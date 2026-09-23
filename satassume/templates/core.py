@@ -1,45 +1,34 @@
 """Structural templates for ``Add``, ``Mul`` and ``Pow``.
 
-Every formula relates predicates of the node to predicates of its direct
+Every rule relates predicates of the node ``y`` to predicates of its
 arguments and is a theorem about the *value* of the node under SymPy's
 conventions (``1/0 = zoo``, ``0**0 = 1``, ``oo - oo = nan`` is "unknown").
 The rules mirror SymPy's ``_eval_is_*`` methods in
 ``sympy/core/{add,mul,power}.py`` except where those are unsound under
-value semantics (noted inline).
+value semantics (noted inline).  The notation is described in
+:mod:`.dsl`; ``python tools/dump_rules.py 'x**2'`` prints what a given
+expression gets.
 
-Rules are index-based specs (see :mod:`._common`): argument ``k`` is index
-``k`` and the node is index ``n``.  The rule base is relied on for
-everything it can derive (``positive == extended_positive & finite``,
-``zero == extended_nonnegative & extended_nonpositive``, ...), and
-"transfer" facts from the node back to an argument are emitted only for
-numeric coefficients, which is what the old assumption system relies on
-(``-x``, ``2*x``, ``x/2``).
+The rule base is relied on for everything it can derive (``positive ==
+extended_positive & finite``, ``zero == extended_nonnegative &
+extended_nonpositive``, ...), and "transfer" facts from the node back to an
+argument are emitted only for numeric coefficients, which is what the old
+assumption system relies on (``-x``, ``2*x``, ``x/2``).
 """
 from __future__ import annotations
 
-from itertools import combinations, product
+from itertools import product
 
 from sympy import S
 from sympy.core.add import Add
-from sympy.core.mul import Mul
 from sympy.core.intfunc import integer_nthroot
+from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.functions.elementary.exponential import exp
 
 from ..formula import Not, P
-
-from ._common import (
-    SIGN_FLIP,
-    VOCAB,
-    Rules,
-    const_key,
-    consts_of,
-    facts,
-    ge2_alternatives,
-    lits,
-    pattern_key,
-)
-from .registry import registry
+from ._common import SIGN_FLIP, VOCAB
+from .dsl import any_of, given, integer_at_least_2, none_of, template
 
 #: Largest arity for per-argument rules of Mul (O(n^2) literals).
 MAX_ONEOUT = 6
@@ -53,349 +42,393 @@ MAX_ADD_SMALL = 3
 # Add
 # ---------------------------------------------------------------------------
 
-# Closed under addition (all args -> node).  ``real``, ``zero`` and the
-# finite sign predicates are derived by the rule base from these.
-_ADD_CLOSED = (
+#: Closed under addition.  ``real``, ``zero`` and the finite sign
+#: predicates are derived by the rule base from these.
+ADD_CLOSED = (
     'extended_real', 'complex', 'integer', 'rational', 'algebraic', 'finite',
     'hermitian', 'antihermitian', 'commutative',
     'extended_positive', 'extended_negative',
     'extended_nonnegative', 'extended_nonpositive',
 )
 
-# Closed under subtraction of finite values: pred(node) & pred(rest) -> pred(a).
-# (The contrapositives give "one non-integer term -> non-integer sum" etc.,
-# and with the closure rules also irrational/transcendental/noninteger sums.)
-_ADD_SUBTRACT = ('real', 'complex', 'integer', 'rational', 'algebraic', 'finite')
-
-_STRICT = (('extended_positive', 'extended_nonnegative'),
-           ('extended_negative', 'extended_nonpositive'))
+#: Closed under subtraction of finite values.  (The contrapositives give "one
+#: non-integer term makes a non-integer sum" etc., and with the rule base
+#: also irrational, transcendental and noninteger sums.)
+ADD_SUBTRACT = ('real', 'complex', 'integer', 'rational', 'algebraic', 'finite')
 
 
-def _add_rules(n, consts):
-    R = Rules()
-    rule = R.rule
-    N = n
-    A = range(n)
+@template(Add, nary=True)
+def add_rules(terms, y):
+    """``y == terms[0] + terms[1] + ...``"""
+    n = len(terms)
 
-    for pred in _ADD_CLOSED:
-        rule(lits(A, pred), (N, pred, True))
+    for pred in ADD_CLOSED:
+        yield terms[pred] >> y[pred]
     if n > MAX_ADD_SMALL:
-        rule(lits(A, 'even'), (N, 'even', True))
+        yield terms.even >> y.even
+    yield terms.imaginary >> (y.imaginary | y.zero)     # I + (-I) == 0
+    for t in terms:
+        yield y.commutative >> t.commutative            # SymPy's convention
 
-    # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
-    rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
-
-    # Commutativity: node commutative -> every term commutative (SymPy convention).
-    for k in A:
-        rule([(N, 'commutative', True)], (k, 'commutative', True))
-
-    for k in A:
-        rest = [j for j in A if j != k]
+    for t, rest in terms.each_with_rest():
         # One strictly signed term among same-signed terms.
-        for strict, nonstrict in _STRICT:
-            rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
-        # Imaginary term plus finite reals is not real.
-        rule([(k, 'imaginary', True), *lits(rest, 'real')], (N, 'extended_real', False))
+        yield (t.extended_positive & rest.extended_nonnegative) >> y.extended_positive
+        yield (t.extended_negative & rest.extended_nonpositive) >> y.extended_negative
+        # An imaginary term plus finite reals is not real.
+        yield (t.imaginary & rest.real) >> ~y.extended_real
         if n <= MAX_ADD_SMALL:
-            for pred in _ADD_SUBTRACT:
-                rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
+            for pred in ADD_SUBTRACT:
+                # t == y - rest
+                yield (y[pred] & rest[pred]) >> t[pred]
         elif n <= MAX_ONEOUT:
-            rule([(k, 'odd', True), *lits(rest, 'even')], (N, 'odd', True))
+            yield (t.odd & rest.even) >> y.odd
         if n <= MAX_ONEOUT:
-            # A nonzero real part (finite or infinite) cannot be cancelled by
-            # imaginary terms.
-            rule([(k, 'extended_nonzero', True), *lits(rest, 'imaginary')],
-                 (N, 'imaginary', False))
-            # Infinite sums.  ``oo - oo``, ``oo + zoo``, ``oo*I - oo*I`` and
+            # A nonzero real part (finite or infinite) cannot be cancelled
+            # by imaginary terms.
+            yield (t.extended_nonzero & rest.imaginary) >> ~y.imaginary
+            # Infinite sums: ``oo - oo``, ``oo + zoo``, ``oo*I - oo*I`` and
             # the like are nan ("unknown"); every other infinite sum is
             # infinite (``oo + I``, ``oo + oo*I``, ``zoo + 1``, ``-oo + I``).
-            # So an infinite term that is not ``-oo`` makes the sum infinite
-            # unless some other term is ``-oo``, and symmetrically.
-            for strict, nonstrict in _STRICT:
-                signed = strict.replace('extended_', '') + '_infinite'
-                other = _STRICT[1 if strict == _STRICT[0][0] else 0][0]
-                other_signed = other.replace('extended_', '') + '_infinite'
-                rule([(k, 'infinite', True), (k, other_signed, False),
-                      *lits(rest, other_signed, False)], (N, 'infinite', True))
-                # A constant +oo plus terms that are >= 0 or finite real is +oo.
-                if k in consts:
-                    for cond in (nonstrict, 'real'):
-                        rule([(k, signed, True), *lits(rest, cond)], (N, strict, True))
+            # So an infinite term that is not -oo makes the sum infinite
+            # unless another term is -oo, and symmetrically.
+            yield (t.infinite & ~t.negative_infinite
+                   & none_of(rest).negative_infinite) >> y.infinite
+            if t.is_const:
+                # oo plus terms that are >= 0 or finite real is oo.
+                yield (t.positive_infinite & rest.extended_nonnegative) >> y.extended_positive
+                yield (t.positive_infinite & rest.real) >> y.extended_positive
+            yield (t.infinite & ~t.positive_infinite
+                   & none_of(rest).positive_infinite) >> y.infinite
+            if t.is_const:
+                yield (t.negative_infinite & rest.extended_nonpositive) >> y.extended_negative
+                yield (t.negative_infinite & rest.real) >> y.extended_negative
 
-    # Parity of a sum of integers.
+    # Parity of a sum of integers, case by case.
     if n <= MAX_ADD_SMALL:
         for parities in product(('even', 'odd'), repeat=n):
-            result = 'odd' if parities.count('odd') % 2 else 'even'
-            rule([(k, p, True) for k, p in enumerate(parities)], (N, result, True))
-    # A sum of two or more positive even integers is at least 4, hence composite.
+            odd = parities.count('odd') % 2 == 1
+            yield given(*(t[p] for t, p in zip(terms, parities))) >> (y.odd if odd else y.even)
+    # A sum of two or more positive even integers is at least 4.
     if n >= 2:
-        rule([*lits(A, 'even'), *lits(A, 'positive')], (N, 'composite', True))
-    return R.rules
-
-
-@registry.register(Add)
-def add_templates(expr):
-    args = expr.args
-    n = len(args)
-    if n == 0:
-        return ()
-    consts = consts_of(args)
-    return facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
-                 consts, args + (expr,), n)
+        yield (terms.even & terms.positive) >> y.composite
 
 
 # ---------------------------------------------------------------------------
 # Mul
 # ---------------------------------------------------------------------------
 
-# Closed under multiplication.  ``real`` and ``positive`` are derived by the
-# rule base (``extended_* & finite``).
-_MUL_CLOSED = (
+#: Closed under multiplication.  ``real`` and ``positive`` are derived by
+#: the rule base (``extended_* & finite``).
+MUL_CLOSED = (
     'extended_real', 'complex', 'integer', 'rational', 'algebraic', 'finite',
     'commutative', 'extended_positive', 'nonnegative',
 )
 
-# Backward transfer for a nonzero real numeric coefficient c: pred(c*x) -> pred(x)
-# (sign predicates flipped for negative c).  The forward directions follow
-# from the closure and per-argument rules.
-_COEFF_BACK = (
+#: For a nonzero real numeric coefficient ``c``: ``pred(c*x) -> pred(x)``
+#: (sign predicates flipped for negative ``c``).  The forward directions
+#: follow from the closure and per-factor rules.
+COEFF_BACK = (
     'positive', 'negative', 'nonnegative', 'nonpositive',
     'extended_positive', 'extended_negative', 'real', 'extended_real',
     'finite', 'complex', 'imaginary',
 )
 
 
-def _mul_rules(n, consts):
-    R = Rules()
-    rule = R.rule
-    N = n
-    A = range(n)
+@template(Mul, nary=True)
+def mul_rules(factors, y):
+    """``y == factors[0] * factors[1] * ...``"""
+    n = len(factors)
 
-    for pred in _MUL_CLOSED:
-        rule(lits(A, pred), (N, pred, True))
-    for k in A:
-        rule([(N, 'commutative', True)], (k, 'commutative', True))
+    for pred in MUL_CLOSED:
+        yield factors[pred] >> y[pred]
+    for f in factors:
+        yield y.commutative >> f.commutative
 
-    # Zero: some zero factor with the rest finite; nonzero: all nonzero.
-    for k in A:
-        rule([(k, 'zero', True), *lits([j for j in A if j != k], 'finite')], (N, 'zero', True))
-    rule([], [*lits(A, 'zero'), (N, 'zero', False)])
+    for f, rest in factors.each_with_rest():
+        yield (f.zero & rest.finite) >> y.zero
+    yield y.zero >> any_of(factors).zero
 
-    # Hermitian product of commuting hermitian factors.
-    rule([*lits(A, 'commutative'), *lits(A, 'hermitian')], (N, 'hermitian', True))
-
-    # Polar: all polar, or one polar factor and the rest positive.
-    rule(lits(A, 'polar'), (N, 'polar', True))
-    for k in A:
-        rule([(k, 'polar', True), *lits([j for j in A if j != k], 'positive')],
-             (N, 'polar', True))
+    yield (factors.commutative & factors.hermitian) >> y.hermitian
+    yield factors.polar >> y.polar
+    for f, rest in factors.each_with_rest():
+        yield (f.polar & rest.positive) >> y.polar
 
     if n >= 2:
-        rule(lits(A, 'prime'), (N, 'composite', True))
+        yield factors.prime >> y.composite
 
-    # All factors negative / nonpositive / imaginary: parity of n.
+    # All factors negative / nonpositive / imaginary: the sign is the
+    # parity of n.
     even_n = n % 2 == 0
-    rule(lits(A, 'extended_negative'),
-         (N, 'extended_positive' if even_n else 'extended_negative', True))
-    rule(lits(A, 'nonpositive'), (N, 'nonnegative' if even_n else 'nonpositive', True))
-    rule(lits(A, 'imaginary'), (N, 'nonzero' if even_n else 'imaginary', True))
-    rule(lits(A, 'odd'), (N, 'odd', True))
+    yield factors.extended_negative >> (y.extended_positive if even_n else y.extended_negative)
+    yield factors.nonpositive >> (y.nonnegative if even_n else y.nonpositive)
+    yield factors.imaginary >> (y.nonzero if even_n else y.imaginary)
+    yield factors.odd >> y.odd
 
     if n <= MAX_ONEOUT:
-        for k in A:
-            rest = [j for j in A if j != k]
-            # One infinite factor and the rest nonzero -> infinite.
-            rule([(k, 'infinite', True), *lits(rest, 'zero', False)], (N, 'infinite', True))
-            # Exactly one negative factor (rest positive) -> negative.
-            rule([(k, 'extended_negative', True), *lits(rest, 'extended_positive')],
-                 (N, 'extended_negative', True))
-            rule([(k, 'nonpositive', True), *lits(rest, 'nonnegative')], (N, 'nonpositive', True))
-            # One even factor and the rest integers -> even.
-            rule([(k, 'even', True), *lits(rest, 'integer')], (N, 'even', True))
-            # One composite factor and the rest integers -> not prime (the
-            # product is 0, negative, or a multiple of a composite).
-            rule([(k, 'composite', True), *lits(rest, 'integer')], (N, 'prime', False))
-            # One irrational factor and the rest nonzero rationals -> irrational.
-            rule([(k, 'irrational', True), *lits(rest, 'rational'), *lits(rest, 'zero', False)],
-                 (N, 'irrational', True))
-            # One non-real factor and the rest nonzero extended reals -> not real.
-            rule([(k, 'extended_real', False), *lits(rest, 'extended_nonzero')],
-                 (N, 'extended_real', False))
-            # One imaginary factor and the rest nonzero finite reals -> imaginary;
-            # with the rest merely real the product may also be zero.
-            rule([(k, 'imaginary', True), *lits(rest, 'real'), *lits(rest, 'zero', False)],
-                 (N, 'imaginary', True))
-            rule([(k, 'imaginary', True), *lits(rest, 'real')],
-                 [(N, 'imaginary', True), (N, 'zero', True)])
+        for f, rest in factors.each_with_rest():
+            yield (f.infinite & none_of(rest).zero) >> y.infinite
+            # Exactly one negative factor.
+            yield (f.extended_negative & rest.extended_positive) >> y.extended_negative
+            yield (f.nonpositive & rest.nonnegative) >> y.nonpositive
+            yield (f.even & rest.integer) >> y.even
+            # The product is 0, negative, or a multiple of a composite.
+            yield (f.composite & rest.integer) >> ~y.prime
+            yield (f.irrational & rest.rational & none_of(rest).zero) >> y.irrational
+            yield (~f.extended_real & rest.extended_nonzero) >> ~y.extended_real
+            # With the other factors merely real the product may be zero.
+            yield (f.imaginary & rest.real & none_of(rest).zero) >> y.imaginary
+            yield (f.imaginary & rest.real) >> (y.imaginary | y.zero)
             if n == 2:
-                # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
+                # I*a*(c + I*d) has real part -a*d and imaginary part a*c:
                 # the product is real iff the other factor is imaginary or
                 # zero, and imaginary iff the other factor is a nonzero real.
-                l = rest[0]
-                rule([(k, 'imaginary', True), (l, 'complex', True), (N, 'extended_real', True)],
-                     [(l, 'imaginary', True), (l, 'zero', True)])
-                rule([(k, 'imaginary', True), (l, 'complex', True), (N, 'imaginary', True)],
-                     (l, 'real', True))
+                g, = rest
+                yield (f.imaginary & g.complex & y.extended_real) >> (g.imaginary | g.zero)
+                yield (f.imaginary & g.complex & y.imaginary) >> g.real
 
     if 3 <= n <= MAX_PAIRS:
-        # Sign of a product with m negative factors, 2 <= m < n (one negative
-        # factor is above, all negative is above).
+        # The sign of a product with 2 <= m < n negative factors (one and
+        # all are above).
         for m in range(2, n):
-            for neg in combinations(A, m):
-                rest = [j for j in A if j not in neg]
-                sign = 'extended_positive' if m % 2 == 0 else 'extended_negative'
-                rule([*lits(neg, 'extended_negative'), *lits(rest, 'extended_positive')],
-                     (N, sign, True))
-                sign = 'nonnegative' if m % 2 == 0 else 'nonpositive'
-                rule([*lits(neg, 'nonpositive'), *lits(rest, 'nonnegative')], (N, sign, True))
-        for k, l in combinations(A, 2):
-            rest = [j for j in A if j != k and j != l]
-            rule([(k, 'imaginary', True), (l, 'imaginary', True),
-                  *lits(rest, 'real'), *lits(rest, 'zero', False)], (N, 'nonzero', True))
+            for negative, rest in factors.subsets(m):
+                even_m = m % 2 == 0
+                yield (negative.extended_negative & rest.extended_positive) >> (
+                    y.extended_positive if even_m else y.extended_negative)
+                yield (negative.nonpositive & rest.nonnegative) >> (
+                    y.nonnegative if even_m else y.nonpositive)
+        for (f, g), rest in factors.subsets(2):
+            yield (f.imaginary & g.imaginary & rest.real & none_of(rest).zero) >> y.nonzero
 
-    # Numeric coefficient c*x: transfer facts back from the product to x.
-    if n == 2 and 0 in consts and consts[0].is_Number:
-        c = consts[0]
+    # A numeric coefficient c*x: transfer facts back from the product to x.
+    if n == 2 and factors[0].is_const and factors[0].value.is_Number:
+        c, x = factors[0].value, factors[1]
         if c.is_finite and c.is_extended_real and not c.is_zero:
-            flip = c.is_negative
-            for pred in _COEFF_BACK:
-                rule([(N, pred, True)], (1, SIGN_FLIP.get(pred, pred) if flip else pred, True))
+            for pred in COEFF_BACK:
+                yield y[pred] >> x[SIGN_FLIP.get(pred, pred) if c.is_negative else pred]
             if c.is_Rational:
-                rule([(N, 'rational', True)], (1, 'rational', True))
-                rule([(N, 'algebraic', True)], (1, 'algebraic', True))
+                yield y.rational >> x.rational
+                yield y.algebraic >> x.algebraic
                 if c.q == 2:
                     # (p/2)*x for integer x is an integer iff x is even.
-                    R.equiv([(1, 'integer', True)], (N, 'integer', True), (1, 'even', True))
+                    yield x.integer >> y.integer.iff(x.even)
                 elif c is S.NegativeOne:
-                    for pred in ('integer', 'even', 'odd'):
-                        rule([(N, pred, True)], (1, pred, True))
-    return R.rules
-
-
-@registry.register(Mul)
-def mul_templates(expr):
-    args = expr.args
-    n = len(args)
-    if n == 0:
-        return ()
-    consts = consts_of(args)
-    return facts(pattern_key('mul', n, consts), lambda: _mul_rules(n, consts),
-                 consts, args + (expr,), n)
+                    yield y.integer >> x.integer
+                    yield y.even >> x.even
+                    yield y.odd >> x.odd
 
 
 # ---------------------------------------------------------------------------
 # Pow
 # ---------------------------------------------------------------------------
 
-# Indices: base 0, exponent 1, node 2.  Rules are ((premises), conclusion)
-# with literals (index, pred) or (index, pred, False).
-_B, _E, _N = 0, 1, 2
-_POW_RULES = (
-    # --- sign ---
-    (((_B, 'positive'), (_E, 'real')), (_N, 'positive')),
-    (((_B, 'extended_positive'), (_E, 'positive')), (_N, 'extended_positive')),
-    (((_B, 'extended_positive'), (_E, 'extended_real')), (_N, 'extended_nonnegative')),
-    (((_B, 'extended_nonnegative'), (_E, 'extended_nonnegative')), (_N, 'extended_nonnegative')),
-    (((_B, 'extended_nonnegative'), (_E, 'extended_real')), (_N, 'extended_negative', False)),
-    (((_B, 'extended_real'), (_E, 'even')), (_N, 'extended_negative', False)),
-    (((_B, 'nonzero'), (_E, 'even')), (_N, 'positive')),
-    # (-oo)**(-2) == 0, so the extended version needs a nonnegative exponent.
-    (((_B, 'extended_negative'), (_E, 'even'), (_E, 'nonnegative')), (_N, 'extended_positive')),
-    (((_B, 'negative'), (_E, 'odd')), (_N, 'negative')),
-    (((_B, 'extended_negative'), (_E, 'odd')), (_N, 'extended_nonpositive')),
-    (((_B, 'extended_nonpositive'), (_E, 'odd')), (_N, 'extended_positive', False)),
-    (((_N, 'positive'), (_B, 'real'), (_E, 'odd')), (_B, 'positive')),
-    (((_N, 'negative'), (_B, 'real'), (_E, 'odd')), (_B, 'negative')),
-    # --- zero base, zero exponent (b**0 == 1, also for zoo and nan) ---
-    (((_B, 'zero'), (_E, 'extended_positive')), (_N, 'zero')),
-    (((_B, 'zero'), (_E, 'extended_nonpositive')), (_N, 'zero', False)),
-    (((_B, 'zero'), (_E, 'extended_negative')), (_N, 'infinite')),
-    (((_E, 'zero'),), (_N, 'positive')),
-    # SymPy leaves ``oo**0.0`` unevaluated and calls it non-integer.
-    (((_E, 'zero'), (_B, 'finite')), (_N, 'odd')),
-    # --- zero / nonzero / finite / infinite ---
-    (((_B, 'zero', False), (_B, 'finite'), (_E, 'finite')), (_N, 'zero', False)),
-    (((_B, 'infinite'), (_E, 'negative')), (_N, 'zero')),
-    (((_B, 'zero', False), (_E, 'nonnegative')), (_N, 'zero', False)),
-    (((_B, 'finite'), (_E, 'negative')), (_N, 'zero', False)),
-    (((_B, 'finite'), (_E, 'finite'), (_E, 'nonnegative')), (_N, 'finite')),
-    (((_B, 'finite'), (_E, 'finite'), (_B, 'zero', False)), (_N, 'finite')),
-    (((_B, 'infinite'), (_E, 'positive')), (_N, 'infinite')),
-    # --- integer / rational ---
-    (((_B, 'integer'), (_E, 'integer'), (_E, 'nonnegative')), (_N, 'integer')),
-    (((_B, 'even'), (_E, 'integer'), (_E, 'positive')), (_N, 'even')),
-    (((_B, 'odd'), (_E, 'integer'), (_E, 'nonnegative')), (_N, 'odd')),
-    (((_B, 'rational'), (_B, 'integer', False), (_E, 'rational'), (_E, 'positive')),
-     (_N, 'integer', False)),
-    (((_B, 'rational'), (_E, 'integer'), (_E, 'nonnegative')), (_N, 'rational')),
-    (((_B, 'rational'), (_E, 'integer'), (_B, 'zero', False)), (_N, 'rational')),
-    # --- extended real / imaginary ---
-    (((_B, 'extended_nonzero'), (_E, 'integer')), (_N, 'extended_real')),
-    (((_B, 'extended_real'), (_E, 'integer'), (_E, 'nonnegative')), (_N, 'extended_real')),
-    (((_B, 'negative'), (_E, 'real'), (_E, 'integer', False)), (_N, 'extended_real', False)),
-    (((_B, 'extended_real'), (_E, 'integer')), (_N, 'imaginary', False)),
-    (((_B, 'extended_real'), (_E, 'extended_real'), (_E, 'rational', False)),
-     (_N, 'imaginary', False)),
-    (((_B, 'positive'), (_E, 'extended_real')), (_N, 'imaginary', False)),
-    (((_B, 'imaginary'), (_E, 'even')), (_N, 'nonzero')),
-    (((_B, 'imaginary'), (_E, 'odd')), (_N, 'imaginary')),
-    # --- complex ---
-    (((_B, 'complex'), (_E, 'complex'), (_B, 'zero', False)), (_N, 'complex')),
-    (((_B, 'complex'), (_E, 'complex'), (_E, 'nonnegative')), (_N, 'complex')),
-    # --- prime ---
-    (((_B, 'integer'), (_E, 'prime')), (_N, 'prime', False)),
-    (((_B, 'integer'), (_E, 'even'), (_E, 'positive')), (_N, 'prime', False)),
-    # --- algebraic ---
-    (((_B, 'algebraic'), (_E, 'rational'), (_B, 'zero', False)), (_N, 'algebraic')),
-    (((_B, 'algebraic'), (_E, 'rational'), (_E, 'positive')), (_N, 'algebraic')),
-    (((_B, 'transcendental'), (_E, 'rational'), (_E, 'zero', False)), (_N, 'algebraic', False)),
-    # --- polar / commutative ---
-    (((_B, 'polar'),), (_N, 'polar')),
-    (((_B, 'commutative'), (_E, 'commutative')), (_N, 'commutative')),
-    (((_N, 'commutative'),), (_B, 'commutative')),
-    (((_N, 'commutative'),), (_E, 'commutative')),
-)
-
-_POW_E_RULES = (
-    (((_E, 'extended_real'),), (_N, 'extended_real')),
-    (((_E, 'extended_real'),), (_N, 'extended_nonnegative')),
-    (((_E, 'real'),), (_N, 'positive')),
-    (((_E, 'complex'),), (_N, 'complex')),
-    (((_E, 'extended_negative'),), (_N, 'complex')),
-    (((_E, 'finite'),), (_N, 'finite')),
-    (((_E, 'finite'),), (_N, 'zero', False)),
-    (((_E, 'algebraic'), (_E, 'zero', False)), (_N, 'transcendental')),
-    (((_E, 'infinite'), (_E, 'extended_negative')), (_N, 'zero')),
-)
-
-# Gelfond-Schneider: for algebraic b not in {0, 1} and algebraic e,
-# b**e is algebraic iff e is rational.  Ways to say "b not in {0, 1}":
-_NOT01 = ('irrational', 'noninteger', 'negative', 'prime', 'composite')
-# Ways to say "b is real with |b| not in {0, 1}".
-_NOTUNIT = ('irrational', 'noninteger', 'prime', 'composite')
-
-# Pow(x, 1) is x.
-_POW_ONE_EQUIV = tuple(sorted(VOCAB - {'commutative'}))
-
-# Extra object slots after base 0, exponent 1, node 2 (see ``pow_templates``).
-_U, _S, _T, _BM, _BP = 3, 4, 5, 6, 7
+#: Ways to say "b is not 0 or 1" (for Gelfond-Schneider).
+NOT_0_OR_1 = ('irrational', 'noninteger', 'negative', 'prime', 'composite')
+#: Ways to say "b is real with |b| not 0 or 1".
+NOT_0_OR_UNIT = ('irrational', 'noninteger', 'prime', 'composite')
 
 
-def _lit(spec):
-    return (spec[0], spec[1], spec[2] if len(spec) > 2 else True)
+def pow_shape(expr):
+    """The derived objects and parameters of ``b**e``:
+
+    * ``u``: the argument when ``b`` is ``exp(u)`` or ``E**u``;
+    * ``s``, param ``c``: ``e == I*pi*c*s`` for base ``E`` (``c`` rational,
+      ``s`` absent when it is 1);
+    * ``two_e``: ``2*e`` for a symbolic exponent;
+    * ``b_minus_1``, ``b_plus_1``: for a symbolic base and exponent;
+    * ``same``: ``b`` is ``e``; ``angle``: ``b == exp(I*pi*angle)`` for
+      ``b`` in ``I, -I, -1``."""
+    b, e = expr.args
+    s = c = None
+    if b is S.Exp1 and not (e.is_Atom and e.is_number):
+        split = ipi_split(e)
+        if split is not None:
+            c, s = split
+    symbolic = not e.is_number
+    both_symbolic = symbolic and not b.is_number
+    objects = {
+        'u': _exp_arg(b),
+        's': s,
+        'two_e': Mul(S(2), e) if symbolic else None,
+        'b_minus_1': b - S.One if both_symbolic else None,
+        'b_plus_1': b + S.One if both_symbolic else None,
+    }
+    return objects, {'same': b is e, 'angle': _unit_angle(b), 'c': c}
 
 
-def _unit_angle(b):
-    """``theta/pi`` as a Rational for the constants ``I``, ``-I``, ``-1``
-    (``b == exp(I*pi*theta/pi)``), else None."""
-    if b is S.ImaginaryUnit:
-        return S.Half
-    if b is S.NegativeOne:
-        return S.One
-    if b.is_Mul and b.args == (S.NegativeOne, S.ImaginaryUnit):
-        return -S.Half
+def _unit_power_extra(expr, params):
+    angle = params['angle']
+    if angle is not None and expr.args[1].is_number:
+        return _unit_power_units(angle, expr.args[1], expr)
     return None
 
+
+@template(Pow, shape=pow_shape, extra=_unit_power_extra)
+def pow_rules(b, e, y, *, u, s, two_e, b_minus_1, b_plus_1, same, angle, c):
+    """``y == b**e``; see :func:`pow_shape` for the other names."""
+    # --- sign ---
+    yield (b.positive & e.real) >> y.positive
+    yield (b.extended_positive & e.positive) >> y.extended_positive
+    yield (b.extended_positive & e.extended_real) >> y.extended_nonnegative
+    yield (b.extended_nonnegative & e.extended_nonnegative) >> y.extended_nonnegative
+    yield (b.extended_nonnegative & e.extended_real) >> ~y.extended_negative
+    yield (b.extended_real & e.even) >> ~y.extended_negative
+    yield (b.nonzero & e.even) >> y.positive
+    # (-oo)**(-2) == 0, so the extended version needs a nonnegative exponent.
+    yield (b.extended_negative & e.even & e.nonnegative) >> y.extended_positive
+    yield (b.negative & e.odd) >> y.negative
+    yield (b.extended_negative & e.odd) >> y.extended_nonpositive
+    yield (b.extended_nonpositive & e.odd) >> ~y.extended_positive
+    yield (y.positive & b.real & e.odd) >> b.positive
+    yield (y.negative & b.real & e.odd) >> b.negative
+
+    # --- zero base, zero exponent (b**0 == 1, also for zoo and nan) ---
+    yield (b.zero & e.extended_positive) >> y.zero
+    yield (b.zero & e.extended_nonpositive) >> ~y.zero
+    yield (b.zero & e.extended_negative) >> y.infinite
+    yield e.zero >> y.positive
+    # SymPy leaves ``oo**0.0`` unevaluated and calls it non-integer.
+    yield (e.zero & b.finite) >> y.odd
+
+    # --- zero / nonzero / finite / infinite ---
+    yield (~b.zero & b.finite & e.finite) >> ~y.zero
+    yield (b.infinite & e.negative) >> y.zero
+    yield (~b.zero & e.nonnegative) >> ~y.zero
+    yield (b.finite & e.negative) >> ~y.zero
+    yield (b.finite & e.finite & e.nonnegative) >> y.finite
+    yield (b.finite & e.finite & ~b.zero) >> y.finite
+    yield (b.infinite & e.positive) >> y.infinite
+
+    # --- integer / rational ---
+    yield (b.integer & e.integer & e.nonnegative) >> y.integer
+    yield (b.even & e.integer & e.positive) >> y.even
+    yield (b.odd & e.integer & e.nonnegative) >> y.odd
+    yield (b.rational & ~b.integer & e.rational & e.positive) >> ~y.integer
+    yield (b.rational & e.integer & e.nonnegative) >> y.rational
+    yield (b.rational & e.integer & ~b.zero) >> y.rational
+
+    # --- extended real / imaginary ---
+    yield (b.extended_nonzero & e.integer) >> y.extended_real
+    yield (b.extended_real & e.integer & e.nonnegative) >> y.extended_real
+    yield (b.negative & e.real & ~e.integer) >> ~y.extended_real
+    yield (b.extended_real & e.integer) >> ~y.imaginary
+    yield (b.extended_real & e.extended_real & ~e.rational) >> ~y.imaginary
+    yield (b.positive & e.extended_real) >> ~y.imaginary
+    yield (b.imaginary & e.even) >> y.nonzero
+    yield (b.imaginary & e.odd) >> y.imaginary
+
+    # --- complex ---
+    yield (b.complex & e.complex & ~b.zero) >> y.complex
+    yield (b.complex & e.complex & e.nonnegative) >> y.complex
+
+    # --- prime ---
+    yield (b.integer & e.prime) >> ~y.prime
+    yield (b.integer & e.even & e.positive) >> ~y.prime
+
+    # --- algebraic ---
+    yield (b.algebraic & e.rational & ~b.zero) >> y.algebraic
+    yield (b.algebraic & e.rational & e.positive) >> y.algebraic
+    yield (b.transcendental & e.rational & ~e.zero) >> ~y.algebraic
+
+    # --- polar / commutative ---
+    yield b.polar >> y.polar
+    yield (b.commutative & e.commutative) >> y.commutative
+    yield y.commutative >> b.commutative
+    yield y.commutative >> e.commutative
+
+    if b.value is S.Exp1:
+        yield from exp_rules(e, y, s=s, c=c)
+
+    if same:
+        # x**x
+        yield b.extended_nonnegative >> y.extended_positive
+    if e.value is S.One:
+        for pred in sorted(VOCAB - {'commutative'}):
+            yield y[pred].iff(b[pred])
+    # A power of a composite is 1, a fraction or composite.
+    yield (b.composite & e.integer) >> ~y.prime
+    # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
+    # exp(-t*phi)*exp(I*t*log(r)) with r algebraic; t*log(r) in pi*Q with
+    # t algebraic nonzero forces log(r)/(I*pi) algebraic, hence rational
+    # (Gelfond-Schneider), hence r == 1.  So b**e is never imaginary, and
+    # it is real iff |b| == 1 (then it is positive).
+    yield (b.algebraic & ~b.zero & e.imaginary & e.algebraic) >> ~y.imaginary
+    for pred in NOT_0_OR_UNIT:
+        yield (b[pred] & b.algebraic & e.imaginary & e.algebraic) >> ~y.extended_real
+    if angle is not None:
+        # I, -I, -1 to an imaginary power
+        yield e.imaginary >> y.positive
+    if u is not None:
+        # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
+        yield (u.imaginary & e.imaginary) >> y.positive
+    if b_minus_1 is not None:
+        # An integer other than 0 and +-1 to a negative integer power is a
+        # fraction (0 gives zoo).
+        yield given(b.integer, e.integer, e.negative,
+                    ~b_minus_1.zero, ~b_plus_1.zero) >> ~y.integer
+    if two_e is not None:
+        # Real base, rational exponent: imaginary iff the base is negative
+        # and the exponent is half an odd integer.
+        yield (b.extended_real & e.rational & ~two_e.integer) >> ~y.imaginary
+        yield (b.negative & e.rational & two_e.integer & ~e.integer) >> y.imaginary
+
+    ev = e.value
+    if ev is not None and ev.is_Rational and not ev.is_Integer:
+        if ev.q == 2:
+            # b**(k/2) for real b is imaginary iff b is a negative real.
+            yield b.extended_real >> y.imaginary.iff(b.negative)
+            yield b.extended_real >> ~y.extended_negative
+        else:
+            yield b.extended_real >> ~y.imaginary
+        if ev.p == 1:
+            # (b**(1/q))**q == b: a non-real base gives a non-real root.
+            yield ~b.extended_real >> ~y.extended_real
+        elif ev.p == -1:
+            # Likewise for 1/b**(1/q), but zoo**(-1/2) == 0 is real.
+            yield (~b.extended_real & b.finite) >> ~y.extended_real
+        bv = b.value
+        if bv is not None and bv.is_Rational and bv.is_positive:
+            # b**(p/q) with gcd(p, q) == 1 is rational iff b is a perfect
+            # q-th power (exact integer arithmetic).
+            if not (integer_nthroot(bv.p, ev.q)[1] and integer_nthroot(bv.q, ev.q)[1]):
+                yield y.irrational
+    if ev is S.NegativeOne:
+        # 1/b is rational iff b is (nonzero) rational.
+        yield b.irrational >> y.irrational
+
+    bv = b.value
+    if bv is not None:
+        if bv is S.NegativeOne:
+            yield e.integer >> y.odd
+        elif bv.is_Integer and (bv.p >= 2 or bv.p <= -2):
+            # |b|**e < 1 for negative e.
+            yield e.negative >> ~y.integer
+        if bv.is_algebraic and bv.is_zero is False and bv is not S.One:
+            # Gelfond-Schneider.
+            yield e.algebraic >> y.algebraic.iff(e.rational)
+        if bv.is_Number and bv.is_finite:
+            # Exact comparisons of a number with 1 (no assumptions involved).
+            if abs(bv) > 1:
+                yield e.extended_negative >> y.finite
+                yield e.negative_infinite >> y.zero
+                yield e.positive_infinite >> y.infinite
+            elif bv.is_zero is False and abs(bv) < 1:
+                yield e.extended_positive >> y.finite
+                yield e.positive_infinite >> y.zero
+                yield e.negative_infinite >> y.infinite
+    if ev is not None:
+        if ev.is_Integer and ev.p >= 2:
+            # b**e for integer b >= 2 is composite.
+            for b_at_least_2 in integer_at_least_2(b):
+                yield b_at_least_2 >> y.composite
+        if ev.is_algebraic and ev.is_rational is False:
+            # Gelfond-Schneider.
+            for pred in NOT_0_OR_1:
+                yield (b[pred] & b.algebraic) >> ~y.algebraic
+
+
+# ---------------------------------------------------------------------------
+# exp (also E**x)
+# ---------------------------------------------------------------------------
 
 def ipi_split(arg):
     """``arg == I*pi*c*s`` structurally (a ``Mul`` with one ``I`` factor, one
@@ -421,139 +454,83 @@ def ipi_split(arg):
     return c, (None if not rest else rest[0] if len(rest) == 1 else Mul(*rest))
 
 
-def ipi_rules(rule, c, iS, N):
-    """Rules for ``node == exp(I*pi*c*s)``: a root of unity when ``s`` is an
-    integer, on the unit circle when ``s`` is real.  ``iS`` is the slot of
-    ``s`` (None: ``s == 1``)."""
-    if iS is None:
-        if c.is_integer:
-            rule([], (N, 'odd', True))
-            rule([], (N, 'positive' if c.p % 2 == 0 else 'negative', True))
-        elif c.q == 2:
-            rule([], (N, 'imaginary', True))
-            rule([], (N, 'algebraic', True))
-        else:
-            for lit in ((N, 'algebraic', True), (N, 'extended_real', False),
-                        (N, 'imaginary', False), (N, 'zero', False)):
-                rule([], lit)
+def exp_shape(expr):
+    """For ``exp(x)``: ``x == I*pi*c*s`` (``c`` rational, ``s`` absent when
+    it is 1), else ``c`` and ``s`` are None."""
+    x = expr.args[0]
+    s = c = None
+    if not (x.is_Atom and x.is_number):
+        split = ipi_split(x)
+        if split is not None:
+            c, s = split
+    return {'s': s}, {'c': c}
+
+
+@template(exp, shape=exp_shape)
+def exp_rules(x, y, *, s, c):
+    """``y == exp(x)``; for ``x == I*pi*c*s`` the value is a root of unity
+    or on the unit circle, stated in terms of ``s``.  Also used for
+    ``E**x``."""
+    yield x.extended_real >> y.extended_real
+    yield x.extended_real >> y.extended_nonnegative
+    yield x.real >> y.positive
+    yield x.complex >> y.complex
+    yield x.extended_negative >> y.complex
+    yield x.finite >> y.finite
+    yield x.finite >> ~y.zero
+    # Lindemann-Weierstrass.
+    yield (x.algebraic & ~x.zero) >> y.transcendental
+    yield (x.infinite & x.extended_negative) >> y.zero
+    yield (x.infinite & x.extended_positive) >> (y.infinite & y.extended_positive)
+    yield x.zero >> (y.odd & y.positive)                # exp(0) == 1
+
+    if c is None:
         return
-    rule([(iS, 'integer', True)], (N, 'algebraic', True))
-    rule([(iS, 'real', True)], (N, 'complex', True))
-    rule([(iS, 'real', True)], (N, 'zero', False))
+    if s is None:
+        # exp(I*pi*c)
+        if c.is_integer:
+            yield y.odd
+            yield y.positive if c.p % 2 == 0 else y.negative
+        elif c.q == 2:
+            yield y.imaginary
+            yield y.algebraic
+        else:
+            yield y.algebraic
+            yield ~y.extended_real
+            yield ~y.imaginary
+            yield ~y.zero
+        return
+    yield s.integer >> y.algebraic
+    yield s.real >> y.complex
+    yield s.real >> ~y.zero
     if c.is_integer:
-        rule([(iS, 'integer', True)], (N, 'odd', True))
+        yield s.integer >> y.odd
         if c.p % 2 == 0:
-            rule([(iS, 'integer', True)], (N, 'positive', True))
+            yield s.integer >> y.positive
         else:
-            rule([(iS, 'even', True)], (N, 'positive', True))
-            rule([(iS, 'odd', True)], (N, 'negative', True))
-            rule([(iS, 'integer', True), (N, 'positive', True)], (iS, 'even', True))
-            rule([(iS, 'integer', True), (N, 'negative', True)], (iS, 'odd', True))
+            yield s.even >> y.positive
+            yield s.odd >> y.negative
+            yield (s.integer & y.positive) >> s.even
+            yield (s.integer & y.negative) >> s.odd
     elif c.q == 2:
-        rule([(iS, 'even', True)], (N, 'odd', True))
-        rule([(iS, 'odd', True)], (N, 'imaginary', True))
+        yield s.even >> y.odd
+        yield s.odd >> y.imaginary
 
 
-def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
-    """``b``/``e`` are the constant base/exponent or ``None`` if symbolic;
-    ``angle`` is ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the
-    argument of an ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and
-    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``:
-    slots ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
-    R = Rules()
-    rule = R.rule
-    for prem, concl in _POW_RULES:
-        rule([_lit(p) for p in prem], _lit(concl))
-    if b is S.Exp1:
-        for prem, concl in _POW_E_RULES:
-            rule([_lit(p) for p in prem], _lit(concl))
-        if ipi is not None:
-            c, has_s = ipi
-            ipi_rules(rule, c, _S if has_s else None, _N)
-    if same:
-        rule([(_B, 'extended_nonnegative', True)], (_N, 'extended_positive', True))
-    if e is S.One:
-        for pred in _POW_ONE_EQUIV:
-            R.equiv([], (_N, pred, True), (_B, pred, True))
-    # A power of a composite is 1, a fraction or composite.
-    rule([(_B, 'composite', True), (_E, 'integer', True)], (_N, 'prime', False))
-    # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
-    # exp(-t*phi)*exp(I*t*log(r)) with r algebraic; t*log(r) in pi*Q with
-    # t algebraic nonzero forces log(r)/(I*pi) algebraic, hence rational
-    # (Gelfond-Schneider), hence r == 1.  So b**e is never imaginary, and
-    # it is real iff |b| == 1 (then it is positive).
-    rule([(_B, 'algebraic', True), (_B, 'zero', False), (_E, 'imaginary', True),
-          (_E, 'algebraic', True)], (_N, 'imaginary', False))
-    for pred in _NOTUNIT:
-        rule([(_B, pred, True), (_B, 'algebraic', True), (_E, 'imaginary', True),
-              (_E, 'algebraic', True)], (_N, 'extended_real', False))
-    if angle is not None:
-        rule([(_E, 'imaginary', True)], (_N, 'positive', True))
-    if has_u:
-        # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
-        rule([(_U, 'imaginary', True), (_E, 'imaginary', True)], (_N, 'positive', True))
-    if has_b1:
-        # An integer other than 0 and +-1 to a negative integer power is a
-        # fraction (0 gives zoo).
-        rule([(_B, 'integer', True), (_E, 'integer', True), (_E, 'negative', True),
-              (_BM, 'zero', False), (_BP, 'zero', False)], (_N, 'integer', False))
-    if has_t:
-        # Real base, rational exponent: imaginary iff the base is negative
-        # and the exponent is half an odd integer.
-        rule([(_B, 'extended_real', True), (_E, 'rational', True), (_T, 'integer', False)],
-             (_N, 'imaginary', False))
-        rule([(_B, 'negative', True), (_E, 'rational', True), (_T, 'integer', True),
-              (_E, 'integer', False)], (_N, 'imaginary', True))
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
 
-    if e is not None and e.is_Rational and not e.is_Integer:
-        if e.q == 2:
-            # b**(k/2) for real b is imaginary iff b is a negative real.
-            R.equiv([(_B, 'extended_real', True)], (_N, 'imaginary', True), (_B, 'negative', True))
-            rule([(_B, 'extended_real', True)], (_N, 'extended_negative', False))
-        else:
-            rule([(_B, 'extended_real', True)], (_N, 'imaginary', False))
-        if e.p == 1:
-            # (b**(1/q))**q == b: a non-real base gives a non-real root.
-            rule([(_B, 'extended_real', False)], (_N, 'extended_real', False))
-        elif e.p == -1:
-            # Likewise for 1/b**(1/q), but zoo**(-1/2) == 0 is real.
-            rule([(_B, 'extended_real', False), (_B, 'finite', True)],
-                 (_N, 'extended_real', False))
-        if b is not None and b.is_Rational and b.is_positive:
-            # b**(p/q) with gcd(p, q) == 1 is rational iff b is a perfect
-            # q-th power (exact integer arithmetic).
-            if not (integer_nthroot(b.p, e.q)[1] and integer_nthroot(b.q, e.q)[1]):
-                rule([], (_N, 'irrational', True))
-    if e is S.NegativeOne:
-        # 1/b is rational iff b is (nonzero) rational.
-        rule([(_B, 'irrational', True)], (_N, 'irrational', True))
-    if b is not None:
-        if b is S.NegativeOne:
-            rule([(_E, 'integer', True)], (_N, 'odd', True))
-        elif b.is_Integer and (b.p >= 2 or b.p <= -2):
-            # |b|**e < 1 for negative e.
-            rule([(_E, 'negative', True)], (_N, 'integer', False))
-        if b.is_algebraic and b.is_zero is False and b is not S.One:
-            R.equiv([(_E, 'algebraic', True)], (_N, 'algebraic', True), (_E, 'rational', True))
-        if b.is_Number and b.is_finite:
-            # Exact comparisons of a number with 1 (no assumptions involved).
-            if abs(b) > 1:
-                rule([(_E, 'extended_negative', True)], (_N, 'finite', True))
-                rule([(_E, 'negative_infinite', True)], (_N, 'zero', True))
-                rule([(_E, 'positive_infinite', True)], (_N, 'infinite', True))
-            elif b.is_zero is False and abs(b) < 1:
-                rule([(_E, 'extended_positive', True)], (_N, 'finite', True))
-                rule([(_E, 'positive_infinite', True)], (_N, 'zero', True))
-                rule([(_E, 'negative_infinite', True)], (_N, 'infinite', True))
-    if e is not None:
-        if e.is_Integer and e.p >= 2:
-            # b**e for integer b >= 2 is composite.
-            for prem in ge2_alternatives(_B):
-                rule(prem, (_N, 'composite', True))
-        if e.is_algebraic and e.is_rational is False:
-            for pred in _NOT01:
-                rule([(_B, pred, True), (_B, 'algebraic', True)], (_N, 'algebraic', False))
-    return R.rules
+def _unit_angle(b):
+    """``theta/pi`` as a Rational for the constants ``I``, ``-I``, ``-1``
+    (``b == exp(I*pi*theta/pi)``), else None."""
+    if b is S.ImaginaryUnit:
+        return S.Half
+    if b is S.NegativeOne:
+        return S.One
+    if b.is_Mul and b.args == (S.NegativeOne, S.ImaginaryUnit):
+        return -S.Half
+    return None
 
 
 def _unit_power_units(angle, e, expr):
@@ -586,51 +563,6 @@ def _exp_arg(b):
     """``u`` if ``b`` is ``exp(u)`` or ``E**u``, else None."""
     if b.is_Pow:
         return b.args[1] if b.args[0] is S.Exp1 else None
-    if isinstance(b, exp):
+    if b.is_Function and isinstance(b, exp):
         return b.args[0]
     return None
-
-
-@registry.register(Pow)
-def pow_templates(expr):
-    b, e = expr.args
-    consts = {}
-    if b.is_Atom and b.is_number:
-        consts[_B] = b
-    if e.is_Atom and e.is_number:
-        consts[_E] = e
-    same = b is e
-    angle = _unit_angle(b)
-    objs = [b, e, expr, None, None, None, None, None]
-    u = _exp_arg(b)
-    if u is not None:
-        objs[_U] = u
-        if u.is_Atom and u.is_number:
-            consts[_U] = u
-    ipi = None
-    if b is S.Exp1 and _E not in consts:
-        split = ipi_split(e)
-        if split is not None:
-            c, s_ = split
-            ipi = (c, s_ is not None)
-            if s_ is not None:
-                objs[_S] = s_
-                if s_.is_Atom and s_.is_number:
-                    consts[_S] = s_
-    has_t = _E not in consts and not e.is_number
-    if has_t:
-        objs[_T] = Mul(S(2), e)
-    has_b1 = has_t and _B not in consts and not b.is_number
-    if has_b1:
-        objs[_BM] = b - S.One
-        objs[_BP] = b + S.One
-    key = ('pow', const_key(b) if _B in consts else None,
-           const_key(e) if _E in consts else None, same, angle,
-           const_key(u) if _U in consts else u is not None, ipi,
-           const_key(objs[_S]) if _S in consts else None, has_t, has_b1)
-    out = facts(key, lambda: _pow_rules(consts.get(_B), consts.get(_E), same, angle,
-                                        u is not None, ipi, has_t, has_b1),
-                consts, tuple(objs), _N)
-    if angle is not None and e.is_number:
-        return [out, *_unit_power_units(angle, e, expr)]
-    return out
