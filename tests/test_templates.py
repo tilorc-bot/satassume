@@ -223,12 +223,15 @@ ADD_SAMPLES = [
     x + y, x + 1, x - 1, x + 2, x + Rational(1, 2), x + y + z, x + y + 1,
     x + y + z + w, x + I, x + pi, x + oo, x - oo, x + sqrt(2), x + 2*I,
     x + y*I, unevaluated(Add, x, y, z, w, 1), unevaluated(Add, 1, 2, x),
+    x + y + oo, x + y - oo, x + y + I, x + y + z + 1, unevaluated(Add, 2, 2),
+    unevaluated(Add, oo, -oo), unevaluated(Add, 1, I),
 ]
 MUL_SAMPLES = [
     x*y, 2*x, -x, x/2, -x/2, 3*x/2, Rational(-3, 2)*x, x*y*z, 2*x*y,
     -x*y, x*y*z*w, I*x, I*x*y, pi*x, sqrt(2)*x, oo*x, -oo*x, zoo*x, x*y/2,
     unevaluated(Mul, x, y, z, w, 2), unevaluated(Mul, 2, 3, x),
-    Float(2.5)*x, Float(-1.5)*x, x*(1 + I),
+    Float(2.5)*x, Float(-1.5)*x, x*(1 + I), 4*x, -x*y*z, sqrt(2)*x, I*x*y*z,
+    unevaluated(Mul, I, 1 + I), unevaluated(Mul, 2, 3),
 ]
 POW_SAMPLES = [
     x**2, x**3, x**4, x**-1, x**-2, x**-3, sqrt(x), 1/sqrt(x),
@@ -438,5 +441,23 @@ def test_specific_expectations():
             assert not a.expr.is_Number or oracle(a.expr, a.pred) is None, f
     facts = registry.facts_for(exp(x))
     assert Implies(P('real', x), P('positive', exp(x))) in facts
+    facts = registry.facts_for(x + y)
+    assert Implies(And(P('infinite', x), Not(P('negative_infinite', x)),
+                       Not(P('negative_infinite', y))), P('infinite', x + y)) in facts
+    assert Implies(And(P('extended_nonzero', x), P('imaginary', y)),
+                   Not(P('imaginary', x + y))) in facts
+    facts = registry.facts_for(x + oo)
+    assert Implies(P('real', x), P('extended_positive', x + oo)) in facts
+    assert Implies(Not(P('negative_infinite', x)), P('infinite', x + oo)) in facts
+    facts = registry.facts_for(I*x)
+    assert Implies(And(P('complex', x), P('extended_real', I*x)),
+                   Or(P('imaginary', x), P('zero', x))) in facts
+    assert Implies(And(P('complex', x), P('imaginary', I*x)), P('real', x)) in facts
+    assert Implies(P('real', x), Or(P('imaginary', I*x), P('zero', I*x))) in facts
+    facts = registry.facts_for(4*x)
+    assert Implies(P('integer', x), Not(P('prime', 4*x))) in facts
+    facts = registry.facts_for(sqrt(2)*x)
+    assert Implies(And(P('irrational', sqrt(2)), P('rational', x), Not(P('zero', x))),
+                   P('irrational', sqrt(2)*x)) in facts
     facts = registry.facts_for(Abs(x))
     assert P('extended_nonnegative', Abs(x)) in facts

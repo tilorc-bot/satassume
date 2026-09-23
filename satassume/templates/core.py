@@ -96,25 +96,35 @@ def _add_rules(n, consts):
                 rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
         elif n <= MAX_ONEOUT:
             rule([(k, 'odd', True), *lits(rest, 'even')], (N, 'odd', True))
-
-        a = consts.get(k)
-        if a is not None:
-            if a.is_infinite and a.is_extended_real:
-                # +oo plus terms that are >= 0 or finite real is +oo.
-                strict, nonstrict = _STRICT[0 if a.is_extended_positive else 1]
-                for cond in (nonstrict, 'real'):
-                    rule(lits(rest, cond), (N, strict, True))
-                    rule(lits(rest, cond), (N, 'infinite', True))
-            elif a.is_extended_nonzero:
-                # A nonzero real part cannot be cancelled by imaginary terms.
-                rule(lits(rest, 'imaginary'), (N, 'zero', False))
-                rule(lits(rest, 'imaginary'), (N, 'imaginary', False))
+        if n <= MAX_ONEOUT:
+            # A nonzero real part (finite or infinite) cannot be cancelled by
+            # imaginary terms.
+            rule([(k, 'extended_nonzero', True), *lits(rest, 'imaginary')],
+                 (N, 'imaginary', False))
+            # Infinite sums.  ``oo - oo``, ``oo + zoo``, ``oo*I - oo*I`` and
+            # the like are nan ("unknown"); every other infinite sum is
+            # infinite (``oo + I``, ``oo + oo*I``, ``zoo + 1``, ``-oo + I``).
+            # So an infinite term that is not ``-oo`` makes the sum infinite
+            # unless some other term is ``-oo``, and symmetrically.
+            for strict, nonstrict in _STRICT:
+                signed = strict.replace('extended_', '') + '_infinite'
+                other = _STRICT[1 if strict == _STRICT[0][0] else 0][0]
+                other_signed = other.replace('extended_', '') + '_infinite'
+                rule([(k, 'infinite', True), (k, other_signed, False),
+                      *lits(rest, other_signed, False)], (N, 'infinite', True))
+                # A constant +oo plus terms that are >= 0 or finite real is +oo.
+                if k in consts:
+                    for cond in (nonstrict, 'real'):
+                        rule([(k, signed, True), *lits(rest, cond)], (N, strict, True))
 
     # Parity of a sum of integers.
     if n <= MAX_ADD_SMALL:
         for parities in product(('even', 'odd'), repeat=n):
             result = 'odd' if parities.count('odd') % 2 else 'even'
             rule([(k, p, True) for k, p in enumerate(parities)], (N, result, True))
+    # A sum of two or more positive even integers is at least 4, hence composite.
+    if n >= 2:
+        rule([*lits(A, 'even'), *lits(A, 'positive')], (N, 'composite', True))
     return R.rules
 
 
@@ -197,20 +207,44 @@ def _mul_rules(n, consts):
             rule([(k, 'nonpositive', True), *lits(rest, 'nonnegative')], (N, 'nonpositive', True))
             # One even factor and the rest integers -> even.
             rule([(k, 'even', True), *lits(rest, 'integer')], (N, 'even', True))
+            # One composite factor and the rest integers -> not prime (the
+            # product is 0, negative, or a multiple of a composite).
+            rule([(k, 'composite', True), *lits(rest, 'integer')], (N, 'prime', False))
+            # One irrational factor and the rest nonzero rationals -> irrational.
+            rule([(k, 'irrational', True), *lits(rest, 'rational'), *lits(rest, 'zero', False)],
+                 (N, 'irrational', True))
             # One non-real factor and the rest nonzero extended reals -> not real.
             rule([(k, 'extended_real', False), *lits(rest, 'extended_nonzero')],
                  (N, 'extended_real', False))
-            # One imaginary factor and the rest nonzero finite reals -> imaginary.
+            # One imaginary factor and the rest nonzero finite reals -> imaginary;
+            # with the rest merely real the product may also be zero.
             rule([(k, 'imaginary', True), *lits(rest, 'real'), *lits(rest, 'zero', False)],
                  (N, 'imaginary', True))
+            rule([(k, 'imaginary', True), *lits(rest, 'real')],
+                 [(N, 'imaginary', True), (N, 'zero', True)])
+            if n == 2:
+                # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
+                # the product is real iff the other factor is imaginary or
+                # zero, and imaginary iff the other factor is a nonzero real.
+                l = rest[0]
+                rule([(k, 'imaginary', True), (l, 'complex', True), (N, 'extended_real', True)],
+                     [(l, 'imaginary', True), (l, 'zero', True)])
+                rule([(k, 'imaginary', True), (l, 'complex', True), (N, 'imaginary', True)],
+                     (l, 'real', True))
 
     if 3 <= n <= MAX_PAIRS:
+        # Sign of a product with m negative factors, 2 <= m < n (one negative
+        # factor is above, all negative is above).
+        for m in range(2, n):
+            for neg in combinations(A, m):
+                rest = [j for j in A if j not in neg]
+                sign = 'extended_positive' if m % 2 == 0 else 'extended_negative'
+                rule([*lits(neg, 'extended_negative'), *lits(rest, 'extended_positive')],
+                     (N, sign, True))
+                sign = 'nonnegative' if m % 2 == 0 else 'nonpositive'
+                rule([*lits(neg, 'nonpositive'), *lits(rest, 'nonnegative')], (N, sign, True))
         for k, l in combinations(A, 2):
             rest = [j for j in A if j != k and j != l]
-            rule([(k, 'extended_negative', True), (l, 'extended_negative', True),
-                  *lits(rest, 'extended_positive')], (N, 'extended_positive', True))
-            rule([(k, 'nonpositive', True), (l, 'nonpositive', True),
-                  *lits(rest, 'nonnegative')], (N, 'nonnegative', True))
             rule([(k, 'imaginary', True), (l, 'imaginary', True),
                   *lits(rest, 'real'), *lits(rest, 'zero', False)], (N, 'nonzero', True))
 

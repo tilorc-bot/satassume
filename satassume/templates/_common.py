@@ -90,9 +90,20 @@ def _resolve_lit(lit: Lit, consts):
     c = consts.get(lit[0])
     if c is not None:
         v = getattr(c, 'is_' + lit[1], None)
+        if v is None and lit[1] in _SIGNED_INFINITE:
+            # The old system has no is_positive_infinite; both parts are
+            # static facts on a constant.
+            inf, sign = c.is_infinite, getattr(c, 'is_extended_' + _SIGNED_INFINITE[lit[1]])
+            if inf is False or sign is False:
+                v = False
+            elif inf and sign:
+                v = True
         if v is not None:
             return v is lit[2]
     return lit
+
+
+_SIGNED_INFINITE = {'positive_infinite': 'positive', 'negative_infinite': 'negative'}
 
 
 def resolve(rules, consts: Dict[int, Any]) -> List[Rule]:

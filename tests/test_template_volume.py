@@ -14,7 +14,9 @@ from sympy.abc import x, y
 from satassume.templates import registry
 
 BUDGETS = [
-    ("x + y", x + y, 40),
+    # 45: 38 structural rules plus the two infinite-sum rules per term, the
+    # nonzero-real-plus-imaginaries rule per term and the even-sum rule.
+    ("x + y", x + y, 46),
     ("x*y", x * y, 50),
     ("2*x", 2 * x, 60),
     ("x**2", x**2, 40),

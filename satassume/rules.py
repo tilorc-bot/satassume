@@ -87,6 +87,14 @@ RULES: Tuple[str, ...] = (
     'real           ->  hermitian',
     'imaginary      ->  antihermitian',
     'zero           ->  hermitian | antihermitian',
+    # For scalars the new system's generic handlers define ``hermitian`` as
+    # ``real`` (a number equals its conjugate iff it is real) and
+    # ``antihermitian`` as ``zero | imaginary`` (a number equals minus its
+    # conjugate iff it is zero or imaginary); the three rules above are the
+    # weaker statements SymPy's fact base keeps for matrices.  This rule base
+    # is only instantiated for scalar nodes.
+    'hermitian      ==  real',
+    'antihermitian  ==  zero | imaginary',
 )
 
 Clause = Tuple[int, ...]   # signed predicate indices, 1-based like DIMACS
