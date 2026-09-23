@@ -16,7 +16,7 @@ sympy = ["sympy>=1.12", "mpmath"]
 dev = ["pytest", "hypothesis"]
 
 [tool.setuptools.packages.find]
-include = ["satassume*"]
+include = ["satassume*", "satrefine*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
