@@ -117,7 +117,7 @@ def test_context_session_is_reused_for_same_assumptions():
 def test_neighbourhood_contains_pred_and_rule_partners():
     n = neighbourhood('even')
     assert 'even' in n and 'integer' in n and 'odd' in n and 'zero' in n
-    assert 'prime' not in n
+    assert 'polar' not in n and 'hermitian' not in n
 
 
 def test_exactlyone_helper():
