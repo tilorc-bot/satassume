@@ -85,6 +85,17 @@ Work list for the slice, in order:
 4. (done) the registration API; the `Predicate.register` shim inside SymPy
    is a landing task.
 
+### Refine as a yardstick
+
+`satrefine/` (the `reasoning` project's refine layer, see README) asks its
+predicate questions through a switchable backend, and
+`tools/refine_scoreboard.py` runs its 470 tests under SymPy's `ask`, satassume
+alone and the two combined. As of 2026-09-22 satassume has no in-scope gap on
+that suite; every test it loses asks a relation or a matrix predicate, so the
+scoreboard is the first thing that moves when either enters scope. Handlers
+that only the combined backend can justify are the way to grow the suite
+past what either engine does alone.
+
 ## 1. What the measurements say (SymPy master, September 2026)
 
 Five core test files (arithmetic, expr, simplify, complexes, limits), 88 s:

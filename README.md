@@ -99,11 +99,69 @@ only when propagation is inconclusive.
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
+| `satrefine/` | the refine layer (SymPy's `refine` dispatcher plus 56 handlers) with a selectable `ask` backend; see below |
+| `tests/refine/` | the refine handler tests, run under each backend |
+| `tools/refine_scoreboard.py` | run `tests/refine` under every backend and compare outcomes |
+
+## satrefine: the refine layer as a yardstick
+
+`satrefine/` is the `reasoning` project's refine layer
+(https://github.com/tilorc-bot/reasoning, branch `feature/refine`, commit
+`12c3845`): SymPy's `refine` dispatcher vendored in `satrefine/_upstream.py`
+plus 56 self-registering handlers in `satrefine/handlers/`, with the test
+harness and 470 tests in `tests/refine/`. Every handler asks its predicate
+questions through one seam, `satrefine._upstream.ask`, and
+`satrefine/backend.py` chooses who answers:
+
+| Backend | `ask` | Use |
+|---|---|---|
+| `sympy` | `sympy.assumptions.ask.ask` | the reference |
+| `satassume` | `satassume.sympy_api.ask` alone; out-of-scope and undecided queries are `None`, so the handler does not fire | the strict measurement of this engine |
+| `combined` | satassume first, SymPy for every `None` | the union, for writing handlers whose simplifications neither engine alone justifies |
+
+Select with `SATREFINE_BACKEND=<name>` (read at import; default `combined`),
+`satrefine.backend.set_backend(name)`, or `with satrefine.backend.using(name):`.
+
+`tools/refine_scoreboard.py` runs `tests/refine` under each backend and
+compares outcomes per test: satassume in-scope gaps (pass under `sympy`, fail
+under `satassume` with only in-scope queries asked), out-of-scope failures
+(relations or matrix predicates were asked, so the handler could not fire),
+satassume wins, combination wins (pass under `combined` only) and refine gaps
+(fail everywhere). The per-test scope counts come from an observer in
+`tests/refine/conftest.py` that classifies every query with `out_of_scope`.
+
+```bash
+PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_scoreboard.py
+PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_scoreboard.py --backends sympy,satassume --show-failures satassume
+SATREFINE_BACKEND=satassume PYTHONPATH=.:/path/to/sympy .venv/bin/python -m pytest -q tests/refine
+```
+
+Scoreboard on 2026-09-22 (SymPy at `ddbb536`, the `reasoning` pin):
+
+| Backend | Passed | Failed | xfailed | Time |
+|---|---|---|---|---|
+| `sympy` | 462 | 7 | 4 | 118 s |
+| `satassume` | 412 | 59 | 2 | 27 s |
+| `combined` | 463 | 6 | 4 | 120 s |
+
+All 59 tests that pass under `sympy` and fail under `satassume` asked
+relations (`Q.eq/ne/lt/le/gt/ge`: Min/Max order rules, KroneckerDelta,
+binomial/factorial at a literal, inverse-trig principal branches) or matrix
+predicates (the eight matrix handlers): the out-of-scope categories, none of
+them in-scope engine gaps. The six tests that fail under `sympy` and pass
+under `satassume` only because the handler did not fire are SymPy's own
+`ask` raising "inconsistent assumptions" on `Q.ge(x, y)` under
+`Q.positive(x) & Q.negative(y)`, and returning `None` for `Max` of two
+negative-infinite arguments. The one in-scope satassume win is
+`refine(Abs(x - y), Q.positive(x) & Q.negative(y))`, where SymPy's `ask`
+cannot decide `Q.negative(x - y)`. No test passes under `combined` only yet:
+the handlers were written against the `reasoning` engine and SymPy, so
+simplifications that need both engines are the work still to do.
 
 ## Running
 
 ```bash
-# unit tests (no SymPy needed for solver/rules; templates and the API need SymPy)
+# unit tests (no SymPy needed for solver/rules; templates, the API and tests/refine need SymPy)
 PYTHONPATH=.:/path/to/sympy uv run --no-project --with pytest --with mpmath python -m pytest -q tests
 
 # record SymPy's own queries (only if queries.jsonl is missing), then replay them
