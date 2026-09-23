@@ -9,7 +9,10 @@ direct, MiniSat-flavoured CDCL solver:
 * VSIDS variable activities kept in an indexed binary heap, phase saving;
 * Luby restarts, simple activity-based deletion of learned clauses;
 * MiniSat-style assumptions (the first decisions of a search) with a proper
-  final-conflict analysis (:meth:`Solver.conflict`).
+  final-conflict analysis (:meth:`Solver.conflict`);
+* optional theory solvers (DPLL(T), :meth:`Solver.attach_theory`, contract
+  in :mod:`satassume.theory`); without one every hook is skipped after a
+  single attribute test.
 
 Literals are plain signed integers externally (``v`` / ``-v``, ``v >= 1``).
 Internally a literal is encoded as ``2*v + (1 if negative else 0)`` so that
@@ -102,6 +105,13 @@ class Solver:
         self._n_decisions = 0
         self._n_learned = 0
         self._n_restarts = 0
+        # Theories (see satassume/theory.py).  ``_theories`` is the guard of
+        # every hook: the no-theory path pays one attribute test per call.
+        self._theories: list = []
+        self._tmap: dict[int, list] = {}     # variable -> theories that registered it
+        self._thead = 0                      # trail entries before it were reported
+        self._tprops: list = []              # bound ``propagate`` methods
+        self._tmodels: list | None = None
 
     # ------------------------------------------------------------------
     # Variables and literal encoding
@@ -437,7 +447,7 @@ class Solver:
             return False
         if self._trail_lim:
             self._backtrack(0)
-        if self._propagate() is not None:
+        if (self._tpropagate() if self._theories else self._propagate()) is not None:
             self._ok = False
             return False
         return True
@@ -489,7 +499,8 @@ class Solver:
             self._backtrack(0)
         if not self._ok:
             return False
-        if self._propagate() is not None:
+        theories = self._theories
+        if (self._tpropagate() if theories else self._propagate()) is not None:
             self._ok = False
             return False
         lits = self._internal_lits(list(assumptions))
@@ -511,7 +522,12 @@ class Solver:
             level[v] = len(trail_lim)
             reason[v] = None
             trail.append(l)
-            if self._propagate() is not None:
+            if theories:
+                for t in theories:
+                    t.push_level()
+                if self._tpropagate() is not None:
+                    return False
+            elif self._propagate() is not None:
                 return False
         return True
 
@@ -609,7 +625,248 @@ class Solver:
                 self._heap_insert(v)
         del trail[start:]
         self._qhead = start
+        if self._theories:
+            if self._thead > start:
+                self._thead = start
+            for _ in range(len(trail_lim) - lvl):
+                for t in self._theories:
+                    t.pop_level()
         del trail_lim[lvl:]
+
+    # ------------------------------------------------------------------
+    # Theories (DPLL(T)); see satassume/theory.py for the contract
+    # ------------------------------------------------------------------
+
+    def attach_theory(self, theory) -> None:
+        """Attach a theory solver (see :class:`satassume.theory.TheorySolver`).
+
+        Several theories may be attached; each sees only the variables
+        registered for it with :meth:`register_atom`.  The theory must be
+        fresh (level 0, nothing asserted).
+        """
+        if any(t is theory for t in self._theories):
+            raise ValueError("theory already attached")
+        if self._trail_lim:
+            self._backtrack(0)
+        self._theories.append(theory)
+        prop = getattr(theory, "propagate", None)
+        if prop is not None:
+            self._tprops.append(prop)
+        self._witness = None
+
+    def theories(self) -> list:
+        return list(self._theories)
+
+    def register_atom(self, theory, var: int, payload) -> bool:
+        """Declare that variable ``var`` is a theory atom of ``theory``
+        (already attached) with the opaque ``payload``; calls
+        ``theory.register_atom(var, payload)``.  If ``var`` is already fixed
+        at root, the theory is told at once.  Returns False iff the problem
+        is now unsatisfiable at root (like :meth:`add_clause`).
+        """
+        if not any(t is theory for t in self._theories):
+            raise ValueError("theory not attached")
+        var = int(var)
+        if var <= 0:
+            raise ValueError("register_atom takes a positive variable")
+        if var > self._nvars:
+            self._grow(var)
+        if self._trail_lim:
+            self._backtrack(0)
+        ts = self._tmap.get(var)
+        if ts is None:
+            self._tmap[var] = [theory]
+        elif any(t is theory for t in ts):
+            raise ValueError(f"variable {var} already registered with this theory")
+        else:
+            ts.append(theory)
+        self._witness = None
+        theory.register_atom(var, payload)
+        if not self._ok:
+            return False
+        l = 2 * var
+        vl = self._val[l]
+        if vl is not None and self._trail.index(l if vl else l ^ 1) < self._thead:
+            # Fixed at root and already past the report cursor: report now.
+            # (Anything after the cursor is reported by the next sync.)
+            r = theory.assert_lit(var if vl else -var)
+            if r is not None and r[0] is False:
+                self._theory_conflict(r[1])
+                return False
+        return True
+
+    def theory_models(self) -> list | None:
+        """After a satisfiable :meth:`solve` with theories attached: the
+        model part of each theory's ``check`` result (None where ``check``
+        returned None), in attachment order; else None."""
+        return list(self._tmodels) if self._tmodels is not None else None
+
+    def _tpropagate(self) -> Clause | None:
+        """Unit propagation interleaved with reporting to the theories until
+        both are quiet.  Returns a conflicting clause or None; after a
+        theory conflict the solver has backtracked to the highest level of
+        the clause (see :meth:`_theory_conflict`)."""
+        while True:
+            confl = self._propagate()
+            if confl is not None:
+                return confl
+            confl = self._theory_sync()
+            if confl is not None:
+                return confl
+            if self._qhead == len(self._trail):
+                return None
+
+    def _theory_sync(self) -> Clause | None:
+        """Report trail entries from the cursor on to the theories that
+        registered them, then ask propagating theories for implications."""
+        trail = self._trail
+        i = self._thead
+        if i == len(trail):
+            return None
+        tmap = self._tmap
+        while i < len(trail):
+            l = trail[i]
+            i += 1
+            ts = tmap.get(l >> 1)
+            if ts is None:
+                continue
+            x = -(l >> 1) if l & 1 else l >> 1
+            for t in ts:
+                r = t.assert_lit(x)
+                if r is not None and r[0] is False:
+                    self._thead = i
+                    return self._theory_conflict(r[1])
+        self._thead = i
+        for prop in self._tprops:
+            for x, why in prop():
+                confl = self._theory_imply(x, why)
+                if confl is not None:
+                    return confl
+        return None
+
+    def _theory_clause(self, lits, what: str) -> list[int]:
+        out = []
+        for x in lits:
+            x = int(x)
+            v = -x if x < 0 else x
+            if v == 0 or v > self._nvars:
+                raise RuntimeError(f"theory {what} has a bad literal {x}")
+            l = 2 * v + 1 if x < 0 else 2 * v
+            if l not in out:
+                out.append(l)
+        return out
+
+    def _theory_conflict(self, lits) -> Clause:
+        """Turn a theory conflict clause into a solver clause, backtrack to
+        its highest level (so that analysis finds a literal of the current
+        level) and store it as a learnt clause watched on its two highest
+        literals.  A clause false at root makes the solver UNSAT."""
+        raw = self._theory_clause(lits, "conflict clause")
+        if not raw:
+            raise RuntimeError("theory returned an empty conflict clause")
+        val = self._val
+        level = self._level
+        for l in raw:
+            if val[l] is not False:
+                raise RuntimeError(
+                    f"theory conflict clause literal {self._to_ext(l)} is not false")
+        raw.sort(key=lambda l: level[l >> 1], reverse=True)
+        c = Clause(raw)
+        ml = level[raw[0] >> 1]
+        if ml < len(self._trail_lim):
+            self._backtrack(ml)
+        if ml == 0:
+            self._ok = False
+            return c
+        if len(raw) > 1:
+            c.learnt = True
+            c.act = 0.0
+            self._learnts.append(c)
+            self._watches[raw[0]].append(c)
+            self._watches[raw[1]].append(c)
+        return c
+
+    def _theory_imply(self, x: int, lits) -> Clause | None:
+        """A theory propagation: ``x`` is implied by clause ``lits``."""
+        raw = self._theory_clause(lits, "reason")
+        val = self._val
+        l = 2 * x if x > 0 else -2 * x + 1
+        if l not in raw:
+            raise RuntimeError(f"theory reason for {x} does not contain it")
+        vl = val[l]
+        if vl is True:
+            return None
+        if vl is False:
+            return self._theory_conflict(lits)
+        raw.remove(l)
+        for q in raw:
+            if val[q] is not False:
+                raise RuntimeError(
+                    f"theory reason literal {self._to_ext(q)} for {x} is not false")
+        level = self._level
+        dl = len(self._trail_lim)
+        v = l >> 1
+        if dl == 0 or not raw:
+            reason = None if dl == 0 else Clause([l])
+        else:
+            raw.sort(key=lambda q: level[q >> 1], reverse=True)
+            reason = Clause([l] + raw)
+            reason.learnt = True
+            reason.act = 0.0
+            self._learnts.append(reason)
+            self._watches[l].append(reason)
+            self._watches[raw[0]].append(reason)
+        val[l] = True
+        val[l ^ 1] = False
+        level[v] = dl
+        self._reason[v] = reason
+        self._trail.append(l)
+        return None
+
+    def _theory_check(self) -> Clause | None:
+        """Final check on a total assignment."""
+        models = []
+        for t in self._theories:
+            r = t.check()
+            if r is None:
+                models.append(None)
+            elif r[0] is False:
+                return self._theory_conflict(r[1])
+            else:
+                models.append(r[1])
+        self._tmodels = models
+        return None
+
+    def _learn(self, confl: Clause) -> bool:
+        """Conflict analysis and learning for a conflict found outside the
+        propagation loop of :meth:`_search`.  False iff UNSAT at root."""
+        self._n_conflicts += 1
+        if not self._trail_lim:
+            self._ok = False
+            return False
+        learnt, bt = self._analyze(confl)
+        self._backtrack(bt)
+        self._n_learned += 1
+        l0 = learnt[0]
+        v0 = l0 >> 1
+        if len(learnt) == 1:
+            reason = None
+        else:
+            reason = Clause(learnt)
+            reason.learnt = True
+            reason.act = 0.0
+            self._bump_clause(reason)
+            self._learnts.append(reason)
+            self._watches[learnt[0]].append(reason)
+            self._watches[learnt[1]].append(reason)
+        self._val[l0] = True
+        self._val[l0 ^ 1] = False
+        self._level[v0] = len(self._trail_lim)
+        self._reason[v0] = reason
+        self._trail.append(l0)
+        self._var_inc /= self._var_decay
+        self._cla_inc /= self._cla_decay
+        return True
 
     # ------------------------------------------------------------------
     # Conflict analysis
@@ -773,9 +1030,11 @@ class Solver:
         level = self._level
         reason = self._reason
         assumptions = self._assumptions
+        theories = self._theories
+        propagate = self._tpropagate if theories else self._propagate
         conflict_c = 0
         while True:
-            confl = self._propagate()
+            confl = propagate()
             if confl is not None:
                 self._n_conflicts += 1
                 conflict_c += 1
@@ -822,6 +1081,9 @@ class Solver:
                     if vp is True:
                         trail_lim.append(len(trail))     # dummy level
                         dl += 1
+                        if theories:
+                            for t in theories:
+                                t.push_level()
                     elif vp is False:
                         self._analyze_final(p)
                         return False
@@ -832,8 +1094,18 @@ class Solver:
                     self._n_decisions += 1
                     nxt = self._pick_branch()
                     if nxt < 0:
+                        if theories:
+                            confl = self._theory_check()
+                            if confl is not None:
+                                conflict_c += 1
+                                if not self._learn(confl):
+                                    return False
+                                continue
                         return True                      # all assigned: model
                 trail_lim.append(len(trail))
+                if theories:
+                    for t in theories:
+                        t.push_level()
                 v = nxt >> 1
                 val[nxt] = True
                 val[nxt ^ 1] = False
@@ -849,12 +1121,13 @@ class Solver:
         responsible; after a satisfiable one :meth:`model` gives a model.
         """
         self._model = None
+        self._tmodels = None
         self._conflict = []
         if self._trail_lim:
             self._backtrack(0)
         if not self._ok:
             return False
-        if self._propagate() is not None:
+        if (self._tpropagate() if self._theories else self._propagate()) is not None:
             self._ok = False
             return False
         self._assumptions = self._internal_lits(list(assumptions))
