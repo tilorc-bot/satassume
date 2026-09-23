@@ -528,6 +528,46 @@ def tableau_invariants(t, feasible=False):
             assert up is None or val <= up, f"variable {v} above its upper bound"
 
 
+class deadline:
+    """Fail loudly (TimeoutError) instead of hanging when a simplex cycles:
+    a wall-clock SIGALRM guard, used around the degenerate and performance
+    tests (no-op where SIGALRM is unavailable)."""
+
+    def __init__(self, seconds=20):
+        self.seconds = seconds
+
+    def _fire(self, *_):
+        raise TimeoutError(f"no answer within {self.seconds}s (cycling simplex?)")
+
+    def __enter__(self):
+        import signal
+        import threading
+        self.ok = hasattr(signal, "SIGALRM") and threading.current_thread() is threading.main_thread()
+        if self.ok:
+            self.old = signal.signal(signal.SIGALRM, self._fire)
+            self.outer = signal.alarm(self.seconds)   # an enclosing guard's rest
+            self.t0 = time.monotonic()
+        return self
+
+    def __exit__(self, *exc):
+        if self.ok:
+            import signal
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, self.old)
+            if self.outer:
+                left = self.outer - (time.monotonic() - self.t0)
+                signal.alarm(max(1, int(left)))
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _hang_guard():
+    """Every test of the LRA modules fails after 120 s instead of hanging
+    (a simplex without a sound anti-cycling rule loops forever)."""
+    with deadline(120):
+        yield
+
+
 def run_fresh(atoms, lits, **kw):
     """Reference by reconstruction: a fresh theory, everything asserted at
     level 0 in the given order, then checked."""
@@ -991,9 +1031,10 @@ def test_degenerate_vertex_terminates():
             co = {v: rng.choice([-2, -1, 0, 1, 2]) for v in vs}
             atoms[i + 1] = payload(co, rng.choice(["<=", ">=", "<", ">"]), 0)
         t0 = time.process_time()
-        d = Driver(atoms)
-        if d.assert_all(sorted(atoms)):
-            d.check()
+        with deadline():
+            d = Driver(atoms)
+            if d.assert_all(sorted(atoms)):
+                d.check()
         assert time.process_time() - t0 < 2.0, f"trial {trial} too slow (cycling?)"
 
 
@@ -1014,9 +1055,10 @@ def test_beale_like_cycling_example():
              9: payload(rows[3], ">", F(1, 20))}
     t0 = time.process_time()
     for lits in ([5, 6, 7, 8, 1, 2, 3, 4], [5, 6, 7, 8, 1, 2, 3, 9], [1, 2, 3, 4, 5, 6, 7, 8]):
-        d = Driver(atoms)
-        if d.assert_all(lits):
-            d.check()
+        with deadline():
+            d = Driver(atoms)
+            if d.assert_all(lits):
+                d.check()
     assert time.process_time() - t0 < 2.0
 
 
@@ -1146,6 +1188,33 @@ def test_check_is_repeatable():
     assert d.assert_all([1, 2, 3])
     assert d.check() is True
     assert d.check() is True
+
+
+@needs_lra
+@pytest.mark.parametrize("op1", ["<=", "<", "==", ">=", ">", "!="])
+@pytest.mark.parametrize("pos1", [True, False])
+@pytest.mark.parametrize("coef2", [1, -2])
+def test_propagation_between_bounds_on_one_term(op1, pos1, coef2):
+    """Assert one bound on x (or on the row x + y) and let the theory
+    propagate to every other atom on the same term: all boundary cases of
+    strict/non-strict/equal bounds.  Each implied literal must have a valid
+    reason; a wrong implication (x <= 0 implies x < 0) is caught here."""
+    ops = ["<=", "<", "==", ">=", ">", "!="]
+    for form in ({"x": 1}, {"x": 1, "y": 1}):
+        atoms = {1: payload(form, op1, 0)}
+        v = 2
+        for op in ops:
+            for r in (-1, 0, 1):
+                atoms[v] = payload({t: c * coef2 for t, c in form.items()}, op, r * coef2)
+                v += 1
+        d = Driver(atoms)
+        d.push()
+        assert d.assert_(1 if pos1 else -1)
+        implied = d.propagate()
+        d.propagate()                    # a second call must be valid too
+        # everything implied is entailed; check it via the oracle directly
+        for lit in implied:
+            assert not lits_feasible(atoms, [1 if pos1 else -1, -lit]), lit
 
 
 @needs_lra

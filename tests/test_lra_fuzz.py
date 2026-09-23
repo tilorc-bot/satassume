@@ -30,7 +30,8 @@ from fractions import Fraction as F
 import pytest
 from hypothesis import HealthCheck, assume, given, settings, strategies as st
 
-from test_lra import (DISEQ_COMPLETE, Driver, fm_feasible, grid_feasible, holds,
+from test_lra import (DISEQ_COMPLETE, Driver, deadline, _hang_guard,  # noqa: F401
+                       fm_feasible, grid_feasible, holds,
                       lits_feasible, consistent_for, needs_lra, new_theory,
                       payload, payload_constraint, run_fresh)
 from theory_harness import (Recorder, TheoryCase, check_entails, check_implied,
@@ -272,7 +273,8 @@ def test_solver_finds_the_only_consistent_assignment():
 
 def _timed(f):
     t0 = time.process_time()
-    r = f()
+    with deadline(20):
+        r = f()
     return r, time.process_time() - t0
 
 

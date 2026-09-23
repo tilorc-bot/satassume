@@ -16,11 +16,12 @@ the payload, evaluated at a random rational point (each opaque term
 substituted and evaluated exactly), must agree with SymPy's own evaluation
 of the relation at that point.
 
-The last section transcribes sympy/assumptions/tests/test_rel_queries.py
-to ``satassume.sympy_api.ask``.  Relation atoms are not wired into the
-engine yet (phase two of agent-reports/2026-09-23-theory-interface.md), so
-a ``None`` answer where SymPy expects a definite one is an xfail; a
-*wrong* definite answer always fails.
+The last sections go end to end through ``satassume.sympy_api.ask``
+(relation atoms are routed to the theories by satassume/relations.py):
+sympy/assumptions/tests/test_rel_queries.py transcribed (a ``None`` where
+SymPy expects a definite answer is an xfail, a *wrong* definite answer
+always fails), and a Hypothesis fuzz of random linear relations against
+the Fourier-Motzkin oracle.
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ from sympy import (E, Eq, Function, I, MatrixSymbol, Ne, Q, Rational, S, Symbol,
 from sympy.core.relational import Ge, Gt, Le, Lt
 from sympy.calculus.accumulationbounds import AccumBounds
 
-from test_lra import holds, payload_constraint
+from test_lra import _hang_guard, holds, payload_constraint  # noqa: F401
 
 try:
     ad = importlib.import_module(os.environ.get("SATASSUME_LRA_ADAPTER", "satassume.lra_adapter"))
@@ -487,14 +488,14 @@ def test_rel_queries_through_ask(case):
         except ValueError:
             return
         if r is None:
-            pytest.xfail("relation atoms not wired into the engine yet")
+            pytest.xfail("engine gives no answer (incomplete)")
         pytest.fail(f"expected ValueError, got {r}")
     r = ask(prop, assum, eng)
     allowed = expected if isinstance(expected, tuple) else (expected,)
     if r in allowed:
         return
     if r is None:
-        pytest.xfail("relation atoms not wired into the engine yet")
+        pytest.xfail("engine gives no answer (incomplete)")
     pytest.fail(f"wrong definite answer {r}, expected {expected}")
 
 
