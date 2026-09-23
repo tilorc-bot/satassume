@@ -25,7 +25,11 @@ Out of scope for now: matrix predicates and matrix arguments, unregistered
 custom predicates, and replacing the old `expr.is_*` system.
 
 **Routing rule.** Any out-of-scope query makes `ask` return `None` without
-touching the engine. That is scoping, not a fallback: the caller (SymPy's
+touching the engine. Relations are the exception once theory adapters are
+present (the default when `satassume/lra_adapter.py` and
+`satassume/euf_adapter.py` exist): they reach the engine, and `ask` returns
+None only when no theory interprets one of them; `out_of_scope` still
+reports them as `relation`. That is scoping, not a fallback: the caller (SymPy's
 `ask`) is expected to route such inputs to its existing path (`satask`, the
 LRA theory, the matrix handlers). `out_of_scope(prop, assumptions)` reports
 the category (`relation`, `matrix`, `custom`, `other`) so the caller can
@@ -65,8 +69,9 @@ y = Symbol('y')
 ask(Q.positive(exp(y)), Q.real(y))            # True
 ask(Q.even(y + 1), Q.odd(y))                  # True
 ask(Q.positive(y), Q.real(y))                 # None: undecided, in scope
-ask(Q.positive(y), Q.gt(y, 0))                # None: out of scope (relation)
-out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation'
+ask(Q.positive(y), Q.gt(y, 0))                # None: y may be non-real, so y > 0 has no order meaning
+ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
+out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
 from sympy import Integer, Predicate, log
 from satassume import register, P, Implies
@@ -167,18 +172,19 @@ The other three need reasoning the templates do not do: `(3*I)**I` and
 non-atomic base; the primality of `cos(1)**2 + sin(1)**2 + 1234...` needs a
 trigonometric identity.
 
-Out-of-scope records, returned as None by rule (informational):
+Out-of-scope records, returned as None by rule (informational; relations
+are answered by the theories, `tools/compare.py --relations-only`):
 
 | Category | Records | SymPy also None | SymPy answered |
 |---|---|---|---|
-| relations | 78 | 15 | 63 |
+| relations | 78 | 15 | 63; with the LRA and EUF theories 75 of the 78 agree, 3 None, 0 wrong |
 | matrix predicates or non-scalar arguments | 189 | 29 | 160 |
 | custom predicates | 0 | | |
 | not a Boolean proposition | 8 | 5 | 1 (SymPy raised on 2) |
 
 Old-system `expr.is_*` records, replayed through `Engine.is_` (out of
-scope, informational): 6343 replayable, 6033 agree (95.1%), 27 extra
-answers, 283 None where SymPy answered, 0 wrong.
+scope, informational): 6343 replayable, 6041 agree (95.2%), 30 extra
+answers, 272 None where SymPy answered, 0 wrong.
 
 Time (`tools/compare.py --in-scope-only --time-sympy`, both sides in the
 same process, garbage collection frozen and disabled inside the timed

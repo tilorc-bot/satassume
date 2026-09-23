@@ -4,11 +4,11 @@
 - **Status:** phase one (protocol, solver hooks, harness) is on `main`.
   Phase two (relation atoms wired into the engine, unary links, equality
   sharing, end-to-end tests) is on the integration branch, merged with
-  main at `e38b5d6` (LRA `9f5aa00`, EUF `d50f302`). 533 tests pass, all of
-  SymPy's `test_rel_queries.py` included; 75 of the 78 relational corpus
-  records agree, 0 wrong. EUF `2e24d31` (integral-transform soundness fix,
-  no recursion limit) is not yet on main; verified here from a scratch
-  copy with the same results.
+  main at `b23a0d4` (LRA with its per-adapter cache, EUF with the
+  integral-transform fix, the builders' and the verifier's tests). Over
+  1560 tests pass, SymPy's `test_rel_queries.py` included; 75 of the 78
+  relational corpus records agree, 0 wrong. After the verifier's review
+  the unary path is no slower than before relations were added (section 6).
 - **Scope:** `satassume/theory.py`, the theory hooks in
   `satassume/solver.py`, `satassume/relations.py`, the relation routing in
   `satassume/engine.py` and `satassume/sympy_api.py`,
@@ -98,7 +98,10 @@ cannot decide) is safe: SAT only ever becomes "not entailed" (None) in
 3. Reporting is lazy through a trail cursor: literals are reported after
    unit propagation finishes, in trail order, at the level they were made.
    A root unit added by `add_clause` is reported by the next `propagate`,
-   `implied`, `entails`, `solve` or `register_atom`.
+   `implied`, `entails` or `solve` (not by `register_atom`, which only
+   reports its own variable, and only if that variable is already fixed at
+   root and behind the cursor; pinned by `tests/test_verify_integration.py`.
+   The text was wrong, the code is as intended).
 4. After a conflict from `assert_lit` or `check` there is no further
    `assert_lit`, `check` or `propagate` on any theory until a `pop_level`;
    a conflict at level 0 makes the solver UNSAT for good.
@@ -257,9 +260,11 @@ the guard) LRA, `lt` atoms only to LRA. After each batch,
 `shared_terms()`. For each new pair of shared terms it creates the atom
 `eq(a, b)`, which is interpreted like any other `eq` atom. This is delayed
 theory combination: the SAT solver decides the arrangement of shared
-terms and each theory checks it. `ask(Q.eq(f(x), f(y)), (x <= y) & (y <= x))`
-is True with sharing and None without it (tested with the dummy theories
-and with the real EUF).
+terms and each theory checks it. With `x` and `y` declared real,
+`ask(Q.eq(f(x), f(y)), (x <= y) & (y <= x))` is True with sharing and None
+without it (tested with the dummy theories and with the real EUF). For
+plain symbols it is None either way: the LRA guard leaves `x <= y` without
+order meaning, so no equality `x = y` follows.
 
 **When Nelson-Oppen equality propagation would be needed.** DTC is
 complete here: LRA over the rationals and EUF are stably infinite with
@@ -297,9 +302,9 @@ strict once it is present. `python tools/compare.py queries.jsonl
 
 The 3 left need substitution of equals into non-relational templates
 (`rational(x**y)` given `x = 1`, `prime(p**x)` given `x != 1`). In-scope
-corpus answers are unchanged (2497 agree, 16 extra, 70 none, 0 wrong). The
-alternating timing on a loaded machine showed no difference beyond noise
-(2.6-3.0 s base, 2.4-3.2 s candidate).
+corpus answers are unchanged (2497 agree, 16 extra, 70 none, 0 wrong).
+The first version of the wiring slowed the unary path down by up to 10 %;
+section 6 has the numbers before and after the fix.
 
 ### 5.7 Open questions
 
@@ -311,11 +316,42 @@ alternating timing on a loaded machine showed no difference beyond noise
 - Nonlinear facts (SymPy's XFAIL multiplication tests) are out of reach of
   LRA. The templates know signs of products, so linking `lt(0, a*c)` to
   `positive(a*c)` already happens when `a*c` is a queried node.
+- LRA theory propagation (`lra.py`, `LRATheory.propagate`) reports bound
+  implications only for variables whose bounds changed since the last
+  call (`_dirty` is cleared on every call and not restored by
+  `pop_level`). After a backtrack some implications are therefore not
+  propagated again. That costs propagation strength only: `check()` is
+  complete, so search still finds the conflicts, and `implied` (unit
+  propagation only) may decide less.
+- Adapter parsing: the engine parses relations in one place
+  (`sympy_api.relation_parts`, normalised by `relations.relation_atom`) and
+  passes adapters only `Q.lt(a, b)` and `Q.eq(a, b)`. The adapters' own
+  branches for `le/gt/ge/ne`, `Relational` and `Q.is_true`
+  (`lra_adapter.relation`/`to_constraint`, `EUFAdapter.parse`) are reached
+  only by their unit tests; they are kept because those suites use them.
 - Integer reasoning: LRA is incomplete for integer symbols (it is sound,
   just weaker). SymPy refuses integer symbols in `lra_satask`; we answer
   what the combination can prove.
 
-## 6. Timing of the solver hooks, phase one (cores 8,9, alternating base and candidate, best of runs)
+## 6. Timing
+
+### 6.1 Phase two, unary path (cores 8,9, CPU time, 6 alternations of `ee7523e` and the branch, medians)
+
+| benchmark | `ee7523e` | first wiring (verifier) | now |
+|---|---|---|---|
+| `tools/bench.py` cases, sum of per-call means (default engine, LRA+EUF present) | 621 us | 679 us (+10.6 %, verifier's base 614 us) | 590 us (-5.0 %) |
+| same, `Engine(relations=[])` | | 648 us | 591 us (-4.9 %) |
+| in-scope corpus, 2588 records, fresh caches | 1.685 s | +2.3 % | 1.718 s (+2.0 %; +0.8 % in an earlier set of 6) |
+
+The causes were two imports inside `to_formula` for every visited node,
+a `Relations` object per session, and `atoms_of`/`note_formula` on every
+unary query. Now the SymPy classes are imported at module level,
+`Session.relations` is created at the first relation atom, and the unary
+path pays one `is not None` test. The small gain on the bench cases comes
+from the module-level imports, which the baseline also lacked. The corpus
+difference includes the phase-one solver hooks (about 1 %, section 6.2).
+
+### 6.2 Solver hooks, phase one (cores 8,9, alternating base and candidate, best of runs)
 
 | benchmark | before | after |
 |---|---|---|
