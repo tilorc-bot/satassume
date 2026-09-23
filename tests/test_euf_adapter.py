@@ -178,27 +178,69 @@ def test_equality_failing_cases_are_not_wrong():
     assert entails(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) is None
 
 
-def test_engine_equality_is_not_wrong():
-    """Through satassume's public ask(): until relation atoms are wired
-    into the engine (phase two) these give None; they must never give the
-    wrong answer."""
-    from satassume.sympy_api import ask
-    assert ask(Q.eq(x, x)) in (True, None)
-    assert ask(Q.eq(y, x), Q.eq(x, y)) in (True, None)
-    assert ask(Q.eq(y, x), ~Q.eq(z, z) | Q.eq(x, y)) in (True, None)
-    assert ask(Q.eq(x, z), Q.eq(x, y) & Q.eq(y, z)) in (True, None)
-    assert ask(Q.prime(x), Q.eq(x, y) & Q.prime(y)) in (True, None)
-    assert ask(Q.real(x), Q.eq(x, y) & Q.real(y)) in (True, None)
-    assert ask(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) in (True, None)
+# ----------------------------------------------------------------------
+# Through satassume's public ask() (relations wired in satassume/relations.py)
+# ----------------------------------------------------------------------
+
+def _ask(prop, assumptions=True):
+    from theory_harness import relation_engine, ask_with
+    return ask_with(relation_engine(), prop, assumptions)
 
 
-@pytest.mark.xfail(strict=False, reason="engine wiring of relation atoms is phase two")
-def test_engine_equality_answers():
-    from satassume.sympy_api import ask
-    assert ask(Q.eq(x, x)) is True
-    assert ask(Q.eq(y, x), Q.eq(x, y)) is True
-    assert ask(Q.eq(y, x), ~Q.eq(z, z) | Q.eq(x, y)) is True
-    assert ask(Q.eq(x, z), Q.eq(x, y) & Q.eq(y, z)) is True
+def test_engine_equality():
+    # sympy/assumptions/tests/test_rel_queries.py::test_equality
+    assert _ask(Q.eq(x, x)) is True
+    assert _ask(Q.eq(y, x), Q.eq(x, y)) is True
+    assert _ask(Q.eq(y, x), ~Q.eq(z, z) | Q.eq(x, y)) is True
+    assert _ask(Q.eq(x, z), Q.eq(x, y) & Q.eq(y, z)) is True
+
+
+def test_engine_equality_failing_is_not_wrong():
+    # test_equality_failing: substitution is out of scope; None (or True
+    # if some day supported), never False.
+    assert _ask(Q.prime(x), Q.eq(x, y) & Q.prime(y)) in (True, None)
+    assert _ask(Q.real(x), Q.eq(x, y) & Q.real(y)) in (True, None)
+    assert _ask(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) in (True, None)
+    assert _ask(Q.prime(x), Q.ne(x, y) & Q.prime(y)) is None
+
+
+def test_engine_ne_congruence_numbers():
+    assert _ask(Q.ne(x, y), Q.eq(x, y)) is False
+    assert _ask(Q.ne(x, z), Q.eq(x, y) & Q.ne(y, z)) is True
+    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, y)) is True
+    assert _ask(Q.eq(x, y), Q.eq(f(x), f(y))) is None
+    assert _ask(Q.eq(g(x, y), g(y, x))) is None
+    assert _ask(Q.eq(f(x, z), f(y, z)), Q.eq(f(x), f(y))) is None
+    assert _ask(Q.ne(x, 2), Q.eq(x, 1)) is True
+    assert _ask(Q.eq(x, y), Q.eq(x, 1) & Q.eq(y, 2)) is False
+    assert _ask(Q.eq(x, y), Q.eq(x, 1) & Q.eq(y, 1)) is True
+    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, 1) & Q.eq(y, 1)) is True
+    assert _ask(Q.eq(x, 1), Q.eq(x, 1) & Q.eq(x, 2)) == "inconsistent"
+
+
+def test_engine_zero_link_through_congruence():
+    # zero(e) <-> eq(e, 0) (relations.py) plus congruence: sound, entailed.
+    assert _ask(Q.zero(x), Q.eq(x, 0)) is True
+    assert _ask(Q.zero(f(y)), Q.zero(f(x)) & Q.eq(x, y)) is True
+    assert _ask(Q.nonzero(f(y)), Q.zero(f(x)) & Q.eq(x, y)) is False
+
+
+def test_engine_numbers_of_different_types_never_wrong():
+    for q, a in [(Q.eq(x, Float(2.0)), Q.eq(x, 2)),
+                 (Q.eq(S(2), Float(2.0)), True),
+                 (Q.eq(Float(0.1), Rational(1, 10)), True),
+                 (Q.eq(x, Float(0.5)), Q.eq(x, S.Half)),
+                 (Q.eq(sqrt(2) + sqrt(3), sqrt(5 + 2 * sqrt(6))), True)]:
+        assert _ask(q, a) in (True, None), (q, a)
+
+
+def test_engine_nan_and_binders_never_wrong():
+    assert _ask(Q.eq(nan, nan)) is not True
+    assert _ask(Q.eq(f(nan), f(nan))) is not True
+    for make in (lambda a: Sum(a, (x, 1, 2)), lambda a: Integral(a, (x, 0, 1)),
+                 lambda a: Subs(a, x, 1), lambda a: LaplaceTransform(a, x, s)):
+        assert _ask(Q.eq(make(x), make(y)), Q.eq(x, y)) is None
+        assert _ask(Q.ne(make(x), make(y)), Q.eq(x, y)) is None
 
 
 # ----------------------------------------------------------------------
@@ -526,3 +568,36 @@ def test_random_conjunctions_match_oracle(lits):
     want = oracle_consistent(terms, atoms, oracle_lits)
     got = consistent(*facts)
     assert got == want, (facts, got, want)
+
+
+@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(st.lists(st.tuples(sym_terms(), sym_terms(), st.booleans()), min_size=1, max_size=5),
+       sym_terms(), sym_terms())
+def test_random_ask_matches_oracle(lits, ql, qr):
+    """ask(Q.eq(ql, qr), facts) through the whole engine (EUF and LRA both
+    attached) against the EUF oracle.  Only uninterpreted functions and
+    integers occur, where EUF with distinct values is complete, so every
+    answer is checked, None included."""
+    from test_euf import oracle_consistent
+    terms, index = [], {}
+    atoms, facts, olits = [], [], []
+    for k, (l, r, pos) in enumerate(lits):
+        atoms.append((_spec(l, terms, index), _spec(r, terms, index), True))
+        facts.append(Q.eq(l, r) if pos else Q.ne(l, r))
+        olits.append((k + 1) if pos else -(k + 1))
+    atoms.append((_spec(ql, terms, index), _spec(qr, terms, index), True))
+    q = len(atoms)
+    if not oracle_consistent(terms, atoms, olits):
+        want = "inconsistent"
+    elif not oracle_consistent(terms, atoms, olits + [-q]):
+        want = True
+    elif not oracle_consistent(terms, atoms, olits + [q]):
+        want = False
+    else:
+        want = None
+    got = _ask(Q.eq(ql, qr), And(*facts))
+    if got != want:
+        # a definite answer must be right; None is reported as incompleteness
+        assert got is None, (facts, Q.eq(ql, qr), got, want)
+        pytest.fail(f"incomplete: ask gave None, EUF entails {want} for "
+                    f"{Q.eq(ql, qr)} given {facts}")

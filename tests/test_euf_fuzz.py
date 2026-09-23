@@ -13,9 +13,13 @@ implementation itself:
   by themselves under the oracle, (c) minimal -- (c) lives in its own
   ``xfail(strict=False)`` test so a non-minimal explanation is reported
   (XFAIL with the counterexample) without failing the suite.
+* ``test_mixed_arity_universe_matches_oracle``: a dense universe where f
+  is used at arity 1 and 2 on the same arguments (curried encodings).
 * ``test_backtracking_torture``: random push/assert/pop/check/propagate
   sequences; after every step the state must equal a theory rebuilt from
   scratch with the literals currently asserted.
+  ``test_backtracking_torture_late_terms`` also creates terms and registers
+  atoms while levels are open.
 * ``test_dpll_t_matches_enumeration``: random CNF over equality atoms solved
   by satassume's CDCL solver with the theory attached (through
   ``theory_harness``), against brute-force enumeration with the oracle.
@@ -32,7 +36,7 @@ import sys
 import time
 
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, example, given, settings, strategies as st
 
 euf = pytest.importorskip("satassume.euf")
 EUFTheory = euf.EUFTheory
@@ -64,7 +68,8 @@ def problems(draw, max_terms=11, max_atoms=8, values=True, min_apps=0):
     applications are made and half of the atoms are between constants
     (the equalities that make applications congruent)."""
     nconst = draw(st.integers(1, 4))
-    terms = [("c", f"k{i}") for i in range(nconst)]
+    # constants named like the heads on purpose (a head is not a constant)
+    terms = [("c", ("k0", "f", "g", "h")[i]) for i in range(nconst)]
     if values:
         terms += [("v", i) for i in range(draw(st.integers(0, 2)))]
     lo = min(min_apps, max(0, max_terms - len(terms)))
@@ -74,6 +79,13 @@ def problems(draw, max_terms=11, max_atoms=8, values=True, min_apps=0):
         spec = ("a", head, args)
         if spec not in terms:
             terms.append(spec)
+        if head == "f" and draw(st.booleans()):
+            # the same first argument under f/1 and f/2: a curried encoding
+            # that shares the partial application f(t) conflates the two
+            other = (args[0],) if arity == 2 else (args[0], draw(st.integers(0, len(terms) - 1)))
+            twin = ("a", "f", other)
+            if twin not in terms:
+                terms.append(twin)
     n = len(terms)
     atoms = []
     for _ in range(draw(st.integers(1, max_atoms))):
@@ -241,11 +253,43 @@ def test_conjunctions_match_oracle(run):
         th.pop_level()
 
 
+MIXED = ([("c", n) for n in ("a", "b", "c")]
+         + [("a", "f", (i,)) for i in range(3)]
+         + [("a", "f", (i, j)) for i in range(3) for j in range(3)])
+
+
+@FUZZ
+@given(st.lists(st.tuples(st.integers(0, len(MIXED) - 1), st.integers(0, len(MIXED) - 1),
+                          st.booleans()), min_size=1, max_size=6))
+def test_mixed_arity_universe_matches_oracle(lits):
+    """A dense universe where f is used at arity 1 and 2 on the same
+    arguments: every f(t) is also the first half of f(t, u).  Targets
+    curried encodings that share partial applications across arities."""
+    atoms = [(i, j, True) for i, j, _ in lits]
+    asserted = [(k + 1) if pos else -(k + 1) for k, (_, _, pos) in enumerate(lits)]
+    th, ids = build(MIXED, atoms)
+    r = None
+    for l in asserted:
+        r = th.assert_lit(l)
+        if is_conflict(r):
+            break
+    if not is_conflict(r):
+        r = th.check()
+    if oracle_consistent(MIXED, atoms, asserted):
+        assert not is_conflict(r), f"conflict {r} on consistent {lits}"
+        check_state(th, MIXED, atoms, ids, asserted)
+    else:
+        assert is_conflict(r), f"missed inconsistency of {lits}"
+        check_clause(MIXED, atoms, r[1], asserted)
+
+
 @pytest.mark.xfail(strict=False, reason="minimal explanations are preferred, "
                    "not required; an XFAIL here shows a non-minimal one")
 @settings(max_examples=N_EXAMPLES, deadline=None,
           suppress_health_check=[HealthCheck.too_slow])
 @given(assertion_runs(max_terms=8, max_atoms=6))
+@example(run=([("c", "k0"), ("a", "f", (0,)), ("a", "f", (1,))],   # k0 = f(f(k0)), then
+               [(0, 1, True), (0, 2, False)], [-2, 1], [False, False]))  # k0 = f(k0)
 def test_conflicts_and_explanations_are_minimal(run):
     terms, atoms, lits, _ = run
     th, ids = build(terms, atoms)
@@ -733,6 +777,7 @@ REFERENCE_FLAWS = {
         ["test_euf.py::test_arity_is_part_of_the_head",
          "test_euf.py::test_arity_unary_value_does_not_leak_into_binary",
          "test_euf.py::test_constant_named_like_a_head_is_a_different_symbol",
+         "test_euf_fuzz.py::test_mixed_arity_universe_matches_oracle",
          "test_euf_fuzz.py (HEADS uses f at arity 1 and 2 in every random test)",
          "test_euf_adapter.py::test_mixed_arity_function_is_not_curried"]),
     "30010-rebuild": (
@@ -740,6 +785,8 @@ REFERENCE_FLAWS = {
         "O(everything) per backtrack, no push/pop levels, and it is the only "
         "undo tested (against a rebuild, so it could not find an undo bug).",
         ["test_euf_fuzz.py::test_backtracking_torture",
+         "test_euf_fuzz.py::test_backtracking_torture_late_terms",
+         "test_euf.py::test_term_made_at_a_popped_level_keeps_congruence",
          "test_euf_fuzz.py::test_perf_chain_levels_balanced",
          "test_euf_fuzz.py::test_perf_function_towers",
          "test_euf.py::test_term_ids_survive_push_pop"]),
@@ -797,7 +844,8 @@ REFERENCE_FLAWS = {
         "Sum/Integral/Subs whose arguments bind variables: from x = y it "
         "derives Sum(x, (x, 1, 2)) = Sum(y, (x, 1, 2)), i.e. 3 = 2*x, which "
         "is unsound.",
-        ["test_euf_adapter.py::test_binders_are_not_congruent"]),
+        ["test_euf_adapter.py::test_binders_are_not_congruent",
+         "test_euf_adapter.py::test_engine_nan_and_binders_never_wrong"]),
     "30327-reflexive-nan": (
         "Q.eq(t, t) is decided True syntactically, also for t = nan where "
         "SymPy's Eq(nan, nan) is False.",
@@ -813,7 +861,8 @@ REFERENCE_FLAWS = {
         "Q.prime(x) = TRUE; SymPy marks this as needing a redesign "
         "(issue 25485) and it is out of scope here: those queries must stay "
         "None, never False.",
-        ["test_euf_adapter.py::test_equality_failing_cases_are_not_wrong"]),
+        ["test_euf_adapter.py::test_equality_failing_cases_are_not_wrong",
+         "test_euf_adapter.py::test_engine_equality_failing_is_not_wrong"]),
     "30327-random-test-unseeded": (
         "test_random_formulas_match_brute_force uses sympy.core.random with "
         "25 cases and no shrinking; failures are not reproducible or minimal.",
