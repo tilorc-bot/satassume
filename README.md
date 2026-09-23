@@ -102,6 +102,10 @@ only when propagation is inconclusive.
 | `satrefine/` | the refine layer (SymPy's `refine` dispatcher plus 56 handlers) with a selectable `ask` backend; see below |
 | `tests/refine/` | the refine handler tests, run under each backend |
 | `tools/refine_scoreboard.py` | run `tests/refine` under every backend and compare outcomes |
+| `satrefine/handlers_v2/`, `handlers_v3/` | two blind from-scratch rewrites of the same 56 keys (one agent; a parallel team with verifiers), selected with `SATREFINE_HANDLERS`; see `agent-reports/2026-09-23-refine-three-implementations.md` |
+| `tests/refine_v2/`, `tests/refine_v3/` | their suites; any suite runs against any package |
+| `tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
+| `tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
 
 ## satrefine: the refine layer as a yardstick
 
@@ -121,6 +125,12 @@ questions through one seam, `satrefine._upstream.ask`, and
 
 Select with `SATREFINE_BACKEND=<name>` (read at import; default `combined`),
 `satrefine.backend.set_backend(name)`, or `with satrefine.backend.using(name):`.
+
+The handler package is chosen the same way: `SATREFINE_HANDLERS=handlers`
+(default, the `reasoning` layer), `handlers_v2` or `handlers_v3`. Each has
+its own suite under `tests/`, and `tools/refine_scoreboard.py --handlers
+handlers_v3 --suite tests/refine_v3` scores it; `SATREFINE_HANDLERS=handlers_v2
+pytest tests/refine` runs one package against another's suite.
 
 `tools/refine_scoreboard.py` runs `tests/refine` under each backend and
 compares outcomes per test: satassume in-scope gaps (pass under `sympy`, fail
