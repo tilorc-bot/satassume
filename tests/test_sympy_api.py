@@ -65,12 +65,10 @@ def test_unsupported_returns_none(eng):
 
 def test_install_routes_is_properties():
     x = Symbol('x_install_test', positive=True)
-    eng = install(Engine(cache=DictCache(), oracle=True))
+    eng = install(Engine(cache=DictCache()))
     try:
         assert (x + 1).is_positive is True
         assert (x**2 + 1).is_zero is False
         assert eng.stats['queries'] >= 1
-        # something the templates may not know but the oracle does
-        assert (sin(x)**2 + 1).is_positive is True
     finally:
         uninstall()

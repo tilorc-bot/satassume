@@ -2,7 +2,7 @@
 import pytest
 
 from satassume import Engine, DictCache, P, And, Or, Not, Implies, allargs, anyarg, exactlyonearg
-from satassume.engine import InconsistentAssumptions, prereq_order
+from satassume.engine import InconsistentAssumptions, neighbourhood
 
 
 # nodes: 'x' (a leaf) or ('add', a, b, ...) / ('mul', a, b, ...)
@@ -114,11 +114,10 @@ def test_context_session_is_reused_for_same_assumptions():
     assert eng.stats['sessions'] == n + 1
 
 
-def test_prereq_order_starts_with_pred_and_covers_rule_base():
-    order = prereq_order('even')
-    assert order[0] == 'even'
-    assert 'integer' in order[:5] and 'odd' in order[:5]
-    assert 'positive' in order
+def test_neighbourhood_contains_pred_and_rule_partners():
+    n = neighbourhood('even')
+    assert 'even' in n and 'integer' in n and 'odd' in n and 'zero' in n
+    assert 'prime' not in n
 
 
 def test_exactlyone_helper():

@@ -110,7 +110,6 @@ class Session:
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
-        self.oracle_done: Dict[Node, set] = {}
         self.nclauses = 0
         self.frontier: deque = deque()
         self.pending: Dict[Node, list] = {}   # node -> template formulas not yet compiled
@@ -313,13 +312,6 @@ class Engine:
         registry if importable, else no templates.
     cache : DictCache
         Where context-free facts live.  Defaults to ``ObjectCache``.
-    oracle : bool
-        When True, and a context-free query is still unknown after propagation
-        and search, fall back to the node's old-system ``_eval_is_*`` handlers
-        (SymPy's ``_prop_handler`` map) as unit-clause oracles, walking the
-        rule-base prerequisites like ``sympy.core.assumptions._ask`` does.
-        This makes the engine complete relative to the old system on day one
-        while templates replace handlers class by class.
     discovery_budget : int
         Maximum new nodes visited per query.
     session_limit : int
@@ -330,7 +322,7 @@ class Engine:
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
-                 oracle: bool = False, discovery_budget: int = 400,
+                 discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 4):
         if templates is None:
             try:
@@ -340,14 +332,13 @@ class Engine:
                 templates = lambda node: ()
         self.templates = templates
         self.cache = cache if cache is not None else ObjectCache()
-        self.oracle = oracle
         self.discovery_budget = discovery_budget
         self.session_limit = session_limit
         self.keep_sessions = keep_sessions
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
-                      "searches": 0, "oracle_calls": 0, "sessions": 0}
+                      "searches": 0, "sessions": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
@@ -387,41 +378,8 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, search=True)
-        if r is None and self.oracle:
-            r = self._oracle(s, node, pred)
         self.cache.put(node, pred, r)
         return r
-
-    def _oracle(self, s: Session, node: Node, pred: str) -> Optional[bool]:
-        handlers = getattr(node, '_prop_handler', None)
-        if not handlers:
-            return None
-        if s.pending:
-            s.escalate()
-        done = s.oracle_done.setdefault(node, set())
-        b = s.base[node]
-        lit = b + PRED_INDEX[pred]
-        solver = s.solver
-        for p in prereq_order(pred):
-            h = handlers.get(p)
-            if h is None or p in done:
-                continue
-            pv = b + PRED_INDEX[p]
-            if solver.value(pv) is not None:
-                # already decided: sympy's _ask never calls the handler then
-                # (class-level constants shadow inherited handlers, and the
-                # inherited handler may be wrong for this class)
-                continue
-            done.add(p)
-            self.stats["oracle_calls"] += 1
-            v = h(node)
-            if v is None:
-                continue
-            s._emit([pv if v else -pv])
-            r = s.query_literal(lit, search=False)
-            if r is not None:
-                return r
-        return s.query_literal(lit, search=True)
 
     # -- contextual -----------------------------------------------------------
     def ask(self, proposition, assumptions=None) -> Optional[bool]:
@@ -452,10 +410,9 @@ class Engine:
 
 
 # --------------------------------------------------------------------------
-# prerequisite order for the oracle walk (mirrors FactRules.prereq)
+# rule-base neighbourhood used by demand-driven instantiation
 # --------------------------------------------------------------------------
 
-_PREREQ: Dict[str, List[str]] = {}
 _NEIGH: Dict[str, frozenset] = {}
 
 
@@ -472,29 +429,3 @@ def neighbourhood(pred: str) -> frozenset:
         n = _NEIGH[pred] = frozenset(acc)
     return n
 
-
-def prereq_order(pred: str) -> List[str]:
-    """``pred`` first, then every predicate that can influence it through the
-    rule base, breadth-first by rule distance."""
-    cached = _PREREQ.get(pred)
-    if cached is not None:
-        return cached
-    adj: Dict[int, set] = {i: set() for i in range(NPRED)}
-    for c in RULE_CLAUSES:
-        idx = [abs(l) - 1 for l in c]
-        for i in idx:
-            adj[i].update(j for j in idx if j != i)
-    start = PRED_INDEX[pred]
-    order = [start]
-    seen = {start}
-    q = deque([start])
-    while q:
-        i = q.popleft()
-        for j in sorted(adj[i]):
-            if j not in seen:
-                seen.add(j)
-                order.append(j)
-                q.append(j)
-    res = [PREDICATES[i] for i in order]
-    _PREREQ[pred] = res
-    return res

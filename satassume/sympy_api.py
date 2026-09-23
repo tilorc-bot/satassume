@@ -27,7 +27,7 @@ _engine: Optional[Engine] = None
 def default_engine() -> Engine:
     global _engine
     if _engine is None:
-        _engine = Engine(oracle=True)
+        _engine = Engine()
     return _engine
 
 

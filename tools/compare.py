@@ -1,6 +1,6 @@
 """Replay recorded SymPy assumption queries against satassume.
 
-    python tools/compare.py queries.jsonl [--oracle] [--limit N] [--show K]
+    python tools/compare.py queries.jsonl [--limit N] [--show K]
 
 Reports, per record kind, how often satassume agrees with SymPy, answers
 where SymPy did not, returns None where SymPy answered, or disagrees (the
@@ -85,7 +85,6 @@ def rebuild(s, timeout=2):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("file")
-    ap.add_argument("--oracle", action="store_true", help="fall back to old-system handlers")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--skip", type=int, default=0, help="skip the first N records")
     ap.add_argument("--show", type=int, default=15, help="print up to K disagreements/misses")
@@ -94,7 +93,7 @@ def main(argv=None):
                     help="use a private cache instead of the objects' _assumptions dicts")
     args = ap.parse_args(argv)
 
-    eng = Engine(oracle=args.oracle, cache=DictCache() if args.fresh_cache else None)
+    eng = Engine(cache=DictCache() if args.fresh_cache else None)
     stats = collections.defaultdict(collections.Counter)
     shown = collections.Counter()
     t_sat = 0.0

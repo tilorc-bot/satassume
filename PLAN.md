@@ -59,7 +59,7 @@ satassume/
   compile.py     formulas -> integer clauses (direct where clausal, Tseitin otherwise)
   solver.py      incremental CDCL: add_clause any time, root propagation, implied(), solve(assumptions), entails()
   engine.py      Engine: ObjectCache (the node's own _assumptions dict), Session (solver + atom table),
-                 demand-driven discovery, level-0 write-back, oracle fallback to _eval_is_* handlers
+                 demand-driven discovery, level-0 write-back
   sympy_api.py   is_(expr, pred), ask(prop, assumptions), install()/uninstall()
   templates/     structural clause generators per SymPy class (Symbol, numbers, Add, Mul, Pow, functions)
 tools/
@@ -79,10 +79,11 @@ Query path for `is_(expr, pred)`:
    context-free fact and is written back to the cache of its node, so one
    query about `x + y` also caches facts about `x` and `y`;
 4. if the query literal is still unassigned: CDCL `entails()` (two solves
-   under assumptions `-q` and `q`); learned unit clauses become root facts;
-5. if still unknown and `oracle=True`: call the node's `_eval_is_*` handlers
-   in rule-prerequisite order, exactly the walk `sympy.core.assumptions._ask`
-   performs, asserting each answer as a unit clause and re-propagating.
+   under assumptions `-q` and `q`); learned unit clauses become root facts.
+
+The engine never consults SymPy's `_eval_is_*` handlers. Every answer comes
+from the rule base, the templates and search, so coverage is exactly what
+the templates encode.
 
 Query path for `ask(prop, assumptions)`: the same session; the assumptions
 formula is compiled under a fresh selector variable `s` and `s` is passed
@@ -102,15 +103,15 @@ both systems. `tools/compare.py` replays them. Agreement and "answers where
 SymPy did not" are fine; "disagree" must stay at zero; "None where SymPy
 answered" is the work list.
 
-### Stage 1: one rule base, one propositional core, handlers as oracles
+### Stage 1: one rule base, one propositional core
 
 * Replace `sympy/core/assumptions.py::_assume_rules` and
   `sympy/assumptions/facts.py::get_number_facts` with `rules.py` (the test
   `test_rule_base_matches_sympy_old_rules` pins the old strings verbatim).
 * `install()` replaces `sympy.core.assumptions._ask`. Every `is_*` cache
-  miss now goes through the engine with `oracle=True`. Because every old
-  handler is still consulted when propagation and search come up empty, the
-  old answers are a lower bound; the full SymPy suite is the acceptance test.
+  miss now goes through the engine. Coverage is whatever the templates
+  encode, so the corpus replay must show zero regressions on the old-system
+  queries before this lands; the full SymPy suite is the acceptance test.
 * Route `sympy.assumptions.ask` through `sympy_api.ask` for unary scalar
   predicates, keeping the existing satask/LRA path for relations and matrix
   predicates.
@@ -134,9 +135,9 @@ Rules of engagement:
 * a template mentions only the node and its direct arguments; deeper
   reasoning is the solver's job through discovery;
 * anything that needs numerical evaluation (`Add._eval_is_extended_positive`
-  with `evalf`, `_monotonic_sign`) stays an oracle until a sound symbolic
-  rule exists; oracles are per-predicate, so they can be retired one at a
-  time;
+  with `evalf`, `_monotonic_sign`) becomes a clause-generating function that
+  does the arithmetic in Python and emits unit facts, kept separate from the
+  purely structural templates;
 * the fuzzer approach from the `reasoning` project (random expressions,
   compare old and new answers) runs in CI against the corpus.
 
@@ -169,10 +170,10 @@ expressions:
 | Risk | Mitigation |
 |---|---|
 | An unsound template corrupts every answer | Soundness tests per template; corpus replay must show zero disagreements; templates land one at a time |
-| Eager instantiation is slower than lazy handlers on big expressions | Discovery budget now; Stage 3 laziness; oracle fallback keeps answers |
+| Eager instantiation is slower than lazy handlers on big expressions | Discovery budget now; Stage 3 laziness |
 | Re-entrancy: expression construction queries assumptions | Engine tolerates nested `is_` calls between solves; a template evaluating its own node returns None instead of recursing |
 | Memory growth of a global solver | Generational sessions; caches live on the objects as today |
-| Behaviour change across the full suite | Stage 1 keeps every old handler as an oracle, so answers can only improve; improvements that change expected outputs are reviewed one by one |
+| Behaviour change across the full suite | Corpus replay gates every change at zero regressions; improvements that change expected outputs are reviewed one by one |
 | Shared symbol knowledge bases | Only context-free, signature-determined facts are written back, which is what SymPy already stores there |
 
 ## 5. Out of scope for the prototype
@@ -180,5 +181,5 @@ expressions:
 Relations, matrix predicates, `refine`, `Q.is_true` over relationals,
 polar, and the multipledispatch handler registration API. The test
 `test_key_extensibility` and friends pass only if `Predicate.register`
-survives as a way to register oracle functions; that is a one-line shim in
-Stage 1.
+survives as a way to register clause-generating functions; that is a small
+shim in Stage 1.

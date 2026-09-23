@@ -38,10 +38,7 @@ def main():
         objs = fresh_objects(N, make)
         eng = Engine(cache=DictCache())
         timed("sat   " + label, objs, lambda o, f=fact: eng.is_(o, f))
-        objs = fresh_objects(N, make)
-        eng = Engine(cache=DictCache(), oracle=True)
-        timed("sat+o " + label, objs, lambda o, f=fact: eng.is_(o, f))
-        print(f"           searches={eng.stats['searches']} oracle_calls={eng.stats['oracle_calls']}")
+        print(f"           searches={eng.stats['searches']}")
     print()
     y = Symbol('y'); w = Symbol('w')
     ctx = [

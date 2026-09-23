@@ -37,11 +37,6 @@ install()                              # route every expr.is_* cache miss throug
 (x**2 + 1).is_zero                     # False, answered by satassume
 ```
 
-`Engine(oracle=True)` (the default for `install()`) falls back to SymPy's
-existing `_eval_is_*` handlers when the rule base, templates and search all
-come up empty, so answers are never worse than today's while templates
-replace handlers class by class.
-
 ## Layout
 
 | Path | What |
@@ -49,7 +44,7 @@ replace handlers class by class.
 | `satassume/rules.py` | the single rule base, in the old system's string syntax |
 | `satassume/formula.py`, `compile.py` | atoms `P(pred, expr)`, formulas, clause compilation |
 | `satassume/solver.py` | incremental CDCL with assumptions, root-level propagation, `entails` |
-| `satassume/engine.py` | sessions, discovery, caching, oracle fallback |
+| `satassume/engine.py` | sessions, discovery, caching |
 | `satassume/templates/` | structural rules per SymPy class |
 | `satassume/sympy_api.py` | `is_`, `ask`, `install` |
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
@@ -67,7 +62,7 @@ cd /path/to/sympy
 RECORD_OUT=/path/to/satassume/queries.jsonl PYTHONPATH=/path/to/satassume/tools:. \
   python -m pytest -p record_queries -p no:cacheprovider sympy/assumptions/tests sympy/core/tests/test_assumptions.py
 cd /path/to/satassume
-PYTHONPATH=.:/path/to/sympy python tools/compare.py queries.jsonl --oracle
+PYTHONPATH=.:/path/to/sympy python tools/compare.py queries.jsonl
 ```
 
 ## Results so far
@@ -75,18 +70,21 @@ PYTHONPATH=.:/path/to/sympy python tools/compare.py queries.jsonl --oracle
 Replay of 9230 queries recorded from SymPy's assumptions tests and the core
 arithmetic and assumptions tests (`tools/compare.py`):
 
-| Mode | Old-system `is_*` queries (6343) | New-system `ask` queries (2870) |
-|---|---|---|
-| templates only | 94% agree, 0 wrong, 24 extra answers | 82% agree, 0 wrong |
-| with oracle | 100% agree, 0 wrong, 31 extra answers | 85% agree, 1 wrong |
+| Old-system `is_*` queries (6343) | New-system `ask` queries (2870) |
+|---|---|
+| 94% agree, 0 wrong, 24 extra answers | 82% agree, 0 wrong |
 
 "Extra answers" are definite answers where SymPy returned None; each one
-was checked by hand. The single "wrong" answer in oracle mode is inherited
-from SymPy's old system: `(I**(3+I)).is_imaginary` is False there, True in
-the new system, and the value is `-I*exp(-pi/2)`. Five further flagged
-cases are a semantic choice: this engine raises on assumptions that
-contradict a symbol's declared facts (`ask(Q.commutative(x),
-~Q.commutative(x))`) where SymPy silently trusts the assumption.
+was checked by hand. The engine never contradicts SymPy on this corpus.
+Five flagged cases are a semantic choice: this engine raises on assumptions
+that contradict a symbol's declared facts (`ask(Q.commutative(x),
+~Q.commutative(x))`) where SymPy silently trusts the assumption. The
+remaining gap is templates not yet written (`Mod`, monotonicity such as
+`pi/2 > 1`, deep parity through denominators) and, on the new-system side,
+relations and matrix predicates, which are out of scope.
+
+The engine answers only from its own rule base, templates and search; it
+never consults SymPy's `_eval_is_*` handlers.
 
 Microbenchmarks (`tools/bench.py`, pure Python, this machine):
 
