@@ -496,3 +496,58 @@ def test_rel_queries_through_ask(case):
     if r is None:
         pytest.xfail("relation atoms not wired into the engine yet")
     pytest.fail(f"wrong definite answer {r}, expected {expected}")
+
+
+# ----------------------------------------------------------------------
+# End to end through ask: random linear relations vs the FM oracle
+# ----------------------------------------------------------------------
+
+from test_lra import fm_feasible  # noqa: E402
+
+_RS = symbols("p q r", real=True)
+_OPS = {"lt": "<", "le": "<=", "gt": ">", "ge": ">=", "eq": "==", "ne": "!="}
+_NEGOP = {"<": ">=", "<=": ">", ">": "<=", ">=": "<", "==": "!=", "!=": "=="}
+
+
+@st.composite
+def real_relation(draw):
+    e = S(0)
+    for s in _RS:
+        e += draw(st.integers(-2, 2)) * s
+    if not e.free_symbols:
+        e += _RS[0]
+    return draw(st.sampled_from(KINDS)), e, S(draw(st.integers(-2, 2)))
+
+
+def _oracle_con(kind, e, c):
+    co = {s: F(int(v)) for s, v in e.as_coefficients_dict().items() if s != 1}
+    return co, _OPS[kind], F(int(c))
+
+
+@needs_adapter
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(st.lists(real_relation(), min_size=1, max_size=4), real_relation())
+def test_fuzz_ask_against_oracle(assumptions, query):
+    """ask(query, And(assumptions)) over real symbols equals the FM oracle:
+    inconsistent / True / False / None.  LRA is complete for conjunctions,
+    so None is right only when neither the query nor its negation is
+    entailed."""
+    from satassume import DictCache, Engine
+    from satassume.sympy_api import ask
+    cons = [_oracle_con(*a) for a in assumptions]
+    qc = _oracle_con(*query)
+    neg = (qc[0], _NEGOP[qc[1]], qc[2])
+    if not fm_feasible(cons):
+        expected = "inconsistent"
+    elif not fm_feasible(cons + [neg]):
+        expected = True
+    elif not fm_feasible(cons + [qc]):
+        expected = False
+    else:
+        expected = None
+    assum = sympy.And(*[pred_atom(k, e, c) for k, e, c in assumptions])
+    try:
+        r = ask(pred_atom(*query), assum, Engine(cache=DictCache()))
+    except ValueError:
+        r = "inconsistent"
+    assert r == expected, (query, assumptions, r, expected)
