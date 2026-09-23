@@ -8,13 +8,17 @@ engine. Propositions and assumptions are Boolean combinations of
 `Q.<name>(expr)` with `name` in the vocabulary of `satassume/rules.py` and
 `expr` a scalar `Expr`.
 
+Custom predicates are in scope once a clause-generating function is
+registered for them (`satassume.register`, see `satassume/extensions.py`).
+
 Out of scope for now: relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`
 propositions, `Q.is_true` over a relational), matrix predicates and matrix
-arguments, custom predicates, and replacing the old `expr.is_*` system.
-Out-of-scope input returns `None` from `satassume.sympy_api.ask` by rule;
-the caller (SymPy's `ask`) routes it to its existing path. There is no
-fallback to SymPy's `_eval_is_*` handlers or to `satask` inside the engine,
-and none will be added: out of scope means "return None", nothing else.
+arguments, unregistered custom predicates, and replacing the old
+`expr.is_*` system. Out-of-scope input returns `None` from
+`satassume.sympy_api.ask` by rule; the caller (SymPy's `ask`) routes it to
+its existing path. There is no fallback to SymPy's `_eval_is_*` handlers or
+to `satask` inside the engine, and none will be added: out of scope means
+"return None", nothing else.
 
 ### Definition of done
 
@@ -33,30 +37,53 @@ and none will be added: out of scope means "return None", nothing else.
 
 | In-scope records | Agree | Extra | None | Wrong | Raises |
 |---|---|---|---|---|---|
-| 2588 | 2283 (88.2%) | 16 | 284 | 0 | 5 |
+| 2588 | 2497 (96.5%) | 16 | 70 | 0 | 5 |
 
 The five "raises" are the documented semantic choice: assumptions
-contradicting a symbol's declared facts are inconsistent here, trusted by
-SymPy's handler path. Out of scope by category: 78 relations, 189 matrix
+contradicting declared facts are inconsistent here, trusted by SymPy's
+handler path. Out of scope by category: 78 relations, 189 matrix
 predicates or non-scalar arguments, 0 custom predicates, 8 non-Boolean
 propositions.
 
+Against the definition of done:
+
+1. **Not fully met, and will not be by adding rules.** The 70 remaining
+   misses are listed in README.md: for 67 of them SymPy's answer is false
+   for a value that satisfies the assumptions (a zero factor or term, an
+   infinite argument, `acot(-1)`, `acos(1)`), and the other three need
+   `Abs` of a non-atomic base or a trigonometric identity. Zero
+   contradictions on 2588 records. Every template added has a soundness
+   test (`tests/test_templates.py`) and API tests (`tests/test_sympy_api.py`)
+   pin the records left undecided on purpose;
+2. **Met on 2532 of 2583 compared records** (`--time-sympy` with garbage
+   collection controlled): 1.19 s against 6.88 s in total, slower on 51.
+   The slower ones are undecided queries over a `Pow` cone with its
+   derived nodes (two CDCL solves over about 600 clauses, 1.5 to 2.7 ms
+   against 0.9 to 1.8 ms for SymPy) and constants asked about for the
+   first time in a process;
+3. **Met** by `satassume.register(pred, *classes)`
+   (`tests/test_extensibility.py` mirrors SymPy's four tests). Hooking
+   SymPy's own `Predicate.register` to it is part of landing the slice.
+
 Work list for the slice, in order:
 
-1. the 284 in-scope misses, by head of the queried expression: Pow 75,
-   Add 54, Mul 34, exp 22, log 19, acos 18, cot 12, sin/cos 12, re/im 8,
-   the `hermitian`/`antihermitian` units of numbers and constants. Every
-   template lands with a soundness test (`tests/test_templates.py`) and the
-   corpus replay must stay at zero contradictions;
-2. per-query speed: satassume takes 2.35 s on the in-scope records against
-   8.26 s for `sympy.ask`, but is slower on 349 of them, almost all first
-   queries under a new assumption set (session instantiation, 286 over
-   1 ms). Candidates: reuse the compiled rule base across sessions,
-   instantiate templates lazily by demanded predicate (see "Laziness"
-   below), cheaper selector handling;
+1. (done) the in-scope misses: hermitian/antihermitian as scalar rules,
+   infinite sums, imaginary and composite factors, unit-circle and
+   exact-constant powers, `exp(I*pi*c*s)`, `log`/`acos`/`asin` with the
+   derived node `x - 1`, a `cot` template. Templates may refer to derived
+   nodes (`2*e`, `x - 1`, `b +- 1`), which the engine visits only on
+   escalation;
+2. (mostly done) per-query speed: templates hand the engine precompiled
+   clause patterns, the rule base is minimised to what unit propagation
+   needs (79 clauses), constants with a complete closure skip it, common
+   patterns are built once per process, search runs over the query's cone
+   when the reused session holds other queries. Left: the 51 records
+   above, which need a cheaper search (a native propagation core or
+   cone-restricted decisions) rather than more template work;
 3. decide the semantics of assumptions that contradict declared facts
    (raise, as now, or trust the assumption like SymPy) with the maintainer;
-4. the `Predicate.register` shim for clause-generating functions.
+4. (done) the registration API; the `Predicate.register` shim inside SymPy
+   is a landing task.
 
 ## 1. What the measurements say (SymPy master, September 2026)
 
@@ -125,15 +152,19 @@ Query path for `ask(prop, assumptions)`:
    leaks into the cache. The session is reused while the assumptions stay
    the same (many questions under one `assuming(...)` block); learned
    clauses stay valid across queries;
-3. visiting a node allocates 33 variables, instantiates the rule base (105
-   clauses), asserts its cached context-free facts as units, asserts the
-   class templates whose conclusions the query demands, and breadth-first
-   visits the child nodes they mention (bounded by `discovery_budget`);
+3. visiting a node allocates 33 variables, instantiates the rule base (79
+   clauses, the propagation-minimal form of the 110), asserts its cached
+   context-free facts as units, emits the precompiled clause patterns of
+   the class templates whose conclusions the query demands, and
+   breadth-first visits the child nodes they mention (bounded by
+   `discovery_budget`); derived nodes wait for escalation;
 4. root-level propagation, then the assumptions' implied literals; every
    literal assigned at level 0 is a context-free fact and is written back to
    the cache of its node;
 5. if the query literal is still undecided: escalate (compile the parked
-   templates), then CDCL `entails()` (two solves under assumptions).
+   templates, visit the derived nodes), then CDCL `entails()` (two solves
+   under assumptions), in a fresh session over the query's cone when the
+   reused session already holds other queries' nodes.
 
 A proposition with no assumptions is a context-free query and goes through
 `Engine.is_`: cache hit in `expr._assumptions`, else a session of its own
@@ -146,8 +177,12 @@ Rules of engagement for templates:
 * a template is only added with a soundness test (see
   `tests/test_templates.py`: instantiate with concrete values, evaluate the
   formula under the old system's concrete truth values, must be True);
-* a template mentions only the node and its direct arguments; deeper
-  reasoning is the solver's job through discovery;
+* a template mentions the node and its direct arguments, plus at most a
+  few *derived* nodes built from them when the vocabulary cannot express a
+  fact otherwise (`2*e` for half-integer exponents, `x - 1` for `log(x)
+  == 0`); deeper reasoning is the solver's job through discovery, and
+  derived nodes are visited only when the direct structure does not decide
+  the query;
 * anything that needs numerical evaluation (`Add._eval_is_extended_positive`
   with `evalf`, `_monotonic_sign`) becomes a clause-generating function that
   does the arithmetic in Python and emits unit facts, kept separate from the

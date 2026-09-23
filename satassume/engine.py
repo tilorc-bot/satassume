@@ -511,13 +511,15 @@ class Engine:
                  cone_search: bool = True, extensions=None):
         clause_templates = None
         if templates is None:
-            try:
+            import importlib.util
+            if importlib.util.find_spec("sympy") is None:  # pragma: no cover
+                templates = lambda node: ()
+            else:
+                # a broken template package must not turn into silent Nones
                 from .templates import registry
                 templates = registry.facts_for
                 clause_templates = registry.clauses_for
                 registry.warm_up()
-            except Exception:  # pragma: no cover - SymPy not installed
-                templates = lambda node: ()
         if extensions is None:
             from .extensions import extensions
         self.templates = templates
