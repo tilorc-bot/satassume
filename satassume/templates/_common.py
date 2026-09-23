@@ -1,6 +1,7 @@
-"""Helpers shared by the template modules (no SymPy imports here).
+"""Rule compilation shared by the template modules (no SymPy imports here).
 
-Templates describe their rules as *index-based specs*: a literal is
+Templates are written in the notation of :mod:`.dsl`, which lowers them to
+*index-based specs*: a literal is
 ``(k, pred, pos)`` where ``k`` indexes a tuple of objects (the arguments
 followed by the node), and a rule is ``(premises, conclusion)`` meaning
 ``And(premises) -> Or(conclusion)``.  Only these clausal shapes are emitted,
@@ -57,34 +58,6 @@ def is_constant(obj) -> bool:
 def const_key(obj):
     """Cache-key component for a constant (``Float(2.0) == Integer(2)``!)."""
     return (type(obj), obj)
-
-
-def lits(ks, pred: str, pos: bool = True) -> List[Lit]:
-    return [(k, pred, pos) for k in ks]
-
-
-class Rules:
-    """Collects rule specs."""
-    __slots__ = ('rules',)
-
-    def __init__(self):
-        self.rules: List[Tuple[list, list]] = []
-
-    def rule(self, premises, conclusion) -> None:
-        """``And(premises) -> conclusion`` (a literal or a list = ``Or``)."""
-        self.rules.append((list(premises),
-                           conclusion if isinstance(conclusion, list) else [conclusion]))
-
-    def equiv(self, cond, a: Lit, b: Lit) -> None:
-        """``cond -> (a <-> b)`` as two rules."""
-        self.rule([*cond, a], b)
-        self.rule([*cond, b], a)
-
-
-def ge2_alternatives(k: int):
-    """Premise alternatives meaning ``objs[k]`` is an integer >= 2."""
-    return ([(k, 'prime', True)], [(k, 'composite', True)],
-            [(k, 'even', True), (k, 'positive', True)])
 
 
 def const_value(c, pred: str):
@@ -198,11 +171,13 @@ class Pattern:
     ``complete`` is set on a unit pattern whose facts, closed under the rule
     base, decide every predicate the rule base mentions: the engine then
     asserts the closed units and skips the rule base for the node."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete')
+    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete', 'names')
 
-    def __init__(self, rules: List[Rule], node: int):
+    def __init__(self, rules: List[Rule], node: int, names=None):
         self.rules = rules
         self.node = node
+        #: Slot names for printing (see :func:`.dsl.show_rules`), or None.
+        self.names = names
         self.complete = False
         clauses = []
         used = set()
@@ -242,15 +217,23 @@ _CACHE: Dict[Any, Pattern] = {}
 MAX_CACHE = 4096
 
 
-def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int) -> Compiled:
-    """The (cached) resolved rules of ``key`` applied to ``objs``; slot
-    ``node`` holds the node itself."""
+def pattern(key, gen: Callable[[], list], consts: Dict[int, Any], node: int,
+            names: Callable[[], list] = None) -> Pattern:
+    """The (cached) resolved rules of ``key``; ``gen()`` gives the specs, slot
+    ``node`` is the node and ``names()`` the slot names."""
     pat = _CACHE.get(key)
     if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node)
-    return Compiled(objs, pat)
+        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node,
+                                    names() if names is not None else None)
+    return pat
+
+
+def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int) -> Compiled:
+    """The (cached) resolved rules of ``key`` applied to ``objs``; slot
+    ``node`` holds the node itself."""
+    return Compiled(objs, pattern(key, gen, consts, node))
 
 
 def units(key, gen: Callable[[], list], obj) -> Compiled:
@@ -273,11 +256,3 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
             pat.complete = len(decided | RULE_FREE) == NPRED
         _CACHE[key] = pat
     return Compiled((obj,), pat)
-
-
-def consts_of(args) -> Dict[int, Any]:
-    return {k: a for k, a in enumerate(args) if a.is_Atom and a.is_number}
-
-
-def pattern_key(tag, n: int, consts: Dict[int, Any]):
-    return (tag, n, tuple((k, type(c), c) for k, c in sorted(consts.items())))

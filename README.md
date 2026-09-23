@@ -93,10 +93,11 @@ only when propagation is inconclusive.
 | `satassume/formula.py`, `compile.py` | atoms `P(pred, expr)`, formulas, clause compilation |
 | `satassume/solver.py` | incremental CDCL with assumptions, root-level propagation, `entails` |
 | `satassume/engine.py` | sessions, discovery, caching |
-| `satassume/templates/` | structural rules per SymPy class |
+| `satassume/templates/` | structural rules per SymPy class, written in the notation of `templates/dsl.py` |
 | `satassume/sympy_api.py` | `ask`, `out_of_scope`, `to_formula`, `Unsupported` |
 | `satassume/extensions.py` | `register(pred, *classes)`: clause-generating functions for custom predicates and for vocabulary predicates on new classes |
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
+| `tools/dump_rules.py` | print the compiled rules an expression gets, e.g. `tools/dump_rules.py -- 'x**2' '-x'` |
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
 
