@@ -35,6 +35,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
 from .formula import P, atoms_of
+from .relations import RELATION_ATOMS, Relations
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .solver import Solver
 
@@ -121,6 +122,9 @@ class Session:
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
         self.n_assumption_nodes = 0           # nodes visited by assume_formula()
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
+        #: relation atoms and their theories (satassume.relations); created
+        #: at the first user formula when the engine has relation support
+        self.relations: Optional[Relations] = None
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -293,6 +297,9 @@ class Session:
         var = self.table.custom[atom]
         if v is not None:
             self._emit([var if v else -var])
+        if atom.pred in RELATION_ATOMS and self.relations is not None:
+            self.relations.enqueue(atom)
+            return
         ext = engine.extensions
         if ext is None:
             return
@@ -441,6 +448,7 @@ class Session:
     def assume_formula(self, f) -> List[int]:
         """Turn a formula into solver assumption literals: its clauses are
         guarded by a fresh selector variable ``s`` and ``s`` is assumed."""
+        self._relations_begin(f)
         self._ensure_atoms(f)
         s = self.table.aux()
 
@@ -449,6 +457,7 @@ class Session:
         compile_formula(f, self.table, emit)
         self._flush()
         self._discover()
+        self._relations(f)
         self.n_assumption_nodes = len(self.base)
         return [s]
 
@@ -457,11 +466,34 @@ class Session:
         if lit is not None:
             return lit
         self._ensure_atoms(f)
+        rel = self._relations_begin(f)
         lit = formula_literal(f, self.table, self._emit)
         self._flush()
         self._discover()
+        if rel is not None:
+            self._relations(f)
         self.literals[f] = lit
         return lit
+
+    # -- relations (satassume.relations) ---------------------------------------
+    def _relations_begin(self, f) -> Optional[Relations]:
+        """Create the relation glue before ``f`` is compiled, so that its
+        relation atoms are queued when allocated."""
+        rel = self.relations
+        if rel is None and self.engine.relation_specs:
+            rel = self.relations = Relations(self, self.engine.relation_specs)
+        return rel
+
+    def _relations(self, f) -> None:
+        """Interpret the relation atoms ``f`` brought in, link and share;
+        raises ``Uninterpreted`` if a relation of ``f`` has no theory."""
+        rel = self.relations
+        if rel is None:
+            return
+        atoms = atoms_of(f)
+        rel.note_formula(atoms)
+        if rel.active or rel.queue:
+            rel.process(atoms)
 
     def _ensure_atoms(self, f) -> None:
         """Visit the nodes of the vocabulary atoms of ``f``.  Custom atoms
@@ -503,12 +535,16 @@ class Engine:
         Registered clause-generating functions for custom predicates and
         for vocabulary predicates on new classes.  Defaults to the global
         registry ``satassume.extensions.extensions``.
+    relations : list of satassume.relations.AdapterSpec, or None
+        Theory adapters for relation atoms.  None: the LRA and EUF adapters
+        if present (with the SymPy templates only); ``[]``: relations are
+        out of scope.
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 16,
-                 cone_search: bool = True, extensions=None):
+                 cone_search: bool = True, extensions=None, relations=None):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -522,6 +558,12 @@ class Engine:
                 registry.warm_up()
         if extensions is None:
             from .extensions import extensions
+        if relations is None:
+            from .relations import default_specs
+            relations = default_specs() if clause_templates is not None else []
+        #: adapter specs for relation atoms (satassume.relations); empty:
+        #: relations are out of scope, as before
+        self.relation_specs = list(relations)
         self.templates = templates
         #: ``node -> (compiled patterns, formulas)``; the fast path the SymPy
         #: template registry provides.  None: ``templates`` (formulas) only.
@@ -644,6 +686,8 @@ class Engine:
     def _literal(s: Session, proposition) -> int:
         if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
             s.ensure(proposition.expr, {proposition.pred})
+            if s.relations is not None:
+                s._relations(proposition)
             return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
         return s.literal_of(proposition)
 

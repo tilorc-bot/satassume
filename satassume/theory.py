@@ -151,4 +151,44 @@ class PropagatingTheory(TheorySolver, Protocol):
         ...
 
 
-__all__ = ["TheorySolver", "PropagatingTheory"]
+class EqualitySharing:
+    """Bookkeeping for delayed theory combination.
+
+    Theories are kept apart by atom kind; they meet on *shared terms*,
+    terms known to at least two theories.  For each pair of shared terms
+    the engine creates one interface atom ``a == b`` and registers it with
+    every theory that interprets it, so the SAT solver decides the
+    arrangement of the shared terms and each theory checks it.  For
+    stably infinite theories with disjoint signatures (LRA over the
+    rationals/reals and EUF are) this is complete; without the interface
+    atoms, combined reasoning such as ``x <= y, y <= x |- f(x) = f(y)`` is
+    lost (but nothing unsound is derived).
+
+    :meth:`update` takes the current term sets of the theories and returns
+    the pairs not returned before, in a deterministic order.
+    """
+
+    def __init__(self):
+        self.shared: list = []
+        self._seen: set = set()
+
+    def update(self, term_sets) -> list:
+        count: dict = {}
+        order: list = []
+        for ts in term_sets:
+            for t in ts:
+                if t not in count:
+                    count[t] = 0
+                    order.append(t)
+                count[t] += 1
+        new = [t for t in order if count[t] >= 2 and t not in self._seen]
+        pairs = []
+        for t in new:
+            for u in self.shared:
+                pairs.append((u, t))
+            self.shared.append(t)
+            self._seen.add(t)
+        return pairs
+
+
+__all__ = ["TheorySolver", "PropagatingTheory", "EqualitySharing"]
