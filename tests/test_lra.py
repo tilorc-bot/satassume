@@ -499,6 +499,35 @@ class Driver:
         return self.check()
 
 
+def tableau_invariants(t, feasible=False):
+    """White-box checks of satassume.lra's tableau (skipped for another
+    implementation): every row equation holds for the current assignment
+    (both the rational and the delta part), rows only mention nonbasic
+    variables, the column index matches the rows, and after a successful
+    check every variable lies within its bounds."""
+    rows = getattr(t, "_rows", None)
+    if rows is None or not hasattr(t, "_vq") or not hasattr(t, "_cols"):
+        return
+    vq, vd, cols = t._vq, t._vd, t._cols
+    for b, row in rows.items():
+        assert b not in row
+        for k, a in row.items():
+            assert a != 0, "explicit zero in a row"
+            assert k not in rows, f"row {b} mentions basic variable {k}"
+            assert b in cols[k], f"column index of {k} misses row {b}"
+        assert vq[b] == sum((a * vq[k] for k, a in row.items()), F(0)), f"row {b} violated (q)"
+        assert vd[b] == sum((a * vd[k] for k, a in row.items()), F(0)), f"row {b} violated (d)"
+    for k, rs in enumerate(cols):
+        for r in rs:
+            assert r in rows and k in rows[r], f"stale column entry {k} -> {r}"
+    for v in range(len(vq)):
+        val = (vq[v], vd[v])
+        lo, up = t._lo[v], t._up[v]
+        if v not in rows or feasible:
+            assert lo is None or lo <= val, f"variable {v} below its lower bound"
+            assert up is None or val <= up, f"variable {v} above its upper bound"
+
+
 def run_fresh(atoms, lits, **kw):
     """Reference by reconstruction: a fresh theory, everything asserted at
     level 0 in the given order, then checked."""
@@ -1151,6 +1180,7 @@ def random_atoms(rng, nvars=3, natoms=8, coef=2, rhs=3, ops=("<=", "<", "==", ">
 def torture(rng, atoms, steps, allow_diseq=True, minimal=True, eager=None):
     d = Driver(atoms, theory=new_theory(eager), minimal=minimal, complete=True)
     for _ in range(steps):
+        tableau_invariants(d.t)
         free = [v for v in atoms if v not in {abs(l) for l in d.asserted}]
         op = rng.random()
         if d.blocked:
@@ -1170,6 +1200,7 @@ def torture(rng, atoms, steps, allow_diseq=True, minimal=True, eager=None):
             d.assert_(lit)
         else:
             r = d.check()
+            tableau_invariants(d.t, feasible=r is True)
             # reference by reconstruction: a fresh theory, same literals
             r2 = run_fresh(atoms, d.asserted, minimal=minimal)
             if r is not None and r2 is not None:
