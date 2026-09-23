@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "satassume"
 version = "0.1.0"
-description = "A unified, incremental SAT-based assumptions engine for SymPy (old is_* and new Q.* systems)"
+description = "An incremental SAT-based engine for SymPy's ask(): unary scalar predicates on scalar expressions"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "BSD-3-Clause"}
