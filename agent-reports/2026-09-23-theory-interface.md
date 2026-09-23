@@ -4,7 +4,7 @@
 - **Status:** phase one (protocol, solver hooks, harness) is on `main`.
   Phase two (relation atoms wired into the engine, unary links, equality
   sharing, end-to-end tests) is on the integration branch. The EUF adapter
-  is merged and in use. The LRA adapter (branch of lra-impl, `3a7d55a`) was
+  is merged and in use. The LRA adapter (branch of lra-impl, `9f5aa00`) was
   tested here from a scratch copy: all of SymPy's `test_rel_queries.py`
   passes and 75 of the 78 relational corpus records agree, 0 wrong.
 - **Scope:** `satassume/theory.py`, the theory hooks in
@@ -282,7 +282,7 @@ strict once it is present. `python tools/compare.py queries.jsonl
 | no adapters (before) | 15 | 63 | 0 |
 | dummy order + dummy UF | 71 | 7 | 0 |
 | EUF only (main today) | 49 | 29 | 0 |
-| LRA draft `3a7d55a` + EUF | 75 | 3 | 0 |
+| LRA `9f5aa00` + EUF | 75 | 3 | 0 |
 
 The 3 left need substitution of equals into non-relational templates
 (`rational(x**y)` given `x = 1`, `prime(p**x)` given `x != 1`). In-scope
