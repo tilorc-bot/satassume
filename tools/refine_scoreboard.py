@@ -23,6 +23,7 @@ Usage::
     ... --junit-dir out/                  # keep the junit files
     ... --reuse out/                      # do not run, read junit-<backend>.xml
     ... --show-failures satassume         # print each failure's message
+    ... --handlers handlers_v2 --suite tests/refine_v2   # another handler package and its suite
     ... -- -k pow                         # extra pytest arguments
 
 Each backend runs in its own pytest subprocess with ``SATREFINE_BACKEND``
@@ -46,8 +47,10 @@ BACKENDS = ("sympy", "satassume", "combined")
 PASSING = ("passed", "xpassed")
 
 
-def run_backend(backend: str, suite: str, junit: Path, pytest_args: list[str]) -> float:
+def run_backend(backend: str, suite: str, junit: Path, pytest_args: list[str], handlers: str | None = None) -> float:
     env = dict(os.environ, SATREFINE_BACKEND=backend)
+    if handlers:
+        env["SATREFINE_HANDLERS"] = handlers
     cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
            "--junitxml", str(junit), suite, *pytest_args]
     start = perf_counter()
@@ -107,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--backends", default=",".join(BACKENDS))
     ap.add_argument("--suite", default="tests/refine")
+    ap.add_argument("--handlers", help="handler package to load (SATREFINE_HANDLERS), e.g. handlers_v2")
     ap.add_argument("--junit-dir", type=Path, help="directory to keep junit-<backend>.xml in")
     ap.add_argument("--reuse", type=Path, help="read junit-<backend>.xml from this directory instead of running")
     ap.add_argument("--show-failures", metavar="BACKEND", help="print every failing test of this backend with its message")
@@ -128,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     for backend in backends:
         junit = junit_dir / f"junit-{backend}.xml"
         if args.reuse is None:
-            wall[backend] = run_backend(backend, args.suite, junit, args.pytest_args)
+            wall[backend] = run_backend(backend, args.suite, junit, args.pytest_args, args.handlers)
         if not junit.exists():
             print(f"{backend}: no junit file at {junit}", file=sys.stderr)
             continue
@@ -138,7 +142,8 @@ def main(argv: list[str] | None = None) -> int:
     if not results:
         return 1
 
-    print(f"# Refine scoreboard: {args.suite} under each ask backend\n")
+    print(f"# Refine scoreboard: {args.suite} under each ask backend"
+          f"{' (handlers: ' + args.handlers + ')' if args.handlers else ''}\n")
     rows = []
     for backend in backends:
         if backend not in results:

@@ -8,6 +8,7 @@ The vendored dispatcher and initial handlers live in
 from __future__ import annotations
 
 import importlib
+import os
 import pkgutil
 
 from ._upstream import (
@@ -47,9 +48,18 @@ __all__ = [
 ]
 
 
+HANDLERS_ENV_VAR = "SATREFINE_HANDLERS"
+"""Name of the handler package to load, relative to ``satrefine``.
+
+Defaults to ``handlers``.  A second implementation of the same registry keys
+(for example ``handlers_v2``) can be selected instead, so the two can be
+measured with the same dispatcher, backends and tools.
+"""
+
+
 def _load_handlers() -> None:
-    """Import every public module in :mod:`satrefine.handlers`."""
-    package = importlib.import_module(__name__ + ".handlers")
+    """Import every public module in the selected handler package."""
+    package = importlib.import_module(__name__ + "." + os.environ.get(HANDLERS_ENV_VAR, "handlers"))
     path = getattr(package, "__path__", None)
     if path is None:
         return
