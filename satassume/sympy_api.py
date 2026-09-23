@@ -56,6 +56,7 @@ from typing import Optional
 from .engine import Engine, InconsistentAssumptions, ObjectCache  # noqa: F401
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
+from .relations import Uninterpreted, relation_atom, relational_name
 from .rules import PRED_INDEX
 
 
@@ -173,9 +174,38 @@ def out_of_scope(proposition, assumptions=True) -> Optional[str]:
 # SymPy Boolean -> satassume formula
 # --------------------------------------------------------------------------
 
-def to_formula(expr):
+def _relation(expr, relations: bool):
+    """The atom formula of a relation (``Relational``, ``Q.lt(a, b)``,
+    ``Q.is_true(a < b)``), or None if ``expr`` is not one.  Raises
+    :class:`Unsupported` if relations are off or the arguments are not
+    scalar."""
+    from sympy.assumptions.assume import AppliedPredicate
+    from sympy.core.relational import Relational
+    if isinstance(expr, AppliedPredicate):
+        name = str(expr.function.name)
+        args = expr.arguments
+        if name == "is_true" and len(args) == 1 and isinstance(args[0], Relational):
+            return _relation(args[0], relations)
+        if name not in RELATION_PREDICATES:
+            return None
+        if len(args) != 2:
+            raise Unsupported(f"{expr} is out of scope (relation)", "relation")
+        lhs, rhs = args
+    elif isinstance(expr, Relational):
+        name = relational_name(expr)
+        lhs, rhs = expr.lhs, expr.rhs
+    else:
+        return None
+    if not relations or not (_is_scalar(lhs) and _is_scalar(rhs)):
+        raise Unsupported(f"{expr} is out of scope (relation)", "relation")
+    return relation_atom(name, lhs, rhs)
+
+
+def to_formula(expr, relations: bool = False):
     """Translate a SymPy Boolean over applied predicates into a formula.
-    Raises :class:`Unsupported` for anything out of scope."""
+    Raises :class:`Unsupported` for anything out of scope.  With
+    ``relations`` (the engine has theory adapters, see
+    :mod:`satassume.relations`) relations become relation atoms."""
     from sympy.assumptions.assume import AppliedPredicate
     from sympy.logic.boolalg import (And as SAnd, Or as SOr, Not as SNot,
                                      Implies as SImplies, Equivalent as SEquivalent,
@@ -184,6 +214,9 @@ def to_formula(expr):
         return TRUE
     if expr is False or isinstance(expr, BooleanFalse):
         return FALSE
+    r = _relation(expr, relations)
+    if r is not None:
+        return r
     if isinstance(expr, AppliedPredicate):
         c = _applied_category(expr)
         if c is not None:
@@ -191,15 +224,15 @@ def to_formula(expr):
         args = expr.arguments
         return P(str(expr.function.name), args[0] if len(args) == 1 else Args(args))
     if isinstance(expr, SAnd):
-        return And(*[to_formula(a) for a in expr.args])
+        return And(*[to_formula(a, relations) for a in expr.args])
     if isinstance(expr, SOr):
-        return Or(*[to_formula(a) for a in expr.args])
+        return Or(*[to_formula(a, relations) for a in expr.args])
     if isinstance(expr, SNot):
-        return Not(to_formula(expr.args[0]))
+        return Not(to_formula(expr.args[0], relations))
     if isinstance(expr, SImplies):
-        return Implies(to_formula(expr.args[0]), to_formula(expr.args[1]))
+        return Implies(to_formula(expr.args[0], relations), to_formula(expr.args[1], relations))
     if isinstance(expr, SEquivalent):
-        return Equivalent(*[to_formula(a) for a in expr.args])
+        return Equivalent(*[to_formula(a, relations) for a in expr.args])
     from sympy.core.relational import Relational
     if isinstance(expr, Relational):
         raise Unsupported(f"{expr} is out of scope (relation)", "relation")
@@ -230,9 +263,10 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
       here, where SymPy trusts the assumption.
     """
     eng = engine or default_engine()
+    rel = bool(eng.relation_specs)
     try:
-        prop = to_formula(proposition)
-        assum = None if assumptions is True else to_formula(assumptions)
+        prop = to_formula(proposition, rel)
+        assum = None if assumptions is True else to_formula(assumptions, rel)
     except Unsupported:
         return None
     if prop is TRUE:
@@ -249,3 +283,6 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
         return eng.ask(prop, assum)
     except InconsistentAssumptions as e:
         raise ValueError(f"inconsistent assumptions {assumptions}") from e
+    except Uninterpreted:
+        # a relation no theory interprets: out of scope, as without theories
+        return None
