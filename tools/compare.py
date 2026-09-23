@@ -25,12 +25,20 @@ SymPy answered), ``wrong`` (definite answer contradicting SymPy),
 documented semantic choice on assumptions contradicting declared facts),
 ``no_error`` (SymPy raised, the engine answered) and ``unreplayable``.
 
+With ``--time-sympy`` every in-scope record is also timed through
+``sympy.ask`` in the same process.  Garbage collection is frozen once and
+disabled inside both timed calls, so a collection pause never lands on one
+side of a record.  A few rebuilt records make ``sympy.ask`` raise (an
+unevaluated ``Or`` of predicates); those are timed again on an evaluated
+rebuild and, if SymPy still raises, left out of the comparison and counted.
+
 The exit code is 1 only if an in-scope record is ``wrong``.
 """
 from __future__ import annotations
 
 import argparse
 import collections
+import gc
 import json
 import sys
 import time
@@ -88,7 +96,7 @@ def _alarm(signum, frame):
     raise Unreplayable("rebuild timed out")
 
 
-def rebuild(s, timeout=2):
+def rebuild(s, timeout=2, evaluated=False):
     """Rebuild an ``srepr`` string.  ``srepr`` loses ``evaluate=False``, so
     the tree is rebuilt without evaluation (it was canonical already) and a
     hard timeout guards against constructions that SymPy would grind on."""
@@ -97,11 +105,35 @@ def rebuild(s, timeout=2):
     old = signal.signal(signal.SIGALRM, _alarm)
     signal.alarm(timeout)
     try:
+        if evaluated:
+            return eval(s, namespace())
         with evaluate(False):
             return eval(s, namespace())
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old)
+
+
+def time_sympy(prop, assum, rec):
+    """Seconds ``sympy.ask`` takes on the record, or None if it raises on
+    both the unevaluated and the evaluated rebuild."""
+    for attempt in (0, 1):
+        if attempt:
+            try:
+                prop, assum = rebuild(rec["prop"], evaluated=True), rebuild(rec["assum"], evaluated=True)
+            except Exception:
+                return None
+        gc.disable()
+        t = time.perf_counter()
+        try:
+            sympy.ask(prop, assum)
+        except Exception:
+            continue
+        else:
+            return time.perf_counter() - t
+        finally:
+            gc.enable()
+    return None
 
 
 IN_SCOPE = "in-scope"
@@ -156,6 +188,10 @@ def main(argv=None):
     t_sat = collections.Counter()
     t_sympy = 0.0
     sat_slower = 0
+    sympy_raised = 0
+    timed = 0
+    if args.time_sympy:
+        gc.freeze()
     n = 0
     with open(args.file) as f:
         for line in f:
@@ -195,24 +231,27 @@ def main(argv=None):
                 if args.in_scope_only and group != IN_SCOPE:
                     continue
                 desc = f"{prop} | {assum}"
+                if args.time_sympy:
+                    gc.disable()
                 t = time.perf_counter()
                 try:
                     got = sat_ask(prop, assum, engine=eng)
                 except ValueError:
                     got = "error:ValueError"
                 dt = time.perf_counter() - t
+                if args.time_sympy:
+                    gc.enable()
                 if args.time_sympy and group == IN_SCOPE:
-                    t = time.perf_counter()
-                    try:
-                        sympy.ask(prop, assum)
-                    except Exception:
-                        pass
-                    ds = time.perf_counter() - t
-                    t_sympy += ds
-                    if dt > ds:
-                        sat_slower += 1
-                    if dump is not None:
-                        dump.write(f"{dt*1000:.3f}\t{ds*1000:.3f}\t{desc}\n")
+                    ds = time_sympy(prop, assum, rec)
+                    if ds is None:
+                        sympy_raised += 1
+                    else:
+                        timed += 1
+                        t_sympy += ds
+                        if dt > ds:
+                            sat_slower += 1
+                        if dump is not None:
+                            dump.write(f"{dt*1000:.3f}\t{ds*1000:.3f}\t{desc}\n")
             t_sat[group] += dt
             if dt * 1000 > args.slow_ms:
                 print(f"[slow {dt*1000:.0f} ms] {group}: {desc[:200]}", flush=True)
@@ -234,8 +273,10 @@ def main(argv=None):
         pct = 100.0 * c["agree"] / answered if answered else 0.0
         print(f"{LABELS[g]}\n    n={tot} {cells}  ({pct:.1f}% agree, {t_sat[g]:.2f}s)")
     if args.time_sympy:
-        print(f"sympy.ask on in-scope records: {t_sympy:.2f}s; satassume slower on {sat_slower} records")
-    print(f"engine stats: {eng.stats}")
+        print(f"sympy.ask on {timed} in-scope records: {t_sympy:.2f}s; satassume slower on "
+              f"{sat_slower} records; sympy.ask raised on {sympy_raised} (not compared)")
+    sizes = sorted((len(sess.base) for sess, _ in eng._context_sessions.values()), reverse=True)
+    print(f"engine stats: {eng.stats}; kept context sessions (nodes): {sizes}")
     if dump is not None:
         dump.close()
     return 1 if stats[IN_SCOPE]["wrong"] else 0

@@ -151,10 +151,72 @@ def compile_rules(rules: Sequence[str] = RULES) -> List[Clause]:
 RULE_CLAUSES: Tuple[Clause, ...] = tuple(compile_rules())
 NPRED = len(PREDICATES)
 
+
+def unit_propagate(clauses: Sequence[Clause], assumptions: Sequence[int]):
+    """Unit propagation to a fixpoint over signed-integer clauses; returns
+    the set of derived literals (including ``assumptions``) or None on a
+    conflict."""
+    assigned = set(assumptions)
+    if any(-l in assigned for l in assigned):
+        return None
+    changed = True
+    while changed:
+        changed = False
+        for c in clauses:
+            unassigned = None
+            satisfied = False
+            n_unassigned = 0
+            for l in c:
+                if l in assigned:
+                    satisfied = True
+                    break
+                if -l not in assigned:
+                    n_unassigned += 1
+                    unassigned = l
+            if satisfied:
+                continue
+            if n_unassigned == 0:
+                return None
+            if n_unassigned == 1:
+                assigned.add(unassigned)
+                changed = True
+    return assigned
+
+
+def minimize_for_propagation(clauses: Sequence[Clause]) -> Tuple[Clause, ...]:
+    """Drop clauses that unit propagation never needs: ``C`` is dropped if,
+    for every literal ``l`` of ``C``, falsifying the other literals of ``C``
+    makes the remaining clauses derive ``l`` (or a conflict) by unit
+    propagation alone.  Whenever ``C`` would propagate, the rest propagates
+    the same literal, so every level-0 fact and every search behaviour that
+    depends on unit propagation is unchanged; the models are unchanged too.
+    """
+    kept = list(dict.fromkeys(tuple(sorted(c)) for c in clauses))   # exact duplicates
+    i = 0
+    while i < len(kept):
+        c = kept[i]
+        rest = kept[:i] + kept[i + 1:]
+        for l in c:
+            derived = unit_propagate(rest, [-m for m in c if m != l])
+            if derived is not None and l not in derived:
+                break
+        else:
+            kept = rest
+            continue
+        i += 1
+    return tuple(kept)
+
+
+#: The clauses the engine instantiates per node: the rule base minus the
+#: clauses unit propagation never needs (same models, same propagation).
+RULE_INSTANTIATED: Tuple[Clause, ...] = minimize_for_propagation(RULE_CLAUSES)
+
 # The same clauses in the solver's internal literal encoding relative to a
 # node's base variable ``b``: internal literal = 2*(b + i) + neg = 2*b + const.
 RULE_INTERNAL: Tuple[Tuple[int, ...], ...] = tuple(
-    tuple(2 * (abs(l) - 1) + (1 if l < 0 else 0) for l in c) for c in RULE_CLAUSES)
+    tuple(2 * (abs(l) - 1) + (1 if l < 0 else 0) for l in c) for c in RULE_INSTANTIATED)
+#: Predicates no instantiated rule clause mentions (``polar``).
+RULE_FREE: frozenset = frozenset(range(NPRED)) - {abs(l) - 1 for c in RULE_INSTANTIATED for l in c}
 
 
 def instantiate(var_of_pred) -> List[List[int]]:

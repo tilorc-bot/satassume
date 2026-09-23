@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
-from ..rules import PRED_INDEX
+from ..rules import NPRED, PRED_INDEX, PREDICATES, RULE_FREE, RULE_INSTANTIATED, unit_propagate
 
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
@@ -193,12 +193,17 @@ class Pattern:
     *slot space*: a literal is ``(k, pidx, neg)`` for predicate index
     ``pidx`` of the object in slot ``k``.  Slots below ``node`` are the
     direct arguments, slot ``node`` is the node, slots above are derived
-    nodes (``2*e``, ``x - 1``, ...)."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds')
+    nodes (``2*e``, ``x - 1``, ...).
+
+    ``complete`` is set on a unit pattern whose facts, closed under the rule
+    base, decide every predicate the rule base mentions: the engine then
+    asserts the closed units and skips the rule base for the node."""
+    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete')
 
     def __init__(self, rules: List[Rule], node: int):
         self.rules = rules
         self.node = node
+        self.complete = False
         clauses = []
         used = set()
         child_preds: Dict[int, set] = {}
@@ -209,7 +214,8 @@ class Pattern:
             if any((k, i, not neg) in lits for k, i, neg in lits):
                 continue    # tautology
             npreds = frozenset(i for k, i, _ in lits if k == node)
-            clauses.append((tuple(lits), npreds))
+            # internal literal = 2*base_of_slot + (2*pidx + neg)
+            clauses.append((tuple(lits), npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
             for k, i, _ in lits:
                 used.add(k)
                 if k != node:
@@ -249,12 +255,23 @@ def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int)
 
 def units(key, gen: Callable[[], list], obj) -> Compiled:
     """Unit facts about one object: ``gen()`` returns ``(pred, value)``
-    pairs; the pattern is cached under ``key``."""
+    pairs; the pattern is cached under ``key``.  The facts are closed under
+    the rule base (unit propagation); when the closure decides every
+    predicate the rule base mentions the pattern is ``complete``."""
     pat = _CACHE.get(key)
     if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        pat = _CACHE[key] = Pattern([((), ((0, pred, value),)) for pred, value in gen()], 0)
+        facts = list(gen())
+        lits = [PRED_INDEX[pred] + 1 if value else -(PRED_INDEX[pred] + 1) for pred, value in facts]
+        closed = unit_propagate(RULE_INSTANTIATED, lits)
+        if closed is not None:
+            facts = [(PREDICATES[abs(l) - 1], l > 0) for l in sorted(closed, key=abs)]
+        pat = Pattern([((), ((0, pred, value),)) for pred, value in facts], 0)
+        if closed is not None:
+            decided = {abs(l) - 1 for l in closed}
+            pat.complete = len(decided | RULE_FREE) == NPRED
+        _CACHE[key] = pat
     return Compiled((obj,), pat)
 
 

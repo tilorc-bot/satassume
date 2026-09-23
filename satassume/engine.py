@@ -119,6 +119,7 @@ class Session:
         self.pending_c: Dict[Node, list] = {}  # node -> (clauses, bases) pairs not yet emitted
         self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
+        self.n_assumption_nodes = 0           # nodes visited by assume_formula()
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -149,17 +150,9 @@ class Session:
         table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
-        # 1. single-node rule base (bulk path, no per-clause sanitising)
-        self.solver.add_pattern(RULE_INTERNAL, b, NPRED)
-        self.nclauses += len(RULE_INTERNAL)
-        # 2. cached context-free facts
-        facts = self.engine.cache.facts(node)
-        if facts:
-            self._add_clauses([[b + PRED_INDEX[p]] if v else [-(b + PRED_INDEX[p])]
-                               for p, v in facts.items() if v is not None and p in PRED_INDEX])
-        # 3. structural templates, and vocabulary predicates registered for
-        #    the node's class (satassume.extensions)
         engine = self.engine
+        # 1. structural templates, and vocabulary predicates registered for
+        #    the node's class (satassume.extensions)
         if engine.clause_templates is not None:
             compiled, formulas = engine.clause_templates(node)
         else:
@@ -167,6 +160,19 @@ class Session:
         ext = engine.extensions
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
+        # 2. single-node rule base (bulk path, no per-clause sanitising),
+        #    unless the node is a constant whose closed unit facts decide
+        #    everything the rule base could say
+        if not (len(compiled) == 1 and compiled[0].pattern.complete and not formulas):
+            self.solver.add_pattern(RULE_INTERNAL, b, NPRED)
+            self.nclauses += len(RULE_INTERNAL)
+        else:
+            self.solver.ensure_vars(b + NPRED - 1)
+        # 3. cached context-free facts
+        facts = engine.cache.facts(node)
+        if facts:
+            self._add_clauses([[b + PRED_INDEX[p]] if v else [-(b + PRED_INDEX[p])]
+                               for p, v in facts.items() if v is not None and p in PRED_INDEX])
         if compiled:
             self._compile_patterns(node, compiled, demanded)
         if formulas:
@@ -205,7 +211,7 @@ class Session:
                 if bb is None:
                     bb = table.node_base(o)
                     new.append(k)
-                bases[k] = bb
+                bases[k] = 2 * bb
             if want is None:
                 self._emit_pattern(pat.clauses, bases)
             else:
@@ -229,8 +235,11 @@ class Session:
         table.new_nodes = []
 
     def _emit_pattern(self, clauses, bases) -> None:
-        self._add_clauses([[-(bases[k] + i) if neg else bases[k] + i for k, i, neg in lits]
-                           for lits, _ in clauses])
+        """``bases[k]`` is twice the base variable of slot ``k``."""
+        self.nclauses += len(clauses)
+        solver = self.solver
+        solver.ensure_vars(len(self.table))
+        solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses])
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
@@ -439,6 +448,7 @@ class Session:
         compile_formula(f, self.table, emit)
         self._flush()
         self._discover()
+        self.n_assumption_nodes = len(self.base)
         return [s]
 
     def literal_of(self, f) -> int:
@@ -475,6 +485,13 @@ class Engine:
     session_limit : int
         A reused contextual session is replaced once it has visited this
         many nodes.
+    cone_search : bool
+        Search (CDCL) decides every variable of a session, so a query that
+        needs search in a reused session holding nodes of earlier queries is
+        searched in a fresh session over its own cone instead; the cost of
+        search then depends on the query, not on what was asked before under
+        the same assumptions.  Propagation-decided queries keep reusing the
+        session.
     keep_sessions : int
         How many contextual sessions (distinct assumption sets) to keep.
     extensions : satassume.extensions.Extensions or None
@@ -485,14 +502,15 @@ class Engine:
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
-                 session_limit: int = 2000, keep_sessions: int = 4,
-                 extensions=None):
+                 session_limit: int = 2000, keep_sessions: int = 16,
+                 cone_search: bool = True, extensions=None):
         clause_templates = None
         if templates is None:
             try:
                 from .templates import registry
                 templates = registry.facts_for
                 clause_templates = registry.clauses_for
+                registry.warm_up()
             except Exception:  # pragma: no cover - SymPy not installed
                 templates = lambda node: ()
         if extensions is None:
@@ -507,10 +525,11 @@ class Engine:
         self.discovery_budget = discovery_budget
         self.session_limit = session_limit
         self.keep_sessions = keep_sessions
+        self.cone_search = cone_search
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
-                      "searches": 0, "sessions": 0}
+                      "searches": 0, "cone_searches": 0, "sessions": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
@@ -583,15 +602,13 @@ class Engine:
         """
         self.stats["queries"] += 1
         lits: List[int] = []
-        if assumptions is not None and assumptions is not True:
+        contextual = assumptions is not None and assumptions is not True
+        if contextual:
             s, lits = self._context_session(assumptions)
         else:
             s = self._fresh_session()
-        if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
-            s.ensure(proposition.expr, {proposition.pred})
-            q = s.base[proposition.expr] + PRED_INDEX[proposition.pred]
-        else:
-            q = s.literal_of(proposition)
+        polluted = len(s.base) > s.n_assumption_nodes
+        q = self._literal(s, proposition)
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
@@ -599,8 +616,21 @@ class Engine:
             r = s.query_literal(q, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
+            if contextual and polluted and self.cone_search:
+                self.stats["cone_searches"] += 1
+                s = self._fresh_session()
+                lits = s.assume_formula(assumptions)
+                q = self._literal(s, proposition)
+                s.escalate()
             r = s.query_literal(q, lits, search=True)
         return r
+
+    @staticmethod
+    def _literal(s: Session, proposition) -> int:
+        if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
+            s.ensure(proposition.expr, {proposition.pred})
+            return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
+        return s.literal_of(proposition)
 
 
 # --------------------------------------------------------------------------

@@ -336,10 +336,15 @@ def test_symbol_units(cls):
     for f in facts:
         atom = f if isinstance(f, P) else f.args[0]
         assert atom.expr is s and atom.pred in VOCAB
-    # facts agree with the old system on the symbol itself
+    # facts agree with the old system on the symbol itself wherever the old
+    # system has an opinion (the units are closed under the rule base, which
+    # also decides antihermitian and the signed infinities)
     for f in facts:
         atom = f if isinstance(f, P) else f.args[0]
-        assert getattr(s, 'is_' + atom.pred) is isinstance(f, P)
+        old = getattr(s, 'is_' + atom.pred, None)
+        assert old is None or old is isinstance(f, P), (f, old)
+    assert Not(P('positive_infinite', s)) in facts
+    assert Not(P('antihermitian', s)) in facts
     plain = cls('t')
     assert registry.facts_for(plain) == [P('commutative', plain)]
     nc = cls('A', commutative=False)

@@ -33,14 +33,14 @@ class Clause(list):
 
     Watched literals are always at positions 0 and 1.  For a clause that is
     the reason of an assignment, the implied literal is at position 0.
+
+    ``learnt`` and ``act`` are class-level defaults so that constructing a
+    clause is a plain (C-level) list construction; learnt clauses set both
+    on the instance.
     """
 
-    __slots__ = ("act", "learnt")
-
-    def __init__(self, lits, learnt=False):
-        list.__init__(self, lits)
-        self.learnt = learnt
-        self.act = 0.0
+    learnt = False
+    act = 0.0
 
 
 def _luby(y: float, x: int) -> float:
@@ -355,6 +355,43 @@ class Solver:
             cls.append(c)
             watches[out[0]].append(c)
             watches[out[1]].append(c)
+        self._witness = None
+        return True
+
+    def ensure_vars(self, v: int) -> None:
+        """Make sure variables ``1..v`` exist."""
+        if v > self._nvars:
+            self._grow(v)
+
+    def add_internal(self, clauses) -> bool:
+        """Like :meth:`add_clauses` for clauses already in the internal
+        literal encoding (variables must exist, see :meth:`ensure_vars`)."""
+        if not self._ok:
+            return False
+        if self._trail_lim:
+            self._backtrack(0)
+        val = self._val
+        watches = self._watches
+        cls = self._clauses
+        for lits in clauses:
+            for l in lits:
+                if val[l] is not None:
+                    if not self.add_clause([-(l >> 1) if l & 1 else l >> 1 for l in lits]):
+                        return False
+                    break
+            else:
+                if len(lits) == 1:
+                    l = lits[0]
+                    val[l] = True
+                    val[l ^ 1] = False
+                    self._level[l >> 1] = 0
+                    self._reason[l >> 1] = None
+                    self._trail.append(l)
+                else:
+                    c = Clause(lits)
+                    cls.append(c)
+                    watches[lits[0]].append(c)
+                    watches[lits[1]].append(c)
         self._witness = None
         return True
 
@@ -757,7 +794,9 @@ class Solver:
                     reason[v0] = None
                     trail.append(l0)
                 else:
-                    c = Clause(learnt, True)
+                    c = Clause(learnt)
+                    c.learnt = True
+                    c.act = 0.0
                     self._bump_clause(c)
                     self._learnts.append(c)
                     self._watches[learnt[0]].append(c)

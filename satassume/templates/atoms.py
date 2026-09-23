@@ -18,6 +18,16 @@ from ._common import VOCAB, const_key, const_value, units
 from .registry import registry
 
 _ORACLE_PREDS = tuple(sorted(VOCAB))
+# Properties read on a constant.  The rest (the extended sign predicates,
+# hermitian/antihermitian, the signed infinities, nonzero, noninteger,
+# irrational, ...) follows from these by the rule-base closure applied in
+# ``units``; ``polar`` is undecidable for numbers.
+_CONST_BASIS = (
+    'algebraic', 'commutative', 'complex', 'composite', 'even', 'finite',
+    'imaginary', 'infinite', 'integer', 'negative', 'odd', 'positive', 'prime',
+    'rational', 'real', 'transcendental', 'zero', 'extended_real',
+    'extended_positive', 'extended_negative',
+)
 
 
 @registry.register(Symbol)
@@ -32,7 +42,7 @@ def symbol_units(expr):
 def constant_units(expr):
     def gen():
         out = []
-        for pred in _ORACLE_PREDS:
+        for pred in _CONST_BASIS:
             value = const_value(expr, pred)
             if value is not None:
                 out.append((pred, value))
