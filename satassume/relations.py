@@ -260,13 +260,16 @@ class Relations:
                 if ad.register(solver, var, sat):
                     ok = True
                 continue
+            terms = ad.terms(sat)
+            if terms is None:                 # not interpreted: no variable
+                continue
             t = s.table.aux()
             solver.ensure_vars(t)
             if not ad.register(solver, t, sat):
                 continue
             ok = True
             guard = []
-            for u in ad.terms(sat) or ():
+            for u in terms:
                 s.ensure(u, {"real"})
                 guard.append(-s.var("real", u))
             s._emit(guard + [-var, t])
