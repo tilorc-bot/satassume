@@ -382,3 +382,51 @@ def test_unhandled_matrix_queries(real_eng):
     from sympy import MatrixSymbol
     X = MatrixSymbol("X", 2, 2)
     assert ask_with(real_eng, Q.lt(X, 2) & Q.gt(X, 3)) is None
+
+
+# ----------------------------------------------------------------------
+# deferred engagement of the unguarded theory (relation-speed branch)
+# ----------------------------------------------------------------------
+
+def _relations_of(engine):
+    sessions = [s for s, _ in engine._context_sessions.values()]
+    return [s.relations for s in sessions if s.relations is not None]
+
+
+def test_order_query_does_not_engage_euf():
+    # a pure order query creates no e = 0 links, no EUF terms and so no
+    # interface equalities
+    e = relation_engine(None)
+    assert ask_with(e, Q.lt(x, z), Q.lt(x, y) & Q.lt(y, z)) is True
+    rel, = _relations_of(e)
+    assert rel.engaged == set()
+    assert rel.sharing.shared == []
+    assert "euf" not in rel.adapters or not rel.adapters["euf"].shared_terms()
+    assert all(a.pred == "lt" for a in rel.status)
+    # zero links are still there through the rule base and the lt links
+    assert ask_with(e, Q.zero(x), Q.le(x, 0) & Q.ge(x, 0)) is True
+    assert ask_with(e, Q.le(x, 0), Q.zero(x)) is True
+    assert ask_with(e, Q.eq(x, 0), Q.le(x, 0) & Q.ge(x, 0)) is True
+
+
+def test_user_equality_in_the_query_engages_euf_after_links():
+    # plain symbols: LRA is guarded off, so only EUF can answer, and only
+    # if the zero links created for the assumptions reach it once the
+    # query's equality engages it
+    u, v = symbols("u v")
+    e = relation_engine(None)
+    assert ask_with(e, Q.ne(u, v), Q.zero(u) & ~Q.zero(v)) is True
+    assert ask_with(e, Q.eq(u, v), Q.zero(u) & Q.zero(v)) is True
+    assert ask_with(e, Q.zero(u), Q.eq(u, v) & Q.zero(v)) is True
+    assert ask_with(e, Q.zero(u), Q.eq(u, v)) is None
+    rel = _relations_of(e)[0]
+    assert rel.engaged == {"euf"}
+    assert rel._zero_pending == [] and rel._deferred == {}
+
+
+def test_engagement_backfills_deferred_links(eng):
+    # dummy adapters: same protocol.  Assumptions first (links deferred),
+    # then an equality query engages the unguarded theory.
+    assert ask_with(eng, Q.eq(f(x), f(y)), (x <= y) & (y <= x)) is True
+    assert ask_with(eng, Q.ne(f(x), f(y)), Q.zero(x) & Q.zero(y)) is False
+    assert ask_with(eng, Q.eq(f(x), f(y)), Q.zero(x) & Q.zero(y)) is True

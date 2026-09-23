@@ -156,8 +156,9 @@ def _constraint(name, form, k):
         form = {t: -c for t, c in form.items()}
         k = -k
         name = "lt" if name == "gt" else "le"
-    items = sorted(((t, c) for t, c in form.items() if c),
-                   key=lambda tc: default_sort_key(tc[0]))
+    items = [(t, c) for t, c in form.items() if c]
+    if len(items) > 1:
+        items.sort(key=lambda tc: default_sort_key(tc[0]))
     if name in ("eq", "ne") and items and items[0][1] < 0:
         items = [(t, -c) for t, c in items]
         k = -k
@@ -180,7 +181,10 @@ def interpret(atom):
         form, k = _linear(*rel)
     except (_Unhandled, TypeError, ValueError):
         return None
-    return _constraint(rel[0], form, k), sorted(form, key=default_sort_key)
+    terms = list(form)
+    if len(terms) > 1:
+        terms.sort(key=default_sort_key)
+    return _constraint(rel[0], form, k), terms
 
 
 def terms(atom) -> list | None:

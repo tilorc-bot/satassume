@@ -57,7 +57,11 @@ clause                                why it is sound
 
 The rule base derives ``nonnegative``, ``nonzero``, ``extended_*`` and the
 rest from these three.  Numbers are not linked (their unary facts are
-closed already).
+closed already).  The ``zero`` link is created only once an unguarded
+theory is engaged (below): for the guarded theory it is redundant, since
+``zero(e)`` gives ``real(e)`` and neither ``0 < e`` nor ``e < 0`` through
+the rule base and the first four clauses, which pin ``e`` to 0, and
+conversely.
 
 Combining theories
 ------------------
@@ -68,6 +72,16 @@ interface atoms: whenever a term becomes known to two adapters
 other shared term, and registered like any other relation atom, so each
 theory sees the same Boolean (delayed theory combination; see
 :class:`satassume.theory.EqualitySharing`).
+
+An unguarded theory (EUF) is *engaged* by the first user atom it
+interprets (an equality of the query or the assumptions).  Until then the
+internal atoms meant for it, the ``e = 0`` links and interface
+equalities, are deferred and registered at engagement, and the ``zero``
+links are not created at all.  Without a user equality EUF could only
+close ``e = 0`` facts under equality, which the rule base and the guarded
+theory do already, while its terms would make every linked term a shared
+term and so cost a quadratic number of interface atoms on every order
+query.
 
 Adapters
 --------
@@ -194,6 +208,15 @@ class Relations:
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
         self._pending_links: list = []
+        #: unguarded adapters that have interpreted a user atom; until
+        #: then internal atoms (links, interface equalities) meant for
+        #: them are kept in ``_deferred`` (see :meth:`_interpret`)
+        self.engaged: set = set()
+        self._deferred: dict = {}         # spec name -> [atom, ...]
+        self._zero_pending: list = []     # linked terms without an ``e = 0`` link yet
+        self._guards: dict = {}           # term -> literal of real(term)
+        from sympy import S
+        self._zero = S.Zero
 
     # -- entry points used by the session ------------------------------
     def enqueue(self, atom: P) -> None:
@@ -214,12 +237,13 @@ class Relations:
         for a in user:
             for side in a.expr:
                 self._link_later(side)
+        user_set = set(user)
         while True:
             s._flush()
             s._discover()
             if self.queue:
                 atom = self.queue.pop()
-                self.status[atom] = self._interpret(atom)
+                self.status[atom] = self._interpret(atom, atom in user_set)
                 self.active = True
                 continue
             if self.active and self.top:
@@ -248,18 +272,35 @@ class Relations:
             ad = self.adapters[spec.name] = spec.factory()
         return ad
 
-    def _interpret(self, atom: P) -> bool:
+    def _interpret(self, atom: P, user: bool = False) -> bool:
+        """Register ``atom`` with every adapter that interprets it.
+
+        An unguarded adapter (EUF) takes *internal* atoms, the unary links
+        ``e = 0`` and the interface equalities, only once it is *engaged*
+        by a user atom it interprets; before that they are deferred and
+        registered at engagement.  Without a user equality the unguarded
+        theory could only close ``e = 0`` facts under equality, which the
+        rule base and the guarded theory already do, while its terms would
+        make every linked term a shared term and so cost a quadratic number
+        of interface atoms."""
         s = self.session
         solver = s.solver
         var = s.table.custom[atom]
         sat = sympy_atom(atom)
         ok = False
         for spec in self.specs:
-            ad = self._adapter(spec)
             if not spec.guarded:
+                if not user and spec.name not in self.engaged:
+                    self._deferred.setdefault(spec.name, []).append(atom)
+                    continue
+                ad = self._adapter(spec)
                 if ad.register(solver, var, sat):
                     ok = True
+                    if spec.name not in self.engaged:
+                        self.engaged.add(spec.name)
+                        self._backfill(spec, ad)
                 continue
+            ad = self._adapter(spec)
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
                 continue
@@ -268,13 +309,29 @@ class Relations:
             if not ad.register(solver, t, sat):
                 continue
             ok = True
+            guards = self._guards
             guard = []
             for u in terms:
-                s.ensure(u, {"real"})
-                guard.append(-s.var("real", u))
+                g = guards.get(u)
+                if g is None:
+                    s.ensure(u, {"real"})
+                    g = guards[u] = -s.var("real", u)
+                guard.append(g)
             s._emit(guard + [-var, t])
             s._emit(guard + [var, -t])
         return ok
+
+    def _backfill(self, spec, ad) -> None:
+        """Register the internal atoms deferred for a newly engaged
+        unguarded adapter (their variables may already be fixed at root;
+        the solver reports those at once)."""
+        solver = self.session.solver
+        custom = self.session.table.custom
+        for atom in self._deferred.pop(spec.name, ()):
+            ad.register(solver, custom[atom], sympy_atom(atom))
+        pending, self._zero_pending = self._zero_pending, []
+        for e in pending:
+            self._link_zero(e)
 
     # -- links to the unary vocabulary ----------------------------------
     def _atom_var(self, f) -> int:
@@ -283,21 +340,37 @@ class Relations:
         return self.session.table.var(f)
 
     def _link(self, e) -> None:
-        from sympy import S
+        """Link ``positive(e)`` and ``negative(e)`` to ``0 < e`` and
+        ``e < 0``; ``zero(e) <-> e = 0`` only once an unguarded theory is
+        engaged (see :meth:`_link_zero`)."""
         s = self.session
         s.ensure(e, {"positive", "negative", "zero", "real"})
-        pos, neg = s.var("positive", e), s.var("negative", e)
-        zero, real = s.var("zero", e), s.var("real", e)
-        gt = self._atom_var(relation_atom("lt", S.Zero, e))
-        lt = self._atom_var(relation_atom("lt", e, S.Zero))
-        eq = self._atom_var(relation_atom("eq", e, S.Zero))
+        pos, neg, real = s.var("positive", e), s.var("negative", e), s.var("real", e)
+        zero = self._zero
+        gt = self._atom_var(P("lt", Args((zero, e))))
+        lt = self._atom_var(P("lt", Args((e, zero))))
         emit = s._emit
         emit([-pos, gt])
         emit([-gt, -real, pos])
         emit([-neg, lt])
         emit([-lt, -real, neg])
-        emit([-zero, eq])
-        emit([-eq, zero])
+        if self.engaged:
+            self._link_zero(e)
+        else:
+            self._zero_pending.append(e)
+
+    def _link_zero(self, e) -> None:
+        """``zero(e) <-> e = 0``.  For the guarded theory this atom is
+        redundant: ``zero(e)`` gives ``real(e)`` and neither ``0 < e`` nor
+        ``e < 0`` through the rule base and the two links above, which pin
+        ``e`` to 0 in LRA, and conversely.  It matters for an unguarded
+        theory (EUF closes ``e = 0`` facts under user equalities in any
+        domain), so it is created when one is engaged."""
+        s = self.session
+        zero = s.var("zero", e)
+        eq = self._atom_var(relation_atom("eq", e, self._zero))
+        s._emit([-zero, eq])
+        s._emit([-eq, zero])
 
     # -- equality sharing -------------------------------------------------
     def _share(self) -> bool:

@@ -27,8 +27,9 @@
   "not the reversed `<`", which is SymPy's own definition. Each session
   has its own adapters. LRA atoms are guarded by `real` of their terms, so
   `<` on non-real or infinite arguments stays a free Boolean. EUF gets
-  `eq` unconditionally. Theories share equalities over common terms
-  through interface atoms (delayed theory combination). If no theory
+  `eq` unconditionally, once a user equality engages it. Theories share
+  equalities over common terms through interface atoms (delayed theory
+  combination). If no theory
   interprets one of the user's relations, `ask` returns None as before.
 
 ## 1. The interface
@@ -248,7 +249,10 @@ vocabulary atom of the user formulas once the session has relations
 | `zero(e) <-> eq(e, 0)` | `Eq(e, 0)` holds iff `e` is 0, in any domain |
 
 The rule base derives nonnegative, nonzero, extended_* and
-positive_infinite from these three. Substituting equals into other unary
+positive_infinite from these three. The `zero` link is created only once
+EUF is engaged (section 5.4): for LRA it is redundant, because `zero(e)`
+gives `real(e)` and neither `0 < e` nor `e < 0` through the rule base and
+the first two links, which pin `e` to 0, and conversely. Substituting equals into other unary
 predicates (`prime(x)` from `x = y` and `prime(y)`) is not linked; SymPy
 marks those tests XFAIL too.
 
@@ -265,6 +269,18 @@ terms and each theory checks it. With `x` and `y` declared real,
 without it (tested with the dummy theories and with the real EUF). For
 plain symbols it is None either way: the LRA guard leaves `x <= y` without
 order meaning, so no equality `x = y` follows.
+
+**Engagement (branch `relation-speed`).** EUF is engaged by the first
+user atom it interprets, an equality of the query or the assumptions.
+Before that, the internal atoms meant for it (`e = 0` links, interface
+equalities) are deferred and registered at engagement, and the `zero`
+links are not created. Without a user equality EUF could only close
+`e = 0` facts under equality, which the rule base and LRA do already,
+while its terms made every linked term a shared term: a three-atom order
+query used to create 9 link atoms and 3 interface atoms, each registered
+with LRA and EUF, on top of the user's 3. It now creates 6 link atoms,
+registered with LRA only. Corpus and test answers are unchanged
+(`tests/test_relations.py`, the engagement tests).
 
 **When Nelson-Oppen equality propagation would be needed.** DTC is
 complete here: LRA over the rationals and EUF are stably infinite with
@@ -350,6 +366,38 @@ unary query. Now the SymPy classes are imported at module level,
 path pays one `is not None` test. The small gain on the bench cases comes
 from the module-level imports, which the baseline also lacked. The corpus
 difference includes the phase-one solver hooks (about 1 %, section 6.2).
+
+### 6.3 Relation queries, cold and warm (branch `relation-speed`, core 8, medians, in process)
+
+"Cold" is a fresh engine per call (session, discovery, theories, search);
+"warm" repeats the query on the same engine (kept context session). All
+symbols real. `sympy.ask` on the same query for scale; where it answers
+None it is marked.
+
+| query | sympy.ask | cold, main `dda88c1` | cold, branch | warm, branch |
+|---|---|---|---|---|
+| `x > z` from `x > y, y > z` | 198 ms | 3.1 ms | 2.1 ms | 55 us |
+| same, `Q.real` in the assumptions | 29 ms (None) | 3.2 ms | 2.2 ms | 85 us |
+| `2x + y > 0` from `x > 1, y > -2` | 115 ms | 3.4 ms | 2.5 ms | 126 us |
+| `x <= y` from `x > y` (plain symbols) | 0.5 ms | 1.4 ms | 0.8 ms | 19 us |
+| `eq(x, z)` from `eq(x, y), eq(y, z)` | 1.64 s (None) | 1.8 ms | 1.6 ms | 64 us |
+| `eq(f(x), f(y))` from `x <= y <= x` (sharing) | 1.82 s (None) | 3.1 ms | 2.9 ms | 103 us |
+| `positive(x)` from `x > 0 & real(x)` | 2.7 ms (None) | 0.8 ms | 0.6 ms | 82 us |
+| sum of the 12 cases in `tools/relbench.py` | 5.6 s | 28.6 ms | 21.6 ms | 0.87 ms |
+
+Where a cold transitivity query spends its 2.1 ms now: 52 % building
+the context session (three nodes with the rule base, two user atoms, six
+link atoms with guards), 31 % the search (`entails`, two CDCL solves with
+LRA, 17 decisions and 3 theory conflicts), 6 % the query atom, the rest
+propagation and escalation. A unary query needing search on three nodes
+costs 0.55 to 0.86 ms on the same engine, so the relation-specific part
+is about 1.2 ms: roughly 100 us per relation atom (SymPy atom, linearisation,
+LRA registration, guard clauses) and the LRA work inside the search.
+Further steps, not taken: link symbols lazily (only when a sign predicate
+of the symbol is constrained by something other than the rule base;
+about 30 % of this query, but the criterion is delicate), register link
+atoms with LRA without a SymPy atom (about 15 %), and the C core the
+unary path also waits for.
 
 ### 6.2 Solver hooks, phase one (cores 8,9, alternating base and candidate, best of runs)
 
