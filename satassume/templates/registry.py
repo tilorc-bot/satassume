@@ -1,0 +1,75 @@
+"""Registry of structural rule templates keyed by SymPy class.
+
+A template is a plain function ``f(expr) -> formula | iterable of formulas``
+(``None`` is tolerated and means "nothing").  Templates are registered for
+one or more classes; :meth:`TemplateRegistry.facts_for` walks the MRO of the
+expression's type, so a template registered for a base class also applies
+to every subclass.  Most-specific classes come first in the result.
+
+This module does not import SymPy.
+"""
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, Iterable, List
+
+from ..formula import Formula, P
+
+Template = Callable[[Any], Any]
+
+
+class TemplateRegistry:
+    def __init__(self) -> None:
+        self._by_class: Dict[type, List[Template]] = {}
+        self._mro_cache: Dict[type, List[Template]] = {}
+
+    def register(self, *classes: type):
+        """Decorator registering ``f`` as a template for ``classes``."""
+        if not classes:
+            raise TypeError("register() needs at least one class")
+
+        def deco(f: Template) -> Template:
+            for cls in classes:
+                self._by_class.setdefault(cls, []).append(f)
+            self._mro_cache.clear()
+            return f
+
+        return deco
+
+    def templates_for(self, cls: type) -> List[Template]:
+        """All templates applying to ``cls``, most specific class first."""
+        out = self._mro_cache.get(cls)
+        if out is None:
+            out = []
+            for base in cls.__mro__:
+                out.extend(self._by_class.get(base, ()))
+            self._mro_cache[cls] = out
+        return out
+
+    def facts_for(self, expr: Any) -> List[Any]:
+        """Every formula emitted by every template matching ``type(expr)``."""
+        out: List[Any] = []
+        for f in self.templates_for(type(expr)):
+            r = f(expr)
+            if type(r) is list:
+                out.extend(r)
+            else:
+                _collect(r, out)
+        return out
+
+    def classes(self) -> Iterable[type]:
+        return self._by_class.keys()
+
+
+def _collect(result: Any, out: List[Any]) -> None:
+    if result is None or result is True:
+        # ``True`` is the degenerate formula (e.g. ``allargs`` of no args):
+        # asserting it is a no-op.
+        return
+    if result is False or isinstance(result, (P, Formula)):
+        out.append(result)
+        return
+    for r in result:
+        _collect(r, out)
+
+
+registry = TemplateRegistry()
