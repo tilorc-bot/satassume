@@ -3,10 +3,12 @@
 - **Date:** 2026-09-23
 - **Status:** phase one (protocol, solver hooks, harness) is on `main`.
   Phase two (relation atoms wired into the engine, unary links, equality
-  sharing, end-to-end tests) is on the integration branch. The EUF adapter
-  is merged and in use. The LRA adapter (branch of lra-impl, `9f5aa00`) was
-  tested here from a scratch copy: all of SymPy's `test_rel_queries.py`
-  passes and 75 of the 78 relational corpus records agree, 0 wrong.
+  sharing, end-to-end tests) is on the integration branch, merged with
+  main at `e38b5d6` (LRA `9f5aa00`, EUF `d50f302`). 533 tests pass, all of
+  SymPy's `test_rel_queries.py` included; 75 of the 78 relational corpus
+  records agree, 0 wrong. EUF `2e24d31` (integral-transform soundness fix,
+  no recursion limit) is not yet on main; verified here from a scratch
+  copy with the same results.
 - **Scope:** `satassume/theory.py`, the theory hooks in
   `satassume/solver.py`, `satassume/relations.py`, the relation routing in
   `satassume/engine.py` and `satassume/sympy_api.py`,
@@ -134,6 +136,15 @@ and `Q.eq(a, b)`, the latter with `(a, b)` in `default_sort_key` order.
 two. A guarded adapter never sees the user's variable `r`: it gets a fresh
 `t` and the engine adds `real(u1) & ... & real(uk) -> (r <-> t)` over
 `terms(atom)`, so it may assume every term is a finite real.
+
+Why the guard makes an adapter that ignores SymPy's assumptions sound:
+take any real situation (actual values of all terms). Give each non-real
+term an arbitrary real value and evaluate every `t` at that real point.
+All `t`s together are then LRA-consistent, and `t = r` holds wherever the
+guard holds, because there the terms have their actual values. So nothing
+LRA derives about the `t`s can refute a real situation. The guard is an
+equivalence under a condition, not "relation implies real": `x < 1` does
+not make `x` real (SymPy does not say so either).
 
 ## 4. Testing a theory with the harness
 
@@ -281,7 +292,7 @@ strict once it is present. `python tools/compare.py queries.jsonl
 |---|---|---|---|
 | no adapters (before) | 15 | 63 | 0 |
 | dummy order + dummy UF | 71 | 7 | 0 |
-| EUF only (main today) | 49 | 29 | 0 |
+| EUF only | 49 | 29 | 0 |
 | LRA `9f5aa00` + EUF | 75 | 3 | 0 |
 
 The 3 left need substitution of equals into non-relational templates
