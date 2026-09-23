@@ -17,7 +17,10 @@ Flattening (:meth:`EUFAdapter.term`)
   applies to it.  The function-like classes are ``Add``, ``Mul``, ``Pow``
   and every ``sympy.core.function.Application`` (undefined functions ``f(x)``,
   ``sin``, ``Abs``, ``Max``, ``Piecewise``, ...).  For each of these the
-  value is a function of the values of the arguments.
+  value is a function of the values of the arguments.  Excluded: integral
+  transforms (``LaplaceTransform`` and friends are ``Function``
+  subclasses but bind a variable) and any class that overrides
+  ``free_symbols`` or ``bound_symbols`` (see ``_structural``).
   ``Add`` and ``Mul`` are opaque, variadic heads applied to SymPy's
   canonical argument tuple.  There is no AC reasoning.  ``x + y`` and
   ``y + x`` are one term only because SymPy already sorts them;
@@ -44,12 +47,48 @@ from sympy.assumptions.ask import Q
 from sympy.core.basic import Basic
 from sympy.core.function import Application
 from sympy.core.relational import Equality, Unequality
+from sympy.integrals.transforms import IntegralTransform
 
 from .euf import EqAtom, EUFTheory
 
 __all__ = ["EUFAdapter"]
 
 _STRUCTURAL = (Add, Mul, Pow, Application)
+
+
+_class_ok: dict[type, bool] = {}
+
+
+def _inherits_from_basic(cls, name) -> bool:
+    for c in cls.__mro__:
+        if name in c.__dict__:
+            return c is Basic
+    return True
+
+
+def _structural(expr) -> bool:
+    """True iff congruence may look inside ``expr``: a function-like class
+    that binds no variable.
+
+    Decided per class, without walking the expression (so deep terms cost
+    nothing and never hit the recursion limit): the class must be Add, Mul,
+    Pow or an ``Application``, must not be an integral transform, and must
+    inherit both ``free_symbols`` and ``bound_symbols`` from ``Basic``.
+    Basic's ``free_symbols`` is the union over the arguments, so such a
+    class binds nothing.  Any class that overrides either attribute (the
+    transforms do) is opaque.
+    """
+    if not expr.args:
+        return False
+    cls = type(expr)
+    ok = _class_ok.get(cls)
+    if ok is None:
+        ok = _class_ok[cls] = (
+            issubclass(cls, _STRUCTURAL)
+            and not issubclass(cls, IntegralTransform)
+            and _inherits_from_basic(cls, "free_symbols")
+            and _inherits_from_basic(cls, "bound_symbols"))
+    return ok
 
 
 class EUFAdapter:
@@ -115,18 +154,29 @@ class EUFAdapter:
 
     def term(self, expr) -> int:
         """The theory term of SymPy expression ``expr`` (interned)."""
-        t = self._terms.get(expr)
+        terms = self._terms
+        t = terms.get(expr)
         if t is not None:
             return t
         th = self.theory
-        if isinstance(expr, Rational):
-            t = th.value(expr)
-        elif isinstance(expr, _STRUCTURAL) and expr.args:
-            t = th.term(expr.func, [self.term(a) for a in expr.args])
-        else:
-            t = th.term(expr)
-        self._terms[expr] = t
-        return t
+        # iterative post-order, so deep expressions do not hit the
+        # recursion limit
+        stack = [(expr, False)]
+        while stack:
+            e, ready = stack.pop()
+            if e in terms:
+                continue
+            if isinstance(e, Rational):
+                terms[e] = th.value(e)
+            elif _structural(e):
+                if ready:
+                    terms[e] = th.term(e.func, [terms[a] for a in e.args])
+                else:
+                    stack.append((e, True))
+                    stack.extend((a, False) for a in e.args if a not in terms)
+            else:
+                terms[e] = th.term(e)
+        return terms[expr]
 
     def term_of(self, expr) -> int | None:
         """The term of ``expr`` if the adapter has interned it, else None."""

@@ -382,3 +382,240 @@ class ForbidTheory:
                 if -last not in true:
                     out.append((-last, sorted(-l for l in f)))
         return out
+
+
+# ----------------------------------------------------------------------
+# Dummy relation adapters (stand-ins for LRA and EUF in engine tests)
+# ----------------------------------------------------------------------
+
+class _TrailTheory:
+    """Shared plumbing: a trail of asserted literals with level marks; a
+    conflict clause is the negation of everything asserted (valid whenever
+    the asserted set is inconsistent, so always sound, just weak)."""
+
+    def __init__(self):
+        self.atoms: dict = {}
+        self.trail: list = []
+        self.lims: list = []
+
+    def register_atom(self, literal, payload):
+        self.atoms[literal] = payload
+
+    def push_level(self):
+        self.lims.append(len(self.trail))
+
+    def pop_level(self):
+        del self.trail[self.lims.pop():]
+
+    def assert_lit(self, literal):
+        if abs(literal) in self.atoms:
+            self.trail.append(literal)
+        return None
+
+    def check(self):
+        if self.consistent([(self.atoms[abs(l)], l > 0) for l in self.trail]):
+            return (True, None)
+        return (False, [-l for l in self.trail])
+
+
+class OrderTheory(_TrailTheory):
+    """Dense order over terms and rational constants: payloads
+    ``(rel, a, b)`` with ``rel`` in ``lt le eq``.  Complete for these
+    atoms (no arithmetic)."""
+
+    @staticmethod
+    def consistent(lits) -> bool:
+        from sympy import Rational
+        edges = []          # (a, b, strict): a <= b, or a < b if strict
+        diseq = []
+        nodes = set()
+        for (rel, a, b), val in lits:
+            nodes.update((a, b))
+            if rel == "lt":
+                edges.append((a, b, True) if val else (b, a, False))
+            elif rel == "le":
+                edges.append((a, b, False) if val else (b, a, True))
+            elif val:
+                edges += [(a, b, False), (b, a, False)]
+            else:
+                diseq.append((a, b))
+        nums = sorted((n for n in nodes if isinstance(n, Rational)), key=float)
+        for i in range(len(nums) - 1):
+            if nums[i] != nums[i + 1]:
+                edges.append((nums[i], nums[i + 1], True))
+        # reach[a][b] = None | False (<=) | True (<)
+        nodes = list(nodes)
+        reach = {a: {} for a in nodes}
+        for a, b, st in edges:
+            reach[a][b] = reach[a].get(b, False) or st
+        for k in nodes:
+            for i in nodes:
+                ik = reach[i].get(k)
+                if ik is None:
+                    continue
+                for j, kj in list(reach[k].items()):
+                    st = ik or kj
+                    if reach[i].get(j) is None or (st and not reach[i][j]):
+                        reach[i][j] = st
+        if any(reach[a].get(a) for a in nodes):
+            return False
+        for a, b in diseq:
+            if a == b or (reach[a].get(b) is not None and reach[b].get(a) is not None):
+                return False
+        return True
+
+
+class UFTheory(_TrailTheory):
+    """Equality with uninterpreted functions: payloads ``(a, b)`` over SymPy
+    terms; applications of undefined functions are congruent; distinct
+    rational constants are distinct."""
+
+    @staticmethod
+    def consistent(lits) -> bool:
+        from sympy import Rational
+        from sympy.core.function import AppliedUndef
+        terms = set()
+
+        def add(t):
+            if t in terms:
+                return
+            terms.add(t)
+            if isinstance(t, AppliedUndef):
+                for a in t.args:
+                    add(a)
+        for (a, b), _ in lits:
+            add(a)
+            add(b)
+        parent = {t: t for t in terms}
+
+        def find(t):
+            while parent[t] != t:
+                t = parent[t]
+            return t
+        for (a, b), val in lits:
+            if val:
+                parent[find(a)] = find(b)
+        apps = [t for t in terms if isinstance(t, AppliedUndef)]
+        changed = True
+        while changed:
+            changed = False
+            for i, s in enumerate(apps):
+                for t in apps[i + 1:]:
+                    if s.func == t.func and len(s.args) == len(t.args) and \
+                            find(s) != find(t) and \
+                            all(find(x) == find(y) for x, y in zip(s.args, t.args)):
+                        parent[find(s)] = find(t)
+                        changed = True
+        nums = [t for t in terms if isinstance(t, Rational)]
+        for i, x in enumerate(nums):
+            for y in nums[i + 1:]:
+                if x != y and find(x) == find(y):
+                    return False
+        return all(find(a) != find(b) for (a, b), val in lits if not val)
+
+
+class _DummyAdapter:
+    theory_class: type = _TrailTheory
+
+    def __init__(self):
+        self.theory = self.theory_class()
+        self.attached = False
+        self.known: set = set()
+
+    def register(self, solver, var, atom) -> bool:
+        payload = self.interpret(atom)
+        if payload is None:
+            return False
+        if not self.attached:
+            solver.attach_theory(self.theory)
+            self.attached = True
+        solver.register_atom(self.theory, var, payload)
+        self.known.update(self.terms(atom) or ())
+        return True
+
+    def shared_terms(self) -> set:
+        return set(self.known)
+
+
+class OrderAdapter(_DummyAdapter):
+    """Guarded stand-in for LRA: ``Q.lt/le/eq`` between symbols and
+    rational numbers."""
+    theory_class = OrderTheory
+
+    @staticmethod
+    def _ok(e):
+        return e.is_Symbol or e.is_Rational
+
+    def interpret(self, atom):
+        a, b = atom.arguments
+        if not (self._ok(a) and self._ok(b)):
+            return None
+        return (str(atom.function.name), a, b)
+
+    def terms(self, atom):
+        return [e for e in atom.arguments if e.is_Symbol]
+
+
+class UFAdapter(_DummyAdapter):
+    """Unguarded stand-in for EUF: ``Q.eq`` between symbols, rational
+    numbers and applications of undefined functions of those."""
+    theory_class = UFTheory
+
+    @staticmethod
+    def _ok(e):
+        from sympy.core.function import AppliedUndef
+        if e.is_Symbol or e.is_Rational:
+            return True
+        return isinstance(e, AppliedUndef) and all(UFAdapter._ok(a) for a in e.args)
+
+    def interpret(self, atom):
+        if atom.function.name != "eq":
+            return None
+        a, b = atom.arguments
+        if not (self._ok(a) and self._ok(b)):
+            return None
+        return (a, b)
+
+    def terms(self, atom):
+        from sympy.core.function import AppliedUndef
+        out = []
+
+        def walk(e):
+            if not e.is_Rational:
+                out.append(e)
+            if isinstance(e, AppliedUndef):
+                for a in e.args:
+                    walk(a)
+        for e in atom.arguments:
+            walk(e)
+        return out
+
+
+def dummy_specs(order=True, uf=True):
+    """Adapter specs for an :class:`~satassume.engine.Engine` using the
+    dummy theories."""
+    from satassume.relations import AdapterSpec
+    specs = []
+    if order:
+        specs.append(AdapterSpec("order", OrderAdapter, True))
+    if uf:
+        specs.append(AdapterSpec("uf", UFAdapter, False))
+    return specs
+
+
+def relation_engine(specs=None):
+    """A fresh engine (private caches) with the given relation adapter
+    specs; default: the real ones (``satassume.relations.default_specs``)."""
+    from satassume import Engine
+    from satassume.engine import DictCache
+    return Engine(cache=DictCache(), relations=specs)
+
+
+def ask_with(engine, proposition, assumptions=True):
+    """``satassume.sympy_api.ask`` on ``engine``; ``"inconsistent"`` if it
+    raises ValueError (inconsistent assumptions)."""
+    from satassume.sympy_api import ask
+    try:
+        return ask(proposition, assumptions, engine=engine)
+    except ValueError:
+        return "inconsistent"

@@ -16,8 +16,12 @@ counterpart of SymPy's `Predicate.register` (see
 `satassume/extensions.py`); a registered vocabulary predicate on a new
 class makes objects of that class ordinary nodes.
 
-Out of scope for now: relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`,
-`Q.is_true(x < 0)`), matrix predicates and matrix arguments, unregistered
+Relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`, `Q.is_true(x < 0)`) are
+being added through theory solvers on the CDCL solver (DPLL(T), LRA and EUF;
+see `satassume/relations.py` and
+`agent-reports/2026-09-23-theory-interface.md`); without an adapter that
+interprets a relation, `ask` returns None as before.
+Out of scope for now: matrix predicates and matrix arguments, unregistered
 custom predicates, and replacing the old `expr.is_*` system.
 
 **Routing rule.** Any out-of-scope query makes `ask` return `None` without
