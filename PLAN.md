@@ -1,16 +1,62 @@
-# Implementation plan: one SAT-based assumptions engine for SymPy
+# Implementation plan
 
-Goal: replace both SymPy assumption systems, the old per-object `expr.is_*`
-properties and the new `ask(Q.*)` module, with a single engine that
+## Current scope
 
-* answers context-free queries at least as fast as the old system,
-* answers contextual queries (`ask(prop, assumptions)`) with a complete
-  propositional procedure instead of hand-written handler recursion,
-* keeps one rule base instead of two, and
-* passes SymPy's full test suite, not only `sympy/assumptions/tests`.
+The repository does one thing for now: answer `ask(proposition, assumptions)`
+for **unary scalar predicates on scalar expressions**, purely with the SAT
+engine. Propositions and assumptions are Boolean combinations of
+`Q.<name>(expr)` with `name` in the vocabulary of `satassume/rules.py` and
+`expr` a scalar `Expr`.
 
-This repository is the standalone prototype. The plan below describes both
-what the prototype does and how it would land in SymPy.
+Out of scope for now: relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`
+propositions, `Q.is_true` over a relational), matrix predicates and matrix
+arguments, custom predicates, and replacing the old `expr.is_*` system.
+Out-of-scope input returns `None` from `satassume.sympy_api.ask` by rule;
+the caller (SymPy's `ask`) routes it to its existing path. There is no
+fallback to SymPy's `_eval_is_*` handlers or to `satask` inside the engine,
+and none will be added: out of scope means "return None", nothing else.
+
+### Definition of done
+
+1. Every in-scope query in the recorded corpus (`queries.jsonl`) is answered
+   identically to SymPy or better (a definite answer where SymPy returns
+   None), with zero contradictions (`tools/compare.py --in-scope-only`
+   exits 0 and reports `none=0`);
+2. faster than `sympy.ask` on each in-scope query
+   (`tools/compare.py --in-scope-only --time-sympy` reports
+   "satassume slower on 0 records"; `tools/bench.py` for the microbenchmarks);
+3. `Predicate.register` kept as a way to add clause-generating functions, so
+   SymPy's extensibility tests (`test_key_extensibility` and friends) keep
+   passing.
+
+### Where the slice stands (2026-09-23, `tools/compare.py`)
+
+| In-scope records | Agree | Extra | None | Wrong | Raises |
+|---|---|---|---|---|---|
+| 2588 | 2283 (88.2%) | 16 | 284 | 0 | 5 |
+
+The five "raises" are the documented semantic choice: assumptions
+contradicting a symbol's declared facts are inconsistent here, trusted by
+SymPy's handler path. Out of scope by category: 78 relations, 189 matrix
+predicates or non-scalar arguments, 0 custom predicates, 8 non-Boolean
+propositions.
+
+Work list for the slice, in order:
+
+1. the 284 in-scope misses, by head of the queried expression: Pow 75,
+   Add 54, Mul 34, exp 22, log 19, acos 18, cot 12, sin/cos 12, re/im 8,
+   the `hermitian`/`antihermitian` units of numbers and constants. Every
+   template lands with a soundness test (`tests/test_templates.py`) and the
+   corpus replay must stay at zero contradictions;
+2. per-query speed: satassume takes 2.35 s on the in-scope records against
+   8.26 s for `sympy.ask`, but is slower on 349 of them, almost all first
+   queries under a new assumption set (session instantiation, 286 over
+   1 ms). Candidates: reuse the compiled rule base across sessions,
+   instantiate templates lazily by demanded predicate (see "Laziness"
+   below), cheaper selector handling;
+3. decide the semantics of assumptions that contradict declared facts
+   (raise, as now, or trust the assumption like SymPy) with the maintainer;
+4. the `Predicate.register` shim for clause-generating functions.
 
 ## 1. What the measurements say (SymPy master, September 2026)
 
@@ -38,7 +84,8 @@ Per-query costs:
 Conclusions that drive the design:
 
 1. The hit path is everything. 96 % of queries never compute. Any replacement
-   must keep a per-object cache with a dictionary-lookup hit path.
+   of the old system must keep a per-object cache with a dictionary-lookup
+   hit path.
 2. Propositional deduction is not the bottleneck of the old system; the
    expression work done inside `_eval_is_*` handlers is. Templates must not
    be more eager than the handlers they replace.
@@ -60,74 +107,41 @@ satassume/
   solver.py      incremental CDCL: add_clause any time, root propagation, implied(), solve(assumptions), entails()
   engine.py      Engine: ObjectCache (the node's own _assumptions dict), Session (solver + atom table),
                  demand-driven discovery, level-0 write-back
-  sympy_api.py   is_(expr, pred), ask(prop, assumptions), install()/uninstall()
+  sympy_api.py   ask(prop, assumptions), out_of_scope(), to_formula(), Unsupported
   templates/     structural clause generators per SymPy class (Symbol, numbers, Add, Mul, Pow, functions)
 tools/
   record_queries.py   pytest plugin: record every query SymPy's tests make (old and new system)
-  compare.py          replay the corpus against the engine: agreement / misses / disagreements / time
-  bench.py            microbenchmarks old vs new vs satassume
+  compare.py          replay the corpus, classified in scope / out of scope: agreement / misses / contradictions / time
+  bench.py            contextual ask microbenchmarks, SymPy versus satassume
 ```
 
-Query path for `is_(expr, pred)`:
+Query path for `ask(prop, assumptions)`:
 
-1. cache hit in `expr._assumptions` -> return (0.1 us, unchanged from today);
-2. visit `expr` in the current session: allocate 33 variables, instantiate
-   the rule base (105 clauses), assert cached facts as units, assert the
-   class templates, and breadth-first visit the child nodes they mention
-   (bounded by `discovery_budget`);
-3. root-level propagation. Every literal assigned at level 0 is a
-   context-free fact and is written back to the cache of its node, so one
-   query about `x + y` also caches facts about `x` and `y`;
-4. if the query literal is still unassigned: CDCL `entails()` (two solves
-   under assumptions `-q` and `q`); learned unit clauses become root facts.
+1. `to_formula` translates both SymPy Booleans; anything out of scope
+   raises `Unsupported` and `ask` returns None;
+2. the assumptions formula is compiled under a fresh selector variable `s`
+   in a session keyed by the assumptions, and `s` is passed as a solver
+   assumption, so nothing derived under it is ever at level 0 and nothing
+   leaks into the cache. The session is reused while the assumptions stay
+   the same (many questions under one `assuming(...)` block); learned
+   clauses stay valid across queries;
+3. visiting a node allocates 33 variables, instantiates the rule base (105
+   clauses), asserts its cached context-free facts as units, asserts the
+   class templates whose conclusions the query demands, and breadth-first
+   visits the child nodes they mention (bounded by `discovery_budget`);
+4. root-level propagation, then the assumptions' implied literals; every
+   literal assigned at level 0 is a context-free fact and is written back to
+   the cache of its node;
+5. if the query literal is still undecided: escalate (compile the parked
+   templates), then CDCL `entails()` (two solves under assumptions).
 
-The engine never consults SymPy's `_eval_is_*` handlers. Every answer comes
-from the rule base, the templates and search, so coverage is exactly what
-the templates encode.
+A proposition with no assumptions is a context-free query and goes through
+`Engine.is_`: cache hit in `expr._assumptions`, else a session of its own
+over the cone of the expression. Sessions are generational: after
+`session_limit` nodes the solver is discarded; level-0 facts already live
+in the per-object caches, so nothing is lost and memory stays bounded.
 
-Query path for `ask(prop, assumptions)`: the same session; the assumptions
-formula is compiled under a fresh selector variable `s` and `s` is passed
-as a solver assumption, so nothing derived under it is ever at level 0 and
-nothing leaks into the cache. Learned clauses stay valid across queries.
-
-Sessions are generational: after `session_limit` nodes the solver is
-discarded and a fresh one started. All level-0 facts already live in the
-per-object caches, so nothing is lost and memory stays bounded.
-
-## 3. Landing it in SymPy, stage by stage
-
-### Stage 0: measure (done, tools in this repo)
-
-`tools/record_queries.py` captures every query the test suite makes, for
-both systems. `tools/compare.py` replays them. Agreement and "answers where
-SymPy did not" are fine; "disagree" must stay at zero; "None where SymPy
-answered" is the work list.
-
-### Stage 1: one rule base, one propositional core
-
-* Replace `sympy/core/assumptions.py::_assume_rules` and
-  `sympy/assumptions/facts.py::get_number_facts` with `rules.py` (the test
-  `test_rule_base_matches_sympy_old_rules` pins the old strings verbatim).
-* `install()` replaces `sympy.core.assumptions._ask`. Every `is_*` cache
-  miss now goes through the engine. Coverage is whatever the templates
-  encode, so the corpus replay must show zero regressions on the old-system
-  queries before this lands; the full SymPy suite is the acceptance test.
-* Route `sympy.assumptions.ask` through `sympy_api.ask` for unary scalar
-  predicates, keeping the existing satask/LRA path for relations and matrix
-  predicates.
-* Exit criterion: full SymPy suite green; `tools/bench.py` shows the compute
-  path within 2x of the old `_ask` and the hit path unchanged.
-
-Estimated effort: two to four weeks, dominated by suite fallout, not code.
-
-### Stage 2: templates replace handlers, class by class
-
-For each class with `_eval_is_*` methods (435 methods in 46 files), write the
-equivalent template, then delete the handler. Order by call frequency in
-the recorded corpus: numbers and symbols, Add, Mul, Pow, then exp/log/Abs,
-trigonometric and hyperbolic functions, then the long tail.
-
-Rules of engagement:
+Rules of engagement for templates:
 
 * a template is only added with a soundness test (see
   `tests/test_templates.py`: instantiate with concrete values, evaluate the
@@ -137,18 +151,59 @@ Rules of engagement:
 * anything that needs numerical evaluation (`Add._eval_is_extended_positive`
   with `evalf`, `_monotonic_sign`) becomes a clause-generating function that
   does the arithmetic in Python and emits unit facts, kept separate from the
-  purely structural templates;
-* the fuzzer approach from the `reasoning` project (random expressions,
+  purely structural templates.
+
+## 3. Later stages
+
+Everything below is deferred until the current scope meets its definition of
+done. It is kept here because the long-term goal, one engine for both SymPy
+assumption systems, drives several design choices already made (the
+per-object cache, level-0 write-back, the single rule base pinned to the old
+strings).
+
+### Landing the slice in SymPy
+
+* Route `sympy.assumptions.ask` through `sympy_api.ask` for in-scope
+  queries, keeping the existing satask/LRA path for everything
+  `out_of_scope` reports.
+* `Predicate.register` as a shim that registers clause-generating functions.
+* Exit criterion: `sympy/assumptions/tests` green with the engine routed in.
+
+### Replacing the old `expr.is_*` system (long-term goal)
+
+* Replace `sympy/core/assumptions.py::_assume_rules` and
+  `sympy/assumptions/facts.py::get_number_facts` with `rules.py` (the test
+  `test_rule_base_matches_sympy_old_rules` pins the old strings verbatim).
+* An install hook replaces `sympy.core.assumptions._ask` so every `is_*`
+  cache miss goes through `Engine.is_`. Coverage is whatever the templates
+  encode, so the corpus replay must show zero regressions on the old-system
+  records before this lands; the full SymPy suite is the acceptance test.
+* For each class with `_eval_is_*` methods (435 methods in 46 files), write
+  the equivalent template, then delete the handler. Order by call frequency
+  in the recorded corpus: numbers and symbols, Add, Mul, Pow, then
+  exp/log/Abs, trigonometric and hyperbolic functions, then the long tail.
+  The fuzzer approach from the `reasoning` project (random expressions,
   compare old and new answers) runs in CI against the corpus.
+* Exit criterion: full SymPy suite green; the compute path within 2x of
+  the old `_ask` and the hit path unchanged.
 
-Estimated effort: two to three months for parity, with the long tail
-in the full test suite rather than the assumptions tests.
+Measured so far on the old-system records of the corpus (6343 replayable,
+informational): 5998 agree (94.6%), 24 extra answers, 321 None where SymPy
+answered, 0 wrong. Context-free microbenchmarks in pure Python: the
+compute path is 3 to 15x slower than the old handlers (`(p*q).is_positive`
+102 us old, 962 us satassume; `(u**2 + 1).is_zero` 499 us versus 1377 us;
+`(n + m).is_even`, unknown, 70 us versus 1309 us); the cached hit path is
+identical. Instantiating a node (33 variables, 105 rule clauses, 30 to 50
+template clauses) costs about 300 us, which is the whole gap; closing it
+needs the laziness below and a native propagation core. Estimated effort:
+two to three months for parity, with the long tail in the full test suite
+rather than the assumptions tests.
 
-### Stage 3: laziness and cost control
+### Laziness and cost control (former Stage 3)
 
-The prototype instantiates all 105 rule clauses and all templates for every
-visited node. The old system is lazy per fact. To match it on large
-expressions:
+The prototype instantiates all 105 rule clauses and all demanded templates
+for every visited node. The old system is lazy per fact. To match it on
+large expressions:
 
 * instantiate template formulas only when one of their conclusion atoms is
   watched (demanded by the query or by a clause under propagation);
@@ -157,7 +212,10 @@ expressions:
 * cap discovery by relevance (a child is visited only if one of its atoms
   appears in a clause that is not yet satisfied).
 
-### Stage 4: contextual reasoning beyond propositional
+Part of this (session instantiation cost) is already on the current slice's
+work list because of the per-query speed criterion.
+
+### Contextual reasoning beyond propositional (former Stage 4)
 
 * Relations (`Q.lt`, `Q.eq`) via the existing LRA theory as a theory
   callback on the same solver (DPLL(T)), replacing `lra_satask`;
@@ -169,17 +227,10 @@ expressions:
 
 | Risk | Mitigation |
 |---|---|
-| An unsound template corrupts every answer | Soundness tests per template; corpus replay must show zero disagreements; templates land one at a time |
-| Eager instantiation is slower than lazy handlers on big expressions | Discovery budget now; Stage 3 laziness |
+| An unsound template corrupts every answer | Soundness tests per template; corpus replay must show zero contradictions; templates land one at a time |
+| Eager instantiation is slower than lazy handlers on big expressions | Discovery budget now; laziness later |
 | Re-entrancy: expression construction queries assumptions | Engine tolerates nested `is_` calls between solves; a template evaluating its own node returns None instead of recursing |
 | Memory growth of a global solver | Generational sessions; caches live on the objects as today |
 | Behaviour change across the full suite | Corpus replay gates every change at zero regressions; improvements that change expected outputs are reviewed one by one |
 | Shared symbol knowledge bases | Only context-free, signature-determined facts are written back, which is what SymPy already stores there |
-
-## 5. Out of scope for the prototype
-
-Relations, matrix predicates, `refine`, `Q.is_true` over relationals,
-polar, and the multipledispatch handler registration API. The test
-`test_key_extensibility` and friends pass only if `Predicate.register`
-survives as a way to register clause-generating functions; that is a small
-shim in Stage 1.
+| Silent fallback hiding engine gaps | None exists; out-of-scope input returns None and in-scope misses are counted by `tools/compare.py` |
