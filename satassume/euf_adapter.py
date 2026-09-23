@@ -19,9 +19,8 @@ Flattening (:meth:`EUFAdapter.term`)
   ``sin``, ``Abs``, ``Max``, ``Piecewise``, ...).  For each of these the
   value is a function of the values of the arguments.  Excluded: integral
   transforms (``LaplaceTransform`` and friends are ``Function``
-  subclasses but bind a variable), anything with ``bound_symbols``, and
-  anything whose free symbols differ from the union over its arguments
-  (see ``_structural``).
+  subclasses but bind a variable) and any class that overrides
+  ``free_symbols`` or ``bound_symbols`` (see ``_structural``).
   ``Add`` and ``Mul`` are opaque, variadic heads applied to SymPy's
   canonical argument tuple.  There is no AC reasoning.  ``x + y`` and
   ``y + x`` are one term only because SymPy already sorts them;
@@ -57,20 +56,39 @@ __all__ = ["EUFAdapter"]
 _STRUCTURAL = (Add, Mul, Pow, Application)
 
 
+_class_ok: dict[type, bool] = {}
+
+
+def _inherits_from_basic(cls, name) -> bool:
+    for c in cls.__mro__:
+        if name in c.__dict__:
+            return c is Basic
+    return True
+
+
 def _structural(expr) -> bool:
     """True iff congruence may look inside ``expr``: a function-like class
-    that binds no variable.  Integral transforms subclass ``Function`` but
-    bind their second argument, so they are excluded by name.  As a
-    backstop, any expression with bound symbols, or whose free symbols
-    differ from the union over its arguments, is opaque."""
-    if not isinstance(expr, _STRUCTURAL) or not expr.args:
+    that binds no variable.
+
+    Decided per class, without walking the expression (so deep terms cost
+    nothing and never hit the recursion limit): the class must be Add, Mul,
+    Pow or an ``Application``, must not be an integral transform, and must
+    inherit both ``free_symbols`` and ``bound_symbols`` from ``Basic``.
+    Basic's ``free_symbols`` is the union over the arguments, so such a
+    class binds nothing.  Any class that overrides either attribute (the
+    transforms do) is opaque.
+    """
+    if not expr.args:
         return False
-    if isinstance(expr, IntegralTransform) or getattr(expr, "bound_symbols", ()):
-        return False
-    free = set()
-    for a in expr.args:
-        free |= a.free_symbols
-    return free == expr.free_symbols
+    cls = type(expr)
+    ok = _class_ok.get(cls)
+    if ok is None:
+        ok = _class_ok[cls] = (
+            issubclass(cls, _STRUCTURAL)
+            and not issubclass(cls, IntegralTransform)
+            and _inherits_from_basic(cls, "free_symbols")
+            and _inherits_from_basic(cls, "bound_symbols"))
+    return ok
 
 
 class EUFAdapter:
