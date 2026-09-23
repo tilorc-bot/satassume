@@ -157,8 +157,13 @@ class Session:
             for p, v in facts.items():
                 if v is not None and p in PRED_INDEX:
                     emit([b + PRED_INDEX[p] if v else -(b + PRED_INDEX[p])])
-        # 3. structural templates
-        items = [(f, atoms_of(f)) for f in self.engine.templates(node)]
+        # 3. structural templates, and vocabulary predicates registered for
+        #    the node's class (satassume.extensions)
+        formulas = self.engine.templates(node)
+        ext = self.engine.extensions
+        if ext is not None and ext._vocab:
+            formulas = list(formulas) + ext.node_facts(node)
+        items = [(f, atoms_of(f)) for f in formulas]
         if items:
             if demanded is None:
                 self._compile(node, items)
@@ -183,13 +188,25 @@ class Session:
         demand = self.demand
         for f, atoms in items:
             for atom in atoms:
-                if atom.expr != node:
+                if atom.expr != node and atom.pred in PRED_INDEX:
                     d = demand.get(atom.expr)
                     if d is None:
                         d = demand[atom.expr] = set()
                     d.add(atom.pred)
             compile_formula(f, table, emit)
-        direct = getattr(node, 'args', None)
+        self._flush(node)
+
+    def _flush(self, node: Node = None) -> None:
+        """Schedule the nodes newly mentioned by compiled formulas, and run
+        the clause generators of newly seen custom atoms.  ``node`` is the
+        node whose templates were compiled (its direct arguments go to the
+        frontier, other nodes are deferred); None schedules everything."""
+        table = self.table
+        while table.new_custom:
+            atoms, table.new_custom = table.new_custom, []
+            for atom in atoms:
+                self._custom(atom)
+        direct = getattr(node, 'args', None) if node is not None else None
         for child in table.new_nodes:
             if child in self.base:
                 continue
@@ -198,6 +215,20 @@ class Session:
             else:
                 self.frontier.append(child)
         table.new_nodes = []
+
+    def _custom(self, atom: P) -> None:
+        """A custom-predicate atom was allocated: assert its cached value
+        and the formulas its registered functions generate."""
+        engine = self.engine
+        v = engine.custom_cache.get(atom.expr, atom.pred)
+        var = self.table.custom[atom]
+        if v is not None:
+            self._emit([var if v else -var])
+        ext = engine.extensions
+        if ext is None:
+            return
+        for f in ext.facts_for(atom):
+            compile_formula(f, self.table, self._emit)
 
     def _compile_pending(self, node: Node, demanded) -> None:
         pend = self.pending.get(node)
@@ -225,10 +256,13 @@ class Session:
     def ensure(self, node: Node, demanded=None, budget: Optional[int] = None) -> None:
         """Demand-driven discovery: visit ``node`` and, breadth-first, the
         nodes its templates mention, up to ``budget`` new nodes."""
-        budget = self.engine.discovery_budget if budget is None else budget
         if demanded is not None:
             self.demand.setdefault(node, set()).update(demanded)
         self.frontier = deque([node])
+        self._discover(demanded, budget)
+
+    def _discover(self, demanded=None, budget: Optional[int] = None) -> None:
+        budget = self.engine.discovery_budget if budget is None else budget
         added = 0
         while self.frontier and added < budget:
             n = self.frontier.popleft()
@@ -270,10 +304,14 @@ class Session:
         trail = self.solver.root_trail()
         atom_of = self.table.atom_of
         cache = self.engine.cache
+        custom = self.engine.custom_cache
         for lit in trail[self.read_pos:]:
             atom = atom_of[abs(lit)]
             if atom is not None:
-                cache.put(atom.expr, atom.pred, lit > 0)
+                if atom.pred in PRED_INDEX:
+                    cache.put(atom.expr, atom.pred, lit > 0)
+                else:
+                    custom.put(atom.expr, atom.pred, lit > 0)
         self.read_pos = len(trail)
 
     # -- queries -------------------------------------------------------------
@@ -311,19 +349,29 @@ class Session:
     def assume_formula(self, f) -> List[int]:
         """Turn a formula into solver assumption literals: its clauses are
         guarded by a fresh selector variable ``s`` and ``s`` is assumed."""
-        for atom in atoms_of(f):
-            self.ensure(atom.expr, {atom.pred})
+        self._ensure_atoms(f)
         s = self.table.aux()
 
         def emit(clause):
             self._emit(clause + [-s])
         compile_formula(f, self.table, emit)
+        self._flush()
+        self._discover()
         return [s]
 
     def literal_of(self, f) -> int:
+        self._ensure_atoms(f)
+        lit = formula_literal(f, self.table, self._emit)
+        self._flush()
+        self._discover()
+        return lit
+
+    def _ensure_atoms(self, f) -> None:
+        """Visit the nodes of the vocabulary atoms of ``f``.  Custom atoms
+        are allocated when ``f`` is compiled (see :meth:`_custom`)."""
         for atom in atoms_of(f):
-            self.ensure(atom.expr, {atom.pred})
-        return formula_literal(f, self.table, self._emit)
+            if atom.pred in PRED_INDEX:
+                self.ensure(atom.expr, {atom.pred})
 
 
 # --------------------------------------------------------------------------
@@ -347,19 +395,28 @@ class Engine:
         many nodes.
     keep_sessions : int
         How many contextual sessions (distinct assumption sets) to keep.
+    extensions : satassume.extensions.Extensions or None
+        Registered clause-generating functions for custom predicates and
+        for vocabulary predicates on new classes.  Defaults to the global
+        registry ``satassume.extensions.extensions``.
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
-                 session_limit: int = 2000, keep_sessions: int = 4):
+                 session_limit: int = 2000, keep_sessions: int = 4,
+                 extensions=None):
         if templates is None:
             try:
                 from .templates import registry
                 templates = registry.facts_for
             except Exception:  # pragma: no cover - SymPy not installed
                 templates = lambda node: ()
+        if extensions is None:
+            from .extensions import extensions
         self.templates = templates
+        self.extensions = extensions
         self.cache = cache if cache is not None else ObjectCache()
+        self.custom_cache = DictCache()
         self.discovery_budget = discovery_budget
         self.session_limit = session_limit
         self.keep_sessions = keep_sessions
@@ -386,7 +443,10 @@ class Engine:
 
     # -- context-free ---------------------------------------------------------
     def is_(self, node: Node, pred: str) -> Optional[bool]:
-        """Context-free truth value of ``pred(node)``; cached on the node."""
+        """Context-free truth value of ``pred(node)``; cached on the node
+        (custom predicates: in the engine's own cache)."""
+        if pred not in PRED_INDEX:
+            return self._is_custom(node, pred)
         facts = self.cache.facts(node)
         if facts is not None and pred in facts:
             self.stats["cache_hits"] += 1
@@ -409,6 +469,25 @@ class Engine:
         self.cache.put(node, pred, r)
         return r
 
+    def _is_custom(self, node: Node, pred: str) -> Optional[bool]:
+        facts = self.custom_cache.facts(node)
+        if facts is not None and pred in facts:
+            self.stats["cache_hits"] += 1
+            return facts[pred]
+        self.stats["queries"] += 1
+        s = self._fresh_session()
+        lit = s.literal_of(P(pred, node))
+        r = s.query_literal(lit, search=False)
+        if r is None and s.incomplete:
+            self.stats["escalations"] += 1
+            s.escalate()
+            r = s.query_literal(lit, search=False)
+        if r is None:
+            self.stats["searches"] += 1
+            r = s.query_literal(lit, search=True)
+        self.custom_cache.put(node, pred, r)
+        return r
+
     # -- contextual -----------------------------------------------------------
     def ask(self, proposition, assumptions=None) -> Optional[bool]:
         """Truth value of ``proposition`` (a formula over ``P`` atoms) given
@@ -421,7 +500,7 @@ class Engine:
             s, lits = self._context_session(assumptions)
         else:
             s = self._fresh_session()
-        if isinstance(proposition, P):
+        if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
             s.ensure(proposition.expr, {proposition.pred})
             q = s.base[proposition.expr] + PRED_INDEX[proposition.pred]
         else:

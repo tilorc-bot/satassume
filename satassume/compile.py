@@ -20,6 +20,10 @@ class VarTable:
     ``PREDICATES`` order, so ``var(P(pred, node)) == base_of[node] +
     PRED_INDEX[pred]``.  Newly seen nodes are appended to ``new_nodes`` so a
     caller can discover children without a separate walk of the formula.
+
+    An atom whose predicate is not in the vocabulary (a custom predicate,
+    see :mod:`satassume.extensions`) gets a single variable of its own,
+    outside any node block; such atoms are appended to ``new_custom``.
     """
 
     def __init__(self):
@@ -29,6 +33,8 @@ class VarTable:
         self.base_of: Dict[Any, int] = {}
         self.atom_of: List[P | None] = [None]
         self.new_nodes: List[Any] = []
+        self.custom: Dict[P, int] = {}
+        self.new_custom: List[P] = []
         self.naux = 0
 
     def node_base(self, node) -> int:
@@ -43,7 +49,12 @@ class VarTable:
     def var(self, atom: P) -> int:
         idx = self._pidx.get(atom.pred)
         if idx is None:
-            raise KeyError(f"unknown predicate {atom.pred!r}")
+            v = self.custom.get(atom)
+            if v is None:
+                v = self.custom[atom] = len(self.atom_of)
+                self.atom_of.append(atom)
+                self.new_custom.append(atom)
+            return v
         return self.node_base(atom.expr) + idx
 
     def aux(self) -> int:

@@ -28,7 +28,10 @@ scope so the caller can decide before asking.  The categories are
   ``sympy.assumptions.predicates.matrices``) or a vocabulary predicate
   applied to a non-scalar argument (a ``MatrixSymbol``, ...);
 * ``"custom"``: any other predicate outside the vocabulary (user-defined
-  predicates, ``Q.is_true`` over a non-relational);
+  predicates, ``Q.is_true`` over a non-relational) for which no
+  clause-generating function is registered (see :func:`register` and
+  :mod:`satassume.extensions`); a registered predicate is in scope, with
+  the arity it was registered for;
 * ``"other"``: the proposition or the assumptions are not a Boolean
   combination of applied predicates at all (a bare ``Q.positive``, an
   ``Expr``, an ``ITE``, ...).
@@ -51,6 +54,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .engine import Engine, InconsistentAssumptions, ObjectCache  # noqa: F401
+from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .rules import PRED_INDEX
 
@@ -122,10 +126,12 @@ def _applied_category(expr) -> Optional[str]:
     if name in matrix_predicates():
         return "matrix"
     if name not in PRED_INDEX:
-        return "custom"
+        return None if extensions.is_registered(name, len(args)) else "custom"
     if len(args) != 1:
         return "other"
-    return None if _is_scalar(args[0]) else "matrix"
+    if _is_scalar(args[0]) or extensions.is_scalar_like(args[0]):
+        return None
+    return "matrix"
 
 
 def _categories(expr, acc: set) -> None:
@@ -182,7 +188,8 @@ def to_formula(expr):
         c = _applied_category(expr)
         if c is not None:
             raise Unsupported(f"{expr} is out of scope ({c})", c)
-        return P(str(expr.function.name), expr.arguments[0])
+        args = expr.arguments
+        return P(str(expr.function.name), args[0] if len(args) == 1 else Args(args))
     if isinstance(expr, SAnd):
         return And(*[to_formula(a) for a in expr.args])
     if isinstance(expr, SOr):
@@ -209,10 +216,14 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
 
     * In-scope input (see the module docstring) is answered from the rule
       base, the templates and search; None means the engine cannot decide.
-    * Out-of-scope input (relations, matrix or custom predicates, non-scalar
-      arguments, non-Boolean propositions) returns None without touching the
-      engine.  The caller is expected to route it to SymPy's existing path;
-      :func:`out_of_scope` tells which category applies.
+    * Out-of-scope input (relations, matrix predicates, unregistered custom
+      predicates, non-scalar arguments, non-Boolean propositions) returns
+      None without touching the engine.  The caller is expected to route it
+      to SymPy's existing path; :func:`out_of_scope` tells which category
+      applies.
+    * Custom predicates with a registered clause-generating function
+      (:func:`register`, the counterpart of ``Predicate.register``) are in
+      scope: their atoms take part in propagation and search.
     * Inconsistent assumptions raise ``ValueError`` like ``sympy.ask``.
       Assumptions contradicting a fact declared on a symbol
       (``ask(Q.commutative(x), ~Q.commutative(x))``) count as inconsistent
