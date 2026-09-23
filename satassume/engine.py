@@ -120,6 +120,7 @@ class Session:
         self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
         self.n_assumption_nodes = 0           # nodes visited by assume_formula()
+        self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -452,10 +453,14 @@ class Session:
         return [s]
 
     def literal_of(self, f) -> int:
+        lit = self.literals.get(f)
+        if lit is not None:
+            return lit
         self._ensure_atoms(f)
         lit = formula_literal(f, self.table, self._emit)
         self._flush()
         self._discover()
+        self.literals[f] = lit
         return lit
 
     def _ensure_atoms(self, f) -> None:
@@ -618,10 +623,18 @@ class Engine:
             self.stats["searches"] += 1
             if contextual and polluted and self.cone_search:
                 self.stats["cone_searches"] += 1
+                s0, lits0, q0 = s, lits, q
                 s = self._fresh_session()
                 lits = s.assume_formula(assumptions)
                 q = self._literal(s, proposition)
                 s.escalate()
+                r = s.query_literal(q, lits, search=True)
+                if r is not None:
+                    # "under these assumptions, q": entailed by the clause set
+                    # (the selector guards the assumptions), so the reused
+                    # session may keep it and answer repeats by propagation.
+                    s0._emit([-lits0[0], q0 if r else -q0])
+                return r
             r = s.query_literal(q, lits, search=True)
         return r
 
