@@ -2,13 +2,16 @@
 
 One ``Engine`` answers two kinds of question with one propositional core:
 
-* **context-free** queries, ``engine.is_(expr, 'positive')``, which replace
-  the old ``expr.is_positive``.  Answers are cached per expression node, so
-  repeated queries cost a dictionary lookup, exactly like the old system.
-* **contextual** queries, ``engine.ask(formula, assumptions)``, which replace
-  ``ask(Q.positive(expr), assumptions)``.  Assumptions enter the solver as
-  solver assumptions (MiniSat style) under a selector literal, never as
-  permanent clauses, so nothing derived under them leaks into the cache.
+* **contextual** queries, ``engine.ask(formula, assumptions)``, behind
+  ``ask(Q.positive(expr), assumptions)`` (see :mod:`satassume.sympy_api`
+  for the scope).  Assumptions enter the solver as solver assumptions
+  (MiniSat style) under a selector literal, never as permanent clauses, so
+  nothing derived under them leaks into the cache.
+* **context-free** queries, ``engine.is_(expr, 'positive')``, used for
+  ``ask`` without assumptions and by the corpus tools.  Answers are cached
+  per expression node, so repeated queries cost a dictionary lookup, the
+  way the old ``expr.is_positive`` works; replacing that old system with
+  this path is the long-term goal, not the current scope.
 
 Both go through a ``Session``: an incremental solver plus a table mapping
 ``(predicate, node)`` atoms to variables.  Visiting a node instantiates the
