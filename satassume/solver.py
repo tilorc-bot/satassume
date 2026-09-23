@@ -121,20 +121,20 @@ class Solver:
         n = self._nvars
         if v <= n:
             return
-        val = self._val
-        watches = self._watches
-        for u in range(n + 1, v + 1):
-            val.append(None)
-            val.append(None)
-            watches.append([])
-            watches.append([])
-            self._level.append(0)
-            self._reason.append(None)
-            self._act.append(0.0)
-            self._polarity.append(1)
-            self._hpos.append(-1)
-            self._seen.append(0)
-            self._heap_insert(u)
+        k = v - n
+        self._val.extend([None] * (2 * k))
+        self._watches.extend([] for _ in range(2 * k))
+        self._level.extend([0] * k)
+        self._reason.extend([None] * k)
+        self._act.extend([0.0] * k)
+        self._polarity.extend([1] * k)
+        self._seen.extend([0] * k)
+        # New variables have activity 0, the minimum: appending them keeps
+        # the max-heap property.
+        heap = self._heap
+        start = len(heap)
+        self._hpos.extend(range(start, start + k))
+        heap.extend(range(n + 1, v + 1))
         self._nvars = v
 
     @staticmethod
@@ -292,6 +292,70 @@ class Solver:
         self._clauses.append(c)
         self._watches[out[0]].append(c)
         self._watches[out[1]].append(c)
+        return True
+
+    def add_clauses(self, clauses) -> bool:
+        """Bulk-add clauses of external literals.  Returns False iff the
+        formula is now UNSAT at root.
+
+        Clauses whose literals are all unassigned at root are inserted
+        directly (they must be duplicate- and tautology-free, which is true
+        for template patterns); any other clause goes through
+        :meth:`add_clause`.  Unit clauses are assigned but not propagated:
+        the caller propagates once at the end (:meth:`propagate`).
+        """
+        if not self._ok:
+            return False
+        if self._trail_lim:
+            self._backtrack(0)
+        val = self._val
+        watches = self._watches
+        cls = self._clauses
+        level = self._level
+        reason = self._reason
+        trail = self._trail
+        nv = self._nvars
+        for lits in clauses:
+            if len(lits) == 1:
+                x = lits[0]
+                v = x if x > 0 else -x
+                if v > nv:
+                    self._grow(v)
+                    nv = self._nvars
+                l = 2 * v + 1 if x < 0 else 2 * v
+                vl = val[l]
+                if vl is True:
+                    continue
+                if vl is False:
+                    self._ok = False
+                    return False
+                val[l] = True
+                val[l ^ 1] = False
+                level[v] = 0
+                reason[v] = None
+                trail.append(l)
+                continue
+            out = []
+            for x in lits:
+                v = x if x > 0 else -x
+                if v > nv:
+                    self._grow(v)
+                    nv = self._nvars
+                l = 2 * v + 1 if x < 0 else 2 * v
+                if val[l] is not None:
+                    out = None
+                    break
+                out.append(l)
+            if out is None:
+                if not self.add_clause(lits):
+                    return False
+                nv = self._nvars
+                continue
+            c = Clause(out)
+            cls.append(c)
+            watches[out[0]].append(c)
+            watches[out[1]].append(c)
+        self._witness = None
         return True
 
     def add_pattern(self, pattern, base: int, nvars: int) -> bool:

@@ -98,9 +98,9 @@ def _unary(tag, gen, slots=None, units=None):
             gen(R, consts.get(X))
             return R.rules
 
-        out = facts(tuple(key), build, consts, tuple(objs))
+        out = facts(tuple(key), build, consts, tuple(objs), N)
         if units is not None and X in consts:
-            out = out + units(x, expr)
+            return [out, *units(x, expr)]
         return out
     template.__name__ = tag + '_templates'
     return template
@@ -127,7 +127,7 @@ def function_commutative(expr):
         return ()
     consts = consts_of(args)
     return facts(pattern_key('function', n, consts), lambda: _commutative_rules(n),
-                 consts, args + (expr,))
+                 consts, args + (expr,), n)
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ def exp_templates(expr):
         _exp(R, consts.get(X), ipi)
         return R.rules
 
-    return facts(key, build, consts, tuple(objs))
+    return facts(key, build, consts, tuple(objs), N)
 
 
 def _log(R, c):

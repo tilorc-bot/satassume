@@ -141,7 +141,7 @@ def add_templates(expr):
         return ()
     consts = consts_of(args)
     return facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
-                 consts, args + (expr,))
+                 consts, args + (expr,), n)
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +280,7 @@ def mul_templates(expr):
         return ()
     consts = consts_of(args)
     return facts(pattern_key('mul', n, consts), lambda: _mul_rules(n, consts),
-                 consts, args + (expr,))
+                 consts, args + (expr,), n)
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +630,7 @@ def pow_templates(expr):
            const_key(objs[_S]) if _S in consts else None, has_t, has_b1)
     out = facts(key, lambda: _pow_rules(consts.get(_B), consts.get(_E), same, angle,
                                         u is not None, ipi, has_t, has_b1),
-                consts, tuple(objs))
+                consts, tuple(objs), _N)
     if angle is not None and e.is_number:
-        out.extend(_unit_power_units(angle, e, expr))
+        return [out, *_unit_power_units(angle, e, expr)]
     return out

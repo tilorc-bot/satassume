@@ -35,7 +35,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
 from .formula import P, atoms_of
-from .rules import NPRED, PREDICATES, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
+from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .solver import Solver
 
 Node = Any
@@ -116,7 +116,8 @@ class Session:
         self.nclauses = 0
         self.frontier: deque = deque()
         self.pending: Dict[Node, list] = {}   # node -> template formulas not yet compiled
-        self.demand: Dict[Node, set] = {}     # node -> predicates the query needs about it
+        self.pending_c: Dict[Node, list] = {}  # node -> (clauses, bases) pairs not yet emitted
+        self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
 
     # -- variables -------------------------------------------------------
@@ -139,32 +140,37 @@ class Session:
         """
         b = self.base.get(node)
         if b is not None:
-            if demanded is not None and node in self.pending:
+            if demanded is not None and (node in self.pending or node in self.pending_c):
                 self._compile_pending(node, demanded)
             return b
         table = self.table
         b = table.node_base(node)
         self.base[node] = b
+        table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
-        emit = self._emit
         # 1. single-node rule base (bulk path, no per-clause sanitising)
         self.solver.add_pattern(RULE_INTERNAL, b, NPRED)
         self.nclauses += len(RULE_INTERNAL)
         # 2. cached context-free facts
         facts = self.engine.cache.facts(node)
         if facts:
-            for p, v in facts.items():
-                if v is not None and p in PRED_INDEX:
-                    emit([b + PRED_INDEX[p] if v else -(b + PRED_INDEX[p])])
+            self._add_clauses([[b + PRED_INDEX[p]] if v else [-(b + PRED_INDEX[p])]
+                               for p, v in facts.items() if v is not None and p in PRED_INDEX])
         # 3. structural templates, and vocabulary predicates registered for
         #    the node's class (satassume.extensions)
-        formulas = self.engine.templates(node)
-        ext = self.engine.extensions
+        engine = self.engine
+        if engine.clause_templates is not None:
+            compiled, formulas = engine.clause_templates(node)
+        else:
+            compiled, formulas = (), engine.templates(node)
+        ext = engine.extensions
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
-        items = [(f, atoms_of(f)) for f in formulas]
-        if items:
+        if compiled:
+            self._compile_patterns(node, compiled, demanded)
+        if formulas:
+            items = [(f, atoms_of(f)) for f in formulas]
             if demanded is None:
                 self._compile(node, items)
             else:
@@ -172,6 +178,59 @@ class Session:
                 self._compile_pending(node, demanded)
         constructing.discard(node)
         return b
+
+    def _add_clauses(self, clauses) -> None:
+        self.nclauses += len(clauses)
+        self.solver.add_clauses(clauses)
+
+    # -- compiled template patterns (the fast path) -------------------------
+    def _compile_patterns(self, node: Node, compiled, demanded) -> None:
+        """Emit the clauses of the compiled patterns of ``node`` (see
+        ``satassume.templates._common.Pattern``): allocate the variable
+        blocks of the objects the patterns mention, emit the clauses about
+        a demanded predicate of the node now and park the rest, schedule the
+        newly seen direct arguments (frontier) and derived nodes (deferred).
+        """
+        table = self.table
+        base_of = table.base_of
+        demand = self.demand
+        want = None if demanded is None else want_of(demanded)
+        for comp in compiled:
+            objs, pat = comp.objs, comp.pattern
+            bases = [0] * len(objs)
+            new = []
+            for k in pat.used:
+                o = objs[k]
+                bb = base_of.get(o)
+                if bb is None:
+                    bb = table.node_base(o)
+                    new.append(k)
+                bases[k] = bb
+            if want is None:
+                self._emit_pattern(pat.clauses, bases)
+            else:
+                now = [c for c in pat.clauses if c[1] & want]
+                if len(now) < len(pat.clauses):
+                    later = [c for c in pat.clauses if not (c[1] & want)]
+                    self.pending_c.setdefault(node, []).append((later, bases))
+                if now:
+                    self._emit_pattern(now, bases)
+            for k, preds in pat.child_preds.items():
+                d = demand.get(objs[k])
+                if d is None:
+                    demand[objs[k]] = set(preds)
+                else:
+                    d.update(preds)
+            for k in new:
+                if k < pat.node:
+                    self.frontier.append(objs[k])
+                elif k > pat.node:
+                    self.deferred.append(objs[k])
+        table.new_nodes = []
+
+    def _emit_pattern(self, clauses, bases) -> None:
+        self._add_clauses([[-(bases[k] + i) if neg else bases[k] + i for k, i, neg in lits]
+                           for lits, _ in clauses])
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
@@ -192,7 +251,7 @@ class Session:
                     d = demand.get(atom.expr)
                     if d is None:
                         d = demand[atom.expr] = set()
-                    d.add(atom.pred)
+                    d.add(PRED_INDEX[atom.pred])
             compile_formula(f, table, emit)
         self._flush(node)
 
@@ -231,17 +290,33 @@ class Session:
             compile_formula(f, self.table, self._emit)
 
     def _compile_pending(self, node: Node, demanded) -> None:
+        """Compile the parked formulas and clauses of ``node`` that mention
+        a predicate in the neighbourhood of ``demanded`` (indices)."""
+        want = want_of(demanded)
+        pend_c = self.pending_c.get(node)
+        if pend_c:
+            keep = []
+            for clauses, bases in pend_c:
+                now = [c for c in clauses if c[1] & want]
+                if now:
+                    self._emit_pattern(now, bases)
+                    later = [c for c in clauses if not (c[1] & want)]
+                    if later:
+                        keep.append((later, bases))
+                else:
+                    keep.append((clauses, bases))
+            if keep:
+                self.pending_c[node] = keep
+            else:
+                del self.pending_c[node]
         pend = self.pending.get(node)
         if not pend:
             return
-        want = set()
-        for p in demanded:
-            want.update(neighbourhood(p))
         now, later = [], []
         for item in pend:
             f, atoms = item
             for a in atoms:
-                if a.expr == node and a.pred in want:
+                if a.expr == node and PRED_INDEX.get(a.pred) in want:
                     now.append(item)
                     break
             else:
@@ -257,16 +332,17 @@ class Session:
         """Demand-driven discovery: visit ``node`` and, breadth-first, the
         nodes its templates mention, up to ``budget`` new nodes."""
         if demanded is not None:
-            self.demand.setdefault(node, set()).update(demanded)
+            self.demand.setdefault(node, set()).update(PRED_INDEX[p] for p in demanded)
         self.frontier = deque([node])
         self._discover(demanded, budget)
 
     def _discover(self, demanded=None, budget: Optional[int] = None) -> None:
         budget = self.engine.discovery_budget if budget is None else budget
         added = 0
+        pending, pending_c = self.pending, self.pending_c
         while self.frontier and added < budget:
             n = self.frontier.popleft()
-            if n in self.base and n not in self.pending:
+            if n in self.base and n not in pending and n not in pending_c:
                 continue
             self.node(n, None if demanded is None else self.demand.get(n, set()))
             added += 1
@@ -275,15 +351,21 @@ class Session:
     @property
     def incomplete(self) -> bool:
         """True while :meth:`escalate` has something left to do."""
-        return bool(self.pending or self.deferred)
+        return bool(self.pending or self.pending_c or self.deferred)
 
     def escalate(self, budget: Optional[int] = None) -> None:
         """Compile every parked formula and visit every derived node (full
         instantiation of the cone)."""
         budget = self.engine.discovery_budget if budget is None else budget
         added = 0
-        while (self.pending or self.deferred or self.frontier) and added < budget:
-            if self.pending:
+        while (self.pending or self.pending_c or self.deferred or self.frontier) \
+                and added < budget:
+            if self.pending_c:
+                node, pend = self.pending_c.popitem()
+                for clauses, bases in pend:
+                    self._emit_pattern(clauses, bases)
+                added += 1
+            elif self.pending:
                 node, formulas = self.pending.popitem()
                 self._compile(node, formulas)
                 added += 1
@@ -405,15 +487,20 @@ class Engine:
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 4,
                  extensions=None):
+        clause_templates = None
         if templates is None:
             try:
                 from .templates import registry
                 templates = registry.facts_for
+                clause_templates = registry.clauses_for
             except Exception:  # pragma: no cover - SymPy not installed
                 templates = lambda node: ()
         if extensions is None:
             from .extensions import extensions
         self.templates = templates
+        #: ``node -> (compiled patterns, formulas)``; the fast path the SymPy
+        #: template registry provides.  None: ``templates`` (formulas) only.
+        self.clause_templates = clause_templates
         self.extensions = extensions
         self.cache = cache if cache is not None else ObjectCache()
         self.custom_cache = DictCache()
@@ -520,19 +607,33 @@ class Engine:
 # rule-base neighbourhood used by demand-driven instantiation
 # --------------------------------------------------------------------------
 
-_NEIGH: Dict[str, frozenset] = {}
+_NEIGH: Dict[int, frozenset] = {}
+_WANT: Dict[frozenset, frozenset] = {}
 
 
-def neighbourhood(pred: str) -> frozenset:
-    """``pred`` plus every predicate sharing a rule clause with it."""
-    n = _NEIGH.get(pred)
+def neighbourhood(pred) -> frozenset:
+    """``pred`` (a name or index) plus every predicate sharing a rule
+    clause with it, as indices."""
+    i = PRED_INDEX[pred] if isinstance(pred, str) else pred
+    n = _NEIGH.get(i)
     if n is None:
-        i = PRED_INDEX[pred]
-        acc = {pred}
+        acc = {i}
         for c in RULE_CLAUSES:
             idx = [abs(l) - 1 for l in c]
             if i in idx:
-                acc.update(PREDICATES[j] for j in idx)
-        n = _NEIGH[pred] = frozenset(acc)
+                acc.update(idx)
+        n = _NEIGH[i] = frozenset(acc)
     return n
+
+
+def want_of(demanded) -> frozenset:
+    """Union of the neighbourhoods of the demanded predicate indices."""
+    key = frozenset(demanded)
+    w = _WANT.get(key)
+    if w is None:
+        acc = set()
+        for i in key:
+            acc.update(neighbourhood(i))
+        w = _WANT[key] = frozenset(acc)
+    return w
 

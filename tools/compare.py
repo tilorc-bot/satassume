@@ -145,7 +145,10 @@ def main(argv=None):
                     help="also time sympy.ask on every in-scope record")
     ap.add_argument("--fresh-cache", action="store_true",
                     help="use a private cache instead of the objects' _assumptions dicts")
+    ap.add_argument("--dump-times", metavar="FILE",
+                    help="write per-record timings (satassume ms, sympy ms, query) to FILE")
     args = ap.parse_args(argv)
+    dump = open(args.dump_times, "w") if args.dump_times else None
 
     eng = Engine(cache=DictCache() if args.fresh_cache else None)
     stats = {g: collections.Counter() for g in GROUPS}
@@ -208,6 +211,8 @@ def main(argv=None):
                     t_sympy += ds
                     if dt > ds:
                         sat_slower += 1
+                    if dump is not None:
+                        dump.write(f"{dt*1000:.3f}\t{ds*1000:.3f}\t{desc}\n")
             t_sat[group] += dt
             if dt * 1000 > args.slow_ms:
                 print(f"[slow {dt*1000:.0f} ms] {group}: {desc[:200]}", flush=True)
@@ -231,6 +236,8 @@ def main(argv=None):
     if args.time_sympy:
         print(f"sympy.ask on in-scope records: {t_sympy:.2f}s; satassume slower on {sat_slower} records")
     print(f"engine stats: {eng.stats}")
+    if dump is not None:
+        dump.close()
     return 1 if stats[IN_SCOPE]["wrong"] else 0
 
 

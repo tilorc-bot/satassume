@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
+from ..rules import PRED_INDEX
 
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
@@ -86,20 +87,37 @@ def ge2_alternatives(k: int):
             [(k, 'even', True), (k, 'positive', True)])
 
 
-def _resolve_lit(lit: Lit, consts):
-    c = consts.get(lit[0])
-    if c is not None:
-        v = getattr(c, 'is_' + lit[1], None)
-        if v is None and lit[1] in _SIGNED_INFINITE:
-            # The old system has no is_positive_infinite; both parts are
-            # static facts on a constant.
-            inf, sign = c.is_infinite, getattr(c, 'is_extended_' + _SIGNED_INFINITE[lit[1]])
+def const_value(c, pred: str):
+    """Static truth value of ``pred`` for the constant ``c`` (None if the
+    constant does not decide it).  Beyond the old-system property this
+    derives the new-system predicates the old system does not store."""
+    v = getattr(c, 'is_' + pred, None)
+    if v is None:
+        if pred in _SIGNED_INFINITE:
+            inf, sign = c.is_infinite, getattr(c, 'is_extended_' + _SIGNED_INFINITE[pred])
             if inf is False or sign is False:
                 v = False
             elif inf and sign:
                 v = True
+        elif pred == 'hermitian':
+            v = c.is_real
+        elif pred == 'antihermitian':
+            z, im = c.is_zero, c.is_imaginary
+            v = True if (z or im) else (False if z is False and im is False else None)
+    return v
+
+
+def _resolve_lit(lit: Lit, consts):
+    c = consts.get(lit[0])
+    if c is not None:
+        v = const_value(c, lit[1])
         if v is not None:
             return v is lit[2]
+        # A constant decides all it ever will right here (its node would
+        # only repeat these static facts), so a rule with an undecidable
+        # literal about a constant (``polar(2)``) can never fire: drop it
+        # rather than make the constant a node of the engine.
+        return None
     return lit
 
 
@@ -115,14 +133,14 @@ def resolve(rules, consts: Dict[int, Any]) -> List[Rule]:
             r = _resolve_lit(lit, consts)
             if r is True:
                 continue
-            if r is False:
+            if r is False or r is None:
                 break
             ps.append(r)
         else:
             cs = []
             for lit in concl:
                 r = _resolve_lit(lit, consts)
-                if r is True:
+                if r is True or r is None:
                     break
                 if r is not False:
                     cs.append(r)
@@ -170,18 +188,74 @@ def instantiate(resolved: List[Rule], objs) -> List:
     return out
 
 
-_CACHE: Dict[Any, List[Rule]] = {}
+class Pattern:
+    """The resolved rules of one template pattern, also as clauses in
+    *slot space*: a literal is ``(k, pidx, neg)`` for predicate index
+    ``pidx`` of the object in slot ``k``.  Slots below ``node`` are the
+    direct arguments, slot ``node`` is the node, slots above are derived
+    nodes (``2*e``, ``x - 1``, ...)."""
+    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds')
+
+    def __init__(self, rules: List[Rule], node: int):
+        self.rules = rules
+        self.node = node
+        clauses = []
+        used = set()
+        child_preds: Dict[int, set] = {}
+        for ps, cs in rules:
+            lits = [(k, PRED_INDEX[p], pos) for k, p, pos in ps]
+            lits += [(k, PRED_INDEX[p], not pos) for k, p, pos in cs]
+            lits = list(dict.fromkeys(lits))
+            if any((k, i, not neg) in lits for k, i, neg in lits):
+                continue    # tautology
+            npreds = frozenset(i for k, i, _ in lits if k == node)
+            clauses.append((tuple(lits), npreds))
+            for k, i, _ in lits:
+                used.add(k)
+                if k != node:
+                    child_preds.setdefault(k, set()).add(i)
+        self.clauses = clauses
+        self.used = tuple(sorted(used))
+        self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
+
+
+class Compiled:
+    """A pattern applied to concrete objects: what a template hands the
+    engine.  ``instantiate(c.pattern.rules, c.objs)`` gives the formulas."""
+    __slots__ = ('objs', 'pattern')
+
+    def __init__(self, objs, pattern: Pattern):
+        self.objs = objs
+        self.pattern = pattern
+
+    def formulas(self) -> List:
+        return instantiate(self.pattern.rules, self.objs)
+
+
+_CACHE: Dict[Any, Pattern] = {}
 MAX_CACHE = 4096
 
 
-def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs) -> List:
-    """Formulas for ``objs`` from the (cached) resolved rules of ``key``."""
-    resolved = _CACHE.get(key)
-    if resolved is None:
+def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int) -> Compiled:
+    """The (cached) resolved rules of ``key`` applied to ``objs``; slot
+    ``node`` holds the node itself."""
+    pat = _CACHE.get(key)
+    if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        resolved = _CACHE[key] = resolve(gen(), consts)
-    return instantiate(resolved, objs)
+        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node)
+    return Compiled(objs, pat)
+
+
+def units(key, gen: Callable[[], list], obj) -> Compiled:
+    """Unit facts about one object: ``gen()`` returns ``(pred, value)``
+    pairs; the pattern is cached under ``key``."""
+    pat = _CACHE.get(key)
+    if pat is None:
+        if len(_CACHE) >= MAX_CACHE:
+            _CACHE.clear()
+        pat = _CACHE[key] = Pattern([((), ((0, pred, value),)) for pred, value in gen()], 0)
+    return Compiled((obj,), pat)
 
 
 def consts_of(args) -> Dict[int, Any]:

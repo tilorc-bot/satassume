@@ -11,12 +11,10 @@ Any other leaf emits nothing.
 """
 from __future__ import annotations
 
-from sympy import S
 from sympy.core.numbers import ComplexInfinity, ImaginaryUnit, Number, NumberSymbol
 from sympy.core.symbol import Symbol
 
-from ..formula import Not, P
-from ._common import VOCAB
+from ._common import VOCAB, const_key, const_value, units
 from .registry import registry
 
 _ORACLE_PREDS = tuple(sorted(VOCAB))
@@ -24,25 +22,19 @@ _ORACLE_PREDS = tuple(sorted(VOCAB))
 
 @registry.register(Symbol)
 def symbol_units(expr):
-    for fact, value in expr.assumptions0.items():
-        if fact in VOCAB and value is not None:
-            yield P(fact, expr) if value else Not(P(fact, expr))
+    a0 = expr.assumptions0
+    key = ('symbol', frozenset(a0.items()))
+    return units(key, lambda: [(fact, value) for fact, value in a0.items()
+                               if fact in VOCAB and value is not None], expr)
 
 
 @registry.register(Number, NumberSymbol, ImaginaryUnit, ComplexInfinity)
 def constant_units(expr):
-    for pred in _ORACLE_PREDS:
-        value = getattr(expr, 'is_' + pred, None)
-        if value is not None:
-            yield P(pred, expr) if value else Not(P(pred, expr))
-    # The old system has no ``is_positive_infinite``; state the signed
-    # infinities explicitly.
-    if expr is S.Infinity:
-        yield P('positive_infinite', expr)
-        yield Not(P('negative_infinite', expr))
-    elif expr is S.NegativeInfinity:
-        yield P('negative_infinite', expr)
-        yield Not(P('positive_infinite', expr))
-    elif expr is S.ComplexInfinity or getattr(expr, 'is_finite', None):
-        yield Not(P('positive_infinite', expr))
-        yield Not(P('negative_infinite', expr))
+    def gen():
+        out = []
+        for pred in _ORACLE_PREDS:
+            value = const_value(expr, pred)
+            if value is not None:
+                out.append((pred, value))
+        return out
+    return units(('const', const_key(expr)), gen, expr)

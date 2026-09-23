@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Iterable, List
 
 from ..formula import Formula, P
+from ._common import Compiled
 
 Template = Callable[[Any], Any]
 
@@ -46,15 +47,27 @@ class TemplateRegistry:
         return out
 
     def facts_for(self, expr: Any) -> List[Any]:
-        """Every formula emitted by every template matching ``type(expr)``."""
+        """Every formula emitted by every template matching ``type(expr)``
+        (compiled patterns expanded to formulas)."""
         out: List[Any] = []
         for f in self.templates_for(type(expr)):
-            r = f(expr)
-            if type(r) is list:
-                out.extend(r)
-            else:
-                _collect(r, out)
+            _collect(f(expr), out)
         return out
+
+    def clauses_for(self, expr: Any):
+        """``(compiled, formulas)``: the compiled patterns and the plain
+        formulas emitted by the templates matching ``type(expr)``.  This is
+        what the engine uses; :meth:`facts_for` is the same information as
+        formulas."""
+        compiled: List[Compiled] = []
+        formulas: List[Any] = []
+        for f in self.templates_for(type(expr)):
+            r = f(expr)
+            if type(r) is Compiled:
+                compiled.append(r)
+            else:
+                _split(r, compiled, formulas)
+        return compiled, formulas
 
     def classes(self) -> Iterable[type]:
         return self._by_class.keys()
@@ -68,8 +81,24 @@ def _collect(result: Any, out: List[Any]) -> None:
     if result is False or isinstance(result, (P, Formula)):
         out.append(result)
         return
+    if type(result) is Compiled:
+        out.extend(result.formulas())
+        return
     for r in result:
         _collect(r, out)
+
+
+def _split(result: Any, compiled: List[Compiled], formulas: List[Any]) -> None:
+    if result is None or result is True:
+        return
+    if type(result) is Compiled:
+        compiled.append(result)
+        return
+    if result is False or isinstance(result, (P, Formula)):
+        formulas.append(result)
+        return
+    for r in result:
+        _split(r, compiled, formulas)
 
 
 registry = TemplateRegistry()
