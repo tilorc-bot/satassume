@@ -161,3 +161,94 @@ def test_in_scope_query_returns_none_only_when_undecided(eng):
     assert out_of_scope(Q.positive(y), Q.real(y)) is None
     assert ask(Q.positive(y), Q.real(y), eng) is None
     assert eng.stats['queries'] == 1
+
+
+# -- in scope: the classes closed while finishing the slice -------------------
+
+def test_hermitian_antihermitian_scalars(eng):
+    x = Symbol('x')
+    assert ask(Q.hermitian(I), True, eng) is False
+    assert ask(Q.antihermitian(Integer(11)), True, eng) is False
+    assert ask(Q.hermitian(oo), True, eng) is False
+    assert ask(Q.antihermitian(oo), True, eng) is False
+    assert ask(Q.antihermitian(x), Q.zero(x), eng) is True
+    assert ask(Q.hermitian(x), Q.imaginary(x), eng) is False
+    assert ask(Q.hermitian(I*x), Q.antihermitian(x), eng) is True
+    assert ask(Q.antihermitian(I*x), Q.real(x), eng) is True
+    # 0 is real and antihermitian, so these stay undecided (SymPy says False)
+    assert ask(Q.antihermitian(x), Q.real(x), eng) is None
+    assert ask(Q.hermitian(I*x), Q.real(x), eng) is None
+
+
+def test_add_mul_closures(eng):
+    from sympy import log, sqrt, Mul
+    x, y, z = Symbol('x'), Symbol('y'), Symbol('z')
+    assert ask(Q.finite(x + y), Q.positive_infinite(x) & Q.positive_infinite(y), eng) is False
+    assert ask(Q.finite(x + y + z), Q.negative_infinite(y) & Q.negative_infinite(z) & Q.positive(x), eng) is False
+    assert ask(Q.finite(x + y), ~Q.extended_positive(x) & ~Q.extended_positive(y) & ~Q.finite(y), eng) is False
+    assert ask(Q.finite(x + y), Q.positive_infinite(x) & Q.negative_infinite(y), eng) is None
+    assert ask(Q.real(I*(1 + I)), True, eng) is False
+    assert ask(Q.prime(I*(1 + I)), True, eng) is False
+    assert ask(Q.imaginary(log(2) + I*pi/2), True, eng) is False
+    assert ask(Q.prime(4*x), Q.integer(x), eng) is False
+    assert ask(Q.rational(2/x), Q.irrational(x), eng) is False
+    assert ask(Q.rational(y/x), Q.irrational(x) & Q.nonzero(y) & Q.rational(y), eng) is False
+    assert ask(Q.positive(-x*y*z), Q.negative(y) & Q.negative(z) & Q.positive(x), eng) is False
+    assert ask(Q.prime(Mul(2, 2, evaluate=False) + 0), True, eng) in (False, None)
+    # x*y with x imaginary and y real may be zero, so imaginary is undecided
+    assert ask(Q.imaginary(x*y), Q.imaginary(x) & Q.real(y), eng) is None
+
+
+def test_pow_closures(eng):
+    from sympy import E, Rational, exp, Pow
+    x, y, n, i = Symbol('x'), Symbol('y'), Symbol('n'), Symbol('i')
+    assert ask(Q.real(I**I), True, eng) is True
+    assert ask(Q.real(I**(2 + I)), True, eng) is True
+    assert ask(Q.imaginary(I**(3 + I)), True, eng) is True
+    assert ask(Q.real(3**I), True, eng) is False
+    assert ask(Q.positive(2**I), True, eng) is False
+    assert ask(Q.real(I**i), Q.imaginary(i), eng) is True
+    assert ask(Q.rational(sqrt(2)), True, eng) is False
+    assert ask(Q.irrational(sqrt(2)), True, eng) is True
+    assert ask(Q.integer(sqrt(5)), True, eng) is False
+    assert ask(Q.prime(Pow(x, 1, evaluate=False)), Q.prime(x), eng) is True
+    assert ask(Q.prime(n**x), Q.composite(n) & Q.integer(x), eng) is False
+    assert ask(Q.finite(2**x), Q.extended_negative(x), eng) is True
+    assert ask(Q.finite(Rational(1, 2)**x), Q.extended_positive(x), eng) is True
+    assert ask(Q.imaginary(x**y), Q.rational(y) & Q.real(x) & ~Q.integer(2*y), eng) is False
+    assert ask(Q.imaginary(x**Rational(1, 4)), Q.negative(x), eng) is False
+    assert ask(Q.real(exp(x)**x), Q.imaginary(x), eng) is True
+    assert ask(Q.real(Pow(exp(2*I*pi*x), x)), Q.integer(x), eng) is True
+    assert ask(Q.imaginary(Pow(exp(I*pi*x/2), x)), Q.odd(x), eng) is True
+    assert ask(Q.positive(Pow(E, I*pi*x, evaluate=False)), Q.even(x), eng) is True
+    assert ask(Q.integer(x**y), Q.integer(x) & Q.integer(y) & Q.negative(y)
+               & ~Q.zero(x - 1) & ~Q.zero(x + 1), eng) is False
+    # 0**(-1) is zoo, so these stay undecided (SymPy says True)
+    assert ask(Q.complex(x**y), Q.complex(x) & Q.complex(y), eng) is None
+
+
+def test_function_closures(eng):
+    from sympy import exp, log, acos, asin, cot, acot, Rational
+    x = Symbol('x')
+    assert ask(Q.real(exp(I*pi, evaluate=False)), True, eng) is True
+    assert ask(Q.imaginary(exp(I*pi/2, evaluate=False)), True, eng) is True
+    assert ask(Q.real(exp(I*pi/2, evaluate=False)), True, eng) is False
+    assert ask(Q.positive(exp(I*pi*x)), Q.even(x), eng) is True
+    assert ask(Q.positive(exp(I*pi*x)), Q.odd(x), eng) is False
+    assert ask(Q.rational(exp(0, evaluate=False)), True, eng) is True
+    assert ask(Q.rational(log(1, evaluate=False)), True, eng) is True
+    assert ask(Q.rational(log(7)), True, eng) is False
+    assert ask(Q.positive(log(x + 2)), Q.positive(x), eng) is True
+    assert ask(Q.rational(log(x)), Q.rational(x) & Q.nonzero(x - 1), eng) is False
+    assert ask(Q.algebraic(acos(7)), True, eng) is False
+    assert ask(Q.rational(acos(1, evaluate=False)), True, eng) is True
+    assert ask(Q.positive(acos(Rational(1, 7))), True, eng) is True
+    assert ask(Q.positive(asin(x)), Q.positive(x) & Q.nonpositive(x - 1), eng) is True
+    assert ask(Q.rational(cot(7)), True, eng) is False
+    assert ask(Q.rational(cot(x)), Q.rational(x), eng) is False
+    assert ask(Q.algebraic(acot(x)), Q.algebraic(x), eng) is False
+    assert ask(Q.positive(acot(x)), Q.imaginary(x), eng) is False
+    # sin(oo*I) is oo*I, so finiteness needs a finite argument
+    from sympy import sin
+    assert ask(Q.finite(sin(x)), True, eng) is None
+    assert ask(Q.finite(sin(x)), Q.finite(x), eng) is True

@@ -354,13 +354,15 @@ registry.register(factorial)(_unary('factorial', _factorial))
 
 _TRANSCENDENTAL = (('algebraic', ('zero', False)), 'transcendental')
 
+# sin(oo*I) == oo*I, so finiteness of the value needs a finite argument.
 _SIN = (
-    (('real',), 'real'), (('complex',), 'complex'), (('zero',), 'zero'),
-    (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
+    (('real',), 'real'), (('complex',), 'complex'), (('finite',), 'finite'),
+    (('zero',), 'zero'), (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
 )
 _COS = (
-    (('real',), 'real'), (('complex',), 'complex'), (('zero',), 'odd'),
-    (('zero',), 'positive'), (('imaginary',), 'positive'), _TRANSCENDENTAL,
+    (('real',), 'real'), (('complex',), 'complex'), (('finite',), 'finite'),
+    (('zero',), 'odd'), (('zero',), 'positive'), (('imaginary',), 'positive'),
+    _TRANSCENDENTAL,
 )
 _TAN = (
     # tan(pi/2) == zoo, so realness needs finiteness of the value.

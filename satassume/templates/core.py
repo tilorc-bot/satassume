@@ -378,7 +378,7 @@ _NOTUNIT = ('irrational', 'noninteger', 'prime', 'composite')
 _POW_ONE_EQUIV = tuple(sorted(VOCAB - {'commutative'}))
 
 # Extra object slots after base 0, exponent 1, node 2 (see ``pow_templates``).
-_U, _S, _T = 3, 4, 5
+_U, _S, _T, _BM, _BP = 3, 4, 5, 6, 7
 
 
 def _lit(spec):
@@ -454,11 +454,12 @@ def ipi_rules(rule, c, iS, N):
         rule([(iS, 'odd', True)], (N, 'imaginary', True))
 
 
-def _pow_rules(b, e, same, angle, has_u, ipi, has_t):
+def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
     """``b``/``e`` are the constant base/exponent or ``None`` if symbolic;
     ``angle`` is ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the
     argument of an ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and
-    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``."""
+    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``:
+    slots ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
     R = Rules()
     rule = R.rule
     for prem, concl in _POW_RULES:
@@ -491,6 +492,11 @@ def _pow_rules(b, e, same, angle, has_u, ipi, has_t):
     if has_u:
         # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
         rule([(_U, 'imaginary', True), (_E, 'imaginary', True)], (_N, 'positive', True))
+    if has_b1:
+        # An integer other than 0 and +-1 to a negative integer power is a
+        # fraction (0 gives zoo).
+        rule([(_B, 'integer', True), (_E, 'integer', True), (_E, 'negative', True),
+              (_BM, 'zero', False), (_BP, 'zero', False)], (_N, 'integer', False))
     if has_t:
         # Real base, rational exponent: imaginary iff the base is negative
         # and the exponent is half an odd integer.
@@ -595,7 +601,7 @@ def pow_templates(expr):
         consts[_E] = e
     same = b is e
     angle = _unit_angle(b)
-    objs = [b, e, expr, None, None, None]
+    objs = [b, e, expr, None, None, None, None, None]
     u = _exp_arg(b)
     if u is not None:
         objs[_U] = u
@@ -614,12 +620,16 @@ def pow_templates(expr):
     has_t = _E not in consts and not e.is_number
     if has_t:
         objs[_T] = Mul(S(2), e)
+    has_b1 = has_t and _B not in consts and not b.is_number
+    if has_b1:
+        objs[_BM] = b - S.One
+        objs[_BP] = b + S.One
     key = ('pow', const_key(b) if _B in consts else None,
            const_key(e) if _E in consts else None, same, angle,
            const_key(u) if _U in consts else u is not None, ipi,
-           const_key(objs[_S]) if _S in consts else None, has_t)
+           const_key(objs[_S]) if _S in consts else None, has_t, has_b1)
     out = facts(key, lambda: _pow_rules(consts.get(_B), consts.get(_E), same, angle,
-                                        u is not None, ipi, has_t),
+                                        u is not None, ipi, has_t, has_b1),
                 consts, tuple(objs))
     if angle is not None and e.is_number:
         out.extend(_unit_power_units(angle, e, expr))

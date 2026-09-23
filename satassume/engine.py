@@ -117,6 +117,7 @@ class Session:
         self.frontier: deque = deque()
         self.pending: Dict[Node, list] = {}   # node -> template formulas not yet compiled
         self.demand: Dict[Node, set] = {}     # node -> predicates the query needs about it
+        self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -169,7 +170,14 @@ class Session:
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
-        children they mention with the predicates demanded of them."""
+        children they mention with the predicates demanded of them.
+
+        A template may mention a *derived* node that is not a direct
+        argument (``2*e`` of a power, ``x - 1`` of a logarithm).  Such nodes
+        are only visited by :meth:`escalate`, so a query decided by the
+        direct structure never pays for them; when the assumptions mention
+        the derived node it is already visited and its atoms are shared.
+        """
         table = self.table
         emit = self._emit
         demand = self.demand
@@ -181,8 +189,13 @@ class Session:
                         d = demand[atom.expr] = set()
                     d.add(atom.pred)
             compile_formula(f, table, emit)
+        direct = getattr(node, 'args', None)
         for child in table.new_nodes:
-            if child not in self.base:
+            if child in self.base:
+                continue
+            if direct is not None and child not in direct:
+                self.deferred.append(child)
+            else:
                 self.frontier.append(child)
         table.new_nodes = []
 
@@ -225,16 +238,28 @@ class Session:
             added += 1
         self.frontier = deque()
 
+    @property
+    def incomplete(self) -> bool:
+        """True while :meth:`escalate` has something left to do."""
+        return bool(self.pending or self.deferred)
+
     def escalate(self, budget: Optional[int] = None) -> None:
-        """Compile every parked formula (full instantiation of the cone)."""
+        """Compile every parked formula and visit every derived node (full
+        instantiation of the cone)."""
         budget = self.engine.discovery_budget if budget is None else budget
         added = 0
-        while self.pending and added < budget:
-            node, formulas = self.pending.popitem()
-            self._compile(node, formulas)
-            added += 1
-            while self.frontier and added < budget:
+        while (self.pending or self.deferred or self.frontier) and added < budget:
+            if self.pending:
+                node, formulas = self.pending.popitem()
+                self._compile(node, formulas)
+                added += 1
+            elif self.frontier:
                 n = self.frontier.popleft()
+                if n not in self.base:
+                    self.node(n, None)
+                    added += 1
+            else:
+                n = self.deferred.pop()
                 if n not in self.base:
                     self.node(n, None)
                     added += 1
@@ -374,7 +399,7 @@ class Engine:
         s.ensure(node, {pred})
         lit = s.base[node] + PRED_INDEX[pred]
         r = s.query_literal(lit, search=False)
-        if r is None and s.pending:
+        if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
             r = s.query_literal(lit, search=False)
@@ -402,7 +427,7 @@ class Engine:
         else:
             q = s.literal_of(proposition)
         r = s.query_literal(q, lits, search=False)
-        if r is None and s.pending:
+        if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
             r = s.query_literal(q, lits, search=False)
