@@ -59,12 +59,16 @@ HEADS = [("f", 1), ("h", 1), ("g", 2), ("f", 2)]
 # ======================================================================
 
 @st.composite
-def problems(draw, max_terms=11, max_atoms=8, values=True):
+def problems(draw, max_terms=11, max_atoms=8, values=True, min_apps=0):
+    """Random ground problems.  With ``min_apps`` > 0 at least that many
+    applications are made and half of the atoms are between constants
+    (the equalities that make applications congruent)."""
     nconst = draw(st.integers(1, 4))
     terms = [("c", f"k{i}") for i in range(nconst)]
     if values:
         terms += [("v", i) for i in range(draw(st.integers(0, 2)))]
-    for _ in range(draw(st.integers(0, max(0, max_terms - len(terms))))):
+    lo = min(min_apps, max(0, max_terms - len(terms)))
+    for _ in range(draw(st.integers(lo, max(lo, max_terms - len(terms))))):
         head, arity = draw(st.sampled_from(HEADS))
         args = tuple(draw(st.integers(0, len(terms) - 1)) for _ in range(arity))
         spec = ("a", head, args)
@@ -73,6 +77,10 @@ def problems(draw, max_terms=11, max_atoms=8, values=True):
     n = len(terms)
     atoms = []
     for _ in range(draw(st.integers(1, max_atoms))):
+        if min_apps and nconst > 1 and draw(st.booleans()):
+            i, j = draw(st.permutations(range(nconst)))[:2]
+            atoms.append((i, j, True))
+            continue
         i = draw(st.integers(0, n - 1))
         j = draw(st.integers(0, n - 1))
         # mostly distinct sides, positive atoms; some reflexive / negative ones
@@ -86,9 +94,10 @@ def problems(draw, max_terms=11, max_atoms=8, values=True):
 def assertion_runs(draw, **kw):
     """A problem, one literal per atom (a subset of the atoms, random
     polarity), an order and a push-before-this-literal flag per literal."""
+    kw.setdefault("min_apps", draw(st.integers(0, 4)))
     terms, atoms = draw(problems(**kw))
     vars_ = draw(st.permutations(range(1, len(atoms) + 1)))
-    k = draw(st.integers(1, len(atoms)))
+    k = draw(st.integers(max(1, len(atoms) // 2), len(atoms)))
     lits = [v if draw(st.booleans()) else -v for v in vars_[:k]]
     pushes = [draw(st.booleans()) for _ in lits]
     return terms, atoms, lits, pushes
@@ -289,11 +298,12 @@ ops = st.lists(st.one_of(
     st.just(("propagate",)),
     st.tuples(st.just("assert"), st.integers(0, 63), st.booleans()),
     st.tuples(st.just("assert"), st.integers(0, 63), st.booleans()),
-), max_size=45)
+), min_size=15, max_size=45)
 
 
 @FUZZ
-@given(problems(max_terms=10, max_atoms=9), ops)
+@given(st.integers(0, 4).flatmap(
+    lambda m: problems(max_terms=10, max_atoms=9, min_apps=m)), ops)
 def test_backtracking_torture(problem, script):
     terms, atoms = problem
     th, ids = build(terms, atoms)
@@ -369,13 +379,128 @@ def test_backtracking_torture(problem, script):
     assert r is not None and r[0] is True
 
 
+late_ops = st.lists(st.one_of(
+    st.just(("push",)), st.just(("pop",)), st.just(("check",)),
+    st.just(("propagate",)), st.just(("intern",)), st.just(("intern",)),
+    st.tuples(st.just("assert"), st.integers(0, 63), st.booleans()),
+    st.tuples(st.just("assert"), st.integers(0, 63), st.booleans()),
+), min_size=20, max_size=50)
+
+
+@FUZZ
+@given(problems(max_terms=9, max_atoms=8, min_apps=3), st.integers(1, 3), late_ops)
+def test_backtracking_torture_late_terms(problem, n0, script):
+    """Terms and atoms are created while levels are open (the adapter may
+    intern lazily).  A term made at a level that is later popped must
+    survive with the congruences of the remaining state."""
+    terms, atoms = problem
+    th = EUFTheory()
+    ids = []
+    registered = []
+    levels = [[]]
+    blocked = False
+
+    def intern_next():
+        i = len(ids)
+        t = terms[i]
+        if t[0] == "c":
+            ids.append(th.term(t[1]))
+        elif t[0] == "v":
+            ids.append(th.value(t[1]))
+        else:
+            ids.append(th.term(t[1], tuple(ids[k] for k in t[2])))
+        for k, (a, b, pos) in enumerate(atoms):
+            if k + 1 not in registered and a < len(ids) and b < len(ids):
+                th.register_atom(k + 1, EqAtom(ids[a], ids[b], pos))
+                registered.append(k + 1)
+
+    def current():
+        return [l for lv in levels for l in lv]
+
+    def compare():
+        n = len(ids)
+        cur = current()
+        fresh = EUFTheory()
+        fids = build(terms[:n], [], fresh)[1]
+        for k in registered:
+            a, b, pos = atoms[k - 1]
+            fresh.register_atom(k, EqAtom(fids[a], fids[b], pos))
+        for l in cur:
+            assert not is_conflict(fresh.assert_lit(l))
+        for i in range(n):
+            for j in range(i + 1, n):
+                assert th.equal(ids[i], ids[j]) == fresh.equal(fids[i], fids[j]), \
+                    f"after {script}: equal(t{i}, t{j}) differs from a rebuilt theory"
+        check_state(th, terms[:n], atoms, ids, cur)
+
+    while len(ids) < min(n0, len(terms)):
+        intern_next()
+    for op in script:
+        if blocked and op[0] != "pop":
+            continue
+        n = len(ids)
+        if op[0] == "intern":
+            if n < len(terms):
+                intern_next()
+        elif op[0] == "push":
+            th.push_level()
+            levels.append([])
+        elif op[0] == "pop":
+            if len(levels) == 1:
+                continue
+            th.pop_level()
+            levels.pop()
+            blocked = False
+        elif op[0] == "check":
+            r = th.check()
+            cur = current()
+            if oracle_consistent(terms[:n], atoms, cur):
+                assert r is not None and r[0] is True, f"check() = {r!r} on {cur}"
+                check_model(r[1], terms[:n], atoms, ids, cur)
+            else:
+                assert is_conflict(r)
+                check_clause(terms[:n], atoms, r[1], cur)
+                blocked = True
+        elif op[0] == "propagate":
+            check_propagations(th, terms[:n], atoms, current())
+        else:
+            if not registered:
+                continue
+            var = registered[op[1] % len(registered)]
+            if any(abs(l) == var for l in current()):
+                continue
+            lit = var if op[2] else -var
+            if len(levels) == 1 and not oracle_consistent(terms[:n], atoms, current() + [lit]):
+                continue
+            levels[-1].append(lit)
+            cur = current()
+            r = th.assert_lit(lit)
+            if is_conflict(r):
+                assert not oracle_consistent(terms[:n], atoms, cur), \
+                    f"assert_lit({lit}) conflict on consistent {cur}"
+                check_clause(terms[:n], atoms, r[1], cur)
+                blocked = True
+            elif not oracle_consistent(terms[:n], atoms, cur):
+                r = th.check()
+                assert is_conflict(r), f"check() missed the inconsistency of {cur}"
+                check_clause(terms[:n], atoms, r[1], cur)
+                blocked = True
+        if not blocked:
+            compare()
+    while len(levels) > 1:
+        th.pop_level()
+        levels.pop()
+    compare()
+
+
 # ======================================================================
 # End to end through the CDCL solver
 # ======================================================================
 
 @st.composite
 def cnf_problems(draw):
-    terms, atoms = draw(problems(max_terms=9, max_atoms=7))
+    terms, atoms = draw(problems(max_terms=9, max_atoms=7,
+                                 min_apps=draw(st.integers(0, 4))))
     nv = len(atoms) + draw(st.integers(0, 2))           # a couple of plain variables
     lit = st.builds(lambda v, s: v if s else -v, st.integers(1, nv), st.booleans())
     clauses = draw(st.lists(st.lists(lit, min_size=1, max_size=3), max_size=7))

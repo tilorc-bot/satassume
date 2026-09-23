@@ -420,6 +420,46 @@ def test_terms_interned_after_root_merges_see_them():
     assert is_conflict(assert_all(b.th, [ne]))
 
 
+def test_term_made_at_a_popped_level_keeps_congruence():
+    # The adapter may intern terms while levels are open.  A term made at a
+    # level that is popped again must still take part in congruence.
+    b = B()
+    a, c = b.c("a", "c")
+    fc = b.app("f", c)
+    ac = b.atom(a, c)
+    b.th.push_level()
+    fa = b.app("f", a)
+    gfa = b.app("g", fa, a)
+    b.th.pop_level()
+    gfc = b.app("g", fc, c)
+    b.th.push_level()
+    consistent_after(b.th, [ac])
+    assert b.th.equal(fa, fc) and b.th.equal(gfa, gfc)
+    b.th.pop_level()
+    assert not b.th.equal(fa, fc)
+
+
+def test_term_made_above_root_joins_existing_classes():
+    b = B()
+    a, c = b.c("a", "c")
+    ac = b.atom(a, c)
+    b.th.push_level()
+    consistent_after(b.th, [ac])
+    b.th.push_level()
+    fa, fc = b.app("f", a), b.app("f", c)          # made while a = c holds
+    assert b.th.equal(fa, fc)
+    ne = b.atom(fa, fc, positive=False)            # atom registered above root
+    r = assert_all(b.th, [ne])
+    assert is_conflict(r) and set(r[1]) == {-ac, -ne}
+    b.th.pop_level()
+    assert b.th.equal(fa, fc)
+    b.th.pop_level()
+    assert not b.th.equal(fa, fc)
+    b.th.push_level()
+    consistent_after(b.th, [ne])                   # f(a) != f(c) alone is fine
+    b.th.pop_level()
+
+
 def test_new_atom_over_new_terms_after_root_merges():
     b = B()
     a, c, d = b.c("a", "c", "d")
