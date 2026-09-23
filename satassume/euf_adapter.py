@@ -17,7 +17,11 @@ Flattening (:meth:`EUFAdapter.term`)
   applies to it.  The function-like classes are ``Add``, ``Mul``, ``Pow``
   and every ``sympy.core.function.Application`` (undefined functions ``f(x)``,
   ``sin``, ``Abs``, ``Max``, ``Piecewise``, ...).  For each of these the
-  value is a function of the values of the arguments.
+  value is a function of the values of the arguments.  Excluded: integral
+  transforms (``LaplaceTransform`` and friends are ``Function``
+  subclasses but bind a variable), anything with ``bound_symbols``, and
+  anything whose free symbols differ from the union over its arguments
+  (see ``_structural``).
   ``Add`` and ``Mul`` are opaque, variadic heads applied to SymPy's
   canonical argument tuple.  There is no AC reasoning.  ``x + y`` and
   ``y + x`` are one term only because SymPy already sorts them;
@@ -44,12 +48,29 @@ from sympy.assumptions.ask import Q
 from sympy.core.basic import Basic
 from sympy.core.function import Application
 from sympy.core.relational import Equality, Unequality
+from sympy.integrals.transforms import IntegralTransform
 
 from .euf import EqAtom, EUFTheory
 
 __all__ = ["EUFAdapter"]
 
 _STRUCTURAL = (Add, Mul, Pow, Application)
+
+
+def _structural(expr) -> bool:
+    """True iff congruence may look inside ``expr``: a function-like class
+    that binds no variable.  Integral transforms subclass ``Function`` but
+    bind their second argument, so they are excluded by name.  As a
+    backstop, any expression with bound symbols, or whose free symbols
+    differ from the union over its arguments, is opaque."""
+    if not isinstance(expr, _STRUCTURAL) or not expr.args:
+        return False
+    if isinstance(expr, IntegralTransform) or getattr(expr, "bound_symbols", ()):
+        return False
+    free = set()
+    for a in expr.args:
+        free |= a.free_symbols
+    return free == expr.free_symbols
 
 
 class EUFAdapter:
@@ -115,18 +136,29 @@ class EUFAdapter:
 
     def term(self, expr) -> int:
         """The theory term of SymPy expression ``expr`` (interned)."""
-        t = self._terms.get(expr)
+        terms = self._terms
+        t = terms.get(expr)
         if t is not None:
             return t
         th = self.theory
-        if isinstance(expr, Rational):
-            t = th.value(expr)
-        elif isinstance(expr, _STRUCTURAL) and expr.args:
-            t = th.term(expr.func, [self.term(a) for a in expr.args])
-        else:
-            t = th.term(expr)
-        self._terms[expr] = t
-        return t
+        # iterative post-order, so deep expressions do not hit the
+        # recursion limit
+        stack = [(expr, False)]
+        while stack:
+            e, ready = stack.pop()
+            if e in terms:
+                continue
+            if isinstance(e, Rational):
+                terms[e] = th.value(e)
+            elif _structural(e):
+                if ready:
+                    terms[e] = th.term(e.func, [terms[a] for a in e.args])
+                else:
+                    stack.append((e, True))
+                    stack.extend((a, False) for a in e.args if a not in terms)
+            else:
+                terms[e] = th.term(e)
+        return terms[expr]
 
     def term_of(self, expr) -> int | None:
         """The term of ``expr`` if the adapter has interned it, else None."""
