@@ -57,7 +57,7 @@ from sympy.core.sorting import default_sort_key
 
 from .lra import LRATheory, Negated
 
-__all__ = ["LRAAdapter", "to_constraint", "terms", "relation"]
+__all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation"]
 
 _PRED = {Q.lt: "lt", Q.le: "le", Q.gt: "gt", Q.ge: "ge", Q.eq: "eq",
          Q.ne: "ne"}
@@ -147,14 +147,11 @@ def to_constraint(atom):
     ``Q.lt(x, y)`` and ``Q.gt(y, x)`` give equal payloads, as do
     ``Q.eq(x, y)`` and ``Q.eq(y, x)``.
     """
-    rel = relation(atom)
-    if rel is None:
-        return None
-    name, lhs, rhs = rel
-    try:
-        form, k = _linear(name, lhs, rhs)
-    except (_Unhandled, TypeError, ValueError):
-        return None
+    r = interpret(atom)
+    return None if r is None else r[0]
+
+
+def _constraint(name, form, k):
     if name in ("gt", "ge"):                 # a > b  <=>  b - a < 0
         form = {t: -c for t, c in form.items()}
         k = -k
@@ -173,25 +170,33 @@ def to_constraint(atom):
     return payload, positive
 
 
-def terms(atom) -> list | None:
-    """The opaque terms of ``atom`` (including ones that cancel, e.g.
-    ``[x]`` for ``Q.lt(x, x + 1)``), in a canonical order; ``[]`` for a
-    purely numeric relation; None if the atom is not interpreted."""
+def interpret(atom):
+    """``(to_constraint(atom), terms(atom))`` from a single linearisation,
+    or None when the atom is not interpreted."""
     rel = relation(atom)
     if rel is None:
         return None
     try:
-        form, _ = _linear(*rel)
+        form, k = _linear(*rel)
     except (_Unhandled, TypeError, ValueError):
         return None
-    return sorted(form, key=default_sort_key)
+    return _constraint(rel[0], form, k), sorted(form, key=default_sort_key)
+
+
+def terms(atom) -> list | None:
+    """The opaque terms of ``atom`` (including ones that cancel, e.g.
+    ``[x]`` for ``Q.lt(x, x + 1)``), in a canonical order; ``[]`` for a
+    purely numeric relation; None if the atom is not interpreted."""
+    r = interpret(atom)
+    return None if r is None else r[1]
 
 
 class LRAAdapter:
     """Registers SymPy relation atoms with one :class:`LRATheory`.
 
     ``register(solver, var, atom)`` interprets ``atom``; on success it
-    attaches the theory to ``solver`` (first time only), registers solver
+    attaches the theory to ``solver`` (first time only; an adapter serves
+    one solver, a second one raises ValueError), registers solver
     variable ``var`` for it and returns True.  A relation without terms is
     registered as a ground atom (the theory fixes its value).  ``Q.ne`` is
     accepted too (``var`` then means the disequality).  Returns False, and
@@ -200,29 +205,59 @@ class LRAAdapter:
 
     def __init__(self, theory: LRATheory | None = None) -> None:
         self.theory = theory if theory is not None else LRATheory()
-        self._solvers: list = []
+        self._solver = None
         self._shared: set = set()
+        # atom -> interpret(atom) (None: not interpreted), so that
+        # terms(atom) followed by register(..., atom) linearises once
+        self._cache: dict = {}
 
-    def register(self, solver, var: int, atom) -> bool:
-        r = to_constraint(atom)
-        if r is None:
+    def register(self, solver, var: int, atom, interpreted=None) -> bool:
+        """``interpreted``: optionally the result of :func:`interpret`
+        for ``atom`` already at hand (saves a second linearisation).
+
+        An adapter owns one theory and so serves a single solver: a
+        second solver raises ValueError (the theory's bounds would leak
+        between them)."""
+        it = self.interpret(atom) if interpreted is None else interpreted
+        if it is None:
             return False
+        r, atom_terms = it
         if r is True or r is False:
             payload: Any = ((), Fraction(0) if r else Fraction(-1), False, False)
         else:
             payload, positive = r
             if not positive:
                 payload = Negated(payload)
-        if not any(s is solver for s in self._solvers):
-            solver.attach_theory(self.theory)
-            self._solvers.append(solver)
+        if self._solver is not solver:
+            if self._solver is not None:
+                raise ValueError("an LRAAdapter serves a single solver")
+            if not any(t is self.theory for t in solver.theories()):
+                solver.attach_theory(self.theory)
+            self._solver = solver
         solver.register_atom(self.theory, var, payload)
-        self._shared.update(terms(atom))
+        self._shared.update(atom_terms)
         return True
 
-    @staticmethod
-    def terms(atom) -> list | None:
-        return terms(atom)
+    def interpret(self, atom):
+        """``(constraint, terms)`` in one call (see :func:`interpret`),
+        cached per adapter."""
+        try:
+            return self._cache[atom]
+        except KeyError:
+            r = self._cache[atom] = interpret(atom)
+            return r
+        except TypeError:                   # unhashable: do not cache
+            return interpret(atom)
+
+    def terms(self, atom) -> list | None:
+        """:func:`terms` through the cache; None: not interpreted."""
+        r = self.interpret(atom)
+        return None if r is None else r[1]
+
+    def to_constraint(self, atom):
+        """:func:`to_constraint` through the cache."""
+        r = self.interpret(atom)
+        return None if r is None else r[0]
 
     def shared_terms(self) -> set:
         """Every opaque term of every atom registered through this adapter."""
