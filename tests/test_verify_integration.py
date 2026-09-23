@@ -3,8 +3,7 @@
 They pin properties that span several agents' modules: import hygiene of
 the SymPy-free core, the default adapter wiring, per-session ownership of
 theories, the relations-off path, the adapters' number rules, and the
-solver's root-unit reporting.  One known latent defect is recorded as a
-strict xfail (``LRAAdapter`` accepts a second solver).
+solver's root-unit reporting.
 """
 import subprocess
 import sys
@@ -178,8 +177,6 @@ def test_register_atom_on_var_already_reported_at_root_asserts_at_once():
     assert th2.log == [("reg", 1), ("assert", -1)]
 
 
-@pytest.mark.xfail(strict=True, reason="LRAAdapter silently attaches its one "
-                   "theory to a second solver; EUFAdapter refuses (ValueError)")
 def test_lra_adapter_refuses_a_second_solver():
     from satassume.lra_adapter import LRAAdapter
     ad = LRAAdapter()
