@@ -15,6 +15,7 @@ conclusion on the node.
 """
 from __future__ import annotations
 
+from sympy import S
 from sympy.core.function import Function
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs, conjugate, im, re, sign
@@ -27,10 +28,12 @@ from sympy.functions.elementary.trigonometric import (
     asin,
     atan,
     cos,
+    cot,
     sin,
     tan,
 )
 
+from ..formula import Not, P
 from ._common import (
     Rules,
     const_key,
@@ -40,9 +43,12 @@ from ._common import (
     lits,
     pattern_key,
 )
+from .core import ipi_rules, ipi_split
 from .registry import registry
 
 X, N = 0, 1
+#: Slot of ``arg - 1`` in the templates that use it (log, acos, asin).
+M = 2
 
 
 def _x(spec):
@@ -64,26 +70,44 @@ def _equiv(R, cond, preds):
         R.equiv(cond, (N, pred, True), (X, pred, True))
 
 
-def _unary(tag, gen):
+def _unary(tag, gen, slots=None, units=None):
     """Template for a unary function: ``gen(R, c)`` fills ``R`` (``c`` is the
-    constant argument or ``None``)."""
+    constant argument or ``None``).  ``slots(x)`` may supply extra objects
+    the rules refer to by index 2, 3, ... (``arg - 1`` for log); ``units(c,
+    expr)`` may supply unit facts for a constant argument ``c``."""
     def template(expr):
         x = expr.args[0]
+        consts = {}
+        key = [tag, None]
         if x.is_Atom and x.is_number:
-            consts = {X: x}
-            key = (tag, const_key(x))
-        else:
-            consts = {}
-            key = (tag,)
+            consts[X] = x
+            key[1] = const_key(x)
+        objs = [x, expr]
+        if slots is not None:
+            for obj in slots(x):
+                i = len(objs)
+                objs.append(obj)
+                if obj.is_Atom and obj.is_number:
+                    consts[i] = obj
+                    key.append(const_key(obj))
+                else:
+                    key.append(None)
 
         def build():
             R = Rules()
             gen(R, consts.get(X))
             return R.rules
 
-        return facts(key, build, consts, (x, expr))
+        out = facts(tuple(key), build, consts, tuple(objs))
+        if units is not None and X in consts:
+            out = out + units(x, expr)
+        return out
     template.__name__ = tag + '_templates'
     return template
+
+
+def _minus_one(x):
+    return (x - S.One,)
 
 
 def _commutative_rules(n):
@@ -138,21 +162,59 @@ _LOG = (
 )
 
 
-def _exp(R, c):
+def _exp(R, c, ipi=None):
     _table(R, _EXP)
+    # exp(0) == 1
+    R.rule([(X, 'zero', True)], (N, 'odd', True))
+    R.rule([(X, 'zero', True)], (N, 'positive', True))
+    if ipi is not None:
+        c, has_s = ipi
+        ipi_rules(R.rule, c, M if has_s else None, N)
+
+
+@registry.register(exp)
+def exp_templates(expr):
+    """``exp(x)``; for ``x == I*pi*c*s`` (``c`` rational) the value is a
+    root of unity or on the unit circle, described in terms of ``s``."""
+    x = expr.args[0]
+    consts = {}
+    objs = [x, expr]
+    ipi = None
+    if x.is_Atom and x.is_number:
+        consts[X] = x
+        key = ('exp', const_key(x))
+    else:
+        split = ipi_split(x)
+        if split is not None:
+            c, s_ = split
+            ipi = (c, s_ is not None)
+            if s_ is not None:
+                objs.append(s_)
+                if s_.is_Atom and s_.is_number:
+                    consts[M] = s_
+        key = ('exp', None, ipi, const_key(objs[M]) if M in consts else None)
+
+    def build():
+        R = Rules()
+        _exp(R, consts.get(X), ipi)
+        return R.rules
+
+    return facts(key, build, consts, tuple(objs))
 
 
 def _log(R, c):
     _table(R, _LOG)
-    # log(x) == 0 iff x == 1.
-    R.rule([(N, 'zero', True)], (X, 'odd', True))
-    R.rule([(N, 'zero', True)], (X, 'positive', True))
+    # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.
+    R.equiv([], (N, 'zero', True), (M, 'zero', True))
+    R.rule([(M, 'extended_positive', True)], (N, 'extended_positive', True))
+    R.rule([(M, 'negative', True), (X, 'positive', True)], (N, 'negative', True))
+    R.rule([(X, 'positive', True), (N, 'positive', True)], (M, 'positive', True))
+    R.rule([(X, 'positive', True), (N, 'negative', True)], (M, 'negative', True))
     R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
            (N, 'transcendental', True))
 
 
-registry.register(exp)(_unary('exp', _exp))
-registry.register(log)(_unary('log', _log))
+registry.register(log)(_unary('log', _log, slots=_minus_one))
 
 
 # ---------------------------------------------------------------------------
@@ -320,22 +382,68 @@ def _tan(R, c):
     R.rule([(X, 'real', True), (N, 'finite', True)], (N, 'real', True))
 
 
+_COT = (
+    # cot(k*pi) == zoo, so realness needs finiteness of the value.
+    (('real',), ('imaginary', False)),
+    (('imaginary',), 'imaginary'),          # cot(I*t) == -I*coth(t)
+    (('zero',), 'infinite'),
+    (('zero',), ('extended_real', False)),
+    # cot(x) == cos(x)/sin(x) is finite for algebraic x != 0 (sin(x) == 0
+    # only at multiples of pi) and transcendental by Lindemann-Weierstrass:
+    # cot(x) == a algebraic would make exp(2*I*x) algebraic.
+    (('algebraic', ('zero', False)), 'transcendental'),
+    (('algebraic',), ('algebraic', False)),
+)
+
+
+def _cot(R, c):
+    _table(R, _COT)
+    R.rule([(X, 'real', True), (N, 'finite', True)], (N, 'real', True))
+    R.rule([(X, 'complex', True), (N, 'finite', True)], (N, 'complex', True))
+
+
 def _asin(R, c):
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
     R.rule([(N, 'real', True)], (X, 'real', True))
     R.equiv([(N, 'real', True)], (N, 'positive', True), (X, 'positive', True))
     R.equiv([(N, 'real', True)], (N, 'negative', True), (X, 'negative', True))
-    _table(R, ((('finite',), 'finite'), (('complex',), 'complex'), _TRANSCENDENTAL))
+    # asin is real on [-1, 1].
+    R.rule([(X, 'nonnegative', True), (M, 'nonpositive', True)], (N, 'real', True))
+    _table(R, ((('finite',), 'finite'), (('complex',), 'complex'),
+               (('imaginary',), 'imaginary'), _TRANSCENDENTAL))
 
 
 def _acos(R, c):
     R.rule([(N, 'real', True)], (N, 'nonnegative', True))
     R.rule([(N, 'real', True)], (X, 'real', True))
     # acos(x) == 0 iff x == 1.
-    R.rule([(N, 'zero', True)], (X, 'odd', True))
-    R.rule([(N, 'zero', True)], (X, 'positive', True))
+    R.equiv([], (N, 'zero', True), (M, 'zero', True))
     _table(R, ((('zero',), 'positive'), (('finite',), 'finite'), (('complex',), 'complex')))
     R.rule([(X, 'algebraic', True), (N, 'zero', False)], (N, 'transcendental', True))
+
+
+def _in_unit_interval_units(kind):
+    """Unit facts for ``asin(c)``/``acos(c)`` with a rational or float ``c``
+    (exact comparisons): real on [-1, 1], else ``+-pi/2 -+ I*acosh|c|``
+    or ``I*acosh(c)`` / ``pi - I*acosh|c|``."""
+    def units(c, expr):
+        if not (c.is_Rational or c.is_Float):
+            return []
+        out = [P('finite', expr), P('complex', expr)]
+        if -1 <= c <= 1:
+            out.append(P('real', expr))
+            if kind == 'acos':
+                out.append(P('positive' if c < 1 else 'zero', expr))
+            else:
+                out.append(P('positive' if c > 0 else 'negative' if c < 0 else 'zero', expr))
+        else:
+            out.append(Not(P('extended_real', expr)))
+            if kind == 'acos' and c > 1:
+                out.append(P('imaginary', expr))
+            else:
+                out.append(Not(P('imaginary', expr)))
+        return out
+    return units
 
 
 def _atan(R, c):
@@ -346,6 +454,9 @@ def _atan(R, c):
     # atan(I) == oo*I, so restrict to real arguments.
     R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
            (N, 'transcendental', True))
+    # atan(x) is real iff x is real (atan(I*t) is imaginary, infinite or
+    # non-real complex).
+    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
 
 
 _ACOT = (
@@ -357,6 +468,9 @@ _ACOT = (
     (('real',), ('zero', False)),
     (('infinite', 'extended_real'), 'zero'),
     (('real', 'algebraic'), 'transcendental'),
+    (('imaginary',), ('extended_real', False)),
+    # acot(0) == pi/2, acot(+-I) is infinite, acot(x) == atan(1/x) otherwise.
+    (('algebraic',), ('algebraic', False)),
 )
 
 
@@ -365,9 +479,12 @@ def _acot(R, c):
 
 
 for _cls, _tag, _gen in ((sin, 'sin', _sin), (cos, 'cos', _cos), (tan, 'tan', _tan),
-                         (asin, 'asin', _asin), (acos, 'acos', _acos),
-                         (atan, 'atan', _atan), (acot, 'acot', _acot)):
+                         (cot, 'cot', _cot), (atan, 'atan', _atan), (acot, 'acot', _acot)):
     registry.register(_cls)(_unary(_tag, _gen))
+registry.register(asin)(_unary('asin', _asin, slots=_minus_one,
+                               units=_in_unit_interval_units('asin')))
+registry.register(acos)(_unary('acos', _acos, slots=_minus_one,
+                               units=_in_unit_interval_units('acos')))
 
 
 # ---------------------------------------------------------------------------

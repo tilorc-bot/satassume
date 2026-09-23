@@ -22,10 +22,15 @@ from itertools import combinations, product
 from sympy import S
 from sympy.core.add import Add
 from sympy.core.mul import Mul
+from sympy.core.intfunc import integer_nthroot
 from sympy.core.power import Pow
+from sympy.functions.elementary.exponential import exp
+
+from ..formula import Not, P
 
 from ._common import (
     SIGN_FLIP,
+    VOCAB,
     Rules,
     const_key,
     consts_of,
@@ -366,14 +371,94 @@ _POW_E_RULES = (
 # Gelfond-Schneider: for algebraic b not in {0, 1} and algebraic e,
 # b**e is algebraic iff e is rational.  Ways to say "b not in {0, 1}":
 _NOT01 = ('irrational', 'noninteger', 'negative', 'prime', 'composite')
+# Ways to say "b is real with |b| not in {0, 1}".
+_NOTUNIT = ('irrational', 'noninteger', 'prime', 'composite')
+
+# Pow(x, 1) is x.
+_POW_ONE_EQUIV = tuple(sorted(VOCAB - {'commutative'}))
+
+# Extra object slots after base 0, exponent 1, node 2 (see ``pow_templates``).
+_U, _S, _T = 3, 4, 5
 
 
 def _lit(spec):
     return (spec[0], spec[1], spec[2] if len(spec) > 2 else True)
 
 
-def _pow_rules(b, e, same):
-    """``b``/``e`` are the constant base/exponent or ``None`` if symbolic."""
+def _unit_angle(b):
+    """``theta/pi`` as a Rational for the constants ``I``, ``-I``, ``-1``
+    (``b == exp(I*pi*theta/pi)``), else None."""
+    if b is S.ImaginaryUnit:
+        return S.Half
+    if b is S.NegativeOne:
+        return S.One
+    if b.is_Mul and b.args == (S.NegativeOne, S.ImaginaryUnit):
+        return -S.Half
+    return None
+
+
+def ipi_split(arg):
+    """``arg == I*pi*c*s`` structurally (a ``Mul`` with one ``I`` factor, one
+    ``pi`` factor, rational coefficients ``c`` and other factors ``s``):
+    returns ``(c, s)`` with ``s`` None when there are no other factors, else
+    None."""
+    if not arg.is_Mul:
+        return None
+    c = S.One
+    rest = []
+    seen_i = seen_pi = False
+    for f in arg.args:
+        if f is S.ImaginaryUnit and not seen_i:
+            seen_i = True
+        elif f is S.Pi and not seen_pi:
+            seen_pi = True
+        elif f.is_Rational:
+            c *= f
+        else:
+            rest.append(f)
+    if not (seen_i and seen_pi):
+        return None
+    return c, (None if not rest else rest[0] if len(rest) == 1 else Mul(*rest))
+
+
+def ipi_rules(rule, c, iS, N):
+    """Rules for ``node == exp(I*pi*c*s)``: a root of unity when ``s`` is an
+    integer, on the unit circle when ``s`` is real.  ``iS`` is the slot of
+    ``s`` (None: ``s == 1``)."""
+    if iS is None:
+        if c.is_integer:
+            rule([], (N, 'odd', True))
+            rule([], (N, 'positive' if c.p % 2 == 0 else 'negative', True))
+        elif c.q == 2:
+            rule([], (N, 'imaginary', True))
+            rule([], (N, 'algebraic', True))
+        else:
+            for lit in ((N, 'algebraic', True), (N, 'extended_real', False),
+                        (N, 'imaginary', False), (N, 'zero', False)):
+                rule([], lit)
+        return
+    rule([(iS, 'integer', True)], (N, 'algebraic', True))
+    rule([(iS, 'real', True)], (N, 'complex', True))
+    rule([(iS, 'real', True)], (N, 'zero', False))
+    if c.is_integer:
+        rule([(iS, 'integer', True)], (N, 'odd', True))
+        if c.p % 2 == 0:
+            rule([(iS, 'integer', True)], (N, 'positive', True))
+        else:
+            rule([(iS, 'even', True)], (N, 'positive', True))
+            rule([(iS, 'odd', True)], (N, 'negative', True))
+            rule([(iS, 'integer', True), (N, 'positive', True)], (iS, 'even', True))
+            rule([(iS, 'integer', True), (N, 'negative', True)], (iS, 'odd', True))
+    elif c.q == 2:
+        rule([(iS, 'even', True)], (N, 'odd', True))
+        rule([(iS, 'odd', True)], (N, 'imaginary', True))
+
+
+def _pow_rules(b, e, same, angle, has_u, ipi, has_t):
+    """``b``/``e`` are the constant base/exponent or ``None`` if symbolic;
+    ``angle`` is ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the
+    argument of an ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and
+    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``."""
     R = Rules()
     rule = R.rule
     for prem, concl in _POW_RULES:
@@ -381,14 +466,46 @@ def _pow_rules(b, e, same):
     if b is S.Exp1:
         for prem, concl in _POW_E_RULES:
             rule([_lit(p) for p in prem], _lit(concl))
+        if ipi is not None:
+            c, has_s = ipi
+            ipi_rules(rule, c, _S if has_s else None, _N)
     if same:
         rule([(_B, 'extended_nonnegative', True)], (_N, 'extended_positive', True))
+    if e is S.One:
+        for pred in _POW_ONE_EQUIV:
+            R.equiv([], (_N, pred, True), (_B, pred, True))
+    # A power of a composite is 1, a fraction or composite.
+    rule([(_B, 'composite', True), (_E, 'integer', True)], (_N, 'prime', False))
+    # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
+    # exp(-t*phi)*exp(I*t*log(r)) with r algebraic; t*log(r) in pi*Q with
+    # t algebraic nonzero forces log(r)/(I*pi) algebraic, hence rational
+    # (Gelfond-Schneider), hence r == 1.  So b**e is never imaginary, and
+    # it is real iff |b| == 1 (then it is positive).
+    rule([(_B, 'algebraic', True), (_B, 'zero', False), (_E, 'imaginary', True),
+          (_E, 'algebraic', True)], (_N, 'imaginary', False))
+    for pred in _NOTUNIT:
+        rule([(_B, pred, True), (_B, 'algebraic', True), (_E, 'imaginary', True),
+              (_E, 'algebraic', True)], (_N, 'extended_real', False))
+    if angle is not None:
+        rule([(_E, 'imaginary', True)], (_N, 'positive', True))
+    if has_u:
+        # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
+        rule([(_U, 'imaginary', True), (_E, 'imaginary', True)], (_N, 'positive', True))
+    if has_t:
+        # Real base, rational exponent: imaginary iff the base is negative
+        # and the exponent is half an odd integer.
+        rule([(_B, 'extended_real', True), (_E, 'rational', True), (_T, 'integer', False)],
+             (_N, 'imaginary', False))
+        rule([(_B, 'negative', True), (_E, 'rational', True), (_T, 'integer', True),
+              (_E, 'integer', False)], (_N, 'imaginary', True))
 
     if e is not None and e.is_Rational and not e.is_Integer:
         if e.q == 2:
             # b**(k/2) for real b is imaginary iff b is a negative real.
             R.equiv([(_B, 'extended_real', True)], (_N, 'imaginary', True), (_B, 'negative', True))
             rule([(_B, 'extended_real', True)], (_N, 'extended_negative', False))
+        else:
+            rule([(_B, 'extended_real', True)], (_N, 'imaginary', False))
         if e.p == 1:
             # (b**(1/q))**q == b: a non-real base gives a non-real root.
             rule([(_B, 'extended_real', False)], (_N, 'extended_real', False))
@@ -396,6 +513,14 @@ def _pow_rules(b, e, same):
             # Likewise for 1/b**(1/q), but zoo**(-1/2) == 0 is real.
             rule([(_B, 'extended_real', False), (_B, 'finite', True)],
                  (_N, 'extended_real', False))
+        if b is not None and b.is_Rational and b.is_positive:
+            # b**(p/q) with gcd(p, q) == 1 is rational iff b is a perfect
+            # q-th power (exact integer arithmetic).
+            if not (integer_nthroot(b.p, e.q)[1] and integer_nthroot(b.q, e.q)[1]):
+                rule([], (_N, 'irrational', True))
+    if e is S.NegativeOne:
+        # 1/b is rational iff b is (nonzero) rational.
+        rule([(_B, 'irrational', True)], (_N, 'irrational', True))
     if b is not None:
         if b is S.NegativeOne:
             rule([(_E, 'integer', True)], (_N, 'odd', True))
@@ -404,6 +529,16 @@ def _pow_rules(b, e, same):
             rule([(_E, 'negative', True)], (_N, 'integer', False))
         if b.is_algebraic and b.is_zero is False and b is not S.One:
             R.equiv([(_E, 'algebraic', True)], (_N, 'algebraic', True), (_E, 'rational', True))
+        if b.is_Number and b.is_finite:
+            # Exact comparisons of a number with 1 (no assumptions involved).
+            if abs(b) > 1:
+                rule([(_E, 'extended_negative', True)], (_N, 'finite', True))
+                rule([(_E, 'negative_infinite', True)], (_N, 'zero', True))
+                rule([(_E, 'positive_infinite', True)], (_N, 'infinite', True))
+            elif b.is_zero is False and abs(b) < 1:
+                rule([(_E, 'extended_positive', True)], (_N, 'finite', True))
+                rule([(_E, 'positive_infinite', True)], (_N, 'zero', True))
+                rule([(_E, 'negative_infinite', True)], (_N, 'infinite', True))
     if e is not None:
         if e.is_Integer and e.p >= 2:
             # b**e for integer b >= 2 is composite.
@@ -415,6 +550,41 @@ def _pow_rules(b, e, same):
     return R.rules
 
 
+def _unit_power_units(angle, e, expr):
+    """Unit facts for ``b**e`` with ``b == exp(I*pi*angle)`` (``I``, ``-I``,
+    ``-1``) and a numeric exponent ``e == a + I*t``: the value is
+    ``exp(-t*pi*angle) * exp(I*pi*a*angle)``, so it is real iff
+    ``a*angle`` is an integer (positive for even, negative for odd) and
+    imaginary iff ``a*angle`` is half an odd integer.  Only exact real
+    parts (atomic numbers) are used."""
+    a, t = e.as_real_imag()
+    if not (a.is_Atom and a.is_number and t.is_Atom and t.is_number):
+        return []
+    out = [Not(P('zero', expr)), P('finite', expr), P('complex', expr)]
+    if a.is_Rational:
+        phi = a * angle
+        if phi.is_Integer:
+            out.append(P('positive' if phi.p % 2 == 0 else 'negative', expr))
+        elif phi.q == 2:
+            out.append(P('imaginary', expr))
+        else:
+            out.append(Not(P('extended_real', expr)))
+            out.append(Not(P('imaginary', expr)))
+    elif a.is_irrational:
+        out.append(Not(P('extended_real', expr)))
+        out.append(Not(P('imaginary', expr)))
+    return out
+
+
+def _exp_arg(b):
+    """``u`` if ``b`` is ``exp(u)`` or ``E**u``, else None."""
+    if b.is_Pow:
+        return b.args[1] if b.args[0] is S.Exp1 else None
+    if isinstance(b, exp):
+        return b.args[0]
+    return None
+
+
 @registry.register(Pow)
 def pow_templates(expr):
     b, e = expr.args
@@ -424,7 +594,33 @@ def pow_templates(expr):
     if e.is_Atom and e.is_number:
         consts[_E] = e
     same = b is e
+    angle = _unit_angle(b)
+    objs = [b, e, expr, None, None, None]
+    u = _exp_arg(b)
+    if u is not None:
+        objs[_U] = u
+        if u.is_Atom and u.is_number:
+            consts[_U] = u
+    ipi = None
+    if b is S.Exp1 and _E not in consts:
+        split = ipi_split(e)
+        if split is not None:
+            c, s_ = split
+            ipi = (c, s_ is not None)
+            if s_ is not None:
+                objs[_S] = s_
+                if s_.is_Atom and s_.is_number:
+                    consts[_S] = s_
+    has_t = _E not in consts and not e.is_number
+    if has_t:
+        objs[_T] = Mul(S(2), e)
     key = ('pow', const_key(b) if _B in consts else None,
-           const_key(e) if _E in consts else None, same)
-    return facts(key, lambda: _pow_rules(consts.get(_B), consts.get(_E), same),
-                 consts, (b, e, expr))
+           const_key(e) if _E in consts else None, same, angle,
+           const_key(u) if _U in consts else u is not None, ipi,
+           const_key(objs[_S]) if _S in consts else None, has_t)
+    out = facts(key, lambda: _pow_rules(consts.get(_B), consts.get(_E), same, angle,
+                                        u is not None, ipi, has_t),
+                consts, tuple(objs))
+    if angle is not None and e.is_number:
+        out.extend(_unit_power_units(angle, e, expr))
+    return out

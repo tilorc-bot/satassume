@@ -40,6 +40,7 @@ from sympy import (
     conjugate,
     cos,
     cosh,
+    cot,
     exp,
     factorial,
     floor,
@@ -242,13 +243,32 @@ POW_SAMPLES = [
     unevaluated(Pow, 1, x), (-I)**x, x**oo, x**-oo, oo**x, (-oo)**x, zoo**x,
     unevaluated(Pow, x, 0), unevaluated(Pow, x, 1), x**(-y), x**(2*y),
     unevaluated(Pow, x, 2), unevaluated(Pow, x, Rational(1, 2)),
-    unevaluated(Pow, x, -1),
+    unevaluated(Pow, x, -1), x**Rational(1, 4), 2**(x/2), x**(y/2), x**(y/3),
+    exp(x)**y, exp(x)**x, (_E**x)**y, unevaluated(Pow, _E, I*pi*x),
+    unevaluated(Pow, _E, 2*I*pi*x), unevaluated(Pow, _E, I*pi*x/2),
+    unevaluated(Pow, 2, S.Half), unevaluated(Pow, 4, S.Half),
+    unevaluated(Pow, Rational(8, 27), Rational(1, 3)), unevaluated(Pow, 12, Rational(2, 3)),
+    # Not I**(3 + I): the old system (the oracle here) wrongly says its
+    # value -I*exp(-pi/2) is not imaginary.
+    unevaluated(Pow, I, I), unevaluated(Pow, I, 2 + I), unevaluated(Pow, -I, I), unevaluated(Pow, -1, I), unevaluated(Pow, I, I*pi),
+    unevaluated(Pow, I, pi), unevaluated(Pow, -1, Rational(1, 2) + I),
+    unevaluated(Pow, 3, I), unevaluated(Pow, 2, -oo), unevaluated(Pow, S.Half, oo),
+    Rational(-3, 2)**x, Float(0.5)**x, 4**x,
 ]
 FUNCTION_SAMPLES = [
     exp(x), log(x), Abs(x), re(x), im(x), sign(x), conjugate(x), floor(x),
     ceiling(x), factorial(x), sin(x), cos(x), tan(x), sinh(x), cosh(x),
     tanh(x), asin(x), acos(x), atan(x), acot(x),
-    exp(2*x), log(x + 1), Abs(x*y), sin(x + y), atan(x*y),
+    exp(2*x), log(x + 1), Abs(x*y), sin(x + y), atan(x*y), cot(x), cot(x + 1),
+    exp(I*pi*x), exp(2*I*pi*x), exp(I*pi*x/2), exp(3*I*pi*x), exp(I*pi*x*y),
+    exp(I*pi*x/3), exp(-I*pi*x), unevaluated(exp, I*pi), unevaluated(exp, 2*I*pi),
+    unevaluated(exp, I*pi/2), unevaluated(exp, -I*pi/2), unevaluated(exp, I*pi/3),
+    unevaluated(exp, 0), unevaluated(exp, I*pi*sqrt(2)), log(x + 2), log(7),
+    unevaluated(log, 1), log(pi), acos(x + 1), asin(x - 1), acos(Rational(1, 7)),
+    acos(7), acos(-7), unevaluated(acos, 1), unevaluated(acos, -1), acos(Float(0.5)),
+    asin(Rational(-1, 2)), asin(7), asin(-7), unevaluated(asin, 1), unevaluated(asin, 0),
+    # Not cot(0, evaluate=False): the old system raises ZeroDivisionError on it.
+    cot(7), acot(x + 1), atan(x + 1),
 ]
 
 
@@ -351,12 +371,16 @@ def _atom_nodes(f):
 
 @pytest.mark.parametrize("expr", ALL_SAMPLES, ids=str)
 def test_atoms_are_node_or_direct_args(expr):
+    """Atoms are about the node, its direct arguments, or one of the few
+    derived nodes a template introduces (``2*e`` of a power, ``x - 1`` of a
+    logarithm, the symbolic part of ``I*pi*c*s``), never about anything
+    with symbols the node does not have."""
     allowed = {expr, *expr.args}
     for f in registry.facts_for(expr):
         assert isinstance(f, (P, Formula)), f
         for a in atoms_of(f):
             assert a.pred in VOCAB, (expr, a)
-            assert a.expr in allowed, (expr, f, a)
+            assert a.expr in allowed or a.expr.free_symbols <= expr.free_symbols, (expr, f, a)
 
 
 def test_facts_for_x_plus_y_shape():
@@ -459,5 +483,35 @@ def test_specific_expectations():
     facts = registry.facts_for(sqrt(2)*x)
     assert Implies(And(P('irrational', sqrt(2)), P('rational', x), Not(P('zero', x))),
                    P('irrational', sqrt(2)*x)) in facts
+    assert P('irrational', sqrt(2)) in registry.facts_for(sqrt(2))
+    assert P('irrational', sqrt(2)) not in registry.facts_for(unevaluated(Pow, 4, S.Half))
+    facts = registry.facts_for(x**y)
+    assert Implies(And(P('extended_real', x), P('rational', y), Not(P('integer', 2*y))),
+                   Not(P('imaginary', x**y))) in facts
+    assert Implies(And(P('composite', x), P('integer', y)), Not(P('prime', x**y))) in facts
+    facts = registry.facts_for(I**x)
+    assert Implies(P('imaginary', x), P('positive', I**x)) in facts
+    facts = registry.facts_for(3**x)
+    assert Implies(P('imaginary', x), Not(P('extended_real', 3**x))) not in facts  # needs algebraic x
+    assert Implies(And(P('imaginary', x), P('algebraic', x)), Not(P('extended_real', 3**x))) in facts
+    assert P('negative', unevaluated(Pow, I, 2 + I)) in registry.facts_for(unevaluated(Pow, I, 2 + I))
+    assert P('imaginary', unevaluated(Pow, I, 3 + I)) in registry.facts_for(unevaluated(Pow, I, 3 + I))
+    assert P('positive', unevaluated(Pow, I, I)) in registry.facts_for(unevaluated(Pow, I, I))
+    facts = registry.facts_for(exp(I*pi*x))
+    assert Implies(P('even', x), P('positive', exp(I*pi*x))) in facts
+    assert Implies(P('odd', x), P('negative', exp(I*pi*x))) in facts
+    facts = registry.facts_for(exp(I*pi*x/2))
+    assert Implies(P('odd', x), P('imaginary', exp(I*pi*x/2))) in facts
+    assert P('imaginary', unevaluated(exp, I*pi/2)) in registry.facts_for(unevaluated(exp, I*pi/2))
+    assert P('negative', unevaluated(exp, I*pi)) in registry.facts_for(unevaluated(exp, I*pi))
+    facts = registry.facts_for(log(x))
+    assert Implies(P('zero', x - 1), P('zero', log(x))) in facts
+    assert Implies(P('extended_positive', x - 1), P('extended_positive', log(x))) in facts
+    assert P('extended_positive', log(7)) in registry.facts_for(log(7))
+    assert P('zero', unevaluated(log, 1)) in registry.facts_for(unevaluated(log, 1))
+    assert P('positive', acos(Rational(1, 7))) in registry.facts_for(acos(Rational(1, 7)))
+    assert P('imaginary', acos(7)) in registry.facts_for(acos(7))
+    facts = registry.facts_for(cot(x))
+    assert Implies(And(P('algebraic', x), Not(P('zero', x))), P('transcendental', cot(x))) in facts
     facts = registry.facts_for(Abs(x))
     assert P('extended_nonnegative', Abs(x)) in facts
