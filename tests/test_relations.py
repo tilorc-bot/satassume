@@ -147,6 +147,21 @@ def test_equality_sharing_is_needed_and_works(monkeypatch):
     assert ask_with(relation_engine(dummy_specs()), prop, assum) is None
 
 
+def test_real_euf_with_order_stand_in():
+    # the real EUF adapter combined with the dummy order theory (LRA stand-in)
+    from satassume.euf_adapter import EUFAdapter
+    from satassume.relations import AdapterSpec
+    from theory_harness import OrderAdapter
+    specs = [AdapterSpec("order", OrderAdapter, True),
+             AdapterSpec("euf", EUFAdapter, False)]
+    e = relation_engine(specs)
+    assert ask_with(e, Q.eq(f(x), f(y)), (x <= y) & (y <= x)) is True
+    assert ask_with(e, Q.eq(f(x), f(y)), x <= y) is None
+    assert ask_with(e, Q.lt(x, z), Q.lt(x, y) & Q.eq(y, z)) is True
+    assert ask_with(e, Q.ne(f(x), f(z)), Q.lt(x, y) & Q.lt(y, z)) is None
+    assert ask_with(e, Q.gt(f(x), 0), Q.eq(f(x), f(y)) & Q.gt(f(y), 0)) is None  # f(x) not a symbol for the stand-in
+
+
 def test_sharing_bookkeeping():
     sh = EqualitySharing()
     assert sh.update([{1, 2}, {3}]) == []
@@ -262,7 +277,10 @@ def test_random_order_queries_are_sound(prop_t, assum_ts):
 # SymPy's sympy/assumptions/tests/test_rel_queries.py on the real theories
 # ----------------------------------------------------------------------
 
-_real = pytest.mark.xfail(reason="waits for the LRA/EUF adapters", strict=False)
+import importlib.util
+_HAVE_LRA = importlib.util.find_spec("satassume.lra_adapter") is not None
+# strict once LRA is present: these must then pass
+_real = pytest.mark.xfail(not _HAVE_LRA, reason="waits for the LRA adapter", strict=True)
 
 
 @pytest.fixture
@@ -343,8 +361,7 @@ def test_failing_number_line_properties(real_eng):
     assert ask_with(e, 1/a >= 1/b, (a <= b) & Q.negative(x) & Q.negative(b)) is True
 
 
-@_real
-def test_equality(real_eng):
+def test_equality(real_eng):   # EUF
     e = real_eng
     assert ask_with(e, Q.eq(x, x)) is True
     assert ask_with(e, Q.eq(y, x), Q.eq(x, y)) is True

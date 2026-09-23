@@ -23,7 +23,11 @@ scope so the caller can decide before asking.  The categories are
 * ``"relation"``: a relational (``x < 0``, ``Eq(x, y)``), one of the binary
   predicates ``Q.eq``, ``Q.ne``, ``Q.lt``, ``Q.le``, ``Q.gt``, ``Q.ge``, or
   ``Q.is_true`` over a relational, anywhere in the proposition or the
-  assumptions;
+  assumptions.  :func:`out_of_scope` always reports this category, but
+  :func:`ask` answers relations when the engine has theory adapters
+  (``Engine.relation_specs``, by default LRA and EUF when present; see
+  :mod:`satassume.relations`) and returns None only when no theory
+  interprets one of the relations;
 * ``"matrix"``: a matrix predicate (``Q.invertible`` and friends from
   ``sympy.assumptions.predicates.matrices``) or a vocabulary predicate
   applied to a non-scalar argument (a ``MatrixSymbol``, ...);

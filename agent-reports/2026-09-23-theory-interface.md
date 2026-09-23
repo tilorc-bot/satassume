@@ -1,25 +1,33 @@
-# Agent report: the theory-solver interface (DPLL(T) phase one)
+# Agent report: theory solvers in satassume (DPLL(T), phases one and two)
 
 - **Date:** 2026-09-23
-- **Status:** phase one done on the integration branch: protocol, solver
-  hooks, test harness, hook tests; 487 tests pass. No theory is
-  implemented yet and nothing in `engine.py` or `sympy_api.py` changed.
+- **Status:** phase one (protocol, solver hooks, harness) is on `main`.
+  Phase two (relation atoms wired into the engine, unary links, equality
+  sharing, end-to-end tests) is on the integration branch. The EUF adapter
+  is merged and in use. The LRA adapter (branch of lra-impl, `3a7d55a`) was
+  tested here from a scratch copy: all of SymPy's `test_rel_queries.py`
+  passes and 75 of the 78 relational corpus records agree, 0 wrong.
 - **Scope:** `satassume/theory.py`, the theory hooks in
-  `satassume/solver.py`, `tests/theory_harness.py`,
-  `tests/test_theory_hooks.py`
+  `satassume/solver.py`, `satassume/relations.py`, the relation routing in
+  `satassume/engine.py` and `satassume/sympy_api.py`,
+  `tests/theory_harness.py`, `tests/test_theory_hooks.py`,
+  `tests/test_relations.py`, `tools/compare.py --relations-only`
 - **Read this if:** you implement or test a theory (LRA, EUF) for
-  satassume, or you wire relation atoms into the engine
-- **Stale after:** any change to `satassume/theory.py` or to the theory
-  section of `satassume/solver.py`; phase two (engine wiring, combination)
+  satassume, write an adapter, or change how relations reach the engine
+- **Stale after:** any change to `satassume/theory.py`,
+  `satassume/relations.py` or the theory section of `satassume/solver.py`
 - **TL;DR:** a theory implements `register_atom`, `assert_lit`, `check`,
   `push_level`, `pop_level` and optionally `propagate`. The solver reports
   only variables registered for that theory, keeps the theory's level equal
   to its own decision level, turns every conflict clause into a learnt
-  clause and calls `check` just before answering SAT. The no-theory path
-  costs about 1 % on engine queries and 0.5-2.5 % on raw solver
-  benchmarks. Test a theory with `TheoryCase` and `check_*` from
-  `tests/theory_harness.py` plus a brute-force oracle, and wrap it in a
-  `Recorder` to check the protocol both ways.
+  clause and calls `check` just before answering SAT. Relations reach the
+  engine as two atom kinds, `eq(a, b)` and `lt(a, b)`, with `<=` meaning
+  "not the reversed `<`", which is SymPy's own definition. Each session
+  has its own adapters. LRA atoms are guarded by `real` of their terms, so
+  `<` on non-real or infinite arguments stays a free Boolean. EUF gets
+  `eq` unconditionally. Theories share equalities over common terms
+  through interface atoms (delayed theory combination). If no theory
+  interprets one of the user's relations, `ask` returns None as before.
 
 ## 1. The interface
 
@@ -107,24 +115,25 @@ sees only its own variables. If theory A returns a conflict for a literal,
 theories later in the attachment order may not see that literal; it is
 undone before anything else happens.
 
-## 3. Mapping SymPy relation atoms to payloads (sketch; adapters are owned by the impl agents)
+## 3. Adapters as wired (entry points announced by the builders)
 
-- **LRA** (`satassume/lra_adapter.py`): `Q.lt/le/gt/ge/eq(a, b)` with `a - b`
-  linear in its non-numeric terms and rational coefficients becomes a
-  record like `(terms: dict[term, Fraction], constant: Fraction, strict: bool,
-  equality: bool)` meaning `sum c*t (<, <=, =) constant`; the terms are
-  SymPy expressions used only as keys. `Q.ne` is the negation of `Q.eq`
-  (same variable, negative literal). Anything non-linear, non-real or
-  infinite is not registered (left to SAT, sound). `~/reasoning/reasoning/lra_adapter.py`
-  is a good model.
-- **EUF** (`satassume/euf_adapter.py`): `Q.eq(a, b)` / `Eq(a, b)` between
-  arbitrary terms becomes an equation between term handles; function
-  applications are flattened to `f(t1, ..., tn)` over term handles so
-  congruence closure can see them. Numbers are distinct constants
-  (`1 != 2` is a theory fact the adapter can add as disequalities).
-- Adapters expose something like `adapter.register(solver, var, sympy_atom)
-  -> bool` that returns False when the atom is not interpreted, so the engine
-  can offer every relation atom to each adapter.
+The engine talks to an adapter only through these calls
+(`satassume/relations.py`, `AdapterSpec(name, factory, guarded)`):
+
+| call | LRA (`LRAAdapter`, guarded) | EUF (`EUFAdapter`, unguarded) |
+|---|---|---|
+| `factory()` | one adapter (and theory) per engine session | same; one solver per adapter |
+| `register(solver, var, atom) -> bool` | `Q.lt(a, b)` / `Q.eq(a, b)` with `a - b` linear over opaque terms and rational coefficients; ground atoms such as `Q.lt(1, 2)` are fixed by the theory itself | `Q.eq(a, b)` over any Basic except nan; Add/Mul/Pow/applications are uninterpreted heads, binders opaque |
+| `terms(atom)` | opaque terms of the linear form, including ones that cancel (`Q.lt(x, x + 1)` gives `[x]`); `[]` only for purely numeric atoms | not used |
+| `shared_terms()` | every opaque term registered | every interned term, subterms included |
+| numbers | exact rationals | only Integer/Rational are distinct values; Float, pi, oo, zoo opaque |
+
+The engine calls `register` with atoms in normal form only: `Q.lt(a, b)`
+and `Q.eq(a, b)`, the latter with `(a, b)` in `default_sort_key` order.
+`Q.ne`, `<=`, `>=` and `>` arrive as negated or swapped literals of these
+two. A guarded adapter never sees the user's variable `r`: it gets a fresh
+`t` and the engine adds `real(u1) & ... & real(uk) -> (r <-> t)` over
+`terms(atom)`, so it may assume every term is a finite real.
 
 ## 4. Testing a theory with the harness
 
@@ -158,66 +167,144 @@ assignments are inconsistent, modes `eager`/`lazy`/`propagate`) shows the
 expected shape of a theory in 60 lines. Theory unit tests without a solver
 can call the five methods directly.
 
-## 5. Open questions for phase two (integration agent, next)
+## 5. Phase two: relations in the engine
 
-**Combining LRA and EUF.** Plan: start disjoint, one theory per atom by
-kind (LRA for linear real relations, EUF for `eq/ne` over other terms),
-no sharing. Sound, incomplete across the boundary (`f(x) = f(y)` from
-`x <= y, y <= x`). Then delayed theory combination: for each pair of terms
-shared by both theories create an interface equality variable and register
-it with *both* theories; the SAT solver branches on it and each theory
-checks it. This needs nothing new in the solver (multi-theory registration
-already works) and no equality propagation inside LRA; Nelson-Oppen with
-equality propagation (both theories are convex) is the faster alternative
-if the number of interface equalities blows up. Decide after measuring on
-`sympy/assumptions/tests/test_rel_queries.py`.
+### 5.1 What SymPy means by `Q.lt` on non-real or infinite arguments
 
-**Where relation atoms enter.** Today `sympy_api.to_formula` raises
-`Unsupported("relation")` for a `Relational` or a `Q.eq/lt/...` applied
-predicate, so `ask` returns None. Phase two:
+SymPy (read-only checkout, `sympy/assumptions/relation/binrel.py`,
+`sympy/core/relational.py`, `sympy/assumptions/lra_satask.py`):
 
-1. `to_formula` turns `Q.lt(a, b)` (and `a < b`, `Q.is_true(a < b)`) into an
-   atom `P('lt', Args((a, b)))`, normalised so that `gt/ge` become `lt/le`
-   with swapped arguments and `ne` becomes `Not(eq)`. `out_of_scope` stops
-   reporting "relation" for the supported kinds.
-2. `VarTable.var` already gives a non-vocabulary atom one variable of its own
-   and queues it in `new_custom`; `Session._flush` hands it to
-   `Session._custom`. `_custom` gets a branch for relation predicates that
-   offers the atom to the session's adapters, which call
-   `solver.register_atom`. Theories live on the `Session` (created lazily
-   at the first relation atom and attached to `session.solver`), so
-   cone-search fresh sessions and context sessions each get their own.
-3. Bridging unary predicates: when a term `t` occurs in a registered LRA
-   atom, `ensure(t, {'positive','negative','zero','real', 'finite'})` and
-   register fresh atoms `t > 0`, `t < 0`, `t = 0` with clauses
-   `positive(t) <-> (real(t) & finite(t) & [t > 0])` and similarly, so that
-   `ask(Q.negative(x), Q.lt(x, y) & Q.lt(y, 0))` works. LRA is over finite
-   reals: every term in an LRA atom must be known real and finite (or the
-   relation atom must imply it) before its constraint is registered; the
-   exact SymPy semantics of `Q.lt` on non-real or infinite arguments has
-   to be fixed first (open).
-4. Caches: `writeback` sends root values of relation atoms to
-   `custom_cache`; only context-free sessions may do that (context sessions
-   already guard assumptions by a selector, so their root trail is
-   context-free too, which keeps this correct).
+- `BinaryRelation.eval` evaluates through `is_eq`/`is_ge`. The `is_ge`
+  docstring requires that "in cases where either x or y is non-real all
+  comparisons will give None". Infinities get their extended-real order
+  (`is_ge(oo, x)` is True for extended-real `x`).
+- `lra_satask`, the only path with arithmetic reasoning, raises
+  `UnhandledInput` unless every argument `is_real` (hence finite). It maps
+  `extended_positive` to `positive` and treats `positive_infinite` as
+  False, so its answers assume finite reals throughout.
+- Negation is definitional: `~(x < 0)` *is* `x >= 0`, since
+  `Relational.negated` and `BinaryRelation.negated` map `lt` to `ge` and
+  `eq` to `ne`. `ask(Q.le(x, y), Q.gt(x, y))` is False even for plain
+  symbols.
 
-**`ask(Q.lt(x, y), assumptions)` end to end.** `to_formula` -> atom
-`P('lt', Args((x, y)))` -> `Engine.ask` -> `_context_session` (assumption
-relation atoms registered via `assume_formula`) -> `_literal` ->
-`literal_of` allocates the variable and registers the atom with LRA ->
-`query_literal`: `implied(assumptions)` (unit propagation plus `assert_lit`
-and `propagate`) may already decide; else `entails` runs `solve` twice with
-`check` as the final arbiter; a cone search builds a fresh session that
-registers its own atoms. No engine code needs to know about theories beyond
-steps 2-3.
+**Decision.** `a <= b` is `Not(a > b)` for any arguments, because that is
+SymPy's definition and holds for reals. `a < b` has its order meaning only
+when every opaque term of `a - b` is real, and so finite (the LRA guard).
+Otherwise it is a free Boolean, which is sound whatever SymPy decides later
+for complex or infinite arguments. `a == b` is equality of values in any
+domain and goes to EUF unconditionally. `nan` is rejected, since
+`Eq(nan, nan)` is False. Infinite arguments (`x < oo`) are not interpreted
+by LRA, and a symbol that may be infinite (`extended_real`) fails the
+guard.
 
-**Engine changes needed (not made in phase one):** a relation branch in
-`Session._custom`; theory instances on `Session`; the bridge clauses of
-step 3; `out_of_scope`/`to_formula` in `sympy_api.py`. The solver side
-needs nothing more unless measurements ask for lazy explanations
-(`provide_reason`) or theory-driven decisions.
+### 5.2 Wiring
 
-## 6. Timing (cores 8,9, alternating base and candidate, best of runs)
+- `sympy_api.to_formula(expr, relations)` turns relations
+  (`Relational`, `Q.eq/ne/lt/le/gt/ge`, `Q.is_true(rel)`) into atoms via
+  `relations.relation_atom` when `Engine.relation_specs` is non-empty. With
+  no specs it raises `Unsupported("relation")` exactly as before.
+  `out_of_scope` still reports "relation" (the corpus tool uses it to
+  group records).
+- `Engine(relations=None)` takes the default specs: LRA and EUF when their
+  modules import, only with the SymPy templates. `relations=[]` switches
+  relations off.
+- `Session.relations` (a `relations.Relations`) is created at the first
+  user formula of a session. Relation atoms get ordinary custom variables
+  (`VarTable.custom`); `Session._custom` queues them, and
+  `Relations.process` interprets them at the end of `literal_of`,
+  `assume_formula` and `Engine._literal`. At that point the session is not
+  compiling, so visiting guard terms is safe. Cone-search sessions and
+  context sessions each have their own adapters and theories.
+- `relations.Uninterpreted` is raised when a relation of the query or the
+  assumptions has no theory. `ask` turns it into None, matching the
+  old behaviour. Internal atoms (links, interface equalities) never raise.
+
+### 5.3 Links to the unary vocabulary (all in `relations.Relations._link`)
+
+For each argument `e` of a user relation, and each argument of a
+vocabulary atom of the user formulas once the session has relations
+(numbers excluded):
+
+| clause | reason it is sound |
+|---|---|
+| `positive(e) -> lt(0, e)` | positive means finite real > 0 |
+| `lt(0, e) & real(e) -> positive(e)` | a finite real > 0 is positive |
+| `negative(e) -> lt(e, 0)` | same |
+| `lt(e, 0) & real(e) -> negative(e)` | same |
+| `zero(e) <-> eq(e, 0)` | `Eq(e, 0)` holds iff `e` is 0, in any domain |
+
+The rule base derives nonnegative, nonzero, extended_* and
+positive_infinite from these three. Substituting equals into other unary
+predicates (`prime(x)` from `x = y` and `prime(y)`) is not linked; SymPy
+marks those tests XFAIL too.
+
+### 5.4 Combination: kept apart by kind, sharing equalities
+
+Each adapter interprets what it can. `eq` atoms go to both EUF and (under
+the guard) LRA, `lt` atoms only to LRA. After each batch,
+`theory.EqualitySharing` finds terms present in at least two adapters'
+`shared_terms()`. For each new pair of shared terms it creates the atom
+`eq(a, b)`, which is interpreted like any other `eq` atom. This is delayed
+theory combination: the SAT solver decides the arrangement of shared
+terms and each theory checks it. `ask(Q.eq(f(x), f(y)), (x <= y) & (y <= x))`
+is True with sharing and None without it (tested with the dummy theories
+and with the real EUF).
+
+**When Nelson-Oppen equality propagation would be needed.** DTC is
+complete here: LRA over the rationals and EUF are stably infinite with
+disjoint signatures, and both are convex. The cost is a quadratic number of
+interface atoms in the shared terms, all of them branching variables of
+the search. Nelson-Oppen (each theory propagates the equalities between
+shared terms that it entails) is worth doing when a session has more than
+a few dozen shared terms, or when searches slow down because the solver
+branches on interface atoms. LRA would then need equality detection
+(bounds that pin `a - b` to 0, or tableau-row equality), exposed through
+`propagate()` with an explanation. No record in the corpus comes close to
+that size today.
+
+### 5.5 Testing end to end (`tests/theory_harness.py`)
+
+`relation_engine(specs)` builds a private engine: `None` gives the real
+adapters, `dummy_specs()` the stand-ins `OrderAdapter` (dense order over
+symbols and rationals, guarded) and `UFAdapter` (equality with
+uninterpreted functions). `ask_with(engine, prop, assum)` returns the
+answer, or `"inconsistent"`. `tests/test_relations.py` has the wiring,
+link, guard and sharing tests, and a Hypothesis test that checks random
+order formulas against a grid model checker. It also transcribes SymPy's
+`test_rel_queries.py`: xfail while `satassume.lra_adapter` is missing,
+strict once it is present. `python tools/compare.py queries.jsonl
+--relations-only` replays the 78 relational corpus records.
+
+### 5.6 Results
+
+| relational corpus (78 records) | agree | none | wrong |
+|---|---|---|---|
+| no adapters (before) | 15 | 63 | 0 |
+| dummy order + dummy UF | 71 | 7 | 0 |
+| EUF only (main today) | 49 | 29 | 0 |
+| LRA draft `3a7d55a` + EUF | 75 | 3 | 0 |
+
+The 3 left need substitution of equals into non-relational templates
+(`rational(x**y)` given `x = 1`, `prime(p**x)` given `x != 1`). In-scope
+corpus answers are unchanged (2497 agree, 16 extra, 70 none, 0 wrong). The
+alternating timing on a loaded machine showed no difference beyond noise
+(2.6-3.0 s base, 2.4-3.2 s candidate).
+
+### 5.7 Open questions
+
+- Substitution of equals into unary predicates and templates (the 3
+  records above, and SymPy's XFAIL `test_equality_failing`). This would
+  need EUF equalities to reach the rule base (`eq(x, y) -> (P(x) <-> P(y))`
+  for demanded predicates), which is quadratic and wants to be
+  demand-driven.
+- Nonlinear facts (SymPy's XFAIL multiplication tests) are out of reach of
+  LRA. The templates know signs of products, so linking `lt(0, a*c)` to
+  `positive(a*c)` already happens when `a*c` is a queried node.
+- Integer reasoning: LRA is incomplete for integer symbols (it is sound,
+  just weaker). SymPy refuses integer symbols in `lra_satask`; we answer
+  what the combination can prove.
+
+## 6. Timing of the solver hooks, phase one (cores 8,9, alternating base and candidate, best of runs)
 
 | benchmark | before | after |
 |---|---|---|
@@ -233,6 +320,7 @@ come from any single hook when they were removed one at a time.
 ## 7. Contact
 
 Interface questions and requests to change `satassume/theory.py`, the
-solver hooks or the harness go to the integration agent (SendMessage; find
-its name with ListAgents). Decisions others must know go into this note;
+solver hooks, the harness or `satassume/relations.py` go to the integration
+agent (SendMessage to agent id `ab05214d89d4911cc`; names do not resolve,
+the orchestrator `fable-rewrite-a8` lists the ids). Decisions others must know go into this note;
 send the text to the integration agent, who edits it.
