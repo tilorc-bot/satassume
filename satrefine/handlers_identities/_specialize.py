@@ -22,7 +22,7 @@ from sympy import And, AppliedPredicate, I, N, Q, S, arg, expand, floor, im, nan
 from .. import _upstream
 from ..harness import _numerically_equal, _sample_satisfies
 from ._dispatch import generated_handlers, live
-from ._engine import Row, bindings, refine, subst
+from ._engine import Row, bindings, refine, rule_handler, subst
 
 class Literal:
     """A catalog entry that substitutes a value for the variable instead of assuming
@@ -156,28 +156,14 @@ def verify(lhs: Any, rhs: Any, hyp: Any, edges: Iterable = ()) -> bool | None:
     return verdict
 
 
-def compile_rule(lhs: Any, rhs: Any, hyp: Any) -> Callable[[Any, Any], Any]:
-    """A generated row as a cheap handler: bind, check the hypothesis, substitute."""
-    def handler(expr: Any, assumptions: Any) -> Any:
-        for m in bindings(lhs, expr, assumptions):
-            if any(v in (0, 1) for v in m.values()):
-                continue
-            if _upstream.ask(subst(hyp, m), assumptions) is True:
-                return subst(rhs, m)
-        return None
-    return handler
+def compile_rule(lhs: Any, rhs: Any, hyp: Any, unless: Any = None) -> Callable[[Any, Any], Any]:
+    """One rule row as a handler (see :func:`._engine.rule_handler`)."""
+    return rule_handler([(lhs, rhs, hyp, unless)])
 
 
-def compile_table(rules: Iterable[Row]) -> Callable[[Any, Any], Any]:
-    handlers = [compile_rule(*rule) for rule in rules]
-
-    def handler(expr: Any, assumptions: Any) -> Any:
-        for h in handlers:
-            out = h(expr, assumptions)
-            if out is not None and out != expr:
-                return out
-        return None
-    return handler
+def compile_table(rules: Iterable) -> Callable[[Any, Any], Any]:
+    """A rule table as a handler; rows ``(lhs, rhs, hypothesis[, unless])`` in table order."""
+    return rule_handler(list(rules))
 
 
 # ----------------------------------------------------------------------------
