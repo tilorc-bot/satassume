@@ -126,11 +126,36 @@ questions through one seam, `satrefine._upstream.ask`, and
 Select with `SATREFINE_BACKEND=<name>` (read at import; default `combined`),
 `satrefine.backend.set_backend(name)`, or `with satrefine.backend.using(name):`.
 
-The handler package is chosen the same way: `SATREFINE_HANDLERS=handlers`
-(default, the `reasoning` layer), `handlers_v2` or `handlers_v3`. Each has
-its own suite under `tests/`, and `tools/refine_scoreboard.py --handlers
-handlers_v3 --suite tests/refine_v3` scores it; `SATREFINE_HANDLERS=handlers_v2
-pytest tests/refine` runs one package against another's suite.
+### The three handler packages
+
+The same 56 registry keys are implemented three times, each package
+self-contained and selected with `SATREFINE_HANDLERS`:
+
+| Package | Tests | Written by | What it is |
+|---|---|---|---|
+| `satrefine/handlers/` (default) | `tests/refine/` (469) | the `reasoning` project's agents, then its verifiers | the original layer, copied from github.com/tilorc-bot/reasoning `feature/refine` at `12c3845`, one module per key, 33 modules |
+| `satrefine/handlers_v2/` | `tests/refine_v2/` (161) | one Fable 5.1 agent, all 56 keys in one run, no verifier pass | a blind rewrite: the agent could not read the other packages, their tests or reports; 18 modules with shared helpers, rules named in the docstrings |
+| `satrefine/handlers_v3/` | `tests/refine_v3/` (1,005) | nine agents (3 Fable, 6 Opus 5.5), one family each, then nine adversarial verifiers | a blind rewrite by a parallel team: one module per family (`trig`, `hyperbolic`, `inverse`, `power_exp_log`, `complex_parts`, `integer_funcs`, `combinatorial`, `minmax_deltas`, `matrices`), a shared `_common.py`, every rule stated with its precondition; the verifiers found and fixed 12 defects |
+
+All three plug into the same dispatcher and backend switch, so any suite
+runs against any package and every tool takes `--handlers`:
+
+```bash
+SATREFINE_HANDLERS=handlers_v3 PYTHONPATH=.:/path/to/sympy .venv/bin/python -m pytest -q tests/refine_v3
+SATREFINE_HANDLERS=handlers_v2 PYTHONPATH=.:/path/to/sympy .venv/bin/python -m pytest -q tests/refine   # one package, another's suite
+PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_scoreboard.py --handlers handlers_v3 --suite tests/refine_v3
+PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_fuzz.py 2 1500 --handlers handlers_v2
+PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_oracle.py --handlers handlers_v3
+```
+
+How they compare, and what to build on, is in
+`agent-reports/2026-09-23-refine-three-implementations.md`. In short: the
+original inherits three unsound matrix rules from SymPy and leaves relation
+errors unguarded; both rewrites refuse those rules; the parallel team's
+package is the only one with zero known defects after an adversarial pass
+and covers the most on the branch-cut families, at about seven times the
+single agent's cost, most of it the verifier pass. `handlers` stays the
+default so the corpus numbers above keep their meaning.
 
 `tools/refine_scoreboard.py` runs `tests/refine` under each backend and
 compares outcomes per test: satassume in-scope gaps (pass under `sympy`, fail
