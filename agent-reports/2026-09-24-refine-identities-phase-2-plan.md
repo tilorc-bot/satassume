@@ -73,8 +73,8 @@ integer_funcs 17; combinatorial 16; minmax_deltas 13; matrices 30.
 | Branch | State |
 | --- | --- |
 | `refine-identities` | integration branch; everything below except `ri/piecewise` is merged into it |
-| `ri/check`, `ri/branchcut`, `ri/trim` | fully merged; delete (remote and local, and their worktrees under `.claude/worktrees/`) once you have confirmed with `git rev-list --count origin/refine-identities..origin/<b>` = 0 |
-| `ri/piecewise` | **unmerged experiment** (head `e31c769`, based on an older `refine-identities`): minmax_deltas as Piecewise definitions. See step 2 |
+| `ri/engine`, `ri/plain`, `ri/check`, `ri/branchcut`, `ri/trim` | merged and deleted at the end of phase 1 |
+| `ri/piecewise` | **unmerged experiment** (head `e31c769`, based on an older `refine-identities`; worktree `.claude/worktrees/ri-piecewise`): minmax_deltas as Piecewise definitions. See step 2 |
 | `main` | 35 commits not in `refine-identities` (satassume relation work: LRA and EUF theories wired into `ask`, tests, fuzzers, reports). See step 1 |
 | `refine-monorepo` | the v3 baseline; do not modify |
 
