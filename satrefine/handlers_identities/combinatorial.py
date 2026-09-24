@@ -34,6 +34,20 @@ Not expressible as rows: none.  The refusals of v3 (no ``gamma`` form for
 a nonpositive integer ``x`` in ``rf``, no ``binomial(n, n) -> 1`` for a
 possibly negative integer ``n``, half-integer ``gamma`` left alone) are the
 hypotheses' missing cases.
+Checked (adversarial pass, 2026-09-24): every row at 0, +-1, negative
+integers, half-integers, non-real points and +-oo, with ``Q.eq`` against
+``-oo``, old-style symbols, plus ``tools/refine_differential.py`` seeds 2,
+3, 7 (1,500 cases each).  Found: ``~Q.integer`` admits ``oo``, where
+``binomial(n, n) -> 1`` and ``binomial(n, n - 1) -> n`` are wrong
+(``binomial(oo, oo) = nan``) and so is ``rf(x, k) -> gamma(x + k)/gamma(x)``
+(``rf(oo, 2) = oo``); those branches now need ``Q.finite``.  v3 shares the
+defect, so the battery's three ``~Q.integer``-only cases are misses.  Not
+defects: the ``binomial`` pole row for infinite ``k`` (``binomial(-3, oo) =
+zoo``), the ``rf`` zero row and ``rf(1, k)`` for infinite ``k``, the ``k ==
+0``/``k == 1`` rows for an infinite first argument.  Unverified: the gamma
+ratio where SymPy leaves ``rf`` of a non-integer ``k`` unevaluated
+(``rf(1/2, -1/2)``, ``rf(-I, I)``: no value to compare; the ratio is the
+definition).
 """
 from __future__ import annotations
 
