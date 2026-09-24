@@ -114,3 +114,35 @@ the dispatcher's fallback for `floor`/`ceiling`, `_simple.floor_of_bounded`
 same `0` for every case they served, both spellings of `x < 1` included.
 Row 17 (`Mod -> a`) is not covered by chaining through row 18 (`Mod ->
 Rem`) and row 22: `ask` does not derive `Q.positive(b)` from `0 <= a < b`.
+
+## combinatorial (16 rows)
+
+Baseline: battery same 64, miss 3 (the three `~Q.integer`-only cases the
+checker made need `Q.finite`), quiet 40; tests 112 passed; gate 3: 19
+inputs, 6 fire, none unsound.
+
+| row | battery cases it alone keeps |
+|---|---|
+| 0 `G(x, k) -> 1`, k = 0 (binomial, rf, ff) | 9 |
+| 1 `G(x, k) -> x`, k = 1 | 3 |
+| 2 `factorial -> 1` at 0, 1 | 5 |
+| 3 `factorial -> zoo` | 2 |
+| 4 `gamma -> factorial(x - 1)` | 3 |
+| 5 `gamma -> zoo` | 5 |
+| 6 `binomial(n, n) -> 1` | 3 |
+| 7 `binomial(n, n - 1) -> n` | 1 |
+| 8 `binomial -> 0` | 9 |
+| 9 `binomial -> zoo` | 1 |
+| 10 `rf(1, k) -> k!` | 2 |
+| 11 `rf -> 0` | 4 |
+| 12 `rf -> gamma ratio` | 4 |
+| 13 `ff(k, k) -> k!` | 2 |
+| 14 `ff -> 0` | 2 |
+| 15 `ff -> factorial ratio` | 5 |
+
+Every row is needed by battery cases of its own (the first run, at
+`2fb1ff7`, also found each row needed by 1 to 4 of its own tests). No
+single row is droppable; largest removable set: none (16 rows).
+Row 10 is not covered by row 12 (`rf(x, k)` with `x = 1`): `ask` does not
+derive `Q.positive(x)` from `Q.eq(x, 1)`. Row 13 is not covered by row 15:
+its battery cases have a possibly negative `k`.
