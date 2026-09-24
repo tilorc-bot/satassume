@@ -91,9 +91,14 @@ FACTS = [   # (lhs, rhs, domain): identity rows, fire when the bookkeeping colla
     # because the engine reads realness from stated bounds, finiteness it does not.)
     (frac(x), x - floor(x), Q.finite(x) | Q.real(x)),
     # Q2 odd: a/b = m + 1/2 truncates towards zero, so Rem(a, b) = b/2 for a/b > 0 and
-    # -b/2 for a/b < 0; fires when sign(a/b) is decided (an odd a of unknown sign stays)
-    (Rem(a, b), b*sign(a/b)/2, Q.odd(2*a/b)),
+    # -b/2 for a/b < 0; fires when sign(a/b) is decided (an odd a of unknown sign stays).
+    # Q.nonzero(b): Rem(a, 0) is undefined (SymPy raises), and the engine's sign split
+    # evaluates the left side at b = 0 unless zero is excluded
+    # (needs/test_defs_case_split_zero_point_raises.py).
+    (Rem(a, b), b*sign(a/b)/2, Q.nonzero(b) & Q.odd(2*a/b)),
 ]
+
+EDGE_POINTS = (S(2), S(-2))   # the generator checks rules here too: Rem(1, 2) has 2*a/b odd
 
 ROUNDING = [
     # F1, F2: floor/ceiling of an integer, or of +-oo, is itself.
