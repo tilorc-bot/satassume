@@ -42,10 +42,11 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     # binomial
     (binomial(n, n), Q.nonnegative(n), S.One, {n: MIXED}),
     (binomial(n, k), Q.eq(n, k) & Q.nonnegative(n), S.One, {n: INTS, k: INTS}),
-    (binomial(n, n), ~Q.integer(n), S.One, {n: MIXED}),
+    (binomial(n, n), ~Q.integer(n) & Q.complex(n), S.One, {n: MIXED}),
+    (binomial(n, n), Q.imaginary(n), S.One, {n: MIXED}),
     (binomial(n + 1, n + 1), Q.integer(n) & Q.nonnegative(n), S.One, None),
     (binomial(n, n - 1), Q.nonnegative(n), n, {n: MIXED}),
-    (binomial(n, n - 1), ~Q.integer(n), n, {n: MIXED}),
+    (binomial(n, n - 1), ~Q.integer(n) & Q.real(n), n, {n: MIXED}),
     (binomial(n, k), Q.integer(k) & Q.negative(k), S.Zero, {n: MIXED, k: INTS}),
     (binomial(n, n), Q.integer(n) & Q.negative(n), S.Zero, None),
     (binomial(n, k), Q.integer(n) & Q.nonnegative(n) & Q.integer(k) & Q.gt(k, n), S.Zero,
@@ -61,7 +62,8 @@ POSITIVE = [  # (expr, assumptions, expected, values)
      {x: INTS, k: INTS}),
     (rf(x, k), Q.integer(x) & Q.negative(x) & ~Q.integer(k), S.Zero, {x: INTS, k: MIXED}),
     (rf(x, k), Q.positive(x), gamma(x + k)/gamma(x), {x: MIXED, k: MIXED}),
-    (rf(x, k), ~Q.integer(x), gamma(x + k)/gamma(x), {x: MIXED, k: MIXED}),
+    (rf(x, k), ~Q.integer(x) & Q.complex(x), gamma(x + k)/gamma(x), {x: MIXED, k: MIXED}),
+    (rf(x, k), Q.imaginary(x), gamma(x + k)/gamma(x), {x: MIXED, k: MIXED}),
     (rf(x, k), Q.integer(x) & Q.positive(x) & Q.integer(k) & Q.nonnegative(k),
      factorial(x + k - 1)/factorial(x - 1), {x: INTS, k: INTS}),
     # FallingFactorial
@@ -96,7 +98,21 @@ NEGATIVE = [  # v3's refusals
     (ff(n, k), Q.integer(n) & Q.negative(n) & Q.integer(k) & Q.positive(k)),  # ff(-2, 2) = 6
     (ff(n, k), Q.integer(n) & Q.nonnegative(n) & Q.integer(k)),               # order unknown
     (ff(n, k), Q.integer(n) & Q.nonnegative(n) & ~Q.integer(k) & Q.gt(k, n)),
+    # checker: oo is not an integer, so ~Q.integer alone admits it (v3 fires on these)
+    (binomial(n, n), ~Q.integer(n)),                # binomial(oo, oo) = nan
+    (binomial(n, n), Q.positive_infinite(n)),
+    (binomial(n, n - 1), ~Q.integer(n)),            # binomial(oo, oo - 1) = nan
+    (rf(x, k), ~Q.integer(x)),                      # rf(oo, 2) = oo, gamma ratio is not
+    (rf(x, k), Q.positive_infinite(x) & Q.integer(k) & Q.positive(k)),
 ]
+
+
+def test_infinite_counterexamples():
+    """The values behind the ``Q.finite`` provisos: at ``oo`` the old right sides disagree."""
+    from sympy import nan, oo
+    assert binomial(oo, oo) is nan and binomial(n, n).subs(n, oo) is nan
+    assert rf(oo, 2) == oo
+    assert (gamma(x + k)/gamma(x)).subs({x: oo, k: 2}) != oo
 
 
 def _id(row):

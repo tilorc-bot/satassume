@@ -83,10 +83,11 @@ GAMMA = [
 ]
 
 BINOMIAL = SMALL_K + [
-    # binomial(n, n) = 1 unless n is a negative integer (binomial(-1, -1) = 0).
-    (binomial(n, k), S.One, _eq(n, k) & (Q.nonnegative(n) | ~Q.integer(n))),
-    # binomial(n, n - 1) = n, same proviso (binomial(-1, -2) = 0).
-    (binomial(n, k), n, _eq(k, n - 1) & (Q.nonnegative(n) | ~Q.integer(n))),
+    # binomial(n, n) = 1 unless n is a negative integer (binomial(-1, -1) = 0)
+    # or infinite (binomial(oo, oo) = nan, and oo is not an integer).
+    (binomial(n, k), S.One, _eq(n, k) & (Q.nonnegative(n) | (~Q.integer(n) & Q.finite(n)))),
+    # binomial(n, n - 1) = n, same proviso (binomial(-1, -2) = 0, binomial(oo, oo) = nan).
+    (binomial(n, k), n, _eq(k, n - 1) & (Q.nonnegative(n) | (~Q.integer(n) & Q.finite(n)))),
     # 0 for a negative integer k whatever n is (SymPy's convention), and for
     # integers 0 <= n < k (the product n (n-1) ... hits 0).
     (binomial(n, k), S.Zero, Q.integer(k) & (_lt(k, 0)
@@ -103,8 +104,9 @@ RISING = SMALL_K + [
     (rf(x, k), S.Zero, (Q.integer(x) & Q.integer(k) & _le(x, 0) & _lt(0, x + k))
                        | (Q.integer(x) & _lt(x, 0) & ~Q.integer(k))),
     # rf(x, k) = gamma(x + k)/gamma(x) where gamma(x) is finite and nonzero: x positive
-    # or not an integer (never for a nonpositive integer x: rf(-2, 2) = 2).
-    (rf(x, k), gamma(x + k)/gamma(x), Q.positive(x) | ~Q.integer(x)),
+    # or a finite non-integer (never for a nonpositive integer x: rf(-2, 2) = 2;
+    # never for x = oo, which is not an integer: rf(oo, 2) = oo, gamma(oo)/gamma(oo) is not).
+    (rf(x, k), gamma(x + k)/gamma(x), Q.positive(x) | (~Q.integer(x) & Q.finite(x))),
 ]
 
 FALLING = SMALL_K + [
