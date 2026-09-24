@@ -49,6 +49,10 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (frac(x + floor(y)), Q.finite(y), frac(x), None),
     (frac(x + ceiling(y)), Q.finite(y), frac(x), None),
     (frac(x), Q.nonnegative(x) & Q.lt(x, 1), x, R),
+    # the frac definition, beyond v3: frac(x) = x - k on [k, k + 1)
+    (frac(x), Q.ge(x, 2) & Q.lt(x, 3), x - 2, R),
+    (frac(x), Q.ge(x, -1) & Q.lt(x, 0), x + 1, R),
+    (frac(x + n), Q.integer(n) & Q.integer(x), S.Zero, None),
     # M1 (with M2 even and Mod(x, 1))
     (Mod(n, 2), Q.even(n), S.Zero, None),
     (Mod(n, -2), Q.even(n), S.Zero, None),
@@ -79,6 +83,7 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (Rem(n, 2), Q.odd(n) & Q.negative(n), S.NegativeOne, None),
     (Rem(n, -2), Q.odd(n) & Q.positive(n), S.One, None),
     (Rem(n, -2), Q.odd(n) & Q.negative(n), S.NegativeOne, None),
+    (Rem(a, b), Q.odd(2*a/b) & Q.negative(a/b) & Q.nonzero(b), -b/2, {b: DIVISORS}),
     # Q3
     (Rem(a, b), Q.nonnegative(a) & Q.lt(a, b), a, R),
     (Rem(a, b), Q.nonnegative(a) & Q.lt(a, -b), a, R),
@@ -96,6 +101,8 @@ NEGATIVE = [  # v3's refusals
     (Mod(x, 2), Q.real(x)),
     (frac(x), Q.real(x)),
     (frac(x), Q.positive(x)),
+    (frac(x), Q.infinite(x) & Q.extended_real(x)),  # frac(oo) is AccumBounds(0, 1), not oo - floor(oo)
+    (frac(x), Q.ge(x, 2) & Q.le(x, 3)),
     (floor(x), Q.real(x)),
     (floor(x), Q.positive(x)),
     (ceiling(x), Q.negative(x)),
@@ -151,6 +158,6 @@ def test_refusal(expr, assumptions):
 def test_table_size_and_registration():
     from satrefine import _upstream
     from satrefine.handlers_identities import integer_funcs as mod
-    assert len(mod.RULES) == 17
+    assert len(mod.RULES) == 10 and len(mod.FACTS) == 2
     assert handlers_dict['floor'] is not _upstream.refine_floor_ceiling
     assert all(callable(handlers_dict[key]) for key in ('floor', 'ceiling', 'frac', 'Mod', 'Rem'))

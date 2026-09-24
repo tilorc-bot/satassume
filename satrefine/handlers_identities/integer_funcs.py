@@ -67,11 +67,12 @@ from the vendored ``Pow`` handler (``needs/test_checker_pow_root_of_power.py``).
 """
 from __future__ import annotations
 
-from sympy import Function, Mod, Q, S, ceiling, floor, frac, symbols
+from sympy import Function, Mod, Q, S, ceiling, floor, frac, sign, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
 from .._upstream import handlers_dict
-from ._specialize import compile_table
+from ._engine import identity_handler, rule_handler
+from ._tables import chain, node_measure
 
 a, b, c, n, x, y = symbols('a b c n x y')
 F = Function('F')        # generic head: the row serves every key it is registered under
@@ -83,34 +84,36 @@ def _lt(u, v):
     return Q.lt(u, v) | Q.positive(v - u)
 
 
+FACTS = [   # (lhs, rhs, domain): identity rows, fire when the bookkeeping collapses
+    # the definition of frac: covers frac(integer) = 0 (floor's first row) and frac(x) = x - k
+    # on [k, k + 1) (the bounds rule behind floor; v3's R3 is k = 0).  Not at +-oo:
+    # frac(oo) is AccumBounds(0, 1).  (Q.real implies Q.finite; it is spelled out
+    # because the engine reads realness from stated bounds, finiteness it does not.)
+    (frac(x), x - floor(x), Q.finite(x) | Q.real(x)),
+    # Q2 odd: a/b = m + 1/2 truncates towards zero, so Rem(a, b) = b/2 for a/b > 0 and
+    # -b/2 for a/b < 0; fires when sign(a/b) is decided (an odd a of unknown sign stays)
+    (Rem(a, b), b*sign(a/b)/2, Q.odd(2*a/b)),
+]
+
 ROUNDING = [
     # F1, F2: floor/ceiling of an integer, or of +-oo, is itself.
     (F(x), x, Q.integer(x) | (Q.infinite(x) & Q.extended_real(x))),
 ]
 
 SHIFT = [
-    # F3: an integer term shifts out: floor(n + x) = n + floor(x), same for ceiling.
-    (F(n + x), n + F(x), Q.integer(n)),
-    # F3: floor/ceiling of a finite y is a (Gaussian) integer and shifts out too
+    # F3, R2: an integer term shifts out: F(n + x) = F(x) + F(n) for floor, ceiling and
+    # frac (F(n) is then n, n and 0 by the rows above).
+    (F(n + x), F(x) + F(n), Q.integer(n)),
+    # ... floor/ceiling of a finite y is a (Gaussian) integer and shifts out too
     # (not for y = oo: floor(1/2 + floor(oo)) is not 1/2 + oo in AccumBounds terms).
-    (F(floor(y) + x), floor(y) + F(x), Q.finite(y)),
-    (F(ceiling(y) + x), ceiling(y) + F(x), Q.finite(y)),
+    (F(floor(y) + x), F(x) + F(floor(y)), Q.finite(y)),
+    (F(ceiling(y) + x), F(x) + F(ceiling(y)), Q.finite(y)),
 ]
 
 # F4 (floor(x) = 0 for 0 <= x < 1, ceiling likewise) is the base layer's
 # floor_of_bounded, the dispatcher's fallback for both keys.
 FLOOR = CEILING = ROUNDING + SHIFT
-
-FRAC = [
-    # R1: frac of an integer is 0.
-    (frac(x), S.Zero, Q.integer(x)),
-    # R2: integer terms drop out: frac(n + x) = frac(x).
-    (frac(n + x), frac(x), Q.integer(n)),
-    (frac(floor(y) + x), frac(x), Q.finite(y)),
-    (frac(ceiling(y) + x), frac(x), Q.finite(y)),
-    # R3: frac(x) = x for 0 <= x < 1 (a merely real x is left alone).
-    (frac(x), x, Q.nonnegative(x) & _lt(x, 1)),
-]
+FRAC = SHIFT
 
 MULTIPLE = [
     # M1/Q1 (and M2/Q2 even): Mod(a, b) = Rem(a, b) = 0 when a is an integer multiple of a nonzero b.
@@ -132,10 +135,6 @@ MOD = MULTIPLE + [
 ]
 
 REM = MULTIPLE + [
-    # Q2 odd, generalized: a/b = m + 1/2 truncates towards zero, so Rem(a, b) is
-    # b/2 for a/b > 0 and -b/2 for a/b < 0 (an odd a of unknown sign stays).
-    (Rem(a, b), b/2, Q.odd(2*a/b) & Q.positive(a/b)),
-    (Rem(a, b), -b/2, Q.odd(2*a/b) & Q.negative(a/b)),
     # Q3: Rem(a, b) = a for -|b| < a < |b|, each branch fixing the sign of b.
     # Integer shifts are not pulled out of Rem (the shift can flip the sign of a).
     (Rem(a, b), a, (Q.nonnegative(a) & (_lt(a, b) | _lt(a, -b)))
@@ -144,10 +143,11 @@ REM = MULTIPLE + [
                    | (Q.negative(b) & _lt(b, a) & _lt(a, -b))),
 ]
 
-RULES: list[tuple] = FLOOR + FRAC + MOD + REM[len(MULTIPLE):]
+RULES: list[tuple] = ROUNDING + SHIFT + MOD + REM[len(MULTIPLE):]
 
-handlers_dict['floor'] = compile_table(FLOOR)
-handlers_dict['ceiling'] = compile_table(CEILING)
-handlers_dict['frac'] = compile_table(FRAC)
-handlers_dict['Mod'] = compile_table(MOD)
-handlers_dict['Rem'] = compile_table(REM)
+handlers_dict['floor'] = rule_handler(FLOOR)
+handlers_dict['ceiling'] = rule_handler(CEILING)
+handlers_dict['frac'] = chain(rule_handler(FRAC), identity_handler(FACTS[:1], measure=node_measure((frac,))))
+handlers_dict['Mod'] = rule_handler(MOD)
+handlers_dict['Rem'] = chain(rule_handler(REM), identity_handler(FACTS[1:], measure=node_measure((Rem,)),
+                                                                 opaque=(floor, sign)))
