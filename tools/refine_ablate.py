@@ -342,6 +342,7 @@ def main(argv=None) -> None:
                     help="run the tests for every row (default: only for rows the battery does not need)")
     ap.add_argument("--rows", help="comma-separated row indices to try (default: all)")
     ap.add_argument("--save-baseline", metavar="JSON", help="measure the working tree, save, exit")
+    ap.add_argument("--keep-baseline", metavar="JSON", help="also save the baseline of a full run (for --compare-to)")
     ap.add_argument("--compare-to", metavar="JSON", help="measure the working tree against a saved baseline, exit")
     ap.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--drop", default="", help=argparse.SUPPRESS)
@@ -373,6 +374,8 @@ def main(argv=None) -> None:
         return
 
     base = measure(args, [], all_gates)
+    if args.keep_baseline:
+        Path(args.keep_baseline).write_text(json.dumps(base))
     import satrefine  # noqa: F401  (only to read the rows for printing, in the parent)
     rules = importlib.import_module(f"{PACKAGE}.{args.family}").RULES
     print(f"family {args.family}: {len(rules)} rows, keys {', '.join(family_keys(args.family))}")
