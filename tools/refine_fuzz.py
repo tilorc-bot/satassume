@@ -159,14 +159,22 @@ def relations(rng, syms):
     return rng.choice([Q.gt, Q.ge, Q.lt, Q.le, Q.eq, Q.ne])(a, b)
 
 def rel_holds(rel, sample):
-    v = rel.subs(sample)
+    """Decide the relation at a numeric sample (True, False, or None if undecidable).
+
+    Both sides are evaluated numerically; an order relation needs both real.
+    (SymPy leaves ``Q.lt(-3, 0).doit()`` unevaluated, so deciding it
+    symbolically never answered True and no case with a relation was checked.)
+    """
     try:
-        v = v.doit()
-    except Exception:
+        lhs, rhs = (complex(N(side.subs(sample), 20)) for side in rel.arguments)
+    except (TypeError, ValueError, AttributeError):
         return None
-    if v in (S.true, True): return True
-    if v in (S.false, False): return False
-    return None
+    tol = 1e-12 * max(1.0, abs(lhs), abs(rhs))
+    if rel.function == Q.eq: return abs(lhs - rhs) <= tol
+    if rel.function == Q.ne: return abs(lhs - rhs) > tol
+    if abs(lhs.imag) > tol or abs(rhs.imag) > tol: return False
+    a, b = lhs.real, rhs.real
+    return {Q.gt: a > b + tol, Q.ge: a >= b - tol, Q.lt: a < b - tol, Q.le: a <= b + tol}.get(rel.function)
 
 def numeric(e):
     try:
