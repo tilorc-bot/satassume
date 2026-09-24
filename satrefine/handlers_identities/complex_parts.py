@@ -1,9 +1,11 @@
 """``re``, ``im``, ``arg``, ``sign``, ``Abs``, ``conjugate`` and the conjugate
 pair in ``Mul`` as tables.
 
-Rows: 3 facts, 1 split, 38 rules, 1 shared zero row; ``handlers_v3/complex_parts.py``
-is 567 lines.  The exponential forms are the ones in
-:mod:`.power_exp_log`.
+Rows: 3 facts, 1 split, 41 rules (26 of them the base layer: ``re``,
+``im``, ``arg``, ``Abs`` under sign facts and of exponentials, logarithms,
+sums, products and conjugates), 1 shared zero row;
+``handlers_v3/complex_parts.py`` is 567 lines.  The exponential forms are
+the ones in :mod:`.power_exp_log` (imported, not owned).
 
 This family is the base layer: the branch bookkeeping of every other
 family (``principal``, the wraps) reduces through ``re``/``im`` of

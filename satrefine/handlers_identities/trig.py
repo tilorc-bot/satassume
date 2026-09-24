@@ -1,6 +1,7 @@
 """``sin``, ``cos``, ``tan``, ``cot``, ``sec``, ``csc`` and ``sinc`` as tables.
 
-Rows: 14 rules, 1 shared zero row; ``handlers_v3/trig.py`` is 221 lines.
+Rows: 13 rules, 1 bounded row (``AccumBounds`` at a real infinity), 1
+shared zero row; ``handlers_v3/trig.py`` is 221 lines.
 A value at a pole comes out as ``(-1)**k*zoo``, which the ``Mul`` row of
 the complex parts (``zoo`` absorbs a nonzero finite factor) turns into
 ``zoo``.

@@ -1,6 +1,6 @@
 """``Pow``, ``exp`` and ``log`` as tables.
 
-Rows: 4 facts, 3 exponential forms (shared with the complex parts), 17
+Rows: 4 facts, 3 exponential forms (shared with the complex parts), 18
 rules, 2 negative-base rows, 1 shared zero row; ``handlers_v3/power_exp_log.py``
 is 345 lines.
 
