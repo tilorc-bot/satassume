@@ -73,6 +73,7 @@ from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, t
 from sympy.core import Pow
 
 from .._upstream import handlers_dict
+from . import _specialize
 from ._engine import Row, derive, identity_handler, part, principal, rule_handler
 from ._tables import ZERO, chain, exp_node_measure, negative_number_base_measure, node_measure
 
@@ -125,6 +126,9 @@ NEGATIVE_BASE: list[Row] = [   # exact for integer n; ordered so they fire for a
     (b**n, (-b)**n,  Q.negative(b) & Q.even(n)),                                # c**n = (-c)**n, even n
     (b**n, -(-b)**n, Q.negative(b) & Q.odd(n)),                                 # c**n = -(-c)**n, odd n
 ]
+
+CATALOG = {None: _specialize.CATALOG + [lambda v: ~Q.zero(v)],       # the log rows' domains speak of b != 0
+           "e": _specialize.CATALOG + [_specialize.Literal(-1), _specialize.Literal(2)]}   # log(1/b), log(b**2)
 
 IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)], EXP_FORMS)
 POW_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], Pow)]
