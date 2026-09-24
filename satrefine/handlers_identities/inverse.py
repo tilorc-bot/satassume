@@ -40,6 +40,20 @@ Q.ge(y, 0)``: SymPy's relation ``ask`` would have to be consulted for
 every candidate bound, which v3 does and this table does not), and
 ``acoth(coth(x))`` under ``Q.real(x)`` alone (``coth(0)`` is ``zoo``; v3
 also declines).
+Checked (adversarial pass, 2026-09-24): every fact at exact points on the
+lines ``im z = k*pi/2`` and at real points, every interval row on 11
+intervals x 4 open/closed combinations with the endpoints themselves as
+sample points (multiples of ``pi/4``), one-sided bounds, spans of two
+branches, shifted and scaled arguments, bounds on another symbol, and the
+live and generated tables through ``tools/refine_differential.py`` (seeds
+2, 3, 7).  Found: the four hyperbolic facts were stated with domain
+``true`` (``~Q.zero`` for acoth/acsch) but fail on the lines ``im z = (k +
+1/2)*pi`` for one sign of ``re z`` (SymPy's value on the branch cut:
+``atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2``), reached through bounds on
+``im z`` (``atanh(tanh(x + I*y))`` under ``Q.ge(y, -pi/2) & Q.lt(y, pi/2)``
+gave ``x + I*y``); their domains now exclude the lines
+(``_OFF_CUT_LINES``).  The real-argument facts, the endpoint split and
+the ``atan`` pole exclusions held everywhere tried.
 """
 from __future__ import annotations
 

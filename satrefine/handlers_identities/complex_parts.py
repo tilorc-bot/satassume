@@ -40,6 +40,21 @@ factor is not a ``Pow``); ``conjugate(exp(w))`` for a ``w`` that does not
 resolve (v3 pushes the conjugate inside unconditionally; the ordering
 here wants a node to disappear); ``re``/``im`` of a power with a non-real
 base (no identity without ``expand(complex=True)``, as in v3).
+Checked (adversarial pass, 2026-09-24): every rule and generated row by
+hand; ``re``/``im``/``arg``/``Abs``/``sign``/``conjugate`` of products,
+powers, exponentials, logarithms and conjugates over 19 assumption
+profiles per symbol (about 700 random cases on real, imaginary, complex
+and infinite points), ``arg(x*y)`` for negative ``y`` and ``arg`` of a
+conjugate on the negative axis, and ``tools/refine_differential.py``.
+Found no wrong row.  Two wrong results traced below the tables: SymPy's
+``ask`` calls ``Abs(x)`` zero for an imaginary ``x`` and the combined
+backend passes that on (``arg(exp(I*Abs(x)))`` became ``0``;
+``needs/test_checker_abs_of_imaginary_is_zero.py``), and one ``ask`` can
+rewrite the old assumptions of every plain symbol in the process
+(``needs/test_checker_ask_poisons_plain_symbols.py``).  At infinity:
+``arg(exp(x)) -> 0`` under ``Q.extended_real(x)`` is ``nan`` at ``-oo``,
+and products with a zero and an infinite factor (``0*oo``) become ``0`` or
+``zoo``; the same class as ``power_exp_log``'s.
 """
 from __future__ import annotations
 
