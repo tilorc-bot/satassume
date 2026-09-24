@@ -20,14 +20,58 @@ to SymPy's); handlers written for the vendored driver keep working here.
 """
 from __future__ import annotations
 
-from typing import Any
+import os
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from sympy.core import Basic, Expr
+from sympy.core.sympify import sympify
 
 from .. import _upstream
 
 MAX_FIRINGS = 500
 """Handler firings allowed in one top-level :func:`refine` call."""
+
+generated_handlers: dict = {}
+"""Handlers from the generated rule tables (``generated/<family>.py``), by key.
+
+Preferred over ``handlers_dict`` when :func:`mode` is ``"generated"``."""
+
+non_basic_returns: dict = {}
+"""``(key, handler) -> count`` of handler results that were not SymPy objects
+(a Python ``int`` from the vendored ``refine_sin_cos``); the dispatcher
+sympifies them, the scoreboard reports them."""
+
+fallback_handlers: dict = {}
+"""The simple rules (:mod:`._simple`), by key: tried after the key's handler
+declines, so a family table that registers ``floor`` or ``im`` keeps them
+without chaining explicitly."""
+
+MODE_ENV_VAR = "SATREFINE_IDENTITIES"
+
+
+_forced: list[str] = []
+
+
+def mode() -> str:
+    """``"generated"`` (default) or ``"live"``, from ``SATREFINE_IDENTITIES`` unless :func:`live` is active."""
+    if _forced:
+        return _forced[-1]
+    value = os.environ.get(MODE_ENV_VAR, "generated")
+    if value not in ("generated", "live"):
+        raise ValueError(f"{MODE_ENV_VAR} must be 'generated' or 'live', not {value!r}")
+    return value
+
+
+@contextmanager
+def live() -> Iterator[None]:
+    """Run the identity rows rather than the generated tables inside the block
+    (generation itself must never read the tables it is producing)."""
+    _forced.append("live")
+    try:
+        yield
+    finally:
+        _forced.pop()
 
 
 class RefineLoopError(RecursionError):
@@ -62,12 +106,26 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         ref = expr._eval_refine(assumptions)
         if ref is not None:
             return ref
-    handler = _upstream.handlers_dict.get(expr.__class__.__name__)
+    name = expr.__class__.__name__
+    handler = generated_handlers.get(name) if mode() == "generated" else None
+    if handler is None:
+        handler = _upstream.handlers_dict.get(name)
     if handler is None:
         return expr
     new = handler(expr, assumptions)
     if new is None or new == expr:
-        return expr
+        fallback = fallback_handlers.get(name)
+        if fallback is None or fallback is handler:
+            return expr
+        new = fallback(expr, assumptions)
+        if new is None or new == expr:
+            return expr
+    if not isinstance(new, Basic):
+        tag = (name, getattr(handler, "__qualname__", repr(handler)))
+        non_basic_returns[tag] = non_basic_returns.get(tag, 0) + 1
+        new = sympify(new)
+        if new == expr:
+            return expr
     _firings[-1] += 1
     if _firings[-1] > MAX_FIRINGS:
         raise RefineLoopError(

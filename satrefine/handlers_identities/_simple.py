@@ -1,11 +1,11 @@
 """Simple rules the identity rows reduce their bookkeeping through.
 
 Registered by the package ``__init__`` on ``re``, ``im``, ``arg``, ``Abs``,
-``floor``, ``ceiling`` and ``Piecewise`` before the family modules load, so
-a family module that registers one of these keys overrides them and should
-chain to the function here (``return simple_im(expr, assumptions)`` at the
-end of its handler) to keep the reductions.  Each rule chains to the
-vendored handler when it does not apply.
+``floor``, ``ceiling`` and ``Piecewise`` before the family modules load, and
+as the dispatcher's fallbacks for those keys: a family module that registers
+one of them overrides the handler, and the dispatcher tries the simple rule
+after the family's table declines.  Each rule chains to the vendored handler
+when it does not apply.
 
 Rules:
 
@@ -110,12 +110,17 @@ def refine_floor(expr: Basic, assumptions: Any) -> Basic | None:
     return _upstream.refine_floor_ceiling(expr, assumptions)
 
 
+def simple_floor(expr: Basic, assumptions: Any) -> Basic | None:
+    """The bounds rule alone (the fallback behind a family's floor/ceiling table)."""
+    return floor_of_bounded(expr, assumptions)
+
+
 def _real_factors(a: Any, assumptions: Any) -> tuple[list, list]:
     real = [f for f in a.args if _upstream.ask(Q.real(f), assumptions)]
     return real, [f for f in a.args if f not in real]
 
 
-def refine_re(expr: Basic, assumptions: Any) -> Basic | None:
+def simple_re(expr: Basic, assumptions: Any) -> Basic | None:
     a = expr.args[0]
     if isinstance(a, exp):
         w = a.args[0]
@@ -128,10 +133,15 @@ def refine_re(expr: Basic, assumptions: Any) -> Basic | None:
         real, rest = _real_factors(a, assumptions)
         if real and rest:
             return Mul(*real)*re(Mul(*rest))
-    return _upstream.refine_re(expr, assumptions)
+    return None
 
 
-def refine_im(expr: Basic, assumptions: Any) -> Basic | None:
+def refine_re(expr: Basic, assumptions: Any) -> Basic | None:
+    out = simple_re(expr, assumptions)
+    return out if out is not None else _upstream.refine_re(expr, assumptions)
+
+
+def simple_im(expr: Basic, assumptions: Any) -> Basic | None:
     a = expr.args[0]
     if isinstance(a, exp):
         w = a.args[0]
@@ -144,10 +154,15 @@ def refine_im(expr: Basic, assumptions: Any) -> Basic | None:
         real, rest = _real_factors(a, assumptions)
         if real and rest:
             return Mul(*real)*im(Mul(*rest))
-    return _upstream.refine_im(expr, assumptions)
+    return None
 
 
-def refine_arg(expr: Basic, assumptions: Any) -> Basic | None:
+def refine_im(expr: Basic, assumptions: Any) -> Basic | None:
+    out = simple_im(expr, assumptions)
+    return out if out is not None else _upstream.refine_im(expr, assumptions)
+
+
+def simple_arg(expr: Basic, assumptions: Any) -> Basic | None:
     a = expr.args[0]
     if isinstance(a, exp):
         return sawtooth(im(a.args[0]), 2*pi)
@@ -155,16 +170,26 @@ def refine_arg(expr: Basic, assumptions: Any) -> Basic | None:
         return pi/2
     if _upstream.ask(Q.negative(-I*a), assumptions):
         return -pi/2
-    return _upstream.refine_arg(expr, assumptions)
+    return None
 
 
-def refine_abs(expr: Basic, assumptions: Any) -> Basic | None:
+def refine_arg(expr: Basic, assumptions: Any) -> Basic | None:
+    out = simple_arg(expr, assumptions)
+    return out if out is not None else _upstream.refine_arg(expr, assumptions)
+
+
+def simple_abs(expr: Basic, assumptions: Any) -> Basic | None:
     a = expr.args[0]
     if isinstance(a, exp):
         return exp(re(a.args[0]))
     if isinstance(a, Mul) and len(a.args) > 1:
         return Mul(*[Abs(f) for f in a.args])
-    return _upstream.refine_abs(expr, assumptions)
+    return None
+
+
+def refine_abs(expr: Basic, assumptions: Any) -> Basic | None:
+    out = simple_abs(expr, assumptions)
+    return out if out is not None else _upstream.refine_abs(expr, assumptions)
 
 
 def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
@@ -183,9 +208,36 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
 
 SIMPLE_RULES = {"re": refine_re, "im": refine_im, "arg": refine_arg, "Abs": refine_abs,
                 "floor": refine_floor, "ceiling": refine_floor, "Piecewise": refine_piecewise}
+"""Handlers for keys no family module registers: the simple rule, then the vendored handler."""
+
+FALLBACK_RULES = {"re": simple_re, "im": simple_im, "arg": simple_arg, "Abs": simple_abs,
+                  "floor": simple_floor, "ceiling": simple_floor, "Piecewise": refine_piecewise}
+"""The simple rules alone: tried by the dispatcher after a family's own table
+declines, never the vendored handler (a family's refusals must stand)."""
+
+
+def refine_Pow_guarded(expr: Basic, assumptions: Any) -> Basic | None:
+    """The vendored ``Pow`` handler with its crash caught (temporary).
+
+    SymPy's ``refine_Pow`` raises ``AttributeError`` on ``(-1)**(n + 1/2)``
+    under a parity assumption (its rebuilt power auto-evaluates to a product
+    it then reads ``.exp`` from), and is unsound on ``sqrt(x**2)`` for an
+    imaginary ``x`` and ``sqrt(x**3)`` for a real one.  This wrapper only
+    stops the crash so the battery can run; the ``power_exp_log`` family
+    module replaces the key and the unsound rules with it.
+    """
+    try:
+        return _upstream.refine_Pow(expr, assumptions)
+    except AttributeError:
+        return None
 
 
 def install(handlers_dict: dict) -> None:
-    """Register the simple rules; family modules loaded later override them."""
+    """Register the simple rules as the keys' handlers and as the dispatcher's
+    fallbacks, so a family module that registers one of the keys later still
+    gets them after its own table declines."""
+    from ._dispatch import fallback_handlers
     for key, handler in SIMPLE_RULES.items():
         handlers_dict[key] = handler
+    fallback_handlers.update(FALLBACK_RULES)
+    handlers_dict["Pow"] = refine_Pow_guarded
