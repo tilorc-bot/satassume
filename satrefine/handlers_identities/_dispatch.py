@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from typing import Any, Iterator
 
 from sympy.core import Basic, Expr
+from sympy.core.sympify import sympify
 
 from .. import _upstream
 
@@ -35,6 +36,11 @@ generated_handlers: dict = {}
 """Handlers from the generated rule tables (``generated/<family>.py``), by key.
 
 Preferred over ``handlers_dict`` when :func:`mode` is ``"generated"``."""
+
+non_basic_returns: dict = {}
+"""``(key, handler) -> count`` of handler results that were not SymPy objects
+(a Python ``int`` from the vendored ``refine_sin_cos``); the dispatcher
+sympifies them, the scoreboard reports them."""
 
 fallback_handlers: dict = {}
 """The simple rules (:mod:`._simple`), by key: tried after the key's handler
@@ -113,6 +119,12 @@ def _refine(expr: Any, assumptions: Any) -> Any:
             return expr
         new = fallback(expr, assumptions)
         if new is None or new == expr:
+            return expr
+    if not isinstance(new, Basic):
+        tag = (name, getattr(handler, "__qualname__", repr(handler)))
+        non_basic_returns[tag] = non_basic_returns.get(tag, 0) + 1
+        new = sympify(new)
+        if new == expr:
             return expr
     _firings[-1] += 1
     if _firings[-1] > MAX_FIRINGS:

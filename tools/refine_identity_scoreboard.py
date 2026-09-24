@@ -114,7 +114,7 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
     """Classify each case; the numeric check follows ``test_battery.py``'s conventions:
     matrix symbols, unsampleable assumptions, a raising sampler and the oracle's
     known limits are unchecked, not wrong."""
-    from sympy import MatrixSymbol
+    from sympy import MatrixSymbol, sympify
     from satrefine import refine
     from satrefine.harness import assert_refinement_valid
     known_limit = _known_oracle_limit()
@@ -126,7 +126,7 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
         if families and family not in families:
             continue
         try:
-            got = refine(expr, assumptions)
+            got = sympify(refine(expr, assumptions))
         except Exception as e:  # noqa: BLE001
             counts["crash"] += 1
             per_family[family]["crash"] += 1
@@ -166,6 +166,15 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
         if show and key not in ("unchanged as expected", "fired, same as v3"):
             print(f"  {key:38s} {source}: {expr} | {assumptions} -> {got}  (v3: {expected})")
     total = sum(counts.values())
+    try:
+        from satrefine.handlers_identities._dispatch import non_basic_returns
+    except ImportError:
+        non_basic_returns = {}
+    if non_basic_returns:
+        n = sum(non_basic_returns.values())
+        print(f"\n  {n} handler results were not SymPy objects (sympified by the dispatcher):")
+        for (key, handler), count in sorted(non_basic_returns.items()):
+            print(f"    {count:5d}  {key}: {handler}")
     print(f"\nbattery: {total} cases, handlers={os.environ.get('SATREFINE_HANDLERS', 'handlers')}, "
           f"identities={os.environ.get('SATREFINE_IDENTITIES', 'generated')}")
     for key in KEYS:
