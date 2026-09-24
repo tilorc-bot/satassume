@@ -147,3 +147,29 @@ Row 10 is not covered by row 12 (`rf(x, k)` with `x = 1`): `ask` does not
 derive `Q.positive(x)` from `Q.eq(x, 1)`. Row 13 is not covered by row 15:
 its cases (`ff(x, k)` under `Q.integer(k) & Q.eq(x, k)`) do not make `x`
 provably nonnegative.
+
+## minmax_deltas (13 rows)
+
+Baseline: battery same 65, quiet 23; tests 120 passed; gate 3: 46 inputs,
+20 fire, none unsound.
+
+| row | battery cases it alone keeps |
+|---|---|
+| 0 `Max(a, b) -> a` by signs | 10 |
+| 1 `Max(a, b) -> a` by relation, unless infinite | 5 |
+| 2 `Min(a, b) -> a` by signs | 9 |
+| 3 `Min(a, b) -> a` by relation, unless infinite | 5 |
+| 4 `DiracDelta(x) -> 0` | 5 |
+| 5 `DiracDelta(x, r) -> 0` | 1 |
+| 6 `DiracDelta(c*x)` scaling | 7 |
+| 7 `KroneckerDelta(i, j) -> 0` | 6 |
+| 8 `KroneckerDelta(i, j, r) -> 0` | 1 |
+| 9 `KroneckerDelta(i, j) -> 1` | 4 |
+| 10 `Heaviside -> 1` | 3 |
+| 11 `Heaviside -> 0` | 2 |
+| 12 `Heaviside -> H0` | 4 |
+
+Every row is needed by battery cases of its own (and, in the first run, by
+1 to 7 of its own tests). No single row is droppable; largest removable set:
+none (13 rows). Rows 4/5 and 7/8 are the same rule at two arities: the
+matcher has no variadic head pattern, so each arity is its own row.
