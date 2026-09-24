@@ -89,7 +89,9 @@ def test_boolean_constants(eng):
 
 # -- out of scope: None, with the category reported ---------------------------
 
-def test_relations_return_none(eng):
+def test_relations_return_none():
+    # an engine without theory adapters (tests/test_relations.py has the rest)
+    eng = Engine(cache=DictCache(), relations=[])
     x, y = Symbol('x'), Symbol('y')
     assert ask(Q.positive(y), Q.gt(y, 0), eng) is None
     assert ask(Q.gt(y, 0), Q.positive(y), eng) is None
@@ -107,7 +109,9 @@ def test_relations_return_none(eng):
     assert info.value.category == "relation"
 
 
-def test_is_true_over_relational_returns_none(eng):
+def test_is_true_over_relational_returns_none():
+    # an engine without theory adapters (tests/test_relations.py has the rest)
+    eng = Engine(cache=DictCache(), relations=[])
     x = Symbol('x')
     assert ask(Q.is_true(x < 0), True, eng) is None
     assert ask(Q.is_true(x < 0), Q.negative(x), eng) is None
@@ -152,6 +156,10 @@ def test_out_of_scope_never_touches_the_engine(eng):
     X = MatrixSymbol('X', 2, 2)
     y = Symbol('y')
     assert ask(Q.invertible(X), True, eng) is None
+    assert eng.stats['queries'] == 0
+    # relations are out of scope only for an engine without theory adapters
+    # (satassume.relations); see tests/test_relations.py for the other case
+    eng = Engine(cache=DictCache(), relations=[])
     assert ask(Q.positive(y), Q.gt(y, 0), eng) is None
     assert eng.stats['queries'] == 0
 
