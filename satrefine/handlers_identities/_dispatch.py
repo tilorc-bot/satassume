@@ -35,7 +35,8 @@ MAX_FIRINGS = 500
 generated_handlers: dict = {}
 """Handlers from the generated rule tables (``generated/<family>.py``), by key.
 
-Preferred over ``handlers_dict`` when :func:`mode` is ``"generated"``."""
+Tried before ``handlers_dict`` when :func:`mode` is ``"generated"``; when the
+table declines, the key's live handler runs with its identity rows off."""
 
 non_basic_returns: dict = {}
 """``(key, handler) -> count`` of handler results that were not SymPy objects
@@ -51,6 +52,11 @@ MODE_ENV_VAR = "SATREFINE_IDENTITIES"
 
 
 _forced: list[str] = []
+
+identities_off: list[bool] = [False]
+"""Set by the dispatcher while it calls a key's live handler after that key's
+generated table declined: identity handlers then return ``None`` (see
+:func:`._engine.identity_handler`); nested ``refine`` calls reset it."""
 
 
 def mode() -> str:
@@ -96,6 +102,7 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
 def _refine(expr: Any, assumptions: Any) -> Any:
     if not isinstance(expr, Basic):
         return expr
+    identities_off[0] = False
     if not expr.is_Atom:
         args = [_refine(a, assumptions) for a in expr.args]
         new = expr.func(*args)
@@ -107,12 +114,22 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         if ref is not None:
             return ref
     name = expr.__class__.__name__
-    handler = generated_handlers.get(name) if mode() == "generated" else None
-    if handler is None:
-        handler = _upstream.handlers_dict.get(name)
-    if handler is None:
-        return expr
-    new = handler(expr, assumptions)
+    handler = _upstream.handlers_dict.get(name)
+    generated = generated_handlers.get(name) if mode() == "generated" else None
+    new = generated(expr, assumptions) if generated is not None else None
+    if new is None or new == expr:
+        if handler is None:
+            return expr
+        # the live handler: with a generated table for the key, its identity rows are
+        # switched off (the table is their specialization) and only its rules run
+        saved = identities_off[0]
+        identities_off[0] = generated is not None
+        try:
+            new = handler(expr, assumptions)
+        finally:
+            identities_off[0] = saved
+    else:
+        handler = generated
     if new is None or new == expr:
         fallback = fallback_handlers.get(name)
         if fallback is None or fallback is handler:

@@ -15,6 +15,8 @@ from typing import Any, Callable, Iterable
 from sympy import Function, Q, Symbol, count_ops
 from sympy.core import Add, Mul
 
+from ._engine import _is_negation
+
 Handler = Callable[[Any, Any], Any]
 
 
@@ -37,10 +39,6 @@ ZERO = (_F(_x), _F(0), Q.zero(_x))
 """``f(x) == f(0)`` when ``x`` is zero; ``f(0)`` evaluates in SymPy (``cot(0)`` is ``zoo``)."""
 
 
-def _is_negation(a: Any) -> bool:
-    return isinstance(a, Mul) and a.could_extract_minus_sign() and not isinstance(-a, Mul)
-
-
 def node_measure(heads: Iterable[type]) -> Callable[[Any, Any], tuple]:
     """``(nodes, structure, size)``: the number of nodes whose head is in
     ``heads``, the factors or terms under them, then ``count_ops``."""
@@ -52,13 +50,20 @@ def node_measure(heads: Iterable[type]) -> Callable[[Any, Any], tuple]:
         for node in nodes:
             a = node.args[0] if node.args else node
             if _is_negation(a):
-                a = -a
+                continue
             if isinstance(a, (Add, Mul)):
                 structure += len(a.args)
             elif not a.is_Atom:
                 structure += 1
         return (len(nodes), structure, count_ops(e))
     return measure
+
+
+def exp_node_measure(e: Any, assumptions: Any) -> tuple:
+    """``(exp nodes, size)``: the ordering for ``exp(a + b) -> exp(a)*exp(b)``, which
+    must fire only when a factor evaluates away (``exp(log(Abs(p)))``)."""
+    from sympy import exp
+    return (len(e.atoms(exp)), count_ops(e))
 
 
 def negative_number_base_measure(e: Any, assumptions: Any) -> tuple:

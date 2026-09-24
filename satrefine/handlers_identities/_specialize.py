@@ -172,10 +172,23 @@ def compile_table(rules: Iterable) -> Callable[[Any, Any], Any]:
 # families and generated modules
 # ----------------------------------------------------------------------------
 
-def identity_keys(module: types.ModuleType) -> dict[str, Any]:
-    """``key -> identity handler`` for the keys ``module`` registered with an identity handler."""
-    handlers = {v for v in vars(module).values() if callable(v) and getattr(v, "kind", None) == "identity"}
-    return {key: h for key, h in _upstream.handlers_dict.items() if h in handlers}
+def _identity_parts(handler: Any) -> list:
+    """The identity handlers inside ``handler`` (itself, or the parts of a ``chain``)."""
+    if getattr(handler, "kind", None) == "identity":
+        return [handler]
+    return [p for part in getattr(handler, "parts", ()) for p in _identity_parts(part)]
+
+
+def identity_keys(module: types.ModuleType) -> dict[str, list]:
+    """``key -> identity handlers`` for the keys ``module`` registered with one (possibly inside a chain)."""
+    registered = {id(v) for v in vars(module).values() if callable(v)}
+    out = {}
+    for key, h in _upstream.handlers_dict.items():
+        parts = _identity_parts(h)
+        if parts and (id(h) in registered or any(id(p) in registered for p in parts)
+                      or getattr(h, "__module__", None) == module.__name__):
+            out[key] = parts
+    return out
 
 
 def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dict[Row, bool | None]]:
@@ -184,7 +197,7 @@ def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dic
     catalog = getattr(module, "CATALOG", CATALOG)
     edges = getattr(module, "EDGE_POINTS", ())
     rules: list[Row] = []
-    for handler in dict.fromkeys(keys.values()):
+    for handler in dict.fromkeys(h for parts in keys.values() for h in parts):
         rules += specialize_table(handler.rows, catalog)
     verdicts = {rule: verify(*rule, edges=edges) for rule in rules}
     return [r for r in rules if verdicts[r] is True], sorted(keys), verdicts

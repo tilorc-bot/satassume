@@ -18,11 +18,21 @@ Patterns are ordinary SymPy expressions over plain symbols:
 ``p*r``, ``a + b`` (two symbols)
     one factor or term against the rest, once per factor or term
     (linear; no commutative search); a non-product does not match ``p*r``;
+``e*log(b)``, ``w*conjugate(w)*r`` (a *rest* symbol beside structure)
+    a product or sum of any arity with exactly one plain symbol that
+    appears nowhere else in it: the other parts are matched against that
+    many factors (terms) of a target of the same head, in every order, and
+    the rest symbol binds the product (sum) of the remaining ones (``1`` or
+    ``0`` when none remain);
+``w*conjugate(w)`` (at the top of a left side, no rest symbol)
+    also matches that many factors of a longer product (terms of a longer
+    sum); the right side replaces them and the other factors are kept;
 ``n*unit + r`` (``n``, ``r`` symbols; ``unit`` constant, e.g. ``pi/2``)
     ``n`` binds the sum of the coefficients of ``unit`` over the terms whose
     ratio to ``unit`` is free of ``pi`` and ``I`` (as ``handlers_v3``'s
-    ``split_shift``), ``r`` the remaining terms; then, if several terms had
-    the unit, each single such term against the rest;
+    ``split_shift``), ``r`` the remaining terms; then, if the coefficients
+    have several terms (``I*pi*(n + y)`` counts as two), each single one
+    against the rest;
 ``part('a', pred) + b``, ``part('a', pred) * b``
     ``a`` binds the sum (product) of the terms (factors) for which
     ``pred(term)`` is provable, ``b`` the rest (``0`` or ``1`` when empty);
@@ -49,7 +59,11 @@ anything else
 Conditions are decided connective by connective (:func:`provable`): an
 ``And`` needs every part provable, an ``Or`` one, atoms are asked one at a
 time through ``_upstream.ask`` and an ``ask`` that raises ``ValueError``
-counts as not provable.  A rule row may carry a fourth element ``unless``:
+counts as not provable.  A sign or realness atom ``ask`` leaves open is
+decided from the bounds the assumptions state on its argument
+(``Q.real(t)`` and ``Q.nonpositive(t)`` under ``Q.ge(t, -pi) & Q.le(t,
+0)``; see :func:`._simple.stated_bounds`): a stated bound carries
+realness, as in ``handlers_v3``.  A rule row may carry a fourth element ``unless``:
 it fires only if ``unless`` is *not* provable.  Rows are tried in table
 order.
 
@@ -62,7 +76,9 @@ from __future__ import annotations
 import itertools
 from typing import Any, Callable, Iterable, Iterator
 
-from sympy import Abs, And, I, Not, Or, Q, S, Symbol, arg, count_ops, exp, floor, im, log
+from sympy import (Abs, And, Dummy, I, Not, Or, Q, S, Symbol, arg, count_ops, exp, expand_mul, floor, im, log,
+                   nan, simplify, zoo)
+from sympy.assumptions import AppliedPredicate
 from sympy.core import Add, Basic, Expr, Mul, Pow
 from sympy.core.function import AppliedUndef, UndefinedFunction
 from sympy.core.operations import LatticeOp
@@ -70,7 +86,7 @@ from sympy.matrices.expressions import HadamardProduct, MatAdd, MatMul, MatrixEx
 
 from .. import _upstream
 from .._upstream import handlers_dict
-from . import _dispatch
+from . import _dispatch, _simple
 from ._dispatch import refine  # the driver identity handlers evaluate candidates with
 from ._wraps import principal  # re-exported for tables
 
@@ -105,7 +121,30 @@ def provable(cond: Any, assumptions: Any) -> bool | None:
         answer = _upstream.ask(cond, assumptions)
     except ValueError:            # SymPy's relation ask on consistent sign facts
         return None
+    if answer is None and isinstance(cond, AppliedPredicate) and cond.function in _BOUND_DECIDED \
+            and len(cond.arguments) == 1:
+        return _from_bounds(cond.function, cond.arguments[0], assumptions)
     return True if answer is True else (False if answer is False else None)
+
+
+_BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero)
+
+
+def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
+    """``True`` when the bounds stated on ``u`` prove ``predicate(u)``, else ``None``."""
+    bounds = _simple.stated_bounds(u, assumptions)
+    if bounds is None:
+        return None
+    lo, hi, lo_open, hi_open = bounds
+    if predicate in (Q.real, Q.extended_real):
+        return True
+    above = lo is not None and (lo.is_positive or (lo.is_zero and lo_open))
+    at_least = lo is not None and lo.is_nonnegative
+    below = hi is not None and (hi.is_negative or (hi.is_zero and hi_open))
+    at_most = hi is not None and hi.is_nonpositive
+    holds = {Q.positive: above, Q.nonnegative: at_least, Q.negative: below, Q.nonpositive: at_most,
+             Q.nonzero: above or below}[predicate]
+    return True if holds else None
 
 
 REBUILD = "__rebuild__"
@@ -275,6 +314,31 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             return
         yield from _match_seq(pattern.args, target.args, assumptions, nb)
         return
+    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, MatrixExpr):
+        rest_syms = [a for a in pattern.args if a.is_Symbol and not isinstance(a, _Part)
+                     and not any(o.has(a) for o in pattern.args if o is not a)]
+        if len(rest_syms) == 1 and not any(isinstance(a, _Part) for a in pattern.args) \
+                and _is_unit_coefficient_form(pattern) is None:               # structure beside a rest symbol
+            if not isinstance(target, pattern.func):
+                return
+            rest_sym = rest_syms[0]
+            others = [a for a in pattern.args if a is not rest_sym]
+            for chosen in itertools.permutations(range(len(target.args)), len(others)):
+                picked = [target.args[i] for i in chosen]
+                remaining = [t for i, t in enumerate(target.args) if i not in chosen]
+                for nb in _match_seq(others, picked, assumptions, b):
+                    nb = _bind(nb, rest_sym, pattern.func(*remaining))
+                    if nb is not None:
+                        yield nb
+            return
+        if top and not rest_syms and isinstance(target, pattern.func) and len(target.args) > len(pattern.args) \
+                and not any(isinstance(a, _Part) for a in pattern.args):    # a sub-product of a longer product
+            for chosen in itertools.permutations(range(len(target.args)), len(pattern.args)):
+                picked = [target.args[i] for i in chosen]
+                remaining = [t for i, t in enumerate(target.args) if i not in chosen]
+                for nb in _match_seq(pattern.args, picked, assumptions, b):
+                    yield {**nb, REBUILD: (lambda r, remaining=remaining, head=pattern.func: head(r, *remaining))}
+            return
     if isinstance(pattern, (Add, Mul)) and len(pattern.args) == 2:
         p1, p2 = pattern.args
         parts = [p for p in (p1, p2) if isinstance(p, _Part)]
@@ -316,8 +380,9 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             rest = Add(*[t for t in terms if t not in [u for u, _ in with_unit]])
             seen = set()
             candidates = [(k, rest)]
-            if len(with_unit) > 1:
-                candidates += [(ratio, target - t) for t, ratio in with_unit]
+            coefficients = [c for _, ratio in with_unit for c in Add.make_args(ratio.expand())]
+            if len(coefficients) > 1:
+                candidates += [(c, (target - c*unit).expand()) for c in coefficients]
             for kk, rr in candidates:
                 if kk == 0 or (kk, rr) in seen:
                     continue
@@ -377,7 +442,16 @@ def subst(expr: Any, binding: Binding, rebuild: bool = False) -> Any:
 # ----------------------------------------------------------------------------
 
 def _is_negation(a: Any) -> bool:
-    return isinstance(a, Mul) and a.could_extract_minus_sign() and not isinstance(-a, Mul)
+    """A unit-modulus number (``-1``, ``I``, ``-I``) times an atom: ``-x``, ``-I*x``.
+
+    Such an argument counts as the atom in the orderings, so that
+    ``log(x) -> log(-I*x) + I*pi/2`` on the positive imaginary axis is as
+    small as ``log(x) -> log(-x) + I*pi`` on the negative real axis."""
+    if not isinstance(a, Mul):
+        return False
+    units = [f for f in a.args if f.is_number and abs(f) == 1]
+    rest = [f for f in a.args if f not in units]
+    return len(units) >= 1 and len(rest) == 1 and rest[0].is_Atom
 
 
 def default_measure(heads: Iterable[type]) -> Measure:
@@ -398,11 +472,11 @@ def default_measure(heads: Iterable[type]) -> Measure:
         structure = 0
         for n in nodes:
             a = n.args[0] if n.args else n
-            if _is_negation(a):
-                a = -a
+            if _is_negation(a) or isinstance(a, Abs):   # Abs is the canonical form rows produce
+                continue
             if isinstance(a, (Add, Mul)):
                 structure += len(a.args)
-            elif not a.is_Atom and not isinstance(a, Abs):   # Abs is the canonical form rows produce
+            elif not a.is_Atom:
                 structure += 1
         bad = sum(_upstream.ask(Q.positive(n.args[0]), assumptions) is not True for n in nodes if n.args)
         return (structure, bad, count_ops(e))
@@ -415,6 +489,19 @@ def default_measure(heads: Iterable[type]) -> Measure:
 
 def _heads_of(rows: Iterable[Row]) -> set[type]:
     return {lhs.func for lhs, _, _ in rows if not isinstance(lhs, AppliedUndef) and not lhs.is_Atom}
+
+
+def _distributed(cand: Any) -> Any:
+    """``cand`` with products distributed over sums when that makes it smaller
+    (``n*(log(-x) + I*pi) - I*pi*n`` is ``n*log(-x)``; a rewrite that only
+    grows, such as a binomial, is left alone)."""
+    if not isinstance(cand, Expr) or not cand.has(Add):
+        return cand
+    try:
+        flat = expand_mul(cand)
+    except Exception:  # noqa: BLE001
+        return cand
+    return flat if count_ops(flat) < count_ops(cand) else cand
 
 
 def identity_handler(rows: list[Row], *, measure: Measure | None = None,
@@ -432,7 +519,7 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     splitting = [False]
 
     def handler(expr: Any, assumptions: Any) -> Any:
-        if busy[0]:
+        if busy[0] or _dispatch.identities_off[0]:
             return None
         m = measure or default_measure(static_heads | {expr.func})
         m0 = m(expr, assumptions)
@@ -445,6 +532,11 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                     cand = refine(subst(rhs, b, rebuild=True), assumptions)
                 finally:
                     busy[0] = False
+                cand = _distributed(cand)
+                if cand.has(floor):
+                    merged = endpoint_split(expr, cand, assumptions)
+                    if merged is not None:
+                        cand = merged
                 if cand.has(*opaque) and not splitting[0]:
                     splitting[0] = True
                     try:
@@ -456,7 +548,10 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                 if cand.has(*opaque):
                     continue
                 if m(cand, assumptions) < m0:
-                    return cand
+                    # nested nodes of this head were left alone while the candidate was
+                    # evaluated; rewrite them now so the result is assembled (and
+                    # distributed) here rather than piecewise by the dispatcher
+                    return _distributed(refine(cand, assumptions))
         return None
 
     handler.rows = rows      # type: ignore[attr-defined]
@@ -492,17 +587,52 @@ def rule_handler(rows: list) -> Callable[[Any, Any], Any]:
 # ----------------------------------------------------------------------------
 
 def _split_branches(s: Any, assumptions: Any) -> tuple[list, bool] | None:
-    """Sign cases for a symbol under an opaque head and whether zero is excluded, or ``None``."""
+    """Sign cases for a symbol under an opaque head and whether zero is excluded, or ``None``.
+
+    A real symbol of unknown sign splits into its positive and negative
+    cases; a nonnegative (nonpositive) one has a single case, the positive
+    (negative) one, and the check at zero decides the rest.  An imaginary
+    symbol is handled by :func:`case_split` as ``I`` times a real one."""
     ask = _upstream.ask
     if ask(Q.real(s), assumptions) is True:
-        if ask(Q.positive(s), assumptions) is not None or ask(Q.negative(s), assumptions) is not None:
+        pos, neg = ask(Q.positive(s), assumptions), ask(Q.negative(s), assumptions)
+        if pos is True or neg is True:
             return None
-        return [Q.positive(s), Q.negative(s)], ask(Q.zero(s), assumptions) is False
-    if ask(Q.imaginary(s), assumptions) is True:
-        if ask(Q.positive(-I*s), assumptions) is not None:
-            return None
-        return [Q.positive(-I*s), Q.negative(-I*s)], True
+        cases = [(Q.positive(s), s), (Q.negative(s), -s)]     # (branch, what Abs(s) is in it)
+        if neg is False:
+            cases = cases[:1]
+        elif pos is False:
+            cases = cases[1:]
+        return cases, ask(Q.zero(s), assumptions) is False
     return None
+
+
+def _same(a: Any, b: Any) -> bool:
+    """Equal, or equal after expansion (``nan``/``zoo`` compared as they are)."""
+    if a == b:
+        return True
+    if a.has(nan, zoo) or b.has(nan, zoo):
+        return False
+    return (a - b).expand() == 0
+
+
+def _agree_at(expr: Any, cand: Any, point: dict, assumptions: Any) -> bool:
+    """Whether ``expr`` and ``cand`` agree at ``point``, by evaluation, refinement, or simplification."""
+    left, right = expr.xreplace(point), cand.xreplace(point)
+    if _same(left, right):
+        return True
+    try:
+        left, right = refine(left, assumptions), refine(right, assumptions)
+    except ValueError:
+        return False
+    if _same(left, right):
+        return True
+    if left.has(nan, zoo) or right.has(nan, zoo):
+        return False
+    try:
+        return simplify(left - right) == 0
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, im, arg)) -> Any | None:
@@ -511,9 +641,10 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
     For a symbol of known reality but unknown sign under an opaque head,
     refine ``cand`` under each sign case; if every case collapses and the
     results agree, that is the answer.  If they differ, try to generalize
-    the positive case's result by ``Abs`` (``x -> Abs(x)``, or ``-x ->
-    Abs(x)`` in the negative case) and accept the generalization when it
-    refines back to every case's result.  When zero is not excluded, the
+    each case's result by ``Abs`` (what ``Abs(x)`` is in that case, ``x``,
+    ``-x``, ``-I*x`` or ``I*x``, replaced by ``Abs(x)``) and accept the
+    generalization when it refines back to every case's result.  An
+    imaginary symbol is split as ``I`` times a real one.  When zero is not excluded, the
     result must also agree with ``expr`` at ``s = 0`` by evaluation.  This
     is the two-branch case split whose branches agree, without
     materializing a ``Piecewise``.
@@ -521,11 +652,23 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
     syms: set = set()
     for node in cand.atoms(*opaque):
         syms |= node.free_symbols
+    ask = _upstream.ask
     for s in sorted(syms, key=str):
+        if ask(Q.imaginary(s), assumptions) is True and ask(Q.positive(-I*s), assumptions) is None:
+            # s = I*t with t real and nonzero: the sign cases are then real-sign
+            # reasoning, which the provers do (they do not relate Q.negative(-I*s)
+            # to Q.positive(I*s)); the answer is mapped back with t = -I*s
+            t = Dummy("t")
+            merged = case_split(expr.xreplace({s: I*t}), cand.xreplace({s: I*t}),
+                                And(assumptions, Q.real(t), ~Q.zero(t)), opaque)
+            if merged is not None:
+                return merged.xreplace({t: -I*s})
+            continue
         split = _split_branches(s, assumptions)
         if split is None:
             continue
-        branches, zero_excluded = split
+        cases, zero_excluded = split
+        branches = [br for br, _ in cases]
         # stage one: only the bookkeeping nodes, which may be constant across the cases
         values: dict | None = {}
         for node in cand.atoms(*opaque):
@@ -542,7 +685,7 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
             values[node] = vals[0]
         if values:
             E = refine(cand.xreplace(values), assumptions)
-            if not E.has(*opaque) and (zero_excluded or expr.subs(s, 0) == E.subs(s, 0)):
+            if not E.has(*opaque) and (zero_excluded or _agree_at(expr, E, {s: S.Zero}, assumptions)):
                 return E
         # stage two: the whole candidate, generalized by Abs
         results = []
@@ -558,14 +701,35 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
             results.append(r)
         if results is None:
             continue
-        guesses = [results[0]] if all(r == results[0] for r in results) else []
-        guesses += [results[0].xreplace({s: Abs(s)}), results[1].xreplace({-s: Abs(s)})]
+        guesses = [results[0]] if all(_same(r, results[0]) for r in results) else []
+        guesses += [r.xreplace({rep: Abs(s)}) for (_, rep), r in zip(cases, results)]
         for E in guesses:
-            if not all(refine(E, And(assumptions, br)) == r for br, r in zip(branches, results)):
+            if not all(_same(refine(E, And(assumptions, br)), r) for br, r in zip(branches, results)):
                 continue
-            if not zero_excluded and expr.subs(s, 0) != E.subs(s, 0):
+            if not zero_excluded and not _agree_at(expr, E, {s: S.Zero}, assumptions):
                 continue
             return E
+    return None
+
+
+def endpoint_split(expr: Any, cand: Any, assumptions: Any) -> Any | None:
+    """Resolve a ``floor`` that is constant on its argument's interval except at
+    one closed endpoint (:func:`._simple.floor_two_valued`): take the interior
+    value when ``cand`` takes the same value at the endpoint under both, so the
+    closed interval of a wrap (``asin(sin(t))`` on ``[-pi/2, pi/2]``) collapses
+    although its floor jumps at the boundary.  ``None`` when nothing applies."""
+    for node in sorted(cand.atoms(floor), key=count_ops):
+        info = _simple.floor_two_valued(node, assumptions)
+        if info is None:
+            continue
+        value, u, endpoint, alternative = info
+        interior, boundary = cand.xreplace({node: value}), cand.xreplace({node: alternative})
+        if _agree_at(interior, boundary, {u: endpoint}, assumptions):
+            merged = refine(interior, assumptions)
+            if merged.has(floor):
+                again = endpoint_split(expr, merged, assumptions)
+                return merged if again is None else again
+            return merged
     return None
 
 
