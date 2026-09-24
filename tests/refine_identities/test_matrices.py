@@ -94,6 +94,7 @@ POSITIVE = [  # (expr, assumptions, expected, witnesses satisfying the assumptio
     (X*Adjoint(X), Q.unitary(X), Identity(2), each(X, UNITARIES)),
     (3*Y*Adjoint(X)*X, Q.unitary(X), 3*Y, [{X: M, Y: G} for M in UNITARIES for G in GENERIC]),
     (Adjoint(X)*X, Q.orthogonal(X) & Q.real_elements(X), Identity(2), each(X, ORTHOGONALS)),
+    (X*Adjoint(X), Q.orthogonal(X) & Q.real_elements(X), Identity(2), each(X, ORTHOGONALS)),
     (MatMul(Inverse(X), X), Q.invertible(X), Identity(2), each(X, INVERTIBLE)),
     (MatMul(X, Inverse(X)), Q.invertible(X), Identity(2), each(X, INVERTIBLE)),
     (X.T*X, Q.symmetric(X), X**2, each(X, SYMMETRIC)),
@@ -215,4 +216,4 @@ def test_symmetric_element_symbolic_order():
 
 def test_table_size():
     from satrefine.handlers_identities import matrices as mod
-    assert len(mod.RULES) == 31
+    assert len(mod.RULES) == 30

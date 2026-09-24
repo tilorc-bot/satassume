@@ -5,8 +5,8 @@
 A row is ``(lhs, rhs, hypothesis)`` or ``(lhs, rhs, hypothesis, unless)``:
 it fires when the hypothesis is provable through ``_upstream.ask`` and the
 ``unless`` condition is not.  The rules are those stated in
-``handlers_v3/matrices.py`` (356 lines), in **31 rows**: Transpose 5,
-Inverse 4, Determinant 2, Trace 1, MatAdd 3, HadamardProduct 1, MatMul 12,
+``handlers_v3/matrices.py`` (356 lines), in **30 rows**: Transpose 5,
+Inverse 4, Determinant 2, Trace 1, MatAdd 3, HadamardProduct 1, MatMul 11,
 MatrixElement 3.
 
 Pattern forms (requested in
@@ -38,7 +38,11 @@ for the real case.
 Minimizations against v3: ``det -> 0`` for singular and for a known zero
 matrix of positive size is one row (the size need not be a literal: a
 provably positive symbolic size is enough, and exactly true); the orthogonal
-``Inverse`` rows come first, so ``Inverse``'s unitary row needs no guard.
+``Inverse`` rows come first, so ``Inverse``'s unitary row needs no guard;
+a zero factor on either side of a product is one row (``Z*W`` with
+``Q.zero(Z) | Q.zero(W)``; merged 2026-09-24 after the row ablation in
+``agent-reports/data/2026-09-24-ablation-plain.md``: no battery case, test
+or fuzz input moved).
 
 Not expressible as rows:
 
@@ -89,7 +93,6 @@ N = MatrixSymbol('N', p, m)     # for N.T*M*N
 Z = MatrixSymbol('Z', m, q)     # general shape
 R = MatrixSymbol('R', m, q)
 W = MatrixSymbol('W', q, s)     # a right neighbour of Z
-V = MatrixSymbol('V', s, m)     # a left neighbour of Z
 
 TRANSPOSE = [
     # The transpose of a zero matrix is the zero matrix of the transposed shape.
@@ -148,8 +151,7 @@ HADAMARD = [
 MATMUL = [
     # A product with a zero factor, scalar or matrix, is the zero matrix of its shape.
     (c*Z, ZeroMatrix(m, q), Q.zero(c)),
-    (Z*W, ZeroMatrix(m, s), Q.zero(Z)),
-    (V*Z, ZeroMatrix(s, q), Q.zero(Z)),
+    (Z*W, ZeroMatrix(m, s), Q.zero(Z) | Q.zero(W)),
     # Adjacent A.T*A and A*A.T cancel for orthogonal A.
     (A.T*A, Identity(m), Q.orthogonal(A)),
     (A*A.T, Identity(m), Q.orthogonal(A)),

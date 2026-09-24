@@ -4,8 +4,8 @@ Each row is ``(lhs, rhs, hypothesis)``: the handler rewrites ``lhs`` to
 ``rhs`` when the hypothesis is provable through ``_upstream.ask``
 (:func:`._specialize.compile_table`).  The rules are the ones stated in
 ``handlers_v3/integer_funcs.py`` (252 lines), transcribed and minimized
-into **23 rows**: one ``floor``/``ceiling`` row shared through a generic
-head, then floor 4, ceiling 4, frac 5, Mod 5, Rem 4.
+into **17 rows**: four ``floor``/``ceiling`` rows shared through a generic
+head, one ``Mod``/``Rem`` row shared likewise, then frac 5, Mod 4, Rem 3.
 
 Pattern forms used beyond the current engine (requested in
 ``tests/refine_identities/needs/test_integer_funcs_needs.py``):
@@ -23,6 +23,14 @@ Minimizations against v3:
 
 * ``F1``/``F2`` are one row with a disjunctive hypothesis, over a generic
   head ``F`` shared by ``floor`` and ``ceiling``.
+* Merged 2026-09-24 after the row ablation
+  (``agent-reports/data/2026-09-24-ablation-plain.md``; no battery case,
+  test or fuzz input moved): the ``F3`` shift rows are shared by ``floor``
+  and ``ceiling`` through ``F`` (6 rows to 3); ``M1``/``Q1`` are one row over
+  a generic two-argument head ``G`` (2 to 1); ``F4`` (``floor``/``ceiling``
+  of an argument in the unit interval is 0) is dropped, since the base
+  layer's ``floor_of_bounded``, the dispatcher's fallback for both keys,
+  gives the same 0 (2 to 0).
 * ``M1`` covers ``M2``'s even case (``a/2`` is an integer for even ``a``) and
   ``Mod(x, 1)``; ``Q1`` likewise for ``Rem``.
 * ``M2``'s odd case is generalized to ``Mod(a, b) = b/2`` whenever ``2*a/b``
@@ -37,7 +45,11 @@ Minimizations against v3:
 Not expressible as rows: none of the stated rules.  The "Gaussian integer"
 terms of ``F3``/``R2`` (``floor(y)``, ``ceiling(y)`` of a finite ``y``) need
 their own rows because ``ask`` cannot show ``Q.integer(floor(y))`` from
-``Q.finite(y)``; that is a prover gap, and those six rows go away with it.
+``Q.finite(y)``; that is a prover gap, and those rows (four since the
+merge: two shared ``floor``/``ceiling`` rows and two ``frac`` rows) fold into
+the plain ``n + x`` shift rows
+once ``ask`` can prove that ``re`` and ``im`` of ``floor(y)`` and
+``ceiling(y)`` are integers for finite ``y`` (a Gaussian-integer fact).
 Checked (adversarial pass, 2026-09-24): every row at 0, +-1, integer and
 half-integer boundaries, +-oo, non-real points (``I``, ``2*I``, ``3*I/2``,
 ``1 + I``), relation bounds against an infinite divisor, old-style symbols,
@@ -63,6 +75,7 @@ from ._specialize import compile_table
 
 a, b, c, n, x, y = symbols('a b c n x y')
 F = Function('F')        # generic head: the row serves every key it is registered under
+G = Function('G')        # generic two-argument head: Mod and Rem
 
 
 def _lt(u, v):
@@ -75,25 +88,18 @@ ROUNDING = [
     (F(x), x, Q.integer(x) | (Q.infinite(x) & Q.extended_real(x))),
 ]
 
-FLOOR = ROUNDING + [
-    # F3: an integer term shifts out: floor(n + x) = n + floor(x).
-    (floor(n + x), n + floor(x), Q.integer(n)),
+SHIFT = [
+    # F3: an integer term shifts out: floor(n + x) = n + floor(x), same for ceiling.
+    (F(n + x), n + F(x), Q.integer(n)),
     # F3: floor/ceiling of a finite y is a (Gaussian) integer and shifts out too
     # (not for y = oo: floor(1/2 + floor(oo)) is not 1/2 + oo in AccumBounds terms).
-    (floor(floor(y) + x), floor(y) + floor(x), Q.finite(y)),
-    (floor(ceiling(y) + x), ceiling(y) + floor(x), Q.finite(y)),
-    # F4: floor(x) = 0 for 0 <= x < 1.
-    (floor(x), S.Zero, Q.nonnegative(x) & _lt(x, 1)),
+    (F(floor(y) + x), floor(y) + F(x), Q.finite(y)),
+    (F(ceiling(y) + x), ceiling(y) + F(x), Q.finite(y)),
 ]
 
-CEILING = ROUNDING + [
-    # F3 for ceiling.
-    (ceiling(n + x), n + ceiling(x), Q.integer(n)),
-    (ceiling(floor(y) + x), floor(y) + ceiling(x), Q.finite(y)),
-    (ceiling(ceiling(y) + x), ceiling(y) + ceiling(x), Q.finite(y)),
-    # F4: ceiling(x) = 0 for -1 < x <= 0.
-    (ceiling(x), S.Zero, Q.nonpositive(x) & _lt(-1, x)),
-]
+# F4 (floor(x) = 0 for 0 <= x < 1, ceiling likewise) is the base layer's
+# floor_of_bounded, the dispatcher's fallback for both keys.
+FLOOR = CEILING = ROUNDING + SHIFT
 
 FRAC = [
     # R1: frac of an integer is 0.
@@ -106,9 +112,12 @@ FRAC = [
     (frac(x), x, Q.nonnegative(x) & _lt(x, 1)),
 ]
 
-MOD = [
-    # M1 (and M2 even): Mod(a, b) = 0 when a is an integer multiple of a nonzero b.
-    (Mod(a, b), S.Zero, Q.nonzero(b) & Q.integer(a/b)),
+MULTIPLE = [
+    # M1/Q1 (and M2/Q2 even): Mod(a, b) = Rem(a, b) = 0 when a is an integer multiple of a nonzero b.
+    (G(a, b), S.Zero, Q.nonzero(b) & Q.integer(a/b)),
+]
+
+MOD = MULTIPLE + [
     # M2 odd, generalized: a/b = m + 1/2 gives Mod(a, b) = b/2; exact for every real
     # b != 0.  Not for non-real b: SymPy's Mod of non-real arguments is not
     # a - b*floor(a/b) (Mod(3*I, 2*I) = 3*I, Mod(-3*I, 2*I) = -I).
@@ -122,9 +131,7 @@ MOD = [
     (Mod(a, b), Rem(a, b), (Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))),
 ]
 
-REM = [
-    # Q1 (and Q2 even): Rem(a, b) = 0 when a is an integer multiple of a nonzero b.
-    (Rem(a, b), S.Zero, Q.nonzero(b) & Q.integer(a/b)),
+REM = MULTIPLE + [
     # Q2 odd, generalized: a/b = m + 1/2 truncates towards zero, so Rem(a, b) is
     # b/2 for a/b > 0 and -b/2 for a/b < 0 (an odd a of unknown sign stays).
     (Rem(a, b), b/2, Q.odd(2*a/b) & Q.positive(a/b)),
@@ -137,7 +144,7 @@ REM = [
                    | (Q.negative(b) & _lt(b, a) & _lt(a, -b))),
 ]
 
-RULES: list[tuple] = FLOOR + CEILING[len(ROUNDING):] + FRAC + MOD + REM
+RULES: list[tuple] = FLOOR + FRAC + MOD + REM[len(MULTIPLE):]
 
 handlers_dict['floor'] = compile_table(FLOOR)
 handlers_dict['ceiling'] = compile_table(CEILING)

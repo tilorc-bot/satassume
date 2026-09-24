@@ -151,6 +151,6 @@ def test_refusal(expr, assumptions):
 def test_table_size_and_registration():
     from satrefine import _upstream
     from satrefine.handlers_identities import integer_funcs as mod
-    assert len(mod.RULES) == 23
+    assert len(mod.RULES) == 17
     assert handlers_dict['floor'] is not _upstream.refine_floor_ceiling
     assert all(callable(handlers_dict[key]) for key in ('floor', 'ceiling', 'frac', 'Mod', 'Rem'))
