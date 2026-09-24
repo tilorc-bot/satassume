@@ -24,7 +24,7 @@ Minimizations against v3:
 * ``F1``/``F2`` are one row with a disjunctive hypothesis, over a generic
   head ``F`` shared by ``floor`` and ``ceiling``.
 * Merged 2026-09-24 after the row ablation
-  (``agent-reports/data/2026-09-24-ablation-plain.md``; no battery case,
+  (``agent-reports/archive/data/2026-09-24-ablation-plain.md``; no battery case,
   test or fuzz input moved): the ``F3`` shift rows are shared by ``floor``
   and ``ceiling`` through ``F`` (6 rows to 3); ``M1``/``Q1`` are one row over
   a generic two-argument head ``G`` (2 to 1); ``F4`` (``floor``/``ceiling``

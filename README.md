@@ -106,7 +106,7 @@ only when propagation is inconclusive.
 | `tests/refine_v2/`, `tests/refine_v3/` | their suites; any suite runs against any package |
 | `tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
 | `tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
-| `satrefine/handlers_identities/` | an experiment on one key: `log` written as two identities plus two exponential forms, with the conditional rules generated from them; `tests/refine_identities/`, `tools/refine_specialize.py`; see `agent-reports/2026-09-24-refine-from-identities.md` |
+| `satrefine/handlers_identities/` | the nine handler families as tables of identities and conditional rules, with rules generated from identities and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py`; see `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and `2026-09-24-refine-identities-phase-2-plan.md` |
 
 ## satrefine: the refine layer as a yardstick
 
@@ -150,23 +150,26 @@ PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_oracle.py --handlers h
 ```
 
 How they compare, and what to build on, is in
-`agent-reports/2026-09-23-refine-three-implementations.md`.
-
-A fourth package, `satrefine/handlers_identities/`, is not a rewrite of the
-56 keys but an experiment on `log` alone: the handler is a table of four
-identities with the branch bookkeeping written out, and the conditional
-rules of the other packages are generated from it by
-`tools/refine_specialize.py` under a catalog of assumption profiles, each
-generated rule checked numerically. Select it with
-`SATREFINE_HANDLERS=handlers_identities`; every other key falls through to
-the vendored handlers. Findings, including a wrong `ask` answer the
-generator surfaced, are in `agent-reports/2026-09-24-refine-from-identities.md`. In short: the
+`agent-reports/2026-09-23-refine-three-implementations.md`. In short: the
 original inherits three unsound matrix rules from SymPy and leaves relation
 errors unguarded; both rewrites refuse those rules; the parallel team's
 package is the only one with zero known defects after an adversarial pass
 and covers the most on the branch-cut families, at about seven times the
 single agent's cost, most of it the verifier pass. `handlers` stays the
 default so the corpus numbers above keep their meaning.
+
+A fourth package, `satrefine/handlers_identities/`, implements the same nine
+handler families as tables: identity rows with the branch bookkeeping written out
+(`log`, powers, inverse functions, complex parts) and plain conditional rows
+(the other families), run by a shared engine that matches rows, decides
+their conditions through `ask`, and generates conditional rules from
+identities under assumption profiles, each verified numerically. Select it
+with `SATREFINE_HANDLERS=handlers_identities`. On the 1,736-case battery
+recorded from the `handlers_v3` suite it gives 0 wrong and 0 crash and
+matches v3 on 1,073 of v3's 1,086 rewrites, in about a third of v3's
+per-family code. Results are in
+`agent-reports/2026-09-24-refine-identities-phase-1-results.md`; the next
+steps in `agent-reports/2026-09-24-refine-identities-phase-2-plan.md`.
 
 `tools/refine_scoreboard.py` runs `tests/refine` under each backend and
 compares outcomes per test: satassume in-scope gaps (pass under `sympy`, fail

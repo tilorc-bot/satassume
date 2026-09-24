@@ -6,7 +6,7 @@
   in `satrefine/handlers_identities/`, checked adversarially and trimmed.
 - **Read this if:** you want the outcome of the identities approach, you are
   deciding whether to build on it, or you are starting phase 2
-  (`2026-09-24-staged-rule-derivation-plan.md`).
+  (`2026-09-24-refine-identities-phase-2-plan.md`).
 - **Stale after:** the staged derivation work, the piecewise experiment
   (`ri/piecewise`) being merged, or a fix to the satassume defect in section 5.
 - **TL;DR:** the table package matches `handlers_v3` on 1,073 of the 1,086
@@ -163,7 +163,7 @@ alone.
 
 1. **Fix the satassume defect first.** It is on `main` and affects anything
    that calls `ask` twice in one process.
-2. **Staged derivation** (`2026-09-24-staged-rule-derivation-plan.md`):
+2. **Staged derivation** (now part of `2026-09-24-refine-identities-phase-2-plan.md`):
    derive the base layer and families in dependency order to a fixpoint,
    with derivation records. Trig and hyperbolic through exponential forms
    are the obvious targets.

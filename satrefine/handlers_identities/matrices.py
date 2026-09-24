@@ -41,7 +41,7 @@ provably positive symbolic size is enough, and exactly true); the orthogonal
 ``Inverse`` rows come first, so ``Inverse``'s unitary row needs no guard;
 a zero factor on either side of a product is one row (``Z*W`` with
 ``Q.zero(Z) | Q.zero(W)``; merged 2026-09-24 after the row ablation in
-``agent-reports/data/2026-09-24-ablation-plain.md``: no battery case, test
+``agent-reports/archive/data/2026-09-24-ablation-plain.md``: no battery case, test
 or fuzz input moved).
 
 Not expressible as rows:
