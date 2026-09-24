@@ -65,7 +65,7 @@ def _range(node: Any, assumptions: Any) -> tuple | None:
     y = node.args[0]
     if head is arg:
         ask = _upstream.ask
-        if (ask(Q.negative(y), assumptions) is False or ask(Q.extended_negative(y), assumptions) is False
+        if (ask(Q.extended_negative(y), assumptions) is False       # arg(-oo) is pi too
                 or ask(Q.nonnegative(re(y)), assumptions) or ask(~Q.zero(im(y)), assumptions) is True):
             hi_open = True                       # off the negative real axis
     elif head in (asin, acos):
@@ -128,10 +128,34 @@ def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
     ``Q.positive(d)``, ``Q.nonnegative(d)``, ``Q.negative(d)``,
     ``Q.nonpositive(d)`` whose difference ``d`` is affine in ``u`` with
     numeric coefficients is a bound on ``u``; the tightest of each side is
-    kept and an unstated side is ``None``.  ``None`` when nothing is stated.
+    kept and an unstated side is ``None``.  When nothing bounds ``u``
+    itself but ``u`` is affine in a bounded quantity ``v`` (``x - 2*pi``
+    under ``Q.le(x, 2*pi)``), the bounds of ``v`` are mapped.  ``None``
+    when nothing is stated.
     """
     if not isinstance(assumptions, Basic):
         return None
+    direct = _direct_bounds(u, assumptions)
+    if direct is not None or u.is_Symbol:
+        return direct
+    for v in _stated_sides(assumptions) + sorted(u.free_symbols, key=str):
+        if v == u or not u.has(v):
+            continue
+        aff = _affine(u, v)
+        rng = _direct_bounds(v, assumptions) if aff else None
+        if rng is None:
+            continue
+        a, c = aff
+        lo, hi, lo_open, hi_open = rng
+        lo, hi = (None if lo is None else a*lo + c), (None if hi is None else a*hi + c)
+        if a < 0:
+            lo, hi, lo_open, hi_open = hi, lo, hi_open, lo_open
+        return lo, hi, lo_open, hi_open
+    return None
+
+
+def _direct_bounds(u: Any, assumptions: Any) -> tuple | None:
+    """The bounds stated on ``u`` itself (see :func:`stated_bounds`)."""
     lo = hi = None
     for conj in And.make_args(assumptions):
         if not isinstance(conj, AppliedPredicate):

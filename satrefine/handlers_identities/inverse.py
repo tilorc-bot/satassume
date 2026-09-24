@@ -13,9 +13,12 @@ pi/2)``, ``Q.positive(t) & Q.lt(t, pi)``, numeric intervals, ...) the
 ``floor`` inside the wrap collapses (the simple layer's floor of a bounded
 quantity), and every interval row of v3 is a specialization; a closed
 interval whose endpoint sits on the jump of the floor is the engine's
-endpoint split (both floor values give the same result there), which is
-also why ``atan(tan t)`` does not fire on the closed ``[-pi/2, pi/2]``:
-at ``pi/2`` the two values disagree, as they must at a pole.
+endpoint split (both floor values give the same result there).  The
+``atan`` facts hold off the poles of ``tan`` and ``cot`` only (``atan(zoo)``
+is not the wrap's value), so their domains exclude ``t/pi + 1/2`` and
+``t/pi`` being integers, which stated bounds refute on an open interval
+and not on a closed one: ``atan(tan t)`` fires on ``(-pi/2, pi/2)`` and
+not on ``[-pi/2, pi/2)``.
 
 The hyperbolic inverses wrap in the imaginary direction (``asinh(sinh z)``
 reflects ``im z`` onto ``[-pi/2, pi/2]``, ``atanh(tanh z)`` is the sawtooth
@@ -25,6 +28,12 @@ of ``im z`` with period ``pi``), which is why they collapse under
 ``Abs`` then refines by sign).  ``atan2(y, x)`` is one row whose right side
 is the sign table as a ``Piecewise``; SymPy's own ``Piecewise`` refinement
 decides its conditions and the row fires when one branch is selected.
+
+Where the facts fire and v3 does not (each exact): an interval spanning
+two of v3's branches, ``acos(cos t)`` on ``[-pi/2, pi/2]`` is ``Abs(t)``
+and ``asin(cos t)`` on ``[pi, 2*pi]`` is ``t - 3*pi/2``; and the
+hyperbolic inverses under a one-sided bound (``Q.ge(t, 0)``), which
+carries realness.
 
 Not covered (and why): bounds derived rather than stated (``Q.ge(t, y) &
 Q.ge(y, 0)``: SymPy's relation ``ask`` would have to be consulted for
@@ -62,8 +71,8 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
     (asin(cos(t)), reflect_half(pi/2 - t),     Q.real(t)),   # cos t = sin(pi/2 - t)
     (acos(cos(t)), reflect_full(t),            Q.real(t)),   # acos undoes cos up to a reflection
     (acos(sin(t)), reflect_full(pi/2 - t),     Q.real(t)),   # sin t = cos(pi/2 - t)
-    (atan(tan(t)), sawtooth(t, pi),            Q.real(t)),   # atan undoes tan up to a period
-    (atan(cot(t)), sawtooth(pi/2 - t, pi),     Q.real(t)),   # cot t = tan(pi/2 - t)
+    (atan(tan(t)), sawtooth(t, pi),            Q.real(t) & ~Q.integer(t/pi + S.Half)),   # atan undoes tan up to a period, off the poles
+    (atan(cot(t)), sawtooth(pi/2 - t, pi),     Q.real(t) & ~Q.integer(t/pi)),            # cot t = tan(pi/2 - t), off the poles
     (asinh(sinh(z)), _reflect_half_imag(z),    true),        # asinh undoes sinh up to an imaginary reflection
     (atanh(tanh(z)), _sawtooth_imag(z),        true),        # atanh undoes tanh up to an imaginary period
     (acoth(coth(z)), _sawtooth_imag(z),        ~Q.zero(z)),  # acoth undoes coth likewise (coth(0) is zoo)

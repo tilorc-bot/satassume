@@ -1,9 +1,4 @@
-"""``handlers_identities.inverse`` against the v3 cases (see ``_rows``).
-
-The trigonometric inverse rows wait on ``floor`` of a symbol bounded by
-relations (``needs/test_branchcut_floor_bounds.py``); those cases are
-expected failures naming it.
-"""
+"""``handlers_identities.inverse`` against the v3 cases (see ``_rows``)."""
 from __future__ import annotations
 
 import pytest
@@ -13,7 +8,7 @@ from sympy import (Abs, I, Q, S, acos, acosh, acot, acoth, acsch, asech, asin, a
 from _rows import check_relation, check_valid, ids
 
 x, y, t = symbols("x y t")
-NEEDS = "miss: floor of a symbol bounded by relations (needs/test_branchcut_floor_bounds.py)"
+NEEDS = "same"
 
 ROWS = [
     (asin(sin(x)), Q.ge(x, -pi/2) & Q.le(x, pi/2), x, NEEDS),
@@ -25,6 +20,11 @@ ROWS = [
     (atan(tan(x)), Q.gt(x, pi/2) & Q.lt(x, 3*pi/2), x - pi, NEEDS),
     (atan(cot(x)), Q.gt(x, 0) & Q.lt(x, pi), pi/2 - x, NEEDS),
     (asin(sin(x)), Q.real(x), None, "neither"), (asin(sin(x)), Q.positive(x), None, "neither"),
+    (atan(tan(x)), Q.ge(x, -pi/2) & Q.le(x, pi/2), None, "neither"),      # closed at the poles
+    (atan(tan(x)), Q.ge(x, -pi/2) & Q.lt(x, pi/2), None, "neither"),      # -pi/2 is a pole
+    (atan(cot(x)), Q.gt(x, 0) & Q.le(x, pi), None, "neither"),            # pi is a pole
+    (acos(cos(x)), Q.ge(x, pi) & Q.le(x, 2*pi), 2*pi - x, "same"),
+    (acos(cos(x)), Q.ge(x, -pi/2) & Q.le(x, pi/2), None, "extra: Abs(x), exact; v3 has no row spanning two branches"),
     (acos(cos(x)), Q.nonnegative(x), None, "neither"), (atan(tan(x)), Q.real(x), None, "neither"),
     (asin(x), Q.positive(x), None, "neither"),
     (atan2(y, x), Q.real(y) & Q.positive(x), atan(y/x), "same"),
@@ -63,7 +63,10 @@ VALUES = {x: [S(-3), S(-1), -S.Half, S.Zero, S.Half, S.One, S(2), pi, 2*I, -I, 1
 def test_output_is_valid(expr, assumptions, team, relation):
     if assumptions is not True and assumptions.has(Q.zero):
         pytest.skip("nan cases and zero points are compared structurally")
-    check_valid(expr, assumptions, relation=relation, values=VALUES)
+    values = VALUES
+    if assumptions is not True and assumptions.has(Q.ge, Q.gt, Q.le, Q.lt):   # a relation raises on a non-real sample
+        values = {s: [v for v in vals if v.is_extended_real] for s, vals in VALUES.items()}
+    check_valid(expr, assumptions, relation=relation, values=values)
 
 
 @pytest.mark.parametrize("expr, assumptions, team, relation", ROWS, ids=ids(ROWS))

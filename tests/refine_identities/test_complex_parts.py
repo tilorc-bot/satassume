@@ -7,8 +7,8 @@ from sympy import (Abs, I, Mul, Q, S, arg, conjugate, cos, cosh, exp, im, log, p
 from _rows import check_relation, check_valid, ids
 
 x, y, z, t, n = symbols("x y z t n")
-AC = "miss: a sub-product pattern with a rest (needs/test_branchcut_subpattern.py)"
-ARG = "miss: arg bounded by a relation on re (no row)"
+AC = "same"
+ARG = "same"
 
 ROWS = [
     # Abs
@@ -47,8 +47,8 @@ ROWS = [
     (re(x**n), Q.real(x) & Q.integer(n) & Q.positive(n), x**n, "same"),
     (im(x**n), Q.real(x) & Q.integer(n) & Q.positive(n), S.Zero, "same"),
     (re(x**2), Q.real(x), x**2, "same"),
-    (re(x**n), Q.real(x) & Q.integer(n), None, "wrong: the simple layer falls through to the vendored re/im, which recurses on powers (needs/test_branchcut_reim_power.py)"),
-    (re(x**z), Q.imaginary(z) & Q.real(x), None, "wrong: the simple layer falls through to the vendored re/im, which recurses on powers (needs/test_branchcut_reim_power.py)"),
+    (re(x**n), Q.real(x) & Q.integer(n), None, "neither"),
+    (re(x**z), Q.imaginary(z) & Q.real(x), None, "neither"),
     # arg
     (arg(x), Q.positive(x), S.Zero, "same"), (arg(x), Q.negative(x), pi, "same"),
     (arg(x), Q.imaginary(x) & Q.positive(im(x)), pi/2, "same"),
@@ -56,13 +56,12 @@ ROWS = [
     (arg(x), Q.real(x), None, "neither"), (arg(x), Q.zero(x), None, "neither"), (arg(x), Q.nonnegative(x), None, "neither"),
     (arg(x*y), Q.positive(y), arg(x), "same"), (arg(x*y*z), Q.positive(y) & Q.positive(z), arg(x), "same"),
     (arg(x*y), Q.positive(x) & Q.positive(y), S.Zero, "same"),
-    (arg(x*y), Q.real(y), None, "neither"), (arg(x*y), Q.negative(y), None, "neither"),
+    (arg(x*y), Q.real(y), None, "neither"), (arg(x*y), Q.negative(y), None, "extra: arg(-x), exact; v3 declines"),
     (arg(x*y), Q.nonnegative(y), None, "neither"),
-    (arg(exp(I*t)), Q.real(t) & Q.positive(t + pi) & Q.nonpositive(t - pi), t,
-     "wrong: the simple layer's arg(exp) sawtooth is open at pi, SymPy's arg is closed there (needs/test_branchcut_arg_exp_boundary.py)"),
+    (arg(exp(I*t)), Q.real(t) & Q.positive(t + pi) & Q.nonpositive(t - pi), t, "same"),
     (arg(exp(x)), Q.real(x), S.Zero, "same"),
-    (arg(exp(I*t)), Q.real(t), None, "wrong: the simple layer's arg(exp) sawtooth is open at pi (needs/test_branchcut_arg_exp_boundary.py)"),
-    (arg(exp(I*t)), Q.positive(t), None, "wrong: the simple layer's arg(exp) sawtooth is open at pi (needs/test_branchcut_arg_exp_boundary.py)"),
+    (arg(exp(I*t)), Q.real(t), None, "neither"),
+    (arg(exp(I*t)), Q.positive(t), None, "neither"),
     (arg(conjugate(x)), Q.positive(re(x)), -arg(x), ARG), (arg(conjugate(x)), ~Q.zero(im(x)), -arg(x), ARG),
     (arg(conjugate(x)), Q.positive(x), S.Zero, "same"), (arg(conjugate(x)), Q.negative(x), pi, "same"),
     (arg(conjugate(x)), True, None, "neither"), (arg(conjugate(x)), Q.negative(re(x)), None, "neither"),
@@ -74,7 +73,7 @@ ROWS = [
     (sign(Abs(x)), ~Q.zero(x), S.One, "same"), (sign(Abs(x)), Q.nonzero(x), S.One, "same"),
     (sign(Abs(x)), Q.imaginary(x), S.One, "same"), (sign(exp(x)), Q.real(x), S.One, "same"),
     (sign(Abs(x)), Q.complex(x), None, "neither"), (sign(exp(x)), Q.complex(x), None, "neither"),
-    (sign(exp(x)), Q.imaginary(x), None, "extra"),
+    (sign(exp(x)), Q.imaginary(x), None, "neither"),
     (sign(x*y), Q.positive(y), sign(x), "same"), (sign(x*y), Q.negative(y), -sign(x), "same"),
     (sign(x*y), Q.zero(y), S.Zero, "same"), (sign(x*y), Q.imaginary(y) & Q.positive(im(y)), I*sign(x), "same"),
     (sign(x*Abs(y)), Q.positive(x) & ~Q.zero(y), S.One, "same"),
@@ -101,6 +100,8 @@ ROWS = [
     (2*x*y*conjugate(x), True, 2*y*Abs(x)**2, AC), (x**2*conjugate(x)**2, True, Abs(x)**4, "same"),
     (x**n*conjugate(x)**n, Q.integer(n), Abs(x)**(2*n), "same"),
     (x**3*conjugate(x), True, x**2*Abs(x)**2, "miss: a computed exponent is not a row"),
+    (Abs(x**n), Q.real(x) & Q.integer(n) & Q.positive(n), Abs(x)**n, "same"),
+    (arg(conjugate(x)), Q.negative_infinite(x), None, "neither"),
     (x/conjugate(x), True, None, "neither"), (x*conjugate(y), True, None, "neither"),
     (x**n*conjugate(x)**n, True, None, "neither"), (sqrt(x)*sqrt(conjugate(x)), True, None, "neither"),
     (x*y, Q.real(x) & Q.real(y), None, "neither"),

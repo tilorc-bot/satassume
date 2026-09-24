@@ -37,7 +37,24 @@ to v3's ``(-1)**b*Abs(x)**(2*b)``; ``a = 0 mod 4`` derives for a symbolic
 number of ``exp`` nodes so it fires only when a factor evaluates away
 (``exp(log(Abs(p)) + log(Abs(r)))``), and three rules: ``I*pi`` times an
 integer or half-integer leaves as ``(-1)**n`` or ``I*(-1)**n``, and
-``exp(e*log(b))`` folds back to ``b**e``.
+``exp(e*log(b))`` folds back to ``b**e`` on the power form's domain
+(``b != 0`` or ``e > 0``: whatever the form unfolded, the fold refolds, so
+no result is left as ``exp(e*log(b))``, which is ``nan`` at ``b = 0``
+where ``b**e`` is ``0``).
+
+Where the rows fire and v3 does not: ``log(2*x)`` is ``log(2) + log(x)``
+(v3 wants a symbolic factor of known sign; the product form needs no
+condition), and ``log(x**n)`` for a negative ``x`` and an odd ``n`` comes
+out as ``log(-x**n) + I*pi`` (the negative-argument row; ``ask`` cannot
+show ``(1 - n)/2`` an integer for an odd ``n``, so the power form's
+``floor`` does not collapse to v3's ``n*log(-x) + I*pi``).
+
+At infinity SymPy's arithmetic breaks the identities themselves:
+``log(1/oo)`` is ``zoo`` while ``-log(oo)`` is ``-oo``, so ``log(1/x)``
+under ``Q.extended_positive(x)`` gives ``-log(x)`` here where v3 (which
+asks ``Q.finite``) declines; a finiteness domain would lose every
+``~Q.zero(x)`` and complex case (``ask`` cannot show ``e*log(b)`` finite
+for an imaginary or complex ``b``).
 
 Not covered (and why): ``log(x**n)`` for a merely real ``x`` and a
 symbolic even ``n``, ``log(x**(-2))`` for a real ``x`` and ``log(1/x)``
@@ -52,14 +69,15 @@ exponent, which it does; the ``2 mod 4`` case is the rule above).
 """
 from __future__ import annotations
 
-from sympy import Abs, E, I, Q, S, arg, exp, floor, im, log, pi, symbols, true
+from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true
 from sympy.core import Pow
 
 from .._upstream import handlers_dict
-from ._engine import Row, derive, identity_handler, principal, rule_handler
+from ._engine import Row, derive, identity_handler, part, principal, rule_handler
 from ._tables import ZERO, chain, exp_node_measure, negative_number_base_measure, node_measure
 
 z, b, e, p, r, x, a, n = symbols('z b e p r x a n')
+c = part('c', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
 
 FACTS: list[Row] = [   # (lhs, rhs, domain): lhs == rhs wherever the domain holds
     (log(exp(z)), principal(z),            true),          # log inverts exp up to the principal branch
@@ -85,7 +103,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     (Pow(E, x, evaluate=False), exp(x), true),                                  # E**x is exp(x)
     ((b**a)**e, b**(a*e), Q.integer(e)),                                        # (b**a)**e = b**(a*e), integer e
     ((b**a)**e, b**(a*e), Q.nonnegative(b) & Q.positive(a)),                    # ... a*log(b) real, 0**a = 0 for a > 0
-    ((b**a)**e, Abs(b)**(a*e), Q.real(b) & Q.even(a) & Q.positive(a)),          # b**a = |b|**a, even a; 0**a = 0 for a > 0
+    ((b**a)**e, Abs(b)**(a*e), Q.real(b) & Q.even(a) & (Q.positive(a) | ~Q.zero(b))),   # b**a = |b|**a, even a; 0**a = 0 for a > 0
     (exp(a)**e, exp(a*e), Q.integer(e)),                                        # exp(a)**e = exp(a*e), integer e
     ((b**a)**e, Abs(b)**(a*e), Q.imaginary(b) & Q.even(a/2)),                   # (I*t)**a = t**a for a = 0 mod 4
     ((b**a)**e, (-1)**e*Abs(b)**(a*e), Q.imaginary(b) & Q.odd(a/2)),            # (I*t)**a = -t**a for a = 2 mod 4
@@ -96,11 +114,11 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     ((-1)**x, S.NegativeOne, Q.odd(x)),                                         # (-1)**odd = -1
     ((-1)**(n + r), (-1)**r, Q.even(n)),                                        # (-1)**z is 2-periodic: drop even terms
     ((-1)**(n + r), (-1)**(r + 1), Q.odd(n)),                                   # ... an odd term becomes 1
-    ((-1)**(n + r), (-1)**(r + n - 2*floor(n/2)), Q.rational(n)),               # ... a rational term is reduced mod 2
+    ((-1)**(c + r), (-1)**(r + Mod(c, 2)), true),                               # ... a rational constant is reduced mod 2
     # exp
     (exp(n*pi*I + r), (-1)**n*exp(r), Q.integer(n)),                            # exp splits over sums; exp(I*pi*n) = (-1)**n
     (exp(n*pi*I + r), I*(-1)**(n - S.Half)*exp(r), Q.integer(n - S.Half)),       # exp(I*pi*(k + 1/2)) = I*(-1)**k
-    (exp(e*log(b)), b**e, ~Q.zero(b)),                                          # the definition of Pow, folded back
+    (exp(e*log(b)), b**e, ~Q.zero(b) | Q.positive(e)),                          # the definition of Pow, folded back (the form's domain)
 ]
 
 NEGATIVE_BASE: list[Row] = [   # exact for integer n; ordered so they fire for a negative number only

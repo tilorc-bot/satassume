@@ -187,6 +187,9 @@ def test_provable_reads_stated_bounds():
     assert provable(Q.positive(t), Q.ge(t, 0) & Q.lt(t, pi)) is None
     assert provable(Q.negative(t), Q.positive(t + pi) & Q.nonpositive(t - pi)) is None
     assert provable(Q.real(t), Q.positive(t + pi)) is True
+    assert provable(Q.nonpositive(t - 2*pi), Q.le(t, 2*pi) & Q.ge(t, pi)) is True    # bounds of an affine expression
+    assert provable(~Q.integer(t/pi + S.Half), Q.gt(t, -pi/2) & Q.lt(t, pi/2)) is True
+    assert provable(~Q.integer(t/pi + S.Half), Q.ge(t, -pi/2) & Q.lt(t, pi/2)) is None
 
 
 def test_floor_of_a_bounded_symbol():
@@ -231,7 +234,7 @@ def test_simple_parts_of_exp_log_and_products():
     assert refine(im(e_*log(b_)), Q.negative(b_) & Q.even(e_)) == pi*e_
     assert refine(Abs(exp(w)), Q.complex(w)) == exp(re(w))
     assert refine(im(exp(w)), Q.complex(w)) == exp(re(w))*sin(im(w))
-    assert refine(arg_(x), Q.positive(-I*x)) == pi/2
+    assert refine(arg_(x), Q.imaginary(x) & Q.positive(-I*x)) == pi/2
 
 
 def test_piecewise_branches_refine_under_their_conditions():

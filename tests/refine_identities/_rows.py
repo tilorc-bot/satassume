@@ -37,7 +37,7 @@ def check_relation(expr, assumptions, team, relation):
         assert refined == team or simplify(refined - team) == 0, refined
     elif relation == "different":
         assert refined != expr and refined != team, refined
-    elif relation == "extra":
+    elif relation.startswith("extra"):
         assert refined != expr
     else:
         assert refined == expr, refined

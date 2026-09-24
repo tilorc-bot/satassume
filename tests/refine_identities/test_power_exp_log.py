@@ -27,7 +27,6 @@ ROWS = [
     (log(x**2), Q.negative(x), 2*log(-x), "same"),
     (log(x**2), Q.imaginary(x), 2*log(Abs(x)) + I*pi, "same"),
     (log(x**n), Q.real(x) & Q.even(n), None, "neither"),
-    (log(x**n), Q.negative(x) & Q.odd(n), n*log(-x) + I*pi, "different"),
     (log(x**y), Q.positive(x) & Q.real(y), y*log(x), "same"),
     (log(x**y), Q.positive(x) & Q.complex(y), None, "neither"),
     (log(x*y), Q.positive(x) & Q.positive(y), log(x) + log(y), "same"),
@@ -47,8 +46,11 @@ ROWS = [
     (log(exp(I*t)), Q.real(t), None, "neither"),
     (log(exp(x + I*t)), Q.real(x) & Q.real(t), None, "neither"),
     (log(x**n), Q.positive(x) & Q.real(n), n*log(x), "same"),
-    (log(x**n), Q.nonnegative(x) & Q.positive(n), n*log(x),
-     "miss: the sign split treats a branch contradicting the assumptions as failure instead of vacuous"),
+    (log(x**n), Q.nonnegative(x) & Q.positive(n), n*log(x), "same"),
+    (log(x**n), Q.negative(x) & Q.odd(n), None, "miss: ask cannot show (1 - n)/2 integer for odd n, so the wrap's floor stays"),
+    (log(x**(-2)), Q.real(x), None, "miss: the power form needs b != 0 or e > 0 (Abs(0**e) is oo, not zoo, for e < 0)"),
+    (sqrt(x**(-2)), Q.nonzero(x), 1/Abs(x), "same"),
+    (log(1/x), Q.extended_positive(x), -log(x), "extra: v3 asks Q.finite; at x = oo SymPy's log(1/oo) is zoo, -log(oo) is -oo"),
     (log(x**4), Q.imaginary(x), 4*log(Abs(x)), "same"),
     (log(exp(x)*y), Q.real(x), x + log(y), "same"),
     # Pow
@@ -137,7 +139,7 @@ def test_relation_to_team(expr, assumptions, team, relation):
         assert refined == team or simplify(refined - team) == 0, refined
     elif relation == "different":
         assert refined != expr and refined != team
-    elif relation == "extra":
+    elif relation.startswith("extra"):
         assert refined != expr
     else:
         assert refined == expr
@@ -145,4 +147,19 @@ def test_relation_to_team(expr, assumptions, team, relation):
 
 def test_row_counts():
     from satrefine.handlers_identities import power_exp_log as m
-    assert len(m.FACTS) == 3 and len(m.EXP_FORMS) == 2
+    assert len(m.FACTS) == 4 and len(m.EXP_FORMS) == 3
+
+
+CUBE_ROOT = (x**3)**Rational(1, 3)
+
+
+def test_cube_root_of_cube_stays(checker_case=CUBE_ROOT):
+    """The checker's finding on the vendored ``refine_Pow``: ``(x**3)**(1/3)`` is
+    neither ``-x`` for negative ``x`` (the principal cube root of ``x**3`` is
+    ``-x*exp(I*pi/3)`` there) nor ``Abs(x)`` for real ``x``; the rows here
+    reach a ``(b**a)**e`` only for an even ``a`` or an integer ``e``."""
+    from sympy import floor
+    assert refine(CUBE_ROOT, Q.negative(x)) == CUBE_ROOT
+    assert refine(CUBE_ROOT, Q.real(x)) == CUBE_ROOT
+    assert refine(floor(CUBE_ROOT), Q.real(x)) == floor(CUBE_ROOT)
+    assert (CUBE_ROOT.subs(x, -1) - 1).evalf() != 0

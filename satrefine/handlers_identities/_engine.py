@@ -60,10 +60,11 @@ Conditions are decided connective by connective (:func:`provable`): an
 ``And`` needs every part provable and stops at the first that is not, an
 ``Or`` one, atoms are asked one at a time through ``_upstream.ask``
 (relations last: they are the expensive ones) and an ``ask`` that raises
-``ValueError`` counts as not provable.  A sign or realness atom ``ask`` leaves open is
+(SymPy's relation theory does, on consistent facts) counts as not provable.  A sign or realness atom ``ask`` leaves open is
 decided from the bounds the assumptions state on its argument
 (``Q.real(t)`` and ``Q.nonpositive(t)`` under ``Q.ge(t, -pi) & Q.le(t,
-0)``; see :func:`._simple.stated_bounds`): a stated bound carries
+0)``, ``Q.integer(t/pi + 1/2)`` refuted under ``Q.gt(t, -pi/2) & Q.lt(t,
+pi/2)``; see :func:`._simple.stated_bounds`): a stated bound carries
 realness, as in ``handlers_v3``.  A rule row may carry a fourth element ``unless``:
 it fires only if ``unless`` is *not* provable.  Rows are tried in table
 order.
@@ -77,8 +78,8 @@ from __future__ import annotations
 import itertools
 from typing import Any, Callable, Iterable, Iterator
 
-from sympy import (Abs, And, Dummy, I, Not, Or, Q, S, Symbol, arg, count_ops, exp, expand_mul, floor, im, log,
-                   nan, simplify, zoo)
+from sympy import (Abs, And, Dummy, I, Not, Or, Q, S, Symbol, arg, ceiling, count_ops, exp, expand_mul, floor, im,
+                   log, nan, simplify, zoo)
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Add, Basic, Expr, Mul, Pow
 from sympy.core.function import AppliedUndef, UndefinedFunction
@@ -128,7 +129,7 @@ def provable(cond: Any, assumptions: Any) -> bool | None:
         return None if inner is None else not inner
     try:
         answer = _upstream.ask(cond, assumptions)
-    except ValueError:            # SymPy's relation ask on consistent sign facts
+    except (ValueError, TypeError, AssertionError):   # SymPy's relation ask (LRA) raising on consistent facts
         return None
     if answer is None and isinstance(cond, AppliedPredicate) and cond.function in _BOUND_DECIDED \
             and len(cond.arguments) == 1:
@@ -136,7 +137,8 @@ def provable(cond: Any, assumptions: Any) -> bool | None:
     return True if answer is True else (False if answer is False else None)
 
 
-_BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero)
+_BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero,
+                  Q.integer)
 
 
 def _ask_cost(cond: Any) -> int:
@@ -153,6 +155,12 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     lo, hi, lo_open, hi_open = bounds
     if predicate in (Q.real, Q.extended_real):
         return True
+    if predicate is Q.integer:                 # refuted when the interval holds no integer
+        if lo is None or hi is None:
+            return None
+        first = ceiling(lo) + (1 if lo_open and lo.is_integer else 0)
+        last = floor(hi) - (1 if hi_open and hi.is_integer else 0)
+        return False if (first - last).is_positive else None
     above = lo is not None and (lo.is_positive or (lo.is_zero and lo_open))
     at_least = lo is not None and lo.is_nonnegative
     below = hi is not None and (hi.is_negative or (hi.is_zero and hi_open))
@@ -469,6 +477,14 @@ def _is_negation(a: Any) -> bool:
     return len(units) >= 1 and len(rest) == 1 and rest[0].is_Atom
 
 
+def _provably_positive(a: Any, assumptions: Any) -> bool:
+    """``a > 0``; for a negation ``-u`` also through ``u < 0`` (the provers do not
+    negate the sign of a product: ``Q.positive(-x*y)`` under ``Q.negative(x*y)``)."""
+    if _upstream.ask(Q.positive(a), assumptions) is True:
+        return True
+    return a.could_extract_minus_sign() and _upstream.ask(Q.negative(-a), assumptions) is True
+
+
 def default_measure(heads: Iterable[type]) -> Measure:
     """The generic rewrite ordering for a table registered on ``heads``.
 
@@ -490,13 +506,10 @@ def default_measure(heads: Iterable[type]) -> Measure:
             if _is_negation(a) or isinstance(a, Abs):   # Abs is the canonical form rows produce
                 continue
             if isinstance(a, (Add, Mul)):
-                structure += len(a.args)
+                structure += len([f for f in a.args if not (f.is_number and abs(f) == 1)])   # -x*y is x*y
             elif not a.is_Atom:
                 structure += 1
-        # positivity is asked for atom-like arguments only (log(x) versus log(-x));
-        # a structured argument counts as bad without a question, structure decides
-        bad = sum(not (a.is_Atom or _is_negation(a)) or _upstream.ask(Q.positive(a), assumptions) is not True
-                  for a in (n.args[0] for n in nodes if n.args))
+        bad = sum(not _provably_positive(n.args[0], assumptions) for n in nodes if n.args)
         return (structure, bad, count_ops(e))
     return measure
 

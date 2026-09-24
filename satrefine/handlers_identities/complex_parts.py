@@ -23,6 +23,12 @@ split by an exact identity whose ordering requires a factor or term to
 resolve, which is v3's "fires only if at least one factor resolves"; the
 same ordering makes ``Abs(x*y)`` split only when a factor resolves.
 
+Where the rows fire and v3 does not: ``arg(x*y)`` for a negative ``y`` is
+``arg(-x)`` (the product form with both signs flipped; v3 pulls positive
+factors only).  Other forms: ``Abs(x**-2)`` for a real ``x`` is ``x**-2``
+(v3: ``1/Abs(x**2)``), ``conjugate(x + y)`` for a real ``y`` is ``y +
+conjugate(x)`` (v3 conjugates every term first).
+
 Not covered (and why): ``x**3*conjugate(x) -> x**2*Abs(x)**2`` (the
 leftover power's exponent is computed, not matched: a ``conjugate(x)``
 factor is not a ``Pow``); ``conjugate(exp(w))`` for a ``w`` that does not
@@ -47,7 +53,7 @@ s = part('s', Q.real)        # the real factors of a product
 FACTS: list[Row] = [   # (lhs, rhs, domain)
     (Abs(exp(z), evaluate=False), exp(re(z)),                          true),   # |exp z| = exp(re z) (SymPy evaluates the lhs)
     (arg(exp(z)),       im(z) + 2*pi*floor(S.Half - im(z)/(2*pi)),     true),   # arg(exp z) = im z wrapped onto (-pi, pi]
-    (arg(conjugate(w)), -arg(w) + 2*pi*floor(S.Half + arg(w)/(2*pi)),  ~Q.zero(w)),  # arg is odd off the negative axis
+    (arg(conjugate(w)), -arg(w) + 2*pi*floor(S.Half + arg(w)/(2*pi)),  true),   # arg is odd off the negative axis (nan at 0 on both sides)
 ]
 
 SPLITS: list[Row] = [   # exact multiplicative or additive identities; the ordering demands progress

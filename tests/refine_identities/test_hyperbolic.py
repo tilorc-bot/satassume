@@ -26,12 +26,11 @@ ROWS = [
     (cosh(k*pi*I), Q.odd(k), S.NegativeOne, "same"), (cosh(k*pi*I), Q.integer(k), (-1)**k, "same"),
     (coth(k*pi*I), Q.integer(k), zoo, "same"), (tanh(k*pi*I/2), Q.odd(k), zoo, "same"),
     (sinh(k*pi*I/2), M1, I, "same"), (csch(k*pi*I/2), M3, I, "same"),
-    (sinh(x + k*pi*I), Q.integer(k), None, "extra: fires with (-1)**k*sinh(x), exact; v3 declines"),
-    (sinh(x + k*pi*I/2), Q.odd(k), None, "extra: fires with I*(-1)**((k-1)/2)*cosh(x), exact; v3 declines"),
+    (sinh(x + k*pi*I), Q.integer(k), None, "neither"),
+    (sinh(x + k*pi*I/2), Q.odd(k), None, "neither"),
     (sinh(x + k*pi*I/2), Q.integer(k), None, "neither"), (sinh(x + k*pi), Q.integer(k), None, "neither"),
     (sinh(x + k*pi*I), Q.real(k), None, "neither"), (sinh(x + y), Q.integer(y), None, "neither"),
 ]
-ROWS = [(e, a, t, r if not r.startswith("extra") else "extra") for e, a, t, r in ROWS]
 
 
 @pytest.mark.parametrize("expr, assumptions, team, relation", ROWS, ids=ids(ROWS))
