@@ -215,11 +215,13 @@ def check(expr, refined, assumptions, combos, rel, rng, samples=12):
     return checked, None
 
 def main(seed=0, cases=3000):
-    rng = random.Random(seed)
     fired = Counter(); tried = Counter(); unsound = []; crashes = []; sympy_unsound = []; nonbasic = []
     sat_only = Counter(); sympy_only = Counter(); differ = []
     t0 = time.time()
     for case in range(cases):
+        # one generator stream per case, so every handler package sees the same inputs
+        # regardless of how the previous case's check consumed randomness
+        rng = random.Random(seed * 1000003 + case)
         head = rng.choice(list(OUTER))
         try:
             e = OUTER[head](inner(rng), rng)

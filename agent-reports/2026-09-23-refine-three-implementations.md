@@ -18,13 +18,13 @@ side by side behind one dispatcher (`SATREFINE_HANDLERS=handlers|handlers_v2|han
 | Written by | the `reasoning` project's agents, with verifiers | one Fable 5.1 agent, whole problem, no verifier | 9 implementers (3 Fable, 6 Opus 5.5) + 9 verifiers (3 Fable, 6 Opus), one family each |
 | Handler modules / lines | 33 / 1,887 | 18 / 1,709 | 9 / 3,207 |
 | Own tests | 469 (6,245 lines) | 161 (1,110 lines) | 1,005 (3,552 lines) |
-| Fuzz, seed 2, 1,500 identical inputs: rewrites fired | 385 | 424 | 453 |
-| Fuzz: unsound / crash / non-SymPy return | 0 (2 nan-at-pole false alarms) / 0 / 3 | 0 (2 same false alarms) / 1 inherited recursion / 0 | 0 / 0 / 0 |
+| Fuzz, seed 2, 1,500 identical inputs: rewrites fired | 395 | 458 | 454 |
+| Fuzz: unsound / crash / non-SymPy return | 0 (1 nan-at-pole false alarm) / 0 / 0 | 0 (same false alarm) / 0 / 0 | 0 (same false alarm) / 0 / 0 |
 | Known unsound rules after verification | 3 (inherited SymPy matrix rules) | none found, but no adversarial pass | 0 (12 found and fixed by verifiers) |
 | Agent cost (reported agent tokens) | n/a | ~240k, 39 min | ~1.7M across 18 agents, ~3 h elapsed under a 3-Fable/6-Opus cap |
 
-The parallel team produced the soundest and broadest handler set, at roughly
-seven times the token cost of the single agent. Half of that cost was the
+The parallel team produced the soundest handler set, and one as broad as
+the single agent's, at roughly seven times the token cost. Half of that cost was the
 verifier pass, which found 12 real defects the implementers had shipped
 (9 of them in Opus-written families), so the verifier pass is where the
 money went and where the quality came from. The single agent, unverified,
@@ -85,28 +85,40 @@ checked and none was unsound):
 
 | head | tried | original | single | parallel |
 |---|---|---|---|---|
-| Abs(...)**n | 34 | 11 | 19 | 23 |
-| acosh(cosh) | 26 | 9 | 19 | 21 |
-| asinh(sinh) | 25 | 14 | 11 | 19 |
-| frac | 31 | 8 | 7 | 13 |
-| binomial | 26 | 2 | 8 | 9 |
-| Min / Max (2 and 3 args) | 96 | 18 | 20 | 24 |
-| Mod / Rem | 49 | 8 | 9 | 9 |
-| ceiling / floor | 42 | 13 | 15 | 20 |
-| KroneckerDelta | 16 | 0 | 2 | 5 |
-| asech / acsch / acoth | 68 | 3 | 8 | 12 |
-| log(exp) | 29 | 25 | 17 | 19 |
-| sign | 21 | 11 | 4 | 11 |
-| sinc | 20 | 3 | 12 | 3 |
-| csch | 21 | 7 | 7 | 1 |
-| re / im | 51 | 48 | 40 | 47 |
-| all heads | 1,482 | 385 | 424 | 453 |
+| Abs(...)**n | 23 | 15 | 15 | 15 |
+| acosh(cosh) | 33 | 11 | 21 | 21 |
+| asinh(sinh) | 29 | 21 | 21 | 21 |
+| atanh(tanh) | 20 | 12 | 12 | 12 |
+| frac | 25 | 3 | 3 | 3 |
+| binomial | 17 | 1 | 1 | 2 |
+| Min / Max (2 and 3 args) | 89 | 12 | 22 | 26 |
+| Mod / Rem | 69 | 12 | 10 | 12 |
+| ceiling / floor | 40 | 12 | 12 | 12 |
+| KroneckerDelta | 15 | 0 | 5 | 6 |
+| asech / acsch / acoth | 59 | 5 | 7 | 6 |
+| log(exp) | 24 | 19 | 19 | 19 |
+| log | 34 | 7 | 9 | 15 |
+| sign | 20 | 7 | 7 | 7 |
+| sinc | 24 | 3 | 16 | 5 |
+| csch | 25 | 2 | 2 | 3 |
+| re / im | 48 | 45 | 45 | 45 |
+| Abs | 27 | 9 | 12 | 12 |
+| conjugate / conj pairs | 53 | 47 | 48 | 48 |
+| trig (sin..csc) | 141 | 39 | 40 | 40 |
+| hyperbolic (sinh..sech) | 119 | 13 | 15 | 12 |
+| all heads | 1485 | 395 | 458 | 454 |
 
-The original leads on `log(exp(x))`, `csch`, and `sign`; the single agent on
-`sinc` and `Abs`; the parallel team on most of the rest. Some of the original's
-extra fires are rules the rewrites refused on purpose (its `sign` handler
-asks without passing the assumptions and fires on symbol-declared facts; its
-`log(exp)` fires on cases the rewrites consider unproven).
+The two rewrites are tied on coverage; the original is about 14 percent
+behind. On most heads all three fire identically, because the vendored
+SymPy rules (re, im, conjugate, the trig shifts) do the same work in every
+package. The original trails where the rewrites added rules: `acosh(cosh)`,
+Min/Max pruning, KroneckerDelta, and `log`, where the team's negative-base
+and mixed-sign product rules fire on 15 inputs against the original's 7.
+The single agent leads on `sinc` and slightly on the hyperbolics; the team
+on `log`, Min/Max and KroneckerDelta. The one flagged rewrite in every
+package is the same vendored `im` rule at a removable 0/0 point, a false
+alarm, not a defect. An earlier version of this table, made before the
+fuzzer seeded each case separately, overstated the team's lead.
 
 ## 5. Every suite against every package (combined backend)
 
@@ -153,7 +165,44 @@ to 4 times faster than the SymPy-backed ones on every suite.
 
 ## 6. Old-assumption oracle
 
-[pending: results of `tools/refine_oracle.py` on the three packages]
+`tools/refine_oracle.py` (written by an Opus 5.5 agent) uses SymPy's old
+assumption system as an oracle that owes nothing to the `Q` predicates:
+mode A substitutes declared-assumption symbols and lets the old system's
+auto-evaluation and simplifiers act, then compares with `refine`; mode B
+replays 326 identity asserts mined from 26 SymPy test modules. Soundness
+is judged at exact points (integers, rationals, surds, Gaussian rationals);
+each case runs in a forked child with a hard timeout.
+
+Results on the original package (`handlers`), mode A on 10,565 generated
+cases plus 51 per matrix key, mode B on 326 replayed asserts:
+
+| | agree | satrefine further | old further | wrong | timeout | error |
+|---|---|---|---|---|---|---|
+| original, mode A | 2,833 | 713 (all sound) | 63 | 3 | 160 | 119 |
+| SymPy's refine, mode A | 1,258 | 66 | 52 | 39 | 160 | 3 |
+| original, mode B | 174 match + 22 equivalent | | 76 gaps | 0 | | 13 |
+| SymPy's refine, mode B | 80 + 9 | | 194 gaps | 0 | | 0 |
+
+The three wrong rewrites in the original: the two inherited SymPy matrix
+rules (orthogonal determinant to 1, unitary inverse to the elementwise
+conjugate) and one of its own, `KroneckerDelta(x, y)` to 0 under
+`Q.imaginary(x) & Q.imaginary(y)`, fed by SymPy's `ask` answering
+`Q.ne(x, y)` True for two imaginary symbols. The 119 errors are its Min,
+Max and KroneckerDelta handlers propagating SymPy's spurious "inconsistent
+assumptions" error on relation queries; the 160 timeouts are the inherited
+`re`/`im` recursion. Its largest coverage gaps against the old system are
+`Abs` (nonpositive arguments, powers), `Pow`, `exp` with `2*pi*I*n`
+shifts, `log` with zero or negated arguments, `sign` and `arg` factoring,
+and rounding functions of imaginary arguments. Both rewrites address most
+of these (see the per-head table), guard the relation asks, and refuse the
+matrix rules.
+
+The oracle's own weaknesses, from its author: the old system is sometimes
+wrong itself (13 such cases were rejected numerically), "gap" versus
+"equivalent form" is an operation-count judgement, matrices have no
+old-system equivalent and are checked on 2x2 instances, and sample points
+avoid branch cuts only by chance. Runs on `handlers_v2` and `handlers_v3`
+are in progress and will be added here.
 
 ## 7. SymPy defects surfaced along the way
 
