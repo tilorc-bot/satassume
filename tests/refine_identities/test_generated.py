@@ -5,7 +5,7 @@ import importlib
 import os
 
 import pytest
-from sympy import I, Q, log, pi, symbols
+from sympy import I, Q, log, pi, srepr, symbols, sympify
 
 from satrefine.handlers_identities import _dispatch
 from satrefine.handlers_identities._specialize import family_modules, generate_family, generated_path
@@ -60,4 +60,7 @@ def test_generated_module_is_up_to_date(module, monkeypatch):
     assert path.exists(), f"run tools/refine_specialize.py --write --family {family}"
     committed = importlib.import_module(f"satrefine.handlers_identities.generated.{family}")
     rules, _keys, _verdicts = generate_family(module)
-    assert set(committed.RULES) == set(rules), "regenerate with tools/refine_specialize.py --write"
+    # Compare as the module reads back: importing it evaluates each row, and
+    # some generated left sides auto-evaluate (Abs(exp(z)) -> exp(re(z))).
+    loaded = {tuple(sympify(srepr(part)) for part in rule) for rule in rules}
+    assert set(committed.RULES) == loaded, "regenerate with tools/refine_specialize.py --write"
