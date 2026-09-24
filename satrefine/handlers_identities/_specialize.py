@@ -82,7 +82,7 @@ def _specialize(lhs: Any, domain: Any, catalog: Any) -> list[Row]:
             rhs = refine(L, profile & D)
         except ValueError:                       # inconsistent profile
             continue
-        if rhs == L or rhs.has(floor, im, arg):
+        if rhs == L or rhs.has(floor, im) or (rhs.has(arg) and not L.has(arg)):   # arg(p*r) -> arg(p) is a rule
             continue
         residual = [d for d in And.make_args(D) if d is not S.true
                     and not (atoms and _upstream.ask(d, profile) is True)

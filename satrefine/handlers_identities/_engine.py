@@ -82,6 +82,7 @@ from sympy import (Abs, And, Dummy, I, Not, Or, Q, S, Symbol, arg, ceiling, coun
                    log, nan, simplify, zoo)
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Add, Basic, Expr, Mul, Pow
+from sympy.core.sympify import sympify
 from sympy.core.function import AppliedUndef, UndefinedFunction
 from sympy.core.operations import LatticeOp
 from sympy.matrices.expressions import HadamardProduct, MatAdd, MatMul, MatrixExpr, MatrixSymbol
@@ -549,12 +550,12 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     rewritten by the dispatcher after acceptance, under the same ordering);
     no ``opaque`` head may survive; and ``measure`` must strictly decrease.
     """
-    rows = list(rows)
+    rows = [tuple(sympify(t) for t in row) for row in rows]   # a generated 0 or True is a Python object
     static_heads = _heads_of(rows)
     busy = [False]
 
     def handler(expr: Any, assumptions: Any) -> Any:
-        if busy[0] or _dispatch.identities_off[0]:
+        if busy[0]:
             return None
         m = measure or default_measure(static_heads | {expr.func})
         m0 = m(expr, assumptions)
@@ -599,7 +600,7 @@ def rule_handler(rows: list) -> Callable[[Any, Any], Any]:
     """A handler from rule rows ``(lhs, rhs, hypothesis[, unless])``, tried in
     table order: bind, prove the hypothesis, check ``unless`` is not provable,
     substitute (rebuilding a partial match)."""
-    rows = [tuple(row) + (None,) * (4 - len(row)) for row in rows]
+    rows = [tuple(sympify(t) for t in row) + (None,) * (4 - len(row)) for row in rows]   # a generated 0 is an int
 
     def handler(expr: Any, assumptions: Any) -> Any:
         for lhs, rhs, hyp, unless in rows:
