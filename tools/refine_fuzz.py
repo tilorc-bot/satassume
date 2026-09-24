@@ -543,6 +543,7 @@ MAT_OUTER = {
     "Adjoint": lambda e, g: Adjoint(e),
     "Trace_sum": lambda e, g: Trace(e + g.inner()),
     "Det_prod": lambda e, g: Determinant(e * g.inner()),
+    "Inverse_prod": lambda e, g: Inverse(g.X * g.Y),
     "rect": None,  # below
 }
 
@@ -573,6 +574,8 @@ class _MatCase:
         self.c = _mc
 
     def inner(self):
+        if self.rng.random() < 0.25:          # a bare symbol: what most rows are stated for
+            return self.rng.choice([self.X, self.Y])
         return _mat_inner(self.rng, self.X, self.Y, self.c)
 
 
@@ -675,25 +678,84 @@ def mat_points(combos, rel, rng, count=12, tries=60):
     return pts
 
 
+class _Unsupported(Exception):
+    pass
+
+
+def _explicit(node, mats, scal):
+    """``node`` evaluated with explicit matrices, operation by operation.
+
+    Every matrix operation is done on explicit matrices (so no symbolic rule of
+    SymPy's, such as ``det(ZeroMatrix(0, 0)) = 0`` or ``0*X -> ZeroMatrix``,
+    decides a value).  Raises ``_Unsupported`` for a node it does not know.
+    """
+    from sympy import MatAdd, MatPow, Sum
+    from sympy.matrices.expressions.matexpr import MatrixElement as ME
+    ev = lambda a: _explicit(a, mats, scal)  # noqa: E731
+    if isinstance(node, MatrixSymbol):
+        M = mats.get(node.name)
+        if M is None or tuple(d.xreplace(scal) for d in node.shape) != M.shape:
+            raise ValueError("shape")
+        return M
+    if isinstance(node, (ZeroMatrix, Identity, OneMatrix)):
+        node = node.xreplace(scal)
+        if not all(d.is_Integer for d in node.shape):
+            raise _Unsupported
+        return ImmutableMatrix(node.as_explicit())
+    if isinstance(node, MatAdd):
+        out = ev(node.args[0])
+        for a in node.args[1:]:
+            out = out + ev(a)
+        return out
+    if isinstance(node, MatMul):
+        out = S.One
+        for a in node.args:
+            out = out * ev(a)
+        return out
+    if isinstance(node, MatPow):
+        return ev(node.base) ** ev(node.exp)
+    if isinstance(node, Inverse):
+        return ev(node.arg).inv()          # a singular matrix raises: undefined, as it should
+    if isinstance(node, Transpose):
+        return ev(node.arg).T
+    if isinstance(node, Adjoint):
+        return ev(node.arg).H
+    if isinstance(node, HadamardProduct):
+        out = ev(node.args[0])
+        for a in node.args[1:]:
+            out = out.multiply_elementwise(ev(a))
+        return out
+    if isinstance(node, Determinant):
+        M = ev(node.arg)
+        return M.det() if M.rows else S.One
+    if isinstance(node, Trace):
+        M = ev(node.arg)
+        return M.trace() if M.rows else S.Zero
+    if isinstance(node, ME):
+        M, i, j = ev(node.parent), ev(node.i), ev(node.j)
+        if not (i.is_Integer and j.is_Integer and -M.rows <= i < M.rows and -M.cols <= j < M.cols):
+            raise ValueError("index out of range")
+        return M[int(i), int(j)]
+    if isinstance(node, Sum):
+        raise _Unsupported
+    if isinstance(node, MatrixExpr):
+        raise _Unsupported
+    if not node.args or not node.has(MatrixSymbol, ZeroMatrix, Identity, OneMatrix):
+        return node.xreplace(scal)
+    return node.func(*[ev(a) for a in node.args])
+
+
 def mat_value(e, pt):
     """The numeric value of ``e`` at ``pt``: a complex, a ('M', shape, values) triple, or a failure string."""
     try:
-        # sizes first (they are part of a MatrixSymbol), then everything else in one
-        # simultaneous replacement, so no symbolic cancellation happens between the steps
-        e1 = e.xreplace({s: v for s, v in pt.items() if s in SIZE_SYMS})
-        byname = {s.name: v for s, v in pt.items() if isinstance(s, MatrixSymbol)}
-        rep = {s: v for s, v in pt.items() if not isinstance(s, MatrixSymbol) and s not in SIZE_SYMS}
-        for ms in e1.atoms(MatrixSymbol):
-            M = byname.get(ms.name)
-            if M is None or tuple(ms.shape) != M.shape:
-                return "error"
-            rep[ms] = M
-        # ZeroMatrix/Identity/OneMatrix of a now-numeric size become explicit, so the value is
-        # the mathematical one (SymPy's det(ZeroMatrix(0, 0)) is 0, an explicit 0x0 matrix's is 1)
-        for sm in e1.atoms(ZeroMatrix, Identity, OneMatrix):
-            if all(d.is_Integer for d in sm.shape):
-                rep[sm] = ImmutableMatrix(sm.as_explicit())
-        v = e1.xreplace(rep).doit()
+        mats = {s.name: v for s, v in pt.items() if isinstance(s, MatrixSymbol)}
+        scal = {s: v for s, v in pt.items() if not isinstance(s, MatrixSymbol)}
+        try:
+            v = _explicit(e, mats, scal)
+        except _Unsupported:
+            v = _mat_value_doit(e, pt, mats)
+        if isinstance(v, str):
+            return v
         if isinstance(v, MatrixExpr) or getattr(v, "is_Matrix", False):
             v = ImmutableMatrix(v.as_explicit()) if isinstance(v, MatrixExpr) else ImmutableMatrix(v)
             vals = tuple(numeric(x) for x in v)
@@ -702,6 +764,23 @@ def mat_value(e, pt):
         return numeric(v)
     except Exception:
         return "error"
+
+
+def _mat_value_doit(e, pt, byname):
+    """Fallback for nodes ``_explicit`` does not know (``Sum``): substitute, then ``doit``."""
+    # sizes first (they are part of a MatrixSymbol), then everything else in one
+    # simultaneous replacement, so no symbolic cancellation happens between the steps
+    e1 = e.xreplace({s: v for s, v in pt.items() if s in SIZE_SYMS})
+    rep = {s: v for s, v in pt.items() if not isinstance(s, MatrixSymbol) and s not in SIZE_SYMS}
+    for ms in e1.atoms(MatrixSymbol):
+        M = byname.get(ms.name)
+        if M is None or tuple(ms.shape) != M.shape:
+            return "error"
+        rep[ms] = M
+    for sm in e1.atoms(ZeroMatrix, Identity, OneMatrix):
+        if all(d.is_Integer for d in sm.shape):
+            rep[sm] = ImmutableMatrix(sm.as_explicit())
+    return e1.xreplace(rep).doit()
 
 
 def mat_agree(a, b):
@@ -734,6 +813,47 @@ def mat_compare(left, right, points, ref=None):
     return checked, None
 
 
+class MatrixRowCoverage:
+    """Counts, per row of ``satrefine.handlers_identities.matrices``, how often it fired.
+
+    Inside the ``with`` block every matrix key's handler is wrapped; when it
+    returns a rewrite, the first row that alone gives the same rewrite is
+    credited.  (Only for the ``handlers_identities`` package.)
+    """
+
+    def __init__(self):
+        self.counts = Counter()
+        self.saved = {}
+
+    def __enter__(self):
+        import importlib
+        from satrefine.handlers_identities._engine import rule_handler
+        mod = importlib.import_module("satrefine.handlers_identities.matrices")
+        tables = {"Determinant": mod.DETERMINANT, "HadamardProduct": mod.HADAMARD, "Inverse": mod.INVERSE,
+                  "MatAdd": mod.MATADD, "MatMul": mod.MATMUL, "MatrixElement": mod.MATRIXELEMENT,
+                  "Trace": mod.TRACE, "Transpose": mod.TRANSPOSE}
+        self.all_rows = [row for rows in tables.values() for row in rows]
+        for key, rows in tables.items():
+            original = handlers_dict[key]
+            singles = [(row, rule_handler([row])) for row in rows]
+
+            def wrapped(expr, assumptions, _original=original, _singles=singles):
+                out = _original(expr, assumptions)
+                if out is not None:
+                    for row, h in _singles:
+                        if h(expr, assumptions) == out:
+                            self.counts[row] += 1
+                            break
+                return out
+            self.saved[key] = original
+            handlers_dict[key] = wrapped
+        return self
+
+    def __exit__(self, *exc):
+        handlers_dict.update(self.saved)
+        return False
+
+
 def _short(v, width=300):
     s = str(v).replace("\n", "")
     return s if len(s) <= width else s[:width] + "..."
@@ -744,6 +864,9 @@ def mat_main(seed=0, cases=1000):
     fired, tried, checked_cases, unchecked, unsound, crashes, nopoint, sympy_unsound = (
         Counter(), Counter(), Counter(), [], [], [], 0, [])
     t0 = time.time()
+    coverage = MatrixRowCoverage() if os.environ.get("SATREFINE_HANDLERS", "handlers") == "handlers_identities" else None
+    if coverage:
+        coverage.__enter__()
     for case in range(cases):
         g = mat_generate(seed, case)
         if g is None:
@@ -786,6 +909,13 @@ def mat_main(seed=0, cases=1000):
           f"unsound={len(unsound)} crash={len(crashes)} (no satisfying point: {nopoint} cases)")
     for h in sorted(tried, key=lambda h: -tried[h]):
         print(f"  {h:14} fired {fired[h]:4}/{tried[h]:<4} checked {checked_cases[h]}")
+    if coverage:
+        coverage.__exit__(None, None, None)
+        unfired = [row for row in coverage.all_rows if not coverage.counts[row]]
+        print(f"\n== matrices rows fired: {len(coverage.all_rows) - len(unfired)} of {len(coverage.all_rows)} ==")
+        for row in coverage.all_rows:
+            print(f"  {coverage.counts[row]:4}  {_short(row[0], 40):40} -> {_short(row[1], 30):30} if {_short(row[2], 80)}"
+                  + (f" unless {row[3]}" if len(row) > 3 else ""))
     print(f"\n== satrefine UNSOUND matrix rewrites: {len(unsound)} ==")
     for head, e, a, r, (pt, va, vb) in unsound[:20]:
         print(f"  [{head}] refine({_short(e)}, {a}) -> {_short(r)}\n      at {_short(pt)}: orig={_short(va)} refined={_short(vb)}")

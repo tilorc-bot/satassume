@@ -83,3 +83,21 @@ def test_generation_is_deterministic_and_separate_from_the_scalar_stream():
     assert fz.mat_generate(4, 17) == fz.mat_generate(4, 17)
     head, e, a, combos, rel = next(g for g in (fz.mat_generate(4, c) for c in range(50)) if g)
     assert any(isinstance(s, MatrixSymbol) for s in combos)
+
+
+def test_values_come_from_explicit_matrices_not_symbolic_rules():
+    # SymPy turns 0*X*Y into ZeroMatrix(0, 0) and calls its determinant 0; an
+    # explicit 0x0 matrix has determinant 1 (the checker once flagged the right
+    # rewrite det(0*X*Y) -> det(ZeroMatrix(n, n)) as unsound at n = 0)
+    X0, Y0 = MatrixSymbol('X', n, n), MatrixSymbol('Y', n, n)
+    pt = {n: S.Zero, fz._mc: S.Zero, X0: ImmutableMatrix.zeros(0, 0), Y0: ImmutableMatrix.zeros(0, 0)}
+    assert fz.mat_value(Determinant(fz._mc*X0*Y0), pt) == 1
+    assert fz.mat_value(Determinant(ZeroMatrix(n, n)), pt) == 1
+
+
+def test_row_coverage_names_the_firing_row():
+    cov = fz.MatrixRowCoverage()
+    with cov:
+        from satrefine import refine
+        refine(X.T*X, Q.orthogonal(X))
+    assert any("Q.orthogonal(A)" in str(row) and n_ == 1 for row, n_ in cov.counts.items())
