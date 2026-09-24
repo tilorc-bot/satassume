@@ -7,7 +7,7 @@ complex samples); ``Mod``/``Rem`` divisors exclude 0.
 from __future__ import annotations
 
 import pytest
-from sympy import Mod, Q, Rational, S, ceiling, floor, frac, oo, pi, sqrt, symbols
+from sympy import I, Mod, Q, Rational, S, ceiling, floor, frac, oo, pi, sqrt, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
 from satrefine import refine
@@ -114,7 +114,19 @@ NEGATIVE = [  # v3's refusals
     (frac(x + ceiling(y)), Q.extended_real(y)),
     (floor(x + floor(y)), True),
     (floor(x), Q.positive(x) & Q.negative(y)),      # a relation ask raises here
+    # checker: the generalized M2 needs a real divisor; SymPy's Mod of non-real
+    # arguments is not a - b*floor(a/b) (Mod(-3*I, 2*I) = -I, not I).
+    (Mod(I*n, 2*I), Q.odd(n)),
+    (Mod(a, I), Q.odd(2*a/I)),
+    (Mod(a, b), Q.odd(2*a/b)),                      # b may be non-real
 ]
+
+
+def test_nonreal_mod_is_not_the_floor_formula():
+    """The counterexample behind M2's ``Q.nonzero(b)``: at ``n = -3``,
+    ``Mod(I*n, 2*I)`` evaluates to ``-I``, while ``b/2 = I``."""
+    assert Mod(-3*I, 2*I) == -I
+    assert Mod(3*I/2, I) == 3*I/2
 
 
 def _id(row):
