@@ -173,3 +173,63 @@ Every row is needed by battery cases of its own (and, in the first run, by
 1 to 7 of its own tests). No single row is droppable; largest removable set:
 none (13 rows). Rows 4/5 and 7/8 are the same rule at two arities: the
 matcher has no variadic head pattern, so each arity is its own row.
+
+## Merges (measured, then reverted)
+
+Each proposal was written into the module in the worktree, measured with
+`refine_ablate.py <family> --compare-to` against the family's baseline at
+`29dfcf1` (all three gates), and reverted. "PASS" means no battery case,
+test or fuzz input moved; the only failing test is `test_table_size*`,
+which asserts the old count. The battery gave identical outputs for every
+case (no "changed output" lines).
+
+| family | proposal | rows | result |
+|---|---|---|---|
+| integer_funcs | **A**: `floor`/`ceiling` integer-shift rows as one shared generic-head list `SHIFT = [(F(n + x), n + F(x), Q.integer(n)), (F(floor(y) + x), floor(y) + F(x), Q.finite(y)), (F(ceiling(y) + x), ceiling(y) + F(x), Q.finite(y))]`, used as `ROUNDING + SHIFT + [F4]` by both tables | 6 -> 3 | with B: PASS |
+| integer_funcs | **B**: `Mod -> 0` and `Rem -> 0` (same hypothesis `Q.nonzero(b) & Q.integer(a/b)`) as one generic two-argument row `(G(a, b), 0, ...)` at the head of both tables | 2 -> 1 | with A: PASS (23 -> 19) |
+| integer_funcs | **A + B + drop rows 4, 8**: `FLOOR = CEILING = ROUNDING + SHIFT` (F4 left to the `floor_of_bounded` fallback) | | PASS (23 -> 17) |
+| matrices | **C**: `(Z*W, 0, Q.zero(Z))` and `(V*Z, 0, Q.zero(Z))` as one row `(Z*W, ZeroMatrix(m, s), Q.zero(Z) \| Q.zero(W))` | 2 -> 1 | PASS (31 -> 30); gate 3 has no matrix inputs |
+| matrices | **C + drop row 22** | | PASS (31 -> 29); see the caveat on row 22: add a test for `X*Adjoint(X)` under `Q.orthogonal(X) & Q.real_elements(X)` rather than drop it |
+
+Not merged, and why (no measurement, the reason is structural):
+
+* `combinatorial`: no two rows share a right side and a head class that a
+  generic head could serve with one hypothesis (`rf(1, k)` and `ff(k, k)`
+  both give `k!`, but under hypotheses that differ by head); the pole rows
+  of `factorial` (n < 0) and `gamma` (x <= 0) differ at 0.
+* `minmax_deltas`: `Max`/`Min` sign and relation rows cannot share one row:
+  the relation row's `unless` (known infinite) would block the sign row's
+  infinite-endpoint cases, and `~Q.infinite` as a hypothesis is not provable
+  for a plain symbol. Rows 4/5 and 7/8 differ only in arity.
+* `matrices`: the mirrored pairs (19/20, 23/24, 25/26) need a matcher that
+  knows `(A*B).T = B.T*A.T`; the unitary rows 21/23 cannot share one row
+  (`unless Q.orthogonal(A) & ~Q.real_elements(A)` is undecided for a complex
+  orthogonal `A` and would let the unsound case through).
+
+## Rows that exist only for a prover gap
+
+`integer_funcs` rows 2, 3, 6, 7, 11, 12 (`floor`/`ceiling`/`frac` of
+`floor(y) + x` and `ceiling(y) + x` under `Q.finite(y)`). `ask` proves
+`Q.integer(floor(y))` for real `y` (so the plain shift rows 1, 5, 10 cover
+real `y` already), but for a merely finite `y`, `floor(y)` is a Gaussian
+integer and SymPy has no predicate for it: `ask(Q.integer(re(floor(y))),
+Q.finite(y))` and the same for `im` are `None`. With a Gaussian-integer fact
+(or `Q.integer(re(n)) & Q.integer(im(n))` provable for floor/ceiling of a
+finite argument) the shift rows' hypotheses could read `Q.integer(n) |
+gaussian_integer(n)` and the six rows would go: 17 -> 13 on top of the
+merges above (not measurable without the prover change). Of the six, rows
+3, 6, 7 and 11 are kept only by the family's own one-case-per-row tests; no
+battery case exercises them.
+
+## Summary
+
+| family | rows | single droppable | largest removable set | with measured merges |
+|---|---|---|---|---|
+| integer_funcs | 23 | 4, 8 | {4, 8}: 21 | 17 |
+| combinatorial | 16 | none | none: 16 | 16 |
+| minmax_deltas | 13 | none | none: 13 | 13 |
+| matrices | 31 | 22 (untested, not redundant) | {22}: 30 | 30 (29 with row 22) |
+
+Run time per family (single-row pass, gates 1 and 2 plus gate 3 on
+candidates, one worker at a time on a shared machine): matrices 2.5 min,
+integer_funcs 4 min, combinatorial 20 min, minmax_deltas 23 min.
