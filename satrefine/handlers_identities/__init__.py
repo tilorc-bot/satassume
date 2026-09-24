@@ -16,11 +16,12 @@ to the vendored handlers.  Infrastructure (underscore modules):
                 ``(lhs, rhs, hypothesis)``), the pattern forms, ``derive``;
 ``_wraps``      the branch bookkeeping (``principal``, ``sawtooth``,
                 ``reflect_half``, ``reflect_full``, ``fractional``);
-``_simple``     the simple rules (``re``/``im``/``arg``/``Abs`` of
-                exponentials, logarithms and products; ``floor`` of a
-                bounded head; ``Piecewise`` branches under their conditions),
-                registered here before the family modules load so a family
-                that registers one of those keys overrides and chains to them;
+``_simple``     the procedural remainder of the base layer (``floor`` of a
+                bounded quantity; ``Piecewise`` branches under their
+                conditions), registered here before the family modules load
+                so a family that registers one of those keys overrides them
+                and the dispatcher falls back to them; the rest of the base
+                layer is the rows of ``complex_parts``;
 ``_specialize`` generation of conditional rules from identity rows under
                 assumption profiles, numeric verification, compilation;
 ``generated/``  the generated rule tables, one module per family, used by

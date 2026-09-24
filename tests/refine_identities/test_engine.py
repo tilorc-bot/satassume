@@ -8,8 +8,8 @@ from sympy import (Abs, Function, I, N, Q, Rational, S, cos, exp, floor, frac, i
 from satrefine import refine
 from satrefine._upstream import handlers_dict
 from satrefine.handlers_identities import _dispatch
-from satrefine.handlers_identities._engine import (bindings, identity_handler, part, rule_handler,
-                                                   subst)
+from satrefine.handlers_identities._engine import (bindings, identity_handler, part, provable,
+                                                   rule_handler, subst)
 from satrefine.handlers_identities._wraps import fractional, principal, reflect_full, reflect_half, sawtooth
 
 x, y, n, r, a, b, p, q = symbols("x y n r a b p q")
@@ -60,6 +60,27 @@ def test_unit_coefficient_form():
     assert {n: 1, r: x + y*pi} in got
     assert list(bindings(n*pi + r, x)) == []
     assert list(bindings(n*pi + r, 2*pi)) == [{n: 2, r: 0}]
+    assert {n: y, r: I*pi*x} in list(bindings(n*pi*I + r, I*pi*(x + y)))   # a product over a sum, distributed
+
+
+def test_structure_beside_a_rest_symbol():
+    """``e*log(b)`` binds the logarithm to one factor and ``e`` to the rest;
+    ``w*conjugate(w)*r`` likewise inside a longer product."""
+    e_, b_, w = symbols("e b w")
+    from sympy import conjugate
+    found = list(bindings(exp(e_*log(b_)), exp(a*b*log(x))))
+    assert any(m[b_] == x and m[e_] == a*b for m in found)
+    found = list(bindings(w*conjugate(w)*r, 2*x*y*conjugate(x)))
+    assert any(m[w] == x and m[r] == 2*y for m in found)
+    assert list(bindings(exp(e_*log(b_)), exp(x))) == []
+
+
+def test_sub_product_at_the_top_keeps_the_other_factors():
+    from sympy import conjugate
+    from satrefine.handlers_identities._engine import REBUILD
+    w = symbols("w")
+    found = [m for m in bindings(w*conjugate(w), 2*x*y*conjugate(x)) if m[w] == x]
+    assert found and found[0][REBUILD](Abs(x)**2) == 2*y*Abs(x)**2
 
 
 def test_partition_form():
@@ -156,6 +177,48 @@ def relaxed_log(monkeypatch):
 from sympy import arg as arg_  # noqa: E402
 
 
+def test_provable_reads_stated_bounds():
+    """A stated bound carries realness and decides the sign atoms ask leaves open."""
+    t = symbols("t")
+    assert provable(Q.real(t), Q.ge(t, 0) & Q.le(t, 1)) is True
+    assert provable(Q.real(t**2), Q.ge(t**2, 0) & Q.le(t**2, pi/2)) is True
+    assert provable(Q.nonpositive(t), Q.le(t, 0) & Q.ge(t, -pi)) is True
+    assert provable(Q.positive(t), Q.gt(t, 0) & Q.lt(t, pi)) is True
+    assert provable(Q.positive(t), Q.ge(t, 0) & Q.lt(t, pi)) is None
+    assert provable(Q.negative(t), Q.positive(t + pi) & Q.nonpositive(t - pi)) is None
+    assert provable(Q.real(t), Q.positive(t + pi)) is True
+    assert provable(Q.nonpositive(t - 2*pi), Q.le(t, 2*pi) & Q.ge(t, pi)) is True    # bounds of an affine expression
+    assert provable(~Q.integer(t/pi + S.Half), Q.gt(t, -pi/2) & Q.lt(t, pi/2)) is True
+    assert provable(~Q.integer(t/pi + S.Half), Q.ge(t, -pi/2) & Q.lt(t, pi/2)) is None
+
+
+def test_floor_of_a_bounded_symbol():
+    """Bounds stated as relations or sign facts on the symbol (or an expression) collapse a floor."""
+    t = symbols("t")
+    assert refine(floor(t/pi + S.Half), Q.ge(t, pi/2) & Q.lt(t, 3*pi/2)) == 1
+    assert refine(floor(t/pi + S.Half), Q.gt(t, -pi/2) & Q.lt(t, pi/2)) == 0
+    assert refine(floor(t/(2*pi) + S.Half), Q.positive(t + pi) & Q.nonpositive(t - pi)) != 0   # 1 at t = pi
+    assert refine(floor(S.Half - t/(2*pi)), Q.positive(t + pi) & Q.nonpositive(t - pi)) == 0
+    assert refine(floor(t/pi + S.Half), Q.nonnegative(t) & Q.le(t, 1)) == 0
+    assert refine(floor(t/pi + S.Half), Q.ge(1, t) & Q.le(0, t)) == 0           # reversed relations
+    assert refine(floor(t/pi + S.Half), Q.ge(t, -5) & Q.ge(t, 0) & Q.le(t, 1) & Q.le(t, 3)) == 0
+    assert refine(floor(t**2/pi + S.Half), Q.ge(t**2, 0) & Q.lt(t**2, pi/2)) == 0
+    assert refine(floor(t/pi + S.Half), Q.ge(t, -pi/2) & Q.le(t, pi/2)) != 0   # closed at the jump: two-valued
+    assert refine(floor(t/pi + S.Half), Q.real(t)) != 0
+
+
+def test_two_valued_floor_and_endpoint_split():
+    from satrefine.handlers_identities._simple import floor_two_valued
+    from satrefine.handlers_identities._engine import endpoint_split
+    t = symbols("t")
+    closed = Q.ge(t, -pi/2) & Q.le(t, pi/2)
+    assert floor_two_valued(floor(t/pi + S.Half), closed) == (0, t, pi/2, 1)
+    assert floor_two_valued(floor(t/pi + S.Half), Q.gt(t, -pi/2) & Q.le(t, pi/2)) == (0, t, pi/2, 1)
+    assert floor_two_valued(floor(t/pi + S.Half), Q.ge(t, -pi/2) & Q.lt(t, pi/2)) is None
+    assert endpoint_split(None, reflect_half(t), closed) == t          # both values agree at pi/2
+    assert endpoint_split(None, sawtooth(t, pi), closed) is None       # t versus t - pi at pi/2
+
+
 def test_floor_of_bounded_head():
     assert refine(floor(S.Half - arg_(y)/(2*pi)), Q.complex(y)) == 0        # arg in (-pi, pi]
     assert refine(floor(S.Half + arg_(y)/(2*pi)), Q.complex(y)) != 0        # (0, 1]: not constant
@@ -171,7 +234,7 @@ def test_simple_parts_of_exp_log_and_products():
     assert refine(im(e_*log(b_)), Q.negative(b_) & Q.even(e_)) == pi*e_
     assert refine(Abs(exp(w)), Q.complex(w)) == exp(re(w))
     assert refine(im(exp(w)), Q.complex(w)) == exp(re(w))*sin(im(w))
-    assert refine(arg_(x), Q.positive(-I*x)) == pi/2
+    assert refine(arg_(x), Q.imaginary(x) & Q.positive(-I*x)) == pi/2
 
 
 def test_piecewise_branches_refine_under_their_conditions():
@@ -182,8 +245,17 @@ def test_piecewise_branches_refine_under_their_conditions():
     assert refine(pw, Q.real(x)) == Piecewise((x, Q.positive(x)), (-x, True))
 
 
+def test_simple_re_im_never_recurse_on_a_power():
+    from sympy import re
+    z = symbols("z")
+    assert refine(re(x**n), Q.real(x) & Q.integer(n)) == re(x**n)
+    assert refine(re(x**z), Q.imaginary(z) & Q.real(x)) == re(x**z)
+
+
 def test_case_split_resolves_leftover_bookkeeping(relaxed_log):
     assert refine(log(x**2), Q.real(x)) == 2*log(Abs(x))                 # branches generalized by Abs
+    assert refine(log(x**2), Q.nonnegative(x)) == 2*log(x)              # one branch, checked at zero
+    assert refine(log(x**n), Q.nonzero(x) & Q.even(n)) == n*log(Abs(x))  # agreement modulo expansion
     assert refine(log(x**2), Q.imaginary(x)) == 2*log(Abs(x)) + I*pi     # branches agree
     assert refine(log(x*y), Q.positive(x) & Q.complex(y)) == log(x) + log(y)
     assert refine(log(1/x), Q.imaginary(x)) == -log(x)

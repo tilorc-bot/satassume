@@ -12,20 +12,19 @@ from satrefine.handlers_identities._specialize import family_modules, generate_f
 
 x = symbols("x")
 
-GENERATED_GAPS = {   # rows where the live engine fires and the generated table does not, and why
-    "log(x**2)|Q.imaginary(x)": "floor(1/2 - e/4) under Q.odd(e/2) needs parity arithmetic; only literal exponents collapse",
-    "log(x**(1/3))|Q.negative(x)": "the catalog has no rational-exponent profile",
-    "log(1/x)|Q.imaginary(x)": "floor(1/2 - e*arg(b)/(2*pi)) is constant only for a literal e; "
-                               "a Literal(-1) catalog entry on e would generate it",
-}
+GENERATED_GAPS: dict = {}   # rows where the live engine fires and generated mode does not, and why
+# None: a generated table is a fast path, and the live rows run when it declines (the
+# catalog has no rational-exponent, extended-sign or literal-4 profile, so the table
+# alone misses log(x**(1/3)), log(1/x) for an extended-positive x and log(x**4) for an
+# imaginary x; the dispatcher covers them).
 
 
 def test_generated_table_covers_the_live_rows(monkeypatch):
-    """Every row the live engine fires on, the generated table fires on with a
+    """Every row the live engine fires on, generated mode fires on with a
     numerically valid result, except the listed gaps."""
     from satrefine import refine
     from satrefine.harness import assert_refinement_valid
-    from test_log import IDS, ROWS  # same directory; pytest prepends it to sys.path
+    from test_power_exp_log import IDS, ROWS  # same directory; pytest prepends it to sys.path
     misses, unexpected = [], []
     for (expr, assumptions, _team, _rel), rid in zip(ROWS, IDS):
         monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")

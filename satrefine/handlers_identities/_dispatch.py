@@ -32,10 +32,22 @@ from .. import _upstream
 MAX_FIRINGS = 500
 """Handler firings allowed in one top-level :func:`refine` call."""
 
+MAX_SPLITS = 8
+"""Case splits (:func:`._engine.case_split`) tried in one top-level call: each
+explores its branches with the full engine, so their number bounds the cost
+of a call whose bookkeeping never collapses (``log(k*x*y)`` for three real
+symbols of unknown sign)."""
+
+splits_left: list[int] = [MAX_SPLITS]
+"""The budget of the current top-level call (reset on entry)."""
+
 generated_handlers: dict = {}
 """Handlers from the generated rule tables (``generated/<family>.py``), by key.
 
-Preferred over ``handlers_dict`` when :func:`mode` is ``"generated"``."""
+Tried before ``handlers_dict`` when :func:`mode` is ``"generated"``; when the
+table declines, the key's live handler runs in full (the table is a fast
+path and an audit of the rows, not a replacement: the catalog specializes
+them only in part)."""
 
 non_basic_returns: dict = {}
 """``(key, handler) -> count`` of handler results that were not SymPy objects
@@ -74,6 +86,18 @@ def live() -> Iterator[None]:
         _forced.pop()
 
 
+@contextmanager
+def exploring() -> Iterator[None]:
+    """Run the engine's exploratory refinements (case and endpoint splits) under
+    a firing counter of their own: each is bounded by :data:`MAX_FIRINGS` by
+    itself and must not exhaust the cap of the call that tries them."""
+    _firings.append(0)
+    try:
+        yield
+    finally:
+        _firings.pop()
+
+
 class RefineLoopError(RecursionError):
     """Raised when one top-level ``refine`` fires handlers more than :data:`MAX_FIRINGS` times."""
 
@@ -81,16 +105,43 @@ class RefineLoopError(RecursionError):
 _firings: list[int] = []   # a stack entry per active top-level call
 
 
+def _memoized(ask: Any) -> Any:
+    """``ask`` with its answers remembered: one top-level call asks the same
+    question many times (a node is refined in every pass of the fixed point and
+    in every branch of a split), and the answer under the same assumptions is
+    the same.  Exceptions are not remembered."""
+    cache: dict = {}
+
+    def memo_ask(proposition: Any, assumptions: Any = True) -> Any:
+        key = (proposition, assumptions)
+        try:
+            return cache[key]
+        except KeyError:
+            pass
+        except TypeError:
+            return ask(proposition, assumptions)
+        answer = ask(proposition, assumptions)
+        cache[key] = answer
+        return answer
+    return memo_ask
+
+
 def refine(expr: Any, assumptions: Any = True) -> Any:
-    """Refine ``expr`` under ``assumptions`` with the handlers in ``handlers_dict``."""
+    """Refine ``expr`` under ``assumptions`` with the handlers in ``handlers_dict``.
+
+    For the duration of a top-level call ``_upstream.ask`` is memoized."""
     top = not _firings
     if top:
         _firings.append(0)
+        splits_left[0] = MAX_SPLITS
+        saved_ask = _upstream.ask
+        _upstream.ask = _memoized(saved_ask)
     try:
         return _refine(expr, assumptions)
     finally:
         if top:
             _firings.pop()
+            _upstream.ask = saved_ask
 
 
 def _refine(expr: Any, assumptions: Any) -> Any:
@@ -107,12 +158,17 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         if ref is not None:
             return ref
     name = expr.__class__.__name__
-    handler = generated_handlers.get(name) if mode() == "generated" else None
-    if handler is None:
-        handler = _upstream.handlers_dict.get(name)
-    if handler is None:
-        return expr
-    new = handler(expr, assumptions)
+    handler = _upstream.handlers_dict.get(name)
+    generated = generated_handlers.get(name) if mode() == "generated" else None
+    new = generated(expr, assumptions) if generated is not None else None
+    if new is None or new == expr:
+        if handler is None:
+            return expr
+        # the table is a fast path: when it declines, the live handler runs in full
+        # (its rules and its identity rows, which the catalog specializes only in part)
+        new = handler(expr, assumptions)
+    else:
+        handler = generated
     if new is None or new == expr:
         fallback = fallback_handlers.get(name)
         if fallback is None or fallback is handler:
