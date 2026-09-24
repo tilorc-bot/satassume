@@ -56,6 +56,8 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--cases", type=int, default=2000)
     ap.add_argument("--show", type=int, default=40)
+    ap.add_argument("--relation", action="store_true",
+                    help="always add a relation between two symbols (satassume then often has no answer)")
     args = ap.parse_args(argv)
     t0 = time.time()
     asked = passed = unchecked = 0
@@ -73,6 +75,9 @@ def main(argv=None):
         combos = {s: rng.choice(f.COMBOS) for s in syms}
         facts = [f.PREDS[p][0](s) for s, c in combos.items() for p in c]
         rel = f.relations(rng, syms)
+        if args.relation and rel is None:
+            a_ = rng.choice(syms)
+            rel = rng.choice([Q.ne, Q.gt, Q.lt, Q.ge, Q.le])(a_, rng.choice([s for s in syms if s != a_] + [S.Zero, S.One]))
         if rel is not None:
             facts.append(rel)
         assumptions = S.true if not facts else functools.reduce(lambda a, b: a & b, facts)
