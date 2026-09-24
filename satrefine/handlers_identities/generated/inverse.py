@@ -13,13 +13,13 @@ from satrefine.handlers_identities._engine import rule_handler
 x, y, z = symbols('x y z')
 
 RULES = [
-    (atan2(y, x), atan(y/x), Q.positive(x) & Q.real(y)),
-    (atan2(y, x), atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
-    (atan2(y, x), atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
     (asinh(sinh(z)), z, Q.real(z)),
     (atanh(tanh(z)), z, Q.real(z)),
     (acoth(coth(z)), z, Q.real(z) & ~Q.zero(z)),
     (acsch(csch(z)), z, Q.real(z) & ~Q.zero(z)),
+    (atan2(y, x), atan(y/x), Q.positive(x) & Q.real(y)),
+    (atan2(y, x), atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
+    (atan2(y, x), atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
 ]
 
 handlers_dict['acoth'] = rule_handler(RULES)

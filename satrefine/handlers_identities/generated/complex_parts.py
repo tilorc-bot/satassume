@@ -13,9 +13,12 @@ from satrefine.handlers_identities._engine import rule_handler
 b, e, p, r, w, z = symbols('b e p r w z')
 
 RULES = [
-    (Abs(exp(z)), exp(re(z)), True),
-    (Abs(exp(z)), exp(z), Q.real(z)),
-    (Abs(exp(z)), 1, Q.imaginary(z)),
+    (exp(re(z)), exp(re(z)), True),
+    (exp(re(z)), exp(z), Q.real(z)),
+    (exp(re(z)), 1, Q.imaginary(z)),
+    (arg(exp(z)), 0, Q.real(z)),
+    (arg(conjugate(w)), 0, Q.positive(w)),
+    (arg(conjugate(w)), pi, Q.negative(w)),
     (Abs(b**e), Abs(b)**e, Q.positive(e)),
     (Abs(b**e), Abs(b)**e, Q.negative(e) & (Q.positive(e) | ~Q.zero(b))),
     (Abs(b**e), b**re(e), Q.positive(b)),
@@ -33,12 +36,9 @@ RULES = [
     (Abs(p*r), p*r, Q.negative(p) & Q.negative(r)),
     (Abs(p*r), -p*r, Q.negative(p) & Q.nonnegative(r)),
     (Abs(p*r), p*r, Q.nonnegative(p) & Q.nonnegative(r)),
-    (arg(exp(z)), 0, Q.real(z)),
     (arg(p*r), 0, Q.positive(p) & Q.positive(r)),
     (arg(p*r), pi, Q.negative(r) & Q.positive(p)),
     (arg(p*r), 0, Q.negative(p) & Q.negative(r)),
-    (arg(conjugate(w)), 0, Q.positive(w)),
-    (arg(conjugate(w)), pi, Q.negative(w)),
     (sign(p*r), sign(p), Q.positive(r)),
     (sign(p*r), -sign(p), Q.negative(r)),
     (sign(p*r), 1, Q.positive(p) & Q.positive(r)),

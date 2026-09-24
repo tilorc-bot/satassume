@@ -13,10 +13,10 @@ from satrefine.handlers_identities._specialize import family_modules, generate_f
 x = symbols("x")
 
 GENERATED_GAPS = {   # rows where the live engine fires and the generated table does not, and why
-    "log(x**2)|Q.imaginary(x)": "floor(1/2 - e/4) under Q.odd(e/2) needs parity arithmetic; only literal exponents collapse",
-    "log(x**(1/3))|Q.negative(x)": "the catalog has no rational-exponent profile",
-    "log(1/x)|Q.imaginary(x)": "floor(1/2 - e*arg(b)/(2*pi)) is constant only for a literal e; "
-                               "a Literal(-1) catalog entry on e would generate it",
+    "log(x**(1/3))|Q.negative(x)": "the catalog has no rational-exponent profile (literals -1 and 2 only)",
+    "log(1/x)|Q.extended_positive(x)": "the catalog has no extended-sign profile",
+    "log(x**4)|Q.imaginary(x)": "the literal 4 is not in the catalog and the symbolic Q.even(e/2) profile "
+                                "leaves floor(1/2 - e/4) to parity arithmetic the split does not do",
 }
 
 

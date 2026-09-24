@@ -217,6 +217,7 @@ def render_module(family: str, rules: list[Row], keys: list[str]) -> str:
     registered: a key whose identity rows generated nothing (``Pow``, whose fact
     pays off on structured inputs the catalog does not produce) keeps its live
     rows, since a table for the key would switch them off."""
+    rules = sorted(rules, key=lambda r: len(r[0].free_symbols))   # literal-specialized rows first (stable)
     syms = sorted({s for row in rules for t in row for s in t.free_symbols}, key=str)
     heads = {lhs.func.__name__ for lhs, _, _ in rules}
     keys = [k for k in keys if k in heads]
