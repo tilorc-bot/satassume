@@ -27,10 +27,10 @@ import textwrap
 import pytest
 
 sympy = pytest.importorskip("sympy")
-from sympy import Symbol, Q, Integer, Pow, exp, log, sqrt, Abs, sin, S
+from sympy import Symbol, Q, Integer, exp, log, sqrt, Abs
 
 from satassume import Engine
-from satassume.engine import DictCache, InconsistentAssumptions
+from satassume.engine import DictCache
 from satassume.sympy_api import ask, default_engine
 
 

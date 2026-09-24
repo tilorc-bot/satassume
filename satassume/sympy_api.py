@@ -57,7 +57,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .engine import Engine, InconsistentAssumptions, ObjectCache  # noqa: F401
+from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
