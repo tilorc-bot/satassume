@@ -225,6 +225,7 @@ def check(expr, refined, assumptions, combos, rel, rng, samples=12):
 def main(seed=0, cases=3000):
     fired = Counter(); tried = Counter(); unsound = []; crashes = []; sympy_unsound = []; nonbasic = []
     sat_only = Counter(); sympy_only = Counter(); differ = []
+    checked_cases = unchecked = 0  # fired cases checked at >= 1 point / at none
     t0 = time.time()
     for case in range(cases):
         # one generator stream per case, so every handler package sees the same inputs
@@ -264,6 +265,8 @@ def main(seed=0, cases=3000):
             fired[head] += 1
             n_ok, ce = check(e, r, assumptions, combos, rel, rng)
             if ce: unsound.append((head, e, assumptions, r, ce))
+            elif n_ok: checked_cases += 1
+            else: unchecked += 1
         if rs is not None and rs != e:
             n_ok, ce = check(e, rs, assumptions, combos, rel, rng)
             if ce: sympy_unsound.append((head, e, assumptions, rs, ce))
@@ -272,7 +275,8 @@ def main(seed=0, cases=3000):
             if r == e and rs != e: sympy_only[head] += 1
             if r != e and rs != e and r != rs: differ.append((head, e, assumptions, r, rs))
     dt = time.time() - t0
-    print(f"seed={seed} cases={cases} time={dt:.0f}s tried={sum(tried.values())} fired={sum(fired.values())}")
+    print(f"seed={seed} cases={cases} time={dt:.0f}s tried={sum(tried.values())} fired={sum(fired.values())} "
+          f"checked={checked_cases} unchecked={unchecked} unsound={len(unsound)}")
     print("\n== fires by head (fired/tried; satrefine-only fires; sympy-only fires) ==")
     for h in sorted(tried, key=lambda h: -tried[h]):
         print(f"  {h:15} {fired[h]:4}/{tried[h]:<4} sat_only={sat_only[h]:<3} sympy_only={sympy_only[h]:<3}")
@@ -315,8 +319,8 @@ def main(seed=0, cases=3000):
 # definition of every predicate before use (rejection sampling), together with
 # values for the scalar factor, the element indices and symbolic sizes.
 
-from sympy import (Adjoint, Determinant, HadamardProduct, ImmutableMatrix, Inverse, MatMul, MatrixSymbol, Trace,
-                   Transpose, expand)
+from sympy import (Adjoint, Determinant, HadamardProduct, Identity, ImmutableMatrix, Inverse, MatMul, MatrixSymbol,
+                   OneMatrix, Trace, Transpose, ZeroMatrix, expand)
 from sympy.matrices.expressions.matexpr import MatrixExpr
 
 
@@ -684,6 +688,11 @@ def mat_value(e, pt):
             if M is None or tuple(ms.shape) != M.shape:
                 return "error"
             rep[ms] = M
+        # ZeroMatrix/Identity/OneMatrix of a now-numeric size become explicit, so the value is
+        # the mathematical one (SymPy's det(ZeroMatrix(0, 0)) is 0, an explicit 0x0 matrix's is 1)
+        for sm in e1.atoms(ZeroMatrix, Identity, OneMatrix):
+            if all(d.is_Integer for d in sm.shape):
+                rep[sm] = ImmutableMatrix(sm.as_explicit())
         v = e1.xreplace(rep).doit()
         if isinstance(v, MatrixExpr) or getattr(v, "is_Matrix", False):
             v = ImmutableMatrix(v.as_explicit()) if isinstance(v, MatrixExpr) else ImmutableMatrix(v)
@@ -703,16 +712,19 @@ def mat_agree(a, b):
     return agree(a, b)
 
 
-def mat_compare(left, right, points):
+def mat_compare(left, right, points, ref=None):
     """(n_checked, counterexample or None): ``left`` and ``right`` at ``points``.
 
     A point counts as checked only when both sides have a finite value there.
-    A point where ``left`` (the input) is undefined is skipped; one where only
-    ``right`` (the rewrite) is undefined is a counterexample.
+    A point where ``left`` (the input), or ``ref`` if given (the input when two
+    rewrites are compared), is undefined is skipped; one where only ``right``
+    is undefined is a counterexample.
     """
     bad = ("error", "unevaluated", "nan", "inf")
     checked = 0
     for pt in points:
+        if ref is not None and mat_value(ref, pt) in bad:
+            continue
         a, b = mat_value(left, pt), mat_value(right, pt)
         if a in bad:
             continue
@@ -720,6 +732,11 @@ def mat_compare(left, right, points):
             return checked, (pt, a, b)
         checked += 1
     return checked, None
+
+
+def _short(v, width=300):
+    s = str(v).replace("\n", "")
+    return s if len(s) <= width else s[:width] + "..."
 
 
 def mat_main(seed=0, cases=1000):
@@ -738,10 +755,10 @@ def mat_main(seed=0, cases=1000):
         except ValueError as ex:
             if "nconsistent" in str(ex):
                 continue
-            crashes.append((head, e, assumptions, f"{type(ex).__name__}: {ex}"))
+            crashes.append((f"{head} #{case}", e, assumptions, f"{type(ex).__name__}: {ex}"))
             continue
         except Exception as ex:
-            crashes.append((head, e, assumptions, f"{type(ex).__name__}: {str(ex)[:80]}"))
+            crashes.append((f"{head} #{case}", e, assumptions, f"{type(ex).__name__}: {str(ex)[:80]}"))
             continue
         rng = random.Random(f"matrix-points-{seed}-{case}")
         points = mat_points(combos, rel, rng)
@@ -771,16 +788,16 @@ def mat_main(seed=0, cases=1000):
         print(f"  {h:14} fired {fired[h]:4}/{tried[h]:<4} checked {checked_cases[h]}")
     print(f"\n== satrefine UNSOUND matrix rewrites: {len(unsound)} ==")
     for head, e, a, r, (pt, va, vb) in unsound[:20]:
-        print(f"  [{head}] refine({e}, {a}) -> {r}\n      at {pt}: orig={va} refined={vb}")
+        print(f"  [{head}] refine({_short(e)}, {a}) -> {_short(r)}\n      at {_short(pt)}: orig={_short(va)} refined={_short(vb)}")
     print(f"\n== fired but unchecked (no point with a finite input value): {len(unchecked)} ==")
     for head, e, a, r in unchecked[:20]:
-        print(f"  [{head}] refine({e}, {a}) -> {r}")
+        print(f"  [{head}] refine({_short(e)}, {a}) -> {_short(r)}")
     print(f"\n== SymPy's own refine unsound on the same inputs: {len(sympy_unsound)} ==")
     for head, e, a, r, (pt, va, vb) in sympy_unsound[:10]:
-        print(f"  [{head}] sympy.refine({e}, {a}) -> {r}\n      at {pt}: orig={va} refined={vb}")
+        print(f"  [{head}] sympy.refine({_short(e)}, {a}) -> {_short(r)}\n      at {_short(pt)}: orig={_short(va)} refined={_short(vb)}")
     print(f"\n== crashes: {len(crashes)} ==")
     for head, e, a, msg in crashes[:10]:
-        print(f"  [{head}] refine({e}, {a}): {msg}")
+        print(f"  [{head}] refine({_short(e)}, {a}): {msg}")
 
 if __name__ == "__main__":
     if "--matrices" in sys.argv:
