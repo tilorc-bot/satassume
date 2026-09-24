@@ -7,7 +7,7 @@ complex samples); ``Mod``/``Rem`` divisors exclude 0.
 from __future__ import annotations
 
 import pytest
-from sympy import I, Mod, Q, Rational, S, ceiling, floor, frac, oo, pi, sqrt, symbols
+from sympy import Abs, I, Mod, Q, Rational, S, ceiling, floor, frac, oo, pi, sqrt, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
 from satrefine import refine
@@ -65,6 +65,8 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (Mod(2*n + 1, 2), Q.integer(n), S.One, None),
     (Mod(2*n + 3, -2), Q.integer(n), S.NegativeOne, None),
     (Mod(3*n, 6), Q.odd(n), S(3), None),                      # beyond v3, exact
+    (Mod(a, b), Q.odd(2*a/b) & Q.positive(b), b/2, {b: DIVISORS}),
+    (Mod(a, b), Q.odd(2*a/b) & Q.negative(b), b/2, {b: DIVISORS}),
     # M3
     (Mod(x + 2*n, 2), Q.integer(n), Mod(x, 2), None),
     (Mod(x + k*b, b), Q.integer(k) & Q.nonzero(b), Mod(x, b), {x: REALS, b: DIVISORS, k: INTS}),
@@ -84,6 +86,7 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (Rem(n, -2), Q.odd(n) & Q.positive(n), S.One, None),
     (Rem(n, -2), Q.odd(n) & Q.negative(n), S.NegativeOne, None),
     (Rem(a, b), Q.odd(2*a/b) & Q.negative(a/b) & Q.nonzero(b), -b/2, {b: DIVISORS}),
+    (Rem(a, b), Q.odd(2*a/b) & Q.positive(a) & Q.nonzero(b), Abs(b)/2, {b: DIVISORS}),   # sign split on b
     # Q3
     (Rem(a, b), Q.nonnegative(a) & Q.lt(a, b), a, R),
     (Rem(a, b), Q.nonnegative(a) & Q.lt(a, -b), a, R),
@@ -158,6 +161,6 @@ def test_refusal(expr, assumptions):
 def test_table_size_and_registration():
     from satrefine import _upstream
     from satrefine.handlers_identities import integer_funcs as mod
-    assert len(mod.RULES) == 10 and len(mod.FACTS) == 2
+    assert len(mod.RULES) == 9 and len(mod.FACTS) == 2
     assert handlers_dict['floor'] is not _upstream.refine_floor_ceiling
     assert all(callable(handlers_dict[key]) for key in ('floor', 'ceiling', 'frac', 'Mod', 'Rem'))

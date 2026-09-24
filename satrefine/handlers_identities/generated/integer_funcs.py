@@ -14,6 +14,10 @@ a, b, x = symbols('a b x')
 
 RULES = [
     (frac(x), 0, Q.integer(x)),
+    (Mod(a, b), b/2, Q.positive(b) & Q.odd(2*a/b)),
+    (Mod(a, b), b/2, Q.negative(b) & Q.odd(2*a/b)),
+    (Mod(a, b), b/2, Q.nonzero(b) & Q.positive(a) & Q.odd(2*a/b)),
+    (Mod(a, b), b/2, Q.negative(a) & Q.nonzero(b) & Q.odd(2*a/b)),
     (Rem(a, b), Abs(b)/2, Q.nonzero(b) & Q.positive(a) & Q.odd(2*a/b)),
     (Rem(a, b), b/2, Q.positive(a) & Q.positive(b) & Q.odd(2*a/b)),
     (Rem(a, b), -b/2, Q.negative(b) & Q.positive(a) & Q.odd(2*a/b)),
@@ -22,5 +26,6 @@ RULES = [
     (Rem(a, b), b/2, Q.negative(a) & Q.negative(b) & Q.odd(2*a/b)),
 ]
 
+handlers_dict['Mod'] = rule_handler(RULES)
 handlers_dict['Rem'] = rule_handler(RULES)
 handlers_dict['frac'] = rule_handler(RULES)
