@@ -10,6 +10,9 @@ Usage::
     ... --fuzz                            # also a fuzz smoke run (seed 2, 200 cases)
     ... --fuzz 2 1500                     # a full fuzz run (seed, cases)
 
+Code lines (``--lines``, also printed with the rows) are physical lines that
+are not blank, not comments and not module, class or function docstrings,
+for the engine (the underscore modules but ``__init__``) and per family.
 Rows are counted from the family modules of ``handlers_identities``
 (``FACTS``, ``EXP_FORMS``, ``RULES``, ``SIMPLE_RULES``).  The battery is a
 list of ``(expr, assumptions, expected, source)`` (see the battery module):
@@ -41,6 +44,7 @@ def parse() -> argparse.Namespace:
     p.add_argument("--fuzz", nargs="*", metavar="SEED CASES",
                    help="also run tools/refine_fuzz.py; with no values a smoke run (seed 2, 200 cases)")
     p.add_argument("--show", action="store_true", help="print every case that is not a clean pass")
+    p.add_argument("--lines", action="store_true", help="only count code lines and rows")
     p.add_argument("--family", action="append", help="battery families to run (by test module name), repeatable")
     return p.parse_args()
 
@@ -69,6 +73,31 @@ def count_rows() -> None:
               f"{counts['SIMPLE_RULES']:6d} {counts['GENERATED']:10d}")
     print(f"  {'total':18s} {total['FACTS']:6d} {total['EXP_FORMS']:6d} {total['RULES']:6d} "
           f"{total['SIMPLE_RULES']:6d} {total['GENERATED']:10d}")
+
+
+def code_lines(path: Path) -> int:
+    """Lines of ``path`` that are not blank, comments, or module/class/function docstrings."""
+    import ast
+    source = path.read_text()
+    docstrings: set = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) \
+                    and isinstance(first.value.value, str):
+                docstrings.update(range(first.lineno, first.end_lineno + 1))
+    return sum(1 for k, line in enumerate(source.splitlines(), 1)
+               if line.strip() and not line.strip().startswith("#") and k not in docstrings)
+
+
+def count_code_lines() -> None:
+    package = ROOT / "satrefine/handlers_identities"
+    engine = sorted(p for p in package.glob("_*.py") if p.name != "__init__.py")
+    families = sorted(p for p in package.glob("[a-z]*.py"))
+    print("code lines (no blanks, comments, docstrings)")
+    for label, paths in (("engine", engine), ("families", families)):
+        counts = {p.stem: code_lines(p) for p in paths}
+        print(f"  {label:10s} {sum(counts.values()):5d}  " + ", ".join(f"{k} {v}" for k, v in counts.items()))
 
 
 def load_battery(path: str) -> tuple[list, int]:
@@ -197,7 +226,10 @@ def main() -> None:
     import satrefine  # noqa: F401
     if args.handlers == "handlers_identities":
         count_rows()
+        count_code_lines()
         sys.stdout.flush()
+    if args.lines:
+        return
     cases, skipped = load_battery(args.battery)
     if skipped:
         print(f"\n({skipped} battery cases under a patched ask are in SKIPPED and not run)")
