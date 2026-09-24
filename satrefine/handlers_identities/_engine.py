@@ -30,9 +30,28 @@ Patterns are ordinary SymPy expressions over plain symbols:
 ``F(x)`` with ``F = Function('F')``
     a head wildcard: matches the applied function the row is registered
     for, ``F`` binds its class and may appear in the right side;
+``Max(a, b)``, ``Min(a, b)`` (two symbols, at the top of a left side)
+    every ordered pair of two distinct arguments of a ``Max``/``Min`` of any
+    arity; the right side replaces the pair and the other arguments are
+    kept (``Max(x, y, z) -> Max(rhs, z)``);
+``Z`` a ``MatrixSymbol``
+    binds a plain ``MatrixSymbol`` only, and its shape symbols bind that
+    matrix's shape; ``Z + R``, ``HadamardProduct(Z, R)`` bind one atom
+    term and the rest (the rest binds ``R`` with its shape); ``c*Z`` over a
+    ``MatMul`` binds one scalar factor and the product of the others;
+    a ``MatMul`` of matrix factors (at the top of a left side) matches any
+    run of adjacent factors, the right side replaces the run and the other
+    factors stay in order, simplified with ``doit(deep=False)``;
 anything else
     structural: same head, same arity, arguments matched pairwise; atoms
-    and constants must be equal.
+    and constants must be equal.  Bindings to ``0`` or ``1`` are legal.
+
+Conditions are decided connective by connective (:func:`provable`): an
+``And`` needs every part provable, an ``Or`` one, atoms are asked one at a
+time through ``_upstream.ask`` and an ``ask`` that raises ``ValueError``
+counts as not provable.  A rule row may carry a fourth element ``unless``:
+it fires only if ``unless`` is *not* provable.  Rows are tried in table
+order.
 
 :func:`derive` composes a ``g(exp(z))`` fact with exponential forms
 ``(L, W, domain)`` (``L == exp(W)``) into rows for ``g(L)``.  The dispatcher
@@ -43,9 +62,11 @@ from __future__ import annotations
 import itertools
 from typing import Any, Callable, Iterable, Iterator
 
-from sympy import Abs, And, I, Q, S, Symbol, arg, count_ops, exp, floor, im, log
+from sympy import Abs, And, I, Not, Or, Q, S, Symbol, arg, count_ops, exp, floor, im, log
 from sympy.core import Add, Basic, Expr, Mul, Pow
 from sympy.core.function import AppliedUndef, UndefinedFunction
+from sympy.core.operations import LatticeOp
+from sympy.matrices.expressions import HadamardProduct, MatAdd, MatMul, MatrixExpr, MatrixSymbol
 
 from .. import _upstream
 from .._upstream import handlers_dict
@@ -57,8 +78,39 @@ Row = tuple[Basic, Basic, Basic]
 Binding = dict[Any, Any]
 Measure = Callable[[Any, Any], tuple]
 
-__all__ = ["Row", "bindings", "derive", "identity_handler", "rule_handler", "part",
-           "principal", "refine", "subst", "default_measure", "handlers_dict"]
+__all__ = ["REBUILD", "Row", "bindings", "derive", "identity_handler", "rule_handler", "part",
+           "principal", "provable", "refine", "subst", "default_measure", "handlers_dict"]
+
+
+# ----------------------------------------------------------------------------
+# conditions
+# ----------------------------------------------------------------------------
+
+def provable(cond: Any, assumptions: Any) -> bool | None:
+    """Decide ``cond`` connective by connective; ``None`` when undecided."""
+    if cond is S.true or cond is True:
+        return True
+    if cond is S.false or cond is False:
+        return False
+    if isinstance(cond, And):
+        parts = [provable(c, assumptions) for c in cond.args]
+        return True if all(p is True for p in parts) else (False if any(p is False for p in parts) else None)
+    if isinstance(cond, Or):
+        parts = [provable(c, assumptions) for c in cond.args]
+        return True if any(p is True for p in parts) else (False if all(p is False for p in parts) else None)
+    if isinstance(cond, Not):
+        inner = provable(cond.args[0], assumptions)
+        return None if inner is None else not inner
+    try:
+        answer = _upstream.ask(cond, assumptions)
+    except ValueError:            # SymPy's relation ask on consistent sign facts
+        return None
+    return True if answer is True else (False if answer is False else None)
+
+
+REBUILD = "__rebuild__"
+"""Binding key holding how a partial match puts its result back (kept
+arguments of a ``Max``, the other factors of a ``MatMul``)."""
 
 
 # ----------------------------------------------------------------------------
@@ -104,9 +156,31 @@ def _bind(b: Binding, key: Any, value: Any) -> Binding | None:
     return {**b, key: value}
 
 
-def _match(pattern: Any, target: Any, assumptions: Any, b: Binding) -> Iterator[Binding]:
+def _is_matrix(e: Any) -> bool:
+    return isinstance(e, MatrixExpr)
+
+
+def _bind_matrix(b: Binding, pattern: Any, target: Any) -> Binding | None:
+    """Bind a ``MatrixSymbol`` pattern to a matrix expression and its shape symbols."""
+    if not _is_matrix(target):
+        return None
+    nb = _bind(b, pattern, target)
+    for dim, size in zip(pattern.shape, target.shape):
+        if nb is None:
+            return None
+        nb = _bind(nb, dim, size) if dim.is_Symbol else (nb if dim == size else None)
+    return nb
+
+
+def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = False) -> Iterator[Binding]:
     if isinstance(pattern, _Part):
         return  # only meaningful inside a two-symbol sum or product
+    if isinstance(pattern, MatrixSymbol):                            # a plain matrix atom
+        if isinstance(target, MatrixSymbol):
+            nb = _bind_matrix(b, pattern, target)
+            if nb is not None:
+                yield nb
+        return
     if pattern.is_Symbol:
         nb = _bind(b, pattern, target)
         if nb is not None:
@@ -115,6 +189,77 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding) -> Iterator[
     if pattern.is_Atom:
         if pattern == target:
             yield b
+        return
+    if isinstance(pattern, (MatAdd, HadamardProduct)) and len(pattern.args) == 2 \
+            and all(isinstance(a, MatrixSymbol) for a in pattern.args):   # one atom term and the rest
+        if not isinstance(target, pattern.func):
+            return
+        # the pattern's argument order is canonical, not the author's, so either
+        # symbol may be the atom and the other the rest
+        for atom, rest_sym in (pattern.args, pattern.args[::-1]):
+            for t in target.args:
+                if not isinstance(t, MatrixSymbol):
+                    continue
+                others = [g for g in target.args if g is not t]
+                rest = others[0] if len(others) == 1 else pattern.func(*others)
+                nb = _bind_matrix(b, atom, t)
+                nb = _bind_matrix(nb, rest_sym, rest) if nb is not None else None
+                if nb is not None:
+                    yield nb
+        return
+    if isinstance(pattern, MatMul):
+        scalars = [a for a in pattern.args if not _is_matrix(a)]
+        matrices = [a for a in pattern.args if _is_matrix(a)]
+        if len(scalars) == 1 and scalars[0].is_Symbol and len(matrices) == 1 \
+                and isinstance(matrices[0], MatrixSymbol):                   # c*Z: a scalar factor and the rest
+            if not isinstance(target, MatMul):
+                return
+            for f in target.args:
+                if _is_matrix(f):
+                    continue
+                others = [g for g in target.args if g is not f]
+                rest = others[0] if len(others) == 1 else MatMul(*others)
+                nb = _bind(b, scalars[0], f)
+                nb = _bind_matrix(nb, matrices[0], rest) if nb is not None else None
+                if nb is not None:
+                    yield nb
+            return
+        if not scalars and isinstance(target, MatMul):                    # a run of adjacent factors
+            k = len(matrices)
+            T = list(target.args)
+            for i in range(len(T) - k + 1):
+                run = T[i:i + k]
+                if not all(_is_matrix(f) for f in run):
+                    continue
+                before, after = T[:i], T[i + k:]
+                if (before or after) and not top:
+                    continue
+                for nb in _match_seq(matrices, run, assumptions, b):
+                    if before or after:
+                        nb = {**nb, REBUILD: (lambda r, before=before, after=after:
+                                              MatMul(*before, r, *after).doit(deep=False))}
+                    else:
+                        nb = {**nb, REBUILD: (lambda r: r.doit(deep=False) if isinstance(r, MatrixExpr) else r)}
+                    yield nb
+            return
+    if top and isinstance(pattern, LatticeOp) and len(pattern.args) == 2 \
+            and all(a.is_Symbol for a in pattern.args):                    # Max(a, b) of any arity
+        if not isinstance(target, pattern.func):
+            return
+        pa, pb = pattern.args
+        T = list(target.args)
+        for i, ti in enumerate(T):
+            for j, tj in enumerate(T):
+                if i == j:
+                    continue
+                nb = _bind(b, pa, ti)
+                nb = _bind(nb, pb, tj) if nb is not None else None
+                if nb is None:
+                    continue
+                others = [t for t in T if t is not ti and t is not tj]
+                if others:
+                    nb = {**nb, REBUILD: (lambda r, others=others, head=pattern.func: head(r, *others))}
+                yield nb
         return
     if isinstance(pattern, AppliedUndef):                        # head wildcard
         F = pattern.func
@@ -182,10 +327,21 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding) -> Iterator[
                 if nb is not None:
                     yield nb
             return
-    # structural
+    # structural; a commutative head of small arity is matched in every argument order
     if target.is_Atom or not isinstance(target, pattern.func) or len(target.args) != len(pattern.args):
         return
+    if isinstance(pattern, _COMMUTATIVE) and 2 <= len(pattern.args) <= 3:
+        seen: set = set()
+        for perm in itertools.permutations(target.args):
+            if perm in seen:
+                continue
+            seen.add(perm)
+            yield from _match_seq(pattern.args, perm, assumptions, b)
+        return
     yield from _match_seq(pattern.args, target.args, assumptions, b)
+
+
+_COMMUTATIVE = (Add, Mul, MatAdd, HadamardProduct, LatticeOp)
 
 
 def _match_seq(patterns: Iterable[Any], targets: Iterable[Any], assumptions: Any, b: Binding) -> Iterator[Binding]:
@@ -199,17 +355,20 @@ def _match_seq(patterns: Iterable[Any], targets: Iterable[Any], assumptions: Any
 
 def bindings(pattern: Any, target: Any, assumptions: Any = True) -> Iterator[Binding]:
     """Ways to match ``pattern`` against ``target`` (see the module docstring)."""
-    yield from _match(pattern, target, assumptions, {})
+    yield from _match(pattern, target, assumptions, {}, top=True)
 
 
-def subst(expr: Any, binding: Binding) -> Any:
-    """Substitute a binding: symbols by ``xreplace``, head wildcards by their class."""
+def subst(expr: Any, binding: Binding, rebuild: bool = False) -> Any:
+    """Substitute a binding: symbols by ``xreplace``, head wildcards by their class;
+    with ``rebuild``, put a partial match's result back into what was kept."""
     heads = {k: v for k, v in binding.items() if isinstance(k, UndefinedFunction)}
-    syms = {k: v for k, v in binding.items() if not isinstance(k, UndefinedFunction)}
+    syms = {k: v for k, v in binding.items() if isinstance(k, Basic) and not isinstance(k, UndefinedFunction)}
     out = expr.xreplace(syms) if syms else expr
     if heads:
         out = out.replace(lambda e: isinstance(e, AppliedUndef) and e.func in heads,
                           lambda e: heads[e.func](*e.args))
+    if rebuild and REBUILD in binding:
+        out = binding[REBUILD](out)
     return out
 
 
@@ -279,11 +438,11 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
         m0 = m(expr, assumptions)
         for lhs, rhs, domain in rows:
             for b in bindings(lhs, expr, assumptions):
-                if domain is not S.true and _upstream.ask(subst(domain, b), assumptions) is not True:
+                if provable(subst(domain, b), assumptions) is not True:
                     continue
                 busy[0] = True
                 try:
-                    cand = refine(subst(rhs, b), assumptions)
+                    cand = refine(subst(rhs, b, rebuild=True), assumptions)
                 finally:
                     busy[0] = False
                 if cand.has(*opaque) and not splitting[0]:
@@ -305,34 +464,27 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     return handler
 
 
-def rule_handler(rows: list[Row]) -> Callable[[Any, Any], Any]:
-    """A handler from rule rows ``(lhs, rhs, hypothesis)``: bind, prove, substitute."""
-    rows = list(rows)
+def rule_handler(rows: list) -> Callable[[Any, Any], Any]:
+    """A handler from rule rows ``(lhs, rhs, hypothesis[, unless])``, tried in
+    table order: bind, prove the hypothesis, check ``unless`` is not provable,
+    substitute (rebuilding a partial match)."""
+    rows = [tuple(row) + (None,) * (4 - len(row)) for row in rows]
 
     def handler(expr: Any, assumptions: Any) -> Any:
-        for lhs, rhs, hyp in rows:
+        for lhs, rhs, hyp, unless in rows:
             for b in bindings(lhs, expr, assumptions):
-                if any(v in (S.Zero, S.One) and k.is_Symbol and not isinstance(k, _Part)
-                       and isinstance(lhs, Basic) and k in _product_symbols(lhs) for k, v in b.items()):
+                if provable(subst(hyp, b), assumptions) is not True:
                     continue
-                if hyp is S.true or _upstream.ask(subst(hyp, b), assumptions) is True:
-                    out = subst(rhs, b)
-                    if out != expr:
-                        return out
+                if unless is not None and provable(subst(unless, b), assumptions) is True:
+                    continue
+                out = subst(rhs, b, rebuild=True)
+                if out != expr:
+                    return out
         return None
 
     handler.rows = rows    # type: ignore[attr-defined]
     handler.kind = "rule"  # type: ignore[attr-defined]
     return handler
-
-
-def _product_symbols(lhs: Any) -> set:
-    """Symbols of two-symbol products in ``lhs`` (a factor bound to 0 or 1 is not a split)."""
-    out: set = set()
-    for node in lhs.atoms(Mul):
-        if len(node.args) == 2 and all(a.is_Symbol and not isinstance(a, _Part) for a in node.args):
-            out |= set(node.args)
-    return out
 
 
 # ----------------------------------------------------------------------------

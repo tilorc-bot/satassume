@@ -36,6 +36,11 @@ generated_handlers: dict = {}
 
 Preferred over ``handlers_dict`` when :func:`mode` is ``"generated"``."""
 
+fallback_handlers: dict = {}
+"""The simple rules (:mod:`._simple`), by key: tried after the key's handler
+declines, so a family table that registers ``floor`` or ``im`` keeps them
+without chaining explicitly."""
+
 MODE_ENV_VAR = "SATREFINE_IDENTITIES"
 
 
@@ -103,7 +108,12 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         return expr
     new = handler(expr, assumptions)
     if new is None or new == expr:
-        return expr
+        fallback = fallback_handlers.get(name)
+        if fallback is None or fallback is handler:
+            return expr
+        new = fallback(expr, assumptions)
+        if new is None or new == expr:
+            return expr
     _firings[-1] += 1
     if _firings[-1] > MAX_FIRINGS:
         raise RefineLoopError(
