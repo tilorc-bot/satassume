@@ -52,8 +52,7 @@ under Results); 2 is met on 2532 of 2583 compared records; 3 is met by
 left for the landing step.
 
 **Long-term goal.** Replacing the old per-object `expr.is_*` system with the
-same engine (the per-object `_assumptions` dictionary as the cache, level-0
-facts written back to the nodes) remains the goal; it is deferred until this
+same engine remains the goal; it is deferred until this
 slice is finished. `Engine.is_` exists because the engine uses it internally
 for context-free queries and the corpus tools replay old-system records
 through it for information, but nothing here hooks it into SymPy. See
@@ -87,8 +86,14 @@ Both SymPy assumption systems are propositional reasoning over the same
 predicate vocabulary (`integer -> rational -> real -> complex`, `real ==
 negative | zero | positive`, ...) plus structural knowledge about expression
 classes. satassume keeps one rule base, one incremental CDCL solver per
-session, and the object's own `_assumptions` dictionary as the cache for
-context-free facts. Assumptions enter the solver as solver assumptions under
+session, and a cache of its own (`DictCache`, keyed by node) for the
+context-free facts it derives. It never reads or writes SymPy's per-object
+`_assumptions`: those hold whatever SymPy's `_eval_is_*` handlers cached,
+which can be wrong (`(0**n).is_finite` is True for a plain `n`), and a
+`Symbol`'s `_assumptions` is one fact base shared by every symbol with the
+same assumptions. SymPy objects enter only through the templates: the
+assumptions a symbol was declared with, and the properties of fixed-value
+constants. Assumptions enter the solver as solver assumptions under
 a selector literal and never touch the cache; the session is reused while
 the assumptions stay the same. Discovery visits only the cone of the queried
 expression, root-level propagation decides most queries, and search runs
@@ -183,8 +188,10 @@ are answered by the theories, `tools/compare.py --relations-only`):
 | not a Boolean proposition | 8 | 5 | 1 (SymPy raised on 2) |
 
 Old-system `expr.is_*` records, replayed through `Engine.is_` (out of
-scope, informational): 6343 replayable, 6041 agree (95.2%), 30 extra
-answers, 272 None where SymPy answered, 0 wrong.
+scope, informational): 6343 replayable, 6033 agree (95.1%), 27 extra
+answers, 283 None where SymPy answered, 0 wrong. (Before the engine
+stopped reading SymPy's cached `_assumptions` it was 6041 / 30 / 272: part
+of that agreement was SymPy's own cached answers read back.)
 
 Time (`tools/compare.py --in-scope-only --time-sympy`, both sides in the
 same process, garbage collection frozen and disabled inside the timed

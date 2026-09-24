@@ -51,7 +51,34 @@ class InconsistentAssumptions(ValueError):
 # --------------------------------------------------------------------------
 
 class DictCache:
-    """Context-free facts per node, bounded in size, for use without SymPy."""
+    """Context-free facts per node, owned by the engine, bounded in size.
+
+    Where facts come from (the trust principle):
+
+    * the engine's inputs from SymPy objects are only what the structural
+      templates read: the assumptions a ``Symbol`` was *declared* with
+      (``assumptions0``, see ``satassume/templates/atoms.py``) and the
+      old-system properties of objects with a fixed value (numbers, ``pi``,
+      ``oo``, ...), where every non-None property is a static fact;
+    * everything else is derived by the engine, and only the facts the
+      solver derives at decision level 0 (from the rule base, the templates
+      and the facts above, never from a query's assumptions) are stored
+      here.
+
+    The cache is keyed by the node (hash and ``==``), so structurally equal
+    nodes share facts, which is sound because a node's context-free facts
+    depend only on its structure and declared assumptions.
+
+    The engine never reads or writes SymPy's per-object ``_assumptions``.
+    Reading it would import whatever SymPy's ``_eval_is_*`` handlers cached
+    as if it were unconditional (they can be wrong: ``(0**n).is_finite`` is
+    True for a plain ``n``, although ``0**-1`` is ``zoo``; with that fact
+    ``Q.negative(n)`` looked inconsistent).  Writing to it would change
+    ``expr.is_*`` for SymPy users, and a ``Symbol``'s ``_assumptions`` is
+    one ``StdFactKB`` shared by every symbol created with the same
+    assumptions, so a derived fact about ``n`` would become a fact about
+    every plain symbol.
+    """
 
     def __init__(self, maxsize: int = 200_000):
         self.store: Dict[Node, Dict[str, Optional[bool]]] = {}
@@ -73,34 +100,11 @@ class DictCache:
         d[pred] = value
 
 
-class ObjectCache(DictCache):
-    """Use the node's own ``_assumptions`` dict (SymPy's per-object FactKB)
-    as the cache when it has one, falling back to a bounded dict otherwise.
-
-    This is what makes the engine a drop-in for the old system: a cache hit is
-    the same dictionary lookup ``expr.is_positive`` performs today, and the
-    knowledge base symbols share per assumption signature is reused as-is.
-    """
-
-    def facts(self, node):
-        d = getattr(node, '_assumptions', None)
-        return d if d is not None else super().facts(node)
-
-    def get(self, node, pred, default=None):
-        d = getattr(node, '_assumptions', None)
-        if d is not None:
-            return d.get(pred, default)
-        return super().get(node, pred, default)
-
-    def put(self, node, pred, value):
-        d = getattr(node, '_assumptions', None)
-        if d is not None:
-            if d is getattr(node, 'default_assumptions', None):
-                # copy-on-write, mirroring sympy.core.assumptions.make_property
-                d = node._assumptions = d.copy()
-            d[pred] = value
-        else:
-            super().put(node, pred, value)
+#: Former default cache, which used SymPy's per-object ``_assumptions`` as
+#: storage; it read facts SymPy's handlers had cached as unconditional and
+#: wrote derived facts into fact bases shared between symbols (see
+#: ``DictCache``).  Kept as a name so existing imports keep working.
+ObjectCache = DictCache
 
 
 # --------------------------------------------------------------------------
@@ -515,7 +519,8 @@ class Engine:
         Structural clause generators.  Defaults to the SymPy template
         registry if importable, else no templates.
     cache : DictCache
-        Where context-free facts live.  Defaults to ``ObjectCache``.
+        Where context-free facts live.  Defaults to a fresh ``DictCache``;
+        SymPy's ``_assumptions`` are never used (see ``DictCache``).
     discovery_budget : int
         Maximum new nodes visited per query.
     session_limit : int
@@ -568,7 +573,7 @@ class Engine:
         #: template registry provides.  None: ``templates`` (formulas) only.
         self.clause_templates = clause_templates
         self.extensions = extensions
-        self.cache = cache if cache is not None else ObjectCache()
+        self.cache = cache if cache is not None else DictCache()
         self.custom_cache = DictCache()
         self.discovery_budget = discovery_budget
         self.session_limit = session_limit

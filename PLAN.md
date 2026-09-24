@@ -132,7 +132,7 @@ satassume/
   formula.py     P(pred, expr) atoms; And/Or/Not/Implies/Equivalent/Exclusive; allargs/anyarg/exactlyonearg
   compile.py     formulas -> integer clauses (direct where clausal, Tseitin otherwise)
   solver.py      incremental CDCL: add_clause any time, root propagation, implied(), solve(assumptions), entails()
-  engine.py      Engine: ObjectCache (the node's own _assumptions dict), Session (solver + atom table),
+  engine.py      Engine: DictCache (engine-owned; never SymPy's _assumptions), Session (solver + atom table),
                  demand-driven discovery, level-0 write-back
   sympy_api.py   ask(prop, assumptions), out_of_scope(), to_formula(), Unsupported
   templates/     structural clause generators per SymPy class (Symbol, numbers, Add, Mul, Pow, functions)
@@ -167,10 +167,10 @@ Query path for `ask(prop, assumptions)`:
    reused session already holds other queries' nodes.
 
 A proposition with no assumptions is a context-free query and goes through
-`Engine.is_`: cache hit in `expr._assumptions`, else a session of its own
+`Engine.is_`: cache hit in the engine's `DictCache`, else a session of its own
 over the cone of the expression. Sessions are generational: after
 `session_limit` nodes the solver is discarded; level-0 facts already live
-in the per-object caches, so nothing is lost and memory stays bounded.
+in the engine's cache, so nothing is lost and memory stays bounded.
 
 Rules of engagement for templates:
 
@@ -195,6 +195,14 @@ done. It is kept here because the long-term goal, one engine for both SymPy
 assumption systems, drives several design choices already made (the
 per-object cache, level-0 write-back, the single rule base pinned to the old
 strings).
+
+Until then the engine does not use SymPy's `_assumptions` at all (see
+`satassume.engine.DictCache`): while the old handlers write into it, its
+contents are not engine facts, and a `Symbol`'s `_assumptions` is one
+`StdFactKB` shared by every symbol created with the same assumptions. A
+per-object cache for the replacement must hold only engine-derived facts
+and copy before its first write on every object whose dict is shared
+(symbols as well as `default_assumptions`).
 
 ### Landing the slice in SymPy
 
