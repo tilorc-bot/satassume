@@ -13,6 +13,8 @@ gates:
    "wrong" or "crash";
 2. **tests**: ``tests/refine_identities/test_<family>.py`` and
    ``test_engine_<family>.py``; every test that passed must still pass.
+   Run only for rows gate 1 does not already keep (``--full``: for every
+   row, to list the tests each row is responsible for).
    Tests that only assert the table size (``test_table_size*``, see
    ``--ignore-test``) are reported, not counted;
 3. **soundness**: ``tools/refine_differential.py``'s inputs (``--seed``,
@@ -336,6 +338,8 @@ def main(argv=None) -> None:
     ap.add_argument("--no-soundness", action="store_true", help="skip gate 3")
     ap.add_argument("--ignore-test", action="append", default=["test_table_size"],
                     help="substring of test ids whose failure is reported, not counted (repeatable)")
+    ap.add_argument("--full", action="store_true",
+                    help="run the tests for every row (default: only for rows the battery does not need)")
     ap.add_argument("--rows", help="comma-separated row indices to try (default: all)")
     ap.add_argument("--save-baseline", metavar="JSON", help="measure the working tree, save, exit")
     ap.add_argument("--compare-to", metavar="JSON", help="measure the working tree against a saved baseline, exit")
@@ -378,8 +382,11 @@ def main(argv=None) -> None:
     print("\n== single-row removal (gates 1 and 2) ==")
     single = []
     for i in rows:
-        m = measure(args, [i], ("battery", "tests"))
+        m = measure(args, [i], ("battery",) if not args.full else ("battery", "tests"))
         lost = regressions(base, m, args.ignore_test)
+        if not fails(lost) and not args.full:          # tests only when the battery alone does not decide
+            m = measure(args, [i], ("battery", "tests"))
+            lost = regressions(base, m, args.ignore_test)
         verdict = "droppable" if not fails(lost) else "needed"
         print(f"  row {i:2d} {verdict:9s} {m['removed'][0][:110]}")
         show_lost(lost)
