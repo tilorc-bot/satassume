@@ -1,7 +1,7 @@
 """``re``, ``im``, ``arg``, ``sign``, ``Abs``, ``conjugate`` and the conjugate
 pair in ``Mul`` as tables.
 
-Rows: 3 facts, 3 splits, 38 rules, 1 shared zero row; ``handlers_v3/complex_parts.py``
+Rows: 3 facts, 1 split, 38 rules, 1 shared zero row; ``handlers_v3/complex_parts.py``
 is 567 lines.  The exponential forms are the ones in
 :mod:`.power_exp_log`.
 
@@ -18,10 +18,13 @@ Abs(p)*Abs(r)`` and ``arg(p*r) = arg(p) + arg(r)`` up to the principal
 wrap derive (``arg`` only with the product forms: v3 leaves ``arg(w**e)``
 alone); and ``arg`` of a conjugate, exact through its own bookkeeping,
 which collapses whenever ``w`` is provably off the negative real axis.
-Products under ``sign`` and ``conjugate`` and sums under ``conjugate``
-split by an exact identity whose ordering requires a factor or term to
-resolve, which is v3's "fires only if at least one factor resolves"; the
-same ordering makes ``Abs(x*y)`` split only when a factor resolves.
+Products under ``sign`` split by an exact identity whose ordering
+requires a factor to resolve, which is v3's "fires only if at least one
+factor resolves"; the same ordering makes ``Abs(x*y)`` split only when a
+factor resolves, and it counts ``re`` nodes for ``Abs`` so that
+``Abs(b**e)`` for an imaginary ``b`` is not rewritten as
+``exp(re(e*log(b)))`` (v3 declines there too).  Sums and products under
+``conjugate`` are distributed by SymPy itself.
 
 Where the rows fire and v3 does not: ``arg(x*y)`` for a negative ``y`` is
 ``arg(-x)`` (the product form with both signs flipped; v3 pulls positive
@@ -56,11 +59,11 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
     (arg(conjugate(w)), -arg(w) + 2*pi*floor(S.Half + arg(w)/(2*pi)),  true),   # arg is odd off the negative axis (nan at 0 on both sides)
 ]
 
-SPLITS: list[Row] = [   # exact multiplicative or additive identities; the ordering demands progress
+SPLITS: list[Row] = [   # an exact multiplicative identity; the ordering demands progress
     (sign(p*r),        sign(p)*sign(r),                 true),   # sign is multiplicative
-    (conjugate(p*r),   conjugate(p)*conjugate(r),       true),   # conjugation is multiplicative
-    (conjugate(a + b), conjugate(a) + conjugate(b),     true),   # ... and additive
 ]
+# conjugate needs no split rows: SymPy distributes conjugate over sums and products on
+# construction, so conjugate(x*y) reaches the table as conjugate(x)*conjugate(y).
 
 _IM_POSITIVE = Q.positive(im(a)) | Q.positive(-I*a)   # the two spellings of "on the positive imaginary axis"
 _IM_NEGATIVE = Q.negative(im(a)) | Q.negative(-I*a)
@@ -137,12 +140,13 @@ BASE: list[Row] = [row for row in RULES if row[0].func in (re, im, arg, Abs)]
 """The rows the other families' bookkeeping reduces through."""
 
 # the splits get a handler of their own so they can fire inside a derived row's candidate
-refine_Abs = chain(_rules, _identity(Abs))
+refine_Abs = chain(_rules, identity_handler([row for row in IDENTITIES if row[0].func is Abs],
+                                            measure=node_measure((Abs, re))))
 refine_re = _rules
 refine_im = _rules
 refine_arg = chain(_rules_no_zero, _identity(arg, opaque=(floor, im)))   # arg is the result, not bookkeeping
 refine_sign = chain(_rules, _splits(sign))
-refine_conjugate = chain(_rules, _splits(conjugate))
+refine_conjugate = _rules
 refine_Mul = rule_handler([row for row in RULES if isinstance(row[0], Mul)])
 
 handlers_dict['Abs'] = refine_Abs
