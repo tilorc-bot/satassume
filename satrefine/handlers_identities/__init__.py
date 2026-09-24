@@ -16,6 +16,11 @@ to the vendored handlers.  Infrastructure (underscore modules):
                 ``(lhs, rhs, hypothesis)``), the pattern forms, ``derive``;
 ``_wraps``      the branch bookkeeping (``principal``, ``sawtooth``,
                 ``reflect_half``, ``reflect_full``, ``fractional``);
+``_simple``     the simple rules (``re``/``im``/``arg``/``Abs`` of
+                exponentials, logarithms and products; ``floor`` of a
+                bounded head; ``Piecewise`` branches under their conditions),
+                registered here before the family modules load so a family
+                that registers one of those keys overrides and chains to them;
 ``_specialize`` generation of conditional rules from identity rows under
                 assumption profiles, numeric verification, compilation.
 
@@ -29,8 +34,11 @@ from __future__ import annotations
 
 import sys
 
-from . import _dispatch
+from . import _dispatch, _simple
+from .._upstream import handlers_dict
 
 _satrefine = sys.modules.get("satrefine")
 if _satrefine is not None:
     _satrefine.refine = _dispatch.refine
+
+_simple.install(handlers_dict)

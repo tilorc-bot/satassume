@@ -104,17 +104,14 @@ def test_rule_handler_fires_on_provable_hypothesis():
 def test_rule_handler_with_head_wildcard_and_partition():
     ints = part("i", Q.integer)
     rows = [(F(ints + r), ints + F(r), true)]          # floor/ceiling distribute over integers
-    handlers_dict["floor"] = rule_handler(rows)
-    saved = handlers_dict.get("ceiling")
-    handlers_dict["ceiling"] = handlers_dict["floor"]
+    saved = handlers_dict["floor"], handlers_dict["ceiling"]
+    handlers_dict["floor"] = handlers_dict["ceiling"] = rule_handler(rows)
     try:
         from sympy import ceiling
         assert refine(floor(x + n), Q.integer(n)) == n + floor(x)
         assert refine(ceiling(x + n + 1), Q.integer(n)) == n + 1 + ceiling(x)
     finally:
-        from satrefine._upstream import refine_floor_ceiling
-        handlers_dict["floor"] = refine_floor_ceiling
-        handlers_dict["ceiling"] = saved or refine_floor_ceiling
+        handlers_dict["floor"], handlers_dict["ceiling"] = saved
 
 
 def test_identity_handler_does_not_loop_and_respects_ordering():
@@ -133,3 +130,60 @@ def test_wraps_numerically(t):
     assert abs(N(reflect_half(t) - asin(sin(t)))) < 1e-12
     assert abs(N(reflect_full(t) - acos(cos(t)))) < 1e-12
     assert abs(N(fractional(t) - frac(t))) < 1e-12
+
+
+# --- simple rules and case split -------------------------------------------
+
+@pytest.fixture
+def relaxed_log():
+    """The log rows with the domains the branch-cut author is asked to adopt:
+    a power needs only one of base or exponent nonzero, a product needs nothing
+    (SymPy's zoo arithmetic makes log(0*r) == log(0) + log(r))."""
+    from sympy import true
+    from satrefine.handlers_identities._engine import derive, principal
+    z, b_, e_, p_, r_ = symbols("z b e p r")
+    facts = [(log(exp(z)), principal(z), true), (log(x), log(Abs(x)) + I*arg_(x), ~Q.zero(x))]
+    forms = [(b_**e_, e_*log(b_), ~Q.zero(b_) | ~Q.zero(e_)), (p_*r_, log(p_) + log(r_), true)]
+    saved = handlers_dict["log"]
+    handlers_dict["log"] = identity_handler(derive(facts, forms))
+    try:
+        yield
+    finally:
+        handlers_dict["log"] = saved
+
+
+from sympy import arg as arg_  # noqa: E402
+
+
+def test_floor_of_bounded_head():
+    assert refine(floor(S.Half - arg_(y)/(2*pi)), Q.complex(y)) == 0        # arg in (-pi, pi]
+    assert refine(floor(S.Half + arg_(y)/(2*pi)), Q.complex(y)) != 0        # (0, 1]: not constant
+    assert refine(floor(S.Half + arg_(x)/(2*pi)), Q.imaginary(x)) == 0      # open at pi
+    from sympy import atan, ceiling
+    assert refine(floor(atan(x)/pi + S.Half), Q.real(x)) == 0
+    assert refine(ceiling(atan(x)/pi - S.Half), Q.real(x)) == 0
+
+
+def test_simple_parts_of_exp_log_and_products():
+    from sympy import cos, re, sin
+    w, e_, b_ = symbols("w e b")
+    assert refine(im(e_*log(b_)), Q.negative(b_) & Q.even(e_)) == pi*e_
+    assert refine(Abs(exp(w)), Q.complex(w)) == exp(re(w))
+    assert refine(im(exp(w)), Q.complex(w)) == exp(re(w))*sin(im(w))
+    assert refine(arg_(x), Q.positive(-I*x)) == pi/2
+
+
+def test_piecewise_branches_refine_under_their_conditions():
+    from sympy import Piecewise
+    pw = Piecewise((Abs(x), Q.positive(x)), (Abs(x), True))
+    assert refine(pw, Q.real(x)) == Abs(x)
+    pw = Piecewise((Abs(x), Q.positive(x)), (-x, True))
+    assert refine(pw, Q.real(x)) == Piecewise((x, Q.positive(x)), (-x, True))
+
+
+def test_case_split_resolves_leftover_bookkeeping(relaxed_log):
+    assert refine(log(x**2), Q.real(x)) == 2*log(Abs(x))                 # branches generalized by Abs
+    assert refine(log(x**2), Q.imaginary(x)) == 2*log(Abs(x)) + I*pi     # branches agree
+    assert refine(log(x*y), Q.positive(x) & Q.complex(y)) == log(x) + log(y)
+    assert refine(log(1/x), Q.imaginary(x)) == -log(x)
+    assert refine(log(-x), Q.negative(x)) == log(-x)                     # ordering still holds

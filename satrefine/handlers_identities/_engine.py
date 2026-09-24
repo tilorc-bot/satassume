@@ -43,7 +43,7 @@ from __future__ import annotations
 import itertools
 from typing import Any, Callable, Iterable, Iterator
 
-from sympy import And, Q, S, Symbol, arg, count_ops, exp, floor, im, log
+from sympy import Abs, And, I, Q, S, Symbol, arg, count_ops, exp, floor, im, log
 from sympy.core import Add, Basic, Expr, Mul, Pow
 from sympy.core.function import AppliedUndef, UndefinedFunction
 
@@ -243,7 +243,7 @@ def default_measure(heads: Iterable[type]) -> Measure:
                 a = -a
             if isinstance(a, (Add, Mul)):
                 structure += len(a.args)
-            elif not a.is_Atom:
+            elif not a.is_Atom and not isinstance(a, Abs):   # Abs is the canonical form rows produce
                 structure += 1
         bad = sum(_upstream.ask(Q.positive(n.args[0]), assumptions) is not True for n in nodes if n.args)
         return (structure, bad, count_ops(e))
@@ -270,6 +270,7 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     rows = list(rows)
     static_heads = _heads_of(rows)
     busy = [False]
+    splitting = [False]
 
     def handler(expr: Any, assumptions: Any) -> Any:
         if busy[0]:
@@ -285,6 +286,14 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                     cand = refine(subst(rhs, b), assumptions)
                 finally:
                     busy[0] = False
+                if cand.has(*opaque) and not splitting[0]:
+                    splitting[0] = True
+                    try:
+                        merged = case_split(expr, cand, assumptions, opaque)
+                    finally:
+                        splitting[0] = False
+                    if merged is not None:
+                        cand = merged
                 if cand.has(*opaque):
                     continue
                 if m(cand, assumptions) < m0:
@@ -324,6 +333,88 @@ def _product_symbols(lhs: Any) -> set:
         if len(node.args) == 2 and all(a.is_Symbol and not isinstance(a, _Part) for a in node.args):
             out |= set(node.args)
     return out
+
+
+# ----------------------------------------------------------------------------
+# case split
+# ----------------------------------------------------------------------------
+
+def _split_branches(s: Any, assumptions: Any) -> tuple[list, bool] | None:
+    """Sign cases for a symbol under an opaque head and whether zero is excluded, or ``None``."""
+    ask = _upstream.ask
+    if ask(Q.real(s), assumptions) is True:
+        if ask(Q.positive(s), assumptions) is not None or ask(Q.negative(s), assumptions) is not None:
+            return None
+        return [Q.positive(s), Q.negative(s)], ask(Q.zero(s), assumptions) is False
+    if ask(Q.imaginary(s), assumptions) is True:
+        if ask(Q.positive(-I*s), assumptions) is not None:
+            return None
+        return [Q.positive(-I*s), Q.negative(-I*s)], True
+    return None
+
+
+def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, im, arg)) -> Any | None:
+    """Resolve leftover bookkeeping by a sign split on one symbol under it.
+
+    For a symbol of known reality but unknown sign under an opaque head,
+    refine ``cand`` under each sign case; if every case collapses and the
+    results agree, that is the answer.  If they differ, try to generalize
+    the positive case's result by ``Abs`` (``x -> Abs(x)``, or ``-x ->
+    Abs(x)`` in the negative case) and accept the generalization when it
+    refines back to every case's result.  When zero is not excluded, the
+    result must also agree with ``expr`` at ``s = 0`` by evaluation.  This
+    is the two-branch case split whose branches agree, without
+    materializing a ``Piecewise``.
+    """
+    syms: set = set()
+    for node in cand.atoms(*opaque):
+        syms |= node.free_symbols
+    for s in sorted(syms, key=str):
+        split = _split_branches(s, assumptions)
+        if split is None:
+            continue
+        branches, zero_excluded = split
+        # stage one: only the bookkeeping nodes, which may be constant across the cases
+        values: dict | None = {}
+        for node in cand.atoms(*opaque):
+            vals = []
+            for br in branches:
+                try:
+                    vals.append(refine(node, And(assumptions, br)))
+                except ValueError:
+                    vals = None
+                    break
+            if vals is None or any(v.has(*opaque) for v in vals) or any(v != vals[0] for v in vals):
+                values = None
+                break
+            values[node] = vals[0]
+        if values:
+            E = refine(cand.xreplace(values), assumptions)
+            if not E.has(*opaque) and (zero_excluded or expr.subs(s, 0) == E.subs(s, 0)):
+                return E
+        # stage two: the whole candidate, generalized by Abs
+        results = []
+        for br in branches:
+            try:
+                r = refine(cand, And(assumptions, br))
+            except ValueError:
+                results = None
+                break
+            if r.has(*opaque):
+                results = None
+                break
+            results.append(r)
+        if results is None:
+            continue
+        guesses = [results[0]] if all(r == results[0] for r in results) else []
+        guesses += [results[0].xreplace({s: Abs(s)}), results[1].xreplace({-s: Abs(s)})]
+        for E in guesses:
+            if not all(refine(E, And(assumptions, br)) == r for br, r in zip(branches, results)):
+                continue
+            if not zero_excluded and expr.subs(s, 0) != E.subs(s, 0):
+                continue
+            return E
+    return None
 
 
 # ----------------------------------------------------------------------------
