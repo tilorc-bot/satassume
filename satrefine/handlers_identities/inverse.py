@@ -8,25 +8,35 @@ inverse, written out with the wraps of :mod:`._wraps`: ``asin(sin t)`` is
 the reflection of ``t`` onto ``[-pi/2, pi/2]``, ``acos(cos t)`` onto
 ``[0, pi]``, ``atan(tan t)`` the sawtooth of period ``pi``; the cofunction
 forms follow by ``cos t = sin(pi/2 - t)`` and ``cot t = tan(pi/2 - t)``.
+Under bounds on ``t`` stated as relations (``Q.ge(t, -pi/2) & Q.le(t,
+pi/2)``, ``Q.positive(t) & Q.lt(t, pi)``, numeric intervals, ...) the
+``floor`` inside the wrap collapses (the simple layer's floor of a bounded
+quantity), and every interval row of v3 is a specialization; a closed
+interval whose endpoint sits on the jump of the floor is the engine's
+endpoint split (both floor values give the same result there), which is
+also why ``atan(tan t)`` does not fire on the closed ``[-pi/2, pi/2]``:
+at ``pi/2`` the two values disagree, as they must at a pole.
+
 The hyperbolic inverses wrap in the imaginary direction (``asinh(sinh z)``
 reflects ``im z`` onto ``[-pi/2, pi/2]``, ``atanh(tanh z)`` is the sawtooth
 of ``im z`` with period ``pi``), which is why they collapse under
 ``Q.real`` alone: ``im z`` is zero and ``floor(1/2)`` is ``0``.  ``acosh
 (cosh t)`` and ``asech(sech t)`` are ``Abs(t)`` for real ``t`` (rules; the
 ``Abs`` then refines by sign).  ``atan2(y, x)`` is one row whose right side
-is the sign table as a ``Piecewise``; the simple ``Piecewise`` rule decides
-its conditions.
+is the sign table as a ``Piecewise``; SymPy's own ``Piecewise`` refinement
+decides its conditions and the row fires when one branch is selected.
 
-The real-direction wraps collapse only under bounds on ``t`` stated as
-relations (``Q.ge(t, -pi/2) & Q.le(t, pi/2)``); that is ``floor`` of a
-symbol bounded by relations, filed under ``needs``, so the trigonometric
-inverse rows do not fire yet.  ``atan2`` and the hyperbolic rows do.
+Not covered (and why): bounds derived rather than stated (``Q.ge(t, y) &
+Q.ge(y, 0)``: SymPy's relation ``ask`` would have to be consulted for
+every candidate bound, which v3 does and this table does not), and
+``acoth(coth(x))`` under ``Q.real(x)`` alone (``coth(0)`` is ``zoo``; v3
+also declines).
 """
 from __future__ import annotations
 
-from sympy import (Abs, I, Piecewise, Q, S, acos, acosh, acot, acoth, acsch, asech, asin, asinh, atan, atan2,
-                   atanh, cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols,
-                   tan, tanh, true, atan as _atan)
+from sympy import (Abs, I, Piecewise, Q, S, acos, acosh, acoth, acsch, asech, asin, asinh, atan, atan2, atanh,
+                   cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols, tan, tanh,
+                   true)
 
 from .._upstream import handlers_dict
 from ._engine import Row, identity_handler, rule_handler
@@ -58,9 +68,9 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
     (atanh(tanh(z)), _sawtooth_imag(z),        true),        # atanh undoes tanh up to an imaginary period
     (acoth(coth(z)), _sawtooth_imag(z),        ~Q.zero(z)),  # acoth undoes coth likewise (coth(0) is zoo)
     (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z)),  # acsch undoes csch likewise
-    (atan2(y, x), Piecewise((_atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
-                            (_atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
-                            (_atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
+    (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
+                            (atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
+                            (atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
                             (sign(y)*pi/2, Q.zero(x) & Q.nonzero(y)),
                             (nan, Q.zero(x) & Q.zero(y)),
                             (atan2(y, x), true)), true),

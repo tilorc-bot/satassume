@@ -1,6 +1,9 @@
 """``sin``, ``cos``, ``tan``, ``cot``, ``sec``, ``csc`` and ``sinc`` as tables.
 
 Rows: 14 rules, 1 shared zero row; ``handlers_v3/trig.py`` is 221 lines.
+A value at a pole comes out as ``(-1)**k*zoo``, which the ``Mul`` row of
+the complex parts (``zoo`` absorbs a nonzero finite factor) turns into
+``zoo``.
 
 The family is its periodicity table.  An argument ``n*pi/2 + r`` (``n`` the
 collected coefficient of ``pi/2``, see the engine's pattern forms) shifts

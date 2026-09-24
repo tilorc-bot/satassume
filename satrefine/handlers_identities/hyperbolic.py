@@ -12,11 +12,18 @@ multiples of ``pi`` are not shifts of the period and never bind (the
 pattern form collects only terms whose ratio to ``pi*I/2`` is free of
 ``pi`` and ``I``).
 
-v3 leaves ``sinh(x + k*pi*I)`` alone when only ``Q.integer(k)`` is known and
-``sinh(x + k*pi*I/2)`` alone when only ``Q.odd(k)`` is known; these rows
-fire with a symbolic sign, ``(-1)**k*sinh(x)`` and ``I*(-1)**((k-1)/2)*
-cosh(x)``, which is exact (and is what the trig family does).  Flagged
-for the checker.
+The sign power collapses through the ``Pow`` rules once the residue of
+``m`` mod 4 is known.  v3 fires ``sinh``, ``cosh``, ``sech`` and ``csch``
+only then (it leaves ``sinh(x + k*pi*I)`` alone under ``Q.integer(k)``
+and ``sinh(x + k*pi*I/2)`` under ``Q.odd(k)``, where the sign would stay
+symbolic), so their hypotheses demand a known parity of ``m/2`` or
+``(m - 1)/2``; the exact rows with a symbolic sign would be the same rows
+with ``Q.even(m)`` and ``Q.odd(m)`` alone.
+
+Not covered: nothing v3 states.  ``f(k*pi*I)`` auto-evaluates to a
+trigonometric function in SymPy, so the exact-point rules of v3 are the
+trigonometric family's rows here (``sinh(I*pi*k)`` is ``I*sin(pi*k)``,
+which gives ``0`` rather than v3's unrefined form).
 """
 from __future__ import annotations
 
@@ -28,19 +35,22 @@ from ._tables import ZERO
 
 m, x = symbols('m x')
 
+_EVEN = Q.even(m) & (Q.even(m/2) | Q.odd(m/2))                # m = 0 or 2 mod 4, known which
+_ODD = Q.odd(m) & (Q.even((m - 1)/2) | Q.odd((m - 1)/2))      # m = 1 or 3 mod 4, known which
+
 RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is m*pi*I/2 + x
-    (sinh(m*pi*I/2 + x), (-1)**(m/2)*sinh(x),         Q.even(m)),   # sinh(x + n*pi*I) = (-1)**n sinh x
-    (sinh(m*pi*I/2 + x), I*(-1)**((m - 1)/2)*cosh(x), Q.odd(m)),    # sinh(x + pi*I/2) = I cosh x
-    (cosh(m*pi*I/2 + x), (-1)**(m/2)*cosh(x),         Q.even(m)),   # cosh(x + n*pi*I) = (-1)**n cosh x
-    (cosh(m*pi*I/2 + x), I*(-1)**((m - 1)/2)*sinh(x), Q.odd(m)),    # cosh(x + pi*I/2) = I sinh x
-    (sech(m*pi*I/2 + x), (-1)**(m/2)*sech(x),         Q.even(m)),   # sech = 1/cosh
-    (sech(m*pi*I/2 + x), -I*(-1)**((m - 1)/2)*csch(x), Q.odd(m)),
-    (csch(m*pi*I/2 + x), (-1)**(m/2)*csch(x),         Q.even(m)),   # csch = 1/sinh
-    (csch(m*pi*I/2 + x), -I*(-1)**((m - 1)/2)*sech(x), Q.odd(m)),
-    (tanh(m*pi*I/2 + x), tanh(x),                     Q.even(m)),   # tanh has period pi*I
-    (tanh(m*pi*I/2 + x), coth(x),                     Q.odd(m)),    # tanh(x + pi*I/2) = coth x
-    (coth(m*pi*I/2 + x), coth(x),                     Q.even(m)),   # coth has period pi*I
-    (coth(m*pi*I/2 + x), tanh(x),                     Q.odd(m)),    # coth(x + pi*I/2) = tanh x
+    (sinh(m*pi*I/2 + x), (-1)**(m/2)*sinh(x),          _EVEN),       # sinh(x + n*pi*I) = (-1)**n sinh x
+    (sinh(m*pi*I/2 + x), I*(-1)**((m - 1)/2)*cosh(x),  _ODD),        # sinh(x + pi*I/2) = I cosh x
+    (cosh(m*pi*I/2 + x), (-1)**(m/2)*cosh(x),          _EVEN),       # cosh(x + n*pi*I) = (-1)**n cosh x
+    (cosh(m*pi*I/2 + x), I*(-1)**((m - 1)/2)*sinh(x),  _ODD),        # cosh(x + pi*I/2) = I sinh x
+    (sech(m*pi*I/2 + x), (-1)**(m/2)*sech(x),          _EVEN),       # sech = 1/cosh
+    (sech(m*pi*I/2 + x), -I*(-1)**((m - 1)/2)*csch(x), _ODD),
+    (csch(m*pi*I/2 + x), (-1)**(m/2)*csch(x),          _EVEN),       # csch = 1/sinh
+    (csch(m*pi*I/2 + x), -I*(-1)**((m - 1)/2)*sech(x), _ODD),
+    (tanh(m*pi*I/2 + x), tanh(x),                      Q.even(m)),   # tanh has period pi*I
+    (tanh(m*pi*I/2 + x), coth(x),                      Q.odd(m)),    # tanh(x + pi*I/2) = coth x
+    (coth(m*pi*I/2 + x), coth(x),                      Q.even(m)),   # coth has period pi*I
+    (coth(m*pi*I/2 + x), tanh(x),                      Q.odd(m)),    # coth(x + pi*I/2) = tanh x
 ]
 
 _shift = rule_handler([ZERO] + RULES)

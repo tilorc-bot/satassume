@@ -1,38 +1,36 @@
-"""Simple rules the identity rows reduce their bookkeeping through.
+"""The procedural remainder of the base layer: ``floor`` of a bounded quantity, ``Piecewise``.
 
-Registered by the package ``__init__`` on ``re``, ``im``, ``arg``, ``Abs``,
-``floor``, ``ceiling`` and ``Piecewise`` before the family modules load, and
-as the dispatcher's fallbacks for those keys: a family module that registers
-one of them overrides the handler, and the dispatcher tries the simple rule
-after the family's table declines.  Each rule chains to the vendored handler
-when it does not apply.
+Registered by the package ``__init__`` on ``floor``, ``ceiling`` and
+``Piecewise`` before the family modules load, and as the dispatcher's
+fallbacks for those keys: a family module that registers one of them
+(``integer_funcs`` registers ``floor`` and ``ceiling``) overrides the
+handler, and the dispatcher tries the simple rule after the family's
+table declines.  Each rule chains to the vendored handler when it does
+not apply.  Everything else the branch bookkeeping reduces through
+(``re``/``im`` of exponentials, logarithms, sums and products; ``arg``
+and ``Abs`` under sign facts) is a row of :mod:`.complex_parts`.
 
-Rules:
+Why these two are procedures and not rows:
 
-``re``/``im``/``arg``/``Abs`` of exponentials, logarithms and products
-    ``re(exp w) = exp(re w)*cos(im w)``, ``im(exp w) = exp(re w)*sin(im w)``,
-    ``Abs(exp w) = exp(re w)``; ``re(log w) = log(Abs w)``,
-    ``im(log w) = arg w``; ``re``/``im`` distribute over sums and pull real
-    factors out of products; ``arg(x) = +-pi/2`` when ``-I*x`` is positive
-    or negative (the imaginary axis).  ``re``/``im`` of a power never reach
-    the vendored handler (it recurses); ``Abs`` of a product and ``arg`` of
-    an exponential are identity rows of the families (they must not split
-    or wrap unconditionally).
 ``floor``/``ceiling`` of a bounded quantity
     ``floor(a*u + c)`` with numeric ``a``, ``c`` is a constant when the
     floor is constant over the interval ``u`` is known to lie in: ``u`` is
     ``h(y)`` for a head ``h`` in :data:`BOUNDS` (``arg``, ``atan``,
     ``acot``, ``asin``, ``acos``; ``arg`` is open at ``pi`` when ``y`` is
-    provably not negative), or any expression whose bounds the assumptions
-    state as conjuncts (:func:`stated_bounds`: ``Q.ge(u, -pi/2)``,
-    ``Q.lt(1, u)``, ``Q.positive(u + pi)``, ... read affinely, and the
-    sign facts ``Q.positive(u)``, ``Q.nonnegative(u)``, ... by asking).
-    :func:`floor_two_valued` is the case where the floor is constant except
-    at one closed endpoint of the interval (the engine's endpoint split).
+    provably off the negative real axis), or any expression whose bounds
+    the assumptions state as conjuncts (:func:`stated_bounds`: ``Q.ge(u,
+    -pi/2)``, ``Q.lt(1, u)``, ``Q.positive(u + pi)``, ... read affinely,
+    and the sign facts ``Q.positive(u)``, ``Q.nonnegative(u)``, ... by
+    asking).  A row states a fixed condition; this is interval arithmetic
+    over whatever bounds are stated (the constant depends on them), which
+    no finite set of rows expresses.  :func:`floor_two_valued` is the case
+    where the floor is constant except at one closed endpoint of the
+    interval (the engine's endpoint split).
 ``Piecewise``
     branches are refined under the assumptions plus their own condition;
     ``Piecewise`` itself drops decided conditions and merges equal
-    branches.
+    branches.  A row cannot add a branch's condition to the assumptions
+    the right side is refined under.
 """
 from __future__ import annotations
 
@@ -40,10 +38,9 @@ from typing import Any
 
 from typing import Iterator
 
-from sympy import (Abs, Add, And, Dummy, I, Mul, Piecewise, Q, S, acos, acot, arg, asin, atan, ceiling, cos,
-                   exp, floor, im, log, pi, re, sin)
+from sympy import And, Dummy, Piecewise, Q, S, acos, acot, arg, asin, atan, ceiling, floor, im, pi, re
 from sympy.assumptions import AppliedPredicate
-from sympy.core import Basic, Pow
+from sympy.core import Basic
 from sympy.logic.boolalg import Boolean
 
 from .. import _upstream
@@ -255,83 +252,6 @@ def simple_floor(expr: Basic, assumptions: Any) -> Basic | None:
     return floor_of_bounded(expr, assumptions)
 
 
-def _real_factors(a: Any, assumptions: Any) -> tuple[list, list]:
-    real = [f for f in a.args if _upstream.ask(Q.real(f), assumptions)]
-    return real, [f for f in a.args if f not in real]
-
-
-def simple_re(expr: Basic, assumptions: Any) -> Basic | None:
-    a = expr.args[0]
-    if isinstance(a, exp):
-        w = a.args[0]
-        return exp(re(w))*cos(im(w))
-    if isinstance(a, log):
-        return log(Abs(a.args[0]))
-    if isinstance(a, Add):
-        return Add(*[re(t) for t in a.args])
-    if isinstance(a, Mul):
-        real, rest = _real_factors(a, assumptions)
-        if real and rest:
-            return Mul(*real)*re(Mul(*rest))
-    return None
-
-
-def refine_re(expr: Basic, assumptions: Any) -> Basic | None:
-    out = simple_re(expr, assumptions)
-    if out is not None or isinstance(expr.args[0], Pow):   # the vendored handler recurses on a power
-        return out
-    return _upstream.refine_re(expr, assumptions)
-
-
-def simple_im(expr: Basic, assumptions: Any) -> Basic | None:
-    a = expr.args[0]
-    if isinstance(a, exp):
-        w = a.args[0]
-        return exp(re(w))*sin(im(w))
-    if isinstance(a, log):
-        return arg(a.args[0])
-    if isinstance(a, Add):
-        return Add(*[im(t) for t in a.args])
-    if isinstance(a, Mul):
-        real, rest = _real_factors(a, assumptions)
-        if real and rest:
-            return Mul(*real)*im(Mul(*rest))
-    return None
-
-
-def refine_im(expr: Basic, assumptions: Any) -> Basic | None:
-    out = simple_im(expr, assumptions)
-    if out is not None or isinstance(expr.args[0], Pow):   # the vendored handler recurses on a power
-        return out
-    return _upstream.refine_im(expr, assumptions)
-
-
-def simple_arg(expr: Basic, assumptions: Any) -> Basic | None:
-    a = expr.args[0]
-    if _upstream.ask(Q.positive(-I*a), assumptions):
-        return pi/2
-    if _upstream.ask(Q.negative(-I*a), assumptions):
-        return -pi/2
-    return None
-
-
-def refine_arg(expr: Basic, assumptions: Any) -> Basic | None:
-    out = simple_arg(expr, assumptions)
-    return out if out is not None else _upstream.refine_arg(expr, assumptions)
-
-
-def simple_abs(expr: Basic, assumptions: Any) -> Basic | None:
-    a = expr.args[0]
-    if isinstance(a, exp):
-        return exp(re(a.args[0]))
-    return None
-
-
-def refine_abs(expr: Basic, assumptions: Any) -> Basic | None:
-    out = simple_abs(expr, assumptions)
-    return out if out is not None else _upstream.refine_abs(expr, assumptions)
-
-
 def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     from ._dispatch import refine
     pairs = []
@@ -346,12 +266,10 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     return Piecewise(*pairs)
 
 
-SIMPLE_RULES = {"re": refine_re, "im": refine_im, "arg": refine_arg, "Abs": refine_abs,
-                "floor": refine_floor, "ceiling": refine_floor, "Piecewise": refine_piecewise}
+SIMPLE_RULES = {"floor": refine_floor, "ceiling": refine_floor, "Piecewise": refine_piecewise}
 """Handlers for keys no family module registers: the simple rule, then the vendored handler."""
 
-FALLBACK_RULES = {"re": simple_re, "im": simple_im, "arg": simple_arg, "Abs": simple_abs,
-                  "floor": simple_floor, "ceiling": simple_floor, "Piecewise": refine_piecewise}
+FALLBACK_RULES = {"floor": simple_floor, "ceiling": simple_floor, "Piecewise": refine_piecewise}
 """The simple rules alone: tried by the dispatcher after a family's own table
 declines, never the vendored handler (a family's refusals must stand)."""
 
