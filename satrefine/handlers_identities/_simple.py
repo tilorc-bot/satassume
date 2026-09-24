@@ -36,9 +36,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from functools import lru_cache
 from typing import Iterator
 
-from sympy import And, Dummy, Piecewise, Q, S, acos, acot, arg, asin, atan, ceiling, floor, im, pi, re
+from sympy import And, Dummy, Piecewise, Q, S, acos, acot, arg, asin, atan, ceiling, expand_mul, floor, im, pi, re
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
 from sympy.logic.boolalg import Boolean
@@ -96,13 +97,14 @@ _RELATIONS = (Q.ge, Q.gt, Q.le, Q.lt)
 _SIGNS = (Q.positive, Q.nonnegative, Q.negative, Q.nonpositive)
 
 
+@lru_cache(maxsize=4096)
 def _affine(d: Any, u: Any) -> tuple | None:
     """``(a, c)`` with ``d == a*u + c`` for real numbers ``a != 0`` and ``c``, else ``None``."""
     t = Dummy("t")
     e = d.xreplace({u: t})
     if not e.has(t):
         return None
-    e = e.expand()
+    e = expand_mul(e)
     a = e.coeff(t)
     c = (e - a*t).expand()
     if a == 0 or c.has(t) or not (a.is_number and c.is_number and a.is_extended_real and c.is_extended_real):

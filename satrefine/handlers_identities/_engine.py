@@ -57,9 +57,10 @@ anything else
     and constants must be equal.  Bindings to ``0`` or ``1`` are legal.
 
 Conditions are decided connective by connective (:func:`provable`): an
-``And`` needs every part provable, an ``Or`` one, atoms are asked one at a
-time through ``_upstream.ask`` and an ``ask`` that raises ``ValueError``
-counts as not provable.  A sign or realness atom ``ask`` leaves open is
+``And`` needs every part provable and stops at the first that is not, an
+``Or`` one, atoms are asked one at a time through ``_upstream.ask``
+(relations last: they are the expensive ones) and an ``ask`` that raises
+``ValueError`` counts as not provable.  A sign or realness atom ``ask`` leaves open is
 decided from the bounds the assumptions state on its argument
 (``Q.real(t)`` and ``Q.nonpositive(t)`` under ``Q.ge(t, -pi) & Q.le(t,
 0)``; see :func:`._simple.stated_bounds`): a stated bound carries
@@ -109,11 +110,19 @@ def provable(cond: Any, assumptions: Any) -> bool | None:
     if cond is S.false or cond is False:
         return False
     if isinstance(cond, And):
-        parts = [provable(c, assumptions) for c in cond.args]
-        return True if all(p is True for p in parts) else (False if any(p is False for p in parts) else None)
+        for c in sorted(cond.args, key=_ask_cost):     # relations last, and only if the rest holds
+            p = provable(c, assumptions)
+            if p is not True:
+                return p                                 # False, or undecided: not provable either way
+        return True
     if isinstance(cond, Or):
-        parts = [provable(c, assumptions) for c in cond.args]
-        return True if any(p is True for p in parts) else (False if all(p is False for p in parts) else None)
+        undecided = False
+        for c in sorted(cond.args, key=_ask_cost):
+            p = provable(c, assumptions)
+            if p is True:
+                return True
+            undecided |= p is None
+        return None if undecided else False
     if isinstance(cond, Not):
         inner = provable(cond.args[0], assumptions)
         return None if inner is None else not inner
@@ -128,6 +137,12 @@ def provable(cond: Any, assumptions: Any) -> bool | None:
 
 
 _BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero)
+
+
+def _ask_cost(cond: Any) -> int:
+    """Relations (``Q.lt`` and friends) go through SymPy's SAT search over the whole
+    expression and are asked last."""
+    return 1 if isinstance(cond, AppliedPredicate) and cond.function in (Q.ge, Q.gt, Q.le, Q.lt) else 0
 
 
 def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
@@ -161,7 +176,7 @@ class _Part(Symbol):
     __slots__ = ("predicate",)
 
     def __new__(cls, name: str, predicate: Callable[[Any], Any]):
-        obj = Symbol.__new__(cls, name)
+        obj = Symbol.__xnew__(cls, name)   # uncached: two families may both use the name 'c'
         obj.predicate = predicate
         return obj
 
@@ -478,7 +493,10 @@ def default_measure(heads: Iterable[type]) -> Measure:
                 structure += len(a.args)
             elif not a.is_Atom:
                 structure += 1
-        bad = sum(_upstream.ask(Q.positive(n.args[0]), assumptions) is not True for n in nodes if n.args)
+        # positivity is asked for atom-like arguments only (log(x) versus log(-x));
+        # a structured argument counts as bad without a question, structure decides
+        bad = sum(not (a.is_Atom or _is_negation(a)) or _upstream.ask(Q.positive(a), assumptions) is not True
+                  for a in (n.args[0] for n in nodes if n.args))
         return (structure, bad, count_ops(e))
     return measure
 
@@ -504,6 +522,11 @@ def _distributed(cand: Any) -> Any:
     return flat if count_ops(flat) < count_ops(cand) else cand
 
 
+_splitting: list[bool] = [False]
+"""Whether a case split is exploring its branches (nested splits are not tried:
+a branch's bookkeeping must collapse by itself, which keeps the cost linear)."""
+
+
 def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                      opaque: tuple = (floor, im, arg)) -> Callable[[Any, Any], Any]:
     """A handler from identity rows ``(lhs, rhs, domain)``.
@@ -516,7 +539,6 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     rows = list(rows)
     static_heads = _heads_of(rows)
     busy = [False]
-    splitting = [False]
 
     def handler(expr: Any, assumptions: Any) -> Any:
         if busy[0] or _dispatch.identities_off[0]:
@@ -537,12 +559,13 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                     merged = endpoint_split(expr, cand, assumptions)
                     if merged is not None:
                         cand = merged
-                if cand.has(*opaque) and not splitting[0]:
-                    splitting[0] = True
-                    try:
+                if cand.has(*opaque) and not _splitting[0] and _dispatch.splits_left[0] > 0:
+                    _dispatch.splits_left[0] -= 1
+                    _splitting[0] = True        # no split inside a split's exploration: the
+                    try:                        # branches must collapse by themselves
                         merged = case_split(expr, cand, assumptions, opaque)
                     finally:
-                        splitting[0] = False
+                        _splitting[0] = False
                     if merged is not None:
                         cand = merged
                 if cand.has(*opaque):
@@ -616,13 +639,19 @@ def _same(a: Any, b: Any) -> bool:
     return (a - b).expand() == 0
 
 
+def _explore(e: Any, assumptions: Any) -> Any:
+    """An exploratory refinement (a branch of a split), under its own firing cap."""
+    with _dispatch.exploring():
+        return refine(e, assumptions)
+
+
 def _agree_at(expr: Any, cand: Any, point: dict, assumptions: Any) -> bool:
     """Whether ``expr`` and ``cand`` agree at ``point``, by evaluation, refinement, or simplification."""
     left, right = expr.xreplace(point), cand.xreplace(point)
     if _same(left, right):
         return True
     try:
-        left, right = refine(left, assumptions), refine(right, assumptions)
+        left, right = _explore(left, assumptions), _explore(right, assumptions)
     except ValueError:
         return False
     if _same(left, right):
@@ -669,29 +698,38 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
             continue
         cases, zero_excluded = split
         branches = [br for br, _ in cases]
-        # stage one: only the bookkeeping nodes, which may be constant across the cases
-        values: dict | None = {}
-        for node in cand.atoms(*opaque):
+        # stage one: the bookkeeping nodes alone.  A node's refinement is context-free,
+        # so one that does not collapse in some case decides the split (no stage two);
+        # nodes constant across the cases are substituted, differing ones need stage two
+        values: dict = {}
+        collapsed = consistent = True
+        for node in sorted(cand.atoms(*opaque), key=count_ops):
             vals = []
             for br in branches:
                 try:
-                    vals.append(refine(node, And(assumptions, br)))
+                    vals.append(_explore(node, And(assumptions, br)))
                 except ValueError:
                     vals = None
                     break
-            if vals is None or any(v.has(*opaque) for v in vals) or any(v != vals[0] for v in vals):
-                values = None
+            if vals is None or any(v.has(*opaque) for v in vals):
+                collapsed = False
                 break
-            values[node] = vals[0]
-        if values:
-            E = refine(cand.xreplace(values), assumptions)
+            if any(v != vals[0] for v in vals):
+                consistent = False
+            else:
+                values[node] = vals[0]
+        if not collapsed:
+            continue
+        if consistent:
+            E = _explore(cand.xreplace(values), assumptions)
             if not E.has(*opaque) and (zero_excluded or _agree_at(expr, E, {s: S.Zero}, assumptions)):
                 return E
+            continue
         # stage two: the whole candidate, generalized by Abs
         results = []
         for br in branches:
             try:
-                r = refine(cand, And(assumptions, br))
+                r = _explore(cand, And(assumptions, br))
             except ValueError:
                 results = None
                 break
@@ -704,7 +742,7 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
         guesses = [results[0]] if all(_same(r, results[0]) for r in results) else []
         guesses += [r.xreplace({rep: Abs(s)}) for (_, rep), r in zip(cases, results)]
         for E in guesses:
-            if not all(_same(refine(E, And(assumptions, br)), r) for br, r in zip(branches, results)):
+            if not all(_same(_explore(E, And(assumptions, br)), r) for br, r in zip(branches, results)):
                 continue
             if not zero_excluded and not _agree_at(expr, E, {s: S.Zero}, assumptions):
                 continue
@@ -725,7 +763,7 @@ def endpoint_split(expr: Any, cand: Any, assumptions: Any) -> Any | None:
         value, u, endpoint, alternative = info
         interior, boundary = cand.xreplace({node: value}), cand.xreplace({node: alternative})
         if _agree_at(interior, boundary, {u: endpoint}, assumptions):
-            merged = refine(interior, assumptions)
+            merged = _explore(interior, assumptions)
             if merged.has(floor):
                 again = endpoint_split(expr, merged, assumptions)
                 return merged if again is None else again
