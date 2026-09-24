@@ -29,6 +29,9 @@ Gate 3 has no inputs: the fuzz grammar generates no matrix expressions, and
 the battery's numeric check skips matrix symbols, so no gate checks matrix
 rows numerically.
 
+Test counts from the first run at `2fb1ff7` (tests run for every row);
+the run at `29dfcf1` gives the same verdict for every row.
+
 | row | kept by (battery cases / tests) |
 |---|---|
 | 0 `Z.T -> 0` | 1 / 1 |
@@ -68,3 +71,46 @@ Row 22 is droppable only because nothing tests it: it mirrors row 21
 (`X*Adjoint(X)` for a real orthogonal `X`, where row 24's guard refuses),
 and removing it loses that rewrite. It points to a missing test, not a
 redundant row.
+
+## integer_funcs (23 rows)
+
+Baseline: battery same 67, quiet 31; tests 131 passed; gate 3: 38 inputs
+touch the family, 4 fire, none unsound.
+
+| row | kept by (battery cases / tests) |
+|---|---|
+| 0 `F(x) -> x` (floor, ceiling) | 6 / 4 |
+| 1 `floor(n + x)` | 4 / 2 |
+| 2 `floor(floor(y) + x)` | 2 / 1 |
+| 3 `floor(ceiling(y) + x)` | 0 / 1 |
+| **4 `floor(x) -> 0`, 0 <= x < 1** | **0 / 0: droppable, gate 3 clean** |
+| 5 `ceiling(n + x)` | 2 / 1 |
+| 6 `ceiling(floor(y) + x)` | 0 / 1 |
+| 7 `ceiling(ceiling(y) + x)` | 0 / 1 |
+| **8 `ceiling(x) -> 0`, -1 < x <= 0** | **0 / 0: droppable, gate 3 clean** |
+| 9 `frac(x) -> 0` | 2 / 1 |
+| 10 `frac(n + x)` | 2 / 1 |
+| 11 `frac(floor(y) + x)` | 0 / 1 |
+| 12 `frac(ceiling(y) + x)` | 2 / 1 |
+| 13 `frac(x) -> x` | 2 / 1 |
+| 14 `Mod -> 0` multiple | 8 / 5 |
+| 15 `Mod -> b/2` | 2 / 3 |
+| 16 `Mod(c + x, b)` | 4 / 2 |
+| 17 `Mod -> a` in the period | 4 / 2 |
+| 18 `Mod -> Rem` same signs | 2 / 2 |
+| 19 `Rem -> 0` multiple | 7 / 3 |
+| 20 `Rem -> b/2` | 2 / 2 |
+| 21 `Rem -> -b/2` | 2 / 2 |
+| 22 `Rem -> a` | 8 / 6 |
+
+(The test counts come from the first run at `2fb1ff7`, which ran the tests
+for every row; the run at `29dfcf1` stops at the battery when it already
+keeps the row. The verdicts are the same in both runs except rows 4 and 8.)
+
+Single droppable: rows 4, 8. Largest removable set: {4, 8} (23 -> 21),
+gate 3 clean. At `2fb1ff7` both were needed; since the branch-cut merge
+the dispatcher's fallback for `floor`/`ceiling`, `_simple.floor_of_bounded`
+(interval arithmetic over the stated bounds and sign facts), gives the
+same `0` for every case they served, both spellings of `x < 1` included.
+Row 17 (`Mod -> a`) is not covered by chaining through row 18 (`Mod ->
+Rem`) and row 22: `ask` does not derive `Q.positive(b)` from `0 <= a < b`.
