@@ -182,6 +182,7 @@ cases plus 51 per matrix key, mode B on 326 replayed asserts:
 | SymPy's refine, mode A | 1,258 | 66 | 52 | 39 | 160 | 3 |
 | original, mode B | 174 match + 22 equivalent | | 76 gaps | 0 | | 13 |
 | SymPy's refine, mode B | 80 + 9 | | 194 gaps | 0 | | 0 |
+| single agent, mode A | 3,108 | 842 (all sound) | 58 | 0 | 160 | 3 |
 
 The three wrong rewrites in the original: the two inherited SymPy matrix
 rules (orthogonal determinant to 1, unitary inverse to the elementwise
@@ -201,8 +202,13 @@ The oracle's own weaknesses, from its author: the old system is sometimes
 wrong itself (13 such cases were rejected numerically), "gap" versus
 "equivalent form" is an operation-count judgement, matrices have no
 old-system equivalent and are checked on 2x2 instances, and sample points
-avoid branch cuts only by chance. Runs on `handlers_v2` and `handlers_v3`
-are in progress and will be added here.
+avoid branch cuts only by chance. The single agent's mode A run came back with no wrong rewrite, 412
+coverage gaps against the original's 633, and 3 errors against its 119
+(it guards the relation asks); its 160 timeouts are the inherited
+`re`/`im` recursion it kept. Mode B for that package and both modes for
+`handlers_v3` were not run to completion (the runs were stopped to free
+the machine); the command to produce them is
+`tools/refine_oracle.py --handlers handlers_v3 --mode both`.
 
 ## 7. SymPy defects surfaced along the way
 
