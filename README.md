@@ -106,6 +106,7 @@ only when propagation is inconclusive.
 | `tests/refine_v2/`, `tests/refine_v3/` | their suites; any suite runs against any package |
 | `tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
 | `tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
+| `satrefine/handlers_identities/` | an experiment on one key: `log` written as two identities plus two exponential forms, with the conditional rules generated from them; `tests/refine_identities/`, `tools/refine_specialize.py`; see `agent-reports/2026-09-24-refine-from-identities.md` |
 
 ## satrefine: the refine layer as a yardstick
 
@@ -149,7 +150,17 @@ PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_oracle.py --handlers h
 ```
 
 How they compare, and what to build on, is in
-`agent-reports/2026-09-23-refine-three-implementations.md`. In short: the
+`agent-reports/2026-09-23-refine-three-implementations.md`.
+
+A fourth package, `satrefine/handlers_identities/`, is not a rewrite of the
+56 keys but an experiment on `log` alone: the handler is a table of four
+identities with the branch bookkeeping written out, and the conditional
+rules of the other packages are generated from it by
+`tools/refine_specialize.py` under a catalog of assumption profiles, each
+generated rule checked numerically. Select it with
+`SATREFINE_HANDLERS=handlers_identities`; every other key falls through to
+the vendored handlers. Findings, including a wrong `ask` answer the
+generator surfaced, are in `agent-reports/2026-09-24-refine-from-identities.md`. In short: the
 original inherits three unsound matrix rules from SymPy and leaves relation
 errors unguarded; both rewrites refuse those rules; the parallel team's
 package is the only one with zero known defects after an adversarial pass
