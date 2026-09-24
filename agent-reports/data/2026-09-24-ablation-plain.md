@@ -233,3 +233,15 @@ battery case exercises them.
 Run time per family (single-row pass, gates 1 and 2 plus gate 3 on
 candidates, one worker at a time on a shared machine): matrices 2.5 min,
 integer_funcs 4 min, combinatorial 20 min, minmax_deltas 23 min.
+
+## Applied (d1065df)
+
+integer_funcs A + B + drop 4, 8 (23 -> 17) and matrices C (31 -> 30) are
+committed, with a test for `X*Adjoint(X)` under `Q.orthogonal(X) &
+Q.real_elements(X)`. Measured on the committed modules against the
+29dfcf1 baselines, all three gates: integer_funcs battery same 67, quiet
+31 (unchanged, identical outputs), tests 131 passed, gate 3 38 inputs, 4
+fire, 0 unsound; matrices battery same 50, miss 3, quiet 53 (unchanged,
+identical outputs), tests 150 passed (148 + the new test's two cases), 1
+xfailed. A fresh matrices ablation finds no droppable row: the real-unitary
+`A*Adjoint(A)` row (now row 21) is kept by the new test.
