@@ -13,7 +13,16 @@ changes, and it replaces ``satrefine.refine`` whenever the
   two rules that undo each other loop forever in the vendored driver.  Here
   every top-level call counts handler firings and raises
   :class:`RefineLoopError` past :data:`MAX_FIRINGS`, so a bad ordering fails
-  loudly in tests instead of hanging.
+  loudly in tests instead of hanging;
+* **a result cache.**  One top-level call refines the same node under the
+  same assumptions many times (every pass of the fixed point re-refines the
+  children of a result, every branch of a ``Piecewise`` or of a case split
+  redoes the work below it).  Completed results are remembered for the
+  call, keyed on the node, the assumptions, the mode and the engine state
+  (:data:`state`: which identity handlers are switched off, whether a split
+  is exploring), so a result is what recomputing it would give and repeated
+  work neither costs time nor counts against the cap.  A node being refined
+  is not in the cache yet, so a real loop still reaches the cap.
 
 ``_upstream.refine`` itself is untouched (it must stay behavior-identical
 to SymPy's); handlers written for the vendored driver keep working here.
@@ -58,6 +67,10 @@ fallback_handlers: dict = {}
 """The simple rules (:mod:`._simple`), by key: tried after the key's handler
 declines, so a family table that registers ``floor`` or ``im`` keeps them
 without chaining explicitly."""
+
+own_args: set = set()
+"""Keys whose handler refines the node's arguments itself (``Piecewise``: each
+branch under its condition); the dispatcher does not refine them first."""
 
 MODE_ENV_VAR = "SATREFINE_IDENTITIES"
 
@@ -104,6 +117,13 @@ class RefineLoopError(RecursionError):
 
 _firings: list[int] = []   # a stack entry per active top-level call
 
+_results: list[dict] = []  # the result cache of the active top-level call
+
+state: list = []
+"""Engine state a result depends on besides the node and the assumptions (a
+stack of hashable tokens: the identity handlers switched off while their
+candidate is evaluated, a case split exploring); part of the cache key."""
+
 
 def _memoized(ask: Any) -> Any:
     """``ask`` with its answers remembered: one top-level call asks the same
@@ -133,6 +153,7 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
     top = not _firings
     if top:
         _firings.append(0)
+        _results.append({})
         splits_left[0] = MAX_SPLITS
         saved_ask = _upstream.ask
         _upstream.ask = _memoized(saved_ask)
@@ -141,13 +162,28 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
     finally:
         if top:
             _firings.pop()
+            _results.pop()
             _upstream.ask = saved_ask
 
 
 def _refine(expr: Any, assumptions: Any) -> Any:
     if not isinstance(expr, Basic):
         return expr
-    if not expr.is_Atom:
+    key = (expr, assumptions, mode(), tuple(state))
+    cache = _results[-1] if _results else {}
+    try:
+        return cache[key]
+    except KeyError:
+        pass
+    except TypeError:                            # unhashable assumptions
+        return _refine_node(expr, assumptions)
+    out = cache[key] = _refine_node(expr, assumptions)
+    return out
+
+
+def _refine_node(expr: Any, assumptions: Any) -> Any:
+    name = expr.__class__.__name__
+    if not expr.is_Atom and name not in own_args:
         args = [_refine(a, assumptions) for a in expr.args]
         new = expr.func(*args)
         if new.is_Atom or new.func is not expr.func or new.args != tuple(args):
@@ -157,7 +193,6 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         ref = expr._eval_refine(assumptions)
         if ref is not None:
             return ref
-    name = expr.__class__.__name__
     handler = _upstream.handlers_dict.get(name)
     generated = generated_handlers.get(name) if mode() == "generated" else None
     new = generated(expr, assumptions) if generated is not None else None

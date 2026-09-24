@@ -76,15 +76,17 @@ these handlers run under is :mod:`._dispatch`.
 from __future__ import annotations
 
 import itertools
+from contextlib import contextmanager
 from typing import Any, Callable, Iterable, Iterator
 
-from sympy import (Abs, And, Dummy, I, Not, Or, Q, S, Symbol, arg, ceiling, count_ops, exp, expand_mul, floor, im,
+from sympy import (Abs, And, Dummy, I, Not, Or, Piecewise, Q, S, Symbol, arg, ceiling, count_ops, exp, expand_mul, floor, im,
                    log, nan, simplify, zoo)
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Add, Basic, Expr, Mul, Pow
 from sympy.core.sympify import sympify
 from sympy.core.function import AppliedUndef, UndefinedFunction
 from sympy.core.operations import LatticeOp
+from sympy.core.relational import Relational
 from sympy.matrices.expressions import HadamardProduct, MatAdd, MatMul, MatrixExpr, MatrixSymbol
 
 from .. import _upstream
@@ -97,7 +99,7 @@ Row = tuple[Basic, Basic, Basic]
 Binding = dict[Any, Any]
 Measure = Callable[[Any, Any], tuple]
 
-__all__ = ["REBUILD", "Row", "bindings", "derive", "identity_handler", "rule_handler", "part",
+__all__ = ["REBUILD", "Row", "bindings", "decide", "derive", "identity_handler", "rule_handler", "part",
            "principal", "provable", "refine", "subst", "default_measure", "handlers_dict"]
 
 
@@ -105,29 +107,52 @@ __all__ = ["REBUILD", "Row", "bindings", "derive", "identity_handler", "rule_han
 # conditions
 # ----------------------------------------------------------------------------
 
-def provable(cond: Any, assumptions: Any) -> bool | None:
-    """Decide ``cond`` connective by connective; ``None`` when undecided."""
+def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
+    """Decide ``cond`` connective by connective; ``None`` when undecided.
+
+    With ``order`` (how :func:`decide` refines ``Piecewise`` conditions), the
+    relation atoms ``Q.ge``, ``Q.gt``, ``Q.le``, ``Q.lt``, ``Q.eq``, ``Q.ne``
+    and SymPy relationals (``x >= y``) are decided by :func:`_order` instead
+    of a bare ``ask``, and an ``And`` with an undecided part is still refuted
+    by a later part."""
     if cond is S.true or cond is True:
         return True
     if cond is S.false or cond is False:
         return False
     if isinstance(cond, And):
+        undecided = False
         for c in sorted(cond.args, key=_ask_cost):     # relations last, and only if the rest holds
-            p = provable(c, assumptions)
-            if p is not True:
-                return p                                 # False, or undecided: not provable either way
-        return True
+            p = provable(c, assumptions, order)
+            if p is False or p is None and not order:
+                return p                                 # undecided: not provable either way
+            undecided |= p is None                       # (a condition goes on looking for a refutation)
+        return None if undecided else True
     if isinstance(cond, Or):
         undecided = False
         for c in sorted(cond.args, key=_ask_cost):
-            p = provable(c, assumptions)
+            p = provable(c, assumptions, order)
             if p is True:
                 return True
             undecided |= p is None
         return None if undecided else False
     if isinstance(cond, Not):
-        inner = provable(cond.args[0], assumptions)
+        inner = provable(cond.args[0], assumptions, order)
         return None if inner is None else not inner
+    if order:
+        relation = _as_relation(cond)
+        if relation is not None:
+            return _order(*relation, assumptions)
+    return _ask_atom(cond, assumptions)
+
+
+def decide(cond: Any, assumptions: Any) -> bool | None:
+    """Decide a condition of a ``Piecewise`` branch: :func:`provable` with
+    relations decided by the order vocabulary (:func:`_order`)."""
+    return provable(cond, assumptions, order=True)
+
+
+def _ask_atom(cond: Any, assumptions: Any) -> bool | None:
+    """One ``ask``; a sign or realness atom it leaves open is tried on the stated bounds."""
     try:
         answer = _upstream.ask(cond, assumptions)
     except (ValueError, TypeError, AssertionError):   # SymPy's relation ask (LRA) raising on consistent facts
@@ -137,6 +162,64 @@ def provable(cond: Any, assumptions: Any) -> bool | None:
         return _from_bounds(cond.function, cond.arguments[0], assumptions)
     return True if answer is True else (False if answer is False else None)
 
+
+# the order vocabulary: proof forms of u <= v, u < v, u = v, u != v for (u, v),
+# from unary facts (signs, an infinite endpoint) and from stated relations
+def _le_by_signs(u: Any, v: Any) -> Any:
+    return ((Q.extended_nonpositive(u) & Q.extended_nonnegative(v))
+            | (Q.infinite(v) & Q.extended_nonnegative(v) & Q.extended_real(u))
+            | (Q.infinite(u) & Q.extended_nonpositive(u) & Q.extended_real(v)))
+
+
+def _lt_by_signs(u: Any, v: Any) -> Any:
+    return ((Q.extended_negative(u) & Q.extended_nonnegative(v))
+            | (Q.extended_nonpositive(u) & Q.extended_positive(v))
+            | (Q.positive_infinite(v) & Q.real(u)) | (Q.negative_infinite(u) & Q.real(v)))
+
+
+ORDER: dict = {   # relation -> (proof from signs, proofs from relations: atoms asked one at a time)
+    'le': (_le_by_signs, lambda u, v: (Q.le(u, v), Q.lt(u, v), Q.eq(u, v))),   # le follows from neither
+    'lt': (_lt_by_signs, lambda u, v: (Q.lt(u, v),)),                          # lt nor eq in SymPy's ask
+    'eq': (lambda u, v: S.false, lambda u, v: (Q.zero(u - v), Q.eq(u, v), Q.eq(v, u))),
+    'ne': (lambda u, v: S.false,
+           lambda u, v: (Q.nonzero(u - v), Q.ne(u, v), Q.ne(v, u), Q.lt(u, v), Q.lt(v, u))),
+}
+_NEGATION = {'le': ('lt', True), 'lt': ('le', True), 'eq': ('ne', False), 'ne': ('eq', False)}
+_RELATION_OF = {Q.le: ('le', False), Q.lt: ('lt', False), Q.ge: ('le', True), Q.gt: ('lt', True),
+                Q.eq: ('eq', False), Q.ne: ('ne', False)}
+
+
+def _as_relation(cond: Any) -> tuple | None:
+    """``(name, u, v)`` with ``name`` a key of :data:`ORDER`, for a relation atom or relational."""
+    if isinstance(cond, AppliedPredicate) and cond.function in _RELATION_OF:
+        (name, flip), (u, v) = _RELATION_OF[cond.function], cond.arguments
+    elif isinstance(cond, Relational) and cond.rel_op in _RELATIONAL_OPS:
+        (name, flip), (u, v) = _RELATIONAL_OPS[cond.rel_op], cond.args
+    else:
+        return None
+    return (name, v, u) if flip else (name, u, v)
+
+
+def _order(name: str, u: Any, v: Any, assumptions: Any) -> bool | None:
+    """Decide the relation ``name`` of ``(u, v)``: ``True`` when one of its proof
+    forms is provable, ``False`` when one of its negation's is."""
+    if _holds(name, u, v, assumptions):
+        return True
+    negation, swap = _NEGATION[name]
+    return False if _holds(negation, *((v, u) if swap else (u, v)), assumptions) else None
+
+
+def _holds(name: str, u: Any, v: Any, assumptions: Any) -> bool:
+    by_signs, by_relations = ORDER[name]
+    if provable(by_signs(u, v), assumptions) is True:
+        return True
+    if provable(Q.infinite(u) | Q.infinite(v), assumptions) is True:
+        return False    # SymPy's relation ask is unsound at infinity: Q.eq(x, y) "True" for x = -oo, y <= 0
+    return any(_ask_atom(atom, assumptions) is True for atom in by_relations(u, v))
+
+
+_RELATIONAL_OPS = {'<=': ('le', False), '<': ('lt', False), '>=': ('le', True), '>': ('lt', True),
+                   '==': ('eq', False), '!=': ('ne', False)}
 
 _BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero,
                   Q.integer)
@@ -541,14 +624,30 @@ _splitting: list[bool] = [False]
 a branch's bookkeeping must collapse by itself, which keeps the cost linear)."""
 
 
+@contextmanager
+def _switched_off(flag: list) -> Iterator[None]:
+    """Set ``flag[0]`` inside the block and record it in the dispatcher's
+    :data:`._dispatch.state` (results refined inside differ, so they are cached apart)."""
+    flag[0] = True
+    _dispatch.state.append(id(flag))
+    try:
+        yield
+    finally:
+        _dispatch.state.pop()
+        flag[0] = False
+
+
 def identity_handler(rows: list[Row], *, measure: Measure | None = None,
-                     opaque: tuple = (floor, im, arg)) -> Callable[[Any, Any], Any]:
+                     opaque: tuple = (floor, im, arg), splits: bool = True) -> Callable[[Any, Any], Any]:
     """A handler from identity rows ``(lhs, rhs, domain)``.
 
     For each row and binding: the domain must be provable; the substituted
     right side is refined with this handler switched off (its own nodes are
     rewritten by the dispatcher after acceptance, under the same ordering);
-    no ``opaque`` head may survive; and ``measure`` must strictly decrease.
+    no ``Piecewise`` the input did not have may survive (a definition whose
+    conditions the assumptions leave open is not a rewrite; no split is tried
+    on it); no ``opaque`` head may survive, after a case split when
+    ``splits``; and ``measure`` must strictly decrease.
     """
     rows = [tuple(sympify(t) for t in row) for row in rows]   # a generated 0 or True is a Python object
     static_heads = _heads_of(rows)
@@ -563,23 +662,23 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
             for b in bindings(lhs, expr, assumptions):
                 if provable(subst(domain, b), assumptions) is not True:
                     continue
-                busy[0] = True
                 try:
-                    cand = refine(subst(rhs, b, rebuild=True), assumptions)
-                finally:
-                    busy[0] = False
+                    cand = subst(rhs, b, rebuild=True)
+                except NotImplementedError:   # SymPy's Piecewise rewrites a condition holding a
+                    continue                  # Piecewise to ITE and needs a (x, True) branch for it
+                with _switched_off(busy):
+                    cand = refine(cand, assumptions)
                 cand = _distributed(cand)
+                if cand.has(Piecewise) and not set(cand.atoms(Piecewise)) <= set(expr.atoms(Piecewise)):
+                    continue
                 if cand.has(floor):
                     merged = endpoint_split(expr, cand, assumptions)
                     if merged is not None:
                         cand = merged
-                if cand.has(*opaque) and not _splitting[0] and _dispatch.splits_left[0] > 0:
+                if splits and cand.has(*opaque) and not _splitting[0] and _dispatch.splits_left[0] > 0:
                     _dispatch.splits_left[0] -= 1
-                    _splitting[0] = True        # no split inside a split's exploration: the
-                    try:                        # branches must collapse by themselves
-                        merged = case_split(expr, cand, assumptions, opaque)
-                    finally:
-                        _splitting[0] = False
+                    with _switched_off(_splitting):   # no split inside a split's exploration: the
+                        merged = case_split(expr, cand, assumptions, opaque)   # branches must collapse by themselves
                     if merged is not None:
                         cand = merged
                 if cand.has(*opaque):
