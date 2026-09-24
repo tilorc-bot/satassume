@@ -26,8 +26,10 @@ Minimizations against v3:
 * ``M1`` covers ``M2``'s even case (``a/2`` is an integer for even ``a``) and
   ``Mod(x, 1)``; ``Q1`` likewise for ``Rem``.
 * ``M2``'s odd case is generalized to ``Mod(a, b) = b/2`` whenever ``2*a/b``
-  is odd, exactly true for every nonzero ``b`` (``a/b = m + 1/2`` so
+  is odd, exactly true for every real nonzero ``b`` (``a/b = m + 1/2`` so
   ``floor(a/b) = m``); it gives ``Mod(2*n + 1, 2) -> 1`` without ``M3``.
+  ``b`` must be real: SymPy's ``Mod`` of non-real arguments does not follow
+  ``a - b*floor(a/b)``.
   ``Q2`` becomes the two rows ``+-b/2`` by the sign of ``a/b``.
 * Relations ``x < c`` are asked in both spellings, ``Q.lt`` and the unary
   ``Q.positive(c - x)``, as v3's ``_holds_lt`` does.
@@ -36,6 +38,20 @@ Not expressible as rows: none of the stated rules.  The "Gaussian integer"
 terms of ``F3``/``R2`` (``floor(y)``, ``ceiling(y)`` of a finite ``y``) need
 their own rows because ``ask`` cannot show ``Q.integer(floor(y))`` from
 ``Q.finite(y)``; that is a prover gap, and those six rows go away with it.
+Checked (adversarial pass, 2026-09-24): every row at 0, +-1, integer and
+half-integer boundaries, +-oo, non-real points (``I``, ``2*I``, ``3*I/2``,
+``1 + I``), relation bounds against an infinite divisor, old-style symbols,
+plus ``tools/refine_differential.py`` seeds 2, 3, 7 (1,500 cases each).
+Found: the generalized ``M2`` fired for a non-real divisor
+(``Mod(I*n, 2*I)`` under ``Q.odd(n)`` gave ``I``; ``Mod(-3*I, 2*I) = -I``);
+it now needs ``Q.nonzero(b)``.  Not defects: ``Mod``/``Rem -> a`` under
+``Q.lt(a, b)`` at ``b = oo`` (SymPy's ask calls ``Q.lt(a, b) &
+Q.infinite(b)`` inconsistent: relations are over the reals); ``frac`` rows
+at ``oo`` (both sides ``AccumBounds(0, 1)``).  Unverified: the ``Rem`` rows
+for non-real arguments (SymPy leaves ``Rem`` of non-real numbers
+unevaluated, so there is no value to compare; the rows follow
+``a - b*trunc(a/b)``).  Unsound fuzz results through ``floor``/``Mod`` came
+from the vendored ``Pow`` handler (``needs/test_checker_pow_root_of_power.py``).
 """
 from __future__ import annotations
 
@@ -93,8 +109,10 @@ FRAC = [
 MOD = [
     # M1 (and M2 even): Mod(a, b) = 0 when a is an integer multiple of a nonzero b.
     (Mod(a, b), S.Zero, Q.nonzero(b) & Q.integer(a/b)),
-    # M2 odd, generalized: a/b = m + 1/2 gives Mod(a, b) = b/2; exact for every b != 0.
-    (Mod(a, b), b/2, Q.odd(2*a/b)),
+    # M2 odd, generalized: a/b = m + 1/2 gives Mod(a, b) = b/2; exact for every real
+    # b != 0.  Not for non-real b: SymPy's Mod of non-real arguments is not
+    # a - b*floor(a/b) (Mod(3*I, 2*I) = 3*I, Mod(-3*I, 2*I) = -I).
+    (Mod(a, b), b/2, Q.nonzero(b) & Q.odd(2*a/b)),
     # M3: terms that are integer multiples of b drop out: Mod(c + x, b) = Mod(x, b).
     (Mod(c + x, b), Mod(x, b), Q.nonzero(b) & Q.integer(c/b)),
     # M4: Mod(a, b) = a inside the period, 0 <= a < b or b < a <= 0.

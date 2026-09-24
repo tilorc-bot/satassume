@@ -56,6 +56,20 @@ Not expressible as rows:
   (the vendored rule v3 delegates to): the order is a property of the
   printed form, not a hypothesis; the row orients by ``Q.gt(i, j)``, which
   decides numeric indices and leaves symbolic ones.
+Checked (adversarial pass, 2026-09-24): 0x0, 1x1, 2x2, 3x3 and symbolic
+shapes; ``det`` of a 0x0 zero matrix (refused); non-square, negated, scaled,
+summed and longer-palindrome ``Transpose`` arguments (refused); ``Inverse``
+of ``-X``, ``2*X``, ``X**2``, ``X.T``, ``Adjoint(X)`` and of products
+under orthogonal/unitary/real facts (the orthogonal rows first, the
+``unless`` guards hold); runs inside longer ``MatMul`` with scalars;
+duplicate atoms in ``MatAdd``/``HadamardProduct`` (the rest drops every
+copy of the atom, harmless for the zero rows: the copies are zero too);
+``MatrixElement`` with negative indices that wrap onto the diagonal
+(``X1[0, -1]``, ``X3[0, -3]`` refused; the symmetric swap is valid under
+wrapping); plus ``tools/refine_differential.py`` seeds 2, 3, 7.  Found
+nothing wrong for matrices over C.  Outside that domain: an infinite scalar
+factor (``c*w*X`` under ``Q.zero(c) & Q.infinite(w)`` gives the zero
+matrix, as in v3, since ``ask`` proves ``Q.zero(c*w)``).
 """
 from __future__ import annotations
 

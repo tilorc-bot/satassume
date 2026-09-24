@@ -37,6 +37,18 @@ Minimizations against v3:
 
 Not expressible as rows: v3's query budget and caching (one ``ask`` per
 argument and per ordered pair) are procedure, not rules; the rows ask more.
+Checked (adversarial pass, 2026-09-24): ``Max``/``Min`` of two and three
+arguments with ``+-oo`` known or merely possible, extended signs, relation
+chains and equalities, compound infinite arguments (``x - 1``, ``2*x``,
+``x*z``, ``x + z`` with ``x = -oo``) against both rows and the ``unless``
+guard; ``DiracDelta`` off the origin with real, extended-real and non-real
+arguments and scaled derivatives; ``KroneckerDelta`` with ranges, infinite
+and imaginary indices; ``Heaviside`` at 0 and ``+-oo`` with and without
+``H0``; plus ``tools/refine_differential.py`` seeds 2, 3, 7.  Found
+nothing: SymPy's wrong ``Q.eq(y, x)`` for ``x = -oo`` is only reached with
+a bare symbol (compound ``-oo`` arguments give ``None``), where the guard
+holds.  ``DiracDelta(0)`` is not compared (a distribution has no value
+there).
 """
 from __future__ import annotations
 
