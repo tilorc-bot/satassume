@@ -5,7 +5,7 @@ import pytest
 from sympy import I, Q, log, pi, symbols
 
 from satrefine.handlers_identities._specialize import compile_table, specialize_table, verify
-from satrefine.handlers_identities.log import IDENTITIES
+from satrefine.handlers_identities.power_exp_log import IDENTITIES
 
 z, b, e, p, r, x = symbols('z b e p r x')
 
@@ -13,7 +13,7 @@ EXPECTED = {   # rules the generator must produce and verify
     (log(exp_ := __import__("sympy").exp(z)), z, Q.real(z)),
     (log(b**e), e*log(b), Q.positive(b) & Q.real(e)),
     (log(b**e), e*log(-b), Q.negative(b) & Q.even(e)),
-    (log(p*r), log(p) + log(r), Q.positive(p) & Q.positive(r)),
+    (log(p*r), log(p) + log(r), Q.positive(r)),   # a positive factor splits off any other
     (log(p*r), log(-p) + log(-r), Q.negative(p) & Q.negative(r)),
     (log(x), log(-x) + I*pi, Q.negative(x)),
 }

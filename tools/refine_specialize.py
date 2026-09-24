@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import satrefine  # noqa: E402,F401  (loads the identity package)
 from satrefine.handlers_identities._specialize import specialize_table, verify  # noqa: E402
-from satrefine.handlers_identities.log import IDENTITIES  # noqa: E402
+from satrefine.handlers_identities.power_exp_log import IDENTITIES  # noqa: E402
 
 
 def main() -> None:

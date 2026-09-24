@@ -76,7 +76,9 @@ def sample_point(hyp: Any, symbols_needed: Iterable) -> dict | None:
     for ap in And.make_args(hyp):
         if isinstance(ap, AppliedPredicate) and ap.function in SAMPLE and ap.arguments[0].is_Symbol:
             point[ap.arguments[0]] = SAMPLE[ap.function]
-    return point if set(point) >= set(symbols_needed) else None
+    for s in symbols_needed:                     # a variable without a hypothesis: any complex value
+        point.setdefault(s, SAMPLE[Q.complex])
+    return point
 
 
 def verify(lhs: Any, rhs: Any, hyp: Any) -> bool | None:
