@@ -24,6 +24,11 @@ Not covered: nothing v3 states.  ``f(k*pi*I)`` auto-evaluates to a
 trigonometric function in SymPy, so the exact-point rules of v3 are the
 trigonometric family's rows here (``sinh(I*pi*k)`` is ``I*sin(pi*k)``,
 which gives ``0`` rather than v3's unrefined form).
+Checked (adversarial pass, 2026-09-24): every row with ``m`` even, odd and
+of known residue mod 4, at the poles (``coth``, ``csch`` at ``m*pi*I``,
+``tanh``, ``sech`` at odd multiples of ``pi*I/2``), real multiples of
+``pi`` (must not bind), sums of shifts, and ``tools/refine_differential.py``.
+Found nothing.
 """
 from __future__ import annotations
 

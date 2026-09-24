@@ -24,6 +24,12 @@ periodicity rows are the shorter statement.
 Not covered: ``sinc`` shifted by a nonzero remainder (no simpler form),
 ``AccumBounds`` for tan/cot/sec/csc at infinity, and imaginary shifts
 (hyperbolic family).
+Checked (adversarial pass, 2026-09-24): every periodicity row with even,
+odd, zero and symbolic coefficients of ``pi/2``, at odd multiples of
+``pi/2`` (the poles of tan, sec; ``(-1)**k*zoo`` becomes ``zoo``), sums of
+several ``pi`` terms, ``sinc`` at multiples, ``sin``/``cos`` at real
+infinities (``AccumBounds``), about 700 random cases, and
+``tools/refine_differential.py``.  Found nothing.
 """
 from __future__ import annotations
 

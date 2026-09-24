@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from sympy import (Abs, I, Q, S, acos, acosh, acot, acoth, acsch, asech, asin, asinh, atan, atan2, atanh, cos,
+from sympy import (Abs, I, Q, im, S, acos, acosh, acot, acoth, acsch, asech, asin, asinh, atan, atan2, atanh, cos,
                    cosh, cot, coth, csch, nan, pi, sech, sign, sin, sinh, symbols, tan, tanh)
 
 from _rows import check_relation, check_valid, ids
@@ -53,7 +53,20 @@ ROWS = [
     (acoth(coth(x)), Q.real(x), None, "neither"), (acsch(csch(x)), Q.nonnegative(x), None, "neither"),
     (acosh(cosh(x)) + asinh(sinh(x)), Q.positive(x), 2*x, "same"),
     (acosh(cosh(acosh(cosh(x)))), Q.real(x), Abs(x), "same"),
+    # checker: on the lines im z = (k + 1/2)*pi the hyperbolic facts fail for one sign of re z
+    # (atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2, asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2)
+    (atanh(tanh(x + I*y)), Q.real(x) & Q.ge(y, -pi/2) & Q.lt(y, pi/2), None, "neither"),
+    (asinh(sinh(x + I*y)), Q.real(x) & Q.ge(y, -pi/2) & Q.lt(y, pi/2), None, "neither"),
+    (atanh(tanh(t)), Q.ge(im(t), -pi/2) & Q.lt(im(t), pi/2), None, "neither"),
+    (atanh(tanh(t)), Q.gt(im(t), -pi/2) & Q.lt(im(t), pi/2), t, "extra: exact off the lines"),
 ]
+
+
+@pytest.mark.parametrize("z, value", [(-1 - I*pi/2, -1 + I*pi/2), (1 - I*pi/2, -1 - I*pi/2)])
+def test_hyperbolic_facts_fail_on_the_cut_lines(z, value):
+    """The counterexamples behind ``_OFF_CUT_LINES``: SymPy's value differs from ``z``."""
+    head = atanh(tanh(z)) if value == -1 + I*pi/2 else asinh(sinh(z))
+    assert (head - value).expand() == 0 or abs(complex(head.evalf()) - complex(value.evalf())) < 1e-12
 
 VALUES = {x: [S(-3), S(-1), -S.Half, S.Zero, S.Half, S.One, S(2), pi, 2*I, -I, 1 + I],
           y: [S(-2), S(-1), S.Zero, S.One, S(3), I]}

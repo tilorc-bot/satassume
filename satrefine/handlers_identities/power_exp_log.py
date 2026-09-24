@@ -66,6 +66,21 @@ part of any row), and ``(x**a)**b`` for an imaginary ``x`` with ``a = 0
 mod 4`` and a symbolic ``b`` in v3's form (the derived
 ``exp(a*b*log(Abs(x)))`` folds only when the fold sees ``a*b`` as the
 exponent, which it does; the ``2 mod 4`` case is the rule above).
+Checked (adversarial pass, 2026-09-24): every rule and generated row by
+hand; ``log``/``Pow``/``exp`` of products, quotients, powers (integer,
+half-integer, symbolic) over 19 profiles per symbol on a grid of real,
+imaginary, complex and infinite points (about 700 random cases), the
+documented extras (``log(2*x)``, ``log(-2*x)``, ``log(pi*x)``,
+``log(x**(3/2))`` for negative ``x``), ``exp(I*t)**s`` and ``log(exp(I*t))``
+under open and closed bounds, and ``tools/refine_differential.py`` (seeds
+2, 3, 7, both modes).  Found no wrong result at a finite point from these
+rows.  At infinity SymPy's arithmetic breaks the facts themselves, as the
+note above says for ``log(1/x)`` (confirmed: ``-log(x)`` under
+``Q.extended_positive(x)``, ``log(1/oo) = zoo``); the same class:
+``log(exp(x)) -> re(x)`` under ``Q.extended_negative(x)`` (``log(exp(-oo))
+= zoo``), ``(1/x)**y -> x**(-y)`` for integer ``y`` at ``x = oo``, and
+``exp(y*log(x)) -> x**y`` at ``x = -oo`` or ``y = +-oo``, and inputs that
+are ``nan`` (``exp(0*log(0))``) become numbers.  Left as documented.
 """
 from __future__ import annotations
 

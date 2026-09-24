@@ -40,6 +40,20 @@ Q.ge(y, 0)``: SymPy's relation ``ask`` would have to be consulted for
 every candidate bound, which v3 does and this table does not), and
 ``acoth(coth(x))`` under ``Q.real(x)`` alone (``coth(0)`` is ``zoo``; v3
 also declines).
+Checked (adversarial pass, 2026-09-24): every fact at exact points on the
+lines ``im z = k*pi/2`` and at real points, every interval row on 11
+intervals x 4 open/closed combinations with the endpoints themselves as
+sample points (multiples of ``pi/4``), one-sided bounds, spans of two
+branches, shifted and scaled arguments, bounds on another symbol, and the
+live and generated tables through ``tools/refine_differential.py`` (seeds
+2, 3, 7).  Found: the four hyperbolic facts were stated with domain
+``true`` (``~Q.zero`` for acoth/acsch) but fail on the lines ``im z = (k +
+1/2)*pi`` for one sign of ``re z`` (SymPy's value on the branch cut:
+``atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2``), reached through bounds on
+``im z`` (``atanh(tanh(x + I*y))`` under ``Q.ge(y, -pi/2) & Q.lt(y, pi/2)``
+gave ``x + I*y``); their domains now exclude the lines
+(``_OFF_CUT_LINES``).  The real-argument facts, the endpoint split and
+the ``atan`` pole exclusions held everywhere tried.
 """
 from __future__ import annotations
 
@@ -66,6 +80,10 @@ def _sawtooth_imag(z):
     return z - I*pi*floor(im(z)/pi + S.Half)
 
 
+_OFF_CUT_LINES = Q.real(z) | ~Q.integer(im(z)/pi + S.Half)
+"""``z`` off the lines ``im z = (k + 1/2)*pi`` (a real ``z`` is, and stated bounds on
+``im z`` that exclude the lines refute the integer)."""
+
 FACTS: list[Row] = [   # (lhs, rhs, domain)
     (asin(sin(t)), reflect_half(t),            Q.real(t)),   # asin undoes sin up to a reflection
     (asin(cos(t)), reflect_half(pi/2 - t),     Q.real(t)),   # cos t = sin(pi/2 - t)
@@ -73,10 +91,13 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
     (acos(sin(t)), reflect_full(pi/2 - t),     Q.real(t)),   # sin t = cos(pi/2 - t)
     (atan(tan(t)), sawtooth(t, pi),            Q.real(t) & ~Q.integer(t/pi + S.Half)),   # atan undoes tan up to a period, off the poles
     (atan(cot(t)), sawtooth(pi/2 - t, pi),     Q.real(t) & ~Q.integer(t/pi)),            # cot t = tan(pi/2 - t), off the poles
-    (asinh(sinh(z)), _reflect_half_imag(z),    true),        # asinh undoes sinh up to an imaginary reflection
-    (atanh(tanh(z)), _sawtooth_imag(z),        true),        # atanh undoes tanh up to an imaginary period
-    (acoth(coth(z)), _sawtooth_imag(z),        ~Q.zero(z)),  # acoth undoes coth likewise (coth(0) is zoo)
-    (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z)),  # acsch undoes csch likewise
+    # The hyperbolic inverses hold off the lines im z = (k + 1/2)*pi, where the forward
+    # function lands on the inverse's branch cut and the result depends on the sign of
+    # re z (asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2, atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2).
+    (asinh(sinh(z)), _reflect_half_imag(z),    _OFF_CUT_LINES),                # asinh undoes sinh up to an imaginary reflection
+    (atanh(tanh(z)), _sawtooth_imag(z),        _OFF_CUT_LINES),                # atanh undoes tanh up to an imaginary period
+    (acoth(coth(z)), _sawtooth_imag(z),        ~Q.zero(z) & _OFF_CUT_LINES),   # acoth undoes coth likewise (coth(0) is zoo)
+    (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z) & _OFF_CUT_LINES),   # acsch undoes csch likewise
     (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
                             (atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
                             (atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
