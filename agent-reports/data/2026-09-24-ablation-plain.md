@@ -145,4 +145,5 @@ Every row is needed by battery cases of its own (the first run, at
 single row is droppable; largest removable set: none (16 rows).
 Row 10 is not covered by row 12 (`rf(x, k)` with `x = 1`): `ask` does not
 derive `Q.positive(x)` from `Q.eq(x, 1)`. Row 13 is not covered by row 15:
-its battery cases have a possibly negative `k`.
+its cases (`ff(x, k)` under `Q.integer(k) & Q.eq(x, k)`) do not make `x`
+provably nonnegative.
