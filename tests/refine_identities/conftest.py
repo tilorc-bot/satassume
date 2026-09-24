@@ -21,3 +21,7 @@ from satrefine.harness import query_scope_recorder  # noqa: E402
 @pytest.fixture(autouse=True)
 def _record_query_scope(request: pytest.FixtureRequest):
     yield from query_scope_recorder()(request)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "slow: regenerates a rule table with the live identity engine (about a minute per family)")

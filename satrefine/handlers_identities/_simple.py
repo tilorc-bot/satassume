@@ -185,7 +185,24 @@ SIMPLE_RULES = {"re": refine_re, "im": refine_im, "arg": refine_arg, "Abs": refi
                 "floor": refine_floor, "ceiling": refine_floor, "Piecewise": refine_piecewise}
 
 
+def refine_Pow_guarded(expr: Basic, assumptions: Any) -> Basic | None:
+    """The vendored ``Pow`` handler with its crash caught (temporary).
+
+    SymPy's ``refine_Pow`` raises ``AttributeError`` on ``(-1)**(n + 1/2)``
+    under a parity assumption (its rebuilt power auto-evaluates to a product
+    it then reads ``.exp`` from), and is unsound on ``sqrt(x**2)`` for an
+    imaginary ``x`` and ``sqrt(x**3)`` for a real one.  This wrapper only
+    stops the crash so the battery can run; the ``power_exp_log`` family
+    module replaces the key and the unsound rules with it.
+    """
+    try:
+        return _upstream.refine_Pow(expr, assumptions)
+    except AttributeError:
+        return None
+
+
 def install(handlers_dict: dict) -> None:
     """Register the simple rules; family modules loaded later override them."""
     for key, handler in SIMPLE_RULES.items():
         handlers_dict[key] = handler
+    handlers_dict["Pow"] = refine_Pow_guarded

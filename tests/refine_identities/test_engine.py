@@ -135,11 +135,12 @@ def test_wraps_numerically(t):
 # --- simple rules and case split -------------------------------------------
 
 @pytest.fixture
-def relaxed_log():
+def relaxed_log(monkeypatch):
     """The log rows with the domains the branch-cut author is asked to adopt:
     a power needs only one of base or exponent nonzero, a product needs nothing
     (SymPy's zoo arithmetic makes log(0*r) == log(0) + log(r))."""
     from sympy import true
+    monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
     from satrefine.handlers_identities._engine import derive, principal
     z, b_, e_, p_, r_ = symbols("z b e p r")
     facts = [(log(exp(z)), principal(z), true), (log(x), log(Abs(x)) + I*arg_(x), ~Q.zero(x))]

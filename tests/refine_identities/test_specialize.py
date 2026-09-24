@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.slow
 from sympy import I, Q, log, pi, symbols
 
 from satrefine.handlers_identities._specialize import compile_table, specialize_table, verify
@@ -13,7 +15,7 @@ EXPECTED = {   # rules the generator must produce and verify
     (log(exp_ := __import__("sympy").exp(z)), z, Q.real(z)),
     (log(b**e), e*log(b), Q.positive(b) & Q.real(e)),
     (log(b**e), e*log(-b), Q.negative(b) & Q.even(e)),
-    (log(p*r), log(p) + log(r), Q.positive(p) & Q.positive(r)),
+    (log(p*r), log(p) + log(r), Q.positive(r) & ~Q.zero(p)),   # arg(p) bounded: any nonzero p
     (log(p*r), log(-p) + log(-r), Q.negative(p) & Q.negative(r)),
     (log(x), log(-x) + I*pi, Q.negative(x)),
 }
@@ -47,3 +49,14 @@ def test_compiled_table_fires_like_the_engine(rules):
     assert handler(log(b**e), Q.positive(b) & Q.real(e)) == e*log(b)
     assert handler(log(x), Q.negative(x)) == log(-x) + I*pi
     assert handler(log(x), Q.positive(x)) is None
+
+
+def test_literal_catalog_entries_specialize_the_left_side():
+    """A Literal(-1) on the exponent yields the reciprocal rules the symbolic
+    catalog cannot reach (an imaginary base needs the literal to collapse)."""
+    from satrefine.handlers_identities._specialize import CATALOG, Literal, specialize
+    from satrefine.handlers_identities.log import IDENTITIES
+    lhs, _rhs, dom = IDENTITIES[1]                     # log(b**e)
+    rules = specialize(lhs, dom, {"e": [Literal(-1)], None: CATALOG})
+    assert (log(1/b), -log(b), Q.imaginary(b)) in rules
+    assert all(verify(*rule) for rule in rules)

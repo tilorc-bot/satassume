@@ -20,7 +20,9 @@ to SymPy's); handlers written for the vendored driver keep working here.
 """
 from __future__ import annotations
 
-from typing import Any
+import os
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from sympy.core import Basic, Expr
 
@@ -28,6 +30,37 @@ from .. import _upstream
 
 MAX_FIRINGS = 500
 """Handler firings allowed in one top-level :func:`refine` call."""
+
+generated_handlers: dict = {}
+"""Handlers from the generated rule tables (``generated/<family>.py``), by key.
+
+Preferred over ``handlers_dict`` when :func:`mode` is ``"generated"``."""
+
+MODE_ENV_VAR = "SATREFINE_IDENTITIES"
+
+
+_forced: list[str] = []
+
+
+def mode() -> str:
+    """``"generated"`` (default) or ``"live"``, from ``SATREFINE_IDENTITIES`` unless :func:`live` is active."""
+    if _forced:
+        return _forced[-1]
+    value = os.environ.get(MODE_ENV_VAR, "generated")
+    if value not in ("generated", "live"):
+        raise ValueError(f"{MODE_ENV_VAR} must be 'generated' or 'live', not {value!r}")
+    return value
+
+
+@contextmanager
+def live() -> Iterator[None]:
+    """Run the identity rows rather than the generated tables inside the block
+    (generation itself must never read the tables it is producing)."""
+    _forced.append("live")
+    try:
+        yield
+    finally:
+        _forced.pop()
 
 
 class RefineLoopError(RecursionError):
@@ -62,7 +95,10 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         ref = expr._eval_refine(assumptions)
         if ref is not None:
             return ref
-    handler = _upstream.handlers_dict.get(expr.__class__.__name__)
+    name = expr.__class__.__name__
+    handler = generated_handlers.get(name) if mode() == "generated" else None
+    if handler is None:
+        handler = _upstream.handlers_dict.get(name)
     if handler is None:
         return expr
     new = handler(expr, assumptions)

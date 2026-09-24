@@ -50,6 +50,14 @@ ROWS = [  # (input, assumptions, team output or None, relation)
 IDS = [f"{expr}|{assum}" for expr, assum, _, _ in ROWS]
 
 
+@pytest.fixture(autouse=True)
+def _live_identities(monkeypatch):
+    """These rows document the live identity engine; the generated table is
+    compared with it in ``test_generated.py``."""
+    from satrefine.handlers_identities import _dispatch
+    monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
+
+
 @pytest.mark.parametrize("expr, assumptions, team, relation", ROWS, ids=IDS)
 def test_output_is_valid(expr, assumptions, team, relation):
     refined = refine(expr, assumptions)

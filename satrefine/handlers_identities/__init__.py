@@ -22,13 +22,20 @@ to the vendored handlers.  Infrastructure (underscore modules):
                 registered here before the family modules load so a family
                 that registers one of those keys overrides and chains to them;
 ``_specialize`` generation of conditional rules from identity rows under
-                assumption profiles, numeric verification, compilation.
+                assumption profiles, numeric verification, compilation;
+``generated/``  the generated rule tables, one module per family, used by
+                the dispatcher when ``SATREFINE_IDENTITIES=generated`` (the
+                default); ``live`` runs the identity rows instead.
 
 A family module declares its tables under the names the scoreboard counts:
 ``FACTS`` (identity rows about the family's own functions), ``EXP_FORMS``
 (exponential forms of other heads, reusable), ``RULES`` (plain conditional
 rows) and ``SIMPLE_RULES`` (rows, or an int for procedural simple rules),
 and registers with literal ``handlers_dict['key'] = handler`` statements.
+It may also declare ``CATALOG`` (the assumption profiles the generator
+tries per variable; see ``_specialize.CATALOG``) and ``EDGE_POINTS``
+(values every generated rule is checked at, in addition to 0, 1, -1, I,
+-I: the family's branch-cut points).
 """
 from __future__ import annotations
 
@@ -42,3 +49,5 @@ if _satrefine is not None:
     _satrefine.refine = _dispatch.refine
 
 _simple.install(handlers_dict)
+
+from . import generated  # noqa: E402  (registers the generated tables; used when SATREFINE_IDENTITIES=generated)
