@@ -21,7 +21,7 @@ from ._engine import Row, derive, identity_handler, principal
 
 z, b, e, p, r, x = symbols('z b e p r x')
 
-LOG_FACTS: list[Row] = [   # (lhs, rhs, domain): lhs == rhs wherever the domain holds
+FACTS: list[Row] = [   # (lhs, rhs, domain): lhs == rhs wherever the domain holds
     (log(exp(z)), principal(z),            true),
     (log(x),      log(Abs(x)) + I*arg(x),  ~Q.zero(x)),
 ]
@@ -31,7 +31,8 @@ EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain hol
     (p*r,  log(p) + log(r),  ~Q.zero(p) & ~Q.zero(r)),
 ]
 
-IDENTITIES: list[Row] = derive(LOG_FACTS, EXP_FORMS)
+IDENTITIES: list[Row] = derive(FACTS, EXP_FORMS)
+LOG_FACTS = FACTS   # older name
 
 refine_log = identity_handler(IDENTITIES)
 

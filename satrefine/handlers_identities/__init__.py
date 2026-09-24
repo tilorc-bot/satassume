@@ -1,22 +1,36 @@
-"""Refine handlers written as identities (data) instead of procedures.
+"""Refine handlers written as tables of identities and rules.
 
-An experiment on one key, ``log``, selected with
-``SATREFINE_HANDLERS=handlers_identities``.  The package registers two keys:
+Select with ``SATREFINE_HANDLERS=handlers_identities``.  Every public module
+in this package is imported by :mod:`satrefine` and registers its keys into
+``satrefine._upstream.handlers_dict``; keys no module registers fall through
+to the vendored handlers.  Infrastructure (underscore modules):
 
-* ``log``: two facts about the logarithm and two exponential forms of
-  powers and products, composed at import into four rows of
-  ``(lhs, rhs, domain)``; the engine in :mod:`._engine` matches a row,
-  substitutes, refines the right side, and keeps it only if the
-  branch bookkeeping (``floor``, ``im``, ``arg``) collapsed and a rewrite
-  ordering strictly decreases;
-* ``im``: three simple rules ahead of the vendored handler, which the
-  identities need to reduce their bookkeeping.
+``_dispatch``   the driver: the vendored ``refine`` with re-refinement after
+                auto-evaluation and a firing cap (:class:`RefineLoopError`);
+                importing this package rebinds ``satrefine.refine`` to it
+                (the attribute on the partially initialized ``satrefine``
+                module is replaced during ``_load_handlers``), so
+                ``from satrefine import refine`` and every tool get it;
+``_engine``     tables: ``identity_handler`` (rows ``(lhs, rhs, domain)``
+                whose bookkeeping must collapse) and ``rule_handler`` (rows
+                ``(lhs, rhs, hypothesis)``), the pattern forms, ``derive``;
+``_wraps``      the branch bookkeeping (``principal``, ``sawtooth``,
+                ``reflect_half``, ``reflect_full``, ``fractional``);
+``_specialize`` generation of conditional rules from identity rows under
+                assumption profiles, numeric verification, compilation.
 
-Every other key falls through to the vendored handlers in
-:mod:`satrefine._upstream`, so this package is not a fourth implementation
-of the 56 keys.  ``tools/refine_specialize.py`` generates the familiar
-conditional rules from these rows by running the engine under a catalog of
-assumption profiles, verifies each generated rule numerically, and compiles
-the survivors into cheap handlers.  See
-``agent-reports/2026-09-24-refine-from-identities.md``.
+A family module declares its tables under the names the scoreboard counts:
+``FACTS`` (identity rows about the family's own functions), ``EXP_FORMS``
+(exponential forms of other heads, reusable), ``RULES`` (plain conditional
+rows) and ``SIMPLE_RULES`` (rows, or an int for procedural simple rules),
+and registers with literal ``handlers_dict['key'] = handler`` statements.
 """
+from __future__ import annotations
+
+import sys
+
+from . import _dispatch
+
+_satrefine = sys.modules.get("satrefine")
+if _satrefine is not None:
+    _satrefine.refine = _dispatch.refine

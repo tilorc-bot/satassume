@@ -1,158 +1,343 @@
-"""Engine for handlers stated as identities.
+"""Engine for handlers stated as tables.
 
-A handler is a table of rows ``(lhs, rhs, domain)``: ``lhs == rhs`` wherever
-``domain`` holds, with the free symbols of ``lhs`` universally quantified.
-The right side carries the branch bookkeeping explicitly (see
-:func:`principal`), so the rows have no case-split hypotheses; the cases
-appear when ``refine`` collapses the bookkeeping under the assumptions.
+Two table kinds, one row shape ``(lhs, rhs, condition)``:
 
-:func:`identity_handler` turns such a table into a dispatcher handler.
-:func:`derive` composes a ``log(exp(z))`` fact with exponential forms of
-other heads, so ``log(b**e)`` and ``log(p*r)`` need not be written down.
-:func:`refine` is the vendored driver with one fix, used to evaluate
-candidates; the vendored ``refine`` stays the public entry point.
+* an **identity** row (:func:`identity_handler`) holds wherever ``condition``
+  (its *domain*) does; its right side carries the branch bookkeeping
+  explicitly (see :mod:`._wraps`).  It fires when the domain is provable,
+  the refined right side contains none of the *opaque* heads (``floor``,
+  ``im``, ``arg`` by default) and a rewrite ordering strictly decreases;
+* a **rule** row (:func:`rule_handler`) is a conditional rewrite: it fires
+  when ``condition`` (its *hypothesis*) is provable through
+  ``_upstream.ask``; the right side is substituted as is.
+
+Patterns are ordinary SymPy expressions over plain symbols:
+
+``x``
+    a symbol binds anything (the same symbol twice must bind equal parts);
+``p*r``, ``a + b`` (two symbols)
+    one factor or term against the rest, once per factor or term
+    (linear; no commutative search); a non-product does not match ``p*r``;
+``n*unit + r`` (``n``, ``r`` symbols; ``unit`` constant, e.g. ``pi/2``)
+    ``n`` binds the sum of the coefficients of ``unit`` over the terms whose
+    ratio to ``unit`` is free of ``pi`` and ``I`` (as ``handlers_v3``'s
+    ``split_shift``), ``r`` the remaining terms; then, if several terms had
+    the unit, each single such term against the rest;
+``part('a', pred) + b``, ``part('a', pred) * b``
+    ``a`` binds the sum (product) of the terms (factors) for which
+    ``pred(term)`` is provable, ``b`` the rest (``0`` or ``1`` when empty);
+    no binding when no term qualifies; a non-sum is one term;
+``F(x)`` with ``F = Function('F')``
+    a head wildcard: matches the applied function the row is registered
+    for, ``F`` binds its class and may appear in the right side;
+anything else
+    structural: same head, same arity, arguments matched pairwise; atoms
+    and constants must be equal.
+
+:func:`derive` composes a ``g(exp(z))`` fact with exponential forms
+``(L, W, domain)`` (``L == exp(W)``) into rows for ``g(L)``.  The dispatcher
+these handlers run under is :mod:`._dispatch`.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Iterator
+import itertools
+from typing import Any, Callable, Iterable, Iterator
 
-from sympy import And, I, Q, S, Wild, arg, exp, floor, im, log, pi, true
+from sympy import And, Q, S, Symbol, arg, count_ops, exp, floor, im, log
 from sympy.core import Add, Basic, Expr, Mul, Pow
+from sympy.core.function import AppliedUndef, UndefinedFunction
 
 from .. import _upstream
 from .._upstream import handlers_dict
+from . import _dispatch
+from ._dispatch import refine  # the driver identity handlers evaluate candidates with
+from ._wraps import principal  # re-exported for tables
 
 Row = tuple[Basic, Basic, Basic]
+Binding = dict[Any, Any]
+Measure = Callable[[Any, Any], tuple]
+
+__all__ = ["Row", "bindings", "derive", "identity_handler", "rule_handler", "part",
+           "principal", "refine", "subst", "default_measure", "handlers_dict"]
 
 
-def refine(expr: Any, assumptions: Any = True) -> Any:
-    """The vendored ``refine`` with one fix.
+# ----------------------------------------------------------------------------
+# patterns
+# ----------------------------------------------------------------------------
 
-    After a node is rebuilt from refined children, the constructor may
-    auto-evaluate into a different structure (``im`` of a product becomes a
-    sum of ``re``, ``im`` and ``arg`` terms).  The vendored driver then
-    dispatches on the new head without refining the children it just
-    created; this one refines the new node again.
-    """
-    if not isinstance(expr, Basic):
-        return expr
-    if not expr.is_Atom:
-        args = [refine(a, assumptions) for a in expr.args]
-        new = expr.func(*args)
-        if new.is_Atom or new.func is not expr.func or new.args != tuple(args):
-            return refine(new, assumptions) if new != expr else expr
-        expr = new
-    if hasattr(expr, "_eval_refine"):
-        ref = expr._eval_refine(assumptions)
-        if ref is not None:
-            return ref
-    handler = handlers_dict.get(expr.__class__.__name__)
-    if handler is None:
-        return expr
-    new = handler(expr, assumptions)
-    if new is None or new == expr:
-        return expr
-    if not isinstance(new, Expr):
-        return new
-    return refine(new, assumptions)
+class _Part(Symbol):
+    """A symbol that binds the part of a sum or product satisfying a predicate."""
+    __slots__ = ("predicate",)
+
+    def __new__(cls, name: str, predicate: Callable[[Any], Any]):
+        obj = Symbol.__new__(cls, name)
+        obj.predicate = predicate
+        return obj
+
+    def _hashable_content(self):
+        return (self.name, id(self.predicate))
 
 
-def principal(w: Any) -> Any:
-    """The representative of ``w`` whose imaginary part lies in ``(-pi, pi]``.
+def part(name: str, predicate: Callable[[Any], Any]) -> Symbol:
+    """A pattern symbol binding the terms (factors) for which ``predicate(term)`` is provable."""
+    return _Part(name, predicate)
 
-    ``exp(w)`` has principal logarithm ``principal(w)``; the floor is the
-    branch bookkeeping that the assumptions are expected to collapse.
-    """
-    return w + 2*pi*I*floor(S.Half - im(w)/(2*pi))
 
+def _is_unit_coefficient_form(pattern: Any) -> tuple[Any, Any, Any] | None:
+    """``(n, unit, r)`` when ``pattern`` is ``n*unit + r`` with symbols ``n``, ``r``."""
+    if not (isinstance(pattern, Add) and len(pattern.args) == 2):
+        return None
+    for term, rest in ((pattern.args[0], pattern.args[1]), (pattern.args[1], pattern.args[0])):
+        if rest.is_Symbol and not isinstance(rest, _Part) and isinstance(term, Mul):
+            syms = [s for s in term.free_symbols if not isinstance(s, _Part)]
+            if len(syms) == 1 and term.free_symbols == {syms[0]}:
+                n = syms[0]
+                unit = (term/n).cancel()
+                if not unit.has(n) and rest != n:
+                    return n, unit, rest
+    return None
+
+
+def _bind(b: Binding, key: Any, value: Any) -> Binding | None:
+    if key in b:
+        return b if b[key] == value else None
+    return {**b, key: value}
+
+
+def _match(pattern: Any, target: Any, assumptions: Any, b: Binding) -> Iterator[Binding]:
+    if isinstance(pattern, _Part):
+        return  # only meaningful inside a two-symbol sum or product
+    if pattern.is_Symbol:
+        nb = _bind(b, pattern, target)
+        if nb is not None:
+            yield nb
+        return
+    if pattern.is_Atom:
+        if pattern == target:
+            yield b
+        return
+    if isinstance(pattern, AppliedUndef):                        # head wildcard
+        F = pattern.func
+        if F in b:
+            if not isinstance(target, b[F]):
+                return
+            nb = b
+        else:
+            if target.is_Atom or not target.args:
+                return
+            nb = {**b, F: target.func}
+        if len(target.args) != len(pattern.args):
+            return
+        yield from _match_seq(pattern.args, target.args, assumptions, nb)
+        return
+    if isinstance(pattern, (Add, Mul)) and len(pattern.args) == 2:
+        p1, p2 = pattern.args
+        parts = [p for p in (p1, p2) if isinstance(p, _Part)]
+        if len(parts) == 1 and all(p.is_Symbol for p in (p1, p2)):    # partition
+            a = parts[0]
+            other = p2 if a is p1 else p1
+            terms = target.args if isinstance(target, pattern.func) else (target,)
+            sel = [t for t in terms if _upstream.ask(a.predicate(t), assumptions) is True]
+            if not sel:
+                return
+            rest = [t for t in terms if t not in sel]
+            nb = _bind(b, a, pattern.func(*sel))
+            nb = _bind(nb, other, pattern.func(*rest)) if nb is not None else None
+            if nb is not None:
+                yield nb
+            return
+        if p1.is_Symbol and p2.is_Symbol and not parts:               # one plus rest
+            if not isinstance(target, pattern.func):
+                return
+            for f in target.args:
+                rest = pattern.func(*[g for g in target.args if g is not f])
+                nb = _bind(b, p1, f)
+                nb = _bind(nb, p2, rest) if nb is not None else None
+                if nb is not None:
+                    yield nb
+            return
+        form = _is_unit_coefficient_form(pattern)
+        if form is not None:                                          # n*unit + r
+            n, unit, r = form
+            terms = Add.make_args(target)
+            with_unit = []
+            for t in terms:
+                ratio = (t/unit).cancel()
+                if not ratio.has(S.Pi) and not ratio.has(S.ImaginaryUnit):
+                    with_unit.append((t, ratio))
+            if not with_unit:
+                return
+            k = Add(*[ratio for _, ratio in with_unit])
+            rest = Add(*[t for t in terms if t not in [u for u, _ in with_unit]])
+            seen = set()
+            candidates = [(k, rest)]
+            if len(with_unit) > 1:
+                candidates += [(ratio, target - t) for t, ratio in with_unit]
+            for kk, rr in candidates:
+                if kk == 0 or (kk, rr) in seen:
+                    continue
+                seen.add((kk, rr))
+                nb = _bind(b, n, kk)
+                nb = _bind(nb, r, rr) if nb is not None else None
+                if nb is not None:
+                    yield nb
+            return
+    # structural
+    if target.is_Atom or not isinstance(target, pattern.func) or len(target.args) != len(pattern.args):
+        return
+    yield from _match_seq(pattern.args, target.args, assumptions, b)
+
+
+def _match_seq(patterns: Iterable[Any], targets: Iterable[Any], assumptions: Any, b: Binding) -> Iterator[Binding]:
+    patterns, targets = list(patterns), list(targets)
+    if not patterns:
+        yield b
+        return
+    for nb in _match(patterns[0], targets[0], assumptions, b):
+        yield from _match_seq(patterns[1:], targets[1:], assumptions, nb)
+
+
+def bindings(pattern: Any, target: Any, assumptions: Any = True) -> Iterator[Binding]:
+    """Ways to match ``pattern`` against ``target`` (see the module docstring)."""
+    yield from _match(pattern, target, assumptions, {})
+
+
+def subst(expr: Any, binding: Binding) -> Any:
+    """Substitute a binding: symbols by ``xreplace``, head wildcards by their class."""
+    heads = {k: v for k, v in binding.items() if isinstance(k, UndefinedFunction)}
+    syms = {k: v for k, v in binding.items() if not isinstance(k, UndefinedFunction)}
+    out = expr.xreplace(syms) if syms else expr
+    if heads:
+        out = out.replace(lambda e: isinstance(e, AppliedUndef) and e.func in heads,
+                          lambda e: heads[e.func](*e.args))
+    return out
+
+
+# ----------------------------------------------------------------------------
+# ordering
+# ----------------------------------------------------------------------------
 
 def _is_negation(a: Any) -> bool:
     return isinstance(a, Mul) and a.could_extract_minus_sign() and not isinstance(-a, Mul)
 
 
-def measure(e: Any, assumptions: Any) -> tuple[int, int]:
-    """Rewrite ordering; a candidate is accepted only if this strictly decreases.
+def default_measure(heads: Iterable[type]) -> Measure:
+    """The generic rewrite ordering for a table registered on ``heads``.
 
-    First the number of factors under logarithms of exponentials, powers and
-    products (a plain negation does not count as a product), then the number
-    of logarithms whose argument is not provably positive.  This is what
-    keeps ``log(-x)`` in place under ``Q.negative(x)`` while ``log(x)``
-    becomes ``log(-x) + I*pi``, and what makes the identities terminate.
+    ``(structure, badness, size)``: for every node whose head is in
+    ``heads``, the number of factors or terms of its argument (a plain
+    negation counts as one), or one for a non-atomic argument; then the
+    number of such nodes whose argument is not provably positive; then
+    ``count_ops`` as a tie-breaker.  A candidate is accepted only if this
+    strictly decreases, which is what makes identity rows terminate.  Tables
+    pass ``measure=`` to :func:`identity_handler` for their own ordering.
     """
-    logs = [l.args[0] for l in e.atoms(log)]
-    structural = sum(len(a.args) if isinstance(a, Mul) and not _is_negation(a)
-                     else int(isinstance(a, (exp, Pow))) for a in logs)
-    bad = sum(_upstream.ask(Q.positive(a), assumptions) is not True for a in logs)
-    return (structural, bad)
+    heads = tuple(heads)
+
+    def measure(e: Any, assumptions: Any) -> tuple:
+        nodes = [n for n in e.atoms(*heads)] if heads else []
+        structure = 0
+        for n in nodes:
+            a = n.args[0] if n.args else n
+            if _is_negation(a):
+                a = -a
+            if isinstance(a, (Add, Mul)):
+                structure += len(a.args)
+            elif not a.is_Atom:
+                structure += 1
+        bad = sum(_upstream.ask(Q.positive(n.args[0]), assumptions) is not True for n in nodes if n.args)
+        return (structure, bad, count_ops(e))
+    return measure
 
 
-def bindings(pattern: Any, target: Any) -> Iterator[dict[Any, Any]]:
-    """Ways to match ``pattern`` (over plain symbols) against ``target``.
+# ----------------------------------------------------------------------------
+# handlers
+# ----------------------------------------------------------------------------
 
-    A symbol binds anything.  A product of two symbols binds one factor of a
-    product against the rest, once per factor.  Any other head must equal
-    the target's head and is matched structurally.
+def _heads_of(rows: Iterable[Row]) -> set[type]:
+    return {lhs.func for lhs, _, _ in rows if not isinstance(lhs, AppliedUndef) and not lhs.is_Atom}
+
+
+def identity_handler(rows: list[Row], *, measure: Measure | None = None,
+                     opaque: tuple = (floor, im, arg)) -> Callable[[Any, Any], Any]:
+    """A handler from identity rows ``(lhs, rhs, domain)``.
+
+    For each row and binding: the domain must be provable; the substituted
+    right side is refined with this handler switched off (its own nodes are
+    rewritten by the dispatcher after acceptance, under the same ordering);
+    no ``opaque`` head may survive; and ``measure`` must strictly decrease.
     """
-    if pattern.is_Symbol:
-        yield {pattern: target}
-    elif isinstance(pattern, Mul):
-        if isinstance(target, Mul) and len(pattern.args) == 2 and all(s.is_Symbol for s in pattern.args):
-            w1, w2 = pattern.args
-            for f in target.args:
-                yield {w1: f, w2: Mul(*[g for g in target.args if g is not f])}
-    elif isinstance(target, pattern.func):
-        wilds = {s: Wild(s.name, exclude=[]) for s in pattern.free_symbols}
-        m = target.match(pattern.xreplace(wilds))
-        if m is not None:
-            yield {s: m[w] for s, w in wilds.items()}
-
-
-def identity_handler(identities: list[Row], opaque: tuple = (floor, im, arg)) -> Callable[[Any, Any], Any]:
-    """Compile a table of rows into a handler for the dispatcher.
-
-    For each row and each binding of its left side: the domain must be
-    provable, the substituted right side is refined with this handler
-    switched off (its own logarithms are rewritten by the dispatcher after
-    acceptance, under the same ordering), no ``opaque`` head may survive,
-    and :func:`measure` must strictly decrease.
-    """
+    rows = list(rows)
+    static_heads = _heads_of(rows)
     busy = [False]
 
     def handler(expr: Any, assumptions: Any) -> Any:
         if busy[0]:
             return None
-        m0 = measure(expr, assumptions)
-        for lhs, rhs, domain in identities:
-            for m in bindings(lhs.args[0], expr.args[0]):
-                if domain is not true and _upstream.ask(domain.xreplace(m), assumptions) is not True:
+        m = measure or default_measure(static_heads | {expr.func})
+        m0 = m(expr, assumptions)
+        for lhs, rhs, domain in rows:
+            for b in bindings(lhs, expr, assumptions):
+                if domain is not S.true and _upstream.ask(subst(domain, b), assumptions) is not True:
                     continue
                 busy[0] = True
                 try:
-                    cand = refine(rhs.xreplace(m), assumptions)
+                    cand = refine(subst(rhs, b), assumptions)
                 finally:
                     busy[0] = False
                 if cand.has(*opaque):
                     continue
-                if measure(cand, assumptions) < m0:
+                if m(cand, assumptions) < m0:
                     return cand
         return None
 
-    handler.identities = identities  # type: ignore[attr-defined]
+    handler.rows = rows      # type: ignore[attr-defined]
+    handler.kind = "identity"  # type: ignore[attr-defined]
     return handler
 
 
-def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
-    """Compose each ``f(exp(z))`` fact with each exponential form.
+def rule_handler(rows: list[Row]) -> Callable[[Any, Any], Any]:
+    """A handler from rule rows ``(lhs, rhs, hypothesis)``: bind, prove, substitute."""
+    rows = list(rows)
 
-    An exponential form ``(L, W, domain)`` states ``L == exp(W)``; composing
-    gives the row ``f(L) == rhs[z := W]`` under both domains.
-    """
+    def handler(expr: Any, assumptions: Any) -> Any:
+        for lhs, rhs, hyp in rows:
+            for b in bindings(lhs, expr, assumptions):
+                if any(v in (S.Zero, S.One) and k.is_Symbol and not isinstance(k, _Part)
+                       and isinstance(lhs, Basic) and k in _product_symbols(lhs) for k, v in b.items()):
+                    continue
+                if hyp is S.true or _upstream.ask(subst(hyp, b), assumptions) is True:
+                    out = subst(rhs, b)
+                    if out != expr:
+                        return out
+        return None
+
+    handler.rows = rows    # type: ignore[attr-defined]
+    handler.kind = "rule"  # type: ignore[attr-defined]
+    return handler
+
+
+def _product_symbols(lhs: Any) -> set:
+    """Symbols of two-symbol products in ``lhs`` (a factor bound to 0 or 1 is not a split)."""
+    out: set = set()
+    for node in lhs.atoms(Mul):
+        if len(node.args) == 2 and all(a.is_Symbol and not isinstance(a, _Part) for a in node.args):
+            out |= set(node.args)
+    return out
+
+
+# ----------------------------------------------------------------------------
+# composition
+# ----------------------------------------------------------------------------
+
+def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
+    """Compose each ``g(exp(z))`` fact with each exponential form ``(L, W, domain)``
+    (``L == exp(W)``) into the row ``g(L) == rhs[z := W]`` under both domains."""
     rows: list[Row] = []
     for lhs, rhs, dom in facts:
         rows.append((lhs, rhs, dom))
-        inner = lhs.args[0]
-        if isinstance(inner, exp) and inner.args[0].is_Symbol:
-            zz = inner.args[0]
+        if lhs.args and isinstance(lhs.args[0], exp) and lhs.args[0].args[0].is_Symbol:
+            zz = lhs.args[0].args[0]
             for L, W, dom_d in exp_forms:
-                rows.append((lhs.func(L), rhs.xreplace({zz: W}), And(dom, dom_d)))
+                rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
     return rows

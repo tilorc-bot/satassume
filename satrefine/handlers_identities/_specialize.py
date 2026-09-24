@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable
 from sympy import And, AppliedPredicate, I, N, Q, arg, expand, floor, im, true
 
 from .. import _upstream
-from ._engine import Row, bindings, refine
+from ._engine import Row, bindings, refine, subst
 
 CATALOG: list = [None, Q.positive, Q.negative, Q.nonnegative, Q.real, Q.imaginary,
                  Q.even, Q.odd, Q.integer, lambda v: Q.even(v/2), lambda v: Q.odd(v/2)]
@@ -90,11 +90,11 @@ def verify(lhs: Any, rhs: Any, hyp: Any) -> bool | None:
 
 def compile_rule(lhs: Any, rhs: Any, hyp: Any) -> Callable[[Any, Any], Any]:
     def handler(expr: Any, assumptions: Any) -> Any:
-        for m in bindings(lhs.args[0], expr.args[0]):
+        for m in bindings(lhs, expr, assumptions):
             if any(v in (0, 1) for v in m.values()):
                 continue
-            if _upstream.ask(hyp.xreplace(m), assumptions) is True:
-                return rhs.xreplace(m)
+            if _upstream.ask(subst(hyp, m), assumptions) is True:
+                return subst(rhs, m)
         return None
     return handler
 

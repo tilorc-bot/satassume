@@ -28,4 +28,6 @@ def refine_im(expr: Basic, assumptions) -> Basic | None:
     return _upstream.refine_im(expr, assumptions)
 
 
+SIMPLE_RULES = 3   # counted by the scoreboard; procedural until _simple.py exists
+
 handlers_dict['im'] = refine_im
