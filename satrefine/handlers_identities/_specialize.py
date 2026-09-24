@@ -262,7 +262,9 @@ def write_family(module: types.ModuleType) -> tuple[pathlib.Path, list[Row], dic
 
 
 def family_modules() -> list[types.ModuleType]:
-    """The family modules of the package that register an identity handler."""
+    """The family modules of the package that register an identity handler, except
+    those declaring ``SPECIALIZE = False`` (definitions that are cheap to evaluate
+    live and have no bookkeeping to collapse, such as ``minmax_deltas``)."""
     import importlib
     import pkgutil
     from .. import handlers_identities as package
@@ -271,7 +273,7 @@ def family_modules() -> list[types.ModuleType]:
         if info.name.startswith("_") or info.ispkg:
             continue
         mod = importlib.import_module(f"{package.__name__}.{info.name}")
-        if identity_keys(mod):
+        if identity_keys(mod) and getattr(mod, "SPECIALIZE", True):
             out.append(mod)
     return out
 

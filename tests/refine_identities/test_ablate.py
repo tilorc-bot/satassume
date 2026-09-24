@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from sympy import Max, Q, symbols
+from sympy import DiracDelta, Q, symbols
 
 from satrefine import refine
 from satrefine._upstream import handlers_dict
@@ -34,19 +34,18 @@ def restore_minmax():
 
 
 def test_family_keys():
-    assert ablate_tool.family_keys("minmax_deltas") == ["Min", "Max", "DiracDelta", "KroneckerDelta", "Heaviside"]
+    assert ablate_tool.family_keys("minmax_deltas") == ["Max", "Min", "KroneckerDelta", "Heaviside", "DiracDelta"]
     assert set(ablate_tool.family_keys("integer_funcs")) == {"floor", "ceiling", "frac", "Mod", "Rem"}
 
 
 def test_ablate_removes_the_row_from_handler_and_module(restore_minmax):
     mod = restore_minmax
-    assumptions = Q.nonnegative(x) & Q.nonpositive(y)
-    assert refine(Max(x, y), assumptions) == x
-    removed = ablate_tool.ablate("minmax_deltas", [0])       # Max's sign row
-    assert "Max(a, b)" in removed[0]
-    assert len(mod.RULES) == 12 and len(mod.MAX) == 1
-    assert len(handlers_dict["Max"].rows) == 1
-    assert refine(Max(x, y), assumptions) == Max(x, y)
+    assert refine(DiracDelta(x), Q.positive(x)) == 0
+    removed = ablate_tool.ablate("minmax_deltas", [0])       # DiracDelta off the origin
+    assert "DiracDelta(x)" in removed[0]
+    assert len(mod.RULES) == 2
+    assert len(handlers_dict["DiracDelta"].rows) == 2
+    assert refine(DiracDelta(x), Q.positive(x)) == DiracDelta(x)
 
 
 def test_ablate_shared_row_goes_from_every_table():

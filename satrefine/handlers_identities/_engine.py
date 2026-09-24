@@ -69,6 +69,16 @@ realness, as in ``handlers_v3``.  A rule row may carry a fourth element ``unless
 it fires only if ``unless`` is *not* provable.  Rows are tried in table
 order.
 
+The conditions of a ``Piecewise`` (a definition's right side, or any
+``Piecewise`` refined) are decided by :func:`decide`: relations (``Q.ge``,
+``Q.lt``, ``Q.eq``, ``Q.ne``, ..., and relationals ``x >= y``) through an
+order vocabulary (:data:`ORDER`) of proof forms from signs and infinite
+endpoints and from stated relations, the latter unused when an argument is
+known infinite (SymPy's ``ask`` proves ``Q.eq(x, y)`` for ``x = -oo`` and
+``y <= 0``).  A candidate with a ``Piecewise`` the input did not have is
+not a rewrite (the conditions are undecided) and no case split is tried
+on it; a table may also switch case splits off (``splits=False``).
+
 :func:`derive` composes a ``g(exp(z))`` fact with exponential forms
 ``(L, W, domain)`` (``L == exp(W)``) into rows for ``g(L)``.  The dispatcher
 these handlers run under is :mod:`._dispatch`.
@@ -79,8 +89,8 @@ import itertools
 from contextlib import contextmanager
 from typing import Any, Callable, Iterable, Iterator
 
-from sympy import (Abs, And, Dummy, I, Not, Or, Piecewise, Q, S, Symbol, arg, ceiling, count_ops, exp, expand_mul, floor, im,
-                   log, nan, simplify, zoo)
+from sympy import (Abs, And, Dummy, I, Not, Or, Piecewise, Q, S, Symbol, arg, ceiling, count_ops, exp, expand_mul,
+                   floor, im, log, nan, simplify, zoo)
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Add, Basic, Expr, Mul, Pow
 from sympy.core.sympify import sympify
@@ -185,19 +195,19 @@ ORDER: dict = {   # relation -> (proof from signs, proofs from relations: atoms 
            lambda u, v: (Q.nonzero(u - v), Q.ne(u, v), Q.ne(v, u), Q.lt(u, v), Q.lt(v, u))),
 }
 _NEGATION = {'le': ('lt', True), 'lt': ('le', True), 'eq': ('ne', False), 'ne': ('eq', False)}
-_RELATION_OF = {Q.le: ('le', False), Q.lt: ('lt', False), Q.ge: ('le', True), Q.gt: ('lt', True),
-                Q.eq: ('eq', False), Q.ne: ('ne', False)}
+_RELATIONS = {Q.le: ('le', False), Q.lt: ('lt', False), Q.ge: ('le', True), Q.gt: ('lt', True),
+              Q.eq: ('eq', False), Q.ne: ('ne', False)}   # predicate -> (relation, arguments swapped)
+_RELATIONALS = {'<=': Q.le, '<': Q.lt, '>=': Q.ge, '>': Q.gt, '==': Q.eq, '!=': Q.ne}
 
 
 def _as_relation(cond: Any) -> tuple | None:
     """``(name, u, v)`` with ``name`` a key of :data:`ORDER`, for a relation atom or relational."""
-    if isinstance(cond, AppliedPredicate) and cond.function in _RELATION_OF:
-        (name, flip), (u, v) = _RELATION_OF[cond.function], cond.arguments
-    elif isinstance(cond, Relational) and cond.rel_op in _RELATIONAL_OPS:
-        (name, flip), (u, v) = _RELATIONAL_OPS[cond.rel_op], cond.args
-    else:
+    if isinstance(cond, Relational) and cond.rel_op in _RELATIONALS:
+        cond = _RELATIONALS[cond.rel_op](*cond.args)
+    if not (isinstance(cond, AppliedPredicate) and cond.function in _RELATIONS):
         return None
-    return (name, v, u) if flip else (name, u, v)
+    (name, swapped), (u, v) = _RELATIONS[cond.function], cond.arguments
+    return (name, v, u) if swapped else (name, u, v)
 
 
 def _order(name: str, u: Any, v: Any, assumptions: Any) -> bool | None:
@@ -217,9 +227,6 @@ def _holds(name: str, u: Any, v: Any, assumptions: Any) -> bool:
         return False    # SymPy's relation ask is unsound at infinity: Q.eq(x, y) "True" for x = -oo, y <= 0
     return any(_ask_atom(atom, assumptions) is True for atom in by_relations(u, v))
 
-
-_RELATIONAL_OPS = {'<=': ('le', False), '<': ('lt', False), '>=': ('le', True), '>': ('lt', True),
-                   '==': ('eq', False), '!=': ('ne', False)}
 
 _BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero,
                   Q.integer)
@@ -669,8 +676,8 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                 with _switched_off(busy):
                     cand = refine(cand, assumptions)
                 cand = _distributed(cand)
-                if cand.has(Piecewise) and not set(cand.atoms(Piecewise)) <= set(expr.atoms(Piecewise)):
-                    continue
+                if not set(cand.atoms(Piecewise)) <= set(expr.atoms(Piecewise)):
+                    continue                  # an undecided definition
                 if cand.has(floor):
                     merged = endpoint_split(expr, cand, assumptions)
                     if merged is not None:

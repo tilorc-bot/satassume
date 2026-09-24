@@ -167,38 +167,51 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
 
 
 def _refine(expr: Any, assumptions: Any) -> Any:
+    """Refine ``expr``: one step per node (:func:`_step`) until a step asks for no
+    further refinement; every node of the chain gets the final result in the cache.
+    Iterative, so a chain of firings does not deepen the Python stack."""
     if not isinstance(expr, Basic):
         return expr
-    key = (expr, assumptions, mode(), tuple(state))
     cache = _results[-1] if _results else {}
-    try:
-        return cache[key]
-    except KeyError:
-        pass
-    except TypeError:                            # unhashable assumptions
-        return _refine_node(expr, assumptions)
-    out = cache[key] = _refine_node(expr, assumptions)
-    return out
+    context = (assumptions, mode(), tuple(state))
+    chain = []
+    while True:
+        key = (expr, context)
+        try:
+            expr = cache[key]
+            break
+        except KeyError:
+            chain.append(key)
+        except TypeError:                        # unhashable assumptions
+            pass
+        expr, again = _step(expr, assumptions)
+        if not again:
+            break
+    for key in chain:
+        cache[key] = expr
+    return expr
 
 
-def _refine_node(expr: Any, assumptions: Any) -> Any:
+def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
+    """``(result, again)``: the node's children refined and its handler applied;
+    ``again`` when the result is a new expression still to be refined."""
     name = expr.__class__.__name__
     if not expr.is_Atom and name not in own_args:
         args = [_refine(a, assumptions) for a in expr.args]
         new = expr.func(*args)
         if new.is_Atom or new.func is not expr.func or new.args != tuple(args):
-            return _refine(new, assumptions) if new != expr else expr
+            return (new, True) if new != expr else (expr, False)
         expr = new
     if hasattr(expr, "_eval_refine"):
         ref = expr._eval_refine(assumptions)
         if ref is not None:
-            return ref
+            return ref, False
     handler = _upstream.handlers_dict.get(name)
     generated = generated_handlers.get(name) if mode() == "generated" else None
     new = generated(expr, assumptions) if generated is not None else None
     if new is None or new == expr:
         if handler is None:
-            return expr
+            return expr, False
         # the table is a fast path: when it declines, the live handler runs in full
         # (its rules and its identity rows, which the catalog specializes only in part)
         new = handler(expr, assumptions)
@@ -207,20 +220,18 @@ def _refine_node(expr: Any, assumptions: Any) -> Any:
     if new is None or new == expr:
         fallback = fallback_handlers.get(name)
         if fallback is None or fallback is handler:
-            return expr
+            return expr, False
         new = fallback(expr, assumptions)
         if new is None or new == expr:
-            return expr
+            return expr, False
     if not isinstance(new, Basic):
         tag = (name, getattr(handler, "__qualname__", repr(handler)))
         non_basic_returns[tag] = non_basic_returns.get(tag, 0) + 1
         new = sympify(new)
         if new == expr:
-            return expr
+            return expr, False
     _firings[-1] += 1
     if _firings[-1] > MAX_FIRINGS:
         raise RefineLoopError(
             f"refine fired handlers more than {MAX_FIRINGS} times; last rewrite {expr} -> {new}")
-    if not isinstance(new, Expr):
-        return new
-    return _refine(new, assumptions)
+    return new, isinstance(new, Expr)

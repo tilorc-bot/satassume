@@ -27,9 +27,10 @@ Why these two are procedures and not rows:
     where the floor is constant except at one closed endpoint of the
     interval (the engine's endpoint split).
 ``Piecewise``
-    branches are refined under the assumptions plus their own condition;
-    ``Piecewise`` itself drops decided conditions and merges equal
-    branches.  A row cannot add a branch's condition to the assumptions
+    conditions are decided by the engine (:func:`._engine.decide`), a
+    branch decided false is dropped, one decided true ends the list, and
+    the other branches are refined under the assumptions plus their own
+    condition.  A row cannot add a branch's condition to the assumptions
     the right side is refined under.
 """
 from __future__ import annotations

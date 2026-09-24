@@ -72,6 +72,9 @@ RULES = [
 ]
 
 
+SPECIALIZE = False   # no generated table: a definition is decided in about 2 ms live
+
+
 def _measure(e, assumptions):
     """Arguments of the family's heads, then size: a definition fires when it drops one."""
     return (sum(len(n.args) for n in e.atoms(Max, Min, KroneckerDelta, Heaviside)), count_ops(e))
