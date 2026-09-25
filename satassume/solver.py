@@ -290,24 +290,32 @@ class Solver:
         """
         if not self._ok:
             return False
+        return self._add_lits(self._internal_lits(list(lits)), True)
+
+    def _add_lits(self, raw: list[int], clean: bool) -> bool:
+        """:meth:`add_clause` for internal literals (variables must exist).
+        ``clean``: merge duplicates and drop tautologies first; otherwise
+        ``raw`` must be free of both (template patterns are)."""
+        if not self._ok:
+            return False
         if self._trail_lim and self._held is None:
             self._backtrack(0)
-        raw = self._internal_lits(list(lits))
+        if clean and len(raw) > 1:
+            seen = set(raw)
+            if len(seen) < len(raw):
+                raw = list(dict.fromkeys(raw))  # merge duplicates, keep order
+            for l in raw:
+                if l ^ 1 in seen:
+                    return True                 # tautology
         val = self._val
         level = self._level
         out: list[int] = []
-        seen = set()
         for l in raw:
-            if l in seen:
-                continue
-            if (l ^ 1) in seen:
-                return True                     # tautology
             vl = val[l]
             if vl is not None and not level[l >> 1]:
                 if vl:
                     return True                 # satisfied at root
                 continue                        # false at root: drop literal
-            seen.add(l)
             out.append(l)
         self._witness = None
         self._stamp += 1
@@ -485,7 +493,7 @@ class Solver:
                 self._backtrack(0)              # root change: drop held levels
             for l in lits:
                 if val[l] is not None:
-                    if not self.add_clause([-(l >> 1) if l & 1 else l >> 1 for l in lits]):
+                    if not self._add_lits(list(lits), True):
                         return False
                     break
             else:
@@ -523,20 +531,30 @@ class Solver:
             self._grow(top)
         lo = 2 * base
         n2 = 2 * nvars
-        if self._val[lo:lo + n2].count(None) != n2:
-            ok = True
-            ext = self._to_ext
-            for c in pattern:
-                ok = self.add_clause([ext(l + lo) for l in c]) and ok
-            return ok
+        val = self._val
         clauses = self._clauses
         watches = self._watches
         append = clauses.append
-        for c in pattern:
-            out = [l + lo for l in c]
-            append(out)
-            watches[out[0]].append(out)
-            watches[out[1]].append(out)
+        if val[lo:lo + n2].count(None) != n2:
+            # Some target variable is assigned (at root, or at a held
+            # level): clauses with an assigned literal take the slow path.
+            for c in pattern:
+                out = [l + lo for l in c]
+                for l in out:
+                    if val[l] is not None:
+                        if not self._add_lits(out, False):
+                            return False
+                        break
+                else:
+                    append(out)
+                    watches[out[0]].append(out)
+                    watches[out[1]].append(out)
+        else:
+            for c in pattern:
+                out = [l + lo for l in c]
+                append(out)
+                watches[out[0]].append(out)
+                watches[out[1]].append(out)
         self._witness = None
         self._stamp += 1
         return True
