@@ -322,6 +322,29 @@ registry.register(floor)(_unary('floor', _floor))
 registry.register(ceiling)(_unary('ceiling', _ceiling))
 
 
+def _parts_of_round_rules():
+    # slots: 0 the argument y of floor/ceiling, 1 floor(y), 2 re(...) or im(...)
+    R = Rules()
+    R.rule([(0, 'finite', True)], (2, 'integer', True))
+    return R.rules
+
+
+@registry.register(re, im)
+def parts_of_round_templates(expr):
+    """``re`` and ``im`` of ``floor(y)`` or ``ceiling(y)`` for finite ``y``
+    are integers: SymPy rounds each part (``floor(y) = floor(re(y)) +
+    I*floor(im(y))``), so the value is a Gaussian integer.  The vocabulary
+    has no Gaussian-integer predicate, hence the rule looks through one
+    level of structure."""
+    r = expr.args[0]
+    if not isinstance(r, (floor, ceiling)):
+        return None
+    y = r.args[0]
+    consts = {0: y} if y.is_Atom and y.is_number else {}
+    key = ('parts_of_round', const_key(y) if consts else None)
+    return facts(key, _parts_of_round_rules, consts, (y, r, expr), 2)
+
+
 # ---------------------------------------------------------------------------
 # factorial
 # ---------------------------------------------------------------------------
