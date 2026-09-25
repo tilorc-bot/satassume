@@ -26,11 +26,27 @@ and the operation log, which is the reproduction.
 Seed count
 ----------
 
-``SOLVER_FUZZ_SEEDS`` (default 300) seeds starting at ``SOLVER_FUZZ_SEED0``
+``SOLVER_FUZZ_SEEDS`` (default 500) seeds starting at ``SOLVER_FUZZ_SEED0``
 (default 0), split into ``CHUNKS`` test items.  For a long run by hand::
 
     SOLVER_FUZZ_SEEDS=4000 pytest -q tests/test_solver_incremental.py
     python tests/test_solver_incremental.py 0 4000     # same, with counters
+    python tests/test_solver_incremental.py 0 2000 block    # rule-block mode
+    python tests/test_solver_incremental.py 0 2000 theory   # ... with a theory
+
+(each command under about 110 s; split longer runs by seed range).
+
+Rule-block mode
+---------------
+
+The same harness with ``Solver.set_rule_block``: the live solver runs its
+blocks as the propagator (``register_block``; even seeds) or mixes them
+with ``add_pattern`` clauses (odd seeds), the oracle always gets them as
+plain clauses.  The block is the engine's ``RULE_INTERNAL`` or a small
+random one; blocks are registered on fresh variables that are sometimes
+already constrained or assigned (at root or at a held level), sometimes
+while levels are held.  The theory variant attaches a ``ForbidTheory``
+whose atoms are variables of the first block.  See ``register_block``.
 
 Per seed, about 30% of instances are "hard" (15 to 40 variables and a
 burst of random 3-clauses near the satisfiability threshold) with small
@@ -48,7 +64,9 @@ from collections.abc import Callable
 
 import pytest
 
+from satassume.rules import NPRED, RULE_INTERNAL
 from satassume.solver import Solver
+from theory_harness import ForbidTheory, Recorder, check_protocol
 
 SEEDS = int(os.environ.get("SOLVER_FUZZ_SEEDS", "500"))
 SEED0 = int(os.environ.get("SOLVER_FUZZ_SEED0", "0"))
@@ -80,7 +98,8 @@ class Harness:
     set ``A``, the operation log and coverage counters."""
 
     def __init__(self, seed: int, ops=None, setup: Callable | None = None,
-                 hard: bool | None = None, nv: int | None = None):
+                 hard: bool | None = None, nv: int | None = None,
+                 block: str | None = None):
         self.seed = seed
         self.rng = rng = random.Random(seed)
         self.ops = list(ops if ops is not None else OPS)
@@ -88,6 +107,20 @@ class Harness:
         self.hard = (rng.random() < 0.3) if hard is None else hard
         if nv is None:
             nv = rng.randint(20, 80) if self.hard else rng.randint(3, 20)
+        # Rule-block mode (see register_block below): None, "prop" (every
+        # block of the live solver is a propagator) or "mixed" (some are
+        # add_pattern clauses).  The oracle always gets the clauses.
+        self.block_mode = block
+        self.pos = 0.5              # probability of a positive literal in rclause
+        if block:
+            if rng.random() < 0.5:
+                self.block, self.bk = RULE_INTERNAL, NPRED
+                # Most rules exclude predicates pairwise: random positive
+                # literals over them make nearly every problem UNSAT.
+                self.pos = 0.3
+            else:
+                self.block, self.bk = random_block(rng)
+            nv = max(nv, self.bk)
         self.nv = nv
         self.clauses: list[list[int]] = []
         self.A: list[int] | None = None
@@ -98,7 +131,7 @@ class Harness:
         self.after_prop = True      # root propagation is complete
         self.verified: set[int] = set()   # root literals proven entailed
         self.counts: dict[str, int] = {}
-        self.solver = s = Solver()
+        self.solver = s = BlockSolver() if block else Solver()
         if self.hard:
             # Small budgets so that learnt-clause deletion and restarts
             # happen on instances this small (both are tunables of Solver).
@@ -106,9 +139,16 @@ class Harness:
             s._restart_first = rng.choice([1, 2, 4, 100])
         if setup is not None:
             setup(s)
+        if block:
+            s.set_rule_block(self.block, self.bk)
         s.ensure_vars(self.nv)
+        if block:
+            self.add_block(1, True)     # variables 1..bk (theory atoms live there)
         if self.hard:
-            burst = [self.rclause(3) for _ in range(int(rng.uniform(4.0, 4.5) * self.nv))]
+            # (a lower ratio with blocks: they constrain the problem too)
+            ratio = (rng.uniform(4.0, 4.5) if not block else rng.uniform(3.4, 4.2)
+                     if self.pos == 0.5 else rng.uniform(1.0, 2.0))
+            burst = [self.rclause(3) for _ in range(int(ratio * self.nv))]
             self.record("add_clauses", burst)
             self.clauses.extend(burst)
             r = s.add_clauses(burst)
@@ -145,7 +185,7 @@ class Harness:
     def rclause(self, k: int) -> list[int]:
         rng = self.rng
         vs = rng.sample(range(1, self.nv + 1), min(k, self.nv))
-        return [v if rng.random() < 0.5 else -v for v in vs]
+        return [v if rng.random() < self.pos else -v for v in vs]
 
     def rlit(self) -> int:
         return self.rng.choice([1, -1]) * self.rng.randint(1, self.nv)
@@ -206,6 +246,24 @@ class Harness:
             if ref is not None and ref._ok and ref.value(v) is not None:
                 self.check(x == ref.value(v), "value incomplete", v, x, ref.value(v))
 
+    def add_block(self, base: int, prop: bool) -> bool:
+        """The rule block on ``base..``: registered as a propagator
+        (``prop``) or added as ``add_pattern`` clauses on the live solver,
+        always as clauses for the oracle."""
+        lo = 2 * base
+        self.clauses.extend([Solver._to_ext(l + lo) for l in c] for c in self.block)
+        s = self.solver
+        if prop:
+            self.record("register_block", base)
+            r = s.register_block(base)
+            self.count("blocks_registered")
+        else:
+            self.record("add_pattern_block", base)
+            r = s.add_pattern(self.block, base, self.bk)
+            self.after_prop = False
+        self.check(r or not self.sat([]), "block False but SAT", base, prop)
+        return r
+
     def held_now(self, lits) -> bool:
         """Will the next call with ``lits`` be answered from held levels?"""
         h = self.solver._held
@@ -218,6 +276,17 @@ def run_seed(seed: int, ops=None, setup=None, steps=None, **kw) -> dict[str, int
     h = Harness(seed, ops, setup, **kw)
     h.run(steps)
     st = h.solver.stats()
+    rec = getattr(h.solver, "recorder", None)
+    if rec is not None:
+        try:
+            check_protocol(rec)
+        except AssertionError as e:
+            h.check(False, f"theory protocol: {e}")
+    if h.block_mode:
+        h.count("block_seeds")
+        h.count("block_conflicts", st["conflicts"])
+        h.count("block_hard_conflicts", st["conflicts"] if h.hard else 0)
+        h.count("rb_reasons_read", h.solver.n_rb_reasons)
     h.count("seeds")
     h.count("conflicts", st["conflicts"])
     h.count("restarts", st["restarts"])
@@ -256,7 +325,9 @@ def add_clause(h: Harness) -> None:
     h.clauses.append(c)
     r = h.solver.add_clause(c)
     h.check(r or not h.sat([]), "add_clause False but SAT")
-    h.after_prop = len(c) != 1 and h.after_prop
+    # A clause unit at root is propagated at once, but without the theories
+    # (they hear of it at the next propagate or search).
+    h.after_prop = len(c) != 1 and h.after_prop and not h.solver._theories
 
 
 @op(8)
@@ -453,6 +524,134 @@ def root(h: Harness) -> None:
 
 
 # ----------------------------------------------------------------------
+# Rule block: the same problems with the block as a propagator
+# ----------------------------------------------------------------------
+#
+# In block mode the live solver has ``set_rule_block`` and a block on
+# variables 1..bk from the start; the operation ``register_block`` adds a
+# block on fresh variables (sometimes already constrained or assigned,
+# sometimes while levels are held) and links it to the rest.  The oracle
+# gets every block as plain clauses, so each check of the harness compares
+# the propagator with clause propagation.  The block is the engine's
+# ``RULE_INTERNAL`` or a small random one (more conflicts per variable).
+
+class BlockSolver(Solver):
+    """Counts the rule-block reasons conflict analysis reads."""
+    n_rb_reasons = 0
+
+    def _rb_reason(self, v, r):
+        self.n_rb_reasons += 1
+        return super()._rb_reason(v, r)
+
+
+def random_block(rng: random.Random) -> tuple[tuple, int]:
+    """A random clean pattern: k variables, binary to 4-ary clauses."""
+    k = rng.randint(3, 8)
+    out = []
+    for _ in range(rng.randint(k, 2 * k)):
+        vs = rng.sample(range(k), min(k, rng.choice([2, 2, 2, 3, 3, 4])))
+        out.append(tuple(2 * v + rng.randint(0, 1) for v in vs))
+    return tuple(out), k
+
+
+def _old_lit(h: Harness, below: int) -> int:
+    return h.rng.choice([1, -1]) * h.rng.randint(1, below)
+
+
+def register_block(h: Harness) -> None:
+    """A block on fresh variables: sometimes constrained first (a unit, or
+    a link from an old variable, possibly propagated at a held level), then
+    registered (in mixed mode sometimes added as clauses instead), then
+    linked to the old variables (in hard seeds by a burst of 3-clauses)."""
+    rng = h.rng
+    s = h.solver
+    k = h.bk
+    base = h.nv + 1
+    h.nv += k
+    s.ensure_vars(h.nv)
+    if rng.random() < 0.4:
+        for _ in range(rng.randint(1, 3)):
+            v = rng.randint(base, h.nv)
+            x = v if rng.random() < 0.5 else -v
+            r = rng.random()
+            top = s._trail[s._trail_lim[-1]:] if s._trail_lim else ()
+            if top and r < 0.5:
+                # implied by a literal of the top held level: x is assigned
+                # at that level (``_attach_held``) and the levels stay held
+                t = rng.choice(top)
+                c = [x, -Solver._to_ext(t)]
+            elif r < 0.7:
+                c = [x]                 # a root value (drops held levels)
+            else:
+                c = [x, _old_lit(h, base - 1)]
+            h.record("add_clause", c)
+            h.clauses.append(c)
+            if not s.add_clause(c):
+                h.check(not h.sat([]), "add_clause False but SAT")
+                return
+        if not s._trail_lim and rng.random() < 0.5:
+            implied(h)                  # hold levels over the root values
+    held = bool(s._trail_lim)
+    if held:
+        h.count("blocks_while_held")
+    val = s._val
+    lv = [s._level[v] for v in range(base, h.nv + 1) if val[2 * v] is not None]
+    if lv:
+        h.count("blocks_over_assigned")
+        if max(lv):
+            h.count("blocks_over_held_assigned")
+        elif held:
+            h.count("blocks_over_root_assigned_while_held")
+    prop = h.block_mode == "prop" or rng.random() < 0.7
+    if not h.add_block(base, prop):
+        return
+    if h.hard:
+        links = []
+        for _ in range(int(rng.uniform(0.3, 1.0) * k)):
+            c = [rng.randint(base, h.nv) * rng.choice([1, -1])]
+            c += [h.rlit() for _ in range(2)]
+            if len({abs(x) for x in c}) == 3:
+                links.append(c)
+    else:
+        links = [[rng.randint(base, h.nv) * rng.choice([1, -1]), _old_lit(h, base - 1)]
+                 for _ in range(rng.randint(1, 3))]
+    h.record("add_clauses", links)
+    h.clauses.extend(links)
+    r = s.add_clauses(links)
+    h.check(r or not h.sat([]), "add_clauses False but SAT")
+    h.after_prop = False
+
+
+BLOCK_OPS = OPS + [("register_block", 6, register_block)]
+
+
+def theory_setup(seed: int) -> Callable:
+    """A ForbidTheory (random mode, two or three forbidden sets) over atoms
+    1..3, which in block mode are variables of the first block; the live
+    solver's copy is wrapped in a Recorder for check_protocol."""
+    rng = random.Random(10007 * seed + 1)
+    mode = rng.choice(["eager", "lazy", "propagate"])
+    atoms = [1, 2, 3]
+    forbidden = [[v * rng.choice([1, -1]) for v in rng.sample(atoms, rng.randint(2, 3))]
+                 for _ in range(rng.randint(2, 3))]
+
+    def setup(s: Solver) -> None:
+        t = ForbidTheory(forbidden, mode)
+        if isinstance(s, BlockSolver):
+            t = s.recorder = Recorder(t, s)
+        s.attach_theory(t)
+        for v in atoms:
+            s.register_atom(t, v, None)
+    return setup
+
+
+def run_block_seed(seed: int, theory: bool = False) -> dict[str, int]:
+    mode = "prop" if seed % 2 == 0 else "mixed"
+    setup = theory_setup(seed) if theory else None
+    return run_seed(seed, ops=BLOCK_OPS, setup=setup, block=mode)
+
+
+# ----------------------------------------------------------------------
 # Tests
 # ----------------------------------------------------------------------
 
@@ -500,10 +699,63 @@ def test_harness_catches_a_dropped_clause(monkeypatch):
         run_seeds(0, 40)
 
 
+BLOCK_COVERAGE: dict[str, int] = {}
+
+
+@pytest.mark.parametrize("chunk", range(CHUNKS))
+def test_block_propagator_matches_clauses(chunk):
+    for seed in _chunk(chunk):
+        _merge(BLOCK_COVERAGE, run_block_seed(seed))
+
+
+@pytest.mark.parametrize("chunk", range(CHUNKS))
+def test_block_propagator_with_theory_matches_clauses(chunk):
+    for seed in _chunk(chunk):
+        _merge(BLOCK_COVERAGE, run_block_seed(seed, theory=True))
+
+
+def test_block_mix_covers_the_propagator_paths():
+    """Conflicts whose analysis reads a propagator reason, blocks
+    registered while levels are held and over assigned variables, and
+    every kind of answer, happen in block mode."""
+    c = BLOCK_COVERAGE
+    if c.get("block_seeds", 0) < 300:
+        c = {}
+        for seed in range(150):
+            _merge(c, run_block_seed(seed))
+            _merge(c, run_block_seed(seed, theory=True))
+    for key in ("rb_reasons_read", "block_hard_conflicts", "blocks_while_held",
+                "blocks_over_assigned", "blocks_over_held_assigned",
+                "blocks_over_root_assigned_while_held", "blocks_registered", "implied_from_held",
+                "solve_from_held", "reductions", "solve_unsat", "entails_None",
+                "entails_True", "entails_False", "entails_inconsistent"):
+        assert c.get(key, 0) > 0, (key, c)
+
+
+def test_harness_catches_a_weak_propagator(monkeypatch):
+    """The block fuzz checks the propagator: one that forgets a clause of
+    the block is caught within a few seeds."""
+    real = Solver.set_rule_block
+
+    def forgetting(self, block, nvars=None):
+        return real(self, tuple(block)[:-1], nvars)
+
+    monkeypatch.setattr(Solver, "set_rule_block", forgetting)
+    with pytest.raises(Mismatch):
+        for seed in range(40):
+            run_block_seed(seed)
+
+
 if __name__ == "__main__":
     seed0 = int(sys.argv[1]) if len(sys.argv) > 1 else SEED0
     n = int(sys.argv[2]) if len(sys.argv) > 2 else SEEDS
-    counts = run_seeds(seed0, n)
+    mode = sys.argv[3] if len(sys.argv) > 3 else "plain"
+    if mode == "plain":
+        counts = run_seeds(seed0, n)
+    else:
+        counts = {}
+        for seed in range(seed0, seed0 + n):
+            _merge(counts, run_block_seed(seed, theory=(mode == "theory")))
     print("ok", n, "seeds from", seed0)
     for k in sorted(counts):
         print(f"  {k}: {counts[k]}")

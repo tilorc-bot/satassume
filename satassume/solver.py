@@ -12,7 +12,10 @@ direct, MiniSat-flavoured CDCL solver:
   final-conflict analysis (:meth:`Solver.conflict`);
 * optional theory solvers (DPLL(T), :meth:`Solver.attach_theory`, contract
   in :mod:`satassume.theory`); without one every hook is skipped after a
-  single attribute test.
+  single attribute test;
+* an optional rule block (:meth:`Solver.set_rule_block`): one fixed clause
+  pattern instantiated per base variable (:meth:`Solver.register_block`)
+  and propagated from shared tables instead of watched clauses.
 
 Literals are plain signed integers externally (``v`` / ``-v``, ``v >= 1``).
 Internally a literal is encoded as ``2*v + (1 if negative else 0)`` so that
@@ -69,6 +72,65 @@ def _luby(y: float, x: int) -> float:
     return y ** seq
 
 
+_RULE_TABLES: dict = {}
+
+
+def _rule_tables(block, nvars: int | None) -> tuple[tuple, int]:
+    """The propagation tables of a rule block, built once per block object
+    and ``nvars``: ``(tables, nvars)`` with ``tables = (imp, occ3, occn,
+    clauses, shift, ncl)``, indexed by a literal ``rel`` relative to the
+    block (``0 .. 2*nvars - 1``) that has just become true:
+
+    * ``imp[rel]``: the literals ``q`` implied by the binary clauses
+      ``(rel^1, q)``;
+    * ``occ3[rel]``: ``(idx, a, b)`` for each ternary clause ``idx`` that
+      is ``(rel^1, a, b)``;
+    * ``occn[rel]``: ``(idx, others)`` for each longer clause ``idx``
+      containing ``rel^1``, ``others`` its other literals;
+    * ``clauses``: the block; ``ncl = len(clauses)``.
+
+    Reasons (see :meth:`Solver.set_rule_block`) are ``base << shift | x``
+    with ``x < ncl`` a clause index, or ``x = ncl + rel`` for an implication
+    of the binary table by the true literal ``rel``.
+    """
+    key = (id(block), nvars)
+    hit = _RULE_TABLES.get(key)
+    if hit is not None and hit[0] is block:
+        return hit[1], hit[2]
+    clauses = tuple(tuple(c) for c in block)
+    top = max((l >> 1 for c in clauses for l in c), default=-1) + 1
+    n = top if nvars is None else int(nvars)
+    if n < top or n < 1:
+        raise ValueError("rule block mentions a variable beyond nvars")
+    imp: list[list] = [[] for _ in range(2 * n)]
+    occ3: list[list] = [[] for _ in range(2 * n)]
+    occn: list[list] = [[] for _ in range(2 * n)]
+    for idx, c in enumerate(clauses):
+        if len(c) < 2 or len({l >> 1 for l in c}) != len(c) or min(c) < 0:
+            raise ValueError(f"rule block clause {c} is not a clean clause of 2+ literals")
+        if len(c) == 2:
+            a, b = c
+            imp[a ^ 1].append(b)
+            imp[b ^ 1].append(a)
+        else:
+            for i, l in enumerate(c):
+                others = c[:i] + c[i + 1:]
+                if len(c) == 3:
+                    occ3[l ^ 1].append((idx,) + others)
+                else:
+                    occn[l ^ 1].append((idx, others))
+    ncl = len(clauses)
+    shift = (ncl + 2 * n).bit_length()
+    tables = (tuple(tuple(x) for x in imp), tuple(tuple(x) for x in occ3),
+              tuple(tuple(x) for x in occn), clauses, shift, ncl)
+    # The entry keeps ``block`` alive, so its id is not reused.  Callers
+    # pass one module-level block; the bound only matters for tests.
+    if len(_RULE_TABLES) >= 64:
+        _RULE_TABLES.clear()
+    _RULE_TABLES[key] = (block, tables, n)
+    return tables, n
+
+
 class Solver:
     """Incremental CDCL SAT solver.  See the module docstring."""
 
@@ -86,7 +148,9 @@ class Solver:
         self._watches: list[list[Clause]] = [[], []]
         # Per-variable data; index 0 unused.
         self._level: list[int] = [0]
-        self._reason: list[Clause | None] = [None]
+        # reason: a clause, None (decision or root), or an int (a rule
+        # block implication, see set_rule_block; read through _rb_reason)
+        self._reason: list[Clause | int | None] = [None]
         self._act: list[float] = [0.0]
         self._polarity: list[int] = [1]      # 1: last/default phase is negative
         self._hpos: list[int] = [-1]         # position in the activity heap, -1 if absent
@@ -137,6 +201,15 @@ class Solver:
         self._thead = 0                      # trail entries before it were reported
         self._tprops: list = []              # bound ``propagate`` methods
         self._tmodels: list | None = None
+        # Rule block (see set_rule_block): per-variable base of the block
+        # the variable belongs to, 0 if none; the shared tables
+        # (see _rule_tables).
+        self._rb_base: list[int] = [0]
+        self._rb: tuple = ((), (), (), (), 0, 0)
+        self._rb_clauses: tuple | None = None
+        self._rb_n = 0                       # variables per block
+        self._rb_blocks = 0                  # registered blocks
+        self._rb_nclauses = 0                # clauses they stand for
 
     # ------------------------------------------------------------------
     # Variables and literal encoding
@@ -164,6 +237,7 @@ class Solver:
         self._act.extend([0.0] * k)
         self._polarity.extend([1] * k)
         self._seen.extend([0] * k)
+        self._rb_base.extend([0] * k)
         # New variables have activity 0, the minimum: appending them keeps
         # the max-heap property.
         heap = self._heap
@@ -559,6 +633,192 @@ class Solver:
         self._stamp += 1
         return True
 
+    # ------------------------------------------------------------------
+    # Rule block: a fixed clause pattern propagated without clauses
+    # ------------------------------------------------------------------
+
+    def set_rule_block(self, block, nvars: int | None = None) -> None:
+        """Install ``block`` as the rule block of this solver: clauses in
+        internal encoding relative to variable 0 (like :meth:`add_pattern`;
+        tautology- and duplicate-free, at least two literals each) over
+        ``nvars`` variables (default: the highest variable mentioned, plus
+        one).  Blocks are then instantiated per base variable with
+        :meth:`register_block`.  At most one block per solver; calling this
+        again with the same block is a no-op.  The tables are built once per
+        block object and shared by every solver (:func:`_rule_tables`), so
+        this is cheap enough to call per solver.
+
+        A registered block is propagated by :meth:`_propagate` from the
+        shared tables instead of watched clauses: binary clauses through an
+        implication table (literal ``rel`` true implies ``q``), longer
+        clauses by evaluating each clause that contains the literal just
+        falsified (see :func:`_rule_tables`).  This is unit propagation over
+        exactly the clauses ``add_pattern(block, base, nvars)`` would
+        insert, so every answer is the same.  A literal it implies has an
+        int as its reason (the base and the clause), turned into the clause
+        by :meth:`_rb_reason` where a reason is read (conflict analysis
+        only).
+        """
+        tables, n = _rule_tables(block, nvars)
+        if self._rb_clauses is not None:
+            if tables[3] == self._rb_clauses and n == self._rb_n:
+                return
+            raise ValueError("the rule block is already set")
+        self._rb = tables
+        self._rb_clauses = tables[3]
+        self._rb_n = n
+
+    def register_block(self, base: int) -> bool:
+        """Instantiate the rule block (:meth:`set_rule_block`) on variables
+        ``base .. base + nvars - 1`` (grown if needed): from now on the
+        solver behaves as if ``add_pattern(block, base, nvars)`` had been
+        called.  Returns False iff the problem is now UNSAT at root.
+
+        Contract: callable at any time between public calls, like the
+        ``add_*`` methods, including while assumption levels are held and
+        whatever the block's variables already carry (clauses, root
+        values, values at held levels).  Each variable belongs to at most
+        one block (ValueError otherwise).
+
+        * No variable of the block assigned (the common case): only the
+          base is recorded; held levels stay the propagation fixpoint.
+        * Some assigned, all at root: the block is evaluated once; clauses
+          unit at root add their literal as a root fact and propagate it at
+          once, a clause false at root makes the problem UNSAT (returns
+          False), exactly as inserting the clause would.  A new root fact
+          drops held levels (as a unit clause does); otherwise they stay.
+        * Some assigned at a held level: held levels are dropped first
+          (back to root), then as above.  Enqueuing the implications at a
+          held level instead would have to follow ``_attach_held`` (a unit
+          below the top level, or a clause satisfied only above its false
+          literals, cannot be kept without losing it on a later backjump);
+          this happens for 3 of 8,260 blocks on the replay.
+        """
+        if self._rb_clauses is None:
+            raise ValueError("register_block before set_rule_block")
+        base = int(base)
+        if base < 1:
+            raise ValueError("register_block takes a positive base variable")
+        if not self._ok:
+            return False
+        if self._trail_lim and self._held is None:
+            self._backtrack(0)
+        n = self._rb_n
+        top = base + n - 1
+        if top > self._nvars:
+            self._grow(top)
+        rb_base = self._rb_base
+        if rb_base[base:top + 1].count(0) != n:
+            raise ValueError(f"variables {base}..{top} overlap a registered block")
+        lo = 2 * base
+        val = self._val
+        assigned = val[lo:lo + 2 * n].count(None) != 2 * n
+        if assigned and self._trail_lim:
+            level = self._level
+            if any(level[v] for v in range(base, top + 1) if val[2 * v] is not None):
+                self._backtrack(0)
+        rb_base[base:top + 1] = [base] * n
+        self._rb_blocks += 1
+        self._rb_nclauses += len(self._rb_clauses)
+        self._witness = None
+        self._stamp += 1
+        if not assigned:
+            return True
+        return self._rb_settle(base)
+
+    def _rb_settle(self, base: int) -> bool:
+        """Propagate a block just registered over variables some of which
+        are assigned, all at root (their literals may already be past the
+        queue head, so the hook would never see them).  A clause of the
+        block unit or false now has a false literal, whose negation is a
+        true literal of the block: the tables of the true literals find
+        every such clause."""
+        val = self._val
+        lo = 2 * base
+        n2 = 2 * self._rb_n
+        imp, occ3, occn, _, _, _ = self._rb
+        vals = val[lo:lo + n2]
+        units = []
+        conflict = False
+        for rel in range(n2):
+            if not vals[rel]:
+                continue
+            for q in imp[rel]:
+                vq = vals[q]
+                if vq is None:
+                    units.append(q + lo)
+                elif not vq:
+                    conflict = True
+            for _, a, b in occ3[rel]:
+                va = vals[a]
+                vb = vals[b]
+                if va or vb:
+                    continue
+                if va is None:
+                    if vb is None:
+                        continue
+                    units.append(a + lo)
+                elif vb is None:
+                    units.append(b + lo)
+                else:
+                    conflict = True
+            for _, others in occn[rel]:
+                free = -1
+                for q in others:
+                    vq = vals[q]
+                    if vq is None:
+                        if free >= 0:
+                            break
+                        free = q
+                    elif vq:
+                        break
+                else:
+                    if free < 0:
+                        conflict = True
+                    else:
+                        units.append(free + lo)
+        if not units and not conflict:
+            return True                         # nothing to propagate
+        if self._trail_lim:
+            self._backtrack(0)                  # root change: drop held levels
+        if conflict:
+            self._ok = False
+            return False
+        level = self._level
+        reason = self._reason
+        trail = self._trail
+        for l in units:
+            vl = val[l]
+            if vl is None:
+                val[l] = True
+                val[l ^ 1] = False
+                level[l >> 1] = 0
+                reason[l >> 1] = None
+                trail.append(l)
+            elif not vl:
+                self._ok = False
+                return False
+        if self._propagate() is not None:
+            self._ok = False
+            return False
+        return True
+
+    def _rb_reason(self, v: int, r: int) -> list[int]:
+        """The clause behind the int reason ``r`` of variable ``v`` (a rule
+        block implication, see :func:`_rule_tables`), with the literal of
+        ``v`` first."""
+        _, _, _, clauses, shift, ncl = self._rb
+        lo = (r >> shift) << 1
+        x = r & ((1 << shift) - 1)
+        l = 2 * v if self._val[2 * v] else 2 * v + 1
+        if x >= ncl:
+            return [l, ((x - ncl) + lo) ^ 1]    # binary: (antecedent false, l)
+        c = [q + lo for q in clauses[x]]
+        i = c.index(l)
+        c[i] = c[0]
+        c[0] = l
+        return c
+
     def propagate(self) -> bool:
         """Run unit propagation at root; False iff there is a root conflict."""
         if not self._ok:
@@ -718,7 +978,156 @@ class Solver:
 
     def _propagate(self) -> Clause | None:
         """Unit propagation from the current queue head.  Returns a
-        conflicting clause or None."""
+        conflicting clause or None.
+
+        Each literal taken off the trail first goes through the rule block
+        of its variable, if registered (see :meth:`set_rule_block`), then
+        through the watch list of its negation.  Without a rule block the
+        loop is :meth:`_propagate_clauses`."""
+        if not self._rb_n:
+            return self._propagate_clauses()
+        val = self._val
+        watches = self._watches
+        trail = self._trail
+        level = self._level
+        reason = self._reason
+        rb_base = self._rb_base
+        rb_imp, rb_occ3, rb_occn, _, rb_shift, rb_ncl = self._rb
+        qhead = self._qhead
+        dl = len(self._trail_lim)
+        confl = None
+        nprops = 0
+        while qhead < len(trail):
+            p = trail[qhead]
+            qhead += 1
+            nprops += 1
+            base = rb_base[p >> 1]
+            if base:
+                lo = base << 1
+                rel = p - lo
+                code = base << rb_shift
+                why = code | (rb_ncl + rel)     # reason of a binary implication
+                for q in rb_imp[rel]:           # binary rules: p -> q
+                    l = q + lo
+                    vl = val[l]
+                    if vl is None:
+                        v = l >> 1
+                        val[l] = True
+                        val[l ^ 1] = False
+                        level[v] = dl
+                        reason[v] = why
+                        trail.append(l)
+                    elif not vl:
+                        confl = [l, p ^ 1]
+                        break
+                else:
+                    for idx, a, b in rb_occ3[rel]:      # ternary rules with p false
+                        a += lo
+                        va = val[a]
+                        if va:
+                            continue
+                        b += lo
+                        vb = val[b]
+                        if vb:
+                            continue
+                        if va is None:
+                            if vb is None:
+                                continue        # two free literals
+                        elif vb is None:
+                            a = b
+                        else:
+                            confl = [a, b, p ^ 1]
+                            break
+                        v = a >> 1
+                        val[a] = True
+                        val[a ^ 1] = False
+                        level[v] = dl
+                        reason[v] = code | idx
+                        trail.append(a)
+                    else:
+                        for idx, others in rb_occn[rel]:    # longer rules
+                            free = 0
+                            for q in others:
+                                l = q + lo
+                                vl = val[l]
+                                if vl is None:
+                                    if free:
+                                        break
+                                    free = l
+                                elif vl:
+                                    break
+                            else:
+                                if not free:
+                                    confl = [q + lo for q in others]
+                                    confl.append(p ^ 1)
+                                    break
+                                v = free >> 1
+                                val[free] = True
+                                val[free ^ 1] = False
+                                level[v] = dl
+                                reason[v] = code | idx
+                                trail.append(free)
+                if confl is not None:
+                    qhead = len(trail)
+                    break
+            fl = p ^ 1                          # this literal just became false
+            ws = watches[fl]
+            n = len(ws)
+            if not n:
+                continue
+            i = 0
+            j = 0
+            while i < n:
+                c = ws[i]
+                i += 1
+                # Make sure the false literal is c[1].
+                if c[0] == fl:
+                    c[0] = c[1]
+                    c[1] = fl
+                first = c[0]
+                vf = val[first]
+                if vf is True:
+                    ws[j] = c
+                    j += 1
+                    continue
+                # Look for a new literal to watch.
+                k = 2
+                m = len(c)
+                while k < m:
+                    l = c[k]
+                    if val[l] is not False:
+                        c[1] = l
+                        c[k] = fl
+                        watches[l].append(c)
+                        break
+                    k += 1
+                else:
+                    # Clause is unit or conflicting; keep watching fl.
+                    ws[j] = c
+                    j += 1
+                    if vf is False:
+                        confl = c
+                        while i < n:
+                            ws[j] = ws[i]
+                            j += 1
+                            i += 1
+                        qhead = len(trail)
+                    else:
+                        v = first >> 1
+                        val[first] = True
+                        val[first ^ 1] = False
+                        level[v] = dl
+                        reason[v] = c
+                        trail.append(first)
+            del ws[j:]
+        self._qhead = qhead
+        self._n_props += nprops
+        return confl
+
+    def _propagate_clauses(self) -> Clause | None:
+        """:meth:`_propagate` for a solver without a rule block: the watch
+        lists only.  (The same watch loop as in :meth:`_propagate`; a
+        solver without :meth:`set_rule_block` pays nothing for the hook.)"""
         val = self._val
         watches = self._watches
         trail = self._trail
@@ -1096,11 +1505,13 @@ class Solver:
             p = trail[index]
             index -= 1
             pv = p >> 1
-            confl = reason[pv]
             seen[pv] = 0
             path -= 1
             if path == 0:
                 break
+            confl = reason[pv]
+            if confl.__class__ is int:
+                confl = self._rb_reason(pv, confl)
         learnt[0] = p ^ 1
 
         # Basic clause minimization: drop literals whose reason clause is
@@ -1114,6 +1525,8 @@ class Solver:
                     learnt[j] = q
                     j += 1
                     continue
+                if r.__class__ is int:
+                    r = self._rb_reason(q >> 1, r)
                 keep = False
                 for m in range(1, len(r)):
                     u = r[m] >> 1
@@ -1163,6 +1576,8 @@ class Solver:
                     if l != p:
                         out.append(l)
                 else:
+                    if r.__class__ is int:
+                        r = self._rb_reason(v, r)
                     for k in range(1, len(r)):
                         u = r[k] >> 1
                         if level[u] > 0:
@@ -1372,7 +1787,8 @@ class Solver:
         reductions = self._n_reductions
         self._scan = 1
         self._assumptions = lits
-        self._max_learnts = max(self._max_learnts, len(self._clauses) / 3.0,
+        self._max_learnts = max(self._max_learnts,
+                                (len(self._clauses) + self._rb_nclauses) / 3.0,
                                 float(self._learnt_size_min))
         status = None
         restarts = 0
@@ -1467,4 +1883,5 @@ class Solver:
             "vars": self._nvars,
             "clauses": len(self._clauses),
             "learnts": len(self._learnts),
+            "rule_blocks": self._rb_blocks,
         }
