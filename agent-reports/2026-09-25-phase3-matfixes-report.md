@@ -1,6 +1,6 @@
 # Phase 3: matrix fixes (ri/matfixes)
 
-Branch `ri/matfixes` from f7e85d7 (refine-identities head). origin/refine-identities had no new commits at the merge. Code commits: 5c1a… (see `git log f7e85d7..`), gated at **25c8656**.
+Branch `ri/matfixes` from f7e85d7 (refine-identities head). origin/refine-identities had no new commits at the merge. Code commits 5027d87, 25c8656; gated at **25c8656**.
 
 ## Cases
 
