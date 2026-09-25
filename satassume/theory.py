@@ -112,7 +112,10 @@ class TheorySolver(Protocol):
     def check(self) -> tuple[bool, Any] | None:
         """Full consistency check of everything asserted so far.
 
-        Called only on a total assignment.  Returns ``(True, model)`` when
+        Called only on a total assignment (of every variable except the
+        rule-block variables nothing outside their block mentions, which
+        the solver leaves to the block's closure; never a theory atom).
+        Returns ``(True, model)`` when
         consistent (``model`` is theory-specific, e.g. values for the
         variables; it is kept by :meth:`Solver.theory_models`),
         ``(False, conflict_clause)`` when not, or None when the theory has

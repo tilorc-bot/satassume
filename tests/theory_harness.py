@@ -232,7 +232,10 @@ class Recorder:
     def check(self):
         s = self.solver
         if s is not None:
-            assert all(s._val[2 * v] is not None for v in range(1, s.nvars() + 1)), \
+            # every variable but the lazy ones (block variables nothing but
+            # their rule block mentions; never theory atoms) is assigned
+            assert all(s._val[2 * v] is not None or s._lazy[v]
+                       for v in range(1, s.nvars() + 1)), \
                 "check() called on a partial assignment"
         r = self.inner.check()
         self.events.append(("check", r))

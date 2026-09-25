@@ -15,7 +15,9 @@ direct, MiniSat-flavoured CDCL solver:
   single attribute test;
 * an optional rule block (:meth:`Solver.set_rule_block`): one fixed clause
   pattern instantiated per base variable (:meth:`Solver.register_block`)
-  and propagated from shared tables instead of watched clauses.
+  and propagated by its exact closure (a shared table of the block's
+  models) instead of watched clauses; its implications are written to the
+  trail only for variables something else mentions (lazy writes).
 
 Literals are plain signed integers externally (``v`` / ``-v``, ``v >= 1``).
 Internally a literal is encoded as ``2*v + (1 if negative else 0)`` so that
@@ -73,26 +75,222 @@ def _luby(y: float, x: int) -> float:
 
 
 _RULE_TABLES: dict = {}
+_EVEN = int("01" * 64, 2)          # bits 0, 2, 4, ... (positive relative literals)
+_BIT = tuple(1 << i for i in range(128))       # relative literal -> its bit
+_NBIT = tuple(~(1 << i) for i in range(128))   # ... and the complement
+
+
+def _block_models(clauses, n: int) -> tuple[int, ...]:
+    """All models of the block ``clauses`` (internal literals relative to
+    variable 0) over ``n`` variables, each as a mask over the ``2*n``
+    relative literals: bit ``2*i`` if variable ``i`` is true, bit
+    ``2*i + 1`` if it is false.  DPLL with unit propagation; the engine's
+    rule base has 48 models."""
+    out: list[int] = []
+    cls = [tuple(c) for c in clauses]
+
+    def up(a: set) -> bool:
+        changed = True
+        while changed:
+            changed = False
+            for c in cls:
+                free = -1
+                for l in c:
+                    if l in a:
+                        break
+                    if l ^ 1 not in a:
+                        if free >= 0:
+                            break
+                        free = l
+                else:
+                    if free < 0:
+                        return False
+                    a.add(free)
+                    changed = True
+        return True
+
+    def rec(a: set) -> None:
+        if not up(a):
+            return
+        for i in range(n):
+            if 2 * i not in a and 2 * i + 1 not in a:
+                rec(a | {2 * i + 1})
+                rec(a | {2 * i})
+                return
+        m = 0
+        for l in a:
+            m |= 1 << l
+        out.append(m)
+        if len(out) > 1 << 16:
+            raise ValueError("rule block has too many models")
+
+    rec(set())
+    return tuple(sorted(set(out)))
+
+
+class _BlockClosure:
+    """The exact closure of a set of literals of one block under the block's
+    clauses, from the table of its models (shared by every solver using the
+    block).  A set is a mask over the relative literals (see
+    :func:`_block_models`); its closure is the AND of the models that
+    contain it (every literal true in all of them), or 0 if none does
+    (the set is inconsistent with the block).  Explanations are subsets of
+    a set that still entail a literal (or are still inconsistent): greedy
+    over the models that must be excluded, then minimal by deletion."""
+
+    __slots__ = ("models", "memo", "expl", "values", "vmemo", "bits", "fmemo", "n",
+                 "msets", "all", "cls")
+
+    def __init__(self, clauses, n: int):
+        self.n = n
+        self.fmemo: dict[int, tuple] = {}
+        self.models = _block_models(clauses, n)
+        # per relative literal, the set of models containing it (a bit per
+        # model); closures are memoized per model set too
+        self.msets = tuple(sum(1 << j for j, x in enumerate(self.models) if (x >> r) & 1)
+                           for r in range(2 * n))
+        self.all = (1 << len(self.models)) - 1
+        self.cls: dict[int, int] = {}
+        self.memo: dict[int, int] = {}
+        self.expl: dict = {}
+        # per model, the values of the n variables (for model completion)
+        self.values = {x: [bool((x >> (2 * i)) & 1) for i in range(n)] for x in self.models}
+        self.vmemo: dict[int, list] = {}
+        # mask -> its relative literals, ascending
+        self.bits: dict[int, tuple] = {}
+
+    def flags(self, mm: int) -> tuple:
+        """``(lazy, mentioned)`` byte strings of the block's variables
+        for the mention mask ``mm``."""
+        r = self.fmemo.get(mm)
+        if r is None:
+            n = self.n
+            mt = bytes(1 if (mm >> (2 * i)) & 1 else 0 for i in range(n))
+            r = (bytes(1 - x for x in mt), mt)
+            if len(self.fmemo) >= 100_000:
+                self.fmemo.clear()
+            self.fmemo[mm] = r
+        return r
+
+    def lits_of(self, m: int) -> tuple:
+        r = self.bits.get(m)
+        if r is None:
+            out = []
+            b = m
+            while b:
+                low = b & -b
+                out.append(low.bit_length() - 1)
+                b ^= low
+            r = tuple(out)
+            if len(self.bits) >= 100_000:
+                self.bits.clear()
+            self.bits[m] = r
+        return r
+
+    def values_of(self, m: int) -> list:
+        """The variable values of a model containing the consistent set
+        ``m``."""
+        r = self.vmemo.get(m)
+        if r is None:
+            r = self.values[self.model_of(m)]
+            if len(self.vmemo) >= 100_000:
+                self.vmemo.clear()
+            self.vmemo[m] = r
+        return r
+
+    def closure(self, m: int) -> int:
+        r = self.memo.get(m)
+        if r is None:
+            # the models containing m: AND of the model sets of its literals
+            sets = self.msets
+            S = self.all
+            b = m
+            while b and S:
+                low = b & -b
+                S &= sets[low.bit_length() - 1]
+                b ^= low
+            r = self.cls.get(S)
+            if r is None:
+                acc = -1
+                x = S
+                models = self.models
+                while x:
+                    low = x & -x
+                    acc &= models[low.bit_length() - 1]
+                    x ^= low
+                r = acc if S else 0
+                self.cls[S] = r
+            memo = self.memo
+            if len(memo) >= 400_000:
+                memo.clear()
+            memo[m] = r
+        return r
+
+    def model_of(self, m: int) -> int:
+        """A model containing the consistent set ``m``."""
+        for x in self.models:
+            if x & m == m:
+                return x
+        raise RuntimeError("rule block: no model contains the set")
+
+    def explain(self, m: int, t: int) -> tuple[int, ...]:
+        """Relative literals of ``m`` (a consistent set whose closure has
+        ``t``; or, with ``t < 0``, an inconsistent set) forming a subset
+        that entails ``t`` (is inconsistent)."""
+        key = (m, t)
+        r = self.expl.get(key)
+        if r is not None:
+            return r
+        if t < 0:
+            bad = list(self.models)
+        else:
+            bad = [x for x in self.models if not (x >> t) & 1]
+        lits = []
+        b = m
+        while b:
+            low = b & -b
+            lits.append(low.bit_length() - 1)
+            b ^= low
+        chosen: list[int] = []
+        rest = bad
+        while rest:
+            best = -1
+            bestk = -1
+            for s in lits:
+                k = 0
+                for x in rest:
+                    if not (x >> s) & 1:
+                        k += 1
+                if k > bestk:
+                    best, bestk = s, k
+            if bestk <= 0:
+                raise RuntimeError("rule block explanation: set does not entail the literal")
+            chosen.append(best)
+            rest = [x for x in rest if (x >> best) & 1]
+        # minimal by deletion
+        i = 0
+        while i < len(chosen) and len(chosen) > 1:
+            sub = 0
+            for j, s in enumerate(chosen):
+                if j != i:
+                    sub |= 1 << s
+            if any(x & sub == sub for x in bad):
+                i += 1
+            else:
+                del chosen[i]
+        r = tuple(chosen)
+        expl = self.expl
+        if len(expl) >= 200_000:
+            expl.clear()
+        expl[key] = r
+        return r
 
 
 def _rule_tables(block, nvars: int | None) -> tuple[tuple, int]:
-    """The propagation tables of a rule block, built once per block object
-    and ``nvars``: ``(tables, nvars)`` with ``tables = (imp, occ3, occn,
-    clauses, shift, ncl)``, indexed by a literal ``rel`` relative to the
-    block (``0 .. 2*nvars - 1``) that has just become true:
-
-    * ``imp[rel]``: the literals ``q`` implied by the binary clauses
-      ``(rel^1, q)``;
-    * ``occ3[rel]``: ``(idx, a, b)`` for each ternary clause ``idx`` that
-      is ``(rel^1, a, b)``;
-    * ``occn[rel]``: ``(idx, others)`` for each longer clause ``idx``
-      containing ``rel^1``, ``others`` its other literals;
-    * ``clauses``: the block; ``ncl = len(clauses)``.
-
-    Reasons (see :meth:`Solver.set_rule_block`) are ``base << shift | x``
-    with ``x < ncl`` a clause index, or ``x = ncl + rel`` for an implication
-    of the binary table by the true literal ``rel``.
-    """
+    """The shared data of a rule block, built once per block object and
+    ``nvars``: ``((clauses, closure), nvars)`` with ``clauses`` the block
+    (checked: clean clauses of two or more literals) and ``closure`` its
+    :class:`_BlockClosure` (model table, closure and explanation memos)."""
     key = (id(block), nvars)
     hit = _RULE_TABLES.get(key)
     if hit is not None and hit[0] is block:
@@ -102,27 +300,12 @@ def _rule_tables(block, nvars: int | None) -> tuple[tuple, int]:
     n = top if nvars is None else int(nvars)
     if n < top or n < 1:
         raise ValueError("rule block mentions a variable beyond nvars")
-    imp: list[list] = [[] for _ in range(2 * n)]
-    occ3: list[list] = [[] for _ in range(2 * n)]
-    occn: list[list] = [[] for _ in range(2 * n)]
-    for idx, c in enumerate(clauses):
+    if n > 64:
+        raise ValueError("rule blocks have at most 64 variables")
+    for c in clauses:
         if len(c) < 2 or len({l >> 1 for l in c}) != len(c) or min(c) < 0:
             raise ValueError(f"rule block clause {c} is not a clean clause of 2+ literals")
-        if len(c) == 2:
-            a, b = c
-            imp[a ^ 1].append(b)
-            imp[b ^ 1].append(a)
-        else:
-            for i, l in enumerate(c):
-                others = c[:i] + c[i + 1:]
-                if len(c) == 3:
-                    occ3[l ^ 1].append((idx,) + others)
-                else:
-                    occn[l ^ 1].append((idx, others))
-    ncl = len(clauses)
-    shift = (ncl + 2 * n).bit_length()
-    tables = (tuple(tuple(x) for x in imp), tuple(tuple(x) for x in occ3),
-              tuple(tuple(x) for x in occn), clauses, shift, ncl)
+    tables = (clauses, _BlockClosure(clauses, n))
     # The entry keeps ``block`` alive, so its id is not reused.  Callers
     # pass one module-level block; the bound only matters for tests.
     if len(_RULE_TABLES) >= 64:
@@ -210,7 +393,30 @@ class Solver:
         # the variable belongs to, 0 if none; the shared tables
         # (see _rule_tables).
         self._rb_base: list[int] = [0]
-        self._rb: tuple = ((), (), (), (), 0, 0)
+        self._rbc: _BlockClosure | None = None   # the block's closure table
+        # Lazy rule-block writes: per base, the mask of the block's literals
+        # processed by _propagate and still on the trail (``_rb_mask``), and
+        # of the literals of its mentioned variables (``_rb_ment``); per
+        # variable, whether anything outside the block mentions it.
+        self._rb_mask: list[int] = [0]
+        self._rb_ment: list[int] = [0]
+        # Undo of the masks: (base, mask) pairs, flat, each saved at the
+        # first change of the block's mask at a level (``_rb_saved[base]``
+        # is the id of that level, ``_uid`` the id of the newest level),
+        # and per level the length of ``_rb_undo`` when it began
+        # (``_rb_ulim``, parallel to ``_trail_lim``).
+        self._rb_saved: list[int] = [0]
+        self._rb_cl: list[int] = [0]
+        self._rb_undo: list[int] = []
+        self._rb_ulim: list[int] = []
+        self._uid = 1
+        self._ment = bytearray(1)
+        # 1 for a block variable nothing else mentions: not decided by the
+        # search (its block's exact closure keeps it consistent; models are
+        # completed from the block's models, see _complete_model)
+        self._lazy = bytearray(1)
+        self._n_late = 0                     # late mentions that dropped held levels
+        self._n_late_written = 0             # late mentions written at held levels
         self._rb_clauses: tuple | None = None
         self._rb_n = 0                       # variables per block
         self._rb_blocks = 0                  # registered blocks
@@ -252,6 +458,8 @@ class Solver:
         self._polarity.extend([1] * k)
         self._seen.extend([0] * k)
         self._rb_base.extend([0] * k)
+        self._ment.extend(bytes(k))
+        self._lazy.extend(bytes(k))
         # New variables have activity 0, the minimum: appending them keeps
         # the max-heap property.
         heap = self._heap
@@ -378,7 +586,10 @@ class Solver:
         """
         if not self._ok:
             return False
-        return self._add_lits(self._internal_lits(list(lits)), True)
+        out = self._internal_lits(list(lits))
+        if len(out) > 1:
+            self._mention(out)          # (a unit is fixed at root: no need)
+        return self._add_lits(out, True)
 
     def _add_lits(self, raw: list[int], clean: bool) -> bool:
         """:meth:`add_clause` for internal literals (variables must exist).
@@ -511,13 +722,30 @@ class Solver:
             return False
         if self._trail_lim and self._held is None:
             self._backtrack(0)
+        nv = self._nvars
+        ment = self._ment
+        new = None
+        for lits in clauses:
+            if len(lits) == 1:
+                continue                        # fixed at root: no mention needed
+            for x in lits:
+                v = x if x > 0 else -x
+                if v > nv or not ment[v]:
+                    if v > nv:
+                        self._grow(v)
+                        nv = self._nvars
+                        ment = self._ment
+                    if new is None:
+                        new = []
+                    new.append(2 * v)
+        if new is not None:
+            self._mention(new)
         val = self._val
         watches = self._watches
         cls = self._clauses
         level = self._level
         reason = self._reason
         trail = self._trail
-        nv = self._nvars
         for lits in clauses:
             if len(lits) == 1:
                 x = lits[0]
@@ -568,13 +796,29 @@ class Solver:
         if v > self._nvars:
             self._grow(v)
 
-    def add_internal(self, clauses) -> bool:
+    def add_internal(self, clauses, mentions=None) -> bool:
         """Like :meth:`add_clauses` for clauses already in the internal
-        literal encoding (variables must exist, see :meth:`ensure_vars`)."""
+        literal encoding (variables must exist, see :meth:`ensure_vars`).
+        ``mentions``: the variables the clauses mention, as
+        :meth:`mention_blocks` pairs covering at least every literal (a
+        caller that knows them saves the scan)."""
         if not self._ok:
             return False
         if self._trail_lim and self._held is None:
             self._backtrack(0)
+        if mentions is not None:
+            self.mention_blocks(mentions)
+        else:
+            ment = self._ment
+            new = None
+            for lits in clauses:
+                for l in lits:
+                    if not ment[l >> 1]:
+                        if new is None:
+                            new = []
+                        new.append(l)
+            if new is not None:
+                self._mention(new)
         val = self._val
         watches = self._watches
         cls = self._clauses
@@ -621,6 +865,7 @@ class Solver:
             self._grow(top)
         lo = 2 * base
         n2 = 2 * nvars
+        self._mention([l + lo for c in pattern for l in c])
         val = self._val
         clauses = self._clauses
         watches = self._watches
@@ -664,27 +909,44 @@ class Solver:
         block object and shared by every solver (:func:`_rule_tables`), so
         this is cheap enough to call per solver.
 
-        A registered block is propagated by :meth:`_propagate` from the
-        shared tables instead of watched clauses: binary clauses through an
-        implication table (literal ``rel`` true implies ``q``), longer
-        clauses by evaluating each clause that contains the literal just
-        falsified (see :func:`_rule_tables`).  This is unit propagation over
-        exactly the clauses ``add_pattern(block, base, nvars)`` would
-        insert, so every answer is the same.  A literal it implies has an
-        int as its reason (the base and the clause), turned into the clause
-        by :meth:`_rb_reason` where a reason is read (conflict analysis
-        only).
+        A registered block is propagated by :meth:`_propagate` without
+        clauses, by its **exact closure** (:class:`_BlockClosure`): per
+        block the solver keeps the *asserted* literals (block literals on
+        the trail that the block did not imply itself) and their closure,
+        every literal true in all models of the block that contain them.
+        That is at least what unit propagation over the clauses
+        ``add_pattern(block, base, nvars)`` would insert derives (it can be
+        more: the case splits of non-Horn clauses), and a set with no model
+        is a conflict at once.  A literal the block implies has an int as
+        its reason (the asserted set and the base), turned into a clause (a
+        subset of the asserted set that entails it, negated) by
+        :meth:`_rb_reason` where a reason is read (conflict analysis only).
+
+        **Lazy writes.**  Above root, an implied literal is written to the
+        trail only if its variable is *mentioned*: by a clause added with
+        any ``add_*`` method (units excepted: they are root facts), an
+        assumption, a theory atom, or :meth:`mention` (the engine's query
+        literal); the rest live in the closure.  At root every implied
+        literal is written (the root trail is the fact cache's source).  A
+        variable mentioned while levels are held gets its implied value
+        written then (:meth:`_rb_late`).  A block variable never mentioned
+        is *lazy*: the search does not decide it (the closure keeps the
+        block consistent, so a model of the rest extends), and a stored
+        model gets its value on demand (:meth:`_fill`).  So
+        :meth:`implied` may leave out literals of unmentioned variables
+        that clause propagation would list; every other answer is as with
+        clauses (or more definite).
         """
         tables, n = _rule_tables(block, nvars)
         if self._rb_clauses is not None:
-            if tables[3] == self._rb_clauses and n == self._rb_n:
+            if tables[0] == self._rb_clauses and n == self._rb_n:
                 return
             raise ValueError("the rule block is already set")
-        self._rb = tables
-        self._rb_clauses = tables[3]
+        self._rb_clauses = tables[0]
         self._rb_n = n
+        self._rbc = tables[1]
 
-    def register_block(self, base: int) -> bool:
+    def register_block(self, base: int, mentions: int = 0) -> bool:
         """Instantiate the rule block (:meth:`set_rule_block`) on variables
         ``base .. base + nvars - 1`` (grown if needed): from now on the
         solver behaves as if ``add_pattern(block, base, nvars)`` had been
@@ -698,17 +960,21 @@ class Solver:
 
         * No variable of the block assigned (the common case): only the
           base is recorded; held levels stay the propagation fixpoint.
-        * Some assigned, all at root: the block is evaluated once; clauses
-          unit at root add their literal as a root fact and propagate it at
-          once, a clause false at root makes the problem UNSAT (returns
-          False), exactly as inserting the clause would.  A new root fact
-          drops held levels (as a unit clause does); otherwise they stay.
+        * Some assigned, all at root: the closure of the assigned literals
+          is written as root facts and propagated at once, or, if they
+          have no model of the block, the problem is UNSAT (returns
+          False).  A new root fact drops held levels (as a unit clause
+          does); otherwise they stay.
         * Some assigned at a held level: held levels are dropped first
           (back to root), then as above.  Enqueuing the implications at a
           held level instead would have to follow ``_attach_held`` (a unit
           below the top level, or a clause satisfied only above its false
           literals, cannot be kept without losing it on a later backjump);
           this happens for 3 of 8,260 blocks on the replay.
+
+        ``mentions``: literals of the block already known to be mentioned
+        (a mask as in :meth:`mention_blocks`), e.g. by the clauses the
+        caller is about to add.
         """
         if self._rb_clauses is None:
             raise ValueError("register_block before set_rule_block")
@@ -734,11 +1000,44 @@ class Solver:
             if any(level[v] for v in range(base, top + 1) if val[2 * v] is not None):
                 self._backtrack(0)
         rb_base[base:top + 1] = [base] * n
+        if top + n > len(self._rb_ment):
+            self._rb_room(top + n)
+        ment = self._ment
+        mm = (mentions | (mentions >> 1)) & _EVEN
+        if mm >> (2 * n):
+            raise ValueError("register_block: mentions beyond the block size")
+        mm |= mm << 1
+        # masks kept by mention_blocks at bases whose range overlaps this
+        # block (normally just this base), shifted onto it
+        rb_ment = self._rb_ment
+        lo_b = max(1, base - n + 1)
+        window = rb_ment[lo_b:top + 1]
+        if window.count(0) != len(window):
+            full = (1 << (2 * n)) - 1
+            for k, x in enumerate(window):
+                if x:
+                    d = lo_b + k - base             # -n < d < n
+                    mm |= (x << (2 * d) if d >= 0 else x >> (-2 * d)) & full
+        if ment[base:top + 1].count(0) != n:
+            for i in range(n):
+                if ment[base + i]:
+                    mm |= 3 << (2 * i)
+        self._rb_ment[base] = mm
+        lz, mt = self._rbc.flags(mm)
+        self._lazy[base:top + 1] = lz
+        ment[base:top + 1] = mt
+        self._rb_mask[base] = 0
+        self._rb_cl[base] = 0
         self._rb_blocks += 1
         self._rb_bases.append(base)
         self._rb_nclauses += len(self._rb_clauses)
         self._witness = None
         self._stamp += 1
+        if not self._rbc.models:
+            if self._trail_lim:
+                self._backtrack(0)
+            self._ok = False
+            return False
         if not assigned:
             return True
         return self._rb_settle(base)
@@ -746,75 +1045,43 @@ class Solver:
     def _rb_settle(self, base: int) -> bool:
         """Propagate a block just registered over variables some of which
         are assigned, all at root (their literals may already be past the
-        queue head, so the hook would never see them).  A clause of the
-        block unit or false now has a false literal, whose negation is a
-        true literal of the block: the tables of the true literals find
-        every such clause."""
+        queue head, so :meth:`_propagate` would never see them): the
+        block's closure of its assigned literals is written at root (all of
+        it: at root every block implication is written), or the problem is
+        UNSAT at root if they are inconsistent with the block."""
         val = self._val
         lo = 2 * base
         n2 = 2 * self._rb_n
-        imp, occ3, occn, _, _, _ = self._rb
-        vals = val[lo:lo + n2]
-        units = []
-        conflict = False
+        m = 0
         for rel in range(n2):
-            if not vals[rel]:
-                continue
-            for q in imp[rel]:
-                vq = vals[q]
-                if vq is None:
-                    units.append(q + lo)
-                elif not vq:
-                    conflict = True
-            for _, a, b in occ3[rel]:
-                va = vals[a]
-                vb = vals[b]
-                if va or vb:
-                    continue
-                if va is None:
-                    if vb is None:
-                        continue
-                    units.append(a + lo)
-                elif vb is None:
-                    units.append(b + lo)
-                else:
-                    conflict = True
-            for _, others in occn[rel]:
-                free = -1
-                for q in others:
-                    vq = vals[q]
-                    if vq is None:
-                        if free >= 0:
-                            break
-                        free = q
-                    elif vq:
-                        break
-                else:
-                    if free < 0:
-                        conflict = True
-                    else:
-                        units.append(free + lo)
-        if not units and not conflict:
+            if val[lo + rel]:
+                m |= 1 << rel
+        self._rb_mask[base] = m
+        if not m:
+            return True                         # (held levels were dropped)
+        c = self._rbc.closure(m)
+        self._rb_cl[base] = c
+        new = c & ~m
+        if c and not new:
             return True                         # nothing to propagate
         if self._trail_lim:
             self._backtrack(0)                  # root change: drop held levels
-        if conflict:
+        if not c:
             self._ok = False
             return False
         level = self._level
         reason = self._reason
         trail = self._trail
-        for l in units:
-            vl = val[l]
-            if vl is None:
+        while new:
+            low = new & -new
+            new ^= low
+            l = lo + low.bit_length() - 1
+            if val[l] is None:
                 val[l] = True
                 val[l ^ 1] = False
                 level[l >> 1] = 0
                 reason[l >> 1] = None
                 trail.append(l)
-            elif not vl:
-                self._ok = False
-                return False
         if self._propagate() is not None:
             self._ok = False
             return False
@@ -822,19 +1089,173 @@ class Solver:
 
     def _rb_reason(self, v: int, r: int) -> list[int]:
         """The clause behind the int reason ``r`` of variable ``v`` (a rule
-        block implication, see :func:`_rule_tables`), with the literal of
-        ``v`` first."""
-        _, _, _, clauses, shift, ncl = self._rb
-        lo = (r >> shift) << 1
-        x = r & ((1 << shift) - 1)
+        block implication: ``r = mask << 32 | base``, ``mask`` the block's
+        literals processed when ``v`` was implied, all on the trail before
+        it), with the literal of ``v`` first: a subset of ``mask`` that
+        entails it (:meth:`_BlockClosure.explain`), negated."""
+        base = r & 0xFFFFFFFF
+        lo = base << 1
         l = 2 * v if self._val[2 * v] else 2 * v + 1
-        if x >= ncl:
-            return [l, ((x - ncl) + lo) ^ 1]    # binary: (antecedent false, l)
-        c = [q + lo for q in clauses[x]]
-        i = c.index(l)
-        c[i] = c[0]
-        c[0] = l
-        return c
+        out = [l]
+        for q in self._rbc.explain(r >> 32, l - lo):
+            out.append((q + lo) ^ 1)
+        return out
+
+    # ------------------------------------------------------------------
+    # Mentioned variables (lazy rule-block writes)
+    # ------------------------------------------------------------------
+
+    def _mention(self, lits) -> None:
+        """Mark the variables of the internal literals ``lits`` as mentioned
+        outside the rule block.  A block implication is written to the trail
+        above root only for a mentioned variable; the rest stay in the
+        block's closure.  A variable of a block that becomes mentioned while
+        assumption levels are held and is implied there by its block (but
+        not written) drops the held levels, so the next propagation writes
+        it with its reason (at root every implication is written)."""
+        ment = self._ment
+        rb_base = self._rb_base
+        pend = None
+        for l in lits:
+            v = l >> 1
+            if not ment[v]:
+                ment[v] = 1
+                b = rb_base[v]
+                if b:
+                    if pend is None:
+                        pend = {}
+                    pend[b] = pend.get(b, 0) | (3 << (2 * (v - b)))
+        if pend is not None:
+            rb_ment = self._rb_ment
+            for b, new in pend.items():
+                mm = rb_ment[b] | new
+                rb_ment[b] = mm
+                self._rb_mentioned(b, new, mm)
+
+    def _rb_room(self, base: int) -> None:
+        """Make ``_rb_mask`` and ``_rb_ment`` (indexed by block base, grown
+        on demand rather than per variable) cover ``base``."""
+        k = max(base, self._nvars) + 1 - len(self._rb_ment)
+        if k > 0:
+            self._rb_mask.extend([0] * k)
+            self._rb_ment.extend([0] * k)
+            self._rb_saved.extend([0] * k)
+            self._rb_cl.extend([0] * k)
+
+    def mention_blocks(self, pairs) -> None:
+        """Mention variables by ``(base, mask)`` pairs: bit ``2*i`` or
+        ``2*i + 1`` of ``mask`` (either or both) mentions variable
+        ``base + i``, for ``i`` below the block size; variables must exist.
+        Same effect as :meth:`_mention` on those variables, per block
+        instead of per variable when ``base`` is the base of a registered
+        block, or when none of the variables is in a registered block yet
+        (the mask is then kept at ``base`` for :meth:`register_block`,
+        which collects every kept mask overlapping the new block).  Any
+        other pair (a ``base`` inside a registered block, a range touching
+        one) is mentioned variable by variable."""
+        rb_ment = self._rb_ment
+        rb_base = self._rb_base
+        n = self._rb_n
+        for base, mask in pairs:
+            mask = (mask | (mask >> 1)) & _EVEN
+            if not mask:
+                continue
+            if mask >> (2 * n):
+                raise ValueError("mention_blocks: mask beyond the block size")
+            mask |= mask << 1
+            if base + n > len(rb_ment):
+                self._rb_room(base + n)
+            b0 = rb_base[base]
+            if b0 != base and (b0 or rb_base[base:base + n].count(0) != n):
+                lits = []
+                while mask:
+                    low = mask & -mask
+                    mask ^= low
+                    lits.append(2 * base + low.bit_length() - 1)
+                self._mention(lits)
+                continue
+            old = rb_ment[base]
+            new = mask & ~old
+            if not new:
+                continue
+            mm = old | new
+            rb_ment[base] = mm
+            if b0 == base:
+                self._rb_mentioned(base, new, mm)
+
+    def _rb_mentioned(self, base: int, new: int, mm: int) -> None:
+        """The registered block at ``base`` has the mention mask ``mm``, of
+        which ``new`` (both literals of each variable) is new: update the
+        per-variable flags, put variables that are no longer lazy back
+        into the activity heap, and drop held levels if the block implies
+        a newly mentioned variable there without having written it."""
+        n = self._rb_n
+        lz, mt = self._rbc.flags(mm)
+        self._lazy[base:base + n] = lz
+        self._ment[base:base + n] = mt
+        hpos = self._hpos
+        if -1 in hpos[base:base + n]:
+            for i in range(n):
+                v = base + i
+                if hpos[v] < 0 and not lz[i]:
+                    self._heap_insert(v)
+        self._stamp += 1
+        if self._trail_lim:
+            imp = self._rb_cl[base] & new
+            if imp:
+                val = self._val
+                lo = base << 1
+                unw = 0
+                for q in self._rbc.lits_of(imp):
+                    if val[q + lo] is None:
+                        unw |= 1 << q
+                if unw:
+                    self._rb_late(base, self._rb_mask[base], unw)
+
+    def _rb_late(self, base: int, m: int, imp: int) -> None:
+        """Held levels, and the block at ``base`` implies the literals
+        ``imp`` of newly mentioned variables without having written them.
+        If the literals of the block below the top level do not imply any
+        of them, they are implied at the top level: write them there with
+        their reason and propagate, which keeps the held trail the
+        propagation fixpoint (as :meth:`_attach_held` does for a unit
+        clause).  Otherwise, or on a conflict, drop the held levels (back
+        to root, where every block implication is written)."""
+        dl = len(self._trail_lim)
+        lo = base << 1
+        level = self._level
+        rbc = self._rbc
+        low = 0
+        for q in rbc.lits_of(m):
+            if level[(q + lo) >> 1] < dl:
+                low |= 1 << q
+        if rbc.closure(low) & imp if low else rbc.closure(0) & imp:
+            self._n_late += 1
+            self._backtrack(0)
+            return
+        val = self._val
+        reason = self._reason
+        trail = self._trail
+        why = (m << 32) | base
+        for q in rbc.lits_of(imp):
+            l = q + lo
+            if val[l] is None:
+                val[l] = True
+                val[l ^ 1] = False
+                level[l >> 1] = dl
+                reason[l >> 1] = why
+                trail.append(l)
+        self._n_late_written += 1
+        if (self._tpropagate() if self._theories else self._propagate()) is not None:
+            self._n_late += 1
+            self._backtrack(0)
+
+    def mention(self, lits: Iterable[int]) -> None:
+        """Declare that the (external) literals' variables are read by the
+        caller (e.g. a query literal nothing else mentions), so that their
+        rule-block implications are written to the trail and seen by
+        :meth:`implied`."""
+        self._mention(self._internal_lits(lits))
 
     def propagate(self) -> bool:
         """Run unit propagation at root; False iff there is a root conflict."""
@@ -923,6 +1344,7 @@ class Solver:
         atoms.
         """
         lits = self._internal_lits(assumptions)
+        self._mention(lits)
         if self._held is not None:
             if self._held == lits:
                 return self._trail
@@ -966,12 +1388,16 @@ class Solver:
         val = self._val
         trail = self._trail
         trail_lim = self._trail_lim
+        rb_ulim = self._rb_ulim
+        rb_undo = self._rb_undo
         level = self._level
         reason = self._reason
         for l in lits:
             vl = val[l]
             if vl is True:
                 trail_lim.append(len(trail))    # empty level
+                rb_ulim.append(len(rb_undo))
+                self._uid += 1
                 if theories:
                     for t in theories:
                         t.push_level()
@@ -979,6 +1405,8 @@ class Solver:
             if vl is False:
                 return False
             trail_lim.append(len(trail))
+            rb_ulim.append(len(rb_undo))
+            self._uid += 1
             v = l >> 1
             val[l] = True
             val[l ^ 1] = False
@@ -1014,7 +1442,16 @@ class Solver:
         level = self._level
         reason = self._reason
         rb_base = self._rb_base
-        rb_imp, rb_occ3, rb_occn, _, rb_shift, rb_ncl = self._rb
+        rb_mask = self._rb_mask
+        rb_ment = self._rb_ment
+        rbc = self._rbc
+        memo = rbc.memo
+        BIT = _BIT
+        rb_saved = self._rb_saved
+        rb_undo = self._rb_undo
+        rb_cl = self._rb_cl
+        uid = self._uid
+        bits = rbc.bits
         qhead = self._qhead
         dl = len(self._trail_lim)
         confl = None
@@ -1023,75 +1460,52 @@ class Solver:
             p = trail[qhead]
             qhead += 1
             nprops += 1
-            base = rb_base[p >> 1]
-            if base:
-                lo = base << 1
-                rel = p - lo
-                code = base << rb_shift
-                why = code | (rb_ncl + rel)     # reason of a binary implication
-                for q in rb_imp[rel]:           # binary rules: p -> q
-                    l = q + lo
-                    vl = val[l]
-                    if vl is None:
-                        v = l >> 1
-                        val[l] = True
-                        val[l ^ 1] = False
-                        level[v] = dl
-                        reason[v] = why
-                        trail.append(l)
-                    elif not vl:
-                        confl = [l, p ^ 1]
+            pv = p >> 1
+            base = rb_base[pv]
+            if base and reason[pv].__class__ is not int:
+                # A block literal the block did not imply itself (an int
+                # reason): unless the block's closure has it already, it is
+                # a new asserted literal of the block.
+                bit = BIT[p - (base << 1)]
+                cl = rb_cl[base]
+                if not cl & bit:
+                    m = rb_mask[base]
+                    if dl and rb_saved[base] != uid:
+                        # first change of this block at this level: save
+                        # its state for _backtrack
+                        rb_saved[base] = uid
+                        rb_undo.append(base)
+                        rb_undo.append(m)
+                        rb_undo.append(cl)
+                    m |= bit
+                    c = memo.get(m)
+                    if c is None:
+                        c = rbc.closure(m)
+                    if not c:
+                        lo = base << 1
+                        confl = [(q + lo) ^ 1 for q in rbc.explain(m, -1)]
+                        qhead = len(trail)
                         break
-                else:
-                    for idx, a, b in rb_occ3[rel]:      # ternary rules with p false
-                        a += lo
-                        va = val[a]
-                        if va:
-                            continue
-                        b += lo
-                        vb = val[b]
-                        if vb:
-                            continue
-                        if va is None:
-                            if vb is None:
-                                continue        # two free literals
-                        elif vb is None:
-                            a = b
-                        else:
-                            confl = [a, b, p ^ 1]
-                            break
-                        v = a >> 1
-                        val[a] = True
-                        val[a ^ 1] = False
-                        level[v] = dl
-                        reason[v] = code | idx
-                        trail.append(a)
-                    else:
-                        for idx, others in rb_occn[rel]:    # longer rules
-                            free = 0
-                            for q in others:
-                                l = q + lo
-                                vl = val[l]
-                                if vl is None:
-                                    if free:
-                                        break
-                                    free = l
-                                elif vl:
-                                    break
-                            else:
-                                if not free:
-                                    confl = [q + lo for q in others]
-                                    confl.append(p ^ 1)
-                                    break
-                                v = free >> 1
-                                val[free] = True
-                                val[free ^ 1] = False
+                    rb_mask[base] = m
+                    rb_cl[base] = c
+                    new = c & ~cl & ~bit
+                    if dl:
+                        new &= rb_ment[base]
+                    if new:
+                        lo = base << 1
+                        why = (m << 32) | base
+                        rels = bits.get(new)
+                        if rels is None:
+                            rels = rbc.lits_of(new)
+                        for l in rels:
+                            l += lo
+                            if val[l] is None:
+                                v = l >> 1
+                                val[l] = True
+                                val[l ^ 1] = False
                                 level[v] = dl
-                                reason[v] = code | idx
-                                trail.append(free)
-                if confl is not None:
-                    qhead = len(trail)
-                    break
+                                reason[v] = why
+                                trail.append(l)
             fl = p ^ 1                          # this literal just became false
             ws = watches[fl]
             n = len(ws)
@@ -1236,6 +1650,19 @@ class Solver:
             pol[v] = l & 1
             if hpos[v] < 0:
                 self._heap_insert(v)
+        # the rule-block masks as they were when level lvl + 1 began
+        undo = self._rb_undo
+        k = self._rb_ulim[lvl]
+        if len(undo) > k:
+            rb_mask = self._rb_mask
+            rb_cl = self._rb_cl
+            for i in range(len(undo) - 1, k, -3):
+                b = undo[i - 2]
+                rb_mask[b] = undo[i - 1]
+                rb_cl[b] = undo[i]
+            del undo[k:]
+        del self._rb_ulim[lvl:]
+        self._uid += 1          # the top level is an older one: save anew
         del trail[start:]
         self._qhead = start
         if self._theories:
@@ -1285,6 +1712,7 @@ class Solver:
             raise ValueError("register_atom takes a positive variable")
         if var > self._nvars:
             self._grow(var)
+        self._mention((2 * var,))
         if self._trail_lim:
             self._backtrack(0)
         self._n_registered += 1
@@ -1633,10 +2061,11 @@ class Solver:
         heap, so the switch needs no work.
         """
         val = self._val
+        lazy = self._lazy
         v = self._scan
         if v:
             n = self._nvars
-            while v <= n and val[2 * v] is not None:
+            while v <= n and (val[2 * v] is not None or lazy[v]):
                 v += 1
             if v > n:
                 return -1
@@ -1646,7 +2075,7 @@ class Solver:
         pol = self._polarity
         while heap:
             v = self._heap_pop()
-            if val[2 * v] is None:
+            if val[2 * v] is None and not lazy[v]:
                 return 2 * v + pol[v]
         return -1
 
@@ -1687,6 +2116,8 @@ class Solver:
         assumptions = self._assumptions
         theories = self._theories
         propagate = self._tpropagate if theories else self._propagate
+        rb_ulim = self._rb_ulim
+        rb_undo = self._rb_undo
         conflict_c = 0
         while True:
             confl = propagate()
@@ -1737,6 +2168,8 @@ class Solver:
                     vp = val[p]
                     if vp is True:
                         trail_lim.append(len(trail))     # dummy level
+                        rb_ulim.append(len(rb_undo))
+                        self._uid += 1
                         dl += 1
                         if theories:
                             for t in theories:
@@ -1760,6 +2193,8 @@ class Solver:
                                 continue
                         return True                      # all assigned: model
                 trail_lim.append(len(trail))
+                rb_ulim.append(len(rb_undo))
+                self._uid += 1
                 if theories:
                     for t in theories:
                         t.push_level()
@@ -1778,6 +2213,7 @@ class Solver:
         responsible; after a satisfiable one :meth:`model` gives a model.
         """
         lits = self._internal_lits(list(assumptions))
+        self._mention(lits)
         held = self._held
         keep = len(held) if held is not None and lits[:len(held)] == held else 0
         return self._solve(lits, keep)
@@ -1864,12 +2300,36 @@ class Solver:
         self._assumptions = []
         return status
 
+    def _fill(self, mv: list, v: int):
+        """The value of variable ``v`` in the stored model ``mv`` where it is
+        None: a lazy block variable (never decided, see ``_lazy``).  The
+        block's segment of ``mv`` is completed with a model of the block
+        containing its assigned values (one exists: their closure was
+        consistent at the time of the model), so later reads agree; nothing
+        else constrained a lazy variable, so ``mv`` stays a model."""
+        b = self._rb_base[v]
+        if not b:
+            return None
+        n = self._rb_n
+        lo = b - 1
+        m = 0
+        for i, x in enumerate(mv[lo:lo + n]):
+            if x is not None:
+                m |= 1 << (2 * i + (0 if x else 1))
+        mv[lo:lo + n] = self._rbc.values_of(m)
+        return mv[v - 1]
+
     @property
     def _model(self) -> dict[int, bool] | None:
         """The model of the last successful solve as ``{var: value}``
         (built on first use), or None."""
         m = self._mdict
         if m is None and self._mvals is not None:
+            mv = self._mvals
+            if self._rb_blocks and None in mv:
+                for v in range(1, len(mv) + 1):
+                    if mv[v - 1] is None:
+                        self._fill(mv, v)
             m = self._mdict = dict(zip(range(1, len(self._mvals) + 1), self._mvals))
         return m
 
@@ -1898,20 +2358,34 @@ class Solver:
             n = len(mv)
             for l in lits:
                 v = l >> 1
-                if v > n or mv[v - 1] is not (not l & 1):
+                if v > n:
+                    break
+                x = mv[v - 1]
+                if x is None:
+                    x = self._fill(mv, v)
+                if x is not (not l & 1):
                     break
             else:
                 for i in range(rlen, root):
                     l = trail[i]
                     v = l >> 1
-                    if v > n or mv[v - 1] is not (not l & 1):
+                    if v > n:
+                        break
+                    x = mv[v - 1]
+                    if x is None:
+                        x = self._fill(mv, v)
+                    if x is not (not l & 1):
                         break
                 else:
                     for i in range(ncl, len(cls)):
                         for l in cls[i]:
                             v = l >> 1
-                            if v <= n and mv[v - 1] is not (l & 1 == 1):
-                                break           # l is true in the model
+                            if v <= n:
+                                x = mv[v - 1]
+                                if x is None:
+                                    x = self._fill(mv, v)
+                                if x is not (l & 1 == 1):
+                                    break           # l is true in the model
                         else:
                             break               # clause false in the model
                     else:
@@ -1930,8 +2404,12 @@ class Solver:
                 for q in c:
                     l = q + lo
                     v = l >> 1
-                    if v <= n and mv[v - 1] is not (l & 1 == 1):
-                        break
+                    if v <= n:
+                        x = mv[v - 1]
+                        if x is None:
+                            x = self._fill(mv, v)
+                        if x is not (l & 1 == 1):
+                            break
                 else:
                     return False
         return True
@@ -1961,7 +2439,9 @@ class Solver:
             v = -a if a < 0 else a
             if v <= n:
                 b = w[v - 1]
-                if b is not None and b != (a > 0):
+                if b is None:
+                    b = self._fill(w, v)
+                if b != (a > 0):
                     return False
         return True
 
@@ -1979,6 +2459,7 @@ class Solver:
         assumptions = [int(x) for x in assumptions]    # as _assume reads them
         if lit == 0:
             raise ValueError("literal must be a nonzero integer")
+        self.mention((lit,))
         # Cheap path: unit propagation only.
         trail = self._assume(assumptions)
         if trail is None:
