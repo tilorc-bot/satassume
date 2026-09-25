@@ -11,7 +11,7 @@
 #   the differential against handlers_v3 for seeds 2, 3, 7 at 1,500 cases in both modes,
 #   the same for seed 2 with SATREFINE_BACKEND=satassume, in both modes,
 #   the extended family (--ext: infinities, Piecewise, inverse pairs) for seed 2 at EXT_CASES
-#   cases (default 1,000) and the matrix family (--matrices) for seed 2 at MAT_CASES cases
+#   cases (default 1,000; 20 s per-case timeout, KroneckerDelta at +-oo is slow) and the matrix family (--matrices) for seed 2 at MAT_CASES cases
 #   (default 1,500), both in both modes, as sections of their own (the default seeds' case
 #   streams are unchanged, so their sections still compare 1:1 with older baselines),
 #   the termination tests (B9) with the adversarial-ask fuzz on their own, so the summary shows
@@ -47,7 +47,7 @@ for m in generated live; do
     tasks+=("diff-$m-$s|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --seed $s --cases 1500")
   done
   tasks+=("diffsa-$m-2|env SATREFINE_BACKEND=satassume SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --seed 2 --cases 1500")
-  tasks+=("diffext-$m-2|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --ext --seed 2 --cases $extcases")
+  tasks+=("diffext-$m-2|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --ext --timeout 20 --seed 2 --cases $extcases")
   tasks+=("diffmat-$m-2|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --matrices --seed 2 --cases $matcases")
 done
 tasks+=("termination|env SATREFINE_TERMINATION_FUZZ=$termfuzz timeout 3000 ${uvrun[*]} -m pytest -q -s -p no:cacheprovider tests/refine_identities/test_engine_termination.py")

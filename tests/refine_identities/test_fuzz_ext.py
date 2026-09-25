@@ -153,3 +153,10 @@ def test_default_scalar_and_matrix_streams_unchanged():
         g = fz.mat_generate(2, c)
         h.update(repr(None if g is None else (g[0], str(g[1]), str(g[2]))).encode())
     assert h.hexdigest()[:16] == "548bbfac92699b94"
+
+
+def test_finite_samples_carry_enough_digits():
+    """A 15-digit sample made ``atanh(tanh(x**3)) -> x**3`` look wrong at x = -2.36 (tanh is -1 + 7e-12)."""
+    from sympy import atanh, tanh
+    _, ce, _ = _check(atanh(tanh(x ** 3)), x ** 3, {x: ("extended_real", "finite")}, seed=3)
+    assert ce is None

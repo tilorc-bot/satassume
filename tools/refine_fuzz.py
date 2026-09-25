@@ -1021,7 +1021,9 @@ def draw_ext(combo, rng, inf_ok=True, p_inf=0.3):
         if v is None:
             return None
         if all(EXT_PREDS[p][1](v) for p in combo):
-            return v
+            # the same binary value at 40 digits: SymPy evaluates a Float argument at the
+            # Float's own precision, and 15 digits lose atanh(tanh(-13.19)) (tanh is -1 + 7e-12)
+            return v.xreplace({f: Float(f, 40) for f in v.atoms(Float)}) if v.has(Float) else v
     return None
 
 

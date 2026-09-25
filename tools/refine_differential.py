@@ -394,7 +394,7 @@ def _load(s):
 
 def _singular(record):
     """The counterexample's input side is nan or infinite."""
-    return record["unsound"]["orig"] in ("nan", "inf")
+    return record["unsound"]["orig"] in ("nan", "inf", "zoo") or record["unsound"]["orig"].startswith("oo*")
 
 
 def main(argv=None):
