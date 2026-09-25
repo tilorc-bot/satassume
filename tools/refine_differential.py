@@ -377,8 +377,9 @@ def _load(s):
     from sympy.assumptions.relation.binrel import AppliedBinaryRelation
     from sympy.core.symbol import Str
     ns.update(AppliedBinaryRelation=AppliedBinaryRelation, Str=Str)
+    from sympy.calculus.accumulationbounds import AccumulationBounds
     from sympy.functions.elementary.piecewise import ExprCondPair
-    ns.update(ExprCondPair=ExprCondPair)
+    ns.update(ExprCondPair=ExprCondPair, AccumulationBounds=AccumulationBounds)
     import sympy.matrices.expressions as mexpr
     from sympy.matrices.expressions.matexpr import MatrixElement
     ns.update({k: getattr(mexpr, k) for k in dir(mexpr) if not k.startswith("_")}, MatrixElement=MatrixElement)
@@ -409,6 +410,7 @@ def main(argv=None):
                     help="matrix expressions (refine_fuzz.mat_generate) checked at explicit sample matrices")
     ap.add_argument("--ext", action="store_true",
                     help="the extended family (refine_fuzz.ext_generate): infinities, Piecewise, inverse pairs")
+    ap.add_argument("--keep", help="keep the workers' JSON results in this directory")
     ap.add_argument("--worker", help=argparse.SUPPRESS)
     ap.add_argument("--out", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
@@ -419,8 +421,10 @@ def main(argv=None):
     t0 = time.time()
     with tempfile.TemporaryDirectory() as tmp:
         res = {}
+        keep = args.keep or tmp
+        os.makedirs(keep, exist_ok=True)
         for label, pkg in (("a", args.a), ("b", args.b)):     # sequential: shared machine
-            res[label] = run_worker(pkg, args, os.path.join(tmp, f"{label}.json"))
+            res[label] = run_worker(pkg, args, os.path.join(keep, f"{label}-{pkg}-{args.seed}.json"))
     A = {r["case"]: r for r in res["a"]["records"]}
     B = {r["case"]: r for r in res["b"]["records"]}
     common = sorted(set(A) & set(B))
@@ -447,7 +451,11 @@ def main(argv=None):
     for c in differ:
         g = gen(args.seed, c)
         _, e, _, combos, rel = g
-        la, lb = _load(A[c]["result"]), _load(B[c]["result"])
+        try:
+            la, lb = _load(A[c]["result"]), _load(B[c]["result"])
+        except Exception:  # noqa: BLE001 -- a result this parser cannot rebuild stays undecided
+            verdicts[c] = ("undecided", None)
+            continue
         rng = random.Random(args.seed * 104729 + c)
         if args.matrices:
             n, ce = fz().mat_compare(la, lb, fz().mat_points(combos, rel, rng), ref=e)
