@@ -7,8 +7,8 @@ its own keys on their identity rows (:func:`._dispatch.live_for`) and every
 other key through the tables generated so far (:func:`._dispatch.tables`), so a
 later stage builds on the compiled rules of the earlier ones.  Rules are
 verified before they are installed, every round.  A round regenerates the
-families whose inputs (the other families' tables) changed since their last
-generation; the loop stops when a round changes no table and fails loudly after
+families whose inputs changed since their last generation: the tables at the
+keys the dispatcher looked up while generating them (:data:`._dispatch.consulted`); the loop stops when a round changes no table and fails loudly after
 :data:`MAX_ROUNDS`.  Cycles between stages (``im(log w)`` needs ``log``,
 ``log``'s rules need ``im``) are what the later rounds are for.
 
@@ -62,14 +62,21 @@ def install(rules: list[Row], keys: list[str], into: dict | None = None) -> None
     for key in keys:
         if key in heads:
             into[key] = handler
+        else:
+            into.pop(key, None)          # the family no longer has a table for it
 
 
-def generate_one(module: types.ModuleType) -> tuple[list[Row], list[str], dict]:
-    """One family against the tables installed now: its keys live, every other key through its table."""
+def generate_one(module: types.ModuleType, consulted: set | None = None) -> tuple[list[Row], list[str], dict]:
+    """One family against the tables installed now: its keys live, every other key through its
+    table.  ``consulted`` collects the keys whose table the dispatcher looked up."""
     keys = sorted(_specialize.identity_keys(module))
     _specialize.records.clear()
-    with _dispatch.tables(), _dispatch.live_for(keys):
-        rules, keys, verdicts = _specialize.generate_family(module)
+    _dispatch.consulted.append(set() if consulted is None else consulted)
+    try:
+        with _dispatch.tables(), _dispatch.live_for(keys):
+            rules, keys, verdicts = _specialize.generate_family(module)
+    finally:
+        _dispatch.consulted.pop()
     return rules, keys, verdicts
 
 
@@ -84,19 +91,20 @@ def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MA
     saved = dict(_dispatch.generated_handlers)
     _dispatch.generated_handlers.clear()
     out: dict[str, dict] = {}
-    inputs: dict[str, Any] = {}
+    inputs: dict[str, dict] = {}     # family -> {key it looked up: the table installed there then}
+    tables: dict[str, tuple] = {}    # key -> the rules of the table installed for it
     try:
         for rnd in range(1, max_rounds + 1):
             changed = []
             for module in modules:
                 fam = family_name(module)
-                seen = tuple((f, tuple(out[f]["rules"])) for f in sorted(out) if f != fam)
-                if inputs.get(fam) == seen:
-                    continue
+                if fam in inputs and all(tables.get(k) == v for k, v in inputs[fam].items()):
+                    continue                     # no table it looked up has changed: same result
                 t0 = time.time()
-                rules, keys, verdicts = generate_one(module)
+                consulted: set = set()
+                rules, keys, verdicts = generate_one(module, consulted)
                 seconds = time.time() - t0
-                inputs[fam] = seen
+                inputs[fam] = {k: tables.get(k) for k in consulted}
                 entry = out.setdefault(fam, {"rules": None, "rounds": [], "seconds": []})
                 entry["seconds"].append(round(seconds, 1))
                 log(f"round {rnd} {fam}: {len(rules)} rules in {seconds:.0f}s")
@@ -107,6 +115,8 @@ def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MA
                                           for r in rules})
                     entry["rounds"].append(rnd)
                     install(rules, keys)
+                    heads = {lhs.func.__name__ for lhs, _, _ in rules}
+                    tables.update({k: tuple(rules) if k in heads else None for k in keys})
                     changed.append(fam)
             if not changed:
                 return out

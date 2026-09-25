@@ -58,25 +58,7 @@ and products with a zero and an infinite factor (``0*oo``) become ``0`` or
 """
 from __future__ import annotations
 
-from sympy import (
-    Abs,
-    I,
-    Interval,
-    Q,
-    S,
-    arg,
-    conjugate,
-    exp,
-    floor,
-    im,
-    log,
-    pi,
-    re,
-    sign,
-    symbols,
-    true,
-    zoo,
-)
+from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
 from sympy.core import Mul
 
 from .._upstream import handlers_dict

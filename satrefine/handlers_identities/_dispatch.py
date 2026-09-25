@@ -146,6 +146,11 @@ def tracing() -> Iterator[list]:
         _trace.pop()
 
 
+consulted: list[set] = []
+"""A stack of key sets: the keys whose generated table the dispatcher looked up (a
+staged generation depends on the other families' tables through these keys only)."""
+
+
 live_keys: set = set()
 """Keys whose generated table is ignored even in generated mode: the keys of the
 family being generated (:func:`._stages.generate`), which must not read the table it
@@ -275,7 +280,11 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
         if ref is not None:
             return ref, False
     handler = _upstream.handlers_dict.get(name)
-    generated = generated_handlers.get(name) if mode() == "generated" and name not in live_keys else None
+    generated = None
+    if mode() == "generated" and name not in live_keys:
+        generated = generated_handlers.get(name)
+        if consulted:
+            consulted[-1].add(name)
     new = generated(expr, assumptions) if generated is not None else None
     if new is None or new == expr:
         if handler is None:
