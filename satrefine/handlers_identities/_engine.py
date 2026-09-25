@@ -753,9 +753,12 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     def handler(expr: Any, assumptions: Any) -> Any:
         if busy[0]:
             return None
+        candidates = [row for row in rows if could_match(row[0], expr)]
+        if not candidates:
+            return None
         m = measure or default_measure(static_heads | {expr.func})
         m0 = m(expr, assumptions)
-        for lhs, rhs, domain in rows:
+        for lhs, rhs, domain in candidates:
             for b in bindings(lhs, expr, assumptions):
                 if provable(subst(domain, b), assumptions) is not True:
                     continue
@@ -804,6 +807,8 @@ def rule_handler(rows: list) -> Callable[[Any, Any], Any]:
 
     def handler(expr: Any, assumptions: Any) -> Any:
         for lhs, rhs, hyp, unless in rows:
+            if not could_match(lhs, expr):
+                continue
             for b in bindings(lhs, expr, assumptions):
                 if provable(subst(hyp, b), assumptions) is not True:
                     continue
