@@ -17,7 +17,7 @@ propagation during which a theory propagated.  ``noop-prop`` adds a
 
 ``micro``: per-literal cost of an implication made by the rule block
 (``register_block``, ``integer`` asserted on N fresh blocks, the block
-implies 12 literals each) against the same implications made by a theory
+implies 15 literals each) against the same implications made by a theory
 through ``propagate`` with eager reasons (``Solver._theory_imply``), at a
 decision level (under an assumption), where a theory reason becomes a
 learnt clause.

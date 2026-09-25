@@ -1,7 +1,7 @@
 # Fact-lattice theory: running status
 
 - **Updated:** 2026-09-25, end of stage 0 (measurements)
-- **Branch:** `facts-theory`, rebased onto `origin/main` at `c552806`
+- **Branch:** `facts-theory`, rebased onto `origin/main` at `6b935d7` (code baseline `c552806`; the later commits only archive reports)
   (the plan baseline since the orchestrator's note; stage 0 re-measured
   there, same conclusions), bundle at
   `/work/src/bundles/facts-theory.bundle`
