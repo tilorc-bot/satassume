@@ -58,8 +58,8 @@ RULES = [
     #   asks: Q.positive(b), Q.nonnegative(b), Q.real(log(b))
     (Abs(b**e), b**re(e), Q.positive(b)),
     # round 1: from complex_parts.IDENTITIES[1] under Q.imaginary(e) & Q.positive(b)
-    #   fired: complex_parts.RULES[10], complex_parts.DEFINITIONS[1], complex_parts.RULES[0], power_exp_log.RULES[18], complex_parts.RULES[4], complex_parts.IDENTITIES[1]
-    #   asks: Q.positive(b), Q.nonnegative(b), Q.imaginary(e*log(b))
+    #   fired: complex_parts.RULES[10], complex_parts.DEFINITIONS[1], complex_parts.RULES[0], power_exp_log.RULES[18], complex_parts.RULES[6], complex_parts.RULES[4], complex_parts.IDENTITIES[1]
+    #   asks: Q.positive(b), Q.nonnegative(b), Q.real(log(b)), Q.imaginary(e)
     (Abs(b**e), 1, Q.imaginary(e) & Q.positive(b)),
     # round 1: from complex_parts.IDENTITIES[1] under Q.negative(b) & Q.real(e)
     #   fired: complex_parts.RULES[11], complex_parts.DEFINITIONS[1], complex_parts.RULES[1], power_exp_log.FACTS[1], complex_parts.IDENTITIES[5], complex_parts.RULES[2], complex_parts.RULES[3], power_exp_log.RULES[18], complex_parts.IDENTITIES[1]
