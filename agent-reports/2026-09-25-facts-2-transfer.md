@@ -123,6 +123,23 @@ assumption sets, each plainly inconsistent without any equality:
 `positive(x) & zero(x) & ...` (6); SymPy raises on 24 and answers the
 unrelated proposition on 12 (as stage 0 found). Nothing lost.
 
+### New ValueErrors (transfer, default engine)
+
+None on the stream, none on gate2, and none lost. New ones arise where
+the assumptions are inconsistent only under equality; the unit tests
+(`test_inconsistent_under_equality`) pin two new ones and one that the
+base already raised through LRA:
+
+| assumptions (query `real(x)`) | base engine | SymPy `ask` | now |
+|---|---|---|---|
+| `eq(x, y) & prime(x) & noninteger(y)` | True | True | ValueError |
+| `eq(x, 2) & odd(x)` | True | True | ValueError |
+| `eq(x, y) & positive(x) & negative(y)` | ValueError already (LRA) | True | ValueError (unchanged) |
+
+SymPy does not check these assumption sets for consistency under
+equality (it has no substitution), so it answers the query; they are
+genuinely inconsistent.
+
 ### gate2 (`tools/gate2.py --allow-more-definite`)
 
 2,863 records, changed 0, **1 more definite** (out of scope group
@@ -154,7 +171,31 @@ through LRA on the base; it stays False.)
 
 ## Gates
 
-FUZZ-PLACEHOLDER
+| gate | result |
+|---|---|
+| transfer fuzz, `euf` setup (`tests/test_transfer_fuzz.py`, exact comparison with the explicit-clause oracle), seeds 0 to 4,199 | pass: 23,175 answers identical (8,327 definite), 1 inconsistent-assumptions difference (seed 750, see Risks) |
+| transfer fuzz, `lra` setup (LRA + EUF, soundness), seeds 0 to 3,999 | pass: 22,089 answers identical (7,919 definite), 0 where the oracle is more definite |
+| mutation check: the same fuzz with transfer off on the engine side | fails on 29 of seeds 0 to 99 (the fuzz sees transfer) |
+| theory protocol (`tests/theory_harness.Recorder` + `check_protocol` around every `TransferTheory` of 40 fuzz seeds, `test_transfer.py::test_protocol_on_fuzz`) | pass |
+| `tests/test_solver_incremental.py`, modes plain / block / theory, 4,000 seeds each | INCPLACEHOLDER |
+| `tests/test_solver_real_theories.py`, `REAL_THEORY_SEEDS=4000` | pass (4 modes) |
+| `tests/test_euf_fuzz.py` + `test_euf.py`, `EUF_FUZZ_EXAMPLES=1000` | pass (72, 2 xfail as baseline) |
+| suite (split in two runs) | baseline: 2 known failures in `test_shared_facts`, everything else passes (1,728 passed + `test_transfer_fuzz.py` 12) |
+| `tools/ab.py` (`facts-theory` vs branch, `--rounds 1 --allow-more-definite`) | answers match, 15 more definite |
+| `tools/gate2.py --allow-more-definite` | changed 0, 1 more definite |
+
+Tests changed: `test_relations.py::test_equality_failing` was an xfail
+(SymPy's `test_equality_failing`) and now passes; its third assertion
+used symbols declared real, for which `imaginary(y)` is inconsistent by
+itself (the base engine says so too), so that line now expects
+inconsistent and a plain-symbol twin expects True.
+`test_euf_adapter.py::test_engine_equality_failing_is_not_wrong` now
+requires True; the reference-flaw note `30327-substitution-scope` says
+the engine answers these.
+
+Stream engagement (informational): 135 of 1,657 sessions of one pass
+attach the transfer theory; they register 28,479 predicate variables
+and it propagates 2,495 literals.
 
 ## Risks and known gaps
 
