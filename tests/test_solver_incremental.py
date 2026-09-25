@@ -99,7 +99,7 @@ class Harness:
 
     def __init__(self, seed: int, ops=None, setup: Callable | None = None,
                  hard: bool | None = None, nv: int | None = None,
-                 block: str | None = None):
+                 block: str | None = None, block_mode: str | None = None):
         self.seed = seed
         self.rng = rng = random.Random(seed)
         self.ops = list(ops if ops is not None else OPS)
@@ -110,7 +110,7 @@ class Harness:
         # Rule-block mode (see register_block below): None, "prop" (every
         # block of the live solver is a propagator) or "mixed" (some are
         # add_pattern clauses).  The oracle always gets the clauses.
-        self.block_mode = block
+        self.block_mode = block_mode or block
         self.pos = 0.5              # probability of a positive literal in rclause
         if block:
             if rng.random() < 0.5:
@@ -123,6 +123,16 @@ class Harness:
             nv = max(nv, self.bk)
         self.nv = nv
         self.clauses: list[list[int]] = []
+        # Lazy rule-block writes: the live solver writes a block implication
+        # above root only for a variable something outside the block
+        # mentions.  The harness keeps its own account of what it told the
+        # live solver: the indices of clauses that are propagator blocks
+        # (``prop_block``, not a mention) and the variables of assumptions,
+        # queried literals, theory atoms and explicit mentions
+        # (``extra_ment``); :meth:`mentioned` is the rest of the clauses'
+        # variables plus those.  ``implied`` is compared on them.
+        self.prop_block: set[int] = set()
+        self.extra_ment: set[int] = set()
         self.regs: list[tuple[int, int]] = []   # (theory index, var) registered by ops
         self.A: list[int] | None = None
         self.A_bad = False          # A was found inconsistent
@@ -132,7 +142,8 @@ class Harness:
         self.after_prop = True      # root propagation is complete
         self.verified: set[int] = set()   # root literals proven entailed
         self.counts: dict[str, int] = {}
-        self.solver = s = BlockSolver() if block else Solver()
+        self.solver = s = (MentionSolver(seed) if block == "mentions" else
+                           BlockSolver() if block else Solver())
         if self.hard:
             # Small budgets so that learnt-clause deletion and restarts
             # happen on instances this small (both are tunables of Solver).
@@ -140,6 +151,7 @@ class Harness:
             s._restart_first = rng.choice([1, 2, 4, 100])
         if setup is not None:
             setup(s)
+            self.extra_ment.update(getattr(s, "fuzz_atoms", ()))
         if block:
             s.set_rule_block(self.block, self.bk)
         s.ensure_vars(self.nv)
@@ -170,6 +182,21 @@ class Harness:
             o.add_clause(c)
         o.propagate()
         return o
+
+    def mentioned(self) -> set[int] | None:
+        """The variables the live solver has been told about outside its
+        propagator blocks (None: no blocks, every variable counts)."""
+        if not self.block_mode:
+            return None
+        out = set(self.extra_ment)
+        pb = self.prop_block
+        for i, c in enumerate(self.clauses):
+            if i not in pb:
+                out.update(abs(x) for x in c)
+        return out
+
+    def mention(self, lits) -> None:
+        self.extra_ment.update(abs(x) for x in lits)
 
     def sat(self, assumptions) -> bool:
         return self.fresh().solve(list(assumptions))
@@ -254,6 +281,8 @@ class Harness:
         (``prop``) or added as ``add_pattern`` clauses on the live solver,
         always as clauses for the oracle."""
         lo = 2 * base
+        if prop:
+            self.prop_block.update(range(len(self.clauses), len(self.clauses) + len(self.block)))
         self.clauses.extend([Solver._to_ext(l + lo) for l in c] for c in self.block)
         s = self.solver
         if prop:
@@ -426,7 +455,12 @@ def _assumptions(h: Harness, sizes=(1, 1, 1, 2, 3)) -> list[int]:
 @op(19)
 def implied(h: Harness) -> None:
     A = _assumptions(h)
+    _check_implied(h, A)
+
+
+def _check_implied(h: Harness, A: list[int]) -> None:
     h.record("implied", A)
+    h.mention(A)
     if h.held_now(A):
         h.count("implied_from_held")
     got = h.solver.implied(A)
@@ -438,6 +472,11 @@ def implied(h: Harness) -> None:
         h.A_bad = True
         return
     h.check(ref is not None, "implied misses a propagation conflict", ref)
+    ment = h.mentioned()
+    if ment is not None:
+        # a variable only its propagator block mentions may stay lazy
+        h.count("implied_lazy_skipped", sum(1 for x in ref if abs(x) not in ment))
+        ref = [x for x in ref if abs(x) in ment]
     h.check(set(ref) <= set(got), "implied misses", sorted(set(ref) - set(got)))
     h.check(len(set(got)) == len(got), "implied has duplicates")
     h.check(not any(-x in got for x in got), "implied contradicts itself")
@@ -459,6 +498,7 @@ def entails(h: Harness) -> None:
     else:
         lit = h.rlit()
     h.record("entails", lit, A)
+    h.mention(A + [lit])
     try:
         got = h.solver.entails(lit, A)
     except ValueError:
@@ -495,6 +535,7 @@ def solve(h: Harness) -> None:
 def _check_solve(h: Harness, AA: list[int]) -> None:
     A = h.A
     h.record("solve", AA)
+    h.mention(AA)
     held = h.solver._held
     if held is not None and h.held_now(AA[:len(held)]):
         h.count("solve_from_held")
@@ -653,7 +694,50 @@ def register_block(h: Harness) -> None:
     h.after_prop = False
 
 
-BLOCK_OPS = OPS + [("register_block", 6, register_block)]
+def late_mention(h: Harness) -> None:
+    """A variable only its propagator block mentioned so far becomes
+    mentioned (``Solver.mention``, as the engine does for a query literal,
+    or a clause), usually while the levels of the current assumptions are
+    held; ``implied`` under the same assumptions must then have its value
+    if the oracle's propagation has it."""
+    rng = h.rng
+    s = h.solver
+    ment = h.mentioned()
+    lazy = [v for v in range(1, h.nv + 1) if v not in ment and s._rb_base[v]]
+    if not lazy:
+        return
+    A = h.A
+    if A is not None and not h.A_bad and rng.random() < 0.8 and not h.held_now(A):
+        _check_implied(h, A)                # hold the levels of A
+    if h.A_bad or A is None:
+        A = []
+    v = rng.choice(lazy)
+    x = v if rng.random() < 0.5 else -v
+    if s._trail_lim:
+        h.count("late_mentions_while_held")
+    h.count("late_mentions")
+    late = s._n_late
+    written = s._n_late_written
+    if rng.random() < 0.5:
+        h.record("mention", x)
+        h.mention([x])
+        s.mention([x])
+    else:
+        c = [x] + [h.rlit() for _ in range(rng.randint(1, 2))]
+        if len({abs(y) for y in c}) < len(c):
+            return
+        h.record("add_clause", c)
+        h.clauses.append(c)
+        _note_add(h)
+        r = s.add_clause(c)
+        h.check(r or not h.sat([]), "add_clause False but SAT")
+        h.after_prop = h.after_prop and not s._theories
+    h.count("late_mentions_dropped_held", s._n_late - late)
+    h.count("late_mentions_written_held", s._n_late_written - written)
+    _check_implied(h, A)
+
+
+BLOCK_OPS = OPS + [("register_block", 6, register_block), ("late_mention", 6, late_mention)]
 
 
 def theory_setup(seed: int) -> Callable:
@@ -682,6 +766,7 @@ def theory_setup(seed: int) -> Callable:
         s.fuzz_theories = [t, t2]
         for v in atoms:
             s.register_atom(t, v, None)
+        s.fuzz_atoms = list(atoms)
         # the harness takes a fresh solver as propagated; registration owes
         # the theories a propagation (Solver.register_atom)
         s.propagate()
@@ -701,17 +786,106 @@ def register_second(h: Harness) -> None:
         return
     v = h.rng.choice(free)
     h.record("register_second", v)
+    h.mention([v])
     h.regs.append((1, v))
     r = s.register_atom(ts[1], v, None)
     h.check(r or not h.sat([]), "register_atom False but SAT")
     h.after_prop = False
 
 
-def run_block_seed(seed: int, theory: bool = False) -> dict[str, int]:
-    mode = "prop" if seed % 2 == 0 else "mixed"
+def run_block_seed(seed: int, theory: bool = False, mentions: bool = False) -> dict[str, int]:
+    """Block mode; ``mentions``: the live solver is a :class:`MentionSolver`
+    (the engine's mention paths) and ``root`` also checks root
+    completeness (always in propagator mode)."""
+    mode = "prop" if seed % 2 == 0 or mentions else "mixed"
     setup = theory_setup(seed) if theory else None
-    ops = BLOCK_OPS + [("register_second", 3, register_second)] if theory else BLOCK_OPS
+    ops = MENTION_OPS if mentions else BLOCK_OPS
+    if theory:
+        ops = ops + [("register_second", 3, register_second)]
+    if mentions:
+        return run_seed(seed, ops=ops, setup=setup, block="mentions", block_mode=mode)
     return run_seed(seed, ops=ops, setup=setup, block=mode)
+
+
+# ----------------------------------------------------------------------
+# The engine's mention paths (written by the reviewer of the lazy writes)
+# ----------------------------------------------------------------------
+#
+# The engine mentions block variables per block (``mention_blocks``,
+# ``add_internal(clauses, mentions)``, ``register_block(base, mentions)``,
+# see ``engine._split``), not through the per-literal scans the plain
+# block mode uses.  ``MentionSolver`` routes the harness's calls through
+# those paths: ``add_internal`` passes masks (block variables by their
+# block, other variables as masks at their own index, as the engine does
+# for slot bases not yet registered; sometimes only the negative bit, or
+# a base inside a registered block), ``register_block`` adds random
+# mentions, ``mention`` goes through ``mention_blocks``.  ``root`` also
+# checks that the root trail has everything clause propagation derives.
+
+class MentionSolver(BlockSolver):
+    def __init__(self, seed: int):
+        super().__init__()
+        self.mrng = random.Random(7919 * seed + 3)
+
+    def _mask_of(self, v: int) -> tuple[int, int]:
+        r = self.mrng.random()
+        bits = 2 if r < 0.2 else 1 if r < 0.3 else 3   # negative only, positive only, both
+        b = self._rb_base[v]
+        if b:
+            if r > 0.9 and v > b:
+                return v, bits                           # a base inside the block
+            return b, bits << (2 * (v - b))
+        return v, bits
+
+    def add_internal(self, clauses, mentions=None):
+        if mentions is None and self._rb_n:
+            acc: dict[int, int] = {}
+            for c in clauses:
+                for l in c:
+                    b, m = self._mask_of(l >> 1)
+                    acc[b] = acc.get(b, 0) | m
+            mentions = list(acc.items())
+        return super().add_internal(clauses, mentions)
+
+    def register_block(self, base, mentions=0):
+        m = 0
+        for i in range(self._rb_n):
+            if self.mrng.random() < 0.3:
+                m |= (1 + (self.mrng.random() < 0.5)) << (2 * i)
+        return super().register_block(base, mentions | m)
+
+    def mention(self, lits):
+        rest, pairs = [], []
+        for x in (int(y) for y in lits):
+            v = abs(x)
+            if v <= self._nvars and self._rb_base[v]:
+                pairs.append(self._mask_of(v))
+            else:
+                rest.append(x)
+        if pairs:
+            self.mention_blocks(pairs)
+        if rest:
+            Solver.mention(self, rest)
+
+
+def root_complete(h: Harness) -> None:
+    """``root``, then: after root propagation everything clause
+    propagation derives at root is on the root trail (at root every block
+    implication is written)."""
+    root(h)
+    s = h.solver
+    if s._trail_lim or not s._ok or not s.propagate():
+        return
+    h.after_prop = True
+    ref = h.fresh()
+    if not ref._ok:
+        return
+    miss = set(ref.root_trail()) - set(s.root_trail())
+    h.check(not miss, "root incomplete", sorted(miss))
+    h.count("root_complete_checked")
+
+
+MENTION_OPS = [(n, w, root_complete if f is root else f) for n, w, f in BLOCK_OPS]
 
 
 # ----------------------------------------------------------------------
@@ -777,6 +951,26 @@ def test_block_propagator_with_theory_matches_clauses(chunk):
         _merge(BLOCK_COVERAGE, run_block_seed(seed, theory=True))
 
 
+MENTION_COVERAGE: dict[str, int] = {}
+
+
+@pytest.mark.parametrize("chunk", range(CHUNKS))
+def test_engine_mention_paths_match_clauses(chunk):
+    for seed in _chunk(chunk):
+        _merge(MENTION_COVERAGE, run_block_seed(seed, mentions=True, theory=seed % 3 == 0))
+
+
+def test_engine_mention_paths_cover():
+    c = MENTION_COVERAGE
+    if c.get("block_seeds", 0) < 300:
+        c = {}
+        for seed in range(300):
+            _merge(c, run_block_seed(seed, mentions=True, theory=seed % 3 == 0))
+    for key in ("root_complete_checked", "late_mentions_while_held", "implied_lazy_skipped",
+                "rb_reasons_read", "blocks_registered", "implied_from_held"):
+        assert c.get(key, 0) > 0, (key, c)
+
+
 def test_block_mix_covers_the_propagator_paths():
     """Conflicts whose analysis reads a propagator reason, blocks
     registered while levels are held and over assigned variables, and
@@ -790,6 +984,8 @@ def test_block_mix_covers_the_propagator_paths():
     for key in ("rb_reasons_read", "block_hard_conflicts", "blocks_while_held",
                 "blocks_over_assigned", "blocks_over_held_assigned",
                 "blocks_over_root_assigned_while_held", "blocks_registered", "implied_from_held",
+                "late_mentions_while_held", "late_mentions_written_held",
+                "late_mentions_dropped_held", "implied_lazy_skipped",
                 "solve_from_held", "reductions", "solve_unsat", "witness_hits", "entails_None",
                 "entails_True", "entails_False", "entails_inconsistent"):
         assert c.get(key, 0) > 0, (key, c)
@@ -833,7 +1029,8 @@ if __name__ == "__main__":
     else:
         counts = {}
         for seed in range(seed0, seed0 + n):
-            _merge(counts, run_block_seed(seed, theory=(mode == "theory")))
+            _merge(counts, run_block_seed(seed, theory=mode in ("theory", "mentions-theory"),
+                                          mentions=mode.startswith("mentions")))
     print("ok", n, "seeds from", seed0)
     for k in sorted(counts):
         print(f"  {k}: {counts[k]}")
