@@ -100,6 +100,21 @@ class DictCache:
         d[pred] = value
 
 
+class AnswerMemo(dict):
+    """Answers of whole queries, bounded in size (cleared when full).
+    ``state`` is the registration state the answers were computed under."""
+
+    def __init__(self, maxsize: int = 100_000):
+        super().__init__()
+        self.maxsize = maxsize
+        self.state = None
+
+    def put(self, key, value) -> None:
+        if len(self) >= self.maxsize:
+            self.clear()
+        self[key] = value
+
+
 #: Former default cache, which used SymPy's per-object ``_assumptions`` as
 #: storage; it read facts SymPy's handlers had cached as unconditional and
 #: wrote derived facts into fact bases shared between symbols (see
@@ -579,6 +594,9 @@ class Engine:
         self.session_limit = session_limit
         self.keep_sessions = keep_sessions
         self.cone_search = cone_search
+        #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
+        #: (satassume.sympy_api), bounded; cleared when registrations change
+        self.answers = AnswerMemo()
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,

@@ -63,6 +63,7 @@ from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE 
 from .relations import Uninterpreted, relation_atom, relational_name
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
+from sympy.core.basic import Basic as _Basic
 from sympy.core.expr import Expr as _Expr
 from sympy.core.relational import Relational as _Relational
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
@@ -273,6 +274,41 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
       here, where SymPy trusts the assumption.
     """
     eng = engine or default_engine()
+    # answer memo (see Engine.answers): keyed by the SymPy objects
+    # themselves, valid while the registrations that decide scope and add
+    # facts are unchanged
+    key = None
+    if isinstance(proposition, _Basic) and (assumptions is True or isinstance(assumptions, _Basic)):
+        key = (proposition, assumptions)
+        memo = eng.answers
+        state = _registry_state(eng)
+        if memo.state != state:
+            memo.clear()
+            memo.state = state
+        r = memo.get(key, _MISS)
+        if r is not _MISS:
+            eng.stats["cache_hits"] += 1
+            return r
+    r = _ask(proposition, assumptions, eng)
+    if key is not None:
+        memo.put(key, r)
+    return r
+
+
+_MISS = object()
+
+
+def _registry_state(eng: Engine):
+    """What an answer depends on besides the query and the engine's
+    history: the registered clause-generating functions (they decide the
+    scope of custom predicates and add facts) and the theory adapters."""
+    ext = eng.extensions
+    h = ext._handlers if ext is not None else None
+    return (tuple((k, tuple(v)) for k, v in h.items()) if h else (),
+            tuple(eng.relation_specs))
+
+
+def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     rel = bool(eng.relation_specs)
     try:
         prop = to_formula(proposition, rel)
