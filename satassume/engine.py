@@ -195,7 +195,17 @@ class Session:
         #    propagator, no clauses), unless the node is a constant whose
         #    closed unit facts decide everything the rule base could say
         if not (len(compiled) == 1 and compiled[0].pattern.complete and not formulas):
-            self.solver.register_block(b)
+            # the node's own literals its patterns are about to mention
+            # (see _split), so that registering does not start them lazy
+            own = 0
+            if compiled:
+                want = None if demanded is None else want_of(demanded)
+                for comp in compiled:
+                    k0 = comp.pattern.node
+                    for k, m in _split(comp.pattern.clauses, want)[3]:
+                        if k == k0:
+                            own |= m
+            self.solver.register_block(b, own)
         else:
             self.solver.ensure_vars(b + NPRED - 1)
         # 3. cached context-free facts
@@ -242,15 +252,11 @@ class Session:
                     bb = table.node_base(o)
                     new.append(k)
                 bases[k] = 2 * bb
-            if want is None:
-                self._emit_pattern(pat.clauses, bases)
-            else:
-                now = [c for c in pat.clauses if c[1] & want]
-                if len(now) < len(pat.clauses):
-                    later = [c for c in pat.clauses if not (c[1] & want)]
-                    self.pending_c.setdefault(node, []).append((later, bases))
-                if now:
-                    self._emit_pattern(now, bases)
+            _, now, later, ment = _split(pat.clauses, want)
+            if later is not None:
+                self.pending_c.setdefault(node, []).append((later, bases))
+            if now:
+                self._emit_pattern(now, bases, ment)
             for k, preds in pat.child_preds.items():
                 d = demand.get(objs[k])
                 if d is None:
@@ -264,12 +270,16 @@ class Session:
                     self.deferred.append(objs[k])
         table.new_nodes = []
 
-    def _emit_pattern(self, clauses, bases) -> None:
-        """``bases[k]`` is twice the base variable of slot ``k``."""
+    def _emit_pattern(self, clauses, bases, ment=None) -> None:
+        """``bases[k]`` is twice the base variable of slot ``k``; ``ment``
+        the slots' mention masks of ``clauses`` (see :func:`_split`)."""
+        if ment is None:
+            ment = _split(clauses, None)[3]
         self.nclauses += len(clauses)
         solver = self.solver
         solver.ensure_vars(len(self.table))
-        solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses])
+        solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
+                            [(bases[k] >> 1, m) for k, m in ment])
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
@@ -345,11 +355,10 @@ class Session:
         if pend_c:
             keep = []
             for clauses, bases in pend_c:
-                now = [c for c in clauses if c[1] & want]
+                _, now, later, ment = _split(clauses, want)
                 if now:
-                    self._emit_pattern(now, bases)
-                    later = [c for c in clauses if not (c[1] & want)]
-                    if later:
+                    self._emit_pattern(now, bases, ment)
+                    if later is not None:
                         keep.append((later, bases))
                 else:
                     keep.append((clauses, bases))
@@ -458,6 +467,9 @@ class Session:
         if not solver.propagate():
             raise InconsistentAssumptions("rule base or cached facts are inconsistent")
         self.writeback()
+        # the query literal is read: its variable's rule-block implication
+        # must be on the trail (Solver.mention)
+        solver.mention((lit,))
         assumptions = list(assumptions)
         if assumptions:
             # consistency of the assumptions is checked first, even when the
@@ -811,6 +823,38 @@ def neighbourhood(pred) -> frozenset:
                 acc.update(idx)
         n = _NEIGH[i] = frozenset(acc)
     return n
+
+
+_SPLIT: dict = {}
+
+
+def _split(clauses, want):
+    """``(clauses, now, later, ment)``: the pattern clauses about a
+    predicate of ``want`` (all of them if ``want`` is None), the rest (None
+    if empty) and the mention masks of ``now`` per slot, ``((k, mask),
+    ...)`` with bits ``off`` and ``off ^ 1`` for each literal offset (see
+    ``Solver.mention_blocks``).  Memoized per clause list and ``want``:
+    the lists are the patterns' own or earlier results, kept alive here."""
+    key = (id(clauses), want)
+    r = _SPLIT.get(key)
+    if r is not None and r[0] is clauses:
+        return r
+    if want is None:
+        now, later = clauses, None
+    else:
+        now = [c for c in clauses if c[1] & want]
+        later = [c for c in clauses if not (c[1] & want)] or None
+        if later is None:
+            now = clauses
+    acc: dict = {}
+    for _, _, li in now:
+        for k, off in li:
+            acc[k] = acc.get(k, 0) | (3 << (off & ~1))
+    r = (clauses, now, later, tuple(acc.items()))
+    if len(_SPLIT) >= 100_000:
+        _SPLIT.clear()
+    _SPLIT[key] = r
+    return r
 
 
 def want_of(demanded) -> frozenset:
