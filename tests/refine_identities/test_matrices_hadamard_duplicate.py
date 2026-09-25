@@ -11,9 +11,10 @@ of ``matrices.HADAMARD``) with ``Z`` one atom term and ``R`` the rest::
 With a repeated atom (``HadamardProduct(X, X)`` keeps both copies; ``MatAdd``
 folds them into ``2*X``, so only Hadamard reaches this) both copies are ``t``,
 ``others`` is empty and ``HadamardProduct()`` raises "needs at least one
-argument".  Any fact on ``X`` gets there, in both modes.  Removing only the
-matched copy (by position, not identity) would fix it; the zero row stays
-sound either way.
+argument".  Any fact on ``X`` gets there, in both modes.  Fixed 2026-09-25
+(phase 3, ri/matfixes): the matcher removes the bound argument by position,
+here and in the other "one and the rest" forms (``c*Z``, ``Max(a, b)`` of
+any arity, a two-symbol ``Add``/``Mul``).
 """
 from __future__ import annotations
 
@@ -39,3 +40,17 @@ def test_hadamard_of_a_repeated_atom_does_not_crash(mode, facts):
 def test_hadamard_of_a_repeated_zero_atom_is_zero(mode):
     with MODES[mode]():
         assert refine(HadamardProduct(X, X), Q.zero(X)) in (ZeroMatrix(2, 2), HadamardProduct(X, X))
+
+
+def test_matcher_keeps_the_other_copies():
+    """Every "one and the rest" form removes the bound argument by position."""
+    from sympy import Add, MatMul, Symbol, symbols
+    from satrefine.handlers_identities._engine import bindings
+    from satrefine.handlers_identities.matrices import HADAMARD, MATMUL, c, Z, R
+    a, u, v = symbols("a u v")
+    rests = [b[R] for b in bindings(HADAMARD[0][0], HadamardProduct(X, X))]
+    assert rests and all(r == X for r in rests)
+    rests = [b[Z] for b in bindings(MATMUL[0][0], MatMul(a, a, X))]
+    assert rests and all(r == MatMul(a, X) for r in rests)
+    got = [(b[u], b[v]) for b in bindings(u + v, Add(a, a, evaluate=False))]
+    assert got and all(pair == (a, a) for pair in got)

@@ -111,6 +111,17 @@ POSITIVE = [  # (expr, assumptions, expected, witnesses satisfying the assumptio
     (X[0, -1], Q.diagonal(X), S.Zero, each(X, DIAGONAL)),
     (X[k + 1, k], Q.diagonal(X), S.Zero, [{X: M, k: 0} for M in DIAGONAL]),
     (X[1, 0], Q.symmetric(X), X[0, 1], each(X, SYMMETRIC)),
+    # symbolic indices go to SymPy's canonical order (matrices._SwappedOrder)
+    (X[i, j], Q.symmetric(X), X[j, i], [{X: M, i: 0, j: 1} for M in SYMMETRIC]),
+    (X[i, j], Q.diagonal(X), X[j, i], [{X: M, i: 1, j: 0} for M in DIAGONAL]),
+    (X[i, j], Q.diagonal(X) & Q.ne(i, j), X[j, i], [{X: M, i: 0, j: 1} for M in DIAGONAL]),
+    (X[i, 0], Q.symmetric(X), X[0, i], [{X: M, i: 1} for M in SYMMETRIC]),
+    # scalars to the front, so a scalar no longer separates a cancelling pair
+    (MatMul(X.T, 2, X), Q.orthogonal(X), 2*Identity(2), each(X, ORTHOGONALS)),
+    (MatMul(X, x, Y), True, x*X*Y, [{x: 3, X: G, Y: G} for G in GENERIC]),
+    # one-term sums and repeated factors
+    (MatAdd(X), Q.zero(X), ZeroMatrix(2, 2), each(X, [Z22])),
+    (HadamardProduct(X, X), Q.zero(X), ZeroMatrix(2, 2), each(X, [Z22])),
 ]
 
 SYMBOLIC_SIZE = [  # fires without a numeric size
@@ -138,8 +149,9 @@ NEGATIVE = [  # v3's refusals
     (X.T*Y*X, Q.orthogonal(X)), (X*Y*X.T, Q.orthogonal(X)),   # not adjacent
     (X*Y, True), (X.T*X, True),
     (X[0, 1], True), (X[1, 0], Q.orthogonal(X)), (X[1, 0], Q.upper_triangular(X)),
-    (X[i, j], Q.diagonal(X)), (X[i, i], Q.diagonal(X)),
-    (X[i, j], Q.diagonal(X) & Q.ne(i, j)),
+    (X[j, i], Q.diagonal(X)), (X[i, i], Q.diagonal(X)), (X[j, i], Q.symmetric(X)),
+    (X[i, 2*i], Q.symmetric(X)), (X[0, i], Q.symmetric(X)),
+    (MatAdd(X), True), (MatAdd(X), Q.diagonal(X)), (HadamardProduct(X, X), Q.diagonal(X)),
     # ask's wrong answers on compound arguments never reach a row
     (Inverse(X*Y), Q.orthogonal(X) & Q.unitary(Y)),
     (Inverse(-X), Q.orthogonal(X)),
@@ -207,13 +219,10 @@ def test_refusals_are_needed():
     _wrong(Inverse(X*Y), Adjoint(Y)*Adjoint(X), {X: COMPLEX_ORTH, Y: UNITARY2})
 
 
-@pytest.mark.xfail(reason="not a row: the canonical index order of a symmetric matrix's "
-                          "element is a property of the printed form, not a hypothesis",
-                   strict=True)
 def test_symmetric_element_symbolic_order():
     assert refine(X[i, j], Q.symmetric(X)) == refine(X[j, i], Q.symmetric(X))
 
 
 def test_table_size():
     from satrefine.handlers_identities import matrices as mod
-    assert len(mod.RULES) == 30
+    assert len(mod.RULES) == 32

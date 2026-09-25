@@ -419,7 +419,6 @@ def test_matmul_scalar_interleaving_preserves_value() -> None:
     assert simplify(refined.subs(X, ROT90).doit()).as_explicit() == 2 * eye(2)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matmul_scalar_factor.py", "MatMul(X, 2, Y) is not rebuilt as 2*X*Y")
 def test_matmul_scalar_moves_to_front() -> None:
     plain = MatMul(X, 2, Y)
     assert refine(plain, True) == sympy_refine(plain, True) == 2 * X * Y
@@ -505,7 +504,6 @@ def test_matadd_unknown_terms_preserved() -> None:
     assert Y not in result.args
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matadd_single_term.py", "refine(MatAdd(X), ...) raises TypeError")
 def test_matadd_single_term() -> None:
     assert refine(MatAdd(X), True) == MatAdd(X)
     assert refine(MatAdd(X), Q.zero(X)) == ZeroMatrix(2, 2)
@@ -599,7 +597,6 @@ def test_matrixelement_diagonal_provably_distinct_offset_symbol() -> None:
     assert refine(A[i + 1, i], Q.diagonal(A)) == S.Zero
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matrixelement_index_order.py", "A[i, 0] under Q.diagonal(A) is not swapped to A[0, i]")
 def test_matrixelement_mixed_literal_symbol_not_distinct() -> None:
     assert refine(A[0, i], Q.diagonal(A)) == A[0, i]
     assert refine(A[1, i], Q.diagonal(A)) == A[1, i]

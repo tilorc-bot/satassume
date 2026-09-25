@@ -476,10 +476,12 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
         # the pattern's argument order is canonical, not the author's, so either
         # symbol may be the atom and the other the rest
         for atom, rest_sym in (pattern.args, pattern.args[::-1]):
-            for t in target.args:
+            for k, t in enumerate(target.args):
                 if not isinstance(t, MatrixSymbol):
                     continue
-                others = [g for g in target.args if g is not t]
+                others = target.args[:k] + target.args[k + 1:]   # by position: an equal copy stays
+                if not others:
+                    continue                                        # a one-term sum has no rest
                 rest = others[0] if len(others) == 1 else pattern.func(*others)
                 nb = _bind_matrix(b, atom, t)
                 nb = _bind_matrix(nb, rest_sym, rest) if nb is not None else None
@@ -493,15 +495,15 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
                 and isinstance(matrices[0], MatrixSymbol):                   # c*Z: a scalar factor and the rest
             if not isinstance(target, MatMul):
                 return
-            for f in target.args:
+            for k, f in enumerate(target.args):
                 if _is_matrix(f):
                     continue
-                others = [g for g in target.args if g is not f]
+                others = target.args[:k] + target.args[k + 1:]
                 rest = others[0] if len(others) == 1 else MatMul(*others)
                 nb = _bind(b, scalars[0], f)
                 nb = _bind_matrix(nb, matrices[0], rest) if nb is not None else None
-                if nb is not None:
-                    yield nb
+                if nb is not None:     # the right side in canonical form (scalars in front, combined)
+                    yield {**nb, REBUILD: (lambda r: r.doit(deep=False) if isinstance(r, MatrixExpr) else r)}
             return
         if not scalars and isinstance(target, MatMul):                    # a run of adjacent factors
             k = len(matrices)
@@ -535,7 +537,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
                 nb = _bind(nb, pb, tj) if nb is not None else None
                 if nb is None:
                     continue
-                others = [t for t in T if t is not ti and t is not tj]
+                others = [t for k, t in enumerate(T) if k != i and k != j]
                 if others:
                     nb = {**nb, REBUILD: (lambda r, others=others, head=pattern.func: head(r, *others))}
                 yield nb
@@ -597,8 +599,8 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
         if p1.is_Symbol and p2.is_Symbol and not parts:               # one plus rest
             if not isinstance(target, pattern.func):
                 return
-            for f in target.args:
-                rest = pattern.func(*[g for g in target.args if g is not f])
+            for k, f in enumerate(target.args):
+                rest = pattern.func(*(target.args[:k] + target.args[k + 1:]))
                 nb = _bind(b, p1, f)
                 nb = _bind(nb, p2, rest) if nb is not None else None
                 if nb is not None:

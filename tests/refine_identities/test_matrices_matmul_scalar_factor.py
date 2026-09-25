@@ -1,4 +1,6 @@
-"""Needs: a scalar between matrix factors blocks cancellation and is not moved to the front.  Owner: handlers_identities (matrices).
+"""A scalar between matrix factors blocked cancellation and was not moved to the
+front (fixed 2026-09-25, ri/matfixes: the canonical row ``c*Z -> c*Z``,
+rebuilt with ``doit(deep=False)``, puts scalars in front).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).
@@ -7,8 +9,6 @@ Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``handlers`` give ``2*X*Y``.
 Each case is a ``tests/refine`` expectation that ``handlers`` meets and
 ``handlers_identities`` does not (v3 does not either);
-the original test is a strict xfail under ``handlers_identities`` that points
-here.
 """
 from __future__ import annotations
 
