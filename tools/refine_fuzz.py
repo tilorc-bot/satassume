@@ -19,7 +19,7 @@ poles or removable singularities of the original can show up as spurious
 mismatches, so read the counterexample before calling a rule wrong.
 """
 from __future__ import annotations
-import os, random, sys, time
+import importlib, os, random, sys, time
 if "--handlers" in sys.argv:
     i = sys.argv.index("--handlers"); os.environ["SATREFINE_HANDLERS"] = sys.argv[i + 1]; del sys.argv[i:i + 2]
 from collections import Counter, defaultdict
@@ -929,8 +929,482 @@ def mat_main(seed=0, cases=1000):
     for head, e, a, msg in crashes[:10]:
         print(f"  [{head}] refine({_short(e)}, {a}): {msg}")
 
+# ---------------------------------------------------------------------------
+# Extended family (``--ext``): infinities, Piecewise, the inverse pairs
+# ---------------------------------------------------------------------------
+# A case stream of its own (``ext_generate``, seeded with the string
+# "ext-SEED-CASE"): the default scalar and matrix streams above are unchanged,
+# so the default differential seeds still compare 1:1 with earlier runs.
+#
+# What it adds to the default grammar:
+# * the predicates ``finite``, ``infinite`` and ``extended_*`` (real, positive,
+#   negative, nonnegative, nonpositive, nonzero), alone and combined;
+# * relations with infinite bounds (``Q.ge(x, oo)``, ``Q.lt(x, oo)``,
+#   ``Q.le(x, -oo)``, ...), sometimes two per case (two-sided bounds);
+# * ``Piecewise`` with Lt/Le/Gt/Ge/Eq/Ne conditions (bounds at +-oo too, And/Or),
+#   ``KroneckerDelta`` of affine arguments, ``acot`` and the inverse pairs
+#   ``acot(cot)``, ``acoth(coth)``, ``asech(sech)``, ``acsch(csch)``.
+#
+# Sample points.  A symbol may take the values oo, -oo, zoo, oo*I, -oo*I when
+# its predicates allow them (checked against ``EXT_PREDS``) and either it has a
+# predicate or it occurs in a relation (a relation makes it extended real, so
+# only +-oo pass the relation there).  A symbol with no fact at all is sampled
+# finite, as in the default family.  Relations are decided numerically at
+# finite points and with SymPy's Gt/Ge/Lt/Le/Eq/Ne at infinite ones.
+#
+# Values (``ext_value``, KroneckerDelta decided by Eq): a finite complex; ("inf", direction) for a signed or
+# directed infinity; "zoo"; "nan" (nan or an AccumBounds: no value); or
+# "unevaluated"/"error".  A point where the input has no value ("nan") is
+# skipped and counted; so is one where a side cannot be evaluated.  A
+# mismatch is excused, and counted per label, when it comes from a SymPy
+# convention (``ext_convention``):
+# * "zoo vs signed infinity (1/0 = zoo | log(0) = zoo)": one side is zoo, the
+#   other a signed infinity, and an exact 1/0 or log(0) produced the zoo (zoo
+#   from a function's own pole, such as acsch(0), is reported);
+# * "log of a non-positive infinity": a side takes log at -oo or oo*I (SymPy
+#   gives oo and drops the imaginary part);
+# * "atan2 of two infinities": atan2(oo, oo) = 0 etc. are arbitrary;
+# Every other mismatch is a counterexample: at a finite point, at an infinite
+# point, or "undefined output" (the input has a value, the output is nan).
+
+from sympy import Piecewise, acot, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Add, Mul
+from sympy.calculus.accumulationbounds import AccumBounds
+
+INF_VALUES = (oo, -oo, zoo, I * oo, -I * oo)
+
+
+def is_inf(v):
+    return isinstance(v, Basic) and v.has(oo, -oo, zoo)
+
+
+def _fin(check):
+    return lambda v: not is_inf(v) and check(v)
+
+
+EXT_PREDS = {name: (q, _fin(chk)) for name, (q, chk) in PREDS.items()}
+EXT_PREDS.update({
+    "finite": (Q.finite, lambda v: not is_inf(v)),
+    "infinite": (Q.infinite, is_inf),
+    "extended_real": (Q.extended_real, lambda v: v in (oo, -oo) or (not is_inf(v) and c_real(v))),
+    "extended_positive": (Q.extended_positive, lambda v: v == oo or (not is_inf(v) and c_pos(v))),
+    "extended_negative": (Q.extended_negative, lambda v: v == -oo or (not is_inf(v) and c_neg(v))),
+    "extended_nonnegative": (Q.extended_nonnegative, lambda v: v == oo or (not is_inf(v) and PREDS["nonnegative"][1](v))),
+    "extended_nonpositive": (Q.extended_nonpositive, lambda v: v == -oo or (not is_inf(v) and PREDS["nonpositive"][1](v))),
+    "extended_nonzero": (Q.extended_nonzero, lambda v: v in (oo, -oo) or (not is_inf(v) and PREDS["nonzero"][1](v))),
+})
+_FINITE_OF = {"finite": None, "extended_real": "real", "extended_positive": "positive", "extended_negative": "negative",
+              "extended_nonnegative": "nonnegative", "extended_nonpositive": "nonpositive", "extended_nonzero": "nonzero"}
+EXT_COMBOS = [(), (), ("real",), ("positive",), ("negative",), ("nonzero",), ("integer",), ("complex",), ("zero",),
+              ("imaginary",), ("positive", "integer"),
+              ("finite",), ("infinite",), ("extended_real",), ("extended_real",), ("extended_positive",),
+              ("extended_positive",), ("extended_negative",), ("extended_nonnegative",), ("extended_nonpositive",),
+              ("extended_nonzero",), ("infinite", "extended_positive"), ("infinite", "extended_negative"),
+              ("infinite", "extended_real"), ("finite", "extended_positive"), ("finite", "extended_real"),
+              ("finite", "extended_nonnegative"), ("extended_real", "extended_nonzero")]
+EXT_BOUNDS = [S.Zero, S.One, S.NegativeOne, pi / 2, -pi / 2, oo, -oo, oo, -oo]
+
+
+def draw_ext(combo, rng, inf_ok=True, p_inf=0.3):
+    """A value satisfying every predicate in ``combo`` (``EXT_PREDS``), possibly infinite if ``inf_ok``."""
+    infs = [v for v in INF_VALUES if all(EXT_PREDS[p][1](v) for p in combo)] if inf_ok else []
+    if "infinite" in combo:
+        return rng.choice(infs) if infs else None
+    if infs and rng.random() < p_inf:
+        return rng.choice(infs)
+    fin = tuple(_FINITE_OF.get(p, p) for p in combo if _FINITE_OF.get(p, p))
+    for _ in range(20):
+        v = draw(fin, rng)
+        if v is None:
+            return None
+        if all(EXT_PREDS[p][1](v) for p in combo):
+            return v
+    return None
+
+
+def ext_relations(rng, syms):
+    """Zero, one or two relations over ``syms``, bounds including +-oo."""
+    if rng.random() < 0.4:
+        return ()
+    out = []
+    for _ in range(2 if rng.random() < 0.3 else 1):
+        a = rng.choice(syms)
+        b = rng.choice(syms + EXT_BOUNDS)
+        if a == b:
+            continue
+        out.append(rng.choice([Q.gt, Q.ge, Q.lt, Q.le, Q.gt, Q.lt, Q.eq, Q.ne])(a, b))
+    return tuple(out)
+
+
+_SYMREL = {Q.gt: Gt, Q.ge: Ge, Q.lt: Lt, Q.le: Le, Q.eq: Eq, Q.ne: Ne}
+
+
+def rel_holds_ext(rel, pt):
+    """``rel_holds``, and SymPy's own relation at infinite values (None if undefined there)."""
+    try:
+        lhs, rhs = (sympify(side).xreplace(pt) for side in rel.arguments)
+    except Exception:  # noqa: BLE001
+        return None
+    if not (is_inf(lhs) or is_inf(rhs)):
+        return rel_holds(rel, pt)
+    if lhs.has(nan, zoo) or rhs.has(nan, zoo) or not (lhs.is_extended_real and rhs.is_extended_real):
+        return None
+    try:
+        v = _SYMREL[rel.function](lhs, rhs)
+    except Exception:  # noqa: BLE001
+        return None
+    return True if v is S.true else False if v is S.false else None
+
+
+def _rel_syms(rels):
+    return set().union(*(sympify(side).free_symbols for r in rels for side in r.arguments)) if rels else set()
+
+
+def _holds_all(rels, pt):
+    return all(rel_holds_ext(r, pt) is True for r in rels)
+
+
+def _draw_point(syms, combos, rels, rng, inf_ok, p_inf=0.3):
+    pt = {s: draw_ext(combos.get(s, ()), rng, inf_ok[s], p_inf) for s in syms}
+    if any(v is None for v in pt.values()):
+        return None
+    for r in rels:                     # make an equation hold now and then
+        if r.function == Q.eq and rng.random() < 0.7:
+            a, b = (sympify(t) for t in r.arguments)
+            if a in pt:
+                v = b.xreplace(pt)
+                if v.is_number and all(EXT_PREDS[p][1](v) for p in combos.get(a, ())):
+                    pt[a] = v
+    return pt
+
+
+def ext_satisfiable(combos, rels, rng, tries=80):
+    """Whether a random point satisfies ``combos`` and ``rels`` (a cheap filter, not a proof)."""
+    syms = sorted(combos, key=str)
+    inf_ok = {s: bool(combos[s]) or s in _rel_syms(rels) for s in syms}
+    for t in range(tries):
+        pt = _draw_point(syms, combos, rels, rng, inf_ok, p_inf=0.5)
+        if pt is None:
+            return False
+        if _holds_all(rels, pt):
+            return True
+    return False
+
+
+def ext_points(exprs, combos, rels, rng, random_points=12, cap=200):
+    """Points satisfying ``combos`` and ``rels``: random draws, edge values, infinities and relation bounds."""
+    import itertools
+    rd = importlib.import_module("refine_differential")
+    syms = sorted(set().union(*(e.free_symbols for e in exprs)), key=str)
+    relsyms = _rel_syms(rels)
+    inf_ok = {s: bool(combos.get(s)) or s in relsyms for s in syms}
+    points = []
+    for _ in range(random_points * 8):
+        if len(points) >= random_points:
+            break
+        pt = _draw_point(syms, combos, rels, rng, inf_ok)
+        if pt is None:
+            break
+        if _holds_all(rels, pt):
+            points.append(pt)
+    cand = {s: list(rd.edge_values()) + ([v for v in INF_VALUES] if inf_ok[s] else []) for s in syms}
+    for arg, pts in rd._cut_arguments(exprs):
+        free = arg.free_symbols
+        if len(free) != 1:
+            continue
+        (s,) = free
+        if s not in cand:
+            continue
+        slope = arg.diff(s)
+        if slope.free_symbols or slope == 0 or arg.subs(s, 0).free_symbols:
+            continue
+        for p in pts:
+            v = (p - arg.subs(s, 0)) / slope
+            if v not in cand[s]:
+                cand[s].append(v)
+    for r in rels:                     # the finite bounds themselves
+        for side in r.arguments:
+            side = sympify(side)
+            if side.is_number and not is_inf(side):
+                for s in _rel_syms((r,)):
+                    if s in cand and side not in cand[s]:
+                        cand[s].append(side)
+
+    def ok(s, v):
+        try:
+            return all(EXT_PREDS[p][1](v) for p in combos.get(s, ()))
+        except (TypeError, ValueError):
+            return False
+    cand = {s: [v for v in vs if ok(s, v)] for s, vs in cand.items()}
+    total = 1
+    for s in syms:
+        total *= max(1, len(cand[s]))
+    edge = []
+    if syms and total <= cap:
+        for combo in itertools.product(*[cand[s] or [None] for s in syms]):
+            edge.append({s: (v if v is not None else draw_ext(combos.get(s, ()), rng, inf_ok[s])) for s, v in zip(syms, combo)})
+    else:
+        for s in syms:
+            for v in cand[s]:
+                edge.append({t: (v if t == s else draw_ext(combos.get(t, ()), rng, inf_ok[t])) for t in syms})
+    points += [p for p in edge if all(w is not None for w in p.values()) and _holds_all(rels, p)]
+    return points
+
+
+def _inf_class(v):
+    """("inf", unit direction) for a signed or directed infinity, "zoo", or "unevaluated"."""
+    if v is zoo:
+        return "zoo"
+    if v.has(zoo):
+        return "unevaluated"
+    terms = [t for t in Add.make_args(v) if t.has(oo, -oo)]
+    if len(terms) != 1 or any(not t.is_number for t in Add.make_args(v)):
+        return "unevaluated"
+    t = terms[0]
+    if t in (oo, -oo):
+        d = S.One if t == oo else S.NegativeOne
+    elif isinstance(t, Mul):
+        infs = [f for f in t.args if f in (oo, -oo)]
+        rest = [f for f in t.args if f not in (oo, -oo)]
+        if len(infs) != 1 or any(f.has(oo, -oo, zoo) for f in rest):
+            return "unevaluated"
+        d = Mul(*rest) * (1 if infs[0] == oo else -1)
+    else:
+        return "unevaluated"
+    try:
+        dc = complex(N(d, 20))
+    except (TypeError, ValueError):
+        return "unevaluated"
+    if dc == 0:
+        return "unevaluated"
+    return ("inf", dc / abs(dc))
+
+
+def ext_value(e, pt):
+    """The value of ``e`` at ``pt`` (see the section comment)."""
+    try:
+        v = e.xreplace(pt)
+    except Exception:  # noqa: BLE001 -- e.g. a Piecewise condition on a non-real value
+        return "error"
+    if not isinstance(v, Expr):
+        return "unevaluated"
+    if v.has(KroneckerDelta):          # SymPy leaves KroneckerDelta(oo, oo) unevaluated; decide it by Eq
+        v = v.replace(KroneckerDelta, lambda p, q: {S.true: S.One, S.false: S.Zero}.get(Eq(p, q), KroneckerDelta(p, q)))
+    if v.has(nan) or v.has(AccumBounds):
+        return "nan"
+    if is_inf(v):
+        return _inf_class(v)
+    return numeric(v)
+
+
+def ext_agree(a, b):
+    if isinstance(a, tuple) or isinstance(b, tuple):
+        return isinstance(a, tuple) and isinstance(b, tuple) and abs(a[1] - b[1]) < 1e-9
+    if a == "zoo" or b == "zoo":
+        return a == b
+    return agree(a, b)
+
+
+def _zero_division(sides, pt):
+    """The label of an exact 1/0 or log(0) met while evaluating ``sides`` at ``pt``, or None."""
+    for e in sides:
+        for sub in e.atoms(log, Pow):
+            try:
+                if isinstance(sub, log):
+                    if sub.args[0].xreplace(pt) == 0:
+                        return "log(0) = zoo"
+                elif sub.base.xreplace(pt) == 0:
+                    ev = ext_value(sub.exp, pt)
+                    if isinstance(ev, complex) and ev.real < 0:
+                        return "1/0 = zoo"
+            except Exception:  # noqa: BLE001, S112
+                continue
+    return None
+
+
+def ext_convention(sides, pt, a, b):
+    """The SymPy convention that explains the mismatch ``a != b`` at ``pt``, or None.
+
+    zoo against a signed infinity is excused only when an exact 1/0 or log(0)
+    produced it; zoo from a function's own pole (``acsch(0)``) is reported.
+    """
+    if (a == "zoo" and isinstance(b, tuple)) or (b == "zoo" and isinstance(a, tuple)):
+        lab = _zero_division(sides, pt)
+        return f"zoo vs signed infinity ({lab})" if lab else None
+    for e in sides:
+        for sub in e.atoms(log, atan2, Pow):
+            try:
+                if isinstance(sub, log):
+                    u = ext_value(sub.args[0], pt)
+                    if isinstance(u, tuple) and abs(u[1] - 1) > 1e-9:
+                        return "log of a non-positive infinity"
+                elif isinstance(sub, atan2):
+                    if all(is_inf(t.xreplace(pt)) for t in sub.args):
+                        return "atan2 of two infinities"
+            except Exception:  # noqa: BLE001, S112
+                continue
+    return None
+
+
+def ext_compare(left, right, points, ref=None):
+    """(n_checked, counterexample or None, stats) for ``left`` (the input) against ``right``.
+
+    The counterexample is (point, left value, right value, kind), kind one of
+    "finite point", "infinite point", "undefined output".  ``stats`` counts the
+    points skipped (input undefined, unevaluable), excused per convention label
+    and checked at an infinity.  With ``ref`` (the input, when two rewrites are
+    compared) a point where ``ref`` has no value is skipped.
+    """
+    stats = Counter()
+    checked = 0
+    for pt in points:
+        inf_pt = any(is_inf(v) for v in pt.values())
+        if ref is not None and ext_value(ref, pt) in ("nan", "error", "unevaluated"):
+            stats["input undefined"] += 1
+            continue
+        a, b = ext_value(left, pt), ext_value(right, pt)
+        if a == "nan":
+            stats["input undefined"] += 1
+            continue
+        if a in ("error", "unevaluated") or b in ("error", "unevaluated"):
+            stats["unevaluable"] += 1
+            continue
+        if b != "nan" and ext_agree(a, b):
+            checked += 1
+            if inf_pt:
+                stats["checked at an infinity"] += 1
+            continue
+        conv = ext_convention((left, right), pt, a, b)
+        if conv:
+            stats["convention: " + conv] += 1
+            continue
+        kind = "undefined output" if b == "nan" else "infinite point" if inf_pt else "finite point"
+        return checked, (pt, a, b, kind), stats
+    return checked, None, stats
+
+
+def _acot_cot(e, rng): return acot(cot(e))
+def _acoth_coth(e, rng): return acoth(coth(e))
+def _asech_sech(e, rng): return asech(sech(e))
+def _acsch_csch(e, rng): return acsch(csch(e))
+
+
+_RELS = (Lt, Le, Gt, Ge, Eq, Ne, Eq, Ne)
+
+
+def _cond(rng):
+    a = atom(rng)
+    b = rng.choice([atom(rng), S.Zero, S.One, pi / 2, oo, -oo, 2 * atom(rng), atom(rng) + 1, 3 * atom(rng) + 1, inner(rng)])
+    c = rng.choice(_RELS)(a, b)
+    if rng.random() < 0.2:
+        c = rng.choice([And, Or])(c, rng.choice(_RELS)(atom(rng), rng.choice([S.Zero, S.One, atom(rng)])))
+    return c
+
+
+def _piecewise(e, rng):
+    pieces = [(e, _cond(rng))]
+    if rng.random() < 0.4:
+        pieces.append((inner(rng), _cond(rng)))
+    pieces.append((rng.choice([S.Zero, S.One, inner(rng), -e]), True))
+    return Piecewise(*pieces)
+
+
+EXT_NEW = {
+    "acot": lambda e, rng: acot(e), "acot_cot": _acot_cot, "acoth_coth": _acoth_coth,
+    "asech_sech": _asech_sech, "acsch_csch": _acsch_csch,
+    "Piecewise": _piecewise,
+    "Piecewise_outer": lambda e, rng: _piecewise(OUTER[rng.choice(list(OUTER))](e, rng), rng),
+    "KroneckerDelta_affine": lambda e, rng: KroneckerDelta(e, rng.choice(
+        [2 * atom(rng), atom(rng) + 1, 3 * atom(rng) + 1, atom(rng), inner(rng)])),
+}
+EXT_OUTER = {**OUTER, **EXT_NEW}
+
+
+def ext_generate(seed, case):
+    """Case ``case`` of the extended family: (head, expr, assumptions, combos, rels) or None.
+
+    ``rels`` is a tuple of relations (possibly empty).  A case with no
+    satisfying point found by ``ext_satisfiable`` is dropped (None).
+    """
+    import functools
+    rng = random.Random(f"ext-{seed}-{case}")
+    head = rng.choice(list(EXT_NEW)) if rng.random() < 0.4 else rng.choice(list(OUTER))
+    try:
+        e = EXT_OUTER[head](inner(rng), rng)
+    except Exception:  # noqa: BLE001 -- the generator's own policy
+        return None
+    if not isinstance(e, Expr) or not e.free_symbols:
+        return None
+    syms = sorted(e.free_symbols, key=str)
+    combos = {s: rng.choice(EXT_COMBOS) for s in syms}
+    rels = ext_relations(rng, syms)
+    if not ext_satisfiable(combos, rels, random.Random(f"ext-sat-{seed}-{case}")):
+        return None
+    facts = [EXT_PREDS[p][0](s) for s, c in combos.items() for p in c] + list(rels)
+    assumptions = S.true if not facts else functools.reduce(lambda a, b: a & b, facts)
+    return head, e, assumptions, combos, rels
+
+
+def ext_main(seed=0, cases=1000):
+    """The extended fuzz for the selected package: refine, check at finite and infinite points."""
+    tried, fired = Counter(), Counter()
+    unsound, crashes, unchecked, conv_cases = [], [], 0, Counter()
+    stats = Counter()
+    dropped = checked_cases = 0
+    t0 = time.time()
+    for case in range(cases):
+        g = ext_generate(seed, case)
+        if g is None:
+            dropped += 1
+            continue
+        head, e, assumptions, combos, rels = g
+        tried[head] += 1
+        try:
+            r = sat_refine(e, assumptions)
+            if not isinstance(r, Basic):
+                r = sympify(r)
+        except ValueError as ex:
+            if "nconsistent" in str(ex):
+                continue
+            crashes.append((head, e, assumptions, f"{type(ex).__name__}: {ex}"))
+            continue
+        except Exception as ex:  # noqa: BLE001
+            crashes.append((head, e, assumptions, f"{type(ex).__name__}: {str(ex)[:80]}"))
+            continue
+        if r == e:
+            continue
+        fired[head] += 1
+        n_ok, ce, st = ext_compare(e, r, ext_points([e, r], combos, rels, random.Random(f"ext-pts-{seed}-{case}")))
+        stats.update(st)
+        for lab in st:
+            if lab.startswith("convention"):
+                conv_cases[lab] += 1
+        if ce:
+            unsound.append((head, case, e, assumptions, r, ce))
+        elif n_ok:
+            checked_cases += 1
+        else:
+            unchecked += 1
+    kinds = Counter(u[5][3] for u in unsound)
+    print(f"ext seed={seed} cases={cases} time={time.time() - t0:.0f}s dropped={dropped} tried={sum(tried.values())} "
+          f"fired={sum(fired.values())} checked={checked_cases} unchecked={unchecked} unsound={len(unsound)} "
+          f"({', '.join(f'{k} {v}' for k, v in sorted(kinds.items())) or 'none'}) crash={len(crashes)}")
+    print("  points: " + ", ".join(f"{k} {v}" for k, v in sorted(stats.items())))
+    print("  cases with a convention-excused point: " + (", ".join(f"{k[12:]} {v}" for k, v in sorted(conv_cases.items())) or "0"))
+    print("\n== fires by head (fired/tried) ==")
+    for h in sorted(tried, key=lambda h: -tried[h]):
+        print(f"  {h:22} {fired[h]:4}/{tried[h]}")
+    print(f"\n== UNSOUND: {len(unsound)} ==")
+    for head, case, e, a, r, (pt, va, vb, kind) in unsound[:40]:
+        print(f"  [{head} #{case}] refine({e}, {a}) -> {r}\n      {kind} {pt}: orig={va} refined={vb}")
+    print(f"\n== crashes: {len(crashes)} ==")
+    for head, e, a, msg in crashes[:20]:
+        print(f"  [{head}] refine({e}, {a}): {msg}")
+
 if __name__ == "__main__":
-    if "--matrices" in sys.argv:
+    if "--ext" in sys.argv:
+        sys.argv.remove("--ext")
+        ext_main(int(sys.argv[1]) if len(sys.argv) > 1 else 0, int(sys.argv[2]) if len(sys.argv) > 2 else 1000)
+    elif "--matrices" in sys.argv:
         sys.argv.remove("--matrices")
         mat_main(int(sys.argv[1]) if len(sys.argv) > 1 else 0, int(sys.argv[2]) if len(sys.argv) > 2 else 1000)
     else:

@@ -33,6 +33,13 @@ Usage::
     PYTHONPATH=.:/path/to/sympy python tools/refine_differential.py \\
         [--a handlers_v3] [--b handlers_identities] [--seed 2] [--cases 1500] [--summary]
 
+``--ext`` uses ``refine_fuzz``'s extended family instead (``ext_generate``:
+``Q.infinite``/``Q.finite``/``extended_*`` facts, relations with infinite
+bounds, Piecewise, the inverse pairs acot(cot) etc.), checked at finite and
+infinite points (``ext_points``/``ext_compare``, which classify SymPy's
+conventions at infinity instead of reporting them); its own seed stream, so
+the default sections are unchanged.  ``--matrices`` uses the matrix family.
+
 ``--summary`` prints only the counts.  ``--show N`` caps the examples listed
 per category (default 15).  ``--timeout T`` bounds one refine call plus its
 checks in a worker (seconds, default 60).
@@ -258,6 +265,8 @@ def compare(left, right, points):
 
 
 def _fmt(v):
+    if isinstance(v, tuple) and v[0] == "inf":  # a directed infinity from refine_fuzz.ext_value
+        return f"oo*({v[1].real:.6g}{v[1].imag:+.6g}j)"
     if isinstance(v, tuple):            # a matrix value from refine_fuzz.mat_value
         return f"{v[1][0]}x{v[1][1]} matrix [" + ", ".join(_fmt(x) for x in v[2]) + "]"
     return v if isinstance(v, str) else f"{v.real:.12g}{v.imag:+.12g}j"
@@ -271,7 +280,7 @@ class _Timeout(Exception):
     pass
 
 
-def worker(package, seed, cases, out, timeout, matrices=False):
+def worker(package, seed, cases, out, timeout, matrices=False, ext=False):
     os.environ["SATREFINE_HANDLERS"] = package
     os.environ.setdefault("SATREFINE_STRICT_LOOPS", "1")   # a tripped loop guard is a crash here
     f = fz()
@@ -286,7 +295,7 @@ def worker(package, seed, cases, out, timeout, matrices=False):
     records = []
     t0 = time.time()
     for case in range(cases):
-        g = f.mat_generate(seed, case) if matrices else generate(seed, case)
+        g = f.mat_generate(seed, case) if matrices else f.ext_generate(seed, case) if ext else generate(seed, case)
         if g is None:
             continue
         head, e, assumptions, combos, rel = g
@@ -313,6 +322,12 @@ def worker(package, seed, cases, out, timeout, matrices=False):
                 rng = random.Random(seed * 7919 + case)
                 if matrices:
                     n_ok, ce = f.mat_compare(e, r, f.mat_points(combos, rel, rng))
+                elif ext:
+                    n_ok, ce, st = f.ext_compare(e, r, f.ext_points([e, r], combos, rel, rng))
+                    rec["stats"] = dict(st)
+                    if ce:
+                        rec["kind"] = ce[3]
+                        ce = ce[:3]
                 else:
                     points = check_points([e, r], combos, rel, rng)
                     n_ok, ce = compare(e, r, points)
@@ -342,6 +357,8 @@ def run_worker(package, args, out):
            "--cases", str(args.cases), "--out", out, "--timeout", str(args.timeout)]
     if args.matrices:
         cmd.append("--matrices")
+    if args.ext:
+        cmd.append("--ext")
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr)
@@ -358,6 +375,8 @@ def _load(s):
     from sympy.assumptions.relation.binrel import AppliedBinaryRelation
     from sympy.core.symbol import Str
     ns.update(AppliedBinaryRelation=AppliedBinaryRelation, Str=Str)
+    from sympy.functions.elementary.piecewise import ExprCondPair
+    ns.update(ExprCondPair=ExprCondPair)
     import sympy.matrices.expressions as mexpr
     from sympy.matrices.expressions.matexpr import MatrixElement
     ns.update({k: getattr(mexpr, k) for k in dir(mexpr) if not k.startswith("_")}, MatrixElement=MatrixElement)
@@ -386,11 +405,13 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=60)
     ap.add_argument("--matrices", action="store_true",
                     help="matrix expressions (refine_fuzz.mat_generate) checked at explicit sample matrices")
+    ap.add_argument("--ext", action="store_true",
+                    help="the extended family (refine_fuzz.ext_generate): infinities, Piecewise, inverse pairs")
     ap.add_argument("--worker", help=argparse.SUPPRESS)
     ap.add_argument("--out", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     if args.worker:
-        worker(args.worker, args.seed, args.cases, args.out, args.timeout, args.matrices)
+        worker(args.worker, args.seed, args.cases, args.out, args.timeout, args.matrices, args.ext)
         return
 
     t0 = time.time()
@@ -420,7 +441,7 @@ def main(argv=None):
 
     # numeric equality of the differing pairs, at the same kind of points
     verdicts = {}
-    gen = fz().mat_generate if args.matrices else generate
+    gen = fz().mat_generate if args.matrices else fz().ext_generate if args.ext else generate
     for c in differ:
         g = gen(args.seed, c)
         _, e, _, combos, rel = g
@@ -428,6 +449,9 @@ def main(argv=None):
         rng = random.Random(args.seed * 104729 + c)
         if args.matrices:
             n, ce = fz().mat_compare(la, lb, fz().mat_points(combos, rel, rng), ref=e)
+        elif args.ext:
+            n, ce, _ = fz().ext_compare(la, lb, fz().ext_points([e, la, lb], combos, rel, rng), ref=e)
+            ce = ce[:3] if ce else None
         else:
             points = check_points([e, la, lb], combos, rel, rng)
             n, ce = compare(la, lb, points)
@@ -446,7 +470,7 @@ def main(argv=None):
     vcount = Counter(v[0] for v in verdicts.values())
 
     name = {"a": args.a, "b": args.b}
-    print(f"{'matrices ' if args.matrices else ''}seed={args.seed} cases={args.cases} compared={len(common)} time={time.time() - t0:.0f}s "
+    print(f"{'matrices ' if args.matrices else 'ext ' if args.ext else ''}seed={args.seed} cases={args.cases} compared={len(common)} time={time.time() - t0:.0f}s "
           f"(a={args.a} {res['a']['seconds']:.0f}s, b={args.b} {res['b']['seconds']:.0f}s)")
     for lab in ("a", "b"):
         print(f"  {lab}={name[lab]}: fired={stat(res[lab], 'fired')} unchanged={stat(res[lab], 'unchanged')} "
@@ -455,6 +479,19 @@ def main(argv=None):
               f"unchecked={len(unchecked[lab])} unsound={len(unsound[lab])} "
               f"(input finite at the point: {sum(1 for r in unsound[lab] if not _singular(r))}) "
               f"non-SymPy={len(nonbasic[lab])}")
+    if args.ext:
+        for lab in ("a", "b"):
+            recs = res[lab]["records"]
+            st, conv = Counter(), Counter()
+            for r in recs:
+                st.update(r.get("stats", {}))
+                conv.update(k[12:] for k in r.get("stats", {}) if k.startswith("convention: "))
+            kinds = Counter(r["kind"] for r in unsound[lab] if "kind" in r)
+            print(f"  {lab} ext: unsound by kind: {', '.join(f'{k} {v}' for k, v in sorted(kinds.items())) or 'none'}; "
+                  f"cases with an infinite point checked: {sum(1 for r in recs if r.get('stats', {}).get('checked at an infinity'))}")
+            print(f"  {lab} ext points: " + ", ".join(f"{k} {v}" for k, v in sorted(st.items()) if not k.startswith("convention")))
+            print(f"  {lab} ext cases with a convention-excused point: "
+                  + (", ".join(f"{k} {v}" for k, v in sorted(conv.items())) or "0"))
     print(f"  only a fires: {len(only_a)}   only b fires: {len(only_b)}   both fire, same result: {same}")
     print(f"  both fire, different results: {len(differ)} (numerically equal {vcount['equal']}, "
           f"different {vcount['different']}, undecided {vcount['undecided']})")
@@ -490,8 +527,9 @@ def main(argv=None):
         for r in unsound[lab][:args.show]:
             u = r["unsound"]
             note = "  (input non-finite there: pole or removable singularity?)" if _singular(r) else ""
+            kind = f" [{r['kind']}]" if "kind" in r else ""
             print(f"  {case_line(r['case'], recs[r['case']])} -> {r['result_str']}\n"
-                  f"      at {u['point']}: orig={u['orig']} refined={u['refined']}{note}")
+                  f"      at {u['point']}{kind}: orig={u['orig']} refined={u['refined']}{note}")
     for lab in ("a", "b"):
         recs = A if lab == "a" else B
         print(f"\n== {lab}={name[lab]} crashes/timeouts: {len(crashes[lab])} ==")
