@@ -56,7 +56,8 @@ G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(x, h), 
 FACTS = [
     (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True)), true),
     (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True)), true),
-    (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True)), true),
+    (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True)), true,
+     Q.infinite(i) & Q.infinite(j)),                     # unless: KroneckerDelta(oo, oo) is undefined
     (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True)), true),
     (G(x, h), Piecewise((0, Q.extended_negative(x)), (h, Q.zero(x)), (1, Q.extended_positive(x)), (nan, True)),
      Q.extended_real(x)),

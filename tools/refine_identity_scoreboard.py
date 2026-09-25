@@ -53,7 +53,8 @@ def count_rows() -> None:
     """Rows per family module; ``generated`` is the size of ``generated/<family>.py`` if present."""
     import satrefine.handlers_identities as package
     print(f"rows per family (handlers_identities, SATREFINE_IDENTITIES={os.environ.get('SATREFINE_IDENTITIES', 'generated')})")
-    print(f"  {'module':18s} {'facts':>6s} {'exp':>6s} {'rules':>6s} {'simple':>6s} {'generated':>10s}")
+    print(f"  {'module':18s} {'facts':>6s} {'exp':>6s} {'rules':>6s} {'simple':>6s} {'ranges':>6s} {'stage0':>6s} "
+          f"{'generated':>10s}")
     total = Counter()
     for info in pkgutil.iter_modules(package.__path__):
         if info.name.startswith("_") or info.ispkg:
@@ -62,7 +63,8 @@ def count_rows() -> None:
         def n(m, name: str) -> int:
             v = getattr(m, name, None)
             return v if isinstance(v, int) else len(v) if v is not None else 0
-        counts = {k: n(mod, k) for k in ("FACTS", "EXP_FORMS", "RULES", "SIMPLE_RULES")}
+        counts = {k: n(mod, k) for k in ("FACTS", "EXP_FORMS", "RULES", "SIMPLE_RULES", "RANGES")}
+        counts["STAGE0"] = sum(counts.values()) + sum(n(mod, k) for k in STATED_ELSEWHERE)
         try:
             gen = importlib.import_module(f"{package.__name__}.generated.{info.name}")
             counts["GENERATED"] = n(gen, "RULES")
@@ -70,9 +72,13 @@ def count_rows() -> None:
             counts["GENERATED"] = 0
         total.update(counts)
         print(f"  {info.name:18s} {counts['FACTS']:6d} {counts['EXP_FORMS']:6d} {counts['RULES']:6d} "
-              f"{counts['SIMPLE_RULES']:6d} {counts['GENERATED']:10d}")
+              f"{counts['SIMPLE_RULES']:6d} {counts['RANGES']:6d} {counts['STAGE0']:6d} {counts['GENERATED']:10d}")
     print(f"  {'total':18s} {total['FACTS']:6d} {total['EXP_FORMS']:6d} {total['RULES']:6d} "
-          f"{total['SIMPLE_RULES']:6d} {total['GENERATED']:10d}")
+          f"{total['SIMPLE_RULES']:6d} {total['RANGES']:6d} {total['STAGE0']:6d} {total['GENERATED']:10d}")
+
+
+STATED_ELSEWHERE = ("SPLITS", "NEGATIVE_BASE", "BOUNDED")
+"""Hand-stated row tables besides the columns (counted in ``stage0``, every stated row)."""
 
 
 def code_lines(path: Path) -> int:

@@ -7,8 +7,8 @@ import os
 import pytest
 from sympy import I, Q, log, pi, srepr, symbols, sympify
 
-from satrefine.handlers_identities import _dispatch
-from satrefine.handlers_identities._specialize import family_modules, generate_family, generated_path
+from satrefine.handlers_identities import _dispatch, _stages
+from satrefine.handlers_identities._specialize import family_modules, generated_path
 
 x = symbols("x")
 
@@ -59,8 +59,15 @@ def test_generated_module_is_up_to_date(module, monkeypatch):
     path = generated_path(family)
     assert path.exists(), f"run tools/refine_specialize.py --write --family {family}"
     committed = importlib.import_module(f"satrefine.handlers_identities.generated.{family}")
-    rules, _keys, _verdicts = generate_family(module)
+    # the fixpoint property: regenerating the family against the committed tables of
+    # the others (its own keys live) gives its committed table (see _stages)
+    rules, _keys, _verdicts = _stages.generate_one(module)
     # Compare as the module reads back: importing it evaluates each row, and
     # some generated left sides auto-evaluate (Abs(exp(z)) -> exp(re(z))).
     loaded = {tuple(sympify(srepr(part)) for part in rule) for rule in rules}
     assert set(committed.RULES) == loaded, "regenerate with tools/refine_specialize.py --write"
+
+
+def test_stage_manifest_covers_every_generating_family():
+    assert {_stages.family_name(m) for m in _stages.ordered_families()} == \
+        {m.__name__.rsplit(".", 1)[-1] for m in family_modules()}
