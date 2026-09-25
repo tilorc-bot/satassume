@@ -120,7 +120,7 @@ Target: fewer engine lines at the end of phase 3 than at its start, with no beha
 
 ## 6. Order, agents and gates
 
-1. **Now:** B9 (`ri/termination`, running).
+1. **Now:** B9 (`ri/termination`); see "Finishing B9" below.
 2. **Track A**, in three branches one after another, since all touch the dispatcher and matcher:
    - A0: the refine_fuzz backend fix, plus A1–A3;
    - A4 + A5;
@@ -134,6 +134,52 @@ Target: fewer engine lines at the end of phase 3 than at its start, with no beha
 - the adversarial-`ask` fuzz from B9 in the suite.
 
 **Agents:** Opus, one fresh agent per assignment, with a handoff note when context reaches about 300k tokens. No tool call over about 4 minutes. Pinned timings for anything that decides a change.
+
+### Finishing B9
+
+An agent started the fix on 2026-09-25, on branch `ri/termination`, in worktree `.claude/worktrees/ri-termination`, created from f83f195. Its task was:
+- **Root cause:** find it and verify it; don't take the diagnosis in #10 on trust.
+- **Termination:** make refine terminate for any `ask` answers, with no `RecursionError`, and argue the guarantee in the docstrings.
+- **Contradictions:** handle the engine proving both a fact and its negation.
+- **Tests:** add
+  - the reproduction, in both modes;
+  - a fuzz test against adversarial `ask` answers (always None, always True, random, contradictory), quick in the suite, with a larger opt-in mode;
+  - a direct test of the nesting guard.
+- **Differential:** run it with the satassume backend (seeds 2, 3, 7, both modes).
+- **Gates:** gate against `.claude/gates/satperf-f83f195`, into `.claude/gates/termination-<sha>`.
+
+**If the branch has `.phase2-done` in its worktree, the agent finished:**
+1. Read its commits, `git log f83f195..ri/termination`, and the report it wrote under `agent-reports/`, if any.
+2. **Check the fix itself,** not only the tests: the reproduction must terminate. Do not accept a raised recursion limit as the fix.
+
+   ```
+   PYTHONHASHSEED=0 PYTHONPATH=.:/home/tilo/orion/sympy SATREFINE_HANDLERS=handlers_identities SATREFINE_BACKEND=satassume
+   refine(factorial(log(k)), Q.negative(k) & Q.gt(k, pi/2))
+   ```
+
+   It must terminate quickly in both `SATREFINE_IDENTITIES` modes.
+3. **Check the gates** in `.claude/gates/termination-<sha>/summary.txt` against the baseline:
+   - no new wrong results, crashes or lost rewrites;
+   - no new differential unsound or crash cases;
+   - the suite fails only on `needs/` tests.
+
+   If the gate run is missing or stale, run it:
+
+   ```
+   JOBS=9 SLOTS=11 SUITE_WORKERS=4 nohup tools/refine_gates.sh .claude/gates/termination-<sha> .claude/gates/satperf-f83f195 > ....log 2>&1 &
+   ```
+
+4. **If both checks pass, merge:** `git merge --no-ff ri/termination` into `refine-identities`, with the trailers, push, remove the worktree, and delete the branch. The gate run becomes the new baseline for track A.
+5. **If the agent reported refine bugs** from the satassume-backend differential and didn't fix them, add them to issue #10.
+
+**If there is no `.phase2-done`:** the agent was interrupted, for example by a cleared session.
+1. Check whether anything is still running, with `pgrep -af ri-termination`.
+2. If nothing is, start a fresh agent on the same worktree:
+   - it continues from the branch's commits and `git status`;
+   - it has the task above, and follows the rules in `/home/tilo/fable-rewrite/.claude/phase3/agent-rules.md`;
+   - it first writes down what is already done.
+
+   Don't discard uncommitted work in the worktree without reading it.
 
 ## 7. Out of scope, and decisions for the user
 
