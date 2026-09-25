@@ -757,9 +757,8 @@ a branch's bookkeeping must collapse by itself, which keeps the cost linear)."""
 
 @contextmanager
 def _switched_off(flag: list) -> Iterator[None]:
-    """Set ``flag[0]`` inside the block (it must be off: every caller has just read it
-    so) and record it in the dispatcher's :data:`._dispatch.state` (the re-entry key);
-    results depend on it where they read it (:func:`._dispatch.read_flag`)."""
+    """Set ``flag[0]`` inside the block and record it in the dispatcher's
+    :data:`._dispatch.state` (results refined inside differ, so they are cached apart)."""
     flag[0] = True
     _dispatch.state.append(id(flag))
     try:
@@ -789,7 +788,7 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     busy = [False]
 
     def handler(expr: Any, assumptions: Any) -> Any:
-        if _dispatch.read_flag(busy):
+        if busy[0]:
             return None
         m = measure or default_measure(static_heads | {expr.func})
         m0 = m(expr, assumptions)
@@ -813,8 +812,7 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                     merged = endpoint_split(expr, cand, assumptions)
                     if merged is not None:
                         cand = merged
-                if splits and cand.has(*opaque) and not _dispatch.read_flag(_splitting) \
-                        and _dispatch.splits_left[0] > 0:
+                if splits and cand.has(*opaque) and not _splitting[0] and _dispatch.splits_left[0] > 0:
                     _dispatch.splits_left[0] -= 1
                     with _switched_off(_splitting):   # no split inside a split's exploration: the
                         merged = case_split(expr, cand, assumptions, opaque)   # branches must collapse by themselves

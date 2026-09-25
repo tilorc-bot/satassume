@@ -17,11 +17,11 @@ changes, and it replaces ``satrefine.refine`` whenever the
   same assumptions many times (every pass of the fixed point re-refines the
   children of a result, every branch of a ``Piecewise`` or of a case split
   redoes the work below it).  Completed results are remembered for the
-  call, keyed on the node, the assumptions and the mode, and conditioned on
-  the engine flags the computation read (see *The result cache* below), so
-  a result is what recomputing it would give and repeated work neither
-  costs time nor counts against the cap.  A node being refined is not in
-  the cache yet, so a real loop still reaches the cap.
+  call, keyed on the node, the assumptions, the mode and the engine state
+  (:data:`state`: which identity handlers are switched off, whether a split
+  is exploring), so a result is what recomputing it would give and repeated
+  work neither costs time nor counts against the cap.  A node being refined
+  is not in the cache yet, so a real loop still reaches the cap.
 
 ``_upstream.refine`` itself is untouched (it must stay behavior-identical
 to SymPy's); handlers written for the vendored driver keep working here.
@@ -67,53 +67,6 @@ a declining handler tries finitely many rows and bindings).  So every call
 terminates, and its stack stays within :data:`MAX_DEPTH` levels whatever
 ``ask`` answers.  A Python ``RecursionError`` raised anyway (an input nested
 deeper than the stack allows, a deep ``ask``) is handled like a tripped limit.
-
-The result cache
-----------------
-
-A computation of ``_refine(expr, assumptions)`` is determined by ``expr``,
-the assumptions, the mode and :data:`live_keys` (the cache key), the handler
-tables (fixed during a call), ``ask`` (memoized per call, so fixed too), the
-results of the nested computations it looks up (by induction, what
-recomputing them gives), and the engine flags: the ``busy`` flag of every
-identity handler (on while that handler's own candidate is refined) and the
-flag of a case split exploring.  A flag influences the computation only
-where it is read, and every read goes through :func:`read_flag`, which adds
-the flag to the read set of the innermost :func:`_refine`; a finished
-:func:`_refine` adds its read set to its caller's, and a cache hit adds the
-read set stored with the entry.  An entry stores the result, the flags the
-computation read (everything nested in it included) and the flags that
-were on when it started (:data:`state`), and it is reused only when every
-flag it read has the same value now as then.  A flag that was not read
-cannot have mattered, so the result is the one a recomputation gives.  In
-particular a result computed while an identity handler was switched off is
-reused where it is on only if that handler was never consulted in the
-computation (consulting it reads its flag).
-
-Why every read then returns what it returned before: a flag changes only
-inside a :func:`._engine._switched_off` block, which switches it on and back
-off, and every such block is entered right after the same frame read the
-flag as off (an identity handler returns at once when its flag is on; a
-split is tried only when no split is exploring).  So each read of a flag in
-the computation returns either the flag's value when the computation
-started or, inside a block of that flag within the computation, ``True``;
-and when every flag read has its starting value again, the recomputation
-reads the same values in the same order, takes the same path and enters
-the same blocks at the same points.
-
-Hidden inputs the key never covered stay as they were: the split budget
-(:data:`splits_left`) and the firing counters (a trip poisons the whole
-call).  :data:`consulted` and :func:`tracing` see a node's handlers only
-when it is computed, not on a hit, as before.
-
-The re-entry guard (limit 2 above) keys on the node, the assumptions, the
-mode and the full engine state (:data:`state`), not on the reads: a
-computation in progress has not finished reading.  Its argument is
-unchanged: the same full key means the same computation, whose result
-depends only on that key, so a re-entry can never finish.  A cache hit
-returns a completed result and never involves a node in progress, and the
-depth and firing limits do not depend on the cache, so the termination
-argument below holds as before.
 
 **When a limit trips** the guard raises :class:`RefineLoopError`, and every
 later :func:`_refine` of the call raises it again at once (the call is
@@ -359,24 +312,9 @@ _firings: list[int] = []   # a stack entry per active top-level call and explora
 _results: list[dict] = []  # the result cache of the active top-level call
 
 state: list = []
-"""Engine state a result may depend on besides the node and the assumptions (a
+"""Engine state a result depends on besides the node and the assumptions (a
 stack of hashable tokens: the identity handlers switched off while their
-candidate is evaluated, a case split exploring); part of the re-entry key.
-The result cache keys on the flags a result actually read instead
-(:func:`read_flag`)."""
-
-_reads: list[set] = []
-"""One entry per active :func:`_refine`: the ids of the engine flags its computation
-has read so far (see :func:`read_flag`)."""
-
-
-def read_flag(flag: list) -> bool:
-    """``flag[0]``, an engine flag (a switched-off identity handler, a split
-    exploring), recorded as read by the innermost :func:`_refine`: its result is
-    reused only where the flag has the same value (see *The result cache*)."""
-    if _reads:
-        _reads[-1].add(id(flag))
-    return flag[0]
+candidate is evaluated, a case split exploring); part of the cache key."""
 
 
 def _memoized(ask: Any) -> Any:
@@ -459,36 +397,23 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         raise call.trip(f"refine nested more than {MAX_DEPTH} levels deep at {_short(expr)}")
     cache = _results[-1]
     active = call.active
-    context = (assumptions, mode(), frozenset(live_keys))
-    engine_state = frozenset(state)
+    context = (assumptions, mode(), tuple(state), frozenset(live_keys))
     chain = []
     steps = 0
-    reads: set = set()
-    _reads.append(reads)
     call.depth += 1
     try:
         while True:
             key = (expr, context)
             try:
-                entries = cache.get(key)
+                expr = cache[key]
+                break
+            except KeyError:
+                if key in active:
+                    raise call.trip(f"{_short(expr)} re-entered its own refinement") from None
+                chain.append(key)
+                active.add(key)
             except TypeError:                        # unhashable assumptions
-                entries = key = None
-            if entries:
-                for read, stored_state, result in entries:
-                    if stored_state is engine_state or read.isdisjoint(stored_state ^ engine_state):
-                        break
-                else:
-                    result = None
-                if result is not None:
-                    reads |= read
-                    expr = result
-                    break
-            if key is not None:
-                guard = (expr, context, engine_state)
-                if guard in active:
-                    raise call.trip(f"{_short(expr)} re-entered its own refinement")
-                chain.append((key, guard))
-                active.add(guard)
+                pass
             expr, again = _step(expr, assumptions)
             if not again:
                 break
@@ -497,14 +422,10 @@ def _refine(expr: Any, assumptions: Any) -> Any:
                 raise call.trip(f"a rewrite chain exceeded {MAX_FIRINGS} steps; last result {_short(expr)}")
     finally:
         call.depth -= 1
-        for _, guard in chain:
-            active.discard(guard)
-        _reads.pop()
-        if _reads:
-            _reads[-1] |= reads
-    entry = (frozenset(reads), engine_state, expr)
-    for key, _ in chain:
-        cache.setdefault(key, []).append(entry)
+        for key in chain:
+            active.discard(key)
+    for key in chain:
+        cache[key] = expr
     return expr
 
 
