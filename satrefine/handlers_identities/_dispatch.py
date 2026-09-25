@@ -96,6 +96,7 @@ from sympy.core import Basic, Expr
 from sympy.core.sympify import sympify
 
 from .. import _upstream
+from . import _simple
 
 MAX_FIRINGS = 500
 """Rewrites allowed in one chain (a node rewritten, the result rewritten again, ...):
@@ -490,7 +491,7 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
     if not expr.is_Atom and name not in own_args:
         args = [_refine(a, assumptions) for a in expr.args]
         try:
-            new = expr.func(*args)
+            new = _simple.rebuild(expr.func, args, assumptions)   # acot/acoth keep their value at 0 (B8)
         except (ValueError, TypeError):          # a child became nan (inconsistent assumptions) and
             return expr, False                   # the head refuses it (Max: "nan is not comparable")
         if new.is_Atom or new.func is not expr.func or new.args != tuple(args):

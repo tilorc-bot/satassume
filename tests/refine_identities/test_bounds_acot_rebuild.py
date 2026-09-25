@@ -1,18 +1,17 @@
-"""Needs: the dispatcher rebuilds a node from refined children with
-``_simple.rebuild`` (issue #10, B8).  Owner: the dispatcher (``_dispatch._step``).
+"""The dispatcher rebuilds a node from refined children with
+``_simple.rebuild`` (issue #10, B8; was a needs/ test, done in ``_dispatch._step``).
 
-``_dispatch._step`` rebuilds with ``new = expr.func(*args)``.  For ``acot`` and
+``_dispatch._step`` used to rebuild with ``new = expr.func(*args)``.  For ``acot`` and
 ``acoth`` SymPy's ``eval`` then pulls a sign out of the refined argument
 (``acot(-z) -> -acot(z)``), which is wrong at ``z = 0``: ``acot(Abs(z))``
 under ``Q.nonpositive(z)`` becomes ``-acot(z)``, ``-pi/2`` at ``z = 0`` where
-the input is ``pi/2``.  The request is one line in ``_step``::
+the input is ``pi/2``.  The fix is one line in ``_step``::
 
     new = _simple.rebuild(expr.func, args, assumptions)   # was: expr.func(*args)
 
 ``_simple.rebuild`` (track B, ri/bounds) keeps ``acot``/``acoth`` of a
 non-numeric argument unevaluated unless ``ask`` proves it nonzero, and is
-``func(*args)`` otherwise.  Verified with that line applied: every case below
-passes in both modes.
+``func(*args)`` otherwise.  Every case below passes in both modes.
 """
 from __future__ import annotations
 
