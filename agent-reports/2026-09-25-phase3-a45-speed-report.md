@@ -36,7 +36,25 @@ The A4 changes do not change which splits succeed: 50 of 247 succeed on the batt
 
 ## 3. Timing
 
-TIMING-PLACEHOLDER
+Satassume backend, generated mode, `PYTHONHASHSEED=0`, each process pinned to one fast core. Runs are interleaved in two sequences in opposite orders, one on each of two cores (CPU 0 and 1, or 10 and 11), and the best of the 2 runs is given. The reference is eb106a6 (`git archive`). "A4" is the `satrefine` of HEAD.
+
+| Workload | ref | a: one dummy | b: early exit | c: pre-test | **A4 (a+b+c)** | load |
+|---|---|---|---|---|---|---|
+| battery `refine`, 1,736 cases | 9.69 s (9.83) | 9.13 (−5.8%) | 8.97 (−7.4%) | 9.12 (−5.9%) | **8.38 s (−13.5%)** (8.42) | 1.9–2.8 |
+| differential seed 2, 1,500 cases, refine time in the worker | 17.20 s (17.35) | | | | **16.11 s (−6.3%)** (16.53) | 3.2–5.5 |
+| same, whole worker (generation, refine, checks) | 26.40 s (26.60) | | | | 25.15 s (−4.7%) | |
+| fixpoint power_exp_log (`refine_specialize --family power_exp_log`) | 55.56 s (57.05) | | | | **25.72 s (−53.7%)** (25.79) | 4.1–5.5 |
+| full fixpoint (`refine_specialize`, all families, one run each, CPU 0 and 1 in parallel) | 133 s, 141 s | | | | **64 s, 66 s (−52%)** | 2–3 |
+
+- **Per change on the fixpoint:** from the profile runs (one run each, pinned, load 2–4, with the counting hook): ref 55.9 s, a+b 31.6 s, a+b+c 24.4 s. So the dummy and the early exit give about −43%, and the pre-test about −23% on top.
+- **Later rounds** of A4 alone gave battery 8.62/8.74 s and power_exp_log 24.26/24.88 s, at load 3 to 4 (section 5).
+- **Combined backend:** the identity runs, which were not timing runs (four processes in parallel, load 4 to 10), show the differential's refine time going from 99.6 s to 81.0 s.
+- **A last timing round was discarded:** it was attempted while another agent's gates were running (load 15 to 17) and gave the reference 168 s on power_exp_log.
+
+**Against the plan's targets:**
+- **Battery:** the phase-3 plan measured 14.8 s at f83f195, and A0 brought it to about 10.2 s. With A4 it is **8.4 s**, under the ≤ 9 s target.
+- **Fixpoint:** **−54%** (target: at least −25%).
+- **Differential:** only **−6%** here, against the target of at least −25%. It is dominated by refusals, and its failed splits were only 10% of it.
 
 ## 4. Output identity
 
@@ -45,7 +63,16 @@ Reference eb106a6, candidate A4 (2cb920d; e428be5 adds only a test).
 - **Battery** (1,736 result strings) and **differential seed 2** (the worker's 1,485 records: status, result, checks), each in both identity modes under the satassume and the combined backend: **0 differences in all 8 comparisons.**
 - **Fixpoint:** `tools/refine_specialize.py` (all families, to the fixpoint) prints the same rules (75 verified rules, 77 lines of output), and `--write` writes byte-identical `generated/*.py` files, derivation-record comments included.
 
-GATES-PLACEHOLDER
+
+## Gates
+
+`gates/speed-a45-de12f0a` against `gates/speed-a0-576158c`, with JOBS=9, SLOTS=11 and SUITE_WORKERS=4. It ran at load 13 to 18, while another agent's differential was running. Every section exited 0.
+
+- **Suite:** 2,464 passed and 0 failed. The baseline had 2,460 passed; the 4 new tests are `test_engine_case_split_pretest.py`.
+- **Scoreboard, both modes:** identical to the baseline, except the engine line count (1,633 → 1,664). wrong 0, crash 0. Generated: same 1,032, other 41, miss 13. Live: same 1,033, other 40, miss 13.
+- **Differential**, seeds 2, 3 and 7, both modes: identical in every count: fired, unsound, crash, inconsistent, only-a and only-b, and different results. Only the times differ, and those are load.
+- **Satassume differential**, seed 2, both modes: identical. Generated: fired 440, unsound 2. Live: fired 437, unsound 2.
+- **Termination tests:** 8 passed.
 
 ## 5. A5: the node cache conditioned on the flags a result read
 
