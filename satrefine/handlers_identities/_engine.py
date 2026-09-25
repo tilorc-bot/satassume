@@ -242,7 +242,8 @@ def _states_relations(assumptions: Any) -> bool:
 
 
 _BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero,
-                  Q.integer)
+                  Q.extended_positive, Q.extended_nonnegative, Q.extended_negative, Q.extended_nonpositive,
+                  Q.extended_nonzero, Q.integer)
 
 
 def _ask_cost(cond: Any) -> int:
@@ -283,11 +284,11 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     depend on the backend detecting them either); what it must do is stop,
     and the dispatcher's termination guard guarantees that whatever is
     proved (``_dispatch``, *Termination*)."""
-    bounds = _simple.stated_bounds(u, assumptions)
-    if bounds is None:
+    found = _simple.stated_finite(u, assumptions)
+    if found is None:
         return None
-    lo, hi, lo_open, hi_open = bounds
-    if predicate in (Q.real, Q.extended_real):
+    (lo, hi, lo_open, hi_open), finite = found
+    if predicate is Q.extended_real:
         return True
     if predicate is Q.integer:                 # refuted when the interval holds no integer
         if lo is None or hi is None:
@@ -295,13 +296,40 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
         first = ceiling(lo) + (1 if lo_open and lo.is_integer else 0)
         last = floor(hi) - (1 if hi_open and hi.is_integer else 0)
         return False if (first - last).is_positive else None
-    above = lo is not None and (lo.is_positive or (lo.is_zero and lo_open))
-    at_least = lo is not None and lo.is_nonnegative
-    below = hi is not None and (hi.is_negative or (hi.is_zero and hi_open))
-    at_most = hi is not None and hi.is_nonpositive
-    holds = {Q.positive: above, Q.nonnegative: at_least, Q.negative: below, Q.nonpositive: at_most,
-             Q.nonzero: above or below}[predicate]
-    return True if holds else None
+    # the interval is one of extended reals: the finite predicates also need each
+    # infinity the sign leaves possible excluded, by a finite endpoint on its side
+    # (or ``u < oo``), by a sign fact (``finite``) or by ``ask`` (issue #10, B1-B7)
+    no_pos_inf = hi is not None and (hi.is_finite or (hi is S.Infinity and hi_open) or hi is S.NegativeInfinity)
+    no_neg_inf = lo is not None and (lo.is_finite or (lo is S.NegativeInfinity and lo_open) or lo is S.Infinity)
+    above = lo is not None and bool(lo.is_extended_positive or (lo.is_zero and lo_open))
+    at_least = lo is not None and bool(lo.is_extended_nonnegative)
+    below = hi is not None and bool(hi.is_extended_negative or (hi.is_zero and hi_open))
+    at_most = hi is not None and bool(hi.is_extended_nonpositive)
+    extended = {Q.extended_positive: above, Q.extended_nonnegative: at_least, Q.extended_negative: below,
+                Q.extended_nonpositive: at_most, Q.extended_nonzero: above or below}
+    if predicate in extended:
+        return True if extended[predicate] else None
+    holds = {Q.real: True, Q.positive: above, Q.nonnegative: at_least, Q.negative: below,
+             Q.nonpositive: at_most, Q.nonzero: above or below}[predicate]
+    if not holds:
+        return None
+    if finite:
+        return True
+    excluded = {Q.real: no_pos_inf and no_neg_inf,           # above/below already exclude one side
+                Q.positive: no_pos_inf, Q.nonnegative: no_pos_inf, Q.negative: no_neg_inf,
+                Q.nonpositive: no_neg_inf,
+                Q.nonzero: (above and no_pos_inf) or (below and no_neg_inf)}[predicate]
+    if excluded:
+        return True
+    return True if _ask_finite(u, assumptions) else None
+
+
+def _ask_finite(u: Any, assumptions: Any) -> bool:
+    """Whether ``ask`` proves ``u`` finite (what a bound on the extended reals leaves open)."""
+    try:
+        return _upstream.ask(Q.finite(u), assumptions) is True
+    except (ValueError, TypeError, AssertionError):
+        return False
 
 
 REBUILD = "__rebuild__"

@@ -133,7 +133,7 @@ def _checked(bounds: tuple | None) -> tuple | None:
     opposite signs would undo each other forever (issue #10, B9).  Under
     inconsistent assumptions any result is correct, so the bounds prove
     nothing and the engine is left with what ``ask`` answers."""
-    return None if bounds is None or _empty(*bounds) else bounds
+    return None if bounds is None or _empty(*bounds[:4]) else bounds
 
 
 def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
@@ -148,7 +148,31 @@ def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
     under ``Q.le(x, 2*pi)``), the bounds of ``v`` are mapped.  ``None``
     when nothing is stated, or when the stated bounds are contradictory
     (an empty interval, :func:`_checked`).
+
+    The interval is one of the *extended* reals: a relation allows an
+    infinite value (``Q.gt(x, 1)`` holds at ``x = oo``), so an unstated or
+    infinite side does not bound ``u`` away from infinity; see
+    :func:`stated_finite` for when the bounds prove ``u`` finite.
     """
+    found = _stated(u, assumptions)
+    return None if found is None else found[:4]
+
+
+def stated_finite(u: Any, assumptions: Any) -> tuple | None:
+    """``(bounds, finite)``: :func:`stated_bounds` and whether the same conjuncts
+    prove ``u`` finite, without looking at the interval's endpoints.
+
+    A sign fact ``Q.positive(d)`` (and the other three) holds only for a
+    finite ``d``, so a bound read from one makes ``u`` finite; a relation
+    (``Q.gt(u, 1)``, and ``Q.ge(u, oo)``, which forces ``u = oo``) does not.
+    Whether an endpoint excludes infinity is left to the caller
+    (:func:`._engine._from_bounds`)."""
+    found = _stated(u, assumptions)
+    return None if found is None else (found[:4], found[4])
+
+
+def _stated(u: Any, assumptions: Any) -> tuple | None:
+    """``(lo, hi, lo_open, hi_open, finite)``: see :func:`stated_bounds` and :func:`stated_finite`."""
     if not isinstance(assumptions, Basic):
         return None
     direct = _checked(_direct_bounds(u, assumptions))
@@ -162,17 +186,19 @@ def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
         if rng is None:
             continue
         a, c = aff
-        lo, hi, lo_open, hi_open = rng
+        lo, hi, lo_open, hi_open, finite = rng
         lo, hi = (None if lo is None else a*lo + c), (None if hi is None else a*hi + c)
         if a < 0:
             lo, hi, lo_open, hi_open = hi, lo, hi_open, lo_open
-        return lo, hi, lo_open, hi_open
+        return lo, hi, lo_open, hi_open, finite and a.is_finite and c.is_finite
     return None
 
 
 def _direct_bounds(u: Any, assumptions: Any) -> tuple | None:
-    """The bounds stated on ``u`` itself (see :func:`stated_bounds`)."""
+    """The bounds stated on ``u`` itself, and whether a sign fact among them makes
+    ``u`` finite (see :func:`_stated`)."""
     lo = hi = None
+    finite = False
     for conj in And.make_args(assumptions):
         if not isinstance(conj, AppliedPredicate):
             continue
@@ -189,13 +215,14 @@ def _direct_bounds(u: Any, assumptions: Any) -> tuple | None:
             continue
         a, c = aff
         bound = -c/a
+        finite |= f in _SIGNS and bool(a.is_finite and c.is_finite)   # a sign fact's argument is finite
         if (a > 0) == lower:
             lo = _tighter(lo, bound, strict, True)
         else:
             hi = _tighter(hi, bound, strict, False)
     if lo is None and hi is None:
         return None
-    return (lo[0] if lo else None, hi[0] if hi else None, bool(lo and lo[1]), bool(hi and hi[1]))
+    return (lo[0] if lo else None, hi[0] if hi else None, bool(lo and lo[1]), bool(hi and hi[1]), finite)
 
 
 def full_bounds(u: Any, assumptions: Any) -> tuple | None:
