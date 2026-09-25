@@ -171,11 +171,8 @@ def stated_finite(u: Any, assumptions: Any) -> tuple | None:
     return None if found is None else (found[:4], found[4])
 
 
-@lru_cache(maxsize=4096)
 def _stated(u: Any, assumptions: Any) -> tuple | None:
     """``(lo, hi, lo_open, hi_open, finite)``: see :func:`stated_bounds` and :func:`stated_finite`.
-    Remembered: it depends on ``u`` and the assumptions alone, and the engine
-    asks it for the same pair many times (on every relation and sign query).
 
     The bounds stated on ``u`` itself come first; while they leave a side
     open (and no sign fact makes ``u`` finite), the bounds of each quantity

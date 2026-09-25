@@ -750,7 +750,7 @@ def default_measure(heads: Iterable[type]) -> Measure:
             elif not a.is_Atom:
                 structure += 1
         bad = sum(not _provably_positive(n.args[0], assumptions) for n in nodes if n.args)
-        return (structure, bad, count_ops(e))
+        return (structure, bad, size(e))
     return measure
 
 
@@ -768,11 +768,25 @@ def _distributed(cand: Any) -> Any:
     grows, such as a binomial, is left alone)."""
     if not isinstance(cand, Expr) or not cand.has(Add):
         return cand
+    return _distributed_expr(cand)
+
+
+@lru_cache(maxsize=4096)
+def _distributed_expr(cand: Expr) -> Expr:
+    """:func:`_distributed` of an expression, remembered (a candidate is
+    distributed again every time its row is tried)."""
     try:
         flat = expand_mul(cand)
     except Exception:  # noqa: BLE001
         return cand
-    return flat if count_ops(flat) < count_ops(cand) else cand
+    return flat if size(flat) < size(cand) else cand
+
+
+@lru_cache(maxsize=8192)
+def size(e: Any) -> int:
+    """``count_ops(e)``, remembered: the tie-breaker of every rewrite ordering,
+    measured again for the same expressions in every pass."""
+    return count_ops(e)
 
 
 _splitting: list[bool] = [False]
