@@ -166,9 +166,20 @@ def relational_name(rel) -> str:
     return _OPS[rel.rel_op]
 
 
+_SYMPY_ATOMS: dict = {}
+
+
 def sympy_atom(atom: P):
-    from sympy.assumptions.ask import Q
-    return {"eq": Q.eq, "lt": Q.lt}[atom.pred](*atom.expr)
+    """``Q.eq(a, b)`` / ``Q.lt(a, b)`` for a normalised relation atom
+    (memoized: a pure function of the atom)."""
+    r = _SYMPY_ATOMS.get(atom)
+    if r is None:
+        from sympy.assumptions.ask import Q
+        r = {"eq": Q.eq, "lt": Q.lt}[atom.pred](*atom.expr)
+        if len(_SYMPY_ATOMS) >= 100_000:
+            _SYMPY_ATOMS.clear()
+        _SYMPY_ATOMS[atom] = r
+    return r
 
 
 def _is_number(e) -> bool:
