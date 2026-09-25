@@ -91,10 +91,12 @@ import os
 from contextlib import contextmanager
 from typing import Any, Iterator
 
+from sympy import I, Pow, Q, S, exp, pi
 from sympy.core import Basic, Expr
 from sympy.core.sympify import sympify
 
 from .. import _upstream
+from . import _simple
 
 MAX_FIRINGS = 500
 """Rewrites allowed in one chain (a node rewritten, the result rewritten again, ...):
@@ -432,6 +434,56 @@ def _short(expr: Any) -> str:
     return text if len(text) <= 200 else text[:200] + "..."
 
 
+def _pow_eval_refine(expr: Any, assumptions: Any) -> Any:
+    """SymPy's ``Pow._eval_refine`` asking through :func:`satrefine._upstream.ask`
+    (the selected backend, memoized for the call) instead of SymPy's ``ask``."""
+    ask = _upstream.ask
+    b, e = expr.as_base_exp()
+    try:
+        if ask(Q.integer(e), assumptions) and b.could_extract_minus_sign():
+            if ask(Q.even(e), assumptions):
+                return Pow(-b, e)
+            elif ask(Q.odd(e), assumptions):
+                return -Pow(-b, e)
+    except ValueError:                       # inconsistent assumptions: the hook declines
+        return None
+    return None
+
+
+def _exp_eval_refine(expr: Any, assumptions: Any) -> Any:
+    """SymPy's ``exp._eval_refine`` asking through :func:`satrefine._upstream.ask`.
+    Like SymPy's, it asks without the assumptions (it only reads the literal
+    coefficient of ``pi*I``)."""
+    ask = _upstream.ask
+    arg = expr.args[0]
+    if arg.is_Mul:
+        Ioo = I*S.Infinity
+        if arg in [Ioo, -Ioo]:
+            return S.NaN
+        coeff = arg.as_coefficient(pi*I)
+        if coeff:
+            try:
+                if ask(Q.integer(2*coeff)):
+                    if ask(Q.even(coeff)):
+                        return S.One
+                    elif ask(Q.odd(coeff)):
+                        return S.NegativeOne
+                    elif ask(Q.even(coeff + S.Half)):
+                        return -I
+                    elif ask(Q.odd(coeff + S.Half)):
+                        return I
+            except ValueError:
+                return None
+    return None
+
+
+_EVAL_REFINE = {Pow._eval_refine: _pow_eval_refine, exp._eval_refine: _exp_eval_refine}
+"""satrefine's copies of SymPy's ``_eval_refine`` hooks that call ``ask``, by the
+SymPy method they replace (a subclass overriding the hook keeps its own).  SymPy's
+versions call SymPy's ``ask`` directly, past the backend and the per-call memo;
+the copies behave the same with the selected backend's answers."""
+
+
 def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
     """``(result, again)``: the node's children refined and its handler applied;
     ``again`` when the result is a new expression still to be refined."""
@@ -439,14 +491,15 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
     if not expr.is_Atom and name not in own_args:
         args = [_refine(a, assumptions) for a in expr.args]
         try:
-            new = expr.func(*args)
+            new = _simple.rebuild(expr.func, args, assumptions)   # acot/acoth keep their value at 0 (B8)
         except (ValueError, TypeError):          # a child became nan (inconsistent assumptions) and
             return expr, False                   # the head refuses it (Max: "nan is not comparable")
         if new.is_Atom or new.func is not expr.func or new.args != tuple(args):
             return (new, True) if new != expr else (expr, False)
         expr = new
-    if hasattr(expr, "_eval_refine"):
-        ref = expr._eval_refine(assumptions)
+    own = _EVAL_REFINE.get(getattr(type(expr), "_eval_refine", None))
+    if own is not None or hasattr(expr, "_eval_refine"):
+        ref = own(expr, assumptions) if own is not None else expr._eval_refine(assumptions)
         if ref is not None:
             return ref, False
     handler = _upstream.handlers_dict.get(name)
