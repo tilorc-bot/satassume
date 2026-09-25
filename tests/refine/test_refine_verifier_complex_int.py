@@ -1384,7 +1384,8 @@ def test_boundary_zero_times_infinite_artifact() -> None:
     assert Abs(zoo) == oo
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_inconsistent_assumptions.py", "inconsistent assumptions return the expression instead of raising ValueError")
+@pytest.mark.handlers("handlers")   # handlers_identities returns the input instead (B9, kept in phase 3):
+                                   # tests/refine_identities/test_default_inconsistent_assumptions.py
 def test_inconsistent_assumptions_raise_pre_existing_engine_error() -> None:
     # Engine-level: every backend raises ValueError for inconsistent
     # assumptions and the dispatcher propagates it.  This is reproducible with
