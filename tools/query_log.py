@@ -38,6 +38,11 @@ unless ``--log`` is given).  One JSON object per query, in stream order:
                               variable ints true in the model
                    depth      only if > 1: the solve belongs to an engine
                               query nested inside this one
+                 The not_p / p tagging reads the last literal ``Solver.entails``
+                 passes to ``_solve`` (``¬P`` or ``P`` after the assumption
+                 literals).  The four scripts under ``agent-reports/scripts/``
+                 copy that rule, so a change to how ``entails`` calls
+                 ``_solve`` must update all five.
     ms           wall time of the query in milliseconds (includes the
                  logging overhead, a few percent)
     via          where sympy_api.ask sent the query: "memo", "ask"
@@ -94,8 +99,17 @@ def _stage(name):
         ctx.path.append(name)
 
 
+_installed = [False]
+
+
 def install(models=False):
+    """Install the wrappers (once; a second call only updates ``models``:
+    wrapping the entry points twice would break the depth tracking and leave
+    ``path`` empty and ``session_new`` null)."""
     ctx.models = models
+    if _installed[0]:
+        return
+    _installed[0] = True
 
     # -- sympy_api: memo vs engine ------------------------------------------
     orig_api_ask = api._ask

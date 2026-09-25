@@ -93,7 +93,7 @@ def test_key_extensibility(eng):
         with pytest.raises(ValueError):
             ask(Q.my_key(x), ~Q.my_key(x), eng)
     finally:
-        unregister('my_key')
+        unregister(Q.my_key)
         del Q.my_key
     assert out_of_scope(Q.__getattr__('my_key')(x)) == "custom" if hasattr(Q, 'my_key') else True
 
