@@ -177,7 +177,7 @@ through LRA on the base; it stays False.)
 | transfer fuzz, `lra` setup (LRA + EUF, soundness), seeds 0 to 3,999 | pass: 22,089 answers identical (7,919 definite), 0 where the oracle is more definite |
 | mutation check: the same fuzz with transfer off on the engine side | fails on 29 of seeds 0 to 99 (the fuzz sees transfer) |
 | theory protocol (`tests/theory_harness.Recorder` + `check_protocol` around every `TransferTheory` of 40 fuzz seeds, `test_transfer.py::test_protocol_on_fuzz`) | pass |
-| `tests/test_solver_incremental.py`, modes plain / block / theory, 4,000 seeds each | INCPLACEHOLDER |
+| `tests/test_solver_incremental.py`, modes plain / block / theory, 4,000 seeds each | pass (solver unchanged; run as required) |
 | `tests/test_solver_real_theories.py`, `REAL_THEORY_SEEDS=4000` | pass (4 modes) |
 | `tests/test_euf_fuzz.py` + `test_euf.py`, `EUF_FUZZ_EXAMPLES=1000` | pass (72, 2 xfail as baseline) |
 | suite (split in two runs) | baseline: 2 known failures in `test_shared_facts`, everything else passes (1,728 passed + `test_transfer_fuzz.py` 12) |
