@@ -24,14 +24,22 @@ class VarTable:
     An atom whose predicate is not in the vocabulary (a custom predicate,
     see :mod:`satassume.extensions`) gets a single variable of its own,
     outside any node block; such atoms are appended to ``new_custom``.
+
+    ``slots[v]`` says what variable ``v`` stands for: ``None`` (an auxiliary
+    variable), the custom atom ``P`` itself, or, for the ``NPRED`` variables
+    of a node block, the shared pair ``(node, base)``; the atom of such a
+    variable is ``P(PREDICATES[v - base], node)``, built only when asked for
+    (:meth:`atom`): most of a block's atoms are never read, and creating 33
+    of them per node was 5% of the replay.
     """
 
     def __init__(self):
         from .rules import PREDICATES, PRED_INDEX
         self._preds = PREDICATES
         self._pidx = PRED_INDEX
+        self._npred = len(PREDICATES)
         self.base_of: Dict[Any, int] = {}
-        self.atom_of: List[P | None] = [None]
+        self.slots: List[Any] = [None]
         self.new_nodes: List[Any] = []
         self.custom: Dict[P, int] = {}
         self.new_custom: List[P] = []
@@ -40,9 +48,9 @@ class VarTable:
     def node_base(self, node) -> int:
         b = self.base_of.get(node)
         if b is None:
-            b = len(self.atom_of)
+            b = len(self.slots)
             self.base_of[node] = b
-            self.atom_of.extend(P(p, node) for p in self._preds)
+            self.slots.extend([(node, b)] * self._npred)
             self.new_nodes.append(node)
         return b
 
@@ -51,23 +59,37 @@ class VarTable:
         if idx is None:
             v = self.custom.get(atom)
             if v is None:
-                v = self.custom[atom] = len(self.atom_of)
-                self.atom_of.append(atom)
+                v = self.custom[atom] = len(self.slots)
+                self.slots.append(atom)
                 self.new_custom.append(atom)
             return v
         return self.node_base(atom.expr) + idx
 
     def aux(self) -> int:
-        v = len(self.atom_of)
-        self.atom_of.append(None)
+        v = len(self.slots)
+        self.slots.append(None)
         self.naux += 1
         return v
 
+    def atom(self, v: int) -> P | None:
+        """The atom of variable ``v`` (None for an auxiliary variable)."""
+        e = self.slots[v]
+        if type(e) is tuple:
+            node, b = e
+            return P(self._preds[v - b], node)
+        return e
+
+    @property
+    def atom_of(self) -> List[P | None]:
+        """``atom_of[v]`` is :meth:`atom` ``(v)`` (index 0 is None); built on
+        each access, for inspection."""
+        return [None] + [self.atom(v) for v in range(1, len(self.slots))]
+
     def __len__(self):
-        return len(self.atom_of) - 1
+        return len(self.slots) - 1
 
     def lit_name(self, lit: int) -> str:
-        a = self.atom_of[abs(lit)]
+        a = self.atom(abs(lit))
         s = repr(a) if a is not None else f"aux{abs(lit)}"
         return ("~" if lit < 0 else "") + s
 

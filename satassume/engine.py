@@ -36,7 +36,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from .compile import VarTable, compile_formula, formula_literal
 from .formula import P, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted
-from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
+from .rules import NPRED, PRED_INDEX, PREDICATES, RULE_CLAUSES, RULE_INTERNAL
 from .solver import Solver
 
 Node = Any
@@ -427,12 +427,17 @@ class Session:
     # -- root facts -> cache ------------------------------------------------
     def writeback(self) -> None:
         trail = self.solver.root_trail()
-        atom_of = self.table.atom_of
+        slots = self.table.slots
         cache = self.engine.cache
         custom = self.engine.custom_cache
         for lit in trail[self.read_pos:]:
-            atom = atom_of[abs(lit)]
-            if atom is not None:
+            v = abs(lit)
+            atom = slots[v]
+            if type(atom) is tuple:
+                # a node block's variable (VarTable.slots): P(pred, node)
+                node, b = atom
+                cache.put(node, PREDICATES[v - b], lit > 0)
+            elif atom is not None:
                 if atom.pred in PRED_INDEX:
                     cache.put(atom.expr, atom.pred, lit > 0)
                 else:
