@@ -22,9 +22,11 @@ all per-literal data lives in flat lists indexed by literal and negation is
 Assignments are stored per *literal*: ``_val[lit]`` is ``True``, ``False`` or
 ``None``, with ``_val[lit ^ 1]`` always the complement.
 
-The solver is always at decision level 0 between public calls.  Level-0
-assignments are permanent facts entailed by the clause set (found by unit
-propagation, by unit clauses, or as learned unit clauses).
+Between public calls the solver is at decision level 0, except that it may
+*hold* the assumption levels of the last :meth:`Solver.implied` (see
+:meth:`Solver._assume`); every root-level query ignores levels above 0.
+Level-0 assignments are permanent facts entailed by the clause set (found
+by unit propagation, by unit clauses, or as learned unit clauses).
 """
 from __future__ import annotations
 
@@ -114,6 +116,9 @@ class Solver:
         # ``key = (assumptions, stamp, root trail length)`` and ``trail``
         # the internal trail it reached (None on conflict).
         self._acache: tuple | None = None
+        # Held assumptions: the internal assumption literals whose levels
+        # are kept on the trail between public calls, or None (see _assume).
+        self._held: list[int] | None = None
         self._conflict: list[int] = []
         # Statistics.
         self._n_props = 0
@@ -121,6 +126,7 @@ class Solver:
         self._n_decisions = 0
         self._n_learned = 0
         self._n_restarts = 0
+        self._n_reductions = 0
         # Theories (see satassume/theory.py).  ``_theories`` is the guard of
         # every hook: the no-theory path pays one attribute test per call.
         self._theories: list = []
@@ -281,10 +287,11 @@ class Solver:
         """
         if not self._ok:
             return False
-        if self._trail_lim:
+        if self._trail_lim and self._held is None:
             self._backtrack(0)
         raw = self._internal_lits(list(lits))
         val = self._val
+        level = self._level
         out: list[int] = []
         seen = set()
         for l in raw:
@@ -293,14 +300,16 @@ class Solver:
             if (l ^ 1) in seen:
                 return True                     # tautology
             vl = val[l]
-            if vl is True:
-                return True                     # satisfied at root
-            if vl is False:
+            if vl is not None and not level[l >> 1]:
+                if vl:
+                    return True                 # satisfied at root
                 continue                        # false at root: drop literal
             seen.add(l)
             out.append(l)
         self._witness = None
         self._stamp += 1
+        if len(out) < 2 and self._trail_lim:
+            self._backtrack(0)                  # root change: drop held levels
         if not out:
             self._ok = False
             return False
@@ -316,9 +325,76 @@ class Solver:
                 return False
             return True
         self._clauses.append(out)
-        self._watches[out[0]].append(out)
-        self._watches[out[1]].append(out)
+        if self._trail_lim:
+            self._attach_held(out)
+            return True
+        watches = self._watches
+        watches[out[0]].append(out)
+        watches[out[1]].append(out)
         return True
+
+    def _attach_held(self, c: list[int]) -> None:
+        """Watch the new clause ``c`` (no literal fixed at root) while the
+        assumption levels are held, and propagate it if it is unit there.
+
+        Watching two non-false literals, or a true one and the false one of
+        highest level where the true one's level is not higher, is the
+        usual two-watched-literal invariant (a false watch implies a true
+        other watch of no higher level), which survives backtracking to any
+        level.  If ``c`` is unit, its literal is implied at
+        the current (highest) level and propagated, which keeps the held
+        trail the propagation fixpoint of the clause set under the held
+        assumptions.  A unit at a lower held level (possible with several
+        assumptions), a falsified clause or a conflict drops the held
+        levels (backtrack to root, where any two literals may be watched).
+        """
+        val = self._val
+        watches = self._watches
+        n = len(c)
+        k = 0                                   # c[:k] are non-false
+        for i in range(n):
+            l = c[i]
+            if val[l] is not False:
+                c[i] = c[k]
+                c[k] = l
+                k += 1
+                if k == 2:
+                    break
+        if k == 1:
+            # c[0] is the only non-false literal: watch the false literal
+            # of highest level next to it.
+            level = self._level
+            best = 1
+            for i in range(2, n):
+                if level[c[i] >> 1] > level[c[best] >> 1]:
+                    best = i
+            c[1], c[best] = c[best], c[1]
+            l = c[0]
+            vl = val[l]
+            if vl is True and level[l >> 1] > level[c[1] >> 1]:
+                # Satisfied only by a literal of a higher level than all the
+                # false ones: backtracking between the two levels (search
+                # continuing from the held levels) would miss the unit.
+                k = 0
+            elif vl is None:
+                dl = len(self._trail_lim)
+                if level[c[1] >> 1] == dl:
+                    v = l >> 1
+                    val[l] = True
+                    val[l ^ 1] = False
+                    level[v] = dl
+                    self._reason[v] = c
+                    self._trail.append(l)
+                    watches[l].append(c)
+                    watches[c[1]].append(c)
+                    if self._propagate() is not None:
+                        self._backtrack(0)
+                    return
+                k = 0                           # unit below the top level
+        if k == 0:
+            self._backtrack(0)                  # no literal of c is assigned now
+        watches[c[0]].append(c)
+        watches[c[1]].append(c)
 
     def add_clauses(self, clauses) -> bool:
         """Bulk-add clauses of external literals.  Returns False iff the
@@ -332,7 +408,7 @@ class Solver:
         """
         if not self._ok:
             return False
-        if self._trail_lim:
+        if self._trail_lim and self._held is None:
             self._backtrack(0)
         val = self._val
         watches = self._watches
@@ -349,6 +425,8 @@ class Solver:
                     self._grow(v)
                     nv = self._nvars
                 l = 2 * v + 1 if x < 0 else 2 * v
+                if self._trail_lim:
+                    self._backtrack(0)          # root change: drop held levels
                 vl = val[l]
                 if vl is True:
                     continue
@@ -394,12 +472,14 @@ class Solver:
         literal encoding (variables must exist, see :meth:`ensure_vars`)."""
         if not self._ok:
             return False
-        if self._trail_lim:
+        if self._trail_lim and self._held is None:
             self._backtrack(0)
         val = self._val
         watches = self._watches
         cls = self._clauses
         for lits in clauses:
+            if len(lits) == 1 and self._trail_lim:
+                self._backtrack(0)              # root change: drop held levels
             for l in lits:
                 if val[l] is not None:
                     if not self.add_clause([-(l >> 1) if l & 1 else l >> 1 for l in lits]):
@@ -433,7 +513,7 @@ class Solver:
         """
         if not self._ok:
             return False
-        if self._trail_lim:
+        if self._trail_lim and self._held is None:
             self._backtrack(0)
         top = base + nvars - 1
         if top > self._nvars:
@@ -462,6 +542,8 @@ class Solver:
         """Run unit propagation at root; False iff there is a root conflict."""
         if not self._ok:
             return False
+        if self._held is not None:
+            return True             # held levels are a propagation fixpoint
         if self._trail_lim:
             self._backtrack(0)
         if (self._tpropagate() if self._theories else self._propagate()) is not None:
@@ -495,7 +577,9 @@ class Solver:
 
         Returns the list of *all* assigned literals (root facts, the
         assumptions and their consequences) or None if propagation runs into
-        a conflict.  No search and no learning; the solver is left at root.
+        a conflict.  No search and no learning.  Root-level state is not
+        changed beyond root propagation (the solver may keep the assumption
+        levels, see :meth:`_assume`).
         """
         trail = self._assume(assumptions)
         if trail is None:
@@ -505,7 +589,19 @@ class Solver:
     def _assume(self, assumptions) -> list[int] | None:
         """Propagate at root, then under ``assumptions`` (each at its own
         level); return the internal trail reached, or None on conflict.
-        The solver is left at root.  The returned list must not be mutated.
+        The returned list must not be mutated and is only valid until the
+        next solver call.
+
+        Held levels.  Without theories, a successful propagation keeps its
+        assumption levels on the trail (``_held``) instead of backtracking.
+        The clause-adding methods then keep the held trail equal to the
+        propagation fixpoint of the grown clause set (see
+        :meth:`_attach_held`); anything that changes the root assignment
+        (a unit clause), a falsified clause, or any other method that needs
+        root (search, theories) backtracks to root, which drops the held
+        levels (:meth:`_backtrack`).  So while ``_held`` is set, the trail is
+        exactly what propagating ``_held`` from root would give, and the
+        same assumptions are answered from it directly.
 
         The result is cached.  It is a function of the assumptions, the
         clause database and the root assignment only: propagation reaches
@@ -523,7 +619,12 @@ class Solver:
         still sound: it was derived from the same assumptions, clauses and
         atoms.
         """
-        if self._trail_lim:
+        lits = self._internal_lits(assumptions)
+        if self._held is not None:
+            if self._held == lits:
+                return self._trail
+            self._backtrack(0)
+        elif self._trail_lim:
             self._backtrack(0)
         if not self._ok:
             return None
@@ -531,14 +632,19 @@ class Solver:
         if (self._tpropagate() if theories else self._propagate()) is not None:
             self._ok = False
             return None
-        lits = self._internal_lits(assumptions)
         stamp = self._stamp
         key = (lits, stamp, len(self._trail))
         cached = self._acache
         if cached is not None and cached[0] == key:
             return cached[1]
-        trail = self._trail[:] if self._assume_propagate(lits) else None
-        self._backtrack(0)
+        if self._assume_propagate(lits):
+            trail = self._trail[:]
+            if not theories and self._trail_lim:
+                self._held = lits
+        else:
+            trail = None
+        if self._held is None:
+            self._backtrack(0)
         if self._ok and self._stamp == stamp:
             self._acache = (key, trail)
         return trail
@@ -547,8 +653,11 @@ class Solver:
         """Assume each internal literal of ``lits`` at its own level and
         propagate; the solver must be at root with propagation done.
 
-        On success the solver is left in the assumed state (caller must
-        backtrack).  Returns False on conflict.
+        Like :meth:`_search`, an assumption that is already true gets an
+        empty level, so level ``i + 1`` always belongs to ``lits[i]`` and a
+        search can continue from these levels.  On success the solver is
+        left in the assumed state (caller must backtrack).  Returns False
+        on conflict.
         """
         theories = self._theories
         val = self._val
@@ -559,6 +668,10 @@ class Solver:
         for l in lits:
             vl = val[l]
             if vl is True:
+                trail_lim.append(len(trail))    # empty level
+                if theories:
+                    for t in theories:
+                        t.push_level()
                 continue
             if vl is False:
                 return False
@@ -657,6 +770,7 @@ class Solver:
         trail_lim = self._trail_lim
         if len(trail_lim) <= lvl:
             return
+        self._held = None
         trail = self._trail
         val = self._val
         pol = self._polarity
@@ -1073,6 +1187,7 @@ class Solver:
                     watches[l] = [c for c in ws if id(c) not in dead]
         self._learnts = keep
         self._stamp += 1
+        self._n_reductions += 1
         self._max_learnts *= self._learnt_size_inc
 
     def _search(self, nof_conflicts: int) -> bool | None:
@@ -1174,17 +1289,45 @@ class Solver:
         After an unsatisfiable call :meth:`conflict` gives the assumptions
         responsible; after a satisfiable one :meth:`model` gives a model.
         """
+        lits = self._internal_lits(list(assumptions))
+        held = self._held
+        keep = len(held) if held is not None and lits[:len(held)] == held else 0
+        return self._solve(lits, keep)
+
+    def _solve(self, lits: list[int], keep: int) -> bool:
+        """:meth:`solve` on internal literals.  Afterwards the levels of the
+        first ``keep`` assumptions are held (see :meth:`_assume`) if
+        possible.
+
+        If the held levels are those of ``lits[:len(held)]``, the search
+        starts from them: they are exactly the state the search would
+        reach by deciding those assumptions (one level per assumption,
+        propagated to fixpoint, valid reasons and watches).  At the end,
+        the levels of ``lits[:keep]`` are kept if they are still on the
+        trail: CDCL keeps every level-prefix of the trail closed under
+        propagation (a learnt clause is unit exactly at its backjump level
+        and is propagated there), so they are again the propagation
+        fixpoint of the (grown) clause set under ``lits[:keep]``.  Not if
+        learnt clauses were deleted meanwhile (the fixpoint could have
+        used one), nor with theories.
+        """
         self._model = None
         self._tmodels = None
         self._conflict = []
-        if self._trail_lim:
-            self._backtrack(0)
-        if not self._ok:
-            return False
-        if (self._tpropagate() if self._theories else self._propagate()) is not None:
-            self._ok = False
-            return False
-        self._assumptions = self._internal_lits(list(assumptions))
+        held = self._held
+        if held is not None and lits[:len(held)] == held:
+            pass                                # continue from held levels
+        else:
+            if self._trail_lim:
+                self._backtrack(0)
+            if not self._ok:
+                return False
+            if (self._tpropagate() if self._theories else self._propagate()) is not None:
+                self._ok = False
+                return False
+        self._held = None                       # the search owns the trail
+        reductions = self._n_reductions
+        self._assumptions = lits
         self._max_learnts = max(self._max_learnts, len(self._clauses) / 3.0,
                                 float(self._learnt_size_min))
         status = None
@@ -1198,7 +1341,12 @@ class Solver:
             val = self._val
             self._model = {v: val[2 * v] for v in range(1, self._nvars + 1)}
             self._witness = self._model
-        self._backtrack(0)
+        if (keep and self._ok and not self._theories and len(self._trail_lim) >= keep
+                and self._n_reductions == reductions):
+            self._backtrack(keep)
+            self._held = lits[:keep]
+        else:
+            self._backtrack(0)
         self._assumptions = []
         return status
 
@@ -1250,16 +1398,18 @@ class Solver:
             self._grow(v)
         l = 2 * v + 1 if lit < 0 else 2 * v
         vl = True if l in trail else False if l ^ 1 in trail else None
+        lits = self._internal_lits(assumptions)
+        k = len(lits)
         if vl is not None:
-            if self._witness_satisfies(assumptions) or self.solve(assumptions):
+            if self._witness_satisfies(assumptions) or self._solve(lits, k):
                 return vl
             raise ValueError("inconsistent assumptions")
         # Full search.
-        if not self.solve(assumptions + [-lit]):
-            if not self.solve(assumptions + [lit]):
+        if not self._solve(lits + [l ^ 1], k):
+            if not self._solve(lits + [l], k):
                 raise ValueError("inconsistent assumptions")
             return True
-        if not self.solve(assumptions + [lit]):
+        if not self._solve(lits + [l], k):
             return False
         return None
 
