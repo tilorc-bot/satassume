@@ -78,7 +78,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--mode", choices=("a", "b", "both"), default="both")
-    p.add_argument("--handlers", default=os.environ.get("SATREFINE_HANDLERS", "handlers"),
+    p.add_argument("--handlers", default=os.environ.get("SATREFINE_HANDLERS", "handlers_identities"),
                    help="handler package inside satrefine (sets SATREFINE_HANDLERS)")
     p.add_argument("--backend", default="combined")
     p.add_argument("--show", choices=("gaps", "unsound", "all"), default="unsound")
