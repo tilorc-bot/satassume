@@ -399,6 +399,32 @@ class Relations:
 
     _want_transfer = False
 
+    def _congruent(self, node) -> bool:
+        """``node`` may become congruent to another known application of
+        the same head: argument by argument, the two are the same
+        expression or both may be merged (a side or a candidate, and not
+        two distinct numbers), and at least one pair differs."""
+        others = self._xheads.get((node.func, len(node.args)))
+        if not others or len(others) < 2:
+            return False
+        cand, xside = self._xcand, self._xside
+        args = node.args
+        for o in others:
+            if o is node or o == node:
+                continue
+            differ = False
+            for a, b in zip(args, o.args):
+                if a == b:
+                    continue
+                if not ((a in cand or a in xside) and (b in cand or b in xside)) \
+                        or (_is_number(a) and _is_number(b)):
+                    break
+                differ = True
+            else:
+                if differ:
+                    return True
+        return False
+
     def _note_sides(self, atom, level) -> None:
         xs = self._xside
         for e in atom.expr:
@@ -443,7 +469,14 @@ class Relations:
         visited = False
         for e in new:
             if isinstance(e, Expr) and e not in s.base:
+                before = len(s.base)
                 s.ensure(e)
+                if _is_number(e):
+                    # a number's facts are closed units: it adds nothing to
+                    # search, so it must not count as pollution of a reused
+                    # session (Engine.ask's cone search test); other sides
+                    # are visited by their links anyway
+                    s.n_assumption_nodes += len(s.base) - before
                 visited = True
         return visited
 
@@ -492,7 +525,11 @@ class Relations:
                 seen.add(e)
                 if isinstance(e, Basic) and _structural(e):
                     k = (e.func, len(e.args))
-                    heads[k] = heads.get(k, 0) + 1
+                    h = heads.get(k)
+                    if h is None:
+                        heads[k] = [e]
+                    else:
+                        h.append(e)
         while i < n:
             e = slots[i]
             if type(e) is tuple and e[1] == i:
@@ -521,10 +558,7 @@ class Relations:
             keep = []
             for node, b in pend:
                 lv = xside.get(node, 0)
-                if lv == 2 or (
-                        _structural(node)
-                        and heads.get((node.func, len(node.args)), 0) >= 2
-                        and any(a in cand or a in xside for a in node.args)):
+                if lv == 2 or (_structural(node) and self._congruent(node)):
                     cand.add(node)
                     changed = True
                     t = ad.node_term(node)
