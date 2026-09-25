@@ -301,18 +301,56 @@ _MISS = object()
 def _registry_state(eng: Engine):
     """What an answer depends on besides the query and the engine's
     history: the registered clause-generating functions (they decide the
-    scope of custom predicates and add facts) and the theory adapters."""
+    scope of custom predicates and add facts), identified by the registry
+    and its version counter (bumped by every (un)registration), and the
+    theory adapters."""
     ext = eng.extensions
-    h = ext._handlers if ext is not None else None
-    return (tuple((k, tuple(v)) for k, v in h.items()) if h else (),
-            tuple(eng.relation_specs))
+    return (ext, ext.version if ext is not None else 0, tuple(eng.relation_specs))
+
+
+#: ``(expr, relations) -> formula``, or the ``Unsupported`` category, of
+#: :func:`to_formula` on SymPy Booleans; valid while the default registry's
+#: version (which decides the scope of custom predicates) is ``_FORMULAS_STATE``
+_FORMULAS: dict = {}
+_FORMULAS_STATE = [None]
+FORMULAS_SIZE = 100_000
+
+
+def _formula(expr, relations: bool):
+    """Memoized :func:`to_formula` (raises :class:`Unsupported` like it)."""
+    if not isinstance(expr, _Basic):
+        return to_formula(expr, relations)
+    state = extensions.version
+    if _FORMULAS_STATE[0] != state:
+        _FORMULAS.clear()
+        _FORMULAS_STATE[0] = state
+    key = (expr, relations)
+    f = _FORMULAS.get(key)
+    if f is None:
+        try:
+            f = to_formula(expr, relations)
+        except Unsupported as e:
+            f = _Failed(str(e), e.category)
+        if len(_FORMULAS) >= FORMULAS_SIZE:
+            _FORMULAS.clear()
+        _FORMULAS[key] = f
+    if type(f) is _Failed:
+        raise Unsupported(f.message, f.category)
+    return f
+
+
+class _Failed:
+    __slots__ = ("message", "category")
+
+    def __init__(self, message, category):
+        self.message, self.category = message, category
 
 
 def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     rel = bool(eng.relation_specs)
     try:
-        prop = to_formula(proposition, rel)
-        assum = None if assumptions is True else to_formula(assumptions, rel)
+        prop = _formula(proposition, rel)
+        assum = None if assumptions is True else _formula(assumptions, rel)
     except Unsupported:
         return None
     if prop is TRUE:

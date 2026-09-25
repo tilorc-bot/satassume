@@ -35,8 +35,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
 from .formula import P, atoms_of
-from .relations import RELATION_ATOMS, Relations
-from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
+from .relations import RELATION_ATOMS, Relations, Uninterpreted
+from .rules import NPRED, PRED_INDEX, PREDICATES, RULE_CLAUSES, RULE_INTERNAL
 from .solver import Solver
 
 Node = Any
@@ -427,12 +427,17 @@ class Session:
     # -- root facts -> cache ------------------------------------------------
     def writeback(self) -> None:
         trail = self.solver.root_trail()
-        atom_of = self.table.atom_of
+        slots = self.table.slots
         cache = self.engine.cache
         custom = self.engine.custom_cache
         for lit in trail[self.read_pos:]:
-            atom = atom_of[abs(lit)]
-            if atom is not None:
+            v = abs(lit)
+            atom = slots[v]
+            if type(atom) is tuple:
+                # a node block's variable (VarTable.slots): P(pred, node)
+                node, b = atom
+                cache.put(node, PREDICATES[v - b], lit > 0)
+            elif atom is not None:
                 if atom.pred in PRED_INDEX:
                     cache.put(atom.expr, atom.pred, lit > 0)
                 else:
@@ -613,6 +618,11 @@ class Engine:
         self.answers = AnswerMemo()
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
+        #: assumption formulas whose session construction raised
+        #: ``Uninterpreted`` -> its message, valid under ``_failed_state``
+        #: (see :meth:`_context_session`)
+        self._failed: Dict[Any, str] = {}
+        self._failed_state = None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "cone_searches": 0, "sessions": 0}
 
@@ -620,13 +630,38 @@ class Engine:
         self.stats["sessions"] += 1
         return Session(self)
 
+    def _registry_state(self):
+        """What decides whether building a session for a set of assumptions
+        raises ``Uninterpreted``: the theory adapters (and, conservatively,
+        the registered clause-generating functions)."""
+        ext = self.extensions
+        return (ext, ext.version if ext is not None else 0, tuple(self.relation_specs))
+
     def _context_session(self, assumptions) -> Tuple[Session, List[int]]:
         hit = self._context_sessions.get(assumptions)
         if hit is not None and len(hit[0].base) <= self.session_limit:
             self._context_sessions.move_to_end(assumptions)
             return hit
+        failed = self._failed
+        if failed:
+            msg = failed.get(assumptions)
+            if msg is not None:
+                if self._failed_state == self._registry_state():
+                    # the construction below would raise this again: whether
+                    # it does depends only on the assumptions' relation atoms
+                    # and the adapters (Relations.process)
+                    raise Uninterpreted(msg)
+                failed.clear()
         s = self._fresh_session()
-        lits = s.assume_formula(assumptions)
+        try:
+            lits = s.assume_formula(assumptions)
+        except Uninterpreted as e:
+            state = self._registry_state()
+            if self._failed_state != state or len(failed) >= 10_000:
+                failed.clear()
+                self._failed_state = state
+            failed[assumptions] = str(e)
+            raise
         self._context_sessions[assumptions] = (s, lits)
         while len(self._context_sessions) > self.keep_sessions:
             self._context_sessions.popitem(last=False)
