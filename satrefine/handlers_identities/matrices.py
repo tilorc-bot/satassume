@@ -141,6 +141,10 @@ MATADD = [
     (Z + R, R, Q.zero(Z)),
     # Canonical form: A - A = 0 (refining X - X.T under Q.symmetric(X) leaves -X + X).
     (MatAdd(Z, -Z), ZeroMatrix(m, q), S.true),
+    # Canonical form: a one-term sum is its term (the zero case first, since
+    # nothing refines a zero matrix symbol on its own).
+    (MatAdd(Z), ZeroMatrix(m, q), Q.zero(Z)),
+    (MatAdd(Z), Z, S.true),
 ]
 
 HADAMARD = [
