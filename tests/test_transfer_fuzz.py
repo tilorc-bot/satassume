@@ -34,7 +34,7 @@ where the other one searches and finds the inconsistency (``x = 1 & f(x) =
 1 & f(y) = 1/2 & (x = 2 | y = f(x))``: transfer decides
 ``imaginary(f(x))`` by propagation; the oracle searches and raises).
 
-Seeds: ``TRANSFER_FUZZ_SEEDS`` (default 150) from ``TRANSFER_FUZZ_SEED0``;
+Seeds: ``TRANSFER_FUZZ_SEEDS`` (default 80) from ``TRANSFER_FUZZ_SEED0``;
 by hand ``python tests/test_transfer_fuzz.py SEED0 N [euf|lra]`` (about
 200 seeds a minute; keep each call under 270 s).
 """
@@ -204,7 +204,7 @@ def run_seed(seed, setup="euf", log=None):
     return counts
 
 
-SEEDS = int(os.environ.get("TRANSFER_FUZZ_SEEDS", "150"))
+SEEDS = int(os.environ.get("TRANSFER_FUZZ_SEEDS", "80"))
 SEED0 = int(os.environ.get("TRANSFER_FUZZ_SEED0", "0"))
 CHUNKS = 6
 

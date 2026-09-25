@@ -59,6 +59,19 @@ The rule base derives ``nonnegative``, ``nonzero``, ``extended_*`` and the
 rest from these three.  Numbers are not linked (their unary facts are
 closed already).
 
+Predicate transfer
+------------------
+With the first equality atom that is not glue (a user or extension atom;
+the links' ``eq(e, 0)`` and interface equalities do not count), the session
+attaches a :class:`satassume.transfer.TransferTheory`: every node block is
+registered with it under the node's EUF term, so terms in one EUF class
+share all unary facts (``Q.prime(x)`` from ``Q.eq(x, 2)``).  See
+:meth:`Relations._engage_transfer`.
+
+A relation no theory interprets makes ``ask`` return None
+(:class:`Uninterpreted`), unless the engine was built with
+``uninterpreted="free"``: then it stays a free Boolean.
+
 Combining theories
 ------------------
 Theories are kept apart by atom kind (each adapter accepts what it can
