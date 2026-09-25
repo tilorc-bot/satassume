@@ -119,3 +119,67 @@ stays on local branch `facts-stage1-prototype`, not landed.
 **Landed:** `e2aa724`, `67ad66f`, `e1bbdba`, `3fc0244`, `db8e7d8`, by
 fast-forward. The Pi session was ended at the user's request after this
 stage; the rest of the plan continues with local subagents.
+
+## Stage 2 (facts shared between equal terms), local subagents
+
+Built by an Opus subagent on the current rule-block representation (not on
+stage 1's FactTheory, which stays unlanded), after the user asked for the
+rest of the plan and said sharing facts between equal expressions matters
+even if slower, while equalities LRA derives from inequalities need not
+reach EUF. Report: `2026-09-25-facts-2-transfer.md`.
+
+**Design:** `satassume/transfer.py` (`TransferTheory`, atoms = node
+predicate variables) and a merge hook in `euf.py`: when EUF puts two terms
+in one class, every predicate value is copied across with reason = the
+premise literal plus EUF's explanation of the equality. EUF is engaged once
+per session at the first user or extension equality atom; then every node
+is interned into EUF and numbers in equalities are visited as nodes (so
+`x = 2` gives `x` every fact of 2). Sessions without an equality are
+unchanged apart from one attribute test. `Engine(transfer=False)` turns it
+off. `Engine(uninterpreted="free")` (uninterpreted relations as free
+Booleans) is built, **off by default**, pending the user's decision (with
+it on: 513 more definite, 36 new ValueErrors on the stream).
+
+**Local review** (Opus) of `9b800bb`: land, no failing input.
+
+- Every propagated literal and conflict checked on the spot (predicate,
+  signs, witness asserted, explanation literals asserted EUF equalities
+  whose congruence closure implies the two terms equal) over 4,750 seeds
+  with numbers, `oo`, `zoo`, `pi`, `I`, floats, applications: none invalid.
+- Equality semantics hold for every predicate: `x = 2 & x = 3`,
+  `x = 1/2 & integer(x)`, `x = oo & x = -oo` raise; floats never contradict
+  their equal rational; `nan` nodes skipped; binders opaque to congruence.
+  `ask(Q.eq(x, A))` for non-commutative `A` is now False (SymPy None),
+  sound since complex implies commutative.
+- The fuzz case where transfer turned a ValueError into a definite answer
+  (seed 750) is not a regression: `main` shows the same class (an answer
+  under assumptions inconsistent only by search depends on whether an
+  earlier query searched); the gates' ValueError sets are identical.
+- Gates: transfer fuzz (euf seeds 4200 to 10199, lra 4000 to 6499), solver
+  fuzz 2,000 per mode, real-theory fuzz 2,000, suite (known pair, plus a
+  timing smoke test that fails on `main` too under load), `ab.py` answers
+  match with 15 more definite, gate2 0 changed with 1 more definite.
+
+**More-definite answers** (all checked against SymPy at the pin and by
+hand; none contradicted):
+
+| stream # | query | assumptions | now | SymPy |
+|---|---|---|---|---|
+| 4395 | `zero(x)` | `eq(x, pi/2)` | False | None |
+| 4396, 4398 | `extended_real(x)`, `real(x)` | `eq(x, pi/2)` | True | None |
+| 4400, 4402 | `extended_real(x)`, `real(x)` | `eq(x, 2)` | True | None |
+| 4401 | `zero(sin(x))` | `eq(x, 2)` | False | None |
+| 12043, 12102 and 4 more | `eq(n, 1)`, `eq(n - 1, 1)`, ... | `~integer(n)` | False | False (same) |
+| 12154, 12157 | `eq(n, k)`, `eq(k, n - 1)` | `integer(n) & nonnegative(n) & gt(k, n)` | False | None |
+| 12178 | `eq(n, k)` | `integer(n) & negative(n) & ~integer(k)` | False | raises (assumptions consistent: `n = -1, k = 1/2`) |
+| gate2 | `prime(x)` | `prime(y) & eq(x, y)` | True | None |
+
+(15 stream answers, 15 distinct; the full list with SymPy's answers is in
+the stage 2 report.)
+
+**Speed** (Pi, landing side, `ab.py --rounds 3` against `main` `7068e57`):
+ref 2.752 s, cand 3.084 s, **+12.1%**. Being profiled and cut by the
+implementer as follow-up commits (to be reviewed as a delta).
+
+**Landed:** `d63d38d`..`9b800bb`, cherry-picked onto `main` (code
+identical).
