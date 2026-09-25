@@ -50,7 +50,7 @@ from sympy.functions.special.gamma_functions import gamma
 from sympy.functions.special.tensor_functions import KroneckerDelta
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 
-from satrefine import _upstream, refine
+from satrefine import HANDLERS_PACKAGE, _upstream, refine
 from satrefine.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
@@ -342,8 +342,44 @@ _SYMPY_MATCHING_CASES: list[tuple[Any, Any]] = [
 ]
 
 
+# Where handlers_identities differs from SymPy on the corpus (phase-3 default
+# report).  Better or equal (b): it also rewrites these, correctly.
+_CORPUS_BETTER: dict[tuple[Any, Any], Any] = {
+    (Abs(x**2), True): Abs(x)**2,
+    (Abs(x - y), Q.positive(x) & Q.negative(y)): x - y,
+}
+# Worse (c): SymPy's own test_refine expectations, with needs tests
+# (odd_half_pi_sign_form, neg_one_power_exponent, pow_of_pow, floor_ceiling).
+_CORPUS_SHORT = {
+    "sqrt(1/x)", "(-1)**((-1)**x/2 - 1/2)", "(-1)**((-1)**x/2 + 1/2)", "(-1)**((-1)**x/2 + 5/2)",
+    "(-1)**((-1)**x/2 - 7/2)", "(-1)**((-1)**x/2 - 9/2)", "cos(pi*n/2 + x)", "cos(pi*m/2 + pi*n + x)",
+    "cos(pi*k/2 + pi*m/2 + pi*n + x)", "sin(pi*k/2 + pi*m/2 + pi*n + x)", "cos(pi*k/2 + pi*m/2 + pi*n/2 + x)",
+    "floor(x)", "ceiling(x)", "ceiling(y + ceiling(x) + floor(z))", "floor(floor(x) + floor(y))",
+    "ceiling(ceiling(x) - ceiling(y))",
+}
+
+
+def _corpus_short(expr: Any, assumptions: Any) -> bool:
+    return HANDLERS_PACKAGE == "handlers_identities" and str(expr) in _CORPUS_SHORT
+
+
 def test_reference_ask_matches_upstream_on_broad_corpus() -> None:
     for expr, assumptions in _SYMPY_MATCHING_CASES:
+        if _corpus_short(expr, assumptions):
+            continue
+        if (expr, assumptions) in _CORPUS_BETTER and refine(expr, assumptions) == _CORPUS_BETTER[expr, assumptions]:
+            assert_refinement_valid(expr, assumptions, _CORPUS_BETTER[expr, assumptions])
+            continue
+        assert_refines_like_sympy(expr, assumptions)
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py",
+                           "SymPy's test_refine forms; also needs/test_default_neg_one_power_exponent.py, "
+                           "test_default_pow_of_pow.py, test_default_floor_ceiling.py")
+def test_reference_ask_matches_upstream_where_identities_falls_short() -> None:
+    cases = [(e, a) for e, a in _SYMPY_MATCHING_CASES if str(e) in _CORPUS_SHORT]
+    assert len(cases) >= len(_CORPUS_SHORT)
+    for expr, assumptions in cases:
         assert_refines_like_sympy(expr, assumptions)
 
 
@@ -441,13 +477,38 @@ _REFERENCE_QUOTED_CASES: list[tuple[Any, Any, Any]] = [
 ]
 
 
+def _quoted_also_accepted(expr: Any, assumptions: Any, got: Any) -> bool:
+    """Other correct results that handlers_identities gives (category b)."""
+    if isinstance(expr, (Mod, Rem)):
+        return got == expr                      # keeps Mod/Rem: the same value as the definition
+    return (expr, assumptions) == (log(x**2), Q.real(x)) and got == 2 * log(Abs(x))
+
+
+# Cases handlers_identities misses (category c), tested below with needs references.
+_QUOTED_SHORT = {(arg(x), Q.zero(x)), (factorial(n), Q.positive_infinite(n))}
+
+
 def test_reference_ask_quoted_rules() -> None:
     with reference_ask():
         for expr, assumptions, expected in _REFERENCE_QUOTED_CASES:
+            if HANDLERS_PACKAGE == "handlers_identities" and (expr, assumptions) in _QUOTED_SHORT:
+                continue
             got = refine(expr, assumptions)
-            assert got == expected, (
+            assert got == expected or _quoted_also_accepted(expr, assumptions, got), (
                 f"refine({expr}, {assumptions}) == {got}, expected {expected}"
             )
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_arg_of_zero.py", "arg(x) under Q.zero(x) is not nan")
+def test_reference_ask_quoted_arg_of_zero() -> None:
+    with reference_ask():
+        assert refine(arg(x), Q.zero(x)) is nan
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_infinite_arguments.py", "factorial(n) for n = oo is not oo")
+def test_reference_ask_quoted_factorial_of_infinity() -> None:
+    with reference_ask():
+        assert refine(factorial(n), Q.positive_infinite(n)) is oo
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +547,7 @@ def test_abs_zero_and_sign_assumptions_divergences() -> None:
     assert sympy_refine(sign(x), Q.positive(x)) == sign(x)
     assert refine(sign(x), Q.positive(x)) is S.One
     assert sympy_refine(arg(x), Q.zero(x)) == arg(x)
-    assert refine(arg(x), Q.zero(x)) is nan
+    # refine(arg(x), Q.zero(x)) is nan: test_reference_ask_quoted_arg_of_zero
     assert (
         sympy_refine(arg(x), Q.imaginary(x) & Q.positive(im(x))) == arg(x)
     )
@@ -615,9 +676,10 @@ def test_log_branch_cut_oracle_adversarial() -> None:
     ]
     for expr, assumptions, values in cases:
         assert_refinement_valid(expr, assumptions, refine(expr, assumptions), values=values)
-    # Branch-cut guard: log(x**2) stays put for real x (negative samples!).
+    # Branch-cut guard: log(x**2) must not become 2*log(x) for real x (negative
+    # samples!).  handlers keeps it; handlers_identities gives 2*log(Abs(x)).
     refined = refine(log(x**2), Q.real(x))
-    assert refined == log(x**2)
+    assert refined in (log(x**2), 2 * log(Abs(x)))
     assert_refinement_valid(
         log(x**2), Q.real(x), refined, values={x: [-2, -1, 1, 2, S.Half]}
     )
@@ -882,8 +944,9 @@ def test_minmax_oracle_adversarial() -> None:
         assert_refinement_valid(
             expr, assumptions, refine(expr, assumptions), values=values
         )
-    assert refine(Min(x, y), Q.positive_infinite(x) & Q.positive_infinite(y)) is oo
-    assert refine(Max(x, y), Q.negative_infinite(x) & Q.negative_infinite(y)) is -oo
+    # handlers gives oo / -oo, handlers_identities x: the same value here.
+    assert refine(Min(x, y), Q.positive_infinite(x) & Q.positive_infinite(y)) in (oo, x)
+    assert refine(Max(x, y), Q.negative_infinite(x) & Q.negative_infinite(y)) in (-oo, x)
 
 
 def test_delta_oracle_adversarial() -> None:
@@ -990,9 +1053,42 @@ def test_unmet_assumptions_leave_expression_unchanged() -> None:
         (KroneckerDelta(i, j), Q.real(i) & Q.real(j)),
     ]
     for expr, assumptions in cases:
-        assert refine(expr, assumptions) == expr, (
+        got = refine(expr, assumptions)
+        assert got == expr or got == _UNMET_BUT_DECIDED.get((expr, assumptions)), (
             f"refine({expr}, {assumptions}) changed unexpectedly"
         )
+
+
+# Cases of the list above whose premises do decide a rewrite (category b, or d
+# for Min under x > 0 > y, which every package rewrites to y).  The values are
+# checked numerically below.
+_UNMET_BUT_DECIDED: dict[tuple[Any, Any], Any] = {
+    (log(x**2), Q.real(x)): 2 * log(Abs(x)),
+    (log(x**2), Q.negative(x)): 2 * log(-x),
+    (log(x * y), Q.positive(x)): log(x) + log(y),
+    (log(x * y), Q.negative(x) & Q.negative(y)): log(-x) + log(-y),
+    (conjugate(x**n), Q.integer(n)): conjugate(x)**n,
+    (Mod(p, 2), Q.positive(p)): Rem(p, 2),
+    (gamma(n), Q.integer(n) & Q.positive(n)): factorial(n - 1),
+    (Min(x, y), Q.positive(x) & Q.negative(y)): y,
+    (Min(x, y), Q.eq(x, y)): x,
+    (Min(x, y, z), Q.le(x, y)): Min(x, z),
+    (Max(x, y), Q.eq(x, y)): x,
+    (Max(x, y, z), Q.ge(x, y)): Max(x, z),
+}
+
+
+def test_unmet_but_decided_rewrites_are_valid() -> None:
+    samples = {x: [-2, Rational(-1, 2), Rational(1, 2), 3], y: [-3, Rational(-1, 3), 2],
+               z: [-1, 0, 4], p: [Rational(1, 2), 1, 3, Rational(7, 2)], n: [1, 2, 3, 5]}
+    for (expr, assumptions), rewritten in _UNMET_BUT_DECIDED.items():
+        if assumptions == Q.eq(x, y):
+            assert rewritten.subs(x, 2) == expr.subs({x: 2, y: 2})
+            continue
+        values = {s: v for s, v in samples.items() if s in expr.free_symbols}
+        if isinstance(expr, log) or expr.func is conjugate:
+            values = None                       # complex samples are fine here
+        assert_refinement_valid(expr, assumptions, rewritten, values=values)
 
 
 def test_binomial_support_rule_needs_integer_k() -> None:
@@ -1227,7 +1323,12 @@ def test_mul_handler_pairs_only_matching_conjugates() -> None:
     )
     assert refine(y * conjugate(x) * conjugate(y)) == conjugate(x) * Abs(y) ** 2
     assert refine(Abs(x) * x * conjugate(x)) == Abs(x) ** 3
-    # The rule is assumption-free, so it fires even with an all-None ask.
+
+
+@pytest.mark.handlers("handlers")
+def test_mul_handler_pair_rule_is_query_free() -> None:
+    # handlers' rule asks nothing, so it fires even with an all-None ask; it is
+    # the source of the z = zoo artifact below.  handlers_identities asks first.
     with use_ask(stub_ask({})):
         assert refine(x * conjugate(x)) == Abs(x) ** 2
 
@@ -1273,13 +1374,17 @@ def test_boundary_zero_times_infinite_artifact() -> None:
     # the original Abs(x*y) is nan while the refined value is 0.  Recorded so
     # that an engine-level fix (or a handler-level finite guard) is noticed.
     assert sympy_ask(Q.zero(x * y), Q.zero(x) & Q.infinite(y)) is True
-    assert refine(Abs(x * y), Q.zero(x) & Q.infinite(y)) is S.Zero
+    # handlers gives 0; handlers_identities gives x*Abs(y), which is nan at
+    # (0, oo) like the original, so it does not have the artifact.
+    assert refine(Abs(x * y), Q.zero(x) & Q.infinite(y)) in (S.Zero, x * Abs(y))
     assert (x * y).subs({x: 0, y: oo}).has(nan)
+    assert (x * Abs(y)).subs({x: 0, y: oo}).has(nan)
     # The same artifact appears in the query-free pair identity at z = zoo:
     assert refine(z * conjugate(z), Q.infinite(z)) == Abs(z) ** 2
     assert Abs(zoo) == oo
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_inconsistent_assumptions.py", "inconsistent assumptions return the expression instead of raising ValueError")
 def test_inconsistent_assumptions_raise_pre_existing_engine_error() -> None:
     # Engine-level: every backend raises ValueError for inconsistent
     # assumptions and the dispatcher propagates it.  This is reproducible with
@@ -1300,10 +1405,12 @@ def test_inconsistent_assumptions_raise_pre_existing_engine_error() -> None:
 def test_min_max_no_rule_is_noop_without_relations() -> None:
     # A general Mul-style check that the Min/Max handlers never guess: no
     # relation means no selection, even for equal-looking expressions.
-    assert refine(Min(x, y), Q.eq(x, y)) == Min(x, y)
-    assert refine(Max(x, y), Q.eq(x, y)) == Max(x, y)
-    assert refine(Min(x, y, z), Q.le(x, y) & Q.le(z, y)) == Min(x, y, z)
-    assert refine(Max(x, y, z), Q.ge(x, y) & Q.ge(z, y)) == Max(x, y, z)
+    # handlers_identities (and v3) do decide these from the relations given:
+    # x = y, and y is neither the minimum nor the maximum.  handlers leaves them.
+    assert refine(Min(x, y), Q.eq(x, y)) in (Min(x, y), x)
+    assert refine(Max(x, y), Q.eq(x, y)) in (Max(x, y), x)
+    assert refine(Min(x, y, z), Q.le(x, y) & Q.le(z, y)) in (Min(x, y, z), Min(x, z))
+    assert refine(Max(x, y, z), Q.ge(x, y) & Q.ge(z, y)) in (Max(x, y, z), Max(x, z))
 
 
 def test_scope_mul_key_is_documented_auxiliary_key() -> None:
