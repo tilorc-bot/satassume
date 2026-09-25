@@ -104,10 +104,6 @@ class EUFAdapter:
         #: terms interned for the transfer layer only (session nodes, see
         #: :meth:`node_term`); kept out of :meth:`shared_terms`
         self._node_terms: dict[Basic, int] = {}
-        #: the sides of every registered atom, in order (an ordered set);
-        #: the only terms besides congruent applications that EUF can ever
-        #: put into a class with another term
-        self.sides: dict[Basic, None] = {}
         self._solver = None
 
     # ------------------------------------------------------------------
@@ -149,9 +145,6 @@ class EUFAdapter:
         if self._solver is not solver:
             self.attach(solver)
         lhs, rhs, positive = parsed
-        sides = self.sides
-        sides[lhs] = None
-        sides[rhs] = None
         payload = EqAtom(self.term(lhs), self.term(rhs), positive)
         solver.register_atom(self.theory, var, payload)
         return True

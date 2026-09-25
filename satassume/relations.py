@@ -225,13 +225,20 @@ class Relations:
         #: eq atoms the glue made (links ``eq(e, 0)``, interface equalities);
         #: they do not engage predicate transfer by themselves
         self._aux_eq: set = set()
+        self._link_eq: set = set()        # the links' eq(e, 0), of _aux_eq
+        #: sides of the equality atoms EUF interprets -> 2 (a user or
+        #: extension atom, or a number) or 1 (only a link's eq(e, 0));
+        #: interface equalities add nothing (see sync_transfer)
+        self._xside: dict = {}
         #: predicate transfer (satassume.transfer), engaged by the first
         #: user or template equality atom; None until then
         self.xfer = None
         self._xadapter = None
         self._xslot = 1                   # cursor into table.slots
         self._xterm = 0                   # cursor into the adapter's atom sides
-        self._xnsides = -1                # atom sides seen by sync_transfer
+        self._xnsides = -1                # _xside state seen by sync_transfer
+        self._xnterms = -1                # EUF atom terms counted in _xheads
+        self._xpart: set = set()          # link-only sides (polar registered)
         self._xheads: dict = {}           # (func, nargs) -> known expressions
         self._xseen: set = set()          # expressions counted in _xheads
         self._xpend: list = []            # (node, base) not yet candidates
@@ -257,8 +264,10 @@ class Relations:
         for a in user:
             for side in a.expr:
                 self._link_later(side)
-        if self.xfer is None and any(a.pred == "eq" for a in user):
-            self._want_transfer = True
+        for a in user:
+            if a.pred == "eq":
+                self._want_transfer = True
+                self._note_sides(a, 2)
         while True:
             s._flush()
             s._discover()
@@ -312,9 +321,12 @@ class Relations:
             if not spec.guarded:
                 if ad.register(solver, var, sat):
                     ok = True
-                    if (atom.pred == "eq" and atom not in self._aux_eq
-                            and hasattr(ad, "node_term")):
-                        self._want_transfer = True
+                    if atom.pred == "eq" and hasattr(ad, "node_term"):
+                        if atom not in self._aux_eq:
+                            self._want_transfer = True
+                            self._note_sides(atom, 2)
+                        elif atom in self._link_eq:
+                            self._note_sides(atom, 1)
                 continue
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
@@ -349,6 +361,7 @@ class Relations:
         eqa = relation_atom("eq", e, S.Zero)
         if eqa not in self.session.table.custom:
             self._aux_eq.add(eqa)
+            self._link_eq.add(eqa)
         eq = self._atom_var(eqa)
         emit = s._emit
         emit([-pos, gt])
@@ -386,6 +399,13 @@ class Relations:
 
     _want_transfer = False
 
+    def _note_sides(self, atom, level) -> None:
+        xs = self._xside
+        for e in atom.expr:
+            lv = 2 if _is_number(e) else level
+            if xs.get(e, 0) < lv:
+                xs[e] = lv
+
     def _engage_transfer(self) -> None:
         s = self.session
         if not s.engine.transfer:
@@ -413,7 +433,7 @@ class Relations:
         (numbers included); True if a node was visited."""
         from itertools import islice
         from sympy import Expr
-        sides = self._xadapter.sides
+        sides = self._xside
         n = len(sides)
         if self._xterm >= n:
             return False
@@ -428,26 +448,38 @@ class Relations:
         return visited
 
     def sync_transfer(self) -> None:
-        """Register with the transfer theory the node blocks whose terms EUF
-        could ever put into a class with another term (*candidates*).
+        """Register with the transfer theory the predicate variables of the
+        nodes whose terms EUF could put into a class with another term.
 
-        A term joins a class with another one only through a union: as the
-        side of an atom, or as an application congruent to another one with
-        the same head (function and arity) whose arguments were merged.  So
-        a node is a candidate iff it is an atom side, or it is an
-        application whose head occurs on at least two known expressions and
-        one of whose arguments is a candidate.  Candidacy only grows (new
-        atoms, new nodes), so nodes not yet candidates are kept and looked at
-        again on the next call; this runs at root-safe points (the end of
-        :meth:`process`, the start of ``Session.query_literal``).  Every
-        other node's facts can never be transferred and its 33 variables
-        stay out of the theory."""
+        A term joins a class only through a union: as the side of an atom,
+        or as an application congruent to another one with the same head
+        (function and arity) whose arguments were merged.  So a node is a
+        *candidate* (all 33 variables registered) iff it is a side of a user
+        or extension equality atom, a number side, or an application whose
+        head occurs on at least two known expressions and one of whose
+        arguments is a side or a candidate.  Two kinds of sides are left out
+        on purpose:
+
+        * a side ``e`` only of the link ``eq(e, 0)``: ``e`` joins the class
+          of ``0`` only when that atom holds, and then the link clause makes
+          ``zero(e)`` true, from which the rule base decides every predicate
+          but ``polar`` exactly as the facts of the number ``0`` (itself a
+          candidate) do; so only ``polar`` is registered for ``e``;
+        * a side only of interface equalities (equality sharing): those are
+          how equalities LRA derives reach EUF, which transfer leaves out.
+
+        Candidacy only grows, so the nodes not (fully) registered are kept
+        and looked at again on the next call.  This runs at root-safe points
+        (the end of :meth:`process`, the start of ``Session.query_literal``).
+        """
         s = self.session
         slots = s.table.slots
         ad = self._xadapter
+        xside = self._xside
         i, n = self._xslot, len(slots)
-        nsides = len(ad.sides)
-        if i >= n and nsides == self._xnsides:
+        nside = len(xside) + sum(xside.values())
+        nterms = len(ad._terms)
+        if i >= n and nside == self._xnsides and nterms == self._xnterms:
             return
         from sympy import Basic, nan
         from .euf_adapter import _structural
@@ -472,29 +504,36 @@ class Relations:
             else:
                 i += 1
         self._xslot = n
-        if nsides != self._xnsides:
-            self._xnsides = nsides
+        self._xnsides = nside
+        if nterms != self._xnterms:
+            self._xnterms = nterms
             for e in ad.terms():
                 count(e)
         if not pend:
             return
-        sides = ad.sides
         cand = self._xcand
+        part = self._xpart
         solver, th = s.solver, self.xfer
+        polar = PRED_INDEX["polar"]
         changed = True
         while changed and pend:
             changed = False
             keep = []
             for node, b in pend:
-                if node in sides or node in cand or (
+                lv = xside.get(node, 0)
+                if lv == 2 or (
                         _structural(node)
                         and heads.get((node.func, len(node.args)), 0) >= 2
-                        and any(a in cand or a in sides for a in node.args)):
+                        and any(a in cand or a in xside for a in node.args)):
                     cand.add(node)
                     changed = True
                     t = ad.node_term(node)
                     for k in range(NPRED):
-                        solver.register_atom(th, b + k, (t, k))
-                else:
-                    keep.append((node, b))
+                        if k != polar or node not in part:
+                            solver.register_atom(th, b + k, (t, k))
+                    continue
+                if lv == 1 and node not in part:
+                    part.add(node)
+                    solver.register_atom(th, b + polar, (ad.node_term(node), polar))
+                keep.append((node, b))
             pend[:] = keep
