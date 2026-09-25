@@ -10,8 +10,9 @@
 #   the battery scoreboard in both SATREFINE_IDENTITIES modes,
 #   the differential against handlers_v3 for seeds 2, 3, 7 at 1,500 cases in both modes,
 #   the same for seed 2 with SATREFINE_BACKEND=satassume, in both modes,
-#   the adversarial-ask termination fuzz (B9) at TERMINATION_FUZZ random cases (default 150)
-#   plus the whole battery, in both modes (the suite runs it small).
+#   the termination tests (B9) with the adversarial-ask fuzz on their own, so the summary shows
+#   they ran: small by default (as in the suite, seconds); TERMINATION_FUZZ=N runs N random
+#   cases and the whole battery instead (N=150: about 10 minutes on one core).
 # Full logs go to OUTDIR; the summary goes to OUTDIR/summary.txt and stdout.
 # With BASEDIR (an earlier OUTDIR), prints the lines of the summary that changed, per
 # section; a section the baseline lacks (a gate added since) prints "no baseline".
@@ -24,7 +25,7 @@ out=${1:?usage: refine_gates.sh OUTDIR [BASEDIR]}
 base=${2:-}
 jobs=${JOBS:-6}
 workers=${SUITE_WORKERS:-3}
-termfuzz=${TERMINATION_FUZZ:-150}
+termfuzz=${TERMINATION_FUZZ:-0}
 export GATE_SLOTS=${SLOTS:-8} GATE_SLOTS_DIR=${GATE_SLOTS_DIR:-/tmp/refine-gate-slots}
 mkdir -p "$GATE_SLOTS_DIR"
 mkdir -p "$out"
@@ -81,7 +82,7 @@ printf '%s\n' "${tasks[@]}" | xargs -P "$jobs" -I{} bash -c '
     echo "== differential satassume $m seed 2 (exit $(cat "$out/diffsa-$m-2.exit"))"
     tail -15 "$out/diffsa-$m-2.log"
   done
-  echo "== termination fuzz, $termfuzz random cases and the battery (exit $(cat "$out/termination.exit"))"
+  echo "== termination tests, fuzz size ${termfuzz} (exit $(cat "$out/termination.exit"))"
   grep -E '^termination fuzz:|[0-9]+ (passed|failed)|^FAILED' "$out/termination.log" | sed 's/ - .*//' | tail -12
 } > "$out/summary.txt"
 cat "$out/summary.txt"
