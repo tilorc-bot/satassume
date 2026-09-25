@@ -273,6 +273,7 @@ class _Timeout(Exception):
 
 def worker(package, seed, cases, out, timeout, matrices=False):
     os.environ["SATREFINE_HANDLERS"] = package
+    os.environ.setdefault("SATREFINE_STRICT_LOOPS", "1")   # a tripped loop guard is a crash here
     f = fz()
     from sympy import Basic, srepr, sympify
     mod = sys.modules.get("satrefine." + package)

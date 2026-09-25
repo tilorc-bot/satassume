@@ -6,7 +6,7 @@ in this package is imported by :mod:`satrefine` and registers its keys into
 to the vendored handlers.  Infrastructure (underscore modules):
 
 ``_dispatch``   the driver: the vendored ``refine`` with re-refinement after
-                auto-evaluation and a firing cap (:class:`RefineLoopError`);
+                auto-evaluation and a termination guard (:class:`RefineLoopError`);
                 importing this package rebinds ``satrefine.refine`` to it
                 (the attribute on the partially initialized ``satrefine``
                 module is replaced during ``_load_handlers``), so

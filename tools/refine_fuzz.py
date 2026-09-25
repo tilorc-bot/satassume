@@ -3,7 +3,7 @@
 
 Builds random expressions over the handler families, draws random consistent
 assumption sets (unary predicates plus an occasional relation), refines under
-the combined backend, and checks every rewrite at random numeric points that
+the combined backend (or ``SATREFINE_BACKEND``), and checks every rewrite at random numeric points that
 satisfy the assumptions, evaluated at 20 digits in the complex plane.  SymPy's
 own refine runs on the same inputs, so inherited upstream bugs can be told
 apart from the handlers' own.  Reported categories: unsound rewrites (with the
@@ -34,7 +34,7 @@ from sympy.functions.elementary.integers import frac as _frac
 from sympy.assumptions.refine import refine as sympy_refine
 from satrefine import refine as sat_refine, backend
 from satrefine._upstream import handlers_dict
-backend.set_backend("combined")
+backend.set_backend(os.environ.get(backend.ENV_VAR, "combined"))   # SATREFINE_BACKEND, default combined
 
 try:
     from sympy import Rem

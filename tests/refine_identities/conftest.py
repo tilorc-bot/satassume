@@ -12,6 +12,7 @@ import sys
 import pytest
 
 os.environ.setdefault("SATREFINE_HANDLERS", "handlers_identities")
+os.environ.setdefault("SATREFINE_STRICT_LOOPS", "1")   # a tripped loop guard fails the test
 if "satrefine" in sys.modules and "satrefine." + os.environ["SATREFINE_HANDLERS"] not in sys.modules:
     raise RuntimeError("satrefine was imported before conftest selected the handler package")
 
