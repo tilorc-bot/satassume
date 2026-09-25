@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-25
 - **Branch:** `ri/speed-a67` (base b01b7a9 = refine-identities with B1–B9, satassume perf round 2, A1+A2, A4), merged with origin/refine-identities 1ecb4e8 at 5ab03c9.
-- **Status:** done. A6 kept as four memos of pure functions (two of them in the plan, two found in the new profile); the plan's third item, the `stated_bounds` memo, was measured and dropped. A7 done: suite wall time 112 s → 44–53 s at comparable load; the long checks are opt-in and need one new gate task (section 5).
+- **Status:** done, gates pass. A6 kept as four memos of pure functions (two of them in the plan, two found in the new profile); the plan's third item, the `stated_bounds` memo, was measured and dropped. A7 done: suite wall time 112 s → 44–53 s at comparable load; the long checks are opt-in and need one new gate task (section 5).
 
 ## 1. Profile on the current head (b01b7a9)
 
@@ -100,7 +100,15 @@ Reference b01b7a9, candidates 97111da (A6 round 1) and 04fddc4 (final A6; e116c5
 
 ## 7. Gates
 
-(filled in below when the run finishes)
+`gates/speed-a67-5ab03c9` (the merge with origin/refine-identities 1ecb4e8; the summary names 77ac6e5, which adds only this report's draft) against `gates/default-merged-f3ee6c4`, JOBS=9, SLOTS=11, SUITE_WORKERS=4, started at load 2, 739 s.
+
+- **Suite:** 66 failed, 2,516 passed, 1,920 skipped, 30 xfailed in 126 s (baseline: 66 failed, 2,518 passed, 1,917 skipped, in 162 s). The 66 failures are the same tests as in the baseline, all under `tests/refine_identities/needs/` (0 failures outside `needs/`). Passed −2 and skipped +3: the three `full` fixpoint tests and battery case 1571 (which ended in a skip anyway) are skipped by default, and `test_smoke_family_generates` is new.
+- **Scoreboard, both modes:** identical except the engine line count, 1,664 → 1,684 (the memo helpers). wrong 0, crash 0; generated same 1,032 / other 41 / miss 13, live 1,033 / 40 / 13.
+- **Differential seeds 2, 3, 7, both modes, and the satassume differential (seed 2, both modes):** identical except the times.
+- **Matrix differential, both modes:** identical except the times.
+- **Ext differential (seed 2, 1,000 cases, 20 s per-case timeout), both modes:** only the timeouts moved, on both sides: identities' timeouts 4 → 3 (generated) and 5 → 3 (live), each such case now finishing as unchanged; v3's (untouched code) moved as well, 4 → 2 and 3 → 2. Unsound, crash and inconsistent are unchanged (identities: 0, 0, 0). These are load effects of a 20 s cut-off, not output changes.
+- **Termination tests:** 8 passed.
+- **The opt-in tests on the merged head** (5ab03c9, `SATREFINE_FULL_TESTS=1 pytest -n 3 -m full`, load 2.5–3.2): 3 passed, 1 skipped (the battery case, as in the baseline) in 62.6 s; power_exp_log 27.0 s, complex_parts 22.8 s, integer_funcs 19.7 s, the battery case 32.3 s.
 
 ## 8. Open
 
