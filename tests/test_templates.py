@@ -226,6 +226,10 @@ ADD_SAMPLES = [
     x + y*I, unevaluated(Add, x, y, z, w, 1), unevaluated(Add, 1, 2, x),
     x + y + oo, x + y - oo, x + y + I, x + y + z + 1, unevaluated(Add, 2, 2),
     unevaluated(Add, oo, -oo), unevaluated(Add, 1, I),
+    # half-integer coefficients (parity of the numerator)
+    x/2 + S.Half, x/2 - S.Half, S.Half - x/2, 3*x/2 + S.Half, x/2 + y/2,
+    x/2 + y + S.Half, x/2 + 3*y/2, x*y/2 + S.Half, x/2 + y/2 + z/2 + S.Half,
+    x/2 + y/3,
 ]
 MUL_SAMPLES = [
     x*y, 2*x, -x, x/2, -x/2, 3*x/2, Rational(-3, 2)*x, x*y*z, 2*x*y,
@@ -269,6 +273,7 @@ FUNCTION_SAMPLES = [
     asin(Rational(-1, 2)), asin(7), asin(-7), unevaluated(asin, 1), unevaluated(asin, 0),
     # Not cot(0, evaluate=False): the old system raises ZeroDivisionError on it.
     cot(7), acot(x + 1), atan(x + 1),
+    re(floor(x)), im(floor(x)), re(ceiling(x)), im(ceiling(x)), re(floor(x + y)),
 ]
 
 

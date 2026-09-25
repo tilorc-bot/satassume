@@ -24,7 +24,7 @@ RULES = [
     (log(x), log(-x) + I*pi, Q.negative(x)),
     (log(b**e), e*log(b), Q.positive(b) & Q.real(e)),
     (log(b**e), e*log(-b), Q.even(e) & Q.negative(b)),
-    (log(b**e), log(-b**e) + I*pi, Q.negative(b) & Q.odd(e)),
+    (log(b**e), e*log(-b) + I*pi, Q.negative(b) & Q.odd(e)),
     (log(b**e), e*log(b), Q.nonnegative(b) & Q.positive(e)),
     (log(b**e), e*log(Abs(b)), Q.even(e) & Q.odd(b)),
     (log(p*r), log(p) + log(r), Q.positive(r)),
