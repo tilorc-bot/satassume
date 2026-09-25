@@ -106,9 +106,12 @@ class TransferTheory:
         if len(members) < 2:
             return
         by_term = self._by_term
+        ds = [(m, d) for m in members if (d := by_term.get(m))]
+        if len(ds) < 2:
+            if not ds or all(len(vs) < 2 for vs in ds[0][1].values()):
+                return
         per: dict = {}
-        for m in members:
-            d = by_term.get(m)
+        for m, d in ds:
             if d:
                 for p, vs in d.items():
                     lst = per.get(p)

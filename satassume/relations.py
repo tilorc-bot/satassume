@@ -528,6 +528,7 @@ class Relations:
                     cand.add(node)
                     changed = True
                     t = ad.node_term(node)
+                    solver.ensure_vars(b + NPRED - 1)     # one _grow, not 33
                     for k in range(NPRED):
                         if k != polar or node not in part:
                             solver.register_atom(th, b + k, (t, k))
