@@ -127,6 +127,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     (w*conjugate(w), Abs(w)**2, Q.commutative(w)),                       # w*conjugate(w) = |w|**2
     (w**e*conjugate(w)**e, Abs(w)**(2*e), Q.integer(e) & Q.commutative(w)),   # ... and for integer powers
     (a*zoo, zoo, Q.finite(a) & ~Q.zero(a)),                              # zoo absorbs a nonzero finite factor
+    ((-1)**a*(-1)**e, (-1)**(a + e), true),                               # (-1)**a = exp(I*pi*a): the powers of -1 combine
 ]
 
 _OFF_NEGATIVE_AXIS = ~Q.extended_negative(y) | Q.nonnegative(re(y)) | ~Q.zero(im(y))
@@ -142,8 +143,7 @@ _OTHER_FACTS = FACTS[len(DEFINITIONS):]
 IDENTITIES: list[Row] = (derive([row for row in _OTHER_FACTS if isinstance(row[0], Abs)], _EXP_FORMS)
                          + derive([row for row in _OTHER_FACTS if isinstance(row[0], arg)], _PRODUCT_FORMS))
 
-_rules = rule_handler([ZERO] + RULES)
-_rules_no_zero = rule_handler(RULES)          # arg(0) is nan: no zero row for arg
+_rules = rule_handler([ZERO] + RULES)   # also arg: arg(0) is nan, which is what arg(x) is at x = 0
 
 
 def _definition(head, **kw):
@@ -166,7 +166,7 @@ refine_Abs = chain(_rules, identity_handler([row for row in IDENTITIES if row[0]
                    _definition(Abs, opaque=(sign,)))
 refine_re = _rules
 refine_im = _rules
-refine_arg = chain(_rules_no_zero, _identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
+refine_arg = chain(_rules, _identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
                    _definition(arg, opaque=(sign,)))
 refine_sign = chain(_rules, _splits(sign))
 refine_conjugate = _rules

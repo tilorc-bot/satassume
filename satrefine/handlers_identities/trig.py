@@ -47,9 +47,9 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is n*pi/2 + r
     (sin(n*pi/2 + r), (-1)**(n/2)*sin(r),       Q.even(n)),   # sin(r + k*pi) = (-1)**k sin r
     (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r), Q.odd(n)),    # sin(r + pi/2 + k*pi) = (-1)**k cos r
     (cos(n*pi/2 + r), (-1)**(n/2)*cos(r),       Q.even(n)),   # cos(r + k*pi) = (-1)**k cos r
-    (cos(n*pi/2 + r), -(-1)**((n - 1)/2)*sin(r), Q.odd(n)),   # cos(r + pi/2 + k*pi) = -(-1)**k sin r
+    (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r),  Q.odd(n)),    # cos(r + pi/2 + k*pi) = -(-1)**k sin r
     (sec(n*pi/2 + r), (-1)**(n/2)*sec(r),       Q.even(n)),   # sec = 1/cos
-    (sec(n*pi/2 + r), -(-1)**((n - 1)/2)*csc(r), Q.odd(n)),
+    (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r),  Q.odd(n)),    # (one power of -1: SymPy's form)
     (csc(n*pi/2 + r), (-1)**(n/2)*csc(r),       Q.even(n)),   # csc = 1/sin
     (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r), Q.odd(n)),
     (tan(n*pi/2 + r), tan(r),                   Q.even(n)),   # tan has period pi
@@ -63,7 +63,7 @@ BOUNDED: list[Row] = [
     (F(x), AccumBounds(-1, 1), Q.infinite(x) & Q.extended_real(x)),   # sin, cos of a real infinity (SymPy's value)
 ]
 
-_shift = rule_handler([ZERO] + RULES)
+_shift = rule_handler([ZERO] + RULES, by_binding=True)   # the whole coefficient first, both parities
 _bounded = rule_handler(BOUNDED)
 
 handlers_dict['sin'] = chain(_shift, _bounded)

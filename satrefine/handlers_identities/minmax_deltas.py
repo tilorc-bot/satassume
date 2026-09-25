@@ -49,6 +49,7 @@ from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Mi
 
 from .._upstream import handlers_dict
 from ._engine import identity_handler, rule_handler
+from ._tables import chain
 
 a, b, c, h, i, j, lo, hi, r, x = symbols('a b c h i j lo hi r x')
 G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(x, h), derivatives of DiracDelta
@@ -63,7 +64,18 @@ FACTS = [
      Q.extended_real(x)),
 ]
 
-RULES = [
+INFINITE = [
+    # Max(oo, b) = oo and Max(-oo, b) = b for every b Max is defined at (extended real b);
+    # Min likewise.  The order vocabulary proves Q.ge(a, b) from an infinite a only for an
+    # extended real b, which a plain symbol is not.  (Pairs of any arity: the other
+    # arguments are kept.)
+    (Max(a, b), a, Q.positive_infinite(a)),
+    (Max(a, b), b, Q.negative_infinite(a)),
+    (Min(a, b), a, Q.negative_infinite(a)),
+    (Min(a, b), b, Q.positive_infinite(a)),
+]
+
+DIRAC = [
     # DiracDelta and all its derivatives vanish off the origin (x real, nonzero).
     (DiracDelta(x), S.Zero, Q.nonzero(x)),
     (G(x, r), S.Zero, Q.nonzero(x)),
@@ -71,6 +83,8 @@ RULES = [
     # expand(diracdelta=True) convention); derivatives pick up sign(c)**k.
     (DiracDelta(c*x), DiracDelta(x)/Abs(c), Q.nonzero(c) & Q.real(x)),
 ]
+
+RULES = INFINITE + DIRAC
 
 
 SPECIALIZE = False   # no generated table: a definition is decided in about 2 ms live
@@ -85,8 +99,8 @@ def _definitions(rows):
     return identity_handler(rows, measure=_measure, opaque=(), splits=False)
 
 
-handlers_dict['Max'] = _definitions(FACTS[0:1])
-handlers_dict['Min'] = _definitions(FACTS[1:2])
+handlers_dict['Max'] = chain(rule_handler(INFINITE[0:2]), _definitions(FACTS[0:1]))
+handlers_dict['Min'] = chain(rule_handler(INFINITE[2:4]), _definitions(FACTS[1:2]))
 handlers_dict['KroneckerDelta'] = _definitions(FACTS[2:4])
 handlers_dict['Heaviside'] = _definitions(FACTS[4:5])
-handlers_dict['DiracDelta'] = rule_handler(RULES)
+handlers_dict['DiracDelta'] = rule_handler(DIRAC)

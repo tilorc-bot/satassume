@@ -13,12 +13,13 @@ pattern form collects only terms whose ratio to ``pi*I/2`` is free of
 ``pi`` and ``I``).
 
 The sign power collapses through the ``Pow`` rules once the residue of
-``m`` mod 4 is known.  v3 fires ``sinh``, ``cosh``, ``sech`` and ``csch``
-only then (it leaves ``sinh(x + k*pi*I)`` alone under ``Q.integer(k)``
-and ``sinh(x + k*pi*I/2)`` under ``Q.odd(k)``, where the sign would stay
-symbolic), so their hypotheses demand a known parity of ``m/2`` or
-``(m - 1)/2``; the exact rows with a symbolic sign would be the same rows
-with ``Q.even(m)`` and ``Q.odd(m)`` alone.
+``m`` mod 4 is known, and stays symbolic otherwise, as in the trigonometric
+table: ``sinh(x + k*pi*I) = (-1)**k*sinh(x)`` under ``Q.integer(k)`` (SymPy's
+and the old ``handlers``' form).  v3 fires ``sinh``, ``cosh``, ``sech`` and
+``csch`` only when the residue is known (phase 3 made the rows exact with a
+symbolic sign instead: ``needs/test_default_hyperbolic_i_pi_shift.py``).
+Like the trigonometric table, the whole coefficient of ``pi*I/2`` is tried
+under both parities before a single term of it (``by_binding``).
 
 Not covered: nothing v3 states.  ``f(k*pi*I)`` auto-evaluates to a
 trigonometric function in SymPy, so the exact-point rules of v3 are the
@@ -40,8 +41,8 @@ from ._tables import ZERO
 
 m, x = symbols('m x')
 
-_EVEN = Q.even(m) & (Q.even(m/2) | Q.odd(m/2))                # m = 0 or 2 mod 4, known which
-_ODD = Q.odd(m) & (Q.even((m - 1)/2) | Q.odd((m - 1)/2))      # m = 1 or 3 mod 4, known which
+_EVEN = Q.even(m)
+_ODD = Q.odd(m)
 
 RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is m*pi*I/2 + x
     (sinh(m*pi*I/2 + x), (-1)**(m/2)*sinh(x),          _EVEN),       # sinh(x + n*pi*I) = (-1)**n sinh x
@@ -58,7 +59,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is m*pi*I/2 + x
     (coth(m*pi*I/2 + x), tanh(x),                      Q.odd(m)),    # coth(x + pi*I/2) = tanh x
 ]
 
-_shift = rule_handler([ZERO] + RULES)
+_shift = rule_handler([ZERO] + RULES, by_binding=True)
 
 handlers_dict['sinh'] = _shift
 handlers_dict['cosh'] = _shift

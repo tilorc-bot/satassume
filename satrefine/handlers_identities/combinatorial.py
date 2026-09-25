@@ -87,6 +87,8 @@ FACTORIAL = [
     (factorial(n), S.One, _eq(n, 0) | _eq(n, 1)),
     # n! is a pole at every negative integer (not rewritten to gamma elsewhere).
     (factorial(n), S.ComplexInfinity, Q.integer(n) & _lt(n, 0)),
+    # factorial(oo) = oo (gamma grows without bound along the positive axis).
+    (factorial(n), S.Infinity, Q.positive_infinite(n)),
 ]
 
 GAMMA = [
