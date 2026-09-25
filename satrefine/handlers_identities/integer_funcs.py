@@ -1,7 +1,7 @@
 """``floor``, ``ceiling``, ``frac``, ``Mod`` and ``Rem`` as rule tables and definitions.
 
-**11 rows** (v3's ``handlers_v3/integer_funcs.py``: 252 lines; phase 1: 17
-rule rows): 2 identity rows (``FACTS``) and 9 rule rows (``RULES``).
+**9 rows** (v3's ``handlers_v3/integer_funcs.py``: 252 lines; phase 1: 17
+rule rows): 2 identity rows (``FACTS``) and 7 rule rows (``RULES``).
 
 ``FACTS`` are identity rows ``(lhs, rhs, domain)`` run by
 :func:`._engine.identity_handler`: they fire when the bookkeeping in the
@@ -15,12 +15,16 @@ at all.
   ``[k, k + 1)``, beyond v3).  ``frac``'s integer shifts are the ``floor``
   shift rows: the shift rows are written ``F(n + x) = F(x) + F(n)`` over a
   generic head that ``floor``, ``ceiling`` and ``frac`` share (``F(n)`` is
-  ``n``, ``n`` and ``0``), which replaces ``frac``'s own three.
+  ``n``, ``n`` and ``0``), which replaces ``frac``'s own three.  The
+  shift and integer rows take Gaussian integers (integral ``re`` and
+  ``im``, which satassume proves for ``floor(y)`` and ``ceiling(y)`` of a
+  finite ``y`` since ``main`` 9dfc27d), which replaces the four phase-1
+  rows for ``floor(y)``/``ceiling(y)`` terms.
 * ``G(a, b) = b*G(sign(a/b), 2)/2`` for ``2*a/b`` odd, shared by ``Mod``
   and ``Rem``, replaces three rows (``Mod``'s ``b/2`` and ``Rem``'s ``+-b/2``).
 
-Rows (rules): four ``floor``/``ceiling`` rows over a generic head (integer
-argument, three shifts; ``frac`` shares the shifts), one ``Mod``/``Rem``
+Rows (rules): two ``floor``/``ceiling`` rows over a generic head (integer
+argument, integer shift; ``frac`` shares the shift), one ``Mod``/``Rem``
 row over a generic two-argument head (multiples), ``Mod`` 3 (shift by a
 multiple, inside the period, ``Mod = Rem`` for equal signs), ``Rem`` 1
 (inside the period).
@@ -56,10 +60,7 @@ or a sign split on one symbol to agree; nested splits are not tried).  Not
 in the battery, the tests or v3.
 
 Pattern forms and matcher behavior this table relies on are pinned in
-``tests/refine_identities/test_engine_integer_funcs.py``.  The "Gaussian
-integer" shift rows (``floor(y)``, ``ceiling(y)`` of a finite ``y``) exist
-because ``ask`` cannot show ``Q.integer(floor(y))`` from ``Q.finite(y)``
-(a prover gap, plan step 5); they fold into the plain shift row once it can.
+``tests/refine_identities/test_engine_integer_funcs.py``.
 Checked (adversarial pass, 2026-09-24, on the phase-1 rows, which the rows
 here restate): every row at 0, +-1, integer and half-integer boundaries,
 +-oo, non-real points, relation bounds against an infinite divisor,
