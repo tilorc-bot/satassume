@@ -705,6 +705,7 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                 if cand.has(*opaque):
                     continue
                 if m(cand, assumptions) < m0:
+                    _dispatch.note("identity", (lhs, rhs, domain))
                     # nested nodes of this head were left alone while the candidate was
                     # evaluated; rewrite them now so the result is assembled (and
                     # distributed) here rather than piecewise by the dispatcher
@@ -731,6 +732,7 @@ def rule_handler(rows: list) -> Callable[[Any, Any], Any]:
                     continue
                 out = subst(rhs, b, rebuild=True)
                 if out != expr:
+                    _dispatch.note("rule", (lhs, rhs, hyp))
                     return out
         return None
 

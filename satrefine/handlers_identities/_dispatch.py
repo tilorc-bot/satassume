@@ -100,6 +100,71 @@ def live() -> Iterator[None]:
 
 
 @contextmanager
+def tables() -> Iterator[None]:
+    """Use the generated tables inside the block whatever ``SATREFINE_IDENTITIES`` says
+    (a staged generation, :mod:`._stages`, installs the tables of earlier families)."""
+    _forced.append("generated")
+    try:
+        yield
+    finally:
+        _forced.pop()
+
+
+def staged() -> bool:
+    """Whether a staged generation is running (:func:`tables` is the innermost mode)."""
+    return bool(_forced) and _forced[-1] == "generated"
+
+
+_trace: list[list] = []
+
+
+def note(kind: str, row: Any) -> None:
+    """Record a row that fired (``kind`` ``"rule"`` or ``"identity"``) for the active :func:`tracing` block."""
+    if _trace:
+        _trace[-1].append((kind, row))
+
+
+@contextmanager
+def tracing() -> Iterator[list]:
+    """Collect the rows that fire and the ``ask`` queries answered ``True`` inside the
+    block: a list of ``("rule" | "identity", row)`` and ``("ask", proposition)`` entries
+    (the derivation record of a generated rule)."""
+    log: list = []
+    _trace.append(log)
+    inner = _upstream.ask
+
+    def recording_ask(proposition: Any, assumptions: Any = True) -> Any:
+        answer = inner(proposition, assumptions)
+        if answer is True and _trace:
+            _trace[-1].append(("ask", proposition))
+        return answer
+    _upstream.ask = recording_ask
+    try:
+        yield log
+    finally:
+        _upstream.ask = inner
+        _trace.pop()
+
+
+live_keys: set = set()
+"""Keys whose generated table is ignored even in generated mode: the keys of the
+family being generated (:func:`._stages.generate`), which must not read the table it
+is producing while every other key uses the tables installed so far."""
+
+
+@contextmanager
+def live_for(keys: Any) -> Iterator[None]:
+    """Run ``keys`` on their identity rows inside the block, every other key as :func:`mode` says."""
+    saved = set(live_keys)
+    live_keys.update(keys)
+    try:
+        yield
+    finally:
+        live_keys.clear()
+        live_keys.update(saved)
+
+
+@contextmanager
 def exploring() -> Iterator[None]:
     """Run the engine's exploratory refinements (case and endpoint splits) under
     a firing counter of their own: each is bounded by :data:`MAX_FIRINGS` by
@@ -173,7 +238,7 @@ def _refine(expr: Any, assumptions: Any) -> Any:
     if not isinstance(expr, Basic):
         return expr
     cache = _results[-1] if _results else {}
-    context = (assumptions, mode(), tuple(state))
+    context = (assumptions, mode(), tuple(state), frozenset(live_keys))
     chain = []
     while True:
         key = (expr, context)
@@ -210,7 +275,7 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
         if ref is not None:
             return ref, False
     handler = _upstream.handlers_dict.get(name)
-    generated = generated_handlers.get(name) if mode() == "generated" else None
+    generated = generated_handlers.get(name) if mode() == "generated" and name not in live_keys else None
     new = generated(expr, assumptions) if generated is not None else None
     if new is None or new == expr:
         if handler is None:

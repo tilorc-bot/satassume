@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import itertools
 import pathlib
+from contextlib import nullcontext
 import types
 from typing import Any, Callable, Iterable
 
@@ -21,6 +22,7 @@ from sympy import And, AppliedPredicate, I, N, Q, S, arg, expand, floor, im, nan
 
 from .. import _upstream
 from ..harness import _numerically_equal, _sample_satisfies
+from . import _dispatch
 from ._dispatch import generated_handlers, live
 from ._engine import Row, bindings, refine, rule_handler, subst
 
@@ -63,8 +65,19 @@ def implies(strong: Any, weak: Any) -> bool:
     return all(_upstream.ask(a, strong) is True for a in And.make_args(weak))
 
 
+records: dict = {}
+"""``rule -> (lhs, domain, profile, trace)`` for every rule :func:`specialize` found:
+the identity left side and domain it came from, the assumption profile, and the
+rows that fired and ``ask`` queries answered ``True`` while the left side was
+refined (:func:`._dispatch.tracing`).  The derivation records of the generated
+modules are rendered from it."""
+
+
 def specialize(lhs: Any, domain: Any, catalog: Any = CATALOG) -> list[Row]:
-    with live():
+    """The conditional rules of one identity left side.  Runs the live identity rows,
+    or, inside a staged generation (:mod:`._stages`), the family's own rows live and
+    every other key through the tables installed so far."""
+    with (nullcontext() if _dispatch.staged() else live()):
         return _specialize(lhs, domain, catalog)
 
 
@@ -79,7 +92,8 @@ def _specialize(lhs: Any, domain: Any, catalog: Any) -> list[Row]:
         if L.is_Atom or L == lhs and literals:
             continue
         try:
-            rhs = refine(L, profile & D)
+            with _dispatch.tracing() as trace:
+                rhs = refine(L, profile & D)
         except ValueError:                       # inconsistent profile
             continue
         if rhs == L or rhs.has(floor, im) or (rhs.has(arg) and not L.has(arg)):   # arg(p*r) -> arg(p) is a rule
@@ -88,6 +102,7 @@ def _specialize(lhs: Any, domain: Any, catalog: Any) -> list[Row]:
                     and not (atoms and _upstream.ask(d, profile) is True)
                     and _upstream.ask(d) is not True]
         found.append((L, expand(rhs), And(profile, *residual)))
+        records.setdefault(found[-1], (lhs, domain, profile, trace))
     kept: list[tuple[Any, Any, Any]] = []
     for L, rhs, hyp in found:
         if any(L == L2 and rhs == rhs2 and implies(hyp, hyp2) for L2, rhs2, hyp2 in kept):
@@ -212,7 +227,7 @@ def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dic
     return [r for r in rules if verdicts[r] is True], sorted(keys), verdicts
 
 
-def render_module(family: str, rules: list[Row], keys: list[str]) -> str:
+def render_module(family: str, rules: list[Row], keys: list[str], notes: dict | None = None) -> str:
     """The generated module.  Only keys some rule's left side is headed by are
     registered: a key whose identity rows generated nothing (``Pow``, whose fact
     pays off on structured inputs the catalog does not produce) keeps its live
@@ -227,6 +242,8 @@ def render_module(family: str, rules: list[Row], keys: list[str]) -> str:
         "",
         "A plain rule table: ``RULES`` rows are ``(lhs, rhs, hypothesis)``; each",
         "row was verified numerically at generation time (see ``_specialize``).",
+        *(["The comment above a row is its derivation record (see ``_stages``): the",
+           "identity row and profile it came from, the rows that fired, the asks used."] if notes else []),
         '"""',
         "from sympy import *  # noqa: F401,F403",
         "from sympy import Q",
@@ -240,6 +257,7 @@ def render_module(family: str, rules: list[Row], keys: list[str]) -> str:
         lines.append("")
     lines.append("RULES = [")
     for lhs, rhs, hyp in rules:
+        lines += [f"    {line}" for line in (notes or {}).get((lhs, rhs, hyp), ())]
         lines.append(f"    ({lhs}, {rhs}, {hyp}),")
     lines.append("]")
     lines.append("")
