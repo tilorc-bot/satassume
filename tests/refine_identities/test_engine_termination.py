@@ -216,7 +216,7 @@ def test_b9_with_the_satassume_backend():
             "    with mode():\n        print(refine(factorial(log(k)), Q.negative(k) & Q.gt(k, pi/2)))\n")
     env = dict(os.environ, SATREFINE_BACKEND="satassume", SATREFINE_HANDLERS="handlers_identities",
                SATREFINE_STRICT_LOOPS="1", PYTHONPATH=os.pathsep.join(sys.path))
-    out = subprocess.run([sys.executable, "-c", code], env=env, cwd=ROOT, capture_output=True, text=True, timeout=300)
+    out = subprocess.run([sys.executable, "-c", code], env=env, cwd=ROOT, capture_output=True, text=True, timeout=300, check=False)
     assert out.returncode == 0, out.stderr[-2000:]
     assert out.stdout.split() == ["factorial(log(k))"] * 2
 

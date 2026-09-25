@@ -30,8 +30,10 @@ def test_firing_cap_raises_instead_of_looping():
         pass
     handlers_dict["Ping"] = lambda expr, assumptions: Ping(expr.args[0] + 1)
     try:
-        with pytest.raises(_dispatch.RefineLoopError):
+        with _dispatch.strict_loops(), pytest.raises(_dispatch.RefineLoopError):
             refine(Ping(x))
+        with _dispatch.strict_loops(False):
+            assert refine(Ping(x)) == Ping(x)      # not strict: the input, unchanged
     finally:
         del handlers_dict["Ping"]
 

@@ -252,7 +252,37 @@ def _ask_cost(cond: Any) -> int:
 
 
 def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
-    """``True`` when the bounds stated on ``u`` prove ``predicate(u)``, else ``None``."""
+    """``True`` when the bounds stated on ``u`` prove ``predicate(u)``, else ``None``
+    (``False`` for an integer refuted by an interval holding no integer).
+
+    **Contradictions.**  The engine derives facts of its own on top of
+    ``ask``, so it can prove both ``P`` and ``not P`` although ``ask`` never
+    does.  The paths, and what the engine does on each:
+
+    * *bounds against bounds*: stated signs and stated relations are folded
+      into one interval (:func:`._simple.stated_bounds`); when it is empty
+      (``Q.negative(k) & Q.gt(k, pi/2)``) every sign followed from it, and rows
+      conditioned on opposite signs undid each other forever (issue #10,
+      B9).  An empty interval now proves nothing (:func:`._simple._checked`,
+      also for :func:`._simple.full_bounds` and the floor rules);
+    * *bounds against ask*: the bounds are consulted only when ``ask``
+      leaves the atom open, so a clash needs ``ask`` to prove a fact that the
+      stated interval rules out (``Q.gt(k, 1)`` with an implied
+      ``Q.negative(k)``, or ``Q.imaginary(k)``): the assumptions are then
+      inconsistent.  It is not detected (that would cost a query per proof
+      from bounds);
+    * *the relation decider* (:func:`_order`) tries a relation's proof forms
+      before its negation's, so each question gets one answer, but under
+      inconsistent assumptions ``Eq(u, v)`` and ``Ne(u, v)`` may both be decided
+      ``True`` as separate questions;
+    * *ask against itself* (an unsound or adversarial backend): nothing to
+      detect it with.
+
+    Under inconsistent assumptions every result is correct, so the engine
+    does not raise for them (it cannot detect them all, and refine must not
+    depend on the backend detecting them either); what it must do is stop,
+    and the dispatcher's termination guard guarantees that whatever is
+    proved (``_dispatch``, *Termination*)."""
     bounds = _simple.stated_bounds(u, assumptions)
     if bounds is None:
         return None

@@ -88,7 +88,6 @@ At the top level the outcome depends on :func:`strict`:
 from __future__ import annotations
 
 import os
-import sys
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -290,7 +289,7 @@ class _Call:
     """The guard state of one top-level call: the :func:`_refine` nesting depth,
     the cache keys being refined, the firings of the whole call, and the
     message of the guard that tripped (the call is poisoned from then on)."""
-    __slots__ = ("depth", "active", "firings", "tripped")
+    __slots__ = ("active", "depth", "firings", "tripped")
 
     def __init__(self) -> None:
         self.depth = 0
