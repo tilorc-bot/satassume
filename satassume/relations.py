@@ -89,6 +89,7 @@ as without relation support: ``sympy_api.ask`` returns None for relations.
 from __future__ import annotations
 
 import importlib
+import weakref
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
@@ -166,9 +167,20 @@ def relational_name(rel) -> str:
     return _OPS[rel.rel_op]
 
 
+_SYMPY_ATOMS: dict = {}
+
+
 def sympy_atom(atom: P):
-    from sympy.assumptions.ask import Q
-    return {"eq": Q.eq, "lt": Q.lt}[atom.pred](*atom.expr)
+    """``Q.eq(a, b)`` / ``Q.lt(a, b)`` for a normalised relation atom
+    (memoized: a pure function of the atom)."""
+    r = _SYMPY_ATOMS.get(atom)
+    if r is None:
+        from sympy.assumptions.ask import Q
+        r = {"eq": Q.eq, "lt": Q.lt}[atom.pred](*atom.expr)
+        if len(_SYMPY_ATOMS) >= 100_000:
+            _SYMPY_ATOMS.clear()
+        _SYMPY_ATOMS[atom] = r
+    return r
 
 
 def _is_number(e) -> bool:
@@ -184,7 +196,10 @@ class Relations:
     theories, guards, links and shared equalities."""
 
     def __init__(self, session, specs):
-        self.session = session
+        # A weak proxy: the session owns this object and outlives every call
+        # into it, and a strong back-reference would make session + solver +
+        # clauses collectable only by a full garbage collection.
+        self.session = weakref.proxy(session)
         self.specs = list(specs)
         self.adapters: dict = {}          # spec name -> adapter instance
         self.status: dict = {}            # atom -> interpreted by some theory

@@ -100,6 +100,21 @@ class DictCache:
         d[pred] = value
 
 
+class AnswerMemo(dict):
+    """Answers of whole queries, bounded in size (cleared when full).
+    ``state`` is the registration state the answers were computed under."""
+
+    def __init__(self, maxsize: int = 100_000):
+        super().__init__()
+        self.maxsize = maxsize
+        self.state = None
+
+    def put(self, key, value) -> None:
+        if len(self) >= self.maxsize:
+            self.clear()
+        self[key] = value
+
+
 #: Former default cache, which used SymPy's per-object ``_assumptions`` as
 #: storage; it read facts SymPy's handlers had cached as unconditional and
 #: wrote derived facts into fact bases shared between symbols (see
@@ -532,7 +547,19 @@ class Engine:
         searched in a fresh session over its own cone instead; the cost of
         search then depends on the query, not on what was asked before under
         the same assumptions.  Propagation-decided queries keep reusing the
-        session.
+        session.  The cone session then replaces the polluted one as the
+        reused session of these assumptions, so one rebuild serves the
+        following searches too.
+    cone_threshold : int
+        The cone search only pays when the reused session holds more than
+        this many nodes beyond those of the assumptions: rebuilding a
+        session (re-grounding the assumptions, their relations and theory
+        atoms) costs about as much as searching a session a few nodes
+        larger than the cone.  Measured on the refine query stream: a
+        search in a session polluted by 1-3 nodes costs 0.9-1.1 ms, the
+        cone search 1.3-1.7 ms; from about 8 extra nodes on, the reused
+        search costs more (2.4 ms at 8-15, 3.7 ms at 16-31, 6.3 ms beyond),
+        since CDCL decides every variable of the session.
     keep_sessions : int
         How many contextual sessions (distinct assumption sets) to keep.
     extensions : satassume.extensions.Extensions or None
@@ -548,7 +575,8 @@ class Engine:
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 16,
-                 cone_search: bool = True, extensions=None, relations=None):
+                 cone_search: bool = True, extensions=None, relations=None,
+                 cone_threshold: int = 3):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -579,6 +607,10 @@ class Engine:
         self.session_limit = session_limit
         self.keep_sessions = keep_sessions
         self.cone_search = cone_search
+        self.cone_threshold = cone_threshold
+        #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
+        #: (satassume.sympy_api), bounded; cleared when registrations change
+        self.answers = AnswerMemo()
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
@@ -660,7 +692,7 @@ class Engine:
             s, lits = self._context_session(assumptions)
         else:
             s = self._fresh_session()
-        polluted = len(s.base) > s.n_assumption_nodes
+        polluted = len(s.base) - s.n_assumption_nodes > self.cone_threshold
         q = self._literal(s, proposition)
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
@@ -671,17 +703,22 @@ class Engine:
             self.stats["searches"] += 1
             if contextual and polluted and self.cone_search:
                 self.stats["cone_searches"] += 1
-                s0, lits0, q0 = s, lits, q
+                s0 = s
                 s = self._fresh_session()
                 lits = s.assume_formula(assumptions)
                 q = self._literal(s, proposition)
                 s.escalate()
                 r = s.query_literal(q, lits, search=True)
-                if r is not None:
-                    # "under these assumptions, q": entailed by the clause set
-                    # (the selector guards the assumptions), so the reused
-                    # session may keep it and answer repeats by propagation.
-                    s0._emit([-lits0[0], q0 if r else -q0])
+                # the cone session (assumptions + this query's cone, and
+                # what the search learned) replaces the polluted one, so the
+                # next searches under these assumptions start small again
+                if self._context_sessions.get(assumptions, (None,))[0] is s0:
+                    self._context_sessions[assumptions] = (s, lits)
+                    if r is not None:
+                        # "under these assumptions, q" is entailed by the
+                        # clause set (the selector guards the assumptions),
+                        # so a repeat is answered by propagation
+                        s._emit([-lits[0], q if r else -q])
                 return r
             r = s.query_literal(q, lits, search=True)
         return r

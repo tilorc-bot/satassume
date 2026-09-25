@@ -191,6 +191,12 @@ def terms(atom) -> list | None:
     return None if r is None else r[1]
 
 
+#: atom -> interpret(atom), shared by every adapter (keyed by the SymPy
+#: atom itself: equal atoms linearise identically)
+_INTERPRETED: dict = {}
+_INTERPRETED_MAX = 100_000
+
+
 class LRAAdapter:
     """Registers SymPy relation atoms with one :class:`LRATheory`.
 
@@ -207,9 +213,6 @@ class LRAAdapter:
         self.theory = theory if theory is not None else LRATheory()
         self._solver = None
         self._shared: set = set()
-        # atom -> interpret(atom) (None: not interpreted), so that
-        # terms(atom) followed by register(..., atom) linearises once
-        self._cache: dict = {}
 
     def register(self, solver, var: int, atom, interpreted=None) -> bool:
         """``interpreted``: optionally the result of :func:`interpret`
@@ -240,11 +243,14 @@ class LRAAdapter:
 
     def interpret(self, atom):
         """``(constraint, terms)`` in one call (see :func:`interpret`),
-        cached per adapter."""
+        memoized across adapters: it is a pure function of the atom (the
+        result is shared, never mutate it)."""
         try:
-            return self._cache[atom]
+            return _INTERPRETED[atom]
         except KeyError:
-            r = self._cache[atom] = interpret(atom)
+            if len(_INTERPRETED) >= _INTERPRETED_MAX:
+                _INTERPRETED.clear()
+            r = _INTERPRETED[atom] = interpret(atom)
             return r
         except TypeError:                   # unhashable: do not cache
             return interpret(atom)
