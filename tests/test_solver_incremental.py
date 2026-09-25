@@ -288,7 +288,6 @@ def run_seed(seed: int, ops=None, setup=None, steps=None, **kw) -> dict[str, int
         h.count("block_hard_conflicts", st["conflicts"] if h.hard else 0)
         h.count("rb_reasons_read", h.solver.n_rb_reasons)
     h.count("seeds")
-    h.count("witness_hits", st["witness_hits"])
     h.count("conflicts", st["conflicts"])
     h.count("restarts", st["restarts"])
     h.count("reductions", h.solver._n_reductions)
@@ -483,19 +482,11 @@ def solve(h: Harness) -> None:
         AA = A[:-1]
     else:
         AA = h.rclause(rng.choice([0, 1, 2, 3]))
-    _check_solve(h, AA)
-
-
-def _check_solve(h: Harness, AA: list[int]) -> None:
-    A = h.A
     h.record("solve", AA)
     held = h.solver._held
     if held is not None and h.held_now(AA[:len(held)]):
         h.count("solve_from_held")
-    hits = h.solver._n_ring_hits
     got = h.solver.solve(AA)
-    if h.solver._n_ring_hits > hits:
-        h.count("solve_by_stored_model")
     h.check(got == h.sat(AA), "solve", AA, got)
     if got:
         m = h.solver.model()
@@ -505,28 +496,12 @@ def _check_solve(h: Harness, AA: list[int]) -> None:
                 "model violates a clause")
     else:
         h.count("solve_unsat")
-        if A is not None and AA[:len(A)] == A:
+        if AA[:len(A)] == A:
             h.A_bad = True
         core = h.solver.conflict()
         h.check(h.solver.model() is None, "model after UNSAT")
         h.check(set(core) <= set(AA), "conflict core not a subset", core, AA)
         h.check(not h.sat(core), "conflict core is consistent", core)
-
-
-@op(4)
-def solve_witness(h: Harness) -> None:
-    """``solve`` on assumptions true in one of the live solver's stored
-    models (``Solver._ring``): answered by that model unless something
-    added since falsifies it; the model is then checked like any other."""
-    ring = h.solver._ring
-    if not ring:
-        return
-    mv = h.rng.choice(ring)[0]
-    vs = h.rng.sample(range(1, len(mv) + 1), min(len(mv), h.rng.randint(1, 3)))
-    AA = [v if mv[v - 1] else -v for v in vs]
-    if h.rng.random() < 0.3:
-        AA.append(h.rlit())
-    _check_solve(h, AA)
 
 
 @op(5)
@@ -702,7 +677,7 @@ def test_mix_covers_the_incremental_paths():
     the chunk tests above (runs 300 seeds itself if they did not run)."""
     c = COVERAGE if COVERAGE.get("seeds", 0) >= 300 else run_seeds(0, 300)
     for key in ("implied_from_held", "solve_from_held", "adds_while_held",
-                "conflicts", "reductions", "restarts", "solve_unsat", "witness_hits",
+                "conflicts", "reductions", "restarts", "solve_unsat",
                 "entails_None", "entails_True", "entails_False",
                 "entails_inconsistent", "implied_none"):
         assert c.get(key, 0) > 0, (key, c)
@@ -752,7 +727,7 @@ def test_block_mix_covers_the_propagator_paths():
     for key in ("rb_reasons_read", "block_hard_conflicts", "blocks_while_held",
                 "blocks_over_assigned", "blocks_over_held_assigned",
                 "blocks_over_root_assigned_while_held", "blocks_registered", "implied_from_held",
-                "solve_from_held", "reductions", "solve_unsat", "witness_hits", "entails_None",
+                "solve_from_held", "reductions", "solve_unsat", "entails_None",
                 "entails_True", "entails_False", "entails_inconsistent"):
         assert c.get(key, 0) > 0, (key, c)
 
@@ -769,21 +744,6 @@ def test_harness_catches_a_weak_propagator(monkeypatch):
     with pytest.raises(Mismatch):
         for seed in range(40):
             run_block_seed(seed)
-
-
-def test_harness_catches_a_stale_witness(monkeypatch):
-    """A solver that answers from a stored model without checking what was
-    added since (clauses, root literals, blocks) is caught."""
-    def stale(self, lits):
-        for rec in reversed(self._ring):
-            mv = rec[0]
-            if all((l >> 1) <= len(mv) and mv[(l >> 1) - 1] is (not l & 1) for l in lits):
-                return rec
-        return None
-
-    monkeypatch.setattr(Solver, "_ring_hit", stale)
-    with pytest.raises(Mismatch):
-        run_seeds(0, 60)
 
 
 if __name__ == "__main__":

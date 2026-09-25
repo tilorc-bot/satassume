@@ -78,9 +78,7 @@ def test_root_facts_are_reported_once_without_levels():
     assert counts["assert"] == 2
     t.events.clear()
     assert s.solve() is True               # root facts are not re-reported
-    # (the repeated solve may be answered by the stored model of the first,
-    # which passed check() under the same atoms: then no call at all)
-    assert [e[0] for e in t.events] in (["check"], [])
+    assert [e[0] for e in t.events] == ["check"]
 
 
 def test_registration_after_cursor_is_not_double_reported():
