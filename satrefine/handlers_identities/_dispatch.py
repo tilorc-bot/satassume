@@ -13,7 +13,16 @@ changes, and it replaces ``satrefine.refine`` whenever the
   two rules that undo each other loop forever in the vendored driver.  Here
   every top-level call counts handler firings and raises
   :class:`RefineLoopError` past :data:`MAX_FIRINGS`, so a bad ordering fails
-  loudly in tests instead of hanging.
+  loudly in tests instead of hanging;
+* **a result cache.**  One top-level call refines the same node under the
+  same assumptions many times (every pass of the fixed point re-refines the
+  children of a result, every branch of a ``Piecewise`` or of a case split
+  redoes the work below it).  Completed results are remembered for the
+  call, keyed on the node, the assumptions, the mode and the engine state
+  (:data:`state`: which identity handlers are switched off, whether a split
+  is exploring), so a result is what recomputing it would give and repeated
+  work neither costs time nor counts against the cap.  A node being refined
+  is not in the cache yet, so a real loop still reaches the cap.
 
 ``_upstream.refine`` itself is untouched (it must stay behavior-identical
 to SymPy's); handlers written for the vendored driver keep working here.
@@ -58,6 +67,10 @@ fallback_handlers: dict = {}
 """The simple rules (:mod:`._simple`), by key: tried after the key's handler
 declines, so a family table that registers ``floor`` or ``im`` keeps them
 without chaining explicitly."""
+
+own_args: set = set()
+"""Keys whose handler refines the node's arguments itself (``Piecewise``: each
+branch under its condition); the dispatcher does not refine them first."""
 
 MODE_ENV_VAR = "SATREFINE_IDENTITIES"
 
@@ -104,6 +117,13 @@ class RefineLoopError(RecursionError):
 
 _firings: list[int] = []   # a stack entry per active top-level call
 
+_results: list[dict] = []  # the result cache of the active top-level call
+
+state: list = []
+"""Engine state a result depends on besides the node and the assumptions (a
+stack of hashable tokens: the identity handlers switched off while their
+candidate is evaluated, a case split exploring); part of the cache key."""
+
 
 def _memoized(ask: Any) -> Any:
     """``ask`` with its answers remembered: one top-level call asks the same
@@ -133,6 +153,7 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
     top = not _firings
     if top:
         _firings.append(0)
+        _results.append({})
         splits_left[0] = MAX_SPLITS
         saved_ask = _upstream.ask
         _upstream.ask = _memoized(saved_ask)
@@ -141,29 +162,59 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
     finally:
         if top:
             _firings.pop()
+            _results.pop()
             _upstream.ask = saved_ask
 
 
 def _refine(expr: Any, assumptions: Any) -> Any:
+    """Refine ``expr``: one step per node (:func:`_step`) until a step asks for no
+    further refinement; every node of the chain gets the final result in the cache.
+    Iterative, so a chain of firings does not deepen the Python stack."""
     if not isinstance(expr, Basic):
         return expr
-    if not expr.is_Atom:
+    cache = _results[-1] if _results else {}
+    context = (assumptions, mode(), tuple(state))
+    chain = []
+    while True:
+        key = (expr, context)
+        try:
+            expr = cache[key]
+            break
+        except KeyError:
+            chain.append(key)
+        except TypeError:                        # unhashable assumptions
+            pass
+        expr, again = _step(expr, assumptions)
+        if not again:
+            break
+    for key in chain:
+        cache[key] = expr
+    return expr
+
+
+def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
+    """``(result, again)``: the node's children refined and its handler applied;
+    ``again`` when the result is a new expression still to be refined."""
+    name = expr.__class__.__name__
+    if not expr.is_Atom and name not in own_args:
         args = [_refine(a, assumptions) for a in expr.args]
-        new = expr.func(*args)
+        try:
+            new = expr.func(*args)
+        except (ValueError, TypeError):          # a child became nan (inconsistent assumptions) and
+            return expr, False                   # the head refuses it (Max: "nan is not comparable")
         if new.is_Atom or new.func is not expr.func or new.args != tuple(args):
-            return _refine(new, assumptions) if new != expr else expr
+            return (new, True) if new != expr else (expr, False)
         expr = new
     if hasattr(expr, "_eval_refine"):
         ref = expr._eval_refine(assumptions)
         if ref is not None:
-            return ref
-    name = expr.__class__.__name__
+            return ref, False
     handler = _upstream.handlers_dict.get(name)
     generated = generated_handlers.get(name) if mode() == "generated" else None
     new = generated(expr, assumptions) if generated is not None else None
     if new is None or new == expr:
         if handler is None:
-            return expr
+            return expr, False
         # the table is a fast path: when it declines, the live handler runs in full
         # (its rules and its identity rows, which the catalog specializes only in part)
         new = handler(expr, assumptions)
@@ -172,20 +223,18 @@ def _refine(expr: Any, assumptions: Any) -> Any:
     if new is None or new == expr:
         fallback = fallback_handlers.get(name)
         if fallback is None or fallback is handler:
-            return expr
+            return expr, False
         new = fallback(expr, assumptions)
         if new is None or new == expr:
-            return expr
+            return expr, False
     if not isinstance(new, Basic):
         tag = (name, getattr(handler, "__qualname__", repr(handler)))
         non_basic_returns[tag] = non_basic_returns.get(tag, 0) + 1
         new = sympify(new)
         if new == expr:
-            return expr
+            return expr, False
     _firings[-1] += 1
     if _firings[-1] > MAX_FIRINGS:
         raise RefineLoopError(
             f"refine fired handlers more than {MAX_FIRINGS} times; last rewrite {expr} -> {new}")
-    if not isinstance(new, Expr):
-        return new
-    return _refine(new, assumptions)
+    return new, isinstance(new, Expr)

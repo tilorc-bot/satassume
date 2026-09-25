@@ -1,4 +1,7 @@
-"""Matrix fuzz finding (``tools/refine_fuzz.py --matrices``, seed 1; 30 of
+"""Moved from ``needs/test_matfuzz_matrixelement_bounds_crash.py``; fixed in
+``_simple._affine`` (no scalar substituted for a matrix: the bound is unknown).
+
+Matrix fuzz finding (``tools/refine_fuzz.py --matrices``, seed 1; 30 of
 1,458 cases), for the engine: refining a scalar expression that contains
 matrix elements crashes with ``TypeError: First argument of MatrixElement
 should be a matrix``.

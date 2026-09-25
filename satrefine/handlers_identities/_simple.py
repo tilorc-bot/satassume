@@ -27,9 +27,10 @@ Why these two are procedures and not rows:
     where the floor is constant except at one closed endpoint of the
     interval (the engine's endpoint split).
 ``Piecewise``
-    branches are refined under the assumptions plus their own condition;
-    ``Piecewise`` itself drops decided conditions and merges equal
-    branches.  A row cannot add a branch's condition to the assumptions
+    conditions are decided by the engine (:func:`._engine.decide`), a
+    branch decided false is dropped, one decided true ends the list, and
+    the other branches are refined under the assumptions plus their own
+    condition.  A row cannot add a branch's condition to the assumptions
     the right side is refined under.
 """
 from __future__ import annotations
@@ -42,7 +43,6 @@ from typing import Iterator
 from sympy import And, Dummy, Piecewise, Q, S, acos, acot, arg, asin, atan, ceiling, expand_mul, floor, im, pi, re
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
-from sympy.logic.boolalg import Boolean
 
 from .. import _upstream
 
@@ -101,7 +101,10 @@ _SIGNS = (Q.positive, Q.nonnegative, Q.negative, Q.nonpositive)
 def _affine(d: Any, u: Any) -> tuple | None:
     """``(a, c)`` with ``d == a*u + c`` for real numbers ``a != 0`` and ``c``, else ``None``."""
     t = Dummy("t")
-    e = d.xreplace({u: t})
+    try:
+        e = d.xreplace({u: t})
+    except (TypeError, ValueError):     # u is a matrix inside a MatrixElement: no scalar stands for it
+        return None
     if not e.has(t):
         return None
     e = expand_mul(e)
@@ -279,14 +282,27 @@ def simple_floor(expr: Basic, assumptions: Any) -> Basic | None:
 
 
 def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
+    """Each branch under the assumptions plus its condition, the conditions decided
+    by the engine (:func:`._engine.decide`: relations from signs and stated
+    relations, never from a relation ``ask`` about a known infinite argument).
+    A condition decided false drops its branch, one decided true ends the list.
+    The dispatcher leaves the arguments to this handler (:data:`._dispatch.own_args`):
+    SymPy refines a condition with a bare ``ask`` (weak on relations, raising on
+    sign facts, wrong at ``-oo``)."""
     from ._dispatch import refine
+    from ._engine import decide
     pairs = []
     for value, cond in expr.args:
-        extra = cond if isinstance(cond, Boolean) and cond not in (S.true, S.false) else None
+        decided = decide(cond, assumptions)
+        if decided is False:
+            continue
         try:
-            pairs.append((refine(value, assumptions & extra if extra is not None else assumptions), cond))
+            pairs.append((refine(value, assumptions if decided else And(assumptions, cond)),
+                          S.true if decided else cond))
         except ValueError:                       # the branch condition contradicts the assumptions
             continue
+        if decided:
+            break
     if not pairs:
         return None
     return Piecewise(*pairs)
@@ -304,7 +320,8 @@ def install(handlers_dict: dict) -> None:
     """Register the simple rules as the keys' handlers and as the dispatcher's
     fallbacks, so a family module that registers one of the keys later still
     gets them after its own table declines."""
-    from ._dispatch import fallback_handlers
+    from ._dispatch import fallback_handlers, own_args
+    own_args.add("Piecewise")
     for key, handler in SIMPLE_RULES.items():
         handlers_dict[key] = handler
     fallback_handlers.update(FALLBACK_RULES)

@@ -130,5 +130,29 @@ def test_max_under_the_wrong_eq_answer_stays_correct():
 
 
 def test_table_size():
+    """Five Piecewise definitions (Max, Min, KroneckerDelta with and without a
+    range, Heaviside) and three DiracDelta rule rows."""
     from satrefine.handlers_identities import minmax_deltas as mod
-    assert len(mod.RULES) == 13
+    assert (len(mod.FACTS), len(mod.RULES)) == (5, 3)
+
+
+BEYOND_V3 = [  # derived by the definitions, not by v3's rules
+    (KroneckerDelta(i, j, (1, 3)), Q.eq(i, j) & Q.ge(i, 1) & Q.le(i, 3), S.One, {i: REALS, j: REALS}),
+    (KroneckerDelta(i, j, (1, 3)), Q.eq(i, j) & Q.gt(i, 3), S.Zero, {i: [S(4), Rational(9, 2)], j: [S(4), Rational(9, 2)]}),
+]
+
+
+@pytest.mark.parametrize("expr, assumptions, expected, values", BEYOND_V3, ids=map(_id, BEYOND_V3))
+def test_definition_beyond_v3(expr, assumptions, expected, values):
+    got = refine(expr, assumptions)
+    assert got == expected
+    assert_refinement_valid(expr, assumptions, got, samples=40, values=values)
+
+
+@pytest.mark.parametrize("expr, assumptions", [
+    (Max(x, y), Q.imaginary(x) & Q.real(y)),       # incomparable: never the nan default branch
+    (Heaviside(x), Q.imaginary(x)),
+    (KroneckerDelta(i, j), Q.negative_infinite(i) & Q.negative_infinite(j)),
+], ids=str)
+def test_undefined_stays(expr, assumptions):
+    assert refine(expr, assumptions) == expr

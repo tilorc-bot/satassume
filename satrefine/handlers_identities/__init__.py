@@ -36,7 +36,8 @@ and registers with literal ``handlers_dict['key'] = handler`` statements.
 It may also declare ``CATALOG`` (the assumption profiles the generator
 tries per variable; see ``_specialize.CATALOG``) and ``EDGE_POINTS``
 (values every generated rule is checked at, in addition to 0, 1, -1, I,
--I: the family's branch-cut points).
+-I: the family's branch-cut points), or ``SPECIALIZE = False`` to have no
+generated table.
 """
 from __future__ import annotations
 
