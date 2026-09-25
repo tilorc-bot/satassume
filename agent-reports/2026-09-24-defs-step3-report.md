@@ -2,7 +2,8 @@
 
 - **Date:** 2026-09-24 and 25
 - **Branch:** `ri/defs`, from `origin/refine-identities` at `2fd72b8`,
-  with `origin/main` at `9dfc27d` merged in (satassume prover gaps, PR #3)
+  with `origin/main` `9dfc27d` (satassume prover gaps) and then
+  `origin/refine-identities` `8f0e147` merged in
 - **TL;DR:** integer_funcs drops from 17 rule rows to 9 rows (2 identity
   rows and 7 rules). Of the 8 rows removed:
   - 6 come from definitions and shared rows;
@@ -107,53 +108,58 @@ did not add it.
 
 ## 2. Gates, against the same satassume version
 
-Baseline: `2fd72b8` merged with `origin/main` `9dfc27d`, built in a
-scratch clone. This branch has the same merge.
+**Method.** `tools/refine_gates.sh` run on this branch at `307c304`, which
+is `ri/defs` with `origin/refine-identities` `8f0e147` merged in. The
+baseline is the coordinator's shared run of `8f0e147`
+(`/home/tilo/fable-rewrite/.claude/gates/base-8f0e147`). Every run uses
+`PYTHONHASHSEED=0`. Two notes on completeness:
 
-**Battery (full scoreboard, `PYTHONHASHSEED=0`)**: in both generated and
-live mode, every family is identical to the baseline.
+- This branch's first run of differential generated seed 7 hit the
+  30-minute timeout under load. I re-ran it with the updated tool, and it
+  finished with exit 0.
+- The baseline's generated seed 7 had also timed out and was not yet
+  re-run when I compared. For that seed, only this branch's absolute
+  numbers are available.
 
-| family | same | other | miss | quiet | extra | wrong | crash |
+**Battery (scoreboard).** Identical to the baseline, family by family, in
+both modes. integer_funcs has 67 same, 0 other, 0 miss, 31 quiet,
+0 extra, 0 wrong, 0 crash in both modes. The totals are:
+
+| mode | same | other | miss | quiet | extra | wrong | crash |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| integer_funcs | 67 | 0 | 0 | 31 | 0 | 0 | 0 |
+| generated | 1,030 | 43 | 13 | 629 | 21 | 0 | 0 |
+| live | 1,033 | 40 | 13 | 629 | 21 | 0 | 0 |
 
-- The merge of `main` itself moves inverse (quiet 164 to 160, extra 12
-  to 16) and power_exp_log, in the baseline as well as here. This is
-  satassume's doing, not this branch's.
-- `PYTHONHASHSEED` is fixed because one power_exp_log case depends on it
-  on the baseline too: `log(1/x) | Q.zero(x)` gives `zoo` for seeds 0
-  and 1 and stays unchanged for seeds 2 and 3. That is a pre-existing
-  hash-order dependence in the engine.
-- Before the merge (on satassume as of `2fd72b8`) the 11-row version was
-  also identical to that baseline in both modes.
+**Test suite (`tests/refine_identities`, xdist).** 2,329 passed and 8
+failed. The baseline has 6 failures, all needs tests, and all 6 fail here
+too. The other 2 failures are my two new needs tests (section 5).
 
-**Tests (`tests/refine_identities`)**: 2200 passed, 13 failed. None of
-the failures come from this branch:
+**Differential (seeds 2, 3, 7 at 1,500 cases, both modes).**
 
-- 5 existing needs tests;
-- my 2 new needs tests (section 5);
-- 6 that fail identically on the merged baseline:
-  - `test_ablate::test_ablate_removes_the_row_from_handler_and_module`:
-    `Max(x, y)` still refines to `x` with its row ablated;
-  - `test_power_exp_log::test_relation_to_team[exp(I*pi*n/2 + x)|Q.odd(n)]`;
-  - `test_generated_module_is_up_to_date[power_exp_log]` and
-    `[complex_parts]`;
-  - `test_specialize::test_expected_rules_are_generated` and
-    `test_generated_rules_verify_or_are_flagged`. The
-    `log(p*r) -> log(-p) + log(-r)` rule is no longer generated; these
-    two and `[complex_parts]` already fail on `2fd72b8` without the
-    merge.
+- No new unsound result, no numerically different result, and no new
+  crash. Unsound counts for b are 2, 3, 1 in each mode, as in the
+  baseline. "Different" is 0 everywhere.
+- Live seed 3 has 1 crash and live seed 7 has 1 crash; both are in the
+  baseline too (the atan2 firing cap).
+- Live seeds 3 and 7 are identical to the baseline.
+- Generated seed 3 differs only in timeouts: 2 in the baseline, 0 here.
+- Seed 2 fires on 2 more inputs than the baseline in generated mode and
+  on 3 more in live mode ("only b fires" +2 in each mode). Unsound and
+  numerically different counts are unchanged. The per-case output was
+  not kept (`--summary`), and the timeout counts also differ between the
+  runs (load).
+- An earlier full run on the pre-merge code, which printed examples,
+  showed the single new firing at seed 3 was
+  `frac(pi*z) | Q.zero(z) & Q.ge(z, 0) -> pi*z`, which is correct. It
+  comes from the frac definition.
+- Generated seed 7 here: 456 fired, 1 unsound (v3 also has 1), 0
+  different, 0 crash.
 
-`test_engine_integer_funcs.py::test_ask_raising_is_not_provable` failed
-after the merge, because satassume now proves `Q.lt(m, y)` from
-`Q.positive(y) & Q.negative(m)`, so the rule legitimately fires. The test
-now simulates the raising `ask` with a monkeypatch.
-
-**Ablation (`tools/refine_ablate.py integer_funcs`, 9-row pre-merge
-layout)**: all 9 rule rows are needed. The tool ablates `RULES` only, so
-the 2 identity rows were checked by hand in live mode: without the frac
-definition 8 of 142 integer_funcs tests fail, and without the `G` row 11
-fail.
+**Ablation (`tools/refine_ablate.py integer_funcs`, run on the 9-rule
+layout before the Gaussian merge).** All 9 rule rows are needed. The tool
+ablates `RULES` only, so the 2 identity rows were checked by hand in live
+mode: without the frac definition 8 of 142 integer_funcs tests fail, and
+without the `G` row 11 fail.
 
 Before this could run I fixed the tool (8 lines, commit "refine_ablate:
 remove rows from every table of a chained key"):
@@ -164,8 +170,17 @@ remove rows from every table of a chained key"):
   and they were not;
 - `tools/refine_ablate.py` is not in the engine's ownership list.
 
-**Differential** (seeds 2, 3, 7 at 1,500 cases, both modes, against the
-merged baseline, `PYTHONHASHSEED=0`): see section 4.
+The Gaussian-integer merge then removed 2 of the 9 rules by construction.
+The ablation was not re-run after that.
+
+**Earlier comparisons, superseded by the run above.** These ran on the
+older merges, against baselines built the same way:
+
+- the 11-row version on satassume as of `2fd72b8`: battery identical in
+  both modes; differential seeds 2 and 3 in both modes with the same
+  counts except the one sound `frac` firing;
+- the 9-row version with `main` `9dfc27d`: battery identical in both
+  modes.
 
 ## 3. combinatorial: measured "not worth it"
 
@@ -205,7 +220,7 @@ The prototype was reverted; `combinatorial.py` is unchanged.
 
 ## 4. Differential
 
-(filled in below)
+See section 2.
 
 ## 5. Needs tests filed
 
@@ -219,3 +234,13 @@ The prototype was reverted; `combinatorial.py` is unchanged.
   `x, = symbols('x')`, which breaks the import of the whole `generated`
   package. I hit it when integer_funcs' table was `frac(x) -> 0` alone;
   the table now has more symbols.
+
+## 6. Commits on `ri/defs`
+
+`git log --oneline --no-merges origin/refine-identities..ri/defs`: the
+integer_funcs rows, generated table and tests, the needs tests, the
+`refine_ablate.py` fix, and this report. Merges from `origin/main`
+`9dfc27d` and from `origin/refine-identities` (`599af95`, `8f0e147`). The
+merge conflict in `test_engine_integer_funcs.py` (both sides simulated the
+raising `ask`) was resolved to `refine-identities`' version.
+`combinatorial.py` is unchanged.
