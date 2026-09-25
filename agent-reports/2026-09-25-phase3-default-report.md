@@ -42,8 +42,8 @@ The 31 (34 − 3) from f83f195 was a whole-directory count, so it had this probl
 | tests/refine | default | 467 passed, 3 failed, 4 xfailed (`handlers`) | 419 passed, 0 failed, 36 xfailed, 46 skipped (`handlers_identities`) |
 | tests/refine | `SATREFINE_HANDLERS=handlers_identities` | 358 passed, **114 failed**, 2 xfailed | as the default row |
 | tests/refine | `SATREFINE_HANDLERS=handlers` | as the default row | 492 passed, 0 failed, 9 xfailed |
-| tests/refine_v2 | default (its conftest selects handlers_v2) | 160 passed, 1 failed | GATE_V2 |
-| tests/refine_v3 | default (its conftest selects handlers_v3) | 1004 passed, 1 failed | GATE_V3 |
+| tests/refine_v2 | default (its conftest selects handlers_v2) | 160 passed, 1 failed | 160 passed, 1 failed (same test) |
+| tests/refine_v3 | default (its conftest selects handlers_v3) | 1004 passed, 1 failed | 1004 passed, 1 failed (same test) |
 
 The suite has 501 tests after the change, 27 more than before, because multi-assert tests were split. A failing case in a multi-assert test was moved into its own test, so the other asserts keep running.
 
@@ -207,16 +207,25 @@ Each fails under `handlers_identities` and passes under `handlers`, except the o
 | test_default_inconsistent_assumptions.py | 2 | `ValueError` for inconsistent assumptions, as the backends raise it | meets it |
 | test_default_matmul_scalar_factor.py | 2 | `MatMul(X.T, 2, X) -> 2*I` (orthogonal); `MatMul(X, 2, Y) -> 2*X*Y` | no |
 
-Under `handlers_identities` the needs directory gives 43 failed and 0 passed; under `handlers`, 45 passed.
+Under `handlers_identities` the needs directory gives 44 failed and 0 passed; under `handlers`, 44 passed.
 
 Worth a look first: the `MatAdd` crash (the only crash); then the sign form and the `(-1)` power, because they are in SymPy's own test suite.
 
 ## 6. Gates
 
-GATES
+Run on 7a1b631 (ri/default merged with origin/refine-identities at cf34f5f). The log header says 4013c9d because the report draft was committed while the gates ran; the code is the same. Baseline: `/home/tilo/fable-rewrite/.claude/gates/speed-a45-de12f0a`. Output: `/home/tilo/fable-rewrite/.claude/gates/default-7a1b631{,.log}`. `JOBS=9 SLOTS=11 SUITE_WORKERS=4`, 372 s.
+
+| gate | baseline | ri/default |
+|---|---|---|
+| suite (tests/refine_identities) | 2464 passed, 1917 skipped, 30 xfailed | 2464 passed, 1917 skipped, 30 xfailed, **44 failed: exactly the 44 new needs/test_default_* cases** |
+| scoreboard generated / live | unchanged (no diff lines) | same+other 1073 / 1073, wrong 0, crash 0, quiet 639 |
+| differential generated and live, seeds 2, 3, 7; satassume seed 2 | | only the timing lines differ; fired, unsound, crash and "different" counts are identical |
+| termination tests | 8 passed | 8 passed |
+
+Pass: the gates select their handler packages explicitly, so no change was expected and none occurred. The suite fails only on the new needs tests.
 
 ## 7. Other observations
 
 - `test_refine_verifier_matrix.py` takes 79 s under `handlers_identities` against 17 s under `handlers`, on the same (loaded) machine. It is the slowest file in `tests/refine`; the time is not investigated here.
-- `tests/refine` as a whole, in one process under the default: ONEPROC.
+- `tests/refine` as a whole, in one process under the default: 419 passed, 46 skipped, 36 xfailed, the same as file by file (no order dependence left).
 - CI (`.github/workflows/test.yml`) runs `pytest tests` in one process. The conftests of tests/refine_identities and tests/refine_v3 refuse to run when satrefine is already imported with another package, so that job cannot pass as written, before or after this change. Out of scope here.
