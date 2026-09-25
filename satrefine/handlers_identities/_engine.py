@@ -109,7 +109,7 @@ Row = tuple[Basic, Basic, Basic]
 Binding = dict[Any, Any]
 Measure = Callable[[Any, Any], tuple]
 
-__all__ = ["REBUILD", "Row", "bindings", "could_match", "decide", "derive", "identity_handler", "rule_handler", "part",
+__all__ = ["REBUILD", "Row", "bindings", "decide", "derive", "identity_handler", "rule_handler", "part",
            "principal", "provable", "refine", "subst", "default_measure", "handlers_dict"]
 
 
@@ -352,7 +352,6 @@ class _Shape(NamedTuple):
     unit_form: tuple[Any, Any, Any] | None   # :func:`_is_unit_coefficient_form`
     rest_syms: tuple                         # symbols of a sum or product standing for "the rest"
     has_part: bool                           # an argument is a :func:`part`
-    head: type | None                        # a class every matching target is an instance of (None: any)
 
 
 _shapes: dict = {}
@@ -367,28 +366,14 @@ def _shape(pattern: Any) -> _Shape:
         pass
     unit_form = rest_syms = None
     has_part = False
-    head = None
-    if not (isinstance(pattern, (AppliedUndef, Symbol)) or pattern.is_Atom):
-        head = pattern.func
+    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, MatrixExpr):
         args = pattern.args
         has_part = any(isinstance(a, _Part) for a in args)
-        if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, MatrixExpr):
-            rest_syms = tuple(a for a in args if a.is_Symbol and not isinstance(a, _Part)
-                              and not any(o.has(a) for o in args if o is not a))
-            unit_form = _is_unit_coefficient_form(pattern)
-            partition = len(args) == 2 and has_part and all(a.is_Symbol for a in args) \
-                and sum(isinstance(a, _Part) for a in args) == 1
-            if partition or unit_form is not None:   # these also match a lone term or factor
-                head = None
-    shape = _shapes[pattern] = _Shape(unit_form, rest_syms or (), has_part, head)
+        rest_syms = tuple(a for a in args if a.is_Symbol and not isinstance(a, _Part)
+                          and not any(o.has(a) for o in args if o is not a))
+        unit_form = _is_unit_coefficient_form(pattern)
+    shape = _shapes[pattern] = _Shape(unit_form, rest_syms or (), has_part)
     return shape
-
-
-def could_match(pattern: Any, target: Any) -> bool:
-    """False when ``pattern`` cannot match ``target`` because of their heads
-    (:func:`bindings` would yield nothing): a test before matching."""
-    head = _shape(pattern).head
-    return head is None or isinstance(target, head)
 
 
 def _bind(b: Binding, key: Any, value: Any) -> Binding | None:
@@ -753,12 +738,9 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     def handler(expr: Any, assumptions: Any) -> Any:
         if busy[0]:
             return None
-        candidates = [row for row in rows if could_match(row[0], expr)]
-        if not candidates:
-            return None
         m = measure or default_measure(static_heads | {expr.func})
         m0 = m(expr, assumptions)
-        for lhs, rhs, domain in candidates:
+        for lhs, rhs, domain in rows:
             for b in bindings(lhs, expr, assumptions):
                 if provable(subst(domain, b), assumptions) is not True:
                     continue
@@ -807,8 +789,6 @@ def rule_handler(rows: list) -> Callable[[Any, Any], Any]:
 
     def handler(expr: Any, assumptions: Any) -> Any:
         for lhs, rhs, hyp, unless in rows:
-            if not could_match(lhs, expr):
-                continue
             for b in bindings(lhs, expr, assumptions):
                 if provable(subst(hyp, b), assumptions) is not True:
                     continue
