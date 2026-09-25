@@ -120,7 +120,7 @@ only when propagation is inconclusive.
 | `tests/refine_v2/`, `tests/refine_v3/` | their suites; any suite runs against any package |
 | `tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
 | `tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
-| `satrefine/handlers_identities/` | the nine handler families as tables of identities and conditional rules, with rules generated from identities and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py`; see `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and `2026-09-24-refine-identities-phase-2-plan.md` |
+| `satrefine/handlers_identities/` | the nine handler families as tables of identities and conditional rules, with rules generated from identities and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py`; see `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and `2026-09-25-refine-identities-phase-2-results.md` |
 
 ## satrefine: the refine layer as a yardstick
 
@@ -136,7 +136,8 @@ questions through one seam, `satrefine._upstream.ask`, and
 |---|---|---|
 | `sympy` | `sympy.assumptions.ask.ask` | the reference |
 | `satassume` | `satassume.sympy_api.ask` alone; out-of-scope and undecided queries are `None`, so the handler does not fire | the strict measurement of this engine |
-| `combined` | satassume first, SymPy for every `None` | the union, for writing handlers whose simplifications neither engine alone justifies |
+| `combined` | satassume; SymPy only where satassume has no model (matrix or unregistered custom predicates, a relation bound no theory interprets such as `pi/2`), finds the assumptions inconsistent, or raises | the default |
+| `union` | satassume first, SymPy for every `None` (the `combined` behaviour before 2026-09-25) | measurements |
 
 Select with `SATREFINE_BACKEND=<name>` (read at import; default `combined`),
 `satrefine.backend.set_backend(name)`, or `with satrefine.backend.using(name):`.
@@ -182,8 +183,8 @@ with `SATREFINE_HANDLERS=handlers_identities`. On the 1,736-case battery
 recorded from the `handlers_v3` suite it gives 0 wrong and 0 crash and
 matches v3 on 1,073 of v3's 1,086 rewrites, in about a third of v3's
 per-family code. Results are in
-`agent-reports/2026-09-24-refine-identities-phase-1-results.md`; the next
-steps in `agent-reports/2026-09-24-refine-identities-phase-2-plan.md`.
+`agent-reports/2026-09-24-refine-identities-phase-1-results.md` and
+`agent-reports/2026-09-25-refine-identities-phase-2-results.md`.
 
 `tools/refine_scoreboard.py` runs `tests/refine` under each backend and
 compares outcomes per test: satassume in-scope gaps (pass under `sympy`, fail
