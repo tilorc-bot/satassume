@@ -118,6 +118,10 @@ Of the cases where the battery differs from v3 (13 misses, 41 other forms, same 
 
 Target: fewer engine lines at the end of phase 3 than at its start, with no behaviour change beyond tracks B and C.
 
+### Refactor (first part of track D)
+
+Issue #13 has the design: separate general algorithms from the rule families, online code from offline code (generation, tools, benchmarks), and current-state code (SymPy workarounds, matrices, backend routing) from the rest, and move satrefine's tools into `satrefine/`. Steps 1–7 of the issue are in phase 3, before the other track D items. They start when A6+A7, the fuzz extensions and the default switch are merged. Steps 8–9 (explicit state, renames) come after phase 3.
+
 ## 6. Order, agents and gates
 
 1. **Now:** B9 (`ri/termination`); see "Finishing B9" below.
