@@ -15,9 +15,9 @@ Why these two are procedures and not rows:
 ``floor``/``ceiling`` of a bounded quantity
     ``floor(a*u + c)`` with numeric ``a``, ``c`` is a constant when the
     floor is constant over the interval ``u`` is known to lie in: ``u`` is
-    ``h(y)`` for a head ``h`` in :data:`BOUNDS` (``arg``, ``atan``,
-    ``acot``, ``asin``, ``acos``; ``arg`` is open at ``pi`` when ``y`` is
-    provably off the negative real axis), or any expression whose bounds
+    ``h(y)`` for a head ``h`` with range rows (:data:`RANGES`: ``arg``,
+    ``atan``, ``acot``, ``asin``, ``acos``, stated by their families), or
+    any expression whose bounds
     the assumptions state as conjuncts (:func:`stated_bounds`: ``Q.ge(u,
     -pi/2)``, ``Q.lt(1, u)``, ``Q.positive(u + pi)``, ... read affinely,
     and the sign facts ``Q.positive(u)``, ``Q.nonnegative(u)``, ... by
@@ -40,40 +40,32 @@ from typing import Any
 from functools import lru_cache
 from typing import Iterator
 
-from sympy import And, Dummy, Piecewise, Q, S, acos, acot, arg, asin, atan, ceiling, expand_mul, floor, im, pi, re
+from sympy import And, Dummy, Piecewise, Q, S, ceiling, expand_mul, floor
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
 
 from .. import _upstream
 
-# head -> (lo, hi, lo_open, hi_open) of its range on real (nonzero for arg) arguments
-BOUNDS: dict = {
-    arg:  (-pi, pi, True, False),
-    atan: (-pi/2, pi/2, True, True),
-    acot: (-pi/2, pi/2, True, False),
-    asin: (-pi/2, pi/2, False, False),
-    acos: (S.Zero, pi, False, False),
-}
+RANGES: dict = {}
+"""``head -> [(head(y), interval, condition), ...]``: the range rows of bounded heads,
+stated by the family that owns the head (``complex_parts`` for ``arg``, ``inverse``
+for ``atan``, ``acot``, ``asin``, ``acos``) and registered with :func:`register_ranges`.
+The first row whose condition is provable gives the range of ``head(y)``."""
+
+
+def register_ranges(rows: list) -> None:
+    """Add range rows ``(head(y), interval, condition)`` (``y`` a symbol) to :data:`RANGES`."""
+    for row in rows:
+        RANGES.setdefault(row[0].func, []).append(row)
 
 
 def _range(node: Any, assumptions: Any) -> tuple | None:
-    """The range of a bounded head applied to its argument, or ``None``."""
-    head = node.func
-    if head not in BOUNDS:
-        return None
-    lo, hi, lo_open, hi_open = BOUNDS[head]
-    y = node.args[0]
-    if head is arg:
-        ask = _upstream.ask
-        if (ask(Q.extended_negative(y), assumptions) is False       # arg(-oo) is pi too
-                or ask(Q.nonnegative(re(y)), assumptions) or ask(~Q.zero(im(y)), assumptions) is True):
-            hi_open = True                       # off the negative real axis
-    elif head in (asin, acos):
-        if _upstream.ask(Q.real(node), assumptions) is not True:
-            return None
-    elif _upstream.ask(Q.real(y), assumptions) is not True:
-        return None
-    return lo, hi, lo_open, hi_open
+    """``(lo, hi, lo_open, hi_open)``: the range of a bounded head applied to its argument, or ``None``."""
+    from ._engine import provable
+    for lhs, interval, cond in RANGES.get(node.func, ()):
+        if provable(cond.xreplace({lhs.args[0]: node.args[0]}), assumptions) is True:
+            return interval.start, interval.end, interval.left_open, interval.right_open
+    return None
 
 
 def _constant_over(fn: Any, a: Any, c: Any, rng: tuple) -> Any | None:
@@ -224,7 +216,7 @@ def _stated_sides(assumptions: Any) -> list:
 
 def _images(inner: Any, assumptions: Any) -> Iterator[tuple]:
     """``(a, c, range, u)`` for every bounded quantity ``u`` that ``inner`` is affine in."""
-    for node in inner.atoms(*BOUNDS):
+    for node in (inner.atoms(*RANGES) if RANGES else ()):
         aff = _affine(inner, node)
         rng = _range(node, assumptions) if aff else None
         if rng is not None:
@@ -242,7 +234,7 @@ def _images(inner: Any, assumptions: Any) -> Iterator[tuple]:
 
 def floor_of_bounded(expr: Basic, assumptions: Any) -> Basic | None:
     """``floor``/``ceiling`` of ``a*u + c`` for a bounded quantity ``u`` (a head of
-    :data:`BOUNDS`, or an expression with stated bounds)."""
+    :data:`RANGES`, or an expression with stated bounds)."""
     fn, inner = expr.func, expr.args[0]
     for a, c, rng, _u in _images(inner, assumptions):
         value = _constant_over(fn, a, c, rng)

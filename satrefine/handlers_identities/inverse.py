@@ -57,12 +57,46 @@ the ``atan`` pole exclusions held everywhere tried.
 """
 from __future__ import annotations
 
-from sympy import (Abs, I, Piecewise, Q, S, acos, acosh, acoth, acsch, asech, asin, asinh, atan, atan2, atanh,
-                   cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols, tan, tanh,
-                   true)
+from sympy import (
+    Abs,
+    I,
+    Interval,
+    Piecewise,
+    Q,
+    S,
+    acos,
+    acosh,
+    acot,
+    acoth,
+    acsch,
+    asech,
+    asin,
+    asinh,
+    atan,
+    atan2,
+    atanh,
+    cos,
+    cosh,
+    cot,
+    coth,
+    csch,
+    floor,
+    im,
+    nan,
+    pi,
+    sech,
+    sign,
+    sin,
+    sinh,
+    symbols,
+    tan,
+    tanh,
+    true,
+)
 
 from .._upstream import handlers_dict
 from ._engine import Row, identity_handler, rule_handler
+from ._simple import register_ranges
 from ._tables import ZERO, chain, node_measure
 from ._wraps import reflect_full, reflect_half, sawtooth
 
@@ -110,6 +144,14 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     (acosh(cosh(t)), Abs(t), Q.real(t)),   # acosh undoes cosh up to sign, real t
     (asech(sech(t)), Abs(t), Q.real(t)),   # asech undoes sech up to sign, real t
 ]
+
+RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)
+    (atan(y), Interval.open(-pi/2, pi/2),  Q.real(y)),
+    (acot(y), Interval.Lopen(-pi/2, pi/2), Q.real(y)),
+    (asin(y), Interval(-pi/2, pi/2),       Q.real(asin(y))),
+    (acos(y), Interval(0, pi),             Q.real(acos(y))),
+]
+register_ranges(RANGES)
 
 _rules = rule_handler([ZERO] + RULES)
 

@@ -58,15 +58,34 @@ and products with a zero and an infinite factor (``0*oo``) become ``0`` or
 """
 from __future__ import annotations
 
-from sympy import Abs, I, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
+from sympy import (
+    Abs,
+    I,
+    Interval,
+    Q,
+    S,
+    arg,
+    conjugate,
+    exp,
+    floor,
+    im,
+    log,
+    pi,
+    re,
+    sign,
+    symbols,
+    true,
+    zoo,
+)
 from sympy.core import Mul
 
 from .._upstream import handlers_dict
 from ._engine import Row, derive, identity_handler, part, rule_handler
+from ._simple import register_ranges
 from ._tables import ZERO, chain, node_measure
-from .power_exp_log import EXP_FORMS
+from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
-z, b, e, p, r, w, a, n = symbols('z b e p r w a n')
+z, b, e, p, r, w, a, n, y = symbols('z b e p r w a n y')
 c = part('c', Q.imaginary)   # the imaginary factors of a product
 s = part('s', Q.real)        # the real factors of a product
 
@@ -128,9 +147,17 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     (a*zoo, zoo, Q.finite(a) & ~Q.zero(a)),                              # zoo absorbs a nonzero finite factor
 ]
 
-_PRODUCT_FORMS = [row for row in EXP_FORMS if isinstance(row[0], Mul)]
+_OFF_NEGATIVE_AXIS = ~Q.extended_negative(y) | Q.nonnegative(re(y)) | ~Q.zero(im(y))
+
+RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)
+    (arg(y), Interval.open(-pi, pi),  _OFF_NEGATIVE_AXIS),   # arg is pi only on the negative axis (and at -oo)
+    (arg(y), Interval.Lopen(-pi, pi), true),                 # the principal range
+]
+register_ranges(RANGES)
+
+_PRODUCT_FORMS = [row for row in _EXP_FORMS if isinstance(row[0], Mul)]
 _OTHER_FACTS = FACTS[len(DEFINITIONS):]
-IDENTITIES: list[Row] = (derive([row for row in _OTHER_FACTS if isinstance(row[0], Abs)], EXP_FORMS)
+IDENTITIES: list[Row] = (derive([row for row in _OTHER_FACTS if isinstance(row[0], Abs)], _EXP_FORMS)
                          + derive([row for row in _OTHER_FACTS if isinstance(row[0], arg)], _PRODUCT_FORMS))
 
 _rules = rule_handler([ZERO] + RULES)
