@@ -45,12 +45,18 @@ def test_a_sum_pattern_binds_one_term_and_the_rest():
     assert rule(floor(y + 2*m + a), Q.integer(m)) == 2*m + floor(y + a)
 
 
-def test_ask_raising_is_not_provable():
-    """SymPy's relation ``ask`` raises ``ValueError('inconsistent
+def test_ask_raising_is_not_provable(monkeypatch):
+    """SymPy's relation ``ask`` raised ``ValueError('inconsistent
     assumptions')`` on consistent sign facts such as ``Q.positive(x) &
-    Q.negative(y)``; ``compile_rule`` lets it escape and ``refine`` crashes.
-    Wanted: read as "not provable" (v3 does)."""
+    Q.negative(y)``; an escaping error would crash ``refine``.  Wanted: read
+    as "not provable" (v3 does).  satassume on ``main`` (9dfc27d) now proves
+    ``Q.lt(m, y)`` from those signs, so the raise is simulated."""
+    from satrefine import _upstream
+
+    def raising_ask(proposition, assumptions=True):
+        raise ValueError("inconsistent assumptions")
     rule = compile_rule(floor(a*b), S.Zero, Q.lt(a, b))
+    monkeypatch.setattr(_upstream, "ask", raising_ask)
     assert rule(floor(y*m), Q.positive(y) & Q.negative(m)) is None
 
 

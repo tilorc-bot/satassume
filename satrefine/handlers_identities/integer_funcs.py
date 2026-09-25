@@ -73,7 +73,7 @@ makes ``b`` real, and ``2*a/b`` odd then makes ``a`` real).
 """
 from __future__ import annotations
 
-from sympy import Function, Mod, Q, S, ceiling, floor, frac, sign, symbols
+from sympy import Function, Mod, Q, S, floor, frac, im, re, sign, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
 from .._upstream import handlers_dict
@@ -90,12 +90,19 @@ def _lt(u, v):
     return Q.lt(u, v) | Q.positive(v - u)
 
 
+def _gaussian_integer(u):
+    """``u`` is an integer, or a Gaussian integer (``floor(y)`` and ``ceiling(y)`` of a
+    finite ``y`` are: SymPy's floor of a complex number is taken part by part)."""
+    return Q.integer(u) | (Q.integer(re(u)) & Q.integer(im(u)))
+
+
 FACTS = [   # (lhs, rhs, domain): identity rows, fire when the bookkeeping collapses
     # the definition of frac: covers frac(integer) = 0 (floor's first row) and frac(x) = x - k
     # on [k, k + 1) (the bounds rule behind floor; v3's R3 is k = 0).  Not at +-oo:
-    # frac(oo) is AccumBounds(0, 1).  (Q.real implies Q.finite; it is spelled out
-    # because the engine reads realness from stated bounds, finiteness it does not.)
-    (frac(x), x - floor(x), Q.finite(x) | Q.real(x)),
+    # frac(oo) is AccumBounds(0, 1).  (Q.real and a Gaussian integer imply Q.finite; they
+    # are spelled out because ask does not derive finiteness from stated bounds or from
+    # integral real and imaginary parts.)
+    (frac(x), x - floor(x), Q.finite(x) | Q.real(x) | _gaussian_integer(x)),
     # M2/Q2 odd: a/b = m + 1/2 has floor m and truncation m or m + 1 by the sign of a/b,
     # so Mod(a, b) = b/2 and Rem(a, b) = +-b/2: both are b/2 times the function at
     # (sign(a/b), 2) (Mod(+-1, 2) = 1, Rem(+-1, 2) = +-1).  Fires when sign(a/b) is decided
@@ -110,18 +117,16 @@ FACTS = [   # (lhs, rhs, domain): identity rows, fire when the bookkeeping colla
 EDGE_POINTS = (S(2), S(-2))   # the generator checks rules here too: Rem(1, 2) has 2*a/b odd
 
 ROUNDING = [
-    # F1, F2: floor/ceiling of an integer, or of +-oo, is itself.
-    (F(x), x, Q.integer(x) | (Q.infinite(x) & Q.extended_real(x))),
+    # F1, F2: floor/ceiling of a (Gaussian) integer, or of +-oo, is itself.
+    (F(x), x, _gaussian_integer(x) | (Q.infinite(x) & Q.extended_real(x))),
 ]
 
 SHIFT = [
-    # F3, R2: an integer term shifts out: F(n + x) = F(x) + F(n) for floor, ceiling and
-    # frac (F(n) is then n, n and 0 by the rows above).
-    (F(n + x), F(x) + F(n), Q.integer(n)),
-    # ... floor/ceiling of a finite y is a (Gaussian) integer and shifts out too
-    # (not for y = oo: floor(1/2 + floor(oo)) is not 1/2 + oo in AccumBounds terms).
-    (F(floor(y) + x), F(x) + F(floor(y)), Q.finite(y)),
-    (F(ceiling(y) + x), F(x) + F(ceiling(y)), Q.finite(y)),
+    # F3, R2: a (Gaussian) integer term shifts out: F(n + x) = F(x) + F(n) for floor,
+    # ceiling and frac (F(n) is then n, n and 0 by the rows above).  Not a term floor(y)
+    # of an infinite y: re(floor(oo)) is not an integer (floor(1/2 + floor(oo)) is not
+    # 1/2 + oo in AccumBounds terms).
+    (F(n + x), F(x) + F(n), _gaussian_integer(n)),
 ]
 
 # F4 (floor(x) = 0 for 0 <= x < 1, ceiling likewise) is the base layer's

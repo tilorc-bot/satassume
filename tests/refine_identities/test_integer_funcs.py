@@ -7,7 +7,7 @@ complex samples); ``Mod``/``Rem`` divisors exclude 0.
 from __future__ import annotations
 
 import pytest
-from sympy import Abs, I, Mod, Q, Rational, S, ceiling, floor, frac, oo, pi, sqrt, symbols
+from sympy import Abs, I, Mod, Q, Rational, S, ceiling, floor, frac, im, oo, pi, re, sqrt, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
 from satrefine import refine
@@ -39,6 +39,10 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (floor(x + ceiling(y)), Q.finite(y), floor(x) + ceiling(y), None),
     (ceiling(x + floor(y)), Q.finite(y), ceiling(x) + floor(y), None),
     (ceiling(x + ceiling(y)), Q.finite(y), ceiling(x) + ceiling(y), None),
+    # a Gaussian integer term (satassume proves re and im of floor(y) integers since 9dfc27d)
+    (floor(x + n), Q.integer(re(n)) & Q.integer(im(n)), n + floor(x), {n: [S(2), -S(3), 1 + 2*I, -I]}),
+    (frac(x + n), Q.integer(re(n)) & Q.integer(im(n)), frac(x), {n: [S(2), -S(3), 1 + 2*I, -I]}),
+    (floor(n), Q.integer(re(n)) & Q.integer(im(n)), n, {n: [S(2), -S(3), 1 + 2*I, -I]}),
     # F4
     (floor(x), Q.nonnegative(x) & Q.lt(x, 1), S.Zero, R),
     (floor(x), Q.nonnegative(x) & Q.positive(1 - x), S.Zero, R),
@@ -161,6 +165,6 @@ def test_refusal(expr, assumptions):
 def test_table_size_and_registration():
     from satrefine import _upstream
     from satrefine.handlers_identities import integer_funcs as mod
-    assert len(mod.RULES) == 9 and len(mod.FACTS) == 2
+    assert len(mod.RULES) == 7 and len(mod.FACTS) == 2
     assert handlers_dict['floor'] is not _upstream.refine_floor_ceiling
     assert all(callable(handlers_dict[key]) for key in ('floor', 'ceiling', 'frac', 'Mod', 'Rem'))
