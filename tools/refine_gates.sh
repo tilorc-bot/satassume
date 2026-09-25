@@ -8,9 +8,13 @@
 # $GATE_SLOTS_DIR, default /tmp/refine-gate-slots; the suite holds 3 slots for its workers):
 #   the tests/refine_identities suite (pytest-xdist, SUITE_WORKERS workers, default 3),
 #   the battery scoreboard in both SATREFINE_IDENTITIES modes,
-#   the differential against handlers_v3 for seeds 2, 3, 7 at 1,500 cases in both modes.
+#   the differential against handlers_v3 for seeds 2, 3, 7 at 1,500 cases in both modes,
+#   the same for seed 2 with SATREFINE_BACKEND=satassume, in both modes,
+#   the adversarial-ask termination fuzz (B9) at TERMINATION_FUZZ random cases (default 150)
+#   plus the whole battery, in both modes (the suite runs it small).
 # Full logs go to OUTDIR; the summary goes to OUTDIR/summary.txt and stdout.
-# With BASEDIR (an earlier OUTDIR), prints the lines of the summary that changed.
+# With BASEDIR (an earlier OUTDIR), prints the lines of the summary that changed, per
+# section; a section the baseline lacks (a gate added since) prints "no baseline".
 # Re-running into an existing OUTDIR only re-runs the tasks that did not finish with
 # exit 0 (the suite: exit 0 or 1), so a run cut short by a timeout can be completed.
 # Start it detached and wait in short chunks (agent-reports/...how-work-gets-lost.md, section 6):
@@ -20,6 +24,7 @@ out=${1:?usage: refine_gates.sh OUTDIR [BASEDIR]}
 base=${2:-}
 jobs=${JOBS:-6}
 workers=${SUITE_WORKERS:-3}
+termfuzz=${TERMINATION_FUZZ:-150}
 export GATE_SLOTS=${SLOTS:-8} GATE_SLOTS_DIR=${GATE_SLOTS_DIR:-/tmp/refine-gate-slots}
 mkdir -p "$GATE_SLOTS_DIR"
 mkdir -p "$out"
@@ -34,7 +39,9 @@ for m in generated live; do
   for s in 2 3 7; do
     tasks+=("diff-$m-$s|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --seed $s --cases 1500")
   done
+  tasks+=("diffsa-$m-2|env SATREFINE_BACKEND=satassume SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --seed 2 --cases 1500")
 done
+tasks+=("termination|env SATREFINE_TERMINATION_FUZZ=$termfuzz timeout 3000 ${uvrun[*]} -m pytest -q -s -p no:cacheprovider tests/refine_identities/test_engine_termination.py")
 
 start=$(date +%s)
 printf '%s\n' "${tasks[@]}" | xargs -P "$jobs" -I{} bash -c '
@@ -70,9 +77,35 @@ printf '%s\n' "${tasks[@]}" | xargs -P "$jobs" -I{} bash -c '
     echo "== differential $m seed $s (exit $(cat "$out/diff-$m-$s.exit"))"
     tail -15 "$out/diff-$m-$s.log"
   done; done
+  for m in generated live; do
+    echo "== differential satassume $m seed 2 (exit $(cat "$out/diffsa-$m-2.exit"))"
+    tail -15 "$out/diffsa-$m-2.log"
+  done
+  echo "== termination fuzz, $termfuzz random cases and the battery (exit $(cat "$out/termination.exit"))"
+  grep -E '^termination fuzz:|[0-9]+ (passed|failed)|^FAILED' "$out/termination.log" | sed 's/ - .*//' | tail -12
 } > "$out/summary.txt"
 cat "$out/summary.txt"
 if [ -n "$base" ] && [ -f "$base/summary.txt" ]; then
+  # compare section by section ("== ..." headers), so a
+  # baseline made before a gate existed says "no baseline" for that gate only
   echo "== changed against $base"
-  diff <(grep -v '^gates:' "$base/summary.txt") <(grep -v '^gates:' "$out/summary.txt") && echo "(no change)"
+  split_sections() {   # summary -> directory of one file per section
+    mkdir -p "$2"
+    awk -v d="$2" '/^== /{f=$0; sub(/ \(exit [^)]*\)$/, "", f); gsub(/[^A-Za-z0-9]+/, "_", f); print f > (d "/.order"); f=d "/" f}
+                   f {print > f}' "$1"
+  }
+  tmp=$(mktemp -d)
+  split_sections "$base/summary.txt" "$tmp/base"
+  split_sections "$out/summary.txt" "$tmp/new"
+  changed=0
+  for f in $(cat "$tmp/new/.order"); do
+    if [ ! -f "$tmp/base/$f" ]; then
+      echo "$(head -1 "$tmp/new/$f"): no baseline"
+    elif ! cmp -s "$tmp/base/$f" "$tmp/new/$f"; then
+      changed=1; echo "$(head -1 "$tmp/new/$f")"
+      diff "$tmp/base/$f" "$tmp/new/$f"
+    fi
+  done
+  [ $changed = 0 ] && echo "(no change in the sections the baseline has)"
+  rm -rf "$tmp"
 fi
