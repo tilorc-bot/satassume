@@ -51,8 +51,23 @@ def test_generated_tables_are_registered_and_preferred(monkeypatch):
         refine(log(x), Q.negative(x))
 
 
+SMOKE_FAMILY = "inverse"
+"""The one family whose fixpoint check runs by default (the cheapest to
+regenerate); the others are marked ``full`` and run when
+``SATREFINE_FULL_TESTS=1`` (see ``conftest.py``; the gates run them)."""
+
+
+def _family_param(module):
+    family = module.__name__.rsplit(".", 1)[-1]
+    return pytest.param(module, id=family, marks=() if family == SMOKE_FAMILY else pytest.mark.full)
+
+
+def test_smoke_family_generates():
+    assert SMOKE_FAMILY in {m.__name__.rsplit(".", 1)[-1] for m in family_modules()}
+
+
 @pytest.mark.slow
-@pytest.mark.parametrize("module", family_modules(), ids=lambda m: m.__name__.rsplit(".", 1)[-1])
+@pytest.mark.parametrize("module", [_family_param(m) for m in family_modules()])
 def test_generated_module_is_up_to_date(module, monkeypatch):
     monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
     family = module.__name__.rsplit(".", 1)[-1]

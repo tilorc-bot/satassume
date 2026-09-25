@@ -22,9 +22,9 @@ EXPECTED = {   # rules the generator must produce and verify
 }
 
 
-@pytest.fixture(scope="module")
-def rules():
-    return specialize_table(IDENTITIES)
+@pytest.fixture(scope="session")
+def rules(shared):
+    return shared("specialize-power_exp_log", lambda: specialize_table(IDENTITIES))
 
 
 def test_expected_rules_are_generated(rules):

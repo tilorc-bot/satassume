@@ -90,6 +90,7 @@ from __future__ import annotations
 
 import itertools
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Any, Callable, Iterable, Iterator, NamedTuple
 
 from sympy import (Abs, And, Dummy, I, Not, Or, Piecewise, Q, S, Symbol, arg, ceiling, count_ops, exp, expand_mul,
@@ -609,7 +610,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             terms = Add.make_args(target)
             with_unit = []
             for t in terms:
-                ratio = (t/unit).cancel()
+                ratio = _ratio(t, unit)
                 if not ratio.has(S.Pi) and not ratio.has(S.ImaginaryUnit):
                     with_unit.append((t, ratio))
             if not with_unit:
@@ -647,6 +648,14 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
 _COMMUTATIVE = (Add, Mul, MatAdd, HadamardProduct, LatticeOp)
 
 
+@lru_cache(maxsize=4096)
+def _ratio(term: Any, unit: Any) -> Any:
+    """``term/unit``, cancelled: the coefficient of ``unit`` in ``term`` for the
+    ``n*unit + r`` form.  Remembered: the terms met are few, and ``cancel``
+    is most of the cost of that form."""
+    return (term/unit).cancel()
+
+
 def _match_seq(patterns: Iterable[Any], targets: Iterable[Any], assumptions: Any, b: Binding) -> Iterator[Binding]:
     patterns, targets = list(patterns), list(targets)
     if not patterns:
@@ -664,14 +673,30 @@ def bindings(pattern: Any, target: Any, assumptions: Any = True) -> Iterator[Bin
 def subst(expr: Any, binding: Binding, rebuild: bool = False) -> Any:
     """Substitute a binding: symbols by ``xreplace``, head wildcards by their class;
     with ``rebuild``, put a partial match's result back into what was kept."""
-    heads = {k: v for k, v in binding.items() if isinstance(k, UndefinedFunction)}
-    syms = {k: v for k, v in binding.items() if isinstance(k, Basic) and not isinstance(k, UndefinedFunction)}
+    out = expr
+    if binding:
+        items = [item for item in binding.items() if item[0] is not REBUILD]
+        try:
+            out = _substituted(expr, frozenset(items))
+        except TypeError:          # an unhashable part (a mutable matrix)
+            out = _substituted.__wrapped__(expr, items)
+    if rebuild and REBUILD in binding:
+        out = binding[REBUILD](out)
+    return out
+
+
+@lru_cache(maxsize=8192)
+def _substituted(expr: Any, items: Iterable) -> Any:
+    """:func:`subst` without the rebuild, remembered: the rows' hypotheses and
+    right sides are substituted with the same bindings many times (every pass
+    of the fixed point, every branch of a split), and each substitution
+    rebuilds and re-evaluates the expression."""
+    heads = {k: v for k, v in items if isinstance(k, UndefinedFunction)}
+    syms = {k: v for k, v in items if isinstance(k, Basic) and not isinstance(k, UndefinedFunction)}
     out = expr.xreplace(syms) if syms else expr
     if heads:
         out = out.replace(lambda e: isinstance(e, AppliedUndef) and e.func in heads,
                           lambda e: heads[e.func](*e.args))
-    if rebuild and REBUILD in binding:
-        out = binding[REBUILD](out)
     return out
 
 
@@ -725,7 +750,7 @@ def default_measure(heads: Iterable[type]) -> Measure:
             elif not a.is_Atom:
                 structure += 1
         bad = sum(not _provably_positive(n.args[0], assumptions) for n in nodes if n.args)
-        return (structure, bad, count_ops(e))
+        return (structure, bad, size(e))
     return measure
 
 
@@ -743,11 +768,25 @@ def _distributed(cand: Any) -> Any:
     grows, such as a binomial, is left alone)."""
     if not isinstance(cand, Expr) or not cand.has(Add):
         return cand
+    return _distributed_expr(cand)
+
+
+@lru_cache(maxsize=4096)
+def _distributed_expr(cand: Expr) -> Expr:
+    """:func:`_distributed` of an expression, remembered (a candidate is
+    distributed again every time its row is tried)."""
     try:
         flat = expand_mul(cand)
     except Exception:  # noqa: BLE001
         return cand
-    return flat if count_ops(flat) < count_ops(cand) else cand
+    return flat if size(flat) < size(cand) else cand
+
+
+@lru_cache(maxsize=8192)
+def size(e: Any) -> int:
+    """``count_ops(e)``, remembered: the tie-breaker of every rewrite ordering,
+    measured again for the same expressions in every pass."""
+    return count_ops(e)
 
 
 _splitting: list[bool] = [False]

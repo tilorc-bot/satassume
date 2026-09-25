@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Iterable
 
-from sympy import Function, Q, Symbol, count_ops
+from sympy import Function, Q, Symbol
 from sympy.core import Add, Mul
 
-from ._engine import _is_negation
+from ._engine import _is_negation, size
 
 Handler = Callable[[Any, Any], Any]
 
@@ -41,7 +41,7 @@ ZERO = (_F(_x), _F(0), Q.zero(_x))
 
 def node_measure(heads: Iterable[type]) -> Callable[[Any, Any], tuple]:
     """``(nodes, structure, size)``: the number of nodes whose head is in
-    ``heads``, the factors or terms under them, then ``count_ops``."""
+    ``heads``, the factors or terms under them, then ``count_ops`` (:func:`._engine.size`)."""
     heads = tuple(heads)
 
     def measure(e: Any, assumptions: Any) -> tuple:
@@ -55,7 +55,7 @@ def node_measure(heads: Iterable[type]) -> Callable[[Any, Any], tuple]:
                 structure += len(a.args)
             elif not a.is_Atom:
                 structure += 1
-        return (len(nodes), structure, count_ops(e))
+        return (len(nodes), structure, size(e))
     return measure
 
 
@@ -63,7 +63,7 @@ def exp_node_measure(e: Any, assumptions: Any) -> tuple:
     """``(exp nodes, size)``: the ordering for ``exp(a + b) -> exp(a)*exp(b)``, which
     must fire only when a factor evaluates away (``exp(log(Abs(p)))``)."""
     from sympy import exp
-    return (len(e.atoms(exp)), count_ops(e))
+    return (len(e.atoms(exp)), size(e))
 
 
 def negative_number_base_measure(e: Any, assumptions: Any) -> tuple:
@@ -72,4 +72,4 @@ def negative_number_base_measure(e: Any, assumptions: Any) -> tuple:
     rewrites ``(-x)**n`` back to ``-x**n`` for odd ``n``, a cycle)."""
     from sympy.core import Pow
     negative = sum(1 for node in e.atoms(Pow) if node.base.is_number and node.base.is_negative)
-    return (negative, count_ops(e))
+    return (negative, size(e))
