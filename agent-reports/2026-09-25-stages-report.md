@@ -191,7 +191,7 @@ stated table once, in its owner: complex_parts' `EXP_FORMS` is
 power_exp_log's, and `SPLITS`, `NEGATIVE_BASE` and `BOUNDED` were not
 counted before.
 
-## 4. Stage 4, trig and hyperbolic (measured, not landed)
+## 4. Stage 4, trig and hyperbolic (considered and rejected)
 
 Prototype (script in the session scratchpad, battery trig and hyperbolic
 cases, live mode):
@@ -224,41 +224,78 @@ the trig rows are restricted the same way. I did not land stage 4. The
 trig family's docstring already says the exponential-form derivation
 "produces quotient forms that are not v3's", and the measurement agrees.
 
-## 5. Gates at b44342b (`/home/tilo/fable-rewrite/.claude/gates/stages-b44342b`, base `int-f686dcc`)
+**Decision (coordinator, 2026-09-25): rejected.** Stage 4 is not done.
+Trig through definitions saves about 6 rows (12 shift rows become 4
+definitions, plus 2 new base -1 rows) and needs a new engine fold of
+about 20 lines. The cost is 6 to 14 trig battery cases moving from
+"same" to "other form": 208/8 with the rows against 194/22 with the
+definitions, or 202/14 with the two extra rows. Hyperbolic through trig
+fires where v3 expects unchanged, because the trig rows fire for any
+even or odd `n` while v3's hyperbolic rows need `m mod 4`. The gate
+forbids that. The trig and hyperbolic families keep their stated rows.
 
-- **Suite:** 2,353 passed, 0 failed (the baseline: 2,350 passed, 2 failed;
-  both failures were the needs tests fixed here).
-- **Scoreboard, live:** identical per family to the baseline.
+## 5. Gates at 3865d76 (`/home/tilo/fable-rewrite/.claude/gates/stages-3865d76`, base `int-f686dcc`)
+
+Run with `JOBS=9 SLOTS=11 SUITE_WORKERS=4`, `PYTHONHASHSEED=0`, 1,191 s.
+It covers every commit after b44342b: 6ae3602, the merge c8dab08, 04b9b1e
+and 3865d76. The fixpoint rerun on this head wrote the four generated
+files byte for byte as committed (section 6), so the gated tables are
+the regenerated ones.
+
+- **Suite:** 2,355 passed, 0 failed, 1,917 skipped, 30 xfailed. The
+  baseline had 2,350 passed and 2 failed, and both failures were needs
+  tests that this branch fixes.
+- **Scoreboard, live:** identical per family to the baseline (1,033 same,
+  40 other, 13 miss, 629 unchanged as expected, 21 extra, 0 wrong,
+  0 crash).
 - **Scoreboard, generated:** identical except power_exp_log, which goes
-  from 98 same / 3 other to 100 same / 1 other (the bare `log(x)` row now
-  comes last). Wrong and crash stay 0, and unchanged-as-required stays at
-  629.
+  from 98 same / 3 other to 100 same / 1 other. Totals: 1,032 same,
+  41 other, 13 miss, 629 unchanged as expected, 21 extra, 0 wrong,
+  0 crash.
 - **Differential** (seeds 2, 3, 7, both modes): 0 numerically different
-  results; the unsound and crash lines are unchanged from the baseline.
-  Two form differences moved between "same" and "different but
-  numerically equal", in seeds 3 and 7.
-
-The commits after b44342b (6ae3602, the merge c8dab08, and 04b9b1e) have
-not been through a gate run. Their targeted tests pass. See the handoff.
+  results, and no crashes. The unsound counts on the identities side
+  (2, 3, 1) are the same as the baseline's in every run. Changes against
+  the base:
+  - Seed 3 in both modes and seed 7 in generated mode: one case each
+    moves from "both fire, same result" to "different but numerically
+    equal". These are the same form differences seen at b44342b.
+  - Seed 2: v3 timed out on one case (timeout=1 on the v3 side, which
+    had 328 s against 174 s in the base run). That removes one
+    both-fire case. The identities side is unchanged.
 
 ## 6. Metrics
 
-| | f686dcc | now |
+| | f686dcc | now (3865d76) |
 | --- | --- | --- |
 | stage 0 rows (every stated table once, plus `_simple.BOUNDS` entries before) | 180 | 166 |
 | complex_parts stated rows | 45 | 32 (5 facts, 24 rules, 2 ranges, 1 split) |
 | generated (derived) rules: complex_parts / power_exp_log / integer_funcs / inverse | 36 / 17 / 11 / 7 | 40 / 17 / 11 / 7 |
 | function-specific lines in the engine (approximate, lines naming a function other than their subject) | about 27 | about 14 |
-| family code lines | 472 | 462 at b44342b (complex_parts 81, inverse 53 after the compact imports) |
-| engine code lines | 1,235 | 1,404 at b44342b (`_stages` 116, `_dispatch` 197) |
-| generation time, one round (s): integer_funcs / complex_parts / power_exp_log / inverse | 218 / 315 / 318 / 27 | 162 / 207 / 269 / 28; round 2: 166 / 230 / 283 / skipped |
+| family code lines | 472 | 478 (complex_parts 88, inverse 57, minmax_deltas 31) |
+| engine code lines | 1,235 | 1,434 (`_stages` 125, `_dispatch` 211, `_engine` 623) |
+| generation time, round 1 (s): integer_funcs / complex_parts / power_exp_log / inverse | 218 / 315 / 318 / 27 | 164 / 198 / 306 / 27 |
+| generation time, round 2 (s) | 679 at b44342b (166 / 230 / 283 / skipped) | 422 (155 / 267 / skipped / skipped) |
+| fixpoint total (s) | 1,461 (first run, on the old tables) | 1,117 |
 
-The gate summary at b44342b shows family lines 528. That count came
-from `ruff --fix` spreading two import blocks to one name per line;
-6ae3602 restores the compact form.
+Rows are from the scoreboard's `count_rows()`, lines from the gate
+summary.
+
+Fixpoint rerun on 3865d76 (`refine_specialize.py --write`,
+`PYTHONHASHSEED=0`, load about 2): 2 rounds. Every generated table
+changed only in round 1. The rule rows are identical to b44342b in all
+four families, and the written files are byte-identical to the
+committed ones, comments included. So the same-infinity `eq` proof and
+the firing cap per chain change no derived row.
+
+Round 2 with the "regenerate only if a table it looked up changed"
+check (6ae3602) regenerates integer_funcs and complex_parts. It skips
+power_exp_log and inverse. The handoff expected complex_parts alone, but
+integer_funcs is first in stage order. In round 1 it ran against empty
+tables for the keys of the later families, so round 2 has to run it
+again. Round 2 costs 422 s, against 679 s at b44342b.
 
 ## 7. Commits on `ri/stages`
 
 746d4ad, 5134182, 0fb75d5, 1813eb1, 27274dc, b44342b, 6ae3602, c8dab08
-(merge of `origin/refine-identities` 4810c71), 04b9b1e, and the handoff
-commit.
+(merge of `origin/refine-identities` 4810c71), 04b9b1e, 3865d76 (handoff), and the
+commit with the final gate numbers (this report).

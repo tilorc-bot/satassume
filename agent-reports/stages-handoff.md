@@ -97,3 +97,10 @@ finished integer_funcs) at the handoff request. It never wrote anything.
   `DEFINITIONS` plus the "Abs, re, im under sign facts" and linearity rows.
 - Identity rows can now be 4-tuples (`unless`). Code that unpacks
   `for lhs, rhs, dom in rows` over family tables must slice `row[:3]`.
+
+## Update, 2026-09-25 (second agent)
+
+Steps 1 to 3 are done, and step 4 was rejected by the coordinator. The
+fixpoint on 3865d76 leaves the generated files byte-identical. Round 2
+takes 422 s. The gates pass (`.claude/gates/stages-3865d76`). See
+report sections 4 to 6.
