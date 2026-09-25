@@ -32,18 +32,25 @@ from collections.abc import Iterable
 
 
 class Clause(list):
-    """A clause: a list of internal literals plus an activity score.
+    """A clause created during search: a list of internal literals plus an
+    activity score.
 
-    Watched literals are always at positions 0 and 1.  For a clause that is
-    the reason of an assignment, the implied literal is at position 0.
+    Every clause is a list of internal literals.  Watched literals are
+    always at positions 0 and 1.  For a clause that is the reason of an
+    assignment, the implied literal is at position 0.
 
-    ``learnt`` and ``act`` are class-level defaults so that constructing a
-    clause is a plain (C-level) list construction; learnt clauses set both
-    on the instance.
+    Problem clauses (``add_*``) are plain lists, which are cheaper to
+    build; learnt clauses and theory clauses are ``Clause`` instances.
+    ``learnt`` and ``act`` are class-level defaults; learnt clauses set both
+    on the instance.  Use :func:`_is_learnt` to test any clause.
     """
 
     learnt = False
     act = 0.0
+
+
+def _is_learnt(c: list) -> bool:
+    return c.__class__ is Clause and c.learnt
 
 
 def _luby(y: float, x: int) -> float:
@@ -142,7 +149,7 @@ class Solver:
             return
         k = v - n
         self._val.extend([None] * (2 * k))
-        self._watches.extend([] for _ in range(2 * k))
+        self._watches.extend([[] for _ in range(2 * k)])
         self._level.extend([0] * k)
         self._reason.extend([None] * k)
         self._act.extend([0.0] * k)
@@ -308,10 +315,9 @@ class Solver:
                 self._ok = False
                 return False
             return True
-        c = Clause(out)
-        self._clauses.append(c)
-        self._watches[out[0]].append(c)
-        self._watches[out[1]].append(c)
+        self._clauses.append(out)
+        self._watches[out[0]].append(out)
+        self._watches[out[1]].append(out)
         return True
 
     def add_clauses(self, clauses) -> bool:
@@ -371,10 +377,9 @@ class Solver:
                     return False
                 nv = self._nvars
                 continue
-            c = Clause(out)
-            cls.append(c)
-            watches[out[0]].append(c)
-            watches[out[1]].append(c)
+            cls.append(out)
+            watches[out[0]].append(out)
+            watches[out[1]].append(out)
         self._witness = None
         self._stamp += 1
         return True
@@ -409,7 +414,7 @@ class Solver:
                     self._reason[l >> 1] = None
                     self._trail.append(l)
                 else:
-                    c = Clause(lits)
+                    c = list(lits)
                     cls.append(c)
                     watches[lits[0]].append(c)
                     watches[lits[1]].append(c)
@@ -433,9 +438,9 @@ class Solver:
         top = base + nvars - 1
         if top > self._nvars:
             self._grow(top)
-        val = self._val
         lo = 2 * base
-        if any(val[l] is not None for l in range(lo, lo + 2 * nvars)):
+        n2 = 2 * nvars
+        if self._val[lo:lo + n2].count(None) != n2:
             ok = True
             ext = self._to_ext
             for c in pattern:
@@ -446,10 +451,9 @@ class Solver:
         append = clauses.append
         for c in pattern:
             out = [l + lo for l in c]
-            cl = Clause(out)
-            append(cl)
-            watches[out[0]].append(cl)
-            watches[out[1]].append(cl)
+            append(out)
+            watches[out[0]].append(out)
+            watches[out[1]].append(out)
         self._witness = None
         self._stamp += 1
         return True
@@ -935,7 +939,7 @@ class Solver:
         p = -1
         index = len(trail) - 1
         while True:
-            if confl.learnt:
+            if _is_learnt(confl):
                 self._bump_clause(confl)
             for k in range(0 if p < 0 else 1, len(confl)):
                 q = confl[k]
