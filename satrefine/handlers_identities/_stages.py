@@ -101,8 +101,10 @@ def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MA
                 entry["seconds"].append(round(seconds, 1))
                 log(f"round {rnd} {fam}: {len(rules)} rules in {seconds:.0f}s")
                 if entry["rules"] != rules:
+                    previous = entry.get("records", {})
                     entry.update(rules=rules, keys=keys, verdicts=verdicts,
-                                 records={r: _specialize.records.get(r) for r in rules})
+                                 records={r: previous[r] if r in previous else (rnd, _specialize.records.get(r))
+                                          for r in rules})
                     entry["rounds"].append(rnd)
                     install(rules, keys)
                     changed.append(fam)
@@ -153,7 +155,8 @@ def row_labels(generated: dict[str, dict] | None = None) -> dict[tuple, str]:
 
 
 def record_lines(record: Any, labels: dict[tuple, str]) -> list[str]:
-    """The comment lines of one derivation record."""
+    """The comment lines of one derivation record ``(round, (lhs, domain, profile, trace))``."""
+    rnd, record = record if isinstance(record, tuple) and len(record) == 2 else (None, record)
     if record is None:
         return ["# derivation: not recorded"]
     lhs, domain, profile, trace = record
@@ -161,7 +164,7 @@ def record_lines(record: Any, labels: dict[tuple, str]) -> list[str]:
     fired = list(dict.fromkeys(labels.get(_key(row), f"{kind} {row[0]} -> {row[1]}")
                                for kind, row in trace if kind != "ask"))
     asks = list(dict.fromkeys(str(p) for kind, p in trace if kind == "ask"))
-    lines = [f"# from {source or lhs} under {profile}"]
+    lines = [f"# {f'round {rnd}: ' if rnd else ''}from {source or lhs} under {profile}"]
     if fired:
         lines.append("#   fired: " + ", ".join(fired))
     if asks:
