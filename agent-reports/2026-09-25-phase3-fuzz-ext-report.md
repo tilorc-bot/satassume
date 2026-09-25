@@ -121,7 +121,38 @@ Other SymPy `ask` answers seen while triaging, which refine does not reach under
 
 ## 5. Gates
 
-GATES_PLACEHOLDER
+`.claude/gates/fuzz-ext-adf44a2` (the code of `adf44a2`: this branch merged with `origin/refine-identities` at `b01b7a9`), against the baseline `.claude/gates/speed-a45-de12f0a`. `PYTHONHASHSEED=0`, `JOBS=9 SLOTS=11 SUITE_WORKERS=4`, 989 s.
+
+**Existing sections:** identical to the baseline except the timing lines (`time=...s`, termination `8 passed in 53 s`).
+- Scoreboards: identical in both modes.
+- Differential seeds 2, 3, 7 in both modes and satassume seed 2 in both modes: identical counts.
+- Termination: 8 passed.
+- No engine change, as expected.
+
+**Suite:** 2,518 passed, 22 failed, 1,917 skipped, 30 xfailed.
+- The 22 failures are exactly the new needs tests: 12 acsch, 10 Hadamard.
+- The baseline had 2,464 passed; the 54 new passing tests are `test_fuzz_ext.py` and the 2 acsch guards.
+
+**New sections** (no baseline; recorded here):
+
+| Section | Package | Fired | Checked / unchecked | Unsound | Crash / timeout | Cases checked at ±oo | Convention-excused cases |
+|---|---|---|---|---|---|---|---|
+| ext gen, seed 2, 1,000 cases (835 compared) | v3 | 136 | 121 / 12 | 3 (1 finite, 2 at ±oo) | 3 / 2 | 54 | 0 |
+| | identities | 147 | 133 / 14 | 0 | 0 / 6 | 60 | 0 |
+| ext live, same cases | v3 | 136 | 121 / 12 | 3 | 3 / 2 | 54 | 0 |
+| | identities | 146 | 132 / 14 | 0 | 0 / 8 | 59 | 0 |
+| matrices gen, seed 2, 1,500 cases (1,457 compared) | v3 | 474 | 444 / 30 | 0 | 0 / 0 | – | – |
+| | identities | 419 | 393 / 26 | 0 | 3 / 0 | – | – |
+| matrices live | identities | 419 | 393 / 26 | 0 | 3 / 0 | – | – |
+
+- **Both-fire-different verdicts:** ext 11 / 12, all numerically equal. Matrices 109: 100 numerically equal, 9 undecided, 0 different.
+- **Identities matrix crashes:** the 3 crashes are the `HadamardProduct(X, X)` crash (needs test).
+- **Timeouts:**
+  - The ext section runs with a 20 s timeout. Its identities timeouts (6 generated, 8 live: KroneckerDelta at ±oo, Min/Max) depend on the machine load, so its timeout and fired counts can move by a few between gate runs.
+  - Compare its unsound and crash lines. The default sections have no timeouts.
+- **Cost:**
+  - The ext section is the longest gate task: 750–800 s at load about 13, against 190–310 s for a default differential section.
+  - `EXT_CASES=500` halves it. I left 1,000 so the section sees about 60 cases checked at an infinite point per run.
 
 ## 6. Open items
 
