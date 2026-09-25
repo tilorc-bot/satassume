@@ -919,6 +919,40 @@ def _agree_at(expr: Any, cand: Any, point: dict, assumptions: Any) -> bool:
         return False
 
 
+_real_part_dummies: dict = {}
+
+
+def _real_part_dummy(s: Any) -> Dummy:
+    """The real symbol ``t`` with ``s = I*t`` that :func:`case_split` splits an imaginary ``s``
+    on: one per ``s``, so that the explorations of every split on ``s`` in a call refine the
+    same expressions and share the dispatcher's result cache (a fresh ``Dummy`` per split made
+    each split redo all of them).  Distinct symbols get distinct dummies, so a split on ``t``
+    nested in a split on ``s`` cannot capture it."""
+    t = _real_part_dummies.get(s)
+    if t is None:
+        t = _real_part_dummies[s] = Dummy("t")
+    return t
+
+
+def _linked(s: Any, groups: list[set]) -> set:
+    """``s`` and every symbol the assumptions link to it: the symbols of the conjuncts
+    (``groups``, one set per conjunct) reachable from ``s`` through shared symbols."""
+    linked = {s}
+    rest = list(groups)
+    grown = True
+    while grown:
+        grown = False
+        keep = []
+        for g in rest:
+            if g & linked:
+                linked |= g
+                grown = True
+            else:
+                keep.append(g)
+        rest = keep
+    return linked
+
+
 def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, im, arg)) -> Any | None:
     """Resolve leftover bookkeeping by a sign split on one symbol under it.
 
@@ -932,17 +966,29 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
     result must also agree with ``expr`` at ``s = 0`` by evaluation.  This
     is the two-branch case split whose branches agree, without
     materializing a ``Piecewise``.
+
+    **Pre-test.**  A split on ``s`` needs every opaque node of ``cand`` to
+    collapse in every case.  A node none of whose symbols the assumptions
+    link to ``s`` (no conjunct of the assumptions shares a symbol with it,
+    transitively; :func:`_linked`) cannot: the assumptions then fall apart
+    into a part on the node's symbols and a part on ``s``'s, so a case
+    ``Q.positive(s)`` or ``Q.negative(s)`` adds nothing about the node, and
+    the node is already what refining ``cand`` under the assumptions left
+    opaque.  Such a split is not explored.  (Measured before the pre-test on
+    the battery and the ``power_exp_log`` generation: 529 of 529 such nodes
+    stayed opaque, and exploring them took 5% and 17% of the time.)
     """
     syms: set = set()
     for node in cand.atoms(*opaque):
         syms |= node.free_symbols
     ask = _upstream.ask
+    groups = None
     for s in sorted(syms, key=str):
         if ask(Q.imaginary(s), assumptions) is True and ask(Q.positive(-I*s), assumptions) is None:
             # s = I*t with t real and nonzero: the sign cases are then real-sign
             # reasoning, which the provers do (they do not relate Q.negative(-I*s)
             # to Q.positive(I*s)); the answer is mapped back with t = -I*s
-            t = Dummy("t")
+            t = _real_part_dummy(s)
             merged = case_split(expr.xreplace({s: I*t}), cand.xreplace({s: I*t}),
                                 And(assumptions, Q.real(t), ~Q.zero(t)), opaque)
             if merged is not None:
@@ -952,6 +998,11 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
         if split is None:
             continue
         cases, zero_excluded = split
+        if groups is None:
+            groups = [c.free_symbols for c in And.make_args(assumptions)]
+        linked = _linked(s, groups)
+        if any(not node.free_symbols & linked for node in cand.atoms(*opaque)):
+            continue                     # a node the split cannot reach (see the docstring)
         branches = [br for br, _ in cases]
         # stage one: the bookkeeping nodes alone.  A node's refinement is context-free,
         # so one that does not collapse in some case decides the split (no stage two);
@@ -962,11 +1013,15 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
             vals = []
             for br in branches:
                 try:
-                    vals.append(_explore(node, And(assumptions, br)))
+                    v = _explore(node, And(assumptions, br))
                 except ValueError:
                     vals = None
                     break
-            if vals is None or any(v.has(*opaque) for v in vals):
+                if v.has(*opaque):
+                    vals = None                  # the node fails in this case: the other cases cannot help
+                    break
+                vals.append(v)
+            if vals is None:
                 collapsed = False
                 break
             if any(v != vals[0] for v in vals):
