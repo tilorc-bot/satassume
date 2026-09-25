@@ -228,9 +228,35 @@ as upstream candidates.
     `log(p*r) -> log(-p) + log(-r)`. They are pre-existing and belong to the engine agent.
     The third I did not re-run on the base.
 - `test_matrices.py` + `test_engine_matrices.py`: 150 passed, 1 xfailed.
-- Battery and scoreboard: **not run** by me. The guard changes `ask` answers, so the
-  scoreboard is the one gate left open. Only answers under imaginary (or otherwise
-  non-real) facts change, and the differential moved only toward fewer wrong results.
+- **Scoreboard** (`tools/refine_identity_scoreboard.py --show`, full battery of 1,736
+  cases). Every run used `PYTHONHASHSEED=0`, one at a time, on `ri/matfuzz` and on a
+  clean copy of 2fd72b8. Each mode was run on both trees, although nothing differed
+  from phase 1 in generated mode.
+
+  | family | phase 1 (generated) | ri/matfuzz generated | ri/matfuzz live | 2fd72b8 live |
+  | --- | --- | --- | --- | --- |
+  | combinatorial | 64/0/3/40/0/0/0 | 64/0/3/40/0/0/0 | 64/0/3/40/0/0/0 | same |
+  | complex_parts | 150/8/4/79/1/0/0 | 150/8/4/79/1/0/0 | 151/7/4/79/1/0/0 | same |
+  | hyperbolic | 196/30/0/142/0/0/0 | 196/30/0/142/0/0/0 | 196/30/0/142/0/0/0 | same |
+  | integer_funcs | 67/0/0/31/0/0/0 | 67/0/0/31/0/0/0 | 67/0/0/31/0/0/0 | same |
+  | inverse | 124/2/0/164/12/0/0 | 124/2/0/164/12/0/0 | 124/2/0/164/12/0/0 | same |
+  | matrices | 50/0/3/53/0/0/0 | 50/0/3/53/0/0/0 | 50/0/3/53/0/0/0 | same |
+  | minmax_deltas | 65/0/0/23/0/0/0 | 65/0/0/23/0/0/0 | 65/0/0/23/0/0/0 | same |
+  | power_exp_log | 98/3/3/66/3/0/0 | 98/3/3/66/3/0/0 | 99/2/3/66/3/0/0 | same |
+  | trig | 216/0/0/36/0/0/0 | 216/0/0/36/0/0/0 | 216/0/0/36/0/0/0 | same |
+  | total | 1,030/43/13/634/16/0/0 | 1,030/43/13/634/16/0/0 | 1,032/41/13/634/16/0/0 | same |
+
+  Columns: same as v3 / other correct form / miss / unchanged as required / extra /
+  wrong / crash.
+
+  The `--show` listings (every case that is not a clean pass) are **identical**
+  between `ri/matfuzz` and 2fd72b8, in both modes. So the guard changed no battery
+  case. The live mode is 2 "other form" cases better than generated, on both trees,
+  so that difference is not from this branch:
+  - `log(x**3)` under `Q.negative(x)`;
+  - `Abs(x*y)` under `Q.zero(y)`.
+
+  189 cases are numerically unchecked in every run, the same number as before.
 
 ## 4. Commits (on `ri/matfuzz`)
 
@@ -246,7 +272,6 @@ as upstream candidates.
 ## 5. Open
 
 - Engine: the MatrixElement crash in `stated_bounds` (needs test filed).
-- The scoreboard in both `SATREFINE_IDENTITIES` modes with the guard is not run.
 - Matrix coverage gaps against v3 (section 1) are misses, not wrong answers; adding rows
   is a separate decision.
 - The battery's numeric check still skips matrix symbols (`tools/refine_identity_scoreboard.py`,
