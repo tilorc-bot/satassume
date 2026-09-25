@@ -104,7 +104,16 @@ Here a is v3 (`handlers_v3`) and b is `handlers_identities`.
 
 ## 3. Test suite (`tests/refine_identities`, `PYTHONHASHSEED=0`)
 
-TESTS_PLACEHOLDER
+| Mode | Passed | Failed | Skipped | Xfailed | Time |
+| --- | --- | --- | --- | --- | --- |
+| generated | 2,182 | 6 | 1,917 | 30 | 22 min |
+| live | 2,182 | 6 | 1,917 | 30 | 22 min |
+
+All 6 failures are needs tests, which are open requests:
+`needs/test_checker_abs_of_imaginary_is_zero.py` (2),
+`needs/test_checker_atan2_power_firing_cap.py` (3, one of them new) and
+`needs/test_baseline_hash_seed_dependence.py` (1, new). Every other test
+passes.
 
 ## 4. The hash seed changes results (found here, not caused by the merge)
 
