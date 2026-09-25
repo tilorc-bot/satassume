@@ -83,6 +83,13 @@ def _norm(row) -> tuple:
     return tuple(row) + (None,) * (4 - len(row))
 
 
+def _table_parts(handler) -> list:
+    """The table handlers (with ``rows``) of a key: the handler itself, or the parts of a ``chain``."""
+    if hasattr(handler, "rows"):
+        return [handler]
+    return [t for part in getattr(handler, "parts", ()) for t in _table_parts(part)]
+
+
 def ablate(family: str, drop: list[int]) -> list[str]:
     """Remove ``RULES[i]`` for ``i`` in ``drop`` from every table of the module; describe what was removed."""
     from satrefine._upstream import handlers_dict
@@ -90,8 +97,7 @@ def ablate(family: str, drop: list[int]) -> list[str]:
     rules = list(mod.RULES)
     gone = [_norm(rules[i]) for i in drop]
     for key in family_keys(family):
-        h = handlers_dict[key]
-        if hasattr(h, "rows"):
+        for h in _table_parts(handlers_dict[key]):
             h.rows[:] = [r for r in h.rows if _norm(r) not in gone]     # the closure's own list
     for name, value in vars(mod).items():
         if isinstance(value, list) and value and all(isinstance(r, tuple) for r in value):
