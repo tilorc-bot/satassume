@@ -17,11 +17,18 @@ from ._common import Compiled
 
 Template = Callable[[Any], Any]
 
+#: bound of the :meth:`TemplateRegistry.clauses_for` memo (cleared when full)
+CLAUSES_CACHE_SIZE = 50_000
+
 
 class TemplateRegistry:
     def __init__(self) -> None:
         self._by_class: Dict[type, List[Template]] = {}
         self._mro_cache: Dict[type, List[Template]] = {}
+        #: ``expr -> (compiled, formulas)`` of :meth:`clauses_for`; templates
+        #: are pure functions of the expression, so the result only changes
+        #: when templates are registered (which clears it)
+        self._clauses_cache: Dict[Any, Any] = {}
 
     def register(self, *classes: type):
         """Decorator registering ``f`` as a template for ``classes``."""
@@ -32,6 +39,7 @@ class TemplateRegistry:
             for cls in classes:
                 self._by_class.setdefault(cls, []).append(f)
             self._mro_cache.clear()
+            self._clauses_cache.clear()
             return f
 
         return deco
@@ -58,7 +66,10 @@ class TemplateRegistry:
         """``(compiled, formulas)``: the compiled patterns and the plain
         formulas emitted by the templates matching ``type(expr)``.  This is
         what the engine uses; :meth:`facts_for` is the same information as
-        formulas."""
+        formulas.  Memoized per expression; the result must not be mutated."""
+        r = self._clauses_cache.get(expr)
+        if r is not None:
+            return r
         compiled: List[Compiled] = []
         formulas: List[Any] = []
         for f in self.templates_for(type(expr)):
@@ -67,7 +78,11 @@ class TemplateRegistry:
                 compiled.append(r)
             else:
                 _split(r, compiled, formulas)
-        return compiled, formulas
+        cache = self._clauses_cache
+        if len(cache) >= CLAUSES_CACHE_SIZE:
+            cache.clear()
+        r = cache[expr] = (compiled, formulas)
+        return r
 
     def classes(self) -> Iterable[type]:
         return self._by_class.keys()
