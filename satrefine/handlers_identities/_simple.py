@@ -116,6 +116,26 @@ def _tighter(current: tuple | None, bound: Any, strict: bool, lower: bool) -> tu
     return current
 
 
+def _empty(lo: Any, hi: Any, lo_open: bool, hi_open: bool) -> bool:
+    """Whether the interval is provably empty (``lo > hi``, or ``lo == hi`` with an open side)."""
+    if lo is None or hi is None:
+        return False
+    gap = lo - hi
+    return bool(gap.is_positive or (gap.is_zero and (lo_open or hi_open)))
+
+
+def _checked(bounds: tuple | None) -> tuple | None:
+    """``bounds``, or ``None`` when they are provably empty.
+
+    An empty interval means the stated facts contradict each other
+    (``Q.negative(k) & Q.gt(k, pi/2)``); every predicate would follow from it,
+    ``Q.positive(k)`` and ``Q.negative(k)`` alike, and rows conditioned on
+    opposite signs would undo each other forever (issue #10, B9).  Under
+    inconsistent assumptions any result is correct, so the bounds prove
+    nothing and the engine is left with what ``ask`` answers."""
+    return None if bounds is None or _empty(*bounds) else bounds
+
+
 def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
     """``(lo, hi, lo_open, hi_open)`` for ``u`` from the conjuncts of ``assumptions``.
 
@@ -126,18 +146,19 @@ def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
     kept and an unstated side is ``None``.  When nothing bounds ``u``
     itself but ``u`` is affine in a bounded quantity ``v`` (``x - 2*pi``
     under ``Q.le(x, 2*pi)``), the bounds of ``v`` are mapped.  ``None``
-    when nothing is stated.
+    when nothing is stated, or when the stated bounds are contradictory
+    (an empty interval, :func:`_checked`).
     """
     if not isinstance(assumptions, Basic):
         return None
-    direct = _direct_bounds(u, assumptions)
+    direct = _checked(_direct_bounds(u, assumptions))
     if direct is not None or u.is_Symbol:
         return direct
     for v in _stated_sides(assumptions) + sorted(u.free_symbols, key=str):
         if v == u or not u.has(v):
             continue
         aff = _affine(u, v)
-        rng = _direct_bounds(v, assumptions) if aff else None
+        rng = _checked(_direct_bounds(v, assumptions)) if aff else None
         if rng is None:
             continue
         a, c = aff
@@ -178,7 +199,8 @@ def _direct_bounds(u: Any, assumptions: Any) -> tuple | None:
 
 
 def full_bounds(u: Any, assumptions: Any) -> tuple | None:
-    """:func:`stated_bounds` completed by asking the sign facts for an unstated side."""
+    """:func:`stated_bounds` completed by asking the sign facts for an unstated side
+    (``None`` when that makes the interval empty, as in :func:`_checked`)."""
     lo, hi, lo_open, hi_open = stated_bounds(u, assumptions) or (None, None, False, False)
     ask = _upstream.ask
     if lo is None:
@@ -193,7 +215,7 @@ def full_bounds(u: Any, assumptions: Any) -> tuple | None:
             hi, hi_open = S.Zero, False
     if lo is None or hi is None:
         return None
-    return lo, hi, lo_open, hi_open
+    return _checked((lo, hi, lo_open, hi_open))
 
 
 def _stated_sides(assumptions: Any) -> list:

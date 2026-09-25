@@ -229,6 +229,7 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
 def main() -> None:
     args = parse()
     os.environ["SATREFINE_HANDLERS"] = args.handlers
+    os.environ.setdefault("SATREFINE_STRICT_LOOPS", "1")   # a tripped loop guard is a crash here
     import satrefine  # noqa: F401
     if args.handlers == "handlers_identities":
         count_rows()
