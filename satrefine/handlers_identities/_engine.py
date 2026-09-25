@@ -350,7 +350,9 @@ class _Shape(NamedTuple):
     """What :func:`_match` needs to know about a pattern besides the target,
     computed once per pattern (:func:`_shape`)."""
     unit_form: tuple[Any, Any, Any] | None   # :func:`_is_unit_coefficient_form`
-    rest_syms: tuple                         # symbols of a sum or product standing for "the rest"
+    rest: tuple                              # positions of the arguments of a sum or product that are
+                                             # symbols standing for "the rest" (positions, not the symbols:
+                                             # an equal pattern met later may hold other, equal objects)
     has_part: bool                           # an argument is a :func:`part`
 
 
@@ -359,20 +361,23 @@ _shapes: dict = {}
 
 def _shape(pattern: Any) -> _Shape:
     """The :class:`_Shape` of ``pattern``, remembered (patterns are the rows' left
-    sides and their subterms, a fixed set)."""
+    sides and their subterms, a fixed set).  It holds nothing that must be
+    identical to a part of ``pattern``: SymPy's cache may be cleared, so an equal
+    pattern built later can consist of other objects."""
     try:
         return _shapes[pattern]
     except KeyError:
         pass
-    unit_form = rest_syms = None
+    unit_form = None
+    rest: tuple = ()
     has_part = False
     if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, MatrixExpr):
         args = pattern.args
         has_part = any(isinstance(a, _Part) for a in args)
-        rest_syms = tuple(a for a in args if a.is_Symbol and not isinstance(a, _Part)
-                          and not any(o.has(a) for o in args if o is not a))
+        rest = tuple(i for i, a in enumerate(args) if a.is_Symbol and not isinstance(a, _Part)
+                     and not any(o.has(a) for o in args if o is not a))
         unit_form = _is_unit_coefficient_form(pattern)
-    shape = _shapes[pattern] = _Shape(unit_form, rest_syms or (), has_part)
+    shape = _shapes[pattern] = _Shape(unit_form, rest, has_part)
     return shape
 
 
@@ -503,12 +508,12 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
         return
     if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, MatrixExpr):
         shape = _shape(pattern)
-        rest_syms = shape.rest_syms
-        if len(rest_syms) == 1 and not shape.has_part and shape.unit_form is None:   # structure beside a rest symbol
+        if len(shape.rest) == 1 and not shape.has_part and shape.unit_form is None:   # structure beside a rest symbol
             if not isinstance(target, pattern.func):
                 return
-            rest_sym = rest_syms[0]
-            others = [a for a in pattern.args if a is not rest_sym]
+            at = shape.rest[0]
+            rest_sym = pattern.args[at]
+            others = pattern.args[:at] + pattern.args[at + 1:]
             for chosen in itertools.permutations(range(len(target.args)), len(others)):
                 picked = [target.args[i] for i in chosen]
                 remaining = [t for i, t in enumerate(target.args) if i not in chosen]
@@ -517,7 +522,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
                     if nb is not None:
                         yield nb
             return
-        if top and not rest_syms and isinstance(target, pattern.func) and len(target.args) > len(pattern.args) \
+        if top and not shape.rest and isinstance(target, pattern.func) and len(target.args) > len(pattern.args) \
                 and not shape.has_part:                                     # a sub-product of a longer product
             for chosen in itertools.permutations(range(len(target.args)), len(pattern.args)):
                 picked = [target.args[i] for i in chosen]
