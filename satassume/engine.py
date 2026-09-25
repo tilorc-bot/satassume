@@ -130,6 +130,9 @@ class Session:
     def __init__(self, engine: "Engine"):
         self.engine = engine
         self.solver = Solver()
+        # the single-node rule base, propagated by the solver from shared
+        # tables instead of 79 clauses per node (Solver.register_block)
+        self.solver.set_rule_block(RULE_INTERNAL, NPRED)
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
@@ -185,12 +188,11 @@ class Session:
         ext = engine.extensions
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
-        # 2. single-node rule base (bulk path, no per-clause sanitising),
-        #    unless the node is a constant whose closed unit facts decide
-        #    everything the rule base could say
+        # 2. single-node rule base (registered with the solver's rule-block
+        #    propagator, no clauses), unless the node is a constant whose
+        #    closed unit facts decide everything the rule base could say
         if not (len(compiled) == 1 and compiled[0].pattern.complete and not formulas):
-            self.solver.add_pattern(RULE_INTERNAL, b, NPRED)
-            self.nclauses += len(RULE_INTERNAL)
+            self.solver.register_block(b)
         else:
             self.solver.ensure_vars(b + NPRED - 1)
         # 3. cached context-free facts

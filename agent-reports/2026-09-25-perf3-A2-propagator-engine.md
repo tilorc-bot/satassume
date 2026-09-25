@@ -1,12 +1,14 @@
 # Agent report: perf round 3, item A2, the rule-block propagator, engine side
 
 - **Date:** 2026-09-25
-- **Status:** prepared, waiting for A1. The edit is an untracked patch
-  `.a2.patch` in the engine worktree (`/home/tilo/satassume/.worktrees/engine`),
-  against `9e8c3eb`, written for the API in the solver agent's work in
-  progress (`set_rule_block(block, nvars=None)`, `register_block(base) ->
-  bool`), which matches the design. Not synced, not A/B'd. Adapt to the
-  API A1's report publishes, then sync, gate and commit.
+- **Status:** implemented and measured on the Pi; **decision is the
+  orchestrator's** (A2 under 5% would revert A1 too). Commit
+  `engine: install the rule block as a propagator per session (A2)` on
+  `perf3-engine`, on top of A1 (`0b43aac` cherry-picked) on `main` at
+  `8166d8f`. A2's own contribution: **-8.3% and -7.1%** (`ab.py --rounds 3`
+  against a checkout of `8166d8f`); against the round's reference
+  `895a6c2`: -14.5% and -14.1%. Every answer identical on both gates; the
+  per-query log differs only in 25 solves' decision counts.
 - **Scope:** `satassume/engine.py` (two call sites); nothing else changes
 - **Read this if:** you land A2, review it, or read solver clause counts
 
@@ -102,7 +104,56 @@ only binds `self._rb = cached`; the engine passes the same
 prototype solver's tables and assign them, but that reaches into private
 attributes; the memo belongs in the solver.
 
-## Plan once A1 is on `main`
+## Result (A1 `0b43aac` + this commit, Pi)
+
+The edit is `.a2.patch` as prepared, unchanged: A1's API matched it
+(`set_rule_block(RULE_INTERNAL, NPRED)` in `Session.__init__`, tables
+cached per block object; `register_block(b)` for `add_pattern(RULE_INTERNAL,
+b, NPRED)` one for one; `ensure_vars` branch kept; `nclauses +=` dropped).
+
+**A/B, `tools/ab.py --rounds 3`** (interleaved, cold, fresh process per
+run; every run's answers match the recording):
+
+| reference | run | ref rounds | cand rounds | best-of-3 | change |
+|---|---|---|---|---|---:|
+| `895a6c2` (`perf-ref`) | 1 | 3.652 / 3.617 / 3.649 | 3.092 / 3.105 / 3.118 | 3.617 → 3.092 | **-14.5%** |
+| `895a6c2` (`perf-ref`) | 2 | 3.650 / 3.618 / 3.621 | 3.153 / 3.107 / 3.114 | 3.618 → 3.107 | **-14.1%** |
+| `main` `8166d8f` (A2's own) | 1 | 3.423 / 3.387 / 3.379 | 3.125 / 3.110 / 3.098 | 3.379 → 3.098 | **-8.3%** |
+| `main` `8166d8f` (A2's own) | 2 | 3.366 / 3.378 / 3.359 | 3.137 / 3.140 / 3.119 | 3.359 → 3.119 | **-7.1%** |
+
+(The `8166d8f` reference was a temporary clone on the Pi, removed after.)
+Every one of the 12 candidate rounds is below every one of the 12 `main`
+rounds; the spread within a side is about 1%.
+
+    tools/gate2.py: gate2: 2863 records (2588 in scope); changed 0 (0 in scope); answers match; replay 1.81s (ask 0.93s)
+
+**Suite (Pi):** `2 failed, 1693 passed, 1 skipped, 4 xfailed, 1 xpassed`;
+the 2 failures are the known `test_shared_facts` pair (main at `8166d8f`:
+1670 passed; the difference is A1's new tests).
+
+**Per-query log diff** (`tools/refine_replay.py --log` on `8166d8f` and on
+this commit, compared record by record over 13,877 queries):
+
+- identical in every record: `path`, `outcome`, `session_new`, `vars`,
+  `root_len`, `via`, `nested`, `built`, `session_error`, `evict_reason`;
+  1,597 sessions built and 1,534 answering sessions on both sides;
+- solves: 6,384 on both sides, same `target`, `result`, `role`, `nvars`,
+  `nassum` in every one; **25 solves differ in `decisions`** (81,320 →
+  81,293 in total) and **1 in `conflicts`** (462 → 463). That is the
+  expected kind of difference: the propagator puts the same fixpoint on the
+  trail in a different order, so search starts from a different trail and
+  can pick different decisions; `vars` and `root_len` unchanged confirm
+  the variable layout and the root fixpoint are the same.
+- logged pass 3,438 ms → 3,202 ms summed.
+
+**My read (not a decision):** A2's own gain is 7.1 to 8.3% on the Pi,
+above the 5% line in both runs by at least 2 points, with the two runs
+consistent and no overlap between the sides. That is well under the
+design's 18 to 21% estimate, which was made before B2a (B2a took 7 to 8%
+of the pass, partly the same GC and allocation work) and on the local
+machine; locally the solver agent saw 2.8 to 6.1%.
+
+## Plan once A1 is on `main` (as it was written before the result)
 
 1. Rebase `perf3-engine`, apply `.a2.patch` adapted to the published API.
 2. Pi: suite, `tools/gate2.py`, `tools/ab.py --rounds 2` against
