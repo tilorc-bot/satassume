@@ -133,6 +133,72 @@ def _add_rules(n, consts):
     return R.rules
 
 
+#: Largest number of odd-coefficient terms whose parity cases are enumerated
+#: for a sum with half-integer coefficients (2**k rules).
+MAX_HALF_ODD = 4
+
+
+def _half_split(args):
+    """A sum ``c0 + sum(c_k*t_k)`` whose rational coefficients have least
+    common denominator 2, as ``(a0 % 2, [(a_k % 2, t_k)])`` with ``a = 2*c``
+    (integers), or None.
+
+    ``c0`` is the Rational term (0 if none), a term ``c*t`` is a ``Mul``
+    with a Rational first factor, any other term has coefficient 1.  None
+    unless some coefficient has denominator 2 and none a larger one.
+    """
+    half = False
+    for a in args:
+        c = a if a.is_Rational else (a.args[0] if a.is_Mul and a.args[0].is_Rational else None)
+        if c is not None and c.q != 1:
+            if c.q != 2:
+                return None
+            half = True
+    if not half:
+        return None
+    a0, terms = 0, []
+    for a in args:
+        if a.is_Rational:
+            a0 = (2*a).p % 2
+        elif a.is_Mul and a.args[0].is_Rational:
+            c = a.args[0]
+            rest = a.args[1:]
+            terms.append(((2*c).p % 2, rest[0] if len(rest) == 1 else Mul(*rest)))
+        else:
+            terms.append((0, a))
+    return a0, terms
+
+
+def _half_rules(a0, odd, m):
+    """Rules for ``N = (a0 + sum a_k*t_k)/2`` over integer ``t_k``: slots
+    ``0..m-1`` are the terms (``odd[k]`` tells whether ``a_k`` is odd), slot
+    ``m`` the node.  With every term an integer the numerator is an integer
+    whose parity is ``a0`` plus the number of odd ``t_k`` with odd ``a_k``,
+    and ``N`` is an integer iff that is even (``N`` is rational either way)."""
+    R = Rules()
+    rule = R.rule
+    T = range(m)
+    ints = lits(T, 'integer')
+    rule(ints, (m, 'rational', True))
+    O = [k for k in T if odd[k]]
+    if len(O) > MAX_HALF_ODD:
+        return R.rules
+    for parities in product(('even', 'odd'), repeat=len(O)):
+        num_odd = (a0 + parities.count('odd')) % 2
+        rule([*ints, *[(k, p, True) for k, p in zip(O, parities)]], (m, 'integer', not num_odd))
+    return R.rules
+
+
+def _half_templates(expr, split):
+    a0, terms = split
+    m = len(terms)
+    odd = tuple(a for a, _ in terms)
+    objs = tuple(t for _, t in terms) + (expr,)
+    consts = consts_of(objs[:m])
+    key = ('add_half', a0, odd, tuple((k, type(c), c) for k, c in sorted(consts.items())))
+    return facts(key, lambda: _half_rules(a0, odd, m), consts, objs, m)
+
+
 @registry.register(Add)
 def add_templates(expr):
     args = expr.args
@@ -140,8 +206,12 @@ def add_templates(expr):
     if n == 0:
         return ()
     consts = consts_of(args)
-    return facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
-                 consts, args + (expr,), n)
+    out = facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
+                consts, args + (expr,), n)
+    split = _half_split(args)
+    if split is not None:
+        return [out, _half_templates(expr, split)]
+    return out
 
 
 # ---------------------------------------------------------------------------
