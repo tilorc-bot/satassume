@@ -5,9 +5,9 @@
   not met** (the rule block's never-read fraction is 52%, above the 30%
   line), **but two measurements the plan did not ask for say stage 1 as
   specified would be slower than `main`**: attaching any theory to a
-  session costs +13.9% of the pass before it does any work, and a literal
-  propagated by a theory costs 3.0 times what the rule block pays for the
-  same implication. Projected stage 1: +25% to +40% time, so its own stop
+  session costs +14.1% of the pass before it does any work, and a literal
+  propagated by a theory costs 2.8 times what the rule block pays for the
+  same implication. Projected stage 1: +20% to +40% time, so its own stop
   condition is expected to trigger. The capability census finds 15 stream
   queries (12 distinct) and **0 of the 59 refine scoreboard losses** that
   predicate transfer answers, and 498 that a
@@ -21,16 +21,22 @@
   `facts_theory_tax.py` (theory tax and per-literal cost), `facts_scoreboard_*`
   (pytest plugin routing the refine suite's `satassume` backend through the
   capability oracles, run scripts, analysis; written by an Opus subagent).
-  Pi, branch `facts-theory` at `e43b318` (`main`), SymPy pin `ddbb536d7e`.
+  Pi, SymPy pin `ddbb536d7e`. Measured first at `e43b318`, then, after
+  `main` reverted the unreviewed hot-loop and witness-reuse commits and
+  landed the reviewed witness reuse, **re-measured on the new baseline
+  `c552806`** (the plan baseline from now on; `facts-theory` rebased onto
+  it). Every number below is from `c552806` unless marked; the census and
+  capability numbers came out identical on both.
 - **Read this if:** you decide whether stage 1 of
   `2026-09-25-fact-lattice-theory-plan.md` is built as planned, changed,
   or dropped
 
 ## Measurement
 
-Baseline on the Pi at `e43b318`: suite `2 failed, 1694 passed, 1 skipped,
+Baseline on the Pi at `c552806`: suite `2 failed, 1697 passed, 1 skipped,
 4 xfailed, 1 xpassed` (the known `test_shared_facts` pair; 58 s with
-`-n 3`), cold replay 2.92 to 3.01 s.
+`-n 3`), cold replay 2.90 to 2.94 s (at `e43b318`: 1694 passed, 2.92 to
+3.01 s).
 
 ### 1. The never-read fraction (`facts_census.py`)
 
@@ -85,12 +91,11 @@ Measured on the Pi:
 
 | | |
 |---|---:|
-| cold pass, plain (3 interleaved runs) | 3.006 / 2.916 / 2.978 s |
-| cold pass, a no-op theory attached to every session | 3.363 / 3.322 / 3.399 s |
-| cold pass, no-op theory with an empty `propagate` | 3.363 / 3.382 / 3.480 s |
-| **theory tax, best against best** | **+13.9%** (+14.8% with `propagate`) |
-| micro: implication by the rule block (2,000 blocks, `integer` implies 15 literals each, under an assumption) | 1.54 µs per literal |
-| micro: the same implications by a theory's `propagate` with eager reasons | 4.65 µs per literal (**3.0x**) |
+| cold pass, plain (3 interleaved runs) | 2.904 / 2.940 / 2.912 s |
+| cold pass, a no-op theory attached to every session | 3.325 / 3.314 / 3.342 s |
+| **theory tax, best against best** | **+14.1%** (at `e43b318`: +13.9%, and +14.8% with an empty `propagate`) |
+| micro: implication by the rule block (2,000 blocks, `integer` implies 15 literals each, under an assumption) | 1.69 µs per literal (`e43b318`: 1.54) |
+| micro: the same implications by a theory's `propagate` with eager reasons | 4.69 µs per literal (**2.8x**; `e43b318`: 4.65, 3.0x) |
 
 ### 3. Projection for stage 1 as specified
 
@@ -101,9 +106,9 @@ collector 3.7 to 4.4%) on a 2.95 s pass:
 |---|---:|
 | removed: rule hook, registration, 42% of `_grow` (19 of 33 variables kept), some collector work | about -0.70 |
 | added: theory tax (measured) | +0.41 |
-| added: 263,566 propagations to mentioned variables at the micro's 4.65 µs (scaled by the micro's own ratio to the replay: 550,530 writes at 1.54 µs would be 0.85 s, the B5 hook share is 0.59 s, so x0.69) | +0.85 to +1.23 |
+| added: 263,566 propagations to mentioned variables at the micro's 4.69 µs (scaled by the micro's own ratio to the replay: 550,530 writes at 1.69 µs would be 0.93 s, the B5 hook share is 0.59 s, so x0.63) | +0.78 to +1.24 |
 | added: closure memo misses (2,857 distinct asserted sets, below) | +0.1 to 0.3 |
-| **net** | **about +0.7 to +1.2 s, +25% to +40%** |
+| **net** | **about +0.6 to +1.25 s, +20% to +40%** |
 
 Even with the propagation cost halved by tuning, the tax alone eats most
 of the removal. Stage 1's stop condition ("slower than `main` after a day
@@ -194,7 +199,9 @@ four oracles, compared with the recording:
 
 ### 7. Capability census, refine scoreboard
 
-Done by an Opus subagent on a checkout of `origin/refine-monorepo`
+Measured at `e43b318` (not re-run on `c552806`: the solver change between
+them changes no answer on either gate, and the scoreboard only counts
+answers). Done by an Opus subagent on a checkout of `origin/refine-monorepo`
 (`20f3b9c`) at `/work/src/refine-mono`, with the branch's refine suite and
 handlers and either its own old `satassume` or the current engine
 (`e43b318`, via `PYTHONSAFEPATH=1` and `PYTHONPATH`; each run records
@@ -257,9 +264,9 @@ The plan's stop condition for stage 0 is "never-read fraction below about
 30% **and** fewer than about 20 stream queries and fewer than about 10
 scoreboard losses the design would answer". The never-read fraction is
 52%, so formally the design survives stage 0 as a speed lever. It does
-not survive as one in practice: section 3 projects stage 1 at +25% to +40%,
+not survive as one in practice: section 3 projects stage 1 at +20% to +40%,
 because the plan priced a theory call at a microsecond and the solver's
-theory path costs a 14% tax plus 3 times the rule block per literal. On
+theory path costs a 14% tax plus about 3 times the rule block per literal. On
 capability, predicate transfer answers 15 stream queries (below the 20
 line) and none of the 59 scoreboard losses (below the 10 line).
 

@@ -1,7 +1,9 @@
 # Fact-lattice theory: running status
 
 - **Updated:** 2026-09-25, end of stage 0 (measurements)
-- **Branch:** `facts-theory` (from `main` at `e43b318`), bundle at
+- **Branch:** `facts-theory`, rebased onto `origin/main` at `c552806`
+  (the plan baseline since the orchestrator's note; stage 0 re-measured
+  there, same conclusions), bundle at
   `/work/src/bundles/facts-theory.bundle`
 - **Stage:** 0 done, report `2026-09-25-facts-0-measurements.md`.
   **Stopped and waiting for a user decision** before stage 1 (below).
@@ -15,8 +17,8 @@
   - 19.1 of the 33 predicates per node are mentioned by templates etc.
     (the plan expected "a few");
   - **theory tax: attaching a do-nothing theory to every session costs
-    +13.9% of the pass**, and a theory-propagated literal costs 3.0x a
-    rule-block implication. Stage 1 as specified projects to +25% to
+    +14.1% of the pass**, and a theory-propagated literal costs 2.8x a
+    rule-block implication. Stage 1 as specified projects to +20% to
     +40%, so its stop condition would trigger;
   - 2,857 distinct asserted sets per pass (closure memo size);
   - 0 of the 62 search answers rest on a case split inside the rule base;
@@ -27,7 +29,7 @@
     turns 36 None answers into ValueError (inconsistent assumptions),
     which the plan's acceptance rule forbids, and costs about +35% time.
 - `tools/ab.py` / `tools/gate2.py`: `--allow-more-definite` (commit
-  `c804733`).
+  `b6cc969` after the rebase).
 - Git identity was not configured in this clone despite the brief; set
   repo-local to `tilorc-bot <tilorc-bot@users.noreply.github.com>`, the
   author of every earlier commit.
