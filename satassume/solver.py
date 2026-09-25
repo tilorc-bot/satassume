@@ -72,24 +72,6 @@ def _luby(y: float, x: int) -> float:
     return y ** seq
 
 
-#: ``_EXT[l]``: the external literal of internal literal ``l``; shared by
-#: all solvers, extended on demand (:func:`_external`).
-_EXT: list[int] = [0, 0]
-
-
-def _external(lits: list[int]) -> list[int]:
-    """Internal literals to external ones (the conversion runs in C)."""
-    try:
-        return list(map(_EXT.__getitem__, lits))
-    except IndexError:
-        top = max(lits) >> 1
-        v0 = len(_EXT) >> 1
-        for v in range(v0, top + 1):
-            _EXT.append(v)
-            _EXT.append(-v)
-        return list(map(_EXT.__getitem__, lits))
-
-
 _RULE_TABLES: dict = {}
 
 
@@ -163,9 +145,7 @@ class Solver:
     def __init__(self):
         # Per-literal data; indices 0 and 1 are unused (variable 0 is not a var).
         self._val: list[bool | None] = [None, None]
-        # Watch lists: the list of clauses watching a literal, or the shared
-        # empty tuple until the first one (created on first use, _watch).
-        self._watches: list[list[Clause] | tuple] = [(), ()]
+        self._watches: list[list[Clause]] = [[], []]
         # Per-variable data; index 0 unused.
         self._level: list[int] = [0]
         # reason: a clause, None (decision or root), or an int (a rule
@@ -176,7 +156,6 @@ class Solver:
         self._hpos: list[int] = [-1]         # position in the activity heap, -1 if absent
         self._seen: list[int] = [0]
         self._heap: list[int] = []           # max-heap of variables keyed by activity
-        self._nout = 0                       # variables popped and not re-inserted
         self._trail: list[int] = []
         self._trail_lim: list[int] = []
         self._qhead = 0
@@ -188,13 +167,10 @@ class Solver:
         self._cla_inc = 1.0
         self._max_learnts = 0.0
         self._assumptions: list[int] = []
-        # Model of the last successful solve: the values of variables 1..n
-        # (``_mvals``) and the dict built from them on demand (``_model``).
-        self._mvals: list | None = None
-        self._mdict: dict[int, bool] | None = None
+        self._model: dict[int, bool] | None = None
         # Last model found by any solve; a cheap witness that a set of
         # assumptions is consistent.  Invalidated when clauses are added.
-        self._witness: list | None = None
+        self._witness: dict[int, bool] | None = None
         # Version of the clause database (problem and learnt clauses and
         # theory atoms); bumped by every change that can alter what
         # propagation derives.  Together with the length of the root trail
@@ -255,7 +231,7 @@ class Solver:
             return
         k = v - n
         self._val.extend([None] * (2 * k))
-        self._watches.extend([()] * (2 * k))
+        self._watches.extend([[] for _ in range(2 * k)])
         self._level.extend([0] * k)
         self._reason.extend([None] * k)
         self._act.extend([0.0] * k)
@@ -269,15 +245,6 @@ class Solver:
         self._hpos.extend(range(start, start + k))
         heap.extend(range(n + 1, v + 1))
         self._nvars = v
-
-    def _watch(self, l: int, c: list) -> None:
-        """Add ``c`` to the watch list of ``l`` (created on first use; the
-        hot insertion paths inline this)."""
-        w = self._watches[l]
-        if w:
-            w.append(c)
-        else:
-            self._watches[l] = [c]
 
     @staticmethod
     def _to_int(x: int) -> int:
@@ -312,7 +279,6 @@ class Solver:
         heap = self._heap
         hpos[v] = len(heap)
         heap.append(v)
-        self._nout -= 1
         self._heap_up(len(heap) - 1)
 
     def _heap_up(self, i: int) -> None:
@@ -361,7 +327,6 @@ class Solver:
         v = heap[0]
         last = heap.pop()
         hpos[v] = -1
-        self._nout += 1
         if heap:
             heap[0] = last
             hpos[last] = 0
@@ -449,16 +414,8 @@ class Solver:
             self._attach_held(out)
             return True
         watches = self._watches
-        w = watches[out[0]]
-        if w:
-            w.append(out)
-        else:
-            watches[out[0]] = [out]
-        w = watches[out[1]]
-        if w:
-            w.append(out)
-        else:
-            watches[out[1]] = [out]
+        watches[out[0]].append(out)
+        watches[out[1]].append(out)
         return True
 
     def _attach_held(self, c: list[int]) -> None:
@@ -513,16 +470,16 @@ class Solver:
                     level[v] = dl
                     self._reason[v] = c
                     self._trail.append(l)
-                    self._watch(l, c)
-                    self._watch(c[1], c)
+                    watches[l].append(c)
+                    watches[c[1]].append(c)
                     if self._propagate() is not None:
                         self._backtrack(0)
                     return
                 k = 0                           # unit below the top level
         if k == 0:
             self._backtrack(0)                  # no literal of c is assigned now
-        self._watch(c[0], c)
-        self._watch(c[1], c)
+        watches[c[0]].append(c)
+        watches[c[1]].append(c)
 
     def add_clauses(self, clauses) -> bool:
         """Bulk-add clauses of external literals.  Returns False iff the
@@ -584,16 +541,8 @@ class Solver:
                 nv = self._nvars
                 continue
             cls.append(out)
-            w = watches[out[0]]
-            if w:
-                w.append(out)
-            else:
-                watches[out[0]] = [out]
-            w = watches[out[1]]
-            if w:
-                w.append(out)
-            else:
-                watches[out[1]] = [out]
+            watches[out[0]].append(out)
+            watches[out[1]].append(out)
         self._witness = None
         self._stamp += 1
         return True
@@ -632,16 +581,8 @@ class Solver:
                 else:
                     c = list(lits)
                     cls.append(c)
-                    w = watches[lits[0]]
-                    if w:
-                        w.append(c)
-                    else:
-                        watches[lits[0]] = [c]
-                    w = watches[lits[1]]
-                    if w:
-                        w.append(c)
-                    else:
-                        watches[lits[1]] = [c]
+                    watches[lits[0]].append(c)
+                    watches[lits[1]].append(c)
         self._witness = None
         self._stamp += 1
         return True
@@ -680,30 +621,14 @@ class Solver:
                         break
                 else:
                     append(out)
-                    w = watches[out[0]]
-                    if w:
-                        w.append(out)
-                    else:
-                        watches[out[0]] = [out]
-                    w = watches[out[1]]
-                    if w:
-                        w.append(out)
-                    else:
-                        watches[out[1]] = [out]
+                    watches[out[0]].append(out)
+                    watches[out[1]].append(out)
         else:
             for c in pattern:
                 out = [l + lo for l in c]
                 append(out)
-                w = watches[out[0]]
-                if w:
-                    w.append(out)
-                else:
-                    watches[out[0]] = [out]
-                w = watches[out[1]]
-                if w:
-                    w.append(out)
-                else:
-                    watches[out[1]] = [out]
+                watches[out[0]].append(out)
+                watches[out[1]].append(out)
         self._witness = None
         self._stamp += 1
         return True
@@ -926,7 +851,7 @@ class Solver:
         trail = self._trail
         if self._trail_lim:
             trail = trail[: self._trail_lim[0]]
-        return _external(trail)
+        return [-(l >> 1) if l & 1 else l >> 1 for l in trail]
 
     def implied(self, assumptions: Iterable[int] = ()) -> list[int] | None:
         """Literals forced by unit propagation under ``assumptions``.
@@ -940,7 +865,7 @@ class Solver:
         trail = self._assume(assumptions)
         if trail is None:
             return None
-        return _external(trail)
+        return [-(l >> 1) if l & 1 else l >> 1 for l in trail]
 
     def _assume(self, assumptions) -> list[int] | None:
         """Propagate at root, then under ``assumptions`` (each at its own
@@ -1071,17 +996,17 @@ class Solver:
         qhead = self._qhead
         dl = len(self._trail_lim)
         confl = None
-        q0 = qhead
-        done = -1                               # qhead at a conflict
-        end = len(trail)
-        # ``end`` is re-read only when the known part of the trail is done.
-        while qhead < end or qhead < (end := len(trail)):
+        nprops = 0
+        while qhead < len(trail):
             p = trail[qhead]
             qhead += 1
+            nprops += 1
             base = rb_base[p >> 1]
             if base:
                 lo = base << 1
                 rel = p - lo
+                code = base << rb_shift
+                why = code | (rb_ncl + rel)     # reason of a binary implication
                 for q in rb_imp[rel]:           # binary rules: p -> q
                     l = q + lo
                     vl = val[l]
@@ -1090,8 +1015,7 @@ class Solver:
                         val[l] = True
                         val[l ^ 1] = False
                         level[v] = dl
-                        # the binary rule fired by the true literal rel
-                        reason[v] = (base << rb_shift) | (rb_ncl + rel)
+                        reason[v] = why
                         trail.append(l)
                     elif not vl:
                         confl = [l, p ^ 1]
@@ -1118,7 +1042,7 @@ class Solver:
                         val[a] = True
                         val[a ^ 1] = False
                         level[v] = dl
-                        reason[v] = (base << rb_shift) | idx
+                        reason[v] = code | idx
                         trail.append(a)
                     else:
                         for idx, others in rb_occn[rel]:    # longer rules
@@ -1141,16 +1065,16 @@ class Solver:
                                 val[free] = True
                                 val[free ^ 1] = False
                                 level[v] = dl
-                                reason[v] = (base << rb_shift) | idx
+                                reason[v] = code | idx
                                 trail.append(free)
                 if confl is not None:
-                    done = qhead
+                    qhead = len(trail)
                     break
             fl = p ^ 1                          # this literal just became false
             ws = watches[fl]
-            if not ws:
-                continue
             n = len(ws)
+            if not n:
+                continue
             i = 0
             j = 0
             while i < n:
@@ -1174,11 +1098,7 @@ class Solver:
                     if val[l] is not False:
                         c[1] = l
                         c[k] = fl
-                        w = watches[l]
-                        if w:
-                            w.append(c)
-                        else:
-                            watches[l] = [c]
+                        watches[l].append(c)
                         break
                     k += 1
                 else:
@@ -1191,8 +1111,7 @@ class Solver:
                             ws[j] = ws[i]
                             j += 1
                             i += 1
-                        done = qhead
-                        qhead = end = len(trail)
+                        qhead = len(trail)
                     else:
                         v = first >> 1
                         val[first] = True
@@ -1201,12 +1120,8 @@ class Solver:
                         reason[v] = c
                         trail.append(first)
             del ws[j:]
-        if confl is None:
-            self._qhead = qhead
-            self._n_props += qhead - q0
-        else:
-            self._qhead = len(trail)
-            self._n_props += done - q0
+        self._qhead = qhead
+        self._n_props += nprops
         return confl
 
     def _propagate_clauses(self) -> Clause | None:
@@ -1221,18 +1136,16 @@ class Solver:
         qhead = self._qhead
         dl = len(self._trail_lim)
         confl = None
-        q0 = qhead
-        done = -1                               # qhead at a conflict
-        end = len(trail)
-        # ``end`` is re-read only when the known part of the trail is done.
-        while qhead < end or qhead < (end := len(trail)):
+        nprops = 0
+        while qhead < len(trail):
             p = trail[qhead]
             qhead += 1
+            nprops += 1
             fl = p ^ 1                          # this literal just became false
             ws = watches[fl]
-            if not ws:
-                continue
             n = len(ws)
+            if not n:
+                continue
             i = 0
             j = 0
             while i < n:
@@ -1256,11 +1169,7 @@ class Solver:
                     if val[l] is not False:
                         c[1] = l
                         c[k] = fl
-                        w = watches[l]
-                        if w:
-                            w.append(c)
-                        else:
-                            watches[l] = [c]
+                        watches[l].append(c)
                         break
                     k += 1
                 else:
@@ -1273,8 +1182,7 @@ class Solver:
                             ws[j] = ws[i]
                             j += 1
                             i += 1
-                        done = qhead
-                        qhead = end = len(trail)
+                        qhead = len(trail)
                     else:
                         v = first >> 1
                         val[first] = True
@@ -1283,12 +1191,8 @@ class Solver:
                         reason[v] = c
                         trail.append(first)
             del ws[j:]
-        if confl is None:
-            self._qhead = qhead
-            self._n_props += qhead - q0
-        else:
-            self._qhead = len(trail)
-            self._n_props += done - q0
+        self._qhead = qhead
+        self._n_props += nprops
         return confl
 
     def _backtrack(self, lvl: int) -> None:
@@ -1302,19 +1206,14 @@ class Solver:
         pol = self._polarity
         hpos = self._hpos
         start = trail_lim[lvl]
-        if self._nout:
-            for l in reversed(trail[start:]):
-                v = l >> 1
-                val[l] = None
-                val[l ^ 1] = None
-                pol[v] = l & 1
-                if hpos[v] < 0:
-                    self._heap_insert(v)
-        else:                                   # every variable is in the heap
-            for l in reversed(trail[start:]):
-                val[l] = None
-                val[l ^ 1] = None
-                pol[l >> 1] = l & 1
+        for i in range(len(trail) - 1, start - 1, -1):
+            l = trail[i]
+            v = l >> 1
+            val[l] = None
+            val[l ^ 1] = None
+            pol[v] = l & 1
+            if hpos[v] < 0:
+                self._heap_insert(v)
         del trail[start:]
         self._qhead = start
         if self._theories:
@@ -1477,8 +1376,8 @@ class Solver:
             c.act = 0.0
             self._stamp += 1
             self._learnts.append(c)
-            self._watch(raw[0], c)
-            self._watch(raw[1], c)
+            self._watches[raw[0]].append(c)
+            self._watches[raw[1]].append(c)
         return c
 
     def _theory_imply(self, x: int, lits) -> Clause | None:
@@ -1510,8 +1409,8 @@ class Solver:
             reason.act = 0.0
             self._stamp += 1
             self._learnts.append(reason)
-            self._watch(l, reason)
-            self._watch(raw[0], reason)
+            self._watches[l].append(reason)
+            self._watches[raw[0]].append(reason)
         val[l] = True
         val[l ^ 1] = False
         level[v] = dl
@@ -1555,8 +1454,8 @@ class Solver:
             reason.act = 0.0
             self._bump_clause(reason)
             self._learnts.append(reason)
-            self._watch(learnt[0], reason)
-            self._watch(learnt[1], reason)
+            self._watches[learnt[0]].append(reason)
+            self._watches[learnt[1]].append(reason)
         self._val[l0] = True
         self._val[l0 ^ 1] = False
         self._level[v0] = len(self._trail_lim)
@@ -1786,8 +1685,8 @@ class Solver:
                     c.act = 0.0
                     self._bump_clause(c)
                     self._learnts.append(c)
-                    self._watch(learnt[0], c)
-                    self._watch(learnt[1], c)
+                    self._watches[learnt[0]].append(c)
+                    self._watches[learnt[1]].append(c)
                     val[l0] = True
                     val[l0 ^ 1] = False
                     level[v0] = len(trail_lim)
@@ -1870,7 +1769,7 @@ class Solver:
         learnt clauses were deleted meanwhile (the fixpoint could have
         used one), nor with theories.
         """
-        self._mvals = self._mdict = None
+        self._model = None
         self._tmodels = None
         self._conflict = []
         held = self._held
@@ -1899,9 +1798,9 @@ class Solver:
             restarts += 1
         self._n_restarts += restarts - 1
         if status:
-            # The values of variables 1..n (positive literals), copied in C;
-            # the dict of model() is built from them on demand.
-            self._mvals = self._witness = self._val[2:2 * self._nvars + 2:2]
+            val = self._val
+            self._model = {v: val[2 * v] for v in range(1, self._nvars + 1)}
+            self._witness = self._model
         if (keep and self._ok and not self._theories and len(self._trail_lim) >= keep
                 and self._n_reductions == reductions):
             self._backtrack(keep)
@@ -1911,19 +1810,9 @@ class Solver:
         self._assumptions = []
         return status
 
-    @property
-    def _model(self) -> dict[int, bool] | None:
-        """The model of the last successful solve as ``{var: value}``
-        (built on first use), or None."""
-        m = self._mdict
-        if m is None and self._mvals is not None:
-            m = self._mdict = dict(zip(range(1, len(self._mvals) + 1), self._mvals))
-        return m
-
     def model(self) -> dict[int, bool] | None:
         """Model of the last successful :meth:`solve`, else None."""
-        m = self._model
-        return dict(m) if m is not None else None
+        return dict(self._model) if self._model is not None else None
 
     def conflict(self) -> list[int]:
         """After an UNSAT :meth:`solve`: assumptions responsible for it.
@@ -1940,13 +1829,10 @@ class Solver:
         w = self._witness
         if w is None:
             return False
-        n = len(w)
         for a in assumptions:
-            v = -a if a < 0 else a
-            if v <= n:
-                b = w[v - 1]
-                if b is not None and b != (a > 0):
-                    return False
+            b = w.get(-a if a < 0 else a)
+            if b is not None and b != (a > 0):
+                return False
         return True
 
     def entails(self, lit: int, assumptions: Iterable[int] = ()) -> bool | None:
