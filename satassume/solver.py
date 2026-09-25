@@ -1298,6 +1298,12 @@ class Solver:
         self._witness = None
         self._stamp += 1
         theory.register_atom(var, payload)
+        # The theory may imply something about the new atom at once (an
+        # LRA atom that is ground, an EUF equality whose sides are already
+        # equal): the next sync, at root, asks it even if no trail entry is
+        # new.  Otherwise the implication would first be delivered under
+        # some assumption level and dropped when that level is popped.
+        self._tpending = True
         if not self._ok:
             return False
         l = 2 * var
@@ -1309,9 +1315,6 @@ class Solver:
             if r is not None and r[0] is False:
                 self._theory_conflict(r[1])
                 return False
-            # The theory may now imply something: the next sync asks it
-            # even if no trail entry is new.
-            self._tpending = True
         return True
 
     def theory_models(self) -> list | None:

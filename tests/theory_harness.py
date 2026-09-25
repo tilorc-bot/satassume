@@ -263,12 +263,13 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
     * after a conflict (from ``assert_lit`` or ``check``) no ``assert``,
       ``check`` or ``propagate`` comes before a ``pop``; a conflict at level
       0 ends all ``assert``/``check`` calls;
-    * ``check`` sees every registered variable asserted;
+    * ``check`` sees every variable registered so far asserted;
     * ``propagate`` is not called after a conflict.
 
     Returns counts of the event kinds.
     """
     level = 0
+    reg: set = set()                     # registered so far in the trace
     alive: dict[int, int] = {}          # var -> level it was asserted at
     blocked = False                      # conflict seen, awaiting pop
     dead = False                         # conflict at level 0
@@ -281,6 +282,7 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
             assert level == want, f"level {level} at marker {e[1]}, solver at {want}"
             continue
         if kind == "register":
+            reg.add(e[1])
             assert level == 0, "register_atom above level 0"
             continue
         if kind == "push":
@@ -299,12 +301,12 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
         if kind == "assert":
             lit, r = e[1], e[2]
             v = abs(lit)
-            assert v in rec.registered, f"assert_lit({lit}) of an unregistered variable"
+            assert v in reg, f"assert_lit({lit}) of an unregistered variable"
             assert v not in alive, f"variable {v} asserted twice"
             alive[v] = level
             conflict = r is not None and r[0] is False
         elif kind == "check":
-            missing = rec.registered - set(alive)
+            missing = reg - set(alive)
             assert not missing, f"check() before asserting {sorted(missing)}"
             r = e[1]
             conflict = r is not None and r[0] is False

@@ -260,6 +260,9 @@ class Harness:
             self.record("register_block", base)
             r = s.register_block(base)
             self.count("blocks_registered")
+            # A block over assigned variables propagates its root units at
+            # once, but without the theories (as a unit clause does).
+            self.after_prop = self.after_prop and not s._theories
         else:
             self.record("add_pattern_block", base)
             r = s.add_pattern(self.block, base, self.bk)
@@ -679,6 +682,9 @@ def theory_setup(seed: int) -> Callable:
         s.fuzz_theories = [t, t2]
         for v in atoms:
             s.register_atom(t, v, None)
+        # the harness takes a fresh solver as propagated; registration owes
+        # the theories a propagation (Solver.register_atom)
+        s.propagate()
     return setup
 
 
