@@ -205,7 +205,11 @@ def ask_policy(self, proposition, assumptions=None):
     p2  polluted session and a proposition atom whose node the polluted
         session has not visited: build the cone session before touching the
         polluted one, then run the usual propagation / escalation / search
-        in it (it replaces the polluted session as the cone does today).
+        in it (it replaces the polluted session as the cone does today);
+    p2r p2, only if the polluted session has no relation atoms (no theory);
+    p2s p2r, and the polluted session has no learnt clauses and no answer
+        clause of an earlier cone query;
+    p3  p2r and p1 together.
     """
     self.stats["queries"] += 1
     lits = []
@@ -215,8 +219,10 @@ def ask_policy(self, proposition, assumptions=None):
     else:
         s = self._fresh_session()
     polluted = len(s.base) - s.n_assumption_nodes > self.cone_threshold
-    if POLICY == "p2" and contextual and polluted and self.cone_search and not all(
-            a.expr in s.base for a in atoms_of(proposition) if a.pred in PRED_INDEX):
+    if POLICY in ("p2", "p2r", "p2s", "p3") and contextual and polluted and self.cone_search and not all(
+            a.expr in s.base for a in atoms_of(proposition) if a.pred in PRED_INDEX) and (
+            POLICY == "p2" or (s.relations is None and (POLICY in ("p2r", "p3") or (
+                not s.solver._learnts and not getattr(s, "_answer_clauses", False))))):
         N["p2_early_cone"] += 1
         s0 = s
         s = self._fresh_session()
@@ -234,10 +240,11 @@ def ask_policy(self, proposition, assumptions=None):
             r = s.query_literal(q, lits, search=True)
             if r is not None and self._context_sessions.get(assumptions, (None,))[0] is s:
                 s._emit([-lits[0], q if r else -q])
+                s._answer_clauses = True
         return r
     q = self._literal(s, proposition)
     r = s.query_literal(q, lits, search=False)
-    skip = POLICY == "p1" and contextual and polluted and self.cone_search
+    skip = POLICY in ("p1", "p3") and contextual and polluted and self.cone_search
     if r is None and s.incomplete and not skip:
         self.stats["escalations"] += 1
         s.escalate()
@@ -256,6 +263,7 @@ def ask_policy(self, proposition, assumptions=None):
                 self._context_sessions[assumptions] = (s, lits)
                 if r is not None:
                     s._emit([-lits[0], q if r else -q])
+                    s._answer_clauses = True
             return r
         r = s.query_literal(q, lits, search=True)
     return r
@@ -472,7 +480,7 @@ def ask_b2(self, proposition, assumptions=None):
         del self._fresh_session, self._context_session
 
 
-if mode in ("p1", "p2", "p0"):
+if mode in ("p1", "p2", "p0", "p2r", "p2s", "p3"):
     # p0: the same copy with no policy (the control for p1 / p2)
     POLICY = mode
     Engine.ask = ask_policy
