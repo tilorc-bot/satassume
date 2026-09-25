@@ -89,6 +89,7 @@ as without relation support: ``sympy_api.ask`` returns None for relations.
 from __future__ import annotations
 
 import importlib
+import weakref
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
@@ -195,7 +196,10 @@ class Relations:
     theories, guards, links and shared equalities."""
 
     def __init__(self, session, specs):
-        self.session = session
+        # A weak proxy: the session owns this object and outlives every call
+        # into it, and a strong back-reference would make session + solver +
+        # clauses collectable only by a full garbage collection.
+        self.session = weakref.proxy(session)
         self.specs = list(specs)
         self.adapters: dict = {}          # spec name -> adapter instance
         self.status: dict = {}            # atom -> interpreted by some theory
