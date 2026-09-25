@@ -16,7 +16,8 @@ EXPECTED = {   # rules the generator must produce and verify
     (log(b**e), e*log(b), Q.positive(b) & Q.real(e)),
     (log(b**e), e*log(-b), Q.negative(b) & Q.even(e)),
     (log(p*r), log(p) + log(r), Q.positive(r)),   # the product form needs nothing
-    (log(p*r), log(-p) + log(-r), Q.negative(p) & Q.negative(r)),
+    # a negative r alone suffices: log(p*r) = log(-p) + log(-r) since -r > 0
+    (log(p*r), log(-p) + log(-r), Q.negative(r)),
     (log(x), log(-x) + I*pi, Q.negative(x)),
 }
 

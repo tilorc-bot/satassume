@@ -14,7 +14,7 @@ here: ``y/x`` has no known sign.
 """
 from __future__ import annotations
 
-from sympy import Q, atan2, symbols
+from sympy import Q, S, atan2, symbols
 
 from satrefine import refine
 from satrefine.handlers_identities import _dispatch
@@ -31,3 +31,13 @@ def test_atan2_of_power_does_not_exhaust_the_firing_cap_live():
     expr = atan2(y, n**y)
     with _dispatch.live():
         assert refine(expr, Q.negative(y) & Q.nonpositive(n)) == expr
+
+
+def test_atan2_of_self_power_does_not_exhaust_the_firing_cap_live():
+    """Differential seed 3 in live mode on the phase-2 baseline (also before
+    the merge of ``main``): the same crash with ``x**x`` as the second
+    argument."""
+    x, z = symbols('x z')
+    expr = atan2(z**(S(1)/2), x**x)
+    with _dispatch.live():
+        assert refine(expr, Q.even(z) & Q.integer(x) & Q.negative(z)) == expr
