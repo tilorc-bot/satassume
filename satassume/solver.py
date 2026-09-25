@@ -98,6 +98,15 @@ class Solver:
         # Last model found by any solve; a cheap witness that a set of
         # assumptions is consistent.  Invalidated when clauses are added.
         self._witness: dict[int, bool] | None = None
+        # Version of the clause database (problem and learnt clauses and
+        # theory atoms); bumped by every change that can alter what
+        # propagation derives.  Together with the length of the root trail
+        # it keys the cache of :meth:`_assume` below.
+        self._stamp = 0
+        # Last propagation under assumptions: ``(key, trail)`` with
+        # ``key = (assumptions, stamp, root trail length)`` and ``trail``
+        # the internal trail it reached (None on conflict).
+        self._acache: tuple | None = None
         self._conflict: list[int] = []
         # Statistics.
         self._n_props = 0
@@ -284,6 +293,7 @@ class Solver:
             seen.add(l)
             out.append(l)
         self._witness = None
+        self._stamp += 1
         if not out:
             self._ok = False
             return False
@@ -366,6 +376,7 @@ class Solver:
             watches[out[0]].append(c)
             watches[out[1]].append(c)
         self._witness = None
+        self._stamp += 1
         return True
 
     def ensure_vars(self, v: int) -> None:
@@ -403,6 +414,7 @@ class Solver:
                     watches[lits[0]].append(c)
                     watches[lits[1]].append(c)
         self._witness = None
+        self._stamp += 1
         return True
 
     def add_pattern(self, pattern, base: int, nvars: int) -> bool:
@@ -439,6 +451,7 @@ class Solver:
             watches[out[0]].append(cl)
             watches[out[1]].append(cl)
         self._witness = None
+        self._stamp += 1
         return True
 
     def propagate(self) -> bool:
@@ -471,8 +484,7 @@ class Solver:
         trail = self._trail
         if self._trail_lim:
             trail = trail[: self._trail_lim[0]]
-        ext = self._to_ext
-        return [ext(l) for l in trail]
+        return [-(l >> 1) if l & 1 else l >> 1 for l in trail]
 
     def implied(self, assumptions: Iterable[int] = ()) -> list[int] | None:
         """Literals forced by unit propagation under ``assumptions``.
@@ -481,29 +493,60 @@ class Solver:
         assumptions and their consequences) or None if propagation runs into
         a conflict.  No search and no learning; the solver is left at root.
         """
-        if not self._assume_propagate(assumptions):
-            self._backtrack(0)
+        trail = self._assume(assumptions)
+        if trail is None:
             return None
-        ext = self._to_ext
-        result = [ext(l) for l in self._trail]
-        self._backtrack(0)
-        return result
+        return [-(l >> 1) if l & 1 else l >> 1 for l in trail]
 
-    def _assume_propagate(self, assumptions) -> bool:
-        """Assume each literal at its own level and propagate.
+    def _assume(self, assumptions) -> list[int] | None:
+        """Propagate at root, then under ``assumptions`` (each at its own
+        level); return the internal trail reached, or None on conflict.
+        The solver is left at root.  The returned list must not be mutated.
 
-        On success the solver is left in the assumed state (caller must
-        backtrack).  Returns False on conflict or if the root is UNSAT.
+        The result is cached.  It is a function of the assumptions, the
+        clause database and the root assignment only: propagation reaches
+        the same fixpoint (or a conflict) whatever the order.  The cache key
+        is therefore the assumption literals, ``_stamp`` (bumped by every
+        clause or theory-atom addition, every learnt clause and every
+        learnt-clause deletion) and the length of the root trail (root
+        assignments only ever grow, so an unchanged length means an
+        unchanged root assignment).  A result is only cached if nothing
+        changed ``_stamp`` while it was computed, e.g. a theory conflict
+        adding a learnt clause.  With theories the result also depends on
+        theory propagation; registering an atom bumps ``_stamp``.  If a
+        theory's propagation depends on its history (e.g. simplex state), a
+        recomputation could derive a different set, but a cached result is
+        still sound: it was derived from the same assumptions, clauses and
+        atoms.
         """
         if self._trail_lim:
             self._backtrack(0)
         if not self._ok:
-            return False
+            return None
         theories = self._theories
         if (self._tpropagate() if theories else self._propagate()) is not None:
             self._ok = False
-            return False
-        lits = self._internal_lits(list(assumptions))
+            return None
+        lits = self._internal_lits(assumptions)
+        stamp = self._stamp
+        key = (lits, stamp, len(self._trail))
+        cached = self._acache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        trail = self._trail[:] if self._assume_propagate(lits) else None
+        self._backtrack(0)
+        if self._ok and self._stamp == stamp:
+            self._acache = (key, trail)
+        return trail
+
+    def _assume_propagate(self, lits: list[int]) -> bool:
+        """Assume each internal literal of ``lits`` at its own level and
+        propagate; the solver must be at root with propagation done.
+
+        On success the solver is left in the assumed state (caller must
+        backtrack).  Returns False on conflict.
+        """
+        theories = self._theories
         val = self._val
         trail = self._trail
         trail_lim = self._trail_lim
@@ -653,6 +696,7 @@ class Solver:
         if prop is not None:
             self._tprops.append(prop)
         self._witness = None
+        self._stamp += 1
 
     def theories(self) -> list:
         return list(self._theories)
@@ -681,6 +725,7 @@ class Solver:
         else:
             ts.append(theory)
         self._witness = None
+        self._stamp += 1
         theory.register_atom(var, payload)
         if not self._ok:
             return False
@@ -781,6 +826,7 @@ class Solver:
         if len(raw) > 1:
             c.learnt = True
             c.act = 0.0
+            self._stamp += 1
             self._learnts.append(c)
             self._watches[raw[0]].append(c)
             self._watches[raw[1]].append(c)
@@ -813,6 +859,7 @@ class Solver:
             reason = Clause([l] + raw)
             reason.learnt = True
             reason.act = 0.0
+            self._stamp += 1
             self._learnts.append(reason)
             self._watches[l].append(reason)
             self._watches[raw[0]].append(reason)
@@ -847,6 +894,7 @@ class Solver:
         learnt, bt = self._analyze(confl)
         self._backtrack(bt)
         self._n_learned += 1
+        self._stamp += 1
         l0 = learnt[0]
         v0 = l0 >> 1
         if len(learnt) == 1:
@@ -1020,6 +1068,7 @@ class Solver:
                 if ws:
                     watches[l] = [c for c in ws if id(c) not in dead]
         self._learnts = keep
+        self._stamp += 1
         self._max_learnts *= self._learnt_size_inc
 
     def _search(self, nof_conflicts: int) -> bool | None:
@@ -1044,6 +1093,7 @@ class Solver:
                 learnt, bt = self._analyze(confl)
                 self._backtrack(bt)
                 self._n_learned += 1
+                self._stamp += 1
                 l0 = learnt[0]
                 v0 = l0 >> 1
                 if len(learnt) == 1:
@@ -1188,15 +1238,14 @@ class Solver:
         if lit == 0:
             raise ValueError("literal must be a nonzero integer")
         # Cheap path: unit propagation only.
-        if not self._assume_propagate(assumptions):
-            self._backtrack(0)
+        trail = self._assume(assumptions)
+        if trail is None:
             raise ValueError("inconsistent assumptions")
         v = -lit if lit < 0 else lit
         if v > self._nvars:
             self._grow(v)
         l = 2 * v + 1 if lit < 0 else 2 * v
-        vl = self._val[l]
-        self._backtrack(0)
+        vl = True if l in trail else False if l ^ 1 in trail else None
         if vl is not None:
             if self._witness_satisfies(assumptions) or self.solve(assumptions):
                 return vl
