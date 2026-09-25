@@ -76,29 +76,30 @@ the assumptions, the mode and :data:`live_keys` (the cache key), the handler
 tables (fixed during a call), ``ask`` (memoized per call, so fixed too), the
 results of the nested computations it looks up (by induction, what
 recomputing them gives), and the engine flags: the ``busy`` flag of every
-identity handler (switched on while that handler's own candidate is refined)
-and the flag of a case split exploring.  A flag influences the computation
-only where it is read, and every read goes through :func:`read_flag`, which
-records ``(flag, value)`` for the innermost :func:`_refine`; a finished
-:func:`_refine` passes its reads on to its caller, and a cache hit passes on
-the reads stored with the entry.  So each entry stores the result together
-with every flag value the computation (including everything nested in it)
-read, and it is reused only when every one of those flags has that value
-now: a recomputation then takes the same path read by read (each read
-returns what it returned before, and everything else it depends on is the
-same), so it returns the same result.  A flag that was not read cannot have
-mattered.  In particular a result computed while an identity handler was
-switched off is reused where it is on only if that handler was never
-consulted (it would have been read) in the computation.
+identity handler (on while that handler's own candidate is refined) and the
+flag of a case split exploring.  A flag influences the computation only
+where it is read, and every read goes through :func:`read_flag`, which adds
+the flag to the read set of the innermost :func:`_refine`; a finished
+:func:`_refine` adds its read set to its caller's, and a cache hit adds the
+read set stored with the entry.  An entry stores the result, the flags the
+computation read (everything nested in it included) and the flags that
+were on when it started (:data:`state`), and it is reused only when every
+flag it read has the same value now as then.  A flag that was not read
+cannot have mattered, so the result is the one a recomputation gives.  In
+particular a result computed while an identity handler was switched off is
+reused where it is on only if that handler was never consulted in the
+computation (consulting it reads its flag).
 
-Reads of a flag that the computation itself switched on (an identity
-handler refining its own candidate, a case split exploring) do not depend on
-the state the computation started in: in a recomputation the flag is
-switched on at the same point again.  A switch happens only after a read of
-the flag as off (the handler returns at once when its flag is on; a split
-is tried only when no split is exploring), so while the block runs, the
-reads of ``(flag, True)`` collected in the frame that switched it come from
-inside the block, and :func:`switched_on_inside` drops them when it ends.
+Why every read then returns what it returned before: a flag changes only
+inside a :func:`._engine._switched_off` block, which switches it on and back
+off, and every such block is entered right after the same frame read the
+flag as off (an identity handler returns at once when its flag is on; a
+split is tried only when no split is exploring).  So each read of a flag in
+the computation returns either the flag's value when the computation
+started or, inside a block of that flag within the computation, ``True``;
+and when every flag read has its starting value again, the recomputation
+reads the same values in the same order, takes the same path and enters
+the same blocks at the same points.
 
 Hidden inputs the key never covered stay as they were: the split budget
 (:data:`splits_left`) and the firing counters (a trip poisons the whole
@@ -364,27 +365,18 @@ candidate is evaluated, a case split exploring); part of the re-entry key.
 The result cache keys on the flags a result actually read instead
 (:func:`read_flag`)."""
 
-_reads: list[dict] = []
-"""One entry per active :func:`_refine`: the engine flags its computation read so
-far, ``{(id(flag), value): flag}`` (see :func:`read_flag`)."""
+_reads: list[set] = []
+"""One entry per active :func:`_refine`: the ids of the engine flags its computation
+has read so far (see :func:`read_flag`)."""
 
 
 def read_flag(flag: list) -> bool:
     """``flag[0]``, an engine flag (a switched-off identity handler, a split
     exploring), recorded as read by the innermost :func:`_refine`: its result is
-    reused only where the flag has the value read (see :func:`_refine`)."""
-    value = flag[0]
+    reused only where the flag has the same value (see *The result cache*)."""
     if _reads:
-        _reads[-1][id(flag), value] = flag
-    return value
-
-
-def switched_on_inside(flag: list) -> None:
-    """Forget the reads of ``flag`` as ``True`` made while the innermost
-    :func:`_refine` had itself switched it on (called when that block ends): those
-    reads saw the computation's own setting, not the state it started in."""
-    if _reads:
-        _reads[-1].pop((id(flag), True), None)
+        _reads[-1].add(id(flag))
+    return flag[0]
 
 
 def _memoized(ask: Any) -> Any:
@@ -468,10 +460,10 @@ def _refine(expr: Any, assumptions: Any) -> Any:
     cache = _results[-1]
     active = call.active
     context = (assumptions, mode(), frozenset(live_keys))
-    engine_state = tuple(state)
+    engine_state = frozenset(state)
     chain = []
     steps = 0
-    reads: dict = {}
+    reads: set = set()
     _reads.append(reads)
     call.depth += 1
     try:
@@ -482,10 +474,14 @@ def _refine(expr: Any, assumptions: Any) -> Any:
             except TypeError:                        # unhashable assumptions
                 entries = key = None
             if entries:
-                hit = next((e for e in entries if all(f[0] is v for (_, v), f in e[0])), None)
-                if hit is not None:
-                    reads.update(hit[0])
-                    expr = hit[1]
+                for read, stored_state, result in entries:
+                    if stored_state is engine_state or read.isdisjoint(stored_state ^ engine_state):
+                        break
+                else:
+                    result = None
+                if result is not None:
+                    reads |= read
+                    expr = result
                     break
             if key is not None:
                 guard = (expr, context, engine_state)
@@ -505,8 +501,8 @@ def _refine(expr: Any, assumptions: Any) -> Any:
             active.discard(guard)
         _reads.pop()
         if _reads:
-            _reads[-1].update(reads)
-    entry = (tuple(reads.items()), expr)
+            _reads[-1] |= reads
+    entry = (frozenset(reads), engine_state, expr)
     for key, _ in chain:
         cache.setdefault(key, []).append(entry)
     return expr

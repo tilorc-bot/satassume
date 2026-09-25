@@ -767,7 +767,6 @@ def _switched_off(flag: list) -> Iterator[None]:
     finally:
         _dispatch.state.pop()
         flag[0] = False
-        _dispatch.switched_on_inside(flag)
 
 
 def identity_handler(rows: list[Row], *, measure: Measure | None = None,
