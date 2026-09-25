@@ -118,6 +118,10 @@ Of the cases where the battery differs from v3 (13 misses, 41 other forms, same 
 
 Target: fewer engine lines at the end of phase 3 than at its start, with no behaviour change beyond tracks B and C.
 
+### Refactor (first part of track D)
+
+Issue #13 has the design: separate general algorithms from the rule families, online code from offline code (generation, tools, benchmarks), and current-state code (SymPy workarounds, matrices, backend routing) from the rest, and move satrefine's tools into `satrefine/`. Steps 1–7 of the issue are in phase 3, before the other track D items. They start when A6+A7, the fuzz extensions and the default switch are merged. Steps 8–9 (explicit state, renames) come after phase 3.
+
 ## 6. Order, agents and gates
 
 1. **Now:** B9 (`ri/termination`); see "Finishing B9" below.
@@ -180,6 +184,14 @@ An agent started the fix on 2026-09-25, on branch `ri/termination`, in worktree 
    - it first writes down what is already done.
 
    Don't discard uncommitted work in the worktree without reading it.
+
+## 6a. Decisions taken on 2026-09-25 (evening)
+
+- **Track C:** the satassume side is asked, on issue #7, to schedule relations with non-rational bounds (`pi`, floats, `oo`). Phase 3 does C once that lands. Issue #7 was rewritten to its current state.
+- **B8 upstream:** the user files the SymPy issue from the draft in `2026-09-25-phase3-bounds-report.md`, section 7.
+- **Long-term target:** not decided; phase 3 finishes as planned.
+- **Default refine:** switch to `handlers_identities` in phase 3 and fix or update the tests that then fail (branch `ri/default`).
+- **Merging into `main`** (coordinator's recommendation, not yet the user's decision): not during phase 3. `main`'s CI runs `pytest tests` in one process against released SymPy, while refine needs the SymPy branch in `orion/sympy` and one process per test directory. Revisit at the end of phase 3.
 
 ## 7. Out of scope, and decisions for the user
 
