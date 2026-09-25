@@ -125,7 +125,7 @@ Each of these made a tool report success on work it had not done.
    own `ask` (`Q.zero(b**2)` under `Q.imaginary(b)` returns `True`). Random
    sampling alone missed points like these in earlier work.
 
-## 6. Cost: keep every tool call under about 4 minutes
+## 6. Cost and speed: keep every tool call under about 4 minutes, run checks in parallel
 
 What happened: in the phase-2 run (2026-09-25; one coordinator, five Opus
 subagents) the session's usage read 18.5M cache-write tokens against 179.5M
@@ -187,3 +187,34 @@ gives subagents the 1-hour lifetime, but one-hour writes cost 2x the input
 price instead of 1.25x, so every write costs 60% more to protect only
 against broken rules. Use it only if agents keep blocking despite the
 rules.
+
+### Speed: the gates, not the work, set the pace
+
+What happened: in the same run, finished branches waited 1.5-2.5 hours per
+round of gates (suite about 20 minutes, a scoreboard about 15 minutes per
+mode, 12 differential runs of 4-10 minutes each, all one after another),
+and the coordinator restarted every agent's gates three times by merging
+new work into the integration branch underneath them.
+
+1. **Run independent checks in parallel.** The `tests/refine_identities`
+   suite gives identical results under pytest-xdist (`--with pytest-xdist
+   ... -n 4`: 12.5 instead of 20.5 minutes; a few table-regeneration tests
+   set the floor, so more workers help little). Scoreboard modes and
+   differential seeds are separate processes and can all run at once.
+   `tools/refine_gates.sh OUTDIR [BASEDIR]` (on `refine-identities` since
+   8f0e147) runs all of them, `JOBS` at a time (default 6), with
+   `PYTHONHASHSEED=0`, and prints a compact summary.
+2. **Compute the baseline once, centrally.** The coordinator runs the gates
+   once on the integration branch and shares the output directory; each
+   agent passes it as `BASEDIR` and reads only the changed lines. Agents
+   must not re-run the old code for their own before/after comparison.
+3. **Do not move the baseline under agents that are in their gates.** Merge
+   finished branches in order and start the next round against the new
+   baseline, instead of merging unrelated work into the integration branch
+   while other branches are being checked.
+4. **Size parallelism to the machine as it is.** Check `nproc` and `uptime`
+   and look for other sessions' load (`ps -eo pid,pcpu,args --sort=-pcpu`)
+   before choosing `JOBS`. This host has 12 cores (8 fast Cortex-A720, 4
+   slow A520) and is shared with other sessions; gate runs are
+   correctness checks, not timings, so they need no pinned cores
+   (benchmarks still go through `~/bin/bench-container`).
