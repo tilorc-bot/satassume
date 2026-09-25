@@ -198,7 +198,10 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
     name = expr.__class__.__name__
     if not expr.is_Atom and name not in own_args:
         args = [_refine(a, assumptions) for a in expr.args]
-        new = expr.func(*args)
+        try:
+            new = expr.func(*args)
+        except (ValueError, TypeError):          # a child became nan (inconsistent assumptions) and
+            return expr, False                   # the head refuses it (Max: "nan is not comparable")
         if new.is_Atom or new.func is not expr.func or new.args != tuple(args):
             return (new, True) if new != expr else (expr, False)
         expr = new

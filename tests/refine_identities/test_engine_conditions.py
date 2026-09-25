@@ -110,3 +110,12 @@ def test_repeated_work_is_done_once():
         assert calls.count(F(x)) == 1
     finally:
         del handlers_dict['F']
+
+
+def test_a_head_refusing_a_refined_child_leaves_the_node():
+    """``n**k`` refines to ``nan`` under these (inconsistent) assumptions and
+    ``Max`` raises on a ``nan`` argument; the node is left as it was."""
+    from sympy import log
+    k = symbols('k')
+    expr = Max(n**k, log(x))
+    assert refine(expr, Q.imaginary(n) & Q.negative(k) & Q.positive(x) & Q.gt(n, 0)) == expr
