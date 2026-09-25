@@ -48,7 +48,7 @@ RULES = [
     #   asks: Q.integer(2), Q.even(2), Q.positive(2), Q.integer(-1), Q.negative(-1), Q.imaginary(b), Q.real(_t), Q.positive(_t), Q.negative(_t), Q.integer(0), Q.nonnegative(re(b)), Q.positive(-_t), Q.positive(Abs(b)), Q.finite(b), Q.odd(-1)
     (log(b**2), 2*log(Abs(b)) + I*pi, Q.imaginary(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.positive(b) & Q.real(e)
-    #   fired: complex_parts.generated[33], complex_parts.generated[20], power_exp_log.RULES[20], complex_parts.RULES[3], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.generated[33], complex_parts.generated[20], power_exp_log.RULES[22], complex_parts.RULES[3], power_exp_log.IDENTITIES[1]
     #   asks: Q.positive(b), Q.positive(b**e), Q.integer(-1), Q.negative(-1), Q.real(e*log(b))
     (log(b**e), e*log(b), Q.positive(b) & Q.real(e)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.negative(b)
@@ -64,7 +64,7 @@ RULES = [
     #   asks: Q.positive(e), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.finite(e)
     (log(b**e), e*log(b), Q.nonnegative(b) & Q.positive(e)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.odd(b)
-    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.generated[20], complex_parts.generated[21], complex_parts.generated[33], complex_parts.generated[34], complex_parts.generated[24], power_exp_log.RULES[20], complex_parts.RULES[7], integer_funcs.RULES[1], integer_funcs.RULES[0], power_exp_log.FACTS[1], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.generated[20], complex_parts.generated[21], complex_parts.generated[33], complex_parts.generated[34], complex_parts.generated[24], power_exp_log.RULES[22], complex_parts.RULES[7], integer_funcs.RULES[1], integer_funcs.RULES[0], power_exp_log.FACTS[1], power_exp_log.IDENTITIES[1]
     #   asks: Q.integer(e), Q.real(b), Q.positive(b), Q.negative(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.positive(-b), Q.even(e), Q.positive(b**e), Q.real(e), Q.integer(0), Q.integer(-im(e)/2), Q.integer(-e/2), Q.positive(Abs(b))
     (log(b**e), e*log(Abs(b)), Q.even(e) & Q.odd(b)),
     # round 1: from power_exp_log.IDENTITIES[2] under Q.positive(r)

@@ -29,7 +29,7 @@ RULES = [
     (acoth(coth(z)), z, Q.real(z) & ~Q.zero(z)),
     # round 1: from inverse.FACTS[9] under Q.real(z)
     #   fired: complex_parts.RULES[3], inverse.FACTS[9]
-    #   asks: Q.finite(z), Q.real(z), Q.integer(-1), Q.negative(-1)
+    #   asks: Q.real(z), Q.integer(-1), Q.negative(-1)
     (acsch(csch(z)), z, Q.real(z) & ~Q.zero(z)),
     # round 1: from inverse.FACTS[10] under Q.positive(x) & Q.real(y)
     #   fired: inverse.FACTS[10]
