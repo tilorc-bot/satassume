@@ -6,6 +6,7 @@ from sympy.assumptions import Q
 from sympy.abc import x
 from sympy.core import S
 from sympy.core.numbers import Rational
+from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.trigonometric import (
     acos,
     asin,
@@ -25,6 +26,10 @@ from satrefine.harness import (
 
 ASIN_RECTANGLE = Q.real(x) & Q.ge(x, -S.Pi / 2) & Q.le(x, S.Pi / 2)
 ACOS_RECTANGLE = Q.real(x) & Q.ge(x, 0) & Q.le(x, S.Pi)
+ASIN_VALUES = [-S.Pi / 2, -1, -S.Half, 0, S.Half, 1, S.Pi / 2]
+ACOS_VALUES = [0, S.Half, 1, S.Pi / 2, 2, 3, S.Pi]
+MIRRORED_VALUES = [S.Pi / 2, 2, 3, S.Pi, 4, 3 * S.Pi / 2]
+BELOW_VALUES = [-S.Pi, -3, -2, -1, -S.Half, 0]
 # ``tan`` has poles at the endpoints, so ``atan(tan(x))`` needs the open
 # interval; ``Q.gt``/``Q.lt`` are the strict relations satask understands.
 ATAN_INTERVAL = Q.real(x) & Q.gt(x, -S.Pi / 2) & Q.lt(x, S.Pi / 2)
@@ -73,12 +78,19 @@ def test_atan_tan_closed_rectangle_is_not_enough() -> None:
 def test_asin_sin_outside_branch() -> None:
     assert refine(asin(sin(x)), Q.real(x)) == asin(sin(x))
     mirrored = Q.real(x) & Q.ge(x, S.Pi / 2) & Q.le(x, 3 * S.Pi / 2)
-    assert refine(asin(sin(x)), mirrored) == asin(sin(x))
+    # handlers only cancels on the principal branch; handlers_identities (and v3)
+    # give pi - x on the mirrored one, which is in [-pi/2, pi/2] there.
+    refined = refine(asin(sin(x)), mirrored)
+    assert refined in (asin(sin(x)), S.Pi - x)
+    assert_refinement_valid(asin(sin(x)), mirrored, refined, values={x: MIRRORED_VALUES})
 
 
 def test_acos_cos_outside_branch() -> None:
     below = Q.real(x) & Q.ge(x, -S.Pi) & Q.le(x, 0)
-    assert refine(acos(cos(x)), below) == acos(cos(x))
+    # acos(cos(x)) = -x on [-pi, 0] (handlers_identities, v3); handlers leaves it.
+    refined = refine(acos(cos(x)), below)
+    assert refined in (acos(cos(x)), -x)
+    assert_refinement_valid(acos(cos(x)), below, refined, values={x: BELOW_VALUES})
     assert refine(acos(cos(x)), Q.real(x)) == acos(cos(x))
 
 
@@ -96,8 +108,15 @@ def test_partial_range_is_not_enough() -> None:
 
 
 def test_only_matching_inner_function() -> None:
-    assert refine(asin(cos(x)), ASIN_RECTANGLE) == asin(cos(x))
-    assert refine(acos(sin(x)), ACOS_RECTANGLE) == acos(sin(x))
+    # handlers only cancels matching pairs; handlers_identities also uses
+    # cos(x) = sin(pi/2 - Abs(x)) and sin(x) = cos(Abs(x - pi/2)), whose angles
+    # lie on the principal branch on these rectangles.
+    refined = refine(asin(cos(x)), ASIN_RECTANGLE)
+    assert refined in (asin(cos(x)), S.Pi / 2 - Abs(x))
+    assert_refinement_valid(asin(cos(x)), ASIN_RECTANGLE, refined, values={x: ASIN_VALUES})
+    refined = refine(acos(sin(x)), ACOS_RECTANGLE)
+    assert refined in (acos(sin(x)), Abs(x - S.Pi / 2))
+    assert_refinement_valid(acos(sin(x)), ACOS_RECTANGLE, refined, values={x: ACOS_VALUES})
     assert refine(atan(sin(x)), ASIN_RECTANGLE) == atan(sin(x))
     assert refine(asin(x), ASIN_RECTANGLE) == asin(x)
     assert refine(acos(x), ACOS_RECTANGLE) == acos(x)

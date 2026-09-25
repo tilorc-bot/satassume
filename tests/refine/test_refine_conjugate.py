@@ -33,7 +33,8 @@ def test_conjugate_real() -> None:
     assert refine(conjugate(x), Q.real(x)) == x
     assert refine(conjugate(x), Q.positive(x)) == x
     assert refine(conjugate(x), Q.negative(x)) == x
-    assert refine(conjugate(x), Q.zero(x)) == x
+    # handlers gives x, handlers_identities 0: the same value
+    assert refine(conjugate(x), Q.zero(x)) in (x, 0)
 
 
 def test_conjugate_imaginary() -> None:
@@ -52,8 +53,9 @@ def test_conjugate_integer_power() -> None:
 
 
 def test_conjugate_integer_power_negative() -> None:
-    # The base must be known complex for the integer-power rule to fire.
-    assert refine(conjugate(x**n), Q.integer(n)) == conjugate(x**n)
+    # handlers wants the base known complex before it fires; handlers_identities
+    # (and v3) give conjugate(x)**n, which holds for every x, 0 and zoo included.
+    assert refine(conjugate(x**n), Q.integer(n)) in (conjugate(x**n), conjugate(x)**n)
     # The exponent must be known integer.
     assert refine(conjugate(x**n), Q.imaginary(x)) == conjugate(x**n)
 

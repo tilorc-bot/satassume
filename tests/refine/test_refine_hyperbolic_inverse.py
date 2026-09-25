@@ -6,6 +6,7 @@ from sympy.assumptions import Q
 from sympy.abc import x
 from sympy.core import S
 from sympy.core.numbers import Rational
+from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.hyperbolic import (
     acosh,
     acoth,
@@ -56,8 +57,12 @@ def test_acosh_cosh_nonnegative() -> None:
 
 
 def test_acosh_cosh_not_nonnegative() -> None:
-    assert refine(acosh(cosh(x)), Q.real(x)) == acosh(cosh(x))
-    assert refine(acosh(cosh(x)), Q.negative(x)) == acosh(cosh(x))
+    # handlers needs x >= 0; handlers_identities (and v3) use acosh(cosh(x)) = Abs(x)
+    # for real x, checked numerically here.
+    for assumptions, other in ((Q.real(x), Abs(x)), (Q.negative(x), -x)):
+        refined = refine(acosh(cosh(x)), assumptions)
+        assert refined in (acosh(cosh(x)), other)
+        assert_refinement_valid(acosh(cosh(x)), assumptions, refined)
 
 
 def test_atanh_tanh_real() -> None:
@@ -87,8 +92,11 @@ def test_asech_sech_nonnegative() -> None:
 
 
 def test_asech_sech_not_nonnegative() -> None:
-    assert refine(asech(sech(x)), Q.real(x)) == asech(sech(x))
-    assert refine(asech(sech(x)), Q.negative(x)) == asech(sech(x))
+    # As for acosh: asech(sech(x)) = Abs(x) for real x.
+    for assumptions, other in ((Q.real(x), Abs(x)), (Q.negative(x), -x)):
+        refined = refine(asech(sech(x)), assumptions)
+        assert refined in (asech(sech(x)), other)
+        assert_refinement_valid(asech(sech(x)), assumptions, refined)
 
 
 def test_acsch_csch_nonzero() -> None:

@@ -10,6 +10,7 @@ import pytest
 from sympy.assumptions import Q
 from sympy.abc import n
 from sympy.core import S
+from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.special.gamma_functions import gamma
 
 from satrefine import refine
@@ -32,7 +33,9 @@ def test_nonpositive_integer_is_pole() -> None:
 
 
 def test_non_poles_unchanged() -> None:
-    assert refine(gamma(n), Q.integer(n) & Q.positive(n)) == gamma(n)
+    # handlers_identities (and v3) give factorial(n - 1), which is gamma(n) for
+    # positive integers; handlers leaves gamma(n).
+    assert refine(gamma(n), Q.integer(n) & Q.positive(n)) in (gamma(n), factorial(n - 1))
     assert refine(gamma(n), Q.integer(n)) == gamma(n)
     assert refine(gamma(n), Q.positive(n)) == gamma(n)
     assert refine(gamma(n), Q.real(n)) == gamma(n)
