@@ -1,7 +1,7 @@
 """Round 3, items B1 and B2: where the cone path and node visits spend
 their time, as a share of the cold pass.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/cone_node_split.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/cone_node_split.py \
         stream.pkl MODE [PLAIN_SECONDS [CONE_INDEX_FILE]]
 
 MODE ``b1``: ``Engine.ask`` is replaced by an instrumented copy of itself

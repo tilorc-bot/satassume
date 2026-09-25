@@ -1,7 +1,7 @@
 """Round 3, item B5: split of the cold pass by area after A2, by sampling.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/profile_split.py stream.pkl [INTERVAL_MS] [--json]
-    python agent-reports/scripts/profile_split.py --sum run1.json run2.json ...
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/profile_split.py stream.pkl [INTERVAL_MS] [--json]
+    python agent-reports/2026-09-perf-rounds/scripts/profile_split.py --sum run1.json run2.json ...
 
 A CPU-time sampler (``signal.setitimer(ITIMER_PROF)``, default every 0.5
 ms) records, for every sample, two things about the Python stack:

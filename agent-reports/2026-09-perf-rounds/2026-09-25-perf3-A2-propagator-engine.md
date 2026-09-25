@@ -38,7 +38,7 @@ edit no session holds a rule clause.
   79 per node. Readers: `tests/test_solver_incremental.py:220` and
   `tests/test_solver.py:145` (solver-owned; they read their own solvers,
   not engine sessions, so unaffected unless A1 changes them);
-  `agent-reports/scripts/clone_bound.py` (reports clause counts per base
+  `agent-reports/2026-09-perf-rounds/scripts/clone_bound.py` (reports clause counts per base
   session: the numbers in the 2.2 report would shrink, the script still
   runs), `witness_bound.py` (uses `len(_clauses)` as an index into the
   clause list, still consistent), `rule_propagation_share.py` (tags
@@ -64,7 +64,7 @@ edit no session holds a rule clause.
 
 The design's precondition for `register_block` ("every variable of the
 block is unassigned, true at the only call site") does **not** hold on the
-stream. `agent-reports/scripts/block_precondition.py` (Pi, cold pass,
+stream. `agent-reports/2026-09-perf-rounds/scripts/block_precondition.py` (Pi, cold pass,
 answers match) classifies the 8,260 rule blocks instantiated:
 
 | block variables at instantiation | blocks | share |

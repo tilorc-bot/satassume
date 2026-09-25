@@ -1,7 +1,7 @@
 """Round 3, item B3: the cost of the SymPy-facing layer (``sympy_api.ask``)
 around the engine, as a share of the cold pass.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/api_overhead.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/api_overhead.py \
         stream.pkl MODE
 
 MODE (one per process, each on a cold engine):

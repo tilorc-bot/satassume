@@ -4,7 +4,7 @@
 - **Status:** measured offline; no implementation (as asked). Bound
   **7.2% of the logged pass without the consistency check** (a semantic
   change), **about 3% with it** (proxy estimate). Script
-  `agent-reports/scripts/memo_subsumption.py`, run on the Pi over the
+  `agent-reports/2026-09-perf-rounds/scripts/memo_subsumption.py`, run on the Pi over the
   stream and `log-747fb0e.jsonl` (logged pass 3,310 ms; shares below are
   of that sum, which includes the log's overhead of about 6%).
 - **Scope:** measurement only (`sympy_api.ask`'s answer memo)

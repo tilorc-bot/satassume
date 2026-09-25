@@ -4,7 +4,7 @@ the clause graph under the root and assumption assignment, against the
 session's unassigned variables, and the share of the real search's
 decisions that fall outside that component.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/scripts/component_bound.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/2026-09-perf-rounds/scripts/component_bound.py \
         ~/.cache/satassume/stream.pkl
 
 Component: breadth-first from the query variable over an occurrence index

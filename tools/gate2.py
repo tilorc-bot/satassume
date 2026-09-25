@@ -5,7 +5,7 @@
 
 The queries are the ``sympy.ask`` / ``_ask_recursive`` calls SymPy's
 assumption tests make, recorded with ``tools/record_queries.py`` (see
-``agent-reports/2026-09-25-perf2-0.2-second-gate.md`` for how).  Every
+``agent-reports/2026-09-perf-rounds/2026-09-25-perf2-0.2-second-gate.md`` for how).  Every
 new-system record is replayed in recording order through
 ``satassume.sympy_api.ask`` with one fresh ``Engine``, in a fresh process
 whose ``PYTHONPATH`` is ``CHECKOUT`` and the SymPy pin, so any satassume

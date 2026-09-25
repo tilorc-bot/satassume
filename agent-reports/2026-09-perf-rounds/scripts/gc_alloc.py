@@ -1,7 +1,7 @@
 """Round 3, item B4: the cyclic garbage collector's share of the replay, and
 which objects it spends its time on.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/gc_alloc.py stream.pkl MODE
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/gc_alloc.py stream.pkl MODE
 
 One cold pass per process (answers checked). MODE:
 

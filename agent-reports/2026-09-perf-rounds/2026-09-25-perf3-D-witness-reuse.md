@@ -22,7 +22,7 @@
 
 ## Measurement
 
-`agent-reports/scripts/witness_bound.py` (unchanged) on `main` plus C,
+`agent-reports/2026-09-perf-rounds/scripts/witness_bound.py` (unchanged) on `main` plus C,
 local:
 - 6,384 solves, 1.21 s inside `_solve`, 37.6% of the instrumented pass
   (3.23 s).

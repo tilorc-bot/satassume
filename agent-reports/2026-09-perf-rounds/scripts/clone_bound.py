@@ -1,6 +1,6 @@
 """Item 2.2: the bound for a base-session clone.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/scripts/clone_bound.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/2026-09-perf-rounds/scripts/clone_bound.py \
         ~/.cache/satassume/stream.pkl
 
 A cone rebuild (and a rebuild of an evicted context session) starts from

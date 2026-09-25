@@ -3,7 +3,7 @@ that are already assigned (the case where the propagator's
 ``register_block`` precondition, "every variable of the block is
 unassigned", fails and the engine must fall back to ``add_pattern``)?
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/block_precondition.py stream.pkl
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/block_precondition.py stream.pkl
 
 Wraps ``Solver.add_pattern`` for ``RULE_INTERNAL`` calls on the cold pass
 (answers checked) and classifies each call: all block variables unassigned,

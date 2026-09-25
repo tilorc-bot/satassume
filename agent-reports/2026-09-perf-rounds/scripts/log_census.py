@@ -1,6 +1,6 @@
 """Sessions by reason and time shares from a per-query log (tools/query_log.py).
 
-    python agent-reports/scripts/log_census.py ~/.cache/satassume/log-747fb0e.jsonl
+    python agent-reports/2026-09-perf-rounds/scripts/log_census.py ~/.cache/satassume/log-747fb0e.jsonl
 """
 import json, sys
 from collections import Counter

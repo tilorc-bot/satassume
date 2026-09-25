@@ -1,6 +1,6 @@
 """Round 3, item B6: how much a monotone answer memo could answer.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/memo_subsumption.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/memo_subsumption.py \
         stream.pkl log-747fb0e.jsonl
 
 Offline, over the stream in order and the per-query log of ``747fb0e``

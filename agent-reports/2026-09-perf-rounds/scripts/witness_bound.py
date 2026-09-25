@@ -2,7 +2,7 @@
 the refine-stream replay and count the solves a stored model would have
 answered.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/witness_bound.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/witness_bound.py \
         ~/.cache/satassume/stream.pkl [--ring 1,2,4,8,16] [--no-theory-gate]
 
 The per-query log (0.3) holds the models but not the assumption and target

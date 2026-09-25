@@ -39,11 +39,11 @@
    (propagation, `implied`, escalation, search), `writeback` (root trail
    to the fact cache), and `compile.py`'s `VarTable`.
 6. The round 3 reports for the numbers used here:
-   `perf3-A1-propagator-solver.md`, `perf3-A2-propagator-engine.md`,
-   `perf3-B2a-lazy-node-atoms.md`, `perf3-B5-profile-after-A2.md`,
-   `perf3-B6-memo-subsumption.md`; round 2's `perf2-2.5-failed-assumption-memo.md`.
+   `2026-09-perf-rounds/2026-09-25-perf3-A1-propagator-solver.md`, `2026-09-perf-rounds/2026-09-25-perf3-A2-propagator-engine.md`,
+   `2026-09-perf-rounds/2026-09-25-perf3-B2a-lazy-node-atoms.md`, `2026-09-perf-rounds/2026-09-25-perf3-B5-profile-after-A2.md`,
+   `2026-09-perf-rounds/2026-09-25-perf3-B6-memo-subsumption.md`; round 2's `2026-09-perf-rounds/2026-09-25-perf2-2.5-failed-assumption-memo.md`.
 7. Environment and gates: the "Environment" section of
-   `2026-09-25-perf-round-3-plan.md` (local venv, the Pi, `tools/ab.py`,
+   `2026-09-perf-rounds/2026-09-25-perf-round-3-plan.md` (local venv, the Pi, `tools/ab.py`,
    `tools/gate2.py`, the per-query log).
 
 ## 1. How unary facts work today, and what that costs and cannot do
@@ -336,7 +336,7 @@ persistent-solver plan (its section 2). Concretely:
 
 ### Stage 0: measurements, no code (one day)
 
-Scripts under `agent-reports/scripts/`, report
+Scripts under `agent-reports/scripts/` (a fresh directory; the rounds' scripts are archived under `agent-reports/2026-09-perf-rounds/scripts/`), report
 `2026-09-25-facts-0-measurements.md`.
 
 - **The never-read fraction.** Wrap a replay: tag every trail literal

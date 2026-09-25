@@ -1,6 +1,6 @@
 """Round 3, item B2a: the ``P`` atoms ``VarTable.node_base`` creates per node.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/node_atoms.py stream.pkl [PLAIN_SECONDS]
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/node_atoms.py stream.pkl [PLAIN_SECONDS]
 
 Measures the eager ``VarTable`` of ``895a6c2`` (it replaces ``atom_of``,
 which is a read-only property after B2a); run it on the reference clone.

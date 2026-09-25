@@ -9,7 +9,7 @@
 - **Scope:** `satassume/solver.py`, `engine.py`, `compile.py`,
   `theory.py`; `tests/test_solver_incremental.py`, `test_solver.py`,
   `test_lazy_atoms.py`, `test_theory_hooks.py`; the per-item reports
-  `2026-09-25-perf3-*.md` and scripts under `agent-reports/scripts/`
+  `2026-09-perf-rounds/2026-09-25-perf3-*.md` and scripts under `agent-reports/2026-09-perf-rounds/scripts/`
 - **Read this if:** you want the engine's speed after this round, why
   the propagator returned half its estimate, or what the two follow-up
   plans start from
@@ -53,12 +53,12 @@ was registered).
 
 | item | bound / A/B | why | report |
 |---|---:|---|---|
-| B3 memo and API overhead | 1.5% | 2 µs per memo hit; `_registry_state` already on the version counter | `perf3-B3-memo-api-overhead.md` |
-| B1 wasted first attempt on a polluted session | 3.3% own (ceiling 6.0 to 8.0%) | wasted and useful attempts look the same beforehand; the early-cone variant that preserves answers gets 3.3% | `perf3-B1-polluted-first-attempt.md` |
-| B4 collector and allocation | measured | 9.4 to 10.2% before A2, 3.7 to 4.4% after; 85% of what it walks is solver lists; no engine-side cut over 0.5% | `perf3-B4-gc-and-allocation.md` |
-| B5 profile after A2 | measured | no engine-side item over its line (template filter memo 1.6 to 2.2%) | `perf3-B5-profile-after-A2.md` |
-| B6 answer-memo subsumption | 3% with checks kept (7.2% without) | skipping the consistency and scope checks would make 251 `None` answers definite and mask an inconsistent set | `perf3-B6-memo-subsumption.md` |
-| C hot loops | -6.8% as a bundle of six; -2.4 to -3.2% after two low-gain, less readable cuts were reverted | the two reverted cuts were worth 3 to 4 points only in combination; the model slice moved into D | `perf3-C-hot-loops.md` |
+| B3 memo and API overhead | 1.5% | 2 µs per memo hit; `_registry_state` already on the version counter | `2026-09-perf-rounds/2026-09-25-perf3-B3-memo-api-overhead.md` |
+| B1 wasted first attempt on a polluted session | 3.3% own (ceiling 6.0 to 8.0%) | wasted and useful attempts look the same beforehand; the early-cone variant that preserves answers gets 3.3% | `2026-09-perf-rounds/2026-09-25-perf3-B1-polluted-first-attempt.md` |
+| B4 collector and allocation | measured | 9.4 to 10.2% before A2, 3.7 to 4.4% after; 85% of what it walks is solver lists; no engine-side cut over 0.5% | `2026-09-perf-rounds/2026-09-25-perf3-B4-gc-and-allocation.md` |
+| B5 profile after A2 | measured | no engine-side item over its line (template filter memo 1.6 to 2.2%) | `2026-09-perf-rounds/2026-09-25-perf3-B5-profile-after-A2.md` |
+| B6 answer-memo subsumption | 3% with checks kept (7.2% without) | skipping the consistency and scope checks would make 251 `None` answers definite and mask an inconsistent set | `2026-09-perf-rounds/2026-09-25-perf3-B6-memo-subsumption.md` |
+| C hot loops | -6.8% as a bundle of six; -2.4 to -3.2% after two low-gain, less readable cuts were reverted | the two reverted cuts were worth 3 to 4 points only in combination; the model slice moved into D | `2026-09-perf-rounds/2026-09-25-perf3-C-hot-loops.md` |
 
 ## 4. What the round taught
 

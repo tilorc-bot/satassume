@@ -17,12 +17,12 @@
 2. `agent-reports/2026-09-25-perf-round-2-report.md` and
    `2026-09-25-perf-round-3-report.md`: what was tried, what was measured,
    what was dropped. Do not re-measure dropped items.
-3. `agent-reports/2026-09-25-perf3-B5-profile-after-A2.md`: where the time
+3. `agent-reports/2026-09-perf-rounds/2026-09-25-perf3-B5-profile-after-A2.md`: where the time
    goes now, by area.
-4. `agent-reports/2026-09-25-perf2-2.1-session-census.md` (sessions built,
-   by reason) and `2026-09-25-perf3-B1-polluted-first-attempt.md` (why
+4. `agent-reports/2026-09-perf-rounds/2026-09-25-perf2-2.1-session-census.md` (sessions built,
+   by reason) and `2026-09-perf-rounds/2026-09-25-perf3-B1-polluted-first-attempt.md` (why
    cone rebuilds exist and why skipping them changes answers).
-5. `agent-reports/2026-09-25-perf2-1.2-component-search.md`: the one
+5. `agent-reports/2026-09-perf-rounds/2026-09-25-perf2-1.2-component-search.md`: the one
    earlier attempt to search less than the whole session, and why it
    measured under 1% on sessions of about 70 variables.
 6. Tooling: `tools/ab.py` (interleaved A/B), `tools/gate2.py` (second
@@ -32,7 +32,7 @@
 7. Environment: local venv and SymPy pin, the Pi container, the stream at
    `~/.cache/satassume/stream.pkl`, in the memory notes and in the
    "Environment" section of the round 3 plan
-   (`2026-09-25-perf-round-3-plan.md`). Two machines, one measuring
+   (`2026-09-perf-rounds/2026-09-25-perf-round-3-plan.md`). Two machines, one measuring
    workload each, every command under 270 s.
 
 ## 1. The idea
@@ -129,7 +129,7 @@ some `None` definitely. The rule for this evaluation:
 
 ### Stage 0: measurement from the stream and the log (about a day, no code)
 
-Scripts under `agent-reports/scripts/`, report
+Scripts under `agent-reports/scripts/` (a fresh directory; the rounds' scripts are archived under `agent-reports/2026-09-perf-rounds/scripts/`), report
 `2026-09-25-global-solver-0-measurements.md`.
 
 - How assumption sets relate between consecutive queries: identical,

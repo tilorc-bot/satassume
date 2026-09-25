@@ -5,7 +5,7 @@
   9.5% of the cold pass, but almost everything it scans is allocated by the
   solver (clause lists and per-variable watch lists), not by code the
   engine agent owns. The engine-side cuts are bounded under 1%, below the
-  3% rule. Script `agent-reports/scripts/gc_alloc.py`. Pi, `main` at
+  3% rule. Script `agent-reports/2026-09-perf-rounds/scripts/gc_alloc.py`. Pi, `main` at
   `6577484`, Python 3.13, default thresholds `(2000, 10, 10)`.
 - **Scope:** measurement only
 - **Read this if:** you work on A2, on item C (the solver's hot loops), or

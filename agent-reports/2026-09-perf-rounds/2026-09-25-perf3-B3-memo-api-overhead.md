@@ -4,7 +4,7 @@
 - **Status:** dropped by the bound rule. Everything `sympy_api.ask` does
   around the engine is at most 1.5% of the cold pass, under the 3% rule for
   ten-line items. No code change. Script
-  `agent-reports/scripts/api_overhead.py`, run on the Pi on `main` at
+  `agent-reports/2026-09-perf-rounds/scripts/api_overhead.py`, run on the Pi on `main` at
   `9e8c3eb` (satassume code identical to `895a6c2`), cold pass 3.63 s.
 - **Scope:** measurement only (`satassume/sympy_api.py`, the answer memo,
   `_registry_state`, `_formula`)

@@ -1,6 +1,6 @@
 """Item 3.1: where the ``implied`` misses come from.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/scripts/assume_misses.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/2026-09-perf-rounds/scripts/assume_misses.py \
         ~/.cache/satassume/stream.pkl
 
 One instrumented pass (``tools/query_log.py``'s wrappers underneath).

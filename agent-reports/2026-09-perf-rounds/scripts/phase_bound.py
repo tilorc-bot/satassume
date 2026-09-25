@@ -1,7 +1,7 @@
 """Bound for item 1.3 (phase heuristic): what a better phase choice could
 remove from the entails searches of the refine-stream replay.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/scripts/phase_bound.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/2026-09-perf-rounds/scripts/phase_bound.py \
         ~/.cache/satassume/stream.pkl ~/.cache/satassume/log-d166940.jsonl
 
 Offline, from the log: decisions and conflicts per solve and the time of

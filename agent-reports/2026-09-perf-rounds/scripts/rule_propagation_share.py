@@ -1,6 +1,6 @@
 """Item 2.3: the share of solver propagation work that the rule block causes.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/scripts/rule_propagation_share.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy:tools python agent-reports/2026-09-perf-rounds/scripts/rule_propagation_share.py \
         ~/.cache/satassume/stream.pkl
 
 Read-only wrappers on the replay.  Every problem clause is tagged by the

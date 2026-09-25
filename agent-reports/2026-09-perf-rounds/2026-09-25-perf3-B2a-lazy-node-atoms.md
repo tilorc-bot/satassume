@@ -5,7 +5,7 @@
   the Pi; ten-line rule 3%).
 - **Scope:** `satassume/compile.py` (`VarTable`), `satassume/engine.py`
   (`Session.writeback`), `tests/test_lazy_atoms.py` (new). Script
-  `agent-reports/scripts/node_atoms.py` (measures the eager table; run it
+  `agent-reports/2026-09-perf-rounds/scripts/node_atoms.py` (measures the eager table; run it
   on the reference).
 - **Read this if:** you read `VarTable.atom_of`, or add a reader of the
   atom behind a solver variable

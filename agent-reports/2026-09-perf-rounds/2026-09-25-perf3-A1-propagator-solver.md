@@ -6,7 +6,7 @@
   before). **Finding for the A2 decision: the gain with the engine using
   the propagator is about 4.5% locally, not the design's 18 to 21%.**
 - **Scope:** `satassume/solver.py`, `tests/test_solver.py`,
-  `tests/test_solver_incremental.py`, `agent-reports/scripts/propagator_census.py`
+  `tests/test_solver_incremental.py`, `agent-reports/2026-09-perf-rounds/scripts/propagator_census.py`
 - **Read this if:** you review A1, you implement A2 (API at the end), or
   you decide whether A2 is kept
 
@@ -18,7 +18,7 @@ clauses, realistic gain 18 to 21%.
 
 What the propagator does on the replay, with A2 simulated (the engine's
 `add_pattern(RULE_INTERNAL, b, NPRED)` redirected to `register_block(b)`;
-`agent-reports/scripts/propagator_census.py`, instrumented, local):
+`agent-reports/2026-09-perf-rounds/scripts/propagator_census.py`, instrumented, local):
 
 | | clauses (today) | propagator |
 |---|---:|---:|
@@ -191,7 +191,7 @@ known failures.
 - Full suite: `2 failed, 1691 passed, 1 skipped, 4 xfailed, 1 xpassed`
   (baseline 1668 plus 23 new; the 2 known `test_shared_facts` failures).
 
-`agent-reports/scripts/rule_propagation_share.py` still runs unchanged.
+`agent-reports/2026-09-perf-rounds/scripts/rule_propagation_share.py` still runs unchanged.
 On the A2 preview it gives the after picture:
 - no rule clauses inserted;
 - `_propagate` 1,022 ms against 830 ms;

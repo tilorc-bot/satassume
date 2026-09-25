@@ -1,7 +1,7 @@
 """Item A1: what the rule-block propagator does on the replay, with the
 engine's block redirected to it (A2 simulated, no engine change).
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/propagator_census.py \
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/propagator_census.py \
         ~/.cache/satassume/stream.pkl [off|on]
 
 ``on`` (default): every ``add_pattern(RULE_INTERNAL, b, NPRED)`` the engine

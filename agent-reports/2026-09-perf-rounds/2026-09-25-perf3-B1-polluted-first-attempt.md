@@ -8,7 +8,7 @@
   saves 3.3% on top of `main` (oracle ceiling 6.0%), under the 5% rule.
   No code change.
 - **Scope:** measurement only; `Engine.ask` (the cone block). Script
-  `agent-reports/scripts/cone_node_split.py`, modes `b1`, `b1oracle`,
+  `agent-reports/2026-09-perf-rounds/scripts/cone_node_split.py`, modes `b1`, `b1oracle`,
   `p0`/`p1`/`p2`. Pi, `main` at `9e8c3eb` (satassume code of `895a6c2`),
   unwrapped cold pass 3.63 to 3.64 s (the share denominator).
 - **Read this if:** you implement B1, or change when `Engine.ask` goes to

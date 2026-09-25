@@ -8,7 +8,7 @@
   orchestrator reassigns the unowned theory code (section 4).
 - **Scope:** measurement only. Pi, `main` at `747fb0e` (A1 + A2), unwrapped
   cold pass **3.12 to 3.16 s** (the denominator below). Scripts:
-  `agent-reports/scripts/profile_split.py` (new: sampling split by phase
+  `agent-reports/2026-09-perf-rounds/scripts/profile_split.py` (new: sampling split by phase
   and area), `emit_bound.py` (new), `log_census.py` (new),
   `cone_node_split.py` (node copy updated for A2), `gc_alloc.py`.
   Log: `~/.cache/satassume/log-747fb0e.jsonl` (13,877 lines, 6,390,938

@@ -9,7 +9,7 @@
   `templates/registry.py`; `tools/ab.py`, `tools/gate2.py`,
   `tools/query_log.py`, `tools/refine_replay.py`;
   `tests/test_solver_incremental.py`, `tests/test_memos.py`; the per-item
-  reports `2026-09-25-perf2-*.md` and scripts under `agent-reports/scripts/`
+  reports `2026-09-perf-rounds/2026-09-25-perf2-*.md` and scripts under `agent-reports/2026-09-perf-rounds/scripts/`
 - **Read this if:** you want the state of the engine's speed after this
   round, what not to try again, or you are about to decide on 2.3
 
@@ -51,13 +51,13 @@ items), none by argument. Each has a report and a re-runnable script.
 
 | item | bound | why | report |
 |---|---:|---|---|
-| 1.1 witness reuse | 4.8% | a ring of 4 models hits 22% of solves, but those are the cheap ones (18% of solve time); Nones of a session do not share a model | `perf2-1.1-witness-reuse.md` |
-| 1.2 component-restricted search | <1% | the query variable's component is 0.88 of the session (0.83 in cone rebuilds): templates link every node to its subexpressions and nodes share symbols. The cone machinery stays. | `perf2-1.2-component-search.md` |
-| 1.3 phase heuristic | ≤4.9% ceiling, ~2.7% real | median 11 decisions and 0 conflicts per solve | `perf2-1.3-phase-heuristic.md` |
-| 2.2 base-session clone | 1.6% net (5.4% with a free clone) | the base session is small (~50 vars, 130 clauses); a cone query's time is visiting its own nodes (12.2%) and searching (9.0%), not re-grounding the assumptions | `perf2-2.2-base-session-clone.md`, census in `perf2-2.1-session-census.md` |
-| 2.4 atomic fast path | 0.9% | only the literal-in-assumptions part keeps answers; the other 5% would skip the consistency check and change 399 answers | `perf2-2.4-atomic-fast-path.md` |
-| 3.1 `implied` misses | 2.7% + 0.6% | theory sessions could hold levels for 2.7%; the "root units" are node facts emitted at node creation, not `writeback()`, nothing to batch | `perf2-3.1-implied-misses.md` |
-| 2.1 `keep_sessions` retest | 0.4% (32), 0.7% (64) | after 2.5 only 143 sessions are LRU rebuilds | `perf2-2.1-session-census.md` |
+| 1.1 witness reuse | 4.8% | a ring of 4 models hits 22% of solves, but those are the cheap ones (18% of solve time); Nones of a session do not share a model | `2026-09-perf-rounds/2026-09-25-perf2-1.1-witness-reuse.md` |
+| 1.2 component-restricted search | <1% | the query variable's component is 0.88 of the session (0.83 in cone rebuilds): templates link every node to its subexpressions and nodes share symbols. The cone machinery stays. | `2026-09-perf-rounds/2026-09-25-perf2-1.2-component-search.md` |
+| 1.3 phase heuristic | ≤4.9% ceiling, ~2.7% real | median 11 decisions and 0 conflicts per solve | `2026-09-perf-rounds/2026-09-25-perf2-1.3-phase-heuristic.md` |
+| 2.2 base-session clone | 1.6% net (5.4% with a free clone) | the base session is small (~50 vars, 130 clauses); a cone query's time is visiting its own nodes (12.2%) and searching (9.0%), not re-grounding the assumptions | `2026-09-perf-rounds/2026-09-25-perf2-2.2-base-session-clone.md`, census in `2026-09-perf-rounds/2026-09-25-perf2-2.1-session-census.md` |
+| 2.4 atomic fast path | 0.9% | only the literal-in-assumptions part keeps answers; the other 5% would skip the consistency check and change 399 answers | `2026-09-perf-rounds/2026-09-25-perf2-2.4-atomic-fast-path.md` |
+| 3.1 `implied` misses | 2.7% + 0.6% | theory sessions could hold levels for 2.7%; the "root units" are node facts emitted at node creation, not `writeback()`, nothing to batch | `2026-09-perf-rounds/2026-09-25-perf2-3.1-implied-misses.md` |
+| 2.1 `keep_sessions` retest | 0.4% (32), 0.7% (64) | after 2.5 only 143 sessions are LRU rebuilds | `2026-09-perf-rounds/2026-09-25-perf2-2.1-session-census.md` |
 
 The plan's headline bet, that `None` is expensive because of search
 (phase 1), did not survive measurement: search is 22% of the pass and its
@@ -71,7 +71,7 @@ session builds (landed as 2.5) and the rule block.
 the unary predicate implications). On this `main` they are 83% of inserted
 clauses, **10.0% of the cold pass to insert and 18.9% to propagate over
 (83% of watch-list visits): 28.9% combined**, realistic saving 18 to 21%.
-Design in `2026-09-25-perf2-2.3-propagator-design.md`: one lookup per
+Design in `2026-09-perf-rounds/2026-09-25-perf2-2.3-propagator-design.md`: one lookup per
 processed literal in `_propagate` over a shared per-rule table, reasons
 encoded as ints and materialized only in `_analyze`; no change to the
 theory interface, held levels or the propagation cache; engine side is six

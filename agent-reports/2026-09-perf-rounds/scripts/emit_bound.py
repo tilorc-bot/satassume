@@ -1,6 +1,6 @@
 """Round 3, item B5: bound for precompiled template clause emission.
 
-    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/scripts/emit_bound.py stream.pkl [PLAIN_SECONDS]
+    PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python agent-reports/2026-09-perf-rounds/scripts/emit_bound.py stream.pkl [PLAIN_SECONDS]
 
 Records, over the cold pass, every demand filter the engine applies to a
 pattern's clauses (``_compile_patterns``: ``c[1] & want`` over

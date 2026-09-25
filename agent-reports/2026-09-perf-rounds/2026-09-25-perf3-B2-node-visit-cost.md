@@ -5,7 +5,7 @@
   part measured here; the rest is what B2 would work on).
 - **Scope:** measurement only; `Session.node`, `_compile_patterns`,
   `_emit_pattern`, `VarTable.node_base`. Script
-  `agent-reports/scripts/cone_node_split.py`, modes `b2` and `b2x`. Pi,
+  `agent-reports/2026-09-perf-rounds/scripts/cone_node_split.py`, modes `b2` and `b2x`. Pi,
   `main` at `9e8c3eb` (satassume code of `895a6c2`), unwrapped cold pass
   3.63 s (the share denominator); two runs each, both given where they
   differ.
