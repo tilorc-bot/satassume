@@ -258,6 +258,8 @@ def compare(left, right, points):
 
 
 def _fmt(v):
+    if isinstance(v, tuple):            # a matrix value from refine_fuzz.mat_value
+        return f"{v[1][0]}x{v[1][1]} matrix [" + ", ".join(_fmt(x) for x in v[2]) + "]"
     return v if isinstance(v, str) else f"{v.real:.12g}{v.imag:+.12g}j"
 
 
@@ -269,7 +271,7 @@ class _Timeout(Exception):
     pass
 
 
-def worker(package, seed, cases, out, timeout):
+def worker(package, seed, cases, out, timeout, matrices=False):
     os.environ["SATREFINE_HANDLERS"] = package
     f = fz()
     from sympy import Basic, srepr, sympify
@@ -283,7 +285,7 @@ def worker(package, seed, cases, out, timeout):
     records = []
     t0 = time.time()
     for case in range(cases):
-        g = generate(seed, case)
+        g = f.mat_generate(seed, case) if matrices else generate(seed, case)
         if g is None:
             continue
         head, e, assumptions, combos, rel = g
@@ -308,12 +310,15 @@ def worker(package, seed, cases, out, timeout):
                 rec["result"] = srepr(r)
                 rec["result_str"] = str(r)
                 rng = random.Random(seed * 7919 + case)
-                points = check_points([e, r], combos, rel, rng)
-                n_ok, ce = compare(e, r, points)
+                if matrices:
+                    n_ok, ce = f.mat_compare(e, r, f.mat_points(combos, rel, rng))
+                else:
+                    points = check_points([e, r], combos, rel, rng)
+                    n_ok, ce = compare(e, r, points)
                 rec["checked"] = n_ok
                 if ce:
                     pt, a, b = ce
-                    rec["unsound"] = {"point": {str(k): str(v) for k, v in pt.items()},
+                    rec["unsound"] = {"point": {str(k): str(v).replace("\n", "") for k, v in pt.items()},
                                       "orig": _fmt(a), "refined": _fmt(b)}
         except _Timeout:
             rec["status"] = "timeout"
@@ -334,6 +339,8 @@ def worker(package, seed, cases, out, timeout):
 def run_worker(package, args, out):
     cmd = [sys.executable, str(Path(__file__).resolve()), "--worker", package, "--seed", str(args.seed),
            "--cases", str(args.cases), "--out", out, "--timeout", str(args.timeout)]
+    if args.matrices:
+        cmd.append("--matrices")
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr)
@@ -350,6 +357,9 @@ def _load(s):
     from sympy.assumptions.relation.binrel import AppliedBinaryRelation
     from sympy.core.symbol import Str
     ns.update(AppliedBinaryRelation=AppliedBinaryRelation, Str=Str)
+    import sympy.matrices.expressions as mexpr
+    from sympy.matrices.expressions.matexpr import MatrixElement
+    ns.update({k: getattr(mexpr, k) for k in dir(mexpr) if not k.startswith("_")}, MatrixElement=MatrixElement)
     v = eval(s, dict(ns))
     if srepr(v) != s:
         with evaluate(False):
@@ -373,11 +383,13 @@ def main(argv=None):
     ap.add_argument("--summary", action="store_true", help="print only the counts")
     ap.add_argument("--show", type=int, default=15, help="examples listed per category")
     ap.add_argument("--timeout", type=int, default=60)
+    ap.add_argument("--matrices", action="store_true",
+                    help="matrix expressions (refine_fuzz.mat_generate) checked at explicit sample matrices")
     ap.add_argument("--worker", help=argparse.SUPPRESS)
     ap.add_argument("--out", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     if args.worker:
-        worker(args.worker, args.seed, args.cases, args.out, args.timeout)
+        worker(args.worker, args.seed, args.cases, args.out, args.timeout, args.matrices)
         return
 
     t0 = time.time()
@@ -407,29 +419,39 @@ def main(argv=None):
 
     # numeric equality of the differing pairs, at the same kind of points
     verdicts = {}
+    gen = fz().mat_generate if args.matrices else generate
     for c in differ:
-        g = generate(args.seed, c)
+        g = gen(args.seed, c)
         _, e, _, combos, rel = g
         la, lb = _load(A[c]["result"]), _load(B[c]["result"])
-        points = check_points([e, la, lb], combos, rel, random.Random(args.seed * 104729 + c))
-        n, ce = compare(la, lb, points)
+        rng = random.Random(args.seed * 104729 + c)
+        if args.matrices:
+            n, ce = fz().mat_compare(la, lb, fz().mat_points(combos, rel, rng), ref=e)
+        else:
+            points = check_points([e, la, lb], combos, rel, rng)
+            n, ce = compare(la, lb, points)
         verdicts[c] = ("different", ce) if ce else (("equal", n) if n else ("undecided", None))
 
     def stat(res_, key):
         return sum(1 for r in res_["records"] if r.get("status") == key)
 
     unsound = {lab: [r for r in res[lab]["records"] if "unsound" in r] for lab in ("a", "b")}
+    # fired, no counterexample, and not a single point checked: reported, never silently passed
+    unchecked = {lab: [r for r in res[lab]["records"]
+                       if r.get("status") == "fired" and "unsound" not in r and not r.get("checked")]
+                 for lab in ("a", "b")}
     crashes = {lab: [r for r in res[lab]["records"] if r.get("status") in ("crash", "timeout")] for lab in ("a", "b")}
     nonbasic = {lab: [r for r in res[lab]["records"] if "nonbasic" in r] for lab in ("a", "b")}
     vcount = Counter(v[0] for v in verdicts.values())
 
     name = {"a": args.a, "b": args.b}
-    print(f"seed={args.seed} cases={args.cases} compared={len(common)} time={time.time() - t0:.0f}s "
+    print(f"{'matrices ' if args.matrices else ''}seed={args.seed} cases={args.cases} compared={len(common)} time={time.time() - t0:.0f}s "
           f"(a={args.a} {res['a']['seconds']:.0f}s, b={args.b} {res['b']['seconds']:.0f}s)")
     for lab in ("a", "b"):
         print(f"  {lab}={name[lab]}: fired={stat(res[lab], 'fired')} unchanged={stat(res[lab], 'unchanged')} "
               f"inconsistent={stat(res[lab], 'inconsistent')} crash={stat(res[lab], 'crash')} "
-              f"timeout={stat(res[lab], 'timeout')} unsound={len(unsound[lab])} "
+              f"timeout={stat(res[lab], 'timeout')} checked={stat(res[lab], 'fired') - len(unsound[lab]) - len(unchecked[lab])} "
+              f"unchecked={len(unchecked[lab])} unsound={len(unsound[lab])} "
               f"(input finite at the point: {sum(1 for r in unsound[lab] if not _singular(r))}) "
               f"non-SymPy={len(nonbasic[lab])}")
     print(f"  only a fires: {len(only_a)}   only b fires: {len(only_b)}   both fire, same result: {same}")
@@ -439,7 +461,7 @@ def main(argv=None):
         return
 
     def case_line(c, rec):
-        g = generate(args.seed, c)
+        g = gen(args.seed, c)
         return f"[{rec['head']}] refine({g[1]}, {g[2]})"
 
     def heads(cs, recs):
@@ -474,6 +496,9 @@ def main(argv=None):
         print(f"\n== {lab}={name[lab]} crashes/timeouts: {len(crashes[lab])} ==")
         for r in crashes[lab][:args.show]:
             print(f"  {case_line(r['case'], recs[r['case']])}: {r.get('error', 'timeout')}")
+        print(f"\n== {lab}={name[lab]} fired but unchecked (no point checked): {len(unchecked[lab])} ==")
+        for r in unchecked[lab][:args.show]:
+            print(f"  {case_line(r['case'], recs[r['case']])} -> {r['result_str']}")
         if nonbasic[lab]:
             print(f"  non-SymPy returns: {len(nonbasic[lab])}, e.g. {nonbasic[lab][0]['nonbasic']}")
 
