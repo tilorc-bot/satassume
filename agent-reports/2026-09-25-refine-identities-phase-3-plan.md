@@ -147,7 +147,7 @@ Target: fewer engine lines at the end of phase 3 than at its start, with no beha
 - **Make `handlers_identities` the default refine?** It's selectable today. Switching makes 31 more `tests/refine` tests fail (3 → 34), a mix of real behaviour changes and tests of the old code. Each would need triage.
 - **The long-term target.** The repo's documents describe `refine` staying on top of `ask`, with no plan to upstream to SymPy or to replace v3. If either is the goal, it changes what phase 3 should finish with.
 
-**Inputs** (the coordinator's scratchpad of session c291c17e, `p3bugs/` and `p3gaps/`):
+**Inputs** (in `/home/tilo/fable-rewrite/.claude/phase3/`, not in git; the agent rules shared by all agents are in `agent-rules.md` there):
 - the bug list with reproductions;
 - the profile;
 - the list of cases where we differ from v3;
