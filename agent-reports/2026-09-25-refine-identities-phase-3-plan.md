@@ -187,7 +187,7 @@ An agent started the fix on 2026-09-25, on branch `ri/termination`, in worktree 
 - **B8 upstream:** the user files the SymPy issue from the draft in `2026-09-25-phase3-bounds-report.md`, section 7.
 - **Long-term target:** not decided; phase 3 finishes as planned.
 - **Default refine:** switch to `handlers_identities` in phase 3 and fix or update the tests that then fail (branch `ri/default`).
-- **Merging into `main`:** not during phase 3. `main`'s CI runs `pytest tests` in one process against released SymPy, while refine needs the SymPy branch in `orion/sympy` and one process per test directory. Revisit at the end of phase 3.
+- **Merging into `main`** (coordinator's recommendation, not yet the user's decision): not during phase 3. `main`'s CI runs `pytest tests` in one process against released SymPy, while refine needs the SymPy branch in `orion/sympy` and one process per test directory. Revisit at the end of phase 3.
 
 ## 7. Out of scope, and decisions for the user
 
