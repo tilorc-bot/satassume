@@ -127,6 +127,9 @@ class Solver:
         self._n_learned = 0
         self._n_restarts = 0
         self._n_reductions = 0
+        # Decision mode of the current solve: next variable index to scan,
+        # or 0 for VSIDS (see _pick_branch).
+        self._scan = 0
         # Theories (see satassume/theory.py).  ``_theories`` is the guard of
         # every hook: the no-theory path pays one attribute test per call.
         self._theories: list = []
@@ -1006,6 +1009,7 @@ class Solver:
         """Conflict analysis and learning for a conflict found outside the
         propagation loop of :meth:`_search`.  False iff UNSAT at root."""
         self._n_conflicts += 1
+        self._scan = 0
         if not self._trail_lim:
             self._ok = False
             return False
@@ -1154,7 +1158,27 @@ class Solver:
     # ------------------------------------------------------------------
 
     def _pick_branch(self) -> int:
+        """Next decision literal, or -1 if every variable is assigned.
+
+        Until the first conflict of a :meth:`solve` call (``_scan > 0``),
+        variables are decided in index order: nothing is popped from the
+        activity heap, so backtracking has nothing to re-insert either.
+        Most searches here are conflict-free (a model is found by the
+        first descent), and without conflicts the activities carry no
+        information yet for this call.  After a conflict (``_scan == 0``)
+        decisions follow VSIDS; every variable not popped is still in the
+        heap, so the switch needs no work.
+        """
         val = self._val
+        v = self._scan
+        if v:
+            n = self._nvars
+            while v <= n and val[2 * v] is not None:
+                v += 1
+            if v > n:
+                return -1
+            self._scan = v
+            return 2 * v + self._polarity[v]
         heap = self._heap
         pol = self._polarity
         while heap:
@@ -1205,6 +1229,7 @@ class Solver:
             confl = propagate()
             if confl is not None:
                 self._n_conflicts += 1
+                self._scan = 0
                 conflict_c += 1
                 if not trail_lim:
                     self._ok = False
@@ -1327,6 +1352,7 @@ class Solver:
                 return False
         self._held = None                       # the search owns the trail
         reductions = self._n_reductions
+        self._scan = 1
         self._assumptions = lits
         self._max_learnts = max(self._max_learnts, len(self._clauses) / 3.0,
                                 float(self._learnt_size_min))
