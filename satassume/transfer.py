@@ -60,6 +60,7 @@ class TransferTheory:
         self._trail: list[int] = []
         self._lims: list[int] = []
         self._dirty: list[int] = []              # terms whose class needs a look
+        self._dirty_p: list[int] = []            # asserted vars to spread
         euf.on_merge = self._merged
         self.stats = {"propagated": 0, "conflicts": 0}
 
@@ -92,7 +93,7 @@ class TransferTheory:
             self._trail.append(v)
         euf = self.euf
         if len(euf._members[euf._repr[a[0]]]) > 1:
-            self._dirty.append(a[0])
+            self._dirty_p.append(v)
         return None
 
     # ------------------------------------------------------------------
@@ -146,9 +147,34 @@ class TransferTheory:
                         e = expl[key] = [-l for l in euf.explain(wm, m)] if wm != m else []
                     out.append((lit, [lit, wneg] + e))
 
+    def _spread(self, v: int, out: list) -> None:
+        """Append the transfers of asserted variable ``v``'s value to the
+        other variables of its predicate in its class."""
+        wb = self._val.get(v)
+        if wb is None:
+            return
+        wm, p = self._atoms[v]
+        euf = self.euf
+        members = euf._members[euf._repr[wm]]
+        by_term, val = self._by_term, self._val
+        wneg = -v if wb else v
+        for m in members:
+            d = by_term.get(m)
+            if d is None:
+                continue
+            vs = d.get(p)
+            if vs is None:
+                continue
+            for u in vs:
+                if u == v or val.get(u) is wb:
+                    continue
+                lit = u if wb else -u
+                e = [-l for l in euf.explain(wm, m)] if wm != m else []
+                out.append((lit, [lit, wneg] + e))
+
     def propagate(self):
-        dirty = self._dirty
-        if not dirty:
+        dirty, dirty_p = self._dirty, self._dirty_p
+        if not dirty and not dirty_p:
             return []
         rep = self.euf._repr
         seen = set()
@@ -158,7 +184,11 @@ class TransferTheory:
             if r not in seen:
                 seen.add(r)
                 self._scan(r, out)
+        for v in dirty_p:
+            if rep[self._atoms[v][0]] not in seen:
+                self._spread(v, out)
         dirty.clear()
+        dirty_p.clear()
         self.stats["propagated"] += len(out)
         return out
 

@@ -230,7 +230,12 @@ class Relations:
         self.xfer = None
         self._xadapter = None
         self._xslot = 1                   # cursor into table.slots
-        self._xterm = 0                   # cursor into the adapter's atom terms
+        self._xterm = 0                   # cursor into the adapter's atom sides
+        self._xnsides = -1                # atom sides seen by sync_transfer
+        self._xheads: dict = {}           # (func, nargs) -> known expressions
+        self._xseen: set = set()          # expressions counted in _xheads
+        self._xpend: list = []            # (node, base) not yet candidates
+        self._xcand: set = set()          # candidate nodes (registered)
 
     # -- entry points used by the session ------------------------------
     def enqueue(self, atom: P) -> None:
@@ -404,15 +409,15 @@ class Relations:
         s.xfer = self
 
     def _transfer_terms(self) -> bool:
-        """Visit the expressions EUF interned for atoms since the last call
+        """Visit the sides of the atoms EUF registered since the last call
         (numbers included); True if a node was visited."""
         from itertools import islice
         from sympy import Expr
-        terms = self._xadapter._terms
-        n = len(terms)
+        sides = self._xadapter.sides
+        n = len(sides)
         if self._xterm >= n:
             return False
-        new = list(islice(terms, self._xterm, n))
+        new = list(islice(sides, self._xterm, n))
         self._xterm = n
         s = self.session
         visited = False
@@ -423,24 +428,73 @@ class Relations:
         return visited
 
     def sync_transfer(self) -> None:
-        """Register the node blocks allocated since the last call with the
-        transfer theory."""
+        """Register with the transfer theory the node blocks whose terms EUF
+        could ever put into a class with another term (*candidates*).
+
+        A term joins a class with another one only through a union: as the
+        side of an atom, or as an application congruent to another one with
+        the same head (function and arity) whose arguments were merged.  So
+        a node is a candidate iff it is an atom side, or it is an
+        application whose head occurs on at least two known expressions and
+        one of whose arguments is a candidate.  Candidacy only grows (new
+        atoms, new nodes), so nodes not yet candidates are kept and looked at
+        again on the next call; this runs at root-safe points (the end of
+        :meth:`process`, the start of ``Session.query_literal``).  Every
+        other node's facts can never be transferred and its 33 variables
+        stay out of the theory."""
         s = self.session
         slots = s.table.slots
+        ad = self._xadapter
         i, n = self._xslot, len(slots)
-        if i >= n:
+        nsides = len(ad.sides)
+        if i >= n and nsides == self._xnsides:
             return
         from sympy import Basic, nan
-        solver, th, ad = s.solver, self.xfer, self._xadapter
+        from .euf_adapter import _structural
+        heads = self._xheads
+        seen = self._xseen
+        pend = self._xpend
+
+        def count(e):
+            if e not in seen:
+                seen.add(e)
+                if isinstance(e, Basic) and _structural(e):
+                    k = (e.func, len(e.args))
+                    heads[k] = heads.get(k, 0) + 1
         while i < n:
             e = slots[i]
             if type(e) is tuple and e[1] == i:
                 node = e[0]
                 if isinstance(node, Basic) and not node.has(nan):
-                    t = ad.node_term(node)
-                    for k in range(NPRED):
-                        solver.register_atom(th, i + k, (t, k))
+                    count(node)
+                    pend.append((node, i))
                 i += NPRED
             else:
                 i += 1
         self._xslot = n
+        if nsides != self._xnsides:
+            self._xnsides = nsides
+            for e in ad.terms():
+                count(e)
+        if not pend:
+            return
+        sides = ad.sides
+        cand = self._xcand
+        solver, th = s.solver, self.xfer
+        changed = True
+        while changed and pend:
+            changed = False
+            keep = []
+            for node, b in pend:
+                if node in sides or node in cand or (
+                        _structural(node)
+                        and heads.get((node.func, len(node.args)), 0) >= 2
+                        and any(a in cand or a in sides for a in node.args)):
+                    cand.add(node)
+                    changed = True
+                    t = ad.node_term(node)
+                    for k in range(NPRED):
+                        solver.register_atom(th, b + k, (t, k))
+                else:
+                    keep.append((node, b))
+            pend[:] = keep
