@@ -343,7 +343,13 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
     For the duration of a top-level call ``_upstream.ask`` is memoized.  The
     call always terminates; when a termination guard trips it returns ``expr``
     unchanged, or raises :class:`RefineLoopError` if :func:`strict` (see
-    *Termination* in the module docstring)."""
+    *Termination* in the module docstring).  When ``ask`` raises on
+    inconsistent assumptions (a ``ValueError`` saying so, as SymPy's backend
+    does), ``expr`` is returned unchanged: every result is correct then, and
+    how far the engine got before a query happened to expose the
+    contradiction must not decide between a result and a crash.  Inside the
+    call the error still propagates (a case split drops an inconsistent
+    branch that way)."""
     if _calls:
         return _refine(expr, assumptions)
     call = _Call()
@@ -358,7 +364,11 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
     except RecursionError as error:          # RefineLoopError, or Python's own limit
         call.trip(f"{type(error).__name__}: {error}")
         cause: BaseException | None = error
-    else:
+    except ValueError as error:
+        if "nconsistent" not in str(error):
+            raise
+        return expr                          # ask found the assumptions inconsistent: any result is
+    else:                                    # correct, and refine does not raise for them (v3 does not)
         cause = None                         # a trip a handler swallowed still counts
     finally:
         _calls.pop()

@@ -93,7 +93,7 @@ def test_key_extensibility(eng):
         with pytest.raises(ValueError):
             ask(Q.my_key(x), ~Q.my_key(x), eng)
     finally:
-        unregister('my_key')
+        unregister(Q.my_key)
         del Q.my_key
     assert out_of_scope(Q.__getattr__('my_key')(x)) == "custom" if hasattr(Q, 'my_key') else True
 
@@ -197,3 +197,33 @@ def test_polyadic_predicate(eng):
     finally:
         unregister(Q.sexyprime)
         del Q.sexyprime
+
+
+def test_registration_version_clears_answer_memo(eng):
+    """Every (un)registration bumps ``Extensions.version``; the answer memo
+    of ``ask`` is keyed on it, so a memoized answer never outlives the
+    registrations it was computed under."""
+
+    class VersionPredicate(Predicate):
+        pass
+
+    from satassume.extensions import extensions
+    try:
+        Q.vkey = VersionPredicate()
+        v0 = extensions.version
+        assert ask(Q.vkey(x), True, eng) is None
+
+        @register(Q.vkey, Symbol)
+        def f(expr):
+            return True
+
+        assert extensions.version == v0 + 1
+        assert ask(Q.vkey(x), True, eng) is True
+        unregister(Q.vkey)
+        assert extensions.version == v0 + 2
+        assert ask(Q.vkey(x), True, eng) is None
+        register(Q.vkey, Symbol)(f)
+        assert ask(Q.vkey(x), True, eng) is True
+    finally:
+        unregister(Q.vkey)
+        del Q.vkey

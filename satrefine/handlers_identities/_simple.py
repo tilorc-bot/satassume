@@ -40,7 +40,7 @@ from typing import Any
 from functools import lru_cache
 from typing import Iterator
 
-from sympy import And, Dummy, Piecewise, Q, S, ceiling, expand_mul, floor
+from sympy import And, Dummy, Piecewise, Q, S, acot, acoth, ceiling, expand_mul, floor
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
 
@@ -133,7 +133,7 @@ def _checked(bounds: tuple | None) -> tuple | None:
     opposite signs would undo each other forever (issue #10, B9).  Under
     inconsistent assumptions any result is correct, so the bounds prove
     nothing and the engine is left with what ``ask`` answers."""
-    return None if bounds is None or _empty(*bounds) else bounds
+    return None if bounds is None or _empty(*bounds[:4]) else bounds
 
 
 def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
@@ -148,12 +148,42 @@ def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
     under ``Q.le(x, 2*pi)``), the bounds of ``v`` are mapped.  ``None``
     when nothing is stated, or when the stated bounds are contradictory
     (an empty interval, :func:`_checked`).
+
+    The interval is one of the *extended* reals: a relation allows an
+    infinite value (``Q.gt(x, 1)`` holds at ``x = oo``), so an unstated or
+    infinite side does not bound ``u`` away from infinity; see
+    :func:`stated_finite` for when the bounds prove ``u`` finite.
     """
+    found = _stated(u, assumptions)
+    return None if found is None else found[:4]
+
+
+def stated_finite(u: Any, assumptions: Any) -> tuple | None:
+    """``(bounds, finite)``: :func:`stated_bounds` and whether the same conjuncts
+    prove ``u`` finite, without looking at the interval's endpoints.
+
+    A sign fact ``Q.positive(d)`` (and the other three) holds only for a
+    finite ``d``, so a bound read from one makes ``u`` finite; a relation
+    (``Q.gt(u, 1)``, and ``Q.ge(u, oo)``, which forces ``u = oo``) does not.
+    Whether an endpoint excludes infinity is left to the caller
+    (:func:`._engine._from_bounds`)."""
+    found = _stated(u, assumptions)
+    return None if found is None else (found[:4], found[4])
+
+
+def _stated(u: Any, assumptions: Any) -> tuple | None:
+    """``(lo, hi, lo_open, hi_open, finite)``: see :func:`stated_bounds` and :func:`stated_finite`.
+
+    The bounds stated on ``u`` itself come first; while they leave a side
+    open (and no sign fact makes ``u`` finite), the bounds of each quantity
+    ``v`` that ``u`` is affine in are mapped and the tightest side kept
+    (``t - 2*pi`` under ``Q.le(t, 2*pi) & Q.ge(t, pi)``: the upper side is
+    stated on ``t - 2*pi``, the lower one on ``t``)."""
     if not isinstance(assumptions, Basic):
         return None
-    direct = _checked(_direct_bounds(u, assumptions))
-    if direct is not None or u.is_Symbol:
-        return direct
+    found = _checked(_direct_bounds(u, assumptions))
+    if u.is_Symbol or found is not None and (found[4] or (found[0] is not None and found[1] is not None)):
+        return found
     for v in _stated_sides(assumptions) + sorted(u.free_symbols, key=str):
         if v == u or not u.has(v):
             continue
@@ -162,17 +192,36 @@ def stated_bounds(u: Any, assumptions: Any) -> tuple | None:
         if rng is None:
             continue
         a, c = aff
-        lo, hi, lo_open, hi_open = rng
+        lo, hi, lo_open, hi_open, finite = rng
         lo, hi = (None if lo is None else a*lo + c), (None if hi is None else a*hi + c)
         if a < 0:
             lo, hi, lo_open, hi_open = hi, lo, hi_open, lo_open
-        return lo, hi, lo_open, hi_open
-    return None
+        mapped = (lo, hi, lo_open, hi_open, bool(finite and a.is_finite and c.is_finite))
+        found = mapped if found is None else _merged(found, mapped)
+        if found is None or found[4] or (found[0] is not None and found[1] is not None):
+            return found
+    return found
+
+
+def _merged(one: tuple, other: tuple) -> tuple | None:
+    """The intersection of two ``(lo, hi, lo_open, hi_open, finite)`` intervals of one quantity."""
+    sides = []
+    for i, lower in ((0, True), (1, False)):
+        side = None
+        for b in (one, other):
+            if b[i] is not None:
+                side = _tighter(side, b[i], b[i + 2], lower)
+        sides.append(side)
+    lo, hi = sides
+    return _checked((lo[0] if lo else None, hi[0] if hi else None, bool(lo and lo[1]), bool(hi and hi[1]),
+                     one[4] or other[4]))
 
 
 def _direct_bounds(u: Any, assumptions: Any) -> tuple | None:
-    """The bounds stated on ``u`` itself (see :func:`stated_bounds`)."""
+    """The bounds stated on ``u`` itself, and whether a sign fact among them makes
+    ``u`` finite (see :func:`_stated`)."""
     lo = hi = None
+    finite = False
     for conj in And.make_args(assumptions):
         if not isinstance(conj, AppliedPredicate):
             continue
@@ -189,13 +238,14 @@ def _direct_bounds(u: Any, assumptions: Any) -> tuple | None:
             continue
         a, c = aff
         bound = -c/a
+        finite |= f in _SIGNS and bool(a.is_finite and c.is_finite)   # a sign fact's argument is finite
         if (a > 0) == lower:
             lo = _tighter(lo, bound, strict, True)
         else:
             hi = _tighter(hi, bound, strict, False)
     if lo is None and hi is None:
         return None
-    return (lo[0] if lo else None, hi[0] if hi else None, bool(lo and lo[1]), bool(hi and hi[1]))
+    return (lo[0] if lo else None, hi[0] if hi else None, bool(lo and lo[1]), bool(hi and hi[1]), finite)
 
 
 def full_bounds(u: Any, assumptions: Any) -> tuple | None:
@@ -320,6 +370,33 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     if not pairs:
         return None
     return Piecewise(*pairs)
+
+
+_SIGN_AT_ZERO = (acot, acoth)   # heads whose eval pulls a sign out of an argument that may be zero
+
+
+def rebuild(func: Any, args: Any, assumptions: Any) -> Basic:
+    """``func(*args)``, the node rebuilt from refined children, except that
+    ``acot`` and ``acoth`` of a non-numeric argument that may be zero stay
+    unevaluated (issue #10, B8).
+
+    SymPy's ``acot.eval`` and ``acoth.eval`` pull a sign out of the argument
+    (``acot(-z) -> -acot(z)``, and ``acoth(I*c) -> -I*acot(c)``), which is
+    wrong at ``z = 0``: ``acot(0) = pi/2``, ``acoth(0) = I*pi/2``.  A refined
+    child often has that shape (``Abs(z) -> -z`` under ``Q.nonpositive(z)``), so
+    ``acot(Abs(z))`` would become ``-acot(z)``.  When ``ask`` proves the
+    argument nonzero the evaluated form is correct and is kept."""
+    if func in _SIGN_AT_ZERO and len(args) == 1 and not args[0].is_number:
+        new = func(*args)
+        if new.func is not func or new.args != tuple(args):
+            try:
+                nonzero = _upstream.ask(Q.zero(args[0]), assumptions) is False
+            except (ValueError, TypeError, AssertionError):
+                nonzero = False
+            if not nonzero:
+                return func(*args, evaluate=False)
+        return new
+    return func(*args)
 
 
 SIMPLE_RULES = {"floor": refine_floor, "ceiling": refine_floor, "Piecewise": refine_piecewise}
