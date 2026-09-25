@@ -256,7 +256,10 @@ def _scan(self, r, start, confl):
 
 
 def _propagate(self):
-    start = len(self._trail)
+    # from the queue head, not the trail's end: entries queued before this
+    # call (decisions, units, learnt asserting literals, theory
+    # implications) are processed by it and must be scanned too
+    start = self._qhead
     confl = _orig_propagate(self)
     _scan(self, rec_of(self), start, confl)
     return confl

@@ -5,8 +5,10 @@
   (the plan baseline since the orchestrator's note; stage 0 re-measured
   there, same conclusions), bundle at
   `/work/src/bundles/facts-theory.bundle`
-- **Stage:** 0 done, report `2026-09-25-facts-0-measurements.md`.
-  **Stopped and waiting for a user decision** before stage 1 (below).
+- **Stage:** 0 done and reviewed (report
+  `2026-09-25-facts-0-measurements.md`). The stop condition is not met on
+  either half (see the report's Decision, corrected after review), so
+  **stage 1 is next**.
 
 ## Done
 
@@ -17,10 +19,12 @@
   - 19.1 of the 33 predicates per node are mentioned by templates etc.
     (the plan expected "a few");
   - **theory tax: attaching a do-nothing theory to every session costs
-    +14.1% of the pass**, and a theory-propagated literal costs 2.8x a
-    rule-block implication. Stage 1 as specified projects to +20% to
-    +40%, so its stop condition would trigger;
-  - 2,857 distinct asserted sets per pass (closure memo size);
+    +14.1% of the pass** (+3 to 5% if held levels are kept with theories),
+    and a theory-propagated literal costs 2.2 to 2.8x a
+    rule-block implication. Stage 1 as specified projects to +4% to +33%
+    (corrected in review);
+  - 8,128 distinct asserted sets per pass (corrected in review); the rule
+    base has 48 models, so exact closure is a table lookup;
   - 0 of the 62 search answers rest on a case split inside the rule base;
   - capability: predicate transfer across equalities answers 15 stream
     queries (12 distinct, all correct) and **0 of the 59 refine
@@ -34,24 +38,18 @@
   repo-local to `tilorc-bot <tilorc-bot@users.noreply.github.com>`, the
   author of every earlier commit.
 
-## Needs the user
+## Needs the user (before stage 2, not blocking stage 1)
 
-The stop condition's capability half is met (15 < 20 stream, 0 < 10
-scoreboard); the speed half is met in substance (the theory mechanism
-costs more than the literals it avoids) but not in letter (52% > 30%).
-Pick one (my recommendation first; details in the stage 0 report,
-"Decision"):
-
-1. **End the fact-lattice project here.**
-2. Separately, uninterpreted relations as free Booleans (498 stream
-   answers, 6 scoreboard tests), if you accept 36 None -> ValueError
-   changes; needs cost work first (about +35% time).
-3. Transfer only in sessions that already have EUF (15 stream, 0 tests).
-4. Stage 1 as a solver-internal closure propagator (plan excluded solver
-   changes; about 5% realistic).
-5. Stage 1 as planned (expected to hit its stop condition).
+Uninterpreted relations as free Booleans (the plan's stage 2
+`relations.py` change) answer 498 stream queries and fix 6 scoreboard
+losses, but turn 36 None answers into ValueError (inconsistent
+assumptions) — the plan's acceptance rule forbids any change to that
+set — and cost about +35% replay time as a bare change. Allow the 36
+(SymPy's semantics), or keep free Booleans out?
 
 ## Next
 
-Nothing running. On a decision, start the chosen stage on
-`facts-theory`.
+Stage 1 (FactTheory replacing the rule block), starting with the levers
+stage 0 found: held assumption levels with theories attached (small
+solver change), and exact closure as a table over the rule base's 48
+models.

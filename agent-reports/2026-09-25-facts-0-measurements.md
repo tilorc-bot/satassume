@@ -1,19 +1,23 @@
 # Agent report: fact-lattice theory, stage 0, measurements
 
 - **Date:** 2026-09-25
-- **Status:** measured, no engine code. **The plan's formal stop condition is
-  not met** (the rule block's never-read fraction is 52%, above the 30%
-  line), **but two measurements the plan did not ask for say stage 1 as
-  specified would be slower than `main`**: attaching any theory to a
-  session costs +14.1% of the pass before it does any work, and a literal
-  propagated by a theory costs 2.8 times what the rule block pays for the
-  same implication. Projected stage 1: +20% to +40% time, so its own stop
-  condition is expected to trigger. The capability census finds 15 stream
-  queries (12 distinct) and **0 of the 59 refine scoreboard losses** that
-  predicate transfer answers, and 498 that a
-  different, independent change answers (uninterpreted relations as free
-  Booleans), which breaks the acceptance rule on 36 queries. Decision
-  needed from the user: see "Decision".
+- **Status:** measured, no engine code; reviewed (Opus, verdict "sound with
+  corrections", applied below). **The stage 0 stop condition is not met on
+  either half**: the rule block's never-read fraction is 52% (above the
+  30% line), and the design, counted as the plan counts it (predicate
+  transfer plus uninterpreted relations as free Booleans, section 3's last
+  row and stage 2), answers 513 stream queries (above the 20 line). So the
+  plan continues with stage 1. Two cautions carried into it: attaching any
+  theory to a session costs +14% of the pass today, almost all of it one
+  solver policy (held assumption levels are kept only without theories;
+  allowing them brings the tax to +3 to 5%), and a theory-propagated
+  literal costs 2.2 to 2.8 times a rule-block implication. The projection
+  for stage 1 as specified is +4% to +33%; the plan's own stage 1 stop
+  ("slower than `main` after a day of tuning") settles it. Capability is
+  almost all free Booleans (498 queries, 6 scoreboard losses), which
+  breaks the acceptance rule on 36 queries: a decision the user must make
+  before stage 2, not before stage 1. Predicate transfer alone answers 15
+  stream queries and none of the 59 scoreboard losses.
 - **Scope:** measurement only. Scripts (new):
   `agent-reports/scripts/facts_closure.py` (exact closure oracle),
   `facts_census.py` (rule writes, mentions, reads, asserted sets, case
@@ -54,7 +58,7 @@ added it.
 | variable mentioned outside the rule block (templates, assumptions, query, links, guards, custom), i.e. a variable stage 1 would still allocate (plan 2.3) | 263,566 | **47.9%** |
 | same, counting cache units and learnt clauses too | 263,613 | 47.9% |
 | **never mentioned**: stage 1 would not write these | 286,964 | **52.1%** |
-| *read* (dynamic, lower bound): antecedent of a non-rule clause's propagation, in a conflict clause, or the query variable | 81,465 | 14.8% |
+| *read* (dynamic, lower bound): antecedent of a non-rule clause's propagation, in a conflict clause, or the query variable | 81,810 | 14.9% |
 | of these, read but never mentioned (learnt-clause antecedents) | 29 | 0.0% |
 
 By mention source: 42.3% template only, 1.3% query only, 1.2% template and
@@ -72,7 +76,10 @@ often never mentioned while written: `noninteger` 98% of its writes,
 
 The plan's rule: under 30% read, a 10 to 20% gain; above 70%, a few
 percent. The design-relevant fraction (what stage 1 still writes) is 48%,
-in the middle; the dynamic read fraction is 15%.
+in the middle; the dynamic read fraction is 15%. (The first version of
+the script scanned each `_propagate` call from the trail's end instead of
+the queue head and missed entries queued before the call; fixed after
+review: writes and mentions unchanged, reads 14.8% to 14.9%.)
 
 ### 2. What a theory propagation costs (`facts_theory_tax.py`), not asked for by the plan
 
@@ -97,6 +104,21 @@ Measured on the Pi:
 | micro: implication by the rule block (2,000 blocks, `integer` implies 15 literals each, under an assumption) | 1.69 µs per literal (`e43b318`: 1.54) |
 | micro: the same implications by a theory's `propagate` with eager reasons | 4.69 µs per literal (**2.8x**; `e43b318`: 4.65, 3.0x) |
 
+Found in review, and they change the size of both numbers:
+
+- **The tax is mostly one policy.** `Solver._assume` keeps held
+  assumption levels only when no theory is attached (two `not theories`
+  gates). With both gates removed in a scratch copy, the reviewer measured
+  plain 2.754 / 2.806 s against no-op theory 2.896 / 2.898 s: **+3% to
+  +5%**, answers identical (unpatched in the same session: +14%). Whether
+  held levels are sound with a stateful theory is not established; it is a
+  small solver change the plan's scope ("`solver.py` (small)") allows, and
+  stage 1 has to decide it.
+- **The micro favours the rule block.** Its `implied` keeps held levels and
+  so skips the backtrack the theory side pays; counting the backtrack on
+  both sides: rule 2.04 µs, theory 4.58 µs, **2.2x**. The tax and the
+  per-literal cost also partly count the same `_tpropagate` routing twice.
+
 ### 3. Projection for stage 1 as specified
 
 From the B5 split (rule hook 20.0%, registration 0.9%, `_grow` 3.2%,
@@ -105,14 +127,17 @@ collector 3.7 to 4.4%) on a 2.95 s pass:
 | | seconds |
 |---|---:|
 | removed: rule hook, registration, 42% of `_grow` (19 of 33 variables kept), some collector work | about -0.70 |
-| added: theory tax (measured) | +0.41 |
-| added: 263,566 propagations to mentioned variables at the micro's 4.69 µs (scaled by the micro's own ratio to the replay: 550,530 writes at 1.69 µs would be 0.93 s, the B5 hook share is 0.59 s, so x0.63) | +0.78 to +1.24 |
-| added: closure memo misses (2,857 distinct asserted sets, below) | +0.1 to 0.3 |
-| **net** | **about +0.6 to +1.25 s, +20% to +40%** |
+| added: theory tax (measured +14%; +3 to 5% with held levels allowed under theories) | +0.14 to +0.41 |
+| added: 263,566 propagations to mentioned variables at 2.2x to 2.8x the rule block's per-literal cost, scaled to the replay (550,530 writes are the B5 hook's 0.59 s, so about 1.07 µs each) | +0.63 to +1.21 |
+| added: exact closures (8,128 distinct asserted sets; section 4: a table lookup over the rule base's 48 models) | about +0.05 |
+| **net** (first version of this report: +20% to +40%, corrected after review) | **about +0.1 to +1.0 s, +4% to +33%** |
 
-Even with the propagation cost halved by tuning, the tax alone eats most
-of the removal. Stage 1's stop condition ("slower than `main` after a day
-of tuning") is expected to trigger.
+Stage 1 as specified is projected slower than `main` over the whole
+range, but the range is wide and mostly policy: with held levels under
+theories and cheap theory reasons it approaches break-even. The projection
+gives no credit to the plan's `decided` short-cut (2.5). The plan's own
+stage 1 stop ("slower than `main` after a day of tuning") is where this is
+settled by measurement.
 
 ### 4. Distinct asserted sets (`facts_census.py`)
 
@@ -120,12 +145,18 @@ After every `_propagate`, for each node block with a new literal not
 implied by the rule block: the set of the block's literals assigned for
 another reason (decision, assumption, clause, root unit).
 
-- 36,580 observations, **2,857 distinct asserted sets**; the sets of all
-  assigned literals of those blocks: 374 distinct.
-- So the closure memo would have about 2,900 entries per pass, a few
-  hundred if keyed by the unit-propagated set. The exact closure
-  (`facts_closure.closure`, a 33-variable DPLL, candidates narrowed by
-  each model found) costs about 0.1 to 1.6 ms in Python per miss.
+- 103,422 observations, **8,128 distinct asserted sets**; the sets of all
+  assigned literals of those blocks: 526 distinct. (The first version
+  scanned from the trail's end and reported 36,580 / 2,857 / 374; see
+  section 1.)
+- The DPLL closure of `facts_closure.closure` costs 0.55 ms on average on
+  these sets (reviewer), 4.5 s for 8,128 misses: too slow as it stands.
+  But **the rule base has exactly 48 models** (enumerated), so the exact
+  closure of a set is the literals common to all models containing it: a
+  bitwise AND over at most 48 precomputed 66-bit masks, a few µs, and the
+  memo is optional. The reviewer checked `closure` against that brute
+  force: 0 mismatches on all 2,178 one- and two-literal sets, 2,357 random
+  3-to-8-literal sets, and all stream asserted sets.
 
 ### 5. Case-split dependence (`facts_census.py`)
 
@@ -150,8 +181,8 @@ completeness argument (predicates no clause mentions need no case split)
 holds on the stream.
 
 Separately, the exact closure is strictly stronger than the rule block's
-unit propagation in general: of the 2,178 consistent sets of one or two
-predicate literals, 170 get more literals (`antihermitian` gives
+unit propagation in general: of the 2,178 sets of one or two predicate
+literals (1,835 of them consistent), 170 get more literals (`antihermitian` gives
 `complex`, `finite`, `commutative`, `!positive`, ...; `!noninteger` gives
 `!irrational`). None of those gains shows up in the 62 search answers.
 
@@ -258,59 +289,66 @@ No engine change, so none run beyond the baseline: suite as above;
 `facts_census.py` and `facts_capability.py` check every answer of their
 base replay against the recording (0 differences).
 
+## Review
+
+Opus reviewer, on `c552806` + this branch: **sound, with corrections**.
+Applied above: the asserted-set scan (8,128 distinct, not 2,857), the
+memo cost line (it contradicted its own per-miss figure; replaced by the
+48-model table), the theory tax as a policy (+3 to 5% with held levels),
+the micro's bias (2.2x with the backtrack counted), the projection (+4% to
++33%, not +20% to +40%), "2,178 sets, 1,835 consistent", a docstring
+(`integer` implies 15 literals, not 12), and, the one that changes the
+decision, the reading of the stop condition's capability half (below).
+Checked clean by the reviewer: the `--allow-more-definite` modes (strict
+mode unchanged; doctored streams with a contradiction or a less definite
+answer fail with and without the flag), the census accounting and literal
+conversions, `_sim` as a sound lower bound, `closure` exact. Gates the
+reviewer re-ran: gate2 with and without the flag `2863 records (2588 in
+scope); changed 0; answers match`; `ab.py . . --rounds 1` strict and with
+the flag: answers match; census headline numbers reproduced; tax +13.2%.
+
 ## Decision
 
-The plan's stop condition for stage 0 is "never-read fraction below about
-30% **and** fewer than about 20 stream queries and fewer than about 10
-scoreboard losses the design would answer". The never-read fraction is
-52%, so formally the design survives stage 0 as a speed lever. It does
-not survive as one in practice: section 3 projects stage 1 at +20% to +40%,
-because the plan priced a theory call at a microsecond and the solver's
-theory path costs a 14% tax plus about 3 times the rule block per literal. On
-capability, predicate transfer answers 15 stream queries (below the 20
-line) and none of the 59 scoreboard losses (below the 10 line).
+The stop condition for stage 0 is "never-read fraction below about 30%
+**and** fewer than about 20 stream queries and fewer than about 10
+scoreboard losses the design would answer". Neither half holds:
 
-So the capability half of the stop condition is met clearly (15 < 20,
-0 < 10), and the speed half is met in substance though not in letter: the
-never-read literals exist, but the plan's mechanism for not writing them
-(a DPLL(T) theory) costs more than they do. My reading: **the design is
-neither a speed nor a capability lever on the workloads we have, and the
-plan's intent is to stop here.** Because the letter of the rule is not
-met, I stop for the user's decision instead of ending the project myself.
-Options, in the order I recommend them:
+- never-read fraction 52%;
+- the plan counts uninterpreted relations as free Booleans as part of the
+  design (section 3, last row: "2.2 and a small `relations.py` change";
+  stage 2), and with them the design answers 513 stream queries and 6
+  scoreboard losses. Predicate transfer alone answers 15 and 0; my first
+  version counted only those and read the capability half as met, which
+  the reviewer rightly called too favourable to stopping.
 
-1. **End the fact-lattice project** here (keep the scripts, the report and
-   the `--allow-more-definite` tooling).
-2. Separately from this plan, consider **uninterpreted relations as free
-   Booleans** (the last line of `Relations.process`): 498 stream answers,
-   6 scoreboard losses fixed, 82 fewer SymPy fallbacks in the combined
-   backend, all verified against SymPy; but 36 queries with inconsistent
-   assumptions then raise ValueError instead of returning None (against
-   the plan's acceptance rule, in the direction of SymPy's semantics) and
-   the replay costs about +35% time (one noisy round), because the 1,130
-   queries per pass that the round 2.5 memo answers with None in 0.01 ms
-   now build and search sessions. That needs its own cost work before it
-   could land.
-3. Predicate transfer only, in sessions that already have EUF (no new
-   theory tax): 15 stream queries, 0 scoreboard tests. Cheap but small.
-4. Stage 1 redesigned as a solver-internal closure propagator (no theory
-   API; per-block bitmask state, memoized exact closure, lazy int reasons,
-   writes only to mentioned variables): a solver change the plan excluded;
-   ceiling about 10% of the pass (52% of the 20% hook), realistic about 5%
-   after the memo's cost.
-5. Stage 1 as planned (expected to hit its stop condition).
+So **the plan continues with stage 1**, whose own stop condition decides
+the speed question the projection leaves open (+4% to +33%). Stage 1
+starts from the two levers the measurements expose: held assumption
+levels under theories (a small solver change, soundness to be argued and
+fuzzed) and a table closure over the 48 models. Carried forward for the
+user, before stage 2 (not blocking stage 1): the free-Boolean change turns
+36 None answers into ValueError (inconsistent assumptions), which the
+plan's acceptance rule forbids, and costs about +35% time in one noisy
+round, because queries the round 2.5 memo answered with None in 0.01 ms
+now build and search sessions.
 
 ## Risks for review
 
 - The mention analysis charges a variable as "needed" if any non-rule
   clause mentions it at any time in the session; a design that allocated
   variables only for predicates a clause could still use would write a
-  little less. It cannot write fewer than the 14.8% that are read.
+  little less. It cannot write fewer than the 14.9% that are read.
 - The theory tax is measured with a theory that does nothing; a real
   `FactTheory` adds its own work on top.
 - The case-split simulation ignores LRA/EUF reasoning (42 of the 62
   sessions have theories); it can under-report what propagation decides
   there, not over-report.
+- The stage 1 projection is a projection over a wide, policy-dependent
+  range, not a measurement.
+- Held levels with a theory attached (the lever behind most of the tax)
+  are untested for soundness with a stateful theory.
+- With `--allow-more-definite`, `ab.py` checks each side only against the
+  recording; neither tool checks more-definite answers against SymPy.
 - History dependence (the 4 less-definite answers) will show up as
   mismatches in every A/B of any later stage; they need to be told apart
   from real losses, e.g. by re-asking in a fresh engine.
