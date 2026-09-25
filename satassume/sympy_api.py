@@ -23,7 +23,11 @@ scope so the caller can decide before asking.  The categories are
 * ``"relation"``: a relational (``x < 0``, ``Eq(x, y)``), one of the binary
   predicates ``Q.eq``, ``Q.ne``, ``Q.lt``, ``Q.le``, ``Q.gt``, ``Q.ge``, or
   ``Q.is_true`` over a relational, anywhere in the proposition or the
-  assumptions;
+  assumptions.  :func:`out_of_scope` always reports this category, but
+  :func:`ask` answers relations when the engine has theory adapters
+  (``Engine.relation_specs``, by default LRA and EUF when present; see
+  :mod:`satassume.relations`) and returns None only when no theory
+  interprets one of the relations;
 * ``"matrix"``: a matrix predicate (``Q.invertible`` and friends from
   ``sympy.assumptions.predicates.matrices``) or a vocabulary predicate
   applied to a non-scalar argument (a ``MatrixSymbol``, ...);
@@ -53,9 +57,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .engine import Engine, InconsistentAssumptions, ObjectCache  # noqa: F401
+from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
+from .relations import Uninterpreted, relation_atom, relational_name
+
+from sympy.assumptions.assume import AppliedPredicate as _Applied
+from sympy.core.expr import Expr as _Expr
+from sympy.core.relational import Relational as _Relational
+from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
+                                 Implies as _SImplies, Equivalent as _SEquivalent,
+                                 BooleanTrue as _BTrue, BooleanFalse as _BFalse)
 from .rules import PRED_INDEX
 
 
@@ -110,13 +122,12 @@ def matrix_predicates() -> frozenset:
 
 
 def _is_scalar(arg) -> bool:
-    from sympy.core.expr import Expr
-    return isinstance(arg, Expr) and bool(arg.is_scalar)
+    return isinstance(arg, _Expr) and bool(arg.is_scalar)
 
 
 def _applied_category(expr) -> Optional[str]:
     """Category of one ``AppliedPredicate``, or None if it is in scope."""
-    from sympy.core.relational import Relational
+    Relational = _Relational
     name = str(expr.function.name)
     args = expr.arguments
     if name in RELATION_PREDICATES:
@@ -173,36 +184,68 @@ def out_of_scope(proposition, assumptions=True) -> Optional[str]:
 # SymPy Boolean -> satassume formula
 # --------------------------------------------------------------------------
 
-def to_formula(expr):
+def relation_parts(expr):
+    """``(name, lhs, rhs)`` for a relation (``Relational``, ``Q.eq/ne/lt/
+    le/gt/ge(a, b)``, ``Q.is_true(a < b)``) with ``name`` in ``eq ne lt le
+    gt ge``; None if ``expr`` is not a relation.  The one place where the
+    engine side parses relations (``satassume.relations.relation_atom``
+    normalises the result).  Raises :class:`Unsupported` for a relation
+    predicate of the wrong arity."""
+    if isinstance(expr, _Relational):
+        return relational_name(expr), expr.lhs, expr.rhs
+    if isinstance(expr, _Applied):
+        name = str(expr.function.name)
+        args = expr.arguments
+        if name == "is_true":
+            if len(args) == 1 and isinstance(args[0], _Relational):
+                return relation_parts(args[0])
+            return None
+        if name in RELATION_PREDICATES:
+            if len(args) != 2:
+                raise Unsupported(f"{expr} is out of scope (relation)", "relation")
+            return name, args[0], args[1]
+    return None
+
+
+def _relation_formula(expr, parts, relations: bool):
+    name, lhs, rhs = parts
+    if not relations or not (_is_scalar(lhs) and _is_scalar(rhs)):
+        raise Unsupported(f"{expr} is out of scope (relation)", "relation")
+    return relation_atom(name, lhs, rhs)
+
+
+def to_formula(expr, relations: bool = False):
     """Translate a SymPy Boolean over applied predicates into a formula.
-    Raises :class:`Unsupported` for anything out of scope."""
-    from sympy.assumptions.assume import AppliedPredicate
-    from sympy.logic.boolalg import (And as SAnd, Or as SOr, Not as SNot,
-                                     Implies as SImplies, Equivalent as SEquivalent,
-                                     BooleanTrue, BooleanFalse)
-    if expr is True or isinstance(expr, BooleanTrue):
+    Raises :class:`Unsupported` for anything out of scope.  With
+    ``relations`` (the engine has theory adapters, see
+    :mod:`satassume.relations`) relations become relation atoms."""
+    if expr is True or isinstance(expr, _BTrue):
         return TRUE
-    if expr is False or isinstance(expr, BooleanFalse):
+    if expr is False or isinstance(expr, _BFalse):
         return FALSE
-    if isinstance(expr, AppliedPredicate):
+    if isinstance(expr, _Applied):
+        name = str(expr.function.name)
+        if name in RELATION_PREDICATES or name == "is_true":
+            parts = relation_parts(expr)
+            if parts is not None:
+                return _relation_formula(expr, parts, relations)
         c = _applied_category(expr)
         if c is not None:
             raise Unsupported(f"{expr} is out of scope ({c})", c)
         args = expr.arguments
-        return P(str(expr.function.name), args[0] if len(args) == 1 else Args(args))
-    if isinstance(expr, SAnd):
-        return And(*[to_formula(a) for a in expr.args])
-    if isinstance(expr, SOr):
-        return Or(*[to_formula(a) for a in expr.args])
-    if isinstance(expr, SNot):
-        return Not(to_formula(expr.args[0]))
-    if isinstance(expr, SImplies):
-        return Implies(to_formula(expr.args[0]), to_formula(expr.args[1]))
-    if isinstance(expr, SEquivalent):
-        return Equivalent(*[to_formula(a) for a in expr.args])
-    from sympy.core.relational import Relational
-    if isinstance(expr, Relational):
-        raise Unsupported(f"{expr} is out of scope (relation)", "relation")
+        return P(name, args[0] if len(args) == 1 else Args(args))
+    if isinstance(expr, _SAnd):
+        return And(*[to_formula(a, relations) for a in expr.args])
+    if isinstance(expr, _SOr):
+        return Or(*[to_formula(a, relations) for a in expr.args])
+    if isinstance(expr, _SNot):
+        return Not(to_formula(expr.args[0], relations))
+    if isinstance(expr, _SImplies):
+        return Implies(to_formula(expr.args[0], relations), to_formula(expr.args[1], relations))
+    if isinstance(expr, _SEquivalent):
+        return Equivalent(*[to_formula(a, relations) for a in expr.args])
+    if isinstance(expr, _Relational):
+        return _relation_formula(expr, relation_parts(expr), relations)
     raise Unsupported(f"cannot translate {type(expr).__name__} (other)", "other")
 
 
@@ -230,9 +273,10 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
       here, where SymPy trusts the assumption.
     """
     eng = engine or default_engine()
+    rel = bool(eng.relation_specs)
     try:
-        prop = to_formula(proposition)
-        assum = None if assumptions is True else to_formula(assumptions)
+        prop = to_formula(proposition, rel)
+        assum = None if assumptions is True else to_formula(assumptions, rel)
     except Unsupported:
         return None
     if prop is TRUE:
@@ -249,3 +293,6 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
         return eng.ask(prop, assum)
     except InconsistentAssumptions as e:
         raise ValueError(f"inconsistent assumptions {assumptions}") from e
+    except Uninterpreted:
+        # a relation no theory interprets: out of scope, as without theories
+        return None

@@ -35,6 +35,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
 from .formula import P, atoms_of
+from .relations import RELATION_ATOMS, Relations
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .solver import Solver
 
@@ -50,7 +51,34 @@ class InconsistentAssumptions(ValueError):
 # --------------------------------------------------------------------------
 
 class DictCache:
-    """Context-free facts per node, bounded in size, for use without SymPy."""
+    """Context-free facts per node, owned by the engine, bounded in size.
+
+    Where facts come from (the trust principle):
+
+    * the engine's inputs from SymPy objects are only what the structural
+      templates read: the assumptions a ``Symbol`` was *declared* with
+      (``assumptions0``, see ``satassume/templates/atoms.py``) and the
+      old-system properties of objects with a fixed value (numbers, ``pi``,
+      ``oo``, ...), where every non-None property is a static fact;
+    * everything else is derived by the engine, and only the facts the
+      solver derives at decision level 0 (from the rule base, the templates
+      and the facts above, never from a query's assumptions) are stored
+      here.
+
+    The cache is keyed by the node (hash and ``==``), so structurally equal
+    nodes share facts, which is sound because a node's context-free facts
+    depend only on its structure and declared assumptions.
+
+    The engine never reads or writes SymPy's per-object ``_assumptions``.
+    Reading it would import whatever SymPy's ``_eval_is_*`` handlers cached
+    as if it were unconditional (they can be wrong: ``(0**n).is_finite`` is
+    True for a plain ``n``, although ``0**-1`` is ``zoo``; with that fact
+    ``Q.negative(n)`` looked inconsistent).  Writing to it would change
+    ``expr.is_*`` for SymPy users, and a ``Symbol``'s ``_assumptions`` is
+    one ``StdFactKB`` shared by every symbol created with the same
+    assumptions, so a derived fact about ``n`` would become a fact about
+    every plain symbol.
+    """
 
     def __init__(self, maxsize: int = 200_000):
         self.store: Dict[Node, Dict[str, Optional[bool]]] = {}
@@ -72,34 +100,11 @@ class DictCache:
         d[pred] = value
 
 
-class ObjectCache(DictCache):
-    """Use the node's own ``_assumptions`` dict (SymPy's per-object FactKB)
-    as the cache when it has one, falling back to a bounded dict otherwise.
-
-    This is what makes the engine a drop-in for the old system: a cache hit is
-    the same dictionary lookup ``expr.is_positive`` performs today, and the
-    knowledge base symbols share per assumption signature is reused as-is.
-    """
-
-    def facts(self, node):
-        d = getattr(node, '_assumptions', None)
-        return d if d is not None else super().facts(node)
-
-    def get(self, node, pred, default=None):
-        d = getattr(node, '_assumptions', None)
-        if d is not None:
-            return d.get(pred, default)
-        return super().get(node, pred, default)
-
-    def put(self, node, pred, value):
-        d = getattr(node, '_assumptions', None)
-        if d is not None:
-            if d is getattr(node, 'default_assumptions', None):
-                # copy-on-write, mirroring sympy.core.assumptions.make_property
-                d = node._assumptions = d.copy()
-            d[pred] = value
-        else:
-            super().put(node, pred, value)
+#: Former default cache, which used SymPy's per-object ``_assumptions`` as
+#: storage; it read facts SymPy's handlers had cached as unconditional and
+#: wrote derived facts into fact bases shared between symbols (see
+#: ``DictCache``).  Kept as a name so existing imports keep working.
+ObjectCache = DictCache
 
 
 # --------------------------------------------------------------------------
@@ -121,6 +126,10 @@ class Session:
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
         self.n_assumption_nodes = 0           # nodes visited by assume_formula()
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
+        self.assumption_formula = None       # the formula of assume_formula()
+        #: relation atoms and their theories (satassume.relations); created
+        #: at the first user formula when the engine has relation support
+        self.relations: Optional[Relations] = None
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -293,6 +302,15 @@ class Session:
         var = self.table.custom[atom]
         if v is not None:
             self._emit([var if v else -var])
+        if atom.pred in RELATION_ATOMS and engine.relation_specs:
+            rel = self.relations
+            if rel is None:
+                rel = self.relations = Relations(self, engine.relation_specs)
+                if self.assumption_formula is not None:
+                    # unary atoms of the assumptions become link candidates
+                    rel.note_formula(atoms_of(self.assumption_formula))
+            rel.enqueue(atom)
+            return
         ext = engine.extensions
         if ext is None:
             return
@@ -441,6 +459,7 @@ class Session:
     def assume_formula(self, f) -> List[int]:
         """Turn a formula into solver assumption literals: its clauses are
         guarded by a fresh selector variable ``s`` and ``s`` is assumed."""
+        self.assumption_formula = f
         self._ensure_atoms(f)
         s = self.table.aux()
 
@@ -449,6 +468,8 @@ class Session:
         compile_formula(f, self.table, emit)
         self._flush()
         self._discover()
+        if self.relations is not None:
+            self._relations(f)
         self.n_assumption_nodes = len(self.base)
         return [s]
 
@@ -460,8 +481,22 @@ class Session:
         lit = formula_literal(f, self.table, self._emit)
         self._flush()
         self._discover()
+        if self.relations is not None:
+            self._relations(f)
         self.literals[f] = lit
         return lit
+
+    # -- relations (satassume.relations) ---------------------------------------
+    def _relations(self, f) -> None:
+        """Interpret the relation atoms ``f`` brought in, link and share;
+        raises ``Uninterpreted`` if a relation of ``f`` has no theory.  Only
+        called once the session has a relation atom (``self.relations``
+        is created by :meth:`_custom`), so the unary path pays one test."""
+        rel = self.relations
+        atoms = atoms_of(f)
+        rel.note_formula(atoms)
+        if rel.active or rel.queue:
+            rel.process(atoms)
 
     def _ensure_atoms(self, f) -> None:
         """Visit the nodes of the vocabulary atoms of ``f``.  Custom atoms
@@ -484,7 +519,8 @@ class Engine:
         Structural clause generators.  Defaults to the SymPy template
         registry if importable, else no templates.
     cache : DictCache
-        Where context-free facts live.  Defaults to ``ObjectCache``.
+        Where context-free facts live.  Defaults to a fresh ``DictCache``;
+        SymPy's ``_assumptions`` are never used (see ``DictCache``).
     discovery_budget : int
         Maximum new nodes visited per query.
     session_limit : int
@@ -503,12 +539,16 @@ class Engine:
         Registered clause-generating functions for custom predicates and
         for vocabulary predicates on new classes.  Defaults to the global
         registry ``satassume.extensions.extensions``.
+    relations : list of satassume.relations.AdapterSpec, or None
+        Theory adapters for relation atoms.  None: the LRA and EUF adapters
+        if present (with the SymPy templates only); ``[]``: relations are
+        out of scope.
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 16,
-                 cone_search: bool = True, extensions=None):
+                 cone_search: bool = True, extensions=None, relations=None):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -522,12 +562,18 @@ class Engine:
                 registry.warm_up()
         if extensions is None:
             from .extensions import extensions
+        if relations is None:
+            from .relations import default_specs
+            relations = default_specs() if clause_templates is not None else []
+        #: adapter specs for relation atoms (satassume.relations); empty:
+        #: relations are out of scope, as before
+        self.relation_specs = list(relations)
         self.templates = templates
         #: ``node -> (compiled patterns, formulas)``; the fast path the SymPy
         #: template registry provides.  None: ``templates`` (formulas) only.
         self.clause_templates = clause_templates
         self.extensions = extensions
-        self.cache = cache if cache is not None else ObjectCache()
+        self.cache = cache if cache is not None else DictCache()
         self.custom_cache = DictCache()
         self.discovery_budget = discovery_budget
         self.session_limit = session_limit
@@ -644,6 +690,8 @@ class Engine:
     def _literal(s: Session, proposition) -> int:
         if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
             s.ensure(proposition.expr, {proposition.pred})
+            if s.relations is not None:
+                s._relations(proposition)
             return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
         return s.literal_of(proposition)
 

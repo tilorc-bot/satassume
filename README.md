@@ -16,12 +16,20 @@ counterpart of SymPy's `Predicate.register` (see
 `satassume/extensions.py`); a registered vocabulary predicate on a new
 class makes objects of that class ordinary nodes.
 
-Out of scope for now: relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`,
-`Q.is_true(x < 0)`), matrix predicates and matrix arguments, unregistered
+Relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`, `Q.is_true(x < 0)`) are
+being added through theory solvers on the CDCL solver (DPLL(T), LRA and EUF;
+see `satassume/relations.py` and
+`agent-reports/2026-09-23-theory-interface.md`); without an adapter that
+interprets a relation, `ask` returns None as before.
+Out of scope for now: matrix predicates and matrix arguments, unregistered
 custom predicates, and replacing the old `expr.is_*` system.
 
 **Routing rule.** Any out-of-scope query makes `ask` return `None` without
-touching the engine. That is scoping, not a fallback: the caller (SymPy's
+touching the engine. Relations are the exception once theory adapters are
+present (the default when `satassume/lra_adapter.py` and
+`satassume/euf_adapter.py` exist): they reach the engine, and `ask` returns
+None only when no theory interprets one of them; `out_of_scope` still
+reports them as `relation`. That is scoping, not a fallback: the caller (SymPy's
 `ask`) is expected to route such inputs to its existing path (`satask`, the
 LRA theory, the matrix handlers). `out_of_scope(prop, assumptions)` reports
 the category (`relation`, `matrix`, `custom`, `other`) so the caller can
@@ -44,8 +52,7 @@ under Results); 2 is met on 2532 of 2583 compared records; 3 is met by
 left for the landing step.
 
 **Long-term goal.** Replacing the old per-object `expr.is_*` system with the
-same engine (the per-object `_assumptions` dictionary as the cache, level-0
-facts written back to the nodes) remains the goal; it is deferred until this
+same engine remains the goal; it is deferred until this
 slice is finished. `Engine.is_` exists because the engine uses it internally
 for context-free queries and the corpus tools replay old-system records
 through it for information, but nothing here hooks it into SymPy. See
@@ -61,8 +68,9 @@ y = Symbol('y')
 ask(Q.positive(exp(y)), Q.real(y))            # True
 ask(Q.even(y + 1), Q.odd(y))                  # True
 ask(Q.positive(y), Q.real(y))                 # None: undecided, in scope
-ask(Q.positive(y), Q.gt(y, 0))                # None: out of scope (relation)
-out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation'
+ask(Q.positive(y), Q.gt(y, 0))                # None: y may be non-real, so y > 0 has no order meaning
+ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
+out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
 from sympy import Integer, Predicate, log
 from satassume import register, P, Implies
@@ -78,8 +86,14 @@ Both SymPy assumption systems are propositional reasoning over the same
 predicate vocabulary (`integer -> rational -> real -> complex`, `real ==
 negative | zero | positive`, ...) plus structural knowledge about expression
 classes. satassume keeps one rule base, one incremental CDCL solver per
-session, and the object's own `_assumptions` dictionary as the cache for
-context-free facts. Assumptions enter the solver as solver assumptions under
+session, and a cache of its own (`DictCache`, keyed by node) for the
+context-free facts it derives. It never reads or writes SymPy's per-object
+`_assumptions`: those hold whatever SymPy's `_eval_is_*` handlers cached,
+which can be wrong (`(0**n).is_finite` is True for a plain `n`), and a
+`Symbol`'s `_assumptions` is one fact base shared by every symbol with the
+same assumptions. SymPy objects enter only through the templates: the
+assumptions a symbol was declared with, and the properties of fixed-value
+constants. Assumptions enter the solver as solver assumptions under
 a selector literal and never touch the cache; the session is reused while
 the assumptions stay the same. Discovery visits only the cone of the queried
 expression, root-level propagation decides most queries, and search runs
@@ -270,18 +284,21 @@ The other three need reasoning the templates do not do: `(3*I)**I` and
 non-atomic base; the primality of `cos(1)**2 + sin(1)**2 + 1234...` needs a
 trigonometric identity.
 
-Out-of-scope records, returned as None by rule (informational):
+Out-of-scope records, returned as None by rule (informational; relations
+are answered by the theories, `tools/compare.py --relations-only`):
 
 | Category | Records | SymPy also None | SymPy answered |
 |---|---|---|---|
-| relations | 78 | 15 | 63 |
+| relations | 78 | 15 | 63; with the LRA and EUF theories 75 of the 78 agree, 3 None, 0 wrong |
 | matrix predicates or non-scalar arguments | 189 | 29 | 160 |
 | custom predicates | 0 | | |
 | not a Boolean proposition | 8 | 5 | 1 (SymPy raised on 2) |
 
 Old-system `expr.is_*` records, replayed through `Engine.is_` (out of
 scope, informational): 6343 replayable, 6033 agree (95.1%), 27 extra
-answers, 283 None where SymPy answered, 0 wrong.
+answers, 283 None where SymPy answered, 0 wrong. (Before the engine
+stopped reading SymPy's cached `_assumptions` it was 6041 / 30 / 272: part
+of that agreement was SymPy's own cached answers read back.)
 
 Time (`tools/compare.py --in-scope-only --time-sympy`, both sides in the
 same process, garbage collection frozen and disabled inside the timed
