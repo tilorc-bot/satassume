@@ -222,3 +222,66 @@ and it propagates 2,495 literals.
   The reused-engine fuzz checks that nothing contextual leaks.
 - `uninterpreted="free"` changes 36 stream answers from None to
   ValueError (all genuinely inconsistent); off by default until decided.
+
+## Cost on the Pi, and what was cut (after the landing side's +12.1%)
+
+The landing side measured `9b800bb` against `main` `7068e57` (same engine
+code as `facts-theory`) on the Pi: ref 2.752 s, cand 3.084 s, **+12.1%**.
+All numbers below are on the Pi, `tools/ab.py --rounds 3` interleaved
+(best-of-3) or three cold passes per variant, with exclusive use.
+
+**Where it went.** `Engine(transfer=False)` on the branch runs at `main`
+speed (2.75 s vs 2.75 s), so all of it is transfer. Nothing leaks into
+sessions without an equality: every one of the 135 engagements per pass
+comes from a user equality in the query or the assumptions; no link or
+extension atom engages it. Per-query split (`facts2_split.py`, best of 3):
+the 399 queries with an equality went from 0.204 s to 0.453 s, the other
+13,478 from 2.522 s to 2.612 s; the latter is later queries in sessions
+an equality query had engaged (they register their nodes too, and visiting
+number nodes made reused sessions look polluted, so some searches became
+cone searches), plus one full garbage collection moving onto query 6489
+(53 ms; the number of gen-2 collections per pass is 1 on both). Ablations
+of the final version (monkeypatched, three passes each): theory attached
+but empty +0.02 s; with registration and transfer +0.13 s; propagation
+itself costs nothing measurable. What costs is registration and the
+per-assignment `assert_lit` calls (35,563 per pass).
+
+**Changes (new commits on `facts-stage2`, each measured):**
+
+| commit | change | Pi best-of-3 vs main |
+|---|---|---:|
+| `9b800bb` | as reviewed | +12.1% (landing side) |
+| `a95100c` | register only *candidate* nodes (terms EUF could ever merge: atom sides and applications that can be congruent); per-predicate spreading on assignment instead of rescanning the class | +8.0% |
+| `c8d4aaf` | a side only of a link `eq(e, 0)` registers `polar` alone (the link makes `zero(e)`, from which the rule base decides every other predicate as for `0`); sides only of interface equalities (how LRA-derived equalities reach EUF) register nothing | +8.3% |
+| `e1c4b1e` | grow the solver once per block (33 single-variable `_grow` calls before), skip scans of classes with fewer than two registered terms | +9.0% (noise) |
+| `2c0a412` | congruence candidates need a same-head partner whose arguments may merge pairwise (`x - 1` and `x - 2` never can); number visits do not count as session pollution | +8.5% |
+| `24d4400` | a number node registers only a basis of its facts (unit propagation under the rule base gives the rest) plus its open predicates | +7.5% |
+| `65aa46e` | rational sides are no longer visited as nodes: the theory holds their fact basis as fixed facts of the EUF term (`TransferTheory.set_fixed`), reasons are the equality's explanation alone | **+5.5% / +6.4%** (two runs) |
+
+Answers unchanged at every step: stream 15 more definite (same 15), gate2
+1 more definite, `uninterpreted="free"` 513 / 36 as before, no ValueError
+lost or added on either gate.
+
+**Candidacy, the argument.** A term joins a class only through a union:
+as the side of an atom, or as an application congruent to another one
+whose arguments were merged. So only atom sides and applications with a
+same-head partner whose argument pairs may merge can ever share facts;
+every other node's 33 variables stay out of the theory, which changes no
+answer. Candidacy only grows and is re-examined at each root-safe sync.
+
+**Left (about +6%, 0.17 s per pass):** 8,760 registered variables and
+35,563 `assert_lit` calls per pass over 90 engaged transfer theories.
+The next cut would register only the predicates some clause outside the
+rule block mentions on a candidate node (plus a number's basis); a model
+argument says that is complete (members agree on every mentioned
+predicate, and a member can copy the unmentioned ones from any other
+member without violating its rule block), but it needs an exact
+collection of mentions (templates, parent templates, cached facts,
+assumptions, links, extensions) and was not attempted here.
+
+Gates after the changes: transfer fuzz `euf` 4,200 seeds and `lra` 4,000
+seeds pass with the same counts as before (23,175 identical answers, 1 inconsistent-assumptions difference; 22,089 identical, 0 oracle-more-definite); suite at baseline (2 known `test_shared_facts` failures);
+`test_transfer.py` including the Recorder protocol check; gate2 on the Pi
+changed 0, 1 more definite. `solver.py`, `euf.py` and `theory.py` are
+untouched by these commits, so the solver, real-theory and EUF fuzz runs
+above stand.
