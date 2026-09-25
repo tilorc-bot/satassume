@@ -148,6 +148,9 @@ class Session:
         #: relation atoms and their theories (satassume.relations); created
         #: at the first user formula when the engine has relation support
         self.relations: Optional[Relations] = None
+        #: the Relations object once predicate transfer is engaged
+        #: (Relations._engage_transfer); None on every other path
+        self.xfer = None
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -450,6 +453,8 @@ class Session:
     def query_literal(self, lit: int, assumptions: Iterable[int] = (),
                       search: bool = True) -> Optional[bool]:
         solver = self.solver
+        if self.xfer is not None:
+            self.xfer.sync_transfer()
         if not solver.propagate():
             raise InconsistentAssumptions("rule base or cached facts are inconsistent")
         self.writeback()
@@ -577,13 +582,24 @@ class Engine:
         Theory adapters for relation atoms.  None: the LRA and EUF adapters
         if present (with the SymPy templates only); ``[]``: relations are
         out of scope.
+    transfer : bool
+        Share unary facts between terms EUF puts in one class
+        (:mod:`satassume.transfer`): ``Q.positive(y)`` from ``Q.eq(x, y) &
+        Q.positive(x)``, ``Q.prime(x)`` from ``Q.eq(x, 2)``.  Engaged only in
+        sessions with an equality atom.
+    uninterpreted : ``"none"`` or ``"free"``
+        What a relation of the query or the assumptions that no theory
+        interprets does: ``"none"`` (default) makes ``ask`` return None;
+        ``"free"`` leaves it a free Boolean, so the rest of the assumptions
+        still answers (and an inconsistent rest raises).
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 16,
                  cone_search: bool = True, extensions=None, relations=None,
-                 cone_threshold: int = 3):
+                 cone_threshold: int = 3, transfer: bool = True,
+                 uninterpreted: str = "none"):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -615,6 +631,10 @@ class Engine:
         self.keep_sessions = keep_sessions
         self.cone_search = cone_search
         self.cone_threshold = cone_threshold
+        self.transfer = transfer
+        if uninterpreted not in ("none", "free"):
+            raise ValueError(f"uninterpreted must be 'none' or 'free', not {uninterpreted!r}")
+        self.uninterpreted = uninterpreted
         #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
         #: (satassume.sympy_api), bounded; cleared when registrations change
         self.answers = AnswerMemo()

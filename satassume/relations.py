@@ -94,7 +94,7 @@ from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
 from .formula import Not, P
-from .rules import PRED_INDEX
+from .rules import NPRED, PRED_INDEX
 from .theory import EqualitySharing
 
 #: atom predicates the engine gives to theories
@@ -209,6 +209,15 @@ class Relations:
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
         self._pending_links: list = []
+        #: eq atoms the glue made (links ``eq(e, 0)``, interface equalities);
+        #: they do not engage predicate transfer by themselves
+        self._aux_eq: set = set()
+        #: predicate transfer (satassume.transfer), engaged by the first
+        #: user or template equality atom; None until then
+        self.xfer = None
+        self._xadapter = None
+        self._xslot = 1                   # cursor into table.slots
+        self._xterm = 0                   # cursor into the adapter's atom terms
 
     # -- entry points used by the session ------------------------------
     def enqueue(self, atom: P) -> None:
@@ -223,12 +232,15 @@ class Relations:
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
         raise :class:`Uninterpreted` if a relation among ``user_atoms`` has
-        no theory."""
+        no theory (unless the engine leaves such atoms free Booleans,
+        ``Engine(uninterpreted="free")``)."""
         s = self.session
         user = [a for a in user_atoms if a.pred in RELATION_ATOMS]
         for a in user:
             for side in a.expr:
                 self._link_later(side)
+        if self.xfer is None and any(a.pred == "eq" for a in user):
+            self._want_transfer = True
         while True:
             s._flush()
             s._discover()
@@ -246,7 +258,15 @@ class Relations:
                 continue
             if self._share():
                 continue
+            if self._want_transfer and self.xfer is None:
+                self._engage_transfer()
+            if self.xfer is not None and self._transfer_terms():
+                continue
             break
+        if self.xfer is not None:
+            self.sync_transfer()
+        if s.engine.uninterpreted == "free":
+            return
         for a in user:
             if not self.status.get(a):
                 raise Uninterpreted(f"no theory interprets {a}")
@@ -274,6 +294,9 @@ class Relations:
             if not spec.guarded:
                 if ad.register(solver, var, sat):
                     ok = True
+                    if (atom.pred == "eq" and atom not in self._aux_eq
+                            and hasattr(ad, "node_term")):
+                        self._want_transfer = True
                 continue
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
@@ -305,7 +328,10 @@ class Relations:
         zero, real = s.var("zero", e), s.var("real", e)
         gt = self._atom_var(relation_atom("lt", S.Zero, e))
         lt = self._atom_var(relation_atom("lt", e, S.Zero))
-        eq = self._atom_var(relation_atom("eq", e, S.Zero))
+        eqa = relation_atom("eq", e, S.Zero)
+        if eqa not in self.session.table.custom:
+            self._aux_eq.add(eqa)
+        eq = self._atom_var(eqa)
         emit = s._emit
         emit([-pos, gt])
         emit([-gt, -real, pos])
@@ -323,5 +349,85 @@ class Relations:
         for a, b in pairs:
             if _is_number(a) and _is_number(b):
                 continue
-            self._atom_var(relation_atom("eq", a, b))
+            eqa = relation_atom("eq", a, b)
+            if eqa not in self.session.table.custom:
+                self._aux_eq.add(eqa)
+            self._atom_var(eqa)
         return bool(pairs)
+
+    # -- predicate transfer (satassume.transfer) -------------------------
+    #
+    # Engaged explicitly, once per session, by the first equality atom that
+    # is not glue (a user atom, or one a template or extension made); the
+    # links' eq(e, 0) and the interface equalities alone do not engage it.
+    # Engaging attaches the EUF adapter's theory (if not yet) and a
+    # TransferTheory; from then on every node block of the session is
+    # registered with it (its expression interned as an EUF term, so
+    # congruence applies to it), and every expression EUF interns for an
+    # atom is visited as a node (so x = 2 finds the facts of 2).
+
+    _want_transfer = False
+
+    def _engage_transfer(self) -> None:
+        s = self.session
+        if not s.engine.transfer:
+            return
+        ad = None
+        for spec in self.specs:
+            if not spec.guarded:
+                a = self._adapter(spec)
+                if hasattr(a, "node_term"):
+                    ad = a
+                    break
+        if ad is None:
+            return
+        from .transfer import TransferTheory
+        solver = s.solver
+        ad.attach(solver)
+        th = TransferTheory(ad.theory)
+        solver.attach_theory(th)
+        self._xadapter = ad
+        self.xfer = th
+        s.xfer = self
+
+    def _transfer_terms(self) -> bool:
+        """Visit the expressions EUF interned for atoms since the last call
+        (numbers included); True if a node was visited."""
+        from itertools import islice
+        from sympy import Expr
+        terms = self._xadapter._terms
+        n = len(terms)
+        if self._xterm >= n:
+            return False
+        new = list(islice(terms, self._xterm, n))
+        self._xterm = n
+        s = self.session
+        visited = False
+        for e in new:
+            if isinstance(e, Expr) and e not in s.base:
+                s.ensure(e)
+                visited = True
+        return visited
+
+    def sync_transfer(self) -> None:
+        """Register the node blocks allocated since the last call with the
+        transfer theory."""
+        s = self.session
+        slots = s.table.slots
+        i, n = self._xslot, len(slots)
+        if i >= n:
+            return
+        from sympy import Basic, nan
+        solver, th, ad = s.solver, self.xfer, self._xadapter
+        while i < n:
+            e = slots[i]
+            if type(e) is tuple and e[1] == i:
+                node = e[0]
+                if isinstance(node, Basic) and not node.has(nan):
+                    t = ad.node_term(node)
+                    for k in range(NPRED):
+                        solver.register_atom(th, i + k, (t, k))
+                i += NPRED
+            else:
+                i += 1
+        self._xslot = n

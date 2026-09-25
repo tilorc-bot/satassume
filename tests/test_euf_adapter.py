@@ -196,11 +196,11 @@ def test_engine_equality():
 
 
 def test_engine_equality_failing_is_not_wrong():
-    # test_equality_failing: substitution is out of scope; None (or True
-    # if some day supported), never False.
-    assert _ask(Q.prime(x), Q.eq(x, y) & Q.prime(y)) in (True, None)
-    assert _ask(Q.real(x), Q.eq(x, y) & Q.real(y)) in (True, None)
-    assert _ask(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) in (True, None)
+    # test_equality_failing: EUF does not substitute; the engine does, by
+    # predicate transfer (satassume.transfer).  True, never False.
+    assert _ask(Q.prime(x), Q.eq(x, y) & Q.prime(y)) is True
+    assert _ask(Q.real(x), Q.eq(x, y) & Q.real(y)) is True
+    assert _ask(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) is True
     assert _ask(Q.prime(x), Q.ne(x, y) & Q.prime(y)) is None
 
 

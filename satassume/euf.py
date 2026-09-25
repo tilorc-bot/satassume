@@ -52,8 +52,17 @@ disequalities (from values or asserted disequalities) is not implemented.
 Leaving it out is always sound, and the eager conflict still catches the
 case.
 
-Out of scope: arithmetic, AC reasoning, and substitution of equals into
-predicates (``Q.prime(x)`` from ``Q.eq(x, y) & Q.prime(y)``).
+Merge hook: if :attr:`EUFTheory.on_merge` is set, it is called as
+``on_merge(ra, rb)`` after every union, with ``ra`` the representative that
+was retired and ``rb`` the one that now stands for the merged class.
+Nothing is called on undo; a listener must not keep state that a
+``pop_level`` would have to revert, or must revert it through its own
+``pop_level`` (the transfer layer, :mod:`satassume.transfer`, recomputes
+from the current classes and needs no undo).
+
+Out of scope here: arithmetic and AC reasoning.  Substitution of equals
+into unary predicates (``Q.prime(x)`` from ``Q.eq(x, y) & Q.prime(y)``) is
+done by :mod:`satassume.transfer` on top of this theory's classes.
 """
 from __future__ import annotations
 
@@ -101,6 +110,8 @@ class EUFTheory:
         self._conflict = None                 # (False, clause) until popped
         self._trail: list[tuple] = []
         self._lims: list[int] = []
+        #: ``on_merge(retired_rep, new_rep)`` after each union, or None
+        self.on_merge = None
 
     # ------------------------------------------------------------------
     # Terms
@@ -183,6 +194,10 @@ class EUFTheory:
 
     def num_terms(self) -> int:
         return len(self._repr)
+
+    def members(self, t: int) -> list[int]:
+        """The terms of ``t``'s class (the live list: do not modify)."""
+        return self._members[self._repr[t]]
 
     # ------------------------------------------------------------------
     # Queries
@@ -279,6 +294,8 @@ class EUFTheory:
             atoms_b.extend(al)
         if conflict is not None:
             self._conflict = (False, sorted(-l for l in conflict))
+        if self.on_merge is not None:
+            self.on_merge(ra, rb)
 
     def _undo_union(self, ra, rb, a, old_root, nuse, ndiseq, natoms, set_val):
         self._pfp[a] = -1
