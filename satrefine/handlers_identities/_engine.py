@@ -64,8 +64,11 @@ Conditions are decided connective by connective (:func:`provable`): an
 decided from the bounds the assumptions state on its argument
 (``Q.real(t)`` and ``Q.nonpositive(t)`` under ``Q.ge(t, -pi) & Q.le(t,
 0)``, ``Q.integer(t/pi + 1/2)`` refuted under ``Q.gt(t, -pi/2) & Q.lt(t,
-pi/2)``; see :func:`._simple.stated_bounds`): a stated bound carries
-realness, as in ``handlers_v3``.  A rule row may carry a fourth element ``unless``:
+pi/2)``; see :func:`._simple.stated_bounds`).  The bounds are on the
+extended reals: ``Q.gt(t, 1)`` holds at ``t = oo``, so a bound proves
+``Q.extended_real`` and the ``extended_*`` signs, and ``Q.real`` or a finite
+sign only when infinity is excluded too (:func:`_from_bounds`; issue #10,
+B1-B7).  A rule row may carry a fourth element ``unless``:
 it fires only if ``unless`` is *not* provable.  Rows are tried in table
 order.
 
@@ -255,6 +258,22 @@ def _ask_cost(cond: Any) -> int:
 def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     """``True`` when the bounds stated on ``u`` prove ``predicate(u)``, else ``None``
     (``False`` for an integer refuted by an interval holding no integer).
+
+    **Infinity.**  A stated interval is one of the extended reals: a relation
+    (``Q.gt(u, 1)``, even ``Q.ge(u, oo)``, which forces ``u = oo``) holds at an
+    infinite ``u``.  It proves ``Q.extended_real(u)`` and the ``extended_*``
+    signs; ``Q.real`` and the finite signs (``positive``, ``nonnegative``,
+    ``negative``, ``nonpositive``, ``nonzero``) imply ``u`` finite, so they
+    also need each infinity the sign leaves possible excluded: by a finite
+    endpoint on that side (or an open ``oo`` endpoint, ``Q.lt(u, oo)``), by a
+    sign fact among the bounds (``Q.positive(u - 1)`` holds only for a finite
+    ``u``: :func:`._simple.stated_finite`), or by ``ask`` proving
+    ``Q.finite(u)``.  Before this, a one-sided bound read as finite gave wrong
+    results at ``u = +-oo`` (issue #10, B1-B7: Piecewise conditions,
+    ``KroneckerDelta``, ``sign(exp(-x))``, ``log(x**n)``, ``acsch(csch(x))``,
+    ``RisingFactorial``).  The relation decider (:func:`_order`) reaches the
+    bounds only through these atoms (``Q.real(u)`` in a ``u < oo`` proof,
+    ``Q.nonzero(u - v)`` for ``u != v``), so it is covered by the same rule.
 
     **Contradictions.**  The engine derives facts of its own on top of
     ``ask``, so it can prove both ``P`` and ``not P`` although ``ask`` never
