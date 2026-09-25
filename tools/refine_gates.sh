@@ -10,6 +10,10 @@
 #   the battery scoreboard in both SATREFINE_IDENTITIES modes,
 #   the differential against handlers_v3 for seeds 2, 3, 7 at 1,500 cases in both modes,
 #   the same for seed 2 with SATREFINE_BACKEND=satassume, in both modes,
+#   the extended family (--ext: infinities, Piecewise, inverse pairs) for seed 2 at EXT_CASES
+#   cases (default 1,000) and the matrix family (--matrices) for seed 2 at MAT_CASES cases
+#   (default 1,500), both in both modes, as sections of their own (the default seeds' case
+#   streams are unchanged, so their sections still compare 1:1 with older baselines),
 #   the termination tests (B9) with the adversarial-ask fuzz on their own, so the summary shows
 #   they ran: small by default (as in the suite, seconds); TERMINATION_FUZZ=N runs N random
 #   cases and the whole battery instead (N=150: about 10 minutes on one core).
@@ -26,6 +30,8 @@ base=${2:-}
 jobs=${JOBS:-6}
 workers=${SUITE_WORKERS:-3}
 termfuzz=${TERMINATION_FUZZ:-0}
+extcases=${EXT_CASES:-1000}
+matcases=${MAT_CASES:-1500}
 export GATE_SLOTS=${SLOTS:-8} GATE_SLOTS_DIR=${GATE_SLOTS_DIR:-/tmp/refine-gate-slots}
 mkdir -p "$GATE_SLOTS_DIR"
 mkdir -p "$out"
@@ -41,6 +47,8 @@ for m in generated live; do
     tasks+=("diff-$m-$s|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --seed $s --cases 1500")
   done
   tasks+=("diffsa-$m-2|env SATREFINE_BACKEND=satassume SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --seed 2 --cases 1500")
+  tasks+=("diffext-$m-2|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --ext --seed 2 --cases $extcases")
+  tasks+=("diffmat-$m-2|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} tools/refine_differential.py --summary --matrices --seed 2 --cases $matcases")
 done
 tasks+=("termination|env SATREFINE_TERMINATION_FUZZ=$termfuzz timeout 3000 ${uvrun[*]} -m pytest -q -s -p no:cacheprovider tests/refine_identities/test_engine_termination.py")
 
@@ -81,6 +89,14 @@ printf '%s\n' "${tasks[@]}" | xargs -P "$jobs" -I{} bash -c '
   for m in generated live; do
     echo "== differential satassume $m seed 2 (exit $(cat "$out/diffsa-$m-2.exit"))"
     tail -15 "$out/diffsa-$m-2.log"
+  done
+  for m in generated live; do
+    echo "== differential ext $m seed 2, $extcases cases (exit $(cat "$out/diffext-$m-2.exit"))"
+    tail -15 "$out/diffext-$m-2.log"
+  done
+  for m in generated live; do
+    echo "== differential matrices $m seed 2, $matcases cases (exit $(cat "$out/diffmat-$m-2.exit"))"
+    tail -15 "$out/diffmat-$m-2.log"
   done
   echo "== termination tests, fuzz size ${termfuzz} (exit $(cat "$out/termination.exit"))"
   grep -E '^termination fuzz:|[0-9]+ (passed|failed)|^FAILED' "$out/termination.log" | sed 's/ - .*//' | tail -12
