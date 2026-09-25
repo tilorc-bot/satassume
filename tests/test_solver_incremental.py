@@ -123,6 +123,7 @@ class Harness:
             nv = max(nv, self.bk)
         self.nv = nv
         self.clauses: list[list[int]] = []
+        self.regs: list[tuple[int, int]] = []   # (theory index, var) registered by ops
         self.A: list[int] | None = None
         self.A_bad = False          # A was found inconsistent
         self.last_trail: list[int] | None = None   # last implied() result
@@ -163,6 +164,8 @@ class Harness:
         if self.setup is not None:
             self.setup(o)
         o.ensure_vars(self.nv)
+        for ti, v in self.regs:
+            o.register_atom(o.fuzz_theories[ti], v, None)
         for c in self.clauses:
             o.add_clause(c)
         o.propagate()
@@ -288,6 +291,7 @@ def run_seed(seed: int, ops=None, setup=None, steps=None, **kw) -> dict[str, int
         h.count("block_hard_conflicts", st["conflicts"] if h.hard else 0)
         h.count("rb_reasons_read", h.solver.n_rb_reasons)
     h.count("seeds")
+    h.count("witness_hits", st["witness_hits"])
     h.count("conflicts", st["conflicts"])
     h.count("restarts", st["restarts"])
     h.count("reductions", h.solver._n_reductions)
@@ -482,11 +486,19 @@ def solve(h: Harness) -> None:
         AA = A[:-1]
     else:
         AA = h.rclause(rng.choice([0, 1, 2, 3]))
+    _check_solve(h, AA)
+
+
+def _check_solve(h: Harness, AA: list[int]) -> None:
+    A = h.A
     h.record("solve", AA)
     held = h.solver._held
     if held is not None and h.held_now(AA[:len(held)]):
         h.count("solve_from_held")
+    hits = h.solver._n_ring_hits
     got = h.solver.solve(AA)
+    if h.solver._n_ring_hits > hits:
+        h.count("solve_by_stored_model")
     h.check(got == h.sat(AA), "solve", AA, got)
     if got:
         m = h.solver.model()
@@ -496,12 +508,28 @@ def solve(h: Harness) -> None:
                 "model violates a clause")
     else:
         h.count("solve_unsat")
-        if AA[:len(A)] == A:
+        if A is not None and AA[:len(A)] == A:
             h.A_bad = True
         core = h.solver.conflict()
         h.check(h.solver.model() is None, "model after UNSAT")
         h.check(set(core) <= set(AA), "conflict core not a subset", core, AA)
         h.check(not h.sat(core), "conflict core is consistent", core)
+
+
+@op(4)
+def solve_witness(h: Harness) -> None:
+    """``solve`` on assumptions true in one of the live solver's stored
+    models (``Solver._ring``): answered by that model unless something
+    added since falsifies it; the model is then checked like any other."""
+    ring = h.solver._ring
+    if not ring:
+        return
+    mv = h.rng.choice(ring)[0]
+    vs = h.rng.sample(range(1, len(mv) + 1), min(len(mv), h.rng.randint(1, 3)))
+    AA = [v if mv[v - 1] else -v for v in vs]
+    if h.rng.random() < 0.3:
+        AA.append(h.rlit())
+    _check_solve(h, AA)
 
 
 @op(5)
@@ -634,21 +662,50 @@ def theory_setup(seed: int) -> Callable:
     atoms = [1, 2, 3]
     forbidden = [[v * rng.choice([1, -1]) for v in rng.sample(atoms, rng.randint(2, 3))]
                  for _ in range(rng.randint(2, 3))]
+    # A second theory with no atoms at the start: register_second gives it
+    # variables the first one already has (a new constraint on a variable
+    # that is already a theory atom).
+    mode2 = rng.choice(["eager", "lazy", "propagate"])
+    forbidden2 = [[v * rng.choice([1, -1]) for v in rng.sample(atoms, rng.randint(1, 2))]
+                  for _ in range(rng.randint(1, 2))]
 
     def setup(s: Solver) -> None:
         t = ForbidTheory(forbidden, mode)
         if isinstance(s, BlockSolver):
             t = s.recorder = Recorder(t, s)
         s.attach_theory(t)
+        t2 = ForbidTheory(forbidden2, mode2)
+        s.attach_theory(t2)
+        s.fuzz_theories = [t, t2]
         for v in atoms:
             s.register_atom(t, v, None)
     return setup
 
 
+def register_second(h: Harness) -> None:
+    """Register a variable of the first theory with the second one (theory
+    mode only): the formula changes while the number of theory variables
+    does not."""
+    s = h.solver
+    ts = getattr(s, "fuzz_theories", None)
+    if ts is None:
+        return
+    free = [v for v in (1, 2, 3) if (1, v) not in h.regs]
+    if not free:
+        return
+    v = h.rng.choice(free)
+    h.record("register_second", v)
+    h.regs.append((1, v))
+    r = s.register_atom(ts[1], v, None)
+    h.check(r or not h.sat([]), "register_atom False but SAT")
+    h.after_prop = False
+
+
 def run_block_seed(seed: int, theory: bool = False) -> dict[str, int]:
     mode = "prop" if seed % 2 == 0 else "mixed"
     setup = theory_setup(seed) if theory else None
-    return run_seed(seed, ops=BLOCK_OPS, setup=setup, block=mode)
+    ops = BLOCK_OPS + [("register_second", 3, register_second)] if theory else BLOCK_OPS
+    return run_seed(seed, ops=ops, setup=setup, block=mode)
 
 
 # ----------------------------------------------------------------------
@@ -677,7 +734,7 @@ def test_mix_covers_the_incremental_paths():
     the chunk tests above (runs 300 seeds itself if they did not run)."""
     c = COVERAGE if COVERAGE.get("seeds", 0) >= 300 else run_seeds(0, 300)
     for key in ("implied_from_held", "solve_from_held", "adds_while_held",
-                "conflicts", "reductions", "restarts", "solve_unsat",
+                "conflicts", "reductions", "restarts", "solve_unsat", "witness_hits",
                 "entails_None", "entails_True", "entails_False",
                 "entails_inconsistent", "implied_none"):
         assert c.get(key, 0) > 0, (key, c)
@@ -727,7 +784,7 @@ def test_block_mix_covers_the_propagator_paths():
     for key in ("rb_reasons_read", "block_hard_conflicts", "blocks_while_held",
                 "blocks_over_assigned", "blocks_over_held_assigned",
                 "blocks_over_root_assigned_while_held", "blocks_registered", "implied_from_held",
-                "solve_from_held", "reductions", "solve_unsat", "entails_None",
+                "solve_from_held", "reductions", "solve_unsat", "witness_hits", "entails_None",
                 "entails_True", "entails_False", "entails_inconsistent"):
         assert c.get(key, 0) > 0, (key, c)
 
@@ -744,6 +801,21 @@ def test_harness_catches_a_weak_propagator(monkeypatch):
     with pytest.raises(Mismatch):
         for seed in range(40):
             run_block_seed(seed)
+
+
+def test_harness_catches_a_stale_witness(monkeypatch):
+    """A solver that answers from a stored model without checking what was
+    added since (clauses, root literals, blocks) is caught."""
+    def stale(self, lits):
+        for rec in reversed(self._ring):
+            mv = rec[0]
+            if all((l >> 1) <= len(mv) and mv[(l >> 1) - 1] is (not l & 1) for l in lits):
+                return rec
+        return None
+
+    monkeypatch.setattr(Solver, "_ring_hit", stale)
+    with pytest.raises(Mismatch):
+        run_seeds(0, 60)
 
 
 if __name__ == "__main__":

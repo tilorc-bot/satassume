@@ -61,6 +61,9 @@ literals asserted at level 0 are permanent facts.
   (``pop_level``) or declared the problem unsatisfiable at root;
 * ``check`` is called only when every solver variable is assigned and every
   assignment has been reported, just before the solver would answer SAT;
+  a satisfiable answer may also reuse a model that passed ``check``
+  earlier under the same theories and registered atoms (the solver's
+  witness reuse), with no theory call at all;
 * ``propagate`` (optional) is called after the theory has been told all
   current assignments without conflict.
 

@@ -762,3 +762,87 @@ def test_rule_block_api_errors_and_shared_tables():
         s.register_block(NPRED)                     # overlaps block 1
     with pytest.raises(ValueError):
         Solver().set_rule_block(((0, 1),), 1)       # tautology
+
+
+# ----------------------------------------------------------------------
+# Witness reuse with theories
+# ----------------------------------------------------------------------
+
+class _NullTheory:
+    def register_atom(self, v, p): pass
+    def assert_lit(self, x): return None
+    def check(self): return None
+    def push_level(self): pass
+    def pop_level(self): pass
+
+
+class _NeverTrue(_NullTheory):
+    """Every registered atom is theory-false."""
+    def __init__(self):
+        self.atoms = set()
+
+    def register_atom(self, v, p):
+        self.atoms.add(v)
+
+    def assert_lit(self, x):
+        return (False, [-x]) if x in self.atoms else None
+
+
+def test_stored_model_not_reused_after_a_second_theory_registers_a_variable():
+    """Registering a variable with a second theory changes the problem
+    without a new theory variable: the stored model must not answer."""
+    s = Solver()
+    a = s.new_var()
+    t1, t2 = _NullTheory(), _NeverTrue()
+    s.attach_theory(t1)
+    s.attach_theory(t2)
+    s.register_atom(t1, a, None)
+    assert s.solve([a])
+    assert s.solve([a]) and s.stats()["witness_hits"] == 1   # reused
+    s.register_atom(t2, a, None)
+    assert not s.solve([a])
+    assert s.stats()["witness_hits"] == 1
+
+
+class _Implies(_NullTheory):
+    """Theory propagation: once ``a`` is true, ``b`` is implied."""
+    def __init__(self, a, b):
+        self.a, self.b, self.trail, self.lims = a, b, [], []
+
+    def assert_lit(self, x):
+        self.trail.append(x)
+        return None
+
+    def push_level(self):
+        self.lims.append(len(self.trail))
+
+    def pop_level(self):
+        del self.trail[self.lims.pop():]
+
+    def propagate(self):
+        return [(self.b, [-self.a, self.b])] if self.a in self.trail else []
+
+
+def test_theory_propagates_after_registering_a_root_fixed_variable():
+    """A variable fixed at root, then registered: the theory hears of it at
+    once and is asked to propagate at the next propagation, even though no
+    trail entry is new."""
+    s = Solver()
+    a, b = s.new_var(), s.new_var()
+    t = _Implies(a, b)
+    s.attach_theory(t)
+    s.add_clause([a])
+    s.propagate()
+    s.register_atom(t, a, None)
+    s.register_atom(t, b, None)
+    assert b in s.implied([])
+
+
+def test_entails_accepts_integral_float_assumptions_with_a_stored_model():
+    """Assumptions go through int() in entails as in _assume, also on the
+    witness path (a stored model exists after the first solve)."""
+    s = Solver()
+    s.add_clause([1, 2])
+    assert s.solve([3])
+    assert s.entails(2, [-1.0]) is True
+    assert s.entails(1, [3.0]) is None

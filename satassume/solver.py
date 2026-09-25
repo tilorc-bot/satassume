@@ -141,6 +141,7 @@ class Solver:
     _restart_inc = 2.0
     _learnt_size_inc = 1.1
     _learnt_size_min = 1000
+    _RING = 2                   # models kept for _ring_hit
 
     def __init__(self):
         # Per-literal data; indices 0 and 1 are unused (variable 0 is not a var).
@@ -167,10 +168,13 @@ class Solver:
         self._cla_inc = 1.0
         self._max_learnts = 0.0
         self._assumptions: list[int] = []
-        self._model: dict[int, bool] | None = None
+        # Model of the last successful solve: the values of variables 1..n
+        # (``_mvals``) and the dict built from them on demand (``_model``).
+        self._mvals: list | None = None
+        self._mdict: dict[int, bool] | None = None
         # Last model found by any solve; a cheap witness that a set of
         # assumptions is consistent.  Invalidated when clauses are added.
-        self._witness: dict[int, bool] | None = None
+        self._witness: list | None = None
         # Version of the clause database (problem and learnt clauses and
         # theory atoms); bumped by every change that can alter what
         # propagation derives.  Together with the length of the root trail
@@ -201,6 +205,7 @@ class Solver:
         self._thead = 0                      # trail entries before it were reported
         self._tprops: list = []              # bound ``propagate`` methods
         self._tmodels: list | None = None
+        self._tpending = False               # propagate() owed after register_atom
         # Rule block (see set_rule_block): per-variable base of the block
         # the variable belongs to, 0 if none; the shared tables
         # (see _rule_tables).
@@ -210,6 +215,15 @@ class Solver:
         self._rb_n = 0                       # variables per block
         self._rb_blocks = 0                  # registered blocks
         self._rb_nclauses = 0                # clauses they stand for
+        self._rb_bases: list[int] = []       # bases, in registration order
+        # The last models found by search (see _ring_hit): tuples
+        # (values of variables 1..n, len(_clauses), root trail length,
+        # registered blocks, theories, theory atoms, theory models).
+        self._ring: list[tuple] = []
+        self._n_ring_hits = 0
+        # register_atom calls so far (a variable registered with a second
+        # theory changes the problem without changing len(_tmap))
+        self._n_registered = 0
 
     # ------------------------------------------------------------------
     # Variables and literal encoding
@@ -719,6 +733,7 @@ class Solver:
                 self._backtrack(0)
         rb_base[base:top + 1] = [base] * n
         self._rb_blocks += 1
+        self._rb_bases.append(base)
         self._rb_nclauses += len(self._rb_clauses)
         self._witness = None
         self._stamp += 1
@@ -1265,6 +1280,7 @@ class Solver:
             self._grow(var)
         if self._trail_lim:
             self._backtrack(0)
+        self._n_registered += 1
         ts = self._tmap.get(var)
         if ts is None:
             self._tmap[var] = [theory]
@@ -1286,6 +1302,9 @@ class Solver:
             if r is not None and r[0] is False:
                 self._theory_conflict(r[1])
                 return False
+            # The theory may now imply something: the next sync asks it
+            # even if no trail entry is new.
+            self._tpending = True
         return True
 
     def theory_models(self) -> list | None:
@@ -1314,8 +1333,9 @@ class Solver:
         registered them, then ask propagating theories for implications."""
         trail = self._trail
         i = self._thead
-        if i == len(trail):
+        if i == len(trail) and not self._tpending:
             return None
+        self._tpending = False
         tmap = self._tmap
         while i < len(trail):
             l = trail[i]
@@ -1769,9 +1789,20 @@ class Solver:
         learnt clauses were deleted meanwhile (the fixpoint could have
         used one), nor with theories.
         """
-        self._model = None
+        self._mvals = self._mdict = None
         self._tmodels = None
         self._conflict = []
+        if self._ring and self._ok:
+            rec = self._ring_hit(lits)
+            if rec is not None:
+                # An earlier model is still a model of the formula and of
+                # lits: no search.  Variables created since get False.
+                mv = rec[0]
+                pad = self._nvars - len(mv)
+                self._mvals = self._witness = mv + [False] * pad if pad else mv
+                self._tmodels = None if rec[6] is None else list(rec[6])
+                self._n_ring_hits += 1
+                return True
         held = self._held
         if held is not None and lits[:len(held)] == held:
             pass                                # continue from held levels
@@ -1798,9 +1829,19 @@ class Solver:
             restarts += 1
         self._n_restarts += restarts - 1
         if status:
-            val = self._val
-            self._model = {v: val[2 * v] for v in range(1, self._nvars + 1)}
-            self._witness = self._model
+            # The values of variables 1..n (positive literals), copied in C;
+            # the dict of model() is built from them on demand.  _mvals,
+            # _witness and the ring entry are the same list object: safe only
+            # because nothing mutates it (all are read, or replaced by a new
+            # list).
+            self._mvals = self._witness = mv = self._val[2:2 * self._nvars + 2:2]
+            ring = self._ring
+            ring.append((mv, len(self._clauses),
+                         self._trail_lim[0] if self._trail_lim else len(self._trail),
+                         len(self._rb_bases), len(self._theories), self._n_registered,
+                         self._tmodels))
+            if len(ring) > self._RING:
+                del ring[0]
         if (keep and self._ok and not self._theories and len(self._trail_lim) >= keep
                 and self._n_reductions == reductions):
             self._backtrack(keep)
@@ -1810,9 +1851,82 @@ class Solver:
         self._assumptions = []
         return status
 
+    @property
+    def _model(self) -> dict[int, bool] | None:
+        """The model of the last successful solve as ``{var: value}``
+        (built on first use), or None."""
+        m = self._mdict
+        if m is None and self._mvals is not None:
+            m = self._mdict = dict(zip(range(1, len(self._mvals) + 1), self._mvals))
+        return m
+
+    def _ring_hit(self, lits: list[int]):
+        """A stored model (most recent first) that satisfies ``lits`` and
+        the current formula, or None.  A model found by search satisfies
+        every clause, block and root literal of its time; the formula has
+        only grown since (problem clauses and blocks are only added, root
+        literals only fixed), so checking what was added is enough.
+        Theories: the model passed their final check for the same theories
+        and registrations (``_n_registered``: a variable registered with a
+        second theory adds a constraint without a new ``_tmap`` entry;
+        otherwise it is skipped); theory lemmas are valid in the
+        theory, so they hold in it.  A literal of a variable the model does
+        not know does not count as satisfied."""
+        trail = self._trail
+        root = self._trail_lim[0] if self._trail_lim else len(trail)
+        cls = self._clauses
+        bases = self._rb_bases
+        ntheories = len(self._theories)
+        natoms = self._n_registered
+        for rec in reversed(self._ring):
+            mv, ncl, rlen, nb, nt, na, _ = rec
+            if nt != ntheories or na != natoms:
+                continue
+            n = len(mv)
+            for l in lits:
+                v = l >> 1
+                if v > n or mv[v - 1] is not (not l & 1):
+                    break
+            else:
+                for i in range(rlen, root):
+                    l = trail[i]
+                    v = l >> 1
+                    if v > n or mv[v - 1] is not (not l & 1):
+                        break
+                else:
+                    for i in range(ncl, len(cls)):
+                        for l in cls[i]:
+                            v = l >> 1
+                            if v <= n and mv[v - 1] is not (l & 1 == 1):
+                                break           # l is true in the model
+                        else:
+                            break               # clause false in the model
+                    else:
+                        if nb == len(bases) or self._ring_blocks(mv, bases[nb:]):
+                            return rec
+        return None
+
+    def _ring_blocks(self, mv: list, bases) -> bool:
+        """Do the model values ``mv`` satisfy the rule block at every base
+        of ``bases``?"""
+        n = len(mv)
+        clauses = self._rb_clauses
+        for b in bases:
+            lo = 2 * b
+            for c in clauses:
+                for q in c:
+                    l = q + lo
+                    v = l >> 1
+                    if v <= n and mv[v - 1] is not (l & 1 == 1):
+                        break
+                else:
+                    return False
+        return True
+
     def model(self) -> dict[int, bool] | None:
         """Model of the last successful :meth:`solve`, else None."""
-        return dict(self._model) if self._model is not None else None
+        m = self._model
+        return dict(m) if m is not None else None
 
     def conflict(self) -> list[int]:
         """After an UNSAT :meth:`solve`: assumptions responsible for it.
@@ -1829,10 +1943,13 @@ class Solver:
         w = self._witness
         if w is None:
             return False
+        n = len(w)
         for a in assumptions:
-            b = w.get(-a if a < 0 else a)
-            if b is not None and b != (a > 0):
-                return False
+            v = -a if a < 0 else a
+            if v <= n:
+                b = w[v - 1]
+                if b is not None and b != (a > 0):
+                    return False
         return True
 
     def entails(self, lit: int, assumptions: Iterable[int] = ()) -> bool | None:
@@ -1846,7 +1963,7 @@ class Solver:
         and only if that fails is a search under the assumptions run (its
         model is then cached for the next queries).
         """
-        assumptions = list(assumptions)
+        assumptions = [int(x) for x in assumptions]    # as _assume reads them
         if lit == 0:
             raise ValueError("literal must be a nonzero integer")
         # Cheap path: unit propagation only.
@@ -1884,4 +2001,5 @@ class Solver:
             "clauses": len(self._clauses),
             "learnts": len(self._learnts),
             "rule_blocks": self._rb_blocks,
+            "witness_hits": self._n_ring_hits,
         }
