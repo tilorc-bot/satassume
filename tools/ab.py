@@ -18,8 +18,13 @@ an answer that is None in the recording and True/False now is *more
 definite*; it is counted and listed (``--show K``, ``--more-definite-out
 PATH`` writes all of them as JSON lines) but does not fail the run.  A
 contradiction (the other definite value), a less definite answer (None
-where the recording is definite) or a ValueError fails as before.  Without
-the flag every difference fails (the default is unchanged).
+where the recording is definite) or a ValueError fails as before.  Since
+the recording no longer pins those answers, two more checks apply: a query
+more definite on ref must get the same answer from cand (cand may add
+more definite answers, not drop or flip ref's), and each side's more
+definite answers must be the same in every round.  ``--more-definite-out``
+needs the flag and is truncated at start-up.  Without the flag every
+difference fails (the default is unchanged).
 
 Defaults: ``--stream`` is ``$SATASSUME_STREAM`` or
 ``~/.cache/satassume/stream.pkl``; ``--sympy`` is ``$SATASSUME_SYMPY`` or
@@ -71,11 +76,13 @@ def run_once(checkout, args):
 def classify(recorded, got) -> str:
     """``more`` (None -> True/False), ``less`` (True/False -> None),
     ``contradiction`` (True <-> False) or ``error`` (anything else)."""
-    if recorded is None and got in (True, False):
+    def definite(x):
+        return x is True or x is False     # not ``in (True, False)``: 1 == True
+    if recorded is None and definite(got):
         return "more"
-    if recorded in (True, False) and got is None:
+    if definite(recorded) and got is None:
         return "less"
-    if recorded in (True, False) and got in (True, False):
+    if definite(recorded) and definite(got):
         return "contradiction"
     return "error"
 
@@ -102,26 +109,44 @@ def main():
     if not os.path.exists(args.stream):
         raise SystemExit(f"stream not found: {args.stream}")
 
+    if args.more_definite_out and not args.allow_more_definite:
+        ap.error("--more-definite-out needs --allow-more-definite")
+    if args.more_definite_out:                # truncated now, so a failed run leaves no stale file
+        for path in (args.more_definite_out, args.more_definite_out + ".ref"):
+            open(path, "w").close()
+
     times = {"ref": [], "cand": []}
     ok = True
     more = {}                               # (side, index) -> diff, first run of each side
+    first_more = {}                         # side -> {index: answer} of its first run
     for r in range(args.rounds):
         for side, d in (("ref", args.ref), ("cand", args.cand)):
             res = run_once(d, args)
             times[side].append(res["seconds"])
             flag = ""
-            if res["bad"] and args.allow_more_definite:
+            if args.allow_more_definite:
                 kinds = {}
+                run_more = {}
                 for diff in res["diffs"]:
                     k = classify(diff[3], diff[4])
                     kinds.setdefault(k, []).append(diff)
                     if k == "more":
                         more.setdefault((side, diff[0]), diff)
+                        run_more[diff[0]] = diff[4]
                 failing = [x for k, xs in kinds.items() if k != "more" for x in xs]
-                flag = "  " + ", ".join(f"{len(xs)} {k}" for k, xs in sorted(kinds.items()))
+                flag = ("  " + ", ".join(f"{len(xs)} {k}" for k, xs in sorted(kinds.items()))) if kinds else ""
                 if failing:
                     ok = False
                     flag += f"  MISMATCH, first {failing[0]}"
+                # The more definite answers of a side must be the same in every round:
+                # the recording no longer pins them, so a round that differs is not caught
+                # by the comparison with the recording.
+                if side not in first_more:
+                    first_more[side] = run_more
+                elif run_more != first_more[side]:
+                    ok = False
+                    changed = sorted(set(run_more.items()) ^ set(first_more[side].items()))
+                    flag += f"  UNSTABLE more definite answers across rounds, first {changed[0]}"
             elif res["bad"]:
                 ok = False
                 flag = f"  MISMATCH {res['bad']} answers, first {res['first_bad']}"
@@ -129,17 +154,28 @@ def main():
                   flush=True)
     best_ref, best_cand = min(times["ref"]), min(times["cand"])
     change = 100.0 * (best_cand - best_ref) / best_ref
+    if args.allow_more_definite:
+        # ref and cand agree with each other only where both agree with the recording;
+        # every query more definite on ref must get the same answer from cand.
+        ref_more, cand_more = first_more.get("ref", {}), first_more.get("cand", {})
+        # A query more definite on ref only means cand answered it like the recording
+        # (None; anything else already failed): cand is less definite than ref.
+        clash = sorted(i for i in ref_more if cand_more.get(i) is not ref_more[i])
+        if clash:
+            ok = False
+            i = clash[0]
+            print(f"  REF AND CAND DIFFER on {len(clash)} of ref's more definite answers, "
+                  f"first #{i}: ref {ref_more[i]}, cand {cand_more.get(i)}", flush=True)
     verdict = "answers match" if ok else "ANSWER MISMATCH"
     if args.allow_more_definite:
         for side in ("ref", "cand"):
             ds = sorted(v for (sd, _), v in more.items() if sd == side)
-            if not ds:
-                continue
-            verdict += f"; {side}: {len(ds)} more definite"
+            if ds:
+                verdict += f"; {side}: {len(ds)} more definite"
             for diff in ds[:args.show]:
                 print(f"  more definite ({side}) #{diff[0]}: {diff[1]} | {diff[2]}: "
                       f"recorded {diff[3]}, now {diff[4]}")
-            if args.more_definite_out:
+            if args.more_definite_out:        # always written, so no stale file survives
                 with open(args.more_definite_out if side == "cand" else args.more_definite_out + ".ref", "w") as f:
                     for diff in ds:
                         f.write(json.dumps({"i": diff[0], "prop": diff[1], "assum": diff[2],
