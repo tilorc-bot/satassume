@@ -176,10 +176,14 @@ Rules to put in every agent prompt:
    a finished agent: a continued agent carries its whole history (here
    200-300k tokens) into work that needs none of it.
 
-Coordinator option: the setting `subagentPromptCacheTtl: "1h"` (or the
-environment variable `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=1h`, Claude
-Code 2.1.242 or later) gives subagents the 1-hour lifetime. One-hour writes
-cost 2x the input price instead of 1.25x, so with rule 1 followed it is a
-small overhead; as a safety net for agents that block anyway, or sit idle
-while the coordinator merges, it is far cheaper than the rewrites it
-prevents.
+No job needs a tool call longer than 4 minutes: however long the job,
+the agent runs it detached (rule 2) and only ever blocks on a check-in
+under 4 minutes. With the rules followed, the 5-minute cache never
+expires.
+
+Not recommended by default: the setting `subagentPromptCacheTtl: "1h"` (or
+`CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=1h`, Claude Code 2.1.242 or later)
+gives subagents the 1-hour lifetime, but one-hour writes cost 2x the input
+price instead of 1.25x, so every write costs 60% more to protect only
+against broken rules. Use it only if agents keep blocking despite the
+rules.
