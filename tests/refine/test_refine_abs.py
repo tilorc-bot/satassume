@@ -7,6 +7,7 @@ the Add-sign path enabled by the structural facts) is delegated and compared
 with ``assert_refines_like_sympy``.
 """
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.assumptions.refine import refine as sympy_refine
@@ -53,6 +54,7 @@ def test_abs_add_sign_path() -> None:
     assert refine(Abs(x + y), Q.negative(x) & Q.negative(y)) == -x - y
 
 
+@pytest.mark.handlers("handlers")
 def test_abs_none_safety() -> None:
     with use_ask(stub_ask({})):
         assert refine(Abs(x), Q.zero(x)) == Abs(x)

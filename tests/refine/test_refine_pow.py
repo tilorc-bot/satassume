@@ -44,13 +44,17 @@ def test_nested_power_integer_outer() -> None:
 def test_nested_power_positive_base() -> None:
     assert refine((x**3)**Rational(1, 3), Q.positive(x)) == x
     assert refine((x**y)**z, Q.positive(x) & Q.real(y)) == x**(y * z)
-    assert refine(sqrt(1 / x), Q.positive(x)) == 1 / sqrt(x)
 
 
 def test_nested_power_real_base_even_inner() -> None:
     assert refine(sqrt(x**2), Q.real(x)) == Abs(x)
     assert refine((x**2)**Rational(1, 2), Q.real(x)) == Abs(x)
     assert refine(sqrt(x**4), Q.real(x)) == x**2
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_pow_of_pow.py", "sqrt(1/x) and (x**y)**z with even y are not rewritten")
+def test_nested_power_sqrt_reciprocal_and_even_inner() -> None:
+    assert refine(sqrt(1 / x), Q.positive(x)) == 1 / sqrt(x)
     assert refine((x**y)**z, Q.real(x) & Q.even(y)) == Abs(x)**(y * z)
 
 
@@ -119,6 +123,11 @@ def test_pow_exp_delegation() -> None:
             == refine(exp(x), Q.even(x)))
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_neg_one_power_exponent.py", "(-1)**((-1)**x/2 + c) is not reduced for integer x")
+def test_pow_vendored_continuation() -> None:
+    assert refine((-1)**((-1)**x / 2 - S.Half), Q.integer(x)) == (-1)**x
+
+
 def test_pow_vendored_behavior_retained() -> None:
     assert refine((-1)**x, Q.even(x)) == 1
     assert refine((-1)**x, Q.odd(x)) == -1
@@ -126,7 +135,6 @@ def test_pow_vendored_behavior_retained() -> None:
     assert refine((-1)**(x + y), Q.even(x)) == (-1)**y
     assert refine((-1)**(x + y + z), Q.odd(x) & Q.odd(z)) == (-1)**y
     assert refine((-1)**(x + y + 2), Q.odd(x)) == (-1)**(y + 1)
-    assert refine((-1)**((-1)**x / 2 - S.Half), Q.integer(x)) == (-1)**x
     assert refine(Abs(x)**2, Q.real(x)) == x**2
     assert refine(Abs(x)**3, Q.real(x)) == Abs(x)**3
 
@@ -154,6 +162,7 @@ def test_pow_documented_divergences() -> None:
     assert refine(Abs(z)**2, Q.imaginary(z)) == -z**2
 
 
+@pytest.mark.handlers("handlers")
 def test_pow_none_safety() -> None:
     with use_ask(stub_ask({})):
         assert refine((x**3)**Rational(1, 2), Q.real(x)) == sqrt(x**3)

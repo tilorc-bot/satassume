@@ -37,7 +37,7 @@ from collections import defaultdict
 from typing import Any
 
 import pytest
-from sympy import I, ask, pi
+from sympy import Abs, I, Rational, ask, pi
 from sympy.abc import m, n, x
 from sympy.assumptions import Q
 from sympy.core import S
@@ -120,6 +120,7 @@ _INV_HYPER_OWNERS = {
 _INV_TRIG_OWNERS = {key: "inverse_trig" for key in ("asin", "acos", "atan")}
 
 
+@pytest.mark.handlers("handlers")
 def test_scope_keys_owned_by_expected_modules() -> None:
     for key, module in {
         **_TRIG_OWNERS,
@@ -317,20 +318,35 @@ def test_non_implying_assumptions_leave_expression_unchanged() -> None:
         (cosh(x + n * IPI), Q.real(n)),
         (tanh(n * IPI / 2), Q.integer(n)),
         (asinh(sinh(x)), Q.imaginary(x)),
-        (acosh(cosh(x)), Q.real(x)),
         (atanh(tanh(x)), Q.imaginary(x)),
         (acoth(coth(x)), Q.real(x)),
-        (asech(sech(x)), Q.real(x)),
         (acsch(csch(x)), Q.imaginary(x)),
         (asin(sin(x)), Q.real(x)),
         (acos(cos(x)), Q.real(x)),
         (atan(tan(x)), Q.real(x)),
-        (asin(sin(x)), Q.real(x) & Q.ge(x, pi / 2) & Q.le(x, 3 * pi / 2)),
-        (acos(cos(x)), Q.real(x) & Q.ge(x, -pi) & Q.le(x, 0)),
         (atan(tan(x)), Q.real(x) & Q.ge(x, pi / 2) & Q.le(x, 3 * pi / 2)),
     ]
     for expr, assumptions in cases:
         assert refine(expr, assumptions) == expr, (expr, assumptions)
+
+
+def test_implying_assumptions_the_original_package_did_not_use() -> None:
+    # These were in the "non-implying" list above, but the premises do imply a
+    # rewrite: handlers leaves them, handlers_identities (and v3) rewrite, and
+    # the rewrite is checked numerically.
+    reals = [-3, -1, Rational(-1, 2), 0, Rational(1, 2), 1, 3]
+    cases: list[tuple[Any, Any, Any, list[Any]]] = [
+        (acosh(cosh(x)), Q.real(x), Abs(x), reals),
+        (asech(sech(x)), Q.real(x), Abs(x), reals),
+        (asin(sin(x)), Q.real(x) & Q.ge(x, pi / 2) & Q.le(x, 3 * pi / 2), pi - x,
+         [pi / 2, 2, 3, pi, 4, 3 * pi / 2]),
+        (acos(cos(x)), Q.real(x) & Q.ge(x, -pi) & Q.le(x, 0), -x,
+         [-pi, -3, -2, -1, Rational(-1, 2), 0]),
+    ]
+    for expr, assumptions, other, values in cases:
+        refined = refine(expr, assumptions)
+        assert refined in (expr, other), (expr, assumptions, refined)
+        assert_refinement_valid(expr, assumptions, refined, values={x: values})
 
 
 def test_unknown_parity_and_missing_integer_assumption() -> None:
@@ -407,8 +423,6 @@ def test_quoted_rule_outputs() -> None:
     assert refine(cot(x + n * pi), Q.integer(n)) == cot(x)
     assert refine(cot(x + n * pi / 2), Q.odd(n)) == -tan(x)
     assert refine(sec(n * pi), Q.integer(n)) == (-1) ** n
-    assert refine(sec(x + n * pi / 2), Q.odd(n)) == \
-        (-1) ** ((n + 1) / 2) * csc(x)
     assert refine(sec(n * pi / 2), Q.odd(n)) is zoo
     assert refine(csc(n * pi), Q.integer(n)) is zoo
     assert refine(csc(n * pi / 2), Q.odd(n) & Q.even((n - 1) / 2)) == 1
@@ -435,6 +449,13 @@ def test_quoted_rule_outputs() -> None:
     assert refine(atan(tan(x)), ATAN_OPEN) == x
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
+def test_quoted_rule_outputs_sec_odd_half_pi() -> None:
+    assert refine(sec(x + n * pi / 2), Q.odd(n)) == \
+        (-1) ** ((n + 1) / 2) * csc(x)
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_hyperbolic_i_pi_shift.py", "f(x + n*I*pi) is not (-1)**n*f(x) for integer n")
 def test_hyperbolic_integer_shift_is_conservative() -> None:
     """The quoted ``(-1)**n`` rule is now implemented.
 
@@ -513,6 +534,7 @@ NONE_SAFE_CASES: list[tuple[Any, Any]] = [
 ]
 
 
+@pytest.mark.handlers("handlers")
 def test_none_answers_leave_expression_unchanged() -> None:
     with use_ask(stub_ask({})):
         for expr, assumptions in NONE_SAFE_CASES:
