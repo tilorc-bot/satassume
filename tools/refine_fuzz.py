@@ -1388,6 +1388,9 @@ def ext_generate(seed, case):
     syms = sorted(e.free_symbols, key=str)
     combos = {s: rng.choice(EXT_COMBOS) for s in syms}
     rels = ext_relations(rng, syms)
+    for s_ in sorted(_rel_syms(rels), key=str):      # the bounds-bug shape: a relation alone on a symbol
+        if s_ in combos and rng.random() < 0.5:
+            combos[s_] = ()
     if not ext_satisfiable(combos, rels, random.Random(f"ext-sat-{seed}-{case}")):
         return None
     facts = [EXT_PREDS[p][0](s) for s, c in combos.items() for p in c] + list(rels)
