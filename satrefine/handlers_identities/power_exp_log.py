@@ -84,7 +84,7 @@ are ``nan`` (``exp(0*log(0))``) become numbers.  Left as documented.
 """
 from __future__ import annotations
 
-from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true
+from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true, zoo
 from sympy.core import Pow
 
 from .._upstream import handlers_dict
@@ -124,6 +124,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     ((b**a)**e, Abs(b)**(a*e), Q.imaginary(b) & Q.even(a/2)),                   # (I*t)**a = t**a for a = 0 mod 4
     ((b**a)**e, (-1)**e*Abs(b)**(a*e), Q.imaginary(b) & Q.odd(a/2)),            # (I*t)**a = -t**a for a = 2 mod 4
     (Pow(S.Zero, n, evaluate=False), S.Zero, Q.positive(n)),                    # 0**n = 0 for n > 0
+    (b**e, zoo, Q.zero(b) & Q.negative(e)),                                     # 0**e = zoo for e < 0 (1/x at x = 0)
     (Abs(b)**n, b**n, Q.real(b) & Q.even(n)),                                   # |b|**n = b**n, real b, even n
     (Abs(b)**n, (-1)**(n/2)*b**n, Q.imaginary(b) & Q.even(n)),                  # |I*t|**n = (-1)**(n/2)*(I*t)**n
     ((-1)**x, S.One, Q.even(x)),                                                # (-1)**even = 1
