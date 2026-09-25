@@ -245,15 +245,19 @@ class Recorder:
         return out
 
     def mark(self, label):
-        """Insert a marker (e.g. between public calls)."""
-        self.events.append(("mark", label))
+        """Insert a marker (e.g. between public calls), with the solver's
+        decision level at that moment (held assumption levels stay on the
+        trail between public calls, see ``Solver._assume``)."""
+        s = self.solver
+        self.events.append(("mark", label, len(s._trail_lim) if s is not None else 0))
 
 
 def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
     """Verify the solver-side guarantees on a recorded trace.
 
-    * pushes and pops balance, the level never goes negative, and (at the
-      end, or at any ``mark``) the level is 0;
+    * pushes and pops balance, the level never goes negative, and at any
+      ``mark`` and at the end the theory's level equals the solver's
+      decision level (0, or the held assumption levels; 0 without a solver);
     * only registered variables are asserted, and a variable is asserted at
       most once until a pop undoes it;
     * after a conflict (from ``assert_lit`` or ``check``) no ``assert``,
@@ -273,7 +277,8 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
         kind = e[0]
         counts[kind] = counts.get(kind, 0) + 1
         if kind == "mark":
-            assert level == 0, f"level {level} at marker {e[1]}"
+            want = e[2] if len(e) > 2 else 0
+            assert level == want, f"level {level} at marker {e[1]}, solver at {want}"
             continue
         if kind == "register":
             assert level == 0, "register_atom above level 0"
@@ -311,7 +316,9 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
             else:
                 blocked = True
     if final_level_zero:
-        assert level == 0, f"trace ends at level {level}"
+        s = getattr(rec, "solver", None)
+        want = len(s._trail_lim) if s is not None else 0
+        assert level == want, f"trace ends at level {level}, solver at {want}"
     return counts
 
 

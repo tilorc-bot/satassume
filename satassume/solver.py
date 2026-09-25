@@ -486,7 +486,9 @@ class Solver:
                     self._trail.append(l)
                     watches[l].append(c)
                     watches[c[1]].append(c)
-                    if self._propagate() is not None:
+                    # the theories hear of the unit (and may propagate) at
+                    # this level, so the held trail stays their fixpoint too
+                    if (self._tpropagate() if self._theories else self._propagate()) is not None:
                         self._backtrack(0)
                     return
                 k = 0                           # unit below the top level
@@ -888,13 +890,18 @@ class Solver:
         The returned list must not be mutated and is only valid until the
         next solver call.
 
-        Held levels.  Without theories, a successful propagation keeps its
-        assumption levels on the trail (``_held``) instead of backtracking.
+        Held levels.  A successful propagation keeps its assumption levels
+        on the trail (``_held``) instead of backtracking; attached theories
+        keep the same levels (they are not popped), and a unit that
+        :meth:`_attach_held` propagates at the top held level is reported
+        to them and may make them propagate, so the held trail is the
+        fixpoint of unit and theory propagation together.
         The clause-adding methods then keep the held trail equal to the
         propagation fixpoint of the grown clause set (see
         :meth:`_attach_held`); anything that changes the root assignment
         (a unit clause), a falsified clause, or any other method that needs
-        root (search, theories) backtracks to root, which drops the held
+        root (a search from other assumptions, attaching a theory or
+        registering a theory atom) backtracks to root, which drops the held
         levels (:meth:`_backtrack`).  So while ``_held`` is set, the trail is
         exactly what propagating ``_held`` from root would give, and the
         same assumptions are answered from it directly.
@@ -935,7 +942,7 @@ class Solver:
             return cached[1]
         if self._assume_propagate(lits):
             trail = self._trail[:]
-            if not theories and self._trail_lim:
+            if self._trail_lim:
                 self._held = lits
         else:
             trail = None
@@ -1787,7 +1794,10 @@ class Solver:
         and is propagated there), so they are again the propagation
         fixpoint of the (grown) clause set under ``lits[:keep]``.  Not if
         learnt clauses were deleted meanwhile (the fixpoint could have
-        used one), nor with theories.
+        used one).  With theories the same holds for theory propagation:
+        the kept levels were reached by :meth:`_tpropagate`, and every
+        literal the search added at them was reported and propagated
+        there.
         """
         self._mvals = self._mdict = None
         self._tmodels = None
@@ -1842,7 +1852,7 @@ class Solver:
                          self._tmodels))
             if len(ring) > self._RING:
                 del ring[0]
-        if (keep and self._ok and not self._theories and len(self._trail_lim) >= keep
+        if (keep and self._ok and len(self._trail_lim) >= keep
                 and self._n_reductions == reductions):
             self._backtrack(keep)
             self._held = lits[:keep]

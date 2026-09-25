@@ -66,13 +66,23 @@ def test_each_context_session_owns_its_adapters_and_theories():
             assert sum(th in other.solver.theories() for other in sessions) == 1
 
 
-def test_theories_are_at_level_zero_after_ask():
+def test_theory_levels_match_the_solver_after_ask():
+    # Between public calls the solver may hold assumption levels (also with
+    # theories attached, see Solver._assume); every theory must then be at
+    # the same level, and at 0 once the solver is back at root.
     eng = Engine()
     ask(Q.eq(f(r), f(s)), Q.le(r, s) & Q.le(s, r), engine=eng)
     ask(Q.lt(r, 3), Q.lt(r, s) & Q.lt(s, 2) & Q.ne(r, 0), engine=eng)
+    held = 0
     for sess, _ in eng._context_sessions.values():
-        for th in sess.solver.theories():
+        solver = sess.solver
+        held += bool(solver._trail_lim)
+        for th in solver.theories():
+            assert len(th._lims) == len(solver._trail_lim), th
+        solver.propagate() if solver._held is None else solver._backtrack(0)
+        for th in solver.theories():
             assert not th._lims, th
+    assert held
 
 
 def test_uninterpreted_assumption_is_none_and_not_cached():
