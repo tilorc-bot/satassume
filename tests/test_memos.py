@@ -58,3 +58,29 @@ def test_formula_memo_follows_registrations():
     finally:
         unregister(Q.memo_key)
         del Q.memo_key
+
+
+def test_uninterpreted_assumptions_are_remembered():
+    """Assumptions holding a relation no theory interprets make every query
+    None (``Uninterpreted`` while building the session).  The engine
+    remembers such sets instead of rebuilding a doomed session per query;
+    the answers are the same, including None (not ValueError) for
+    assumptions that are also inconsistent."""
+    from sympy import pi
+    from satassume import Engine, DictCache
+    from satassume.sympy_api import ask
+    eng = Engine(cache=DictCache())
+    a = Q.le(x, pi) & Q.nonnegative(x)
+    assert ask(Q.positive(x), a, eng) is None
+    n = eng.stats["sessions"]
+    assert a is not None and len(eng._failed) == 1
+    assert ask(Q.real(x), a, eng) is None
+    assert ask(Q.negative(x), a, eng) is None
+    assert eng.stats["sessions"] == n              # no doomed rebuilds
+    bad = Q.le(x, pi) & Q.positive(x) & Q.negative(x)
+    assert ask(Q.real(x), bad, eng) is None
+    assert ask(Q.zero(x), bad, eng) is None
+    # a change of the theory adapters invalidates the memo
+    eng.relation_specs = list(eng.relation_specs)[:1]
+    assert ask(Q.finite(x), a, eng) is None
+    assert eng.stats["sessions"] == n + 2
