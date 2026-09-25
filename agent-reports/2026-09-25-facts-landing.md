@@ -1,8 +1,10 @@
 # Agent report: fact-lattice theory, landing side (reviews and what landed)
 
 - **Date:** 2026-09-25
-- **Status:** stage 0 reviewed locally and landed with one tool fix; stages
-  1 and later not yet delivered. Updated per stage.
+- **Status:** stage 0 landed with one tool fix; stage 1 stopped on its
+  stop condition (+56%), its two solver commits landed; stage 2 (facts
+  shared between equal terms, on the rule block) and a stage 1 retry
+  (lazy rule writes inside the solver loop) in progress. Updated per stage.
 - **Scope:** the `facts-theory` branch delivered as bundles from the Pi
   (`/work/src/bundles/facts-theory.bundle`), reviewed and landed from this
   machine. The Pi session writes the stage reports
@@ -74,3 +76,46 @@ code. Decision in the report: the stop condition is not met, stage 1 next.
 
 **Landed:** the five stage 0 commits and the `ab.py` fix, by fast-forward.
 Issue: "fact-lattice theory: landed stages and risks".
+
+## Stage 1 (FactTheory replacing the rule block), bundle of 2026-09-25 21:44
+
+**Delivered:** the stage 1 report `2026-09-25-facts-1-fact-theory.md`
+(stopped: the prototype is +56% against `main` with answers identical;
+every predicate literal crossing the Python theory interface costs more
+than the rule block's in-loop propagation), the stage 0 corrections the
+landing side asked for, and two solver commits: `e2aa724` (held
+assumption levels kept with theories attached, -4.2% to -4.7% on the Pi,
+the theory tax from +14.1% to +4.9%) and `3fc0244` (a newly registered
+theory atom is asked about at root; fixes an older gap where `implied`
+was weaker than a fresh solver's in about 5% of real-theory fuzz seeds),
+with a new real-theory fuzz (`tests/real_theory_fuzz.py`). The prototype
+stays on local branch `facts-stage1-prototype`, not landed.
+
+**Local review** (Opus): land, no defect found.
+
+- Theory levels stay in step with the solver: every path that changes the
+  root or needs it backtracks to root (and pops theories) first; a clause
+  unit at the top held level goes through `_tpropagate`; held levels
+  survive a search only if still on the trail and no learnt clause was
+  deleted; stored models are reused only under the same theories and
+  registration count.
+- `_tpending` is set after `register_atom` backtracks to root and
+  consumed at root before any assumption level opens; no double
+  assertion.
+- Extra probe, LRA in lazy mode, seeds 0 to 3,999: the branch has 1 weaker
+  `implied` (no assumptions involved), `main` 849 plus 401: strictly
+  better.
+- Minor, not a defect: a theory conflict of root literals inside the
+  unit-at-held-level path lets `add_clause` return True while the solver
+  is already UNSAT; the next call answers correctly.
+- Gates re-run locally: solver fuzz 4,000 seeds in plain, block and block
+  with theory; real-theory fuzz 4,000 seeds each for lra, euf and both,
+  0 mismatches, 0 weaker `implied`; suite `2 failed, 1701 passed, 1
+  skipped, 4 xfailed, 1 xpassed` (the known pair); `ab.py` answers match;
+  gate2 0 changed.
+
+**More-definite answers:** none (answers identical on both gates).
+
+**Landed:** `e2aa724`, `67ad66f`, `e1bbdba`, `3fc0244`, `db8e7d8`, by
+fast-forward. The Pi session was ended at the user's request after this
+stage; the rest of the plan continues with local subagents.
