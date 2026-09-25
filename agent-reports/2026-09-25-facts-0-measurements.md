@@ -3,8 +3,9 @@
 - **Date:** 2026-09-25
 - **Status:** measured, no engine code; reviewed (Opus, verdict "sound with
   corrections", applied below). **The stage 0 stop condition is not met on
-  either half**: the rule block's never-read fraction is 52% (above the
-  30% line), and the design, counted as the plan counts it (predicate
+  either half**: of the rule block's implied literals, 52% are never
+  *mentioned* outside the rule base (stage 1 would not write them) and
+  about 85% are never *read* (both above the 30% line), and the design, counted as the plan counts it (predicate
   transfer plus uninterpreted relations as free Booleans, section 3's last
   row and stage 2), answers 513 stream queries (above the 20 line). So the
   plan continues with stage 1. Two cautions carried into it: attaching any
@@ -12,7 +13,7 @@
   solver policy (held assumption levels are kept only without theories;
   allowing them brings the tax to +3 to 5%), and a theory-propagated
   literal costs 2.2 to 2.8 times a rule-block implication. The projection
-  for stage 1 as specified is +4% to +33%; the plan's own stage 1 stop
+  for stage 1 as specified is +4% to +19%; the plan's own stage 1 stop
   ("slower than `main` after a day of tuning") settles it. Capability is
   almost all free Booleans (498 queries, 6 scoreboard losses), which
   breaks the acceptance rule on 36 queries: a decision the user must make
@@ -128,9 +129,9 @@ collector 3.7 to 4.4%) on a 2.95 s pass:
 |---|---:|
 | removed: rule hook, registration, 42% of `_grow` (19 of 33 variables kept), some collector work | about -0.70 |
 | added: theory tax (measured +14%; +3 to 5% with held levels allowed under theories) | +0.14 to +0.41 |
-| added: 263,566 propagations to mentioned variables at 2.2x to 2.8x the rule block's per-literal cost, scaled to the replay (550,530 writes are the B5 hook's 0.59 s, so about 1.07 µs each) | +0.63 to +1.21 |
+| added: 263,566 propagations to mentioned variables at 2.2x to 2.8x the rule block's per-literal cost, scaled to the replay (550,530 writes are the B5 hook's 0.59 s, so about 1.07 µs each) | +0.62 to +0.79 |
 | added: exact closures (8,128 distinct asserted sets; section 4: a table lookup over the rule base's 48 models) | about +0.05 |
-| **net** (first version of this report: +20% to +40%, corrected after review) | **about +0.1 to +1.0 s, +4% to +33%** |
+| **net** (first version of this report: +20% to +40%; the review's +33% upper bound mixed methods, corrected on landing) | **about +0.1 to +0.55 s, +4% to +19%** |
 
 Stage 1 as specified is projected slower than `main` over the whole
 range, but the range is wide and mostly policy: with held levels under
@@ -198,15 +199,16 @@ four oracles, compared with the recording:
 | `free`: an uninterpreted relation is a free Boolean, not a None | 13,343 | **498** | **36** | 0 |
 | `both` | 13,324 | 513 | 36 | 4 |
 
-- **Transfer answers 15 stream queries (12 distinct)**, all of them with
+- **Transfer answers 15 stream queries (15 distinct; the first version
+  said 12, corrected on landing)**, all of them with
   `eq` against a number or another term: `real(x)`/`extended_real(x)`
   given `x = pi/2` or `x = 2` (True), `zero(sin(x))` given `x = 2`
   (False), `eq(n, 1)` given `~integer(n)` (False), `eq(n, k)` given
   `integer(n) & nonnegative(n) & k > n` (False: transfer makes `k` real,
-  which un-guards LRA). SymPy's `ask` returns None on 11 of the 12 and
-  raises ValueError on one (`eq(n, k)` given `integer(n) & negative(n) &
-  ~integer(k)`, which is consistent: `n = -1, k = 1/2`). All 12 checked by
-  hand: correct.
+  which un-guards LRA). SymPy's `ask` gives the same False on 6, None on
+  7, raises ValueError on one (`eq(n, k)` given `integer(n) & negative(n)
+  & ~integer(k)`, which is consistent: `n = -1, k = 1/2`) and times out
+  on one. All checked by hand: correct.
 - The 4 "less definite" are not transfer: they contain no equality and
   answer None in a fresh engine even without the oracle. Their recorded
   answers come from the session's history (learnt or cone-memo clauses of
@@ -214,13 +216,16 @@ four oracles, compared with the recording:
   atoms changed that history. **Risk for every later stage: the engine's
   answers depend on query order, so an internal change can make a
   recorded answer less definite without any loss of reasoning.**
-- **Free Booleans answer 498 queries** (445 distinct; ordering relations
-  against `pi`, `pi/2`, ... in the assumptions). Against SymPy's `ask`:
-  412 of the distinct answers agree, 19 SymPy cannot decide, and the other
-  12 are all among the 36 new ValueErrors: assumptions such as
-  `negative(x) & positive(x) & t > -pi/2 & ...`, which are inconsistent,
-  where SymPy answers the unrelated proposition (`Q.zero(pi)`: False)
-  without checking. Today these 36 are None because the session never
+- **Free Booleans answer 498 queries** (407 distinct; ordering relations
+  against `pi`, `pi/2`, ... in the assumptions): 388 agree with SymPy's
+  `ask`, 19 SymPy cannot decide, none contradicts. With the 36 new
+  ValueErrors that makes 443 distinct changed queries (the first version
+  said 445 and counted the errors into the agreement figures; corrected
+  on landing). **The 36 come from 3 plainly inconsistent assumption
+  sets** (`x` negative and positive, twice; `x` positive and zero, each
+  with orderings of `t` against `pi/2`), and **SymPy's own `ask` raises
+  ValueError on 24 of them**; on the other 12 it answers the unrelated
+  proposition (`Q.zero(pi)`: False) without checking the assumptions. Today these 36 are None because the session never
   builds. The acceptance rule of the plan (section 5) requires the set of
   InconsistentAssumptions errors to stay identical, so this change breaks
   it on 36 queries, in the direction of SymPy's own semantics
@@ -245,10 +250,10 @@ through a pytest plugin (`facts_scoreboard_plugin.py`, `-p` via
 |---|---:|---:|---:|---:|---:|
 | the branch's old engine | 412 | 59 | 59 | | |
 | current engine (`e43b318`) | 416 | 55 | 52 | 8 | 1 (a stale test expectation, below) |
-| oracle `base` (control) | 416 | 55 | 52 | 8 | 0 |
-| oracle `transfer` | 416 | 55 | 52 | **8 (+0)** | 0 |
-| oracle `free` | 422 | 49 | 46 | 14 (+6) | 0 |
-| oracle `both` | 422 | 49 | 46 | 14 (+6) | 0 |
+| oracle `base` (control) | 416 | 55 | 52 | 8 | 01 (the same Kronecker test) |
+| oracle `transfer` | 416 | 55 | 52 | **8 (+0)** | 01 (the same Kronecker test) |
+| oracle `free` | 422 | 49 | 46 | 14 (+6) | 01 (the same Kronecker test) |
+| oracle `both` | 422 | 49 | 46 | 14 (+6) | 01 (the same Kronecker test) |
 
 (`sympy` backend: 462 passed, 7 failed, 4 xfailed; the published baseline
 reproduces exactly. The `base` control answers all 1,419 distinct queries
@@ -296,7 +301,8 @@ Applied above: the asserted-set scan (8,128 distinct, not 2,857), the
 memo cost line (it contradicted its own per-miss figure; replaced by the
 48-model table), the theory tax as a policy (+3 to 5% with held levels),
 the micro's bias (2.2x with the backtrack counted), the projection (+4% to
-+33%, not +20% to +40%), "2,178 sets, 1,835 consistent", a docstring
++19%, not +20% to +40%; the review's figure was +33%, corrected on
+landing), "2,178 sets, 1,835 consistent", a docstring
 (`integer` implies 15 literals, not 12), and, the one that changes the
 decision, the reading of the stop condition's capability half (below).
 Checked clean by the reviewer: the `--allow-more-definite` modes (strict
@@ -309,11 +315,18 @@ the flag: answers match; census headline numbers reproduced; tax +13.2%.
 
 ## Decision
 
+(Stage 1 measured the design at +56%: the projection's per-literal model
+missed the cost of telling the theory every literal and of registering
+atoms; see `2026-09-25-facts-1-fact-theory.md`.)
+
 The stop condition for stage 0 is "never-read fraction below about 30%
 **and** fewer than about 20 stream queries and fewer than about 10
 scoreboard losses the design would answer". Neither half holds:
 
-- never-read fraction 52%;
+- never-read fraction about 85% (only 14.9% of the implied literals are
+  read); the never-*mentioned* share, what stage 1 would not write, is
+  52% (the first version of this report called that the never-read
+  fraction; corrected on landing);
 - the plan counts uninterpreted relations as free Booleans as part of the
   design (section 3, last row: "2.2 and a small `relations.py` change";
   stage 2), and with them the design answers 513 stream queries and 6
@@ -322,7 +335,7 @@ scoreboard losses the design would answer". Neither half holds:
   the reviewer rightly called too favourable to stopping.
 
 So **the plan continues with stage 1**, whose own stop condition decides
-the speed question the projection leaves open (+4% to +33%). Stage 1
+the speed question the projection leaves open (+4% to +19%). Stage 1
 starts from the two levers the measurements expose: held assumption
 levels under theories (a small solver change, soundness to be argued and
 fuzzed) and a table closure over the 48 models. Carried forward for the

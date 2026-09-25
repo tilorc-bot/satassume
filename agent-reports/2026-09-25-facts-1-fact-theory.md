@@ -8,19 +8,22 @@
   in anything tuning reaches. The prototype is kept on branch
   `facts-stage1-prototype` (not for landing). One solver change made for
   it stands on its own and is on `facts-theory` for landing: **held
-  assumption levels with theories attached, -4.7%** (commit `34f06e5`).
+  assumption levels with theories attached, -4.2% to -4.7%** (commit
+  `e2aa724`), with the fix its review found (`3fc0244`: a newly
+  registered theory atom is asked about at root) and a new fuzz over the
+  real LRA and EUF theories.
 - **Scope:** `satassume/solver.py` (held levels with theories; kept),
   `tests/theory_harness.py`, `tests/test_verify_integration.py` (kept);
   on the prototype branch also `satassume/facts_theory.py` (new),
   `engine.py`, `compile.py`, more of `solver.py`, `theory.py`.
 - **Read this if:** you decide what happens after stage 1, review commit
-  `34f06e5`, or want to revive the design in another form
+  `e2aa724`, or want to revive the design in another form
 
 ## Measurement
 
 Pi, `main` at `6b935d7` (code as `c552806`), SymPy pin `ddbb536d7e`.
 
-### The kept change: held levels with theories (`34f06e5`)
+### The kept change: held levels with theories (`e2aa724`)
 
 Stage 0 found that most of the +14% any attached theory costs is one
 policy: `Solver._assume` kept held assumption levels only without
@@ -116,20 +119,63 @@ solver's own propagation loop (option 4 of stage 0: per-block masks,
 table closure, int reasons, writes only to mentioned variables), which
 drops the theory interface the plan's stage 2 builds on.
 
+## Review
+
+Opus reviewer, on both branches: **`e2aa724`: land, with one fix**;
+**stage 1 stop: correct**.
+
+- No wrong answer in any fuzz: the existing incremental fuzz at new seeds
+  (theory 4000 to 4999 and 8000 to 8999, plain 3000 to 3999, block 5000
+  to 5999), and a new differential fuzz with the real LRA and EUF theories
+  and shared equality atoms, 3,400 seeds per mode, which exercised
+  theory units in `_attach_held` (271, 10 with theory conflicts), searches
+  continuing from held levels (about 14,000), `implied` answered from held
+  levels (about 800) and atoms registered while levels were held.
+- **A pre-existing gap it exposed**: `register_atom` asked the theory
+  about a new atom at the next root sync only when the variable was
+  already fixed at root, so an implication about the new atom (a ground
+  LRA atom, an EUF equality whose sides are already equal) landed under
+  an assumption level and was dropped at the next pop. Sound (search is
+  complete), but `implied` weaker than a fresh solver's: about 5% of seeds
+  on `main`, and `e2aa724` added cases (LRA seed 858) because a search
+  continuing from held levels never relearns the literal at root. Fixed
+  in `3fc0244` (`_tpending` always set on registration); the reviewer's
+  fuzz is now `tests/real_theory_fuzz.py`, driven by
+  `tests/test_solver_real_theories.py` with the regression case; all four
+  tests fail without the fix. Two harness assumptions adjusted in the
+  same commit (see its message).
+- Stop: +58.6% measured by the reviewer (`ab.py --rounds 2`). The floor
+  argument is right but incomplete: 78% of the 403,344 `assert_lit` calls
+  echo a literal the theory itself implied; model-reuse hits drop from
+  1,344 to 484 (non-decision variables are None in stored models); held
+  reuse drops from 9,276 to 6,952 (lazy registration backtracks to root).
+  Removing all three would save about 0.6 s at most, leaving about +38%.
+- Risks it lists: the held trail is the fixpoint of unit and theory
+  propagation only up to the theories' own history-dependent
+  incompleteness (LRA's dirty set, EUF's queue), in either direction;
+  `_attach_held` can return success after a root theory conflict set
+  `_ok = False` (pre-existing, harmless: later calls see `_ok`).
+
 ## Change
 
-On `facts-theory` (for landing): `34f06e5` (held levels with theories,
+On `facts-theory` (for landing): `e2aa724` (held levels with theories,
 with the protocol checker and one test updated to the invariant "every
-theory is at the solver's level"), `facts_closure.py` oracle fix, this
-report, STATUS. On `facts-stage1-prototype` (not for landing): the
+theory is at the solver's level"), `3fc0244` (the review's fix and the
+real-theory fuzz), `facts_closure.py` oracle fix, this report, STATUS,
+and the corrections the landing side asked for in the stage 0 report. On `facts-stage1-prototype` (not for landing): the
 prototype, one commit on top.
 
 ## Gates
 
-- `34f06e5`: incremental solver fuzz, theory mode seeds 0 to 3,999 and
+- `e2aa724`: incremental solver fuzz, theory mode seeds 0 to 3,999 and
   plain mode 0 to 2,999: ok; suite `2 failed (known pair), 1697 passed, 1
   skipped, 4 xfailed, 1 xpassed`; `ab.py --rounds 3` -4.7%, answers match;
   gate2 answers match.
+- With `3fc0244`: incremental fuzz theory mode 0 to 3,999 and block mode
+  0 to 1,499 ok; real-theory fuzz 1,000 seeds per mode, no mismatch and no
+  weaker `implied`; suite `2 failed (known pair), 1701 passed, 1 skipped,
+  4 xfailed, 1 xpassed`; `ab.py --rounds 3` ref 2.910 s cand 2.789 s,
+  **-4.2%**, answers match; gate2 answers match.
 - Prototype: as above (answers identical, +56.3%).
 
 ## Decision
@@ -142,7 +188,8 @@ was specified on top of stage 1's FactTheory, and stage 0 found it worth
 
 For the user:
 
-1. **Land `34f06e5`** (held levels with theories, -4.7%), after review.
+1. **Land `e2aa724` and `3fc0244`** (held levels with theories, -4.2% to
+   -4.7%; reviewed, the review's fix applied).
 2. Choose whether anything of the fact-lattice idea continues:
    - end it here (my recommendation: the capability it adds by itself is
      small, and the speed lever needs a different mechanism);
@@ -156,7 +203,12 @@ For the user:
 
 ## Risks for review
 
-- `34f06e5` changes when theories are popped: they now stay at held
+- The stage 0 projection for this stage (+4% to +19%, corrected on
+  landing) was far below the measured +56%: it priced only the
+  propagations, not telling the theory every literal (78% of them echoes
+  of its own implications), registering atoms, or the lost model and
+  held-level reuse.
+- `e2aa724` changes when theories are popped: they now stay at held
   levels between public calls. Any theory whose state is read between
   calls must read it knowing that (the engine reads none; tests that
   assumed level 0 were updated). Held levels are dropped by every path
