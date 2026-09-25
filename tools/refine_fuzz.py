@@ -971,6 +971,10 @@ from sympy import Piecewise, acot, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Add, Mul
 from sympy.calculus.accumulationbounds import AccumBounds
 
 INF_VALUES = (oo, -oo, zoo, I * oo, -I * oo)
+# Exceptions the checker must never swallow: the differential's worker puts its
+# per-case timeout here, so a slow SymPy evaluation ends the case instead of
+# being skipped as one unevaluable point after another.
+NO_SWALLOW = ()
 
 
 def is_inf(v):
@@ -1042,6 +1046,8 @@ def rel_holds_ext(rel, pt):
     """``rel_holds``, and SymPy's own relation at infinite values (None if undefined there)."""
     try:
         lhs, rhs = (sympify(side).xreplace(pt) for side in rel.arguments)
+    except NO_SWALLOW:
+        raise
     except Exception:  # noqa: BLE001
         return None
     if not (is_inf(lhs) or is_inf(rhs)):
@@ -1050,6 +1056,8 @@ def rel_holds_ext(rel, pt):
         return None
     try:
         v = _SYMREL[rel.function](lhs, rhs)
+    except NO_SWALLOW:
+        raise
     except Exception:  # noqa: BLE001
         return None
     return True if v is S.true else False if v is S.false else None
@@ -1179,10 +1187,41 @@ def _inf_class(v):
     return ("inf", dc / abs(dc))
 
 
+class _NoBranch(Exception):
+    pass
+
+
+def _pw_resolve(e, pt):
+    """``e`` with every Piecewise replaced by its branch at ``pt``.
+
+    Substituting into a Piecewise rebuilds it through SymPy's argument
+    collapse, which can recurse without end (``Ne(2, z**2)`` with a complex
+    Float ``z``); here each condition is decided on its own instead.  Raises
+    ``_NoBranch`` if no condition holds (the Piecewise has no value).
+    """
+    if not isinstance(e, Basic) or not e.has(Piecewise):
+        return e
+    if isinstance(e, Piecewise):
+        for expr_, cond in e.args:
+            c = S.true if cond is S.true else _pw_resolve(cond, pt).xreplace(pt)
+            if c is S.true:
+                return _pw_resolve(expr_, pt)
+            if c is not S.false:
+                raise TypeError("undecided Piecewise condition")
+        raise _NoBranch
+    return e.func(*[_pw_resolve(a, pt) for a in e.args])
+
+
 def ext_value(e, pt):
     """The value of ``e`` at ``pt`` (see the section comment)."""
     try:
-        v = e.xreplace(pt)
+        v = _pw_resolve(e, pt).xreplace(pt)
+    except _NoBranch:
+        return "nan"
+    except NO_SWALLOW:
+        raise
+    except NO_SWALLOW:
+        raise
     except Exception:  # noqa: BLE001 -- e.g. a Piecewise condition on a non-real value
         return "error"
     if not isinstance(v, Expr):
@@ -1193,7 +1232,13 @@ def ext_value(e, pt):
         return "nan"
     if is_inf(v):
         return _inf_class(v)
-    return numeric(v)
+    try:
+        w = N(v, 20)
+    except NO_SWALLOW:
+        raise
+    except Exception:  # noqa: BLE001
+        return "error"
+    return numeric(w)
 
 
 def ext_agree(a, b):
@@ -1216,6 +1261,8 @@ def _zero_division(sides, pt):
                     ev = ext_value(sub.exp, pt)
                     if isinstance(ev, complex) and ev.real < 0:
                         return "1/0 = zoo"
+            except NO_SWALLOW:
+                raise
             except Exception:  # noqa: BLE001, S112
                 continue
     return None
@@ -1240,6 +1287,8 @@ def ext_convention(sides, pt, a, b):
                 elif isinstance(sub, atan2):
                     if all(is_inf(t.xreplace(pt)) for t in sub.args):
                         return "atan2 of two infinities"
+            except NO_SWALLOW:
+                raise
             except Exception:  # noqa: BLE001, S112
                 continue
     return None
@@ -1330,6 +1379,8 @@ def ext_generate(seed, case):
     head = rng.choice(list(EXT_NEW)) if rng.random() < 0.4 else rng.choice(list(OUTER))
     try:
         e = EXT_OUTER[head](inner(rng), rng)
+    except NO_SWALLOW:
+        raise
     except Exception:  # noqa: BLE001 -- the generator's own policy
         return None
     if not isinstance(e, Expr) or not e.free_symbols:

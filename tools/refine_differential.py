@@ -292,6 +292,8 @@ def worker(package, seed, cases, out, timeout, matrices=False, ext=False):
         raise _Timeout
 
     signal.signal(signal.SIGALRM, on_alarm)
+    if ext:
+        f.NO_SWALLOW = (_Timeout,)
     records = []
     t0 = time.time()
     for case in range(cases):
