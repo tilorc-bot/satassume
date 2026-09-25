@@ -71,8 +71,15 @@ def test_battery_matches_v3(expr, assumptions, expected, source):
         assert refined == expected, f"{source}: expected {expected}, got {refined}"
 
 
+SLOW_SAMPLING = {"1571:test_minmax_deltas.py::test_minmax_all_equal_keeps_one"}
+"""Cases whose numeric check takes half a minute (the sampler's search for a
+point satisfying three equalities); marked ``full``, run when
+``SATREFINE_FULL_TESTS=1`` (see ``conftest.py``)."""
+
+
 @pytest.mark.parametrize("expr, assumptions, expected, source",
-                         [case for case, _ in FIRING], ids=[case_id for _, case_id in FIRING])
+                         [pytest.param(*case, id=case_id, marks=pytest.mark.full if case_id in SLOW_SAMPLING else ())
+                          for case, case_id in FIRING])
 def test_battery_is_numerically_valid(expr, assumptions, expected, source):
     matrices = [s for s in expr.free_symbols if isinstance(s, MatrixSymbol)]
     if matrices:
