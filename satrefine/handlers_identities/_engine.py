@@ -884,15 +884,18 @@ def rule_handler(rows: list, *, by_binding: bool = False) -> Callable[[Any, Any]
     both parities before a single term of it is (``sec(x + (2*n + 1)*pi/2)``
     is one odd shift, not an even shift ``2*n`` and then a quarter turn)."""
     rows = [tuple(sympify(t) for t in row) + (None,) * (4 - len(row)) for row in rows]   # a generated 0 is an int
-    groups: list[list] = []
-    for row in rows:
-        if by_binding and groups and groups[-1][0][0] == row[0]:
-            groups[-1].append(row)
-        else:
-            groups.append([row])
+
+    def grouped() -> list[list]:     # from ``rows`` at each call: the ablation tool edits that list
+        groups: list[list] = []
+        for row in rows:
+            if groups and groups[-1][0][0] == row[0]:
+                groups[-1].append(row)
+            else:
+                groups.append([row])
+        return groups
 
     def handler(expr: Any, assumptions: Any) -> Any:
-        for group in groups:
+        for group in (grouped() if by_binding else ((row,) for row in rows)):
             for b in bindings(group[0][0], expr, assumptions):
                 for lhs, rhs, hyp, unless in group:
                     if provable(subst(hyp, b), assumptions) is not True:

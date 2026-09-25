@@ -7,7 +7,7 @@ complex samples); ``Mod``/``Rem`` divisors exclude 0.
 from __future__ import annotations
 
 import pytest
-from sympy import Abs, I, Mod, Q, Rational, S, ceiling, floor, frac, im, oo, pi, re, sqrt, symbols
+from sympy import Abs, I, Mod, Q, Rational, S, ceiling, floor, frac, im, oo, pi, re, sqrt, symbols, zoo
 from sympy.functions.elementary.miscellaneous import Rem
 
 from satrefine import refine
@@ -36,6 +36,11 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (ceiling(x + n), Q.integer(n), n + ceiling(x), None),
     (floor(x + 2*n + m), Q.integer(n) & Q.integer(m), 2*n + m + floor(x), None),
     (floor(x + floor(y)), Q.finite(y), floor(x) + floor(y), None),
+    (floor(x + floor(y)), True, floor(x) + floor(y), None),    # a rounded term shifts out (SymPy's test_floor_ceiling)
+    (ceiling(x - 2*ceiling(y)), True, ceiling(x) - 2*ceiling(y), None),
+    (floor(x), Q.infinite(x), x, {x: [oo, -oo, zoo, I*oo, -I*oo]}),
+    (Mod(a, b), Q.zero(a), S.Zero, {b: DIVISORS}),
+    (Rem(a, b), Q.zero(a), S.Zero, {b: DIVISORS}),
     (floor(x + ceiling(y)), Q.finite(y), floor(x) + ceiling(y), None),
     (ceiling(x + floor(y)), Q.finite(y), ceiling(x) + floor(y), None),
     (ceiling(x + ceiling(y)), Q.finite(y), ceiling(x) + ceiling(y), None),
@@ -126,7 +131,6 @@ NEGATIVE = [  # v3's refusals
     (Mod(x + n*b, b), Q.integer(n)),                # b may be zero
     (frac(x + floor(y)), True),                     # y may be oo
     (frac(x + ceiling(y)), Q.extended_real(y)),
-    (floor(x + floor(y)), True),
     (floor(x), Q.positive(x) & Q.negative(y)),      # a relation ask raises here
     # checker: the generalized M2 needs a real divisor; SymPy's Mod of non-real
     # arguments is not a - b*floor(a/b) (Mod(-3*I, 2*I) = -I, not I).
@@ -165,6 +169,6 @@ def test_refusal(expr, assumptions):
 def test_table_size_and_registration():
     from satrefine import _upstream
     from satrefine.handlers_identities import integer_funcs as mod
-    assert len(mod.RULES) == 7 and len(mod.FACTS) == 2
+    assert len(mod.RULES) == 9 and len(mod.FACTS) == 2
     assert handlers_dict['floor'] is not _upstream.refine_floor_ceiling
     assert all(callable(handlers_dict[key]) for key in ('floor', 'ceiling', 'frac', 'Mod', 'Rem'))

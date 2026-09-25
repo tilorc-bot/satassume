@@ -8,7 +8,7 @@ harness where the defaults would not satisfy the assumptions.
 from __future__ import annotations
 
 import pytest
-from sympy import I, Q, Rational, S, binomial, factorial, ff, gamma, rf, symbols, zoo
+from sympy import I, Q, Rational, S, binomial, factorial, ff, gamma, rf, oo, symbols, zoo
 
 from satrefine import refine
 from satrefine.harness import assert_refinement_valid
@@ -33,6 +33,7 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (factorial(n), Q.eq(n, 1), S.One, {n: INTS}),
     (factorial(n - 1), Q.zero(n - 1), S.One, {n: INTS}),
     (factorial(n), Q.integer(n) & Q.negative(n), zoo, None),
+    (factorial(n), Q.positive_infinite(n), oo, {n: [oo]}),
     # gamma
     (gamma(n), Q.integer(n) & Q.positive(n), factorial(n - 1), None),
     (gamma(n + 1), Q.integer(n) & Q.nonnegative(n), factorial(n), None),
@@ -136,4 +137,4 @@ def test_refusal(expr, assumptions):
 
 def test_table_size():
     from satrefine.handlers_identities import combinatorial as mod
-    assert len(mod.RULES) == 16
+    assert len(mod.RULES) == 17

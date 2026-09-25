@@ -98,7 +98,7 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
     (asinh(sinh(z)), _reflect_half_imag(z),    _OFF_CUT_LINES),                # asinh undoes sinh up to an imaginary reflection
     (atanh(tanh(z)), _sawtooth_imag(z),        _OFF_CUT_LINES),                # atanh undoes tanh up to an imaginary period
     (acoth(coth(z)), _sawtooth_imag(z),        ~Q.zero(z) & _OFF_CUT_LINES),   # acoth undoes coth likewise (coth(0) is zoo)
-    (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z) & Q.finite(z) & _OFF_CUT_LINES),   # acsch undoes csch likewise
+    (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z) & (Q.real(z) | Q.finite(z) & _OFF_CUT_LINES)),   # acsch undoes csch likewise
     # (csch(+-oo) = 0 and acsch(0) = zoo: finite z only; the other three hold at +-oo.  A real z is
     # finite, but im(z) = 0 does not make z real: im(Abs(w)) is 0 for an infinite w, issue #10 B10)
     (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y

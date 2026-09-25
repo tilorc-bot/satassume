@@ -26,8 +26,8 @@ ROWS = [
     (cosh(k*pi*I), Q.odd(k), S.NegativeOne, "same"), (cosh(k*pi*I), Q.integer(k), (-1)**k, "same"),
     (coth(k*pi*I), Q.integer(k), zoo, "same"), (tanh(k*pi*I/2), Q.odd(k), zoo, "same"),
     (sinh(k*pi*I/2), M1, I, "same"), (csch(k*pi*I/2), M3, I, "same"),
-    (sinh(x + k*pi*I), Q.integer(k), None, "neither"),
-    (sinh(x + k*pi*I/2), Q.odd(k), None, "neither"),
+    (sinh(x + k*pi*I), Q.integer(k), None, "extra: (-1)**k*sinh(x), exact (SymPy's form); v3 declines"),
+    (sinh(x + k*pi*I/2), Q.odd(k), None, "extra: I*(-1)**(k/2 + 3/2)*cosh(x), exact; v3 declines"),
     (sinh(x + k*pi*I/2), Q.integer(k), None, "neither"), (sinh(x + k*pi), Q.integer(k), None, "neither"),
     (sinh(x + k*pi*I), Q.real(k), None, "neither"), (sinh(x + y), Q.integer(y), None, "neither"),
 ]

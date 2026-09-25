@@ -84,7 +84,7 @@ DIRAC = [
     (DiracDelta(c*x), DiracDelta(x)/Abs(c), Q.nonzero(c) & Q.real(x)),
 ]
 
-RULES = INFINITE + DIRAC
+RULES = DIRAC + INFINITE
 
 
 SPECIALIZE = False   # no generated table: a definition is decided in about 2 ms live

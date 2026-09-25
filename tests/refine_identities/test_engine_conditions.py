@@ -59,7 +59,7 @@ def test_undecided_definition_declines_without_a_split():
     it by ``xreplace`` and could raise, and on refusals cost about 5x)."""
     rows = [(Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b))), S.true)]
     handler = identity_handler(rows, measure=lambda e, _: (len(e.args), 0), opaque=(Piecewise,))
-    assert handler(Max(x, y, z), Q.positive_infinite(z) & Q.real(x)) == Max(y, z)
+    assert handler(Max(x, y, z), Q.positive_infinite(z) & Q.real(x)) in (Max(y, z), z)   # z: the Max(oo, b) row
     assert handler(Max(x, y), Q.real(x) & Q.real(y)) is None
     before = _dispatch.MAX_SPLITS
     assert refine(Max(x, y), Q.real(x) & Q.real(y)) == Max(x, y)

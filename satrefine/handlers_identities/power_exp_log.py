@@ -130,6 +130,8 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     (Abs(b)**n, (-1)**(n/2)*b**n, Q.imaginary(b) & Q.even(n)),                  # |I*t|**n = (-1)**(n/2)*(I*t)**n
     ((-1)**x, S.One, Q.even(x)),                                                # (-1)**even = 1
     ((-1)**x, S.NegativeOne, Q.odd(x)),                                         # (-1)**odd = -1
+    ((-1)**x, S.NegativeOne, Q.even(x - 1)),                                    # ... the parity stated one lower: (-1)**((n + 1)/2)
+    ((-1)**x, S.One, Q.odd(x - 1)),                                             #     under a parity of (n - 1)/2 (ask does not shift it)
     ((-1)**((-1)**x/2 + r), (-1)**(x + r + S.Half), Q.integer(x) & Q.integer(r + S.Half)),   # (-1)**x/2 = +-1/2 (SymPy's continuation)
     ((-1)**(n + r), (-1)**r, Q.even(n)),                                        # (-1)**z is 2-periodic: drop even terms
     ((-1)**(n + r), (-1)**(r + 1), Q.odd(n)),                                   # ... an odd term becomes 1

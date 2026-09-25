@@ -53,7 +53,7 @@ ROWS = [
     (arg(x), Q.positive(x), S.Zero, "same"), (arg(x), Q.negative(x), pi, "same"),
     (arg(x), Q.imaginary(x) & Q.positive(im(x)), pi/2, "same"),
     (arg(x), Q.imaginary(x) & Q.negative(im(x)), -pi/2, "same"),
-    (arg(x), Q.real(x), None, "neither"), (arg(x), Q.zero(x), None, "neither"), (arg(x), Q.nonnegative(x), None, "neither"),
+    (arg(x), Q.real(x), None, "neither"), (arg(x), Q.zero(x), None, "extra: nan, as arg(0) is (the input is undefined there); v3 declines"), (arg(x), Q.nonnegative(x), None, "neither"),
     (arg(x*y), Q.positive(y), arg(x), "same"), (arg(x*y*z), Q.positive(y) & Q.positive(z), arg(x), "same"),
     (arg(x*y), Q.positive(x) & Q.positive(y), S.Zero, "same"),
     (arg(x*y), Q.real(y), None, "neither"), (arg(x*y), Q.negative(y), None, "extra: arg(-x), exact; v3 declines"),

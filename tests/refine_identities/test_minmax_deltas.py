@@ -32,6 +32,11 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (Max(x, y), Q.negative_infinite(x) & Q.real(y), y, ON),
     (Min(x, y), Q.negative_infinite(x) & Q.real(y), x, ON),
     (Max(x, y), Q.negative_infinite(x) & Q.positive_infinite(y), y, ON),
+    # an infinite argument decides without y known real: Max is defined only at extended
+    # real arguments (Max(oo, I) raises), so the rows are exact wherever the input has a value
+    (Max(x, y), Q.positive_infinite(x), x, ON), (Max(x, y), Q.negative_infinite(y), x, ON),
+    (Min(x, y), Q.negative_infinite(x), x, ON), (Min(x, y), Q.positive_infinite(y), x, ON),
+    (Max(x, y, z), Q.negative_infinite(x), Max(y, z), ON),
     (Min(x, y), Q.positive_infinite(x) & Q.nonpositive(y), y, ON),
     (Max(x, 0), Q.negative(x), S.Zero, ON),
     (Max(x, 0), Q.nonnegative(x), x, ON),
@@ -82,7 +87,6 @@ NEGATIVE = [  # v3's refusals
     (Max(x, y), Q.positive(x) & Q.positive(y)),
     (Max(x, y), Q.negative(x) & Q.negative(y)),
     (Max(x, y, z), True),
-    (Max(x, y), Q.positive_infinite(x)),            # y may not be real
     (DiracDelta(x), Q.real(x)),
     (DiracDelta(x), Q.nonnegative(x)),
     (DiracDelta(k*x), Q.real(k) & Q.real(x)),
@@ -131,9 +135,10 @@ def test_max_under_the_wrong_eq_answer_stays_correct():
 
 def test_table_size():
     """Five Piecewise definitions (Max, Min, KroneckerDelta with and without a
-    range, Heaviside) and three DiracDelta rule rows."""
+    range, Heaviside), three DiracDelta rule rows and four rows for an infinite
+    argument of Max/Min."""
     from satrefine.handlers_identities import minmax_deltas as mod
-    assert (len(mod.FACTS), len(mod.RULES)) == (5, 3)
+    assert (len(mod.FACTS), len(mod.RULES)) == (5, 7)
 
 
 BEYOND_V3 = [  # derived by the definitions, not by v3's rules
