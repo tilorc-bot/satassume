@@ -11,9 +11,11 @@ changes, and it replaces ``satrefine.refine`` whenever the
   children it just created; this one refines the rebuilt node again;
 * **a firing cap.**  Handler results are re-refined until a fixed point, so
   two rules that undo each other loop forever in the vendored driver.  Here
-  every top-level call counts handler firings and raises
-  :class:`RefineLoopError` past :data:`MAX_FIRINGS`, so a bad ordering fails
-  loudly in tests instead of hanging;
+  a chain of rewrites of one node raises :class:`RefineLoopError` past
+  :data:`MAX_FIRINGS` steps (and a whole call past
+  :data:`MAX_TOTAL_FIRINGS` firings), so a bad ordering fails loudly in
+  tests instead of hanging, while a wide input's independent rewrites do
+  not add up;
 * **a result cache.**  One top-level call refines the same node under the
   same assumptions many times (every pass of the fixed point re-refines the
   children of a result, every branch of a ``Piecewise`` or of a case split
@@ -39,7 +41,11 @@ from sympy.core.sympify import sympify
 from .. import _upstream
 
 MAX_FIRINGS = 500
-"""Handler firings allowed in one top-level :func:`refine` call."""
+"""Rewrites allowed in one chain (a node rewritten, the result rewritten again, ...):
+more is a loop.  Independent rewrites of many nodes do not add up."""
+
+MAX_TOTAL_FIRINGS = 100*MAX_FIRINGS
+"""Handler firings allowed in one top-level :func:`refine` call (a backstop)."""
 
 MAX_SPLITS = 8
 """Case splits (:func:`._engine.case_split`) tried in one top-level call: each
@@ -245,6 +251,7 @@ def _refine(expr: Any, assumptions: Any) -> Any:
     cache = _results[-1] if _results else {}
     context = (assumptions, mode(), tuple(state), frozenset(live_keys))
     chain = []
+    steps = 0
     while True:
         key = (expr, context)
         try:
@@ -257,6 +264,9 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         expr, again = _step(expr, assumptions)
         if not again:
             break
+        steps += 1
+        if steps > MAX_FIRINGS:
+            raise RefineLoopError(f"a rewrite chain exceeded {MAX_FIRINGS} steps; last result {expr}")
     for key in chain:
         cache[key] = expr
     return expr
@@ -308,7 +318,7 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
         if new == expr:
             return expr, False
     _firings[-1] += 1
-    if _firings[-1] > MAX_FIRINGS:
+    if _firings[-1] > MAX_TOTAL_FIRINGS:
         raise RefineLoopError(
-            f"refine fired handlers more than {MAX_FIRINGS} times; last rewrite {expr} -> {new}")
+            f"refine fired handlers more than {MAX_TOTAL_FIRINGS} times; last rewrite {expr} -> {new}")
     return new, isinstance(new, Expr)

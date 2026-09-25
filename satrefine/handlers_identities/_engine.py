@@ -190,7 +190,9 @@ def _lt_by_signs(u: Any, v: Any) -> Any:
 ORDER: dict = {   # relation -> (proof from signs, proofs from relations: atoms asked one at a time)
     'le': (_le_by_signs, lambda u, v: (Q.le(u, v), Q.lt(u, v), Q.eq(u, v))),   # le follows from neither
     'lt': (_lt_by_signs, lambda u, v: (Q.lt(u, v),)),                          # lt nor eq in SymPy's ask
-    'eq': (lambda u, v: S.false, lambda u, v: (Q.zero(u - v), Q.eq(u, v), Q.eq(v, u))),
+    'eq': (lambda u, v: ((Q.positive_infinite(u) & Q.positive_infinite(v))     # the same infinity
+                         | (Q.negative_infinite(u) & Q.negative_infinite(v))),
+           lambda u, v: (Q.zero(u - v), Q.eq(u, v), Q.eq(v, u))),
     'ne': (lambda u, v: S.false,
            lambda u, v: (Q.nonzero(u - v), Q.ne(u, v), Q.ne(v, u), Q.lt(u, v), Q.lt(v, u))),
 }
@@ -657,17 +659,20 @@ def _switched_off(flag: list) -> Iterator[None]:
 
 def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                      opaque: tuple = (floor, im, arg), splits: bool = True) -> Callable[[Any, Any], Any]:
-    """A handler from identity rows ``(lhs, rhs, domain)``.
+    """A handler from identity rows ``(lhs, rhs, domain[, unless])``.
 
     For each row and binding: the domain must be provable; the substituted
     right side is refined with this handler switched off (its own nodes are
     rewritten by the dispatcher after acceptance, under the same ordering);
     no ``Piecewise`` the input did not have may survive (a definition whose
     conditions the assumptions leave open is not a rewrite; no split is tried
-    on it); no ``opaque`` head may survive, after a case split when
+    on it); a row with ``unless`` does not fire when ``unless`` is provable;
+    no ``opaque`` head may survive, after a case split when
     ``splits``; and ``measure`` must strictly decrease.
     """
     rows = [tuple(sympify(t) for t in row) for row in rows]   # a generated 0 or True is a Python object
+    unless = {row[:3]: row[3] for row in rows if len(row) == 4}
+    rows = [row[:3] for row in rows]
     static_heads = _heads_of(rows)
     busy = [False]
 
@@ -679,6 +684,9 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
         for lhs, rhs, domain in rows:
             for b in bindings(lhs, expr, assumptions):
                 if provable(subst(domain, b), assumptions) is not True:
+                    continue
+                if unless and (lhs, rhs, domain) in unless \
+                        and provable(subst(unless[lhs, rhs, domain], b), assumptions) is True:
                     continue
                 try:
                     cand = subst(rhs, b, rebuild=True)
