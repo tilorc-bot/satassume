@@ -200,6 +200,51 @@ def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
 
+def _number_basis(engine, c) -> tuple:
+    """The predicates to register with the transfer theory for the number
+    ``c``: a small set of its decided facts whose unit propagation under the
+    rule base gives all of them, plus every predicate its facts leave open.
+
+    A term merged with ``c`` receives the basis and its own rule block
+    derives the rest, exactly the facts of ``c`` (the rule block propagates
+    ``RULE_INTERNAL``, the same clauses as ``RULE_INSTANTIATED`` used here);
+    a contradiction with a non-basis fact shows up in that block.  The open
+    predicates are transferred as they are.  Memoized per engine and
+    number (a number's facts are context-free)."""
+    memo = engine.__dict__.setdefault("_xbasis", {})
+    r = memo.get(c)
+    if r is not None:
+        return r
+    from .rules import PREDICATES, RULE_INSTANTIATED, unit_propagate
+    decided, open_ = [], []
+    for k, p in enumerate(PREDICATES):
+        v = engine.is_(c, p)
+        if v is None:
+            open_.append(k)
+        else:
+            decided.append(k + 1 if v else -(k + 1))
+    want = set(decided)
+
+    def closes(lits):
+        d = unit_propagate(RULE_INSTANTIATED, lits)
+        return d is not None and want <= set(d) | set(lits)
+    basis = []
+    for l in decided:
+        d = unit_propagate(RULE_INSTANTIATED, basis)
+        if d is None or l not in set(d) | set(basis):
+            basis.append(l)
+    for l in list(basis):
+        rest = [m for m in basis if m != l]
+        if closes(rest):
+            basis = rest
+    if not closes(basis):                 # defensive: fall back to all
+        r = tuple(range(NPRED))
+    else:
+        r = tuple(sorted({abs(l) - 1 for l in basis} | set(open_)))
+    memo[c] = r
+    return r
+
+
 # --------------------------------------------------------------------------
 # per-session glue
 # --------------------------------------------------------------------------
@@ -514,7 +559,7 @@ class Relations:
         nterms = len(ad._terms)
         if i >= n and nside == self._xnsides and nterms == self._xnterms:
             return
-        from sympy import Basic, nan
+        from sympy import Basic, Rational, nan
         from .euf_adapter import _structural
         heads = self._xheads
         seen = self._xseen
@@ -563,7 +608,9 @@ class Relations:
                     changed = True
                     t = ad.node_term(node)
                     solver.ensure_vars(b + NPRED - 1)     # one _grow, not 33
-                    for k in range(NPRED):
+                    preds = (_number_basis(s.engine, node) if _is_number(node)
+                             and isinstance(node, Rational) else range(NPRED))
+                    for k in preds:
                         if k != polar or node not in part:
                             solver.register_atom(th, b + k, (t, k))
                     continue
