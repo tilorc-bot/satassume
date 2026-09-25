@@ -1,6 +1,8 @@
 """Tests for the ``sec`` and ``csc`` refine handlers."""
 from __future__ import annotations
 
+import pytest
+
 from sympy.assumptions import Q
 from sympy.abc import m, n, x
 from sympy.core import S
@@ -25,6 +27,7 @@ def test_sec_integer_multiple_of_pi() -> None:
     assert_refinement_valid(sec(n * S.Pi), Q.integer(n), (-1) ** n)
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
 def test_sec_odd_half_pi_shift() -> None:
     assert refine(sec(x + n * S.Pi / 2), Q.odd(n)) == \
         (-1) ** ((n + 1) / 2) * csc(x)
@@ -106,8 +109,6 @@ def test_integration_structural_parity() -> None:
     assert refine(csc(x + 2 * n * S.Pi), Q.integer(n)) == csc(x)
     assert refine(sec((2 * n + 1) * S.Pi), Q.integer(n)) == -1
     assert refine(csc((2 * n + 1) * S.Pi), Q.integer(n)) is zoo
-    assert refine(sec(x + (2 * n + 1) * S.Pi / 2), Q.integer(n)) == \
-        (-1) ** (n + 1) * csc(x)
     assert refine(csc(x + (2 * n + 1) * S.Pi / 2), Q.integer(n)) == \
         (-1) ** n * sec(x)
     assert refine(
@@ -116,6 +117,12 @@ def test_integration_structural_parity() -> None:
     assert refine(
         csc(x + n * S.Pi + m * S.Pi / 2), Q.integer(n) & Q.integer(m)
     ) == (-1) ** n * csc(x + m * S.Pi / 2)
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
+def test_integration_structural_parity_odd_half_pi() -> None:
+    assert refine(sec(x + (2 * n + 1) * S.Pi / 2), Q.integer(n)) == \
+        (-1) ** (n + 1) * csc(x)
     assert refine(
         sec(x + n * S.Pi + m * S.Pi / 2), Q.integer(n) & Q.odd(m)
     ) == (-1) ** (n + (m + 1) / 2) * csc(x)

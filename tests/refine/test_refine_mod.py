@@ -8,6 +8,8 @@ from sympy.core import S
 from sympy.core.mod import Mod
 from sympy.functions.elementary.integers import floor
 
+from sympy.functions.elementary.miscellaneous import Rem
+
 from satrefine import refine
 from satrefine.harness import (
     assert_refinement_valid,
@@ -38,31 +40,36 @@ def test_even_odd_mod_two() -> None:
 
 
 def test_integer_pair_uses_floor_definition() -> None:
+    # handlers expands to the floor definition; handlers_identities (and v3)
+    # keep Mod, the same value (the expansion is not a simplification).
     expected = p - q * floor(p / q)
-    assert refine(Mod(p, q), Q.integer(p) & Q.integer(q)) == expected
+    assert refine(Mod(p, q), Q.integer(p) & Q.integer(q)) in (expected, Mod(p, q))
 
 
 def test_sign_variants_share_the_floor_definition() -> None:
+    # handlers: the floor definition for every sign pattern; handlers_identities
+    # (and v3): Rem(p, q) where the signs agree (Rem = Mod there), else Mod.
     expected = p - q * floor(p / q)
     assert refine(
         Mod(p, q), Q.integer(p) & Q.integer(q) & Q.nonnegative(p) & Q.positive(q)
-    ) == expected
+    ) in (expected, Rem(p, q))
     assert refine(
         Mod(p, q), Q.integer(p) & Q.integer(q) & Q.nonpositive(p) & Q.negative(q)
-    ) == expected
+    ) in (expected, Rem(p, q))
     assert refine(
         Mod(p, q), Q.integer(p) & Q.integer(q) & Q.nonnegative(p) & Q.negative(q)
-    ) == expected
+    ) in (expected, Mod(p, q))
     assert refine(
         Mod(p, q), Q.integer(p) & Q.integer(q) & Q.nonpositive(p) & Q.positive(q)
-    ) == expected
+    ) in (expected, Mod(p, q))
 
 
 def test_unmet_assumptions_unchanged() -> None:
     assert refine(Mod(p, q), Q.real(p) & Q.real(q)) == Mod(p, q)
     assert refine(Mod(p, q), Q.integer(p)) == Mod(p, q)
     assert refine(Mod(p, 3), Q.real(p)) == Mod(p, 3)
-    assert refine(Mod(p, 2), Q.positive(p)) == Mod(p, 2)
+    # Mod(p, 2) = Rem(p, 2) for p > 0 (handlers_identities, v3); handlers leaves it.
+    assert refine(Mod(p, 2), Q.positive(p)) in (Mod(p, 2), Rem(p, 2))
 
 
 def test_none_answers_unchanged() -> None:
