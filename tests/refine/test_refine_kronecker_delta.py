@@ -8,6 +8,7 @@ unchanged.  The engine derives no ``Q.ne`` from a given ``Q.eq``, so the
 (it does answer there), and an ``ask`` answer of ``None`` never refines.
 """
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import i, j, k
@@ -35,6 +36,7 @@ def test_unequal_indices_are_zero() -> None:
     assert refine(KroneckerDelta(i, j), Q.ne(i, j)) is S.Zero
 
 
+@pytest.mark.handlers("handlers")
 def test_ne_direction_uses_direct_assumption() -> None:
     # Under a direct Q.ne the Q.eq query answers None, then Q.ne answers True.
     fake, log = recording_ask({str(Q.ne(i, j)): True})
@@ -77,6 +79,7 @@ def test_fidelity_when_sympy_does_not_refine() -> None:
     assert_refines_like_sympy(KroneckerDelta(i, j), Q.integer(i) & Q.integer(j))
 
 
+@pytest.mark.handlers("handlers")
 def test_ask_goes_through_upstream() -> None:
     fake, log = recording_ask({str(Q.eq(i, j)): True})
     with use_ask(fake):

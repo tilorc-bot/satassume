@@ -149,7 +149,7 @@ self-contained and selected with `SATREFINE_HANDLERS`:
 
 | Package | Tests | Written by | What it is |
 |---|---|---|---|
-| `satrefine/handlers/` (default) | `tests/refine/` (469) | the `reasoning` project's agents, then its verifiers | the original layer, copied from github.com/tilorc-bot/reasoning `feature/refine` at `12c3845`, one module per key, 33 modules |
+| `satrefine/handlers/` | `tests/refine/` (469; now run under the default package, see below) | the `reasoning` project's agents, then its verifiers | the original layer, copied from github.com/tilorc-bot/reasoning `feature/refine` at `12c3845`, one module per key, 33 modules |
 | `satrefine/handlers_v2/` | `tests/refine_v2/` (161) | one Fable 5.1 agent, all 56 keys in one run, no verifier pass | a blind rewrite: the agent could not read the other packages, their tests or reports; 18 modules with shared helpers, rules named in the docstrings |
 | `satrefine/handlers_v3/` | `tests/refine_v3/` (1,005) | nine agents (3 Fable, 6 Opus 5.5), one family each, then nine adversarial verifiers | a blind rewrite by a parallel team: one module per family (`trig`, `hyperbolic`, `inverse`, `power_exp_log`, `complex_parts`, `integer_funcs`, `combinatorial`, `minmax_deltas`, `matrices`), a shared `_common.py`, every rule stated with its precondition; the verifiers found and fixed 12 defects |
 
@@ -170,16 +170,23 @@ original inherits three unsound matrix rules from SymPy and leaves relation
 errors unguarded; both rewrites refuse those rules; the parallel team's
 package is the only one with zero known defects after an adversarial pass
 and covers the most on the branch-cut families, at about seven times the
-single agent's cost, most of it the verifier pass. `handlers` stays the
-default so the corpus numbers above keep their meaning.
+single agent's cost, most of it the verifier pass. `handlers` was the
+default until 2026-09-25, and the corpus numbers above were measured with it.
 
 A fourth package, `satrefine/handlers_identities/`, implements the same nine
 handler families as tables: identity rows with the branch bookkeeping written out
 (`log`, powers, inverse functions, complex parts) and plain conditional rows
 (the other families), run by a shared engine that matches rows, decides
 their conditions through `ask`, and generates conditional rules from
-identities under assumption profiles, each verified numerically. Select it
-with `SATREFINE_HANDLERS=handlers_identities`. On the 1,736-case battery
+identities under assumption profiles, each verified numerically. It is the
+default package since 2026-09-25 (`satrefine.DEFAULT_HANDLERS`;
+`SATREFINE_HANDLERS=handlers` selects the original, `handlers_v3` the
+parallel team's). `tests/refine/` runs against it: tests of the original's
+internals are marked `@pytest.mark.handlers("handlers")` and skipped, cases
+it handles worse are strict xfails pointing at
+`tests/refine_identities/needs/test_default_*.py`, and the suite still
+passes with `SATREFINE_HANDLERS=handlers`
+(`agent-reports/2026-09-25-phase3-default-report.md`). On the 1,736-case battery
 recorded from the `handlers_v3` suite it gives 0 wrong and 0 crash and
 matches v3 on 1,073 of v3's 1,086 rewrites, in about a third of v3's
 per-family code. Results are in

@@ -16,7 +16,6 @@ from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.trigonometric import cos, sin, tan
 
 from satrefine import refine
-from satrefine.handlers.trig_sin_cos import refine_sin_cos
 from satrefine.harness import (
     assert_refines_like_sympy,
     assert_refinement_valid,
@@ -49,14 +48,19 @@ def test_parity_known_half_pi_multiple() -> None:
     assert refine(cos(n * S.Pi / 2), Q.odd(n)) == 0
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
+def test_shifts_cos_odd_half_pi() -> None:
+    n = Symbol("n")
+    assert refine(cos(x + n * S.Pi / 2), Q.odd(n)) == \
+        (-1) ** ((n + 1) / 2) * sin(x)
+
+
 def test_shifts() -> None:
     n = Symbol("n")
     assert refine(sin(x + n * S.Pi), Q.integer(n)) == (-1) ** n * sin(x)
     assert refine(cos(x + n * S.Pi), Q.odd(n)) == -cos(x)
     assert refine(sin(x + n * S.Pi / 2), Q.odd(n)) == \
         (-1) ** ((n + 3) / 2) * cos(x)
-    assert refine(cos(x + n * S.Pi / 2), Q.odd(n)) == \
-        (-1) ** ((n + 1) / 2) * sin(x)
     assert refine(cos(x + y + 2 * n * S.Pi), Q.integer(n)) == cos(x + y)
     assert_refinement_valid(
         sin(x + n * S.Pi), Q.integer(n), (-1) ** n * sin(x)
@@ -101,7 +105,9 @@ def test_matches_sympy_for_handled_cases() -> None:
     )
 
 
+@pytest.mark.handlers("handlers")
 def test_type_error_preserved() -> None:
+    from satrefine.handlers.trig_sin_cos import refine_sin_cos
     with pytest.raises(TypeError):
         refine_sin_cos(tan(x), Q.real(x))
     with pytest.raises(TypeError):
@@ -110,11 +116,16 @@ def test_type_error_preserved() -> None:
         refine_sin_cos(x, Q.real(x))
 
 
+@pytest.mark.handlers("handlers")
 def test_integer_power_factor_regression() -> None:
     # `sin(pi + x)` has a literal `k`, so `(-1)**((k + 1)/2)` is `-1`: calling
     # `refine_Pow` on it used to raise `AttributeError`.
+    from satrefine.handlers.trig_sin_cos import refine_sin_cos
     assert refine_sin_cos(sin(S.Pi + x, evaluate=False), True) == -sin(x)
     assert refine_sin_cos(cos(S.Pi + x, evaluate=False), True) == -cos(x)
+
+
+def test_integer_power_factor_regression_through_refine() -> None:
     assert refine(sin(S.Pi + x, evaluate=False), True) == -sin(x)
 
 

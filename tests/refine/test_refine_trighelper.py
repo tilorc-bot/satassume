@@ -1,6 +1,7 @@
 """Unit tests for the shared ``pi/2`` parser in ``handlers/_trig.py``."""
 from __future__ import annotations
 
+import pytest
 from sympy.assumptions import Q
 from sympy.abc import m, n, x
 from sympy.core.singleton import S
@@ -8,6 +9,8 @@ from sympy.functions.elementary.trigonometric import cos, sin
 
 from satrefine.handlers import _trig
 from satrefine.harness import stub_ask, use_ask
+
+pytestmark = pytest.mark.handlers("handlers")
 
 
 def test_non_add_pi_multiple() -> None:

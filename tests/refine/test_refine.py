@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import pytest
 from typing import Any, Callable
 from sympy.assumptions.ask import Q
 from satrefine import refine, refine_sin_cos
@@ -47,7 +49,6 @@ def test_pow1() -> None:
     assert refine((x**3)**Rational(1, 3), Q.positive(x)) == x
 
     assert refine(sqrt(1/x), Q.real(x)) != 1/sqrt(x)
-    assert refine(sqrt(1/x), Q.positive(x)) == 1/sqrt(x)
 
     # powers of (-1)
     assert refine((-1)**(x + y), Q.even(x)) == (-1)**y
@@ -56,16 +57,26 @@ def test_pow1() -> None:
     assert refine((-1)**(x + y + 2), Q.odd(x)) == (-1)**(y + 1)
     assert refine((-1)**(x + 3)) == (-1)**(x + 1)
 
-    # continuation
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_pow_of_pow.py", "sqrt(1/x) is not rewritten to 1/sqrt(x) for positive x")
+def test_pow1_sqrt_of_reciprocal() -> None:
+    assert refine(sqrt(1/x), Q.positive(x)) == 1/sqrt(x)
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_neg_one_power_exponent.py", "(-1)**((-1)**x/2 + c) is not reduced for integer x")
+def test_pow1_continuation() -> None:
     assert refine((-1)**((-1)**x/2 - S.Half), Q.integer(x)) == (-1)**x
     assert refine((-1)**((-1)**x/2 + S.Half), Q.integer(x)) == (-1)**(x + 1)
     assert refine((-1)**((-1)**x/2 + 5*S.Half), Q.integer(x)) == (-1)**(x + 1)
 
 
-def test_pow2() -> None:
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_neg_one_power_exponent.py", "(-1)**((-1)**x/2 + c) is not reduced for integer x")
+def test_pow2_continuation() -> None:
     assert refine((-1)**((-1)**x/2 - 7*S.Half), Q.integer(x)) == (-1)**(x + 1)
     assert refine((-1)**((-1)**x/2 - 9*S.Half), Q.integer(x)) == (-1)**x
 
+
+def test_pow2() -> None:
     # powers of Abs
     assert refine(Abs(x)**2, Q.real(x)) == x**2
     assert refine(Abs(x)**3, Q.real(x)) == Abs(x)**3
@@ -247,8 +258,15 @@ def test_matrixelement() -> None:
     j = Symbol('j', positive = True)
     assert refine(x[0, 1], Q.symmetric(x)) == x[0, 1]
     assert refine(x[1, 0], Q.symmetric(x)) == x[0, 1]
-    assert refine(x[i, j], Q.symmetric(x)) == x[j, i]
     assert refine(x[j, i], Q.symmetric(x)) == x[j, i]
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matrixelement_index_order.py", "x[i, j] under Q.symmetric(x) is not swapped to x[j, i]")
+def test_matrixelement_symbolic_swap() -> None:
+    x = MatrixSymbol('x', 3, 3)
+    i = Symbol('i', positive = True)
+    j = Symbol('j', positive = True)
+    assert refine(x[i, j], Q.symmetric(x)) == x[j, i]
 
 
 def test_sin_cos() -> None:
@@ -275,7 +293,6 @@ def test_sin_cos() -> None:
     assert refine(sin(x + n*pi/2), Q.even(n)) == ((-1)**(n/2)) * sin(x)
     assert refine(cos(x + n*pi/2), Q.even(n)) == ((-1)**(n/2)) * cos(x)
     assert refine(sin(x + n*pi/2), Q.odd(n)) == ((-1)**((n + 3)/2)) * cos(x)
-    assert refine(cos(x + n*pi/2), Q.odd(n)) == ((-1)**((n + 1)/2)) * sin(x)
     assert refine(sin(x - n*pi/2), Q.odd(n)) == ((-1)**((n + 3)/2)) * -cos(x)
     assert refine(cos(x - n*pi / 2), Q.even(n)) == ((-1)**(n/2)) * cos(x)
     assert refine(sin(x + y + 2*n*pi), Q.integer(n)) == sin(x + y)
@@ -287,8 +304,6 @@ def test_sin_cos() -> None:
     m = Symbol('m')
     assert refine(cos(x + n*pi + m*pi / 2), Q.integer(n) & Q.even(m)) == \
         (-1)**(n + m / 2) * cos(x)
-    assert refine(cos(x + n*pi + m*pi / 2), Q.integer(n) & Q.odd(m)) == \
-        (-1)**(n + (m + 1)/2) * sin(x)
     assert refine(cos(x + n*pi + m*pi / 2), Q.integer(n) & Q.integer(m)) == \
         (-1)**(n) * cos(x + m*pi / 2)
     assert refine(cos(x + (2*n + 1)*pi + m*pi / 2), \
@@ -298,15 +313,6 @@ def test_sin_cos() -> None:
         Q.integer(n) & Q.integer(m)) == \
         sin(x + m*pi / 2)
     k = Symbol('k')
-    assert refine(cos(x + n*pi + k*pi/2 + m*pi/2), \
-                  Q.integer(n) & Q.odd(k) & Q.integer(m)) == \
-        (-1)**(n + (k + 1)/2) * sin(x + m*pi/2)
-    assert refine(sin(x + n*pi + k*pi/2 + m*pi/2), \
-                  Q.integer(n) & Q.odd(k) & Q.integer(m)) == \
-        (-1)**(n + (k + 3)/2) * cos(x + m*pi/2)
-    assert refine(cos(x + n*pi/2 + k*pi/2 + m*pi/2), \
-                  Q.odd(n) & Q.odd(k) & Q.integer(m)) == \
-        (-1)**((n + k)/2) * cos(x + m*pi/2)
 
     assert refine(cos(x), Q.zero(x)) == 1
     assert refine(sin(x), Q.zero(x)) == 0
@@ -323,11 +329,26 @@ def test_sin_cos() -> None:
     raises(TypeError, lambda: refine_sin_cos(x, Q.real(x)))
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
+def test_sin_cos_odd_half_pi_forms() -> None:
+    n, m, k = Symbol('n'), Symbol('m'), Symbol('k')
+    assert refine(cos(x + n*pi/2), Q.odd(n)) == ((-1)**((n + 1)/2)) * sin(x)
+    assert refine(cos(x + n*pi + m*pi / 2), Q.integer(n) & Q.odd(m)) == \
+        (-1)**(n + (m + 1)/2) * sin(x)
+    assert refine(cos(x + n*pi + k*pi/2 + m*pi/2), \
+                  Q.integer(n) & Q.odd(k) & Q.integer(m)) == \
+        (-1)**(n + (k + 1)/2) * sin(x + m*pi/2)
+    assert refine(sin(x + n*pi + k*pi/2 + m*pi/2), \
+                  Q.integer(n) & Q.odd(k) & Q.integer(m)) == \
+        (-1)**(n + (k + 3)/2) * cos(x + m*pi/2)
+    assert refine(cos(x + n*pi/2 + k*pi/2 + m*pi/2), \
+                  Q.odd(n) & Q.odd(k) & Q.integer(m)) == \
+        (-1)**((n + k)/2) * cos(x + m*pi/2)
+
+
 def test_floor_ceiling() -> None:
     assert refine(floor(x), Q.integer(x)) == x
     assert refine(ceiling(x), Q.integer(x)) == x
-    assert refine(floor(x), Q.infinite(x)) == x
-    assert refine(ceiling(x), Q.infinite(x)) == x
 
     assert refine(floor(y), Q.real(y)) == floor(y)
     assert refine(ceiling(y), Q.real(y)) == ceiling(y)
@@ -337,8 +358,13 @@ def test_floor_ceiling() -> None:
     assert refine(floor(x + y + z), Q.integer(x) & Q.integer(y)) == x + y + floor(z)
     assert refine(ceiling(x + y + z), Q.integer(x) & Q.integer(z)) == x + z + ceiling(y)
     assert refine(floor(x + y - z)) == floor (x + y - z)
-    assert refine(ceiling(ceiling(x) + y + floor(z))) == ceiling(x) + ceiling(y) + floor(z)
 
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_floor_ceiling.py", "floor/ceiling of an infinite argument or of a sum of floors is not simplified")
+def test_floor_ceiling_infinite_and_nested() -> None:
+    assert refine(floor(x), Q.infinite(x)) == x
+    assert refine(ceiling(x), Q.infinite(x)) == x
+    assert refine(ceiling(ceiling(x) + y + floor(z))) == ceiling(x) + ceiling(y) + floor(z)
     assert refine(floor(floor(x)+ floor(y))) == floor(x) + floor(y)
     assert refine(ceiling(ceiling(x) - ceiling(y))) == ceiling(x) - ceiling(y)
 
