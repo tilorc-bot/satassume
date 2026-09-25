@@ -119,3 +119,106 @@ really are stage 0, as the plan feared: the meaning of `Q.real`,
 - The `_simple.py` range table as rows.
 
 I continue with plan step 4's order.
+
+## 2. Stage manifest, fixpoint loop, derivation records
+
+New engine module `_stages.py` (113 code lines at the time of writing):
+- `STAGES` is the manifest: integer_funcs and complex_parts in stage 1,
+  power_exp_log in stage 2 (its `Pow` rows are stage 3 but live in the
+  same family), trig and hyperbolic in stage 4 (no generated tables
+  today), inverse in stage 5. A generating family missing from the
+  manifest is an error (`test_stage_manifest_covers_every_generating_family`).
+- `generate()` starts from empty tables and runs the families in stage
+  order. Each family is specialized with its own keys on their identity
+  rows and every other key through the tables generated so far
+  (`_dispatch.tables()` and `_dispatch.live_for(keys)`; the dispatcher's
+  result cache keys on the live keys). Verified rules are installed after
+  each family, every round. A round regenerates only the families whose
+  inputs, the other families' tables, changed since their last
+  generation. The loop stops when a round changes nothing and raises
+  after 5 rounds, naming the families still changing.
+- **Derivation records.** `_dispatch.tracing()` collects, while a
+  profile is refined, the rows that fired (a `note` in `rule_handler` and
+  `identity_handler`) and the `ask` queries answered `True`.
+  `_specialize.records` keeps them per found rule. The generated modules
+  carry them as comments above each row: the round, the source identity
+  row and profile, the rows fired (labelled `family.TABLE[i]`, or
+  `family.generated[i]` for another family's installed table) and the
+  asks.
+- `tools/refine_specialize.py --write` runs the fixpoint and writes every
+  table. `--family F` regenerates one family against the committed
+  tables of the others. `test_generated.py`'s up-to-date test now checks
+  exactly that for each family, which is the fixpoint property.
+- One shared `table_order` sorts a generated table, both in memory during
+  the fixpoint and in the written module. A left side over bare symbols
+  (`log(x)`) goes after structured ones (`log(b**e)`), then fewer symbols
+  first, as before.
+
+**Reproduction check.** On a copy of f686dcc with only the new
+infrastructure (old tables, old order), the fixpoint gave the same rows
+in the same order for all four generated families. It stopped after
+round 2, and round 2 skipped inverse because its inputs had not changed.
+Time, at load 3 to 15 on 12 cores:
+
+| family | round 1 | round 2 |
+| --- | --- | --- |
+| integer_funcs | 170 s | 159 s |
+| complex_parts | 234 s | 253 s |
+| power_exp_log | 300 s | 319 s |
+| inverse | 26 s | skipped |
+| total | | 1,461 s |
+
+Installing earlier tables did not make generation faster. The live
+fallback runs whenever a table declines, and specialization mostly
+explores profiles where the tables decline.
+
+## 3. `_simple.py`: the range table as rows
+
+`_simple.BOUNDS` and `arg`'s special case in `_range` were function
+knowledge in the engine. They are now range rows
+`(head(y), interval, condition)`, stated by the owning family and
+registered with `register_ranges`:
+- `complex_parts.RANGES` has 2 rows for `arg`: open at `pi` off the
+  negative axis, else `(-pi, pi]`.
+- `inverse.RANGES` has 4 rows: `atan`, `acot`, `asin`, `acos`.
+
+`_simple._range` reads the first row whose condition is provable. The
+interval reasoning stays in `_simple.py`. I kept the module name, since
+a rename would only churn imports for the other teams. The scoreboard's
+row table gains `ranges` and `stage0` columns. `stage0` counts every
+stated table once, in its owner: complex_parts' `EXP_FORMS` is
+power_exp_log's, and `SPLITS`, `NEGATIVE_BASE` and `BOUNDED` were not
+counted before.
+
+## 4. Stage 4, trig and hyperbolic (measured, not landed)
+
+Prototype (script in the session scratchpad, battery trig and hyperbolic
+cases, live mode):
+- `tan`, `cot`, `sec` and `csc` as definitions over the `sin`/`cos`
+  shift rows (12 shift rows become 4 definitions).
+- A top-down fold that reads the definitions backwards
+  (`sin(u)/cos(u) -> tan(u)`). Bottom-up folds `1/cos` to `sec` first
+  and leaves `sin(x)*sec(x)`.
+- `AccumBounds` opaque, so there are no new firings at infinity.
+
+Results:
+- No misses, and no new firings where v3 expects unchanged.
+- 14 trig cases moved from "same" to "other form" in my harness: 208/8
+  (rows) against 194/22 (definitions). The forms are `(-1)**(1/2 - k/2)`,
+  `sec(x)/(-1)**(k/2)` and uncombined `(-1)**a*(-1)**b`.
+- Two stated rows for base -1 bring it to 202/14: `(-1)**a*(-1)**b =
+  (-1)**(a + b)` and `(-1)**(-x) = (-1)**x` for integer `x`.
+- The rest needs one of two things. One is a matcher that extracts a
+  sign from a rational coefficient: `(-1)**(-A)` does not match
+  `(-1)**(-k/2)`. The other is the step 5 prover gap: `ask` cannot show
+  `(1 - k)/2` is an integer for odd `k`.
+
+Net: about 6 rows fewer, a new engine fold of about 20 lines, and 6
+trig cases in a worse form. Hyperbolic through trig (`sinh(z) =
+-I*sin(I*z)`) folds by itself, because SymPy evaluates `sin(I*x)` to
+`I*sinh(x)`. But v3's hyperbolic rows fire only when `m mod 4` is known,
+while the trig rows fire for any even or odd `n`. A derivation would
+therefore fire where v3 expects unchanged, which the gate forbids unless
+the trig rows are restricted the same way. I did not land stage 4. The
+trig family's docstring already says the exponential-form derivation
+"produces quotient forms that are not v3's", and the measurement agrees.
