@@ -101,7 +101,10 @@ _SIGNS = (Q.positive, Q.nonnegative, Q.negative, Q.nonpositive)
 def _affine(d: Any, u: Any) -> tuple | None:
     """``(a, c)`` with ``d == a*u + c`` for real numbers ``a != 0`` and ``c``, else ``None``."""
     t = Dummy("t")
-    e = d.xreplace({u: t})
+    try:
+        e = d.xreplace({u: t})
+    except (TypeError, ValueError):     # u is a matrix inside a MatrixElement: no scalar stands for it
+        return None
     if not e.has(t):
         return None
     e = expand_mul(e)

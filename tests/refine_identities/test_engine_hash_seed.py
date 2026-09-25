@@ -1,4 +1,10 @@
-"""Found while re-baselining after the merge of ``main`` (not caused by it):
+"""Moved from ``needs/test_baseline_hash_seed_dependence.py``.  Fixed in the engine:
+the positive-sign branch of a case split was explored under ``Q.zero(x)``,
+where it is inconsistent, and the backend's answer there (``True`` or a
+``ValueError``) depended on the hash seed.  ``_split_branches`` now offers
+no sign case when neither sign is consistent.
+
+Found while re-baselining after the merge of ``main`` (not caused by it):
 ``refine`` gives different results for different ``PYTHONHASHSEED`` values.
 
 ``refine(log(1/x), Q.zero(x))`` is ``zoo`` for hash seeds 0, 1, 5, 6, 7

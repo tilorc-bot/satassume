@@ -225,7 +225,18 @@ def _holds(name: str, u: Any, v: Any, assumptions: Any) -> bool:
         return True
     if provable(Q.infinite(u) | Q.infinite(v), assumptions) is True:
         return False    # SymPy's relation ask is unsound at infinity: Q.eq(x, y) "True" for x = -oo, y <= 0
-    return any(_ask_atom(atom, assumptions) is True for atom in by_relations(u, v))
+    stated = _states_relations(assumptions)
+    return any(_ask_atom(atom, assumptions) is True for atom in by_relations(u, v)
+               if stated or atom.function not in (Q.eq, Q.ne))
+
+
+def _states_relations(assumptions: Any) -> bool:
+    """Whether the assumptions contain a relation.  Without one, ``Q.eq`` and ``Q.ne``
+    atoms are not asked: SymPy's equality reasoning costs about 0.6 s per query
+    and the ``u - v`` zero/nonzero and ``Q.lt`` forms cover what it could prove."""
+    return isinstance(assumptions, Basic) and (
+        any(p.function in _RELATIONS for p in assumptions.atoms(AppliedPredicate))
+        or bool(assumptions.atoms(Relational)))
 
 
 _BOUND_DECIDED = (Q.real, Q.extended_real, Q.positive, Q.nonnegative, Q.negative, Q.nonpositive, Q.nonzero,
@@ -739,8 +750,8 @@ def _split_branches(s: Any, assumptions: Any) -> tuple[list, bool] | None:
     ask = _upstream.ask
     if ask(Q.real(s), assumptions) is True:
         pos, neg = ask(Q.positive(s), assumptions), ask(Q.negative(s), assumptions)
-        if pos is True or neg is True:
-            return None
+        if pos is True or neg is True or pos is False and neg is False:
+            return None                  # no sign case, or none consistent (s is zero)
         cases = [(Q.positive(s), s), (Q.negative(s), -s)]     # (branch, what Abs(s) is in it)
         if neg is False:
             cases = cases[:1]
