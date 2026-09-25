@@ -57,6 +57,10 @@ class Extensions:
         self._handlers: Dict[str, List[Tuple[Tuple[type, ...], Handler]]] = {}
         self._vocab: Dict[str, List[Tuple[Tuple[type, ...], Handler]]] = {}
         self._node_cache: Dict[type, List[Tuple[str, Handler]]] = {}
+        #: bumped by every registration and unregistration; what depends on
+        #: the registrations (the answer memo of ``sympy_api.ask``) compares
+        #: it instead of the handler lists
+        self.version = 0
 
     # -- registration --------------------------------------------------------
     def register(self, pred, *classes: type):
@@ -68,6 +72,7 @@ class Extensions:
 
         def deco(f: Handler) -> Handler:
             self._handlers.setdefault(name, []).append((classes, f))
+            self.version += 1
             if name in PRED_INDEX and len(classes) == 1:
                 self._vocab.setdefault(name, []).append((classes, f))
                 self._node_cache.clear()
@@ -79,6 +84,7 @@ class Extensions:
         """Forget every function registered for ``pred``."""
         name = _name(pred)
         self._handlers.pop(name, None)
+        self.version += 1
         if self._vocab.pop(name, None) is not None:
             self._node_cache.clear()
 

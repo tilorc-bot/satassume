@@ -301,11 +301,11 @@ _MISS = object()
 def _registry_state(eng: Engine):
     """What an answer depends on besides the query and the engine's
     history: the registered clause-generating functions (they decide the
-    scope of custom predicates and add facts) and the theory adapters."""
+    scope of custom predicates and add facts), identified by the registry
+    and its version counter (bumped by every (un)registration), and the
+    theory adapters."""
     ext = eng.extensions
-    h = ext._handlers if ext is not None else None
-    return (tuple((k, tuple(v)) for k, v in h.items()) if h else (),
-            tuple(eng.relation_specs))
+    return (ext, ext.version if ext is not None else 0, tuple(eng.relation_specs))
 
 
 def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
