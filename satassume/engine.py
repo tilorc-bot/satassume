@@ -547,7 +547,9 @@ class Engine:
         searched in a fresh session over its own cone instead; the cost of
         search then depends on the query, not on what was asked before under
         the same assumptions.  Propagation-decided queries keep reusing the
-        session.
+        session.  The cone session then replaces the polluted one as the
+        reused session of these assumptions, so one rebuild serves the
+        following searches too.
     cone_threshold : int
         The cone search only pays when the reused session holds more than
         this many nodes beyond those of the assumptions: rebuilding a
@@ -574,7 +576,7 @@ class Engine:
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 16,
                  cone_search: bool = True, extensions=None, relations=None,
-                 cone_threshold: int = 5):
+                 cone_threshold: int = 3):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -701,17 +703,22 @@ class Engine:
             self.stats["searches"] += 1
             if contextual and polluted and self.cone_search:
                 self.stats["cone_searches"] += 1
-                s0, lits0, q0 = s, lits, q
+                s0 = s
                 s = self._fresh_session()
                 lits = s.assume_formula(assumptions)
                 q = self._literal(s, proposition)
                 s.escalate()
                 r = s.query_literal(q, lits, search=True)
-                if r is not None:
-                    # "under these assumptions, q": entailed by the clause set
-                    # (the selector guards the assumptions), so the reused
-                    # session may keep it and answer repeats by propagation.
-                    s0._emit([-lits0[0], q0 if r else -q0])
+                # the cone session (assumptions + this query's cone, and
+                # what the search learned) replaces the polluted one, so the
+                # next searches under these assumptions start small again
+                if self._context_sessions.get(assumptions, (None,))[0] is s0:
+                    self._context_sessions[assumptions] = (s, lits)
+                    if r is not None:
+                        # "under these assumptions, q" is entailed by the
+                        # clause set (the selector guards the assumptions),
+                        # so a repeat is answered by propagation
+                        s._emit([-lits[0], q if r else -q])
                 return r
             r = s.query_literal(q, lits, search=True)
         return r
