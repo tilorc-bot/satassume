@@ -548,6 +548,16 @@ class Engine:
         search then depends on the query, not on what was asked before under
         the same assumptions.  Propagation-decided queries keep reusing the
         session.
+    cone_threshold : int
+        The cone search only pays when the reused session holds more than
+        this many nodes beyond those of the assumptions: rebuilding a
+        session (re-grounding the assumptions, their relations and theory
+        atoms) costs about as much as searching a session a few nodes
+        larger than the cone.  Measured on the refine query stream: a
+        search in a session polluted by 1-3 nodes costs 0.9-1.1 ms, the
+        cone search 1.3-1.7 ms; from about 8 extra nodes on, the reused
+        search costs more (2.4 ms at 8-15, 3.7 ms at 16-31, 6.3 ms beyond),
+        since CDCL decides every variable of the session.
     keep_sessions : int
         How many contextual sessions (distinct assumption sets) to keep.
     extensions : satassume.extensions.Extensions or None
@@ -563,7 +573,8 @@ class Engine:
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 16,
-                 cone_search: bool = True, extensions=None, relations=None):
+                 cone_search: bool = True, extensions=None, relations=None,
+                 cone_threshold: int = 5):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -594,6 +605,7 @@ class Engine:
         self.session_limit = session_limit
         self.keep_sessions = keep_sessions
         self.cone_search = cone_search
+        self.cone_threshold = cone_threshold
         #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
         #: (satassume.sympy_api), bounded; cleared when registrations change
         self.answers = AnswerMemo()
@@ -678,7 +690,7 @@ class Engine:
             s, lits = self._context_session(assumptions)
         else:
             s = self._fresh_session()
-        polluted = len(s.base) > s.n_assumption_nodes
+        polluted = len(s.base) - s.n_assumption_nodes > self.cone_threshold
         q = self._literal(s, proposition)
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
