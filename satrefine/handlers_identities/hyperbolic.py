@@ -17,7 +17,7 @@ The sign power collapses through the ``Pow`` rules once the residue of
 table: ``sinh(x + k*pi*I) = (-1)**k*sinh(x)`` under ``Q.integer(k)`` (SymPy's
 and the old ``handlers``' form).  v3 fires ``sinh``, ``cosh``, ``sech`` and
 ``csch`` only when the residue is known (phase 3 made the rows exact with a
-symbolic sign instead: ``needs/test_default_hyperbolic_i_pi_shift.py``).
+symbolic sign instead: ``tests/refine_identities/test_default_hyperbolic_i_pi_shift.py``).
 Like the trigonometric table, the whole coefficient of ``pi*I/2`` is tried
 under both parities before a single term of it (``by_binding``).
 

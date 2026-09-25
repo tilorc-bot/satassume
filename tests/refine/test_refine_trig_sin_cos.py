@@ -48,7 +48,6 @@ def test_parity_known_half_pi_multiple() -> None:
     assert refine(cos(n * S.Pi / 2), Q.odd(n)) == 0
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
 def test_shifts_cos_odd_half_pi() -> None:
     n = Symbol("n")
     assert refine(cos(x + n * S.Pi / 2), Q.odd(n)) == \

@@ -30,7 +30,6 @@ def test_negative_integer_is_pole() -> None:
     assert refine(factorial(n), Q.integer(n) & Q.negative(n)) is S.ComplexInfinity
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_infinite_arguments.py", "factorial(n) for n = oo is not oo")
 def test_positive_infinite_is_infinity() -> None:
     assert refine(factorial(n), Q.positive_infinite(n)) is S.Infinity
 

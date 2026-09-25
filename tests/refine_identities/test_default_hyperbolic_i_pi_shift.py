@@ -1,4 +1,4 @@
-"""Needs: ``sinh``/``cosh``/``sech``/``csch`` of ``x + n*I*pi`` for integer ``n`` (parity unknown).  Owner: handlers_identities (hyperbolic).
+"""Fixed in phase 3 (ri/fixes).  The needs test said: ``sinh``/``cosh``/``sech``/``csch`` of ``x + n*I*pi`` for integer ``n`` (parity unknown).  Owner: handlers_identities (hyperbolic).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

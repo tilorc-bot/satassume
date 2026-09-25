@@ -1,4 +1,4 @@
-"""Needs: ``factorial``, ``Max`` and ``Min`` of an argument known to be ``oo`` or ``-oo``.  Owner: handlers_identities (combinatorial, minmax_deltas).
+"""Fixed in phase 3 (ri/fixes).  The needs test said: ``factorial``, ``Max`` and ``Min`` of an argument known to be ``oo`` or ``-oo``.  Owner: handlers_identities (combinatorial, minmax_deltas).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

@@ -1,4 +1,4 @@
-"""Needs: ``Rem(p, q)`` under ``Q.zero(p)`` is not reduced to 0.  Owner: handlers_identities (integer_funcs).
+"""Fixed in phase 3 (ri/fixes).  The needs test said: ``Rem(p, q)`` under ``Q.zero(p)`` is not reduced to 0.  Owner: handlers_identities (integer_funcs).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

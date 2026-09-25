@@ -57,7 +57,6 @@ def test_multi_argument_without_single_maximum_unchanged() -> None:
     assert refine(Max(x, y, z), Q.ge(x, y) & Q.ge(z, y)) in (Max(x, y, z), Max(x, z))
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_infinite_arguments.py", "Max(x, y) with one argument known infinite is not reduced")
 def test_infinite_arguments() -> None:
     assert refine(Max(x, y), Q.positive_infinite(x)) == x
     assert refine(Max(x, y), Q.positive_infinite(y)) == y
@@ -65,7 +64,7 @@ def test_infinite_arguments() -> None:
     assert refine(Max(x, y), Q.negative_infinite(y)) == x
     assert refine(
         Max(x, y), Q.negative_infinite(x) & Q.negative_infinite(y)
-    ) in (S.NegativeInfinity, x)   # x is -oo here
+    ) in (S.NegativeInfinity, x, y)   # x and y are -oo here
     assert refine(Max(x, 0), Q.negative_infinite(x)) is S.Zero
     # literal infinities already evaluate while the arguments are refined
     assert refine(Max(x, oo)) is S.Infinity

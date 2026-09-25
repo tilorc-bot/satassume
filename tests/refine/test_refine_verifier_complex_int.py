@@ -348,8 +348,9 @@ _CORPUS_BETTER: dict[tuple[Any, Any], Any] = {
     (Abs(x**2), True): Abs(x)**2,
     (Abs(x - y), Q.positive(x) & Q.negative(y)): x - y,
 }
-# Worse (c): SymPy's own test_refine expectations, with needs tests
-# (odd_half_pi_sign_form, neg_one_power_exponent, pow_of_pow, floor_ceiling).
+# Worse (c) at the default switch: SymPy's own test_refine expectations, filed as needs
+# tests (odd_half_pi_sign_form, neg_one_power_exponent, pow_of_pow, floor_ceiling) and
+# met since phase 3 (ri/fixes); kept as a check.
 _CORPUS_SHORT = {
     "sqrt(1/x)", "(-1)**((-1)**x/2 - 1/2)", "(-1)**((-1)**x/2 + 1/2)", "(-1)**((-1)**x/2 + 5/2)",
     "(-1)**((-1)**x/2 - 7/2)", "(-1)**((-1)**x/2 - 9/2)", "cos(pi*n/2 + x)", "cos(pi*m/2 + pi*n + x)",
@@ -373,9 +374,6 @@ def test_reference_ask_matches_upstream_on_broad_corpus() -> None:
         assert_refines_like_sympy(expr, assumptions)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py",
-                           "SymPy's test_refine forms; also needs/test_default_neg_one_power_exponent.py, "
-                           "test_default_pow_of_pow.py, test_default_floor_ceiling.py")
 def test_reference_ask_matches_upstream_where_identities_falls_short() -> None:
     cases = [(e, a) for e, a in _SYMPY_MATCHING_CASES if str(e) in _CORPUS_SHORT]
     assert len(cases) >= len(_CORPUS_SHORT)
@@ -499,13 +497,11 @@ def test_reference_ask_quoted_rules() -> None:
             )
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_arg_of_zero.py", "arg(x) under Q.zero(x) is not nan")
 def test_reference_ask_quoted_arg_of_zero() -> None:
     with reference_ask():
         assert refine(arg(x), Q.zero(x)) is nan
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_infinite_arguments.py", "factorial(n) for n = oo is not oo")
 def test_reference_ask_quoted_factorial_of_infinity() -> None:
     with reference_ask():
         assert refine(factorial(n), Q.positive_infinite(n)) is oo
@@ -944,9 +940,9 @@ def test_minmax_oracle_adversarial() -> None:
         assert_refinement_valid(
             expr, assumptions, refine(expr, assumptions), values=values
         )
-    # handlers gives oo / -oo, handlers_identities x: the same value here.
-    assert refine(Min(x, y), Q.positive_infinite(x) & Q.positive_infinite(y)) in (oo, x)
-    assert refine(Max(x, y), Q.negative_infinite(x) & Q.negative_infinite(y)) in (-oo, x)
+    # handlers gives oo / -oo, handlers_identities x or y: the same value here.
+    assert refine(Min(x, y), Q.positive_infinite(x) & Q.positive_infinite(y)) in (oo, x, y)
+    assert refine(Max(x, y), Q.negative_infinite(x) & Q.negative_infinite(y)) in (-oo, x, y)
 
 
 def test_delta_oracle_adversarial() -> None:

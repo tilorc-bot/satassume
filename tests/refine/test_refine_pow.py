@@ -52,9 +52,13 @@ def test_nested_power_real_base_even_inner() -> None:
     assert refine(sqrt(x**4), Q.real(x)) == x**2
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_pow_of_pow.py", "sqrt(1/x) and (x**y)**z with even y are not rewritten")
-def test_nested_power_sqrt_reciprocal_and_even_inner() -> None:
+def test_nested_power_sqrt_reciprocal() -> None:
     assert refine(sqrt(1 / x), Q.positive(x)) == 1 / sqrt(x)
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_pow_of_pow.py",
+                           "(x**y)**z with even y is not rewritten when x may be 0 (wrong at x = 0, y < 0, z = oo)")
+def test_nested_power_even_inner() -> None:
     assert refine((x**y)**z, Q.real(x) & Q.even(y)) == Abs(x)**(y * z)
 
 
@@ -123,7 +127,6 @@ def test_pow_exp_delegation() -> None:
             == refine(exp(x), Q.even(x)))
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_neg_one_power_exponent.py", "(-1)**((-1)**x/2 + c) is not reduced for integer x")
 def test_pow_vendored_continuation() -> None:
     assert refine((-1)**((-1)**x / 2 - S.Half), Q.integer(x)) == (-1)**x
 

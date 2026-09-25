@@ -36,7 +36,6 @@ def test_arg_sign_known() -> None:
     assert refine(arg(x), Q.negative(x)) == pi
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_arg_of_zero.py", "arg(x) under Q.zero(x) is not nan")
 def test_arg_zero() -> None:
     assert refine(arg(x), Q.zero(x)) is nan
 

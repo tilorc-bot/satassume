@@ -58,19 +58,16 @@ def test_pow1() -> None:
     assert refine((-1)**(x + 3)) == (-1)**(x + 1)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_pow_of_pow.py", "sqrt(1/x) is not rewritten to 1/sqrt(x) for positive x")
 def test_pow1_sqrt_of_reciprocal() -> None:
     assert refine(sqrt(1/x), Q.positive(x)) == 1/sqrt(x)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_neg_one_power_exponent.py", "(-1)**((-1)**x/2 + c) is not reduced for integer x")
 def test_pow1_continuation() -> None:
     assert refine((-1)**((-1)**x/2 - S.Half), Q.integer(x)) == (-1)**x
     assert refine((-1)**((-1)**x/2 + S.Half), Q.integer(x)) == (-1)**(x + 1)
     assert refine((-1)**((-1)**x/2 + 5*S.Half), Q.integer(x)) == (-1)**(x + 1)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_neg_one_power_exponent.py", "(-1)**((-1)**x/2 + c) is not reduced for integer x")
 def test_pow2_continuation() -> None:
     assert refine((-1)**((-1)**x/2 - 7*S.Half), Q.integer(x)) == (-1)**(x + 1)
     assert refine((-1)**((-1)**x/2 - 9*S.Half), Q.integer(x)) == (-1)**x
@@ -329,7 +326,6 @@ def test_sin_cos() -> None:
     raises(TypeError, lambda: refine_sin_cos(x, Q.real(x)))
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
 def test_sin_cos_odd_half_pi_forms() -> None:
     n, m, k = Symbol('n'), Symbol('m'), Symbol('k')
     assert refine(cos(x + n*pi/2), Q.odd(n)) == ((-1)**((n + 1)/2)) * sin(x)
@@ -360,7 +356,6 @@ def test_floor_ceiling() -> None:
     assert refine(floor(x + y - z)) == floor (x + y - z)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_floor_ceiling.py", "floor/ceiling of an infinite argument or of a sum of floors is not simplified")
 def test_floor_ceiling_infinite_and_nested() -> None:
     assert refine(floor(x), Q.infinite(x)) == x
     assert refine(ceiling(x), Q.infinite(x)) == x
