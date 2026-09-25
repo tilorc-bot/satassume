@@ -47,7 +47,7 @@ ROWS = [
     (log(exp(x + I*t)), Q.real(x) & Q.real(t), None, "neither"),
     (log(x**n), Q.positive(x) & Q.real(n), n*log(x), "same"),
     (log(x**n), Q.nonnegative(x) & Q.positive(n), n*log(x), "same"),
-    (log(x**n), Q.negative(x) & Q.odd(n), n*log(-x) + I*pi, "different"),   # log(-x**n) + I*pi: ask cannot show (1 - n)/2 integer for odd n
+    (log(x**n), Q.negative(x) & Q.odd(n), n*log(-x) + I*pi, "same"),   # was log(-x**n) + I*pi: the bare log(x) row now comes last
     (log(x**(-2)), Q.real(x), None, "miss: the power form needs b != 0 or e > 0 (Abs(0**e) is oo, not zoo, for e < 0)"),
     (sqrt(x**(-2)), Q.nonzero(x), 1/Abs(x), "same"),
     (log(1/x), Q.extended_positive(x), -log(x), "extra: v3 asks Q.finite; at x = oo SymPy's log(1/oo) is zoo, -log(oo) is -oo"),

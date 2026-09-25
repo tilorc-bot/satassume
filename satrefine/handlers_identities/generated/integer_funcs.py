@@ -3,6 +3,8 @@
 
 A plain rule table: ``RULES`` rows are ``(lhs, rhs, hypothesis)``; each
 row was verified numerically at generation time (see ``_specialize``).
+The comment above a row is its derivation record (see ``_stages``): the
+identity row and profile it came from, the rows that fired, the asks used.
 """
 from sympy import *  # noqa: F401,F403
 from sympy import Q
@@ -13,16 +15,49 @@ from satrefine.handlers_identities._engine import rule_handler
 a, b, x = symbols('a b x')
 
 RULES = [
+    # round 1: from integer_funcs.FACTS[0] under Q.integer(x)
+    #   fired: integer_funcs.RULES[0], integer_funcs.FACTS[0]
+    #   asks: Q.finite(x), Q.integer(x)
     (frac(x), 0, Q.integer(x)),
+    # round 1: from integer_funcs.MOD_FACTS[0] under Q.positive(b)
+    #   fired: complex_parts.RULES[10], complex_parts.SPLITS[0], complex_parts.RULES[11], integer_funcs.MOD_FACTS[0]
+    #   asks: Q.nonzero(b), Q.odd(2*a/b), Q.negative(-1), Q.positive(1/b), Q.nonzero(2), Q.positive(2), Q.real(a), Q.positive(a), Q.negative(a)
     (Mod(a, b), b/2, Q.positive(b) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.MOD_FACTS[0] under Q.negative(b)
+    #   fired: complex_parts.RULES[11], complex_parts.SPLITS[0], complex_parts.RULES[10], integer_funcs.MOD_FACTS[0]
+    #   asks: Q.nonzero(b), Q.negative(b), Q.odd(2*a/b), Q.negative(-1), Q.odd(-1), Q.negative(1/b), Q.nonzero(2), Q.positive(2), Q.real(a), Q.positive(a), Q.negative(a)
     (Mod(a, b), b/2, Q.negative(b) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.MOD_FACTS[0] under Q.positive(a)
+    #   fired: complex_parts.RULES[10], complex_parts.SPLITS[0], complex_parts.RULES[11], integer_funcs.MOD_FACTS[0]
+    #   asks: Q.nonzero(b), Q.nonnegative(a), Q.odd(2*a/b), Q.negative(-1), Q.positive(a), Q.nonzero(2), Q.positive(2), Q.real(b), Q.positive(1/b), Q.negative(b), Q.odd(-1), Q.negative(1/b)
     (Mod(a, b), b/2, Q.nonzero(b) & Q.positive(a) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.MOD_FACTS[0] under Q.negative(a)
+    #   fired: complex_parts.RULES[11], complex_parts.SPLITS[0], complex_parts.RULES[10], integer_funcs.MOD_FACTS[0]
+    #   asks: Q.nonzero(b), Q.nonpositive(a), Q.odd(2*a/b), Q.negative(-1), Q.negative(a), Q.nonzero(2), Q.positive(2), Q.real(b), Q.positive(1/b), Q.negative(b), Q.odd(-1), Q.negative(1/b)
     (Mod(a, b), b/2, Q.negative(a) & Q.nonzero(b) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.REM_FACTS[0] under Q.positive(a)
+    #   fired: complex_parts.RULES[10], complex_parts.SPLITS[0], complex_parts.RULES[11], complex_parts.RULES[0], complex_parts.RULES[1], integer_funcs.REM_FACTS[0]
+    #   asks: Q.nonzero(b), Q.nonnegative(a), Q.odd(2*a/b), Q.negative(-1), Q.positive(a), Q.nonzero(2), Q.positive(2), Q.real(b), Q.positive(1/b), Q.negative(b), Q.odd(-1), Q.negative(1/b), Q.nonnegative(b), Q.nonpositive(b), Q.finite(b), Q.positive(b)
     (Rem(a, b), Abs(b)/2, Q.nonzero(b) & Q.positive(a) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.REM_FACTS[0] under Q.positive(a) & Q.positive(b)
+    #   fired: complex_parts.RULES[10], integer_funcs.REM_FACTS[0]
+    #   asks: Q.nonzero(b), Q.positive(b), Q.nonnegative(a), Q.odd(2*a/b), Q.negative(-1), Q.positive(a/b)
     (Rem(a, b), b/2, Q.positive(a) & Q.positive(b) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.REM_FACTS[0] under Q.negative(b) & Q.positive(a)
+    #   fired: complex_parts.RULES[11], integer_funcs.REM_FACTS[0]
+    #   asks: Q.nonzero(b), Q.nonnegative(a), Q.negative(b), Q.positive(a - b), Q.odd(2*a/b), Q.negative(-1), Q.odd(-1), Q.negative(a/b)
     (Rem(a, b), -b/2, Q.negative(b) & Q.positive(a) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.REM_FACTS[0] under Q.negative(a)
+    #   fired: complex_parts.RULES[11], complex_parts.SPLITS[0], complex_parts.RULES[10], complex_parts.RULES[0], complex_parts.RULES[1], integer_funcs.REM_FACTS[0]
+    #   asks: Q.nonzero(b), Q.nonpositive(a), Q.odd(2*a/b), Q.negative(-1), Q.negative(a), Q.nonzero(2), Q.positive(2), Q.real(b), Q.positive(1/b), Q.negative(b), Q.odd(-1), Q.negative(1/b), Q.nonnegative(b), Q.nonpositive(b), Q.finite(b), Q.positive(b)
     (Rem(a, b), -Abs(b)/2, Q.negative(a) & Q.nonzero(b) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.REM_FACTS[0] under Q.negative(a) & Q.positive(b)
+    #   fired: complex_parts.RULES[11], integer_funcs.REM_FACTS[0]
+    #   asks: Q.nonzero(b), Q.nonpositive(a), Q.positive(b), Q.positive(-a + b), Q.odd(2*a/b), Q.negative(-1), Q.negative(a/b)
     (Rem(a, b), -b/2, Q.negative(a) & Q.positive(b) & Q.odd(2*a/b)),
+    # round 1: from integer_funcs.REM_FACTS[0] under Q.negative(a) & Q.negative(b)
+    #   fired: complex_parts.RULES[10], integer_funcs.REM_FACTS[0]
+    #   asks: Q.nonzero(b), Q.nonpositive(a), Q.negative(b), Q.odd(2*a/b), Q.negative(-1), Q.odd(-1), Q.positive(a/b)
     (Rem(a, b), b/2, Q.negative(a) & Q.negative(b) & Q.odd(2*a/b)),
 ]
 

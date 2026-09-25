@@ -58,19 +58,31 @@ and products with a zero and an infinite factor (``0*oo``) become ``0`` or
 """
 from __future__ import annotations
 
-from sympy import Abs, I, Q, S, arg, conjugate, cos, exp, floor, im, log, pi, re, sign, sin, symbols, true, zoo
-from sympy.core import Mul, Pow
+from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
+from sympy.core import Mul
 
 from .._upstream import handlers_dict
 from ._engine import Row, derive, identity_handler, part, rule_handler
+from ._simple import register_ranges
 from ._tables import ZERO, chain, node_measure
-from .power_exp_log import EXP_FORMS
+from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
-z, b, e, p, r, w, a, n = symbols('z b e p r w a n')
+z, b, e, p, r, w, a, n, y = symbols('z b e p r w a n y')
 c = part('c', Q.imaginary)   # the imaginary factors of a product
 s = part('s', Q.real)        # the real factors of a product
 
-FACTS: list[Row] = [   # (lhs, rhs, domain)
+DEFINITIONS: list[Row] = [   # (lhs, rhs, domain): stage 0 definitions through sign
+    (Abs(z), z/sign(z),        ~Q.zero(z) & Q.finite(z)),   # sign z = z/|z| (Abs(zoo) is oo)
+    (arg(z), -I*log(sign(z)),  ~Q.zero(z)),                 # sign z = exp(I*arg z), arg in (-pi, pi]
+]
+# With the sign rows below they give Abs and arg of positive, negative and imaginary
+# arguments.  re/im of conjugates, sums, exponentials and logarithms and |conjugate w|
+# are evaluated by SymPy when the node is built and need no row; re/im of a real power
+# follow from the real-argument rows (ask proves b**n real).  re, im and Abs of a real,
+# imaginary or signed argument stay stated: a definition through conjugate would lose
+# them for products (SymPy distributes conjugate(x*y) before Q.real(x*y) can apply).
+
+FACTS: list[Row] = DEFINITIONS + [   # (lhs, rhs, domain)
     (Abs(exp(z), evaluate=False), exp(re(z)),                          true),   # |exp z| = exp(re z) (SymPy evaluates the lhs)
     (arg(exp(z)),       im(z) + 2*pi*floor(S.Half - im(z)/(2*pi)),     true),   # arg(exp z) = im z wrapped onto (-pi, pi]
     (arg(conjugate(w)), -arg(w) + 2*pi*floor(S.Half + arg(w)/(2*pi)),  true),   # arg is odd off the negative axis (nan at 0 on both sides)
@@ -86,36 +98,18 @@ _IM_POSITIVE = Q.positive(im(a)) | Q.positive(-I*a)   # the two spellings of "on
 _IM_NEGATIVE = Q.negative(im(a)) | Q.negative(-I*a)
 
 RULES: list[Row] = [   # (lhs, rhs, hypothesis)
-    # Abs
+    # Abs, re, im under sign facts
     (Abs(a), a,      Q.nonnegative(a)),                                  # |a| = a for a >= 0
     (Abs(a), -a,     Q.nonpositive(a)),                                  # |a| = -a for a <= 0
-    (Abs(a), -I*a,   Q.imaginary(a) & _IM_POSITIVE),                     # |i*t| = t for t > 0
-    (Abs(a), I*a,    Q.imaginary(a) & _IM_NEGATIVE),                     # |i*t| = -t for t < 0
-    (Abs(conjugate(w)), Abs(w), true),                                   # |conjugate w| = |w|
-    # re / im
     (re(a), a,       Q.real(a)),                                         # re a = a, real a
     (im(a), S.Zero,  Q.real(a)),                                         # im a = 0, real a
     (re(a), S.Zero,  Q.imaginary(a)),                                    # re a = 0, imaginary a
     (im(a), -I*a,    Q.imaginary(a)),                                    # im(i*t) = t
-    (re(conjugate(w)), re(w),   true),                                   # re conjugate = re
-    (im(conjugate(w)), -im(w),  true),                                   # im conjugate = -im
-    (re(exp(z)), exp(re(z))*cos(im(z)), true),                           # re(exp z) = exp(re z) cos(im z)
-    (im(exp(z)), exp(re(z))*sin(im(z)), true),                           # im(exp z) = exp(re z) sin(im z)
-    (re(log(w)), log(Abs(w)), true),                                     # re(log w) = log|w|
-    (im(log(w)), arg(w),      true),                                     # im(log w) = arg w
-    (re(a + b), re(a) + re(b), true),                                    # re is additive
-    (im(a + b), im(a) + im(b), true),                                    # im is additive
+    # re / im are linear over the reals (these hold at infinity, where the definitions need a finite argument)
     (re(s*w), s*re(w), true),                                            # a real factor comes out of re
     (im(s*w), s*im(w), true),                                            # ... and of im
     (re(c*w), -I*c*re(I*w), true),                                       # re(c*w) = (-i*c)*re(i*w), imaginary c
     (im(c*w), -I*c*im(I*w), true),                                       # im(c*w) = (-i*c)*im(i*w), imaginary c
-    (re(b**n), b**n,   Q.real(b) & Q.integer(n) & (Q.nonnegative(n) | ~Q.zero(b))),   # b**n is real (0**n is zoo for n < 0)
-    (im(b**n), S.Zero, Q.real(b) & Q.integer(n) & (Q.nonnegative(n) | ~Q.zero(b))),
-    # arg
-    (arg(a), S.Zero, Q.positive(a)),                                     # arg a = 0 for a > 0
-    (arg(a), pi,     Q.negative(a)),                                     # arg a = pi for a < 0
-    (arg(a), pi/2,   Q.imaginary(a) & _IM_POSITIVE),                     # arg(i*t) = pi/2 for t > 0
-    (arg(a), -pi/2,  Q.imaginary(a) & _IM_NEGATIVE),                     # arg(i*t) = -pi/2 for t < 0
     # sign
     (sign(a), S.One,         Q.positive(a)),                             # sign a = 1 for a > 0
     (sign(a), S.NegativeOne, Q.negative(a)),                             # sign a = -1 for a < 0
@@ -135,12 +129,25 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     (a*zoo, zoo, Q.finite(a) & ~Q.zero(a)),                              # zoo absorbs a nonzero finite factor
 ]
 
-_PRODUCT_FORMS = [row for row in EXP_FORMS if isinstance(row[0], Mul)]
-IDENTITIES: list[Row] = (derive([row for row in FACTS if isinstance(row[0], Abs)], EXP_FORMS)
-                         + derive([row for row in FACTS if isinstance(row[0], arg)], _PRODUCT_FORMS))
+_OFF_NEGATIVE_AXIS = ~Q.extended_negative(y) | Q.nonnegative(re(y)) | ~Q.zero(im(y))
+
+RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)
+    (arg(y), Interval.open(-pi, pi),  _OFF_NEGATIVE_AXIS),   # arg is pi only on the negative axis (and at -oo)
+    (arg(y), Interval.Lopen(-pi, pi), true),                 # the principal range
+]
+register_ranges(RANGES)
+
+_PRODUCT_FORMS = [row for row in _EXP_FORMS if isinstance(row[0], Mul)]
+_OTHER_FACTS = FACTS[len(DEFINITIONS):]
+IDENTITIES: list[Row] = (derive([row for row in _OTHER_FACTS if isinstance(row[0], Abs)], _EXP_FORMS)
+                         + derive([row for row in _OTHER_FACTS if isinstance(row[0], arg)], _PRODUCT_FORMS))
 
 _rules = rule_handler([ZERO] + RULES)
 _rules_no_zero = rule_handler(RULES)          # arg(0) is nan: no zero row for arg
+
+
+def _definition(head, **kw):
+    return identity_handler([row for row in DEFINITIONS if row[0].func is head], **kw)
 
 
 def _identity(head, **kw):
@@ -153,15 +160,14 @@ def _splits(head):
     return identity_handler(rows, measure=node_measure((head,)))
 
 
-BASE: list[Row] = [row for row in RULES if row[0].func in (re, im, arg, Abs)]
-"""The rows the other families' bookkeeping reduces through."""
-
 # the splits get a handler of their own so they can fire inside a derived row's candidate
 refine_Abs = chain(_rules, identity_handler([row for row in IDENTITIES if row[0].func is Abs],
-                                            measure=node_measure((Abs, re))))
+                                            measure=node_measure((Abs, re))),
+                   _definition(Abs, opaque=(sign,)))
 refine_re = _rules
 refine_im = _rules
-refine_arg = chain(_rules_no_zero, _identity(arg, opaque=(floor, im)))   # arg is the result, not bookkeeping
+refine_arg = chain(_rules_no_zero, _identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
+                   _definition(arg, opaque=(sign,)))
 refine_sign = chain(_rules, _splits(sign))
 refine_conjugate = _rules
 refine_Mul = rule_handler([row for row in RULES if isinstance(row[0], Mul)])
