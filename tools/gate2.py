@@ -22,6 +22,13 @@ Without ``--freeze`` it replays the frozen file against CHECKOUT and exits
 1 if any answer differs from the frozen one (in any group; the in-scope
 count is printed separately), 0 otherwise.
 
+``--allow-more-definite`` (the acceptance rule of the fact-lattice plan):
+an answer frozen as None that is True/False now is *more definite*: it is
+counted and listed (up to ``--show``) but does not fail the gate.  A
+contradiction (the other definite value), a less definite answer, and
+any change to or from ``"error:ValueError"`` still fail.  Without the flag
+every change fails (the default is unchanged).
+
 Defaults: ``--frozen`` is ``$SATASSUME_GATE2`` or
 ``~/.cache/satassume/gate2-frozen.jsonl``; ``--sympy`` is
 ``$SATASSUME_SYMPY`` or ``/home/tilo/sympy``; ``--python`` is the running
@@ -89,6 +96,8 @@ def main():
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--timeout", type=float, default=240.0)
     ap.add_argument("--show", type=int, default=10, help="print up to K changed answers")
+    ap.add_argument("--allow-more-definite", action="store_true",
+                    help="more definite answers (None -> True/False) are listed, not failures")
     args = ap.parse_args()
     if not os.path.isdir(os.path.join(args.checkout, "satassume")):
         raise SystemExit(f"{args.checkout}: no satassume package there")
@@ -115,16 +124,27 @@ def main():
     full = replay(args.checkout, args.frozen, args)
     res = full["results"]
     changed = collections.Counter()
+    more = collections.Counter()
     total = collections.Counter(r["group"] for r in frozen)
     shown = 0
     for i, (want, got) in enumerate(zip(frozen, res)):
         if got["answer"] != want["answer"]:
-            changed[want["group"]] += 1
+            is_more = want["answer"] is None and got["answer"] in (True, False)
+            if args.allow_more_definite and is_more:
+                more[want["group"]] += 1
+                label = "MORE DEFINITE"
+            else:
+                changed[want["group"]] += 1
+                label = "CHANGED"
             if shown < args.show:
                 shown += 1
-                print(f"CHANGED #{i} [{want['group']}] {want['prop']} | {want['assum']}: "
+                print(f"{label} #{i} [{want['group']}] {want['prop']} | {want['assum']}: "
                       f"frozen {want['answer']} now {got['answer']} (sympy {want['sympy']})")
     n_changed = sum(changed.values())
+    if args.allow_more_definite:
+        n_more = sum(more.values())
+        print(f"gate2: {n_more} more definite ({more['in-scope']} in scope)"
+              + (f" {dict(more)}" if n_more else ""))
     print(f"gate2: {len(frozen)} records ({total['in-scope']} in scope); changed {n_changed} "
           f"({changed['in-scope']} in scope){' ' + str(dict(changed)) if n_changed else ''}; "
           + ("FAIL" if n_changed else "answers match")
