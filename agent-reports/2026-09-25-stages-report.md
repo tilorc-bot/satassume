@@ -3,8 +3,9 @@
 - **Date:** 2026-09-25
 - **Branch:** `ri/stages`, from `refine-identities` f686dcc. Not merged; the
   coordinator merges.
-- **Status:** interim. Section 1 is the go/no-go test. Later sections are
-  added as the work lands.
+- **Status:** handed off at the coordinator's request (context size);
+  see `agent-reports/stages-handoff.md` for the next steps. Section 1 is
+  the go/no-go test.
 
 ## 1. Interim: the cheap test (stage 1 from a draft stage 0)
 
@@ -222,3 +223,42 @@ therefore fire where v3 expects unchanged, which the gate forbids unless
 the trig rows are restricted the same way. I did not land stage 4. The
 trig family's docstring already says the exponential-form derivation
 "produces quotient forms that are not v3's", and the measurement agrees.
+
+## 5. Gates at b44342b (`/home/tilo/fable-rewrite/.claude/gates/stages-b44342b`, base `int-f686dcc`)
+
+- **Suite:** 2,353 passed, 0 failed (the baseline: 2,350 passed, 2 failed;
+  both failures were the needs tests fixed here).
+- **Scoreboard, live:** identical per family to the baseline.
+- **Scoreboard, generated:** identical except power_exp_log, which goes
+  from 98 same / 3 other to 100 same / 1 other (the bare `log(x)` row now
+  comes last). Wrong and crash stay 0, and unchanged-as-required stays at
+  629.
+- **Differential** (seeds 2, 3, 7, both modes): 0 numerically different
+  results; the unsound and crash lines are unchanged from the baseline.
+  Two form differences moved between "same" and "different but
+  numerically equal", in seeds 3 and 7.
+
+The commits after b44342b (6ae3602, the merge c8dab08, and 04b9b1e) have
+not been through a gate run. Their targeted tests pass. See the handoff.
+
+## 6. Metrics
+
+| | f686dcc | now |
+| --- | --- | --- |
+| stage 0 rows (every stated table once, plus `_simple.BOUNDS` entries before) | 180 | 166 |
+| complex_parts stated rows | 45 | 32 (5 facts, 24 rules, 2 ranges, 1 split) |
+| generated (derived) rules: complex_parts / power_exp_log / integer_funcs / inverse | 36 / 17 / 11 / 7 | 40 / 17 / 11 / 7 |
+| function-specific lines in the engine (approximate, lines naming a function other than their subject) | about 27 | about 14 |
+| family code lines | 472 | 462 at b44342b (complex_parts 81, inverse 53 after the compact imports) |
+| engine code lines | 1,235 | 1,404 at b44342b (`_stages` 116, `_dispatch` 197) |
+| generation time, one round (s): integer_funcs / complex_parts / power_exp_log / inverse | 218 / 315 / 318 / 27 | 162 / 207 / 269 / 28; round 2: 166 / 230 / 283 / skipped |
+
+The gate summary at b44342b shows family lines 528. That count came
+from `ruff --fix` spreading two import blocks to one name per line;
+6ae3602 restores the compact form.
+
+## 7. Commits on `ri/stages`
+
+746d4ad, 5134182, 0fb75d5, 1813eb1, 27274dc, b44342b, 6ae3602, c8dab08
+(merge of `origin/refine-identities` 4810c71), 04b9b1e, and the handoff
+commit.
