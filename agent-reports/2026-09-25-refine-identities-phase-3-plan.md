@@ -60,7 +60,7 @@ Every change must keep the battery and differential outputs identical, or explai
 **Not worth doing:** a cache of `ask` answers shared across calls gains about 0 with the satassume backend, and it brings back the order-dependence risk raised in issue #8.
 
 **Rules for this track:**
-- **A/B timing:** pinned (`taskset -c <fast cpu>`; CPUs 4–7 are slow cores), interleaved (reference, candidate, reference, candidate), best of 2 or more, at a 1-minute load under about 8.
+- **A/B timing:** pinned (`taskset -c <fast cpu>`; fast CPUs are 0, 1, 10 and 11; 2–5 are slow and 6–9 medium, per `cpu_capacity`), interleaved (reference, candidate, reference, candidate), best of 2 or more, at a 1-minute load under about 8.
 - **Report:** gains are given on the battery with the satassume backend, and on one differential seed.
 - **Keep or drop:** keep a change only if it shows at least 3%, or if it simplifies the code at no cost. If candidates stack less than their individual gains suggest, measure them together again.
 - **Tooling:** `tools/refine_fuzz.py` currently forces the combined backend, so the differential ignores `SATREFINE_BACKEND`. Fix that first, since track A and track C both need differential runs with the satassume backend.
