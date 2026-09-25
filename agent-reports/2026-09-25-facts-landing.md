@@ -166,16 +166,27 @@ hand; none contradicted):
 | stream # | query | assumptions | now | SymPy |
 |---|---|---|---|---|
 | 4395 | `zero(x)` | `eq(x, pi/2)` | False | None |
-| 4396, 4398 | `extended_real(x)`, `real(x)` | `eq(x, pi/2)` | True | None |
-| 4400, 4402 | `extended_real(x)`, `real(x)` | `eq(x, 2)` | True | None |
+| 4396 | `extended_real(x)` | `eq(x, pi/2)` | True | None |
+| 4398 | `real(x)` | `eq(x, pi/2)` | True | None |
+| 4400 | `extended_real(x)` | `eq(x, 2)` | True | None |
 | 4401 | `zero(sin(x))` | `eq(x, 2)` | False | None |
-| 12043, 12102 and 4 more | `eq(n, 1)`, `eq(n - 1, 1)`, ... | `~integer(n)` | False | False (same) |
-| 12154, 12157 | `eq(n, k)`, `eq(k, n - 1)` | `integer(n) & nonnegative(n) & gt(k, n)` | False | None |
-| 12178 | `eq(n, k)` | `integer(n) & negative(n) & ~integer(k)` | False | raises (assumptions consistent: `n = -1, k = 1/2`) |
+| 4402 | `real(x)` | `eq(x, 2)` | True | None |
+| 12043 | `eq(n, 1)` | `~integer(n)` | False | False |
+| 12102 | `eq(n - 1, 1)` | `~integer(n)` | False | False |
+| 12154 | `eq(n, k)` | `integer(n) & nonnegative(n) & gt(k, n)` | False | None |
+| 12157 | `eq(k, n - 1)` | same | False | None |
+| 12176 | `eq(k, 1)` | `integer(n) & negative(n) & ~integer(k)` | False | False |
+| 12178 | `eq(n, k)` | same | False | ValueError (the assumptions are consistent: `n = -1, k = 1/2`) |
+| 12274 | `eq(k, 1)` | `integer(x) & negative(x) & ~integer(k)` | False | False |
+| 12300 | `eq(x, 1)` | `~integer(x)` | False | False |
+| 12547 | `eq(k, 1)` | `integer(n) & nonnegative(n) & gt(k, n) & ~integer(k)` | False | False |
 | gate2 | `prime(x)` | `prime(y) & eq(x, y)` | True | None |
 
-(15 stream answers, 15 distinct; the full list with SymPy's answers is in
-the stage 2 report.)
+The None answers from SymPy were checked by hand, all correct. New
+ValueErrors only where the assumptions are inconsistent under equality
+(`eq(x, y) & prime(x) & noninteger(y)`, `eq(x, 2) & odd(x)`: `main` and
+SymPy answer `real(x)` True there); none on either gate.
+
 
 **Speed** (Pi, landing side, `ab.py --rounds 3` against `main` `7068e57`):
 ref 2.752 s, cand 3.084 s, **+12.1%**. Being profiled and cut by the
