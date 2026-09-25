@@ -94,6 +94,15 @@ def test_atan2_of_power_does_not_exhaust_the_firing_cap_live():
         assert refine(expr, Q.negative(y) & Q.nonpositive(n)) == expr
 
 
+def test_atan2_of_self_power_does_not_exhaust_the_firing_cap_live():
+    """Differential seed 3, live mode: the same crash with ``x**x``."""
+    from sympy import sqrt
+    k = symbols('k')
+    expr = atan2(sqrt(z), k**k)
+    with _dispatch.live():
+        assert refine(expr, Q.even(z) & Q.integer(k) & Q.negative(z)) == expr
+
+
 def test_repeated_work_is_done_once():
     F = Function('F')
     calls = []

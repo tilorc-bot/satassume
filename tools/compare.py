@@ -11,7 +11,9 @@ Each new-system record (``kind`` ``ask`` or ``rec``) is classified with
 * **out of scope**: ``relation``, ``matrix`` (matrix predicate or non-scalar
   argument), ``custom`` predicate, ``other`` (not a Boolean proposition).
   The engine returns None for these by rule; they are reported for
-  information only.
+  information only.  Relations are answered once theory adapters are
+  present (``satassume.relations``); ``--relations-only`` replays just
+  those records and shows the disagreements.
 
 Old-system records (``kind == "old"``, ``expr.is_<fact>`` cache misses) are
 replayed through ``Engine.is_`` and reported as "out of scope
@@ -171,12 +173,14 @@ def main(argv=None):
     ap.add_argument("--skip", type=int, default=0, help="skip the first N records")
     ap.add_argument("--show", type=int, default=15, help="print up to K records per reported category")
     ap.add_argument("--slow-ms", type=float, default=100.0, help="print records slower than this")
+    ap.add_argument("--relations-only", action="store_true",
+                    help="replay only relational new-system records (theory solvers)")
     ap.add_argument("--in-scope-only", action="store_true",
                     help="replay only in-scope new-system records")
     ap.add_argument("--time-sympy", action="store_true",
                     help="also time sympy.ask on every in-scope record")
     ap.add_argument("--fresh-cache", action="store_true",
-                    help="use a private cache instead of the objects' _assumptions dicts")
+                    help="a fresh cache for this run (the default engine's cache is also engine-owned)")
     ap.add_argument("--dump-times", metavar="FILE",
                     help="write per-record timings (satassume ms, sympy ms, query) to FILE")
     args = ap.parse_args(argv)
@@ -204,7 +208,7 @@ def main(argv=None):
             kind = rec["kind"]
             want = rec["value"]
             if kind == "old":
-                if args.in_scope_only:
+                if args.in_scope_only or args.relations_only:
                     continue
                 group = OLD
                 try:
@@ -229,6 +233,8 @@ def main(argv=None):
                     continue
                 group = IN_SCOPE if cat is None else "out:" + cat
                 if args.in_scope_only and group != IN_SCOPE:
+                    continue
+                if args.relations_only and group != "out:relation":
                     continue
                 desc = f"{prop} | {assum}"
                 if args.time_sympy:
@@ -258,7 +264,8 @@ def main(argv=None):
             cat = classify(got, want)
             stats[group][cat] += 1
             key = (group, cat)
-            if cat in ("wrong", "none", "error", "no_error") and group == IN_SCOPE \
+            if cat in ("wrong", "none", "error", "no_error") \
+                    and (group == IN_SCOPE or args.relations_only) \
                     and shown[key] < args.show:
                 shown[key] += 1
                 print(f"[{cat}] {group}: {desc}  sympy={want} satassume={got}")
