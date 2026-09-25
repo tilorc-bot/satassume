@@ -5,8 +5,8 @@
 A row is ``(lhs, rhs, hypothesis)`` or ``(lhs, rhs, hypothesis, unless)``:
 it fires when the hypothesis is provable through ``_upstream.ask`` and the
 ``unless`` condition is not.  The rules are those stated in
-``handlers_v3/matrices.py`` (356 lines), in **30 rows**: Transpose 5,
-Inverse 4, Determinant 2, Trace 1, MatAdd 3, HadamardProduct 1, MatMul 11,
+``handlers_v3/matrices.py`` (356 lines), in **32 rows**: Transpose 5,
+Inverse 4, Determinant 2, Trace 1, MatAdd 4, HadamardProduct 1, MatMul 12,
 MatrixElement 3.
 
 Pattern forms (requested in
@@ -54,20 +54,26 @@ Not expressible as rows:
   symmetric (``X + Y*X``).
 * The canonical form v3 falls back to when no rule fires
   (``MatAdd``/``MatMul`` ``doit(deep=False)``) is structural, not a rule;
-  two instances are rows (``A - A -> 0`` and ``A*A -> A**2``), which is what
-  refining ``X - X.T`` and ``X.T*X`` under ``Q.symmetric(X)`` needs.
-* ``A[i, j] -> A[j, i]`` for symmetric ``A`` in a canonical index order
-  (the vendored rule v3 delegates to): the order is a property of the
-  printed form, not a hypothesis; the row orients by ``Q.gt(i, j)``, which
-  decides numeric indices and leaves symbolic ones.
+  three instances are rows (``A - A -> 0``, ``A*A -> A**2`` and scalars
+  to the front, ``c*Z -> c*Z`` rebuilt canonically), which is what refining
+  ``X - X.T``, ``X.T*X`` under ``Q.symmetric(X)`` and ``X.T*2*X`` under
+  ``Q.orthogonal(X)`` needs.
+
+``A[i, j] -> A[j, i]`` for symmetric ``A`` goes to SymPy's canonical index
+order (the vendored rule v3 delegates to).  The order is a property of the
+form, which ``ask`` cannot decide, so the row's hypothesis carries
+:class:`_SwappedOrder`, a condition that evaluates itself once the indices
+are bound (phase 3, 2026-09-25; before, the row oriented by ``Q.gt(i, j)``
+and left symbolic indices).
 Checked (adversarial pass, 2026-09-24): 0x0, 1x1, 2x2, 3x3 and symbolic
 shapes; ``det`` of a 0x0 zero matrix (refused); non-square, negated, scaled,
 summed and longer-palindrome ``Transpose`` arguments (refused); ``Inverse``
 of ``-X``, ``2*X``, ``X**2``, ``X.T``, ``Adjoint(X)`` and of products
 under orthogonal/unitary/real facts (the orthogonal rows first, the
 ``unless`` guards hold); runs inside longer ``MatMul`` with scalars;
-duplicate atoms in ``MatAdd``/``HadamardProduct`` (the rest drops every
-copy of the atom, harmless for the zero rows: the copies are zero too);
+duplicate atoms in ``MatAdd``/``HadamardProduct`` (the rest keeps the
+other copies: the matcher removes the bound term by position, 2026-09-25,
+B11; before it dropped every copy, and ``HadamardProduct(X, X)`` crashed);
 ``MatrixElement`` with negative indices that wrap onto the diagonal
 (``X1[0, -1]``, ``X3[0, -3]`` refused; the symmetric swap is valid under
 wrapping); plus ``tools/refine_differential.py`` seeds 2, 3, 7.  Found
@@ -80,6 +86,8 @@ from __future__ import annotations
 from sympy import (Adjoint, Determinant, HadamardProduct, Identity, Inverse,
                    MatAdd, MatMul, MatrixSymbol, Q, S, Trace, Transpose,
                    ZeroMatrix, symbols)
+from sympy import Symbol
+from sympy.logic.boolalg import BooleanFunction
 from sympy.matrices.expressions.matexpr import MatrixElement
 
 from .._upstream import handlers_dict
@@ -93,6 +101,31 @@ N = MatrixSymbol('N', p, m)     # for N.T*M*N
 Z = MatrixSymbol('Z', m, q)     # general shape
 R = MatrixSymbol('R', m, q)
 W = MatrixSymbol('W', q, s)     # a right neighbour of Z
+
+class _Index(Symbol):
+    """An index variable of the symmetric-swap row: :class:`_SwappedOrder` of
+    two of these stays unevaluated, so the row's hypothesis is decided only
+    once the indices are bound."""
+
+
+class _SwappedOrder(BooleanFunction):
+    """True when ``A[i, j]`` is out of SymPy's canonical index order and
+    ``A[j, i]`` is in it (SymPy's ``refine_matrixelement``: keep ``A[i, j]``
+    when ``i - j`` has a minus sign to extract).  The order is a property of
+    the form, not of the values, so ``ask`` cannot decide it; this evaluates
+    it on construction, i.e. when the row's binding is substituted.  It asks
+    for both directions, so a pair of forms both reading as unsigned (none is
+    known) cannot swap back and forth."""
+
+    @classmethod
+    def eval(cls, i, j):
+        if isinstance(i, _Index) or isinstance(j, _Index):
+            return None
+        d = i - j
+        return S.true if not d.could_extract_minus_sign() and (-d).could_extract_minus_sign() else S.false
+
+
+ii, jj = _Index('i'), _Index('j')
 
 TRANSPOSE = [
     # The transpose of a zero matrix is the zero matrix of the transposed shape.
@@ -141,10 +174,9 @@ MATADD = [
     (Z + R, R, Q.zero(Z)),
     # Canonical form: A - A = 0 (refining X - X.T under Q.symmetric(X) leaves -X + X).
     (MatAdd(Z, -Z), ZeroMatrix(m, q), S.true),
-    # Canonical form: a one-term sum is its term (the zero case first, since
-    # nothing refines a zero matrix symbol on its own).
+    # A one-term sum of a zero matrix is the zero matrix (Z + R needs a rest;
+    # a one-term sum is otherwise kept, as the handlers package keeps it).
     (MatAdd(Z), ZeroMatrix(m, q), Q.zero(Z)),
-    (MatAdd(Z), Z, S.true),
 ]
 
 HADAMARD = [
@@ -171,6 +203,10 @@ MATMUL = [
     (MatMul(A, Inverse(A)), Identity(m), Q.invertible(A)),
     # Canonical form: A*A = A**2, written MatMul(A, A) since A*A is built as A**2 (refining X.T*X under Q.symmetric(X) leaves X*X).
     (MatMul(A, A), A**2, S.true),
+    # Canonical form: scalar factors in front and combined (MatMul(X, 2, Y) ->
+    # 2*X*Y; the c*Z form rebuilds its right side canonically), so a scalar
+    # between factors no longer separates a cancelling pair.
+    (c*Z, c*Z, S.true),
 ]
 
 MATRIXELEMENT = [
@@ -183,9 +219,9 @@ MATRIXELEMENT = [
      Q.diagonal(A) & (Q.ne(i, j) | Q.nonzero(i - j))
      & ((Q.nonnegative(i) & Q.nonnegative(j)) | (Q.negative(i) & Q.negative(j))
         | (Q.nonzero(i - j - m) & Q.nonzero(i - j + m)))),
-    # A symmetric matrix's elements A[i, j] = A[j, i], oriented to the smaller
-    # first index where the order is provable.
-    (MatrixElement(A, i, j), MatrixElement(A, j, i), Q.symmetric(A) & Q.gt(i, j)),
+    # A symmetric matrix's elements A[i, j] = A[j, i], oriented to SymPy's
+    # canonical index order (a structural condition, see _SwappedOrder).
+    (MatrixElement(A, ii, jj), MatrixElement(A, jj, ii), Q.symmetric(A) & _SwappedOrder(ii, jj)),
 ]
 
 RULES: list[tuple] = (TRANSPOSE + INVERSE + DETERMINANT + TRACE + MATADD

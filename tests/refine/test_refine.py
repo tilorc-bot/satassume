@@ -261,7 +261,6 @@ def test_matrixelement() -> None:
     assert refine(x[j, i], Q.symmetric(x)) == x[j, i]
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matrixelement_index_order.py", "x[i, j] under Q.symmetric(x) is not swapped to x[j, i]")
 def test_matrixelement_symbolic_swap() -> None:
     x = MatrixSymbol('x', 3, 3)
     i = Symbol('i', positive = True)

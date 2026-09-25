@@ -36,7 +36,6 @@ def test_all_zero_collapses_to_zero_matrix() -> None:
     assert refine(MatAdd(A, B), Q.zero(A) & Q.zero(B)) == ZeroMatrix(2, 3)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matadd_single_term.py", "refine(MatAdd(X), ...) raises TypeError")
 def test_single_term_sum() -> None:
     # ``MatAdd(X)`` is a one-argument MatAdd, not ``X``.
     assert refine(MatAdd(X), Q.zero(X)) == ZeroMatrix(2, 2)
@@ -62,7 +61,6 @@ def test_unmet_assumption_unchanged() -> None:
     assert refine(MatAdd(X, Y), True) == MatAdd(X, Y)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matadd_single_term.py", "refine(MatAdd(X), ...) raises TypeError")
 def test_none_answers_single_term_unchanged() -> None:
     with use_ask(stub_ask({})):
         assert refine(MatAdd(X), Q.zero(X)) == MatAdd(X)

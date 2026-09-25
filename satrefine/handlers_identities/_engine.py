@@ -502,8 +502,8 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
                 rest = others[0] if len(others) == 1 else MatMul(*others)
                 nb = _bind(b, scalars[0], f)
                 nb = _bind_matrix(nb, matrices[0], rest) if nb is not None else None
-                if nb is not None:
-                    yield nb
+                if nb is not None:     # the right side in canonical form (scalars in front, combined)
+                    yield {**nb, REBUILD: (lambda r: r.doit(deep=False) if isinstance(r, MatrixExpr) else r)}
             return
         if not scalars and isinstance(target, MatMul):                    # a run of adjacent factors
             k = len(matrices)

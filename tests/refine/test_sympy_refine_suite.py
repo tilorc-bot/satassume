@@ -22,7 +22,6 @@ from sympy.assumptions.tests.test_refine import *  # noqa: E402,F401,F403
 for _name, _topic, _reason in [
     ("test_pow1", "pow_of_pow", "sqrt(1/x) for positive x, and (-1)**((-1)**x/2 + c), see also needs/test_default_neg_one_power_exponent.py"),
     ("test_pow2", "neg_one_power_exponent", "(-1)**((-1)**x/2 + c) is not reduced for integer x"),
-    ("test_matrixelement", "matrixelement_index_order", "x[i, j] under Q.symmetric(x) is not swapped to x[j, i]"),
     ("test_sin_cos", "odd_half_pi_sign_form", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)"),
     ("test_floor_ceiling", "floor_ceiling", "floor/ceiling of an infinite argument or of a sum of floors is not simplified"),
 ]:
