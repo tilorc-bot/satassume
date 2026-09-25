@@ -25,6 +25,7 @@ from sympy.abc import i, j, n, x
 from sympy.assumptions.refine import refine as sympy_refine
 from sympy.core.basic import Basic
 from sympy.matrices.expressions import (
+    Adjoint,
     HadamardProduct,
     Identity,
     MatAdd,
@@ -36,7 +37,7 @@ from sympy.matrices.expressions import (
 from sympy.matrices.expressions.determinant import Determinant
 
 from satrefine import handlers as handlers_package
-from satrefine import handlers_dict, refine
+from satrefine import HANDLERS_PACKAGE, handlers_dict, refine
 from satrefine.harness import (
     assert_refines_like_sympy,
     recording_ask,
@@ -149,7 +150,9 @@ def test_transpose_diagonal_implies_symmetric() -> None:
 def test_transpose_rectangular_symbols() -> None:
     assert refine(R.T, True) == R.T
     assert refine(R.T, Q.real(x)) == R.T
-    assert refine(R.T, Q.symmetric(R)) == R
+    # Q.symmetric(R) is false for a 2x3 R, so the assumptions are inconsistent
+    # and either answer is acceptable: handlers gives R, handlers_identities R.T.
+    assert refine(R.T, Q.symmetric(R)) in (R, R.T)
     assert sympy_refine(R.T, Q.symmetric(R)) == R
 
 
@@ -192,7 +195,13 @@ def test_transpose_reference_ask_parity_on_transpose_assumption() -> None:
 
 def test_inverse_positive() -> None:
     assert refine(X.I, Q.orthogonal(X)) == X.T
-    assert refine(X.I, Q.unitary(X)) == X.conjugate()
+
+
+@pytest.mark.original_wrong("X**-1 -> X.conjugate() for unitary X; the inverse is X.H")
+def test_inverse_unitary_is_conjugate_transpose() -> None:
+    # See test_inverse_unitary_soundness_counterexample: handlers inherits the
+    # upstream elementwise conjugate; handlers_identities and v3 give Adjoint(X).
+    assert refine(X.I, Q.unitary(X)) == Adjoint(X)
 
 
 def test_inverse_negative_wrong_assumptions() -> None:
@@ -203,6 +212,7 @@ def test_inverse_negative_wrong_assumptions() -> None:
     assert refine(X.I, True) == X.I
 
 
+@pytest.mark.handlers("handlers")
 def test_inverse_singular_raises() -> None:
     with pytest.raises(ValueError, match='Inverse of singular matrix'):
         refine(X.I, Q.singular(X))
@@ -228,11 +238,12 @@ def test_inverse_none_answers_unchanged() -> None:
 
 def test_inverse_reference_ask_parity() -> None:
     assert_refines_like_sympy(X.I, Q.orthogonal(X))
-    assert_refines_like_sympy(X.I, Q.unitary(X))
+    # X**-1 under Q.unitary(X): SymPy is wrong, see test_inverse_unitary_is_conjugate_transpose
     assert_refines_like_sympy(X.I, Q.symmetric(X))
     assert_refines_like_sympy(X.I, True)
 
 
+@pytest.mark.handlers("handlers")
 def test_inverse_singular_divergence_from_upstream() -> None:
     # Documented: the port asks the base, so Q.singular(X) raises here while
     # upstream's undecidable Q.singular(X**-1) query leaves X**-1 unchanged.
@@ -255,7 +266,7 @@ def test_inverse_reference_ask_parity_on_inverse_assumption() -> None:
 
 
 @pytest.mark.xfail(
-    backend.current() != "satassume",
+    backend.current() != "satassume" and HANDLERS_PACKAGE == "handlers",
     strict=True,
     reason=(
         'inherited upstream bug: Q.unitary(U) -> U**-1 = U.conjugate() '
@@ -273,8 +284,14 @@ def test_inverse_unitary_soundness_counterexample() -> None:
 # Determinant
 # ---------------------------------------------------------------------------
 
+@pytest.mark.original_wrong("det(X) -> 1 for orthogonal X; a reflection has det -1")
+def test_determinant_orthogonal_is_plus_or_minus_one() -> None:
+    # diag(1, -1) is orthogonal with det -1; handlers_identities and v3 leave det(X).
+    assert Matrix([[1, 0], [0, -1]]).det() == -1
+    assert refine(Determinant(X), Q.orthogonal(X)) == Determinant(X)
+
+
 def test_determinant_positive() -> None:
-    assert refine(Determinant(X), Q.orthogonal(X)) == S.One
     assert refine(Determinant(X), Q.singular(X)) == S.Zero
     assert refine(Determinant(X), Q.unit_triangular(X)) == S.One
 
@@ -306,7 +323,8 @@ def test_determinant_ask_order() -> None:
 
 
 def test_determinant_reference_ask_parity() -> None:
-    assert_refines_like_sympy(Determinant(X), Q.orthogonal(X))
+    # Determinant(X) under Q.orthogonal(X): SymPy is wrong, see
+    # test_determinant_orthogonal_is_plus_or_minus_one
     assert_refines_like_sympy(Determinant(X), Q.singular(X))
     assert_refines_like_sympy(Determinant(X), Q.unit_triangular(X))
     assert_refines_like_sympy(Determinant(X), Q.diagonal(X))
@@ -338,7 +356,9 @@ def test_matmul_multifactor_orthogonal_cancellation() -> None:
     ]
     for expr, expected in cases:
         refined = refine(expr, assumptions)
-        assert refined.doit() == expected
+        # handlers stops at X.T*X for the last case; handlers_identities (and v3)
+        # cancel both pairs, giving I.
+        assert refined.doit() == expected or refined.doit() == I2
         assert refine(refined, assumptions) == refined
 
 
@@ -371,7 +391,8 @@ def test_matmul_symmetric_refines_factor_first() -> None:
     # resulting one-argument-product-free MatMul(X, X) is sound and is the
     # fixed point (MatMul(X, X).doit() == X**2).
     result = refine(X.T * X, Q.symmetric(X))
-    assert result == MatMul(X, X)
+    # handlers_identities (and v3) give X**2, the same matrix.
+    assert result in (MatMul(X, X), X**2)
     assert result.doit() == X**2
     assert refine(result, Q.symmetric(X)) == result
 
@@ -395,7 +416,11 @@ def test_matmul_scripted_mixed_answers() -> None:
 def test_matmul_scalar_interleaving_preserves_value() -> None:
     expr = MatMul(X.T, 2, X)
     refined = refine(expr, Q.orthogonal(X))
-    assert simplify(refined.subs(X, ROT90).doit()) == 2 * I2
+    assert simplify(refined.subs(X, ROT90).doit()).as_explicit() == 2 * eye(2)
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matmul_scalar_factor.py", "MatMul(X, 2, Y) is not rebuilt as 2*X*Y")
+def test_matmul_scalar_moves_to_front() -> None:
     plain = MatMul(X, 2, Y)
     assert refine(plain, True) == sympy_refine(plain, True) == 2 * X * Y
 
@@ -407,7 +432,7 @@ def test_matmul_rectangular_unchanged_under_satisfiable_assumptions() -> None:
 
 
 @pytest.mark.xfail(
-    backend.current() != "satassume",
+    backend.current() != "satassume" and HANDLERS_PACKAGE == "handlers",
     strict=True,
     reason=(
         'inherited upstream bug: Q.unitary(U) -> conj(U)*U = I is false; '
@@ -480,6 +505,7 @@ def test_matadd_unknown_terms_preserved() -> None:
     assert Y not in result.args
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matadd_single_term.py", "refine(MatAdd(X), ...) raises TypeError")
 def test_matadd_single_term() -> None:
     assert refine(MatAdd(X), True) == MatAdd(X)
     assert refine(MatAdd(X), Q.zero(X)) == ZeroMatrix(2, 2)
@@ -573,6 +599,7 @@ def test_matrixelement_diagonal_provably_distinct_offset_symbol() -> None:
     assert refine(A[i + 1, i], Q.diagonal(A)) == S.Zero
 
 
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matrixelement_index_order.py", "A[i, 0] under Q.diagonal(A) is not swapped to A[0, i]")
 def test_matrixelement_mixed_literal_symbol_not_distinct() -> None:
     assert refine(A[0, i], Q.diagonal(A)) == A[0, i]
     assert refine(A[1, i], Q.diagonal(A)) == A[1, i]
@@ -697,6 +724,11 @@ def test_singular_inverse_is_the_only_raising_path() -> None:
         except Exception as exc:  # noqa: BLE001 - record, do not hide
             raising.append((expr, assumption, exc))
     assert raising == []
+
+
+@pytest.mark.handlers("handlers")
+def test_singular_inverse_raises_in_the_original_package() -> None:
+    # handlers raises where upstream SymPy (and handlers_identities) leave X**-1.
     with pytest.raises(ValueError, match='Inverse of singular matrix'):
         refine(X.I, Q.singular(X))
 

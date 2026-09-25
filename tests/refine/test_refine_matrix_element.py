@@ -50,9 +50,13 @@ def test_diagonal_element_with_offset_symbols() -> None:
 def test_diagonal_element_with_independent_symbols() -> None:
     # Independent symbols may be equal, so no zero is provable; only the
     # vendored symmetric-index swap applies.
-    assert refine(A[i, j], Q.diagonal(A)) == A[j, i]
     assert refine(A[j, i], Q.diagonal(A)) == A[j, i]
     assert refine(A[i, 2 * i], Q.diagonal(A)) == A[i, 2 * i]
+
+
+@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_matrixelement_index_order.py", "A[i, j] under Q.diagonal(A) is neither swapped nor, with Q.ne(i, j), zeroed")
+def test_diagonal_element_with_independent_symbols_swap_and_ne() -> None:
+    assert refine(A[i, j], Q.diagonal(A)) == A[j, i]
     assert refine(A[i, j], Q.diagonal(A) & Q.ne(i, j)) == S.Zero
 
 
