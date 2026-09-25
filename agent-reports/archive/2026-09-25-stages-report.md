@@ -3,9 +3,11 @@
 - **Date:** 2026-09-25
 - **Branch:** `ri/stages`, from `refine-identities` f686dcc. Not merged; the
   coordinator merges.
-- **Status:** handed off at the coordinator's request (context size);
-  see `agent-reports/stages-handoff.md` for the next steps. Section 1 is
-  the go/no-go test.
+- **Status:** done. The first agent handed off at the coordinator's
+  request (context size); a second agent finished the fixpoint rerun, the
+  gates and the metrics (sections 5 and 6). Section 8 keeps the pitfalls
+  from the handoff note, which has been folded in here and deleted.
+  Section 1 is the go/no-go test.
 
 ## 1. Interim: the cheap test (stage 1 from a draft stage 0)
 
@@ -299,3 +301,25 @@ again. Round 2 costs 422 s, against 679 s at b44342b.
 746d4ad, 5134182, 0fb75d5, 1813eb1, 27274dc, b44342b, 6ae3602, c8dab08
 (merge of `origin/refine-identities` 4810c71), 04b9b1e, 3865d76 (handoff), and the
 commit with the final gate numbers (this report).
+
+## 8. Pitfalls (from the handoff note)
+
+- `from sympy import *` after `from satrefine import refine` replaces
+  `refine` with SymPy's own. In scripts, import
+  `satrefine.handlers_identities._dispatch.refine` after the star import.
+- `ruff check --fix --select I001` spreads parenthesized imports to one
+  name per line, which inflates the code-line metric. Keep the compact
+  style.
+- Moving the last file out of `tests/refine_identities/needs/` makes git's
+  directory-rename detection put new needs tests from later merges in the
+  wrong directory. Check `git status` after a merge.
+- Generation is slow: 25 to 320 s per family per round at load 10 to 15
+  before the backend routing (303 s for the whole fixpoint after it).
+  Installing tables did not speed it up (section 2).
+- `BASE` in complex_parts no longer exists: the base layer is the
+  `DEFINITIONS` plus the "Abs, re, im under sign facts" and linearity rows.
+- Identity rows can now be 4-tuples (`unless`). Code that unpacks
+  `for lhs, rhs, dom in rows` over family tables must slice `row[:3]`.
+- Do not edit a worktree while its gate run is going: the jobs start at
+  different times and import the worktree as it is then.
+
