@@ -311,8 +311,11 @@ def node_b2(self, node, demanded=None):
         formulas = list(formulas) + ext.node_facts(node)
     t4 = pc()
     if not (len(compiled) == 1 and compiled[0].pattern.complete and not formulas):
-        self.solver.add_pattern(RULE_INTERNAL, b, NPRED)
-        self.nclauses += len(RULE_INTERNAL)
+        if getattr(self.solver, "_rb_n", 0):
+            self.solver.register_block(b)           # after A2 (747fb0e)
+        else:
+            self.solver.add_pattern(RULE_INTERNAL, b, NPRED)
+            self.nclauses += len(RULE_INTERNAL)
         N[tag + "blocks"] += 1
     else:
         self.solver.ensure_vars(b + NPRED - 1)
