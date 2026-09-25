@@ -40,7 +40,10 @@ def test_family_keys():
 
 def test_ablate_removes_the_row_from_handler_and_module(restore_minmax):
     mod = restore_minmax
-    assumptions = Q.nonnegative(x) & Q.nonpositive(y)
+    # An infinite x: only the sign row applies.  The relation row is excluded
+    # for a known infinite argument; for finite sign facts it now fires too,
+    # since satassume's LRA theory proves Q.le(y, x) from them.
+    assumptions = Q.infinite(x) & Q.extended_nonnegative(x) & Q.real(y)
     assert refine(Max(x, y), assumptions) == x
     removed = ablate_tool.ablate("minmax_deltas", [0])       # Max's sign row
     assert "Max(a, b)" in removed[0]
