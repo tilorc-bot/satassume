@@ -17,11 +17,11 @@ changes, and it replaces ``satrefine.refine`` whenever the
   same assumptions many times (every pass of the fixed point re-refines the
   children of a result, every branch of a ``Piecewise`` or of a case split
   redoes the work below it).  Completed results are remembered for the
-  call, keyed on the node, the assumptions, the mode and the engine state
-  (:data:`state`: which identity handlers are switched off, whether a split
-  is exploring), so a result is what recomputing it would give and repeated
-  work neither costs time nor counts against the cap.  A node being refined
-  is not in the cache yet, so a real loop still reaches the cap.
+  call, keyed on the node, the assumptions and the mode, and conditioned on
+  the engine flags the computation read (see *The result cache* below), so
+  a result is what recomputing it would give and repeated work neither
+  costs time nor counts against the cap.  A node being refined is not in
+  the cache yet, so a real loop still reaches the cap.
 
 ``_upstream.refine`` itself is untouched (it must stay behavior-identical
 to SymPy's); handlers written for the vendored driver keep working here.
@@ -67,6 +67,52 @@ a declining handler tries finitely many rows and bindings).  So every call
 terminates, and its stack stays within :data:`MAX_DEPTH` levels whatever
 ``ask`` answers.  A Python ``RecursionError`` raised anyway (an input nested
 deeper than the stack allows, a deep ``ask``) is handled like a tripped limit.
+
+The result cache
+----------------
+
+A computation of ``_refine(expr, assumptions)`` is determined by ``expr``,
+the assumptions, the mode and :data:`live_keys` (the cache key), the handler
+tables (fixed during a call), ``ask`` (memoized per call, so fixed too), the
+results of the nested computations it looks up (by induction, what
+recomputing them gives), and the engine flags: the ``busy`` flag of every
+identity handler (switched on while that handler's own candidate is refined)
+and the flag of a case split exploring.  A flag influences the computation
+only where it is read, and every read goes through :func:`read_flag`, which
+records ``(flag, value)`` for the innermost :func:`_refine`; a finished
+:func:`_refine` passes its reads on to its caller, and a cache hit passes on
+the reads stored with the entry.  So each entry stores the result together
+with every flag value the computation (including everything nested in it)
+read, and it is reused only when every one of those flags has that value
+now: a recomputation then takes the same path read by read (each read
+returns what it returned before, and everything else it depends on is the
+same), so it returns the same result.  A flag that was not read cannot have
+mattered.  In particular a result computed while an identity handler was
+switched off is reused where it is on only if that handler was never
+consulted (it would have been read) in the computation.
+
+Reads of a flag that the computation itself switched on (an identity
+handler refining its own candidate, a case split exploring) do not depend on
+the state the computation started in: in a recomputation the flag is
+switched on at the same point again.  A switch happens only after a read of
+the flag as off (the handler returns at once when its flag is on; a split
+is tried only when no split is exploring), so while the block runs, the
+reads of ``(flag, True)`` collected in the frame that switched it come from
+inside the block, and :func:`switched_on_inside` drops them when it ends.
+
+Hidden inputs the key never covered stay as they were: the split budget
+(:data:`splits_left`) and the firing counters (a trip poisons the whole
+call).  :data:`consulted` and :func:`tracing` see a node's handlers only
+when it is computed, not on a hit, as before.
+
+The re-entry guard (limit 2 above) keys on the node, the assumptions, the
+mode and the full engine state (:data:`state`), not on the reads: a
+computation in progress has not finished reading.  Its argument is
+unchanged: the same full key means the same computation, whose result
+depends only on that key, so a re-entry can never finish.  A cache hit
+returns a completed result and never involves a node in progress, and the
+depth and firing limits do not depend on the cache, so the termination
+argument below holds as before.
 
 **When a limit trips** the guard raises :class:`RefineLoopError`, and every
 later :func:`_refine` of the call raises it again at once (the call is
@@ -312,9 +358,33 @@ _firings: list[int] = []   # a stack entry per active top-level call and explora
 _results: list[dict] = []  # the result cache of the active top-level call
 
 state: list = []
-"""Engine state a result depends on besides the node and the assumptions (a
+"""Engine state a result may depend on besides the node and the assumptions (a
 stack of hashable tokens: the identity handlers switched off while their
-candidate is evaluated, a case split exploring); part of the cache key."""
+candidate is evaluated, a case split exploring); part of the re-entry key.
+The result cache keys on the flags a result actually read instead
+(:func:`read_flag`)."""
+
+_reads: list[dict] = []
+"""One entry per active :func:`_refine`: the engine flags its computation read so
+far, ``{(id(flag), value): flag}`` (see :func:`read_flag`)."""
+
+
+def read_flag(flag: list) -> bool:
+    """``flag[0]``, an engine flag (a switched-off identity handler, a split
+    exploring), recorded as read by the innermost :func:`_refine`: its result is
+    reused only where the flag has the value read (see :func:`_refine`)."""
+    value = flag[0]
+    if _reads:
+        _reads[-1][id(flag), value] = flag
+    return value
+
+
+def switched_on_inside(flag: list) -> None:
+    """Forget the reads of ``flag`` as ``True`` made while the innermost
+    :func:`_refine` had itself switched it on (called when that block ends): those
+    reads saw the computation's own setting, not the state it started in."""
+    if _reads:
+        _reads[-1].pop((id(flag), True), None)
 
 
 def _memoized(ask: Any) -> Any:
@@ -397,23 +467,32 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         raise call.trip(f"refine nested more than {MAX_DEPTH} levels deep at {_short(expr)}")
     cache = _results[-1]
     active = call.active
-    context = (assumptions, mode(), tuple(state), frozenset(live_keys))
+    context = (assumptions, mode(), frozenset(live_keys))
+    engine_state = tuple(state)
     chain = []
     steps = 0
+    reads: dict = {}
+    _reads.append(reads)
     call.depth += 1
     try:
         while True:
             key = (expr, context)
             try:
-                expr = cache[key]
-                break
-            except KeyError:
-                if key in active:
-                    raise call.trip(f"{_short(expr)} re-entered its own refinement") from None
-                chain.append(key)
-                active.add(key)
+                entries = cache.get(key)
             except TypeError:                        # unhashable assumptions
-                pass
+                entries = key = None
+            if entries:
+                hit = next((e for e in entries if all(f[0] is v for (_, v), f in e[0])), None)
+                if hit is not None:
+                    reads.update(hit[0])
+                    expr = hit[1]
+                    break
+            if key is not None:
+                guard = (expr, context, engine_state)
+                if guard in active:
+                    raise call.trip(f"{_short(expr)} re-entered its own refinement")
+                chain.append((key, guard))
+                active.add(guard)
             expr, again = _step(expr, assumptions)
             if not again:
                 break
@@ -422,10 +501,14 @@ def _refine(expr: Any, assumptions: Any) -> Any:
                 raise call.trip(f"a rewrite chain exceeded {MAX_FIRINGS} steps; last result {_short(expr)}")
     finally:
         call.depth -= 1
-        for key in chain:
-            active.discard(key)
-    for key in chain:
-        cache[key] = expr
+        for _, guard in chain:
+            active.discard(guard)
+        _reads.pop()
+        if _reads:
+            _reads[-1].update(reads)
+    entry = (tuple(reads.items()), expr)
+    for key, _ in chain:
+        cache.setdefault(key, []).append(entry)
     return expr
 
 
