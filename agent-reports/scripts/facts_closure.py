@@ -63,6 +63,9 @@ def closure(lits):
     r = _MEMO.get(key, 0)
     if r != 0:
         return r
+    if any(-l in key for l in key):
+        _MEMO[key] = None
+        return None
     m = _model(key)
     if m is None:
         _MEMO[key] = None
