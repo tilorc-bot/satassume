@@ -113,7 +113,7 @@ ROWS = [
     (exp(x + pi*I*n/2), Q.even(n), (-1)**(n/2)*exp(x), "same"),
     (exp(x + pi*I*n + pi*I*m), Q.even(n) & Q.odd(m), -exp(x), "same"),
     (exp(x), Q.real(x), None, "neither"),
-    (exp(x + pi*I*n/2), Q.odd(n), None, "neither"),
+    (exp(x + pi*I*n/2), Q.odd(n), None, "extra"),   # I*(-1)**((n - 1)/2)*exp(x) once ask proves (n - 1)/2 an integer
     (exp(x + pi*n), Q.integer(n), None, "neither"),
     (exp(x + pi*I*n), Q.rational(n), None, "neither"),
 ]
