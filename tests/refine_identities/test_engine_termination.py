@@ -8,8 +8,8 @@ of a call are:
 * a result (with ``SATREFINE_STRICT_LOOPS`` off, a tripped guard returns the
   input unchanged and records it in ``_dispatch.loop_events``);
 * :class:`RefineLoopError` when a guard trips and :func:`_dispatch.strict`;
-* a ``ValueError`` about inconsistent assumptions raised by ``ask`` itself
-  (SymPy's backend detects some contradictions and raises).
+* never an error from ``ask`` finding the assumptions inconsistent (SymPy's
+  backend raises ``ValueError`` for some): refine returns its input then.
 
 The property test runs the engine, in both identity modes, against
 adversarial oracles over a sample of the battery and of the differential's
@@ -125,8 +125,7 @@ def _oracle(ask):
 
 
 def outcome(expr, assumptions, ask, mode, strict):
-    """``"ok"``, ``"loop"`` (a guard tripped), ``"inconsistent"`` (``ask`` raised
-    on contradictory facts) or a failure message."""
+    """``"ok"``, ``"loop"`` (a guard tripped) or a failure message."""
     events = len(_dispatch.loop_events)
     t0 = time.perf_counter()
     try:
@@ -137,8 +136,6 @@ def outcome(expr, assumptions, ask, mode, strict):
     except _Timeout:
         return f"no result in {CALL_SECONDS} s"
     except ValueError as error:
-        if "nconsistent" in str(error):
-            return "inconsistent"
         return f"ValueError: {error}"
     except Exception as error:  # noqa: BLE001 -- anything else is a failure, reported
         return f"{type(error).__name__}: {str(error)[:200]}"
@@ -184,7 +181,7 @@ def run(cases, modes=("generated", "live"), strict_every=3):
             for name, ask, facts in runs:
                 strict = i % strict_every == 0
                 result = outcome(expr, facts, ask, mode, strict)
-                documented = result in ("ok", "loop", "inconsistent")
+                documented = result in ("ok", "loop")
                 tag = (name, result if documented else "fail")
                 counts[tag] = counts.get(tag, 0) + 1
                 if not documented:
