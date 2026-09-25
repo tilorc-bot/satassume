@@ -200,7 +200,7 @@ def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
 
-def _number_basis(engine, c) -> tuple:
+def _number_basis(engine, c, facts=False) -> tuple:
     """The predicates to register with the transfer theory for the number
     ``c``: a small set of its decided facts whose unit propagation under the
     rule base gives all of them, plus every predicate its facts leave open.
@@ -214,7 +214,7 @@ def _number_basis(engine, c) -> tuple:
     memo = engine.__dict__.setdefault("_xbasis", {})
     r = memo.get(c)
     if r is not None:
-        return r
+        return r[1] if facts else r[0]
     from .rules import PREDICATES, RULE_INSTANTIATED, unit_propagate
     decided, open_ = [], []
     for k, p in enumerate(PREDICATES):
@@ -238,11 +238,17 @@ def _number_basis(engine, c) -> tuple:
         if closes(rest):
             basis = rest
     if not closes(basis):                 # defensive: fall back to all
-        r = tuple(range(NPRED))
-    else:
-        r = tuple(sorted({abs(l) - 1 for l in basis} | set(open_)))
+        basis = decided
+    r = (tuple(sorted({abs(l) - 1 for l in basis} | set(open_))),
+         tuple((abs(l) - 1, l > 0) for l in basis))
     memo[c] = r
-    return r
+    return r[1] if facts else r[0]
+
+
+def _number_facts(engine, c) -> tuple:
+    """``[(pred index, value), ...]``: the basis of the facts of number
+    ``c`` (see :func:`_number_basis`)."""
+    return _number_basis(engine, c, facts=True)
 
 
 # --------------------------------------------------------------------------
@@ -510,18 +516,21 @@ class Relations:
             return False
         new = list(islice(sides, self._xterm, n))
         self._xterm = n
+        from sympy import Rational
         s = self.session
+        ad, th = self._xadapter, self.xfer
         visited = False
         for e in new:
+            if isinstance(e, Rational):
+                # a rational's facts are closed and context-free: the theory
+                # holds a basis of them for its term instead of a node (no
+                # visit, no variables, no change to the session's search)
+                t = ad.term_of(e)
+                if t is not None:
+                    th.set_fixed(t, _number_facts(s.engine, e))
+                continue
             if isinstance(e, Expr) and e not in s.base:
-                before = len(s.base)
                 s.ensure(e)
-                if _is_number(e):
-                    # a number's facts are closed units: it adds nothing to
-                    # search, so it must not count as pollution of a reused
-                    # session (Engine.ask's cone search test); other sides
-                    # are visited by their links anyway
-                    s.n_assumption_nodes += len(s.base) - before
                 visited = True
         return visited
 

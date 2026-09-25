@@ -104,6 +104,7 @@ def test_protocol_on_fuzz(monkeypatch):
 
     def factory(euf):
         r = Recorder(inner_cls(euf))
+        r.set_fixed = r.inner.set_fixed      # not a protocol method
         recs.append(r)
         return r
 

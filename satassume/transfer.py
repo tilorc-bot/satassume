@@ -61,6 +61,7 @@ class TransferTheory:
         self._lims: list[int] = []
         self._dirty: list[int] = []              # terms whose class needs a look
         self._dirty_p: list[int] = []            # asserted vars to spread
+        self._fixed: dict[int, dict] = {}        # term -> {pred: value} (numbers)
         euf.on_merge = self._merged
         self.stats = {"propagated": 0, "conflicts": 0}
 
@@ -97,6 +98,25 @@ class TransferTheory:
         return None
 
     # ------------------------------------------------------------------
+    def set_fixed(self, term: int, facts) -> None:
+        """Give ``term`` fixed, context-free facts ``[(pred, value), ...]``
+        (a number's, see ``Relations._transfer_terms``) without a variable:
+        every term EUF puts into its class gets them, with reasons made of
+        the explanation of the equality alone (the facts are axioms of the
+        theory).  Called at root."""
+        if term in self._fixed:
+            return
+        self._fixed[term] = dict(facts)
+        self._dirty.append(term)
+
+    def _explain(self, a: int, b: int, memo: dict) -> list:
+        if a == b:
+            return []
+        e = memo.get((a, b))
+        if e is None:
+            e = memo[(a, b)] = [-l for l in self.euf.explain(a, b)]
+        return e
+
     def _scan(self, r: int, out: list) -> None:
         """Append to ``out`` the transfers the class of representative
         ``r`` implies (including ones whose literal is already false:
@@ -105,63 +125,73 @@ class TransferTheory:
         members = euf._members[r]
         if len(members) < 2:
             return
-        by_term = self._by_term
+        by_term, fixed = self._by_term, self._fixed
         ds = [(m, d) for m in members if (d := by_term.get(m))]
-        if len(ds) < 2:
-            if not ds or all(len(vs) < 2 for vs in ds[0][1].values()):
-                return
+        fs = [(m, f) for m in members if (f := fixed.get(m))] if fixed else []
+        if not ds or (len(ds) < 2 and not fs
+                      and all(len(vs) < 2 for vs in ds[0][1].values())):
+            return
         per: dict = {}
         for m, d in ds:
-            if d:
-                for p, vs in d.items():
-                    lst = per.get(p)
-                    if lst is None:
-                        per[p] = [(m, vs)]
-                    else:
-                        lst.append((m, vs))
-        if not per:
-            return
+            for p, vs in d.items():
+                lst = per.get(p)
+                if lst is None:
+                    per[p] = [(m, vs)]
+                else:
+                    lst.append((m, vs))
         val = self._val
-        expl: dict = {}
-        for lst in per.values():
-            if len(lst) < 2 and len(lst[0][1]) < 2:
-                continue
+        memo: dict = {}
+        for p, lst in per.items():
             wit = None
-            for m, vs in lst:
-                for v in vs:
-                    b = val.get(v)
-                    if b is not None:
-                        wit = (m, v, b)
-                        break
-                if wit is not None:
+            for m, f in fs:
+                b = f.get(p)
+                if b is not None:
+                    wit = (m, 0, b)
                     break
             if wit is None:
-                continue
+                if len(lst) < 2 and len(lst[0][1]) < 2:
+                    continue
+                for m, vs in lst:
+                    for v in vs:
+                        b = val.get(v)
+                        if b is not None:
+                            wit = (m, v, b)
+                            break
+                    if wit is not None:
+                        break
+                if wit is None:
+                    continue
             wm, wv, wb = wit
-            wneg = -wv if wb else wv          # the negated witness literal
+            head = [-wv if wb else wv] if wv else []   # the negated witness
             for m, vs in lst:
                 for v in vs:
                     if v == wv or val.get(v) is wb:
                         continue
                     lit = v if wb else -v
-                    key = (wm, m)
-                    e = expl.get(key)
-                    if e is None:
-                        e = expl[key] = [-l for l in euf.explain(wm, m)] if wm != m else []
-                    out.append((lit, [lit, wneg] + e))
+                    out.append((lit, [lit] + head + self._explain(wm, m, memo)))
 
     def _spread(self, v: int, out: list) -> None:
         """Append the transfers of asserted variable ``v``'s value to the
-        other variables of its predicate in its class."""
+        other variables of its predicate in its class (and the conflict with
+        a fixed fact of the class, if any)."""
         wb = self._val.get(v)
         if wb is None:
             return
         wm, p = self._atoms[v]
         euf = self.euf
         members = euf._members[euf._repr[wm]]
-        by_term, val = self._by_term, self._val
+        by_term, val, fixed = self._by_term, self._val, self._fixed
         wneg = -v if wb else v
+        memo: dict = {}
         for m in members:
+            if fixed:
+                f = fixed.get(m)
+                if f is not None:
+                    b = f.get(p)
+                    if b is not None and b != wb:
+                        lit = v if b else -v          # false: a conflict
+                        out.append((lit, [lit] + self._explain(m, wm, memo)))
+                        return
             d = by_term.get(m)
             if d is None:
                 continue
@@ -172,8 +202,7 @@ class TransferTheory:
                 if u == v or val.get(u) is wb:
                     continue
                 lit = u if wb else -u
-                e = [-l for l in euf.explain(wm, m)] if wm != m else []
-                out.append((lit, [lit, wneg] + e))
+                out.append((lit, [lit, wneg] + self._explain(wm, m, memo)))
 
     def propagate(self):
         dirty, dirty_p = self._dirty, self._dirty_p
