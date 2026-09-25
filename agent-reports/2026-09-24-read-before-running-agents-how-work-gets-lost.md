@@ -1,13 +1,13 @@
 # Agent report: read this before running or coordinating agents — how work gets lost, and how to prevent it
 
-- **Date:** 2026-09-24
+- **Date:** 2026-09-24 (section 6 added 2026-09-25)
 - **Status:** lessons from a multi-agent run on the `refine-identities`
   branch (one coordinator, up to four subagents in parallel on separate
   worktrees). Every failure described below happened in that run; the
   prevention rules are what would have stopped it.
 - **Read this if:** you are about to spawn subagents, run long test or
   generation jobs, coordinate parallel work in this repository, or trust a
-  fuzzer's "0 unsound".
+  fuzzer's "0 unsound", or you are paying for agent runs (section 6).
 - **Stale after:** never entirely; revise items as the tooling changes.
 - **TL;DR:** a subagent waited for hours on its own background job and
   stopped without committing, and its coordinator kept reporting it as
@@ -16,7 +16,10 @@
   fuzzer had silently skipped a third of its cases. The fixes are cheap:
   time-box every long run, commit before waiting, judge liveness from the
   branch rather than from messages, and make every test tool count what it
-  could not check.
+  could not check. And (section 6, from the phase-2 run): keep every
+  single tool call under about 4 minutes, because a subagent that blocks
+  longer loses its prompt cache and pays to rewrite its whole context;
+  that was about $80 of a $141 bill.
 
 ## 1. Subagents: never lose work to a stall
 
@@ -31,7 +34,8 @@ Rules to put in every agent prompt:
 1. **Wrap every long command in `timeout`** with an explicit budget (for
    example `timeout 1200 ...`). A hung run must fail, not block. Note that
    pytest's `-o faulthandler_timeout=N` only dumps stack traces; it does
-   not stop a hung test.
+   not stop a hung test. Run it detached and wait for it in short
+   foreground chunks (section 6), not as one long blocking call.
 2. **Split long runs.** One family, one test file, one generator target
    per run. A job whose cost you have not measured should not be started
    over everything at once. (Here, generating one small rule family took
@@ -120,3 +124,62 @@ Each of these made a tool report success on work it had not done.
    branch-cut points always included, surfaced a wrong answer in SymPy's
    own `ask` (`Q.zero(b**2)` under `Q.imaginary(b)` returns `True`). Random
    sampling alone missed points like these in earlier work.
+
+## 6. Cost: keep every tool call under about 4 minutes
+
+What happened: in the phase-2 run (2026-09-25; one coordinator, five Opus
+subagents) the session's usage read 18.5M cache-write tokens against 179.5M
+cache reads, $141 in total. The transcripts
+(`~/.claude/projects/<project>/<session>/subagents/*.jsonl`, field
+`message.usage`) showed why:
+
+- Subagents write their prompt cache with a **5-minute lifetime**
+  (`usage.cache_creation.ephemeral_5m_input_tokens`); the main
+  conversation on a subscription gets 1 hour. This is Claude Code's
+  documented default
+  (https://code.claude.com/docs/en/prompt-caching#subagents-and-the-cache).
+- The agents ran scoreboards, differentials and suites as single
+  foreground commands of up to 10 minutes (the Bash tool's maximum
+  timeout). After each one the cache had expired, and the next turn
+  rewrote the agent's whole 200-300k-token context at the write price.
+- Measured over 637 subagent requests: after a gap under 4 minutes, 2
+  full-context rewrites in 543 requests; after 4-5 minutes, 0 in 5; after
+  5-6 minutes, 3 in 12; after 6 minutes or more, **76 in 77**. The 81
+  rewrites were 16.2M of the 17.5M written tokens, about $80 at Opus 5.5
+  prices ($5/M for 5-minute writes, $0.20/M for reads). The same waits as
+  warm-cache check-ins would have cost about $0.05 each instead of about
+  $1.25.
+
+Rules to put in every agent prompt:
+
+1. **No single tool call longer than about 4 minutes.** The cache
+   lifetime runs from the *start* of one model request to the start of the
+   next, so it has to cover the model's own generation time (seconds to
+   over a minute for a long turn) as well as the tool call. A 4-minute cap
+   leaves about a minute of margin; 4.5 minutes leaves 30 seconds, which a
+   long turn can use up (the 5-6 minute band above already loses a quarter
+   of its caches).
+2. **Start long jobs detached and wait in chunks, in the foreground:**
+   ```bash
+   nohup env PYTHONHASHSEED=0 timeout 3000 uv run ... > /path/run.log 2>&1 & echo $!
+   timeout 200 tail --pid=<PID> -f /dev/null; tail -3 /path/run.log   # repeat until the process is gone
+   ```
+   This keeps section 1's rule (the agent never ends its turn to wait for
+   a notification, so it cannot stall) while every check-in lands on a
+   warm cache.
+3. **Keep tool output small.** Redirect full output to files and print
+   summaries (`tail -25`, a grep for FAILED/unsound/crash, totals). Every
+   token in the context is paid once as a write and again as a read on
+   every later turn.
+4. **Start a fresh agent for each new assignment** and hand over through
+   the previous agent's written report, instead of sending the next task to
+   a finished agent: a continued agent carries its whole history (here
+   200-300k tokens) into work that needs none of it.
+
+Coordinator option: the setting `subagentPromptCacheTtl: "1h"` (or the
+environment variable `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=1h`, Claude
+Code 2.1.242 or later) gives subagents the 1-hour lifetime. One-hour writes
+cost 2x the input price instead of 1.25x, so with rule 1 followed it is a
+small overhead; as a safety net for agents that block anyway, or sit idle
+while the coordinator merges, it is far cheaper than the rewrites it
+prevents.
