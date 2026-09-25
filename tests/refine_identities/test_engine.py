@@ -180,7 +180,8 @@ from sympy import arg as arg_  # noqa: E402
 
 
 def test_provable_reads_stated_bounds():
-    """A stated bound carries realness and decides the sign atoms ask leaves open."""
+    """Stated bounds decide the sign atoms ask leaves open; realness and finite signs need
+    infinity excluded (see test_engine_bounds_infinity.py)."""
     t = symbols("t")
     assert provable(Q.real(t), Q.ge(t, 0) & Q.le(t, 1)) is True
     assert provable(Q.real(t**2), Q.ge(t**2, 0) & Q.le(t**2, pi/2)) is True
