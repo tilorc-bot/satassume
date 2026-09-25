@@ -227,12 +227,19 @@ def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dic
     return [r for r in rules if verdicts[r] is True], sorted(keys), verdicts
 
 
+def table_order(rules: Iterable[Row]) -> list[Row]:
+    """The order of a generated table: left sides with structure before a head of bare
+    symbols (``log(b**e)`` before ``log(x)``, which would match ``log(x**n)`` too), then
+    literal-specialized rows (fewer symbols) first; stable otherwise."""
+    return sorted(rules, key=lambda r: (all(t.is_Symbol for t in r[0].args), len(r[0].free_symbols)))
+
+
 def render_module(family: str, rules: list[Row], keys: list[str], notes: dict | None = None) -> str:
     """The generated module.  Only keys some rule's left side is headed by are
     registered: a key whose identity rows generated nothing (``Pow``, whose fact
     pays off on structured inputs the catalog does not produce) keeps its live
     rows, since a table for the key would switch them off."""
-    rules = sorted(rules, key=lambda r: len(r[0].free_symbols))   # literal-specialized rows first (stable)
+    rules = table_order(rules)
     syms = sorted({s for row in rules for t in row for s in t.free_symbols}, key=str)
     heads = {lhs.func.__name__ for lhs, _, _ in rules}
     keys = [k for k in keys if k in heads]
@@ -253,7 +260,8 @@ def render_module(family: str, rules: list[Row], keys: list[str], notes: dict | 
         "",
     ]
     if syms:
-        lines.append(f"{', '.join(map(str, syms))}{',' if len(syms) == 1 else ''} = symbols('{' '.join(map(str, syms))}')")
+        comma = "," if len(syms) == 1 else ""   # symbols('x,') is a tuple, symbols('x') a Symbol
+        lines.append(f"{', '.join(map(str, syms))}{comma} = symbols('{' '.join(map(str, syms))}{comma}')")
         lines.append("")
     lines.append("RULES = [")
     for lhs, rhs, hyp in rules:
@@ -298,4 +306,4 @@ def family_modules() -> list[types.ModuleType]:
 
 __all__ = ["CATALOG", "EDGE_POINTS", "Literal", "SAMPLE", "compile_rule", "compile_table", "family_modules",
            "generate_family", "generated_handlers", "generated_path", "identity_keys", "render_module",
-           "sample_point", "specialize", "specialize_table", "verify", "write_family"]
+           "sample_point", "specialize", "specialize_table", "table_order", "verify", "write_family"]

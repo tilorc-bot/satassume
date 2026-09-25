@@ -109,7 +109,7 @@ Row = tuple[Basic, Basic, Basic]
 Binding = dict[Any, Any]
 Measure = Callable[[Any, Any], tuple]
 
-__all__ = ["REBUILD", "Row", "bindings", "decide", "derive", "fold_back", "identity_handler", "rule_handler", "part",
+__all__ = ["REBUILD", "Row", "bindings", "decide", "derive", "identity_handler", "rule_handler", "part",
            "principal", "provable", "refine", "subst", "default_measure", "handlers_dict"]
 
 
@@ -656,8 +656,7 @@ def _switched_off(flag: list) -> Iterator[None]:
 
 
 def identity_handler(rows: list[Row], *, measure: Measure | None = None,
-                     opaque: tuple = (floor, im, arg), splits: bool = True,
-                     fold: Callable[[Any], Any] | None = None) -> Callable[[Any, Any], Any]:
+                     opaque: tuple = (floor, im, arg), splits: bool = True) -> Callable[[Any, Any], Any]:
     """A handler from identity rows ``(lhs, rhs, domain)``.
 
     For each row and binding: the domain must be provable; the substituted
@@ -688,8 +687,6 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                 with _switched_off(busy):
                     cand = refine(cand, assumptions)
                 cand = _distributed(cand)
-                if fold is not None:
-                    cand = fold(cand)
                 if not set(cand.atoms(Piecewise)) <= set(expr.atoms(Piecewise)):
                     continue                  # an undecided definition
                 if cand.has(floor):
@@ -783,7 +780,10 @@ def _explore(e: Any, assumptions: Any) -> Any:
 
 def _agree_at(expr: Any, cand: Any, point: dict, assumptions: Any) -> bool:
     """Whether ``expr`` and ``cand`` agree at ``point``, by evaluation, refinement, or simplification."""
-    left, right = expr.xreplace(point), cand.xreplace(point)
+    try:
+        left, right = expr.xreplace(point), cand.xreplace(point)
+    except (ArithmeticError, ValueError, TypeError):   # undefined there (Rem(a, 0) raises): no agreement
+        return False
     if _same(left, right):
         return True
     try:
@@ -923,29 +923,3 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
                 rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
     return rows
 
-
-def fold_back(definitions: list[Row], head: type) -> Callable[[Any], Any]:
-    """A fold for identity candidates (``identity_handler(..., fold=)``): the
-    ``head`` nodes a definition introduced are replaced by the definitions
-    solved for ``head``.  Each definition ``(g(z), R, _)`` with ``R`` linear
-    in ``head(z)`` gives ``head(z) = (g(z) - A)/B`` for ``R = A + B*head(z)``
-    (``conjugate(z) = 2*re(z) - z`` from ``re(z) = (z + conjugate(z))/2``);
-    every candidate is folded by each of them, and the result with the fewest
-    operations wins."""
-    inverses = []
-    for lhs, rhs, _dom in definitions:
-        zz, h = lhs.args[0], Dummy('h')
-        R = rhs.xreplace({head(zz): h})
-        A, B = R.xreplace({h: S.Zero}), R.diff(h)
-        if R.has(head) or B == 0 or B.has(h):
-            continue
-        inverses.append((zz, (lhs - A)/B))
-
-    def fold(cand: Any) -> Any:
-        nodes = cand.atoms(head)
-        if not nodes or not inverses:
-            return cand
-        outs = [expand_mul(cand.xreplace({nd: inv.xreplace({zz: nd.args[0]}) for nd in nodes}))
-                for zz, inv in inverses]
-        return min(outs, key=count_ops)
-    return fold

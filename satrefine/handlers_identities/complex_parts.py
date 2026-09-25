@@ -62,7 +62,7 @@ from sympy import Abs, I, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sig
 from sympy.core import Mul
 
 from .._upstream import handlers_dict
-from ._engine import Row, derive, fold_back, identity_handler, part, rule_handler
+from ._engine import Row, derive, identity_handler, part, rule_handler
 from ._tables import ZERO, chain, node_measure
 from .power_exp_log import EXP_FORMS
 
@@ -70,17 +70,16 @@ z, b, e, p, r, w, a, n = symbols('z b e p r w a n')
 c = part('c', Q.imaginary)   # the imaginary factors of a product
 s = part('s', Q.real)        # the real factors of a product
 
-DEFINITIONS: list[Row] = [   # (lhs, rhs, domain): the stage 0 definitions of the base layer
-    (re(z),  (z + conjugate(z))/2,      Q.finite(z)),  # re through conjugate
-    (im(z),  (z - conjugate(z))/(2*I),  Q.finite(z)),  # im through conjugate
-    (Abs(z), z*conjugate(sign(z)),      Q.finite(z)),  # |z| = z*conjugate(sign z) (0 at 0)
-    (arg(z), -I*log(sign(z)),           ~Q.zero(z)),   # sign z = exp(I*arg z), arg in (-pi, pi]
+DEFINITIONS: list[Row] = [   # (lhs, rhs, domain): stage 0 definitions through sign
+    (Abs(z), z/sign(z),        ~Q.zero(z) & Q.finite(z)),   # sign z = z/|z| (Abs(zoo) is oo)
+    (arg(z), -I*log(sign(z)),  ~Q.zero(z)),                 # sign z = exp(I*arg z), arg in (-pi, pi]
 ]
-# What the definitions derive (with the conjugate and sign rows below and SymPy's own
-# evaluation): re/im of real and imaginary arguments, of products with a real or an
-# imaginary factor and of real integer powers; Abs and arg under sign facts and of
-# imaginary arguments.  re/im of conjugates, sums, exponentials and logarithms and
-# |conjugate w| are evaluated by SymPy when the node is built and need no row.
+# With the sign rows below they give Abs and arg of positive, negative and imaginary
+# arguments.  re/im of conjugates, sums, exponentials and logarithms and |conjugate w|
+# are evaluated by SymPy when the node is built and need no row; re/im of a real power
+# follow from the real-argument rows (ask proves b**n real).  re, im and Abs of a real,
+# imaginary or signed argument stay stated: a definition through conjugate would lose
+# them for products (SymPy distributes conjugate(x*y) before Q.real(x*y) can apply).
 
 FACTS: list[Row] = DEFINITIONS + [   # (lhs, rhs, domain)
     (Abs(exp(z), evaluate=False), exp(re(z)),                          true),   # |exp z| = exp(re z) (SymPy evaluates the lhs)
@@ -98,6 +97,13 @@ _IM_POSITIVE = Q.positive(im(a)) | Q.positive(-I*a)   # the two spellings of "on
 _IM_NEGATIVE = Q.negative(im(a)) | Q.negative(-I*a)
 
 RULES: list[Row] = [   # (lhs, rhs, hypothesis)
+    # Abs, re, im under sign facts
+    (Abs(a), a,      Q.nonnegative(a)),                                  # |a| = a for a >= 0
+    (Abs(a), -a,     Q.nonpositive(a)),                                  # |a| = -a for a <= 0
+    (re(a), a,       Q.real(a)),                                         # re a = a, real a
+    (im(a), S.Zero,  Q.real(a)),                                         # im a = 0, real a
+    (re(a), S.Zero,  Q.imaginary(a)),                                    # re a = 0, imaginary a
+    (im(a), -I*a,    Q.imaginary(a)),                                    # im(i*t) = t
     # re / im are linear over the reals (these hold at infinity, where the definitions need a finite argument)
     (re(s*w), s*re(w), true),                                            # a real factor comes out of re
     (im(s*w), s*im(w), true),                                            # ... and of im
@@ -129,7 +135,6 @@ IDENTITIES: list[Row] = (derive([row for row in _OTHER_FACTS if isinstance(row[0
 
 _rules = rule_handler([ZERO] + RULES)
 _rules_no_zero = rule_handler(RULES)          # arg(0) is nan: no zero row for arg
-_fold = fold_back([row for row in DEFINITIONS if row[0].func in (re, im)], conjugate)
 
 
 def _definition(head, **kw):
@@ -149,12 +154,11 @@ def _splits(head):
 # the splits get a handler of their own so they can fire inside a derived row's candidate
 refine_Abs = chain(_rules, identity_handler([row for row in IDENTITIES if row[0].func is Abs],
                                             measure=node_measure((Abs, re))),
-                   _definition(Abs, opaque=(conjugate, sign)))
-_parts = node_measure((re, im))   # re(x*y) -> re(x)*re(y) - im(x)*im(y) is no progress
-refine_re = chain(_rules, _definition(re, measure=_parts, opaque=(conjugate,), fold=_fold))
-refine_im = chain(_rules, _definition(im, measure=_parts, opaque=(conjugate,), fold=_fold))
+                   _definition(Abs, opaque=(sign,)))
+refine_re = _rules
+refine_im = _rules
 refine_arg = chain(_rules_no_zero, _identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
-                   _definition(arg, opaque=(conjugate, sign)))
+                   _definition(arg, opaque=(sign,)))
 refine_sign = chain(_rules, _splits(sign))
 refine_conjugate = _rules
 refine_Mul = rule_handler([row for row in RULES if isinstance(row[0], Mul)])
