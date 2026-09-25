@@ -133,6 +133,7 @@ def test_floor_identity_is_not_sound_without_signs() -> None:
         )
 
 
+@pytest.mark.handlers("handlers")
 def test_ask_goes_through_upstream() -> None:
     fake, log = recording_ask({str(Q.zero(p)): True})
     with use_ask(fake):

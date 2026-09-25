@@ -120,6 +120,7 @@ _INV_HYPER_OWNERS = {
 _INV_TRIG_OWNERS = {key: "inverse_trig" for key in ("asin", "acos", "atan")}
 
 
+@pytest.mark.handlers("handlers")
 def test_scope_keys_owned_by_expected_modules() -> None:
     for key, module in {
         **_TRIG_OWNERS,
@@ -513,6 +514,7 @@ NONE_SAFE_CASES: list[tuple[Any, Any]] = [
 ]
 
 
+@pytest.mark.handlers("handlers")
 def test_none_answers_leave_expression_unchanged() -> None:
     with use_ask(stub_ask({})):
         for expr, assumptions in NONE_SAFE_CASES:

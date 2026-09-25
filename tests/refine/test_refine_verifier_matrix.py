@@ -91,6 +91,7 @@ _ALL_HANDLER_CASES: list[tuple[Any, Any]] = [
 # Scope and registration
 # ---------------------------------------------------------------------------
 
+@pytest.mark.handlers("handlers")
 def test_matrix_handler_keys_owned_by_their_modules() -> None:
     for key, module in _EXPECTED_MODULES.items():
         handler = handlers_dict[key]
@@ -116,6 +117,7 @@ def test_no_handler_key_is_registered_twice() -> None:
         assert key in seen
 
 
+@pytest.mark.handlers("handlers")
 def test_handlers_consult_patchable_upstream_ask() -> None:
     fake, log = recording_ask({str(Q.symmetric(X)): True})
     with use_ask(fake):
@@ -156,6 +158,7 @@ def test_transpose_none_answers_unchanged() -> None:
         assert refine(X.T, Q.symmetric(X)) == X.T
 
 
+@pytest.mark.handlers("handlers")
 def test_transpose_scripted_mixed_answers() -> None:
     for sequence in ([None], [False], [None, True], [True, False, None]):
         fake, _ = scripted_ask(sequence)
@@ -205,6 +208,7 @@ def test_inverse_singular_raises() -> None:
         refine(X.I, Q.singular(X))
 
 
+@pytest.mark.handlers("handlers")
 def test_inverse_singular_raises_under_scripted_ask() -> None:
     fake, log = scripted_ask([False, False, True])
     with use_ask(fake):
@@ -291,6 +295,7 @@ def test_determinant_none_answers_unchanged() -> None:
             assert refine(Determinant(X), assumption) == Determinant(X)
 
 
+@pytest.mark.handlers("handlers")
 def test_determinant_ask_order() -> None:
     fake, log = recording_ask({str(Q.unit_triangular(X)): True})
     with use_ask(fake):

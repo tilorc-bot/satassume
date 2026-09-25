@@ -154,6 +154,7 @@ def test_pow_documented_divergences() -> None:
     assert refine(Abs(z)**2, Q.imaginary(z)) == -z**2
 
 
+@pytest.mark.handlers("handlers")
 def test_pow_none_safety() -> None:
     with use_ask(stub_ask({})):
         assert refine((x**3)**Rational(1, 2), Q.real(x)) == sqrt(x**3)

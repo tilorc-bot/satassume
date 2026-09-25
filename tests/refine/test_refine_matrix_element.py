@@ -1,5 +1,6 @@
 """Tests for the extended ``MatrixElement`` refine handler."""
 from __future__ import annotations
+import pytest
 
 from sympy.abc import i, j
 from sympy.assumptions import Q
@@ -60,6 +61,7 @@ def test_symmetric_index_swap_kept() -> None:
     assert refine(X[0, 1], Q.symmetric(X)) == X[0, 1]
 
 
+@pytest.mark.handlers("handlers")
 def test_ask_order() -> None:
     fake, log = recording_ask({str(Q.zero(X)): True})
     with use_ask(fake):

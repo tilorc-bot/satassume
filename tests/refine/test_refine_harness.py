@@ -36,6 +36,7 @@ def test_reference_ask_matches_sympy() -> None:
     assert_refines_like_sympy(Abs(x), Q.positive(x))
 
 
+@pytest.mark.handlers("handlers")
 def test_reference_ask_detects_wrong_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -102,6 +103,7 @@ def test_use_ask_patches_module_attribute() -> None:
     assert upstream.ask is not fake
 
 
+@pytest.mark.handlers("handlers")
 def test_no_duplicate_handler_keys() -> None:
     path = getattr(handlers_package, "__path__")
     owners: dict[str, list[str]] = {}

@@ -8,6 +8,7 @@ test: ``log(exp(x))`` needs ``Q.real(x)`` and ``log(x**2)`` needs
 ``Q.positive(x)``.
 """
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x, y
@@ -73,6 +74,7 @@ def test_log_product_split_negative() -> None:
     assert refine(log(-x), Q.positive(x)) == log(-x)
 
 
+@pytest.mark.handlers("handlers")
 def test_log_none_safety() -> None:
     with use_ask(stub_ask({})):
         assert refine(log(exp(x))) == log(exp(x))

@@ -49,6 +49,7 @@ def test_sign_unchanged() -> None:
     assert refine(sign(Abs(x)), Q.nonzero(x)) == 1
 
 
+@pytest.mark.handlers("handlers")
 def test_sign_none_safety() -> None:
     with use_ask(stub_ask({})):
         assert refine(sign(x), Q.positive(x)) == sign(x)

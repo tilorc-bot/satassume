@@ -1,5 +1,6 @@
 """Tests for the ``Mod`` refine handler."""
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import p, q, x
@@ -98,6 +99,7 @@ def test_numeric_oracle() -> None:
     )
 
 
+@pytest.mark.handlers("handlers")
 def test_asks_the_quotient_first() -> None:
     fake, log = recording_ask({str(Q.integer(p)): True})
     with use_ask(fake):

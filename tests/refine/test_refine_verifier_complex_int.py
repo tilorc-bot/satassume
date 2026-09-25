@@ -119,6 +119,7 @@ def test_scope_every_key_registered_exactly_once() -> None:
         )
 
 
+@pytest.mark.handlers("handlers")
 def test_scope_runtime_handler_comes_from_expected_module() -> None:
     for key, module in IN_SCOPE_OWNERS.items():
         handler = _upstream.handlers_dict[key]
@@ -127,6 +128,7 @@ def test_scope_runtime_handler_comes_from_expected_module() -> None:
         )
 
 
+@pytest.mark.handlers("handlers")
 def test_scope_vendored_handler_names_are_overridden_not_duplicated() -> None:
     # The vendored dict must still exist unchanged in size for the keys no
     # handler module overrides; the overridden ones resolve to the new modules.
@@ -1064,6 +1066,7 @@ def test_scripted_mixed_answers_do_not_raise() -> None:
         assert result is not None
 
 
+@pytest.mark.handlers("handlers")
 def test_handlers_ask_through_the_upstream_module() -> None:
     # A recording stub must observe the queries: proves the monkeypatch reaches
     # the handlers (no from-import of ask) and that answers are respected.

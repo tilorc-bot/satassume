@@ -1,5 +1,6 @@
 """Tests for the ``Transpose`` refine handler."""
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x
@@ -28,6 +29,7 @@ def test_local_refinement() -> None:
     assert refine(X.T, Q.symmetric(X)) == X
 
 
+@pytest.mark.handlers("handlers")
 def test_asks_base_matrix() -> None:
     fake, log = recording_ask({str(Q.symmetric(X)): True})
     with use_ask(fake):

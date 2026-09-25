@@ -13,6 +13,7 @@ auxiliary ``Mul`` key (upstream PR #29173 implemented the same rule as a
 ``refine_Mul``).
 """
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import n, x, y, z
@@ -72,6 +73,7 @@ def test_conjugate_pair_product_negative() -> None:
     assert refine(z * conjugate(z), Q.real(z)) == z**2
 
 
+@pytest.mark.handlers("handlers")
 def test_conjugate_none_safety() -> None:
     with use_ask(stub_ask({})):
         assert refine(conjugate(x)) == conjugate(x)

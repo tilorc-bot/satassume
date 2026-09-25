@@ -16,7 +16,6 @@ from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.trigonometric import cos, sin, tan
 
 from satrefine import refine
-from satrefine.handlers.trig_sin_cos import refine_sin_cos
 from satrefine.harness import (
     assert_refines_like_sympy,
     assert_refinement_valid,
@@ -101,7 +100,9 @@ def test_matches_sympy_for_handled_cases() -> None:
     )
 
 
+@pytest.mark.handlers("handlers")
 def test_type_error_preserved() -> None:
+    from satrefine.handlers.trig_sin_cos import refine_sin_cos
     with pytest.raises(TypeError):
         refine_sin_cos(tan(x), Q.real(x))
     with pytest.raises(TypeError):
@@ -110,11 +111,16 @@ def test_type_error_preserved() -> None:
         refine_sin_cos(x, Q.real(x))
 
 
+@pytest.mark.handlers("handlers")
 def test_integer_power_factor_regression() -> None:
     # `sin(pi + x)` has a literal `k`, so `(-1)**((k + 1)/2)` is `-1`: calling
     # `refine_Pow` on it used to raise `AttributeError`.
+    from satrefine.handlers.trig_sin_cos import refine_sin_cos
     assert refine_sin_cos(sin(S.Pi + x, evaluate=False), True) == -sin(x)
     assert refine_sin_cos(cos(S.Pi + x, evaluate=False), True) == -cos(x)
+
+
+def test_integer_power_factor_regression_through_refine() -> None:
     assert refine(sin(S.Pi + x, evaluate=False), True) == -sin(x)
 
 

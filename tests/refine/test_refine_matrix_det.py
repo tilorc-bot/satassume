@@ -1,5 +1,6 @@
 """Tests for the ``Determinant`` refine handler."""
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x
@@ -39,6 +40,7 @@ def test_asks_base_matrix() -> None:
     assert [entry[0] for entry in log] == [Q.orthogonal(X)]
 
 
+@pytest.mark.handlers("handlers")
 def test_singular_ask_order() -> None:
     fake, log = recording_ask({str(Q.singular(X)): True})
     with use_ask(fake):
@@ -46,6 +48,7 @@ def test_singular_ask_order() -> None:
     assert [entry[0] for entry in log] == [Q.orthogonal(X), Q.singular(X)]
 
 
+@pytest.mark.handlers("handlers")
 def test_unit_triangular_ask_order() -> None:
     fake, log = recording_ask({str(Q.unit_triangular(X)): True})
     with use_ask(fake):

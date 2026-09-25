@@ -1,5 +1,6 @@
 """Tests for the inverse trigonometric refine handlers."""
 from __future__ import annotations
+import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x
@@ -108,6 +109,7 @@ def test_extra_assumptions_still_apply() -> None:
     assert refine(atan(tan(x)), ATAN_INTERVAL & Q.positive(x)) == x
 
 
+@pytest.mark.handlers("handlers")
 def test_none_answers_leave_expression_unchanged() -> None:
     with use_ask(stub_ask({})):
         assert refine(asin(sin(x)), ASIN_RECTANGLE) == asin(sin(x))
