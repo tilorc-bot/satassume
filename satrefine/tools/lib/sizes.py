@@ -3,7 +3,9 @@
 Code lines are physical lines that are not blank, not comments and not
 module, class or function docstrings.  The engine is the former underscore
 modules of ``handlers_identities``: online, ``satrefine/identities`` without
-the families, the generated tables and the ``ask`` backend; offline,
+the families, the generated tables, the ``ask`` backend and the vendored
+SymPy dispatcher (``compat/upstream.py``, ``satrefine/_upstream.py`` before
+phase 3, never counted); offline,
 ``satrefine/build`` (specialisation, fixpoint).  Rows are counted from each
 family's ``SPEC`` (:class:`satrefine.identities.core.spec.Family`): its table
 kinds ``facts``, ``exp_forms``, ``rules``, ``ranges``, counting only rows the
@@ -72,7 +74,7 @@ def family_paths() -> dict[str, Path]:
 def engine_paths() -> tuple[list[Path], list[Path]]:
     """The engine's modules, ``(online, offline)`` (see the module docstring)."""
     package = ROOT / "satrefine/identities"
-    skip = set(family_paths().values()) | {package / "compat/backend.py"}
+    skip = set(family_paths().values()) | {package / "compat/backend.py", package / "compat/upstream.py"}
     online = sorted(p for p in package.rglob("*.py") if p not in skip and "generated" not in p.parts
                     and not (p.name == "__init__.py" and code_lines(p) == 0))
     offline = sorted(p for p in (ROOT / "satrefine/build").glob("*.py") if p.name != "__init__.py" or code_lines(p))
