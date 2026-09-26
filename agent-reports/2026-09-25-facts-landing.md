@@ -224,3 +224,49 @@ candidacy re-checked as sides grow; fixed facts' reasons context-free).
 
 Gates after the fix (local): `ab.py` answers match with the same 15 more
 definite, gate2 0 changed, transfer fuzz 2,000 seeds, suite at baseline.
+
+## Stage 1 retry (lazy rule-block writes) and stage 2b (transfer atoms without mentions), landed together
+
+**Stage 1b** (`dd24eec`..`fcb8605`, report `2026-09-25-facts-1b-lazy-rule-writes.md`):
+the rule block stays inside the solver's propagation loop (no per-literal
+theory interface), closes each block exactly from a table of the rule
+base's 48 models, and writes an implied literal above root only to a
+variable something outside the rule base mentions (a clause, assumption,
+theory atom, or the query via `Solver.mention`); root is always complete.
+Opus review: fit to land; two bugs in public solver calls the engine
+never hits (a mention mask not normalised, a mention at a non-base index
+silently lost) fixed with regression tests and a new `mentions` fuzz mode.
+Pi: -6.1% against its base before stage 2; -2.7% on `main` after stage 2,
+because every predicate variable registered with the transfer theory
+counted as mentioned. Below the 3% line alone, so held for:
+
+**Stage 2b** (`8e3d2d7`..`0d4c4a8`, report `2026-09-25-facts-2b-transfer-mentions.md`):
+the transfer theory registers its predicate atoms with `mention=False`, so
+they stay lazy; it is still told every value. A new optional theory hook
+`decide()` has the solver decide an atom of a *partial* node (a link-only
+`polar`, a rational basis) before the final check when equal terms could
+otherwise complete differently (71 decisions per pass).
+
+**Pi, both together against `main` `66871eb`:** `--rounds 4` ref 2.897 s,
+cand 2.761 s, **-4.7%** (and -4.5% at `--rounds 3`); decisions per pass
+64,141 to 36,453. Answers match; the same 15 more-definite; same ValueError
+set on both gates.
+
+**Opus review of 2b:** ready to land, no defect. Instrumented every
+`TransferTheory.check` and every satisfiable solve over about 316,000
+models: 0 transfers owed to an unassigned lazy atom, 0 disagreements
+between equal terms. Sequence differential fuzz against `main` (equalities
+in later queries, repeats): EUF 195,439 answers, 0 differ; LRA 117,771, 1
+differs, from 1b, not 2b:
+`ask(even(y), A)` with `A = ~polar(f(x)) & ~nonzero(y+1) & prime(g(x,z)) &
+eq(f(x),g(x,z)) & (eq(pi,f(x)) | lt(y+1,1)) & (eq(y,(1+sqrt(2))**2) |
+eq(f(pi),g(x,z))) & (eq(pi,g(x,z)) | ~eq(f(pi),g(x,z)))`: `main` raises
+InconsistentAssumptions, now False. `A` is inconsistent (`y = -1` forces
+`f(pi) = g = pi`, and `g` is prime); the exact closure lets propagation
+decide the query, so the search that would find the inconsistency never
+runs: the engine's known "propagation decides" class, a new instance of
+it. Other gates: transfer fuzz, solver fuzz (theory, mentions-theory),
+real-theory fuzz, suite (known pair), gate2: all as `main`.
+
+**Landed:** cherry-picked onto `main` (code identical to the reviewed
+branch).
