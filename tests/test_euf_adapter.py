@@ -34,7 +34,7 @@ from sympy import (Eq, Ne, Function, symbols, S, Rational, Float, sqrt, pi,  # n
                    Max, And, Or, Not, Symbol)
 from sympy.assumptions.ask import Q  # noqa: E402
 from sympy.integrals.transforms import LaplaceTransform, FourierTransform  # noqa: E402
-from hypothesis import given, settings, strategies as st, HealthCheck  # noqa: E402
+from hypothesis import example, given, settings, strategies as st, HealthCheck  # noqa: E402
 
 from satassume.solver import Solver  # noqa: E402
 from satassume.euf_adapter import EUFAdapter  # noqa: E402
@@ -573,6 +573,7 @@ def test_random_conjunctions_match_oracle(lits):
 @settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(st.lists(st.tuples(sym_terms(), sym_terms(), st.booleans()), min_size=1, max_size=5),
        sym_terms(), sym_terms())
+@example([(A, A, False)], S(1), S(1))    # constants: answered without the assumptions
 def test_random_ask_matches_oracle(lits, ql, qr):
     """ask(Q.eq(ql, qr), facts) through the whole engine (EUF and LRA both
     attached) against the EUF oracle.  Only uninterpreted functions and
@@ -587,6 +588,9 @@ def test_random_ask_matches_oracle(lits, ql, qr):
         olits.append((k + 1) if pos else -(k + 1))
     atoms.append((_spec(ql, terms, index), _spec(qr, terms, index), True))
     q = len(atoms)
+    from satassume.sympy_api import _is_constant_proposition
+    if _is_constant_proposition(Q.eq(ql, qr)):
+        olits = []       # a question about constants is answered without the assumptions
     if not oracle_consistent(terms, atoms, olits):
         want = "inconsistent"
     elif not oracle_consistent(terms, atoms, olits + [-q]):
