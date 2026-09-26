@@ -1,4 +1,4 @@
-"""Needs: ``(-1)**((-1)**x/2 + c)`` for integer ``x`` is not reduced to ``(-1)**x`` or ``(-1)**(x + 1)``.  Owner: handlers_identities (power_exp_log).
+"""Fixed in phase 3 (ri/fixes).  The needs test said: ``(-1)**((-1)**x/2 + c)`` for integer ``x`` is not reduced to ``(-1)**x`` or ``(-1)**(x + 1)``.  Owner: handlers_identities (power_exp_log).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

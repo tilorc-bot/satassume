@@ -1,4 +1,4 @@
-"""Needs: odd multiples of ``pi/2`` inside sin/cos/sec/csc give a doubled sign form.  Owner: handlers_identities (trig).
+"""Fixed in phase 3 (ri/fixes).  The needs test said: odd multiples of ``pi/2`` inside sin/cos/sec/csc give a doubled sign form.  Owner: handlers_identities (trig).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

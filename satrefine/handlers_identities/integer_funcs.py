@@ -74,11 +74,11 @@ makes ``b`` real, and ``2*a/b`` odd then makes ``a`` real).
 """
 from __future__ import annotations
 
-from sympy import Function, Mod, Q, S, floor, frac, im, re, sign, symbols
+from sympy import Function, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols, true
 from sympy.functions.elementary.miscellaneous import Rem
 
 from .._upstream import handlers_dict
-from ._engine import identity_handler, rule_handler
+from ._engine import identity_handler, part, rule_handler
 from ._tables import chain, node_measure
 
 a, b, c, n, x, y = symbols('a b c n x y')
@@ -118,8 +118,9 @@ FACTS = [   # (lhs, rhs, domain): identity rows, fire when the bookkeeping colla
 EDGE_POINTS = (S(2), S(-2))   # the generator checks rules here too: Rem(1, 2) has 2*a/b odd
 
 ROUNDING = [
-    # F1, F2: floor/ceiling of a (Gaussian) integer, or of +-oo, is itself.
-    (F(x), x, _gaussian_integer(x) | (Q.infinite(x) & Q.extended_real(x))),
+    # F1, F2: floor/ceiling of a (Gaussian) integer, or of an infinity, is itself
+    # (floor(oo) = oo, floor(-oo) = -oo, floor(zoo) = zoo, floor(oo*I) = oo*I).
+    (F(x), x, _gaussian_integer(x) | Q.infinite(x)),
 ]
 
 SHIFT = [
@@ -130,14 +131,32 @@ SHIFT = [
     (F(n + x), F(x) + F(n), _gaussian_integer(n)),
 ]
 
+
+def _rounded(t):
+    """``t`` is an integer multiple of a ``floor`` or ``ceiling``."""
+    k, f = t.as_coeff_Mul()
+    return S(bool(k.is_Integer and isinstance(f, (floor, ceiling))))
+
+
+g = part('g', _rounded)
+
+ROUNDED_SHIFT = [
+    # F3 for rounded terms, which ask cannot show (Gaussian) integers: floor(y) and
+    # ceiling(y) of a finite y are Gaussian integers; of an infinite y they are y,
+    # which absorbs the rest as the left side does (floor(oo + x) = oo + floor(x)).
+    (F(g + x), F(x) + g, true),
+]
+
 # F4 (floor(x) = 0 for 0 <= x < 1, ceiling likewise) is the base layer's
 # floor_of_bounded, the dispatcher's fallback for both keys.
-FLOOR = CEILING = ROUNDING + SHIFT
+FLOOR = CEILING = ROUNDING + SHIFT + ROUNDED_SHIFT
 FRAC = SHIFT
 
 MULTIPLE = [
     # M1/Q1 (and M2/Q2 even): Mod(a, b) = Rem(a, b) = 0 when a is an integer multiple of a nonzero b.
     (G(a, b), S.Zero, Q.nonzero(b) & Q.integer(a/b)),
+    # Mod(0, b) = Rem(0, b) = 0 whatever b is known to be (at b = 0 the left side is undefined).
+    (G(a, b), S.Zero, Q.zero(a)),
 ]
 
 MOD = MULTIPLE + [
@@ -159,7 +178,7 @@ REM = MULTIPLE + [
                    | (Q.negative(b) & _lt(b, a) & _lt(a, -b))),
 ]
 
-RULES: list[tuple] = ROUNDING + SHIFT + MOD + REM[len(MULTIPLE):]
+RULES: list[tuple] = ROUNDING + SHIFT + ROUNDED_SHIFT + MOD + REM[len(MULTIPLE):]
 
 handlers_dict['floor'] = rule_handler(FLOOR)
 handlers_dict['ceiling'] = rule_handler(CEILING)

@@ -119,6 +119,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     (Pow(E, x, evaluate=False), exp(x), true),                                  # E**x is exp(x)
     ((b**a)**e, b**(a*e), Q.integer(e)),                                        # (b**a)**e = b**(a*e), integer e
     ((b**a)**e, b**(a*e), Q.nonnegative(b) & Q.positive(a)),                    # ... a*log(b) real, 0**a = 0 for a > 0
+    ((b**a)**e, b**(a*e), Q.positive(b) & Q.real(a)),                           # ... a*log(b) real for b > 0 (sqrt(1/x) = 1/sqrt(x))
     ((b**a)**e, Abs(b)**(a*e), Q.real(b) & Q.even(a) & (Q.positive(a) | ~Q.zero(b))),   # b**a = |b|**a, even a; 0**a = 0 for a > 0
     (exp(a)**e, exp(a*e), Q.integer(e)),                                        # exp(a)**e = exp(a*e), integer e
     ((b**a)**e, Abs(b)**(a*e), Q.imaginary(b) & Q.even(a/2)),                   # (I*t)**a = t**a for a = 0 mod 4
@@ -129,6 +130,9 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     (Abs(b)**n, (-1)**(n/2)*b**n, Q.imaginary(b) & Q.even(n)),                  # |I*t|**n = (-1)**(n/2)*(I*t)**n
     ((-1)**x, S.One, Q.even(x)),                                                # (-1)**even = 1
     ((-1)**x, S.NegativeOne, Q.odd(x)),                                         # (-1)**odd = -1
+    ((-1)**x, S.NegativeOne, Q.even(x - 1)),                                    # ... the parity stated one lower: (-1)**((n + 1)/2)
+    ((-1)**x, S.One, Q.odd(x - 1)),                                             #     under a parity of (n - 1)/2 (ask does not shift it)
+    ((-1)**((-1)**x/2 + r), (-1)**(x + r + S.Half), Q.integer(x) & Q.integer(r + S.Half)),   # (-1)**x/2 = +-1/2 (SymPy's continuation)
     ((-1)**(n + r), (-1)**r, Q.even(n)),                                        # (-1)**z is 2-periodic: drop even terms
     ((-1)**(n + r), (-1)**(r + 1), Q.odd(n)),                                   # ... an odd term becomes 1
     ((-1)**(c + r), (-1)**(r + Mod(c, 2)), true),                               # ... a rational constant is reduced mod 2

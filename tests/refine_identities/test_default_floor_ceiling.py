@@ -1,4 +1,4 @@
-"""Needs: floor/ceiling of an infinite argument, and of a sum of floors/ceilings.  Owner: handlers_identities (integer_funcs).
+"""Fixed in phase 3 (ri/fixes).  The needs test said: floor/ceiling of an infinite argument, and of a sum of floors/ceilings.  Owner: handlers_identities (integer_funcs).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

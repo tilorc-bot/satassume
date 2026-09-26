@@ -1,4 +1,4 @@
-"""Needs: ``arg(x)`` under ``Q.zero(x)`` stays ``arg(x)``; SymPy's ``arg(0)`` is ``nan``.  Owner: handlers_identities (complex_parts).
+"""Fixed in phase 3 (ri/fixes).  The needs test said: ``arg(x)`` under ``Q.zero(x)`` stays ``arg(x)``; SymPy's ``arg(0)`` is ``nan``.  Owner: handlers_identities (complex_parts).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

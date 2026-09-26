@@ -121,7 +121,6 @@ def test_no_refinement_for_unknown_integer_shift() -> None:
     assert refine(coth(x + n * I_PI), Q.real(n)) == coth(x + n * I_PI)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_hyperbolic_i_pi_shift.py", "f(x + n*I*pi) is not (-1)**n*f(x) for integer n")
 def test_integer_shift_with_unknown_parity() -> None:
     assert refine(sinh(x + n * I_PI), Q.integer(n)) == (-1)**n * sinh(x)
     assert refine(cosh(x + n * I_PI), Q.integer(n)) == (-1)**n * cosh(x)

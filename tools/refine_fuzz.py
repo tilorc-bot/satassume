@@ -32,6 +32,7 @@ from sympy.core.basic import Basic
 from sympy import sympify
 from sympy.functions.elementary.integers import frac as _frac
 from sympy.assumptions.refine import refine as sympy_refine
+import satrefine
 from satrefine import refine as sat_refine, backend
 from satrefine._upstream import handlers_dict
 backend.set_backend(os.environ.get(backend.ENV_VAR, "combined"))   # SATREFINE_BACKEND, default combined
@@ -864,7 +865,7 @@ def mat_main(seed=0, cases=1000):
     fired, tried, checked_cases, unchecked, unsound, crashes, nopoint, sympy_unsound = (
         Counter(), Counter(), Counter(), [], [], [], 0, [])
     t0 = time.time()
-    coverage = MatrixRowCoverage() if os.environ.get("SATREFINE_HANDLERS", "handlers") == "handlers_identities" else None
+    coverage = MatrixRowCoverage() if satrefine.HANDLERS_PACKAGE == "handlers_identities" else None
     if coverage:
         coverage.__enter__()
     for case in range(cases):

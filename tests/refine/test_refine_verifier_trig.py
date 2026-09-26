@@ -449,13 +449,11 @@ def test_quoted_rule_outputs() -> None:
     assert refine(atan(tan(x)), ATAN_OPEN) == x
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_odd_half_pi_sign_form.py", "odd multiples of pi/2 give -(-1)**(n/2 + 3/2) instead of (-1)**((n + 1)/2)")
 def test_quoted_rule_outputs_sec_odd_half_pi() -> None:
     assert refine(sec(x + n * pi / 2), Q.odd(n)) == \
         (-1) ** ((n + 1) / 2) * csc(x)
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_hyperbolic_i_pi_shift.py", "f(x + n*I*pi) is not (-1)**n*f(x) for integer n")
 def test_hyperbolic_integer_shift_is_conservative() -> None:
     """The quoted ``(-1)**n`` rule is now implemented.
 

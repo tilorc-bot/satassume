@@ -25,7 +25,6 @@ INTEGERS = [-4, -3, -2, -1, 0, 1, 2, 3, 4]
 NONZERO_INTEGERS = [-3, -2, -1, 1, 2, 3]
 
 
-@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_rem_zero_dividend.py", "Rem(p, q) under Q.zero(p) is not 0")
 def test_zero_dividend_is_zero() -> None:
     assert refine(Rem(p, q), Q.zero(p)) is S.Zero
     assert refine(Rem(p, q), Q.zero(p) & Q.nonzero(q)) is S.Zero

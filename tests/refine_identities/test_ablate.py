@@ -25,12 +25,14 @@ def restore_minmax():
     mod = importlib.import_module("satrefine.handlers_identities.minmax_deltas")
     lists = {name: list(v) for name, v in vars(mod).items()
              if isinstance(v, list) and v and all(isinstance(r, tuple) for r in v)}
-    rows = {key: list(handlers_dict[key].rows) for key in ablate_tool.family_keys("minmax_deltas")}
+    tables = [t for key in ablate_tool.family_keys("minmax_deltas")
+              for t in ablate_tool._table_parts(handlers_dict[key])]
+    rows = [(t, list(t.rows)) for t in tables]
     yield mod
     for name, saved in lists.items():
         getattr(mod, name)[:] = saved
-    for key, saved in rows.items():
-        handlers_dict[key].rows[:] = saved
+    for table, saved in rows:
+        table.rows[:] = saved
 
 
 def test_family_keys():
@@ -43,7 +45,7 @@ def test_ablate_removes_the_row_from_handler_and_module(restore_minmax):
     assert refine(DiracDelta(x), Q.positive(x)) == 0
     removed = ablate_tool.ablate("minmax_deltas", [0])       # DiracDelta off the origin
     assert "DiracDelta(x)" in removed[0]
-    assert len(mod.RULES) == 2
+    assert len(mod.RULES) == 6 and len(mod.DIRAC) == 2
     assert len(handlers_dict["DiracDelta"].rows) == 2
     assert refine(DiracDelta(x), Q.positive(x)) == DiracDelta(x)
 
