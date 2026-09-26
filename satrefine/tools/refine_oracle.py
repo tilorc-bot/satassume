@@ -62,7 +62,6 @@ import itertools
 import json
 import os
 import random
-import signal
 import sys
 import time
 import traceback
@@ -93,12 +92,9 @@ def parse_args(argv=None):
 
 ARGS = None
 if __name__ == "__main__":
+    from satrefine.tools.lib.select import select
     ARGS = parse_args()
-    if "satrefine" in sys.modules:           # python -m: satrefine is loaded already
-        from satrefine.tools import rerun_with
-        rerun_with(handlers=ARGS.handlers, backend=ARGS.backend)
-    os.environ["SATREFINE_HANDLERS"] = ARGS.handlers
-    os.environ["SATREFINE_BACKEND"] = ARGS.backend
+    select(handlers=ARGS.handlers, backend=ARGS.backend)
 
 sys.setrecursionlimit(10000)
 
@@ -124,6 +120,9 @@ from sympy.core.relational import Relational  # noqa: E402
 import satrefine  # noqa: E402
 from satrefine.identities.compat import backend as sat_backend  # noqa: E402
 from satrefine import _upstream  # noqa: E402
+from satrefine.tools.lib.report import table  # noqa: E402
+from satrefine.tools.lib.workers import Timeout, attempt, install_timeouts, run_forked, timed  # noqa: E402
+from satrefine.tools.lib.workers import outer_expired as _outer_expired  # noqa: E402
 
 HANDLER_KEYS = sorted(_upstream.handlers_dict)
 
@@ -132,60 +131,7 @@ HANDLER_KEYS = sorted(_upstream.handlers_dict)
 # timeouts
 # ---------------------------------------------------------------------------
 
-class Timeout(BaseException):
-    """BaseException, so SymPy's internal ``except Exception`` cannot swallow it."""
-
-
-def _on_alarm(signum, frame):
-    raise Timeout()
-
-
-signal.signal(signal.SIGALRM, _on_alarm)
-_DEADLINES: list[float] = []
-
-
-def _arm():
-    if _DEADLINES:
-        left = max(min(_DEADLINES) - time.monotonic(), 0.001)
-        # keep re-firing once expired, in case library code swallows one signal
-        signal.setitimer(signal.ITIMER_REAL, left, 0.5)
-    else:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-
-
-def timed(fn, secs, *a, **kw):
-    """Run fn with a wall-clock limit; nested limits are honoured (the tighter wins).
-
-    A Timeout propagates out of this frame only when this frame's own deadline
-    has passed or an outer one has; it is raised as ``Timeout``.
-    """
-    deadline = time.monotonic() + secs
-    _DEADLINES.append(deadline)
-    _arm()
-    try:
-        return fn(*a, **kw)
-    finally:
-        _DEADLINES.remove(deadline)
-        _arm()
-
-
-def _outer_expired():
-    now = time.monotonic()
-    return any(d <= now for d in _DEADLINES)
-
-
-def attempt(fn, secs, *a, **kw):
-    """(value, None) or (None, error string); an outer deadline is re-raised."""
-    try:
-        return timed(fn, secs, *a, **kw), None
-    except Timeout:
-        if _outer_expired():
-            raise
-        return None, "timeout"
-    except RecursionError:
-        return None, "RecursionError"
-    except Exception as e:  # noqa: BLE001
-        return None, f"{type(e).__name__}: {e}"[:200]
+install_timeouts()     # Timeout, timed and attempt: satrefine.tools.lib.workers
 
 
 # ---------------------------------------------------------------------------
@@ -1102,67 +1048,10 @@ def mode_a_tasks(keys, limit):
     return tasks
 
 
-def _child(task, conn, fn):
-    try:
-        res = fn(task)
-    except BaseException as e:  # noqa: BLE001
-        res = [{"key": "?", "expr": str(task), "spec": "",
-                "sat": {"category": "error", "error": repr(e)[:200]},
-                "up": {"category": "error", "error": repr(e)[:200]}}]
-    try:
-        conn.send(res)
-    finally:
-        conn.close()
-    os._exit(0)
-
-
-def run_forked(tasks, jobs, fn, label, hard_timeout, on_timeout):
-    """Run fn(task) in one forked child per task; kill children past hard_timeout.
-
-    SIGALRM cannot interrupt long C-level computations (big-integer
-    arithmetic), so a wall-clock kill from the parent is the only reliable
-    guard against a stuck case.
-    """
-    import multiprocessing as mp
-    from multiprocessing.connection import wait
-    ctx = mp.get_context("fork")
-    pending = list(tasks)
-    pending.reverse()
-    running = {}
-    out = []
-    done = 0
-    start = time.time()
-    while pending or running:
-        while pending and len(running) < jobs:
-            task = pending.pop()
-            r, w = ctx.Pipe(duplex=False)
-            proc = ctx.Process(target=_child, args=(task, w, fn))
-            proc.start()
-            w.close()
-            running[r] = (proc, time.time(), task)
-        ready = wait(list(running), timeout=1.0)
-        for conn in ready:
-            proc, t0, task = running.pop(conn)
-            try:
-                out.extend(conn.recv())
-            except (EOFError, OSError):
-                out.extend(on_timeout(task, "child died"))
-            conn.close()
-            proc.join()
-            done += 1
-        now = time.time()
-        for conn, (proc, t0, task) in list(running.items()):
-            if now - t0 > hard_timeout:
-                proc.kill()
-                proc.join()
-                conn.close()
-                running.pop(conn)
-                out.extend(on_timeout(task, f"hard timeout {hard_timeout}s"))
-                done += 1
-        if ready and (done % 25 == 0 or not (pending or running)):
-            print(f"  [{label}] {done}/{len(tasks)} tasks, {len(out)} records, "
-                  f"{time.time() - start:.0f}s", file=sys.stderr, flush=True)
-    return out
+def _error_records(task, e):
+    return [{"key": "?", "expr": str(task), "spec": "",
+             "sat": {"category": "error", "error": repr(e)[:200]},
+             "up": {"category": "error", "error": repr(e)[:200]}}]
 
 
 def _a_timeout(task, why):
@@ -1181,7 +1070,7 @@ def _a_timeout(task, why):
 
 def run_parallel(tasks, jobs, backend_name, label):
     worker_init(backend_name)
-    return run_forked(tasks, jobs, run_task, label, 180.0, _a_timeout)
+    return run_forked(tasks, jobs, run_task, label, 180.0, _a_timeout, _error_records)
 
 
 # ---------------------------------------------------------------------------
@@ -1520,7 +1409,7 @@ def _b_timeout(path, why):
 
 
 def run_mode_b(jobs):
-    return run_forked(MODE_B_MODULES, jobs, _b_task, "mode B", 1500.0, _b_timeout)
+    return run_forked(MODE_B_MODULES, jobs, _b_task, "mode B", 1500.0, _b_timeout, _error_records)
 
 
 # ---------------------------------------------------------------------------
@@ -1530,15 +1419,6 @@ def run_mode_b(jobs):
 A_CATS = ["agree", "both-unchanged", "sat-further", "old-further", "gap",
           "disagree-sat-wrong", "unsound-alone", "timeout", "error"]
 B_CATS = ["match", "equivalent-form", "gap", "trivial", "unsound", "undecided", "timeout", "error"]
-
-
-def table(rows, header):
-    widths = [max(len(str(r[i])) for r in rows + [header]) for i in range(len(header))]
-    line = "  ".join(str(h).rjust(w) if i else str(h).ljust(w) for i, (h, w) in enumerate(zip(header, widths)))
-    print(line)
-    print("-" * len(line))
-    for r in rows:
-        print("  ".join(str(c).rjust(w) if i else str(c).ljust(w) for i, (c, w) in enumerate(zip(r, widths))))
 
 
 def report_a(recs, show, max_show):
@@ -1561,7 +1441,7 @@ def report_a(recs, show, max_show):
             tot["cases"] += len(by_key[k])
             rows.append([k, len(by_key[k])] + [c[x] for x in A_CATS] + [uns, sing])
         rows.append(["TOTAL", tot["cases"]] + [tot[x] for x in A_CATS] + [tot["unsound"], tot["singular"]])
-        table(rows, ["key", "cases"] + A_CATS + ["UNSOUND", "sing-mismatch"])
+        table(rows, ["key", "cases"] + A_CATS + ["UNSOUND", "sing-mismatch"], right=True)
     same = sum(1 for r in recs if r.get("same_as_sympy"))
     print(f"\nsatrefine result identical to sympy.refine: {same}/{len(recs)}")
     ow = [r for r in recs if r.get("old_wrong")]
@@ -1647,7 +1527,7 @@ def report_b(recs, show, max_show):
             tot["rep"] += len(rep)
             tot.update(c)
         rows.append(["TOTAL", tot["found"], tot["unrepl"], tot["fails"], tot["rep"]] + [tot[x] for x in B_CATS])
-        table(rows, ["module", "found", "unreplayable", "assert-fails", "replayed"] + B_CATS)
+        table(rows, ["module", "found", "unreplayable", "assert-fails", "replayed"] + B_CATS, right=True)
     rep = [r for r in recs if r.get("status") == "replayed"]
     kc = collections.Counter(r["key"] for r in rep)
     print("\nreplayed cases by handler key: " + ", ".join(f"{k}={v}" for k, v in sorted(kc.items())))
