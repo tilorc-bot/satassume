@@ -87,9 +87,9 @@ from __future__ import annotations
 from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true, zoo
 from sympy.core import Pow
 
-from .._upstream import handlers_dict
-from . import _specialize
-from ._engine import Row, derive, identity_handler, part, principal, rule_handler
+from ..._upstream import handlers_dict
+from ...build import specialize as _specialize
+from ._tables import Row, derive, identity_handler, part, principal, rule_handler
 from ._tables import ZERO, chain, exp_node_measure, negative_number_base_measure, node_measure
 
 z, b, e, p, r, x, a, n = symbols('z b e p r x a n')

@@ -311,7 +311,7 @@ def query_scope_recorder():
     """
     from collections import Counter
 
-    from satrefine import backend
+    from satrefine.identities.compat import backend
 
     def generator(request):
         from satassume.sympy_api import out_of_scope

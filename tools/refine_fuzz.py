@@ -33,7 +33,8 @@ from sympy import sympify
 from sympy.functions.elementary.integers import frac as _frac
 from sympy.assumptions.refine import refine as sympy_refine
 import satrefine
-from satrefine import refine as sat_refine, backend
+from satrefine import refine as sat_refine
+from satrefine.identities.compat import backend
 from satrefine._upstream import handlers_dict
 backend.set_backend(os.environ.get(backend.ENV_VAR, "combined"))   # SATREFINE_BACKEND, default combined
 
@@ -815,7 +816,7 @@ def mat_compare(left, right, points, ref=None):
 
 
 class MatrixRowCoverage:
-    """Counts, per row of ``satrefine.handlers_identities.matrices``, how often it fired.
+    """Counts, per row of ``satrefine.identities.compat.matrices``, how often it fired.
 
     Inside the ``with`` block every matrix key's handler is wrapped; when it
     returns a rewrite, the first row that alone gives the same rewrite is
@@ -828,8 +829,8 @@ class MatrixRowCoverage:
 
     def __enter__(self):
         import importlib
-        from satrefine.handlers_identities._engine import rule_handler
-        mod = importlib.import_module("satrefine.handlers_identities.matrices")
+        from satrefine.identities.core.rewrite import rule_handler
+        mod = importlib.import_module("satrefine.identities.compat.matrices")
         tables = {"Determinant": mod.DETERMINANT, "HadamardProduct": mod.HADAMARD, "Inverse": mod.INVERSE,
                   "MatAdd": mod.MATADD, "MatMul": mod.MATMUL, "MatrixElement": mod.MATRIXELEMENT,
                   "Trace": mod.TRACE, "Transpose": mod.TRANSPOSE}

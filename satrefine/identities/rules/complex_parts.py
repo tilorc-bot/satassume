@@ -61,8 +61,8 @@ from __future__ import annotations
 from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
 from sympy.core import Mul
 
-from .._upstream import handlers_dict
-from ._engine import Row, derive, identity_handler, part, rule_handler
+from ..._upstream import handlers_dict
+from ._tables import Row, derive, identity_handler, part, rule_handler
 from ._simple import register_ranges
 from ._tables import ZERO, chain, node_measure
 from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)

@@ -19,7 +19,7 @@ from sympy.assumptions import Q
 
 from satrefine import refine
 from satrefine.handlers_v3 import complex_parts
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 
 x, y, z, t, w = symbols('x y z t w')
 n = Symbol('n')

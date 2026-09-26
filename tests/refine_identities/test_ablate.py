@@ -22,7 +22,7 @@ x, y = symbols("x y")
 
 @pytest.fixture
 def restore_minmax():
-    mod = importlib.import_module("satrefine.handlers_identities.minmax_deltas")
+    mod = importlib.import_module("satrefine.identities.rules.minmax_deltas")
     lists = {name: list(v) for name, v in vars(mod).items()
              if isinstance(v, list) and v and all(isinstance(r, tuple) for r in v)}
     tables = [t for key in ablate_tool.family_keys("minmax_deltas")
@@ -51,7 +51,7 @@ def test_ablate_removes_the_row_from_handler_and_module(restore_minmax):
 
 
 def test_ablate_shared_row_goes_from_every_table():
-    mod = importlib.import_module("satrefine.handlers_identities.integer_funcs")
+    mod = importlib.import_module("satrefine.identities.rules.integer_funcs")
     saved = {name: list(getattr(mod, name)) for name in ("RULES", "FLOOR", "CEILING", "ROUNDING")}
     saved_rows = {key: list(handlers_dict[key].rows) for key in ("floor", "ceiling")}
     try:

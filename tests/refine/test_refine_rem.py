@@ -14,7 +14,7 @@ from sympy.functions.elementary.integers import ceiling, floor
 from sympy.functions.elementary.miscellaneous import Rem
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     recording_ask,
     stub_ask,

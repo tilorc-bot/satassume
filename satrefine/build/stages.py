@@ -24,8 +24,9 @@ from typing import Any, Callable
 
 from sympy import sympify
 
-from . import _dispatch, _specialize
-from ._engine import Row, rule_handler
+from ..identities.core import driver as _dispatch
+from ..identities.core.rewrite import Row, rule_handler
+from . import specialize as _specialize
 
 STAGES: list[tuple[int, list[str]]] = [
     (1, ["integer_funcs", "complex_parts"]),   # floor and frac; re, im, arg, Abs, sign, conjugate
@@ -141,13 +142,10 @@ def row_labels(generated: dict[str, dict] | None = None) -> dict[tuple, str]:
     """``row -> "family.TABLE[i]"`` for the stated rows of every family module, and
     ``"family.generated[i]"`` for the rows of the generated tables in ``generated``."""
     import importlib
-    import pkgutil
-    from .. import handlers_identities as package
+    from ..identities import families, family_module_name
     labels: dict[tuple, str] = {}
-    for info in pkgutil.iter_modules(package.__path__):
-        if info.name.startswith("_") or info.ispkg:
-            continue
-        mod = importlib.import_module(f"{package.__name__}.{info.name}")
+    for family in families():
+        mod = importlib.import_module(family_module_name(family))
         tables = [n for n in _TABLE_ORDER if isinstance(getattr(mod, n, None), list)]
         tables += sorted(n for n, v in vars(mod).items() if n.isupper() and n not in tables and isinstance(v, list)
                          and v and all(isinstance(r, tuple) and len(r) in (3, 4) for r in v))
@@ -155,7 +153,7 @@ def row_labels(generated: dict[str, dict] | None = None) -> dict[tuple, str]:
             for i, row in enumerate(getattr(mod, name)):
                 if isinstance(row, tuple) and len(row) in (3, 4):
                     try:
-                        labels.setdefault(_key(row), f"{info.name}.{name}[{i}]")
+                        labels.setdefault(_key(row), f"{family}.{name}[{i}]")
                     except Exception:  # noqa: BLE001  (a row SymPy cannot rebuild)
                         pass
     for fam, entry in (generated or {}).items():

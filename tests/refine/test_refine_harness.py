@@ -12,7 +12,7 @@ from sympy.abc import x
 from sympy.functions.elementary.complexes import Abs
 
 import satrefine.handlers as handlers_package
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refines_like_sympy,
     assert_refinement_valid,
     recording_ask,

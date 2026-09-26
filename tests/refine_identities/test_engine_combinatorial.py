@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from sympy import Function, Q, S, binomial, ff, rf, symbols
 
-from satrefine.handlers_identities._specialize import compile_rule
+from satrefine.identities.rules._tables import compile_rule
 
 k, m, n, x = symbols('k m n x')
 G = Function('G')

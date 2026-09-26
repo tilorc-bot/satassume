@@ -6,8 +6,9 @@ import pytest
 pytestmark = pytest.mark.slow
 from sympy import I, Q, log, pi, symbols
 
-from satrefine.handlers_identities._specialize import compile_table, specialize_table, verify
-from satrefine.handlers_identities.power_exp_log import IDENTITIES
+from satrefine.identities.rules._tables import compile_table
+from satrefine.build.specialize import specialize_table, verify
+from satrefine.identities.rules.power_exp_log import IDENTITIES
 
 z, b, e, p, r, x = symbols('z b e p r x')
 
@@ -55,8 +56,8 @@ def test_compiled_table_fires_like_the_engine(rules):
 def test_literal_catalog_entries_specialize_the_left_side():
     """A Literal(-1) on the exponent yields the reciprocal rules the symbolic
     catalog cannot reach (an imaginary base needs the literal to collapse)."""
-    from satrefine.handlers_identities._specialize import CATALOG, Literal, specialize
-    from satrefine.handlers_identities.power_exp_log import IDENTITIES
+    from satrefine.build.specialize import CATALOG, Literal, specialize
+    from satrefine.identities.rules.power_exp_log import IDENTITIES
     lhs, _rhs, dom = IDENTITIES[1]                     # log(b**e)
     rules = specialize(lhs, dom, {"e": [Literal(-1)], None: CATALOG})
     assert (log(1/b), -log(b), Q.imaginary(b)) in rules or (log(1/b), -log(b), Q.imaginary(b) & ~Q.zero(b)) in rules

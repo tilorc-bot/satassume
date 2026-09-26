@@ -1,5 +1,9 @@
 """Helpers the table modules share (the authors' side of the engine).
 
+The family modules import everything they use from here: the engine's
+table API (``Row``, ``identity_handler``, ``rule_handler``, ``part``,
+re-exported from :mod:`..core`), the wrap ``principal`` and the helpers below.
+
 ``chain`` registers several handlers on one key: rule rows are tried
 before identity rows, and because only the identity handler switches
 itself off while evaluating a candidate, nested nodes of the same head are
@@ -15,7 +19,11 @@ from typing import Any, Callable, Iterable
 from sympy import Function, Q, Symbol
 from sympy.core import Add, Mul
 
-from ._engine import _is_negation, size
+from ..core.rewrite import Row, _is_negation, derive, identity_handler, part, rule_handler, size
+from ._wraps import principal
+
+__all__ = ["ZERO", "Row", "chain", "compile_rule", "compile_table", "derive", "exp_node_measure", "identity_handler",
+           "negative_number_base_measure", "node_measure", "part", "principal", "rule_handler"]
 
 Handler = Callable[[Any, Any], Any]
 
@@ -73,3 +81,13 @@ def negative_number_base_measure(e: Any, assumptions: Any) -> tuple:
     from sympy.core import Pow
     negative = sum(1 for node in e.atoms(Pow) if node.base.is_number and node.base.is_negative)
     return (negative, size(e))
+
+
+def compile_rule(lhs: Any, rhs: Any, hyp: Any, unless: Any = None) -> Callable[[Any, Any], Any]:
+    """One rule row as a handler (see :func:`..core.rewrite.rule_handler`)."""
+    return rule_handler([(lhs, rhs, hyp, unless)])
+
+
+def compile_table(rules: Iterable) -> Callable[[Any, Any], Any]:
+    """A rule table as a handler; rows ``(lhs, rhs, hypothesis[, unless])`` in table order."""
+    return rule_handler(list(rules))

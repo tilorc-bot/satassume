@@ -95,8 +95,8 @@ from sympy import I, Pow, Q, S, exp, pi
 from sympy.core import Basic, Expr
 from sympy.core.sympify import sympify
 
-from .. import _upstream
-from . import _simple
+from ... import _upstream
+from ..rules import _simple
 
 MAX_FIRINGS = 500
 """Rewrites allowed in one chain (a node rewritten, the result rewritten again, ...):

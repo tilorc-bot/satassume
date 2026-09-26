@@ -11,7 +11,7 @@ from sympy.functions.combinatorial.factorials import (
 )
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     recording_ask,
     stub_ask,

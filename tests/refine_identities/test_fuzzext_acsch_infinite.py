@@ -25,8 +25,9 @@ from __future__ import annotations
 import pytest
 from sympy import Abs, Q, acsch, csch, symbols
 
-from satrefine import backend, refine
-from satrefine.handlers_identities import _dispatch
+from satrefine import refine
+from satrefine.identities.compat import backend
+from satrefine.identities.core import driver as _dispatch
 
 z, n = symbols("z n")
 MODES = {"generated": _dispatch.tables, "live": _dispatch.live}

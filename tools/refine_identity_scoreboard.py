@@ -12,8 +12,9 @@ Usage::
 
 Code lines (``--lines``, also printed with the rows) are physical lines that
 are not blank, not comments and not module, class or function docstrings,
-for the engine (the underscore modules but ``__init__``) and per family.
-Rows are counted from the family modules of ``handlers_identities``
+for the engine (online: ``satrefine/identities`` without the families, the
+generated tables and the backend; offline: ``satrefine/build``) and per family.
+Rows are counted from the family modules of ``satrefine.identities``
 (``FACTS``, ``EXP_FORMS``, ``RULES``, ``SIMPLE_RULES``).  The battery is a
 list of ``(expr, assumptions, expected, source)`` (see the battery module):
 for each case the dispatcher's output is compared with ``expected`` by
@@ -27,7 +28,6 @@ import argparse
 import importlib
 import importlib.util
 import os
-import pkgutil
 import subprocess
 import sys
 from collections import Counter, defaultdict
@@ -51,27 +51,25 @@ def parse() -> argparse.Namespace:
 
 def count_rows() -> None:
     """Rows per family module; ``generated`` is the size of ``generated/<family>.py`` if present."""
-    import satrefine.handlers_identities as package
+    from satrefine.identities import families, family_module_name
     print(f"rows per family (handlers_identities, SATREFINE_IDENTITIES={os.environ.get('SATREFINE_IDENTITIES', 'generated')})")
     print(f"  {'module':18s} {'facts':>6s} {'exp':>6s} {'rules':>6s} {'simple':>6s} {'ranges':>6s} {'stage0':>6s} "
           f"{'generated':>10s}")
     total = Counter()
-    for info in pkgutil.iter_modules(package.__path__):
-        if info.name.startswith("_") or info.ispkg:
-            continue
-        mod = importlib.import_module(f"{package.__name__}.{info.name}")
+    for name in families():
+        mod = importlib.import_module(family_module_name(name))
         def n(m, name: str) -> int:
             v = getattr(m, name, None)
             return v if isinstance(v, int) else len(v) if v is not None else 0
         counts = {k: n(mod, k) for k in ("FACTS", "EXP_FORMS", "RULES", "SIMPLE_RULES", "RANGES")}
         counts["STAGE0"] = sum(counts.values()) + sum(n(mod, k) for k in STATED_ELSEWHERE)
         try:
-            gen = importlib.import_module(f"{package.__name__}.generated.{info.name}")
+            gen = importlib.import_module(f"satrefine.identities.generated.{name}")
             counts["GENERATED"] = n(gen, "RULES")
         except ModuleNotFoundError:
             counts["GENERATED"] = 0
         total.update(counts)
-        print(f"  {info.name:18s} {counts['FACTS']:6d} {counts['EXP_FORMS']:6d} {counts['RULES']:6d} "
+        print(f"  {name:18s} {counts['FACTS']:6d} {counts['EXP_FORMS']:6d} {counts['RULES']:6d} "
               f"{counts['SIMPLE_RULES']:6d} {counts['RANGES']:6d} {counts['STAGE0']:6d} {counts['GENERATED']:10d}")
     print(f"  {'total':18s} {total['FACTS']:6d} {total['EXP_FORMS']:6d} {total['RULES']:6d} "
           f"{total['SIMPLE_RULES']:6d} {total['RANGES']:6d} {total['STAGE0']:6d} {total['GENERATED']:10d}")
@@ -96,14 +94,34 @@ def code_lines(path: Path) -> int:
                if line.strip() and not line.strip().startswith("#") and k not in docstrings)
 
 
+def engine_paths() -> tuple[list[Path], list[Path]]:
+    """The engine's modules, ``(online, offline)``: what used to be the underscore
+    modules of ``handlers_identities``.  Online: ``satrefine/identities`` without
+    the families, the generated tables and the ``ask`` backend (``compat/backend.py``,
+    which was never counted); offline: ``satrefine/build`` (specialisation, fixpoint)."""
+    from satrefine.identities import families, family_module_name
+    package = ROOT / "satrefine/identities"
+    family_files = {ROOT / (family_module_name(f).replace(".", "/") + ".py") for f in families()}
+    skip = family_files | {package / "compat/backend.py"}
+    online = sorted(p for p in package.rglob("*.py") if p not in skip and "generated" not in p.parts
+                    and not (p.name == "__init__.py" and code_lines(p) == 0))
+    offline = sorted(p for p in (ROOT / "satrefine/build").glob("*.py") if p.name != "__init__.py" or code_lines(p))
+    return online, offline
+
+
 def count_code_lines() -> None:
-    package = ROOT / "satrefine/handlers_identities"
-    engine = sorted(p for p in package.glob("_*.py") if p.name != "__init__.py")
-    families = sorted(p for p in package.glob("[a-z]*.py"))
+    from satrefine.identities import families, family_module_name
+    online, offline = engine_paths()
+    family_paths = {f: ROOT / (family_module_name(f).replace(".", "/") + ".py") for f in families()}
     print("code lines (no blanks, comments, docstrings)")
-    for label, paths in (("engine", engine), ("families", families)):
-        counts = {p.stem: code_lines(p) for p in paths}
-        print(f"  {label:10s} {sum(counts.values()):5d}  " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+
+    def listed(paths: list[Path]) -> tuple[int, str]:
+        counts = {str(p.relative_to(ROOT / "satrefine").with_suffix("")): code_lines(p) for p in paths}
+        return sum(counts.values()), ", ".join(f"{k} {v}" for k, v in counts.items())
+    (n_on, on), (n_off, off) = listed(online), listed(offline)
+    print(f"  {'engine':10s} {n_on + n_off:5d}  online {n_on}: {on}; offline {n_off}: {off}")
+    counts = {f: code_lines(p) for f, p in family_paths.items()}
+    print(f"  {'families':10s} {sum(counts.values()):5d}  " + ", ".join(f"{k} {v}" for k, v in counts.items()))
 
 
 def load_battery(path: str) -> tuple[list, int]:
@@ -151,7 +169,7 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
     known limits are unchecked, not wrong."""
     from sympy import MatrixSymbol, sympify
     from satrefine import refine
-    from satrefine.harness import assert_refinement_valid
+    from satrefine.testing.harness import assert_refinement_valid
     known_limit = _known_oracle_limit()
     counts: Counter = Counter()
     per_family: dict = defaultdict(Counter)
@@ -202,7 +220,7 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
             print(f"  {key:38s} {source}: {expr} | {assumptions} -> {got}  (v3: {expected})")
     total = sum(counts.values())
     try:
-        from satrefine.handlers_identities._dispatch import non_basic_returns
+        from satrefine.identities.core.driver import non_basic_returns
     except ImportError:
         non_basic_returns = {}
     if non_basic_returns:

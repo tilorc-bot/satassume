@@ -34,7 +34,7 @@ sys.argv = _argv
 
 from sympy import Q, S  # noqa: E402
 
-from satrefine import backend  # noqa: E402
+from satrefine.identities.compat import backend  # noqa: E402
 
 CHECK = {name: (f.PREDS[name][0], f.PREDS[name][1]) for name in
          ("real", "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero", "integer", "even",

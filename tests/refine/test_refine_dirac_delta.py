@@ -13,7 +13,7 @@ from sympy.core import S
 from sympy.functions.special.delta_functions import DiracDelta
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
     recording_ask,

@@ -90,8 +90,8 @@ from sympy import Symbol
 from sympy.logic.boolalg import BooleanFunction
 from sympy.matrices.expressions.matexpr import MatrixElement
 
-from .._upstream import handlers_dict
-from ._specialize import compile_table
+from ..._upstream import handlers_dict
+from ..rules._tables import compile_table
 
 c, i, j, m, p, q, s = symbols('c i j m p q s')
 A = MatrixSymbol('A', m, m)     # square

@@ -10,7 +10,7 @@ from sympy.matrices.expressions import MatrixSymbol
 from sympy.matrices.expressions.determinant import det
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refines_like_sympy,
     recording_ask,
     stub_ask,

@@ -47,8 +47,8 @@ from __future__ import annotations
 from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Min, Piecewise, Q, S, Tuple,
                    count_ops, nan, symbols, true)
 
-from .._upstream import handlers_dict
-from ._engine import identity_handler, rule_handler
+from ..._upstream import handlers_dict
+from ._tables import identity_handler, rule_handler
 from ._tables import chain
 
 a, b, c, h, i, j, lo, hi, r, x = symbols('a b c h i j lo hi r x')

@@ -103,11 +103,12 @@ from sympy.core.operations import LatticeOp
 from sympy.core.relational import Relational
 from sympy.matrices.expressions import HadamardProduct, MatAdd, MatMul, MatrixExpr, MatrixSymbol
 
-from .. import _upstream
-from .._upstream import handlers_dict
-from . import _dispatch, _simple
-from ._dispatch import refine  # the driver identity handlers evaluate candidates with
-from ._wraps import principal  # re-exported for tables
+from ... import _upstream
+from ..._upstream import handlers_dict
+from . import driver as _dispatch
+from ..rules import _simple
+from .driver import refine  # the driver identity handlers evaluate candidates with
+from ..rules._wraps import principal  # re-exported for tables
 
 Row = tuple[Basic, Basic, Basic]
 Binding = dict[Any, Any]

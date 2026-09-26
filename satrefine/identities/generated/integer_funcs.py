@@ -9,8 +9,8 @@ identity row and profile it came from, the rows that fired, the asks used.
 from sympy import *  # noqa: F401,F403
 from sympy import Q
 
-from satrefine.handlers_identities._dispatch import generated_handlers as handlers_dict
-from satrefine.handlers_identities._engine import rule_handler
+from satrefine.identities.core.driver import generated_handlers as handlers_dict
+from satrefine.identities.core.rewrite import rule_handler
 
 a, b, x = symbols('a b x')
 

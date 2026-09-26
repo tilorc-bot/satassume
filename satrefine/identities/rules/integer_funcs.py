@@ -77,8 +77,8 @@ from __future__ import annotations
 from sympy import Function, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols, true
 from sympy.functions.elementary.miscellaneous import Rem
 
-from .._upstream import handlers_dict
-from ._engine import identity_handler, part, rule_handler
+from ..._upstream import handlers_dict
+from ._tables import identity_handler, part, rule_handler
 from ._tables import chain, node_measure
 
 a, b, c, n, x, y = symbols('a b c n x y')

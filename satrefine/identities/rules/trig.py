@@ -36,8 +36,8 @@ from __future__ import annotations
 from sympy import Function, Q, S, cos, cot, csc, pi, sec, sin, sinc, symbols, tan, true
 from sympy.calculus.accumulationbounds import AccumBounds
 
-from .._upstream import handlers_dict
-from ._engine import Row, rule_handler
+from ..._upstream import handlers_dict
+from ._tables import Row, rule_handler
 from ._tables import ZERO, chain
 
 n, r, x = symbols('n r x')

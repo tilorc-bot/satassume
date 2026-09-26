@@ -27,8 +27,9 @@ import pytest
 from sympy import Abs, I, MatrixSymbol, Q, Symbol, ZeroMatrix, arg, exp, log, sqrt, symbols
 from sympy.assumptions.ask import ask as sympy_ask
 
-from satrefine import backend, refine
-from satrefine.backend import ask
+from satrefine import refine
+from satrefine.identities.compat import backend
+from satrefine.identities.compat.backend import ask
 
 x, y, z, b, c = Symbol('x'), Symbol('y'), Symbol('z'), Symbol('b'), Symbol('c')
 

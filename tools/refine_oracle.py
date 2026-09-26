@@ -119,7 +119,7 @@ from sympy.assumptions.refine import refine as sympy_refine  # noqa: E402
 from sympy.core.relational import Relational  # noqa: E402
 
 import satrefine  # noqa: E402
-from satrefine import backend as sat_backend  # noqa: E402
+from satrefine.identities.compat import backend as sat_backend  # noqa: E402
 from satrefine import _upstream  # noqa: E402
 
 HANDLER_KEYS = sorted(_upstream.handlers_dict)

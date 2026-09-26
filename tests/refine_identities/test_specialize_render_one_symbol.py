@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from sympy import Q, S, frac, symbols
 
-from satrefine.handlers_identities._specialize import render_module
+from satrefine.build.specialize import render_module
 
 x = symbols('x')
 

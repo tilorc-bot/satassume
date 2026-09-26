@@ -5,7 +5,7 @@ from sympy.assumptions import Q
 from sympy.matrices.expressions import HadamardProduct, MatrixSymbol, ZeroMatrix
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     recording_ask,
     reference_ask,
     stub_ask,

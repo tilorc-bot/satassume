@@ -25,7 +25,8 @@ import pytest
 from sympy import Abs, Q, conjugate, gamma
 from sympy.abc import n, x
 
-from satrefine import backend, refine
+from satrefine import refine
+from satrefine.identities.compat import backend
 
 CASES = [
     (conjugate(x), Q.infinite(x) & Q.real(x)),

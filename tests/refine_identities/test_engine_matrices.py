@@ -11,7 +11,7 @@ from __future__ import annotations
 from sympy import (Adjoint, HadamardProduct, Identity, MatMul,
                    MatrixSymbol, Q, S, Transpose, ZeroMatrix, symbols)
 
-from satrefine.handlers_identities._specialize import compile_rule
+from satrefine.identities.rules._tables import compile_rule
 
 c, i, j, m, q, s, x = symbols('c i j m q s x')
 A = MatrixSymbol('A', m, m)

@@ -29,8 +29,8 @@ os.environ["SATREFINE_IDENTITIES"] = "live"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import satrefine  # noqa: E402,F401  (loads the identity package)
-from satrefine.handlers_identities import _stages  # noqa: E402
-from satrefine.handlers_identities._specialize import generated_path, render_module  # noqa: E402
+from satrefine.build import stages as _stages  # noqa: E402
+from satrefine.build.specialize import generated_path, render_module  # noqa: E402
 
 
 def write(family: str, entry: dict, labels: dict) -> str:
@@ -50,7 +50,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--family", action="append", help="family module name (repeatable): regenerate only these, "
                    "against the committed tables of the others")
-    p.add_argument("--write", action="store_true", help="write satrefine/handlers_identities/generated/<family>.py")
+    p.add_argument("--write", action="store_true", help="write satrefine/identities/generated/<family>.py")
     p.add_argument("--quiet", action="store_true", help="do not list the rules")
     args = p.parse_args()
     t0 = time.time()
@@ -60,7 +60,7 @@ def main() -> None:
         for module in modules:
             t = time.time()
             rules, keys, verdicts = _stages.generate_one(module)
-            from satrefine.handlers_identities import _specialize
+            from satrefine.build import specialize as _specialize
             out[_stages.family_name(module)] = {"rules": rules, "keys": keys, "verdicts": verdicts,
                                                 "records": {r: _specialize.records.get(r) for r in rules},
                                                 "rounds": [1], "seconds": [round(time.time() - t, 1)]}
@@ -69,7 +69,7 @@ def main() -> None:
         for module in _stages.ordered_families():
             fam = _stages.family_name(module)
             try:
-                others[fam] = {"rules": importlib.import_module(f"satrefine.handlers_identities.generated.{fam}").RULES}
+                others[fam] = {"rules": importlib.import_module(f"satrefine.identities.generated.{fam}").RULES}
             except ImportError:
                 pass
         labels = _stages.row_labels(others)

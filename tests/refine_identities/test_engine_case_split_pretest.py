@@ -1,7 +1,7 @@
 """Case splits (phase 3, A4): the linkage pre-test and the shared real-part dummy."""
 from sympy import And, Q, arg, floor, log, pi, symbols
 
-from satrefine.handlers_identities import _engine
+from satrefine.identities.core import rewrite as _engine
 
 x, y, z, w = symbols("x y z w")
 

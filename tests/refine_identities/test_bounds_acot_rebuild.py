@@ -19,7 +19,7 @@ import pytest
 from sympy import Abs, Max, Min, Q, acot, acoth, pi, I, sqrt, symbols
 
 from satrefine import refine
-from satrefine.handlers_identities import _dispatch
+from satrefine.identities.core import driver as _dispatch
 
 z = symbols("z")
 MODES = {"generated": _dispatch.tables, "live": _dispatch.live}

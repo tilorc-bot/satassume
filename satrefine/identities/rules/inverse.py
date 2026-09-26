@@ -61,8 +61,8 @@ from sympy import (Abs, I, Interval, Piecewise, Q, S, acos, acosh, acot, acoth, 
                    atan2, atanh, cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols, tan,
                    tanh, true)
 
-from .._upstream import handlers_dict
-from ._engine import Row, identity_handler, rule_handler
+from ..._upstream import handlers_dict
+from ._tables import Row, identity_handler, rule_handler
 from ._simple import register_ranges
 from ._tables import ZERO, chain, node_measure
 from ._wraps import reflect_full, reflect_half, sawtooth

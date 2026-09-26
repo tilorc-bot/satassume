@@ -2,7 +2,7 @@
 """Run the refine suite under each ask backend and compare the outcomes.
 
 The refine handlers in ``satrefine`` ask their predicate questions through
-one seam, ``satrefine.backend``, which can be SymPy's ``ask``, satassume's
+one seam, ``satrefine.identities.compat.backend``, which can be SymPy's ``ask``, satassume's
 ``ask``, or the two combined.  Running ``tests/refine`` under each backend
 measures how much of the refine work each engine can justify:
 

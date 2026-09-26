@@ -54,8 +54,8 @@ from __future__ import annotations
 from sympy import (Function, Q, S, binomial, factorial, ff, gamma, rf,
                    symbols)
 
-from .._upstream import handlers_dict
-from ._specialize import compile_table
+from ..._upstream import handlers_dict
+from ._tables import compile_table
 
 n, k, x = symbols('n k x')
 G = Function('G')        # generic head: binomial, rf and ff share these rows

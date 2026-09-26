@@ -13,7 +13,7 @@ from sympy.core.numbers import Rational
 from sympy.functions.combinatorial.factorials import binomial
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     recording_ask,
     stub_ask,

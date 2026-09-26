@@ -44,7 +44,7 @@ from sympy import And, Dummy, Piecewise, Q, S, acot, acoth, ceiling, expand_mul,
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
 
-from .. import _upstream
+from ... import _upstream
 
 RANGES: dict = {}
 """``head -> [(head(y), interval, condition), ...]``: the range rows of bounded heads,
@@ -61,7 +61,7 @@ def register_ranges(rows: list) -> None:
 
 def _range(node: Any, assumptions: Any) -> tuple | None:
     """``(lo, hi, lo_open, hi_open)``: the range of a bounded head applied to its argument, or ``None``."""
-    from ._engine import provable
+    from ..core.rewrite import provable
     for lhs, interval, cond in RANGES.get(node.func, ()):
         if provable(cond.xreplace({lhs.args[0]: node.args[0]}), assumptions) is True:
             return interval.start, interval.end, interval.left_open, interval.right_open
@@ -353,8 +353,8 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     The dispatcher leaves the arguments to this handler (:data:`._dispatch.own_args`):
     SymPy refines a condition with a bare ``ask`` (weak on relations, raising on
     sign facts, wrong at ``-oo``)."""
-    from ._dispatch import refine
-    from ._engine import decide
+    from ..core.driver import refine
+    from ..core.rewrite import decide
     pairs = []
     for value, cond in expr.args:
         decided = decide(cond, assumptions)
@@ -411,7 +411,7 @@ def install(handlers_dict: dict) -> None:
     """Register the simple rules as the keys' handlers and as the dispatcher's
     fallbacks, so a family module that registers one of the keys later still
     gets them after its own table declines."""
-    from ._dispatch import fallback_handlers, own_args
+    from ..core.driver import fallback_handlers, own_args
     own_args.add("Piecewise")
     for key, handler in SIMPLE_RULES.items():
         handlers_dict[key] = handler

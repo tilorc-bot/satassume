@@ -7,7 +7,7 @@ from sympy.core import S
 from sympy.functions.elementary.integers import frac
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     recording_ask,
     stub_ask,

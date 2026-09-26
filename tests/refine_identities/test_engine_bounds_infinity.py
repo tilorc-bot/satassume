@@ -19,9 +19,9 @@ from sympy import (Abs, Eq, KroneckerDelta, Ne, Piecewise, Q, RisingFactorial, a
                    log, oo, pi, sign, symbols)
 
 from satrefine import refine
-from satrefine.handlers_identities import _dispatch
-from satrefine.handlers_identities._engine import provable
-from satrefine.handlers_identities._simple import rebuild
+from satrefine.identities.core import driver as _dispatch
+from satrefine.identities.core.rewrite import provable
+from satrefine.identities.rules._simple import rebuild
 
 x, y, n, z = symbols("x y n z")
 MODES = {"generated": _dispatch.tables, "live": _dispatch.live}

@@ -8,8 +8,8 @@ from __future__ import annotations
 from sympy import Function, Max, Piecewise, Q, S, atan2, symbols
 
 from satrefine import refine
-from satrefine.handlers_identities import _dispatch
-from satrefine.handlers_identities._engine import decide, identity_handler, provable
+from satrefine.identities.core import driver as _dispatch
+from satrefine.identities.core.rewrite import decide, identity_handler, provable
 
 a, b, n, x, y, z = symbols('a b n x y z')
 
@@ -67,7 +67,7 @@ def test_undecided_definition_declines_without_a_split():
 
 
 def test_a_table_can_switch_the_case_split_off(monkeypatch):
-    from satrefine.handlers_identities import _engine
+    from satrefine.identities.core import rewrite as _engine
     splits = []
     monkeypatch.setattr(_engine, "case_split", lambda *args: splits.append(args) and None)
     Book = Function('Book')                                  # bookkeeping nothing collapses

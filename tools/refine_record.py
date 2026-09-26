@@ -8,7 +8,7 @@ Needs a checkout that has ``satrefine`` and ``tests/refine_identities``
 ``tools/refine_replay.py`` against any satassume checkout.
 """
 import pickle, sys, time
-import satrefine, satrefine.backend as B
+import satrefine, satrefine.identities.compat.backend as B
 from tests.refine_identities.battery_v3 import BATTERY
 B.set_backend("satassume")
 orig = B._satassume_ask

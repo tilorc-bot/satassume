@@ -21,7 +21,7 @@ from sympy.core.numbers import I
 from sympy.functions.elementary.complexes import Abs, conjugate
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     scripted_ask,
     stub_ask,

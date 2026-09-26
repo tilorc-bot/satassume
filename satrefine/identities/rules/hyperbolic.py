@@ -35,8 +35,8 @@ from __future__ import annotations
 
 from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
-from .._upstream import handlers_dict
-from ._engine import Row, rule_handler
+from ..._upstream import handlers_dict
+from ._tables import Row, rule_handler
 from ._tables import ZERO
 
 m, x = symbols('m x')

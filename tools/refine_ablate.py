@@ -62,7 +62,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TESTS = ROOT / "tests" / "refine_identities"
-PACKAGE = "satrefine.handlers_identities"
 GOOD = ("same", "other")
 SHORT = {"fired, same as v3": "same", "fired, other form": "other",
          "did not fire, v3 expects a result": "miss", "unchanged as expected": "quiet",
@@ -73,9 +72,21 @@ SHORT = {"fired, same as v3": "same", "fired, other form": "other",
 # worker: ablate in process, measure, write JSON
 # ---------------------------------------------------------------------------
 
+def family_file(family: str) -> Path:
+    """The family's module file (``satrefine/identities/rules/`` or, for the matrices, ``compat/``)."""
+    package = ROOT / "satrefine" / "identities"
+    return next((p for p in (package / "rules" / f"{family}.py", package / "compat" / f"{family}.py") if p.exists()),
+                package / "rules" / f"{family}.py")
+
+
+def family_module(family: str) -> str:
+    """The family's module name (see :func:`family_file`)."""
+    return ".".join(family_file(family).relative_to(ROOT).with_suffix("").parts)
+
+
 def family_keys(family: str) -> list[str]:
     """The keys the module registers (its literal ``handlers_dict['key'] = ...`` lines)."""
-    src = (ROOT / "satrefine" / "handlers_identities" / f"{family}.py").read_text()
+    src = family_file(family).read_text()
     return re.findall(r"handlers_dict\[['\"](\w+)['\"]\]\s*=", src)
 
 
@@ -93,7 +104,7 @@ def _table_parts(handler) -> list:
 def ablate(family: str, drop: list[int]) -> list[str]:
     """Remove ``RULES[i]`` for ``i`` in ``drop`` from every table of the module; describe what was removed."""
     from satrefine._upstream import handlers_dict
-    mod = importlib.import_module(f"{PACKAGE}.{family}")
+    mod = importlib.import_module(family_module(family))
     rules = list(mod.RULES)
     gone = [_norm(rules[i]) for i in drop]
     for key in family_keys(family):
@@ -110,7 +121,7 @@ def classify_battery(family: str) -> dict:
     from sympy import MatrixSymbol, sympify
 
     from satrefine import refine
-    from satrefine.harness import assert_refinement_valid
+    from satrefine.testing.harness import assert_refinement_valid
     sys.path.insert(0, str(ROOT / "tools"))
     sb = importlib.import_module("refine_identity_scoreboard")
     cases, _ = sb.load_battery(str(TESTS / "battery_v3.py"))
@@ -383,7 +394,7 @@ def main(argv=None) -> None:
     if args.keep_baseline:
         Path(args.keep_baseline).write_text(json.dumps(base))
     import satrefine  # noqa: F401  (only to read the rows for printing, in the parent)
-    rules = importlib.import_module(f"{PACKAGE}.{args.family}").RULES
+    rules = importlib.import_module(family_module(args.family)).RULES
     print(f"family {args.family}: {len(rules)} rows, keys {', '.join(family_keys(args.family))}")
     print(f"baseline: {summary(base)} ({base['seconds']:.0f}s)")
     rows = [int(i) for i in args.rows.split(",")] if args.rows else list(range(len(rules)))

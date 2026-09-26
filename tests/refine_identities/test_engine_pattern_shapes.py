@@ -8,8 +8,8 @@ failures)."""
 from sympy import Symbol, conjugate, exp, log, symbols
 from sympy.core.cache import clear_cache
 
-from satrefine.handlers_identities import _engine
-from satrefine.handlers_identities._engine import bindings
+from satrefine.identities.core import rewrite as _engine
+from satrefine.identities.core.rewrite import bindings
 
 
 def _fresh(name):
