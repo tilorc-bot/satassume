@@ -307,17 +307,20 @@ def parser() -> argparse.ArgumentParser:
     return ap
 
 
-def main(argv: list[str] | None = None) -> int:
-    argv = list(sys.argv[1:] if argv is None else argv)
+def parse(argv: list[str], ap: argparse.ArgumentParser | None = None) -> argparse.Namespace:
+    """The options; ``battery`` is the subcommand when none is named, and ``lines`` is ``battery --lines``."""
     if not argv or argv[0] not in (*COMMANDS, "-h", "--help"):
-        argv = ["battery", *argv]                  # the default subcommand
-    ap = parser()
-    args = ap.parse_args(argv)
-    if args.command == "suite":
-        return suite(args, ap.error)
+        argv = ["battery", *argv]
+    args = (ap or parser()).parse_args(argv)
     if args.command == "lines":
         args.lines = True
-    return battery(args)
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = parser()
+    args = parse(list(sys.argv[1:] if argv is None else argv), ap)
+    return suite(args, ap.error) if args.command == "suite" else battery(args)
 
 
 if __name__ == "__main__":
