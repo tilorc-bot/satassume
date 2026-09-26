@@ -9,6 +9,10 @@ One line per query that reaches ``satrefine.backend.ask``::
     {"b": backend, "p": str(prop), "a": str(assumptions),
      "ans": answer, "route": reason}
 
+``REFINE_BASELINE_ENGINE_KW`` (a Python dict literal, e.g.
+``{"uninterpreted": "free"}``) makes the default engine
+``Engine(**kw)`` for the run.
+
 ``route`` is only present under the ``combined`` backend: ``null`` when
 satassume's answer stands (including an undecided None), otherwise the
 reason SymPy was asked (``matrix``, ``relation``, ``custom``, ``other``,
@@ -26,6 +30,12 @@ _pending: list = []
 
 def pytest_configure(config):
     global _log
+    kw = os.environ.get("REFINE_BASELINE_ENGINE_KW")
+    if kw:
+        import ast
+        from satassume.engine import Engine
+        from satassume.sympy_api import set_default_engine
+        set_default_engine(Engine(**ast.literal_eval(kw)))
     path = os.environ.get("REFINE_BASELINE_QLOG")
     if not path:
         return
