@@ -98,19 +98,18 @@ def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MA
     modules = ordered_families() if modules is None else modules
     installed: dict = {}             # key -> the handler of the table generated for it so far
     out: dict[str, dict] = {}
-    inputs: dict[str, dict] = {}     # family -> {key it looked up: the table installed there then}
-    tables: dict[str, tuple] = {}    # key -> the rules of the table installed for it
+    inputs: dict[str, dict] = {}     # family -> {key it looked up: the handler installed there then}
     for rnd in range(1, max_rounds + 1):
         changed = []
         for module in modules:
             fam = family_name(module)
-            if fam in inputs and all(tables.get(k) == v for k, v in inputs[fam].items()):
+            if fam in inputs and all(installed.get(k) is v for k, v in inputs[fam].items()):
                 continue                     # no table it looked up has changed: same result
             t0 = time.time()
             consulted: set = set()
             rules, keys, verdicts = generate_one(module, consulted, installed)
             seconds = time.time() - t0
-            inputs[fam] = {k: tables.get(k) for k in consulted}
+            inputs[fam] = {k: installed.get(k) for k in consulted}
             entry = out.setdefault(fam, {"rules": None, "rounds": [], "seconds": []})
             entry["seconds"].append(round(seconds, 1))
             log(f"round {rnd} {fam}: {len(rules)} rules in {seconds:.0f}s")
@@ -120,9 +119,7 @@ def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MA
                              records={r: previous[r] if r in previous else (rnd, _specialize.records.get(r))
                                       for r in rules})
                 entry["rounds"].append(rnd)
-                install(rules, keys, installed)
-                heads = {lhs.func.__name__ for lhs, _, _ in rules}
-                tables.update({k: tuple(rules) if k in heads else None for k in keys})
+                install(rules, keys, installed)   # a new handler for each key whose table changed
                 changed.append(fam)
         if not changed:
             return out

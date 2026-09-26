@@ -174,8 +174,4 @@ def family_modules() -> list[types.ModuleType]:
     those in :data:`.specs.NOT_GENERATED`."""
     from ..identities import family_modules as all_families
     from .specs import NOT_GENERATED
-    out = []
-    for mod in all_families():
-        if identity_keys(mod) and mod.__name__.rsplit(".", 1)[-1] not in NOT_GENERATED:
-            out.append(mod)
-    return out
+    return [mod for mod in all_families() if identity_keys(mod) and mod.__name__.rsplit(".", 1)[-1] not in NOT_GENERATED]
