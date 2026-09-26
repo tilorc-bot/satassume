@@ -33,9 +33,9 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 from sympy import (Abs, Add, Eq, HadamardProduct, I, Identity, KroneckerDelta, MatAdd, MatMul, MatrixSymbol, Max,
-                   Min, Ne, Piecewise, Q, Rem, RisingFactorial, S, Symbol, acot, acoth, acsch, arg, atan2, ceiling,
-                   conjugate, cos, cosh, csc, csch, exp, factorial, floor, gamma, log, nan, oo, pi, sec, sech, sign,
-                   sin, sinh, sqrt, symbols, zoo, ZeroMatrix)
+                   Min, Ne, Piecewise, Q, Rem, RisingFactorial, S, Symbol, acosh, acot, acoth, acsch, arg, asech,
+                   asinh, atan2, atanh, ceiling, conjugate, cos, cosh, coth, csc, csch, exp, factorial, floor, gamma, im,
+                   log, nan, oo, pi, sec, sech, sign, sin, sinh, sqrt, symbols, tanh, zoo, ZeroMatrix)
 
 
 class _Unchanged:
@@ -139,6 +139,51 @@ _add("#10 B6", "acsch(csch(oo)) = acsch(0) = zoo", [
 ])
 _add("#10 B7", "RisingFactorial: oo vs nan at y = 1", [
     (RisingFactorial(x, y), Q.gt(x, 1), UNCHANGED),
+])
+_add("#10 B5", "the power form's oo**0: log(x**n) for an extended positive or infinite x", [
+    (log(x**n), Q.extended_positive(x) & Q.real(n), UNCHANGED),
+    (log(x**n), Q.positive_infinite(x) & Q.real(n), UNCHANGED),
+])
+# Rows stated over the extended reals: the B1-B7 fix (a bound proves only the extended signs) had
+# cost these rewrites, which hold at +-oo too (agent-reports/2026-09-26-phase3-d-extended-report.md).
+# Each: a one-sided bound, then the infinite point itself.
+_add("B1-B7 extended", "a one-sided bound proves only extended signs; the row holds at +-oo", [
+    (acoth(coth(x)), Q.ge(x, 1), x),                          # acoth(coth(oo)) = acoth(1) = oo
+    (acoth(coth(x)), Q.gt(x, 0), x),
+    (acoth(coth(x)), Q.positive_infinite(x), x),
+    (acoth(coth(x)), Q.negative_infinite(x), x),              # acoth(-1) = -oo
+    (acosh(cosh(x)), Q.ge(x, 0), x),                          # acosh(cosh(+-oo)) = oo = Abs(+-oo)
+    (acosh(cosh(x)), Q.gt(x, -1), Abs(x)),
+    (acosh(cosh(x)), Q.negative_infinite(x), -x),
+    (asech(sech(x)), Q.ge(x, 0), x),                          # asech(0) = oo
+    (asech(sech(x)), Q.gt(x, -1), Abs(x)),
+    (asech(sech(x)), Q.positive_infinite(x), x),
+    (asech(sech(x)), Q.negative_infinite(x), -x),
+    (asinh(sinh(x)), Q.ge(x, 0), x),                          # asinh(sinh(-oo)) = -oo
+    (asinh(sinh(x)), Q.negative_infinite(x), x),
+    (atanh(tanh(x)), Q.ge(x, 0), x),                          # atanh(tanh(oo)) = atanh(1) = oo
+    (atanh(tanh(x)), Q.le(x, 0), x),
+    (atanh(tanh(x)), Q.positive_infinite(x), x),
+    (factorial(sign(n)), Q.ge(n, pi/2), 1),                   # differential seed 2, case 561
+    (factorial(sign(n)), Q.positive_infinite(n), 1),
+    (acosh(cosh(conjugate(m))), Q.le(m, pi/2), Abs(m)),       # seed 2, case 1216
+    (acosh(cosh(conjugate(m))), Q.negative_infinite(m), -m),
+    (conjugate(sqrt(y**2)), Q.gt(y, pi/2), y),                # seed 3, case 262 (the (b**a)**e row at +-oo)
+    (conjugate(sqrt(y**2)), Q.positive_infinite(y), y),
+    (sign(y + 1), Q.ge(y, 0), 1),                             # seed 3, case 1043
+    (sign(y + 1), Q.positive_infinite(y), 1),
+    (pi*Abs(m)/2, Q.lt(m, 0), -pi*m/2),                       # seed 3, case 1101
+    (pi*Abs(m)/2, Q.negative_infinite(m), -pi*m/2),
+    (floor(sqrt(n**2)), Q.lt(n, 0), floor(-n)),               # seed 7, case 1249
+    (floor(sqrt(n**2)), Q.negative_infinite(n), -n),
+    (Abs(x), Q.gt(x, 1), x),                                  # the base rows themselves
+    (Abs(x), Q.infinite(x) & Q.extended_negative(x), -x),
+    (sign(x), Q.lt(x, -1), -1),
+    (sign(x), Q.infinite(x) & Q.extended_positive(x), 1),
+    (conjugate(x), Q.gt(x, 1), x),
+    (conjugate(x), Q.infinite(x) & Q.extended_real(x), x),
+    (im(x), Q.gt(x, 0), 0),
+    (im(x), Q.infinite(x) & Q.extended_real(x), 0),
 ])
 _add("#10 B1-B7", "the same rewrites still fire where x is finite", [
     (log(x**n), Q.positive(x - 1) & Q.real(n), n*log(x)),             # a sign fact makes x finite
@@ -257,8 +302,9 @@ _add("default: odd pi/2 sign form", "a doubled sign form -(-1)**(n/2 + 3/2) inst
 # im(Abs(w)) auto-evaluates to 0, so the acsch row's _OFF_CUT_LINES admitted an infinite Abs(w).
 _add("#10 B10", "acsch(csch(Abs(z))) -> Abs(z) fired where Abs(z) may be infinite (ext differential)", [
     (acsch(csch(Abs(z))), Q.infinite(z), UNCHANGED),
-    (acsch(csch(Abs(z))), Q.extended_negative(z) & Q.infinite(z), UNCHANGED),
-    (acsch(csch(Abs(n))), Q.gt(n, 0), UNCHANGED),
+    # the inner Abs refines (Abs(-oo) = oo = -z, "B1-B7 extended"); acsch(csch(.)) must stay
+    (acsch(csch(Abs(z))), Q.extended_negative(z) & Q.infinite(z), OneOf(UNCHANGED, -acsch(csch(z)))),
+    (acsch(csch(Abs(n))), Q.gt(n, 0), OneOf(UNCHANGED, acsch(csch(n)))),
 ], backends=("satassume", "combined"))
 _add("#10 B10", "the finite case still fires", [
     (acsch(csch(Abs(n))), Q.gt(n, 0) & Q.finite(n), OneOf(n, Abs(n))),

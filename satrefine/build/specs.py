@@ -19,6 +19,7 @@ with ``None`` as the default key (see :data:`.specialize.CATALOG`)."""
 
 EDGE_POINTS: dict = {
     "integer_funcs": (S(2), S(-2)),   # Rem(1, 2) has 2*a/b odd
+    "inverse": (S.Infinity, S.NegativeInfinity),   # rows over the extended reals (acsch(csch(oo)) = zoo)
 }
 """``family -> points``: values every generated rule of the family is checked at, in
 addition to :data:`.verify.EDGE_POINTS` (the family's branch-cut points)."""

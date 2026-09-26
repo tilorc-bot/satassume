@@ -7,6 +7,7 @@ from sympy import (Abs, I, Mul, Q, S, arg, conjugate, cos, cosh, exp, im, log, p
 from _rows import check_relation, check_valid, ids
 
 x, y, z, t, n = symbols("x y z t n")
+u = symbols("u")   # sampled at +-oo only
 AC = "same"
 ARG = "same"
 
@@ -102,7 +103,7 @@ ROWS = [
     (x**3*conjugate(x), True, x**2*Abs(x)**2, "same"), (x*conjugate(x)**2, True, conjugate(x)*Abs(x)**2, "same"),
     (x**2*conjugate(x)**5, True, conjugate(x)**3*Abs(x)**4, "same"), (x**n*conjugate(x), True, None, "neither"),
     (Abs(x**n), Q.real(x) & Q.integer(n) & Q.positive(n), Abs(x)**n, "same"),
-    (arg(conjugate(x)), Q.negative_infinite(x), None, "neither"),
+    (arg(conjugate(u)), Q.negative_infinite(u), pi, "extra: conjugate(-oo) = -oo, arg(-oo) = pi (rows over the extended reals)"),
     (x/conjugate(x), True, None, "neither"), (x*conjugate(y), True, None, "neither"),
     (x**n*conjugate(x)**n, True, None, "neither"), (sqrt(x)*sqrt(conjugate(x)), True, None, "neither"),
     (x*y, Q.real(x) & Q.real(y), None, "neither"),
@@ -110,7 +111,8 @@ ROWS = [
 ]
 
 COMPLEX = [S.One, S(-1), I, -I, 1 + I, -1 + I, -2 - 3*I, 2 - I, S(3), S.Half]
-VALUES = {x: COMPLEX, y: COMPLEX, z: COMPLEX, t: [S.Zero, S.One, S(-1), S(3), pi, S.Half], n: [-2, -1, 0, 1, 2, 3]}
+VALUES = {x: COMPLEX, y: COMPLEX, z: COMPLEX, t: [S.Zero, S.One, S(-1), S(3), pi, S.Half], n: [-2, -1, 0, 1, 2, 3],
+          u: [S.Infinity, S.NegativeInfinity]}
 
 
 @pytest.mark.parametrize("expr, assumptions, team, relation", ROWS, ids=ids(ROWS))

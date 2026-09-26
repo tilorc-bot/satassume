@@ -50,11 +50,14 @@ show ``(1 - n)/2`` an integer for an odd ``n``, so the power form's
 ``floor`` does not collapse to v3's ``n*log(-x) + I*pi``).
 
 At infinity SymPy's arithmetic breaks the identities themselves:
-``log(1/oo)`` is ``zoo`` while ``-log(oo)`` is ``-oo``, so ``log(1/x)``
-under ``Q.extended_positive(x)`` gives ``-log(x)`` here where v3 (which
-asks ``Q.finite``) declines; a finiteness domain would lose every
-``~Q.zero(x)`` and complex case (``ask`` cannot show ``e*log(b)`` finite
-for an imaginary or complex ``b``).
+``log(1/oo)`` is ``zoo`` while ``-log(oo)`` is ``-oo``, and ``log(oo**0)``
+is ``0`` while ``0*log(oo)`` is ``nan``.  The log rows therefore derive
+with a power form that needs a finite or real base or a positive exponent
+(``LOG_FORMS``): ``log(1/x)`` under ``Q.extended_positive(x)`` and
+``log(x**n)`` under ``Q.gt(x, 1)`` stay (as in v3, which asks
+``Q.finite``), while an imaginary or complex base, which ``ask`` proves
+finite, keeps its rows (a domain on ``e*log(b)`` being finite would lose
+them: ``ask`` cannot show that for an imaginary ``b``).
 
 ``log(x**n)`` for a real ``x`` and an even ``n`` (literal or symbolic,
 negative too: ``log(x**(-2))``) is a rule, ``n*log(Abs(x))``, tried after
@@ -77,8 +80,7 @@ documented extras (``log(2*x)``, ``log(-2*x)``, ``log(pi*x)``,
 under open and closed bounds, and ``python -m satrefine.tools.refine_differential`` (seeds
 2, 3, 7, both modes).  Found no wrong result at a finite point from these
 rows.  At infinity SymPy's arithmetic breaks the facts themselves, as the
-note above says for ``log(1/x)`` (confirmed: ``-log(x)`` under
-``Q.extended_positive(x)``, ``log(1/oo) = zoo``); the same class:
+note above says for ``log(1/x)`` (now declined, ``LOG_FORMS``); the same class:
 ``log(exp(x)) -> re(x)`` under ``Q.extended_negative(x)`` (``log(exp(-oo))
 = zoo``), ``(1/x)**y -> x**(-y)`` for integer ``y`` at ``x = oo``, and
 ``exp(y*log(x)) -> x**y`` at ``x = -oo`` or ``y = +-oo``, and inputs that
@@ -118,9 +120,10 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     # Pow
     (Pow(E, x, evaluate=False), exp(x), true),                                  # E**x is exp(x)
     ((b**a)**e, b**(a*e), Q.integer(e)),                                        # (b**a)**e = b**(a*e), integer e
-    ((b**a)**e, b**(a*e), Q.nonnegative(b) & Q.positive(a)),                    # ... a*log(b) real, 0**a = 0 for a > 0
+    ((b**a)**e, b**(a*e), (Q.nonnegative(b) | Q.extended_nonnegative(b)) & Q.positive(a)),   # ... a*log(b) real, 0**a = 0 for a > 0, oo**a = oo
     ((b**a)**e, b**(a*e), Q.positive(b) & Q.real(a)),                           # ... a*log(b) real for b > 0 (sqrt(1/x) = 1/sqrt(x))
     ((b**a)**e, Abs(b)**(a*e), Q.real(b) & Q.even(a) & (Q.positive(a) | ~Q.zero(b))),   # b**a = |b|**a, even a; 0**a = 0 for a > 0
+    ((b**a)**e, Abs(b)**(a*e), Q.extended_real(b) & Q.even(a) & Q.positive(a)),        # ... also at b = +-oo for a > 0 ((+-oo)**a = oo)
     (exp(a)**e, exp(a*e), Q.integer(e)),                                        # exp(a)**e = exp(a*e), integer e
     ((b**a)**e, Abs(b)**(a*e), Q.imaginary(b) & Q.even(a/2)),                   # (I*t)**a = t**a for a = 0 mod 4
     ((b**a)**e, (-1)**e*Abs(b)**(a*e), Q.imaginary(b) & Q.odd(a/2)),            # (I*t)**a = -t**a for a = 2 mod 4
@@ -153,7 +156,18 @@ NEGATIVE_BASE: list[Row] = [   # exact for integer n; ordered so they fire for a
     (b**n, -(-b)**n, Q.negative(b) & Q.odd(n)),                                 # c**n = -(-c)**n, odd n
 ]
 
-IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)], EXP_FORMS)
+# At an infinite base the power form is not an identity for e <= 0: (+-oo)**0 is 1 but 0*log(+-oo)
+# is nan, and oo**e is 0 for e < 0, whose log is zoo, not -oo.  Where the form's exponential
+# folds back (Abs(b**e) = Abs(b)**e in complex_parts) the result is right there, but the derived
+# log row's right side is not: log(x**n) -> n*log(x) at x = oo, n = 0 (issue #10, B5), and
+# log(1/x) -> -log(x) at x = oo.  So the log rows derive with an infinite base excluded unless
+# e > 0: a finite or real base (Q.real is decided from stated bounds only for a finite quantity;
+# an imaginary or complex base is finite) or a positive exponent will do, a one-sided bound or
+# Q.extended_positive alone does not.
+LOG_FORMS: list[Row] = [(EXP_FORMS[0][0], EXP_FORMS[0][1], EXP_FORMS[0][2] & (Q.finite(b) | Q.real(b) | Q.positive(e)))
+                        ] + EXP_FORMS[1:]
+
+IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)], LOG_FORMS)
 POW_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], Pow)]
 EXP_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], exp)]
 
@@ -174,4 +188,4 @@ SPEC = Family({'log': (_zero, Identities(IDENTITIES), Rules(LOG_RULES)),
                        Identities(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
                        Identities(NEGATIVE_BASE, measure=negative_number_base_measure)),
                'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=count_measure((exp,))))},
-              facts=FACTS + NEGATIVE_BASE, exp_forms=EXP_FORMS, rules=[ZERO] + RULES + LOG_RULES)
+              facts=FACTS + NEGATIVE_BASE, exp_forms=LOG_FORMS, rules=[ZERO] + RULES + LOG_RULES)

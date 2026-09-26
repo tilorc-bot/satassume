@@ -136,6 +136,28 @@ def _nonzero_false_checked(expr: Any, assumptions: Any) -> bool | None:
     return None
 
 
+# SymPy's ``Q.extended_real`` handler for ``Pow`` is the closure of the extended
+# reals, so a root of a negative number is called extended real:
+# ``ask(Q.extended_real(sqrt(z)), Q.negative(z))`` is True.  While the combined
+# backend asks SymPy, a ``True`` for a power is kept only for an integer
+# exponent, or an extended nonnegative base and a real exponent
+# (``_extended_real_true_checked``); otherwise it becomes None.  Rows stated over
+# the extended reals (``conjugate(a) -> a`` if ``Q.extended_real(a)``) rely on it
+# when satassume leaves the query open (a relation against ``pi/2``).
+
+def _extended_real_true_checked(expr: Any, assumptions: Any) -> bool | None:
+    """``Q.extended_real(b**e)`` where SymPy's closure said True: True for an integer
+    ``e``, or an extended nonnegative ``b`` and a real ``e``; else None."""
+    from sympy import Q
+    from sympy.assumptions.ask import _ask_recursive as ask_
+    b, e = expr.base, expr.exp
+    if ask_(Q.integer(e), assumptions):
+        return True
+    if ask_(Q.extended_nonnegative(b), assumptions) and ask_(Q.real(e), assumptions):
+        return True
+    return None
+
+
 def _install_guard() -> None:
     global _guard_installed
     from sympy import Abs, Mul, Pow, Q
@@ -150,6 +172,16 @@ def _install_guard() -> None:
             return answer
         dispatcher.funcs[(cls,)] = guarded
     dispatcher._cache.clear()
+    extended = Q.extended_real.handler
+    original_ext = extended.funcs[(Pow,)]
+
+    def guarded_ext(expr: Any, assumptions: Any) -> bool | None:
+        answer = original_ext(expr, assumptions)
+        if answer is True and _guard_on:
+            return _extended_real_true_checked(expr, assumptions)
+        return answer
+    extended.funcs[(Pow,)] = guarded_ext
+    extended._cache.clear()
     _guard_installed = True
 
 

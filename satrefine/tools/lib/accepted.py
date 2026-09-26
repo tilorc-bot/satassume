@@ -18,7 +18,7 @@ too, so this list is kept current.
 * ``modes``: the ``SATREFINE_IDENTITIES`` modes it applies to (a case that
   differs in one mode only).
 
-Reviewed 2026-09-26 (phase 3, track D rows); every "extra" is checked
+Reviewed 2026-09-26 (phase 3, track D rows and d-extended); every "extra" is checked
 numerically by the scoreboard (it counts any that is not).
 """
 from __future__ import annotations
@@ -40,6 +40,10 @@ _HVAL = "exact value; v3 leaves it as I*sin/I*tan/... of pi*k, which is the same
 _HPER = ("exact: sinh/cosh/sech/csch(x + I*pi*k) = (-1)**k*f(x) for integer k (the half period for odd k); "
          "v3 declines without the parity of k")
 _HPER_FORM = _HPER + "; the exponent k/2 + 3/2 reads awkwardly but is right"
+
+_W = "test_inverse.py::test_hyperbolic_inverses_with_weaker_complex_facts"
+_EXT = ("exact on the extended reals: the identity also holds at +-oo (acoth(coth(oo)) = acoth(1) = oo, "
+        "atanh(1) = oo, acosh(cosh(+-oo)) = oo, asech(0) = oo); v3 wants a finite real argument")
 
 ACCEPTED: list[Accepted] = [
     # --- hyperbolic: exact evaluations and periods v3 does not do (ours better) ---
@@ -107,6 +111,16 @@ ACCEPTED: list[Accepted] = [
     Accepted("extra", "test_inverse.py::test_bounds_spanning_more_than_one_branch_do_not_fire",
              "atan(cot(x)) | Q.gt(x, pi) & Q.lt(x, 2*pi)", "-x + 3*pi/2",
              "exact: cot x = tan(3*pi/2 - x) and 3*pi/2 - x is in (-pi/2, pi/2)"),
+    # --- inverse: the hyperbolic inverses over the extended reals (phase 3, d-extended) ---
+    *[Accepted("extra", _W, case, got, _EXT) for case, got in [
+        ("acoth(coth(x)) | Q.extended_positive(x)", "x"), ("acoth(coth(x)) | Q.ge(x, 1)", "x"),
+        ("acoth(coth(x)) | Q.gt(x, 0)", "x"),
+        ("acosh(cosh(x)) | Q.extended_nonnegative(x)", "x"), ("acosh(cosh(x)) | Q.ge(x, 0)", "x"),
+        ("acosh(cosh(x)) | Q.gt(x, -1)", "Abs(x)"),
+        ("asech(sech(x)) | Q.extended_nonnegative(x)", "x"), ("asech(sech(x)) | Q.ge(x, 0)", "x"),
+        ("asech(sech(x)) | Q.gt(x, -1)", "Abs(x)"),
+        ("asinh(sinh(x)) | Q.extended_real(x)", "x"), ("asinh(sinh(x)) | Q.ge(x, 0)", "x"),
+        ("atanh(tanh(x)) | Q.extended_real(x)", "x"), ("atanh(tanh(x)) | Q.ge(x, 0)", "x")]],
     Accepted("other", "test_inverse.py::test_even_inverse_by_sign[acosh-cosh]", "acosh(cosh(x)) | Q.zero(x)", "0",
              "same value: x is 0"),
     Accepted("other", "test_inverse.py::test_even_inverse_by_sign[asech-sech]", "asech(sech(x)) | Q.zero(x)", "0",
@@ -131,6 +145,8 @@ ACCEPTED: list[Accepted] = [
       for case, got in [("Abs(x**(-2)) | Q.nonzero(x) & Q.real(x)", "x**(-2)"), ("Abs(x**(-2)) | Q.real(x)", "x**(-2)"),
                         ("Abs(x**(-2)) | Q.real(x) & ~Q.zero(x)", "x**(-2)"),
                         ("re(x**(-3)) | Q.real(x) & ~Q.zero(x)", "x**(-3)"), ("re(x**(-3)) | Q.real(x)", "x**(-3)")]],
+    Accepted("extra", "test_complex_parts.py::test_arg_of_conjugate", "arg(conjugate(x)) | Q.negative_infinite(x)", "pi",
+             "exact: conjugate(-oo) = -oo and arg(-oo) = pi (the conjugate row over the extended reals)"),
     Accepted("extra", "test_complex_parts.py::test_arg_scalar", "arg(x) | Q.zero(x)", "nan",
              "SymPy's arg(0) is nan (the zero row); v3 declines"),
     Accepted("extra", "test_complex_parts.py::test_arg_product_drops_positive_factors", "arg(x*y) | Q.negative(y)",

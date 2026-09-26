@@ -52,7 +52,7 @@ ROWS = [
     (log(x**n), Q.even(n) & Q.nonzero(n) & Q.real(x), n*log(Abs(x)), "same"),
     (log(x**n), Q.even(n) & Q.nonzero(x), n*log(Abs(x)), "same"),
     (sqrt(x**(-2)), Q.nonzero(x), 1/Abs(x), "same"),
-    (log(1/x), Q.extended_positive(x), -log(x), "extra: v3 asks Q.finite; at x = oo SymPy's log(1/oo) is zoo, -log(oo) is -oo"),
+    (log(1/x), Q.extended_positive(x), None, "neither"),   # log(1/oo) is zoo, -log(oo) is -oo: the log rows' power form needs a finite base or e > 0
     (log(x**4), Q.imaginary(x), 4*log(Abs(x)), "same"),
     (log(exp(x)*y), Q.real(x), x + log(y), "same"),
     # Pow

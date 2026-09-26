@@ -33,7 +33,10 @@ Where the facts fire and v3 does not (each exact): an interval spanning
 two of v3's branches, ``acos(cos t)`` on ``[-pi/2, pi/2]`` is ``Abs(t)``
 and ``asin(cos t)`` on ``[pi, 2*pi]`` is ``t - 3*pi/2``; and the
 hyperbolic inverses under a one-sided bound (``Q.ge(t, 0)``), which
-carries realness.
+proves only extended realness: ``asinh``, ``atanh``, ``acoth``, ``acosh``
+and ``asech`` of their functions are stated over the extended reals, since
+they hold at ``+-oo`` (``acoth(coth(oo)) = acoth(1) = oo``, ``asech(sech(oo))
+= asech(0) = oo``); ``acsch`` is not (``acsch(csch(oo)) = acsch(0) = zoo``).
 
 Not covered (and why): bounds derived rather than stated (``Q.ge(t, y) &
 Q.ge(y, 0)``: SymPy's relation ``ask`` would have to be consulted for
@@ -78,9 +81,13 @@ def _sawtooth_imag(z):
     return z - I*pi*floor(im(z)/pi + S.Half)
 
 
-_OFF_CUT_LINES = Q.real(z) | ~Q.integer(im(z)/pi + S.Half)
-"""``z`` off the lines ``im z = (k + 1/2)*pi`` (a real ``z`` is, and stated bounds on
-``im z`` that exclude the lines refute the integer)."""
+_OFF_CUT_LINES = Q.real(z) | Q.extended_real(z) | ~Q.integer(im(z)/pi + S.Half)
+"""``z`` off the lines ``im z = (k + 1/2)*pi`` (an extended real ``z`` is, and stated bounds
+on ``im z`` that exclude the lines refute the integer).  Extended: ``asinh``, ``atanh`` and
+``acoth`` of their functions hold at ``+-oo`` (``asinh(sinh(oo)) = oo``, ``atanh(tanh(oo)) =
+atanh(1) = oo``, ``acoth(coth(-oo)) = acoth(-1) = -oo``), so a one-sided bound, which proves
+only ``Q.extended_real``, fires them (issue #10, B1-B7).  ``Q.real`` stays first: SymPy's ``ask``
+proves ``Q.real(sin(x))`` for a real ``x`` but not ``Q.extended_real(sin(x))``."""
 
 FACTS: list[Row] = [   # (lhs, rhs, domain)
     (asin(sin(t)), reflect_half(t),            Q.real(t)),   # asin undoes sin up to a reflection
@@ -95,9 +102,10 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
     (asinh(sinh(z)), _reflect_half_imag(z),    _OFF_CUT_LINES),                # asinh undoes sinh up to an imaginary reflection
     (atanh(tanh(z)), _sawtooth_imag(z),        _OFF_CUT_LINES),                # atanh undoes tanh up to an imaginary period
     (acoth(coth(z)), _sawtooth_imag(z),        ~Q.zero(z) & _OFF_CUT_LINES),   # acoth undoes coth likewise (coth(0) is zoo)
-    (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z) & (Q.real(z) | Q.finite(z) & _OFF_CUT_LINES)),   # acsch undoes csch likewise
-    # (csch(+-oo) = 0 and acsch(0) = zoo: finite z only; the other three hold at +-oo.  A real z is
-    # finite, but im(z) = 0 does not make z real: im(Abs(w)) is 0 for an infinite w, issue #10 B10)
+    (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z) & (Q.real(z) | Q.finite(z) & ~Q.integer(im(z)/pi + S.Half))),   # acsch undoes csch likewise
+    # (csch(+-oo) = 0 and acsch(0) = zoo: finite z only, so Q.real and not the extended lines;
+    # the other three hold at +-oo.  A real z is finite, but im(z) = 0 does not make z real:
+    # im(Abs(w)) is 0 for an infinite w, issue #10 B10 and B6)
     (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
                             (atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
                             (atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
@@ -107,8 +115,8 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
 ]
 
 RULES: list[Row] = [   # (lhs, rhs, hypothesis)
-    (acosh(cosh(t)), Abs(t), Q.real(t)),   # acosh undoes cosh up to sign, real t
-    (asech(sech(t)), Abs(t), Q.real(t)),   # asech undoes sech up to sign, real t
+    (acosh(cosh(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # acosh undoes cosh up to sign, extended real t (acosh(cosh(+-oo)) = oo)
+    (asech(sech(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # asech undoes sech up to sign, extended real t (asech(0) = oo)
 ]
 
 RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)
