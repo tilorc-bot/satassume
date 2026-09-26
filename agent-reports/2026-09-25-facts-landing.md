@@ -194,3 +194,33 @@ implementer as follow-up commits (to be reviewed as a delta).
 
 **Landed:** `d63d38d`..`9b800bb`, cherry-picked onto `main` (code
 identical).
+
+### Stage 2 tuning (follow-up commits), landed
+
+The implementer cut the transfer cost on the Pi from +12.1% to +5.5% and
++6.4% (two A/B runs against `main` `7068e57`), answers unchanged: register
+only nodes EUF could merge (equality sides, applications with a
+congruence partner), `polar` only for link-only sides, a basis of a
+number's facts, rational sides held as fixed theory facts instead of
+visited nodes, one solver growth per block. The remaining cost is
+registering predicate variables (8,760 per pass) and one `assert_lit` per
+assignment (35,563).
+
+**Delta review** (Opus): one real defect, fixed here before landing. The
+congruence-candidate test treated any two number arguments as never
+mergeable, but EUF keeps only Rationals apart; a Float or an irrational may
+merge with an equal value, so `positive(f(1))` under
+`eq(x, 1.0) & eq(x, 1) & positive(f(1.0))` and three similar queries lost
+the answer the reviewed `9b800bb` gave. Fixed to "two Rationals"; three
+regression tests fail without it. Differential fuzz of the tuning against
+`9b800bb` (separate processes, reused engines, 22 number kinds): 12,000
+EUF and 8,000 LRA+EUF seeds; with the fix only 3 ValueError flips remain,
+all under assumptions inconsistent only by search (the engine's known
+"propagation decides the query" class; one of them via an equality LRA
+derives, out of scope by the user's decision); the gates' ValueError sets
+are identical. Other claims checked sound (number basis complete under the
+rule clauses with a fallback; `zero` decides every predicate but `polar`;
+candidacy re-checked as sides grow; fixed facts' reasons context-free).
+
+Gates after the fix (local): `ab.py` answers match with the same 15 more
+definite, gate2 0 changed, transfer fuzz 2,000 seeds, suite at baseline.
