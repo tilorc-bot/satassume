@@ -125,3 +125,70 @@ def test_protocol_on_fuzz(monkeypatch):
         for k, v in check_protocol(r).items():
             kinds[k] = kinds.get(k, 0) + v
     assert kinds.get("propagate") and kinds.get("assert") and kinds.get("pop")
+    # the atoms do not mention their variables: some are lazy at check
+    assert any(len(e) > 2 and e[0] == "check" for r in recs for e in r.events)
+
+
+# ----------------------------------------------------------------------
+# models: equal terms agree on every transfer atom, lazy ones included
+# ----------------------------------------------------------------------
+
+def _transfer_model_checker(counts):
+    """Wrap ``Solver._solve``: after every satisfiable call with a transfer
+    theory attached, the model (lazy variables completed as any reader
+    completes them) gives every atom of one predicate the same value
+    across a class of the EUF model, and a number's fixed facts to its
+    class."""
+    from satassume.solver import Solver
+    from satassume.transfer import TransferTheory
+    orig = Solver._solve
+
+    def solve(self, lits, keep):
+        r = orig(self, lits, keep)
+        if not r:
+            return r
+        ths = self._theories
+        tr = next((t for t in ths if isinstance(t, TransferTheory)), None)
+        if tr is None:
+            return r
+        tm = self.theory_models()
+        if tm is None:
+            return r
+        rep = tm[ths.index(tr.euf)] if tr.euf in ths else None
+        if not rep:
+            return r
+        model = self._model
+        seen: dict = {}
+        for v, (t, p) in tr._atoms.items():
+            c = rep.get(t)
+            if c is None:
+                continue
+            key = (c, p)
+            b = model[v]
+            if key in seen:
+                assert seen[key][1] == b, (
+                    f"atoms {seen[key][0]} and {v} of predicate {p} in one "
+                    f"class disagree in the model")
+                counts["pairs"] += 1
+            else:
+                seen[key] = (v, b)
+        for t, facts in tr._fixed.items():
+            c = rep.get(t)
+            for p, b in facts.items():
+                if (c, p) in seen:
+                    assert seen[(c, p)][1] == b, f"atom {seen[(c, p)][0]} against a fixed fact"
+                    counts["fixed"] += 1
+        counts["models"] += 1
+        return r
+    return solve
+
+
+def test_models_respect_transfer(monkeypatch):
+    import test_transfer_fuzz as fz
+    from satassume.solver import Solver
+
+    counts = {"models": 0, "pairs": 0, "fixed": 0}
+    monkeypatch.setattr(Solver, "_solve", _transfer_model_checker(counts))
+    for seed in range(60):
+        fz.run_seed(seed, "euf" if seed % 2 else "lra")
+    assert counts["models"] and counts["pairs"] and counts["fixed"]

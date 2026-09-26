@@ -67,6 +67,20 @@ literals asserted at level 0 are permanent facts.
 * ``propagate`` (optional) is called after the theory has been told all
   current assignments without conflict.
 
+*Lazy atoms* (``solver.register_atom(theory, v, payload, mention=False)``,
+for a rule-block variable ``v``): the registration does not *mention* the
+variable, so unless something else does, the block's implications are not
+written to it above root and the search does not decide it (the solver's
+lazy rule-block writes).  The theory is still told every value ``v`` gets on
+the trail, but ``check`` may then see it unassigned, and ``implied`` may
+reach less than with a mentioned atom (an implication the block has not
+written is not seen).  Such a theory implements ``decide()`` (optional):
+called when every other variable is assigned, before ``check``, it returns
+an unassigned registered variable it needs a value of, or None; the solver
+decides it, in the phase the variable's rule block implies if any.  The
+transfer theory uses this: equal terms' blocks are completed alike without
+deciding their variables (see :mod:`satassume.transfer`).
+
 A theory is informed consistently on every solver path: ``solve``,
 ``entails``, ``implied``, ``propagate`` and root-level unit clauses.
 ``implied`` and the unit-propagation stage of ``entails`` see ``assert_lit``
@@ -114,7 +128,8 @@ class TheorySolver(Protocol):
 
         Called only on a total assignment (of every variable except the
         rule-block variables nothing outside their block mentions, which
-        the solver leaves to the block's closure; never a theory atom).
+        the solver leaves to the block's closure; a theory atom only if it
+        was registered with ``mention=False``, see *Lazy atoms*).
         Returns ``(True, model)`` when
         consistent (``model`` is theory-specific, e.g. values for the
         variables; it is kept by :meth:`Solver.theory_models`),

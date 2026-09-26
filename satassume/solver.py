@@ -428,6 +428,7 @@ class Solver:
         # registered blocks, theories, theory atoms, theory models).
         self._ring: list[tuple] = []
         self._n_ring_hits = 0
+        self._n_tdecisions = 0               # decisions theories asked for
         # register_atom calls so far (a variable registered with a second
         # theory changes the problem without changing len(_tmap))
         self._n_registered = 0
@@ -1905,6 +1906,7 @@ class Solver:
                 raise RuntimeError(f"theory decision {x} is not a variable")
             if val[2 * v] is not None:
                 raise RuntimeError(f"theory decision {x} is assigned")
+            self._n_tdecisions += 1
             b = self._rb_base[v]
             if b:
                 cl = self._rb_cl[b]
@@ -2538,4 +2540,5 @@ class Solver:
             "learnts": len(self._learnts),
             "rule_blocks": self._rb_blocks,
             "witness_hits": self._n_ring_hits,
+            "theory_decisions": self._n_tdecisions,
         }

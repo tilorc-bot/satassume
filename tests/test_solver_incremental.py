@@ -324,6 +324,7 @@ def run_seed(seed: int, ops=None, setup=None, steps=None, **kw) -> dict[str, int
         h.count("rb_reasons_read", h.solver.n_rb_reasons)
     h.count("seeds")
     h.count("witness_hits", st["witness_hits"])
+    h.count("theory_decisions", st["theory_decisions"])
     h.count("conflicts", st["conflicts"])
     h.count("restarts", st["restarts"])
     h.count("reductions", h.solver._n_reductions)
@@ -458,6 +459,12 @@ def implied(h: Harness) -> None:
     _check_implied(h, A)
 
 
+def ment_lazy_atoms(h: Harness) -> bool:
+    """The live solver has rule-block theory atoms registered with
+    ``mention=False``."""
+    return bool(h.block_mode and getattr(h.solver, "fuzz_lazy_atoms", False))
+
+
 def _check_implied(h: Harness, A: list[int]) -> None:
     h.record("implied", A)
     h.mention(A)
@@ -470,6 +477,18 @@ def _check_implied(h: Harness, A: list[int]) -> None:
         h.check(not h.sat(A), "implied None but consistent")
         h.last_trail = None
         h.A_bad = True
+        return
+    if ment_lazy_atoms(h):
+        # Theory atoms registered without a mention: the block's
+        # implications on them are not written above root, so the theory
+        # does not see them and propagation may reach less (a theory that
+        # needs no more, like the transfer theory, is exact regardless);
+        # here only soundness.  entails and solve stay exact.
+        h.count("implied_lazy_atoms_sound_only")
+        h.check(len(set(got)) == len(got), "implied has duplicates")
+        for x in set(got) - set(ref or ()):
+            h.check(h.entailed(A, x), "implied unsound", x)
+        h.last_trail = got
         return
     h.check(ref is not None, "implied misses a propagation conflict", ref)
     ment = h.mentioned()
@@ -740,6 +759,18 @@ def late_mention(h: Harness) -> None:
 BLOCK_OPS = OPS + [("register_block", 6, register_block), ("late_mention", 6, late_mention)]
 
 
+def _forbid_decide(t: ForbidTheory) -> Callable:
+    """``decide`` for a ForbidTheory whose atoms may be lazy: an atom it
+    has not been told a value of (its check needs them all)."""
+    def decide():
+        told = {abs(l) for l in t.trail}
+        for v in sorted(t.atoms):
+            if v not in told:
+                return v
+        return None
+    return decide
+
+
 def theory_setup(seed: int) -> Callable:
     """A ForbidTheory (random mode, two or three forbidden sets) over atoms
     1..3, which in block mode are variables of the first block; the live
@@ -756,8 +787,17 @@ def theory_setup(seed: int) -> Callable:
     forbidden2 = [[v * rng.choice([1, -1]) for v in rng.sample(atoms, rng.randint(1, 2))]
                   for _ in range(rng.randint(1, 2))]
 
+    # Half the seeds register the first theory's atoms without mentioning
+    # them (Solver.register_atom(..., mention=False), as the transfer
+    # theory does): they stay lazy unless something else mentions them, and
+    # the theory asks for the unassigned ones with ``decide`` before its
+    # check (a separate generator keeps the other draws of the seed).
+    lazy_atoms = random.Random(10007 * seed + 2).random() < 0.5
+
     def setup(s: Solver) -> None:
         t = ForbidTheory(forbidden, mode)
+        if lazy_atoms:
+            t.decide = _forbid_decide(t)
         if isinstance(s, BlockSolver):
             t = s.recorder = Recorder(t, s)
         s.attach_theory(t)
@@ -765,8 +805,9 @@ def theory_setup(seed: int) -> Callable:
         s.attach_theory(t2)
         s.fuzz_theories = [t, t2]
         for v in atoms:
-            s.register_atom(t, v, None)
-        s.fuzz_atoms = list(atoms)
+            s.register_atom(t, v, None, not lazy_atoms)
+        s.fuzz_atoms = [] if lazy_atoms else list(atoms)
+        s.fuzz_lazy_atoms = lazy_atoms
         # the harness takes a fresh solver as propagated; registration owes
         # the theories a propagation (Solver.register_atom)
         s.propagate()
@@ -987,7 +1028,8 @@ def test_block_mix_covers_the_propagator_paths():
                 "late_mentions_while_held", "late_mentions_written_held",
                 "late_mentions_dropped_held", "implied_lazy_skipped",
                 "solve_from_held", "reductions", "solve_unsat", "witness_hits", "entails_None",
-                "entails_True", "entails_False", "entails_inconsistent"):
+                "entails_True", "entails_False", "entails_inconsistent",
+                "implied_lazy_atoms_sound_only", "theory_decisions"):
         assert c.get(key, 0) > 0, (key, c)
 
 

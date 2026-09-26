@@ -31,6 +31,21 @@ for every pair of terms and every predicate, without materializing them:
 * ``check`` rescans every class (the eager path finds everything; this is
   the completeness backstop the contract asks for at a total assignment).
 
+The atoms are registered *lazy* (``Solver.register_atom(..., mention=False)``):
+they do not mention their variables, so the rule block writes its
+implications above root only to variables something else mentions (a
+clause, an assumption, the query, another theory), and the search does not
+decide the rest.  No transfer is lost by that: every literal of a block
+that the block did not imply itself (a decision, an assumption, a clause's
+or a theory's propagation) is on the trail and reported here, so it reaches
+every atom of its predicate in the class; each equal term's block then
+asserts the same literals and its closure implies what the first block's
+does (the closure is exact), writing it where mentioned.  A class's atoms of
+one predicate are therefore all assigned alike or all unassigned; the
+latter are completed per block from the same assigned values, alike, except
+on a *partial* node (only some of its variables atoms), which ``decide``
+settles before the final check.
+
 The theory keeps no derived state: what it propagates is recomputed from
 the current EUF classes and its own assignment, so EUF's undo needs no
 hook, and ``pop_level`` only forgets the values asserted above the level.
