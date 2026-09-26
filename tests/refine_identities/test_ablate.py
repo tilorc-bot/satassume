@@ -1,12 +1,10 @@
-"""``tools/refine_ablate.py``: in-process row removal and the gate comparison.
+"""``satrefine/tools/refine_ablate.py``: in-process row removal and the gate comparison.
 
 The ablation mutates the loaded tables, so every test restores them.
 """
 from __future__ import annotations
 
 import importlib
-import sys
-from pathlib import Path
 
 import pytest
 from sympy import DiracDelta, Q, symbols
@@ -14,8 +12,7 @@ from sympy import DiracDelta, Q, symbols
 from satrefine import refine
 from satrefine._upstream import handlers_dict
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-ablate_tool = importlib.import_module("refine_ablate")
+ablate_tool = importlib.import_module("satrefine.tools.refine_ablate")
 
 x, y = symbols("x y")
 

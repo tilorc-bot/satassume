@@ -74,7 +74,7 @@ def test_generated_module_is_up_to_date(module, monkeypatch):
     monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
     family = module.__name__.rsplit(".", 1)[-1]
     path = generated_path(family)
-    assert path.exists(), f"run tools/refine_specialize.py --write --family {family}"
+    assert path.exists(), f"run satrefine/tools/refine_specialize.py --write --family {family}"
     committed = importlib.import_module(f"satrefine.identities.generated.{family}")
     # the fixpoint property: regenerating the family against the committed tables of
     # the others (its own keys live) gives its committed table (see _stages)
@@ -82,7 +82,7 @@ def test_generated_module_is_up_to_date(module, monkeypatch):
     # Compare as the module reads back: importing it evaluates each row, and
     # some generated left sides auto-evaluate (Abs(exp(z)) -> exp(re(z))).
     loaded = {tuple(sympify(srepr(part)) for part in rule) for rule in rules}
-    assert set(committed.RULES) == loaded, "regenerate with tools/refine_specialize.py --write"
+    assert set(committed.RULES) == loaded, "regenerate with satrefine/tools/refine_specialize.py --write"
 
 
 def test_stage_manifest_covers_every_generating_family():

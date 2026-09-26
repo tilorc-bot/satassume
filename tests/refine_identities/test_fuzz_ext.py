@@ -1,4 +1,4 @@
-"""``tools/refine_fuzz.py``'s extended family (``--ext``): infinite sample
+"""``satrefine/tools/refine_fuzz.py``'s extended family (``--ext``): infinite sample
 points, relations with infinite bounds, SymPy's conventions at infinity
 classified instead of reported, and the default case streams unchanged.
 
@@ -11,16 +11,14 @@ import hashlib
 import importlib
 import random
 import sys
-from pathlib import Path
 
 import pytest
 from sympy import (KroneckerDelta, Piecewise, Q, RisingFactorial, S, acoth, acsch, atan2, coth, csch, exp, gamma, log,
                    oo, pi, sign, symbols, zoo, Eq, I, Add, Pow, im)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 _argv, sys.argv = sys.argv, sys.argv[:1]
-fz = importlib.import_module("refine_fuzz")
-rd = importlib.import_module("refine_differential")
+fz = importlib.import_module("satrefine.tools.refine_fuzz")
+rd = importlib.import_module("satrefine.tools.refine_differential")
 sys.argv = _argv
 
 x, y, z, n, m, k = symbols("x y z n m k")

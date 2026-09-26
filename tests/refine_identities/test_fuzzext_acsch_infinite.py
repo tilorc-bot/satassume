@@ -1,5 +1,5 @@
 """Fixed in phase 3 (ri/fixes; issue #10 B10).  The needs test said: ``acsch(csch(Abs(z))) -> Abs(z)`` fires where ``Abs(z)`` may be infinite
-(found by ``tools/refine_differential.py --ext``, seeds 21 and 24, both modes,
+(found by ``satrefine/tools/refine_differential.py --ext``, seeds 21 and 24, both modes,
 both backends; phase-3 fuzz extension).
 
 The row in ``inverse.FACTS``::

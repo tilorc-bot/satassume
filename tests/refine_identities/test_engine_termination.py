@@ -38,7 +38,6 @@ from satrefine.identities.core import driver as _dispatch
 from satrefine.identities.core.driver import RefineLoopError
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 LARGE = int(os.environ.get("SATREFINE_TERMINATION_FUZZ", "0"))
@@ -152,7 +151,7 @@ def _battery_sample():
 
 def _random_cases(n):
     """``n`` differential cases, taken in turn from seeds 2, 3 and 7."""
-    from refine_differential import generate
+    from satrefine.tools.refine_differential import generate
     out, case = [], 0
     while len(out) < n:
         for seed in (2, 3, 7):

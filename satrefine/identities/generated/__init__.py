@@ -1,5 +1,5 @@
 """Generated rule tables, one module per family, written by
-``tools/refine_specialize.py --write`` and never edited by hand.
+``satrefine/tools/refine_specialize.py --write`` and never edited by hand.
 
 Each module is a plain rule table (a ``RULES`` list of ``(lhs, rhs,
 hypothesis)`` rows and literal ``handlers_dict['key'] = rule_handler(RULES)``

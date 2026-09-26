@@ -1,5 +1,5 @@
 """``refine(HadamardProduct(X, X), ...)`` raises ``ValueError`` (found by the
-matrix differential, ``tools/refine_differential.py --matrices --seed 2``,
+matrix differential, ``satrefine/tools/refine_differential.py --matrices --seed 2``,
 cases Hadamard; phase-3 fuzz extension).
 
 ``_engine._match`` binds the pattern ``HadamardProduct(Z, R)`` (the zero row

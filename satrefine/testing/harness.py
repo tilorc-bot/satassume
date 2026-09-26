@@ -305,7 +305,7 @@ def query_scope_recorder():
     The counts land in the junit XML as ``ask_<category>`` properties
     (``in_scope``, ``relation``, ``matrix``, ``custom``, ``other``, plus
     ``undecided`` for in-scope queries satassume answered ``None``), which
-    ``tools/refine_scoreboard.py`` uses to tell out-of-scope failures from
+    ``satrefine/tools/refine_scoreboard.py`` uses to tell out-of-scope failures from
     in-scope engine gaps.  Queries answered under a patched ``ask`` (the
     ``reference_ask`` fixture and the stubs above) are not seen.
     """
