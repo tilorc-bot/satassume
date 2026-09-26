@@ -8,7 +8,7 @@ from sympy.matrices import Matrix
 from sympy.matrices.expressions import Adjoint, MatrixSymbol
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refines_like_sympy,
     recording_ask,
     reference_ask,

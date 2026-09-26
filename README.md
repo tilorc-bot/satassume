@@ -115,12 +115,12 @@ only when propagation is inconclusive.
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
 | `satrefine/` | the refine layer (SymPy's `refine` dispatcher plus 56 handlers) with a selectable `ask` backend; see below |
 | `tests/refine/` | the refine handler tests, run under each backend |
-| `tools/refine_scoreboard.py` | run `tests/refine` under every backend and compare outcomes |
+| `satrefine/tools/refine_scoreboard.py` | run `tests/refine` under every backend and compare outcomes |
 | `satrefine/handlers_v2/`, `handlers_v3/` | two blind from-scratch rewrites of the same 56 keys (one agent; a parallel team with verifiers), selected with `SATREFINE_HANDLERS`; see `agent-reports/2026-09-23-refine-three-implementations.md` |
 | `tests/refine_v2/`, `tests/refine_v3/` | their suites; any suite runs against any package |
-| `tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
-| `tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
-| `satrefine/handlers_identities/` | the nine handler families as tables of identities and conditional rules, with rules generated from identities and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py`; see `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and `2026-09-25-refine-identities-phase-2-results.md` |
+| `satrefine/tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
+| `satrefine/tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
+| `satrefine/identities/` (selected as `handlers_identities`) | the nine handler families as tables of identities and conditional rules, with rules generated from identities (offline, `satrefine/build/`) and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `satrefine/tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py` (run as `python -m satrefine.tools.<name>`; `tools/refine_*` are shims for phase 3); see `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and `2026-09-25-refine-identities-phase-2-results.md` |
 
 ## satrefine: the refine layer as a yardstick
 
@@ -130,7 +130,7 @@ only when propagation is inconclusive.
 plus 56 self-registering handlers in `satrefine/handlers/`, with the test
 harness and 470 tests in `tests/refine/`. Every handler asks its predicate
 questions through one seam, `satrefine._upstream.ask`, and
-`satrefine/backend.py` chooses who answers:
+`satrefine/identities/compat/backend.py` chooses who answers:
 
 | Backend | `ask` | Use |
 |---|---|---|
@@ -159,9 +159,9 @@ runs against any package and every tool takes `--handlers`:
 ```bash
 SATREFINE_HANDLERS=handlers_v3 PYTHONPATH=.:/path/to/sympy .venv/bin/python -m pytest -q tests/refine_v3
 SATREFINE_HANDLERS=handlers_v2 PYTHONPATH=.:/path/to/sympy .venv/bin/python -m pytest -q tests/refine   # one package, another's suite
-PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_scoreboard.py --handlers handlers_v3 --suite tests/refine_v3
-PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_fuzz.py 2 1500 --handlers handlers_v2
-PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_oracle.py --handlers handlers_v3
+PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_scoreboard --handlers handlers_v3 --suite tests/refine_v3
+PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_fuzz 2 1500 --handlers handlers_v2
+PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_oracle --handlers handlers_v3
 ```
 
 How they compare, and what to build on, is in
@@ -173,7 +173,7 @@ and covers the most on the branch-cut families, at about seven times the
 single agent's cost, most of it the verifier pass. `handlers` was the
 default until 2026-09-25, and the corpus numbers above were measured with it.
 
-A fourth package, `satrefine/handlers_identities/`, implements the same nine
+A fourth package, `satrefine/identities/` (selected as `handlers_identities`), implements the same nine
 handler families as tables: identity rows with the branch bookkeeping written out
 (`log`, powers, inverse functions, complex parts) and plain conditional rows
 (the other families), run by a shared engine that matches rows, decides
@@ -193,7 +193,16 @@ per-family code. Results are in
 `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and
 `agent-reports/2026-09-25-refine-identities-phase-2-results.md`.
 
-`tools/refine_scoreboard.py` runs `tests/refine` under each backend and
+Its layout (issue #13): `satrefine/identities/` is what runs on every
+`refine` call (`core/`: driver, termination guard, proving, matching,
+rewriting, case splits; `rules/`: the families; `generated/`: the checked-in
+generated tables; `compat/`: SymPy workarounds, matrix special cases, the
+`ask` backend; `config.py`: the environment switches). `satrefine/build/`
+(table generation), `satrefine/tools/` (satrefine's tools) and
+`satrefine/testing/` (the test harness) are offline: they import
+`satrefine.identities`, never the reverse, and are not distributed.
+
+`satrefine/tools/refine_scoreboard.py` runs `tests/refine` under each backend and
 compares outcomes per test: satassume in-scope gaps (pass under `sympy`, fail
 under `satassume` with only in-scope queries asked), out-of-scope failures
 (relations or matrix predicates were asked, so the handler could not fire),
@@ -202,8 +211,8 @@ satassume wins, combination wins (pass under `combined` only) and refine gaps
 `tests/refine/conftest.py` that classifies every query with `out_of_scope`.
 
 ```bash
-PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_scoreboard.py
-PYTHONPATH=.:/path/to/sympy .venv/bin/python tools/refine_scoreboard.py --backends sympy,satassume --show-failures satassume
+PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_scoreboard
+PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_scoreboard --backends sympy,satassume --show-failures satassume
 SATREFINE_BACKEND=satassume PYTHONPATH=.:/path/to/sympy .venv/bin/python -m pytest -q tests/refine
 ```
 

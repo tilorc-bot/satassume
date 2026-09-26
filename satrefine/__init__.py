@@ -8,7 +8,6 @@ The vendored dispatcher and initial handlers live in
 from __future__ import annotations
 
 import importlib
-import os
 import pkgutil
 
 from ._upstream import (
@@ -48,19 +47,9 @@ __all__ = [
 ]
 
 
-HANDLERS_ENV_VAR = "SATREFINE_HANDLERS"
-"""Name of the handler package to load, relative to ``satrefine``.
+from .identities.config import DEFAULT_HANDLERS, HANDLERS_ENV_VAR, handlers_package  # noqa: E402,F401  (re-exported)
 
-Defaults to :data:`DEFAULT_HANDLERS`.  The other implementations of the same
-registry keys (``handlers``, the original layer; ``handlers_v2``;
-``handlers_v3``) can be selected instead, so they can be measured with the
-same dispatcher, backends and tools.
-"""
-
-DEFAULT_HANDLERS = "handlers_identities"
-"""Handler package loaded when :data:`HANDLERS_ENV_VAR` is not set."""
-
-HANDLERS_PACKAGE = os.environ.get(HANDLERS_ENV_VAR, DEFAULT_HANDLERS)
+HANDLERS_PACKAGE = handlers_package()
 """Name of the handler package this process loaded (fixed at import)."""
 
 

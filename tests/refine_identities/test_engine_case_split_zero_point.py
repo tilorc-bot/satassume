@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from sympy import Q, Rem, sign, symbols
 
-from satrefine.handlers_identities._engine import identity_handler
+from satrefine.identities.core.rewrite import identity_handler
 
 a, b, x, y = symbols('a b x y')
 

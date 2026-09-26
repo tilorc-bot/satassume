@@ -7,9 +7,10 @@ from sympy import Abs, Basic, Integer, Q, S, cos, sin, sqrt
 from sympy.abc import n, x, y
 
 import satrefine
-from satrefine import backend, handlers_v2
+from satrefine import handlers_v2
+from satrefine.identities.compat import backend
 from satrefine._upstream import handlers_dict
-from satrefine.harness import scripted_ask, use_ask
+from satrefine.testing.harness import scripted_ask, use_ask
 
 KEYS = sorted("""Abs Determinant DiracDelta FallingFactorial HadamardProduct Heaviside
 Inverse KroneckerDelta MatAdd MatMul MatrixElement Max Min Mod Mul Pow Rem RisingFactorial

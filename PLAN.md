@@ -89,7 +89,7 @@ Work list for the slice, in order:
 
 `satrefine/` (the `reasoning` project's refine layer, see README) asks its
 predicate questions through a switchable backend, and
-`tools/refine_scoreboard.py` runs its 470 tests under SymPy's `ask`, satassume
+`satrefine/tools/refine_scoreboard.py` runs its 470 tests under SymPy's `ask`, satassume
 alone and the two combined. As of 2026-09-22 satassume has no in-scope gap on
 that suite; every test it loses asks a relation or a matrix predicate, so the
 scoreboard is the first thing that moves when either enters scope. Handlers

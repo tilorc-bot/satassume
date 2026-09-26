@@ -12,7 +12,7 @@ from sympy import (Abs, DiracDelta, Eq, Heaviside, KroneckerDelta, Max, Min, Q, 
                    nan, oo, symbols)
 
 from satrefine import refine
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 
 x, y, z, k, i, j, z_, w_ = symbols('x y z k i j z_ w_')
 REALS = [S(v) for v in range(-3, 4)] + [Rational(1, 2), Rational(-7, 2)]
@@ -137,7 +137,7 @@ def test_table_size():
     """Five Piecewise definitions (Max, Min, KroneckerDelta with and without a
     range, Heaviside), three DiracDelta rule rows and four rows for an infinite
     argument of Max/Min."""
-    from satrefine.handlers_identities import minmax_deltas as mod
+    from satrefine.identities.rules import minmax_deltas as mod
     assert (len(mod.FACTS), len(mod.RULES)) == (5, 7)
 
 

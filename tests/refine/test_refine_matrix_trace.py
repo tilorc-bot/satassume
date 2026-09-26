@@ -7,7 +7,7 @@ from sympy.core import S
 from sympy.matrices.expressions import MatrixSymbol, Trace
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     recording_ask,
     reference_ask,
     stub_ask,

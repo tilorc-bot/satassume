@@ -1,24 +1,10 @@
-"""Record the ``ask`` query stream that satrefine issues over its battery.
+#!/usr/bin/env python
+"""Moved to ``satrefine/tools/refine_record.py``: run ``python -m satrefine.tools.refine_record``.
 
-    PYTHONHASHSEED=0 SATREFINE_HANDLERS=handlers_identities SATREFINE_IDENTITIES=generated \
-      PYTHONPATH=.:/path/to/sympy python tools/refine_record.py stream.pkl
+This shim (kept for phase 3) runs that file as a script with the same arguments."""
+import os
+import runpy
+import sys
 
-Needs a checkout that has ``satrefine`` and ``tests/refine_identities``
-(the ``refine-identities`` branch); the pickle it writes is replayed by
-``tools/refine_replay.py`` against any satassume checkout.
-"""
-import pickle, sys, time
-import satrefine, satrefine.backend as B
-from tests.refine_identities.battery_v3 import BATTERY
-B.set_backend("satassume")
-orig = B._satassume_ask
-stream = []
-def rec(p, a=True):
-    r = orig(p, a); stream.append((p, a, r)); return r
-B._IMPLEMENTATIONS["satassume"] = rec
-t0 = time.perf_counter()
-for expr, assum, exp, src in BATTERY:
-    try: satrefine.refine(expr, assum)
-    except Exception: pass
-print(f"refine loop {time.perf_counter()-t0:.1f}s, {len(stream)} queries")
-with open(sys.argv[1], "wb") as f: pickle.dump(stream, f)
+sys.path[0] = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # the repository root, not tools/
+runpy.run_path(os.path.join(sys.path[0], "satrefine", "tools", "refine_record.py"), run_name="__main__")

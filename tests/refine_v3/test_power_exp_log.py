@@ -17,7 +17,7 @@ from sympy import (
 
 from satrefine import refine
 from satrefine.handlers_v3.power_exp_log import refine_Pow, refine_exp, refine_log
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 
 x, y, z, a, b, n, m = symbols("x y z a b n m")
 

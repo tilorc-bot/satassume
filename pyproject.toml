@@ -17,6 +17,8 @@ dev = ["pytest", "hypothesis"]
 
 [tool.setuptools.packages.find]
 include = ["satassume*", "satrefine*"]
+# offline parts of satrefine (table generation, tools, test fixtures): dev-only dependencies
+exclude = ["satrefine.build*", "satrefine.tools*", "satrefine.testing*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

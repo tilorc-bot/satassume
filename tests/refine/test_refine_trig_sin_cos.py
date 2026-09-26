@@ -16,7 +16,7 @@ from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.trigonometric import cos, sin, tan
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refines_like_sympy,
     assert_refinement_valid,
     stub_ask,

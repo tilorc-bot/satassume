@@ -5,7 +5,7 @@ import pytest
 from sympy import simplify
 
 from satrefine import refine
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 
 
 def ids(rows):

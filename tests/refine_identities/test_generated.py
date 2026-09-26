@@ -7,8 +7,10 @@ import os
 import pytest
 from sympy import I, Q, log, pi, srepr, symbols, sympify
 
-from satrefine.handlers_identities import _dispatch, _stages
-from satrefine.handlers_identities._specialize import family_modules, generated_path
+from satrefine.build import stages as _stages
+from satrefine.identities.core import driver as _dispatch
+from satrefine.build.render import generated_path
+from satrefine.build.specialize import family_modules
 
 x = symbols("x")
 
@@ -23,7 +25,7 @@ def test_generated_table_covers_the_live_rows(monkeypatch):
     """Every row the live engine fires on, generated mode fires on with a
     numerically valid result, except the listed gaps."""
     from satrefine import refine
-    from satrefine.harness import assert_refinement_valid
+    from satrefine.testing.harness import assert_refinement_valid
     from test_power_exp_log import IDS, ROWS  # same directory; pytest prepends it to sys.path
     misses, unexpected = [], []
     for (expr, assumptions, _team, _rel), rid in zip(ROWS, IDS):
@@ -72,15 +74,15 @@ def test_generated_module_is_up_to_date(module, monkeypatch):
     monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
     family = module.__name__.rsplit(".", 1)[-1]
     path = generated_path(family)
-    assert path.exists(), f"run tools/refine_specialize.py --write --family {family}"
-    committed = importlib.import_module(f"satrefine.handlers_identities.generated.{family}")
+    assert path.exists(), f"run satrefine/tools/refine_specialize.py --write --family {family}"
+    committed = importlib.import_module(f"satrefine.identities.generated.{family}")
     # the fixpoint property: regenerating the family against the committed tables of
     # the others (its own keys live) gives its committed table (see _stages)
     rules, _keys, _verdicts = _stages.generate_one(module)
     # Compare as the module reads back: importing it evaluates each row, and
     # some generated left sides auto-evaluate (Abs(exp(z)) -> exp(re(z))).
     loaded = {tuple(sympify(srepr(part)) for part in rule) for rule in rules}
-    assert set(committed.RULES) == loaded, "regenerate with tools/refine_specialize.py --write"
+    assert set(committed.RULES) == loaded, "regenerate with satrefine/tools/refine_specialize.py --write"
 
 
 def test_stage_manifest_covers_every_generating_family():

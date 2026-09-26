@@ -1,4 +1,4 @@
-"""``tools/refine_fuzz.py``'s matrix mode: the samplers satisfy the predicates
+"""``satrefine/tools/refine_fuzz.py``'s matrix mode: the samplers satisfy the predicates
 they are drawn for, the checker finds a wrong rewrite, and a rewrite with no
 checkable point is counted as unchecked, not as passed.
 """
@@ -7,15 +7,13 @@ from __future__ import annotations
 import importlib
 import random
 import sys
-from pathlib import Path
 
 import pytest
 from sympy import (Determinant, I, Identity, ImmutableMatrix, MatrixSymbol, Q, Rational, S, Symbol, ZeroMatrix,
                    symbols)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 _argv, sys.argv = sys.argv, sys.argv[:1]
-fz = importlib.import_module("refine_fuzz")
+fz = importlib.import_module("satrefine.tools.refine_fuzz")
 sys.argv = _argv
 
 X = MatrixSymbol('X', 2, 2)

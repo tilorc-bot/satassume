@@ -12,7 +12,7 @@ import pytest
 from sympy import (Abs, E, I, Pow, Q, Rational, S, exp, log, pi, simplify, sqrt, symbols)
 
 from satrefine import refine
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 
 x, y, t, n, m, a, b = symbols("x y t n m a b")
 HALF = S.Half
@@ -146,7 +146,7 @@ def test_relation_to_team(expr, assumptions, team, relation):
 
 
 def test_row_counts():
-    from satrefine.handlers_identities import power_exp_log as m
+    from satrefine.identities.rules import power_exp_log as m
     assert len(m.FACTS) == 4 and len(m.EXP_FORMS) == 3
 
 

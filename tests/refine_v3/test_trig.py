@@ -15,7 +15,7 @@ from sympy import (
 from sympy.core.basic import Basic
 
 from satrefine import handlers_dict, refine
-from satrefine.harness import assert_refinement_valid, stub_ask, use_ask
+from satrefine.testing.harness import assert_refinement_valid, stub_ask, use_ask
 from satrefine.handlers_v3 import trig
 
 x = Symbol('x')

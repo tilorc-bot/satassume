@@ -16,7 +16,7 @@ from sympy.core import S
 from sympy.functions.special.tensor_functions import KroneckerDelta
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
     recording_ask,

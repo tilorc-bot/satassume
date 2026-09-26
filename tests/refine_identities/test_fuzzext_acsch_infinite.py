@@ -1,5 +1,5 @@
 """Fixed in phase 3 (ri/fixes; issue #10 B10).  The needs test said: ``acsch(csch(Abs(z))) -> Abs(z)`` fires where ``Abs(z)`` may be infinite
-(found by ``tools/refine_differential.py --ext``, seeds 21 and 24, both modes,
+(found by ``satrefine/tools/refine_differential.py --ext``, seeds 21 and 24, both modes,
 both backends; phase-3 fuzz extension).
 
 The row in ``inverse.FACTS``::
@@ -25,8 +25,9 @@ from __future__ import annotations
 import pytest
 from sympy import Abs, Q, acsch, csch, symbols
 
-from satrefine import backend, refine
-from satrefine.handlers_identities import _dispatch
+from satrefine import refine
+from satrefine.identities.compat import backend
+from satrefine.identities.core import driver as _dispatch
 
 z, n = symbols("z n")
 MODES = {"generated": _dispatch.tables, "live": _dispatch.live}

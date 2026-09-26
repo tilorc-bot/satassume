@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from sympy import Mod, Q, S, floor, gamma, symbols
 
-from satrefine.handlers_identities._specialize import compile_rule
+from satrefine.identities.rules._tables import compile_rule
 
 a, b, c, m, n, x, y = symbols('a b c m n x y')
 

@@ -8,7 +8,7 @@ and keep using SymPy's ``ask``.
 
 This module is the ``reasoning`` project's ``reasoning/refine/_upstream.py``
 at commit ``12c3845`` with only the ``ask`` seam changed (it now delegates to
-:mod:`satrefine.backend`).  It must otherwise stay behavior-identical; new
+:mod:`satrefine.identities.compat.backend`).  It must otherwise stay behavior-identical; new
 handlers live in :mod:`satrefine.handlers` and override entries of
 :data:`handlers_dict` instead of editing this file.
 """
@@ -20,7 +20,7 @@ from sympy.assumptions import Q
 from sympy.core import S, Add, Expr, Basic, Mul, Pow, Rational
 from sympy.core.logic import fuzzy_not
 
-from . import backend
+from .identities.compat import backend
 
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ def ask(proposition: Basic,
 
     Handlers must call this through the module attribute
     (``_upstream.ask(...)``) so the test harness can patch it.  Which engine
-    answers is chosen in :mod:`satrefine.backend`: SymPy's ``ask``, satassume
+    answers is chosen in :mod:`satrefine.identities.compat.backend`: SymPy's ``ask``, satassume
     alone, or the two combined.  Global assumptions are not read.
     """
     return backend.ask(proposition, assumptions)

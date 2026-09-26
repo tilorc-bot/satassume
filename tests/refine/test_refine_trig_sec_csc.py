@@ -10,7 +10,7 @@ from sympy.core.numbers import zoo
 from sympy.functions.elementary.trigonometric import csc, sec
 
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     stub_ask,
     use_ask,

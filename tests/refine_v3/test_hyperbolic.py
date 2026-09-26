@@ -15,7 +15,7 @@ from sympy import (
 
 from satrefine import refine
 from satrefine._upstream import handlers_dict
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 from satrefine.handlers_v3 import hyperbolic
 
 x, k, n = symbols("x k n")

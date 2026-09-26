@@ -25,7 +25,7 @@ from sympy.assumptions import Q
 
 from satrefine import _upstream, refine
 from satrefine.handlers_v3 import inverse
-from satrefine.harness import assert_refinement_valid, use_ask
+from satrefine.testing.harness import assert_refinement_valid, use_ask
 
 x, y, t = symbols('x y t')
 

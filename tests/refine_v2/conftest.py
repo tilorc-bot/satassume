@@ -14,7 +14,7 @@ import pytest
 os.environ.setdefault("SATREFINE_HANDLERS", "handlers_v2")
 
 import satrefine  # noqa: E402
-from satrefine.harness import assert_refinement_valid  # noqa: E402
+from satrefine.testing.harness import assert_refinement_valid  # noqa: E402
 from sympy import I, Rational, S, pi, sqrt  # noqa: E402
 
 
@@ -26,7 +26,7 @@ from sympy import I, Rational, S, pi, sqrt  # noqa: E402
 @pytest.fixture(autouse=True)
 def _record_query_scope(request: pytest.FixtureRequest):
     """Count each test's queries by satassume scope category (see the harness)."""
-    from satrefine.harness import query_scope_recorder
+    from satrefine.testing.harness import query_scope_recorder
     yield from query_scope_recorder()(request)
 
 

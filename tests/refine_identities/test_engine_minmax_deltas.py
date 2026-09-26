@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from sympy import Function, KroneckerDelta, Max, Min, Q, S, symbols
 
-from satrefine.handlers_identities._specialize import compile_rule, compile_table
+from satrefine.identities.rules._tables import compile_rule, compile_table
 
 a, b, i, j, r, x, y, z = symbols('a b i j r x y z')
 G = Function('G')

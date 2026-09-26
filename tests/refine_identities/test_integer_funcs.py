@@ -12,7 +12,7 @@ from sympy.functions.elementary.miscellaneous import Rem
 
 from satrefine import refine
 from satrefine._upstream import handlers_dict
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 
 x, y, n, m, k, a, b = symbols('x y n m k a b')
 
@@ -168,7 +168,7 @@ def test_refusal(expr, assumptions):
 
 def test_table_size_and_registration():
     from satrefine import _upstream
-    from satrefine.handlers_identities import integer_funcs as mod
+    from satrefine.identities.rules import integer_funcs as mod
     assert len(mod.RULES) == 9 and len(mod.FACTS) == 2
     assert handlers_dict['floor'] is not _upstream.refine_floor_ceiling
     assert all(callable(handlers_dict[key]) for key in ('floor', 'ceiling', 'frac', 'Mod', 'Rem'))

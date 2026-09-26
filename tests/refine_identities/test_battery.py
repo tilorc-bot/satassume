@@ -32,7 +32,7 @@ from battery_v3 import BATTERY
 from sympy import DiracDelta, MatrixSymbol, Rem, zoo
 
 from satrefine import refine
-from satrefine.harness import assert_refinement_valid
+from satrefine.testing.harness import assert_refinement_valid
 
 _OTHER_PACKAGES = ("handlers", "handlers_v2", "handlers_identities")
 V3_LOADED = "satrefine.handlers_v3" in sys.modules and not any(

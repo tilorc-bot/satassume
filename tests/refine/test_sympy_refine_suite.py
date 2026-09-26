@@ -3,7 +3,7 @@
 The suite is imported from the SymPy on ``sys.path``; ``refine`` and
 ``refine_sin_cos`` are rebound to satrefine's in the imported module, and
 the test functions are re-exported so pytest collects them.  Which engine
-answers the handlers' questions is chosen by :mod:`satrefine.backend`.
+answers the handlers' questions is chosen by :mod:`satrefine.identities.compat.backend`.
 """
 import pytest
 

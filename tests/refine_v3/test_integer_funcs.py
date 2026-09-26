@@ -18,7 +18,7 @@ from sympy.assumptions.assume import AppliedPredicate
 
 import satrefine._upstream as upstream
 from satrefine import refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     _numerically_equal, _sample_satisfies, assert_refinement_valid, use_ask,
 )
 

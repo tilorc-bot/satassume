@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 
 import satrefine.handlers
-from satrefine import backend
+from satrefine.identities.compat import backend
 from sympy.assumptions import Q
 from sympy.assumptions.ask import ask as sympy_ask
 from sympy.assumptions.refine import refine as sympy_refine
@@ -51,7 +51,7 @@ from sympy.functions.special.tensor_functions import KroneckerDelta
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 
 from satrefine import HANDLERS_PACKAGE, _upstream, refine
-from satrefine.harness import (
+from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
     reference_ask,

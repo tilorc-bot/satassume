@@ -27,8 +27,8 @@ from collections.abc import Iterator
 import pytest
 
 from satrefine import HANDLERS_PACKAGE
-from satrefine.harness import query_scope_recorder
-from satrefine.harness import reference_ask as _reference_ask
+from satrefine.testing.harness import query_scope_recorder
+from satrefine.testing.harness import reference_ask as _reference_ask
 
 _ORIGINAL_MODULE = re.compile(r"satrefine\.handlers\.[a-z]")
 
