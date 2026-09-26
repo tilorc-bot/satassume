@@ -260,3 +260,25 @@ def test_function_closures(eng):
     from sympy import sin
     assert ask(Q.finite(sin(x)), True, eng) is None
     assert ask(Q.finite(sin(x)), Q.finite(x), eng) is True
+
+
+# -- constants: answered without the assumptions -------------------------------
+
+def test_constant_proposition_ignores_assumptions(eng):
+    x = Symbol('x')
+    # inconsistent assumptions do not raise for a question about constants
+    assert ask(Q.positive(pi), Q.positive(x) & Q.negative(x), eng) is True
+    assert ask(~Q.zero(Integer(-1)) & Q.negative(Integer(-1)), Q.zero(x) & ~Q.zero(x), eng) is True
+    # an assumption about something else does not change the answer
+    assert ask(Q.rational(pi), Q.rational(x), eng) is False
+    # a proposition with a free symbol still reads the assumptions and raises
+    with pytest.raises(ValueError):
+        ask(Q.positive(x + pi), Q.positive(x) & Q.negative(x), eng)
+
+
+def test_undefined_function_value_is_not_a_constant(eng):
+    from sympy import Function
+    f = Function('f')
+    assert ask(Q.positive(f(1)), Q.positive(f(1)), eng) is True
+    with pytest.raises(ValueError):
+        ask(Q.positive(f(1)), Q.positive(f(1)) & Q.negative(f(1)), eng)

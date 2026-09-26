@@ -268,7 +268,10 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
     * Custom predicates with a registered clause-generating function
       (:func:`register`, the counterpart of ``Predicate.register``) are in
       scope: their atoms take part in propagation and search.
-    * Inconsistent assumptions raise ``ValueError`` like ``sympy.ask``.
+    * Inconsistent assumptions raise ``ValueError`` like ``sympy.ask``,
+      except for a proposition about constants only (every argument a
+      number without free symbols), which is answered without the
+      assumptions and so never raises.
       Assumptions contradicting a fact declared on a symbol
       (``ask(Q.commutative(x), ~Q.commutative(x))``) count as inconsistent
       here, where SymPy trusts the assumption.
@@ -346,7 +349,38 @@ class _Failed:
         self.message, self.category = message, category
 
 
+# --------------------------------------------------------------------------
+# constants: answered without the assumptions
+# --------------------------------------------------------------------------
+
+def _is_constant_proposition(prop) -> bool:
+    """Every expression the proposition's predicates are applied to has no
+    free symbols and is a number (so not ``f(1)`` for an undefined ``f``,
+    about which the assumptions may say something).
+
+    Such a proposition (``Q.negative(-1)``, ``~Q.zero(pi)``,
+    ``Q.eq(zoo, 1)``) is answered by the engine without the assumptions
+    (its context-free path): the facts of a constant do not depend on them.
+    So it never raises for inconsistent assumptions, and a relation no
+    theory interprets in the assumptions no longer sinks it."""
+    from sympy.logic.boolalg import BooleanFunction
+    from sympy.assumptions.relation.binrel import AppliedBinaryRelation
+    if isinstance(prop, (_Applied, AppliedBinaryRelation)):
+        args = prop.arguments
+        return bool(args) and all(isinstance(a, _Expr) and not a.free_symbols and a.is_number
+                                  for a in args)
+    if isinstance(prop, BooleanFunction):
+        return bool(prop.args) and all(_is_constant_proposition(a) for a in prop.args)
+    return False
+
+
 def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
+    if isinstance(proposition, _Basic) and _is_constant_proposition(proposition):
+        return _engine_ask(proposition, True, eng)
+    return _engine_ask(proposition, assumptions, eng)
+
+
+def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     rel = bool(eng.relation_specs)
     try:
         prop = _formula(proposition, rel)
