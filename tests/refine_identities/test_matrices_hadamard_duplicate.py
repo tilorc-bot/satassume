@@ -45,7 +45,7 @@ def test_hadamard_of_a_repeated_zero_atom_is_zero(mode):
 def test_matcher_keeps_the_other_copies():
     """Every "one and the rest" form removes the bound argument by position."""
     from sympy import Add, MatMul, Symbol, symbols
-    from satrefine.identities.core.rewrite import bindings
+    from satrefine.identities.core.match import bindings
     from satrefine.identities.compat.matrices import HADAMARD, MATMUL, c, Z, R
     a, u, v = symbols("a u v")
     rests = [b[R] for b in bindings(HADAMARD[0][0], HadamardProduct(X, X))]

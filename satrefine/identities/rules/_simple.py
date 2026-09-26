@@ -61,7 +61,7 @@ def register_ranges(rows: list) -> None:
 
 def _range(node: Any, assumptions: Any) -> tuple | None:
     """``(lo, hi, lo_open, hi_open)``: the range of a bounded head applied to its argument, or ``None``."""
-    from ..core.rewrite import provable
+    from ..core.prove import provable
     for lhs, interval, cond in RANGES.get(node.func, ()):
         if provable(cond.xreplace({lhs.args[0]: node.args[0]}), assumptions) is True:
             return interval.start, interval.end, interval.left_open, interval.right_open
@@ -354,7 +354,7 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     SymPy refines a condition with a bare ``ask`` (weak on relations, raising on
     sign facts, wrong at ``-oo``)."""
     from ..core.driver import refine
-    from ..core.rewrite import decide
+    from ..core.prove import decide
     pairs = []
     for value, cond in expr.args:
         decided = decide(cond, assumptions)

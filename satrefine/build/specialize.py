@@ -16,7 +16,7 @@ import itertools
 import pathlib
 from contextlib import nullcontext
 import types
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
 from sympy import And, AppliedPredicate, I, N, Q, S, arg, expand, floor, im, nan, true, zoo
 
@@ -24,7 +24,7 @@ from .. import _upstream
 from ..identities import family_module_name
 from ..identities.core import driver as _dispatch
 from ..identities.core.driver import generated_handlers, live
-from ..identities.core.rewrite import Row, bindings, refine, rule_handler, subst
+from ..identities.core.rewrite import Row, refine
 from ..testing.harness import _numerically_equal, _sample_satisfies
 
 class Literal:

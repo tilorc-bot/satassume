@@ -9,7 +9,8 @@ from sympy import Function, Max, Piecewise, Q, S, atan2, symbols
 
 from satrefine import refine
 from satrefine.identities.core import driver as _dispatch
-from satrefine.identities.core.rewrite import decide, identity_handler, provable
+from satrefine.identities.core.prove import decide, provable
+from satrefine.identities.core.rewrite import identity_handler
 
 a, b, n, x, y, z = symbols('a b n x y z')
 

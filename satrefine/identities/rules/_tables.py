@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from typing import Any, Callable, Iterable
 
-from sympy import Function, Q, Symbol
+from sympy import And, Function, Q, Symbol, exp
 from sympy.core import Add, Mul
 
-from ..core.rewrite import Row, _is_negation, derive, identity_handler, part, rule_handler, size
+from ..core.match import part
+from ..core.rewrite import Row, _is_negation, identity_handler, rule_handler, size
 from ._wraps import principal
 
 __all__ = ["ZERO", "Row", "chain", "compile_rule", "compile_table", "derive", "exp_node_measure", "identity_handler",
@@ -91,3 +92,16 @@ def compile_rule(lhs: Any, rhs: Any, hyp: Any, unless: Any = None) -> Callable[[
 def compile_table(rules: Iterable) -> Callable[[Any, Any], Any]:
     """A rule table as a handler; rows ``(lhs, rhs, hypothesis[, unless])`` in table order."""
     return rule_handler(list(rules))
+
+
+def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
+    """Compose each ``g(exp(z))`` fact with each exponential form ``(L, W, domain)``
+    (``L == exp(W)``) into the row ``g(L) == rhs[z := W]`` under both domains."""
+    rows: list[Row] = []
+    for lhs, rhs, dom in facts:
+        rows.append((lhs, rhs, dom))
+        if lhs.args and isinstance(lhs.args[0], exp) and lhs.args[0].args[0].is_Symbol:
+            zz = lhs.args[0].args[0]
+            for L, W, dom_d in exp_forms:
+                rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
+    return rows
