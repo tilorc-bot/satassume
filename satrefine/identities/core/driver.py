@@ -2,7 +2,7 @@
 
 This is the vendored driver (:func:`satrefine._upstream.refine`) with two
 changes, and it replaces ``satrefine.refine`` whenever the
-``handlers_identities`` package is selected (see the package ``__init__``):
+``handlers_identities`` package is selected (see :func:`satrefine.identities.load`):
 
 * **re-refine after auto-evaluation.**  When a node is rebuilt from refined
   children, the constructor may auto-evaluate into a different structure
@@ -46,7 +46,7 @@ from .guard import (MAX_CALL_FIRINGS, MAX_DEPTH, MAX_FIRINGS, MAX_TOTAL_FIRINGS,
                     _Call, _short, loop_events, strict, strict_loops)
 
 MAX_SPLITS = 8
-"""Case splits (:func:`._engine.case_split`) tried in one top-level call: each
+"""Case splits (:func:`.split.case_split`) tried in one top-level call: each
 explores its branches with the full engine, so their number bounds the cost
 of a call whose bookkeeping never collapses (``log(k*x*y)`` for three real
 symbols of unknown sign)."""
@@ -102,7 +102,7 @@ def live() -> Iterator[None]:
 @contextmanager
 def tables() -> Iterator[None]:
     """Use the generated tables inside the block whatever ``SATREFINE_IDENTITIES`` says
-    (a staged generation, :mod:`._stages`, installs the tables of earlier families)."""
+    (a staged generation, :mod:`satrefine.build.stages`, installs the tables of earlier families)."""
     _forced.append("generated")
     try:
         yield

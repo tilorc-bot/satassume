@@ -27,7 +27,7 @@ Why these two are procedures and not rows:
     where the floor is constant except at one closed endpoint of the
     interval (the engine's endpoint split).
 ``Piecewise``
-    conditions are decided by the engine (:func:`._engine.decide`), a
+    conditions are decided by the engine (:func:`..core.prove.decide`), a
     branch decided false is dropped, one decided true ends the list, and
     the other branches are refined under the assumptions plus their own
     condition.  A row cannot add a branch's condition to the assumptions
@@ -145,10 +145,10 @@ def simple_floor(expr: Basic, assumptions: Any) -> Basic | None:
 
 def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     """Each branch under the assumptions plus its condition, the conditions decided
-    by the engine (:func:`._engine.decide`: relations from signs and stated
+    by the engine (:func:`..core.prove.decide`: relations from signs and stated
     relations, never from a relation ``ask`` about a known infinite argument).
     A condition decided false drops its branch, one decided true ends the list.
-    The dispatcher leaves the arguments to this handler (:data:`._dispatch.own_args`):
+    The dispatcher leaves the arguments to this handler (:data:`..core.driver.own_args`):
     SymPy refines a condition with a bare ``ask`` (weak on relations, raising on
     sign facts, wrong at ``-oo``)."""
     from ..core.driver import refine

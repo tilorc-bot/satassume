@@ -219,7 +219,7 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     does not raise for them (it cannot detect them all, and refine must not
     depend on the backend detecting them either); what it must do is stop,
     and the dispatcher's termination guard guarantees that whatever is
-    proved (``_dispatch``, *Termination*)."""
+    proved (:mod:`.guard`, *Termination*)."""
     found = bounds.stated_finite(u, assumptions)
     if found is None:
         return None

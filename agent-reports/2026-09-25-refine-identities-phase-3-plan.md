@@ -63,7 +63,7 @@ Every change must keep the battery and differential outputs identical, or explai
 - **A/B timing:** pinned (`taskset -c <fast cpu>`; fast CPUs are 0, 1, 10 and 11; 2–5 are slow and 6–9 medium, per `cpu_capacity`), interleaved (reference, candidate, reference, candidate), best of 2 or more, at a 1-minute load under about 8.
 - **Report:** gains are given on the battery with the satassume backend, and on one differential seed.
 - **Keep or drop:** keep a change only if it shows at least 3%, or if it simplifies the code at no cost. If candidates stack less than their individual gains suggest, measure them together again.
-- **Tooling:** `tools/refine_fuzz.py` currently forces the combined backend, so the differential ignores `SATREFINE_BACKEND`. Fix that first, since track A and track C both need differential runs with the satassume backend.
+- **Tooling:** `satrefine/tools/refine_fuzz.py` currently forces the combined backend, so the differential ignores `SATREFINE_BACKEND`. Fix that first, since track A and track C both need differential runs with the satassume backend.
 
 ## 3. Track B: correctness
 
@@ -76,7 +76,7 @@ All confirmed bugs are in issue #10.
 | B8 | `acot`/`acoth` of a rewritten `-z` is wrong at `z = 0`; SymPy's auto-evaluation pulls out the sign. | Guard on the refine side (build the result unevaluated unless the argument is known nonzero), and report it to SymPy. |
 
 After B1–B9, extend the fuzzers so this kind of bug is found without being looked for:
-- `Q.infinite`/`Q.finite` and relations with infinite bounds in `tools/refine_fuzz.py`;
+- `Q.infinite`/`Q.finite` and relations with infinite bounds in `satrefine/tools/refine_fuzz.py`;
 - `Piecewise`, which has no fuzz or differential coverage and isn't in the battery;
 - the inverse pairs `acot(cot)`, `acoth(coth)`, `asech(sech)` and `acsch(csch)`, which are never generated;
 - matrices (`--matrices`) in the gates.
@@ -122,6 +122,8 @@ Target: fewer engine lines at the end of phase 3 than at its start, with no beha
 
 Issue #13 has the design: separate general algorithms from the rule families, online code from offline code (generation, tools, benchmarks), and current-state code (SymPy workarounds, matrices, backend routing) from the rest, and move satrefine's tools into `satrefine/`. Steps 1–7 of the issue are in phase 3, before the other track D items. They start when A6+A7, the fuzz extensions and the default switch are merged. Steps 8–9 (explicit state, renames) come after phase 3.
 
+Steps 1–2 are done on `ri/refactor` (report `2026-09-26-phase3-refactor-1-report.md`): satrefine's tools are in `satrefine/tools/` (run as `python -m satrefine.tools.<name>`; `tools/refine_*` are shims for phase 3), the engine in `satrefine/identities/` and the generation in `satrefine/build/`.
+
 ## 6. Order, agents and gates
 
 1. **Now:** B9 (`ri/termination`); see "Finishing B9" below.
@@ -133,7 +135,7 @@ Issue #13 has the design: separate general algorithms from the rule families, on
 3. **Then** the fuzz extensions and track D. Track C when satassume item 3 lands.
 4. **Finally**, a results report as for phase 2, and archiving of the step reports.
 
-**Gates:** `tools/refine_gates.sh` with `JOBS=9 SLOTS=11 SUITE_WORKERS=4`, against the newest baseline under `.claude/gates/`. They also get:
+**Gates:** `satrefine/tools/refine_gates.sh` with `JOBS=9 SLOTS=11 SUITE_WORKERS=4`, against the newest baseline under `.claude/gates/`. They also get:
 - a differential with the satassume backend, once refine_fuzz honours it;
 - the adversarial-`ask` fuzz from B9 in the suite.
 
@@ -170,7 +172,7 @@ An agent started the fix on 2026-09-25, on branch `ri/termination`, in worktree 
    If the gate run is missing or stale, run it:
 
    ```
-   JOBS=9 SLOTS=11 SUITE_WORKERS=4 nohup tools/refine_gates.sh .claude/gates/termination-<sha> .claude/gates/satperf-f83f195 > ....log 2>&1 &
+   JOBS=9 SLOTS=11 SUITE_WORKERS=4 nohup satrefine/tools/refine_gates.sh .claude/gates/termination-<sha> .claude/gates/satperf-f83f195 > ....log 2>&1 &
    ```
 
 4. **If both checks pass, merge:** `git merge --no-ff ri/termination` into `refine-identities`, with the trailers, push, remove the worktree, and delete the branch. The gate run becomes the new baseline for track A.

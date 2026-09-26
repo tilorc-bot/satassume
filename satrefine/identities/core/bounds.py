@@ -101,7 +101,7 @@ def stated_finite(u: Any, assumptions: Any) -> tuple | None:
     finite ``d``, so a bound read from one makes ``u`` finite; a relation
     (``Q.gt(u, 1)``, and ``Q.ge(u, oo)``, which forces ``u = oo``) does not.
     Whether an endpoint excludes infinity is left to the caller
-    (:func:`._engine._from_bounds`)."""
+    (:func:`.prove._from_bounds`)."""
     found = _stated(u, assumptions)
     return None if found is None else (found[:4], found[4])
 

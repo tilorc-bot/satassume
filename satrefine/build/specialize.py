@@ -65,7 +65,7 @@ modules are rendered from it."""
 
 def specialize(lhs: Any, domain: Any, catalog: Any = CATALOG) -> list[Row]:
     """The conditional rules of one identity left side.  Runs the live identity rows,
-    or, inside a staged generation (:mod:`._stages`), the family's own rows live and
+    or, inside a staged generation (:mod:`.stages`), the family's own rows live and
     every other key through the tables installed so far."""
     with (nullcontext() if _dispatch.staged() else live()):
         return _specialize(lhs, domain, catalog)

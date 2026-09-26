@@ -213,7 +213,7 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
 
 def endpoint_split(expr: Any, cand: Any, assumptions: Any) -> Any | None:
     """Resolve a ``floor`` that is constant on its argument's interval except at
-    one closed endpoint (:func:`._simple.floor_two_valued`): take the interior
+    one closed endpoint (:func:`..rules._simple.floor_two_valued`): take the interior
     value when ``cand`` takes the same value at the endpoint under both, so the
     closed interval of a wrap (``asin(sin(t))`` on ``[-pi/2, pi/2]``) collapses
     although its floor jumps at the boundary.  ``None`` when nothing applies."""

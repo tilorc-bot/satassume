@@ -50,7 +50,7 @@ ZERO = (_F(_x), _F(0), Q.zero(_x))
 
 def node_measure(heads: Iterable[type]) -> Callable[[Any, Any], tuple]:
     """``(nodes, structure, size)``: the number of nodes whose head is in
-    ``heads``, the factors or terms under them, then ``count_ops`` (:func:`._engine.size`)."""
+    ``heads``, the factors or terms under them, then ``count_ops`` (:func:`..core.rewrite.size`)."""
     heads = tuple(heads)
 
     def measure(e: Any, assumptions: Any) -> tuple:
