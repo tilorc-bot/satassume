@@ -60,7 +60,7 @@ RULES = [
     #   asks: Q.integer(e), Q.negative(b), Q.positive(-b), Q.integer(-1), Q.negative(-1), Q.real(b), Q.odd(e), Q.real(e), Q.integer(1/2 - e/2)
     (log(b**e), e*log(-b) + I*pi, Q.negative(b) & Q.odd(e)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.nonnegative(b) & Q.positive(e)
-    #   fired: complex_parts.RULES[7], complex_parts.generated[33], power_exp_log.RULES[8], complex_parts.RULES[23], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.RULES[7], complex_parts.generated[33], power_exp_log.RULES[8], complex_parts.RULES[25], power_exp_log.IDENTITIES[1]
     #   asks: Q.positive(e), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.finite(e)
     (log(b**e), e*log(b), Q.nonnegative(b) & Q.positive(e)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.odd(b)

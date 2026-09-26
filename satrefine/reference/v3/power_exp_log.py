@@ -4,7 +4,7 @@ Every rule below is an identity over the complex numbers for SymPy's
 principal branches (``log`` with imaginary part in ``(-pi, pi]``,
 ``x**a = exp(a*log(x))``, ``(-1)**z = exp(I*pi*z)``) under the stated
 precondition; nothing fires without its precondition being answered
-``True`` (or, where noted, ``False``) by :func:`satrefine._upstream.ask`.
+``True`` (or, where noted, ``False``) by :func:`satrefine.identities.compat.upstream.ask`.
 
 ``Pow`` (registry key ``Pow``)
 ==============================

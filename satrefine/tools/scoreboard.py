@@ -53,6 +53,7 @@ import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from satrefine.tools.lib import accepted as acc
 from satrefine.tools.lib import battery as bat
 from satrefine.tools.lib import sizes
 from satrefine.tools.lib import suite as st
@@ -96,11 +97,21 @@ def print_code_lines() -> None:
 
 
 def run_battery(cases: list, show: bool, families: list | None = None) -> None:
-    """Classify each case (``lib.battery.classify``) and print the totals and the per-family table."""
+    """Classify each case (``lib.battery.classify``) and print the totals and the per-family table.
+
+    A difference from v3 (other form, miss, extra) listed in ``lib.accepted``
+    with the same result is *accepted*; the others are *open* and are printed
+    after the totals, with the accepted entries that no longer apply (stale)
+    and the extras that could not be checked numerically."""
+    mode = os.environ.get("SATREFINE_IDENTITIES", "generated")
     known_limit = bat.known_oracle_limit()
+    accepted_table = acc.table(mode)
     counts: Counter = Counter()
     per_family: dict = defaultdict(Counter)
     unchecked = 0
+    open_cases: list[str] = []
+    unchecked_extras: list[str] = []
+    used: set = set()
     for expr, assumptions, expected, source in cases:
         family = bat.family_of(source)
         if families and family not in families:
@@ -113,13 +124,25 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
                 print(f"  crash        {source}: {expr} | {assumptions}: {type(out.error).__name__}: {out.error}")
             continue
         unchecked += out.unchecked
+        kind = bat.SHORT[out.key]
+        line = f"{source}: {expr} | {assumptions} -> {out.got}  (v3: {expected})"
+        if kind in bat.DIFFERENCES:
+            k = acc.key(kind, source, f"{expr} | {assumptions}", str(out.got))
+            if k in accepted_table:
+                used.add(k)
+                counts[kind + " accepted"] += 1
+            else:
+                per_family[family]["open"] += 1
+                open_cases.append(f"  {kind:6s} {line}")
+            if kind == "extra" and out.unchecked:
+                unchecked_extras.append(f"  {line}")
         if show and out.limit:
             print(f"  oracle limit {source}: {out.limit}")
         if show and out.unsampled is not None:
             print(f"  unsampled    {source}: {expr} | {assumptions}: {type(out.unsampled).__name__}: {out.unsampled}")
         if show and out.key not in ("unchanged as expected", "fired, same as v3"):
-            print(f"  {out.key:38s} {source}: {expr} | {assumptions} -> {out.got}  (v3: {expected})")
-    total = sum(counts.values())
+            print(f"  {out.key:38s} {line}")
+    total = sum(counts[k] for k in bat.KEYS)
     try:
         from satrefine.identities.core.driver import non_basic_returns
     except ImportError:
@@ -130,16 +153,33 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
         for (key, handler), count in sorted(non_basic_returns.items()):
             print(f"    {count:5d}  {key}: {handler}")
     print(f"\nbattery: {total} cases, handlers={os.environ.get('SATREFINE_HANDLERS', 'handlers_identities')}, "
-          f"identities={os.environ.get('SATREFINE_IDENTITIES', 'generated')}")
+          f"identities={mode}")
     for key in bat.KEYS:
         if counts[key]:
-            print(f"  {counts[key]:5d}  {key}")
+            kind = bat.SHORT[key]
+            note = (f"  (accepted {counts[kind + ' accepted']}, open {counts[key] - counts[kind + ' accepted']})"
+                    if kind in bat.DIFFERENCES else "")
+            print(f"  {counts[key]:5d}  {key}{note}")
     if unchecked:
         print(f"  {unchecked:5d}  {bat.UNCHECKED}")
-    print(f"\n  {'family':16s}" + "".join(f"{bat.SHORT[k]:>7s}" for k in bat.KEYS))
+    print(f"  {len(unchecked_extras):5d}  fired where v3 expects unchanged and numerically unchecked")
+    print(f"\n  {'family':16s}" + "".join(f"{bat.SHORT[k]:>7s}" for k in bat.KEYS) + f"{'open':>7s}")
     for family in sorted(per_family):
         c = per_family[family]
-        print(f"  {family:16s}" + "".join(f"{c[k]:7d}" for k in bat.KEYS))
+        print(f"  {family:16s}" + "".join(f"{c[k]:7d}" for k in bat.KEYS) + f"{c['open']:7d}")
+    print(f"\nopen differences from v3 ({len(open_cases)}; accepted ones are in satrefine/tools/lib/accepted.py)")
+    for line in open_cases:
+        print(line)
+    stale = [a for k, a in accepted_table.items() if k not in used
+             and (not families or bat.family_of(a.source) in families)]
+    if stale:
+        print(f"\nstale accepted entries ({len(stale)}: the case no longer comes out this way)")
+        for a in stale:
+            print(f"  {a.kind:6s} {a.source}: {a.case} -> {a.got}")
+    if unchecked_extras:
+        print(f"\nfired where v3 expects unchanged, numerically unchecked ({len(unchecked_extras)})")
+        for line in unchecked_extras:
+            print(line)
 
 
 def battery(args) -> int:

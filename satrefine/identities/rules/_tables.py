@@ -1,7 +1,7 @@
 """Helpers the table modules share (the authors' side of the engine).
 
 The family modules import everything they use from here: the engine's
-table API (``Row``, ``part``, the orderings ``node_measure`` and
+table API (``Row``, ``part``, ``exponent``, the orderings ``node_measure`` and
 ``count_measure`` with their tie-breaker ``size``, and the spec classes ``Family``, ``Rules``, ``Identities``,
 re-exported from :mod:`..core`), the wrap ``principal`` and the helpers below.
 
@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from sympy import And, Function, Q, Symbol, exp
 
-from ..core.match import part
+from ..core.match import exponent, part
 from ..core.measure import count_measure, node_measure, size
 from ..core.rewrite import Row
 from ..core.spec import Family, Identities, Rules
 from ._wraps import principal
 
-__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "node_measure", "part",
+__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent", "node_measure", "part",
            "principal", "size"]
 
 

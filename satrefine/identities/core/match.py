@@ -22,6 +22,11 @@ Patterns are ordinary SymPy expressions over plain symbols:
     ``split_shift``), ``r`` the remaining terms; then, if the coefficients
     have several terms (``I*pi*(n + y)`` counts as two), each single one
     against the rest;
+``b**k`` with ``k = exponent('k')``
+    a power, or any other target as its first power: ``k`` binds the
+    exponent of a power whose base matches ``b``, else ``1`` with ``b``
+    matched against the whole target (``w**k*conjugate(w)**m`` matches
+    ``x**3*conjugate(x)`` with ``m = 1``);
 ``part('a', pred) + b``, ``part('a', pred) * b``
     ``a`` binds the sum (product) of the terms (factors) for which
     ``pred(term)`` is provable, ``b`` the rest (``0`` or ``1`` when empty);
@@ -76,6 +81,20 @@ class _Part(Symbol):
 def part(name: str, predicate: Callable[[Any], Any]) -> Symbol:
     """A pattern symbol binding the terms (factors) for which ``predicate(term)`` is provable."""
     return _Part(name, predicate)
+
+
+class _Exponent(Symbol):
+    """A symbol for an exponent that also binds ``1`` (see :func:`exponent`)."""
+    __slots__ = ()
+
+    def __new__(cls, name: str):
+        return Symbol.__xnew__(cls, name)   # uncached: never the plain symbol of that name
+
+
+def exponent(name: str) -> Symbol:
+    """A pattern symbol for the exponent of a power: ``b**exponent('k')`` also
+    matches a target that is not such a power, as ``target**1``."""
+    return _Exponent(name)
 
 
 def _is_unit_coefficient_form(pattern: Any) -> tuple[Any, Any, Any] | None:
@@ -258,6 +277,17 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
                 if nb is not None:
                     yield nb
             return
+    if pattern.is_Pow and isinstance(pattern.exp, _Exponent):          # b**k, or the target as its first power
+        found = False
+        if target.is_Pow:
+            for nb in _match_seq(pattern.args, target.args, assumptions, b):
+                found = True
+                yield nb
+        if not found:
+            nb = _bind(b, pattern.exp, S.One)
+            if nb is not None:
+                yield from _match(pattern.base, target, assumptions, nb)
+        return
     # structural; a commutative head of small arity is matched in every argument order
     if target.is_Atom or not isinstance(target, pattern.func) or len(target.args) != len(pattern.args):
         return

@@ -33,7 +33,8 @@ from pathlib import Path
 import pytest
 from sympy import Function, Q, Symbol, factorial, log, pi
 
-from satrefine import _upstream, refine
+from satrefine import refine
+from satrefine.identities.compat import upstream as _upstream
 from satrefine.identities.core import driver as _dispatch
 from satrefine.identities.core.driver import RefineLoopError
 

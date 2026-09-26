@@ -2,7 +2,8 @@
 
 * **Imports go one way**: ``satrefine.build``, ``satrefine.tools`` and
   ``satrefine.testing`` (offline) may import ``satrefine.identities``, never
-  the reverse.  A subprocess makes the offline packages unimportable (a
+  the reverse; nor does ``satrefine.identities`` import the reference
+  implementation ``satrefine.reference`` (v3, measuring material).  A subprocess makes the offline packages unimportable (a
   meta-path finder that raises) before it imports ``satrefine``, then refines
   a few inputs in each ``SATREFINE_IDENTITIES`` mode; the results must be what
   this process gets.
@@ -116,6 +117,12 @@ def _imports(directory: Path, forbidden: tuple[str, ...]) -> list[str]:
 def test_the_offline_packages_are_not_imported_by_identities():
     """No module under ``satrefine/identities`` imports an offline package, even lazily."""
     found = _imports(ROOT / "satrefine" / "identities", OFFLINE)
+    assert not found, found
+
+
+def test_the_reference_is_not_imported_by_identities():
+    """No module under ``satrefine/identities`` imports ``satrefine.reference`` (v3), even lazily."""
+    found = _imports(ROOT / "satrefine" / "identities", ("satrefine.reference",))
     assert not found, found
 
 
