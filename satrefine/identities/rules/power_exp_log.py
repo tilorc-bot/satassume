@@ -106,13 +106,8 @@ FACTS: list[Row] = [   # (lhs, rhs, domain): lhs == rhs wherever the domain hold
 # The power form still needs e > 0 when b may be 0: log(0**0) is 0 but 0*log(0) is nan, and
 # Abs(0**e) is oo for e < 0 while Abs(0)**e is zoo.
 
-# ... and not oo**0: (+-oo)**0 is 1 but 0*log(+-oo) is nan, so an infinite base needs e != 0.
-# A finite or real base (Q.real is decided from stated bounds only for a finite quantity)
-# or a nonzero exponent will do; a one-sided bound alone (Q.gt(b, 1)) does not (issue #10, B5).
-_NOT_INF_TO_ZERO = Q.finite(b) | Q.real(b) | ~Q.zero(e)
-
 EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain holds
-    (b**e, e*log(b),           (~Q.zero(b) | Q.positive(e)) & _NOT_INF_TO_ZERO),  # a power is an exponential (see the note above)
+    (b**e, e*log(b),           ~Q.zero(b) | Q.positive(e)),  # a power is an exponential (see the note above)
     (p*r,  log(p) + log(r),    true),                      # a product is an exponential (see the note above)
     (p*r,  log(-p) + log(-r),  true),                      # ... with both signs flipped: p*r == (-p)*(-r)
 ]
@@ -151,7 +146,16 @@ NEGATIVE_BASE: list[Row] = [   # exact for integer n; ordered so they fire for a
     (b**n, -(-b)**n, Q.negative(b) & Q.odd(n)),                                 # c**n = -(-c)**n, odd n
 ]
 
-IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)], EXP_FORMS)
+# The power form is not an identity at oo**0 either ((+-oo)**0 is 1, 0*log(+-oo) is nan).  Where the
+# form's exponential folds back (Abs(b**e) = Abs(b)**e in complex_parts) the result is right there,
+# but the derived log row's right side is nan: log(x**n) -> n*log(x) at x = oo, n = 0 (issue #10,
+# B5).  So the log rows derive with an infinite base excluded unless e != 0: a finite or real base
+# (Q.real is decided from stated bounds only for a finite quantity) or a nonzero exponent will do,
+# a one-sided bound alone (Q.gt(b, 1)) does not.
+LOG_FORMS: list[Row] = [(EXP_FORMS[0][0], EXP_FORMS[0][1], EXP_FORMS[0][2] & (Q.finite(b) | Q.real(b) | ~Q.zero(e)))
+                        ] + EXP_FORMS[1:]
+
+IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)], LOG_FORMS)
 POW_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], Pow)]
 EXP_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], exp)]
 
@@ -172,4 +176,4 @@ SPEC = Family({'log': (_zero, Identities(IDENTITIES)),
                        Identities(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
                        Identities(NEGATIVE_BASE, measure=negative_number_base_measure)),
                'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=count_measure((exp,))))},
-              facts=FACTS + NEGATIVE_BASE, exp_forms=EXP_FORMS, rules=[ZERO] + RULES)
+              facts=FACTS + NEGATIVE_BASE, exp_forms=LOG_FORMS, rules=[ZERO] + RULES)
