@@ -106,8 +106,13 @@ FACTS: list[Row] = [   # (lhs, rhs, domain): lhs == rhs wherever the domain hold
 # The power form still needs e > 0 when b may be 0: log(0**0) is 0 but 0*log(0) is nan, and
 # Abs(0**e) is oo for e < 0 while Abs(0)**e is zoo.
 
+# ... and not oo**0: (+-oo)**0 is 1 but 0*log(+-oo) is nan, so an infinite base needs e != 0.
+# A finite or real base (Q.real is decided from stated bounds only for a finite quantity)
+# or a nonzero exponent will do; a one-sided bound alone (Q.gt(b, 1)) does not (issue #10, B5).
+_NOT_INF_TO_ZERO = Q.finite(b) | Q.real(b) | ~Q.zero(e)
+
 EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain holds
-    (b**e, e*log(b),           ~Q.zero(b) | Q.positive(e)),  # a power is an exponential (see the note above)
+    (b**e, e*log(b),           (~Q.zero(b) | Q.positive(e)) & _NOT_INF_TO_ZERO),  # a power is an exponential (see the note above)
     (p*r,  log(p) + log(r),    true),                      # a product is an exponential (see the note above)
     (p*r,  log(-p) + log(-r),  true),                      # ... with both signs flipped: p*r == (-p)*(-r)
 ]
@@ -119,6 +124,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     ((b**a)**e, b**(a*e), Q.nonnegative(b) & Q.positive(a)),                    # ... a*log(b) real, 0**a = 0 for a > 0
     ((b**a)**e, b**(a*e), Q.positive(b) & Q.real(a)),                           # ... a*log(b) real for b > 0 (sqrt(1/x) = 1/sqrt(x))
     ((b**a)**e, Abs(b)**(a*e), Q.real(b) & Q.even(a) & (Q.positive(a) | ~Q.zero(b))),   # b**a = |b|**a, even a; 0**a = 0 for a > 0
+    ((b**a)**e, Abs(b)**(a*e), Q.extended_real(b) & Q.even(a) & Q.positive(a)),        # ... also at b = +-oo for a > 0 ((+-oo)**a = oo)
     (exp(a)**e, exp(a*e), Q.integer(e)),                                        # exp(a)**e = exp(a*e), integer e
     ((b**a)**e, Abs(b)**(a*e), Q.imaginary(b) & Q.even(a/2)),                   # (I*t)**a = t**a for a = 0 mod 4
     ((b**a)**e, (-1)**e*Abs(b)**(a*e), Q.imaginary(b) & Q.odd(a/2)),            # (I*t)**a = -t**a for a = 2 mod 4
