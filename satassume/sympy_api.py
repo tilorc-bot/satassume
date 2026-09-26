@@ -66,6 +66,8 @@ from sympy.assumptions.assume import AppliedPredicate as _Applied
 from sympy.core.basic import Basic as _Basic
 from sympy.core.expr import Expr as _Expr
 from sympy.core.relational import Relational as _Relational
+from sympy.core.numbers import Rational as _Rational
+from sympy.core.singleton import S as _S
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
                                  Implies as _SImplies, Equivalent as _SEquivalent,
                                  BooleanTrue as _BTrue, BooleanFalse as _BFalse)
@@ -272,6 +274,10 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
       except for a proposition about constants only (every argument a
       number without free symbols), which is answered without the
       assumptions and so never raises.
+      A query is answered under the conjuncts of the assumptions connected
+      to it (by shared symbols, undefined functions and irrational
+      constants, transitively), once the whole set is known consistent,
+      if neither holds a relation; see ``_relevant``.
       Assumptions contradicting a fact declared on a symbol
       (``ask(Q.commutative(x), ~Q.commutative(x))``) count as inconsistent
       here, where SymPy trusts the assumption.
@@ -288,6 +294,7 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
         if memo.state != state:
             memo.clear()
             memo.state = state
+            eng.splits.clear()
         r = memo.get(key, _MISS)
         if r is not _MISS:
             eng.stats["cache_hits"] += 1
@@ -381,9 +388,358 @@ def _is_constant_proposition(prop) -> bool:
 
 
 def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
-    if isinstance(proposition, _Basic) and _is_constant_proposition(proposition):
-        return _engine_ask(proposition, True, eng)
+    if isinstance(proposition, _Basic):
+        if _is_constant_proposition(proposition):
+            return _engine_ask(proposition, True, eng)
+        if eng.relevance and isinstance(assumptions, (_SAnd, _Applied, _Relational, _SOr,
+                                                      _SNot, _SImplies, _SEquivalent)):
+            f = _relevant(proposition, assumptions, eng)
+            if f is not assumptions:
+                # answered under the conjuncts connected to the query; the
+                # answer memo is shared by every set with the same part
+                eng.stats["relevant"] += 1
+                key = (proposition, f)
+                memo = eng.answers
+                r = memo.get(key, _MISS)
+                if r is not _MISS:
+                    eng.stats["cache_hits"] += 1
+                    return r
+                r = _engine_ask(proposition, f, eng)
+                memo.put(key, r)
+                return r
     return _engine_ask(proposition, assumptions, eng)
+
+
+# --------------------------------------------------------------------------
+# relevance: only the assumptions connected to the query
+# --------------------------------------------------------------------------
+#
+# The conjuncts of the assumptions split into components by shared *keys*
+# (transitively).  A query is answered under the components whose keys meet
+# its own, once the whole set is known to be consistent (checked once per
+# set); see agent-reports/2026-09-25-relevance-1-build.md for the argument.
+#
+# Keys of an expression: its free symbols, the classes of its undefined
+# function applications (EUF congruence connects f(x) and f(y)), and every
+# closed subterm that is not a Rational (pi, sqrt(2), 2*pi, a Float, oo,
+# f(1)): such a term may carry facts the assumptions decide (pi is a bounded
+# LRA variable, a Float's rationality is open, f(1) is a free EUF term).
+# Rationals have all their facts decided context-free (except ``polar``),
+# so without relations a Rational inside a term connects nothing; a Rational
+# that is itself the argument of a predicate (``Q.polar(2)``) is a key.  A
+# relation's keys are those of both sides, so ``Q.eq(x, y)`` and ``x < y``
+# connect x and y.  With a relation in the set or the query, terms pinned
+# to a common value connect as well; by default (``RELATIONAL``) such a set
+# is not split at all.
+#
+# Opaque (never split): a predicate outside the vocabulary (a custom
+# predicate: its registered function may mention any term), ``Q.is_true``
+# of a non-relational, anything that is not a Boolean over applied
+# predicates and relations; also any set when a vocabulary predicate is
+# registered for a class (its function may mention any term).
+
+_OPAQUE = None  # keys of an opaque expression
+_KEYS: dict = {}
+KEYS_SIZE = 100_000
+
+
+def _expr_keys(e, acc: set) -> bool:
+    """Add the keys of the expression ``e`` to ``acc``; True if ``e`` is
+    closed (no symbol inside)."""
+    from sympy.core.function import AppliedUndef
+    if e.is_Symbol:
+        acc.add(e)
+        return False
+    if e.is_Rational:
+        return True
+    closed = True
+    for a in e.args:
+        if not _expr_keys(a, acc):
+            closed = False
+    if isinstance(e, AppliedUndef):
+        acc.add(type(e))
+    if closed:
+        acc.add(e)
+        if RELATIONAL == "rationals":
+            # sin(2) is congruent to sin(x) once x = 2
+            acc.update(a for a in e.atoms(_Rational))
+    return closed
+
+
+#: marker added by a relation while collecting keys (removed again)
+_RELATION = object()
+
+
+def _keys(e):
+    """Frozenset of the keys of the Boolean ``e``, or ``_OPAQUE``."""
+    return _keys_rel(e)[0]
+
+
+def _keys_rel(e):
+    """``(keys, has a relation)`` of the Boolean ``e`` (keys as :func:`_keys`)."""
+    k = _KEYS.get(e)
+    if k is not None:
+        return k
+    acc: set = set()
+    try:
+        ok = _bool_keys(e, acc)
+    except RecursionError:
+        ok = False
+    rel = _RELATION in acc
+    acc.discard(_RELATION)
+    k = (frozenset(acc) if ok else _OPAQUE, rel)
+    if len(_KEYS) >= KEYS_SIZE:
+        _KEYS.clear()
+    _KEYS[e] = k
+    return k
+
+
+def _bool_keys(e, acc: set) -> bool:
+    if e is True or e is False or isinstance(e, (_BTrue, _BFalse)):
+        return True
+    if isinstance(e, (_SAnd, _SOr, _SNot, _SImplies, _SEquivalent)):
+        return all(_bool_keys(a, acc) for a in e.args)
+    if isinstance(e, _Relational):
+        return _sides_keys((e.lhs, e.rhs), acc, e.rel_op in ("==", "!="))
+    if isinstance(e, _Applied):
+        name = str(e.function.name)
+        args = e.arguments
+        if name in RELATION_PREDICATES:
+            return _sides_keys(args, acc, name in ("eq", "ne"))
+        if name == "is_true":
+            return (len(args) == 1 and isinstance(args[0], _Relational)
+                    and _bool_keys(args[0], acc))
+        if name not in PRED_INDEX:
+            return False
+        if name == "zero" and RELATIONAL == "rationals":
+            acc.add(_S.Zero)            # zero(e) <-> eq(e, 0)
+        for a in args:
+            if not isinstance(a, _Basic):
+                return False
+            if a.is_Rational:
+                acc.add(a)
+            else:
+                _expr_keys(a, acc)
+        return True
+    return False
+
+
+def _sides_keys(args, acc: set, eq: bool = False) -> bool:
+    acc.add(_RELATION)
+    for a in args:
+        if not isinstance(a, _Basic):
+            return False
+        if eq and a.is_Rational and RELATIONAL == "rationals":
+            acc.add(a)                  # x = 2, y = 2: x ~ y in EUF
+        else:
+            _expr_keys(a, acc)
+    return True
+
+
+class _Split:
+    """The components of one set of assumptions."""
+    __slots__ = ("whole", "conjuncts", "comps", "opaque", "relational", "keyless",
+                 "parts", "consistent")
+
+    def __init__(self, a):
+        self.whole = a
+        cs = a.args if isinstance(a, _SAnd) else (a,)
+        self.conjuncts = cs
+        self.opaque = False
+        #: some conjunct holds a relation / has no key
+        self.relational = self.keyless = False
+        #: [(keys, conjunct indices)], disjoint keys
+        comps: list = []
+        for i, c in enumerate(cs):
+            k, rel = _keys_rel(c)
+            if k is _OPAQUE:
+                self.opaque = True
+                return
+            if rel:
+                self.relational = True
+            if not k:
+                # only Rationals inside relations (``Q.lt(1, 2)``): decided,
+                # connected to nothing; the consistency check covers it
+                self.keyless = True
+                continue
+            ks, idx = set(k), [i]
+            rest = []
+            for comp in comps:
+                if comp[0].isdisjoint(ks):
+                    rest.append(comp)
+                else:
+                    ks |= comp[0]
+                    idx += comp[1]
+            rest.append((ks, idx))
+            comps = rest
+        self.comps = comps
+        #: (indices of components) -> their conjunction (a SymPy Boolean,
+        #: True if empty, the whole set itself if all)
+        self.parts: dict = {}
+        #: whether the whole set is known consistent (None: not checked)
+        self.consistent = None
+
+    def part(self, mine: tuple):
+        f = self.parts.get(mine)
+        if f is None:
+            idx = sorted(i for j in mine for i in self.comps[j][1])
+            cs = self.conjuncts
+            if len(idx) == len(cs):
+                f = self.whole
+            elif not idx:
+                f = True
+            elif len(idx) == 1:
+                f = cs[idx[0]]
+            else:
+                f = _SAnd(*[cs[i] for i in idx])
+            self.parts[mine] = f
+        return f
+
+
+def _relevant(p, a, eng: Engine):
+    """The assumptions ``p`` is asked under: ``a`` itself, or the part of
+    ``a`` (a SymPy Boolean, or True) connected to ``p`` if that is smaller
+    and ``a`` is consistent as a whole."""
+    splits = eng.splits
+    sp = splits.get(a)
+    if sp is None:
+        sp = _Split(a)
+        splits.put(a, sp)
+    if sp.opaque:
+        return a
+    ext = eng.extensions
+    if ext is not None and ext._vocab:
+        return a
+    pk, prel = _keys_rel(p)
+    if not pk:
+        # opaque, or no key at all: nothing to split by
+        return a
+    if RELATIONAL == "whole" and (prel or sp.relational or sp.keyless):
+        # a relation brings in the theories, which connect terms of
+        # different components (see RELATIONAL)
+        return a
+    mine = tuple(j for j, (k, _) in enumerate(sp.comps) if not k.isdisjoint(pk))
+    f = sp.part(mine)
+    if f is a:
+        return a
+    ok = sp.consistent
+    if ok is None:
+        if sp.relational or sp.keyless:
+            ok = _consistent(a, eng, search=CHECK_SEARCH or CHECK_SEARCH_RELATIONS)
+        else:
+            # no relation: the components share no solver variable, so the
+            # set is consistent iff each component is.  Out of scope as a
+            # whole (a matrix predicate in another component): as before,
+            # the whole set answers (None)
+            try:
+                _formula(a, bool(eng.relation_specs))
+            except Unsupported:
+                ok = False
+            else:
+                ok = all(_part_consistent(sp.part((j,)), eng) for j in range(len(sp.comps)))
+        sp.consistent = ok
+    return f if ok else a
+
+
+#: how a set or query with a relation splits.  With a relation, the session
+#: has the theories and links every vocabulary argument ``e`` by
+#: ``zero(e) <-> eq(e, 0)``; terms of different components can then be
+#: merged in EUF through a common value (``x = 2`` and ``y = 2``, ``zero(x)``
+#: and ``y = 0``, but also values LRA derives, ``x + 1 = 3`` or ``2 <= x <= 2``,
+#: meeting through interface equalities, and a zero the rule base derives
+#: from ``nonnegative & nonpositive``), and congruence merges ``sin(x)`` with
+#: ``sin(y)`` or ``sin(2)``, which carries facts across.
+#: ``"whole"``: a set or query with a relation is not split (the answers
+#: are those of the whole set); ``"rationals"``: it splits, with a Rational
+#: that is a side of an equality, the 0 of ``zero``, and the Rationals of
+#: a closed term as keys (connects ``x = 2`` with ``y = 2``, ``sin(2)``,
+#: ``polar(2)``, but not the values LRA or the rule base derive).
+#: The key memo ``_KEYS`` depends on it: clear it when changing it.
+#: See agent-reports/2026-09-26-relevance-2-connect.md.
+RELATIONAL = "whole"
+
+#: every consistency check also searches (``Solver.solve``, in a session of
+#: its own), not only propagates.  On: a Boolean conflict that propagation
+#: does not see (``(p | i) & (p | ~i) & (~p | i) & (~p | ~i)`` over the
+#: atoms of one symbol) makes the old path raise for every query that goes
+#: to search, including queries about other components
+CHECK_SEARCH = True
+
+#: the whole-set check of a set with relations searches: theory conflicts
+#: (``Q.eq(y, u) & Q.negative(u*y)``) often surface only in search, and the
+#: old path raises for any query that goes to search
+CHECK_SEARCH_RELATIONS = True
+
+#: a check whose session is incomplete (discovery left nodes or formulas
+#: parked) escalates once, as a query undecided by propagation does, before
+#: it certifies the set: the old path raises for such a query
+CHECK_ESCALATE = True
+
+
+_OK = object()
+
+
+def _part_consistent(f, eng: Engine) -> bool:
+    """:func:`_consistent` for a component without relations, memoized per
+    component (shared by every set it is part of), in the contextual session
+    the component's queries use (``Engine._context_session``)."""
+    key = (_OK, f)
+    splits = eng.splits
+    ok = splits.get(key)
+    if ok is None:
+        eng.stats["consistency_checks"] += 1
+        try:
+            g = _formula(f, bool(eng.relation_specs))
+            s, lits = eng._context_session(g)
+            if s.xfer is not None:
+                s.xfer.sync_transfer()
+            solver = s.solver
+            ok = bool(solver.propagate()) and solver.implied(lits) is not None
+            if ok and (CHECK_SEARCH or CHECK_ESCALATE and s.incomplete):
+                # in a fresh session: the nodes escalation adds and what the
+                # search learns stay out of the session the queries use
+                ok = _consistent(f, eng, count=False)
+        except Exception:
+            ok = False
+        splits.put(key, ok)
+    return ok
+
+
+def _consistent(a, eng: Engine, count: bool = True, search: Optional[bool] = None) -> bool:
+    """``a`` is consistent as far as propagation in a session of its own
+    tells (what ``Session.query_literal`` checks before answering), after
+    escalation if the session is incomplete, and search with ``search``
+    (default :data:`CHECK_SEARCH`).  False
+    also when that cannot be decided (out of scope, a relation no theory
+    reads, an error): the caller then answers under ``a`` as a whole, so
+    whatever that does (None, ValueError) stays as it was."""
+    if count:
+        eng.stats["consistency_checks"] += 1
+    if search is None:
+        search = CHECK_SEARCH
+    rel = bool(eng.relation_specs)
+    try:
+        g = _formula(a, rel)
+        if g is TRUE:
+            return True
+        if g is FALSE:
+            return False
+        s = eng._fresh_session()
+        lits = s.assume_formula(g)
+        if s.xfer is not None:
+            s.xfer.sync_transfer()
+        solver = s.solver
+        if not solver.propagate() or solver.implied(lits) is None:
+            return False
+        if CHECK_ESCALATE and s.incomplete:
+            s.escalate()
+            if s.xfer is not None:
+                s.xfer.sync_transfer()
+            if not solver.propagate() or solver.implied(lits) is None:
+                return False
+        return not search or solver.solve(lits)
+    except Exception:
+        return False
 
 
 def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:

@@ -616,6 +616,10 @@ class Engine:
         interprets does: ``"none"`` (default) makes ``ask`` return None;
         ``"free"`` leaves it a free Boolean, so the rest of the assumptions
         still answers (and an inconsistent rest raises).
+    relevance : bool
+        ``sympy_api.ask`` answers a query under the assumption conjuncts
+        connected to it only (see ``sympy_api._relevant``), once the whole
+        set is known to be consistent; False: always under the whole set.
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
@@ -623,7 +627,7 @@ class Engine:
                  session_limit: int = 2000, keep_sessions: int = 16,
                  cone_search: bool = True, extensions=None, relations=None,
                  cone_threshold: int = 3, transfer: bool = True,
-                 uninterpreted: str = "none"):
+                 uninterpreted: str = "none", relevance: bool = True):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -662,6 +666,10 @@ class Engine:
         #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
         #: (satassume.sympy_api), bounded; cleared when registrations change
         self.answers = AnswerMemo()
+        self.relevance = relevance
+        #: SymPy assumptions -> their split into components
+        #: (``sympy_api._Split``), cleared together with ``answers``
+        self.splits = AnswerMemo(20_000)
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: assumption formulas whose session construction raised
@@ -670,7 +678,8 @@ class Engine:
         self._failed: Dict[Any, str] = {}
         self._failed_state = None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
-                      "searches": 0, "cone_searches": 0, "sessions": 0}
+                      "searches": 0, "cone_searches": 0, "sessions": 0,
+                      "relevant": 0, "consistency_checks": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
