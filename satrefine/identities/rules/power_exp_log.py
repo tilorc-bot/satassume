@@ -118,7 +118,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     # Pow
     (Pow(E, x, evaluate=False), exp(x), true),                                  # E**x is exp(x)
     ((b**a)**e, b**(a*e), Q.integer(e)),                                        # (b**a)**e = b**(a*e), integer e
-    ((b**a)**e, b**(a*e), Q.extended_nonnegative(b) & Q.positive(a)),           # ... a*log(b) real, 0**a = 0 for a > 0, oo**a = oo
+    ((b**a)**e, b**(a*e), (Q.nonnegative(b) | Q.extended_nonnegative(b)) & Q.positive(a)),   # ... a*log(b) real, 0**a = 0 for a > 0, oo**a = oo
     ((b**a)**e, b**(a*e), Q.positive(b) & Q.real(a)),                           # ... a*log(b) real for b > 0 (sqrt(1/x) = 1/sqrt(x))
     ((b**a)**e, Abs(b)**(a*e), Q.real(b) & Q.even(a) & (Q.positive(a) | ~Q.zero(b))),   # b**a = |b|**a, even a; 0**a = 0 for a > 0
     ((b**a)**e, Abs(b)**(a*e), Q.extended_real(b) & Q.even(a) & Q.positive(a)),        # ... also at b = +-oo for a > 0 ((+-oo)**a = oo)

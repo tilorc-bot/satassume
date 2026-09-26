@@ -13,7 +13,6 @@ from .specialize import CATALOG, Literal
 CATALOGS: dict = {
     "power_exp_log": {None: CATALOG + [lambda v: ~Q.zero(v)],       # the log rows' domains speak of b != 0
                       "e": CATALOG + [Literal(-1), Literal(2)]},     # log(1/b), log(b**2)
-    "inverse": CATALOG + [Q.extended_real],   # asinh/atanh/acoth of their functions hold at +-oo
 }
 """``family -> catalog``: a list (every variable) or a dict ``{variable name: list}``
 with ``None`` as the default key (see :data:`.specialize.CATALOG`)."""

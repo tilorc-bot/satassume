@@ -98,11 +98,13 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     # Abs, re, im under sign facts
     # (the sign rows are stated over the extended reals: they hold at +-oo, where
     # Abs(+-oo) = oo, re(+-oo) = +-oo, im(+-oo) = 0, sign(+-oo) = +-1, conjugate(+-oo) = +-oo,
-    # and a one-sided bound such as Q.gt(a, 1) proves only the extended signs: issue #10, B1-B7)
-    (Abs(a), a,      Q.extended_nonnegative(a)),                         # |a| = a for a >= 0 (also a = oo)
-    (Abs(a), -a,     Q.extended_nonpositive(a)),                         # |a| = -a for a <= 0 (also a = -oo)
-    (re(a), a,       Q.extended_real(a)),                                # re a = a, extended real a
-    (im(a), S.Zero,  Q.extended_real(a)),                                # im a = 0, extended real a
+    # and a one-sided bound such as Q.gt(a, 1) proves only the extended signs: issue #10, B1-B7.
+    # The finite predicate is kept first: SymPy's ask proves Q.real(sin(x)) for a real x but
+    # not Q.extended_real(sin(x)), whose handler goes by signs)
+    (Abs(a), a,      Q.nonnegative(a) | Q.extended_nonnegative(a)),      # |a| = a for a >= 0 (also a = oo)
+    (Abs(a), -a,     Q.nonpositive(a) | Q.extended_nonpositive(a)),      # |a| = -a for a <= 0 (also a = -oo)
+    (re(a), a,       Q.real(a) | Q.extended_real(a)),                    # re a = a, extended real a
+    (im(a), S.Zero,  Q.real(a) | Q.extended_real(a)),                    # im a = 0, extended real a
     (re(a), S.Zero,  Q.imaginary(a)),                                    # re a = 0, imaginary a
     (im(a), -I*a,    Q.imaginary(a)),                                    # im(i*t) = t
     # re / im are linear over the reals (these hold at infinity, where the definitions need a finite argument)
@@ -111,14 +113,14 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     (re(c*w), -I*c*re(I*w), true),                                       # re(c*w) = (-i*c)*re(i*w), imaginary c
     (im(c*w), -I*c*im(I*w), true),                                       # im(c*w) = (-i*c)*im(i*w), imaginary c
     # sign
-    (sign(a), S.One,         Q.extended_positive(a)),                    # sign a = 1 for a > 0 (also a = oo)
-    (sign(a), S.NegativeOne, Q.extended_negative(a)),                    # sign a = -1 for a < 0 (also a = -oo)
+    (sign(a), S.One,         Q.positive(a) | Q.extended_positive(a)),    # sign a = 1 for a > 0 (also a = oo)
+    (sign(a), S.NegativeOne, Q.negative(a) | Q.extended_negative(a)),    # sign a = -1 for a < 0 (also a = -oo)
     (sign(a), I,             Q.imaginary(a) & _IM_POSITIVE),             # sign(i*t) = i for t > 0
     (sign(a), -I,            Q.imaginary(a) & _IM_NEGATIVE),             # sign(i*t) = -i for t < 0
     (sign(Abs(w)), S.One,    ~Q.zero(w)),                                # sign|w| = 1 for w != 0
     (sign(exp(z)), S.One,    Q.real(z)),                                 # sign(exp z) = 1 for real z
     # conjugate
-    (conjugate(a), a,  Q.extended_real(a)),                              # conjugate a = a, extended real a
+    (conjugate(a), a,  Q.real(a) | Q.extended_real(a)),                  # conjugate a = a, extended real a
     (conjugate(a), -a, Q.imaginary(a)),                                  # conjugate a = -a, imaginary a
     (conjugate(exp(z), evaluate=False), exp(conjugate(z)), true),        # conjugate(exp z) = exp(conjugate z) (SymPy evaluates the lhs)
     (conjugate(b**e), conjugate(b)**e, Q.integer(e)),                    # conjugate(b**e) = conjugate(b)**e, integer e

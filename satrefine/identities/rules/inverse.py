@@ -81,12 +81,13 @@ def _sawtooth_imag(z):
     return z - I*pi*floor(im(z)/pi + S.Half)
 
 
-_OFF_CUT_LINES = Q.extended_real(z) | ~Q.integer(im(z)/pi + S.Half)
+_OFF_CUT_LINES = Q.real(z) | Q.extended_real(z) | ~Q.integer(im(z)/pi + S.Half)
 """``z`` off the lines ``im z = (k + 1/2)*pi`` (an extended real ``z`` is, and stated bounds
 on ``im z`` that exclude the lines refute the integer).  Extended: ``asinh``, ``atanh`` and
 ``acoth`` of their functions hold at ``+-oo`` (``asinh(sinh(oo)) = oo``, ``atanh(tanh(oo)) =
 atanh(1) = oo``, ``acoth(coth(-oo)) = acoth(-1) = -oo``), so a one-sided bound, which proves
-only ``Q.extended_real``, fires them (issue #10, B1-B7)."""
+only ``Q.extended_real``, fires them (issue #10, B1-B7).  ``Q.real`` stays first: SymPy's ``ask``
+proves ``Q.real(sin(x))`` for a real ``x`` but not ``Q.extended_real(sin(x))``."""
 
 FACTS: list[Row] = [   # (lhs, rhs, domain)
     (asin(sin(t)), reflect_half(t),            Q.real(t)),   # asin undoes sin up to a reflection
@@ -114,8 +115,8 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
 ]
 
 RULES: list[Row] = [   # (lhs, rhs, hypothesis)
-    (acosh(cosh(t)), Abs(t), Q.extended_real(t)),   # acosh undoes cosh up to sign, extended real t (acosh(cosh(+-oo)) = oo)
-    (asech(sech(t)), Abs(t), Q.extended_real(t)),   # asech undoes sech up to sign, extended real t (asech(0) = oo)
+    (acosh(cosh(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # acosh undoes cosh up to sign, extended real t (acosh(cosh(+-oo)) = oo)
+    (asech(sech(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # asech undoes sech up to sign, extended real t (asech(0) = oo)
 ]
 
 RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)
