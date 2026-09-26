@@ -45,7 +45,7 @@ hand; ``re``/``im``/``arg``/``Abs``/``sign``/``conjugate`` of products,
 powers, exponentials, logarithms and conjugates over 19 assumption
 profiles per symbol (about 700 random cases on real, imaginary, complex
 and infinite points), ``arg(x*y)`` for negative ``y`` and ``arg`` of a
-conjugate on the negative axis, and ``tools/refine_differential.py``.
+conjugate on the negative axis, and ``python -m satrefine.tools.refine_differential``.
 Found no wrong row.  Two wrong results traced below the tables: SymPy's
 ``ask`` calls ``Abs(x)`` zero for an imaginary ``x`` and the combined
 backend passes that on (``arg(exp(I*Abs(x)))`` became ``0``;
@@ -61,10 +61,7 @@ from __future__ import annotations
 from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
 from sympy.core import Mul
 
-from ..._upstream import handlers_dict
-from ._tables import Row, derive, identity_handler, part, rule_handler
-from ._simple import register_ranges
-from ._tables import ZERO, chain, node_measure
+from ._tables import ZERO, Family, Identities, Row, Rules, derive, node_measure, part
 from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
 z, b, e, p, r, w, a, n, y = symbols('z b e p r w a n y')
@@ -136,46 +133,38 @@ RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded
     (arg(y), Interval.open(-pi, pi),  _OFF_NEGATIVE_AXIS),   # arg is pi only on the negative axis (and at -oo)
     (arg(y), Interval.Lopen(-pi, pi), true),                 # the principal range
 ]
-register_ranges(RANGES)
 
 _PRODUCT_FORMS = [row for row in _EXP_FORMS if isinstance(row[0], Mul)]
 _OTHER_FACTS = FACTS[len(DEFINITIONS):]
 IDENTITIES: list[Row] = (derive([row for row in _OTHER_FACTS if isinstance(row[0], Abs)], _EXP_FORMS)
                          + derive([row for row in _OTHER_FACTS if isinstance(row[0], arg)], _PRODUCT_FORMS))
 
-_rules = rule_handler([ZERO] + RULES)   # also arg: arg(0) is nan, which is what arg(x) is at x = 0
+_rules = Rules([ZERO] + RULES)   # also arg: arg(0) is nan, which is what arg(x) is at x = 0
 
 
 def _definition(head, **kw):
-    return identity_handler([row for row in DEFINITIONS if row[0].func is head], **kw)
+    return Identities([row for row in DEFINITIONS if row[0].func is head], **kw)
 
 
 def _identity(head, **kw):
     rows = [row for row in IDENTITIES if row[0].func is head]
-    return identity_handler(rows, measure=node_measure((head,)), **kw)
+    return Identities(rows, measure=node_measure((head,)), **kw)
 
 
 def _splits(head):
     rows = [row for row in SPLITS if row[0].func is head]
-    return identity_handler(rows, measure=node_measure((head,)))
+    return Identities(rows, measure=node_measure((head,)))
 
 
 # the splits get a handler of their own so they can fire inside a derived row's candidate
-refine_Abs = chain(_rules, identity_handler([row for row in IDENTITIES if row[0].func is Abs],
-                                            measure=node_measure((Abs, re))),
-                   _definition(Abs, opaque=(sign,)))
-refine_re = _rules
-refine_im = _rules
-refine_arg = chain(_rules, _identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
-                   _definition(arg, opaque=(sign,)))
-refine_sign = chain(_rules, _splits(sign))
-refine_conjugate = _rules
-refine_Mul = rule_handler([row for row in RULES if isinstance(row[0], Mul)])
-
-handlers_dict['Abs'] = refine_Abs
-handlers_dict['re'] = refine_re
-handlers_dict['im'] = refine_im
-handlers_dict['arg'] = refine_arg
-handlers_dict['sign'] = refine_sign
-handlers_dict['conjugate'] = refine_conjugate
-handlers_dict['Mul'] = refine_Mul
+SPEC = Family({'Abs': (_rules, Identities([row for row in IDENTITIES if row[0].func is Abs],
+                                          measure=node_measure((Abs, re))),
+                       _definition(Abs, opaque=(sign,))),
+               're': _rules,
+               'im': _rules,
+               'arg': (_rules, _identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
+                       _definition(arg, opaque=(sign,))),
+               'sign': (_rules, _splits(sign)),
+               'conjugate': _rules,
+               'Mul': Rules([row for row in RULES if isinstance(row[0], Mul)])},
+              facts=FACTS + SPLITS, exp_forms=_EXP_FORMS, rules=[ZERO] + RULES, ranges=RANGES)

@@ -2,7 +2,7 @@
 ``gamma`` as rule tables.
 
 Each row is ``(lhs, rhs, hypothesis)``, compiled by
-:func:`._specialize.compile_table`: the row fires when its hypothesis is
+:func:`..core.rewrite.rule_handler`: the row fires when its hypothesis is
 provable through ``_upstream.ask``.  The rules are those stated in
 ``handlers_v3/combinatorial.py`` (236 lines), every one agreeing with
 SymPy's own evaluation at every point its hypothesis allows (0, negative
@@ -36,7 +36,7 @@ possibly negative integer ``n``, half-integer ``gamma`` left alone) are the
 hypotheses' missing cases.
 Checked (adversarial pass, 2026-09-24): every row at 0, +-1, negative
 integers, half-integers, non-real points and +-oo, with ``Q.eq`` against
-``-oo``, old-style symbols, plus ``tools/refine_differential.py`` seeds 2,
+``-oo``, old-style symbols, plus ``python -m satrefine.tools.refine_differential`` seeds 2,
 3, 7 (1,500 cases each).  Found: ``~Q.integer`` admits ``oo``, where
 ``binomial(n, n) -> 1`` and ``binomial(n, n - 1) -> n`` are wrong
 (``binomial(oo, oo) = nan``) and so is ``rf(x, k) -> gamma(x + k)/gamma(x)``
@@ -54,8 +54,7 @@ from __future__ import annotations
 from sympy import (Function, Q, S, binomial, factorial, ff, gamma, rf,
                    symbols)
 
-from ..._upstream import handlers_dict
-from ._tables import compile_table
+from ._tables import Family, Rules
 
 n, k, x = symbols('n k x')
 G = Function('G')        # generic head: binomial, rf and ff share these rows
@@ -139,8 +138,6 @@ FALLING = SMALL_K + [
 RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + [
     row for table in (BINOMIAL, RISING, FALLING) for row in table[len(SMALL_K):]]
 
-handlers_dict['factorial'] = compile_table(FACTORIAL)
-handlers_dict['binomial'] = compile_table(BINOMIAL)
-handlers_dict['RisingFactorial'] = compile_table(RISING)
-handlers_dict['FallingFactorial'] = compile_table(FALLING)
-handlers_dict['gamma'] = compile_table(GAMMA)
+SPEC = Family({'factorial': Rules(FACTORIAL), 'binomial': Rules(BINOMIAL), 'RisingFactorial': Rules(RISING),
+               'FallingFactorial': Rules(FALLING), 'gamma': Rules(GAMMA)},
+              rules=RULES)

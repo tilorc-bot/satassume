@@ -52,7 +52,6 @@ import importlib
 import json
 import os
 import random
-import re
 import signal
 import subprocess
 import sys
@@ -85,9 +84,8 @@ def family_module(family: str) -> str:
 
 
 def family_keys(family: str) -> list[str]:
-    """The keys the module registers (its literal ``handlers_dict['key'] = ...`` lines)."""
-    src = family_file(family).read_text()
-    return re.findall(r"handlers_dict\[['\"](\w+)['\"]\]\s*=", src)
+    """The keys the module registers (the keys of its ``SPEC.handlers``)."""
+    return list(importlib.import_module(family_module(family)).SPEC.handlers)
 
 
 def _norm(row) -> tuple:

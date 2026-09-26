@@ -11,12 +11,11 @@ never the reverse (``tests/refine_identities/test_import_direction.py``).
                 (:mod:`.core.prove`, :mod:`.core.bounds`), pattern matching
                 (:mod:`.core.match`), rewriting with identity and rule tables
                 (:mod:`.core.rewrite`) and case splits (:mod:`.core.split`);
-``rules/``      the families (one module per family of heads, registering its
-                handlers into ``satrefine._upstream.handlers_dict`` when
-                imported), the helpers the tables share (``_tables``: chain,
-                measures, ``derive``, ``compile_table``), the wraps
-                (``_wraps``) and the procedural ``floor``/``Piecewise``
-                handlers (``_simple``);
+``rules/``      the families (one module per family of heads, each ending with
+                a ``SPEC`` (:class:`.core.spec.Family`) that :func:`load`
+                registers), the helpers the tables share (``_tables``:
+                measures, ``derive``, ``ZERO``), the wraps (``_wraps``) and
+                the procedural ``floor``/``Piecewise`` handlers (``_simple``);
 ``generated/``  the generated rule tables, one module per family, written by
                 ``python -m satrefine.tools.refine_specialize --write`` and used by
                 the driver when ``SATREFINE_IDENTITIES=generated`` (the
@@ -31,15 +30,18 @@ never the reverse (``tests/refine_identities/test_import_direction.py``).
 The package is selected with ``SATREFINE_HANDLERS=handlers_identities`` (the
 default); :mod:`satrefine.handlers_identities` calls :func:`load`.
 
-A family module declares its tables under the names the scoreboard counts:
-``FACTS`` (identity rows about the family's own functions), ``EXP_FORMS``
-(exponential forms of other heads, reusable), ``RULES`` (plain conditional
-rows) and ``SIMPLE_RULES`` (rows, or an int for procedural simple rules),
-and registers with literal ``handlers_dict['key'] = handler`` statements.
-It may also declare ``EDGE_POINTS`` (values every generated rule is checked
-at, in addition to 0, 1, -1, I, -I: the family's branch-cut points), or
-``SPECIALIZE = False`` to have no generated table; the assumption profiles
-the generator tries per variable are in :data:`satrefine.build.specs.CATALOGS`.
+A family module states its rows in module-level tables under the names the
+scoreboard counts: ``FACTS`` (identity rows about the family's own
+functions), ``EXP_FORMS`` (exponential forms of other heads, reusable),
+``RULES`` (plain conditional rows), ``RANGES`` (ranges of bounded heads) and
+further named tables (the names label the rows of the generated modules),
+and ends with ``SPEC = Family(handlers, facts=..., exp_forms=..., rules=...,
+ranges=...)``: which parts (:class:`.core.spec.Rules`,
+:class:`.core.spec.Identities`) serve which ``handlers_dict`` key, and the
+tables classified into those kinds.  Importing a family registers nothing.
+The generation settings (the edge points every generated rule is checked at,
+the families without a generated table, the assumption profiles per
+variable) are in :mod:`satrefine.build.specs`.
 """
 from __future__ import annotations
 
@@ -74,19 +76,42 @@ def family_modules() -> list[types.ModuleType]:
     return [importlib.import_module(family_module_name(name)) for name in families()]
 
 
+_PRECEDED_BY = {"complex_parts": "power_exp_log"}
+"""``family -> family registered just before it``: ``complex_parts`` states rows over
+``power_exp_log``'s exponential forms (the order of the new keys in ``handlers_dict``,
+which generation follows, is the order the modules used to register in on import)."""
+
+
+def registration_order() -> list[types.ModuleType]:
+    """Every family module in the order :func:`load` registers them: :func:`families`
+    order, a family of :data:`_PRECEDED_BY` moved right after its predecessor."""
+    names: list[str] = []
+    for name in families():
+        before = _PRECEDED_BY.get(name)
+        if before is not None and before not in names:
+            names.append(before)
+        if name not in names:
+            names.append(name)
+    return [importlib.import_module(family_module_name(name)) for name in names]
+
+
 def load() -> None:
     """Select this package: the driver replaces ``satrefine.refine`` (the attribute
     on the partially initialized ``satrefine`` module is replaced while it loads
     its handler package, so ``from satrefine import refine`` and every tool get
     it), the simple rules are registered before the families so a family that
     registers one of their keys overrides them and the driver falls back to them,
-    then the generated tables and the families are imported."""
+    then the generated tables are imported and every family's ``SPEC`` and range
+    rows are registered."""
     from .. import _upstream
-    from .core import driver
+    from .core import driver, spec
     from .rules import _simple
     satrefine = sys.modules.get("satrefine")
     if satrefine is not None:
         satrefine.refine = driver.refine
     _simple.install(_upstream.handlers_dict)
     from . import generated  # noqa: F401  (registers the generated tables)
-    family_modules()
+    specs = [m.SPEC for m in registration_order()]
+    spec.register(specs, _upstream.handlers_dict)
+    for family in specs:
+        _simple.register_ranges(family.ranges)

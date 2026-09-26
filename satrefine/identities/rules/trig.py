@@ -29,16 +29,14 @@ odd, zero and symbolic coefficients of ``pi/2``, at odd multiples of
 ``pi/2`` (the poles of tan, sec; ``(-1)**k*zoo`` becomes ``zoo``), sums of
 several ``pi`` terms, ``sinc`` at multiples, ``sin``/``cos`` at real
 infinities (``AccumBounds``), about 700 random cases, and
-``tools/refine_differential.py``.  Found nothing.
+``python -m satrefine.tools.refine_differential``.  Found nothing.
 """
 from __future__ import annotations
 
 from sympy import Function, Q, S, cos, cot, csc, pi, sec, sin, sinc, symbols, tan, true
 from sympy.calculus.accumulationbounds import AccumBounds
 
-from ..._upstream import handlers_dict
-from ._tables import Row, rule_handler
-from ._tables import ZERO, chain
+from ._tables import ZERO, Family, Row, Rules
 
 n, r, x = symbols('n r x')
 F = Function('F')
@@ -63,13 +61,9 @@ BOUNDED: list[Row] = [
     (F(x), AccumBounds(-1, 1), Q.infinite(x) & Q.extended_real(x)),   # sin, cos of a real infinity (SymPy's value)
 ]
 
-_shift = rule_handler([ZERO] + RULES, by_binding=True)   # the whole coefficient first, both parities
-_bounded = rule_handler(BOUNDED)
+_shift = Rules([ZERO] + RULES, by_binding=True)   # the whole coefficient first, both parities
+_bounded = Rules(BOUNDED)
 
-handlers_dict['sin'] = chain(_shift, _bounded)
-handlers_dict['cos'] = chain(_shift, _bounded)
-handlers_dict['tan'] = _shift
-handlers_dict['cot'] = _shift
-handlers_dict['sec'] = _shift
-handlers_dict['csc'] = _shift
-handlers_dict['sinc'] = _shift
+SPEC = Family({'sin': (_shift, _bounded), 'cos': (_shift, _bounded),
+               'tan': _shift, 'cot': _shift, 'sec': _shift, 'csc': _shift, 'sinc': _shift},
+              rules=[ZERO] + RULES + BOUNDED)

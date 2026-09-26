@@ -156,9 +156,10 @@ def identity_keys(module: types.ModuleType) -> dict[str, list]:
 def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dict[Row, bool | None]]:
     """The verified rules of a family module, the keys they serve, and every rule's verdict."""
     keys = identity_keys(module)
-    from .specs import CATALOGS
-    catalog = CATALOGS.get(module.__name__.rsplit(".", 1)[-1], getattr(module, "CATALOG", CATALOG))
-    edges = getattr(module, "EDGE_POINTS", ())
+    from .specs import CATALOGS, EDGE_POINTS
+    family = module.__name__.rsplit(".", 1)[-1]
+    catalog = CATALOGS.get(family, getattr(module, "CATALOG", CATALOG))
+    edges = EDGE_POINTS.get(family, ())
     rules: list[Row] = []
     for handler in dict.fromkeys(h for parts in keys.values() for h in parts):
         rules += specialize_table(handler.rows, catalog)
@@ -168,12 +169,12 @@ def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dic
 
 def family_modules() -> list[types.ModuleType]:
     """The family modules of the package that register an identity handler, except
-    those declaring ``SPECIALIZE = False`` (definitions that are cheap to evaluate
-    live and have no bookkeeping to collapse, such as ``minmax_deltas``)."""
+    those in :data:`.specs.NOT_GENERATED`."""
     from ..identities import family_modules as all_families
+    from .specs import NOT_GENERATED
     out = []
     for mod in all_families():
-        if identity_keys(mod) and getattr(mod, "SPECIALIZE", True):
+        if identity_keys(mod) and mod.__name__.rsplit(".", 1)[-1] not in NOT_GENERATED:
             out.append(mod)
     return out
 

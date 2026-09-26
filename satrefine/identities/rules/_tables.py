@@ -1,14 +1,11 @@
 """Helpers the table modules share (the authors' side of the engine).
 
 The family modules import everything they use from here: the engine's
-table API (``Row``, ``identity_handler``, ``rule_handler``, ``part``,
-re-exported from :mod:`..core`), the wrap ``principal`` and the helpers below.
+table API (``Row``, ``part`` and the spec classes ``Family``, ``Rules``,
+``Identities``, re-exported from :mod:`..core`), the wrap ``principal`` and
+the helpers below.
 
-``chain`` registers several handlers on one key: rule rows are tried
-before identity rows, and because only the identity handler switches
-itself off while evaluating a candidate, nested nodes of the same head are
-still reduced by the rules inside a candidate.  ``ZERO`` is the one generic
-row every unary family registers.  ``node_measure`` is the ordering the
+``ZERO`` is the one generic row every unary family registers.  ``node_measure`` is the ordering the
 complex-part identities use: fewer nodes of the family first, then smaller
 arguments, so ``Abs(x*y)`` is left alone unless a factor resolves.
 """
@@ -20,25 +17,12 @@ from sympy import And, Function, Q, Symbol, exp
 from sympy.core import Add, Mul
 
 from ..core.match import part
-from ..core.rewrite import Row, _is_negation, identity_handler, rule_handler, size
+from ..core.rewrite import Row, _is_negation, size
+from ..core.spec import Family, Identities, Rules
 from ._wraps import principal
 
-__all__ = ["ZERO", "Row", "chain", "compile_rule", "compile_table", "derive", "exp_node_measure", "identity_handler",
-           "negative_number_base_measure", "node_measure", "part", "principal", "rule_handler"]
-
-Handler = Callable[[Any, Any], Any]
-
-
-def chain(*handlers: Handler) -> Handler:
-    """One handler from several: the first non-``None`` result wins."""
-    def handler(expr: Any, assumptions: Any) -> Any:
-        for h in handlers:
-            out = h(expr, assumptions)
-            if out is not None:
-                return out
-        return None
-    handler.parts = handlers  # type: ignore[attr-defined]
-    return handler
+__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "derive", "exp_node_measure",
+           "negative_number_base_measure", "node_measure", "part", "principal"]
 
 
 _F = Function('F')
@@ -82,16 +66,6 @@ def negative_number_base_measure(e: Any, assumptions: Any) -> tuple:
     from sympy.core import Pow
     negative = sum(1 for node in e.atoms(Pow) if node.base.is_number and node.base.is_negative)
     return (negative, size(e))
-
-
-def compile_rule(lhs: Any, rhs: Any, hyp: Any, unless: Any = None) -> Callable[[Any, Any], Any]:
-    """One rule row as a handler (see :func:`..core.rewrite.rule_handler`)."""
-    return rule_handler([(lhs, rhs, hyp, unless)])
-
-
-def compile_table(rules: Iterable) -> Callable[[Any, Any], Any]:
-    """A rule table as a handler; rows ``(lhs, rhs, hypothesis[, unless])`` in table order."""
-    return rule_handler(list(rules))
 
 
 def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:

@@ -76,7 +76,7 @@ other copies: the matcher removes the bound term by position, 2026-09-25,
 B11; before it dropped every copy, and ``HadamardProduct(X, X)`` crashed);
 ``MatrixElement`` with negative indices that wrap onto the diagonal
 (``X1[0, -1]``, ``X3[0, -3]`` refused; the symmetric swap is valid under
-wrapping); plus ``tools/refine_differential.py`` seeds 2, 3, 7.  Found
+wrapping); plus ``python -m satrefine.tools.refine_differential`` seeds 2, 3, 7.  Found
 nothing wrong for matrices over C.  Outside that domain: an infinite scalar
 factor (``c*w*X`` under ``Q.zero(c) & Q.infinite(w)`` gives the zero
 matrix, as in v3, since ``ask`` proves ``Q.zero(c*w)``).
@@ -90,8 +90,7 @@ from sympy import Symbol
 from sympy.logic.boolalg import BooleanFunction
 from sympy.matrices.expressions.matexpr import MatrixElement
 
-from ..._upstream import handlers_dict
-from ..rules._tables import compile_table
+from ..rules._tables import Family, Rules
 
 c, i, j, m, p, q, s = symbols('c i j m p q s')
 A = MatrixSymbol('A', m, m)     # square
@@ -227,11 +226,7 @@ MATRIXELEMENT = [
 RULES: list[tuple] = (TRANSPOSE + INVERSE + DETERMINANT + TRACE + MATADD
                       + HADAMARD + MATMUL + MATRIXELEMENT)
 
-handlers_dict['Determinant'] = compile_table(DETERMINANT)
-handlers_dict['HadamardProduct'] = compile_table(HADAMARD)
-handlers_dict['Inverse'] = compile_table(INVERSE)
-handlers_dict['MatAdd'] = compile_table(MATADD)
-handlers_dict['MatMul'] = compile_table(MATMUL)
-handlers_dict['MatrixElement'] = compile_table(MATRIXELEMENT)
-handlers_dict['Trace'] = compile_table(TRACE)
-handlers_dict['Transpose'] = compile_table(TRANSPOSE)
+SPEC = Family({'Determinant': Rules(DETERMINANT), 'HadamardProduct': Rules(HADAMARD), 'Inverse': Rules(INVERSE),
+               'MatAdd': Rules(MATADD), 'MatMul': Rules(MATMUL), 'MatrixElement': Rules(MATRIXELEMENT),
+               'Trace': Rules(TRACE), 'Transpose': Rules(TRANSPOSE)},
+              rules=RULES)

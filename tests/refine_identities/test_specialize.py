@@ -6,7 +6,7 @@ import pytest
 pytestmark = pytest.mark.slow
 from sympy import I, Q, log, pi, symbols
 
-from satrefine.identities.rules._tables import compile_table
+from satrefine.identities.core.rewrite import rule_handler
 from satrefine.build.specialize import specialize_table
 from satrefine.build.verify import verify
 from satrefine.identities.rules.power_exp_log import IDENTITIES
@@ -48,7 +48,7 @@ def test_generated_rules_verify_or_are_flagged(rules):
 
 
 def test_compiled_table_fires_like_the_engine(rules):
-    handler = compile_table([rule for rule in rules if verify(*rule)])
+    handler = rule_handler([rule for rule in rules if verify(*rule)])
     assert handler(log(b**e), Q.positive(b) & Q.real(e)) == e*log(b)
     assert handler(log(x), Q.negative(x)) == log(-x) + I*pi
     assert handler(log(x), Q.positive(x)) is None

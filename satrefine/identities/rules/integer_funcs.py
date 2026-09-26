@@ -4,7 +4,7 @@
 rule rows): 2 identity rows (``FACTS``) and 7 rule rows (``RULES``).
 
 ``FACTS`` are identity rows ``(lhs, rhs, domain)`` run by
-:func:`._engine.identity_handler`: they fire when the bookkeeping in the
+:func:`..core.rewrite.identity_handler`: they fire when the bookkeeping in the
 right side (``floor``, ``sign``) collapses, and the measure (nodes of the
 row's head) must drop, so a result comes back in the user's function or not
 at all.
@@ -64,7 +64,7 @@ Pattern forms and matcher behavior this table relies on are pinned in
 Checked (adversarial pass, 2026-09-24, on the phase-1 rows, which the rows
 here restate): every row at 0, +-1, integer and half-integer boundaries,
 +-oo, non-real points, relation bounds against an infinite divisor,
-old-style symbols, plus ``tools/refine_differential.py`` seeds 2, 3, 7.
+old-style symbols, plus ``python -m satrefine.tools.refine_differential`` seeds 2, 3, 7.
 Not defects: ``Mod``/``Rem -> a`` under ``Q.lt(a, b)`` at ``b = oo`` (SymPy's
 ask calls ``Q.lt(a, b) & Q.infinite(b)`` inconsistent: relations are over
 the reals); the shift rows at ``oo`` (both sides ``AccumBounds(0, 1)`` for
@@ -77,9 +77,7 @@ from __future__ import annotations
 from sympy import Function, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols, true
 from sympy.functions.elementary.miscellaneous import Rem
 
-from ..._upstream import handlers_dict
-from ._tables import identity_handler, part, rule_handler
-from ._tables import chain, node_measure
+from ._tables import Family, Identities, Rules, node_measure, part
 
 a, b, c, n, x, y = symbols('a b c n x y')
 F = Function('F')        # generic head: the row serves every key it is registered under
@@ -114,8 +112,6 @@ FACTS = [   # (lhs, rhs, domain): identity rows, fire when the bookkeeping colla
     # (needs/test_defs_case_split_zero_point_raises.py).
     (G(a, b), b*G(sign(a/b), 2)/2, Q.nonzero(b) & Q.odd(2*a/b)),
 ]
-
-EDGE_POINTS = (S(2), S(-2))   # the generator checks rules here too: Rem(1, 2) has 2*a/b odd
 
 ROUNDING = [
     # F1, F2: floor/ceiling of a (Gaussian) integer, or of an infinity, is itself
@@ -180,8 +176,6 @@ REM = MULTIPLE + [
 
 RULES: list[tuple] = ROUNDING + SHIFT + ROUNDED_SHIFT + MOD + REM[len(MULTIPLE):]
 
-handlers_dict['floor'] = rule_handler(FLOOR)
-handlers_dict['ceiling'] = rule_handler(CEILING)
 
 def _instance(row: tuple, head: type) -> tuple:
     """A generic-head identity row for one head (the identity engine and the generator
@@ -192,8 +186,8 @@ def _instance(row: tuple, head: type) -> tuple:
 MOD_FACTS = [_instance(FACTS[1], Mod)]
 REM_FACTS = [_instance(FACTS[1], Rem)]
 
-handlers_dict['frac'] = chain(rule_handler(FRAC), identity_handler(FACTS[:1], measure=node_measure((frac,))))
-handlers_dict['Mod'] = chain(rule_handler(MOD), identity_handler(MOD_FACTS, measure=node_measure((Mod,)),
-                                                                 opaque=(floor, sign)))
-handlers_dict['Rem'] = chain(rule_handler(REM), identity_handler(REM_FACTS, measure=node_measure((Rem,)),
-                                                                 opaque=(floor, sign)))
+SPEC = Family({'floor': Rules(FLOOR), 'ceiling': Rules(CEILING),
+               'frac': (Rules(FRAC), Identities(FACTS[:1], measure=node_measure((frac,)))),
+               'Mod': (Rules(MOD), Identities(MOD_FACTS, measure=node_measure((Mod,)), opaque=(floor, sign))),
+               'Rem': (Rules(REM), Identities(REM_FACTS, measure=node_measure((Rem,)), opaque=(floor, sign)))},
+              facts=FACTS, rules=RULES)
