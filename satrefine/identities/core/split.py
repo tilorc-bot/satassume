@@ -104,20 +104,13 @@ def _real_part_dummy(s: Any) -> Dummy:
 def _linked(s: Any, groups: list[set]) -> set:
     """``s`` and every symbol the assumptions link to it: the symbols of the conjuncts
     (``groups``, one set per conjunct) reachable from ``s`` through shared symbols."""
-    linked = {s}
-    rest = list(groups)
-    grown = True
-    while grown:
-        grown = False
-        keep = []
-        for g in rest:
-            if g & linked:
-                linked |= g
-                grown = True
-            else:
-                keep.append(g)
-        rest = keep
-    return linked
+    linked, rest = {s}, list(groups)
+    while True:
+        joined = [g for g in rest if g & linked]
+        if not joined:
+            return linked
+        linked = linked.union(*joined)
+        rest = [g for g in rest if not g <= linked]
 
 
 def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple | None = None) -> Any | None:

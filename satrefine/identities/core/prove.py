@@ -253,31 +253,22 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
              Q.nonpositive: at_most, Q.nonzero: above or below}[predicate]
     if not holds:
         return None
-    if finite:
-        return True
     excluded = {Q.real: no_pos_inf and no_neg_inf,           # above/below already exclude one side
                 Q.positive: no_pos_inf, Q.nonnegative: no_pos_inf, Q.negative: no_neg_inf,
                 Q.nonpositive: no_neg_inf,
                 Q.nonzero: (above and no_pos_inf) or (below and no_neg_inf)}[predicate]
-    if excluded:
-        return True
-    return True if _ask_finite(u, assumptions) else None
-
-
-def _ask_finite(u: Any, assumptions: Any) -> bool:
-    """Whether ``ask`` proves ``u`` finite (what a bound on the extended reals leaves open)."""
-    try:
-        return _upstream.ask(Q.finite(u), assumptions) is True
+    try:     # else whether ``ask`` proves ``u`` finite (what a bound on the extended reals leaves open)
+        return True if finite or excluded or _upstream.ask(Q.finite(u), assumptions) is True else None
     except (ValueError, TypeError, AssertionError):
-        return False
+        return None
 
 
 # ----------------------------------------------------------------------------
 # the bounds the assumptions state on a quantity
 # ----------------------------------------------------------------------------
 
+# a sign fact s(d) as the relation of (d, 0) it states: Q.positive(d) is Q.gt(d, 0)
 _SIGN_FACTS = {Q.positive: Q.gt, Q.nonnegative: Q.ge, Q.negative: Q.lt, Q.nonpositive: Q.le}
-"""A sign fact ``s(d)`` as the relation of ``(d, 0)`` it states (``Q.positive(d)`` is ``Q.gt(d, 0)``)."""
 
 
 def _stated_relations(assumptions: Any) -> Iterator[tuple]:
