@@ -6,7 +6,7 @@ from sympy import (Abs, Function, I, N, Q, Rational, S, cos, exp, floor, frac, i
                    symbols, true)
 
 from satrefine import refine
-from satrefine._upstream import handlers_dict
+from satrefine.identities.compat.upstream import handlers_dict
 from satrefine.identities.config import MODE_ENV_VAR
 from satrefine.identities.core import driver as _dispatch
 from satrefine.identities.core.match import bindings, part, subst

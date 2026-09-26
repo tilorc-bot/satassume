@@ -54,7 +54,7 @@ def test_ask_raising_is_not_provable(monkeypatch):
     (``Q.lt(m, y)`` is True), so the raise is simulated."""
     from sympy.assumptions import AppliedPredicate
 
-    from satrefine import _upstream
+    from satrefine.identities.compat import upstream as _upstream
     real_ask = _upstream.ask
 
     def raising(prop, assumptions=True):

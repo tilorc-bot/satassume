@@ -48,7 +48,9 @@ ROWS = [
     (log(x**n), Q.positive(x) & Q.real(n), n*log(x), "same"),
     (log(x**n), Q.nonnegative(x) & Q.positive(n), n*log(x), "same"),
     (log(x**n), Q.negative(x) & Q.odd(n), n*log(-x) + I*pi, "same"),   # was log(-x**n) + I*pi: the bare log(x) row now comes last
-    (log(x**(-2)), Q.real(x), None, "miss: the power form needs b != 0 or e > 0 (Abs(0**e) is oo, not zoo, for e < 0)"),
+    (log(x**(-2)), Q.real(x), -2*log(Abs(x)), "same"),   # the even-power rule (zoo on both sides at x = 0)
+    (log(x**n), Q.even(n) & Q.nonzero(n) & Q.real(x), n*log(Abs(x)), "same"),
+    (log(x**n), Q.even(n) & Q.nonzero(x), n*log(Abs(x)), "same"),
     (sqrt(x**(-2)), Q.nonzero(x), 1/Abs(x), "same"),
     (log(1/x), Q.extended_positive(x), -log(x), "extra: v3 asks Q.finite; at x = oo SymPy's log(1/oo) is zoo, -log(oo) is -oo"),
     (log(x**4), Q.imaginary(x), 4*log(Abs(x)), "same"),
@@ -93,6 +95,8 @@ ROWS = [
     ((-1)**(-n - HALF), Q.even(n), -I, "same"),
     ((-1)**(n + m + HALF), Q.even(n) & Q.odd(m), -I, "same"),
     ((-1)**(2*n + HALF), Q.integer(n), I, "same"),
+    ((-1)**((-1)**n/2 + m/2), Q.integer(n), (-1)**(m/2 + n + HALF), "same"),   # 2-periodic in the exponent
+    ((-1)**((-1)**y/2 + m/2), True, None, "neither"),
     ((-2)**n, Q.even(n), 2**n, "same"),
     ((-2)**n, Q.odd(n), -2**n, "same"),
     ((-2)**n, Q.integer(n), None, "neither"),

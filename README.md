@@ -127,7 +127,7 @@ only when propagation is inconclusive.
 `satrefine/` is the `reasoning` project's refine layer
 (https://github.com/tilorc-bot/reasoning, branch `feature/refine`, commit
 `12c3845`): SymPy's `refine` dispatcher vendored in `satrefine/_upstream.py` (since
-phase 3 `satrefine/identities/compat/upstream.py`; the old name is an alias)
+phase 3 `satrefine/identities/compat/upstream.py`)
 plus 56 self-registering handlers in `satrefine/handlers/` (removed in phase 3,
 see below), with the test harness and 470 tests in `tests/refine/`. Every
 handler asks its predicate questions through one seam, the dispatcher's `ask`, and
@@ -141,7 +141,8 @@ handler asks its predicate questions through one seam, the dispatcher's `ask`, a
 | `union` | satassume first, SymPy for every `None` (the `combined` behaviour before 2026-09-25) | measurements |
 
 Select with `SATREFINE_BACKEND=<name>` (read at import; default `combined`),
-`satrefine.backend.set_backend(name)`, or `with satrefine.backend.using(name):`.
+`satrefine.identities.compat.backend.set_backend(name)`, or
+`with satrefine.identities.compat.backend.using(name):`.
 
 ### The three handler packages
 

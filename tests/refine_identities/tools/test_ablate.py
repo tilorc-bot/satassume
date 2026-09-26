@@ -10,7 +10,7 @@ import pytest
 from sympy import DiracDelta, Q, symbols
 
 from satrefine import refine
-from satrefine._upstream import handlers_dict
+from satrefine.identities.compat.upstream import handlers_dict
 
 ablate_tool = importlib.import_module("satrefine.tools.refine_ablate")
 

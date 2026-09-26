@@ -25,6 +25,8 @@ KEYS = ("fired, same as v3", "fired, other form", "did not fire, v3 expects a re
 SHORT = {"fired, same as v3": "same", "fired, other form": "other", "did not fire, v3 expects a result": "miss",
          "unchanged as expected": "quiet", "fired where v3 expects unchanged": "extra",
          "fired, numerically wrong": "wrong", "crash": "crash"}
+DIFFERENCES = ("other", "miss", "extra")
+"""The kinds that differ from v3 (reviewed in ``lib.accepted``)."""
 UNCHECKED = "numerically unchecked (matrix symbols, no sample, or the sampler raised)"
 
 
