@@ -19,7 +19,7 @@ from sympy import And, Q, S, arg, expand, floor, im, true
 
 from .. import _upstream
 from . import hooks
-from ..identities.core import driver as _dispatch
+from ..identities.core import hooks as _hooks
 from ..identities.core.driver import live
 from ..identities.core.rewrite import Row, refine
 from .verify import verify
@@ -65,9 +65,10 @@ modules are rendered from it."""
 
 def specialize(lhs: Any, domain: Any, catalog: Any = CATALOG) -> list[Row]:
     """The conditional rules of one identity left side.  Runs the live identity rows,
-    or, inside a staged generation (:mod:`.stages`), the family's own rows live and
-    every other key through the tables installed so far."""
-    with (nullcontext() if _dispatch.staged() else live()):
+    or, when an observer supplies the tables (a staged generation, :mod:`.stages`),
+    the family's own rows live and every other key through the tables installed so far."""
+    staged = bool(_hooks.observer) and _hooks.observer[-1].tables is not None
+    with (nullcontext() if staged else live()):
         return _specialize(lhs, domain, catalog)
 
 
@@ -131,19 +132,21 @@ def _identity_parts(handler: Any) -> list:
     return [p for part in getattr(handler, "parts", ()) for p in _identity_parts(part)]
 
 
-def _module_rows(module: types.ModuleType) -> set:
-    """Every row of the module's tables (``FACTS``, ``IDENTITIES``, ...)."""
-    rows: set = set()
-    for v in vars(module).values():
-        if isinstance(v, list) and v and all(isinstance(r, tuple) and len(r) in (3, 4) for r in v):
-            rows.update(v)
-    return rows
+_TABLE_ORDER = ("DEFINITIONS", "FACTS", "RULES", "SPLITS", "EXP_FORMS", "NEGATIVE_BASE", "IDENTITIES")
+
+
+def row_tables(module: types.ModuleType) -> dict[str, list]:
+    """``name -> rows``: the module-level lists of rows (3- or 4-tuples) of a family
+    module, the names of :data:`_TABLE_ORDER` first, then the others by name."""
+    tables = {n: v for n, v in vars(module).items()
+              if isinstance(v, list) and v and all(isinstance(r, tuple) and len(r) in (3, 4) for r in v)}
+    return {n: tables[n] for n in [n for n in _TABLE_ORDER if n in tables] + sorted(set(tables) - set(_TABLE_ORDER))}
 
 
 def identity_keys(module: types.ModuleType) -> dict[str, list]:
     """``key -> identity handlers`` for the keys whose identity rows (possibly
     inside a chain) come from ``module``'s tables."""
-    rows = _module_rows(module)
+    rows = {row for table in row_tables(module).values() for row in table}
     out = {}
     for key, h in _upstream.handlers_dict.items():
         parts = [p for p in _identity_parts(h) if any(r in rows for r in p.rows)]
@@ -155,9 +158,10 @@ def identity_keys(module: types.ModuleType) -> dict[str, list]:
 def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dict[Row, bool | None]]:
     """The verified rules of a family module, the keys they serve, and every rule's verdict."""
     keys = identity_keys(module)
-    from .specs import CATALOGS
-    catalog = CATALOGS.get(module.__name__.rsplit(".", 1)[-1], getattr(module, "CATALOG", CATALOG))
-    edges = getattr(module, "EDGE_POINTS", ())
+    from .specs import CATALOGS, EDGE_POINTS
+    family = module.__name__.rsplit(".", 1)[-1]
+    catalog = CATALOGS.get(family, getattr(module, "CATALOG", CATALOG))
+    edges = EDGE_POINTS.get(family, ())
     rules: list[Row] = []
     for handler in dict.fromkeys(h for parts in keys.values() for h in parts):
         rules += specialize_table(handler.rows, catalog)
@@ -167,15 +171,7 @@ def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dic
 
 def family_modules() -> list[types.ModuleType]:
     """The family modules of the package that register an identity handler, except
-    those declaring ``SPECIALIZE = False`` (definitions that are cheap to evaluate
-    live and have no bookkeeping to collapse, such as ``minmax_deltas``)."""
+    those in :data:`.specs.NOT_GENERATED`."""
     from ..identities import family_modules as all_families
-    out = []
-    for mod in all_families():
-        if identity_keys(mod) and getattr(mod, "SPECIALIZE", True):
-            out.append(mod)
-    return out
-
-
-__all__ = ["CATALOG", "Literal", "family_modules", "generate_family", "identity_keys", "records", "specialize",
-           "specialize_table"]
+    from .specs import NOT_GENERATED
+    return [mod for mod in all_families() if identity_keys(mod) and mod.__name__.rsplit(".", 1)[-1] not in NOT_GENERATED]

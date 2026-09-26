@@ -1,12 +1,10 @@
 """The procedural remainder of the base layer: ``floor`` of a bounded quantity, ``Piecewise``.
 
-Registered by the package ``__init__`` on ``floor``, ``ceiling`` and
-``Piecewise`` before the family modules load, and as the dispatcher's
-fallbacks for those keys: a family module that registers one of them
-(``integer_funcs`` registers ``floor`` and ``ceiling``) overrides the
-handler, and the dispatcher tries the simple rule after the family's
-table declines.  Each rule chains to the vendored handler when it does
-not apply.  Everything else the branch bookkeeping reduces through
+:func:`install` (called by the package ``__init__`` before the families
+register) makes them the dispatcher's fallbacks for ``floor``, ``ceiling``
+and ``Piecewise``, tried after the key's handler declines (``integer_funcs``
+registers ``floor`` and ``ceiling``), and the ``Piecewise`` handler itself.
+Everything else the branch bookkeeping reduces through
 (``re``/``im`` of exponentials, logarithms, sums and products; ``arg``
 and ``Abs`` under sign facts) is a row of :mod:`.complex_parts`.
 
@@ -18,7 +16,7 @@ Why these two are procedures and not rows:
     ``h(y)`` for a head ``h`` with range rows (:data:`RANGES`: ``arg``,
     ``atan``, ``acot``, ``asin``, ``acos``, stated by their families), or
     any expression whose bounds
-    the assumptions state as conjuncts (:func:`..core.bounds.stated_bounds`: ``Q.ge(u,
+    the assumptions state as conjuncts (:func:`..core.prove.stated_bounds`: ``Q.ge(u,
     -pi/2)``, ``Q.lt(1, u)``, ``Q.positive(u + pi)``, ... read affinely,
     and the sign facts ``Q.positive(u)``, ``Q.nonnegative(u)``, ... by
     asking).  A row states a fixed condition; this is interval arithmetic
@@ -35,15 +33,12 @@ Why these two are procedures and not rows:
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterator
 
-from typing import Iterator
-
-from sympy import And, Piecewise, S, ceiling, floor
+from sympy import Abs, And, Piecewise, S, arg, ceiling, floor, im
 from sympy.core import Basic
 
-from ... import _upstream
-from ..core.bounds import _affine, _stated_sides, full_bounds
+from ..core.prove import _affine, _stated_sides, full_bounds
 
 RANGES: dict = {}
 """``head -> [(head(y), interval, condition), ...]``: the range rows of bounded heads,
@@ -131,24 +126,12 @@ def floor_two_valued(expr: Basic, assumptions: Any) -> tuple | None:
     return None
 
 
-def refine_floor(expr: Basic, assumptions: Any) -> Basic | None:
-    value = floor_of_bounded(expr, assumptions)
-    if value is not None:
-        return value
-    return _upstream.refine_floor_ceiling(expr, assumptions)
-
-
-def simple_floor(expr: Basic, assumptions: Any) -> Basic | None:
-    """The bounds rule alone (the fallback behind a family's floor/ceiling table)."""
-    return floor_of_bounded(expr, assumptions)
-
-
 def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     """Each branch under the assumptions plus its condition, the conditions decided
     by the engine (:func:`..core.prove.decide`: relations from signs and stated
     relations, never from a relation ``ask`` about a known infinite argument).
     A condition decided false drops its branch, one decided true ends the list.
-    The dispatcher leaves the arguments to this handler (:data:`..core.driver.own_args`):
+    The dispatcher leaves the arguments to this handler (:data:`..core.hooks.own_args`):
     SymPy refines a condition with a bare ``ask`` (weak on relations, raising on
     sign facts, wrong at ``-oo``)."""
     from ..core.driver import refine
@@ -170,20 +153,17 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     return Piecewise(*pairs)
 
 
-SIMPLE_RULES = {"floor": refine_floor, "ceiling": refine_floor, "Piecewise": refine_piecewise}
-"""Handlers for keys no family module registers: the simple rule, then the vendored handler."""
-
-FALLBACK_RULES = {"floor": simple_floor, "ceiling": simple_floor, "Piecewise": refine_piecewise}
-"""The simple rules alone: tried by the dispatcher after a family's own table
-declines, never the vendored handler (a family's refusals must stand)."""
-
-
 def install(handlers_dict: dict) -> None:
-    """Register the simple rules as the keys' handlers and as the dispatcher's
-    fallbacks, so a family module that registers one of the keys later still
-    gets them after its own table declines."""
-    from ..core.driver import fallback_handlers, own_args
-    own_args.add("Piecewise")
-    for key, handler in SIMPLE_RULES.items():
-        handlers_dict[key] = handler
-    fallback_handlers.update(FALLBACK_RULES)
+    """Register the simple rules as the dispatcher's fallbacks
+    (:data:`..core.hooks.fallback`), so a family module that registers one of
+    the keys still gets them after its own table declines, and ``Piecewise``'s
+    handler; and set the head roles of :mod:`..core.hooks` the engine reads."""
+    from ..core import hooks
+    hooks.own_args.add("Piecewise")
+    handlers_dict["Piecewise"] = refine_piecewise
+    hooks.fallback.update({"floor": floor_of_bounded, "ceiling": floor_of_bounded, "Piecewise": refine_piecewise})
+    hooks.opaque = (floor, im, arg)
+    hooks.conditional = Piecewise
+    hooks.modulus = Abs
+    hooks.step = floor
+    hooks.two_valued = floor_two_valued

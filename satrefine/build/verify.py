@@ -14,7 +14,7 @@ SAMPLE = {Q.positive: 2.3, Q.negative: -1.7, Q.nonnegative: 0.6, Q.real: 0.6, Q.
 
 EDGE_POINTS: tuple = (S.Zero, S.One, S.NegativeOne, I, -I)
 """Values every generated rule is checked at when they satisfy its hypothesis;
-a family module adds its branch-cut points in ``EDGE_POINTS``."""
+a family adds its branch-cut points in :data:`.specs.EDGE_POINTS`."""
 
 
 def sample_point(hyp: Any, symbols_needed: Iterable) -> dict | None:

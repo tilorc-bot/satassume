@@ -6,11 +6,11 @@
   meta-path finder that raises) before it imports ``satrefine``, then refines
   a few inputs in each ``SATREFINE_IDENTITIES`` mode; the results must be what
   this process gets.
-* **``identities/core`` names no specific SymPy function and no matrix type.**
-  After the moves of step 1 some remain (the opaque heads of the identity
-  handler, the ``floor`` of the endpoint split, ...); steps 3 and 4 of #13
-  remove them.  The strict xfail names them; the other test fails when one is
-  added.
+* **``identities/core`` names no specific SymPy function and no matrix type**
+  (the heads the engine needs to know about are roles in
+  ``identities/core/hooks.py``, set by the rules layer), and **imports neither
+  ``identities.rules`` nor ``identities.compat``** (they plug in through
+  ``core/hooks.py``).
 """
 from __future__ import annotations
 
@@ -91,10 +91,11 @@ def test_refine_runs_without_the_offline_packages(mode):
     assert child["results"] == expected
 
 
-def test_the_offline_packages_are_not_imported_by_identities():
-    """No module under ``satrefine/identities`` imports an offline package, even lazily."""
+def _imports(directory: Path, forbidden: tuple[str, ...]) -> list[str]:
+    """``path:line name`` for every import (even a lazy one) under ``directory`` of a
+    module in, or equal to, one of the packages ``forbidden``."""
     found = []
-    for path in sorted((ROOT / "satrefine" / "identities").rglob("*.py")):
+    for path in sorted(directory.rglob("*.py")):
         for node in ast.walk(ast.parse(path.read_text())):
             names = []
             if isinstance(node, ast.Import):
@@ -107,8 +108,21 @@ def test_the_offline_packages_are_not_imported_by_identities():
                     base = ".".join(parts + ([base] if base else []))
                 names = [base] + [f"{base}.{a.name}" for a in node.names]
             for name in names:
-                if name.startswith(OFFLINE) or name in ("satrefine.build", "satrefine.tools", "satrefine.testing"):
+                if name in forbidden or name.startswith(tuple(p + "." for p in forbidden)):
                     found.append(f"{path.relative_to(ROOT)}:{node.lineno} {name}")
+    return found
+
+
+def test_the_offline_packages_are_not_imported_by_identities():
+    """No module under ``satrefine/identities`` imports an offline package, even lazily."""
+    found = _imports(ROOT / "satrefine" / "identities", OFFLINE)
+    assert not found, found
+
+
+def test_core_imports_no_rules_or_compat():
+    """No module under ``identities/core`` imports ``identities.rules`` or ``identities.compat``,
+    even lazily: they plug into core through ``core/hooks.py``."""
+    found = _imports(CORE, ("satrefine.identities.rules", "satrefine.identities.compat"))
     assert not found, found
 
 
@@ -119,13 +133,8 @@ def test_the_offline_packages_are_not_imported_by_identities():
 GENERIC = {"Function", "AppliedUndef", "UndefinedFunction"}
 """Function classes core may name: the generic ones (head wildcards)."""
 
-REMAINING = {
-    "prove.py": {"ceiling", "floor"},              # integer refutation from an interval (_from_bounds)
-    "rewrite.py": {"Abs", "Piecewise", "arg", "floor", "im"},   # opaque heads, the endpoint split's floor,
-                                                   # the measure's Abs, undecided Piecewise candidates
-    "split.py": {"Abs", "arg", "floor", "im"},     # opaque heads, Abs generalisation, the endpoint split
-}
-"""What step 1 left in ``core`` (steps 3/4 of issue #13 move it out)."""
+REMAINING: dict[str, set[str]] = {}
+"""Specific names ``core`` may still import, by module (none since step 3 of issue #13)."""
 
 
 def _specific_names(path: Path) -> set[str]:
@@ -164,7 +173,5 @@ def test_core_names_nothing_new():
     assert not extra, extra
 
 
-@pytest.mark.xfail(strict=True, reason="core still names: " + "; ".join(
-    f"{m}: {', '.join(sorted(n))}" for m, n in sorted(REMAINING.items())) + " (issue #13, steps 3 and 4)")
 def test_core_names_no_specific_function_or_matrix():
     assert _core_names() == {}

@@ -4,9 +4,11 @@ Code lines are physical lines that are not blank, not comments and not
 module, class or function docstrings.  The engine is the former underscore
 modules of ``handlers_identities``: online, ``satrefine/identities`` without
 the families, the generated tables and the ``ask`` backend; offline,
-``satrefine/build`` (specialisation, fixpoint).  Rows are counted from the
-family modules (``FACTS``, ``EXP_FORMS``, ``RULES``, ``SIMPLE_RULES``,
-``RANGES``; ``stage0`` also counts ``STATED_ELSEWHERE``).
+``satrefine/build`` (specialisation, fixpoint).  Rows are counted from each
+family's ``SPEC`` (:class:`satrefine.identities.core.spec.Family`): its table
+kinds ``facts``, ``exp_forms``, ``rules``, ``ranges``, counting only rows the
+module states in its own public tables (not the shared ``ZERO`` row, not another
+family's exponential forms); ``stage0`` is every stated row.
 """
 from __future__ import annotations
 
@@ -18,8 +20,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 
 COLUMNS = ("FACTS", "EXP_FORMS", "RULES", "SIMPLE_RULES", "RANGES")
-STATED_ELSEWHERE = ("SPLITS", "NEGATIVE_BASE", "BOUNDED")
-"""Hand-stated row tables besides the columns (counted in ``stage0``, every stated row)."""
+KINDS = {"FACTS": "facts", "EXP_FORMS": "exp_forms", "RULES": "rules", "RANGES": "ranges"}
+"""Column -> ``Family`` table kind (``SIMPLE_RULES`` is 0: no family has procedural rules)."""
 
 
 def _size(module, name: str) -> int:
@@ -34,8 +36,11 @@ def family_rows() -> list[tuple[str, Counter]]:
     out = []
     for name in families():
         mod = importlib.import_module(family_module_name(name))
-        counts = Counter({k: _size(mod, k) for k in COLUMNS})
-        counts["STAGE0"] = sum(counts.values()) + sum(_size(mod, k) for k in STATED_ELSEWHERE)
+        own = [v for k, v in vars(mod).items() if isinstance(v, list) and not k.startswith("_")]
+        counts = Counter({col: sum(any(row in rows for rows in own) for row in getattr(mod.SPEC, kind))
+                          for col, kind in KINDS.items()})
+        counts["SIMPLE_RULES"] = 0
+        counts["STAGE0"] = sum(counts.values())
         try:
             gen = importlib.import_module(f"satrefine.identities.generated.{name}")
             counts["GENERATED"] = _size(gen, "RULES")

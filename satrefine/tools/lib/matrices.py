@@ -523,9 +523,7 @@ class MatrixRowCoverage:
         from satrefine._upstream import handlers_dict
         from satrefine.identities.core.rewrite import rule_handler
         mod = importlib.import_module("satrefine.identities.compat.matrices")
-        tables = {"Determinant": mod.DETERMINANT, "HadamardProduct": mod.HADAMARD, "Inverse": mod.INVERSE,
-                  "MatAdd": mod.MATADD, "MatMul": mod.MATMUL, "MatrixElement": mod.MATRIXELEMENT,
-                  "Trace": mod.TRACE, "Transpose": mod.TRANSPOSE}
+        tables = {key: part.rows for key, part in mod.SPEC.handlers.items()}   # one rule table per key
         self.all_rows = [row for rows in tables.values() for row in rows]
         for key, rows in tables.items():
             original = handlers_dict[key]

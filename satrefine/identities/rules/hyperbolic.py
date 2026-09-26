@@ -28,16 +28,14 @@ which gives ``0`` rather than v3's unrefined form).
 Checked (adversarial pass, 2026-09-24): every row with ``m`` even, odd and
 of known residue mod 4, at the poles (``coth``, ``csch`` at ``m*pi*I``,
 ``tanh``, ``sech`` at odd multiples of ``pi*I/2``), real multiples of
-``pi`` (must not bind), sums of shifts, and ``tools/refine_differential.py``.
+``pi`` (must not bind), sums of shifts, and ``python -m satrefine.tools.refine_differential``.
 Found nothing.
 """
 from __future__ import annotations
 
 from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
-from ..._upstream import handlers_dict
-from ._tables import Row, rule_handler
-from ._tables import ZERO
+from ._tables import ZERO, Family, Row, Rules
 
 m, x = symbols('m x')
 
@@ -59,11 +57,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is m*pi*I/2 + x
     (coth(m*pi*I/2 + x), tanh(x),                      Q.odd(m)),    # coth(x + pi*I/2) = tanh x
 ]
 
-_shift = rule_handler([ZERO] + RULES, by_binding=True)
+_shift = Rules([ZERO] + RULES, by_binding=True)
 
-handlers_dict['sinh'] = _shift
-handlers_dict['cosh'] = _shift
-handlers_dict['tanh'] = _shift
-handlers_dict['coth'] = _shift
-handlers_dict['sech'] = _shift
-handlers_dict['csch'] = _shift
+SPEC = Family({'sinh': _shift, 'cosh': _shift, 'tanh': _shift, 'coth': _shift, 'sech': _shift, 'csch': _shift},
+              rules=[ZERO] + RULES)

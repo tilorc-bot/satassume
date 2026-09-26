@@ -7,6 +7,7 @@ from sympy import (Abs, Function, I, N, Q, Rational, S, cos, exp, floor, frac, i
 
 from satrefine import refine
 from satrefine._upstream import handlers_dict
+from satrefine.identities.config import MODE_ENV_VAR
 from satrefine.identities.core import driver as _dispatch
 from satrefine.identities.core.match import bindings, part, subst
 from satrefine.identities.core.prove import provable
@@ -164,7 +165,7 @@ def relaxed_log(monkeypatch):
     a power needs only one of base or exponent nonzero, a product needs nothing
     (SymPy's zoo arithmetic makes log(0*r) == log(0) + log(r))."""
     from sympy import true
-    monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
+    monkeypatch.setenv(MODE_ENV_VAR, "live")
     from satrefine.identities.rules._tables import derive, principal
     z, b_, e_, p_, r_ = symbols("z b e p r")
     facts = [(log(exp(z)), principal(z), true), (log(x), log(Abs(x)) + I*arg_(x), ~Q.zero(x))]

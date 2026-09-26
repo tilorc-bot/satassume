@@ -13,7 +13,7 @@ definition is an identity row whose right side states the case analysis::
 A definition fires when the engine decides its conditions under the
 assumptions (the refined right side has no ``Piecewise`` left) and the
 family's heads lose an argument.  The conditions are decided by the
-engine's order vocabulary (:func:`._engine.decide`), not by SymPy's
+engine's order vocabulary (:func:`..core.prove.decide`), not by SymPy's
 ``Piecewise`` refinement: a relation holds when a proof form from signs or
 infinite endpoints holds, or one from stated relations (``Q.le``, ``Q.lt``,
 ``Q.eq``, ``Q.ne``, the difference zero or nonzero), and the relation forms
@@ -47,9 +47,7 @@ from __future__ import annotations
 from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Min, Piecewise, Q, S, Tuple,
                    count_ops, nan, symbols, true)
 
-from ..._upstream import handlers_dict
-from ._tables import identity_handler, rule_handler
-from ._tables import chain
+from ._tables import Family, Identities, Rules
 
 a, b, c, h, i, j, lo, hi, r, x = symbols('a b c h i j lo hi r x')
 G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(x, h), derivatives of DiracDelta
@@ -87,20 +85,18 @@ DIRAC = [
 RULES = DIRAC + INFINITE
 
 
-SPECIALIZE = False   # no generated table: a definition is decided in about 2 ms live
-
-
 def _measure(e, assumptions):
     """Arguments of the family's heads, then size: a definition fires when it drops one."""
     return (sum(len(n.args) for n in e.atoms(Max, Min, KroneckerDelta, Heaviside)), count_ops(e))
 
 
 def _definitions(rows):
-    return identity_handler(rows, measure=_measure, opaque=(), splits=False)
+    return Identities(rows, measure=_measure, opaque=(), splits=False)
 
 
-handlers_dict['Max'] = chain(rule_handler(INFINITE[0:2]), _definitions(FACTS[0:1]))
-handlers_dict['Min'] = chain(rule_handler(INFINITE[2:4]), _definitions(FACTS[1:2]))
-handlers_dict['KroneckerDelta'] = _definitions(FACTS[2:4])
-handlers_dict['Heaviside'] = _definitions(FACTS[4:5])
-handlers_dict['DiracDelta'] = rule_handler(DIRAC)
+SPEC = Family({'Max': (Rules(INFINITE[0:2]), _definitions(FACTS[0:1])),
+               'Min': (Rules(INFINITE[2:4]), _definitions(FACTS[1:2])),
+               'KroneckerDelta': _definitions(FACTS[2:4]),
+               'Heaviside': _definitions(FACTS[4:5]),
+               'DiracDelta': Rules(DIRAC)},
+              facts=FACTS, rules=RULES)

@@ -34,7 +34,8 @@ Patterns are ordinary SymPy expressions over plain symbols:
     arity; the right side replaces the pair and the other arguments are
     kept (``Max(x, y, z) -> Max(rhs, z)``);
 matrix patterns
-    matched by the hook of :mod:`..compat.matrix_match` (:data:`MATCH_HOOKS`);
+    matched by the hook of :mod:`..compat.matrix_match` (:data:`.hooks.match`;
+    :data:`.hooks.non_scalar` and :data:`.hooks.commutative` also come from there);
 anything else
     structural: same head, same arity, arguments matched pairwise; atoms
     and constants must be equal.  Bindings to ``0`` or ``1`` are legal.
@@ -51,27 +52,9 @@ from sympy.core.function import AppliedUndef, UndefinedFunction
 from sympy.core.operations import LatticeOp
 
 from ... import _upstream
+from . import hooks
 
 Binding = dict[Any, Any]
-
-MATCH_HOOKS: list = []
-"""Matchers for pattern kinds the generic matcher does not know (the matrix
-patterns: :mod:`..compat.matrix_match`).  ``hook(pattern, target, assumptions,
-binding, top)`` returns ``None`` when ``pattern`` is not of its kind (matching goes
-on with the generic forms), else an iterator of bindings (the only ones)."""
-
-NON_SCALAR: tuple = ()
-"""Sum and product heads that are not scalar sums and products (``MatAdd``,
-``MatMul``): the rest-symbol and sub-product forms skip them."""
-
-
-def register(hook: Callable | None = None, *, non_scalar: tuple = (), commutative: tuple = ()) -> None:
-    """Add a matcher hook, non-scalar sum/product heads and commutative heads."""
-    global NON_SCALAR, COMMUTATIVE
-    if hook is not None and hook not in MATCH_HOOKS:
-        MATCH_HOOKS.append(hook)
-    NON_SCALAR = NON_SCALAR + tuple(h for h in non_scalar if h not in NON_SCALAR)
-    COMMUTATIVE = COMMUTATIVE + tuple(h for h in commutative if h not in COMMUTATIVE)
 
 REBUILD = "__rebuild__"
 """Binding key holding how a partial match puts its result back (kept
@@ -136,7 +119,7 @@ def _shape(pattern: Any) -> _Shape:
     unit_form = None
     rest: tuple = ()
     has_part = False
-    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, NON_SCALAR):
+    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, hooks.non_scalar):
         args = pattern.args
         has_part = any(isinstance(a, _Part) for a in args)
         rest = tuple(i for i, a in enumerate(args) if a.is_Symbol and not isinstance(a, _Part)
@@ -164,7 +147,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
         if pattern == target:
             yield b
         return
-    for hook in MATCH_HOOKS:                                          # a pattern kind the hooks know
+    for hook in hooks.match:                                          # a pattern kind the hooks know
         found = hook(pattern, target, assumptions, b, top)
         if found is not None:
             yield from found
@@ -175,18 +158,15 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             return
         pa, pb = pattern.args
         T = list(target.args)
-        for i, ti in enumerate(T):
-            for j, tj in enumerate(T):
-                if i == j:
-                    continue
-                nb = _bind(b, pa, ti)
-                nb = _bind(nb, pb, tj) if nb is not None else None
-                if nb is None:
-                    continue
-                others = [t for k, t in enumerate(T) if k != i and k != j]
-                if others:
-                    nb = {**nb, REBUILD: (lambda r, others=others, head=pattern.func: head(r, *others))}
-                yield nb
+        for i, j in itertools.permutations(range(len(T)), 2):
+            nb = _bind(b, pa, T[i])
+            nb = _bind(nb, pb, T[j]) if nb is not None else None
+            if nb is None:
+                continue
+            others = [t for k, t in enumerate(T) if k != i and k != j]
+            if others:
+                nb = {**nb, REBUILD: (lambda r, others=others, head=pattern.func: head(r, *others))}
+            yield nb
         return
     if isinstance(pattern, AppliedUndef):                        # head wildcard
         F = pattern.func
@@ -202,7 +182,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             return
         yield from _match_seq(pattern.args, target.args, assumptions, nb)
         return
-    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, NON_SCALAR):
+    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, hooks.non_scalar):
         shape = _shape(pattern)
         if len(shape.rest) == 1 and not shape.has_part and shape.unit_form is None:   # structure beside a rest symbol
             if not isinstance(target, pattern.func):
@@ -282,7 +262,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
     # structural; a commutative head of small arity is matched in every argument order
     if target.is_Atom or not isinstance(target, pattern.func) or len(target.args) != len(pattern.args):
         return
-    if isinstance(pattern, COMMUTATIVE) and 2 <= len(pattern.args) <= 3:
+    if isinstance(pattern, hooks.commutative) and 2 <= len(pattern.args) <= 3:
         seen: set = set()
         for perm in itertools.permutations(target.args):
             if perm in seen:
@@ -291,10 +271,6 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             yield from _match_seq(pattern.args, perm, assumptions, b)
         return
     yield from _match_seq(pattern.args, target.args, assumptions, b)
-
-
-COMMUTATIVE: tuple = (Add, Mul, LatticeOp)
-"""Heads matched in every argument order (small arities); :func:`register` adds more."""
 
 
 @lru_cache(maxsize=4096)

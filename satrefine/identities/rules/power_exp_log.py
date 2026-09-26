@@ -7,7 +7,7 @@ is 345 lines.
 ``log`` is two facts: ``log`` inverts ``exp`` up to the principal branch,
 and the complex logarithm is the real logarithm of the modulus plus ``I``
 times the argument.  Composed with the exponential forms of a power and of
-a product (:func:`._engine.derive`) they give every ``log(x**a)`` and
+a product (:func:`._tables.derive`) they give every ``log(x**a)`` and
 ``log(x*y)`` rule of v3: the bookkeeping ``floor`` collapses under the
 rule's precondition, through the ``arg`` bounds of the simple layer or
 the engine's sign case split.  The product has two exponential forms,
@@ -72,7 +72,7 @@ half-integer, symbolic) over 19 profiles per symbol on a grid of real,
 imaginary, complex and infinite points (about 700 random cases), the
 documented extras (``log(2*x)``, ``log(-2*x)``, ``log(pi*x)``,
 ``log(x**(3/2))`` for negative ``x``), ``exp(I*t)**s`` and ``log(exp(I*t))``
-under open and closed bounds, and ``tools/refine_differential.py`` (seeds
+under open and closed bounds, and ``python -m satrefine.tools.refine_differential`` (seeds
 2, 3, 7, both modes).  Found no wrong result at a finite point from these
 rows.  At infinity SymPy's arithmetic breaks the facts themselves, as the
 note above says for ``log(1/x)`` (confirmed: ``-log(x)`` under
@@ -87,9 +87,8 @@ from __future__ import annotations
 from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true, zoo
 from sympy.core import Pow
 
-from ..._upstream import handlers_dict
-from ._tables import Row, derive, identity_handler, part, principal, rule_handler
-from ._tables import ZERO, chain, exp_node_measure, negative_number_base_measure, node_measure
+from ._tables import (ZERO, Family, Identities, Row, Rules, count_measure, derive, node_measure, part, principal,
+                      size)
 
 z, b, e, p, r, x, a, n = symbols('z b e p r x a n')
 c = part('c', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
@@ -150,15 +149,21 @@ IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)]
 POW_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], Pow)]
 EXP_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], exp)]
 
-_rules = rule_handler(RULES)
-_zero = rule_handler([ZERO])
 
-refine_log = chain(_zero, identity_handler(IDENTITIES))
-refine_Pow = chain(_rules,
-                   identity_handler(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
-                   identity_handler(NEGATIVE_BASE, measure=negative_number_base_measure))
-refine_exp = chain(_zero, _rules, identity_handler(EXP_IDENTITIES, measure=exp_node_measure))
+def negative_number_base_measure(e, assumptions):
+    """``(powers of a negative number, size)``: the ordering for ``c**n -> (-c)**n``
+    rows, which must not fire for a symbolic base (SymPy's ``Pow._eval_refine``
+    rewrites ``(-x)**n`` back to ``-x**n`` for odd ``n``, a cycle)."""
+    negative = sum(1 for node in e.atoms(Pow) if node.base.is_number and node.base.is_negative)
+    return (negative, size(e))
 
-handlers_dict['log'] = refine_log
-handlers_dict['Pow'] = refine_Pow
-handlers_dict['exp'] = refine_exp
+
+_rules = Rules(RULES)
+_zero = Rules([ZERO])
+
+SPEC = Family({'log': (_zero, Identities(IDENTITIES)),
+               'Pow': (_rules,
+                       Identities(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
+                       Identities(NEGATIVE_BASE, measure=negative_number_base_measure)),
+               'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=count_measure((exp,))))},
+              facts=FACTS + NEGATIVE_BASE, exp_forms=EXP_FORMS, rules=[ZERO] + RULES)

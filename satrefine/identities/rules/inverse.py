@@ -45,7 +45,7 @@ lines ``im z = k*pi/2`` and at real points, every interval row on 11
 intervals x 4 open/closed combinations with the endpoints themselves as
 sample points (multiples of ``pi/4``), one-sided bounds, spans of two
 branches, shifted and scaled arguments, bounds on another symbol, and the
-live and generated tables through ``tools/refine_differential.py`` (seeds
+live and generated tables through ``python -m satrefine.tools.refine_differential`` (seeds
 2, 3, 7).  Found: the four hyperbolic facts were stated with domain
 ``true`` (``~Q.zero`` for acoth/acsch) but fail on the lines ``im z = (k +
 1/2)*pi`` for one sign of ``re z`` (SymPy's value on the branch cut:
@@ -61,10 +61,7 @@ from sympy import (Abs, I, Interval, Piecewise, Q, S, acos, acosh, acot, acoth, 
                    atan2, atanh, cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols, tan,
                    tanh, true)
 
-from ..._upstream import handlers_dict
-from ._tables import Row, identity_handler, rule_handler
-from ._simple import register_ranges
-from ._tables import ZERO, chain, node_measure
+from ._tables import ZERO, Family, Identities, Row, Rules, node_measure
 from ._wraps import reflect_full, reflect_half, sawtooth
 
 t, z, x, y = symbols('t z x y')
@@ -120,19 +117,17 @@ RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded
     (asin(y), Interval(-pi/2, pi/2),       Q.real(asin(y))),
     (acos(y), Interval(0, pi),             Q.real(acos(y))),
 ]
-register_ranges(RANGES)
 
-_rules = rule_handler([ZERO] + RULES)
+_rules = Rules([ZERO] + RULES)
 
 
 def _identity(head, opaque=(floor, im)):
     rows = [row for row in FACTS if row[0].func is head]
-    return identity_handler(rows, measure=node_measure((head,)), opaque=opaque)
+    return Identities(rows, measure=node_measure((head,)), opaque=opaque)
 
 
-for _key, _head in (('asin', asin), ('acos', acos), ('atan', atan), ('asinh', asinh),
-                    ('atanh', atanh), ('acoth', acoth), ('acsch', acsch)):
-    handlers_dict[_key] = chain(_rules, _identity(_head))
-handlers_dict['acosh'] = _rules
-handlers_dict['asech'] = _rules
-handlers_dict['atan2'] = _identity(atan2, opaque=(floor, im, Piecewise))
+SPEC = Family({**{head.__name__: (_rules, _identity(head))
+                  for head in (asin, acos, atan, asinh, atanh, acoth, acsch)},
+               'acosh': _rules, 'asech': _rules,
+               'atan2': _identity(atan2, opaque=(floor, im, Piecewise))},
+              facts=FACTS, rules=[ZERO] + RULES, ranges=RANGES)
