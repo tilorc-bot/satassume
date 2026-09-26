@@ -149,7 +149,7 @@ The same 56 registry keys were implemented three times, each package
 self-contained and selected with `SATREFINE_HANDLERS`. Phase 3 of the
 identities work kept only v3, as the reference (`satrefine/reference/v3/`,
 still selected as `handlers_v3`), and removed `handlers` and `handlers_v2`
-with their own tests: the last commit that has them is `411038c` on
+with their own tests: the last commit that has them with all their tests is `411038c` on
 `ri/refactor-retire` (`git checkout 411038c` runs them as described here;
 `agent-reports/2026-09-26-phase3-refactor-retire-report.md`).
 
