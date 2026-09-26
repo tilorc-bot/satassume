@@ -65,8 +65,8 @@ from sympy.functions.elementary.trigonometric import (
     cos, cot, csc, sec, sin, sinc, tan,
 )
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 from ._common import is_integer, parity, split_shift
 
 _HALF_PI = S.Pi / 2

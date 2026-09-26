@@ -64,8 +64,8 @@ from sympy.core.traversal import preorder_traversal
 from sympy.core.basic import Basic
 from sympy.functions.special.gamma_functions import gamma
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 
 
 def _ask(prop: Any, assumptions: Any) -> bool | None:

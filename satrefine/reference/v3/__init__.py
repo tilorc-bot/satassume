@@ -1,10 +1,16 @@
 """Refine handlers, third implementation: one module per handler family,
 each written by a separate agent that never saw the other implementations.
 
-Select with ``SATREFINE_HANDLERS=handlers_v3``.  Every public module in this
-package is imported by :mod:`satrefine` and registers its keys into
-``satrefine._upstream.handlers_dict`` at import time.  Shared helpers live
-in :mod:`satrefine.handlers_v3._common`.
+The reference the identity handlers are measured against: the battery
+(``tests/refine_identities/battery_v3.py``) was captured from it, and the
+scoreboard and the differential compare with it.  It was
+``satrefine/handlers_v3`` until phase 3.
+
+Select with ``SATREFINE_HANDLERS=handlers_v3`` (:mod:`satrefine.handlers_v3`
+is an alias of this package).  Every public module in this package is
+imported by :mod:`satrefine` and registers its keys into
+``satrefine.identities.compat.upstream.handlers_dict`` at import time.
+Shared helpers live in :mod:`satrefine.reference.v3._common`.
 
 Families and their modules:
 

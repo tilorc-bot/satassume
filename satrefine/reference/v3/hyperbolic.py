@@ -52,7 +52,7 @@ from sympy.core.expr import Expr
 from sympy.functions.elementary.hyperbolic import (
     cosh, coth, csch, sech, sinh, tanh)
 
-from .._upstream import handlers_dict
+from ...identities.compat.upstream import handlers_dict
 from ._common import is_integer, parity, split_shift
 
 # Result classes of the shift.

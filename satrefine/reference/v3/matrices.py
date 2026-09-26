@@ -99,8 +99,8 @@ from sympy.matrices.expressions.slice import MatrixSlice
 from sympy.matrices.expressions.special import Identity, ZeroMatrix
 from sympy.matrices.expressions.transpose import Transpose
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 
 
 # ---------------------------------------------------------------- helpers

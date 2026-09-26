@@ -1,4 +1,4 @@
-"""Helpers shared by the ``handlers_v3`` modules.
+"""Helpers shared by the ``handlers_v3`` modules (:mod:`satrefine.reference.v3`).
 
 Handlers ask predicate questions only through ``_upstream.ask`` (imported as
 a module attribute, so test harnesses can patch it) and return ``None`` when
@@ -14,7 +14,7 @@ from sympy import Add, S
 from sympy.assumptions import Q
 from sympy.core.expr import Expr
 
-from .. import _upstream
+from ...identities.compat import upstream as _upstream
 
 
 def split_shift(arg: Expr, unit: Expr) -> tuple[Expr, Expr]:

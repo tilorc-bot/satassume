@@ -62,8 +62,8 @@ from sympy.functions.elementary.hyperbolic import (
 from sympy.functions.elementary.trigonometric import atan, cos, cot, sin, tan
 from sympy.logic.boolalg import And
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 
 
 # ---------------------------------------------------------------------------

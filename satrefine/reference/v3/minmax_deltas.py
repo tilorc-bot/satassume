@@ -81,8 +81,8 @@ from sympy.core.traversal import preorder_traversal
 from sympy.core.relational import Equality
 from sympy.functions import DiracDelta, KroneckerDelta
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 
 
 def _mentions_eq(assumptions: Any) -> bool:

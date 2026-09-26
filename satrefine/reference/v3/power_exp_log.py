@@ -113,8 +113,8 @@ from sympy.core.numbers import I, pi
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp, log
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 from ._common import is_integer, parity, split_shift
 
 

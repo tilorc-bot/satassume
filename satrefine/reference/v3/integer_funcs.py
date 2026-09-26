@@ -71,8 +71,8 @@ from sympy.core.mod import Mod
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Rem
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 from ._common import is_integer as _is_integer_raw
 
 

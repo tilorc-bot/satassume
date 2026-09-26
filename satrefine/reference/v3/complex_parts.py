@@ -126,8 +126,8 @@ from sympy.functions.elementary.complexes import Abs, arg, conjugate, im, re, si
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.trigonometric import cos, sin
 
-from .. import _upstream
-from .._upstream import handlers_dict
+from ...identities.compat import upstream as _upstream
+from ...identities.compat.upstream import handlers_dict
 from ._common import is_integer, parity
 
 I = S.ImaginaryUnit
