@@ -50,7 +50,7 @@ ROWS = [
     (log(x**n), Q.negative(x) & Q.odd(n), n*log(-x) + I*pi, "same"),   # was log(-x**n) + I*pi: the bare log(x) row now comes last
     (log(x**(-2)), Q.real(x), None, "miss: the power form needs b != 0 or e > 0 (Abs(0**e) is oo, not zoo, for e < 0)"),
     (sqrt(x**(-2)), Q.nonzero(x), 1/Abs(x), "same"),
-    (log(1/x), Q.extended_positive(x), -log(x), "extra: v3 asks Q.finite; at x = oo SymPy's log(1/oo) is zoo, -log(oo) is -oo"),
+    (log(1/x), Q.extended_positive(x), None, "neither"),   # log(1/oo) is zoo, -log(oo) is -oo: the log rows' power form needs a finite base or e > 0
     (log(x**4), Q.imaginary(x), 4*log(Abs(x)), "same"),
     (log(exp(x)*y), Q.real(x), x + log(y), "same"),
     # Pow
