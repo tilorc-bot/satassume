@@ -26,7 +26,6 @@ on it; a table may also switch case splits off (``splits=False``).
 """
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from sympy import And, Not, Or, Q, S
@@ -230,9 +229,11 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     if predicate is Q.integer:                 # refuted when the interval holds no integer
         if lo is None or hi is None:
             return None
-        first = math.ceil(lo) + (1 if lo_open and lo.is_integer else 0)
-        last = math.floor(hi) - (1 if hi_open and hi.is_integer else 0)
-        return False if S(first - last).is_positive else None
+        # SymPy's exact floor division (``floor(e/1)``, never through a float: an endpoint
+        # 1.5707963267948966 - pi/2 is negative), so no integer-function class is named here
+        first = -((-lo) // 1) + (1 if lo_open and lo.is_integer else 0)
+        last = hi // 1 - (1 if hi_open and hi.is_integer else 0)
+        return False if (first - last).is_positive else None
     # the interval is one of extended reals: the finite predicates also need each
     # infinity the sign leaves possible excluded, by a finite endpoint on its side
     # (or ``u < oo``), by a sign fact (``finite``) or by ``ask`` (issue #10, B1-B7)
