@@ -620,14 +620,20 @@ class Relations:
                     changed = True
                     t = ad.node_term(node)
                     solver.ensure_vars(b + NPRED - 1)     # one _grow, not 33
-                    preds = (_number_basis(s.engine, node) if _is_number(node)
-                             and isinstance(node, Rational) else range(NPRED))
+                    if _is_number(node) and isinstance(node, Rational):
+                        preds = _number_basis(s.engine, node)
+                        full = len(preds) == NPRED
+                    else:
+                        preds = range(NPRED)
+                        full = True
                     for k in preds:
                         if k != polar or node not in part:
-                            solver.register_atom(th, b + k, (t, k), False)
+                            solver.register_atom(
+                                th, b + k, (t, k) if full else (t, k, True), False)
                     continue
                 if lv == 1 and node not in part:
                     part.add(node)
-                    solver.register_atom(th, b + polar, (ad.node_term(node), polar), False)
+                    solver.register_atom(th, b + polar, (ad.node_term(node), polar, True),
+                                         False)
                 keep.append((node, b))
             pend[:] = keep

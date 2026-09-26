@@ -62,18 +62,33 @@ class TransferTheory:
         self._dirty: list[int] = []              # terms whose class needs a look
         self._dirty_p: list[int] = []            # asserted vars to spread
         self._fixed: dict[int, dict] = {}        # term -> {pred: value} (numbers)
+        #: term -> predicates with an atom of a *partial* node of the term
+        #: (payload ``(term, pred, True)``: not every variable of the node's
+        #: block is an atom), see ``decide``
+        self._pterms: dict[int, set] = {}
+        #: representatives of classes that had two or more members when
+        #: noted (for ``decide``; stale entries are dropped there)
+        self._multi: list[int] = [r for r, ms in enumerate(euf._members)
+                                  if len(ms) > 1 and euf._repr[r] == r]
         euf.on_merge = self._merged
         self.stats = {"propagated": 0, "conflicts": 0}
 
     # ------------------------------------------------------------------
     def _merged(self, ra: int, rb: int) -> None:
         self._dirty.append(rb)
+        self._multi.append(rb)
 
     def register_atom(self, literal: int, payload) -> None:
         if literal <= 0 or literal in self._atoms:
             raise ValueError(f"bad or repeated atom variable {literal}")
-        term, pred = payload
+        term, pred = payload[0], payload[1]
         self._atoms[literal] = (term, pred)
+        if len(payload) > 2 and payload[2]:
+            ps = self._pterms.get(term)
+            if ps is None:
+                self._pterms[term] = {pred}
+            else:
+                ps.add(pred)
         d = self._by_term.get(term)
         if d is None:
             d = self._by_term[term] = {}
@@ -244,46 +259,75 @@ class TransferTheory:
     def decide(self):
         """A variable to decide, or None: the solver asks at an assignment
         total but for lazy variables (see ``Solver.register_atom(...,
-        mention=False)``).  The atoms of a predicate in a class with two or
-        more of them are either all unassigned (no witness: nothing forced
-        them) or, after propagation, all assigned alike.  All unassigned is
-        consistent, but each rule block would complete its lazy variables
-        on its own and could pick different values for equal terms; so the
-        first of them is decided, and propagation gives the rest the same
-        value.  Atoms of a singleton class are unconstrained here."""
+        mention=False)``).
+
+        After propagation the atoms of a predicate in one class are either
+        all assigned alike or all unassigned (no witness).  All unassigned
+        is consistent, and the stored model completes each lazy block
+        variable from a model of its block containing the block's assigned
+        values (``Solver._fill``, a function of those values).  Two nodes
+        whose block variables are all atoms have the same assigned values
+        in one class, so they are completed alike.  A *partial* node (only
+        some of its variables are atoms: a link-only side, a rational
+        number's basis) may be completed differently from an equal term on
+        an atom they share; such an atom, unassigned with another atom of
+        its predicate in the class, is decided here, and propagation gives
+        the rest the same value.
+
+        Only classes noted by a merge are looked at (``_multi``); a noted
+        representative whose class is a singleton now stays one until a
+        new merge notes it again (backtracking only splits classes), so it
+        is dropped."""
+        multi = self._multi
+        pterms = self._pterms
+        if not multi or not pterms:
+            return None
         euf = self.euf
         rep, members = euf._repr, euf._members
+        keep = []
+        kept = set()
+        for r0 in multi:
+            if r0 not in kept and len(members[rep[r0]]) > 1:
+                kept.add(r0)
+                keep.append(r0)
+        self._multi = keep
         by_term, val = self._by_term, self._val
-        seen = None
-        for t, d in by_term.items():
-            r = rep[t]
-            ms = members[r]
-            if len(ms) < 2:
-                continue
-            if seen is None:
-                seen = set()
-            elif r in seen:
+        seen = set()
+        for r0 in keep:
+            r = rep[r0]
+            if r in seen:
                 continue
             seen.add(r)
-            ds = [d2 for m in ms if (d2 := by_term.get(m))]
-            if len(ds) < 2:
-                if all(len(vs) < 2 for vs in ds[0].values()):
-                    continue
-            per: dict = {}
-            for d2 in ds:
-                for p, vs in d2.items():
-                    lst = per.get(p)
-                    if lst is None:
-                        per[p] = list(vs)
-                    else:
-                        lst.extend(vs)
-            for vs in per.values():
-                if len(vs) > 1 and vs[0] not in val:
+            ms = members[r]
+            preds = None
+            for m in ms:
+                ps = pterms.get(m)
+                if ps is not None:
+                    preds = ps if preds is None else preds | ps
+            if preds is None:
+                continue
+            for p in preds:
+                first = None
+                n = 0
+                for m in ms:
+                    d = by_term.get(m)
+                    if d is None:
+                        continue
+                    vs = d.get(p)
+                    if vs is None:
+                        continue
                     for v in vs:
                         if v in val:
                             break
                     else:
-                        return vs[0]
+                        if first is None:
+                            first = vs[0]
+                        n += len(vs)
+                        continue
+                    break
+                else:
+                    if n > 1:
+                        return first
         return None
 
     def push_level(self) -> None:
