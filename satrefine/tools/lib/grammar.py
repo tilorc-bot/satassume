@@ -16,7 +16,7 @@ Extended family (``--ext``): the heads of ``EXT_NEW`` besides ``OUTER``
 scalar seeds are unchanged by it.
 
 The matrix family is :mod:`.matrices`.  All streams are pinned by digests in
-``tests/refine_identities/test_fuzz_ext.py``.
+``tests/refine_identities/tools/test_fuzz_ext.py``.
 """
 from __future__ import annotations
 

@@ -13,7 +13,7 @@ one; :func:`ext_relations` draws up to two relations whose bounds include
 with SymPy's own ``Gt``/``Ge``/... .
 
 The random calls are part of the case streams (pinned by
-``tests/refine_identities/test_fuzz_ext.py``): change the order of any of
+``tests/refine_identities/tools/test_fuzz_ext.py``): change the order of any of
 them and every seed generates different cases.
 """
 from __future__ import annotations

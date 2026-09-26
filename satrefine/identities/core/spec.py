@@ -18,7 +18,7 @@ stated) and ``ranges`` (range rows ``(head(y), interval, condition)`` for the
 floor of a bounded quantity).  Every row a handler uses is one of the stated
 rows, derived from them (``derive(facts, exp_forms)``), or a stated row whose
 generic head (an undefined function such as ``G``) is replaced by the key's
-head (``tests/refine_identities/test_family_specs.py``).
+head (``tests/refine_identities/rules/test_family_specs.py``).
 """
 from __future__ import annotations
 

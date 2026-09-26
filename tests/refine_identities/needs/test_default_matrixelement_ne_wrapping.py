@@ -10,7 +10,8 @@ Found by making ``handlers_identities`` the default (phase 3, track D; see
 or ``i - j != +-3``.  Left open (2026-09-25, ri/matfixes): meeting it needs a
 decision that symbolic indices are nonnegative, not an engine change.  (The
 index-order swaps from this file now pass:
-``tests/refine_identities/test_matrices_matrixelement_index_order.py``.)
+rows "default: MatrixElement index order" of
+``tests/refine_identities/regressions.py``.)
 Each case is a ``tests/refine`` expectation that ``handlers`` meets and
 ``handlers_identities`` does not;
 the original test is a strict xfail under ``handlers_identities`` that points

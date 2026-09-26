@@ -1,4 +1,4 @@
-"""Needs: powers of powers: ``(x**y)**z`` for even ``y`` (``sqrt(1/x)`` for positive ``x`` is met since phase 3: tests/refine_identities/test_default_pow_of_pow_positive_base.py).  Owner: handlers_identities (power_exp_log).
+"""Needs: powers of powers: ``(x**y)**z`` for even ``y`` (``sqrt(1/x)`` for positive ``x`` is met since phase 3: row "default: pow of pow, positive base" of tests/refine_identities/regressions.py).  Owner: handlers_identities (power_exp_log).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
 ``agent-reports/2026-09-25-phase3-default-report.md``).

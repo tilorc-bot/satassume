@@ -1,5 +1,9 @@
 """Fixtures for the ``handlers_identities`` tests.
 
+The layout follows the package: ``core/``, ``rules/``, ``compat/``, ``build/``
+and ``tools/`` test the modules of the same name; the per-bug regressions are
+rows of ``regressions.py``; ``needs/`` holds open requests.
+
 Selects the package before ``satrefine`` is imported so a plain
 ``pytest tests/refine_identities`` works; ``SATREFINE_BACKEND`` selects the
 ask backend as everywhere else.
@@ -8,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -34,10 +39,18 @@ def pytest_configure(config: pytest.Config) -> None:
                                        f"case the sampler needs half a minute for); skipped unless {FULL_ENV}=1")
 
 
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
+    """Collect ``build/`` (the tests of ``satrefine.build``), which pytest's
+    default ``norecursedirs`` skips by name."""
+    if collection_path == Path(__file__).resolve().parent / "build":
+        return False
+    return None
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
     """Skip the ``full`` tests unless :data:`FULL_ENV` is ``1``: they were most
     of the suite's wall time, and the default run keeps a smaller check of the
-    same property (the fixpoint of one family, ``test_generated.py``).  Run
+    same property (the fixpoint of one family, ``build/test_generated.py``).  Run
     them alone with ``SATREFINE_FULL_TESTS=1 pytest -m full tests/refine_identities``."""
     if os.environ.get(FULL_ENV) == "1":
         return

@@ -1,11 +1,13 @@
 """The engine's condition decider, ``Piecewise`` refinement, the result cache.
 
 Moved here from needs tests: ``test_checker_atan2_power_firing_cap.py`` (checker)
-and ``test_piecewise_conditions.py`` (branch ``ri/piecewise``).
+and ``test_piecewise_conditions.py`` (branch ``ri/piecewise``).  The ``atan2``
+firing-cap inputs and a head refusing a refined child are rows of
+``regressions.py``.
 """
 from __future__ import annotations
 
-from sympy import Function, Max, Piecewise, Q, S, atan2, symbols
+from sympy import Function, Max, Piecewise, Q, S, symbols
 
 from satrefine import refine
 from satrefine.identities.core import driver as _dispatch
@@ -81,29 +83,6 @@ def test_a_table_can_switch_the_case_split_off(monkeypatch):
 
 # --- the result cache and the firing cap --------------------------------------
 
-def test_atan2_of_shifted_power_does_not_exhaust_the_firing_cap():
-    """Each branch of ``atan2``'s ``Piecewise`` refined ``n**y`` again through the
-    ``Pow`` fact and a sign split, until 500 firings; the dispatcher's result
-    cache does that work once.  A refusal is right: ``y/x`` has no known sign."""
-    expr = atan2(y, n**y + 1)
-    assert refine(expr, Q.negative(y) & Q.nonpositive(n)) == expr
-
-
-def test_atan2_of_power_does_not_exhaust_the_firing_cap_live():
-    expr = atan2(y, n**y)
-    with _dispatch.live():
-        assert refine(expr, Q.negative(y) & Q.nonpositive(n)) == expr
-
-
-def test_atan2_of_self_power_does_not_exhaust_the_firing_cap_live():
-    """Differential seed 3, live mode: the same crash with ``x**x``."""
-    from sympy import sqrt
-    k = symbols('k')
-    expr = atan2(sqrt(z), k**k)
-    with _dispatch.live():
-        assert refine(expr, Q.even(z) & Q.integer(k) & Q.negative(z)) == expr
-
-
 def test_repeated_work_is_done_once():
     F = Function('F')
     calls = []
@@ -120,12 +99,3 @@ def test_repeated_work_is_done_once():
         assert calls.count(F(x)) == 1
     finally:
         del handlers_dict['F']
-
-
-def test_a_head_refusing_a_refined_child_leaves_the_node():
-    """``n**k`` refines to ``nan`` under these (inconsistent) assumptions and
-    ``Max`` raises on a ``nan`` argument; the node is left as it was."""
-    from sympy import log
-    k = symbols('k')
-    expr = Max(n**k, log(x))
-    assert refine(expr, Q.imaginary(n) & Q.negative(k) & Q.positive(x) & Q.gt(n, 0)) == expr

@@ -11,7 +11,7 @@ gates:
    case that was "same" or "other form" must stay one of the two, a "quiet"
    case (unchanged as v3 expects) must stay quiet, and no case may become
    "wrong" or "crash";
-2. **tests**: ``tests/refine_identities/test_<family>.py`` and
+2. **tests**: ``tests/refine_identities/*/test_<family>.py`` and
    ``test_engine_<family>.py``; every test that passed must still pass.
    Run only for rows gate 1 does not already keep (``--full``: for every
    row, to list the tests each row is responsible for).
@@ -140,7 +140,7 @@ class _Collector:
 
 def run_tests(family: str) -> dict:
     import pytest
-    paths = [str(p) for p in (TESTS / f"test_{family}.py", TESTS / f"test_engine_{family}.py") if p.exists()]
+    paths = sorted(str(p) for name in (f"test_{family}.py", f"test_engine_{family}.py") for p in TESTS.rglob(name))
     col = _Collector()
     pytest.main(["-q", "-p", "no:cacheprovider", "--no-header", "-rN", *paths], plugins=[col])
     return col.outcomes
