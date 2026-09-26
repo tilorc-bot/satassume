@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import satrefine  # noqa: E402,F401  (loads the identity package)
 from satrefine.build import stages as _stages  # noqa: E402
-from satrefine.build.specialize import generated_path, render_module  # noqa: E402
+from satrefine.build.render import generated_path, render_module  # noqa: E402
 
 
 def write(family: str, entry: dict, labels: dict) -> str:

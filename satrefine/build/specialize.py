@@ -1,32 +1,28 @@
-"""Generate conditional rules from identity rows, verify them, write them out.
+"""Generate conditional rules from identity rows.
 
 :func:`specialize` runs the identity engine on a row's left side under every
 assumption profile drawn from a catalog and keeps the profiles where the
 branch bookkeeping collapsed, minus profiles strictly stronger than another
 with the same result and rules equal under a symmetry of the left side.
-:func:`verify` checks a generated rule numerically at a sample point of its
-hypothesis and at every edge point that satisfies the hypothesis.
-:func:`write_family` writes a family's verified rules as a plain rule-table
-module under ``generated/``; :func:`satrefine.identities.rules._tables.compile_rule`
-is the in-memory equivalent.
+:func:`generate_family` runs it over a family's identity rows and keeps the
+rules :func:`.verify.verify` confirms numerically; :mod:`.render` writes them
+out as a module under ``satrefine/identities/generated/``.
 """
 from __future__ import annotations
 
 import itertools
-import pathlib
 from contextlib import nullcontext
 import types
 from typing import Any, Iterable
 
-from sympy import And, AppliedPredicate, I, N, Q, S, arg, expand, floor, im, nan, true, zoo
+from sympy import And, Q, S, arg, expand, floor, im, true
 
 from .. import _upstream
-from ..identities import family_module_name
 from . import hooks
 from ..identities.core import driver as _dispatch
-from ..identities.core.driver import generated_handlers, live
+from ..identities.core.driver import live
 from ..identities.core.rewrite import Row, refine
-from ..testing.harness import _numerically_equal, _sample_satisfies
+from .verify import verify
 
 class Literal:
     """A catalog entry that substitutes a value for the variable instead of assuming
@@ -44,9 +40,9 @@ class Literal:
 
 CATALOG: list = [None, Q.positive, Q.negative, Q.nonnegative, Q.real, Q.imaginary,
                  Q.even, Q.odd, Q.integer, lambda v: Q.even(v/2), lambda v: Q.odd(v/2)]
-"""Default per-variable assumption profiles.  A family module may declare its
-own ``CATALOG``: a list (every variable) or a dict ``{variable name: list}``
-with ``None`` as the default key; entries are ``None``, a predicate or
+"""Default per-variable assumption profiles.  A family's own catalog is in
+:data:`.specs.CATALOGS` (a family module may still declare ``CATALOG``): a list
+(every variable) or a dict ``{variable name: list}`` with ``None`` as the default key; entries are ``None``, a predicate or
 predicate builder, or a :class:`Literal`."""
 
 
@@ -54,14 +50,6 @@ def _catalog_for(catalog: Any, v: Any) -> list:
     if isinstance(catalog, dict):
         return list(catalog.get(str(v), catalog.get(None, CATALOG)))
     return list(catalog)
-
-SAMPLE = {Q.positive: 2.3, Q.negative: -1.7, Q.nonnegative: 0.6, Q.real: 0.6, Q.imaginary: 1.9*I,
-          Q.complex: 1.2 + 0.7*I, Q.even: 4, Q.odd: 3, Q.integer: 5}
-
-EDGE_POINTS: tuple = (S.Zero, S.One, S.NegativeOne, I, -I)
-"""Values every generated rule is checked at when they satisfy its hypothesis;
-a family module adds its branch-cut points in ``EDGE_POINTS``."""
-
 
 def implies(strong: Any, weak: Any) -> bool:
     return all(_upstream.ask(a, strong) is True for a in And.make_args(weak))
@@ -132,51 +120,8 @@ def specialize_table(identities: Iterable[Row], catalog: Any = CATALOG) -> list[
     return rules
 
 
-def sample_point(hyp: Any, symbols_needed: Iterable) -> dict | None:
-    point = {}
-    for ap in And.make_args(hyp):
-        if isinstance(ap, AppliedPredicate) and ap.function in SAMPLE and ap.arguments[0].is_Symbol:
-            point[ap.arguments[0]] = SAMPLE[ap.function]
-    for s in symbols_needed:                     # a variable without a hypothesis: any complex value
-        point.setdefault(s, SAMPLE[Q.complex])
-    return point
-
-
-def _agree(lhs: Any, rhs: Any, point: dict) -> bool | None:
-    left, right = lhs.subs(point), rhs.subs(point)
-    if left in (nan, zoo) or right in (nan, zoo):
-        return left == right
-    try:
-        return _numerically_equal(left, right)
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def verify(lhs: Any, rhs: Any, hyp: Any, edges: Iterable = ()) -> bool | None:
-    """``True``/``False`` at one sample point of the hypothesis and at every edge point
-    (:data:`EDGE_POINTS` plus ``edges``) satisfying it; ``None`` if no point is known."""
-    syms = sorted(lhs.free_symbols, key=str)
-    point = sample_point(hyp, syms)
-    verdict: bool | None = None
-    if point is not None and _sample_satisfies(hyp, point):   # a profile on b/2 gives b no sample
-        verdict = _agree(lhs, rhs, point)
-        if verdict is False:
-            return False
-    values = list(dict.fromkeys((*EDGE_POINTS, *edges)))
-    for combo in itertools.product(values, repeat=len(syms)):
-        sample = dict(zip(syms, combo))
-        if not _sample_satisfies(hyp, sample):
-            continue
-        ok = _agree(lhs, rhs, sample)
-        if ok is False:
-            return False
-        if ok is True and verdict is None:
-            verdict = True
-    return verdict
-
-
 # ----------------------------------------------------------------------------
-# families and generated modules
+# families
 # ----------------------------------------------------------------------------
 
 def _identity_parts(handler: Any) -> list:
@@ -210,73 +155,14 @@ def identity_keys(module: types.ModuleType) -> dict[str, list]:
 def generate_family(module: types.ModuleType) -> tuple[list[Row], list[str], dict[Row, bool | None]]:
     """The verified rules of a family module, the keys they serve, and every rule's verdict."""
     keys = identity_keys(module)
-    catalog = getattr(module, "CATALOG", CATALOG)
+    from .specs import CATALOGS
+    catalog = CATALOGS.get(module.__name__.rsplit(".", 1)[-1], getattr(module, "CATALOG", CATALOG))
     edges = getattr(module, "EDGE_POINTS", ())
     rules: list[Row] = []
     for handler in dict.fromkeys(h for parts in keys.values() for h in parts):
         rules += specialize_table(handler.rows, catalog)
     verdicts = {rule: verify(*rule, edges=edges) for rule in rules}
     return [r for r in rules if verdicts[r] is True], sorted(keys), verdicts
-
-
-def table_order(rules: Iterable[Row]) -> list[Row]:
-    """The order of a generated table: left sides with structure before a head of bare
-    symbols (``log(b**e)`` before ``log(x)``, which would match ``log(x**n)`` too), then
-    literal-specialized rows (fewer symbols) first; stable otherwise."""
-    return sorted(rules, key=lambda r: (all(t.is_Symbol for t in r[0].args), len(r[0].free_symbols)))
-
-
-def render_module(family: str, rules: list[Row], keys: list[str], notes: dict | None = None) -> str:
-    """The generated module.  Only keys some rule's left side is headed by are
-    registered: a key whose identity rows generated nothing (``Pow``, whose fact
-    pays off on structured inputs the catalog does not produce) keeps its live
-    rows, since a table for the key would switch them off."""
-    rules = table_order(rules)
-    syms = sorted({s for row in rules for t in row for s in t.free_symbols}, key=str)
-    heads = {lhs.func.__name__ for lhs, _, _ in rules}
-    keys = [k for k in keys if k in heads]
-    lines = [
-        f'"""Generated by ``python -m satrefine.tools.refine_specialize --write`` from',
-        f"``{family_module_name(family)}``; do not edit.",
-        "",
-        "A plain rule table: ``RULES`` rows are ``(lhs, rhs, hypothesis)``; each",
-        "row was verified numerically at generation time (see ``satrefine.build.specialize``).",
-        *(["The comment above a row is its derivation record (see ``satrefine.build.stages``): the",
-           "identity row and profile it came from, the rows that fired, the asks used."] if notes else []),
-        '"""',
-        "from sympy import *  # noqa: F401,F403",
-        "from sympy import Q",
-        "",
-        "from satrefine.identities.core.driver import generated_handlers as handlers_dict",
-        "from satrefine.identities.core.rewrite import rule_handler",
-        "",
-    ]
-    if syms:
-        comma = "," if len(syms) == 1 else ""   # symbols('x,') is a tuple, symbols('x') a Symbol
-        lines.append(f"{', '.join(map(str, syms))}{comma} = symbols('{' '.join(map(str, syms))}{comma}')")
-        lines.append("")
-    lines.append("RULES = [")
-    for lhs, rhs, hyp in rules:
-        lines += [f"    {line}" for line in (notes or {}).get((lhs, rhs, hyp), ())]
-        lines.append(f"    ({lhs}, {rhs}, {hyp}),")
-    lines.append("]")
-    lines.append("")
-    for key in keys:
-        lines.append(f"handlers_dict['{key}'] = rule_handler(RULES)")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def generated_path(family: str) -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent / "identities" / "generated" / f"{family}.py"
-
-
-def write_family(module: types.ModuleType) -> tuple[pathlib.Path, list[Row], dict[Row, bool | None]]:
-    family = module.__name__.rsplit(".", 1)[-1]
-    rules, keys, verdicts = generate_family(module)
-    path = generated_path(family)
-    path.write_text(render_module(family, rules, keys))
-    return path, rules, verdicts
 
 
 def family_modules() -> list[types.ModuleType]:
@@ -291,6 +177,5 @@ def family_modules() -> list[types.ModuleType]:
     return out
 
 
-__all__ = ["CATALOG", "EDGE_POINTS", "Literal", "SAMPLE", "family_modules",
-           "generate_family", "generated_handlers", "generated_path", "identity_keys", "render_module",
-           "sample_point", "specialize", "specialize_table", "table_order", "verify", "write_family"]
+__all__ = ["CATALOG", "Literal", "family_modules", "generate_family", "identity_keys", "records", "specialize",
+           "specialize_table"]

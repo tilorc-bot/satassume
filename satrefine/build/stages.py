@@ -28,6 +28,7 @@ from ..identities.core import driver as _dispatch
 from ..identities.core.rewrite import Row, rule_handler
 from . import hooks
 from . import specialize as _specialize
+from .render import table_order
 
 STAGES: list[tuple[int, list[str]]] = [
     (1, ["integer_funcs", "complex_parts"]),   # floor and frac; re, im, arg, Abs, sign, conjugate
@@ -60,7 +61,7 @@ def install(rules: list[Row], keys: list[str], into: dict | None = None) -> None
     as the generated module does on import."""
     into = _dispatch.generated_handlers if into is None else into
     heads = {lhs.func.__name__ for lhs, _, _ in rules}
-    handler = rule_handler(_specialize.table_order(rules))
+    handler = rule_handler(table_order(rules))
     for key in keys:
         if key in heads:
             into[key] = handler

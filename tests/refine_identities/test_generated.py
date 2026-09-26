@@ -9,7 +9,8 @@ from sympy import I, Q, log, pi, srepr, symbols, sympify
 
 from satrefine.build import stages as _stages
 from satrefine.identities.core import driver as _dispatch
-from satrefine.build.specialize import family_modules, generated_path
+from satrefine.build.render import generated_path
+from satrefine.build.specialize import family_modules
 
 x = symbols("x")
 

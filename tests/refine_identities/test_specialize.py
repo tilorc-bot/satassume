@@ -7,7 +7,8 @@ pytestmark = pytest.mark.slow
 from sympy import I, Q, log, pi, symbols
 
 from satrefine.identities.rules._tables import compile_table
-from satrefine.build.specialize import specialize_table, verify
+from satrefine.build.specialize import specialize_table
+from satrefine.build.verify import verify
 from satrefine.identities.rules.power_exp_log import IDENTITIES
 
 z, b, e, p, r, x = symbols('z b e p r x')

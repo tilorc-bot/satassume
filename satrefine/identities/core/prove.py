@@ -8,7 +8,7 @@ Conditions are decided connective by connective (:func:`provable`): an
 decided from the bounds the assumptions state on its argument
 (``Q.real(t)`` and ``Q.nonpositive(t)`` under ``Q.ge(t, -pi) & Q.le(t,
 0)``, ``Q.integer(t/pi + 1/2)`` refuted under ``Q.gt(t, -pi/2) & Q.lt(t,
-pi/2)``; see :func:`._simple.stated_bounds`).  The bounds are on the
+pi/2)``; see :func:`.bounds.stated_bounds`).  The bounds are on the
 extended reals: ``Q.gt(t, 1)`` holds at ``t = oo``, so a bound proves
 ``Q.extended_real`` and the ``extended_*`` signs, and ``Q.real`` or a finite
 sign only when infinity is excluded too (:func:`_from_bounds`; issue #10,
@@ -34,7 +34,7 @@ from sympy.core import Basic
 from sympy.core.relational import Relational
 
 from ... import _upstream
-from ..rules import _simple
+from . import bounds
 
 
 def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
@@ -184,7 +184,7 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     also need each infinity the sign leaves possible excluded: by a finite
     endpoint on that side (or an open ``oo`` endpoint, ``Q.lt(u, oo)``), by a
     sign fact among the bounds (``Q.positive(u - 1)`` holds only for a finite
-    ``u``: :func:`._simple.stated_finite`), or by ``ask`` proving
+    ``u``: :func:`.bounds.stated_finite`), or by ``ask`` proving
     ``Q.finite(u)``.  Before this, a one-sided bound read as finite gave wrong
     results at ``u = +-oo`` (issue #10, B1-B7: Piecewise conditions,
     ``KroneckerDelta``, ``sign(exp(-x))``, ``log(x**n)``, ``acsch(csch(x))``,
@@ -197,11 +197,11 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     does.  The paths, and what the engine does on each:
 
     * *bounds against bounds*: stated signs and stated relations are folded
-      into one interval (:func:`._simple.stated_bounds`); when it is empty
+      into one interval (:func:`.bounds.stated_bounds`); when it is empty
       (``Q.negative(k) & Q.gt(k, pi/2)``) every sign followed from it, and rows
       conditioned on opposite signs undid each other forever (issue #10,
-      B9).  An empty interval now proves nothing (:func:`._simple._checked`,
-      also for :func:`._simple.full_bounds` and the floor rules);
+      B9).  An empty interval now proves nothing (:func:`.bounds._checked`,
+      also for :func:`.bounds.full_bounds` and the floor rules);
     * *bounds against ask*: the bounds are consulted only when ``ask``
       leaves the atom open, so a clash needs ``ask`` to prove a fact that the
       stated interval rules out (``Q.gt(k, 1)`` with an implied
@@ -220,7 +220,7 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     depend on the backend detecting them either); what it must do is stop,
     and the dispatcher's termination guard guarantees that whatever is
     proved (``_dispatch``, *Termination*)."""
-    found = _simple.stated_finite(u, assumptions)
+    found = bounds.stated_finite(u, assumptions)
     if found is None:
         return None
     (lo, hi, lo_open, hi_open), finite = found
