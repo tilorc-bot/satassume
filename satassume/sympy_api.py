@@ -354,9 +354,11 @@ class _Failed:
 # --------------------------------------------------------------------------
 
 def _is_constant_proposition(prop) -> bool:
-    """Every expression the proposition's predicates are applied to has no
-    free symbols and is a number (so not ``f(1)`` for an undefined ``f``,
-    about which the assumptions may say something).
+    """Every predicate in the proposition is built in, and every expression
+    it is applied to has no free symbols, is a number and holds no undefined
+    function (so not ``f(1)`` or ``Integral(f(x), (x, 0, 1))``, about which
+    the assumptions may say something).  A custom predicate is excluded
+    because the assumptions may be all that is known about it.
 
     Such a proposition (``Q.negative(-1)``, ``~Q.zero(pi)``,
     ``Q.eq(zoo, 1)``) is answered by the engine without the assumptions
@@ -365,10 +367,14 @@ def _is_constant_proposition(prop) -> bool:
     theory interprets in the assumptions no longer sinks it."""
     from sympy.logic.boolalg import BooleanFunction
     from sympy.assumptions.relation.binrel import AppliedBinaryRelation
+    from sympy.core.function import AppliedUndef
     if isinstance(prop, (_Applied, AppliedBinaryRelation)):
+        name = str(prop.function.name)
+        if name not in PRED_INDEX and name not in RELATION_PREDICATES:
+            return False
         args = prop.arguments
         return bool(args) and all(isinstance(a, _Expr) and not a.free_symbols and a.is_number
-                                  for a in args)
+                                  and not a.has(AppliedUndef) for a in args)
     if isinstance(prop, BooleanFunction):
         return bool(prop.args) and all(_is_constant_proposition(a) for a in prop.args)
     return False

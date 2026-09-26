@@ -282,3 +282,27 @@ def test_undefined_function_value_is_not_a_constant(eng):
     assert ask(Q.positive(f(1)), Q.positive(f(1)), eng) is True
     with pytest.raises(ValueError):
         ask(Q.positive(f(1)), Q.positive(f(1)) & Q.negative(f(1)), eng)
+
+
+def test_constant_route_needs_builtin_predicates_and_no_undefined_function(eng):
+    from sympy import Function, Integral
+    from satassume import Implies
+    from satassume.sympy_api import _is_constant_proposition
+    from satassume.formula import P
+    f, x = Function('f'), Symbol('x')
+    assert _is_constant_proposition(Q.positive(pi) & Q.lt(pi, 4))
+    assert not _is_constant_proposition(Q.positive(Integral(f(x), (x, 0, 1))))
+    e = Integral(f(x), (x, 0, 1))
+    assert ask(Q.positive(e), Q.positive(e), eng) is True
+
+    class Nice(Predicate):
+        name = 'nice_constant_test'
+    nice = Nice()
+    from satassume.sympy_api import register, unregister
+    fn = register('nice_constant_test', Integer)(lambda n: Implies(P('nice_constant_test', n),
+                                                                      P('positive', n)))
+    try:
+        assert not _is_constant_proposition(nice(Integer(2)))
+        assert ask(nice(Integer(2)), nice(Integer(2)), eng) is True
+    finally:
+        unregister('nice_constant_test')
