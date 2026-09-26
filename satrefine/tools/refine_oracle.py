@@ -119,7 +119,7 @@ from sympy.core.relational import Relational  # noqa: E402
 
 import satrefine  # noqa: E402
 from satrefine.identities.compat import backend as sat_backend  # noqa: E402
-from satrefine import _upstream  # noqa: E402
+from satrefine.identities.compat import upstream as _upstream  # noqa: E402
 from satrefine.tools.lib.report import table  # noqa: E402
 from satrefine.tools.lib.workers import Timeout, attempt, install_timeouts, run_forked, timed  # noqa: E402
 from satrefine.tools.lib.workers import outer_expired as _outer_expired  # noqa: E402

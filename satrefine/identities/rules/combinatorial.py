@@ -3,7 +3,7 @@
 
 Each row is ``(lhs, rhs, hypothesis)``, compiled by
 :func:`..core.rewrite.rule_handler`: the row fires when its hypothesis is
-provable through ``_upstream.ask``.  The rules are those stated in
+provable through the dispatcher's ``ask``.  The rules are those stated in
 ``handlers_v3/combinatorial.py`` (236 lines), every one agreeing with
 SymPy's own evaluation at every point its hypothesis allows (0, negative
 integers and poles included, where both sides are ``zoo``).  **16 rows**

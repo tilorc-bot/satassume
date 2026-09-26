@@ -6,7 +6,7 @@ modules' derivation comments and are what the tools read) and ends with
 ``SPEC = Family(...)``, which registers nothing: :func:`satrefine.identities.load`
 registers :func:`build` of every family's spec.
 
-``Family.handlers`` maps a key of ``satrefine._upstream.handlers_dict`` to a
+``Family.handlers`` maps a key of ``satrefine.identities.compat.upstream.handlers_dict`` to a
 part (:class:`Rules` or :class:`Identities`) or a tuple of parts, tried in
 order (:func:`chain`).  :func:`build` makes each part's handler once, so a
 part named under several keys is one handler object; a key with one part gets

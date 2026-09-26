@@ -1,16 +1,17 @@
 """Assumption-driven refinement backed by the independent engine.
 
 The vendored dispatcher and initial handlers live in
-:mod:`satrefine._upstream`; every additional handler is a module in
-:mod:`satrefine.handlers` that registers itself into
-``handlers_dict`` when imported.  Importing this package loads all of them.
+:mod:`satrefine.identities.compat.upstream`; the handler package selected
+with ``SATREFINE_HANDLERS`` (default ``handlers_identities``; the reference
+``handlers_v3``) registers its handlers into ``handlers_dict`` when this
+package is imported.
 """
 from __future__ import annotations
 
 import importlib
 import pkgutil
 
-from ._upstream import (
+from .identities.compat.upstream import (
     ask,
     handlers_dict,
     refine,

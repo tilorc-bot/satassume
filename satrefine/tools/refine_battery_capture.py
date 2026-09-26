@@ -33,7 +33,7 @@ from sympy import Basic, srepr
 
 import satrefine
 import satrefine.handlers_v3 as pkg
-from satrefine import _upstream
+from satrefine.identities.compat import upstream as _upstream
 
 ORIG_REFINE = _upstream.refine
 ORIG_ASK = _upstream.ask

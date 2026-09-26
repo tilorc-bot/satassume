@@ -10,7 +10,7 @@ Two table kinds, one row shape ``(lhs, rhs, condition)``:
   (:mod:`.measure`) strictly decreases;
 * a **rule** row (:func:`rule_handler`) is a conditional rewrite: it fires
   when ``condition`` (its *hypothesis*) is provable through
-  ``_upstream.ask``; the right side is substituted as is.
+  the dispatcher's ``ask``; the right side is substituted as is.
 
 A rule row may carry a fourth element ``unless``: it fires only if
 ``unless`` is *not* provable.  Rows are tried in table order.  Patterns are
