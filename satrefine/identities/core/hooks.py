@@ -59,7 +59,7 @@ Pushed by offline code (:mod:`satrefine.build`) through :func:`.driver.observing
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 from sympy.core import Add, Mul
 from sympy.core.operations import LatticeOp
@@ -90,13 +90,10 @@ def two_valued(node: Any, assumptions: Any) -> tuple | None:
     return None
 
 
-class Observer:
+class Observer(NamedTuple):
     """One entry of :data:`observer` (see :func:`.driver.observing`)."""
-    __slots__ = ("on_fire", "tables")
-
-    def __init__(self, on_fire: Callable | None, tables: Callable | None):
-        self.on_fire = on_fire
-        self.tables = tables
+    on_fire: Callable | None
+    tables: Callable | None
 
 
 observer: list[Observer] = []

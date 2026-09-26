@@ -99,13 +99,18 @@ def strict() -> bool:
 
 
 @contextmanager
-def strict_loops(on: bool = True) -> Iterator[None]:
-    """Raise (``on``) or return the input unchanged (not ``on``) when a guard trips inside the block."""
-    _strict.append(on)
+def pushed(stack: list, item: Any) -> Iterator[Any]:
+    """``item`` on top of ``stack`` for the block (the driver's switches are such stacks)."""
+    stack.append(item)
     try:
-        yield
+        yield item
     finally:
-        _strict.pop()
+        stack.pop()
+
+
+def strict_loops(on: bool = True) -> Any:
+    """Raise (``on``) or return the input unchanged (not ``on``) when a guard trips inside the block."""
+    return pushed(_strict, on)
 
 
 class RefineLoopError(RecursionError):

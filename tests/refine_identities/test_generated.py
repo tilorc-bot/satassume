@@ -8,6 +8,7 @@ import pytest
 from sympy import I, Q, log, pi, srepr, symbols, sympify
 
 from satrefine.build import stages as _stages
+from satrefine.identities.config import MODE_ENV_VAR
 from satrefine.identities.core import driver as _dispatch
 from satrefine.build.render import generated_path
 from satrefine.build.specialize import family_modules
@@ -29,9 +30,9 @@ def test_generated_table_covers_the_live_rows(monkeypatch):
     from test_power_exp_log import IDS, ROWS  # same directory; pytest prepends it to sys.path
     misses, unexpected = [], []
     for (expr, assumptions, _team, _rel), rid in zip(ROWS, IDS):
-        monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
+        monkeypatch.setenv(MODE_ENV_VAR, "live")
         live = refine(expr, assumptions)
-        monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "generated")
+        monkeypatch.setenv(MODE_ENV_VAR, "generated")
         gen = refine(expr, assumptions)
         if gen != expr:
             assert_refinement_valid(expr, assumptions, gen)
@@ -44,11 +45,11 @@ def test_generated_table_covers_the_live_rows(monkeypatch):
 def test_generated_tables_are_registered_and_preferred(monkeypatch):
     from satrefine import refine
     assert "log" in _dispatch.generated_handlers
-    monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "generated")
+    monkeypatch.setenv(MODE_ENV_VAR, "generated")
     assert refine(log(x), Q.negative(x)) == log(-x) + I*pi
-    monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
+    monkeypatch.setenv(MODE_ENV_VAR, "live")
     assert refine(log(x), Q.negative(x)) == log(-x) + I*pi
-    monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "bogus")
+    monkeypatch.setenv(MODE_ENV_VAR, "bogus")
     with pytest.raises(ValueError):
         refine(log(x), Q.negative(x))
 
@@ -71,7 +72,7 @@ def test_smoke_family_generates():
 @pytest.mark.slow
 @pytest.mark.parametrize("module", [_family_param(m) for m in family_modules()])
 def test_generated_module_is_up_to_date(module, monkeypatch):
-    monkeypatch.setenv(_dispatch.MODE_ENV_VAR, "live")
+    monkeypatch.setenv(MODE_ENV_VAR, "live")
     family = module.__name__.rsplit(".", 1)[-1]
     path = generated_path(family)
     assert path.exists(), f"run satrefine/tools/refine_specialize.py --write --family {family}"

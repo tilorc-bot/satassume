@@ -32,17 +32,15 @@ fallbacks, an observer while a table is generated) is in :mod:`.hooks`;
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 
 from sympy.core import Basic, Expr
 
 from ... import _upstream
 from .. import config
 from . import hooks
-from ..config import MODE_ENV_VAR  # noqa: F401  (re-exported: tools and tests read it here)
 from .guard import (MAX_CALL_FIRINGS, MAX_DEPTH, MAX_FIRINGS, MAX_TOTAL_FIRINGS, RefineLoopError,  # noqa: F401
-                    _Call, _short, loop_events, strict, strict_loops)
+                    _Call, _short, loop_events, pushed, strict, strict_loops)
 
 MAX_SPLITS = 8
 """Case splits (:func:`.split.case_split`) tried in one top-level call: each
@@ -71,29 +69,18 @@ def mode() -> str:
     return config.env_mode()
 
 
-@contextmanager
-def live() -> Iterator[None]:
+def live() -> Any:
     """Run the identity rows rather than the generated tables inside the block
     (generation itself must never read the tables it is producing)."""
-    _forced.append("live")
-    try:
-        yield
-    finally:
-        _forced.pop()
+    return pushed(_forced, "live")
 
 
-@contextmanager
-def tables() -> Iterator[None]:
+def tables() -> Any:
     """Use the generated tables inside the block whatever ``SATREFINE_IDENTITIES`` says."""
-    _forced.append("generated")
-    try:
-        yield
-    finally:
-        _forced.pop()
+    return pushed(_forced, "generated")
 
 
-@contextmanager
-def observing(on_fire: Any = None, tables: Any = None) -> Iterator[hooks.Observer]:
+def observing(on_fire: Any = None, tables: Any = None) -> Any:
     """Push an observer (:data:`.hooks.observer`) for the block: ``on_fire(kind, row)``
     is called on each table-row firing, ``tables(key)`` gives the generated table used
     for ``key`` (``None``: none) whatever the mode.  What is not given is inherited
@@ -102,24 +89,14 @@ def observing(on_fire: Any = None, tables: Any = None) -> Iterator[hooks.Observe
     if outer is not None:
         on_fire = outer.on_fire if on_fire is None else on_fire
         tables = outer.tables if tables is None else tables
-    observer = hooks.Observer(on_fire, tables)
-    hooks.observer.append(observer)
-    try:
-        yield observer
-    finally:
-        hooks.observer.pop()
+    return pushed(hooks.observer, hooks.Observer(on_fire, tables))
 
 
-@contextmanager
-def exploring() -> Iterator[None]:
+def exploring() -> Any:
     """Run the engine's exploratory refinements (case and endpoint splits) under
     a firing counter of their own: each is bounded by :data:`MAX_FIRINGS` by
     itself and must not exhaust the cap of the call that tries them."""
-    _firings.append(0)
-    try:
-        yield
-    finally:
-        _firings.pop()
+    return pushed(_firings, 0)
 
 
 _calls: list[_Call] = []   # the guard of the active top-level call (one entry)
