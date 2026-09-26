@@ -133,9 +133,6 @@ def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MA
 # derivation records
 # ----------------------------------------------------------------------------
 
-_TABLE_ORDER = ("DEFINITIONS", "FACTS", "RULES", "SPLITS", "EXP_FORMS", "NEGATIVE_BASE", "IDENTITIES")
-
-
 def _key(row: Any) -> tuple:
     return tuple(sympify(t) for t in row[:3])
 
@@ -147,17 +144,12 @@ def row_labels(generated: dict[str, dict] | None = None) -> dict[tuple, str]:
     from ..identities import families, family_module_name
     labels: dict[tuple, str] = {}
     for family in families():
-        mod = importlib.import_module(family_module_name(family))
-        tables = [n for n in _TABLE_ORDER if isinstance(getattr(mod, n, None), list)]
-        tables += sorted(n for n, v in vars(mod).items() if n.isupper() and n not in tables and isinstance(v, list)
-                         and v and all(isinstance(r, tuple) and len(r) in (3, 4) for r in v))
-        for name in tables:
-            for i, row in enumerate(getattr(mod, name)):
-                if isinstance(row, tuple) and len(row) in (3, 4):
-                    try:
-                        labels.setdefault(_key(row), f"{family}.{name}[{i}]")
-                    except Exception:  # noqa: BLE001  (a row SymPy cannot rebuild)
-                        pass
+        for name, rows in _specialize.row_tables(importlib.import_module(family_module_name(family))).items():
+            for i, row in enumerate(rows):
+                try:
+                    labels.setdefault(_key(row), f"{family}.{name}[{i}]")
+                except Exception:  # noqa: BLE001  (a row SymPy cannot rebuild)
+                    pass
     for fam, entry in (generated or {}).items():
         for i, row in enumerate(entry["rules"]):
             labels.setdefault(_key(row), f"{fam}.generated[{i}]")
@@ -180,7 +172,3 @@ def record_lines(record: Any, labels: dict[tuple, str]) -> list[str]:
     if asks:
         lines.append("#   asks: " + ", ".join(asks))
     return lines
-
-
-__all__ = ["MAX_ROUNDS", "STAGES", "family_name", "generate", "generate_one", "install", "ordered_families",
-           "record_lines", "row_labels"]
