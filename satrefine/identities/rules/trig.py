@@ -33,7 +33,7 @@ infinities (``AccumBounds``), about 700 random cases, and
 """
 from __future__ import annotations
 
-from sympy import Function, Q, S, cos, cot, csc, pi, sec, sin, sinc, symbols, tan, true
+from sympy import Function, Q, cos, cot, csc, pi, sec, sin, sinc, symbols, tan
 from sympy.calculus.accumulationbounds import AccumBounds
 
 from ._tables import ZERO, Family, Row, Rules

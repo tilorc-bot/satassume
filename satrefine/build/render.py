@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import pathlib
-import types
 from typing import Iterable
 
 from ..identities import family_module_name
 from ..identities.core.rewrite import Row
-from .specialize import generate_family
 
 def table_order(rules: Iterable[Row]) -> list[Row]:
     """The order of a generated table: left sides with structure before a head of bare
@@ -60,10 +58,3 @@ def render_module(family: str, rules: list[Row], keys: list[str], notes: dict | 
 def generated_path(family: str) -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parent.parent / "identities" / "generated" / f"{family}.py"
 
-
-def write_family(module: types.ModuleType) -> tuple[pathlib.Path, list[Row], dict[Row, bool | None]]:
-    family = module.__name__.rsplit(".", 1)[-1]
-    rules, keys, verdicts = generate_family(module)
-    path = generated_path(family)
-    path.write_text(render_module(family, rules, keys))
-    return path, rules, verdicts
