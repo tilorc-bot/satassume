@@ -59,16 +59,18 @@ with a power form that needs a finite or real base or a positive exponent
 finite, keeps its rows (a domain on ``e*log(b)`` being finite would lose
 them: ``ask`` cannot show that for an imaginary ``b``).
 
-Not covered (and why): ``log(x**n)`` for a merely real ``x`` and a
-symbolic even ``n``, ``log(x**(-2))`` for a real ``x`` and ``log(1/x)``
-for a zero ``x`` (the power form needs ``b != 0`` or ``e > 0``: at a zero
-base ``0*log(0)`` is ``nan`` and ``Abs(0**e)`` is ``oo``, not ``zoo``, for
-``e < 0``; v3 checks the zero base per rule), ``(-1)**((-1)**n/2 + m/2)`` (a vendored
-special case), ``log(1/x)`` for an infinite ``x`` (``Q.finite`` is not
-part of any row), and ``(x**a)**b`` for an imaginary ``x`` with ``a = 0
-mod 4`` and a symbolic ``b`` in v3's form (the derived
-``exp(a*b*log(Abs(x)))`` folds only when the fold sees ``a*b`` as the
-exponent, which it does; the ``2 mod 4`` case is the rule above).
+``log(x**n)`` for a real ``x`` and an even ``n`` (literal or symbolic,
+negative too: ``log(x**(-2))``) is a rule, ``n*log(Abs(x))``, tried after
+the identities; it needs ``n != 0`` or ``x != 0`` (``0*log(0)`` is ``nan``).
+
+Not covered (and why): ``log(1/x)`` for an infinite ``x`` in v3's
+sense (``Q.finite`` is not part of any row; see above), and ``(x**a)**b``
+for an imaginary ``x`` with ``a = 0 mod 4`` and a symbolic ``b`` in v3's
+form (the derived ``exp(a*b*log(Abs(x)))`` folds only when the fold sees
+``a*b`` as the exponent, which it does; the ``2 mod 4`` case is the rule
+above).  ``(-1)**((-1)**n/2 + r)`` for an integer ``n`` is
+``(-1)**(n + r + 1/2)`` for any ``r``: ``(-1)**n/2`` is ``+-1/2`` and
+``(-1)**z`` is 2-periodic.
 Checked (adversarial pass, 2026-09-24): every rule and generated row by
 hand; ``log``/``Pow``/``exp`` of products, quotients, powers (integer,
 half-integer, symbolic) over 19 profiles per symbol on a grid of real,
@@ -133,7 +135,7 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     ((-1)**x, S.NegativeOne, Q.odd(x)),                                         # (-1)**odd = -1
     ((-1)**x, S.NegativeOne, Q.even(x - 1)),                                    # ... the parity stated one lower: (-1)**((n + 1)/2)
     ((-1)**x, S.One, Q.odd(x - 1)),                                             #     under a parity of (n - 1)/2 (ask does not shift it)
-    ((-1)**((-1)**x/2 + r), (-1)**(x + r + S.Half), Q.integer(x) & Q.integer(r + S.Half)),   # (-1)**x/2 = +-1/2 (SymPy's continuation)
+    ((-1)**((-1)**x/2 + r), (-1)**(x + r + S.Half), Q.integer(x)),              # (-1)**x/2 = +-1/2 and (-1)**z is 2-periodic
     ((-1)**(n + r), (-1)**r, Q.even(n)),                                        # (-1)**z is 2-periodic: drop even terms
     ((-1)**(n + r), (-1)**(r + 1), Q.odd(n)),                                   # ... an odd term becomes 1
     ((-1)**(c + r), (-1)**(r + Mod(c, 2)), true),                               # ... a rational constant is reduced mod 2
@@ -141,6 +143,12 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
     (exp(n*pi*I + r), (-1)**n*exp(r), Q.integer(n)),                            # exp splits over sums; exp(I*pi*n) = (-1)**n
     (exp(n*pi*I + r), I*(-1)**(n - S.Half)*exp(r), Q.integer(n - S.Half)),       # exp(I*pi*(k + 1/2)) = I*(-1)**k
     (exp(e*log(b)), b**e, ~Q.zero(b) | Q.positive(e)),                          # the definition of Pow, folded back (the form's domain)
+]
+
+LOG_RULES: list[Row] = [   # tried after the log identities
+    # b**e = |b|**e for a real b and an even e, and log(r**e) = e*log(r) for r > 0 and a real e.  At b = 0
+    # both sides are zoo (log(0) = log(zoo) = zoo) unless e = 0, where 0*log(0) is nan: hence e != 0 or b != 0.
+    (log(b**e), e*log(Abs(b)), Q.real(b) & Q.even(e) & (~Q.zero(e) | ~Q.zero(b))),
 ]
 
 NEGATIVE_BASE: list[Row] = [   # exact for integer n; ordered so they fire for a negative number only
@@ -175,9 +183,9 @@ def negative_number_base_measure(e, assumptions):
 _rules = Rules(RULES)
 _zero = Rules([ZERO])
 
-SPEC = Family({'log': (_zero, Identities(IDENTITIES)),
+SPEC = Family({'log': (_zero, Identities(IDENTITIES), Rules(LOG_RULES)),
                'Pow': (_rules,
                        Identities(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
                        Identities(NEGATIVE_BASE, measure=negative_number_base_measure)),
                'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=count_measure((exp,))))},
-              facts=FACTS + NEGATIVE_BASE, exp_forms=LOG_FORMS, rules=[ZERO] + RULES)
+              facts=FACTS + NEGATIVE_BASE, exp_forms=LOG_FORMS, rules=[ZERO] + RULES + LOG_RULES)

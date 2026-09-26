@@ -91,7 +91,7 @@ def test_repeated_work_is_done_once():
         calls.append(expr)
         return expr.args[0] if expr.args[0].is_Symbol else None
 
-    from satrefine._upstream import handlers_dict
+    from satrefine.identities.compat.upstream import handlers_dict
     handlers_dict['F'] = once
     try:
         big = sum(F(x)*k for k in range(1, 2*_dispatch.MAX_FIRINGS))

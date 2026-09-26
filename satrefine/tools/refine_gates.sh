@@ -82,7 +82,8 @@ printf '%s\n' "${tasks[@]}" | xargs -P "$jobs" -I{} bash -c '
   for m in generated live; do
     echo "== scoreboard $m (exit $(cat "$out/score-$m.exit"))"
     grep -E '^  (family|[a-z_]+) +[0-9]|^  family' "$out/score-$m.log" | tail -12
-    grep -E '^ +[0-9]+  ' "$out/score-$m.log" | tail -8
+    grep -E '^ +[0-9]+  ' "$out/score-$m.log" | tail -10
+    sed -n '/^open differences/,/^$/p; /^stale accepted/,/^$/p' "$out/score-$m.log" | sed '/^$/d'
   done
   for m in generated live; do for s in 2 3 7; do
     echo "== differential $m seed $s (exit $(cat "$out/diff-$m-$s.exit"))"

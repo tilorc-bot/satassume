@@ -34,9 +34,7 @@ factors only).  Other forms: ``Abs(x**-2)`` for a real ``x`` is ``x**-2``
 (v3: ``1/Abs(x**2)``), ``conjugate(x + y)`` for a real ``y`` is ``y +
 conjugate(x)`` (v3 conjugates every term first).
 
-Not covered (and why): ``x**3*conjugate(x) -> x**2*Abs(x)**2`` (the
-leftover power's exponent is computed, not matched: a ``conjugate(x)``
-factor is not a ``Pow``); ``conjugate(exp(w))`` for a ``w`` that does not
+Not covered (and why): ``conjugate(exp(w))`` for a ``w`` that does not
 resolve (v3 pushes the conjugate inside unconditionally; the ordering
 here wants a node to disappear); ``re``/``im`` of a power with a non-real
 base (no identity without ``expand(complex=True)``, as in v3).
@@ -61,12 +59,13 @@ from __future__ import annotations
 from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
 from sympy.core import Mul
 
-from ._tables import ZERO, Family, Identities, Row, Rules, derive, node_measure, part
+from ._tables import ZERO, Family, Identities, Row, Rules, derive, exponent, node_measure, part
 from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
 z, b, e, p, r, w, a, n, y = symbols('z b e p r w a n y')
 c = part('c', Q.imaginary)   # the imaginary factors of a product
 s = part('s', Q.real)        # the real factors of a product
+k, m = exponent('k'), exponent('m')   # exponents that also bind 1 (conjugate(x) is conjugate(x)**1)
 
 DEFINITIONS: list[Row] = [   # (lhs, rhs, domain): stage 0 definitions through sign
     (Abs(z), z/sign(z),        ~Q.zero(z) & Q.finite(z)),   # sign z = z/|z| (Abs(zoo) is oo)
@@ -128,6 +127,10 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     # Mul
     (w*conjugate(w), Abs(w)**2, Q.commutative(w)),                       # w*conjugate(w) = |w|**2
     (w**e*conjugate(w)**e, Abs(w)**(2*e), Q.integer(e) & Q.commutative(w)),   # ... and for integer powers
+    (w**k*conjugate(w)**m, Abs(w)**(2*m)*w**(k - m),                      # ... unequal positive powers,
+     Q.integer(k) & Q.integer(m) & Q.positive(m) & Q.positive(k - m) & Q.commutative(w)),   # the higher one w's
+    (w**k*conjugate(w)**m, Abs(w)**(2*k)*conjugate(w)**(m - k),           # ... or conjugate(w)'s
+     Q.integer(k) & Q.integer(m) & Q.positive(k) & Q.positive(m - k) & Q.commutative(w)),
     (a*zoo, zoo, Q.finite(a) & ~Q.zero(a)),                              # zoo absorbs a nonzero finite factor
     ((-1)**a*(-1)**e, (-1)**(a + e), true),                               # (-1)**a = exp(I*pi*a): the powers of -1 combine
 ]

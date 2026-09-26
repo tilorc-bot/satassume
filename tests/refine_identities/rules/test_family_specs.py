@@ -15,7 +15,7 @@ import pytest
 from sympy import sympify
 from sympy.core.function import UndefinedFunction
 
-from satrefine._upstream import handlers_dict
+from satrefine.identities.compat.upstream import handlers_dict
 from satrefine.identities import families, family_module_name, family_modules
 from satrefine.identities.core.spec import Family, Identities, Rules, build
 from satrefine.identities.rules._tables import derive
@@ -27,7 +27,7 @@ def test_importing_a_family_registers_nothing():
     code = textwrap.dedent(f"""
         import importlib, sys
         import satrefine
-        from satrefine._upstream import handlers_dict
+        from satrefine.identities.compat.upstream import handlers_dict
         from satrefine.identities.rules import _simple
         before = {{k: id(v) for k, v in handlers_dict.items()}}
         ranges = {{k: list(v) for k, v in _simple.RANGES.items()}}
