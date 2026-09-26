@@ -1,8 +1,14 @@
 # Agent report: next steps after the fact-lattice plan (constants, bounded irrationals, relevance)
 
 - **Date:** 2026-09-25
-- **Status:** plan for a fresh session. Nothing in it is implemented except
-  item 1, which sits unreviewed on local branch `constant-queries`.
+- **Status:** DONE (2026-09-26). Item 1 landed (`997e723`, `58b6e39`;
+  issue #12), item 2 landed (`b208af3`; issue #14; +30% on the Pi, 106
+  more definite, 24 correct errors), item 3 landed (`99e8827`; issue #15;
+  -8.3% on the Pi, answers identical). Free Booleans re-measured
+  (`2026-09-26-free-booleans-remeasured.md`: 3 answers, +3.2%); their
+  default and the Float reading are the owner's decisions. Landing reports:
+  `2026-09-25-constants-landing.md`, `2026-09-26-irrational-landing.md`,
+  `2026-09-26-relevance-landing.md`.
 - **Scope:** `satassume/sympy_api.py`, `lra_adapter.py`, `relations.py`,
   `engine.py`; tools `ab.py`, `gate2.py`, `refine_replay.py --log`
 - **Read this if:** you are the session that finishes this work
