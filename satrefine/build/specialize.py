@@ -22,6 +22,7 @@ from sympy import And, AppliedPredicate, I, N, Q, S, arg, expand, floor, im, nan
 
 from .. import _upstream
 from ..identities import family_module_name
+from . import hooks
 from ..identities.core import driver as _dispatch
 from ..identities.core.driver import generated_handlers, live
 from ..identities.core.rewrite import Row, refine
@@ -70,7 +71,7 @@ records: dict = {}
 """``rule -> (lhs, domain, profile, trace)`` for every rule :func:`specialize` found:
 the identity left side and domain it came from, the assumption profile, and the
 rows that fired and ``ask`` queries answered ``True`` while the left side was
-refined (:func:`._dispatch.tracing`).  The derivation records of the generated
+refined (:func:`.hooks.tracing`).  The derivation records of the generated
 modules are rendered from it."""
 
 
@@ -93,7 +94,7 @@ def _specialize(lhs: Any, domain: Any, catalog: Any) -> list[Row]:
         if L.is_Atom or L == lhs and literals:
             continue
         try:
-            with _dispatch.tracing() as trace:
+            with hooks.tracing() as trace:
                 rhs = refine(L, profile & D)
         except ValueError:                       # inconsistent profile
             continue

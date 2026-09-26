@@ -40,7 +40,7 @@ from typing import Any
 from functools import lru_cache
 from typing import Iterator
 
-from sympy import And, Dummy, Piecewise, Q, S, acot, acoth, ceiling, expand_mul, floor
+from sympy import And, Dummy, Piecewise, Q, S, ceiling, expand_mul, floor
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
 
@@ -370,33 +370,6 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     if not pairs:
         return None
     return Piecewise(*pairs)
-
-
-_SIGN_AT_ZERO = (acot, acoth)   # heads whose eval pulls a sign out of an argument that may be zero
-
-
-def rebuild(func: Any, args: Any, assumptions: Any) -> Basic:
-    """``func(*args)``, the node rebuilt from refined children, except that
-    ``acot`` and ``acoth`` of a non-numeric argument that may be zero stay
-    unevaluated (issue #10, B8).
-
-    SymPy's ``acot.eval`` and ``acoth.eval`` pull a sign out of the argument
-    (``acot(-z) -> -acot(z)``, and ``acoth(I*c) -> -I*acot(c)``), which is
-    wrong at ``z = 0``: ``acot(0) = pi/2``, ``acoth(0) = I*pi/2``.  A refined
-    child often has that shape (``Abs(z) -> -z`` under ``Q.nonpositive(z)``), so
-    ``acot(Abs(z))`` would become ``-acot(z)``.  When ``ask`` proves the
-    argument nonzero the evaluated form is correct and is kept."""
-    if func in _SIGN_AT_ZERO and len(args) == 1 and not args[0].is_number:
-        new = func(*args)
-        if new.func is not func or new.args != tuple(args):
-            try:
-                nonzero = _upstream.ask(Q.zero(args[0]), assumptions) is False
-            except (ValueError, TypeError, AssertionError):
-                nonzero = False
-            if not nonzero:
-                return func(*args, evaluate=False)
-        return new
-    return func(*args)
 
 
 SIMPLE_RULES = {"floor": refine_floor, "ceiling": refine_floor, "Piecewise": refine_piecewise}

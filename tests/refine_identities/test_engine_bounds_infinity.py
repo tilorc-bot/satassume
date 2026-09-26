@@ -21,7 +21,7 @@ from sympy import (Abs, Eq, KroneckerDelta, Ne, Piecewise, Q, RisingFactorial, a
 from satrefine import refine
 from satrefine.identities.core import driver as _dispatch
 from satrefine.identities.core.prove import provable
-from satrefine.identities.rules._simple import rebuild
+from satrefine.identities.compat.sympy_fixes import rebuild
 
 x, y, n, z = symbols("x y n z")
 MODES = {"generated": _dispatch.tables, "live": _dispatch.live}

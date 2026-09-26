@@ -33,14 +33,8 @@ Patterns are ordinary SymPy expressions over plain symbols:
     every ordered pair of two distinct arguments of a ``Max``/``Min`` of any
     arity; the right side replaces the pair and the other arguments are
     kept (``Max(x, y, z) -> Max(rhs, z)``);
-``Z`` a ``MatrixSymbol``
-    binds a plain ``MatrixSymbol`` only, and its shape symbols bind that
-    matrix's shape; ``Z + R``, ``HadamardProduct(Z, R)`` bind one atom
-    term and the rest (the rest binds ``R`` with its shape); ``c*Z`` over a
-    ``MatMul`` binds one scalar factor and the product of the others;
-    a ``MatMul`` of matrix factors (at the top of a left side) matches any
-    run of adjacent factors, the right side replaces the run and the other
-    factors stay in order, simplified with ``doit(deep=False)``;
+matrix patterns
+    matched by the hook of :mod:`..compat.matrix_match` (:data:`MATCH_HOOKS`);
 anything else
     structural: same head, same arity, arguments matched pairwise; atoms
     and constants must be equal.  Bindings to ``0`` or ``1`` are legal.
@@ -55,11 +49,29 @@ from sympy import S, Symbol
 from sympy.core import Add, Basic, Mul
 from sympy.core.function import AppliedUndef, UndefinedFunction
 from sympy.core.operations import LatticeOp
-from sympy.matrices.expressions import HadamardProduct, MatAdd, MatMul, MatrixExpr, MatrixSymbol
 
 from ... import _upstream
 
 Binding = dict[Any, Any]
+
+MATCH_HOOKS: list = []
+"""Matchers for pattern kinds the generic matcher does not know (the matrix
+patterns: :mod:`..compat.matrix_match`).  ``hook(pattern, target, assumptions,
+binding, top)`` returns ``None`` when ``pattern`` is not of its kind (matching goes
+on with the generic forms), else an iterator of bindings (the only ones)."""
+
+NON_SCALAR: tuple = ()
+"""Sum and product heads that are not scalar sums and products (``MatAdd``,
+``MatMul``): the rest-symbol and sub-product forms skip them."""
+
+
+def register(hook: Callable | None = None, *, non_scalar: tuple = (), commutative: tuple = ()) -> None:
+    """Add a matcher hook, non-scalar sum/product heads and commutative heads."""
+    global NON_SCALAR, COMMUTATIVE
+    if hook is not None and hook not in MATCH_HOOKS:
+        MATCH_HOOKS.append(hook)
+    NON_SCALAR = NON_SCALAR + tuple(h for h in non_scalar if h not in NON_SCALAR)
+    COMMUTATIVE = COMMUTATIVE + tuple(h for h in commutative if h not in COMMUTATIVE)
 
 REBUILD = "__rebuild__"
 """Binding key holding how a partial match puts its result back (kept
@@ -124,7 +136,7 @@ def _shape(pattern: Any) -> _Shape:
     unit_form = None
     rest: tuple = ()
     has_part = False
-    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, MatrixExpr):
+    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, NON_SCALAR):
         args = pattern.args
         has_part = any(isinstance(a, _Part) for a in args)
         rest = tuple(i for i, a in enumerate(args) if a.is_Symbol and not isinstance(a, _Part)
@@ -140,31 +152,9 @@ def _bind(b: Binding, key: Any, value: Any) -> Binding | None:
     return {**b, key: value}
 
 
-def _is_matrix(e: Any) -> bool:
-    return isinstance(e, MatrixExpr)
-
-
-def _bind_matrix(b: Binding, pattern: Any, target: Any) -> Binding | None:
-    """Bind a ``MatrixSymbol`` pattern to a matrix expression and its shape symbols."""
-    if not _is_matrix(target):
-        return None
-    nb = _bind(b, pattern, target)
-    for dim, size in zip(pattern.shape, target.shape):
-        if nb is None:
-            return None
-        nb = _bind(nb, dim, size) if dim.is_Symbol else (nb if dim == size else None)
-    return nb
-
-
 def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = False) -> Iterator[Binding]:
     if isinstance(pattern, _Part):
         return  # only meaningful inside a two-symbol sum or product
-    if isinstance(pattern, MatrixSymbol):                            # a plain matrix atom
-        if isinstance(target, MatrixSymbol):
-            nb = _bind_matrix(b, pattern, target)
-            if nb is not None:
-                yield nb
-        return
     if pattern.is_Symbol:
         nb = _bind(b, pattern, target)
         if nb is not None:
@@ -174,59 +164,10 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
         if pattern == target:
             yield b
         return
-    if isinstance(pattern, (MatAdd, HadamardProduct)) and len(pattern.args) == 2 \
-            and all(isinstance(a, MatrixSymbol) for a in pattern.args):   # one atom term and the rest
-        if not isinstance(target, pattern.func):
-            return
-        # the pattern's argument order is canonical, not the author's, so either
-        # symbol may be the atom and the other the rest
-        for atom, rest_sym in (pattern.args, pattern.args[::-1]):
-            for k, t in enumerate(target.args):
-                if not isinstance(t, MatrixSymbol):
-                    continue
-                others = target.args[:k] + target.args[k + 1:]   # by position: an equal copy stays
-                if not others:
-                    continue                                        # a one-term sum has no rest
-                rest = others[0] if len(others) == 1 else pattern.func(*others)
-                nb = _bind_matrix(b, atom, t)
-                nb = _bind_matrix(nb, rest_sym, rest) if nb is not None else None
-                if nb is not None:
-                    yield nb
-        return
-    if isinstance(pattern, MatMul):
-        scalars = [a for a in pattern.args if not _is_matrix(a)]
-        matrices = [a for a in pattern.args if _is_matrix(a)]
-        if len(scalars) == 1 and scalars[0].is_Symbol and len(matrices) == 1 \
-                and isinstance(matrices[0], MatrixSymbol):                   # c*Z: a scalar factor and the rest
-            if not isinstance(target, MatMul):
-                return
-            for k, f in enumerate(target.args):
-                if _is_matrix(f):
-                    continue
-                others = target.args[:k] + target.args[k + 1:]
-                rest = others[0] if len(others) == 1 else MatMul(*others)
-                nb = _bind(b, scalars[0], f)
-                nb = _bind_matrix(nb, matrices[0], rest) if nb is not None else None
-                if nb is not None:     # the right side in canonical form (scalars in front, combined)
-                    yield {**nb, REBUILD: (lambda r: r.doit(deep=False) if isinstance(r, MatrixExpr) else r)}
-            return
-        if not scalars and isinstance(target, MatMul):                    # a run of adjacent factors
-            k = len(matrices)
-            T = list(target.args)
-            for i in range(len(T) - k + 1):
-                run = T[i:i + k]
-                if not all(_is_matrix(f) for f in run):
-                    continue
-                before, after = T[:i], T[i + k:]
-                if (before or after) and not top:
-                    continue
-                for nb in _match_seq(matrices, run, assumptions, b):
-                    if before or after:
-                        nb = {**nb, REBUILD: (lambda r, before=before, after=after:
-                                              MatMul(*before, r, *after).doit(deep=False))}
-                    else:
-                        nb = {**nb, REBUILD: (lambda r: r.doit(deep=False) if isinstance(r, MatrixExpr) else r)}
-                    yield nb
+    for hook in MATCH_HOOKS:                                          # a pattern kind the hooks know
+        found = hook(pattern, target, assumptions, b, top)
+        if found is not None:
+            yield from found
             return
     if top and isinstance(pattern, LatticeOp) and len(pattern.args) == 2 \
             and all(a.is_Symbol for a in pattern.args):                    # Max(a, b) of any arity
@@ -261,7 +202,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             return
         yield from _match_seq(pattern.args, target.args, assumptions, nb)
         return
-    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, MatrixExpr):
+    if isinstance(pattern, (Add, Mul)) and not isinstance(pattern, NON_SCALAR):
         shape = _shape(pattern)
         if len(shape.rest) == 1 and not shape.has_part and shape.unit_form is None:   # structure beside a rest symbol
             if not isinstance(target, pattern.func):
@@ -341,7 +282,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
     # structural; a commutative head of small arity is matched in every argument order
     if target.is_Atom or not isinstance(target, pattern.func) or len(target.args) != len(pattern.args):
         return
-    if isinstance(pattern, _COMMUTATIVE) and 2 <= len(pattern.args) <= 3:
+    if isinstance(pattern, COMMUTATIVE) and 2 <= len(pattern.args) <= 3:
         seen: set = set()
         for perm in itertools.permutations(target.args):
             if perm in seen:
@@ -352,7 +293,8 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
     yield from _match_seq(pattern.args, target.args, assumptions, b)
 
 
-_COMMUTATIVE = (Add, Mul, MatAdd, HadamardProduct, LatticeOp)
+COMMUTATIVE: tuple = (Add, Mul, LatticeOp)
+"""Heads matched in every argument order (small arities); :func:`register` adds more."""
 
 
 @lru_cache(maxsize=4096)

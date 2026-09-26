@@ -3,7 +3,7 @@
 Every fact about a function is a hand-stated row (the family modules' tables:
 the stage 0 rows) or a generated rule (``generated/<family>.py``).  Families
 are generated in stage order (:data:`STAGES`); each family is specialized with
-its own keys on their identity rows (:func:`._dispatch.live_for`) and every
+its own keys on their identity rows (:func:`.hooks.live_for`) and every
 other key through the tables generated so far (:func:`._dispatch.tables`), so a
 later stage builds on the compiled rules of the earlier ones.  Rules are
 verified before they are installed, every round.  A round regenerates the
@@ -26,6 +26,7 @@ from sympy import sympify
 
 from ..identities.core import driver as _dispatch
 from ..identities.core.rewrite import Row, rule_handler
+from . import hooks
 from . import specialize as _specialize
 
 STAGES: list[tuple[int, list[str]]] = [
@@ -74,7 +75,7 @@ def generate_one(module: types.ModuleType, consulted: set | None = None) -> tupl
     _specialize.records.clear()
     _dispatch.consulted.append(set() if consulted is None else consulted)
     try:
-        with _dispatch.tables(), _dispatch.live_for(keys):
+        with _dispatch.tables(), hooks.live_for(keys):
             rules, keys, verdicts = _specialize.generate_family(module)
     finally:
         _dispatch.consulted.pop()

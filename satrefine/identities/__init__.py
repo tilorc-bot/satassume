@@ -48,6 +48,9 @@ import pkgutil
 import sys
 import types
 
+from .compat import matrix_match as _matrix_match  # noqa: F401  (installs the matcher's matrix hook)
+from .compat import sympy_fixes as _sympy_fixes  # noqa: F401  (installs the driver's SymPy workarounds)
+
 
 COMPAT_FAMILIES = ("matrices",)
 """Families that live in :mod:`.compat` (expected to change) rather than in :mod:`.rules`."""
