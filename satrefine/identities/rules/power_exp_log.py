@@ -87,8 +87,8 @@ from __future__ import annotations
 from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true, zoo
 from sympy.core import Pow
 
-from ._tables import (ZERO, Family, Identities, Row, Rules, derive, exp_node_measure, negative_number_base_measure,
-                      node_measure, part, principal)
+from ._tables import (ZERO, Family, Identities, Row, Rules, count_measure, derive, node_measure, part, principal,
+                      size)
 
 z, b, e, p, r, x, a, n = symbols('z b e p r x a n')
 c = part('c', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
@@ -149,6 +149,15 @@ IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)]
 POW_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], Pow)]
 EXP_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], exp)]
 
+
+def negative_number_base_measure(e, assumptions):
+    """``(powers of a negative number, size)``: the ordering for ``c**n -> (-c)**n``
+    rows, which must not fire for a symbolic base (SymPy's ``Pow._eval_refine``
+    rewrites ``(-x)**n`` back to ``-x**n`` for odd ``n``, a cycle)."""
+    negative = sum(1 for node in e.atoms(Pow) if node.base.is_number and node.base.is_negative)
+    return (negative, size(e))
+
+
 _rules = Rules(RULES)
 _zero = Rules([ZERO])
 
@@ -156,5 +165,5 @@ SPEC = Family({'log': (_zero, Identities(IDENTITIES)),
                'Pow': (_rules,
                        Identities(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
                        Identities(NEGATIVE_BASE, measure=negative_number_base_measure)),
-               'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=exp_node_measure))},
+               'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=count_measure((exp,))))},
               facts=FACTS + NEGATIVE_BASE, exp_forms=EXP_FORMS, rules=[ZERO] + RULES)

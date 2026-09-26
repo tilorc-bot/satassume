@@ -40,7 +40,7 @@ Set by :func:`..rules._simple.install`:
     the head of a conditional expression (``Piecewise``): a candidate with a
     new one is an undecided definition, not a rewrite.
 :data:`modulus`
-    the modulus head (``Abs``): canonical in :func:`.rewrite.default_measure`,
+    the modulus head (``Abs``): canonical in :func:`.measure.default_measure`,
     what :func:`.split.case_split` generalizes its cases by.
 :data:`step`
     the step head (``floor``) the endpoint split (:func:`.split.endpoint_split`) resolves.
