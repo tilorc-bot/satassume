@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 *.egg-info/
-build/
+/build/
 dist/
 .pytest_cache/
 queries*.jsonl
