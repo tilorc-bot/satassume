@@ -1,6 +1,5 @@
 """Tests for the inverse trigonometric refine handlers."""
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x
@@ -19,8 +18,6 @@ from sympy.functions.elementary.trigonometric import (
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
-    stub_ask,
-    use_ask,
 )
 
 
@@ -126,11 +123,3 @@ def test_only_matching_inner_function() -> None:
 def test_extra_assumptions_still_apply() -> None:
     assert refine(asin(sin(x)), ASIN_RECTANGLE & Q.nonzero(x)) == x
     assert refine(atan(tan(x)), ATAN_INTERVAL & Q.positive(x)) == x
-
-
-@pytest.mark.handlers("handlers")
-def test_none_answers_leave_expression_unchanged() -> None:
-    with use_ask(stub_ask({})):
-        assert refine(asin(sin(x)), ASIN_RECTANGLE) == asin(sin(x))
-        assert refine(acos(cos(x)), ACOS_RECTANGLE) == acos(cos(x))
-        assert refine(atan(tan(x)), ASIN_RECTANGLE) == atan(tan(x))

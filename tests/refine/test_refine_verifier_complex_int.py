@@ -17,13 +17,9 @@ Scope of the three packages under verification:
 """
 from __future__ import annotations
 
-import ast
-import pathlib
 from typing import Any
 
-import pytest
 
-import satrefine.handlers
 from satrefine.identities.compat import backend
 from sympy.assumptions import Q
 from sympy.assumptions.ask import ask as sympy_ask
@@ -50,12 +46,11 @@ from sympy.functions.special.gamma_functions import gamma
 from sympy.functions.special.tensor_functions import KroneckerDelta
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 
-from satrefine import HANDLERS_PACKAGE, _upstream, refine
+from satrefine import HANDLERS_PACKAGE, refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
     reference_ask,
-    recording_ask,
     scripted_ask,
     stub_ask,
     use_ask,
@@ -64,93 +59,6 @@ from satrefine.testing.harness import (
 INTEGERS = [0, 1, -1, 2, -2, 3, -3, 4, -4]
 NONZERO_INTEGERS = [1, -1, 2, -2, 3, -3]
 REALS = [0, 1, -1, 2, -2, S.Half, Rational(-1, 2), Rational(4, 3)]
-
-# Registry key -> expected owning module (report sections 3.3/3.4/3.5/3.6/3.7/
-# 3.9/3.12).  ``Mul`` is the documented auxiliary key of ``conjugate.py``.
-IN_SCOPE_OWNERS: dict[str, str] = {
-    "log": "log",
-    "conjugate": "conjugate",
-    "Mul": "conjugate",
-    "Pow": "pow",
-    "Abs": "abs",
-    "sign": "sign",
-    "arg": "arg",
-    "frac": "frac",
-    "Mod": "mod",
-    "Rem": "rem",
-    "factorial": "factorial",
-    "binomial": "binomial",
-    "RisingFactorial": "rf_ff",
-    "FallingFactorial": "rf_ff",
-    "gamma": "special_gamma",
-    "Min": "minmax_min",
-    "Max": "minmax_max",
-    "DiracDelta": "dirac_delta",
-    "KroneckerDelta": "kronecker_delta",
-}
-
-
-# ---------------------------------------------------------------------------
-# 1. Scope: one registration per key, expected owner, no vendored-dict clash
-# ---------------------------------------------------------------------------
-
-
-def test_scope_every_key_registered_exactly_once() -> None:
-    hdir = pathlib.Path(satrefine.handlers.__file__).resolve().parent
-    owners: dict[str, str] = {}
-    for path in sorted(hdir.glob("*.py")):
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Subscript)
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "handlers_dict"
-                and isinstance(node.ctx, ast.Store)
-            ):
-                key = ast.literal_eval(node.slice)
-                assert key not in owners, (
-                    f"duplicate registry key {key!r}: "
-                    f"{owners.get(key)} and {path.name}"
-                )
-                owners[key] = path.name
-    for key, module in IN_SCOPE_OWNERS.items():
-        assert owners.get(key) == module + ".py", (
-            f"{key} registered by {owners.get(key)!r}, expected {module}.py"
-        )
-
-
-@pytest.mark.handlers("handlers")
-def test_scope_runtime_handler_comes_from_expected_module() -> None:
-    for key, module in IN_SCOPE_OWNERS.items():
-        handler = _upstream.handlers_dict[key]
-        assert handler.__module__ == f"satrefine.handlers.{module}", (
-            f"{key} resolves to {handler.__module__}"
-        )
-
-
-@pytest.mark.handlers("handlers")
-def test_scope_vendored_handler_names_are_overridden_not_duplicated() -> None:
-    # The vendored dict must still exist unchanged in size for the keys no
-    # handler module overrides; the overridden ones resolve to the new modules.
-    vendored = {
-        "Abs",
-        "Pow",
-        "atan2",
-        "re",
-        "im",
-        "arg",
-        "sign",
-        "MatrixElement",
-        "cos",
-        "sin",
-        "exp",
-        "Heaviside",
-        "floor",
-        "ceiling",
-    }
-    assert vendored <= set(_upstream.handlers_dict)
-    assert _upstream.handlers_dict["atan2"].__module__ == "satrefine._upstream"
-    assert _upstream.handlers_dict["exp"].__module__ == "satrefine._upstream"
 
 
 # ---------------------------------------------------------------------------
@@ -1158,21 +1066,6 @@ def test_scripted_mixed_answers_do_not_raise() -> None:
         assert result is not None
 
 
-@pytest.mark.handlers("handlers")
-def test_handlers_ask_through_the_upstream_module() -> None:
-    # A recording stub must observe the queries: proves the monkeypatch reaches
-    # the handlers (no from-import of ask) and that answers are respected.
-    fake, log = recording_ask({str(Q.integer(x)): True})
-    with use_ask(fake):
-        assert refine(frac(x)) is S.Zero
-    assert [entry[0] for entry in log] == [Q.integer(x)]
-
-    fake, log = recording_ask({str(Q.zero(x)): True})
-    with use_ask(fake):
-        assert refine(Abs(x)) is S.Zero
-    assert log and log[0][0] == Q.zero(x)
-
-
 def test_nan_and_zoo_inputs_do_not_crash() -> None:
     for expr in (
         DiracDelta(nan),
@@ -1321,14 +1214,6 @@ def test_mul_handler_pairs_only_matching_conjugates() -> None:
     assert refine(Abs(x) * x * conjugate(x)) == Abs(x) ** 3
 
 
-@pytest.mark.handlers("handlers")
-def test_mul_handler_pair_rule_is_query_free() -> None:
-    # handlers' rule asks nothing, so it fires even with an all-None ask; it is
-    # the source of the z = zoo artifact below.  handlers_identities asks first.
-    with use_ask(stub_ask({})):
-        assert refine(x * conjugate(x)) == Abs(x) ** 2
-
-
 def test_mul_handler_noncommutative_conjugate_pair() -> None:
     a = Symbol("a", commutative=False)
     assert refine(a * conjugate(a)) == a * conjugate(a)
@@ -1380,25 +1265,6 @@ def test_boundary_zero_times_infinite_artifact() -> None:
     assert Abs(zoo) == oo
 
 
-@pytest.mark.handlers("handlers")   # handlers_identities returns the input instead (B9, kept in phase 3):
-                                   # tests/refine_identities/test_default_inconsistent_assumptions.py
-def test_inconsistent_assumptions_raise_pre_existing_engine_error() -> None:
-    # Engine-level: every backend raises ValueError for inconsistent
-    # assumptions and the dispatcher propagates it.  This is reproducible with
-    # the vendored Abs handler alone, i.e. it predates the new handlers.
-    with pytest.raises(ValueError, match="(?i)inconsistent assumptions"):
-        refine(conjugate(x), Q.infinite(x) & Q.real(x))
-    with pytest.raises(ValueError, match="(?i)inconsistent assumptions"):
-        refine(Abs(x), Q.positive(x) & Q.negative(x))
-    # SymPy's ask does not flag an infinite integer as inconsistent (its check
-    # covers only the facts it extracts about one argument); satassume does.
-    if backend.current() == "satassume":
-        with pytest.raises(ValueError, match="(?i)inconsistent assumptions"):
-            refine(gamma(n), Q.infinite(n) & Q.integer(n))
-    else:
-        assert refine(gamma(n), Q.infinite(n) & Q.integer(n)) == gamma(n)
-
-
 def test_min_max_no_rule_is_noop_without_relations() -> None:
     # A general Mul-style check that the Min/Max handlers never guess: no
     # relation means no selection, even for equal-looking expressions.
@@ -1408,12 +1274,3 @@ def test_min_max_no_rule_is_noop_without_relations() -> None:
     assert refine(Max(x, y), Q.eq(x, y)) in (Max(x, y), x)
     assert refine(Min(x, y, z), Q.le(x, y) & Q.le(z, y)) in (Min(x, y, z), Min(x, z))
     assert refine(Max(x, y, z), Q.ge(x, y) & Q.ge(z, y)) in (Max(x, y, z), Max(x, z))
-
-
-def test_scope_mul_key_is_documented_auxiliary_key() -> None:
-    # ``Mul`` is outside the nominal conjugate ownership; the module docstring
-    # must say so, and no other module may claim the key.
-    path = pathlib.Path(satrefine.handlers.__file__).resolve().parent / "conjugate.py"
-    text = path.read_text()
-    assert "auxiliary" in text
-    assert "handlers_dict['Mul']" in text

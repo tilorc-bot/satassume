@@ -10,7 +10,6 @@ from sympy.matrices.expressions import MatrixSymbol
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refines_like_sympy,
-    recording_ask,
     stub_ask,
     use_ask,
 )
@@ -66,27 +65,6 @@ def test_diagonal_element_with_independent_symbols_ne() -> None:
 def test_symmetric_index_swap_kept() -> None:
     assert refine(X[1, 0], Q.symmetric(X)) == X[0, 1]
     assert refine(X[0, 1], Q.symmetric(X)) == X[0, 1]
-
-
-@pytest.mark.handlers("handlers")
-def test_ask_order() -> None:
-    fake, log = recording_ask({str(Q.zero(X)): True})
-    with use_ask(fake):
-        assert refine(X[0, 1], Q.zero(X)) == S.Zero
-    assert [entry[0] for entry in log] == [Q.zero(X)]
-
-    fake, log = recording_ask({str(Q.diagonal(X)): True})
-    with use_ask(fake):
-        assert refine(X[0, 1], Q.diagonal(X)) == S.Zero
-    assert [entry[0] for entry in log] == [Q.zero(X), Q.diagonal(X)]
-
-    fake, log = recording_ask({str(Q.symmetric(X)): True})
-    with use_ask(fake):
-        assert refine(X[1, 0], Q.symmetric(X)) == X[0, 1]
-    assert [entry[0] for entry in log] == [
-        Q.zero(X), Q.diagonal(X), Q.symmetric(X),
-        Q.zero(X), Q.diagonal(X), Q.symmetric(X),
-    ]
 
 
 def test_unmet_assumption_unchanged() -> None:

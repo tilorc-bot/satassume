@@ -8,7 +8,6 @@ test: ``log(exp(x))`` needs ``Q.real(x)`` and ``log(x**2)`` needs
 ``Q.positive(x)``.
 """
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x, y
@@ -19,9 +18,6 @@ from sympy.functions.elementary.exponential import exp, log
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
-    scripted_ask,
-    stub_ask,
-    use_ask,
 )
 
 
@@ -85,25 +81,6 @@ def test_log_product_split_negative() -> None:
         refined = refine(expr, assumptions)
         assert refined in (expr, other)
         assert_refinement_valid(expr, assumptions, refined)
-
-
-@pytest.mark.handlers("handlers")
-def test_log_none_safety() -> None:
-    with use_ask(stub_ask({})):
-        assert refine(log(exp(x))) == log(exp(x))
-        assert refine(log(x**y)) == log(x**y)
-        assert refine(log(x * y)) == log(x * y)
-
-    # A partially known power rule still leaves the expression alone.
-    fake = stub_ask({str(Q.positive(x)): True, str(Q.real(y)): None})
-    with use_ask(fake):
-        assert refine(log(x**y)) == log(x**y)
-
-    # A scripted ask mixing True/False/None must not raise either.
-    fake_scripted, queries = scripted_ask([False, None, None])
-    with use_ask(fake_scripted):
-        assert refine(log(exp(x))) == log(exp(x))
-    assert queries[0][0] == Q.real(x)
 
 
 def test_log_numeric_oracle() -> None:

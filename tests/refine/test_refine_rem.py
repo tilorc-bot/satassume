@@ -16,7 +16,6 @@ from sympy.functions.elementary.miscellaneous import Rem
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
-    recording_ask,
     stub_ask,
     use_ask,
 )
@@ -135,11 +134,3 @@ def test_floor_identity_is_not_sound_without_signs() -> None:
             p - q * floor(p / q),
             values={p: [-2, 2], q: [-3, 3]},
         )
-
-
-@pytest.mark.handlers("handlers")
-def test_ask_goes_through_upstream() -> None:
-    fake, log = recording_ask({str(Q.zero(p)): True})
-    with use_ask(fake):
-        assert refine(Rem(p, q), Q.zero(p)) is S.Zero
-    assert [entry[0] for entry in log] == [Q.zero(p)]

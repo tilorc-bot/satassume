@@ -1,6 +1,7 @@
 """Adversarial verification tests for the matrix refine handlers.
 
-Independent verifier tests for ``satrefine/handlers/matrix_*.py``.
+Independent verifier tests, written for ``satrefine/handlers/matrix_*.py``
+(the original package, removed in phase 3); they run against the loaded package.
 They are deliberately hostile: scope/registration checks, wrong-assumption
 negatives, ``None``-safety, scripted-ask robustness, fixed-point re-dispatch
 and mathematical counterexamples.
@@ -13,8 +14,6 @@ regression tests.
 """
 from __future__ import annotations
 
-import pathlib
-import re
 from typing import Any
 
 import pytest
@@ -36,11 +35,9 @@ from sympy.matrices.expressions import (
 )
 from sympy.matrices.expressions.determinant import Determinant
 
-from satrefine import handlers as handlers_package
-from satrefine import HANDLERS_PACKAGE, handlers_dict, refine
+from satrefine import refine
 from satrefine.testing.harness import (
     assert_refines_like_sympy,
-    recording_ask,
     scripted_ask,
     stub_ask,
     use_ask,
@@ -89,44 +86,6 @@ _ALL_HANDLER_CASES: list[tuple[Any, Any]] = [
 
 
 # ---------------------------------------------------------------------------
-# Scope and registration
-# ---------------------------------------------------------------------------
-
-@pytest.mark.handlers("handlers")
-def test_matrix_handler_keys_owned_by_their_modules() -> None:
-    for key, module in _EXPECTED_MODULES.items():
-        handler = handlers_dict[key]
-        assert handler.__module__ == f'satrefine.handlers.{module}', (
-            key, handler.__module__
-        )
-
-
-def test_no_handler_key_is_registered_twice() -> None:
-    package_file = handlers_package.__file__
-    assert package_file is not None
-    root = pathlib.Path(package_file).parent
-    seen: dict[str, str] = {}
-    for path in sorted(root.glob('*.py')):
-        text = path.read_text(encoding='utf-8')
-        for match in re.finditer(r"handlers_dict\[['\"](\w+)['\"]\]\s*=", text):
-            key = match.group(1)
-            assert key not in seen, (
-                f'{key} registered in both {seen[key]} and {path.name}'
-            )
-            seen[key] = path.name
-    for key in _EXPECTED_MODULES:
-        assert key in seen
-
-
-@pytest.mark.handlers("handlers")
-def test_handlers_consult_patchable_upstream_ask() -> None:
-    fake, log = recording_ask({str(Q.symmetric(X)): True})
-    with use_ask(fake):
-        assert refine(X.T, Q.symmetric(X)) == X
-    assert log and log[0][0] == Q.symmetric(X)
-
-
-# ---------------------------------------------------------------------------
 # Transpose
 # ---------------------------------------------------------------------------
 
@@ -161,15 +120,6 @@ def test_transpose_none_answers_unchanged() -> None:
         assert refine(X.T, Q.symmetric(X)) == X.T
 
 
-@pytest.mark.handlers("handlers")
-def test_transpose_scripted_mixed_answers() -> None:
-    for sequence in ([None], [False], [None, True], [True, False, None]):
-        fake, _ = scripted_ask(sequence)
-        with use_ask(fake):
-            result = refine(X.T, Q.symmetric(X))
-        assert result in (X, X.T)
-
-
 def test_transpose_reference_ask_parity() -> None:
     assert_refines_like_sympy(X.T, Q.symmetric(X))
     assert_refines_like_sympy(X.T, Q.orthogonal(X))
@@ -197,7 +147,8 @@ def test_inverse_positive() -> None:
     assert refine(X.I, Q.orthogonal(X)) == X.T
 
 
-@pytest.mark.original_wrong("X**-1 -> X.conjugate() for unitary X; the inverse is X.H")
+# The original ``handlers`` package got this wrong (removed in phase 3): X**-1 -> X.conjugate()
+# for unitary X; the inverse is X.H
 def test_inverse_unitary_is_conjugate_transpose() -> None:
     # See test_inverse_unitary_soundness_counterexample: handlers inherits the
     # upstream elementwise conjugate; handlers_identities and v3 give Adjoint(X).
@@ -210,23 +161,6 @@ def test_inverse_negative_wrong_assumptions() -> None:
     assert refine(X.I, Q.diagonal(X)) == X.I
     assert refine(X.I, Q.real(x)) == X.I
     assert refine(X.I, True) == X.I
-
-
-@pytest.mark.handlers("handlers")
-def test_inverse_singular_raises() -> None:
-    with pytest.raises(ValueError, match='Inverse of singular matrix'):
-        refine(X.I, Q.singular(X))
-
-
-@pytest.mark.handlers("handlers")
-def test_inverse_singular_raises_under_scripted_ask() -> None:
-    fake, log = scripted_ask([False, False, True])
-    with use_ask(fake):
-        with pytest.raises(ValueError, match='Inverse of singular matrix'):
-            refine(X.I, Q.singular(X))
-    assert [entry[0] for entry in log] == [
-        Q.orthogonal(X), Q.unitary(X), Q.singular(X),
-    ]
 
 
 def test_inverse_none_answers_unchanged() -> None:
@@ -243,15 +177,6 @@ def test_inverse_reference_ask_parity() -> None:
     assert_refines_like_sympy(X.I, True)
 
 
-@pytest.mark.handlers("handlers")
-def test_inverse_singular_divergence_from_upstream() -> None:
-    # Documented: the port asks the base, so Q.singular(X) raises here while
-    # upstream's undecidable Q.singular(X**-1) query leaves X**-1 unchanged.
-    with pytest.raises(ValueError, match='Inverse of singular matrix'):
-        refine(X.I, Q.singular(X))
-    assert sympy_refine(X.I, Q.singular(X)) == X.I
-
-
 @pytest.mark.xfail(
     strict=True,
     reason=(
@@ -265,15 +190,9 @@ def test_inverse_reference_ask_parity_on_inverse_assumption() -> None:
     assert_refines_like_sympy(X.I, Q.unitary(X.I))
 
 
-@pytest.mark.xfail(
-    backend.current() != "satassume" and HANDLERS_PACKAGE == "handlers",
-    strict=True,
-    reason=(
-        'inherited upstream bug: Q.unitary(U) -> U**-1 = U.conjugate() '
-        '(elementwise conjugate) is false; minimal repro U = ROT90 gives '
-        'conj(U) = ROT90 != ROT90.T, and COMPLEX_UNITARY gives conj(U) != U**-1'
-    ),
-)
+# The original ``handlers`` package failed this (removed in phase 3): inherited upstream bug:
+# Q.unitary(U) -> U**-1 = U.conjugate() (elementwise conjugate) is false; minimal repro U = ROT90
+# gives conj(U) = ROT90 != ROT90.T, and COMPLEX_UNITARY gives conj(U) != U**-1
 def test_inverse_unitary_soundness_counterexample() -> None:
     refined = refine(X.I, Q.unitary(X))
     for sample in (ROT90, COMPLEX_UNITARY):
@@ -284,7 +203,8 @@ def test_inverse_unitary_soundness_counterexample() -> None:
 # Determinant
 # ---------------------------------------------------------------------------
 
-@pytest.mark.original_wrong("det(X) -> 1 for orthogonal X; a reflection has det -1")
+# The original ``handlers`` package got this wrong (removed in phase 3): det(X) -> 1 for
+# orthogonal X; a reflection has det -1
 def test_determinant_orthogonal_is_plus_or_minus_one() -> None:
     # diag(1, -1) is orthogonal with det -1; handlers_identities and v3 leave det(X).
     assert Matrix([[1, 0], [0, -1]]).det() == -1
@@ -310,16 +230,6 @@ def test_determinant_none_answers_unchanged() -> None:
         for assumption in (Q.orthogonal(X), Q.singular(X),
                            Q.unit_triangular(X)):
             assert refine(Determinant(X), assumption) == Determinant(X)
-
-
-@pytest.mark.handlers("handlers")
-def test_determinant_ask_order() -> None:
-    fake, log = recording_ask({str(Q.unit_triangular(X)): True})
-    with use_ask(fake):
-        assert refine(Determinant(X), Q.unit_triangular(X)) == S.One
-    assert [entry[0] for entry in log] == [
-        Q.orthogonal(X), Q.singular(X), Q.unit_triangular(X),
-    ]
 
 
 def test_determinant_reference_ask_parity() -> None:
@@ -430,15 +340,9 @@ def test_matmul_rectangular_unchanged_under_satisfiable_assumptions() -> None:
     assert refine(R.T * R, Q.real(x)) == R.T * R
 
 
-@pytest.mark.xfail(
-    backend.current() != "satassume" and HANDLERS_PACKAGE == "handlers",
-    strict=True,
-    reason=(
-        'inherited upstream bug: Q.unitary(U) -> conj(U)*U = I is false; '
-        'minimal repro U = ROT90 gives conj(U)*U = -I, COMPLEX_UNITARY gives '
-        'a non-identity product'
-    ),
-)
+# The original ``handlers`` package failed this (removed in phase 3): inherited upstream bug:
+# Q.unitary(U) -> conj(U)*U = I is false; minimal repro U = ROT90 gives conj(U)*U = -I,
+# COMPLEX_UNITARY gives a non-identity product
 def test_matmul_unitary_soundness_counterexample() -> None:
     expr = X.conjugate() * X
     refined = refine(expr, Q.unitary(X))
@@ -721,13 +625,6 @@ def test_singular_inverse_is_the_only_raising_path() -> None:
         except Exception as exc:  # noqa: BLE001 - record, do not hide
             raising.append((expr, assumption, exc))
     assert raising == []
-
-
-@pytest.mark.handlers("handlers")
-def test_singular_inverse_raises_in_the_original_package() -> None:
-    # handlers raises where upstream SymPy (and handlers_identities) leave X**-1.
-    with pytest.raises(ValueError, match='Inverse of singular matrix'):
-        refine(X.I, Q.singular(X))
 
 
 def test_complex_unitary_sample_is_actually_unitary() -> None:

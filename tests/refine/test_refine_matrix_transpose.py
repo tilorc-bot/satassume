@@ -1,6 +1,5 @@
 """Tests for the ``Transpose`` refine handler."""
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x
@@ -9,7 +8,6 @@ from sympy.matrices.expressions import MatrixSymbol
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refines_like_sympy,
-    recording_ask,
     stub_ask,
     use_ask,
 )
@@ -27,14 +25,6 @@ def test_reference_ask_fidelity() -> None:
 
 def test_local_refinement() -> None:
     assert refine(X.T, Q.symmetric(X)) == X
-
-
-@pytest.mark.handlers("handlers")
-def test_asks_base_matrix() -> None:
-    fake, log = recording_ask({str(Q.symmetric(X)): True})
-    with use_ask(fake):
-        assert refine(X.T, Q.symmetric(X)) == X
-    assert [entry[0] for entry in log] == [Q.symmetric(X)]
 
 
 def test_unmet_assumption_unchanged() -> None:
