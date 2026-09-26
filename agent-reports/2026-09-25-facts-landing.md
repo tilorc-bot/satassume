@@ -1,10 +1,12 @@
 # Agent report: fact-lattice theory, landing side (reviews and what landed)
 
 - **Date:** 2026-09-25
-- **Status:** stage 0 landed with one tool fix; stage 1 stopped on its
-  stop condition (+56%), its two solver commits landed; stage 2 (facts
-  shared between equal terms, on the rule block) and a stage 1 retry
-  (lazy rule writes inside the solver loop) in progress. Updated per stage.
+- **Status:** complete. Stage 0 landed; stage 1 as specified stopped at
+  +56% (two solver commits from it landed, then a reworked stage 1, lazy
+  rule-block writes, landed with stage 2b); stage 2 (facts shared between
+  equal terms) landed and tuned; stage 3 reported
+  (`2026-09-25-facts-3-refine-outcome.md`). Open for the owner: whether
+  `Engine(uninterpreted="free")` becomes the default.
 - **Scope:** the `facts-theory` branch delivered as bundles from the Pi
   (`/work/src/bundles/facts-theory.bundle`), reviewed and landed from this
   machine. The Pi session writes the stage reports
