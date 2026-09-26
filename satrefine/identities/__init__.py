@@ -8,7 +8,7 @@ never the reverse (``tests/refine_identities/test_import_direction.py``).
 ``core/``       general algorithms: the driver (:mod:`.core.driver`, which
                 replaces ``satrefine.refine`` when this package is selected),
                 the termination guard (:mod:`.core.guard`), proving
-                (:mod:`.core.prove`, :mod:`.core.bounds`), pattern matching
+                (:mod:`.core.prove`), pattern matching
                 (:mod:`.core.match`), rewriting with identity and rule tables
                 (:mod:`.core.rewrite`) and case splits (:mod:`.core.split`);
 ``rules/``      the families (one module per family of heads, each ending with
