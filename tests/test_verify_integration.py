@@ -87,7 +87,7 @@ def test_theory_levels_match_the_solver_after_ask():
 
 def test_uninterpreted_assumption_is_none_and_not_cached():
     eng = Engine()
-    assum = Q.gt(r, 0) & Q.lt(r, pi)      # LRA refuses pi, EUF takes no lt
+    assum = Q.gt(r, 0) & Q.lt(pi * r, 1)  # LRA refuses pi*r, EUF takes no lt
     assert ask(Q.positive(r), assum, engine=eng) is None
     assert ask(Q.positive(r), assum, engine=eng) is None
     assert not eng._context_sessions

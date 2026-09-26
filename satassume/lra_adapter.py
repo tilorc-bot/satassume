@@ -23,11 +23,39 @@ The atom is not interpreted (``None``) if
   matrix expressions), or the arity is not 2;
 * anything in it is ``nan``, ``oo``, ``-oo`` or ``zoo`` (even inside an
   opaque term, e.g. ``x + oo`` or ``sin(x + oo)``);
-* a numeric coefficient or constant is not a SymPy ``Rational``: floats,
-  ``I``, ``pi``, ``sqrt(2)``, ``E``, and any subexpression without free
-  symbols that is not a rational number (``f(1)``, ``sin(1)``).
+* a factor of a product with free symbols is a number that is not a
+  SymPy ``Rational`` (``pi*x``, ``sqrt(2)*x``, ``0.5*x``, ``I*x``): a
+  constant times a symbol is nonlinear here;
+* a subexpression without free symbols is none of the readable constants
+  below (``I``, ``I*pi``, ``f(1)``, ``AccumBounds(0, 1)``, anything SymPy
+  does not know to be a finite real, or that interval arithmetic over
+  rationals, pi, E, +, *, **, exp, log, sin, cos, tan and atan cannot bound);
+* it holds a ``Float`` anywhere in a closed subexpression (``x < 0.5``,
+  ``x < 0.5*pi``).  SymPy has no single meaning for a Float in a relation:
+  ``Float(0.1) > Rational(1, 10)`` is True (exact binary value) while
+  ``Eq(Float(0.1), Rational(1, 10))`` is True as well (equality at the
+  Float's precision), and ``sympy.ask(Q.gt(0.1, 1/10))`` is False.  Reading
+  a Float either way would contradict SymPy somewhere, so it stays
+  unreadable.
 
-No SymPy assumptions are consulted.  **The caller vouches that every opaque
+Constants
+---------
+A subexpression without free symbols in a linear position is read as
+follows (:func:`_closed`): a ``Rational`` is a constant; a sum is split and a rational factor pulled out (``3*pi/2 + 1`` is ``3/2 * pi + 1``); what is left
+(``pi``, ``sqrt(2)``, ``pi**2``, ``log(2)``, ``sin(1)``, ``2**pi``) is a
+*constant term* if SymPy says it is a finite real (``is_extended_real``
+and ``is_finite`` True) and :func:`constant_bounds` finds rational bounds
+``lo < c < hi``.  A constant term is a theory variable like an opaque term
+(the same expression, the same variable, so ``pi/2`` and ``3*pi`` share
+``pi``); the engine asserts its bounds once per session
+(:meth:`LRAAdapter.register_bounds`, ``Relations._bound``).  Sound: the
+constant's value satisfies every asserted bound.  Comparisons closer than
+the bounds' width (about 2**-70 relative) stay undecided; distinct
+spellings of one value (``log(8)/log(2)`` and ``3``) are unrelated
+variables, which is a relaxation.
+
+No SymPy assumptions are consulted about terms with free symbols.
+**The caller vouches that every opaque
 term (see :func:`terms`) is a finite real**: the theory reads
 ``not (a < b)`` as ``a >= b`` and ``Q.lt(x, x + 1)`` as true, which is only
 right for finite reals.  The engine guarantees this with bridge clauses
@@ -44,7 +72,7 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import Any
 
-from sympy import S
+from sympy import Float, Rational, S
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.ask import Q
 from sympy.core.add import Add
@@ -94,10 +122,8 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
             or getattr(e, "is_MatrixExpr", False):
         raise _Unhandled(e)
     if not e.free_symbols:
-        if e.is_Rational:
-            const[0] += scale * Fraction(int(e.p), int(e.q))
-            return
-        raise _Unhandled(e)
+        _closed(e, scale, out, const)
+        return
     if e.is_Add:
         for a in e.args:
             _lin(a, scale, out, const)
@@ -120,6 +146,218 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
             _lin(rest[0], scale, out, const)
             return
     out[e] = out.get(e, Fraction(0)) + scale
+
+
+def _closed(e, scale: Fraction, out: dict, const: list) -> None:
+    """``_lin`` for a subexpression without free symbols: rationals go to
+    the constant, sums are split, a rational factor is pulled out, and what
+    is left must be a real constant without Floats and with rigorous bounds
+    (:func:`constant_bounds`); it becomes a term."""
+    if e.is_Rational:
+        const[0] += scale * Fraction(int(e.p), int(e.q))
+        return
+    if e.is_Add:
+        for a in e.args:
+            _closed(a, scale, out, const)
+        return
+    c, rest = e.as_coeff_Mul()
+    if rest is not e and c != 1 and c.is_Rational:
+        _closed(rest, scale * Fraction(int(c.p), int(c.q)), out, const)
+        return
+    if e.has(Float):
+        raise _Unhandled(e)                  # Floats: see the module docstring
+    if constant_bounds(e) is None:
+        raise _Unhandled(e)
+    out[e] = out.get(e, Fraction(0)) + scale
+
+
+#: working precision (bits) of the interval evaluation behind a constant's bounds
+_IV_PREC = 128
+#: constants of magnitude beyond ``2**±_MAX_BITS`` get no bounds: the
+#: exact rationals would be integers of that many bits
+#: (``exp(exp(exp(5)))`` is about ``2**(4e64)``)
+_MAX_BITS = 4096
+#: constant -> (lo, hi) or None (see constant_bounds); shared, pure
+_BOUNDS: dict = {}
+
+
+def constant_bounds(c):
+    """Rational bounds ``(lo, hi)`` with ``lo < c < hi`` for a closed
+    expression ``c`` that SymPy says is a finite (extended) real number, or
+    None: not such a constant, or no rigorous bound.
+
+    The value comes from interval arithmetic (:func:`_interval`: mpmath's
+    interval context at 128 bits, outward rounded at every step, over
+    rationals, pi, E, ``+``, ``*``, ``**``, exp, log, sin, cos, tan, atan);
+    the interval is widened outward to rationals on a grid 72 bits below
+    its magnitude.  A constant that SymPy cannot show to be zero still gets
+    a narrow interval around 0.  Memoized per constant."""
+    try:
+        return _BOUNDS[c]
+    except KeyError:
+        pass
+    except TypeError:
+        return _bounds(c)
+    if len(_BOUNDS) >= _INTERPRETED_MAX:
+        _BOUNDS.clear()
+    r = _BOUNDS[c] = _bounds(c)
+    return r
+
+
+def _bounds(c):
+    iv = _interval(c)
+    if iv is None:
+        return None
+    a, b = iv._mpi_
+    lo, hi = _rational(a), _rational(b)
+    top = max(_mag(a), _mag(b), -_MAX_BITS)
+    q = Fraction(2) ** (top - 72)            # a coarse grid, strictly outside
+    return ((lo / q).__floor__() - 1) * q, ((hi / q).__ceil__() + 1) * q
+
+
+_IV = None
+
+
+def _iv_context():
+    global _IV
+    if _IV is None:
+        from mpmath.ctx_iv import MPIntervalContext
+        _IV = MPIntervalContext()
+        _IV.prec = _IV_PREC
+    return _IV
+
+
+def _rational(x) -> Fraction:
+    """The exact value of a finite raw mpf (bounded by the caller)."""
+    from mpmath.libmp import to_rational
+    p, q = to_rational(x)
+    return Fraction(p, q)
+
+
+def _mag(x) -> float:
+    """``k`` with ``|x| < 2**k`` for a raw mpf; -inf for zero, inf for an
+    infinity or nan."""
+    sign, man, exp, bc = x
+    if man:
+        return exp + bc
+    return float("-inf") if not exp else float("inf")
+
+
+def _sign(x) -> int:
+    from mpmath.libmp import mpf_sign
+    return mpf_sign(x)
+
+
+def _interval(e):
+    """An interval (mpmath, outward rounded at every step) that holds the
+    real value of the closed expression ``e``, or None.
+
+    Only rationals, pi, E, ``+``, ``*``, ``**``, exp, log, sin, cos, tan and
+    atan are evaluated; a step outside its real domain (log of an interval
+    that reaches 0, a fractional power of one that reaches below 0, tan
+    across a pole, 1/x across 0) gives None, so a result is also a proof
+    that the value is real.  Every intermediate value must stay within
+    ``2**±_MAX_BITS`` (exp is checked before it is applied), so nothing huge
+    is built: ``exp(exp(exp(5)))`` and ``sin(exp(exp(exp(5))))`` are None
+    at once.  No error estimate of SymPy's evalf is trusted (it claims full
+    accuracy for ``sign``, ``tanh``, ``tan`` next to a pole, ``log`` next to
+    1)."""
+    iv = _iv_context()
+    from sympy import Pow, exp, log, sin, cos, tan, atan
+    if e.is_Rational:
+        if e.p and abs(e.p.bit_length() - e.q.bit_length()) > _MAX_BITS:
+            return None
+        return iv.mpf(e.p) / iv.mpf(e.q)
+    if e is S.Pi:
+        return iv.pi + 0
+    if e is S.Exp1:
+        return iv.e + 0
+    head = type(e)
+    if head not in (Add, Mul, Pow, exp, log, sin, cos, tan, atan):
+        return None
+    args = []
+    for a in e.args:
+        x = _interval(a)
+        if x is None:
+            return None
+        args.append(x)
+    try:
+        if head is Add:
+            r = args[0]
+            for x in args[1:]:
+                r = r + x
+        elif head is Mul:
+            r = args[0]
+            for x in args[1:]:
+                r = r * x
+        elif head is Pow:
+            b, x = args
+            n = e.args[1]
+            ba, bb = b._mpi_
+            if n.is_Integer:
+                if n < 0 and _sign(ba) <= 0 <= _sign(bb):
+                    return None
+                if abs(int(n)).bit_length() > _IV_PREC:
+                    return None              # not exact at 128 bits: mpmath goes through log/exp
+                r = b ** int(n)
+            else:
+                if _sign(ba) <= 0:
+                    return None
+                r = _iv_exp(x * _loose(iv.log(b)))
+        elif head is exp:
+            r = _iv_exp(args[0])
+        elif head is log:
+            if _sign(args[0]._mpi_[0]) <= 0:
+                return None
+            r = _loose(iv.log(args[0]))
+        elif head is atan:
+            from mpmath.libmp import mpf_atan
+            x = args[0]
+            import mpmath
+            mk = mpmath.mp.make_mpf       # atan is increasing: round the ends outward
+            xa, xb = args[0]._mpi_
+            r = _loose(iv.mpf([mk(mpf_atan(xa, _IV_PREC, "f")), mk(mpf_atan(xb, _IV_PREC, "c"))]))
+        else:
+            r = _loose({sin: iv.sin, cos: iv.cos, tan: iv.tan}[head](args[0]))
+    except Exception:                        # noqa: BLE001 - a step mpmath refuses decides nothing
+        return None
+    if r is None or type(r) is not type(args[0]):
+        return None                          # complex
+    a, b = r._mpi_
+    if max(_mag(a), _mag(b)) > _MAX_BITS:
+        return None                          # huge, infinite or nan
+    if (a[1] and _mag(a) < -_MAX_BITS) or (b[1] and _mag(b) < -_MAX_BITS):
+        # a tiny end moves outward to 0 or 2**-_MAX_BITS: its exact rational
+        # would be huge (``pi**-(10**9)``, ``tan(22)**(10**100)``)
+        from mpmath.libmp import fzero
+        if a[1] and _mag(a) < -_MAX_BITS:
+            a = (1, 1, -_MAX_BITS, 1) if a[0] else fzero
+        if b[1] and _mag(b) < -_MAX_BITS:
+            b = fzero if b[0] else (0, 1, -_MAX_BITS, 1)
+        r = _IV.make_mpf((a, b))
+    return r
+
+
+def _loose(r):
+    """``r`` widened outward by ``2**-120`` relative at each end.  mpmath's
+    exp, log, atan, sin, cos and tan round an approximation (a few units in
+    the last place at 10 to 30 guard bits) in the requested direction,
+    which is wrong when the true value is that close to a 128-bit number:
+    ``exp(891)`` and ``log(156434)`` come out with an upper end below the
+    value, and a cancelling parent (``pi*(log(156434) - Y)``) exposes it."""
+    from mpmath.libmp import mpf_abs, mpf_add, mpf_shift, mpf_sub
+    a, b = r._mpi_
+    a = mpf_sub(a, mpf_shift(mpf_abs(a), -120), _IV_PREC, "f")
+    b = mpf_add(b, mpf_shift(mpf_abs(b), -120), _IV_PREC, "c")
+    return _IV.make_mpf((a, b))
+
+
+def _iv_exp(x):
+    # exp of anything beyond about 2839 in size would be beyond 2**±4096;
+    # the check allows |x| < 2048
+    if x is None or max(_mag(x._mpi_[0]), _mag(x._mpi_[1])) > 11:
+        return None                          # |x| >= 2048
+    return _loose(_IV.exp(x))
 
 
 def _linear(name, lhs, rhs):
@@ -264,6 +502,23 @@ class LRAAdapter:
         """:func:`to_constraint` through the cache."""
         r = self.interpret(atom)
         return None if r is None else r[0]
+
+    def register_bounds(self, solver, term, new_var) -> list:
+        """Register the bounds ``lo < term < hi`` of a constant term
+        (:func:`constant_bounds`) on fresh variables ``new_var()``; returns
+        those variables, to be asserted true (``[]`` for any other term).
+        The caller does this once per solver and term."""
+        b = constant_bounds(term) if not term.free_symbols else None
+        if b is None:
+            return []
+        lo, hi = b
+        out = []
+        for payload in ((((term, Fraction(-1)),), -lo, True, False),   # -c < -lo
+                        (((term, Fraction(1)),), hi, True, False)):     # c < hi
+            v = new_var()
+            solver.register_atom(self.theory, v, payload)
+            out.append(v)
+        return out
 
     def shared_terms(self) -> set:
         """Every opaque term of every atom registered through this adapter."""

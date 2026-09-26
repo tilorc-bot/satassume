@@ -59,6 +59,17 @@ The rule base derives ``nonnegative``, ``nonzero``, ``extended_*`` and the
 rest from these three.  Numbers are not linked (their unary facts are
 closed already).
 
+Constant terms
+--------------
+A closed real constant in a linear position (``pi`` of ``x <= 3*pi/2``) is
+a term of the LRA form (see :mod:`satassume.lra_adapter`); its guard
+``real(pi)`` is decided at the root by the rule base, and the first atom
+that brings it in has the adapter register its rational bounds
+``lo < pi < hi`` as two theory atoms asserted by unit clauses, once per
+session (:meth:`Relations._bound`).  A constant the engine knows to be
+real context-free (``Engine.is_``) gets no guard literal and hence no node
+of its own: its ``real`` literal would be false at the root anyway.
+
 Predicate transfer
 ------------------
 With the first equality atom that is not glue (a user or extension atom;
@@ -80,7 +91,13 @@ interface atoms: whenever a term becomes known to two adapters
 (``shared_terms()``), the atom ``eq(a, b)`` is created for it and every
 other shared term, and registered like any other relation atom, so each
 theory sees the same Boolean (delayed theory combination; see
-:class:`satassume.theory.EqualitySharing`).
+:class:`satassume.theory.EqualitySharing`).  A pair with a constant term
+that is not rational (``eq(pi, x)``) gets no interface atom.  Such an
+atom passes an equality with the constant between the theories, e.g.
+``x = pi`` derived by LRA from ``x <= pi <= x`` reaching EUF, where it
+would give ``f(x) = f(pi)``; on the refine stream these atoms decided no
+query and cost search (about 10% of the decisions under the assumption
+sets with ``pi``).  Leaving them out is a relaxation, never unsound.
 
 Adapters
 --------
@@ -200,6 +217,12 @@ def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
 
+def _constant_term(e) -> bool:
+    """``e`` is a closed constant that is not a rational number (``pi``,
+    ``sqrt(2)``): an LRA term with bounds, left out of equality sharing."""
+    return _is_number(e) and not e.is_Rational
+
+
 def _number_basis(engine, c, facts=False) -> tuple:
     """The predicates to register with the transfer theory for the number
     ``c``: a small set of its decided facts whose unit propagation under the
@@ -269,6 +292,7 @@ class Relations:
         self.status: dict = {}            # atom -> interpreted by some theory
         self.queue: List[P] = []          # allocated, not yet interpreted
         self.linked: set = set()
+        self._bounded: set = set()        # constant terms whose bounds are asserted
         self.top: dict = {}               # vocabulary-atom arguments of user formulas
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
@@ -389,11 +413,35 @@ class Relations:
             ok = True
             guard = []
             for u in terms:
+                if _is_number(u):
+                    if u not in self._bounded:
+                        self._bounded.add(u)
+                        self._bound(ad, u)
+                    if s.engine.is_(u, "real") is True:
+                        # real(u) holds at the root: its guard literal is
+                        # false everywhere, and u needs no node here
+                        continue
                 s.ensure(u, {"real"})
                 guard.append(-s.var("real", u))
             s._emit(guard + [-var, t])
             s._emit(guard + [var, -t])
         return ok
+
+    def _bound(self, ad, c) -> None:
+        """Assert the rational bounds of the constant term ``c`` (``pi``,
+        ``sqrt(2)``) as root facts of the theory: true for its value, so
+        unconditional (no guard)."""
+        register = getattr(ad, "register_bounds", None)
+        if register is None:
+            return
+        s = self.session
+
+        def new_var():
+            v = s.table.aux()
+            s.solver.ensure_vars(v)
+            return v
+        for v in register(s.solver, c, new_var):
+            s._emit([v])
 
     # -- links to the unary vocabulary ----------------------------------
     def _atom_var(self, f) -> int:
@@ -430,6 +478,8 @@ class Relations:
         pairs = self.sharing.update(sets)
         for a, b in pairs:
             if _is_number(a) and _is_number(b):
+                continue
+            if _constant_term(a) or _constant_term(b):
                 continue
             eqa = relation_atom("eq", a, b)
             if eqa not in self.session.table.custom:

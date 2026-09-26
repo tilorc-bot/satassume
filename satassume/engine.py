@@ -143,6 +143,10 @@ class Session:
         self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
         self.n_assumption_nodes = 0           # nodes visited by assume_formula()
+        #: nodes that are closed irrational constants (pi, 1/pi); they do
+        #: not count as pollution (Engine.cone_threshold)
+        self.n_constants = 0
+        self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.assumption_formula = None       # the formula of assume_formula()
         #: relation atoms and their theories (satassume.relations); created
@@ -178,6 +182,9 @@ class Session:
         table = self.table
         b = table.node_base(node)
         self.base[node] = b
+        if getattr(node, "is_number", False) and not node.is_Rational \
+                and not node.free_symbols:
+            self.n_constants += 1
         table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
@@ -510,6 +517,7 @@ class Session:
         if self.relations is not None:
             self._relations(f)
         self.n_assumption_nodes = len(self.base)
+        self.n_assumption_constants = self.n_constants
         return [s]
 
     def literal_of(self, f) -> int:
@@ -583,7 +591,11 @@ class Engine:
         search in a session polluted by 1-3 nodes costs 0.9-1.1 ms, the
         cone search 1.3-1.7 ms; from about 8 extra nodes on, the reused
         search costs more (2.4 ms at 8-15, 3.7 ms at 16-31, 6.3 ms beyond),
-        since CDCL decides every variable of the session.
+        since CDCL decides every variable of the session.  Nodes that are
+        closed irrational constants (``pi``, ``1/pi`` of ``x/pi``) do not
+        count: their facts are context-free, nearly all fixed at the root.
+        Counting them sent twice as many queries under assumption sets with
+        ``pi`` to a cone rebuild, which cost about 10% of their time.
     keep_sessions : int
         How many contextual sessions (distinct assumption sets) to keep.
     extensions : satassume.extensions.Extensions or None
@@ -761,7 +773,8 @@ class Engine:
             s, lits = self._context_session(assumptions)
         else:
             s = self._fresh_session()
-        polluted = len(s.base) - s.n_assumption_nodes > self.cone_threshold
+        polluted = (len(s.base) - s.n_assumption_nodes
+                    - (s.n_constants - s.n_assumption_constants)) > self.cone_threshold
         q = self._literal(s, proposition)
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
