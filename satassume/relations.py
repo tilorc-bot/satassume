@@ -454,7 +454,10 @@ class Relations:
         """``node`` may become congruent to another known application of
         the same head: argument by argument, the two are the same
         expression or both may be merged (a side or a candidate, and not
-        two distinct numbers), and at least one pair differs."""
+        two distinct Rationals: EUF keeps those apart, but a Float or an
+        irrational number is an opaque term that may equal a Rational or
+        another spelling of the same value), and at least one pair
+        differs."""
         others = self._xheads.get((node.func, len(node.args)))
         if not others or len(others) < 2:
             return False
@@ -468,7 +471,7 @@ class Relations:
                 if a == b:
                     continue
                 if not ((a in cand or a in xside) and (b in cand or b in xside)) \
-                        or (_is_number(a) and _is_number(b)):
+                        or (a.is_Rational and b.is_Rational):
                     break
                 differ = True
             else:
