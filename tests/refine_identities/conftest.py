@@ -50,7 +50,7 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
 def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
     """Skip the ``full`` tests unless :data:`FULL_ENV` is ``1``: they were most
     of the suite's wall time, and the default run keeps a smaller check of the
-    same property (the fixpoint of one family, ``test_generated.py``).  Run
+    same property (the fixpoint of one family, ``build/test_generated.py``).  Run
     them alone with ``SATREFINE_FULL_TESTS=1 pytest -m full tests/refine_identities``."""
     if os.environ.get(FULL_ENV) == "1":
         return

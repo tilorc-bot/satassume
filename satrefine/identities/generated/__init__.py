@@ -8,7 +8,7 @@ assignments, where ``handlers_dict`` is
 The dispatcher prefers a generated handler for a key when
 ``SATREFINE_IDENTITIES`` is ``generated`` (the default) and falls back to
 the live identity handler otherwise; ``SATREFINE_IDENTITIES=live`` ignores
-the generated tables.  ``tests/refine_identities/test_generated.py`` checks
+the generated tables.  ``tests/refine_identities/build/test_generated.py`` checks
 that regenerating gives the committed modules.
 """
 from __future__ import annotations

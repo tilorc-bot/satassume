@@ -60,7 +60,7 @@ or a sign split on one symbol to agree; nested splits are not tried).  Not
 in the battery, the tests or v3.
 
 Pattern forms and matcher behavior this table relies on are pinned in
-``tests/refine_identities/test_engine_integer_funcs.py``.
+``tests/refine_identities/core/test_engine_integer_funcs.py``.
 Checked (adversarial pass, 2026-09-24, on the phase-1 rows, which the rows
 here restate): every row at 0, +-1, integer and half-integer boundaries,
 +-oo, non-real points, relation bounds against an infinite divisor,
