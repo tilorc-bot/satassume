@@ -1,4 +1,4 @@
-"""``satrefine/tools/refine_fuzz.py``'s extended family (``--ext``): infinite sample
+"""The fuzzers' extended family (``satrefine.tools.lib``, ``refine_fuzz --ext``): infinite sample
 points, relations with infinite bounds, SymPy's conventions at infinity
 classified instead of reported, and the default case streams unchanged.
 
@@ -8,25 +8,24 @@ checker must find each of them at +-oo without being pointed at the point.
 from __future__ import annotations
 
 import hashlib
-import importlib
 import random
-import sys
 
 import pytest
 from sympy import (KroneckerDelta, Piecewise, Q, RisingFactorial, S, acoth, acsch, atan2, coth, csch, exp, gamma, log,
                    oo, pi, sign, symbols, zoo, Eq, I, Add, Pow, im)
 
-_argv, sys.argv = sys.argv, sys.argv[:1]
-fz = importlib.import_module("satrefine.tools.refine_fuzz")
-rd = importlib.import_module("satrefine.tools.refine_differential")
-sys.argv = _argv
+from satrefine.tools.lib import assumptions as A
+from satrefine.tools.lib import grammar as G
+from satrefine.tools.lib import matrices as M
+from satrefine.tools.lib import numeric as V
+from satrefine.tools.lib import points as P
 
 x, y, z, n, m, k = symbols("x y z n m k")
 
 
 def _check(expr, refined, combos, rels=(), seed=0):
-    pts = fz.ext_points([expr, refined], combos, rels, random.Random(seed))
-    return fz.ext_compare(expr, refined, pts)
+    pts = P.ext_points([expr, refined], combos, rels, random.Random(seed))
+    return V.ext_compare(expr, refined, pts)
 
 
 # --- the bounds bugs are found at +-oo --------------------------------------------------------
@@ -50,7 +49,7 @@ def test_bounds_bugs_are_found_at_infinity(expr, wrong, combos, rels):
     assert ce is not None
     pt, a, b, kind = ce
     assert kind in ("infinite point", "undefined output")
-    assert any(fz.is_inf(v) for v in pt.values())
+    assert any(A.is_inf(v) for v in pt.values())
 
 
 RIGHT = [   # correct at +-oo, and at finite points
@@ -98,38 +97,38 @@ def test_undefined_input_is_skipped():
 
 # --- the samplers ----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("combo", fz.EXT_COMBOS)
+@pytest.mark.parametrize("combo", A.EXT_COMBOS)
 def test_ext_samples_satisfy_their_predicates(combo):
     rng = random.Random(1)
     for _ in range(30):
-        v = fz.draw_ext(combo, rng, inf_ok=True)
+        v = A.draw_ext(combo, rng, inf_ok=True)
         assert v is not None
-        assert all(fz.EXT_PREDS[p][1](v) for p in combo)
+        assert all(A.EXT_PREDS[p][1](v) for p in combo)
 
 
 def test_values_classify_infinities():
-    assert fz.ext_value(x, {x: oo}) == ("inf", 1)
-    assert fz.ext_value(-x + 1, {x: oo}) == ("inf", -1)
-    assert fz.ext_value(I * x, {x: oo})[0] == "inf"
-    assert fz.ext_value(1 / x, {x: S.Zero}) == "zoo"
-    assert fz.ext_value(x - x + 0 * x, {x: oo}) in ("nan", 0j)
-    assert fz.ext_value(KroneckerDelta(x, 2 * x), {x: oo}) == 1     # SymPy leaves it unevaluated; Eq decides
-    assert fz.ext_value(KroneckerDelta(x, 2 * x), {x: S(3)}) == 0
+    assert V.ext_value(x, {x: oo}) == ("inf", 1)
+    assert V.ext_value(-x + 1, {x: oo}) == ("inf", -1)
+    assert V.ext_value(I * x, {x: oo})[0] == "inf"
+    assert V.ext_value(1 / x, {x: S.Zero}) == "zoo"
+    assert V.ext_value(x - x + 0 * x, {x: oo}) in ("nan", 0j)
+    assert V.ext_value(KroneckerDelta(x, 2 * x), {x: oo}) == 1     # SymPy leaves it unevaluated; Eq decides
+    assert V.ext_value(KroneckerDelta(x, 2 * x), {x: S(3)}) == 0
 
 
 def test_relations_at_infinity():
-    assert fz.rel_holds_ext(Q.gt(x, 1), {x: oo}) is True
-    assert fz.rel_holds_ext(Q.lt(x, oo), {x: oo}) is False
-    assert fz.rel_holds_ext(Q.ge(x, oo), {x: oo}) is True
-    assert fz.rel_holds_ext(Q.gt(x, 1), {x: zoo}) is None
-    assert fz.rel_holds_ext(Q.eq(x, y), {x: -oo, y: -oo}) is True
+    assert A.rel_holds_ext(Q.gt(x, 1), {x: oo}) is True
+    assert A.rel_holds_ext(Q.lt(x, oo), {x: oo}) is False
+    assert A.rel_holds_ext(Q.ge(x, oo), {x: oo}) is True
+    assert A.rel_holds_ext(Q.gt(x, 1), {x: zoo}) is None
+    assert A.rel_holds_ext(Q.eq(x, y), {x: -oo, y: -oo}) is True
 
 
 def test_ext_stream_is_deterministic_and_fired_heads_exist():
     heads = set()
     for c in range(200):
-        g = fz.ext_generate(5, c)
-        assert g == fz.ext_generate(5, c)
+        g = G.ext_generate(5, c)
+        assert g == G.ext_generate(5, c)
         if g:
             heads.add(g[0])
     assert {"Piecewise", "acot_cot", "acoth_coth", "asech_sech", "acsch_csch"} <= heads
@@ -142,15 +141,40 @@ def test_default_scalar_and_matrix_streams_unchanged():
     h = hashlib.sha256()
     for s in (2, 3, 7):
         for c in range(0, 1500, 7):
-            g = rd.generate(s, c)
+            g = G.generate(s, c)
             h.update(repr(None if g is None else (g[0], str(g[1]), str(g[2]), sorted((str(q), v) for q, v in g[3].items()),
                                                   str(g[4]))).encode())
     assert h.hexdigest()[:16] == "30b0eb22641f2de1"
     h = hashlib.sha256()
     for c in range(0, 300, 3):
-        g = fz.mat_generate(2, c)
+        g = M.mat_generate(2, c)
         h.update(repr(None if g is None else (g[0], str(g[1]), str(g[2]))).encode())
     assert h.hexdigest()[:16] == "548bbfac92699b94"
+
+
+def test_sample_points_and_ext_stream_unchanged():
+    """The points each checker draws, and the extended stream, are part of what the gates compare
+    (pinned when the tools moved into ``satrefine.tools.lib``, from the code before the move)."""
+    def pts(ps):
+        return [sorted((str(k), str(v).replace("\n", "")) for k, v in p.items()) for p in ps]
+    h = hashlib.sha256()
+    for c in range(0, 300, 5):
+        g = G.generate(2, c)
+        if g is not None:
+            h.update(repr(pts(P.check_points([g[1]], g[3], g[4], random.Random(c)))).encode())
+    assert h.hexdigest()[:16] == "a0b7df8b06931d6d"
+    h = hashlib.sha256()
+    for c in range(0, 150, 3):
+        g = G.ext_generate(2, c)
+        h.update(repr(None if g is None else (g[0], str(g[1]), str(g[2]), str(g[4]),
+                                              pts(P.ext_points([g[1]], g[3], g[4], random.Random(c))))).encode())
+    assert h.hexdigest()[:16] == "f2a26c0067dbdc75"
+    h = hashlib.sha256()
+    for c in range(0, 150, 3):
+        g = M.mat_generate(2, c)
+        if g is not None:
+            h.update(repr(pts(M.mat_points(g[3], g[4], random.Random(c)))).encode())
+    assert h.hexdigest()[:16] == "941c2a653db50dc4"
 
 
 def test_finite_samples_carry_enough_digits():

@@ -9,16 +9,20 @@ dispatcher-level result computed on the rebuilt objects.  Calls under a
 patched ``ask`` go to ``SKIPPED``; a case repeated within one test function is
 kept once.
 """
+import argparse
 import collections
 import json
 import os
 import re
-import sys
 
-if "satrefine" in sys.modules:               # python -m: satrefine is loaded already
-    from satrefine.tools import rerun_with
-    rerun_with(handlers="handlers_v3")
-os.environ["SATREFINE_HANDLERS"] = "handlers_v3"
+_ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+_ap.add_argument("capture_dir", help="the JSON files refine_battery_capture wrote, one per v3 test file")
+_ap.add_argument("output", help="the battery module to write")
+_args = _ap.parse_args()
+
+from satrefine.tools.lib.select import select  # noqa: E402
+
+select(handlers="handlers_v3")
 import sympy
 from sympy import AccumBounds
 from sympy import Basic, MatrixSymbol, Symbol, srepr
@@ -30,8 +34,8 @@ from sympy.printing.str import StrPrinter
 
 from satrefine import refine as v3_refine
 
-CAP = sys.argv[1]
-OUT = sys.argv[2]
+CAP = _args.capture_dir
+OUT = _args.output
 FILES = ["trig", "hyperbolic", "inverse", "power_exp_log", "complex_parts", "integer_funcs", "combinatorial", "minmax_deltas", "matrices"]
 
 BASE_NS = {k: getattr(sympy, k) for k in dir(sympy) if not k.startswith("_")}

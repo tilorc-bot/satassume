@@ -7,7 +7,7 @@
 # SLOTS gate jobs machine-wide across concurrent gate runs (default 8; lock files in
 # $GATE_SLOTS_DIR, default /tmp/refine-gate-slots; the suite holds 3 slots for its workers):
 #   the tests/refine_identities suite (pytest-xdist, SUITE_WORKERS workers, default 3),
-#   the battery scoreboard in both SATREFINE_IDENTITIES modes,
+#   the battery scoreboard (scoreboard battery) in both SATREFINE_IDENTITIES modes,
 #   the differential against handlers_v3 for seeds 2, 3, 7 at 1,500 cases in both modes,
 #   the same for seed 2 with SATREFINE_BACKEND=satassume, in both modes,
 #   the extended family (--ext: infinities, Piecewise, inverse pairs) for seed 2 at EXT_CASES
@@ -44,7 +44,7 @@ tasks=()
 tasks+=("suite|timeout 2400 ${uvrun[*]} -m pytest -q -p no:cacheprovider -n $workers tests/refine_identities")
 tasks+=("full|env SATREFINE_FULL_TESTS=1 timeout 2400 ${uvrun[*]} -m pytest -q -p no:cacheprovider -n 3 -m full tests/refine_identities")
 for m in generated live; do
-  tasks+=("score-$m|env SATREFINE_IDENTITIES=$m timeout 3000 ${uvrun[*]} -m satrefine.tools.refine_identity_scoreboard")
+  tasks+=("score-$m|env SATREFINE_IDENTITIES=$m timeout 3000 ${uvrun[*]} -m satrefine.tools.scoreboard battery")
   for s in 2 3 7; do
     tasks+=("diff-$m-$s|env SATREFINE_IDENTITIES=$m timeout 3600 ${uvrun[*]} -m satrefine.tools.refine_differential --summary --seed $s --cases 1500")
   done

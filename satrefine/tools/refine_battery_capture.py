@@ -17,7 +17,12 @@ name), srepr of the arguments and result, and whether ``ask`` was patched.
 import functools
 import json
 import os
+import sys
 import types
+
+if __name__ == "__main__":                   # a pytest plugin (-p), not a command
+    print(__doc__)
+    sys.exit(0)
 
 os.environ["SATREFINE_HANDLERS"] = "handlers_v3"
 import importlib

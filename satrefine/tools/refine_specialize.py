@@ -12,7 +12,7 @@ Families are generated in stage order (``_stages.STAGES``): each with its own
 keys on their identity rows and every other key through the tables generated
 so far, repeated until no table changes.  Every generated rule is checked
 numerically at a sample point of its hypothesis and at the edge points (0, 1,
--1, I, -I and the family's ``EDGE_POINTS``) that satisfy it; only verified
+-1, I, -I and the family's edge points in ``satrefine.build.specs.EDGE_POINTS``) that satisfy it; only verified
 rules are installed and written.  The written modules carry each rule's
 derivation record as a comment.  Generation time is printed per family and
 round.
@@ -24,12 +24,11 @@ import os
 import sys
 import time
 
-if "satrefine" in sys.modules:               # python -m: satrefine is loaded already
-    from satrefine.tools import rerun_with
-    rerun_with(handlers="handlers_identities")
-os.environ["SATREFINE_HANDLERS"] = "handlers_identities"
-os.environ["SATREFINE_IDENTITIES"] = "live"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from satrefine.tools.lib.select import select  # noqa: E402
+
+select(handlers="handlers_identities")
+os.environ["SATREFINE_IDENTITIES"] = "live"
 
 import satrefine  # noqa: E402,F401  (loads the identity package)
 from satrefine.build import stages as _stages  # noqa: E402

@@ -7,7 +7,7 @@ process and without editing files, and the family is measured against three
 gates:
 
 1. **battery**: the family's cases of ``tests/refine_identities/battery_v3.py``,
-   classified exactly as ``satrefine/tools/refine_identity_scoreboard.py`` does.  A
+   classified exactly as the scoreboard does (``satrefine.tools.lib.battery``).  A
    case that was "same" or "other form" must stay one of the two, a "quiet"
    case (unchanged as v3 expects) must stay quiet, and no case may become
    "wrong" or "crash";
@@ -17,7 +17,7 @@ gates:
    row, to list the tests each row is responsible for).
    Tests that only assert the table size (``test_table_size*``, see
    ``--ignore-test``) are reported, not counted;
-3. **soundness**: ``satrefine/tools/refine_differential.py``'s inputs (``--seed``,
+3. **soundness**: the differential's inputs (``lib.grammar.generate``, ``--seed``,
    ``--cases``) restricted to the inputs containing one of the family's
    heads, checked numerically with its edge points; no input may become
    unsound, crash or time out that did not before.  Slow, so run only on
@@ -52,19 +52,18 @@ import importlib
 import json
 import os
 import random
-import signal
-import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
+from satrefine.tools.lib import battery as bat
+from satrefine.tools.lib.workers import install_case_alarm, refine_case, run_json_worker
+
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = ROOT / "tests" / "refine_identities"
 GOOD = ("same", "other")
-SHORT = {"fired, same as v3": "same", "fired, other form": "other",
-         "did not fire, v3 expects a result": "miss", "unchanged as expected": "quiet",
-         "fired where v3 expects unchanged": "extra", "fired, numerically wrong": "wrong", "crash": "crash"}
+SHORT = bat.SHORT
 
 
 # ---------------------------------------------------------------------------
@@ -116,42 +115,15 @@ def ablate(family: str, drop: list[int]) -> list[str]:
 
 def classify_battery(family: str) -> dict:
     """``case id -> (short key, result)`` for the family's battery cases, as the scoreboard classifies them."""
-    from sympy import MatrixSymbol, sympify
-
-    from satrefine import refine
-    from satrefine.testing.harness import assert_refinement_valid
-    sb = importlib.import_module("satrefine.tools.refine_identity_scoreboard")
-    cases, _ = sb.load_battery(str(TESTS / "battery_v3.py"))
-    known_limit = sb._known_oracle_limit()
+    cases, _ = bat.load_battery(bat.DEFAULT)
+    known_limit = bat.known_oracle_limit()
     out = {}
     for index, (expr, assumptions, expected, source) in enumerate(cases):
-        if sb._family(source) != family:
+        if bat.family_of(source) != family:
             continue
-        cid = f"{index}:{source}"
-        try:
-            got = sympify(refine(expr, assumptions))
-        except Exception as e:  # noqa: BLE001
-            out[cid] = ("crash", f"{type(e).__name__}: {str(e)[:120]}")
-            continue
-        fired = got != expr
-        valid = True
-        if fired and not (expr.has(MatrixSymbol) or got.has(MatrixSymbol)):
-            try:
-                assert_refinement_valid(expr, assumptions, got)
-            except AssertionError as e:
-                if not (str(e).startswith("no satisfying sample") or known_limit(expr, assumptions, got, source)):
-                    valid = False
-            except Exception:  # noqa: BLE001  (unsampled: unchecked, not wrong)
-                pass
-        if not valid:
-            key = "wrong"
-        elif expected is None:
-            key = "extra" if fired else "quiet"
-        elif not fired:
-            key = "miss"
-        else:
-            key = "same" if sb._same(got, expected) else "other"
-        out[cid] = (key, str(got))
+        o = bat.classify(expr, assumptions, expected, source, known_limit)
+        out[f"{index}:{source}"] = (SHORT[o.key], str(o.got) if o.error is None
+                                    else f"{type(o.error).__name__}: {str(o.error)[:120]}")
     return out
 
 
@@ -174,70 +146,37 @@ def run_tests(family: str) -> dict:
     return col.outcomes
 
 
-class _Timeout(Exception):
-    pass
-
-
 def soundness(family: str, seed: int, cases: int, timeout: int) -> dict:
-    """``case -> record`` for ``refine_differential``'s inputs that contain one of the family's heads."""
-    from sympy import Basic, preorder_traversal, srepr, sympify
-    rd = importlib.import_module("satrefine.tools.refine_differential")
-    f = rd.fz()
+    """``case -> record`` (``lib.workers.refine_case``) for the differential's inputs that contain one of the family's heads."""
+    from sympy import preorder_traversal
+
+    from satrefine.tools.lib.grammar import generate
+    from satrefine.tools.lib.numeric import compare
+    from satrefine.tools.lib.points import check_points
+    from satrefine.tools.lib.select import backend_from_env
+    backend_from_env()
+    install_case_alarm()
     keys = set(family_keys(family))
-
-    def on_alarm(signum, frame):
-        raise _Timeout
-
-    signal.signal(signal.SIGALRM, on_alarm)
     out = {}
     for case in range(cases):
-        g = rd.generate(seed, case)
+        g = generate(seed, case)
         if g is None:
             continue
         head, e, assumptions, combos, rel = g
         if not any(type(n).__name__ in keys for n in preorder_traversal(e)):
             continue
-        rec = {"head": head, "expr": str(e), "assumptions": str(assumptions)}
-        signal.alarm(timeout)
-        try:
-            try:
-                r = f.sat_refine(e, assumptions)
-                if not isinstance(r, Basic):
-                    r = sympify(r)
-            except ValueError as ex:
-                if "nconsistent" in str(ex):
-                    rec["status"] = "inconsistent"
-                    out[str(case)] = rec
-                    continue
-                raise
-            if r == e:
-                rec["status"] = "unchanged"
-            else:
-                rec["status"] = "fired"
-                rec["result"] = srepr(r)
-                rec["result_str"] = str(r)
-                points = rd.check_points([e, r], combos, rel, random.Random(seed * 7919 + case))
-                _, ce = rd.compare(e, r, points)
-                if ce:
-                    pt, a, b = ce
-                    rec["unsound"] = {"point": {str(k): str(v) for k, v in pt.items()},
-                                      "orig": rd._fmt(a), "refined": rd._fmt(b)}
-        except _Timeout:
-            rec["status"] = "timeout"
-        except Exception as ex:  # noqa: BLE001
-            rec["status"] = "crash"
-            rec["error"] = f"{type(ex).__name__}: {str(ex)[:160]}"
-        finally:
-            signal.alarm(0)
-        out[str(case)] = rec
+
+        def check(r, rec, e=e, combos=combos, rel=rel, case=case):
+            return compare(e, r, check_points([e, r], combos, rel, random.Random(seed * 7919 + case)))
+        out[str(case)] = {"head": head, "expr": str(e), "assumptions": str(assumptions),
+                          **refine_case(e, assumptions, timeout, check)}
     return out
 
 
 def worker(args) -> None:
-    os.environ["SATREFINE_HANDLERS"] = "handlers_identities"
-    sys.path.insert(0, str(ROOT))
     sys.path.insert(0, str(TESTS))
-    import satrefine  # noqa: F401
+    import satrefine
+    assert satrefine.HANDLERS_PACKAGE == "handlers_identities", satrefine.HANDLERS_PACKAGE
     drop = [int(i) for i in args.drop.split(",") if i != ""] if args.drop else []
     t0 = time.time()
     result = {"family": args.family, "drop": drop, "removed": ablate(args.family, drop)}
@@ -259,15 +198,10 @@ def worker(args) -> None:
 def measure(args, drop: list[int], gates: tuple[str, ...]) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "m.json")
-        cmd = [sys.executable, str(Path(__file__).resolve()), args.family, "--worker", "--out", out,
-               "--drop", ",".join(map(str, drop)), "--gates", ",".join(gates),
+        cmd = [args.family, "--worker", "--out", out, "--drop", ",".join(map(str, drop)), "--gates", ",".join(gates),
                "--seed", str(args.seed), "--cases", str(args.cases), "--timeout", str(args.timeout)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=ROOT)
-        if proc.returncode != 0 or not os.path.exists(out):
-            sys.stderr.write(proc.stdout[-3000:] + proc.stderr[-3000:])
-            raise SystemExit(f"worker failed for drop={drop} ({proc.returncode})")
-        with open(out) as fh:
-            return json.load(fh)
+        return run_json_worker("satrefine.tools.refine_ablate", cmd, out, env={"SATREFINE_HANDLERS": "handlers_identities"},
+                               failure=f"worker failed for drop={drop}", tail=3000, cwd=ROOT)
 
 
 def regressions(base: dict, now: dict, ignore: list[str]) -> dict:

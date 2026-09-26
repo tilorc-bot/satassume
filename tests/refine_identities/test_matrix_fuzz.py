@@ -1,20 +1,17 @@
-"""``satrefine/tools/refine_fuzz.py``'s matrix mode: the samplers satisfy the predicates
+"""The fuzzers' matrix family (``satrefine.tools.lib.matrices``, ``refine_fuzz --matrices``): the samplers satisfy the predicates
 they are drawn for, the checker finds a wrong rewrite, and a rewrite with no
 checkable point is counted as unchecked, not as passed.
 """
 from __future__ import annotations
 
-import importlib
 import random
-import sys
 
 import pytest
 from sympy import (Determinant, I, Identity, ImmutableMatrix, MatrixSymbol, Q, Rational, S, Symbol, ZeroMatrix,
                    symbols)
 
-_argv, sys.argv = sys.argv, sys.argv[:1]
-fz = importlib.import_module("satrefine.tools.refine_fuzz")
-sys.argv = _argv
+from satrefine.tools.lib import matrices as fz
+from satrefine.tools.lib.assumptions import c_imag
 
 X = MatrixSymbol('X', 2, 2)
 n = fz.SIZE_SYMS[0]
@@ -74,7 +71,7 @@ def test_scalar_and_index_points_respect_their_predicates():
     rel = Q.gt(fz._mi, fz._mj)
     for p in fz.mat_points(combos, rel, random.Random(3)):
         assert p[fz._mi] < 0 and p[fz._mi] > p[fz._mj] >= -2
-        assert fz.c_imag(p[fz._mc])
+        assert c_imag(p[fz._mc])
 
 
 def test_generation_is_deterministic_and_separate_from_the_scalar_stream():
