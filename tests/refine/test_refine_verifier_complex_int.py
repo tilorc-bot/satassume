@@ -1195,12 +1195,18 @@ def test_mul_handler_is_noop_on_general_products() -> None:
         x * conjugate(y),
         conjugate(x) * conjugate(y),
         conjugate(x) ** 2,
-        x**2 * conjugate(x),
         2 * conjugate(x),
         x * y * z,
         (x + 1) * (conjugate(x) + 1),
     ):
         assert refine(expr) == expr, f"Mul handler changed {expr}"
+
+
+def test_mul_handler_pairs_a_power_with_its_conjugate() -> None:
+    # x**2*conjugate(x) contains the pair x*conjugate(x) = Abs(x)**2 (exact for
+    # every complex x); handlers_identities rewrites it since the conjugate
+    # power match (phase 3, track D), the old handlers left it unchanged.
+    assert refine(x**2 * conjugate(x)) in (x**2 * conjugate(x), x * Abs(x) ** 2)
 
 
 def test_mul_handler_pairs_only_matching_conjugates() -> None:

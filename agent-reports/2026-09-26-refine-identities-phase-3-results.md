@@ -95,6 +95,7 @@ One coordinator and 18 Opus subagents in this session (after an earlier session 
 - Never wait for or kill processes with `pgrep -f`/`pkill -f` patterns that also match the waiting shell; wait on a PID with `tail --pid`.
 - Before gating, `git status --ignored` must list no source files, and the coordinator gates merges from a clean checkout: the repo's `.gitignore` had `build/`, which silently kept five `satrefine/build` modules out of a merge whose gates had passed in the agent's worktree (refine-identities was broken on clean checkouts for about an hour; fixed in d132bf3).
 - Pytest skips directories named `build` by default; a conftest hook collects `tests/refine_identities/build/`.
+- The gates did not run `tests/refine`, so the conjugate power match (`x**2*conjugate(x) -> x*Abs(x)**2`, exact) broke an old expectation there unnoticed for two merges. The expectation is updated, and the gates now have a `tests/refine` section.
 
 ## 7. Decisions for the user
 

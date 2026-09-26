@@ -14,6 +14,7 @@
 #   cases (default 1,000; 20 s per-case timeout, KroneckerDelta at +-oo is slow) and the matrix family (--matrices) for seed 2 at MAT_CASES cases
 #   (default 1,500), both in both modes, as sections of their own (the default seeds' case
 #   streams are unchanged, so their sections still compare 1:1 with older baselines),
+#   tests/refine (SymPy's refine tests and the verifier tests) under the default package,
 #   the tests behind the opt-in marker `full` (the full fixpoints; SATREFINE_FULL_TESTS=1),
 #   the termination tests (B9) with the adversarial-ask fuzz on their own, so the summary shows
 #   they ran: small by default (as in the suite, seconds); TERMINATION_FUZZ=N runs N random
@@ -42,6 +43,7 @@ uvrun=(uv run --no-project --with pytest --with pytest-xdist --with mpmath --wit
 
 tasks=()
 tasks+=("suite|timeout 2400 ${uvrun[*]} -m pytest -q -p no:cacheprovider -n $workers tests/refine_identities")
+tasks+=("refine|timeout 2400 ${uvrun[*]} -m pytest -q -p no:cacheprovider -n 2 tests/refine")
 tasks+=("full|env SATREFINE_FULL_TESTS=1 timeout 2400 ${uvrun[*]} -m pytest -q -p no:cacheprovider -n 3 -m full tests/refine_identities")
 for m in generated live; do
   tasks+=("score-$m|env SATREFINE_IDENTITIES=$m timeout 3000 ${uvrun[*]} -m satrefine.tools.scoreboard battery")
@@ -101,6 +103,8 @@ printf '%s\n' "${tasks[@]}" | xargs -P "$jobs" -I{} bash -c '
     echo "== differential matrices $m seed 2, $matcases cases (exit $(cat "$out/diffmat-$m-2.exit"))"
     tail -15 "$out/diffmat-$m-2.log"
   done
+  echo "== tests/refine under the default package (exit $(cat "$out/refine.exit"))"
+  grep -E '[0-9]+ (passed|failed|xfailed)|^FAILED' "$out/refine.log" | sed 's/ - .*//' | tail -8
   echo "== full fixpoint tests, marker full (exit $(cat "$out/full.exit"))"
   grep -E '[0-9]+ (passed|failed|skipped)|^FAILED' "$out/full.log" | sed 's/ - .*//' | tail -8
   echo "== termination tests, fuzz size ${termfuzz} (exit $(cat "$out/termination.exit"))"
