@@ -137,3 +137,19 @@ cannot change its answer, only the consistency check. Stage 0 first:
   .venv/bin/python` (memory note `satassume-test-environment`; the refine
   tests need SymPy `6379c4da69`, extracted with `git archive`).
 - Reports in `agent-reports/`, written as the work happens.
+
+## 6. Finish (after each item and at the end)
+
+- Record each landing on an issue (a new one per item, or #12 for item 1)
+  with the answers that changed and the risks; update this file's status.
+- Clean up everything the session made, and say what was kept and why:
+  temporary git worktrees and `tmp-*`/landing branches here
+  (`git worktree list`), files under `/tmp/claude-1000` that are not
+  another session's, the session scratchpad; on the Pi, bundles in `/tmp`,
+  worktrees under `/work/src/wt-*`, landed branches and `refs/remotes/land/*`
+  in `/work/src/perf-work`, any SymPy copy shipped there. Leave other
+  sessions' directories alone.
+- Update the memory notes (`next-engine-plans`, `perf-round-2-outcome`,
+  `pi5-benchmark-container` if the Pi layout changed).
+- Final message: what landed (commits, Pi numbers), what was dropped and
+  why, open decisions for the owner.
