@@ -1,7 +1,7 @@
 """Needs: powers of powers: ``(x**y)**z`` for even ``y`` (``sqrt(1/x)`` for positive ``x`` is met since phase 3: row "default: pow of pow, positive base" of tests/refine_identities/regressions.py).  Owner: handlers_identities (power_exp_log).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
-``agent-reports/2026-09-25-phase3-default-report.md``).
+``agent-reports/archive/2026-09-25-phase3-default-report.md``).
 ``sqrt(1/x) -> 1/sqrt(x)`` is in SymPy's ``test_pow1``; ``(x**y)**z ->
 Abs(x)**(y*z)`` (real ``x``, even ``y``) is ``handlers``' nested-power rule
 (v3 declines it too).

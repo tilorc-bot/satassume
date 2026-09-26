@@ -4,8 +4,8 @@ The suite runs against the default handler package
 (:data:`satrefine.DEFAULT_HANDLERS`, ``handlers_identities``) unless
 ``SATREFINE_HANDLERS`` selects another one.  It was written for the original
 package, ``satrefine.handlers``, which was removed in phase 3 with the tests of
-its internals (``agent-reports/2026-09-26-phase3-refactor-retire-report.md``;
-``agent-reports/2026-09-25-phase3-default-report.md`` for how the suite was
+its internals (``agent-reports/archive/2026-09-26-phase3-refactor-retire-report.md``;
+``agent-reports/archive/2026-09-25-phase3-default-report.md`` for how the suite was
 moved to the default package).  One marker remains:
 
 ``@pytest.mark.default_xfail("tests/refine_identities/needs/test_default_x.py", reason)``

@@ -1,7 +1,7 @@
 """Needs: ``A[i, j]`` under ``Q.diagonal(A) & Q.ne(i, j)`` is not zeroed.  Owner: handlers_identities (matrices).
 
 Found by making ``handlers_identities`` the default (phase 3, track D; see
-``agent-reports/2026-09-25-phase3-default-report.md``).
+``agent-reports/archive/2026-09-25-phase3-default-report.md``).
 ``handlers`` makes ``A[i, j]`` 0 under ``Q.diagonal(A) & Q.ne(i, j)``.
 ``handlers_identities`` refuses on purpose: SymPy keeps a negative index
 (``A[-1, 0]`` stays ``MatrixElement(A, -1, 0)`` and means the last row once

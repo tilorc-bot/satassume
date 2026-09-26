@@ -16,7 +16,7 @@ A row is ``Case(expr, assumptions, expected, bug, reason, backends=None)``:
 ``bug``
     where the bug is recorded: ``#10 B1`` (issue #10's list), ``default``
     (found by making ``handlers_identities`` the default, phase 3; see
-    ``agent-reports/2026-09-25-phase3-default-report.md``), ``matfixes``
+    ``agent-reports/archive/2026-09-25-phase3-default-report.md``), ``matfixes``
     (the matrix differential, phase 3), ``checker``/``engine`` (phase 2
     requests), ``diff`` (a differential or fuzz finding).
 ``reason``
@@ -145,7 +145,7 @@ _add("#10 B5", "the power form's oo**0: log(x**n) for an extended positive or in
     (log(x**n), Q.positive_infinite(x) & Q.real(n), UNCHANGED),
 ])
 # Rows stated over the extended reals: the B1-B7 fix (a bound proves only the extended signs) had
-# cost these rewrites, which hold at +-oo too (agent-reports/2026-09-26-phase3-d-extended-report.md).
+# cost these rewrites, which hold at +-oo too (agent-reports/archive/2026-09-26-phase3-d-extended-report.md).
 # Each: a one-sided bound, then the infinite point itself.
 _add("B1-B7 extended", "a one-sided bound proves only extended signs; the row holds at +-oo", [
     (acoth(coth(x)), Q.ge(x, 1), x),                          # acoth(coth(oo)) = acoth(1) = oo
@@ -220,7 +220,7 @@ _add("checker: Eq of equal infinities", "no proof of u = v for two arguments at 
 ])
 
 # --- inconsistent assumptions: the input comes back (from test_default_inconsistent_assumptions.py) ---
-# Decided in agent-reports/2026-09-26-phase3-fixes-report.md: every result is correct under
+# Decided in agent-reports/archive/2026-09-26-phase3-fixes-report.md: every result is correct under
 # inconsistent assumptions, and raising would depend on which question the engine asks first.
 _add("default: inconsistent assumptions", "top-level refine returns its input (B9), under every backend", [
     (conjugate(x), Q.infinite(x) & Q.real(x), UNCHANGED),

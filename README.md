@@ -152,7 +152,7 @@ identities work kept only v3, as the reference (`satrefine/reference/v3/`,
 still selected as `handlers_v3`), and removed `handlers` and `handlers_v2`
 with their own tests: the last commit that has them with all their tests is `411038c` on
 `ri/refactor-retire` (`git checkout 411038c` runs them as described here;
-`agent-reports/2026-09-26-phase3-refactor-retire-report.md`).
+`agent-reports/archive/2026-09-26-phase3-refactor-retire-report.md`).
 
 | Package | Tests | Written by | What it is |
 |---|---|---|---|
@@ -190,7 +190,7 @@ default package since 2026-09-25 (`satrefine.DEFAULT_HANDLERS`;
 `SATREFINE_HANDLERS=handlers_v3` selects the reference). `tests/refine/`
 runs against it: cases it handles worse are strict xfails pointing at
 `tests/refine_identities/needs/test_default_*.py`
-(`agent-reports/2026-09-25-phase3-default-report.md`); the tests of the
+(`agent-reports/archive/2026-09-25-phase3-default-report.md`); the tests of the
 original package's internals were removed with it in phase 3. On the 1,736-case battery
 recorded from the `handlers_v3` suite it gives 0 wrong and 0 crash and
 matches v3 on 1,073 of v3's 1,086 rewrites, in about a third of v3's
