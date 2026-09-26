@@ -1,14 +1,15 @@
 """Case splits: leftover bookkeeping resolved by a sign split on one symbol
-(:func:`case_split`) or at a closed endpoint of a floor's interval (:func:`endpoint_split`)."""
+(:func:`case_split`) or at a closed endpoint of a step node's interval (:func:`endpoint_split`).
+The heads involved are roles in :mod:`.hooks` (``opaque``, ``modulus``, ``step``, ``two_valued``)."""
 from __future__ import annotations
 
 from typing import Any
 
-from sympy import Abs, And, Dummy, I, Q, S, arg, count_ops, floor, im, nan, simplify, zoo
+from sympy import And, Dummy, I, Q, S, count_ops, nan, simplify, zoo
 
 from ... import _upstream
-from ..rules import _simple
 from . import driver as _dispatch
+from . import hooks
 from .driver import refine
 
 
@@ -104,13 +105,14 @@ def _linked(s: Any, groups: list[set]) -> set:
     return linked
 
 
-def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, im, arg)) -> Any | None:
+def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple | None = None) -> Any | None:
     """Resolve leftover bookkeeping by a sign split on one symbol under it.
 
-    For a symbol of known reality but unknown sign under an opaque head,
-    refine ``cand`` under each sign case; if every case collapses and the
-    results agree, that is the answer.  If they differ, try to generalize
-    each case's result by ``Abs`` (what ``Abs(x)`` is in that case, ``x``,
+    For a symbol of known reality but unknown sign under an opaque head
+    (``None``: :data:`.hooks.opaque`), refine ``cand`` under each sign case;
+    if every case collapses and the results agree, that is the answer.  If
+    they differ, try to generalize each case's result by the modulus head
+    (:data:`.hooks.modulus`, ``Abs``: what ``Abs(x)`` is in that case, ``x``,
     ``-x``, ``-I*x`` or ``I*x``, replaced by ``Abs(x)``) and accept the
     generalization when it refines back to every case's result.  An
     imaginary symbol is split as ``I`` times a real one.  When zero is not excluded, the
@@ -129,6 +131,8 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
     the battery and the ``power_exp_log`` generation: 529 of 529 such nodes
     stayed opaque, and exploring them took 5% and 17% of the time.)
     """
+    if opaque is None:
+        opaque = hooks.opaque
     syms: set = set()
     for node in cand.atoms(*opaque):
         syms |= node.free_symbols
@@ -201,7 +205,8 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
         if results is None:
             continue
         guesses = [results[0]] if all(_same(r, results[0]) for r in results) else []
-        guesses += [r.xreplace({rep: Abs(s)}) for (_, rep), r in zip(cases, results)]
+        if hooks.modulus is not None:
+            guesses += [r.xreplace({rep: hooks.modulus(s)}) for (_, rep), r in zip(cases, results)]
         for E in guesses:
             if not all(_same(_explore(E, And(assumptions, br)), r) for br, r in zip(branches, results)):
                 continue
@@ -212,20 +217,24 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple = (floor, i
 
 
 def endpoint_split(expr: Any, cand: Any, assumptions: Any) -> Any | None:
-    """Resolve a ``floor`` that is constant on its argument's interval except at
-    one closed endpoint (:func:`..rules._simple.floor_two_valued`): take the interior
+    """Resolve a step node (:data:`.hooks.step`, ``floor``) that is constant on its
+    argument's interval except at one closed endpoint (:data:`.hooks.two_valued`,
+    :func:`..rules._simple.floor_two_valued`): take the interior
     value when ``cand`` takes the same value at the endpoint under both, so the
     closed interval of a wrap (``asin(sin(t))`` on ``[-pi/2, pi/2]``) collapses
     although its floor jumps at the boundary.  ``None`` when nothing applies."""
-    for node in sorted(cand.atoms(floor), key=count_ops):
-        info = _simple.floor_two_valued(node, assumptions)
+    step = hooks.step
+    if step is None:
+        return None
+    for node in sorted(cand.atoms(step), key=count_ops):
+        info = hooks.two_valued(node, assumptions)
         if info is None:
             continue
         value, u, endpoint, alternative = info
         interior, boundary = cand.xreplace({node: value}), cand.xreplace({node: alternative})
         if _agree_at(interior, boundary, {u: endpoint}, assumptions):
             merged = _explore(interior, assumptions)
-            if merged.has(floor):
+            if merged.has(step):
                 again = endpoint_split(expr, merged, assumptions)
                 return merged if again is None else again
             return merged

@@ -39,7 +39,7 @@ from typing import Any
 
 from typing import Iterator
 
-from sympy import And, Piecewise, S, ceiling, floor
+from sympy import Abs, And, Piecewise, S, arg, ceiling, floor, im
 from sympy.core import Basic
 
 from ... import _upstream
@@ -148,7 +148,7 @@ def refine_piecewise(expr: Basic, assumptions: Any) -> Basic | None:
     by the engine (:func:`..core.prove.decide`: relations from signs and stated
     relations, never from a relation ``ask`` about a known infinite argument).
     A condition decided false drops its branch, one decided true ends the list.
-    The dispatcher leaves the arguments to this handler (:data:`..core.driver.own_args`):
+    The dispatcher leaves the arguments to this handler (:data:`..core.hooks.own_args`):
     SymPy refines a condition with a bare ``ask`` (weak on relations, raising on
     sign facts, wrong at ``-oo``)."""
     from ..core.driver import refine
@@ -180,10 +180,16 @@ declines, never the vendored handler (a family's refusals must stand)."""
 
 def install(handlers_dict: dict) -> None:
     """Register the simple rules as the keys' handlers and as the dispatcher's
-    fallbacks, so a family module that registers one of the keys later still
-    gets them after its own table declines."""
-    from ..core.driver import fallback_handlers, own_args
-    own_args.add("Piecewise")
+    fallbacks (:data:`..core.hooks.fallback`), so a family module that registers
+    one of the keys later still gets them after its own table declines; and set
+    the head roles of :mod:`..core.hooks` the engine reads."""
+    from ..core import hooks
+    hooks.own_args.add("Piecewise")
     for key, handler in SIMPLE_RULES.items():
         handlers_dict[key] = handler
-    fallback_handlers.update(FALLBACK_RULES)
+    hooks.fallback.update(FALLBACK_RULES)
+    hooks.opaque = (floor, im, arg)
+    hooks.conditional = Piecewise
+    hooks.modulus = Abs
+    hooks.step = floor
+    hooks.two_valued = floor_two_valued

@@ -19,7 +19,7 @@ from sympy import And, Q, S, arg, expand, floor, im, true
 
 from .. import _upstream
 from . import hooks
-from ..identities.core import driver as _dispatch
+from ..identities.core import hooks as _hooks
 from ..identities.core.driver import live
 from ..identities.core.rewrite import Row, refine
 from .verify import verify
@@ -65,9 +65,10 @@ modules are rendered from it."""
 
 def specialize(lhs: Any, domain: Any, catalog: Any = CATALOG) -> list[Row]:
     """The conditional rules of one identity left side.  Runs the live identity rows,
-    or, inside a staged generation (:mod:`.stages`), the family's own rows live and
-    every other key through the tables installed so far."""
-    with (nullcontext() if _dispatch.staged() else live()):
+    or, when an observer supplies the tables (a staged generation, :mod:`.stages`),
+    the family's own rows live and every other key through the tables installed so far."""
+    staged = bool(_hooks.observer) and _hooks.observer[-1].tables is not None
+    with (nullcontext() if staged else live()):
         return _specialize(lhs, domain, catalog)
 
 

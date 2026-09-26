@@ -26,10 +26,9 @@ changes, and it replaces ``satrefine.refine`` whenever the
 ``_upstream.refine`` itself is untouched (it must stay behavior-identical
 to SymPy's); handlers written for the vendored driver keep working here.
 
-The generation hooks (:func:`note`, :data:`consulted`, :data:`live_keys`) are
-the online half of what :mod:`satrefine.build.hooks` switches on while a
-table is generated (``tracing``, ``live_for``); step 3 of issue #13
-replaces them with one observer hook.
+What other code plugs in (the SymPy workarounds, the simple rules'
+fallbacks, an observer while a table is generated) is in :mod:`.hooks`;
+:func:`observing` pushes an observer.
 """
 from __future__ import annotations
 
@@ -37,10 +36,10 @@ from contextlib import contextmanager
 from typing import Any, Iterator
 
 from sympy.core import Basic, Expr
-from sympy.core.sympify import sympify
 
 from ... import _upstream
 from .. import config
+from . import hooks
 from ..config import MODE_ENV_VAR  # noqa: F401  (re-exported: tools and tests read it here)
 from .guard import (MAX_CALL_FIRINGS, MAX_DEPTH, MAX_FIRINGS, MAX_TOTAL_FIRINGS, RefineLoopError,  # noqa: F401
                     _Call, _short, loop_events, strict, strict_loops)
@@ -61,22 +60,6 @@ Tried before ``handlers_dict`` when :func:`mode` is ``"generated"``; when the
 table declines, the key's live handler runs in full (the table is a fast
 path and an audit of the rows, not a replacement: the catalog specializes
 them only in part)."""
-
-non_basic_returns: dict = {}
-"""``(key, handler) -> count`` of handler results that were not SymPy objects
-(a Python ``int`` from the vendored ``refine_sin_cos``); the dispatcher
-sympifies them, the scoreboard reports them."""
-
-fallback_handlers: dict = {}
-"""The simple rules (:mod:`._simple`), by key: tried after the key's handler
-declines, so a family table that registers ``floor`` or ``im`` keeps them
-without chaining explicitly."""
-
-own_args: set = set()
-"""Keys whose handler refines the node's arguments itself (``Piecewise``: each
-branch under its condition); the dispatcher does not refine them first."""
-
-
 
 _forced: list[str] = []
 
@@ -101,8 +84,7 @@ def live() -> Iterator[None]:
 
 @contextmanager
 def tables() -> Iterator[None]:
-    """Use the generated tables inside the block whatever ``SATREFINE_IDENTITIES`` says
-    (a staged generation, :mod:`satrefine.build.stages`, installs the tables of earlier families)."""
+    """Use the generated tables inside the block whatever ``SATREFINE_IDENTITIES`` says."""
     _forced.append("generated")
     try:
         yield
@@ -110,30 +92,22 @@ def tables() -> Iterator[None]:
         _forced.pop()
 
 
-def staged() -> bool:
-    """Whether a staged generation is running (:func:`tables` is the innermost mode)."""
-    return bool(_forced) and _forced[-1] == "generated"
-
-
-_trace: list[list] = []
-
-
-def note(kind: str, row: Any) -> None:
-    """Record a row that fired (``kind`` ``"rule"`` or ``"identity"``) for the active
-:func:`satrefine.build.hooks.tracing` block."""
-    if _trace:
-        _trace[-1].append((kind, row))
-
-
-consulted: list[set] = []
-"""A stack of key sets: the keys whose generated table the dispatcher looked up (a
-staged generation depends on the other families' tables through these keys only)."""
-
-
-live_keys: set = set()
-"""Keys whose generated table is ignored even in generated mode: the keys of the
-family being generated (:func:`._stages.generate`), which must not read the table it
-is producing while every other key uses the tables installed so far."""
+@contextmanager
+def observing(on_fire: Any = None, tables: Any = None) -> Iterator[hooks.Observer]:
+    """Push an observer (:data:`.hooks.observer`) for the block: ``on_fire(kind, row)``
+    is called on each table-row firing, ``tables(key)`` gives the generated table used
+    for ``key`` (``None``: none) whatever the mode.  What is not given is inherited
+    from the enclosing observer."""
+    outer = hooks.observer[-1] if hooks.observer else None
+    if outer is not None:
+        on_fire = outer.on_fire if on_fire is None else on_fire
+        tables = outer.tables if tables is None else tables
+    observer = hooks.Observer(on_fire, tables)
+    hooks.observer.append(observer)
+    try:
+        yield observer
+    finally:
+        hooks.observer.pop()
 
 
 @contextmanager
@@ -240,7 +214,7 @@ def _refine(expr: Any, assumptions: Any) -> Any:
         raise call.trip(f"refine nested more than {MAX_DEPTH} levels deep at {_short(expr)}")
     cache = _results[-1]
     active = call.active
-    context = (assumptions, mode(), tuple(state), frozenset(live_keys))
+    context = (assumptions, mode(), tuple(state), hooks.observer[-1].tables if hooks.observer else None)
     chain = []
     steps = 0
     call.depth += 1
@@ -272,43 +246,29 @@ def _refine(expr: Any, assumptions: Any) -> Any:
     return expr
 
 
-def _plain_rebuild(func: Any, args: Any, assumptions: Any) -> Basic:
-    return func(*args)
-
-
-rebuild_hook: list = [_plain_rebuild]
-"""``rebuild_hook[0](func, args, assumptions)`` rebuilds a node from its refined
-children; :mod:`..compat.sympy_fixes` installs the ``acot``/``acoth`` guard (B8)."""
-
-eval_refine_copies: dict = {}
-"""SymPy ``_eval_refine`` methods the driver calls a copy of instead, by the method
-(a subclass overriding the hook keeps its own); filled by :mod:`..compat.sympy_fixes`."""
-
-
 def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
     """``(result, again)``: the node's children refined and its handler applied;
     ``again`` when the result is a new expression still to be refined."""
     name = expr.__class__.__name__
-    if not expr.is_Atom and name not in own_args:
+    if not expr.is_Atom and name not in hooks.own_args:
         args = [_refine(a, assumptions) for a in expr.args]
         try:
-            new = rebuild_hook[0](expr.func, args, assumptions)   # acot/acoth keep their value at 0 (B8)
+            new = hooks.rebuild(expr.func, args, assumptions)   # acot/acoth keep their value at 0 (B8)
         except (ValueError, TypeError):          # a child became nan (inconsistent assumptions) and
             return expr, False                   # the head refuses it (Max: "nan is not comparable")
         if new.is_Atom or new.func is not expr.func or new.args != tuple(args):
             return (new, True) if new != expr else (expr, False)
         expr = new
-    own = eval_refine_copies.get(getattr(type(expr), "_eval_refine", None))
+    own = hooks.eval_refine.get(getattr(type(expr), "_eval_refine", None))
     if own is not None or hasattr(expr, "_eval_refine"):
         ref = own(expr, assumptions) if own is not None else expr._eval_refine(assumptions)
         if ref is not None:
             return ref, False
     handler = _upstream.handlers_dict.get(name)
-    generated = None
-    if mode() == "generated" and name not in live_keys:
-        generated = generated_handlers.get(name)
-        if consulted:
-            consulted[-1].add(name)
+    if hooks.observer and hooks.observer[-1].tables is not None:
+        generated = hooks.observer[-1].tables(name)
+    else:
+        generated = generated_handlers.get(name) if mode() == "generated" else None
     new = generated(expr, assumptions) if generated is not None else None
     if new is None or new == expr:
         if handler is None:
@@ -319,17 +279,11 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
     else:
         handler = generated
     if new is None or new == expr:
-        fallback = fallback_handlers.get(name)
+        fallback = hooks.fallback.get(name)
         if fallback is None or fallback is handler:
             return expr, False
         new = fallback(expr, assumptions)
         if new is None or new == expr:
-            return expr, False
-    if not isinstance(new, Basic):
-        tag = (name, getattr(handler, "__qualname__", repr(handler)))
-        non_basic_returns[tag] = non_basic_returns.get(tag, 0) + 1
-        new = sympify(new)
-        if new == expr:
             return expr, False
     _firings[-1] += 1
     call = _calls[-1]

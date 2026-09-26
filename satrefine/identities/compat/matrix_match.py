@@ -11,10 +11,11 @@ Pattern forms:
     run of adjacent factors, the right side replaces the run and the other
     factors stay in order, simplified with ``doit(deep=False)``;
 
-Importing this module registers :func:`match_matrix` with :func:`..core.match.register`,
-together with ``MatrixExpr`` as a non-scalar head (``MatAdd`` and ``MatMul`` are
-``Add`` and ``Mul`` subclasses) and ``MatAdd``, ``HadamardProduct`` as
-commutative heads; :mod:`satrefine.identities` imports it.
+Importing this module installs :func:`match_matrix` in :data:`..core.hooks.match`,
+``MatrixExpr`` as a non-scalar head (:data:`..core.hooks.non_scalar`: ``MatAdd``
+and ``MatMul`` are ``Add`` and ``Mul`` subclasses) and ``MatAdd``,
+``HadamardProduct`` as commutative heads (:data:`..core.hooks.commutative`);
+:mod:`satrefine.identities` imports it.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from typing import Any, Iterator
 
 from sympy.matrices.expressions import HadamardProduct, MatAdd, MatMul, MatrixExpr, MatrixSymbol
 
-from ..core import match
+from ..core import hooks
 from ..core.match import REBUILD, Binding, _bind, _match_seq
 
 
@@ -124,4 +125,6 @@ def _run(matrices: list, target: Any, assumptions: Any, b: Binding, top: bool) -
             yield nb
 
 
-match.register(match_matrix, non_scalar=(MatrixExpr,), commutative=(MatAdd, HadamardProduct))
+hooks.match.append(match_matrix)
+hooks.non_scalar += (MatrixExpr,)
+hooks.commutative += (MatAdd, HadamardProduct)

@@ -4,9 +4,10 @@ Two table kinds, one row shape ``(lhs, rhs, condition)``:
 
 * an **identity** row (:func:`identity_handler`) holds wherever ``condition``
   (its *domain*) does; its right side carries the branch bookkeeping
-  explicitly (see :mod:`._wraps`).  It fires when the domain is provable,
-  the refined right side contains none of the *opaque* heads (``floor``,
-  ``im``, ``arg`` by default) and a rewrite ordering strictly decreases;
+  explicitly (see :mod:`..rules._wraps`).  It fires when the domain is provable,
+  the refined right side contains none of the *opaque* heads (by default
+  :data:`.hooks.opaque`: ``floor``, ``im``, ``arg``) and a rewrite ordering
+  strictly decreases;
 * a **rule** row (:func:`rule_handler`) is a conditional rewrite: it fires
   when ``condition`` (its *hypothesis*) is provable through
   ``_upstream.ask``; the right side is substituted as is.
@@ -24,13 +25,14 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any, Callable, Iterable, Iterator
 
-from sympy import Abs, Piecewise, Q, arg, count_ops, expand_mul, floor, im
+from sympy import Q, count_ops, expand_mul
 from sympy.core import Add, Basic, Expr, Mul
 from sympy.core.function import AppliedUndef
 from sympy.core.sympify import sympify
 
 from ... import _upstream
 from . import driver as _dispatch
+from . import hooks
 from .driver import refine  # the driver identity handlers evaluate candidates with
 from .match import Binding, bindings, subst
 from .prove import provable
@@ -85,7 +87,7 @@ def default_measure(heads: Iterable[type]) -> Measure:
         structure = 0
         for n in nodes:
             a = n.args[0] if n.args else n
-            if _is_negation(a) or isinstance(a, Abs):   # Abs is the canonical form rows produce
+            if _is_negation(a) or isinstance(a, hooks.modulus or ()):   # Abs, the canonical form rows produce
                 continue
             if isinstance(a, (Add, Mul)):
                 structure += len([f for f in a.args if not (f.is_number and abs(f) == 1)])   # -x*y is x*y
@@ -149,18 +151,28 @@ def _switched_off(flag: list) -> Iterator[None]:
         flag[0] = False
 
 
+def _fired(kind: str, row: Row) -> None:
+    """Tell the observer (:data:`.hooks.observer`), if any, that ``row`` fired."""
+    if hooks.observer:
+        on_fire = hooks.observer[-1].on_fire
+        if on_fire is not None:
+            on_fire(kind, row)
+
+
 def identity_handler(rows: list[Row], *, measure: Measure | None = None,
-                     opaque: tuple = (floor, im, arg), splits: bool = True) -> Callable[[Any, Any], Any]:
+                     opaque: tuple | None = None, splits: bool = True) -> Callable[[Any, Any], Any]:
     """A handler from identity rows ``(lhs, rhs, domain[, unless])``.
 
     For each row and binding: the domain must be provable; the substituted
     right side is refined with this handler switched off (its own nodes are
     rewritten by the dispatcher after acceptance, under the same ordering);
-    no ``Piecewise`` the input did not have may survive (a definition whose
-    conditions the assumptions leave open is not a rewrite; no split is tried
-    on it); a row with ``unless`` does not fire when ``unless`` is provable;
-    no ``opaque`` head may survive, after a case split when
-    ``splits``; and ``measure`` must strictly decrease.
+    no conditional (:data:`.hooks.conditional`, ``Piecewise``) the input did
+    not have may survive (a definition whose conditions the assumptions leave
+    open is not a rewrite; no split is tried on it); a row with ``unless``
+    does not fire when ``unless`` is provable; a step node (:data:`.hooks.step`)
+    is tried by the endpoint split; no ``opaque`` head (``None``:
+    :data:`.hooks.opaque`) may survive, after a case split when ``splits``;
+    and ``measure`` must strictly decrease.
     """
     rows = [tuple(sympify(t) for t in row) for row in rows]   # a generated 0 or True is a Python object
     unless = {row[:3]: row[3] for row in rows if len(row) == 4}
@@ -171,6 +183,8 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
     def handler(expr: Any, assumptions: Any) -> Any:
         if busy[0]:
             return None
+        heads = hooks.opaque if opaque is None else opaque
+        conditional, step = hooks.conditional, hooks.step
         m = measure or default_measure(static_heads | {expr.func})
         m0 = m(expr, assumptions)
         for lhs, rhs, domain in rows:
@@ -187,22 +201,22 @@ def identity_handler(rows: list[Row], *, measure: Measure | None = None,
                 with _switched_off(busy):
                     cand = refine(cand, assumptions)
                 cand = _distributed(cand)
-                if not set(cand.atoms(Piecewise)) <= set(expr.atoms(Piecewise)):
+                if conditional is not None and not set(cand.atoms(conditional)) <= set(expr.atoms(conditional)):
                     continue                  # an undecided definition
-                if cand.has(floor):
+                if step is not None and cand.has(step):
                     merged = endpoint_split(expr, cand, assumptions)
                     if merged is not None:
                         cand = merged
-                if splits and cand.has(*opaque) and not _splitting[0] and _dispatch.splits_left[0] > 0:
+                if splits and cand.has(*heads) and not _splitting[0] and _dispatch.splits_left[0] > 0:
                     _dispatch.splits_left[0] -= 1
                     with _switched_off(_splitting):   # no split inside a split's exploration: the
-                        merged = case_split(expr, cand, assumptions, opaque)   # branches must collapse by themselves
+                        merged = case_split(expr, cand, assumptions, heads)   # branches must collapse by themselves
                     if merged is not None:
                         cand = merged
-                if cand.has(*opaque):
+                if cand.has(*heads):
                     continue
                 if m(cand, assumptions) < m0:
-                    _dispatch.note("identity", (lhs, rhs, domain))
+                    _fired("identity", (lhs, rhs, domain))
                     # nested nodes of this head were left alone while the candidate was
                     # evaluated; rewrite them now so the result is assembled (and
                     # distributed) here rather than piecewise by the dispatcher
@@ -246,7 +260,7 @@ def rule_handler(rows: list, *, by_binding: bool = False) -> Callable[[Any, Any]
                         continue
                     out = subst(rhs, b, rebuild=True)
                     if out != expr:
-                        _dispatch.note("rule", (lhs, rhs, hyp))
+                        _fired("rule", (lhs, rhs, hyp))
                         return out
         return None
 

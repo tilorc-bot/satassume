@@ -3,12 +3,14 @@
 Every fact about a function is a hand-stated row (the family modules' tables:
 the stage 0 rows) or a generated rule (``generated/<family>.py``).  Families
 are generated in stage order (:data:`STAGES`); each family is specialized with
-its own keys on their identity rows (:func:`.hooks.live_for`) and every
-other key through the tables generated so far (:func:`._dispatch.tables`), so a
+its own keys on their identity rows and every other key through the tables
+generated so far (the stages' own dict of installed tables, supplied to the
+driver by an observer, :func:`..identities.core.driver.observing`), so a
 later stage builds on the compiled rules of the earlier ones.  Rules are
 verified before they are installed, every round.  A round regenerates the
 families whose inputs changed since their last generation: the tables at the
-keys the dispatcher looked up while generating them (:data:`._dispatch.consulted`); the loop stops when a round changes no table and fails loudly after
+keys the dispatcher looked up while generating them (what the observer's
+``tables`` was asked for); the loop stops when a round changes no table and fails loudly after
 :data:`MAX_ROUNDS`.  Cycles between stages (``im(log w)`` needs ``log``,
 ``log``'s rules need ``im``) are what the later rounds are for.
 
@@ -26,7 +28,6 @@ from sympy import sympify
 
 from ..identities.core import driver as _dispatch
 from ..identities.core.rewrite import Row, rule_handler
-from . import hooks
 from . import specialize as _specialize
 from .render import table_order
 
@@ -56,10 +57,9 @@ def family_name(module: types.ModuleType) -> str:
     return module.__name__.rsplit(".", 1)[-1]
 
 
-def install(rules: list[Row], keys: list[str], into: dict | None = None) -> None:
-    """Register ``rules`` as the generated table of ``keys`` (the keys some rule's left side is headed by),
-    as the generated module does on import."""
-    into = _dispatch.generated_handlers if into is None else into
+def install(rules: list[Row], keys: list[str], into: dict) -> None:
+    """Register ``rules`` in ``into`` as the generated table of ``keys`` (the keys some rule's left side
+    is headed by), as the generated module does on import."""
     heads = {lhs.func.__name__ for lhs, _, _ in rules}
     handler = rule_handler(table_order(rules))
     for key in keys:
@@ -69,18 +69,23 @@ def install(rules: list[Row], keys: list[str], into: dict | None = None) -> None
             into.pop(key, None)          # the family no longer has a table for it
 
 
-def generate_one(module: types.ModuleType, consulted: set | None = None) -> tuple[list[Row], list[str], dict]:
-    """One family against the tables installed now: its keys live, every other key through its
-    table.  ``consulted`` collects the keys whose table the dispatcher looked up."""
-    keys = sorted(_specialize.identity_keys(module))
+def generate_one(module: types.ModuleType, consulted: set | None = None,
+                 installed: dict | None = None) -> tuple[list[Row], list[str], dict]:
+    """One family against the tables in ``installed`` (default: the committed ones the driver
+    uses): its keys live, every other key through its table.  ``consulted`` collects the keys
+    whose table the dispatcher looked up."""
+    own = set(_specialize.identity_keys(module))
+    installed = _dispatch.generated_handlers if installed is None else installed
+    consulted = set() if consulted is None else consulted
+
+    def tables(key: str) -> Any:
+        if key in own:
+            return None
+        consulted.add(key)
+        return installed.get(key)
     _specialize.records.clear()
-    _dispatch.consulted.append(set() if consulted is None else consulted)
-    try:
-        with _dispatch.tables(), hooks.live_for(keys):
-            rules, keys, verdicts = _specialize.generate_family(module)
-    finally:
-        _dispatch.consulted.pop()
-    return rules, keys, verdicts
+    with _dispatch.observing(tables=tables):
+        return _specialize.generate_family(module)
 
 
 def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MAX_ROUNDS,
@@ -88,45 +93,40 @@ def generate(modules: list[types.ModuleType] | None = None, max_rounds: int = MA
     """Run the stages to a fixpoint from empty tables.
 
     Returns ``family -> {"rules", "keys", "verdicts", "records", "rounds", "seconds"}``
-    (``seconds``: generation time per round).  The installed tables are restored
-    afterwards."""
+    (``seconds``: generation time per round).  The tables are installed in a dict of
+    the stages' own, not in the driver's."""
     modules = ordered_families() if modules is None else modules
-    saved = dict(_dispatch.generated_handlers)
-    _dispatch.generated_handlers.clear()
+    installed: dict = {}             # key -> the handler of the table generated for it so far
     out: dict[str, dict] = {}
     inputs: dict[str, dict] = {}     # family -> {key it looked up: the table installed there then}
     tables: dict[str, tuple] = {}    # key -> the rules of the table installed for it
-    try:
-        for rnd in range(1, max_rounds + 1):
-            changed = []
-            for module in modules:
-                fam = family_name(module)
-                if fam in inputs and all(tables.get(k) == v for k, v in inputs[fam].items()):
-                    continue                     # no table it looked up has changed: same result
-                t0 = time.time()
-                consulted: set = set()
-                rules, keys, verdicts = generate_one(module, consulted)
-                seconds = time.time() - t0
-                inputs[fam] = {k: tables.get(k) for k in consulted}
-                entry = out.setdefault(fam, {"rules": None, "rounds": [], "seconds": []})
-                entry["seconds"].append(round(seconds, 1))
-                log(f"round {rnd} {fam}: {len(rules)} rules in {seconds:.0f}s")
-                if entry["rules"] != rules:
-                    previous = entry.get("records", {})
-                    entry.update(rules=rules, keys=keys, verdicts=verdicts,
-                                 records={r: previous[r] if r in previous else (rnd, _specialize.records.get(r))
-                                          for r in rules})
-                    entry["rounds"].append(rnd)
-                    install(rules, keys)
-                    heads = {lhs.func.__name__ for lhs, _, _ in rules}
-                    tables.update({k: tuple(rules) if k in heads else None for k in keys})
-                    changed.append(fam)
-            if not changed:
-                return out
-        raise RuntimeError(f"no fixpoint after {max_rounds} rounds; still changing: {changed}")
-    finally:
-        _dispatch.generated_handlers.clear()
-        _dispatch.generated_handlers.update(saved)
+    for rnd in range(1, max_rounds + 1):
+        changed = []
+        for module in modules:
+            fam = family_name(module)
+            if fam in inputs and all(tables.get(k) == v for k, v in inputs[fam].items()):
+                continue                     # no table it looked up has changed: same result
+            t0 = time.time()
+            consulted: set = set()
+            rules, keys, verdicts = generate_one(module, consulted, installed)
+            seconds = time.time() - t0
+            inputs[fam] = {k: tables.get(k) for k in consulted}
+            entry = out.setdefault(fam, {"rules": None, "rounds": [], "seconds": []})
+            entry["seconds"].append(round(seconds, 1))
+            log(f"round {rnd} {fam}: {len(rules)} rules in {seconds:.0f}s")
+            if entry["rules"] != rules:
+                previous = entry.get("records", {})
+                entry.update(rules=rules, keys=keys, verdicts=verdicts,
+                             records={r: previous[r] if r in previous else (rnd, _specialize.records.get(r))
+                                      for r in rules})
+                entry["rounds"].append(rnd)
+                install(rules, keys, installed)
+                heads = {lhs.func.__name__ for lhs, _, _ in rules}
+                tables.update({k: tuple(rules) if k in heads else None for k in keys})
+                changed.append(fam)
+        if not changed:
+            return out
+    raise RuntimeError(f"no fixpoint after {max_rounds} rounds; still changing: {changed}")
 
 
 # ----------------------------------------------------------------------------

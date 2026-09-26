@@ -6,8 +6,8 @@
 * :data:`EVAL_REFINE`: satrefine's copies of SymPy's ``Pow._eval_refine`` and
   ``exp._eval_refine``, which call SymPy's ``ask`` directly (A1).
 
-Importing this module installs both into the driver
-(:data:`..core.driver.rebuild_hook`, :data:`..core.driver.eval_refine_copies`);
+Importing this module installs both (:data:`..core.hooks.rebuild`,
+:data:`..core.hooks.eval_refine`);
 :mod:`satrefine.identities` imports it.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from sympy import I, Pow, Q, S, acot, acoth, exp, pi
 from sympy.core import Basic
 
 from ... import _upstream
-from ..core import driver
+from ..core import hooks
 
 
 _SIGN_AT_ZERO = (acot, acoth)   # heads whose eval pulls a sign out of an argument that may be zero
@@ -98,5 +98,5 @@ versions call SymPy's ``ask`` directly, past the backend and the per-call memo;
 the copies behave the same with the selected backend's answers."""
 
 
-driver.rebuild_hook[0] = rebuild
-driver.eval_refine_copies.update(EVAL_REFINE)
+hooks.rebuild = rebuild
+hooks.eval_refine.update(EVAL_REFINE)
