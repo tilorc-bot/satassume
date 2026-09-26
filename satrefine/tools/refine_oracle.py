@@ -47,7 +47,7 @@ old-assumption symbols.
 Usage::
 
     PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_oracle \
-        [--mode a|b|both] [--handlers handlers|handlers_v2] \
+        [--mode a|b|both] [--handlers handlers_identities|handlers_v3] \
         [--show gaps|unsound|all] [--keys log,Pow] [--jobs 4] [--json out.json]
 
 The exit status is always 0: this is a measurement.

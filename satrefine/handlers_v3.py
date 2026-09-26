@@ -4,7 +4,8 @@ Importing it imports the reference package and its public modules (in the order
 :mod:`satrefine` loads a handler package, so the handlers register as before),
 then binds ``satrefine.handlers_v3`` and ``satrefine.handlers_v3.<module>`` in
 ``sys.modules`` to those same module objects: the old names keep working and no
-module is loaded twice.
+module is loaded twice.  A source checkout only: the distribution leaves out
+:mod:`satrefine.reference` (see ``pyproject.toml``).
 """
 import importlib
 import pkgutil

@@ -17,7 +17,7 @@ Usage::
     ... suite --junit-dir out/            # keep the junit files
     ... suite --reuse out/                # do not run, read junit-<backend>.xml
     ... suite --show-failures satassume   # print each failure's message
-    ... suite --handlers handlers_v2 --suite tests/refine_v2   # another handler package and its suite
+    ... suite --handlers handlers_v3 --suite tests/refine_v3   # another handler package and its suite
     ... suite -- -k pow                   # extra pytest arguments
 
 ``battery``: rows per family module (``satrefine.tools.lib.sizes``), code
@@ -129,7 +129,7 @@ def run_battery(cases: list, show: bool, families: list | None = None) -> None:
         print(f"\n  {n} handler results were not SymPy objects (sympified by the dispatcher):")
         for (key, handler), count in sorted(non_basic_returns.items()):
             print(f"    {count:5d}  {key}: {handler}")
-    print(f"\nbattery: {total} cases, handlers={os.environ.get('SATREFINE_HANDLERS', 'handlers')}, "
+    print(f"\nbattery: {total} cases, handlers={os.environ.get('SATREFINE_HANDLERS', 'handlers_identities')}, "
           f"identities={os.environ.get('SATREFINE_IDENTITIES', 'generated')}")
     for key in bat.KEYS:
         if counts[key]:
@@ -299,7 +299,7 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("suite", help="a test suite under each ask backend")
     p.add_argument("--backends", default=",".join(st.BACKENDS))
     p.add_argument("--suite", default="tests/refine")
-    p.add_argument("--handlers", help="handler package to load (SATREFINE_HANDLERS), e.g. handlers_v2")
+    p.add_argument("--handlers", help="handler package to load (SATREFINE_HANDLERS), e.g. handlers_v3")
     p.add_argument("--junit-dir", type=Path, help="directory to keep junit-<backend>.xml in")
     p.add_argument("--reuse", type=Path, help="read junit-<backend>.xml from this directory instead of running")
     p.add_argument("--show-failures", metavar="BACKEND", help="print every failing test of this backend with its message")

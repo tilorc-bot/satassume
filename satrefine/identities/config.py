@@ -17,10 +17,10 @@ import os
 HANDLERS_ENV_VAR = "SATREFINE_HANDLERS"
 """Name of the handler package to load, relative to ``satrefine``.
 
-Defaults to :data:`DEFAULT_HANDLERS`.  The other implementations of the same
-registry keys (``handlers``, the original layer; ``handlers_v2``;
-``handlers_v3``) can be selected instead, so they can be measured with the
-same dispatcher, backends and tools.
+Defaults to :data:`DEFAULT_HANDLERS`.  The reference implementation of the
+same registry keys, ``handlers_v3`` (:mod:`satrefine.reference.v3`), can be
+selected instead, so it can be measured with the same dispatcher, backends
+and tools.  (``handlers`` and ``handlers_v2`` were removed in phase 3.)
 """
 
 DEFAULT_HANDLERS = "handlers_identities"
