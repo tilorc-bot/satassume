@@ -22,6 +22,7 @@ head (``tests/refine_identities/test_family_specs.py``).
 """
 from __future__ import annotations
 
+from dataclasses import KW_ONLY, dataclass
 from typing import Any, Callable, Iterable
 
 from .rewrite import identity_handler, rule_handler
@@ -29,44 +30,40 @@ from .rewrite import identity_handler, rule_handler
 Handler = Callable[[Any, Any], Any]
 
 
+@dataclass(eq=False)
 class Rules:
     """Rule rows ``(lhs, rhs, hypothesis[, unless])`` as one handler (:func:`.rewrite.rule_handler`)."""
-    __slots__ = ("rows", "by_binding")
-
-    def __init__(self, rows: Iterable, *, by_binding: bool = False):
-        self.rows = list(rows)
-        self.by_binding = by_binding
+    rows: list
+    _: KW_ONLY
+    by_binding: bool = False
 
     def handler(self) -> Handler:
         return rule_handler(self.rows, by_binding=self.by_binding)
 
 
+@dataclass(eq=False)
 class Identities:
     """Identity rows ``(lhs, rhs, domain[, unless])`` as one handler (:func:`.rewrite.identity_handler`)."""
-    __slots__ = ("rows", "measure", "opaque", "splits")
-
-    def __init__(self, rows: Iterable, *, measure: Any = None, opaque: tuple | None = None, splits: bool = True):
-        self.rows = list(rows)
-        self.measure = measure
-        self.opaque = opaque
-        self.splits = splits
+    rows: list
+    _: KW_ONLY
+    measure: Any = None
+    opaque: tuple | None = None
+    splits: bool = True
 
     def handler(self) -> Handler:
         return identity_handler(self.rows, measure=self.measure, opaque=self.opaque, splits=self.splits)
 
 
+@dataclass(eq=False)
 class Family:
     """``handlers``: ``key -> part or tuple of parts``; the table kinds: ``facts``,
-    ``exp_forms``, ``rules``, ``ranges`` (see the module docstring)."""
-    __slots__ = ("handlers", "facts", "exp_forms", "rules", "ranges")
-
-    def __init__(self, handlers: dict, *, facts: Iterable = (), exp_forms: Iterable = (), rules: Iterable = (),
-                 ranges: Iterable = ()):
-        self.handlers = dict(handlers)
-        self.facts = list(facts)
-        self.exp_forms = list(exp_forms)
-        self.rules = list(rules)
-        self.ranges = list(ranges)
+    ``exp_forms``, ``rules``, ``ranges`` (lists; see the module docstring)."""
+    handlers: dict
+    _: KW_ONLY
+    facts: list = ()
+    exp_forms: list = ()
+    rules: list = ()
+    ranges: list = ()
 
 
 def chain(*handlers: Handler) -> Handler:

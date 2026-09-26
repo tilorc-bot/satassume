@@ -58,7 +58,7 @@ def _parts(value) -> tuple:
 def test_handler_rows_are_stated_or_derived(module):
     spec = module.SPEC
     assert isinstance(spec, Family)
-    stated = [_norm(r) for r in spec.facts + spec.rules]
+    stated = [_norm(r) for r in [*spec.facts, *spec.rules]]
     allowed = set(stated) | {_norm(r) for r in derive([f for f in spec.facts if len(f) == 3], spec.exp_forms)}
     generic = [r for r in stated if isinstance(r[0].func, UndefinedFunction)]
     for key, value in spec.handlers.items():

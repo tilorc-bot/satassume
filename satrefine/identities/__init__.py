@@ -64,7 +64,7 @@ def family_module_name(family: str) -> str:
 
 
 def families() -> list[str]:
-    """The short names of every family module, sorted (the order they are loaded in)."""
+    """The short names of every family module, sorted."""
     from . import rules
     names = [info.name for info in pkgutil.iter_modules(rules.__path__)
              if not info.name.startswith("_") and not info.ispkg]
@@ -74,25 +74,6 @@ def families() -> list[str]:
 def family_modules() -> list[types.ModuleType]:
     """Every family module, imported, in :func:`families` order."""
     return [importlib.import_module(family_module_name(name)) for name in families()]
-
-
-_PRECEDED_BY = {"complex_parts": "power_exp_log"}
-"""``family -> family registered just before it``: ``complex_parts`` states rows over
-``power_exp_log``'s exponential forms (the order of the new keys in ``handlers_dict``,
-which generation follows, is the order the modules used to register in on import)."""
-
-
-def registration_order() -> list[types.ModuleType]:
-    """Every family module in the order :func:`load` registers them: :func:`families`
-    order, a family of :data:`_PRECEDED_BY` moved right after its predecessor."""
-    names: list[str] = []
-    for name in families():
-        before = _PRECEDED_BY.get(name)
-        if before is not None and before not in names:
-            names.append(before)
-        if name not in names:
-            names.append(name)
-    return [importlib.import_module(family_module_name(name)) for name in names]
 
 
 def load() -> None:
@@ -111,7 +92,11 @@ def load() -> None:
         satrefine.refine = driver.refine
     _simple.install(_upstream.handlers_dict)
     from . import generated  # noqa: F401  (registers the generated tables)
-    specs = [m.SPEC for m in registration_order()]
-    spec.register(specs, _upstream.handlers_dict)
-    for family in specs:
-        _simple.register_ranges(family.ranges)
+    modules = family_modules()
+    names = [m.__name__.rsplit(".", 1)[-1] for m in modules]
+    # complex_parts imports power_exp_log's exponential forms, so power_exp_log used to register
+    # first: keep that order (the order of handlers_dict's keys, which generation follows)
+    modules.insert(names.index("complex_parts"), modules.pop(names.index("power_exp_log")))
+    spec.register([m.SPEC for m in modules], _upstream.handlers_dict)
+    for m in modules:
+        _simple.register_ranges(m.SPEC.ranges)
