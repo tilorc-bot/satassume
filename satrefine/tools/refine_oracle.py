@@ -1367,7 +1367,7 @@ def walk_body(stmts, mod, func, ns_old, ns_plain, pairs, out):
 
 def run_mode_b_module(path):
     worker_init(ARGS_BACKEND[0])
-    full = Path("/home/tilo/sympy") / path
+    full = Path(sympy.__file__).resolve().parents[1] / path     # the checkout sympy is imported from
     modname = path[:-3].replace("/", ".")
     out = []
     try:
@@ -1408,8 +1408,12 @@ def _b_timeout(path, why):
     return [{"module": path, "status": "unreplayable", "why": why}]
 
 
+def _b_error(path, e):
+    return _b_timeout(path, repr(e)[:120])
+
+
 def run_mode_b(jobs):
-    return run_forked(MODE_B_MODULES, jobs, _b_task, "mode B", 1500.0, _b_timeout, _error_records)
+    return run_forked(MODE_B_MODULES, jobs, _b_task, "mode B", 1500.0, _b_timeout, _b_error)
 
 
 # ---------------------------------------------------------------------------
