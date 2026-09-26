@@ -4,7 +4,7 @@ A family module (``rules/*.py``, ``compat/matrices.py``) states its rows in
 module-level tables (the maths; the names label the rows in the generated
 modules' derivation comments and are what the tools read) and ends with
 ``SPEC = Family(...)``, which registers nothing: :func:`satrefine.identities.load`
-calls :func:`register` on every family's spec.
+registers :func:`build` of every family's spec.
 
 ``Family.handlers`` maps a key of ``satrefine._upstream.handlers_dict`` to a
 part (:class:`Rules` or :class:`Identities`) or a tuple of parts, tried in
@@ -23,7 +23,7 @@ head (``tests/refine_identities/test_family_specs.py``).
 from __future__ import annotations
 
 from dataclasses import KW_ONLY, dataclass
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from .rewrite import identity_handler, rule_handler
 
@@ -84,22 +84,11 @@ def chain(*handlers: Handler) -> Handler:
 def build(family: Family) -> dict[str, Handler]:
     """``key -> handler`` for ``family``; each part is built once."""
     made: dict = {}
-
-    def make(part: Rules | Identities) -> Handler:
-        if part not in made:
-            made[part] = part.handler()
-        return made[part]
-
     out = {}
     for key, parts in family.handlers.items():
-        if isinstance(parts, tuple):
-            out[key] = make(parts[0]) if len(parts) == 1 else chain(*(make(p) for p in parts))
-        else:
-            out[key] = make(parts)
+        parts = parts if isinstance(parts, tuple) else (parts,)
+        for p in parts:
+            if p not in made:
+                made[p] = p.handler()
+        out[key] = made[parts[0]] if len(parts) == 1 else chain(*(made[p] for p in parts))
     return out
-
-
-def register(families: Iterable[Family], into: dict) -> None:
-    """Register every family's handlers into ``into``, in order."""
-    for family in families:
-        into.update(build(family))

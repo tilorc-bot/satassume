@@ -97,6 +97,6 @@ def load() -> None:
     # complex_parts imports power_exp_log's exponential forms, so power_exp_log used to register
     # first: keep that order (the order of handlers_dict's keys, which generation follows)
     modules.insert(names.index("complex_parts"), modules.pop(names.index("power_exp_log")))
-    spec.register([m.SPEC for m in modules], _upstream.handlers_dict)
     for m in modules:
+        _upstream.handlers_dict.update(spec.build(m.SPEC))
         _simple.register_ranges(m.SPEC.ranges)
