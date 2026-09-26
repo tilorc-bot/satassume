@@ -197,6 +197,8 @@ class Recorder:
         self.registered: set[int] = set()
         if hasattr(inner, "propagate"):
             self.propagate = self._propagate
+        if hasattr(inner, "decide"):
+            self.decide = self._decide
 
     def register_atom(self, literal, payload):
         self.events.append(("register", literal))
@@ -231,16 +233,28 @@ class Recorder:
 
     def check(self):
         s = self.solver
+        lazy = frozenset()
         if s is not None:
             # every variable but the lazy ones (block variables nothing but
-            # their rule block mentions; never theory atoms) is assigned
+            # their rule block mentions, which may be theory atoms
+            # registered with mention=False) is assigned
             assert all(s._val[2 * v] is not None or s._lazy[v]
                        for v in range(1, s.nvars() + 1)), \
                 "check() called on a partial assignment"
+            lazy = frozenset(v for v in self.registered
+                             if s._val[2 * v] is None and s._lazy[v])
+            if hasattr(self.inner, "decide"):
+                assert self.inner.decide() is None, \
+                    "check() while the theory still asks for a decision"
         r = self.inner.check()
-        self.events.append(("check", r))
+        self.events.append(("check", r, lazy) if lazy else ("check", r))
         self._check_clause(r, "check")
         return r
+
+    def _decide(self):
+        x = self.inner.decide()
+        self.events.append(("decide", x))
+        return x
 
     def _propagate(self):
         out = list(self.inner.propagate())
@@ -266,7 +280,9 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
     * after a conflict (from ``assert_lit`` or ``check``) no ``assert``,
       ``check`` or ``propagate`` comes before a ``pop``; a conflict at level
       0 ends all ``assert``/``check`` calls;
-    * ``check`` sees every variable registered so far asserted;
+    * ``check`` sees every variable registered so far asserted, except
+      lazy ones (registered with ``mention=False``, unassigned);
+    * ``decide`` names a registered variable not asserted, or None;
     * ``propagate`` is not called after a conflict.
 
     Returns counts of the event kinds.
@@ -308,8 +324,12 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
             assert v not in alive, f"variable {v} asserted twice"
             alive[v] = level
             conflict = r is not None and r[0] is False
+        elif kind == "decide":
+            assert e[1] is None or e[1] in reg, f"decide({e[1]}) of an unregistered variable"
+            assert e[1] not in alive, f"decide({e[1]}) of an asserted variable"
+            continue
         elif kind == "check":
-            missing = reg - set(alive)
+            missing = reg - set(alive) - (e[2] if len(e) > 2 else frozenset())
             assert not missing, f"check() before asserting {sorted(missing)}"
             r = e[1]
             conflict = r is not None and r[0] is False

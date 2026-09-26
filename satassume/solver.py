@@ -387,6 +387,7 @@ class Solver:
         self._tmap: dict[int, list] = {}     # variable -> theories that registered it
         self._thead = 0                      # trail entries before it were reported
         self._tprops: list = []              # bound ``propagate`` methods
+        self._tdecides: list = []            # bound ``decide`` methods
         self._tmodels: list | None = None
         self._tpending = False               # propagate() owed after register_atom
         # Rule block (see set_rule_block): per-variable base of the block
@@ -1692,18 +1693,29 @@ class Solver:
         prop = getattr(theory, "propagate", None)
         if prop is not None:
             self._tprops.append(prop)
+        dec = getattr(theory, "decide", None)
+        if dec is not None:
+            self._tdecides.append(dec)
         self._witness = None
         self._stamp += 1
 
     def theories(self) -> list:
         return list(self._theories)
 
-    def register_atom(self, theory, var: int, payload) -> bool:
+    def register_atom(self, theory, var: int, payload, mention: bool = True) -> bool:
         """Declare that variable ``var`` is a theory atom of ``theory``
         (already attached) with the opaque ``payload``; calls
         ``theory.register_atom(var, payload)``.  If ``var`` is already fixed
         at root, the theory is told at once.  Returns False iff the problem
         is now unsatisfiable at root (like :meth:`add_clause`).
+
+        ``mention=False`` (for a rule-block variable): the atom does not
+        mention its variable, which stays lazy unless something else
+        mentions it: the block's implications are not written to it above
+        root and the search does not decide it.  The theory is still told
+        every value it gets on the trail; it must then not need a total
+        assignment of its atoms: what it needs decided it asks for with
+        ``decide`` (see :mod:`satassume.theory`).
         """
         if not any(t is theory for t in self._theories):
             raise ValueError("theory not attached")
@@ -1712,7 +1724,8 @@ class Solver:
             raise ValueError("register_atom takes a positive variable")
         if var > self._nvars:
             self._grow(var)
-        self._mention((2 * var,))
+        if mention:
+            self._mention((2 * var,))
         if self._trail_lim:
             self._backtrack(0)
         self._n_registered += 1
@@ -1875,6 +1888,33 @@ class Solver:
         self._reason[v] = reason
         self._trail.append(l)
         return None
+
+    def _theory_decide(self) -> int:
+        """Every variable the search decides is assigned: a decision a
+        theory asks for (``decide``: a variable, e.g. a lazy theory atom it
+        needs a value of), or -1.  The phase is the one the variable's rule
+        block implies if any (so the decision is consistent with the
+        block's closure), else the saved phase."""
+        val = self._val
+        for dec in self._tdecides:
+            x = dec()
+            if x is None:
+                continue
+            v = int(x)
+            if v <= 0 or v > self._nvars:
+                raise RuntimeError(f"theory decision {x} is not a variable")
+            if val[2 * v] is not None:
+                raise RuntimeError(f"theory decision {x} is assigned")
+            b = self._rb_base[v]
+            if b:
+                cl = self._rb_cl[b]
+                q = 2 * (v - b)
+                if cl & _BIT[q]:
+                    return 2 * v
+                if cl & _BIT[q + 1]:
+                    return 2 * v + 1
+            return 2 * v + self._polarity[v]
+        return -1
 
     def _theory_check(self) -> Clause | None:
         """Final check on a total assignment."""
@@ -2183,6 +2223,8 @@ class Solver:
                 if nxt < 0:
                     self._n_decisions += 1
                     nxt = self._pick_branch()
+                    if nxt < 0 and self._tdecides:
+                        nxt = self._theory_decide()
                     if nxt < 0:
                         if theories:
                             confl = self._theory_check()

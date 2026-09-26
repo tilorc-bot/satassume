@@ -624,10 +624,10 @@ class Relations:
                              and isinstance(node, Rational) else range(NPRED))
                     for k in preds:
                         if k != polar or node not in part:
-                            solver.register_atom(th, b + k, (t, k))
+                            solver.register_atom(th, b + k, (t, k), False)
                     continue
                 if lv == 1 and node not in part:
                     part.add(node)
-                    solver.register_atom(th, b + polar, (ad.node_term(node), polar))
+                    solver.register_atom(th, b + polar, (ad.node_term(node), polar), False)
                 keep.append((node, b))
             pend[:] = keep

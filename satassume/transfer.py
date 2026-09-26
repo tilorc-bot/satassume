@@ -241,6 +241,51 @@ class TransferTheory:
                 return (False, why)
         return None
 
+    def decide(self):
+        """A variable to decide, or None: the solver asks at an assignment
+        total but for lazy variables (see ``Solver.register_atom(...,
+        mention=False)``).  The atoms of a predicate in a class with two or
+        more of them are either all unassigned (no witness: nothing forced
+        them) or, after propagation, all assigned alike.  All unassigned is
+        consistent, but each rule block would complete its lazy variables
+        on its own and could pick different values for equal terms; so the
+        first of them is decided, and propagation gives the rest the same
+        value.  Atoms of a singleton class are unconstrained here."""
+        euf = self.euf
+        rep, members = euf._repr, euf._members
+        by_term, val = self._by_term, self._val
+        seen = None
+        for t, d in by_term.items():
+            r = rep[t]
+            ms = members[r]
+            if len(ms) < 2:
+                continue
+            if seen is None:
+                seen = set()
+            elif r in seen:
+                continue
+            seen.add(r)
+            ds = [d2 for m in ms if (d2 := by_term.get(m))]
+            if len(ds) < 2:
+                if all(len(vs) < 2 for vs in ds[0].values()):
+                    continue
+            per: dict = {}
+            for d2 in ds:
+                for p, vs in d2.items():
+                    lst = per.get(p)
+                    if lst is None:
+                        per[p] = list(vs)
+                    else:
+                        lst.extend(vs)
+            for vs in per.values():
+                if len(vs) > 1 and vs[0] not in val:
+                    for v in vs:
+                        if v in val:
+                            break
+                    else:
+                        return vs[0]
+        return None
+
     def push_level(self) -> None:
         self._lims.append(len(self._trail))
 
