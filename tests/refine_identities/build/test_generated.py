@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import os
+from pathlib import Path
 
 import pytest
 from sympy import I, Q, log, pi, srepr, symbols, sympify
@@ -14,6 +16,15 @@ from satrefine.build.render import generated_path
 from satrefine.build.specialize import family_modules
 
 x = symbols("x")
+
+
+def _power_exp_log_rows():
+    """``IDS`` and ``ROWS`` of ``rules/test_power_exp_log.py`` (another directory, so not on ``sys.path``)."""
+    path = Path(__file__).resolve().parents[1] / "rules" / "test_power_exp_log.py"
+    spec = importlib.util.spec_from_file_location("_power_exp_log_rows", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.IDS, module.ROWS
 
 GENERATED_GAPS: dict = {}   # rows where the live engine fires and generated mode does not, and why
 # None: a generated table is a fast path, and the live rows run when it declines (the
@@ -27,7 +38,7 @@ def test_generated_table_covers_the_live_rows(monkeypatch):
     numerically valid result, except the listed gaps."""
     from satrefine import refine
     from satrefine.testing.harness import assert_refinement_valid
-    from test_power_exp_log import IDS, ROWS  # same directory; pytest prepends it to sys.path
+    IDS, ROWS = _power_exp_log_rows()
     misses, unexpected = [], []
     for (expr, assumptions, _team, _rel), rid in zip(ROWS, IDS):
         monkeypatch.setenv(MODE_ENV_VAR, "live")
