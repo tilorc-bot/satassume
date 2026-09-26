@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from .. import _upstream
+from ..identities.compat import upstream as _upstream
 from ..identities.core.driver import observing
 
 

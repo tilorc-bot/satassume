@@ -1,7 +1,6 @@
 """Tests for the ``MatMul`` refine handler."""
 from __future__ import annotations
 
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x
@@ -11,7 +10,6 @@ from sympy.matrices.expressions import Identity, MatMul, MatrixSymbol
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refines_like_sympy,
-    recording_ask,
     stub_ask,
     use_ask,
 )
@@ -36,7 +34,8 @@ def test_local_refinement() -> None:
     assert refine(X.T * X, Q.orthogonal(X)).doit() == Identity(2)
 
 
-@pytest.mark.original_wrong("conjugate(X)*X -> I for unitary X; that is X.H*X")
+# The original ``handlers`` package got this wrong (removed in phase 3): conjugate(X)*X -> I for
+# unitary X; that is X.H*X
 def test_unitary_conjugate_times_matrix_is_not_identity() -> None:
     # handlers (and SymPy's refine) cancel conjugate(X)*X; for the real rotation
     # ROT90 it is ROT90**2 = -I.  handlers_identities and v3 leave it.
@@ -47,17 +46,6 @@ def test_unitary_conjugate_times_matrix_is_not_identity() -> None:
 
 def test_scalar_factor_preserved() -> None:
     assert refine(2 * X.T * X, Q.orthogonal(X)) == 2 * Identity(2)
-
-
-@pytest.mark.handlers("handlers")
-def test_asks_factor() -> None:
-    fake, log = recording_ask({
-        str(Q.symmetric(X)): None,
-        str(Q.orthogonal(X)): True,
-    })
-    with use_ask(fake):
-        assert refine(X.T * X, Q.orthogonal(X)) == MatMul(Identity(2))
-    assert Q.orthogonal(X) in [entry[0] for entry in log]
 
 
 def test_non_cancelling_product_unchanged() -> None:

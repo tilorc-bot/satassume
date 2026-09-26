@@ -520,7 +520,7 @@ class MatrixRowCoverage:
     def __enter__(self):
         import importlib
 
-        from satrefine._upstream import handlers_dict
+        from satrefine.identities.compat.upstream import handlers_dict
         from satrefine.identities.core.rewrite import rule_handler
         mod = importlib.import_module("satrefine.identities.compat.matrices")
         tables = {key: part.rows for key, part in mod.SPEC.handlers.items()}   # one rule table per key
@@ -542,7 +542,7 @@ class MatrixRowCoverage:
         return self
 
     def __exit__(self, *exc):
-        from satrefine._upstream import handlers_dict
+        from satrefine.identities.compat.upstream import handlers_dict
         handlers_dict.update(self.saved)
         return False
 

@@ -100,7 +100,7 @@ def _table_parts(handler) -> list:
 
 def ablate(family: str, drop: list[int]) -> list[str]:
     """Remove ``RULES[i]`` for ``i`` in ``drop`` from every table of the module; describe what was removed."""
-    from satrefine._upstream import handlers_dict
+    from satrefine.identities.compat.upstream import handlers_dict
     mod = importlib.import_module(family_module(family))
     rules = list(mod.RULES)
     gone = [_norm(rules[i]) for i in drop]

@@ -32,8 +32,8 @@ import pytest
 from sympy import Basic, srepr
 
 import satrefine
-import satrefine.handlers_v3 as pkg
-from satrefine import _upstream
+import satrefine.reference.v3 as pkg
+from satrefine.identities.compat import upstream as _upstream
 
 ORIG_REFINE = _upstream.refine
 ORIG_ASK = _upstream.ask
@@ -87,7 +87,7 @@ def make_handler_wrapper(name, fn):
 _upstream.refine = refine_wrapper
 satrefine.refine = refine_wrapper
 
-mods = [importlib.import_module(f"satrefine.handlers_v3.{i.name}") for i in pkgutil.iter_modules(pkg.__path__)]
+mods = [importlib.import_module(f"{pkg.__name__}.{i.name}") for i in pkgutil.iter_modules(pkg.__path__)]
 orig_to_wrap = {}
 for m in mods:
     for attr, val in list(vars(m).items()):

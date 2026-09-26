@@ -13,7 +13,6 @@ auxiliary ``Mul`` key (upstream PR #29173 implemented the same rule as a
 ``refine_Mul``).
 """
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import n, x, y, z
@@ -23,9 +22,6 @@ from sympy.functions.elementary.complexes import Abs, conjugate
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
-    scripted_ask,
-    stub_ask,
-    use_ask,
 )
 
 
@@ -73,21 +69,6 @@ def test_conjugate_pair_product_negative() -> None:
     assert refine(conjugate(x)) == conjugate(x)
     # A known-real factor is refined to itself first, so the pair vanishes.
     assert refine(z * conjugate(z), Q.real(z)) == z**2
-
-
-@pytest.mark.handlers("handlers")
-def test_conjugate_none_safety() -> None:
-    with use_ask(stub_ask({})):
-        assert refine(conjugate(x)) == conjugate(x)
-        assert refine(conjugate(x**n)) == conjugate(x**n)
-        # The Mul pair rule needs no query at all.
-        assert refine(z * conjugate(z)) == Abs(z)**2
-
-    fake, queries = scripted_ask([None, None, None])
-    with use_ask(fake):
-        assert refine(conjugate(x**n)) == conjugate(x**n)
-    assert [query[0] for query in queries] == [
-        Q.real(x), Q.real(x**n), Q.imaginary(x**n), Q.integer(n)]
 
 
 def test_conjugate_numeric_oracle() -> None:

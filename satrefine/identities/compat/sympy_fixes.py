@@ -17,7 +17,7 @@ from typing import Any
 from sympy import I, Pow, Q, S, acot, acoth, exp, pi
 from sympy.core import Basic
 
-from ... import _upstream
+from . import upstream as _upstream
 from ..core import hooks
 
 
@@ -49,7 +49,7 @@ def rebuild(func: Any, args: Any, assumptions: Any) -> Basic:
 
 
 def _pow_eval_refine(expr: Any, assumptions: Any) -> Any:
-    """SymPy's ``Pow._eval_refine`` asking through :func:`satrefine._upstream.ask`
+    """SymPy's ``Pow._eval_refine`` asking through :func:`.upstream.ask`
     (the selected backend, memoized for the call) instead of SymPy's ``ask``."""
     ask = _upstream.ask
     b, e = expr.as_base_exp()
@@ -65,7 +65,7 @@ def _pow_eval_refine(expr: Any, assumptions: Any) -> Any:
 
 
 def _exp_eval_refine(expr: Any, assumptions: Any) -> Any:
-    """SymPy's ``exp._eval_refine`` asking through :func:`satrefine._upstream.ask`.
+    """SymPy's ``exp._eval_refine`` asking through :func:`.upstream.ask`.
     Like SymPy's, it asks without the assumptions (it only reads the literal
     coefficient of ``pi*I``)."""
     ask = _upstream.ask

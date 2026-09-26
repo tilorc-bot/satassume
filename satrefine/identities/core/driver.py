@@ -1,6 +1,6 @@
 """The refine dispatcher for identity-based handlers.
 
-This is the vendored driver (:func:`satrefine._upstream.refine`) with two
+This is the vendored driver (:func:`satrefine.identities.compat.upstream.refine`) with two
 changes, and it replaces ``satrefine.refine`` whenever the
 ``handlers_identities`` package is selected (see :func:`satrefine.identities.load`):
 
@@ -23,7 +23,7 @@ changes, and it replaces ``satrefine.refine`` whenever the
   work neither costs time nor counts against the cap.  A node being refined
   is not in the cache yet, so a real loop still reaches the cap.
 
-``_upstream.refine`` itself is untouched (it must stay behavior-identical
+``upstream.refine`` itself is untouched (it must stay behavior-identical
 to SymPy's); handlers written for the vendored driver keep working here.
 
 What other code plugs in (the SymPy workarounds, the simple rules'
@@ -36,7 +36,6 @@ from typing import Any
 
 from sympy.core import Basic, Expr
 
-from ... import _upstream
 from .. import config
 from . import hooks
 from .guard import (MAX_CALL_FIRINGS, MAX_DEPTH, MAX_FIRINGS, MAX_TOTAL_FIRINGS, RefineLoopError,  # noqa: F401
@@ -135,7 +134,7 @@ def _memoized(ask: Any) -> Any:
 def refine(expr: Any, assumptions: Any = True) -> Any:
     """Refine ``expr`` under ``assumptions`` with the handlers in ``handlers_dict``.
 
-    For the duration of a top-level call ``_upstream.ask`` is memoized.  The
+    For the duration of a top-level call the dispatcher's ``ask`` is memoized.  The
     call always terminates; when a termination guard trips it returns ``expr``
     unchanged, or raises :class:`RefineLoopError` if :func:`strict` (see
     *Termination* in :mod:`.guard`).  When ``ask`` raises on
@@ -152,8 +151,8 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
     _firings.append(0)
     _results.append({})
     splits_left[0] = MAX_SPLITS
-    saved_ask = _upstream.ask
-    _upstream.ask = _memoized(saved_ask)
+    saved_ask = hooks.dispatcher.ask
+    hooks.dispatcher.ask = _memoized(saved_ask)
     try:
         result = _refine(expr, assumptions)
     except RecursionError as error:          # RefineLoopError, or Python's own limit
@@ -169,7 +168,7 @@ def refine(expr: Any, assumptions: Any = True) -> Any:
         _calls.pop()
         _firings.pop()
         _results.pop()
-        _upstream.ask = saved_ask
+        hooks.dispatcher.ask = saved_ask
     if call.tripped is None:
         return result
     if strict():
@@ -241,7 +240,7 @@ def _step(expr: Basic, assumptions: Any) -> tuple[Any, bool]:
         ref = own(expr, assumptions) if own is not None else expr._eval_refine(assumptions)
         if ref is not None:
             return ref, False
-    handler = _upstream.handlers_dict.get(name)
+    handler = hooks.dispatcher.handlers_dict.get(name)
     if hooks.observer and hooks.observer[-1].tables is not None:
         generated = hooks.observer[-1].tables(name)
     else:

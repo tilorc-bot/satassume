@@ -12,7 +12,7 @@ with different results.
 
 Usage::
 
-    PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_fuzz [seed] [cases] [--handlers handlers_v2]
+    PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_fuzz [seed] [cases] [--handlers handlers_v3]
     ... --ext [seed] [cases]         # the extended family: infinities, Piecewise, inverse pairs
     ... --matrices [seed] [cases]    # matrix expressions at explicit sample matrices
 

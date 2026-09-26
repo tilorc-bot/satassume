@@ -30,9 +30,6 @@ from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
-    scripted_ask,
-    stub_ask,
-    use_ask,
 )
 
 
@@ -163,17 +160,3 @@ def test_pow_documented_divergences() -> None:
     # issue #30473: pinned SymPy has no imaginary-Abs rule.
     assert sympy_refine(Abs(z)**2, Q.imaginary(z)) == Abs(z)**2
     assert refine(Abs(z)**2, Q.imaginary(z)) == -z**2
-
-
-@pytest.mark.handlers("handlers")
-def test_pow_none_safety() -> None:
-    with use_ask(stub_ask({})):
-        assert refine((x**3)**Rational(1, 2), Q.real(x)) == sqrt(x**3)
-        assert refine((x**2)**Rational(1, 2), Q.real(x)) == sqrt(x**2)
-        assert refine(Abs(z)**2, Q.imaginary(z)) == Abs(z)**2
-        assert refine(Abs(x)**2) == Abs(x)**2
-
-    fake, queries = scripted_ask([None, None])
-    with use_ask(fake):
-        assert refine((x**y)**z, Q.integer(z)) == (x**y)**z
-    assert queries[0][0] == Q.real(x)

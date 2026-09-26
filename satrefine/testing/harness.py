@@ -13,7 +13,7 @@ Three kinds of oracle are provided:
   with the original; it does not consult ``ask`` at all.
 
 Handlers must call ``ask`` as an attribute of
-``satrefine._upstream`` (never import it by value) for the ask
+``satrefine.identities.compat.upstream`` (never import it by value) for the ask
 patches here to reach them.
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ AskLog = list[tuple[Any, Any, bool | None]]
 @contextmanager
 def use_ask(fake_ask: Ask) -> Iterator[None]:
     """Patch the module-global ``ask`` that every handler calls."""
-    import satrefine._upstream as upstream
+    import satrefine.identities.compat.upstream as upstream
 
     with mock.patch.object(upstream, "ask", fake_ask):
         yield

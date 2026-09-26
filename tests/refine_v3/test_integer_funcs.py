@@ -1,4 +1,4 @@
-"""Tests for ``satrefine.handlers_v3.integer_funcs``.
+"""Tests for ``satrefine.reference.v3.integer_funcs``.
 
 Each rule gets a positive test (the refined form) and a numeric soundness
 check over a grid that covers every sign combination, exact divisibility,
@@ -16,7 +16,7 @@ from sympy import (
 
 from sympy.assumptions.assume import AppliedPredicate
 
-import satrefine._upstream as upstream
+import satrefine.identities.compat.upstream as upstream
 from satrefine import refine
 from satrefine.testing.harness import (
     _numerically_equal, _sample_satisfies, assert_refinement_valid, use_ask,
@@ -233,7 +233,7 @@ def test_relation_ask_errors_are_treated_as_unknown():
 
 
 def test_handlers_return_none_when_nothing_is_known():
-    from satrefine.handlers_v3 import integer_funcs as mod
+    from satrefine.reference.v3 import integer_funcs as mod
     with use_ask(lambda p, q=True: None):
         assert mod.refine_floor(floor(x), True) is None
         assert mod.refine_ceiling(ceiling(x), True) is None
@@ -243,7 +243,7 @@ def test_handlers_return_none_when_nothing_is_known():
 
 
 def test_registration():
-    from satrefine.handlers_v3 import integer_funcs as mod
+    from satrefine.reference.v3 import integer_funcs as mod
     assert upstream.handlers_dict['floor'] is mod.refine_floor
     assert upstream.handlers_dict['ceiling'] is mod.refine_ceiling
     assert upstream.handlers_dict['frac'] is mod.refine_frac
@@ -273,6 +273,6 @@ def test_floor_of_infinite_is_not_a_gaussian_integer():
 ])
 def test_contradictory_assumptions_do_not_raise(expr, assumptions):
     # regression: the integer test used to propagate ask's ValueError
-    from satrefine.handlers_v3 import integer_funcs as mod
+    from satrefine.reference.v3 import integer_funcs as mod
     handler = getattr(mod, "refine_" + type(expr).__name__)
     handler(expr, assumptions)              # any answer is vacuously sound

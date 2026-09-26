@@ -2,7 +2,7 @@
 
 Conditions are decided connective by connective (:func:`provable`): an
 ``And`` needs every part provable and stops at the first that is not, an
-``Or`` one, atoms are asked one at a time through ``_upstream.ask``
+``Or`` one, atoms are asked one at a time through the dispatcher's ``ask``
 (relations last: they are the expensive ones) and an ``ask`` that raises
 (SymPy's relation theory does, on consistent facts) counts as not provable.  A sign or realness atom ``ask`` leaves open is
 decided from the bounds the assumptions state on its argument
@@ -36,7 +36,7 @@ from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
 from sympy.core.relational import Relational
 
-from ... import _upstream
+from . import hooks
 
 
 def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
@@ -86,7 +86,7 @@ def decide(cond: Any, assumptions: Any) -> bool | None:
 def _ask_atom(cond: Any, assumptions: Any) -> bool | None:
     """One ``ask``; a sign or realness atom it leaves open is tried on the stated bounds."""
     try:
-        answer = _upstream.ask(cond, assumptions)
+        answer = hooks.dispatcher.ask(cond, assumptions)
     except (ValueError, TypeError, AssertionError):   # SymPy's relation ask (LRA) raising on consistent facts
         return None
     if answer is None and isinstance(cond, AppliedPredicate) and cond.function in _BOUND_DECIDED \
@@ -258,7 +258,7 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
                 Q.nonpositive: no_neg_inf,
                 Q.nonzero: (above and no_pos_inf) or (below and no_neg_inf)}[predicate]
     try:     # else whether ``ask`` proves ``u`` finite (what a bound on the extended reals leaves open)
-        return True if finite or excluded or _upstream.ask(Q.finite(u), assumptions) is True else None
+        return True if finite or excluded or hooks.dispatcher.ask(Q.finite(u), assumptions) is True else None
     except (ValueError, TypeError, AssertionError):
         return None
 
@@ -421,7 +421,7 @@ def full_bounds(u: Any, assumptions: Any) -> tuple | None:
     sign facts for an unstated side (``None`` when that makes the interval empty,
     as in :func:`_checked`)."""
     lo, hi, lo_open, hi_open = (stated_bounds(u, assumptions) or (None, None, False, False))[:4]
-    ask = _upstream.ask
+    ask = hooks.dispatcher.ask
     if lo is None:
         if ask(Q.positive(u), assumptions):
             lo, lo_open = S.Zero, True

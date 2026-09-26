@@ -30,13 +30,8 @@ Verified findings, both fixed after the verifier report:
 """
 from __future__ import annotations
 
-import ast
-import pathlib
-import re
-from collections import defaultdict
 from typing import Any
 
-import pytest
 from sympy import Abs, I, Rational, ask, pi
 from sympy.abc import m, n, x
 from sympy.assumptions import Q
@@ -69,13 +64,11 @@ from sympy.functions.elementary.trigonometric import (
     tan,
 )
 
-import satrefine
-from satrefine import handlers_dict, refine
+from satrefine import refine
 from satrefine.testing.harness import (
     assert_refines_like_sympy,
     assert_refinement_valid,
     scripted_ask,
-    stub_ask,
     use_ask,
 )
 
@@ -99,60 +92,6 @@ ATAN_OPEN = Q.real(x) & Q.gt(x, -pi / 2) & Q.lt(x, pi / 2)
 # ---------------------------------------------------------------------------
 # scope: registry keys and ownership
 # ---------------------------------------------------------------------------
-
-_TRIG_OWNERS = {
-    "tan": "trig_tan",
-    "cot": "trig_cot",
-    "sec": "trig_sec_csc",
-    "csc": "trig_sec_csc",
-    "sinc": "trig_sinc",
-    "sin": "trig_sin_cos",
-    "cos": "trig_sin_cos",
-}
-_HYPER_OWNERS = {
-    key: "hyperbolic_forward"
-    for key in ("sinh", "cosh", "tanh", "coth", "sech", "csch")
-}
-_INV_HYPER_OWNERS = {
-    key: "hyperbolic_inverse"
-    for key in ("asinh", "acosh", "atanh", "acoth", "asech", "acsch")
-}
-_INV_TRIG_OWNERS = {key: "inverse_trig" for key in ("asin", "acos", "atan")}
-
-
-@pytest.mark.handlers("handlers")
-def test_scope_keys_owned_by_expected_modules() -> None:
-    for key, module in {
-        **_TRIG_OWNERS,
-        **_HYPER_OWNERS,
-        **_INV_HYPER_OWNERS,
-        **_INV_TRIG_OWNERS,
-    }.items():
-        handler = handlers_dict[key]
-        assert handler.__module__ == f"satrefine.handlers.{module}", (
-            f"key {key!r} registered by {handler.__module__}"
-        )
-
-
-def test_scope_no_duplicate_handler_registrations() -> None:
-    root = pathlib.Path(satrefine.__file__).parent / "handlers"
-    key_to_files: dict[str, list[str]] = defaultdict(list)
-    for path in sorted(root.glob("*.py")):
-        text = path.read_text()
-        for key in re.findall(r"handlers_dict\[['\"]([^'\"]+)['\"]\]", text):
-            key_to_files[key].append(path.name)
-    duplicates = {k: v for k, v in key_to_files.items() if len(v) > 1}
-    assert not duplicates, f"duplicate handler keys: {duplicates}"
-    # the shared parser must not register anything
-    parser = (root / "_trig.py").read_text()
-    assert "handlers_dict[" not in parser
-    # AST-level check that the regex did not miss annotated assignments
-    parsed = ast.parse((root / "trig_tan.py").read_text())
-    assert any(
-        isinstance(node, ast.Assign)
-        and isinstance(node.targets[0], ast.Subscript)
-        for node in ast.walk(parsed)
-    )
 
 
 def test_nonzero_is_real_in_new_assumptions() -> None:
@@ -530,13 +469,6 @@ NONE_SAFE_CASES: list[tuple[Any, Any]] = [
     (acos(cos(x)), Q.real(x)),
     (atan(tan(x)), Q.real(x)),
 ]
-
-
-@pytest.mark.handlers("handlers")
-def test_none_answers_leave_expression_unchanged() -> None:
-    with use_ask(stub_ask({})):
-        for expr, assumptions in NONE_SAFE_CASES:
-            assert refine(expr, assumptions) == expr, (expr, assumptions)
 
 
 def test_scripted_mixed_answers_do_not_raise() -> None:

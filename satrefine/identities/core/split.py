@@ -7,7 +7,6 @@ from typing import Any
 
 from sympy import And, Dummy, I, Q, S, count_ops, nan, simplify, zoo
 
-from ... import _upstream
 from . import driver as _dispatch
 from . import hooks
 from .driver import refine
@@ -20,7 +19,7 @@ def _split_branches(s: Any, assumptions: Any) -> tuple[list, bool] | None:
     cases; a nonnegative (nonpositive) one has a single case, the positive
     (negative) one, and the check at zero decides the rest.  An imaginary
     symbol is handled by :func:`case_split` as ``I`` times a real one."""
-    ask = _upstream.ask
+    ask = hooks.dispatcher.ask
     if ask(Q.real(s), assumptions) is True:
         pos, neg = ask(Q.positive(s), assumptions), ask(Q.negative(s), assumptions)
         if pos is True or neg is True or pos is False and neg is False:
@@ -144,7 +143,7 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple | None = No
     syms: set = set()
     for node in cand.atoms(*opaque):
         syms |= node.free_symbols
-    ask = _upstream.ask
+    ask = hooks.dispatcher.ask
     groups = None
     for s in sorted(syms, key=str):
         if ask(Q.imaginary(s), assumptions) is True and ask(Q.positive(-I*s), assumptions) is None:

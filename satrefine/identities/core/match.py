@@ -51,7 +51,6 @@ from sympy.core import Add, Basic, Mul
 from sympy.core.function import AppliedUndef, UndefinedFunction
 from sympy.core.operations import LatticeOp
 
-from ... import _upstream
 from . import hooks
 
 Binding = dict[Any, Any]
@@ -213,7 +212,7 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             a = parts[0]
             other = p2 if a is p1 else p1
             terms = target.args if isinstance(target, pattern.func) else (target,)
-            sel = [t for t in terms if _upstream.ask(a.predicate(t), assumptions) is True]
+            sel = [t for t in terms if hooks.dispatcher.ask(a.predicate(t), assumptions) is True]
             if not sel:
                 return
             rest = [t for t in terms if t not in sel]

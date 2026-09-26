@@ -6,7 +6,6 @@ selection for longer argument lists, and provably infinite arguments.  An
 ``ask`` answer of ``None`` never refines.
 """
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x, y, z
@@ -18,7 +17,6 @@ from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
-    recording_ask,
     stub_ask,
     use_ask,
 )
@@ -113,13 +111,3 @@ def test_numeric_oracle() -> None:
 
 def test_fidelity_when_sympy_does_not_refine() -> None:
     assert_refines_like_sympy(Max(x, y), Q.real(x) & Q.real(y))
-
-
-@pytest.mark.handlers("handlers")
-def test_ask_goes_through_upstream() -> None:
-    # The first candidate x asks y <= x; the engine answers only the
-    # reversed-order form Q.ge(x, y), which the handler accepts.
-    fake, log = recording_ask({str(Q.ge(x, y)): True})
-    with use_ask(fake):
-        assert refine(Max(x, y), Q.ge(x, y)) == x
-    assert [entry[0] for entry in log] == [Q.le(y, x), Q.lt(y, x), Q.ge(x, y)]

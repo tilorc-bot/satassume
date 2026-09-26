@@ -3,7 +3,7 @@
 ``Transpose``.
 
 A row is ``(lhs, rhs, hypothesis)`` or ``(lhs, rhs, hypothesis, unless)``:
-it fires when the hypothesis is provable through ``_upstream.ask`` and the
+it fires when the hypothesis is provable through the dispatcher's ``ask`` and the
 ``unless`` condition is not.  The rules are those stated in
 ``handlers_v3/matrices.py`` (356 lines), in **32 rows**: Transpose 5,
 Inverse 4, Determinant 2, Trace 1, MatAdd 4, HadamardProduct 1, MatMul 12,

@@ -1,6 +1,5 @@
 """Tests for the inverse hyperbolic refine handlers."""
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import x
@@ -25,8 +24,6 @@ from sympy.functions.elementary.hyperbolic import (
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
-    stub_ask,
-    use_ask,
 )
 
 
@@ -125,14 +122,3 @@ def test_integration_stronger_assumptions() -> None:
     assert refine(asinh(sinh(x)), Q.positive(x)) == x
     assert refine(acoth(coth(x)), Q.nonzero(x)) == x
     assert refine(asech(sech(x)), Q.positive(x)) == x
-
-
-@pytest.mark.handlers("handlers")
-def test_none_answers_leave_expression_unchanged() -> None:
-    with use_ask(stub_ask({})):
-        assert refine(asinh(sinh(x)), Q.real(x)) == asinh(sinh(x))
-        assert refine(acosh(cosh(x)), Q.nonnegative(x)) == acosh(cosh(x))
-        assert refine(atanh(tanh(x)), Q.real(x)) == atanh(tanh(x))
-        assert refine(acoth(coth(x)), Q.real(x) & Q.nonzero(x)) == acoth(coth(x))
-        assert refine(asech(sech(x)), Q.nonnegative(x)) == asech(sech(x))
-        assert refine(acsch(csch(x)), Q.nonzero(x)) == acsch(csch(x))

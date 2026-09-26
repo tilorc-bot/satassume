@@ -17,7 +17,7 @@ from typing import Any, Iterable
 
 from sympy import And, Q, S, arg, expand, floor, im, true
 
-from .. import _upstream
+from ..identities.compat import upstream as _upstream
 from . import hooks
 from ..identities.core import hooks as _hooks
 from ..identities.core.driver import live

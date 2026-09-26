@@ -1,19 +1,17 @@
 """Tests for the guarded ``sin``/``cos`` refine handler.
 
 The handler is a copy of the vendored
-:func:`satrefine._upstream.refine_sin_cos` with the PR #29450 guard
+:func:`satrefine.identities.compat.upstream.refine_sin_cos` with the PR #29450 guard
 for the ``(-1)**(k/2)`` factor that can evaluate to an ``Integer``.
 """
 from __future__ import annotations
 
-import pytest
 from sympy.assumptions import Q
 from sympy.abc import x, y
 from sympy.calculus.accumulationbounds import AccumBounds
 from sympy.core import S
 from sympy.core.symbol import Symbol
-from sympy.functions.elementary.exponential import exp
-from sympy.functions.elementary.trigonometric import cos, sin, tan
+from sympy.functions.elementary.trigonometric import cos, sin
 
 from satrefine import refine
 from satrefine.testing.harness import (
@@ -102,26 +100,6 @@ def test_matches_sympy_for_handled_cases() -> None:
     assert_refines_like_sympy(
         sin(n * S.Pi / 2), Q.odd(n) & Q.even((n - 1) / 2)
     )
-
-
-@pytest.mark.handlers("handlers")
-def test_type_error_preserved() -> None:
-    from satrefine.handlers.trig_sin_cos import refine_sin_cos
-    with pytest.raises(TypeError):
-        refine_sin_cos(tan(x), Q.real(x))
-    with pytest.raises(TypeError):
-        refine_sin_cos(exp(x), Q.real(x))
-    with pytest.raises(TypeError):
-        refine_sin_cos(x, Q.real(x))
-
-
-@pytest.mark.handlers("handlers")
-def test_integer_power_factor_regression() -> None:
-    # `sin(pi + x)` has a literal `k`, so `(-1)**((k + 1)/2)` is `-1`: calling
-    # `refine_Pow` on it used to raise `AttributeError`.
-    from satrefine.handlers.trig_sin_cos import refine_sin_cos
-    assert refine_sin_cos(sin(S.Pi + x, evaluate=False), True) == -sin(x)
-    assert refine_sin_cos(cos(S.Pi + x, evaluate=False), True) == -cos(x)
 
 
 def test_integer_power_factor_regression_through_refine() -> None:

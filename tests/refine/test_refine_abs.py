@@ -7,7 +7,6 @@ the Add-sign path enabled by the structural facts) is delegated and compared
 with ``assert_refines_like_sympy``.
 """
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.assumptions.refine import refine as sympy_refine
@@ -19,9 +18,6 @@ from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
-    scripted_ask,
-    stub_ask,
-    use_ask,
 )
 
 
@@ -52,24 +48,6 @@ def test_abs_add_sign_path() -> None:
     assert refine(Abs(x + y), Q.positive(x) & Q.positive(y)) == x + y
     assert refine(Abs(x - y), Q.positive(x) & Q.negative(y)) == x - y
     assert refine(Abs(x + y), Q.negative(x) & Q.negative(y)) == -x - y
-
-
-@pytest.mark.handlers("handlers")
-def test_abs_none_safety() -> None:
-    with use_ask(stub_ask({})):
-        assert refine(Abs(x), Q.zero(x)) == Abs(x)
-        assert refine(Abs(x)) == Abs(x)
-
-    # Zero unknown but positive known: still the vendored positive behavior.
-    fake = stub_ask({str(Q.zero(x)): None, str(Q.real(x)): True,
-                     str(Q.negative(x)): False})
-    with use_ask(fake):
-        assert refine(Abs(x), Q.positive(x)) == x
-
-    fake, queries = scripted_ask([None, None, None])
-    with use_ask(fake):
-        assert refine(Abs(x)) == Abs(x)
-    assert queries[0][0] == Q.zero(x)
 
 
 def test_abs_numeric_oracle() -> None:

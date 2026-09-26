@@ -1,6 +1,5 @@
 """Tests for the ``Mod`` refine handler."""
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import p, q, x
@@ -13,7 +12,6 @@ from sympy.functions.elementary.miscellaneous import Rem
 from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
-    recording_ask,
     stub_ask,
     use_ask,
 )
@@ -104,11 +102,3 @@ def test_numeric_oracle() -> None:
     assert_refinement_valid(
         Mod(5 * x, 5), Q.integer(x), S.Zero, values={x: INTEGERS}
     )
-
-
-@pytest.mark.handlers("handlers")
-def test_asks_the_quotient_first() -> None:
-    fake, log = recording_ask({str(Q.integer(p)): True})
-    with use_ask(fake):
-        assert refine(Mod(p, 1), Q.integer(p)) is S.Zero
-    assert [entry[0] for entry in log] == [Q.integer(p)]

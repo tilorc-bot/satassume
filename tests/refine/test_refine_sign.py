@@ -11,7 +11,6 @@ compared.
 """
 from __future__ import annotations
 
-import pytest
 from sympy.assumptions import Q
 from sympy.assumptions.refine import refine as sympy_refine
 from sympy.abc import x, z
@@ -23,9 +22,6 @@ from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
-    scripted_ask,
-    stub_ask,
-    use_ask,
 )
 
 
@@ -47,18 +43,6 @@ def test_sign_unchanged() -> None:
     assert refine(sign(x)) == sign(x)
     assert refine(sign(x), Q.complex(x)) == sign(x)
     assert refine(sign(Abs(x)), Q.nonzero(x)) == 1
-
-
-@pytest.mark.handlers("handlers")
-def test_sign_none_safety() -> None:
-    with use_ask(stub_ask({})):
-        assert refine(sign(x), Q.positive(x)) == sign(x)
-        assert refine(sign(z), Q.imaginary(z) & Q.positive(im(z))) == sign(z)
-
-    fake, queries = scripted_ask([None, None, None])
-    with use_ask(fake):
-        assert refine(sign(x), Q.positive(x)) == sign(x)
-    assert queries[0][0] == Q.zero(x)
 
 
 def test_sign_numeric_oracle() -> None:

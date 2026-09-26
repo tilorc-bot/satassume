@@ -14,7 +14,6 @@ from typing import Any, Callable, Iterable
 from sympy import Q, count_ops
 from sympy.core import Add, Mul
 
-from ... import _upstream
 from . import hooks
 
 Measure = Callable[[Any, Any], tuple]
@@ -47,9 +46,9 @@ def _is_negation(a: Any) -> bool:
 def _provably_positive(a: Any, assumptions: Any) -> bool:
     """``a > 0``; for a negation ``-u`` also through ``u < 0`` (the provers do not
     negate the sign of a product: ``Q.positive(-x*y)`` under ``Q.negative(x*y)``)."""
-    if _upstream.ask(Q.positive(a), assumptions) is True:
+    if hooks.dispatcher.ask(Q.positive(a), assumptions) is True:
         return True
-    return a.could_extract_minus_sign() and _upstream.ask(Q.negative(-a), assumptions) is True
+    return a.could_extract_minus_sign() and hooks.dispatcher.ask(Q.negative(-a), assumptions) is True
 
 
 def _structure(nodes: Iterable, canonical: Any = (), units: bool = True) -> int:

@@ -84,7 +84,7 @@ def load() -> None:
     registers one of their keys overrides them and the driver falls back to them,
     then the generated tables are imported and every family's ``SPEC`` and range
     rows are registered."""
-    from .. import _upstream
+    from .compat import upstream as _upstream
     from .core import driver, spec
     from .rules import _simple
     satrefine = sys.modules.get("satrefine")

@@ -1,9 +1,6 @@
 """Self-tests for :mod:`satrefine.harness`."""
 from __future__ import annotations
 
-import importlib
-import pkgutil
-import re
 
 import pytest
 from sympy.assumptions.ask import Q
@@ -11,7 +8,6 @@ from sympy.assumptions.ask import ask as sympy_ask
 from sympy.abc import x
 from sympy.functions.elementary.complexes import Abs
 
-import satrefine.handlers as handlers_package
 from satrefine.testing.harness import (
     assert_refines_like_sympy,
     assert_refinement_valid,
@@ -24,7 +20,7 @@ from satrefine.testing.harness import (
 
 
 def test_reference_ask_restores_state() -> None:
-    import satrefine._upstream as upstream
+    import satrefine.identities.compat.upstream as upstream
 
     original = upstream.ask
     with reference_ask():
@@ -34,17 +30,6 @@ def test_reference_ask_restores_state() -> None:
 
 def test_reference_ask_matches_sympy() -> None:
     assert_refines_like_sympy(Abs(x), Q.positive(x))
-
-
-@pytest.mark.handlers("handlers")
-def test_reference_ask_detects_wrong_handler(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import satrefine._upstream as upstream
-
-    monkeypatch.setitem(upstream.handlers_dict, "Abs", lambda expr, assumptions: -expr.args[0])
-    with pytest.raises(AssertionError, match="sympy.refine gives"):
-        assert_refines_like_sympy(Abs(x), Q.positive(x))
 
 
 def test_oracle_accepts_valid_refinement() -> None:
@@ -95,28 +80,9 @@ def test_recording_ask_logs_with_stub() -> None:
 
 
 def test_use_ask_patches_module_attribute() -> None:
-    import satrefine._upstream as upstream
+    import satrefine.identities.compat.upstream as upstream
 
     fake = stub_ask({})
     with use_ask(fake):
         assert upstream.ask is fake
     assert upstream.ask is not fake
-
-
-@pytest.mark.handlers("handlers")
-def test_no_duplicate_handler_keys() -> None:
-    path = getattr(handlers_package, "__path__")
-    owners: dict[str, list[str]] = {}
-    pattern = re.compile(r"handlers_dict\[['\"]([^'\"]+)['\"]\]\s*=")
-    for info in pkgutil.iter_modules(path):
-        if info.name.startswith("_"):
-            continue
-        module = importlib.import_module(f"{handlers_package.__name__}.{info.name}")
-        source_file = getattr(module, "__file__")
-        assert source_file is not None
-        with open(source_file) as handle:
-            source = handle.read()
-        for key in pattern.findall(source):
-            owners.setdefault(key, []).append(module.__name__)
-    duplicates = {key: names for key, names in owners.items() if len(names) > 1}
-    assert not duplicates, f"duplicate handler keys registered: {duplicates}"

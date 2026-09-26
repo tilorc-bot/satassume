@@ -1,7 +1,6 @@
 """Tests for the ``Inverse`` refine handler."""
 from __future__ import annotations
 
-import pytest
 from sympy.assumptions import Q
 from sympy.abc import x
 from sympy.matrices import Matrix
@@ -11,7 +10,6 @@ from satrefine import refine
 from satrefine.testing.harness import (
     assert_refines_like_sympy,
     recording_ask,
-    reference_ask,
     stub_ask,
     use_ask,
 )
@@ -31,7 +29,8 @@ def test_local_refinement() -> None:
     assert refine(X.I, Q.orthogonal(X)) == X.T
 
 
-@pytest.mark.original_wrong("X**-1 -> X.conjugate() for unitary X; the inverse is X.H")
+# The original ``handlers`` package got this wrong (removed in phase 3): X**-1 -> X.conjugate()
+# for unitary X; the inverse is X.H
 def test_unitary_inverse_is_the_conjugate_transpose() -> None:
     # handlers (and SymPy's refine) give the elementwise conjugate: for the real
     # rotation ROT90, conjugate(U) = U but U**-1 = U.T.  handlers_identities and
@@ -48,21 +47,6 @@ def test_asks_base_matrix() -> None:
     # The first query is the base matrix; the dispatcher then refines the
     # returned ``X.T``, which asks ``Q.symmetric(X)`` again.
     assert log[0][0] == Q.orthogonal(X)
-
-
-@pytest.mark.handlers("handlers")
-def test_singular_inverse_raises() -> None:
-    with pytest.raises(ValueError, match="Inverse of singular matrix"):
-        refine(X.I, Q.singular(X))
-
-
-@pytest.mark.handlers("handlers")
-def test_singular_inverse_raises_under_reference_ask() -> None:
-    # The port asks the base matrix, so the raise fires where upstream's
-    # ``Q.singular(X**-1)`` query (undecidable for SymPy's ask) does not.
-    with reference_ask():
-        with pytest.raises(ValueError, match="Inverse of singular matrix"):
-            refine(X.I, Q.singular(X))
 
 
 def test_unmet_assumption_unchanged() -> None:

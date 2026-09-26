@@ -4,6 +4,14 @@ Core reads them at call time (``hooks.name``), so whoever sets one does so once,
 at load, by assignment or in place.  Nothing in ``core`` names a specific SymPy
 function; what the engine needs to know about particular heads is a role here.
 
+Set by :mod:`..compat` (its ``__init__``):
+
+:data:`dispatcher`
+    the refine dispatcher module, the vendored :mod:`..compat.upstream`: its
+    ``ask`` (every query of the engine goes through it, read at call time, so
+    a test can patch it and the driver memoizes it per call) and its
+    ``handlers_dict`` (the handler registry).
+
 Set by :mod:`..compat.sympy_fixes`:
 
 :data:`rebuild`
@@ -63,6 +71,9 @@ from typing import Any, Callable, NamedTuple
 
 from sympy.core import Add, Mul
 from sympy.core.operations import LatticeOp
+
+
+dispatcher: Any = None
 
 
 def rebuild(func: Any, args: Any, assumptions: Any) -> Any:

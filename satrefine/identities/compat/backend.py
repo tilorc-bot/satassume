@@ -1,7 +1,7 @@
 """Which ``ask`` answers the refine handlers' questions.
 
 Every handler in :mod:`satrefine` asks predicate questions through
-:func:`satrefine._upstream.ask`, which delegates to the backend selected
+:func:`.upstream.ask`, which delegates to the backend selected
 here.  Three backends exist:
 
 ``sympy``

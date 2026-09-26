@@ -5,7 +5,6 @@ Rule from the missing-handler report section 3.7: ``gamma(n)`` under
 evaluate at construction, and an ``ask`` answer of ``None`` never refines.
 """
 from __future__ import annotations
-import pytest
 
 from sympy.assumptions import Q
 from sympy.abc import n
@@ -17,7 +16,6 @@ from satrefine import refine
 from satrefine.testing.harness import (
     assert_refinement_valid,
     assert_refines_like_sympy,
-    recording_ask,
     stub_ask,
     use_ask,
 )
@@ -60,12 +58,3 @@ def test_numeric_oracle() -> None:
 
 def test_fidelity_when_sympy_does_not_refine() -> None:
     assert_refines_like_sympy(gamma(n), Q.positive(n))
-
-
-@pytest.mark.handlers("handlers")
-def test_ask_goes_through_upstream() -> None:
-    proposition = Q.integer(n) & Q.nonpositive(n)
-    fake, log = recording_ask({str(proposition): True})
-    with use_ask(fake):
-        assert refine(gamma(n), proposition) is S.ComplexInfinity
-    assert [entry[0] for entry in log] == [proposition]
