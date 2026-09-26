@@ -3,7 +3,7 @@
 Filed as ``needs/test_default_inconsistent_assumptions.py`` by the default switch
 (phase 3, track D), which asked for the ``ValueError`` that SymPy's ``refine``,
 the old ``handlers`` and v3 let through from ``ask``.  Decided in phase 3
-(``agent-reports/2026-09-25-phase3-fixes-report.md``) to keep returning the input:
+(``agent-reports/2026-09-26-phase3-fixes-report.md``) to keep returning the input:
 
 * SymPy's own ``test_refine.py`` has no case with inconsistent assumptions, so
   there is no SymPy expectation to match (its ``ValueError`` comes from ``ask``

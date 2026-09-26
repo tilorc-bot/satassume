@@ -1,6 +1,6 @@
 # Agent report: phase 3, scalar fixes (track B follow-up)
 
-- **Date:** 2026-09-25
+- **Date:** 2026-09-25 to 2026-09-26
 - **Branch:** `ri/fixes` (from `f7e85d7`), worktree `.claude/worktrees/ri-fixes`. `origin/refine-identities` had no new commits when the gates started; the coordinator merged ri/matfixes (`3bf5543`) during the gate run and re-gates the combination.
 - **Status:** done. 11 of the 12 scalar needs files pass and moved out of `needs/`. One case is left as a needs test: `(x**y)**z -> Abs(x)**(y*z)` for real `x`, even `y` (section 2.3). Inconsistent assumptions: B9's behaviour is kept and documented (section 2.9). The fuzz coverage line is fixed.
 - **Files:** `trig.py`, `hyperbolic.py`, `power_exp_log.py`, `complex_parts.py`, `integer_funcs.py`, `combinatorial.py`, `minmax_deltas.py`, `inverse.py`, `_engine.py` (`rule_handler` only), the generated tables (only their derivation comments changed), `tools/refine_fuzz.py` (one line), and tests. `matrices.py` and the matrix code in `_match` were not touched.
@@ -165,12 +165,26 @@ The gates ran on `16841b8` against `a67-merged-f7e85d7`: output in `.claude/gate
   - identities fires 2 more cases per run;
   - "only v3 fires" drops by 1 or 2 per run, and "both fire, same result" rises by as much, so identities now meets v3 on those cases;
   - "unsound", "crash" and "different" are unchanged.
-  - DIFF_PLACEHOLDER
+  - The changed cases, found by refining every case of seeds 2, 3 and 7 with identities alone, at f7e85d7 (extracted with `git archive`) and at this branch, and diffing the results. Six cases change, and all are new firings:
+    - seed 2, case 279: `Rem(pi*x*z, x)` under `Q.zero(x)` gives `0`. The input is `Rem(0, 0)`, which is undefined.
+    - seed 2, case 625: `sqrt(k**n)` under `Q.ge(k, 1) & Q.nonpositive(n)` gives `k**(n/2)`.
+    - seed 3, case 480: `sqrt(1/(m + 1))` gives `1/sqrt(m + 1)`. The assumptions are inconsistent (`Q.positive(m) & Q.lt(m, -pi/2)`).
+    - seed 3, case 1362: `(1/(n + 1))**(3/2)` under `Q.nonnegative(n)` gives `(n + 1)**(-3/2)`.
+    - seed 7, case 770: `sqrt(1/n)` gives `1/sqrt(n)`.
+    - seed 7, case 1114: `(1/(x + 1))**(3/2)` gives `(x + 1)**(-3/2)`.
+    
+    All but the first come from the positive-base power rule (2.3), and v3 gives the same result for them.
 - **Differential ext (`--ext --seed 2 --cases 1000 --show 40`, rerun on this branch to list the cases):**
   - One case newly fires: `Min(sqrt(m), m**3)` under `Q.extended_negative(m) & Q.infinite(m)` gives `m**3`. At `m = -oo` the argument `sqrt(-oo) = oo*I` is not real, so `Min` is undefined there and the points are unevaluable (+13).
   - The "different results" +1 is `Max(m, n, 1/x)` under `Q.infinite(n) & Q.extended_positive(n)`: identities gives `n`, v3 gives `Max(n, 1/x)`. They are equal at all 48 points.
   - The timeout 4 → 3 is one case that finishes now. Identities has 0 unsound results.
 
+
+**Verdict:** pass.
+- The scoreboards have wrong 0 and crash 0.
+- No differential section has a new unsound result or crash.
+- The suite fails only on needs tests (the matrix agent's, and `pow_of_pow`'s even-inner case).
+- Every change is explained above.
 
 ## 5. Open items
 
