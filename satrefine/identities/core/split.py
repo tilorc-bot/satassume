@@ -49,6 +49,21 @@ def _explore(e: Any, assumptions: Any) -> Any:
         return refine(e, assumptions)
 
 
+def _in_every_case(e: Any, assumptions: Any, branches: list, opaque: tuple) -> list | None:
+    """``e`` explored under each branch, or ``None`` when a branch is inconsistent
+    or leaves an ``opaque`` node (the later branches are not tried)."""
+    out = []
+    for br in branches:
+        try:
+            v = _explore(e, And(assumptions, br))
+        except ValueError:
+            return None
+        if v.has(*opaque):
+            return None
+        out.append(v)
+    return out
+
+
 def _agree_at(expr: Any, cand: Any, point: dict, assumptions: Any) -> bool:
     """Whether ``expr`` and ``cand`` agree at ``point``, by evaluation, refinement, or simplification."""
     try:
@@ -165,18 +180,8 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple | None = No
         values: dict = {}
         collapsed = consistent = True
         for node in sorted(cand.atoms(*opaque), key=count_ops):
-            vals = []
-            for br in branches:
-                try:
-                    v = _explore(node, And(assumptions, br))
-                except ValueError:
-                    vals = None
-                    break
-                if v.has(*opaque):
-                    vals = None                  # the node fails in this case: the other cases cannot help
-                    break
-                vals.append(v)
-            if vals is None:
+            vals = _in_every_case(node, assumptions, branches, opaque)
+            if vals is None:                     # the node fails in a case: the other cases cannot help
                 collapsed = False
                 break
             if any(v != vals[0] for v in vals):
@@ -191,17 +196,7 @@ def case_split(expr: Any, cand: Any, assumptions: Any, opaque: tuple | None = No
                 return E
             continue
         # stage two: the whole candidate, generalized by Abs
-        results = []
-        for br in branches:
-            try:
-                r = _explore(cand, And(assumptions, br))
-            except ValueError:
-                results = None
-                break
-            if r.has(*opaque):
-                results = None
-                break
-            results.append(r)
+        results = _in_every_case(cand, assumptions, branches, opaque)
         if results is None:
             continue
         guesses = [results[0]] if all(_same(r, results[0]) for r in results) else []

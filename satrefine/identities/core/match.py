@@ -158,18 +158,15 @@ def _match(pattern: Any, target: Any, assumptions: Any, b: Binding, top: bool = 
             return
         pa, pb = pattern.args
         T = list(target.args)
-        for i, ti in enumerate(T):
-            for j, tj in enumerate(T):
-                if i == j:
-                    continue
-                nb = _bind(b, pa, ti)
-                nb = _bind(nb, pb, tj) if nb is not None else None
-                if nb is None:
-                    continue
-                others = [t for k, t in enumerate(T) if k != i and k != j]
-                if others:
-                    nb = {**nb, REBUILD: (lambda r, others=others, head=pattern.func: head(r, *others))}
-                yield nb
+        for i, j in itertools.permutations(range(len(T)), 2):
+            nb = _bind(b, pa, T[i])
+            nb = _bind(nb, pb, T[j]) if nb is not None else None
+            if nb is None:
+                continue
+            others = [t for k, t in enumerate(T) if k != i and k != j]
+            if others:
+                nb = {**nb, REBUILD: (lambda r, others=others, head=pattern.func: head(r, *others))}
+            yield nb
         return
     if isinstance(pattern, AppliedUndef):                        # head wildcard
         F = pattern.func
