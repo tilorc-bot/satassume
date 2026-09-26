@@ -14,18 +14,20 @@ model of every satisfiable solve.  The log instruments the engine by
 wrapping methods, so its pass is slower and is not the benchmark number;
 without ``--log`` nothing is instrumented.
 """
-import pickle, sys, time
-argv = sys.argv[1:]
-log_path = None
-log_models = "--log-models" in argv
-if log_models: argv.remove("--log-models")
-if "--log" in argv:
-    k = argv.index("--log"); log_path = argv[k + 1]; del argv[k:k + 2]
+import argparse, os, pickle, sys, time
+_ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+_ap.add_argument("stream", help="the pickle refine_record wrote")
+_ap.add_argument("repeats", nargs="?", type=int, default=1)
+_ap.add_argument("--log", metavar="PATH", help="write a per-query JSON-lines log of the cold pass")
+_ap.add_argument("--log-models", action="store_true", help="add the model of every satisfiable solve to the log")
+_args = _ap.parse_args()
+log_path, log_models = _args.log, _args.log_models
 from satassume.sympy_api import ask
-stream = pickle.load(open(argv[0], "rb"))
-reps = int(argv[1]) if len(argv) > 1 else 1
+stream = pickle.load(open(_args.stream, "rb"))
+reps = _args.repeats
 times = []
 if log_path is not None:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
     import query_log
     dt, bad = query_log.run(stream, log_path, log_models)
     if bad:

@@ -24,12 +24,11 @@ import os
 import sys
 import time
 
-if "satrefine" in sys.modules:               # python -m: satrefine is loaded already
-    from satrefine.tools import rerun_with
-    rerun_with(handlers="handlers_identities")
-os.environ["SATREFINE_HANDLERS"] = "handlers_identities"
-os.environ["SATREFINE_IDENTITIES"] = "live"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from satrefine.tools.lib.select import select  # noqa: E402
+
+select(handlers="handlers_identities")
+os.environ["SATREFINE_IDENTITIES"] = "live"
 
 import satrefine  # noqa: E402,F401  (loads the identity package)
 from satrefine.build import stages as _stages  # noqa: E402
