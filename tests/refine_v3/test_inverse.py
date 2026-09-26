@@ -1,4 +1,4 @@
-"""Tests for ``satrefine.handlers_v3.inverse``.
+"""Tests for ``satrefine.reference.v3.inverse``.
 
 Every rule gets a positive refine test, a numeric soundness check on the
 real samples that satisfy its precondition (interval endpoints, 0 and the
@@ -23,8 +23,9 @@ from sympy import (
 )
 from sympy.assumptions import Q
 
-from satrefine import _upstream, refine
-from satrefine.handlers_v3 import inverse
+from satrefine import refine
+from satrefine.identities.compat import upstream as _upstream
+from satrefine.reference.v3 import inverse
 from satrefine.testing.harness import assert_refinement_valid, use_ask
 
 x, y, t = symbols('x y t')

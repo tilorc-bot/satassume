@@ -1,4 +1,4 @@
-"""Tests for ``satrefine.handlers_v3.power_exp_log`` (``Pow``, ``exp``, ``log``).
+"""Tests for ``satrefine.reference.v3.power_exp_log`` (``Pow``, ``exp``, ``log``).
 
 Every rule has a positive test that checks the refined form and a numeric
 soundness check: the harness oracle draws sample points satisfying the
@@ -16,7 +16,7 @@ from sympy import (
 )
 
 from satrefine import refine
-from satrefine.handlers_v3.power_exp_log import refine_Pow, refine_exp, refine_log
+from satrefine.reference.v3.power_exp_log import refine_Pow, refine_exp, refine_log
 from satrefine.testing.harness import assert_refinement_valid
 
 x, y, z, a, b, n, m = symbols("x y z a b n m")
@@ -578,7 +578,7 @@ def test_handler_results_are_sympy_objects(handler, expr, assumptions):
 
 
 def test_handlers_are_registered():
-    from satrefine._upstream import handlers_dict
+    from satrefine.identities.compat.upstream import handlers_dict
     assert handlers_dict["Pow"] is refine_Pow
     assert handlers_dict["exp"] is refine_exp
     assert handlers_dict["log"] is refine_log

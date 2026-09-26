@@ -1,4 +1,4 @@
-"""Tests for ``satrefine.handlers_v3.minmax_deltas``.
+"""Tests for ``satrefine.reference.v3.minmax_deltas``.
 
 Each rule has a positive test whose result is also checked numerically:
 the original expression and the refined one are substituted with explicit
@@ -15,8 +15,9 @@ from sympy import (
     integrate, nan, oo, symbols,
 )
 
-from satrefine import _upstream, refine
-from satrefine.handlers_v3 import minmax_deltas as mod
+from satrefine import refine
+from satrefine.identities.compat import upstream as _upstream
+from satrefine.reference.v3 import minmax_deltas as mod
 
 x, y, z, k, i, j = symbols("x y z k i j")
 

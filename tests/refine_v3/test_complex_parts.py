@@ -1,4 +1,4 @@
-"""Tests for ``satrefine.handlers_v3.complex_parts``.
+"""Tests for ``satrefine.reference.v3.complex_parts``.
 
 Every positive test asserts the exact refined form and then checks it
 numerically with :func:`satrefine.harness.assert_refinement_valid`, whose
@@ -18,7 +18,7 @@ from sympy import (Abs, I, Mul, Rational, S, Symbol, arg, conjugate, cos, cosh,
 from sympy.assumptions import Q
 
 from satrefine import refine
-from satrefine.handlers_v3 import complex_parts
+from satrefine.reference.v3 import complex_parts
 from satrefine.testing.harness import assert_refinement_valid
 
 x, y, z, t, w = symbols('x y z t w')
@@ -58,7 +58,7 @@ def bounded(seconds):
 # --------------------------------------------------------------------------
 
 def test_registered_handlers():
-    from satrefine._upstream import handlers_dict
+    from satrefine.identities.compat.upstream import handlers_dict
     for key in ('re', 'im', 'arg', 'sign', 'Abs', 'conjugate', 'Mul'):
         assert handlers_dict[key].__module__ == complex_parts.__name__
 
