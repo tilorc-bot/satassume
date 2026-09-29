@@ -141,6 +141,8 @@ PYTHONPATH=.:/path/to/sympy python tools/bench.py
 pip install asv virtualenv
 asv run HASHFILE:<(git rev-list --first-parent -n 20 main)
 asv publish && asv preview
+# time against a count on two y-axes, and change per commit: serve
+# .asv/site (index.html -> benchmarks/compare.html, asv -> ../html)
 ```
 
 The asv counters are exact under the fixed `PYTHONHASHSEED` in

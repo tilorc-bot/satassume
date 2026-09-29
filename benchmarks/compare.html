@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>satassume: time vs counts</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --surface: #fcfcfb; --surface-2: #f0efec; --text: #0b0b0b; --text-2: #52514e;
+    --grid: #e4e3df; --series-1: #2a78d6; --series-2: #eb6834;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface: #1a1a19; --surface-2: #262624; --text: #ffffff; --text-2: #c3c2b7;
+      --grid: #383835; --series-1: #3987e5; --series-2: #d95926;
+    }
+  }
+  body { margin: 0; background: var(--surface); color: var(--text);
+         font: 14px/1.45 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 28px 0 4px; }
+  p.note { color: var(--text-2); margin: 0 0 12px; max-width: 75ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; margin: 12px 0; }
+  label { display: flex; flex-direction: column; gap: 2px; color: var(--text-2); font-size: 12px; }
+  select { font: inherit; padding: 4px 6px; background: var(--surface-2); color: var(--text);
+           border: 1px solid var(--grid); border-radius: 4px; }
+  label.check { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--text); }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+  .chart { position: relative; height: 380px; }
+  .chart.scatter { height: 360px; }
+  a { color: var(--series-1); }
+  details { margin-top: 24px; }
+  table { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+  th, td { padding: 3px 10px; text-align: right; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child, td:nth-child(2) { text-align: left; }
+  .tablewrap { overflow-x: auto; }
+  #status { color: var(--text-2); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Time vs counts, per commit</h1>
+  <p class="note">From the asv benchmark <code>Correlation.track_value</code>
+    (<a href="asv/">full asv site</a>). The time is the median of its samples
+    (stream: cold passes in fresh processes; families: warm, fresh engine).
+    Counts are exact under <code>PYTHONHASHSEED=0</code>.</p>
+
+  <div class="controls">
+    <label>Workload <select id="workload"></select></label>
+    <label><span><span class="swatch" style="background:var(--series-1)"></span>Left axis</span>
+      <select id="left"></select></label>
+    <label><span><span class="swatch" style="background:var(--series-2)"></span>Right axis</span>
+      <select id="right"></select></label>
+    <label class="check"><input type="checkbox" id="indexed"> Indexed (% of first commit, one axis)</label>
+    <span id="status"></span>
+  </div>
+
+  <div class="chart"><canvas id="lines"></canvas></div>
+
+  <h2>Change per commit</h2>
+  <p class="note">Each point is one commit against the previous measured one: %
+    change of the right-axis metric (x) against % change of the left-axis metric
+    (y). On the diagonal the count explains the time; on the y-axis the time
+    moved without the count; on the x-axis the count moved without the time.
+    Commits that change neither sit at the origin. Click a point for the commit.</p>
+  <div class="chart scatter"><canvas id="scatter"></canvas></div>
+
+  <details>
+    <summary>Table</summary>
+    <div class="tablewrap"><table id="table"></table></div>
+  </details>
+</main>
+<script>
+const BENCH = "correlation.Correlation.track_value";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const unq = s => s.replace(/^'|'$/g, "");
+const fmt = (m, v) => v == null ? "–" : m === "time"
+  ? (v < 1 ? (v * 1e3).toFixed(2) + " ms" : v.toFixed(3) + " s")
+  : Math.round(v).toLocaleString();
+const pct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+
+let index, data, subjects = {}, lineChart, scatterChart;
+
+async function load() {
+  index = await (await fetch("asv/index.json", {cache: "no-store"})).json();
+  try { subjects = await (await fetch("commits.json", {cache: "no-store"})).json(); } catch (e) {}
+  const gp = index.graph_param_list[0];
+  const path = Object.keys(gp).sort().map(k => encodeURIComponent(k + "-" + gp[k])).join("/");
+  const raw = await (await fetch(`asv/graphs/${path}/${BENCH}.json`, {cache: "no-store"})).json();
+  const b = index.benchmarks[BENCH];
+  const workloads = b.params[0].map(unq), metrics = b.params[1].map(unq);
+  // raw: [[revision, [values over product(workloads, metrics)]], ...], oldest first
+  data = {workloads, metrics, rows: raw.filter(r => Array.isArray(r[1])).map(([rev, vals]) => {
+    const hash = index.revision_to_hash[rev];
+    return {rev, hash, date: new Date(index.revision_to_date[rev]), vals};
+  })};
+  fill("workload", workloads, "stream");
+  fill("left", metrics, "time");
+  fill("right", metrics, "propagations");
+  document.getElementById("status").textContent = `${data.rows.length} commits`;
+  draw();
+}
+
+function fill(id, opts, def) {
+  const s = document.getElementById(id);
+  s.innerHTML = opts.map(o => `<option${o === def ? " selected" : ""}>${o}</option>`).join("");
+  s.onchange = draw;
+}
+
+function series(w, m) {
+  const i = data.workloads.indexOf(w) * data.metrics.length + data.metrics.indexOf(m);
+  return data.rows.map(r => r.vals[i] ?? null);
+}
+
+function label(r) {
+  const s = subjects[r.hash];
+  return [r.hash.slice(0, 7) + "  " + r.date.toISOString().slice(0, 16).replace("T", " "),
+          ...(s ? [s.length > 70 ? s.slice(0, 69) + "…" : s] : [])];
+}
+
+function draw() {
+  const w = val("workload"), L = val("left"), R = val("right");
+  const indexed = document.getElementById("indexed").checked;
+  const a = series(w, L), b = series(w, R);
+  const base = v => v.find(x => x != null && x !== 0);
+  const ix = v => { const b0 = base(v); return v.map(x => x == null ? null : 100 * x / b0); };
+  const ya = indexed ? ix(a) : a, yb = indexed ? ix(b) : b;
+  const c1 = css("--series-1"), c2 = css("--series-2"), text2 = css("--text-2"), grid = css("--grid");
+  const tick = {color: text2}, gridc = {color: grid};
+  const labels = data.rows.map(r => r.hash.slice(0, 7));
+
+  const ds = (lab, d, c, axis) => ({label: lab, data: d, borderColor: c, backgroundColor: c,
+    borderWidth: 2, pointRadius: 2.5, pointHoverRadius: 5, tension: 0, spanGaps: true, yAxisID: axis});
+  const scales = {
+    x: {ticks: {...tick, maxRotation: 60, autoSkip: true}, grid: gridc},
+    yL: {position: "left", ticks: {...tick, callback: v => indexed ? v + "%" : fmt(L, v)},
+         grid: gridc, title: {display: true, text: indexed ? "% of first commit" : L, color: text2}},
+  };
+  if (!indexed) scales.yR = {position: "right", ticks: {...tick, callback: v => fmt(R, v)},
+    grid: {drawOnChartArea: false}, title: {display: true, text: R, color: text2}};
+
+  lineChart?.destroy();
+  lineChart = new Chart(document.getElementById("lines"), {
+    type: "line",
+    data: {labels, datasets: [ds(L, ya, c1, "yL"), ds(R, yb, c2, indexed ? "yL" : "yR")]},
+    options: {
+      maintainAspectRatio: false, animation: false,
+      interaction: {mode: "index", intersect: false},
+      plugins: {
+        legend: {labels: {color: css("--text")}},
+        tooltip: {callbacks: {
+          title: items => label(data.rows[items[0].dataIndex]),
+          label: it => {
+            const raw = (it.datasetIndex === 0 ? a : b)[it.dataIndex], m = it.datasetIndex === 0 ? L : R;
+            return ` ${m}: ${fmt(m, raw)}` + (indexed ? ` (${it.parsed.y.toFixed(1)}%)` : "");
+          }}},
+      },
+      scales,
+      onClick: (e, els) => els.length && open(data.rows[els[0].index].hash),
+    },
+  });
+
+  // change per commit, against the previous commit with both values
+  const pts = [];
+  let prev = null;
+  data.rows.forEach((r, i) => {
+    if (a[i] == null || b[i] == null) return;
+    if (prev != null && a[prev] && b[prev])
+      pts.push({x: 100 * (b[i] - b[prev]) / b[prev], y: 100 * (a[i] - a[prev]) / a[prev], i, p: prev});
+    prev = i;
+  });
+  const lim = v => { const x = Math.max(1, ...v.map(Math.abs)) * 1.1; const st = x > 20 ? 10 : x > 5 ? 5 : 1; return Math.ceil(x / st) * st; };
+  const lx = lim(pts.map(p => p.x)), ly = lim(pts.map(p => p.y));
+  const m = Math.max(lx, ly);
+  scatterChart?.destroy();
+  scatterChart = new Chart(document.getElementById("scatter"), {
+    type: "scatter",
+    data: {datasets: [
+      {label: "commit", data: pts, backgroundColor: c1, borderColor: css("--surface"), borderWidth: 2,
+       pointRadius: 5, pointHoverRadius: 7},
+      {label: "diagonal (same % change)", type: "line", data: [{x: -m, y: -m}, {x: m, y: m}],
+       borderColor: grid, borderWidth: 2, borderDash: [4, 4], pointRadius: 0},
+    ]},
+    options: {
+      maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: {labels: {color: css("--text")}},
+        tooltip: {filter: it => it.datasetIndex === 0, callbacks: {
+          title: items => label(data.rows[items[0].raw.i]),
+          label: it => [` ${R}: ${pct(it.raw.x)}  (${fmt(R, b[it.raw.p])} → ${fmt(R, b[it.raw.i])})`,
+                        ` ${L}: ${pct(it.raw.y)}  (${fmt(L, a[it.raw.p])} → ${fmt(L, a[it.raw.i])})`],
+        }},
+      },
+      scales: {
+        x: {min: -lx, max: lx, ticks: {...tick, callback: v => +v.toFixed(1) + "%"}, grid: gridc,
+            title: {display: true, text: `% change in ${R}`, color: text2}},
+        y: {min: -ly, max: ly, ticks: {...tick, callback: v => +v.toFixed(1) + "%"}, grid: gridc,
+            title: {display: true, text: `% change in ${L}`, color: text2}},
+      },
+      onClick: (e, els) => els.length && els[0].datasetIndex === 0 && open(data.rows[pts[els[0].index].i].hash),
+    },
+  });
+
+  // table
+  const t = document.getElementById("table");
+  t.innerHTML = `<tr><th>commit</th><th>subject</th><th>${L}</th><th>${R}</th></tr>` +
+    data.rows.map((r, i) => `<tr><td><a href="${index.show_commit_url}${r.hash}" target="_blank">${r.hash.slice(0, 7)}</a></td>` +
+      `<td>${(subjects[r.hash] || "").replace(/</g, "&lt;")}</td><td>${fmt(L, a[i])}</td><td>${fmt(R, b[i])}</td></tr>`).reverse().join("");
+}
+
+function val(id) { return document.getElementById(id).value; }
+function open(hash) { window.open(index.show_commit_url + hash, "_blank"); }
+document.getElementById("indexed").onchange = draw;
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => data && draw());
+load().catch(e => { document.getElementById("status").textContent = "failed to load: " + e; });
+</script>
+</body>
+</html>
