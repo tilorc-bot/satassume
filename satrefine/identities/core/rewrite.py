@@ -169,8 +169,9 @@ def rule_handler(rows: list, *, by_binding: bool = False) -> Callable[[Any, Any]
     table order: bind, prove the hypothesis, check ``unless`` is not provable,
     substitute (rebuilding a partial match).
 
-    With ``by_binding``, consecutive rows with the same left side form a group
-    whose bindings are tried in order, each against every row of the group:
+    With ``by_binding``, the rows with the same left side form a group, wherever
+    they sit in the table (groups in the order of their first row, rows in table
+    order), whose bindings are tried in order, each against every row of the group:
     the first binding some row fires on wins.  The periodicity tables use it,
     so the whole coefficient of ``pi/2`` (the first binding) is tried under
     both parities before a single term of it is (``sec(x + (2*n + 1)*pi/2)``
@@ -178,13 +179,10 @@ def rule_handler(rows: list, *, by_binding: bool = False) -> Callable[[Any, Any]
     rows = [tuple(sympify(t) for t in row) + (None,) * (4 - len(row)) for row in rows]   # a generated 0 is an int
 
     def grouped() -> list[list]:     # from ``rows`` at each call: the ablation tool edits that list
-        groups: list[list] = []
+        groups: dict = {}
         for row in rows:
-            if groups and groups[-1][0][0] == row[0]:
-                groups[-1].append(row)
-            else:
-                groups.append([row])
-        return groups
+            groups.setdefault(row[0], []).append(row)
+        return list(groups.values())
 
     def handler(expr: Any, assumptions: Any) -> Any:
         for group in (grouped() if by_binding else ((row,) for row in rows)):
