@@ -36,25 +36,23 @@ from __future__ import annotations
 from sympy import Function, Q, cos, cot, csc, pi, sec, sin, sinc, symbols, tan
 from sympy.calculus.accumulationbounds import AccumBounds
 
-from ._tables import ZERO, Family, Row, Rules
+from ._tables import ZERO, Family, Row, Rules, shift_rows
 
 n, r, x = symbols('n r x')
 F = Function('F')
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is n*pi/2 + r
-    (sin(n*pi/2 + r), (-1)**(n/2)*sin(r),       Q.even(n)),   # sin(r + k*pi) = (-1)**k sin r
-    (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r), Q.odd(n)),    # sin(r + pi/2 + k*pi) = (-1)**k cos r
-    (cos(n*pi/2 + r), (-1)**(n/2)*cos(r),       Q.even(n)),   # cos(r + k*pi) = (-1)**k cos r
-    (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r),  Q.odd(n)),    # cos(r + pi/2 + k*pi) = -(-1)**k sin r
-    (sec(n*pi/2 + r), (-1)**(n/2)*sec(r),       Q.even(n)),   # sec = 1/cos
-    (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r),  Q.odd(n)),    # (one power of -1: SymPy's form)
-    (csc(n*pi/2 + r), (-1)**(n/2)*csc(r),       Q.even(n)),   # csc = 1/sin
-    (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r), Q.odd(n)),
-    (tan(n*pi/2 + r), tan(r),                   Q.even(n)),   # tan has period pi
-    (tan(n*pi/2 + r), -cot(r),                  Q.odd(n)),    # tan(r + pi/2) = -cot r
-    (cot(n*pi/2 + r), cot(r),                   Q.even(n)),   # cot has period pi
-    (cot(n*pi/2 + r), -tan(r),                  Q.odd(n)),    # cot(r + pi/2) = -tan r
-    (sinc(n*pi/2 + r), sin(n*pi/2)/(n*pi/2),    Q.zero(r) & Q.integer(n) & ~Q.zero(n)),  # sinc x = sin x / x, x != 0
+QUARTER_TURN = {   # f(r + pi/2) = quarter*g(r) and f(r + pi) = half*f(r)
+    #    g    quarter half
+    sin: (cos,  1,    -1),
+    cos: (sin, -1,    -1),
+    sec: (csc, -1,    -1),   # sec = 1/cos
+    csc: (sec,  1,    -1),   # csc = 1/sin
+    tan: (cot, -1,     1),   # period pi
+    cot: (tan, -1,     1),
+}
+
+RULES: list[Row] = shift_rows(QUARTER_TURN, pi/2, n, r) + [
+    (sinc(n*pi/2 + r), sin(n*pi/2)/(n*pi/2), Q.zero(r) & Q.integer(n) & ~Q.zero(n)),  # sinc x = sin x / x, x != 0
 ]
 
 BOUNDED: list[Row] = [

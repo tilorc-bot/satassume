@@ -35,27 +35,21 @@ from __future__ import annotations
 
 from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
-from ._tables import ZERO, Family, Row, Rules
+from ._tables import ZERO, Family, Row, Rules, shift_rows
 
 m, x = symbols('m x')
 
-_EVEN = Q.even(m)
-_ODD = Q.odd(m)
+QUARTER_TURN = {   # f(x + pi*I/2) = quarter*g(x) and f(x + pi*I) = half*f(x)
+    #      g     quarter half
+    sinh: (cosh,  I,     -1),
+    cosh: (sinh,  I,     -1),
+    sech: (csch, -I,     -1),   # sech = 1/cosh
+    csch: (sech, -I,     -1),   # csch = 1/sinh
+    tanh: (coth,  1,      1),   # period pi*I
+    coth: (tanh,  1,      1),
+}
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is m*pi*I/2 + x
-    (sinh(m*pi*I/2 + x), (-1)**(m/2)*sinh(x),          _EVEN),       # sinh(x + n*pi*I) = (-1)**n sinh x
-    (sinh(m*pi*I/2 + x), I*(-1)**((m - 1)/2)*cosh(x),  _ODD),        # sinh(x + pi*I/2) = I cosh x
-    (cosh(m*pi*I/2 + x), (-1)**(m/2)*cosh(x),          _EVEN),       # cosh(x + n*pi*I) = (-1)**n cosh x
-    (cosh(m*pi*I/2 + x), I*(-1)**((m - 1)/2)*sinh(x),  _ODD),        # cosh(x + pi*I/2) = I sinh x
-    (sech(m*pi*I/2 + x), (-1)**(m/2)*sech(x),          _EVEN),       # sech = 1/cosh
-    (sech(m*pi*I/2 + x), -I*(-1)**((m - 1)/2)*csch(x), _ODD),
-    (csch(m*pi*I/2 + x), (-1)**(m/2)*csch(x),          _EVEN),       # csch = 1/sinh
-    (csch(m*pi*I/2 + x), -I*(-1)**((m - 1)/2)*sech(x), _ODD),
-    (tanh(m*pi*I/2 + x), tanh(x),                      Q.even(m)),   # tanh has period pi*I
-    (tanh(m*pi*I/2 + x), coth(x),                      Q.odd(m)),    # tanh(x + pi*I/2) = coth x
-    (coth(m*pi*I/2 + x), coth(x),                      Q.even(m)),   # coth has period pi*I
-    (coth(m*pi*I/2 + x), tanh(x),                      Q.odd(m)),    # coth(x + pi*I/2) = tanh x
-]
+RULES: list[Row] = shift_rows(QUARTER_TURN, pi*I/2, m, x)
 
 _shift = Rules([ZERO] + RULES, by_binding=True)
 

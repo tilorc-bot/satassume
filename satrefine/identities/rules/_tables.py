@@ -19,7 +19,7 @@ from ..core.spec import Family, Identities, Rules
 from ._wraps import principal
 
 __all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent", "node_measure", "part",
-           "principal", "size"]
+           "principal", "shift_rows", "size"]
 
 
 _F = Function('F')
@@ -39,4 +39,18 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
             zz = lhs.args[0].args[0]
             for L, W, dom_d in exp_forms:
                 rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
+    return rows
+
+
+def shift_rows(table: dict, unit, q: Symbol, r: Symbol) -> list[Row]:
+    """The periodicity rows of ``f(q*unit + r)`` for every ``f`` in ``table``, which maps
+    ``f`` to ``(g, quarter, half)``: one ``unit`` turns ``f`` into ``quarter*g``, two
+    turns multiply ``f`` by ``half``.  ``q`` even is ``q/2`` half turns; ``q`` odd is
+    a quarter turn, then ``(q - 1)/2`` half turns.  Two rows per ``f``, even first."""
+    def times_power(c, base, e):   # c*base**e, a sign folded into the power as SymPy writes it
+        return base**(e + 1) if c == base != 1 else c*base**e
+    rows: list[Row] = []
+    for f, (g, quarter, half) in table.items():
+        rows.append((f(q*unit + r), half**(q/2)*f(r), Q.even(q)))
+        rows.append((f(q*unit + r), times_power(quarter, half, (q - 1)/2)*g(r), Q.odd(q)))
     return rows
