@@ -28,6 +28,8 @@
            border: 1px solid var(--grid); border-radius: 4px; }
   label.check { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--text); }
   .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+  .axis { display: flex; flex-wrap: wrap; gap: 6px; }
+  .axis select { max-width: 100%; }
   .chart { position: relative; height: 380px; }
   .chart.scatter { height: 360px; }
   a { color: var(--series-1); }
@@ -42,17 +44,16 @@
 <body>
 <main>
   <h1>Time vs counts, per commit</h1>
-  <p class="note">From the asv benchmark <code>Correlation.track_value</code>
-    (<a href="asv/">full asv site</a>). The time is the median of its samples
-    (stream: cold passes in fresh processes; families: warm, fresh engine).
-    Counts are exact under <code>PYTHONHASHSEED=0</code>.</p>
+  <p class="note">Any two asv benchmarks of this suite, one per y-axis
+    (<a href="asv/">full asv site</a>). Series are read from asv's
+    <code>index.json</code>, so renamed or new benchmarks appear here without
+    changing the page. Counts are exact under <code>PYTHONHASHSEED=0</code>.</p>
 
   <div class="controls">
-    <label>Workload <select id="workload"></select></label>
     <label><span><span class="swatch" style="background:var(--series-1)"></span>Left axis</span>
-      <select id="left"></select></label>
+      <span class="axis" id="left"></span></label>
     <label><span><span class="swatch" style="background:var(--series-2)"></span>Right axis</span>
-      <select id="right"></select></label>
+      <span class="axis" id="right"></span></label>
     <label class="check"><input type="checkbox" id="indexed"> Indexed (% of first commit, one axis)</label>
     <span id="status"></span>
   </div>
@@ -61,9 +62,9 @@
 
   <h2>Change per commit</h2>
   <p class="note">Each point is one commit against the previous measured one: %
-    change of the right-axis metric (x) against % change of the left-axis metric
-    (y). On the diagonal the count explains the time; on the y-axis the time
-    moved without the count; on the x-axis the count moved without the time.
+    change of the right-axis series (x) against % change of the left-axis series
+    (y). On the diagonal the right series explains the left; on the y-axis the
+    left moved without the right; on the x-axis the right moved without the left.
     Commits that change neither sit at the origin. Click a point for the commit.</p>
   <div class="chart scatter"><canvas id="scatter"></canvas></div>
 
@@ -73,22 +74,15 @@
   </details>
 </main>
 <script>
-const BENCH = "correlation.Correlation.track_value";
-// single-value benchmarks of the stream, offered as extra metrics (bytes)
-const MEMORY = {
-  "python_peak_mem (stream)": "memory.StreamPythonMemory.track_python_peak",
-  "python_retained_mem (stream)": "memory.StreamPythonMemory.track_python_retained",
-  "peak_rss (stream)": "memory.StreamPeakRSS.peakmem_stream",
-};
+const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const unq = s => s.replace(/^'|'$/g, "");
-const fmt = (m, v) => v == null ? "–" : m === "time"
-  ? (v < 1 ? (v * 1e3).toFixed(2) + " ms" : v.toFixed(3) + " s")
-  : m in MEMORY ? (v / 2 ** 20).toFixed(2) + " MB"
-  : Math.round(v).toLocaleString();
+const unq = s => String(s).replace(/^'|'$/g, "");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 const pct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+const product = lists => lists.reduce((acc, l) => acc.flatMap(a => l.map(x => [...a, x])), [[]]);
 
-let index, data, subjects = {}, lineChart, scatterChart;
+let index, graphPath, benches, rows = [], subjects = {}, lineChart, scatterChart;
+const graphs = {};
 
 async function getJSON(url) {
   const r = await fetch(url, {cache: "no-store"});
@@ -96,46 +90,98 @@ async function getJSON(url) {
   return r.json();
 }
 
+function graph(bench) {
+  return graphs[bench] ??= getJSON(`asv/graphs/${graphPath}/${bench}.json`).catch(() => []);
+}
+
+// a selection is {bench, params: [raw param values, one per parameter]}
+async function seriesOf(sel) {
+  const b = index.benchmarks[sel.bench];
+  const i = b.params.length
+    ? product(b.params).findIndex(c => c.every((v, k) => v === sel.params[k])) : -1;
+  const m = new Map();
+  for (const row of await graph(sel.bench)) {
+    let v = row[1];
+    if (Array.isArray(v)) v = i >= 0 ? v[i] : null;
+    if (typeof v === "number" && isFinite(v)) m.set(row[0], v);
+  }
+  return m;
+}
+
+function kind(sel) {
+  const b = index.benchmarks[sel.bench], u = String(b.unit || "").toLowerCase();
+  if (u === "seconds" || sel.params.map(unq).includes("time")) return "time";
+  if (u === "bytes") return "bytes";
+  return "count";
+}
+
+function fmt(k, v) {
+  if (v == null) return "–";
+  if (k === "time") return v < 1 ? (v * 1e3).toFixed(2) + " ms" : v.toFixed(3) + " s";
+  if (k === "bytes") return (v / 2 ** 20).toFixed(2) + " MB";
+  return Math.round(v).toLocaleString();
+}
+
+function nameOf(sel) {
+  const p = sel.params.map(unq);
+  return sel.bench.split(".").slice(1).join(".") + (p.length ? ` (${p.join(", ")})` : "");
+}
+
+function defaults() {
+  // a benchmark with a "time" parameter value pairs time with counts (Correlation)
+  const corr = benches.find(n => index.benchmarks[n].params.some(p => p.includes("'time'")));
+  const pick = (bench, want) => ({bench, params: index.benchmarks[bench].params.map(p =>
+    want.find(w => p.includes(w)) ?? p[0])});
+  if (corr) {
+    const other = index.benchmarks[corr].params.flat().some(v => v === "'clauses'") ? "'clauses'"
+      : index.benchmarks[corr].params.find(p => p.includes("'time'")).find(v => v !== "'time'");
+    return [pick(corr, ["'time'", "'stream'"]), pick(corr, [other, "'stream'"])];
+  }
+  const t = benches.find(n => index.benchmarks[n].type === "time") ?? benches[0];
+  const c = benches.find(n => index.benchmarks[n].type !== "time") ?? benches[0];
+  return [pick(t, []), pick(c, [])];
+}
+
+function buildAxis(side, def) {
+  const box = $(side);
+  box.innerHTML = "";
+  const bs = document.createElement("select");
+  bs.innerHTML = benches.map(n => `<option${n === def.bench ? " selected" : ""}>${esc(n)}</option>`).join("");
+  const ps = document.createElement("span");
+  ps.className = "axis";
+  box.append(bs, ps);
+  const params = () => {
+    ps.innerHTML = "";
+    const b = index.benchmarks[bs.value];
+    b.params.forEach((vals, k) => {
+      const s = document.createElement("select");
+      s.title = b.param_names[k];
+      s.innerHTML = vals.map(v => `<option value="${esc(v)}"${bs.value === def.bench && def.params[k] === v
+        ? " selected" : ""}>${esc(unq(v))}</option>`).join("");
+      s.onchange = draw;
+      ps.append(s);
+    });
+  };
+  bs.onchange = () => { params(); draw(); };
+  params();
+}
+
+function selOf(side) {
+  const s = [...$(side).querySelectorAll("select")];
+  return {bench: s[0].value, params: s.slice(1).map(x => x.value)};
+}
+
 async function load() {
   index = await getJSON("asv/index.json");
   try { subjects = await getJSON("commits.json"); } catch (e) {}
   const gp = index.graph_param_list[0];
-  const path = Object.keys(gp).sort().map(k => encodeURIComponent(k + "-" + gp[k])).join("/");
-  const b = index.benchmarks[BENCH];
-  const workloads = b.params[0].map(unq), metrics = b.params[1].map(unq);
-  // key "workload|metric" -> Map(revision -> value)
-  const values = {};
-  const put = (k, rev, v) => { if (v != null) (values[k] ??= new Map()).set(rev, v); };
-  // Correlation: [[revision, [values over product(workloads, metrics)]], ...]
-  for (const [rev, vals] of await getJSON(`asv/graphs/${path}/${BENCH}.json`)) {
-    if (!Array.isArray(vals)) continue;
-    workloads.forEach((w, i) => metrics.forEach((m, j) => put(`${w}|${m}`, rev, vals[i * metrics.length + j])));
-  }
-  const extra = [];
-  for (const [m, bench] of Object.entries(MEMORY)) {
-    if (!index.benchmarks[bench]) continue;
-    for (const [rev, v] of await getJSON(`asv/graphs/${path}/${bench}.json`)) put(`stream|${m}`, rev, v);
-    extra.push(m);
-  }
-  const revs = [...new Set(Object.values(values).flatMap(mp => [...mp.keys()]))].sort((x, y) => x - y);
-  data = {workloads, metrics: [...metrics, ...extra], values, rows: revs.map(rev => (
-    {rev, hash: index.revision_to_hash[rev], date: new Date(index.revision_to_date[rev])}))};
-  fill("workload", workloads, "stream");
-  fill("left", data.metrics, "time");
-  fill("right", data.metrics, "clauses");
-  document.getElementById("status").textContent = `${data.rows.length} commits`;
-  draw();
-}
-
-function fill(id, opts, def) {
-  const s = document.getElementById(id);
-  s.innerHTML = opts.map(o => `<option${o === def ? " selected" : ""}>${o}</option>`).join("");
-  s.onchange = draw;
-}
-
-function series(w, m) {
-  const mp = data.values[`${w}|${m}`];
-  return data.rows.map(r => mp?.get(r.rev) ?? null);
+  graphPath = Object.keys(gp).sort().map(k => encodeURIComponent(k + "-" + gp[k])).join("/");
+  benches = Object.keys(index.benchmarks).sort();
+  if (!benches.length) throw new Error("no benchmarks published yet");
+  const [l, r] = defaults();
+  buildAxis("left", l);
+  buildAxis("right", r);
+  await draw();
 }
 
 function label(r) {
@@ -144,25 +190,31 @@ function label(r) {
           ...(s ? [s.length > 70 ? s.slice(0, 69) + "…" : s] : [])];
 }
 
-function draw() {
-  const w = val("workload"), L = val("left"), R = val("right");
-  const indexed = document.getElementById("indexed").checked;
-  const a = series(w, L), b = series(w, R);
+async function draw() {
+  const Ls = selOf("left"), Rs = selOf("right");
+  const [ma, mb] = await Promise.all([seriesOf(Ls), seriesOf(Rs)]);
+  const revs = [...new Set([...ma.keys(), ...mb.keys()])].sort((x, y) => x - y);
+  rows = revs.map(rev => ({rev, hash: index.revision_to_hash[rev], date: new Date(index.revision_to_date[rev])}));
+  const a = rows.map(r => ma.get(r.rev) ?? null), b = rows.map(r => mb.get(r.rev) ?? null);
+  const L = nameOf(Ls), R = nameOf(Rs), kL = kind(Ls), kR = kind(Rs);
+  const fL = v => fmt(kL, v), fR = v => fmt(kR, v);
+  $("status").textContent = `${rows.length} commits`;
+  const indexed = $("indexed").checked;
   const base = v => v.find(x => x != null && x !== 0);
   const ix = v => { const b0 = base(v); return v.map(x => x == null ? null : 100 * x / b0); };
   const ya = indexed ? ix(a) : a, yb = indexed ? ix(b) : b;
   const c1 = css("--series-1"), c2 = css("--series-2"), text2 = css("--text-2"), grid = css("--grid");
   const tick = {color: text2}, gridc = {color: grid};
-  const labels = data.rows.map(r => r.hash.slice(0, 7));
+  const labels = rows.map(r => r.hash.slice(0, 7));
 
   const ds = (lab, d, c, axis) => ({label: lab, data: d, borderColor: c, backgroundColor: c,
     borderWidth: 2, pointRadius: 2.5, pointHoverRadius: 5, tension: 0, spanGaps: true, yAxisID: axis});
   const scales = {
     x: {ticks: {...tick, maxRotation: 60, autoSkip: true}, grid: gridc},
-    yL: {position: "left", ticks: {...tick, callback: v => indexed ? v + "%" : fmt(L, v)},
+    yL: {position: "left", ticks: {...tick, callback: v => indexed ? v + "%" : fL(v)},
          grid: gridc, title: {display: true, text: indexed ? "% of first commit" : L, color: text2}},
   };
-  if (!indexed) scales.yR = {position: "right", ticks: {...tick, callback: v => fmt(R, v)},
+  if (!indexed) scales.yR = {position: "right", ticks: {...tick, callback: v => fR(v)},
     grid: {drawOnChartArea: false}, title: {display: true, text: R, color: text2}};
 
   lineChart?.destroy();
@@ -175,21 +227,21 @@ function draw() {
       plugins: {
         legend: {labels: {color: css("--text")}},
         tooltip: {callbacks: {
-          title: items => label(data.rows[items[0].dataIndex]),
+          title: items => label(rows[items[0].dataIndex]),
           label: it => {
-            const raw = (it.datasetIndex === 0 ? a : b)[it.dataIndex], m = it.datasetIndex === 0 ? L : R;
-            return ` ${m}: ${fmt(m, raw)}` + (indexed ? ` (${it.parsed.y.toFixed(1)}%)` : "");
+            const raw = (it.datasetIndex === 0 ? a : b)[it.dataIndex], f = it.datasetIndex === 0 ? fL : fR;
+            return ` ${it.dataset.label}: ${f(raw)}` + (indexed ? ` (${it.parsed.y.toFixed(1)}%)` : "");
           }}},
       },
       scales,
-      onClick: (e, els) => els.length && open(data.rows[els[0].index].hash),
+      onClick: (e, els) => els.length && open(rows[els[0].index].hash),
     },
   });
 
   // change per commit, against the previous commit with both values
   const pts = [];
   let prev = null;
-  data.rows.forEach((r, i) => {
+  rows.forEach((r, i) => {
     if (a[i] == null || b[i] == null) return;
     if (prev != null && a[prev] && b[prev])
       pts.push({x: 100 * (b[i] - b[prev]) / b[prev], y: 100 * (a[i] - a[prev]) / a[prev], i, p: prev});
@@ -212,9 +264,9 @@ function draw() {
       plugins: {
         legend: {labels: {color: css("--text")}},
         tooltip: {filter: it => it.datasetIndex === 0, callbacks: {
-          title: items => label(data.rows[items[0].raw.i]),
-          label: it => [` ${R}: ${pct(it.raw.x)}  (${fmt(R, b[it.raw.p])} → ${fmt(R, b[it.raw.i])})`,
-                        ` ${L}: ${pct(it.raw.y)}  (${fmt(L, a[it.raw.p])} → ${fmt(L, a[it.raw.i])})`],
+          title: items => label(rows[items[0].raw.i]),
+          label: it => [` ${R}: ${pct(it.raw.x)}  (${fR(b[it.raw.p])} → ${fR(b[it.raw.i])})`,
+                        ` ${L}: ${pct(it.raw.y)}  (${fL(a[it.raw.p])} → ${fL(a[it.raw.i])})`],
         }},
       },
       scales: {
@@ -223,22 +275,21 @@ function draw() {
         y: {min: -ly, max: ly, ticks: {...tick, callback: v => +v.toFixed(1) + "%"}, grid: gridc,
             title: {display: true, text: `% change in ${L}`, color: text2}},
       },
-      onClick: (e, els) => els.length && els[0].datasetIndex === 0 && open(data.rows[pts[els[0].index].i].hash),
+      onClick: (e, els) => els.length && els[0].datasetIndex === 0 && open(rows[pts[els[0].index].i].hash),
     },
   });
 
   // table
   const t = document.getElementById("table");
-  t.innerHTML = `<tr><th>commit</th><th>subject</th><th>${L}</th><th>${R}</th></tr>` +
-    data.rows.map((r, i) => `<tr><td><a href="${index.show_commit_url}${r.hash}" target="_blank">${r.hash.slice(0, 7)}</a></td>` +
-      `<td>${(subjects[r.hash] || "").replace(/</g, "&lt;")}</td><td>${fmt(L, a[i])}</td><td>${fmt(R, b[i])}</td></tr>`).reverse().join("");
+  t.innerHTML = `<tr><th>commit</th><th>subject</th><th>${esc(L)}</th><th>${esc(R)}</th></tr>` +
+    rows.map((r, i) => `<tr><td><a href="${index.show_commit_url}${r.hash}" target="_blank">${r.hash.slice(0, 7)}</a></td>` +
+      `<td>${(subjects[r.hash] || "").replace(/</g, "&lt;")}</td><td>${fL(a[i])}</td><td>${fR(b[i])}</td></tr>`).reverse().join("");
 }
 
-function val(id) { return document.getElementById(id).value; }
 function open(hash) { window.open(index.show_commit_url + hash, "_blank"); }
 document.getElementById("indexed").onchange = draw;
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => data && draw());
-load().catch(e => { document.getElementById("status").textContent = "failed to load: " + e; });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => index && draw());
+load().catch(e => { $("status").textContent = "failed to load: " + e.message; });
 </script>
 </body>
 </html>

@@ -101,10 +101,15 @@ _SEEN = {"solvers": [], "sessions": []}
 
 
 def _instrument():
-    """Patch ``Solver`` and ``Session`` so every instance lands in ``_SEEN``."""
-    import satassume.engine as E
-    import satassume.solver as S
-    for cls, key in ((S.Solver, "solvers"), (E.Session, "sessions")):
+    """Patch ``Solver`` and ``Session`` (where they exist) so every instance
+    lands in ``_SEEN``."""
+    import importlib
+    for mod, name, key in (("satassume.solver", "Solver", "solvers"),
+                           ("satassume.engine", "Session", "sessions")):
+        try:
+            cls = getattr(importlib.import_module(mod), name)
+        except (ImportError, AttributeError):
+            continue
         if getattr(cls, "_asv_patched", False):
             continue
         orig = cls.__init__
@@ -118,36 +123,63 @@ def _instrument():
 
 def answer(queries):
     """Answer ``queries`` (``(prop, assumptions)`` pairs) on a fresh engine;
-    return ``(answers, engine)``."""
+    return ``(answers, engine)``.  Any exception a query raises is recorded
+    as the answer ``"error"``, so one failing query does not lose the run."""
     from satassume.engine import Engine
-    from satassume.sympy_api import ask, set_default_engine
+    from satassume import sympy_api
     eng = Engine()
-    set_default_engine(eng)
+    if hasattr(sympy_api, "set_default_engine"):
+        sympy_api.set_default_engine(eng)
+        ask = sympy_api.ask
+    else:
+        def ask(p, a):
+            return sympy_api.ask(p, a, engine=eng)
     answers = []
     for p, a in queries:
         try:
             answers.append(ask(p, a))
-        except ValueError:
+        except Exception:
             answers.append("error")
     return answers, eng
 
 
+def _stats(obj):
+    """``obj.stats`` as a dict, called if it is a method; {} if absent."""
+    st = getattr(obj, "stats", None)
+    if callable(st):
+        try:
+            st = st()
+        except Exception:
+            return {}
+    return st if isinstance(st, dict) else {}
+
+
 def run(queries):
-    """``(answers, counters)`` for ``queries`` on a fresh engine."""
+    """``(answers, counters)`` for ``queries`` on a fresh engine.
+
+    A counter the engine no longer exposes (a renamed stats key, a removed
+    attribute) is NaN, which asv records as a missing value, so the other
+    counters of that commit are kept; the counters rely on internals
+    (``Solver.stats()``, ``Session.base``, ``Engine.stats``) by design."""
+    nan = float("nan")
     _instrument()
     _SEEN["solvers"].clear()
     _SEEN["sessions"].clear()
     answers, eng = answer(queries)
-    c = dict.fromkeys(METRICS, 0)
-    for s in _SEEN["solvers"]:
-        st = s.stats()
-        for k in SOLVER_KEYS:
-            c[k] += st.get(k, 0)
-        c["clauses_with_rule_block"] += st["clauses"] + getattr(s, "_rb_nclauses", 0)
-    c["sessions"] = len(_SEEN["sessions"])
-    c["nodes"] = sum(len(s.base) for s in _SEEN["sessions"])
+    solvers, sessions = _SEEN["solvers"], _SEEN["sessions"]
+    stats = [_stats(s) for s in solvers]
+    c = {}
+    for k in SOLVER_KEYS:
+        have = [st[k] for st in stats if k in st]
+        c[k] = sum(have) if have or not solvers else nan
+    c["clauses_with_rule_block"] = nan if c["clauses"] != c["clauses"] else (
+        c["clauses"] + sum(getattr(s, "_rb_nclauses", 0) for s in solvers))
+    c["sessions"] = len(sessions) if sessions or not solvers else nan
+    c["nodes"] = (sum(len(s.base) for s in sessions)
+                  if all(hasattr(s, "base") for s in sessions) else nan)
+    est = _stats(eng)
     for k in ENGINE_KEYS:
-        c[k] = eng.stats.get(k, 0)
+        c[k] = est.get(k, nan)
     return answers, c
 
 
