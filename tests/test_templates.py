@@ -153,19 +153,19 @@ def test_evaluator_basics():
 # ---------------------------------------------------------------------------
 
 
-def oracle(value, pred, nan_is_no_number=False):
+def oracle(value, pred):
     """Old-system truth value of ``pred`` for the concrete ``value``.
 
-    With ``nan_is_no_number``, ``nan`` (``oo - oo``, ``0*oo``) has every
-    predicate that implies a number (``extended_real``, ``complex``, ...)
-    False, where SymPy leaves it None; ``finite``/``infinite``
-    (complements in the rule base) and ``commutative`` stay None.  Only
-    the Add and Mul samples are checked that way so far: ``re``, ``im``,
-    ``Abs`` and ``Pow`` still claim ``extended_real`` for a nan value
-    (``re(zoo)``, ``1**oo``)."""
+    ``nan`` (``oo - oo``, ``0*oo``, ``re(zoo)``, ``1**oo``) is no number:
+    every predicate that implies one (``extended_real``, ``complex``, ...)
+    is False for it, where SymPy leaves it None; ``finite``/``infinite``
+    (complements in the rule base) and ``commutative`` stay None.  Inputs
+    are numbers, never nan: :func:`check_sound` skips an assignment under
+    which a direct argument of the node is nan (``Abs(x*y)`` at ``x = 0``,
+    ``y = oo``)."""
     if isinstance(value, AccumBounds):
         return None
-    if nan_is_no_number and value is S.NaN:
+    if value is S.NaN:
         return None if pred in ('finite', 'infinite', 'commutative') else False
     return getattr(value, 'is_' + pred, None)
 
@@ -188,7 +188,7 @@ def pool_for(nsyms):
     return {1: POOL, 2: POOL_MEDIUM, 3: POOL_SMALL}.get(nsyms, POOL_TINY)
 
 
-def make_valuation(assignment, nan_is_no_number=False):
+def make_valuation(assignment):
     """Atom valuation under ``assignment`` (symbol -> concrete value)."""
     cache = {}
 
@@ -198,13 +198,13 @@ def make_valuation(assignment, nan_is_no_number=False):
                 v = atom.expr.xreplace(assignment)
             except Exception:  # an evaluation SymPy cannot do
                 v = None
-            cache[atom] = None if v is None else oracle(v, atom.pred, nan_is_no_number)
+            cache[atom] = None if v is None else oracle(v, atom.pred)
         return cache[atom]
 
     return valuation
 
 
-def check_sound(expr, nan_is_no_number=False):
+def check_sound(expr):
     """Check every template formula of ``expr`` against concrete values."""
     facts = registry.facts_for(expr)
     assert facts, f"no templates fired for {expr!r}"
@@ -213,7 +213,16 @@ def check_sound(expr, nan_is_no_number=False):
     failures = []
     for values in product(pool, repeat=len(syms)):
         assignment = dict(zip(syms, values))
-        valuation = make_valuation(assignment, nan_is_no_number)
+        try:
+            inputs = [a.xreplace(assignment) for a in expr.args]
+        except Exception:  # an evaluation SymPy cannot do
+            inputs = []
+        if any(a is S.NaN for a in inputs):
+            continue                      # a nan input: not a number
+        if isinstance(expr, Pow) and inputs and inputs[0] is zoo \
+                and inputs[1].is_Float and inputs[1].is_zero:
+            continue                      # SymPy: zoo**0 = 1 but zoo**0.0 = nan
+        valuation = make_valuation(assignment)
         for f in facts:
             if evaluate(f, valuation) is False:
                 detail = {a: valuation(a) for a in atoms_of(f)}
@@ -289,12 +298,12 @@ FUNCTION_SAMPLES = [
 
 @pytest.mark.parametrize("expr", ADD_SAMPLES, ids=str)
 def test_add_sound(expr):
-    check_sound(expr, nan_is_no_number=True)
+    check_sound(expr)
 
 
 @pytest.mark.parametrize("expr", MUL_SAMPLES, ids=str)
 def test_mul_sound(expr):
-    check_sound(expr, nan_is_no_number=True)
+    check_sound(expr)
 
 
 @pytest.mark.parametrize("expr", POW_SAMPLES, ids=str)

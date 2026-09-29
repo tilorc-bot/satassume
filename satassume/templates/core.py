@@ -372,8 +372,9 @@ _POW_RULES = (
     # --- sign ---
     (((_B, 'positive'), (_E, 'real')), (_N, 'positive')),
     (((_B, 'extended_positive'), (_E, 'positive')), (_N, 'extended_positive')),
-    (((_B, 'extended_positive'), (_E, 'extended_real')), (_N, 'extended_nonnegative')),
-    (((_B, 'extended_nonnegative'), (_E, 'extended_nonnegative')), (_N, 'extended_nonnegative')),
+    # A finite exponent: 1**oo and 1**-oo are nan.
+    (((_B, 'extended_positive'), (_E, 'real')), (_N, 'extended_nonnegative')),
+    (((_B, 'extended_nonnegative'), (_E, 'nonnegative')), (_N, 'extended_nonnegative')),
     (((_B, 'extended_nonnegative'), (_E, 'extended_real')), (_N, 'extended_negative', False)),
     (((_B, 'extended_real'), (_E, 'even')), (_N, 'extended_negative', False)),
     (((_B, 'nonzero'), (_E, 'even')), (_N, 'positive')),
