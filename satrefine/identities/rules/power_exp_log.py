@@ -11,7 +11,7 @@ a product (:func:`._tables.derive`) they give every ``log(x**a)`` and
 ``log(x*y)`` rule of v3: the bookkeeping ``floor`` collapses under the
 rule's precondition, through the ``arg`` bounds of the simple layer or
 the engine's sign case split.  The product has two exponential forms,
-``log(p) + log(r)`` and ``log(-p) + log(-r)``, which is how a negative
+``log(y) + log(r)`` and ``log(-y) + log(-r)``, which is how a negative
 factor's sign is absorbed into the other factor (``log(x*y) = log(-x) +
 log(-y)`` for negative ``x``).
 
@@ -35,7 +35,7 @@ to v3's ``(-1)**b*Abs(x)**(2*b)``; ``a = 0 mod 4`` derives for a symbolic
 
 ``exp`` has one fact, ``exp(a + b) == exp(a)*exp(b)``, ordered by the
 number of ``exp`` nodes so it fires only when a factor evaluates away
-(``exp(log(Abs(p)) + log(Abs(r)))``), and three rules: ``I*pi`` times an
+(``exp(log(Abs(y)) + log(Abs(r)))``), and three rules: ``I*pi`` times an
 integer or half-integer leaves as ``(-1)**n`` or ``I*(-1)**n``, and
 ``exp(e*log(b))`` folds back to ``b**e`` on the power form's domain
 (``b != 0`` or ``e > 0``: whatever the form unfolded, the fold refolds, so
@@ -91,18 +91,31 @@ from __future__ import annotations
 from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true, zoo
 from sympy.core import Pow
 
-from ._tables import (ZERO, Family, Identities, Row, Rules, count_measure, derive, node_measure, part, principal,
-                      size)
+from ._tables import (ZERO, Family, Identities, Row, Rules, add_rules, count_measure, derive, node_measure, part,
+                      principal, size)
 
-z, b, e, p, r, x, a, n = symbols('z b e p r x a n')
-c = part('c', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
+# b is a base; a and e are exponents; y and r are factors of a product; z and x are arguments:
+# all arbitrary (b, e, y and r also appear in the exponential forms, which assume nothing).
+z, b, e, y, r, x, a = symbols('z b e y r x a')
+d, k, m, n, p, q, t, v = symbols('d k m n p q t v')
+h = part('h', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
 
-FACTS: list[Row] = [   # (lhs, rhs, domain): lhs == rhs wherever the domain holds
-    (log(exp(z)), principal(z),            true),          # log inverts exp up to the principal branch
-    (log(x),      log(Abs(x)) + I*arg(x),  ~Q.zero(x)),    # definition of the complex logarithm
-    (b**e,        exp(e*log(b)),           ~Q.zero(b)),    # definition of the principal power
-    (exp(a + b),  exp(a)*exp(b),           true),          # exp is a homomorphism (fires when a factor evaluates)
-]
+# Assumed throughout: a row takes each fact whose variables are all in its left side.
+ASSUMED = {~Q.zero(d),        # d is nonzero
+           Q.integer(m),      # m is an integer
+           Q.even(n),         # n is an even integer
+           Q.odd(k),          # k is an odd integer (so nonzero)
+           Q.positive(p),     # p is positive
+           Q.negative(q),     # q is negative
+           Q.real(t),         # t is real
+           Q.imaginary(v)}    # v is imaginary
+
+FACTS: list[Row] = add_rules([   # lhs == rhs wherever the family's facts hold
+    (log(exp(z)), principal(z)),               # log inverts exp up to the principal branch
+    (log(d),      log(Abs(d)) + I*arg(d)),     # definition of the complex logarithm
+    (d**e,        exp(e*log(d))),              # definition of the principal power
+    (exp(a + b),  exp(a)*exp(b)),              # exp is a homomorphism (fires when a factor evaluates)
+])
 # The power and product forms are identities only off zero (at b = 0 the right side of a
 # derived log row is nan in SymPy's arithmetic).  Their domains are relaxed so the engine's
 # sign case split may try them; the split checks its result at the excluded point before
@@ -112,49 +125,83 @@ FACTS: list[Row] = [   # (lhs, rhs, domain): lhs == rhs wherever the domain hold
 
 EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain holds
     (b**e, e*log(b),           ~Q.zero(b) | Q.positive(e)),  # a power is an exponential (see the note above)
-    (p*r,  log(p) + log(r),    true),                      # a product is an exponential (see the note above)
-    (p*r,  log(-p) + log(-r),  true),                      # ... with both signs flipped: p*r == (-p)*(-r)
+    (y*r,  log(y) + log(r),    true),                      # a product is an exponential (see the note above)
+    (y*r,  log(-y) + log(-r),  true),                      # ... with both signs flipped: y*r == (-y)*(-r)
 ]
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis): a conditional rewrite
+RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypothesis of its rows
     # Pow
-    (Pow(E, x, evaluate=False), exp(x), true),                                  # E**x is exp(x)
-    ((b**a)**e, b**(a*e), Q.integer(e)),                                        # (b**a)**e = b**(a*e), integer e
-    ((b**a)**e, b**(a*e), (Q.nonnegative(b) | Q.extended_nonnegative(b)) & Q.positive(a)),   # ... a*log(b) real, 0**a = 0 for a > 0, oo**a = oo
-    ((b**a)**e, b**(a*e), Q.positive(b) & Q.real(a)),                           # ... a*log(b) real for b > 0 (sqrt(1/x) = 1/sqrt(x))
-    ((b**a)**e, Abs(b)**(a*e), Q.real(b) & Q.even(a) & (Q.positive(a) | ~Q.zero(b))),   # b**a = |b|**a, even a; 0**a = 0 for a > 0
-    ((b**a)**e, Abs(b)**(a*e), Q.extended_real(b) & Q.even(a) & Q.positive(a)),        # ... also at b = +-oo for a > 0 ((+-oo)**a = oo)
-    (exp(a)**e, exp(a*e), Q.integer(e)),                                        # exp(a)**e = exp(a*e), integer e
-    ((b**a)**e, Abs(b)**(a*e), Q.imaginary(b) & Q.even(a/2)),                   # (I*t)**a = t**a for a = 0 mod 4
-    ((b**a)**e, (-1)**e*Abs(b)**(a*e), Q.imaginary(b) & Q.odd(a/2)),            # (I*t)**a = -t**a for a = 2 mod 4
-    (Pow(S.Zero, n, evaluate=False), S.Zero, Q.positive(n)),                    # 0**n = 0 for n > 0
-    (b**e, zoo, Q.zero(b) & Q.negative(e)),                                     # 0**e = zoo for e < 0 (1/x at x = 0)
-    (Abs(b)**n, b**n, Q.real(b) & Q.even(n)),                                   # |b|**n = b**n, real b, even n
-    (Abs(b)**n, (-1)**(n/2)*b**n, Q.imaginary(b) & Q.even(n)),                  # |I*t|**n = (-1)**(n/2)*(I*t)**n
-    ((-1)**x, S.One, Q.even(x)),                                                # (-1)**even = 1
-    ((-1)**x, S.NegativeOne, Q.odd(x)),                                         # (-1)**odd = -1
-    ((-1)**x, S.NegativeOne, Q.even(x - 1)),                                    # ... the parity stated one lower: (-1)**((n + 1)/2)
-    ((-1)**x, S.One, Q.odd(x - 1)),                                             #     under a parity of (n - 1)/2 (ask does not shift it)
-    ((-1)**((-1)**x/2 + r), (-1)**(x + r + S.Half), Q.integer(x)),              # (-1)**x/2 = +-1/2 and (-1)**z is 2-periodic
-    ((-1)**(n + r), (-1)**r, Q.even(n)),                                        # (-1)**z is 2-periodic: drop even terms
-    ((-1)**(n + r), (-1)**(r + 1), Q.odd(n)),                                   # ... an odd term becomes 1
-    ((-1)**(c + r), (-1)**(r + Mod(c, 2)), true),                               # ... a rational constant is reduced mod 2
-    # exp
-    (exp(n*pi*I + r), (-1)**n*exp(r), Q.integer(n)),                            # exp splits over sums; exp(I*pi*n) = (-1)**n
-    (exp(n*pi*I + r), I*(-1)**(n - S.Half)*exp(r), Q.integer(n - S.Half)),       # exp(I*pi*(k + 1/2)) = I*(-1)**k
-    (exp(e*log(b)), b**e, ~Q.zero(b) | Q.positive(e)),                          # the definition of Pow, folded back (the form's domain)
-]
+    add_rules([
+        (Pow(E, x, evaluate=False), exp(x)),     # E**x is exp(x)
+        ((b**a)**m, b**(a*m)),                   # (b**a)**m = b**(a*m)
+    ])
+    + add_rules([
+        ((b**p)**e, b**(p*e)),                   # ... p*log(b) real, 0**p = 0, oo**p = oo
+    ], assuming={Q.nonnegative(b) | Q.extended_nonnegative(b)})
+    + add_rules([
+        ((p**t)**e, p**(t*e)),                   # ... t*log(p) real (sqrt(1/x) = 1/sqrt(x))
+    ])
+    + add_rules([
+        ((t**n)**e, Abs(t)**(n*e)),              # t**n = |t|**n; 0**n = 0 for n > 0
+    ], assuming={Q.positive(n) | ~Q.zero(t)})
+    + add_rules([
+        ((b**n)**e, Abs(b)**(n*e)),              # ... also at b = +-oo for n > 0 ((+-oo)**n = oo)
+    ], assuming={Q.extended_real(b), Q.positive(n)})
+    + add_rules([
+        (exp(a)**m, exp(a*m)),                   # exp(a)**m = exp(a*m)
+    ])
+    + add_rules([
+        ((v**a)**e, Abs(v)**(a*e)),              # (I*t)**a = t**a for a = 0 mod 4
+    ], assuming={Q.even(a/2)})
+    + add_rules([
+        ((v**a)**e, (-1)**e*Abs(v)**(a*e)),      # (I*t)**a = -t**a for a = 2 mod 4
+    ], assuming={Q.odd(a/2)})
+    + add_rules([
+        (Pow(S.Zero, p, evaluate=False), S.Zero),   # 0**p = 0
+    ])
+    + add_rules([
+        (b**q, zoo),                             # 0**q = zoo (1/x at x = 0)
+    ], assuming={Q.zero(b)})
+    + add_rules([
+        (Abs(t)**n, t**n),                       # |t|**n = t**n
+        (Abs(v)**n, (-1)**(n/2)*v**n),           # |I*t|**n = (-1)**(n/2)*(I*t)**n
+        ((-1)**n, S.One),                        # (-1)**even = 1
+        ((-1)**k, S.NegativeOne),                # (-1)**odd = -1
+    ])
+    # ... the parity stated one lower: (-1)**((n + 1)/2) under a parity of (n - 1)/2
+    # (ask does not shift it)
+    + add_rules([
+        ((-1)**x, S.NegativeOne),
+    ], assuming={Q.even(x - 1)})
+    + add_rules([
+        ((-1)**x, S.One),
+    ], assuming={Q.odd(x - 1)})
+    + add_rules([
+        ((-1)**((-1)**m/2 + r), (-1)**(m + r + S.Half)),   # (-1)**m/2 = +-1/2 and (-1)**z is 2-periodic
+        ((-1)**(n + r), (-1)**r),                          # (-1)**z is 2-periodic: drop even terms
+        ((-1)**(k + r), (-1)**(r + 1)),                    # ... an odd term becomes 1
+        ((-1)**(h + r), (-1)**(r + Mod(h, 2))),            # ... a rational constant is reduced mod 2
+        # exp
+        (exp(m*pi*I + r), (-1)**m*exp(r)),                 # exp splits over sums; exp(I*pi*m) = (-1)**m
+    ])
+    + add_rules([
+        (exp(x*pi*I + r), I*(-1)**(x - S.Half)*exp(r)),    # exp(I*pi*(m + 1/2)) = I*(-1)**m
+    ], assuming={Q.integer(x - S.Half)})
+    + add_rules([
+        (exp(e*log(b)), b**e),                   # the definition of Pow, folded back (the form's domain)
+    ], assuming={~Q.zero(b) | Q.positive(e)})
+)
 
-LOG_RULES: list[Row] = [   # tried after the log identities
-    # b**e = |b|**e for a real b and an even e, and log(r**e) = e*log(r) for r > 0 and a real e.  At b = 0
-    # both sides are zoo (log(0) = log(zoo) = zoo) unless e = 0, where 0*log(0) is nan: hence e != 0 or b != 0.
-    (log(b**e), e*log(Abs(b)), Q.real(b) & Q.even(e) & (~Q.zero(e) | ~Q.zero(b))),
-]
+LOG_RULES: list[Row] = add_rules([   # tried after the log identities
+    # t**n = |t|**n, and log(r**e) = e*log(r) for r > 0 and a real e.  At t = 0 both sides are
+    # zoo (log(0) = log(zoo) = zoo) unless n = 0, where 0*log(0) is nan: hence n != 0 or t != 0.
+    (log(t**n), n*log(Abs(t))),
+], assuming={~Q.zero(n) | ~Q.zero(t)})
 
-NEGATIVE_BASE: list[Row] = [   # exact for integer n; ordered so they fire for a negative number only
-    (b**n, (-b)**n,  Q.negative(b) & Q.even(n)),                                # c**n = (-c)**n, even n
-    (b**n, -(-b)**n, Q.negative(b) & Q.odd(n)),                                 # c**n = -(-c)**n, odd n
-]
+NEGATIVE_BASE: list[Row] = add_rules([   # exact for integer n; ordered so they fire for a negative number only
+    (q**n, (-q)**n),                                                            # q**n = (-q)**n
+    (q**k, -(-q)**k),                                                           # q**k = -(-q)**k
+])
 
 # At an infinite base the power form is not an identity for e <= 0: (+-oo)**0 is 1 but 0*log(+-oo)
 # is nan, and oo**e is 0 for e < 0, whose log is zoo, not -oo.  Where the form's exponential
@@ -188,4 +235,5 @@ SPEC = Family({'log': (_zero, Identities(IDENTITIES), Rules(LOG_RULES)),
                        Identities(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
                        Identities(NEGATIVE_BASE, measure=negative_number_base_measure)),
                'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=count_measure((exp,))))},
-              facts=FACTS + NEGATIVE_BASE, exp_forms=LOG_FORMS, rules=[ZERO] + RULES + LOG_RULES)
+              facts=FACTS + NEGATIVE_BASE, exp_forms=LOG_FORMS, rules=[ZERO] + RULES + LOG_RULES,
+              assumed=ASSUMED)

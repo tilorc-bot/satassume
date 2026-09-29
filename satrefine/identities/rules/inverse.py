@@ -55,7 +55,7 @@ live and generated tables through ``python -m satrefine.tools.refine_differentia
 ``atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2``), reached through bounds on
 ``im z`` (``atanh(tanh(x + I*y))`` under ``Q.ge(y, -pi/2) & Q.lt(y, pi/2)``
 gave ``x + I*y``); their domains now exclude the lines
-(``_OFF_CUT_LINES``).  The real-argument facts, the endpoint split and
+(``_off_cut_lines``).  The real-argument facts, the endpoint split and
 the ``atan`` pole exclusions held everywhere tried.
 """
 from __future__ import annotations
@@ -64,10 +64,14 @@ from sympy import (Abs, I, Interval, Piecewise, Q, S, acos, acosh, acot, acoth, 
                    atan2, atanh, cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols, tan,
                    tanh, true)
 
-from ._tables import ZERO, Family, Identities, Row, Rules, node_measure
+from ._tables import ZERO, Family, Identities, Row, Rules, add_rules, node_measure
 from ._wraps import reflect_full, reflect_half, sawtooth
 
-t, z, x, y = symbols('t z x y')
+d, t, u, x, y, z = symbols('d t u x y z')
+
+# Assumed throughout: a row takes each fact whose variables are all in its left side.
+# The letters follow the tables' convention (t real; u extended real; d nonzero; x, y, z arbitrary).
+ASSUMED = {Q.real(t), ~Q.zero(d)}   # t is real, d is nonzero
 
 
 def _reflect_half_imag(z):
@@ -81,43 +85,66 @@ def _sawtooth_imag(z):
     return z - I*pi*floor(im(z)/pi + S.Half)
 
 
-_OFF_CUT_LINES = Q.real(z) | Q.extended_real(z) | ~Q.integer(im(z)/pi + S.Half)
-"""``z`` off the lines ``im z = (k + 1/2)*pi`` (an extended real ``z`` is, and stated bounds
-on ``im z`` that exclude the lines refute the integer).  Extended: ``asinh``, ``atanh`` and
-``acoth`` of their functions hold at ``+-oo`` (``asinh(sinh(oo)) = oo``, ``atanh(tanh(oo)) =
-atanh(1) = oo``, ``acoth(coth(-oo)) = acoth(-1) = -oo``), so a one-sided bound, which proves
-only ``Q.extended_real``, fires them (issue #10, B1-B7).  ``Q.real`` stays first: SymPy's ``ask``
-proves ``Q.real(sin(x))`` for a real ``x`` but not ``Q.extended_real(sin(x))``."""
+def _off_cut_lines(z):
+    """``z`` off the lines ``im z = (k + 1/2)*pi`` (an extended real ``z`` is, and stated bounds
+    on ``im z`` that exclude the lines refute the integer).  Extended: ``asinh``, ``atanh`` and
+    ``acoth`` of their functions hold at ``+-oo`` (``asinh(sinh(oo)) = oo``, ``atanh(tanh(oo)) =
+    atanh(1) = oo``, ``acoth(coth(-oo)) = acoth(-1) = -oo``), so a one-sided bound, which proves
+    only ``Q.extended_real``, fires them (issue #10, B1-B7).  ``Q.real`` stays first: SymPy's ``ask``
+    proves ``Q.real(sin(x))`` for a real ``x`` but not ``Q.extended_real(sin(x))``."""
+    return Q.real(z) | Q.extended_real(z) | ~Q.integer(im(z)/pi + S.Half)
 
-FACTS: list[Row] = [   # (lhs, rhs, domain)
-    (asin(sin(t)), reflect_half(t),            Q.real(t)),   # asin undoes sin up to a reflection
-    (asin(cos(t)), reflect_half(pi/2 - t),     Q.real(t)),   # cos t = sin(pi/2 - t)
-    (acos(cos(t)), reflect_full(t),            Q.real(t)),   # acos undoes cos up to a reflection
-    (acos(sin(t)), reflect_full(pi/2 - t),     Q.real(t)),   # sin t = cos(pi/2 - t)
-    (atan(tan(t)), sawtooth(t, pi),            Q.real(t) & ~Q.integer(t/pi + S.Half)),   # atan undoes tan up to a period, off the poles
-    (atan(cot(t)), sawtooth(pi/2 - t, pi),     Q.real(t) & ~Q.integer(t/pi)),            # cot t = tan(pi/2 - t), off the poles
-    # The hyperbolic inverses hold off the lines im z = (k + 1/2)*pi, where the forward
-    # function lands on the inverse's branch cut and the result depends on the sign of
-    # re z (asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2, atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2).
-    (asinh(sinh(z)), _reflect_half_imag(z),    _OFF_CUT_LINES),                # asinh undoes sinh up to an imaginary reflection
-    (atanh(tanh(z)), _sawtooth_imag(z),        _OFF_CUT_LINES),                # atanh undoes tanh up to an imaginary period
-    (acoth(coth(z)), _sawtooth_imag(z),        ~Q.zero(z) & _OFF_CUT_LINES),   # acoth undoes coth likewise (coth(0) is zoo)
-    (acsch(csch(z)), _reflect_half_imag(z),    ~Q.zero(z) & (Q.real(z) | Q.finite(z) & ~Q.integer(im(z)/pi + S.Half))),   # acsch undoes csch likewise
-    # (csch(+-oo) = 0 and acsch(0) = zoo: finite z only, so Q.real and not the extended lines;
-    # the other three hold at +-oo.  A real z is finite, but im(z) = 0 does not make z real:
-    # im(Abs(w)) is 0 for an infinite w, issue #10 B10 and B6)
-    (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
-                            (atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
-                            (atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
-                            (sign(y)*pi/2, Q.zero(x) & Q.nonzero(y)),
-                            (nan, Q.zero(x) & Q.zero(y)),
-                            (atan2(y, x), true)), true),
-]
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis)
-    (acosh(cosh(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # acosh undoes cosh up to sign, extended real t (acosh(cosh(+-oo)) = oo)
-    (asech(sech(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # asech undoes sech up to sign, extended real t (asech(0) = oo)
-]
+# The hyperbolic inverses hold off the lines im z = (k + 1/2)*pi, where the forward
+# function lands on the inverse's branch cut and the result depends on the sign of
+# re z (asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2, atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2).
+FACTS: list[Row] = (
+    add_rules([
+        (asin(sin(t)), reflect_half(t)),                      # asin undoes sin up to a reflection
+        (asin(cos(t)), reflect_half(pi/2 - t)),               # cos t = sin(pi/2 - t)
+        (acos(cos(t)), reflect_full(t)),                      # acos undoes cos up to a reflection
+        (acos(sin(t)), reflect_full(pi/2 - t)),               # sin t = cos(pi/2 - t)
+    ])
+    # off the poles of tan
+    + add_rules([
+        (atan(tan(t)), sawtooth(t, pi)),                      # atan undoes tan up to a period
+    ], assuming={~Q.integer(t/pi + S.Half)})
+    # off the poles of cot
+    + add_rules([
+        (atan(cot(t)), sawtooth(pi/2 - t, pi)),               # cot t = tan(pi/2 - t)
+    ], assuming={~Q.integer(t/pi)})
+    # for z off the lines
+    + add_rules([
+        (asinh(sinh(z)), _reflect_half_imag(z)),              # asinh undoes sinh up to an imaginary reflection
+        (atanh(tanh(z)), _sawtooth_imag(z)),                  # atanh undoes tanh up to an imaginary period
+    ], assuming={_off_cut_lines(z)})
+    # for d off the lines
+    + add_rules([
+        (acoth(coth(d)), _sawtooth_imag(d)),                  # acoth undoes coth likewise (coth(0) is zoo)
+    ], assuming={_off_cut_lines(d)})
+    # acsch undoes csch likewise, for d finite off the lines.  (csch(+-oo) = 0 and acsch(0) = zoo:
+    # finite d only, so Q.real and not the extended lines; the other three hold at +-oo.  A real
+    # d is finite, but im(d) = 0 does not make d real: im(Abs(v)) is 0 for an infinite v, issue
+    # #10 B10 and B6)
+    + add_rules([
+        (acsch(csch(d)), _reflect_half_imag(d)),
+    ], assuming={Q.real(d) | Q.finite(d) & ~Q.integer(im(d)/pi + S.Half)})
+    + add_rules([
+        (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
+                                (atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
+                                (atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
+                                (sign(y)*pi/2, Q.zero(x) & Q.nonzero(y)),
+                                (nan, Q.zero(x) & Q.zero(y)),
+                                (atan2(y, x), true))),
+    ])
+)
+
+ASSUMED |= {Q.real(u) | Q.extended_real(u)}   # u is an extended real (+-oo included)
+
+RULES: list[Row] = add_rules([
+    (acosh(cosh(u)), Abs(u)),   # acosh undoes cosh up to sign (acosh(cosh(+-oo)) = oo)
+    (asech(sech(u)), Abs(u)),   # asech undoes sech up to sign (asech(0) = oo)
+])
 
 RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)
     (atan(y), Interval.open(-pi/2, pi/2),  Q.real(y)),
@@ -138,4 +165,4 @@ SPEC = Family({**{head.__name__: (_rules, _identity(head))
                   for head in (asin, acos, atan, asinh, atanh, acoth, acsch)},
                'acosh': _rules, 'asech': _rules,
                'atan2': _identity(atan2, opaque=(floor, im, Piecewise))},
-              facts=FACTS, rules=[ZERO] + RULES, ranges=RANGES)
+              facts=FACTS, rules=[ZERO] + RULES, ranges=RANGES, assumed=ASSUMED)

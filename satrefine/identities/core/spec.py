@@ -19,11 +19,25 @@ floor of a bounded quantity).  Every row a handler uses is one of the stated
 rows, derived from them (``derive(facts, exp_forms)``), or a stated row whose
 generic head (an undefined function such as ``G``) is replaced by the key's
 head (``tests/refine_identities/rules/test_family_specs.py``).
+
+``assumed`` is a set of facts about the pattern variables (``Q.integer(n)``).
+A fact belongs to every row whose left side holds all its variables, as a
+theorem's "for n an integer" holds for every formula that follows.  The
+family adds it to the row's condition, in place, so the module's tables are
+complete rows for everything that reads them; such rows may omit their own
+condition, ``(lhs, rhs)``.
+
+A fact ``Eq(r, e1) | Eq(r, e2) | ...`` with a symbol ``r`` is a definition
+instead: "r is e1 or e2 or ...".  A row holding ``r`` in its left side becomes
+one row for each ``e``, with ``r`` replaced; the other facts then apply to
+those rows.  ``ask`` never sees a definition.
 """
 from __future__ import annotations
 
 from dataclasses import KW_ONLY, dataclass
 from typing import Any, Callable
+
+from sympy import And, Eq, Or, Symbol, true
 
 from .rewrite import identity_handler, rule_handler
 
@@ -57,13 +71,69 @@ class Identities:
 @dataclass(eq=False)
 class Family:
     """``handlers``: ``key -> part or tuple of parts``; the table kinds: ``facts``,
-    ``exp_forms``, ``rules``, ``ranges`` (lists; see the module docstring)."""
+    ``exp_forms``, ``rules``, ``ranges`` (lists), ``assumed`` (a set of facts; see
+    the module docstring)."""
     handlers: dict
     _: KW_ONLY
     facts: list = ()
     exp_forms: list = ()
     rules: list = ()
     ranges: list = ()
+    assumed: set = ()
+
+    def __post_init__(self):
+        self.completed: dict = {}   # id(row as written) -> (row, completed rows); see complete_module
+        if not self.assumed:
+            return
+        definitions = dict(d for d in map(_definition, self.assumed) if d)
+        facts = [f for f in self.assumed if not _definition(f)]
+        done = self.completed   # a row in several tables stays the same rows
+        tables = [p.rows for parts in self.handlers.values()
+                  for p in (parts if isinstance(parts, tuple) else (parts,))]
+        for rows in {id(t): t for t in tables + [self.facts, self.rules] if isinstance(t, list)}.values():
+            rows[:] = [done_row for row in rows for done_row in done.setdefault(
+                id(row), (row, [assume(r, facts) for r in _define(row, definitions)]))[1]]
+
+
+def complete_module(module) -> None:
+    """Complete the module's own tables too: a table the family was given only as a slice
+    or inside a concatenation (``INFINITE[0:2]``, ``[ZERO] + RULES``) still holds the rows
+    as written, and the tools read the module's tables."""
+    completed = module.SPEC.completed
+    for value in vars(module).values():
+        if isinstance(value, list) and any(id(row) in completed for row in value):
+            value[:] = [c for row in value for c in (completed[id(row)][1] if id(row) in completed else [row])]
+
+
+def _definition(fact) -> tuple | None:
+    """``(r, [e1, e2, ...])`` when ``fact`` is ``Eq(r, e1) | Eq(r, e2) | ...`` for a symbol ``r``."""
+    alternatives = fact.args if isinstance(fact, Or) else (fact,)
+    if not all(isinstance(a, Eq) for a in alternatives):
+        return None
+    names = {a.lhs for a in alternatives}
+    if len(names) != 1 or not next(iter(names)).is_Symbol:
+        return None
+    return names.pop(), [a.rhs for a in alternatives]
+
+
+def _define(row: tuple, definitions: dict) -> list[tuple]:
+    """``row``, once for each way of replacing its defined symbols by what they stand for."""
+    rows = [row]
+    for r, expressions in definitions.items():
+        if r in row[0].free_symbols:
+            rows = [tuple(t.xreplace({r: e}) if hasattr(t, 'xreplace') else t for t in row)
+                    for row in rows for e in expressions]
+    return rows
+
+
+def assume(row: tuple, facts) -> tuple:
+    """``row`` with the facts about its left side's variables in its condition (a
+    matrix's size counts as a variable of the left side: ``Determinant(A)`` holds ``m``)."""
+    lhs, rhs, *rest = row
+    condition, unless = (rest or [true])[0], rest[1:]
+    variables = lhs.free_symbols | lhs.atoms(Symbol)
+    held = [f for f in facts if f.free_symbols <= variables]
+    return (lhs, rhs, And(*held, condition), *unless)
 
 
 def chain(*handlers: Handler) -> Handler:

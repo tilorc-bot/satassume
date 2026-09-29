@@ -98,5 +98,6 @@ def load() -> None:
     # first: keep that order (the order of handlers_dict's keys, which generation follows)
     modules.insert(names.index("complex_parts"), modules.pop(names.index("power_exp_log")))
     for m in modules:
+        spec.complete_module(m)
         _upstream.handlers_dict.update(spec.build(m.SPEC))
         _simple.register_ranges(m.SPEC.ranges)

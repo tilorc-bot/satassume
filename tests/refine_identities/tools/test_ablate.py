@@ -41,21 +41,22 @@ def test_ablate_removes_the_row_from_handler_and_module(restore_minmax):
     mod = restore_minmax
     assert refine(DiracDelta(x), Q.positive(x)) == 0
     removed = ablate_tool.ablate("minmax_deltas", [0])       # DiracDelta off the origin
-    assert "DiracDelta(x)" in removed[0]
+    assert "DiracDelta(d)" in removed[0]
     assert len(mod.RULES) == 6 and len(mod.DIRAC) == 2
     assert len(handlers_dict["DiracDelta"].rows) == 2
     assert refine(DiracDelta(x), Q.positive(x)) == DiracDelta(x)
 
 
-def test_ablate_shared_row_goes_from_every_table():
+def test_ablate_row_goes_from_every_table_holding_it():
     mod = importlib.import_module("satrefine.identities.rules.integer_funcs")
-    saved = {name: list(getattr(mod, name)) for name in ("RULES", "FLOOR", "CEILING", "ROUNDING")}
+    saved = {name: list(getattr(mod, name)) for name in ("RULES", "FLOOR", "CEILING")}
     saved_rows = {key: list(handlers_dict[key].rows) for key in ("floor", "ceiling")}
     try:
-        ablate_tool.ablate("integer_funcs", [0])              # the generic-head F(x) row
+        ablate_tool.ablate("integer_funcs", [0])              # floor(x) = x, in FLOOR and RULES
         assert len(handlers_dict["floor"].rows) == len(saved_rows["floor"]) - 1
-        assert len(handlers_dict["ceiling"].rows) == len(saved_rows["ceiling"]) - 1
-        assert len(mod.ROUNDING) == 0
+        assert len(handlers_dict["ceiling"].rows) == len(saved_rows["ceiling"])
+        assert len(mod.FLOOR) == len(saved["FLOOR"]) - 1 and len(mod.RULES) == len(saved["RULES"]) - 1
+        assert mod.CEILING == saved["CEILING"]
     finally:
         for name, rows in saved.items():
             getattr(mod, name)[:] = rows

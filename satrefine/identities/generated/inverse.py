@@ -12,7 +12,7 @@ from sympy import Q
 from satrefine.identities.core.driver import generated_handlers as handlers_dict
 from satrefine.identities.core.rewrite import rule_handler
 
-x, y, z = symbols('x y z')
+d, x, y, z = symbols('d x y z')
 
 RULES = [
     # round 1: from inverse.FACTS[6] under Q.real(z)
@@ -23,14 +23,14 @@ RULES = [
     #   fired: complex_parts.RULES[3], inverse.FACTS[7]
     #   asks: Q.extended_real(z), Q.integer(-1), Q.negative(-1)
     (atanh(tanh(z)), z, Q.real(z)),
-    # round 1: from inverse.FACTS[8] under Q.real(z)
+    # round 1: from inverse.FACTS[8] under Q.real(d)
     #   fired: complex_parts.RULES[3], inverse.FACTS[8]
-    #   asks: Q.extended_real(z), Q.integer(-1), Q.negative(-1)
-    (acoth(coth(z)), z, Q.real(z) & ~Q.zero(z)),
-    # round 1: from inverse.FACTS[9] under Q.real(z)
+    #   asks: Q.extended_real(d), Q.integer(-1), Q.negative(-1)
+    (acoth(coth(d)), d, Q.real(d) & ~Q.zero(d)),
+    # round 1: from inverse.FACTS[9] under Q.real(d)
     #   fired: complex_parts.RULES[3], inverse.FACTS[9]
-    #   asks: Q.real(z), Q.integer(-1), Q.negative(-1), Q.extended_real(z)
-    (acsch(csch(z)), z, Q.real(z) & ~Q.zero(z)),
+    #   asks: Q.real(d), Q.integer(-1), Q.negative(-1), Q.extended_real(d)
+    (acsch(csch(d)), d, Q.real(d) & ~Q.zero(d)),
     # round 1: from inverse.FACTS[10] under Q.positive(x) & Q.real(y)
     #   fired: inverse.FACTS[10]
     #   asks: Q.positive(x), Q.real(y), Q.integer(-1), Q.negative(-1)

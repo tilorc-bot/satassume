@@ -10,16 +10,16 @@ tables pass as ``measure=`` are in :mod:`..core.measure`.
 """
 from __future__ import annotations
 
-from sympy import And, Function, Q, Symbol, exp
+from sympy import And, Function, Q, Symbol, exp, true
 
 from ..core.match import exponent, part
 from ..core.measure import count_measure, node_measure, size
 from ..core.rewrite import Row
-from ..core.spec import Family, Identities, Rules
+from ..core.spec import Family, Identities, Rules, assume
 from ._wraps import principal
 
-__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent", "node_measure", "part",
-           "principal", "size"]
+__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "add_rules", "count_measure", "derive", "exponent",
+           "node_measure", "part", "principal", "size"]
 
 
 _F = Function('F')
@@ -33,10 +33,20 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
     """Compose each ``g(exp(z))`` fact with each exponential form ``(L, W, domain)``
     (``L == exp(W)``) into the row ``g(L) == rhs[z := W]`` under both domains."""
     rows: list[Row] = []
-    for lhs, rhs, dom in facts:
+    for lhs, rhs, *rest in facts:        # a fact may leave its domain to the family's assumptions
+        dom = rest[0] if rest else true
         rows.append((lhs, rhs, dom))
         if lhs.args and isinstance(lhs.args[0], exp) and lhs.args[0].args[0].is_Symbol:
             zz = lhs.args[0].args[0]
             for L, W, dom_d in exp_forms:
                 rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
     return rows
+
+
+def add_rules(rows: list, assuming=()) -> list[Row]:
+    """``rows`` with the facts in ``assuming`` added to the condition of each row whose
+    left side holds all their variables, on top of the family's ``ASSUMED``: the
+    hypotheses of these rows ("here n is even", "for 0 <= a < d").  A row fires only
+    where its hypotheses are proved.  The rows returned are ordinary rows, so a row
+    keeps its facts in every table it is reused in."""
+    return [assume(row, assuming) for row in rows]
