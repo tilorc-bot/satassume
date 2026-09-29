@@ -38,9 +38,11 @@ satassume said ``None`` (or found the assumptions inconsistent) and either
   with no registered clause function) or ``"other"`` (not a Boolean over
   applied predicates); or
 * a relation in the query has no theory that interprets it (a bound such as
-  ``pi/2``, a float, ``oo`` or an ``AccumBounds``): satassume then drops the
-  whole query, including trivial facts such as ``Q.nonnegative(x)`` under
-  ``Q.nonnegative(x) & Q.le(x, pi/2)``, which SymPy answers cheaply.
+  a float, ``oo`` or an ``AccumBounds``): satassume then drops the whole
+  query, including trivial facts such as ``Q.nonnegative(x)`` under
+  ``Q.nonnegative(x) & Q.le(x, 1.5)``, which SymPy answers cheaply.
+  Irrational constants (``pi/2``, ``sqrt(2)``, ``E``) are bounded LRA
+  variables in satassume since its b208af3, so such bounds stay with it.
 
 Relations that satassume's theories do interpret are not re-asked: where the
 engine is undecided on them SymPy almost never decides either (28 of 1,678
@@ -143,7 +145,7 @@ def _nonzero_false_checked(expr: Any, assumptions: Any) -> bool | None:
 # exponent, or an extended nonnegative base and a real exponent
 # (``_extended_real_true_checked``); otherwise it becomes None.  Rows stated over
 # the extended reals (``conjugate(a) -> a`` if ``Q.extended_real(a)``) rely on it
-# when satassume leaves the query open (a relation against ``pi/2``).
+# when satassume leaves the query open (a relation against a float).
 
 def _extended_real_true_checked(expr: Any, assumptions: Any) -> bool | None:
     """``Q.extended_real(b**e)`` where SymPy's closure said True: True for an integer
