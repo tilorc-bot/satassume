@@ -154,9 +154,19 @@ def test_evaluator_basics():
 
 
 def oracle(value, pred):
-    """Old-system truth value of ``pred`` for the concrete ``value``."""
+    """Old-system truth value of ``pred`` for the concrete ``value``.
+
+    ``nan`` (``oo - oo``, ``0*oo``, ``re(zoo)``, ``1**oo``) is no number:
+    every predicate that implies one (``extended_real``, ``complex``, ...)
+    is False for it, where SymPy leaves it None; ``finite``/``infinite``
+    (complements in the rule base) and ``commutative`` stay None.  Inputs
+    are numbers, never nan: :func:`check_sound` skips an assignment under
+    which a direct argument of the node is nan (``Abs(x*y)`` at ``x = 0``,
+    ``y = oo``)."""
     if isinstance(value, AccumBounds):
         return None
+    if value is S.NaN:
+        return None if pred in ('finite', 'infinite', 'commutative') else False
     return getattr(value, 'is_' + pred, None)
 
 
@@ -203,6 +213,15 @@ def check_sound(expr):
     failures = []
     for values in product(pool, repeat=len(syms)):
         assignment = dict(zip(syms, values))
+        try:
+            inputs = [a.xreplace(assignment) for a in expr.args]
+        except Exception:  # an evaluation SymPy cannot do
+            inputs = []
+        if any(a is S.NaN for a in inputs):
+            continue                      # a nan input: not a number
+        if isinstance(expr, Pow) and inputs and inputs[0] is zoo \
+                and inputs[1].is_Float and inputs[1].is_zero:
+            continue                      # SymPy: zoo**0 = 1 but zoo**0.0 = nan
         valuation = make_valuation(assignment)
         for f in facts:
             if evaluate(f, valuation) is False:

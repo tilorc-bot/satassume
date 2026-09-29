@@ -111,8 +111,9 @@ def test_exact_zero_gets_a_narrow_interval_around_zero():
 def test_bounds_make_assumptions_inconsistent():
     assert _ask(Q.lt(xr, 2), Q.gt(xr, 3) & Q.le(xr, pi / 2)) == "inconsistent"
     assert _ask(Q.lt(x, 2), Q.real(x) & Q.gt(x, 3) & Q.le(x, pi / 2)) == "inconsistent"
-    # a non-real x makes the relations free Booleans: not inconsistent
-    assert _ask(Q.positive(x), Q.gt(x, 3) & Q.le(x, pi / 2)) is False
+    # the relations make x an extended real, and x = oo fails x <= pi/2
+    assert _ask(Q.positive(x), Q.gt(x, 3) & Q.le(x, pi / 2)) == "inconsistent"
+    assert _ask(Q.positive(x), Q.gt(x, 3) | Q.le(x, pi / 2)) is None
 
 
 def test_bound_implies_rational_bound():

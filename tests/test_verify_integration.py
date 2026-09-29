@@ -125,12 +125,14 @@ def test_float_is_uninterpreted_by_lra_and_opaque_to_euf():
     assert ask(Q.eq(x, 2), Q.eq(x, 1)) is False
 
 
-def test_non_real_and_infinite_arguments_stay_undecided():
+def test_non_real_and_infinite_arguments():
     from sympy import I, oo
-    assert ask(Q.lt(I, 1)) is None
-    assert ask(Q.lt(r, oo)) is None           # LRA refuses oo (SymPy: True)
-    assert ask(Q.le(x, y), Q.gt(x, y)) is False   # <= is the complement of reversed <
-    assert ask(Q.lt(x, y), Q.lt(x, 0) & Q.lt(0, y)) is None   # x, y may be non-real
+    assert ask(Q.lt(I, 1)) is False           # a side that is no extended real
+    assert ask(Q.lt(r, oo)) is True           # an infinite bound: r is not +oo
+    assert ask(Q.lt(x, oo)) is None           # x may be +oo or non-real
+    assert ask(Q.le(x, y), Q.gt(x, y)) is False
+    assert ask(Q.lt(x, y), Q.lt(x, 0) & Q.lt(0, y)) is True   # over the extended reals
+    assert ask(Q.le(x, y), ~Q.gt(x, y)) is None   # x may be non-real
 
 
 # ----------------------------------------------------------------------
