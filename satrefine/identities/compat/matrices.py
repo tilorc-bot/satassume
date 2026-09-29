@@ -2,8 +2,9 @@
 ``Inverse``, ``MatAdd``, ``MatMul``, ``MatrixElement``, ``Trace``,
 ``Transpose``.
 
-A row is ``(lhs, rhs, hypothesis)`` or ``(lhs, rhs, hypothesis, unless)``:
-it fires when the hypothesis is provable through the dispatcher's ``ask`` and the
+A row is ``(lhs, rhs)``, ``(lhs, rhs, hypothesis)`` or ``(lhs, rhs, hypothesis,
+unless)``: it fires when the hypothesis, with the facts ``ASSUMED`` about the
+variables of its left side, is provable through the dispatcher's ``ask`` and the
 ``unless`` condition is not.  The rules are those stated in
 ``handlers_v3/matrices.py`` (356 lines), in **32 rows**: Transpose 5,
 Inverse 4, Determinant 2, Trace 1, MatAdd 4, HadamardProduct 1, MatMul 12,
@@ -16,8 +17,8 @@ Pattern forms (requested in
   (an atom) and its shape symbols bind that matrix's shape, so a right side
   can say ``ZeroMatrix(q, m)`` or ``Identity(m)``;
 * in ``Z + R`` and ``HadamardProduct(Z, R)``, ``Z`` binds one term (an atom)
-  and ``R`` the sum (product) of the others, whatever they are; in ``c*Z``
-  over a ``MatMul``, ``c`` binds one scalar factor and ``Z`` the rest;
+  and ``R`` the sum (product) of the others, whatever they are; in ``c*X``
+  over a ``MatMul``, ``c`` binds one scalar factor and ``X`` the rest;
 * a ``MatMul`` pattern of matrix factors matches a run of adjacent factors;
   the right side replaces the run, scalars and the other factors are kept in
   order and the product is put in canonical form (``doit(deep=False)``);
@@ -32,15 +33,15 @@ against each by walking the expression; a row whose variable binds only
 atoms never sees those expressions, and the products v3 does accept get
 rows of their own.  The one ``ask`` answer wrong for atoms too is
 ``Q.unitary(X)`` from ``Q.orthogonal(X)`` (a complex orthogonal matrix is
-not unitary): the unitary rows carry ``unless Q.orthogonal(A)``, plus a row
+not unitary): the unitary rows carry ``unless Q.orthogonal(U)``, plus a row
 for the real case.
 
 Minimizations against v3: ``det -> 0`` for singular and for a known zero
 matrix of positive size is one row (the size need not be a literal: a
 provably positive symbolic size is enough, and exactly true); the orthogonal
 ``Inverse`` rows come first, so ``Inverse``'s unitary row needs no guard;
-a zero factor on either side of a product is one row (``Z*W`` with
-``Q.zero(Z) | Q.zero(W)``; merged 2026-09-24 after the row ablation in
+a zero factor on either side of a product is one row (``X*W`` with
+``Q.zero(X) | Q.zero(W)``; merged 2026-09-24 after the row ablation in
 ``agent-reports/archive/data/2026-09-24-ablation-plain.md``: no battery case, test
 or fuzz input moved).
 
@@ -48,14 +49,14 @@ Not expressible as rows:
 
 * v3's ``_symmetric`` is recursive (palindromic products of any length,
   sums, transposes, inverses and powers of symmetric parts); rows give its
-  instances: ``A*M*A``, ``A.T*M*A`` and a product of two diagonals.  A sum
+  instances: ``S*M*S``, ``N.T*M*N`` and a product of two diagonals.  A sum
   of symmetric matrices is left out: in ``Transpose(A + B)`` the split binds
   ``B`` to the rest of the sum, which may be a product ``ask`` wrongly calls
   symmetric (``X + Y*X``).
 * The canonical form v3 falls back to when no rule fires
   (``MatAdd``/``MatMul`` ``doit(deep=False)``) is structural, not a rule;
   three instances are rows (``A - A -> 0``, ``A*A -> A**2`` and scalars
-  to the front, ``c*Z -> c*Z`` rebuilt canonically), which is what refining
+  to the front, ``c*X -> c*X`` rebuilt canonically), which is what refining
   ``X - X.T``, ``X.T*X`` under ``Q.symmetric(X)`` and ``X.T*2*X`` under
   ``Q.orthogonal(X)`` needs.
 
@@ -92,17 +93,32 @@ from sympy.matrices.expressions.matexpr import MatrixElement
 
 from ..rules._tables import Family, Rules
 
-# Throughout: A and B are m x m, M is p x p, N is p x m, Z and R are m x q, W is q x s (the
-# shapes are the MatrixSymbols below); c is a scalar, i and j are indices.  No predicate is
-# declared: none holds for a matrix in every row, so each row states its own.
-c, i, j, m, p, q, s = symbols('c i j m p q s')
-A = MatrixSymbol('A', m, m)     # square
-B = MatrixSymbol('B', m, m)
-M = MatrixSymbol('M', p, p)
+# c and c0 are scalars, i and j are indices; the matrices' shapes are given below.
+c, c0, i, j, m, p, q, s = symbols('c c0 i j m p q s')
+A = MatrixSymbol('A', m, m)     # square, arbitrary
+S_ = MatrixSymbol('S', m, m)    # symmetric
+D = MatrixSymbol('D', m, m)     # diagonal
+E = MatrixSymbol('E', m, m)     # diagonal
+O = MatrixSymbol('O', m, m)     # orthogonal
+U = MatrixSymbol('U', m, m)     # unitary
+V = MatrixSymbol('V', m, m)     # unitary
+Ur = MatrixSymbol('Ur', m, m)   # unitary with real elements
+G = MatrixSymbol('G', m, m)     # invertible
+T = MatrixSymbol('T', m, m)     # unit triangular
+Zs = MatrixSymbol('Zs', m, m)   # a square zero matrix
+M = MatrixSymbol('M', p, p)     # symmetric
 N = MatrixSymbol('N', p, m)     # for N.T*M*N
-Z = MatrixSymbol('Z', m, q)     # general shape
-R = MatrixSymbol('R', m, q)
-W = MatrixSymbol('W', q, s)     # a right neighbour of Z
+X = MatrixSymbol('X', m, q)     # general shape, arbitrary
+R = MatrixSymbol('R', m, q)     # general shape, arbitrary (the rest of a sum or product)
+Z = MatrixSymbol('Z', m, q)     # a zero matrix of general shape
+Y = MatrixSymbol('Y', m, q)     # a zero matrix of general shape
+W = MatrixSymbol('W', q, s)     # a right neighbour of X
+
+# Assumed throughout: a row takes each fact whose variables are all in its left side.
+ASSUMED = {Q.symmetric(S_), Q.symmetric(M), Q.diagonal(D), Q.diagonal(E), Q.orthogonal(O),
+           Q.unitary(U), Q.unitary(V), Q.unitary(Ur), Q.real_elements(Ur), Q.invertible(G),
+           Q.unit_triangular(T), Q.zero(Zs), Q.zero(Z), Q.zero(Y),
+           Q.zero(c0)}       # c0 is a zero scalar
 
 class _Index(Symbol):
     """An index variable of the symmetric-swap row: :class:`_SwappedOrder` of
@@ -131,99 +147,98 @@ ii, jj = _Index('i'), _Index('j')
 
 TRANSPOSE = [
     # The transpose of a zero matrix is the zero matrix of the transposed shape.
-    (Transpose(Z), ZeroMatrix(q, m), Q.zero(Z)),
-    # A.T = A for a symmetric (e.g. diagonal) A.
-    (Transpose(A), A, Q.symmetric(A)),
-    # Products v3 accepts as symmetric: palindromes A*M*A, N.T*M*N with M
-    # symmetric, and products of diagonal matrices (which commute).
-    (Transpose(A*M*A), A*M*A, Q.symmetric(A) & Q.symmetric(M)),
-    (Transpose(N.T*M*N), N.T*M*N, Q.symmetric(M)),
-    (Transpose(A*B), A*B, Q.diagonal(A) & Q.diagonal(B)),
+    (Transpose(Z), ZeroMatrix(q, m)),
+    # S.T = S for a symmetric (e.g. diagonal) S.
+    (Transpose(S_), S_),
+    # Products v3 accepts as symmetric: palindromes S*M*S, N.T*M*N, and products
+    # of diagonal matrices (which commute).
+    (Transpose(S_*M*S_), S_*M*S_),
+    (Transpose(N.T*M*N), N.T*M*N),
+    (Transpose(D*E), D*E),
 ]
 
 INVERSE = [
-    # An orthogonal matrix is inverted by its transpose (so (A.T)**-1 = A).
-    (Inverse(A), A.T, Q.orthogonal(A)),
-    (Inverse(A.T), A, Q.orthogonal(A)),
+    # An orthogonal matrix is inverted by its transpose (so (O.T)**-1 = O).
+    (Inverse(O), O.T),
+    (Inverse(O.T), O),
     # A unitary matrix is inverted by its conjugate transpose, never by its
     # conjugate.  After the orthogonal rows, so SymPy's derivation of unitary
     # from orthogonal cannot reach it for an atom.
-    (Inverse(A), Adjoint(A), Q.unitary(A)),
-    # (A*B)**-1 = B.H*A.H for unitary A, B, refused when either may be a complex
-    # orthogonal matrix ask called unitary.
-    (Inverse(A*B), Adjoint(B)*Adjoint(A), Q.unitary(A) & Q.unitary(B),
-     Q.orthogonal(A) | Q.orthogonal(B)),
+    (Inverse(U), Adjoint(U)),
+    # (U*V)**-1 = V.H*U.H, refused when either may be a complex orthogonal matrix
+    # ask called unitary.
+    (Inverse(U*V), Adjoint(V)*Adjoint(U), S.true, Q.orthogonal(U) | Q.orthogonal(V)),
 ]
 
 DETERMINANT = [
     # det A = 0 for singular A, and for a zero matrix of positive size (a 0x0
-    # matrix has determinant 1).
+    # matrix has determinant 1).  The condition is about A and its size, so it stays here.
     (Determinant(A), S.Zero, Q.singular(A) | (Q.zero(A) & Q.positive(m))),
-    # A unit triangular matrix has determinant 1.  (det A = 1 for orthogonal A,
+    # A unit triangular matrix has determinant 1.  (det O = 1 for orthogonal O,
     # SymPy's rule, is wrong: the determinant is +-1.)
-    (Determinant(A), S.One, Q.unit_triangular(A)),
+    (Determinant(T), S.One),
 ]
 
 TRACE = [
     # The trace of a zero matrix is 0.
-    (Trace(A), S.Zero, Q.zero(A)),
+    (Trace(Zs), S.Zero),
 ]
 
 MATADD = [
     # A sum of zero matrices is the zero matrix of its shape.
-    (Z + R, ZeroMatrix(m, q), Q.zero(Z) & Q.zero(R)),
+    (Z + Y, ZeroMatrix(m, q)),
     # A zero term drops out of a sum.
-    (Z + R, R, Q.zero(Z)),
-    # Canonical form: A - A = 0 (refining X - X.T under Q.symmetric(X) leaves -X + X).
-    (MatAdd(Z, -Z), ZeroMatrix(m, q), S.true),
+    (Z + R, R),
+    # Canonical form: X - X = 0 (refining X - X.T under Q.symmetric(X) leaves -X + X).
+    (MatAdd(X, -X), ZeroMatrix(m, q)),
     # A one-term sum of a zero matrix is the zero matrix (Z + R needs a rest;
     # a one-term sum is otherwise kept, as the handlers package keeps it).
-    (MatAdd(Z), ZeroMatrix(m, q), Q.zero(Z)),
+    (MatAdd(Z), ZeroMatrix(m, q)),
 ]
 
 HADAMARD = [
     # An elementwise product with a zero factor is the zero matrix of its shape.
-    (HadamardProduct(Z, R), ZeroMatrix(m, q), Q.zero(Z)),
+    (HadamardProduct(Z, R), ZeroMatrix(m, q)),
 ]
 
 MATMUL = [
     # A product with a zero factor, scalar or matrix, is the zero matrix of its shape.
-    (c*Z, ZeroMatrix(m, q), Q.zero(c)),
-    (Z*W, ZeroMatrix(m, s), Q.zero(Z) | Q.zero(W)),
-    # Adjacent A.T*A and A*A.T cancel for orthogonal A.
-    (A.T*A, Identity(m), Q.orthogonal(A)),
-    (A*A.T, Identity(m), Q.orthogonal(A)),
-    # Adjacent A.H*A and A*A.H cancel for unitary A: for real A from Q.orthogonal,
-    # otherwise refused when A may be a complex orthogonal matrix ask calls unitary.
-    (Adjoint(A)*A, Identity(m), Q.unitary(A) & Q.real_elements(A)),
-    (A*Adjoint(A), Identity(m), Q.unitary(A) & Q.real_elements(A)),
-    (Adjoint(A)*A, Identity(m), Q.unitary(A), Q.orthogonal(A)),
-    (A*Adjoint(A), Identity(m), Q.unitary(A), Q.orthogonal(A)),
-    # Adjacent A**-1*A and A*A**-1 cancel for invertible A (spelled MatMul(...):
+    (c0*X, ZeroMatrix(m, q)),
+    (X*W, ZeroMatrix(m, s), Q.zero(X) | Q.zero(W)),
+    # Adjacent O.T*O and O*O.T cancel for orthogonal O.
+    (O.T*O, Identity(m)),
+    (O*O.T, Identity(m)),
+    # Adjacent U.H*U and U*U.H cancel for unitary U: for real U from Q.orthogonal,
+    # otherwise refused when U may be a complex orthogonal matrix ask calls unitary.
+    (Adjoint(Ur)*Ur, Identity(m)),
+    (Ur*Adjoint(Ur), Identity(m)),
+    (Adjoint(U)*U, Identity(m), S.true, Q.orthogonal(U)),
+    (U*Adjoint(U), Identity(m), S.true, Q.orthogonal(U)),
+    # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):
     # the operator form cancels while the pattern is built).
-    (MatMul(Inverse(A), A), Identity(m), Q.invertible(A)),
-    (MatMul(A, Inverse(A)), Identity(m), Q.invertible(A)),
+    (MatMul(Inverse(G), G), Identity(m)),
+    (MatMul(G, Inverse(G)), Identity(m)),
     # Canonical form: A*A = A**2, written MatMul(A, A) since A*A is built as A**2 (refining X.T*X under Q.symmetric(X) leaves X*X).
-    (MatMul(A, A), A**2, S.true),
+    (MatMul(A, A), A**2),
     # Canonical form: scalar factors in front and combined (MatMul(X, 2, Y) ->
-    # 2*X*Y; the c*Z form rebuilds its right side canonically), so a scalar
+    # 2*X*Y; the c*X form rebuilds its right side canonically), so a scalar
     # between factors no longer separates a cancelling pair.
-    (c*Z, c*Z, S.true),
+    (c*X, c*X),
 ]
 
 MATRIXELEMENT = [
     # Every element of a zero matrix is 0.
-    (MatrixElement(Z, i, j), S.Zero, Q.zero(Z)),
+    (MatrixElement(Z, i, j), S.Zero),
     # An off-diagonal element of a diagonal matrix is 0.  Negative indices wrap
-    # (A[0, -1] of a 1x1 matrix is A[0, 0]), so i != j must hold after wrapping:
+    # (D[0, -1] of a 1x1 matrix is D[0, 0]), so i != j must hold after wrapping:
     # both indices of one sign, or i - j != +-m.
-    (MatrixElement(A, i, j), S.Zero,
-     Q.diagonal(A) & (Q.ne(i, j) | Q.nonzero(i - j))
+    (MatrixElement(D, i, j), S.Zero,
+     (Q.ne(i, j) | Q.nonzero(i - j))
      & ((Q.nonnegative(i) & Q.nonnegative(j)) | (Q.negative(i) & Q.negative(j))
         | (Q.nonzero(i - j - m) & Q.nonzero(i - j + m)))),
-    # A symmetric matrix's elements A[i, j] = A[j, i], oriented to SymPy's
+    # A symmetric matrix's elements S[i, j] = S[j, i], oriented to SymPy's
     # canonical index order (a structural condition, see _SwappedOrder).
-    (MatrixElement(A, ii, jj), MatrixElement(A, jj, ii), Q.symmetric(A) & _SwappedOrder(ii, jj)),
+    (MatrixElement(S_, ii, jj), MatrixElement(S_, jj, ii), _SwappedOrder(ii, jj)),
 ]
 
 RULES: list[tuple] = (TRANSPOSE + INVERSE + DETERMINANT + TRACE + MATADD
@@ -232,4 +247,4 @@ RULES: list[tuple] = (TRANSPOSE + INVERSE + DETERMINANT + TRACE + MATADD
 SPEC = Family({'Determinant': Rules(DETERMINANT), 'HadamardProduct': Rules(HADAMARD), 'Inverse': Rules(INVERSE),
                'MatAdd': Rules(MATADD), 'MatMul': Rules(MATMUL), 'MatrixElement': Rules(MATRIXELEMENT),
                'Trace': Rules(TRACE), 'Transpose': Rules(TRANSPOSE)},
-              rules=RULES)
+              rules=RULES, assumed=ASSUMED)

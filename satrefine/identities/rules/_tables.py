@@ -18,7 +18,7 @@ from ..core.rewrite import Row
 from ..core.spec import Family, Identities, Rules
 from ._wraps import principal
 
-__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent", "given",
+__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent",
            "node_measure", "part", "principal", "size"]
 
 
@@ -33,7 +33,8 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
     """Compose each ``g(exp(z))`` fact with each exponential form ``(L, W, domain)``
     (``L == exp(W)``) into the row ``g(L) == rhs[z := W]`` under both domains."""
     rows: list[Row] = []
-    for lhs, rhs, dom in facts:
+    for lhs, rhs, *rest in facts:        # a fact may leave its domain to the family's assumptions
+        dom = rest[0] if rest else true
         rows.append((lhs, rhs, dom))
         if lhs.args and isinstance(lhs.args[0], exp) and lhs.args[0].args[0].is_Symbol:
             zz = lhs.args[0].args[0]
@@ -41,18 +42,3 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
                 rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
     return rows
 
-
-def given(assumptions: dict):
-    """Standing assumptions on pattern variables, as a theorem starts "for n an integer":
-    ``given({n: Q.integer})`` returns a function that completes a list of rows
-    ``(lhs, rhs[, condition[, unless]])`` so that each row's condition also holds the
-    assumption of every declared variable in its left side.  The rows it returns are
-    ordinary rows; the declarations only save writing them out."""
-    def complete(rows: list) -> list[Row]:
-        out = []
-        for lhs, rhs, *rest in rows:
-            condition, unless = (rest + [true])[0], rest[1:]
-            standing = [assume(v) for v, assume in assumptions.items() if lhs.has(v)]
-            out.append((lhs, rhs, And(*standing, condition), *unless))
-        return out
-    return complete

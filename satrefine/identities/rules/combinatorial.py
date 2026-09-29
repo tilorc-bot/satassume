@@ -1,9 +1,10 @@
 """``factorial``, ``binomial``, ``RisingFactorial``, ``FallingFactorial`` and
 ``gamma`` as rule tables.
 
-Each row is ``(lhs, rhs, hypothesis)``, compiled by
-:func:`..core.rewrite.rule_handler`: the row fires when its hypothesis is
-provable through the dispatcher's ``ask``.  The rules are those stated in
+Each row is ``(lhs, rhs)`` or ``(lhs, rhs, hypothesis)``, compiled by
+:func:`..core.rewrite.rule_handler`: the row fires when its hypothesis, with
+the facts ``ASSUMED`` about the variables of its left side, is provable
+through the dispatcher's ``ask``.  The rules are those stated in
 ``handlers_v3/combinatorial.py`` (236 lines), every one agreeing with
 SymPy's own evaluation at every point its hypothesis allows (0, negative
 integers and poles included, where both sides are ``zoo``).  **16 rows**
@@ -56,9 +57,7 @@ from sympy import (Function, Q, S, binomial, factorial, ff, gamma, rf,
 
 from ._tables import Family, Rules
 
-# Throughout: n and x are first arguments and k the second.  Nothing is declared: no
-# assumption holds for a variable in every row, so each row states its own.
-n, k, x = symbols('n k x')
+n, k, x = symbols('n k x')   # arbitrary: n and x are first arguments, k the second
 G = Function('G')        # generic head: binomial, rf and ff share these rows
 
 
@@ -76,65 +75,82 @@ def _le(u, v):
     return Q.nonnegative(v - u) | Q.nonpositive(u - v) | Q.le(u, v)
 
 
+a, b, g, h, i, m, p, q, u, v, w, z = symbols('a b g h i m p q u v w z')
+
+# Assumed throughout: a row takes each fact whose variables are all in its left side.
+ASSUMED = {
+    _eq(z, 0),                                     # z is 0
+    _eq(u, 1),                                     # u is 1
+    _eq(v, 0) | _eq(v, 1),                         # v is 0 or 1
+    Q.integer(i),                                  # i is an integer
+    ~Q.integer(h),                                 # h is not an integer
+    Q.integer(m) & _lt(m, 0),                      # m is a negative integer
+    Q.integer(a) & Q.nonnegative(a),               # a is a nonnegative integer
+    Q.integer(p) & _lt(0, p),                      # p is a positive integer
+    Q.integer(q) & _le(q, 0),                      # q is a nonpositive integer
+    Q.positive_infinite(w),                        # w is oo
+    # b is nonnegative or a finite non-integer: not a negative integer (binomial(-1, -1) = 0)
+    # and not infinite (binomial(oo, oo) = nan, and oo is not an integer)
+    Q.nonnegative(b) | (~Q.integer(b) & Q.finite(b)),
+    # g is positive or a finite non-integer: gamma(g) is finite and nonzero (never a
+    # nonpositive integer: rf(-2, 2) = 2; never oo: rf(oo, 2) = oo, gamma(oo)/gamma(oo) is not)
+    Q.positive(g) | (~Q.integer(g) & Q.finite(g)),
+}
+
 SMALL_K = [
     # binomial(n, 0) = rf(x, 0) = ff(x, 0) = 1, for every first argument.
-    (G(x, k), S.One, _eq(k, 0)),
+    (G(x, z), S.One),
     # binomial(n, 1) = n, rf(x, 1) = ff(x, 1) = x.
-    (G(x, k), x, _eq(k, 1)),
+    (G(x, u), x),
 ]
 
 FACTORIAL = [
     # 0! = 1! = 1.
-    (factorial(n), S.One, _eq(n, 0) | _eq(n, 1)),
+    (factorial(v), S.One),
     # n! is a pole at every negative integer (not rewritten to gamma elsewhere).
-    (factorial(n), S.ComplexInfinity, Q.integer(n) & _lt(n, 0)),
+    (factorial(m), S.ComplexInfinity),
     # factorial(oo) = oo (gamma grows without bound along the positive axis).
-    (factorial(n), S.Infinity, Q.positive_infinite(n)),
+    (factorial(w), S.Infinity),
 ]
 
 GAMMA = [
-    # gamma(x) = (x - 1)! at positive integers (so gamma(n + 1) = n! for n >= 0).
-    (gamma(x), factorial(x - 1), Q.integer(x) & _lt(0, x)),
+    # gamma(p) = (p - 1)! at positive integers (so gamma(n + 1) = n! for n >= 0).
+    (gamma(p), factorial(p - 1)),
     # gamma has a pole at every nonpositive integer (half-integers are left alone).
-    (gamma(x), S.ComplexInfinity, Q.integer(x) & _le(x, 0)),
+    (gamma(q), S.ComplexInfinity),
 ]
 
 BINOMIAL = SMALL_K + [
-    # binomial(n, n) = 1 unless n is a negative integer (binomial(-1, -1) = 0)
-    # or infinite (binomial(oo, oo) = nan, and oo is not an integer).
-    (binomial(n, k), S.One, _eq(n, k) & (Q.nonnegative(n) | (~Q.integer(n) & Q.finite(n)))),
-    # binomial(n, n - 1) = n, same proviso (binomial(-1, -2) = 0, binomial(oo, oo) = nan).
-    (binomial(n, k), n, _eq(k, n - 1) & (Q.nonnegative(n) | (~Q.integer(n) & Q.finite(n)))),
-    # 0 for a negative integer k whatever n is (SymPy's convention), and for
-    # integers 0 <= n < k (the product n (n-1) ... hits 0).
-    (binomial(n, k), S.Zero, Q.integer(k) & (_lt(k, 0)
-                             | (Q.integer(n) & Q.nonnegative(n) & _lt(n, k)))),
-    # A pole: n a negative integer and k not an integer.
-    (binomial(n, k), S.ComplexInfinity, Q.integer(n) & _lt(n, 0) & ~Q.integer(k)),
+    # binomial(b, b) = 1.
+    (binomial(b, k), S.One, _eq(b, k)),
+    # binomial(b, b - 1) = b.
+    (binomial(b, k), b, _eq(k, b - 1)),
+    # 0 for a negative integer i whatever n is (SymPy's convention), and for
+    # integers 0 <= n < i (the product n (n-1) ... hits 0).
+    (binomial(n, i), S.Zero, _lt(i, 0) | (Q.integer(n) & Q.nonnegative(n) & _lt(n, i))),
+    # A pole: m a negative integer and h not an integer.
+    (binomial(m, h), S.ComplexInfinity),
 ]
 
 RISING = SMALL_K + [
     # rf(1, k) = gamma(k + 1) = k!, for every k.
-    (rf(x, k), factorial(k), _eq(x, 1)),
+    (rf(u, k), factorial(k)),
     # 0 when the product x (x+1) ... (x+k-1) contains the factor 0 (x <= 0 < x + k,
     # integers), and SymPy's 0 for a negative integer x and non-integer k.
     (rf(x, k), S.Zero, (Q.integer(x) & Q.integer(k) & _le(x, 0) & _lt(0, x + k))
                        | (Q.integer(x) & _lt(x, 0) & ~Q.integer(k))),
-    # rf(x, k) = gamma(x + k)/gamma(x) where gamma(x) is finite and nonzero: x positive
-    # or a finite non-integer (never for a nonpositive integer x: rf(-2, 2) = 2;
-    # never for x = oo, which is not an integer: rf(oo, 2) = oo, gamma(oo)/gamma(oo) is not).
-    (rf(x, k), gamma(x + k)/gamma(x), Q.positive(x) | (~Q.integer(x) & Q.finite(x))),
+    # rf(g, k) = gamma(g + k)/gamma(g) where gamma(g) is finite and nonzero.
+    (rf(g, k), gamma(g + k)/gamma(g)),
 ]
 
 FALLING = SMALL_K + [
-    # ff(k, k) = k! for integer k (both sides zoo at negative integers).
-    (ff(x, k), factorial(k), Q.integer(k) & _eq(x, k)),
-    # 0 for integers 0 <= x < k.
-    (ff(x, k), S.Zero, Q.integer(x) & Q.nonnegative(x) & Q.integer(k) & _lt(x, k)),
-    # ff(x, k) = x!/(x - k)! for integers 0 <= x, k <= x (negative k included:
+    # ff(i, i) = i! for integer i (both sides zoo at negative integers).
+    (ff(x, i), factorial(i), _eq(x, i)),
+    # 0 for integers 0 <= a < i.
+    (ff(a, i), S.Zero, _lt(a, i)),
+    # ff(a, i) = a!/(a - i)! for integers 0 <= a, i <= a (negative i included:
     # ff(3, -2) = 1/20 = 3!/5!).
-    (ff(x, k), factorial(x)/factorial(x - k),
-     Q.integer(x) & Q.nonnegative(x) & Q.integer(k) & _le(k, x)),
+    (ff(a, i), factorial(a)/factorial(a - i), _le(i, a)),
 ]
 
 RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + [
@@ -142,4 +158,4 @@ RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + [
 
 SPEC = Family({'factorial': Rules(FACTORIAL), 'binomial': Rules(BINOMIAL), 'RisingFactorial': Rules(RISING),
                'FallingFactorial': Rules(FALLING), 'gamma': Rules(GAMMA)},
-              rules=RULES)
+              rules=RULES, assumed=ASSUMED)

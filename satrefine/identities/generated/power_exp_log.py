@@ -12,7 +12,7 @@ from sympy import Q
 from satrefine.identities.core.driver import generated_handlers as handlers_dict
 from satrefine.identities.core.rewrite import rule_handler
 
-b, e, p, r, x, z = symbols('b e p r x z')
+b, d, e, p, r, z = symbols('b d e p r z')
 
 RULES = [
     # round 1: from power_exp_log.FACTS[0] under Q.real(z)
@@ -79,10 +79,10 @@ RULES = [
     #   fired: complex_parts.generated[33], complex_parts.generated[34], power_exp_log.IDENTITIES[2], complex_parts.generated[20], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
     #   asks: Q.integer(-1), Q.negative(-1), Q.positive(p), Q.negative(r), Q.positive(-r)
     (log(p*r), log(p) + log(-r) + I*pi, Q.negative(r) & Q.positive(p)),
-    # round 1: from power_exp_log.FACTS[1] under Q.negative(x)
+    # round 1: from power_exp_log.FACTS[1] under Q.negative(d)
     #   fired: complex_parts.generated[34], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
-    #   asks: Q.negative(x), Q.positive(-x), Q.integer(-1), Q.negative(-1)
-    (log(x), log(-x) + I*pi, Q.negative(x)),
+    #   asks: Q.negative(d), Q.positive(-d), Q.integer(-1), Q.negative(-1)
+    (log(d), log(-d) + I*pi, Q.negative(d)),
 ]
 
 handlers_dict['log'] = rule_handler(RULES)

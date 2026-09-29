@@ -11,7 +11,7 @@ from satrefine.build.specialize import specialize_table
 from satrefine.build.verify import verify
 from satrefine.identities.rules.power_exp_log import IDENTITIES
 
-z, b, e, p, r, x = symbols('z b e p r x')
+z, b, d, e, p, r, x = symbols('z b d e p r x')
 
 EXPECTED = {   # rules the generator must produce and verify
     (log(exp_ := __import__("sympy").exp(z)), z, Q.real(z)),
@@ -20,7 +20,7 @@ EXPECTED = {   # rules the generator must produce and verify
     (log(p*r), log(p) + log(r), Q.positive(r)),   # the product form needs nothing
     # a negative r alone suffices: log(p*r) = log(-p) + log(-r) since -r > 0
     (log(p*r), log(-p) + log(-r), Q.negative(r)),
-    (log(x), log(-x) + I*pi, Q.negative(x)),
+    (log(d), log(-d) + I*pi, Q.negative(d)),
 }
 
 

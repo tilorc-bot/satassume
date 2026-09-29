@@ -26,7 +26,7 @@ The last branch of each two-way definition is ``(nan, True)``, the value
 outside the domain (``Max`` of incomparable arguments, ``Heaviside`` of a
 non-real argument; SymPy raises there).  The decider never refutes both
 ``a >= b`` and ``a < b``, so that branch is reached only for ``Heaviside``,
-whose row carries the domain ``Q.extended_real(x)``.
+whose argument ``v`` is assumed extended real.
 
 Ties and infinities follow SymPy: ``Max(a, b)`` keeps ``a`` when ``a >= b``
 (under ``Q.eq(x, y)`` the first argument survives); ``+-oo`` are ordered
@@ -47,42 +47,47 @@ from __future__ import annotations
 from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Min, Piecewise, Q, S, Tuple,
                    count_ops, nan, symbols, true)
 
-from ._tables import Family, Identities, Rules, given
+from ._tables import Family, Identities, Rules
 
-# Throughout: c is nonzero.  The other variables are arbitrary; each row states its own conditions.
-a, b, c, h, i, j, lo, hi, r, x = symbols('a b c h i j lo hi r x')
-rows = given({c: Q.nonzero})
-G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(x, h), derivatives of DiracDelta
+a, b, c, h, i, j, lo, hi, m, p, r, v, x, y = symbols('a b c h i j lo hi m p r v x y')
+G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(v, h), derivatives of DiracDelta
+
+# Assumed throughout: a row takes each fact whose variables are all in its left side.
+ASSUMED = {Q.extended_real(v)}   # v is an extended real (Heaviside's argument)
 
 FACTS = [
-    (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True)), true),
-    (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True)), true),
+    (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True))),
+    (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True))),
     (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True)), true,
      Q.infinite(i) & Q.infinite(j)),                     # unless: KroneckerDelta(oo, oo) is undefined
-    (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True)), true),
-    (G(x, h), Piecewise((0, Q.extended_negative(x)), (h, Q.zero(x)), (1, Q.extended_positive(x)), (nan, True)),
-     Q.extended_real(x)),
+    (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
+    (G(v, h), Piecewise((0, Q.extended_negative(v)), (h, Q.zero(v)), (1, Q.extended_positive(v)), (nan, True))),
 ]
+
+ASSUMED |= {Q.positive_infinite(p), Q.negative_infinite(m)}   # p is oo, m is -oo
 
 INFINITE = [
     # Max(oo, b) = oo and Max(-oo, b) = b for every b Max is defined at (extended real b);
     # Min likewise.  The order vocabulary proves Q.ge(a, b) from an infinite a only for an
     # extended real b, which a plain symbol is not.  (Pairs of any arity: the other
     # arguments are kept.)
-    (Max(a, b), a, Q.positive_infinite(a)),
-    (Max(a, b), b, Q.negative_infinite(a)),
-    (Min(a, b), a, Q.negative_infinite(a)),
-    (Min(a, b), b, Q.positive_infinite(a)),
+    (Max(p, b), p),
+    (Max(m, b), b),
+    (Min(m, b), m),
+    (Min(p, b), b),
 ]
 
-DIRAC = rows([
+ASSUMED |= {Q.nonzero(x)}                 # x is off the origin (nonzero: real and not 0)
+ASSUMED |= {Q.real(y), Q.nonzero(c)}      # y is real, c is nonzero
+
+DIRAC = [
     # DiracDelta and all its derivatives vanish off the origin (x real, nonzero).
-    (DiracDelta(x), S.Zero, Q.nonzero(x)),
-    (G(x, r), S.Zero, Q.nonzero(x)),
-    # DiracDelta(c*x) = DiracDelta(x)/|c| for nonzero real c and real x (SymPy's
+    (DiracDelta(x), S.Zero),
+    (G(x, r), S.Zero),
+    # DiracDelta(c*y) = DiracDelta(y)/|c| for nonzero real c and real y (SymPy's
     # expand(diracdelta=True) convention); derivatives pick up sign(c)**k.
-    (DiracDelta(c*x), DiracDelta(x)/Abs(c), Q.real(x)),
-])
+    (DiracDelta(c*y), DiracDelta(y)/Abs(c)),
+]
 
 RULES = DIRAC + INFINITE
 
@@ -101,4 +106,4 @@ SPEC = Family({'Max': (Rules(INFINITE[0:2]), _definitions(FACTS[0:1])),
                'KroneckerDelta': _definitions(FACTS[2:4]),
                'Heaviside': _definitions(FACTS[4:5]),
                'DiracDelta': Rules(DIRAC)},
-              facts=FACTS, rules=RULES)
+              facts=FACTS, rules=RULES, assumed=ASSUMED)

@@ -38,12 +38,18 @@ from sympy.calculus.accumulationbounds import AccumBounds
 
 from ._tables import ZERO, Family, Row, Rules
 
-# Throughout: the argument is n*pi/2 + r, and x is arbitrary.  Nothing is declared about n:
-# each row states its parity (which also makes it an integer), and that is what tells the rows apart.
-n, r, x = symbols('n r x')
+# The argument is n*pi/2 + r.  Nothing is assumed about n: each shift row states its parity
+# (which also makes it an integer), and that is what tells the rows apart.  The two parities
+# stay in the rows: the table is tried by binding (``by_binding``), so both rows of a function
+# must have the same left side.
+n, r, k, z, w = symbols('n r k z w')
 F = Function('F')
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is n*pi/2 + r
+ASSUMED = {Q.integer(k), ~Q.zero(k),              # k is a nonzero integer (sinc at a multiple)
+           Q.zero(z),                             # z is 0
+           Q.infinite(w), Q.extended_real(w)}     # w is a real infinity, +-oo
+
+RULES: list[Row] = [   # (lhs, rhs[, hypothesis]); the argument is n*pi/2 + r
     (sin(n*pi/2 + r), (-1)**(n/2)*sin(r),       Q.even(n)),   # sin(r + k*pi) = (-1)**k sin r
     (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r), Q.odd(n)),    # sin(r + pi/2 + k*pi) = (-1)**k cos r
     (cos(n*pi/2 + r), (-1)**(n/2)*cos(r),       Q.even(n)),   # cos(r + k*pi) = (-1)**k cos r
@@ -56,11 +62,11 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is n*pi/2 + r
     (tan(n*pi/2 + r), -cot(r),                  Q.odd(n)),    # tan(r + pi/2) = -cot r
     (cot(n*pi/2 + r), cot(r),                   Q.even(n)),   # cot has period pi
     (cot(n*pi/2 + r), -tan(r),                  Q.odd(n)),    # cot(r + pi/2) = -tan r
-    (sinc(n*pi/2 + r), sin(n*pi/2)/(n*pi/2),    Q.zero(r) & Q.integer(n) & ~Q.zero(n)),  # sinc x = sin x / x, x != 0
+    (sinc(k*pi/2 + z), sin(k*pi/2)/(k*pi/2)),                   # sinc x = sin x / x, x != 0
 ]
 
 BOUNDED: list[Row] = [
-    (F(x), AccumBounds(-1, 1), Q.infinite(x) & Q.extended_real(x)),   # sin, cos of a real infinity (SymPy's value)
+    (F(w), AccumBounds(-1, 1)),   # sin, cos of a real infinity (SymPy's value)
 ]
 
 _shift = Rules([ZERO] + RULES, by_binding=True)   # the whole coefficient first, both parities
@@ -68,4 +74,4 @@ _bounded = Rules(BOUNDED)
 
 SPEC = Family({'sin': (_shift, _bounded), 'cos': (_shift, _bounded),
                'tan': _shift, 'cot': _shift, 'sec': _shift, 'csc': _shift, 'sinc': _shift},
-              rules=[ZERO] + RULES + BOUNDED)
+              rules=[ZERO] + RULES + BOUNDED, assumed=ASSUMED)

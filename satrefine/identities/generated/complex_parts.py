@@ -12,7 +12,7 @@ from sympy import Q
 from satrefine.identities.core.driver import generated_handlers as handlers_dict
 from satrefine.identities.core.rewrite import rule_handler
 
-b, e, p, r, w, z = symbols('b e p r w z')
+b, d, e, f, p, r, w, z = symbols('b d e f p r w z')
 
 RULES = [
     # round 1: from complex_parts.FACTS[2] under True
@@ -157,22 +157,22 @@ RULES = [
     #   fired: complex_parts.RULES[10]
     #   asks: Q.extended_positive(p*r)
     (sign(p*r), 1, Q.negative(p) & Q.negative(r)),
-    # round 1: from complex_parts.DEFINITIONS[0] under Q.positive(z)
+    # round 1: from complex_parts.DEFINITIONS[0] under Q.positive(f)
     #   fired: complex_parts.RULES[0]
-    #   asks: Q.extended_nonnegative(z)
-    (Abs(z), z, Q.positive(z)),
-    # round 1: from complex_parts.DEFINITIONS[0] under Q.negative(z)
+    #   asks: Q.extended_nonnegative(f)
+    (Abs(f), f, Q.positive(f)),
+    # round 1: from complex_parts.DEFINITIONS[0] under Q.negative(f)
     #   fired: complex_parts.RULES[1]
-    #   asks: Q.extended_nonpositive(z)
-    (Abs(z), -z, Q.negative(z)),
-    # round 1: from complex_parts.DEFINITIONS[1] under Q.positive(z)
+    #   asks: Q.extended_nonpositive(f)
+    (Abs(f), -f, Q.negative(f)),
+    # round 1: from complex_parts.DEFINITIONS[1] under Q.positive(d)
     #   fired: complex_parts.RULES[10], complex_parts.DEFINITIONS[1]
-    #   asks: Q.positive(z), Q.extended_positive(z)
-    (arg(z), 0, Q.positive(z)),
-    # round 1: from complex_parts.DEFINITIONS[1] under Q.negative(z)
+    #   asks: Q.positive(d), Q.extended_positive(d)
+    (arg(d), 0, Q.positive(d)),
+    # round 1: from complex_parts.DEFINITIONS[1] under Q.negative(d)
     #   fired: complex_parts.RULES[11], complex_parts.DEFINITIONS[1]
-    #   asks: Q.extended_negative(z)
-    (arg(z), pi, Q.negative(z)),
+    #   asks: Q.extended_negative(d)
+    (arg(d), pi, Q.negative(d)),
 ]
 
 handlers_dict['Abs'] = rule_handler(RULES)

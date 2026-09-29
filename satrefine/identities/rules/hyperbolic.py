@@ -37,9 +37,12 @@ from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
 from ._tables import ZERO, Family, Row, Rules
 
-# Throughout: the argument is m*pi*I/2 + x.  Nothing is declared about m: each row states
-# its parity (which also makes it an integer), and that is what tells the rows apart.
+# The argument is m*pi*I/2 + x.  Nothing is assumed about m: each row states its parity
+# (which also makes it an integer), and that is what tells the rows apart.  The parities stay
+# in the rows: the table is tried by binding (``by_binding``), so both rows of a function must
+# have the same left side.  So nothing is assumed throughout.
 m, x = symbols('m x')
+ASSUMED: set = set()
 
 _EVEN = Q.even(m)
 _ODD = Q.odd(m)
@@ -62,4 +65,4 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is m*pi*I/2 + x
 _shift = Rules([ZERO] + RULES, by_binding=True)
 
 SPEC = Family({'sinh': _shift, 'cosh': _shift, 'tanh': _shift, 'coth': _shift, 'sech': _shift, 'csch': _shift},
-              rules=[ZERO] + RULES)
+              rules=[ZERO] + RULES, assumed=ASSUMED)

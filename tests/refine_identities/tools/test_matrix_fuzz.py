@@ -95,4 +95,4 @@ def test_row_coverage_names_the_firing_row():
     with cov:
         from satrefine import refine
         refine(X.T*X, Q.orthogonal(X))
-    assert any("Q.orthogonal(A)" in str(row) and n_ == 1 for row, n_ in cov.counts.items())
+    assert any("Q.orthogonal(O)" in str(row) and n_ == 1 for row, n_ in cov.counts.items())
