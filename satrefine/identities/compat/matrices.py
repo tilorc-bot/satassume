@@ -3,9 +3,8 @@
 ``Transpose``.
 
 A row is ``(lhs, rhs)``, in an ``add_rules`` block whose ``assuming`` facts are
-its hypothesis and whose ``unless`` is its exception: it fires when the
-hypothesis, with the facts ``ASSUMED`` about the variables of its left side, is
-provable through the dispatcher's ``ask`` and the ``unless`` condition is not.  The rules are those stated in
+its hypothesis: it fires when the hypothesis, with the facts ``ASSUMED`` about
+the variables of its left side, is provable through the dispatcher's ``ask``.  The rules are those stated in
 ``handlers_v3/matrices.py`` (356 lines), in **32 rows**: Transpose 5,
 Inverse 4, Determinant 2, Trace 1, MatAdd 4, HadamardProduct 1, MatMul 12,
 MatrixElement 3.
@@ -22,8 +21,7 @@ Pattern forms (requested in
 * a ``MatMul`` pattern of matrix factors matches a run of adjacent factors;
   the right side replaces the run, scalars and the other factors are kept in
   order and the product is put in canonical form (``doit(deep=False)``);
-* the ``unless`` element (see below); literal ``0``/``1`` bindings
-  (``X[0, 1]``).
+* literal ``0``/``1`` bindings (``X[0, 1]``).
 
 Atoms, not arbitrary matrix expressions, are what makes the rows sound:
 SymPy's ``ask`` calls every product of symmetric matrices symmetric, a
@@ -33,7 +31,7 @@ against each by walking the expression; a row whose variable binds only
 atoms never sees those expressions, and the products v3 does accept get
 rows of their own.  The one ``ask`` answer wrong for atoms too is
 ``Q.unitary(X)`` from ``Q.orthogonal(X)`` (a complex orthogonal matrix is
-not unitary): the unitary rows carry ``unless Q.orthogonal(U)``, plus a row
+not unitary): the unitary rows require ``~Q.orthogonal(U)`` proved, plus a row
 for the real case.
 
 Minimizations against v3: ``det -> 0`` for singular and for a known zero
@@ -71,7 +69,7 @@ shapes; ``det`` of a 0x0 zero matrix (refused); non-square, negated, scaled,
 summed and longer-palindrome ``Transpose`` arguments (refused); ``Inverse``
 of ``-X``, ``2*X``, ``X**2``, ``X.T``, ``Adjoint(X)`` and of products
 under orthogonal/unitary/real facts (the orthogonal rows first, the
-``unless`` guards hold); runs inside longer ``MatMul`` with scalars;
+not-orthogonal hypotheses hold); runs inside longer ``MatMul`` with scalars;
 duplicate atoms in ``MatAdd``/``HadamardProduct`` (the rest keeps the
 other copies: the matcher removes the bound term by position, 2026-09-25,
 B11; before it dropped every copy, and ``HadamardProduct(X, X)`` crashed);
@@ -166,11 +164,11 @@ INVERSE = (
         # from orthogonal cannot reach it for an atom.
         (Inverse(U), Adjoint(U)),
     ])
-    # (U*V)**-1 = V.H*U.H, refused when either may be a complex orthogonal matrix
-    # ask called unitary.
+    # (U*V)**-1 = V.H*U.H, for U and V not orthogonal: a complex orthogonal matrix
+    # is one ask calls unitary.
     + add_rules([
         (Inverse(U*V), Adjoint(V)*Adjoint(U)),
-    ], unless=Q.orthogonal(U) | Q.orthogonal(V))
+    ], assuming={~Q.orthogonal(U), ~Q.orthogonal(V)})
 )
 
 DETERMINANT = (
@@ -223,7 +221,7 @@ MATMUL = (
         (O*O.T, Identity(m)),
     ])
     # Adjacent U.H*U and U*U.H cancel for unitary U: for real U from Q.orthogonal,
-    # otherwise refused when U may be a complex orthogonal matrix ask calls unitary.
+    # otherwise for U not orthogonal (a complex orthogonal matrix is one ask calls unitary).
     # here U has real elements
     + add_rules([
         (Adjoint(U)*U, Identity(m)),
@@ -232,7 +230,7 @@ MATMUL = (
     + add_rules([
         (Adjoint(U)*U, Identity(m)),
         (U*Adjoint(U), Identity(m)),
-    ], unless=Q.orthogonal(U))
+    ], assuming={~Q.orthogonal(U)})
     + add_rules([
         # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):
         # the operator form cancels while the pattern is built).

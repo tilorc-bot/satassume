@@ -61,15 +61,15 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (DiracDelta(k*x), Q.negative(k) & Q.real(x), -DiracDelta(x)/k, {k: NONZERO, x: NONZERO}),
     (DiracDelta(3*x), Q.real(x), DiracDelta(x)/3, {x: NONZERO}),
     # KroneckerDelta
-    (KroneckerDelta(i, j), Q.nonzero(i - j), S.Zero, None),
+    (KroneckerDelta(i, j), Q.nonzero(i - j) & Q.finite(i), S.Zero, None),
     (KroneckerDelta(i, j), Q.positive(i) & Q.negative(j), S.Zero, None),
-    (KroneckerDelta(i, j), Q.ne(i, j), S.Zero, {i: REALS, j: REALS}),
-    (KroneckerDelta(i, j), Q.lt(i, j), S.Zero, {i: REALS, j: REALS}),
+    (KroneckerDelta(i, j), Q.ne(i, j) & Q.finite(i), S.Zero, {i: REALS, j: REALS}),
+    (KroneckerDelta(i, j), Q.lt(i, j) & Q.finite(i), S.Zero, {i: REALS, j: REALS}),
     (KroneckerDelta(i, j, (1, 3)), Q.ne(i, j), S.Zero, {i: REALS, j: REALS}),
-    (KroneckerDelta(i, j), Q.zero(i - j), S.One, None),
-    (KroneckerDelta(i, j), Q.eq(i, j), S.One, {i: REALS, j: REALS}),
-    (KroneckerDelta(i, j), Q.eq(j, i), S.One, {i: REALS, j: REALS}),
-    (KroneckerDelta(i, j), Eq(i, j), S.One, {i: REALS, j: REALS}),
+    (KroneckerDelta(i, j), Q.zero(i - j) & Q.finite(i), S.One, None),
+    (KroneckerDelta(i, j), Q.eq(i, j) & Q.finite(i), S.One, {i: REALS, j: REALS}),
+    (KroneckerDelta(i, j), Q.eq(j, i) & Q.finite(i), S.One, {i: REALS, j: REALS}),
+    (KroneckerDelta(i, j), Eq(i, j) & Q.finite(i), S.One, {i: REALS, j: REALS}),
     # Heaviside
     (Heaviside(x), Q.positive(x), S.One, None),
     (Heaviside(x), Q.positive_infinite(x), S.One, ON),
@@ -95,7 +95,11 @@ NEGATIVE = [  # v3's refusals
     (KroneckerDelta(i, j), True),
     (KroneckerDelta(i, j), Q.integer(i) & Q.integer(j)),
     (KroneckerDelta(i, j, (1, 3)), Q.eq(i, j)),     # equal indices may lie outside the range
-    # SymPy's ask calls Q.eq(i, j) True for i = -oo and j <= 0: refused by `unless`
+    # the rows need i or j proved finite (KroneckerDelta(oo, oo) is undefined)
+    (KroneckerDelta(i, j), Q.eq(i, j)),
+    (KroneckerDelta(i, j), Q.ne(i, j)),
+    (KroneckerDelta(i, j), Q.nonzero(i - j)),
+    # SymPy's ask calls Q.eq(i, j) True for i = -oo and j <= 0: refused, neither index is finite
     (KroneckerDelta(i, j), Q.negative_infinite(i) & Q.extended_nonpositive(j) & Q.eq(z_, w_)),
     (KroneckerDelta(i, j), Q.negative_infinite(i) & Q.negative_infinite(j) & Q.eq(z_, w_)),
     (Heaviside(x), Q.real(x)),

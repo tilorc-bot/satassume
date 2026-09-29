@@ -387,6 +387,8 @@ def _quoted_also_accepted(expr: Any, assumptions: Any, got: Any) -> bool:
     """Other correct results that handlers_identities gives (category b)."""
     if isinstance(expr, (Mod, Rem)):
         return got == expr                      # keeps Mod/Rem: the same value as the definition
+    if isinstance(expr, KroneckerDelta):
+        return got == expr                      # needs an index proved finite (KroneckerDelta(oo, oo))
     return (expr, assumptions) == (log(x**2), Q.real(x)) and got == 2 * log(Abs(x))
 
 
@@ -1237,11 +1239,12 @@ def test_kronecker_reversed_assumption_order() -> None:
         assert refine(KroneckerDelta(i, j), Q.eq(i, j)) == KroneckerDelta(i, j)
         assert refine(KroneckerDelta(i, j), Q.eq(j, i)) == KroneckerDelta(i, j)
         return
-    assert refine(KroneckerDelta(i, j), Q.eq(i, j)) is S.One
-    assert refine(KroneckerDelta(i, j), Q.ne(i, j)) is S.Zero
+    # an index proved finite: the rows need it (KroneckerDelta(oo, oo) is undefined)
+    assert refine(KroneckerDelta(i, j), Q.eq(i, j) & Q.finite(i)) is S.One
+    assert refine(KroneckerDelta(i, j), Q.ne(i, j) & Q.finite(i)) is S.Zero
     assert sympy_ask(Q.eq(j, i), Q.eq(i, j)) is True
     assert sympy_ask(Q.ne(j, i), Q.ne(i, j)) is True
-    assert refine(KroneckerDelta(i, j), Q.eq(j, i)) is S.One
+    assert refine(KroneckerDelta(i, j), Q.eq(j, i) & Q.finite(i)) is S.One
 
 
 def test_nonzero_assumption_semantics_for_the_oracle() -> None:
