@@ -59,6 +59,30 @@ The rule base derives ``nonnegative``, ``nonzero``, ``extended_*`` and the
 rest from these three.  Numbers are not linked (their unary facts are
 closed already).
 
+Constant terms
+--------------
+A closed real constant in a linear position (``pi`` of ``x <= 3*pi/2``) is
+a term of the LRA form (see :mod:`satassume.lra_adapter`); its guard
+``real(pi)`` is decided at the root by the rule base, and the first atom
+that brings it in has the adapter register its rational bounds
+``lo < pi < hi`` as two theory atoms asserted by unit clauses, once per
+session (:meth:`Relations._bound`).  A constant the engine knows to be
+real context-free (``Engine.is_``) gets no guard literal and hence no node
+of its own: its ``real`` literal would be false at the root anyway.
+
+Predicate transfer
+------------------
+With the first equality atom that is not glue (a user or extension atom;
+the links' ``eq(e, 0)`` and interface equalities do not count), the session
+attaches a :class:`satassume.transfer.TransferTheory`: every node block is
+registered with it under the node's EUF term, so terms in one EUF class
+share all unary facts (``Q.prime(x)`` from ``Q.eq(x, 2)``).  See
+:meth:`Relations._engage_transfer`.
+
+A relation no theory interprets makes ``ask`` return None
+(:class:`Uninterpreted`), unless the engine was built with
+``uninterpreted="free"``: then it stays a free Boolean.
+
 Combining theories
 ------------------
 Theories are kept apart by atom kind (each adapter accepts what it can
@@ -67,7 +91,13 @@ interface atoms: whenever a term becomes known to two adapters
 (``shared_terms()``), the atom ``eq(a, b)`` is created for it and every
 other shared term, and registered like any other relation atom, so each
 theory sees the same Boolean (delayed theory combination; see
-:class:`satassume.theory.EqualitySharing`).
+:class:`satassume.theory.EqualitySharing`).  A pair with a constant term
+that is not rational (``eq(pi, x)``) gets no interface atom.  Such an
+atom passes an equality with the constant between the theories, e.g.
+``x = pi`` derived by LRA from ``x <= pi <= x`` reaching EUF, where it
+would give ``f(x) = f(pi)``; on the refine stream these atoms decided no
+query and cost search (about 10% of the decisions under the assumption
+sets with ``pi``).  Leaving them out is a relaxation, never unsound.
 
 Adapters
 --------
@@ -94,7 +124,7 @@ from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
 from .formula import Not, P
-from .rules import PRED_INDEX
+from .rules import NPRED, PRED_INDEX
 from .theory import EqualitySharing
 
 #: atom predicates the engine gives to theories
@@ -187,6 +217,63 @@ def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
 
+def _constant_term(e) -> bool:
+    """``e`` is a closed constant that is not a rational number (``pi``,
+    ``sqrt(2)``): an LRA term with bounds, left out of equality sharing."""
+    return _is_number(e) and not e.is_Rational
+
+
+def _number_basis(engine, c, facts=False) -> tuple:
+    """The predicates to register with the transfer theory for the number
+    ``c``: a small set of its decided facts whose unit propagation under the
+    rule base gives all of them, plus every predicate its facts leave open.
+
+    A term merged with ``c`` receives the basis and its own rule block
+    derives the rest, exactly the facts of ``c`` (the rule block propagates
+    ``RULE_INTERNAL``, the same clauses as ``RULE_INSTANTIATED`` used here);
+    a contradiction with a non-basis fact shows up in that block.  The open
+    predicates are transferred as they are.  Memoized per engine and
+    number (a number's facts are context-free)."""
+    memo = engine.__dict__.setdefault("_xbasis", {})
+    r = memo.get(c)
+    if r is not None:
+        return r[1] if facts else r[0]
+    from .rules import PREDICATES, RULE_INSTANTIATED, unit_propagate
+    decided, open_ = [], []
+    for k, p in enumerate(PREDICATES):
+        v = engine.is_(c, p)
+        if v is None:
+            open_.append(k)
+        else:
+            decided.append(k + 1 if v else -(k + 1))
+    want = set(decided)
+
+    def closes(lits):
+        d = unit_propagate(RULE_INSTANTIATED, lits)
+        return d is not None and want <= set(d) | set(lits)
+    basis = []
+    for l in decided:
+        d = unit_propagate(RULE_INSTANTIATED, basis)
+        if d is None or l not in set(d) | set(basis):
+            basis.append(l)
+    for l in list(basis):
+        rest = [m for m in basis if m != l]
+        if closes(rest):
+            basis = rest
+    if not closes(basis):                 # defensive: fall back to all
+        basis = decided
+    r = (tuple(sorted({abs(l) - 1 for l in basis} | set(open_))),
+         tuple((abs(l) - 1, l > 0) for l in basis))
+    memo[c] = r
+    return r[1] if facts else r[0]
+
+
+def _number_facts(engine, c) -> tuple:
+    """``[(pred index, value), ...]``: the basis of the facts of number
+    ``c`` (see :func:`_number_basis`)."""
+    return _number_basis(engine, c, facts=True)
+
+
 # --------------------------------------------------------------------------
 # per-session glue
 # --------------------------------------------------------------------------
@@ -205,10 +292,32 @@ class Relations:
         self.status: dict = {}            # atom -> interpreted by some theory
         self.queue: List[P] = []          # allocated, not yet interpreted
         self.linked: set = set()
+        self._bounded: set = set()        # constant terms whose bounds are asserted
         self.top: dict = {}               # vocabulary-atom arguments of user formulas
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
         self._pending_links: list = []
+        #: eq atoms the glue made (links ``eq(e, 0)``, interface equalities);
+        #: they do not engage predicate transfer by themselves
+        self._aux_eq: set = set()
+        self._link_eq: set = set()        # the links' eq(e, 0), of _aux_eq
+        #: sides of the equality atoms EUF interprets -> 2 (a user or
+        #: extension atom, or a number) or 1 (only a link's eq(e, 0));
+        #: interface equalities add nothing (see sync_transfer)
+        self._xside: dict = {}
+        #: predicate transfer (satassume.transfer), engaged by the first
+        #: user or template equality atom; None until then
+        self.xfer = None
+        self._xadapter = None
+        self._xslot = 1                   # cursor into table.slots
+        self._xterm = 0                   # cursor into the adapter's atom sides
+        self._xnsides = -1                # _xside state seen by sync_transfer
+        self._xnterms = -1                # EUF atom terms counted in _xheads
+        self._xpart: set = set()          # link-only sides (polar registered)
+        self._xheads: dict = {}           # (func, nargs) -> known expressions
+        self._xseen: set = set()          # expressions counted in _xheads
+        self._xpend: list = []            # (node, base) not yet candidates
+        self._xcand: set = set()          # candidate nodes (registered)
 
     # -- entry points used by the session ------------------------------
     def enqueue(self, atom: P) -> None:
@@ -223,12 +332,17 @@ class Relations:
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
         raise :class:`Uninterpreted` if a relation among ``user_atoms`` has
-        no theory."""
+        no theory (unless the engine leaves such atoms free Booleans,
+        ``Engine(uninterpreted="free")``)."""
         s = self.session
         user = [a for a in user_atoms if a.pred in RELATION_ATOMS]
         for a in user:
             for side in a.expr:
                 self._link_later(side)
+        for a in user:
+            if a.pred == "eq":
+                self._want_transfer = True
+                self._note_sides(a, 2)
         while True:
             s._flush()
             s._discover()
@@ -246,7 +360,15 @@ class Relations:
                 continue
             if self._share():
                 continue
+            if self._want_transfer and self.xfer is None:
+                self._engage_transfer()
+            if self.xfer is not None and self._transfer_terms():
+                continue
             break
+        if self.xfer is not None:
+            self.sync_transfer()
+        if s.engine.uninterpreted == "free":
+            return
         for a in user:
             if not self.status.get(a):
                 raise Uninterpreted(f"no theory interprets {a}")
@@ -274,6 +396,12 @@ class Relations:
             if not spec.guarded:
                 if ad.register(solver, var, sat):
                     ok = True
+                    if atom.pred == "eq" and hasattr(ad, "node_term"):
+                        if atom not in self._aux_eq:
+                            self._want_transfer = True
+                            self._note_sides(atom, 2)
+                        elif atom in self._link_eq:
+                            self._note_sides(atom, 1)
                 continue
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
@@ -285,11 +413,35 @@ class Relations:
             ok = True
             guard = []
             for u in terms:
+                if _is_number(u):
+                    if u not in self._bounded:
+                        self._bounded.add(u)
+                        self._bound(ad, u)
+                    if s.engine.is_(u, "real") is True:
+                        # real(u) holds at the root: its guard literal is
+                        # false everywhere, and u needs no node here
+                        continue
                 s.ensure(u, {"real"})
                 guard.append(-s.var("real", u))
             s._emit(guard + [-var, t])
             s._emit(guard + [var, -t])
         return ok
+
+    def _bound(self, ad, c) -> None:
+        """Assert the rational bounds of the constant term ``c`` (``pi``,
+        ``sqrt(2)``) as root facts of the theory: true for its value, so
+        unconditional (no guard)."""
+        register = getattr(ad, "register_bounds", None)
+        if register is None:
+            return
+        s = self.session
+
+        def new_var():
+            v = s.table.aux()
+            s.solver.ensure_vars(v)
+            return v
+        for v in register(s.solver, c, new_var):
+            s._emit([v])
 
     # -- links to the unary vocabulary ----------------------------------
     def _atom_var(self, f) -> int:
@@ -305,7 +457,11 @@ class Relations:
         zero, real = s.var("zero", e), s.var("real", e)
         gt = self._atom_var(relation_atom("lt", S.Zero, e))
         lt = self._atom_var(relation_atom("lt", e, S.Zero))
-        eq = self._atom_var(relation_atom("eq", e, S.Zero))
+        eqa = relation_atom("eq", e, S.Zero)
+        if eqa not in self.session.table.custom:
+            self._aux_eq.add(eqa)
+            self._link_eq.add(eqa)
+        eq = self._atom_var(eqa)
         emit = s._emit
         emit([-pos, gt])
         emit([-gt, -real, pos])
@@ -323,5 +479,211 @@ class Relations:
         for a, b in pairs:
             if _is_number(a) and _is_number(b):
                 continue
-            self._atom_var(relation_atom("eq", a, b))
+            if _constant_term(a) or _constant_term(b):
+                continue
+            eqa = relation_atom("eq", a, b)
+            if eqa not in self.session.table.custom:
+                self._aux_eq.add(eqa)
+            self._atom_var(eqa)
         return bool(pairs)
+
+    # -- predicate transfer (satassume.transfer) -------------------------
+    #
+    # Engaged explicitly, once per session, by the first equality atom that
+    # is not glue (a user atom, or one a template or extension made); the
+    # links' eq(e, 0) and the interface equalities alone do not engage it.
+    # Engaging attaches the EUF adapter's theory (if not yet) and a
+    # TransferTheory; from then on every node block of the session is
+    # registered with it (its expression interned as an EUF term, so
+    # congruence applies to it), and every expression EUF interns for an
+    # atom is visited as a node (so x = 2 finds the facts of 2).
+
+    _want_transfer = False
+
+    def _congruent(self, node) -> bool:
+        """``node`` may become congruent to another known application of
+        the same head: argument by argument, the two are the same
+        expression or both may be merged (a side or a candidate, and not
+        two distinct Rationals: EUF keeps those apart, but a Float or an
+        irrational number is an opaque term that may equal a Rational or
+        another spelling of the same value), and at least one pair
+        differs."""
+        others = self._xheads.get((node.func, len(node.args)))
+        if not others or len(others) < 2:
+            return False
+        cand, xside = self._xcand, self._xside
+        args = node.args
+        for o in others:
+            if o is node or o == node:
+                continue
+            differ = False
+            for a, b in zip(args, o.args):
+                if a == b:
+                    continue
+                if not ((a in cand or a in xside) and (b in cand or b in xside)) \
+                        or (a.is_Rational and b.is_Rational):
+                    break
+                differ = True
+            else:
+                if differ:
+                    return True
+        return False
+
+    def _note_sides(self, atom, level) -> None:
+        xs = self._xside
+        for e in atom.expr:
+            lv = 2 if _is_number(e) else level
+            if xs.get(e, 0) < lv:
+                xs[e] = lv
+
+    def _engage_transfer(self) -> None:
+        s = self.session
+        if not s.engine.transfer:
+            return
+        ad = None
+        for spec in self.specs:
+            if not spec.guarded:
+                a = self._adapter(spec)
+                if hasattr(a, "node_term"):
+                    ad = a
+                    break
+        if ad is None:
+            return
+        from .transfer import TransferTheory
+        solver = s.solver
+        ad.attach(solver)
+        th = TransferTheory(ad.theory)
+        solver.attach_theory(th)
+        self._xadapter = ad
+        self.xfer = th
+        s.xfer = self
+
+    def _transfer_terms(self) -> bool:
+        """Visit the sides of the atoms EUF registered since the last call
+        (numbers included); True if a node was visited."""
+        from itertools import islice
+        from sympy import Expr
+        sides = self._xside
+        n = len(sides)
+        if self._xterm >= n:
+            return False
+        new = list(islice(sides, self._xterm, n))
+        self._xterm = n
+        from sympy import Rational
+        s = self.session
+        ad, th = self._xadapter, self.xfer
+        visited = False
+        for e in new:
+            if isinstance(e, Rational):
+                # a rational's facts are closed and context-free: the theory
+                # holds a basis of them for its term instead of a node (no
+                # visit, no variables, no change to the session's search)
+                t = ad.term_of(e)
+                if t is not None:
+                    th.set_fixed(t, _number_facts(s.engine, e))
+                continue
+            if isinstance(e, Expr) and e not in s.base:
+                s.ensure(e)
+                visited = True
+        return visited
+
+    def sync_transfer(self) -> None:
+        """Register with the transfer theory the predicate variables of the
+        nodes whose terms EUF could put into a class with another term.
+
+        A term joins a class only through a union: as the side of an atom,
+        or as an application congruent to another one with the same head
+        (function and arity) whose arguments were merged.  So a node is a
+        *candidate* (all 33 variables registered) iff it is a side of a user
+        or extension equality atom, a number side, or an application whose
+        head occurs on at least two known expressions and one of whose
+        arguments is a side or a candidate.  Two kinds of sides are left out
+        on purpose:
+
+        * a side ``e`` only of the link ``eq(e, 0)``: ``e`` joins the class
+          of ``0`` only when that atom holds, and then the link clause makes
+          ``zero(e)`` true, from which the rule base decides every predicate
+          but ``polar`` exactly as the facts of the number ``0`` (itself a
+          candidate) do; so only ``polar`` is registered for ``e``;
+        * a side only of interface equalities (equality sharing): those are
+          how equalities LRA derives reach EUF, which transfer leaves out.
+
+        Candidacy only grows, so the nodes not (fully) registered are kept
+        and looked at again on the next call.  This runs at root-safe points
+        (the end of :meth:`process`, the start of ``Session.query_literal``).
+        """
+        s = self.session
+        slots = s.table.slots
+        ad = self._xadapter
+        xside = self._xside
+        i, n = self._xslot, len(slots)
+        nside = len(xside) + sum(xside.values())
+        nterms = len(ad._terms)
+        if i >= n and nside == self._xnsides and nterms == self._xnterms:
+            return
+        from sympy import Basic, Rational, nan
+        from .euf_adapter import _structural
+        heads = self._xheads
+        seen = self._xseen
+        pend = self._xpend
+
+        def count(e):
+            if e not in seen:
+                seen.add(e)
+                if isinstance(e, Basic) and _structural(e):
+                    k = (e.func, len(e.args))
+                    h = heads.get(k)
+                    if h is None:
+                        heads[k] = [e]
+                    else:
+                        h.append(e)
+        while i < n:
+            e = slots[i]
+            if type(e) is tuple and e[1] == i:
+                node = e[0]
+                if isinstance(node, Basic) and not node.has(nan):
+                    count(node)
+                    pend.append((node, i))
+                i += NPRED
+            else:
+                i += 1
+        self._xslot = n
+        self._xnsides = nside
+        if nterms != self._xnterms:
+            self._xnterms = nterms
+            for e in ad.terms():
+                count(e)
+        if not pend:
+            return
+        cand = self._xcand
+        part = self._xpart
+        solver, th = s.solver, self.xfer
+        polar = PRED_INDEX["polar"]
+        changed = True
+        while changed and pend:
+            changed = False
+            keep = []
+            for node, b in pend:
+                lv = xside.get(node, 0)
+                if lv == 2 or (_structural(node) and self._congruent(node)):
+                    cand.add(node)
+                    changed = True
+                    t = ad.node_term(node)
+                    solver.ensure_vars(b + NPRED - 1)     # one _grow, not 33
+                    if _is_number(node) and isinstance(node, Rational):
+                        preds = _number_basis(s.engine, node)
+                        full = len(preds) == NPRED
+                    else:
+                        preds = range(NPRED)
+                        full = True
+                    for k in preds:
+                        if k != polar or node not in part:
+                            solver.register_atom(
+                                th, b + k, (t, k) if full else (t, k, True), False)
+                    continue
+                if lv == 1 and node not in part:
+                    part.add(node)
+                    solver.register_atom(th, b + polar, (ad.node_term(node), polar, True),
+                                         False)
+                keep.append((node, b))
+            pend[:] = keep

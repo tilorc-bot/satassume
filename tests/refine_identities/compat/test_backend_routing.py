@@ -8,11 +8,14 @@ predicates on matrix arguments, unregistered custom predicates, relations over
 matrices), for relations no satassume theory interprets (bounds such as
 ``pi/2``, floats, ``AccumBounds``), for assumptions satassume finds
 inconsistent, and when satassume raises.  ``union`` keeps the old behaviour.
+Since satassume reads irrational constants as bounded LRA variables (main's
+b208af3), bounds such as ``pi/2`` are interpreted and stay with satassume;
+floats, ``oo`` and ``AccumBounds`` still route to SymPy.
 """
 from __future__ import annotations
 
 import pytest
-from sympy import Abs, AccumBounds, MatrixSymbol, Q, Symbol, asin, pi, sin, sqrt
+from sympy import Abs, AccumBounds, MatrixSymbol, Q, Symbol, asin, oo, pi, sin, sqrt
 from sympy.assumptions.assume import Predicate
 
 from satrefine import refine
@@ -35,6 +38,9 @@ ROUTES = [
     (Q.ne(x, y), Q.lt(x, y), None, None),
     (Q.positive(x), Q.gt(x, 1), None, None),  # x not known real: None is right
     (Q.integer(x), True, None, None),
+    # an irrational bound is a bounded LRA variable (b208af3): no SymPy fallback
+    (Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, pi/2), True, None),
+    (Q.positive(x), Q.real(x) & Q.gt(x, pi/2), True, None),
     # no model in satassume: SymPy is asked
     (Q.invertible(X), Q.orthogonal(X), None, "matrix"),
     (Q.real(x), Q.symmetric(X), None, "matrix"),
@@ -43,8 +49,9 @@ ROUTES = [
     (Q.eq(X, Y), True, None, "relation"),
     (_Unregistered()(x), True, None, "custom"),
     # a relation no theory interprets drops the whole query in satassume
-    (Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, pi/2), None, "no-theory"),
+    (Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5), None, "no-theory"),
     (Q.positive(x), Q.real(x) & Q.gt(x, 1.5), None, "no-theory"),
+    (Q.real(x), Q.nonnegative(x) & Q.lt(x, oo), None, "no-theory"),
     (Q.real(x), Q.ge(x, 0) & Q.le(x, AccumBounds(0, 1)), None, "no-theory"),
     (Q.positive(x), Q.positive(x) & Q.negative(x), None, "inconsistent"),
 ]
@@ -70,9 +77,9 @@ def test_in_scope_queries_never_reach_sympy(monkeypatch, proposition, assumption
 def test_out_of_scope_queries_reach_sympy():
     with backend.using("combined"):
         assert backend.ask(Q.invertible(X), Q.orthogonal(X)) is True
-        assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, pi/2)) is True
+        assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5)) is True
     with backend.using("satassume"):
-        assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, pi/2)) is None
+        assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5)) is None
 
 
 def test_union_still_asks_sympy_for_every_none(monkeypatch):
@@ -83,10 +90,12 @@ def test_union_still_asks_sympy_for_every_none(monkeypatch):
     assert seen == [Q.eq(x, 1)]
 
 
-def test_rewrite_under_a_pi_bound_needs_the_no_theory_route():
-    # the one battery case satassume alone loses (test_inverse.py::test_results_are_re_refined)
-    with backend.using("combined"):
-        assert refine(sqrt(asin(sin(x))**2), Q.nonnegative(x) & Q.le(x, pi/2)) == x
+def test_rewrite_under_a_pi_bound():
+    # the one battery case satassume alone used to lose
+    # (test_inverse.py::test_results_are_re_refined); since b208af3 it needs no SymPy
+    for name in ("combined", "satassume"):
+        with backend.using(name):
+            assert refine(sqrt(asin(sin(x))**2), Q.nonnegative(x) & Q.le(x, pi/2)) == x
 
 
 def test_accumbounds_bound_does_not_crash():

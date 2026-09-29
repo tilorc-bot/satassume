@@ -369,13 +369,15 @@ def test_equality(real_eng):   # EUF
     assert ask_with(e, Q.eq(x, z), Q.eq(x, y) & Q.eq(y, z)) is True
 
 
-@pytest.mark.xfail(reason="XFAIL in SymPy too: substitution of equals into "
-                   "unary predicates is not linked", strict=False)
 def test_equality_failing(real_eng):
+    # XFAIL in SymPy; answered here by predicate transfer (satassume.transfer)
     e = real_eng
     assert ask_with(e, Q.prime(x), Q.eq(x, y) & Q.prime(y)) is True
     assert ask_with(e, Q.real(x), Q.eq(x, y) & Q.real(y)) is True
-    assert ask_with(e, Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) is True
+    # x, y are declared real here, so imaginary(y) is inconsistent by itself
+    assert ask_with(e, Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) == "inconsistent"
+    u, v = symbols("u v")
+    assert ask_with(e, Q.imaginary(u), Q.eq(u, v) & Q.imaginary(v)) is True
 
 
 def test_unhandled_matrix_queries(real_eng):

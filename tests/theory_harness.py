@@ -197,6 +197,8 @@ class Recorder:
         self.registered: set[int] = set()
         if hasattr(inner, "propagate"):
             self.propagate = self._propagate
+        if hasattr(inner, "decide"):
+            self.decide = self._decide
 
     def register_atom(self, literal, payload):
         self.events.append(("register", literal))
@@ -231,13 +233,28 @@ class Recorder:
 
     def check(self):
         s = self.solver
+        lazy = frozenset()
         if s is not None:
-            assert all(s._val[2 * v] is not None for v in range(1, s.nvars() + 1)), \
+            # every variable but the lazy ones (block variables nothing but
+            # their rule block mentions, which may be theory atoms
+            # registered with mention=False) is assigned
+            assert all(s._val[2 * v] is not None or s._lazy[v]
+                       for v in range(1, s.nvars() + 1)), \
                 "check() called on a partial assignment"
+            lazy = frozenset(v for v in self.registered
+                             if s._val[2 * v] is None and s._lazy[v])
+            if hasattr(self.inner, "decide"):
+                assert self.inner.decide() is None, \
+                    "check() while the theory still asks for a decision"
         r = self.inner.check()
-        self.events.append(("check", r))
+        self.events.append(("check", r, lazy) if lazy else ("check", r))
         self._check_clause(r, "check")
         return r
+
+    def _decide(self):
+        x = self.inner.decide()
+        self.events.append(("decide", x))
+        return x
 
     def _propagate(self):
         out = list(self.inner.propagate())
@@ -245,26 +262,33 @@ class Recorder:
         return out
 
     def mark(self, label):
-        """Insert a marker (e.g. between public calls)."""
-        self.events.append(("mark", label))
+        """Insert a marker (e.g. between public calls), with the solver's
+        decision level at that moment (held assumption levels stay on the
+        trail between public calls, see ``Solver._assume``)."""
+        s = self.solver
+        self.events.append(("mark", label, len(s._trail_lim) if s is not None else 0))
 
 
 def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
     """Verify the solver-side guarantees on a recorded trace.
 
-    * pushes and pops balance, the level never goes negative, and (at the
-      end, or at any ``mark``) the level is 0;
+    * pushes and pops balance, the level never goes negative, and at any
+      ``mark`` and at the end the theory's level equals the solver's
+      decision level (0, or the held assumption levels; 0 without a solver);
     * only registered variables are asserted, and a variable is asserted at
       most once until a pop undoes it;
     * after a conflict (from ``assert_lit`` or ``check``) no ``assert``,
       ``check`` or ``propagate`` comes before a ``pop``; a conflict at level
       0 ends all ``assert``/``check`` calls;
-    * ``check`` sees every registered variable asserted;
+    * ``check`` sees every variable registered so far asserted, except
+      lazy ones (registered with ``mention=False``, unassigned);
+    * ``decide`` names a registered variable not asserted, or None;
     * ``propagate`` is not called after a conflict.
 
     Returns counts of the event kinds.
     """
     level = 0
+    reg: set = set()                     # registered so far in the trace
     alive: dict[int, int] = {}          # var -> level it was asserted at
     blocked = False                      # conflict seen, awaiting pop
     dead = False                         # conflict at level 0
@@ -273,9 +297,11 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
         kind = e[0]
         counts[kind] = counts.get(kind, 0) + 1
         if kind == "mark":
-            assert level == 0, f"level {level} at marker {e[1]}"
+            want = e[2] if len(e) > 2 else 0
+            assert level == want, f"level {level} at marker {e[1]}, solver at {want}"
             continue
         if kind == "register":
+            reg.add(e[1])
             assert level == 0, "register_atom above level 0"
             continue
         if kind == "push":
@@ -294,12 +320,16 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
         if kind == "assert":
             lit, r = e[1], e[2]
             v = abs(lit)
-            assert v in rec.registered, f"assert_lit({lit}) of an unregistered variable"
+            assert v in reg, f"assert_lit({lit}) of an unregistered variable"
             assert v not in alive, f"variable {v} asserted twice"
             alive[v] = level
             conflict = r is not None and r[0] is False
+        elif kind == "decide":
+            assert e[1] is None or e[1] in reg, f"decide({e[1]}) of an unregistered variable"
+            assert e[1] not in alive, f"decide({e[1]}) of an asserted variable"
+            continue
         elif kind == "check":
-            missing = rec.registered - set(alive)
+            missing = reg - set(alive) - (e[2] if len(e) > 2 else frozenset())
             assert not missing, f"check() before asserting {sorted(missing)}"
             r = e[1]
             conflict = r is not None and r[0] is False
@@ -311,7 +341,9 @@ def check_protocol(rec: Recorder, final_level_zero=True) -> dict:
             else:
                 blocked = True
     if final_level_zero:
-        assert level == 0, f"trace ends at level {level}"
+        s = getattr(rec, "solver", None)
+        want = len(s._trail_lim) if s is not None else 0
+        assert level == want, f"trace ends at level {level}, solver at {want}"
     return counts
 
 

@@ -260,3 +260,49 @@ def test_function_closures(eng):
     from sympy import sin
     assert ask(Q.finite(sin(x)), True, eng) is None
     assert ask(Q.finite(sin(x)), Q.finite(x), eng) is True
+
+
+# -- constants: answered without the assumptions -------------------------------
+
+def test_constant_proposition_ignores_assumptions(eng):
+    x = Symbol('x')
+    # inconsistent assumptions do not raise for a question about constants
+    assert ask(Q.positive(pi), Q.positive(x) & Q.negative(x), eng) is True
+    assert ask(~Q.zero(Integer(-1)) & Q.negative(Integer(-1)), Q.zero(x) & ~Q.zero(x), eng) is True
+    # an assumption about something else does not change the answer
+    assert ask(Q.rational(pi), Q.rational(x), eng) is False
+    # a proposition with a free symbol still reads the assumptions and raises
+    with pytest.raises(ValueError):
+        ask(Q.positive(x + pi), Q.positive(x) & Q.negative(x), eng)
+
+
+def test_undefined_function_value_is_not_a_constant(eng):
+    from sympy import Function
+    f = Function('f')
+    assert ask(Q.positive(f(1)), Q.positive(f(1)), eng) is True
+    with pytest.raises(ValueError):
+        ask(Q.positive(f(1)), Q.positive(f(1)) & Q.negative(f(1)), eng)
+
+
+def test_constant_route_needs_builtin_predicates_and_no_undefined_function(eng):
+    from sympy import Function, Integral
+    from satassume import Implies
+    from satassume.sympy_api import _is_constant_proposition
+    from satassume.formula import P
+    f, x = Function('f'), Symbol('x')
+    assert _is_constant_proposition(Q.positive(pi) & Q.lt(pi, 4))
+    assert not _is_constant_proposition(Q.positive(Integral(f(x), (x, 0, 1))))
+    e = Integral(f(x), (x, 0, 1))
+    assert ask(Q.positive(e), Q.positive(e), eng) is True
+
+    class Nice(Predicate):
+        name = 'nice_constant_test'
+    nice = Nice()
+    from satassume.sympy_api import register, unregister
+    fn = register('nice_constant_test', Integer)(lambda n: Implies(P('nice_constant_test', n),
+                                                                      P('positive', n)))
+    try:
+        assert not _is_constant_proposition(nice(Integer(2)))
+        assert ask(nice(Integer(2)), nice(Integer(2)), eng) is True
+    finally:
+        unregister('nice_constant_test')
