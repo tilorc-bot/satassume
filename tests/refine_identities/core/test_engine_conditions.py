@@ -43,10 +43,11 @@ def test_relation_proofs_unused_for_a_known_infinite_argument():
 def test_a_condition_is_refuted_past_an_undecided_conjunct():
     """``provable`` stops a hypothesis at its first undecided conjunct; a
     condition goes on looking for a refutation."""
-    cond = Q.le(1, x) & Q.le(x, 3)
+    cond = Q.integer(x) & Q.le(x, 3)
     assert provable(cond, Q.gt(x, 3)) is None
     assert decide(cond, Q.gt(x, 3)) is False
     assert refine(Piecewise((1, cond), (0, True)), Q.gt(x, 3)) == 0
+    assert decide(Q.le(1, x) & Q.le(x, 3), Q.gt(x, 3)) is False
 
 
 def test_undecided_branches_are_refined_under_their_conditions():

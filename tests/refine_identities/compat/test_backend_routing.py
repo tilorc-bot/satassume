@@ -9,8 +9,9 @@ matrices), for relations no satassume theory interprets (bounds such as
 ``pi/2``, floats, ``AccumBounds``), for assumptions satassume finds
 inconsistent, and when satassume raises.  ``union`` keeps the old behaviour.
 Since satassume reads irrational constants as bounded LRA variables (main's
-b208af3), bounds such as ``pi/2`` are interpreted and stay with satassume;
-floats, ``oo`` and ``AccumBounds`` still route to SymPy.
+b208af3), bounds such as ``pi/2`` are interpreted and stay with satassume,
+and since relations are read over the extended reals (main's #26) so are
+``oo`` bounds; floats and ``AccumBounds`` still route to SymPy.
 """
 from __future__ import annotations
 
@@ -35,12 +36,15 @@ ROUTES = [
     (Q.positive(x), Q.real(x) & Q.gt(x, 1), True, None),
     (Q.positive(x), Q.negative(x), False, None),
     (Q.eq(x, 1), Q.positive(x), None, None),
-    (Q.ne(x, y), Q.lt(x, y), None, None),
+    (Q.ne(x, y), Q.lt(x, y), True, None),     # a relation's sides are extended reals (main's #26)
     (Q.positive(x), Q.gt(x, 1), None, None),  # x not known real: None is right
     (Q.integer(x), True, None, None),
     # an irrational bound is a bounded LRA variable (b208af3): no SymPy fallback
     (Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, pi/2), True, None),
     (Q.positive(x), Q.real(x) & Q.gt(x, pi/2), True, None),
+    # an infinite bound is read on the extended reals (main's #26): no SymPy fallback
+    (Q.real(x), Q.nonnegative(x) & Q.lt(x, oo), True, None),
+    (Q.finite(x), Q.gt(x, 1) & Q.lt(x, oo), True, None),
     # no model in satassume: SymPy is asked
     (Q.invertible(X), Q.orthogonal(X), None, "matrix"),
     (Q.real(x), Q.symmetric(X), None, "matrix"),
@@ -51,7 +55,6 @@ ROUTES = [
     # a relation no theory interprets drops the whole query in satassume
     (Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5), None, "no-theory"),
     (Q.positive(x), Q.real(x) & Q.gt(x, 1.5), None, "no-theory"),
-    (Q.real(x), Q.nonnegative(x) & Q.lt(x, oo), None, "no-theory"),
     (Q.real(x), Q.ge(x, 0) & Q.le(x, AccumBounds(0, 1)), None, "no-theory"),
     (Q.positive(x), Q.positive(x) & Q.negative(x), None, "inconsistent"),
 ]

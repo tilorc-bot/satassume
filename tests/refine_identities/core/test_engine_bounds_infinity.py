@@ -27,7 +27,7 @@ def test_what_a_bound_proves():
         assert provable(p(x), gt1) is True
     for p in (Q.real, Q.positive, Q.nonnegative, Q.nonzero):
         assert provable(p(x), gt1) is None
-        assert provable(p(x), Q.ge(x, oo)) is None                       # forces x = oo
+        assert provable(p(x), Q.ge(x, oo)) is not True                   # forces x = oo (refuted since #26)
         assert provable(p(x), gt1 & Q.lt(x, 7)) is True
         assert provable(p(x), gt1 & Q.lt(x, oo)) is True                 # x < oo excludes oo
         assert provable(p(x), gt1 & Q.le(x, oo)) is None

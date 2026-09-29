@@ -142,7 +142,7 @@ handler asks its predicate questions through one seam, the dispatcher's `ask`, a
 |---|---|---|
 | `sympy` | `sympy.assumptions.ask.ask` | the reference |
 | `satassume` | `satassume.sympy_api.ask` alone; out-of-scope and undecided queries are `None`, so the handler does not fire | the strict measurement of this engine |
-| `combined` | satassume; SymPy only where satassume has no model (matrix or unregistered custom predicates, a relation bound no theory interprets such as `pi/2`), finds the assumptions inconsistent, or raises | the default |
+| `combined` | satassume; SymPy only where satassume has no model (matrix or unregistered custom predicates, a relation bound no theory interprets such as a float), finds the assumptions inconsistent, or raises | the default |
 | `union` | satassume first, SymPy for every `None` (the `combined` behaviour before 2026-09-25) | measurements |
 
 Select with `SATREFINE_BACKEND=<name>` (read at import; default `combined`),
