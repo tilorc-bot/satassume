@@ -98,7 +98,7 @@ async function load() {
   })};
   fill("workload", workloads, "stream");
   fill("left", metrics, "time");
-  fill("right", metrics, "propagations");
+  fill("right", metrics, "clauses");
   document.getElementById("status").textContent = `${data.rows.length} commits`;
   draw();
 }
