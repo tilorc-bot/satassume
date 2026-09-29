@@ -101,6 +101,9 @@ class EUFAdapter:
     def __init__(self, theory: EUFTheory | None = None):
         self.theory = theory if theory is not None else EUFTheory()
         self._terms: dict[Basic, int] = {}
+        #: terms interned for the transfer layer only (session nodes, see
+        #: :meth:`node_term`); kept out of :meth:`shared_terms`
+        self._node_terms: dict[Basic, int] = {}
         self._solver = None
 
     # ------------------------------------------------------------------
@@ -140,15 +143,22 @@ class EUFAdapter:
         if parsed is None:
             return False
         if self._solver is not solver:
-            if self._solver is not None:
-                raise ValueError("an EUFAdapter serves a single solver")
-            if not any(t is self.theory for t in solver.theories()):
-                solver.attach_theory(self.theory)
-            self._solver = solver
+            self.attach(solver)
         lhs, rhs, positive = parsed
         payload = EqAtom(self.term(lhs), self.term(rhs), positive)
         solver.register_atom(self.theory, var, payload)
         return True
+
+    def attach(self, solver) -> None:
+        """Attach the theory to ``solver`` (once; :meth:`register` does it
+        on first use)."""
+        if self._solver is solver:
+            return
+        if self._solver is not None:
+            raise ValueError("an EUFAdapter serves a single solver")
+        if not any(t is self.theory for t in solver.theories()):
+            solver.attach_theory(self.theory)
+        self._solver = solver
 
     # ------------------------------------------------------------------
 
@@ -177,6 +187,41 @@ class EUFAdapter:
             else:
                 terms[e] = th.term(e)
         return terms[expr]
+
+    def node_term(self, expr) -> int:
+        """The theory term of ``expr`` for predicate transfer
+        (:mod:`satassume.transfer`): interned like :meth:`term`, with the
+        same ids, but remembered apart so that it does not become a
+        candidate interface term (:meth:`shared_terms`).  Interning more
+        terms only adds congruences over the new terms; the equalities
+        between terms interned before are unchanged."""
+        t = self._terms.get(expr)
+        if t is not None:
+            return t
+        nt = self._node_terms
+        t = nt.get(expr)
+        if t is not None:
+            return t
+        terms = self._terms
+        th = self.theory
+        stack = [(expr, False)]
+        while stack:
+            e, ready = stack.pop()
+            if e in nt or e in terms:
+                continue
+            if isinstance(e, Rational):
+                nt[e] = th.value(e)
+            elif _structural(e):
+                if ready:
+                    nt[e] = th.term(e.func, [terms[a] if a in terms else nt[a]
+                                             for a in e.args])
+                else:
+                    stack.append((e, True))
+                    stack.extend((a, False) for a in e.args
+                                 if a not in terms and a not in nt)
+            else:
+                nt[e] = th.term(e)
+        return nt[expr]
 
     def term_of(self, expr) -> int | None:
         """The term of ``expr`` if the adapter has interned it, else None."""

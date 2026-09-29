@@ -130,6 +130,9 @@ class Session:
     def __init__(self, engine: "Engine"):
         self.engine = engine
         self.solver = Solver()
+        # the single-node rule base, propagated by the solver from shared
+        # tables instead of 79 clauses per node (Solver.register_block)
+        self.solver.set_rule_block(RULE_INTERNAL, NPRED)
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
@@ -140,11 +143,18 @@ class Session:
         self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
         self.n_assumption_nodes = 0           # nodes visited by assume_formula()
+        #: nodes that are closed irrational constants (pi, 1/pi); they do
+        #: not count as pollution (Engine.cone_threshold)
+        self.n_constants = 0
+        self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.assumption_formula = None       # the formula of assume_formula()
         #: relation atoms and their theories (satassume.relations); created
         #: at the first user formula when the engine has relation support
         self.relations: Optional[Relations] = None
+        #: the Relations object once predicate transfer is engaged
+        #: (Relations._engage_transfer); None on every other path
+        self.xfer = None
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -172,6 +182,9 @@ class Session:
         table = self.table
         b = table.node_base(node)
         self.base[node] = b
+        if getattr(node, "is_number", False) and not node.is_Rational \
+                and not node.free_symbols:
+            self.n_constants += 1
         table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
@@ -185,12 +198,21 @@ class Session:
         ext = engine.extensions
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
-        # 2. single-node rule base (bulk path, no per-clause sanitising),
-        #    unless the node is a constant whose closed unit facts decide
-        #    everything the rule base could say
+        # 2. single-node rule base (registered with the solver's rule-block
+        #    propagator, no clauses), unless the node is a constant whose
+        #    closed unit facts decide everything the rule base could say
         if not (len(compiled) == 1 and compiled[0].pattern.complete and not formulas):
-            self.solver.add_pattern(RULE_INTERNAL, b, NPRED)
-            self.nclauses += len(RULE_INTERNAL)
+            # the node's own literals its patterns are about to mention
+            # (see _split), so that registering does not start them lazy
+            own = 0
+            if compiled:
+                want = None if demanded is None else want_of(demanded)
+                for comp in compiled:
+                    k0 = comp.pattern.node
+                    for k, m in _split(comp.pattern.clauses, want)[3]:
+                        if k == k0:
+                            own |= m
+            self.solver.register_block(b, own)
         else:
             self.solver.ensure_vars(b + NPRED - 1)
         # 3. cached context-free facts
@@ -237,15 +259,11 @@ class Session:
                     bb = table.node_base(o)
                     new.append(k)
                 bases[k] = 2 * bb
-            if want is None:
-                self._emit_pattern(pat.clauses, bases)
-            else:
-                now = [c for c in pat.clauses if c[1] & want]
-                if len(now) < len(pat.clauses):
-                    later = [c for c in pat.clauses if not (c[1] & want)]
-                    self.pending_c.setdefault(node, []).append((later, bases))
-                if now:
-                    self._emit_pattern(now, bases)
+            _, now, later, ment = _split(pat.clauses, want)
+            if later is not None:
+                self.pending_c.setdefault(node, []).append((later, bases))
+            if now:
+                self._emit_pattern(now, bases, ment)
             for k, preds in pat.child_preds.items():
                 d = demand.get(objs[k])
                 if d is None:
@@ -259,12 +277,16 @@ class Session:
                     self.deferred.append(objs[k])
         table.new_nodes = []
 
-    def _emit_pattern(self, clauses, bases) -> None:
-        """``bases[k]`` is twice the base variable of slot ``k``."""
+    def _emit_pattern(self, clauses, bases, ment=None) -> None:
+        """``bases[k]`` is twice the base variable of slot ``k``; ``ment``
+        the slots' mention masks of ``clauses`` (see :func:`_split`)."""
+        if ment is None:
+            ment = _split(clauses, None)[3]
         self.nclauses += len(clauses)
         solver = self.solver
         solver.ensure_vars(len(self.table))
-        solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses])
+        solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
+                            [(bases[k] >> 1, m) for k, m in ment])
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
@@ -340,11 +362,10 @@ class Session:
         if pend_c:
             keep = []
             for clauses, bases in pend_c:
-                now = [c for c in clauses if c[1] & want]
+                _, now, later, ment = _split(clauses, want)
                 if now:
-                    self._emit_pattern(now, bases)
-                    later = [c for c in clauses if not (c[1] & want)]
-                    if later:
+                    self._emit_pattern(now, bases, ment)
+                    if later is not None:
                         keep.append((later, bases))
                 else:
                     keep.append((clauses, bases))
@@ -448,9 +469,14 @@ class Session:
     def query_literal(self, lit: int, assumptions: Iterable[int] = (),
                       search: bool = True) -> Optional[bool]:
         solver = self.solver
+        if self.xfer is not None:
+            self.xfer.sync_transfer()
         if not solver.propagate():
             raise InconsistentAssumptions("rule base or cached facts are inconsistent")
         self.writeback()
+        # the query literal is read: its variable's rule-block implication
+        # must be on the trail (Solver.mention)
+        solver.mention((lit,))
         assumptions = list(assumptions)
         if assumptions:
             # consistency of the assumptions is checked first, even when the
@@ -491,6 +517,7 @@ class Session:
         if self.relations is not None:
             self._relations(f)
         self.n_assumption_nodes = len(self.base)
+        self.n_assumption_constants = self.n_constants
         return [s]
 
     def literal_of(self, f) -> int:
@@ -564,7 +591,11 @@ class Engine:
         search in a session polluted by 1-3 nodes costs 0.9-1.1 ms, the
         cone search 1.3-1.7 ms; from about 8 extra nodes on, the reused
         search costs more (2.4 ms at 8-15, 3.7 ms at 16-31, 6.3 ms beyond),
-        since CDCL decides every variable of the session.
+        since CDCL decides every variable of the session.  Nodes that are
+        closed irrational constants (``pi``, ``1/pi`` of ``x/pi``) do not
+        count: their facts are context-free, nearly all fixed at the root.
+        Counting them sent twice as many queries under assumption sets with
+        ``pi`` to a cone rebuild, which cost about 10% of their time.
     keep_sessions : int
         How many contextual sessions (distinct assumption sets) to keep.
     extensions : satassume.extensions.Extensions or None
@@ -575,13 +606,28 @@ class Engine:
         Theory adapters for relation atoms.  None: the LRA and EUF adapters
         if present (with the SymPy templates only); ``[]``: relations are
         out of scope.
+    transfer : bool
+        Share unary facts between terms EUF puts in one class
+        (:mod:`satassume.transfer`): ``Q.positive(y)`` from ``Q.eq(x, y) &
+        Q.positive(x)``, ``Q.prime(x)`` from ``Q.eq(x, 2)``.  Engaged only in
+        sessions with an equality atom.
+    uninterpreted : ``"none"`` or ``"free"``
+        What a relation of the query or the assumptions that no theory
+        interprets does: ``"none"`` (default) makes ``ask`` return None;
+        ``"free"`` leaves it a free Boolean, so the rest of the assumptions
+        still answers (and an inconsistent rest raises).
+    relevance : bool
+        ``sympy_api.ask`` answers a query under the assumption conjuncts
+        connected to it only (see ``sympy_api._relevant``), once the whole
+        set is known to be consistent; False: always under the whole set.
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
                  session_limit: int = 2000, keep_sessions: int = 16,
                  cone_search: bool = True, extensions=None, relations=None,
-                 cone_threshold: int = 3):
+                 cone_threshold: int = 3, transfer: bool = True,
+                 uninterpreted: str = "none", relevance: bool = True):
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -613,9 +659,17 @@ class Engine:
         self.keep_sessions = keep_sessions
         self.cone_search = cone_search
         self.cone_threshold = cone_threshold
+        self.transfer = transfer
+        if uninterpreted not in ("none", "free"):
+            raise ValueError(f"uninterpreted must be 'none' or 'free', not {uninterpreted!r}")
+        self.uninterpreted = uninterpreted
         #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
         #: (satassume.sympy_api), bounded; cleared when registrations change
         self.answers = AnswerMemo()
+        self.relevance = relevance
+        #: SymPy assumptions -> their split into components
+        #: (``sympy_api._Split``), cleared together with ``answers``
+        self.splits = AnswerMemo(20_000)
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: assumption formulas whose session construction raised
@@ -624,7 +678,8 @@ class Engine:
         self._failed: Dict[Any, str] = {}
         self._failed_state = None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
-                      "searches": 0, "cone_searches": 0, "sessions": 0}
+                      "searches": 0, "cone_searches": 0, "sessions": 0,
+                      "relevant": 0, "consistency_checks": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
@@ -727,7 +782,8 @@ class Engine:
             s, lits = self._context_session(assumptions)
         else:
             s = self._fresh_session()
-        polluted = len(s.base) - s.n_assumption_nodes > self.cone_threshold
+        polluted = (len(s.base) - s.n_assumption_nodes
+                    - (s.n_constants - s.n_assumption_constants)) > self.cone_threshold
         q = self._literal(s, proposition)
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
@@ -789,6 +845,38 @@ def neighbourhood(pred) -> frozenset:
                 acc.update(idx)
         n = _NEIGH[i] = frozenset(acc)
     return n
+
+
+_SPLIT: dict = {}
+
+
+def _split(clauses, want):
+    """``(clauses, now, later, ment)``: the pattern clauses about a
+    predicate of ``want`` (all of them if ``want`` is None), the rest (None
+    if empty) and the mention masks of ``now`` per slot, ``((k, mask),
+    ...)`` with bits ``off`` and ``off ^ 1`` for each literal offset (see
+    ``Solver.mention_blocks``).  Memoized per clause list and ``want``:
+    the lists are the patterns' own or earlier results, kept alive here."""
+    key = (id(clauses), want)
+    r = _SPLIT.get(key)
+    if r is not None and r[0] is clauses:
+        return r
+    if want is None:
+        now, later = clauses, None
+    else:
+        now = [c for c in clauses if c[1] & want]
+        later = [c for c in clauses if not (c[1] & want)] or None
+        if later is None:
+            now = clauses
+    acc: dict = {}
+    for _, _, li in now:
+        for k, off in li:
+            acc[k] = acc.get(k, 0) | (3 << (off & ~1))
+    r = (clauses, now, later, tuple(acc.items()))
+    if len(_SPLIT) >= 100_000:
+        _SPLIT.clear()
+    _SPLIT[key] = r
+    return r
 
 
 def want_of(demanded) -> frozenset:

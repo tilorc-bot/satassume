@@ -859,8 +859,9 @@ REFERENCE_FLAWS = {
         "test_eq_ask.py makes predicate substitution (Q.prime(x) from "
         "Q.eq(x, y) & Q.prime(y)) the main feature via reification "
         "Q.prime(x) = TRUE; SymPy marks this as needing a redesign "
-        "(issue 25485) and it is out of scope here: those queries must stay "
-        "None, never False.",
+        "(issue 25485).  EUF itself stays out of it (adapter-level entails "
+        "are None); the engine answers them with predicate transfer "
+        "(satassume.transfer): True, never False.",
         ["test_euf_adapter.py::test_equality_failing_cases_are_not_wrong",
          "test_euf_adapter.py::test_engine_equality_failing_is_not_wrong"]),
     "30327-random-test-unseeded": (
