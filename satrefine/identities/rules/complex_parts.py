@@ -15,8 +15,8 @@ rows).  What the bookkeeping needs beyond rows is the simple layer of
 :mod:`._simple`: ``floor`` of a bounded quantity and ``Piecewise``.
 
 The facts: ``Abs`` and ``arg`` of an exponential, composed with the
-exponential forms so that ``Abs(b**e) = Abs(b)**e``, ``Abs(p*r) =
-Abs(p)*Abs(r)`` and ``arg(p*r) = arg(p) + arg(r)`` up to the principal
+exponential forms so that ``Abs(b**e) = Abs(b)**e``, ``Abs(y*r) =
+Abs(y)*Abs(r)`` and ``arg(y*r) = arg(y) + arg(r)`` up to the principal
 wrap derive (``arg`` only with the product forms: v3 leaves ``arg(w**e)``
 alone); and ``arg`` of a conjugate, exact through its own bookkeeping,
 which collapses whenever ``w`` is provably off the negative real axis.
@@ -62,22 +62,22 @@ from sympy.core import Mul
 from ._tables import ZERO, Family, Identities, Row, Rules, derive, exponent, node_measure, part
 from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
-# z, b, e, p, r, w, a and y are arbitrary (b, e, p and r also appear in power_exp_log's
+# z, b, e, y, r, w and a are arbitrary (b, e, y and r also appear in power_exp_log's
 # exponential forms, which assume nothing).
-z, b, e, p, r, w, a, y = symbols('z b e p r w a y')
-d, f, n, t, u, v = symbols('d f n t u v')
-c = part('c', Q.imaginary)   # the imaginary factors of a product
-s = part('s', Q.real)        # the real factors of a product
-k, m = exponent('k'), exponent('m')   # exponents that also bind 1 (conjugate(x) is conjugate(x)**1)
+z, b, e, y, r, w, a = symbols('z b e y r w a')
+d, f, g, n, u, v = symbols('d f g n u v')
+vs = part('vs', Q.imaginary)   # the imaginary factors of a product
+s = part('s', Q.real)          # the real factors of a product
+h, m = exponent('h'), exponent('m')   # exponents that also bind 1 (conjugate(x) is conjugate(x)**1)
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 ASSUMED = {~Q.zero(d),                     # d is nonzero
            ~Q.zero(f) & Q.finite(f),       # f is nonzero and finite
            Q.integer(n),                   # n is an integer
-           Q.integer(k), Q.integer(m),     # k and m are integers
-           Q.real(t) | Q.extended_real(t),   # t is an extended real (+-oo included)
+           Q.integer(h), Q.integer(m),     # h and m are integers (h may be 0, so not k)
+           Q.real(u) | Q.extended_real(u),   # u is an extended real (+-oo included)
            Q.imaginary(v),                 # v is imaginary
-           Q.commutative(u)}               # u commutes (a factor of a product)
+           Q.commutative(g)}               # g commutes (a factor of a product)
 
 DEFINITIONS: list[Row] = [   # (lhs, rhs[, domain]): stage 0 definitions through sign
     (Abs(f), f/sign(f)),                   # sign f = f/|f| (Abs(zoo) is oo)
@@ -97,7 +97,7 @@ FACTS: list[Row] = DEFINITIONS + [   # (lhs, rhs[, domain])
 ]
 
 SPLITS: list[Row] = [   # an exact multiplicative identity; the ordering demands progress
-    (sign(p*r),        sign(p)*sign(r)),                 # sign is multiplicative
+    (sign(y*r),        sign(y)*sign(r)),                 # sign is multiplicative
 ]
 # conjugate needs no split rows: SymPy distributes conjugate over sums and products on
 # construction, so conjugate(x*y) reaches the table as conjugate(x)*conjugate(y).
@@ -114,15 +114,15 @@ RULES: list[Row] = [   # (lhs, rhs[, hypothesis])
     # not Q.extended_real(sin(x)), whose handler goes by signs)
     (Abs(a), a,      Q.nonnegative(a) | Q.extended_nonnegative(a)),      # |a| = a for a >= 0 (also a = oo)
     (Abs(a), -a,     Q.nonpositive(a) | Q.extended_nonpositive(a)),      # |a| = -a for a <= 0 (also a = -oo)
-    (re(t), t),                                                          # re t = t
-    (im(t), S.Zero),                                                     # im t = 0
+    (re(u), u),                                                          # re u = u
+    (im(u), S.Zero),                                                     # im u = 0
     (re(v), S.Zero),                                                     # re v = 0
     (im(v), -I*v),                                                       # im(i*t) = t
     # re / im are linear over the reals (these hold at infinity, where the definitions need a finite argument)
     (re(s*w), s*re(w)),                                                  # a real factor comes out of re
     (im(s*w), s*im(w)),                                                  # ... and of im
-    (re(c*w), -I*c*re(I*w)),                                             # re(c*w) = (-i*c)*re(i*w), imaginary c
-    (im(c*w), -I*c*im(I*w)),                                             # im(c*w) = (-i*c)*im(i*w), imaginary c
+    (re(vs*w), -I*vs*re(I*w)),                                           # re(vs*w) = (-i*vs)*re(i*w), imaginary vs
+    (im(vs*w), -I*vs*im(I*w)),                                           # im(vs*w) = (-i*vs)*im(i*w), imaginary vs
     # sign
     (sign(a), S.One,         Q.positive(a) | Q.extended_positive(a)),    # sign a = 1 for a > 0 (also a = oo)
     (sign(a), S.NegativeOne, Q.negative(a) | Q.extended_negative(a)),    # sign a = -1 for a < 0 (also a = -oo)
@@ -131,16 +131,16 @@ RULES: list[Row] = [   # (lhs, rhs[, hypothesis])
     (sign(Abs(d)), S.One),                                               # sign|d| = 1
     (sign(exp(z)), S.One,    Q.real(z)),                                 # sign(exp z) = 1 for real z
     # conjugate
-    (conjugate(t), t),                                                   # conjugate t = t
+    (conjugate(u), u),                                                   # conjugate u = u
     (conjugate(v), -v),                                                  # conjugate v = -v
     (conjugate(exp(z), evaluate=False), exp(conjugate(z))),              # conjugate(exp z) = exp(conjugate z) (SymPy evaluates the lhs)
     (conjugate(b**n), conjugate(b)**n),                                  # conjugate(b**n) = conjugate(b)**n
     (conjugate(b**e), b**conjugate(e), Q.positive(b)),                   # conjugate(b**e) = b**conjugate(e), b > 0
     # Mul
-    (u*conjugate(u), Abs(u)**2),                                         # u*conjugate(u) = |u|**2
-    (u**n*conjugate(u)**n, Abs(u)**(2*n)),                               # ... and for integer powers
-    (u**k*conjugate(u)**m, Abs(u)**(2*m)*u**(k - m), Q.positive(m) & Q.positive(k - m)),            # ... unequal positive powers, the higher one u's
-    (u**k*conjugate(u)**m, Abs(u)**(2*k)*conjugate(u)**(m - k), Q.positive(k) & Q.positive(m - k)),   # ... or conjugate(u)'s
+    (g*conjugate(g), Abs(g)**2),                                         # g*conjugate(g) = |g|**2
+    (g**n*conjugate(g)**n, Abs(g)**(2*n)),                               # ... and for integer powers
+    (g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m), Q.positive(m) & Q.positive(h - m)),            # ... unequal positive powers, the higher one g's
+    (g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h), Q.positive(h) & Q.positive(m - h)),   # ... or conjugate(g)'s
     (f*zoo, zoo),                                                        # zoo absorbs a nonzero finite factor
     ((-1)**a*(-1)**e, (-1)**(a + e)),                                    # (-1)**a = exp(I*pi*a): the powers of -1 combine
 ]

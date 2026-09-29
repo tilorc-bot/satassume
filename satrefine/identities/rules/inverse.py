@@ -67,9 +67,10 @@ from sympy import (Abs, I, Interval, Piecewise, Q, S, acos, acosh, acot, acoth, 
 from ._tables import ZERO, Family, Identities, Row, Rules, node_measure
 from ._wraps import reflect_full, reflect_half, sawtooth
 
-p, q, s, t, u, w, z, x, y = symbols('p q s t u w z x y')
+d, f, g, h, s, t, u, x, y = symbols('d f g h s t u x y')
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
+# The letters follow the tables' convention (t, s real; u extended real; d nonzero; x, y arbitrary).
 ASSUMED = {Q.real(t)}   # t is real
 
 
@@ -94,30 +95,30 @@ def _off_cut_lines(z):
     return Q.real(z) | Q.extended_real(z) | ~Q.integer(im(z)/pi + S.Half)
 
 
-ASSUMED |= {Q.real(p), ~Q.integer(p/pi + S.Half)}   # p is real, off the poles of tan
-ASSUMED |= {Q.real(q), ~Q.integer(q/pi)}            # q is real, off the poles of cot
+ASSUMED |= {Q.real(s), ~Q.integer(s/pi + S.Half)}   # s is real, off the poles of tan
+ASSUMED |= {Q.real(g), ~Q.integer(g/pi)}            # g is real, off the poles of cot
 
 # The hyperbolic inverses hold off the lines im z = (k + 1/2)*pi, where the forward
 # function lands on the inverse's branch cut and the result depends on the sign of
 # re z (asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2, atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2).
-ASSUMED |= {_off_cut_lines(z)}                      # z is off the lines
-ASSUMED |= {~Q.zero(w), _off_cut_lines(w)}          # w is nonzero and off the lines (coth(0) is zoo)
-# s is nonzero and finite off the lines.  (csch(+-oo) = 0 and acsch(0) = zoo: finite s only,
-# so Q.real and not the extended lines; the other three hold at +-oo.  A real s is finite,
-# but im(s) = 0 does not make s real: im(Abs(v)) is 0 for an infinite v, issue #10 B10 and B6)
-ASSUMED |= {~Q.zero(s), Q.real(s) | Q.finite(s) & ~Q.integer(im(s)/pi + S.Half)}
+ASSUMED |= {_off_cut_lines(f)}                      # f is off the lines
+ASSUMED |= {~Q.zero(d), _off_cut_lines(d)}          # d is nonzero and off the lines (coth(0) is zoo)
+# h is nonzero and finite off the lines.  (csch(+-oo) = 0 and acsch(0) = zoo: finite h only,
+# so Q.real and not the extended lines; the other three hold at +-oo.  A real h is finite,
+# but im(h) = 0 does not make h real: im(Abs(v)) is 0 for an infinite v, issue #10 B10 and B6)
+ASSUMED |= {~Q.zero(h), Q.real(h) | Q.finite(h) & ~Q.integer(im(h)/pi + S.Half)}
 
 FACTS: list[Row] = [   # (lhs, rhs)
     (asin(sin(t)), reflect_half(t)),                          # asin undoes sin up to a reflection
     (asin(cos(t)), reflect_half(pi/2 - t)),                   # cos t = sin(pi/2 - t)
     (acos(cos(t)), reflect_full(t)),                          # acos undoes cos up to a reflection
     (acos(sin(t)), reflect_full(pi/2 - t)),                   # sin t = cos(pi/2 - t)
-    (atan(tan(p)), sawtooth(p, pi)),                          # atan undoes tan up to a period
-    (atan(cot(q)), sawtooth(pi/2 - q, pi)),                   # cot q = tan(pi/2 - q)
-    (asinh(sinh(z)), _reflect_half_imag(z)),                  # asinh undoes sinh up to an imaginary reflection
-    (atanh(tanh(z)), _sawtooth_imag(z)),                      # atanh undoes tanh up to an imaginary period
-    (acoth(coth(w)), _sawtooth_imag(w)),                      # acoth undoes coth likewise
-    (acsch(csch(s)), _reflect_half_imag(s)),                  # acsch undoes csch likewise
+    (atan(tan(s)), sawtooth(s, pi)),                          # atan undoes tan up to a period
+    (atan(cot(g)), sawtooth(pi/2 - g, pi)),                   # cot g = tan(pi/2 - g)
+    (asinh(sinh(f)), _reflect_half_imag(f)),                  # asinh undoes sinh up to an imaginary reflection
+    (atanh(tanh(f)), _sawtooth_imag(f)),                      # atanh undoes tanh up to an imaginary period
+    (acoth(coth(d)), _sawtooth_imag(d)),                      # acoth undoes coth likewise
+    (acsch(csch(h)), _reflect_half_imag(h)),                  # acsch undoes csch likewise
     (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
                             (atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
                             (atan(y/x) - pi, Q.negative(x) & Q.negative(y)),

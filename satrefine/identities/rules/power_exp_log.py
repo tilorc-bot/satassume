@@ -11,7 +11,7 @@ a product (:func:`._tables.derive`) they give every ``log(x**a)`` and
 ``log(x*y)`` rule of v3: the bookkeeping ``floor`` collapses under the
 rule's precondition, through the ``arg`` bounds of the simple layer or
 the engine's sign case split.  The product has two exponential forms,
-``log(p) + log(r)`` and ``log(-p) + log(-r)``, which is how a negative
+``log(y) + log(r)`` and ``log(-y) + log(-r)``, which is how a negative
 factor's sign is absorbed into the other factor (``log(x*y) = log(-x) +
 log(-y)`` for negative ``x``).
 
@@ -35,7 +35,7 @@ to v3's ``(-1)**b*Abs(x)**(2*b)``; ``a = 0 mod 4`` derives for a symbolic
 
 ``exp`` has one fact, ``exp(a + b) == exp(a)*exp(b)``, ordered by the
 number of ``exp`` nodes so it fires only when a factor evaluates away
-(``exp(log(Abs(p)) + log(Abs(r)))``), and three rules: ``I*pi`` times an
+(``exp(log(Abs(y)) + log(Abs(r)))``), and three rules: ``I*pi`` times an
 integer or half-integer leaves as ``(-1)**n`` or ``I*(-1)**n``, and
 ``exp(e*log(b))`` folds back to ``b**e`` on the power form's domain
 (``b != 0`` or ``e > 0``: whatever the form unfolded, the fold refolds, so
@@ -94,18 +94,18 @@ from sympy.core import Pow
 from ._tables import (ZERO, Family, Identities, Row, Rules, count_measure, derive, node_measure, part, principal,
                       size)
 
-# b is a base; a and e are exponents; p and r are factors of a product; z and x are arguments:
-# all arbitrary (b, e, p and r also appear in the exponential forms, which assume nothing).
-z, b, e, p, r, x, a = symbols('z b e p r x a')
-d, j, k, n, q, s, t, v = symbols('d j k n q s t v')
-c = part('c', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
+# b is a base; a and e are exponents; y and r are factors of a product; z and x are arguments:
+# all arbitrary (b, e, y and r also appear in the exponential forms, which assume nothing).
+z, b, e, y, r, x, a = symbols('z b e y r x a')
+d, k, m, n, p, q, t, v = symbols('d k m n p q t v')
+h = part('h', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 ASSUMED = {~Q.zero(d),        # d is nonzero
-           Q.integer(k),      # k is an integer
-           Q.even(n),         # n is even
-           Q.odd(j),          # j is odd
-           Q.positive(s),     # s is positive
+           Q.integer(m),      # m is an integer
+           Q.even(n),         # n is an even integer
+           Q.odd(k),          # k is an odd integer (so nonzero)
+           Q.positive(p),     # p is positive
            Q.negative(q),     # q is negative
            Q.real(t),         # t is real
            Q.imaginary(v)}    # v is imaginary
@@ -125,36 +125,36 @@ FACTS: list[Row] = [   # (lhs, rhs[, domain]): lhs == rhs wherever the domain ho
 
 EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain holds
     (b**e, e*log(b),           ~Q.zero(b) | Q.positive(e)),  # a power is an exponential (see the note above)
-    (p*r,  log(p) + log(r),    true),                      # a product is an exponential (see the note above)
-    (p*r,  log(-p) + log(-r),  true),                      # ... with both signs flipped: p*r == (-p)*(-r)
+    (y*r,  log(y) + log(r),    true),                      # a product is an exponential (see the note above)
+    (y*r,  log(-y) + log(-r),  true),                      # ... with both signs flipped: y*r == (-y)*(-r)
 ]
 
 RULES: list[Row] = [   # (lhs, rhs[, hypothesis]): a conditional rewrite
     # Pow
     (Pow(E, x, evaluate=False), exp(x)),                                        # E**x is exp(x)
-    ((b**a)**k, b**(a*k)),                                                      # (b**a)**k = b**(a*k)
-    ((b**s)**e, b**(s*e), Q.nonnegative(b) | Q.extended_nonnegative(b)),        # ... s*log(b) real, 0**s = 0, oo**s = oo
-    ((s**t)**e, s**(t*e)),                                                      # ... t*log(s) real (sqrt(1/x) = 1/sqrt(x))
+    ((b**a)**m, b**(a*m)),                                                      # (b**a)**m = b**(a*m)
+    ((b**p)**e, b**(p*e), Q.nonnegative(b) | Q.extended_nonnegative(b)),        # ... p*log(b) real, 0**p = 0, oo**p = oo
+    ((p**t)**e, p**(t*e)),                                                      # ... t*log(p) real (sqrt(1/x) = 1/sqrt(x))
     ((t**n)**e, Abs(t)**(n*e), Q.positive(n) | ~Q.zero(t)),                     # t**n = |t|**n; 0**n = 0 for n > 0
     ((b**n)**e, Abs(b)**(n*e), Q.extended_real(b) & Q.positive(n)),             # ... also at b = +-oo for n > 0 ((+-oo)**n = oo)
-    (exp(a)**k, exp(a*k)),                                                      # exp(a)**k = exp(a*k)
+    (exp(a)**m, exp(a*m)),                                                      # exp(a)**m = exp(a*m)
     ((v**a)**e, Abs(v)**(a*e), Q.even(a/2)),                                    # (I*t)**a = t**a for a = 0 mod 4
     ((v**a)**e, (-1)**e*Abs(v)**(a*e), Q.odd(a/2)),                             # (I*t)**a = -t**a for a = 2 mod 4
-    (Pow(S.Zero, s, evaluate=False), S.Zero),                                   # 0**s = 0
+    (Pow(S.Zero, p, evaluate=False), S.Zero),                                   # 0**p = 0
     (b**q, zoo, Q.zero(b)),                                                     # 0**q = zoo (1/x at x = 0)
     (Abs(t)**n, t**n),                                                          # |t|**n = t**n
     (Abs(v)**n, (-1)**(n/2)*v**n),                                              # |I*t|**n = (-1)**(n/2)*(I*t)**n
     ((-1)**n, S.One),                                                           # (-1)**even = 1
-    ((-1)**j, S.NegativeOne),                                                   # (-1)**odd = -1
+    ((-1)**k, S.NegativeOne),                                                   # (-1)**odd = -1
     ((-1)**x, S.NegativeOne, Q.even(x - 1)),                                    # ... the parity stated one lower: (-1)**((n + 1)/2)
     ((-1)**x, S.One, Q.odd(x - 1)),                                             #     under a parity of (n - 1)/2 (ask does not shift it)
-    ((-1)**((-1)**k/2 + r), (-1)**(k + r + S.Half)),                            # (-1)**k/2 = +-1/2 and (-1)**z is 2-periodic
+    ((-1)**((-1)**m/2 + r), (-1)**(m + r + S.Half)),                            # (-1)**m/2 = +-1/2 and (-1)**z is 2-periodic
     ((-1)**(n + r), (-1)**r),                                                   # (-1)**z is 2-periodic: drop even terms
-    ((-1)**(j + r), (-1)**(r + 1)),                                             # ... an odd term becomes 1
-    ((-1)**(c + r), (-1)**(r + Mod(c, 2))),                                     # ... a rational constant is reduced mod 2
+    ((-1)**(k + r), (-1)**(r + 1)),                                             # ... an odd term becomes 1
+    ((-1)**(h + r), (-1)**(r + Mod(h, 2))),                                     # ... a rational constant is reduced mod 2
     # exp
-    (exp(k*pi*I + r), (-1)**k*exp(r)),                                          # exp splits over sums; exp(I*pi*k) = (-1)**k
-    (exp(x*pi*I + r), I*(-1)**(x - S.Half)*exp(r), Q.integer(x - S.Half)),       # exp(I*pi*(k + 1/2)) = I*(-1)**k
+    (exp(m*pi*I + r), (-1)**m*exp(r)),                                          # exp splits over sums; exp(I*pi*m) = (-1)**m
+    (exp(x*pi*I + r), I*(-1)**(x - S.Half)*exp(r), Q.integer(x - S.Half)),       # exp(I*pi*(m + 1/2)) = I*(-1)**m
     (exp(e*log(b)), b**e, ~Q.zero(b) | Q.positive(e)),                          # the definition of Pow, folded back (the form's domain)
 ]
 
@@ -166,7 +166,7 @@ LOG_RULES: list[Row] = [   # tried after the log identities
 
 NEGATIVE_BASE: list[Row] = [   # exact for integer n; ordered so they fire for a negative number only
     (q**n, (-q)**n),                                                            # q**n = (-q)**n
-    (q**j, -(-q)**j),                                                           # q**j = -(-q)**j
+    (q**k, -(-q)**k),                                                           # q**k = -(-q)**k
 ]
 
 # At an infinite base the power form is not an identity for e <= 0: (+-oo)**0 is 1 but 0*log(+-oo)

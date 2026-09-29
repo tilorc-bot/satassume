@@ -49,11 +49,12 @@ from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Mi
 
 from ._tables import Family, Identities, Rules
 
-a, b, c, h, i, j, lo, hi, m, p, r, v, x, y = symbols('a b c h i j lo hi m p r v x y')
-G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(v, h), derivatives of DiracDelta
+a, b, d, i, j, lo, hi, inf, ninf, r, t, u, w = symbols('a b d i j lo hi inf ninf r t u w')
+G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(u, w), derivatives of DiracDelta
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
-ASSUMED = {Q.extended_real(v)}   # v is an extended real (Heaviside's argument)
+# The letters follow the tables' convention (t real; u extended real; d nonzero; a, b, r, w arbitrary).
+ASSUMED = {Q.extended_real(u)}   # u is an extended real (Heaviside's argument)
 
 FACTS = [
     (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True))),
@@ -61,32 +62,31 @@ FACTS = [
     (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True)), true,
      Q.infinite(i) & Q.infinite(j)),                     # unless: KroneckerDelta(oo, oo) is undefined
     (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
-    (G(v, h), Piecewise((0, Q.extended_negative(v)), (h, Q.zero(v)), (1, Q.extended_positive(v)), (nan, True))),
+    (G(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)), (nan, True))),
 ]
 
-ASSUMED |= {Q.positive_infinite(p), Q.negative_infinite(m)}   # p is oo, m is -oo
+ASSUMED |= {Q.positive_infinite(inf), Q.negative_infinite(ninf)}   # inf is oo, ninf is -oo
 
 INFINITE = [
     # Max(oo, b) = oo and Max(-oo, b) = b for every b Max is defined at (extended real b);
     # Min likewise.  The order vocabulary proves Q.ge(a, b) from an infinite a only for an
     # extended real b, which a plain symbol is not.  (Pairs of any arity: the other
     # arguments are kept.)
-    (Max(p, b), p),
-    (Max(m, b), b),
-    (Min(m, b), m),
-    (Min(p, b), b),
+    (Max(inf, b), inf),
+    (Max(ninf, b), b),
+    (Min(ninf, b), ninf),
+    (Min(inf, b), b),
 ]
 
-ASSUMED |= {Q.nonzero(x)}                 # x is off the origin (nonzero: real and not 0)
-ASSUMED |= {Q.real(y), Q.nonzero(c)}      # y is real, c is nonzero
+ASSUMED |= {Q.nonzero(d), Q.real(t)}      # d is off the origin (nonzero: real and not 0), t is real
 
 DIRAC = [
-    # DiracDelta and all its derivatives vanish off the origin (x real, nonzero).
-    (DiracDelta(x), S.Zero),
-    (G(x, r), S.Zero),
-    # DiracDelta(c*y) = DiracDelta(y)/|c| for nonzero real c and real y (SymPy's
-    # expand(diracdelta=True) convention); derivatives pick up sign(c)**k.
-    (DiracDelta(c*y), DiracDelta(y)/Abs(c)),
+    # DiracDelta and all its derivatives vanish off the origin (d real, nonzero).
+    (DiracDelta(d), S.Zero),
+    (G(d, r), S.Zero),
+    # DiracDelta(d*t) = DiracDelta(t)/|d| for nonzero real d and real t (SymPy's
+    # expand(diracdelta=True) convention); derivatives pick up sign(d)**k.
+    (DiracDelta(d*t), DiracDelta(t)/Abs(d)),
 ]
 
 RULES = DIRAC + INFINITE

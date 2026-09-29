@@ -6,11 +6,11 @@ so it is 0 at an integer and drops an integer term.  Bounds (``floor(x) = 0`` fo
 ``0 <= x < 1``) are interval arithmetic, not rows: ``floor_of_bounded`` in
 :mod:`._simple`.
 
-Remainders: ``Mod(a, b)`` has the sign of ``b`` (Python's ``%``), ``Rem(a, b)``
-the sign of ``a`` (truncating division).  Both are 0 at a multiple of ``b`` and
-``a`` itself inside the period, and they agree when ``a`` and ``b`` have the same
-sign.  ``b`` is assumed nonzero, which also makes it real: SymPy's ``Mod``
-of non-real arguments is not ``a - b*floor(a/b)`` (``Mod(3*I, 2*I) = 3*I``).
+Remainders: ``Mod(a, d)`` has the sign of ``d`` (Python's ``%``), ``Rem(a, d)``
+the sign of ``a`` (truncating division).  Both are 0 at a multiple of ``d`` and
+``a`` itself inside the period, and they agree when ``a`` and ``d`` have the same
+sign.  ``d`` is assumed nonzero, which also makes it real: SymPy's ``Mod``
+of non-real arguments is not ``a - d*floor(a/d)`` (``Mod(3*I, 2*I) = 3*I``).
 
 Two things the assumptions spell out because ``ask`` does not derive them:
 "integer" includes Gaussian integers (SymPy takes the floor of a complex number
@@ -40,78 +40,79 @@ def less(u, v):
     return Q.lt(u, v) | Q.positive(v - u)
 
 
-a, b, c, d, k, m, n, r, t, x, y, z = symbols('a b c d k m n r t x y z')
+a, b, c, d, f, g, h, m, n, w, x, zero = symbols('a b c d f g h m n w x zero')
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
-ASSUMED = {integer(n), Q.nonzero(b)}   # n is an integer, b is nonzero
+# The letters follow the tables' convention (n, m integers; d nonzero; a, b, c, w, x arbitrary).
+ASSUMED = {integer(n), Q.nonzero(d)}   # n is an integer (Gaussian included), d is nonzero
 
 
 # ---- floor, ceiling, frac ------------------------------------------------------
 
-ASSUMED |= {integer(k) | Q.infinite(k)}   # k is an integer or an infinity
+ASSUMED |= {integer(h) | Q.infinite(h)}   # h is an integer or an infinity
 
-# r is a floor or ceiling term: floor(t) or ceiling(t), times an integer m.  (The m-less
-# forms are listed because a pattern m*floor(t) does not match floor(t) itself.)
+# g is a floor or ceiling term: floor(w) or ceiling(w), times an integer m.  (The m-less
+# forms are listed because a pattern m*floor(w) does not match floor(w) itself.)
 ASSUMED |= {Q.integer(m),
-            Eq(r, floor(t)) | Eq(r, m*floor(t)) | Eq(r, ceiling(t)) | Eq(r, m*ceiling(t))}
+            Eq(g, floor(w)) | Eq(g, m*floor(w)) | Eq(g, ceiling(w)) | Eq(g, m*ceiling(w))}
 
 FLOOR = [
-    (floor(k), k),                       # floor(3) = 3, floor(oo) = oo
+    (floor(h), h),                       # floor(3) = 3, floor(oo) = oo
     (floor(n + x), floor(x) + n),        # floor(x + 3) = floor(x) + 3
-    # r moves out as n does, for any t: floor(t) is an integer or, for an infinite t, t
+    # g moves out as n does, for any w: floor(w) is an integer or, for an infinite w, w
     # itself, which absorbs the rest.  SymPy's floor returns an infinite argument unchanged
     # (floor(1/2 + I*oo) = 1/2 + I*oo, where flooring each part gives I*oo), so its
     # expressions can keep a finite part there that these rows drop: the same value.
-    (floor(r + x), floor(x) + r),
+    (floor(g + x), floor(x) + g),
 ]
 
 CEILING = [
-    (ceiling(k), k),
+    (ceiling(h), h),
     (ceiling(n + x), ceiling(x) + n),
-    (ceiling(r + x), ceiling(x) + r),
+    (ceiling(g + x), ceiling(x) + g),
 ]
 
 FRAC = [
     (frac(n + x), frac(x)),              # frac(x + 3) = frac(x)
 ]
 
-# y is finite.  (A Gaussian integer y is too, but ask does not see it: issue #19.)  Not
+# f is finite.  (A Gaussian integer f is too, but ask does not see it: issue #19.)  Not
 # at +-oo, where frac is AccumBounds(0, 1).
-ASSUMED |= {Q.finite(y) | Q.real(y) | integer(y)}
+ASSUMED |= {Q.finite(f) | Q.real(f) | integer(f)}
 
 FRAC_DEFINITION = [
-    (frac(y), y - floor(y)),             # gives frac(3) = 0 and frac(y) = y - k on [k, k + 1)
+    (frac(f), f - floor(f)),             # gives frac(3) = 0 and frac(f) = f - n on [n, n + 1)
 ]
 
 
 # ---- Mod, Rem ------------------------------------------------------------------
-# b is nonzero; d is any divisor.
+# d is nonzero; b is any divisor.
 
-ASSUMED |= {Q.zero(z)}   # z is 0
+ASSUMED |= {Q.zero(zero)}
 
 MOD = [
-    (Mod(a, b), S.Zero, Q.integer(a/b)),                                                 # Mod(6, 3) = 0
-    (Mod(z, d), S.Zero),                                                                 # Mod(0, d) = 0
-    (Mod(c + x, b), Mod(x, b), Q.integer(c/b)),                                          # Mod(x + 6, 3) = Mod(x, 3)
-    (Mod(a, d), a, (Q.nonnegative(a) & less(a, d)) | (Q.nonpositive(a) & less(d, a))),   # 0 <= a < d, d < a <= 0
+    (Mod(a, d), S.Zero, Q.integer(a/d)),                                                 # Mod(6, 3) = 0
+    (Mod(zero, b), S.Zero),                                                              # Mod(0, b) = 0
+    (Mod(c + x, d), Mod(x, d), Q.integer(c/d)),                                          # Mod(x + 6, 3) = Mod(x, 3)
+    (Mod(a, b), a, (Q.nonnegative(a) & less(a, b)) | (Q.nonpositive(a) & less(b, a))),   # 0 <= a < b, b < a <= 0
     # same signs; never the reverse rewrite, so Mod and Rem cannot loop
-    (Mod(a, d), Rem(a, d), (Q.nonnegative(a) & Q.positive(d)) | (Q.nonpositive(a) & Q.negative(d))),
+    (Mod(a, b), Rem(a, b), (Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))),
 ]
 
 REM = [
-    (Rem(a, b), S.Zero, Q.integer(a/b)),                                 # Rem(6, 3) = 0
-    (Rem(z, d), S.Zero),                                                 # Rem(0, d) = 0
-    # Rem(a, d) = a for |a| < |d|, one row per way the signs can be known
-    (Rem(a, d), a, Q.nonnegative(a) & (less(a, d) | less(a, -d))),      # 0 <= a < |d|
-    (Rem(a, d), a, Q.nonpositive(a) & (less(-d, a) | less(d, a))),      # -|d| < a <= 0
-    (Rem(a, d), a, Q.positive(d) & less(-d, a) & less(a, d)),           # -d < a < d
-    (Rem(a, d), a, Q.negative(d) & less(d, a) & less(a, -d)),           # d < a < -d
+    (Rem(a, d), S.Zero, Q.integer(a/d)),                                 # Rem(6, 3) = 0
+    (Rem(zero, b), S.Zero),                                              # Rem(0, b) = 0
+    # Rem(a, b) = a for |a| < |b|, one row per way the signs can be known
+    (Rem(a, b), a, Q.nonnegative(a) & (less(a, b) | less(a, -b))),      # 0 <= a < |b|
+    (Rem(a, b), a, Q.nonpositive(a) & (less(-b, a) | less(b, a))),      # -|b| < a <= 0
+    (Rem(a, b), a, Q.positive(b) & less(-b, a) & less(a, b)),           # -b < a < b
+    (Rem(a, b), a, Q.negative(b) & less(b, a) & less(a, -b)),           # b < a < -b
 ]
 
-# At a half period (a/b = k + 1/2): Mod(a, b) = b/2, and Rem(a, b) = b/2 or -b/2 by the
-# sign of a/b.  Identity rows: they fire once the assumptions decide sign(a/b).
-MOD_HALF = [(Mod(a, b), b*Mod(sign(a/b), 2)/2, Q.odd(2*a/b))]   # Mod(+-1, 2) = 1
-REM_HALF = [(Rem(a, b), sign(a/b)*b/2, Q.odd(2*a/b))]
+# At a half period (a/d = n + 1/2): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2 by the
+# sign of a/d.  Identity rows: they fire once the assumptions decide sign(a/d).
+MOD_HALF = [(Mod(a, d), d*Mod(sign(a/d), 2)/2, Q.odd(2*a/d))]   # Mod(+-1, 2) = 1
+REM_HALF = [(Rem(a, d), sign(a/d)*d/2, Q.odd(2*a/d))]
 
 
 FACTS = FRAC_DEFINITION + MOD_HALF + REM_HALF

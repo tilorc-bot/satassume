@@ -12,7 +12,7 @@ from sympy import Q
 from satrefine.identities.core.driver import generated_handlers as handlers_dict
 from satrefine.identities.core.rewrite import rule_handler
 
-b, d, e, p, r, z = symbols('b d e p r z')
+b, d, e, r, y, z = symbols('b d e r y z')
 
 RULES = [
     # round 1: from power_exp_log.FACTS[0] under Q.real(z)
@@ -67,18 +67,18 @@ RULES = [
     #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.generated[20], complex_parts.generated[21], complex_parts.generated[33], complex_parts.generated[34], complex_parts.generated[24], power_exp_log.RULES[23], complex_parts.RULES[7], integer_funcs.RULES[1], power_exp_log.FACTS[1], power_exp_log.IDENTITIES[1]
     #   asks: Q.integer(e), Q.real(b), Q.extended_positive(b), Q.extended_negative(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.positive(b), Q.negative(b), Q.positive(-b), Q.even(e), Q.positive(b**e), Q.real(e), Q.integer(0), Q.integer(-im(e)/2), Q.integer(-e/2), Q.positive(Abs(b))
     (log(b**e), e*log(Abs(b)), Q.even(e) & Q.odd(b)),
-    # round 1: from power_exp_log.IDENTITIES[2] under Q.positive(r)
+    # round 1: from power_exp_log.IDENTITIES[2] under Q.positive(y)
     #   fired: complex_parts.generated[33], power_exp_log.IDENTITIES[2], complex_parts.generated[20]
-    #   asks: Q.integer(-1), Q.negative(-1), Q.positive(r), Q.integer(0)
-    (log(p*r), log(p) + log(r), Q.positive(r)),
-    # round 1: from power_exp_log.IDENTITIES[2] under Q.negative(r)
+    #   asks: Q.integer(-1), Q.negative(-1), Q.positive(y), Q.integer(0)
+    (log(r*y), log(r) + log(y), Q.positive(y)),
+    # round 1: from power_exp_log.IDENTITIES[2] under Q.negative(y)
     #   fired: complex_parts.generated[34], complex_parts.generated[24], power_exp_log.IDENTITIES[3], complex_parts.generated[21]
-    #   asks: Q.integer(-1), Q.negative(-1), Q.negative(r), Q.integer(0), Q.positive(-r)
-    (log(p*r), log(-p) + log(-r), Q.negative(r)),
-    # round 1: from power_exp_log.IDENTITIES[2] under Q.negative(r) & Q.positive(p)
+    #   asks: Q.integer(-1), Q.negative(-1), Q.negative(y), Q.integer(0), Q.positive(-y)
+    (log(r*y), log(-r) + log(-y), Q.negative(y)),
+    # round 1: from power_exp_log.IDENTITIES[2] under Q.negative(y) & Q.positive(r)
     #   fired: complex_parts.generated[33], complex_parts.generated[34], power_exp_log.IDENTITIES[2], complex_parts.generated[20], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
-    #   asks: Q.integer(-1), Q.negative(-1), Q.positive(p), Q.negative(r), Q.positive(-r)
-    (log(p*r), log(p) + log(-r) + I*pi, Q.negative(r) & Q.positive(p)),
+    #   asks: Q.integer(-1), Q.negative(-1), Q.positive(r), Q.negative(y), Q.positive(-y)
+    (log(r*y), log(r) + log(-y) + I*pi, Q.negative(y) & Q.positive(r)),
     # round 1: from power_exp_log.FACTS[1] under Q.negative(d)
     #   fired: complex_parts.generated[34], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
     #   asks: Q.negative(d), Q.positive(-d), Q.integer(-1), Q.negative(-1)

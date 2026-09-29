@@ -15,7 +15,7 @@ Pattern forms (requested in
 
 * a ``MatrixSymbol`` pattern of symbolic shape binds a ``MatrixSymbol``
   (an atom) and its shape symbols bind that matrix's shape, so a right side
-  can say ``ZeroMatrix(q, m)`` or ``Identity(m)``;
+  can say ``ZeroMatrix(n, m)`` or ``Identity(m)``;
 * in ``Z + R`` and ``HadamardProduct(Z, R)``, ``Z`` binds one term (an atom)
   and ``R`` the sum (product) of the others, whatever they are; in ``c*X``
   over a ``MatMul``, ``c`` binds one scalar factor and ``X`` the rest;
@@ -93,8 +93,8 @@ from sympy.matrices.expressions.matexpr import MatrixElement
 
 from ..rules._tables import Family, Rules
 
-# c and c0 are scalars, i and j are indices; the matrices' shapes are given below.
-c, c0, i, j, m, p, q, s = symbols('c c0 i j m p q s')
+# c is a scalar, zero a zero scalar, i and j are indices; m, n, l and h are sizes.
+c, zero, i, j, m, n, l, h = symbols('c zero i j m n l h')
 A = MatrixSymbol('A', m, m)     # square, arbitrary
 S_ = MatrixSymbol('S', m, m)    # symmetric
 D = MatrixSymbol('D', m, m)     # diagonal
@@ -106,19 +106,19 @@ Ur = MatrixSymbol('Ur', m, m)   # unitary with real elements
 G = MatrixSymbol('G', m, m)     # invertible
 T = MatrixSymbol('T', m, m)     # unit triangular
 Zs = MatrixSymbol('Zs', m, m)   # a square zero matrix
-M = MatrixSymbol('M', p, p)     # symmetric
-N = MatrixSymbol('N', p, m)     # for N.T*M*N
-X = MatrixSymbol('X', m, q)     # general shape, arbitrary
-R = MatrixSymbol('R', m, q)     # general shape, arbitrary (the rest of a sum or product)
-Z = MatrixSymbol('Z', m, q)     # a zero matrix of general shape
-Y = MatrixSymbol('Y', m, q)     # a zero matrix of general shape
-W = MatrixSymbol('W', q, s)     # a right neighbour of X
+M = MatrixSymbol('M', l, l)     # symmetric
+N = MatrixSymbol('N', l, m)     # for N.T*M*N
+X = MatrixSymbol('X', m, n)     # general shape, arbitrary
+R = MatrixSymbol('R', m, n)     # general shape, arbitrary (the rest of a sum or product)
+Z = MatrixSymbol('Z', m, n)     # a zero matrix of general shape
+Y = MatrixSymbol('Y', m, n)     # a zero matrix of general shape
+W = MatrixSymbol('W', n, h)     # a right neighbour of X
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 ASSUMED = {Q.symmetric(S_), Q.symmetric(M), Q.diagonal(D), Q.diagonal(E), Q.orthogonal(O),
            Q.unitary(U), Q.unitary(V), Q.unitary(Ur), Q.real_elements(Ur), Q.invertible(G),
            Q.unit_triangular(T), Q.zero(Zs), Q.zero(Z), Q.zero(Y),
-           Q.zero(c0)}       # c0 is a zero scalar
+           Q.zero(zero)}       # zero is a zero scalar
 
 class _Index(Symbol):
     """An index variable of the symmetric-swap row: :class:`_SwappedOrder` of
@@ -147,7 +147,7 @@ ii, jj = _Index('i'), _Index('j')
 
 TRANSPOSE = [
     # The transpose of a zero matrix is the zero matrix of the transposed shape.
-    (Transpose(Z), ZeroMatrix(q, m)),
+    (Transpose(Z), ZeroMatrix(n, m)),
     # S.T = S for a symmetric (e.g. diagonal) S.
     (Transpose(S_), S_),
     # Products v3 accepts as symmetric: palindromes S*M*S, N.T*M*N, and products
@@ -186,25 +186,25 @@ TRACE = [
 
 MATADD = [
     # A sum of zero matrices is the zero matrix of its shape.
-    (Z + Y, ZeroMatrix(m, q)),
+    (Z + Y, ZeroMatrix(m, n)),
     # A zero term drops out of a sum.
     (Z + R, R),
     # Canonical form: X - X = 0 (refining X - X.T under Q.symmetric(X) leaves -X + X).
-    (MatAdd(X, -X), ZeroMatrix(m, q)),
+    (MatAdd(X, -X), ZeroMatrix(m, n)),
     # A one-term sum of a zero matrix is the zero matrix (Z + R needs a rest;
     # a one-term sum is otherwise kept, as the handlers package keeps it).
-    (MatAdd(Z), ZeroMatrix(m, q)),
+    (MatAdd(Z), ZeroMatrix(m, n)),
 ]
 
 HADAMARD = [
     # An elementwise product with a zero factor is the zero matrix of its shape.
-    (HadamardProduct(Z, R), ZeroMatrix(m, q)),
+    (HadamardProduct(Z, R), ZeroMatrix(m, n)),
 ]
 
 MATMUL = [
     # A product with a zero factor, scalar or matrix, is the zero matrix of its shape.
-    (c0*X, ZeroMatrix(m, q)),
-    (X*W, ZeroMatrix(m, s), Q.zero(X) | Q.zero(W)),
+    (zero*X, ZeroMatrix(m, n)),
+    (X*W, ZeroMatrix(m, h), Q.zero(X) | Q.zero(W)),
     # Adjacent O.T*O and O*O.T cancel for orthogonal O.
     (O.T*O, Identity(m)),
     (O*O.T, Identity(m)),

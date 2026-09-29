@@ -2,7 +2,7 @@
 
 Rows: 13 rules, 1 bounded row (``AccumBounds`` at a real infinity), 1
 shared zero row; ``handlers_v3/trig.py`` is 221 lines.
-A value at a pole comes out as ``(-1)**k*zoo``, which the ``Mul`` row of
+A value at a pole comes out as ``(-1)**m*zoo``, which the ``Mul`` row of
 the complex parts (``zoo`` absorbs a nonzero finite factor) turns into
 ``zoo``.
 
@@ -26,7 +26,7 @@ Not covered: ``sinc`` shifted by a nonzero remainder (no simpler form),
 (hyperbolic family).
 Checked (adversarial pass, 2026-09-24): every periodicity row with even,
 odd, zero and symbolic coefficients of ``pi/2``, at odd multiples of
-``pi/2`` (the poles of tan, sec; ``(-1)**k*zoo`` becomes ``zoo``), sums of
+``pi/2`` (the poles of tan, sec; ``(-1)**m*zoo`` becomes ``zoo``), sums of
 several ``pi`` terms, ``sinc`` at multiples, ``sin``/``cos`` at real
 infinities (``AccumBounds``), about 700 random cases, and
 ``python -m satrefine.tools.refine_differential``.  Found nothing.
@@ -42,18 +42,18 @@ from ._tables import ZERO, Family, Row, Rules
 # (which also makes it an integer), and that is what tells the rows apart.  The two parities
 # stay in the rows: the table is tried by binding (``by_binding``), so both rows of a function
 # must have the same left side.
-n, r, k, z, w = symbols('n r k z w')
+n, r, k, zero, u = symbols('n r k zero u')
 F = Function('F')
 
 ASSUMED = {Q.integer(k), ~Q.zero(k),              # k is a nonzero integer (sinc at a multiple)
-           Q.zero(z),                             # z is 0
-           Q.infinite(w), Q.extended_real(w)}     # w is a real infinity, +-oo
+           Q.zero(zero),                          # zero is 0
+           Q.infinite(u), Q.extended_real(u)}     # u is extended real, here infinite: +-oo
 
 RULES: list[Row] = [   # (lhs, rhs[, hypothesis]); the argument is n*pi/2 + r
-    (sin(n*pi/2 + r), (-1)**(n/2)*sin(r),       Q.even(n)),   # sin(r + k*pi) = (-1)**k sin r
-    (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r), Q.odd(n)),    # sin(r + pi/2 + k*pi) = (-1)**k cos r
-    (cos(n*pi/2 + r), (-1)**(n/2)*cos(r),       Q.even(n)),   # cos(r + k*pi) = (-1)**k cos r
-    (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r),  Q.odd(n)),    # cos(r + pi/2 + k*pi) = -(-1)**k sin r
+    (sin(n*pi/2 + r), (-1)**(n/2)*sin(r),       Q.even(n)),   # sin(r + m*pi) = (-1)**m sin r
+    (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r), Q.odd(n)),    # sin(r + pi/2 + m*pi) = (-1)**m cos r
+    (cos(n*pi/2 + r), (-1)**(n/2)*cos(r),       Q.even(n)),   # cos(r + m*pi) = (-1)**m cos r
+    (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r),  Q.odd(n)),    # cos(r + pi/2 + m*pi) = -(-1)**m sin r
     (sec(n*pi/2 + r), (-1)**(n/2)*sec(r),       Q.even(n)),   # sec = 1/cos
     (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r),  Q.odd(n)),    # (one power of -1: SymPy's form)
     (csc(n*pi/2 + r), (-1)**(n/2)*csc(r),       Q.even(n)),   # csc = 1/sin
@@ -62,11 +62,11 @@ RULES: list[Row] = [   # (lhs, rhs[, hypothesis]); the argument is n*pi/2 + r
     (tan(n*pi/2 + r), -cot(r),                  Q.odd(n)),    # tan(r + pi/2) = -cot r
     (cot(n*pi/2 + r), cot(r),                   Q.even(n)),   # cot has period pi
     (cot(n*pi/2 + r), -tan(r),                  Q.odd(n)),    # cot(r + pi/2) = -tan r
-    (sinc(k*pi/2 + z), sin(k*pi/2)/(k*pi/2)),                   # sinc x = sin x / x, x != 0
+    (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),                # sinc x = sin x / x, x != 0
 ]
 
 BOUNDED: list[Row] = [
-    (F(w), AccumBounds(-1, 1)),   # sin, cos of a real infinity (SymPy's value)
+    (F(u), AccumBounds(-1, 1)),   # sin, cos of a real infinity (SymPy's value)
 ]
 
 _shift = Rules([ZERO] + RULES, by_binding=True)   # the whole coefficient first, both parities

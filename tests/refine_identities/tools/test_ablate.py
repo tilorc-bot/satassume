@@ -41,7 +41,7 @@ def test_ablate_removes_the_row_from_handler_and_module(restore_minmax):
     mod = restore_minmax
     assert refine(DiracDelta(x), Q.positive(x)) == 0
     removed = ablate_tool.ablate("minmax_deltas", [0])       # DiracDelta off the origin
-    assert "DiracDelta(x)" in removed[0]
+    assert "DiracDelta(d)" in removed[0]
     assert len(mod.RULES) == 6 and len(mod.DIRAC) == 2
     assert len(handlers_dict["DiracDelta"].rows) == 2
     assert refine(DiracDelta(x), Q.positive(x)) == DiracDelta(x)
