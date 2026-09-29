@@ -19,8 +19,8 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 from hypothesis import HealthCheck, given, settings, strategies as st
-from sympy import (Eq, I, Integral, Matrix, Q, S, nan, oo, pi, sin, sqrt, symbols,
-                   zoo)
+from sympy import (Eq, I, Integral, Matrix, Q, S, im, nan, oo, pi, re, sin, sqrt,
+                   symbols, zoo)
 from sympy.logic.boolalg import And
 
 from satassume import DictCache, Engine
@@ -143,6 +143,22 @@ def test_order_sides_unread(atom):
     (Q.eq(-oo, oo), True, False),
 ])
 def test_answers(prop, assum, expected):
+    assert _ask(prop, assum) is expected
+
+
+@pytest.mark.parametrize("prop, assum, expected", [
+    # re(zoo) = im(zoo) = nan, so re(x) <= oo fails at x = zoo
+    (Q.le(re(x), oo), True, None),                                # SymPy True (wrong)
+    (Q.le(re(x), oo), Q.complex(x), True),
+    (Q.extended_real(re(x)), Q.extended_real(x), True),           # SymPy None
+    (Q.extended_real(im(x)), Q.extended_real(x), True),           # SymPy None
+    (Q.extended_real(im(x)), True, None),
+    # 1**oo = 1**-oo = nan: a positive base needs a finite exponent
+    (Q.extended_nonnegative(x**y), Q.positive(x) & Q.extended_real(y), None),
+    (Q.extended_nonnegative(x**y), Q.positive(x) & Q.real(y), True),
+    (Q.le(0, x**y), Q.positive(x) & Q.extended_real(y), None),
+])
+def test_sides_that_may_be_nan(prop, assum, expected):
     assert _ask(prop, assum) is expected
 
 
