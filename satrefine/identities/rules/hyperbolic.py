@@ -37,6 +37,8 @@ from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
 from ._tables import ZERO, Family, Row, Rules
 
+# Throughout: the argument is m*pi*I/2 + x.  Nothing is declared about m: each row states
+# its parity (which also makes it an integer), and that is what tells the rows apart.
 m, x = symbols('m x')
 
 _EVEN = Q.even(m)

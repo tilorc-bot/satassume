@@ -38,6 +38,8 @@ from sympy.calculus.accumulationbounds import AccumBounds
 
 from ._tables import ZERO, Family, Row, Rules
 
+# Throughout: the argument is n*pi/2 + r, and x is arbitrary.  Nothing is declared about n:
+# each row states its parity (which also makes it an integer), and that is what tells the rows apart.
 n, r, x = symbols('n r x')
 F = Function('F')
 

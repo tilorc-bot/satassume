@@ -59,13 +59,16 @@ from __future__ import annotations
 from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
 from sympy.core import Mul
 
-from ._tables import ZERO, Family, Identities, Row, Rules, derive, exponent, node_measure, part
+from ._tables import ZERO, Family, Identities, Row, Rules, derive, exponent, given, node_measure, part
 from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
-z, b, e, p, r, w, a, n, y = symbols('z b e p r w a n y')
+# Throughout: k and m are integers, u commutes (a factor of a product), c is imaginary and
+# s real.  z, b, e, p, r, w, a, n and y are arbitrary; each row states its own conditions.
+z, b, e, p, r, u, w, a, n, y = symbols('z b e p r u w a n y')
 c = part('c', Q.imaginary)   # the imaginary factors of a product
 s = part('s', Q.real)        # the real factors of a product
 k, m = exponent('k'), exponent('m')   # exponents that also bind 1 (conjugate(x) is conjugate(x)**1)
+rows = given({k: Q.integer, m: Q.integer, u: Q.commutative})
 
 DEFINITIONS: list[Row] = [   # (lhs, rhs, domain): stage 0 definitions through sign
     (Abs(z), z/sign(z),        ~Q.zero(z) & Q.finite(z)),   # sign z = z/|z| (Abs(zoo) is oo)
@@ -93,7 +96,7 @@ SPLITS: list[Row] = [   # an exact multiplicative identity; the ordering demands
 _IM_POSITIVE = Q.positive(im(a)) | Q.positive(-I*a)   # the two spellings of "on the positive imaginary axis"
 _IM_NEGATIVE = Q.negative(im(a)) | Q.negative(-I*a)
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis)
+RULES: list[Row] = rows([   # (lhs, rhs[, hypothesis])
     # Abs, re, im under sign facts
     # (the sign rows are stated over the extended reals: they hold at +-oo, where
     # Abs(+-oo) = oo, re(+-oo) = +-oo, im(+-oo) = 0, sign(+-oo) = +-1, conjugate(+-oo) = +-oo,
@@ -125,15 +128,13 @@ RULES: list[Row] = [   # (lhs, rhs, hypothesis)
     (conjugate(b**e), conjugate(b)**e, Q.integer(e)),                    # conjugate(b**e) = conjugate(b)**e, integer e
     (conjugate(b**e), b**conjugate(e), Q.positive(b)),                   # conjugate(b**e) = b**conjugate(e), b > 0
     # Mul
-    (w*conjugate(w), Abs(w)**2, Q.commutative(w)),                       # w*conjugate(w) = |w|**2
-    (w**e*conjugate(w)**e, Abs(w)**(2*e), Q.integer(e) & Q.commutative(w)),   # ... and for integer powers
-    (w**k*conjugate(w)**m, Abs(w)**(2*m)*w**(k - m),                      # ... unequal positive powers,
-     Q.integer(k) & Q.integer(m) & Q.positive(m) & Q.positive(k - m) & Q.commutative(w)),   # the higher one w's
-    (w**k*conjugate(w)**m, Abs(w)**(2*k)*conjugate(w)**(m - k),           # ... or conjugate(w)'s
-     Q.integer(k) & Q.integer(m) & Q.positive(k) & Q.positive(m - k) & Q.commutative(w)),
+    (u*conjugate(u), Abs(u)**2),                                         # u*conjugate(u) = |u|**2
+    (u**e*conjugate(u)**e, Abs(u)**(2*e), Q.integer(e)),                 # ... and for integer powers
+    (u**k*conjugate(u)**m, Abs(u)**(2*m)*u**(k - m), Q.positive(m) & Q.positive(k - m)),            # ... unequal positive powers, the higher one u's
+    (u**k*conjugate(u)**m, Abs(u)**(2*k)*conjugate(u)**(m - k), Q.positive(k) & Q.positive(m - k)),   # ... or conjugate(u)'s
     (a*zoo, zoo, Q.finite(a) & ~Q.zero(a)),                              # zoo absorbs a nonzero finite factor
     ((-1)**a*(-1)**e, (-1)**(a + e), true),                               # (-1)**a = exp(I*pi*a): the powers of -1 combine
-]
+])
 
 _OFF_NEGATIVE_AXIS = ~Q.extended_negative(y) | Q.nonnegative(re(y)) | ~Q.zero(im(y))
 

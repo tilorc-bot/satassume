@@ -47,9 +47,11 @@ from __future__ import annotations
 from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Min, Piecewise, Q, S, Tuple,
                    count_ops, nan, symbols, true)
 
-from ._tables import Family, Identities, Rules
+from ._tables import Family, Identities, Rules, given
 
+# Throughout: c is nonzero.  The other variables are arbitrary; each row states its own conditions.
 a, b, c, h, i, j, lo, hi, r, x = symbols('a b c h i j lo hi r x')
+rows = given({c: Q.nonzero})
 G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(x, h), derivatives of DiracDelta
 
 FACTS = [
@@ -73,14 +75,14 @@ INFINITE = [
     (Min(a, b), b, Q.positive_infinite(a)),
 ]
 
-DIRAC = [
+DIRAC = rows([
     # DiracDelta and all its derivatives vanish off the origin (x real, nonzero).
     (DiracDelta(x), S.Zero, Q.nonzero(x)),
     (G(x, r), S.Zero, Q.nonzero(x)),
     # DiracDelta(c*x) = DiracDelta(x)/|c| for nonzero real c and real x (SymPy's
     # expand(diracdelta=True) convention); derivatives pick up sign(c)**k.
-    (DiracDelta(c*x), DiracDelta(x)/Abs(c), Q.nonzero(c) & Q.real(x)),
-]
+    (DiracDelta(c*x), DiracDelta(x)/Abs(c), Q.real(x)),
+])
 
 RULES = DIRAC + INFINITE
 

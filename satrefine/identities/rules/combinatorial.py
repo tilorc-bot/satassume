@@ -56,6 +56,8 @@ from sympy import (Function, Q, S, binomial, factorial, ff, gamma, rf,
 
 from ._tables import Family, Rules
 
+# Throughout: n and x are first arguments and k the second.  Nothing is declared: no
+# assumption holds for a variable in every row, so each row states its own.
 n, k, x = symbols('n k x')
 G = Function('G')        # generic head: binomial, rf and ff share these rows
 

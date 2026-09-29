@@ -64,10 +64,12 @@ from sympy import (Abs, I, Interval, Piecewise, Q, S, acos, acosh, acot, acoth, 
                    atan2, atanh, cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols, tan,
                    tanh, true)
 
-from ._tables import ZERO, Family, Identities, Row, Rules, node_measure
+from ._tables import ZERO, Family, Identities, Row, Rules, given, node_measure
 from ._wraps import reflect_full, reflect_half, sawtooth
 
-t, z, x, y = symbols('t z x y')
+# Throughout: t is real and u is an extended real (+-oo included).  z, x and y are arbitrary.
+t, u, z, x, y = symbols('t u z x y')
+rows = given({t: Q.real, u: lambda v: Q.real(v) | Q.extended_real(v)})
 
 
 def _reflect_half_imag(z):
@@ -89,13 +91,13 @@ atanh(1) = oo``, ``acoth(coth(-oo)) = acoth(-1) = -oo``), so a one-sided bound, 
 only ``Q.extended_real``, fires them (issue #10, B1-B7).  ``Q.real`` stays first: SymPy's ``ask``
 proves ``Q.real(sin(x))`` for a real ``x`` but not ``Q.extended_real(sin(x))``."""
 
-FACTS: list[Row] = [   # (lhs, rhs, domain)
-    (asin(sin(t)), reflect_half(t),            Q.real(t)),   # asin undoes sin up to a reflection
-    (asin(cos(t)), reflect_half(pi/2 - t),     Q.real(t)),   # cos t = sin(pi/2 - t)
-    (acos(cos(t)), reflect_full(t),            Q.real(t)),   # acos undoes cos up to a reflection
-    (acos(sin(t)), reflect_full(pi/2 - t),     Q.real(t)),   # sin t = cos(pi/2 - t)
-    (atan(tan(t)), sawtooth(t, pi),            Q.real(t) & ~Q.integer(t/pi + S.Half)),   # atan undoes tan up to a period, off the poles
-    (atan(cot(t)), sawtooth(pi/2 - t, pi),     Q.real(t) & ~Q.integer(t/pi)),            # cot t = tan(pi/2 - t), off the poles
+FACTS: list[Row] = rows([   # (lhs, rhs[, domain])
+    (asin(sin(t)), reflect_half(t)),                          # asin undoes sin up to a reflection
+    (asin(cos(t)), reflect_half(pi/2 - t)),                   # cos t = sin(pi/2 - t)
+    (acos(cos(t)), reflect_full(t)),                          # acos undoes cos up to a reflection
+    (acos(sin(t)), reflect_full(pi/2 - t)),                   # sin t = cos(pi/2 - t)
+    (atan(tan(t)), sawtooth(t, pi),            ~Q.integer(t/pi + S.Half)),   # atan undoes tan up to a period, off the poles
+    (atan(cot(t)), sawtooth(pi/2 - t, pi),     ~Q.integer(t/pi)),            # cot t = tan(pi/2 - t), off the poles
     # The hyperbolic inverses hold off the lines im z = (k + 1/2)*pi, where the forward
     # function lands on the inverse's branch cut and the result depends on the sign of
     # re z (asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2, atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2).
@@ -112,12 +114,12 @@ FACTS: list[Row] = [   # (lhs, rhs, domain)
                             (sign(y)*pi/2, Q.zero(x) & Q.nonzero(y)),
                             (nan, Q.zero(x) & Q.zero(y)),
                             (atan2(y, x), true)), true),
-]
+])
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis)
-    (acosh(cosh(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # acosh undoes cosh up to sign, extended real t (acosh(cosh(+-oo)) = oo)
-    (asech(sech(t)), Abs(t), Q.real(t) | Q.extended_real(t)),   # asech undoes sech up to sign, extended real t (asech(0) = oo)
-]
+RULES: list[Row] = rows([   # (lhs, rhs[, hypothesis])
+    (acosh(cosh(u)), Abs(u)),   # acosh undoes cosh up to sign (acosh(cosh(+-oo)) = oo)
+    (asech(sech(u)), Abs(u)),   # asech undoes sech up to sign (asech(0) = oo)
+])
 
 RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)
     (atan(y), Interval.open(-pi/2, pi/2),  Q.real(y)),

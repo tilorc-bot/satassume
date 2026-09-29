@@ -92,6 +92,9 @@ from sympy.matrices.expressions.matexpr import MatrixElement
 
 from ..rules._tables import Family, Rules
 
+# Throughout: A and B are m x m, M is p x p, N is p x m, Z and R are m x q, W is q x s (the
+# shapes are the MatrixSymbols below); c is a scalar, i and j are indices.  No predicate is
+# declared: none holds for a matrix in every row, so each row states its own.
 c, i, j, m, p, q, s = symbols('c i j m p q s')
 A = MatrixSymbol('A', m, m)     # square
 B = MatrixSymbol('B', m, m)

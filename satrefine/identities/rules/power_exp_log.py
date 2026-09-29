@@ -94,6 +94,9 @@ from sympy.core import Pow
 from ._tables import (ZERO, Family, Identities, Row, Rules, count_measure, derive, node_measure, part, principal,
                       size)
 
+# Throughout: b is a base; a, e and n are exponents; p and r are factors of a product; z and x
+# are arguments.  Nothing is declared: no assumption holds for a variable in every row (e is an
+# integer in one row and positive in another), so each row states its own.
 z, b, e, p, r, x, a, n = symbols('z b e p r x a n')
 c = part('c', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
 
