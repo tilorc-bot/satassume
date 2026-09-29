@@ -59,7 +59,7 @@ from __future__ import annotations
 from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
 from sympy.core import Mul
 
-from ._tables import ZERO, Family, Identities, Row, Rules, derive, exponent, node_measure, part
+from ._tables import ZERO, Family, Identities, Row, Rules, add_rules, derive, exponent, node_measure, part
 from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
 # z, b, e, y, r, w and a are arbitrary (b, e, y and r also appear in power_exp_log's
@@ -79,10 +79,10 @@ ASSUMED = {~Q.zero(d),                     # d is nonzero
            Q.imaginary(v),                 # v is imaginary
            Q.commutative(g)}               # g commutes (a factor of a product)
 
-DEFINITIONS: list[Row] = [   # (lhs, rhs[, domain]): stage 0 definitions through sign
+DEFINITIONS: list[Row] = add_rules([   # stage 0 definitions through sign
     (Abs(f), f/sign(f)),                   # sign f = f/|f| (Abs(zoo) is oo)
     (arg(d), -I*log(sign(d))),             # sign d = exp(I*arg d), arg in (-pi, pi]
-]
+])
 # With the sign rows below they give Abs and arg of positive, negative and imaginary
 # arguments.  re/im of conjugates, sums, exponentials and logarithms and |conjugate w|
 # are evaluated by SymPy when the node is built and need no row; re/im of a real power
@@ -90,60 +90,76 @@ DEFINITIONS: list[Row] = [   # (lhs, rhs[, domain]): stage 0 definitions through
 # imaginary or signed argument stay stated: a definition through conjugate would lose
 # them for products (SymPy distributes conjugate(x*y) before Q.real(x*y) can apply).
 
-FACTS: list[Row] = DEFINITIONS + [   # (lhs, rhs[, domain])
+FACTS: list[Row] = DEFINITIONS + add_rules([
     (Abs(exp(z), evaluate=False), exp(re(z))),                         # |exp z| = exp(re z) (SymPy evaluates the lhs)
     (arg(exp(z)),       im(z) + 2*pi*floor(S.Half - im(z)/(2*pi))),    # arg(exp z) = im z wrapped onto (-pi, pi]
     (arg(conjugate(w)), -arg(w) + 2*pi*floor(S.Half + arg(w)/(2*pi))), # arg is odd off the negative axis (nan at 0 on both sides)
-]
+])
 
-SPLITS: list[Row] = [   # an exact multiplicative identity; the ordering demands progress
+SPLITS: list[Row] = add_rules([   # an exact multiplicative identity; the ordering demands progress
     (sign(y*r),        sign(y)*sign(r)),                 # sign is multiplicative
-]
+])
 # conjugate needs no split rows: SymPy distributes conjugate over sums and products on
 # construction, so conjugate(x*y) reaches the table as conjugate(x)*conjugate(y).
 
 _IM_POSITIVE = Q.positive(im(v)) | Q.positive(-I*v)   # the two spellings of "on the positive imaginary axis"
 _IM_NEGATIVE = Q.negative(im(v)) | Q.negative(-I*v)
 
-RULES: list[Row] = [   # (lhs, rhs[, hypothesis])
+RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypothesis of its rows
     # Abs, re, im under sign facts
     # (the sign rows are stated over the extended reals: they hold at +-oo, where
     # Abs(+-oo) = oo, re(+-oo) = +-oo, im(+-oo) = 0, sign(+-oo) = +-1, conjugate(+-oo) = +-oo,
     # and a one-sided bound such as Q.gt(a, 1) proves only the extended signs: issue #10, B1-B7.
     # The finite predicate is kept first: SymPy's ask proves Q.real(sin(x)) for a real x but
     # not Q.extended_real(sin(x)), whose handler goes by signs)
-    (Abs(a), a,      Q.nonnegative(a) | Q.extended_nonnegative(a)),      # |a| = a for a >= 0 (also a = oo)
-    (Abs(a), -a,     Q.nonpositive(a) | Q.extended_nonpositive(a)),      # |a| = -a for a <= 0 (also a = -oo)
-    (re(u), u),                                                          # re u = u
-    (im(u), S.Zero),                                                     # im u = 0
-    (re(v), S.Zero),                                                     # re v = 0
-    (im(v), -I*v),                                                       # im(i*t) = t
-    # re / im are linear over the reals (these hold at infinity, where the definitions need a finite argument)
-    (re(s*w), s*re(w)),                                                  # a real factor comes out of re
-    (im(s*w), s*im(w)),                                                  # ... and of im
-    (re(vs*w), -I*vs*re(I*w)),                                           # re(vs*w) = (-i*vs)*re(i*w), imaginary vs
-    (im(vs*w), -I*vs*im(I*w)),                                           # im(vs*w) = (-i*vs)*im(i*w), imaginary vs
+    add_rules([(Abs(a), a)],                     # |a| = a for a >= 0 (also a = oo)
+              assuming={Q.nonnegative(a) | Q.extended_nonnegative(a)})
+    + add_rules([(Abs(a), -a)],                  # |a| = -a for a <= 0 (also a = -oo)
+                assuming={Q.nonpositive(a) | Q.extended_nonpositive(a)})
+    + add_rules([
+        (re(u), u),                              # re u = u
+        (im(u), S.Zero),                         # im u = 0
+        (re(v), S.Zero),                         # re v = 0
+        (im(v), -I*v),                           # im(i*t) = t
+        # re / im are linear over the reals (these hold at infinity, where the definitions need a finite argument)
+        (re(s*w), s*re(w)),                      # a real factor comes out of re
+        (im(s*w), s*im(w)),                      # ... and of im
+        (re(vs*w), -I*vs*re(I*w)),               # re(vs*w) = (-i*vs)*re(i*w), imaginary vs
+        (im(vs*w), -I*vs*im(I*w)),               # im(vs*w) = (-i*vs)*im(i*w), imaginary vs
+    ])
     # sign
-    (sign(a), S.One,         Q.positive(a) | Q.extended_positive(a)),    # sign a = 1 for a > 0 (also a = oo)
-    (sign(a), S.NegativeOne, Q.negative(a) | Q.extended_negative(a)),    # sign a = -1 for a < 0 (also a = -oo)
-    (sign(v), I,             _IM_POSITIVE),                              # sign(i*t) = i for t > 0
-    (sign(v), -I,            _IM_NEGATIVE),                              # sign(i*t) = -i for t < 0
-    (sign(Abs(d)), S.One),                                               # sign|d| = 1
-    (sign(exp(z)), S.One,    Q.real(z)),                                 # sign(exp z) = 1 for real z
+    + add_rules([(sign(a), S.One)],              # sign a = 1 for a > 0 (also a = oo)
+                assuming={Q.positive(a) | Q.extended_positive(a)})
+    + add_rules([(sign(a), S.NegativeOne)],      # sign a = -1 for a < 0 (also a = -oo)
+                assuming={Q.negative(a) | Q.extended_negative(a)})
+    + add_rules([(sign(v), I)], assuming={_IM_POSITIVE})    # sign(i*t) = i for t > 0
+    + add_rules([(sign(v), -I)], assuming={_IM_NEGATIVE})   # sign(i*t) = -i for t < 0
+    + add_rules([(sign(Abs(d)), S.One)])         # sign|d| = 1
+    + add_rules([(sign(exp(z)), S.One)],         # sign(exp z) = 1 for real z
+                assuming={Q.real(z)})
     # conjugate
-    (conjugate(u), u),                                                   # conjugate u = u
-    (conjugate(v), -v),                                                  # conjugate v = -v
-    (conjugate(exp(z), evaluate=False), exp(conjugate(z))),              # conjugate(exp z) = exp(conjugate z) (SymPy evaluates the lhs)
-    (conjugate(b**n), conjugate(b)**n),                                  # conjugate(b**n) = conjugate(b)**n
-    (conjugate(b**e), b**conjugate(e), Q.positive(b)),                   # conjugate(b**e) = b**conjugate(e), b > 0
+    + add_rules([
+        (conjugate(u), u),                                        # conjugate u = u
+        (conjugate(v), -v),                                       # conjugate v = -v
+        (conjugate(exp(z), evaluate=False), exp(conjugate(z))),   # conjugate(exp z) = exp(conjugate z) (SymPy evaluates the lhs)
+        (conjugate(b**n), conjugate(b)**n),                       # conjugate(b**n) = conjugate(b)**n
+    ])
+    + add_rules([(conjugate(b**e), b**conjugate(e))],   # conjugate(b**e) = b**conjugate(e), b > 0
+                assuming={Q.positive(b)})
     # Mul
-    (g*conjugate(g), Abs(g)**2),                                         # g*conjugate(g) = |g|**2
-    (g**n*conjugate(g)**n, Abs(g)**(2*n)),                               # ... and for integer powers
-    (g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m), Q.positive(m) & Q.positive(h - m)),            # ... unequal positive powers, the higher one g's
-    (g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h), Q.positive(h) & Q.positive(m - h)),   # ... or conjugate(g)'s
-    (f*zoo, zoo),                                                        # zoo absorbs a nonzero finite factor
-    ((-1)**a*(-1)**e, (-1)**(a + e)),                                    # (-1)**a = exp(I*pi*a): the powers of -1 combine
-]
+    + add_rules([
+        (g*conjugate(g), Abs(g)**2),                  # g*conjugate(g) = |g|**2
+        (g**n*conjugate(g)**n, Abs(g)**(2*n)),        # ... and for integer powers
+    ])
+    + add_rules([(g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m))],             # ... unequal positive powers, the higher one g's
+                assuming={Q.positive(m), Q.positive(h - m)})
+    + add_rules([(g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h))],   # ... or conjugate(g)'s
+                assuming={Q.positive(h), Q.positive(m - h)})
+    + add_rules([
+        (f*zoo, zoo),                                 # zoo absorbs a nonzero finite factor
+        ((-1)**a*(-1)**e, (-1)**(a + e)),             # (-1)**a = exp(I*pi*a): the powers of -1 combine
+    ])
+)
 
 _OFF_NEGATIVE_AXIS = ~Q.extended_negative(y) | Q.nonnegative(re(y)) | ~Q.zero(im(y))
 

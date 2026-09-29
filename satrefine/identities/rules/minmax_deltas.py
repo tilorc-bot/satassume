@@ -45,9 +45,9 @@ factors at once; the row scales out one and the dispatcher repeats it.
 from __future__ import annotations
 
 from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Min, Piecewise, Q, S, Tuple,
-                   count_ops, nan, symbols, true)
+                   count_ops, nan, symbols)
 
-from ._tables import Family, Identities, Rules
+from ._tables import Family, Identities, Rules, add_rules
 
 a, b, d, i, j, lo, hi, inf, ninf, r, t, u, w = symbols('a b d i j lo hi inf ninf r t u w')
 G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(u, w), derivatives of DiracDelta
@@ -56,18 +56,22 @@ G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(u, w), 
 # The letters follow the tables' convention (t real; u extended real; d nonzero; a, b, r, w arbitrary).
 ASSUMED = {Q.extended_real(u)}   # u is an extended real (Heaviside's argument)
 
-FACTS = [
-    (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True))),
-    (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True))),
-    (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True)), true,
-     Q.infinite(i) & Q.infinite(j)),                     # unless: KroneckerDelta(oo, oo) is undefined
-    (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
-    (G(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)), (nan, True))),
-]
+FACTS = (
+    add_rules([
+        (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True))),
+        (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True))),
+    ])
+    + add_rules([(G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True)))],
+                unless=Q.infinite(i) & Q.infinite(j))      # KroneckerDelta(oo, oo) is undefined
+    + add_rules([
+        (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
+        (G(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)), (nan, True))),
+    ])
+)
 
 ASSUMED |= {Q.positive_infinite(inf), Q.negative_infinite(ninf)}   # inf is oo, ninf is -oo
 
-INFINITE = [
+INFINITE = add_rules([
     # Max(oo, b) = oo and Max(-oo, b) = b for every b Max is defined at (extended real b);
     # Min likewise.  The order vocabulary proves Q.ge(a, b) from an infinite a only for an
     # extended real b, which a plain symbol is not.  (Pairs of any arity: the other
@@ -76,18 +80,18 @@ INFINITE = [
     (Max(ninf, b), b),
     (Min(ninf, b), ninf),
     (Min(inf, b), b),
-]
+])
 
 ASSUMED |= {Q.nonzero(d), Q.real(t)}      # d is off the origin (nonzero: real and not 0), t is real
 
-DIRAC = [
+DIRAC = add_rules([
     # DiracDelta and all its derivatives vanish off the origin (d real, nonzero).
     (DiracDelta(d), S.Zero),
     (G(d, r), S.Zero),
     # DiracDelta(d*t) = DiracDelta(t)/|d| for nonzero real d and real t (SymPy's
     # expand(diracdelta=True) convention); derivatives pick up sign(d)**k.
     (DiracDelta(d*t), DiracDelta(t)/Abs(d)),
-]
+])
 
 RULES = DIRAC + INFINITE
 

@@ -43,9 +43,11 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
     return rows
 
 
-def add_rules(rows: list, assuming=()) -> list[Row]:
+def add_rules(rows: list, assuming=(), unless=None) -> list[Row]:
     """``rows`` with the facts in ``assuming`` added to the condition of each row whose
-    left side holds all their variables, on top of the family's ``ASSUMED``: facts
-    that hold for these rows only ("here n is even").  The rows returned are ordinary
-    rows, so a row keeps its facts in every table it is reused in."""
-    return [assume(row, assuming) for row in rows]
+    left side holds all their variables, on top of the family's ``ASSUMED``: the
+    hypotheses of these rows ("here n is even", "for 0 <= a < d").  ``unless``, if
+    given, is each row's exception: the row does not fire where it is provable.  The
+    rows returned are ordinary rows, so a row keeps its facts in every table it is
+    reused in."""
+    return [assume(row, assuming) + ((unless,) if unless is not None else ()) for row in rows]

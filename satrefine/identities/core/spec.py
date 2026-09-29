@@ -37,7 +37,7 @@ from __future__ import annotations
 from dataclasses import KW_ONLY, dataclass
 from typing import Any, Callable
 
-from sympy import And, Eq, Or, true
+from sympy import And, Eq, Or, Symbol, true
 
 from .rewrite import identity_handler, rule_handler
 
@@ -127,10 +127,12 @@ def _define(row: tuple, definitions: dict) -> list[tuple]:
 
 
 def assume(row: tuple, facts) -> tuple:
-    """``row`` with the facts about its left side's variables in its condition."""
+    """``row`` with the facts about its left side's variables in its condition (a
+    matrix's size counts as a variable of the left side: ``Determinant(A)`` holds ``m``)."""
     lhs, rhs, *rest = row
     condition, unless = (rest or [true])[0], rest[1:]
-    held = [f for f in facts if f.free_symbols <= lhs.free_symbols]
+    variables = lhs.free_symbols | lhs.atoms(Symbol)
+    held = [f for f in facts if f.free_symbols <= variables]
     return (lhs, rhs, And(*held, condition), *unless)
 
 

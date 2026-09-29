@@ -27,7 +27,7 @@ from __future__ import annotations
 from sympy import Eq, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
-from ._tables import Family, Identities, Rules, node_measure
+from ._tables import Family, Identities, Rules, add_rules, node_measure
 
 
 def integer(u):
@@ -56,7 +56,7 @@ ASSUMED |= {integer(h) | Q.infinite(h)}   # h is an integer or an infinity
 ASSUMED |= {Q.integer(m),
             Eq(g, floor(w)) | Eq(g, m*floor(w)) | Eq(g, ceiling(w)) | Eq(g, m*ceiling(w))}
 
-FLOOR = [
+FLOOR = add_rules([
     (floor(h), h),                       # floor(3) = 3, floor(oo) = oo
     (floor(n + x), floor(x) + n),        # floor(x + 3) = floor(x) + 3
     # g moves out as n does, for any w: floor(w) is an integer or, for an infinite w, w
@@ -64,25 +64,25 @@ FLOOR = [
     # (floor(1/2 + I*oo) = 1/2 + I*oo, where flooring each part gives I*oo), so its
     # expressions can keep a finite part there that these rows drop: the same value.
     (floor(g + x), floor(x) + g),
-]
+])
 
-CEILING = [
+CEILING = add_rules([
     (ceiling(h), h),
     (ceiling(n + x), ceiling(x) + n),
     (ceiling(g + x), ceiling(x) + g),
-]
+])
 
-FRAC = [
+FRAC = add_rules([
     (frac(n + x), frac(x)),              # frac(x + 3) = frac(x)
-]
+])
 
 # f is finite.  (A Gaussian integer f is too, but ask does not see it: issue #19.)  Not
 # at +-oo, where frac is AccumBounds(0, 1).
 ASSUMED |= {Q.finite(f) | Q.real(f) | integer(f)}
 
-FRAC_DEFINITION = [
+FRAC_DEFINITION = add_rules([
     (frac(f), f - floor(f)),             # gives frac(3) = 0 and frac(f) = f - n on [n, n + 1)
-]
+])
 
 
 # ---- Mod, Rem ------------------------------------------------------------------
@@ -90,29 +90,28 @@ FRAC_DEFINITION = [
 
 ASSUMED |= {Q.zero(zero)}
 
-MOD = [
-    (Mod(a, d), S.Zero, Q.integer(a/d)),                                                 # Mod(6, 3) = 0
-    (Mod(zero, b), S.Zero),                                                              # Mod(0, b) = 0
-    (Mod(c + x, d), Mod(x, d), Q.integer(c/d)),                                          # Mod(x + 6, 3) = Mod(x, 3)
-    (Mod(a, b), a, (Q.nonnegative(a) & less(a, b)) | (Q.nonpositive(a) & less(b, a))),   # 0 <= a < b, b < a <= 0
-    # same signs; never the reverse rewrite, so Mod and Rem cannot loop
-    (Mod(a, b), Rem(a, b), (Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))),
-]
+MOD = (add_rules([(Mod(a, d), S.Zero)], assuming={Q.integer(a/d)})             # Mod(6, 3) = 0
+       + add_rules([(Mod(zero, b), S.Zero)])                                    # Mod(0, b) = 0
+       + add_rules([(Mod(c + x, d), Mod(x, d))], assuming={Q.integer(c/d)})     # Mod(x + 6, 3) = Mod(x, 3)
+       # for 0 <= a < b or b < a <= 0
+       + add_rules([(Mod(a, b), a)],
+                   assuming={(Q.nonnegative(a) & less(a, b)) | (Q.nonpositive(a) & less(b, a))})
+       # for a and b of the same sign; never the reverse rewrite, so Mod and Rem cannot loop
+       + add_rules([(Mod(a, b), Rem(a, b))],
+                   assuming={(Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))}))
 
-REM = [
-    (Rem(a, d), S.Zero, Q.integer(a/d)),                                 # Rem(6, 3) = 0
-    (Rem(zero, b), S.Zero),                                              # Rem(0, b) = 0
-    # Rem(a, b) = a for |a| < |b|, one row per way the signs can be known
-    (Rem(a, b), a, Q.nonnegative(a) & (less(a, b) | less(a, -b))),      # 0 <= a < |b|
-    (Rem(a, b), a, Q.nonpositive(a) & (less(-b, a) | less(b, a))),      # -|b| < a <= 0
-    (Rem(a, b), a, Q.positive(b) & less(-b, a) & less(a, b)),           # -b < a < b
-    (Rem(a, b), a, Q.negative(b) & less(b, a) & less(a, -b)),           # b < a < -b
-]
+# Rem(a, b) = a for |a| < |b|, one row per way the signs can be known
+REM = (add_rules([(Rem(a, d), S.Zero)], assuming={Q.integer(a/d)})             # Rem(6, 3) = 0
+       + add_rules([(Rem(zero, b), S.Zero)])                                    # Rem(0, b) = 0
+       + add_rules([(Rem(a, b), a)], assuming={Q.nonnegative(a) & (less(a, b) | less(a, -b))})   # 0 <= a < |b|
+       + add_rules([(Rem(a, b), a)], assuming={Q.nonpositive(a) & (less(-b, a) | less(b, a))})   # -|b| < a <= 0
+       + add_rules([(Rem(a, b), a)], assuming={Q.positive(b) & less(-b, a) & less(a, b)})        # -b < a < b
+       + add_rules([(Rem(a, b), a)], assuming={Q.negative(b) & less(b, a) & less(a, -b)}))       # b < a < -b
 
-# At a half period (a/d = n + 1/2): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2 by the
-# sign of a/d.  Identity rows: they fire once the assumptions decide sign(a/d).
-MOD_HALF = [(Mod(a, d), d*Mod(sign(a/d), 2)/2, Q.odd(2*a/d))]   # Mod(+-1, 2) = 1
-REM_HALF = [(Rem(a, d), sign(a/d)*d/2, Q.odd(2*a/d))]
+# At a half period (a/d = n + 1/2, 2*a/d odd): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2
+# by the sign of a/d.  Identity rows: they fire once the assumptions decide sign(a/d).
+MOD_HALF = add_rules([(Mod(a, d), d*Mod(sign(a/d), 2)/2)], assuming={Q.odd(2*a/d)})   # Mod(+-1, 2) = 1
+REM_HALF = add_rules([(Rem(a, d), sign(a/d)*d/2)], assuming={Q.odd(2*a/d)})
 
 
 FACTS = FRAC_DEFINITION + MOD_HALF + REM_HALF

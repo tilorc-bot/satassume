@@ -35,32 +35,35 @@ from __future__ import annotations
 
 from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
-from ._tables import ZERO, Family, Row, Rules
+from ._tables import ZERO, Family, Row, Rules, add_rules
 
-# The argument is n*pi*I/2 + r.  Nothing is assumed about n: each row states its parity
-# (which also makes it an integer), and that is what tells the rows apart.  The parities stay
-# in the rows: the table is tried by binding (``by_binding``), so both rows of a function must
-# have the same left side.  So nothing is assumed throughout.
+# The argument is n*pi*I/2 + r.  Nothing is assumed about n throughout: each row's block states
+# its parity (which also makes it an integer), and that is what tells the rows apart.  The
+# table is tried by binding (``by_binding``), so both rows of a function keep the same left
+# side, one block each: the even row, then the odd one.  So nothing is assumed throughout.
 n, r = symbols('n r')
 ASSUMED: set = set()
 
-_EVEN = Q.even(n)
-_ODD = Q.odd(n)
 
-RULES: list[Row] = [   # (lhs, rhs, hypothesis); the argument is n*pi*I/2 + r
-    (sinh(n*pi*I/2 + r), (-1)**(n/2)*sinh(r),          _EVEN),       # sinh(r + m*pi*I) = (-1)**m sinh r
-    (sinh(n*pi*I/2 + r), I*(-1)**((n - 1)/2)*cosh(r),  _ODD),        # sinh(r + pi*I/2) = I cosh r
-    (cosh(n*pi*I/2 + r), (-1)**(n/2)*cosh(r),          _EVEN),       # cosh(r + m*pi*I) = (-1)**m cosh r
-    (cosh(n*pi*I/2 + r), I*(-1)**((n - 1)/2)*sinh(r),  _ODD),        # cosh(r + pi*I/2) = I sinh r
-    (sech(n*pi*I/2 + r), (-1)**(n/2)*sech(r),          _EVEN),       # sech = 1/cosh
-    (sech(n*pi*I/2 + r), -I*(-1)**((n - 1)/2)*csch(r), _ODD),
-    (csch(n*pi*I/2 + r), (-1)**(n/2)*csch(r),          _EVEN),       # csch = 1/sinh
-    (csch(n*pi*I/2 + r), -I*(-1)**((n - 1)/2)*sech(r), _ODD),
-    (tanh(n*pi*I/2 + r), tanh(r),                      Q.even(n)),   # tanh has period pi*I
-    (tanh(n*pi*I/2 + r), coth(r),                      Q.odd(n)),    # tanh(r + pi*I/2) = coth r
-    (coth(n*pi*I/2 + r), coth(r),                      Q.even(n)),   # coth has period pi*I
-    (coth(n*pi*I/2 + r), tanh(r),                      Q.odd(n)),    # coth(r + pi*I/2) = tanh r
-]
+def _parities(even: Row, odd: Row) -> list[Row]:
+    """A function's two shift rows: ``even`` for an even ``n``, ``odd`` for an odd one."""
+    return add_rules([even], assuming={Q.even(n)}) + add_rules([odd], assuming={Q.odd(n)})
+
+
+RULES: list[Row] = (   # the argument is n*pi*I/2 + r
+    _parities((sinh(n*pi*I/2 + r), (-1)**(n/2)*sinh(r)),            # sinh(r + m*pi*I) = (-1)**m sinh r
+              (sinh(n*pi*I/2 + r), I*(-1)**((n - 1)/2)*cosh(r)))    # sinh(r + pi*I/2) = I cosh r
+    + _parities((cosh(n*pi*I/2 + r), (-1)**(n/2)*cosh(r)),          # cosh(r + m*pi*I) = (-1)**m cosh r
+                (cosh(n*pi*I/2 + r), I*(-1)**((n - 1)/2)*sinh(r)))  # cosh(r + pi*I/2) = I sinh r
+    + _parities((sech(n*pi*I/2 + r), (-1)**(n/2)*sech(r)),          # sech = 1/cosh
+                (sech(n*pi*I/2 + r), -I*(-1)**((n - 1)/2)*csch(r)))
+    + _parities((csch(n*pi*I/2 + r), (-1)**(n/2)*csch(r)),          # csch = 1/sinh
+                (csch(n*pi*I/2 + r), -I*(-1)**((n - 1)/2)*sech(r)))
+    + _parities((tanh(n*pi*I/2 + r), tanh(r)),                      # tanh has period pi*I
+                (tanh(n*pi*I/2 + r), coth(r)))                      # tanh(r + pi*I/2) = coth r
+    + _parities((coth(n*pi*I/2 + r), coth(r)),                      # coth has period pi*I
+                (coth(n*pi*I/2 + r), tanh(r)))                      # coth(r + pi*I/2) = tanh r
+)
 
 _shift = Rules([ZERO] + RULES, by_binding=True)
 

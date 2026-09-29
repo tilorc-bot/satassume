@@ -1,10 +1,13 @@
 """The rule families (one module per family) and the helpers their tables share.
 
 Each family states its standing facts in an ``ASSUMED`` set (see
-:class:`..core.spec.Family`), so a letter carries its assumptions.  A letter
-means the same in every family; a family may add facts to a reserved letter
-(``n`` even, ``p`` a positive integer), said at its ``ASSUMED`` line, but
-never contradict it:
+:class:`..core.spec.Family`), so a letter carries its assumptions, and every
+table is built with ``add_rules(rows, assuming=...)``, whose facts are the
+hypotheses of those rows only.  Rows are ``(lhs, rhs)``.  A letter means the
+same in every family; a family may add facts to a reserved letter (``n`` even,
+``p`` a positive integer), said at its ``ASSUMED`` line, but never contradict
+it.  Arbitrary letters get no facts in ``ASSUMED``; an ``add_rules`` block may
+state any hypothesis about its rows ("for 0 <= a < d"):
 
 ==============================  ================================================
 ``x``, ``y``, ``z``, ``w``      arbitrary values: no facts
