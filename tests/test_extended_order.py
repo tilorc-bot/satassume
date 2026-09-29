@@ -129,6 +129,18 @@ def test_order_sides_unread(atom):
     (Q.extended_real(x), Q.eq(x, y), None),
     (Q.eq(x, I), Q.eq(I, x), True),
     (Q.ne(x, 1), Q.lt(x, 1), True),
+    # Eq with oo / -oo is linked to positive_infinite / negative_infinite
+    (Q.eq(x, oo), Q.gt(x, 1) & ~Q.finite(x), True),               # SymPy None
+    (Q.eq(x, -oo), Q.lt(x, 1) & Q.infinite(x), True),             # SymPy None
+    (Q.eq(x, oo), Q.positive_infinite(x), True),
+    (Q.positive_infinite(x), Q.eq(x, oo), True),
+    (Q.negative_infinite(x), Q.eq(-oo, x), True),
+    (Q.ne(x, oo), Q.real(x), True),
+    (Q.eq(x + 1, oo), Q.positive_infinite(x), True),
+    (Q.eq(x, oo) | Q.eq(x, -oo), Q.extended_real(x) & Q.infinite(x), True),
+    (Q.eq(x, oo), Q.infinite(x), None),                           # x = -oo, zoo
+    (Q.eq(zoo, oo), True, False),
+    (Q.eq(-oo, oo), True, False),
 ])
 def test_answers(prop, assum, expected):
     assert _ask(prop, assum) is expected
@@ -214,7 +226,10 @@ def _holds(t, env):
     if tag == "u":
         return _unary(t[1], env[t[2]])
     _, op, a, b = t
-    return _order(op, S(a).subs(env), S(b).subs(env))
+    a, b = S(a).subs(env), S(b).subs(env)
+    if op in ("eq", "ne"):
+        return (a == b) == (op == "eq")         # value equality, any domain
+    return _order(op, a, b)
 
 
 def _to_sympy(t):
@@ -252,7 +267,8 @@ _OPS = ["lt", "le", "gt", "ge"]
 _BOUNDS = [oo, -oo, S(0), S(2)]
 _ONE = ([("u", p, x) for p in _UNARY]
         + [("r", op, x, b) for op in _OPS for b in _BOUNDS]
-        + [("r", op, b, x) for op in _OPS for b in _BOUNDS])
+        + [("r", op, b, x) for op in _OPS for b in _BOUNDS]
+        + [("r", op, x, b) for op in ("eq", "ne") for b in _BOUNDS])
 
 
 def test_every_pair_of_atoms_against_models():
@@ -274,6 +290,9 @@ _VALUES_2 = [-oo, S(-1), S(0), S(2), oo, I, zoo]
 def _atoms2(draw):
     if draw(st.integers(0, 3)) == 0:
         return ("u", draw(st.sampled_from(_UNARY)), draw(st.sampled_from([x, y])))
+    if draw(st.integers(0, 4)) == 0:
+        return ("r", draw(st.sampled_from(["eq", "ne"])), draw(st.sampled_from(_BOUNDS)),
+                draw(st.sampled_from(_TERMS)))
     return ("r", draw(st.sampled_from(_OPS)), draw(st.sampled_from(_SIDES)),
             draw(st.sampled_from(_TERMS)))
 

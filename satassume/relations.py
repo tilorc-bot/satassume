@@ -31,7 +31,10 @@ is not an extended real (hence the ``extended_real`` conjuncts of ``<=``).
 
 ``eq`` is equality of values; it holds or fails in every domain (complex,
 extended reals: ``Eq(I, I)`` is True, ``Eq(oo, oo)`` is True) and asserts
-nothing about the sides; ``ne`` is its negation.  It is given to theories
+nothing about the sides; ``ne`` is its negation.  An equality with ``oo``
+or ``-oo`` is linked to the unary vocabulary: ``eq(e, oo) <->
+positive_infinite(e)``, ``eq(e, -oo) <-> negative_infinite(e)``
+(:meth:`Relations._eq_infinity`).  It is given to theories
 that interpret it unconditionally (EUF) and, for finite real terms, to
 LRA (below).
 
@@ -455,6 +458,8 @@ class Relations:
         order = atom.pred == "lt"
         if order and self._order_sides(var, atom):
             return True                       # false: a side is no extended real
+        if atom.pred == "eq":
+            self._eq_infinity(var, atom)
         sat = sympy_atom(atom)
         ok = False
         for spec in self.specs:
@@ -499,6 +504,32 @@ class Relations:
             s._emit(guard + [-var, t])
             s._emit(guard + [var, -t])
         return ok
+
+    def _eq_infinity(self, var: int, atom: P) -> None:
+        """``eq(e, oo) <-> positive_infinite(e)`` and ``eq(e, -oo) <->
+        negative_infinite(e)``: ``Eq(e, oo)`` holds iff ``e`` is ``+oo``, in
+        any domain (``Eq(zoo, oo)`` is False)."""
+        from sympy import S
+        a, b = atom.expr
+        for inf, pred in ((S.Infinity, "positive_infinite"),
+                          (S.NegativeInfinity, "negative_infinite")):
+            if b is inf:
+                e = a
+            elif a is inf:
+                e = b
+            else:
+                continue
+            s = self.session
+            if _is_number(e):
+                v = s.engine.is_(e, pred)
+                if v is not None:
+                    s._emit([var] if v else [-var])
+                    return
+            s.ensure(e, {pred})
+            p = s.var(pred, e)
+            s._emit([-var, p])
+            s._emit([var, -p])
+            return
 
     # -- order atoms over the extended reals (clauses 1 and 2) ----------
     def _closed_extended_real(self, e):
