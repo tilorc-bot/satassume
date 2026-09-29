@@ -75,6 +75,15 @@ plus the sign of an ``oo`` or ``-oo`` summand (``x + oo``, ``oo``,
 facts and the coefficients' signs.  Anything else infinite (``oo*x``,
 ``sin(x + oo)``, ``zoo``, ``nan``) stays unread.
 
+Integrality
+-----------
+:func:`integer_form` reads ``Q.integer(e)`` for a scalar ``e`` like one
+side of a relation: ``e`` as ``sum(c*u) + k`` over the same opaque terms and
+constant terms, as an :class:`satassume.lra.Integral` payload.  The engine
+registers it under the same kind of guard (every opaque term a finite
+real, then ``e`` is exactly that form, and ``Q.integer(e)`` holds iff the
+form's value is an integer; see :meth:`satassume.relations.Relations._link_integer`).
+
 Equalities and disequalities alone would even be sound over the complex
 numbers (a rational linear system with disequalities that has a complex
 solution has a real one), but order atoms need real terms, so the one rule
@@ -96,9 +105,10 @@ from sympy.core.relational import (Equality, GreaterThan, LessThan,
                                    Unequality)
 from sympy.core.sorting import default_sort_key
 
-from .lra import LRATheory, Negated
+from .lra import Integral, LRATheory, Negated
 
-__all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation"]
+__all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
+           "integer_form"]
 
 _PRED = {Q.lt: "lt", Q.le: "le", Q.gt: "gt", Q.ge: "ge", Q.eq: "eq",
          Q.ne: "ne"}
@@ -483,6 +493,25 @@ def order_sides(atom):
         return None
 
 
+def integer_form(e):
+    """``(payload, terms)`` for ``Q.integer(e)``: an
+    :class:`~satassume.lra.Integral` payload for the linear form of ``e``
+    and its opaque terms (as :func:`terms`); None when ``e`` is not read
+    (as a side of :func:`interpret`: no ``oo``, ``nan``, ``Float``,
+    non-rational factor of a symbol, ...)."""
+    if not isinstance(e, Expr) or e.has(*_BAD):
+        return None
+    form: dict = {}
+    const = [Fraction(0)]
+    try:
+        _lin(e, Fraction(1), form, const)
+    except (_Unhandled, TypeError, ValueError):
+        return None
+    keys = sorted(form, key=default_sort_key)
+    items = tuple((t, form[t]) for t in keys if form[t])
+    return Integral(items, const[0]), keys
+
+
 #: atom -> interpret(atom), shared by every adapter (keyed by the SymPy
 #: atom itself: equal atoms linearise identically)
 _INTERPRETED: dict = {}
@@ -523,15 +552,18 @@ class LRAAdapter:
             payload, positive = r
             if not positive:
                 payload = Negated(payload)
+        self._attach(solver)
+        solver.register_atom(self.theory, var, payload)
+        self._shared.update(atom_terms)
+        return True
+
+    def _attach(self, solver) -> None:
         if self._solver is not solver:
             if self._solver is not None:
                 raise ValueError("an LRAAdapter serves a single solver")
             if not any(t is self.theory for t in solver.theories()):
                 solver.attach_theory(self.theory)
             self._solver = solver
-        solver.register_atom(self.theory, var, payload)
-        self._shared.update(atom_terms)
-        return True
 
     def interpret(self, atom):
         """``(constraint, terms)`` in one call (see :func:`interpret`),
@@ -559,6 +591,27 @@ class LRAAdapter:
             return r
         except TypeError:
             return order_sides(atom)
+
+    def integer_form(self, e):
+        """:func:`integer_form`, memoized like :meth:`interpret`."""
+        key = ("integer", e)
+        try:
+            return _INTERPRETED[key]
+        except KeyError:
+            if len(_INTERPRETED) >= _INTERPRETED_MAX:
+                _INTERPRETED.clear()
+            r = _INTERPRETED[key] = integer_form(e)
+            return r
+        except TypeError:
+            return integer_form(e)
+
+    def register_integer(self, solver, var, form) -> None:
+        """Register ``var`` for the ``Integral`` payload of ``form`` (a
+        result of :meth:`integer_form`), attaching the theory to ``solver``
+        as :meth:`register` does.  Its terms are not shared terms: an
+        integrality atom alone connects nothing."""
+        self._attach(solver)
+        solver.register_atom(self.theory, var, form[0])
 
     def terms(self, atom) -> list | None:
         """:func:`terms` through the cache; None: not interpreted."""

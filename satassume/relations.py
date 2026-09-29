@@ -109,6 +109,28 @@ The rule base derives ``positive`` (``extended_positive & finite``),
 ``nonnegative``, ``nonzero`` and the rest from these three.  Numbers are
 not linked (their unary facts are closed already).
 
+Integrality
+-----------
+Each linked ``e`` whose linear form a guarded adapter reads
+(:func:`satassume.lra_adapter.integer_form`: ``sum(c_i*u_i) + k`` with
+rational ``c_i``, ``k`` and opaque or constant terms ``u_i``, as a side of
+an LRA atom) also gets an integrality atom ``i`` ("the form is an
+integer", :class:`satassume.lra.Integral`) and, with the guard of
+clause 3,
+
+    real(u1) & ... & real(uk)  ->  (integer(e) <-> i)
+
+Sound: with every term a finite real, ``e`` is the form's value, a finite
+real, and ``integer(e)`` holds iff that value is an integer (SymPy's
+``integer`` implies finite, so ``oo`` is no integer, and an infinite term
+fails the guard).  The theory rounds bounds and branches (see
+:mod:`satassume.lra`, "Integrality"), so ``Q.integer(t)`` is False under
+``0 < t < 1`` and ``Q.ge(n, 1)`` is True for an integer ``n > 0``; the
+``<-`` half gives True where the bounds pin ``e`` to an integer
+(``Q.integer(x)`` under ``2 <= x <= 2``).  The opaque terms themselves
+are not linked (a declared-integer ``n`` inside ``2*n + 1`` counts through
+the linked sides only).  ``INTEGERS = False`` turns the link off.
+
 Constant terms
 --------------
 A closed real constant in a linear position (``pi`` of ``x <= 3*pi/2``) is
@@ -182,6 +204,10 @@ from .theory import EqualitySharing
 
 #: atom predicates the engine gives to theories
 RELATION_ATOMS = frozenset({"eq", "lt"})
+
+#: link ``integer(e)`` to an integrality atom of the guarded theories (see
+#: "Integrality")
+INTEGERS = True
 
 _OPS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 
@@ -489,21 +515,45 @@ class Relations:
             if not ad.register(solver, t, sat):
                 continue
             ok = True
-            guard = []
-            for u in terms:
-                if _is_number(u):
-                    if u not in self._bounded:
-                        self._bounded.add(u)
-                        self._bound(ad, u)
-                    if s.engine.is_(u, "real") is True:
-                        # real(u) holds at the root: its guard literal is
-                        # false everywhere, and u needs no node here
-                        continue
-                s.ensure(u, {"real"})
-                guard.append(-s.var("real", u))
+            guard = self._guard(ad, terms)
             s._emit(guard + [-var, t])
             s._emit(guard + [var, -t])
         return ok
+
+    def _guard(self, ad, terms) -> list:
+        """``[-real(u), ...]`` for the opaque terms ``u`` of a guarded
+        theory atom (clause 3); a constant term gets its bounds asserted
+        (once per session) and no literal when it is real at the root."""
+        s = self.session
+        guard = []
+        for u in terms:
+            if _is_number(u):
+                if u not in self._bounded:
+                    self._bounded.add(u)
+                    self._bound(ad, u)
+                if s.engine.is_(u, "real") is True:
+                    # real(u) holds at the root: its guard literal is
+                    # false everywhere, and u needs no node here
+                    continue
+            s.ensure(u, {"real"})
+            guard.append(-s.var("real", u))
+        return guard
+
+    def _link_integer(self, ad, e) -> None:
+        """``guard -> (integer(e) <-> i)`` for the integrality atom ``i`` of
+        ``e``'s linear form in the guarded adapter ``ad`` (see
+        "Integrality"); called once per linked expression."""
+        form = ad.integer_form(e)
+        if form is None:
+            return
+        s = self.session
+        i = s.table.aux()
+        s.solver.ensure_vars(i)
+        ad.register_integer(s.solver, i, form)
+        guard = self._guard(ad, form[1])
+        z = s.var("integer", e)
+        s._emit(guard + [-z, i])
+        s._emit(guard + [z, -i])
 
     def _eq_infinity(self, var: int, atom: P) -> None:
         """``eq(e, oo) <-> positive_infinite(e)`` and ``eq(e, -oo) <->
@@ -653,6 +703,12 @@ class Relations:
         emit([-lt, neg])
         emit([-zero, eq])
         emit([-eq, zero])
+        if INTEGERS:
+            for spec in self.specs:
+                if spec.guarded:
+                    ad = self._adapter(spec)
+                    if hasattr(ad, "integer_form"):
+                        self._link_integer(ad, e)
 
     # -- equality sharing -------------------------------------------------
     def _share(self) -> bool:
