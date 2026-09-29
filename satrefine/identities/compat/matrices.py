@@ -91,7 +91,7 @@ from sympy import Symbol
 from sympy.logic.boolalg import BooleanFunction
 from sympy.matrices.expressions.matexpr import MatrixElement
 
-from ..rules._tables import Family, Rules
+from ..rules._tables import Family, Rules, add_rules
 
 # c is a scalar, zero a zero scalar, i and j are indices; m, n, l and h are sizes.
 c, zero, i, j, m, n, l, h = symbols('c zero i j m n l h')
@@ -102,7 +102,6 @@ E = MatrixSymbol('E', m, m)     # diagonal
 O = MatrixSymbol('O', m, m)     # orthogonal
 U = MatrixSymbol('U', m, m)     # unitary
 V = MatrixSymbol('V', m, m)     # unitary
-Ur = MatrixSymbol('Ur', m, m)   # unitary with real elements
 G = MatrixSymbol('G', m, m)     # invertible
 T = MatrixSymbol('T', m, m)     # unit triangular
 Zs = MatrixSymbol('Zs', m, m)   # a square zero matrix
@@ -116,7 +115,7 @@ W = MatrixSymbol('W', n, h)     # a right neighbour of X
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 ASSUMED = {Q.symmetric(S_), Q.symmetric(M), Q.diagonal(D), Q.diagonal(E), Q.orthogonal(O),
-           Q.unitary(U), Q.unitary(V), Q.unitary(Ur), Q.real_elements(Ur), Q.invertible(G),
+           Q.unitary(U), Q.unitary(V), Q.invertible(G),
            Q.unit_triangular(T), Q.zero(Zs), Q.zero(Z), Q.zero(Y),
            Q.zero(zero)}       # zero is a zero scalar
 
@@ -210,8 +209,10 @@ MATMUL = [
     (O*O.T, Identity(m)),
     # Adjacent U.H*U and U*U.H cancel for unitary U: for real U from Q.orthogonal,
     # otherwise refused when U may be a complex orthogonal matrix ask calls unitary.
-    (Adjoint(Ur)*Ur, Identity(m)),
-    (Ur*Adjoint(Ur), Identity(m)),
+] + add_rules([
+    (Adjoint(U)*U, Identity(m)),
+    (U*Adjoint(U), Identity(m)),
+], assuming={Q.real_elements(U)}) + [   # here U has real elements
     (Adjoint(U)*U, Identity(m), S.true, Q.orthogonal(U)),
     (U*Adjoint(U), Identity(m), S.true, Q.orthogonal(U)),
     # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):

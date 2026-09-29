@@ -15,10 +15,10 @@ from sympy import And, Function, Q, Symbol, exp, true
 from ..core.match import exponent, part
 from ..core.measure import count_measure, node_measure, size
 from ..core.rewrite import Row
-from ..core.spec import Family, Identities, Rules
+from ..core.spec import Family, Identities, Rules, assume
 from ._wraps import principal
 
-__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent",
+__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "add_rules", "count_measure", "derive", "exponent",
            "node_measure", "part", "principal", "size"]
 
 
@@ -42,3 +42,10 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
                 rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
     return rows
 
+
+def add_rules(rows: list, assuming=()) -> list[Row]:
+    """``rows`` with the facts in ``assuming`` added to the condition of each row whose
+    left side holds all their variables, on top of the family's ``ASSUMED``: facts
+    that hold for these rows only ("here n is even").  The rows returned are ordinary
+    rows, so a row keeps its facts in every table it is reused in."""
+    return [assume(row, assuming) for row in rows]

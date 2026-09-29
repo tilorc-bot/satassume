@@ -92,7 +92,7 @@ class Family:
                   for p in (parts if isinstance(parts, tuple) else (parts,))]
         for rows in {id(t): t for t in tables + [self.facts, self.rules] if isinstance(t, list)}.values():
             rows[:] = [done_row for row in rows for done_row in done.setdefault(
-                id(row), (row, [_assume(r, facts) for r in _define(row, definitions)]))[1]]
+                id(row), (row, [assume(r, facts) for r in _define(row, definitions)]))[1]]
 
 
 def complete_module(module) -> None:
@@ -126,7 +126,7 @@ def _define(row: tuple, definitions: dict) -> list[tuple]:
     return rows
 
 
-def _assume(row: tuple, facts) -> tuple:
+def assume(row: tuple, facts) -> tuple:
     """``row`` with the facts about its left side's variables in its condition."""
     lhs, rhs, *rest = row
     condition, unless = (rest or [true])[0], rest[1:]

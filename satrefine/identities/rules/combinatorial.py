@@ -55,7 +55,7 @@ from __future__ import annotations
 from sympy import (Function, Q, S, binomial, factorial, ff, gamma, rf,
                    symbols)
 
-from ._tables import Family, Rules
+from ._tables import Family, Rules, add_rules
 
 x, y, z = symbols('x y z')   # arbitrary: x and y are first arguments, z the second
 G = Function('G')        # generic head: binomial, rf and ff share these rows
@@ -75,7 +75,7 @@ def _le(u, v):
     return Q.nonnegative(v - u) | Q.nonpositive(u - v) | Q.le(u, v)
 
 
-bit, f, g, h, inf, l, m, n, one, p, q, zero = symbols('bit f g h inf l m n one p q zero')
+bit, f, g, h, inf, m, n, one, p, q, zero = symbols('bit f g h inf m n one p q zero')
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 ASSUMED = {
@@ -87,7 +87,6 @@ ASSUMED = {
     Q.integer(q) & _lt(q, 0),                      # q is negative, here a negative integer
     Q.integer(m) & Q.nonnegative(m),               # m is an integer, here nonnegative
     Q.integer(p) & _lt(0, p),                      # p is positive, here a positive integer
-    Q.integer(l) & _le(l, 0),                      # l is a nonpositive integer
     Q.positive_infinite(inf),                      # inf is oo
     # f is nonnegative or a finite non-integer: not a negative integer (binomial(-1, -1) = 0)
     # and not infinite (binomial(oo, oo) = nan, and oo is not an integer)
@@ -116,9 +115,10 @@ FACTORIAL = [
 GAMMA = [
     # gamma(p) = (p - 1)! at positive integers (so gamma(m + 1) = m! for m >= 0).
     (gamma(p), factorial(p - 1)),
+] + add_rules([
     # gamma has a pole at every nonpositive integer (half-integers are left alone).
-    (gamma(l), S.ComplexInfinity),
-]
+    (gamma(n), S.ComplexInfinity),
+], assuming={_le(n, 0)})   # here n is a nonpositive integer
 
 BINOMIAL = SMALL_K + [
     # binomial(f, f) = 1.
