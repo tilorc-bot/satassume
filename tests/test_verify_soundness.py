@@ -16,12 +16,13 @@ SymPy's ``ask``:
   infinite (``oo``, ``-oo``, ``zoo``) ones, optionally also ``nan``;
 * unary predicates follow SymPy's new-assumption meaning (``real`` is finite
   real, ``nonzero`` is real and not zero, ...);
-* ``a < b`` is compared when both sides are finite reals.  For
-  ``oo``/``-oo`` it is compared too in one pass (SymPy's ``is_lt``) and
-  left free in another; any other comparison (non-real, ``zoo``, ``nan``)
-  is a free Boolean, as the engine documents (``satassume.relations``).
-  Both ``<=`` and ``>=`` are the negation of the reversed ``<`` atom, which
-  is SymPy's ``Relational.negated``;
+* order relations are over the extended reals and assert that their
+  sides are extended reals (``satassume.relations``, "Meaning"):
+  ``a < b`` is compared when both sides are finite reals or ``oo``/``-oo``,
+  and is false when a side is no extended real (non-real, ``zoo``,
+  ``nan``); a value whose extended-realness SymPy cannot tell leaves it
+  free.  ``a <= b`` is ``extended_real(a) & extended_real(b) & ~(b < a)``
+  (not the plain negation of the reversed ``<``);
 * ``Eq`` compares values; structurally identical values are equal (SymPy's
   reflexivity, ``Q.eq(e, e)`` is True even where ``e`` evaluates to
   ``nan``), a ``nan`` against anything else is unequal, and values the
@@ -118,12 +119,21 @@ def _unary(pred, v):
             "nonzero": v != 0, "integer": v.is_integer}[pred] == True  # noqa: E712
 
 
-def _lt(a, b, compare_infinities):
-    fin = ("rat", "realnum")
-    ka, kb = _kind(a), _kind(b)
-    if ka in fin and kb in fin:
-        return bool(a < b)
-    if compare_infinities and ka in fin + ("inf",) and kb in fin + ("inf",):
+def _ext(v):
+    """Is the value ``v`` an extended real (None: unknown)?"""
+    k = _kind(v)
+    if k in ("rat", "realnum", "inf"):
+        return True
+    if k in ("nan", "zoo", "cplx"):
+        return False
+    return v.is_extended_real
+
+
+def _lt(a, b):
+    ea, eb = _ext(a), _ext(b)
+    if ea is False or eb is False:
+        return False
+    if ea and eb:
         return bool(a < b)
     return None
 
@@ -143,15 +153,17 @@ def _eq(a, b):
 #              | (op, f, g) for op in and/or/imp/eqv
 
 def _atom_key(op, a, b):
-    """(normalised atom, negated): ``<=``/``>=`` negate the reversed ``<``."""
+    """(normalised atom, negated) for ``lt``/``gt``/``eq``/``ne``; for
+    ``le``/``ge`` the triple of atoms ``(lt(b, a), ext(a), ext(b))`` of
+    ``a <= b`` (``ge``: swapped) and None."""
     if op == "lt":
         return ("lt", a, b), False
     if op == "gt":
         return ("lt", b, a), False
-    if op == "le":
-        return ("lt", b, a), True
-    if op == "ge":
-        return ("lt", a, b), True
+    if op in ("le", "ge"):
+        if op == "ge":
+            a, b = b, a
+        return (("lt", b, a), ("ext", a), ("ext", b)), None
     a, b = sorted((a, b), key=lambda e: e.sort_key())
     return ("eq", a, b), op == "ne"
 
@@ -160,7 +172,11 @@ def _atoms(f, acc):
     if f[0] == "u":
         acc.add(f)
     elif f[0] == "r":
-        acc.add(_atom_key(f[1], f[2], f[3])[0])
+        key, neg = _atom_key(f[1], f[2], f[3])
+        if neg is None:
+            acc.update(key)
+        else:
+            acc.add(key)
     else:
         for g in f[1:]:
             _atoms(g, acc)
@@ -173,6 +189,9 @@ def _eval(f, env):
         return env[f]
     if tag == "r":
         key, neg = _atom_key(f[1], f[2], f[3])
+        if neg is None:
+            lt, ea, eb = key
+            return env[ea] and env[eb] and not env[lt]
         return env[key] != neg
     if tag == "not":
         return not _eval(f[1], env)
@@ -180,15 +199,17 @@ def _eval(f, env):
     return {"and": a and b, "or": a or b, "imp": (not a) or b, "eqv": a == b}[tag]
 
 
-def _worlds(fs, point, compare_infinities):
+def _worlds(fs, point):
     atoms = sorted(set().union(*(_atoms(f, set()) for f in fs)), key=str)
     fixed, free = {}, []
     for at in atoms:
         if at[0] == "u":
             v = _unary(at[1], S(at[2]).xreplace(point))
+        elif at[0] == "ext":
+            v = _ext(S(at[1]).subs(point))
         else:
             a, b = S(at[1]).subs(point), S(at[2]).subs(point)
-            v = _lt(a, b, compare_infinities) if at[0] == "lt" else _eq(a, b)
+            v = _lt(a, b) if at[0] == "lt" else _eq(a, b)
         if v is None:
             free.append(at)
         else:
@@ -208,13 +229,12 @@ def _points(domains):
 def refute(prop, assum, answer, domains):
     """A point (and atom values) where ``assum`` holds and ``prop`` differs
     from ``answer`` (``"inconsistent"``: where ``assum`` holds), or None."""
-    for compare_infinities in (True, False):
-        for point in _points(domains):
-            for env in _worlds([prop, assum], point, compare_infinities):
-                if not _eval(assum, env):
-                    continue
-                if answer == "inconsistent" or _eval(prop, env) != answer:
-                    return point, env
+    for point in _points(domains):
+        for env in _worlds([prop, assum], point):
+            if not _eval(assum, env):
+                continue
+            if answer == "inconsistent" or _eval(prop, env) != answer:
+                return point, env
     return None
 
 

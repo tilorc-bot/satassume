@@ -21,6 +21,10 @@ being added through theory solvers on the CDCL solver (DPLL(T), LRA and EUF;
 see `satassume/relations.py` and
 `agent-reports/2026-09-23-theory-interface.md`); without an adapter that
 interprets a relation, `ask` returns None as before.
+Order relations are over the extended reals and assert that their sides
+are extended reals (`x < 1` implies `Q.extended_real(x)`, `x < oo` is
+`x` extended real and not `+oo`, `x < I` is false); `Eq`/`Ne` compare
+values in any domain and assert nothing about the sides.
 Out of scope for now: matrix predicates and matrix arguments, unregistered
 custom predicates, and replacing the old `expr.is_*` system.
 
@@ -68,7 +72,8 @@ y = Symbol('y')
 ask(Q.positive(exp(y)), Q.real(y))            # True
 ask(Q.even(y + 1), Q.odd(y))                  # True
 ask(Q.positive(y), Q.real(y))                 # None: undecided, in scope
-ask(Q.positive(y), Q.gt(y, 0))                # None: y may be non-real, so y > 0 has no order meaning
+ask(Q.positive(y), Q.gt(y, 0))                # None: y = oo satisfies y > 0 (relations are over the extended reals), and positive means finite
+ask(Q.extended_positive(y), Q.gt(y, 0))       # True: y > 0 makes y an extended real
 ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
 out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 

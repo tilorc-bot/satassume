@@ -16,7 +16,7 @@ from sympy.core.relational import Relational
 
 from satassume.relations import Relations, relation_atom, default_specs
 from satassume.theory import EqualitySharing
-from satassume.formula import Not, P
+from satassume.formula import And, Not, P
 from satassume.extensions import Args
 from satassume.sympy_api import out_of_scope
 
@@ -38,8 +38,13 @@ def eng():
 
 def test_normalisation():
     assert relation_atom("gt", x, y) == P("lt", Args((y, x)))
-    assert relation_atom("ge", x, y) == Not(P("lt", Args((x, y))))
-    assert relation_atom("le", x, y) == Not(P("lt", Args((y, x))))
+    # <= and >= assert that the sides are extended reals (satassume.relations)
+    assert relation_atom("ge", x, y) == And(P("extended_real", y), P("extended_real", x),
+                                            Not(P("lt", Args((x, y)))))
+    assert relation_atom("le", x, y) == And(P("extended_real", x), P("extended_real", y),
+                                            Not(P("lt", Args((y, x)))))
+    assert relation_atom("le", x, S.One) == And(P("extended_real", x), Not(P("lt", Args((S.One, x)))))
+    assert relation_atom("le", -oo, oo) == Not(P("lt", Args((oo, -oo))))
     assert relation_atom("eq", y, x) == relation_atom("eq", x, y)
     assert relation_atom("ne", x, y) == Not(relation_atom("eq", x, y))
 
@@ -123,8 +128,9 @@ def test_old_assumptions_link():
 
 
 def test_guard_non_real_and_infinite():
-    # For non-real or possibly infinite arguments an order atom has no
-    # meaning; the answer must not come from the order theory.
+    # For possibly non-real or infinite arguments the finite-real order
+    # theory must not decide an atom (the dummy order theory has no
+    # extended-real layer, so these stay undecided).
     u, v, w = symbols("u v w")                    # no assumptions
     e = relation_engine(dummy_specs())
     assert ask_with(e, Q.lt(u, w), Q.lt(u, v) & Q.lt(v, w)) is None
@@ -134,10 +140,12 @@ def test_guard_non_real_and_infinite():
     # extended reals may be infinite: not interpreted
     a, b, c = symbols("a b c", extended_real=True)
     assert ask_with(e, Q.lt(a, c), Q.lt(a, b) & Q.lt(b, c)) is None
-    # no contradiction from a free order atom over imaginary terms
+    # an order atom over an imaginary term is false (its sides must be
+    # extended reals), whatever the theory
     im = Symbol("im", imaginary=True)
-    assert ask_with(e, Q.gt(im, 0), Q.gt(im, 0)) is True      # propositional
-    assert ask_with(e, Q.positive(im), Q.gt(im, 0)) is False  # rule base: not real
+    assert ask_with(e, Q.gt(im, 0)) is False
+    assert ask_with(e, Q.le(im, 0)) is False
+    assert ask_with(e, Q.gt(im, 0), Q.gt(im, 0)) == "inconsistent"
 
 
 def test_equality_sharing_is_needed_and_works(monkeypatch):
