@@ -10,7 +10,7 @@ tables pass as ``measure=`` are in :mod:`..core.measure`.
 """
 from __future__ import annotations
 
-from sympy import And, Function, Q, Symbol, exp
+from sympy import And, Function, Q, Symbol, exp, true
 
 from ..core.match import exponent, part
 from ..core.measure import count_measure, node_measure, size
@@ -18,8 +18,8 @@ from ..core.rewrite import Row
 from ..core.spec import Family, Identities, Rules
 from ._wraps import principal
 
-__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent", "node_measure", "part",
-           "principal", "size"]
+__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "count_measure", "derive", "exponent", "given",
+           "node_measure", "part", "principal", "size"]
 
 
 _F = Function('F')
@@ -40,3 +40,19 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
             for L, W, dom_d in exp_forms:
                 rows.append((lhs.func(L, *lhs.args[1:]), rhs.xreplace({zz: W}), And(dom, dom_d)))
     return rows
+
+
+def given(assumptions: dict):
+    """Standing assumptions on pattern variables, as a theorem starts "for n an integer":
+    ``given({n: Q.integer})`` returns a function that completes a list of rows
+    ``(lhs, rhs[, condition[, unless]])`` so that each row's condition also holds the
+    assumption of every declared variable in its left side.  The rows it returns are
+    ordinary rows; the declarations only save writing them out."""
+    def complete(rows: list) -> list[Row]:
+        out = []
+        for lhs, rhs, *rest in rows:
+            condition, unless = (rest + [true])[0], rest[1:]
+            standing = [assume(v) for v, assume in assumptions.items() if lhs.has(v)]
+            out.append((lhs, rhs, And(*standing, condition), *unless))
+        return out
+    return complete
