@@ -22,7 +22,8 @@ The atom is not interpreted (``None``) if
 * an argument is not a scalar ``Expr`` (booleans, tuples, matrices,
   matrix expressions), or the arity is not 2;
 * anything in it is ``nan``, ``oo``, ``-oo`` or ``zoo`` (even inside an
-  opaque term, e.g. ``x + oo`` or ``sin(x + oo)``);
+  opaque term, e.g. ``x + oo`` or ``sin(x + oo)``); an order atom with an
+  ``oo`` or ``-oo`` summand is read by :func:`order_sides` instead;
 * a factor of a product with free symbols is a number that is not a
   SymPy ``Rational`` (``pi*x``, ``sqrt(2)*x``, ``0.5*x``, ``I*x``): a
   constant times a symbol is nonlinear here;
@@ -61,6 +62,18 @@ term (see :func:`terms`) is a finite real**: the theory reads
 right for finite reals.  The engine guarantees this with bridge clauses
 ``real(u1) & ... & real(uk) -> (atom <-> theory atom)``.  That is why
 :func:`terms` includes terms that cancel (``x`` in ``Q.lt(x, x + 1)``).
+
+Extended reals
+--------------
+Order relations are over the extended reals (see
+:mod:`satassume.relations`, "Meaning"): the theory atom above is exact
+only when every term is a finite real, which is what the guard ensures.
+For the other cases :func:`order_sides` gives the engine each side of
+``Q.lt(a, b)`` separately, as a linear form over the same opaque terms
+plus the sign of an ``oo`` or ``-oo`` summand (``x + oo``, ``oo``,
+``2*y - oo``); the engine reads the atom's value off the terms' infinity
+facts and the coefficients' signs.  Anything else infinite (``oo*x``,
+``sin(x + oo)``, ``zoo``, ``nan``) stays unread.
 
 Equalities and disequalities alone would even be sound over the complex
 numbers (a rational linear system with disequalities that has a complex
@@ -429,6 +442,47 @@ def terms(atom) -> list | None:
     return None if r is None else r[1]
 
 
+def _side(e):
+    """``(form, inf)`` for one side of an order atom: the linear form of
+    ``e`` without its ``oo``/``-oo`` summand, and that summand's sign (+1,
+    -1, or 0 for none); raises _Unhandled."""
+    if not isinstance(e, Expr) or getattr(e, "is_Matrix", False) \
+            or getattr(e, "is_MatrixExpr", False):
+        raise _Unhandled(e)
+    inf = 0
+    form: dict = {}
+    const = [Fraction(0)]
+    for t in Add.make_args(e):
+        if t is S.Infinity or t is S.NegativeInfinity:
+            sign = 1 if t is S.Infinity else -1
+            if inf and inf != sign:
+                raise _Unhandled(e)              # oo - oo does not stay unevaluated
+            inf = sign
+            continue
+        if t.has(*_BAD):
+            raise _Unhandled(t)
+        _lin(t, Fraction(1), form, const)
+    return form, inf
+
+
+def order_sides(atom):
+    """``((form_a, inf_a), (form_b, inf_b))`` for an order atom
+    ``Q.lt(a, b)`` (or ``a < b``): per side the linear form (term ->
+    rational coefficient, zeros kept, the rational constant dropped) and
+    the sign of its ``oo`` summand (+1 for ``oo``, -1 for ``-oo``, 0 for
+    none).  None when a side is not read (as :func:`interpret`, except
+    that an ``oo`` or ``-oo`` summand is allowed) or the atom is no
+    ``lt``.  The terms are those of :func:`terms` for an atom without
+    infinities."""
+    rel = relation(atom)
+    if rel is None or rel[0] != "lt":
+        return None
+    try:
+        return _side(rel[1]), _side(rel[2])
+    except (_Unhandled, TypeError, ValueError):
+        return None
+
+
 #: atom -> interpret(atom), shared by every adapter (keyed by the SymPy
 #: atom itself: equal atoms linearise identically)
 _INTERPRETED: dict = {}
@@ -492,6 +546,19 @@ class LRAAdapter:
             return r
         except TypeError:                   # unhashable: do not cache
             return interpret(atom)
+
+    def order_sides(self, atom):
+        """:func:`order_sides`, memoized like :meth:`interpret`."""
+        key = ("sides", atom)
+        try:
+            return _INTERPRETED[key]
+        except KeyError:
+            if len(_INTERPRETED) >= _INTERPRETED_MAX:
+                _INTERPRETED.clear()
+            r = _INTERPRETED[key] = order_sides(atom)
+            return r
+        except TypeError:
+            return order_sides(atom)
 
     def terms(self, atom) -> list | None:
         """:func:`terms` through the cache; None: not interpreted."""

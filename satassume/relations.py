@@ -7,34 +7,83 @@ normalisation by :func:`relation_atom`:
   order, so ``Eq(a, b)`` and ``Eq(b, a)`` share a variable);
 * ``P('lt', Args((a, b)))`` for ``a < b``;
 
-and ``a > b`` is ``lt(b, a)``, ``a <= b`` is ``Not(lt(b, a))``, ``a >= b`` is
-``Not(lt(a, b))``, ``a != b`` is ``Not(eq(a, b))``.  Treating ``<=`` as the
-complement of the reversed ``<`` is SymPy's own definition, not an
-assumption about the arguments: ``~(x < 0)`` *is* ``x >= 0`` in SymPy
-(``Relational.negated``, ``BinaryRelation.negated``), for any ``x``, and
-``ask(Q.le(x, y), Q.gt(x, y))`` is False for a plain symbol.  Each atom gets
-one solver variable like any non-vocabulary atom (``VarTable.custom``).
+and ``a > b`` is ``lt(b, a)``, ``a != b`` is ``Not(eq(a, b))``,
+
+    a <= b   is   extended_real(a) & extended_real(b) & ~lt(b, a),
+    a >= b   is   extended_real(a) & extended_real(b) & ~lt(a, b)
+
+(an ``extended_real`` conjunct is left out for a Rational, ``oo`` or
+``-oo`` side, and the formula is False for a ``nan`` side, which is no
+extended real although the rule base cannot say so).  Each atom gets one
+solver variable like any non-vocabulary atom (``VarTable.custom``).
 
 Meaning
 -------
+Order relations are over the extended reals and assert that their sides
+are extended reals: ``a < b`` holds iff ``a`` and ``b`` are extended reals
+and ``a < b`` there (``-oo`` < every finite real < ``oo``).  So
+``Q.lt(x, 1)`` implies ``extended_real(x)``, ``x < oo`` is
+``extended_real(x) & ~positive_infinite(x)``, ``x < zoo`` and ``I < 1``
+are false, and ``~(a < b)`` is *not* ``a >= b``: it also holds when a side
+is not an extended real (hence the ``extended_real`` conjuncts of ``<=``).
+``Q.gt(x, 0)`` gives ``extended_positive(x)`` but not ``positive(x)``
+(``x = oo``).
+
 ``eq`` is equality of values; it holds or fails in every domain (complex,
-extended reals) and is given to theories that interpret it unconditionally
-(EUF).  ``lt`` has its usual meaning when both sides are finite reals;
-SymPy gives it no meaning otherwise (``is_ge`` returns None for
-non-real arguments, ``lra_satask`` refuses anything that is not
-``is_real``), so for other arguments the atom is left uninterpreted: a free
-Boolean.  A *guarded* theory (LRA) therefore never sees the atom's
-variable ``r`` itself.  The engine registers a fresh variable ``t`` with the
-theory and adds
+extended reals: ``Eq(I, I)`` is True, ``Eq(oo, oo)`` is True) and asserts
+nothing about the sides; ``ne`` is its negation.  It is given to theories
+that interpret it unconditionally (EUF) and, for finite real terms, to
+LRA (below).
 
-    real(u1) & ... & real(uk)  ->  (r <-> t)
+An ``lt`` atom ``r`` for ``a < b`` gets these clauses
+(:meth:`Relations._order_sides`, :meth:`Relations._order_infinite`):
 
-for the opaque terms ``u`` of the atom's linear form (``real`` implies
-``finite`` in the vocabulary).  When a term may be non-real, ``t`` floats
-free and can never cause a conflict involving ``r``, which is sound under
-any semantics SymPy might later adopt for such arguments.  ``eq`` atoms go
-to guarded theories the same way (LRA's ``a - b = 0``) and to unguarded
+1. *sides*: ``r -> extended_real(a)`` and ``r -> extended_real(b)``; a
+   closed side the engine knows is no extended real (``zoo``, ``I``,
+   ``1 + I``, ``nan``) makes ``r`` false outright.  This reads the node
+   facts of the sides, so it is only as sound as the templates'
+   ``extended_real`` rules (a sum or product of extended reals need not
+   be one: ``oo - oo`` and ``0*oo`` are nan).
+2. *infinite terms* (when the guarded adapter can split both sides into
+   linear forms, :func:`satassume.lra_adapter.order_sides`): each side is
+   ``sum(c_i * u_i) + k`` (rational ``c_i``, opaque terms ``u_i``, a
+   rational ``k``, and possibly one ``oo`` or ``-oo`` summand).  A term
+   pushes its side *up* if it is ``positive_infinite`` with ``c > 0`` or
+   ``negative_infinite`` with ``c < 0`` (the ``oo`` summand always does),
+   *down* in the other two cases.  In the extended reals a side with an
+   up push is ``+oo`` or undefined (``oo - oo``), and with any non-real
+   term it is no extended real either, so:
+
+   * a push up in ``a`` -> ``~r``;  a push down in ``b`` -> ``~r``;
+   * a push down in ``a``, no push up in ``a``, no push down in ``b``, every
+     term an extended real -> ``r`` (``a = -oo``, ``b > -oo``);
+   * a push up in ``b``, no push down in ``b``, no push up in ``a``, every
+     term an extended real -> ``r`` (``b = +oo``, ``a < +oo``).
+
+   The last two need every coefficient nonzero (a cancelling term would be
+   ``oo - oo``); without that they are left out (incomplete, sound).
+3. *finite terms* (LRA, unchanged): a *guarded* theory never sees ``r``
+   itself.  The engine registers a fresh variable ``t`` with the theory
+   and adds
+
+       real(u1) & ... & real(uk)  ->  (r <-> t)
+
+   for the opaque terms ``u`` of the linear form of ``a - b`` (``real``
+   implies ``finite``).  With every term a finite real both sides are
+   finite reals, where ``t`` is exact.  An atom with an ``oo`` summand has
+   no finite case and gets no ``t``.  Closed real constants (``pi``) are
+   terms with bounds (below) and never infinite.
+
+When no term is ``+-oo`` and every term is real the atom is exactly ``t``;
+when some term is infinite, clauses 2 decide it as far as the signs allow;
+with a non-real term only clause 1 applies (the side may still be real:
+``x + y`` with ``x = I``, ``y = 1 - I``).  ``eq`` atoms go to guarded
+theories with the guard of clause 3 (LRA's ``a - b = 0``) and to unguarded
 ones (EUF) directly.
+
+An ``lt`` atom is *interpreted* when clause 1 decides it, when it has an
+``oo`` summand and clauses 2 apply, or when a guarded theory registers it
+(clause 3); otherwise it keeps clause 1 but is uninterpreted (below).
 
 Links to the unary vocabulary
 -----------------------------
@@ -43,21 +92,19 @@ and every argument of a vocabulary atom of the query or the assumptions
 once the session has relations, the engine adds (``gt(e, 0)`` is the atom
 ``lt(0, e)``):
 
-====================================  ======================================
-clause                                why it is sound
-====================================  ======================================
-``positive(e) -> gt(e, 0)``           positive means real, finite, > 0
-``gt(e, 0) & real(e) -> positive(e)`` for a finite real, ``> 0`` is positive
-``negative(e) -> lt(e, 0)``           as above
-``lt(e, 0) & real(e) -> negative(e)`` as above
-``zero(e) <-> eq(e, 0)``              ``Eq(e, 0)`` holds iff ``e`` is zero,
-                                      in any domain (``Eq(nan, 0)`` is False
-                                      and ``nan`` is not zero)
-====================================  ======================================
+======================================  ======================================
+clause                                  why it is sound
+======================================  ======================================
+``extended_positive(e) <-> gt(e, 0)``   ``0 < e`` in the extended reals
+``extended_negative(e) <-> lt(e, 0)``   as above
+``zero(e) <-> eq(e, 0)``                ``Eq(e, 0)`` holds iff ``e`` is zero,
+                                        in any domain (``Eq(nan, 0)`` is
+                                        False and ``nan`` is not zero)
+======================================  ======================================
 
-The rule base derives ``nonnegative``, ``nonzero``, ``extended_*`` and the
-rest from these three.  Numbers are not linked (their unary facts are
-closed already).
+The rule base derives ``positive`` (``extended_positive & finite``),
+``nonnegative``, ``nonzero`` and the rest from these three.  Numbers are
+not linked (their unary facts are closed already).
 
 Constant terms
 --------------
@@ -110,6 +157,9 @@ object with
   is not interpreted;
 * ``terms(atom) -> list`` (guarded adapters): the opaque terms of the
   atom, for the guard;
+* optionally ``order_sides(atom)`` (guarded adapters): the linear forms of
+  the two sides of ``Q.lt(a, b)`` with their ``oo`` summands, for
+  clauses 2 (see :func:`satassume.lra_adapter.order_sides`);
 * ``shared_terms() -> set``: every term the adapter's theory knows.
 
 The default specs are the LRA and EUF adapters when their modules exist
@@ -123,7 +173,7 @@ import weakref
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
-from .formula import Not, P
+from .formula import And, Not, P
 from .rules import NPRED, PRED_INDEX
 from .theory import EqualitySharing
 
@@ -175,6 +225,15 @@ def _key(e):
     return default_sort_key(e)
 
 
+def _ext_atoms(*sides) -> list:
+    """``extended_real(e)`` for each side that is not a Rational, ``oo`` or
+    ``-oo`` (those are extended reals)."""
+    from sympy import S
+    return [P("extended_real", e) for e in sides
+            if not (getattr(e, "is_Rational", False) or e is S.Infinity
+                    or e is S.NegativeInfinity)]
+
+
 def relation_atom(name: str, lhs, rhs):
     """The formula for relation ``name`` (``eq ne lt le gt ge``)."""
     if name in ("eq", "ne"):
@@ -185,10 +244,14 @@ def relation_atom(name: str, lhs, rhs):
         return P("lt", Args((lhs, rhs)))
     if name == "gt":
         return P("lt", Args((rhs, lhs)))
-    if name == "le":
-        return Not(P("lt", Args((rhs, lhs))))
-    if name == "ge":
-        return Not(P("lt", Args((lhs, rhs))))
+    if name in ("le", "ge"):
+        a, b = (lhs, rhs) if name == "le" else (rhs, lhs)     # a <= b
+        from sympy import S
+        if a is S.NaN or b is S.NaN:
+            return False                  # nan is no extended real
+        f = Not(P("lt", Args((b, a))))
+        ext = _ext_atoms(a, b)
+        return And(*ext, f) if ext else f
     raise ValueError(f"unknown relation {name!r}")
 
 
@@ -389,6 +452,9 @@ class Relations:
         s = self.session
         solver = s.solver
         var = s.table.custom[atom]
+        order = atom.pred == "lt"
+        if order and self._order_sides(var, atom):
+            return True                       # false: a side is no extended real
         sat = sympy_atom(atom)
         ok = False
         for spec in self.specs:
@@ -403,6 +469,13 @@ class Relations:
                         elif atom in self._link_eq:
                             self._note_sides(atom, 1)
                 continue
+            if order and hasattr(ad, "order_sides"):
+                sides = ad.order_sides(sat)
+                if sides is not None:
+                    self._order_infinite(var, sides)
+                    if sides[0][1] or sides[1][1]:
+                        ok = True             # an oo summand: no finite case
+                        continue
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
                 continue
@@ -426,6 +499,86 @@ class Relations:
             s._emit(guard + [-var, t])
             s._emit(guard + [var, -t])
         return ok
+
+    # -- order atoms over the extended reals (clauses 1 and 2) ----------
+    def _closed_extended_real(self, e):
+        """``extended_real`` of a closed side, context-free (``nan`` is
+        none); None if unknown or not closed."""
+        if not _is_number(e):
+            return None
+        from sympy import S
+        if e is S.NaN:
+            return False
+        return self.session.engine.is_(e, "extended_real")
+
+    def _order_sides(self, var: int, atom: P) -> bool:
+        """Clause 1 for the ``lt`` atom ``var``: ``var -> extended_real``
+        of each side.  True if a side is known to be no extended real
+        (``var`` is then false and the atom decided)."""
+        s = self.session
+        need = []
+        for e in atom.expr:
+            v = self._closed_extended_real(e)
+            if v is False:
+                s._emit([-var])
+                return True
+            if v is None:
+                need.append(e)
+        for e in need:
+            s.ensure(e, {"extended_real"})
+            s._emit([-var, s.var("extended_real", e)])
+        return False
+
+    def _order_infinite(self, var: int, sides) -> None:
+        """Clauses 2 for the ``lt`` atom ``var`` with side forms
+        ``((form_a, inf_a), (form_b, inf_b))`` (``form``: term ->
+        coefficient; ``inf``: +1/-1 for an ``oo``/``-oo`` summand, else 0)."""
+        s = self.session
+        emit = s._emit
+        push = []                             # per side: (up lits, down lits, const up, const down)
+        ext = []                              # -extended_real(u) for every term
+        exact = True
+        seen = set()
+        for form, inf in sides:
+            up, down = [], []
+            for u, c in form.items():
+                if _is_number(u):
+                    continue                  # a bounded real constant: finite
+                if not c:
+                    exact = False             # cancels: oo - oo if infinite
+                    continue
+                s.ensure(u, {"extended_real", "positive_infinite", "negative_infinite"})
+                p, n = s.var("positive_infinite", u), s.var("negative_infinite", u)
+                (up if c > 0 else down).append(p)
+                (down if c > 0 else up).append(n)
+                if u not in seen:
+                    seen.add(u)
+                    ext.append(-s.var("extended_real", u))
+            push.append((up, down, inf > 0, inf < 0))
+        (up_a, down_a, cup_a, cdown_a), (up_b, down_b, cup_b, cdown_b) = push
+        if cup_a or cdown_b:                  # a = +oo or b = -oo: nothing is below/above
+            emit([-var])
+            return
+        for l in up_a:                        # a is +oo or undefined
+            emit([-l, -var])
+        for l in down_b:                      # b is -oo or undefined
+            emit([-l, -var])
+        if not exact:
+            return
+        # a = -oo (a push down, none up), b > -oo, everything extended real
+        rest = up_a + down_b + ext + [var]
+        if cdown_a:
+            emit(rest)
+        else:
+            for l in down_a:
+                emit([-l] + rest)
+        # b = +oo, a < +oo
+        rest = down_b + up_a + ext + [var]
+        if cup_b:
+            emit(rest)
+        else:
+            for l in up_b:
+                emit([-l] + rest)
 
     def _bound(self, ad, c) -> None:
         """Assert the rational bounds of the constant term ``c`` (``pi``,
@@ -452,9 +605,9 @@ class Relations:
     def _link(self, e) -> None:
         from sympy import S
         s = self.session
-        s.ensure(e, {"positive", "negative", "zero", "real"})
-        pos, neg = s.var("positive", e), s.var("negative", e)
-        zero, real = s.var("zero", e), s.var("real", e)
+        s.ensure(e, {"extended_positive", "extended_negative", "zero"})
+        pos, neg = s.var("extended_positive", e), s.var("extended_negative", e)
+        zero = s.var("zero", e)
         gt = self._atom_var(relation_atom("lt", S.Zero, e))
         lt = self._atom_var(relation_atom("lt", e, S.Zero))
         eqa = relation_atom("eq", e, S.Zero)
@@ -464,9 +617,9 @@ class Relations:
         eq = self._atom_var(eqa)
         emit = s._emit
         emit([-pos, gt])
-        emit([-gt, -real, pos])
+        emit([-gt, pos])
         emit([-neg, lt])
-        emit([-lt, -real, neg])
+        emit([-lt, neg])
         emit([-zero, eq])
         emit([-eq, zero])
 
