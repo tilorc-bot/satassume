@@ -156,29 +156,35 @@ TRANSPOSE = add_rules([
     (Transpose(D*E), D*E),
 ])
 
-INVERSE = add_rules([
-    # An orthogonal matrix is inverted by its transpose (so (O.T)**-1 = O).
-    (Inverse(O), O.T),
-    (Inverse(O.T), O),
-    # A unitary matrix is inverted by its conjugate transpose, never by its
-    # conjugate.  After the orthogonal rows, so SymPy's derivation of unitary
-    # from orthogonal cannot reach it for an atom.
-    (Inverse(U), Adjoint(U)),
-]) + add_rules([
+INVERSE = (
+    add_rules([
+        # An orthogonal matrix is inverted by its transpose (so (O.T)**-1 = O).
+        (Inverse(O), O.T),
+        (Inverse(O.T), O),
+        # A unitary matrix is inverted by its conjugate transpose, never by its
+        # conjugate.  After the orthogonal rows, so SymPy's derivation of unitary
+        # from orthogonal cannot reach it for an atom.
+        (Inverse(U), Adjoint(U)),
+    ])
     # (U*V)**-1 = V.H*U.H, refused when either may be a complex orthogonal matrix
     # ask called unitary.
-    (Inverse(U*V), Adjoint(V)*Adjoint(U)),
-], unless=Q.orthogonal(U) | Q.orthogonal(V))
+    + add_rules([
+        (Inverse(U*V), Adjoint(V)*Adjoint(U)),
+    ], unless=Q.orthogonal(U) | Q.orthogonal(V))
+)
 
-DETERMINANT = add_rules([
+DETERMINANT = (
     # det A = 0 for singular A, and for a zero matrix of positive size (a 0x0
     # matrix has determinant 1).
-    (Determinant(A), S.Zero),
-], assuming={Q.singular(A) | (Q.zero(A) & Q.positive(m))}) + add_rules([
-    # A unit triangular matrix has determinant 1.  (det O = 1 for orthogonal O,
-    # SymPy's rule, is wrong: the determinant is +-1.)
-    (Determinant(T), S.One),
-])
+    add_rules([
+        (Determinant(A), S.Zero),
+    ], assuming={Q.singular(A) | (Q.zero(A) & Q.positive(m))})
+    + add_rules([
+        # A unit triangular matrix has determinant 1.  (det O = 1 for orthogonal O,
+        # SymPy's rule, is wrong: the determinant is +-1.)
+        (Determinant(T), S.One),
+    ])
+)
 
 TRACE = add_rules([
     # The trace of a zero matrix is 0.
@@ -202,51 +208,64 @@ HADAMARD = add_rules([
     (HadamardProduct(Z, R), ZeroMatrix(m, n)),
 ])
 
-MATMUL = add_rules([
+MATMUL = (
     # A product with a zero factor, scalar or matrix, is the zero matrix of its shape.
-    (zero*X, ZeroMatrix(m, n)),
-]) + add_rules([
-    (X*W, ZeroMatrix(m, h)),
-], assuming={Q.zero(X) | Q.zero(W)}) + add_rules([   # either factor is zero
-    # Adjacent O.T*O and O*O.T cancel for orthogonal O.
-    (O.T*O, Identity(m)),
-    (O*O.T, Identity(m)),
+    add_rules([
+        (zero*X, ZeroMatrix(m, n)),
+    ])
+    # either factor is zero
+    + add_rules([
+        (X*W, ZeroMatrix(m, h)),
+    ], assuming={Q.zero(X) | Q.zero(W)})
+    + add_rules([
+        # Adjacent O.T*O and O*O.T cancel for orthogonal O.
+        (O.T*O, Identity(m)),
+        (O*O.T, Identity(m)),
+    ])
     # Adjacent U.H*U and U*U.H cancel for unitary U: for real U from Q.orthogonal,
     # otherwise refused when U may be a complex orthogonal matrix ask calls unitary.
-]) + add_rules([
-    (Adjoint(U)*U, Identity(m)),
-    (U*Adjoint(U), Identity(m)),
-], assuming={Q.real_elements(U)}) + add_rules([   # here U has real elements
-    (Adjoint(U)*U, Identity(m)),
-    (U*Adjoint(U), Identity(m)),
-], unless=Q.orthogonal(U)) + add_rules([
-    # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):
-    # the operator form cancels while the pattern is built).
-    (MatMul(Inverse(G), G), Identity(m)),
-    (MatMul(G, Inverse(G)), Identity(m)),
-    # Canonical form: A*A = A**2, written MatMul(A, A) since A*A is built as A**2 (refining X.T*X under Q.symmetric(X) leaves X*X).
-    (MatMul(A, A), A**2),
-    # Canonical form: scalar factors in front and combined (MatMul(X, 2, Y) ->
-    # 2*X*Y; the c*X form rebuilds its right side canonically), so a scalar
-    # between factors no longer separates a cancelling pair.
-    (c*X, c*X),
-])
+    # here U has real elements
+    + add_rules([
+        (Adjoint(U)*U, Identity(m)),
+        (U*Adjoint(U), Identity(m)),
+    ], assuming={Q.real_elements(U)})
+    + add_rules([
+        (Adjoint(U)*U, Identity(m)),
+        (U*Adjoint(U), Identity(m)),
+    ], unless=Q.orthogonal(U))
+    + add_rules([
+        # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):
+        # the operator form cancels while the pattern is built).
+        (MatMul(Inverse(G), G), Identity(m)),
+        (MatMul(G, Inverse(G)), Identity(m)),
+        # Canonical form: A*A = A**2, written MatMul(A, A) since A*A is built as A**2 (refining X.T*X under Q.symmetric(X) leaves X*X).
+        (MatMul(A, A), A**2),
+        # Canonical form: scalar factors in front and combined (MatMul(X, 2, Y) ->
+        # 2*X*Y; the c*X form rebuilds its right side canonically), so a scalar
+        # between factors no longer separates a cancelling pair.
+        (c*X, c*X),
+    ])
+)
 
-MATRIXELEMENT = add_rules([
-    # Every element of a zero matrix is 0.
-    (MatrixElement(Z, i, j), S.Zero),
-]) + add_rules([
+MATRIXELEMENT = (
+    add_rules([
+        # Every element of a zero matrix is 0.
+        (MatrixElement(Z, i, j), S.Zero),
+    ])
     # An off-diagonal element of a diagonal matrix is 0.  Negative indices wrap
     # (D[0, -1] of a 1x1 matrix is D[0, 0]), so i != j must hold after wrapping:
     # both indices of one sign, or i - j != +-m.
-    (MatrixElement(D, i, j), S.Zero),
-], assuming={Q.ne(i, j) | Q.nonzero(i - j),
-             (Q.nonnegative(i) & Q.nonnegative(j)) | (Q.negative(i) & Q.negative(j))
-             | (Q.nonzero(i - j - m) & Q.nonzero(i - j + m))}) + add_rules([
+    + add_rules([
+        (MatrixElement(D, i, j), S.Zero),
+    ], assuming={Q.ne(i, j) | Q.nonzero(i - j),
+                 (Q.nonnegative(i) & Q.nonnegative(j)) | (Q.negative(i) & Q.negative(j))
+                 | (Q.nonzero(i - j - m) & Q.nonzero(i - j + m))})
     # A symmetric matrix's elements S[i, j] = S[j, i], oriented to SymPy's
     # canonical index order (a structural condition, see _SwappedOrder).
-    (MatrixElement(S_, ii, jj), MatrixElement(S_, jj, ii)),
-], assuming={_SwappedOrder(ii, jj)})
+    + add_rules([
+        (MatrixElement(S_, ii, jj), MatrixElement(S_, jj, ii)),
+    ], assuming={_SwappedOrder(ii, jj)})
+)
 
 RULES: list[tuple] = (TRANSPOSE + INVERSE + DETERMINANT + TRACE + MATADD
                       + HADAMARD + MATMUL + MATRIXELEMENT)

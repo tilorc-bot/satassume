@@ -90,29 +90,60 @@ FRAC_DEFINITION = add_rules([
 
 ASSUMED |= {Q.zero(zero)}
 
-MOD = (add_rules([(Mod(a, d), S.Zero)], assuming={Q.integer(a/d)})             # Mod(6, 3) = 0
-       + add_rules([(Mod(zero, b), S.Zero)])                                    # Mod(0, b) = 0
-       + add_rules([(Mod(c + x, d), Mod(x, d))], assuming={Q.integer(c/d)})     # Mod(x + 6, 3) = Mod(x, 3)
-       # for 0 <= a < b or b < a <= 0
-       + add_rules([(Mod(a, b), a)],
-                   assuming={(Q.nonnegative(a) & less(a, b)) | (Q.nonpositive(a) & less(b, a))})
-       # for a and b of the same sign; never the reverse rewrite, so Mod and Rem cannot loop
-       + add_rules([(Mod(a, b), Rem(a, b))],
-                   assuming={(Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))}))
+MOD = (
+    add_rules([
+        (Mod(a, d), S.Zero),                     # Mod(6, 3) = 0
+    ], assuming={Q.integer(a/d)})
+    + add_rules([
+        (Mod(zero, b), S.Zero),                  # Mod(0, b) = 0
+    ])
+    + add_rules([
+        (Mod(c + x, d), Mod(x, d)),              # Mod(x + 6, 3) = Mod(x, 3)
+    ], assuming={Q.integer(c/d)})
+    # for 0 <= a < b or b < a <= 0
+    + add_rules([
+        (Mod(a, b), a),
+    ], assuming={(Q.nonnegative(a) & less(a, b)) | (Q.nonpositive(a) & less(b, a))})
+    # for a and b of the same sign; never the reverse rewrite, so Mod and Rem cannot loop
+    + add_rules([
+        (Mod(a, b), Rem(a, b)),
+    ], assuming={(Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))})
+)
 
 # Rem(a, b) = a for |a| < |b|, one row per way the signs can be known
-REM = (add_rules([(Rem(a, d), S.Zero)], assuming={Q.integer(a/d)})             # Rem(6, 3) = 0
-       + add_rules([(Rem(zero, b), S.Zero)])                                    # Rem(0, b) = 0
-       + add_rules([(Rem(a, b), a)], assuming={Q.nonnegative(a) & (less(a, b) | less(a, -b))})   # 0 <= a < |b|
-       + add_rules([(Rem(a, b), a)], assuming={Q.nonpositive(a) & (less(-b, a) | less(b, a))})   # -|b| < a <= 0
-       + add_rules([(Rem(a, b), a)], assuming={Q.positive(b) & less(-b, a) & less(a, b)})        # -b < a < b
-       + add_rules([(Rem(a, b), a)], assuming={Q.negative(b) & less(b, a) & less(a, -b)}))       # b < a < -b
+REM = (
+    add_rules([
+        (Rem(a, d), S.Zero),                     # Rem(6, 3) = 0
+    ], assuming={Q.integer(a/d)})
+    + add_rules([
+        (Rem(zero, b), S.Zero),                  # Rem(0, b) = 0
+    ])
+    # 0 <= a < |b|
+    + add_rules([
+        (Rem(a, b), a),
+    ], assuming={Q.nonnegative(a) & (less(a, b) | less(a, -b))})
+    # -|b| < a <= 0
+    + add_rules([
+        (Rem(a, b), a),
+    ], assuming={Q.nonpositive(a) & (less(-b, a) | less(b, a))})
+    # -b < a < b
+    + add_rules([
+        (Rem(a, b), a),
+    ], assuming={Q.positive(b) & less(-b, a) & less(a, b)})
+    # b < a < -b
+    + add_rules([
+        (Rem(a, b), a),
+    ], assuming={Q.negative(b) & less(b, a) & less(a, -b)})
+)
 
 # At a half period (a/d = n + 1/2, 2*a/d odd): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2
 # by the sign of a/d.  Identity rows: they fire once the assumptions decide sign(a/d).
-MOD_HALF = add_rules([(Mod(a, d), d*Mod(sign(a/d), 2)/2)], assuming={Q.odd(2*a/d)})   # Mod(+-1, 2) = 1
-REM_HALF = add_rules([(Rem(a, d), sign(a/d)*d/2)], assuming={Q.odd(2*a/d)})
-
+MOD_HALF = add_rules([
+    (Mod(a, d), d*Mod(sign(a/d), 2)/2),          # Mod(+-1, 2) = 1
+], assuming={Q.odd(2*a/d)})
+REM_HALF = add_rules([
+    (Rem(a, d), sign(a/d)*d/2),
+], assuming={Q.odd(2*a/d)})
 
 FACTS = FRAC_DEFINITION + MOD_HALF + REM_HALF
 RULES = FLOOR + CEILING + FRAC + MOD + REM

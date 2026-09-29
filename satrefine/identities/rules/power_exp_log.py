@@ -135,21 +135,33 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
         (Pow(E, x, evaluate=False), exp(x)),     # E**x is exp(x)
         ((b**a)**m, b**(a*m)),                   # (b**a)**m = b**(a*m)
     ])
-    + add_rules([((b**p)**e, b**(p*e))],          # ... p*log(b) real, 0**p = 0, oo**p = oo
-                assuming={Q.nonnegative(b) | Q.extended_nonnegative(b)})
-    + add_rules([((p**t)**e, p**(t*e))])         # ... t*log(p) real (sqrt(1/x) = 1/sqrt(x))
-    + add_rules([((t**n)**e, Abs(t)**(n*e))],     # t**n = |t|**n; 0**n = 0 for n > 0
-                assuming={Q.positive(n) | ~Q.zero(t)})
-    + add_rules([((b**n)**e, Abs(b)**(n*e))],     # ... also at b = +-oo for n > 0 ((+-oo)**n = oo)
-                assuming={Q.extended_real(b), Q.positive(n)})
-    + add_rules([(exp(a)**m, exp(a*m))])         # exp(a)**m = exp(a*m)
-    + add_rules([((v**a)**e, Abs(v)**(a*e))],     # (I*t)**a = t**a for a = 0 mod 4
-                assuming={Q.even(a/2)})
-    + add_rules([((v**a)**e, (-1)**e*Abs(v)**(a*e))],   # (I*t)**a = -t**a for a = 2 mod 4
-                assuming={Q.odd(a/2)})
-    + add_rules([(Pow(S.Zero, p, evaluate=False), S.Zero)])   # 0**p = 0
-    + add_rules([(b**q, zoo)],                    # 0**q = zoo (1/x at x = 0)
-                assuming={Q.zero(b)})
+    + add_rules([
+        ((b**p)**e, b**(p*e)),                   # ... p*log(b) real, 0**p = 0, oo**p = oo
+    ], assuming={Q.nonnegative(b) | Q.extended_nonnegative(b)})
+    + add_rules([
+        ((p**t)**e, p**(t*e)),                   # ... t*log(p) real (sqrt(1/x) = 1/sqrt(x))
+    ])
+    + add_rules([
+        ((t**n)**e, Abs(t)**(n*e)),              # t**n = |t|**n; 0**n = 0 for n > 0
+    ], assuming={Q.positive(n) | ~Q.zero(t)})
+    + add_rules([
+        ((b**n)**e, Abs(b)**(n*e)),              # ... also at b = +-oo for n > 0 ((+-oo)**n = oo)
+    ], assuming={Q.extended_real(b), Q.positive(n)})
+    + add_rules([
+        (exp(a)**m, exp(a*m)),                   # exp(a)**m = exp(a*m)
+    ])
+    + add_rules([
+        ((v**a)**e, Abs(v)**(a*e)),              # (I*t)**a = t**a for a = 0 mod 4
+    ], assuming={Q.even(a/2)})
+    + add_rules([
+        ((v**a)**e, (-1)**e*Abs(v)**(a*e)),      # (I*t)**a = -t**a for a = 2 mod 4
+    ], assuming={Q.odd(a/2)})
+    + add_rules([
+        (Pow(S.Zero, p, evaluate=False), S.Zero),   # 0**p = 0
+    ])
+    + add_rules([
+        (b**q, zoo),                             # 0**q = zoo (1/x at x = 0)
+    ], assuming={Q.zero(b)})
     + add_rules([
         (Abs(t)**n, t**n),                       # |t|**n = t**n
         (Abs(v)**n, (-1)**(n/2)*v**n),           # |I*t|**n = (-1)**(n/2)*(I*t)**n
@@ -158,8 +170,12 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
     ])
     # ... the parity stated one lower: (-1)**((n + 1)/2) under a parity of (n - 1)/2
     # (ask does not shift it)
-    + add_rules([((-1)**x, S.NegativeOne)], assuming={Q.even(x - 1)})
-    + add_rules([((-1)**x, S.One)], assuming={Q.odd(x - 1)})
+    + add_rules([
+        ((-1)**x, S.NegativeOne),
+    ], assuming={Q.even(x - 1)})
+    + add_rules([
+        ((-1)**x, S.One),
+    ], assuming={Q.odd(x - 1)})
     + add_rules([
         ((-1)**((-1)**m/2 + r), (-1)**(m + r + S.Half)),   # (-1)**m/2 = +-1/2 and (-1)**z is 2-periodic
         ((-1)**(n + r), (-1)**r),                          # (-1)**z is 2-periodic: drop even terms
@@ -168,10 +184,12 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
         # exp
         (exp(m*pi*I + r), (-1)**m*exp(r)),                 # exp splits over sums; exp(I*pi*m) = (-1)**m
     ])
-    + add_rules([(exp(x*pi*I + r), I*(-1)**(x - S.Half)*exp(r))],   # exp(I*pi*(m + 1/2)) = I*(-1)**m
-                assuming={Q.integer(x - S.Half)})
-    + add_rules([(exp(e*log(b)), b**e)],          # the definition of Pow, folded back (the form's domain)
-                assuming={~Q.zero(b) | Q.positive(e)})
+    + add_rules([
+        (exp(x*pi*I + r), I*(-1)**(x - S.Half)*exp(r)),    # exp(I*pi*(m + 1/2)) = I*(-1)**m
+    ], assuming={Q.integer(x - S.Half)})
+    + add_rules([
+        (exp(e*log(b)), b**e),                   # the definition of Pow, folded back (the form's domain)
+    ], assuming={~Q.zero(b) | Q.positive(e)})
 )
 
 LOG_RULES: list[Row] = add_rules([   # tried after the log identities

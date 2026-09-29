@@ -112,10 +112,12 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
     # and a one-sided bound such as Q.gt(a, 1) proves only the extended signs: issue #10, B1-B7.
     # The finite predicate is kept first: SymPy's ask proves Q.real(sin(x)) for a real x but
     # not Q.extended_real(sin(x)), whose handler goes by signs)
-    add_rules([(Abs(a), a)],                     # |a| = a for a >= 0 (also a = oo)
-              assuming={Q.nonnegative(a) | Q.extended_nonnegative(a)})
-    + add_rules([(Abs(a), -a)],                  # |a| = -a for a <= 0 (also a = -oo)
-                assuming={Q.nonpositive(a) | Q.extended_nonpositive(a)})
+    add_rules([
+        (Abs(a), a),                             # |a| = a for a >= 0 (also a = oo)
+    ], assuming={Q.nonnegative(a) | Q.extended_nonnegative(a)})
+    + add_rules([
+        (Abs(a), -a),                            # |a| = -a for a <= 0 (also a = -oo)
+    ], assuming={Q.nonpositive(a) | Q.extended_nonpositive(a)})
     + add_rules([
         (re(u), u),                              # re u = u
         (im(u), S.Zero),                         # im u = 0
@@ -128,15 +130,24 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
         (im(vs*w), -I*vs*im(I*w)),               # im(vs*w) = (-i*vs)*im(i*w), imaginary vs
     ])
     # sign
-    + add_rules([(sign(a), S.One)],              # sign a = 1 for a > 0 (also a = oo)
-                assuming={Q.positive(a) | Q.extended_positive(a)})
-    + add_rules([(sign(a), S.NegativeOne)],      # sign a = -1 for a < 0 (also a = -oo)
-                assuming={Q.negative(a) | Q.extended_negative(a)})
-    + add_rules([(sign(v), I)], assuming={_IM_POSITIVE})    # sign(i*t) = i for t > 0
-    + add_rules([(sign(v), -I)], assuming={_IM_NEGATIVE})   # sign(i*t) = -i for t < 0
-    + add_rules([(sign(Abs(d)), S.One)])         # sign|d| = 1
-    + add_rules([(sign(exp(z)), S.One)],         # sign(exp z) = 1 for real z
-                assuming={Q.real(z)})
+    + add_rules([
+        (sign(a), S.One),                        # sign a = 1 for a > 0 (also a = oo)
+    ], assuming={Q.positive(a) | Q.extended_positive(a)})
+    + add_rules([
+        (sign(a), S.NegativeOne),                # sign a = -1 for a < 0 (also a = -oo)
+    ], assuming={Q.negative(a) | Q.extended_negative(a)})
+    + add_rules([
+        (sign(v), I),                            # sign(i*t) = i for t > 0
+    ], assuming={_IM_POSITIVE})
+    + add_rules([
+        (sign(v), -I),                           # sign(i*t) = -i for t < 0
+    ], assuming={_IM_NEGATIVE})
+    + add_rules([
+        (sign(Abs(d)), S.One),                   # sign|d| = 1
+    ])
+    + add_rules([
+        (sign(exp(z)), S.One),                   # sign(exp z) = 1 for real z
+    ], assuming={Q.real(z)})
     # conjugate
     + add_rules([
         (conjugate(u), u),                                        # conjugate u = u
@@ -144,17 +155,20 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
         (conjugate(exp(z), evaluate=False), exp(conjugate(z))),   # conjugate(exp z) = exp(conjugate z) (SymPy evaluates the lhs)
         (conjugate(b**n), conjugate(b)**n),                       # conjugate(b**n) = conjugate(b)**n
     ])
-    + add_rules([(conjugate(b**e), b**conjugate(e))],   # conjugate(b**e) = b**conjugate(e), b > 0
-                assuming={Q.positive(b)})
+    + add_rules([
+        (conjugate(b**e), b**conjugate(e)),      # conjugate(b**e) = b**conjugate(e), b > 0
+    ], assuming={Q.positive(b)})
     # Mul
     + add_rules([
         (g*conjugate(g), Abs(g)**2),                  # g*conjugate(g) = |g|**2
         (g**n*conjugate(g)**n, Abs(g)**(2*n)),        # ... and for integer powers
     ])
-    + add_rules([(g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m))],             # ... unequal positive powers, the higher one g's
-                assuming={Q.positive(m), Q.positive(h - m)})
-    + add_rules([(g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h))],   # ... or conjugate(g)'s
-                assuming={Q.positive(h), Q.positive(m - h)})
+    + add_rules([
+        (g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m)),             # ... unequal positive powers, the higher one g's
+    ], assuming={Q.positive(m), Q.positive(h - m)})
+    + add_rules([
+        (g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h)),  # ... or conjugate(g)'s
+    ], assuming={Q.positive(h), Q.positive(m - h)})
     + add_rules([
         (f*zoo, zoo),                                 # zoo absorbs a nonzero finite factor
         ((-1)**a*(-1)**e, (-1)**(a + e)),             # (-1)**a = exp(I*pi*a): the powers of -1 combine

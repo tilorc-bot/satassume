@@ -112,49 +112,69 @@ FACTORIAL = add_rules([
     (factorial(inf), S.Infinity),
 ])
 
-GAMMA = add_rules([
-    # gamma(p) = (p - 1)! at positive integers (so gamma(m + 1) = m! for m >= 0).
-    (gamma(p), factorial(p - 1)),
-]) + add_rules([
-    # gamma has a pole at every nonpositive integer (half-integers are left alone).
-    (gamma(n), S.ComplexInfinity),
-], assuming={_le(n, 0)})   # here n is a nonpositive integer
+GAMMA = (
+    add_rules([
+        # gamma(p) = (p - 1)! at positive integers (so gamma(m + 1) = m! for m >= 0).
+        (gamma(p), factorial(p - 1)),
+    ])
+    # here n is a nonpositive integer
+    + add_rules([
+        # gamma has a pole at every nonpositive integer (half-integers are left alone).
+        (gamma(n), S.ComplexInfinity),
+    ], assuming={_le(n, 0)})
+)
 
-BINOMIAL = SMALL_K + add_rules([
-    (binomial(f, z), S.One),             # binomial(f, f) = 1
-], assuming={_eq(f, z)}) + add_rules([
-    (binomial(f, z), f),                 # binomial(f, f - 1) = f
-], assuming={_eq(z, f - 1)}) + add_rules([
-    # 0 for a negative integer n whatever y is (SymPy's convention), and for
-    # integers 0 <= y < n (the product y (y-1) ... hits 0).
-    (binomial(y, n), S.Zero),
-], assuming={_lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & _lt(y, n))}) + add_rules([
-    # A pole: q a negative integer and h not an integer.
-    (binomial(q, h), S.ComplexInfinity),
-])
+BINOMIAL = (
+    SMALL_K
+    + add_rules([
+        (binomial(f, z), S.One),             # binomial(f, f) = 1
+    ], assuming={_eq(f, z)})
+    + add_rules([
+        (binomial(f, z), f),                 # binomial(f, f - 1) = f
+    ], assuming={_eq(z, f - 1)})
+    + add_rules([
+        # 0 for a negative integer n whatever y is (SymPy's convention), and for
+        # integers 0 <= y < n (the product y (y-1) ... hits 0).
+        (binomial(y, n), S.Zero),
+    ], assuming={_lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & _lt(y, n))})
+    + add_rules([
+        # A pole: q a negative integer and h not an integer.
+        (binomial(q, h), S.ComplexInfinity),
+    ])
+)
 
-RISING = SMALL_K + add_rules([
-    # rf(1, z) = gamma(z + 1) = z!, for every z.
-    (rf(one, z), factorial(z)),
-]) + add_rules([
-    # 0 when the product x (x+1) ... (x+z-1) contains the factor 0 (x <= 0 < x + z,
-    # integers), and SymPy's 0 for a negative integer x and non-integer z.
-    (rf(x, z), S.Zero),
-], assuming={(Q.integer(x) & Q.integer(z) & _le(x, 0) & _lt(0, x + z))
-             | (Q.integer(x) & _lt(x, 0) & ~Q.integer(z))}) + add_rules([
-    # rf(g, z) = gamma(g + z)/gamma(g) where gamma(g) is finite and nonzero.
-    (rf(g, z), gamma(g + z)/gamma(g)),
-])
+RISING = (
+    SMALL_K
+    + add_rules([
+        # rf(1, z) = gamma(z + 1) = z!, for every z.
+        (rf(one, z), factorial(z)),
+    ])
+    + add_rules([
+        # 0 when the product x (x+1) ... (x+z-1) contains the factor 0 (x <= 0 < x + z,
+        # integers), and SymPy's 0 for a negative integer x and non-integer z.
+        (rf(x, z), S.Zero),
+    ], assuming={(Q.integer(x) & Q.integer(z) & _le(x, 0) & _lt(0, x + z))
+                 | (Q.integer(x) & _lt(x, 0) & ~Q.integer(z))})
+    + add_rules([
+        # rf(g, z) = gamma(g + z)/gamma(g) where gamma(g) is finite and nonzero.
+        (rf(g, z), gamma(g + z)/gamma(g)),
+    ])
+)
 
-FALLING = SMALL_K + add_rules([
-    (ff(x, n), factorial(n)),            # ff(n, n) = n! for integer n (both sides zoo at negative integers)
-], assuming={_eq(x, n)}) + add_rules([
-    (ff(m, n), S.Zero),                  # 0 for integers 0 <= m < n
-], assuming={_lt(m, n)}) + add_rules([
-    # ff(m, n) = m!/(m - n)! for integers 0 <= m, n <= m (negative n included:
-    # ff(3, -2) = 1/20 = 3!/5!).
-    (ff(m, n), factorial(m)/factorial(m - n)),
-], assuming={_le(n, m)})
+FALLING = (
+    SMALL_K
+    + add_rules([
+        (ff(x, n), factorial(n)),            # ff(n, n) = n! for integer n (both sides zoo at negative integers)
+    ], assuming={_eq(x, n)})
+    + add_rules([
+        (ff(m, n), S.Zero),                  # 0 for integers 0 <= m < n
+    ], assuming={_lt(m, n)})
+    + add_rules([
+        # ff(m, n) = m!/(m - n)! for integers 0 <= m, n <= m (negative n included:
+        # ff(3, -2) = 1/20 = 3!/5!).
+        (ff(m, n), factorial(m)/factorial(m - n)),
+    ], assuming={_le(n, m)})
+)
 
 RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + [
     row for table in (BINOMIAL, RISING, FALLING) for row in table[len(SMALL_K):]]

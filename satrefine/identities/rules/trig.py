@@ -56,20 +56,32 @@ def _parities(even: Row, odd: Row) -> list[Row]:
 
 
 RULES: list[Row] = (   # the argument is n*pi/2 + r
-    _parities((sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),          # sin(r + m*pi) = (-1)**m sin r
-              (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r)))    # sin(r + pi/2 + m*pi) = (-1)**m cos r
-    + _parities((cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),        # cos(r + m*pi) = (-1)**m cos r
-                (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r)))  # cos(r + pi/2 + m*pi) = -(-1)**m sin r
-    + _parities((sec(n*pi/2 + r), (-1)**(n/2)*sec(r)),        # sec = 1/cos
-                (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r)))  # (one power of -1: SymPy's form)
-    + _parities((csc(n*pi/2 + r), (-1)**(n/2)*csc(r)),        # csc = 1/sin
-                (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r)))
-    + _parities((tan(n*pi/2 + r), tan(r)),                    # tan has period pi
-                (tan(n*pi/2 + r), -cot(r)))                   # tan(r + pi/2) = -cot r
-    + _parities((cot(n*pi/2 + r), cot(r)),                    # cot has period pi
-                (cot(n*pi/2 + r), -tan(r)))                   # cot(r + pi/2) = -tan r
+    _parities(
+        (sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),        # sin(r + m*pi) = (-1)**m sin r
+        (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r)),  # sin(r + pi/2 + m*pi) = (-1)**m cos r
+    )
+    + _parities(
+        (cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),        # cos(r + m*pi) = (-1)**m cos r
+        (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r)),  # cos(r + pi/2 + m*pi) = -(-1)**m sin r
+    )
+    + _parities(
+        (sec(n*pi/2 + r), (-1)**(n/2)*sec(r)),        # sec = 1/cos
+        (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r)),  # (one power of -1: SymPy's form)
+    )
+    + _parities(
+        (csc(n*pi/2 + r), (-1)**(n/2)*csc(r)),        # csc = 1/sin
+        (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r)),
+    )
+    + _parities(
+        (tan(n*pi/2 + r), tan(r)),                    # tan has period pi
+        (tan(n*pi/2 + r), -cot(r)),                   # tan(r + pi/2) = -cot r
+    )
+    + _parities(
+        (cot(n*pi/2 + r), cot(r)),                    # cot has period pi
+        (cot(n*pi/2 + r), -tan(r)),                   # cot(r + pi/2) = -tan r
+    )
     + add_rules([
-        (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),          # sinc x = sin x / x, x != 0
+        (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),  # sinc x = sin x / x, x != 0
     ])
 )
 
