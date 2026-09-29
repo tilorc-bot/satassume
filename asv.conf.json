@@ -1,0 +1,18 @@
+{
+    "version": 1,
+    "project": "satassume",
+    "project_url": "https://github.com/tilorc-bot/satassume",
+    "show_commit_url": "https://github.com/tilorc-bot/satassume/commit/",
+    "repo": ".",
+    "branches": ["main"],
+    "environment_type": "virtualenv",
+    "pythons": ["3.13"],
+    "matrix": {
+        "req": {"mpmath": ["1.3.0"]},
+        "env_nobuild": {"PYTHONHASHSEED": ["0"]}
+    },
+    "benchmark_dir": "benchmarks",
+    "env_dir": ".asv/env",
+    "results_dir": ".asv/results",
+    "html_dir": ".asv/html"
+}
