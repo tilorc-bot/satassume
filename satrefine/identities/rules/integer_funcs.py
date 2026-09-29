@@ -9,10 +9,10 @@ so it is 0 at an integer and drops an integer term.  Bounds (``floor(x) = 0`` fo
 Remainders: ``Mod(a, b)`` has the sign of ``b`` (Python's ``%``), ``Rem(a, b)``
 the sign of ``a`` (truncating division).  Both are 0 at a multiple of ``b`` and
 ``a`` itself inside the period, and they agree when ``a`` and ``b`` have the same
-sign.  ``Q.nonzero(b)`` in their conditions also makes ``b`` real: SymPy's ``Mod``
+sign.  ``b`` is assumed nonzero, which also makes it real: SymPy's ``Mod``
 of non-real arguments is not ``a - b*floor(a/b)`` (``Mod(3*I, 2*I) = 3*I``).
 
-Two things the conditions spell out because ``ask`` does not derive them:
+Two things the assumptions spell out because ``ask`` does not derive them:
 "integer" includes Gaussian integers (SymPy takes the floor of a complex number
 part by part, so ``floor(y)`` of a finite ``y`` is one), and ``u < v`` is asked
 both as ``Q.lt(u, v)`` and as ``Q.positive(v - u)``.
@@ -24,10 +24,10 @@ pinned in ``tests/refine_identities/core/test_engine_integer_funcs.py``.
 """
 from __future__ import annotations
 
-from sympy import Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols
+from sympy import Eq, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
-from ._tables import Family, Identities, Rules, given, node_measure, part
+from ._tables import Family, Identities, Rules, node_measure
 
 
 def integer(u):
@@ -40,83 +40,86 @@ def less(u, v):
     return Q.lt(u, v) | Q.positive(v - u)
 
 
-def _is_rounded(t):
-    """``t`` is an integer times a ``floor`` or ``ceiling``: a Gaussian integer ``ask`` cannot see."""
-    k, f = t.as_coeff_Mul()
-    return S(bool(k.is_Integer and isinstance(f, (floor, ceiling))))
+a, b, c, d, k, m, n, r, t, x, y, z = symbols('a b c d k m n r t x y z')
 
-
-# Throughout: n is an integer and b is nonzero (real).  a, c, d and x are arbitrary.
-a, b, c, d, n, x = symbols('a b c d n x')
-rounded = part('rounded', _is_rounded)   # a term floor(y) or ceiling(y) of a sum
-rows = given({n: integer, b: Q.nonzero})
+# Assumed throughout: a row takes each fact whose variables are all in its left side.
+ASSUMED = {integer(n), Q.nonzero(b)}   # n is an integer, b is nonzero
 
 
 # ---- floor, ceiling, frac ------------------------------------------------------
 
-def rounding(f):
-    return rows([
-        (f(x), x, integer(x) | Q.infinite(x)),   # floor(3) = 3, floor(oo) = oo
-        (f(n + x), f(x) + n),                    # floor(x + 3) = floor(x) + 3
-        # the same for a term floor(y), whether y is finite or not (floor(oo + x) = oo + floor(x))
-        (f(rounded + x), f(x) + rounded),
-    ])
+ASSUMED |= {integer(k) | Q.infinite(k)}   # k is an integer or an infinity
 
+# r is a floor or ceiling term: floor(t) or ceiling(t), times an integer m.  (The m-less
+# forms are listed because a pattern m*floor(t) does not match floor(t) itself.)
+ASSUMED |= {Q.integer(m),
+            Eq(r, floor(t)) | Eq(r, m*floor(t)) | Eq(r, ceiling(t)) | Eq(r, m*ceiling(t))}
 
-FLOOR = rounding(floor)
-CEILING = rounding(ceiling)
+FLOOR = [
+    (floor(k), k),                       # floor(3) = 3, floor(oo) = oo
+    (floor(n + x), floor(x) + n),        # floor(x + 3) = floor(x) + 3
+    # r moves out as n does, for any t: floor(t) is an integer or, for an infinite t, t
+    # itself, which absorbs the rest.  SymPy's floor returns an infinite argument unchanged
+    # (floor(1/2 + I*oo) = 1/2 + I*oo, where flooring each part gives I*oo), so its
+    # expressions can keep a finite part there that these rows drop: the same value.
+    (floor(r + x), floor(x) + r),
+]
 
-FRAC = rows([
-    (frac(n + x), frac(x)),                      # frac(x + 3) = frac(x)
-])
+CEILING = [
+    (ceiling(k), k),
+    (ceiling(n + x), ceiling(x) + n),
+    (ceiling(r + x), ceiling(x) + r),
+]
 
-FRAC_DEFINITION = rows([
-    # gives frac(3) = 0 and frac(x) = x - k on [k, k + 1).  Not at +-oo, where frac is
-    # AccumBounds(0, 1); Q.real and integer imply Q.finite, but ask does not see it.
-    (frac(x), x - floor(x), Q.finite(x) | Q.real(x) | integer(x)),
-])
+FRAC = [
+    (frac(n + x), frac(x)),              # frac(x + 3) = frac(x)
+]
+
+# y is finite.  (A Gaussian integer y is too, but ask does not see it: issue #19.)  Not
+# at +-oo, where frac is AccumBounds(0, 1).
+ASSUMED |= {Q.finite(y) | Q.real(y) | integer(y)}
+
+FRAC_DEFINITION = [
+    (frac(y), y - floor(y)),             # gives frac(3) = 0 and frac(y) = y - k on [k, k + 1)
+]
 
 
 # ---- Mod, Rem ------------------------------------------------------------------
+# b is nonzero; d is any divisor.
 
-def multiple(f):
-    return rows([
-        (f(a, b), S.Zero, Q.integer(a/b)),       # Mod(6, 3) = 0
-        (f(a, d), S.Zero, Q.zero(a)),            # Mod(0, d) = 0, whatever d is
-    ])
+ASSUMED |= {Q.zero(z)}   # z is 0
 
-
-MOD = multiple(Mod) + rows([
+MOD = [
+    (Mod(a, b), S.Zero, Q.integer(a/b)),                                                 # Mod(6, 3) = 0
+    (Mod(z, d), S.Zero),                                                                 # Mod(0, d) = 0
     (Mod(c + x, b), Mod(x, b), Q.integer(c/b)),                                          # Mod(x + 6, 3) = Mod(x, 3)
     (Mod(a, d), a, (Q.nonnegative(a) & less(a, d)) | (Q.nonpositive(a) & less(d, a))),   # 0 <= a < d, d < a <= 0
     # same signs; never the reverse rewrite, so Mod and Rem cannot loop
     (Mod(a, d), Rem(a, d), (Q.nonnegative(a) & Q.positive(d)) | (Q.nonpositive(a) & Q.negative(d))),
-])
+]
 
-REM = multiple(Rem) + rows([   # Rem(a, d) = a for |a| < |d|, one row per way the signs can be known
-    (Rem(a, d), a, Q.nonnegative(a) & (less(a, d) | less(a, -d))),   # 0 <= a < |d|
-    (Rem(a, d), a, Q.nonpositive(a) & (less(-d, a) | less(d, a))),   # -|d| < a <= 0
-    (Rem(a, d), a, Q.positive(d) & less(-d, a) & less(a, d)),        # -d < a < d
-    (Rem(a, d), a, Q.negative(d) & less(d, a) & less(a, -d)),        # d < a < -d
-])
+REM = [
+    (Rem(a, b), S.Zero, Q.integer(a/b)),                                 # Rem(6, 3) = 0
+    (Rem(z, d), S.Zero),                                                 # Rem(0, d) = 0
+    # Rem(a, d) = a for |a| < |d|, one row per way the signs can be known
+    (Rem(a, d), a, Q.nonnegative(a) & (less(a, d) | less(a, -d))),      # 0 <= a < |d|
+    (Rem(a, d), a, Q.nonpositive(a) & (less(-d, a) | less(d, a))),      # -|d| < a <= 0
+    (Rem(a, d), a, Q.positive(d) & less(-d, a) & less(a, d)),           # -d < a < d
+    (Rem(a, d), a, Q.negative(d) & less(d, a) & less(a, -d)),           # d < a < -d
+]
 
 # At a half period (a/b = k + 1/2): Mod(a, b) = b/2, and Rem(a, b) = b/2 or -b/2 by the
 # sign of a/b.  Identity rows: they fire once the assumptions decide sign(a/b).
-MOD_HALF = rows([(Mod(a, b), b*Mod(sign(a/b), 2)/2, Q.odd(2*a/b))])   # Mod(+-1, 2) = 1
-REM_HALF = rows([(Rem(a, b), sign(a/b)*b/2, Q.odd(2*a/b))])
+MOD_HALF = [(Mod(a, b), b*Mod(sign(a/b), 2)/2, Q.odd(2*a/b))]   # Mod(+-1, 2) = 1
+REM_HALF = [(Rem(a, b), sign(a/b)*b/2, Q.odd(2*a/b))]
 
 
 FACTS = FRAC_DEFINITION + MOD_HALF + REM_HALF
 RULES = FLOOR + CEILING + FRAC + MOD + REM
 
-
-def _half(rows, f):
-    return Identities(rows, measure=node_measure((f,)), opaque=(floor, sign))
-
-
 SPEC = Family({'floor': Rules(FLOOR),
                'ceiling': Rules(CEILING),
                'frac': (Rules(FRAC), Identities(FRAC_DEFINITION, measure=node_measure((frac,)))),
-               'Mod': (Rules(MOD), _half(MOD_HALF, Mod)),
-               'Rem': (Rules(REM), _half(REM_HALF, Rem))},
-              facts=FACTS, rules=RULES)
+               'Mod': (Rules(MOD), Identities(MOD_HALF, measure=node_measure((Mod,)), opaque=(floor, sign))),
+               'Rem': (Rules(REM), Identities(REM_HALF, measure=node_measure((Rem,)), opaque=(floor, sign)))},
+              facts=FACTS, rules=RULES, assumed=ASSUMED)

@@ -12,13 +12,13 @@ from sympy import Q
 from satrefine.identities.core.driver import generated_handlers as handlers_dict
 from satrefine.identities.core.rewrite import rule_handler
 
-a, b, x = symbols('a b x')
+a, b, y = symbols('a b y')
 
 RULES = [
-    # round 1: from integer_funcs.FACTS[0] under Q.integer(x)
+    # round 1: from integer_funcs.FACTS[0] under Q.integer(y)
     #   fired: integer_funcs.RULES[0], integer_funcs.FACTS[0]
-    #   asks: Q.finite(x), Q.integer(x)
-    (frac(x), 0, Q.integer(x)),
+    #   asks: Q.finite(y), Q.integer(y)
+    (frac(y), 0, Q.integer(y)),
     # round 1: from integer_funcs.FACTS[1] under Q.positive(b)
     #   fired: complex_parts.RULES[10], complex_parts.SPLITS[0], complex_parts.RULES[11], integer_funcs.FACTS[1]
     #   asks: Q.nonzero(b), Q.odd(2*a/b), Q.integer(-1), Q.negative(-1), Q.extended_positive(1/b), Q.nonzero(2), Q.positive(2), Q.real(a), Q.extended_positive(a), Q.extended_negative(a)
