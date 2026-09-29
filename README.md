@@ -118,6 +118,8 @@ only when propagation is inconclusive.
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
+| `benchmarks/counters.py` | asv suite: per-commit counts of what the engine builds and does (nodes, clauses, rule blocks, propagations, ...) and the refine-stream time |
+| `benchmarks/memory.py` | asv suite: peak RSS of a stream pass, and its traced Python allocations (peak, and retained afterwards) |
 
 ## Running
 
@@ -134,7 +136,20 @@ PYTHONPATH=.:/path/to/sympy python tools/compare.py queries.jsonl --in-scope-onl
 
 # microbenchmarks
 PYTHONPATH=.:/path/to/sympy python tools/bench.py
+
+# asv: counters and stream time per commit of main (SymPy from $SATASSUME_SYMPY,
+# stream from $SATASSUME_STREAM, as for tools/ab.py); results in .asv/
+pip install asv virtualenv
+asv run HASHFILE:<(git rev-list --first-parent -n 20 main)
+asv publish && asv preview
+# time against a count on two y-axes, and change per commit: serve
+# .asv/site (index.html -> benchmarks/compare.html, asv -> ../html)
 ```
+
+The asv counters are exact under the fixed `PYTHONHASHSEED` in
+`asv.conf.json`, so they show a change in what a commit instantiates or
+searches without the noise of a timing; they are not costs (see the module
+docstring).
 
 `tools/compare.py` exits nonzero only when a definite answer contradicts
 SymPy on an in-scope record. Without `--in-scope-only` it also replays the
