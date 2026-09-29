@@ -119,6 +119,7 @@ only when propagation is inconclusive.
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
 | `benchmarks/counters.py` | asv suite: per-commit counts of what the engine builds and does (nodes, clauses, rule blocks, propagations, ...) and the refine-stream time |
+| `benchmarks/memory.py` | asv suite: peak RSS of a stream pass, and its traced Python allocations (peak, and retained afterwards) |
 
 ## Running
 

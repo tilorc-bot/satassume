@@ -74,31 +74,55 @@
 </main>
 <script>
 const BENCH = "correlation.Correlation.track_value";
+// single-value benchmarks of the stream, offered as extra metrics (bytes)
+const MEMORY = {
+  "python_peak_mem (stream)": "memory.StreamPythonMemory.track_python_peak",
+  "python_retained_mem (stream)": "memory.StreamPythonMemory.track_python_retained",
+  "peak_rss (stream)": "memory.StreamPeakRSS.peakmem_stream",
+};
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const unq = s => s.replace(/^'|'$/g, "");
 const fmt = (m, v) => v == null ? "–" : m === "time"
   ? (v < 1 ? (v * 1e3).toFixed(2) + " ms" : v.toFixed(3) + " s")
+  : m in MEMORY ? (v / 2 ** 20).toFixed(2) + " MB"
   : Math.round(v).toLocaleString();
 const pct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
 
 let index, data, subjects = {}, lineChart, scatterChart;
 
+async function getJSON(url) {
+  const r = await fetch(url, {cache: "no-store"});
+  if (!r.ok) throw new Error(url + ": " + r.status);
+  return r.json();
+}
+
 async function load() {
-  index = await (await fetch("asv/index.json", {cache: "no-store"})).json();
-  try { subjects = await (await fetch("commits.json", {cache: "no-store"})).json(); } catch (e) {}
+  index = await getJSON("asv/index.json");
+  try { subjects = await getJSON("commits.json"); } catch (e) {}
   const gp = index.graph_param_list[0];
   const path = Object.keys(gp).sort().map(k => encodeURIComponent(k + "-" + gp[k])).join("/");
-  const raw = await (await fetch(`asv/graphs/${path}/${BENCH}.json`, {cache: "no-store"})).json();
   const b = index.benchmarks[BENCH];
   const workloads = b.params[0].map(unq), metrics = b.params[1].map(unq);
-  // raw: [[revision, [values over product(workloads, metrics)]], ...], oldest first
-  data = {workloads, metrics, rows: raw.filter(r => Array.isArray(r[1])).map(([rev, vals]) => {
-    const hash = index.revision_to_hash[rev];
-    return {rev, hash, date: new Date(index.revision_to_date[rev]), vals};
-  })};
+  // key "workload|metric" -> Map(revision -> value)
+  const values = {};
+  const put = (k, rev, v) => { if (v != null) (values[k] ??= new Map()).set(rev, v); };
+  // Correlation: [[revision, [values over product(workloads, metrics)]], ...]
+  for (const [rev, vals] of await getJSON(`asv/graphs/${path}/${BENCH}.json`)) {
+    if (!Array.isArray(vals)) continue;
+    workloads.forEach((w, i) => metrics.forEach((m, j) => put(`${w}|${m}`, rev, vals[i * metrics.length + j])));
+  }
+  const extra = [];
+  for (const [m, bench] of Object.entries(MEMORY)) {
+    if (!index.benchmarks[bench]) continue;
+    for (const [rev, v] of await getJSON(`asv/graphs/${path}/${bench}.json`)) put(`stream|${m}`, rev, v);
+    extra.push(m);
+  }
+  const revs = [...new Set(Object.values(values).flatMap(mp => [...mp.keys()]))].sort((x, y) => x - y);
+  data = {workloads, metrics: [...metrics, ...extra], values, rows: revs.map(rev => (
+    {rev, hash: index.revision_to_hash[rev], date: new Date(index.revision_to_date[rev])}))};
   fill("workload", workloads, "stream");
-  fill("left", metrics, "time");
-  fill("right", metrics, "clauses");
+  fill("left", data.metrics, "time");
+  fill("right", data.metrics, "clauses");
   document.getElementById("status").textContent = `${data.rows.length} commits`;
   draw();
 }
@@ -110,8 +134,8 @@ function fill(id, opts, def) {
 }
 
 function series(w, m) {
-  const i = data.workloads.indexOf(w) * data.metrics.length + data.metrics.indexOf(m);
-  return data.rows.map(r => r.vals[i] ?? null);
+  const mp = data.values[`${w}|${m}`];
+  return data.rows.map(r => mp?.get(r.rev) ?? null);
 }
 
 function label(r) {
