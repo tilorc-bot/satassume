@@ -153,10 +153,20 @@ def test_evaluator_basics():
 # ---------------------------------------------------------------------------
 
 
-def oracle(value, pred):
-    """Old-system truth value of ``pred`` for the concrete ``value``."""
+def oracle(value, pred, nan_is_no_number=False):
+    """Old-system truth value of ``pred`` for the concrete ``value``.
+
+    With ``nan_is_no_number``, ``nan`` (``oo - oo``, ``0*oo``) has every
+    predicate that implies a number (``extended_real``, ``complex``, ...)
+    False, where SymPy leaves it None; ``finite``/``infinite``
+    (complements in the rule base) and ``commutative`` stay None.  Only
+    the Add and Mul samples are checked that way so far: ``re``, ``im``,
+    ``Abs`` and ``Pow`` still claim ``extended_real`` for a nan value
+    (``re(zoo)``, ``1**oo``)."""
     if isinstance(value, AccumBounds):
         return None
+    if nan_is_no_number and value is S.NaN:
+        return None if pred in ('finite', 'infinite', 'commutative') else False
     return getattr(value, 'is_' + pred, None)
 
 
@@ -178,7 +188,7 @@ def pool_for(nsyms):
     return {1: POOL, 2: POOL_MEDIUM, 3: POOL_SMALL}.get(nsyms, POOL_TINY)
 
 
-def make_valuation(assignment):
+def make_valuation(assignment, nan_is_no_number=False):
     """Atom valuation under ``assignment`` (symbol -> concrete value)."""
     cache = {}
 
@@ -188,13 +198,13 @@ def make_valuation(assignment):
                 v = atom.expr.xreplace(assignment)
             except Exception:  # an evaluation SymPy cannot do
                 v = None
-            cache[atom] = None if v is None else oracle(v, atom.pred)
+            cache[atom] = None if v is None else oracle(v, atom.pred, nan_is_no_number)
         return cache[atom]
 
     return valuation
 
 
-def check_sound(expr):
+def check_sound(expr, nan_is_no_number=False):
     """Check every template formula of ``expr`` against concrete values."""
     facts = registry.facts_for(expr)
     assert facts, f"no templates fired for {expr!r}"
@@ -203,7 +213,7 @@ def check_sound(expr):
     failures = []
     for values in product(pool, repeat=len(syms)):
         assignment = dict(zip(syms, values))
-        valuation = make_valuation(assignment)
+        valuation = make_valuation(assignment, nan_is_no_number)
         for f in facts:
             if evaluate(f, valuation) is False:
                 detail = {a: valuation(a) for a in atoms_of(f)}
@@ -279,12 +289,12 @@ FUNCTION_SAMPLES = [
 
 @pytest.mark.parametrize("expr", ADD_SAMPLES, ids=str)
 def test_add_sound(expr):
-    check_sound(expr)
+    check_sound(expr, nan_is_no_number=True)
 
 
 @pytest.mark.parametrize("expr", MUL_SAMPLES, ids=str)
 def test_mul_sound(expr):
-    check_sound(expr)
+    check_sound(expr, nan_is_no_number=True)
 
 
 @pytest.mark.parametrize("expr", POW_SAMPLES, ids=str)

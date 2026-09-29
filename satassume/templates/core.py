@@ -55,8 +55,9 @@ MAX_ADD_SMALL = 3
 
 # Closed under addition (all args -> node).  ``real``, ``zero`` and the
 # finite sign predicates are derived by the rule base from these.
+# ``extended_real`` is not: ``oo - oo`` is nan (see _add_rules).
 _ADD_CLOSED = (
-    'extended_real', 'complex', 'integer', 'rational', 'algebraic', 'finite',
+    'complex', 'integer', 'rational', 'algebraic', 'finite',
     'hermitian', 'antihermitian', 'commutative',
     'extended_positive', 'extended_negative',
     'extended_nonnegative', 'extended_nonpositive',
@@ -79,6 +80,9 @@ def _add_rules(n, consts):
 
     for pred in _ADD_CLOSED:
         rule(lits(A, pred), (N, pred, True))
+    # Extended reals without both +oo and -oo among the terms.
+    for inf in ('positive_infinite', 'negative_infinite'):
+        rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
     if n > MAX_ADD_SMALL:
         rule(lits(A, 'even'), (N, 'even', True))
 
@@ -219,9 +223,10 @@ def add_templates(expr):
 # ---------------------------------------------------------------------------
 
 # Closed under multiplication.  ``real`` and ``positive`` are derived by the
-# rule base (``extended_* & finite``).
+# rule base (``extended_* & finite``).  ``extended_real`` is not: ``0*oo``
+# is nan (see _mul_rules).
 _MUL_CLOSED = (
-    'extended_real', 'complex', 'integer', 'rational', 'algebraic', 'finite',
+    'complex', 'integer', 'rational', 'algebraic', 'finite',
     'commutative', 'extended_positive', 'nonnegative',
 )
 
@@ -243,6 +248,9 @@ def _mul_rules(n, consts):
 
     for pred in _MUL_CLOSED:
         rule(lits(A, pred), (N, pred, True))
+    # Extended reals, all finite or all nonzero (no 0*oo).
+    rule([*lits(A, 'extended_real'), *lits(A, 'finite')], (N, 'extended_real', True))
+    rule([*lits(A, 'extended_real'), *lits(A, 'zero', False)], (N, 'extended_real', True))
     for k in A:
         rule([(N, 'commutative', True)], (k, 'commutative', True))
 
