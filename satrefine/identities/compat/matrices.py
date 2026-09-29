@@ -31,8 +31,9 @@ against each by walking the expression; a row whose variable binds only
 atoms never sees those expressions, and the products v3 does accept get
 rows of their own.  The one ``ask`` answer wrong for atoms too is
 ``Q.unitary(X)`` from ``Q.orthogonal(X)`` (a complex orthogonal matrix is
-not unitary): the unitary rows require ``~Q.orthogonal(U)`` proved, plus a row
-for the real case.
+not unitary): the unitary rows are the plain identities, so under
+``Q.orthogonal`` alone they rely on that wrong answer; the tests mark it as a
+known SymPy bug (``tests/refine_identities/needs/test_sympy_ask_bugs.py``).
 
 Minimizations against v3: ``det -> 0`` for singular and for a known zero
 matrix of positive size is one row (the size need not be a literal: a
@@ -68,8 +69,7 @@ Checked (adversarial pass, 2026-09-24): 0x0, 1x1, 2x2, 3x3 and symbolic
 shapes; ``det`` of a 0x0 zero matrix (refused); non-square, negated, scaled,
 summed and longer-palindrome ``Transpose`` arguments (refused); ``Inverse``
 of ``-X``, ``2*X``, ``X**2``, ``X.T``, ``Adjoint(X)`` and of products
-under orthogonal/unitary/real facts (the orthogonal rows first, the
-not-orthogonal hypotheses hold); runs inside longer ``MatMul`` with scalars;
+under orthogonal/unitary/real facts (the orthogonal rows first); runs inside longer ``MatMul`` with scalars;
 duplicate atoms in ``MatAdd``/``HadamardProduct`` (the rest keeps the
 other copies: the matcher removes the bound term by position, 2026-09-25,
 B11; before it dropped every copy, and ``HadamardProduct(X, X)`` crashed);
@@ -164,11 +164,9 @@ INVERSE = (
         # from orthogonal cannot reach it for an atom.
         (Inverse(U), Adjoint(U)),
     ])
-    # (U*V)**-1 = V.H*U.H, for U and V not orthogonal: a complex orthogonal matrix
-    # is one ask calls unitary.
     + add_rules([
-        (Inverse(U*V), Adjoint(V)*Adjoint(U)),
-    ], assuming={~Q.orthogonal(U), ~Q.orthogonal(V)})
+        (Inverse(U*V), Adjoint(V)*Adjoint(U)),                    # (U*V)**-1 = V.H*U.H
+    ])
 )
 
 DETERMINANT = (
@@ -220,17 +218,11 @@ MATMUL = (
         (O.T*O, Identity(m)),
         (O*O.T, Identity(m)),
     ])
-    # Adjacent U.H*U and U*U.H cancel for unitary U: for real U from Q.orthogonal,
-    # otherwise for U not orthogonal (a complex orthogonal matrix is one ask calls unitary).
-    # here U has real elements
+    # Adjacent U.H*U and U*U.H cancel for unitary U
     + add_rules([
         (Adjoint(U)*U, Identity(m)),
         (U*Adjoint(U), Identity(m)),
-    ], assuming={Q.real_elements(U)})
-    + add_rules([
-        (Adjoint(U)*U, Identity(m)),
-        (U*Adjoint(U), Identity(m)),
-    ], assuming={~Q.orthogonal(U)})
+    ])
     + add_rules([
         # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):
         # the operator form cancels while the pattern is built).

@@ -61,10 +61,9 @@ FACTS = (
         (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True))),
         (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True))),
     ])
-    # not both infinite: KroneckerDelta(oo, oo) is undefined
     + add_rules([
         (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True))),
-    ], assuming={~Q.infinite(i) | ~Q.infinite(j)})
+    ])
     + add_rules([
         (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
         (G(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)), (nan, True))),

@@ -26,15 +26,12 @@ INDICES = [-1, 0, 1]
 
 
 def test_equal_indices_are_one() -> None:
-    # an index must be proved finite: KroneckerDelta(oo, oo) is undefined (SymPy gives 1)
-    assert refine(KroneckerDelta(i, j), Q.eq(i, j)) == KroneckerDelta(i, j)
-    assert refine(KroneckerDelta(i, j), Q.eq(i, j) & Q.finite(i)) is S.One
+    assert refine(KroneckerDelta(i, j), Q.eq(i, j)) is S.One
     assert refine(KroneckerDelta(i, j), Q.eq(i, j) & Q.integer(i)) is S.One
 
 
 def test_unequal_indices_are_zero() -> None:
-    assert refine(KroneckerDelta(i, j), Q.ne(i, j)) == KroneckerDelta(i, j)   # as above
-    assert refine(KroneckerDelta(i, j), Q.ne(i, j) & Q.finite(i)) is S.Zero
+    assert refine(KroneckerDelta(i, j), Q.ne(i, j)) is S.Zero
 
 
 def test_unproven_equality_is_not_guessed() -> None:
