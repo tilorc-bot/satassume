@@ -38,10 +38,8 @@ from sympy.calculus.accumulationbounds import AccumBounds
 
 from ._tables import ZERO, Family, Row, Rules, add_rules
 
-# The argument is n*pi/2 + r.  Nothing is assumed about n throughout: each shift row's block
-# states its parity (which also makes it an integer), and that is what tells the rows apart.
-# The table is tried by binding (``by_binding``), so both rows of a function keep the same left
-# side, one block each: the even row, then the odd one.
+# The argument is n*pi/2 + r.  Nothing is assumed about n throughout: each shift block states
+# its parity (which also makes it an integer), and that is what tells the rows apart.
 n, r, k, zero, u = symbols('n r k zero u')
 F = Function('F')
 
@@ -49,37 +47,23 @@ ASSUMED = {Q.integer(k), ~Q.zero(k),              # k is a nonzero integer (sinc
            Q.zero(zero),                          # zero is 0
            Q.infinite(u), Q.extended_real(u)}     # u is extended real, here infinite: +-oo
 
-
-def _parities(even: Row, odd: Row) -> list[Row]:
-    """A function's two shift rows: ``even`` for an even ``n``, ``odd`` for an odd one."""
-    return add_rules([even], assuming={Q.even(n)}) + add_rules([odd], assuming={Q.odd(n)})
-
-
 RULES: list[Row] = (   # the argument is n*pi/2 + r
-    _parities(
-        (sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),        # sin(r + m*pi) = (-1)**m sin r
-        (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r)),  # sin(r + pi/2 + m*pi) = (-1)**m cos r
-    )
-    + _parities(
-        (cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),        # cos(r + m*pi) = (-1)**m cos r
-        (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r)),  # cos(r + pi/2 + m*pi) = -(-1)**m sin r
-    )
-    + _parities(
+    add_rules([        # n even: the function itself, sin(r + m*pi) = (-1)**m sin r
+        (sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),
+        (cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),
         (sec(n*pi/2 + r), (-1)**(n/2)*sec(r)),        # sec = 1/cos
-        (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r)),  # (one power of -1: SymPy's form)
-    )
-    + _parities(
         (csc(n*pi/2 + r), (-1)**(n/2)*csc(r)),        # csc = 1/sin
-        (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r)),
-    )
-    + _parities(
         (tan(n*pi/2 + r), tan(r)),                    # tan has period pi
-        (tan(n*pi/2 + r), -cot(r)),                   # tan(r + pi/2) = -cot r
-    )
-    + _parities(
         (cot(n*pi/2 + r), cot(r)),                    # cot has period pi
+    ], assuming={Q.even(n)})
+    + add_rules([      # n odd: the cofunction, sin(r + pi/2 + m*pi) = (-1)**m cos r
+        (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r)),
+        (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r)),  # cos(r + pi/2 + m*pi) = -(-1)**m sin r
+        (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r)),  # (one power of -1: SymPy's form)
+        (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r)),
+        (tan(n*pi/2 + r), -cot(r)),                   # tan(r + pi/2) = -cot r
         (cot(n*pi/2 + r), -tan(r)),                   # cot(r + pi/2) = -tan r
-    )
+    ], assuming={Q.odd(n)})
     + add_rules([
         (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),  # sinc x = sin x / x, x != 0
     ])
