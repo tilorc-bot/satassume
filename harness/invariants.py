@@ -326,6 +326,10 @@ def rename(exprs: Sequence[Any], rng: random.Random, tag: str = "r"):
         cls = Dummy if isinstance(s, Dummy) else Symbol
         smap[s] = cls(nm, **s.assumptions0)
     fmap = {f: Function(f"{rng.choice('aqz')}{tag}f{names.pop()}") for f in sorted(funcs, key=str)}
+    return apply_rename(exprs, smap, fmap), smap, fmap
+
+
+def apply_rename(exprs: Sequence[Any], smap: dict, fmap: dict) -> list:
     out = []
     for e in exprs:
         if not hasattr(e, "xreplace"):
@@ -469,12 +473,15 @@ def check_I5(prop, assum, config, base, rng, variant=None):
     if assum is True or assum is S.true:
         return None, base, variant or {"kind": "skip"}
     if variant is None:
-        r = assum
+        cs = _conjuncts(assum)
+        parts = list(cs)
         for _ in range(4):        # SymPy canonicalises most of it: retry until it differs
-            r = restate(assum, random.Random(rng.randrange(1 << 30)))
-            if r != assum:
+            r = random.Random(rng.randrange(1 << 30))
+            parts = [restate(c, r) for c in cs]
+            if _join(parts) != assum:
                 break
-        variant = {"kind": "restate", "assum": to_srepr(r)}
+        variant = {"kind": "restate", "parts": [to_srepr(x) for x in parts],
+                   "assum": to_srepr(_join(parts))}
     new = from_srepr(variant["assum"])
     other = fresh_outcome(prop, new, config)
     return _severity_same("I5", base, other), other, variant
@@ -488,9 +495,16 @@ def check_I6(prop, assum, config, base, rng, variant=None):
     if variant is None:
         if len(to_srepr(prop)) + len(to_srepr(assum)) > RENAME_LIMIT:
             return None, base, {"kind": "skip"}
-        p2, a2 = rename([prop, assum], random.Random(rng.randrange(1 << 30)))
-        variant = {"kind": "rename", "prop": to_srepr(p2), "assum": to_srepr(a2)}
-    p2, a2 = from_srepr(variant["prop"]), from_srepr(variant["assum"])
+        (p2, a2), smap, fmap = rename([prop, assum], random.Random(rng.randrange(1 << 30)))
+        variant = {"kind": "rename", "prop": to_srepr(p2), "assum": to_srepr(a2),
+                   "symbols": [(to_srepr(k), to_srepr(x)) for k, x in smap.items()],
+                   "functions": [(k.__name__, x.__name__) for k, x in fmap.items()]}
+    else:
+        # the maps applied to (possibly shrunk) prop and assum
+        smap = {from_srepr(k): from_srepr(x) for k, x in variant.get("symbols", [])}
+        fmap = {Function(k): Function(x) for k, x in variant.get("functions", [])}
+        p2, a2 = apply_rename([prop, assum], smap, fmap)
+        variant = dict(variant, prop=to_srepr(p2), assum=to_srepr(a2))
     if variant.get("hashseed") is None and rng.random() < I6_PROCESS_RATE:
         variant = dict(variant, hashseed=rng.choice([1, 2, 3]))
     if variant.get("hashseed") is not None:
@@ -613,6 +627,20 @@ def shrink(v: Violation, max_tests: int = 400) -> Violation:
     """ddmin over the conjuncts of the assumption set, then over the
     unrelated conjuncts (I2) and the history (I7)."""
     cs = _conjuncts(v.assum)
+    if v.inv == "I5" and len(v.variant.get("parts", [])) == len(cs):
+        pairs = list(zip(cs, v.variant["parts"]))
+
+        def variant_of(sub):
+            return dict(v.variant, parts=[q for _, q in sub],
+                        assum=to_srepr(_join([from_srepr(q) for _, q in sub])))
+
+        def test_p5(sub):
+            return _guarded(v, v.prop, _join([c for c, _ in sub]), variant_of(sub))
+
+        if len(pairs) >= 2 and test_p5(pairs):
+            pairs = ddmin(pairs, test_p5, max_tests)
+            v.assum, v.variant = _join([c for c, _ in pairs]), variant_of(pairs)
+        cs = []                                  # done
 
     def test_a(sub):
         return _guarded(v, v.prop, _join(sub), v.variant)

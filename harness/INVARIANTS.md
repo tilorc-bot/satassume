@@ -34,11 +34,13 @@ A pair of answers is reported only when
    whatever the history, and the checker cannot tell whether the
    engine's report or its answer is the right one);
 3. the assumption set is consistent: `sympy_api._consistent(A, fresh
-   engine, search=True)` finds a model with full escalation and search.
-   When that cannot be decided (a set with a matrix or a relation no
-   theory reads) the candidate is *not* reported (counted as
-   `inconclusive`).  `A & B` for I2 and I3 is consistent iff `A` is, by
-   construction.
+   engine, search=True)` finds a model with full escalation and search,
+   of `A` or of a set with the same models (the restated set for I5, the
+   renamed one for I6) or of one whose consistency implies `A`'s (`A & B`
+   for I2 and I3: `B` is satisfiable over fresh symbols, or `p`/`~p` as
+   answered, or a declared fact).  When none can be decided (a set with a
+   matrix or a relation no theory reads) the candidate is *not* reported
+   (counted as `inconclusive`).
 
 Severity classes: `wrong` > `depends` (definite vs None across a "same
 answer" invariant) > `lost` (definiteness demanded by I3/I4) > `crash`.
@@ -101,10 +103,20 @@ The streams are the existing ones (`harness/generators.py`,
   ~Q.extended_nonzero(r))` = True; None with `Q.gt(u, h(k(0)))` added)
   and a context-free fact (`ask(Q.commutative(f(_d) + 1), Q.finite(r))`).
   Nine cases are pinned; the nightly reports up to five per slice.
+* **I4, `lost`** (pinned): `ask(sqrt(j)/2 + k/2 + 8 >= -oo,
+  Q.positive(sin(j)/2))` is None while the negated proposition is False.
+* **I5, `depends`** (found, not pinned: the per-conjunct restatement
+  finds it again): `ask(Q.even(j), ~Q.lt(2.0*sqrt(2), 0))` is None; the
+  same conjunct spelled `~Lt(2.0*sqrt(2), 0)` evaluates to `True` in
+  SymPy and the answer is True (`j` is declared even).  A constant
+  relation conjunct the theories do not read makes the engine give up on
+  a declared fact.
 * **I7, `depends`**, known (`I7-settings`): one pinned case.
-* I1, I3, I4, I5, I6: no violation in about 12,000 checks; the I1
-  candidates seen were all under inconsistent sets (rejected by the
-  guard).
+* I1, I3, I6: no violation in about 20,000 checks; the I1 candidates
+  seen were all under inconsistent sets (rejected by the guard).  I1
+  also turns a few consistent definite answers into `ValueError`
+  (fewer clauses, yet an inconsistency report): not a violation as I1
+  is stated, so not reported.
 
 ## Not covered / ideas not done
 
