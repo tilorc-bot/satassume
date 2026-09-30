@@ -2,7 +2,9 @@
 
 Conditions are decided connective by connective (:func:`provable`): an
 ``And`` needs every part provable and stops at the first that is not, an
-``Or`` one, atoms are asked one at a time through the dispatcher's ``ask``
+``Or`` one, or, where satassume answers, its undecided alternatives asked at
+once (:func:`_by_cases`: ``floor(y)`` is a Gaussian integer or infinite by
+whether ``y`` is finite; issue #18), atoms are asked one at a time through the dispatcher's ``ask``
 (relations last: they are the expensive ones) and an ``ask`` that raises
 (SymPy's relation theory does, on consistent facts) counts as not provable.  A sign or realness atom ``ask`` leaves open is
 decided from the bounds the assumptions state on its argument
@@ -60,12 +62,15 @@ def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
             undecided |= p is None                       # (a condition goes on looking for a refutation)
         return None if undecided else True
     if isinstance(cond, Or):
-        undecided = False
+        undecided = []
         for c in sorted(cond.args, key=_ask_cost):
             p = provable(c, assumptions, order)
             if p is True:
                 return True
-            undecided |= p is None
+            if p is None:
+                undecided.append(c)
+        if len(undecided) > 1 and _by_cases(Or(*undecided), assumptions, order):
+            return True
         return None if undecided else False
     if isinstance(cond, Not):
         inner = provable(cond.args[0], assumptions, order)
@@ -75,6 +80,23 @@ def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
         if relation is not None:
             return _order(*relation, assumptions)
     return _ask_atom(cond, assumptions)
+
+
+def _by_cases(cond: Any, assumptions: Any, order: bool) -> bool:
+    """Whether satassume proves the ``Or`` ``cond`` of the undecided alternatives
+    (at least two; the refuted ones dropped) as a whole: it holds by cases
+    (``floor(y)`` is a Gaussian integer or infinite, the first for a finite
+    ``y`` and the second for an infinite one; issue #18).  Only under a
+    backend whose ``ask`` is satassume's, and only when satassume answers the
+    whole ``Or`` itself (:data:`.hooks.ask_whole`): SymPy's ``ask`` does not
+    split cases and calls an ``Or`` true under inconsistent assumptions.  With ``order``
+    (a ``Piecewise`` condition, :func:`decide`) not when a relation is among the
+    atoms: there relations are decided by their proof forms (:func:`_order`),
+    and the whole ``Or`` would bypass them; a hypothesis asks its relation
+    atoms bare anyway."""
+    if order and any(_as_relation(a) for a in cond.atoms(AppliedPredicate, Relational)):
+        return False
+    return hooks.ask_whole(cond, assumptions) is True
 
 
 def decide(cond: Any, assumptions: Any) -> bool | None:

@@ -567,10 +567,19 @@ def test_results_are_sympy_objects_and_terminate():
     assert refine(atan(tan(atan(tan(x)))), Q.gt(x, 0) & Q.lt(x, pi/2)) == x
     # atan2's result contains atan of a quotient, which is not a tan
     assert refine(atan2(x*tan(t), x), Q.positive(x) & Q.gt(t, -pi/2) & Q.lt(t, pi/2)) == atan2(x*tan(t), x)
-    # old-style relationals and odd assumption shapes do not raise
+    # old-style relationals and odd assumption shapes do not raise, except that
+    # assumptions no value satisfies (a relation's sides are extended reals, so
+    # x >= zoo, x > x and x >= I are false) raise as inconsistent under the
+    # backends whose ask is satassume's (issue #18); SymPy's ask did not see it
     e = asin(sin(x))
-    for a in [Ge(x, -pi/2) & Le(x, pi/2), (x > -pi/2) & (x < pi/2), Q.ge(x, zoo), Q.gt(x, x),
-              Q.ge(x, I) & Q.le(x, I), Q.ge(x, 0) & Q.le(x, AccumBounds(0, 1)), Q.ge(x, 0) & Q.lt(x, zoo)]:
+    for a in [Ge(x, -pi/2) & Le(x, pi/2), (x > -pi/2) & (x < pi/2), Q.ge(x, 0) & Q.le(x, AccumBounds(0, 1))]:
         r = refine(e, a)
         assert isinstance(r, Basic) and r in (e, x)
+    for a in [Q.ge(x, zoo), Q.gt(x, x), Q.ge(x, I) & Q.le(x, I), Q.ge(x, 0) & Q.lt(x, zoo)]:
+        try:
+            r = refine(e, a)
+        except ValueError as error:
+            assert "inconsistent" in str(error)
+        else:
+            assert isinstance(r, Basic) and r in (e, x)
     assert inverse._conjunct_bounds(x, Q.ge(x, nan) & Q.le(x, zoo) & Q.ge(x, I)) == []

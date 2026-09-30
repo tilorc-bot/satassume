@@ -7,9 +7,10 @@ firing-cap inputs and a head refusing a refined child are rows of
 """
 from __future__ import annotations
 
-from sympy import Function, Max, Piecewise, Q, S, symbols
+from sympy import Abs, Function, Max, Piecewise, Q, S, floor, im, re, symbols
 
 from satrefine import refine
+from satrefine.identities.compat import backend
 from satrefine.identities.core import driver as _dispatch
 from satrefine.identities.core.prove import decide, provable
 from satrefine.identities.core.rewrite import identity_handler
@@ -50,8 +51,37 @@ def test_a_condition_is_refuted_past_an_undecided_conjunct():
     assert decide(Q.le(1, x) & Q.le(x, 3), Q.gt(x, 3)) is False
 
 
+def test_an_or_holding_by_cases_is_asked_whole():
+    """``floor(y)`` is a Gaussian integer for a finite ``y`` and ``y`` for an
+    infinite one: no alternative is provable alone, the ``Or`` is (issue #18).
+    SymPy's ``ask`` does not split cases; under inconsistent assumptions, where
+    it calls an ``Or`` true, the combined backend raises and nothing is proved."""
+    f = floor(y)
+    cond = Q.integer(f) | (Q.integer(re(f)) & Q.integer(im(f))) | Q.infinite(f)
+    for name in ("combined", "satassume"):
+        with backend.using(name):
+            assert provable(cond, S.true) is True
+    with backend.using("sympy"):
+        assert provable(cond, S.true) is None
+    for name in ("combined", "satassume"):
+        with backend.using(name):
+            assert provable(Q.nonnegative(x) | Q.zero(x), Q.positive(x) & Q.negative(x)) is None
+            assert refine(Abs(x), Q.positive(x) & Q.negative(x)) == Abs(x)
+
+
+def test_a_hypothesis_or_with_a_relation_is_asked_whole():
+    """A hypothesis asks relation atoms bare anyway, so its ``Or`` is asked whole
+    too (satassume reads relations over the extended reals, sound at infinity);
+    a ``Piecewise`` condition (``decide``) keeps its relations to the order
+    vocabulary."""
+    cond = Q.le(x, 0) | Q.gt(x, 0)
+    with backend.using("combined"):
+        assert provable(cond, Q.real(x)) is True
+    with backend.using("sympy"):
+        assert provable(cond, Q.real(x)) is None
+
+
 def test_undecided_branches_are_refined_under_their_conditions():
-    from sympy import Abs
     assert refine(Piecewise((Abs(x), Q.ge(x, 0)), (-x, True)), Q.real(x)) == Piecewise((x, Q.ge(x, 0)), (-x, True))
 
 
