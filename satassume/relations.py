@@ -35,7 +35,8 @@ nothing about the sides; ``ne`` is its negation.  An equality with ``oo``
 or ``-oo`` is linked to the unary vocabulary: ``eq(e, oo) <->
 positive_infinite(e)``, ``eq(e, -oo) <-> negative_infinite(e)``
 (:meth:`Relations._eq_infinity`); two sides at the same infinity, or with
-a zero difference, are equal, and sides with a nonzero difference are not
+a zero difference, are equal, and sides with a nonzero difference are not,
+for a difference SymPy builds without cancelling terms
 (:meth:`Relations._eq_links`).  It is given to theories
 that interpret it unconditionally (EUF) and, for finite real terms, to
 LRA (below).
@@ -309,6 +310,24 @@ def sympy_atom(atom: P):
 
 def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
+
+
+def _termwise(a, b, d) -> bool:
+    """``d`` (SymPy's ``a - b``) is the sum of the terms of ``a`` and the
+    negated terms of ``b``, up to how SymPy adds up the constants that are
+    ``Number``s (``2``, ``oo``) or finite (``pi``, ``I``): no other term is
+    cancelled, merged (``2*f(1) - f(1)``) or absorbed (``oo + x`` for a real
+    ``x``).  Its value is then that of ``a`` minus that of ``b`` at every
+    point."""
+    from collections import Counter
+
+    from sympy import Add
+
+    def terms(e):
+        return [t for t in Add.make_args(e)
+                if not (t.is_Number or _is_number(t) and t.is_finite)]
+
+    return Counter(terms(d)) == Counter(terms(a) + [-t for t in terms(b)])
 
 
 def _constant_term(e) -> bool:
@@ -600,10 +619,19 @@ class Relations:
         These hold in every domain (the sides may be complex).  The
         difference is taken as ``a - b``, and also as ``b - a`` when the
         session already has that term (``Q.zero(j - i)`` for ``Eq(i, j)``),
-        and only for sides without a common symbol: SymPy cancels common
-        terms (``x - (x + y)`` is ``-y``), which is not the difference at
-        ``x = oo`` (nan).  Not for a side that is a number: an infinite one
-        is :meth:`_eq_infinity`'s, and ``eq(e, 0)`` is ``zero(e)`` by the links."""
+        and only when SymPy built it term by term (:func:`_termwise`): its
+        value is then the value of ``a`` minus that of ``b`` at every point
+        (an extended sum does not depend on grouping: a ``nan`` term, or
+        infinities in different directions, make it nan).  SymPy cancels and merges
+        common terms (``x - (x + y)`` is ``-y``, ``(x + f(1)) - (y + f(1))``
+        is ``x - y``, ``(2*f(1) + x) - (f(1) + y)`` is ``f(1) + x - y``),
+        and the result is not the difference where a cancelled part is
+        infinite or nan: ``x = oo``, ``f(1) = oo`` gives equal sides with a
+        nonzero ``x - y``, and ``f(1) = g(1) = oo`` gives sides
+        ``x + f(1) - g(1)`` and ``y + f(1) - g(1)`` that are nan (so not
+        equal) with a zero ``x - y``.  Not for a side that is a number: an
+        infinite one is :meth:`_eq_infinity`'s, and ``eq(e, 0)`` is
+        ``zero(e)`` by the links."""
         a, b = atom.expr
         if _is_number(a) or _is_number(b):
             return
@@ -613,10 +641,9 @@ class Relations:
         s.ensure(b, {"positive_infinite", "negative_infinite"})
         for pred in ("positive_infinite", "negative_infinite"):
             emit([-s.var(pred, a), -s.var(pred, b), var])
-        if a.free_symbols & b.free_symbols:
-            return
-        for d, needed in ((a - b, False), (b - a, True)):
-            if _is_number(d) or needed and d not in s.base:
+        for p, q, needed in ((a, b, False), (b, a, True)):
+            d = p - q
+            if _is_number(d) or needed and d not in s.base or not _termwise(p, q, d):
                 continue
             s.ensure(d, {"zero", "nonzero"})
             emit([-s.var("zero", d), var])

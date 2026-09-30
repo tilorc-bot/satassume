@@ -20,13 +20,16 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 from hypothesis import HealthCheck, given, settings, strategies as st
-from sympy import I, Q, S, nan, oo, symbols, zoo
+from sympy import Function, I, Integral, Q, S, nan, oo, symbols, zoo
 from sympy.logic.boolalg import And
 
 from satassume import DictCache, Engine
 from satassume.sympy_api import ask
 
-x, y = symbols("x y")
+x, y, t = symbols("x y t")
+f, g = Function("f"), Function("g")
+F, G = f(1), g(1)                     # shared subterms without free symbols
+INT = Integral(g(t), (t, 0, 1))
 
 
 def _ask(prop, assum=True):
@@ -57,6 +60,22 @@ def _ask(prop, assum=True):
     (Q.eq(x, y), Q.extended_positive(x - y), None),              # x - y = oo needs x != y ...
     (Q.eq(x, y), ~Q.zero(x - y), None),                          # ... but x = y = oo has x - y = nan
     (Q.zero(x - y), Q.eq(x, y), None),                           # x = y = oo
+    # sides with a common term without free symbols: SymPy cancels it too, but
+    # it may be infinite (both sides oo while x - y is nonzero) or the
+    # cancelled part nan (both sides nan, so not equal, while x - y is zero)
+    (Q.ne(x + F, y + F), Q.nonzero(x - y) & Q.positive_infinite(F), None),
+    (Q.eq(x + F, y + F), Q.nonzero(x - y) & Q.positive_infinite(F), None),
+    (Q.ne(x + F, F), Q.nonzero(x), None),
+    (Q.ne(x + INT, y + INT), Q.nonzero(x - y) & Q.positive_infinite(INT), None),
+    (Q.ne(x + INT, INT), Q.nonzero(x), None),
+    (Q.ne(2*F + x, F + y), Q.nonzero(F + x - y) & Q.positive_infinite(F), None),  # merged
+    (Q.eq(x + F - G, y + F - G),
+     Q.zero(x - y) & Q.positive_infinite(F) & Q.positive_infinite(G), None),
+    (Q.eq(x + F*G, y + F*G), Q.zero(x - y) & Q.zero(F) & Q.positive_infinite(G), None),
+    (Q.ne(x + F, y), Q.nonzero(x + F - y), True),               # nothing cancelled
+    (Q.eq(x + F, y), Q.zero(x + F - y), True),
+    (Q.ne(x + 1, y + 2), Q.nonzero(x - y - 1), True),           # numbers are added up
+    (Q.ne(x + I, y + I), Q.nonzero(x - y), True),               # ... and finite constants
     # sign facts on two sums: LRA compares them without a relation atom
     (Q.negative(1 - x), Q.positive(x - 1), True),
     (Q.positive(x - 1), Q.negative(1 - x), True),
@@ -103,8 +122,8 @@ def _holds(t, env):
     if tag == "not":
         return not _holds(t[1], env)
     if tag == "u":
-        return _unary(t[1], S(t[2]).subs(env))
-    a, b = S(t[1]).subs(env), S(t[2]).subs(env)
+        return _unary(t[1], S(t[2]).xreplace(env))
+    a, b = S(t[1]).xreplace(env), S(t[2]).xreplace(env)
     equal = a is not nan and b is not nan and a == b     # value equality; Eq(nan, nan) is False
     return equal == (tag == "eq")
 
@@ -118,7 +137,10 @@ def _to_sympy(t):
     return getattr(Q, tag)(t[1], t[2])
 
 
-def _check(prop_t, assum_ts, eng):
+_POINTS = [dict(zip((x, y), v)) for v in itertools.product(_VALUES, repeat=2)]
+
+
+def _check(prop_t, assum_ts, eng, points=_POINTS):
     prop = _to_sympy(prop_t)
     assum = And(*[_to_sympy(t) for t in assum_ts])
     if prop in (S.true, S.false) or assum in (S.true, S.false):
@@ -127,8 +149,7 @@ def _check(prop_t, assum_ts, eng):
         got = ask(prop, assum, eng)
     except ValueError:
         got = "inconsistent"
-    for vals in itertools.product(_VALUES, repeat=2):
-        env = dict(zip((x, y), vals))
+    for env in points:
         if not all(_holds(t, env) for t in assum_ts):
             continue
         assert got != "inconsistent", (prop, assum, env)
@@ -157,3 +178,26 @@ def test_eq_and_ne_against_models():
        st.lists(st.tuples(st.sampled_from(_ATOMS), st.booleans()), min_size=1, max_size=3))
 def test_fuzz_against_models(prop_t, assum):
     _check(prop_t, [("not", a) if neg else a for a, neg in assum], Engine(cache=DictCache()))
+
+
+# sides sharing ``f(1)``, which SymPy cancels in the difference although it
+# may be infinite.  (A shared part that may be nan, ``f(1)*g(1)``, is left
+# out: congruence closure already equates ``x + f(1)*g(1)`` with
+# ``y + f(1)*g(1)`` from ``x = y``, though both are nan at ``0*oo``.)
+_F_POINTS = [dict(zip((x, y, F), v)) for v in itertools.product(
+    [-oo, S(0), S(1), oo, I, zoo], [-oo, S(0), S(1), oo, zoo], [-oo, S(0), oo, zoo])]
+_F_SIDES = [x + F, y + F, F, 2*F + y, x - F, x]
+_F_EQS = [(op, a, b) for op in ("eq", "ne") for a, b in itertools.combinations(_F_SIDES, 2)]
+_F_UNARY = [("u", p, e) for p in ("zero", "nonzero", "positive_infinite", "finite")
+            for e in (x - y, x, F, F + y - x, x - F - y)]
+
+
+def test_shared_subterm_against_models():
+    eng = Engine(cache=DictCache())
+    for a in _F_UNARY + _F_EQS:
+        for a_t in (a, ("not", a)):
+            for p in _F_EQS:
+                _check(p, [a_t], eng, _F_POINTS)
+    for p in _F_EQS:
+        for a, b in itertools.combinations(_F_UNARY, 2):
+            _check(p, [a, b], eng, _F_POINTS)
