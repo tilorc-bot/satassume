@@ -10,6 +10,8 @@
     python -m harness repro    FILE.json [--hashseed N]
     python -m harness exec     STREAM.json [--ref-level L]      (used by subprocesses)
     python -m harness inventory
+    python -m harness invariants --inv I1,I2 --seeds 0-2 --profile base,related --config default
+                               [--queries N] [--sets K] [--minutes M] [--nightly]   (harness/INVARIANTS.md)
 
 Every mode prints one JSON line per (source, config) with the counts, and
 writes each discrepancy (shrunk to a minimal prefix) to ``--out DIR``
@@ -359,6 +361,59 @@ def cmd_inventory(args) -> int:
     return 1 if unknown else 0
 
 
+def cmd_invariants(args) -> int:
+    """I1-I7 on generated streams (harness/invariants.py).  ``--minutes``
+    bounds the whole run: the (profile, config, seed) combinations are
+    visited round robin, a bounded slice of each stream at a time, until
+    the budget is spent; ``--nightly`` selects the documented nightly work
+    list (profiles, configs and 20 minutes)."""
+    from .generators import random_stream
+    from .invariants import INVARIANTS, run_stream, write_case
+    invs = INVARIANTS if args.inv == "all" else tuple(args.inv.split(","))
+    if args.nightly:
+        profiles = ["base", "related", "declared", "deep", "relational", "focus", "links", "transfer"]
+        configs = _configs("default,budget,tight,reuse,whole")
+        minutes = args.minutes or 20.0
+    else:
+        profiles, configs, minutes = _profiles(args), _configs(args.config), args.minutes
+    deadline = time.time() + minutes * 60 if minutes else None
+    seeds = _seeds(args.seeds)
+    combos = [(pr, cfg, sd) for sd in seeds for pr in profiles for cfg in configs]
+    bad = unknown = 0
+    slice_n = args.queries if not minutes else max(10, args.queries // 4)
+    offsets = {i: 0 for i in range(len(combos))}
+    rounds = 0
+    while True:
+        progressed = False
+        for i, (profile, cfg, seed) in enumerate(combos):
+            if deadline is not None and time.time() > deadline:
+                break
+            if offsets[i] >= args.queries:
+                continue
+            items = random_stream(seed, args.queries, args.sets, **_opts_of(args, profile))
+            chunk = items[offsets[i]:offsets[i] + slice_n]
+            offsets[i] += slice_n
+            progressed = True
+            src = f"invariants profile={profile} seed={seed} slice={offsets[i] - slice_n}"
+            rep = run_stream(chunk, cfg, invs, seed * 1000 + offsets[i], source=src,
+                             max_violations=args.max_violations, shrink_them=not args.no_shrink,
+                             deadline=deadline, progress=_progress(args.quiet))
+            d = rep.to_json()
+            print(json.dumps(d), flush=True)
+            for k, v in enumerate(rep.violations):
+                stem = f"inv-{v.inv}-{profile}-{cfg.name}-s{seed}-{offsets[i]}-{k}"
+                jp, pp = write_case(v, args.out, stem)
+                print(f"  violation: {v.summary()}\n    case: {pp}", file=sys.stderr, flush=True)
+                bad += 1
+                unknown += not v.known
+        rounds += 1
+        if not progressed or deadline is None or time.time() > deadline:
+            break
+    if args.fail_on == "never":
+        return 0
+    return 1 if (unknown if args.fail_on == "unknown" else bad) else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m harness", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -426,6 +481,18 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("inventory")
     p.set_defaults(fn=cmd_inventory)
+
+    p = sub.add_parser("invariants")
+    p.add_argument("--inv", default="all", help="comma-separated subset of I1..I7, or all")
+    p.add_argument("--seeds", default="0-2")
+    p.add_argument("--queries", type=int, default=120)
+    p.add_argument("--sets", type=int, default=5)
+    p.add_argument("--minutes", type=float, default=0.0, help="time budget for the whole run")
+    p.add_argument("--nightly", action="store_true", help="the documented nightly work list")
+    p.add_argument("--max-violations", type=int, default=5)
+    _common(p)
+    _gen_opts(p)
+    p.set_defaults(fn=cmd_invariants)
 
     args = ap.parse_args(argv)
     return args.fn(args)
