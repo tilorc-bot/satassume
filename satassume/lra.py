@@ -238,6 +238,7 @@ class LRATheory:
         self._key: list[Hashable | None] = []
         self._var_of: dict[Hashable, int] = {}
         self._slack_of: dict[tuple, int] = {}
+        self._forms: dict[frozenset, tuple[int, Fraction]] = {}   # _var_of_form
         # bounds: (q, d) delta-rational or None, and the literal that set it
         self._lo: list[tuple | None] = []
         self._up: list[tuple | None] = []
@@ -493,7 +494,8 @@ class LRATheory:
                 c = num(c)
                 if type(c) is not Fraction:
                     self._fields = True
-            lin[t] = lin.get(t, _ZERO) + c
+            old = lin.get(t)
+            lin[t] = c if old is None else old + c
         for t in lin:
             self._term_var(t)
         # a formal zero test (sparsity): a coefficient whose value is 0
@@ -504,12 +506,20 @@ class LRATheory:
     def _var_of_form(self, lin: dict) -> tuple[int, Fraction]:
         """``(v, c)`` with ``sum(a*t) == c*v`` for the non-empty form
         ``lin``: the term's variable, or the slack of the form normalised to
-        leading coefficient 1."""
+        leading coefficient 1.  Memoized per form (the atoms of one
+        expression, ``0 < e``, ``e < 0``, ``e = 0``, share it)."""
+        key = frozenset(lin.items())
+        r = self._forms.get(key)
+        if r is not None:
+            return r
         vs = sorted((self._term_var(t), c) for t, c in lin.items())
         if len(vs) == 1:
-            return vs[0]
-        c = vs[0][1]
-        return self._slack(tuple((w, a / c) for w, a in vs)), c
+            r = vs[0]
+        else:
+            c = vs[0][1]
+            r = self._slack(tuple((w, a / c) for w, a in vs)), c
+        self._forms[key] = r
+        return r
 
     def _register_integral(self, literal: int, payload: Integral) -> None:
         lin = self._lin(payload.terms)
