@@ -117,8 +117,8 @@ def test_module_state_inventory_is_classified():
 
 #: family of a repro file whose name does not start with it; issue filed
 #: for a family
-FAMILY = {"C6b": "C'", "Gp1": "G'", "Gp2": "G'"}
-ISSUES = {"G": "#42", "G'": "#42", "C": "#47"}
+FAMILY = {"C6b": "C'", "E1c": "E", "Gp1": "G'", "Gp2": "G'"}
+ISSUES = {"G": "#42", "G'": "#42", "C": "#47", "E": "#53"}
 
 
 def _repro_params():
@@ -416,6 +416,64 @@ def test_order_stream_keeps_events_in_place():
         assert all(it == items[0] for it in out[:ev[0]]) and len(out[:ev[0]]) >= 1
         assert {it.prop for it in out[ev[0] + 1:]} == {items[2].prop, items[3].prop}
     assert not reg.active_ids()
+
+
+def _srepr_samples():
+    from sympy import (AccumBounds, CRootOf, FiniteSet, Function, ImageSet, Interval, Lambda,
+                       Piecewise, Range, S, hyper, meijerg, oo)
+    x = Symbol("x")
+    return [
+        AccumBounds(-1, 1),                       # AccumulationBounds: not in sympy's namespace
+        Q.extended_negative(AccumBounds(-1, 1) + x),
+        Piecewise((x, x > 0), (0, True)),         # ExprCondPair
+        hyper([1], [2], x),                       # TupleArg
+        meijerg([[1], []], [[], []], x),
+        CRootOf(x**5 + x + 1, 0),                 # ComplexRootOf
+        ImageSet(Lambda(x, x**2), S.Naturals),
+        Range(3), Interval(0, oo), FiniteSet(1, x),
+        Q.positive(Function("f")(x)) | Q.eq(x, 1),
+    ]
+
+
+@pytest.mark.parametrize("expr", _srepr_samples(), ids=lambda e: type(e).__name__)
+def test_srepr_round_trip(expr):
+    """``from_srepr`` rebuilds what ``srepr`` prints for classes SymPy does
+    not export at the top level (the nightly hash-seed step once crashed on
+    ``NameError: AccumulationBounds``)."""
+    from harness.sympy_io import from_srepr, to_srepr
+    back = from_srepr(to_srepr(expr))
+    assert back == expr and type(back) is type(expr)
+
+
+def test_srepr_unknown_name_is_a_name_error():
+    from harness.sympy_io import from_srepr
+    with pytest.raises(NameError):
+        from_srepr("NoSuchSymPyClass(Integer(1))")
+
+
+def test_family_of_answer_memo_repeating_the_query():
+    """The pinned E1c: a relation in a prefix set links ``i + oo``, the
+    extended-order clauses decide its sign at the root and write it back,
+    and the prefix also asks the query context-free, so the answer memo
+    holds a copy.  Only clearing both the cache and the memo restores the
+    fresh answer (carrier ``cache+answers``); the tag is the cache's
+    family, E.  Without the repeated query in the prefix the pair carrier
+    stays unexplained."""
+    import dataclasses
+    from harness.checker import attribute, family_of, item_from_json
+    from harness.state import EngineConfig
+    with open(os.path.join(REPROS, "E1c-order-clauses-write-back-oo-sum-relation-in-set.json")) as fh:
+        rec = json.load(fh)
+    seq = [item_from_json(i) for i in rec["prefix"]]
+    d = Discrepancy(EngineConfig.from_dict(rec["config"]), "pinned", len(seq),
+                    item_from_json(rec["item"]), rec["warm"], rec["ref"], ReferenceLevel.ENGINE,
+                    list(seq), shrunk=list(seq), shrunk_warm=rec["warm"], shrunk_ref=rec["ref"])
+    attribute(d)
+    assert d.confirmations["carrier"] == ["cache+answers"], d.confirmations
+    assert d.confirmations["family"] == "E"
+    other = dataclasses.replace(d, prefix=seq[:1], shrunk=seq[:1],
+                                confirmations=dict(d.confirmations))
+    assert family_of(other).startswith("new:cache+answers-")
 
 
 def test_known_families():

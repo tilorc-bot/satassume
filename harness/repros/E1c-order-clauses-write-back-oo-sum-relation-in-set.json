@@ -1,0 +1,63 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "audit",
+ "index": 117,
+ "source": "audit profile=base seed=103 (nightly history-fuzz)",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.extended_negative, Add(Symbol('i', imaginary=True), oo))",
+  "assum": "True"
+ },
+ "warm": "False",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.extended_negative, Add(Symbol('i', imaginary=True), oo))",
+   "assum": "And(Or(AppliedPredicate(Q.extended_real, Integer(0)), AppliedBinaryRelation(Q.ge, pi, Symbol('n', integer=True))), AppliedPredicate(Q.infinite, Mul(Integer(-1), pi, Pow(Mul(Integer(-1), Symbol('k', integer=True, positive=True)), Symbol('j', integer=True, even=True)))), AppliedPredicate(Q.prime, Mul(Integer(-1), Pow(Symbol('k', integer=True, positive=True), Integer(2)), Pow(Mul(Integer(-1), Symbol('k', integer=True, positive=True)), Symbol('j', integer=True, even=True)))))"
+  },
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.extended_negative, Add(Symbol('i', imaginary=True), oo))",
+   "assum": "True"
+  }
+ ],
+ "full_prefix_len": 117,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "False",
+   "sessions": "False",
+   "answers": "False",
+   "splits": "False",
+   "failed": "False",
+   "all": "None",
+   "cache+sessions": "False",
+   "cache+answers": "None"
+  },
+  "carrier": [
+   "cache+answers"
+  ],
+  "outside_engine": false,
+  "family": "E"
+ }
+}

@@ -66,7 +66,10 @@ the fresh answer is the *carrier* of the dependence.  `checker.family_of`
 turns carrier, kind, configuration and the shape of the prefix into a
 heuristic family tag (`A`, `B`, `C`, `C'`, `D`, `E`, `G`, `G'`, `K`, `L`,
 `T`, `R:<carrier>`, or `new:<carrier>-<kind>` for what no known mechanism
-explains); the summary line and the JSON carry both.  Two tags rest on
+explains); the summary line and the JSON carry both.  A pair carrier
+`X+answers` whose prefix asks the query itself is tagged by `X`: the
+answer memo only holds a copy of the query's earlier answer, which `X`
+made history-dependent.  Two tags rest on
 extra replays: with the trigger/observer shape (a relation query in the
 prefix under the query's set, none in the query) the prefix is replayed
 with `transfer=False` (`without_transfer`: the discrepancy vanishes for
