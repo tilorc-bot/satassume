@@ -10,6 +10,7 @@ from sympy import *  # noqa: F401,F403
 from sympy import Q
 
 from satrefine.identities.core.driver import generated_handlers as handlers_dict
+from satrefine.identities.core.prove import by_cases
 from satrefine.identities.core.rewrite import rule_handler
 
 b, d, e, r, y, z = symbols('b d e r y z')
@@ -66,11 +67,11 @@ RULES = [
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.nonnegative(b)
     #   fired: complex_parts.RULES[7], complex_parts.generated[30], power_exp_log.LOG_RULES[0], complex_parts.RULES[0]
     #   asks: Q.integer(e), Q.even(e), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.zero(0), Q.real(0), Q.finite(e), Q.extended_nonnegative(b)
-    (log(b**e), e*log(b), Q.even(e) & Q.nonnegative(b) & (Q.positive(e) | ~Q.zero(b))),
+    (log(b**e), e*log(b), Q.even(e) & Q.nonnegative(b) & by_cases(Q.positive(e) | ~Q.zero(b))),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.real(b)
     #   fired: complex_parts.RULES[7], complex_parts.generated[30], complex_parts.generated[31], integer_funcs.RULES[1], complex_parts.generated[17], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21], power_exp_log.LOG_RULES[0]
     #   asks: Q.integer(e), Q.even(e), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.negative(b), Q.integer(-im(e)/2), Q.integer(-e/2), Q.positive(-b), Q.zero(0), Q.real(0), Q.finite(e)
-    (log(b**e), e*log(Abs(b)), Q.even(e) & Q.real(b) & (Q.positive(e) | ~Q.zero(b))),
+    (log(b**e), e*log(Abs(b)), Q.even(e) & Q.real(b) & by_cases(Q.positive(e) | ~Q.zero(b))),
     # round 1: from power_exp_log.IDENTITIES[2] under Q.positive(y)
     #   fired: complex_parts.generated[30], power_exp_log.IDENTITIES[2], complex_parts.generated[17]
     #   asks: Q.integer(-1), Q.negative(-1), Q.positive(y), Q.integer(0)

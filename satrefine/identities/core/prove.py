@@ -2,9 +2,10 @@
 
 Conditions are decided connective by connective (:func:`provable`): an
 ``And`` needs every part provable and stops at the first that is not, an
-``Or`` one, or, where satassume answers, its undecided alternatives asked at
-once (:func:`_by_cases`: ``floor(y)`` is a Gaussian integer or infinite by
-whether ``y`` is finite; issue #18), atoms are asked one at a time through the dispatcher's ``ask``
+``Or`` one, or, for an ``Or`` a table marks as holding by cases
+(:func:`by_cases`) and where satassume answers, its undecided alternatives
+asked at once (``floor(y)`` is a Gaussian integer or infinite by whether
+``y`` is finite; issue #18), atoms are asked one at a time through the dispatcher's ``ask``
 (relations last: they are the expensive ones) and an ``ask`` that raises
 (SymPy's relation theory does, on consistent facts) counts as not provable.  A sign or realness atom ``ask`` leaves open is
 decided from the bounds the assumptions state on its argument
@@ -37,6 +38,7 @@ from sympy import And, Dummy, Not, Or, Q, S, expand_mul
 from sympy.assumptions import AppliedPredicate
 from sympy.core import Basic
 from sympy.core.relational import Relational
+from sympy.printing.precedence import PRECEDENCE
 
 from . import hooks
 
@@ -69,8 +71,9 @@ def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
                 return True
             if p is None:
                 undecided.append(c)
-        if len(undecided) > 1 and _by_cases(Or(*undecided), assumptions, order):
-            return True
+        if len(undecided) > 1 and not order and isinstance(cond, ByCases) \
+                and hooks.ask_whole(Or(*undecided), assumptions) is True:
+            return True                                  # by cases (see ByCases)
         return None if undecided else False
     if isinstance(cond, Not):
         inner = provable(cond.args[0], assumptions, order)
@@ -82,21 +85,39 @@ def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
     return _ask_atom(cond, assumptions)
 
 
-def _by_cases(cond: Any, assumptions: Any, order: bool) -> bool:
-    """Whether satassume proves the ``Or`` ``cond`` of the undecided alternatives
-    (at least two; the refuted ones dropped) as a whole: it holds by cases
-    (``floor(y)`` is a Gaussian integer or infinite, the first for a finite
-    ``y`` and the second for an infinite one; issue #18).  Only under a
-    backend whose ``ask`` is satassume's, and only when satassume answers the
-    whole ``Or`` itself (:data:`.hooks.ask_whole`): SymPy's ``ask`` does not
-    split cases and calls an ``Or`` true under inconsistent assumptions.  With ``order``
-    (a ``Piecewise`` condition, :func:`decide`) not when a relation is among the
-    atoms: there relations are decided by their proof forms (:func:`_order`),
-    and the whole ``Or`` would bypass them; a hypothesis asks its relation
-    atoms bare anyway."""
-    if order and any(_as_relation(a) for a in cond.atoms(AppliedPredicate, Relational)):
-        return False
-    return hooks.ask_whole(cond, assumptions) is True
+class ByCases(Or):
+    """An ``Or`` that may hold only by cases, made by :func:`by_cases`: when no
+    alternative is provable on its own and at least two are undecided,
+    :func:`provable` asks satassume the ``Or`` of the undecided ones (the
+    refuted ones dropped) at once (``floor(y)`` is a Gaussian integer or
+    infinite, the first for a finite ``y`` and the second for an infinite one;
+    issue #18).  Only under a backend whose ``ask`` is satassume's, and only
+    where satassume answers the whole ``Or`` itself (:data:`.hooks.ask_whole`):
+    SymPy's ``ask`` does not split cases and calls an ``Or`` true under
+    inconsistent assumptions.  Not in a ``Piecewise`` condition (:func:`decide`),
+    whose relations are decided by their proof forms (:func:`_order`); a proof
+    form may itself be marked (``u <= v`` from signs, :func:`_le_by_signs`).
+
+    Every other ``Or`` is decided alternative by alternative: asking it whole
+    proves nothing more where one alternative implies another (most of the
+    tables' ``Or`` conditions, such as ``Q.nonnegative(a) | Q.extended_nonnegative(a)``)
+    and cost 10% on the battery (#50).  A ``ByCases`` is an ``Or`` for
+    everything else (``ask``, ``And.make_args``, ``xreplace``, a row's
+    condition used as assumptions by the generator) and prints as
+    ``by_cases(...)``, so a generated row keeps the mark."""
+    precedence = PRECEDENCE["Func"]              # printed as a call, never parenthesized
+
+    def __new__(cls, *alternatives, **options):
+        return super().__new__(cls, *(a for x in alternatives for a in Or.make_args(x)), **options)
+
+    def _sympystr(self, printer: Any) -> str:
+        return f"by_cases({printer._print_Or(self)})"
+
+
+def by_cases(*alternatives: Any) -> Any:
+    """The ``Or`` of ``alternatives`` (a plain ``Or`` among them is flattened
+    into it), marked as holding possibly only by cases (:class:`ByCases`)."""
+    return ByCases(*alternatives)
 
 
 def decide(cond: Any, assumptions: Any) -> bool | None:
@@ -120,9 +141,10 @@ def _ask_atom(cond: Any, assumptions: Any) -> bool | None:
 # the order vocabulary: proof forms of u <= v, u < v, u = v, u != v for (u, v),
 # from unary facts (signs, an infinite endpoint) and from stated relations
 def _le_by_signs(u: Any, v: Any) -> Any:
-    return ((Q.extended_nonpositive(u) & Q.extended_nonnegative(v))
-            | (Q.infinite(v) & Q.extended_nonnegative(v) & Q.extended_real(u))
-            | (Q.infinite(u) & Q.extended_nonpositive(u) & Q.extended_real(v)))
+    # by cases: m <= n with n infinite is n = oo (the second form) or m = n = -oo (the third)
+    return by_cases((Q.extended_nonpositive(u) & Q.extended_nonnegative(v)),
+                    (Q.infinite(v) & Q.extended_nonnegative(v) & Q.extended_real(u)),
+                    (Q.infinite(u) & Q.extended_nonpositive(u) & Q.extended_real(v)))
 
 
 def _lt_by_signs(u: Any, v: Any) -> Any:
