@@ -276,7 +276,7 @@ def restate(b, rng: random.Random, p: float = 0.5):
                 return {v: k for k, v in _QREL.items()}[f](*b.arguments)
             except Exception:  # noqa: BLE001
                 return b
-        if rng.random() < p * 0.3:
+        if rng.random() < p * 0.6:
             return Q.is_true(b)
         return b
     if isinstance(b, Relational):
@@ -469,7 +469,11 @@ def check_I5(prop, assum, config, base, rng, variant=None):
     if assum is True or assum is S.true:
         return None, base, variant or {"kind": "skip"}
     if variant is None:
-        r = restate(assum, random.Random(rng.randrange(1 << 30)))
+        r = assum
+        for _ in range(4):        # SymPy canonicalises most of it: retry until it differs
+            r = restate(assum, random.Random(rng.randrange(1 << 30)))
+            if r != assum:
+                break
         variant = {"kind": "restate", "assum": to_srepr(r)}
     new = from_srepr(variant["assum"])
     other = fresh_outcome(prop, new, config)
@@ -567,22 +571,42 @@ def evaluate(v: Violation, prop=None, assum=None, variant=None) -> Tuple[Optiona
     return sev, base, other, var
 
 
+def _equivalent_set(v: Violation, assum, var) -> Optional[Any]:
+    """A set with exactly the models of ``assum`` (I5: the restatement;
+    I6: the renamed set) or one whose consistency implies ``assum``'s
+    (I2, I3: ``A & B``); None for the other invariants."""
+    if v.inv == "I5":
+        return from_srepr(var["assum"])
+    if v.inv == "I6":
+        return from_srepr(var["assum"])
+    if v.inv == "I2":
+        return _join(_conjuncts(assum) + _conjuncts(from_srepr(var["extra"])))
+    if v.inv == "I3":
+        if var.get("kind") == "self":
+            b = v.prop if v.base == "True" else Not(v.prop)
+        elif var.get("kind") == "declared":
+            atom = getattr(Q, var["pred"])(from_srepr(var["sym"]))
+            b = atom if var["value"] else Not(atom)
+        else:
+            return None
+        return _join(_conjuncts(assum) + [b])
+    return None
+
+
 def _guarded(v: Violation, prop, assum, variant) -> bool:
-    """The candidate still violates and its sets are consistent."""
+    """The candidate still violates and its set is consistent: the
+    engine finds a model of ``A`` or of a set equivalent to it (the
+    restated or renamed set) or one that implies it is consistent
+    (``A & B``: B is over fresh symbols and satisfiable, or p / ~p as
+    answered, or a declared fact).  The engine's check refuses sets it
+    cannot decide (a relation no theory reads), so both are tried."""
     sev, base, other, var = evaluate(v, prop, assum, variant)
     if sev is None:
         return False
-    if not consistent(assum, v.config):
-        return False
-    if v.inv in ("I2", "I3"):
-        # A & B is consistent iff A is, by construction: B is over fresh
-        # symbols and functions and satisfiable (I2), or p / ~p as answered
-        # or a declared fact (I3); the engine's own check would refuse
-        # sets with relations no theory reads and lose real findings
+    if consistent(assum, v.config):
         return True
-    if v.inv == "I5":
-        return consistent(from_srepr(var["assum"]), v.config)
-    return True
+    alt = _equivalent_set(v, assum, var)
+    return alt is not None and consistent(alt, v.config)
 
 
 def shrink(v: Violation, max_tests: int = 400) -> Violation:
