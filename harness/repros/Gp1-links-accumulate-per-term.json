@@ -1,0 +1,71 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 1,
+ "source": "hand-written (harness/lazy.py shapes)",
+ "item": {
+  "kind": "ask",
+  "prop": "Implies(AppliedBinaryRelation(Q.eq, Add(Integer(1), Symbol('w', nonzero=True)), Integer(1)), AppliedPredicate(Q.prime, Function('f')(Symbol('z'))))",
+  "assum": "AppliedBinaryRelation(Q.eq, Symbol('c', complex=True), Integer(1))",
+  "pickle": "gASV8gEAAAAAAACME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjAdJbXBsaWVzlJOUjCFzeW1weS5hc3N1bXB0aW9ucy5yZWxhdGlvbi5iaW5yZWyUjBVBcHBsaWVkQmluYXJ5UmVsYXRpb26Uk5SMI3N5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmVxdWFsaXR5lIwRRXF1YWxpdHlQcmVkaWNhdGWUk5QpgZSMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUjBJzeW1weS5jb3JlLm51bWJlcnOUjANPbmWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF3lIWUfZSMB25vbnplcm+UiHOSlIaUgZRoEIeUgZSMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMJHN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMubnRoZW9yeZSMDlByaW1lUHJlZGljYXRllJOUKYGUjBNzeW1weS5jb3JlLmZ1bmN0aW9ulIwOX3JlYnVpbGRfdW5kZWaUk5SMAWaUfZSGlFKUaBOMAXqUhZSBlIWUgZSGlIGUhpSBlGgFaAloE4wBY5SFlH2UjAdjb21wbGV4lIhzkpRoEIeUgZSGlC4="
+ },
+ "warm": "True",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.positive, Symbol('w', nonzero=True))",
+   "assum": "AppliedBinaryRelation(Q.eq, Symbol('c', complex=True), Integer(1))",
+   "pickle": "gASVYwEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXeUhZR9lIwHbm9uemVyb5SIc5KUhpSBlIwhc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uYmlucmVslIwVQXBwbGllZEJpbmFyeVJlbGF0aW9ulJOUjCNzeW1weS5hc3N1bXB0aW9ucy5yZWxhdGlvbi5lcXVhbGl0eZSMEUVxdWFsaXR5UHJlZGljYXRllJOUKYGUaAmMAWOUhZR9lIwHY29tcGxleJSIc5KUjBJzeW1weS5jb3JlLm51bWJlcnOUjANPbmWUk5QpgZSHlIGUhpQu"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "True",
+   "sessions": "None",
+   "answers": "True",
+   "splits": "True",
+   "failed": "True",
+   "all": "None"
+  },
+  "carrier": [
+   "sessions"
+  ],
+  "outside_engine": false,
+  "mention_only": "True",
+  "family": "G'",
+  "hashseed=0": {
+   "warm": "True",
+   "ref": "None"
+  },
+  "hashseed=1": {
+   "warm": "True",
+   "ref": "None"
+  },
+  "hashseed=2": {
+   "warm": "True",
+   "ref": "None"
+  }
+ }
+}

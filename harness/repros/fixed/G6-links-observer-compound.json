@@ -1,0 +1,72 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 1,
+ "source": "hand-written (harness/lazy.py shapes)",
+ "item": {
+  "kind": "ask",
+  "prop": "Or(AppliedPredicate(Q.zero, Symbol('u')), AppliedPredicate(Q.positive, Add(Symbol('x', real=True), Symbol('y', real=True))))",
+  "assum": "AppliedPredicate(Q.positive, Add(Integer(-1), Symbol('x', real=True), Symbol('y', real=True)))",
+  "pickle": "gASVUgEAAAAAAACME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjAJPcpSTlIwYc3ltcHkuYXNzdW1wdGlvbnMuYXNzdW1llIwQQXBwbGllZFByZWRpY2F0ZZSTlIwic3ltcHkuYXNzdW1wdGlvbnMucHJlZGljYXRlcy5vcmRlcpSMDVplcm9QcmVkaWNhdGWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF1lIWUgZSGlIGUaAVoBowRUG9zaXRpdmVQcmVkaWNhdGWUk5QpgZSMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUaAyMAXiUhZR9lIwEcmVhbJSIc5KUaAyMAXmUhZRoGpKUhpSBlIaUgZSGlIGUaAVoFGgXjBJzeW1weS5jb3JlLm51bWJlcnOUjAtOZWdhdGl2ZU9uZZSTlCmBlGgcaB+HlIGUhpSBlIaULg=="
+ },
+ "warm": "True",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "StrictLessThan(Symbol('x', real=True), Symbol('y', real=True))",
+   "assum": "AppliedPredicate(Q.positive, Add(Integer(-1), Symbol('x', real=True), Symbol('y', real=True)))",
+   "pickle": "gASVKwEAAAAAAACMFXN5bXB5LmNvcmUucmVsYXRpb25hbJSMDlN0cmljdExlc3NUaGFulJOUjBFzeW1weS5jb3JlLnN5bWJvbJSMBlN5bWJvbJSTlIwBeJSFlH2UjARyZWFslIhzkpRoBYwBeZSFlGgIkpSGlIGUjBhzeW1weS5hc3N1bXB0aW9ucy5hc3N1bWWUjBBBcHBsaWVkUHJlZGljYXRllJOUjCJzeW1weS5hc3N1bXB0aW9ucy5wcmVkaWNhdGVzLm9yZGVylIwRUG9zaXRpdmVQcmVkaWNhdGWUk5QpgZSMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUjBJzeW1weS5jb3JlLm51bWJlcnOUjAtOZWdhdGl2ZU9uZZSTlCmBlGgKaA2HlIGUhpSBlIaULg=="
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "True",
+   "sessions": "None",
+   "answers": "True",
+   "splits": "True",
+   "failed": "True",
+   "all": "None"
+  },
+  "carrier": [
+   "sessions"
+  ],
+  "outside_engine": false,
+  "without_transfer": "True",
+  "mention_only": "None",
+  "family": "G",
+  "hashseed=0": {
+   "warm": "True",
+   "ref": "None"
+  },
+  "hashseed=1": {
+   "warm": "True",
+   "ref": "None"
+  },
+  "hashseed=2": {
+   "warm": "True",
+   "ref": "None"
+  }
+ }
+}

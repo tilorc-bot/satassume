@@ -1,0 +1,57 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "raise-vs-definite",
+ "group_size": 1,
+ "order": "forward",
+ "index": 1,
+ "source": "hand",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.algebraic, Add(Symbol('x'), Symbol('A', commutative=False)))",
+  "assum": "AppliedPredicate(Q.algebraic, Add(Symbol('x'), Symbol('A', commutative=False)))",
+  "pickle": "gASV3wAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SMEkFsZ2VicmFpY1ByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUgZRoDIwBQZSFlH2UjAtjb21tdXRhdGl2ZZSJc5KUhpSBlIaUgZRoAmgGaBaGlIGUhpQu"
+ },
+ "warm": "ValueError",
+ "ref": "True",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.algebraic, Add(Symbol('x'), Symbol('A', commutative=False)))",
+   "assum": "True",
+   "pickle": "gASV1gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SMEkFsZ2VicmFpY1ByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUgZRoDIwBQZSFlH2UjAtjb21tdXRhdGl2ZZSJc5KUhpSBlIaUgZSIhpQu"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "without": {
+   "cache": "True",
+   "sessions": "ValueError",
+   "answers": "ValueError",
+   "splits": "ValueError",
+   "failed": "ValueError",
+   "all": "True"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "B"
+ }
+}

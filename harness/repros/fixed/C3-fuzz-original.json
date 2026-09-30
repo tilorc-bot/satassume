@@ -1,0 +1,57 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "forward",
+ "index": 1,
+ "source": "fuzz --custom seed=101",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.finite, Symbol('A', commutative=False))",
+  "assum": "True",
+  "pickle": "gASVsAAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMJXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuY2FsY3VsdXOUjA9GaW5pdGVQcmVkaWNhdGWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAFBlIWUfZSMC2NvbW11dGF0aXZllIlzkpSGlIGUiIaULg=="
+ },
+ "warm": "True",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "Or(AppliedBinaryRelation(Q.eq, Mul(Integer(-1), Symbol('j', integer=True, even=True)), Integer(1)), AppliedPredicate(Q.extended_negative, Pow(Add(Symbol('A', commutative=False), acot(Symbol('j', integer=True, even=True))), Integer(-1))))",
+   "assum": "True",
+   "pickle": "gASVRAIAAAAAAACME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjAJPcpSTlIwhc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uYmlucmVslIwVQXBwbGllZEJpbmFyeVJlbGF0aW9ulJOUjCNzeW1weS5hc3N1bXB0aW9ucy5yZWxhdGlvbi5lcXVhbGl0eZSMEUVxdWFsaXR5UHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLm11bJSMA011bJSTlIwSc3ltcHkuY29yZS5udW1iZXJzlIwLTmVnYXRpdmVPbmWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAFqlIWUfZQojAdpbnRlZ2VylIiMBGV2ZW6UiHWSlIaUgZRoDYwDT25llJOUKYGUh5SBlIwYc3ltcHkuYXNzdW1wdGlvbnMuYXNzdW1llIwQQXBwbGllZFByZWRpY2F0ZZSTlIwic3ltcHkuYXNzdW1wdGlvbnMucHJlZGljYXRlcy5vcmRlcpSMGUV4dGVuZGVkTmVnYXRpdmVQcmVkaWNhdGWUk5QpgZSMEHN5bXB5LmNvcmUucG93ZXKUjANQb3eUk5SMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUaBOMAUGUhZR9lIwLY29tbXV0YXRpdmWUiXOSlIwoc3ltcHkuZnVuY3Rpb25zLmVsZW1lbnRhcnkudHJpZ29ub21ldHJpY5SMBGFjb3SUk5RoGYWUgZSGlIGUaBCGlIGUhpSBlIaUgZSIhpQu"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "without": {
+   "cache": "None",
+   "sessions": "True",
+   "answers": "True",
+   "splits": "True",
+   "failed": "True",
+   "all": "None"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "C"
+ }
+}

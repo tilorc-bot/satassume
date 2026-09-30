@@ -1,0 +1,57 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "forward",
+ "index": 1,
+ "source": "hand",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.finite, Symbol('x'))",
+  "assum": "True",
+  "pickle": "gASVngAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMJXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuY2FsY3VsdXOUjA9GaW5pdGVQcmVkaWNhdGWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUgZSGlIGUiIaULg=="
+ },
+ "warm": "True",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.positive, Mul(Pow(Symbol('x'), Integer(-1)), Pow(Symbol('A', commutative=False), Integer(-1))))",
+   "assum": "True",
+   "pickle": "gASVJQEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5tdWyUjANNdWyUk5SMEHN5bXB5LmNvcmUucG93ZXKUjANQb3eUk5SMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUgZSMEnN5bXB5LmNvcmUubnVtYmVyc5SMC05lZ2F0aXZlT25llJOUKYGUhpSBlGgMaA+MAUGUhZR9lIwLY29tbXV0YXRpdmWUiXOSlGgWhpSBlIaUgZSGlIGUiIaULg=="
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "without": {
+   "cache": "None",
+   "sessions": "True",
+   "answers": "True",
+   "splits": "True",
+   "failed": "True",
+   "all": "None"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "C"
+ }
+}

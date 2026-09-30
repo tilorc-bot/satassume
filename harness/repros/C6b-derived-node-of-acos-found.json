@@ -1,0 +1,58 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 1,
+ "source": "hand-built from the profile/audit findings",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.zero, Add(Integer(-1), Mul(Integer(-1), Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2))), Mul(Integer(-1), Symbol('w', nonzero=True), Add(Integer(1), I)), Mul(Integer(-1), Symbol('j', integer=True, even=True), Pow(Integer(2), Rational(1, 2)))))",
+  "assum": "True",
+  "pickle": "gASVtAEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjA1aZXJvUHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLmFkZJSMA0FkZJSTlCiMEnN5bXB5LmNvcmUubnVtYmVyc5SMC05lZ2F0aXZlT25llJOUKYGUjA5zeW1weS5jb3JlLm11bJSMA011bJSTlGgNjBFzeW1weS5jb3JlLnN5bWJvbJSMBlN5bWJvbJSTlIwBd5SFlH2UjAdub256ZXJvlIhzkpSMEHN5bXB5LmNvcmUucG93ZXKUjANQb3eUk5RoE4wBapSFlH2UKIwHaW50ZWdlcpSIjARldmVulIh1kpRoCowHSW50ZWdlcpSTlEsChZSBlIaUgZSHlIGUaBBoDWgYaAloCowDT25llJOUKYGUaAqMDUltYWdpbmFyeVVuaXSUk5QpgZSGlIGUh5SBlGgQaA1oIWgbaCVoCowESGFsZpSTlCmBlIaUgZSHlIGUdJSBlIaUgZSIhpQu"
+ },
+ "warm": "False",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.extended_nonnegative, acos(Add(Mul(Integer(-1), Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2))), Mul(Integer(-1), Symbol('w', nonzero=True), Add(Integer(1), I)), Mul(Integer(-1), Symbol('j', integer=True, even=True), Pow(Integer(2), Rational(1, 2))))))",
+   "assum": "True",
+   "pickle": "gASV+AEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBxFeHRlbmRlZE5vbk5lZ2F0aXZlUHJlZGljYXRllJOUKYGUjChzeW1weS5mdW5jdGlvbnMuZWxlbWVudGFyeS50cmlnb25vbWV0cmljlIwEYWNvc5STlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMDnN5bXB5LmNvcmUubXVslIwDTXVslJOUjBJzeW1weS5jb3JlLm51bWJlcnOUjAtOZWdhdGl2ZU9uZZSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXeUhZR9lIwHbm9uemVyb5SIc5KUjBBzeW1weS5jb3JlLnBvd2VylIwDUG93lJOUaBaMAWqUhZR9lCiMB2ludGVnZXKUiIwEZXZlbpSIdZKUaBCMB0ludGVnZXKUk5RLAoWUgZSGlIGUh5SBlGgPaBNoG2gMaBCMA09uZZSTlCmBlGgQjA1JbWFnaW5hcnlVbml0lJOUKYGUhpSBlIeUgZRoD2gTaCRoHmgoaBCMBEhhbGaUk5QpgZSGlIGUh5SBlIeUgZSFlIGUhpSBlIiGlC4="
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "None",
+   "sessions": "False",
+   "answers": "False",
+   "splits": "False",
+   "failed": "False",
+   "all": "None"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "C'"
+ }
+}
