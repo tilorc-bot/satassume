@@ -1,0 +1,35 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedPredicate(Q.even, Symbol('j', integer=True, even=True))",
+ "assum": "Not(AppliedBinaryRelation(Q.lt, Mul(Float('2.0', precision=53), Pow(Integer(2), Rational(1, 2))), Integer(0)))",
+ "variant": {
+  "kind": "restate",
+  "parts": [
+   "true"
+  ],
+  "assum": "true"
+ },
+ "base": "None",
+ "other": "True",
+ "source": "python -m harness invariants (invariants profile=relational seed=35 slice=25)",
+ "shrunk": true,
+ "prefix": []
+}

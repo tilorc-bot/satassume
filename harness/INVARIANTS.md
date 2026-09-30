@@ -105,8 +105,7 @@ The streams are the existing ones (`harness/generators.py`,
   Nine cases are pinned; the nightly reports up to five per slice.
 * **I4, `lost`** (pinned): `ask(sqrt(j)/2 + k/2 + 8 >= -oo,
   Q.positive(sin(j)/2))` is None while the negated proposition is False.
-* **I5, `depends`** (found, not pinned: the per-conjunct restatement
-  finds it again): `ask(Q.even(j), ~Q.lt(2.0*sqrt(2), 0))` is None; the
+* **I5, `depends`** (pinned): `ask(Q.even(j), ~Q.lt(2.0*sqrt(2), 0))` is None; the
   same conjunct spelled `~Lt(2.0*sqrt(2), 0)` evaluates to `True` in
   SymPy and the answer is True (`j` is declared even).  A constant
   relation conjunct the theories do not read makes the engine give up on
