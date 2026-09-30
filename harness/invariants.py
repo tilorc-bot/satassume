@@ -46,7 +46,7 @@ from satassume.solver import Solver
 from .checker import Ask, Event, Item, ddmin
 from .outcomes import outcome
 from .state import EngineConfig
-from .sympy_io import from_srepr, to_srepr
+from .sympy_io import custom_predicate, from_srepr, to_srepr
 
 INVARIANTS = ("I1", "I2", "I3", "I4", "I5", "I6", "I7")
 SEVERITY = ("wrong", "depends", "lost", "crash")
@@ -262,6 +262,55 @@ class Unrelated:
 
     def conjunction(self, n: int, depth: int = 2):
         return And(*[self.piece(depth) for _ in range(n)])
+
+    def extension(self):
+        """A registered extension with no path to the query: a fresh
+        predicate on a fresh symbol, whose handler relates it to one
+        vocabulary literal on that symbol (satisfiable on its own).  The
+        conjunct asserts the fresh predicate on a fresh symbol, so the
+        handler does run."""
+        r = self.rng
+        self.k += 1
+        name = f"{self.tag}h{self.k}p"
+        s = self.sym()
+        spec = {"pred": name, "cls": r.choice(["Symbol", "Basic"]),
+                "lit": r.choice(VALUE_PREDS), "neg": r.random() < 0.3,
+                "shape": r.choice(["implies", "iff", "or"])}
+        atom = custom_predicate(name)(s)
+        return spec, atom
+
+
+def extension_handler(spec: dict):
+    from satassume.formula import Implies, Not as FNot, Or as FOr, P
+
+    def fn(t):
+        lit = P(spec["lit"], t)
+        if spec["neg"]:
+            lit = FNot(lit)
+        me = P(spec["pred"], t)
+        if spec["shape"] == "implies":
+            return Implies(me, lit)
+        if spec["shape"] == "iff":
+            return [Implies(me, lit), Implies(lit, me)]
+        return FOr(FNot(me), lit)
+    return fn
+
+
+@contextlib.contextmanager
+def registered(specs: Sequence[dict]):
+    """The extensions of ``specs`` registered while active (the registry
+    is restored afterwards, as ``harness.registry`` does)."""
+    from sympy import Basic
+    from .registry import restore, snapshot
+    from satassume.extensions import extensions
+    snap = snapshot()
+    try:
+        for spec in specs:
+            cls = Symbol if spec["cls"] == "Symbol" else Basic
+            extensions.register(spec["pred"], cls)(extension_handler(spec))
+        yield
+    finally:
+        restore(snap)
 
 
 # --------------------------------------------------------------------------
@@ -481,11 +530,21 @@ def check_I2(prop, assum, config, base, rng, variant=None):
     if variant is None:
         u = Unrelated(random.Random(rng.randrange(1 << 30)), "iu")
         n = rng.choice([1, 1, 2, 3, 5, 8, 12])
-        extra = u.conjunction(n, depth=rng.choice([1, 2, 3]))
-        variant = {"kind": "unrelated", "extra": to_srepr(extra)}
+        parts = [u.piece(depth=rng.choice([1, 2, 3])) for _ in range(n)]
+        specs = []
+        if rng.random() < I2_EXTENSION_RATE:
+            for _ in range(rng.choice([1, 1, 2, 3])):
+                spec, atom = u.extension()
+                specs.append(spec)
+                parts.append(atom)
+        rng.shuffle(parts)
+        variant = {"kind": "unrelated", "extra": to_srepr(And(*parts))}
+        if specs:
+            variant["extensions"] = specs
     extra = from_srepr(variant["extra"])
     new = extra if assum is True or assum is S.true else And(assum, extra)
-    other = fresh_outcome(prop, new, config)
+    with registered(variant.get("extensions", [])):
+        other = fresh_outcome(prop, new, config)
     return _severity_same("I2", base, other), other, variant
 
 
@@ -588,6 +647,8 @@ def check_I6(prop, assum, config, base, rng, variant=None):
 
 
 RENAME_LIMIT = 1500
+#: share of I2 checks that also register fresh extensions
+I2_EXTENSION_RATE = 0.3
 #: share of I5 checks that respell the conjunction (order, duplicate, nesting)
 #: instead of restating conjuncts
 I5_SYNTAX_RATE = 0.35
@@ -822,7 +883,8 @@ def _known(v: Violation) -> Optional[str]:
 def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str], seed: int,
                source: str = "", max_violations: int = 5, shrink_them: bool = True,
                deadline: Optional[float] = None, progress: Optional[Callable[[str], None]] = None,
-               i1_rounds: int = 2, slow_limit: float = 3.0) -> InvReport:
+               i1_rounds: int = 3, slow_limit: float = 3.0, i2_rounds: int = 2,
+               clock: Callable[[], float] = time.time) -> InvReport:
     """Every ``Ask`` of ``items`` (events are skipped: the registry is
     configuration, checked by ``python -m harness fuzz --custom``) through
     each checker in ``invs``."""
@@ -832,7 +894,7 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
     asks = [it for it in items if isinstance(it, Ask)]
     seen = set()
     for idx, it in enumerate(asks):
-        if deadline is not None and time.time() > deadline:
+        if deadline is not None and clock() > deadline:
             break
         key = (it.prop, it.assum)
         if key in seen:
@@ -846,7 +908,7 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
         for inv in invs:
             if len(rep.violations) >= max_violations:
                 break
-            rounds = i1_rounds if inv == "I1" else 1
+            rounds = {"I1": i1_rounds, "I2": i2_rounds}.get(inv, 1)
             for _ in range(rounds):
                 try:
                     if inv == "I7":

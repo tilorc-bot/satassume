@@ -361,6 +361,12 @@ def cmd_inventory(args) -> int:
     return 1 if unknown else 0
 
 
+def _cpu() -> float:
+    """CPU seconds of this process and its finished children."""
+    t = os.times()
+    return t.user + t.system + t.children_user + t.children_system
+
+
 def cmd_invariants(args) -> int:
     """I1-I7 on generated streams (harness/invariants.py).  ``--minutes``
     bounds the whole run: the (profile, config, seed) combinations are
@@ -376,7 +382,10 @@ def cmd_invariants(args) -> int:
         minutes = args.minutes or 20.0
     else:
         profiles, configs, minutes = _profiles(args), _configs(args.config), args.minutes
-    deadline = time.time() + minutes * 60 if minutes else None
+    # the budget is CPU (user + system, this process and its children: the
+    # I6 hash-seed subprocesses), on one core; wall time waiting on a
+    # loaded machine does not count, so the run does the documented work
+    deadline = _cpu() + minutes * 60 if minutes else None
     seeds = _seeds(args.seeds)
     combos = [(pr, cfg, sd) for sd in seeds for pr in profiles for cfg in configs]
     bad = unknown = 0
@@ -386,7 +395,7 @@ def cmd_invariants(args) -> int:
     while True:
         progressed = False
         for i, (profile, cfg, seed) in enumerate(combos):
-            if deadline is not None and time.time() > deadline:
+            if deadline is not None and _cpu() > deadline:
                 break
             if offsets[i] >= args.queries:
                 continue
@@ -397,7 +406,7 @@ def cmd_invariants(args) -> int:
             src = f"invariants profile={profile} seed={seed} slice={offsets[i] - slice_n}"
             rep = run_stream(chunk, cfg, invs, seed * 1000 + offsets[i], source=src,
                              max_violations=args.max_violations, shrink_them=not args.no_shrink,
-                             deadline=deadline, progress=_progress(args.quiet))
+                             deadline=deadline, progress=_progress(args.quiet), clock=_cpu)
             d = rep.to_json()
             print(json.dumps(d), flush=True)
             for k, v in enumerate(rep.violations):
@@ -407,8 +416,10 @@ def cmd_invariants(args) -> int:
                 bad += 1
                 unknown += not v.known
         rounds += 1
-        if not progressed or deadline is None or time.time() > deadline:
+        if not progressed or deadline is None or _cpu() > deadline:
             break
+    print(json.dumps({"cpu_seconds": round(_cpu(), 1), "rounds": rounds,
+                      "queries": sum(min(o, args.queries) for o in offsets.values())}), flush=True)
     if args.fail_on == "never":
         return 0
     return 1 if (unknown if args.fail_on == "unknown" else bad) else 0

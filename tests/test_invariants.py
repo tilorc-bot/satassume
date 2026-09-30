@@ -142,3 +142,44 @@ def test_nightly_slice():
     rc = main(["invariants", "--nightly", "--minutes", "2", "--seeds", "0", "--fail-on", "unknown",
                "--out", os.path.join(ROOT, "harness-results", "invariants-slow"), "--quiet"])
     assert rc == 0
+
+
+def test_negation_is_not_sympys_rewrite():
+    """Round-1 false positives: ``Not(x >= a)`` is rewritten by SymPy to
+    ``x < a``, which is not the negation when ``x`` can be non-real.  The
+    checkers negate with ``evaluate=False`` and the negation survives the
+    srepr round trip, renaming and restatement."""
+    from sympy import Ge, Gt, Not, Rational, S, oo
+    from harness.invariants import negate, rename, restate
+    from harness.sympy_io import from_srepr, to_srepr
+    nP = Symbol("nP", positive=False)
+    z = Symbol("z")
+    for p in (Ge(-nP, Rational(-1, 3)), Gt(z / 2, oo), Ge(z, oo)):
+        n = negate(p)
+        assert isinstance(n, Not) and n.args[0] == p
+        assert from_srepr(to_srepr(n)) == n
+        (r,), _, _ = rename([n], random.Random(0))
+        assert isinstance(r, Not)
+        assert isinstance(restate(n, random.Random(0), 1.0), Not)
+    assert negate(negate(Q.positive(z))) == Q.positive(z)
+    assert negate(S.true) is S.false
+    # the round-1 cases: consistent, and no I4 report
+    cfg = preset("default")
+    for p, a in ((Ge(-nP, Rational(-1, 3)), Q.complex(nP)), (Ge(z, oo), Q.negative_infinite(z**2 * (z + 1)))):
+        base = fresh_outcome(p, a, cfg)
+        assert check_I4(p, a, cfg, base, random.Random(0))[0] is None, (p, a, base)
+
+
+def test_syntax_form_keeps_the_models():
+    from sympy import And
+    from harness.invariants import syntax_form
+
+    def _leaves(e):
+        return [x for a in e.args for x in _leaves(a)] if isinstance(e, And) else [e]
+    from harness.sympy_io import from_srepr, to_srepr
+    x, y = Symbol("x"), Symbol("y")
+    cs = [Q.positive(x), Q.real(y), Q.zero(y - 1)]
+    for seed in range(6):
+        f = syntax_form(cs, random.Random(seed))
+        assert set(_leaves(f)) == set(cs)                   # the same conjuncts, whatever the nesting
+        assert from_srepr(to_srepr(f)) == f                 # the spelling survives srepr
