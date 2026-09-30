@@ -104,9 +104,12 @@ assumptions a symbol was declared with, and the properties of fixed-value
 constants. Assumptions enter the solver as solver assumptions under
 a selector literal and never touch the cache; the session is reused while
 the assumptions stay the same. Everything kept between queries (the fact
-caches, the reused sessions, the answer memos) is keyed on the registry
-state, i.e. the registered clause-generating functions and the theory
-adapters, and dropped when it changes, so an answer is a function of the
+caches, the reused sessions, the answer and split memos) records the registry
+epoch it was filled under, a process-wide counter that every registration or
+unregistration of a clause-generating function, every template registration
+and every assignment of an engine's `extensions` or `relation_specs` bumps,
+and is dropped at the next query when the epoch has moved on; a session that a
+query made raise is dropped with the raise. So an answer is a function of the
 query, the assumptions, the engine's configuration and the registrations in
 force, never of earlier queries. Discovery visits only the cone of the queried
 expression, root-level propagation decides most queries, and search runs
