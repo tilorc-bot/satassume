@@ -917,7 +917,8 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                clock: Callable[[], float] = time.time) -> InvReport:
     """Every ``Ask`` of ``items`` (events are skipped: the registry is
     configuration, checked by ``python -m harness fuzz --custom``) through
-    each checker in ``invs``."""
+    each checker in ``invs``; at most ``max_violations`` reports per
+    invariant per stream."""
     rng = random.Random(seed)
     rep = InvReport(source, config.name)
     t0 = time.time()
@@ -936,8 +937,10 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
             rep.inconclusive["slow"] = rep.inconclusive.get("slow", 0) + 1
             continue              # a query that alone takes seconds would eat the budget
         for inv in invs:
-            if len(rep.violations) >= max_violations:
-                break
+            # the cap is per invariant: a flood of one family (the I2
+            # lost-definiteness one) must not stop the other checkers
+            if sum(v.inv == inv for v in rep.violations) >= max_violations:
+                continue
             rounds = {"I1": i1_rounds, "I2": i2_rounds}.get(inv, 1)
             for _ in range(rounds):
                 try:

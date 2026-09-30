@@ -124,8 +124,13 @@ The streams are the existing ones (`harness/generators.py`,
   ~Q.extended_nonzero(r))` = True; None with `Q.gt(u, h(k(0)))` added)
   and a context-free fact (`ask(Q.commutative(f(_d) + 1), Q.finite(r))`).
   Nine cases are pinned; the nightly reports up to five per slice.
-* **I4, `lost`** (pinned): `ask(sqrt(j)/2 + k/2 + 8 >= -oo,
-  Q.positive(sin(j)/2))` is None while the negated proposition is False.
+* **I4**: no violation.  Round 1 reported five (one pinned), all of
+  them SymPy's rewrite of `Not(rel)` (`-nP >= -1/3` under `Q.complex(nP)`,
+  `z/2 > oo`, `z**3 > oo`, `z >= oo` under `Q.negative_infinite(...)`,
+  `sqrt(j)/2 + k/2 + 8 >= -oo` under `Q.positive(sin(j)/2)`): with the
+  logical negation every one is consistent and correctly answered.  The
+  pinned case is removed; `tests/test_invariants.py::
+  test_negation_is_not_sympys_rewrite` keeps the round-1 cases as a guard.
 * **I5, `depends`** (pinned): `ask(Q.even(j), ~Q.lt(2.0*sqrt(2), 0))` is None; the
   same conjunct spelled `~Lt(2.0*sqrt(2), 0)` evaluates to `True` in
   SymPy and the answer is True (`j` is declared even).  A constant
@@ -138,12 +143,37 @@ The streams are the existing ones (`harness/generators.py`,
   (fewer clauses, yet an inconsistency report): not a violation as I1
   is stated, so not reported.
 
+## Not violations (do not report)
+
+* A set with a *matrix* atom or an *unregistered custom* predicate:
+  `sympy_api.out_of_scope` documents both and the engine answers None
+  for the whole set, so a definite answer "lost" to such a conjunct is
+  the documented contract, not I2.  `Unrelated` generates neither;
+  every custom predicate it asserts is registered (`registered`).
+* `Not(rel)` built by SymPy is a different statement (above).
+* `Q.nonzero(x)` is *not* `Q.ne(x, 0)` (nonzero implies real) and
+  `Q.positive(x)` is not `Q.gt(x, 0)` for a non-real `x`: `restate`
+  uses neither.
+
+## Observed, not pinned
+
+* The first registration of a fresh predicate name in a process can
+  answer None where the same registration made again answers True
+  (`ask(Q.negative_infinite(u), Q.iuh1p(u))` with the handler
+  `iuh1p(t) -> negative_infinite(t)`): a history effect of the registry
+  epoch on a fresh engine.  Out of I2's reach (the query is about the
+  extension); a registration-history checker could pin it.
+
 ## Not covered / ideas not done
 
 * I1 does not drop the lazily loaded rule blocks (`Solver.mention_blocks`:
   propagated without clauses) nor learnt clauses.
-* I2 adds conjuncts and terms only; registered extensions
-  (`satassume.register`) with fresh predicates are not added.
+* I2's extensions are one handler per fresh predicate on `Symbol` or
+  `Basic`; polyadic predicates, handlers on `AppliedUndef` or on
+  numbers, and handlers returning Python bools are not generated.
+* I2 does not share a *function symbol* between the unrelated conjuncts
+  and the query (`f(u)` next to `f(x)`): the engine's congruence clauses
+  would link them, so it is not "no path".
 * I6 skips terms above 1500 characters of srepr (SymPy rebuilds them in
   tens of seconds); the hash-seed dimension is a 4 % sample only.
 * I5 cannot vary what SymPy canonicalises (`And` order, duplicates,
