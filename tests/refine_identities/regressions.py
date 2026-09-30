@@ -114,7 +114,7 @@ def _add(bug: str, reason: str, rows: list, backends: tuple | None = None) -> No
 # A one-sided bound holds at x = oo: it proves extended signs, not finite ones.
 _add("#10 B1", "x < oo read as provable from x > 1", [
     (Piecewise((0, x < oo), (1, True)), Q.gt(x, 1), UNCHANGED),
-    (Piecewise((0, x < oo), (1, True)), Q.ge(x, oo), UNCHANGED),
+    (Piecewise((0, x < oo), (1, True)), Q.ge(x, oo), OneOf(UNCHANGED, 1)),   # x = oo: x < oo is false
 ])
 _add("#10 B2", "Eq(oo, 2*oo) is True; the bound made x finite", [
     (Piecewise((0, Eq(x, 2*x)), (1, True)), Q.gt(x, 1), UNCHANGED),

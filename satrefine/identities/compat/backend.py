@@ -38,11 +38,13 @@ satassume said ``None`` (or found the assumptions inconsistent) and either
   with no registered clause function) or ``"other"`` (not a Boolean over
   applied predicates); or
 * a relation in the query has no theory that interprets it (a bound such as
-  a float, ``oo`` or an ``AccumBounds``): satassume then drops the whole
+  a float or an ``AccumBounds``): satassume then drops the whole
   query, including trivial facts such as ``Q.nonnegative(x)`` under
   ``Q.nonnegative(x) & Q.le(x, 1.5)``, which SymPy answers cheaply.
   Irrational constants (``pi/2``, ``sqrt(2)``, ``E``) are bounded LRA
-  variables in satassume since its b208af3, so such bounds stay with it.
+  variables in satassume since its b208af3, and relations are read over
+  the extended reals since its #26 (``x < oo`` says ``x`` is extended real
+  and not ``+oo``), so such bounds and ``oo`` stay with it.
 
 Relations that satassume's theories do interpret are not re-asked: where the
 engine is undecided on them SymPy almost never decides either (28 of 1,678

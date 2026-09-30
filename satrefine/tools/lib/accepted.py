@@ -99,6 +99,10 @@ ACCEPTED: list[Accepted] = [
     Accepted("extra", "test_inverse.py::test_acos_cos_needs_the_real_interval",
              "acos(sin(x)) | Q.ge(x, 0) & Q.le(x, pi)", "Abs(x - pi/2)",
              "exact: acos(sin x) = |x - pi/2| on [-pi/2, 3*pi/2]"),
+    Accepted("extra", "test_inverse.py::test_asin_sin_needs_the_real_interval",
+             "asin(cos(x)) | Q.ge(x, -pi/2) & Q.le(x, pi/2)", "-Abs(x) + pi/2",
+             "exact: asin(cos x) = pi/2 - |x| on [-pi, pi]; the relations make x extended real "
+             "(satassume's #26, merged 2026-09-29) and the bounds make it real"),
     Accepted("extra", "test_inverse.py::test_bounds_spanning_more_than_one_branch_do_not_fire",
              "acos(cos(x)) | Q.le(x, pi) & Q.ge(x, -pi)", "Abs(x)",
              "exact: acos(cos x) = |x| on [-pi, pi] (one branch of acos(cos) with |.|; v3 splits it in two)"),
@@ -121,6 +125,10 @@ ACCEPTED: list[Accepted] = [
         ("asech(sech(x)) | Q.gt(x, -1)", "Abs(x)"),
         ("asinh(sinh(x)) | Q.extended_real(x)", "x"), ("asinh(sinh(x)) | Q.ge(x, 0)", "x"),
         ("atanh(tanh(x)) | Q.extended_real(x)", "x"), ("atanh(tanh(x)) | Q.ge(x, 0)", "x")]],
+    *[Accepted("extra", _W, case, got, _EXT + "; x > y makes x extended real (satassume's #26, merged 2026-09-29) "
+               "and y real bounds it below, so x is real or +oo")
+      for case, got in [("asinh(sinh(x)) | Q.real(y) & Q.gt(x, y)", "x"),
+                        ("atanh(tanh(x)) | Q.real(y) & Q.gt(x, y)", "x")]],
     Accepted("other", "test_inverse.py::test_even_inverse_by_sign[acosh-cosh]", "acosh(cosh(x)) | Q.zero(x)", "0",
              "same value: x is 0"),
     Accepted("other", "test_inverse.py::test_even_inverse_by_sign[asech-sech]", "asech(sech(x)) | Q.zero(x)", "0",

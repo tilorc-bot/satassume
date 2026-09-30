@@ -234,9 +234,14 @@ def _abs(R, c):
     _equiv(R, [(X, 'extended_nonnegative', True)], ('prime', 'composite'))
 
 
+# ``re`` and ``im`` are not extended real for every argument:
+# ``re(zoo) = im(zoo) = nan``.  The vocabulary cannot tell ``zoo`` from
+# ``oo*I`` (``re(oo*I) = 0``) or ``oo + oo*I``, so an infinite non-real
+# argument gets no claim; a finite argument gives a real part, an extended
+# real one gives itself (``re``) or zero (``im``).
 def _re(R, c):
-    R.rule([], (N, 'extended_real', True))
     R.rule([(X, 'finite', True)], (N, 'real', True))
+    R.rule([(X, 'extended_real', True)], (N, 'extended_real', True))
     R.rule([(X, 'imaginary', True)], (N, 'zero', True))
     R.rule([(X, 'zero', True)], (N, 'zero', True))
     R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
@@ -246,7 +251,6 @@ def _re(R, c):
 
 
 def _im(R, c):
-    R.rule([], (N, 'extended_real', True))
     R.rule([(X, 'finite', True)], (N, 'real', True))
     R.rule([(X, 'extended_real', True)], (N, 'zero', True))
     R.rule([(X, 'imaginary', True)], (N, 'nonzero', True))
