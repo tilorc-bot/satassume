@@ -718,6 +718,55 @@ def test_powers_are_refused_quickly():
     assert (PI + E + 1) ** 16 == ((PI + E + 1) ** 8) ** 2        # still computed when small
 
 
+def _distinct_denominators(n1, n2, bits, seed=1):
+    """``sum(PI**i * E**j / d_ij)`` with ``n1*n2`` random ``bits``-bit
+    denominators (odd, pairwise coprime almost surely)."""
+    rng = random.Random(seed)
+    return sum(PI ** i * E ** j * F(1, rng.getrandbits(bits) | 1 | 1 << (bits - 1))
+               for i in range(n1) for j in range(n2))
+
+
+def test_coefficient_growth_is_refused_quickly():
+    # verifier of PR #37: coefficients with distinct denominators passed
+    # the pre-check (bits of the factors add up to at most MAX_BITS), but
+    # a coefficient of the product sums many terms and its common
+    # denominator grows with their number: refused only after 3.5 s to
+    # over 30 s of work on ever larger numbers
+    import time
+    rng = random.Random(1)
+    x = sum(PI ** i * F(1, rng.getrandbits(4000) | 1 | 1 << 3999) for i in range(33))
+    cases = [x]
+    for n, bits in ((8, 3000), (11, 2000), (11, 4000)):
+        cases.append(_distinct_denominators(n, n, bits))
+    for y in cases:
+        for f in (lambda y=y: y ** 2, lambda y=y: y * y, lambda y=y: (y + PI) * y):
+            t = time.perf_counter()
+            with pytest.raises(cf.TooLarge):
+                f()
+            assert time.perf_counter() - t < 1
+    # the gcd over ZZ of the cross terms: a common denominator of 240000
+    # bits took 5 s before the product
+    y = cases[2]
+    z = y + 1 / (PI + 1)
+    t = time.perf_counter()
+    with pytest.raises(cf.TooLarge):
+        z * y
+    assert time.perf_counter() - t < 1
+
+
+def test_products_with_distinct_denominators_are_still_computed():
+    # 64 terms with distinct 64-bit denominators: past the bound of the
+    # unchecked product, computed by the checked one (a coefficient of
+    # the square sums up to 64 products; at most 3885 bits)
+    y = _distinct_denominators(8, 8, 64)
+    assert not cf._mul_fast(y._size(), y._size())
+    sq = y * y
+    assert sq == y ** 2 and sq.numerator == cf._mul(y.numerator, y.numerator)
+    assert sq._size()[2] < cf.MAX_BITS
+    w = _distinct_denominators(16, 8, 64)      # 465 terms, 7626-bit coefficients
+    assert (w * w)._size() == (44, 465, 7626)
+
+
 def test_large_univariate_gcd_is_fast():
     # degree 70, 160-bit coefficients (like reviewer D's instance, which
     # took 20 s with Euclid over Q without normalisation)
