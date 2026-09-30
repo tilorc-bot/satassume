@@ -221,7 +221,7 @@ class Session:
             compiled, formulas = engine.clause_templates(node)
         else:
             compiled, formulas = (), engine.templates(node)
-        ext = engine.extensions
+        ext = engine._extensions
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
         # 2. single-node rule base (registered with the solver's rule-block
@@ -365,16 +365,16 @@ class Session:
         var = self.table.custom[atom]
         if v is not None:
             self._emit([var if v else -var])
-        if atom.pred in RELATION_ATOMS and engine.relation_specs:
+        if atom.pred in RELATION_ATOMS and engine._relation_specs:
             rel = self.relations
             if rel is None:
-                rel = self.relations = Relations(self, engine.relation_specs)
+                rel = self.relations = Relations(self, engine._relation_specs)
                 if self.assumption_formula is not None:
                     # unary atoms of the assumptions become link candidates
                     rel.note_formula(atoms_of(self.assumption_formula))
             rel.enqueue(atom)
             return
-        ext = engine.extensions
+        ext = engine._extensions
         if ext is None:
             return
         for f in ext.facts_for(atom):
@@ -593,7 +593,7 @@ class Session:
         no relations; the sums of the assumptions are kept (``keep``), a
         query's are not."""
         engine = self.engine
-        if not engine.relation_specs:
+        if not engine._relation_specs:
             return
         atoms = atoms_of(f)
         new = [a.expr for a in atoms if a.pred in _SIGN_PREDS and getattr(a.expr, "is_Add", False)]
@@ -611,7 +611,7 @@ class Session:
             sums[e] = symbols
         if not hit:
             return
-        rel = self.relations = Relations(self, engine.relation_specs)
+        rel = self.relations = Relations(self, engine._relation_specs)
         if self.assumption_formula is not None:
             rel.note_formula(atoms_of(self.assumption_formula))
         rel.note_formula(atoms)
