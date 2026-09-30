@@ -11,6 +11,10 @@ the sign of ``a`` (truncating division).  Both are 0 at a multiple of ``d`` and
 ``a`` itself inside the period, and they agree when ``a`` and ``d`` have the same
 sign.  ``d`` is assumed nonzero, which also makes it real: SymPy's ``Mod``
 of non-real arguments is not ``a - d*floor(a/d)`` (``Mod(3*I, 2*I) = 3*I``).
+A divisor bounded only by a relation (``Q.lt(a, b)``) may be infinite, since
+relations hold on the extended reals, and ``Mod``/``Rem`` of a finite ``a`` by
+``+-oo`` are ``nan``; so the rows that read ``|a| < |b|`` from relations also
+need ``b`` finite (issue #10, B12).
 
 Two things the assumptions spell out because ``ask`` does not derive them:
 "integer" includes Gaussian integers (SymPy takes the floor of a complex number
@@ -95,10 +99,11 @@ MOD = (
     + add_rules([
         (Mod(c + x, d), Mod(x, d)),              # Mod(x + 6, 3) = Mod(x, 3)
     ], assuming={Q.integer(c/d)})
-    # for 0 <= a < b or b < a <= 0
+    # for 0 <= a < b or b < a <= 0, b finite: a relation holds on the extended reals, so
+    # Q.lt(a, b) allows b = oo, where Mod(a, oo) is nan (issue #10, B12)
     + add_rules([
         (Mod(a, b), a),
-    ], assuming={(Q.nonnegative(a) & Q.lt(a, b)) | (Q.nonpositive(a) & Q.lt(b, a))})
+    ], assuming={Q.finite(b) & ((Q.nonnegative(a) & Q.lt(a, b)) | (Q.nonpositive(a) & Q.lt(b, a)))})
     # for a and b of the same sign; never the reverse rewrite, so Mod and Rem cannot loop
     + add_rules([
         (Mod(a, b), Rem(a, b)),
@@ -113,14 +118,14 @@ REM = (
     + add_rules([
         (Rem(zero, b), S.Zero),                  # Rem(0, b) = 0
     ])
-    # 0 <= a < |b|
+    # 0 <= a < |b|, b finite (Rem(a, +-oo) is nan, as for Mod)
     + add_rules([
         (Rem(a, b), a),
-    ], assuming={Q.nonnegative(a) & (Q.lt(a, b) | Q.lt(a, -b))})
-    # -|b| < a <= 0
+    ], assuming={Q.finite(b) & Q.nonnegative(a) & (Q.lt(a, b) | Q.lt(a, -b))})
+    # -|b| < a <= 0, b finite
     + add_rules([
         (Rem(a, b), a),
-    ], assuming={Q.nonpositive(a) & (Q.lt(-b, a) | Q.lt(b, a))})
+    ], assuming={Q.finite(b) & Q.nonpositive(a) & (Q.lt(-b, a) | Q.lt(b, a))})
     # -b < a < b
     + add_rules([
         (Rem(a, b), a),

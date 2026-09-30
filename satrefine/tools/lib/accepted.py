@@ -45,6 +45,19 @@ _W = "test_inverse.py::test_hyperbolic_inverses_with_weaker_complex_facts"
 _EXT = ("exact on the extended reals: the identity also holds at +-oo (acoth(coth(oo)) = acoth(1) = oo, "
         "atanh(1) = oo, acosh(cosh(+-oo)) = oo, asech(0) = oo); v3 wants a finite real argument")
 
+_B12 = ("v3 wrong: the relation holds on the extended reals, so b = +-oo is allowed, where Mod and Rem "
+        "are nan, not a (issue #10, B12)")
+_B12_CASES = [
+    *[(f"test_rule_fires_and_is_sound[{f}(a, b)|{facts}]", f, facts) for f, facts in (
+        ("Mod", "Q.nonnegative(a) & Q.lt(a, b)"), ("Mod", "Q.nonpositive(a) & Q.gt(a, b)"),
+        ("Rem", "Q.nonnegative(a) & Q.lt(a, b)"), ("Rem", "Q.nonnegative(a) & Q.lt(a, -b)"),
+        ("Rem", "Q.nonpositive(a) & Q.gt(a, -b)"), ("Rem", "Q.nonpositive(a) & Q.gt(a, b)"))],
+    *[(f"test_rules_checked_in_every_allowed_quadrant[expr{i}-assumptions{i}-divisor_signs{i}]", f, facts)
+      for i, (f, facts) in enumerate((
+          ("Mod", "Q.nonnegative(a) & Q.lt(a, b)"), ("Mod", "Q.nonpositive(a) & Q.gt(a, b)"),
+          ("Rem", "Q.nonnegative(a) & Q.lt(a, -b)"), ("Rem", "Q.nonpositive(a) & Q.gt(a, -b)")))],
+]
+
 ACCEPTED: list[Accepted] = [
     # --- hyperbolic: exact evaluations and periods v3 does not do (ours better) ---
     *[Accepted("extra", _H + f"test_period_integer_sign_unknown_unchanged[{f}]",
@@ -179,6 +192,10 @@ ACCEPTED: list[Accepted] = [
              "binomial(n, n - 1)", "v3 questionable: ~integer allows an infinite n, where binomial(n, n - 1) is not n"),
     Accepted("miss", "test_combinatorial.py::test_rf_gamma_positive_x", "RisingFactorial(x, k) | ~Q.integer(x)",
              "RisingFactorial(x, k)", "v3 questionable: gamma(k + x)/gamma(x) is wrong when k + x is a pole or at infinity"),
+
+    # --- integer_funcs: v3 wrong (a relation allows an infinite divisor; issue #10, B12) ---
+    *[Accepted("miss", f"test_integer_funcs.py::{test}", f"{f}(a, b) | {facts}", f"{f}(a, b)", _B12)
+      for test, f, facts in _B12_CASES],
 ]
 
 
