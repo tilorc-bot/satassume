@@ -29,6 +29,14 @@
   label.check { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--text); }
   .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
   .axis { display: flex; flex-wrap: wrap; gap: 6px; }
+  .custom { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: -4px 0 12px;
+            color: var(--text-2); font-size: 12px; }
+  .custom[hidden] { display: none; }
+  dl.glossary { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 8px 0 0; }
+  dl.glossary dt { font-weight: 600; }
+  dl.glossary dd { margin: 0; color: var(--text-2); }
+  dl.glossary .grp { grid-column: 1 / -1; margin-top: 8px; color: var(--text-2); font-size: 12px;
+                     text-transform: uppercase; letter-spacing: .04em; }
   .axis select { max-width: 100%; }
   .chart { position: relative; height: 380px; }
   .chart.scatter { height: 360px; }
@@ -44,19 +52,22 @@
 <body>
 <main>
   <h1>Time vs counts, per commit</h1>
-  <p class="note">Any two asv benchmarks of this suite, one per y-axis
-    (<a href="asv/">full asv site</a>). Series are read from asv's
-    <code>index.json</code>, so renamed or new benchmarks appear here without
-    changing the page. Counts are exact under <code>PYTHONHASHSEED=0</code>.</p>
+  <p class="note">How satassume's speed, problem size and memory changed over the
+    history of <code>main</code>: one metric on each y-axis, one point per commit
+    (<a href="asv/">full asv site</a>).</p>
 
   <div class="controls">
+    <label>Workload <select id="workload"></select></label>
     <label><span><span class="swatch" style="background:var(--series-1)"></span>Left axis</span>
-      <span class="axis" id="left"></span></label>
+      <select id="leftm"></select></label>
     <label><span><span class="swatch" style="background:var(--series-2)"></span>Right axis</span>
-      <span class="axis" id="right"></span></label>
+      <select id="rightm"></select></label>
     <label class="check"><input type="checkbox" id="indexed"> Indexed (% of first commit, one axis)</label>
     <span id="status"></span>
   </div>
+  <div class="custom" id="leftc" hidden>Left axis, any benchmark: <span class="axis" id="left"></span></div>
+  <div class="custom" id="rightc" hidden>Right axis, any benchmark: <span class="axis" id="right"></span></div>
+  <p class="note" id="about"></p>
 
   <div class="chart"><canvas id="lines"></canvas></div>
 
@@ -67,6 +78,11 @@
     left moved without the right; on the x-axis the right moved without the left.
     Commits that change neither sit at the origin. Click a point for the commit.</p>
   <div class="chart scatter"><canvas id="scatter"></canvas></div>
+
+  <details>
+    <summary>What the metrics mean</summary>
+    <dl class="glossary" id="glossary"></dl>
+  </details>
 
   <details>
     <summary>Table</summary>
@@ -81,7 +97,38 @@ const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(
 const pct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
 const product = lists => lists.reduce((acc, l) => acc.flatMap(a => l.map(x => [...a, x])), [[]]);
 
+// Plain-language names.  Keys are metric parameter values (Correlation) or the last
+// part of a benchmark's name; anything not listed still works under its raw name.
+const METRICS = {
+  time: ["Time", "Time", "Wall time of the workload. Stream: one cold pass in a fresh process (median of 3). Families: the queries on a fresh engine, warm caches (median of 15)."],
+  clauses: ["Clauses", "Problem size", "Clauses the SAT solver holds at the end, summed over every solver the workload creates: templates, relations and assumptions (and, before the rule block landed in 747fb0e, the unary rules too)."],
+  clauses_with_rule_block: ["Clauses, rule blocks included", "Problem size", "Clauses with each rule block counted as the 79 unary-rule clauses it stands for, so commits before and after 747fb0e compare."],
+  nodes: ["Expression nodes", "Problem size", "Subexpressions the engine visited and instantiated rules and templates for."],
+  propagations: ["Propagations", "Solver work", "Literals the solver assigned (written to its trail)."],
+  decisions: ["Decisions", "Solver work", "Branching decisions in search; 0 when propagation alone answers."],
+  track_python_peak: ["Peak Python memory", "Memory", "Highest Python allocation during the stream pass (tracemalloc), above what was allocated before it."],
+  track_python_retained: ["Python memory kept afterwards", "Memory", "What is still allocated after the stream pass with the engine alive: mostly its caches."],
+  peakmem_stream: ["Peak process memory", "Memory", "The process's peak resident memory, including Python, SymPy and the loaded stream (about 56 MB of it)."],
+};
+const WORKLOADS = {
+  stream: ["Refine stream", "13,877 recorded ask() calls from running satrefine's refine() over its test battery: the realistic mix."],
+  add: ["Sums", "4 questions about sums, e.g. is y + 1 positive given y > 0."],
+  mul: ["Products", "4 questions about products, e.g. is x*y*z negative."],
+  pow: ["Powers", "4 questions about powers, exp and sqrt."],
+  functions: ["Functions", "4 questions about sin, log, Abs and exp."],
+  compound: ["And/Or questions", "2 compound propositions, e.g. positive(y) | negative(y)."],
+  relations: ["Relations", "4 questions with <, > and = in the assumptions."],
+  context_free: ["No assumptions", "4 questions answered from the symbols' declared facts alone."],
+  reuse: ["One assumption set, many questions", "45 questions under the same assumptions: the reused-session case."],
+};
+const GROUPS = ["Time", "Problem size", "Solver work", "Memory", "Other"];
+const CUSTOM = "__custom__";
+const info = key => METRICS[key] ?? [key.replace(/^track_|^time_|^peakmem_/, "").replace(/_/g, " "), "Other", ""];
+
 let index, graphPath, benches, rows = [], subjects = {}, lineChart, scatterChart;
+// the simple view: one benchmark with a "time" parameter value (Correlation) gives the
+// workloads and metrics; parameterless byte-valued benchmarks add memory (stream only)
+let simple = null;
 const graphs = {};
 
 async function getJSON(url) {
@@ -167,8 +214,65 @@ function buildAxis(side, def) {
 }
 
 function selOf(side) {
-  const s = [...$(side).querySelectorAll("select")];
-  return {bench: s[0].value, params: s.slice(1).map(x => x.value)};
+  const m = $(side + "m").value;
+  if (!simple || m === CUSTOM) {
+    const s = [...$(side).querySelectorAll("select")];
+    return {bench: s[0].value, params: s.slice(1).map(x => x.value)};
+  }
+  const [type, key] = [m.slice(0, 2), m.slice(2)];
+  if (type === "b:") return {bench: key, params: []};
+  const params = index.benchmarks[simple.bench].params.map(p => p[0]);
+  params[simple.mi] = key;
+  if (simple.wi >= 0) params[simple.wi] = $("workload").value;
+  return {bench: simple.bench, params};
+}
+
+function labelOf(sel) {
+  if (simple && sel.bench === simple.bench) {
+    const w = simple.wi >= 0 ? unq(sel.params[simple.wi]) : "";
+    return info(unq(sel.params[simple.mi]))[0] + (w ? ` (${WORKLOADS[w]?.[0] ?? w})` : "");
+  }
+  if (simple && simple.extra.includes(sel.bench)) return info(sel.bench.split(".").pop())[0] + " (stream)";
+  return nameOf(sel);
+}
+
+function setupSimple() {
+  const bench = benches.find(n => index.benchmarks[n].params.some(p => p.includes("'time'")));
+  const els = ["workload", "leftm", "rightm"].map($);
+  if (!bench) {   // no such benchmark any more: the custom pickers only
+    els.forEach(e => e.closest("label").hidden = true);
+    $("leftc").hidden = $("rightc").hidden = false;
+    return;
+  }
+  const b = index.benchmarks[bench];
+  const mi = b.params.findIndex(p => p.includes("'time'"));
+  const wi = b.params.findIndex((p, k) => k !== mi);
+  const extra = benches.filter(n => !index.benchmarks[n].params.length
+    && String(index.benchmarks[n].unit).toLowerCase() === "bytes");
+  simple = {bench, mi, wi, extra};
+  const wl = wi >= 0 ? b.params[wi] : [];
+  $("workload").innerHTML = wl.map(v => `<option value="${esc(v)}"${unq(v) === "stream" ? " selected" : ""}>${
+    esc(WORKLOADS[unq(v)]?.[0] ?? unq(v))}</option>`).join("");
+  $("workload").closest("label").hidden = !wl.length;
+  const opts = [...b.params[mi].map(v => ["m:" + v, unq(v)]), ...extra.map(n => ["b:" + n, n.split(".").pop()])];
+  const menu = def => GROUPS.map(g => {
+    const o = opts.filter(([, k]) => info(k)[1] === g);
+    return o.length ? `<optgroup label="${g}">` + o.map(([v, k]) =>
+      `<option value="${esc(v)}"${v === def ? " selected" : ""}>${esc(info(k)[0])}</option>`).join("") + "</optgroup>" : "";
+  }).join("") + `<optgroup label="More"><option value="${CUSTOM}">Custom: any benchmark…</option></optgroup>`;
+  const other = b.params[mi].includes("'clauses'") ? "'clauses'" : b.params[mi].find(v => v !== "'time'");
+  $("leftm").innerHTML = menu("m:'time'");
+  $("rightm").innerHTML = menu("m:" + other);
+  for (const side of ["left", "right"])
+    $(side + "m").onchange = () => { $(side + "c").hidden = $(side + "m").value !== CUSTOM; draw(); };
+  $("workload").onchange = draw;
+  // glossary
+  $("glossary").innerHTML = GROUPS.map(g => {
+    const o = opts.filter(([, k]) => info(k)[1] === g && info(k)[2]);
+    return o.length ? `<div class="grp">${g}</div>` + o.map(([, k]) =>
+      `<dt>${esc(info(k)[0])}</dt><dd>${esc(info(k)[2])}</dd>`).join("") : "";
+  }).join("") + `<div class="grp">Workloads</div>` + wl.map(v => { const w = WORKLOADS[unq(v)];
+    return w ? `<dt>${esc(w[0])}</dt><dd>${esc(w[1])}</dd>` : ""; }).join("");
 }
 
 async function load() {
@@ -181,6 +285,7 @@ async function load() {
   const [l, r] = defaults();
   buildAxis("left", l);
   buildAxis("right", r);
+  setupSimple();
   await draw();
 }
 
@@ -196,7 +301,13 @@ async function draw() {
   const revs = [...new Set([...ma.keys(), ...mb.keys()])].sort((x, y) => x - y);
   rows = revs.map(rev => ({rev, hash: index.revision_to_hash[rev], date: new Date(index.revision_to_date[rev])}));
   const a = rows.map(r => ma.get(r.rev) ?? null), b = rows.map(r => mb.get(r.rev) ?? null);
-  const L = nameOf(Ls), R = nameOf(Rs), kL = kind(Ls), kR = kind(Rs);
+  const L = labelOf(Ls), R = labelOf(Rs), kL = kind(Ls), kR = kind(Rs);
+  if (simple) {
+    const w = unq($("workload").value), wd = WORKLOADS[w];
+    const memOnly = [Ls, Rs].some(x => simple.extra.includes(x.bench)) && w !== "stream";
+    $("about").textContent = (wd ? `${wd[0]}: ${wd[1]}` : "") +
+      (memOnly ? "  Memory is measured on the refine stream only, whatever the workload." : "");
+  }
   const fL = v => fmt(kL, v), fR = v => fmt(kR, v);
   $("status").textContent = `${rows.length} commits`;
   const indexed = $("indexed").checked;
