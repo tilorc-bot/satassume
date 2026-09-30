@@ -11,6 +11,13 @@ Set by :mod:`..compat` (its ``__init__``):
     ``ask`` (every query of the engine goes through it, read at call time, so
     a test can patch it and the driver memoizes it per call) and its
     ``handlers_dict`` (the handler registry).
+:data:`whole`
+    ``whole(condition, assumptions)``: whether the dispatcher's ``ask`` decides
+    ``condition`` in one query (:func:`..compat.backend.decides_whole`: satassume
+    and the ``combined`` backend, which split cases and raise on inconsistent
+    assumptions, for a condition and assumptions satassume translates); :func:`.prove.provable`
+    decides any other condition connective by connective.  Read at call time,
+    as the backend is.
 
 Set by :mod:`..compat.sympy_fixes`:
 
@@ -74,6 +81,11 @@ from sympy.core.operations import LatticeOp
 
 
 dispatcher: Any = None
+
+
+def whole(condition: Any, assumptions: Any) -> bool:
+    """The default: conditions are decided connective by connective."""
+    return False
 
 
 def rebuild(func: Any, args: Any, assumptions: Any) -> Any:

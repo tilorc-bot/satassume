@@ -6,8 +6,8 @@ Before the routing, every ``None`` from satassume was re-asked of SymPy's
 asked only for queries satassume cannot translate (matrix predicates,
 predicates on matrix arguments, unregistered custom predicates, relations over
 matrices), for relations no satassume theory interprets (bounds such as
-``pi/2``, floats, ``AccumBounds``), for assumptions satassume finds
-inconsistent, and when satassume raises.  ``union`` keeps the old behaviour.
+``pi/2``, floats, ``AccumBounds``), and when satassume raises.  Assumptions
+satassume finds inconsistent raise (issue #18).  ``union`` keeps the old behaviour.
 Since satassume reads irrational constants as bounded LRA variables (main's
 b208af3), bounds such as ``pi/2`` are interpreted and stay with satassume,
 and since relations are read over the extended reals (main's #26) so are
@@ -83,6 +83,30 @@ def test_out_of_scope_queries_reach_sympy():
         assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5)) is True
     with backend.using("satassume"):
         assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5)) is None
+
+
+def test_inconsistent_assumptions_raise_without_asking_sympy(monkeypatch):
+    """SymPy calls an ``Or`` true under inconsistent assumptions (issue #18)."""
+    monkeypatch.setattr(backend, "_guarded_sympy_ask", _sympy_forbidden)
+    with backend.using("combined"), pytest.raises(ValueError, match="inconsistent assumptions"):
+        backend.ask(Q.nonnegative(x) | Q.zero(x), Q.positive(x) & Q.negative(x))
+
+
+def test_conditions_asked_whole_by_satassume_and_combined():
+    """Which conditions the engine hands to one ``ask`` (``hooks.whole``): those
+    satassume answers itself, with their assumptions, under the backends whose
+    ``ask`` is satassume's; SymPy never gets a compound condition."""
+    in_scope = Q.integer(x) | Q.infinite(x)
+    for name, whole in (("combined", True), ("satassume", True), ("sympy", False), ("union", False)):
+        with backend.using(name):
+            assert backend.decides_whole(in_scope) is whole
+            assert backend.decides_whole(Q.positive(x) & Q.invertible(X)) is False
+            assert backend.decides_whole(_Unregistered()(x) | Q.positive(x)) is False
+            assert backend.decides_whole(in_scope, Q.real(x) & Q.lt(x, pi)) is whole
+            assert backend.decides_whole(in_scope, Q.positive(x) & Q.negative(x)) is whole   # raises
+            assert backend.decides_whole(in_scope, Q.invertible(X)) is False
+            assert backend.decides_whole(Q.lt(x, 1.5) | Q.positive(x)) is False              # no theory
+            assert backend.decides_whole(in_scope, Q.lt(x, 1.5)) is False
 
 
 def test_union_still_asks_sympy_for_every_none(monkeypatch):

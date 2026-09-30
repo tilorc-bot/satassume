@@ -30,7 +30,7 @@ here.  Three backends exist:
 Routing (``combined``)
 ----------------------
 satassume answers every query it has a model of.  SymPy is asked only when
-satassume said ``None`` (or found the assumptions inconsistent) and either
+satassume said ``None`` and either
 
 * the query is outside satassume's vocabulary:
   :func:`satassume.sympy_api.out_of_scope` reports ``"matrix"`` (a matrix
@@ -54,6 +54,25 @@ several of them unsoundly, e.g. ``Q.zero(y/x)`` under ``Q.zero(x) & Q.zero(y)``)
 A satassume error that is not an inconsistency makes the query go to SymPy
 too: a backend answers ``None`` rather than crash the refine call.
 
+Assumptions satassume finds inconsistent raise ``ValueError("inconsistent
+assumptions ...")``, as SymPy's ``ask`` does for an atom; they are not
+re-asked of SymPy, which answers a compound query under them ``True``
+(``Q.nonnegative(x) | Q.zero(x)`` under ``Q.positive(x) & Q.negative(x)``), and
+the engine asks its conditions whole under this backend (:func:`decides_whole`),
+so rows would fire on that (issue #18).
+
+Whole conditions
+----------------
+satassume decides a compound condition as a whole, case splits included
+(``floor(y)`` is a Gaussian integer or infinite, by whether ``y`` is finite,
+although neither alternative holds alone), and raises on inconsistent
+assumptions instead of calling an ``Or`` true.  Under ``satassume`` and
+``combined`` the engine therefore hands each condition whose atoms satassume
+can translate to one ``ask`` (:func:`decides_whole`, read through
+:data:`..core.hooks.whole`); under ``sympy`` and ``union`` (where SymPy has the
+last word on inconsistent assumptions) it decides conditions connective by
+connective.
+
 The backend is chosen with :func:`set_backend`, temporarily with
 :func:`using`, or at import time from the ``SATREFINE_BACKEND`` environment
 variable.  The default is ``combined``.
@@ -62,6 +81,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Any, Callable, Iterator
 
 Ask = Callable[..., "bool | None"]
@@ -78,7 +98,8 @@ def _sympy_ask(proposition: Any, assumptions: Any = True) -> bool | None:
 
 def _satassume_ask(proposition: Any, assumptions: Any = True) -> bool | None:
     from satassume.sympy_api import ask
-    return ask(proposition, assumptions)
+    known, answer = _answered(proposition, assumptions)
+    return answer if known else ask(proposition, assumptions)
 
 
 # --- the guard on SymPy's ``Q.nonzero`` handlers (combined and union) ---------
@@ -263,8 +284,8 @@ def route(proposition: Any, assumptions: Any = True) -> tuple["bool | None", str
       theories), not a relation as such;
     * ``"no-theory"``: the query translates, but no theory interprets one of
       its relations;
-    * ``"inconsistent"``: satassume found the assumptions inconsistent (SymPy
-      then decides whether to raise, as before the routing);
+    * ``"inconsistent"``: satassume found the assumptions inconsistent (the
+      combined backend raises);
     * ``"error"``: satassume raised anything else.
 
     Translation is checked on the proposition and the assumptions separately,
@@ -297,9 +318,14 @@ def route(proposition: Any, assumptions: Any = True) -> tuple["bool | None", str
 
 
 def _combined_ask(proposition: Any, assumptions: Any = True) -> bool | None:
+    known, answer = _answered(proposition, assumptions)
+    if known:
+        return answer
     answer, reason = route(proposition, assumptions)
     if reason is None:
         return answer
+    if reason == "inconsistent":
+        raise ValueError(f"inconsistent assumptions {assumptions}")
     if reason == "error":
         try:
             return _guarded_sympy_ask(proposition, assumptions)
@@ -330,10 +356,47 @@ def current() -> str:
     return _current
 
 
+def decides_whole(condition: Any, assumptions: Any = True) -> bool:
+    """Whether the selected backend decides ``condition`` in one ``ask``
+    (:data:`..core.hooks.whole`): the backend is ``satassume`` or ``combined``
+    and satassume itself answers the query (:func:`route` gives no reason to
+    ask SymPy, or finds the assumptions inconsistent).  Otherwise (a matrix or
+    custom predicate, or a relation whose bound no theory interprets, such as
+    a float, in the condition or the assumptions) the engine decides the
+    condition connective by connective, so satassume still answers the parts
+    it can, and SymPy, which the ``combined`` backend asks for the rest, never
+    gets a compound condition: it calls an ``Or`` true under inconsistent
+    assumptions, and its relation ``ask`` is unsound at infinity."""
+    return _current in ("satassume", "combined") and _satassume_answers(condition, assumptions)
+
+
+@lru_cache(maxsize=16384)
+def _satassume_answers(condition: Any, assumptions: Any) -> bool:
+    answer, reason = route(condition, assumptions)
+    if reason is None:     # the engine asks this next (prove._whole): answered already
+        _routed[0] = (condition, assumptions, answer)
+    return reason in (None, "inconsistent")
+
+
+_routed: list = [None]
+"""``(proposition, assumptions, answer)`` of the last query :func:`decides_whole`
+found satassume answering: the ``ask`` of the same objects that follows it
+takes the answer instead of asking satassume a second time."""
+
+
+def _answered(proposition: Any, assumptions: Any) -> tuple[bool, Any]:
+    routed = _routed[0]
+    if routed is not None and routed[0] is proposition and routed[1] is assumptions:
+        _routed[0] = None
+        return True, routed[2]
+    return False, None
+
+
 def set_backend(name: str) -> None:
     """Select the backend for all following refine calls."""
     global _current
     _current = _validate(name)
+    _satassume_answers.cache_clear()
 
 
 Observer = Callable[[Any, Any, str, "bool | None"], None]

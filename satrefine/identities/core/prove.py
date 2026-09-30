@@ -1,28 +1,46 @@
-"""Deciding conditions: the connectives, the order vocabulary, and the bounds.
+"""Deciding conditions: one ``ask``, or connective by connective.
 
-Conditions are decided connective by connective (:func:`provable`): an
-``And`` needs every part provable and stops at the first that is not, an
-``Or`` one, atoms are asked one at a time through the dispatcher's ``ask``
-(relations last: they are the expensive ones) and an ``ask`` that raises
-(SymPy's relation theory does, on consistent facts) counts as not provable.  A sign or realness atom ``ask`` leaves open is
-decided from the bounds the assumptions state on its argument
-(``Q.real(t)`` and ``Q.nonpositive(t)`` under ``Q.ge(t, -pi) & Q.le(t,
-0)``, ``Q.integer(t/pi + 1/2)`` refuted under ``Q.gt(t, -pi/2) & Q.lt(t,
-pi/2)``; see :func:`stated_bounds`).  The bounds are on the
-extended reals: ``Q.gt(t, 1)`` holds at ``t = oo``, so a bound proves
-``Q.extended_real`` and the ``extended_*`` signs, and ``Q.real`` or a finite
-sign only when infinity is excluded too (:func:`_from_bounds`; issue #10,
-B1-B7).
+**Whole conditions.**  Under a backend that decides compound conditions
+itself (satassume and ``combined``: :data:`.hooks.whole`), a condition is
+handed to one ``ask`` (:func:`provable`).  satassume splits cases
+(``floor(y)`` is a Gaussian integer or infinite, by whether ``y`` is finite,
+although neither alternative holds alone; issue #18), reads bounds on the
+extended reals (``Q.real(t)`` under ``Q.ge(t, -pi) & Q.le(t, 0)``, but not
+under ``Q.gt(t, 1)``, which holds at ``t = oo``), decides order from signs,
+stated relations and equalities soundly at infinity, and refutes a
+conjunction past an undecided conjunct.  The one thing it does not decide
+yet is integrality over an interval: ``Q.integer(t/pi + 1/2)`` refuted under
+``Q.gt(t, -pi/2) & Q.lt(t, pi/2)`` (the poles of ``tan``, ``cot``, ``tanh``
+at the principal branches of the inverse functions).  When the ``ask`` leaves
+a condition open, each ``Q.integer`` atom refuted by the stated bounds
+(:func:`_no_integer_between`) is replaced by ``false`` and the condition asked
+again.  A condition satassume does not answer itself (a matrix or custom
+predicate, or a relation whose bound no theory interprets, such as a float,
+in the condition or the assumptions) is decided connective by connective as
+below, each part again whole where it can be: satassume still answers the
+parts it can, and SymPy never gets a compound condition (it calls an ``Or``
+true under inconsistent assumptions, and its relation ``ask`` is unsound at
+infinity).  Assumptions satassume finds inconsistent make every ``ask``
+raise, so nothing is proved and refine returns its input.
 
-The conditions of a ``Piecewise`` (a definition's right side, or any
-``Piecewise`` refined) are decided by :func:`decide`: relations (``Q.ge``,
-``Q.lt``, ``Q.eq``, ``Q.ne``, ..., and relationals ``x >= y``) through an
-order vocabulary (:data:`ORDER`) of proof forms from signs and infinite
-endpoints and from stated relations, the latter unused when an argument is
-known infinite (SymPy's ``ask`` proves ``Q.eq(x, y)`` for ``x = -oo`` and
-``y <= 0``).  A candidate with a ``Piecewise`` the input did not have is
-not a rewrite (the conditions are undecided) and no case split is tried
-on it; a table may also switch case splits off (``splits=False``).
+**Connective by connective** (SymPy's ``ask``: the ``sympy`` and ``union``
+backends, and the conditions satassume does not answer).  An ``And`` needs every part provable and stops at the first that
+is not, an ``Or`` one, atoms are asked one at a time (relations last: they
+are the expensive ones) and an ``ask`` that raises (SymPy's relation theory
+does, on consistent facts) counts as not provable.  A sign or realness atom
+``ask`` leaves open is decided from the bounds the assumptions state on its
+argument (:func:`_from_bounds`, :func:`stated_bounds`), on the extended reals
+(issue #10, B1-B7).  With ``order`` (:func:`decide`, the conditions of a
+``Piecewise``), relations (``Q.ge``, ..., ``Q.eq``, ``Q.ne`` and relationals
+``x >= y``) are decided through an order vocabulary (:data:`ORDER`) of proof
+forms from signs and infinite endpoints and from stated relations, the
+latter unused when an argument is known infinite (SymPy's ``ask`` proves
+``Q.eq(x, y)`` for ``x = -oo`` and ``y <= 0``), and an ``And`` with an
+undecided part is still refuted by a later part.
+
+A candidate with a ``Piecewise`` the input did not have is not a rewrite
+(the conditions are undecided) and no case split is tried on it; a table
+may also switch case splits off (``splits=False``).
 """
 from __future__ import annotations
 
@@ -40,20 +58,26 @@ from . import hooks
 
 
 def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
-    """Decide ``cond`` connective by connective; ``None`` when undecided.
+    """Decide ``cond``: ``True``, ``False``, or ``None`` when undecided.
 
-    With ``order`` (how :func:`decide` refines ``Piecewise`` conditions), the
-    relation atoms ``Q.ge``, ``Q.gt``, ``Q.le``, ``Q.lt``, ``Q.eq``, ``Q.ne``
-    and SymPy relationals (``x >= y``) are decided by :func:`_order` instead
-    of a bare ``ask``, and an ``And`` with an undecided part is still refuted
-    by a later part."""
+    One ``ask`` where the backend decides the whole condition
+    (:data:`.hooks.whole`), else connective by connective.  With ``order``
+    (how :func:`decide` refines ``Piecewise`` conditions) the connective path
+    decides the relation atoms ``Q.ge``, ``Q.gt``, ``Q.le``, ``Q.lt``,
+    ``Q.eq``, ``Q.ne`` and SymPy relationals (``x >= y``) by :func:`_order`
+    instead of a bare ``ask``, and refutes an ``And`` with an undecided part
+    by a later part (a whole ``ask`` does both anyway)."""
     if cond is S.true or cond is True:
         return True
     if cond is S.false or cond is False:
         return False
+    if hooks.whole(cond, assumptions):
+        return _whole(cond, assumptions)
+    if isinstance(cond, (And, Or)):
+        args = _grouped(cond, assumptions)
     if isinstance(cond, And):
         undecided = False
-        for c in sorted(cond.args, key=_ask_cost):     # relations last, and only if the rest holds
+        for c in args:                                   # relations last, and only if the rest holds
             p = provable(c, assumptions, order)
             if p is False or p is None and not order:
                 return p                                 # undecided: not provable either way
@@ -61,7 +85,7 @@ def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
         return None if undecided else True
     if isinstance(cond, Or):
         undecided = False
-        for c in sorted(cond.args, key=_ask_cost):
+        for c in args:
             p = provable(c, assumptions, order)
             if p is True:
                 return True
@@ -77,6 +101,52 @@ def provable(cond: Any, assumptions: Any, order: bool = False) -> bool | None:
     return _ask_atom(cond, assumptions)
 
 
+def _grouped(cond: Any, assumptions: Any) -> list:
+    """The parts of an ``And`` or ``Or`` in the order they are decided: the parts
+    the backend decides whole joined into one (so an ``Or`` holding by cases
+    beside a matrix atom is still proved), then the others, relations last."""
+    whole = [c for c in cond.args if hooks.whole(c, assumptions)]
+    rest = [c for c in cond.args if c not in whole] if whole else list(cond.args)
+    return ([cond.func(*whole)] if whole else []) + sorted(rest, key=_ask_cost)
+
+
+def _whole(cond: Any, assumptions: Any) -> bool | None:
+    """One ``ask`` of ``cond``; when it is open, again with the ``Q.integer`` atoms
+    the stated bounds refute (:func:`_no_integer_between`) replaced by ``false``."""
+    answer = _ask(cond, assumptions)
+    if answer is not None or not _states_bounds(assumptions):
+        return answer
+    refuted = {a: S.false for a in _integer_atoms(cond) if _no_integer_between(a.arguments[0], assumptions)}
+    if not refuted:
+        return None
+    rest = cond.xreplace(refuted)
+    if rest is S.true or rest is S.false:
+        return bool(rest)
+    return _ask(rest, assumptions)
+
+
+@lru_cache(maxsize=4096)
+def _integer_atoms(cond: Any) -> tuple:
+    if isinstance(cond, AppliedPredicate):
+        return (cond,) if cond.function is Q.integer else ()
+    return tuple(a for a in cond.atoms(AppliedPredicate) if a.function is Q.integer)
+
+
+@lru_cache(maxsize=1024)
+def _states_bounds(assumptions: Any) -> bool:
+    """Whether the assumptions state a bound (:func:`_stated_relations`)."""
+    return any(True for _ in _stated_relations(assumptions))
+
+
+def _ask(cond: Any, assumptions: Any) -> bool | None:
+    """The dispatcher's ``ask``; one that raises counts as undecided."""
+    try:
+        answer = hooks.dispatcher.ask(cond, assumptions)
+    except (ValueError, TypeError, AssertionError):   # SymPy's relation ask (LRA) raising on consistent facts
+        return None
+    return True if answer is True else (False if answer is False else None)
+
+
 def decide(cond: Any, assumptions: Any) -> bool | None:
     """Decide a condition of a ``Piecewise`` branch: :func:`provable` with
     relations decided by the order vocabulary (:func:`_order`)."""
@@ -85,14 +155,11 @@ def decide(cond: Any, assumptions: Any) -> bool | None:
 
 def _ask_atom(cond: Any, assumptions: Any) -> bool | None:
     """One ``ask``; a sign or realness atom it leaves open is tried on the stated bounds."""
-    try:
-        answer = hooks.dispatcher.ask(cond, assumptions)
-    except (ValueError, TypeError, AssertionError):   # SymPy's relation ask (LRA) raising on consistent facts
-        return None
+    answer = _ask(cond, assumptions)
     if answer is None and isinstance(cond, AppliedPredicate) and cond.function in _BOUND_DECIDED \
             and len(cond.arguments) == 1:
         return _from_bounds(cond.function, cond.arguments[0], assumptions)
-    return True if answer is True else (False if answer is False else None)
+    return answer
 
 
 # the order vocabulary: proof forms of u <= v, u < v, u = v, u != v for (u, v),
@@ -229,13 +296,7 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
     if predicate is Q.extended_real:
         return True
     if predicate is Q.integer:                 # refuted when the interval holds no integer
-        if lo is None or hi is None:
-            return None
-        # SymPy's exact floor division (``floor(e/1)``, never through a float: an endpoint
-        # 1.5707963267948966 - pi/2 is negative), so no integer-function class is named here
-        first = -((-lo) // 1) + (1 if lo_open and lo.is_integer else 0)
-        last = hi // 1 - (1 if hi_open and hi.is_integer else 0)
-        return False if (first - last).is_positive else None
+        return False if _no_integer_in(found) else None
     # the interval is one of extended reals: the finite predicates also need each
     # infinity the sign leaves possible excluded, by a finite endpoint on its side
     # (or ``u < oo``), by a sign fact (``finite``) or by ``ask`` (issue #10, B1-B7)
@@ -261,6 +322,24 @@ def _from_bounds(predicate: Any, u: Any, assumptions: Any) -> bool | None:
         return True if finite or excluded or hooks.dispatcher.ask(Q.finite(u), assumptions) is True else None
     except (ValueError, TypeError, AssertionError):
         return None
+
+
+def _no_integer_between(u: Any, assumptions: Any) -> bool:
+    """Whether the bounds stated on ``u`` (:func:`stated_bounds`) leave no integer
+    for it: ``Q.integer(t/pi + 1/2)`` is false under ``Q.gt(t, -pi/2) & Q.lt(t,
+    pi/2)``.  The one fallback of a whole ``ask`` (:func:`_whole`)."""
+    return _no_integer_in(stated_bounds(u, assumptions))
+
+
+def _no_integer_in(found: tuple | None) -> bool:
+    if found is None or found[0] is None or found[1] is None:
+        return False
+    lo, hi, lo_open, hi_open = found[:4]
+    # SymPy's exact floor division (``floor(e/1)``, never through a float: an endpoint
+    # 1.5707963267948966 - pi/2 is negative), so no integer-function class is named here
+    first = -((-lo) // 1) + (1 if lo_open and lo.is_integer else 0)
+    last = hi // 1 - (1 if hi_open and hi.is_integer else 0)
+    return bool((first - last).is_positive)
 
 
 # ----------------------------------------------------------------------------

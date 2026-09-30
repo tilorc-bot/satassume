@@ -38,10 +38,15 @@ AskLog = list[tuple[Any, Any, bool | None]]
 
 @contextmanager
 def use_ask(fake_ask: Ask) -> Iterator[None]:
-    """Patch the module-global ``ask`` that every handler calls."""
+    """Patch the module-global ``ask`` that every handler calls.  The identity
+    engine then decides its conditions connective by connective, as for SymPy's
+    ``ask`` (a whole condition is handed only to satassume's; see
+    :func:`satrefine.identities.compat.backend.decides_whole`)."""
     import satrefine.identities.compat.upstream as upstream
+    from satrefine.identities.core import hooks
 
-    with mock.patch.object(upstream, "ask", fake_ask):
+    with mock.patch.object(upstream, "ask", fake_ask), \
+            mock.patch.object(hooks, "whole", lambda condition, assumptions: False):
         yield
 
 
