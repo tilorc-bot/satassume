@@ -707,27 +707,30 @@ class Relations:
         and a zero (``0*oo``), or a ``nan`` term.  So a sum is not ``nan``
         when all its terms but at most one are finite and that one is not
         ``nan``; a product likewise, with the finite terms also nonzero.
-        "Finite" is ``complex`` (a finite number), not ``finite``: the rule
-        base's ``infinite == !finite`` lets ``finite`` follow from
-        ``~infinite``, which ``nan`` satisfies.  With ``c(t)`` for
-        ``complex(t)`` in a sum and ``complex(t) & ~zero(t)`` in a product:
 
-            complex(t_1) & ... & complex(t_n) -> d
+        "``t`` is finite" is ``fin(t)``: ``finite(t)`` for a term that is
+        never ``nan`` by shape (:func:`_never_nan`), else ``complex(t)``.
+        ``finite`` alone does not exclude ``nan``: the rule base's
+        ``infinite == !finite`` lets it follow from ``~infinite``, which
+        ``nan`` satisfies.  With ``c(t)`` for ``fin(t)`` in a sum and
+        ``fin(t) & ~zero(t)`` in a product:
+
+            fin(t_1) & ... & fin(t_n) -> d
             c(t_k) for all k != j -> d          for each t_j never nan by shape
 
-        (:func:`_never_nan`).  A Rational term needs no literal."""
+        A Rational term needs no literal."""
         s = self.session
         mul = e.is_Mul
-        preds = {"complex", "zero"} if mul else {"complex"}
-        cx, c = {}, {}
+        fin, c = {}, {}
         for t in e.args:
             if t.is_Rational:
-                cx[t], c[t] = [], []
+                fin[t], c[t] = [], []
                 continue
-            s.ensure(t, preds)
-            cx[t] = [-s.var("complex", t)]
-            c[t] = cx[t] + ([s.var("zero", t)] if mul else [])
-        s._emit([lit for t in e.args for lit in cx[t]] + [d])
+            p = "finite" if _never_nan(t) else "complex"
+            s.ensure(t, {p, "zero"} if mul else {p})
+            fin[t] = [-s.var(p, t)]
+            c[t] = fin[t] + ([s.var("zero", t)] if mul else [])
+        s._emit([lit for t in e.args for lit in fin[t]] + [d])
         for j, tj in enumerate(e.args):
             if not tj.is_Rational and _never_nan(tj):
                 s._emit([lit for k, t in enumerate(e.args) if k != j

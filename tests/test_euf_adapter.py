@@ -238,6 +238,8 @@ def test_engine_eq_on_terms_that_may_be_nan():
     assert _ask(Q.eq(x - z, y - z), Q.eq(x, y) & Q.extended_real(z)) is None
     assert _ask(Q.eq(x - z, y - z), Q.eq(x, y) & Q.real(z)) is True
     assert _ask(Q.eq(x - z, y - z), Q.eq(x, y) & Q.imaginary(z)) is True
+    assert _ask(Q.eq(x - z, y - z), Q.eq(x, y) & Q.finite(z)) is True      # z is a leaf
+    assert _ask(Q.eq(x + p, y + p), Q.eq(x, y) & ~Q.infinite(p)) is None  # p may be nan
     assert _ask(Q.eq(x*z, y*z), Q.eq(x, y) & Q.real(z)) is None          # 0*oo
     assert _ask(Q.eq(x*z, y*z), Q.eq(x, y) & Q.nonzero(z)) is True
     assert _ask(Q.eq(x - z, x - z)) is None
