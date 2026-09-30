@@ -48,13 +48,11 @@ because a block was skipped.
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import pickle
-import sys
 import time
 
-from satassume.rules import NPRED, PREDICATES, PRED_INDEX, RULE_CLAUSES, RULE_FREE
+from satassume.rules import NPRED, PREDICATES, PRED_INDEX, RULE_CLAUSES
 from satassume.solver import Solver
 
 
@@ -153,18 +151,12 @@ def derived_constraints(comp, depth=1):
     return extra
 
 
-def check_pattern(pat, models, extra=(), alias=None):
+def check_pattern(pat, models, extra=()):
     """Return None if total, else (child_assignment, fired_clauses).
     ``extra``: clauses over non-node slots that constrain the children
-    (the derived nodes' own blocks); ``alias``: slot -> representative
-    slot for slots holding the same object (``r**r``)."""
-    if alias:
-        def canon(k):
-            return alias.get(k, k)
-        pat_clauses = [(tuple((canon(k), i, neg) for k, i, neg in lits), a, b) for lits, a, b in pat.clauses]
-        extra = [tuple((canon(k), i, neg) for k, i, neg in c) for c in extra]
-    else:
-        pat_clauses = pat.clauses
+    (the derived nodes' own blocks).  Slots holding the same object
+    (``r**r``) are already merged by ``_Union``."""
+    pat_clauses = pat.clauses
     slots = sorted({k for lits, _, _ in pat_clauses for k, _, _ in lits if k != pat.node}
                    | {k for c in extra for k, _, _ in c})
     if not slots:
@@ -314,9 +306,9 @@ def _expressions_of(obj):
 
 
 def load_exprs(corpus=None, stream=None):
-    from sympy import Symbol, symbols, I, pi, oo, E, Rational, Integer, Float  # noqa
-    from sympy import sin, cos, tan, cot, exp, log, sqrt, Abs, acos, asin, atan, acot, sinh, cosh, tanh  # noqa
-    from sympy import re, im, sign, conjugate, floor, ceiling, factorial, Function  # noqa
+    from sympy import Symbol, symbols, I, pi, oo, E, Rational, Float
+    from sympy import sin, cos, tan, cot, exp, log, sqrt, Abs, acos, asin, atan, acot, sinh, cosh, tanh
+    from sympy import re, im, sign, conjugate, floor, ceiling, factorial, arg, Function
     exprs = []
     if corpus:
         # records of tools/compare.py: ``prop``/``assum`` (srepr of a
@@ -346,7 +338,6 @@ def load_exprs(corpus=None, stream=None):
     # facts, and the node shapes of every non-total family found so far
     # (the fast mode of tests/test_totality.py runs this list alone, so a
     # shape that once failed stays pinned here)
-    from sympy import arg  # noqa
     x, y, z, w, a, b, k = symbols("x y z w a b k")
     A = Symbol("A", commutative=False)
     p = Symbol("p", positive=True)
@@ -407,7 +398,7 @@ def run(exprs, depth=1, independent=False, models=None):
         models = rule_models()
     pats, formulas_only = collect_patterns(exprs)
     failures = []
-    for key, (e, compiled) in pats.items():
+    for e, compiled in pats.values():
         r = check_block(e, compiled, models, depth, independent)
         if r is not None:
             pat, assign, fired = r
@@ -439,10 +430,9 @@ def main():
     failures, total, formulas_only = run(exprs, args.depth, args.independent, models)
     print(f"expressions: {len(exprs)}; distinct node blocks (pattern combinations): {total}; "
           f"nodes with formula-only templates (plain formulas not checked): {formulas_only}")
-    failures = [(pat, e, assign, fired) for e, pat, assign, fired in failures]
     print(f"checked {total} blocks in {time.time() - t0:.1f}s; non-total: {len(failures)}")
     out = []
-    for pat, e, assign, fired in failures:
+    for e, pat, assign, fired in failures:
         print(f"\n=== block of {e!r} (type {type(e).__name__}, {len(pat.clauses)} clauses, slots {pat.used}, node slot {pat.node})")
         for k, true in sorted(assign.items()):
             what = pat.objs[k] if k < len(pat.objs) else "(grandchild)"
@@ -452,7 +442,7 @@ def main():
             print("    " + clause_str(lits, pat.node))
         out.append(describe(e, pat, assign, fired))
     fam = {}
-    for pat, e, assign, fired in failures:
+    for e, pat, assign, fired in failures:
         key = tuple(sorted(set(clause_str(l, pat.node) for l, _, _ in fired)))
         fam.setdefault(key, []).append(repr(e))
     print(f"\nfailure families (by the set of fired clauses): {len(fam)}")

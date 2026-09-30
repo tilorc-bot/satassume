@@ -69,7 +69,7 @@ def test_canary_a_non_total_block_is_reported():
     argument, and the same block without the downward rule must pass."""
     from sympy import Function, Symbol
 
-    from satassume.templates._common import Rules, facts, resolve  # noqa: F401
+    from satassume.templates._common import Rules, facts
 
     A = Symbol('A', commutative=False)
     node = Function('canary')(A)
