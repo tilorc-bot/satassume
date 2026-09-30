@@ -4,8 +4,8 @@ definitions; ``DiracDelta`` as rule rows.
 **8 rows**: 5 definitions (``FACTS``) and 3 ``DiracDelta`` rules.  Each
 definition is an identity row whose right side states the case analysis::
 
-    Max(a, b)                    = Piecewise((a, a >= b), (b, a < b))
-    Min(a, b)                    = Piecewise((a, a <= b), (b, a > b))
+    Max(a, b)                    = Piecewise((a, a >= b or a = b), (b, a < b))
+    Min(a, b)                    = Piecewise((a, a <= b or a = b), (b, a > b))
     KroneckerDelta(i, j)         = Piecewise((1, i = j), (0, i != j))
     KroneckerDelta(i, j, (l, u)) = Piecewise((1, i = j & l <= i <= u), (0, True))
     Heaviside(x, h)              = Piecewise((0, x < 0), (h, x = 0), (1, x > 0))
@@ -13,23 +13,27 @@ definition is an identity row whose right side states the case analysis::
 A definition fires when the engine decides its conditions under the
 assumptions (the refined right side has no ``Piecewise`` left) and the
 family's heads lose an argument.  The conditions are decided by the
-engine's order vocabulary (:func:`..core.prove.decide`), not by SymPy's
-``Piecewise`` refinement: a relation holds when a proof form from signs or
-infinite endpoints holds, or one from stated relations (``Q.le``, ``Q.lt``,
-``Q.eq``, ``Q.ne``, the difference zero or nonzero), and the relation forms
-are not used for an argument known infinite, where SymPy's ``ask`` answers
-``Q.eq(x, y)`` "True" for ``x = -oo`` and ``y <= 0`` (v3 refuses relation
-queries there).  No case split is tried (``splits=False``): on refusals it
-cost about 5x and derived nothing the battery or the differential run needs.
+engine (:func:`..core.prove.decide`), not by SymPy's ``Piecewise``
+refinement: under satassume (the ``satassume`` and ``combined`` backends) by
+one ``ask`` each, a relation saying its sides are extended reals and
+holding on them, also at infinity; under SymPy's ``ask`` by the order
+vocabulary, whose relation forms are not used for an argument known
+infinite, where SymPy's ``ask`` answers ``Q.eq(x, y)`` "True" for ``x = -oo``
+and ``y <= 0`` (v3 refuses relation queries there).  No case split is tried
+(``splits=False``): on refusals it cost about 5x and derived nothing the
+battery or the differential run needs.
 
-The last branch of each two-way definition is ``(nan, True)``, the value
-outside the domain (``Max`` of incomparable arguments, ``Heaviside`` of a
-non-real argument; SymPy raises there).  The decider never refutes both
-``a >= b`` and ``a < b``, so that branch is reached only for ``Heaviside``,
-whose argument ``v`` is assumed extended real.
+``Max`` and ``Min`` have no default branch.  For a non-real argument both
+``a >= b`` and ``a < b`` are false (a relation's sides are extended reals),
+so the definition is left with no branch and does not fire: ``Max`` of
+incomparable arguments is undefined, and SymPy raises there.  The two-way
+definitions of ``KroneckerDelta`` and ``Heaviside`` end with ``(nan, True)``,
+the value outside the domain; it is reached only for ``Heaviside`` of a
+non-real argument, whose argument ``v`` is assumed extended real.
 
 Ties and infinities follow SymPy: ``Max(a, b)`` keeps ``a`` when ``a >= b``
-(under ``Q.eq(x, y)`` the first argument survives); ``+-oo`` are ordered
+or ``a = b`` (under ``Q.eq(x, y)`` the first argument survives, also for a
+non-real ``x``, as SymPy's ``Max(x, x)`` is ``x``); ``+-oo`` are ordered
 like any extended real; ``Heaviside(0, h) = h`` (``Heaviside(x)`` carries
 ``h = 1/2``).  More than two arguments need no row: ``Max(a, b)`` matches
 every ordered pair of arguments of a longer ``Max`` and keeps the others.
@@ -58,8 +62,8 @@ ASSUMED = {Q.extended_real(u)}   # u is an extended real (Heaviside's argument)
 
 FACTS = (
     add_rules([
-        (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True))),
-        (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True))),
+        (Max(a, b), Piecewise((a, Q.ge(a, b) | Q.eq(a, b)), (b, Q.lt(a, b)))),
+        (Min(a, b), Piecewise((a, Q.le(a, b) | Q.eq(a, b)), (b, Q.gt(a, b)))),
     ])
     + add_rules([
         (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True))),
