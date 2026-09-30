@@ -76,6 +76,8 @@ ask(Q.positive(y), Q.gt(y, 0))                # None: y = oo satisfies y > 0 (re
 ask(Q.extended_positive(y), Q.gt(y, 0))       # True: y > 0 makes y an extended real
 ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
 ask(Q.integer(y), Q.gt(y, 0) & Q.lt(y, 1))    # False (integrality in LRA: bounds rounded, branch and bound)
+from sympy import S, pi
+ask(Q.integer(y/pi + S.Half), Q.gt(y, -pi/2) & Q.lt(y, pi/2))  # False (exact pi coefficients, satassume/constfield.py)
 out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
 from sympy import Integer, Predicate, log
@@ -115,6 +117,7 @@ only when propagation is inconclusive.
 | `satassume/engine.py` | sessions, discovery, caching |
 | `satassume/templates/` | structural rules per SymPy class |
 | `satassume/sympy_api.py` | `ask`, `out_of_scope`, `to_formula`, `Unsupported` |
+| `satassume/constfield.py` | exact numbers in `Q(pi, E, sqrt(2), ...)` for LRA coefficients and bounds (signs by interval refinement, `Undecided` when out of reach) |
 | `satassume/extensions.py` | `register(pred, *classes)`: clause-generating functions for custom predicates and for vocabulary predicates on new classes |
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
