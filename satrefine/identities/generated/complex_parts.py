@@ -47,7 +47,7 @@ RULES = [
     (arg(conjugate(w)), arg(-w), Q.imaginary(w)),
     # round 1: from complex_parts.IDENTITIES[1] under Q.real(e)
     #   fired: complex_parts.RULES[6], power_exp_log.RULES[23], complex_parts.IDENTITIES[1]
-    #   asks: Q.positive(e) | ~Q.zero(b), Q.real(e), Q.positive(e) | ~Q.zero(Abs(b))
+    #   asks: Q.real(e)
     (Abs(b**e), Abs(b)**e, Q.real(e) & (Q.positive(e) | ~Q.zero(b))),
     # round 1: from complex_parts.IDENTITIES[1] under Q.positive(b)
     #   fired: complex_parts.RULES[10], complex_parts.DEFINITIONS[1], complex_parts.RULES[0], power_exp_log.RULES[23], complex_parts.RULES[6], complex_parts.IDENTITIES[1]

@@ -65,11 +65,11 @@ RULES = [
     (log(b**e), e*log(b), Q.nonnegative(b) & Q.positive(e)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.nonnegative(b)
     #   fired: complex_parts.RULES[7], complex_parts.generated[30], power_exp_log.LOG_RULES[0], complex_parts.RULES[0]
-    #   asks: Q.integer(e), Q.even(e), Q.positive(e) | ~Q.zero(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.zero(0), Q.real(0), Q.finite(e), ~Q.zero(b) | ~Q.zero(e), Q.extended_nonnegative(b)
+    #   asks: Q.integer(e), Q.even(e), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.zero(0), Q.real(0), Q.finite(e), Q.extended_nonnegative(b)
     (log(b**e), e*log(b), Q.even(e) & Q.nonnegative(b) & (Q.positive(e) | ~Q.zero(b))),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.real(b)
     #   fired: complex_parts.RULES[7], complex_parts.generated[30], complex_parts.generated[31], integer_funcs.RULES[1], complex_parts.generated[17], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21], power_exp_log.LOG_RULES[0]
-    #   asks: Q.integer(e), Q.even(e), Q.positive(e) | ~Q.zero(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.negative(b), Q.integer(-im(e)/2), Q.integer(-e/2), Q.positive(-b), Q.zero(0), Q.real(0), Q.finite(e), ~Q.zero(b) | ~Q.zero(e)
+    #   asks: Q.integer(e), Q.even(e), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.negative(b), Q.integer(-im(e)/2), Q.integer(-e/2), Q.positive(-b), Q.zero(0), Q.real(0), Q.finite(e)
     (log(b**e), e*log(Abs(b)), Q.even(e) & Q.real(b) & (Q.positive(e) | ~Q.zero(b))),
     # round 1: from power_exp_log.IDENTITIES[2] under Q.positive(y)
     #   fired: complex_parts.generated[30], power_exp_log.IDENTITIES[2], complex_parts.generated[17]
