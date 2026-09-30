@@ -199,6 +199,7 @@ from __future__ import annotations
 
 import importlib
 import weakref
+from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
@@ -630,10 +631,13 @@ class Relations:
             for u, c in form.items():
                 if _is_number(u):
                     continue                  # a bounded real constant: finite
-                try:
-                    sg = sign(c)              # c may involve constants (pi*x)
-                except Undecided:
-                    return                    # unknown sign: no clauses 2 (a relaxation)
+                if type(c) is Fraction:
+                    sg = 1 if c > 0 else -1 if c else 0
+                else:
+                    try:
+                        sg = sign(c)          # c involves constants (pi*x)
+                    except Undecided:
+                        return                # unknown sign: no clauses 2 (a relaxation)
                 if not sg:
                     exact = False             # cancels: oo - oo if infinite
                     continue

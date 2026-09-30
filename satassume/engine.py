@@ -840,7 +840,10 @@ _WANT: Dict[frozenset, frozenset] = {}
 
 def _gave_up(s: Session) -> bool:
     """A theory of the session's solver gave up (satassume.theory)."""
-    return any(getattr(t, "gave_up", False) for t in s.solver._theories)
+    for t in s.solver._theories:
+        if getattr(t, "gave_up", False):
+            return True
+    return False
 
 
 def neighbourhood(pred) -> frozenset:

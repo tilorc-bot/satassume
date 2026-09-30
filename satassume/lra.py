@@ -302,7 +302,7 @@ class LRATheory:
             else:
                 for k, a in r.items():
                     row[k] = row.get(k, _ZERO) + c * a
-        row = {k: a for k, a in row.items() if not formally_zero(a)}
+        row = {k: a for k, a in row.items() if type(a) is not Fraction or a}
         vq = vd = _ZERO
         for k, a in row.items():
             vq += a * self._vq[k]
@@ -479,15 +479,17 @@ class LRATheory:
         items = terms.items() if isinstance(terms, dict) else terms
         lin: dict[Hashable, Fraction] = {}
         for t, c in items:
-            c = num(c)
             if type(c) is not Fraction:
-                self._fields = True
+                c = num(c)
+                if type(c) is not Fraction:
+                    self._fields = True
             lin[t] = lin.get(t, _ZERO) + c
         for t in lin:
             self._term_var(t)
         # a formal zero test (sparsity): a coefficient whose value is 0
-        # without being formally 0 stays, and any use of its sign aborts
-        return {t: c for t, c in lin.items() if not formally_zero(c)}
+        # without being formally 0 stays (an Element is never formally 0),
+        # and any use of its sign gives up
+        return {t: c for t, c in lin.items() if type(c) is not Fraction or c}
 
     def _var_of_form(self, lin: dict) -> tuple[int, Fraction]:
         """``(v, c)`` with ``sum(a*t) == c*v`` for the non-empty form
