@@ -804,7 +804,6 @@ def run_in_process(items: Sequence[Item], config: EngineConfig, hashseed: Option
         path = f.name
     env = dict(os.environ)
     env["PYTHONHASHSEED"] = str(0 if hashseed is None else hashseed)
-    env.pop("SATASSUME_SELFCHECK", None)
     cmd = [sys.executable, "-m", "harness", "exec", path, "--ref-level", str(int(ref_level))]
     p = subprocess.run(cmd, capture_output=True, text=True, cwd=_repo_root(), env=env, timeout=timeout)
     os.unlink(path)

@@ -245,11 +245,25 @@ raises `HistoryDependence` (or is logged); the original answer (or
 `ValueError`) is still returned.  About one fresh query of extra cost per
 call.
 
+It is off unless installed from code, before the queries to check: at
+the top of a script, or in a `conftest.py` to check a whole test run (the
+repository root must be on `sys.path`, as it is for `pytest` run from the
+root):
+
 ```python
 from harness import selfcheck
-selfcheck.install()                     # level=2: module memos and SymPy's cache cleared too
-                                        # mode="warn" / "log", log_path=...
+selfcheck.install()                     # raise HistoryDependence on a mismatch
+selfcheck.install(mode="warn")          # print a warning per mismatch and go on
+selfcheck.install(mode="log", log_path="mismatches.jsonl")   # only record them
+selfcheck.install(level=2)              # module memos and SymPy's cache cleared too
 ```
+
+`install` wraps `satassume.sympy_api.ask` only; the engine is not changed
+and nothing in `satassume` imports the harness.  Call it once (a second
+call does nothing; the lines above are alternatives).  Recorded mismatches are
+in `selfcheck.mismatches`.  Level 2 clears process-wide state (the module
+memos, SymPy's cache) in the middle of other queries: single-threaded use
+only.
 
 ## Findings
 

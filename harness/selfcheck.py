@@ -1,24 +1,25 @@
 """Runtime self-check: every ``ask`` re-answered in a clean engine.
 
-Switched on by the environment (read by ``satassume/sympy_api.py`` at
-import, off by default)::
+Off unless installed from code (a script, or a ``conftest.py``)::
 
-    SATASSUME_SELFCHECK=1        raise HistoryDependence on a mismatch
-    SATASSUME_SELFCHECK=log      only record mismatches (see ``mismatches``)
-    SATASSUME_SELFCHECK=warn     print a warning per mismatch, keep going
-    SATASSUME_SELFCHECK_LEVEL=1  reference: a fresh Engine of the same
-                                 configuration (default), 2: also clear the
-                                 module memos and SymPy's cache
-    SATASSUME_SELFCHECK_LOG=PATH append one JSON line per mismatch
+    from harness import selfcheck
+    selfcheck.install()                  # raise HistoryDependence on a mismatch
+    selfcheck.install(mode="warn")       # print a warning per mismatch, keep going
+    selfcheck.install(mode="log", log_path="mismatches.jsonl")
+                                         # only record (``mismatches``, the file)
+    selfcheck.install(level=2)           # also clear the module memos and
+                                         # SymPy's cache before each reference
 
-or from code with ``install()``.  The wrapped ``ask`` answers as before
-(the engine under test's answer is returned, or its ValueError raised);
-the reference costs about one fresh query per call.
+The engine itself is not touched: ``install`` replaces
+``satassume.sympy_api.ask`` with a wrapper.  The wrapped ``ask`` answers
+as before (the engine under test's answer is returned, or its ValueError
+raised); the reference costs about one fresh query per call.  Level 2
+clears process-wide state in the middle of other queries, so it is for
+single-threaded use only.
 """
 from __future__ import annotations
 
 import json
-import os
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -78,11 +79,3 @@ def install(level: int = 1, mode: str = "raise", log_path: Optional[str] = None)
     ask.__doc__ = orig.__doc__
     api.ask = ask
 
-
-def install_from_env() -> None:
-    v = os.environ.get("SATASSUME_SELFCHECK", "")
-    if not v or v == "0":
-        return
-    mode = {"1": "raise", "raise": "raise", "log": "log", "warn": "warn"}.get(v, "raise")
-    level = int(os.environ.get("SATASSUME_SELFCHECK_LEVEL", "1"))
-    install(level=level, mode=mode, log_path=os.environ.get("SATASSUME_SELFCHECK_LOG"))

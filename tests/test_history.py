@@ -531,3 +531,39 @@ def test_corpus_sample():
     items = load_corpus(CORPUS, limit=400)
     assert len(items) >= 300, len(items)
     _check(preset("default"), items, ("forward", "grouped"))
+
+
+# ==========================================================================
+# the runtime self-check (harness/selfcheck.py)
+# ==========================================================================
+
+def test_selfcheck_passes_clean_queries_and_flags_a_planted_one():
+    """``selfcheck.install()`` (in a subprocess: it wraps ``ask`` for the
+    whole process) lets clean answers through and raises on an answer
+    planted in the default engine's answer memo."""
+    import subprocess
+    import sys
+    code = """
+from sympy import Q, Symbol
+import satassume.sympy_api as api
+from harness import selfcheck
+selfcheck.install()
+assert api._selfcheck_original is not None
+x = Symbol('x')
+for p, a in [(Q.positive(x + 1), Q.positive(x)), (Q.real(x), Q.integer(x)), (Q.positive(x), Q.real(x))]:
+    api.ask(p, a)
+assert not selfcheck.mismatches
+eng = api.default_engine()
+key = (Q.negative(x), Q.positive(x))
+eng.answers.put(key, True)
+try:
+    api.ask(*key)
+except selfcheck.HistoryDependence as e:
+    print("caught:", e)
+else:
+    raise SystemExit("planted mismatch not caught")
+"""
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         cwd=ROOT, env=dict(os.environ, PYTHONHASHSEED="0"), timeout=300)
+    assert out.returncode == 0, out.stderr[-3000:]
+    assert "caught:" in out.stdout
