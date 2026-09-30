@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.real, Symbol('x', real=True))",
-  "assum": "And(AppliedPredicate(Q.negative, Add(Symbol('x', real=True), Symbol('y', real=True))), AppliedPredicate(Q.positive, Add(Integer(-1), Symbol('x', real=True), Symbol('y', real=True))))",
-  "pickle": "gASVhgEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SMDVJlYWxQcmVkaWNhdGWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUfZSMBHJlYWyUiHOSlIaUgZSME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjANBbmSUk5RoAowic3ltcHkuYXNzdW1wdGlvbnMucHJlZGljYXRlcy5vcmRlcpSMEU5lZ2F0aXZlUHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLmFkZJSMA0FkZJSTlGgOaAmMAXmUhZRoDJKUhpSBlIaUgZRoAmgUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlGgajBJzeW1weS5jb3JlLm51bWJlcnOUjAtOZWdhdGl2ZU9uZZSTlCmBlGgOaB2HlIGUhpSBlIaUgZSGlC4="
+  "assum": "And(AppliedPredicate(Q.negative, Add(Symbol('x', real=True), Symbol('y', real=True))), AppliedPredicate(Q.positive, Add(Integer(-1), Symbol('x', real=True), Symbol('y', real=True))))"
  },
  "warm": "ValueError",
  "ref": "True",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "AppliedBinaryRelation(Q.lt, Symbol('u'), Symbol('v'))",
-   "assum": "And(AppliedPredicate(Q.negative, Add(Symbol('x', real=True), Symbol('y', real=True))), AppliedPredicate(Q.positive, Add(Integer(-1), Symbol('x', real=True), Symbol('y', real=True))))",
-   "pickle": "gASV4AEAAAAAAACMIXN5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmJpbnJlbJSMFUFwcGxpZWRCaW5hcnlSZWxhdGlvbpSTlIwjc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uZXF1YWxpdHmUjBdTdHJpY3RMZXNzVGhhblByZWRpY2F0ZZSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXWUhZSBlGgJjAF2lIWUgZSHlIGUjBNzeW1weS5sb2dpYy5ib29sYWxnlIwDQW5klJOUjBhzeW1weS5hc3N1bXB0aW9ucy5hc3N1bWWUjBBBcHBsaWVkUHJlZGljYXRllJOUjCJzeW1weS5hc3N1bXB0aW9ucy5wcmVkaWNhdGVzLm9yZGVylIwRTmVnYXRpdmVQcmVkaWNhdGWUk5QpgZSMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUaAmMAXiUhZR9lIwEcmVhbJSIc5KUaAmMAXmUhZRoIZKUhpSBlIaUgZRoF2gYjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlGgejBJzeW1weS5jb3JlLm51bWJlcnOUjAtOZWdhdGl2ZU9uZZSTlCmBlGgjaCaHlIGUhpSBlIaUgZSGlC4="
+   "assum": "And(AppliedPredicate(Q.negative, Add(Symbol('x', real=True), Symbol('y', real=True))), AppliedPredicate(Q.positive, Add(Integer(-1), Symbol('x', real=True), Symbol('y', real=True))))"
   }
  ],
  "full_prefix_len": 1,

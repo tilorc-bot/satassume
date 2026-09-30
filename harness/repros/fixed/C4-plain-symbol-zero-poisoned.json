@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.zero, Symbol('x'))",
-  "assum": "True",
-  "pickle": "gASVmQAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjA1aZXJvUHJlZGljYXRllJOUKYGUjBFzeW1weS5jb3JlLnN5bWJvbJSMBlN5bWJvbJSTlIwBeJSFlIGUhpSBlIiGlC4="
+  "assum": "True"
  },
  "warm": "False",
  "ref": "None",
@@ -33,14 +32,12 @@
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.positive, Pow(Symbol('A', commutative=False), Integer(-1)))",
-   "assum": "True",
-   "pickle": "gASV9gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwQc3ltcHkuY29yZS5wb3dlcpSMA1Bvd5STlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAUGUhZR9lIwLY29tbXV0YXRpdmWUiXOSlIwSc3ltcHkuY29yZS5udW1iZXJzlIwLTmVnYXRpdmVPbmWUk5QpgZSGlIGUhpSBlIiGlC4="
+   "assum": "True"
   },
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.zero, Mul(Symbol('x'), Symbol('A', commutative=False)))",
-   "assum": "True",
-   "pickle": "gASV0gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjA1aZXJvUHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLm11bJSMA011bJSTlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXiUhZSBlGgMjAFBlIWUfZSMC2NvbW11dGF0aXZllIlzkpSGlIGUhpSBlIiGlC4="
+   "assum": "True"
   }
  ],
  "full_prefix_len": 2,

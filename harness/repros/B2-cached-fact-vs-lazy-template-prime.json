@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.prime, Mul(I, Symbol('n', integer=True)))",
-  "assum": "AppliedPredicate(Q.prime, Mul(I, Symbol('n', integer=True)))",
-  "pickle": "gASV+gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMJHN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMubnRoZW9yeZSMDlByaW1lUHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLm11bJSMA011bJSTlIwSc3ltcHkuY29yZS5udW1iZXJzlIwNSW1hZ2luYXJ5VW5pdJSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAW6UhZR9lIwHaW50ZWdlcpSIc5KUhpSBlIaUgZRoAmgGaBeGlIGUhpQu"
+  "assum": "AppliedPredicate(Q.prime, Mul(I, Symbol('n', integer=True)))"
  },
  "warm": "ValueError",
  "ref": "True",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.prime, Mul(I, Symbol('n', integer=True)))",
-   "assum": "True",
-   "pickle": "gASV8QAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMJHN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMubnRoZW9yeZSMDlByaW1lUHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLm11bJSMA011bJSTlIwSc3ltcHkuY29yZS5udW1iZXJzlIwNSW1hZ2luYXJ5VW5pdJSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAW6UhZR9lIwHaW50ZWdlcpSIc5KUhpSBlIaUgZSIhpQu"
+   "assum": "True"
   }
  ],
  "full_prefix_len": 1,

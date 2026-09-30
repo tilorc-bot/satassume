@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.positive, Add(Integer(-2), Pow(Integer(2), Rational(1, 2)), Mul(Integer(-1), Symbol('q', nonnegative=True))))",
-  "assum": "And(AppliedPredicate(Q.nonnegative, Mul(Integer(3), Symbol('q', nonnegative=True))), AppliedPredicate(Q.zero, Mul(Integer(3), Symbol('q', nonnegative=True))))",
-  "pickle": "gASV0QEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEnN5bXB5LmNvcmUubnVtYmVyc5SMB0ludGVnZXKUk5RK/v///4WUgZSMEHN5bXB5LmNvcmUucG93ZXKUjANQb3eUk5RoDEsChZSBlGgKjARIYWxmlJOUKYGUhpSBlIwOc3ltcHkuY29yZS5tdWyUjANNdWyUk5RoCowLTmVnYXRpdmVPbmWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAFxlIWUfZSMC25vbm5lZ2F0aXZllIhzkpSGlIGUh5SBlIaUgZSME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjANBbmSUk5RoAmgDjBROb25OZWdhdGl2ZVByZWRpY2F0ZZSTlCmBlGgbaAxLA4WUgZRoJoaUgZSGlIGUaAJoA4wNWmVyb1ByZWRpY2F0ZZSTlCmBlGg2hpSBlIaUgZSGlC4="
+  "assum": "And(AppliedPredicate(Q.nonnegative, Mul(Integer(3), Symbol('q', nonnegative=True))), AppliedPredicate(Q.zero, Mul(Integer(3), Symbol('q', nonnegative=True))))"
  },
  "warm": "False",
  "ref": "None",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "Implies(AppliedBinaryRelation(Q.lt, Add(Integer(1), Mul(Rational(1, 2), Symbol('q', nonnegative=True))), Integer(7)), AppliedPredicate(Q.nonpositive, Mul(Integer(3), Symbol('q', nonnegative=True))))",
-   "assum": "And(AppliedPredicate(Q.nonnegative, Mul(Integer(3), Symbol('q', nonnegative=True))), AppliedPredicate(Q.zero, Mul(Integer(3), Symbol('q', nonnegative=True))))",
-   "pickle": "gASVPQIAAAAAAACME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjAdJbXBsaWVzlJOUjCFzeW1weS5hc3N1bXB0aW9ucy5yZWxhdGlvbi5iaW5yZWyUjBVBcHBsaWVkQmluYXJ5UmVsYXRpb26Uk5SMI3N5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmVxdWFsaXR5lIwXU3RyaWN0TGVzc1RoYW5QcmVkaWNhdGWUk5QpgZSMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUjBJzeW1weS5jb3JlLm51bWJlcnOUjANPbmWUk5QpgZSMDnN5bXB5LmNvcmUubXVslIwDTXVslJOUaA2MBEhhbGaUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAFxlIWUfZSMC25vbm5lZ2F0aXZllIhzkpSGlIGUhpSBlGgNjAdJbnRlZ2VylJOUSweFlIGUh5SBlIwYc3ltcHkuYXNzdW1wdGlvbnMuYXNzdW1llIwQQXBwbGllZFByZWRpY2F0ZZSTlIwic3ltcHkuYXNzdW1wdGlvbnMucHJlZGljYXRlcy5vcmRlcpSMFE5vblBvc2l0aXZlUHJlZGljYXRllJOUKYGUaBNoJEsDhZSBlGgehpSBlIaUgZSGlIGUaACMA0FuZJSTlGgraCyMFE5vbk5lZ2F0aXZlUHJlZGljYXRllJOUKYGUaDOGlIGUaCtoLIwNWmVyb1ByZWRpY2F0ZZSTlCmBlGgzhpSBlIaUgZSGlC4="
+   "assum": "And(AppliedPredicate(Q.nonnegative, Mul(Integer(3), Symbol('q', nonnegative=True))), AppliedPredicate(Q.zero, Mul(Integer(3), Symbol('q', nonnegative=True))))"
   }
  ],
  "full_prefix_len": 16,

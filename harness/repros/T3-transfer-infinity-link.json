@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.positive, Function('f')(Symbol('u')))",
-  "assum": "And(AppliedPredicate(Q.positive_infinite, Symbol('u')), AppliedPredicate(Q.positive, Function('f')(oo)))",
-  "pickle": "gASVeQEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwTc3ltcHkuY29yZS5mdW5jdGlvbpSMDl9yZWJ1aWxkX3VuZGVmlJOUjAFmlH2UhpRSlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXWUhZSBlIWUgZSGlIGUjBNzeW1weS5sb2dpYy5ib29sYWxnlIwDQW5klJOUaAKMJXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuY2FsY3VsdXOUjBlQb3NpdGl2ZUluZmluaXRlUHJlZGljYXRllJOUKYGUaBOGlIGUaAJoBmgNjBJzeW1weS5jb3JlLm51bWJlcnOUjAhJbmZpbml0eZSTlCmBlIWUgZSGlIGUhpSBlIaULg=="
+  "assum": "And(AppliedPredicate(Q.positive_infinite, Symbol('u')), AppliedPredicate(Q.positive, Function('f')(oo)))"
  },
  "warm": "True",
  "ref": "None",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "AppliedBinaryRelation(Q.eq, Symbol('u'), oo)",
-   "assum": "And(AppliedPredicate(Q.positive_infinite, Symbol('u')), AppliedPredicate(Q.positive, Function('f')(oo)))",
-   "pickle": "gASV7gEAAAAAAACMIXN5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmJpbnJlbJSMFUFwcGxpZWRCaW5hcnlSZWxhdGlvbpSTlIwjc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uZXF1YWxpdHmUjBFFcXVhbGl0eVByZWRpY2F0ZZSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXWUhZSBlIwSc3ltcHkuY29yZS5udW1iZXJzlIwISW5maW5pdHmUk5QpgZSHlIGUjBNzeW1weS5sb2dpYy5ib29sYWxnlIwDQW5klJOUjBhzeW1weS5hc3N1bXB0aW9ucy5hc3N1bWWUjBBBcHBsaWVkUHJlZGljYXRllJOUjCVzeW1weS5hc3N1bXB0aW9ucy5wcmVkaWNhdGVzLmNhbGN1bHVzlIwZUG9zaXRpdmVJbmZpbml0ZVByZWRpY2F0ZZSTlCmBlGgMhpSBlGgYjCJzeW1weS5hc3N1bXB0aW9ucy5wcmVkaWNhdGVzLm9yZGVylIwRUG9zaXRpdmVQcmVkaWNhdGWUk5QpgZSME3N5bXB5LmNvcmUuZnVuY3Rpb26UjA5fcmVidWlsZF91bmRlZpSTlIwBZpR9lIaUUpRoEIWUgZSGlIGUhpSBlIaULg=="
+   "assum": "And(AppliedPredicate(Q.positive_infinite, Symbol('u')), AppliedPredicate(Q.positive, Function('f')(oo)))"
   }
  ],
  "full_prefix_len": 1,

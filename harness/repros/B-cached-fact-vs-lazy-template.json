@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.algebraic, Add(Symbol('x'), Symbol('A', commutative=False)))",
-  "assum": "AppliedPredicate(Q.algebraic, Add(Symbol('x'), Symbol('A', commutative=False)))",
-  "pickle": "gASV3wAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SMEkFsZ2VicmFpY1ByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUgZRoDIwBQZSFlH2UjAtjb21tdXRhdGl2ZZSJc5KUhpSBlIaUgZRoAmgGaBaGlIGUhpQu"
+  "assum": "AppliedPredicate(Q.algebraic, Add(Symbol('x'), Symbol('A', commutative=False)))"
  },
  "warm": "ValueError",
  "ref": "True",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.algebraic, Add(Symbol('x'), Symbol('A', commutative=False)))",
-   "assum": "True",
-   "pickle": "gASV1gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SMEkFsZ2VicmFpY1ByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUgZRoDIwBQZSFlH2UjAtjb21tdXRhdGl2ZZSJc5KUhpSBlIaUgZSIhpQu"
+   "assum": "True"
   }
  ],
  "full_prefix_len": 1,

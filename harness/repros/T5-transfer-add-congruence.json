@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.positive, Add(Integer(1), Function('f')(Symbol('u'))))",
-  "assum": "And(AppliedPredicate(Q.zero, Symbol('u')), AppliedPredicate(Q.positive, Add(Integer(1), Function('f')(Integer(0)))))",
-  "pickle": "gASVdQEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEnN5bXB5LmNvcmUubnVtYmVyc5SMA09uZZSTlCmBlIwTc3ltcHkuY29yZS5mdW5jdGlvbpSMDl9yZWJ1aWxkX3VuZGVmlJOUjAFmlH2UhpRSlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXWUhZSBlIWUgZSGlIGUhpSBlIwTc3ltcHkubG9naWMuYm9vbGFsZ5SMA0FuZJSTlGgCaAOMDVplcm9QcmVkaWNhdGWUk5QpgZRoGoaUgZRoAmgGaAloDWgUaAqMBFplcm+Uk5QpgZSFlIGUhpSBlIaUgZSGlIGUhpQu"
+  "assum": "And(AppliedPredicate(Q.zero, Symbol('u')), AppliedPredicate(Q.positive, Add(Integer(1), Function('f')(Integer(0)))))"
  },
  "warm": "True",
  "ref": "None",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "AppliedBinaryRelation(Q.eq, Symbol('u'), Symbol('y', real=True))",
-   "assum": "And(AppliedPredicate(Q.zero, Symbol('u')), AppliedPredicate(Q.positive, Add(Integer(1), Function('f')(Integer(0)))))",
-   "pickle": "gASV9QEAAAAAAACMIXN5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmJpbnJlbJSMFUFwcGxpZWRCaW5hcnlSZWxhdGlvbpSTlIwjc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uZXF1YWxpdHmUjBFFcXVhbGl0eVByZWRpY2F0ZZSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXWUhZSBlGgJjAF5lIWUfZSMBHJlYWyUiHOSlIeUgZSME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjANBbmSUk5SMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjA1aZXJvUHJlZGljYXRllJOUKYGUaAyGlIGUaBloGowRUG9zaXRpdmVQcmVkaWNhdGWUk5QpgZSMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUjBJzeW1weS5jb3JlLm51bWJlcnOUjANPbmWUk5QpgZSME3N5bXB5LmNvcmUuZnVuY3Rpb26UjA5fcmVidWlsZF91bmRlZpSTlIwBZpR9lIaUUpRoJowEWmVyb5STlCmBlIWUgZSGlIGUhpSBlIaUgZSGlC4="
+   "assum": "And(AppliedPredicate(Q.zero, Symbol('u')), AppliedPredicate(Q.positive, Add(Integer(1), Function('f')(Integer(0)))))"
   }
  ],
  "full_prefix_len": 1,

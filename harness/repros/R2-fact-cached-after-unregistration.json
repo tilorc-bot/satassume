@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.real, Function('f')(Symbol('y', real=True)))",
-  "assum": "True",
-  "pickle": "gASV2gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SMDVJlYWxQcmVkaWNhdGWUk5QpgZSME3N5bXB5LmNvcmUuZnVuY3Rpb26UjA5fcmVidWlsZF91bmRlZpSTlIwBZpR9lIaUUpSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF5lIWUfZSMBHJlYWyUiHOSlIWUgZSGlIGUiIaULg=="
+  "assum": "True"
  },
  "warm": "True",
  "ref": "None",
@@ -37,8 +36,7 @@
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.real, Function('f')(Symbol('y', real=True)))",
-   "assum": "True",
-   "pickle": "gASV2gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SMDVJlYWxQcmVkaWNhdGWUk5QpgZSME3N5bXB5LmNvcmUuZnVuY3Rpb26UjA5fcmVidWlsZF91bmRlZpSTlIwBZpR9lIaUUpSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF5lIWUfZSMBHJlYWyUiHOSlIWUgZSGlIGUiIaULg=="
+   "assum": "True"
   },
   {
    "kind": "unregister",

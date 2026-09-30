@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "Not(AppliedBinaryRelation(Q.ne, Add(Integer(7), Symbol('q', nonnegative=True)), Integer(2)))",
-  "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))",
-  "pickle": "gASVsgEAAAAAAACME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjANOb3SUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmJpbnJlbJSMFUFwcGxpZWRCaW5hcnlSZWxhdGlvbpSTlIwjc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uZXF1YWxpdHmUjBNVbmVxdWFsaXR5UHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLmFkZJSMA0FkZJSTlIwSc3ltcHkuY29yZS5udW1iZXJzlIwHSW50ZWdlcpSTlEsHhZSBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXGUhZR9lIwLbm9ubmVnYXRpdmWUiHOSlIaUgZRoD0sChZSBlIeUgZSFlIGUaAKMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBxFeHRlbmRlZE5vblBvc2l0aXZlUHJlZGljYXRllJOUKYGUaBuGlIGUhZSBlIaULg=="
+  "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))"
  },
  "warm": "False",
  "ref": "None",
@@ -33,14 +32,12 @@
   {
    "kind": "ask",
    "prop": "AppliedBinaryRelation(Q.gt, Add(Integer(21), Mul(Integer(3), Symbol('q', nonnegative=True))), Integer(7))",
-   "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))",
-   "pickle": "gASV4AEAAAAAAACMIXN5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmJpbnJlbJSMFUFwcGxpZWRCaW5hcnlSZWxhdGlvbpSTlIwjc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uZXF1YWxpdHmUjBpTdHJpY3RHcmVhdGVyVGhhblByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEnN5bXB5LmNvcmUubnVtYmVyc5SMB0ludGVnZXKUk5RLFYWUgZSMDnN5bXB5LmNvcmUubXVslIwDTXVslJOUaAxLA4WUgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAFxlIWUfZSMC25vbm5lZ2F0aXZllIhzkpSGlIGUhpSBlGgMSweFlIGUh5SBlIwTc3ltcHkubG9naWMuYm9vbGFsZ5SMA05vdJSTlIwYc3ltcHkuYXNzdW1wdGlvbnMuYXNzdW1llIwQQXBwbGllZFByZWRpY2F0ZZSTlIwic3ltcHkuYXNzdW1wdGlvbnMucHJlZGljYXRlcy5vcmRlcpSMHEV4dGVuZGVkTm9uUG9zaXRpdmVQcmVkaWNhdGWUk5QpgZRoCWghaBuGlIGUhpSBlIWUgZSGlC4="
+   "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))"
   },
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.commutative, Symbol('q', nonnegative=True))",
-   "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))",
-   "pickle": "gASVaQEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMI3N5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuY29tbW9ulIwUQ29tbXV0YXRpdmVQcmVkaWNhdGWUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAFxlIWUfZSMC25vbm5lZ2F0aXZllIhzkpSGlIGUjBNzeW1weS5sb2dpYy5ib29sYWxnlIwDTm90lJOUaAKMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBxFeHRlbmRlZE5vblBvc2l0aXZlUHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLmFkZJSMA0FkZJSTlIwSc3ltcHkuY29yZS5udW1iZXJzlIwHSW50ZWdlcpSTlEsHhZSBlGgOhpSBlIaUgZSFlIGUhpQu"
+   "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))"
   }
  ],
  "full_prefix_len": 2,

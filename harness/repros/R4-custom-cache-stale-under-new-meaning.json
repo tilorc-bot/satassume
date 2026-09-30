@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.hbig, Symbol('m', negative=True))",
-  "assum": "True",
-  "pickle": "gASVoAAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5RoAIwSVW5kZWZpbmVkUHJlZGljYXRllJOUjBFzeW1weS5jb3JlLnN5bWJvbJSMA1N0cpSTlIwEaGJpZ5SFlIGUhZSBlGgFjAZTeW1ib2yUk5SMAW2UhZR9lIwIbmVnYXRpdmWUiHOSlIaUgZSIhpQu"
+  "assum": "True"
  },
  "warm": "False",
  "ref": "None",
@@ -37,8 +36,7 @@
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.hbig, Symbol('m', negative=True))",
-   "assum": "True",
-   "pickle": "gASVoAAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5RoAIwSVW5kZWZpbmVkUHJlZGljYXRllJOUjBFzeW1weS5jb3JlLnN5bWJvbJSMA1N0cpSTlIwEaGJpZ5SFlIGUhZSBlGgFjAZTeW1ib2yUk5SMAW2UhZR9lIwIbmVnYXRpdmWUiHOSlIaUgZSIhpQu"
+   "assum": "True"
   },
   {
    "kind": "unregister",

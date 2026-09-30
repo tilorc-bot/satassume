@@ -52,7 +52,8 @@ Mismatches are classified (`contradiction`, `none-vs-definite`,
 set, kind), since one inconsistent session makes every later query under
 it disagree.  The first of each group is shrunk by ddmin to a minimal
 prefix that still reproduces, and written to `--out DIR` as `NAME.json`
-(the stream, exact pickles included) and `NAME.py` (standalone repro).
+(the stream as srepr strings; an item whose srepr rebuilds into another
+tree is marked `"srepr_exact": false`) and `NAME.py` (standalone repro).
 `--ignore kind,kind` leaves known kinds out of the report while still
 counting them.  Every report line carries `first_hit` (order, index and
 the number of queries run when the first mismatch appeared).

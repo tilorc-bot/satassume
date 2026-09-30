@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.noninteger, Mul(Pow(Mul(I, Symbol('w', nonzero=True)), Rational(1, 3)), Pow(Abs(Symbol('j', integer=True, even=True)), Rational(2, 3))))",
-  "assum": "true",
-  "pickle": "gASVuwEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuc2V0c5SME05vbkludGVnZXJQcmVkaWNhdGWUk5QpgZSMDnN5bXB5LmNvcmUubXVslIwDTXVslJOUjBBzeW1weS5jb3JlLnBvd2VylIwDUG93lJOUaAmMEnN5bXB5LmNvcmUubnVtYmVyc5SMDUltYWdpbmFyeVVuaXSUk5QpgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF3lIWUfZSMB25vbnplcm+UiHOSlIaUgZRoDYwIUmF0aW9uYWyUk5RLAUsDhpSBlIaUgZRoDIwkc3ltcHkuZnVuY3Rpb25zLmVsZW1lbnRhcnkuY29tcGxleGVzlIwDQWJzlJOUaBOMAWqUhZR9lCiMB2ludGVnZXKUiIwEZXZlbpSIdZKUhZSBlGgcSwJLA4aUgZSGlIGUhpSBlIaUgZSME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjAtCb29sZWFuVHJ1ZZSTlCmBlIaULg=="
+  "assum": "true"
  },
  "warm": "False",
  "ref": "None",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "Or(AppliedBinaryRelation(Q.lt, Integer(1), Pow(Integer(2), Rational(1, 2))), AppliedBinaryRelation(Q.ne, E, Add(Symbol('w', nonzero=True), Mul(Pow(Mul(I, Symbol('w', nonzero=True)), Rational(1, 3)), Pow(Abs(Symbol('j', integer=True, even=True)), Rational(2, 3))))))",
-   "assum": "True",
-   "pickle": "gASVTQIAAAAAAACME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjAJPcpSTlIwhc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uYmlucmVslIwVQXBwbGllZEJpbmFyeVJlbGF0aW9ulJOUjCNzeW1weS5hc3N1bXB0aW9ucy5yZWxhdGlvbi5lcXVhbGl0eZSMF1N0cmljdExlc3NUaGFuUHJlZGljYXRllJOUKYGUjBJzeW1weS5jb3JlLm51bWJlcnOUjANPbmWUk5QpgZSMEHN5bXB5LmNvcmUucG93ZXKUjANQb3eUk5RoCowHSW50ZWdlcpSTlEsChZSBlGgKjARIYWxmlJOUKYGUhpSBlIeUgZRoBWgGjBNVbmVxdWFsaXR5UHJlZGljYXRllJOUKYGUaAqMBEV4cDGUk5QpgZSMDnN5bXB5LmNvcmUuYWRklIwDQWRklJOUjBFzeW1weS5jb3JlLnN5bWJvbJSMBlN5bWJvbJSTlIwBd5SFlH2UjAdub256ZXJvlIhzkpSMDnN5bXB5LmNvcmUubXVslIwDTXVslJOUaBBoL2gKjA1JbWFnaW5hcnlVbml0lJOUKYGUaCyGlIGUaAqMCFJhdGlvbmFslJOUSwFLA4aUgZSGlIGUaBCMJHN5bXB5LmZ1bmN0aW9ucy5lbGVtZW50YXJ5LmNvbXBsZXhlc5SMA0Fic5STlGgnjAFqlIWUfZQojAdpbnRlZ2VylIiMBGV2ZW6UiHWSlIWUgZRoNksCSwOGlIGUhpSBlIaUgZSGlIGUh5SBlIaUgZSIhpQu"
+   "assum": "True"
   }
  ],
  "full_prefix_len": 1,

@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.positive, Add(Rational(-1, 2), Symbol('x', real=True)))",
-  "assum": "AppliedPredicate(Q.positive, Add(Integer(-1), Mul(Integer(2), Symbol('x', real=True))))",
-  "pickle": "gASVRwEAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwOc3ltcHkuY29yZS5hZGSUjANBZGSUk5SMEnN5bXB5LmNvcmUubnVtYmVyc5SMCFJhdGlvbmFslJOUSv////9LAoaUgZSMEXN5bXB5LmNvcmUuc3ltYm9slIwGU3ltYm9slJOUjAF4lIWUfZSMBHJlYWyUiHOSlIaUgZSGlIGUaAJoBmgJaAqMC05lZ2F0aXZlT25llJOUKYGUjA5zeW1weS5jb3JlLm11bJSMA011bJSTlGgKjAdJbnRlZ2VylJOUSwKFlIGUaBaGlIGUhpSBlIaUgZSGlC4="
+  "assum": "AppliedPredicate(Q.positive, Add(Integer(-1), Mul(Integer(2), Symbol('x', real=True))))"
  },
  "warm": "True",
  "ref": "None",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "Not(AppliedBinaryRelation(Q.eq, Symbol('u'), Symbol('v')))",
-   "assum": "AppliedPredicate(Q.positive, Add(Integer(-1), Mul(Integer(2), Symbol('x', real=True))))",
-   "pickle": "gASV1AEAAAAAAACME3N5bXB5LmxvZ2ljLmJvb2xhbGeUjANOb3SUk5SMIXN5bXB5LmFzc3VtcHRpb25zLnJlbGF0aW9uLmJpbnJlbJSMFUFwcGxpZWRCaW5hcnlSZWxhdGlvbpSTlIwjc3ltcHkuYXNzdW1wdGlvbnMucmVsYXRpb24uZXF1YWxpdHmUjBFFcXVhbGl0eVByZWRpY2F0ZZSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAXWUhZSBlGgMjAF2lIWUgZSHlIGUhZSBlIwYc3ltcHkuYXNzdW1wdGlvbnMuYXNzdW1llIwQQXBwbGllZFByZWRpY2F0ZZSTlIwic3ltcHkuYXNzdW1wdGlvbnMucHJlZGljYXRlcy5vcmRlcpSMEVBvc2l0aXZlUHJlZGljYXRllJOUKYGUjA5zeW1weS5jb3JlLmFkZJSMA0FkZJSTlIwSc3ltcHkuY29yZS5udW1iZXJzlIwLTmVnYXRpdmVPbmWUk5QpgZSMDnN5bXB5LmNvcmUubXVslIwDTXVslJOUaCGMB0ludGVnZXKUk5RLAoWUgZRoDIwBeJSFlH2UjARyZWFslIhzkpSGlIGUhpSBlIaUgZSGlC4="
+   "assum": "AppliedPredicate(Q.positive, Add(Integer(-1), Mul(Integer(2), Symbol('x', real=True))))"
   }
  ],
  "full_prefix_len": 1,

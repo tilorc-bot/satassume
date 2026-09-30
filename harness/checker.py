@@ -82,25 +82,23 @@ class ReferenceLevel(IntEnum):
 # --------------------------------------------------------------------------
 
 def item_to_json(it: Item) -> Dict[str, Any]:
-    """srepr (readable) plus a pickle (exact: srepr re-evaluates
-    ``p + (-1 + I)/2`` into another tree)."""
-    import base64
-    import pickle
+    """srepr only: readable, and no opaque executable data in the files.
+    srepr is rebuilt with evaluation, which can give another tree than an
+    unevaluated original; such an item is marked ``"srepr_exact": false``."""
     if isinstance(it, Event):
         return {"kind": it.kind, "id": it.reg_id}
-    return {"kind": "ask", "prop": to_srepr(it.prop), "assum": to_srepr(it.assum),
-            "pickle": base64.b64encode(pickle.dumps((it.prop, it.assum))).decode()}
+    d = {"kind": "ask", "prop": to_srepr(it.prop), "assum": to_srepr(it.assum)}
+    try:
+        exact = (from_srepr(d["prop"]), from_srepr(d["assum"])) == (it.prop, it.assum)
+    except Exception:  # noqa: BLE001 - not rebuildable at all
+        exact = False
+    if not exact:
+        d["srepr_exact"] = False
+    return d
 
 
 def item_from_json(d: Dict[str, Any]) -> Item:
     if d["kind"] == "ask":
-        if d.get("pickle"):
-            import base64
-            import pickle
-            try:
-                return Ask(*pickle.loads(base64.b64decode(d["pickle"])))
-            except Exception:  # noqa: BLE001 - fall back to the srepr
-                pass
         return Ask(from_srepr(d["prop"]), from_srepr(d["assum"]))
     return Event(d["kind"], d["id"])
 

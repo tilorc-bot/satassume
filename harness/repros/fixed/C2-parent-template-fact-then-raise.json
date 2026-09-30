@@ -23,8 +23,7 @@
  "item": {
   "kind": "ask",
   "prop": "AppliedPredicate(Q.infinite, Symbol('A', commutative=False))",
-  "assum": "AppliedPredicate(Q.infinite, Symbol('A', commutative=False))",
-  "pickle": "gASVuwAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMJXN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMuY2FsY3VsdXOUjBFJbmZpbml0ZVByZWRpY2F0ZZSTlCmBlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAUGUhZR9lIwLY29tbXV0YXRpdmWUiXOSlIaUgZRoAmgGaA6GlIGUhpQu"
+  "assum": "AppliedPredicate(Q.infinite, Symbol('A', commutative=False))"
  },
  "warm": "ValueError",
  "ref": "True",
@@ -33,8 +32,7 @@
   {
    "kind": "ask",
    "prop": "AppliedPredicate(Q.positive, Pow(Symbol('A', commutative=False), Integer(-1)))",
-   "assum": "True",
-   "pickle": "gASV9gAAAAAAAACMGHN5bXB5LmFzc3VtcHRpb25zLmFzc3VtZZSMEEFwcGxpZWRQcmVkaWNhdGWUk5SMInN5bXB5LmFzc3VtcHRpb25zLnByZWRpY2F0ZXMub3JkZXKUjBFQb3NpdGl2ZVByZWRpY2F0ZZSTlCmBlIwQc3ltcHkuY29yZS5wb3dlcpSMA1Bvd5STlIwRc3ltcHkuY29yZS5zeW1ib2yUjAZTeW1ib2yUk5SMAUGUhZR9lIwLY29tbXV0YXRpdmWUiXOSlIwSc3ltcHkuY29yZS5udW1iZXJzlIwLTmVnYXRpdmVPbmWUk5QpgZSGlIGUhpSBlIiGlC4="
+   "assum": "True"
   }
  ],
  "full_prefix_len": 1,
