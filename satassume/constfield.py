@@ -76,8 +76,9 @@ values is answered semantically:
   structural) compares them and so can raise :class:`Undecided` when
   both involve several or algebraic constants.  ``==`` with a SymPy
   number converts it (:func:`from_sympy`); with a float, or a SymPy
-  number that is not read, it raises TypeError instead of being
-  silently False.
+  number that is not read (``Float``, ``I``), it raises TypeError instead
+  of being silently False; a non-number (``None``, a bool, a string,
+  ``Symbol('y')``) is never equal.
 * ``floor(x)`` refines until the enclosure has one floor.  A formally
   non-rational number in a single transcendental constant is irrational,
   so it terminates (up to the cap).
@@ -281,6 +282,34 @@ def _pow(p, k: int):
         k >>= 1
         if k:
             p = _mul(p, p)
+    return r
+
+
+def _mul_checked(a, b):
+    """``a * b``, or TooLarge before the work of the product (terms times
+    terms) or after its size exceeds the budget."""
+    if type(a) is Fraction or type(b) is Fraction:
+        return _mul(a, b)
+    sa, sb = _psize(a), _psize(b)
+    if sa[0] + sb[0] > MAX_DEGREE or sa[2] + sb[2] > MAX_BITS or sa[1] * sb[1] > MAX_WORK:
+        raise TooLarge("a product in a power exceeds the size budget")
+    r = _mul(a, b)
+    if _psize(r)[1] > MAX_TERMS:
+        raise TooLarge("a power has more terms than the size budget")
+    return r
+
+
+def _pow_checked(p, k: int):
+    """``p**k`` by squaring, each product checked (:func:`_mul_checked`):
+    ``(pi + E + ... + 1)**64`` is refused at the first squaring that grows
+    too large, not after minutes."""
+    r = _ONE
+    while k:
+        if k & 1:
+            r = _mul_checked(r, p)
+        k >>= 1
+        if k:
+            p = _mul_checked(p, p)
     return r
 
 
@@ -785,11 +814,16 @@ def _coerce(x):
 
 def _coerce_foreign(x):
     """For ``==``: a SymPy number as a Fraction or Element (``Integer(3)``,
-    ``pi/2``); TypeError for any other number (``3.0``, a SymPy Float or a
-    closed expression that is not read), whose equality with an exact real
-    has no single meaning; None for a non-number (never equal)."""
+    ``pi/2``); TypeError for any other number (``3.0``, a SymPy ``Float``,
+    ``I`` or a closed expression that is not read), whose equality with an
+    exact real has no single meaning; None for a non-number (never equal:
+    ``None``, a string, a bool, ``Symbol('y')``, ``x + 1``, ``S.true``)."""
     import numbers
+    if isinstance(x, bool):
+        return None
     if type(x).__module__.startswith("sympy"):
+        if getattr(x, "is_number", False) is not True:
+            return None
         r = from_sympy(x)
         if r is None:
             raise TypeError(f"cannot compare an exact number with {x!r}")
@@ -997,8 +1031,9 @@ class Element:
         deg, terms, bits = self._size()
         if deg * k > MAX_DEGREE or bits * k > MAX_BITS:
             raise TooLarge(f"a power of degree {deg * k} exceeds the size budget")
-        # powers of coprime polynomials are coprime, monic stays monic
-        return _checked(Element._new(_pow(self._n, k), _pow(self._d, k)))
+        # powers of coprime polynomials are coprime, monic stays monic;
+        # every product of the squarings is checked against the budget
+        return _checked(Element._new(_pow_checked(self._n, k), _pow_checked(self._d, k)))
 
     # -- signs and comparisons -----------------------------------------
 
