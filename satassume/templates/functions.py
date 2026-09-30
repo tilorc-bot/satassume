@@ -309,6 +309,9 @@ def _round(R, c):
     R.rule([(X, 'real', True)], (N, 'integer', True))
     R.rule([(X, 'extended_real', True)], (N, 'extended_real', True))
     R.rule([(X, 'complex', True)], (N, 'complex', True))
+    # a real value of floor/ceiling is an integer (floor(1 + I/2) == 1 is
+    # real; floor(oo) == oo is not)
+    R.rule([(N, 'real', True)], (N, 'integer', True))
     _equiv(R, [(X, 'integer', True)], ('even', 'odd', 'zero', 'positive', 'negative'))
 
 
