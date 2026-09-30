@@ -494,8 +494,14 @@ def _rebuild(e, smap: dict, fmap: dict):
     args = [_rebuild(a, smap, fmap) for a in e.args]
     if isinstance(e, AppliedUndef) and e.func in fmap:
         return fmap[e.func](*args)
-    if isinstance(e, (Not, And, Or)):
-        return type(e)(*args, evaluate=False)
+    if isinstance(e, Not):
+        return Not(*args, evaluate=False)
+    if isinstance(e, (And, Or)):
+        # a canonical node (SymPy's own order) stays canonical under the new
+        # names, so that an I6 report is about the names, not the order (I5);
+        # a respelled one keeps its spelling
+        canonical = e == type(e)(*e.args)
+        return type(e)(*args) if canonical else type(e)(*args, evaluate=False)
     return e.func(*args)
 
 
