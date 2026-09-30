@@ -394,9 +394,16 @@ class Session:
 
     def ensure(self, node: Node, demanded=None, budget: Optional[int] = None) -> None:
         """Demand-driven discovery: visit ``node`` and, breadth-first, the
-        nodes its templates mention, up to ``budget`` new nodes."""
+        nodes its templates mention, up to ``budget`` new nodes.
+
+        A visited node with nothing parked is only recorded (the discovery
+        below would skip it at once)."""
         if demanded is not None:
             self.demand.setdefault(node, set()).update(PRED_INDEX[p] for p in demanded)
+        if node in self.base and node not in self.pending and node not in self.pending_c:
+            if self.frontier:
+                self.frontier = deque()
+            return
         self.frontier = deque([node])
         self._discover(demanded, budget)
 

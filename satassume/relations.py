@@ -123,7 +123,11 @@ clause 3,
 Sound: with every term a finite real, ``e`` is the form's value, a finite
 real, and ``integer(e)`` holds iff that value is an integer (SymPy's
 ``integer`` implies finite, so ``oo`` is no integer, and an infinite term
-fails the guard).  The theory rounds bounds and branches (see
+fails the guard).  When the form is ``e`` itself (``x``, ``sin(x)``), the
+variable ``integer(e)`` is registered as the atom, without guard or
+auxiliary variable: if ``e`` is no finite real, ``integer(e)`` is false
+and the theory's value of ``e`` is free (every other atom on ``e`` is
+guarded), so a non-integral value satisfies it.  The theory rounds bounds and branches (see
 :mod:`satassume.lra`, "Integrality"), so ``Q.integer(t)`` is False under
 ``0 < t < 1`` and ``Q.ge(n, 1)`` is True for an integer ``n > 0``; the
 ``<-`` half gives True where the bounds pin ``e`` to an integer
@@ -366,6 +370,21 @@ def _number_facts(engine, c) -> tuple:
     return _number_basis(engine, c, facts=True)
 
 
+_INF_PREDS = frozenset({"extended_real", "positive_infinite", "negative_infinite"})
+
+
+def _own_term(sides, e) -> bool:
+    """The order sides (:func:`satassume.lra_adapter.order_sides`) of
+    ``0 < e`` or ``e < 0`` are ``0`` and ``e`` itself as the only term,
+    with coefficient 1 and no ``oo`` summand."""
+    (fa, ia), (fb, ib) = sides
+    if ia or ib:
+        return False
+    if fa:
+        fa, fb = fb, fa
+    return not fa and len(fb) == 1 and fb.get(e) == 1
+
+
 # --------------------------------------------------------------------------
 # per-session glue
 # --------------------------------------------------------------------------
@@ -385,6 +404,8 @@ class Relations:
         self.queue: List[P] = []          # allocated, not yet interpreted
         self.linked: set = set()
         self._bounded: set = set()        # constant terms whose bounds are asserted
+        self._guards: dict = {}           # terms -> guard literals (_guard)
+        self._link_lt: dict = {}          # link atoms 0 < e, e < 0 -> e
         self.top: dict = {}               # vocabulary-atom arguments of user formulas
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
@@ -482,7 +503,13 @@ class Relations:
         solver = s.solver
         var = s.table.custom[atom]
         order = atom.pred == "lt"
-        if order and self._order_sides(var, atom):
+        # a link atom 0 < e or e < 0 (see _link): clause 1 is implied by
+        # the link and the rule base (extended_positive and
+        # extended_negative imply extended_real); only its demand is kept
+        link = self._link_lt.get(atom) if order else None
+        if link is not None:
+            s.ensure(link, {"extended_real"})
+        elif order and self._order_sides(var, atom):
             return True                       # false: a side is no extended real
         if atom.pred == "eq":
             self._eq_infinity(var, atom)
@@ -503,7 +530,14 @@ class Relations:
             if order and hasattr(ad, "order_sides"):
                 sides = ad.order_sides(sat)
                 if sides is not None:
-                    self._order_infinite(var, sides)
+                    if link is not None and _own_term(sides, link):
+                        # clauses 2 of 0 < u and u < 0 for an opaque term u
+                        # are implied by the link: positive_infinite(u)
+                        # implies extended_positive(u), negative_infinite(u)
+                        # extended_negative(u); only their demand is kept
+                        s.ensure(link, _INF_PREDS)
+                    else:
+                        self._order_infinite(var, sides)
                     if sides[0][1] or sides[1][1]:
                         ok = True             # an oo summand: no finite case
                         continue
@@ -523,9 +557,14 @@ class Relations:
     def _guard(self, ad, terms) -> list:
         """``[-real(u), ...]`` for the opaque terms ``u`` of a guarded
         theory atom (clause 3); a constant term gets its bounds asserted
-        (once per session) and no literal when it is real at the root."""
+        (once per session) and no literal when it is real at the root.
+        Memoized per session and term list (never mutate the result)."""
+        key = (ad, tuple(terms))
+        guard = self._guards.get(key)
+        if guard is not None:
+            return guard
         s = self.session
-        guard = []
+        guard = self._guards[key] = []
         for u in terms:
             if _is_number(u):
                 if u not in self._bounded:
@@ -542,11 +581,17 @@ class Relations:
     def _link_integer(self, ad, e) -> None:
         """``guard -> (integer(e) <-> i)`` for the integrality atom ``i`` of
         ``e``'s linear form in the guarded adapter ``ad`` (see
-        "Integrality"); called once per linked expression."""
+        "Integrality"); called once per linked expression.  When ``e`` is
+        its own term, ``integer(e)`` itself is the atom (no guard)."""
         form = ad.integer_form(e)
         if form is None:
             return
         s = self.session
+        (payload, _terms) = form
+        if not payload.offset and len(payload.terms) == 1 \
+                and payload.terms[0][0] == e and payload.terms[0][1] == 1:
+            ad.register_integer(s.solver, s.var("integer", e), form)
+            return
         i = s.table.aux()
         s.solver.ensure_vars(i)
         ad.register_integer(s.solver, i, form)
@@ -585,6 +630,8 @@ class Relations:
     def _closed_extended_real(self, e):
         """``extended_real`` of a closed side, context-free (``nan`` is
         none); None if unknown or not closed."""
+        if getattr(e, "is_Rational", False):
+            return True
         if not _is_number(e):
             return None
         from sympy import S
@@ -689,8 +736,10 @@ class Relations:
         s.ensure(e, {"extended_positive", "extended_negative", "zero"})
         pos, neg = s.var("extended_positive", e), s.var("extended_negative", e)
         zero = s.var("zero", e)
-        gt = self._atom_var(relation_atom("lt", S.Zero, e))
-        lt = self._atom_var(relation_atom("lt", e, S.Zero))
+        gta, lta = relation_atom("lt", S.Zero, e), relation_atom("lt", e, S.Zero)
+        self._link_lt[gta] = self._link_lt[lta] = e
+        gt = self._atom_var(gta)
+        lt = self._atom_var(lta)
         eqa = relation_atom("eq", e, S.Zero)
         if eqa not in self.session.table.custom:
             self._aux_eq.add(eqa)
