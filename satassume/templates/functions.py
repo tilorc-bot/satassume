@@ -111,11 +111,11 @@ def _minus_one(x):
 
 
 def _commutative_rules(n):
+    # A function of numbers is a number.  Not the converse: ``f(A)`` can be
+    # a number for a non-number ``A`` (``sin(A) == 0`` for ``A`` with
+    # eigenvalues 0 and pi, ``Abs(A)``, ``f = det``).
     R = Rules()
-    A = range(n)
-    R.rule(lits(A, 'commutative'), (n, 'commutative', True))
-    for k in A:
-        R.rule([(n, 'commutative', True)], (k, 'commutative', True))
+    R.rule(lits(range(n), 'commutative'), (n, 'commutative', True))
     return R.rules
 
 
@@ -123,7 +123,8 @@ def _commutative_rules(n):
 def function_commutative(expr):
     args = expr.args
     n = len(args)
-    if n == 0:
+    # ``Function('g', commutative=False)``: SymPy declares ``g(x)`` non-commutative.
+    if n == 0 or type(expr).default_assumptions.get('commutative') is False:
         return ()
     consts = consts_of(args)
     return facts(pattern_key('function', n, consts), lambda: _commutative_rules(n),

@@ -1,15 +1,20 @@
-"""Products and powers with non-commutative factors (issue #47).
+"""Products, powers, sums and function applications with non-commutative
+arguments (issue #47).
 
 ``commutative`` is a property of the *value*: numbers (and ``oo``, ``zoo``)
 are commutative, a non-commutative symbol stands for a value that is not a
 number.  A product with a non-commutative factor can still be a number
 (``0*A == 0``, ``A*A**-1 == 1``, ``A**2 == 1`` for a reflection) and zero
-without a zero factor (``A*B == 0`` for nilpotent ``A = B``).
+without a zero factor (``A*B == 0`` for nilpotent ``A = B``).  Likewise a
+sum or a function of non-numbers can be a number (``A - B == 0`` for
+``B = A``, ``f(A) == 0`` for ``f = 0``).
 
 The model check below evaluates template formulas and ``ask`` answers in a
 concrete model: commutative symbols are complex numbers, non-commutative
 symbols are 2x2 matrices that are not multiples of the identity, and a
-value that is ``c`` times the identity is the number ``c``.
+value that is ``c`` times the identity is the number ``c``.  An undefined
+function ranges over a few maps that send numbers to numbers, ``Abs`` is
+the Frobenius norm on matrices.
 """
 from __future__ import annotations
 
@@ -19,7 +24,25 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 
-from sympy import I, Integer, Matrix, Mul, Pow, Q, Rational, S, Symbol, eye, oo
+from sympy import (
+    Abs,
+    Add,
+    Function,
+    I,
+    Integer,
+    Matrix,
+    Mul,
+    Pow,
+    Q,
+    Rational,
+    S,
+    Symbol,
+    eye,
+    oo,
+    sin,
+    sqrt,
+)
+from sympy.core.function import AppliedUndef
 from test_templates import evaluate
 
 from satassume import DictCache, Engine
@@ -30,6 +53,7 @@ from satassume.templates import registry
 A = Symbol('A', commutative=False)
 B = Symbol('B', commutative=False)
 x, y = Symbol('x'), Symbol('y')
+f = Function('f')
 
 
 def fresh():
@@ -97,6 +121,52 @@ def test_no_leak_into_later_queries():
 
 
 # ---------------------------------------------------------------------------
+# sums and function applications
+# ---------------------------------------------------------------------------
+
+def test_sums_of_noncommutative_terms():
+    # A - B is 0 at B = A, A + B is 2 at A = diag(1, 0), B = diag(1, 2)
+    for q in (Q.zero(A - B), Q.zero(A + B), Q.commutative(A + B), Q.commutative(A - B),
+              Q.real(A - B), Q.zero(x*A - x*B), Q.zero(A*B - B*A), Q.zero(A + B + x)):
+        assert ask(q, True, fresh()) is None, q
+    assert ask(Q.zero(A + B), Q.zero(x), fresh()) is None
+    # still decided: a finite number plus one non-number is no number, and
+    # an infinite number plus a non-number is infinite
+    assert ask(Q.zero(A + 1), True, fresh()) is False
+    assert ask(Q.commutative(A + 1), True, fresh()) is False
+    assert ask(Q.commutative(x + A), Q.finite(x), fresh()) is False
+    assert ask(Q.zero(x + A), True, fresh()) is False
+    assert ask(Q.zero(x), Q.zero(x + A), fresh()) is False
+    assert ask(Q.finite(x + A), Q.infinite(x), fresh()) is False
+    assert ask(Q.commutative(x + y), True, fresh()) is True
+
+
+def test_functions_of_noncommutative_arguments():
+    g = Function('g', commutative=False)
+    for q in (Q.zero(f(A)), Q.commutative(f(A)), Q.zero(f(A, x)), Q.zero(sin(A)),
+              Q.positive(f(A)), Q.commutative(g(x)), Q.zero(g(x))):
+        assert ask(q, True, fresh()) is None, q
+    # Abs(A) is extended real (a norm), not inconsistent
+    assert ask(Q.extended_real(Abs(A)), True, fresh()) is True
+    assert ask(Q.extended_nonnegative(Abs(A)), True, fresh()) is True
+    assert ask(Q.zero(Abs(A)), True, fresh()) is False
+    assert ask(Q.finite(A), Q.real(Abs(A)), fresh()) is True
+    # functions of numbers are numbers
+    assert ask(Q.commutative(f(x)), True, fresh()) is True
+    assert ask(Q.commutative(f(x, 2)), True, fresh()) is True
+    assert ask(Q.commutative(sin(x)), True, fresh()) is True
+
+
+def test_no_leak_from_sums_and_functions():
+    eng = fresh()
+    for q in (Q.zero(A - B), Q.zero(f(A)), Q.real(Abs(A)), Q.zero(A + x), Q.zero(A + B + x)):
+        assert ask(q, True, eng) == ask(q, True, fresh()), q
+    assert ask(Q.finite(A), True, eng) is None
+    assert ask(Q.zero(x), True, eng) is None
+    assert ask(Q.zero(A - B), Q.zero(A - B), eng) is True
+
+
+# ---------------------------------------------------------------------------
 # commutative opaque terms (templates.atoms.structural_commutative)
 # ---------------------------------------------------------------------------
 
@@ -159,6 +229,17 @@ PREDS = ('zero', 'commutative', 'finite', 'infinite', 'positive', 'negative',
 #: nan) times the matrix ``M``, which is None or not a multiple of the
 #: identity.  None: undefined (nan, the inverse of a singular matrix).
 UNDEFINED = None
+#: A sum of a non-number and one infinite value (``oo + A``): infinite, not
+#: finite and not zero, everything else unknown.
+INFINITE = 'infinite'
+
+#: Interpretations of an undefined function: each sends numbers to numbers.
+FUNCTIONS = {
+    'first': lambda vs: vs[0],
+    'zero': lambda vs: (S.Zero, None),
+    'det': lambda vs: _make(vs[0][0]**2 * (1 if vs[0][1] is None else vs[0][1].det()), None),
+    'square': lambda vs: _make(vs[0][0]**2, None if vs[0][1] is None else vs[0][1]**2),
+}
 
 
 def _make(c, m):
@@ -173,17 +254,43 @@ def _make(c, m):
     return (c, m)
 
 
+def _add(vs):
+    if all(m is None for _, m in vs):
+        return _make(Add(*(c for c, _ in vs)), None)
+    infinite = [c for c, _ in vs if c.is_infinite]
+    if not infinite:
+        total = sum(((c * (eye(2) if m is None else m)) for c, m in vs), Matrix.zeros(2, 2))
+        return _make(S.One, total)
+    return INFINITE if len(infinite) == 1 else UNDEFINED
+
+
+def _abs(v):
+    c, m = v
+    if m is None:
+        return _make(Abs(c), None)
+    return _make(Abs(c) * sqrt(sum(Abs(e)**2 for e in m)), None)
+
+
 def value(expr, point):
     if expr in point:
         v = point[expr]
         return (S.One, v) if isinstance(v, Matrix) else (v, None)
     if expr.is_Number or expr is I:
         return (expr, None)
+    if isinstance(expr, (Add, AppliedUndef, Abs)):
+        vs = [value(a, point) for a in expr.args]
+        if any(v is UNDEFINED or v is INFINITE for v in vs):
+            return UNDEFINED
+        if isinstance(expr, Add):
+            return _add(vs)
+        if isinstance(expr, Abs):
+            return _abs(vs[0])
+        return FUNCTIONS[point[expr.func]](vs)
     if isinstance(expr, Mul):
         c, m = S.One, None
         for a in expr.args:
             v = value(a, point)
-            if v is UNDEFINED:
+            if v is UNDEFINED or v is INFINITE:
                 return UNDEFINED
             c = c * v[0]
             m = v[1] if m is None else m if v[1] is None else m * v[1]
@@ -193,7 +300,7 @@ def value(expr, point):
     if isinstance(expr, Pow):
         b, e = expr.args
         v = value(b, point)
-        if v is UNDEFINED:
+        if v is UNDEFINED or v is INFINITE:
             return UNDEFINED
         c, m = v
         if m is None:
@@ -206,6 +313,8 @@ def value(expr, point):
 
 def truth(v, pred):
     """Value of ``pred`` at the value ``v`` (None: unknown)."""
+    if v is INFINITE:
+        return {'infinite': True, 'finite': False, 'zero': False}.get(pred)
     c, m = v
     if m is None:
         return getattr(c, 'is_' + pred, None)
@@ -219,14 +328,20 @@ def samples():
     exprs = [x*A, x*A*B, x*y*A, 2*A, -A, I*A, 2*A*B, A*B, B*A, A*B*A, x*A*B*A,
              A**2, A**-1, A**-2, x*A**2, x*A**-1, A*B**-1,
              Mul(x, A, B, evaluate=False), (x*A)**-1, 1/(x*A), oo*A, oo*A*B, x*y*A*B]
-    return exprs
+    sums = [A + B, A - B, x + A, x - A, A + 1, oo + A, A + B + x, x*A + B, x*A - x*B,
+            A*B - B*A, A**2 - B, x + y + A, A + B + x + y, oo*A + B, A*B + x*A]
+    functions = [f(A), f(x*A), f(A - B), f(A + x), f(A, x), f(A) + x, x*f(A), f(A)*f(B),
+                 f(f(A)), Abs(A), Abs(A - B), Abs(x*A), Abs(A) + x]
+    return exprs + sums + functions
 
 
 def points(expr):
     syms = sorted(expr.free_symbols, key=lambda s: s.name)
+    funcs = sorted({a.func for a in expr.atoms(AppliedUndef)}, key=str)
     pools = [MATRICES if not s.is_commutative else SCALARS for s in syms]
+    pools += [FUNCTIONS] * len(funcs)
     for vals in product(*pools):
-        yield dict(zip(syms, vals))
+        yield dict(zip(syms + funcs, vals))
 
 
 def node_values(point):
@@ -245,6 +360,7 @@ def test_templates_sound_for_noncommutative_factors(expr):
     """Every formula the templates emit for ``expr`` (and its subterms)
     holds at every point of the matrix model."""
     nodes = [expr, *(a for a in expr.args if not a.is_Atom)]
+    nodes += [b for a in nodes[1:] for b in a.args if not b.is_Atom]
     facts = [f for n in nodes for f in registry.facts_for(n)]
     failures = []
     for point in points(expr):
@@ -260,6 +376,8 @@ def _assumption(point, syms):
     parts = []
     for s in syms:
         v = point[s]
+        if isinstance(v, str):
+            continue
         if isinstance(v, Matrix):
             continue
         parts.append(Q.zero(s) if v == 0 else Q.nonzero(s) if v.is_real else

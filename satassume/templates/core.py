@@ -89,9 +89,14 @@ def _add_rules(n, consts):
     # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
     rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
 
-    # Commutativity: node commutative -> every term commutative (SymPy convention).
-    for k in A:
-        rule([(N, 'commutative', True)], (k, 'commutative', True))
+    # A commutative sum has a commutative term k when every other term is a
+    # finite number: k is the sum minus them.  Not in general: ``A - B`` is
+    # 0 for ``B = A``, and ``A + B`` is 1 for ``B = 1 - A``.
+    if n <= MAX_ONEOUT:
+        for k in A:
+            rest = [j for j in A if j != k]
+            rule([(N, 'commutative', True), *lits(rest, 'commutative'), *lits(rest, 'finite')],
+                 (k, 'commutative', True))
 
     for k in A:
         rest = [j for j in A if j != k]
