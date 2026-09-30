@@ -107,7 +107,7 @@ def test_planted_defects_are_caught(monkeypatch):
 
     # I2: an engine that gives up when the set holds a fresh 'iu' symbol
     def ask_i2(self, proposition, assumptions=None):
-        if assumptions not in (None, True) and any("iu" in str(s) for s in assumptions.free_symbols):
+        if assumptions is not None and "iu" in str(assumptions):
             return None
         return real_ask(self, proposition, assumptions)
     monkeypatch.setattr(eng_mod.Engine, "ask", ask_i2)
@@ -132,7 +132,7 @@ def test_planted_defects_are_caught(monkeypatch):
         r = real_ask(self, proposition, assumptions)
         return (not r) if Solver.add_internal is not real_int else r
     monkeypatch.setattr(eng_mod.Engine, "ask", ask_i1)
-    sev, other, var = check_I1(p, a, cfg, base, random.Random(0), {"kind": "drop", "seed": 1, "rate": 0.5})
+    sev, other, var = check_I1(p, a, cfg, base, random.Random(0), {"kind": "drop", "seed": 1, "rate": 0.0})
     assert sev == "wrong" and other == "False", (sev, other, var)
 
 

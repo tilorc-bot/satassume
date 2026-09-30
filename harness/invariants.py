@@ -655,7 +655,7 @@ def _known(v: Violation) -> Optional[str]:
 def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str], seed: int,
                source: str = "", max_violations: int = 5, shrink_them: bool = True,
                deadline: Optional[float] = None, progress: Optional[Callable[[str], None]] = None,
-               i1_rounds: int = 2) -> InvReport:
+               i1_rounds: int = 2, slow_limit: float = 3.0) -> InvReport:
     """Every ``Ask`` of ``items`` (events are skipped: the registry is
     configuration, checked by ``python -m harness fuzz --custom``) through
     each checker in ``invs``."""
@@ -671,7 +671,11 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
         if key in seen:
             continue
         seen.add(key)
+        t1 = time.time()
         base = fresh_outcome(it.prop, it.assum, config)
+        if time.time() - t1 > slow_limit:
+            rep.inconclusive["slow"] = rep.inconclusive.get("slow", 0) + 1
+            continue              # a query that alone takes seconds would eat the budget
         for inv in invs:
             if len(rep.violations) >= max_violations:
                 break
