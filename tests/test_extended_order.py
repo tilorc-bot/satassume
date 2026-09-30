@@ -24,6 +24,7 @@ from sympy import (Eq, I, Integral, Matrix, Q, S, im, nan, oo, pi, re, sin, sqrt
 from sympy.logic.boolalg import And
 
 from satassume import DictCache, Engine
+from satassume import constfield as cf
 from satassume import lra_adapter as ad
 from satassume.sympy_api import ask
 
@@ -46,7 +47,8 @@ def _ask(prop, assum=True, **kw):
     (Q.lt(x, oo), (({x: F(1)}, 0), ({}, 1))),
     (Q.lt(-oo, x), (({}, -1), ({x: F(1)}, 0))),
     (Q.lt(x + oo, 2 * y - 1), (({x: F(1)}, 1), ({y: F(2)}, 0))),
-    (Q.lt(-x, pi), (({x: F(-1)}, 0), ({pi: F(1)}, 0))),
+    (Q.lt(-x, pi), (({x: F(-1)}, 0), ({}, 0))),            # pi: a number, dropped
+    (Q.lt(pi * x, 1), (({x: cf.PI}, 0), ({}, 0))),
     (Q.lt(2 * (x + y), y - oo), (({x: F(2), y: F(2)}, 0), ({y: F(1)}, -1))),
 ], ids=str)
 def test_order_sides(atom, expected):
@@ -55,7 +57,7 @@ def test_order_sides(atom, expected):
 
 @pytest.mark.parametrize("atom", [
     Q.lt(x, zoo), Q.lt(x, nan), Q.lt(oo * x, 1), Q.lt(sin(x + oo), 1),
-    Q.lt(x, 0.5), Q.lt(pi * x, 1), Q.lt(x, I), Q.eq(x, oo), Q.lt(Matrix([x]), 1),
+    Q.lt(x, 0.5), Q.lt(I * x, 1), Q.lt(x, I), Q.eq(x, oo), Q.lt(Matrix([x]), 1),
 ], ids=str)
 def test_order_sides_unread(atom):
     assert ad.order_sides(atom) is None
@@ -170,7 +172,7 @@ def test_relationals_and_is_true_have_the_same_meaning():
 
 
 @pytest.mark.parametrize("assum", [
-    Q.real(x) & Q.lt(x, 0.5), Q.real(x) & Q.lt(pi * x, 1),
+    Q.real(x) & Q.lt(x, 0.5), Q.real(x) & Q.lt(I * x, 1),
     Q.real(x) & Q.lt(Integral(sin(y), (y, 0, 1)), x),
     Q.real(x) & Q.lt(oo * x, 1), Q.real(x) & Q.lt(x * zoo, 1),
 ], ids=str)

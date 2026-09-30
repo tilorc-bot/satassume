@@ -15,7 +15,7 @@ jobs:
       # SymPy at the commit the refine gates use (satrefine/tools/refine_gates.sh: SYMPY_PATH,
       # /home/tilo/orion/sympy): the refine tests need its assumptions/refine changes, and PyPI's
       # SymPy fails 25 of them
-      - run: pip install pytest pytest-xdist hypothesis mpmath "sympy @ git+https://github.com/tilorc-bot/sympy@6379c4da69"
+      - run: pip install pytest pytest-xdist hypothesis mpmath z3-solver "sympy @ git+https://github.com/tilorc-bot/sympy@6379c4da69"
       # one run per tree, as the gates do: the trees share test module basenames
       # (tests/test_engine.py, tests/refine_v3/test_*.py vs tests/refine_identities/rules/test_*.py),
       # which pytest cannot collect in one run; tests/refine_identities/needs holds open requests
