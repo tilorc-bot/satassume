@@ -188,10 +188,14 @@ def _ask(prop, assumptions=True):
 
 
 def test_engine_equality():
-    # sympy/assumptions/tests/test_rel_queries.py::test_equality
-    assert _ask(Q.eq(x, x)) is True
+    # sympy/assumptions/tests/test_rel_queries.py::test_equality, except
+    # that Q.eq(x, x) is None: x may be nan and Eq(nan, nan) is False
+    assert _ask(Q.eq(x, x)) is None
+    assert _ask(Q.eq(x, x), Q.complex(x)) is True
+    assert _ask(Q.eq(x, x), Q.extended_real(x)) is True
     assert _ask(Q.eq(y, x), Q.eq(x, y)) is True
-    assert _ask(Q.eq(y, x), ~Q.eq(z, z) | Q.eq(x, y)) is True
+    assert _ask(Q.eq(y, x), ~Q.eq(z, z) | Q.eq(x, y)) is None     # z may be nan
+    assert _ask(Q.eq(y, x), (~Q.eq(z, z) | Q.eq(x, y)) & Q.complex(z)) is True
     assert _ask(Q.eq(x, z), Q.eq(x, y) & Q.eq(y, z)) is True
 
 
@@ -207,14 +211,17 @@ def test_engine_equality_failing_is_not_wrong():
 def test_engine_ne_congruence_numbers():
     assert _ask(Q.ne(x, y), Q.eq(x, y)) is False
     assert _ask(Q.ne(x, z), Q.eq(x, y) & Q.ne(y, z)) is True
-    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, y)) is True
+    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, y)) is None      # f(x) may be nan
+    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, y) & Q.real(f(x))) is True
+    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, y) & Q.eq(f(x), z)) is True
     assert _ask(Q.eq(x, y), Q.eq(f(x), f(y))) is None
     assert _ask(Q.eq(g(x, y), g(y, x))) is None
     assert _ask(Q.eq(f(x, z), f(y, z)), Q.eq(f(x), f(y))) is None
     assert _ask(Q.ne(x, 2), Q.eq(x, 1)) is True
     assert _ask(Q.eq(x, y), Q.eq(x, 1) & Q.eq(y, 2)) is False
     assert _ask(Q.eq(x, y), Q.eq(x, 1) & Q.eq(y, 1)) is True
-    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, 1) & Q.eq(y, 1)) is True
+    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, 1) & Q.eq(y, 1)) is None   # f(1) may be nan
+    assert _ask(Q.eq(f(x), f(y)), Q.eq(x, 1) & Q.eq(y, 1) & Q.eq(f(1), z)) is True
     assert _ask(Q.eq(x, 1), Q.eq(x, 1) & Q.eq(x, 2)) == "inconsistent"
 
 
@@ -570,16 +577,52 @@ def test_random_conjunctions_match_oracle(lits):
     assert got == want, (facts, got, want)
 
 
+def _nan_consistent(terms, atoms, lits):
+    """Are the literals satisfiable when ``eq`` is SymPy's ``Eq``: equal
+    values that are not ``nan`` (``Eq(nan, nan)`` is False)?  Ground EUF
+    over the values with one more value ``nan``, distinct from the
+    integers: ``eq(i, j)`` is ``i = j & i != nan``, so a negated one is
+    ``i != j | i = nan``; every choice of disjuncts is tried."""
+    from itertools import product
+    from test_euf import naive_consistent, split_lits
+    eqs, neqs = split_lits(atoms, lits)
+    terms = list(terms) + [("v", "nan")]
+    nan_ = len(terms) - 1
+    defined = [(i, nan_) for i, _ in eqs]
+    for pick in product((False, True), repeat=len(neqs)):
+        e = eqs + [(i, nan_) for (i, _), p in zip(neqs, pick) if p]
+        d = defined + [ij for ij, p in zip(neqs, pick) if not p]
+        if naive_consistent(terms, e, d):
+            return True
+    return False
+
+
+def test_nan_oracle_self_check():
+    a, b = ("c", "a"), ("c", "b")
+    terms = [a, b, ("a", "f", (0,)), ("a", "f", (1,)), ("v", 1), ("v", 2)]
+    # eq(a, b), ne(f(a), f(b)): consistent (f(a) is nan)
+    assert _nan_consistent(terms, [(0, 1, True), (2, 3, True)], [1, -2])
+    # ... but not with f(a) = 1
+    assert not _nan_consistent(terms, [(0, 1, True), (2, 3, True), (2, 4, True)],
+                               [1, -2, 3])
+    # ne(a, a) & ne(b, b): a and b are both nan, so f(a) = f(b)
+    assert not _nan_consistent(terms, [(0, 0, True), (1, 1, True), (2, 4, True),
+                                       (3, 5, True)], [-1, -2, 3, 4])
+
+
 @settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(st.lists(st.tuples(sym_terms(), sym_terms(), st.booleans()), min_size=1, max_size=5),
        sym_terms(), sym_terms())
 @example([(A, A, False)], S(1), S(1))    # constants: answered without the assumptions
+@example([(A, B_, True)], f(A), f(B_))   # f(a) may be nan: None
+@example([(A, A, False)], A, A)          # a is nan: False
+@example([(A, B_, True), (f(A), C, True)], f(B_), f(B_))   # f(b) = f(a) = c: not nan
 def test_random_ask_matches_oracle(lits, ql, qr):
     """ask(Q.eq(ql, qr), facts) through the whole engine (EUF and LRA both
-    attached) against the EUF oracle.  Only uninterpreted functions and
-    integers occur, where EUF with distinct values is complete, so every
-    answer is checked, None included."""
-    from test_euf import oracle_consistent
+    attached) against the EUF oracle with ``nan`` (:func:`_nan_consistent`).
+    Only uninterpreted functions and integers occur, where that oracle is
+    exact, so every answer is checked, None included."""
+    oracle_consistent = _nan_consistent
     terms, index = [], {}
     atoms, facts, olits = [], [], []
     for k, (l, r, pos) in enumerate(lits):

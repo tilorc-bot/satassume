@@ -50,9 +50,10 @@ The theory keeps no derived state: what it propagates is recomputed from
 the current EUF classes and its own assignment, so EUF's undo needs no
 hook, and ``pop_level`` only forgets the values asserted above the level.
 
-Soundness: ``Q.eq(a, b)`` is equality of values, and every predicate of the
-vocabulary is a property of a value, so ``a = b`` and ``P(a)`` give
-``P(b)``.  Ordering relations are not transferred (they are LRA's), and
+Soundness: EUF's classes are identity of values (``nan`` included, see
+:mod:`satassume.euf_adapter`; ``Q.eq(a, b)`` implies it), and every
+predicate of the vocabulary is a property of a value, so ``a = b`` and
+``P(a)`` give ``P(b)``.  Ordering relations are not transferred (they are LRA's), and
 equalities LRA derives from inequalities are not handed to EUF.
 
 The session glue (which terms EUF sees, when the theory is engaged) is in

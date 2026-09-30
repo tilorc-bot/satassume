@@ -24,7 +24,9 @@ interprets a relation, `ask` returns None as before.
 Order relations are over the extended reals and assert that their sides
 are extended reals (`x < 1` implies `Q.extended_real(x)`, `x < oo` is
 `x` extended real and not `+oo`, `x < I` is false); `Eq`/`Ne` compare
-values in any domain and assert nothing about the sides.
+values in any domain and assert only that the sides are not `nan`
+(`Eq(nan, nan)` is False, so `Q.eq(f(x), f(x))` is None: `f(x)` may be
+`nan`).
 Out of scope for now: matrix predicates and matrix arguments, unregistered
 custom predicates, and replacing the old `expr.is_*` system.
 

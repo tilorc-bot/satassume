@@ -31,7 +31,8 @@ TARGETS = [
     (Q.eq(x, y), Q.prime(x) & Q.noninteger(y), False),
     (Q.ne(x, y), Q.prime(x) & Q.noninteger(y), True),
     (Q.eq(x, 2), Q.odd(x), False),
-    (Q.eq(f(x), f(y)), Q.eq(x, y), True),
+    (Q.eq(f(x), f(y)), Q.eq(x, y), None),         # f(x) may be nan: Eq(nan, nan) is False
+    (Q.eq(f(x), f(y)), Q.eq(x, y) & Q.complex(f(x)), True),
     (Q.odd(f(y)), Q.eq(x, y) & Q.even(f(x)), False),
     (Q.positive(x), Q.eq(x, y) & Q.ne(y, z), None),
     (Q.prime(x), Q.ne(x, y) & Q.prime(y), None),

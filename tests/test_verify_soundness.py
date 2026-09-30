@@ -23,14 +23,16 @@ SymPy's ``ask``:
   ``nan``); a value whose extended-realness SymPy cannot tell leaves it
   free.  ``a <= b`` is ``extended_real(a) & extended_real(b) & ~(b < a)``
   (not the plain negation of the reversed ``<``);
-* ``Eq`` compares values; structurally identical values are equal (SymPy's
-  reflexivity, ``Q.eq(e, e)`` is True even where ``e`` evaluates to
-  ``nan``), a ``nan`` against anything else is unequal, and values the
-  oracle cannot classify are free.  Under the stricter reading
-  ``Eq(nan, nan) is False`` the engine differs from a concrete model only on
-  reflexive atoms and on congruence (``Q.eq(x - z, y - z)`` from
-  ``Q.eq(x, y)`` at ``x = y = z = oo``); SymPy's own ``Q.eq(e, e)`` is True
-  there too, so that reading is not used here.
+* ``Eq`` compares values and is False on ``nan`` (``Eq(nan, nan)``, so
+  ``Q.eq(x - z, y - z)`` is False at ``x = y = z = oo``); structurally
+  identical values are equal, and values the oracle cannot classify are
+  free.
+
+The fuzzer with an undefined function (``test_fuzz_eq_nan``) draws terms
+such as ``f(x)*z``, ``x - z`` and ``f(1)*f(y)`` and checks the answers
+against random models: symbol values from ``0, 1, -1, oo, -oo, zoo, I``
+and ``nan``, and ``f`` and ``g`` random tables from values to values, so
+that ``nan`` arises from ``0*oo``, ``oo - oo`` and the functions themselves.
 
 Set ``VERIFY_FUZZ_EXAMPLES`` to raise the example count of the default
 fuzzers (default 60), and ``VERIFY_SLOW=1`` to run the slow 2000-example
@@ -139,11 +141,11 @@ def _lt(a, b):
 
 
 def _eq(a, b):
-    if a == b:
-        return True
     ka, kb = _kind(a), _kind(b)
     if ka == "nan" or kb == "nan":
-        return None if ka == kb else False
+        return False                  # Eq(nan, nan) is False
+    if a == b:
+        return True
     if ka == "other" or kb == "other":
         return None
     return bool(a == b)
@@ -462,3 +464,155 @@ def test_non_rational_numbers_do_not_crash():
         (Q.eq(f(xr), f(1)), Q.eq(xr, 1)), (Q.lt(xr + oo, 1), True),
     ]:
         ask(p, a, engine=Engine())   # any answer; must not raise
+
+
+# --------------------------------------------------------------------------
+# eq on terms that may be nan: congruence and reflexivity
+# --------------------------------------------------------------------------
+
+F, G = Function("f"), Function("g")
+NAN_SYMBOL_VALUES = [S.Zero, S.One, S.NegativeOne, oo, -oo, zoo, I, nan]
+NAN_F_VALUES = [S.Zero, S.One, S(2), oo, -oo, zoo, I, nan]
+N_MODELS = 300
+
+
+def _value(t, point, table, rng):
+    """The value of ``t`` in the model ``point`` (symbols) and ``table``
+    (``f`` and ``g``, filled lazily from ``rng``); SymPy's arithmetic gives nan."""
+    if t.is_Symbol:
+        return point[t]
+    if t.is_Number:
+        return t
+    if t.func in (F, G):
+        key = (t.func, _value(t.args[0], point, table, rng))
+        if key not in table:
+            table[key] = rng.choice(NAN_F_VALUES)
+        return table[key]
+    return t.func(*[_value(a, point, table, rng) for a in t.args])
+
+
+def _nan_models(syms, seed):
+    import random
+    rng = random.Random(seed)
+    for k in range(N_MODELS):
+        point = {s: rng.choice(NAN_SYMBOL_VALUES) for s in syms}
+        yield point, {}, rng
+
+
+def _nan_atom(at, point, table, rng):
+    if at[0] == "u":
+        return _unary(at[1], _value(S(at[2]), point, table, rng))
+    if at[0] == "ext":
+        return _ext(_value(S(at[1]), point, table, rng))
+    a = _value(S(at[1]), point, table, rng)
+    b = _value(S(at[2]), point, table, rng)
+    return _lt(a, b) if at[0] == "lt" else _eq(a, b)
+
+
+def refute_nan(prop, assum, answer, syms, seed):
+    """A model where ``assum`` holds and ``prop`` differs from ``answer``.
+    A model with an atom the oracle cannot decide (``oo - I`` against
+    ``oo``) is skipped: leaving such atoms free, independently of each
+    other, could give an assignment no values have."""
+    atoms = sorted(_atoms(prop, set()) | _atoms(assum, set()), key=str)
+    for point, table, rng in _nan_models(syms, seed):
+        env = {}
+        for at in atoms:
+            v = _nan_atom(at, point, table, rng)
+            if v is None:
+                break
+            env[at] = v
+        else:
+            if not _eval(assum, env):
+                continue
+            if answer == "inconsistent" or _eval(prop, env) != answer:
+                return point, table, env
+    return None
+
+
+@st.composite
+def nan_terms(draw):
+    base = st.sampled_from([X, Y, Z, F(X), F(Y), F(S.One), G(S.One), S.Zero, S.One])
+    t = draw(base)
+    for _ in range(draw(st.integers(0, 2))):
+        op = draw(st.sampled_from(["add", "sub", "mul", "f"]))
+        u = draw(base)
+        t = {"add": lambda: t + u, "sub": lambda: t - u, "mul": lambda: t * u,
+             "f": lambda: F(t)}[op]()
+    return t
+
+
+@st.composite
+def nan_cases(draw):
+    """Assumptions: equalities (often ``x = y``), disequalities and unary
+    facts; the proposition: an equality of two terms, often one term with
+    ``x`` and ``y`` swapped (congruence) or twice the same (reflexivity)."""
+    parts = [("r", "eq", X, Y, "Q")] if draw(st.booleans()) else []
+    for _ in range(draw(st.integers(0, 2))):
+        kind = draw(st.sampled_from(["eq", "ne", "u"]))
+        if kind == "u":
+            parts.append(("u", draw(st.sampled_from(["real", "zero", "positive"])),
+                          draw(nan_terms())))
+        else:
+            parts.append(("r", kind, draw(nan_terms()), draw(nan_terms()), "Q"))
+    if not parts:
+        parts.append(("r", "eq", draw(nan_terms()), draw(nan_terms()), "Q"))
+    assum = parts[0]
+    for g in parts[1:]:
+        assum = ("and", assum, g)
+    t = draw(nan_terms())
+    shape = draw(st.sampled_from(["swap", "swap", "same", "any"]))
+    if shape == "swap":
+        u = t.xreplace({X: Y, Y: X})
+    elif shape == "same":
+        u = t
+    else:
+        u = draw(nan_terms())
+    prop = ("r", draw(st.sampled_from(["eq", "ne"])), t, u, "Q")
+    if draw(st.integers(0, 3)) == 0:
+        prop = ("or", prop, ("r", "eq", draw(nan_terms()), draw(nan_terms()), "Q"))
+    return prop, assum, draw(st.integers(0, 2**31)), draw(st.booleans())
+
+
+def check_nan(prop, assum, seed, engine=None):
+    sp, sa = to_sympy(prop), to_sympy(assum)
+    if sp in (S.true, S.false) or sa in (S.true, S.false):
+        return None
+    try:
+        r = ask(sp, sa, engine=engine or _shared)
+    except ValueError:
+        r = "inconsistent"
+    if r is None:
+        return None
+    cx = refute_nan(prop, assum, r, (X, Y, Z), seed)
+    assert cx is None, (
+        f"ask({sp}, {sa}) = {r} but the model {cx[0]}, f = {cx[1]} satisfies "
+        f"the assumptions and refutes it (atom values {cx[2]})")
+    return r
+
+
+@FUZZ
+@given(nan_cases())
+def test_fuzz_eq_nan(case):
+    prop, assum, seed, fresh = case
+    check_nan(prop, assum, seed, Engine() if fresh else None)
+
+
+_NAN_EDGE = [
+    # the reported case: f(1)*g(1) is nan at f(1) = 0, g(1) = oo
+    (("r", "eq", X + F(S.One) * G(S.One), Y + F(S.One) * G(S.One)), ("r", "eq", X, Y, "Q")),
+    (("r", "eq", X, X), ("u", "zero", Z)),
+    (("r", "eq", F(X), F(X)), ("u", "zero", Z)),
+    (("r", "ne", F(X), F(X)), ("u", "zero", Z)),
+    (("r", "eq", F(X), F(Y)), ("r", "eq", X, Y, "Q")),
+    (("r", "eq", X - Z, Y - Z), ("r", "eq", X, Y, "Q")),
+    (("r", "eq", X * Z, Y * Z), ("r", "eq", X, Y, "Q")),
+    (("r", "eq", X - Z, Y - Z), ("and", ("r", "eq", X, Y, "Q"), ("u", "real", Z))),
+]
+
+
+@pytest.mark.parametrize("prop, assum", _NAN_EDGE)
+def test_eq_nan_edge_cases(prop, assum):
+    prop = prop if len(prop) == 5 else prop + ("Q",)
+    for seed in range(3):
+        check_nan(prop, assum, seed, Engine())

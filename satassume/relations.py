@@ -31,12 +31,20 @@ is not an extended real (hence the ``extended_real`` conjuncts of ``<=``).
 
 ``eq`` is equality of values; it holds or fails in every domain (complex,
 extended reals: ``Eq(I, I)`` is True, ``Eq(oo, oo)`` is True) and asserts
-nothing about the sides; ``ne`` is its negation.  An equality with ``oo``
-or ``-oo`` is linked to the unary vocabulary: ``eq(e, oo) <->
+only that the sides are not ``nan``: ``Eq(nan, nan)`` is False, so ``eq``
+is not reflexive where a side may be ``nan`` (``f(1)*g(1)`` at ``0*oo``,
+``x - z`` at ``oo - oo``); ``ne`` is its negation.  An equality with
+``oo`` or ``-oo`` is linked to the unary vocabulary: ``eq(e, oo) <->
 positive_infinite(e)``, ``eq(e, -oo) <-> negative_infinite(e)``
-(:meth:`Relations._eq_infinity`).  It is given to theories
-that interpret it unconditionally (EUF) and, for finite real terms, to
-LRA (below).
+(:meth:`Relations._eq_infinity`).  It is given, for finite real terms,
+to LRA (below), and to EUF as *identity* ``a ~ b`` (the same value,
+``nan`` included), which is reflexive and congruent, with
+
+    eq(a, b) <-> (a ~ b) & ~nan(a),   eq(a, b) -> ~nan(b)
+
+where ``nan(e)`` is EUF's ``e ~ NaN`` for an interpreted constant
+``NaN`` (so it is the same for a whole class) and ``complex(e)`` and
+``extended_real(e)`` imply ``~nan(e)`` (:meth:`Relations._identity`).
 
 An ``lt`` atom ``r`` for ``a < b`` gets these clauses
 (:meth:`Relations._order_sides`, :meth:`Relations._order_infinite`):
@@ -81,8 +89,9 @@ When no term is ``+-oo`` and every term is real the atom is exactly ``t``;
 when some term is infinite, clauses 2 decide it as far as the signs allow;
 with a non-real term only clause 1 applies (the side may still be real:
 ``x + y`` with ``x = I``, ``y = 1 - I``).  ``eq`` atoms go to guarded
-theories with the guard of clause 3 (LRA's ``a - b = 0``) and to unguarded
-ones (EUF) directly.
+theories with the guard of clause 3 (LRA's ``a - b = 0``), to unguarded
+*identity* adapters (EUF, ``identity = True``) as ``a ~ b`` (above) and
+to other unguarded ones directly.
 
 An ``lt`` atom is *interpreted* when clause 1 decides it, when it has an
 ``oo`` summand and clauses 2 apply, or when a guarded theory registers it
@@ -420,6 +429,8 @@ class Relations:
         #: they do not engage predicate transfer by themselves
         self._aux_eq: set = set()
         self._link_eq: set = set()        # the links' eq(e, 0), of _aux_eq
+        self._ident: dict = {}            # eq atom -> identity variable (_identity)
+        self._def: dict = {}              # term -> True or "not nan" literal (_defined)
         #: sides of the equality atoms EUF interprets -> 2 (a user or
         #: extension atom, or a number) or 1 (only a link's eq(e, 0));
         #: interface equalities add nothing (see sync_transfer)
@@ -524,7 +535,12 @@ class Relations:
         for spec in self.specs:
             ad = self._adapter(spec)
             if not spec.guarded:
-                if ad.register(solver, var, sat):
+                reg = var
+                if atom.pred == "eq" and getattr(ad, "identity", False):
+                    if not ad.interprets(sat):
+                        continue
+                    reg = self._identity(ad, var, atom)
+                if ad.register(solver, reg, sat):
                     ok = True
                     if atom.pred == "eq" and hasattr(ad, "node_term"):
                         if atom not in self._aux_eq:
@@ -559,6 +575,76 @@ class Relations:
             s._emit(guard + [-var, t])
             s._emit(guard + [var, -t])
         return ok
+
+    def _identity(self, ad, var: int, atom: P) -> int:
+        """The variable ``i`` of ``a ~ b`` (``a`` and ``b`` have the same
+        value, ``nan`` included) for the ``eq`` atom ``var`` of ``a == b``,
+        registered by the caller with the identity adapter ``ad`` (EUF),
+        with the clauses
+
+            var -> i,   var -> d(a),   var -> d(b),
+            i & d(a) -> var,   i & d(b) -> var
+
+        where the literal ``d(e)`` says "``e`` is not ``nan``"
+        (:meth:`_defined`).  EUF's reflexivity and congruence hold for
+        ``~`` but not for ``==``, which is false on ``nan``
+        (``Eq(nan, nan)``; ``f(1)*g(1)`` is ``nan`` at ``0*oo``), so EUF
+        gets ``i``, never ``var``.  The link ``eq(e, 0)`` gets no ``var ->
+        d(e)``: ``zero(e)`` implies ``complex(e)`` and hence ``d(e)``."""
+        i = self._ident.get(atom)
+        if i is not None:
+            return i
+        s = self.session
+        i = self._ident[atom] = s.table.aux()
+        s.solver.ensure_vars(i)
+        emit = s._emit
+        emit([-var, i])
+        link = atom in self._link_eq
+        ds = [self._defined(ad, e, not link) for e in atom.expr]
+        if any(d is True for d in ds):
+            emit([-i, var])
+            others = [d for d in ds if d is not True]
+        else:
+            others = ds
+            for d in ds:
+                if d is not None:
+                    emit([-i, -d, var])
+        if not link:
+            for d in others:
+                if d is not None:
+                    emit([-var, d])
+        return i
+
+    def _defined(self, ad, e, create=True):
+        """The literal "``e`` is not ``nan``", or True for a Rational, for
+        ``zoo`` and for a number the engine knows (context-free) to be
+        complex or an extended real.  Otherwise it is ``-n`` for an atom
+        ``n``, "``e ~ nan``", that the identity adapter ``ad`` registers
+        against its ``nan`` value, so it holds for every term of the class
+        of ``e`` alike; ``complex(e)`` and ``extended_real(e)`` imply
+        ``-n`` (``nan`` is neither).  Made on first use; None if
+        ``create`` is false and there is none yet."""
+        d = self._def.get(e)
+        if d is not None:
+            return d
+        from sympy import S
+        s = self.session
+        if getattr(e, "is_Rational", False) or e is S.ComplexInfinity or (
+                _is_number(e) and (s.engine.is_(e, "complex") is True
+                                   or s.engine.is_(e, "extended_real") is True)):
+            self._def[e] = True
+            return True
+        if not create:
+            return None
+        n = s.table.aux()
+        s.solver.ensure_vars(n)
+        if not ad.register_nan(s.solver, n, e):
+            return None
+        d = self._def[e] = -n
+        s.ensure(e, {"complex", "extended_real"})
+        s._emit([-s.var("complex", e), d])
+        s._emit([-s.var("extended_real", e), d])
+        return d
 
     def _guard(self, ad, terms) -> list:
         """``[-real(u), ...]`` for the opaque terms ``u`` of a guarded

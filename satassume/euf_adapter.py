@@ -5,7 +5,16 @@
 solver it attaches the adapter's theory to it.  Then it registers ``var``
 with the payload ``EqAtom(term(a), term(b), positive)``.  It returns False,
 registering nothing, for any other atom and for atoms containing ``nan``.
-``Eq(nan, nan)`` is False in SymPy, so reflexivity does not hold for nan.
+
+The theory's equality is *identity* of values, ``nan`` included: it is
+reflexive and congruent.  SymPy's ``Eq`` is not reflexive on ``nan``
+(``Eq(nan, nan)`` is False, and ``f(1)*g(1)`` is ``nan`` at ``0*oo``), so
+the relations glue does not register a SymPy ``eq`` atom itself: it
+registers a fresh identity variable, plus "``e`` is ``nan``" atoms
+(:meth:`EUFAdapter.register_nan`, ``e`` against an interpreted ``NaN``
+constant), and ties them to the ``eq`` atom with clauses
+(:meth:`satassume.relations.Relations._identity`).  Called directly,
+:meth:`EUFAdapter.register` gives the identity reading.
 
 Flattening (:meth:`EUFAdapter.term`)
 ------------------------------------
@@ -98,6 +107,12 @@ class EUFAdapter:
     theory to the solver on first use.
     """
 
+    #: the theory's equality is identity of values (reflexive, congruent),
+    #: which SymPy's ``Eq`` is not on ``nan``; the relations glue registers
+    #: an ``eq`` atom's identity variable with it, not the atom itself
+    #: (:meth:`satassume.relations.Relations._identity`)
+    identity = True
+
     def __init__(self, theory: EUFTheory | None = None):
         self.theory = theory if theory is not None else EUFTheory()
         self._terms: dict[Basic, int] = {}
@@ -146,6 +161,22 @@ class EUFAdapter:
             self.attach(solver)
         lhs, rhs, positive = parsed
         payload = EqAtom(self.term(lhs), self.term(rhs), positive)
+        solver.register_atom(self.theory, var, payload)
+        return True
+
+    def register_nan(self, solver, var: int, expr) -> bool:
+        """Register ``var`` as "the value of ``expr`` is ``nan``": the EUF
+        atom ``term(expr) = NaN`` for an interpreted constant ``NaN``
+        (distinct from every Rational; no SymPy term maps to it, since
+        atoms with ``nan`` are refused).  The glue uses its negation as
+        "``expr`` is not ``nan``" (:meth:`satassume.relations.Relations.
+        _defined`), which EUF then keeps equal across a class.  False,
+        registering nothing, if ``expr`` contains ``nan``."""
+        if not isinstance(expr, Basic) or expr.has(nan):
+            return False
+        if self._solver is not solver:
+            self.attach(solver)
+        payload = EqAtom(self.term(expr), self.theory.value(nan), True)
         solver.register_atom(self.theory, var, payload)
         return True
 
