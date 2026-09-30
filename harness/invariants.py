@@ -166,7 +166,7 @@ class Unrelated:
     with the query: their conjunction is satisfiable, and ``A & B`` is
     consistent exactly when ``A`` is.  Each piece is a predicate on a term
     ``u + T(v, ...)`` (``u`` appears nowhere else: the term takes every
-    value), on a product or power of fresh symbols, on ``h(u)`` with a
+    value), on a product or odd power of fresh symbols, on ``h(u)`` with a
     fresh ``h``, a relation between two such terms with different bases,
     or a fact on a declared fresh symbol consistent with its declaration."""
 
@@ -207,7 +207,10 @@ class Unrelated:
         if c < 0.7:
             return self.sym() * self.sym()
         if c < 0.8:
-            return self.sym() ** r.choice([2, 3, S.Half])
+            # odd powers only: u**3 takes every value (including -oo);
+            # u**2 or sqrt(u) cannot be negative, so a predicate on them
+            # could be unsatisfiable
+            return self.sym() ** r.choice([3, 5])
         return self.sym() + self._inner(depth)
 
     def piece(self, depth: int = 2):
