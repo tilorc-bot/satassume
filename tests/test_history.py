@@ -136,11 +136,10 @@ def _repro_params():
     return out
 
 
-@pytest.mark.parametrize("path", _repro_params())
-def test_repro_still_reproduces(path):
-    """The minimal prefix still makes the long-lived engine answer the
-    final query differently from a fresh one.  Strict xfail: once the
-    engine answers the same, the item XPASSes and fails; drop the file."""
+def _replay(path):
+    """The recorded repro at ``path`` and the last row of its replay: the
+    final query in the engine after the prefix (``warm``) and in a fresh
+    engine (``ref``)."""
     from harness.checker import item_from_json
     from harness.state import EngineConfig
     with open(path) as fh:
@@ -148,9 +147,91 @@ def test_repro_still_reproduces(path):
     cfg = EngineConfig.from_dict(d["config"])
     items = [item_from_json(i) for i in d["prefix"]] + [item_from_json(d["item"])]
     rows, _ = execute(items, cfg, ReferenceLevel.NONE, ref_for_last=True)
-    last = rows[-1]
+    return d, rows[-1]
+
+
+def _fail_on_error(warm, ref):
+    """An engine error (``Error:<Type>``) is a defect of its own, never the
+    expected failure: ``pytest.fail`` is not an AssertionError, so a strict
+    xfail with ``raises=AssertionError`` reports it as a failure."""
+    if warm.startswith("Error:") or ref.startswith("Error:"):
+        pytest.fail(f"engine error: engine {warm}, fresh {ref}")
+
+
+@pytest.mark.parametrize("path", _repro_params())
+def test_repro_still_reproduces(path):
+    """The minimal prefix still makes the long-lived engine answer the
+    final query differently from a fresh one, with exactly the recorded
+    pair of answers.  Strict xfail: once the engine answers the same, the
+    item XPASSes and fails; drop the file (or move it to ``fixed/``).  Any
+    other outcome (an engine error, another disagreement) is a failure,
+    not the expected one."""
+    d, last = _replay(path)
+    _fail_on_error(last.warm, last.ref)
+    if last.warm != last.ref and (last.warm, last.ref) != (d["warm"], d["ref"]):
+        pytest.fail(f"another disagreement than the recorded one: engine {last.warm}, "
+                    f"fresh {last.ref} (recorded {d['warm']} / {d['ref']})")
     assert last.warm == last.ref, (f"engine {last.warm}, fresh {last.ref} "
                                    f"(recorded {d['warm']} / {d['ref']})")
+
+
+_PLANT = """
+import os
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _plant(monkeypatch):
+    # the first engine to answer is the long-lived one; its second answer
+    # (the final query of the one-query-prefix repro used here) crashes or
+    # has True and False swapped
+    import harness.outcomes as o
+    orig, how, warm = o._ask, os.environ["HISTORY_PLANT"], {}
+
+    def _ask():
+        f = orig()
+
+        def ask(prop, assum, engine):
+            warm.setdefault("engine", engine)
+            if engine is warm["engine"]:
+                warm["n"] = warm.get("n", 0) + 1
+                if warm["n"] > 1:
+                    if how == "crash":
+                        raise RuntimeError("planted crash")
+                    r = f(prop, assum, engine)
+                    return (not r) if (r is True or r is False) else r
+            return f(prop, assum, engine)
+        return ask
+
+    monkeypatch.setattr(o, "_ask", _ask)
+"""
+
+
+@pytest.mark.parametrize("how", ["crash", "flip"])
+def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
+    """The strict xfail of a pinned repro accepts only its recorded pair:
+    with the long-lived engine made to crash (``Error:RuntimeError``) or to
+    flip its True into False on the final query, the pinned test fails
+    instead of xfailing."""
+    import subprocess
+    import sys
+    name = "T1-transfer-congruent-application"
+    with open(os.path.join(REPROS, name + ".json")) as fh:
+        d = json.load(fh)
+    assert (d["warm"], d["ref"]) == ("True", "None") and len(d["prefix"]) == 1
+    (tmp_path / "history_plant.py").write_text(_PLANT)
+    env = dict(os.environ, HISTORY_PLANT=how,
+               PYTHONPATH=os.pathsep.join([str(tmp_path), ROOT, os.environ.get("PYTHONPATH", "")]))
+    out = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                          "-p", "history_plant", "-rf",
+                          f"tests/test_history.py::test_repro_still_reproduces[{name}]"],
+                         capture_output=True, text=True, cwd=ROOT, env=env, timeout=600)
+    tail = out.stdout[-3000:] + out.stderr[-3000:]
+    assert out.returncode == 1, tail
+    assert "1 failed" in out.stdout and "xfailed" not in out.stdout, tail
+    want = "engine error" if how == "crash" else "another disagreement than the recorded one: engine False"
+    assert want in out.stdout, tail
 
 
 def test_repros_are_pinned():
@@ -163,15 +244,11 @@ def test_repros_are_pinned():
                          ids=lambda p: os.path.basename(p)[:-5])
 def test_fixed_repro_stays_fixed(path):
     """A repro whose history dependence was fixed (``harness/repros/fixed``):
-    the long-lived engine and a fresh one must keep agreeing."""
-    from harness.checker import item_from_json
-    from harness.state import EngineConfig
-    with open(path) as fh:
-        d = json.load(fh)
-    cfg = EngineConfig.from_dict(d["config"])
-    items = [item_from_json(i) for i in d["prefix"]] + [item_from_json(d["item"])]
-    rows, _ = execute(items, cfg, ReferenceLevel.NONE, ref_for_last=True)
-    assert rows[-1].warm == rows[-1].ref, (rows[-1].warm, rows[-1].ref)
+    the long-lived engine and a fresh one must keep agreeing, on an answer
+    (an engine error on either side fails too)."""
+    _, last = _replay(path)
+    _fail_on_error(last.warm, last.ref)
+    assert last.warm == last.ref, (last.warm, last.ref)
 
 
 def test_generated_streams_do_not_depend_on_the_hash_seed():
@@ -206,6 +283,15 @@ print(h.hexdigest())
 
 # -- CI-sized profile runs that find a known family (strict xfails) -----------
 
+def _assert_no_discrepancy(rep):
+    """The expected failure of a profile xfail is a disagreement between
+    answers; an engine error (kind ``error``) fails instead."""
+    for d in rep.discrepancies:
+        if d.kind == "error":
+            pytest.fail("engine error, not the known family: " + d.summary())
+    assert not rep.discrepancies, rep.discrepancies[0].summary()
+
+
 @pytest.mark.xfail(strict=True, raises=AssertionError,
                    reason="family R: the fact caches and the sessions survive registration "
                           "changes (harness/repros/R*)")
@@ -216,8 +302,9 @@ def test_registry_profile_finds_no_registration_dependence():
     cfg = preset("default")
     items = random_stream(0, n=120, nsets=3, profile="registry", custom=True, events=True)
     rep = Checker(cfg, ReferenceLevel.ENGINE, ("forward",), seed=0, max_discrepancies=1).run(items)
-    assert not reg.active_ids()
-    assert not rep.discrepancies, rep.discrepancies[0].summary()
+    if reg.active_ids():            # a leak is a failure, never the expected one
+        pytest.fail(f"registrations left active: {reg.active_ids()}")
+    _assert_no_discrepancy(rep)
 
 
 @pytest.mark.xfail(strict=True, raises=AssertionError,
@@ -232,7 +319,7 @@ def test_links_profile_finds_no_glue_dependence():
     cfg = preset("default")
     items = random_stream(13, n=100, nsets=4, profile="links")
     rep = Checker(cfg, ReferenceLevel.ENGINE, ("forward",), seed=13, max_discrepancies=1).run(items)
-    assert not rep.discrepancies, rep.discrepancies[0].summary()
+    _assert_no_discrepancy(rep)
 
 
 @pytest.mark.xfail(strict=True, raises=AssertionError,
@@ -246,7 +333,7 @@ def test_transfer_profile_finds_no_transfer_dependence():
     cfg = preset("default")
     items = random_stream(2, n=100, nsets=4, profile="transfer")
     rep = Checker(cfg, ReferenceLevel.ENGINE, ("forward",), seed=2, max_discrepancies=1).run(items)
-    assert not rep.discrepancies, rep.discrepancies[0].summary()
+    _assert_no_discrepancy(rep)
 
 
 # -- the checker catches planted defects ---------------------------------------
