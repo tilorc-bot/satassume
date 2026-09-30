@@ -9,8 +9,9 @@ engine and compare every answer with a fresh engine (``harness.checker``).
 Two parts:
 
 * **fast** (every push, about 10 s): the pinned repros, one strict xfail
-  per file in ``harness/repros``; the CI-sized ``links``, ``transfer`` and
-  ``registry`` profile runs, also strict xfails; the planted-defect tests
+  per file in ``harness/repros``; the CI-sized ``links`` and ``transfer``
+  profile runs, also strict xfails, and the ``registry`` run, which must
+  find nothing since #63; the planted-defect tests
   showing the checker, ddmin and the stream orders work; the inventory of
   module-level state.
 * **slow** (marked ``slow``, run with ``HISTORY_SLOW=1``, nightly in
@@ -235,7 +236,7 @@ def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
 
 
 def test_repros_are_pinned():
-    assert len(_repro_params()) >= 20
+    assert len(_repro_params()) >= 14
     for path in glob.glob(os.path.join(REPROS, "*.json")):
         assert os.path.exists(path[:-5] + ".py"), f"no standalone script for {path}"
 
@@ -292,13 +293,11 @@ def _assert_no_discrepancy(rep):
     assert not rep.discrepancies, rep.discrepancies[0].summary()
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="family R: the fact caches and the sessions survive registration "
-                          "changes (harness/repros/R*)")
 def test_registry_profile_finds_no_registration_dependence():
     """The ``registry`` profile straddles register/unregister events with
-    the same queries.  Strict xfail: it turns into a failure once the
-    engine invalidates its caches on a registration change."""
+    the same queries.  Family R (``harness/repros/fixed/R*``) is fixed by
+    #63: every cache is keyed on the registry epoch, so the run must find
+    nothing."""
     cfg = preset("default")
     items = random_stream(0, n=120, nsets=3, profile="registry", custom=True, events=True)
     rep = Checker(cfg, ReferenceLevel.ENGINE, ("forward",), seed=0, max_discrepancies=1).run(items)

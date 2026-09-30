@@ -58,6 +58,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
+from .epoch import EPOCH as _EPOCH
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
@@ -284,17 +285,15 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
     """
     eng = engine or default_engine()
     # answer memo (see Engine.answers): keyed by the SymPy objects
-    # themselves, valid while the registrations that decide scope and add
-    # facts are unchanged
+    # themselves, valid while the registry epoch (satassume.epoch: the
+    # registrations that decide the scope and add facts, the templates,
+    # the adapters) is the one it was filled under
     key = None
     if isinstance(proposition, _Basic) and (assumptions is True or isinstance(assumptions, _Basic)):
         key = (proposition, assumptions)
         memo = eng.answers
-        state = _registry_state(eng)
-        if memo.state != state:
-            memo.clear()
-            memo.state = state
-            eng.splits.clear()
+        if eng._epoch != _EPOCH[0]:
+            eng._check_version()
         r = memo.get(key, _MISS)
         if r is not _MISS:
             eng.stats["cache_hits"] += 1
@@ -306,16 +305,6 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
 
 
 _MISS = object()
-
-
-def _registry_state(eng: Engine):
-    """What an answer depends on besides the query and the engine's
-    history: the registered clause-generating functions (they decide the
-    scope of custom predicates and add facts), identified by the registry
-    and its version counter (bumped by every (un)registration), and the
-    theory adapters."""
-    ext = eng.extensions
-    return (ext, ext.version if ext is not None else 0, tuple(eng.relation_specs))
 
 
 #: ``(expr, relations) -> formula``, or the ``Unsupported`` category, of
