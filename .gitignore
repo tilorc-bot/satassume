@@ -7,3 +7,6 @@ dist/
 queries*.jsonl
 .ruff_cache/
 .asv/
+harness-results/
+.harness-tmp/
+.hypothesis/
