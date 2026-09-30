@@ -343,14 +343,20 @@ def test_two_transcendentals_need_evaluation():
     assert PI * E > 8 and PI * E < 9
 
 
-def test_generic_constants_have_limited_precision():
+def test_generic_constants_refine_beyond_128_bits():
+    # log(2) and other constants are enclosed at any precision by
+    # lra_adapter's interval evaluation (constant_enclosure)
     sympy = pytest.importorskip("sympy")
     l2 = from_sympy(sympy.log(2))
     assert l2 > F(693, 1000) and l2 < F(694, 1000)
-    with mp.workdps(100):
-        q = F(int(mp.floor(mp.log(2) * mp.mpf(2) ** 100)), 2 ** 100)
-    with pytest.raises(Undecided):
-        (l2 - q).sign()
+    for k in (100, 500, 2000):
+        with mp.workdps(k):
+            t = int(mp.floor(mp.log(2) * mp.mpf(2) ** k))
+        assert l2 > F(t, 2 ** k) and l2 < F(t + 1, 2 ** k)
+    s1 = from_sympy(sympy.sin(1))
+    with mp.workdps(700):
+        t = int(mp.floor(mp.sin(1) * mp.mpf(2) ** 2000))
+    assert s1 > F(t, 2 ** 2000) and s1 < F(t + 1, 2 ** 2000)
     assert l2 == from_sympy(sympy.log(2)) and l2 * 3 == from_sympy(3 * sympy.log(2))
     with pytest.raises(Undecided):         # log(8) and 3*log(2) are unrelated
         from_sympy(sympy.log(8)) == 3 * l2
