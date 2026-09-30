@@ -4,16 +4,16 @@ extension of its children (``tools/totality.py``; issue #53, invariant I2).
 A block is *total* if, for every assignment of its children that the rule
 base and the children's own blocks (one level down, ``depth=1``) allow,
 the node's clauses are satisfiable.  A non-total block is either unsound
-(the generic ``commutative(f(x)) -> commutative(x)`` against the scalar
-facts of ``Abs``, ``re``, ``im`` and ``sign``; the ``Mul``/``Pow`` rules of
-issue #47) or a gap that lets one node's block decide facts its children's
-blocks cannot (a transcendental product, a product a ``Mul`` derives).
-Both make the answer of a query depend on which other nodes a session
-holds, so the gate keeps the set of non-total blocks at ``ALLOWLIST``
-(empty: every entry must be justified here with the issue that tracks
-it).  Totality is not soundness: a sound block is total, a total block
-need not be sound (the old Mul rule of #47 passed the gate once its
-counterpart was weakened).
+(the downward ``commutative`` rules of #47 and #59: ``Abs(A)`` of a
+non-commutative ``A`` was inconsistent in a fresh engine) or a gap that
+lets one node's block decide facts its children's blocks cannot (a
+transcendental product, a product a ``Mul`` derives).  Both make the
+answer of a query depend on which other nodes a session holds, so the
+gate keeps the set of non-total blocks at ``ALLOWLIST`` (empty: every
+entry must be justified here with the issue that tracks it).  Totality is
+not soundness: a sound block is total, a total block need not be sound
+(the old Mul rule of #47 passed the gate once its counterpart was
+weakened), so a rule change needs its own argument.
 
 The check runs over the synthetic expression list of the checker (the
 node shapes of the templates and every family found so far, about 2 s);
