@@ -20,3 +20,5 @@ include = ["satassume*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# the root on sys.path: tests/test_history.py imports harness/ (not packaged)
+pythonpath = ["."]
