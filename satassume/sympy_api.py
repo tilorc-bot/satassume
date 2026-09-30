@@ -290,11 +290,7 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
     if isinstance(proposition, _Basic) and (assumptions is True or isinstance(assumptions, _Basic)):
         key = (proposition, assumptions)
         memo = eng.answers
-        state = _registry_state(eng)
-        if memo.state != state:
-            memo.clear()
-            memo.state = state
-            eng.splits.clear()
+        eng._check_version()
         r = memo.get(key, _MISS)
         if r is not _MISS:
             eng.stats["cache_hits"] += 1
@@ -306,16 +302,6 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
 
 
 _MISS = object()
-
-
-def _registry_state(eng: Engine):
-    """What an answer depends on besides the query and the engine's
-    history: the registered clause-generating functions (they decide the
-    scope of custom predicates and add facts), identified by the registry
-    and its version counter (bumped by every (un)registration), and the
-    theory adapters."""
-    ext = eng.extensions
-    return (ext, ext.version if ext is not None else 0, tuple(eng.relation_specs))
 
 
 #: ``(expr, relations) -> formula``, or the ``Unsupported`` category, of

@@ -80,7 +80,9 @@ def test_uninterpreted_assumptions_are_remembered():
     bad = Q.le(0.5 * x, 1) & Q.positive(x) & Q.negative(x)
     assert ask(Q.real(x), bad, eng) is None
     assert ask(Q.zero(x), bad, eng) is None
-    # a change of the theory adapters invalidates the memo
+    # a change of the theory adapters invalidates the memo, with every
+    # other engine-level cache (Engine._check_version)
     eng.relation_specs = list(eng.relation_specs)[:1]
     assert ask(Q.finite(x), a, eng) is None
     assert eng.stats["sessions"] == n + 2
+    assert eng.stats["version_clears"] == 1 and not eng._context_sessions

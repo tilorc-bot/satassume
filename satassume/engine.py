@@ -27,6 +27,14 @@ cone of the queried expression, so search cost is bounded by the size of
 that expression and never by what was asked before.  Contextual queries
 reuse a session while the assumptions stay the same, which is the
 incremental case (many questions under one ``assuming(...)`` block).
+
+Everything the engine keeps between queries (the fact caches, the reused
+sessions, the answer and split memos) is a function of the registry state:
+the registered clause-generating functions (``satassume.extensions``) and
+the theory adapters.  Every query first compares that state with the one
+the caches were filled under (``Engine._check_version``) and drops them all
+on a change, so an answer never depends on what was registered when an
+earlier query ran.
 """
 from __future__ import annotations
 
@@ -101,13 +109,13 @@ class DictCache:
 
 
 class AnswerMemo(dict):
-    """Answers of whole queries, bounded in size (cleared when full).
-    ``state`` is the registration state the answers were computed under."""
+    """Answers of whole queries, bounded in size (cleared when full), and
+    cleared by the engine when the registry state changes
+    (``Engine._check_version``)."""
 
     def __init__(self, maxsize: int = 100_000):
         super().__init__()
         self.maxsize = maxsize
-        self.state = None
 
     def put(self, key, value) -> None:
         if len(self) >= self.maxsize:
@@ -722,26 +730,56 @@ class Engine:
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: assumption formulas whose session construction raised
-        #: ``Uninterpreted`` -> its message, valid under ``_failed_state``
-        #: (see :meth:`_context_session`)
+        #: ``Uninterpreted`` -> its message (see :meth:`_context_session`)
         self._failed: Dict[Any, str] = {}
-        self._failed_state = None
+        #: the registry state (:meth:`_registry_state`) every engine-level
+        #: cache was filled under, as its three parts; ``_version`` is None
+        #: until the first query
+        self._ext = None
+        self._version = None
+        self._specs: list = []
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "cone_searches": 0, "sessions": 0,
-                      "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0}
+                      "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
+                      "version_clears": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
         return Session(self)
 
     def _registry_state(self):
-        """What decides whether building a session for a set of assumptions
-        raises ``Uninterpreted``: the theory adapters (and, conservatively,
-        the registered clause-generating functions)."""
+        """What every answer depends on besides the query and the engine's
+        configuration: the registered clause-generating functions (they add
+        facts and decide the scope of custom predicates), identified by the
+        registry and its version counter, which every (un)registration
+        bumps, and the theory adapters."""
         ext = self.extensions
-        return (ext, ext.version if ext is not None else 0, tuple(self.relation_specs))
+        return (ext, ext.version if ext is not None else 0, list(self.relation_specs))
+
+    def _check_version(self) -> None:
+        """Drop every engine-level cache when the registry state changed
+        since it was filled: the fact caches, the contextual sessions, the
+        answer and split memos and the ``Uninterpreted`` memo all hold
+        results computed under the registrations in force at the time.
+        Called at the entry of every query; the fast path is an identity
+        check, an integer comparison and a comparison of the adapter
+        list."""
+        ext = self.extensions
+        if (ext is self._ext and (ext is None or ext.version == self._version)
+                and self.relation_specs == self._specs):
+            return
+        if self._version is not None:
+            self.stats["version_clears"] += 1
+            self.cache.store.clear()
+            self.custom_cache.store.clear()
+            self._context_sessions.clear()
+            self.answers.clear()
+            self.splits.clear()
+            self._failed.clear()
+        self._ext, self._version, self._specs = self._registry_state()
 
     def _context_session(self, assumptions) -> Tuple[Session, List[int]]:
+        self._check_version()
         hit = self._context_sessions.get(assumptions)
         if hit is not None and _gave_up(hit[0]):
             # a theory stopped answering in an earlier query (see
@@ -753,23 +791,18 @@ class Engine:
             self._context_sessions.move_to_end(assumptions)
             return hit
         failed = self._failed
-        if failed:
-            msg = failed.get(assumptions)
-            if msg is not None:
-                if self._failed_state == self._registry_state():
-                    # the construction below would raise this again: whether
-                    # it does depends only on the assumptions' relation atoms
-                    # and the adapters (Relations.process)
-                    raise Uninterpreted(msg)
-                failed.clear()
+        msg = failed.get(assumptions)
+        if msg is not None:
+            # the construction below would raise this again: whether it
+            # does depends only on the assumptions' relation atoms and the
+            # registry state, which _check_version has just compared
+            raise Uninterpreted(msg)
         s = self._fresh_session()
         try:
             lits = s.assume_formula(assumptions)
         except Uninterpreted as e:
-            state = self._registry_state()
-            if self._failed_state != state or len(failed) >= 10_000:
+            if len(failed) >= 10_000:
                 failed.clear()
-                self._failed_state = state
             failed[assumptions] = str(e)
             raise
         self._context_sessions[assumptions] = (s, lits)
@@ -781,6 +814,7 @@ class Engine:
     def is_(self, node: Node, pred: str) -> Optional[bool]:
         """Context-free truth value of ``pred(node)``; cached on the node
         (custom predicates: in the engine's own cache)."""
+        self._check_version()
         if pred not in PRED_INDEX:
             return self._is_custom(node, pred)
         facts = self.cache.facts(node)
@@ -830,6 +864,7 @@ class Engine:
         ``assumptions`` (a formula or None).  Raises
         ``InconsistentAssumptions`` if the assumptions contradict the facts.
         """
+        self._check_version()
         self.stats["queries"] += 1
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
