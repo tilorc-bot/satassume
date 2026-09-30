@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from sympy import (Abs, DiracDelta, Eq, Heaviside, KroneckerDelta, Max, Min, Q, Rational, S,
                    nan, oo, symbols)
+from sympy.assumptions.assume import AppliedPredicate
 
 from satrefine import refine
 from satrefine.testing.harness import assert_refinement_valid
@@ -155,11 +156,31 @@ def test_definition_beyond_v3(expr, assumptions, expected, values):
 
 
 @pytest.mark.parametrize("expr, assumptions", [
-    (Max(x, y), Q.imaginary(x) & Q.real(y)),       # incomparable: never the nan default branch
+    (Max(x, y), Q.imaginary(x) & Q.real(y)),       # incomparable: Max/Min have no default branch
+    (Max(x, 1), Q.imaginary(x)),                   # both relations refuted: unrefined, not nan
+    (Min(x, 1), Q.imaginary(x)),
     (Heaviside(x), Q.imaginary(x)),
 ], ids=str)
 def test_undefined_stays(expr, assumptions):
     assert refine(expr, assumptions) == expr
+
+
+@pytest.mark.parametrize("expr", [Max(x, 1), Min(x, 1)], ids=str)
+def test_both_relations_refuted_stays(expr):
+    # A decider that asks satassume refutes both a >= b and a < b for a non-real
+    # argument (a relation says its sides are extended reals).  Max/Min have no
+    # default branch, so the definition does not fire: no nan.
+    from unittest import mock
+    from satrefine.identities.core import prove
+    decide = prove.decide
+
+    def refuting(cond, assumptions):
+        if isinstance(cond, AppliedPredicate) and cond.function in (Q.ge, Q.gt, Q.le, Q.lt):
+            return False
+        return decide(cond, assumptions)
+
+    with mock.patch.object(prove, "decide", refuting):
+        assert refine(expr, Q.imaginary(x)) == expr
 
 
 def test_equal_infinite_indices_are_one():

@@ -22,11 +22,15 @@ are not used for an argument known infinite, where SymPy's ``ask`` answers
 queries there).  No case split is tried (``splits=False``): on refusals it
 cost about 5x and derived nothing the battery or the differential run needs.
 
-The last branch of each two-way definition is ``(nan, True)``, the value
-outside the domain (``Max`` of incomparable arguments, ``Heaviside`` of a
-non-real argument; SymPy raises there).  The decider never refutes both
-``a >= b`` and ``a < b``, so that branch is reached only for ``Heaviside``,
-whose argument ``v`` is assumed extended real.
+``Max`` and ``Min`` have no default branch.  A relation says its sides are
+extended reals (satassume's #26), so a decider that asks satassume refutes
+both ``a >= b`` and ``a < b`` for a non-real argument (the order vocabulary
+does not); the definition is then left with no branch and does not fire, and
+the input stays unrefined, not ``nan`` (``Max`` of incomparable arguments is
+undefined, and SymPy raises there).  The two-way definitions of
+``KroneckerDelta`` and ``Heaviside`` end with ``(nan, True)``, the value
+outside the domain; it is reached only for ``Heaviside`` of a non-real
+argument, whose argument ``u`` is assumed extended real.
 
 Ties and infinities follow SymPy: ``Max(a, b)`` keeps ``a`` when ``a >= b``
 (under ``Q.eq(x, y)`` the first argument survives); ``+-oo`` are ordered
@@ -58,8 +62,8 @@ ASSUMED = {Q.extended_real(u)}   # u is an extended real (Heaviside's argument)
 
 FACTS = (
     add_rules([
-        (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)), (nan, True))),
-        (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)), (nan, True))),
+        (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)))),
+        (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)))),
     ])
     + add_rules([
         (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True))),
