@@ -76,6 +76,8 @@ ask(Q.positive(y), Q.gt(y, 0))                # None: y = oo satisfies y > 0 (re
 ask(Q.extended_positive(y), Q.gt(y, 0))       # True: y > 0 makes y an extended real
 ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
 ask(Q.integer(y), Q.gt(y, 0) & Q.lt(y, 1))    # False (integrality in LRA: bounds rounded, branch and bound)
+from sympy import S, pi
+ask(Q.integer(y/pi + S.Half), Q.gt(y, -pi/2) & Q.lt(y, pi/2))  # False (exact pi coefficients, satassume/constfield.py)
 out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
 from sympy import Integer, Predicate, log
@@ -115,10 +117,13 @@ only when propagation is inconclusive.
 | `satassume/engine.py` | sessions, discovery, caching |
 | `satassume/templates/` | structural rules per SymPy class |
 | `satassume/sympy_api.py` | `ask`, `out_of_scope`, `to_formula`, `Unsupported` |
+| `satassume/constfield.py` | exact numbers in `Q(pi, E, sqrt(2), ...)` for LRA coefficients and bounds (signs by interval refinement, `Undecided` when out of reach) |
 | `satassume/extensions.py` | `register(pred, *classes)`: clause-generating functions for custom predicates and for vocabulary predicates on new classes |
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
+| `benchmarks/counters.py` | asv suite: per-commit counts of what the engine builds and does (nodes, clauses, rule blocks, propagations, ...) and the refine-stream time |
+| `benchmarks/memory.py` | asv suite: peak RSS of a stream pass, and its traced Python allocations (peak, and retained afterwards) |
 
 ## Running
 
@@ -135,7 +140,20 @@ PYTHONPATH=.:/path/to/sympy python tools/compare.py queries.jsonl --in-scope-onl
 
 # microbenchmarks
 PYTHONPATH=.:/path/to/sympy python tools/bench.py
+
+# asv: counters and stream time per commit of main (SymPy from $SATASSUME_SYMPY,
+# stream from $SATASSUME_STREAM, as for tools/ab.py); results in .asv/
+pip install asv virtualenv
+asv run HASHFILE:<(git rev-list --first-parent -n 20 main)
+asv publish && asv preview
+# time against a count on two y-axes, and change per commit: serve
+# .asv/site (index.html -> benchmarks/compare.html, asv -> ../html)
 ```
+
+The asv counters are exact under the fixed `PYTHONHASHSEED` in
+`asv.conf.json`, so they show a change in what a commit instantiates or
+searches without the noise of a timing; they are not costs (see the module
+docstring).
 
 `tools/compare.py` exits nonzero only when a definite answer contradicts
 SymPy on an in-scope record. Without `--in-scope-only` it also replays the

@@ -11,8 +11,11 @@ Rules
 -----
 
 ``a - b`` is linearised structurally (no ``expand``, no simplification):
-sums are split, a product with a rational numeric factor is scaled
-(``2*(x + y)`` is ``2*x + 2*y``), and every other subexpression with free
+sums are split, a product with a numeric factor is scaled (``2*(x + y)``
+is ``2*x + 2*y``; the factor may involve constants: ``pi*x``, ``x/pi``,
+``x*(pi + 1)``, ``sqrt(2)*x`` have the exact coefficients ``pi``,
+``1/pi``, ``pi + 1``, ``sqrt(2)`` of :mod:`satassume.constfield`), and
+every other subexpression with free
 symbols (``x``, ``x*y``, ``sin(x)``, ``x**2``, ``f(x)``) is an *opaque
 term*, an independent real variable for the theory.  Treating a nonlinear
 term as a variable is a relaxation, so it is sound (only incomplete).
@@ -24,9 +27,12 @@ The atom is not interpreted (``None``) if
 * anything in it is ``nan``, ``oo``, ``-oo`` or ``zoo`` (even inside an
   opaque term, e.g. ``x + oo`` or ``sin(x + oo)``); an order atom with an
   ``oo`` or ``-oo`` summand is read by :func:`order_sides` instead;
-* a factor of a product with free symbols is a number that is not a
-  SymPy ``Rational`` (``pi*x``, ``sqrt(2)*x``, ``0.5*x``, ``I*x``): a
-  constant times a symbol is nonlinear here;
+* a factor of a product with free symbols is a number that is no number
+  of the exact field (``0.5*x``, ``I*x``; ``log(2)*x`` without
+  :data:`GENERIC_CONSTANTS`);
+* a coefficient's sign cannot be decided, or the arithmetic exceeds the
+  field's size budget (:class:`satassume.constfield.Undecided`: a formal
+  expression whose value is 0, ``((1 + sqrt(2))**2 - 3 - 2*sqrt(2))*x``);
 * a subexpression without free symbols is none of the readable constants
   below (``I``, ``I*pi``, ``f(1)``, ``AccumBounds(0, 1)``, anything SymPy
   does not know to be a finite real, or that interval arithmetic over
@@ -42,8 +48,17 @@ The atom is not interpreted (``None``) if
 Constants
 ---------
 A subexpression without free symbols in a linear position is read as
-follows (:func:`_closed`): a ``Rational`` is a constant; a sum is split and a rational factor pulled out (``3*pi/2 + 1`` is ``3/2 * pi + 1``); what is left
-(``pi``, ``sqrt(2)``, ``pi**2``, ``log(2)``, ``sin(1)``, ``2**pi``) is a
+follows (:func:`_closed`): a ``Rational`` is a constant; a sum is split
+and a rational factor pulled out; a number of the exact field
+(:func:`satassume.constfield.from_sympy`: ``pi``, ``E``, ``exp(n)``,
+rational powers of rationals such as ``sqrt(2)``, with ``+ - * /`` and
+integer powers: ``3*pi/2 + 1``, ``pi**2``, ``1/(pi + E)``) is part of the
+constant, exact (``x/pi + 1/2`` at ``x = -pi/2`` is exactly 0).  With
+:data:`GENERIC_CONSTANTS` (the default) so is every other closed real
+constant with rigorous bounds (``log(2)``, ``sin(1)``, ``2**pi``): an
+indeterminate of the field, enclosed at any precision by
+:func:`constant_enclosure`.  Without it, what is
+left (``log(2)``, ``sin(1)``, ``2**pi``) is a
 *constant term* if SymPy says it is a finite real (``is_extended_real``
 and ``is_finite`` True) and :func:`constant_bounds` finds rational bounds
 ``lo < c < hi``.  A constant term is a theory variable like an opaque term
@@ -105,6 +120,7 @@ from sympy.core.relational import (Equality, GreaterThan, LessThan,
                                    Unequality)
 from sympy.core.sorting import default_sort_key
 
+from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
@@ -119,6 +135,17 @@ _BAD = (S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity)
 
 class _Unhandled(Exception):
     pass
+
+
+#: read every closed real constant that has rigorous bounds as a number of
+#: the exact field (``log(2)*x`` readable, ``x < log(2)`` exact); False:
+#: only pi, E and rational powers of rationals (with ``+ - * /``), other
+#: constants stay bounded terms (see "Constants")
+GENERIC_CONSTANTS = True
+
+#: what reading can raise besides _Unhandled: undecidable signs of
+#: coefficients with constants, and the size budget (satassume.constfield)
+_UNREAD = (_Unhandled, TypeError, ValueError, Undecided, ZeroDivisionError)
 
 
 def relation(atom) -> tuple[str, Any, Any] | None:
@@ -154,13 +181,21 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
     if e.is_Mul:
         coeff = S.One
         rest = []
+        closed = []
         for f in e.args:
             if f.free_symbols:
                 rest.append(f)
             elif f.is_Rational:
                 coeff *= f
             else:
-                raise _Unhandled(f)          # I*x, pi*x, 0.5*x, sqrt(2)*x
+                closed.append(f)             # pi, 1/pi, pi + 1, sqrt(2); I, 0.5
+        if closed:
+            c = from_sympy(Mul(*closed), generic=GENERIC_CONSTANTS)
+            if c is None:
+                raise _Unhandled(e)          # I*x, 0.5*x, log(2)*x (see GENERIC_CONSTANTS)
+            c = c * Fraction(int(coeff.p), int(coeff.q))
+            _lin(Mul(*rest), scale * c, out, const)
+            return
         if coeff != 1:
             _lin(Mul(*rest), scale * Fraction(int(coeff.p), int(coeff.q)),
                  out, const)
@@ -171,11 +206,13 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
     out[e] = out.get(e, Fraction(0)) + scale
 
 
-def _closed(e, scale: Fraction, out: dict, const: list) -> None:
+def _closed(e, scale, out: dict, const: list) -> None:
     """``_lin`` for a subexpression without free symbols: rationals go to
-    the constant, sums are split, a rational factor is pulled out, and what
-    is left must be a real constant without Floats and with rigorous bounds
-    (:func:`constant_bounds`); it becomes a term."""
+    the constant, sums are split, a rational factor is pulled out; a
+    number of the exact field (:func:`satassume.constfield.from_sympy`:
+    ``pi``, ``3*pi/2``, ``1/pi``, ``E**2``, ``sqrt(2)``) goes to the
+    constant too; what is left must be a real constant without Floats and
+    with rigorous bounds (:func:`constant_bounds`); it becomes a term."""
     if e.is_Rational:
         const[0] += scale * Fraction(int(e.p), int(e.q))
         return
@@ -186,6 +223,10 @@ def _closed(e, scale: Fraction, out: dict, const: list) -> None:
     c, rest = e.as_coeff_Mul()
     if rest is not e and c != 1 and c.is_Rational:
         _closed(rest, scale * Fraction(int(c.p), int(c.q)), out, const)
+        return
+    v = from_sympy(e, generic=GENERIC_CONSTANTS)
+    if v is not None:
+        const[0] += scale * v
         return
     if e.has(Float):
         raise _Unhandled(e)                  # Floats: see the module docstring
@@ -238,16 +279,51 @@ def _bounds(c):
     return ((lo / q).__floor__() - 1) * q, ((hi / q).__ceil__() + 1) * q
 
 
-_IV = None
+#: precision -> mpmath interval context at that precision
+_IV: dict = {}
 
 
-def _iv_context():
-    global _IV
-    if _IV is None:
+def _iv_context(prec: int = _IV_PREC):
+    ctx = _IV.get(prec)
+    if ctx is None:
         from mpmath.ctx_iv import MPIntervalContext
-        _IV = MPIntervalContext()
-        _IV.prec = _IV_PREC
-    return _IV
+        ctx = _IV[prec] = MPIntervalContext()
+        ctx.prec = prec
+    return ctx
+
+
+#: (constant, working precision) -> rational enclosure or None
+_ENCLOSURES: dict = {}
+
+
+def constant_enclosure(c, prec: int):
+    """Rational ``(lo, hi)`` with ``lo <= c <= hi`` and ``hi - lo`` about
+    ``2**-prec`` relative, for a closed constant with
+    :func:`constant_bounds` (None otherwise): the interval evaluation of
+    :func:`_interval` at working precision ``prec + 16`` bits, rounded
+    outward.  Used to refine a constant of :mod:`satassume.constfield`
+    beyond the 128 bits of its bounds."""
+    key = (c, prec)
+    try:
+        return _ENCLOSURES[key]
+    except KeyError:
+        pass
+    except TypeError:
+        return _enclosure(c, prec)
+    if len(_ENCLOSURES) >= _INTERPRETED_MAX:
+        _ENCLOSURES.clear()
+    r = _ENCLOSURES[key] = _enclosure(c, prec)
+    return r
+
+
+def _enclosure(c, prec: int):
+    if constant_bounds(c) is None:           # also: SymPy says a finite real
+        return None
+    iv = _interval(c, max(prec + 16, _IV_PREC))
+    if iv is None:
+        return None
+    a, b = iv._mpi_
+    return _rational(a), _rational(b)
 
 
 def _rational(x) -> Fraction:
@@ -271,7 +347,7 @@ def _sign(x) -> int:
     return mpf_sign(x)
 
 
-def _interval(e):
+def _interval(e, prec: int = _IV_PREC):
     """An interval (mpmath, outward rounded at every step) that holds the
     real value of the closed expression ``e``, or None.
 
@@ -285,7 +361,7 @@ def _interval(e):
     at once.  No error estimate of SymPy's evalf is trusted (it claims full
     accuracy for ``sign``, ``tanh``, ``tan`` next to a pole, ``log`` next to
     1)."""
-    iv = _iv_context()
+    iv = _iv_context(prec)
     from sympy import Pow, exp, log, sin, cos, tan, atan
     if e.is_Rational:
         if e.p and abs(e.p.bit_length() - e.q.bit_length()) > _MAX_BITS:
@@ -300,7 +376,7 @@ def _interval(e):
         return None
     args = []
     for a in e.args:
-        x = _interval(a)
+        x = _interval(a, prec)
         if x is None:
             return None
         args.append(x)
@@ -320,28 +396,28 @@ def _interval(e):
             if n.is_Integer:
                 if n < 0 and _sign(ba) <= 0 <= _sign(bb):
                     return None
-                if abs(int(n)).bit_length() > _IV_PREC:
-                    return None              # not exact at 128 bits: mpmath goes through log/exp
+                if abs(int(n)).bit_length() > prec:
+                    return None              # not exact at this precision: mpmath goes through log/exp
                 r = b ** int(n)
             else:
                 if _sign(ba) <= 0:
                     return None
-                r = _iv_exp(x * _loose(iv.log(b)))
+                r = _iv_exp(x * _loose(iv.log(b), prec), prec)
         elif head is exp:
-            r = _iv_exp(args[0])
+            r = _iv_exp(args[0], prec)
         elif head is log:
             if _sign(args[0]._mpi_[0]) <= 0:
                 return None
-            r = _loose(iv.log(args[0]))
+            r = _loose(iv.log(args[0]), prec)
         elif head is atan:
             from mpmath.libmp import mpf_atan
             x = args[0]
             import mpmath
             mk = mpmath.mp.make_mpf       # atan is increasing: round the ends outward
             xa, xb = args[0]._mpi_
-            r = _loose(iv.mpf([mk(mpf_atan(xa, _IV_PREC, "f")), mk(mpf_atan(xb, _IV_PREC, "c"))]))
+            r = _loose(iv.mpf([mk(mpf_atan(xa, prec, "f")), mk(mpf_atan(xb, prec, "c"))]), prec)
         else:
-            r = _loose({sin: iv.sin, cos: iv.cos, tan: iv.tan}[head](args[0]))
+            r = _loose({sin: iv.sin, cos: iv.cos, tan: iv.tan}[head](args[0]), prec)
     except Exception:                        # noqa: BLE001 - a step mpmath refuses decides nothing
         return None
     if r is None or type(r) is not type(args[0]):
@@ -357,12 +433,13 @@ def _interval(e):
             a = (1, 1, -_MAX_BITS, 1) if a[0] else fzero
         if b[1] and _mag(b) < -_MAX_BITS:
             b = fzero if b[0] else (0, 1, -_MAX_BITS, 1)
-        r = _IV.make_mpf((a, b))
+        r = iv.make_mpf((a, b))
     return r
 
 
-def _loose(r):
-    """``r`` widened outward by ``2**-120`` relative at each end.  mpmath's
+def _loose(r, prec: int = _IV_PREC):
+    """``r`` widened outward by ``2**(8 - prec)`` relative at each end
+    (``2**-120`` at the 128 bits of :func:`constant_bounds`).  mpmath's
     exp, log, atan, sin, cos and tan round an approximation (a few units in
     the last place at 10 to 30 guard bits) in the requested direction,
     which is wrong when the true value is that close to a 128-bit number:
@@ -370,17 +447,17 @@ def _loose(r):
     value, and a cancelling parent (``pi*(log(156434) - Y)``) exposes it."""
     from mpmath.libmp import mpf_abs, mpf_add, mpf_shift, mpf_sub
     a, b = r._mpi_
-    a = mpf_sub(a, mpf_shift(mpf_abs(a), -120), _IV_PREC, "f")
-    b = mpf_add(b, mpf_shift(mpf_abs(b), -120), _IV_PREC, "c")
-    return _IV.make_mpf((a, b))
+    a = mpf_sub(a, mpf_shift(mpf_abs(a), 8 - prec), prec, "f")
+    b = mpf_add(b, mpf_shift(mpf_abs(b), 8 - prec), prec, "c")
+    return _iv_context(prec).make_mpf((a, b))
 
 
-def _iv_exp(x):
+def _iv_exp(x, prec: int = _IV_PREC):
     # exp of anything beyond about 2839 in size would be beyond 2**±4096;
     # the check allows |x| < 2048
     if x is None or max(_mag(x._mpi_[0]), _mag(x._mpi_[1])) > 11:
         return None                          # |x| >= 2048
-    return _loose(_IV.exp(x))
+    return _loose(_iv_context(prec).exp(x), prec)
 
 
 def _linear(name, lhs, rhs):
@@ -439,9 +516,10 @@ def interpret(atom):
         return None
     try:
         form, k = _linear(*rel)
-    except (_Unhandled, TypeError, ValueError):
+        c = _constraint(rel[0], form, k)
+    except _UNREAD:
         return None
-    return _constraint(rel[0], form, k), sorted(form, key=default_sort_key)
+    return c, sorted(form, key=default_sort_key)
 
 
 def terms(atom) -> list | None:
@@ -489,7 +567,7 @@ def order_sides(atom):
         return None
     try:
         return _side(rel[1]), _side(rel[2])
-    except (_Unhandled, TypeError, ValueError):
+    except _UNREAD:
         return None
 
 
@@ -505,10 +583,10 @@ def integer_form(e):
     const = [Fraction(0)]
     try:
         _lin(e, Fraction(1), form, const)
-    except (_Unhandled, TypeError, ValueError):
+        keys = sorted(form, key=default_sort_key)
+        items = tuple((t, form[t]) for t in keys if form[t])
+    except _UNREAD:
         return None
-    keys = sorted(form, key=default_sort_key)
-    items = tuple((t, form[t]) for t in keys if form[t])
     return Integral(items, const[0]), keys
 
 

@@ -395,7 +395,7 @@ def _ask(prop, assum):
     (Q.integer(x), Q.gt(x, 0) & Q.le(x, 1), None),                # x = 1
     (Q.integer(x), Q.gt(x, 0) & Q.lt(x, 2), None),
     (Q.integer(x), Q.gt(x, 0), None),
-    (Q.integer(x / S.Pi), Q.gt(x, 0) & Q.lt(x, 1), None),         # not read (pi factor)
+    (Q.integer(x / S.Pi), Q.gt(x, 0) & Q.lt(x, 1), False),        # 0 < x/pi < 1/pi (exact coefficient)
     (Q.integer(x), Q.gt(x, 0) & Q.lt(x, S.Pi - 3), False),        # pi's bounds
     (Q.integer(x), Q.gt(x, 0) & Q.lt(x, 1) & Q.integer(y), False),
     (Q.positive(x), Q.integer(x) & Q.gt(x, 0) & Q.lt(x, 1), "inconsistent"),

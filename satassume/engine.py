@@ -396,9 +396,16 @@ class Session:
 
     def ensure(self, node: Node, demanded=None, budget: Optional[int] = None) -> None:
         """Demand-driven discovery: visit ``node`` and, breadth-first, the
-        nodes its templates mention, up to ``budget`` new nodes."""
+        nodes its templates mention, up to ``budget`` new nodes.
+
+        A visited node with nothing parked is only recorded (the discovery
+        below would skip it at once)."""
         if demanded is not None:
             self.demand.setdefault(node, set()).update(PRED_INDEX[p] for p in demanded)
+        if node in self.base and node not in self.pending and node not in self.pending_c:
+            if self.frontier:
+                self.frontier = deque()
+            return
         self.frontier = deque([node])
         self._discover(demanded, budget)
 
@@ -721,7 +728,7 @@ class Engine:
         self._failed_state = None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "cone_searches": 0, "sessions": 0,
-                      "relevant": 0, "consistency_checks": 0}
+                      "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
@@ -736,6 +743,12 @@ class Engine:
 
     def _context_session(self, assumptions) -> Tuple[Session, List[int]]:
         hit = self._context_sessions.get(assumptions)
+        if hit is not None and _gave_up(hit[0]):
+            # a theory stopped answering in an earlier query (see
+            # satassume.theory, "Giving up"): start over with a working one
+            del self._context_sessions[assumptions]
+            self.stats["theory_gave_up"] += 1
+            hit = None
         if hit is not None and len(hit[0].base) <= self.session_limit:
             self._context_sessions.move_to_end(assumptions)
             return hit
@@ -883,6 +896,14 @@ _SIGN_PREDS = frozenset({
 
 _NEIGH: Dict[int, frozenset] = {}
 _WANT: Dict[frozenset, frozenset] = {}
+
+
+def _gave_up(s: Session) -> bool:
+    """A theory of the session's solver gave up (satassume.theory)."""
+    for t in s.solver._theories:
+        if getattr(t, "gave_up", False):
+            return True
+    return False
 
 
 def neighbourhood(pred) -> frozenset:
