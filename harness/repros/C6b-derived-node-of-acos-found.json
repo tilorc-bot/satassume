@@ -1,0 +1,56 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 1,
+ "source": "hand-built from the profile/audit findings",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.zero, Add(Integer(-1), Mul(Integer(-1), Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2))), Mul(Integer(-1), Symbol('w', nonzero=True), Add(Integer(1), I)), Mul(Integer(-1), Symbol('j', integer=True, even=True), Pow(Integer(2), Rational(1, 2)))))",
+  "assum": "True"
+ },
+ "warm": "False",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.extended_nonnegative, acos(Add(Mul(Integer(-1), Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2))), Mul(Integer(-1), Symbol('w', nonzero=True), Add(Integer(1), I)), Mul(Integer(-1), Symbol('j', integer=True, even=True), Pow(Integer(2), Rational(1, 2))))))",
+   "assum": "True"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "None",
+   "sessions": "False",
+   "answers": "False",
+   "splits": "False",
+   "failed": "False",
+   "all": "None"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "C'"
+ }
+}

@@ -1,0 +1,60 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 2,
+ "source": "hand-built from the profile/audit findings",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.real, Function('f')(Symbol('y', real=True)))",
+  "assum": "True"
+ },
+ "warm": "None",
+ "ref": "True",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.real, Function('f')(Symbol('y', real=True)))",
+   "assum": "True"
+  },
+  {
+   "kind": "register",
+   "id": "undef_real"
+  }
+ ],
+ "full_prefix_len": 2,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "True",
+   "sessions": "None",
+   "answers": "None",
+   "splits": "None",
+   "failed": "None",
+   "all": "True"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "R:cache-none-vs-definite"
+ }
+}

@@ -1,0 +1,70 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 1,
+ "source": "hand-written (harness/lazy.py shapes)",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.positive, Add(Integer(-3), Symbol('x', real=True)))",
+  "assum": "AppliedPredicate(Q.positive, Add(Symbol('x', real=True), Mul(Integer(-1), pi)))"
+ },
+ "warm": "True",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedBinaryRelation(Q.lt, Symbol('x', real=True), Integer(5))",
+   "assum": "AppliedPredicate(Q.positive, Add(Symbol('x', real=True), Mul(Integer(-1), pi)))"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "True",
+   "sessions": "None",
+   "answers": "True",
+   "splits": "True",
+   "failed": "True",
+   "all": "None"
+  },
+  "carrier": [
+   "sessions"
+  ],
+  "outside_engine": false,
+  "without_transfer": "True",
+  "mention_only": "None",
+  "family": "G",
+  "hashseed=0": {
+   "warm": "True",
+   "ref": "None"
+  },
+  "hashseed=1": {
+   "warm": "True",
+   "ref": "None"
+  },
+  "hashseed=2": {
+   "warm": "True",
+   "ref": "None"
+  }
+ }
+}

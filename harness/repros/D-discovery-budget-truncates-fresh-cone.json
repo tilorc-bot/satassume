@@ -1,0 +1,55 @@
+{
+ "config": {
+  "name": "budget",
+  "discovery_budget": 5,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "forward",
+ "index": 1,
+ "source": "fuzz --config budget seed=3",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.noninteger, Mul(Pow(Mul(I, Symbol('w', nonzero=True)), Rational(1, 3)), Pow(Abs(Symbol('j', integer=True, even=True)), Rational(2, 3))))",
+  "assum": "true"
+ },
+ "warm": "False",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "Or(AppliedBinaryRelation(Q.lt, Integer(1), Pow(Integer(2), Rational(1, 2))), AppliedBinaryRelation(Q.ne, E, Add(Symbol('w', nonzero=True), Mul(Pow(Mul(I, Symbol('w', nonzero=True)), Rational(1, 3)), Pow(Abs(Symbol('j', integer=True, even=True)), Rational(2, 3))))))",
+   "assum": "True"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "without": {
+   "cache": "None",
+   "sessions": "False",
+   "answers": "False",
+   "splits": "False",
+   "failed": "False",
+   "all": "None"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "D"
+ }
+}

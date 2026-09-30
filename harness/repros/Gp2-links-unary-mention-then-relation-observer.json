@@ -1,0 +1,74 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 2,
+ "source": "hand-written (campaign lazy-default-s21 shape)",
+ "item": {
+  "kind": "ask",
+  "prop": "Not(AppliedBinaryRelation(Q.ne, Add(Integer(7), Symbol('q', nonnegative=True)), Integer(2)))",
+  "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))"
+ },
+ "warm": "False",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedBinaryRelation(Q.gt, Add(Integer(21), Mul(Integer(3), Symbol('q', nonnegative=True))), Integer(7))",
+   "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))"
+  },
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.commutative, Symbol('q', nonnegative=True))",
+   "assum": "Not(AppliedPredicate(Q.extended_nonpositive, Add(Integer(7), Symbol('q', nonnegative=True))))"
+  }
+ ],
+ "full_prefix_len": 2,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "False",
+   "sessions": "None",
+   "answers": "False",
+   "splits": "False",
+   "failed": "False",
+   "all": "None"
+  },
+  "carrier": [
+   "sessions"
+  ],
+  "outside_engine": false,
+  "mention_only": "False",
+  "family": "G'",
+  "hashseed=0": {
+   "warm": "False",
+   "ref": "None"
+  },
+  "hashseed=1": {
+   "warm": "False",
+   "ref": "None"
+  },
+  "hashseed=2": {
+   "warm": "False",
+   "ref": "None"
+  }
+ }
+}

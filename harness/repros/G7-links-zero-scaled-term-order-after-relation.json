@@ -1,0 +1,58 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "forward",
+ "index": 16,
+ "source": "fuzz profile=links seed=13",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.positive, Add(Integer(-2), Pow(Integer(2), Rational(1, 2)), Mul(Integer(-1), Symbol('q', nonnegative=True))))",
+  "assum": "And(AppliedPredicate(Q.nonnegative, Mul(Integer(3), Symbol('q', nonnegative=True))), AppliedPredicate(Q.zero, Mul(Integer(3), Symbol('q', nonnegative=True))))"
+ },
+ "warm": "False",
+ "ref": "None",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "Implies(AppliedBinaryRelation(Q.lt, Add(Integer(1), Mul(Rational(1, 2), Symbol('q', nonnegative=True))), Integer(7)), AppliedPredicate(Q.nonpositive, Mul(Integer(3), Symbol('q', nonnegative=True))))",
+   "assum": "And(AppliedPredicate(Q.nonnegative, Mul(Integer(3), Symbol('q', nonnegative=True))), AppliedPredicate(Q.zero, Mul(Integer(3), Symbol('q', nonnegative=True))))"
+  }
+ ],
+ "full_prefix_len": 16,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "without": {
+   "cache": "False",
+   "sessions": "None",
+   "answers": "False",
+   "splits": "False",
+   "failed": "False",
+   "all": "None"
+  },
+  "carrier": [
+   "sessions"
+  ],
+  "outside_engine": false,
+  "without_transfer": "False",
+  "mention_only": "False",
+  "family": "G"
+ }
+}

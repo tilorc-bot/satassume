@@ -1,0 +1,55 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "raise-vs-definite",
+ "group_size": 1,
+ "order": "forward",
+ "index": 1,
+ "source": "fuzz seed=3 (harness-results/fuzz-default/fuzz-default-s3-0.json)",
+ "item": {
+  "kind": "ask",
+  "prop": "Equivalent(AppliedPredicate(Q.extended_nonpositive, Symbol('j', integer=True, even=True)), AppliedPredicate(Q.finite, Symbol('p', positive=True)))",
+  "assum": "And(AppliedPredicate(Q.commutative, Symbol('j', integer=True, even=True)), AppliedPredicate(Q.noninteger, Mul(I, Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2)))), AppliedPredicate(Q.extended_negative, Mul(I, Pow(Symbol('w', nonzero=True), Integer(2)), Pow(Symbol('j', integer=True, even=True), Integer(4)), Add(Mul(Integer(-1), Pow(Symbol('w', nonzero=True), Integer(-2)), Pow(Symbol('j', integer=True, even=True), Integer(-4))), Mul(I, Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2)))))))"
+ },
+ "warm": "ValueError",
+ "ref": "True",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "Implies(AppliedPredicate(Q.transcendental, Mul(Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2)))), AppliedPredicate(Q.transcendental, Rational(1, 2)))",
+   "assum": "And(AppliedPredicate(Q.commutative, Symbol('j', integer=True, even=True)), AppliedPredicate(Q.noninteger, Mul(I, Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2)))), AppliedPredicate(Q.extended_negative, Mul(I, Pow(Symbol('w', nonzero=True), Integer(2)), Pow(Symbol('j', integer=True, even=True), Integer(4)), Add(Mul(Integer(-1), Pow(Symbol('w', nonzero=True), Integer(-2)), Pow(Symbol('j', integer=True, even=True), Integer(-4))), Mul(I, Symbol('w', nonzero=True), Pow(Symbol('j', integer=True, even=True), Integer(2)))))))"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "without": {
+   "cache": "ValueError",
+   "sessions": "True",
+   "answers": "ValueError",
+   "splits": "ValueError",
+   "failed": "ValueError",
+   "all": "True"
+  },
+  "carrier": [
+   "sessions"
+  ],
+  "outside_engine": false,
+  "family": "A"
+ }
+}

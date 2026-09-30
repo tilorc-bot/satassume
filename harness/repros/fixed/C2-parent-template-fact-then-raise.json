@@ -1,0 +1,55 @@
+{
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "raise-vs-definite",
+ "group_size": 1,
+ "order": "forward",
+ "index": 1,
+ "source": "hand",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedPredicate(Q.infinite, Symbol('A', commutative=False))",
+  "assum": "AppliedPredicate(Q.infinite, Symbol('A', commutative=False))"
+ },
+ "warm": "ValueError",
+ "ref": "True",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.positive, Pow(Symbol('A', commutative=False), Integer(-1)))",
+   "assum": "True"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "without": {
+   "cache": "True",
+   "sessions": "ValueError",
+   "answers": "ValueError",
+   "splits": "ValueError",
+   "failed": "ValueError",
+   "all": "True"
+  },
+  "carrier": [
+   "cache"
+  ],
+  "outside_engine": false,
+  "family": "B"
+ }
+}
