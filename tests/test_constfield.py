@@ -27,6 +27,30 @@ from satassume.constfield import PI, E, Element, Undecided, from_sympy
 mpmath = pytest.importorskip("mpmath")
 mp = mpmath.mp
 
+#: no test of this module may run longer (CI has no timeout plugin; a
+#: blow-up in the arithmetic must fail, not hang)
+TEST_SECONDS = 120
+
+
+@pytest.fixture(autouse=True)
+def _time_limit():
+    import signal
+    import threading
+    if not hasattr(signal, "SIGALRM") or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def expire(signum, frame):
+        raise TimeoutError(f"test ran longer than {TEST_SECONDS} s")
+    old = signal.signal(signal.SIGALRM, expire)
+    signal.alarm(TEST_SECONDS)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
+
+
 SQRT2 = cf.radical(2, 2)
 CBRT3 = cf.radical(3, 3)
 
@@ -626,3 +650,126 @@ def test_formally_zero_never_raises():
     assert not cf.formally_zero(z) and cf.formally_zero(F(0)) and cf.formally_zero(0)
     assert not cf.formally_zero(PI) and not cf.formally_zero(F(1))
     assert not issubclass(Undecided, ArithmeticError)
+
+
+# ----------------------------------------------------------------------
+# size budget and speed (reviewer D's cases)
+# ----------------------------------------------------------------------
+
+def _elapsed(f):
+    import time
+    t = time.perf_counter()
+    r = f()
+    return r, time.perf_counter() - t
+
+
+def test_huge_powers_are_refused_quickly():
+    pytest.importorskip("sympy")
+    from sympy import pi
+    r, t = _elapsed(lambda: from_sympy(((pi + 1) ** 64 + 1) ** 64))   # degree 4096
+    assert r is None and t < 2
+    assert from_sympy(((pi + 1) ** 8 + 1) ** 8) is not None           # degree 64
+    with pytest.raises(cf.TooLarge):
+        (PI + 1) ** (cf.MAX_DEGREE + 1)
+    with pytest.raises(cf.TooLarge):
+        (PI + E) ** 40 * (PI - E) ** 40
+    with pytest.raises(cf.TooLarge):
+        PI * F(1, 3) ** 6000                                           # 9510-bit coefficient
+    assert issubclass(cf.TooLarge, Undecided)
+
+
+def test_products_over_budget_are_refused_before_computing():
+    a = (PI + E + SQRT2 + 1) ** 12          # 455 terms each: within the budget
+    b = (PI - E + 2 * SQRT2 + 3) ** 12
+    assert a._size()[1] == 455 and b._size()[1] == 455
+    # the product would be about 2e5 term products (0.4 s) and then too
+    # large: refused up front
+    import time
+    for f in (lambda: a * b, lambda: a + 1 / b):
+        t = time.perf_counter()
+        with pytest.raises(cf.TooLarge):
+            f()
+        assert time.perf_counter() - t < 0.1
+
+
+def test_large_univariate_gcd_is_fast():
+    # degree 70, 160-bit coefficients (like reviewer D's instance, which
+    # took 20 s with Euclid over Q without normalisation)
+    rng = random.Random(5)
+    t = PI.numerator
+
+    def rpoly(deg, bits):
+        return cf._mk(t[0], [F(rng.randint(-(1 << bits), 1 << bits), rng.randint(1, 1 << 20))
+                             for _ in range(deg)] + [F(1)])
+    h = rpoly(31, 40)
+    a, b = cf._mul(rpoly(39, 60), h), cf._mul(rpoly(39, 60), h)
+    (g, qa, qb), dt = _elapsed(lambda: cf._inner_gcd(a, b))
+    assert dt < 2
+    assert g == cf._monic(h) and cf._mul(g, qa) == a and cf._mul(g, qb) == b
+    x = (PI ** 5 + 3 * PI + 1) / (PI ** 7 - 2)                        # through Elements
+    y = (PI ** 7 - 2) / (PI ** 5 + 3 * PI + 1)
+    assert x * y == 1
+
+
+@pytest.mark.parametrize("pool,n", [("pi,E", 8), ("pi,E,sqrt2", 6), ("pi,E,sqrt2", 8),
+                                    ("five", 4), ("five", 6)])
+def test_eliminations_finish_or_refuse_quickly(pool, n):
+    # Gaussian elimination as in a simplex pivot sequence: every matrix is
+    # either eliminated or refused (TooLarge/Undecided) within seconds;
+    # before the budget, pi,E 8x8 took over 120 s
+    sympy = pytest.importorskip("sympy")
+    l2 = from_sympy(sympy.log(2))
+    s3 = cf.radical(3, 2)
+    pools = {"pi,E": [PI, E, PI + E, 1 / PI, E / 2],
+             "pi,E,sqrt2": [PI, E, SQRT2, PI * SQRT2, 1 / (PI + E)],
+             "five": [PI, E, SQRT2, s3, l2, PI + l2]}
+    rng = random.Random(n)
+    for _ in range(3):
+        m = [[rng.choice(pools[pool]) if rng.random() < 0.5 else F(rng.randint(-5, 5))
+              for _ in range(n)] for _ in range(n)]
+
+        def run():
+            try:
+                for c in range(n):
+                    p = next((r for r in range(c, n) if cf.sign(m[r][c])), None)
+                    if p is None:
+                        continue
+                    m[c], m[p] = m[p], m[c]
+                    inv = 1 / m[c][c]
+                    for r in range(c + 1, n):
+                        f = m[r][c] * inv
+                        for k in range(c, n):
+                            m[r][k] = m[r][k] - f * m[c][k]
+                    assert all(cf.formally_zero(m[r][c]) for r in range(c + 1, n))
+                return "done"
+            except Undecided:
+                return "refused"
+        _, dt = _elapsed(run)
+        assert dt < 10
+
+
+# ----------------------------------------------------------------------
+# x / x, and == with foreign numbers
+# ----------------------------------------------------------------------
+
+def test_x_over_x_checks_the_divisor():
+    z = SQRT2 * SQRT2 - 2                    # value 0
+    for f in (lambda: z / z, lambda: 1 / z, lambda: (PI * z) / z):
+        with pytest.raises(Undecided):
+            f()
+    assert PI / PI == 1 and (PI + SQRT2) / (PI + SQRT2) == 1
+
+
+def test_eq_with_foreign_numbers():
+    sympy = pytest.importorskip("sympy")
+    for bad in (3.0, 3.14, complex(3, 0), sympy.Float(3.0), sympy.I, sympy.Symbol("x")):
+        with pytest.raises(TypeError):
+            PI == bad
+        with pytest.raises(TypeError):
+            PI != bad
+    assert PI == sympy.pi and PI != sympy.Integer(3) and PI / 2 == sympy.pi / 2
+    assert not (PI == None) and PI != "pi" and PI not in [None, "pi", 3]  # noqa: E711
+    with pytest.raises(Undecided):
+        CBRT3 ** 3 == sympy.Integer(3)       # value 3, not decidable here
+    with pytest.raises(TypeError):
+        PI < 3.5

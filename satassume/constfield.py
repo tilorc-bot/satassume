@@ -7,7 +7,8 @@ rational coefficients; this module extends it to coefficients such as
 is a linear form whose endpoint ties (``x = -pi/2`` makes it exactly 0)
 are decided exactly rather than by interval arithmetic.  Nothing here
 imports SymPy except :func:`from_sympy` and :meth:`Element.to_sympy`
-(lazily).
+(lazily), and ``sympy.polys`` for gcds beyond the small univariate
+case (see Limits).
 
 Following de Moura and Passmore, "Computation in Real Closed Infinitesimal
 and Transcendental Extensions of the Rationals" (CADE 2013; z3's ``rcf``
@@ -26,9 +27,7 @@ An :class:`Element` is ``n/d`` with ``gcd(n, d) = 1`` and the recursive
 leading coefficient of ``d`` equal to 1.  That is a normal form: formally
 equal numbers have equal representations, so ``==`` on the formal level
 and ``hash`` are structural (``pi/pi`` is 1, ``(-pi/2)/pi + 1/2`` is 0).
-The gcd is the classical recursive primitive PRS (Collins/Brown), exact
-for any number of indeterminates; with one indeterminate (almost every
-coefficient the simplex sees) it is Euclid on univariate polynomials.
+The gcd (see Limits) is exact for any number of indeterminates.
 The alternative the research suggested for several constants (no
 multivariate gcd, only monomial and content factors removed) was not
 taken: without a normal form ``hash`` would have to be invented
@@ -72,10 +71,26 @@ values is answered semantically:
   nonzero without evaluation: a nonzero rational polynomial has no
   transcendental root.  Consequently ``a == b`` is True only for formally
   equal numbers and ``hash`` agrees with ``==``; an ``Element`` never
-  equals a ``Fraction``.
+  equals a ``Fraction``.  But ``==`` can raise: a dict or set lookup of
+  an Element whose hash collides with another key's (rare, as hashes are
+  structural) compares them and so can raise :class:`Undecided` when
+  both involve several or algebraic constants.  ``==`` with a SymPy
+  number converts it (:func:`from_sympy`); with a float, or a SymPy
+  number that is not read, it raises TypeError instead of being
+  silently False.
 * ``floor(x)`` refines until the enclosure has one floor.  A formally
   non-rational number in a single transcendental constant is irrational,
   so it terminates (up to the cap).
+* Division checks its divisor, also ``x / x`` (which is 1 only if ``x``
+  is nonzero): ``z / z`` raises :class:`Undecided` exactly when ``1 / z``
+  does.
+
+The precision is *absolute* (bits after the binary point, whatever the
+magnitude): a value closer to 0 than about ``2**-PREC_CAP`` is
+:class:`Undecided` although nonzero (``((pi - 355/113)**400).sign()``,
+about ``1e-2630``), and so is the floor of a number whose integer part
+takes most of the bits (``floor(pi * 10**1300)``: the interval
+evaluation then errs by more than 1).
 
 For one transcendental constant every sign is decided (the cap only
 bounds the work).  Several constants (``pi`` and ``E``, whose algebraic
@@ -109,6 +124,19 @@ the relation is :class:`Undecided`, never wrong.
 
 Limits
 ------
+* A size budget (:data:`MAX_DEGREE` total degree, :data:`MAX_TERMS`
+  terms, :data:`MAX_BITS` coefficient bits, :data:`MAX_WORK` term
+  products per multiplication) bounds the cost of every operation: one
+  that would exceed it raises :class:`TooLarge`, an :class:`Undecided`.
+  Pivots on rows with several constants can blow expressions up (random
+  8x8 eliminations over pi, E and sqrt(2) do); the query then gets no
+  answer rather than a slow one.  :func:`from_sympy` gives None for such
+  inputs (``((pi + 1)**64 + 1)**64``).
+* The gcd of a normal form is Euclid (monic remainders) for univariate
+  polynomials of degree at most 8, a monomial shortcut (``1/pi``), and
+  otherwise SymPy's ``dmp_inner_gcd`` over ZZ (heuristic gcd with a PRS
+  fallback), imported lazily: this module needs ``sympy.polys`` for
+  anything beyond one small constant.
 * The registry of constants is global and grows (one entry per distinct
   constant ever converted); the variable order is the registration order.
 * A few hundred bits of cancellation are decided quickly; the cap
@@ -122,15 +150,26 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable
 from fractions import Fraction
+from math import gcd as _igcd
 
-__all__ = ["Element", "Constant", "Undecided", "PI", "E", "constant",
+__all__ = ["Element", "Constant", "Undecided", "TooLarge", "PI", "E", "constant",
            "radical", "from_sympy", "sign", "num", "formally_zero",
-           "PREC_START", "PREC_CAP"]
+           "PREC_START", "PREC_CAP", "MAX_DEGREE", "MAX_TERMS", "MAX_BITS", "MAX_WORK"]
 
 #: first precision (bits after the binary point) of a sign test
 PREC_START = 64
 #: last precision tried before :class:`Undecided`
 PREC_CAP = 4096
+#: size budget of an :class:`Element` (numerator and denominator each):
+#: total degree, number of terms, bits of a coefficient's numerator or
+#: denominator; and the work of one product (terms times terms).  An
+#: operation that would exceed it raises :class:`TooLarge` (an
+#: Undecided) instead of running for seconds: pivots that blow up
+#: expressions make the query undecided rather than slow.
+MAX_DEGREE = 64
+MAX_TERMS = 512
+MAX_BITS = 8192
+MAX_WORK = 1 << 14
 
 _ZERO = Fraction(0)
 _ONE = Fraction(1)
@@ -142,6 +181,11 @@ class Undecided(Exception):
     for a floor) without the formal expression being so.  Deliberately no
     ArithmeticError, so that a handler for division by zero does not
     swallow it."""
+
+
+class TooLarge(Undecided):
+    """An operation would exceed the size budget (:data:`MAX_DEGREE`,
+    :data:`MAX_TERMS`, :data:`MAX_BITS`, :data:`MAX_WORK`)."""
 
 
 # ----------------------------------------------------------------------
@@ -336,97 +380,174 @@ def _udiv(a, b) -> list:
     return q
 
 
-def _prem(a, b, v: int):
-    """A pseudo-remainder of ``a`` by ``b`` in ``t_v`` (``deg b >= 1``),
-    up to a factor free of ``t_v``."""
-    db, lb = _deg(b, v), _lc(b, v)
-    r = a
-    while not _zero(r):
-        dr = _deg(r, v)
-        if dr < db:
-            break
-        r = _sub(_mul(lb, r), _mul(_shift(_lc(r, v), v, dr - db), b))
-    return r
-
-
 def _monic(p):
     l = _lcrec(p)
     return p if l == 1 else _scale(p, 1 / l)
 
 
-def _content(p, v: int):
-    """Monic gcd of the coefficients of ``p`` (main variable ``v``)."""
-    g = _ZERO
-    for c in p[1]:
-        if not _zero(c):
-            g = _gcd(g, c)
-            if type(g) is Fraction:          # a unit: gcd is 1
-                return _ONE
-    return g
+#: univariate gcds up to this degree run Euclid here, larger ones SymPy's
+#: heuristic gcd over ZZ (cheaper for tiny inputs, much faster for big ones)
+_EUCLID_MAX_DEG = 8
 
 
 def _ugcd(a, b) -> list:
     """Monic gcd of two univariate polynomials over Q of degree >= 1
-    (coefficient sequences, lowest degree first): Euclid."""
+    (coefficient sequences, lowest degree first): Euclid with monic
+    remainders."""
     a, b = list(a), list(b)
     if len(a) < len(b):
         a, b = b, a
+    l = b[-1]
+    if l != 1:
+        b = [c / l for c in b]
     while True:
-        lb, db = b[-1], len(b) - 1
-        while len(a) > db:                   # a := a mod b
-            f = a.pop() / lb
+        db = len(b) - 1
+        while len(a) > db:                   # a := a mod b (b monic)
+            f = a.pop()
             s = len(a) - db
             for i in range(db):
                 a[s + i] -= f * b[i]
             while a and not a[-1]:
                 a.pop()
         if not a:
-            break
+            return b
         if len(a) == 1:
             return [_ONE]
-        a, b = b, a
-    l = b[-1]
-    return b if l == 1 else [c / l for c in b]
+        l = a[-1]
+        a, b = b, (a if l == 1 else [c / l for c in a])
+
+
+def _inner_gcd(a, b):
+    """``(g, a/g, b/g)`` for nonzero polynomials, ``g`` their monic gcd."""
+    if type(a) is Fraction or type(b) is Fraction:
+        return _ONE, a, b
+    if a == b:
+        l = _lcrec(a)
+        return (a if l == 1 else _scale(a, 1 / l)), l, l
+    v = a[0]
+    if v == b[0]:
+        ma, mb = _monomial(a), _monomial(b)
+        if ma or mb:                         # gcd(p, t**k) = t**min(k, ord_t p)
+            j = min(ma or _order(a), mb or _order(b))
+            if j == 0:
+                return _ONE, a, b
+            g = (v, (_ZERO,) * j + (_ONE,))
+            return g, _divexact(a, g), _divexact(b, g)
+        ca, cb = a[1], b[1]
+        if len(ca) <= _EUCLID_MAX_DEG + 1 and len(cb) <= _EUCLID_MAX_DEG + 1 \
+                and all(type(c) is Fraction for c in ca) \
+                and all(type(c) is Fraction for c in cb):
+            g = _ugcd(ca, cb)
+            if len(g) == 1:
+                return _ONE, a, b
+            return (v, tuple(g)), _mk(v, _udiv(ca, g)), _mk(v, _udiv(cb, g))
+    return _sympy_inner_gcd(a, b)
+
+
+def _denominators(p, acc: int) -> int:
+    if type(p) is Fraction:
+        d = p.denominator
+        return acc if acc % d == 0 else acc * d // _igcd(acc, d)
+    for c in p[1]:
+        acc = _denominators(c, acc)
+    return acc
+
+
+def _to_dmp(p, vs: list, i: int, den: int, K):
+    """``den * p`` as a SymPy dense recursive polynomial over ``K = ZZ``
+    in the variables ``vs[i:]`` (main variable first)."""
+    if i == len(vs):
+        return K(int(p * den))
+    if type(p) is tuple and p[0] == vs[i]:
+        return [_to_dmp(c, vs, i + 1, den, K) for c in reversed(p[1])]
+    if _zero(p):
+        from sympy.polys.densebasic import dmp_zero
+        return dmp_zero(len(vs) - 1 - i)
+    return [_to_dmp(p, vs, i + 1, den, K)]
+
+
+def _from_dmp(f, vs: list, i: int):
+    if i == len(vs):
+        return Fraction(int(f))
+    from sympy.polys.densebasic import dmp_zero_p
+    if dmp_zero_p(f, len(vs) - 1 - i):
+        return _ZERO
+    return _mk(vs[i], [_from_dmp(c, vs, i + 1) for c in reversed(f)])
+
+
+def _sympy_inner_gcd(a, b):
+    """:func:`_inner_gcd` by SymPy's ``dmp_inner_gcd`` over ZZ (the
+    heuristic gcd, with a PRS fallback inside SymPy)."""
+    from sympy.polys.domains import ZZ
+    from sympy.polys.euclidtools import dmp_inner_gcd
+    vs = sorted(_vars(b, _vars(a, set())), reverse=True)
+    da, db = _denominators(a, 1), _denominators(b, 1)
+    h, fa, fb = dmp_inner_gcd(_to_dmp(a, vs, 0, da, ZZ), _to_dmp(b, vs, 0, db, ZZ),
+                              len(vs) - 1, ZZ)
+    g = _from_dmp(h, vs, 0)
+    if type(g) is Fraction:
+        return _ONE, a, b
+    # a = (h * fa) / da and g = h / lh: a / g = fa * lh / da
+    lh = _lcrec(g)
+    g = _scale(g, 1 / lh)
+    return g, _scale(_from_dmp(fa, vs, 0), lh / da), _scale(_from_dmp(fb, vs, 0), lh / db)
 
 
 def _gcd(a, b):
     """Monic gcd (recursive leading coefficient 1) of two polynomials;
-    0 for two zeros.  Recursive primitive PRS."""
+    0 for two zeros."""
     if _zero(a):
         return _ZERO if _zero(b) else _monic(b)
     if _zero(b):
         return _monic(a)
-    if type(a) is Fraction or type(b) is Fraction:
-        return _ONE
-    if a == b:
-        return _monic(a)
-    va, vb = a[0], b[0]
-    if va != vb:                             # b is a coefficient: gcd with a's content
-        if va < vb:
-            a, b = b, a
-        return _gcd(_content(a, a[0]), b)
-    v = va
-    ma, mb = _monomial(a), _monomial(b)
-    if ma or mb:                             # gcd(p, t**k) = t**min(k, ord_t p)
-        j = min(ma or _order(a), mb or _order(b))
-        return _ONE if j == 0 else (v, (_ZERO,) * j + (_ONE,))
-    if all(type(c) is Fraction for c in a[1]) and all(type(c) is Fraction for c in b[1]):
-        return _mk(v, _ugcd(a[1], b[1]))     # univariate: Euclid over Q
-    ca, cb = _content(a, v), _content(b, v)
-    c = _gcd(ca, cb)
-    pa, pb = _divexact(a, ca), _divexact(b, cb)
-    if _deg(pa, v) < _deg(pb, v):
-        pa, pb = pb, pa
-    while True:
-        r = _prem(pa, pb, v)
-        if _zero(r):
-            g = pb
+    return _inner_gcd(a, b)[0]
+
+
+def _psize(p) -> tuple[int, int, int]:
+    """``(total degree, number of terms, max coefficient bits)``."""
+    if type(p) is Fraction:
+        return 0, (1 if p else 0), max(p.numerator.bit_length(), p.denominator.bit_length())
+    deg = terms = bits = 0
+    cs = p[1]
+    for c in cs:
+        if type(c) is Fraction:
+            if c:
+                terms += 1
+                n, d = c.numerator.bit_length(), c.denominator.bit_length()
+                if n > bits:
+                    bits = n
+                if d > bits:
+                    bits = d
+        else:
             break
-        if _deg(r, v) == 0:
-            g = _ONE
-            break
-        pa, pb = pb, _divexact(r, _content(r, v))
-    return _monic(_mul(c, g))
+    else:                                    # univariate: all coefficients rational
+        return len(cs) - 1, terms, bits
+    deg = terms = bits = 0
+    for k, c in enumerate(cs):
+        if _zero(c):
+            continue
+        d, t, b = _psize(c)
+        if d + k > deg:
+            deg = d + k
+        terms += t
+        if b > bits:
+            bits = b
+    return deg, terms, bits
+
+
+def _short(x, n: int = 200) -> str:
+    r = repr(x)
+    return r if len(r) <= n else r[:n] + "..."
+
+
+def _checked(x):
+    """``x``, or TooLarge when an Element exceeds the size budget."""
+    if type(x) is Element:
+        deg, terms, bits = x._size()
+        if deg > MAX_DEGREE or terms > MAX_TERMS or bits > MAX_BITS:
+            raise TooLarge(f"a number of degree {deg}, {terms} terms, "
+                           f"{bits}-bit coefficients exceeds the size budget")
+    return x
 
 
 def _vars(p, out: set) -> set:
@@ -637,9 +758,9 @@ def _make(n, d):
         if type(n) is Fraction:
             return n / d
         return Element._new(n if d == 1 else _scale(n, 1 / d), _ONE)
-    g = _gcd(n, d)
-    if g is not _ONE and g != 1:
-        n, d = _divexact(n, g), _divexact(d, g)
+    if _zero(n):
+        return _ZERO
+    _, n, d = _inner_gcd(n, d)
     l = _lcrec(d)
     if l != 1:
         l = 1 / l
@@ -662,12 +783,28 @@ def _coerce(x):
     return None
 
 
+def _coerce_foreign(x):
+    """For ``==``: a SymPy number as a Fraction or Element (``Integer(3)``,
+    ``pi/2``); TypeError for any other number (``3.0``, a SymPy Float or a
+    closed expression that is not read), whose equality with an exact real
+    has no single meaning; None for a non-number (never equal)."""
+    import numbers
+    if type(x).__module__.startswith("sympy"):
+        r = from_sympy(x)
+        if r is None:
+            raise TypeError(f"cannot compare an exact number with {x!r}")
+        return r
+    if isinstance(x, numbers.Number):
+        raise TypeError(f"cannot compare an exact number with {x!r}")
+    return None
+
+
 class Element:
     """A number ``n/d`` of ``Q(constants)`` that is not rational formally
     (see the module docstring); operations with Fractions and ints return
     a Fraction when the result is constant-free."""
 
-    __slots__ = ("_n", "_d", "_hash", "_sign", "_vars", "_enc")
+    __slots__ = ("_d", "_enc", "_hash", "_n", "_sign", "_size_", "_vars")
 
     @classmethod
     def _new(cls, n, d) -> Element:
@@ -678,6 +815,7 @@ class Element:
         self._sign = None
         self._vars = None
         self._enc = None
+        self._size_ = None
         return self
 
     def __init__(self, *args):
@@ -702,6 +840,31 @@ class Element:
         if v is None:
             v = self._vars = frozenset(_vars(self._d, _vars(self._n, set())))
         return v
+
+    def _size(self) -> tuple[int, int, int]:
+        """``(total degree, terms, coefficient bits)``, the largest of
+        numerator and denominator (see :data:`MAX_DEGREE`)."""
+        sz = self._size_
+        if sz is None:
+            a, b = _psize(self._n), _psize(self._d)
+            sz = self._size_ = (max(a[0], b[0]), max(a[1], b[1]), max(a[2], b[2]))
+        return sz
+
+    def _budget_scale(self, q: Fraction) -> None:
+        """Refuse a product or sum with the rational ``q`` whose
+        coefficients would exceed :data:`MAX_BITS`."""
+        bits = self._size()[2] + max(q.numerator.bit_length(), q.denominator.bit_length())
+        if bits > MAX_BITS:
+            raise TooLarge(f"{bits}-bit coefficients exceed the size budget")
+
+    def _budget_product(self, o: Element) -> None:
+        """Refuse ``self * o`` or ``self + o`` before computing it when the
+        result would exceed the budget (degrees and bits add, the work is
+        the product of the numbers of terms)."""
+        a, b = self._size(), o._size()
+        if a[0] + b[0] > MAX_DEGREE or a[2] + b[2] > MAX_BITS or a[1] * b[1] > MAX_WORK:
+            raise TooLarge(f"a result of degree {a[0] + b[0]}, {a[2] + b[2]}-bit "
+                           f"coefficients, {a[1] * b[1]} term products exceeds the size budget")
 
     def _single_transcendental(self, other=None) -> bool:
         vs = self._varset()
@@ -737,21 +900,22 @@ class Element:
             if not o:
                 return self
             # gcd(n + o*d, d) = gcd(n, d) = 1: no normalisation needed
+            self._budget_scale(o)
             d = self._d
             return Element._new(_add(self._n, o if type(d) is Fraction else _scale(d, o)), d)
         an, ad, bn, bd = self._n, self._d, o._n, o._d
         if ad == bd:
-            return _make(_add(an, bn), ad)
+            return _checked(_make(_add(an, bn), ad))
+        self._budget_product(o)
         # the results below are nonzero: a = -b would have ad == bd
         if type(ad) is Fraction:             # gcd(an*bd + bn, bd) = 1
-            return Element._new(_add(_mul(an, bd), bn), bd)
+            return _checked(Element._new(_add(_mul(an, bd), bn), bd))
         if type(bd) is Fraction:
-            return Element._new(_add(an, _mul(bn, ad)), ad)
-        g = _gcd(ad, bd)
+            return _checked(Element._new(_add(an, _mul(bn, ad)), ad))
+        g, ad1, bd1 = _inner_gcd(ad, bd)
         if type(g) is Fraction:              # coprime denominators: lowest terms, monic
-            return Element._new(_add(_mul(an, bd), _mul(bn, ad)), _mul(ad, bd))
-        ad1, bd1 = _divexact(ad, g), _divexact(bd, g)
-        return _make(_add(_mul(an, bd1), _mul(bn, ad1)), _mul(_mul(ad1, bd1), g))
+            return _checked(Element._new(_add(_mul(an, bd), _mul(bn, ad)), _mul(ad, bd)))
+        return _checked(_make(_add(_mul(an, bd1), _mul(bn, ad1)), _mul(_mul(ad1, bd1), g)))
 
     __radd__ = __add__
 
@@ -776,20 +940,19 @@ class Element:
                 return _ZERO
             if o == 1:
                 return self
+            self._budget_scale(o)
             return Element._new(_scale(self._n, o), self._d)
+        self._budget_product(o)
         an, ad, bn, bd = self._n, self._d, o._n, o._d
         if type(ad) is Fraction and type(bd) is Fraction:
-            return _make(_mul(an, bn), _ONE)
+            return _checked(_make(_mul(an, bn), _ONE))
         # cross gcds keep the result in lowest terms
-        g1, g2 = _gcd(an, bd), _gcd(bn, ad)
-        if g1 != 1:
-            an, bd = _divexact(an, g1), _divexact(bd, g1)
-        if g2 != 1:
-            bn, ad = _divexact(bn, g2), _divexact(ad, g2)
+        _, an, bd = _inner_gcd(an, bd)
+        _, bn, ad = _inner_gcd(bn, ad)
         n, d = _mul(an, bn), _mul(ad, bd)
         if type(d) is Fraction:
-            return _make(n, d)
-        return Element._new(n, d)            # monic: product of monics
+            return _checked(_make(n, d))
+        return _checked(Element._new(n, d))  # monic: product of monics
 
     __rmul__ = __mul__
 
@@ -814,6 +977,7 @@ class Element:
                 raise ZeroDivisionError("division by zero")
             return self * (1 / o)
         if o is self or (o._n == self._n and o._d == self._d):
+            o._nonzero()                     # x/x is 1 only for a nonzero x
             return _ONE
         return self * o._inverse()
 
@@ -830,8 +994,11 @@ class Element:
             return self._inverse() ** -k
         if k == 0:
             return _ONE
+        deg, terms, bits = self._size()
+        if deg * k > MAX_DEGREE or bits * k > MAX_BITS:
+            raise TooLarge(f"a power of degree {deg * k} exceeds the size budget")
         # powers of coprime polynomials are coprime, monic stays monic
-        return Element._new(_pow(self._n, k), _pow(self._d, k))
+        return _checked(Element._new(_pow(self._n, k), _pow(self._d, k)))
 
     # -- signs and comparisons -----------------------------------------
 
@@ -863,7 +1030,7 @@ class Element:
             lo, hi = _ieval(n, prec, self._env(prec, vs))
             if lo > 0 or hi < 0:
                 return True
-        raise Undecided(f"cannot show {self!r} nonzero")
+        raise Undecided(f"cannot show {_short(self)} nonzero")
 
     def sign(self) -> int:
         """The sign (-1 or 1) of the value; Undecided if not found (the
@@ -883,7 +1050,7 @@ class Element:
             if sn and sd:
                 self._sign = sn * sd
                 return self._sign
-        raise Undecided(f"cannot decide the sign of {self!r}")
+        raise Undecided(f"cannot decide the sign of {_short(self)}")
 
     def enclosure(self, prec: int) -> tuple[int, int] | None:
         """``(lo, hi)`` with ``lo <= value * 2**prec <= hi``, or None when
@@ -936,7 +1103,9 @@ class Element:
             return True
         o = _coerce(other)
         if o is None:
-            return NotImplemented
+            o = _coerce_foreign(other)
+            if o is None:
+                return NotImplemented            # not a number: never equal
         if type(o) is Element:
             if o._n == self._n and o._d == self._d:
                 return True
@@ -976,7 +1145,7 @@ class Element:
                 lo, hi = e[0] >> prec, e[1] >> prec
                 if lo == hi:
                     return lo
-        raise Undecided(f"cannot decide the floor of {self!r}")
+        raise Undecided(f"cannot decide the floor of {_short(self)}")
 
     def __ceil__(self) -> int:
         return -(-self).__floor__()
