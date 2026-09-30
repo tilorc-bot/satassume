@@ -26,6 +26,7 @@ from sympy import Q, Symbol  # noqa: E402
 
 from harness.checker import Ask  # noqa: E402
 from harness.generators import random_stream  # noqa: E402
+from harness.sympy_io import to_srepr
 from harness.invariants import (INVARIANTS, Unrelated, check_I1, check_I2, check_I4,  # noqa: E402
                                 consistent, dropping_clauses, fresh_outcome, replay, run_stream)
 from harness.state import preset  # noqa: E402
@@ -100,7 +101,10 @@ def test_planted_defects_are_caught(monkeypatch):
     rng = random.Random(0)
     base = fresh_outcome(p, a, cfg)
     assert base == "True"
-    assert check_I2(p, a, cfg, base, rng)[0] is None
+    # a fixed unrelated conjunct (the generator's own variants reach the
+    # engine's real I2 families, e.g. a closed relation in the set)
+    fixed = {"kind": "unrelated", "extra": to_srepr(Q.positive(Symbol("iuu1")))}
+    assert check_I2(p, a, cfg, base, rng, dict(fixed))[0] is None
     assert check_I4(p, a, cfg, base, rng)[0] is None
 
     real_ask = eng_mod.Engine.ask

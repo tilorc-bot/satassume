@@ -32,8 +32,9 @@ import random
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sympy import (Abs, Basic, Dummy, Eq, Function, Ge, Gt, Le, Lt, Mod, Ne, Q, Symbol,
-                   ceiling, conjugate, cos, exp, floor, im, log, pi, re, sign, sin, sqrt, S)
+from sympy import (Abs, Basic, Dummy, E, Eq, Float, Function, Ge, GoldenRatio, Gt, I, Le, Lt, Mod,
+                   Ne, Q, Rational, Symbol, ceiling, conjugate, cos, exp, floor, im, log, pi, re,
+                   sign, sin, sqrt, S)
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.function import AppliedUndef
 from sympy.core.relational import Relational
@@ -189,7 +190,17 @@ _DECLARED = {
     "integer": ["positive", "negative", "zero", "even", "odd", "prime", "composite", "nonzero"],
     "real": ["positive", "negative", "zero", "integer", "irrational", "rational", "nonzero"],
 }
-_FINITE_CONSTS = [S.Zero, S.One, S(2), S(-3), S.Half, pi, sqrt(2), S(7)]
+_FINITE_CONSTS = [S.Zero, S.One, S(2), S(-3), S.Half, pi, sqrt(2), S(7),
+                  Float(2.5), Rational(-2, 3), E, S(10) ** 12, I, GoldenRatio]
+#: real constants only: a relation to ``I`` is unsatisfiable
+_REAL_CONSTS = [c for c in _FINITE_CONSTS if c.is_extended_real]
+#: infinities a fresh symbol may equal or be bounded by (each satisfiable)
+_INF_RELS = [lambda u: Q.eq(u, S.Infinity), lambda u: Q.eq(u, S.NegativeInfinity),
+             lambda u: Q.eq(u, S.ComplexInfinity), lambda u: Q.ne(u, S.Infinity),
+             lambda u: Q.ne(u, S.ComplexInfinity), lambda u: Q.lt(u, S.Infinity),
+             lambda u: Q.gt(u, S.NegativeInfinity), lambda u: Q.le(u, S.Infinity),
+             lambda u: Q.ge(u, S.NegativeInfinity), lambda u: Lt(u, S.Infinity),
+             lambda u: Gt(u, S.NegativeInfinity), lambda u: Q.infinite(u) & Q.extended_real(u)]
 _UNARY = [Abs, floor, ceiling, log, sin, cos, conjugate, re, im, sign, lambda t: Mod(t, 3)]
 
 
@@ -208,6 +219,8 @@ class Unrelated:
 
     def sym(self, **kw):
         self.k += 1
+        if not kw and self.rng.random() < 0.1:
+            return Dummy(f"{self.tag}d{self.k}")
         return Symbol(f"{self.tag}u{self.k}", **kw)
 
     def func(self):
@@ -233,9 +246,13 @@ class Unrelated:
             b = self._inner(depth - 1)
             return b ** r.choice([2, 3, -1, S.Half]) if b != 0 else b + 1
         if c < 0.85:
+            if r.random() < 0.25:
+                return self.func()(self._inner(depth - 1), self._inner(depth - 1))   # a binary application
             return self.func()(self._inner(depth - 1))
         if c < 0.93:
             return r.choice([exp, sqrt])(self._inner(depth - 1))
+        if c < 0.96:
+            return r.choice([S(2), S(-3), Rational(1, 3), Float(0.5)]) * self._inner(depth - 1)   # a scaled term (linear glue)
         return r.choice(_UNARY)(self._inner(depth - 1))
 
     def free_term(self, depth: int):
@@ -245,8 +262,11 @@ class Unrelated:
         replaced by the fresh symbol alone."""
         r = self.rng
         c = r.random()
-        if c < 0.35:
+        if c < 0.3:
             return self.sym()
+        if c < 0.36:
+            # a linear combination with a fresh leading symbol: every value
+            return self.sym() + r.choice([S(2), S(-3), Rational(1, 3)]) * self.sym() + r.choice([S.Zero, S.One, S(-2)])
         if c < 0.55:
             return self.func()(self._inner(depth))
         if c < 0.7:
@@ -276,21 +296,66 @@ class Unrelated:
             a, b = self.piece(depth - 1), self.piece(depth - 1)
             return r.choice([Or, Implies, Equivalent])(a, b)
         if c < 0.24:
-            return Q.is_true(self.atom(depth))
+            # ``Q.is_true`` over a relational only: over anything else it is
+            # documented as out of scope (``sympy_api``: category "custom")
+            a = self.atom(depth)
+            if isinstance(a, Relational):
+                return Q.is_true(a)
+            if isinstance(a, AppliedPredicate) and a.function in _SWAP:
+                return Q.is_true({v: k for k, v in _QREL.items()}[a.function](*a.arguments, evaluate=False))
+            return a
         return self.atom(depth)
+
+    def closed(self):
+        """A true fact about closed terms (SymPy's own assumptions decide
+        it): a predicate on a constant, or a relation between constants."""
+        r = self.rng
+        for _ in range(8):
+            c = r.random()
+            if c < 0.5:
+                t = r.choice(_FINITE_CONSTS)
+                if r.random() < 0.4:
+                    t = r.choice([exp, sqrt, Abs, floor, sin, log])(t)
+                name = r.choice(VALUE_PREDS)
+                val = getattr(t, "is_" + name, None)
+                if val is None or t.has(S.NaN, S.ComplexInfinity, S.Infinity, S.NegativeInfinity):
+                    continue
+                atom = getattr(Q, name)(t)
+                return atom if val else Not(atom)
+            a, b = r.choice(_REAL_CONSTS), r.choice(_REAL_CONSTS)
+            cls = r.choice([Lt, Le, Gt, Ge, Eq, Ne])
+            try:
+                val = cls(a, b)
+            except TypeError:
+                continue
+            if val not in (S.true, S.false):
+                continue
+            atom = _QREL[cls](a, b) if r.random() < 0.6 else Q.is_true(cls(a, b, evaluate=False))
+            return atom if val == S.true else Not(atom)
+        return Q.positive(S.One)
 
     def atom(self, depth: int = 2):
         r = self.rng
         c = r.random()
-        if c < 0.55:
+        if c < 0.45:
             atom = getattr(Q, r.choice(VALUE_PREDS))(self.free_term(depth))
             return Not(atom) if r.random() < 0.25 else atom
-        if c < 0.8:
-            a, b = self.free_term(depth), self.free_term(depth) if r.random() < 0.7 else r.choice(_FINITE_CONSTS)
+        if c < 0.68:
+            a, b = self.free_term(depth), self.free_term(depth) if r.random() < 0.7 else r.choice(_REAL_CONSTS)
             rel = r.choice([Q.lt, Q.le, Q.gt, Q.ge, Q.eq, Q.ne, Lt, Le, Gt, Ge, Eq, Ne])
             if a == b:
                 return Q.eq(a, b)
             return rel(a, b)
+        if c < 0.76:
+            return self.closed()
+        if c < 0.84:
+            return r.choice(_INF_RELS)(self.sym())
+        if c < 0.88:
+            # commutativity is declared: a plain symbol is commutative, a
+            # symbol declared commutative=False is not
+            if r.random() < 0.5:
+                return Q.commutative(self.sym())
+            return Not(Q.commutative(self.sym(commutative=False)))
         kind = r.choice(list(_DECLARED))
         s = self.sym(**{kind: True})
         return getattr(Q, r.choice(_DECLARED[kind]))(s)
@@ -299,55 +364,118 @@ class Unrelated:
         return And(*[self.piece(depth) for _ in range(n)])
 
     def extension(self):
-        """A registered extension with no path to the query: a fresh
-        predicate on a fresh symbol, whose handler relates it to one
-        vocabulary literal on that symbol (satisfiable on its own).  The
-        conjunct asserts the fresh predicate on a fresh symbol, so the
-        handler does run."""
+        """A registered extension with no path to the query.  Either a
+        fresh predicate on a fresh symbol (or fresh ``h(u)``, or a pair of
+        fresh symbols for a polyadic one), whose handler relates it to one
+        vocabulary literal on that term (satisfiable on its own), returns
+        ``None``/``True``, or chains to a second fresh predicate; the
+        conjunct asserts the fresh predicate so that the handler runs.  Or
+        a *registration only* (nothing asserted): a fresh predicate on a
+        number class, an operator class, ``Symbol`` or ``Basic`` whose
+        handler may also return ``False``; or a vocabulary predicate on a
+        fresh function class (no application of it occurs anywhere) or a
+        vocabulary predicate on ``Symbol``/``Basic`` whose handler returns
+        ``None`` (no clause: no path)."""
         r = self.rng
         self.k += 1
         name = f"{self.tag}h{self.k}p"
-        cls = r.choice(["Symbol", "Basic", "AppliedUndef"])
-        s = self.func()(self.sym()) if cls == "AppliedUndef" else self.sym()
-        spec = {"pred": name, "cls": cls,
-                "lit": r.choice(VALUE_PREDS), "neg": r.random() < 0.3,
-                "shape": r.choice(["implies", "iff", "or", "none", "true"])}
-        atom = custom_predicate(name)(s)
-        return spec, atom
+        c = r.random()
+        if c < 0.55:
+            cls = r.choice(["Symbol", "Basic", "AppliedUndef", "Symbol,Symbol"])
+            polyadic = "," in cls
+            if polyadic:
+                args = (self.sym(), self.sym())
+            else:
+                args = (self.func()(self.sym()) if cls == "AppliedUndef" else self.sym(),)
+            spec = {"pred": name, "cls": cls,
+                    "lit": r.choice(VALUE_PREDS), "neg": r.random() < 0.3,
+                    "shape": r.choice(["implies", "iff", "or", "none", "true", "chain"])}
+            atom = custom_predicate(name, len(args))(*args)
+            return spec, atom
+        if c < 0.85:
+            cls = r.choice(["Integer", "Rational", "Float", "NumberSymbol", "Add", "Mul", "Pow",
+                            "Symbol", "Basic", "AppliedUndef", "Symbol,Symbol"])
+            spec = {"pred": name, "cls": cls, "lit": r.choice(VALUE_PREDS), "neg": r.random() < 0.3,
+                    "shape": r.choice(["implies", "iff", "or", "none", "true", "false", "chain"])}
+            return spec, None
+        if c < 0.95:
+            self.k += 1
+            spec = {"pred": r.choice(VALUE_PREDS), "cls": f"Function:{self.tag}h{self.k}",
+                    "lit": r.choice(VALUE_PREDS), "neg": r.random() < 0.3,
+                    "shape": r.choice(["implies", "iff", "none", "true", "false"])}
+            return spec, None
+        spec = {"pred": r.choice(VALUE_PREDS), "cls": r.choice(["Symbol", "Basic"]),
+                "lit": "positive", "neg": False, "shape": "none"}
+        return spec, None
+
+
+#: exceptions raised inside the harness's own handlers (a harness defect,
+#: never reported as an engine crash)
+HANDLER_ERRORS: List[str] = []
 
 
 def extension_handler(spec: dict):
     from satassume.formula import Implies, Not as FNot, Or as FOr, P
 
-    def fn(t):
+    def fn(*ts):
+        try:
+            return _handler_body(spec, ts, Implies, FNot, FOr, P)
+        except Exception as e:  # noqa: BLE001
+            HANDLER_ERRORS.append(f"{type(e).__name__}: {e}")
+            raise
+    return fn
+
+
+def _handler_body(spec, ts, Implies, FNot, FOr, P):
+    if True:       # (indented as the former closure body; see extension_handler)
+        t = ts[0]
         if spec["shape"] == "none":
             return None                       # no knowledge
         if spec["shape"] == "true":
             return True                       # the predicate holds of t: what the conjunct asserts
+        if spec["shape"] == "false":
+            return False                      # never asserted: a registration only
         lit = P(spec["lit"], t)
         if spec["neg"]:
             lit = FNot(lit)
-        me = P(spec["pred"], t)
+        if len(ts) > 1:
+            from satassume.extensions import Args
+            me = P(spec["pred"], Args(ts))            # a polyadic atom's expr is its argument tuple
+        else:
+            me = P(spec["pred"], t)
+        if spec["shape"] == "chain":
+            return Implies(me, P(spec["pred"] + "q", t))     # to a second fresh predicate (unregistered)
         if spec["shape"] == "implies":
             return Implies(me, lit)
         if spec["shape"] == "iff":
             return [Implies(me, lit), Implies(lit, me)]
         return FOr(FNot(me), lit)
-    return fn
+
+
+def _classes(cls: str) -> tuple:
+    from sympy import Add, Basic, Float, Integer, Mul, NumberSymbol, Pow, Rational
+    table = {"Symbol": Symbol, "Basic": Basic, "AppliedUndef": AppliedUndef, "Integer": Integer,
+             "Rational": Rational, "Float": Float, "NumberSymbol": NumberSymbol, "Add": Add,
+             "Mul": Mul, "Pow": Pow}
+    out = []
+    for name in cls.split(","):
+        if name.startswith("Function:"):
+            out.append(Function(name[len("Function:"):]))
+        else:
+            out.append(table[name])
+    return tuple(out)
 
 
 @contextlib.contextmanager
 def registered(specs: Sequence[dict]):
     """The extensions of ``specs`` registered while active (the registry
     is restored afterwards, as ``harness.registry`` does)."""
-    from sympy import Basic
     from .registry import restore, snapshot
     from satassume.extensions import extensions
     snap = snapshot()
     try:
         for spec in specs:
-            cls = {"Symbol": Symbol, "Basic": Basic, "AppliedUndef": AppliedUndef}[spec["cls"]]
-            extensions.register(spec["pred"], cls)(extension_handler(spec))
+            extensions.register(spec["pred"], *_classes(spec["cls"]))(extension_handler(spec))
         yield
     finally:
         restore(snap)
@@ -387,6 +515,78 @@ def syntax_form(cs: Sequence[Any], rng: random.Random):
     return And(*parts, evaluate=False) if len(parts) > 1 else parts[0]
 
 
+#: a predicate as a union or intersection of others, true of exactly the
+#: same values (SymPy's assumption facts: real is negative, zero or positive;
+#: nonzero is real and not zero; integer is even or odd; ...)
+_SPLIT = {
+    Q.real: lambda x: Or(Q.negative(x), Q.zero(x), Q.positive(x)),
+    Q.nonnegative: lambda x: Or(Q.zero(x), Q.positive(x)),
+    Q.nonpositive: lambda x: Or(Q.zero(x), Q.negative(x)),
+    Q.nonzero: lambda x: Or(Q.positive(x), Q.negative(x)),
+    Q.positive: lambda x: And(Q.nonnegative(x), Q.nonzero(x)),
+    Q.negative: lambda x: And(Q.nonpositive(x), Q.nonzero(x)),
+    Q.zero: lambda x: And(Q.nonnegative(x), Q.nonpositive(x)),
+    Q.integer: lambda x: Or(Q.even(x), Q.odd(x)),
+    Q.odd: lambda x: And(Q.integer(x), Not(Q.even(x), evaluate=False)),
+    Q.even: lambda x: And(Q.integer(x), Not(Q.odd(x), evaluate=False)),
+    Q.rational: lambda x: And(Q.real(x), Not(Q.irrational(x), evaluate=False)),
+    Q.irrational: lambda x: And(Q.real(x), Not(Q.rational(x), evaluate=False)),
+}
+#: predicates a predicate implies (adding one is an equivalent restatement)
+_IMPLIED = {
+    Q.positive: ["real", "nonzero", "nonnegative", "extended_positive", "finite", "complex"],
+    Q.negative: ["real", "nonzero", "nonpositive", "extended_negative", "finite"],
+    Q.zero: ["real", "even", "integer", "finite", "nonnegative", "nonpositive"],
+    Q.even: ["integer", "rational", "real"],
+    Q.odd: ["integer", "real", "nonzero"],
+    Q.prime: ["integer", "positive", "nonzero"],
+    Q.composite: ["integer", "positive"],
+    Q.irrational: ["real", "nonzero"],
+    Q.rational: ["real", "algebraic"],
+    Q.integer: ["rational", "real", "algebraic"],
+    Q.real: ["complex", "hermitian", "finite", "extended_real"],
+    Q.imaginary: ["complex", "antihermitian", "finite"],
+    Q.nonzero: ["real"],
+    Q.transcendental: ["complex", "finite"],
+}
+#: the same predicate on a transformed term with the same truth for every
+#: scalar value: x is positive exactly when -x is negative or 2*x is positive
+_TERM_FORMS = {
+    Q.positive: [lambda x: 2 * x, lambda x: x / 3],
+    Q.negative: [lambda x: 2 * x, lambda x: x / 3],
+    Q.zero: [lambda x: -x, lambda x: 3 * x, lambda x: x / 2],
+    Q.nonzero: [lambda x: -x, lambda x: 2 * x],
+    Q.real: [lambda x: -x, lambda x: 2 * x, lambda x: x + 1],
+    Q.integer: [lambda x: -x, lambda x: x + 1, lambda x: x - 3],
+    Q.even: [lambda x: -x, lambda x: x + 2],
+    Q.odd: [lambda x: -x, lambda x: x + 2],
+    Q.rational: [lambda x: -x, lambda x: 2 * x, lambda x: x + 1],
+    Q.irrational: [lambda x: -x, lambda x: x + 1],
+    Q.finite: [lambda x: -x, lambda x: 2 * x],
+    Q.infinite: [lambda x: -x, lambda x: 2 * x],
+    Q.complex: [lambda x: -x, lambda x: x + 1],
+    Q.imaginary: [lambda x: -x, lambda x: 2 * x],
+}
+_SIGN_FLIP = {Q.positive: Q.negative, Q.negative: Q.positive}
+
+
+def _shift_relation(b, rng: random.Random):
+    """``rel(a, b)`` as ``rel(a + c, b + c)`` or ``rel(-b, -a)`` (a
+    swapped, negated relation), the same truth for every value of scalar
+    sides (in the extended reals ``oo + c`` is ``oo``; non-real sides make
+    every order relation false and equality is unchanged)."""
+    a, c = b.arguments
+    if not (_scalar(a) and _scalar(c)):
+        return None
+    if a.has(S.NaN) or c.has(S.NaN):
+        return None
+    f = b.function
+    if rng.random() < 0.5:
+        k = rng.choice([S.One, S(-2), Rational(1, 2)])
+        return f(a + k, c + k)
+    return _SWAP[f](-c, -a)
+
+
 def restate(b, rng: random.Random, p: float = 0.5):
     """An equivalent restatement of the Boolean ``b``: swapped relation
     sides (``lt(a, b)`` -> ``gt(b, a)``), the three spellings of a
@@ -407,6 +607,18 @@ def restate(b, rng: random.Random, p: float = 0.5):
             return Q.eq(b.arguments[0], S.Zero)             # zero(x) is x = 0 for every scalar value
         if f == Q.eq and b.arguments[1] == S.Zero and _scalar(b.arguments[0]) and rng.random() < p:
             return Q.zero(b.arguments[0])
+        if f in _SWAP and rng.random() < p * 0.5:
+            r = _shift_relation(b, rng)
+            if r is not None:
+                return r
+        if f in _SPLIT and _scalar(b.arguments[0]) and rng.random() < p * 0.6:
+            return _SPLIT[f](*b.arguments)              # the predicate as a union / intersection of others
+        if f in _IMPLIED and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
+            return And(b, getattr(Q, rng.choice(_IMPLIED[f]))(*b.arguments))   # a conjunct it implies
+        if f in _TERM_FORMS and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
+            if f in _SIGN_FLIP and rng.random() < 0.4:
+                return _SIGN_FLIP[f](-b.arguments[0])
+            return f(rng.choice(_TERM_FORMS[f])(b.arguments[0]))
         if rng.random() < p * 0.6:
             return Q.is_true(b)
         return b
@@ -541,6 +753,18 @@ class Violation:
                 "prefix": [{"prop": to_srepr(a.prop), "assum": to_srepr(a.assum)} for a in self.prefix]}
 
 
+def in_scope(prop, assum) -> bool:
+    """The query is within the engine's documented scope
+    (``sympy_api.out_of_scope``: no matrix atom, no unregistered custom
+    predicate, no ``Q.is_true`` over a non-relational, nothing but a
+    Boolean combination of applied predicates); relations are answered
+    by the theories, so the "relation" category is in scope."""
+    try:
+        return _api.out_of_scope(prop, assum) in (None, "relation")
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _severity_same(inv: str, base: str, other: str) -> Optional[str]:
     """Class of ``base`` vs ``other`` under an invariant that says "same
     answer" (I2, I5, I6, I7); None when nothing is violated or the pair is
@@ -591,15 +815,23 @@ def check_I2(prop, assum, config, base, rng, variant=None):
             for _ in range(rng.choice([1, 1, 2, 3])):
                 spec, atom = u.extension()
                 specs.append(spec)
-                parts.append(atom)
+                if atom is not None:
+                    parts.append(atom)
         rng.shuffle(parts)
         variant = {"kind": "unrelated", "extra": to_srepr(And(*parts))}
         if specs:
             variant["extensions"] = specs
     extra = from_srepr(variant["extra"])
     new = extra if assum is True or assum is S.true else And(assum, extra)
+    n_err = len(HANDLER_ERRORS)
     with registered(variant.get("extensions", [])):
         other = fresh_outcome(prop, new, config)
+    if len(HANDLER_ERRORS) > n_err and _error(other):
+        return None, other, variant          # the harness's handler raised: not the engine's error
+    with registered(variant.get("extensions", [])):
+        scoped = in_scope(prop, new)
+    if not scoped:
+        return None, other, variant          # None by the documented contract, whatever the answer
     return _severity_same("I2", base, other), other, variant
 
 
@@ -669,6 +901,8 @@ def check_I5(prop, assum, config, base, rng, variant=None):
     else:
         new = from_srepr(variant["assum"])
     other = fresh_outcome(prop, new, config)
+    if not in_scope(prop, new):
+        return None, other, variant
     return _severity_same("I5", base, other), other, variant
 
 
@@ -710,6 +944,74 @@ I5_SYNTAX_RATE = 0.35
 #: share of I6 checks whose renamed query also runs in a fresh interpreter
 #: under another PYTHONHASHSEED (a subprocess: about a second each)
 I6_PROCESS_RATE = 0.04
+#: share of stream queries that also get a derived query (``derived_asks``)
+WIDEN_RATE = 0.35
+
+
+def _terms(exprs) -> list:
+    """Scalar terms the atoms of ``exprs`` are about."""
+    out = []
+    for e in exprs:
+        if not isinstance(e, Basic):
+            continue
+        for a in e.atoms(AppliedPredicate):
+            out.extend(x for x in a.arguments if isinstance(x, Basic) and _scalar(x))
+        for r in e.atoms(Relational):
+            out.extend(x for x in r.args if isinstance(x, Basic) and _scalar(x))
+    return sorted(set(out), key=str)
+
+
+def derived_asks(asks: Sequence[Ask], rng: random.Random, rate: float = WIDEN_RATE) -> List[Ask]:
+    """Queries derived from the stream's: the proposition combined with a
+    conjunct of its set (``And``, ``Or`` with the negation, ``Implies``,
+    ``Equivalent``), wrapped in ``Q.is_true``, negated, a conjunct asked
+    back or negated, or a relation between two terms of the query.  The
+    same checkers run on them; they reach shapes the profiles do not."""
+    out: List[Ask] = []
+    for it in asks:
+        if rng.random() >= rate:
+            continue
+        p, a = it.prop, it.assum
+        cs = _conjuncts(a)
+        opts = ["neg", "rel"]
+        if cs:
+            opts += ["and", "or", "implies", "equiv", "conj", "negconj"]
+        if isinstance(p, (AppliedPredicate, Relational)):
+            opts.append("is_true")
+        kind = rng.choice(opts)
+        c = rng.choice(cs) if cs else None
+        try:
+            if kind == "neg":
+                q = negate(p)
+            elif kind == "and":
+                q = And(p, c)
+            elif kind == "or":
+                q = Or(p, negate(c))
+            elif kind == "implies":
+                q = Implies(c, p)
+            elif kind == "equiv":
+                q = Equivalent(p, c)
+            elif kind == "conj":
+                q = c
+            elif kind == "negconj":
+                q = negate(c)
+            elif kind == "is_true":
+                q = Q.is_true(p)
+            else:
+                ts = _terms([p, a])
+                if len(ts) < 1:
+                    continue
+                t1 = rng.choice(ts)
+                t2 = rng.choice(ts + [S.Zero, S.One, S(-1), S.Infinity])
+                if t1 == t2:
+                    continue
+                q = rng.choice([Q.lt, Q.le, Q.gt, Q.ge, Q.eq, Q.ne, Lt, Le, Ge, Eq, Ne])(t1, t2)
+            if isinstance(q, BooleanAtom) or q in (True, False):
+                continue
+        except Exception:  # noqa: BLE001 - SymPy refused the construction
+            continue
+        out.append(Ask(q, a))
+    return out
 
 I7_SETTINGS = {
     "discovery_budget": [5, 40, 400, 5000],
@@ -939,7 +1241,8 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                source: str = "", max_violations: int = 5, shrink_them: bool = True,
                deadline: Optional[float] = None, progress: Optional[Callable[[str], None]] = None,
                i1_rounds: int = 3, slow_limit: float = 3.0, i2_rounds: int = 2,
-               clock: Callable[[], float] = time.time, family_cap: int = 2) -> InvReport:
+               clock: Callable[[], float] = time.time, family_cap: int = 2,
+               widen: bool = True) -> InvReport:
     """Every ``Ask`` of ``items`` (events are skipped: the registry is
     configuration, checked by ``python -m harness fuzz --custom``) through
     each checker in ``invs``; at most ``max_violations`` reports per
@@ -950,6 +1253,8 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
     rep = InvReport(source, config.name)
     t0 = time.time()
     asks = [it for it in items if isinstance(it, Ask)]
+    if widen:
+        asks = asks + derived_asks(asks, rng)
     seen = set()
     for idx, it in enumerate(asks):
         if deadline is not None and clock() > deadline:
