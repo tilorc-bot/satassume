@@ -127,11 +127,11 @@ only when propagation is inconclusive.
 | `satrefine/` | the refine layer (SymPy's `refine` dispatcher plus 56 handlers) with a selectable `ask` backend; see below |
 | `tests/refine/` | the refine handler tests, run under each backend |
 | `satrefine/tools/refine_scoreboard.py` | run `tests/refine` under every backend and compare outcomes |
-| `satrefine/reference/v3/` | the reference package the identity handlers are measured against (the parallel team's blind rewrite of the same 56 keys), selected with `SATREFINE_HANDLERS=handlers_v3`; see `agent-reports/2026-09-23-refine-three-implementations.md` |
+| `satrefine/reference/v3/` | the reference package the identity handlers are measured against (the parallel team's blind rewrite of the same 56 keys), selected with `SATREFINE_HANDLERS=handlers_v3`; see [docs/refine.md](docs/refine.md#three-implementations) |
 | `tests/refine_v3/` | its suite; any suite runs against any package |
 | `satrefine/tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
 | `satrefine/tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
-| `satrefine/identities/` (selected as `handlers_identities`) | the nine handler families as tables of identities and conditional rules, with rules generated from identities (offline, `satrefine/build/`) and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `satrefine/tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py` (run as `python -m satrefine.tools.<name>`; `tools/refine_*` are shims for phase 3); see `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and `2026-09-25-refine-identities-phase-2-results.md` |
+| `satrefine/identities/` (selected as `handlers_identities`) | the nine handler families as tables of identities and conditional rules, with rules generated from identities (offline, `satrefine/build/`) and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `satrefine/tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py` (run as `python -m satrefine.tools.<name>`; `tools/refine_*` are shims for phase 3); see [docs/refine.md](docs/refine.md) and [docs/refine-testing.md](docs/refine-testing.md) |
 | `docs/` | [design](docs/design.md) (engine, semantic decisions, relevance), [theories](docs/theories.md) (relations, LRA, EUF, transfer), [performance](docs/performance.md) (what landed, what was dropped, invariants), [testing](docs/testing.md) (suite, gates, fuzzers, asv), [agents](docs/agents.md) (rules for coding agents); for satrefine [refine](docs/refine.md) (design, layout, routing, open decisions) and [refine-testing](docs/refine-testing.md) (test trees, gates, what the checks found) |
 
 The dated agent reports that preceded `docs/` (2026-09-21 to 26) are in the
@@ -168,7 +168,7 @@ identities work kept only v3, as the reference (`satrefine/reference/v3/`,
 still selected as `handlers_v3`), and removed `handlers` and `handlers_v2`
 with their own tests: the last commit that has them with all their tests is `411038c` on
 `ri/refactor-retire` (`git checkout 411038c` runs them as described here;
-`agent-reports/archive/2026-09-26-phase3-refactor-retire-report.md`).
+[docs/refine.md](docs/refine.md#three-implementations)).
 
 | Package | Tests | Written by | What it is |
 |---|---|---|---|
@@ -188,7 +188,7 @@ PYTHONPATH=.:/path/to/sympy .venv/bin/python -m satrefine.tools.refine_oracle --
 ```
 
 How they compare, and what to build on, is in
-`agent-reports/2026-09-23-refine-three-implementations.md`. In short: the
+[docs/refine.md](docs/refine.md#three-implementations). In short: the
 original inherits three unsound matrix rules from SymPy and leaves relation
 errors unguarded; both rewrites refuse those rules; the parallel team's
 package is the only one with zero known defects after an adversarial pass
@@ -206,13 +206,12 @@ default package since 2026-09-25 (`satrefine.DEFAULT_HANDLERS`;
 `SATREFINE_HANDLERS=handlers_v3` selects the reference). `tests/refine/`
 runs against it: cases it handles worse are strict xfails pointing at
 `tests/refine_identities/needs/test_default_*.py`
-(`agent-reports/archive/2026-09-25-phase3-default-report.md`); the tests of the
+([docs/refine-testing.md](docs/refine-testing.md#needs-open-requests)); the tests of the
 original package's internals were removed with it in phase 3. On the 1,736-case battery
 recorded from the `handlers_v3` suite it gives 0 wrong and 0 crash and
 matches v3 on 1,073 of v3's 1,086 rewrites, in about a third of v3's
-per-family code. Results are in
-`agent-reports/2026-09-24-refine-identities-phase-1-results.md` and
-`agent-reports/2026-09-25-refine-identities-phase-2-results.md`.
+per-family code. How it works is in [docs/refine.md](docs/refine.md), its
+verification and numbers in [docs/refine-testing.md](docs/refine-testing.md).
 
 Its layout (issue #13): `satrefine/identities/` is what runs on every
 `refine` call (`core/`: driver, termination guard, proving, matching,

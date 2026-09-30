@@ -24,7 +24,7 @@
 # section; a section the baseline lacks (a gate added since) prints "no baseline".
 # Re-running into an existing OUTDIR only re-runs the tasks that did not finish with
 # exit 0 (the suite: exit 0 or 1), so a run cut short by a timeout can be completed.
-# Start it detached and wait in short chunks (agent-reports/...how-work-gets-lost.md, section 6):
+# Start it detached and wait in short chunks (docs/agents.md, "Long-running commands"):
 #   nohup satrefine/tools/refine_gates.sh /path/out > /path/out.log 2>&1 &
 set -u
 out=${1:?usage: refine_gates.sh OUTDIR [BASEDIR]}

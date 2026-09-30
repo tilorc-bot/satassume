@@ -5,8 +5,8 @@
 A row is ``(lhs, rhs)``, in an ``add_rules`` block whose ``assuming`` facts are
 its hypothesis: it fires when the hypothesis, with the facts ``ASSUMED`` about
 the variables of its left side, is provable through the dispatcher's ``ask``.  The rules are those stated in
-``handlers_v3/matrices.py`` (356 lines), in **32 rows**: Transpose 5,
-Inverse 4, Determinant 2, Trace 1, MatAdd 4, HadamardProduct 1, MatMul 12,
+``handlers_v3/matrices.py`` (356 lines), in **30 rows**: Transpose 5,
+Inverse 4, Determinant 2, Trace 1, MatAdd 4, HadamardProduct 1, MatMul 10,
 MatrixElement 3.
 
 Pattern forms (requested in
@@ -41,7 +41,7 @@ provably positive symbolic size is enough, and exactly true); the orthogonal
 ``Inverse`` rows come first, so ``Inverse``'s unitary row needs no guard;
 a zero factor on either side of a product is one row (``X*W`` with
 ``Q.zero(X) | Q.zero(W)``; merged 2026-09-24 after the row ablation in
-``agent-reports/archive/data/2026-09-24-ablation-plain.md``: no battery case, test
+``docs/refine-testing.md``, "Oracle, ablation, table verification": no battery case, test
 or fuzz input moved).
 
 Not expressible as rows:
