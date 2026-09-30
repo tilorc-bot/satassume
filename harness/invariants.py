@@ -928,11 +928,13 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                source: str = "", max_violations: int = 5, shrink_them: bool = True,
                deadline: Optional[float] = None, progress: Optional[Callable[[str], None]] = None,
                i1_rounds: int = 3, slow_limit: float = 3.0, i2_rounds: int = 2,
-               clock: Callable[[], float] = time.time) -> InvReport:
+               clock: Callable[[], float] = time.time, family_cap: int = 2) -> InvReport:
     """Every ``Ask`` of ``items`` (events are skipped: the registry is
     configuration, checked by ``python -m harness fuzz --custom``) through
     each checker in ``invs``; at most ``max_violations`` reports per
-    invariant per stream."""
+    invariant per stream, and ``family_cap`` of the same shape (invariant,
+    severity, base answer, variant answer), so that one large family does
+    not spend the budget on shrinking."""
     rng = random.Random(seed)
     rep = InvReport(source, config.name)
     t0 = time.time()
@@ -985,6 +987,9 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                 v.known = _known(v)
                 if v.known and any(w.known == v.known for w in rep.violations):
                     continue          # one finding covers a known family
+                fam = (inv, sev, b, other)
+                if sum((w.inv, w.severity, w.base, w.other) == fam for w in rep.violations) >= family_cap:
+                    continue          # the same shape again (the I2 definite -> None flood): shrinking costs
                 if shrink_them:
                     try:
                         shrink(v)
