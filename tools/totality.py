@@ -33,8 +33,17 @@ The SAT model is the counterexample (the child assignment).
         [--corpus queries.jsonl] [--stream stream.pkl] [--json OUT]
 
 Without ``--corpus``/``--stream`` only the synthetic list of ``load_exprs``
-is checked (about 1 s); with both, every subexpression of the corpus and
-the refine stream (372 blocks at c26e5e1, about 6 s).
+is checked (about 2 s); with both, every subexpression of the corpus and
+the refine stream (about 380 blocks, about 6 s).
+
+Only compiled patterns are checked.  The plain formulas some templates
+emit alongside them (the unit facts of a constant-argument node such as
+``asin(7)`` or ``(-1)**I``: facts about the node alone, computed from the
+constant) are not: they have no children, so totality would only mean
+they are satisfiable, which the compiler's constant resolution already
+guarantees.  Their count is reported as "formula-only".  A template that
+cannot be compiled for an expression raises: the gate must not pass
+because a block was skipped.
 """
 from __future__ import annotations
 
@@ -90,7 +99,7 @@ def number_units(k, o):
     return out
 
 
-def derived_constraints(comp, depth=0):
+def derived_constraints(comp, depth=1):
     """Clauses (in the parent's slot space, possibly with extra slots) that
     the derived nodes' own template blocks impose: slot ``k > node`` holds
     ``objs[k]``, whose own patterns relate it to its arguments.  With
@@ -116,10 +125,7 @@ def derived_constraints(comp, depth=0):
             continue
         seen.add(k)
         o = objs[k]
-        try:
-            compiled, _ = registry.clauses_for(o)
-        except Exception:
-            continue
+        compiled, _ = registry.clauses_for(o)
         for c in compiled:
             m = {}
             for j, oj in enumerate(c.objs):
@@ -219,20 +225,20 @@ def clause_str(lits, node):
     return " | ".join(("~" if neg else "") + f"{PREDICATES[i]}({name(k)})" for k, i, neg in lits)
 
 
-def collect_patterns(exprs, verbose=False):
+def collect_patterns(exprs):
+    """``(blocks, formulas_only)``: the distinct node blocks of every
+    subexpression of ``exprs`` as ``key -> (expr, compiled patterns)``, one
+    representative per combination of compiled patterns, and the number of
+    nodes that also emit plain formulas.  A template that raises on an
+    expression propagates: nothing is skipped."""
     from satassume.templates import registry
-    from satassume.templates._common import Compiled
     seen = {}
     formulas_only = 0
     walk = set()
     for e in exprs:
-        for sub in e.atoms() | set(e.args) | {e} | set(sub for sub in _subexprs(e)):
-            walk.add(sub)
+        walk |= _subexprs(e)
     for e in walk:
-        try:
-            compiled, formulas = registry.clauses_for(e)
-        except Exception as ex:  # noqa: BLE001
-            continue
+        compiled, formulas = registry.clauses_for(e)
         if formulas:
             formulas_only += 1
         if not compiled:
@@ -289,19 +295,35 @@ def _subexprs(e):
     return out
 
 
+def _expressions_of(obj):
+    """The scalar expressions of a Boolean (the arguments of its applied
+    predicates and the sides of its relations) or the expression itself."""
+    from sympy.assumptions.assume import AppliedPredicate
+    from sympy.core.expr import Expr
+    from sympy.core.relational import Relational
+    if not hasattr(obj, "atoms"):
+        return []
+    if isinstance(obj, Expr):
+        return [obj]
+    out = []
+    for ap in obj.atoms(AppliedPredicate):
+        out.extend(a for a in ap.arguments if isinstance(a, Expr))
+    for rel in obj.atoms(Relational):
+        out.extend(a for a in rel.args if isinstance(a, Expr))
+    return out
+
+
 def load_exprs(corpus=None, stream=None):
     from sympy import Symbol, symbols, I, pi, oo, E, Rational, Integer, Float  # noqa
     from sympy import sin, cos, tan, cot, exp, log, sqrt, Abs, acos, asin, atan, acot, sinh, cosh, tanh  # noqa
     from sympy import re, im, sign, conjugate, floor, ceiling, factorial, Function  # noqa
     exprs = []
     if corpus:
-        import re as _re
-        from sympy import sympify, srepr  # noqa
-        from sympy.core.symbol import Symbol  # noqa
-        from sympy.assumptions import Q  # noqa
+        # records of tools/compare.py: ``prop``/``assum`` (srepr of a
+        # Boolean) or ``expr`` (an old-system record); records that do not
+        # rebuild (a removed class) are skipped like compare.py skips them
         ns = {}
         exec("from sympy import *\nfrom sympy.assumptions import Q\nfrom sympy.core.symbol import Symbol", ns)
-        n = 0
         with open(corpus) as fh:
             for line in fh:
                 d = json.loads(line)
@@ -311,42 +333,15 @@ def load_exprs(corpus=None, stream=None):
                         continue
                     try:
                         obj = eval(v, ns)
-                    except Exception:
+                    except Exception:  # noqa: BLE001  (unreplayable record)
                         continue
-                    for a in getattr(obj, "atoms", lambda *x: ())(
-                            *[]) if False else []:
-                        pass
-                    # arguments of applied predicates
-                    from sympy.assumptions.assume import AppliedPredicate
-                    from sympy.core.relational import Relational
-                    from sympy.core.expr import Expr
-                    if not hasattr(obj, "atoms"):
-                        continue
-                    if isinstance(obj, Expr):
-                        exprs.append(obj)
-                    else:
-                        for ap in obj.atoms(AppliedPredicate):
-                            exprs.extend(a for a in ap.arguments if isinstance(a, Expr))
-                        for rel in obj.atoms(Relational):
-                            exprs.extend(a for a in rel.args if isinstance(a, Expr))
-                    n += 1
+                    exprs.extend(_expressions_of(obj))
     if stream:
-        from sympy.assumptions.assume import AppliedPredicate
-        from sympy.core.relational import Relational
-        from sympy.core.expr import Expr
         with open(stream, "rb") as fh:
             st = pickle.load(fh)
         for p, a, r in st:
-            for obj in (p, a):
-                if not hasattr(obj, "atoms"):
-                    continue
-                if isinstance(obj, Expr):
-                    exprs.append(obj)
-                    continue
-                for ap in obj.atoms(AppliedPredicate):
-                    exprs.extend(x for x in ap.arguments if isinstance(x, Expr))
-                for rel in obj.atoms(Relational):
-                    exprs.extend(x for x in rel.args if isinstance(x, Expr))
+            exprs.extend(_expressions_of(p))
+            exprs.extend(_expressions_of(a))
     # synthetic: every registered function class on symbols with declared
     # facts, and the node shapes of every non-total family found so far
     # (the fast mode of tests/test_totality.py runs this list alone, so a
@@ -389,14 +384,51 @@ def load_exprs(corpus=None, stream=None):
     return exprs
 
 
+def check_block(e, compiled, models, depth=1, independent=False):
+    """Check the block of node ``e`` (the union of its compiled patterns):
+    None if total, else ``(union, assignment, fired)`` with the child
+    assignment (slot -> true predicate indices) and the fired clauses."""
+    pat = _Union(e, compiled)
+    comp = _Comp(tuple(pat.objs), pat)
+    extra = () if independent else derived_constraints(comp, depth)
+    r = check_pattern(pat, models, extra)
+    if r is None:
+        return None
+    assign, fired = r
+    return pat, assign, fired
+
+
+def run(exprs, depth=1, independent=False, models=None):
+    """Check every distinct node block of the subexpressions of ``exprs``:
+    ``(failures, checked, formulas_only)`` with ``failures`` a list of
+    ``(expr, union, assignment, fired)``.  The gate (tests/test_totality.py)
+    and ``main`` both run this."""
+    if models is None:
+        models = rule_models()
+    pats, formulas_only = collect_patterns(exprs)
+    failures = []
+    for key, (e, compiled) in pats.items():
+        r = check_block(e, compiled, models, depth, independent)
+        if r is not None:
+            pat, assign, fired = r
+            failures.append((e, pat, assign, fired))
+    return failures, len(pats), formulas_only
+
+
+def describe(e, pat, assign, fired):
+    """One failure as a JSON-friendly dict (used by ``--json`` and the test)."""
+    return {"expr": repr(e), "type": type(e).__name__, "node": pat.node, "slots": list(pat.used),
+            "assignment": {str(k): sorted(PREDICATES[i] for i in t) for k, t in assign.items()},
+            "fired": [clause_str(l, pat.node) for l, _, _ in fired]}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus")
     ap.add_argument("--stream")
-    ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--json")
-    ap.add_argument("--depth", type=int, default=0,
-                    help="include the arguments' own blocks this many levels down")
+    ap.add_argument("--depth", type=int, default=1,
+                    help="include the arguments' own blocks this many levels down (the gate: 1)")
     ap.add_argument("--independent", action="store_true",
                     help="treat derived slots as independent of the arguments (the naive check)")
     args = ap.parse_args()
@@ -404,21 +436,11 @@ def main():
     models = rule_models()
     print(f"rule-base models: {len(models)}")
     exprs = load_exprs(args.corpus, args.stream)
-    pats, formulas_only = collect_patterns(exprs, args.verbose)
-    print(f"expressions: {len(exprs)}; distinct node blocks (pattern combinations): {len(pats)}; "
-          f"nodes with formula-only templates: {formulas_only}")
-    failures = []
-    total = 0
-    for key, (e, compiled) in pats.items():
-        pat = _Union(e, compiled)
-        comp = _Comp(tuple(pat.objs), pat)
-        r = check_pattern(pat, models, derived_constraints(comp, args.depth) if not args.independent else ())
-        total += 1
-        if r is None:
-            continue
-        assign, fired = r
-        failures.append((pat, e, assign, fired))
-    print(f"checked {total} patterns in {time.time() - t0:.1f}s; non-total: {len(failures)}")
+    failures, total, formulas_only = run(exprs, args.depth, args.independent, models)
+    print(f"expressions: {len(exprs)}; distinct node blocks (pattern combinations): {total}; "
+          f"nodes with formula-only templates (plain formulas not checked): {formulas_only}")
+    failures = [(pat, e, assign, fired) for e, pat, assign, fired in failures]
+    print(f"checked {total} blocks in {time.time() - t0:.1f}s; non-total: {len(failures)}")
     out = []
     for pat, e, assign, fired in failures:
         print(f"\n=== block of {e!r} (type {type(e).__name__}, {len(pat.clauses)} clauses, slots {pat.used}, node slot {pat.node})")
@@ -428,9 +450,7 @@ def main():
         print("  fired clauses (all child literals false; no node model satisfies them together):")
         for lits, _, _ in fired[:40]:
             print("    " + clause_str(lits, pat.node))
-        out.append({"expr": repr(e), "type": type(e).__name__, "node": pat.node, "slots": list(pat.used),
-                    "assignment": {str(k): sorted(PREDICATES[i] for i in t) for k, t in assign.items()},
-                    "fired": [clause_str(l, pat.node) for l, _, _ in fired]})
+        out.append(describe(e, pat, assign, fired))
     fam = {}
     for pat, e, assign, fired in failures:
         key = tuple(sorted(set(clause_str(l, pat.node) for l, _, _ in fired)))
