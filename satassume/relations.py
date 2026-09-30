@@ -385,6 +385,7 @@ class Relations:
         self.queue: List[P] = []          # allocated, not yet interpreted
         self.linked: set = set()
         self._bounded: set = set()        # constant terms whose bounds are asserted
+        self._guards: dict = {}           # terms -> guard literals (_guard)
         self.top: dict = {}               # vocabulary-atom arguments of user formulas
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
@@ -523,9 +524,14 @@ class Relations:
     def _guard(self, ad, terms) -> list:
         """``[-real(u), ...]`` for the opaque terms ``u`` of a guarded
         theory atom (clause 3); a constant term gets its bounds asserted
-        (once per session) and no literal when it is real at the root."""
+        (once per session) and no literal when it is real at the root.
+        Memoized per session and term list (never mutate the result)."""
+        key = (ad, tuple(terms))
+        guard = self._guards.get(key)
+        if guard is not None:
+            return guard
         s = self.session
-        guard = []
+        guard = self._guards[key] = []
         for u in terms:
             if _is_number(u):
                 if u not in self._bounded:
@@ -585,6 +591,8 @@ class Relations:
     def _closed_extended_real(self, e):
         """``extended_real`` of a closed side, context-free (``nan`` is
         none); None if unknown or not closed."""
+        if getattr(e, "is_Rational", False):
+            return True
         if not _is_number(e):
             return None
         from sympy import S
