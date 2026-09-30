@@ -372,6 +372,20 @@ def test_end_to_end_answers(prop, assum, expected):
     assert _ask(prop, assum) == expected
 
 
+@pytest.mark.skipif(not __import__("satassume.lra_adapter").lra_adapter.GENERIC_CONSTANTS,
+                    reason="general constants are bounded terms")
+def test_general_constants_are_numbers():
+    from sympy import log, sin
+    from satassume import lra_adapter as ad
+    assert ad.terms(Q.lt(x, log(2))) == [x] and ad.terms(Q.lt(log(2) * x, 1)) == [x]
+    assert _ask(Q.lt(xr, 2), Q.le(log(2) * xr, 1)) is True           # xr <= 1.44...
+    assert _ask(Q.lt(xr, Rational(144, 100)), Q.le(log(2) * xr, 1)) is None
+    assert _ask(Q.integer(xr / sin(1)), Q.gt(xr, 0) & Q.lt(xr, sin(1))) is False
+    # exact ties beyond the old 128-bit bounds
+    near = Rational(int(sympy.log(2).evalf(80) * 10 ** 60), 10 ** 60)
+    assert _ask(Q.lt(near, log(2))) is True
+
+
 def test_inconsistent_with_constant_coefficients():
     assert _ask(Q.positive(xr), Q.gt(pi * xr, 4) & Q.lt(xr, 1)) == "inconsistent"
     assert _ask(Q.positive(xr), Q.gt(pi * xr, 3) & Q.lt(xr, 1)) is True

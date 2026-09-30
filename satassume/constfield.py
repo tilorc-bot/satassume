@@ -1314,15 +1314,24 @@ def _from_sympy(e, generic=True):
 
 
 def _generic(e):
-    from .lra_adapter import constant_bounds
+    """An indeterminate for a closed real constant with rigorous bounds
+    (:func:`satassume.lra_adapter.constant_bounds`), enclosed at any
+    precision by the same interval evaluation at a higher working
+    precision (:func:`satassume.lra_adapter.constant_enclosure`)."""
+    from .lra_adapter import constant_bounds, constant_enclosure
     b = constant_bounds(e)
     if b is None:
         raise _Unread(e)
-    lo, hi = b
+    lo0, hi0 = b
+    mag = max(abs(lo0), abs(hi0))
+    mag = mag.numerator.bit_length() - mag.denominator.bit_length() + 1
 
     def enclose(prec: int) -> tuple[int, int]:
+        # absolute 2**-prec: relative precision prec plus the magnitude
+        r = constant_enclosure(e, prec + max(mag, 0) + 8) if prec > 64 else None
+        lo, hi = r if r is not None else (lo0, hi0)
         return _qenc(lo, prec)[0], _qenc(hi, prec)[1]
-    return constant(("sympy", e), enclose, max_prec=128, name=str(e))
+    return constant(("sympy", e), enclose, name=str(e))
 
 
 def _sympy_constant(c: Constant):
