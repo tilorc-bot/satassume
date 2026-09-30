@@ -52,7 +52,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from sympy import Function, I, Q, Rational, S, Symbol, pi, sqrt, Float, oo
+from sympy import Function, Q, Rational, S, Symbol, pi, sqrt, Float, oo
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or

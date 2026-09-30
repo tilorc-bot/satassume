@@ -34,7 +34,7 @@ One builder (``QueryGen``) is driven either by a seeded ``random.Random``
 from __future__ import annotations
 
 import random
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence
 
 from sympy import (Abs, Dummy, E, Eq, EulerGamma, Float, Function, Ge, GoldenRatio, Gt,
                    I, Integer, Le, Lt, MatrixSymbol, Ne, Predicate, Q, Rational, S, Symbol,

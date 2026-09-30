@@ -123,12 +123,6 @@ def write_stream(path: str, items: Sequence[Item], meta: Optional[dict] = None) 
         json.dump({"meta": meta or {}, "items": [item_to_json(i) for i in items]}, f)
 
 
-def read_stream(path: str) -> Tuple[List[Item], dict]:
-    with open(path) as f:
-        d = json.load(f)
-    return [item_from_json(i) for i in d["items"]], d.get("meta", {})
-
-
 # --------------------------------------------------------------------------
 # orders
 # --------------------------------------------------------------------------
@@ -423,6 +417,8 @@ def clear_state(eng, part: str) -> None:
         eng.splits.clear()
     if part in ("failed", "all"):
         eng._failed.clear()
+        # the validity key of ``_failed`` on main (#63 removes the attribute;
+        # drop this line with it)
         eng._failed_state = None
     if part not in STATE_PARTS + ("all",):
         raise ValueError(part)

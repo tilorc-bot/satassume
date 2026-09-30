@@ -28,8 +28,8 @@ import sys
 import time
 from typing import List
 
-from .checker import (Ask, Checker, Discrepancy, ORDERS, ReferenceLevel, confirm, execute,
-                      is_known_family, item_from_json, read_stream, run_in_process, write_repro,
+from .checker import (Ask, Checker, Discrepancy, ReferenceLevel, confirm, execute,
+                      is_known_family, item_from_json, run_in_process, write_repro,
                       write_stream)
 from .state import PRESETS, EngineConfig, MODULE_CONFIG, MODULE_CONSTANTS, MODULE_STATE, inventory, preset
 
@@ -346,7 +346,6 @@ def cmd_exec(args) -> int:
 def cmd_inventory(args) -> int:
     from .state import MODULE_INTERNED, import_all
     import_all()
-    known = set(MODULE_STATE) | set(MODULE_CONSTANTS) | set(MODULE_CONFIG) | set(MODULE_INTERNED)
     unknown = []
     for mod, attr, tp in inventory():
         tag = ("state" if (mod, attr) in set(MODULE_STATE) else

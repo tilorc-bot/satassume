@@ -46,7 +46,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pytest hypothesis sympy mpmath
+      - run: pip install pytest hypothesis sympy mpmath z3-solver
       - name: campaign (${{ matrix.shard }})
         env:
           SEED_OFFSET: ${{ inputs.seed_offset }}

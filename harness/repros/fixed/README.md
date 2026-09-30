@@ -3,8 +3,9 @@
 History-dependent answers that no longer differ on `main`: the long-lived
 engine and a fresh one now answer the final query the same.  Kept as
 regression tests (`test_fixed_repro_stays_fixed` in `tests/test_history.py`
-fails if they differ again); `python -m harness repro fixed/NAME.json`
-prints `still_differs`.
+fails if they differ again); run from the repository root,
+`python -m harness repro harness/repros/fixed/NAME.json` prints
+`still_differs`.
 
 | repro | family | fixed by |
 |---|---|---|

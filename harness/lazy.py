@@ -48,13 +48,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Sequence, Tuple
 
-from sympy import (Abs, E, Eq, Function, I, Integer, Ne, Q, Rational, S, Symbol, cos, exp, oo, pi,
-                   sin, sqrt)
+from sympy import Abs, E, Eq, Function, Integer, Ne, Q, Rational, S, exp, oo, pi, sin, sqrt
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or
-
-from .checker import Ask
 
 f, g = Function("f"), Function("g")
 
@@ -103,26 +100,6 @@ def rel_names_of(b) -> set:
 
 def has_relation(b) -> bool:
     return bool(rel_names_of(b))
-
-
-def has_equality(b) -> bool:
-    return bool(rel_names_of(b) & {"eq", "ne"})
-
-
-def relation_sides(b) -> List[Any]:
-    """Sides of the relations in the Boolean ``b`` (the terms the relation
-    glue links), without repeats."""
-    out: dict = {}
-    if b is True or b is False or not hasattr(b, "atoms"):
-        return []
-    for r in sorted_atoms(b, Relational):
-        out[r.lhs] = None
-        out[r.rhs] = None
-    for a in sorted_atoms(b, AppliedPredicate):
-        if str(a.function.name) in RELATION_NAMES:
-            for e in a.arguments:
-                out[e] = None
-    return list(out)
 
 
 def relation_atoms(b) -> List[Any]:

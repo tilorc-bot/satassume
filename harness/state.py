@@ -44,16 +44,13 @@ from __future__ import annotations
 import dataclasses
 import importlib
 import sys
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from satassume.engine import AnswerMemo, DictCache, Engine
 
 # --------------------------------------------------------------------------
 # engine configuration
 # --------------------------------------------------------------------------
-
-RELATION_CHOICES = ("default", "none", "lra", "euf")
-
 
 @dataclasses.dataclass(frozen=True)
 class EngineConfig:
@@ -311,18 +308,3 @@ def reset_module_state(sympy_cache: bool = True) -> None:
     if sympy_cache:
         from sympy.core.cache import clear_cache
         clear_cache()
-
-
-def engine_state_summary(eng: Engine) -> Dict[str, Any]:
-    """Sizes of the engine-level state, for reports."""
-    sessions = list(eng._context_sessions.values())
-    return {
-        "cache_nodes": len(eng.cache.store),
-        "custom_cache_nodes": len(eng.custom_cache.store),
-        "answers": len(eng.answers),
-        "splits": len(eng.splits),
-        "sessions": len(sessions),
-        "session_nodes": [len(s.base) for s, _ in sessions],
-        "failed": len(eng._failed),
-        "stats": dict(eng.stats),
-    }
