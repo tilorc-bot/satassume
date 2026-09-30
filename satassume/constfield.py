@@ -285,17 +285,88 @@ def _pow(p, k: int):
     return r
 
 
+def _too_many_bits(q: Fraction) -> bool:
+    return q.denominator.bit_length() > MAX_BITS or q.numerator.bit_length() > MAX_BITS
+
+
+def _add_bounded(a, b):
+    """:func:`_add`, or TooLarge as soon as a coefficient of the sum has
+    more than :data:`MAX_BITS` bits."""
+    ta, tb = type(a) is Fraction, type(b) is Fraction
+    if ta and tb:
+        r = a + b
+        if _too_many_bits(r):
+            raise TooLarge(f"a coefficient exceeds {MAX_BITS} bits")
+        return r
+    if ta:
+        a, b = b, a
+    elif not tb:
+        va, vb = a[0], b[0]
+        if va == vb:
+            ca, cb = a[1], b[1]
+            if len(ca) < len(cb):
+                ca, cb = cb, ca
+            cs = [_add_bounded(x, y) for x, y in zip(ca, cb)]
+            cs.extend(ca[len(cb):])
+            return _mk(va, cs)
+        if va < vb:
+            a, b = b, a
+    if _zero(b):
+        return a
+    cs = a[1]
+    return (a[0], (_add_bounded(cs[0], b),) + cs[1:])
+
+
+def _mul_bounded(a, b):
+    """:func:`_mul`, or TooLarge as soon as a partial sum of a coefficient
+    has more than :data:`MAX_BITS` bits.  For factors whose coefficient
+    products fit the budget (see :func:`_mul_fast`): a coefficient sums
+    products with different denominators, and its common denominator can
+    grow with the number of summands; checked while it grows, the work
+    stays bounded (at most :data:`MAX_WORK` operations on numbers of at
+    most twice :data:`MAX_BITS` bits) instead of running for seconds on
+    ever larger numbers and refusing the result afterwards."""
+    ta, tb = type(a) is Fraction, type(b) is Fraction
+    if ta or tb:
+        return _mul(a, b)
+    va, vb = a[0], b[0]
+    if va == vb:
+        ca, cb = a[1], b[1]
+        out = [_ZERO] * (len(ca) + len(cb) - 1)
+        for i, x in enumerate(ca):
+            if _zero(x):
+                continue
+            for j, y in enumerate(cb):
+                if not _zero(y):
+                    out[i + j] = _add_bounded(out[i + j], _mul_bounded(x, y))
+        return (va, tuple(out))
+    if va < vb:
+        a, b = b, a
+    return (a[0], tuple(_mul_bounded(x, b) for x in a[1]))
+
+
+def _mul_fast(sa, sb) -> bool:
+    """Whether no coefficient of a product of polynomials of sizes ``sa``
+    and ``sb`` (:func:`_psize`, or bounds of them) can exceed
+    :data:`MAX_BITS` bits: a coefficient sums at most ``min(terms)``
+    products of at most ``bits(a) + bits(b)`` bits each, and a sum of
+    ``k`` fractions of ``B`` bits has at most ``k*B`` bits in the
+    denominator and ``k*B + log2(k)`` in the numerator."""
+    return min(sa[1], sb[1]) * (sa[2] + sb[2] + 1) <= MAX_BITS
+
+
 def _mul_checked(a, b):
     """``a * b``, or TooLarge before the work of the product (terms times
-    terms) or after its size exceeds the budget."""
+    terms), while a coefficient grows too large, or after its size
+    exceeds the budget."""
     if type(a) is Fraction or type(b) is Fraction:
         return _mul(a, b)
     sa, sb = _psize(a), _psize(b)
     if sa[0] + sb[0] > MAX_DEGREE or sa[2] + sb[2] > MAX_BITS or sa[1] * sb[1] > MAX_WORK:
-        raise TooLarge("a product in a power exceeds the size budget")
-    r = _mul(a, b)
+        raise TooLarge("a product exceeds the size budget")
+    r = _mul(a, b) if _mul_fast(sa, sb) else _mul_bounded(a, b)
     if _psize(r)[1] > MAX_TERMS:
-        raise TooLarge("a power has more terms than the size budget")
+        raise TooLarge("a product has more terms than the size budget")
     return r
 
 
@@ -474,9 +545,18 @@ def _inner_gcd(a, b):
 
 
 def _denominators(p, acc: int) -> int:
+    """The lcm of ``acc`` and the denominators of ``p``'s coefficients;
+    TooLarge once it has more than :data:`MAX_BITS` bits (the gcd over ZZ
+    of polynomials with a common denominator of 240000 bits, 121 terms
+    with distinct 2000-bit denominators, took 5 s)."""
     if type(p) is Fraction:
         d = p.denominator
-        return acc if acc % d == 0 else acc * d // _igcd(acc, d)
+        if acc % d == 0:
+            return acc
+        acc = acc * d // _igcd(acc, d)
+        if acc.bit_length() > MAX_BITS:
+            raise TooLarge(f"a common denominator exceeds {MAX_BITS} bits")
+        return acc
     for c in p[1]:
         acc = _denominators(c, acc)
     return acc
@@ -507,10 +587,10 @@ def _from_dmp(f, vs: list, i: int):
 def _sympy_inner_gcd(a, b):
     """:func:`_inner_gcd` by SymPy's ``dmp_inner_gcd`` over ZZ (the
     heuristic gcd, with a PRS fallback inside SymPy)."""
+    da, db = _denominators(a, 1), _denominators(b, 1)   # TooLarge before importing SymPy
     from sympy.polys.domains import ZZ
     from sympy.polys.euclidtools import dmp_inner_gcd
     vs = sorted(_vars(b, _vars(a, set())), reverse=True)
-    da, db = _denominators(a, 1), _denominators(b, 1)
     h, fa, fb = dmp_inner_gcd(_to_dmp(a, vs, 0, da, ZZ), _to_dmp(b, vs, 0, db, ZZ),
                               len(vs) - 1, ZZ)
     g = _from_dmp(h, vs, 0)
@@ -891,14 +971,19 @@ class Element:
         if bits > MAX_BITS:
             raise TooLarge(f"{bits}-bit coefficients exceed the size budget")
 
-    def _budget_product(self, o: Element) -> None:
+    def _budget_product(self, o: Element):
         """Refuse ``self * o`` or ``self + o`` before computing it when the
         result would exceed the budget (degrees and bits add, the work is
-        the product of the numbers of terms)."""
+        the product of the numbers of terms); otherwise the multiplication
+        for the numerators and denominators: :func:`_mul` when no
+        coefficient can outgrow the budget (:func:`_mul_fast`), else
+        :func:`_mul_bounded`, which refuses a growing common denominator
+        of a coefficient as soon as it is too large."""
         a, b = self._size(), o._size()
         if a[0] + b[0] > MAX_DEGREE or a[2] + b[2] > MAX_BITS or a[1] * b[1] > MAX_WORK:
             raise TooLarge(f"a result of degree {a[0] + b[0]}, {a[2] + b[2]}-bit "
                            f"coefficients, {a[1] * b[1]} term products exceeds the size budget")
+        return _mul if min(a[1], b[1]) * (a[2] + b[2] + 1) <= MAX_BITS else _mul_bounded   # _mul_fast
 
     def _single_transcendental(self, other=None) -> bool:
         vs = self._varset()
@@ -940,16 +1025,18 @@ class Element:
         an, ad, bn, bd = self._n, self._d, o._n, o._d
         if ad == bd:
             return _checked(_make(_add(an, bn), ad))
-        self._budget_product(o)
+        mul = self._budget_product(o)
         # the results below are nonzero: a = -b would have ad == bd
         if type(ad) is Fraction:             # gcd(an*bd + bn, bd) = 1
-            return _checked(Element._new(_add(_mul(an, bd), bn), bd))
+            return _checked(Element._new(_add(mul(an, bd), bn), bd))
         if type(bd) is Fraction:
-            return _checked(Element._new(_add(an, _mul(bn, ad)), ad))
+            return _checked(Element._new(_add(an, mul(bn, ad)), ad))
         g, ad1, bd1 = _inner_gcd(ad, bd)
         if type(g) is Fraction:              # coprime denominators: lowest terms, monic
-            return _checked(Element._new(_add(_mul(an, bd), _mul(bn, ad)), _mul(ad, bd)))
-        return _checked(_make(_add(_mul(an, bd1), _mul(bn, ad1)), _mul(_mul(ad1, bd1), g)))
+            return _checked(Element._new(_add(mul(an, bd), mul(bn, ad)), mul(ad, bd)))
+        # cofactors can have other sizes than ad, bd: checked afresh
+        return _checked(_make(_add(_mul_checked(an, bd1), _mul_checked(bn, ad1)),
+                              _mul_checked(_mul_checked(ad1, bd1), g)))
 
     __radd__ = __add__
 
@@ -976,14 +1063,17 @@ class Element:
                 return self
             self._budget_scale(o)
             return Element._new(_scale(self._n, o), self._d)
-        self._budget_product(o)
+        mul = self._budget_product(o)
         an, ad, bn, bd = self._n, self._d, o._n, o._d
         if type(ad) is Fraction and type(bd) is Fraction:
-            return _checked(_make(_mul(an, bn), _ONE))
-        # cross gcds keep the result in lowest terms
-        _, an, bd = _inner_gcd(an, bd)
-        _, bn, ad = _inner_gcd(bn, ad)
-        n, d = _mul(an, bn), _mul(ad, bd)
+            return _checked(_make(mul(an, bn), _ONE))
+        # cross gcds keep the result in lowest terms; cofactors of a
+        # nontrivial gcd can have other sizes: checked afresh
+        g1, an, bd = _inner_gcd(an, bd)
+        g2, bn, ad = _inner_gcd(bn, ad)
+        if type(g1) is not Fraction or type(g2) is not Fraction:
+            mul = _mul_checked
+        n, d = mul(an, bn), mul(ad, bd)
         if type(d) is Fraction:
             return _checked(_make(n, d))
         return _checked(Element._new(n, d))  # monic: product of monics
