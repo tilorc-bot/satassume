@@ -32,11 +32,12 @@ import random
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sympy import Dummy, Eq, Function, Ge, Gt, Le, Lt, Ne, Q, Symbol, exp, sqrt, pi, S
+from sympy import Basic, Dummy, Eq, Function, Ge, Gt, Le, Lt, Ne, Q, Symbol, exp, sqrt, pi, S
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.function import AppliedUndef
 from sympy.core.relational import Relational
-from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or
+from sympy.matrices.expressions import MatrixExpr
+from sympy.logic.boolalg import And, BooleanAtom, Equivalent, Implies, Not, Or
 
 import satassume.sympy_api as _api
 from satassume.rules import PREDICATES
@@ -59,6 +60,18 @@ def _definite(o: str) -> bool:
 
 def _error(o: str) -> bool:
     return o.startswith("Error:") or o.startswith("Value:")
+
+
+def negate(p):
+    """The logical negation of ``p``.  SymPy's ``Not(rel)`` *rewrites* a
+    ``Relational`` (``Not(x >= a)`` becomes ``x < a``), which is not the
+    negation when ``x`` can be non-real: the negation is built with
+    ``evaluate=False`` (``Not(Not(q))`` is ``q``; a Boolean atom flips)."""
+    if isinstance(p, Not):
+        return p.args[0]
+    if isinstance(p, BooleanAtom):
+        return Not(p)
+    return Not(p, evaluate=False)
 
 
 # --------------------------------------------------------------------------
@@ -260,6 +273,31 @@ _RSWAP = {Lt: Gt, Gt: Lt, Le: Ge, Ge: Le, Eq: Eq, Ne: Ne}
 _QREL = {Lt: Q.lt, Gt: Q.gt, Le: Q.le, Ge: Q.ge, Eq: Q.eq, Ne: Q.ne}
 
 
+def _scalar(e) -> bool:
+    return getattr(e, "is_commutative", False) is True and not isinstance(e, MatrixExpr)
+
+
+def syntax_form(cs: Sequence[Any], rng: random.Random):
+    """The conjunction of ``cs`` spelled differently: reordered, with a
+    duplicate, nested (``And`` built with ``evaluate=False`` so that SymPy
+    keeps the spelling; the models are the same)."""
+    parts = list(cs)
+    rng.shuffle(parts)
+    if not parts:
+        return True
+    if rng.random() < 0.4:
+        parts.append(rng.choice(parts))
+    for _ in range(rng.choice([0, 1, 1, 2])):
+        if len(parts) < 2:
+            break
+        i = rng.randrange(len(parts) - 1)
+        j = rng.randrange(i + 2, len(parts) + 1)
+        parts[i:j] = [And(*parts[i:j], evaluate=False)]
+    if len(parts) == 1 and isinstance(parts[0], And):
+        return parts[0]
+    return And(*parts, evaluate=False) if len(parts) > 1 else parts[0]
+
+
 def restate(b, rng: random.Random, p: float = 0.5):
     """An equivalent restatement of the Boolean ``b``: swapped relation
     sides (``lt(a, b)`` -> ``gt(b, a)``), the three spellings of a
@@ -276,6 +314,10 @@ def restate(b, rng: random.Random, p: float = 0.5):
                 return {v: k for k, v in _QREL.items()}[f](*b.arguments)
             except Exception:  # noqa: BLE001
                 return b
+        if f == Q.zero and _scalar(b.arguments[0]) and rng.random() < p:
+            return Q.eq(b.arguments[0], S.Zero)             # zero(x) is x = 0 for every scalar value
+        if f == Q.eq and b.arguments[1] == S.Zero and _scalar(b.arguments[0]) and rng.random() < p:
+            return Q.zero(b.arguments[0])
         if rng.random() < p * 0.6:
             return Q.is_true(b)
         return b
@@ -290,11 +332,25 @@ def restate(b, rng: random.Random, p: float = 0.5):
                 return b
         return b
     if isinstance(b, Not):
-        return Not(restate(b.args[0], rng, p))
+        inner = b.args[0]
+        if isinstance(inner, AppliedPredicate) and inner.function in (Q.eq, Q.ne) and rng.random() < p:
+            # ne is the complement of eq for every value (unlike lt/ge)
+            f = Q.ne if inner.function == Q.eq else Q.eq
+            return f(*inner.arguments)
+        if isinstance(inner, (And, Or)) and rng.random() < p:
+            # De Morgan
+            other = Or if isinstance(inner, And) else And
+            return other(*[negate(restate(x, rng, p)) for x in inner.args])
+        return negate(restate(inner, rng, p))
     if isinstance(b, Implies):
         a, c = b.args
         a, c = restate(a, rng, p), restate(c, rng, p)
-        return Or(Not(a), c) if rng.random() < p else Implies(a, c)
+        r = rng.random()
+        if r < p / 2:
+            return Or(negate(a), c)
+        if r < p:
+            return Implies(negate(c), negate(a))          # contrapositive
+        return Implies(a, c)
     if isinstance(b, Equivalent) and len(b.args) == 2:
         a, c = (restate(x, rng, p) for x in b.args)
         return And(Implies(a, c), Implies(c, a)) if rng.random() < p else Equivalent(a, c)
@@ -329,18 +385,24 @@ def rename(exprs: Sequence[Any], rng: random.Random, tag: str = "r"):
     return apply_rename(exprs, smap, fmap), smap, fmap
 
 
+def _rebuild(e, smap: dict, fmap: dict):
+    """``xreplace`` that keeps the spelling of ``Not``/``And``/``Or`` nodes
+    (SymPy would rewrite a rebuilt ``Not(rel)`` and flatten a nested
+    ``And``): the renamed expression means what the original means."""
+    if e in smap:
+        return smap[e]
+    if not isinstance(e, Basic) or not e.args:
+        return e
+    args = [_rebuild(a, smap, fmap) for a in e.args]
+    if isinstance(e, AppliedUndef) and e.func in fmap:
+        return fmap[e.func](*args)
+    if isinstance(e, (Not, And, Or)):
+        return type(e)(*args, evaluate=False)
+    return e.func(*args)
+
+
 def apply_rename(exprs: Sequence[Any], smap: dict, fmap: dict) -> list:
-    out = []
-    for e in exprs:
-        if not hasattr(e, "xreplace"):
-            out.append(e)
-            continue
-        e = e.xreplace(smap)
-        if fmap:
-            e = e.replace(lambda x: isinstance(x, AppliedUndef) and x.func in fmap,
-                          lambda x: fmap[x.func](*x.args))
-        out.append(e)
-    return out
+    return [_rebuild(e, smap, fmap) if isinstance(e, Basic) else e for e in exprs]
 
 
 # --------------------------------------------------------------------------
@@ -441,7 +503,7 @@ def check_I3(prop, assum, config, base, rng, variant=None):
                     opts.append({"kind": "declared", "sym": to_srepr(s), "pred": k, "value": bool(v)})
         variant = rng.choice(opts)
     if variant["kind"] == "self":
-        b = prop if base == "True" else Not(prop)
+        b = prop if base == "True" else negate(prop)
     else:
         atom = getattr(Q, variant["pred"])(from_srepr(variant["sym"]))
         b = atom if variant["value"] else Not(atom)
@@ -454,9 +516,11 @@ def check_I3(prop, assum, config, base, rng, variant=None):
 
 
 def check_I4(prop, assum, config, base, rng, variant=None):
-    """ask(p, A) is True exactly when ask(~p, A) is False."""
+    """ask(p, A) is True exactly when ask(~p, A) is False; ``~p`` is the
+    logical negation (``negate``: ``Not(p, evaluate=False)``), never
+    SymPy's rewrite of a negated relation."""
     variant = variant or {"kind": "negation"}
-    other = fresh_outcome(Not(prop), assum, config)
+    other = fresh_outcome(negate(prop), assum, config)
     sev = None
     if "ValueError" not in (base, other):
         if _error(base) or _error(other):
@@ -472,6 +536,8 @@ def check_I5(prop, assum, config, base, rng, variant=None):
     """An equivalent restatement of the assumptions gives the same answer."""
     if assum is True or assum is S.true:
         return None, base, variant or {"kind": "skip"}
+    if variant is None and rng.random() < I5_SYNTAX_RATE:
+        variant = {"kind": "syntax", "seed": rng.randrange(1 << 30)}
     if variant is None:
         cs = _conjuncts(assum)
         parts = list(cs)
@@ -482,7 +548,12 @@ def check_I5(prop, assum, config, base, rng, variant=None):
                 break
         variant = {"kind": "restate", "parts": [to_srepr(x) for x in parts],
                    "assum": to_srepr(_join(parts))}
-    new = from_srepr(variant["assum"])
+    if variant["kind"] == "syntax":
+        # rebuilt from the (possibly shrunk) conjuncts: the seed fixes the spelling
+        new = syntax_form(_conjuncts(assum), random.Random(variant["seed"]))
+        variant = dict(variant, assum=to_srepr(new))
+    else:
+        new = from_srepr(variant["assum"])
     other = fresh_outcome(prop, new, config)
     return _severity_same("I5", base, other), other, variant
 
@@ -517,6 +588,9 @@ def check_I6(prop, assum, config, base, rng, variant=None):
 
 
 RENAME_LIMIT = 1500
+#: share of I5 checks that respell the conjunction (order, duplicate, nesting)
+#: instead of restating conjuncts
+I5_SYNTAX_RATE = 0.35
 #: share of I6 checks whose renamed query also runs in a fresh interpreter
 #: under another PYTHONHASHSEED (a subprocess: about a second each)
 I6_PROCESS_RATE = 0.04
@@ -597,7 +671,7 @@ def _equivalent_set(v: Violation, assum, var) -> Optional[Any]:
         return _join(_conjuncts(assum) + _conjuncts(from_srepr(var["extra"])))
     if v.inv == "I3":
         if var.get("kind") == "self":
-            b = v.prop if v.base == "True" else Not(v.prop)
+            b = v.prop if v.base == "True" else negate(v.prop)
         elif var.get("kind") == "declared":
             atom = getattr(Q, var["pred"])(from_srepr(var["sym"]))
             b = atom if var["value"] else Not(atom)
@@ -617,9 +691,12 @@ def _guarded(v: Violation, prop, assum, variant) -> bool:
     sev, base, other, var = evaluate(v, prop, assum, variant)
     if sev is None:
         return False
+    alt = _equivalent_set(v, assum, var)
+    if v.inv == "I3":
+        # anything goes if A & B is inconsistent: A & B itself must have a model
+        return alt is not None and consistent(alt, v.config)
     if consistent(assum, v.config):
         return True
-    alt = _equivalent_set(v, assum, var)
     return alt is not None and consistent(alt, v.config)
 
 
