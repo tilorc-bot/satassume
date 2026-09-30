@@ -32,10 +32,10 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
-from sympy import (Abs, Add, Eq, HadamardProduct, I, Identity, KroneckerDelta, MatAdd, MatMul, MatrixSymbol, Max,
-                   Min, Ne, Piecewise, Q, Rem, RisingFactorial, S, Symbol, acosh, acot, acoth, acsch, arg, asech,
-                   asinh, atan2, atanh, ceiling, conjugate, cos, cosh, coth, csc, csch, exp, factorial, floor, gamma, im,
-                   log, nan, oo, pi, sec, sech, sign, sin, sinh, sqrt, symbols, tanh, zoo, ZeroMatrix)
+from sympy import (Abs, Add, Eq, HadamardProduct, I, Identity, KroneckerDelta, MatAdd, MatMul, MatrixSymbol, Max, Min,
+                   Mod, Ne, Piecewise, Q, Rational, Rem, RisingFactorial, S, Symbol, acosh, acot, acoth, acsch, arg,
+                   asech, asinh, atan2, atanh, ceiling, conjugate, cos, cosh, coth, csc, csch, exp, factorial, floor,
+                   gamma, im, log, nan, oo, pi, sec, sech, sign, sin, sinh, sqrt, symbols, tanh, zoo, ZeroMatrix)
 
 
 class _Unchanged:
@@ -246,6 +246,24 @@ _add("default: floor/ceiling", "floor/ceiling of an infinite argument, of a sum 
 _add("default: Rem zero dividend", "Rem(0, q) = 0 was not applied", [
     (Rem(p, q), Q.zero(p), S.Zero),
 ])
+# A relation holds on the extended reals, so Q.lt(p, q) allows q = oo, where Mod(p, oo) = Rem(p, oo) = nan.
+_add("#10 B12", "Mod/Rem(p, q) -> p read q as finite from a relation bounding p", [
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q), UNCHANGED),
+    (Mod(p, q), Q.nonpositive(p) & Q.gt(p, q), UNCHANGED),                   # q = -oo
+    (Rem(p, q), Q.nonnegative(p) & Q.lt(p, q), UNCHANGED),
+    (Rem(p, q), Q.nonnegative(p) & Q.lt(p, -q), UNCHANGED),                  # q = -oo
+    (Rem(p, q), Q.nonpositive(p) & Q.gt(p, -q), UNCHANGED),
+    (Rem(p, q), Q.nonpositive(p) & Q.gt(p, q), UNCHANGED),
+])
+_add("#10 B12", "the rewrite still fires where q is finite", [
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.positive(q), p),
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.finite(q), p),
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.integer(q), p),
+    (Mod(p, q), Q.nonpositive(p) & Q.gt(p, q) & Q.finite(q), p),
+    (Mod(p, 5), Q.nonnegative(p) & Q.lt(p, 5), p),
+    (Rem(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.finite(q), p),
+    (Rem(p, q), Q.nonpositive(p) & Q.gt(p, -q) & Q.real(q), p),
+])
 
 # --- rules: hyperbolic (from test_default_hyperbolic_i_pi_shift.py) ------------------------------
 _add("default: hyperbolic i*pi shift", "f(x + n*I*pi) = (-1)**n*f(x) for integer n was missing", [
@@ -277,6 +295,19 @@ _add("default: (-1)**exponent", "the constant was reduced modulo 2 but not the r
 # from test_default_pow_of_pow_positive_base.py (split from needs/test_default_pow_of_pow.py)
 _add("default: pow of pow, positive base", "(b**a)**e -> b**(a*e) for b > 0, real a (SymPy's test_pow1)", [
     (sqrt(1/x), Q.positive(x), 1/sqrt(x)),
+])
+# (t**n)**e -> Abs(t)**(n*e) for real t, even n: wrong only at t = 0, n < 0 with e infinite
+# (zoo**oo = 0, 0**(-oo) = zoo) or non-real (zoo**(1 + I) stays, 0**(-2 - 2*I) = nan), so a
+# real e is enough (needs/test_default_pow_of_pow.py; the case with nothing known of e stays open).
+_add("#10 pow of pow", "(x**y)**z for even y fires where z is real; not where z may be infinite", [
+    (sqrt(x**y), Q.real(x) & Q.even(y), Abs(x)**(y/2)),
+    ((x**y)**Rational(1, 3), Q.real(x) & Q.even(y), Abs(x)**(y/3)),
+    ((x**y)**z, Q.real(x) & Q.even(y) & Q.real(z), Abs(x)**(y*z)),
+    ((x**y)**z, Q.real(x) & Q.even(y) & Q.positive(z), Abs(x)**(y*z)),
+    ((x**y)**z, Q.real(x) & Q.even(y), UNCHANGED),                      # x = 0, y = -2, z = oo
+    ((x**y)**z, Q.real(x) & Q.even(y) & Q.gt(z, 1), UNCHANGED),         # z = oo allowed
+    ((x**y)**z, Q.real(x) & Q.even(y) & Q.extended_real(z), UNCHANGED),
+    ((x**y)**z, Q.real(x) & Q.even(y) & Q.finite(z), UNCHANGED),        # z = 1 + I
 ])
 # from test_power_exp_log_zero_base.py
 _add("engine: zero base", "log(1/x) under Q.zero(x) depended on the hash seed; b**e = zoo for zero b, negative e", [

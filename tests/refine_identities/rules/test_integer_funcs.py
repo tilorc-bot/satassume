@@ -80,8 +80,11 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (Mod(x + 2*n, 2), Q.integer(n), Mod(x, 2), None),
     (Mod(x + k*b, b), Q.integer(k) & Q.nonzero(b), Mod(x, b), {x: REALS, b: DIVISORS, k: INTS}),
     # M4
-    (Mod(a, b), Q.nonnegative(a) & Q.lt(a, b), a, R),
-    (Mod(a, b), Q.nonpositive(a) & Q.gt(a, b), a, R),
+    # b finite: a relation allows b = +-oo, where Mod and Rem are nan (issue #10, B12)
+    (Mod(a, b), Q.nonnegative(a) & Q.lt(a, b) & Q.finite(b), a, R),
+    (Mod(a, b), Q.nonpositive(a) & Q.gt(a, b) & Q.finite(b), a, R),
+    (Mod(a, b), Q.nonnegative(a) & Q.lt(a, b) & Q.positive(b), a, R),
+    (Mod(a, b), Q.nonnegative(a) & Q.lt(a, b) & Q.integer(b), a, R),
     # M5
     (Mod(a, b), Q.positive(a) & Q.positive(b), Rem(a, b), R),
     (Mod(a, b), Q.negative(a) & Q.negative(b), Rem(a, b), R),
@@ -97,10 +100,11 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (Rem(a, b), Q.odd(2*a/b) & Q.negative(a/b) & Q.nonzero(b), -b/2, {b: DIVISORS}),
     (Rem(a, b), Q.odd(2*a/b) & Q.positive(a) & Q.nonzero(b), Abs(b)/2, {b: DIVISORS}),   # sign split on b
     # Q3
-    (Rem(a, b), Q.nonnegative(a) & Q.lt(a, b), a, R),
-    (Rem(a, b), Q.nonnegative(a) & Q.lt(a, -b), a, R),
-    (Rem(a, b), Q.nonpositive(a) & Q.gt(a, -b), a, R),
-    (Rem(a, b), Q.nonpositive(a) & Q.gt(a, b), a, R),
+    (Rem(a, b), Q.nonnegative(a) & Q.lt(a, b) & Q.finite(b), a, R),
+    (Rem(a, b), Q.nonnegative(a) & Q.lt(a, -b) & Q.finite(b), a, R),
+    (Rem(a, b), Q.nonpositive(a) & Q.gt(a, -b) & Q.finite(b), a, R),
+    (Rem(a, b), Q.nonpositive(a) & Q.gt(a, b) & Q.finite(b), a, R),
+    (Rem(a, b), Q.nonpositive(a) & Q.gt(a, b) & Q.negative(b), a, R),
     (Rem(a, b), Q.positive(b) & Q.lt(a, b) & Q.gt(a, -b), a, R),
     (Rem(a, b), Q.negative(b) & Q.gt(a, b) & Q.lt(a, -b), a, R),
 ]
@@ -124,6 +128,13 @@ NEGATIVE = [  # v3's refusals
     (Mod(a, b), Q.nonnegative(a)),
     (Mod(a, b), Q.integer(a) & Q.integer(b)),
     (Mod(a, b), Q.lt(a, b)),                        # a may be negative
+    # b may be +-oo (a relation holds on the extended reals): Mod(a, oo) = Rem(a, oo) = nan (issue #10, B12)
+    (Mod(a, b), Q.nonnegative(a) & Q.lt(a, b)),
+    (Mod(a, b), Q.nonpositive(a) & Q.gt(a, b)),
+    (Rem(a, b), Q.nonnegative(a) & Q.lt(a, b)),
+    (Rem(a, b), Q.nonnegative(a) & Q.lt(a, -b)),
+    (Rem(a, b), Q.nonpositive(a) & Q.gt(a, -b)),
+    (Rem(a, b), Q.nonpositive(a) & Q.gt(a, b)),
     (Rem(a, b), Q.positive(a) & Q.positive(b)),
     (Rem(a, b), Q.lt(a, b) & Q.positive(b)),        # a may be <= -b
     (Rem(x + 2*n, 2), Q.integer(n) & Q.real(x)),    # a shift can flip the sign

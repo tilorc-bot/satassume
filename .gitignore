@@ -6,3 +6,4 @@ dist/
 .pytest_cache/
 queries*.jsonl
 .ruff_cache/
+.asv/
