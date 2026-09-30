@@ -152,6 +152,8 @@ class Session:
         #: relation atoms and their theories (satassume.relations); created
         #: at the first user formula when the engine has relation support
         self.relations: Optional[Relations] = None
+        #: sums under a sign atom -> their free symbols (:meth:`_affine_links`)
+        self._sign_sums: Dict[Any, frozenset] = {}
         #: the Relations object once predicate transfer is engaged
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
@@ -523,6 +525,8 @@ class Session:
         self._discover()
         if self.relations is not None:
             self._relations(f)
+        else:
+            self._affine_links(f, keep=True)
         self.n_assumption_nodes = len(self.base)
         self.n_assumption_constants = self.n_constants
         return [s]
@@ -537,6 +541,8 @@ class Session:
         self._discover()
         if self.relations is not None:
             self._relations(f)
+        else:
+            self._affine_links(f)
         self.literals[f] = lit
         return lit
 
@@ -551,6 +557,42 @@ class Session:
         rel.note_formula(atoms)
         if rel.active or rel.queue:
             rel.process(atoms)
+
+    def _affine_links(self, f, keep: bool = False) -> None:
+        """Start the relation machinery without a relation atom when two sign
+        atoms, of the assumptions or of ``f``, are on different sums sharing
+        a symbol (``Q.positive(x - 1)`` and ``Q.negative(1 - x)``): only the
+        relation glue links a sign fact to its linear form
+        (``extended_positive(e) <-> 0 < e``,
+        :meth:`satassume.relations.Relations._link`), so without a relation
+        atom LRA never compared the two sums.  Called while the session has
+        no relations; the sums of the assumptions are kept (``keep``), a
+        query's are not."""
+        engine = self.engine
+        if not engine.relation_specs:
+            return
+        atoms = atoms_of(f)
+        new = [a.expr for a in atoms if a.pred in _SIGN_PREDS and getattr(a.expr, "is_Add", False)]
+        if not new:
+            return
+        sums = self._sign_sums if keep else dict(self._sign_sums)
+        hit = False
+        for e in new:
+            if e in sums:
+                continue
+            symbols = e.free_symbols
+            if not symbols:
+                continue
+            hit = hit or any(symbols & other for other in sums.values())
+            sums[e] = symbols
+        if not hit:
+            return
+        rel = self.relations = Relations(self, engine.relation_specs)
+        if self.assumption_formula is not None:
+            rel.note_formula(atoms_of(self.assumption_formula))
+        rel.note_formula(atoms)
+        rel.active = True
+        rel.process(atoms)
 
     def _ensure_atoms(self, f) -> None:
         """Visit the nodes of the vocabulary atoms of ``f``.  Custom atoms
@@ -833,8 +875,19 @@ class Engine:
             s.ensure(proposition.expr, {proposition.pred})
             if s.relations is not None:
                 s._relations(proposition)
+            else:
+                s._affine_links(proposition)
             return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
         return s.literal_of(proposition)
+
+
+#: the predicates whose atoms the relation glue links to order atoms
+#: (``extended_positive``, ``extended_negative``, ``zero``) and those that imply
+#: or refute them for a finite argument
+_SIGN_PREDS = frozenset({
+    "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero",
+    "extended_positive", "extended_negative", "extended_nonnegative",
+    "extended_nonpositive", "extended_nonzero"})
 
 
 # --------------------------------------------------------------------------
