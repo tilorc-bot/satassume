@@ -12,12 +12,12 @@ consistent (below).  Losing definiteness is allowed under I1 only.
 
 | inv | statement | checker | variant | reports |
 |---|---|---|---|---|
-| I1 | dropping any subset of the clauses never flips a definite answer, never turns None definite | `check_I1` | `dropping_clauses(seed, rate)`: a test-time patch of `Solver.add_clause`, `add_clauses`, `add_internal` (the template patterns' path) dropping each clause by a hash of its literals and the seed, rate 3-50 %; two seeds per query | definite -> other definite (`wrong`), None -> definite (`wrong`), None -> engine error (`crash`) |
+| I1 | dropping any subset of the clauses never flips a definite answer, never turns None definite | `check_I1` | `dropping_clauses(seed, rate)`: a test-time patch of `Solver.add_clause`, `add_clauses`, `add_internal` (the template patterns' path) and `add_pattern` (compiled blocks) dropping each clause by a hash of its literals and the seed, rate 3-50 %; two seeds per query | definite -> other definite (`wrong`), None -> definite (`wrong`), None -> engine error (`crash`) |
 | I2 | conjuncts, terms, extensions with no path through shared variables to the query or the set do not change the answer | `check_I2` | `Unrelated`: 1-12 conjuncts over fresh symbols and fresh undefined functions, each satisfiable on its own (a predicate on `u + T(v, ...)` where `u` occurs nowhere else, on `u*v`, `u**3`, `u**5`, `h(T)`; a relation between two such terms with different bases or a finite constant; a fact consistent with a fresh declared symbol), symbols disjoint across pieces: `A & B` is consistent iff `A` is | any change but an inconsistency report: definite vs definite (`wrong`), definite vs None (`depends`), error on one side (`crash`) |
 | I3 | a definite answer under `A` stays under `A & B` | `check_I3` | `B` = `p` (answer True) or `~p` (False), or a fact declared on a symbol of the query (`assumptions0`): `A & B` consistent iff `A` is | flipped (`wrong`), None (`lost`), error (`crash`) |
 | I4 | `ask(p, A)` is True exactly when `ask(~p, A)` is False | `check_I4` | `Not(p)` | both definite and not opposite (`wrong`), one definite and the other None (`lost`), error on one side (`crash`) |
 | I5 | an equivalent restatement of the set gives the same answer | `check_I5` | `restate`: relation sides swapped (`lt(a, b)` -> `gt(b, a)`), the three spellings of a relation, `Implies` as `Or`, `Equivalent` as two `Implies`, `Q.is_true` around an atom, reordered and duplicated conjuncts (SymPy re-sorts `And`, so the engine's own ordering is what is checked) | as I2 |
-| I6 | renaming symbols and functions to fresh names gives the same answer | `check_I6` | `rename`: fresh `Symbol`/`Dummy` with the same `assumptions0`, fresh `Function`s, names whose sort order differs; in the same process | as I2 |
+| I6 | renaming symbols and functions to fresh names gives the same answer | `check_I6` | `rename`: fresh `Symbol`/`Dummy` with the same `assumptions0`, fresh `Function`s, names whose sort order differs; in the same process, and for 4 % of the checks in a fresh interpreter under `PYTHONHASHSEED` 1-3 (`checker.process_outcome`) | as I2 |
 | I7 | changing a setting after queries gives the answers of a fresh engine with that setting | `check_I7` | 1-8 earlier stream queries in one engine, then `setattr(engine, setting, value)` (`discovery_budget`, `cone_threshold`, `transfer`, `cone_search`, `relevance`, `session_limit`, `keep_sessions`), against a fresh engine with the setting | as I2; always tagged `known:I7-settings` (plain attributes, not keyed on the registry epoch); one finding per run |
 
 Every I1-I6 check compares fresh engines (`EngineConfig.make()`), one
@@ -108,14 +108,12 @@ The streams are the existing ones (`harness/generators.py`,
 
 ## Not covered / ideas not done
 
-* I1 does not drop the lazily loaded rule blocks (`Solver.mention_blocks`,
-  `add_pattern`) nor learnt clauses; a patch of `add_pattern` filtering
-  the block's clauses would cover the rule base.
+* I1 does not drop the lazily loaded rule blocks (`Solver.mention_blocks`:
+  propagated without clauses) nor learnt clauses.
 * I2 adds conjuncts and terms only; registered extensions
   (`satassume.register`) with fresh predicates are not added.
 * I6 skips terms above 1500 characters of srepr (SymPy rebuilds them in
-  tens of seconds) and runs in-process only; the `PYTHONHASHSEED`
-  dimension would be `checker.process_outcome` on a sample.
+  tens of seconds); the hash-seed dimension is a 4 % sample only.
 * I5 cannot vary what SymPy canonicalises (`And` order, duplicates,
   nesting); an engine-level entry taking a list of conjuncts would.
 * The consistency guard loses candidates under sets the engine cannot
