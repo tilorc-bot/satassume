@@ -12,8 +12,11 @@ replacing 236 lines: 2 shared by ``binomial``/``rf``/``ff``, then factorial 2,
 gamma 2, binomial 4, rf 3, ff 3.
 
 Spellings.  v3 decides ``a == b`` as ``Q.zero(a - b)`` or the relation
-``Q.eq(a, b)``, and order as a sign of the difference or a relation; the
-hypotheses below spell both, e.g. ``Q.zero(z) | Q.eq(z, 0)``.
+``Q.eq(a, b)``; the hypotheses below spell both (``_eq``), since satassume
+relates neither to the other when a side may be a finite non-real number
+(``f`` below).  Order is the relation alone (``Q.lt``, ``Q.le``): every
+ordered side here is an integer, where satassume proves the relation from
+either sign of the difference and from the relation.
 
 Minimizations against v3:
 
@@ -65,16 +68,6 @@ def _eq(u, v):
     return Q.zero(u - v) | Q.eq(u, v)
 
 
-def _lt(u, v):
-    """``u < v`` as a sign of either difference or as a relation (the engines
-    do not always relate ``Q.positive(v - u)`` to ``Q.negative(u - v)``)."""
-    return Q.positive(v - u) | Q.negative(u - v) | Q.lt(u, v)
-
-
-def _le(u, v):
-    return Q.nonnegative(v - u) | Q.nonpositive(u - v) | Q.le(u, v)
-
-
 bit, f, g, h, inf, m, n, one, p, q, zero = symbols('bit f g h inf m n one p q zero')
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
@@ -84,9 +77,9 @@ ASSUMED = {
     _eq(bit, 0) | _eq(bit, 1),                     # bit is 0 or 1
     Q.integer(n),                                  # n is an integer
     ~Q.integer(h),                                 # h is not an integer
-    Q.integer(q) & _lt(q, 0),                      # q is negative, here a negative integer
+    Q.integer(q) & Q.lt(q, 0),                     # q is negative, here a negative integer
     Q.integer(m) & Q.nonnegative(m),               # m is an integer, here nonnegative
-    Q.integer(p) & _lt(0, p),                      # p is positive, here a positive integer
+    Q.integer(p) & Q.lt(0, p),                     # p is positive, here a positive integer
     Q.positive_infinite(inf),                      # inf is oo
     # f is nonnegative or a finite non-integer: not a negative integer (binomial(-1, -1) = 0)
     # and not infinite (binomial(oo, oo) = nan, and oo is not an integer)
@@ -121,7 +114,7 @@ GAMMA = (
     + add_rules([
         # gamma has a pole at every nonpositive integer (half-integers are left alone).
         (gamma(n), S.ComplexInfinity),
-    ], assuming={_le(n, 0)})
+    ], assuming={Q.le(n, 0)})
 )
 
 BINOMIAL = (
@@ -136,7 +129,7 @@ BINOMIAL = (
         # 0 for a negative integer n whatever y is (SymPy's convention), and for
         # integers 0 <= y < n (the product y (y-1) ... hits 0).
         (binomial(y, n), S.Zero),
-    ], assuming={_lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & _lt(y, n))})
+    ], assuming={Q.lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & Q.lt(y, n))})
     + add_rules([
         # A pole: q a negative integer and h not an integer.
         (binomial(q, h), S.ComplexInfinity),
@@ -153,8 +146,8 @@ RISING = (
         # 0 when the product x (x+1) ... (x+z-1) contains the factor 0 (x <= 0 < x + z,
         # integers), and SymPy's 0 for a negative integer x and non-integer z.
         (rf(x, z), S.Zero),
-    ], assuming={(Q.integer(x) & Q.integer(z) & _le(x, 0) & _lt(0, x + z))
-                 | (Q.integer(x) & _lt(x, 0) & ~Q.integer(z))})
+    ], assuming={(Q.integer(x) & Q.integer(z) & Q.le(x, 0) & Q.lt(0, x + z))
+                 | (Q.integer(x) & Q.lt(x, 0) & ~Q.integer(z))})
     + add_rules([
         # rf(g, z) = gamma(g + z)/gamma(g) where gamma(g) is finite and nonzero.
         (rf(g, z), gamma(g + z)/gamma(g)),
@@ -168,12 +161,12 @@ FALLING = (
     ], assuming={_eq(x, n)})
     + add_rules([
         (ff(m, n), S.Zero),                  # 0 for integers 0 <= m < n
-    ], assuming={_lt(m, n)})
+    ], assuming={Q.lt(m, n)})
     + add_rules([
         # ff(m, n) = m!/(m - n)! for integers 0 <= m, n <= m (negative n included:
         # ff(3, -2) = 1/20 = 3!/5!).
         (ff(m, n), factorial(m)/factorial(m - n)),
-    ], assuming={_le(n, m)})
+    ], assuming={Q.le(n, m)})
 )
 
 RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + [

@@ -35,11 +35,6 @@ def integer(u):
     return Q.integer(u) | (Q.integer(re(u)) & Q.integer(im(u)))
 
 
-def less(u, v):
-    """``u < v``, in both spellings ``ask`` understands."""
-    return Q.lt(u, v) | Q.positive(v - u)
-
-
 a, b, c, d, f, g, h, m, n, w, x, zero = symbols('a b c d f g h m n w x zero')
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
@@ -103,7 +98,7 @@ MOD = (
     # for 0 <= a < b or b < a <= 0
     + add_rules([
         (Mod(a, b), a),
-    ], assuming={(Q.nonnegative(a) & less(a, b)) | (Q.nonpositive(a) & less(b, a))})
+    ], assuming={(Q.nonnegative(a) & Q.lt(a, b)) | (Q.nonpositive(a) & Q.lt(b, a))})
     # for a and b of the same sign; never the reverse rewrite, so Mod and Rem cannot loop
     + add_rules([
         (Mod(a, b), Rem(a, b)),
@@ -121,19 +116,19 @@ REM = (
     # 0 <= a < |b|
     + add_rules([
         (Rem(a, b), a),
-    ], assuming={Q.nonnegative(a) & (less(a, b) | less(a, -b))})
+    ], assuming={Q.nonnegative(a) & (Q.lt(a, b) | Q.lt(a, -b))})
     # -|b| < a <= 0
     + add_rules([
         (Rem(a, b), a),
-    ], assuming={Q.nonpositive(a) & (less(-b, a) | less(b, a))})
+    ], assuming={Q.nonpositive(a) & (Q.lt(-b, a) | Q.lt(b, a))})
     # -b < a < b
     + add_rules([
         (Rem(a, b), a),
-    ], assuming={Q.positive(b) & less(-b, a) & less(a, b)})
+    ], assuming={Q.positive(b) & Q.lt(-b, a) & Q.lt(a, b)})
     # b < a < -b
     + add_rules([
         (Rem(a, b), a),
-    ], assuming={Q.negative(b) & less(b, a) & less(a, -b)})
+    ], assuming={Q.negative(b) & Q.lt(b, a) & Q.lt(a, -b)})
 )
 
 # At a half period (a/d = n + 1/2, 2*a/d odd): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2
