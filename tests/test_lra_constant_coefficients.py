@@ -437,3 +437,24 @@ def test_random_relations_with_pi_against_the_oracle():
             assert got is None
         decided += got is not None
     assert decided > 15
+
+
+def test_rounding_an_exact_integer_element():
+    # r = 4**(1/2) is exactly 2 with exact enclosures: 1 < x < r has no
+    # integer; the rounding may see (1, 2] (floor(r) without the delta),
+    # which is wider, so no conflict is claimed wrongly, and 1 < x <= r
+    # with x = 2 stays possible
+    r = cf.radical(4, 2)
+    for op, integer_possible in (("<", False), ("<=", True)):
+        t = lra.LRATheory()
+        t.register_atom(1, lra.constraint({"x": 1}, ">", 1))
+        t.register_atom(2, lra.constraint({"x": 1}, op, r))
+        t.register_atom(3, lra.Integral((("x", F(1)),), 0))
+        assert t.assert_lit(1) is None and t.assert_lit(2) is None
+        res = t.assert_lit(3)
+        if integer_possible:
+            assert res is None
+            res = t.check()
+            assert res is None or res[0] is True
+        else:
+            assert res is None or res[0] is False

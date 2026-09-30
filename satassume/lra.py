@@ -183,22 +183,24 @@ def _is_int(q) -> bool:
 
 
 def _floor(q, d) -> int:
-    """The largest integer ``<= q + d*delta`` for every small ``delta > 0``."""
+    """The largest integer ``<= q + d*delta`` for every small ``delta > 0``
+    (for an Element: ``floor(q)``, which is one too large when the value is
+    an integer and ``d < 0``: a wider range, so fewer conflicts, never a
+    wrong one; ``floor`` itself is exact or Undecided)."""
     if type(q) is Fraction:
         if q.denominator == 1:
             return q.numerator - 1 if d < 0 else q.numerator
         return q.__floor__()
-    q.is_integer()                      # an Element: False, or Undecided
     return math.floor(q)
 
 
 def _ceil(q, d) -> int:
-    """The smallest integer ``>= q + d*delta`` for every small ``delta > 0``."""
+    """The smallest integer ``>= q + d*delta`` for every small ``delta > 0``
+    (for an Element: ``ceil(q)``, see :func:`_floor`)."""
     if type(q) is Fraction:
         if q.denominator == 1:
             return q.numerator + 1 if d > 0 else q.numerator
         return q.__ceil__()
-    q.is_integer()                      # an Element: False, or Undecided
     return math.ceil(q)
 
 
