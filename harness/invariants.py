@@ -32,7 +32,8 @@ import random
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sympy import Basic, Dummy, Eq, Function, Ge, Gt, Le, Lt, Ne, Q, Symbol, exp, sqrt, pi, S
+from sympy import (Abs, Basic, Dummy, Eq, Function, Ge, Gt, Le, Lt, MatrixSymbol, Mod, Ne, Q, Symbol,
+                   ceiling, conjugate, cos, exp, floor, im, log, pi, re, sign, sin, sqrt, S)
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.function import AppliedUndef
 from sympy.core.relational import Relational
@@ -189,6 +190,13 @@ _DECLARED = {
     "real": ["positive", "negative", "zero", "integer", "irrational", "rational", "nonzero"],
 }
 _FINITE_CONSTS = [S.Zero, S.One, S(2), S(-3), S.Half, pi, sqrt(2), S(7)]
+_UNARY = [Abs, floor, ceiling, log, sin, cos, conjugate, re, im, sign, lambda t: Mod(t, 3)]
+_MATRIX_PREDS = ["invertible", "symmetric", "orthogonal", "unitary", "positive_definite",
+                 "diagonal", "upper_triangular", "lower_triangular", "fullrank", "square",
+                 "singular", "normal", "triangular", "real_elements", "complex_elements",
+                 "integer_elements"]
+_MATRIX_NEGATABLE = ["invertible", "symmetric", "orthogonal", "unitary", "positive_definite",
+                     "diagonal", "singular", "fullrank", "upper_triangular", "lower_triangular"]
 
 
 class Unrelated:
@@ -225,7 +233,9 @@ class Unrelated:
             return self._inner(depth - 1) ** r.choice([2, 3, -1, S.Half])
         if c < 0.85:
             return self.func()(self._inner(depth - 1))
-        return r.choice([exp, sqrt])(self._inner(depth - 1))
+        if c < 0.93:
+            return r.choice([exp, sqrt])(self._inner(depth - 1))
+        return r.choice(_UNARY)(self._inner(depth - 1))
 
     def free_term(self, depth: int):
         """A term whose value is unconstrained: a fresh symbol plus anything."""
@@ -244,7 +254,35 @@ class Unrelated:
             return self.sym() ** r.choice([3, 5])
         return self.sym() + self._inner(depth)
 
+    def matrix_piece(self):
+        """A predicate on a fresh square ``MatrixSymbol`` (every listed
+        predicate, and the negations of the ones a square matrix can fail,
+        are satisfiable on a fresh matrix)."""
+        r = self.rng
+        self.k += 1
+        n = r.choice([2, 3])
+        M = MatrixSymbol(f"{self.tag}M{self.k}", n, n)
+        if r.random() < 0.3:
+            return Not(getattr(Q, r.choice(_MATRIX_NEGATABLE))(M))
+        return getattr(Q, r.choice(_MATRIX_PREDS))(M)
+
     def piece(self, depth: int = 2):
+        """A satisfiable conjunct over fresh symbols: an atom (``atom``),
+        a matrix atom, or ``Or``/``Implies``/``Equivalent`` of two atoms
+        over disjoint symbols (satisfiable: the consequent's model plus any
+        value for the rest), or ``Q.is_true`` around one."""
+        r = self.rng
+        c = r.random()
+        if c < 0.08:
+            return self.matrix_piece()
+        if c < 0.2 and depth > 0:
+            a, b = self.piece(depth - 1), self.piece(depth - 1)
+            return r.choice([Or, Implies, Equivalent])(a, b)
+        if c < 0.24:
+            return Q.is_true(self.atom(depth))
+        return self.atom(depth)
+
+    def atom(self, depth: int = 2):
         r = self.rng
         c = r.random()
         if c < 0.55:
@@ -370,10 +408,14 @@ def restate(b, rng: random.Random, p: float = 0.5):
         if rng.random() < p * 0.6:
             return Q.is_true(b)
         return b
+    if rng.random() < p * 0.15:
+        return Not(Not(b, evaluate=False), evaluate=False)   # a double negation, unevaluated
     if isinstance(b, Relational):
         cls = type(b)
         if cls in _QREL and rng.random() < p:
             return _QREL[cls](*b.args)
+        if rng.random() < p * 0.3:
+            return Q.is_true(b)
         if cls in _RSWAP and rng.random() < p:
             try:
                 return _RSWAP[cls](b.rhs, b.lhs)
@@ -402,7 +444,12 @@ def restate(b, rng: random.Random, p: float = 0.5):
         return Implies(a, c)
     if isinstance(b, Equivalent) and len(b.args) == 2:
         a, c = (restate(x, rng, p) for x in b.args)
-        return And(Implies(a, c), Implies(c, a)) if rng.random() < p else Equivalent(a, c)
+        r = rng.random()
+        if r < p / 2:
+            return And(Implies(a, c), Implies(c, a))
+        if r < p:
+            return Or(And(a, c), And(negate(a), negate(c)))
+        return Equivalent(a, c)
     if isinstance(b, (And, Or)):
         args = [restate(x, rng, p) for x in b.args]
         rng.shuffle(args)
@@ -529,7 +576,7 @@ def check_I2(prop, assum, config, base, rng, variant=None):
     the answer, whatever they do to the budget or the polluted switch."""
     if variant is None:
         u = Unrelated(random.Random(rng.randrange(1 << 30)), "iu")
-        n = rng.choice([1, 1, 2, 3, 5, 8, 12])
+        n = rng.choice([1, 1, 2, 3, 5, 8, 12, 12, 20, 30])
         parts = [u.piece(depth=rng.choice([1, 2, 3])) for _ in range(n)]
         specs = []
         if rng.random() < I2_EXTENSION_RATE:
