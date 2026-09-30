@@ -48,6 +48,13 @@ to LRA (below), and to EUF as *identity* ``a ~ b`` (the same value,
 where ``nan(e)`` is EUF's ``e ~ NaN`` for an interpreted constant
 ``NaN`` (so it is the same for a whole class) and ``complex(e)`` and
 ``extended_real(e)`` imply ``~nan(e)`` (:meth:`Relations._identity`).
+A leaf is never ``nan``: as in SymPy's assumptions, a Symbol or an
+applied undefined function (``f(x)``, a value of ``f`` whatever ``x`` is)
+ranges over values and ``nan`` is none, so ``Q.eq(x, x)`` and
+``Q.eq(f(x), f(y))`` under ``Q.eq(x, y)`` are True; only a compound term
+gets a ``nan(e)`` atom.  A sum whose terms are all finite but one, which
+is not ``nan``, is not ``nan`` either; likewise a product whose other
+terms are finite and nonzero (:meth:`Relations._defined_terms`).
 
 An ``lt`` atom ``r`` for ``a < b`` gets these clauses
 (:meth:`Relations._order_sides`, :meth:`Relations._order_infinite`):
@@ -329,6 +336,26 @@ def sympy_atom(atom: P):
 
 def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
+
+
+def _never_nan(e) -> bool:
+    """Is ``e`` never ``nan`` by its shape?  A leaf never is: an atom
+    other than ``nan`` (a Symbol, a number) or an applied undefined
+    function (``f(x)`` is a value of ``f``, whatever ``x`` is); in SymPy's
+    assumptions a leaf ranges over values, and ``nan`` is none.  Nor is
+    ``c*t`` for a nonzero Rational ``c`` and a leaf ``t`` (``-z``, ``2*x``).
+    Only compound terms can be ``nan`` (``0*oo``, ``oo - oo``, ``sin(zoo)``)."""
+    from sympy import S
+    from sympy.core.function import AppliedUndef
+    if e.is_Atom:
+        return e is not S.NaN
+    if isinstance(e, AppliedUndef):
+        return True
+    if e.is_Mul and len(e.args) == 2:
+        c, t = e.args
+        return bool(c.is_Rational) and c != 0 and (t.is_Atom and t is not S.NaN
+                                                   or isinstance(t, AppliedUndef))
+    return False
 
 
 def _termwise(a, b, d) -> bool:
@@ -639,20 +666,22 @@ class Relations:
         return i
 
     def _defined(self, ad, e, create=True):
-        """The literal "``e`` is not ``nan``", or True for a Rational, for
-        ``zoo`` and for a number the engine knows (context-free) to be
-        complex or an extended real.  Otherwise it is ``-n`` for an atom
-        ``n``, "``e ~ nan``", that the identity adapter ``ad`` registers
-        against its ``nan`` value, so it holds for every term of the class
-        of ``e`` alike; ``complex(e)`` and ``extended_real(e)`` imply
-        ``-n`` (``nan`` is neither).  Made on first use; None if
-        ``create`` is false and there is none yet."""
+        """The literal "``e`` is not ``nan``", or True where that holds by
+        shape: for a leaf and ``c*leaf`` (:func:`_never_nan`), for ``zoo``
+        and for a number the engine knows (context-free) to be complex or
+        an extended real.  Otherwise it is ``-n`` for an atom ``n``, "``e ~
+        nan``", that the identity adapter ``ad`` registers against its
+        ``nan`` value, so it holds for every term of the class of ``e``
+        alike; ``complex(e)`` and ``extended_real(e)`` imply ``-n`` (``nan``
+        is neither), and so do the finiteness conditions of
+        :meth:`_defined_terms` for a sum or product.  Made on first use;
+        None if ``create`` is false and there is none yet."""
         d = self._def.get(e)
         if d is not None:
             return d
         from sympy import S
         s = self.session
-        if getattr(e, "is_Rational", False) or e is S.ComplexInfinity or (
+        if _never_nan(e) or e is S.ComplexInfinity or (
                 _is_number(e) and (s.engine.is_(e, "complex") is True
                                    or s.engine.is_(e, "extended_real") is True)):
             self._def[e] = True
@@ -667,7 +696,42 @@ class Relations:
         s.ensure(e, {"complex", "extended_real"})
         s._emit([-s.var("complex", e), d])
         s._emit([-s.var("extended_real", e), d])
+        if e.is_Add or e.is_Mul:
+            self._defined_terms(e, d)
         return d
+
+    def _defined_terms(self, e, d) -> None:
+        """Sufficient conditions for the sum or product ``e`` not to be
+        ``nan`` (the literal ``d``).  ``nan`` from a sum needs two
+        infinities (``oo - oo``, ``zoo + zoo``), from a product an infinity
+        and a zero (``0*oo``), or a ``nan`` term.  So a sum is not ``nan``
+        when all its terms but at most one are finite and that one is not
+        ``nan``; a product likewise, with the finite terms also nonzero.
+        "Finite" is ``complex`` (a finite number), not ``finite``: the rule
+        base's ``infinite == !finite`` lets ``finite`` follow from
+        ``~infinite``, which ``nan`` satisfies.  With ``c(t)`` for
+        ``complex(t)`` in a sum and ``complex(t) & ~zero(t)`` in a product:
+
+            complex(t_1) & ... & complex(t_n) -> d
+            c(t_k) for all k != j -> d          for each t_j never nan by shape
+
+        (:func:`_never_nan`).  A Rational term needs no literal."""
+        s = self.session
+        mul = e.is_Mul
+        preds = {"complex", "zero"} if mul else {"complex"}
+        cx, c = {}, {}
+        for t in e.args:
+            if t.is_Rational:
+                cx[t], c[t] = [], []
+                continue
+            s.ensure(t, preds)
+            cx[t] = [-s.var("complex", t)]
+            c[t] = cx[t] + ([s.var("zero", t)] if mul else [])
+        s._emit([lit for t in e.args for lit in cx[t]] + [d])
+        for j, tj in enumerate(e.args):
+            if not tj.is_Rational and _never_nan(tj):
+                s._emit([lit for k, t in enumerate(e.args) if k != j
+                         for lit in c[t]] + [d])
 
     def _guard(self, ad, terms) -> list:
         """``[-real(u), ...]`` for the opaque terms ``u`` of a guarded

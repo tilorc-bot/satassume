@@ -6,13 +6,10 @@ explicit clauses in the assumptions, the plan's section 5.3 oracle: for
 every pair ``a, b`` of the problem's terms (numbers against numbers left
 out: distinct values never merge)
 
-    same(a, b) -> (P(a) <-> P(b))      for each of the 33 predicates
+    eq(a, b) -> (P(a) <-> P(b))        for each of the 33 predicates
 
 and congruence spelled out for the one function symbol,
-``same(a, b) -> same(f(a), f(b))``.  ``same(a, b)`` is identity of values,
-``nan`` included: ``eq(a, b) | (~eq(a, a) & ~eq(b, b))``, since ``eq`` is
-SymPy's ``Eq``, false on ``nan``, and ``eq(t, t)`` says ``t`` is not
-``nan`` (a number never is).  Terms are ``x, y, z, f(x), f(y)`` and the
+``eq(a, b) -> eq(f(a), f(b))``.  Terms are ``x, y, z, f(x), f(y)`` and the
 numbers ``0, 1, 2, -1, 1/2``; assumptions are random conjunctions of unary
 literals, ``eq``/``ne`` atoms and small disjunctions; queries are unary
 predicates or equalities.  One engine pair per seed answers several
@@ -139,14 +136,6 @@ def _terms(*fs):
     return out
 
 
-def same(a, b):
-    """``a`` and ``b`` have the same value, ``nan`` included."""
-    e = eq(a, b)
-    if _is_num(a) or _is_num(b):
-        return e
-    return Or(e, And(Not(eq(a, a)), Not(eq(b, b))))
-
-
 def oracle_assumptions(assum, query):
     ts = _terms(assum, query)
     extra = []
@@ -154,11 +143,11 @@ def oracle_assumptions(assum, query):
         for b in ts[i + 1:]:
             if _is_num(a) and _is_num(b):
                 continue
-            e = same(a, b)
+            e = eq(a, b)
             extra.append(Implies(e, And(*[Equivalent(P(p, a), P(p, b)) for p in PREDICATES])))
             fa, fb = f(a), f(b)
             if fa in ts and fb in ts:
-                extra.append(Implies(e, same(fa, fb)))
+                extra.append(Implies(e, eq(fa, fb)))
     return And(assum, *extra)
 
 

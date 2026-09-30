@@ -104,10 +104,8 @@ def test_readme_usage_example():
 
 def test_sharing_example_needs_real_arguments():
     # the design note's section 5.4 example; with plain symbols the guard
-    # keeps LRA out, so sharing cannot fire.  f(r) may be nan (Eq(nan, nan)
-    # is False), so congruence needs it known not to be nan
-    assert ask(Q.eq(f(r), f(s)), (r <= s) & (s <= r)) is None
-    assert ask(Q.eq(f(r), f(s)), (r <= s) & (s <= r) & Q.real(f(r))) is True
+    # keeps LRA out, so sharing cannot fire
+    assert ask(Q.eq(f(r), f(s)), (r <= s) & (s <= r)) is True
     assert ask(Q.eq(f(x), f(y)), (x <= y) & (y <= x)) is None
 
 

@@ -25,8 +25,9 @@ Order relations are over the extended reals and assert that their sides
 are extended reals (`x < 1` implies `Q.extended_real(x)`, `x < oo` is
 `x` extended real and not `+oo`, `x < I` is false); `Eq`/`Ne` compare
 values in any domain and assert only that the sides are not `nan`
-(`Eq(nan, nan)` is False, so `Q.eq(f(x), f(x))` is None: `f(x)` may be
-`nan`).
+(`Eq(nan, nan)` is False). A leaf (a symbol, `f(x)`) is never `nan`, so
+`Q.eq(x, x)` is True, but a compound term may be: `Q.eq(f(1)*g(1),
+f(1)*g(1))` is None (`0*oo`).
 Out of scope for now: matrix predicates and matrix arguments, unregistered
 custom predicates, and replacing the old `expr.is_*` system.
 

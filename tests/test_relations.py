@@ -163,9 +163,7 @@ def test_real_euf_with_order_stand_in():
     specs = [AdapterSpec("order", OrderAdapter, True),
              AdapterSpec("euf", EUFAdapter, False)]
     e = relation_engine(specs)
-    # f(x) may be nan (Eq(nan, nan) is False): congruence needs it not nan
-    assert ask_with(e, Q.eq(f(x), f(y)), (x <= y) & (y <= x)) is None
-    assert ask_with(e, Q.eq(f(x), f(y)), (x <= y) & (y <= x) & Q.complex(f(x))) is True
+    assert ask_with(e, Q.eq(f(x), f(y)), (x <= y) & (y <= x)) is True
     assert ask_with(e, Q.eq(f(x), f(y)), x <= y) is None
     assert ask_with(e, Q.lt(x, z), Q.lt(x, y) & Q.eq(y, z)) is True
     assert ask_with(e, Q.ne(f(x), f(z)), Q.lt(x, y) & Q.lt(y, z)) is None

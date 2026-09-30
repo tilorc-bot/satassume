@@ -13,7 +13,10 @@ The oracle evaluates atoms at a point itself; it never calls the engine or
 SymPy's ``ask``:
 
 * symbols take rational values and some non-real (``I``, ``1 + I``) and
-  infinite (``oo``, ``-oo``, ``zoo``) ones, optionally also ``nan``;
+  infinite (``oo``, ``-oo``, ``zoo``) ones, never ``nan``: in SymPy's
+  assumptions a leaf (a symbol, an applied undefined function) ranges over
+  values, and ``nan`` is none; only a compound term such as ``0*oo`` can
+  be ``nan``;
 * unary predicates follow SymPy's new-assumption meaning (``real`` is finite
   real, ``nonzero`` is real and not zero, ...);
 * order relations are over the extended reals and assert that their
@@ -30,9 +33,10 @@ SymPy's ``ask``:
 
 The fuzzer with an undefined function (``test_fuzz_eq_nan``) draws terms
 such as ``f(x)*z``, ``x - z`` and ``f(1)*f(y)`` and checks the answers
-against random models: symbol values from ``0, 1, -1, oo, -oo, zoo, I``
-and ``nan``, and ``f`` and ``g`` random tables from values to values, so
-that ``nan`` arises from ``0*oo``, ``oo - oo`` and the functions themselves.
+against random models: symbol values from ``0, 1, -1, oo, -oo, zoo, I``,
+and ``f`` and ``g`` random tables from values (``nan`` included, for
+``f(0*oo)``) to those values and ``2``.  Leaves are never ``nan``; it
+arises from ``0*oo``, ``oo - oo`` and ``zoo + zoo`` in compound terms.
 
 Set ``VERIFY_FUZZ_EXAMPLES`` to raise the example count of the default
 fuzzers (default 60), and ``VERIFY_SLOW=1`` to run the slow 2000-example
@@ -46,7 +50,7 @@ import os
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 from sympy import (Eq, Ge, Gt, I, Le, Lt, Ne, Q, Rational, S, Symbol,
-                   Function, nan, oo, symbols, zoo)
+                   Function, oo, symbols, zoo)
 from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or
 
 from satassume.engine import Engine
@@ -390,14 +394,6 @@ def test_fuzz_old_style_symbols(case):
     check(prop, assum, domains, Engine() if fresh else None)
 
 
-@FUZZ
-@given(plain_cases())
-def test_fuzz_symbols_may_be_nan(case):
-    prop, assum, domains, fresh = case
-    domains = {s: list(v) + [nan] for s, v in domains.items()}
-    check(prop, assum, domains, Engine() if fresh else None)
-
-
 @pytest.mark.slow
 @pytest.mark.skipif(not SLOW, reason="slow soundness fuzzer: set VERIFY_SLOW=1")
 @settings(max_examples=2000, deadline=None,
@@ -471,8 +467,9 @@ def test_non_rational_numbers_do_not_crash():
 # --------------------------------------------------------------------------
 
 F, G = Function("f"), Function("g")
-NAN_SYMBOL_VALUES = [S.Zero, S.One, S.NegativeOne, oo, -oo, zoo, I, nan]
-NAN_F_VALUES = [S.Zero, S.One, S(2), oo, -oo, zoo, I, nan]
+# leaves (symbols, f(t), g(t)) are never nan; compound terms can be
+NAN_SYMBOL_VALUES = [S.Zero, S.One, S.NegativeOne, oo, -oo, zoo, I]
+NAN_F_VALUES = [S.Zero, S.One, S(2), oo, -oo, zoo, I]
 N_MODELS = 300
 
 
@@ -537,8 +534,7 @@ def nan_terms(draw):
     for _ in range(draw(st.integers(0, 2))):
         op = draw(st.sampled_from(["add", "sub", "mul", "f"]))
         u = draw(base)
-        t = {"add": lambda: t + u, "sub": lambda: t - u, "mul": lambda: t * u,
-             "f": lambda: F(t)}[op]()
+        t = t + u if op == "add" else t - u if op == "sub" else t * u if op == "mul" else F(t)
     return t
 
 
@@ -599,20 +595,31 @@ def test_fuzz_eq_nan(case):
 
 
 _NAN_EDGE = [
+    # (proposition, assumptions, the engine's answer)
     # the reported case: f(1)*g(1) is nan at f(1) = 0, g(1) = oo
-    (("r", "eq", X + F(S.One) * G(S.One), Y + F(S.One) * G(S.One)), ("r", "eq", X, Y, "Q")),
-    (("r", "eq", X, X), ("u", "zero", Z)),
-    (("r", "eq", F(X), F(X)), ("u", "zero", Z)),
-    (("r", "ne", F(X), F(X)), ("u", "zero", Z)),
-    (("r", "eq", F(X), F(Y)), ("r", "eq", X, Y, "Q")),
-    (("r", "eq", X - Z, Y - Z), ("r", "eq", X, Y, "Q")),
-    (("r", "eq", X * Z, Y * Z), ("r", "eq", X, Y, "Q")),
-    (("r", "eq", X - Z, Y - Z), ("and", ("r", "eq", X, Y, "Q"), ("u", "real", Z))),
+    (("r", "eq", X + F(S.One) * G(S.One), Y + F(S.One) * G(S.One)), ("r", "eq", X, Y, "Q"),
+     None),
+    (("r", "eq", F(S.One) * G(S.One), F(S.One) * G(S.One)), ("u", "zero", Z), None),
+    # leaves are never nan: reflexivity and congruence hold
+    (("r", "eq", X, X), ("u", "zero", Z), True),
+    (("r", "eq", F(X), F(X)), ("u", "zero", Z), True),
+    (("r", "ne", F(X), F(X)), ("u", "zero", Z), False),
+    (("r", "eq", F(X), F(Y)), ("r", "eq", X, Y, "Q"), True),
+    (("r", "eq", F(X - Z), F(Y - Z)), ("r", "eq", X, Y, "Q"), True),
+    # oo - oo and 0*oo
+    (("r", "eq", X - Z, Y - Z), ("r", "eq", X, Y, "Q"), None),
+    (("r", "eq", X * Z, Y * Z), ("r", "eq", X, Y, "Q"), None),
+    (("r", "eq", X * Z, Y * Z), ("and", ("r", "eq", X, Y, "Q"), ("u", "real", Z)), None),
+    # all terms but one finite (and nonzero, in a product): not nan
+    (("r", "eq", X - Z, Y - Z), ("and", ("r", "eq", X, Y, "Q"), ("u", "real", Z)), True),
+    (("r", "eq", X * Z, Y * Z), ("and", ("r", "eq", X, Y, "Q"), ("u", "positive", Z)),
+     True),
 ]
 
 
-@pytest.mark.parametrize("prop, assum", _NAN_EDGE)
-def test_eq_nan_edge_cases(prop, assum):
+@pytest.mark.parametrize("prop, assum, want", _NAN_EDGE)
+def test_eq_nan_edge_cases(prop, assum, want):
     prop = prop if len(prop) == 5 else prop + ("Q",)
+    assert ask(to_sympy(prop), to_sympy(assum), engine=Engine()) is want
     for seed in range(3):
         check_nan(prop, assum, seed, Engine())
