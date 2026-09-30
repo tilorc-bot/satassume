@@ -75,10 +75,12 @@ def _drop(lits: Sequence[int], seed: int, rate: float) -> bool:
 
 @contextlib.contextmanager
 def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None):
-    """While active, every ``Solver.add_clause`` / ``add_clauses`` drops the
-    clauses ``_drop`` selects (an engine change is not needed: the engine
-    only ever sees a subset of the clauses it meant to add)."""
-    orig_add, orig_bulk = Solver.add_clause, Solver.add_clauses
+    """While active, every ``Solver.add_clause`` / ``add_clauses`` /
+    ``add_internal`` drops the clauses ``_drop`` selects (an engine change
+    is not needed: the engine only ever sees a subset of the clauses it
+    meant to add).  Not covered: ``add_pattern`` and the lazily loaded rule
+    blocks (``mention_blocks``), which insert whole compiled blocks."""
+    orig_add, orig_bulk, orig_int = Solver.add_clause, Solver.add_clauses, Solver.add_internal
     n = {"dropped": 0, "kept": 0}
 
     def add_clause(self, lits):
@@ -100,11 +102,23 @@ def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None):
                 kept.append(c)
         return orig_bulk(self, kept)
 
-    Solver.add_clause, Solver.add_clauses = add_clause, add_clauses
+    def add_internal(self, clauses, mentions=None):
+        # the template patterns' path (internal literals); ``mentions`` is
+        # left as it is: mentioning a variable only loads lazy rule blocks
+        kept = []
+        for c in clauses:
+            if _drop(c, seed, rate):
+                n["dropped"] += 1
+            else:
+                n["kept"] += 1
+                kept.append(c)
+        return orig_int(self, kept, mentions)
+
+    Solver.add_clause, Solver.add_clauses, Solver.add_internal = add_clause, add_clauses, add_internal
     try:
         yield n
     finally:
-        Solver.add_clause, Solver.add_clauses = orig_add, orig_bulk
+        Solver.add_clause, Solver.add_clauses, Solver.add_internal = orig_add, orig_bulk, orig_int
         if stats is not None:
             stats.update(n)
 
@@ -279,7 +293,9 @@ def rename(exprs: Sequence[Any], rng: random.Random, tag: str = "r"):
     syms, funcs = set(), set()
     for e in exprs:
         if hasattr(e, "free_symbols"):
-            syms |= e.free_symbols
+            # plain symbols and Dummies only: a MatrixSymbol is out of scope
+            # and must stay one
+            syms |= {s for s in e.free_symbols if type(s) in (Symbol, Dummy)}
             funcs |= {a.func for a in e.atoms(AppliedUndef)}
     names = list(range(len(syms) + len(funcs)))
     rng.shuffle(names)
@@ -520,12 +536,12 @@ def _guarded(v: Violation, prop, assum, variant) -> bool:
         return False
     if not consistent(assum, v.config):
         return False
-    if v.inv == "I2":
-        extra = from_srepr(var["extra"])
-        if not consistent(_join(_conjuncts(assum) + _conjuncts(extra)), v.config):
-            return False
-    if v.inv == "I3":
-        return True   # A & B consistent iff A is, by construction (B is p / ~p / declared)
+    if v.inv in ("I2", "I3"):
+        # A & B is consistent iff A is, by construction: B is over fresh
+        # symbols and functions and satisfiable (I2), or p / ~p as answered
+        # or a declared fact (I3); the engine's own check would refuse
+        # sets with relations no theory reads and lose real findings
+        return True
     if v.inv == "I5":
         return consistent(from_srepr(var["assum"]), v.config)
     return True
