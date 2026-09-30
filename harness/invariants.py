@@ -78,9 +78,11 @@ def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None):
     """While active, every ``Solver.add_clause`` / ``add_clauses`` /
     ``add_internal`` drops the clauses ``_drop`` selects (an engine change
     is not needed: the engine only ever sees a subset of the clauses it
-    meant to add).  Not covered: ``add_pattern`` and the lazily loaded rule
-    blocks (``mention_blocks``), which insert whole compiled blocks."""
+    meant to add); ``add_pattern`` (compiled blocks) is filtered the same
+    way.  Not covered: the lazily loaded rule blocks (``mention_blocks``),
+    which are propagated without clauses."""
     orig_add, orig_bulk, orig_int = Solver.add_clause, Solver.add_clauses, Solver.add_internal
+    orig_pat = Solver.add_pattern
     n = {"dropped": 0, "kept": 0}
 
     def add_clause(self, lits):
@@ -114,11 +116,27 @@ def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None):
                 kept.append(c)
         return orig_int(self, kept, mentions)
 
+    def add_pattern(self, pattern, base, nvars):
+        # a compiled block relative to variable 0, shifted to ``base``:
+        # decided on the shifted literals (a subset of a unit-free,
+        # tautology-free pattern is one too)
+        lo = 2 * base
+        kept = []
+        for c in pattern:
+            if _drop([l + lo for l in c], seed, rate):
+                n["dropped"] += 1
+            else:
+                n["kept"] += 1
+                kept.append(c)
+        return orig_pat(self, kept, base, nvars)
+
     Solver.add_clause, Solver.add_clauses, Solver.add_internal = add_clause, add_clauses, add_internal
+    Solver.add_pattern = add_pattern
     try:
         yield n
     finally:
         Solver.add_clause, Solver.add_clauses, Solver.add_internal = orig_add, orig_bulk, orig_int
+        Solver.add_pattern = orig_pat
         if stats is not None:
             stats.update(n)
 
@@ -469,11 +487,21 @@ def check_I6(prop, assum, config, base, rng, variant=None):
         p2, a2 = rename([prop, assum], random.Random(rng.randrange(1 << 30)))
         variant = {"kind": "rename", "prop": to_srepr(p2), "assum": to_srepr(a2)}
     p2, a2 = from_srepr(variant["prop"]), from_srepr(variant["assum"])
-    other = fresh_outcome(p2, a2, config)
+    if variant.get("hashseed") is None and rng.random() < I6_PROCESS_RATE:
+        variant = dict(variant, hashseed=rng.choice([1, 2, 3]))
+    if variant.get("hashseed") is not None:
+        # the renamed query in a fresh interpreter under another PYTHONHASHSEED
+        from .checker import process_outcome
+        other = process_outcome(Ask(p2, a2), config, variant["hashseed"])
+    else:
+        other = fresh_outcome(p2, a2, config)
     return _severity_same("I6", base, other), other, variant
 
 
 RENAME_LIMIT = 1500
+#: share of I6 checks whose renamed query also runs in a fresh interpreter
+#: under another PYTHONHASHSEED (a subprocess: about a second each)
+I6_PROCESS_RATE = 0.04
 
 I7_SETTINGS = {
     "discovery_budget": [5, 40, 400, 5000],
