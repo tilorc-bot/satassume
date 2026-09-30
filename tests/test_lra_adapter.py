@@ -233,7 +233,7 @@ im = Symbol("im", imaginary=True)
 UNINTERPRETED = [
     # closed real constants in a linear position are read
     # (test_lra_constants.py); as factors of a symbol they are not; Floats never
-    Q.gt(x, 0.5), Q.lt(x, 0.5 * pi), Q.lt(x, pi + 0.25), Q.lt(0.5 * x, 1), Q.lt(pi * x, 1), Q.lt(E * x, 1), Q.lt(sqrt(2) * x + 1, y),
+    Q.gt(x, 0.5), Q.lt(x, 0.5 * pi), Q.lt(x, pi + 0.25), Q.lt(0.5 * x, 1), Q.lt(I * x, 1), Q.lt(0.5 * pi * x + 1, y),
     Q.lt(x, I * pi), Q.lt(x, pi + I),
     Q.gt(x, I), Q.lt(I, 1), Q.lt(1 + I, 1),       # 1 + I: the references' Lt(I, 0) TypeError
     Q.lt(I * x, 1), Q.gt(im * I, 0),               # (im*I).is_real is True: sympy edge case

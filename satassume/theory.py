@@ -38,6 +38,16 @@ Smaller clauses prune more; any valid clause is sound.  The solver raises
 *Soundness.*  A theory must never report a conflict for a theory-consistent
 set of literals.  Every definite answer of the engine rests on this.
 
+*Giving up.*  A theory that meets a question it cannot decide (LRA with
+constants in its coefficients: a sign that exact arithmetic cannot
+decide, or an expression over its size budget) must not guess a branch.
+It may instead stop contributing: from then on it reports no conflict, no
+propagation and ``None`` from ``check``, and sets ``gave_up``.  That is
+incompleteness as below (the conflicts and propagations it reported
+before were valid, nothing after is claimed), so every definite answer
+stays sound; the engine discards a session whose theory gave up once the
+query is done, so later queries start with a working theory.
+
 *Completeness.*  :meth:`check` on a total assignment should report a conflict
 whenever the asserted literals are inconsistent.  A theory that cannot tell
 (nonlinear terms, an unsupported atom) returns None there; the solver then

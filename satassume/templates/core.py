@@ -251,13 +251,25 @@ def _mul_rules(n, consts):
     # Extended reals, all finite or all nonzero (no 0*oo).
     rule([*lits(A, 'extended_real'), *lits(A, 'finite')], (N, 'extended_real', True))
     rule([*lits(A, 'extended_real'), *lits(A, 'zero', False)], (N, 'extended_real', True))
-    for k in A:
-        rule([(N, 'commutative', True)], (k, 'commutative', True))
+    # A commutative product has a commutative factor k when every other
+    # factor is a nonzero number: k is the product divided by them.  Not
+    # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
+    if n <= MAX_ONEOUT:
+        for k in A:
+            rest = [j for j in A if j != k]
+            rule([(N, 'commutative', True), *lits(rest, 'complex'), *lits(rest, 'zero', False)],
+                 (k, 'commutative', True))
 
-    # Zero: some zero factor with the rest finite; nonzero: all nonzero.
+    # Zero: some zero factor with the rest finite; nonzero: all nonzero and
+    # at most one of them non-commutative (non-commutative values have zero
+    # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
     for k in A:
         rule([(k, 'zero', True), *lits([j for j in A if j != k], 'finite')], (N, 'zero', True))
-    rule([], [*lits(A, 'zero'), (N, 'zero', False)])
+    if n <= MAX_ONEOUT:
+        for k in A:
+            rule(lits([j for j in A if j != k], 'commutative'), [*lits(A, 'zero'), (N, 'zero', False)])
+    else:
+        rule(lits(A, 'commutative'), [*lits(A, 'zero'), (N, 'zero', False)])
 
     # Hermitian product of commuting hermitian factors.
     rule([*lits(A, 'commutative'), *lits(A, 'hermitian')], (N, 'hermitian', True))
@@ -393,9 +405,11 @@ _POW_RULES = (
     # SymPy leaves ``oo**0.0`` unevaluated and calls it non-integer.
     (((_E, 'zero'), (_B, 'finite')), (_N, 'odd')),
     # --- zero / nonzero / finite / infinite ---
-    (((_B, 'zero', False), (_B, 'finite'), (_E, 'finite')), (_N, 'zero', False)),
+    # (A commutative base: ``A**2 == 0`` for a nilpotent ``A``.)
+    (((_B, 'zero', False), (_B, 'commutative'), (_B, 'finite'), (_E, 'finite')),
+     (_N, 'zero', False)),
     (((_B, 'infinite'), (_E, 'negative')), (_N, 'zero')),
-    (((_B, 'zero', False), (_E, 'nonnegative')), (_N, 'zero', False)),
+    (((_B, 'zero', False), (_B, 'commutative'), (_E, 'nonnegative')), (_N, 'zero', False)),
     (((_B, 'finite'), (_E, 'negative')), (_N, 'zero', False)),
     (((_B, 'finite'), (_E, 'finite'), (_E, 'nonnegative')), (_N, 'finite')),
     (((_B, 'finite'), (_E, 'finite'), (_B, 'zero', False)), (_N, 'finite')),
@@ -430,9 +444,10 @@ _POW_RULES = (
     (((_B, 'transcendental'), (_E, 'rational'), (_E, 'zero', False)), (_N, 'algebraic', False)),
     # --- polar / commutative ---
     (((_B, 'polar'),), (_N, 'polar')),
+    # Not ``commutative(b**e) -> commutative(b)`` (``A**2`` is 1 for a
+    # reflection ``A``, ``A**0 == 1``) or ``-> commutative(e)``
+    # (``1**A == 1``); see #47 and the rule for ``1/b`` in ``_pow_rules``.
     (((_B, 'commutative'), (_E, 'commutative')), (_N, 'commutative')),
-    (((_N, 'commutative'),), (_B, 'commutative')),
-    (((_N, 'commutative'),), (_E, 'commutative')),
 )
 
 _POW_E_RULES = (
@@ -606,6 +621,8 @@ def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
     if e is S.NegativeOne:
         # 1/b is rational iff b is (nonzero) rational.
         rule([(_B, 'irrational', True)], (_N, 'irrational', True))
+        # b is the inverse of a nonzero number 1/b.
+        rule([(_N, 'complex', True), (_N, 'zero', False)], (_B, 'commutative', True))
     if b is not None:
         if b is S.NegativeOne:
             rule([(_E, 'integer', True)], (_N, 'odd', True))

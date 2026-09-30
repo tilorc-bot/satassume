@@ -11,7 +11,8 @@ which argument positions hold which constants), so it is generated once
 per pattern, resolved against the constants (a premise a constant satisfies
 is dropped, one it violates kills the rule, a violated conclusion negates the
 premises), pruned of subsumed rules, and cached.  Per node only the atoms
-are instantiated.  No ``is_*`` property is ever read on a symbolic object.
+are instantiated.  No ``is_*`` property is ever read on a symbolic object,
+except the structural ``is_commutative`` (``atoms.structural_commutative``).
 """
 from __future__ import annotations
 
