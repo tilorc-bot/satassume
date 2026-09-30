@@ -136,6 +136,18 @@ The streams are the existing ones (`harness/generators.py`,
   SymPy and the answer is True (`j` is declared even).  A constant
   relation conjunct the theories do not read makes the engine give up on
   a declared fact.
+* **I5, `depends`** (round 2, two pinned: `I5-zero-as-eq-engages-transfer*`):
+  `ask(~Q.real(-g(x)), Q.zero(x) & Q.infinite(2*g(0)))` is None; with
+  `Q.zero(x)` spelled `Q.eq(x, 0)` it is True (correctly: `g(x)` is
+  `g(0)`).  The relation spelling engages the relation glue and transfer,
+  the predicate spelling does not: the I2 transfer family reached through
+  a restatement.  Nine cases in a 2,800-query I5 run (`transfer` profile,
+  every config).
+* **I3, `lost`** (round 2, pinned: `I3-declared-fact-loses-definiteness-budget`):
+  `ask(Q.negative(1/(z0 + 1)), Q.positive(he) | Q.negative_infinite(-3/sqrt(f(z0))))`
+  is False under the `budget` config and None once `~Q.irrational(z0)`
+  (declared: `z0` is zero) is added: the discovery budget family of
+  round 1's I3 case.
 * **I7, `depends`**, known (`I7-settings`): one pinned case.
 * I1, I3, I6: no violation in about 20,000 checks; the I1 candidates
   seen were all under inconsistent sets (rejected by the guard).  I1
