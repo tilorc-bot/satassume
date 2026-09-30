@@ -253,6 +253,41 @@ per case, both sides return the same answer):
 | `Q.positive(w**2 + y + z) \| Q.nonnegative(z) & Q.positive(y) & Q.real(w)` | 1111 us | 96 us |
 | `Q.negative(y) \| Q.positive(y) \| Q.nonzero(y) & Q.real(y)` | 1271 us | 32 us |
 
+## Known gaps
+
+Queries answered None where a definite answer holds for every value the
+assumptions allow. None of them is a wrong answer. Each one is pinned as a
+strict xfail in `tests/test_known_gaps.py`, so closing a gap fails that test
+until the case is moved and this list updated.
+
+Tracked in an issue:
+
+* an unread relation (a Float or `AccumBounds` bound) makes the whole query
+  None, also for facts unrelated to it (`Q.real(m)` under
+  `Q.odd(m) & Q.ge(m, 1.5)`): #64 proposes `uninterpreted="free"` as the
+  default;
+* differences whose sides are not known to be real (`Q.negative(a - b)`
+  under `Q.positive(b - a)`, `Q.zero(a - b)` under `Q.eq(a, b)` with finite
+  sides): #42;
+* integral `re(x)` and `im(x)` do not make `x` finite: #19.
+
+Not tracked, because neither SymPy system answers them either (except the
+first, which SymPy's `ask` gets by substituting the zero symbol) and no
+caller has needed them:
+
+* `Q.integer(1/(m + 1))` under `Q.zero(m)`: there is no "equals 1" fact, and
+  a symbol pinned to a constant is not substituted;
+* `Q.eq(f(x), f(pi))` under `Q.eq(2*x, 2*pi)`: a constant term gets no
+  interface equality in the theory combination;
+* `Q.eq(x, 3)` under `Q.eq(x, log(8)/log(2))`: one value written two ways is
+  two unrelated constants;
+* `Q.positive(x)` under `Q.gt(x, pi**-(10**20))`: a tiny constant is not
+  shown positive.
+
+Deliberately not read: Float bounds. SymPy compares `Float(0.1) > 1/10`
+exactly but `Eq(Float(0.1), 1/10)` at the Float's precision, so there is no
+single right reading, and a Float bound is left to the uninterpreted path.
+
 ## License
 
 BSD-3-Clause. The rule strings and several structural rules are copied or
