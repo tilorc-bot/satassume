@@ -1,6 +1,3 @@
-# To enable: move this file to .github/workflows/history-fuzz.yml (it is
-# staged here because the account that opened the PR could not push
-# workflow files).
 name: history-fuzz
 # Nightly history-independence campaign (harness/README.md): the slow part
 # of tests/test_history.py plus fuzz, profile, audit and hash-seed runs,

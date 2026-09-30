@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The nightly history-independence campaign, one shard per call
-# (the workflow harness/ci/history-fuzz.yml, to be moved to
-# .github/workflows/, runs the four shards in parallel).
+# (the workflow .github/workflows/history-fuzz.yml runs the four shards
+# in parallel).
 #
 #   harness/campaign.sh tests|base|profiles|audit|all
 #

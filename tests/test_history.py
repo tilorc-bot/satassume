@@ -13,8 +13,8 @@ Two parts:
   ``registry`` profile runs, also strict xfails; the planted-defect tests
   showing the checker, ddmin and the stream orders work; the inventory of
   module-level state.
-* **slow** (marked ``slow``, run with ``HISTORY_SLOW=1``; nightly by
-  the workflow staged at ``harness/ci/history-fuzz.yml``): random streams over several
+* **slow** (marked ``slow``, run with ``HISTORY_SLOW=1``, nightly in
+  ``.github/workflows/history-fuzz.yml``): random streams over several
   configurations and orders, the other profiles, the cache audit, a
   module-level reference sample, Hypothesis streams (derandomized) and
   the recorded corpus (if ``queries.jsonl`` exists).

@@ -225,8 +225,7 @@ under `--fail-on unknown`.
 
 * `.github/workflows/test.yml` (every push) runs the whole suite, which
   includes the fast part of `tests/test_history.py`.
-* `harness/ci/history-fuzz.yml` (nightly and on manual dispatch; move it
-  to `.github/workflows/` to enable it)
+* `.github/workflows/history-fuzz.yml` (nightly and on manual dispatch)
   runs `harness/campaign.sh` in four parallel jobs: `tests` (the slow
   pytest part with 6 seeds and 200 Hypothesis examples), `base` (random
   streams in four configurations, with registrations, with trigger/observer
