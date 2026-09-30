@@ -366,6 +366,21 @@ def _number_facts(engine, c) -> tuple:
     return _number_basis(engine, c, facts=True)
 
 
+_INF_PREDS = frozenset({"extended_real", "positive_infinite", "negative_infinite"})
+
+
+def _own_term(sides, e) -> bool:
+    """The order sides (:func:`satassume.lra_adapter.order_sides`) of
+    ``0 < e`` or ``e < 0`` are ``0`` and ``e`` itself as the only term,
+    with coefficient 1 and no ``oo`` summand."""
+    (fa, ia), (fb, ib) = sides
+    if ia or ib:
+        return False
+    if fa:
+        fa, fb = fb, fa
+    return not fa and len(fb) == 1 and fb.get(e) == 1
+
+
 # --------------------------------------------------------------------------
 # per-session glue
 # --------------------------------------------------------------------------
@@ -386,6 +401,7 @@ class Relations:
         self.linked: set = set()
         self._bounded: set = set()        # constant terms whose bounds are asserted
         self._guards: dict = {}           # terms -> guard literals (_guard)
+        self._link_lt: dict = {}          # link atoms 0 < e, e < 0 -> e
         self.top: dict = {}               # vocabulary-atom arguments of user formulas
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
@@ -483,7 +499,13 @@ class Relations:
         solver = s.solver
         var = s.table.custom[atom]
         order = atom.pred == "lt"
-        if order and self._order_sides(var, atom):
+        # a link atom 0 < e or e < 0 (see _link): clause 1 is implied by
+        # the link and the rule base (extended_positive and
+        # extended_negative imply extended_real); only its demand is kept
+        link = self._link_lt.get(atom) if order else None
+        if link is not None:
+            s.ensure(link, {"extended_real"})
+        elif order and self._order_sides(var, atom):
             return True                       # false: a side is no extended real
         if atom.pred == "eq":
             self._eq_infinity(var, atom)
@@ -504,7 +526,14 @@ class Relations:
             if order and hasattr(ad, "order_sides"):
                 sides = ad.order_sides(sat)
                 if sides is not None:
-                    self._order_infinite(var, sides)
+                    if link is not None and _own_term(sides, link):
+                        # clauses 2 of 0 < u and u < 0 for an opaque term u
+                        # are implied by the link: positive_infinite(u)
+                        # implies extended_positive(u), negative_infinite(u)
+                        # extended_negative(u); only their demand is kept
+                        s.ensure(link, _INF_PREDS)
+                    else:
+                        self._order_infinite(var, sides)
                     if sides[0][1] or sides[1][1]:
                         ok = True             # an oo summand: no finite case
                         continue
@@ -697,8 +726,10 @@ class Relations:
         s.ensure(e, {"extended_positive", "extended_negative", "zero"})
         pos, neg = s.var("extended_positive", e), s.var("extended_negative", e)
         zero = s.var("zero", e)
-        gt = self._atom_var(relation_atom("lt", S.Zero, e))
-        lt = self._atom_var(relation_atom("lt", e, S.Zero))
+        gta, lta = relation_atom("lt", S.Zero, e), relation_atom("lt", e, S.Zero)
+        self._link_lt[gta] = self._link_lt[lta] = e
+        gt = self._atom_var(gta)
+        lt = self._atom_var(lta)
         eqa = relation_atom("eq", e, S.Zero)
         if eqa not in self.session.table.custom:
             self._aux_eq.add(eqa)
