@@ -123,7 +123,11 @@ clause 3,
 Sound: with every term a finite real, ``e`` is the form's value, a finite
 real, and ``integer(e)`` holds iff that value is an integer (SymPy's
 ``integer`` implies finite, so ``oo`` is no integer, and an infinite term
-fails the guard).  The theory rounds bounds and branches (see
+fails the guard).  When the form is ``e`` itself (``x``, ``sin(x)``), the
+variable ``integer(e)`` is registered as the atom, without guard or
+auxiliary variable: if ``e`` is no finite real, ``integer(e)`` is false
+and the theory's value of ``e`` is free (every other atom on ``e`` is
+guarded), so a non-integral value satisfies it.  The theory rounds bounds and branches (see
 :mod:`satassume.lra`, "Integrality"), so ``Q.integer(t)`` is False under
 ``0 < t < 1`` and ``Q.ge(n, 1)`` is True for an integer ``n > 0``; the
 ``<-`` half gives True where the bounds pin ``e`` to an integer
@@ -577,11 +581,17 @@ class Relations:
     def _link_integer(self, ad, e) -> None:
         """``guard -> (integer(e) <-> i)`` for the integrality atom ``i`` of
         ``e``'s linear form in the guarded adapter ``ad`` (see
-        "Integrality"); called once per linked expression."""
+        "Integrality"); called once per linked expression.  When ``e`` is
+        its own term, ``integer(e)`` itself is the atom (no guard)."""
         form = ad.integer_form(e)
         if form is None:
             return
         s = self.session
+        (payload, _terms) = form
+        if not payload.offset and len(payload.terms) == 1 \
+                and payload.terms[0][0] == e and payload.terms[0][1] == 1:
+            ad.register_integer(s.solver, s.var("integer", e), form)
+            return
         i = s.table.aux()
         s.solver.ensure_vars(i)
         ad.register_integer(s.solver, i, form)
