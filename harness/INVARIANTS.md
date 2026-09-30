@@ -95,6 +95,12 @@ The streams are the existing ones (`harness/generators.py`,
   switches the set from the relevance-split path to the whole-set
   path with the relation glue and transfer engaged (the mechanism of
   history family T, but without any history: a fresh engine, one query).
+  The lost-definiteness direction is large: in a 2.6-minute run over
+  every profile 39 of 88 slices reported one, including a set asked
+  back as the proposition (`ask(~Q.extended_nonzero(r),
+  ~Q.extended_nonzero(r))` = True; None with `Q.gt(u, h(k(0)))` added)
+  and a context-free fact (`ask(Q.commutative(f(_d) + 1), Q.finite(r))`).
+  Nine cases are pinned; the nightly reports up to five per slice.
 * **I7, `depends`**, known (`I7-settings`): one pinned case.
 * I1, I3, I4, I5, I6: no violation in about 12,000 checks; the I1
   candidates seen were all under inconsistent sets (rejected by the
