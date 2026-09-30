@@ -100,7 +100,7 @@ run to check a change is in [testing.md](testing.md).
 2. The push token lacks the `workflow` scope, so GitHub refuses any change
    under `.github/workflows/`. Stage such a file elsewhere (#55 used
    `harness/ci/`), say in the PR that it must be moved, and let the owner
-   move it.
+   move it (the owner did, in `fb1c039`).
 3. `gh pr edit` fails with the installed `gh` 2.46; edit a PR with
    `gh api -X PATCH repos/tilorc-bot/satassume/pulls/N -F body=@file`.
 
