@@ -307,10 +307,11 @@ class Unrelated:
         r = self.rng
         self.k += 1
         name = f"{self.tag}h{self.k}p"
-        s = self.sym()
-        spec = {"pred": name, "cls": r.choice(["Symbol", "Basic"]),
+        cls = r.choice(["Symbol", "Basic", "AppliedUndef"])
+        s = self.func()(self.sym()) if cls == "AppliedUndef" else self.sym()
+        spec = {"pred": name, "cls": cls,
                 "lit": r.choice(VALUE_PREDS), "neg": r.random() < 0.3,
-                "shape": r.choice(["implies", "iff", "or"])}
+                "shape": r.choice(["implies", "iff", "or", "none", "true"])}
         atom = custom_predicate(name)(s)
         return spec, atom
 
@@ -319,6 +320,10 @@ def extension_handler(spec: dict):
     from satassume.formula import Implies, Not as FNot, Or as FOr, P
 
     def fn(t):
+        if spec["shape"] == "none":
+            return None                       # no knowledge
+        if spec["shape"] == "true":
+            return True                       # the predicate holds of t: what the conjunct asserts
         lit = P(spec["lit"], t)
         if spec["neg"]:
             lit = FNot(lit)
@@ -341,7 +346,7 @@ def registered(specs: Sequence[dict]):
     snap = snapshot()
     try:
         for spec in specs:
-            cls = Symbol if spec["cls"] == "Symbol" else Basic
+            cls = {"Symbol": Symbol, "Basic": Basic, "AppliedUndef": AppliedUndef}[spec["cls"]]
             extensions.register(spec["pred"], cls)(extension_handler(spec))
         yield
     finally:

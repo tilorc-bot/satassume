@@ -13,7 +13,7 @@ consistent (below).  Losing definiteness is allowed under I1 only.
 | inv | statement | checker | variant | reports |
 |---|---|---|---|---|
 | I1 | dropping any subset of the clauses never flips a definite answer, never turns None definite | `check_I1` | `dropping_clauses(seed, rate)`: a test-time patch of `Solver.add_clause`, `add_clauses`, `add_internal` (the template patterns' path) and `add_pattern` (compiled blocks) dropping each clause by a hash of its literals and the seed, rate 3-50 %; two seeds per query | definite -> other definite (`wrong`), None -> definite (`wrong`), None -> engine error (`crash`) |
-| I2 | conjuncts, terms, extensions with no path through shared variables to the query or the set do not change the answer | `check_I2` | `Unrelated`: 1-12 conjuncts over fresh symbols and fresh undefined functions, each satisfiable on its own (a predicate on `u + T(v, ...)` where `u` occurs nowhere else, on `u*v`, `u**3`, `u**5`, `h(T)`; a relation between two such terms with different bases or a finite constant; a fact consistent with a fresh declared symbol), symbols disjoint across pieces: `A & B` is consistent iff `A` is; in 30 % of the checks (`I2_EXTENSION_RATE`) 1-3 *registered extensions* too (`Unrelated.extension`, `registered`): a fresh predicate `iuhNp` registered on `Symbol` or `Basic` whose handler relates it to one vocabulary literal on the same term (`implies`, `iff` or `Or`), asserted on a fresh symbol in the added conjuncts so that the handler runs; the registry is restored afterwards; two variants per query | any change but an inconsistency report: definite vs definite (`wrong`), definite vs None (`depends`), error on one side (`crash`) |
+| I2 | conjuncts, terms, extensions with no path through shared variables to the query or the set do not change the answer | `check_I2` | `Unrelated`: 1-12 conjuncts over fresh symbols and fresh undefined functions, each satisfiable on its own (a predicate on `u + T(v, ...)` where `u` occurs nowhere else, on `u*v`, `u**3`, `u**5`, `h(T)`; a relation between two such terms with different bases or a finite constant; a fact consistent with a fresh declared symbol), symbols disjoint across pieces: `A & B` is consistent iff `A` is; in 30 % of the checks (`I2_EXTENSION_RATE`) 1-3 *registered extensions* too (`Unrelated.extension`, `registered`): a fresh predicate `iuhNp` registered on `Symbol`, `Basic` or `AppliedUndef` whose handler relates it to one vocabulary literal on the same term (`implies`, `iff` or `Or`) or returns `None` / `True`, asserted on a fresh symbol or fresh `h(u)` in the added conjuncts so that the handler runs; the registry is restored afterwards; two variants per query | any change but an inconsistency report: definite vs definite (`wrong`), definite vs None (`depends`), error on one side (`crash`) |
 | I3 | a definite answer under `A` stays under `A & B` | `check_I3` | `B` = `p` (answer True) or `negate(p)` (False), or a fact declared on a symbol of the query (`assumptions0`); the guard demands a model of `A & B` itself (anything goes when `A & B` is inconsistent) | flipped (`wrong`), None (`lost`), error (`crash`) |
 | I4 | `ask(p, A)` is True exactly when `ask(~p, A)` is False | `check_I4` | `negate(p)`: `Not(p, evaluate=False)` (`Not(Not(q))` is `q`).  SymPy's `Not(rel)` *rewrites* a `Relational` (`Not(x >= a)` is `x < a`), which is not the negation when `x` can be non-real: every round-1 I4 report was that rewrite | both definite and not opposite (`wrong`), one definite and the other None (`lost`), error on one side (`crash`) |
 | I5 | an equivalent restatement of the set gives the same answer | `check_I5` | 65 %: `restate` per conjunct: relation sides swapped (`lt(a, b)` -> `gt(b, a)`), the three spellings of a relation, `Implies` as `Or` or as its contrapositive, `Equivalent` as two `Implies`, `Q.is_true` around an atom, `~eq` <-> `ne` (complements for every value; `~lt` is *not* `ge`), `zero(x)` <-> `eq(x, 0)` for a commutative non-matrix `x`, De Morgan on a negated `And`/`Or`; the negations inside are `negate` (never SymPy's rewrite).  35 % (`I5_SYNTAX_RATE`): `syntax_form`, the same conjuncts reordered, one duplicated, nested once or twice, built with `And(..., evaluate=False)` so that SymPy keeps the spelling; rebuilt from a seed, so the shrinker can drop conjuncts | as I2 |
@@ -90,11 +90,16 @@ python -m harness invariants --nightly --seeds 0-2 --out harness-results/invaria
 python -m harness invariants --inv I1,I2 --profile transfer,links --config default,budget --seeds 0-4 --queries 120
 ```
 
-Measured (this machine): a 30-query slice through all seven checkers
-takes 2-16 s (`deep`, `relational` are the slow profiles).  Round 1's
-runs stopped after 485-569 s of user CPU because the budget was wall
-time on a loaded machine; it is CPU now, and each query does more (three
-I1 drops, two I2 variants).  Exit status 1 on an unknown violation
+Measured (this machine, loaded): a 30-query slice through all seven
+checkers takes 2-20 s (`deep`, `relational` are the slow profiles);
+`--nightly --minutes 2.5 --seeds 13` visited 22 slices (573 queries,
+1,719 I1 checks, 1,146 I2 checks).  The 20-minute run visits roughly
+170-200 slices, about 4,500 queries.  Round 1's runs stopped after
+485-569 s of user CPU because the budget was wall time on a loaded
+machine; it is CPU now, and each query does more (three I1 drops, two
+I2 variants).  At most five reports per invariant and two of one shape
+per slice (the I2 definite -> None family would otherwise spend the
+budget on shrinking).  Exit status 1 on an unknown violation
 (`--fail-on unknown`) or any.
 
 ## Generators
@@ -180,9 +185,9 @@ The streams are the existing ones (`harness/generators.py`,
 
 * I1 does not drop the lazily loaded rule blocks (`Solver.mention_blocks`:
   propagated without clauses) nor learnt clauses.
-* I2's extensions are one handler per fresh predicate on `Symbol` or
-  `Basic`; polyadic predicates, handlers on `AppliedUndef` or on
-  numbers, and handlers returning Python bools are not generated.
+* I2's extensions are one handler per fresh predicate; polyadic
+  predicates, handlers on numbers and handlers returning `False` (not
+  satisfiable with the asserted atom) are not generated.
 * I2 does not share a *function symbol* between the unrelated conjuncts
   and the query (`f(u)` next to `f(x)`): the engine's congruence clauses
   would link them, so it is not "no path".
