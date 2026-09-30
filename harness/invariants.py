@@ -456,14 +456,21 @@ def check_I5(prop, assum, config, base, rng, variant=None):
 
 
 def check_I6(prop, assum, config, base, rng, variant=None):
-    """Renaming symbols and functions to fresh names gives the same answer."""
+    """Renaming symbols and functions to fresh names gives the same answer.
+    Terms above ``RENAME_LIMIT`` characters of srepr are skipped: SymPy's
+    rebuild of a renamed deep term takes tens of seconds (a budget matter,
+    not an engine one)."""
     if variant is None:
+        if len(to_srepr(prop)) + len(to_srepr(assum)) > RENAME_LIMIT:
+            return None, base, {"kind": "skip"}
         p2, a2 = rename([prop, assum], random.Random(rng.randrange(1 << 30)))
         variant = {"kind": "rename", "prop": to_srepr(p2), "assum": to_srepr(a2)}
     p2, a2 = from_srepr(variant["prop"]), from_srepr(variant["assum"])
     other = fresh_outcome(p2, a2, config)
     return _severity_same("I6", base, other), other, variant
 
+
+RENAME_LIMIT = 1500
 
 I7_SETTINGS = {
     "discovery_budget": [5, 40, 400, 5000],
