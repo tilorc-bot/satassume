@@ -32,10 +32,10 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
-from sympy import (Abs, Add, Eq, HadamardProduct, I, Identity, KroneckerDelta, MatAdd, MatMul, MatrixSymbol, Max,
-                   Min, Ne, Piecewise, Q, Rem, RisingFactorial, S, Symbol, acosh, acot, acoth, acsch, arg, asech,
-                   asinh, atan2, atanh, ceiling, conjugate, cos, cosh, coth, csc, csch, exp, factorial, floor, gamma, im,
-                   log, nan, oo, pi, sec, sech, sign, sin, sinh, sqrt, symbols, tanh, zoo, ZeroMatrix)
+from sympy import (Abs, Add, Eq, HadamardProduct, I, Identity, KroneckerDelta, MatAdd, MatMul, MatrixSymbol, Max, Min,
+                   Mod, Ne, Piecewise, Q, Rem, RisingFactorial, S, Symbol, acosh, acot, acoth, acsch, arg,
+                   asech, asinh, atan2, atanh, ceiling, conjugate, cos, cosh, coth, csc, csch, exp, factorial, floor,
+                   gamma, im, log, nan, oo, pi, sec, sech, sign, sin, sinh, sqrt, symbols, tanh, zoo, ZeroMatrix)
 
 
 class _Unchanged:
@@ -245,6 +245,24 @@ _add("default: floor/ceiling", "floor/ceiling of an infinite argument, of a sum 
 # from test_default_rem_zero_dividend.py
 _add("default: Rem zero dividend", "Rem(0, q) = 0 was not applied", [
     (Rem(p, q), Q.zero(p), S.Zero),
+])
+# A relation holds on the extended reals, so Q.lt(p, q) allows q = oo, where Mod(p, oo) = Rem(p, oo) = nan.
+_add("#10 B12", "Mod/Rem(p, q) -> p read q as finite from a relation bounding p", [
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q), UNCHANGED),
+    (Mod(p, q), Q.nonpositive(p) & Q.gt(p, q), UNCHANGED),                   # q = -oo
+    (Rem(p, q), Q.nonnegative(p) & Q.lt(p, q), UNCHANGED),
+    (Rem(p, q), Q.nonnegative(p) & Q.lt(p, -q), UNCHANGED),                  # q = -oo
+    (Rem(p, q), Q.nonpositive(p) & Q.gt(p, -q), UNCHANGED),
+    (Rem(p, q), Q.nonpositive(p) & Q.gt(p, q), UNCHANGED),
+])
+_add("#10 B12", "the rewrite still fires where q is finite", [
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.positive(q), p),
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.finite(q), p),
+    (Mod(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.integer(q), p),
+    (Mod(p, q), Q.nonpositive(p) & Q.gt(p, q) & Q.finite(q), p),
+    (Mod(p, 5), Q.nonnegative(p) & Q.lt(p, 5), p),
+    (Rem(p, q), Q.nonnegative(p) & Q.lt(p, q) & Q.finite(q), p),
+    (Rem(p, q), Q.nonpositive(p) & Q.gt(p, -q) & Q.real(q), p),
 ])
 
 # --- rules: hyperbolic (from test_default_hyperbolic_i_pi_shift.py) ------------------------------
