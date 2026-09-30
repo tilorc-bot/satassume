@@ -122,6 +122,7 @@ only when propagation is inconclusive.
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
+| `tools/totality.py` | the totality gate: every node block of the templates must be satisfiable for every assignment of its children the rule base and their own blocks allow (`tests/test_totality.py` runs it in CI; `--corpus`/`--stream` for the long mode) |
 | `benchmarks/counters.py` | asv suite: per-commit counts of what the engine builds and does (nodes, clauses, rule blocks, propagations, ...) and the refine-stream time |
 | `benchmarks/memory.py` | asv suite: peak RSS of a stream pass, and its traced Python allocations (peak, and retained afterwards) |
 | `docs/` | [design](docs/design.md) (engine, semantic decisions, relevance), [theories](docs/theories.md) (relations, LRA, EUF, transfer), [performance](docs/performance.md) (what landed, what was dropped, invariants), [testing](docs/testing.md) (suite, gates, fuzzers, asv), [agents](docs/agents.md) (rules for coding agents) |
