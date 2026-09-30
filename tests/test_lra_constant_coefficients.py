@@ -458,3 +458,49 @@ def test_rounding_an_exact_integer_element():
             assert res is None or res[0] is True
         else:
             assert res is None or res[0] is False
+
+
+# an integrality atom whose offset is an integer-valued Element (its floor
+# is undecidable): the offset is kept unreduced instead of giving up at
+# registration, which silenced the theory for every query (PR #48 review)
+_log8 = sympy.log(8) / sympy.log(2)                        # 3, not formally
+_sq = -2 * sqrt(2) + (1 + sqrt(2)) ** 2                    # 3, not formally
+
+
+@pytest.mark.parametrize("offset", [_log8, _sq], ids=["log8/log2", "sqrt2"])
+def test_integer_valued_offset_does_not_silence_the_theory(offset):
+    y = symbols("y")
+    a = Q.integer(x + offset) & Q.gt(x, 1) & Q.gt(y, x + 1)
+    eng = Engine(cache=DictCache())
+    assert ask(Q.gt(y, 2), a, eng) is True
+    assert eng.stats["theory_gave_up"] == 0
+
+
+@pytest.mark.parametrize("offset", [_log8, _sq], ids=["log8/log2", "sqrt2"])
+def test_undecidable_integral_offset_never_answers_wrongly(offset):
+    # x + 3 in Z with 1 < x < 2 is impossible, x + 3 in Z with x = 2 holds:
+    # the theory cannot round the offset, so it may not know, but it must
+    # never claim the opposite
+    assert _ask(Q.integer(x + offset), Q.gt(x, 1) & Q.lt(x, 2)) in (False, None)
+    assert _ask(Q.integer(x + offset), Q.eq(x, 2)) in (True, None)
+    assert _ask(Q.integer(x), Q.integer(x + offset)) in (True, None)
+    assert _ask(Q.gt(x, 1), Q.integer(x + offset) & Q.gt(x, 1) & Q.lt(x, 2)) \
+        in (True, "inconsistent", None)
+    t = lra.LRATheory()
+    t.register_atom(1, lra.constraint({"x": 1}, ">", 1))
+    t.register_atom(2, lra.constraint({"x": 1}, "<", 2))
+    t.register_atom(3, lra.Integral((("x", F(1)),), cf.from_sympy(offset)))
+    assert not t.gave_up                                   # registered
+    for lit in (1, 2, 3):
+        r = t.assert_lit(lit)
+        assert r is None or r[0] is False
+    r = t.check()
+    assert r is None or r[0] is False
+    t2 = lra.LRATheory()
+    t2.register_atom(1, lra.constraint({"x": 1}, "==", 2))
+    t2.register_atom(2, lra.Integral((("x", F(1)),), cf.from_sympy(offset)))
+    assert t2.assert_lit(1) is None
+    assert all(l != -2 for l, _ in t2.propagate())         # never refuted
+    assert t2.assert_lit(2) is None
+    r = t2.check()
+    assert r is None or r[0] is True

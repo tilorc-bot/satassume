@@ -184,9 +184,11 @@ def _is_int(q) -> bool:
 
 def _floor(q, d) -> int:
     """The largest integer ``<= q + d*delta`` for every small ``delta > 0``
-    (for an Element: ``floor(q)``, which is one too large when the value is
-    an integer and ``d < 0``: a wider range, so fewer conflicts, never a
-    wrong one; ``floor`` itself is exact or Undecided)."""
+    (for an Element: ``floor(q)``, exact or Undecided, ``d`` unused: an
+    integer value makes it Undecided, as its enclosures contain the
+    integer, unless one ends exactly there (``radical(4, 2)``); then
+    ``floor(q)`` is one too large for ``d < 0``, a wider range: fewer
+    conflicts, never a wrong one)."""
     if type(q) is Fraction:
         if q.denominator == 1:
             return q.numerator - 1 if d < 0 else q.numerator
@@ -196,7 +198,8 @@ def _floor(q, d) -> int:
 
 def _ceil(q, d) -> int:
     """The smallest integer ``>= q + d*delta`` for every small ``delta > 0``
-    (for an Element: ``ceil(q)``, see :func:`_floor`)."""
+    (for an Element: ``ceil(q)``, at worst one too small for ``d > 0``,
+    see :func:`_floor`)."""
     if type(q) is Fraction:
         if q.denominator == 1:
             return q.numerator + 1 if d > 0 else q.numerator
@@ -258,6 +261,11 @@ class LRATheory:
         self._ints: dict[int, tuple[int, Fraction, Fraction]] = {}
         self._ints_on: dict[int, list[int]] = {}
         self._int_lits: list[tuple[int, Fraction, Fraction, int]] = []
+        # _int_verdict's cache for Element bounds, keyed by the integrality
+        # atom and the literals of the two bounds (a literal always sets the
+        # same bound value), so its entries stay valid across levels and it
+        # is never cleared: at most one entry per integrality atom and pair
+        # of bound literals on its variable, and the session is per query
         self._int_memo: dict = {}
         # undo trail and level marks
         self._trail: list[tuple] = []
@@ -513,7 +521,16 @@ class LRATheory:
             self._pending_ground.append(literal)
             return
         v, m = self._var_of_form(lin)
-        k -= math.floor(k)
+        # reduce the offset to [0, 1) (fewer distinct atoms, and "v in Z"
+        # recognised below); only an optimisation, so an offset whose floor
+        # is undecidable (an integer-valued Element: log(8)/log(2),
+        # (1 + sqrt(2))**2 - 2*sqrt(2)) is kept as it is: every use of k
+        # (rounding, branching) takes any offset, and giving up here would
+        # silence the theory for every query under these assumptions
+        try:
+            k -= math.floor(k)
+        except Undecided:
+            pass
         if type(m) is Fraction and m == 1 and type(k) is Fraction and not k:
             m, k = _ONE, _ZERO                  # "v in Z": the fast path
         self._ints[literal] = (v, m, k)
