@@ -75,6 +75,7 @@ ask(Q.positive(y), Q.real(y))                 # None: undecided, in scope
 ask(Q.positive(y), Q.gt(y, 0))                # None: y = oo satisfies y > 0 (relations are over the extended reals), and positive means finite
 ask(Q.extended_positive(y), Q.gt(y, 0))       # True: y > 0 makes y an extended real
 ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
+ask(Q.integer(y), Q.gt(y, 0) & Q.lt(y, 1))    # False (integrality in LRA: bounds rounded, branch and bound)
 out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
 from sympy import Integer, Predicate, log
