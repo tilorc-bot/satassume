@@ -215,6 +215,12 @@ class Unrelated:
         return Function(f"{self.tag}h{self.k}")
 
     def _inner(self, depth: int):
+        t = self._inner_raw(depth)
+        if getattr(t, "has", None) and t.has(S.ComplexInfinity, S.Infinity, S.NegativeInfinity, S.NaN):
+            return self.sym()
+        return t
+
+    def _inner_raw(self, depth: int):
         r = self.rng
         if depth <= 0 or r.random() < 0.4:
             return self.sym() if r.random() < 0.7 else r.choice(_FINITE_CONSTS)
@@ -224,7 +230,8 @@ class Unrelated:
         if c < 0.55:
             return self._inner(depth - 1) * self._inner(depth - 1)
         if c < 0.7:
-            return self._inner(depth - 1) ** r.choice([2, 3, -1, S.Half])
+            b = self._inner(depth - 1)
+            return b ** r.choice([2, 3, -1, S.Half]) if b != 0 else b + 1
         if c < 0.85:
             return self.func()(self._inner(depth - 1))
         if c < 0.93:
@@ -232,7 +239,10 @@ class Unrelated:
         return r.choice(_UNARY)(self._inner(depth - 1))
 
     def free_term(self, depth: int):
-        """A term whose value is unconstrained: a fresh symbol plus anything."""
+        """A term whose value is unconstrained: a fresh symbol plus anything.
+        SymPy may fold a sub-term into an infinity (``u + zoo`` is ``zoo``),
+        which would make a predicate on it unsatisfiable: such a term is
+        replaced by the fresh symbol alone."""
         r = self.rng
         c = r.random()
         if c < 0.35:
@@ -246,7 +256,11 @@ class Unrelated:
             # u**2 or sqrt(u) cannot be negative, so a predicate on them
             # could be unsatisfiable
             return self.sym() ** r.choice([3, 5])
-        return self.sym() + self._inner(depth)
+        u = self.sym()
+        t = u + self._inner(depth)
+        if u not in getattr(t, "free_symbols", ()) or t.has(S.ComplexInfinity, S.Infinity, S.NegativeInfinity, S.NaN):
+            return u
+        return t
 
     def piece(self, depth: int = 2):
         """A satisfiable conjunct over fresh symbols: an atom (``atom``),
