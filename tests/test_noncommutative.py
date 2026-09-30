@@ -97,6 +97,47 @@ def test_no_leak_into_later_queries():
 
 
 # ---------------------------------------------------------------------------
+# commutative opaque terms (templates.atoms.structural_commutative)
+# ---------------------------------------------------------------------------
+
+def test_opaque_commutative_terms():
+    """Terms no template relates to their arguments are commutative when
+    SymPy's structural ``is_commutative`` says so, so the rules for
+    commutative factors still apply to them."""
+    from sympy import (Derivative, Determinant, Function, Integral, MatrixSymbol,
+                       Max, Min, Piecewise, Sum, Trace)
+    t = Symbol('t')
+    f = Function('f')
+    M = MatrixSymbol('M', 2, 2)
+    g, h = Max(x, y), Min(x, y)
+    I1, S1 = Integral(f(t), (t, 0, x)), Sum(f(t), (t, 0, x))
+    for e in (g, h, I1, S1, Derivative(f(x), x), Piecewise((x, y > 0), (1, True)),
+              Trace(M), Determinant(M), M[0, 0]):
+        assert ask(Q.commutative(e), True, fresh()) is True, e
+        if (e**2).is_Pow:  # Piecewise(...)**2 is a Piecewise
+            assert ask(Q.zero(e**2), ~Q.zero(e), fresh()) is False, e
+        assert ask(Q.zero(x*e), ~Q.zero(x) & ~Q.zero(e), fresh()) is False, e
+    assert ask(Q.zero(g**2), ~Q.zero(g), fresh()) is False
+    assert ask(Q.zero(g*h), ~Q.zero(g) & ~Q.zero(h), fresh()) is False
+    assert ask(Q.zero(I1**2), ~Q.zero(I1), fresh()) is False
+    assert ask(Q.zero(I1*S1), ~Q.zero(I1) & ~Q.zero(S1), fresh()) is False
+
+
+def test_opaque_terms_with_noncommutative_ingredients():
+    """``is_commutative`` alone is not trusted: these claim True from their
+    commutative expression, but their values (``A``, ``x*A``) are not."""
+    from sympy import Integral, Subs, Sum
+    t, n = Symbol('t'), Symbol('n', integer=True)
+    for e in (Subs(x, x, A), Integral(x, (t, 0, A)), Sum(x, (n, 0, A))):
+        assert e.is_commutative is True
+        assert registry.facts_for(e) == [], e
+        assert ask(Q.commutative(e), True, fresh()) is None, e
+        assert ask(Q.zero(e**2), ~Q.zero(e), fresh()) is None, e
+    # no negative fact from ``is_commutative`` False
+    assert ask(Q.commutative(Integral(A, (t, 0, x))), True, fresh()) is None
+
+
+# ---------------------------------------------------------------------------
 # model check
 # ---------------------------------------------------------------------------
 

@@ -6,12 +6,21 @@
   ``zoo`` and ``nan``: these objects have fixed values, so every old-system
   ``is_<pred>`` property that is not ``None`` is a trustworthy static fact
   (the "atom oracle").
+* Any other expression that no template relates to its arguments' commutativity
+  (``Max``, ``Integral``, ``Piecewise``, ``Trace``, ``M[0, 0]``, ...):
+  ``commutative`` when SymPy's structural ``is_commutative`` says so and every
+  scalar ingredient is commutative, see :func:`structural_commutative`.
 
 Any other leaf emits nothing.
 """
 from __future__ import annotations
 
+from sympy.core.add import Add
+from sympy.core.expr import Expr
+from sympy.core.function import Function
+from sympy.core.mul import Mul
 from sympy.core.numbers import ComplexInfinity, ImaginaryUnit, Number, NumberSymbol
+from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 
 from ._common import VOCAB, const_key, const_value, units
@@ -48,3 +57,50 @@ def constant_units(expr):
                 out.append((pred, value))
         return out
     return units(('const', const_key(expr)), gen, expr)
+
+
+# Nodes whose commutativity other templates already decide: atoms emit it
+# above; Add, Mul, Pow and functions of expressions derive it from their
+# arguments (``commutative`` is closed under them).
+_STRUCTURAL = (Symbol, Number, NumberSymbol, ImaginaryUnit, ComplexInfinity, Add, Mul, Pow)
+_INGREDIENTS: dict = {}
+_INGREDIENTS_MAX = 50_000
+
+
+def _commutative_ingredients(expr) -> bool:
+    """Every scalar subexpression of ``expr`` (``expr`` included) is
+    commutative by SymPy's ``is_commutative``.  Non-expressions (tuples,
+    conditions) and matrix expressions are not themselves scalars and are
+    only looked into: ``M[0, 0]`` and ``Trace(M)`` are commutative scalars
+    (SymPy's matrices have commutative entries; ``A*M`` for a
+    non-commutative ``A`` is rejected by ``MatMul``)."""
+    r = _INGREDIENTS.get(expr)
+    if r is None:
+        r = all(_commutative_ingredients(a) for a in expr.args) and (
+            not isinstance(expr, Expr) or expr.is_Matrix or expr.is_commutative is True)
+        if len(_INGREDIENTS) >= _INGREDIENTS_MAX:
+            _INGREDIENTS.clear()
+        _INGREDIENTS[expr] = r
+    return r
+
+
+@registry.register(Expr)
+def structural_commutative(expr):
+    """``commutative(expr)`` when SymPy's ``is_commutative`` is True and
+    so is that of every scalar ingredient.
+
+    ``is_commutative`` is structural: fixed by the class (``Trace``,
+    ``MatrixElement``, ``Max``) or computed from the arguments, never from
+    other assumptions.  Its value alone is not enough: some classes read
+    only part of their arguments, e.g. ``Subs(x, x, A)`` and
+    ``Integral(x, (t, 0, A))`` claim True from their commutative expression
+    although their values ``A`` and ``x*A`` are not commutative.  With every
+    ingredient commutative there is nothing non-commutative to evaluate to.
+    Only the positive fact is emitted, never a negation from False."""
+    if isinstance(expr, _STRUCTURAL) or expr.is_Matrix:
+        return None
+    if isinstance(expr, Function) and all(isinstance(a, Expr) for a in expr.args):
+        return None
+    if not _commutative_ingredients(expr):
+        return None
+    return units(('structural_commutative',), lambda: [('commutative', True)], expr)
