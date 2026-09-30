@@ -142,8 +142,10 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
         ((p**t)**e, p**(t*e)),                   # ... t*log(p) real (sqrt(1/x) = 1/sqrt(x))
     ])
     + add_rules([
-        ((t**n)**e, Abs(t)**(n*e)),              # t**n = |t|**n; 0**n = 0 for n > 0
-    ], assuming={Q.positive(n) | ~Q.zero(t)})
+        # t**n = |t|**n; 0**n = 0 for n > 0.  At t = 0 with n < 0 it needs a real e: SymPy's
+        # zoo**oo is 0 while 0**(-oo) is zoo, and zoo**(1 + I) stays while 0**(-2 - 2*I) is nan
+        ((t**n)**e, Abs(t)**(n*e)),
+    ], assuming={Q.positive(n) | ~Q.zero(t) | Q.real(e)})
     + add_rules([
         ((b**n)**e, Abs(b)**(n*e)),              # ... also at b = +-oo for n > 0 ((+-oo)**n = oo)
     ], assuming={Q.extended_real(b), Q.positive(n)})

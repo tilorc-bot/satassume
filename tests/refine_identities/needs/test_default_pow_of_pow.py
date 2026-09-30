@@ -15,6 +15,16 @@ Left open in phase 3 (ri/fixes): the rule ``(b**a)**e -> Abs(b)**(a*e)`` for rea
 SymPy evaluates the left side ``zoo**oo`` to ``0`` and the right side ``0**(-oo)`` to
 ``zoo``.  So the row keeps its guard ``Q.positive(a) | ~Q.zero(b)``; firing here needs
 one of ``x != 0``, ``y > 0`` or a finite ``z`` (or SymPy's ``zoo**oo`` changed).
+
+Rechecked for issue #10 (2026-09-29, ri/issue10-open): still left open.  The case
+above states nothing about ``z``, so ``x = 0, y = -2, z = oo`` is allowed and the
+rewrite is wrong there under SymPy's arithmetic; meeting it needs a decision to
+depart from SymPy's ``zoo**oo = 0`` (or to read a plain exponent as finite), not a
+row change.  What the guard can take without such a decision it now takes: a real
+``z`` (``Q.real(e)`` in the row's guard), so ``sqrt(x**y)`` and ``(x**y)**z``
+under ``Q.real(z)`` or ``Q.positive(z)`` are rewritten (rows "#10 pow of pow" of
+tests/refine_identities/regressions.py).  A finite non-real ``z`` stays refused:
+at ``x = 0`` SymPy leaves ``zoo**(1 + I)`` while ``0**(-2 - 2*I)`` is ``nan``.
 """
 from __future__ import annotations
 
