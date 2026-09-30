@@ -146,11 +146,14 @@ applies to the default configuration for cones of more than 400 nodes.
 | R4 | `register(big)`; `ask(hbig(m), True)`; `unregister(big)`; `register(big2)` | `ask(hbig(m), True)` | False | None | R (custom cache) |
 | E1 | `ask(Q.lt(oo + x, 0), True)` | `ask(Q.extended_negative(oo + x), True)` | False | None | E |
 | E1b | `ask(Q.ne(oo, -1) \| Q.imaginary(oo + nP), True)` | `ask(Q.extended_negative(oo + nP), True)` | False | None | E |
+| E1c | `ask(Q.extended_negative(i + oo), S)`; `ask(Q.extended_negative(i + oo), True)` | `ask(Q.extended_negative(i + oo), True)` | False | None | E |
 | C6b | `ask(Q.extended_nonnegative(acos(E)), True)` | `ask(Q.zero(E - 1), True)` | False | None | C' |
 | L1 | `ask(Q.imaginary(...) \| ~Q.nonzero(inf + acos(-1/he)), Q.gt(-1/3, 1/(2*al)) & Q.infinite(acos(-1/he)))` | `ask(Q.nonzero(inf + acos(-1/he)), True)` | False | None | L |
 
 with `y` real, `m` negative, `x` plain, `nP` declared `positive=False`,
-`inf` declared infinite, `he` hermitian, `al` algebraic,
+`inf` declared infinite, `he` hermitian, `al` algebraic, `i` imaginary,
+`S = (Q.extended_real(0) | Q.ge(pi, n)) & Q.infinite(-pi*(-k)**j) & Q.prime(-k**2*(-k)**j)`
+(`n` integer, `k` positive integer, `j` even integer),
 `E = -j**2*w - sqrt(2)*j - w*(1 + I)` (`j` even integer, `w` nonzero,
 hence real), and the registrations of `harness/registry.py`
 (`undef_real`: `real(f(e)) <- real(e)`; `big`: `hbig(s) -> positive(s) &
@@ -192,6 +195,15 @@ is `+oo` or undefined is never below anything).  The linked unary fact is
 a root literal and `Session.writeback` caches it on `e`; the unary
 templates alone do not derive it (`Add` with an `oo` term and an unknown
 term), so a fresh engine answers None.  Sound, more definite.
+
+In E1c (nightly `audit`, profile `base`, seed 103) the relation is inside
+the prefix's assumption set (`Q.ge(pi, n)` in a disjunct), and the prefix
+also asks the query context-free, so the answer memo holds a copy of the
+written-back False: clearing the fact cache alone or the memo alone keeps
+False, clearing both gives the fresh None (carrier `cache+answers`).
+`family_of` drops the memo from a pair carrier `X+answers` when the prefix
+asks the query itself, and tags by `X`.  Sound: `i + oo` is not an
+extended real, so not extended negative.
 
 ### L. Learnt units are written back
 

@@ -552,6 +552,44 @@ def _noncommutative(d: Discrepancy) -> bool:
     return False
 
 
+def _repeats_query(d: Discrepancy) -> bool:
+    """The (shrunk) prefix asks the query itself, under the same
+    assumptions: the answer memo then holds the query's own earlier answer."""
+    seq = d.prefix if d.shrunk is None else d.shrunk
+    return any(isinstance(it, Ask) and it == d.item for it in seq)
+
+
+def _effective_carrier(d: Discrepancy) -> List[str]:
+    """The carrier ``attribute`` found, without the answer memo when the
+    memo only repeats an answer another part carries: with the carrier a
+    pair ``X+answers`` and the query itself in the prefix, the memo holds
+    that earlier answer of the query, which ``X`` made history-dependent
+    (clearing ``X`` alone leaves the memoised copy, clearing the memo alone
+    leaves ``X``).  The mechanism is ``X``'s."""
+    carrier = list(d.confirmations.get("carrier") or [])
+    if len(carrier) == 1 and "+" in carrier[0]:
+        parts = carrier[0].split("+")
+        if "answers" in parts and len(parts) == 2 and _repeats_query(d):
+            return [p for p in parts if p != "answers"]
+    return carrier
+
+
+def _oo_summand(e) -> bool:
+    """``e`` has a sum with an ``oo`` or ``-oo`` summand: the argument whose
+    sign the extended-order clauses decide at the root (family E)."""
+    from sympy import Add, Basic, oo
+    return isinstance(e, Basic) and any(t in (oo, -oo) for a in e.atoms(Add) for t in a.args)
+
+
+def _relation_in_prefix(d: Discrepancy) -> bool:
+    """Some prefix query has a relation atom in its proposition or in its
+    assumption set: what creates the relation layer's links in a session."""
+    from .lazy import has_relation
+    seq = d.prefix if d.shrunk is None else d.shrunk
+    return any(isinstance(it, Ask) and (has_relation(it.prop) or has_relation(it.assum))
+               for it in seq)
+
+
 #: family tags (``family_of``) of the defects documented in
 #: ``harness/repros/README.md``; ``new:...`` and ``?`` are not known
 KNOWN_FAMILIES = frozenset({"A", "B", "B/A", "B/C", "C", "C'", "D", "K", "E", "L", "G", "G'", "T"})
@@ -577,9 +615,9 @@ def family_of(d: Discrepancy) -> str:
     a prefix relation query switched on in the session, ``T`` the predicate
     transfer an equality query engaged) or ``new:<carrier>-<kind>`` for
     anything the known mechanisms do not explain.  Needs ``attribute``."""
-    carrier = d.confirmations.get("carrier")
-    if carrier is None:
+    if d.confirmations.get("carrier") is None:
         return "?"
+    carrier = _effective_carrier(d)
     kind = d.kind
     budget = d.config.discovery_budget < 400
     if d.confirmations.get("outside_engine"):
@@ -630,23 +668,13 @@ def family_of(d: Discrepancy) -> str:
         if kind == "none-vs-definite":
             # a fact a fresh cone does not derive, written back by an earlier
             # query: through the relation layer's links and extended-order
-            # clauses (E: an oo summand, or a relation in the prefix), a
-            # unit learnt by a contextual search (L), or a parent's derived
-            # node (C')
-            from sympy import Basic, oo
-            from sympy.core.relational import Relational
-            from sympy.assumptions.assume import AppliedPredicate
-            rel = {"eq", "ne", "lt", "le", "gt", "ge"}
-
-            def has_relation(e):
-                return isinstance(e, Basic) and (e.atoms(Relational) or any(
-                    str(p.function.name) in rel for p in e.atoms(AppliedPredicate)))
-            expr = d.item.prop
-            if isinstance(expr, Basic) and (expr.has(oo) or expr.has(-oo)):
+            # clauses (E: the query is about a sum with an oo summand, or a
+            # relation in the prefix, in a query or in its assumption set,
+            # created the links), a unit learnt by a contextual search (L),
+            # or a parent's derived node (C')
+            if _oo_summand(d.item.prop) or _relation_in_prefix(d):
                 return "E"
             asks = [it for it in seq if isinstance(it, Ask)]
-            if any(has_relation(it.prop) or has_relation(it.assum) for it in asks):
-                return "E"
             if any(it.assum is not True for it in asks):
                 return "L"
             return "C'"
