@@ -17,31 +17,31 @@ d, x, y, z = symbols('d x y z')
 RULES = [
     # round 1: from inverse.FACTS[6] under Q.real(z)
     #   fired: complex_parts.RULES[3], inverse.FACTS[6]
-    #   asks: Q.extended_real(z), Q.integer(-1), Q.negative(-1)
+    #   asks: Q.extended_real(z) | Q.real(z) | ~Q.integer(im(z)/pi + 1/2), Q.integer(-1), ~Q.zero(pi), Q.extended_real(z) | Q.real(z)
     (asinh(sinh(z)), z, Q.real(z)),
     # round 1: from inverse.FACTS[7] under Q.real(z)
     #   fired: complex_parts.RULES[3], inverse.FACTS[7]
-    #   asks: Q.extended_real(z), Q.integer(-1), Q.negative(-1)
+    #   asks: Q.extended_real(z) | Q.real(z) | ~Q.integer(im(z)/pi + 1/2), Q.integer(-1), ~Q.zero(pi), Q.extended_real(z) | Q.real(z)
     (atanh(tanh(z)), z, Q.real(z)),
     # round 1: from inverse.FACTS[8] under Q.real(d)
     #   fired: complex_parts.RULES[3], inverse.FACTS[8]
-    #   asks: Q.extended_real(d), Q.integer(-1), Q.negative(-1)
+    #   asks: ~Q.zero(d) & (Q.extended_real(d) | Q.real(d) | ~Q.integer(im(d)/pi + 1/2)), Q.integer(-1), ~Q.zero(pi), Q.extended_real(d) | Q.real(d)
     (acoth(coth(d)), d, Q.real(d) & ~Q.zero(d)),
     # round 1: from inverse.FACTS[9] under Q.real(d)
     #   fired: complex_parts.RULES[3], inverse.FACTS[9]
-    #   asks: Q.real(d), Q.integer(-1), Q.negative(-1), Q.extended_real(d)
+    #   asks: ~Q.zero(d) & (Q.real(d) | (Q.finite(d) & ~Q.integer(im(d)/pi + 1/2))), Q.integer(-1), ~Q.zero(pi), Q.extended_real(d) | Q.real(d)
     (acsch(csch(d)), d, Q.real(d) & ~Q.zero(d)),
     # round 1: from inverse.FACTS[10] under Q.positive(x) & Q.real(y)
     #   fired: inverse.FACTS[10]
-    #   asks: Q.positive(x), Q.real(y), Q.integer(-1), Q.negative(-1)
+    #   asks: Q.positive(x) & Q.real(y), Q.integer(-1), ~Q.zero(x)
     (atan2(y, x), atan(y/x), Q.positive(x) & Q.real(y)),
     # round 1: from inverse.FACTS[10] under Q.negative(x) & Q.negative(y)
     #   fired: inverse.FACTS[10]
-    #   asks: Q.negative(x), Q.negative(y), Q.integer(-1), Q.negative(-1), Q.odd(-1)
+    #   asks: Q.negative(x) & Q.negative(y), Q.integer(-1), ~Q.zero(x), Q.negative(x) & Q.odd(-1)
     (atan2(y, x), atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
     # round 1: from inverse.FACTS[10] under Q.negative(x) & Q.nonnegative(y)
     #   fired: inverse.FACTS[10]
-    #   asks: Q.negative(x), Q.nonnegative(y), Q.integer(-1), Q.negative(-1), Q.odd(-1)
+    #   asks: Q.negative(x) & Q.nonnegative(y), Q.integer(-1), ~Q.zero(x), Q.negative(x) & Q.odd(-1)
     (atan2(y, x), atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
 ]
 
