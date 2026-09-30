@@ -40,9 +40,10 @@ unless ``--log`` is given).  One JSON object per query, in stream order:
                               query nested inside this one
                  The not_p / p tagging reads the last literal ``Solver.entails``
                  passes to ``_solve`` (``¬P`` or ``P`` after the assumption
-                 literals).  The four scripts under ``agent-reports/2026-09-perf-rounds/scripts/``
-                 copy that rule, so a change to how ``entails`` calls
-                 ``_solve`` must update all five.
+                 literals).  The analysis scripts of the performance rounds (tag
+                 ``agent-reports-2026-09``, ``agent-reports/2026-09-perf-rounds/scripts/``)
+                 copied that rule; a change to how ``entails`` calls
+                 ``_solve`` must update this one and any such script.
     ms           wall time of the query in milliseconds (includes the
                  logging overhead, a few percent)
     via          where sympy_api.ask sent the query: "memo", "ask"

@@ -417,7 +417,7 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 # The conjuncts of the assumptions split into components by shared *keys*
 # (transitively).  A query is answered under the components whose keys meet
 # its own, once the whole set is known to be consistent (checked once per
-# set); see agent-reports/2026-09-25-relevance-1-build.md for the argument.
+# set); see docs/design.md, "Why splitting is sound", for the argument.
 #
 # Keys of an expression: its free symbols, the classes of its undefined
 # function applications (EUF congruence connects f(x) and f(y)), and every
@@ -655,7 +655,7 @@ def _relevant(p, a, eng: Engine):
 #: a closed term as keys (connects ``x = 2`` with ``y = 2``, ``sin(2)``,
 #: ``polar(2)``, but not the values LRA or the rule base derive).
 #: The key memo ``_KEYS`` depends on it: clear it when changing it.
-#: See agent-reports/2026-09-26-relevance-2-connect.md.
+#: See docs/design.md, "What connects".
 RELATIONAL = "whole"
 
 #: every consistency check also searches (``Solver.solve``, in a session of

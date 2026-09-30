@@ -414,7 +414,7 @@ class Solver:
         self._ment = bytearray(1)
         # 1 for a block variable nothing else mentions: not decided by the
         # search (its block's exact closure keeps it consistent; models are
-        # completed from the block's models, see _complete_model)
+        # completed from the block's models, see _fill)
         self._lazy = bytearray(1)
         self._n_late = 0                     # late mentions that dropped held levels
         self._n_late_written = 0             # late mentions written at held levels

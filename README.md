@@ -18,8 +18,8 @@ class makes objects of that class ordinary nodes.
 
 Relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`, `Q.is_true(x < 0)`) are
 being added through theory solvers on the CDCL solver (DPLL(T), LRA and EUF;
-see `satassume/relations.py` and
-`agent-reports/2026-09-23-theory-interface.md`); without an adapter that
+see `satassume/relations.py` and [docs/theories.md](docs/theories.md));
+without an adapter that
 interprets a relation, `ask` returns None as before.
 Order relations are over the extended reals and assert that their sides
 are extended reals (`x < 1` implies `Q.extended_real(x)`, `x < oo` is
@@ -124,6 +124,10 @@ only when propagation is inconclusive.
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
 | `benchmarks/counters.py` | asv suite: per-commit counts of what the engine builds and does (nodes, clauses, rule blocks, propagations, ...) and the refine-stream time |
 | `benchmarks/memory.py` | asv suite: peak RSS of a stream pass, and its traced Python allocations (peak, and retained afterwards) |
+| `docs/` | [design](docs/design.md) (engine, semantic decisions, relevance), [theories](docs/theories.md) (relations, LRA, EUF, transfer), [performance](docs/performance.md) (what landed, what was dropped, invariants), [testing](docs/testing.md) (suite, gates, fuzzers, asv), [agents](docs/agents.md) (rules for coding agents) |
+
+The dated agent reports that preceded `docs/` (2026-09-23 to 26) are in the
+tag `agent-reports-2026-09`.
 
 ## Running
 
@@ -248,6 +252,41 @@ per case, both sides return the same answer):
 | `Q.positive(((y**2 + 1)**w)**2) \| Q.real(w) & Q.real(y)` | 1115 us | 134 us |
 | `Q.positive(w**2 + y + z) \| Q.nonnegative(z) & Q.positive(y) & Q.real(w)` | 1111 us | 96 us |
 | `Q.negative(y) \| Q.positive(y) \| Q.nonzero(y) & Q.real(y)` | 1271 us | 32 us |
+
+## Known gaps
+
+Queries answered None where a definite answer holds for every value the
+assumptions allow. None of them is a wrong answer. Each one is pinned as a
+strict xfail in `tests/test_known_gaps.py`, so closing a gap fails that test
+until the case is moved and this list updated.
+
+Tracked in an issue:
+
+* an unread relation (a Float or `AccumBounds` bound) makes the whole query
+  None, also for facts unrelated to it (`Q.real(m)` under
+  `Q.odd(m) & Q.ge(m, 1.5)`): #64 proposes `uninterpreted="free"` as the
+  default;
+* differences whose sides are not known to be real (`Q.negative(a - b)`
+  under `Q.positive(b - a)`, `Q.zero(a - b)` under `Q.eq(a, b)` with finite
+  sides): #42;
+* integral `re(x)` and `im(x)` do not make `x` finite: #19.
+
+Not tracked, because neither SymPy system answers them either (except the
+first, which SymPy's `ask` gets by substituting the zero symbol) and no
+caller has needed them:
+
+* `Q.integer(1/(m + 1))` under `Q.zero(m)`: there is no "equals 1" fact, and
+  a symbol pinned to a constant is not substituted;
+* `Q.eq(f(x), f(pi))` under `Q.eq(2*x, 2*pi)`: a constant term gets no
+  interface equality in the theory combination;
+* `Q.eq(x, 3)` under `Q.eq(x, log(8)/log(2))`: one value written two ways is
+  two unrelated constants;
+* `Q.positive(x)` under `Q.gt(x, pi**-(10**20))`: a tiny constant is not
+  shown positive.
+
+Deliberately not read: Float bounds. SymPy compares `Float(0.1) > 1/10`
+exactly but `Eq(Float(0.1), 1/10)` at the Float's precision, so there is no
+single right reading, and a Float bound is left to the uninterpreted path.
 
 ## License
 
