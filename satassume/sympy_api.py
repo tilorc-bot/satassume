@@ -679,6 +679,10 @@ CHECK_ESCALATE = True
 _OK = object()
 
 
+def _gave_up(s) -> bool:
+    return any(getattr(t, "gave_up", False) for t in s.solver.theories())
+
+
 def _part_consistent(f, eng: Engine) -> bool:
     """:func:`_consistent` for a component without relations, memoized per
     component (shared by every set it is part of), in the contextual session
@@ -695,6 +699,8 @@ def _part_consistent(f, eng: Engine) -> bool:
                 s.xfer.sync_transfer()
             solver = s.solver
             ok = bool(solver.propagate()) and solver.implied(lits) is not None
+            if ok and _gave_up(s):
+                ok = False               # a theory gave up (satassume.theory): not known
             if ok and (CHECK_SEARCH or CHECK_ESCALATE and s.incomplete):
                 # in a fresh session: the nodes escalation adds and what the
                 # search learns stay out of the session the queries use
@@ -737,7 +743,10 @@ def _consistent(a, eng: Engine, count: bool = True, search: Optional[bool] = Non
                 s.xfer.sync_transfer()
             if not solver.propagate() or solver.implied(lits) is None:
                 return False
-        return not search or solver.solve(lits)
+        ok = not search or solver.solve(lits)
+        # a theory that gave up (satassume.theory) makes "no conflict found"
+        # no evidence of consistency
+        return ok and not _gave_up(s)
     except Exception:
         return False
 

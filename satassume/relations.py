@@ -133,7 +133,11 @@ the linked sides only).  ``INTEGERS = False`` turns the link off.
 
 Constant terms
 --------------
-A closed real constant in a linear position (``pi`` of ``x <= 3*pi/2``) is
+``pi``, ``E`` and rational powers of rationals (``sqrt(2)``), with
+``+ - * /``, are exact numbers of the LRA form (constants and coefficients:
+``x <= 3*pi/2``, ``x/pi``; :mod:`satassume.constfield`), not terms.  Any
+other closed real constant in a linear position (``log(2)`` of
+``x <= log(2)``) is
 a term of the LRA form (see :mod:`satassume.lra_adapter`); its guard
 ``real(pi)`` is decided at the root by the rule base, and the first atom
 that brings it in has the adapter register its rational bounds
@@ -200,6 +204,7 @@ from typing import Any, Callable, List, NamedTuple, Optional
 from .extensions import Args
 from .formula import And, Not, P
 from .rules import NPRED, PRED_INDEX
+from .constfield import Undecided, sign
 from .theory import EqualitySharing
 
 #: atom predicates the engine gives to theories
@@ -625,13 +630,17 @@ class Relations:
             for u, c in form.items():
                 if _is_number(u):
                     continue                  # a bounded real constant: finite
-                if not c:
+                try:
+                    sg = sign(c)              # c may involve constants (pi*x)
+                except Undecided:
+                    return                    # unknown sign: no clauses 2 (a relaxation)
+                if not sg:
                     exact = False             # cancels: oo - oo if infinite
                     continue
                 s.ensure(u, {"extended_real", "positive_infinite", "negative_infinite"})
                 p, n = s.var("positive_infinite", u), s.var("negative_infinite", u)
-                (up if c > 0 else down).append(p)
-                (down if c > 0 else up).append(n)
+                (up if sg > 0 else down).append(p)
+                (down if sg > 0 else up).append(n)
                 if u not in seen:
                     seen.add(u)
                     ext.append(-s.var("extended_real", u))

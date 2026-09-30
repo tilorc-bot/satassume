@@ -29,6 +29,7 @@ from sympy.calculus.accumulationbounds import AccumBounds
 from test_lra import fm_feasible
 
 from satassume import DictCache, Engine
+from satassume import constfield as cf
 from satassume import lra_adapter as ad
 from satassume.sympy_api import ask
 
@@ -47,21 +48,33 @@ def _ask(prop, assum=True):
 # The adapter
 # ----------------------------------------------------------------------
 
-def test_pi_over_two_and_pi_are_one_term():
+def test_pi_is_a_number_of_the_constant():
+    # pi, E and rational powers of rationals are exact numbers
+    # (satassume.constfield), folded into the constant, not terms
     for c in (pi / 2, pi, 3 * pi / 2, -pi, 2 * pi + 1, pi / 2 - S(1) / 3):
-        assert ad.terms(Q.lt(x, c)) == [pi, x]
+        assert ad.terms(Q.lt(x, c)) == [x]
     (items, rhs, strict, eq), pos = ad.to_constraint(Q.le(x, 3 * pi / 2 + 1))
-    assert dict(items) == {pi: F(-3, 2), x: F(1)} and rhs == 1 and not strict
+    assert dict(items) == {x: F(1)} and rhs == 3 * cf.PI / 2 + 1 and not strict
 
 
-def test_closed_sums_split_into_constants():
-    assert set(ad.terms(Q.lt(x, sqrt(2) + pi / 3 - E))) == {x, sqrt(2), pi, E}
-    assert ad.terms(Q.lt(pi, 4)) == [pi]
+def test_closed_sums_are_numbers():
+    assert ad.terms(Q.lt(x, sqrt(2) + pi / 3 - E)) == [x]
+    assert ad.terms(Q.lt(pi, 4)) == []
+    assert ad.to_constraint(Q.lt(pi, 4)) is True
 
 
-@pytest.mark.parametrize("atom", [Q.lt(x * pi, 1), Q.lt(pi * x + 1, y), Q.lt(sqrt(2) * x, 1),
-                                  Q.lt(0.5 * x, 1), Q.lt(x * (pi + 1), 1)], ids=str)
-def test_constant_times_symbol_is_unreadable(atom):
+@pytest.mark.parametrize("atom,coeff", [(Q.lt(x * pi, 1), cf.PI), (Q.lt(pi * x + 1, y), cf.PI),
+                                        (Q.lt(sqrt(2) * x, 1), cf.radical(2, 2)),
+                                        (Q.lt(x * (pi + 1), 1), cf.PI + 1),
+                                        (Q.lt(x / pi, 1), 1 / cf.PI)], ids=str)
+def test_constant_times_symbol_is_a_coefficient(atom, coeff):
+    assert x in ad.terms(atom)
+    (items, rhs, strict, eq), pos = ad.to_constraint(atom)
+    assert dict(items)[x] == coeff
+
+
+def test_float_times_symbol_is_unreadable():
+    atom = Q.lt(0.5 * x, 1)
     assert ad.terms(atom) is None
     assert _ask(Q.lt(xr, 2), Q.real(xr) & atom) is None
 
@@ -138,12 +151,14 @@ def test_constant_only_relations_use_the_bounds():
     assert _ask(Q.gt(E, Rational(2718, 1000))) is True
     assert _ask(Q.lt(sqrt(2) + sqrt(3), pi)) is None or sympy.ask(Q.lt(sqrt(2) + sqrt(3), pi)) is not None
     near = Rational(int(pi.evalf(40) * 10 ** 25), 10 ** 25)            # pi - 1e-25 < near < pi
-    assert _ask(Q.lt(near, pi)) is None
+    assert _ask(Q.lt(near, pi)) is True                                 # exact now
     assert _ask(Q.lt(pi, 2 * pi)) is True
 
 
-def test_nonlinear_constant_position_still_unreadable_end_to_end():
-    assert _ask(Q.lt(xr, 2), Q.le(pi * xr, 1)) is None
+def test_constant_coefficient_end_to_end():
+    assert _ask(Q.lt(xr, 2), Q.le(pi * xr, 1)) is True                  # xr <= 1/pi
+    assert _ask(Q.lt(xr, Rational(318, 1000)), Q.le(pi * xr, 1)) is None  # 1/pi = 0.3183...
+    assert _ask(Q.lt(xr, Rational(319, 1000)), Q.le(pi * xr, 1)) is True
 
 
 # ----------------------------------------------------------------------

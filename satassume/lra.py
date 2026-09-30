@@ -4,7 +4,9 @@ The solver implements :class:`satassume.theory.TheorySolver` (plus the
 optional ``propagate``) for conjunctions of linear constraints over the
 reals, with the general simplex of Dutertre and de Moura, "A Fast
 Linear-Arithmetic Solver for DPLL(T)" (CAV 2006).  Arithmetic is exact
-(:class:`fractions.Fraction`); strict bounds use delta-rationals ``q + d*delta``
+(:class:`fractions.Fraction`, and numbers with constants such as ``pi``,
+``1/pi``, ``sqrt(2)`` from :mod:`satassume.constfield` where a payload has
+them); strict bounds use delta-rationals ``q + d*delta``
 for an infinitesimal ``delta > 0``.  Nothing here imports SymPy: terms are
 opaque hashable keys, the SymPy boundary is :mod:`satassume.lra_adapter`.
 
@@ -23,6 +25,20 @@ Payloads
   ``x != y``, i.e. solver variable ``v`` true means the equality is false).
 * ``Integral(terms, offset)``: ``sum(c*t for t, c in terms) + offset`` is
   an integer (``terms`` as above).  Its negation is "not an integer".
+
+Coefficients and constants may be :class:`satassume.constfield.Element`
+numbers (``pi``, ``3*pi/2``, ``1/pi``); a payload of Fractions only costs
+nothing extra (constant-free results stay Fractions).  With constants a
+comparison can be undecidable (:class:`satassume.constfield.Undecided`:
+a formal expression whose value is 0, ``sqrt(2)**2 - 2``, or one over the
+size budget).  No comparison takes a default branch then: the theory
+*gives up* (see "Giving up" in :mod:`satassume.theory`): it reports no
+conflict, propagation or model from then on, which is incompleteness, not
+unsoundness.  Rows drop a coefficient only when it is formally 0
+(:func:`~satassume.constfield.formally_zero`), pivots and assignment
+updates compute every new value before writing any, and integrality
+never calls an Element integral or non-integral by default
+(:func:`_is_int`).
 
 A payload without terms is a *ground* atom: its truth value is fixed, the
 theory reports ``[-lit]`` when it is asserted the wrong way and propagates
@@ -97,8 +113,11 @@ Complexity (``k`` = number of rows containing a variable, ``m`` = rows):
 """
 from __future__ import annotations
 
+import math
 from fractions import Fraction
 from typing import Any, Hashable, Iterable, NamedTuple
+
+from .constfield import Undecided, formally_zero, num
 
 __all__ = ["LRATheory", "Negated", "Integral", "constraint", "BRANCH_BUDGET"]
 
@@ -133,8 +152,8 @@ def constraint(terms, op: str, rhs=0):
     ``< <= > >= = == !=``.  ``>``/``>=`` are negated into ``<``/``<=``;
     ``!=`` gives ``Negated`` of the equality."""
     items = terms.items() if isinstance(terms, dict) else terms
-    items = tuple((t, Fraction(c)) for t, c in items)
-    rhs = Fraction(rhs)
+    items = tuple((t, num(c)) for t, c in items)
+    rhs = num(rhs)
     if op in (">", ">="):
         items = tuple((t, -c) for t, c in items)
         rhs = -rhs
@@ -150,18 +169,29 @@ def constraint(terms, op: str, rhs=0):
     raise ValueError(f"unknown operator {op!r}")
 
 
-def _floor(q: Fraction, d: Fraction) -> int:
+def _is_int(q) -> bool:
+    """``q`` (a Fraction or an :class:`~satassume.constfield.Element`) is
+    an integer.  An Element is False when its value is proven not to be an
+    integer and raises Undecided otherwise, never True (its value may still
+    be one, ``sqrt(2)**2``): so no Element is ever declared non-integral
+    by default."""
+    if type(q) is Fraction:
+        return q.denominator == 1
+    return q.is_integer()
+
+
+def _floor(q, d) -> int:
     """The largest integer ``<= q + d*delta`` for every small ``delta > 0``."""
-    if q.denominator == 1:
+    if _is_int(q):
         return q.numerator - 1 if d < 0 else q.numerator
-    return q.__floor__()
+    return math.floor(q)
 
 
-def _ceil(q: Fraction, d: Fraction) -> int:
+def _ceil(q, d) -> int:
     """The smallest integer ``>= q + d*delta`` for every small ``delta > 0``."""
-    if q.denominator == 1:
+    if _is_int(q):
         return q.numerator + 1 if d > 0 else q.numerator
-    return q.__ceil__()
+    return math.ceil(q)
 
 
 def _dedupe(lits: Iterable[int]) -> list[int]:
@@ -185,6 +215,8 @@ class LRATheory:
 
     def __init__(self, eager: bool = True) -> None:
         self.eager = eager
+        #: set when an undecidable comparison made the theory give up
+        self.gave_up = False
         # variables: index -> term key (None for slack variables)
         self._key: list[Hashable | None] = []
         self._var_of: dict[Hashable, int] = {}
@@ -219,7 +251,7 @@ class LRATheory:
         self._dirty: set[int] = set()
         self._pending_ground: list[int] = []
         self.stats = {"pivots": 0, "checks": 0, "conflicts": 0,
-                      "propagations": 0, "branches": 0}
+                      "propagations": 0, "branches": 0, "gave_up": 0}
 
     # ------------------------------------------------------------------
     # registration
@@ -257,20 +289,76 @@ class LRATheory:
             else:
                 for k, a in r.items():
                     row[k] = row.get(k, _ZERO) + c * a
-        row = {k: a for k, a in row.items() if a}
-        s = self._new_var(None)
-        self._slack_of[form] = s
+        row = {k: a for k, a in row.items() if not formally_zero(a)}
         vq = vd = _ZERO
         for k, a in row.items():
             vq += a * self._vq[k]
             vd += a * self._vd[k]
+        s = self._new_var(None)                 # arithmetic done: commit
+        self._slack_of[form] = s
+        for k in row:
             self._cols[k].add(s)
         self._vq[s] = vq
         self._vd[s] = vd
         rows[s] = row
         return s
 
+    # ------------------------------------------------------------------
+    # the theory boundary: Undecided -> give up
+    # ------------------------------------------------------------------
+    #
+    # With constants in the coefficients (satassume.constfield) a sign, a
+    # comparison or a floor can be undecidable (Undecided, or TooLarge for
+    # the size budget).  No comparison here has a default branch for that:
+    # the exception leaves the method, and the theory gives up
+    # (satassume.theory, "Giving up"): it reports nothing more (no
+    # conflict, no propagation, None from check), whatever state the
+    # interrupted call left is never read again, and the engine discards
+    # the session after the query.  Conflicts and propagations reported
+    # before stay valid, so answers stay sound (only less complete).
+    # propagate alone skips an implication it cannot decide and goes on
+    # (propagation is optional).
+
+    def _give_up(self) -> None:
+        self.gave_up = True
+        self.stats["gave_up"] += 1
+
     def register_atom(self, literal: int, payload: Any) -> None:
+        if self.gave_up:
+            return
+        try:
+            self._register_atom(literal, payload)
+        except Undecided:
+            self._give_up()
+
+    def assert_lit(self, literal: int):
+        if self.gave_up:
+            return None
+        try:
+            return self._assert_lit(literal)
+        except Undecided:
+            self._give_up()
+            return None
+
+    def check(self):
+        if self.gave_up:
+            return None
+        try:
+            return self._check()
+        except Undecided:
+            self._give_up()
+            return None
+
+    def propagate(self):
+        if self.gave_up:
+            return []
+        try:
+            return self._propagate()
+        except Undecided:
+            self._give_up()
+            return []
+
+    def _register_atom(self, literal: int, payload: Any) -> None:
         if literal <= 0:
             raise ValueError("register_atom takes a positive literal")
         if literal in self._atoms or literal in self._ground \
@@ -285,7 +373,7 @@ class LRATheory:
             payload = payload.payload
         terms, constant, strict, equality = payload
         lin = self._lin(terms)
-        k = Fraction(constant)
+        k = num(constant)
         kind = "=" if equality else "<" if strict else "<="
         if negated:
             kind = _NEG[kind]
@@ -310,10 +398,12 @@ class LRATheory:
         items = terms.items() if isinstance(terms, dict) else terms
         lin: dict[Hashable, Fraction] = {}
         for t, c in items:
-            lin[t] = lin.get(t, _ZERO) + Fraction(c)
+            lin[t] = lin.get(t, _ZERO) + num(c)
         for t in lin:
             self._term_var(t)
-        return {t: c for t, c in lin.items() if c}
+        # a formal zero test (sparsity): a coefficient whose value is 0
+        # without being formally 0 stays, and any use of its sign aborts
+        return {t: c for t, c in lin.items() if not formally_zero(c)}
 
     def _var_of_form(self, lin: dict) -> tuple[int, Fraction]:
         """``(v, c)`` with ``sum(a*t) == c*v`` for the non-empty form
@@ -327,14 +417,14 @@ class LRATheory:
 
     def _register_integral(self, literal: int, payload: Integral) -> None:
         lin = self._lin(payload.terms)
-        k = Fraction(payload.offset)
+        k = num(payload.offset)
         if not lin:
-            self._ground[literal] = k.denominator == 1
+            self._ground[literal] = _is_int(k)
             self._pending_ground.append(literal)
             return
         v, m = self._var_of_form(lin)
-        k -= k.__floor__()
-        if m == 1 and not k:
+        k -= math.floor(k)
+        if type(m) is Fraction and m == 1 and type(k) is Fraction and not k:
             m, k = _ONE, _ZERO                  # "v in Z": the fast path
         self._ints[literal] = (v, m, k)
         self._ints_on.setdefault(v, []).append(literal)
@@ -345,10 +435,14 @@ class LRATheory:
     # ------------------------------------------------------------------
 
     def push_level(self) -> None:
-        self._lims.append(len(self._trail))
+        if not self.gave_up:
+            self._lims.append(len(self._trail))
 
     def pop_level(self) -> None:
-        self._undo_to(self._lims.pop())
+        # after giving up (possibly inside an internal level of check) the
+        # state is never read again: levels need no bookkeeping
+        if not self.gave_up:
+            self._undo_to(self._lims.pop())
 
     def _undo_to(self, n: int) -> None:
         trail = self._trail
@@ -372,7 +466,7 @@ class LRATheory:
     # asserting
     # ------------------------------------------------------------------
 
-    def assert_lit(self, literal: int):
+    def _assert_lit(self, literal: int):
         a = abs(literal)
         atom = self._atoms.get(a)
         if atom is None:
@@ -454,14 +548,16 @@ class LRATheory:
         return None
 
     def _update(self, v: int, b: tuple) -> None:
-        """Move nonbasic ``v`` to value ``b``, keeping every row satisfied."""
+        """Move nonbasic ``v`` to value ``b``, keeping every row satisfied
+        (computed first, then written: see :meth:`_pivot`)."""
         dq = b[0] - self._vq[v]
         dd = b[1] - self._vd[v]
         vq, vd, rows = self._vq, self._vd, self._rows
-        for r in self._cols[v]:
-            a = rows[r][v]
-            vq[r] += a * dq
-            vd[r] += a * dd
+        new = [(r, vq[r] + a * dq, vd[r] + a * dd)
+               for r, a in ((r, rows[r][v]) for r in self._cols[v])]
+        for r, q, d in new:
+            vq[r] = q
+            vd[r] = d
         vq[v] = b[0]
         vd[v] = b[1]
 
@@ -499,7 +595,7 @@ class LRATheory:
             if m < 0:
                 a, b = b, a
         if lo == up:                            # pinned: d == 0 here
-            return (a[0].denominator == 1, why)
+            return (_is_int(a[0]), why)
         if _ceil(*a) > _floor(*b):
             return (False, why)
         return None
@@ -526,7 +622,7 @@ class LRATheory:
                 nq, nd = vq[v], vd[v]
             else:
                 nq, nd = m * vq[v] + k, m * vd[v]
-            integral = not nd and nq.denominator == 1
+            integral = not nd and _is_int(nq)
             if lit > 0 and not integral:        # n <= floor(n) or n >= floor(n) + 1
                 f = _floor(nq, nd)
                 cases = (("<=", f), (">=", f + 1))
@@ -613,35 +709,48 @@ class LRATheory:
         a = rows[b][j]
         tq = (target[0] - vq[b]) / a
         td = (target[1] - vd[b]) / a
+        new = [(k, vq[k] + ak * tq, vd[k] + ak * td)
+               for k, ak in ((k, rows[k][j]) for k in cols[j] if k != b)]
+        new.append((j, vq[j] + tq, vd[j] + td))
+        self._pivot(b, j)                        # may raise before writing
         vq[b], vd[b] = target
-        vq[j] += tq
-        vd[j] += td
-        for k in cols[j]:
-            if k != b:
-                ak = rows[k][j]
-                vq[k] += ak * tq
-                vd[k] += ak * td
-        self._pivot(b, j)
+        for k, q, d in new:
+            vq[k] = q
+            vd[k] = d
 
     def _pivot(self, b: int, j: int) -> None:
-        """Make ``j`` basic in place of ``b`` (``b`` becomes nonbasic)."""
+        """Make ``j`` basic in place of ``b`` (``b`` becomes nonbasic).
+
+        All arithmetic (which can raise for numbers with constants: a
+        size budget, see :mod:`satassume.constfield`) is done before the
+        tableau is written, so the tableau is never left half pivoted."""
         self.stats["pivots"] += 1
         rows, cols = self._rows, self._cols
-        row = rows.pop(b)
-        a = row.pop(j)
+        row = rows[b]
+        a = row[j]
         inv = _ONE / a
         newrow = {b: inv}
         for k, c in row.items():
-            cols[k].discard(b)
-            newrow[k] = -c * inv
+            if k != j:
+                newrow[k] = -c * inv
         cj = cols[j]
-        cj.discard(b)
+        updates = []
         for r in cj:
+            if r == b:
+                continue
             rr = rows[r]
-            f = rr.pop(j)
-            for k, c in newrow.items():
-                nv = rr.get(k, _ZERO) + f * c
-                if nv:
+            f = rr[j]
+            updates.append((r, [(k, rr.get(k, _ZERO) + f * c) for k, c in newrow.items()]))
+        # commit
+        del rows[b]
+        for k in row:
+            if k != j:
+                cols[k].discard(b)
+        for r, new in updates:
+            rr = rows[r]
+            del rr[j]
+            for k, nv in new:
+                if not formally_zero(nv):
                     if k not in rr:
                         cols[k].add(r)
                     rr[k] = nv
@@ -675,7 +784,7 @@ class LRATheory:
     def _model(self, point: list[Fraction]) -> dict:
         return {k: point[v] for v, k in enumerate(self._key) if k is not None}
 
-    def check(self):
+    def _check(self):
         self.stats["checks"] += 1
         conflict = self._simplex()
         if conflict is None and self._int_lits:
@@ -728,7 +837,7 @@ class LRATheory:
     # propagation
     # ------------------------------------------------------------------
 
-    def propagate(self):
+    def _propagate(self):
         out = []
         assigned = self._assigned
         if self._pending_ground:
@@ -747,7 +856,10 @@ class LRATheory:
                 if a in assigned:
                     continue
                 _, kind, c = self._atoms[a]
-                val = self._implied(v, kind, c)
+                try:
+                    val = self._implied(v, kind, c)
+                except Undecided:
+                    continue                    # optional: skip, never guess
                 if val is None:
                     continue
                 lit = a if val[0] else -a
@@ -755,7 +867,10 @@ class LRATheory:
             for a in ints_on.get(v, ()):
                 if a in assigned:
                     continue
-                val = self._int_verdict(*self._ints[a])
+                try:
+                    val = self._int_verdict(*self._ints[a])
+                except Undecided:
+                    continue
                 if val is not None:
                     lit = a if val[0] else -a
                     out.append((lit, _dedupe([lit] + [-r for r in val[1]])))

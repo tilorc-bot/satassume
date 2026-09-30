@@ -11,8 +11,11 @@ Rules
 -----
 
 ``a - b`` is linearised structurally (no ``expand``, no simplification):
-sums are split, a product with a rational numeric factor is scaled
-(``2*(x + y)`` is ``2*x + 2*y``), and every other subexpression with free
+sums are split, a product with a numeric factor is scaled (``2*(x + y)``
+is ``2*x + 2*y``; the factor may involve constants: ``pi*x``, ``x/pi``,
+``x*(pi + 1)``, ``sqrt(2)*x`` have the exact coefficients ``pi``,
+``1/pi``, ``pi + 1``, ``sqrt(2)`` of :mod:`satassume.constfield`), and
+every other subexpression with free
 symbols (``x``, ``x*y``, ``sin(x)``, ``x**2``, ``f(x)``) is an *opaque
 term*, an independent real variable for the theory.  Treating a nonlinear
 term as a variable is a relaxation, so it is sound (only incomplete).
@@ -24,9 +27,12 @@ The atom is not interpreted (``None``) if
 * anything in it is ``nan``, ``oo``, ``-oo`` or ``zoo`` (even inside an
   opaque term, e.g. ``x + oo`` or ``sin(x + oo)``); an order atom with an
   ``oo`` or ``-oo`` summand is read by :func:`order_sides` instead;
-* a factor of a product with free symbols is a number that is not a
-  SymPy ``Rational`` (``pi*x``, ``sqrt(2)*x``, ``0.5*x``, ``I*x``): a
-  constant times a symbol is nonlinear here;
+* a factor of a product with free symbols is a number that is no number
+  of the exact field (``0.5*x``, ``I*x``; ``log(2)*x`` unless
+  :data:`GENERIC_CONSTANTS`);
+* a coefficient's sign cannot be decided, or the arithmetic exceeds the
+  field's size budget (:class:`satassume.constfield.Undecided`: a formal
+  expression whose value is 0, ``((1 + sqrt(2))**2 - 3 - 2*sqrt(2))*x``);
 * a subexpression without free symbols is none of the readable constants
   below (``I``, ``I*pi``, ``f(1)``, ``AccumBounds(0, 1)``, anything SymPy
   does not know to be a finite real, or that interval arithmetic over
@@ -42,8 +48,13 @@ The atom is not interpreted (``None``) if
 Constants
 ---------
 A subexpression without free symbols in a linear position is read as
-follows (:func:`_closed`): a ``Rational`` is a constant; a sum is split and a rational factor pulled out (``3*pi/2 + 1`` is ``3/2 * pi + 1``); what is left
-(``pi``, ``sqrt(2)``, ``pi**2``, ``log(2)``, ``sin(1)``, ``2**pi``) is a
+follows (:func:`_closed`): a ``Rational`` is a constant; a sum is split
+and a rational factor pulled out; a number of the exact field
+(:func:`satassume.constfield.from_sympy`: ``pi``, ``E``, ``exp(n)``,
+rational powers of rationals such as ``sqrt(2)``, with ``+ - * /`` and
+integer powers: ``3*pi/2 + 1``, ``pi**2``, ``1/(pi + E)``) is part of the
+constant, exact (``x/pi + 1/2`` at ``x = -pi/2`` is exactly 0).  What is
+left (``log(2)``, ``sin(1)``, ``2**pi``) is a
 *constant term* if SymPy says it is a finite real (``is_extended_real``
 and ``is_finite`` True) and :func:`constant_bounds` finds rational bounds
 ``lo < c < hi``.  A constant term is a theory variable like an opaque term
@@ -105,6 +116,7 @@ from sympy.core.relational import (Equality, GreaterThan, LessThan,
                                    Unequality)
 from sympy.core.sorting import default_sort_key
 
+from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
@@ -119,6 +131,17 @@ _BAD = (S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity)
 
 class _Unhandled(Exception):
     pass
+
+
+#: read every closed real constant that has rigorous bounds as a number of
+#: the exact field (``log(2)*x`` readable, ``x < log(2)`` exact); False:
+#: only pi, E and rational powers of rationals (with ``+ - * /``), other
+#: constants stay bounded terms (see "Constants")
+GENERIC_CONSTANTS = False
+
+#: what reading can raise besides _Unhandled: undecidable signs of
+#: coefficients with constants, and the size budget (satassume.constfield)
+_UNREAD = (_Unhandled, TypeError, ValueError, Undecided, ZeroDivisionError)
 
 
 def relation(atom) -> tuple[str, Any, Any] | None:
@@ -154,13 +177,21 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
     if e.is_Mul:
         coeff = S.One
         rest = []
+        closed = []
         for f in e.args:
             if f.free_symbols:
                 rest.append(f)
             elif f.is_Rational:
                 coeff *= f
             else:
-                raise _Unhandled(f)          # I*x, pi*x, 0.5*x, sqrt(2)*x
+                closed.append(f)             # pi, 1/pi, pi + 1, sqrt(2); I, 0.5
+        if closed:
+            c = from_sympy(Mul(*closed), generic=GENERIC_CONSTANTS)
+            if c is None:
+                raise _Unhandled(e)          # I*x, 0.5*x, log(2)*x (see GENERIC_CONSTANTS)
+            c = c * Fraction(int(coeff.p), int(coeff.q))
+            _lin(Mul(*rest), scale * c, out, const)
+            return
         if coeff != 1:
             _lin(Mul(*rest), scale * Fraction(int(coeff.p), int(coeff.q)),
                  out, const)
@@ -171,11 +202,13 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
     out[e] = out.get(e, Fraction(0)) + scale
 
 
-def _closed(e, scale: Fraction, out: dict, const: list) -> None:
+def _closed(e, scale, out: dict, const: list) -> None:
     """``_lin`` for a subexpression without free symbols: rationals go to
-    the constant, sums are split, a rational factor is pulled out, and what
-    is left must be a real constant without Floats and with rigorous bounds
-    (:func:`constant_bounds`); it becomes a term."""
+    the constant, sums are split, a rational factor is pulled out; a
+    number of the exact field (:func:`satassume.constfield.from_sympy`:
+    ``pi``, ``3*pi/2``, ``1/pi``, ``E**2``, ``sqrt(2)``) goes to the
+    constant too; what is left must be a real constant without Floats and
+    with rigorous bounds (:func:`constant_bounds`); it becomes a term."""
     if e.is_Rational:
         const[0] += scale * Fraction(int(e.p), int(e.q))
         return
@@ -186,6 +219,10 @@ def _closed(e, scale: Fraction, out: dict, const: list) -> None:
     c, rest = e.as_coeff_Mul()
     if rest is not e and c != 1 and c.is_Rational:
         _closed(rest, scale * Fraction(int(c.p), int(c.q)), out, const)
+        return
+    v = from_sympy(e, generic=GENERIC_CONSTANTS)
+    if v is not None:
+        const[0] += scale * v
         return
     if e.has(Float):
         raise _Unhandled(e)                  # Floats: see the module docstring
@@ -439,9 +476,10 @@ def interpret(atom):
         return None
     try:
         form, k = _linear(*rel)
-    except (_Unhandled, TypeError, ValueError):
+        c = _constraint(rel[0], form, k)
+    except _UNREAD:
         return None
-    return _constraint(rel[0], form, k), sorted(form, key=default_sort_key)
+    return c, sorted(form, key=default_sort_key)
 
 
 def terms(atom) -> list | None:
@@ -489,7 +527,7 @@ def order_sides(atom):
         return None
     try:
         return _side(rel[1]), _side(rel[2])
-    except (_Unhandled, TypeError, ValueError):
+    except _UNREAD:
         return None
 
 
@@ -505,10 +543,10 @@ def integer_form(e):
     const = [Fraction(0)]
     try:
         _lin(e, Fraction(1), form, const)
-    except (_Unhandled, TypeError, ValueError):
+        keys = sorted(form, key=default_sort_key)
+        items = tuple((t, form[t]) for t in keys if form[t])
+    except _UNREAD:
         return None
-    keys = sorted(form, key=default_sort_key)
-    items = tuple((t, form[t]) for t in keys if form[t])
     return Integral(items, const[0]), keys
 
 

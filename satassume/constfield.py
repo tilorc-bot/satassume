@@ -1185,6 +1185,24 @@ class Element:
     def __ceil__(self) -> int:
         return -(-self).__floor__()
 
+    def is_integer(self) -> bool:
+        """False when the value is proven not to be an integer; else
+        Undecided.  An Element is never formally an integer, but its value
+        can be one (``sqrt(2)**2``), so True is never answered.  In a
+        single transcendental constant the value is irrational (a rational
+        value ``r`` would make the nonzero polynomial ``n - r*d`` vanish
+        there), so the answer is False without evaluation."""
+        if self._single_transcendental():
+            return False
+        for prec in self._precisions():
+            e = self.enclosure(prec)
+            if e is not None:
+                lo, hi = e
+                f = lo >> prec
+                if (f << prec) < lo and hi < ((f + 1) << prec):
+                    return False
+        raise Undecided(f"cannot show that {_short(self)} is no integer")
+
     # -- conversion ----------------------------------------------------
 
     def to_sympy(self):
@@ -1233,13 +1251,16 @@ E = constant("E", _e_enclose, transcendental=True, name="E")
 # SymPy
 # ----------------------------------------------------------------------
 
-def from_sympy(expr):
+def from_sympy(expr, generic: bool = True):
     """The number of a closed real SymPy expression: a Fraction, an
     Element, or None when it is not read (free symbols, Floats, non-real
-    or unbounded constants, a division by a number not shown nonzero).
-    See "Constants" in the module docstring."""
+    or unbounded constants, a division by a number not shown nonzero, a
+    result over the size budget).  See "Constants" in the module
+    docstring.  ``generic=False`` reads only rationals, ``pi``, ``E``,
+    ``exp(n)`` and rational powers of rationals (with ``+ - * /`` and
+    integer powers), not other constants such as ``log(2)``."""
     try:
-        return _from_sympy(expr)
+        return _from_sympy(expr, generic)
     except (Undecided, ZeroDivisionError, _Unread):
         return None
 
@@ -1252,7 +1273,7 @@ class _Unread(Exception):
 _MAX_POW = 64
 
 
-def _from_sympy(e):
+def _from_sympy(e, generic=True):
     from sympy import Float, Pow, S, exp
     from sympy.core.expr import Expr
     if not isinstance(e, Expr):
@@ -1269,24 +1290,26 @@ def _from_sympy(e):
     if e.is_Add:
         r = _ZERO
         for a in e.args:
-            r = r + _from_sympy(a)
+            r = r + _from_sympy(a, generic)
         return r
     if e.is_Mul:
         r = _ONE
         for a in e.args:
-            r = r * _from_sympy(a)
+            r = r * _from_sympy(a, generic)
         return r
     if isinstance(e, Pow):
         b, x = e.args
         if x.is_Integer and abs(int(x)) <= _MAX_POW:
-            return _from_sympy(b) ** int(x)
+            return _from_sympy(b, generic) ** int(x)
         if b.is_Rational and b.is_positive and x.is_Rational:
             p, q = int(x.p), int(x.q)
             if abs(p) <= _MAX_POW and q <= _MAX_POW:
                 t = radical(Fraction(int(b.p), int(b.q)), q)
                 return t ** p
     if isinstance(e, exp) and e.args[0].is_Integer and abs(int(e.args[0])) <= _MAX_POW:
-        return _from_sympy(S.Exp1) ** int(e.args[0])
+        return E ** int(e.args[0])
+    if not generic:
+        raise _Unread(e)
     return _generic(e)
 
 
