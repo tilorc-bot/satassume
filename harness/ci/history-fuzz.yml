@@ -1,0 +1,64 @@
+# To enable: move this file to .github/workflows/history-fuzz.yml (it is
+# staged here because the account that opened the PR could not push
+# workflow files).
+name: history-fuzz
+# Nightly history-independence campaign (harness/README.md): the slow part
+# of tests/test_history.py plus fuzz, profile, audit and hash-seed runs,
+# one job per shard of harness/campaign.sh.  A job fails only on a
+# discrepancy of an undocumented family; every shrunk discrepancy (known
+# families included) is uploaded as an artifact.
+#
+# Size: SEEDS random seeds per (profile, configuration) cell.  At the
+# default of 8 the longest shard (base) takes about 20 minutes; the cost
+# is linear in SEEDS.  Change it for one run with the `seeds` input of a
+# manual dispatch, or for the nightly run in `env` below.  The seeds move
+# every night (run number x 100) so successive runs cover new streams;
+# `seed_offset` pins them to rerun a night's campaign.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: "random seeds per cell (cost is linear; 8 is about 20 minutes)"
+        default: "8"
+      seed_offset:
+        description: "first seed (empty: run number x 100)"
+        default: ""
+      queries:
+        description: "queries per base stream (profiles use half)"
+        default: "300"
+
+env:
+  SEEDS: ${{ inputs.seeds || '8' }}
+  QUERIES: ${{ inputs.queries || '300' }}
+
+jobs:
+  campaign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [tests, base, profiles, audit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest hypothesis sympy mpmath
+      - name: campaign (${{ matrix.shard }})
+        env:
+          SEED_OFFSET: ${{ inputs.seed_offset }}
+        run: |
+          export SEED_OFFSET=${SEED_OFFSET:-$(( (GITHUB_RUN_NUMBER % 10000) * 100 ))}
+          OUT=harness-results/campaign bash harness/campaign.sh ${{ matrix.shard }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: history-${{ matrix.shard }}
+          path: |
+            harness-results/campaign
+            !harness-results/campaign/**/.hypothesis-db
+          if-no-files-found: ignore
+          retention-days: 30
