@@ -378,8 +378,37 @@ def mul_templates(expr):
     if n == 0:
         return ()
     consts = consts_of(args)
+    out = facts(pattern_key('mul', n, consts), lambda: _mul_rules(n, consts),
+                consts, args + (expr,), n)
+    # A product that another template derives from this Mul's factors is
+    # a derived node here too, related to the Mul by the Mul rules over
+    # (constants, product): the Mul's own block knows its factors, not the
+    # product of a subset of them, so without this the deriving block
+    # relates a node to a term nothing constrains (a non-total block,
+    # tools/totality.py; the relation must sit in the block whose node
+    # is the Mul, not in the deriving block, which is local to its node).
+    out = [out]
+    c = args[0]
+    if n >= 3 and c.is_Rational and not c.is_zero:
+        # c*t: the coefficient-free t of the half-integer split of an Add
+        # (x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
+        rest = Mul(*args[1:])
+        if rest.is_Mul and len(rest.args) == n - 1:
+            out.append(_product_block((c, rest), expr))
+    split = ipi_split(expr)
+    if split is not None and split[1] is not None and split[1].is_Mul:
+        # I*pi*c*s: the s of exp(I*pi*c*s) and E**(I*pi*c*s)
+        c, s_ = split
+        out.append(_product_block(((c,) if c is not S.One else ()) + (S.ImaginaryUnit, S.Pi, s_), expr))
+    return out if len(out) > 1 else out[0]
+
+
+def _product_block(factors, expr):
+    """The Mul block of ``expr == Mul(*factors)`` over these objects."""
+    n = len(factors)
+    consts = consts_of(factors)
     return facts(pattern_key('mul', n, consts), lambda: _mul_rules(n, consts),
-                 consts, args + (expr,), n)
+                 consts, tuple(factors) + (expr,), n)
 
 
 # ---------------------------------------------------------------------------
