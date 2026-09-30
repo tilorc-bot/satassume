@@ -285,8 +285,9 @@ Families A-D were found by the base streams (first round), each shrunk to
 a one- or two-query prefix and confirmed in fresh interpreters under
 several hash seeds.  The profiles and the audit (second round) added:
 
-* **R** (`harness/repros/R*.py`): the answer memo is invalidated when the
-  extension registry changes, but the fact cache, the custom-fact cache
+* **R** (R1-R4 in `repros/fixed/`; fixed by #63, which keys every engine
+  cache and session on the registry epoch): the answer memo was invalidated
+  when the extension registry changed, but the fact cache, the custom-fact cache
   and the contextual sessions are not, and `Engine.is_` also caches
   `None`.  So a context-free answer computed before a registration stays
   None after it (fresh engine: True), a fact derived from a registration
@@ -340,7 +341,7 @@ own tests) showed no discrepancy.
   (the set has a relation), a query that merely *mentions* a term links
   it, and a later query about a relative of that term is decided.  The
   round-2 `relational` profile had hit it (seed 9, tagged `K`).
-* **T** (`T*.py`): predicate transfer is engaged by the first equality
+* **T** (`T*.py`; T2 in `repros/fixed/` since #63 drops a session with a raise): predicate transfer is engaged by the first equality
   atom that is not glue; from then on every node of the session is a
   candidate for sharing its unary facts with its EUF class.  Under
   `Q.zero(u) & Q.positive(f(0))` the query `Q.positive(f(u))` is None

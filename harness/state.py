@@ -20,8 +20,8 @@ Engine-level state (one ``Engine``, see ``satassume/engine.py``):
   and LRA state, constant bounds) and the ``[-selector, q]`` clauses cone
   searches add; replaced when it outgrows ``session_limit``, or by the cone
   session of a search;
-* ``_failed`` / ``_failed_state``: assumption sets whose session raised
-  ``Uninterpreted``;
+* ``_failed``: assumption sets whose session raised ``Uninterpreted``
+  (dropped with every other cache when the registry epoch moves on);
 * ``_xbasis`` (set by ``relations._number_basis``): per number, its basis
   of facts for predicate transfer;
 * ``stats``, ``_constructing``.
@@ -242,6 +242,8 @@ MODULE_INTERNED: frozenset = frozenset({
 MODULE_CONFIG: frozenset = frozenset({
     ("satassume.extensions", "extensions"),
     ("satassume.templates.registry", "registry"),
+    ("satassume.epoch", "EPOCH"),                 # the registry epoch: bumped by every
+                                                  # registration, never reset (#63)
     ("satassume.sympy_api", "_engine"),           # the default engine itself
 })
 

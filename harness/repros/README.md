@@ -35,6 +35,12 @@ Two consequences follow.
 
 ### A. An inconsistent assumption set is detected only once some query escalated the session
 
+Repro A no longer differs since #63 (it is in `fixed/`): the prefix query
+raises in both engines, and the session under which a query raised is now
+dropped, so the final query is answered from a fresh session, as a fresh
+engine does.  The mechanism below remains (the consistency check itself is
+#53 group 5); no pinned repro of it is left.
+
 `Session.query_literal` (`satassume/engine.py`, lines 469-503) checks the
 assumptions' consistency with unit propagation only (`solver.implied`).
 Search runs only when the query literal is undecided, and escalation
@@ -160,6 +166,11 @@ hence real), and the registrations of `harness/registry.py`
 ~integer(s)`; `big2`: `hbig(s) -> negative(s)`).
 
 ### R. Registration changes do not invalidate the fact caches or the sessions
+
+Fixed by #63 (R1-R4 are in `fixed/` as regression tests): every engine
+cache and session records the registry epoch it was filled under, which
+every registration and unregistration bumps, and is dropped at the next
+query.  The mechanism as found:
 
 `sympy_api.ask` keys its answer memo by the registry version
 (`_registry_state`) and clears it on any change, and `_FORMULAS` and the
@@ -310,6 +321,12 @@ the terms it mentions) reproduces the discrepancy, which is what the tag
 `G'` records.
 
 ### T. Predicate transfer is engaged by the first equality atom of a session, and stays on
+
+T2 no longer differs since #63 (it is in `fixed/`): its prefix query
+raises in both engines (the set is inconsistent once transfer is
+engaged), and #63 drops a session with the raise, so the final query runs
+in a fresh session.  T1, T3 and T4 still reproduce and stay pinned; the
+mechanism is unchanged.
 
 `Relations.process` (relations.py 409-411) sets `_want_transfer` for a
 user `eq` atom (also `ne`: it is `Not(eq)`), and `_engage_transfer`
