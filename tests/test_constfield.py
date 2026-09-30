@@ -692,6 +692,26 @@ def test_products_over_budget_are_refused_before_computing():
         assert time.perf_counter() - t < 0.1
 
 
+def test_powers_are_refused_quickly():
+    # reviewer D: powers squared without a term check ran for minutes
+    import time
+    sympy = pytest.importorskip("sympy")
+    s3, s5 = cf.radical(3, 2), cf.radical(5, 2)
+    l2 = from_sympy(sympy.log(2))
+    s7 = PI + E + SQRT2 + s3 + s5 + CBRT3 + l2 + 1
+    for f in (lambda: s7 ** 8, lambda: s7 ** 16, lambda: s7 ** 64, lambda: (PI + E + 1) ** 64,
+              lambda: (PI + E + SQRT2 + 1) ** 32):
+        t = time.perf_counter()
+        with pytest.raises(cf.TooLarge):
+            f()
+        assert time.perf_counter() - t < 0.5
+    from sympy import E as sE, log, pi, sqrt
+    t = time.perf_counter()
+    assert from_sympy((pi + sE + sqrt(2) + sqrt(3) + sqrt(5) + log(2) + 1) ** 64) is None
+    assert time.perf_counter() - t < 1
+    assert (PI + E + 1) ** 16 == ((PI + E + 1) ** 8) ** 2        # still computed when small
+
+
 def test_large_univariate_gcd_is_fast():
     # degree 70, 160-bit coefficients (like reviewer D's instance, which
     # took 20 s with Euclid over Q without normalisation)
@@ -762,13 +782,15 @@ def test_x_over_x_checks_the_divisor():
 
 def test_eq_with_foreign_numbers():
     sympy = pytest.importorskip("sympy")
-    for bad in (3.0, 3.14, complex(3, 0), sympy.Float(3.0), sympy.I, sympy.Symbol("x")):
+    for bad in (3.0, 3.14, complex(3, 0), sympy.Float(3.0), sympy.I, sympy.sqrt(-2)):
         with pytest.raises(TypeError):
             PI == bad
         with pytest.raises(TypeError):
             PI != bad
     assert PI == sympy.pi and PI != sympy.Integer(3) and PI / 2 == sympy.pi / 2
     assert not (PI == None) and PI != "pi" and PI not in [None, "pi", 3]  # noqa: E711
+    for other in (True, False, sympy.Symbol("y"), sympy.Symbol("y") + 1, sympy.S.true):
+        assert not (PI == other) and PI != other
     with pytest.raises(Undecided):
         CBRT3 ** 3 == sympy.Integer(3)       # value 3, not decidable here
     with pytest.raises(TypeError):
