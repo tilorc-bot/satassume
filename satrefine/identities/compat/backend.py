@@ -347,11 +347,30 @@ def ask_whole(condition: Any, assumptions: Any = True) -> bool | None:
     ``None``.  ``None`` too where ``combined`` would ask SymPy (:func:`route`
     gives a reason): SymPy does not split cases and calls an ``Or`` true under
     inconsistent assumptions, which made rows fire (issue #18).  Remembered
-    per backend selection: the engine asks the same ``Or`` again for each
-    row and pass that states it."""
+    per backend selection and satassume state (:func:`_satassume_state`),
+    as satassume's own answer memo is: the engine asks the same ``Or`` again
+    for each row and pass that states it."""
     if _current not in ("satassume", "combined"):
         return None
+    state = _satassume_state()
+    if _whole_state[0] != state:
+        _whole_answer.cache_clear()
+        _whole_state[0] = state
     return _whole_answer(condition, assumptions)
+
+
+def _satassume_state() -> tuple:
+    """What satassume's answers depend on besides the query: the default
+    engine and its registry state (registered clause-generating functions,
+    theory adapters; what resets satassume's answer memo), and the default
+    registry's version (which decides the scope of custom predicates)."""
+    from satassume.sympy_api import _registry_state, default_engine, extensions
+    eng = default_engine()
+    return (eng, _registry_state(eng), extensions.version)
+
+
+#: the :func:`_satassume_state` the entries of :func:`_whole_answer` were computed in
+_whole_state: list = [None]
 
 
 @lru_cache(maxsize=4096)

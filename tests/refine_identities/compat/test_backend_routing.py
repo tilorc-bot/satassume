@@ -107,6 +107,41 @@ def test_a_whole_condition_is_asked_of_satassume_only(monkeypatch):
         assert backend.ask_whole(by_cases, Q.positive(x) & Q.negative(x)) is None         # inconsistent
 
 
+def test_a_whole_answer_follows_satassume_state():
+    """``ask_whole`` remembers answers only while satassume's own answer memo
+    would: a predicate (un)registration or a new default engine forgets them."""
+    from satassume import Engine
+    from satassume.sympy_api import default_engine, register, set_default_engine, unregister
+
+    class WholeKey(Predicate):
+        name = 'whole_key'
+
+    relation = Q.lt(x, 1) | Q.gt(x, 0)
+    engine = default_engine()
+    try:
+        Q.whole_key = WholeKey()
+        custom = Q.whole_key(x) | Q.negative(x)
+        with backend.using("combined"):
+            assert backend.ask_whole(custom, Q.positive(x)) is None   # unregistered: custom
+
+            @register(Q.whole_key, Symbol)
+            def _(e):
+                return True
+
+            assert backend.ask_whole(custom, Q.positive(x)) is True
+            unregister(Q.whole_key)
+            assert backend.ask_whole(custom, Q.positive(x)) is None
+            assert backend.ask_whole(relation, Q.real(x)) is True
+            set_default_engine(Engine(relations=[]))                 # no theory: relations out of scope
+            assert backend.ask_whole(relation, Q.real(x)) is None
+            set_default_engine(engine)
+            assert backend.ask_whole(relation, Q.real(x)) is True
+    finally:
+        set_default_engine(engine)
+        unregister(Q.whole_key)
+        del Q.whole_key
+
+
 def test_union_still_asks_sympy_for_every_none(monkeypatch):
     seen = []
     monkeypatch.setattr(backend, "_guarded_sympy_ask", lambda p, a=True: seen.append(p))
