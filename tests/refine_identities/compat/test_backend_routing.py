@@ -6,8 +6,8 @@ Before the routing, every ``None`` from satassume was re-asked of SymPy's
 asked only for queries satassume cannot translate (matrix predicates,
 predicates on matrix arguments, unregistered custom predicates, relations over
 matrices), for relations no satassume theory interprets (bounds such as
-``pi/2``, floats, ``AccumBounds``), for assumptions satassume finds
-inconsistent, and when satassume raises.  ``union`` keeps the old behaviour.
+``pi/2``, floats, ``AccumBounds``), and when satassume raises.  Assumptions
+satassume finds inconsistent raise (issue #18).  ``union`` keeps the old behaviour.
 Since satassume reads irrational constants as bounded LRA variables (main's
 b208af3), bounds such as ``pi/2`` are interpreted and stay with satassume,
 and since relations are read over the extended reals (main's #26) so are
@@ -83,6 +83,63 @@ def test_out_of_scope_queries_reach_sympy():
         assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5)) is True
     with backend.using("satassume"):
         assert backend.ask(Q.nonnegative(x), Q.nonnegative(x) & Q.le(x, 1.5)) is None
+
+
+def test_inconsistent_assumptions_raise_without_asking_sympy(monkeypatch):
+    """SymPy calls an ``Or`` true under inconsistent assumptions (issue #18)."""
+    monkeypatch.setattr(backend, "_guarded_sympy_ask", _sympy_forbidden)
+    with backend.using("combined"), pytest.raises(ValueError, match="inconsistent assumptions"):
+        backend.ask(Q.nonnegative(x) | Q.zero(x), Q.positive(x) & Q.negative(x))
+
+
+def test_a_whole_condition_is_asked_of_satassume_only(monkeypatch):
+    """``ask_whole`` (the engine's whole-``Or`` ask, issue #18) is satassume's
+    answer, and ``None`` where ``combined`` would ask SymPy or under the
+    ``sympy`` and ``union`` backends."""
+    monkeypatch.setattr(backend, "_guarded_sympy_ask", _sympy_forbidden)
+    by_cases = Q.positive(x) | Q.nonpositive(x)
+    for name, answer in (("combined", True), ("satassume", True), ("sympy", None), ("union", None)):
+        with backend.using(name):
+            assert backend.ask_whole(by_cases, Q.real(x)) is answer
+    with backend.using("combined"):
+        assert backend.ask_whole(Q.invertible(X) | Q.positive(x), Q.real(x)) is None      # matrix
+        assert backend.ask_whole(by_cases, Q.real(x) & Q.lt(x, 1.5)) is None             # no theory
+        assert backend.ask_whole(by_cases, Q.positive(x) & Q.negative(x)) is None         # inconsistent
+
+
+def test_a_whole_answer_follows_satassume_state():
+    """``ask_whole`` remembers answers only while satassume's own answer memo
+    would: a predicate (un)registration or a new default engine forgets them."""
+    from satassume import Engine
+    from satassume.sympy_api import default_engine, register, set_default_engine, unregister
+
+    class WholeKey(Predicate):
+        name = 'whole_key'
+
+    relation = Q.lt(x, 1) | Q.gt(x, 0)
+    engine = default_engine()
+    try:
+        Q.whole_key = WholeKey()
+        custom = Q.whole_key(x) | Q.negative(x)
+        with backend.using("combined"):
+            assert backend.ask_whole(custom, Q.positive(x)) is None   # unregistered: custom
+
+            @register(Q.whole_key, Symbol)
+            def _(e):
+                return True
+
+            assert backend.ask_whole(custom, Q.positive(x)) is True
+            unregister(Q.whole_key)
+            assert backend.ask_whole(custom, Q.positive(x)) is None
+            assert backend.ask_whole(relation, Q.real(x)) is True
+            set_default_engine(Engine(relations=[]))                 # no theory: relations out of scope
+            assert backend.ask_whole(relation, Q.real(x)) is None
+            set_default_engine(engine)
+            assert backend.ask_whole(relation, Q.real(x)) is True
+    finally:
+        set_default_engine(engine)
+        unregister(Q.whole_key)
+        del Q.whole_key
 
 
 def test_union_still_asks_sympy_for_every_none(monkeypatch):

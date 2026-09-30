@@ -10,6 +10,7 @@ from sympy import *  # noqa: F401,F403
 from sympy import Q
 
 from satrefine.identities.core.driver import generated_handlers as handlers_dict
+from satrefine.identities.core.prove import by_cases
 from satrefine.identities.core.rewrite import rule_handler
 
 b, d, e, f, r, w, y, z = symbols('b d e f r w y z')
@@ -45,14 +46,10 @@ RULES = [
     #   fired: complex_parts.RULES[17], complex_parts.DEFINITIONS[0], complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.DEFINITIONS[1], complex_parts.IDENTITIES[5]
     #   asks: Q.imaginary(w), Q.integer(-1), Q.negative(-1), Q.finite(sign(w)), Q.real(_t), Q.extended_positive(_t), Q.extended_negative(_t), Q.integer(0), Q.nonnegative(re(w)), Q.positive(_t), Q.nonnegative(re(sign(w))), Q.nonnegative(-re(sign(w))), Q.nonnegative(-re(w))
     (arg(conjugate(w)), arg(-w), Q.imaginary(w)),
-    # round 1: from complex_parts.IDENTITIES[1] under Q.positive(e)
+    # round 1: from complex_parts.IDENTITIES[1] under Q.real(e)
     #   fired: complex_parts.RULES[6], power_exp_log.RULES[23], complex_parts.IDENTITIES[1]
-    #   asks: Q.positive(e), Q.real(e)
-    (Abs(b**e), Abs(b)**e, Q.positive(e)),
-    # round 1: from complex_parts.IDENTITIES[1] under Q.negative(e)
-    #   fired: power_exp_log.RULES[23], complex_parts.RULES[6], complex_parts.RULES[10], complex_parts.DEFINITIONS[1], complex_parts.IDENTITIES[1]
-    #   asks: Q.negative(e), Q.real(e), Q.extended_positive(Abs(b))
-    (Abs(b**e), Abs(b)**e, Q.negative(e) & (Q.positive(e) | ~Q.zero(b))),
+    #   asks: Q.real(e)
+    (Abs(b**e), Abs(b)**e, Q.real(e) & by_cases(Q.positive(e) | ~Q.zero(b))),
     # round 1: from complex_parts.IDENTITIES[1] under Q.positive(b)
     #   fired: complex_parts.RULES[10], complex_parts.DEFINITIONS[1], complex_parts.RULES[0], power_exp_log.RULES[23], complex_parts.RULES[6], complex_parts.IDENTITIES[1]
     #   asks: Q.positive(b), Q.extended_positive(b), Q.extended_nonnegative(b), Q.real(log(b))
@@ -76,23 +73,15 @@ RULES = [
     # round 1: from complex_parts.IDENTITIES[1] under Q.nonnegative(b) & Q.real(e)
     #   fired: complex_parts.RULES[0]
     #   asks: Q.extended_nonnegative(b**e)
-    (Abs(b**e), b**e, Q.nonnegative(b) & Q.real(e) & (Q.positive(e) | ~Q.zero(b))),
+    (Abs(b**e), b**e, Q.nonnegative(b) & Q.real(e) & by_cases(Q.positive(e) | ~Q.zero(b))),
     # round 1: from complex_parts.IDENTITIES[1] under Q.even(e) & Q.real(b)
     #   fired: complex_parts.RULES[0]
     #   asks: Q.integer(e), Q.even(e), Q.extended_nonnegative(b**e)
-    (Abs(b**e), b**e, Q.even(e) & Q.real(b) & (Q.positive(e) | ~Q.zero(b))),
-    # round 1: from complex_parts.IDENTITIES[1] under Q.imaginary(b) & Q.real(e)
-    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.RULES[0], complex_parts.RULES[1], complex_parts.DEFINITIONS[1], complex_parts.IDENTITIES[5], power_exp_log.RULES[23], complex_parts.RULES[6], complex_parts.IDENTITIES[1]
-    #   asks: Q.imaginary(b), Q.real(_t), Q.extended_positive(_t), Q.extended_negative(_t), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.extended_nonnegative(_t), Q.extended_nonpositive(_t), Q.positive(_t), Q.positive(-_t), Q.real(e), Q.positive(Abs(b)), Q.extended_positive(Abs(b))
-    (Abs(b**e), Abs(b)**e, Q.imaginary(b) & Q.real(e)),
+    (Abs(b**e), b**e, Q.even(e) & Q.real(b) & by_cases(Q.positive(e) | ~Q.zero(b))),
     # round 1: from complex_parts.IDENTITIES[1] under Q.even(e) & Q.imaginary(b)
     #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.RULES[0], complex_parts.RULES[1], complex_parts.DEFINITIONS[1], complex_parts.IDENTITIES[5], power_exp_log.RULES[23], complex_parts.RULES[6], power_exp_log.RULES[12], power_exp_log.RULES[21], complex_parts.IDENTITIES[1]
     #   asks: Q.integer(e), Q.imaginary(b), Q.real(_t), Q.extended_positive(_t), Q.extended_negative(_t), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.extended_nonnegative(_t), Q.extended_nonpositive(_t), Q.positive(_t), Q.positive(-_t), Q.even(e), Q.real(e), Q.positive(Abs(b)), Q.extended_positive(Abs(b)), Q.integer(e/2)
     (Abs(b**e), (-1)**(e/2)*b**e, Q.even(e) & Q.imaginary(b)),
-    # round 1: from complex_parts.IDENTITIES[1] under Q.odd(b) & Q.real(e)
-    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.RULES[0], complex_parts.RULES[1], complex_parts.DEFINITIONS[1], complex_parts.IDENTITIES[5], power_exp_log.RULES[23], complex_parts.RULES[6], complex_parts.IDENTITIES[1]
-    #   asks: Q.real(b), Q.extended_positive(b), Q.extended_negative(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.extended_nonnegative(b), Q.extended_nonpositive(b), Q.positive(b), Q.positive(-b), Q.real(e), Q.positive(Abs(b)), Q.extended_positive(Abs(b))
-    (Abs(b**e), Abs(b)**e, Q.odd(b) & Q.real(e)),
     # round 1: from complex_parts.IDENTITIES[2] under Q.negative(y)
     #   fired: complex_parts.RULES[1], complex_parts.IDENTITIES[2]
     #   asks: Q.extended_nonpositive(y)

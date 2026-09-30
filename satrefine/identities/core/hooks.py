@@ -11,6 +11,15 @@ Set by :mod:`..compat` (its ``__init__``):
     ``ask`` (every query of the engine goes through it, read at call time, so
     a test can patch it and the driver memoizes it per call) and its
     ``handlers_dict`` (the handler registry).
+:data:`ask_whole`
+    ``ask_whole(condition, assumptions)``: satassume's answer to a compound
+    condition, or ``None`` when the backend's ``ask`` is not satassume's or
+    satassume leaves the query to SymPy (out of its vocabulary, a relation no
+    theory interprets) or finds the assumptions inconsistent.  satassume
+    splits cases (``floor(y)`` is a Gaussian integer or infinite, although
+    neither alternative holds alone); :func:`.prove.provable` asks the
+    undecided alternatives of an ``Or`` a table marks (:func:`.prove.by_cases`)
+    with it when none is provable on its own (issue #18).  Read at call time, as the backend is.
 
 Set by :mod:`..compat.sympy_fixes`:
 
@@ -74,6 +83,11 @@ from sympy.core.operations import LatticeOp
 
 
 dispatcher: Any = None
+
+
+def ask_whole(condition: Any, assumptions: Any) -> bool | None:
+    """The default: no compound condition is asked whole."""
+    return None
 
 
 def rebuild(func: Any, args: Any, assumptions: Any) -> Any:
