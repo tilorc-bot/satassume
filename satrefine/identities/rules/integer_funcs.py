@@ -16,10 +16,11 @@ relations hold on the extended reals, and ``Mod``/``Rem`` of a finite ``a`` by
 ``+-oo`` are ``nan``; so the rows that read ``|a| < |b|`` from relations also
 need ``b`` finite (issue #10, B12).
 
-Two things the assumptions spell out because ``ask`` does not derive them:
+One thing the assumptions spell out because ``ask`` does not derive it:
 "integer" includes Gaussian integers (SymPy takes the floor of a complex number
-part by part, so ``floor(y)`` of a finite ``y`` is one), and ``u < v`` is asked
-both as ``Q.lt(u, v)`` and as ``Q.positive(v - u)``.
+part by part, so ``floor(y)`` of a finite ``y`` is one; issue #19).  ``u < v``
+is asked as ``Q.lt(u, v)`` alone, which satassume proves from either spelling
+for the integer sides these rows bind (#40).
 
 Not stated as definitions, because they derive nothing the rows below do not
 (measured 2026-09-24): ``ceiling(x) = -floor(-x)``, ``Mod(a, b) = a -
