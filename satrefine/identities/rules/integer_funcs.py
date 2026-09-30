@@ -31,7 +31,7 @@ from __future__ import annotations
 from sympy import Eq, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
-from ._tables import Family, Identities, Rules, add_rules, node_measure
+from ._tables import Family, Identities, Rules, add_rules, by_cases, node_measure
 
 
 def integer(u):
@@ -48,7 +48,7 @@ ASSUMED = {integer(n), Q.nonzero(d)}   # n is an integer (Gaussian included), d 
 
 # ---- floor, ceiling, frac ------------------------------------------------------
 
-ASSUMED |= {integer(h) | Q.infinite(h)}   # h is an integer or an infinity
+ASSUMED |= {by_cases(integer(h), Q.infinite(h))}   # h is an integer or an infinity (floor(t) is, by cases: #18)
 
 # g is a floor or ceiling term: floor(w) or ceiling(w), times an integer m.  (The m-less
 # forms are listed because a pattern m*floor(w) does not match floor(w) itself.)
@@ -77,7 +77,7 @@ FRAC = add_rules([
 
 # f is finite.  (A Gaussian integer f is too, but ask does not see it: issue #19.)  Not
 # at +-oo, where frac is AccumBounds(0, 1).
-ASSUMED |= {Q.finite(f) | Q.real(f) | integer(f)}
+ASSUMED |= {by_cases(Q.finite(f), Q.real(f), integer(f))}
 
 FRAC_DEFINITION = add_rules([
     (frac(f), f - floor(f)),             # gives frac(3) = 0 and frac(f) = f - n on [n, n + 1)

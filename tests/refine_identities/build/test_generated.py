@@ -12,6 +12,7 @@ from sympy import I, Q, log, pi, srepr, symbols, sympify
 from satrefine.build import stages as _stages
 from satrefine.identities.config import MODE_ENV_VAR
 from satrefine.identities.core import driver as _dispatch
+from satrefine.identities.core.prove import ByCases
 from satrefine.build.render import generated_path
 from satrefine.build.specialize import family_modules
 
@@ -92,8 +93,9 @@ def test_generated_module_is_up_to_date(module, monkeypatch):
     # the others (its own keys live) gives its committed table (see _stages)
     rules, _keys, _verdicts = _stages.generate_one(module)
     # Compare as the module reads back: importing it evaluates each row, and
-    # some generated left sides auto-evaluate (Abs(exp(z)) -> exp(re(z))).
-    loaded = {tuple(sympify(srepr(part)) for part in rule) for rule in rules}
+    # some generated left sides auto-evaluate (Abs(exp(z)) -> exp(re(z))); a hypothesis
+    # marked by cases (by_cases) reads back as one.
+    loaded = {tuple(sympify(srepr(part), locals={"ByCases": ByCases}) for part in rule) for rule in rules}
     assert set(committed.RULES) == loaded, "regenerate with satrefine/tools/refine_specialize.py --write"
 
 

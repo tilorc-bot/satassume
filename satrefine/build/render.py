@@ -5,6 +5,7 @@ import pathlib
 from typing import Iterable
 
 from ..identities import family_module_name
+from ..identities.core.prove import ByCases
 from ..identities.core.rewrite import Row
 
 def table_order(rules: Iterable[Row]) -> list[Row]:
@@ -36,6 +37,8 @@ def render_module(family: str, rules: list[Row], keys: list[str], notes: dict | 
         "from sympy import Q",
         "",
         "from satrefine.identities.core.driver import generated_handlers as handlers_dict",
+        *(["from satrefine.identities.core.prove import by_cases"]
+          if any(hyp.atoms(ByCases) for _, _, hyp in rules) else []),   # a hypothesis marked by cases
         "from satrefine.identities.core.rewrite import rule_handler",
         "",
     ]

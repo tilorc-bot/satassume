@@ -17,9 +17,9 @@ Set by :mod:`..compat` (its ``__init__``):
     satassume leaves the query to SymPy (out of its vocabulary, a relation no
     theory interprets) or finds the assumptions inconsistent.  satassume
     splits cases (``floor(y)`` is a Gaussian integer or infinite, although
-    neither alternative holds alone); :func:`.prove.provable` asks an ``Or``'s
-    undecided alternatives with it when none is provable on its own (issue
-    #18).  Read at call time, as the backend is.
+    neither alternative holds alone); :func:`.prove.provable` asks the
+    undecided alternatives of an ``Or`` a table marks (:func:`.prove.by_cases`)
+    with it when none is provable on its own (issue #18).  Read at call time, as the backend is.
 
 Set by :mod:`..compat.sympy_fixes`:
 

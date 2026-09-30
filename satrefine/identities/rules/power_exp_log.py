@@ -91,7 +91,7 @@ from __future__ import annotations
 from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true, zoo
 from sympy.core import Pow
 
-from ._tables import (ZERO, Family, Identities, Row, Rules, add_rules, count_measure, derive, node_measure, part,
+from ._tables import (ZERO, Family, Identities, Row, Rules, add_rules, by_cases, count_measure, derive, node_measure, part,
                       principal, size)
 
 # b is a base; a and e are exponents; y and r are factors of a product; z and x are arguments:
@@ -122,9 +122,12 @@ FACTS: list[Row] = add_rules([   # lhs == rhs wherever the family's facts hold
 # accepting, and a collapse without a split needs arg(b) bounded, which excludes b = 0 too.
 # The power form still needs e > 0 when b may be 0: log(0**0) is 0 but 0*log(0) is nan, and
 # Abs(0**e) is oo for e < 0 while Abs(0)**e is zoo.
+# The domains below that are marked by_cases hold under a profile stating them only as a whole
+# (the generator refines a row under profile & domain): Abs(b**e) = Abs(b)**e for a real e
+# with e > 0 or b != 0, by the cases of that Or (#50).
 
 EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain holds
-    (b**e, e*log(b),           ~Q.zero(b) | Q.positive(e)),  # a power is an exponential (see the note above)
+    (b**e, e*log(b),           by_cases(~Q.zero(b), Q.positive(e))),  # a power is an exponential (see the note above)
     (y*r,  log(y) + log(r),    true),                      # a product is an exponential (see the note above)
     (y*r,  log(-y) + log(-r),  true),                      # ... with both signs flipped: y*r == (-y)*(-r)
 ]
@@ -191,14 +194,14 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
     ], assuming={Q.integer(x - S.Half)})
     + add_rules([
         (exp(e*log(b)), b**e),                   # the definition of Pow, folded back (the form's domain)
-    ], assuming={~Q.zero(b) | Q.positive(e)})
+    ], assuming={by_cases(~Q.zero(b), Q.positive(e))})
 )
 
 LOG_RULES: list[Row] = add_rules([   # tried after the log identities
     # t**n = |t|**n, and log(r**e) = e*log(r) for r > 0 and a real e.  At t = 0 both sides are
     # zoo (log(0) = log(zoo) = zoo) unless n = 0, where 0*log(0) is nan: hence n != 0 or t != 0.
     (log(t**n), n*log(Abs(t))),
-], assuming={~Q.zero(n) | ~Q.zero(t)})
+], assuming={by_cases(~Q.zero(n), ~Q.zero(t))})
 
 NEGATIVE_BASE: list[Row] = add_rules([   # exact for integer n; ordered so they fire for a negative number only
     (q**n, (-q)**n),                                                            # q**n = (-q)**n
@@ -213,7 +216,7 @@ NEGATIVE_BASE: list[Row] = add_rules([   # exact for integer n; ordered so they 
 # e > 0: a finite or real base (Q.real is decided from stated bounds only for a finite quantity;
 # an imaginary or complex base is finite) or a positive exponent will do, a one-sided bound or
 # Q.extended_positive alone does not.
-LOG_FORMS: list[Row] = [(EXP_FORMS[0][0], EXP_FORMS[0][1], EXP_FORMS[0][2] & (Q.finite(b) | Q.real(b) | Q.positive(e)))
+LOG_FORMS: list[Row] = [(EXP_FORMS[0][0], EXP_FORMS[0][1], EXP_FORMS[0][2] & by_cases(Q.finite(b), Q.real(b), Q.positive(e)))
                         ] + EXP_FORMS[1:]
 
 IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)], LOG_FORMS)
