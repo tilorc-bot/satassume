@@ -30,13 +30,16 @@ incremental case (many questions under one ``assuming(...)`` block).
 
 Everything the engine keeps between queries (the fact caches, the reused
 sessions, the answer and split memos) is a function of the registry state:
-the registered clause-generating functions (``satassume.extensions``) and
-the theory adapters.  Every query first compares that state with the one
-the caches were filled under (``Engine._check_version``) and drops them all
-on a change, so an answer never depends on what was registered when an
-earlier query ran.  A reused session whose clause set a query's own nodes
-made unsatisfiable at root is dropped with the raise (``dead_sessions``),
-so that query alone raises.
+the registered clause-generating functions (``satassume.extensions``), the
+structural templates and the theory adapters.  Every change of that state
+starts a new registry epoch (:mod:`satassume.epoch`); every query compares
+the epoch its caches were filled under with the current one
+(``Engine._check_version``) and drops them all on a change, so an answer
+never depends on what was registered when an earlier query ran.  A reused
+session that a query under it made raise, or whose clause set the query's
+own nodes made unsatisfiable at root, is dropped (``dead_sessions``): the
+next query under the same assumptions builds a fresh one, as a fresh
+engine would, so that query alone raises.
 """
 from __future__ import annotations
 
@@ -44,6 +47,7 @@ from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
+from .epoch import EPOCH as _EPOCH, bump as _bump
 from .formula import P, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted
 from .rules import NPRED, PRED_INDEX, PREDICATES, RULE_CLAUSES, RULE_INTERNAL
@@ -79,6 +83,14 @@ class DictCache:
     nodes share facts, which is sound because a node's context-free facts
     depend only on its structure and declared assumptions.
 
+    The facts also depend on the registrations in force (a vocabulary
+    handler adds facts to a node's block, a template derives them), so the
+    cache records the registry epoch (:mod:`satassume.epoch`) it was created
+    under and every engine using it drops its contents when that epoch is
+    over (``Engine._check_version``); a cache shared between engines, or
+    given to an engine created after a registration, is dropped like the
+    engine's own.
+
     The engine never reads or writes SymPy's per-object ``_assumptions``.
     Reading it would import whatever SymPy's ``_eval_is_*`` handlers cached
     as if it were unconditional (they can be wrong: ``(0**n).is_finite`` is
@@ -93,6 +105,8 @@ class DictCache:
     def __init__(self, maxsize: int = 200_000):
         self.store: Dict[Node, Dict[str, Optional[bool]]] = {}
         self.maxsize = maxsize
+        #: the registry epoch the facts were derived under
+        self._epoch = _EPOCH[0]
 
     def facts(self, node: Node) -> Optional[Dict[str, Optional[bool]]]:
         return self.store.get(node)
@@ -112,7 +126,7 @@ class DictCache:
 
 class AnswerMemo(dict):
     """Answers of whole queries, bounded in size (cleared when full), and
-    cleared by the engine when the registry state changes
+    cleared by the engine when the registry epoch changes
     (``Engine._check_version``)."""
 
     def __init__(self, maxsize: int = 100_000):
@@ -661,10 +675,11 @@ class Engine:
         Registered clause-generating functions for custom predicates and
         for vocabulary predicates on new classes.  Defaults to the global
         registry ``satassume.extensions.extensions``.
-    relations : list of satassume.relations.AdapterSpec, or None
+    relations : sequence of satassume.relations.AdapterSpec, or None
         Theory adapters for relation atoms.  None: the LRA and EUF adapters
         if present (with the SymPy templates only); ``[]``: relations are
-        out of scope.
+        out of scope.  Kept as the tuple ``relation_specs``; assigning it
+        (or ``extensions``) after construction drops the caches.
     transfer : bool
         Share unary facts between terms EUF puts in one class
         (:mod:`satassume.transfer`): ``Q.positive(y)`` from ``Q.eq(x, y) &
@@ -703,14 +718,13 @@ class Engine:
         if relations is None:
             from .relations import default_specs
             relations = default_specs() if clause_templates is not None else []
-        #: adapter specs for relation atoms (satassume.relations); empty:
-        #: relations are out of scope, as before
-        self.relation_specs = list(relations)
+        self._relation_specs: tuple = tuple(relations)
         self.templates = templates
         #: ``node -> (compiled patterns, formulas)``; the fast path the SymPy
         #: template registry provides.  None: ``templates`` (formulas) only.
         self.clause_templates = clause_templates
-        self.extensions = extensions
+        self._extensions = extensions
+        #: context-free facts (``DictCache``); set at construction
         self.cache = cache if cache is not None else DictCache()
         self.custom_cache = DictCache()
         self.discovery_budget = discovery_budget
@@ -734,12 +748,9 @@ class Engine:
         #: assumption formulas whose session construction raised
         #: ``Uninterpreted`` -> its message (see :meth:`_context_session`)
         self._failed: Dict[Any, str] = {}
-        #: the registry state (:meth:`_registry_state`) every engine-level
-        #: cache was filled under, as its three parts; ``_version`` is None
-        #: until the first query
-        self._ext = None
-        self._version = None
-        self._specs: list = []
+        #: the registry epoch (:mod:`satassume.epoch`) the engine-level
+        #: caches were filled under; -1 until the first query
+        self._epoch = -1
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "cone_searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
@@ -749,40 +760,73 @@ class Engine:
         self.stats["sessions"] += 1
         return Session(self)
 
-    def _registry_state(self):
-        """What every answer depends on besides the query and the engine's
-        configuration: the registered clause-generating functions (they add
-        facts and decide the scope of custom predicates), identified by the
-        registry and its version counter, which every (un)registration
-        bumps, and the theory adapters."""
-        ext = self.extensions
-        return (ext, ext.version if ext is not None else 0, list(self.relation_specs))
+    # -- the registry epoch ---------------------------------------------------
+    @property
+    def extensions(self):
+        """The registry of clause-generating functions
+        (``satassume.extensions.Extensions``) or None.  Assigning another
+        one starts a new registry epoch: every cache is dropped."""
+        return self._extensions
+
+    @extensions.setter
+    def extensions(self, ext) -> None:
+        if ext is not self._extensions:
+            self._extensions = ext
+            _bump()
+
+    @property
+    def relation_specs(self) -> tuple:
+        """The theory adapters for relation atoms
+        (``satassume.relations.AdapterSpec``), as a tuple; empty: relations
+        are out of scope.  Assigning a different sequence starts a new
+        registry epoch: every cache is dropped.  A tuple, so the adapters
+        cannot change behind the epoch's back."""
+        return self._relation_specs
+
+    @relation_specs.setter
+    def relation_specs(self, specs) -> None:
+        specs = tuple(specs)
+        if specs != self._relation_specs:
+            self._relation_specs = specs
+            _bump()
 
     def _check_version(self) -> None:
-        """Drop every engine-level cache when the registry state changed
-        since it was filled: the fact caches, the contextual sessions, the
-        answer and split memos and the ``Uninterpreted`` memo all hold
-        results computed under the registrations in force at the time.
-        Called at the entry of every query; the fast path is an identity
-        check, an integer comparison and a comparison of the adapter
-        list."""
-        ext = self.extensions
-        if (ext is self._ext and (ext is None or ext.version == self._version)
-                and self.relation_specs == self._specs):
-            return
-        if self._version is not None:
-            self.stats["version_clears"] += 1
-            self.cache.store.clear()
-            self.custom_cache.store.clear()
-            self._context_sessions.clear()
-            self.answers.clear()
-            self.splits.clear()
-            self._failed.clear()
-        self._ext, self._version, self._specs = self._registry_state()
+        """Drop every engine-level cache filled under an earlier registry
+        epoch (:mod:`satassume.epoch`): the fact caches, the contextual
+        sessions, the answer and split memos and the ``Uninterpreted`` memo
+        all hold results computed under the registrations in force at the
+        time.  The entry of every query calls this when the engine's epoch
+        is not the current one (``if self._epoch != _EPOCH[0]``); a
+        ``DictCache`` records its own epoch, so a cache shared between
+        engines, or given to an engine created after a registration, is
+        dropped by the first engine that looks.  Nothing is counted before
+        the engine's first query, so registering before using an engine
+        costs nothing."""
+        epoch = _EPOCH[0]
+        if self._epoch != epoch:
+            if self._epoch >= 0:
+                self.stats["version_clears"] += 1
+                self._context_sessions.clear()
+                self.answers.clear()
+                self.splits.clear()
+                self._failed.clear()
+            self._epoch = epoch
+        for cache in (self.cache, self.custom_cache):
+            if cache._epoch != epoch:
+                cache.store.clear()
+                cache._epoch = epoch
 
     def _context_session(self, assumptions) -> Tuple[Session, List[int]]:
-        self._check_version()
+        if self._epoch != _EPOCH[0]:
+            self._check_version()
         hit = self._context_sessions.get(assumptions)
+        if hit is not None and not hit[0].solver.propagate():
+            # dead: a query's own nodes made the clause set unsatisfiable at
+            # root, and the query left some other way than by raising
+            # InconsistentAssumptions (an Uninterpreted relation, an error)
+            del self._context_sessions[assumptions]
+            self.stats["dead_sessions"] += 1
+            hit = None
         if hit is not None and _gave_up(hit[0]):
             # a theory stopped answering in an earlier query (see
             # satassume.theory, "Giving up"): start over with a working one
@@ -797,7 +841,7 @@ class Engine:
         if msg is not None:
             # the construction below would raise this again: whether it
             # does depends only on the assumptions' relation atoms and the
-            # registry state, which _check_version has just compared
+            # registry epoch, which _check_version has just compared
             raise Uninterpreted(msg)
         s = self._fresh_session()
         try:
@@ -816,7 +860,8 @@ class Engine:
     def is_(self, node: Node, pred: str) -> Optional[bool]:
         """Context-free truth value of ``pred(node)``; cached on the node
         (custom predicates: in the engine's own cache)."""
-        self._check_version()
+        if self._epoch != _EPOCH[0]:
+            self._check_version()
         if pred not in PRED_INDEX:
             return self._is_custom(node, pred)
         facts = self.cache.facts(node)
@@ -842,6 +887,8 @@ class Engine:
         return r
 
     def _is_custom(self, node: Node, pred: str) -> Optional[bool]:
+        if self._epoch != _EPOCH[0]:
+            self._check_version()
         facts = self.custom_cache.facts(node)
         if facts is not None and pred in facts:
             self.stats["cache_hits"] += 1
@@ -866,7 +913,8 @@ class Engine:
         ``assumptions`` (a formula or None).  Raises
         ``InconsistentAssumptions`` if the assumptions contradict the facts.
         """
-        self._check_version()
+        if self._epoch != _EPOCH[0]:
+            self._check_version()
         self.stats["queries"] += 1
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
@@ -882,16 +930,17 @@ class Engine:
             raise
 
     def _drop_dead(self, assumptions) -> None:
-        """A query raised under a reused session: if the session's clause
-        set is now unsatisfiable at root (the query's own nodes made it so:
-        a non-total template block, or an extension emitting contradictory
-        facts), the raise belongs to this query alone.  The session must
-        not answer later queries under these assumptions, so it is
-        dropped; the next query builds a fresh one."""
-        hit = self._context_sessions.get(assumptions)
-        if hit is not None and not hit[0].solver.propagate():
+        """A query raised under a reused session.  Whether the raise
+        belongs to this query alone (its own nodes made the clause set
+        unsatisfiable, at root or only under the assumptions: a non-total
+        template block, an extension emitting contradictory facts) or to
+        the assumptions (they contradict the facts), the session must not
+        answer later queries under these assumptions: it is dropped, and
+        the next query builds a fresh one, as a fresh engine would.  An
+        inconsistent assumption set therefore raises for every query, from
+        a fresh session each time."""
+        if self._context_sessions.pop(assumptions, None) is not None:
             self.stats["dead_sessions"] += 1
-            del self._context_sessions[assumptions]
 
     def _ask(self, s: Session, lits: List[int], proposition, assumptions,
              contextual: bool) -> Optional[bool]:

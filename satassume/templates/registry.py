@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Iterable, List
 
+from ..epoch import bump as _bump
 from ..formula import Formula, P
 from ._common import Compiled
 
@@ -40,6 +41,8 @@ class TemplateRegistry:
                 self._by_class.setdefault(cls, []).append(f)
             self._mro_cache.clear()
             self._clauses_cache.clear()
+            # the engines' caches hold facts the old templates derived
+            _bump()
             return f
 
         return deco

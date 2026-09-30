@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Tuple
 
+from .epoch import bump as _bump
 from .formula import Formula, Not, P
 from .rules import PRED_INDEX
 
@@ -57,10 +58,20 @@ class Extensions:
         self._handlers: Dict[str, List[Tuple[Tuple[type, ...], Handler]]] = {}
         self._vocab: Dict[str, List[Tuple[Tuple[type, ...], Handler]]] = {}
         self._node_cache: Dict[type, List[Tuple[str, Handler]]] = {}
-        #: bumped by every registration and unregistration; what depends on
-        #: the registrations (the answer memo of ``sympy_api.ask``) compares
-        #: it instead of the handler lists
-        self.version = 0
+        self._version = 0
+
+    @property
+    def version(self) -> int:
+        """Bumped by every registration and unregistration; what depends on
+        the registrations compares it instead of the handler lists.  Every
+        assignment also starts a new registry epoch (:mod:`satassume.epoch`),
+        which drops the caches of every engine."""
+        return self._version
+
+    @version.setter
+    def version(self, value: int) -> None:
+        self._version = value
+        _bump()
 
     # -- registration --------------------------------------------------------
     def register(self, pred, *classes: type):
