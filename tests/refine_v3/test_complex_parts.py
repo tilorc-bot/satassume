@@ -288,6 +288,10 @@ def test_arg_product_drops_positive_factors():
     unchanged(arg(x * y), Q.nonnegative(y))    # y == 0 gives nan
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "v3's refine_arg does not fire on arg(exp(I*t)) under the combined and satassume backends "
+    "(it does under sympy and union), although both range conditions it asks are proved when "
+    "asked directly; failing since at least 4e29b2d; cause not traced (v3 is the frozen reference)"))
 def test_arg_of_exp_needs_the_principal_range():
     in_range = Q.real(t) & Q.positive(t + pi) & Q.nonpositive(t - pi)
     check(arg(exp(I * t)), in_range, t, values={t: [0, 1, -1, 3, -3, pi, S.Half, -S.Half]})

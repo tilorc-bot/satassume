@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 
 from satrefine.identities.compat import backend
 from sympy.assumptions import Q
@@ -392,6 +394,15 @@ def _quoted_also_accepted(expr: Any, assumptions: Any, got: Any) -> bool:
 
 # Cases handlers_identities misses (category c), tested below with needs references.
 _QUOTED_SHORT = {(arg(x), Q.zero(x)), (factorial(n), Q.positive_infinite(n))}
+# Rows whose condition is a bare relation since 3872206 ("order hypotheses are the relation
+# alone"): the rf zero row asks Q.le(x, 0) & Q.lt(0, x + z), the gamma pole row Q.le(n, 0).
+# SymPy's ask (the reference here) leaves those relations None, where it proved the sign forms
+# the rows also accepted before; satassume proves both, so the default backend is unaffected.
+# Split out as strict xfails below.
+_QUOTED_SYMPY_RELATION = [
+    (RisingFactorial(x, k), Q.integer(k) & Q.positive(k) & Q.zero(x), S.Zero),
+    (gamma(n), Q.integer(n) & Q.nonpositive(n), S.ComplexInfinity),
+]
 
 
 def test_reference_ask_quoted_rules() -> None:
@@ -399,10 +410,20 @@ def test_reference_ask_quoted_rules() -> None:
         for expr, assumptions, expected in _REFERENCE_QUOTED_CASES:
             if HANDLERS_PACKAGE == "handlers_identities" and (expr, assumptions) in _QUOTED_SHORT:
                 continue
+            if HANDLERS_PACKAGE == "handlers_identities" and (expr, assumptions, expected) in _QUOTED_SYMPY_RELATION:
+                continue
             got = refine(expr, assumptions)
             assert got == expected or _quoted_also_accepted(expr, assumptions, got), (
                 f"refine({expr}, {assumptions}) == {got}, expected {expected}"
             )
+
+
+@pytest.mark.xfail(HANDLERS_PACKAGE == "handlers_identities", strict=True,
+                   reason="bare-relation row condition since 3872206; SymPy's ask leaves it None")
+@pytest.mark.parametrize("expr, assumptions, expected", _QUOTED_SYMPY_RELATION)
+def test_reference_ask_quoted_relation_rows(expr: Any, assumptions: Any, expected: Any) -> None:
+    with reference_ask():
+        assert refine(expr, assumptions) == expected
 
 
 def test_reference_ask_quoted_arg_of_zero() -> None:

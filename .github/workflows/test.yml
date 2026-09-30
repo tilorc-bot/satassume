@@ -4,6 +4,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python: ["3.11", "3.12"]
     steps:
@@ -11,5 +12,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install pytest hypothesis sympy mpmath
-      - run: python -m pytest -q tests
+      # SymPy at the commit the refine gates use (satrefine/tools/refine_gates.sh: SYMPY_PATH,
+      # /home/tilo/orion/sympy): the refine tests need its assumptions/refine changes, and PyPI's
+      # SymPy fails 25 of them
+      - run: pip install pytest pytest-xdist hypothesis mpmath "sympy @ git+https://github.com/tilorc-bot/sympy@6379c4da69"
+      # one run per tree, as the gates do: the trees share test module basenames
+      # (tests/test_engine.py, tests/refine_v3/test_*.py vs tests/refine_identities/rules/test_*.py),
+      # which pytest cannot collect in one run; tests/refine_identities/needs holds open requests
+      # (expected to fail) and is left out
+      - run: python -m pytest -q -n auto tests --ignore=tests/refine --ignore=tests/refine_identities --ignore=tests/refine_v3
+        env: {PYTHONHASHSEED: "0"}
+      - run: python -m pytest -q -n auto tests/refine_identities --ignore=tests/refine_identities/needs
+        if: always()
+        env: {PYTHONHASHSEED: "0"}
+      - run: python -m pytest -q -n auto tests/refine
+        if: always()
+        env: {PYTHONHASHSEED: "0"}
+      - run: python -m pytest -q -n auto tests/refine_v3
+        if: always()
+        env: {PYTHONHASHSEED: "0"}
