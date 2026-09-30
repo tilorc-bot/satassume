@@ -313,6 +313,10 @@ def _mul_rules(n, consts):
             # One irrational factor and the rest nonzero rationals -> irrational.
             rule([(k, 'irrational', True), *lits(rest, 'rational'), *lits(rest, 'zero', False)],
                  (N, 'irrational', True))
+            # One transcendental factor and the rest nonzero algebraics ->
+            # transcendental (the algebraic numbers are a field).
+            rule([(k, 'transcendental', True), *lits(rest, 'algebraic'), *lits(rest, 'zero', False)],
+                 (N, 'transcendental', True))
             # One non-real factor and the rest nonzero extended reals -> not real.
             rule([(k, 'extended_real', False), *lits(rest, 'extended_nonzero')],
                  (N, 'extended_real', False))
