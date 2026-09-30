@@ -32,7 +32,7 @@ import random
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sympy import (Abs, Basic, Dummy, Eq, Function, Ge, Gt, Le, Lt, MatrixSymbol, Mod, Ne, Q, Symbol,
+from sympy import (Abs, Basic, Dummy, Eq, Function, Ge, Gt, Le, Lt, Mod, Ne, Q, Symbol,
                    ceiling, conjugate, cos, exp, floor, im, log, pi, re, sign, sin, sqrt, S)
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.function import AppliedUndef
@@ -191,12 +191,6 @@ _DECLARED = {
 }
 _FINITE_CONSTS = [S.Zero, S.One, S(2), S(-3), S.Half, pi, sqrt(2), S(7)]
 _UNARY = [Abs, floor, ceiling, log, sin, cos, conjugate, re, im, sign, lambda t: Mod(t, 3)]
-_MATRIX_PREDS = ["invertible", "symmetric", "orthogonal", "unitary", "positive_definite",
-                 "diagonal", "upper_triangular", "lower_triangular", "fullrank", "square",
-                 "singular", "normal", "triangular", "real_elements", "complex_elements",
-                 "integer_elements"]
-_MATRIX_NEGATABLE = ["invertible", "symmetric", "orthogonal", "unitary", "positive_definite",
-                     "diagonal", "singular", "fullrank", "upper_triangular", "lower_triangular"]
 
 
 class Unrelated:
@@ -254,28 +248,17 @@ class Unrelated:
             return self.sym() ** r.choice([3, 5])
         return self.sym() + self._inner(depth)
 
-    def matrix_piece(self):
-        """A predicate on a fresh square ``MatrixSymbol`` (every listed
-        predicate, and the negations of the ones a square matrix can fail,
-        are satisfiable on a fresh matrix)."""
-        r = self.rng
-        self.k += 1
-        n = r.choice([2, 3])
-        M = MatrixSymbol(f"{self.tag}M{self.k}", n, n)
-        if r.random() < 0.3:
-            return Not(getattr(Q, r.choice(_MATRIX_NEGATABLE))(M))
-        return getattr(Q, r.choice(_MATRIX_PREDS))(M)
-
     def piece(self, depth: int = 2):
         """A satisfiable conjunct over fresh symbols: an atom (``atom``),
-        a matrix atom, or ``Or``/``Implies``/``Equivalent`` of two atoms
-        over disjoint symbols (satisfiable: the consequent's model plus any
-        value for the rest), or ``Q.is_true`` around one."""
+        or ``Or``/``Implies``/``Equivalent`` of two atoms over disjoint
+        symbols (satisfiable: the consequent's model plus any value for the
+        rest), or ``Q.is_true`` around one.  No matrix atoms and no
+        unregistered custom predicates: the engine documents both as out of
+        scope (``sympy_api.out_of_scope``) and answers None for the whole
+        set, which is not an I2 violation but the documented contract."""
         r = self.rng
         c = r.random()
-        if c < 0.08:
-            return self.matrix_piece()
-        if c < 0.2 and depth > 0:
+        if c < 0.12 and depth > 0:
             a, b = self.piece(depth - 1), self.piece(depth - 1)
             return r.choice([Or, Implies, Equivalent])(a, b)
         if c < 0.24:

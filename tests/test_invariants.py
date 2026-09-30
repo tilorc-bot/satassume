@@ -65,8 +65,8 @@ def test_ci_stream_finds_the_pinned_i2_family():
     items = random_stream(3, 60, 4, profile="transfer")
     rep = run_stream(items, cfg, ("I2",), seed=3060, source="ci", max_violations=2, shrink_them=False)
     assert rep.violations, rep.to_json()
-    assert all(v.severity == "depends" and v.base == "None" for v in rep.violations), \
-        [v.summary() for v in rep.violations]
+    # both directions of the family: None -> definite, and definite -> None
+    assert all(v.severity == "depends" for v in rep.violations), [v.summary() for v in rep.violations]
 
 
 def test_drop_patch_drops_and_restores():
