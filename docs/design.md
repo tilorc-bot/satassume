@@ -362,9 +362,10 @@ State that can carry a dependence: writeback, cached facts asserted as
 units, one reused session per assumption set, caches that omit the registry.
 
 Issue #53 is the umbrella (seven defect groups); group 1, non-total
-templates (`x*A`, `Abs(A)`), is fixed by #54 and #61. Open PRs: #55
-(differential harness), #58 (totality gate), #63 (caches and sessions keyed
-on the registry state). The later stages proposed on #53 (restricted
+templates (`x*A`, `Abs(A)`), is fixed by #54 and #61. `harness/` (#55) checks the property
+differentially and pins the known cases as strict xfails in
+`tests/test_history.py`. Open PRs: #58 (totality gate), #63 (caches and
+sessions keyed on the registry state). The later stages proposed on #53 (restricted
 writeback, one complete consistency check per set, glue and transfer behind
 selectors) are not PRs yet. Still different on `main` (warm, then fresh):
 

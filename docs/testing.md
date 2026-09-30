@@ -237,14 +237,19 @@ next to the pass count; "0 unsound" means nothing without "N unchecked".
 * `tools/ask_fuzz.py` (on `refine-identities`) checks numerically the
   `ask` answers satrefine takes from SymPy; it is a refine tool.
 
-## Pending: totality gate and history harness
+## History independence and totality
 
+* `harness/` (#55) checks that answers do not depend on query history:
+  a long-lived engine against fresh ones over several stream orders and
+  engine presets, shrinking, attribution, a cache audit and pinned repros.
+  `tests/test_history.py` runs its fast part on every push (the known
+  cases are strict xfails; a fix moves its repro to `harness/repros/fixed/`)
+  and its slow part with `HISTORY_SLOW=1`;
+  `.github/workflows/history-fuzz.yml` runs the nightly campaign. Every
+  mode is in `harness/README.md`.
 * #58, not merged: `tools/totality.py` checks statically that every
   node's template block is satisfiable for every allowed assignment of its
   children; `tests/test_totality.py` runs it with an empty allowlist.
-* #55, not merged: `harness/` checks that answers do not depend on query
-  history (orders, engine presets, shrinking, pinned repros), with
-  `tests/test_history.py` and a nightly workflow.
 
 ## Benchmarks (asv)
 
