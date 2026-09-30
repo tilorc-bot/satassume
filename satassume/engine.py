@@ -34,7 +34,9 @@ the registered clause-generating functions (``satassume.extensions``) and
 the theory adapters.  Every query first compares that state with the one
 the caches were filled under (``Engine._check_version``) and drops them all
 on a change, so an answer never depends on what was registered when an
-earlier query ran.
+earlier query ran.  A reused session whose clause set a query's own nodes
+made unsatisfiable at root is dropped with the raise (``dead_sessions``),
+so that query alone raises.
 """
 from __future__ import annotations
 
@@ -741,7 +743,7 @@ class Engine:
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "cone_searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
-                      "version_clears": 0}
+                      "version_clears": 0, "dead_sessions": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
@@ -872,6 +874,27 @@ class Engine:
             s, lits = self._context_session(assumptions)
         else:
             s = self._fresh_session()
+        try:
+            return self._ask(s, lits, proposition, assumptions, contextual)
+        except InconsistentAssumptions:
+            if contextual:
+                self._drop_dead(assumptions)
+            raise
+
+    def _drop_dead(self, assumptions) -> None:
+        """A query raised under a reused session: if the session's clause
+        set is now unsatisfiable at root (the query's own nodes made it so:
+        a non-total template block, or an extension emitting contradictory
+        facts), the raise belongs to this query alone.  The session must
+        not answer later queries under these assumptions, so it is
+        dropped; the next query builds a fresh one."""
+        hit = self._context_sessions.get(assumptions)
+        if hit is not None and not hit[0].solver.propagate():
+            self.stats["dead_sessions"] += 1
+            del self._context_sessions[assumptions]
+
+    def _ask(self, s: Session, lits: List[int], proposition, assumptions,
+             contextual: bool) -> Optional[bool]:
         polluted = (len(s.base) - s.n_assumption_nodes
                     - (s.n_constants - s.n_assumption_constants)) > self.cone_threshold
         q = self._literal(s, proposition)
