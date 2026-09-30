@@ -18,8 +18,8 @@ class makes objects of that class ordinary nodes.
 
 Relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`, `Q.is_true(x < 0)`) are
 being added through theory solvers on the CDCL solver (DPLL(T), LRA and EUF;
-see `satassume/relations.py` and
-`agent-reports/2026-09-23-theory-interface.md`); without an adapter that
+see `satassume/relations.py` and [docs/theories.md](docs/theories.md));
+without an adapter that
 interprets a relation, `ask` returns None as before.
 Order relations are over the extended reals and assert that their sides
 are extended reals (`x < 1` implies `Q.extended_real(x)`, `x < oo` is
@@ -124,6 +124,10 @@ only when propagation is inconclusive.
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |
 | `benchmarks/counters.py` | asv suite: per-commit counts of what the engine builds and does (nodes, clauses, rule blocks, propagations, ...) and the refine-stream time |
 | `benchmarks/memory.py` | asv suite: peak RSS of a stream pass, and its traced Python allocations (peak, and retained afterwards) |
+| `docs/` | [design](docs/design.md) (engine, semantic decisions, relevance), [theories](docs/theories.md) (relations, LRA, EUF, transfer), [performance](docs/performance.md) (what landed, what was dropped, invariants), [testing](docs/testing.md) (suite, gates, fuzzers, asv), [agents](docs/agents.md) (rules for coding agents) |
+
+The dated agent reports that preceded `docs/` (2026-09-23 to 26) are in the
+tag `agent-reports-2026-09`.
 
 ## Running
 
