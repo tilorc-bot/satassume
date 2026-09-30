@@ -34,7 +34,9 @@ extended reals: ``Eq(I, I)`` is True, ``Eq(oo, oo)`` is True) and asserts
 nothing about the sides; ``ne`` is its negation.  An equality with ``oo``
 or ``-oo`` is linked to the unary vocabulary: ``eq(e, oo) <->
 positive_infinite(e)``, ``eq(e, -oo) <-> negative_infinite(e)``
-(:meth:`Relations._eq_infinity`).  It is given to theories
+(:meth:`Relations._eq_infinity`); two sides at the same infinity, or with
+a zero difference, are equal, and sides with a nonzero difference are not
+(:meth:`Relations._eq_links`).  It is given to theories
 that interpret it unconditionally (EUF) and, for finite real terms, to
 LRA (below).
 
@@ -486,6 +488,8 @@ class Relations:
             return True                       # false: a side is no extended real
         if atom.pred == "eq":
             self._eq_infinity(var, atom)
+            if atom not in self._aux_eq:
+                self._eq_links(var, atom)
         sat = sympy_atom(atom)
         ok = False
         for spec in self.specs:
@@ -580,6 +584,43 @@ class Relations:
             s._emit([-var, p])
             s._emit([var, -p])
             return
+
+    def _eq_links(self, var: int, atom: P) -> None:
+        """Two sufficient conditions of ``eq(a, b)`` and one of its negation, for
+        a user or extension atom (not the glue's):
+
+        * ``positive_infinite(a) & positive_infinite(b) -> eq(a, b)``, and the
+          same for ``negative_infinite`` (``Eq(oo, oo)`` is True);
+        * ``zero(a - b) -> eq(a, b)``: a zero difference is finite, so both
+          sides are finite and equal (``oo - oo`` is nan, not zero);
+        * ``nonzero(a - b) -> ~eq(a, b)``: equal finite sides have a zero
+          difference and equal infinite ones a nan difference, neither
+          nonzero.
+
+        These hold in every domain (the sides may be complex).  The
+        difference is taken as ``a - b``, and also as ``b - a`` when the
+        session already has that term (``Q.zero(j - i)`` for ``Eq(i, j)``),
+        and only for sides without a common symbol: SymPy cancels common
+        terms (``x - (x + y)`` is ``-y``), which is not the difference at
+        ``x = oo`` (nan).  Not for a side that is a number: an infinite one
+        is :meth:`_eq_infinity`'s, and ``eq(e, 0)`` is ``zero(e)`` by the links."""
+        a, b = atom.expr
+        if _is_number(a) or _is_number(b):
+            return
+        s = self.session
+        emit = s._emit
+        s.ensure(a, {"positive_infinite", "negative_infinite"})
+        s.ensure(b, {"positive_infinite", "negative_infinite"})
+        for pred in ("positive_infinite", "negative_infinite"):
+            emit([-s.var(pred, a), -s.var(pred, b), var])
+        if a.free_symbols & b.free_symbols:
+            return
+        for d, needed in ((a - b, False), (b - a, True)):
+            if _is_number(d) or needed and d not in s.base:
+                continue
+            s.ensure(d, {"zero", "nonzero"})
+            emit([-s.var("zero", d), var])
+            emit([-s.var("nonzero", d), -var])
 
     # -- order atoms over the extended reals (clauses 1 and 2) ----------
     def _closed_extended_real(self, e):
