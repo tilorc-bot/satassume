@@ -45,7 +45,7 @@ RULES = [
     (Rem(a, d), d/2, Q.positive(a) & Q.positive(d) & Q.odd(2*a/d)),
     # round 1: from integer_funcs.FACTS[2] under Q.negative(d) & Q.positive(a)
     #   fired: complex_parts.RULES[11], integer_funcs.FACTS[2]
-    #   asks: Q.nonzero(d), Q.nonnegative(a), Q.negative(d), Q.positive(a - d), Q.odd(2*a/d), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.extended_negative(a/d)
+    #   asks: Q.nonzero(d), Q.nonnegative(a), Q.negative(d), Q.lt(d, a), Q.odd(2*a/d), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.extended_negative(a/d)
     (Rem(a, d), -d/2, Q.negative(d) & Q.positive(a) & Q.odd(2*a/d)),
     # round 1: from integer_funcs.FACTS[2] under Q.negative(a)
     #   fired: complex_parts.RULES[11], complex_parts.SPLITS[0], complex_parts.RULES[10], complex_parts.RULES[0], complex_parts.RULES[1], integer_funcs.FACTS[2]
@@ -53,7 +53,7 @@ RULES = [
     (Rem(a, d), -Abs(d)/2, Q.negative(a) & Q.nonzero(d) & Q.odd(2*a/d)),
     # round 1: from integer_funcs.FACTS[2] under Q.negative(a) & Q.positive(d)
     #   fired: complex_parts.RULES[11], integer_funcs.FACTS[2]
-    #   asks: Q.nonzero(d), Q.nonpositive(a), Q.positive(d), Q.positive(-a + d), Q.odd(2*a/d), Q.integer(-1), Q.negative(-1), Q.extended_negative(a/d)
+    #   asks: Q.nonzero(d), Q.nonpositive(a), Q.positive(d), Q.lt(a, d), Q.odd(2*a/d), Q.integer(-1), Q.negative(-1), Q.extended_negative(a/d)
     (Rem(a, d), -d/2, Q.negative(a) & Q.positive(d) & Q.odd(2*a/d)),
     # round 1: from integer_funcs.FACTS[2] under Q.negative(a) & Q.negative(d)
     #   fired: complex_parts.RULES[10], integer_funcs.FACTS[2]

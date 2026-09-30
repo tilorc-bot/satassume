@@ -20,67 +20,71 @@ RULES = [
     #   asks: Q.positive(exp(z)), Q.integer(-1), Q.negative(-1), Q.extended_real(z)
     (log(exp(z)), z, Q.real(z)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.positive(b)
-    #   fired: complex_parts.generated[33], power_exp_log.IDENTITIES[1], complex_parts.generated[20]
+    #   fired: complex_parts.generated[30], power_exp_log.IDENTITIES[1], complex_parts.generated[17]
     #   asks: Q.integer(-1), Q.negative(-1), Q.positive(1/b), Q.finite(b), Q.positive(b)
     (log(1/b), -log(b), Q.positive(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.negative(b)
-    #   fired: complex_parts.generated[34], power_exp_log.IDENTITIES[1], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
+    #   fired: complex_parts.generated[31], power_exp_log.IDENTITIES[1], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21]
     #   asks: Q.integer(-1), Q.negative(-1), Q.negative(b), Q.odd(-1), Q.finite(b), Q.positive(-b)
     (log(1/b), -log(-b) + I*pi, Q.negative(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.negative(b)
-    #   fired: complex_parts.generated[34], power_exp_log.IDENTITIES[1], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
+    #   fired: complex_parts.generated[31], power_exp_log.IDENTITIES[1], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21]
     #   asks: Q.integer(2), Q.even(2), Q.negative(b), Q.positive(b**2), Q.positive(2), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.positive(-b)
     (log(b**2), 2*log(-b), Q.negative(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.nonnegative(b)
-    #   fired: complex_parts.generated[33], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.generated[30], power_exp_log.IDENTITIES[1]
     #   asks: Q.integer(2), Q.even(2), Q.positive(2), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.integer(0), Q.nonnegative(re(b)), Q.real(b), Q.positive(b)
     (log(b**2), 2*log(b), Q.nonnegative(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.real(b)
-    #   fired: complex_parts.generated[33], complex_parts.generated[34], complex_parts.generated[20], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.generated[30], complex_parts.generated[31], complex_parts.generated[17], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21], power_exp_log.IDENTITIES[1]
     #   asks: Q.integer(2), Q.even(2), Q.positive(2), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.integer(0), Q.zero(im(b)), Q.real(b), Q.positive(b), Q.negative(b), Q.positive(-b)
     (log(b**2), 2*log(Abs(b)), Q.real(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.imaginary(b)
-    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], power_exp_log.IDENTITIES[1], complex_parts.generated[20], complex_parts.generated[21], complex_parts.generated[23], complex_parts.generated[24], complex_parts.generated[33], complex_parts.generated[34]
+    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], power_exp_log.IDENTITIES[1], complex_parts.generated[17], complex_parts.generated[18], complex_parts.generated[20], complex_parts.generated[21], complex_parts.generated[30], complex_parts.generated[31]
     #   asks: Q.integer(-1), Q.negative(-1), Q.finite(b), Q.imaginary(b), Q.real(_t), Q.extended_positive(_t), Q.extended_negative(_t), Q.integer(0), Q.nonnegative(re(b)), Q.odd(-1), Q.positive(_t), Q.negative(_t), Q.positive(-_t)
     (log(1/b), -log(b), Q.imaginary(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.imaginary(b)
-    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.generated[23], complex_parts.generated[24], complex_parts.generated[33], power_exp_log.IDENTITIES[2], complex_parts.generated[20], complex_parts.generated[34], power_exp_log.IDENTITIES[3], complex_parts.generated[21], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.generated[20], complex_parts.generated[21], complex_parts.generated[30], power_exp_log.IDENTITIES[2], complex_parts.generated[17], complex_parts.generated[31], power_exp_log.IDENTITIES[3], complex_parts.generated[18], power_exp_log.IDENTITIES[1]
     #   asks: Q.integer(2), Q.even(2), Q.positive(2), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.imaginary(b), Q.real(_t), Q.extended_positive(_t), Q.extended_negative(_t), Q.integer(0), Q.nonnegative(re(b)), Q.positive(_t), Q.negative(_t), Q.positive(-_t), Q.positive(Abs(b)), Q.odd(-1)
     (log(b**2), 2*log(Abs(b)) + I*pi, Q.imaginary(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.positive(b) & Q.real(e)
-    #   fired: complex_parts.generated[33], complex_parts.generated[20], power_exp_log.RULES[23], complex_parts.RULES[3], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.generated[30], complex_parts.generated[17], power_exp_log.RULES[23], complex_parts.RULES[3], power_exp_log.IDENTITIES[1]
     #   asks: Q.positive(b), Q.positive(b**e), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.extended_real(e*log(b))
     (log(b**e), e*log(b), Q.positive(b) & Q.real(e)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.negative(b)
-    #   fired: complex_parts.generated[34], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24], complex_parts.RULES[7], integer_funcs.RULES[1], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.generated[31], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21], complex_parts.RULES[7], integer_funcs.RULES[1], power_exp_log.IDENTITIES[1]
     #   asks: Q.integer(e), Q.negative(b), Q.positive(-b), Q.integer(-1), Q.negative(-1), Q.real(b), Q.even(e), Q.positive(b**e), Q.finite(b), Q.real(e), Q.integer(-im(e)/2), Q.integer(0), Q.integer(-e/2)
     (log(b**e), e*log(-b), Q.even(e) & Q.negative(b)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.negative(b) & Q.odd(e)
-    #   fired: complex_parts.generated[34], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24], complex_parts.RULES[7], integer_funcs.RULES[0], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.generated[31], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21], complex_parts.RULES[7], integer_funcs.RULES[0], power_exp_log.IDENTITIES[1]
     #   asks: Q.integer(e), Q.negative(b), Q.positive(-b), Q.integer(-1), Q.negative(-1), Q.real(b), Q.odd(e), Q.finite(b), Q.real(e), Q.integer(1/2 - e/2)
     (log(b**e), e*log(-b) + I*pi, Q.negative(b) & Q.odd(e)),
     # round 1: from power_exp_log.IDENTITIES[1] under Q.nonnegative(b) & Q.positive(e)
-    #   fired: complex_parts.RULES[7], complex_parts.generated[33], power_exp_log.RULES[9], complex_parts.RULES[25], power_exp_log.IDENTITIES[1]
+    #   fired: complex_parts.RULES[7], complex_parts.generated[30], power_exp_log.RULES[9], complex_parts.RULES[25], power_exp_log.IDENTITIES[1]
     #   asks: Q.positive(e), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.finite(e)
     (log(b**e), e*log(b), Q.nonnegative(b) & Q.positive(e)),
-    # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.odd(b)
-    #   fired: complex_parts.RULES[10], complex_parts.RULES[11], complex_parts.generated[20], complex_parts.generated[21], complex_parts.generated[33], complex_parts.generated[34], complex_parts.generated[24], power_exp_log.RULES[23], complex_parts.RULES[7], integer_funcs.RULES[1], power_exp_log.FACTS[1], power_exp_log.IDENTITIES[1]
-    #   asks: Q.integer(e), Q.real(b), Q.extended_positive(b), Q.extended_negative(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.odd(-1), Q.positive(b), Q.negative(b), Q.positive(-b), Q.even(e), Q.positive(b**e), Q.real(e), Q.integer(0), Q.integer(-im(e)/2), Q.integer(-e/2), Q.positive(Abs(b))
-    (log(b**e), e*log(Abs(b)), Q.even(e) & Q.odd(b)),
+    # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.nonnegative(b)
+    #   fired: complex_parts.RULES[7], complex_parts.generated[30], power_exp_log.LOG_RULES[0], complex_parts.RULES[0]
+    #   asks: Q.integer(e), Q.even(e), Q.positive(e) | ~Q.zero(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.zero(0), Q.real(0), Q.finite(e), ~Q.zero(b) | ~Q.zero(e), Q.extended_nonnegative(b)
+    (log(b**e), e*log(b), Q.even(e) & Q.nonnegative(b) & (Q.positive(e) | ~Q.zero(b))),
+    # round 1: from power_exp_log.IDENTITIES[1] under Q.even(e) & Q.real(b)
+    #   fired: complex_parts.RULES[7], complex_parts.generated[30], complex_parts.generated[31], integer_funcs.RULES[1], complex_parts.generated[17], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21], power_exp_log.LOG_RULES[0]
+    #   asks: Q.integer(e), Q.even(e), Q.positive(e) | ~Q.zero(b), Q.finite(b), Q.integer(-1), Q.negative(-1), Q.real(e), Q.integer(0), Q.real(b), Q.positive(b), Q.negative(b), Q.integer(-im(e)/2), Q.integer(-e/2), Q.positive(-b), Q.zero(0), Q.real(0), Q.finite(e), ~Q.zero(b) | ~Q.zero(e)
+    (log(b**e), e*log(Abs(b)), Q.even(e) & Q.real(b) & (Q.positive(e) | ~Q.zero(b))),
     # round 1: from power_exp_log.IDENTITIES[2] under Q.positive(y)
-    #   fired: complex_parts.generated[33], power_exp_log.IDENTITIES[2], complex_parts.generated[20]
+    #   fired: complex_parts.generated[30], power_exp_log.IDENTITIES[2], complex_parts.generated[17]
     #   asks: Q.integer(-1), Q.negative(-1), Q.positive(y), Q.integer(0)
     (log(r*y), log(r) + log(y), Q.positive(y)),
     # round 1: from power_exp_log.IDENTITIES[2] under Q.negative(y)
-    #   fired: complex_parts.generated[34], complex_parts.generated[24], power_exp_log.IDENTITIES[3], complex_parts.generated[21]
+    #   fired: complex_parts.generated[31], complex_parts.generated[21], power_exp_log.IDENTITIES[3], complex_parts.generated[18]
     #   asks: Q.integer(-1), Q.negative(-1), Q.negative(y), Q.integer(0), Q.positive(-y)
     (log(r*y), log(-r) + log(-y), Q.negative(y)),
     # round 1: from power_exp_log.IDENTITIES[2] under Q.negative(y) & Q.positive(r)
-    #   fired: complex_parts.generated[33], complex_parts.generated[34], power_exp_log.IDENTITIES[2], complex_parts.generated[20], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
+    #   fired: complex_parts.generated[30], complex_parts.generated[31], power_exp_log.IDENTITIES[2], complex_parts.generated[17], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21]
     #   asks: Q.integer(-1), Q.negative(-1), Q.positive(r), Q.negative(y), Q.positive(-y)
     (log(r*y), log(r) + log(-y) + I*pi, Q.negative(y) & Q.positive(r)),
     # round 1: from power_exp_log.FACTS[1] under Q.negative(d)
-    #   fired: complex_parts.generated[34], complex_parts.generated[21], power_exp_log.FACTS[1], complex_parts.generated[24]
+    #   fired: complex_parts.generated[31], complex_parts.generated[18], power_exp_log.FACTS[1], complex_parts.generated[21]
     #   asks: Q.negative(d), Q.positive(-d), Q.integer(-1), Q.negative(-1)
     (log(d), log(-d) + I*pi, Q.negative(d)),
 ]
