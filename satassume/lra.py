@@ -131,6 +131,8 @@ _FLIP = {"<=": ">=", "<": ">", ">=": "<=", ">": "<", "=": "=", "!=": "!="}
 # trail entry tags
 _LO, _UP, _ASG, _DIS, _INT = 0, 1, 2, 3, 4
 
+_MISSING = object()
+
 #: branch-and-bound nodes (branchings) per ``check``; beyond it the check
 #: reports no integrality conflict (incomplete, sound)
 BRANCH_BUDGET = 16
@@ -182,15 +184,21 @@ def _is_int(q) -> bool:
 
 def _floor(q, d) -> int:
     """The largest integer ``<= q + d*delta`` for every small ``delta > 0``."""
-    if _is_int(q):
-        return q.numerator - 1 if d < 0 else q.numerator
+    if type(q) is Fraction:
+        if q.denominator == 1:
+            return q.numerator - 1 if d < 0 else q.numerator
+        return q.__floor__()
+    q.is_integer()                      # an Element: False, or Undecided
     return math.floor(q)
 
 
 def _ceil(q, d) -> int:
     """The smallest integer ``>= q + d*delta`` for every small ``delta > 0``."""
-    if _is_int(q):
-        return q.numerator + 1 if d > 0 else q.numerator
+    if type(q) is Fraction:
+        if q.denominator == 1:
+            return q.numerator + 1 if d > 0 else q.numerator
+        return q.__ceil__()
+    q.is_integer()                      # an Element: False, or Undecided
     return math.ceil(q)
 
 
@@ -217,6 +225,10 @@ class LRATheory:
         self.eager = eager
         #: set when an undecidable comparison made the theory give up
         self.gave_up = False
+        #: a payload had a number with constants (an Element): from then on
+        #: pivots and updates compute before they write (arithmetic can
+        #: raise TooLarge); without, the rational code paths run unchanged
+        self._fields = False
         # variables: index -> term key (None for slack variables)
         self._key: list[Hashable | None] = []
         self._var_of: dict[Hashable, int] = {}
@@ -244,6 +256,7 @@ class LRATheory:
         self._ints: dict[int, tuple[int, Fraction, Fraction]] = {}
         self._ints_on: dict[int, list[int]] = {}
         self._int_lits: list[tuple[int, Fraction, Fraction, int]] = []
+        self._int_memo: dict = {}
         # undo trail and level marks
         self._trail: list[tuple] = []
         self._lims: list[int] = []
@@ -335,7 +348,35 @@ class LRATheory:
         if self.gave_up:
             return None
         try:
-            return self._assert_lit(literal)
+            a = abs(literal)
+            atom = self._atoms.get(a)
+            if atom is None:
+                it = self._ints.get(a)
+                if it is not None:
+                    return self._assert_integral(literal, it)
+                truth = self._ground.get(a)
+                if truth is None:
+                    return None
+                self._assigned[a] = literal > 0
+                self._trail.append((_ASG, a))
+                if truth != (literal > 0):
+                    self.stats["conflicts"] += 1
+                    return (False, [-literal])
+                return None
+            self._assigned[a] = literal > 0
+            self._trail.append((_ASG, a))
+            v, kind, c = atom
+            if literal < 0:
+                kind = _NEG[kind]
+            conflict = self._assert_kind(v, kind, c, literal)
+            if conflict is None and self._int_lits and v in self._ints_on:
+                conflict = self._int_bounds(v)
+            if conflict is None and self.eager and kind != "!=":
+                conflict = self._simplex()
+            if conflict is not None:
+                self.stats["conflicts"] += 1
+                return (False, conflict)
+            return None
         except Undecided:
             self._give_up()
             return None
@@ -353,7 +394,45 @@ class LRATheory:
         if self.gave_up:
             return []
         try:
-            return self._propagate()
+            out = []
+            assigned = self._assigned
+            if self._pending_ground:
+                for a in self._pending_ground:
+                    if a not in assigned:
+                        lit = a if self._ground[a] else -a
+                        out.append((lit, [lit]))
+                self._pending_ground = []
+            if not self._dirty:
+                return out
+            ints_on = self._ints_on
+            for v in self._dirty:
+                if self._lo[v] is None and self._up[v] is None:
+                    continue
+                for a in self._atoms_on[v]:
+                    if a in assigned:
+                        continue
+                    _, kind, c = self._atoms[a]
+                    try:
+                        val = self._implied(v, kind, c)
+                    except Undecided:
+                        continue                    # optional: skip, never guess
+                    if val is None:
+                        continue
+                    lit = a if val[0] else -a
+                    out.append((lit, _dedupe([lit] + [-r for r in val[1]])))
+                for a in ints_on.get(v, ()):
+                    if a in assigned:
+                        continue
+                    try:
+                        val = self._int_verdict(*self._ints[a])
+                    except Undecided:
+                        continue
+                    if val is not None:
+                        lit = a if val[0] else -a
+                        out.append((lit, _dedupe([lit] + [-r for r in val[1]])))
+            self._dirty = set()
+            self.stats["propagations"] += len(out)
+            return out
         except Undecided:
             self._give_up()
             return []
@@ -374,6 +453,8 @@ class LRATheory:
         terms, constant, strict, equality = payload
         lin = self._lin(terms)
         k = num(constant)
+        if type(k) is not Fraction:
+            self._fields = True
         kind = "=" if equality else "<" if strict else "<="
         if negated:
             kind = _NEG[kind]
@@ -398,7 +479,10 @@ class LRATheory:
         items = terms.items() if isinstance(terms, dict) else terms
         lin: dict[Hashable, Fraction] = {}
         for t, c in items:
-            lin[t] = lin.get(t, _ZERO) + num(c)
+            c = num(c)
+            if type(c) is not Fraction:
+                self._fields = True
+            lin[t] = lin.get(t, _ZERO) + c
         for t in lin:
             self._term_var(t)
         # a formal zero test (sparsity): a coefficient whose value is 0
@@ -418,6 +502,8 @@ class LRATheory:
     def _register_integral(self, literal: int, payload: Integral) -> None:
         lin = self._lin(payload.terms)
         k = num(payload.offset)
+        if type(k) is not Fraction:
+            self._fields = True
         if not lin:
             self._ground[literal] = _is_int(k)
             self._pending_ground.append(literal)
@@ -465,37 +551,6 @@ class LRATheory:
     # ------------------------------------------------------------------
     # asserting
     # ------------------------------------------------------------------
-
-    def _assert_lit(self, literal: int):
-        a = abs(literal)
-        atom = self._atoms.get(a)
-        if atom is None:
-            it = self._ints.get(a)
-            if it is not None:
-                return self._assert_integral(literal, it)
-            truth = self._ground.get(a)
-            if truth is None:
-                return None
-            self._assigned[a] = literal > 0
-            self._trail.append((_ASG, a))
-            if truth != (literal > 0):
-                self.stats["conflicts"] += 1
-                return (False, [-literal])
-            return None
-        self._assigned[a] = literal > 0
-        self._trail.append((_ASG, a))
-        v, kind, c = atom
-        if literal < 0:
-            kind = _NEG[kind]
-        conflict = self._assert_kind(v, kind, c, literal)
-        if conflict is None and self._int_lits and v in self._ints_on:
-            conflict = self._int_bounds(v)
-        if conflict is None and self.eager and kind != "!=":
-            conflict = self._simplex()
-        if conflict is not None:
-            self.stats["conflicts"] += 1
-            return (False, conflict)
-        return None
 
     def _assert_kind(self, v: int, kind: str, c: Fraction, lit: int):
         if kind == "<=":
@@ -553,6 +608,14 @@ class LRATheory:
         dq = b[0] - self._vq[v]
         dd = b[1] - self._vd[v]
         vq, vd, rows = self._vq, self._vd, self._rows
+        if not self._fields:                     # rationals: nothing can raise
+            for r in self._cols[v]:
+                a = rows[r][v]
+                vq[r] += a * dq
+                vd[r] += a * dd
+            vq[v] = b[0]
+            vd[v] = b[1]
+            return
         new = [(r, vq[r] + a * dq, vd[r] + a * dd)
                for r, a in ((r, rows[r][v]) for r in self._cols[v])]
         for r, q, d in new:
@@ -586,6 +649,20 @@ class LRATheory:
         lo, up = self._lo[v], self._up[v]
         if lo is None or up is None:
             return None
+        if self._fields:
+            # with constants the rounding is expensive (enclosures): the
+            # verdict depends only on the bounds, which their literals
+            # identify (branch bounds have literal 0: not cached)
+            lr, ur = self._lo_r[v], self._up_r[v]
+            if lr and ur:
+                key = (v, m, k, lr, ur)
+                r = self._int_memo.get(key, _MISSING)
+                if r is _MISSING:
+                    r = self._int_memo[key] = self._int_verdict_bounds(v, m, k, lo, up)
+                return r
+        return self._int_verdict_bounds(v, m, k, lo, up)
+
+    def _int_verdict_bounds(self, v, m, k, lo, up):
         why = [self._lo_r[v], self._up_r[v]]
         if m is _ONE and k is _ZERO:
             a, b = lo, up
@@ -595,7 +672,8 @@ class LRATheory:
             if m < 0:
                 a, b = b, a
         if lo == up:                            # pinned: d == 0 here
-            return (_is_int(a[0]), why)
+            q = a[0]
+            return (q.denominator == 1 if type(q) is Fraction else q.is_integer(), why)
         if _ceil(*a) > _floor(*b):
             return (False, why)
         return None
@@ -622,7 +700,8 @@ class LRATheory:
                 nq, nd = vq[v], vd[v]
             else:
                 nq, nd = m * vq[v] + k, m * vd[v]
-            integral = not nd and _is_int(nq)
+            integral = not nd and (nq.denominator == 1 if type(nq) is Fraction
+                                   else nq.is_integer())
             if lit > 0 and not integral:        # n <= floor(n) or n >= floor(n) + 1
                 f = _floor(nq, nd)
                 cases = (("<=", f), (">=", f + 1))
@@ -709,6 +788,17 @@ class LRATheory:
         a = rows[b][j]
         tq = (target[0] - vq[b]) / a
         td = (target[1] - vd[b]) / a
+        if not self._fields:                     # rationals: nothing can raise
+            vq[b], vd[b] = target
+            vq[j] += tq
+            vd[j] += td
+            for k in cols[j]:
+                if k != b:
+                    ak = rows[k][j]
+                    vq[k] += ak * tq
+                    vd[k] += ak * td
+            self._pivot_rational(b, j)
+            return
         new = [(k, vq[k] + ak * tq, vd[k] + ak * td)
                for k, ak in ((k, rows[k][j]) for k in cols[j] if k != b)]
         new.append((j, vq[j] + tq, vd[j] + td))
@@ -717,6 +807,36 @@ class LRATheory:
         for k, q, d in new:
             vq[k] = q
             vd[k] = d
+
+    def _pivot_rational(self, b: int, j: int) -> None:
+        """:meth:`_pivot` in place, for a tableau of Fractions only."""
+        self.stats["pivots"] += 1
+        rows, cols = self._rows, self._cols
+        row = rows.pop(b)
+        a = row.pop(j)
+        inv = _ONE / a
+        newrow = {b: inv}
+        for k, c in row.items():
+            cols[k].discard(b)
+            newrow[k] = -c * inv
+        cj = cols[j]
+        cj.discard(b)
+        for r in cj:
+            rr = rows[r]
+            f = rr.pop(j)
+            for k, c in newrow.items():
+                nv = rr.get(k, _ZERO) + f * c
+                if nv:
+                    if k not in rr:
+                        cols[k].add(r)
+                    rr[k] = nv
+                elif k in rr:
+                    del rr[k]
+                    cols[k].discard(r)
+        cols[j] = set()
+        rows[j] = newrow
+        for k in newrow:
+            cols[k].add(j)
 
     def _pivot(self, b: int, j: int) -> None:
         """Make ``j`` basic in place of ``b`` (``b`` becomes nonbasic).
@@ -836,47 +956,6 @@ class LRATheory:
     # ------------------------------------------------------------------
     # propagation
     # ------------------------------------------------------------------
-
-    def _propagate(self):
-        out = []
-        assigned = self._assigned
-        if self._pending_ground:
-            for a in self._pending_ground:
-                if a not in assigned:
-                    lit = a if self._ground[a] else -a
-                    out.append((lit, [lit]))
-            self._pending_ground = []
-        if not self._dirty:
-            return out
-        ints_on = self._ints_on
-        for v in self._dirty:
-            if self._lo[v] is None and self._up[v] is None:
-                continue
-            for a in self._atoms_on[v]:
-                if a in assigned:
-                    continue
-                _, kind, c = self._atoms[a]
-                try:
-                    val = self._implied(v, kind, c)
-                except Undecided:
-                    continue                    # optional: skip, never guess
-                if val is None:
-                    continue
-                lit = a if val[0] else -a
-                out.append((lit, _dedupe([lit] + [-r for r in val[1]])))
-            for a in ints_on.get(v, ()):
-                if a in assigned:
-                    continue
-                try:
-                    val = self._int_verdict(*self._ints[a])
-                except Undecided:
-                    continue
-                if val is not None:
-                    lit = a if val[0] else -a
-                    out.append((lit, _dedupe([lit] + [-r for r in val[1]])))
-        self._dirty = set()
-        self.stats["propagations"] += len(out)
-        return out
 
     def _implied(self, v, kind, c):
         """Truth of atom ``v kind c`` implied by the current bounds of
