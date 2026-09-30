@@ -1,6 +1,6 @@
 """Closed real constants (``pi``, ``sqrt(2)``, ``E``, ``sin(1)``) in
-linear relations (``satassume.lra_adapter``, item 2 of
-``agent-reports/2026-09-25-next-steps.md``).
+linear relations (``satassume.lra_adapter``;
+``docs/theories.md``, "Constants").
 
 A constant in a linear position is an LRA term with rigorous rational
 bounds ``lo < c < hi`` asserted once per session; ``pi/2`` and ``3*pi`` are

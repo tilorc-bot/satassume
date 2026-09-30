@@ -142,9 +142,11 @@ Constant terms
 --------------
 ``pi``, ``E`` and rational powers of rationals (``sqrt(2)``), with
 ``+ - * /``, are exact numbers of the LRA form (constants and coefficients:
-``x <= 3*pi/2``, ``x/pi``; :mod:`satassume.constfield`), not terms.  Any
-other closed real constant in a linear position (``log(2)`` of
-``x <= log(2)``) is
+``x <= 3*pi/2``, ``x/pi``; :mod:`satassume.constfield`), not terms.  So is
+every other closed real constant with rigorous bounds (``log(2)`` of
+``x <= log(2)``), as an indeterminate of the field, while
+:data:`satassume.lra_adapter.GENERIC_CONSTANTS` is True (the default).
+Without it, such a constant is
 a term of the LRA form (see :mod:`satassume.lra_adapter`); its guard
 ``real(pi)`` is decided at the root by the rule base, and the first atom
 that brings it in has the adapter register its rational bounds

@@ -1,13 +1,14 @@
-"""Free-Boolean re-measurement, step 1: replay the stream under one mode.
+"""Replay a recorded query stream through one engine and save the answers.
 
     PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python \\
-        agent-reports/scripts/free_stream.py STREAM OUT.json MODE
+        tools/stream_answers.py STREAM OUT.json MODE
 
 MODE ``default`` (``Engine()``) or ``free`` (``Engine(uninterpreted="free")``).
 Replays every query of ``stream.pkl`` in order through ``sympy_api.ask`` on
 one engine (as ``tools/ab.py`` does) and writes one answer per query
 (true / false / null / "error") plus the wall time.  Compare two runs with
-``free_compare.py``.
+``tools/stream_answers_compare.py``.  ``tools/gate2_stream.py`` turns
+gate2's frozen queries into a stream file.
 """
 import json, pickle, sys, time
 

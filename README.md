@@ -18,8 +18,8 @@ class makes objects of that class ordinary nodes.
 
 Relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`, `Q.is_true(x < 0)`) are
 being added through theory solvers on the CDCL solver (DPLL(T), LRA and EUF;
-see `satassume/relations.py` and
-`agent-reports/2026-09-23-theory-interface.md`); without an adapter that
+see `satassume/relations.py` and [docs/theories.md](docs/theories.md));
+without an adapter that
 interprets a relation, `ask` returns None as before.
 Order relations are over the extended reals and assert that their sides
 are extended reals (`x < 1` implies `Q.extended_real(x)`, `x < oo` is
@@ -132,6 +132,11 @@ only when propagation is inconclusive.
 | `satrefine/tools/refine_fuzz.py` | random expressions and assumptions, numeric check of every rewrite, SymPy's refine on the same inputs |
 | `satrefine/tools/refine_oracle.py` | SymPy's old assumption system as an independent oracle for the handlers |
 | `satrefine/identities/` (selected as `handlers_identities`) | the nine handler families as tables of identities and conditional rules, with rules generated from identities (offline, `satrefine/build/`) and verified numerically; `tests/refine_identities/` (includes the 1,736-case v3 battery), `satrefine/tools/refine_identity_scoreboard.py`, `refine_specialize.py`, `refine_differential.py`, `refine_ablate.py` (run as `python -m satrefine.tools.<name>`; `tools/refine_*` are shims for phase 3); see `agent-reports/2026-09-24-refine-identities-phase-1-results.md` and `2026-09-25-refine-identities-phase-2-results.md` |
+| `docs/` | [design](docs/design.md) (engine, semantic decisions, relevance), [theories](docs/theories.md) (relations, LRA, EUF, transfer), [performance](docs/performance.md) (what landed, what was dropped, invariants), [testing](docs/testing.md) (suite, gates, fuzzers, asv), [agents](docs/agents.md) (rules for coding agents); for satrefine [refine](docs/refine.md) (design, layout, routing, open decisions) and [refine-testing](docs/refine-testing.md) (test trees, gates, what the checks found) |
+
+The dated agent reports that preceded `docs/` (2026-09-21 to 26) are in the
+tags `agent-reports-2026-09` (main) and `refine-agent-reports-2026-09`
+(this branch, including `archive/`).
 
 ## satrefine: the refine layer as a yardstick
 

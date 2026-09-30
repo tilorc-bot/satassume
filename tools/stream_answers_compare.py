@@ -1,7 +1,7 @@
-"""Free-Boolean re-measurement, step 2: compare default and free answers.
+"""Compare two answer files of ``tools/stream_answers.py`` (for example default and free).
 
     PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python \\
-        agent-reports/scripts/free_compare.py STREAM DEFAULT.json FREE.json OUT.json [--verify S]
+        tools/stream_answers_compare.py STREAM DEFAULT.json FREE.json OUT.json [--verify S]
 
 Classifies every stream query (default answer -> free answer): same, more
 definite (None -> True/False), new error (-> ValueError), lost error, less
