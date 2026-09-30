@@ -38,6 +38,7 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (gamma(n), Q.integer(n) & Q.positive(n), factorial(n - 1), None),
     (gamma(n + 1), Q.integer(n) & Q.nonnegative(n), factorial(n), None),
     (gamma(n), Q.integer(n) & Q.nonpositive(n), zoo, None),
+    (gamma(n), Q.integer(n) & Q.negative(n - 1), zoo, None),   # n <= 0 (v3 refuses; satassume #38)
     (gamma(n + 3), Q.integer(n) & Q.nonpositive(n + 3), zoo, {n: INTS}),
     (gamma(n + 3), Q.integer(n) & Q.le(n + 3, 0), zoo, {n: INTS}),
     # binomial
@@ -85,7 +86,6 @@ NEGATIVE = [  # v3's refusals
     (factorial(n), Q.negative(n) & ~Q.integer(n)),  # finite off the integers
     (gamma(n), Q.integer(n)),
     (gamma(n), Q.positive(n)),
-    (gamma(n), Q.integer(n) & Q.negative(n - 1)),
     (gamma(n + HALF), Q.integer(n) & Q.nonnegative(n)),
     (binomial(n, n), Q.integer(n)),                 # binomial(-1, -1) = 0
     (binomial(n, n - 1), Q.integer(n)),             # binomial(-1, -2) = 0

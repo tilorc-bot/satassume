@@ -128,6 +128,10 @@ ACCEPTED: list[Accepted] = [
     Accepted("extra", "test_inverse.py::test_bounds_spanning_more_than_one_branch_do_not_fire",
              "atan(cot(x)) | Q.gt(x, pi) & Q.lt(x, 2*pi)", "-x + 3*pi/2",
              "exact: cot x = tan(3*pi/2 - x) and 3*pi/2 - x is in (-pi/2, pi/2)"),
+    Accepted("extra", "test_inverse.py::test_bounds_spanning_more_than_one_branch_do_not_fire",
+             "asin(sin(x)) | Q.eq(x, pi/2)", "pi/2",
+             "exact: asin(sin(pi/2)) = asin(1) = pi/2; satassume decides Q.integer(x/pi + 1/2) (True at x = pi/2) "
+             "over the exact field Q(pi) (satassume's #37/#48, merged 2026-09-30)"),
     # --- inverse: the hyperbolic inverses over the extended reals (phase 3, d-extended) ---
     *[Accepted("extra", _W, case, got, _EXT) for case, got in [
         ("acoth(coth(x)) | Q.extended_positive(x)", "x"), ("acoth(coth(x)) | Q.ge(x, 1)", "x"),
@@ -192,6 +196,9 @@ ACCEPTED: list[Accepted] = [
              "binomial(n, n - 1)", "v3 questionable: ~integer allows an infinite n, where binomial(n, n - 1) is not n"),
     Accepted("miss", "test_combinatorial.py::test_rf_gamma_positive_x", "RisingFactorial(x, k) | ~Q.integer(x)",
              "RisingFactorial(x, k)", "v3 questionable: gamma(k + x)/gamma(x) is wrong when k + x is a pole or at infinity"),
+    Accepted("extra", "test_combinatorial.py::test_gamma_left_alone", "gamma(n) | Q.integer(n) & Q.negative(n - 1)", "zoo",
+             "exact: an integer n < 1 is a nonpositive integer, a pole of gamma; satassume proves Q.le(n, 0) "
+             "from the integrality of n (satassume's #38, merged 2026-09-30)"),
 
     # --- integer_funcs: v3 wrong (a relation allows an infinite divisor; issue #10, B12) ---
     *[Accepted("miss", f"test_integer_funcs.py::{test}", f"{f}(a, b) | {facts}", f"{f}(a, b)", _B12)
