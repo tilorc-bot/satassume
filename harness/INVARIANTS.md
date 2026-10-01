@@ -284,6 +284,20 @@ opaque abstraction is not a model of the set.  Moved to `fixed/`:
   `I2-self-assumption-lost-with-unrelated-conjunct`,
   `I5-constant-relation-conjunct-restated`.
 
+### Status after the complete set check (#73)
+
+Every assumption set gets one complete check when its contextual
+session is built (`Engine.verdict`: the whole cone escalated,
+propagation, search, in the session the set's queries then use).  The
+guard reads that verdict: only `consistent` is a model (`unknown`, a
+theory that gave up or a cone cut by the discovery budget, is none).
+The three `budget` cases (`discovery_budget=5`) no longer violate and
+move to `fixed/`: `I2-predicates-only-exhaust-discovery-budget`,
+`I3-declared-fact-loses-definiteness-budget` (K7),
+`I5-implied-conjunct-rescues-budget`.  The check's escalation moves
+where the budget cuts; the budget families (H2b) stay pinned in
+`tests/test_invariant_repros.py`.
+
 The findings below describe the cases as found.
 
 ### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
