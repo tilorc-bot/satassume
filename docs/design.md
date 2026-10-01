@@ -151,7 +151,7 @@ the engine's `DictCache` (`ObjectCache` is an alias); the switch had no
 measurable cost (bench-container at 07e0bd5). `tests/test_shared_facts.py`
 pins the defect; the SymPy bug is not filed upstream.
 
-### Constant propositions ignore the assumptions
+### Constant propositions: context-free first
 
 `_is_constant_proposition`: every predicate is built in (vocabulary or
 relation) and every argument has no free symbols, is a number and contains
@@ -164,12 +164,24 @@ SymPy's old `is_*` properties instead was tried and dropped: it lost 23
 gate2 answers (`Q.algebraic(asin(7))`, `Q.imaginary(exp(pi*I/2))`).
 Accepted consequences (recorded on #12):
 
-- it never raises: `ask(Q.prime(7), Q.composite(7))` is True (`sympy.ask`
-  trusts the assumption: False);
-- assuming an undecidable constant fact does not answer it:
-  `ask(Q.positive(E**pi - pi**E), Q.positive(E**pi - pi**E))` is None, and
-  so is `Q.positive(g(1))` under itself for `class g(Function)` (not an
-  `AppliedUndef`, unlike `Function('f')(1)`).
+- a definite context-free answer never raises:
+  `ask(Q.prime(7), Q.composite(7))` is True (`sympy.ask` trusts the
+  assumption: False). Its padded form (`& (Q.complex(w) | ~Q.complex(w))`)
+  takes the general path and raises. The invariant harness cannot report
+  that pair: it reports neither a `ValueError` side nor an inconsistent
+  set (`harness/INVARIANTS.md`, "The oracle").
+
+Fallback on None (nightly family C): when the context-free answer is None
+the proposition is answered under the assumptions like any other (the
+general path, with relevance), and so raises for an inconsistent set. The
+shortcut alone used to drop the assumptions about a constant not decided
+context-free (`nan`, `pi + E`, Floats): `ask(Q.rational(pi + E),
+Q.rational(pi + E))` was None but True once the proposition was padded
+with a tautology over another symbol (invariant I5); likewise
+`Q.positive(E**pi - pi**E)` and `Q.positive(g(1))` (`class g(Function)`)
+under themselves. All are now True. Removing the shortcut altogether was
+tried and rejected: the definite constant answers under inconsistent sets
+would raise.
 
 ### Inconsistent assumptions raise `ValueError`
 
