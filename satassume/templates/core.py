@@ -18,6 +18,7 @@ numeric coefficients, which is what the old assumption system relies on
 from __future__ import annotations
 
 from itertools import product
+from types import MappingProxyType
 
 from sympy import S
 from sympy.core.add import Add
@@ -266,7 +267,7 @@ def _coeff(ctx):
 
 #: Conditions on the pattern of a Mul (``n`` arguments, ``consts``; ``m``
 #: the size of the negative set in a ``negsets`` section).
-MUL_GUARDS = {
+MUL_GUARDS = MappingProxyType({
     'n<=MAX_ONEOUT': lambda c: c['n'] <= MAX_ONEOUT,
     'n>MAX_ONEOUT': lambda c: c['n'] > MAX_ONEOUT,
     'n>=2': lambda c: c['n'] >= 2,
@@ -282,7 +283,7 @@ MUL_GUARDS = {
     'c rational': lambda c: bool(c['consts'][0].is_Rational),
     'c.q==2': lambda c: c['consts'][0].q == 2,
     'c==-1': lambda c: c['consts'][0] is S.NegativeOne,
-}
+})
 
 # Slots: 'N' the node, '*' all arguments; in a section 'k' the argument of
 # the iteration, 'rest' the others ('l' the other one when there is one),
@@ -587,7 +588,7 @@ def ipi_split(arg):
 
 
 #: Conditions on ``exp(I*pi*c*s)`` (``c`` rational; ``has_s``: an ``s`` slot).
-IPI_GUARDS = {
+IPI_GUARDS = MappingProxyType({
     'no s': lambda x: not x['has_s'],
     's': lambda x: x['has_s'],
     'c integer': lambda x: bool(x['c'].is_integer),
@@ -595,7 +596,7 @@ IPI_GUARDS = {
     'c odd integer': lambda x: bool(x['c'].is_integer) and x['c'].p % 2 != 0,
     'c half-odd': lambda x: not x['c'].is_integer and x['c'].q == 2,
     'c other': lambda x: not x['c'].is_integer and x['c'].q != 2,
-}
+})
 
 # Slots: 'N' the node exp(I*pi*c*s), 'S' the s (only with an s).
 IPI_TABLE = (
@@ -653,7 +654,7 @@ def _b_not_qth_power(x):
 
 #: Conditions on the pattern of a Pow (``b``/``e`` the constant base or
 #: exponent or None, and the flags of ``pow_templates``).
-POW_GUARDS = {
+POW_GUARDS = MappingProxyType({
     'b is E': lambda x: x['b'] is S.Exp1,
     'ipi': lambda x: x['ipi'] is not None,
     'b is e': lambda x: x['same'],
@@ -680,9 +681,9 @@ POW_GUARDS = {
     'e integer >= 2': lambda x: x['e'] is not None and x['e'].is_Integer and x['e'].p >= 2,
     'e algebraic irrational': lambda x: (x['e'] is not None and x['e'].is_algebraic
                                          and x['e'].is_rational is False),
-}
+})
 
-_POW_SLOT_NAMES = {_B: 'B', _E: 'E', _N: 'N'}
+_POW_SLOT_NAMES = MappingProxyType({_B: 'B', _E: 'E', _N: 'N'})
 
 
 def _pairs_rows(prefix, pairs, when=()):
@@ -694,7 +695,8 @@ def _pairs_rows(prefix, pairs, when=()):
 
 
 #: Slot names of a Pow block (see ``pow_templates``).
-POW_SLOTS = {'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': _T, 'BM': _BM, 'BP': _BP}
+POW_SLOTS = MappingProxyType({'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': _T,
+                              'BM': _BM, 'BP': _BP})
 
 # Slots: 'B' base, 'E' exponent, 'N' node, 'U' the u of an exp(u) base,
 # 'S' the s of an I*pi*c*s exponent of E, 'T' 2*e, 'BM'/'BP' b - 1, b + 1.
