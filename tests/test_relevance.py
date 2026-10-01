@@ -126,6 +126,18 @@ def test_inconsistent_relational_set_raises_for_any_component():
         api.ask(Q.positive(y), a, engine=Engine())
 
 
+def test_sign_sums_set_raises_for_any_component():
+    # sign atoms on sums sharing a symbol start the relation glue (#51) in
+    # the whole set's session, which links x and y (both zero) across
+    # components: the whole set is inconsistent while each component is
+    # consistent on its own, so the whole set's verdict decides raising
+    bj = lambda e: besselj(1, e)
+    a = (Q.zero(x) & Q.zero(y) & Q.zero(bj(y)) & Q.nonzero(bj(x))
+         & Q.positive(z - 1) & Q.negative(z - 3))
+    for p in (Q.gt(z, 0), Q.lt(0, z), Q.positive(z), Q.zero(bj(x))):
+        assert both(p, a) == ["error", "error"], p
+
+
 SPLIT_SWEEP = [
     Q.positive(x) & Q.lt(x, y) & Q.negative(z) & Q.eq(t, 3),
     Q.eq(x, 2) & Q.eq(y, 2) & Q.positive(sin(y)) & Q.lt(1, 2),

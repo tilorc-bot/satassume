@@ -75,6 +75,7 @@ from typing import Optional
 
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
+from .engine import affine_glue as _affine_glue
 from .epoch import EPOCH as _EPOCH
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
@@ -880,12 +881,22 @@ def _relevant(p, a, eng: Engine):
             # wrong arity): as before, the whole set answers (None).  Matrix
             # and unregistered custom predicates are opaque atoms here and
             # translate
+            rel = bool(eng.relation_specs)
             try:
-                _formula(a, bool(eng.relation_specs), True)
+                g = _formula(a, rel, True)
             except Unsupported:
                 ok = False
             else:
-                ok = all(_part_consistent(sp.part((j,)), eng) for j in range(len(sp.comps)))
+                if rel and _affine_glue(g):
+                    # sign atoms on sums sharing a symbol start the relation
+                    # glue in the whole set's session (#51), which then
+                    # links terms of every component: the per-component
+                    # checks could miss an inconsistency, so the whole
+                    # set's verdict decides, as for a relational set
+                    ok = _consistent(a, eng)
+                else:
+                    ok = all(_part_consistent(sp.part((j,)), eng)
+                             for j in range(len(sp.comps)))
         sp.consistent = ok
     return f if ok else a
 

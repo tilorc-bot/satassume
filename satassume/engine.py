@@ -1881,6 +1881,29 @@ _SIGN_PREDS = frozenset({
     "extended_nonpositive", "extended_nonzero"})
 
 
+def affine_glue(f) -> bool:
+    """Whether the sign atoms of ``f`` alone start the relation glue of
+    :meth:`Session._affine_links` (two sign atoms on different sums sharing
+    a symbol), given an engine with relation specs.  Once started, the glue
+    links the argument of every unary atom of the assumptions, in every
+    component, so the relevance layer treats such a set as relational
+    (``satassume.sympy_api._relevant``)."""
+    sums: Dict[Any, frozenset] = {}
+    for a in atoms_of(f):
+        if a.pred not in _SIGN_PREDS:
+            continue
+        e = a.expr
+        if not getattr(e, "is_Add", False) or e in sums:
+            continue
+        symbols = e.free_symbols
+        if not symbols:
+            continue
+        if any(symbols & other for other in sums.values()):
+            return True
+        sums[e] = symbols
+    return False
+
+
 # --------------------------------------------------------------------------
 # rule-base neighbourhood used by demand-driven instantiation
 # --------------------------------------------------------------------------
