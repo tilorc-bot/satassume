@@ -1371,7 +1371,7 @@ class Engine:
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
-                 session_limit: int = 2000, keep_sessions: int = 16,
+                 session_limit: int = 2000, keep_sessions: int = 0,
                  cone_search: bool = True, extensions=None, relations=None,
                  cone_threshold: int = 3, transfer: bool = True,
                  uninterpreted: str = "free", relevance: bool = True,
