@@ -19,7 +19,10 @@ here.  Three backends exist:
     satassume, with SymPy's ``ask`` asked only where satassume has no model
     of the query (see "Routing" below).  While it asks SymPy, three of SymPy's
     ``Q.nonzero`` handlers are guarded against a wrong ``False`` (below),
-    which otherwise makes ``Abs(x)`` and ``x**2`` zero for imaginary ``x``.
+    which otherwise makes ``Abs(x)`` and ``x**2`` zero for imaginary ``x``,
+    its ``Q.extended_real`` handler for powers against a wrong ``True``, and
+    its fact base does not derive ``Q.unitary`` from ``Q.orthogonal`` alone
+    (issue #67).
 ``union``
     satassume first; every ``None`` (and every inconsistency error) is
     re-asked of SymPy's ``ask``, with the same guard.  The union of both.
@@ -171,9 +174,84 @@ def _extended_real_true_checked(expr: Any, assumptions: Any) -> bool | None:
     return None
 
 
+# SymPy's matrix fact base states ``Implies(Q.orthogonal(x), Q.unitary(x))``
+# (``sympy/assumptions/facts.py``, compiled into ``ask_generated``), which holds
+# only for real matrices: ``Matrix([[5/4, 3*I/4], [-3*I/4, 5/4]])`` has
+# ``A.T*A == I`` and ``A.H*A != I``.  The ``Q.unitary`` handlers never go
+# through orthogonality (a ``MatrixSymbol`` is unitary only if stated; products,
+# powers, transposes and inverses recurse on ``Q.unitary``); the wrong ``True``
+# comes from the facts, by three paths: ``_ask_single_fact`` (the
+# ``get_known_facts_dict`` entry of ``Q.orthogonal`` lists ``Q.unitary`` and,
+# through it, ``Q.normal``), used by ``ask`` and by every handler's
+# ``_ask_recursive``; ``satask`` (the clauses of ``get_all_known_matrix_facts``);
+# and ``ask``'s consistency check (``get_all_known_facts``).  While the combined
+# backend asks SymPy, all three see the fact base with that implication
+# replaced by ``Implies(Q.orthogonal(x) & Q.real_elements(x), Q.unitary(x))``
+# (``_corrected_facts``).  Only weakening a fact, this removes answers, never
+# adds one.
+
+def _orthogonal_unitary_clauses() -> tuple[frozenset, frozenset]:
+    """The CNF clause of ``orthogonal -> unitary`` and of its real-only version."""
+    from sympy import Q
+    from sympy.assumptions.cnf import Literal
+    wrong = frozenset((Literal(Q.orthogonal, True), Literal(Q.unitary, False)))
+    right = frozenset((Literal(Q.orthogonal, True), Literal(Q.real_elements, True),
+                       Literal(Q.unitary, False)))
+    return wrong, right
+
+
+def _corrected_clauses(clauses: Any) -> Any:
+    wrong, right = _orthogonal_unitary_clauses()
+    if wrong not in clauses:
+        return clauses
+    return type(clauses)((clauses - {wrong}) | {right})
+
+
+def _corrected_facts_dict(facts: dict) -> dict:
+    """``get_known_facts_dict()`` under the corrected implication.
+
+    Weakening one implication from ``Q.orthogonal`` can only shrink the entry
+    of ``Q.orthogonal`` (no other predicate implies ``Q.orthogonal`` alone), so
+    each of its implied and rejected predicates is re-checked against the
+    corrected matrix facts."""
+    from sympy import And, Implies, Not, Q, Symbol
+    from sympy.assumptions.facts import get_matrix_facts
+    from sympy.logic.inference import satisfiable
+    x = Symbol('x')
+    wrong = Implies(Q.orthogonal(x), Q.unitary(x))
+    matrix = get_matrix_facts(x)
+    if wrong not in matrix.args or Q.orthogonal not in facts:
+        return facts
+    corrected = And(*[a for a in matrix.args if a != wrong],
+                    Implies(Q.orthogonal(x) & Q.real_elements(x), Q.unitary(x)),
+                    Q.orthogonal(x))
+    implied, rejected = facts[Q.orthogonal]
+    entry = ({p for p in implied if satisfiable(And(corrected, Not(p(x)))) is False},
+             {p for p in rejected if satisfiable(And(corrected, p(x))) is False})
+    return {**facts, Q.orthogonal: entry}
+
+
+def _install_facts_guard() -> None:
+    from importlib import import_module
+    # ``import sympy.assumptions.ask as m`` would bind the function ``ask``
+    sympy_ask_module = import_module("sympy.assumptions.ask")
+    satask_module = import_module("sympy.assumptions.satask")
+    for module, name, correct in (
+            (sympy_ask_module, "get_known_facts_dict", _corrected_facts_dict),
+            (sympy_ask_module, "get_all_known_facts", _corrected_clauses),
+            (satask_module, "get_all_known_matrix_facts", _corrected_clauses)):
+        original = getattr(module, name)
+        corrected = correct(original())
+
+        def guarded(_original: Any = original, _corrected: Any = corrected) -> Any:
+            return _corrected if _guard_on else _original()
+        setattr(module, name, guarded)
+
+
 def _install_guard() -> None:
     global _guard_installed
     from sympy import Abs, Mul, Pow, Q
+    _install_facts_guard()
     dispatcher = Q.nonzero.handler
     for cls in (Abs, Pow, Mul):
         original = dispatcher.funcs[(cls,)]
