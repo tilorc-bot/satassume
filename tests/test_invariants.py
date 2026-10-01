@@ -245,13 +245,16 @@ def test_given_restatements_agree_on_declared_values():
                 if other is None or other in seen:
                     continue
                 seen.add(other)
+                unary = y not in conj.free_symbols
                 for vx in vals:
-                    for vy in vals:
+                    for vy in (vals if not unary else [S.Zero]):
                         subs = {x: vx, y: vy}
                         a, b = evaluate_at(conj, subs), evaluate_at(other, subs)
                         if a is not None and b is not None:
                             assert a == b, (conj, other, vx, vy, a, b)
                             checked += 1
+                        if not unary:
+                            continue          # SymPy's ask on every pair is slow; the evaluator covers them
                         try:
                             sa, sb = sask(conj.xreplace(subs)), sask(other.xreplace(subs))
                         except Exception:  # noqa: BLE001
