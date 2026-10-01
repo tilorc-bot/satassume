@@ -188,7 +188,9 @@ the price is that answers can depend on query order (#42, below).
 `Relations.process`, at the end of `literal_of`, `assume_formula` and
 `Engine._literal`, interprets queued atoms with every adapter that accepts
 them, adds links, shares equalities and engages transfer until nothing
-changes; a user relation no theory interprets raises `Uninterpreted`.
+changes; a user relation no theory interprets stays a free Boolean (the
+default `uninterpreted="free"`), or raises `Uninterpreted` with
+`Engine(uninterpreted="none")`.
 
 **Links to the unary vocabulary** (`Relations._link`), for every argument
 `e` of a user relation and, once the session has relations, every argument
@@ -355,17 +357,22 @@ Q.rational(y)` is None).
 ## Uninterpreted relations
 
 A relation no theory reads (a Float, `AccumBounds(0, 1) < x`, `oo*x <
-1`; `x < I` and `x < zoo` are read, as False) makes `ask` return None by
-default (`relations.Uninterpreted`). `Engine(uninterpreted="free")` keeps
-it a free Boolean with its clause 1, so the rest of the assumptions
-answers and an inconsistent rest raises. Measured at c8361d7, free changed
+1`; `x < I` and `x < zoo` are read, as False) is kept a free Boolean
+with its clause 1 by default (`Engine(uninterpreted="free")`), so the rest
+of the assumptions answers and an inconsistent rest raises; this only
+drops what the relation says, which is sound. `Engine(uninterpreted="none")`
+is the old behaviour, opt-in: `ask` returns None
+(`relations.Uninterpreted`). Measured at c8361d7, free changed
 3 stream answers (None to False, correct), nothing on gate2 or the refine
 scoreboard, for +3.2% on the Pi, and lost one combined-backend answer
 (`Q.eq(nan, 1)`: the router no longer sees the unread relation, a signal
 to keep before switching; on SymPy 1.14.0 that query raises `TypeError`
 instead, #65). Before constants were read it was worth 498
-stream answers and 6 scoreboard tests. Whether free becomes the default
-is open: #64.
+stream answers and 6 scoreboard tests. Free is the default since #64.
+Under `sympy_api.RELATIONAL == "whole"` a set with such a relation is still
+not split. Out-of-scope applied predicates of the assumptions (matrix,
+unregistered custom) are likewise opaque free atoms (`sympy_api.to_formula`
+with `opaque`).
 
 **Floats are deliberately not read** ([README, Known
 gaps](../README.md#known-gaps)): SymPy compares `Float > Rational` exactly

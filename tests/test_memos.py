@@ -61,15 +61,16 @@ def test_formula_memo_follows_registrations():
 
 
 def test_uninterpreted_assumptions_are_remembered():
-    """Assumptions holding a relation no theory interprets make every query
-    None (``Uninterpreted`` while building the session).  The engine
+    """With ``uninterpreted="none"`` (opt-in), assumptions holding a
+    relation no theory interprets make every query None (``Uninterpreted``
+    while building the session).  The engine
     remembers such sets instead of rebuilding a doomed session per query;
     the answers are the same, including None (not ValueError) for
     assumptions that are also inconsistent."""
     from sympy import pi
     from satassume import Engine, DictCache
     from satassume.sympy_api import ask
-    eng = Engine(cache=DictCache())
+    eng = Engine(cache=DictCache(), uninterpreted="none")
     a = Q.le(0.5 * x, 1) & Q.nonnegative(x)          # a Float: unread
     assert ask(Q.positive(x), a, eng) is None
     n = eng.stats["sessions"]

@@ -164,9 +164,9 @@ registered with it under the node's EUF term, so terms in one EUF class
 share all unary facts (``Q.prime(x)`` from ``Q.eq(x, 2)``).  See
 :meth:`Relations._engage_transfer`.
 
-A relation no theory interprets makes ``ask`` return None
-(:class:`Uninterpreted`), unless the engine was built with
-``uninterpreted="free"``: then it stays a free Boolean.
+A relation no theory interprets stays a free Boolean (the default
+``Engine(uninterpreted="free")``); with ``uninterpreted="none"`` (opt-in,
+the old behaviour) it raises :class:`Uninterpreted` and ``ask`` returns None.
 
 Combining theories
 ------------------
@@ -480,8 +480,8 @@ class Relations:
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
         raise :class:`Uninterpreted` if a relation among ``user_atoms`` has
-        no theory (unless the engine leaves such atoms free Booleans,
-        ``Engine(uninterpreted="free")``)."""
+        no theory and the engine was built with ``uninterpreted="none"``
+        (by default such atoms stay free Booleans)."""
         s = self.session
         user = [a for a in user_atoms if a.pred in RELATION_ATOMS]
         for a in user:

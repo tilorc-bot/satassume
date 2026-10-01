@@ -5,7 +5,10 @@ from sympy import (Symbol, Q, exp, sqrt, I, pi, Integer, Rational, oo, Abs,
                    Eq, Predicate, MatrixSymbol)
 
 from satassume import Engine, DictCache
-from satassume.sympy_api import ask, out_of_scope, to_formula, Unsupported
+from satassume.formula import P
+from satassume.sympy_api import ask, out_of_scope, to_formula, Unsupported, OPAQUE
+from sympy import MatrixSymbol, false
+from sympy.calculus.accumulationbounds import AccumBounds
 
 
 @pytest.fixture
@@ -141,8 +144,44 @@ def test_custom_predicates_return_none(eng):
     x = Symbol('x')
     mine = Predicate('mypredicate')
     assert ask(mine(x), True, eng) is None
-    assert ask(Q.positive(x), mine(x) & Q.positive(x), eng) is None
+    # in the assumptions an unregistered predicate is an opaque atom
+    assert ask(Q.positive(x), mine(x) & Q.positive(x), eng) is True
+    assert ask(mine(x), mine(x), eng) is None
     assert out_of_scope(mine(x)) == "custom"
+
+
+def test_opaque_conjuncts_of_the_assumptions():
+    """An out-of-scope conjunct of the assumptions (matrix, unregistered
+    custom) is a free atom; as a proposition it stays None (#64)."""
+    x = Symbol('x')
+    M = MatrixSymbol('M', 2, 2)
+    mine = Predicate('mypredicate')
+    assert ask(Q.invertible(M), Q.invertible(M), Engine()) is None
+    with pytest.raises(ValueError):
+        ask(Q.real(x), Q.invertible(M) & ~Q.invertible(M), Engine())
+    with pytest.raises(ValueError):
+        ask(Q.real(x), mine(x) & ~mine(x), Engine())
+    assert ask(Q.real(x), Q.positive(x) & mine(x), Engine()) is True
+    assert ask(Q.real(x), Q.positive(x) & Q.is_true(x), Engine()) is True
+    assert ask(false, Q.symmetric(M), Engine()) is False
+    assert to_formula(Q.invertible(M), opaque=True) == P(OPAQUE, Q.invertible(M))
+    with pytest.raises(Unsupported):
+        to_formula(Q.invertible(M))
+
+
+_m, _x = Symbol('m'), Symbol('x')
+
+
+@pytest.mark.parametrize("prop, assum", [
+    (Q.real(_m), Q.odd(_m) & Q.ge(_m, 1.5)),
+    (Q.real(_m), Q.odd(_m) & Q.ge(_x, AccumBounds(0, 1))),
+    (Q.real(_x), Q.nonnegative(_x) & Q.le(_x, 1.5)),
+])
+def test_unread_relation_is_a_free_atom(prop, assum):
+    """#64: a relation no theory reads (Float or AccumBounds bound) is a
+    free atom by default; ``uninterpreted="none"`` keeps the old None."""
+    assert ask(prop, assum, Engine()) is True
+    assert ask(prop, assum, Engine(uninterpreted="none")) is None
 
 
 def test_non_boolean_propositions_return_none(eng):
