@@ -213,14 +213,14 @@ def _plant(monkeypatch):
 def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
     """The strict xfail of a pinned repro accepts only its recorded pair:
     with the long-lived engine made to crash (``Error:RuntimeError``) or to
-    flip its False into True on the final query (G7), the pinned test fails
+    flip its False into True on the final query (Gp2), the pinned test fails
     instead of xfailing."""
     import subprocess
     import sys
-    name = "G7-links-zero-scaled-term-order-after-relation"
+    name = "Gp2-links-unary-mention-then-relation-observer"
     with open(os.path.join(REPROS, name + ".json")) as fh:
         d = json.load(fh)
-    assert (d["warm"], d["ref"]) == ("False", "None") and len(d["prefix"]) == 1
+    assert (d["warm"], d["ref"]) == ("False", "None")
     (tmp_path / "history_plant.py").write_text(_PLANT)
     env = dict(os.environ, HISTORY_PLANT=how,
                PYTHONPATH=os.pathsep.join([str(tmp_path), ROOT, os.environ.get("PYTHONPATH", "")]))
@@ -238,8 +238,9 @@ def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
 def test_repros_are_pinned():
     # 15 before B, B2 and E1c (the complete set check, #73), E1, E1b,
     # L1, C6b and D (the writeback rule, #53 stage 3) and T1, T3-T5 and Gp1
-    # (component-scoped answering, #53 R2) moved to fixed/
-    assert len(_repro_params()) >= 3
+    # (component-scoped answering, #53 R2) and G7 (T3: a reused session re-answers
+    # a query whose search used branch-and-bound) moved to fixed/
+    assert len(_repro_params()) >= 2
     for path in glob.glob(os.path.join(REPROS, "*.json")):
         assert os.path.exists(path[:-5] + ".py"), f"no standalone script for {path}"
 
@@ -309,10 +310,6 @@ def test_registry_profile_finds_no_registration_dependence():
     _assert_no_discrepancy(rep)
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="family G (#42): a session's relation glue (links to the unary "
-                          "vocabulary, LRA) is switched on by its first relation query and "
-                          "stays on (harness/repros/G7)")
 def test_links_profile_finds_no_glue_dependence():
     """The ``links`` profile asks a relation query under a unary set and
     then order predicates about linear relatives of the set's terms.
