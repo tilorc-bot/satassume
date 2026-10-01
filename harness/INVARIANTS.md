@@ -73,9 +73,12 @@ the violation).
 
 ```bash
 export PYTHONHASHSEED=0
-# CI (about 10 s wall): pinned cases (strict xfail), planted defects,
-# a 24-query related stream through every checker, the I2 transfer family,
-# the negation and syntax-form guards
+# CI (10-11 s wall, measured at 3b20064 on a quiet machine): pinned cases
+# (strict xfail), planted defects, a 24-query related stream (plus its
+# derived queries) through every checker, the I2 transfer family, the
+# negation and syntax-form guards, the value-level guard of the I5
+# restatements (every restatement agrees with the original at sample
+# values under SymPy's own ask)
 python -m pytest -q tests/test_invariants.py
 
 # nightly (20 minutes CPU on one core, self-bounded: the budget is user +
@@ -195,20 +198,25 @@ generators avoid producing such sets; the filter is the safety net).
 
 ## Observed, not pinned
 
-* The first registration of a fresh predicate name in a process can
-  answer None where the same registration made again answers True
-  (`ask(Q.negative_infinite(u), Q.iuh1p(u))` with the handler
-  `iuh1p(t) -> negative_infinite(t)`): a history effect of the registry
-  epoch on a fresh engine.  Out of I2's reach (the query is about the
-  extension); a registration-history checker could pin it.
+* Round 2 noted that the first registration of a fresh predicate name
+  in a process answered None where the same registration made again
+  answered True (`ask(Q.negative_infinite(u), Q.iuh1p(u))`, handler
+  `iuh1p(t) -> negative_infinite(t)`).  Round 3 could not reproduce it
+  in isolation: in a fresh process the first registration answers True,
+  also after the same query was asked unregistered first (None, the
+  documented out-of-scope answer) and after an unrelated query; three
+  registrations in a row agree.  Not pinned; whatever the round-2 process
+  had done before (thousands of queries, many registrations restored
+  through `harness.registry.restore`) is the missing ingredient.
 
 ## Not covered / ideas not done
 
 * I1 does not drop the lazily loaded rule blocks (`Solver.mention_blocks`:
   propagated without clauses) nor learnt clauses.
-* I2's extensions are one handler per fresh predicate; polyadic
-  predicates, handlers on numbers and handlers returning `False` (not
-  satisfiable with the asserted atom) are not generated.
+* I2's extensions: a handler never raises, never returns a clause over
+  the *query's* symbols (that would be a path), and never relates two
+  registered predicates to each other; the chain shape mentions an
+  unregistered second predicate inside a clause only.
 * I2 does not share a *function symbol* between the unrelated conjuncts
   and the query (`f(u)` next to `f(x)`): the engine's congruence clauses
   would link them, so it is not "no path".
