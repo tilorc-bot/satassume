@@ -109,9 +109,10 @@ def test_planted_defects_are_caught(monkeypatch):
 
     real_ask = eng_mod.Engine.ask
 
-    # I2: an engine that gives up when the set holds a fresh 'iu' symbol
+    # I2: an engine that gives up when anything is added to the set (the
+    # unrelated material may be a closed fact with no fresh symbol in it)
     def ask_i2(self, proposition, assumptions=None):
-        if assumptions is not None and "iu" in str(assumptions):
+        if assumptions is not None and assumptions != a:
             return None
         return real_ask(self, proposition, assumptions)
     monkeypatch.setattr(eng_mod.Engine, "ask", ask_i2)
