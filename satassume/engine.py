@@ -89,13 +89,13 @@ are not written, those of a standing answer are written once it stands
 (after a raise nothing is written then; a session kept writes its facts
 with the next standing answer in it).
 
-This argument holds modulo relation glue.  A known remaining channel:
-the glue of an earlier query can register an integrality atom on a slack
-term (``x - y`` after ``ask(Q.positive(x - y), Q.gt(x, y + 1/3))``) that
-lets the reused session refute the negation of ``Q.ge(x, y + 1)`` by bound
-rounding, without branching, where a fresh session must branch and may run
-out of the budget.  That is link glue, not the search: the guarded
-integrality links of stage 5 remove it.
+This argument is about the search; the relation glue an earlier query
+left is switched off for this one (above).  Such glue used to be a channel
+of its own: an integrality atom an earlier query registered on a slack
+term (``x - y`` after ``ask(Q.positive(x - y), Q.gt(x, y + 1/3))``) let the
+reused session refute the negation of ``Q.ge(x, y + 1)`` by bound rounding,
+without branching; the integrality atoms are switched by their links'
+selectors since #53 stage 5.
 """
 from __future__ import annotations
 

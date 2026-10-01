@@ -6,6 +6,7 @@ from sympy import Function, Q, Rational, S, Symbol, symbols, pi
 
 from satassume.engine import DictCache, Engine
 from satassume.relations import Relations
+from satassume.rules import PRED_INDEX
 from theory_harness import Recorder, ask_with, check_protocol
 
 x, y, z = symbols("x y z")
@@ -124,6 +125,8 @@ def test_protocol_on_fuzz(monkeypatch):
         r = Recorder(inner_cls(euf))
         r.set_fixed = r.inner.set_fixed      # not a protocol method
         r.guard = r.inner.guard              # nor this (the selector is an atom)
+        r.switch = r.inner.switch            # nor these (enable variables are atoms)
+        r.unswitch = r.inner.unswitch
         recs.append(r)
         return r
 
@@ -177,11 +180,19 @@ def _transfer_model_checker(counts):
         if not rep:
             return r
         model = self._model
+        if tr.sel is not None and not model[tr.sel]:
+            return r                       # switched off: no constraint
         seen: dict = {}
         for v, (t, p) in tr._atoms.items():
             c = rep.get(t)
             if c is None:
                 continue
+            sw = tr._sw.get(t)
+            if sw is not None:
+                # a switched term takes part as its enable variables say
+                if not (sw[0] and model[sw[0]]) and not (
+                        sw[1] and model[sw[1]] and p == PRED_INDEX["polar"]):
+                    continue
             key = (c, p)
             b = model[v]
             if key in seen:

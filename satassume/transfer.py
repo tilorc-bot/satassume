@@ -61,7 +61,18 @@ While the selector is not true the theory propagates, checks and decides
 nothing; every reason and conflict clause it returns ends with the
 negated selector, so a clause learnt from it is inert wherever the
 selector is not assumed; when the selector turns true at some level every
-class is rescanned, and popping that level switches the theory off again.
+class with two or more members is rescanned, and popping that level
+switches the theory off again.
+
+Terms are switched too (:meth:`TransferTheory.switch`): a term whose
+candidacy comes from equality atoms (a side of one) takes part only while
+one of its two enable variables is true, all its predicates with the
+*full* one, ``polar`` alone with the *polar* one (it is then a partial
+node, see ``decide``).  The session makes those variables true exactly in
+the queries whose atoms make the term a side (see
+``Relations._apply_role``); every lemma that uses a switched term carries
+the negation of the enable variable it used.  Terms not switched (numbers,
+congruent applications) always take part.
 
 The session glue (which terms EUF sees, when the theory is engaged and
 which queries assume its selector) is in
@@ -69,7 +80,12 @@ which queries assume its selector) is in
 """
 from __future__ import annotations
 
+from .rules import PRED_INDEX
+
 __all__ = ["TransferTheory"]
+
+_POLAR = PRED_INDEX["polar"]
+_POLAR_ONLY = frozenset({_POLAR})
 
 
 class TransferTheory:
@@ -100,6 +116,13 @@ class TransferTheory:
         #: noted (for ``decide``; stale entries are dropped there)
         self._multi: list[int] = [r for r, ms in enumerate(euf._members)
                                   if len(ms) > 1 and euf._repr[r] == r]
+        #: switched terms (:meth:`switch`): term -> (full var, polar var),
+        #: 0 for none; and enable variable -> (term, kind: 2 full, 1 polar)
+        self._sw: dict[int, tuple] = {}
+        self._onv: dict[int, tuple] = {}
+        self._on: dict[int, bool] = {}           # enable var -> asserted value
+        self._otrail: list[int] = []
+        self._olims: list[int] = []
         euf.on_merge = self._merged
         self.stats = {"propagated": 0, "conflicts": 0}
 
@@ -115,13 +138,56 @@ class TransferTheory:
         self.sel = sel
         self.enabled = False
 
+    def switch(self, term: int, full: int, polar: int) -> list:
+        """Make ``term``'s atoms take part only while ``full`` (all of them)
+        or ``polar`` (its ``polar`` atom alone) is true; 0 for none.  May be
+        called again with new variables for a term.  Returns the variables
+        new to the theory, which the caller registers as atoms of it (any
+        payload)."""
+        old = self._sw.get(term, (0, 0))
+        new = []
+        for v, k in ((full, 2), (polar, 1)):
+            if v and v not in self._onv:
+                self._onv[v] = (term, k)
+                new.append(v)
+        self._sw[term] = (full or old[0], polar or old[1])
+        self._dirty.append(term)
+        return new
+
+    def unswitch(self, term: int) -> None:
+        """``term`` takes part always from now on (a candidate for another
+        reason, see ``Relations.sync_transfer``)."""
+        if self._sw.pop(term, None) is not None:
+            self._dirty.append(term)
+
+    def _kind(self, m: int) -> int:
+        """2: every predicate of term ``m`` takes part, 1: ``polar`` only,
+        0: none (see :meth:`switch`)."""
+        sw = self._sw.get(m)
+        if sw is None:
+            return 2
+        on = self._on
+        if sw[0] and on.get(sw[0]):
+            return 2
+        if sw[1] and on.get(sw[1]):
+            return 1
+        return 0
+
+    def _why(self, m: int, k: int) -> list:
+        """The negated enable variable term ``m`` takes part by (kind ``k``),
+        for a lemma: [] if ``m`` is not switched."""
+        sw = self._sw.get(m)
+        if sw is None:
+            return []
+        return [-sw[0]] if k == 2 else [-sw[1]]
+
     # ------------------------------------------------------------------
     def _merged(self, ra: int, rb: int) -> None:
         self._dirty.append(rb)
         self._multi.append(rb)
 
     def register_atom(self, literal: int, payload) -> None:
-        if literal == self.sel:
+        if literal == self.sel or literal in self._onv:
             return
         if literal <= 0 or literal in self._atoms:
             raise ValueError(f"bad or repeated atom variable {literal}")
@@ -152,6 +218,14 @@ class TransferTheory:
                 self.enabled = on
                 if on:
                     self._rescan = True
+            return None
+        o = self._onv.get(v)
+        if o is not None:
+            self._on[v] = literal > 0
+            if self._olims:
+                self._otrail.append(v)
+            if literal > 0:
+                self._dirty.append(o[0])
             return None
         a = self._atoms.get(v)
         if a is None:
@@ -184,6 +258,30 @@ class TransferTheory:
             e = memo[(a, b)] = [-l for l in self.euf.explain(a, b)]
         return e
 
+    def _members_on(self, members, p=None):
+        """``(term, {pred: vars}, kind)`` for the members of a class that
+        take part (see :meth:`switch`); a member with ``polar`` only is
+        given its ``polar`` atoms alone."""
+        by_term, sw = self._by_term, self._sw
+        out = []
+        for m in members:
+            d = by_term.get(m)
+            if not d:
+                continue
+            if sw and m in sw:
+                k = self._kind(m)
+                if k == 0:
+                    continue
+                if k == 1:
+                    vs = d.get(_POLAR)
+                    if vs is None:
+                        continue
+                    d = {_POLAR: vs}
+                out.append((m, d, k))
+            else:
+                out.append((m, d, 2))
+        return out
+
     def _scan(self, r: int, out: list) -> None:
         """Append to ``out`` the transfers the class of representative
         ``r`` implies (including ones whose literal is already false:
@@ -192,50 +290,58 @@ class TransferTheory:
         members = euf._members[r]
         if len(members) < 2:
             return
-        by_term, fixed = self._by_term, self._fixed
-        ds = [(m, d) for m in members if (d := by_term.get(m))]
+        fixed = self._fixed
+        ds = self._members_on(members)
         fs = [(m, f) for m in members if (f := fixed.get(m))] if fixed else []
         if not ds or (len(ds) < 2 and not fs
                       and all(len(vs) < 2 for vs in ds[0][1].values())):
             return
         per: dict = {}
-        for m, d in ds:
+        for m, d, k in ds:
             for p, vs in d.items():
                 lst = per.get(p)
                 if lst is None:
-                    per[p] = [(m, vs)]
+                    per[p] = [(m, vs, k)]
                 else:
-                    lst.append((m, vs))
+                    lst.append((m, vs, k))
         val = self._val
+        sw = self._sw
         memo: dict = {}
         for p, lst in per.items():
             wit = None
             for m, f in fs:
                 b = f.get(p)
                 if b is not None:
-                    wit = (m, 0, b)
+                    wit = (m, 0, b, 2)
                     break
             if wit is None:
                 if len(lst) < 2 and len(lst[0][1]) < 2:
                     continue
-                for m, vs in lst:
+                for m, vs, k in lst:
                     for v in vs:
                         b = val.get(v)
                         if b is not None:
-                            wit = (m, v, b)
+                            wit = (m, v, b, k)
                             break
                     if wit is not None:
                         break
                 if wit is None:
                     continue
-            wm, wv, wb = wit
+            wm, wv, wb, wk = wit
             head = [-wv if wb else wv] if wv else []   # the negated witness
-            for m, vs in lst:
+            if sw:
+                head += self._why(wm, wk)
+            for m, vs, k in lst:
+                tail = None
                 for v in vs:
                     if v == wv or val.get(v) is wb:
                         continue
+                    if tail is None:
+                        tail = self._explain(wm, m, memo)
+                        if sw and m != wm:
+                            tail = tail + self._why(m, k)
                     lit = v if wb else -v
-                    out.append((lit, [lit] + head + self._explain(wm, m, memo)))
+                    out.append((lit, [lit] + head + tail))
 
     def _spread(self, v: int, out: list) -> None:
         """Append the transfers of asserted variable ``v``'s value to the
@@ -245,10 +351,16 @@ class TransferTheory:
         if wb is None:
             return
         wm, p = self._atoms[v]
+        sw = self._sw
+        wneg = [-v if wb else v]
+        if sw and wm in sw:
+            k = self._kind(wm)
+            if k == 0 or (k == 1 and p != _POLAR):
+                return
+            wneg += self._why(wm, k)
         euf = self.euf
         members = euf._members[euf._repr[wm]]
         by_term, val, fixed = self._by_term, self._val, self._fixed
-        wneg = -v if wb else v
         memo: dict = {}
         for m in members:
             if fixed:
@@ -257,7 +369,7 @@ class TransferTheory:
                     b = f.get(p)
                     if b is not None and b != wb:
                         lit = v if b else -v          # false: a conflict
-                        out.append((lit, [lit] + self._explain(m, wm, memo)))
+                        out.append((lit, [lit] + wneg[1:] + self._explain(m, wm, memo)))
                         return
             d = by_term.get(m)
             if d is None:
@@ -265,11 +377,37 @@ class TransferTheory:
             vs = d.get(p)
             if vs is None:
                 continue
+            whym = ()
+            if sw and m in sw and m != wm:
+                k = self._kind(m)
+                if k == 0 or (k == 1 and p != _POLAR):
+                    continue
+                whym = self._why(m, k)
             for u in vs:
                 if u == v or val.get(u) is wb:
                     continue
                 lit = u if wb else -u
-                out.append((lit, [lit, wneg] + self._explain(wm, m, memo)))
+                out.append((lit, [lit] + wneg + self._explain(wm, m, memo) + list(whym)))
+
+    def _classes(self) -> list:
+        """The representatives of the classes with two or more members
+        (each once), from ``_multi``, which is pruned to them: a class
+        that is a singleton now stays one until a merge notes it again
+        (backtracking only splits classes)."""
+        euf = self.euf
+        rep, members = euf._repr, euf._members
+        keep, reps, kept, seen = [], [], set(), set()
+        for r0 in self._multi:
+            r = rep[r0]
+            if len(members[r]) > 1:
+                if r0 not in kept:
+                    kept.add(r0)
+                    keep.append(r0)
+                if r not in seen:
+                    seen.add(r)
+                    reps.append(r)
+        self._multi = keep
+        return reps
 
     def propagate(self):
         dirty, dirty_p = self._dirty, self._dirty_p
@@ -278,11 +416,11 @@ class TransferTheory:
             dirty_p.clear()
             return []
         if self._rescan:
-            # switched on: every class once (what was queued while off
-            # was dropped)
+            # switched on: every class with two or more members once (what
+            # was queued while off was dropped; a singleton transfers
+            # nothing)
             self._rescan = False
-            dirty.extend(self._by_term)
-            dirty.extend(self._fixed)
+            dirty.extend(self._classes())
         if not dirty and not dirty_p:
             return []
         rep = self.euf._repr
@@ -308,14 +446,9 @@ class TransferTheory:
     def check(self):
         if not self.enabled:
             return None
-        rep = self.euf._repr
-        seen = set()
         out: list = []
-        for t in self._by_term:
-            r = rep[t]
-            if r not in seen:
-                seen.add(r)
-                self._scan(r, out)
+        for r in self._classes():
+            self._scan(r, out)
         val = self._val
         for lit, why in out:
             b = val.get(-lit if lit < 0 else lit)
@@ -339,39 +472,23 @@ class TransferTheory:
         whose block variables are all atoms have the same assigned values
         in one class, so they are completed alike.  A *partial* node (only
         some of its variables are atoms: a link-only side, a rational
-        number's basis) may be completed differently from an equal term on
-        an atom they share; such an atom, unassigned with another atom of
-        its predicate in the class, is decided here, and propagation gives
-        the rest the same value.
+        number's basis, a switched term with ``polar`` alone on) may be
+        completed differently from an equal term on an atom they share;
+        such an atom, unassigned with another atom of its predicate in the
+        class, is decided here, and propagation gives the rest the same
+        value.  Only the atoms that take part count (see :meth:`switch`).
 
-        Only classes noted by a merge are looked at (``_multi``); a noted
-        representative whose class is a singleton now stays one until a
-        new merge notes it again (backtracking only splits classes), so it
-        is dropped."""
-        multi = self._multi
-        pterms = self._pterms
-        if not multi or not pterms or not self.enabled:
+        Only classes noted by a merge are looked at (``_multi``)."""
+        if not self._multi or not (self._pterms or self._sw) or not self.enabled:
             return None
-        euf = self.euf
-        rep, members = euf._repr, euf._members
-        keep = []
-        kept = set()
-        for r0 in multi:
-            if r0 not in kept and len(members[rep[r0]]) > 1:
-                kept.add(r0)
-                keep.append(r0)
-        self._multi = keep
-        by_term, val = self._by_term, self._val
-        seen = set()
-        for r0 in keep:
-            r = rep[r0]
-            if r in seen:
-                continue
-            seen.add(r)
-            ms = members[r]
+        pterms = self._pterms
+        members = self.euf._members
+        val = self._val
+        for r in self._classes():
+            ds = self._members_on(members[r])
             preds = None
-            for m in ms:
-                ps = pterms.get(m)
+            for m, d, k in ds:
+                ps = _POLAR_ONLY if k == 1 else pterms.get(m)
                 if ps is not None:
                     preds = ps if preds is None else preds | ps
             if preds is None:
@@ -379,10 +496,7 @@ class TransferTheory:
             for p in preds:
                 first = None
                 n = 0
-                for m in ms:
-                    d = by_term.get(m)
-                    if d is None:
-                        continue
+                for m, d, k in ds:
                     vs = d.get(p)
                     if vs is None:
                         continue
@@ -402,12 +516,17 @@ class TransferTheory:
 
     def push_level(self) -> None:
         self._lims.append(len(self._trail))
+        self._olims.append(len(self._otrail))
 
     def pop_level(self) -> None:
         lim = self._lims.pop()
         trail, val = self._trail, self._val
         while len(trail) > lim:
             del val[trail.pop()]
+        lim = self._olims.pop()
+        trail, on = self._otrail, self._on
+        while len(trail) > lim:
+            del on[trail.pop()]
         eh = self._ehist
         n = len(self._lims)
         while eh and eh[-1][0] > n:
