@@ -390,8 +390,9 @@ def cmd_invariants(args) -> int:
     # loaded machine does not count, so the run does the documented work
     deadline = _cpu() + minutes * 60 if minutes else None
     seeds = _seeds(args.seeds)
-    from .invariants import KNOWN_SEEN
+    from .invariants import KNOWN_SEEN, FAMILY_SEEN
     KNOWN_SEEN.clear()                 # a pinned family is reported once per run
+    FAMILY_SEEN.clear()                # any family at most FAMILY_RUN_CAP times per run
     combos = [(pr, cfg, sd) for sd in seeds for pr in profiles for cfg in configs]
     bad = unknown = 0
     slice_n = args.queries if not minutes else max(10, args.queries // 4)

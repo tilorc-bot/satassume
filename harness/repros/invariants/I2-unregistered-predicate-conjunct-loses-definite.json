@@ -1,0 +1,39 @@
+{
+ "inv": "I2",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "budget",
+  "discovery_budget": 5,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedPredicate(Q.antihermitian, Pow(Add(Integer(1), Symbol('j', integer=True, even=True)), Integer(-1)))",
+ "assum": "AppliedPredicate(Q.extended_real, Pow(Symbol('c', complex=True), Integer(-1)))",
+ "variant": {
+  "kind": "unrelated",
+  "extra": "AppliedPredicate(Q.iuoos5, Symbol('iuu6'))",
+  "mode": "any",
+  "scope": "custom",
+  "kinds": [
+   "custom"
+  ]
+ },
+ "base": "False",
+ "other": "None",
+ "source": "round 4: invariants profile=base seed=11 slice=0",
+ "shrunk": true,
+ "consistent_by": null,
+ "fingerprint": "-",
+ "prefix": []
+}

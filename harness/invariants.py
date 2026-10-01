@@ -1646,8 +1646,9 @@ PROBES: Dict[str, dict] = {
 
 def fingerprint(v: Violation) -> str:
     """The probes (``PROBES``) under which the candidate's difference
-    vanishes, as ``"a,b"`` (``"-"``: none); ``?`` after a probe that
-    errored.  With the kinds it keys the family: two cases with the same
+    vanishes while the base answer persists (a probe that changes the base
+    answer itself says nothing about the mechanism), as ``"a,b"`` (``"-"``:
+    none); ``?`` after a probe that errored.  With the kinds it keys the family: two cases with the same
     answer shape but different fingerprints are different families."""
     gone = []
     for name, over in PROBES.items():
@@ -1660,8 +1661,8 @@ def fingerprint(v: Violation) -> str:
         except Exception:  # noqa: BLE001
             gone.append(name + "?")
             continue
-        if sev is None:
-            gone.append(name)
+        if sev is None and base == v.base:
+            gone.append(name)         # the base answer persists and the difference is gone
     return ",".join(gone) or "-"
 
 
@@ -1677,6 +1678,11 @@ _PINNED: Dict[tuple, list] = {}
 _PINNED_LOADED = False
 #: pinned families (family keys) reported in this run (``KNOWN_SEEN``)
 KNOWN_SEEN: set = set()
+#: families (``family_key``) reported in this run, with counts: at most
+#: ``FAMILY_RUN_CAP`` reports (and shrinks) of one family per run, whatever
+#: the profile or configuration (the CPU goes to new mechanisms)
+FAMILY_SEEN: Dict[tuple, int] = {}
+FAMILY_RUN_CAP = 2
 
 
 def _pinned_with_shape(shape: tuple) -> list:
@@ -1804,6 +1810,11 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                 if sum((w.inv, w.severity, w.base, w.other) == fam for w in rep.violations) >= family_cap \
                         and not (v.fingerprint and all(family_key(w) != family_key(v) for w in rep.violations)):
                     continue          # the same shape again (the I2 definite -> None flood): shrinking costs
+                key = family_key(v)
+                if FAMILY_SEEN.get(key, 0) >= FAMILY_RUN_CAP:
+                    rep.inconclusive["family_repeat"] = rep.inconclusive.get("family_repeat", 0) + 1
+                    continue          # a family already reported in this run (kinds and fingerprint)
+                FAMILY_SEEN[key] = FAMILY_SEEN.get(key, 0) + 1
                 if v.known:
                     KNOWN_SEEN.add(v.known)
                     rep.violations.append(v)     # tagged with the pinned case, never shrunk again

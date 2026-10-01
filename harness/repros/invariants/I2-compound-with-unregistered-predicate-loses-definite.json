@@ -1,0 +1,39 @@
+{
+ "inv": "I2",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedBinaryRelation(Q.le, Mul(Pow(Add(Integer(1), Symbol('j', integer=True, even=True)), Integer(-1)), Symbol('A', commutative=False)), Rational(-1, 3))",
+ "assum": "AppliedPredicate(Q.extended_real, Symbol('j', integer=True, even=True))",
+ "variant": {
+  "kind": "unrelated",
+  "extra": "Or(AppliedPredicate(Q.iuoos1, Symbol('iuu2')), Not(AppliedPredicate(Q.commutative, Symbol('iuu3', commutative=False))))",
+  "mode": "any",
+  "scope": "in",
+  "kinds": [
+   "compound"
+  ]
+ },
+ "base": "False",
+ "other": "None",
+ "source": "round 4: invariants profile=base seed=11 slice=0",
+ "shrunk": true,
+ "consistent_by": null,
+ "fingerprint": "-",
+ "prefix": []
+}
