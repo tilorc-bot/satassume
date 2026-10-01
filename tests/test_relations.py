@@ -392,3 +392,16 @@ def test_unhandled_matrix_queries(real_eng):
     from sympy import MatrixSymbol
     X = MatrixSymbol("X", 2, 2)
     assert ask_with(real_eng, Q.lt(X, 2) & Q.gt(X, 3)) is None
+
+
+@pytest.mark.parametrize("prop", [
+    lambda: Q.eq(S.NaN, 1), lambda: Q.eq(1, S.NaN),
+    lambda: Q.ne(S.NaN, 1), lambda: Q.ne(1, S.NaN)])
+def test_nan_eq_does_not_raise(prop):
+    # issue #65: SymPy 1.14 raised TypeError ordering nan against a number
+    from satassume.sympy_api import ask
+    assert ask(prop()) is None
+
+
+def test_nan_eq_atom_is_symmetric():
+    assert relation_atom("eq", S.NaN, 1) == relation_atom("eq", 1, S.NaN)

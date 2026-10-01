@@ -281,7 +281,13 @@ def _ext_atoms(*sides) -> list:
 def relation_atom(name: str, lhs, rhs):
     """The formula for relation ``name`` (``eq ne lt le gt ge``)."""
     if name in ("eq", "ne"):
-        a, b = sorted((lhs, rhs), key=_key)
+        from sympy import S
+        if lhs is S.NaN or rhs is S.NaN:
+            # never sort with nan: default_sort_key would compare it
+            # numerically (SymPy 1.14 raises); nan goes last
+            a, b = (rhs, lhs) if lhs is S.NaN else (lhs, rhs)
+        else:
+            a, b = sorted((lhs, rhs), key=_key)
         atom = P("eq", Args((a, b)))
         return atom if name == "eq" else Not(atom)
     if name == "lt":
