@@ -57,9 +57,14 @@ session's LRA atoms are not certified (``LRATheory.certified``, see
 ``_cannot_give_up``).  The build is canonical: a fresh engine branches in
 it just the same; and a branch and bound that ends in a point or the
 budget leaves no clause and no bound behind.  A None found without
-running out or giving up is a model that satisfies every integrality
-atom, and a fresh engine's clauses are a subset of the reused session's,
-so the fresh engine cannot be definite.  A definite answer without branch
+running out or giving up is a genuine model: a point that satisfies
+every asserted integrality literal and every LRA atom, with the clauses
+of the reused session true.  A fresh engine's clauses are not a subset of
+those (a cone session that replaced the stored one lacks the set check's
+learnt clauses), but every clause it has is valid (the rules, the
+assumptions, lemmas and learnt clauses entailed by them) and its atoms
+are atoms of the reused session (see ``_cannot_give_up``), so the genuine
+model satisfies them all and the fresh engine cannot be definite.  A definite answer without branch
 conflicts since the build rests on the build's clauses and on conflicts
 of the simplex, the rounded bounds and the real disequality argument,
 which have no budget and are monotone in the asserted literals: a fresh
@@ -69,6 +74,21 @@ or are certified (a function of the atoms, monotone: the reused session
 has registered every atom a fresh engine registers, so certifying its
 atoms is enough), the values the set check's branch and bound left
 behind included (``Session.build_values``).
+
+With ``writeback="provenance"`` or ``"all"``, a query in a reused session
+holds the session's writeback (``Session.writeback``) until its answer
+stands: the facts of a session whose answer is discarded for a re-answer
+are not written, those of a standing answer are written once it stands
+(after a raise nothing is written then; a session kept writes its facts
+with the next standing answer in it).
+
+This argument holds modulo relation glue.  A known remaining channel:
+the glue of an earlier query can register an integrality atom on a slack
+term (``x - y`` after ``ask(Q.positive(x - y), Q.gt(x, y + 1/3))``) that
+lets the reused session refute the negation of ``Q.ge(x, y + 1)`` by bound
+rounding, without branching, where a fresh session must branch and may run
+out of the budget.  That is link glue, not the search: the guarded
+integrality links of stage 5 remove it.
 """
 from __future__ import annotations
 
@@ -708,7 +728,7 @@ class Session:
         """
         engine = self.engine
         policy = engine._writeback
-        if policy == "root-only":
+        if policy == "root-only" or engine._hold_writeback:
             return
         trail = self.solver.root_trail()
         start = self.read_pos
@@ -1195,6 +1215,8 @@ class Engine:
         self._transfer = transfer
         self._uninterpreted = _check_uninterpreted(uninterpreted)
         self._writeback = _check_writeback(writeback)
+        #: Engine.ask holds Session.writeback while a re-answer may follow
+        self._hold_writeback = False
         #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
         #: (satassume.sympy_api), bounded; cleared when registrations change
         self.answers = AnswerMemo()
@@ -2016,16 +2038,26 @@ class Engine:
             return self._over_budget()
         s, lits, reused = self._open_session(assumptions, contextual)
         used: List[Session] = []
+        # a re-answer may follow: write back only once the answer stands
+        hold = reused and self._writeback != "root-only"
+        self._hold_writeback = hold
         try:
             r = self._ask(s, lits, proposition, assumptions, contextual, used)
         except InconsistentAssumptions:
+            self._hold_writeback = False
             if contextual:
                 self._drop_dead(assumptions)
             if not (reused and _path_dependent(s, used, True)):
                 raise
         else:
+            self._hold_writeback = False
             if not (reused and _path_dependent(s, used, r is not None)):
+                if hold:
+                    for x in (s, *used):
+                        x.writeback()
                 return r
+        finally:
+            self._hold_writeback = False
         # The search ran out of branch budget or gave up, or found a
         # definite answer (or raised) after a branch and bound conflict
         # since the build or with constants: a fresh engine, searching

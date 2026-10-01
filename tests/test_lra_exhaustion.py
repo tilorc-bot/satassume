@@ -40,14 +40,18 @@ def _a(p, s, e):
         return "raise"
 
 
-def test_warm_equals_fresh():
-    # on main: warm None (the second search ran out), fresh True
+def test_warm_equals_fresh(monkeypatch):
+    # on main (80c91c0): warm True (the first query's search left a basis
+    # and clauses along which the second stays within the budget), fresh
+    # None (the fresh search runs out)
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
     e = Engine()
-    ask(Q.ge(x, y + 1), A & B, e)
-    warm = ask(Q.gt(u0, 1), A & B, e)
-    fresh = ask(Q.gt(u0, 1), A & B, Engine())
+    ask(Q.gt(u0, 1), A & C, e)
+    warm = ask(Q.ge(u0, 4), A & C, e)
+    fresh = ask(Q.ge(u0, 4), A & C, Engine())
     assert warm == fresh
-    assert fresh is True
+    assert fresh is None
+    assert e.stats["exhaust_reanswers"]
 
 
 def _divergences():
@@ -65,16 +69,18 @@ def _divergences():
     return out, reanswers
 
 
-def test_no_warm_fresh_divergence_budget_3(monkeypatch):
-    # on main: 1 warm None/fresh definite, 4 warm definite/fresh None
-    monkeypatch.setattr(lra, "BRANCH_BUDGET", 3)
+def test_no_warm_fresh_divergence_budget_5(monkeypatch):
+    # on main (80c91c0): 1 warm definite/fresh None (A & C, Q.gt(u0, 1)
+    # then Q.ge(u0, 4)); budgets 1-4, 7-24 show none there with this probe
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
     out, reanswers = _divergences()
     assert out == []
     assert reanswers
 
 
-def test_no_warm_fresh_divergence_budget_16(monkeypatch):
-    # on main: 2 warm None/fresh definite, 11 warm definite/fresh None
+def test_no_warm_fresh_divergence_budget_6(monkeypatch):
+    # on main (80c91c0): the same divergence as at budget 5
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 6)
     out, reanswers = _divergences()
     assert out == []
     assert reanswers
@@ -226,3 +232,51 @@ def test_split_beyond_the_certificate_bound_counts_as_exhausted(monkeypatch):
         r = t.check()
         assert r is not None and r[0] is True
         assert t.exhausted is small          # |3/2| > 1: no split, as if out of budget
+
+
+def test_certificate_reads_the_constfield_limits(monkeypatch):
+    # the certificate covers the configuration in force when it is asked,
+    # not the one of an earlier (memoized) certification
+    t = _theory(_certified_atoms())
+    assert t.certified
+    for name, small in (("MAX_DEGREE", 1), ("MAX_TERMS", 2), ("MAX_WORK", 8),
+                        ("MAX_BITS", 256), ("PREC_CAP", 512)):
+        with monkeypatch.context() as m:
+            m.setattr(cf, name, small)
+            assert not t.certified, name
+            assert not _theory(_certified_atoms()).certified, name
+        assert t.certified
+
+
+def test_constants_small_limits_are_not_certified(monkeypatch):
+    # with constfield's size budget shrunk, a search over atoms certified
+    # at the default limits (no re-answer there, see
+    # test_certified_constants_are_not_answered_again) could give up: they
+    # are not certified then, and definite answers are answered again
+    monkeypatch.setattr(cf, "MAX_DEGREE", 1)
+    out, reanswers = _sweep([_t(7 * pi / 2)], CQUERIES)
+    assert out == []
+    assert reanswers
+
+
+def test_writeback_waits_for_the_standing_answer(monkeypatch):
+    # writeback="provenance"/"all": the session whose answer is discarded
+    # for a re-answer writes nothing (Engine.ask holds Session.writeback)
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
+    for policy in ("provenance", "all"):
+        e = Engine(writeback=policy)
+        ask(Q.gt(u0, 1), A & C, e)
+        held = []
+        monkeypatch.setattr(type(e), "_ask", _spy(type(e)._ask, held))
+        assert ask(Q.ge(u0, 4), A & C, e) is None
+        monkeypatch.undo()
+        monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
+        assert held[0] is True and held[1:] == [False]     # warm held; the re-answer not
+        assert e.stats["exhaust_reanswers"] == 1 and not e._hold_writeback
+
+
+def _spy(f, held):
+    def g(self, *args, **kw):
+        held.append(self._hold_writeback)
+        return f(self, *args, **kw)
+    return g

@@ -138,7 +138,15 @@ its path.  It holds when
   ``A + B*pi`` (over a denominator ``D``) with ``|B|`` and ``D`` so small
   that Mahler's bound ``|pi - p/q| > q**-42`` puts ``|A + B*pi|`` beyond
   constfield's interval error at ``PREC_CAP`` (:func:`_decided`), and far
-  below the size budget.
+  below the size budget;
+* constfield's limits, read when the certificate is computed (it is
+  recomputed when they change), admit the argument: numbers of degree at
+  most 3 in ``pi`` and products of two of them (``MAX_DEGREE >= 6``,
+  ``MAX_TERMS >= 7``, ``MAX_WORK >= 16``), coefficients of 8 times the
+  bits of the heights above (``MAX_BITS``) and the precision ``PREC_CAP``
+  of :func:`_decided`; with smaller limits a certified search could give
+  up, so nothing is certified.  The certificate is a function of the
+  atoms and of this configuration.
 
 The sizes follow from what values can be: a nonbasic variable sits at 0
 or at a bound it was given (atom bounds and branch bounds), a basic one
@@ -148,7 +156,13 @@ size must not grow with the number of checks: with constants and the
 atoms certified, a variable splits only while its value is at most ``Y``
 (``(nonbasic + 1) * had * (X + 1) * 2**16``, ``X`` the largest atom bound),
 which bounds ``n``; otherwise the check counts as having run out of
-budget (the engine handles that as above).  Values left from a branch and
+budget (the engine handles that as above).  This changes what a search
+may do, a fresh engine's too: a split beyond ``Y`` that the search
+without the bound would make now counts as running out (the answer of
+such a query is the one of the freshly built session, None if it runs out
+there too, where without the bound it might have been definite).  On the
+stream no split ever goes beyond ``Y``; the answers are a function of the
+atoms and the configuration either way.  Values left from a branch and
 bound that ran while no payload had constants are certified separately
 (:meth:`LRATheory.certified_with`; the engine records those the set
 check leaves).  Everything else a check computes (the deltas of
@@ -368,6 +382,33 @@ def _decided(den: int, height: int) -> bool:
             + (3 * height + 8).bit_length() + 8 <= _cf.PREC_CAP)
 
 
+#: what the certificate's size argument assumes of constfield's budget:
+#: every number a certified search computes has a numerator and a
+#: denominator of degree at most _CERT_DEGREE in pi (so at most
+#: _CERT_DEGREE + 1 terms), and constfield multiplies two of them on the
+#: way (degrees add, the work is terms times terms)
+_CERT_DEGREE = 3
+
+
+def _limits() -> tuple:
+    """constfield's current precision and size limits (read at every
+    certification: a test or a user may change them)."""
+    return (_cf.PREC_START, _cf.PREC_CAP, _cf.MAX_DEGREE, _cf.MAX_TERMS, _cf.MAX_BITS,
+            _cf.MAX_WORK)
+
+
+def _limits_suffice() -> bool:
+    """Whether constfield's current size budget admits what the
+    certificate's argument assumes (degrees below ``_CERT_DEGREE + 1``,
+    their products, the term counts and the work of those products);
+    below it a certified search could raise TooLarge, so nothing is
+    certified.  The coefficient bits are checked against ``MAX_BITS`` in
+    :meth:`LRATheory._certify` and the precision in :func:`_decided`."""
+    t = _CERT_DEGREE + 1
+    return (_cf.MAX_DEGREE >= 2 * _CERT_DEGREE and _cf.MAX_TERMS >= 2 * t - 1
+            and _cf.MAX_WORK >= t * t and _cf.PREC_START <= _cf.PREC_CAP)
+
+
 class _CertAtoms:
     """The registered atoms' part of :meth:`LRATheory._certify`, gathered
     incrementally (atoms, integrality atoms and forms are only ever
@@ -572,7 +613,10 @@ class LRATheory:
         """``(certified, Y)``, ``Y`` the largest value a variable may have
         to split in a branch and bound (:meth:`_branch`); memoized per
         registered atom count."""
-        key = (len(self._atoms), len(self._ints), len(self._slack_of), len(self._key))
+        # the constfield limits are read now: the certificate is about the
+        # configuration in force, not the one of an earlier certification
+        key = (len(self._atoms), len(self._ints), len(self._slack_of), len(self._key),
+               _limits())
         c = self._cert.get(values)
         if c is None or c[0] != key:
             try:
@@ -590,6 +634,8 @@ class LRATheory:
         # variable splits only within Y (_branch).  Everything below is an
         # upper bound, monotone in the atoms.
         no = (False, None)
+        if not _limits_suffice():
+            return no
         g = self._cagg
         if not g.ok or not g.update(self):
             g.ok = False
@@ -630,7 +676,13 @@ class LRATheory:
                            nm * (nt + 1) * had * hb * lkd + kc * had * den * dm))
         if not all(_decided(d, h) for d, h in checks):
             return no
-        # sizes far below constfield's budget (degrees stay below 4): the
+        # coefficients: a compared number's are fractions of at most
+        # bits(h) + bits(d) bits; products of two such, and their sums,
+        # stay within 8 times that (see _limits_suffice)
+        if 8 * max(d.bit_length() + h.bit_length() for d, h in checks) + 64 > _cf.MAX_BITS:
+            return no
+        # sizes far below constfield's budget (degrees stay below 4, which
+        # _limits_suffice checked against the current limits): the
         # weights t**i of _check's generic combination, t <= neq**2 + 1
         if neq * (neq * neq + 2).bit_length() > _cf.MAX_BITS // 8:
             return no
