@@ -187,3 +187,36 @@ def test_syntax_form_keeps_the_models():
         f = syntax_form(cs, random.Random(seed))
         assert set(_leaves(f)) == set(cs)                   # the same conjuncts, whatever the nesting
         assert from_srepr(to_srepr(f)) == f                 # the spelling survives srepr
+
+
+def test_restatements_agree_on_values():
+    """Every restatement of a predicate or relation conjunct has the truth
+    of the original at sample values (SymPy's own ``ask`` on closed terms:
+    integers, rationals, floats, irrationals, imaginary, infinities)."""
+    from sympy import I as _I, Rational, Float, S, pi as _pi, sqrt as _sqrt, oo, zoo, ask as sask
+    from sympy.logic.boolalg import BooleanAtom
+    from harness.invariants import restate, VALUE_PREDS
+    x, y = Symbol("x"), Symbol("y")
+    values = [S(0), S(1), S(-2), S(3), S(4), S(7), Rational(1, 2), Rational(-3, 2), Float(2.5),
+              _sqrt(2), -_pi, _I, 1 + _I, 2 * _I, oo, -oo, zoo]
+    rng = random.Random(5)
+    rels = [Q.lt(x, y), Q.le(x, y), Q.gt(x, y), Q.ge(x, y), Q.eq(x, y), Q.ne(x, y), Q.lt(x, 2), Q.eq(x, 0)]
+    preds = [getattr(Q, n)(x) for n in VALUE_PREDS]
+    checked = 0
+    for conj in rels + preds:
+        for _ in range(5):
+            other = restate(conj, rng, p=0.9)
+            if other == conj:
+                continue
+            for _ in range(6):
+                vx, vy = rng.choice(values), rng.choice(values)
+                try:
+                    a = sask(conj.xreplace({x: vx, y: vy}))
+                    b = sask(other.xreplace({x: vx, y: vy}))
+                except Exception:  # noqa: BLE001 - SymPy refused the value (nan, ...)
+                    continue
+                if a is None or b is None:
+                    continue
+                assert a == b, (conj, other, vx, vy, a, b)
+                checked += 1
+    assert checked > 80
