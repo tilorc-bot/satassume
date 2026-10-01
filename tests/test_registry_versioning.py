@@ -458,7 +458,7 @@ def _no_templates(node):
 #: a non-default value of every engine setting
 SETTINGS = [("discovery_budget", 1), ("session_limit", 0), ("keep_sessions", 0),
             ("cone_search", False), ("cone_threshold", 0), ("transfer", False),
-            ("uninterpreted", "free"), ("relevance", False),
+            ("uninterpreted", "none"), ("relevance", False),
             ("templates", _no_templates)]
 
 SETTING_QUERIES = [(Q.real(x), Q.real(x) & Q.le(y, 1.5)),
@@ -542,4 +542,4 @@ def test_uninterpreted_is_validated_on_assignment():
     eng = fresh()
     with pytest.raises(ValueError):
         eng.uninterpreted = "bogus"
-    assert eng.uninterpreted == "none"
+    assert eng.uninterpreted == "free"
