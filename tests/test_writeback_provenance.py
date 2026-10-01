@@ -1,10 +1,12 @@
 """Provenance writeback (#53 stage 3): the fact cache stays a memo of
 ``Engine.is_``.  ``Solver.provenance`` on a small reason DAG; facts derived
-with a clause from outside their node's cone are not written; the
+with a clause from outside their node's cone are not written (a clause the
+solver shortened with a foreign root fact included); facts of a node whose
+cone does not fit the discovery budget are not written; the
 ``"root-only"`` policy; a budget-truncated session writes nothing."""
 import pytest
 
-from satassume import Engine, DictCache, P, Implies, Not, allargs
+from satassume import Engine, DictCache, P, Implies, Not, And, Or, allargs
 from satassume.solver import BOTTOM, BlockOwner, Solver
 
 
@@ -164,3 +166,201 @@ def test_home_shortcut_implies_provenance_in_cone():
                     o = s.table.slots[o.base][0]
                 assert o == h or s._in_cone(h, o)
         assert n > 0
+
+
+# --------------------------------------------------------------------------
+# retry 1 of the reviews: shortened clauses, and the budget of a fresh is_
+# --------------------------------------------------------------------------
+
+def _not_memos(eng, mk):
+    """The cached facts of ``eng`` that a fresh engine (``mk()``) answers
+    otherwise, or answers only budget-limited: ``[(node, pred, cached,
+    fresh, fresh budget-limited)]``."""
+    bad = []
+    for node, facts in list(eng.cache.store.items()):
+        for pred, v in facts.items():
+            fresh = mk()
+            r = fresh.is_(node, pred)
+            if r is not v or fresh.last_budget_limited:
+                bad.append((node, pred, v, r, fresh.last_budget_limited))
+    return bad
+
+
+# r1 (opus-high review): F's template speaks about c; D's clause
+# ~zero(c) | ~real(e) | positive(D) is added once zero(c) is true at root,
+# so the solver stores real(e) -> positive(D), owned by D; F is not in
+# cone(D), and the fresh is_(D, positive) is None.
+F1 = ('f', 'c')
+D1 = ('d', 'c', 'e')
+
+
+def _r1_templates(node):
+    if node == F1:
+        return [Implies(Not(P('nonzero', F1)), P('zero', 'c'))]
+    if node == D1:
+        return [Implies(And(P('zero', 'c'), P('real', 'e')), P('positive', D1))]
+    return []
+
+
+def _r1_engine():
+    cache = DictCache()
+    cache.put('e', 'real', True)
+    cache.put(F1, 'nonzero', False)
+    return Engine(templates=_r1_templates, cache=cache)
+
+
+def test_shortened_clause_keeps_its_foreign_antecedent():
+    eng = _r1_engine()
+    # one session that visits F before D
+    assert eng.ask(Or(P('nonzero', F1), P('positive', D1))) is True
+    assert eng.cache.get(D1, 'positive', 'missing') == 'missing'
+    assert eng.stats["writeback_refused"] > 0
+    assert eng.is_(D1, 'positive') is None
+    assert _r1_engine().is_(D1, 'positive') is None
+    assert _not_memos(eng, _r1_engine) == []
+
+
+def _chain_engine(budget, policy="provenance"):
+    cache = DictCache()
+    cache.put('y', 'positive', True)
+    return Engine(templates=templates, cache=cache, discovery_budget=budget, writeback=policy)
+
+
+@pytest.mark.parametrize("policy", ["provenance", "root-only"])
+def test_reused_session_past_the_budget_writes_only_facts_of_cones_that_fit(policy):
+    """a_chain (fable review): the same assumptions reuse one contextual
+    session, which grows by one node per call past the discovery budget
+    without ever being truncated; the facts of a node whose cone is larger
+    than the budget are not written (a fresh is_ of it runs out of
+    budget)."""
+    eng = _chain_engine(2, policy)
+    e = 'y'
+    for _ in range(4):
+        e = ('add', e)
+        assert eng.ask(P('positive', e), P('real', 'w')) is True
+        assert eng.last_budget_limited is False
+    if policy == "provenance":
+        assert eng.cache.get(('add', 'y'), 'positive') is True      # cone of 2 fits
+        assert eng.stats["writeback_budget"] > 0
+    assert eng.cache.facts(('add', ('add', 'y'))) is None           # cone of 3 does not
+    assert _not_memos(eng, lambda: _chain_engine(2, policy)) == []
+    fresh = _chain_engine(2, policy)
+    assert fresh.is_(e, 'positive') is None and fresh.last_budget_limited
+    assert eng.is_(e, 'positive') is None and eng.last_budget_limited
+
+
+def test_reused_session_past_the_budget_sympy():
+    """a_final (fable review), on SymPy nodes: exp(exp(exp(x))) has a cone
+    of 4 nodes, the budget is 3."""
+    sympy = pytest.importorskip("sympy")
+    x = sympy.Symbol('x', positive=True)
+    y = sympy.Symbol('y')
+    eng = Engine(discovery_budget=3)
+    e = x
+    for _ in range(3):
+        e = sympy.exp(e)
+        eng.ask(P('positive', e), P('real', y))     # a reused session, one node more per call
+    assert eng.cache.get(e, 'positive', 'missing') == 'missing'
+    assert eng.stats["writeback_budget"] > 0
+    assert _not_memos(eng, lambda: Engine(discovery_budget=3)) == []
+    fresh = Engine(discovery_budget=3)
+    r = fresh.is_(e, 'positive')
+    assert r is None and fresh.last_budget_limited
+    # the warm is_ is budget-limited as well (it may be more definite, from
+    # the memos of smaller nodes: DESIGN.md 2.5 (i)), and caches nothing
+    w = eng.is_(e, 'positive')
+    assert eng.last_budget_limited and (w is r or w is True)
+    assert eng.cache.get(e, 'positive', 'missing') == 'missing'
+
+
+# b_trunc (fable review): facts written by an earlier writeback of a session
+# whose later escalation truncates; the cone rule does not depend on the
+# session's own truncation
+def _bt_templates(node):
+    if isinstance(node, tuple):
+        kind, *args = node
+        if kind == 'f':
+            return [Implies(P('positive', args[0]), P('positive', node)),
+                    Implies(P('real', args[0]), P('real', node))]
+        if kind == 'add':
+            return [Implies(allargs('positive', args), P('positive', node)),
+                    Implies(allargs('real', args), P('real', node)),
+                    Implies(allargs('integer', args), P('integer', node))]
+    return []
+
+
+def _bt_engine(budget):
+    cache = DictCache()
+    for s in 'abcdefg':
+        cache.put(s, 'positive', True)
+    cache.put('a', 'integer', True)
+    return Engine(templates=_bt_templates, cache=cache, discovery_budget=budget)
+
+
+@pytest.mark.parametrize("budget", [2, 3, 4, 6])
+def test_cache_stays_a_memo_when_sessions_truncate(budget):
+    eng = _bt_engine(budget)
+    wide = ('add', ('f', 'a'), ('f', 'b'), ('f', 'c'), ('f', 'd'), ('f', 'e'))
+    seq = [(wide, 'integer'), (wide, 'positive'), (('f', wide), 'real'),
+           (('add', 'a', 'b'), 'integer'), (('f', ('f', ('f', 'a'))), 'real'),
+           (('add', ('f', 'a'), 'g'), 'integer')]
+    for node, pred in seq:
+        eng.is_(node, pred)
+        eng.ask(P(pred, node), P('real', 'zz'))
+    assert _not_memos(eng, lambda: _bt_engine(budget)) == []
+
+
+# a node whose query is decided before escalation, with a parked template
+# about a long chain: its cone (5 objects) is larger than the budget (2)
+# although its session is not truncated
+DP = ('p', 'a', ('add', ('add', 'z')))
+
+
+def _parked_templates(node):
+    if node == DP:
+        return [Implies(P('positive', 'a'), P('positive', DP)),
+                Implies(P('integer', DP[2]), P('integer', DP))]   # parked for positive
+    return templates(node)
+
+
+def _parked_engine(budget, policy):
+    cache = DictCache()
+    cache.put('a', 'positive', True)
+    return Engine(templates=_parked_templates, cache=cache, discovery_budget=budget,
+                  writeback=policy)
+
+
+@pytest.mark.parametrize("policy", ["provenance", "root-only"])
+def test_answer_decided_with_work_parked_is_cached_only_if_the_cone_fits(policy):
+    eng = _parked_engine(2, policy)
+    assert eng.is_(DP, 'positive') is True
+    assert eng.last_budget_limited is False
+    assert eng.cache.facts(DP) is None
+    assert eng.stats["writeback_budget"] > 0
+    assert _not_memos(eng, lambda: _parked_engine(2, policy)) == []
+    eng = _parked_engine(5, policy)
+    assert eng.is_(DP, 'positive') is True
+    assert eng.cache.get(DP, 'positive') is True
+    assert eng.stats["writeback_budget"] == 0
+
+
+def test_cone_of_a_node_and_the_budget():
+    """Session._cone: the cone if its weight fits the budget; a relation
+    atom never fits."""
+    eng = _chain_engine(3)
+    s = eng._fresh_session()
+    chain = ('add', ('add', 'y'))
+    assert s._cone(chain) == frozenset([chain, ('add', 'y'), 'y'])
+    assert s._cone(('add', chain)) is None              # 4 > 3
+    assert s._in_cone(chain, 'y') and not s._in_cone(('add', 'y'), chain)
+    s2 = eng._fresh_session()
+    s2.kids[('r',)] = ({P('lt', ('y', 'w'))}, 1)
+    assert s2._cone(('r',)) is None
+
+
+def test_cache_hit_resets_last_budget_limited():
+    eng, cache = _engine(discovery_budget=1)
+    eng.is_(('add', ('add', 'x', 'w'), 'y'), 'real')
+    assert eng.last_budget_limited is True
+    assert eng.is_('y', 'positive') is True               # a cache hit
+    assert eng.last_budget_limited is False

@@ -74,12 +74,8 @@ _WRITEBACK = ("provenance", "root-only", "all")
 #: the home of a root literal whose provenance was not established cheaply
 #: (Session._home_of)
 _FOREIGN = object()
-
-
-def _same(a, b) -> bool:
-    """``a`` and ``b`` are the same object of a cone (a SymPy node or a
-    custom atom; never compared across the two kinds)."""
-    return a is b or (a.__class__ is b.__class__ and a == b)
+#: a missing memo entry (Session._home_of, Session._cone)
+_NO_STEP = object()
 
 
 def _kid(atom):
@@ -214,11 +210,17 @@ class Session:
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
         # -- provenance writeback (see writeback) --
-        #: node (or custom atom) -> the objects its templates (its
-        #: extension facts) mention: the structural cone, one level; a
-        #: function of the node and the registry, not of what was loaded.
-        #: Kept only under Engine(writeback="provenance").
-        self.kids: Optional[Dict[Any, set]] = {} if engine.writeback_policy == "provenance" else None
+        #: node (or custom atom) -> ``(kids, weight)`` (:meth:`_struct`):
+        #: the objects its templates (its extension facts) mention, one
+        #: level of the structural cone, and its cost to a fresh session's
+        #: budget; a function of the object and the registry, computed on
+        #: demand (only for objects a writeback decision needs), whether or
+        #: not this session visited the object
+        self.kids: Dict[Any, Any] = {}
+        #: object -> its structural cone (a frozenset, the object included)
+        #: if its weight fits ``discovery_budget``, else None (:meth:`_cone`)
+        self._cones: dict = {}
+        self._cone_budget = engine.discovery_budget
         #: a budget cut dropped work: :meth:`_discover` or :meth:`escalate`
         #: stopped on the discovery budget with unvisited nodes (new, or
         #: with parked templates) on its frontier, or :meth:`escalate`
@@ -234,7 +236,6 @@ class Session:
         #: contextual, or a custom predicate); Engine(writeback="root-only")
         self.subject = None
         self._prov_memo: dict = {}           # var -> owners (Solver.provenance)
-        self._cone_memo: dict = {}           # (node, object) found in its cone
         #: var -> its home (see _home_of), _FOREIGN if not established
         self._home: dict = {}
 
@@ -293,18 +294,6 @@ class Session:
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
         items = [(f, atoms_of(f)) for f in formulas] if formulas else None
-        kids = self.kids
-        if kids is not None:
-            # every object the node's templates mention, parked ones too
-            k = set()
-            for comp in compiled:
-                objs, pat = comp.objs, comp.pattern
-                k.update(objs[i] for i in pat.used if i != pat.node)
-            if items:
-                for _, atoms in items:
-                    k.update(_kid(a) for a in atoms)
-                k.discard(node)
-            kids[node] = k
         # 2. single-node rule base (registered with the solver's rule-block
         #    propagator, no clauses), unless the node is a constant whose
         #    closed unit facts decide everything the rule base could say
@@ -463,15 +452,9 @@ class Session:
         ext = engine._extensions
         if ext is None:
             return
-        kids = self.kids
-        if kids is not None:
-            k = kids.setdefault(atom, set())
         solver.owner = atom
         try:
             for f in ext.facts_for(atom):
-                if kids is not None:
-                    k.update(_kid(a) for a in atoms_of(f))
-                    k.discard(atom)
                 compile_formula(f, self.table, self._emit)
         finally:
             solver.owner = prev_owner
@@ -609,26 +592,41 @@ class Session:
 
         ``"provenance"`` (default)
             A fact about node ``D`` (or custom atom ``D``) is written only if
-            the session is not budget-truncated and its *provenance* (the
-            owners of the clauses in its reason DAG, ``Solver.provenance``)
-            lies in ``{D} | cone(D)``: ``D``'s own rule block, templates,
-            extension facts and cached facts, and those of the objects its
-            templates mention, transitively (``self.kids``); never a learnt
-            or theory clause, relation glue or the assumptions (``BOTTOM``).
-            Every such clause is in any session that loads ``cone(D)``, in
-            particular a fresh ``Engine.is_(D, ...)``, and unit propagation
-            is confluent, so that query derives the fact too: the cache stays
-            a memo of ``is_`` (DESIGN.md 2.4; by induction, cached facts of
-            ``cone(D)`` asserted here are themselves such memos).
+            the session is not budget-truncated, its *provenance* (the
+            owners of the clauses in its reason DAG, ``Solver.provenance``,
+            the root facts that shortened a clause included) lies in
+            ``cone(D)`` (``D``'s own rule block, templates, extension facts
+            and cached facts, and those of the objects its templates
+            mention, transitively: :meth:`_struct`), never a learnt or theory
+            clause, relation glue or the assumptions (``BOTTOM``), and
+            ``cone(D)`` *fits the discovery budget* (:meth:`_cone`).  Every
+            clause of ``cone(D)`` is then loaded by a fresh
+            ``Engine.is_(D, ...)``, which runs out of budget neither in
+            discovery nor in escalation (:meth:`_cone` says why), and unit
+            propagation is confluent, so that query derives the fact, or is
+            decided by propagation before it escalates, soundly and so the
+            same way: the cache stays a memo of ``is_`` (DESIGN.md 2.4; by
+            induction, cached facts of ``cone(D)`` asserted here are
+            themselves such memos, entailed by their own cones).  Neither
+            condition depends on the session's own budget or history: facts
+            of an earlier writeback of a session that a later escalation
+            truncates satisfy both too.
         ``"root-only"``
             Only the facts about the queried node of an ``Engine.is_``
             session (whose clauses all come from that node's cone, so they
-            are memos by construction); nothing from contextual sessions.
+            are memos), again only if the node's cone fits the budget (a
+            fresh ``is_`` of another predicate of the node parks other
+            clauses and may have to escalate); nothing from contextual
+            sessions.
         ``"all"``
             Every root literal, as before the provenance rule.  History-
             dependent (a fact found with another node's template, a learnt
             clause or relation glue is served later as a context-free fact):
             kept for measurement only.
+
+        Refusals are counted in ``Engine.stats``: ``writeback_refused``
+        (provenance outside the cone), ``writeback_budget`` (the cone does
+        not fit the budget).
         """
         trail = self.solver.root_trail()
         start = self.read_pos
@@ -640,6 +638,7 @@ class Session:
         if policy != "all":
             if self.truncated:
                 return
+            self._sync_budget()
             if policy == "root-only":
                 self._writeback_subject(trail, start)
                 return
@@ -660,48 +659,43 @@ class Session:
                     else:
                         custom.put(atom.expr, atom.pred, lit > 0)
             return
+        stats = engine.stats
+        cone_of = self._cone
         home_of = self._home_of
         for lit in trail[start:]:
             v = abs(lit)
             atom = slots[v]
             if type(atom) is tuple:
-                node, b = atom
-                h = home_of(v, node)
+                # a node block's variable (VarTable.slots): P(pred, node)
+                subject, b = atom
                 pred = PREDICATES[v - b]
-                d = cache.facts(node)
-                if d is not None and pred in d:
-                    continue
-                if h is _FOREIGN and not self._walk(v, node):
-                    engine.stats["writeback_refused"] += 1
-                    continue
-                cache.put(node, pred, lit > 0)
+                c, key = cache, subject
             elif atom is None:
-                home_of(v, None)
-            elif atom.pred in PRED_INDEX:
-                node = atom.expr
-                h = home_of(v, node)
-                d = cache.facts(node)
-                if d is not None and atom.pred in d:
-                    continue
-                if h is _FOREIGN and not self._walk(v, node):
-                    engine.stats["writeback_refused"] += 1
-                    continue
-                cache.put(node, atom.pred, lit > 0)
-            elif atom.pred in RELATION_ATOMS:
-                home_of(v, None)              # interpreted by glue: never written
+                continue                        # auxiliary: never written
             else:
-                h = home_of(v, atom)
-                d = custom.facts(atom.expr)
-                if d is not None and atom.pred in d:
-                    continue
-                if h is _FOREIGN and not self._walk(v, atom):
-                    engine.stats["writeback_refused"] += 1
-                    continue
-                custom.put(atom.expr, atom.pred, lit > 0)
+                pred = atom.pred
+                if pred in PRED_INDEX:
+                    subject = key = atom.expr
+                    c = cache
+                elif pred in RELATION_ATOMS:
+                    continue                    # interpreted by glue: never written
+                else:
+                    subject, key, c = atom, atom.expr, custom
+            d = c.facts(key)
+            if d is not None and pred in d:
+                continue                        # cached: no home needed
+            if cone_of(subject) is None:
+                stats["writeback_budget"] += 1
+                continue
+            if home_of(v, subject) is _FOREIGN and not self._walk(v, subject):
+                stats["writeback_refused"] += 1
+                continue
+            c.put(key, pred, lit > 0)
 
     def _writeback_subject(self, trail, start: int) -> None:
         """``writeback="root-only"``: the facts about the node of the
-        ``Engine.is_`` query this session answers."""
+        ``Engine.is_`` query this session answers, if its cone fits the
+        budget."""
         subject = self.subject
         if subject is None:
             return
@@ -709,103 +703,246 @@ class Session:
         if b is None:
             return
         cache = self.engine.cache
+        fits = None
         for lit in trail[start:]:
             v = abs(lit)
             if b <= v < b + NPRED:
+                if fits is None:
+                    fits = self._cone(subject) is not None
+                if not fits:
+                    self.engine.stats["writeback_budget"] += 1
+                    continue
                 cache.put(subject, PREDICATES[v - b], lit > 0)
+
+    def _sync_budget(self) -> None:
+        """Drop the cone and home memos if ``Engine.discovery_budget``
+        changed since they were filled (whether a cone fits depends on it)."""
+        budget = self.engine.discovery_budget
+        if budget != self._cone_budget:
+            self._cone_budget = budget
+            self._cones.clear()
+            self._home.clear()
+
+    def _subject(self, v: int):
+        """What the root literal of ``v`` is about, for :meth:`_home_of`:
+        its node, its custom atom, or None (an auxiliary variable, a
+        relation atom: never written back)."""
+        atom = self.table.slots[v]
+        if type(atom) is tuple:
+            return atom[0]
+        if atom is None:
+            return None
+        pred = atom.pred
+        if pred in PRED_INDEX:
+            return atom.expr
+        if pred in RELATION_ATOMS:
+            return None
+        return atom
 
     def _home_of(self, v: int, subject) -> Any:
         """The *home* of the root assignment of ``v``: an object ``H``
-        with ``provenance(v) <= {H} | cone(H)``, or ``_FOREIGN`` when that
-        is not established by this cheap test (the caller then walks).
+        with ``provenance(v) <= cone(H)`` (``H`` included), or ``_FOREIGN``
+        when that is not established by this cheap test (the caller then
+        walks).
 
         The test looks at one step of the reason DAG only: the owner ``o``
         of ``v``'s reason (its rule block's node, its template's node, ...)
-        and the homes of its antecedents, which are on the root trail before
-        ``v`` and so already have one (writeback visits the trail in order;
-        every root literal gets a home).  ``H`` is ``subject`` (the node or
-        custom atom ``v`` is about), or ``o`` for an auxiliary variable.  If
-        ``o`` and every antecedent's home are ``H`` or in ``cone(H)``, then,
-        by induction over the trail, every owner of ``v``'s reason DAG is in
-        ``{H} | cone(H)``: an antecedent's provenance lies in ``{h} |
-        cone(h)`` and ``cone(h) <= cone(H)`` for ``h`` in ``cone(H)`` (a
-        path of ``self.kids`` is a path of the structural cone, which is
-        transitive).  So ``home == D`` implies exactly what the provenance
-        rule of :meth:`writeback` asks for ``D``, without the walk; the
-        common case (a fact found by ``D``'s own rule block, templates and
-        its children's facts) costs one reason lookup and a few dict hits.
+        and the homes of its antecedents (computed first, the same way,
+        with their own subjects; memoized, so each root literal is looked
+        at once per session, and only literals some writeback needs).  ``H``
+        is ``subject`` (the node or custom atom ``v`` is about), or ``o``
+        for an auxiliary variable.  If ``o`` and every antecedent's home
+        are in ``cone(H)``, then, by induction over the reason DAG (root
+        reasons only point to earlier root literals), every owner of
+        ``v``'s reason DAG is in ``cone(H)``: an antecedent's provenance
+        lies in ``cone(h)`` and ``cone(h) <= cone(H)`` for ``h`` in
+        ``cone(H)`` (cones are closed under :meth:`_struct`'s kids).  So
+        ``home == D`` implies exactly what the provenance rule of
+        :meth:`writeback` asks for ``D``, without the walk; the common case
+        (a fact found by ``D``'s own rule block, templates and its
+        children's facts) costs one reason lookup and a few set hits.  A
+        subject whose cone does not fit the budget gets no home (its cone
+        is not kept): conservative, the walk decides.
         """
         home = self._home
         h = home.get(v)
         if h is not None:
             return h
-        step = self.solver.root_step(v)
-        h = _FOREIGN
-        if step is not None:
-            o, ants = step
-            if type(o) is BlockOwner:
-                o = self.table.slots[o.base][0]   # a rule block: its node
-            H = o if subject is None else subject
-            in_cone = self._in_cone
-            if _same(o, H) or in_cone(H, o):
-                for a in ants:
-                    ha = home.get(a, _FOREIGN)
-                    if ha is _FOREIGN or not (_same(ha, H) or in_cone(H, ha)):
-                        break
-                else:
-                    h = H
-        home[v] = h
-        return h
+        root_step = self.solver.root_step
+        slots = self.table.slots
+        cone_of = self._cone
+        subject_of = self._subject
+        steps: dict = {}
+        stack = [(v, subject)]
+        while stack:
+            u, subj = stack[-1]
+            if u in home:
+                stack.pop()
+                continue
+            step = steps.get(u, _NO_STEP)
+            if step is _NO_STEP:
+                step = steps[u] = root_step(u)
+                if step is not None:
+                    todo = [a for a in step[1] if a not in home]
+                    if todo:
+                        stack.extend([(a, subject_of(a)) for a in todo])
+                        continue
+            h = _FOREIGN
+            if step is not None:
+                o, ants = step
+                if type(o) is BlockOwner:
+                    o = slots[o.base][0]        # a rule block: its node
+                H = o if subj is None else subj
+                cone = cone_of(H)
+                if cone is not None and o in cone:
+                    for a in ants:
+                        if home[a] not in cone:
+                            break
+                    else:
+                        h = H
+            home[u] = h
+            stack.pop()
+        return home[v]
 
     def _walk(self, v: int, node) -> bool:
         """The exact provenance test for a fact about ``node`` whose home
-        was not established: every owner of its reason DAG is ``node``
-        or in its cone.  On success ``node`` becomes its home."""
+        was not established: every owner of its reason DAG is in
+        ``cone(node)``, which fits the budget (the caller checked).  On
+        success ``node`` becomes its home."""
         prov = self.solver.provenance(v, self._prov_memo)
         if BOTTOM in prov:
             return False
+        cone = self._cone(node)
+        if cone is None:
+            return False
         slots = self.table.slots
-        in_cone = self._in_cone
         for o in prov:
             if type(o) is BlockOwner:
                 o = slots[o.base][0]
-            if not (_same(o, node) or in_cone(node, o)):
+            if o not in cone:
                 return False
         self._home[v] = node
         return True
 
     def _in_cone(self, node, o) -> bool:
-        """``o`` is reachable from ``node`` through ``self.kids`` (the
-        structural cone as far as this session visited it; an unvisited
-        object has no entry, so the answer may be a false negative, never
-        a false positive).  Only positive answers are memoized: the kids
-        of an object never change once it is visited, but more objects get
-        visited."""
+        """``o`` is in ``cone(node)`` (``node`` included), and that cone
+        fits the budget (:meth:`_cone`; otherwise False)."""
+        cone = self._cone(node)
+        return cone is not None and o in cone
+
+    def _struct(self, o):
+        """``(kids, weight)`` of a cone object ``o``, memoized in
+        ``self.kids``.  ``kids``: the objects ``o``'s templates mention
+        (compiled patterns and formulas, extension vocabulary facts; for a
+        custom atom, its extension facts), parked and derived ones too: a
+        function of ``o`` and the registry, read from the templates whether
+        or not this session visited ``o``.  ``weight``: what ``o`` can cost
+        a fresh session's discovery budget (see :meth:`_cone`): 1 for a
+        node, 2 for a node with both compiled patterns and formulas (both
+        can be parked, and escalation counts each), 0 for a custom atom
+        (its extension facts are compiled when it is allocated, outside the
+        budget).  None for a relation atom: its glue visits nodes with
+        budgets of its own (``Relations``), so a cone holding one never
+        fits."""
         kids = self.kids
-        k = kids.get(node)
-        if not k:
-            return False
-        if o in k:
-            return True
-        memo = self._cone_memo
-        key = (node, o)
-        if key in memo:
-            return True
-        seen = {node}
-        stack = list(k)
-        seen.update(stack)
+        r = kids.get(o)
+        if r is not None:
+            return r
+        engine = self.engine
+        ext = engine._extensions
+        if isinstance(o, P):
+            # an object of a cone that is a P is a custom or relation atom
+            # (_kid maps vocabulary atoms to their argument)
+            if o.pred in RELATION_ATOMS:
+                return None
+            k = set()
+            if ext is not None:
+                for f in ext.facts_for(o):
+                    k.update(_kid(a) for a in atoms_of(f))
+                k.discard(o)
+            r = kids[o] = (k, 0)
+            return r
+        constructing = engine._constructing
+        mine = o not in constructing
+        if mine:
+            constructing.add(o)                 # as Session.node does
+        try:
+            if engine.clause_templates is not None:
+                compiled, formulas = engine.clause_templates(o)
+            else:
+                compiled, formulas = (), engine.templates(o)
+            if ext is not None and ext._vocab:
+                formulas = list(formulas) + ext.node_facts(o)
+        finally:
+            if mine:
+                constructing.discard(o)
+        k = set()
+        for comp in compiled:
+            objs, pat = comp.objs, comp.pattern
+            k.update(objs[i] for i in pat.used if i != pat.node)
+        for f in formulas:
+            k.update(_kid(a) for a in atoms_of(f))
+        k.discard(o)
+        r = kids[o] = (k, 2 if compiled and formulas else 1)
+        return r
+
+    def _cone(self, d):
+        """The structural cone of ``d`` (``d`` and every object reachable
+        through :meth:`_struct`'s kids) as a frozenset, if its *weight* (the
+        sum of the objects' weights) is at most ``Engine.discovery_budget``;
+        None otherwise (or if it holds a relation atom).  Memoized per
+        session (:meth:`_sync_budget` drops it if the budget changes).
+
+        Why the weight bounds a fresh ``Engine.is_(d, p)`` (and
+        ``_is_custom`` for a custom atom ``d``): its discovery
+        (:meth:`_discover`) visits nodes breadth-first from ``d`` through
+        the children its templates schedule, each node once (a node enters
+        the frontier when its variables are allocated, which happens once),
+        so it visits only nodes of ``cone(d)``, at most one budget unit
+        each; with no relation atom in the cone nothing else visits nodes.
+        Its escalation (:meth:`escalate`, a budget of its own) counts one
+        unit per node with parked clauses, one per node with parked
+        formulas (nodes visited by discovery only; escalation visits with
+        nothing parked) and one per node it visits: at most the weight.
+        So if the weight is at most the budget, neither phase stops with
+        work left: the session loads all of ``cone(d)`` before it searches,
+        and is never budget-limited."""
+        cones = self._cones
+        if d in cones:
+            return cones[d]
+        budget = self._cone_budget
+        struct = self._struct
+        seen = {d}
+        stack = [d]
+        total = 0
+        r = None
         while stack:
-            ks = kids.get(stack.pop())
-            if not ks:
-                continue
-            if o in ks:
-                memo[key] = True
-                return True
-            for x in ks:
-                if x not in seen:
-                    seen.add(x)
-                    stack.append(x)
-        return False
+            o = stack.pop()
+            st = struct(o)
+            if st is None:
+                break
+            k, w = st
+            total += w
+            known = cones.get(o, _NO_STEP) if o is not d else _NO_STEP
+            if known is None:
+                break                           # a sub-cone that does not fit
+            if known is not _NO_STEP:
+                # a known (closed) sub-cone: count its objects, no expansion
+                for x in known:
+                    if x not in seen:
+                        seen.add(x)
+                        total += self.kids[x][1]
+            else:
+                for x in k:
+                    if x not in seen:
+                        seen.add(x)
+                        stack.append(x)
+            if total > budget:
+                break
+        else:
+            r = frozenset(seen)
+        cones[d] = r
+        return r
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit: int, assumptions: Iterable[int] = (),
@@ -1018,7 +1155,10 @@ class Engine:
         from the fact's own node's structural cone only, ``"root-only"``
         only the queried node's facts of an ``is_`` session, ``"all"``
         every root literal (history-dependent; for measurement only).
-        A budget-truncated session writes nothing but under ``"all"``.
+        A budget-truncated session writes nothing but under ``"all"``, and
+        under the other two a fact about a node is written only if the
+        node's structural cone fits ``discovery_budget`` (a fresh
+        ``is_`` of the node then loads all of it; ``Session._cone``).
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
@@ -1090,10 +1230,11 @@ class Engine:
                       "searches": 0, "cone_searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "dead_sessions": 0, "set_checks": 0,
-                      "writeback_refused": 0, "budget_limited": 0}
+                      "writeback_refused": 0, "writeback_budget": 0,
+                      "budget_limited": 0}
         #: whether the last query's session ran out of discovery budget
         #: (its answer is sound but may be less definite than with a larger
-        #: budget, and it wrote nothing back)
+        #: budget, and it wrote nothing back); False after a cache hit
         self.last_budget_limited = False
 
     def _fresh_session(self) -> Session:
@@ -1434,6 +1575,7 @@ class Engine:
         facts = self.cache.facts(node)
         if facts is not None and pred in facts:
             self.stats["cache_hits"] += 1
+            self.last_budget_limited = False
             return facts[pred]
         if node in self._constructing:
             # re-entrant query from a template evaluating this very node
@@ -1451,17 +1593,39 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, search=True)
-        self._put_result(s, self.cache, node, pred, r)
+        self._put_result(s, self.cache, node, node, pred, r)
         return r
 
-    def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
-        """Cache the answer of a context-free query, unless its session ran
-        out of discovery budget (then it is not a function of the node
-        alone, but of the budget's cut; ``"all"`` caches it anyway)."""
+    def _put_result(self, s: Session, cache: DictCache, subject, node, pred: str, r) -> None:
+        """Cache the answer ``r`` of the context-free query ``pred(node)``
+        (``subject``: ``node``, or the custom atom), unless a fresh engine's
+        same query could answer otherwise (``"all"`` caches it anyway):
+
+        * the session ran out of discovery budget: ``r`` is a function of
+          the budget's cut, not of the node alone;
+        * ``r`` was decided before escalation with work still parked or
+          deferred (``s.incomplete``), and ``cone(subject)`` does not fit the
+          budget (``Session._cone``).  The fresh query discovers the same
+          nodes and parks the same clauses (both depend on the node and the
+          predicate only, not on cached values), but without this engine's
+          cached facts it may have to escalate, and that escalation could
+          run out of budget.  Otherwise the fresh query either escalates
+          exactly as this one did (no truncation) or does not need to, and
+          answers ``r``: the same clauses up to cached facts, which are
+          memos entailed by them, and a complete search.
+
+        A session that engaged relation glue (only through extension facts
+        naming relation atoms) is cached only through the cone rule, which
+        refuses cones with relation atoms."""
         self.last_budget_limited = s.truncated
         if s.truncated:
             self.stats["budget_limited"] += 1
             if self.writeback_policy != "all":
+                return
+        elif self.writeback_policy != "all" and (s.incomplete or s.relations is not None):
+            s._sync_budget()
+            if s._cone(subject) is None:
+                self.stats["writeback_budget"] += 1
                 return
         cache.put(node, pred, r)
 
@@ -1471,10 +1635,12 @@ class Engine:
         facts = self.custom_cache.facts(node)
         if facts is not None and pred in facts:
             self.stats["cache_hits"] += 1
+            self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
         s = self._fresh_session()
-        lit = s.literal_of(P(pred, node))
+        atom = P(pred, node)
+        lit = s.literal_of(atom)
         r = s.query_literal(lit, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
@@ -1483,7 +1649,7 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, search=True)
-        self._put_result(s, self.custom_cache, node, pred, r)
+        self._put_result(s, self.custom_cache, atom, node, pred, r)
         return r
 
     # -- contextual -----------------------------------------------------------

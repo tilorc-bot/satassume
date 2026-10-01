@@ -451,9 +451,16 @@ class Solver:
         # false at root that shortened the clause to the unit, or, for a
         # rule-block closure written at registration (_rb_settle), the
         # block's mask of assigned literals (an int).  Missing: BOTTOM.
+        # ``_cante``: id(owned problem clause) -> the internal literals
+        # false at root that _add_lits dropped from it (the clause stored is
+        # the client's clause resolved with those root facts, so they are
+        # antecedents of every implication it makes: root_step adds them).
+        # Every strengthening of a clause goes through _add_lits (the slow
+        # paths of add_clauses, add_internal and add_pattern included).
         self.owner = BOTTOM
         self._cowner: dict = {}
         self._uowner: dict = {}
+        self._cante: dict = {}
         self._n_late = 0                     # late mentions that dropped held levels
         self._n_late_written = 0             # late mentions written at held levels
         self._rb_clauses: tuple | None = None
@@ -683,6 +690,8 @@ class Solver:
         self._clauses.append(out)
         if self.owner is not BOTTOM:
             self._cowner[id(out)] = self.owner
+            if dropped is not None:
+                self._cante[id(out)] = dropped
         if self._trail_lim:
             self._attach_held(out)
             return True
@@ -2604,7 +2613,11 @@ class Solver:
         owner is ``BOTTOM`` (a learnt or theory clause, a learnt or theory
         unit, a clause or unit added with no owner set).  A rule-block
         implication is owned by ``BlockOwner(base)``.  ``v`` must be
-        assigned at root (root reasons never change afterwards)."""
+        assigned at root (root reasons never change afterwards).  The
+        antecedents of a clause or unit the solver shortened when it was
+        added (literals false at root dropped, :meth:`_add_lits`) include
+        the variables of the dropped literals: the client's clause, not the
+        shortened one, is what the owner contributed."""
         reason = self._reason[v]
         if reason is None:
             uo = self._uowner.get(v)
@@ -2625,7 +2638,13 @@ class Solver:
         owner = self._cowner.get(id(reason), BOTTOM)
         if owner is BOTTOM:
             return None
-        return owner, [l >> 1 for l in reason if (l >> 1) != v]
+        ants = [l >> 1 for l in reason if (l >> 1) != v]
+        if self._cante:
+            dropped = self._cante.get(id(reason))
+            if dropped is not None:
+                # the root facts that shortened the clause (_add_lits)
+                ants.extend(l >> 1 for l in dropped)
+        return owner, ants
 
     def provenance(self, v: int, memo: dict) -> frozenset:
         """The owners of the clauses behind the root-level assignment of
