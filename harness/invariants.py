@@ -1748,14 +1748,12 @@ def _pinned_with_shape(shape: tuple) -> list:
 
 
 def _known(v: Violation, subset: bool = False) -> Optional[str]:
-    """``I7-settings`` for I7; ``pinned:<stem>`` when the candidate's
+    """``pinned:<stem>`` when the candidate's
     family key (kinds and fingerprint) is a pinned case's.  The kinds and
     the fingerprint are (re)computed here.  Before shrinking (``subset``)
     the pinned case's kinds need only be *among* the candidate's (shrinking
     removes material, never adds), so that a known family is recognised
     without the shrink; after shrinking the kinds must agree."""
-    if v.inv == "I7":
-        return "I7-settings"       # plain attributes, not keyed on the registry epoch
     if v.inv == "I2":
         v.variant = dict(v.variant, kinds=extra_kinds(from_srepr(v.variant["extra"]),
                                                       v.variant.get("extensions", ())))

@@ -106,6 +106,7 @@ above covers both.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from fractions import Fraction
 from typing import Any
 
@@ -140,7 +141,8 @@ class _Unhandled(Exception):
 #: read every closed real constant that has rigorous bounds as a number of
 #: the exact field (``log(2)*x`` readable, ``x < log(2)`` exact); False:
 #: only pi, E and rational powers of rationals (with ``+ - * /``), other
-#: constants stay bounded terms (see "Constants")
+#: constants stay bounded terms (see "Constants").  A bool; it may change
+#: at run time: the process-wide memo (:data:`_INTERPRETED`) is keyed on it
 GENERIC_CONSTANTS = True
 
 #: what reading can raise besides _Unhandled: undecidable signs of
@@ -596,9 +598,16 @@ def integer_form(e):
     return Integral(items, const[0]), keys
 
 
-#: atom -> interpret(atom), shared by every adapter (keyed by the SymPy
-#: atom itself: equal atoms linearise identically)
-_INTERPRETED: dict = {}
+#: ``GENERIC_CONSTANTS -> {atom -> interpret(atom)}`` (and the
+#: ``order_sides`` and ``integer_form`` results), shared by every adapter:
+#: keyed by the SymPy atom itself (equal atoms linearise identically) and,
+#: through the outer dict, by the flag the results were computed under, so
+#: flipping the flag never serves the other value's linearisations.  One
+#: memo per flag value keeps a lookup at one more index.  A
+#: ``defaultdict``, so emptying the outer dict (the harness's
+#: ``reset_module_state`` does ``_INTERPRETED.clear()``) leaves it usable.
+_INTERPRETED: dict = defaultdict(dict)
+#: size bound of each memo; a module constant, not a setting: changing it at run time is unsupported (answers memoized under the old value are kept)
 _INTERPRETED_MAX = 100_000
 
 
@@ -653,12 +662,13 @@ class LRAAdapter:
         """``(constraint, terms)`` in one call (see :func:`interpret`),
         memoized across adapters: it is a pure function of the atom (the
         result is shared, never mutate it)."""
+        memo = _INTERPRETED[GENERIC_CONSTANTS]
         try:
-            return _INTERPRETED[atom]
+            return memo[atom]
         except KeyError:
-            if len(_INTERPRETED) >= _INTERPRETED_MAX:
-                _INTERPRETED.clear()
-            r = _INTERPRETED[atom] = interpret(atom)
+            if len(memo) >= _INTERPRETED_MAX:
+                memo.clear()
+            r = memo[atom] = interpret(atom)
             return r
         except TypeError:                   # unhashable: do not cache
             return interpret(atom)
@@ -666,12 +676,13 @@ class LRAAdapter:
     def order_sides(self, atom):
         """:func:`order_sides`, memoized like :meth:`interpret`."""
         key = ("sides", atom)
+        memo = _INTERPRETED[GENERIC_CONSTANTS]
         try:
-            return _INTERPRETED[key]
+            return memo[key]
         except KeyError:
-            if len(_INTERPRETED) >= _INTERPRETED_MAX:
-                _INTERPRETED.clear()
-            r = _INTERPRETED[key] = order_sides(atom)
+            if len(memo) >= _INTERPRETED_MAX:
+                memo.clear()
+            r = memo[key] = order_sides(atom)
             return r
         except TypeError:
             return order_sides(atom)
@@ -679,12 +690,13 @@ class LRAAdapter:
     def integer_form(self, e):
         """:func:`integer_form`, memoized like :meth:`interpret`."""
         key = ("integer", e)
+        memo = _INTERPRETED[GENERIC_CONSTANTS]
         try:
-            return _INTERPRETED[key]
+            return memo[key]
         except KeyError:
-            if len(_INTERPRETED) >= _INTERPRETED_MAX:
-                _INTERPRETED.clear()
-            r = _INTERPRETED[key] = integer_form(e)
+            if len(memo) >= _INTERPRETED_MAX:
+                memo.clear()
+            r = memo[key] = integer_form(e)
             return r
         except TypeError:
             return integer_form(e)

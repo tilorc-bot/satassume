@@ -146,7 +146,9 @@ _LO, _UP, _ASG, _DIS, _INT = 0, 1, 2, 3, 4
 _MISSING = object()
 
 #: branch-and-bound nodes (branchings) per ``check``; beyond it the check
-#: reports no integrality conflict (incomplete, sound)
+#: reports no integrality conflict (incomplete, sound).
+#: A module constant, not a setting: changing it at run time is unsupported
+#: (answers memoized under the old value are kept)
 BRANCH_BUDGET = 16
 
 

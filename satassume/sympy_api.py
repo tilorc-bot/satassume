@@ -643,7 +643,9 @@ def _relevant(p, a, eng: Engine):
 #: that is a side of an equality, the 0 of ``zero``, and the Rationals of
 #: a closed term as keys (connects ``x = 2`` with ``y = 2``, ``sin(2)``,
 #: ``polar(2)``, but not the values LRA or the rule base derive).
-#: The key memo ``_KEYS`` depends on it: clear it when changing it.
+#: The key memo ``_KEYS`` depends on it.  A module constant, not a
+#: setting: changing it at run time is unsupported (answers memoized under
+#: the old value are kept, and so are the keys in ``_KEYS``).
 #: See docs/design.md, "What connects".
 RELATIONAL = "whole"
 
@@ -651,12 +653,16 @@ RELATIONAL = "whole"
 #: its own), not only propagates.  On: a Boolean conflict that propagation
 #: does not see (``(p | i) & (p | ~i) & (~p | i) & (~p | ~i)`` over the
 #: atoms of one symbol) makes the old path raise for every query that goes
-#: to search, including queries about other components
+#: to search, including queries about other components.
+#: A module constant, not a setting: changing it at run time is unsupported
+#: (answers memoized under the old value are kept)
 CHECK_SEARCH = True
 
 #: the whole-set check of a set with relations searches: theory conflicts
 #: (``Q.eq(y, u) & Q.negative(u*y)``) often surface only in search, and the
-#: old path raises for any query that goes to search
+#: old path raises for any query that goes to search.
+#: A module constant, not a setting: changing it at run time is unsupported
+#: (answers memoized under the old value are kept)
 CHECK_SEARCH_RELATIONS = True
 
 #: a check whose session is incomplete (discovery left nodes or formulas

@@ -122,7 +122,9 @@ def test_neighbourhood_contains_pred_and_rule_partners():
 
 
 def test_exactlyone_helper():
-    eng, cache = make(x={'imaginary': True}, y={'real': True, 'nonzero': True})
+    _, cache = make(x={'imaginary': True}, y={'real': True, 'nonzero': True})
     f = Implies(And(allargs('complex', ['x', 'y']), exactlyonearg('imaginary', ['x', 'y'])), P('imaginary', ('mul', 'x', 'y')))
-    eng.templates = lambda n: [f] if n == ('mul', 'x', 'y') else templates(n)
+    # templates given at construction: assigning them later starts a new
+    # registry epoch, which drops the hand-filled cache
+    eng = Engine(templates=lambda n: [f] if n == ('mul', 'x', 'y') else templates(n), cache=cache)
     assert eng.is_(('mul', 'x', 'y'), 'imaginary') is True
