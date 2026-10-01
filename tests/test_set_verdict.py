@@ -3,13 +3,14 @@
 Whether an assumption set raises must not depend on the query nor on what
 ran before: every set gets one complete check (``Engine._complete_check``)
 when its session is built, memoized per set.  Only an ``inconsistent``
-verdict raises; ``unknown`` (a theory gave up, a truncated cone) never does.
+verdict raises; ``unknown`` (a theory gave up, a cone over the discovery budget) never does.
 """
 import itertools
 
 import pytest
 from sympy import Q, cos, sin, symbols
 
+from satassume import P
 from satassume.engine import CONSISTENT, INCONSISTENT, UNKNOWN
 from satassume.sympy_api import DictCache, Engine, ask
 
@@ -96,21 +97,32 @@ def test_setting_change_drops_the_verdict_memo():
     eng = Engine()
     v = eng.verdict(g)
     assert eng._verdict.get(g) is v and eng.stats["set_checks"] == 1
-    eng.discovery_budget = 1
+    eng.discovery_budget = 200
     assert not eng._verdict and eng.stats["version_clears"] == 1
-    assert eng.verdict(g) is Engine(discovery_budget=1).verdict(g)
+    assert eng.verdict(g) is Engine(discovery_budget=200).verdict(g)
+    assert eng.stats["set_checks"] == 2
+    # a budget below the set's cone: unknown, without a check (#53 task 6)
+    eng.discovery_budget = 1
+    assert eng.verdict(g) is UNKNOWN is Engine(discovery_budget=1).verdict(g)
     assert eng.stats["set_checks"] == 2
 
 
-def test_truncated_cone_is_unknown():
-    # the discovery budget drops frontier nodes (Session.truncated): a
-    # check over the cut cone finds no conflict, which proves nothing
+def test_set_over_the_budget_is_unknown():
+    # a set whose structural cone outweighs the discovery budget is not
+    # checked (#53 task 6): unknown, never raising, and every query under
+    # it is over the budget too (None); at its weight the check runs
     from sympy import Symbol, exp
     from satassume.sympy_api import _formula
     x = Symbol('x')
-    f = _formula(Q.negative(exp(x) + x**2) & Q.real(x), True)
-    assert Engine(cache=DictCache(), discovery_budget=2).verdict(f) is UNKNOWN
-    assert Engine(cache=DictCache(), discovery_budget=3).verdict(f) is INCONSISTENT
+    a = Q.negative(exp(x) + x**2) & Q.real(x)
+    f = _formula(a, True)
+    # cone: exp(x) + x**2, exp(x), x**2, x
+    eng = Engine(cache=DictCache(), discovery_budget=3)
+    assert eng.verdict(f) is UNKNOWN and eng.stats["sessions"] == 0
+    assert ask(Q.positive(x), a, eng) is None and eng.last_budget_limited
+    assert eng.ask(P('positive', x), f) is None and eng.last_budget_limited
+    assert eng.stats["sessions"] == 0
+    assert Engine(cache=DictCache(), discovery_budget=4).verdict(f) is INCONSISTENT
     # a non-commutative argument is out of scope: an opaque atom, no raise
     A = Symbol('A', commutative=False)
     g = _formula(Q.algebraic(x + A), True, True)
@@ -139,8 +151,8 @@ def test_verdict_keeps_no_session():
 
 
 def test_setting_change_recomputes_a_memoized_verdict():
-    # the verdict memoized under discovery_budget=3 (inconsistent) is not
-    # kept when the budget becomes 2, which truncates the cone (unknown)
+    # the verdict memoized under discovery_budget=4 (inconsistent) is not
+    # kept when the budget becomes 3, below the set's cone (unknown)
     from sympy import Symbol, exp
     from satassume.sympy_api import _formula
     x = Symbol('x')
@@ -149,11 +161,11 @@ def test_setting_change_recomputes_a_memoized_verdict():
     g = _formula(Q.algebraic(x + A), True, True)
     assert Engine(cache=DictCache(), discovery_budget=3).verdict(g) is CONSISTENT
     f = _formula(Q.negative(exp(x) + x**2) & Q.real(x), True, True)
-    eng = Engine(cache=DictCache(), discovery_budget=3)
+    eng = Engine(cache=DictCache(), discovery_budget=4)
     assert eng.verdict(f) is INCONSISTENT
-    eng.discovery_budget = 2
-    assert eng.verdict(f) is UNKNOWN
     eng.discovery_budget = 3
+    assert eng.verdict(f) is UNKNOWN
+    eng.discovery_budget = 4
     assert eng.verdict(f) is INCONSISTENT
     assert eng.stats["version_clears"] == 2
 

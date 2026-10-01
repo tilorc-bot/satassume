@@ -136,9 +136,6 @@ def test_k7_declared_fact_loses_definite():
             == ask(p, a & ~Q.transcendental(r), Engine(discovery_budget=5)))
 
 
-@_xfail("K7c (I3, depends): an implied declared fact loses definiteness "
-        "at discovery_budget=3 with cone search; engine.py Session._discover "
-        "(budget cut, shifted by the set check); task 6")
 def test_k7c_declared_fact_loses_definite():
     z0 = Symbol('z0', zero=True)
     he = Symbol('he', hermitian=True)
@@ -152,8 +149,6 @@ def test_k7c_declared_fact_loses_definite():
     assert ask(p, a, eng()) == ask(p, a & Not(Q.irrational(z0)), eng())
 
 
-@_xfail("K8 (I5, depends): Implies(a, c) vs Or(c, ~a) at discovery_budget=5; "
-        "engine.py Session._discover (budget cut)")
 def test_k8_implies_vs_or_restated():
     y = Symbol('y', real=True)
     r = Symbol('r', rational=True)
@@ -206,8 +201,6 @@ def test_w2a3_unrelated_out_of_scope_conjunct_sinks_answer():
             == ask(Q.real(x), Q.positive(x) & Q.invertible(m), Engine()))
 
 
-@_xfail("W2A4 (I4, depends): p vs Not(p) asymmetric at discovery_budget=1; "
-        "engine.py Session._discover/ensure (budget cut per query)")
 def test_w2a4_budget_cut_negation_asymmetry():
     x = Symbol('x')
     he = Symbol('he', hermitian=True)
@@ -304,10 +297,6 @@ def test_h2_unrelated_material_consumes_discovery_budget():
             == ask(Q.positive(x), a & Q.real(1/u),
                    Engine(discovery_budget=1, relevance=False)))
 
-@_xfail("H2b (I2, depends): unrelated predicate material consumes the "
-        "discovery budget of the query's own nodes (relevance=False, "
-        "discovery_budget=1); engine.py Session._discover/escalate (one "
-        "budget for every pending node, related or not)")
 def test_h2b_unrelated_material_consumes_discovery_budget():
     x, u = symbols('x u')
     a = Q.positive(x - 1)

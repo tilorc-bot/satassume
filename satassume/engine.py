@@ -49,7 +49,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from .compile import VarTable, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
 from .formula import P, atoms_of
-from .relations import RELATION_ATOMS, Relations, Uninterpreted
+from .relations import (RELATION_ATOMS, Relations, Uninterpreted, glue_objects,
+                        link_objects)
 from .rules import NPRED, PRED_INDEX, PREDICATES, RULE_CLAUSES, RULE_INTERNAL
 from .solver import BOTTOM, BlockOwner, Solver
 
@@ -58,7 +59,8 @@ Node = Any
 
 #: the verdicts of an assumption set (``Engine.verdict``): only
 #: ``INCONSISTENT`` makes a query raise; ``UNKNOWN`` (a theory gave up, the
-#: cone was truncated, the check could not conclude) never does
+#: set's cone is over the discovery budget, the check could not conclude)
+#: never does
 CONSISTENT = "consistent"
 INCONSISTENT = "inconsistent"
 UNKNOWN = "unknown"
@@ -76,6 +78,11 @@ _WRITEBACK = ("root-only", "provenance", "all")
 _FOREIGN = object()
 #: a missing memo entry (Session._home_of, Session._cone)
 _NO_STEP = object()
+
+#: the cap of discovery and escalation in the engine's sessions: none (the
+#: discovery budget is a test on the query's structural cone, made before
+#: any session work: Engine._within_budget)
+_UNCAPPED = float("inf")
 
 
 def _kid(atom):
@@ -215,27 +222,22 @@ class Session:
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
         # -- provenance writeback (see writeback) --
-        #: node (or custom atom) -> ``(kids, weight)`` (:meth:`_struct`):
-        #: the objects its templates (its extension facts) mention, one
-        #: level of the structural cone, and its cost to a fresh session's
-        #: budget; a function of the object and the registry, computed on
-        #: demand (only for objects a writeback decision needs), whether or
-        #: not this session visited the object
-        self.kids: Dict[Any, Any] = {}
-        #: object -> its structural cone (a frozenset, the object included)
-        #: if its weight fits ``discovery_budget``, else None (:meth:`_cone`)
-        self._cones: dict = {}
+        #: node (or custom or relation atom) -> ``(kids, weight)``
+        #: (``Engine._struct``): the engine's memo, shared by its sessions
+        #: (a function of the object and the registry)
+        self.kids: Dict[Any, Any] = engine._kids
+        #: the budget the home memo was filled under (:meth:`_sync_budget`)
         self._cone_budget = engine.discovery_budget
-        #: a budget cut dropped work: :meth:`_discover` or :meth:`escalate`
-        #: stopped on the discovery budget with unvisited nodes (new, or
-        #: with parked templates) on its frontier, or :meth:`escalate`
-        #: stopped with parked templates or derived nodes left.  Once set,
-        #: it stays.  The session may lack part of a cone in a way
-        #: ``incomplete`` misses: it writes nothing back
-        #: (:meth:`writeback`, ``Engine.is_``) and its set's complete check
-        #: gives ``UNKNOWN`` (``Engine._complete_check``).  Frontier nodes
-        #: already visited with nothing parked do not count: dropping them
-        #: drops no work.
+        #: a budget cut dropped work: :meth:`_discover` or :meth:`escalate`,
+        #: called with an explicit ``budget``, stopped with unvisited nodes
+        #: (new, or with parked templates) on its frontier, or with parked
+        #: templates or derived nodes left.  The engine never passes one:
+        #: a query whose structural cone exceeds ``discovery_budget`` is
+        #: answered None before any session work (``Engine._within_budget``)
+        #: and every other query runs discovery and escalation uncapped, so
+        #: a session the engine uses is never truncated (``Engine._note_budget``
+        #: checks it).  If set (a direct caller), the session writes nothing
+        #: back and its set's complete check gives ``UNKNOWN``.
         self.truncated = False
         #: the session asserted a cached fact (``engine.cache``,
         #: ``custom_cache``): Engine._put_result
@@ -532,7 +534,8 @@ class Session:
 
     def ensure(self, node: Node, demanded=None, budget: Optional[int] = None) -> None:
         """Demand-driven discovery: visit ``node`` and, breadth-first, the
-        nodes its templates mention, up to ``budget`` new nodes.
+        nodes its templates mention, up to ``budget`` new nodes (None: no
+        cap; the engine's queries passed ``Engine._within_budget``).
 
         A visited node with nothing parked is only recorded (the discovery
         below would skip it at once)."""
@@ -546,7 +549,8 @@ class Session:
         self._discover(demanded, budget)
 
     def _discover(self, demanded=None, budget: Optional[int] = None) -> None:
-        budget = self.engine.discovery_budget if budget is None else budget
+        if budget is None:
+            budget = _UNCAPPED
         added = 0
         pending, pending_c = self.pending, self.pending_c
         while self.frontier and added < budget:
@@ -568,8 +572,9 @@ class Session:
 
     def escalate(self, budget: Optional[int] = None) -> None:
         """Compile every parked formula and visit every derived node (full
-        instantiation of the cone)."""
-        budget = self.engine.discovery_budget if budget is None else budget
+        instantiation of the cone); ``budget`` as for :meth:`ensure`."""
+        if budget is None:
+            budget = _UNCAPPED
         added = 0
         solver = self.solver
         prev_owner = solver.owner
@@ -637,18 +642,20 @@ class Session:
             and cached facts, and those of the objects its templates
             mention, transitively: :meth:`_struct`), never a learnt or theory
             clause, relation glue or the assumptions (``BOTTOM``), and
-            ``cone(D)`` *fits the discovery budget* (:meth:`_cone`).  Every
-            clause of ``cone(D)`` is then loaded by a fresh
-            ``Engine.is_(D, ...)``, which runs out of budget neither in
-            discovery nor in escalation (:meth:`_cone` says why), and unit
+            ``cone(D)`` *fits the discovery budget* (:meth:`_cone`; a
+            fresh ``is_`` of a ``D`` over it answers None whatever is
+            cached).  Every clause of ``cone(D)`` is then loaded by a fresh
+            ``Engine.is_(D, ...)`` that escalates, which passes the budget
+            test and runs uncapped (:meth:`_cone` says why), and unit
             propagation is confluent, so that query derives the fact, or is
             decided by propagation before it escalates, soundly and so the
             same way: the cache stays a memo of ``is_`` (DESIGN.md 2.4; by
             induction, cached facts of ``cone(D)`` asserted here are
             themselves such memos, entailed by their own cones).  Neither
-            condition depends on the session's own budget or history: facts
-            of an earlier writeback of a session that a later escalation
-            truncates satisfy both too.  More cache reuse than
+            condition depends on the session or on history (the engine's
+            sessions are never truncated, ``Engine._within_budget``), so
+            this policy is history-independent at every budget, as
+            ``"root-only"`` is.  More cache reuse than
             ``"root-only"`` (facts about every node of a session, contextual
             ones included), at the measured cost of the owner bookkeeping
             and the cone tests.
@@ -726,12 +733,12 @@ class Session:
             c.put(key, pred, lit > 0)
 
     def _sync_budget(self) -> None:
-        """Drop the cone and home memos if ``Engine.discovery_budget``
-        changed since they were filled (whether a cone fits depends on it)."""
+        """Drop the home memo if ``Engine.discovery_budget`` changed since
+        it was filled (whether a cone fits depends on it; the engine's cone
+        memos are dropped by the setting change itself)."""
         budget = self.engine.discovery_budget
         if budget != self._cone_budget:
             self._cone_budget = budget
-            self._cones.clear()
             self._home.clear()
 
     def _subject(self, v: int):
@@ -842,118 +849,30 @@ class Session:
         return cone is not None and o in cone
 
     def _struct(self, o):
-        """``(kids, weight)`` of a cone object ``o``, memoized in
-        ``self.kids``.  ``kids``: the objects ``o``'s templates mention
-        (compiled patterns and formulas, extension vocabulary facts; for a
-        custom atom, its extension facts), parked and derived ones too: a
-        function of ``o`` and the registry, read from the templates whether
-        or not this session visited ``o``.  ``weight``: what ``o`` can cost
-        a fresh session's discovery budget (see :meth:`_cone`): 1 for a
-        node, 2 for a node with both compiled patterns and formulas (both
-        can be parked, and escalation counts each), 0 for a custom atom
-        (its extension facts are compiled when it is allocated, outside the
-        budget).  None for a relation atom: its glue visits nodes with
-        budgets of its own (``Relations``), so a cone holding one never
-        fits."""
-        kids = self.kids
-        r = kids.get(o)
-        if r is not None:
-            return r
-        engine = self.engine
-        ext = engine._extensions
-        if isinstance(o, P):
-            # an object of a cone that is a P is a custom or relation atom
-            # (_kid maps vocabulary atoms to their argument)
-            if o.pred in RELATION_ATOMS:
-                return None
-            k = set()
-            if ext is not None:
-                for f in ext.facts_for(o):
-                    k.update(_kid(a) for a in atoms_of(f))
-                k.discard(o)
-            r = kids[o] = (k, 0)
-            return r
-        constructing = engine._constructing
-        mine = o not in constructing
-        if mine:
-            constructing.add(o)                 # as Session.node does
-        try:
-            if engine.clause_templates is not None:
-                compiled, formulas = engine.clause_templates(o)
-            else:
-                compiled, formulas = (), engine.templates(o)
-            if ext is not None and ext._vocab:
-                formulas = list(formulas) + ext.node_facts(o)
-        finally:
-            if mine:
-                constructing.discard(o)
-        k = set()
-        for comp in compiled:
-            objs, pat = comp.objs, comp.pattern
-            k.update(objs[i] for i in pat.used if i != pat.node)
-        for f in formulas:
-            k.update(_kid(a) for a in atoms_of(f))
-        k.discard(o)
-        r = kids[o] = (k, 2 if compiled and formulas else 1)
-        return r
+        """``(kids, weight)`` of a cone object (``Engine._struct``)."""
+        return self.engine._struct(o)
 
     def _cone(self, d):
         """The structural cone of ``d`` (``d`` and every object reachable
-        through :meth:`_struct`'s kids) as a frozenset, if its *weight* (the
-        sum of the objects' weights) is at most ``Engine.discovery_budget``;
-        None otherwise (or if it holds a relation atom).  Memoized per
-        session (:meth:`_sync_budget` drops it if the budget changes).
+        through :meth:`_struct`'s kids) as a frozenset, if its weight fits
+        ``Engine.discovery_budget`` and it holds no relation atom; None
+        otherwise (``Engine._cone_info``).
 
-        Why the weight bounds a fresh ``Engine.is_(d, p)`` (and
-        ``_is_custom`` for a custom atom ``d``): its discovery
-        (:meth:`_discover`) visits nodes breadth-first from ``d`` through
-        the children its templates schedule, each node once (a node enters
-        the frontier when its variables are allocated, which happens once),
-        so it visits only nodes of ``cone(d)``, at most one budget unit
-        each; with no relation atom in the cone nothing else visits nodes.
-        Its escalation (:meth:`escalate`, a budget of its own) counts one
-        unit per node with parked clauses, one per node with parked
-        formulas (nodes visited by discovery only; escalation visits with
-        nothing parked) and one per node it visits: at most the weight.
-        So if the weight is at most the budget, neither phase stops with
-        work left: the session loads all of ``cone(d)`` before it searches,
-        and is never budget-limited."""
-        cones = self._cones
-        if d in cones:
-            return cones[d]
-        budget = self._cone_budget
-        struct = self._struct
-        seen = {d}
-        stack = [d]
-        total = 0
-        r = None
-        while stack:
-            o = stack.pop()
-            st = struct(o)
-            if st is None:
-                break
-            k, w = st
-            total += w
-            known = cones.get(o, _NO_STEP) if o is not d else _NO_STEP
-            if known is None:
-                break                           # a sub-cone that does not fit
-            if known is not _NO_STEP:
-                # a known (closed) sub-cone: count its objects, no expansion
-                for x in known:
-                    if x not in seen:
-                        seen.add(x)
-                        total += self.kids[x][1]
-            else:
-                for x in k:
-                    if x not in seen:
-                        seen.add(x)
-                        stack.append(x)
-            if total > budget:
-                break
-        else:
-            r = frozenset(seen)
-        cones[d] = r
-        return r
+        Why a cone that fits makes a fresh ``Engine.is_(d, p)`` (and
+        ``_is_custom`` for a custom atom ``d``) load every clause of
+        ``cone(d)`` before it searches: it passes the budget test
+        (``Engine._within_budget``: the weight fits), and its discovery
+        (:meth:`_discover`) and escalation (:meth:`escalate`) then run
+        uncapped, visiting breadth-first the children the templates
+        schedule and every derived node, compiling every parked template.
+        With no relation atom in the cone nothing else visits nodes, so the
+        session holds exactly ``cone(d)`` once escalated, whatever its
+        cached facts made it skip before.  A relation atom brings glue
+        whose answers are not entailments of the clauses alone (a theory
+        may give up), so such a cone is refused here (writeback), though
+        it counts toward the budget test with its glue."""
+        c, _w, rel = self.engine._cone_info(d)
+        return None if rel else c
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit: int, assumptions: Iterable[int] = (),
@@ -1112,7 +1031,13 @@ class Engine:
         Where context-free facts live.  Defaults to a fresh ``DictCache``;
         SymPy's ``_assumptions`` are never used (see ``DictCache``).
     discovery_budget : int
-        Maximum new nodes visited per query.
+        The largest structural cone a query may have: a query whose cone,
+        ``cone(p) | cone(a)`` (templates, derived nodes, extension facts
+        and relation glue, weighted as ``Session._cone`` explains), weighs
+        more is answered None before any session work, and so is every
+        query under a set whose own cone does (its verdict is ``UNKNOWN``);
+        ``last_budget_limited`` tells.  A function of the query alone
+        (``_within_budget``); every other query loads its whole cone.
     session_limit : int
         A reused contextual session is replaced once it has visited this
         many nodes.
@@ -1175,10 +1100,12 @@ class Engine:
         ``is_`` session, with no bookkeeping; ``"provenance"`` (opt-in:
         a memo too, more cache reuse, at a measured cost) every fact
         derived from its own node's structural cone only; ``"all"`` every
-        root literal (history-dependent; for measurement only).  A
-        budget-truncated session writes nothing but under ``"all"``, and
-        under the other two a fact is written only when a fresh ``is_`` of
-        it is known to load all it needs (``Session._cone``).  A setting:
+        root literal (history-dependent; for measurement only).  Under
+        the first two a fact is written only when a fresh ``is_`` of it is
+        known to load all it needs (``Session._cone``); both are
+        history-independent at every budget (no session the engine uses
+        is truncated, and an ``is_`` over the budget is None whatever is
+        cached).  A setting:
         assigning a different value drops this engine's caches
         (``_settings_changed``).
     """
@@ -1235,6 +1162,17 @@ class Engine:
         self.splits = AnswerMemo(20_000)
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
+        #: the structural cones of the discovery budget (``_struct``,
+        #: ``_cone_info``, ``_query_cone``): object -> ``(kids, weight)``,
+        #: object -> ``(cone or None, weight, has relation atom)``, formula
+        #: -> its cone record; functions of the object, the registry and
+        #: the settings, dropped with the other caches
+        self._kids: Dict[Any, Any] = {}
+        self._cones: Dict[Any, Any] = {}
+        self._qcones: Dict[Any, Any] = {}
+        #: adapters that only read linear forms for the glue's weight
+        #: (``relations.glue_objects``), by spec name
+        self._glue_adapters: Dict[str, Any] = {}
         #: assumption formulas whose session construction raised
         #: ``Uninterpreted`` -> its message (see :meth:`_context_session`)
         self._failed: Dict[Any, str] = {}
@@ -1251,9 +1189,9 @@ class Engine:
                       "version_clears": 0, "dead_sessions": 0, "set_checks": 0,
                       "writeback_refused": 0, "writeback_budget": 0,
                       "budget_limited": 0}
-        #: whether the last query's session ran out of discovery budget
-        #: (its answer is sound but may be less definite than with a larger
-        #: budget, and it wrote nothing back); False after a cache hit
+        #: whether the last query was over the discovery budget (its
+        #: structural cone outweighs ``discovery_budget``: answered None,
+        #: no session touched); a function of the query, cache hit or not
         self.last_budget_limited = False
 
     def _fresh_session(self) -> Session:
@@ -1428,11 +1366,13 @@ class Engine:
         memos, the ``Uninterpreted`` memo, the verdict memo), counted in
         ``stats["version_clears"]``, and the stores of the engine's fact
         caches (``cache``, ``custom_cache``): their facts can depend on
-        ``templates``, ``discovery_budget`` (truncated sessions),
+        ``templates``, ``discovery_budget`` (which cones fit),
         ``transfer``, ``uninterpreted`` and ``writeback``, as can a set's
         verdict.  A ``DictCache`` shared with other engines is cleared for
         them too: a needless clear for them, never a stale answer.
-        :data:`satassume.epoch.EPOCH` is untouched."""
+        :data:`satassume.epoch.EPOCH` is untouched.  The structural cone
+        memos of the budget test are dropped in every case."""
+        self._drop_cones()
         if self._epoch >= 0:
             self.stats["version_clears"] += 1
             self._context_sessions.clear()
@@ -1457,6 +1397,7 @@ class Engine:
         costs nothing."""
         epoch = _EPOCH[0]
         if self._epoch != epoch:
+            self._drop_cones()
             if self._epoch >= 0:
                 self.stats["version_clears"] += 1
                 self._context_sessions.clear()
@@ -1469,6 +1410,208 @@ class Engine:
             if cache._epoch != epoch:
                 cache.store.clear()
                 cache._epoch = epoch
+
+    # -- the discovery budget: a test on the query's structural cone ----------
+    def _drop_cones(self) -> None:
+        self._kids.clear()
+        self._cones.clear()
+        self._qcones.clear()
+        self._glue_adapters.clear()
+
+    def _struct(self, o):
+        """``(kids, weight)`` of a cone object ``o``, memoized per engine
+        (``_kids``, dropped with the other caches).  ``kids``: the objects
+        ``o``'s templates mention (compiled patterns and formulas, extension
+        vocabulary facts; for a custom atom, its extension facts; for a
+        relation atom of an engine with adapters, what its glue can visit,
+        ``relations.glue_objects``), parked and derived ones too: a function
+        of ``o``, the registry and the settings, read whether or not a
+        session visited ``o``.  ``weight``: 1 for a node, 2 for a node with
+        both compiled patterns and formulas (both can be parked, and
+        escalation handles each), 0 for a custom or relation atom (no node
+        of its own)."""
+        kids = self._kids
+        r = kids.get(o)
+        if r is not None:
+            return r
+        if len(kids) >= 200_000:
+            kids.clear()
+        ext = self._extensions
+        if isinstance(o, P):
+            # an object of a cone that is a P is a custom or relation atom
+            # (_kid maps vocabulary atoms to their argument)
+            if o.pred in RELATION_ATOMS and self._relation_specs:
+                r = kids[o] = (glue_objects(o, self._relation_specs, self._glue_adapters), 0)
+                return r
+            k = set()
+            if ext is not None:
+                for f in ext.facts_for(o):
+                    k.update(_kid(a) for a in atoms_of(f))
+                k.discard(o)
+            r = kids[o] = (k, 0)
+            return r
+        constructing = self._constructing
+        mine = o not in constructing
+        if mine:
+            constructing.add(o)                 # as Session.node does
+        try:
+            if self.clause_templates is not None:
+                compiled, formulas = self.clause_templates(o)
+            else:
+                compiled, formulas = (), self.templates(o)
+            if ext is not None and ext._vocab:
+                formulas = list(formulas) + ext.node_facts(o)
+        finally:
+            if mine:
+                constructing.discard(o)
+        k = set()
+        for comp in compiled:
+            objs, pat = comp.objs, comp.pattern
+            k.update(objs[i] for i in pat.used if i != pat.node)
+        for f in formulas:
+            k.update(_kid(a) for a in atoms_of(f))
+        k.discard(o)
+        r = kids[o] = (k, 2 if compiled and formulas else 1)
+        return r
+
+    def _cone_info(self, d):
+        """``(cone, weight, rel)`` for the cone object ``d``: its structural
+        cone (``d`` and every object reachable through :meth:`_struct`'s
+        kids) as a frozenset and its weight (the sum of the objects'
+        weights) if that is at most ``discovery_budget``, else ``(None, w,
+        rel)`` with ``w`` past the budget; ``rel``: the cone holds a relation
+        atom (meaningful when it fits).  Memoized per engine."""
+        cones = self._cones
+        r = cones.get(d)
+        if r is not None:
+            return r
+        budget = self._discovery_budget
+        struct = self._struct
+        seen = {d}
+        stack = [d]
+        total = 0
+        rel = False
+        over = False
+        while stack:
+            o = stack.pop()
+            k, w = struct(o)
+            total += w
+            if type(o) is P and o.pred in RELATION_ATOMS:
+                rel = True
+            known = cones.get(o) if o is not d else None
+            if known is not None:
+                kc, _kw, krel = known
+                if kc is None:
+                    over = True                 # a sub-cone that does not fit
+                    break
+                rel = rel or krel
+                # a known (closed) sub-cone: count its objects, no expansion
+                for x in kc:
+                    if x not in seen:
+                        seen.add(x)
+                        total += struct(x)[1]
+            else:
+                for x in k:
+                    if x not in seen:
+                        seen.add(x)
+                        stack.append(x)
+            if total > budget:
+                over = True
+                break
+        r = (None, max(total, budget + 1), rel) if over else (frozenset(seen), total, rel)
+        if len(cones) >= 100_000:
+            cones.clear()
+        cones[d] = r
+        return r
+
+    def _query_cone(self, f, link: bool):
+        """``(cone, weight, rel, sums)`` for a formula ``f`` (a query or an
+        assumption set): the union of the cones of its atoms' objects
+        (:func:`_kid`) and, with ``link`` (the session's relation glue
+        runs), of the objects of the link of every vocabulary argument
+        (``relations.link_objects``); cone None if it outweighs the budget.
+        ``sums``: the sums under its sign atoms (``Session._affine_links``).
+        Memoized per engine."""
+        key = (f, link)
+        qc = self._qcones
+        r = qc.get(key)
+        if r is not None:
+            return r
+        atoms = atoms_of(f)
+        objs = {_kid(a) for a in atoms}
+        if link:
+            specs, memo = self._relation_specs, self._glue_adapters
+            for a in atoms:
+                if a.pred in PRED_INDEX:
+                    objs |= link_objects(a.expr, specs, memo)
+        sums = frozenset(a.expr for a in atoms if a.pred in _SIGN_PREDS
+                         and getattr(a.expr, "is_Add", False)
+                         and getattr(a.expr, "free_symbols", None))
+        r = self._union(objs) + (sums,)
+        if len(qc) >= 50_000:
+            qc.clear()
+        qc[key] = r
+        return r
+
+    def _union(self, objs):
+        """``(cone, weight, rel)`` of the union of the cones of ``objs``
+        (cone None if it outweighs the budget)."""
+        budget = self._discovery_budget
+        struct = self._struct
+        cone = frozenset()
+        weight = 0
+        rel = False
+        for o in objs:
+            c, w, r = self._cone_info(o)
+            if c is None:
+                return None, w, r
+            rel = rel or r
+            if not cone:
+                cone, weight = c, w
+                continue
+            new = c - cone
+            if new:
+                weight += w if len(new) == len(c) else sum(struct(x)[1] for x in new)
+                if weight > budget:
+                    return None, weight, rel
+                cone = cone | new
+        return cone, weight, rel
+
+    def _within_budget(self, proposition, assumptions=None) -> bool:
+        """The discovery budget's test (``discovery_budget``): whether the
+        structural cone of the query, ``cone(proposition) |
+        cone(assumptions)`` (assumptions None: a query without them),
+        weighs at most the budget; with the links of the relation glue
+        when the query's session runs it (a relation atom in the cone, or
+        two sign atoms on sums, ``Session._affine_links``; conservative).
+        Decided from the structure alone, before any session work, so a
+        function of the query, the registry and the settings: never of the
+        sessions, the caches or earlier queries.  A query that passes runs
+        discovery and escalation uncapped and loads its whole cone."""
+        _c, _w, rel, sums = self._query_cone(proposition, False)
+        if assumptions is not None:
+            _c, _w, rel_a, sums_a = self._query_cone(assumptions, False)
+            rel = rel or rel_a
+            sums = sums | sums_a
+        link = bool(self._relation_specs) and (rel or len(sums) >= 2)
+        cp, wp, _r, _s = self._query_cone(proposition, link)
+        if cp is None:
+            return False
+        if assumptions is None:
+            return True
+        ca, wa, _r, _s = self._query_cone(assumptions, link)
+        if ca is None:
+            return False
+        if wp + wa <= self._discovery_budget:
+            return True
+        struct = self._struct
+        return wp + sum(struct(x)[1] for x in ca if x not in cp) <= self._discovery_budget
+
+    def _over_budget(self) -> None:
+        """A query over the discovery budget: None, no session touched."""
+        self.last_budget_limited = True
+        self.stats["budget_limited"] += 1
+        return None
 
     def _context_session(self, assumptions) -> Tuple[Session, List[int]]:
         if self._epoch != _EPOCH[0]:
@@ -1572,9 +1715,13 @@ class Engine:
         evict it.  If the whole set is queried later its session is built
         then, by the same steps (see :meth:`_build_context`), so what a
         query sees does not depend on whether a verdict was asked
-        first."""
+        first.  A set whose structural cone outweighs ``discovery_budget``
+        is ``UNKNOWN`` without any session (every query under it is over
+        the budget too: ``_within_budget``)."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
+        if not self._within_budget(assumptions):
+            return UNKNOWN
         v = self._verdict.get(assumptions)
         if v is not None:
             return v
@@ -1607,8 +1754,9 @@ class Engine:
         search.  ``INCONSISTENT`` only on a conflict, which is sound even
         if a theory gave up afterwards (its earlier conflicts were valid,
         satassume.theory); ``UNKNOWN`` if no conflict was found but a
-        theory gave up or the cone is truncated by the discovery budget
-        (then a model of the clauses is no model of the set);
+        theory gave up or the session is truncated (only with an explicit
+        budget; a set over the discovery budget never gets here, see
+        :meth:`verdict`; then a model of the clauses is no model of the set);
         ``CONSISTENT`` otherwise."""
         solver = s.solver
         if s.xfer is not None:
@@ -1633,19 +1781,26 @@ class Engine:
     # -- context-free ---------------------------------------------------------
     def is_(self, node: Node, pred: str) -> Optional[bool]:
         """Context-free truth value of ``pred(node)``; cached on the node
-        (custom predicates: in the engine's own cache)."""
+        (custom predicates: in the engine's own cache).  None if the cone
+        of ``node`` outweighs ``discovery_budget`` (``last_budget_limited``),
+        whatever is cached."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
         if pred not in PRED_INDEX:
             return self._is_custom(node, pred)
+        if node in self._constructing:
+            # re-entrant query from a template evaluating this very node
+            return None
+        c = self._cones.get(node)
+        if c is None:
+            c = self._cone_info(node)
+        if c[0] is None:
+            return self._over_budget()
         facts = self.cache.facts(node)
         if facts is not None and pred in facts:
             self.stats["cache_hits"] += 1
             self.last_budget_limited = False
             return facts[pred]
-        if node in self._constructing:
-            # re-entrant query from a template evaluating this very node
-            return None
         self.stats["queries"] += 1
         s = self._fresh_session()
         s.ensure(node, {pred})
@@ -1665,22 +1820,23 @@ class Engine:
         """Cache the answer ``r`` of the context-free query ``pred(node)``
         (``subject``: ``node``, or the custom atom), unless a fresh engine's
         same query could answer otherwise (``"all"`` caches it anyway).
-        A session that ran out of discovery budget caches nothing: ``r`` is
-        a function of the budget's cut, not of the node alone.  Otherwise
-        ``"root-only"``: :meth:`_put_root_only`.  ``"provenance"``: ``r``
-        is not cached if it was decided before escalation with work still
-        parked or deferred (``s.incomplete``) and ``cone(subject)`` does not
-        fit the budget (``Session._cone``).  The fresh query discovers the
-        same nodes and parks the same clauses (both depend on the node and
-        the predicate only, not on cached values), but without this
-        engine's cached facts it may have to escalate, and that escalation
-        could run out of budget.  Otherwise the fresh query either escalates
-        exactly as this one did (no truncation) or does not need to, and
-        answers ``r``: the same clauses up to cached facts, which are memos
-        entailed by them, and a complete search.  A session that engaged
+        ``s`` passed the budget test (``_within_budget``), ran uncapped and
+        is never truncated (a truncated session, possible only with an
+        explicit budget, would cache nothing).  ``"root-only"``:
+        :meth:`_put_root_only`.  ``"provenance"``: ``r`` is not cached if
+        it was decided before escalation with work still parked or deferred
+        (``s.incomplete``) and ``Session._cone`` refuses ``cone(subject)``.
+        The fresh query discovers the same nodes and parks the same clauses
+        (both depend on the node and the predicate only, not on cached
+        values), but without this engine's cached facts it may have to
+        escalate; it then loads the whole cone (uncapped) and searches.
+        So the fresh query either escalates exactly as this one did or does
+        not need to, and answers ``r``: the same clauses up to cached facts,
+        which are memos entailed by them, and a complete search.  A session that engaged
         relation glue (only through extension facts naming relation atoms)
         is cached only through the cone rule, which refuses cones with
         relation atoms."""
+        assert not s.truncated, "a session of a query within the budget was truncated"
         self.last_budget_limited = s.truncated
         policy = self._writeback
         if s.truncated:
@@ -1715,20 +1871,17 @@ class Engine:
           exactly when ``s`` did (it propagates less), without truncation,
           and answers ``r`` (``s``'s clauses minus cached facts entailed by
           them, a complete search).  So ``r`` is written.  A fresh
-          ``is_(node, q)`` of another predicate visits only nodes of ``V``,
-          each once in discovery (at most ``|V|`` units of budget) and, in
-          escalation, spends one unit per node with parked clauses, one per
-          node with parked formulas and one per node it visits (at most
-          ``2|V|``): if ``2|V| <= discovery_budget`` it is never truncated,
-          so it loads every clause of ``V`` before it searches and answers
-          the value ``s`` derived.  Otherwise the exact test
-          ``Session._cone`` decides.
+          ``is_(node, q)`` of another predicate passes the same budget test
+          (the cone of ``node``) and runs uncapped, so it is decided by
+          propagation (soundly) or loads every clause of ``V`` before it
+          searches, and answers the value ``s`` derived.
         * ``s`` is incomplete: it was decided by propagation before
           escalation.  If it asserted no cached fact, it *is* the fresh
           session (nothing else of the engine enters a session), so ``r``
           is written; the other facts need ``Session._cone``.  If it
-          asserted cached facts, a fresh session may need an escalation
-          that runs out of budget: everything needs ``Session._cone``.
+          asserted cached facts, a fresh session may need an escalation:
+          everything needs ``Session._cone`` (conservative: it refuses a
+          cone with a relation atom, whose glue this session never ran).
 
         Cone tests run only when there is something to write that the
         cheap tests do not settle; refusals count in ``writeback_budget``.
@@ -1750,7 +1903,7 @@ class Engine:
                     todo.append((p, v))
         if not todo:
             return
-        if not (complete and 2 * len(s.base) <= self._discovery_budget):
+        if not complete:
             s._sync_budget()
             if s._cone(subject) is None:
                 self.stats["writeback_budget"] += 1
@@ -1761,6 +1914,9 @@ class Engine:
     def _is_custom(self, node: Node, pred: str) -> Optional[bool]:
         if self._epoch != _EPOCH[0]:
             self._check_version()
+        atom = P(pred, node)
+        if self._cone_info(atom)[0] is None:
+            return self._over_budget()
         facts = self.custom_cache.facts(node)
         if facts is not None and pred in facts:
             self.stats["cache_hits"] += 1
@@ -1768,7 +1924,6 @@ class Engine:
             return facts[pred]
         self.stats["queries"] += 1
         s = self._fresh_session()
-        atom = P(pred, node)
         lit = s.literal_of(atom)
         r = s.query_literal(lit, search=False)
         if r is None and s.incomplete:
@@ -1792,6 +1947,8 @@ class Engine:
         self.stats["queries"] += 1
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
+        if not self._within_budget(proposition, assumptions if contextual else None):
+            return self._over_budget()
         if contextual:
             s, lits = self._context_session(assumptions)
         else:
@@ -1858,6 +2015,8 @@ class Engine:
         return r
 
     def _note_budget(self, s: Session) -> None:
+        # the query passed _within_budget, so its session ran uncapped
+        assert not s.truncated, "a session of a query within the budget was truncated"
         self.last_budget_limited = s.truncated
         if s.truncated:
             self.stats["budget_limited"] += 1
