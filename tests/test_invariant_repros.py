@@ -24,7 +24,8 @@ hunts checked these invariants:
 Each test below pins one violation found at f055b7b by the invariant
 hunts: families K1-K8 (with the second entry paths K3b and K6b), W2A1-W2A4
 and W2B1-W2B4; and the invariant harness's own findings that no earlier
-test covers: families H1-H2 and the entry path W2A3c.  Each asserts that the invariant holds, so it xfails while
+test covers: families H1-H2 and the entry path W2A3c; and W2B4b, a
+sibling of W2B4 that a plan review found.  Each asserts that the invariant holds, so it xfails while
 the bug is present and XPASSes (failing the run, ``strict=True``) once it
 is fixed: the PR that fixes a family removes its marker.
 
@@ -276,6 +277,17 @@ def test_w2b4_unrelated_equality_engages_transfer():
     a = Q.positive(f(y)) & Q.le(x, y) & Q.ge(x, y)
     assert (ask(Q.positive(f(x)), a, Engine())
             == ask(Q.positive(f(x)), a & Q.eq(u, v), Engine()))
+
+
+@_xfail("W2B4b (I5, depends): an equality LRA derives from two inequalities "
+        "(x <= y & x >= y vs x = y) does not engage transfer; relations.py "
+        "Relations._want_transfer/_engage_transfer (only a syntactic eq atom)")
+def test_w2b4b_derived_equality_does_not_engage_transfer():
+    x, y = symbols('x y')
+    f = Function('f')
+    p = Q.positive(f(x))
+    assert (ask(p, Q.positive(f(y)) & Q.eq(x, y), Engine())
+            == ask(p, Q.positive(f(y)) & Q.le(x, y) & Q.ge(x, y), Engine()))
 
 
 @_xfail("H1 (I5, depends): an equality of non-real terms restated "
