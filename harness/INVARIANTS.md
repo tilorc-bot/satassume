@@ -304,6 +304,23 @@ R2).  Failing variants stay pinned:
 the original set), H2b, W2B3b and W2B3c in
 `tests/test_invariant_repros.py`.
 
+### Status after the budget became a test on the query's cone (#53 task 6)
+
+A query is budget-limited iff the weight of its structural cone
+`cone(p) | cone(a)` (templates, derived nodes, extension facts, relation
+glue) exceeds `discovery_budget`, decided before any session work
+(`Engine._within_budget`): such a query is None, a set over the budget is
+`unknown`, and every other query runs discovery and escalation uncapped
+(no session is ever truncated).  The answer and `last_budget_limited` are
+functions of the query.  Fixed and moved to `fixed/`:
+`I2-predicates-only-exhaust-discovery-budget-budget2`,
+`I5-implied-conjunct-rescues-budget-budget1`,
+`I5-proposition-negated-swapped-boundary-budget`; K7c, K8, W2A4 and H2b
+are unpinned.  What remains is by design: with `relevance=False` an
+unrelated conjunct is part of the input, so between `|cone(p, a)|` and
+`|cone(p, a & B)|` the two spellings differ
+(`tests/test_budget_cone.py`, H2's residual).
+
 The findings below describe the cases as found.
 
 ### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
