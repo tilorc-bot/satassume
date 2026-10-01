@@ -270,6 +270,9 @@ non-commutativity that made C4 wrong.
 | T3 | `ask(Q.eq(u, oo), S)`, `S = Q.positive_infinite(u) & Q.positive(f(oo))` | `ask(Q.positive(f(u)), S)` | True | None | T |
 | T4 | `ask(Q.eq(u, y), S)`, `S = Q.zero(u) & Q.zero(v) & Q.positive(f(v))` | `ask(Q.positive(f(u)), S)` | True | None | T |
 | T5 | `ask(Q.is_true(Eq(u, y)), S)`, `S = Q.zero(u) & Q.positive(f(0) + 1)` | `ask(Q.positive(f(u) + 1), S)` | True | None | T |
+| S1 | `ask(Q.real(w), S)`, `S = Q.eq(y, q) & Q.irrational(-1/(m*w*y))` | `ask(Q.eq(q, w), S)` | None | False | S |
+
+S1 (reused-session glue, stage 5 of #53) uses `y` real, `q` rational, `m` nonnegative integer, `w` nonzero, and the configuration `discovery_budget=12, session_limit=12, keep_sessions=1, cone_threshold=0, cone_search=False, relevance=False, transfer=False` (other fields default); the fresh False is correct (`w` must be irrational).  It was found by the stage-3 review; no budget truncation is involved; stage 5 (selectors) is expected to fix it.
 
 G1-G6 were fixed on `main` by #51 (the sign facts of two sums now reach
 LRA in a fresh session, so a fresh engine answers them too): they moved to

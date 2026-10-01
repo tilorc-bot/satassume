@@ -118,8 +118,8 @@ def test_module_state_inventory_is_classified():
 
 #: family of a repro file whose name does not start with it; issue filed
 #: for a family
-FAMILY = {"C6b": "C'", "E1c": "E", "Gp1": "G'", "Gp2": "G'"}
-ISSUES = {"G": "#42", "G'": "#42", "C": "#47", "E": "#53"}
+FAMILY = {"C6b": "C'", "E1c": "E", "Gp1": "G'", "Gp2": "G'", "S1": "S"}
+ISSUES = {"G": "#42", "G'": "#42", "C": "#47", "E": "#53", "S": "#53"}
 
 
 def _repro_params():

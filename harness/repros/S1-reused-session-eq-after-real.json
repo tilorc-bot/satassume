@@ -1,0 +1,52 @@
+{
+ "config": {
+  "name": "seed41",
+  "discovery_budget": 12,
+  "session_limit": 12,
+  "keep_sessions": 1,
+  "cone_search": false,
+  "cone_threshold": 0,
+  "transfer": false,
+  "uninterpreted": "none",
+  "relevance": false,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "kind": "none-vs-definite",
+ "group_size": 1,
+ "order": "hand",
+ "index": 1,
+ "source": "stage-3 fable review, harness seed 41 (hand-minimized)",
+ "item": {
+  "kind": "ask",
+  "prop": "AppliedBinaryRelation(Q.eq, Symbol('q', rational=True), Symbol('w', nonzero=True))",
+  "assum": "And(AppliedBinaryRelation(Q.eq, Symbol('y', real=True), Symbol('q', rational=True)), AppliedPredicate(Q.irrational, Mul(Integer(-1), Pow(Symbol('y', real=True), Integer(-1)), Pow(Symbol('w', nonzero=True), Integer(-1)), Pow(Symbol('m', nonnegative=True, integer=True), Integer(-1)))))"
+ },
+ "warm": "None",
+ "ref": "False",
+ "ref_level": 1,
+ "prefix": [
+  {
+   "kind": "ask",
+   "prop": "AppliedPredicate(Q.real, Symbol('w', nonzero=True))",
+   "assum": "And(AppliedBinaryRelation(Q.eq, Symbol('y', real=True), Symbol('q', rational=True)), AppliedPredicate(Q.irrational, Mul(Integer(-1), Pow(Symbol('y', real=True), Integer(-1)), Pow(Symbol('w', nonzero=True), Integer(-1)), Pow(Symbol('m', nonnegative=True, integer=True), Integer(-1)))))"
+  }
+ ],
+ "full_prefix_len": 1,
+ "shrunk": true,
+ "confirmations": {
+  "reproduces_from_prefix": true,
+  "family": "S",
+  "hashseed=0": {
+   "warm": "None",
+   "ref": "False"
+  },
+  "hashseed=1": {
+   "warm": "None",
+   "ref": "False"
+  }
+ }
+}
