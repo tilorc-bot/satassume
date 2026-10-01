@@ -89,7 +89,7 @@ def _drop(lits: Sequence[int], seed: int, rate: float) -> bool:
 
 
 @contextlib.contextmanager
-def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None):
+def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None, blocks: bool = False):
     """While active, every ``Solver.add_clause`` / ``add_clauses`` /
     ``add_internal`` drops the clauses ``_drop`` selects (an engine change
     is not needed: the engine only ever sees a subset of the clauses it
@@ -97,8 +97,17 @@ def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None):
     way.  Not covered: the lazily loaded rule blocks (``mention_blocks``),
     which are propagated without clauses."""
     orig_add, orig_bulk, orig_int = Solver.add_clause, Solver.add_clauses, Solver.add_internal
-    orig_pat = Solver.add_pattern
-    n = {"dropped": 0, "kept": 0}
+    orig_pat, orig_reg = Solver.add_pattern, Solver.register_block
+    n = {"dropped": 0, "kept": 0, "blocks": 0}
+
+    def register_block(self, base, mentions=0):
+        # ``blocks``: the lazily loaded rule block instantiated as clauses
+        # (``set_rule_block``: the solver then "behaves as if
+        # add_pattern(block, base, nvars) had been called"), minus the
+        # dropped ones; the reference of such a check is the same patch at
+        # rate 0 (eager blocks, nothing dropped), see ``check_I1``
+        n["blocks"] += 1
+        return add_pattern(self, self._rb_clauses, base, self._rb_n)
 
     def add_clause(self, lits):
         lits = list(lits)
@@ -147,11 +156,13 @@ def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None):
 
     Solver.add_clause, Solver.add_clauses, Solver.add_internal = add_clause, add_clauses, add_internal
     Solver.add_pattern = add_pattern
+    if blocks:
+        Solver.register_block = register_block
     try:
         yield n
     finally:
         Solver.add_clause, Solver.add_clauses, Solver.add_internal = orig_add, orig_bulk, orig_int
-        Solver.add_pattern = orig_pat
+        Solver.add_pattern, Solver.register_block = orig_pat, orig_reg
         if stats is not None:
             stats.update(n)
 
@@ -805,10 +816,24 @@ def check_I1(prop, assum, config, base, rng, variant=None):
     if variant is None:
         variant = {"kind": "drop", "seed": rng.randrange(1 << 30),
                    "rate": rng.choice([0.03, 0.1, 0.25, 0.5])}
+        if rng.random() < I1_BLOCKS_RATE:
+            variant["blocks"] = True
     stats: dict = {}
-    with dropping_clauses(variant["seed"], variant["rate"], stats):
+    blocks = bool(variant.get("blocks"))
+    if blocks:
+        # the rule blocks as clauses: the reference is the eager solver
+        # with nothing dropped (the engine says it answers as the lazy
+        # block does, or more definitely, which is not I1's statement),
+        # and the check is inconclusive when that reference differs
+        with dropping_clauses(variant["seed"], 0.0, blocks=True):
+            ref = fresh_outcome(prop, assum, config)
+        if ref != base:
+            return None, ref, dict(variant, eager=ref, inconclusive="eager blocks answer differently")
+    with dropping_clauses(variant["seed"], variant["rate"], stats, blocks=blocks):
         other = fresh_outcome(prop, assum, config)
     variant = dict(variant, dropped=stats.get("dropped", 0), kept=stats.get("kept", 0))
+    if blocks:
+        variant["blocks_as_clauses"] = stats.get("blocks", 0)
     sev = None
     if "ValueError" not in (base, other):
         if _definite(base) and _definite(other) and base != other:
@@ -954,6 +979,9 @@ def check_I6(prop, assum, config, base, rng, variant=None):
 
 
 RENAME_LIMIT = 1500
+#: share of I1 checks that instantiate the lazily loaded rule blocks as
+#: clauses (``dropping_clauses(blocks=True)``) and drop among them too
+I1_BLOCKS_RATE = 1.0 if os.environ.get('I1_BLOCKS_ALL') else 0.3
 #: share of I2 checks that also register fresh extensions
 I2_EXTENSION_RATE = 0.3
 #: share of I5 checks that respell the conjunction (order, duplicate, nesting)
