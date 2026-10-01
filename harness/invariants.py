@@ -8,8 +8,11 @@ history) and compares the answers of fresh engines under the exact
 statement of the invariant.  Nothing here is heuristic: a pair of answers
 is reported only if the invariant as stated forbids it, the assumption set
 is known consistent (a model found by the engine's own solver with full
-escalation and search, ``sympy_api._consistent``), and neither answer is
-an inconsistency report (``ValueError``: allowed whatever the history).
+escalation and search, ``sympy_api._consistent``, or a concrete
+assignment from a grid, ``harness.models.find_model``: ``consistent_by``),
+and neither answer is an inconsistency report (``ValueError``: allowed
+whatever the history).  The engine's documented scope is a tag on a case
+(``scope``), never a reason to skip the oracle.
 
 Severity classes (``SEVERITY``, most important first):
 
@@ -334,10 +337,10 @@ class Unrelated:
         """A satisfiable conjunct over fresh symbols: an atom (``atom``),
         or ``Or``/``Implies``/``Equivalent`` of two atoms over disjoint
         symbols (satisfiable: the consequent's model plus any value for the
-        rest), or ``Q.is_true`` around one.  No matrix atoms and no
-        unregistered custom predicates: the engine documents both as out of
-        scope (``sympy_api.out_of_scope``) and answers None for the whole
-        set, which is not an I2 violation but the documented contract."""
+        rest), or ``Q.is_true`` around one; at ``OOS_RATE`` (``any`` mode)
+        a piece the engine documents as out of scope (``out_of_scope``: a
+        matrix atom, ``Q.is_true`` over a non-relation, an unregistered
+        predicate), which the invariant does not exempt."""
         r = self.rng
         c = r.random()
         if self.mode == "any" and r.random() < OOS_RATE:
