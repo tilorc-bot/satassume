@@ -120,8 +120,9 @@ and every assignment of an engine's `extensions` or `relation_specs` bumps,
 and is dropped at the next query when the epoch has moved on; a session that a
 query made raise is dropped with the raise. So an answer is a function of the
 query, the assumptions, the engine's configuration and the registrations in
-force, never of earlier queries. Discovery visits only the cone of the queried
-expression, root-level propagation decides most queries, and search runs
+force, never of earlier queries. Discovery in a fresh session visits only the
+cone of the query (a reused session may also escalate what earlier queries
+left, which changes the cost, never the answer), root-level propagation decides most queries, and search runs
 only when propagation is inconclusive.
 
 ## Layout

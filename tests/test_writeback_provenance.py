@@ -3,8 +3,9 @@
 with a clause from outside their node's cone are not written (a clause the
 solver shortened with a foreign root fact included); facts of a node whose
 cone does not fit the discovery budget are not written; the
-``"root-only"`` policy (the default: no provenance bookkeeping); a
-budget-truncated session writes nothing."""
+``"root-only"`` policy (the default: no provenance bookkeeping); a query
+over the discovery budget is None, whatever is cached, and writes
+nothing."""
 import pytest
 
 from satassume import Engine, DictCache, P, Implies, Not, And, Or, allargs
@@ -138,15 +139,19 @@ def test_unknown_writeback_policy_raises():
 
 
 @pytest.mark.parametrize("policy", ["provenance", "root-only"])
-def test_truncated_session_writes_nothing(policy):
+def test_query_over_the_budget_is_none_whatever_is_cached(policy):
+    # the cone of node (3 nodes) outweighs the budget: None before any
+    # session work (#53 task 6), although a cached fact of node decides it
     node = ('add', ('add', 'x', 'w'), 'y')
     cache = DictCache()
     cache.put(node, 'positive', True)
     eng = Engine(templates=templates, cache=cache, discovery_budget=1, writeback=policy)
-    assert eng.is_(node, 'real') is True      # the cached unit, by the rule block
+    assert eng.is_(node, 'real') is None
     assert eng.last_budget_limited is True
-    assert eng.stats["budget_limited"] == 1
-    # neither the closure of the cached fact nor the answer is cached
+    assert eng.stats["budget_limited"] == 1 and eng.stats["sessions"] == 0
+    # so is a cached question: the answer is a function of the query
+    assert eng.is_(node, 'positive') is None and eng.last_budget_limited
+    assert eng.ask(P('real', node)) is None and eng.last_budget_limited
     assert cache.facts(node) == {'positive': True}
     assert cache.facts('y') is None
     eng2 = Engine(templates=templates, cache=DictCache(), writeback=policy)
@@ -250,23 +255,27 @@ def _chain_engine(budget, policy="provenance"):
 
 @pytest.mark.parametrize("policy", ["provenance", "root-only"])
 def test_reused_session_past_the_budget_writes_only_facts_of_cones_that_fit(policy):
-    """a_chain (fable review): the same assumptions reuse one contextual
-    session, which grows by one node per call past the discovery budget
-    without ever being truncated; the facts of a node whose cone is larger
-    than the budget are not written (a fresh is_ of it runs out of
-    budget)."""
-    eng = _chain_engine(2, policy)
+    """a_chain (fable review), with the budget a test on the query's cone
+    (#53 task 6): the same assumptions reuse one contextual session, one
+    node larger per call; a query whose cone (with the assumptions')
+    outweighs the budget is None before any session work, warm as fresh,
+    and the facts of a node whose cone does not fit are never written."""
+    eng = _chain_engine(4, policy)
     e = 'y'
-    for _ in range(4):
+    for k in range(4):
         e = ('add', e)
-        assert eng.ask(P('positive', e), P('real', 'w')) is True
-        assert eng.last_budget_limited is False
+        r = eng.ask(P('positive', e), P('real', 'w'))
+        over = k + 3 > 4                    # cone(e): k + 2 nodes, and w
+        assert r is (None if over else True)
+        assert eng.last_budget_limited is over
+        fresh = _chain_engine(4, policy)
+        assert fresh.ask(P('positive', e), P('real', 'w')) is r
+        assert fresh.last_budget_limited is over
     if policy == "provenance":
         assert eng.cache.get(('add', 'y'), 'positive') is True      # cone of 2 fits
-        assert eng.stats["writeback_budget"] > 0
-    assert eng.cache.facts(('add', ('add', 'y'))) is None           # cone of 3 does not
-    assert _not_memos(eng, lambda: _chain_engine(2, policy)) == []
-    fresh = _chain_engine(2, policy)
+    assert eng.cache.facts(('add', ('add', ('add', ('add', 'y'))))) is None   # 5 does not
+    assert _not_memos(eng, lambda: _chain_engine(4, policy)) == []
+    fresh = _chain_engine(4, policy)
     assert fresh.is_(e, 'positive') is None and fresh.last_budget_limited
     assert eng.is_(e, 'positive') is None and eng.last_budget_limited
 
@@ -274,7 +283,8 @@ def test_reused_session_past_the_budget_writes_only_facts_of_cones_that_fit(poli
 @pytest.mark.parametrize("policy", ["provenance", "root-only"])
 def test_reused_session_past_the_budget_sympy(policy):
     """a_final (fable review), on SymPy nodes: exp(exp(exp(x))) has a cone
-    of 4 nodes, the budget is 3."""
+    of 4 nodes, the budget is 3; warm and fresh agree on every answer and
+    on ``last_budget_limited`` (DESIGN.md 2.5 (i) is gone)."""
     sympy = pytest.importorskip("sympy")
     x = sympy.Symbol('x', positive=True)
     y = sympy.Symbol('y')
@@ -282,18 +292,19 @@ def test_reused_session_past_the_budget_sympy(policy):
     e = x
     for _ in range(3):
         e = sympy.exp(e)
-        eng.ask(P('positive', e), P('real', y))     # a reused session, one node more per call
+        r = eng.ask(P('positive', e), P('real', y))     # a reused session
+        fresh = Engine(discovery_budget=3, writeback=policy)
+        assert fresh.ask(P('positive', e), P('real', y)) is r
+        assert fresh.last_budget_limited is eng.last_budget_limited
+    assert eng.last_budget_limited
     assert eng.cache.get(e, 'positive', 'missing') == 'missing'
-    if policy == "provenance":
-        assert eng.stats["writeback_budget"] > 0
     assert _not_memos(eng, lambda: Engine(discovery_budget=3, writeback=policy)) == []
     fresh = Engine(discovery_budget=3, writeback=policy)
     r = fresh.is_(e, 'positive')
     assert r is None and fresh.last_budget_limited
-    # the warm is_ is budget-limited as well (it may be more definite, from
-    # the memos of smaller nodes: DESIGN.md 2.5 (i)), and caches nothing
+    # the warm is_ is the fresh one: over the budget, whatever is cached
     w = eng.is_(e, 'positive')
-    assert eng.last_budget_limited and (w is r or w is True)
+    assert w is None and eng.last_budget_limited
     assert eng.cache.get(e, 'positive', 'missing') == 'missing'
 
 
@@ -356,11 +367,12 @@ def _parked_engine(budget, policy):
 
 @pytest.mark.parametrize("policy", ["provenance", "root-only"])
 def test_answer_decided_with_work_parked_is_cached_only_if_the_cone_fits(policy):
+    # the cone of DP (5 objects) outweighs the budget (2): None, although
+    # propagation would decide it before escalation (#53 task 6)
     eng = _parked_engine(2, policy)
-    assert eng.is_(DP, 'positive') is True
-    assert eng.last_budget_limited is False
+    assert eng.is_(DP, 'positive') is None
+    assert eng.last_budget_limited is True
     assert eng.cache.facts(DP) is None
-    assert eng.stats["writeback_budget"] > 0
     assert _not_memos(eng, lambda: _parked_engine(2, policy)) == []
     eng = _parked_engine(5, policy)
     assert eng.is_(DP, 'positive') is True

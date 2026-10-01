@@ -304,6 +304,31 @@ R2).  Failing variants stay pinned:
 the original set), H2b, W2B3b and W2B3c in
 `tests/test_invariant_repros.py`.
 
+### Status after the budget became a test on the query's cone (#53 task 6)
+
+A query is budget-limited iff the weight of its structural cone
+`cone(p) | cone(a)` (templates, derived nodes, extension facts, relation
+glue) exceeds `discovery_budget`, decided before any session work
+(`Engine._within_budget`): such a query is None, a set over the budget is
+`unknown`, and every other query runs discovery and escalation uncapped
+(no session is ever truncated).  The answer and `last_budget_limited` are
+functions of the query.  Fixed and moved to `fixed/`:
+`I2-predicates-only-exhaust-discovery-budget-budget2`,
+`I5-implied-conjunct-rescues-budget-budget1`,
+`I5-proposition-negated-swapped-boundary-budget`; K7c, K8, W2A4 and H2b
+are unpinned.  What remains is by design ("above the discovery budget
+the answer is None", issue #72): the budget weighs the set the engine is
+asked under, so whenever the relevance layer does not split it down to
+the query's component (`relevance=False`, a vocabulary registration in
+force, opaque or keyless sets) unrelated material counts, and any
+restatement of a set may weigh differently; between the two weights the
+spellings differ.  The heavier one is None, flagged `last_budget_limited`,
+never a wrong value, and each answer is a function of (p, a, config,
+registry) (`tests/test_budget_cone.py`, H2's residual).  The invariant
+harness therefore exempts a pair from I2, I3 and I5 when a side's answer
+is a budget-limited None (not from I4: p and Not(p) have the same cone;
+not from soundness I1), and counts the exempt pairs in its report.
+
 The findings below describe the cases as found.
 
 ### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
@@ -348,7 +373,9 @@ The findings below describe the cases as found.
 * **I5, the proposition evaluated by SymPy** (pinned:
   `I5-proposition-evaluated-by-sympy-gains-true`): `ask(Q.ne(3*m - 1/(3*m),
   -1/(3*m)), ~Q.commutative(-1/(3*m)) | Q.composite(3*m - 1/(3*m)))` is
-  None under `boundary`; the proposition spelled `Ne(...)` evaluates to
+  None under `boundary` (found at `discovery_budget` 1; pinned at 400
+  since task 6 of #53, where the budget-limited None is exempt and the
+  mechanism persists); the proposition spelled `Ne(...)` evaluates to
   `True` in SymPy (the difference is `3*m`, `m` declared nonzero: a sound
   evaluation from the declaration) and the answer is True.  The
   `Lt`/`Q.lt` spellings are taken as equivalent (above); this is the

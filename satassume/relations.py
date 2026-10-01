@@ -1080,3 +1080,100 @@ class Relations:
                                          False)
                 keep.append((node, b))
             pend[:] = keep
+
+
+# --------------------------------------------------------------------------
+# what the glue can visit: the structural weight of relation atoms
+# --------------------------------------------------------------------------
+#
+# ``Engine._struct`` (the discovery budget's test on a query's structural
+# cone, ``Engine._cone_info``) asks these for the nodes the glue of a
+# session can visit beyond the templates: a relation atom's sides (clauses
+# 1, ``_eq_infinity``, ``_transfer_terms``), the differences of
+# ``_eq_links``, the opaque terms its guarded adapters read (clauses 2 and
+# 3, ``_guard``, ``_order_infinite``), and, for every side and every
+# vocabulary argument of a user formula once the glue runs, the link
+# ``_link(e)``: ``e`` and the terms of its linear form (``_link_integer``
+# and the link atoms ``0 < e``, ``e < 0``, ``e = 0``).  Interface
+# equalities (``_share``) are between terms the adapters already read, and
+# their guards are those terms again.  An over-estimate is harmless (a
+# query just over the budget answers None); keep these in step with the
+# glue above.
+
+
+def _guarded_adapters(specs, memo: dict) -> list:
+    """One adapter per guarded spec, used only to read linear forms (it
+    never registers anything); kept in ``memo`` by spec name."""
+    out = []
+    for spec in specs:
+        if spec.guarded:
+            ad = memo.get(spec.name)
+            if ad is None:
+                ad = memo[spec.name] = spec.factory()
+            out.append(ad)
+    return out
+
+
+def _terms_of(ad, sat, order: bool) -> set:
+    k = set()
+    if order and hasattr(ad, "order_sides"):
+        sides = ad.order_sides(sat)
+        if sides is not None:
+            for form, _inf in sides:
+                k.update(form)
+    terms = ad.terms(sat)
+    if terms:
+        k.update(terms)
+    return k
+
+
+def link_objects(e, specs, memo: dict) -> set:
+    """The nodes ``Relations._link(e)`` can visit: ``e`` and the opaque
+    terms of its linear form in every guarded adapter (numbers included,
+    conservatively: ``_guard`` skips a constant real at the root)."""
+    k = {e}
+    if _is_number(e):
+        return k
+    try:
+        from sympy import S
+        for ad in _guarded_adapters(specs, memo):
+            if INTEGERS and hasattr(ad, "integer_form"):
+                form = ad.integer_form(e)
+                if form is not None:
+                    k.update(form[1])
+            for atom in (relation_atom("lt", S.Zero, e), relation_atom("lt", e, S.Zero),
+                         relation_atom("eq", e, S.Zero)):
+                k.update(_terms_of(ad, sympy_atom(atom), atom.pred == "lt"))
+    except Exception:       # noqa: BLE001 (a side the adapters cannot read)
+        pass
+    return k
+
+
+def glue_objects(atom: P, specs, memo: dict) -> set:
+    """The nodes the glue of the relation atom ``atom`` can visit (see
+    above), the atom itself excluded."""
+    k = set()
+    sides = tuple(atom.expr)
+    for e in sides:
+        k.add(e)
+        if not _is_number(e):
+            k.update(link_objects(e, specs, memo))
+    if atom.pred == "eq" and len(sides) == 2:
+        a, b = sides
+        if not (_is_number(a) or _is_number(b)):
+            for p, q in ((a, b), (b, a)):
+                try:
+                    d = p - q
+                    if not _is_number(d) and _termwise(p, q, d):
+                        k.add(d)
+                except Exception:   # noqa: BLE001 (sides that do not subtract)
+                    pass
+    if specs:
+        try:
+            sat = sympy_atom(atom)
+            for ad in _guarded_adapters(specs, memo):
+                k.update(_terms_of(ad, sat, atom.pred == "lt"))
+        except Exception:   # noqa: BLE001 (sides the adapters cannot read)
+            pass
+    k.discard(atom)
+    return k

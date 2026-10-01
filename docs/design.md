@@ -80,13 +80,26 @@ variables. `Session.node` registers the rule block, asserts the node's
 cached context-free facts as units and emits its template clauses, but
 only those about the rule-base neighbourhood of what the query asks
 (`want_of`); the rest is parked (`pending_c`, `pending`). Children are
-visited breadth-first up to `discovery_budget` (400) new nodes; derived
-nodes wait in `deferred`. A query runs root propagation; if that leaves it
+visited breadth-first; derived nodes wait in `deferred`. A query runs root propagation; if that leaves it
 open and the session is `incomplete`, `escalate` compiles everything
 parked and visits the derived nodes; only then does search run
 (`Solver.entails` in `satassume/solver.py`, MiniSat-style CDCL under
 solver assumptions, at most two searches). A template's query about the
 node being built returns None (`Engine._constructing`).
+
+The discovery budget (`discovery_budget`, 400) is a test on the query,
+not a cap on a session (#53 task 6): before any session work,
+`Engine._within_budget` weighs the structural cone `cone(p) | cone(a)`
+(`Engine._struct`, `_cone_info`: every object the templates, derived
+nodes and extension facts reach, and for a relation atom what its glue
+can visit, `relations.glue_objects`; 1 per node, 2 for a node with both
+compiled patterns and formulas). Over the budget the query is None
+(`last_budget_limited`, `stats["budget_limited"]`), whatever is cached, and
+a set over it is `unknown` without a check; within it, discovery and
+escalation run uncapped, so no session is ever truncated and the answer is
+that of the whole cone. Both are functions of the query, never of earlier
+queries, a reused session or the caches. On the corpus and the stream the
+largest cone weighs 16, so no default query is budget-limited.
 
 ### Sessions per assumption set
 
@@ -257,8 +270,8 @@ every set with the same relevant part shares memo entries and session.
    `Engine.verdict`, which keeps no session: the whole set of a split set
    is usually never queried, and its session would evict the parts'). It is
    three-valued: `inconsistent` (a conflict: every query under the set
-   raises), `unknown` (no conflict, but a theory gave up, the cone hit the
-   discovery budget (`Session.truncated`) or the check failed; never raises, and certifies) and
+   raises), `unknown` (no conflict, but a theory gave up, the set's cone is over the
+   discovery budget (then no session is built) or the check failed; never raises, and certifies) and
    `consistent`. The switches `CHECK_SEARCH`, `CHECK_SEARCH_RELATIONS` and
    `CHECK_ESCALATE` are gone: the complete check always escalates and
    searches.
