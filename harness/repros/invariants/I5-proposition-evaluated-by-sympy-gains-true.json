@@ -3,8 +3,8 @@
  "severity": "depends",
  "known": null,
  "config": {
-  "name": "boundary",
-  "discovery_budget": 1,
+  "name": "boundary+budget",
+  "discovery_budget": 400,
   "session_limit": 1,
   "keep_sessions": 0,
   "cone_search": true,

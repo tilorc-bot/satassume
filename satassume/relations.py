@@ -1158,19 +1158,22 @@ def glue_objects(atom: P, specs, memo: dict) -> set:
         k.add(e)
         if not _is_number(e):
             k.update(link_objects(e, specs, memo))
-    try:
-        if atom.pred == "eq" and len(sides) == 2:
-            a, b = sides
-            if not (_is_number(a) or _is_number(b)):
-                for p, q in ((a, b), (b, a)):
+    if atom.pred == "eq" and len(sides) == 2:
+        a, b = sides
+        if not (_is_number(a) or _is_number(b)):
+            for p, q in ((a, b), (b, a)):
+                try:
                     d = p - q
                     if not _is_number(d) and _termwise(p, q, d):
                         k.add(d)
-        if specs:
+                except Exception:   # noqa: BLE001 (sides that do not subtract)
+                    pass
+    if specs:
+        try:
             sat = sympy_atom(atom)
             for ad in _guarded_adapters(specs, memo):
                 k.update(_terms_of(ad, sat, atom.pred == "lt"))
-    except Exception:       # noqa: BLE001 (sides the adapters cannot read)
-        pass
+        except Exception:   # noqa: BLE001 (sides the adapters cannot read)
+            pass
     k.discard(atom)
     return k

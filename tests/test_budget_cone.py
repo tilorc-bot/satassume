@@ -2,8 +2,9 @@
 
 A query is budget-limited iff the weight of ``cone(p) | cone(a)`` exceeds
 ``discovery_budget``, decided before any session work from the structure
-alone (``Engine._within_budget``): such a query is None, every other one
-loads its whole cone.  So the answer and ``last_budget_limited`` are
+alone (``Engine._within_budget``): such a query is None (unless its set
+fits the budget and is inconsistent: then it raises, as every query under
+that set does), every other one runs uncapped and is never truncated.  So the answer and ``last_budget_limited`` are
 functions of ``(p, a, config, registry)``, never of earlier queries, the
 caches or a reused session.
 """
@@ -133,12 +134,19 @@ def test_set_over_the_budget_unknown_none_no_raise():
         ask(Q.real(x), a, Engine(cache=DictCache()))
 
 
-def test_h2_residual_unrelated_conjunct_counts_without_relevance():
-    """H2's residual (plan): with ``relevance=False`` an unrelated conjunct
-    is part of the input, so for a budget between ``|cone(p, a)|`` (2) and
-    ``|cone(p, a & B)|`` (4) the two spellings differ; each answer is a
-    function of (p, a, config).  With relevance (the default) ``B`` is
-    dropped and both agree."""
+def test_h2_residual_unsplit_or_reweighted_sets():
+    """H2's residual, by design ("above the discovery budget the answer is
+    None", issue #72): the budget weighs the set the engine is asked
+    under.  Whenever that set is not split down to the query's component
+    (``relevance=False`` as here, a vocabulary registration in force,
+    opaque or keyless sets) an unrelated conjunct is in ``cone(a)``, and
+    any restatement of a set (implied conjuncts, ``Implies`` vs ``Or``)
+    may weigh differently; so for a budget between the two weights (here
+    ``|cone(p, a)|`` = 2 and ``|cone(p, a & B)|`` = 4) the two spellings
+    differ.  The heavier one is None, flagged ``last_budget_limited``,
+    never a wrong value, and each answer is a function of (p, a, config,
+    registry).  With relevance (the default) this ``B`` is dropped and
+    both agree."""
     p, a, b = Q.positive(x), Q.positive(x - 1), Q.real(1/u)
     for budget in (2, 3):
         e1 = Engine(discovery_budget=budget, relevance=False)
@@ -165,3 +173,34 @@ def test_stream_sample_is_never_budget_limited_at_the_default():
             pass
         assert not eng.last_budget_limited, (p, a)
     assert eng.stats["budget_limited"] == 0
+
+
+def test_inconsistent_set_within_budget_raises_for_every_query():
+    """I6: whether a set raises is a function of the set alone.  A set that
+    fits the budget and is inconsistent raises for a query over the budget
+    as for one within it; ``last_budget_limited`` is reset even when the
+    query raises."""
+    a = P('positive', 'x') & P('negative', 'x')
+    heavy = ('add', ('add', ('add', 'x', 'y'), ('add', 'z', 'w')), ('add', 'u', 'v'))
+    from satassume import Implies, allargs
+    from satassume.engine import InconsistentAssumptions
+
+    def templates(node):
+        if isinstance(node, tuple):
+            return [Implies(allargs('positive', node[1:]), P('positive', node))]
+        return []
+    eng = Engine(templates=templates, cache=DictCache(), discovery_budget=3)
+    assert eng._within_budget(a) and not eng._within_budget(P('positive', heavy), a)
+    assert eng.ask(P('positive', heavy), True) is None and eng.last_budget_limited
+    for p in (P('positive', heavy), P('real', 'x')):
+        with pytest.raises(InconsistentAssumptions):
+            eng.ask(p, a)
+        assert not eng.last_budget_limited
+    # the SymPy layer: the same set raises ValueError whatever the query
+    big = Q.positive(x + y + z + u + sin(x) + exp(y))
+    e = Engine(discovery_budget=3)
+    assert ask(big, Q.real(x), e) is None and e.last_budget_limited
+    for p in (big, Q.real(x)):
+        e = Engine(discovery_budget=3)
+        with pytest.raises(ValueError):
+            ask(p, Q.positive(x) & Q.negative(x), e)

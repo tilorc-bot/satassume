@@ -394,7 +394,7 @@ def cmd_invariants(args) -> int:
     KNOWN_SEEN.clear()                 # a pinned family is reported once per run
     FAMILY_SEEN.clear()                # any family at most FAMILY_RUN_CAP times per run
     combos = [(pr, cfg, sd) for sd in seeds for pr in profiles for cfg in configs]
-    bad = unknown = 0
+    bad = unknown = exempt = 0
     slice_n = args.queries if not minutes else max(10, args.queries // 4)
     offsets = {i: 0 for i in range(len(combos))}
     rounds = 0
@@ -414,6 +414,7 @@ def cmd_invariants(args) -> int:
                              max_violations=args.max_violations, shrink_them=not args.no_shrink,
                              deadline=deadline, progress=_progress(args.quiet), clock=_cpu)
             d = rep.to_json()
+            exempt += sum(rep.exempt.values())
             print(json.dumps(d), flush=True)
             for k, v in enumerate(rep.violations):
                 stem = f"inv-{v.inv}-{profile}-{cfg.name}-s{seed}-{offsets[i]}-{k}"
@@ -425,7 +426,8 @@ def cmd_invariants(args) -> int:
         if not progressed or deadline is None or _cpu() > deadline:
             break
     print(json.dumps({"cpu_seconds": round(_cpu(), 1), "rounds": rounds,
-                      "queries": sum(min(o, args.queries) for o in offsets.values())}), flush=True)
+                      "queries": sum(min(o, args.queries) for o in offsets.values()),
+                      "budget_exempt": exempt}), flush=True)
     if args.fail_on == "never":
         return 0
     return 1 if (unknown if args.fail_on == "unknown" else bad) else 0

@@ -222,8 +222,31 @@ def consistent(assum, config: EngineConfig) -> bool:
     return consistent_by(assum, config) is not None
 
 
+#: whether the latest ``fresh_outcome`` was a budget-limited None (its
+#: engine's ``last_budget_limited`` set after the ask); read by the runner
+#: and ``evaluate`` right after each side's ask (``budget_exempt``)
+LAST_BUDGET_LIMITED = [False]
+
+#: invariants a pair is exempt from when a side's answer is a budget-limited
+#: None: above the discovery budget the answer is None by design (issue
+#: #72), and an unsplit set with unrelated material (I2), a stronger set
+#: (I3) or a restatement (I5) may weigh more than the base.  Not I4 (p and
+#: Not(p) have the same cone) and not soundness (I1).  INVARIANTS.md.
+BUDGET_EXEMPT = ("I2", "I3", "I5")
+
+
 def fresh_outcome(prop, assum, config: EngineConfig) -> str:
-    return outcome(prop, assum, config.make())
+    eng = config.make()
+    LAST_BUDGET_LIMITED[0] = False
+    o = outcome(prop, assum, eng)
+    LAST_BUDGET_LIMITED[0] = o == "None" and bool(getattr(eng, "last_budget_limited", False))
+    return o
+
+
+def budget_exempt(inv: str, base_limited: bool, other_limited: bool) -> bool:
+    """The pair is exempt from ``inv`` (``BUDGET_EXEMPT``): a side's answer
+    is a budget-limited None."""
+    return inv in BUDGET_EXEMPT and (base_limited or other_limited)
 
 
 # --------------------------------------------------------------------------
@@ -1430,7 +1453,10 @@ def evaluate(v: Violation, prop=None, assum=None, variant=None) -> Tuple[Optiona
         sev, other, var = check_I7(prop, assum, v.config, None, rng, variant, v.prefix)
         return sev, var["fresh"], other, var
     base = fresh_outcome(prop, assum, v.config)
+    base_limited = LAST_BUDGET_LIMITED[0]
     sev, other, var = CHECKERS[v.inv](prop, assum, v.config, base, rng, variant)
+    if sev is not None and budget_exempt(v.inv, base_limited, LAST_BUDGET_LIMITED[0]):
+        sev = None                       # a budget-limited None: by design
     return sev, base, other, var
 
 
@@ -1592,12 +1618,15 @@ class InvReport:
     checked: Dict[str, int] = dataclasses.field(default_factory=dict)
     inconclusive: Dict[str, int] = dataclasses.field(default_factory=dict)
     candidates: Dict[str, int] = dataclasses.field(default_factory=dict)
+    #: pairs exempt because a side is a budget-limited None (``budget_exempt``)
+    exempt: Dict[str, int] = dataclasses.field(default_factory=dict)
     violations: List[Violation] = dataclasses.field(default_factory=list)
     seconds: float = 0.0
 
     def to_json(self) -> Dict[str, Any]:
         return {"source": self.source, "config": self.config, "checked": self.checked,
                 "inconclusive": self.inconclusive, "candidates": self.candidates,
+                "budget_exempt": self.exempt,
                 "seconds": round(self.seconds, 1),
                 "violations": [v.summary() for v in self.violations]}
 
@@ -1804,6 +1833,7 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
         seen.add(key)
         t1 = time.time()
         base = fresh_outcome(it.prop, it.assum, config)
+        base_limited = LAST_BUDGET_LIMITED[0]
         if time.time() - t1 > slow_limit:
             rep.inconclusive["slow"] = rep.inconclusive.get("slow", 0) + 1
             continue              # a query that alone takes seconds would eat the budget
@@ -1827,6 +1857,7 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                         prefix = []
                         b = base
                         sev, other, var = CHECKERS[inv](it.prop, it.assum, config, base, rng)
+                    other_limited = LAST_BUDGET_LIMITED[0]
                 except Exception as e:  # noqa: BLE001 - a checker crash is not a violation
                     rep.inconclusive[inv] = rep.inconclusive.get(inv, 0) + 1
                     if progress:
@@ -1836,6 +1867,9 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                 if "ValueError" in (b, other):
                     rep.inconclusive[inv] = rep.inconclusive.get(inv, 0) + 1
                 if sev is None:
+                    continue
+                if inv != "I7" and budget_exempt(inv, base_limited, other_limited):
+                    rep.exempt[inv] = rep.exempt.get(inv, 0) + 1
                     continue
                 rep.candidates[inv] = rep.candidates.get(inv, 0) + 1
                 v = Violation(inv, sev, config, it.prop, it.assum, var, b, other, source,

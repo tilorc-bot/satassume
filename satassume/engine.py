@@ -1037,7 +1037,12 @@ class Engine:
         more is answered None before any session work, and so is every
         query under a set whose own cone does (its verdict is ``UNKNOWN``);
         ``last_budget_limited`` tells.  A function of the query alone
-        (``_within_budget``); every other query loads its whole cone.
+        (``_within_budget``); every other query runs discovery and
+        escalation uncapped, so nothing is truncated.  Cost: a fresh
+        session loads at most the query's cone; a reused contextual
+        session's uncapped escalation may also do work that earlier
+        queries' nodes left (bounded by about ``session_limit`` times the
+        budget).  Answers are the same either way.
     session_limit : int
         A reused contextual session is replaced once it has visited this
         many nodes.
@@ -1230,7 +1235,9 @@ class Engine:
 
     @property
     def discovery_budget(self):
-        """Setting: nodes one discovery or escalation step may add.  Assigning a different
+        """Setting: the largest structural cone (``cone(p) | cone(a)``,
+        weighed by ``_within_budget``) of a query that is answered; heavier
+        queries are None (``last_budget_limited``).  Assigning a different
         value drops this engine's caches (``_settings_changed``)."""
         return self._discovery_budget
 
@@ -1587,7 +1594,10 @@ class Engine:
         Decided from the structure alone, before any session work, so a
         function of the query, the registry and the settings: never of the
         sessions, the caches or earlier queries.  A query that passes runs
-        discovery and escalation uncapped and loads its whole cone."""
+        discovery and escalation uncapped (never truncated): a fresh
+        session visits at most its cone, a reused contextual session may
+        also escalate what earlier queries' nodes left (about
+        ``session_limit`` times the budget at most)."""
         _c, _w, rel, sums = self._query_cone(proposition, False)
         if assumptions is not None:
             _c, _w, rel_a, sums_a = self._query_cone(assumptions, False)
@@ -1945,9 +1955,20 @@ class Engine:
         if self._epoch != _EPOCH[0]:
             self._check_version()
         self.stats["queries"] += 1
+        # never the previous query's flag, even if this one raises
+        self.last_budget_limited = False
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
         if not self._within_budget(proposition, assumptions if contextual else None):
+            # whether a set raises is a function of the set alone: one that
+            # fits the budget and is INCONSISTENT raises for every query
+            # under it, over the budget or not (a set over the budget is
+            # UNKNOWN: never raises).  verdict() is memoized and builds no
+            # stored session; it raises Uninterpreted as the session
+            # construction of a query within the budget would.
+            if (contextual and self._within_budget(assumptions)
+                    and self.verdict(assumptions) is INCONSISTENT):
+                raise InconsistentAssumptions("inconsistent assumptions")
             return self._over_budget()
         if contextual:
             s, lits = self._context_session(assumptions)
