@@ -247,12 +247,16 @@ every set with the same relevant part shares memo entries and session.
    set's verdict (`Engine.verdict`), or each component's if it has no
    relation, must not be inconsistent. The verdict comes from the one
    complete check every assumption set gets when its contextual session is
-   built (`Engine._context_session`, `_complete_check`: a session of its
-   own, the whole cone escalated, propagation, then a search; memoized per
-   formula in `Engine._verdict`, counted in `stats["set_checks"]`). It is
+   built (`Engine._build_context`, `_complete_check`: in that session, at
+   every construction of it, first or rebuilt, the whole cone escalated,
+   propagation, then a search, so the session the queries use is built the
+   same way every time; if the check makes a theory give up, a plain
+   session without the check replaces it. Counted in `stats["set_checks"]`;
+   `Engine._verdict` memoizes it per formula only to raise for an
+   inconsistent set without building anything). It is
    three-valued: `inconsistent` (a conflict: every query under the set
    raises), `unknown` (no conflict, but a theory gave up, the cone hit the
-   discovery budget or the check failed; never raises, and certifies) and
+   discovery budget (`Session.truncated`) or the check failed; never raises, and certifies) and
    `consistent`. The switches `CHECK_SEARCH`, `CHECK_SEARCH_RELATIONS` and
    `CHECK_ESCALATE` are gone: the complete check always escalates and
    searches.

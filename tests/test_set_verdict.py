@@ -93,3 +93,45 @@ def test_setting_change_drops_the_verdict_memo():
     assert not eng._verdict and eng.stats["version_clears"] == 1
     assert eng.verdict(g) is Engine(discovery_budget=1).verdict(g)
     assert eng.stats["set_checks"] == 2
+
+
+def test_truncated_cone_is_unknown():
+    # the discovery budget drops frontier nodes (Session.truncated): a
+    # check over the cut cone finds no conflict, which proves nothing
+    from sympy import Symbol
+    from satassume.sympy_api import _formula
+    x = Symbol('x')
+    A = Symbol('A', commutative=False)
+    f = _formula(Q.algebraic(x + A), True)
+    assert Engine(cache=DictCache(), discovery_budget=2).verdict(f) is UNKNOWN
+    assert Engine(cache=DictCache(), discovery_budget=3).verdict(f) is INCONSISTENT
+
+
+def test_check_runs_in_the_query_session():
+    # no session of its own for the check: the set's contextual session
+    # is the only one built, and Engine.verdict builds that very session
+    from satassume.sympy_api import _formula
+    x, y = symbols('x y')
+    f = _formula(Q.positive(x) & Q.gt(y, 1), True)
+    eng = Engine(cache=DictCache())
+    assert eng.verdict(f) is CONSISTENT
+    assert eng.stats["sessions"] == 1
+    s, _ = eng._context_session(f)
+    assert eng.stats["sessions"] == 1 and s.verdict is CONSISTENT
+
+
+def test_setting_change_recomputes_a_memoized_verdict():
+    # the verdict memoized under discovery_budget=3 (inconsistent) is not
+    # kept when the budget becomes 2, which truncates the cone (unknown)
+    from sympy import Symbol
+    from satassume.sympy_api import _formula
+    x = Symbol('x')
+    A = Symbol('A', commutative=False)
+    f = _formula(Q.algebraic(x + A), True, True)
+    eng = Engine(cache=DictCache(), discovery_budget=3)
+    assert eng.verdict(f) is INCONSISTENT
+    eng.discovery_budget = 2
+    assert eng.verdict(f) is UNKNOWN
+    eng.discovery_budget = 3
+    assert eng.verdict(f) is INCONSISTENT
+    assert eng.stats["version_clears"] == 2
