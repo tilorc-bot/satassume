@@ -84,8 +84,8 @@ def _ask(prop, assum=True):
     (Q.nonnegative(x - 2), Q.positive(x - 3), True),
     (Q.positive(x - 3), Q.positive(x - 2), None),
     (Q.negative(x + y), Q.negative(x - 1) & Q.negative(y + 1), True),
-    (Q.extended_negative(1 - x), Q.extended_positive(x - 1), None),  # true, but x may be oo:
-    #   the LRA link is guarded by real(x)
+    (Q.extended_negative(1 - x), Q.extended_positive(x - 1), True),  # x may be oo, but
+    #   extended_real(x - 1) & real(-1) gives extended_real(x) (the Add rule of T1)
     (Q.negative(1 - x), Q.extended_positive(x - 1), None),       # x = oo
 ], ids=str)
 def test_answers(prop, assum, expected):

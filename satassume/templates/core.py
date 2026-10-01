@@ -109,7 +109,8 @@ def _add_rules(n, consts):
         # extended-real term k: with r = rest real, k = oo or -oo gives
         # N = k, a finite real k gives N real, and a k that is not extended
         # real (finite non-real, zoo, or an infinity off the real axis such
-        # as oo*I) gives N = k + r not extended real.  Contrapositive: a
+        # as oo*I) gives N = k + r not extended real (nan + r = nan, the
+        # same value as k).  Contrapositive: a
         # non-extended-real term plus finite reals is not extended real.
         # This is what lets ``x - z > 0`` (which says ``extended_real(x -
         # z)``) give ``extended_real(x)``, as ``x > z`` does (#53, W2B1).
