@@ -458,23 +458,19 @@ def test_srepr_unknown_name_is_a_name_error():
         from_srepr("NoSuchSymPyClass(Integer(1))")
 
 
-def test_family_of_answer_memo_repeating_the_query(monkeypatch):
-    """C6b with the query repeated context-free in the prefix (the shape of
-    E1c): the prefix query writes a fact of a derived node back, and the
-    prefix's own copy of the query puts it in the answer memo.  Only
-    clearing both the cache and the memo restores the fresh answer
-    (carrier ``cache+answers``); the tag is the cache's family, C'.
-    Without the repeated query in the prefix the pair carrier stays
-    unexplained.
-
-    C6b is fixed by the writeback rule (``harness/repros/fixed``), so the
-    attribution is checked under ``Engine(writeback="all")``, the old
-    history-dependent writeback that produced the family.  (Until #53
-    stage 5 the vehicle was E1, whose root fact came from an unguarded
-    link: with the links switched per query it is no root fact any more,
-    under any writeback.)"""
-    import dataclasses
-    from harness.checker import attribute, family_of, item_from_json
+def test_answer_memo_repeating_the_query_is_history_free(monkeypatch):
+    """E1 and C6b with the query repeated context-free in the prefix (the
+    shape of E1c), under ``Engine(writeback="all")``, the old
+    history-dependent writeback: before #53 stage 5 the prefix query wrote a
+    fact back (E1: a root fact from an unguarded link) and the prefix's own
+    copy of the query put it in the answer memo, so only clearing both the
+    cache and the memo restored the fresh answer (carrier
+    ``cache+answers``, the cache's family C').  With the glue switched per
+    query neither vehicle carries the dependence any more, under any
+    writeback, and no context-free vehicle is known (a search over the
+    fixed repros and ~26k pairs of C6b's shape found none): this is now a
+    regression test, warm == fresh."""
+    from harness.checker import item_from_json
     from harness.state import EngineConfig
     make = EngineConfig.make
 
@@ -483,19 +479,24 @@ def test_family_of_answer_memo_repeating_the_query(monkeypatch):
         eng.writeback = "all"
         return eng
     monkeypatch.setattr(EngineConfig, "make", make_all)
-    with open(os.path.join(REPROS, "fixed", "C6b-derived-node-of-acos-found.json")) as fh:
-        rec = json.load(fh)
-    rec["prefix"] = rec["prefix"] + [rec["item"]]
-    seq = [item_from_json(i) for i in rec["prefix"]]
-    d = Discrepancy(EngineConfig.from_dict(rec["config"]), "pinned", len(seq),
-                    item_from_json(rec["item"]), rec["warm"], rec["ref"], ReferenceLevel.ENGINE,
-                    list(seq), shrunk=list(seq), shrunk_warm=rec["warm"], shrunk_ref=rec["ref"])
-    attribute(d)
-    assert d.confirmations["carrier"] == ["cache+answers"], d.confirmations
-    assert d.confirmations["family"] == "C'"
-    other = dataclasses.replace(d, prefix=seq[:1], shrunk=seq[:1],
-                                confirmations=dict(d.confirmations))
-    assert family_of(other).startswith("new:cache+answers-")
+
+    def pinned(name):
+        with open(os.path.join(REPROS, "fixed", name)) as fh:
+            rec = json.load(fh)
+        rec["prefix"] = rec["prefix"] + [rec["item"]]
+        seq = [item_from_json(i) for i in rec["prefix"]]
+        return seq, Discrepancy(EngineConfig.from_dict(rec["config"]), "pinned", len(seq),
+                                item_from_json(rec["item"]), rec["warm"], rec["ref"],
+                                ReferenceLevel.ENGINE, list(seq), shrunk=list(seq),
+                                shrunk_warm=rec["warm"], shrunk_ref=rec["ref"])
+    from harness.checker import outcome
+    for name in ("E1-order-clauses-write-back-oo-sum.json", "C6b-derived-node-of-acos-found.json"):
+        seq, d = pinned(name)
+        eng = d.config.make()
+        for it in seq:
+            outcome(it.prop, it.assum, eng)
+        warm = outcome(d.item.prop, d.item.assum, eng)
+        assert warm == outcome(d.item.prop, d.item.assum, d.config.make()), name
 
 
 def test_known_families():
