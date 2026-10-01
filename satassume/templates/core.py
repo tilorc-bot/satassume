@@ -105,6 +105,16 @@ def _add_rules(n, consts):
             rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
         # Imaginary term plus finite reals is not real.
         rule([(k, 'imaginary', True), *lits(rest, 'real')], (N, 'extended_real', False))
+        # An extended-real sum whose other terms are finite reals has an
+        # extended-real term k: with r = rest real, k = oo or -oo gives
+        # N = k, a finite real k gives N real, and a k that is not extended
+        # real (finite non-real, zoo, or an infinity off the real axis such
+        # as oo*I) gives N = k + r not extended real (nan + r = nan, the
+        # same value as k).  Contrapositive: a
+        # non-extended-real term plus finite reals is not extended real.
+        # This is what lets ``x - z > 0`` (which says ``extended_real(x -
+        # z)``) give ``extended_real(x)``, as ``x > z`` does (#53, W2B1).
+        rule([(N, 'extended_real', True), *lits(rest, 'real')], (k, 'extended_real', True))
         if n <= MAX_ADD_SMALL:
             for pred in _ADD_SUBTRACT:
                 rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))

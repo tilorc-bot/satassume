@@ -217,9 +217,6 @@ def test_w2a3c_keyless_proposition_with_out_of_scope_conjunct():
     assert ask(false, True, Engine()) == ask(false, Q.symmetric(m), Engine())
 
 
-@_xfail("W2B1 (I5, depends): a restated relation loses a term's sign "
-        "(x > z vs x - z > 0, z positive); relations.py Relations._link "
-        "(sign facts linked only for relation sides)")
 def test_w2b1_restated_relation_loses_term_sign():
     x = Symbol('x')
     z = Symbol('z', positive=True)
