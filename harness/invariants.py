@@ -214,8 +214,12 @@ class Unrelated:
     fresh ``h``, a relation between two such terms with different bases,
     or a fact on a declared fresh symbol consistent with its declaration."""
 
-    def __init__(self, rng: random.Random, tag: str):
-        self.rng, self.tag, self.k = rng, tag, 0
+    def __init__(self, rng: random.Random, tag: str, mode: str = "any"):
+        """``mode``: ``any``; ``norel``, no relation anywhere in the
+        material (predicates, closed predicate facts, commutativity,
+        declared facts, extensions: a definite answer lost to these is
+        not the relation family); ``rel``, relations only."""
+        self.rng, self.tag, self.k, self.mode = rng, tag, 0, mode
 
     def sym(self, **kw):
         self.k += 1
@@ -312,6 +316,10 @@ class Unrelated:
         r = self.rng
         for _ in range(8):
             c = r.random()
+            if self.mode == "norel":
+                c = 0.0
+            elif self.mode == "rel":
+                c = 1.0
             if c < 0.5:
                 t = r.choice(_FINITE_CONSTS)
                 if r.random() < 0.4:
@@ -337,6 +345,10 @@ class Unrelated:
     def atom(self, depth: int = 2):
         r = self.rng
         c = r.random()
+        if self.mode == "norel":
+            c = r.choice([0.2, 0.2, 0.7, 0.86, 0.95])     # predicate, closed predicate, commutativity, declared
+        elif self.mode == "rel":
+            c = r.choice([0.5, 0.5, 0.7, 0.8])            # relation, closed relation, infinity relation
         if c < 0.45:
             atom = getattr(Q, r.choice(VALUE_PREDS))(self.free_term(depth))
             return Not(atom) if r.random() < 0.25 else atom
@@ -349,7 +361,7 @@ class Unrelated:
         if c < 0.76:
             return self.closed()
         if c < 0.84:
-            return r.choice(_INF_RELS)(self.sym())
+            return r.choice(_INF_RELS[:-1] if self.mode != "norel" else _INF_RELS[-1:])(self.sym())
         if c < 0.88:
             # commutativity is declared: a plain symbol is commutative, a
             # symbol declared commutative=False is not
@@ -812,7 +824,8 @@ def check_I2(prop, assum, config, base, rng, variant=None):
     """Unrelated conjuncts (fresh symbols, fresh functions) do not change
     the answer, whatever they do to the budget or the polluted switch."""
     if variant is None:
-        u = Unrelated(random.Random(rng.randrange(1 << 30)), "iu")
+        mode = rng.choice(["any", "any", "norel", "norel", "rel"])
+        u = Unrelated(random.Random(rng.randrange(1 << 30)), "iu", mode)
         n = rng.choice([1, 1, 2, 3, 5, 8, 12, 12, 20, 30])
         parts = [u.piece(depth=rng.choice([1, 2, 3])) for _ in range(n)]
         specs = []
@@ -823,7 +836,7 @@ def check_I2(prop, assum, config, base, rng, variant=None):
                 if atom is not None:
                     parts.append(atom)
         rng.shuffle(parts)
-        variant = {"kind": "unrelated", "extra": to_srepr(And(*parts))}
+        variant = {"kind": "unrelated", "extra": to_srepr(And(*parts)), "mode": mode}
         if specs:
             variant["extensions"] = specs
     extra = from_srepr(variant["extra"])
