@@ -122,9 +122,6 @@ def test_k5_unrelated_undecidable_constant_kills_lra():
             == ask(Q.gt(x, 0), Q.gt(x, 1) & Q.eq(y, c), Engine()))
 
 
-@_xfail("K6 (I2, crash): constfield.Undecided escapes ask through "
-        "Session._affine_links; relations.py Relations._link_integer "
-        "(bool of a constfield Element)", raises=Undecided)
 def test_k6_undecided_escapes_affine_links():
     x, y = symbols('x y')
     c = cos(1)**2 + sin(1)**2 - 1
@@ -132,10 +129,6 @@ def test_k6_undecided_escapes_affine_links():
     assert ask(Q.real(x), a, Engine()) == ask(Q.real(x), Q.real(x), Engine())
 
 
-@_xfail("K6b (I2, crash): constfield.Undecided escapes ask through "
-        "Session._relations -> Relations.process; relations.py "
-        "Relations._link_integer (bool of a constfield Element)",
-        raises=Undecided)
 def test_k6b_undecided_escapes_relations():
     x = Symbol('x')
     c = log(4) - 2*log(2)

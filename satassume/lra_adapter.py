@@ -585,6 +585,12 @@ def integer_form(e):
         _lin(e, Fraction(1), form, const)
         keys = sorted(form, key=default_sort_key)
         items = tuple((t, form[t]) for t in keys if form[t])
+        # decide here what callers read (offset nonzero, unit coefficient):
+        # an undecidable constant reads as "not read" (no integrality
+        # link, a relaxation) instead of raising Undecided later
+        bool(const[0])
+        for _t, c in items:
+            bool(c == 1)
     except _UNREAD:
         return None
     return Integral(items, const[0]), keys
