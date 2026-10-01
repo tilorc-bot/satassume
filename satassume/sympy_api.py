@@ -392,7 +392,10 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
     # answer memo (see Engine.answers): keyed by the SymPy objects
     # themselves, valid while the registry epoch (satassume.epoch: the
     # registrations that decide the scope and add facts, the templates,
-    # the adapters) is the one it was filled under
+    # the adapters) is the one it was filled under.  An answer over the
+    # discovery budget is not memoized, so a hit is never budget-limited
+    # and ``last_budget_limited`` (cleared here) is the same warm or fresh
+    eng.last_budget_limited = False
     key = None
     if isinstance(proposition, _Basic) and (assumptions is True or isinstance(assumptions, _Basic)):
         key = (proposition, assumptions)
@@ -404,7 +407,7 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
             eng.stats["cache_hits"] += 1
             return r
     r = _ask(proposition, assumptions, eng)
-    if key is not None:
+    if key is not None and not eng.last_budget_limited:
         memo.put(key, r)
     return r
 
@@ -498,9 +501,11 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
                 r = memo.get(key, _MISS)
                 if r is not _MISS:
                     eng.stats["cache_hits"] += 1
+                    eng.last_budget_limited = False     # never memoized
                     return r
                 r = _engine_ask(proposition, f, eng)
-                memo.put(key, r)
+                if not eng.last_budget_limited:
+                    memo.put(key, r)
                 return r
     return _engine_ask(proposition, assumptions, eng)
 
@@ -1017,6 +1022,9 @@ def _consistent(a, eng: Engine) -> bool:
 
 
 def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
+    # the flag is the answer's: not left over from a query the relevance
+    # layer made (Engine.is_ of a closed term), set by the engine call below
+    eng.last_budget_limited = False
     rel = bool(eng.relation_specs)
     try:
         prop = _formula(proposition, rel)
