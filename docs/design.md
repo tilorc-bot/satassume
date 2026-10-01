@@ -293,7 +293,8 @@ relation or a keyless conjunct.
   `Q.positive(y)`, `Q.integer(y)`, made the old path raise for
   `Q.positive(x)` under it `& Q.real(x)` while a propagation-only check
   certified the set. The search costs 0 to 0.5% of the replay.
-- **Why components are independent** (so the per-component check equals a
+- **Why components are independent** (for a relation-free set without
+  sign atoms on sums sharing a symbol, the per-component checks equal a
   whole-set check and the part answers as the whole set would): templates
   relate a node only to its own subterms and derived nodes built from them
   and create no relation atoms; constants in templates are resolved in
@@ -301,7 +302,13 @@ relation or a keyless conjunct.
   where it is a key; declared facts belong to the symbol's node, in one
   component; the `DictCache` holds root facts only; and without a relation
   no theory in the session merges terms. So components without shared keys
-  share no solver variable.
+  share no solver variable. For a set with a relation, a keyless conjunct
+  or such sign atoms (below), the theories can merge terms of different
+  components (a common value, D3 in "What connects"), so this identity is
+  not claimed: the whole set's verdict decides raising, and the part's
+  answer is sound (entailed by a sub-conjunction) and never the other
+  definite value, but may be less definite than the whole set's (None
+  where value merging across components decided it before).
 - **Closed non-Rational terms connect.** They became keys when `pi` was a
   bounded LRA variable (`x < pi` and `pi < y`, with `x` and `y` pinned on
   either side, are each consistent and together not). Since #48 `pi` and
@@ -313,27 +320,24 @@ relation or a keyless conjunct.
   theory relating terms of different components. A feature that brings a
   theory into such a session must connect only terms sharing a key, or
   turn the split off.
-- **Known gap: sign facts on sums break the invariant.**
+- **Sign facts on sums start the glue without a relation.**
   `Session._affine_links` (#51) starts the relation glue without a relation
-  atom when two sign atoms are on sums sharing a symbol
-  (`Q.positive(z - 1) & Q.negative(z - 3)`), and `_relevant` does not treat
-  such a set as relational. The trigger concerns one component, but once
-  the glue exists `Relations.note_formula` makes the argument of every
-  unary atom of the assumptions a link candidate, in every component:
-  `zero(x)` and `zero(y)` both become `eq(·, 0)`, `x` and `y` merge in EUF
-  and congruence merges their applications. Fresh engines,
-  `PYTHONHASHSEED` 0 to 2, `bj = besselj(1, ·)`:
-
-  | query | assumptions | whole set | relevance |
-  |---|---|---|---|
-  | `Q.zero(bj(x))` | `Q.zero(x) & Q.zero(y) & Q.zero(bj(y)) & Q.positive(z - 1) & Q.negative(z - 3)` | True | None |
-  | `Q.positive(z)` | the same `& Q.nonzero(bj(x))` | `ValueError` | True |
-
-  Without the `z` conjuncts both sides agree. The part's
-  answers stay entailed by the part; identity with the whole set and the
-  error set break. Sets of sign facts on sums alone do not show it (it
-  needs pinned terms and applications of them). Treating such a pair of
-  sign atoms as a relation in `_relevant` would restore the invariant.
+  atom when two sign atoms are on different sums sharing a symbol
+  (`Q.positive(z - 1) & Q.negative(z - 3)`). The trigger concerns one
+  component, but once the glue exists `Relations.note_formula` makes the
+  argument of every unary atom of the assumptions a link candidate, in
+  every component: `zero(x)` and `zero(y)` both become `eq(·, 0)`, `x` and
+  `y` merge in EUF and congruence merges their applications. So under
+  `Q.zero(x) & Q.zero(y) & Q.zero(bj(y)) & Q.nonzero(bj(x)) & Q.positive(z - 1)
+  & Q.negative(z - 3)` (`bj = besselj(1, ·)`) the whole set is inconsistent
+  while each component is consistent on its own. `_relevant` therefore
+  treats a set whose sign atoms on sums would start the glue
+  (`engine.affine_glue`) like a relational one: the whole set's verdict
+  decides raising, so every query under that set raises
+  (`test_sign_sums_set_raises_for_any_component`). The part's answers stay
+  sound; they may be less definite than the whole set's (`Q.zero(bj(x))`
+  under the set without `Q.nonzero(bj(x))`: True as a whole, None under
+  its part), as for a relational set.
 
 ### What connects
 

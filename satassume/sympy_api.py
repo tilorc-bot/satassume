@@ -841,7 +841,14 @@ class _Split:
 def _relevant(p, a, eng: Engine):
     """The assumptions ``p`` is asked under: ``a`` itself, or the part of
     ``a`` (a SymPy Boolean, or True) connected to ``p`` if that is smaller
-    and ``a`` is consistent as a whole."""
+    and ``a`` is not found inconsistent.  Three-valued: a set whose verdict
+    is inconsistent answers under ``a`` (which raises); consistent or
+    unknown, under the part (sound by monotonicity).  The verdict is the
+    whole set's (:func:`_consistent`) when the set has a relation, a
+    keyless conjunct or sign atoms on sums that start the relation glue
+    (``engine.affine_glue``); otherwise the conjunction of the components'
+    verdicts, which equals it there (docs/design.md, "Why components are
+    independent")."""
     splits = eng.splits
     sp = splits.get(a)
     if sp is None:
@@ -961,9 +968,12 @@ def _vocab_blocks(e, ext) -> bool:
 #: ``zero``, and the Rationals of a closed term as keys (connects ``x = 2``
 #: with ``y = 2``, ``sin(2)``, ``polar(2)``, but not the values LRA or the
 #: rule base derive).
-#: The key memo ``_KEYS`` depends on it.  A module constant, not a
-#: setting: changing it at run time is unsupported (answers memoized under
-#: the old value are kept, and so are the keys in ``_KEYS``).
+#: The key memo ``_KEYS`` depends on it, and so do the splits memoized in
+#: ``Engine.splits`` (``_Split``: the components and the consistency flag)
+#: and the answer memo.  A module constant, not a setting: changing it at
+#: run time is unsupported (answers, keys and splits memoized under the
+#: old value are kept); a test that switches it must clear ``_KEYS`` and
+#: use fresh engines.
 #: See docs/design.md, "What connects".
 RELATIONAL = "components"
 
@@ -986,8 +996,10 @@ def _part_consistent(f, eng: Engine) -> bool:
 def _consistent(a, eng: Engine) -> bool:
     """``a`` may be answered under a part: its verdict, from the one
     complete check of the set (``Engine.verdict``: the whole cone,
-    propagation and search, memoized per formula in the engine, in the
-    contextual session the set's queries use), is consistent or unknown.
+    propagation and search, memoized per formula in the engine; built like
+    the contextual session of a query under ``a`` but not kept, since the
+    queries of a split set run in their parts' sessions), is consistent or
+    unknown.
     False if it is inconsistent, and also when the set cannot be checked
     (out of scope, a relation no theory reads, an error): the caller then
     answers under ``a`` as a whole, so whatever that does (None,

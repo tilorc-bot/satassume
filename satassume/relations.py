@@ -505,6 +505,10 @@ class Relations:
             if self.queue:
                 atom = self.queue.pop()
                 ok = self.status[atom] = self._interpret(atom)
+                # also for an opaque relation (ok False): the glue then links
+                # every vocabulary argument of this session; the relevance
+                # layer splits a set by component (sympy_api.RELATIONAL), so
+                # that is only the session of the relation's component
                 self.active = True
                 if ok and atom in unlinked:
                     for side in atom.expr:

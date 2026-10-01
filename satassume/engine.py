@@ -1164,8 +1164,10 @@ class Engine:
         behaviour, opt-in: ``ask`` returns None.
     relevance : bool
         ``sympy_api.ask`` answers a query under the assumption conjuncts
-        connected to it only (see ``sympy_api._relevant``), once the whole
-        set is known to be consistent; False: always under the whole set.
+        connected to it only (see ``sympy_api._relevant``) unless the whole
+        set is found inconsistent (then under the whole set, which raises);
+        a consistent or unknown set answers under the part.  False: always
+        under the whole set.
     writeback : ``"root-only"``, ``"provenance"`` or ``"all"``
         Which root facts of a session go to the context-free caches
         (``Session.writeback``, ``_put_root_only``): ``"root-only"``
