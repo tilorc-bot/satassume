@@ -248,8 +248,6 @@ def test_w2b1_restated_relation_loses_term_sign():
             == ask(Q.gt(x, 0), Q.gt(x - z, 0), Engine()))
 
 
-@_xfail("W2B2 (I5, depends): integer n <= 1 vs n < 2; lra.py "
-        "LRATheory._check (integer rounding never used as a bound)")
 def test_w2b2_integer_bound_restated_strict():
     n = Symbol('n', integer=True)
     assert (ask(Q.eq(n, 1), Q.ge(n, 1) & Q.le(n, 1), Engine())

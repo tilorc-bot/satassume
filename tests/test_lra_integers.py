@@ -189,6 +189,61 @@ def test_budget_gives_up_without_a_conflict(monkeypatch):
     assert t.stats["branches"] == 3
 
 
+def _diseq_theory(lo, up, excluded, integral=True):
+    """x >= lo (literal 1), x <= up or x < up (2), x != c for each c in
+    ``excluded`` (3, 4, ...), x in Z (last literal) if ``integral``;
+    ``up`` is ``(value, strict)``.  The theory with all of them asserted
+    and the literals."""
+    atoms = {1: constraint({"x": 1}, ">=", lo),
+             2: constraint({"x": 1}, "<" if up[1] else "<=", up[0])}
+    for c in excluded:
+        atoms[len(atoms) + 1] = constraint({"x": 1}, "!=", c)
+    if integral:
+        atoms[len(atoms) + 1] = Integral({"x": 1})
+    t = _theory(atoms)
+    assert _assert(t, list(atoms)) is None
+    return t, list(atoms)
+
+
+@pytest.mark.parametrize("lo, up, excluded, conflict", [
+    (1, (2, True), [1], True),           # 1 <= n < 2, n != 1
+    (1, (3, False), [2], False),         # n = 1 or 3
+    (0, (1, False), [0, 1], True),       # 0 <= n <= 1, n != 0, n != 1
+    (0, (1, False), [1, 0], True),
+    (0, (2, False), [0, 1], False),      # n = 2
+    (0, (3, True), [2, 0, 1], True),
+])
+def test_disequalities_with_integrality(lo, up, excluded, conflict):
+    """A disequality the integral point lies on splits with the
+    integrality atom (a real point off it, 1 < n < 2, is no integer)."""
+    t, lits = _diseq_theory(lo, up, excluded)
+    ok, r = t.check()
+    if conflict:
+        assert ok is False and sorted(r) == sorted(-l for l in lits)
+    else:
+        assert ok is True and all(r["x"] != c for c in excluded)
+
+
+def test_disequality_without_integrality_does_not_branch():
+    """Real x: 1 <= x < 2, x != 1 is satisfiable, without branching."""
+    t, _ = _diseq_theory(1, (2, True), [1], integral=False)
+    ok, model = t.check()
+    assert ok is True and 1 < model["x"] < 2
+    assert t.stats["branches"] == 0
+
+
+def test_disequality_split_shares_the_budget(monkeypatch):
+    """Budget exhausted: no conflict (sound, incomplete)."""
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 0)
+    t, _ = _diseq_theory(1, (2, True), [1])
+    assert t.check()[0] is True
+    assert t.stats["branches"] == 0
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 1)        # 0 <= n <= 1 needs 2
+    t, _ = _diseq_theory(0, (1, False), [0, 1])
+    assert t.check()[0] is True
+    assert t.stats["branches"] == 1
+
+
 def test_check_leaves_the_bounds_alone():
     atoms = {1: constraint({"x": 1}, ">", 0), 2: constraint({"y": 1}, ">=", 0),
              3: constraint({"x": 1, "y": 1}, "<", 3), 4: Integral({"x": 2}, F(1, 3))}
@@ -400,6 +455,10 @@ def _ask(prop, assum):
     (Q.integer(x), Q.gt(x, 0) & Q.lt(x, 1) & Q.integer(y), False),
     (Q.positive(x), Q.integer(x) & Q.gt(x, 0) & Q.lt(x, 1), "inconsistent"),
     (Q.integer(x + y), Q.gt(x, 0) & Q.gt(y, 0) & Q.lt(x + y, 1), False),
+    (Q.eq(x, 1), Q.integer(x) & Q.ge(x, 1) & Q.lt(x, 2), True),
+    (Q.eq(x, 1), Q.ge(x, 1) & Q.lt(x, 2), None),                  # real x
+    (Q.eq(x, 2), Q.integer(x) & Q.ge(x, 1) & Q.le(x, 3), None),
+    (Q.eq(x, 1), Q.integer(x) & Q.ge(x, 0) & Q.le(x, 1) & Q.ne(x, 0), True),
 ])
 def test_answers(prop, assum, expected):
     assert _ask(prop, assum) == expected
