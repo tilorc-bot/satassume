@@ -34,8 +34,10 @@ def test_writeback_caches_node_facts():
     x = Symbol("x", positive=True)
     eng = Engine()
     assert eng.is_(x + 1, "positive") is True
-    # facts derived at root about the argument are written back under the node
-    assert eng.cache.get(x, "positive") is True
+    # facts derived at root about the queried node are written back under
+    # it; the argument's are recomputed (writeback="root-only")
+    assert eng.cache.get(x, "positive", "missing") == "missing"
+    assert eng.is_(x, "positive") is True
     assert eng.cache.get(x + 1, "positive") is True
     assert eng.cache.get(x + 1, "negative") is False
     assert ask(Q.nonzero(x + 1)) is True

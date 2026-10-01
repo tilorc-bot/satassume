@@ -48,7 +48,18 @@ def test_structural_template_and_child_writeback():
     eng, cache = make(x={'positive': True}, y={'positive': True})
     assert eng.is_(('add', 'x', 'y'), 'positive') is True
     assert eng.is_(('mul', 'x', 'y'), 'nonzero') is True
-    assert cache.get('y', 'nonzero') is True     # derived about a child while answering the parent
+    # derived about a child while answering the parent: the default
+    # writeback="root-only" caches only the queried node's facts, the child's
+    # are recomputed; writeback="provenance" caches them (they come from the
+    # child's own cone)
+    assert cache.get('y', 'nonzero', 'missing') == 'missing'
+    assert cache.get(('mul', 'x', 'y'), 'nonzero') is True
+    assert eng.is_('y', 'nonzero') is True
+    eng.writeback = "provenance"
+    cache.put('x', 'positive', True)
+    cache.put('y', 'positive', True)
+    assert eng.is_(('mul', 'x', 'y'), 'nonzero') is True
+    assert cache.get('y', 'nonzero') is True
 
 
 def test_unknown_stays_unknown_and_is_cached():
@@ -98,8 +109,14 @@ def test_sessions_are_per_query_and_facts_persist():
     for i in range(10):
         assert eng.is_(('add', 'x', f'z{i}'), 'real') is None
     assert eng.stats['sessions'] == 10
-    assert eng.is_('x', 'nonzero') is True      # cache hit, no new session
+    assert eng.is_('x', 'positive') is True     # cache hit, no new session
     assert eng.stats['sessions'] == 10
+    # a fact about x derived while answering about x + z_i is not cached
+    # (writeback="root-only"): recomputed once, then cached as an answer
+    assert eng.is_('x', 'nonzero') is True
+    assert eng.stats['sessions'] == 11
+    assert eng.is_('x', 'nonzero') is True
+    assert eng.stats['sessions'] == 11
 
 
 def test_context_session_is_reused_for_same_assumptions():

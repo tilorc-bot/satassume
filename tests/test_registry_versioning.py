@@ -460,7 +460,7 @@ def _no_templates(node):
 SETTINGS = [("discovery_budget", 1), ("session_limit", 0), ("keep_sessions", 0),
             ("cone_search", False), ("cone_threshold", 0), ("transfer", False),
             ("uninterpreted", "none"), ("relevance", False),
-            ("templates", _no_templates)]
+            ("writeback", "provenance"), ("templates", _no_templates)]
 
 SETTING_QUERIES = [(Q.real(x), Q.real(x) & Q.le(y, 1.5)),
                    (Q.real(x + 1), Q.real(x)),

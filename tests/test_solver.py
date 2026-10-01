@@ -942,3 +942,39 @@ def test_entails_accepts_integral_float_assumptions_with_a_stored_model():
     assert s.solve([3])
     assert s.entails(2, [-1.0]) is True
     assert s.entails(1, [3.0]) is None
+
+
+# ----------------------------------------------------------------------
+# Provenance of root facts through shortened clauses (#53 stage 3)
+# ----------------------------------------------------------------------
+
+@pytest.mark.parametrize("path", ["add_clause", "add_clauses", "add_internal", "add_pattern"])
+def test_provenance_keeps_literals_dropped_from_a_shortened_clause(path):
+    """D's clause ``~1 | ~2 | 3`` is added when 1 is already true at root
+    (a unit owned by F): the solver stores ``~2 | 3`` (``_add_lits``, the
+    slow path of every bulk method).  When 2 then becomes true (owned by
+    E), 3's reason is the stored clause, but F's fact took part too: the
+    dropped literal stays an antecedent of the clause's implications."""
+    from satassume.solver import BOTTOM
+    s = Solver()
+    for _ in range(4):
+        s.new_var()
+    s.owner = "F"
+    s.add_clause([1])
+    s.owner = "D"
+    if path == "add_clause":
+        s.add_clause([-1, -2, 3])
+    elif path == "add_clauses":
+        s.add_clauses([[-1, -2, 3]])
+    elif path == "add_internal":
+        s.add_internal([[3, 5, 6]])         # internal: ~1 = 3, ~2 = 5, 3 = 6
+    else:
+        s.add_pattern([[1, 3, 4]], 1, 3)    # ~v0 | ~v1 | v2, shifted to base 1
+    assert all(len(c) == 2 for c in s._clauses)     # stored shortened
+    s.owner = "E"
+    s.add_clause([2])
+    s.owner = BOTTOM
+    assert s.root_trail() == [1, 2, 3]
+    owner, ants = s.root_step(3)
+    assert owner == "D" and sorted(ants) == [1, 2]
+    assert s.provenance(3, {}) == {"D", "E", "F"}

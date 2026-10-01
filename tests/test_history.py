@@ -236,8 +236,9 @@ def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
 
 
 def test_repros_are_pinned():
-    # 12 since B, B2 and E1c moved to fixed/ (the complete set check, #73)
-    assert len(_repro_params()) >= 12
+    # 15 before B, B2 and E1c (the complete set check, #73) and E1, E1b,
+    # L1, C6b and D (the writeback rule, #53 stage 3) moved to fixed/
+    assert len(_repro_params()) >= 7
     for path in glob.glob(os.path.join(REPROS, "*.json")):
         assert os.path.exists(path[:-5] + ".py"), f"no standalone script for {path}"
 
@@ -451,19 +452,30 @@ def test_srepr_unknown_name_is_a_name_error():
         from_srepr("NoSuchSymPyClass(Integer(1))")
 
 
-def test_family_of_answer_memo_repeating_the_query():
-    """The pinned E1 with the query repeated context-free in the prefix
-    (the shape of E1c, which is fixed: its prefix set is inconsistent and
-    now raises before anything is written back): the relation query
-    decides the sign of ``x + oo`` at the root and writes it back, and the
-    prefix's own copy of the query puts it in the answer memo.  Only
-    clearing both the cache and the memo restores the fresh answer
-    (carrier ``cache+answers``); the tag is the cache's family, E.  Without
-    the repeated query in the prefix the pair carrier stays unexplained."""
+def test_family_of_answer_memo_repeating_the_query(monkeypatch):
+    """E1 with the query repeated context-free in the prefix (the shape of
+    E1c): the relation query decides the sign of ``x + oo`` at the root and
+    writes it back, and the prefix's own copy of the query puts it in the
+    answer memo.  Only clearing both the cache and the memo restores the
+    fresh answer (carrier ``cache+answers``); the tag is the cache's
+    family, E.  Without the repeated query in the prefix the pair carrier
+    stays unexplained.
+
+    E1 is fixed by the writeback rule (``harness/repros/fixed``) and E1c's
+    prefix set now raises (the complete set check), so the attribution is
+    checked on E1 under ``Engine(writeback="all")``, the old
+    history-dependent writeback that produced the family."""
     import dataclasses
     from harness.checker import attribute, family_of, item_from_json
     from harness.state import EngineConfig
-    with open(os.path.join(REPROS, "E1-order-clauses-write-back-oo-sum.json")) as fh:
+    make = EngineConfig.make
+
+    def make_all(self):
+        eng = make(self)
+        eng.writeback = "all"
+        return eng
+    monkeypatch.setattr(EngineConfig, "make", make_all)
+    with open(os.path.join(REPROS, "fixed", "E1-order-clauses-write-back-oo-sum.json")) as fh:
         rec = json.load(fh)
     rec["prefix"] = rec["prefix"] + [rec["item"]]
     seq = [item_from_json(i) for i in rec["prefix"]]

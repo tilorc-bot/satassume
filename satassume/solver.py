@@ -56,6 +56,32 @@ class Clause(list):
     act = 0.0
 
 
+#: the unknown owner of a clause or root unit (see ``Solver.owner``): learnt
+#: and theory clauses, and everything added while no owner was set (relation
+#: glue, assumption clauses, query definitions)
+BOTTOM = "<bottom>"
+_BOTTOM_SET = frozenset([BOTTOM])
+
+
+class BlockOwner:
+    """The owner of a rule-block implication (:meth:`Solver.root_step`):
+    the block registered at variable ``base`` (the client maps it to the
+    node it registered the block for)."""
+    __slots__ = ("base",)
+
+    def __init__(self, base: int):
+        self.base = base
+
+    def __eq__(self, other):
+        return type(other) is BlockOwner and other.base == self.base
+
+    def __hash__(self):
+        return hash((BlockOwner, self.base))
+
+    def __repr__(self):
+        return f"BlockOwner({self.base})"
+
+
 def _is_learnt(c: list) -> bool:
     return c.__class__ is Clause and c.learnt
 
@@ -416,6 +442,30 @@ class Solver:
         # search (its block's exact closure keeps it consistent; models are
         # completed from the block's models, see _fill)
         self._lazy = bytearray(1)
+        # Provenance (Solver.provenance): the *owner* of every problem
+        # clause and root unit, set by the client (``owner``) before adding.
+        # ``_cowner``: id(problem clause) -> owner (problem clauses are
+        # never removed, so their ids are never reused while the solver
+        # lives); ``_uowner``: var -> (owner, antecedents) for a root unit
+        # added by a client, the antecedents being the internal literals
+        # false at root that shortened the clause to the unit, or, for a
+        # rule-block closure written at registration (_rb_settle), the
+        # block's mask of assigned literals (an int).  Missing: BOTTOM.
+        # ``_cante``: id(owned problem clause) -> the internal literals
+        # false at root that _add_lits dropped from it (the clause stored is
+        # the client's clause resolved with those root facts, so they are
+        # antecedents of every implication it makes: root_step adds them).
+        # Every strengthening of a clause goes through _add_lits (the slow
+        # paths of add_clauses, add_internal and add_pattern included).
+        # ``track_owners`` False (a client that never asks for provenance,
+        # e.g. Engine(writeback="root-only")): nothing of this is recorded,
+        # and the client leaves ``owner`` at BOTTOM, so every bookkeeping
+        # site takes its fast path.
+        self.track_owners = True
+        self.owner = BOTTOM
+        self._cowner: dict = {}
+        self._uowner: dict = {}
+        self._cante: dict = {}
         self._n_late = 0                     # late mentions that dropped held levels
         self._n_late_written = 0             # late mentions written at held levels
         self._rb_clauses: tuple | None = None
@@ -618,6 +668,12 @@ class Solver:
                     return True                 # satisfied at root
                 continue                        # false at root: drop literal
             out.append(l)
+        owner = self.owner
+        if owner is not BOTTOM:
+            # the root facts that shortened the clause (provenance)
+            dropped = None
+            if len(out) < len(raw):
+                dropped = [l for l in raw if val[l] is False and not level[l >> 1]]
         self._witness = None
         self._stamp += 1
         if len(out) < 2 and self._trail_lim:
@@ -631,12 +687,18 @@ class Solver:
             val[l ^ 1] = False
             self._level[l >> 1] = 0
             self._reason[l >> 1] = None
+            if owner is not BOTTOM:
+                self._uowner[l >> 1] = (owner, dropped or ())
             self._trail.append(l)
             if self._propagate() is not None:
                 self._ok = False
                 return False
             return True
         self._clauses.append(out)
+        if owner is not BOTTOM:
+            self._cowner[id(out)] = owner
+            if dropped is not None:
+                self._cante[id(out)] = dropped
         if self._trail_lim:
             self._attach_held(out)
             return True
@@ -748,6 +810,8 @@ class Solver:
         level = self._level
         reason = self._reason
         trail = self._trail
+        owner = self.owner
+        cowner = None if owner is BOTTOM else self._cowner
         for lits in clauses:
             if len(lits) == 1:
                 x = lits[0]
@@ -768,6 +832,8 @@ class Solver:
                 val[l ^ 1] = False
                 level[v] = 0
                 reason[v] = None
+                if cowner is not None:
+                    self._uowner[v] = (owner, ())
                 trail.append(l)
                 continue
             out = []
@@ -787,6 +853,8 @@ class Solver:
                 nv = self._nvars
                 continue
             cls.append(out)
+            if cowner is not None:
+                cowner[id(out)] = owner
             watches[out[0]].append(out)
             watches[out[1]].append(out)
         self._witness = None
@@ -824,6 +892,8 @@ class Solver:
         val = self._val
         watches = self._watches
         cls = self._clauses
+        owner = self.owner
+        cowner = None if owner is BOTTOM else self._cowner
         for lits in clauses:
             if len(lits) == 1 and self._trail_lim:
                 self._backtrack(0)              # root change: drop held levels
@@ -839,10 +909,14 @@ class Solver:
                     val[l ^ 1] = False
                     self._level[l >> 1] = 0
                     self._reason[l >> 1] = None
+                    if cowner is not None:
+                        self._uowner[l >> 1] = (owner, ())
                     self._trail.append(l)
                 else:
                     c = list(lits)
                     cls.append(c)
+                    if cowner is not None:
+                        cowner[id(c)] = owner
                     watches[lits[0]].append(c)
                     watches[lits[1]].append(c)
         self._witness = None
@@ -871,7 +945,14 @@ class Solver:
         val = self._val
         clauses = self._clauses
         watches = self._watches
-        append = clauses.append
+        if self.owner is BOTTOM:
+            append = clauses.append
+        else:
+            cowner, owner = self._cowner, self.owner
+
+            def append(c):
+                clauses.append(c)
+                cowner[id(c)] = owner
         if val[lo:lo + n2].count(None) != n2:
             # Some target variable is assigned (at root, or at a held
             # level): clauses with an assigned literal take the slow path.
@@ -1074,6 +1155,8 @@ class Solver:
         level = self._level
         reason = self._reason
         trail = self._trail
+        uowner = self._uowner if self.track_owners else None
+        own = None if uowner is None else BlockOwner(base)
         while new:
             low = new & -new
             new ^= low
@@ -1083,6 +1166,8 @@ class Solver:
                 val[l ^ 1] = False
                 level[l >> 1] = 0
                 reason[l >> 1] = None
+                if uowner is not None:
+                    uowner[l >> 1] = (own, m)   # implied by the block from m
                 trail.append(l)
         if self._propagate() is not None:
             self._ok = False
@@ -1285,6 +1370,18 @@ class Solver:
         if self._trail_lim and self._level[v] > 0:
             return None
         return self._val[l]
+
+    def root_values(self, lo: int, n: int) -> list:
+        """``(k, value)`` for each variable ``lo + k`` (``0 <= k < n``)
+        assigned at root level."""
+        val = self._val
+        level = self._level
+        out = []
+        for v in range(lo, min(lo + n, self._nvars + 1)):
+            x = val[2 * v]
+            if x is not None and not level[v]:
+                out.append((v - lo, x))
+        return out
 
     def root_trail(self) -> list[int]:
         """All literals assigned at root level, in assignment order."""
@@ -2527,6 +2624,82 @@ class Solver:
         if not self._solve(lits + [l], k):
             return False
         return None
+
+    # ------------------------------------------------------------------
+    # Provenance of root facts
+    # ------------------------------------------------------------------
+
+    def root_step(self, v: int):
+        """One step of the reason DAG of the root-level assignment of
+        variable ``v``: ``(owner, antecedent variables)``, or None if the
+        owner is ``BOTTOM`` (a learnt or theory clause, a learnt or theory
+        unit, a clause or unit added with no owner set).  A rule-block
+        implication is owned by ``BlockOwner(base)``.  ``v`` must be
+        assigned at root (root reasons never change afterwards).  The
+        antecedents of a clause or unit the solver shortened when it was
+        added (literals false at root dropped, :meth:`_add_lits`) include
+        the variables of the dropped literals: the client's clause, not the
+        shortened one, is what the owner contributed."""
+        reason = self._reason[v]
+        if reason is None:
+            uo = self._uowner.get(v)
+            if uo is None:
+                return None
+            owner, ante = uo
+            if type(ante) is int:
+                # a block closure written at registration (_rb_settle)
+                base = owner.base
+                lo = 2 * base
+                l = 2 * v if self._val[2 * v] else 2 * v + 1
+                return owner, [(q + lo) >> 1 for q in self._rbc.explain(ante, l - lo)]
+            return owner, [l >> 1 for l in ante]
+        if type(reason) is int:
+            return BlockOwner(reason & 0xFFFFFFFF), [l >> 1 for l in self._rb_reason(v, reason)[1:]]
+        if reason.__class__ is Clause:
+            return None
+        owner = self._cowner.get(id(reason), BOTTOM)
+        if owner is BOTTOM:
+            return None
+        ants = [l >> 1 for l in reason if (l >> 1) != v]
+        if self._cante:
+            dropped = self._cante.get(id(reason))
+            if dropped is not None:
+                # the root facts that shortened the clause (_add_lits)
+                ants.extend(l >> 1 for l in dropped)
+        return owner, ants
+
+    def provenance(self, v: int, memo: dict) -> frozenset:
+        """The owners of the clauses behind the root-level assignment of
+        variable ``v``, transitively through the reasons (:meth:`root_step`):
+        contains ``BOTTOM`` if a learnt clause, a theory clause or an
+        unowned clause or unit took part.  ``memo`` (var -> frozenset) is
+        the caller's; root reasons never change, so it can live as long as
+        the solver."""
+        r = memo.get(v)
+        if r is not None:
+            return r
+        stack = [v]
+        while stack:
+            u = stack[-1]
+            if u in memo:
+                stack.pop()
+                continue
+            step = self.root_step(u)
+            if step is None:
+                memo[u] = _BOTTOM_SET
+                stack.pop()
+                continue
+            own, ants = step
+            todo = [a for a in ants if a not in memo]
+            if todo:
+                stack.extend(todo)
+                continue
+            acc = {own}
+            for a in ants:
+                acc |= memo[a]
+            memo[u] = frozenset(acc)
+            stack.pop()
+        return memo[v]
 
     def stats(self) -> dict[str, int]:
         return {
