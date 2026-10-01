@@ -83,14 +83,15 @@ def test_guarded_answers(prop, assumptions, sympy_answer, guarded):
 def test_only_the_orthogonal_entry_changes():
     # the corrected single-fact table equals a full regeneration from the
     # corrected matrix facts
-    from sympy import And, Implies, Symbol
+    from sympy import And, Symbol
     from sympy.assumptions.ask_generated import get_known_facts_dict
     from sympy.assumptions.assume import AppliedPredicate
     from sympy.assumptions.facts import generate_known_facts_dict, get_matrix_facts
     x = Symbol('x')
-    wrong = Implies(Q.orthogonal(x), Q.unitary(x))
-    facts = And(*[a for a in get_matrix_facts(x).args if a != wrong],
-                Implies(Q.orthogonal(x) & Q.real_elements(x), Q.unitary(x)))
+    pairs = backend._orthogonal_corrections()
+    wrong = {w for w, _ in pairs}
+    facts = And(*[a for a in get_matrix_facts(x).args if a not in wrong],
+                *[r for _, r in pairs])
     regenerated = generate_known_facts_dict(sorted(facts.atoms(AppliedPredicate), key=str), facts)
     corrected = backend._corrected_facts_dict(get_known_facts_dict())
     for key, entry in regenerated.items():
