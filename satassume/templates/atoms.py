@@ -25,6 +25,7 @@ from sympy.core.symbol import Symbol
 
 from ._common import VOCAB, const_key, const_value, units
 from .registry import registry
+from ..memos import PROCESS as _PROCESS
 
 _ORACLE_PREDS = tuple(sorted(VOCAB))
 # Properties read on a constant.  The rest (the extended sign predicates,
@@ -63,8 +64,8 @@ def constant_units(expr):
 # above; Add, Mul, Pow and functions of expressions derive it from their
 # arguments (``commutative`` is closed under them).
 _STRUCTURAL = (Symbol, Number, NumberSymbol, ImaginaryUnit, ComplexInfinity, Add, Mul, Pow)
-_INGREDIENTS: dict = {}
 _INGREDIENTS_MAX = 50_000
+_INGREDIENTS = _PROCESS.table("satassume.templates.atoms._INGREDIENTS", "pure", _INGREDIENTS_MAX)
 
 
 def _commutative_ingredients(expr) -> bool:

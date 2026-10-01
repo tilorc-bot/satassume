@@ -276,6 +276,7 @@ from .formula import And, Not, P, atoms_of
 from .rules import NPRED, PRED_INDEX
 from .constfield import Undecided, sign
 from .theory import EqualitySharing
+from .memos import PROCESS as _PROCESS
 
 #: atom predicates the engine gives to theories
 RELATION_ATOMS = frozenset({"eq", "lt"})
@@ -409,7 +410,7 @@ def relational_name(rel) -> str:
     return _OPS[rel.rel_op]
 
 
-_SYMPY_ATOMS: dict = {}
+_SYMPY_ATOMS = _PROCESS.table("satassume.relations._SYMPY_ATOMS", "pure", 100_000)
 
 
 def sympy_atom(atom: P):
@@ -419,7 +420,7 @@ def sympy_atom(atom: P):
     if r is None:
         from sympy.assumptions.ask import Q
         r = {"eq": Q.eq, "lt": Q.lt}[atom.pred](*atom.expr)
-        if len(_SYMPY_ATOMS) >= 100_000:
+        if len(_SYMPY_ATOMS) >= _SYMPY_ATOMS.size:
             _SYMPY_ATOMS.clear()
         _SYMPY_ATOMS[atom] = r
     return r

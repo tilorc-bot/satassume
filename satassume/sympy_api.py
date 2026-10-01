@@ -77,6 +77,7 @@ from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
 from .engine import affine_glue as _affine_glue
 from .epoch import EPOCH as _EPOCH
+from .memos import PROCESS as _PROCESS
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
@@ -153,8 +154,8 @@ def _is_scalar(arg) -> bool:
 #: memo of :func:`_noncommutative` (a function of the expression only:
 #: SymPy equality distinguishes ``Symbol('A')`` from the non-commutative
 #: ``A`` and ``Function('g')`` from ``Function('g', commutative=False)``)
-_NONCOMM: dict = {}
 NONCOMM_SIZE = 4096
+_NONCOMM = _PROCESS.table("satassume.sympy_api._NONCOMM", "pure", NONCOMM_SIZE)
 
 
 def _fixed_noncommutative(t) -> bool:
@@ -417,10 +418,9 @@ _MISS = object()
 
 #: ``(expr, relations) -> formula``, or the ``Unsupported`` category, of
 #: :func:`to_formula` on SymPy Booleans; valid while the default registry's
-#: version (which decides the scope of custom predicates) is ``_FORMULAS_STATE``
-_FORMULAS: dict = {}
-_FORMULAS_STATE = [None]
+#: version (which decides the scope of custom predicates) is ``_FORMULAS.stamp``
 FORMULAS_SIZE = 100_000
+_FORMULAS = _PROCESS.table("satassume.sympy_api._FORMULAS", "extensions", FORMULAS_SIZE)
 
 
 def _formula(expr, relations: bool, opaque: bool = False):
@@ -429,9 +429,8 @@ def _formula(expr, relations: bool, opaque: bool = False):
     if not isinstance(expr, _Basic):
         return to_formula(expr, relations, opaque)
     state = extensions.version
-    if _FORMULAS_STATE[0] != state:
-        _FORMULAS.clear()
-        _FORMULAS_STATE[0] = state
+    if _FORMULAS.stamp != state:
+        _FORMULAS.restamp(state)
     key = (expr, relations, opaque)
     f = _FORMULAS.get(key)
     if f is None:
@@ -593,11 +592,10 @@ _OPAQUE = None  # keys of an opaque expression
 #: (:mod:`satassume.epoch`: the default registry decides whether a custom
 #: predicate is registered, so opaque, or unregistered, keyed by its
 #: arguments; the templates decide what a closed term's block fixes) is
-#: ``_KEYS_STATE``.  ``_CONST`` (closed term -> in ``K``) shares it.
-_KEYS: dict = {}
-_CONST: dict = {}
-_KEYS_STATE = [None]
+#: ``_KEYS.stamp``.  ``_CONST`` (closed term -> in ``K``) is dropped with it.
 KEYS_SIZE = 100_000
+_KEYS = _PROCESS.table("satassume.sympy_api._KEYS", "epoch", KEYS_SIZE)
+_CONST = _PROCESS.table("satassume.sympy_api._CONST", "epoch", KEYS_SIZE)
 
 
 #: the closed atoms of ``K`` (see "Closed terms" above)
@@ -700,10 +698,9 @@ def _keys(e):
 def _keys_rel(e):
     """``(keys, has a relation)`` of the Boolean ``e`` (keys as :func:`_keys`)."""
     state = _EPOCH[0]
-    if _KEYS_STATE[0] != state:
-        _KEYS.clear()
-        _CONST.clear()
-        _KEYS_STATE[0] = state
+    if _KEYS.stamp != state:
+        _KEYS.restamp(state)
+        _CONST.restamp(state)
     k = _KEYS.get(e)
     if k is not None:
         return k

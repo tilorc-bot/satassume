@@ -87,3 +87,70 @@ def test_uninterpreted_assumptions_are_remembered():
     assert ask(Q.finite(x), a, eng) is None
     assert eng.stats["sessions"] == n + 2
     assert eng.stats["version_clears"] == 1 and not eng._context_sessions
+
+
+# -- the memo objects (issue #97, P4) ------------------------------------------
+
+def test_two_engines_do_not_share_memos():
+    """Every engine has its own ``Memos``; none of its memo containers is
+    another engine's, filling one leaves the other's empty, and clearing
+    one leaves the other's alone.  What engines do share is
+    ``memos.PROCESS``, and only memos keyed on nothing but their key and
+    the registry epoch (or the default registry's version) may live there."""
+    from satassume import Engine
+    from satassume.memos import PROCESS, PROCESS_KEYS
+    from satassume.sympy_api import ask
+    e1, e2 = Engine(), Engine()
+    assert e1.memos is not e2.memos
+    c1 = {n: c for n, _, c in e1.memos.items()}
+    c2 = {n: c for n, _, c in e2.memos.items()}
+    assert set(c1) == set(c2) and len(c1) >= 8
+    assert not {id(c) for c in c1.values()} & {id(c) for c in c2.values()}
+    y = Symbol('y')
+    a = Q.positive(x) & Q.positive(y)
+    assert ask(Q.positive(x + y), a, e1) is True
+    assert ask(Q.nonnegative(x * y), a, e1) is True
+    assert any(e1.memos.sizes().values())
+    assert not any(e2.memos.sizes().values())
+    assert ask(Q.positive(x + y), a, e2) is True
+    n2 = e2.memos.sizes()
+    e1.memos.clear()
+    assert not any(e1.memos.sizes().values())
+    assert e2.memos.sizes() == n2 and any(n2.values())
+    assert ask(Q.positive(x + y), a, e1) is True          # works after a clear
+    for name, key, _ in PROCESS.items():
+        assert key in PROCESS_KEYS, name
+
+
+def test_process_memos_registered_and_cleared():
+    """Every module-level memo is registered with ``memos.PROCESS``
+    (``harness.state.MODULE_STATE`` is derived from it, also after every
+    module is imported), and one ``PROCESS.clear()`` empties all of them
+    and forgets the stamps of the epoch-keyed tables."""
+    from harness.state import MODULE_STATE, import_all
+    from satassume import memos
+    from satassume import sympy_api as api
+    import_all()
+    assert set(memos.module_locations()) == set(MODULE_STATE)
+    assert ("satassume.sympy_api", "_KEYS") in MODULE_STATE
+    api._keys(Q.positive(x))
+    _formula(Q.positive(x), False)
+    assert api._KEYS and api._FORMULAS and api._KEYS.stamp is not None
+    memos.PROCESS.clear()
+    assert not any(memos.PROCESS.sizes().values())
+    assert api._KEYS.stamp is None and api._FORMULAS.stamp is None
+    assert api._keys(Q.positive(x)) == frozenset([x])
+
+
+def test_table_bound_and_process_key_check():
+    from satassume.memos import Memos, PROCESS, Table
+    t = Memos("t").table("t.x", "settings", size=2)
+    assert isinstance(t, Table) and type(t).get is dict.get
+    t.put(1, 1); t.put(2, 2); t.put(3, 3)
+    assert dict(t) == {3: 3}
+    t.restamp(7)
+    assert not t and t.stamp == 7
+    with pytest.raises(ValueError):
+        PROCESS.table("satassume.test.bad", "settings")
+    with pytest.raises(ValueError):
+        Memos("t").table("t.y", "nonsense")
