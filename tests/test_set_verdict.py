@@ -110,17 +110,25 @@ def test_truncated_cone_is_unknown():
     assert Engine(cache=DictCache(), discovery_budget=3).verdict(g) is CONSISTENT
 
 
-def test_check_runs_in_the_query_session():
-    # no session of its own for the check: the set's contextual session
-    # is the only one built, and Engine.verdict builds that very session
+def test_verdict_keeps_no_session():
+    # Engine.verdict builds the set's session as a query would
+    # (_build_context) but keeps only the verdict: the relevance layer asks
+    # it for sets it then answers under a part, whose sessions a
+    # never-queried whole session would evict.  A query under the whole
+    # set builds its session then, with the same verdict; later verdicts
+    # come from the memo
     from satassume.sympy_api import _formula
     x, y = symbols('x y')
     f = _formula(Q.positive(x) & Q.gt(y, 1), True)
     eng = Engine(cache=DictCache())
     assert eng.verdict(f) is CONSISTENT
-    assert eng.stats["sessions"] == 1
+    assert eng.stats["sessions"] == 1 and not eng._context_sessions
     s, _ = eng._context_session(f)
-    assert eng.stats["sessions"] == 1 and s.verdict is CONSISTENT
+    assert eng.stats["sessions"] == 2 and s.verdict is CONSISTENT
+    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == 2
+    # a session's verdict answers when the memo has none
+    eng._verdict.clear()
+    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == 2
 
 
 def test_setting_change_recomputes_a_memoized_verdict():
@@ -147,10 +155,13 @@ def test_cone_search_keeps_the_verdict():
     # the cone session that replaces a polluted one carries the set's verdict
     from satassume.sympy_api import _formula
     x, y, z, w = symbols('x y z w')
-    eng = Engine(cache=DictCache(), cone_threshold=0)
+    # (relevance off: the queries are asked under the whole set)
+    eng = Engine(cache=DictCache(), cone_threshold=0, relevance=False)
     a = Q.positive(x) & Q.gt(y, 1)
-    assert eng.verdict(_formula(a, True)) is CONSISTENT
+    g = _formula(a, True, True)
+    assert eng.verdict(g) is CONSISTENT
     ask(Q.positive(z*w + 1), a, eng)  # pollutes the session
     ask(Q.negative(x*y), a, eng)
     assert eng.stats["cone_searches"] >= 1
-    assert eng.verdict(_formula(a, True)) is CONSISTENT
+    assert eng._context_sessions[g][0].verdict is CONSISTENT
+    assert eng.verdict(g) is CONSISTENT

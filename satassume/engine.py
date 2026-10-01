@@ -1557,14 +1557,45 @@ class Engine:
         """The verdict of the assumption set ``assumptions`` (a formula):
         ``CONSISTENT``, ``INCONSISTENT`` or ``UNKNOWN``, from the complete
         check (:meth:`_complete_check`) run when its contextual session is
-        built.  Builds that session if it has none (the set's queries use
-        it); raises ``Uninterpreted`` as that construction does, never
-        ``InconsistentAssumptions``."""
-        try:
-            s, _ = self._context_session(assumptions)
-        except InconsistentAssumptions:
-            return INCONSISTENT
-        return s.verdict
+        built; raises ``Uninterpreted`` as that construction does, never
+        ``InconsistentAssumptions``.
+
+        Answered from the verdict memo, or from the set's contextual
+        session if it has one; else the session is built by
+        :meth:`_build_context` and only its verdict is kept: the session
+        is not stored in ``_context_sessions``.  The caller of a verdict
+        is mostly the relevance layer deciding whether a set may raise
+        before it answers under a part of it; the part's session is the
+        one its queries use, and a never-queried whole session would only
+        evict it.  If the whole set is queried later its session is built
+        then, by the same steps (see :meth:`_build_context`), so what a
+        query sees does not depend on whether a verdict was asked
+        first."""
+        if self._epoch != _EPOCH[0]:
+            self._check_version()
+        v = self._verdict.get(assumptions)
+        if v is not None:
+            return v
+        hit = self._context_sessions.get(assumptions)
+        if hit is not None and hit[0].verdict is not None:
+            v = hit[0].verdict
+        else:
+            failed = self._failed
+            msg = failed.get(assumptions)
+            if msg is not None:
+                raise Uninterpreted(msg)
+            try:
+                s, _ = self._build_context(assumptions)
+            except Uninterpreted as e:
+                if len(failed) >= 10_000:
+                    failed.clear()
+                failed[assumptions] = str(e)
+                raise
+            v = s.verdict
+        if len(self._verdict) >= 20_000:
+            self._verdict.clear()
+        self._verdict[assumptions] = v
+        return v
 
     @staticmethod
     def _complete_check(s: Session, lits: List[int]) -> str:
