@@ -171,17 +171,44 @@ def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None, block
 # consistency guard
 # --------------------------------------------------------------------------
 
-def consistent(assum, config: EngineConfig) -> bool:
-    """The engine's own solver finds a model of ``assum`` (full escalation
-    and search).  False also when that cannot be decided: a candidate
-    violation under such a set is not reported."""
+#: disagreements between the two paths of the guard (the engine finds no
+#: model, a concrete assignment satisfies the set): logged, never reported
+GUARD_DISAGREEMENTS: List[dict] = []
+
+
+def consistent_by(assum, config: EngineConfig) -> Optional[str]:
+    """Which path finds a model of ``assum``: ``"engine"`` (the engine's
+    own solver, full escalation and search), else ``"model"`` (a concrete
+    assignment of the symbols from a small grid, respecting their declared
+    assumptions, under the conservative evaluator of ``harness.models``),
+    else None (undecided: a candidate under such a set is not reported).
+    The engine's "no model" is also what it says of a set it cannot read,
+    so a model found after it is logged (``GUARD_DISAGREEMENTS``), never
+    reported."""
     if assum is True or assum is S.true:
-        return True
+        return "engine"
     eng = config.make()
     try:
-        return bool(_api._consistent(assum, eng, count=False, search=True))
+        if bool(_api._consistent(assum, eng, count=False, search=True)):
+            return "engine"
     except Exception:  # noqa: BLE001
-        return False
+        pass
+    from .models import find_model
+    try:
+        m = find_model(assum)
+    except Exception:  # noqa: BLE001
+        m = None
+    if m is None:
+        return None
+    GUARD_DISAGREEMENTS.append({"assum": to_srepr(assum), "model": {str(k): str(v) for k, v in m.items()}})
+    return "model"
+
+
+def consistent(assum, config: EngineConfig) -> bool:
+    """The engine's own solver or a concrete model (``consistent_by``)
+    finds a model of ``assum``.  False when neither can decide: a
+    candidate violation under such a set is not reported."""
+    return consistent_by(assum, config) is not None
 
 
 def fresh_outcome(prop, assum, config: EngineConfig) -> str:
@@ -307,6 +334,8 @@ class Unrelated:
         set, which is not an I2 violation but the documented contract."""
         r = self.rng
         c = r.random()
+        if self.mode == "any" and r.random() < OOS_RATE:
+            return self.out_of_scope()
         if c < 0.12 and depth > 0:
             a, b = self.piece(depth - 1), self.piece(depth - 1)
             return r.choice([Or, Implies, Equivalent])(a, b)
@@ -385,6 +414,119 @@ class Unrelated:
 
     def conjunction(self, n: int, depth: int = 2):
         return And(*[self.piece(depth) for _ in range(n)])
+
+    def out_of_scope(self):
+        """Material the engine documents as out of scope (``sympy_api.
+        out_of_scope``): a matrix atom, ``Q.is_true`` over a non-relation,
+        an unregistered custom predicate on a fresh symbol.  Each is
+        satisfiable over fresh symbols, so ``A & B`` is consistent iff ``A``
+        is; the invariant does not exempt them (a scope tag is recorded in
+        the case, the oracle is the same)."""
+        r = self.rng
+        c = r.random()
+        if c < 0.34:
+            from sympy import MatrixSymbol
+            self.k += 1
+            M = MatrixSymbol(f"{self.tag}M{self.k}", 2, 2)
+            return r.choice([Q.symmetric, Q.invertible, Q.square])(M)
+        if c < 0.67:
+            u = self.sym()
+            inner = r.choice([Or(Q.positive(u), Q.negative(u)), Q.real(u), Not(Q.zero(u), evaluate=False)])
+            return Q.is_true(inner)
+        self.k += 1
+        return custom_predicate(f"{self.tag}oos{self.k}", 1)(self.sym())
+
+    def block(self, shared_consts: Sequence[Any] = ()) -> Optional[List[Any]]:
+        """An unrelated *subsystem*: 2-4 conjuncts over 2-3 fresh symbols
+        that share symbols among themselves (sign atoms on sums sharing a
+        symbol, order chains, equalities, disequalities, integrality), the
+        symbols optionally declared, the constants optionally from the
+        query's own (``shared_consts``: symbol-disjoint, sharing a constant,
+        is still unrelated).  A witness assignment is chosen first and the
+        block built around it: each atom is kept in the polarity true at
+        the witness, and the whole block is verified by evaluation
+        (``harness.models.evaluate_at``); None when it cannot be."""
+        from .models import WITNESS_POOL, evaluate_at, values_for
+        r = self.rng
+        n_syms = r.choice([2, 2, 3])
+        syms, subs = [], {}
+        for _ in range(n_syms):
+            kw = {}
+            c = r.random()
+            if c < 0.2:
+                kw = {"integer": True}
+            elif c < 0.35:
+                kw = {"positive": True}
+            elif c < 0.5:
+                kw = {"real": True}
+            s = self.sym(**kw)
+            if isinstance(s, Dummy):
+                s = Symbol(f"{self.tag}u{self.k}", **kw)
+            vals = values_for(s, WITNESS_POOL)
+            if not vals:
+                return None
+            syms.append(s)
+            subs[s] = r.choice(vals)
+        consts = list(_FINITE_CONSTS[:6]) + [c for c in shared_consts if getattr(c, "is_extended_real", None) and getattr(c, "is_finite", None)]
+
+        def term():
+            a, b = r.sample(syms, 2)
+            c = r.random()
+            if c < 0.3:
+                return a + b
+            if c < 0.45:
+                return a + r.choice(consts)
+            if c < 0.6:
+                return a - b
+            if c < 0.7:
+                return a * b
+            if c < 0.8:
+                return r.choice([S(2), S(-3), Rational(1, 2)]) * a + b
+            if c < 0.9:
+                return a
+            return a + b + r.choice(consts)
+
+        out = []
+        for _ in range(r.choice([2, 3, 3, 4])):
+            c = r.random()
+            if self.mode == "norel":
+                c = r.choice([0.1, 0.1, 0.9])
+            elif self.mode == "rel":
+                c = r.choice([0.5, 0.5, 0.8])
+            if c < 0.4:
+                name = r.choice(["positive", "negative", "nonnegative", "nonpositive", "zero", "nonzero", "real"])
+                atom = getattr(Q, name)(term())
+                val = evaluate_at(atom, subs)
+                if val is None:
+                    continue
+                out.append(atom if val else Not(atom, evaluate=False))
+            elif c < 0.8:
+                a = term()
+                b = term() if r.random() < 0.6 else r.choice(consts)
+                if a == b:
+                    continue
+                rel = r.choice([Q.lt, Q.le, Q.gt, Q.ge, Q.eq, Q.ne])
+                atom = rel(a, b)
+                val = evaluate_at(atom, subs)
+                if val is None:
+                    continue
+                if not val:
+                    atom = {Q.lt: Q.ge, Q.le: Q.gt, Q.gt: Q.le, Q.ge: Q.lt, Q.eq: Q.ne, Q.ne: Q.eq}[rel](a, b)
+                if r.random() < 0.3:
+                    atom = {v: k for k, v in _QREL.items()}[atom.function](*atom.arguments, evaluate=False)
+                out.append(atom)
+            else:
+                name = r.choice(["integer", "even", "odd", "rational", "irrational", "noninteger"])
+                atom = getattr(Q, name)(term())
+                val = evaluate_at(atom, subs)
+                if val is None:
+                    continue
+                out.append(atom if val else Not(atom, evaluate=False))
+        if len(out) < 2:
+            return None
+        if evaluate_at(And(*out), subs) is not True:
+            return None
+        return out
 
     def extension(self):
         """A registered extension with no path to the query.  Either a
@@ -609,9 +751,21 @@ def _shift_relation(b, rng: random.Random):
     if a.has(S.NaN) or c.has(S.NaN):
         return None
     f = b.function
-    if rng.random() < 0.5:
+    r = rng.random()
+    if r < 0.3:
         k = rng.choice([S.One, S(-2), Rational(1, 2)])
         return f(a + k, c + k)
+    if r < 0.5:
+        # shifted by a term of the relation itself: ``a < c`` is ``0 < c - a``
+        # (finite terms; an infinite side would give ``oo - oo``)
+        if a.is_finite and c.is_finite:
+            return f(S.Zero, c - a) if rng.random() < 0.5 else f(a - c, S.Zero)
+        return f(-c, -a)
+    if r < 0.75:
+        # scaled by a positive constant (the order is unchanged; non-real
+        # sides stay non-real, equality is unchanged)
+        k = rng.choice([S(2), S(3), Rational(1, 2)])
+        return f(k * a, k * c)
     return f(-c, -a)
 
 
@@ -623,7 +777,11 @@ def restate(b, rng: random.Random, p: float = 0.5):
     re-sorts them, so this checks the engine's own ordering)."""
     if isinstance(b, AppliedPredicate):
         f = b.function
-        if f in _SWAP and rng.random() < p:
+        if f in _SWAP and rng.random() < p * 0.8:
+            r = _shift_relation(b, rng)         # first: shifted, scaled, one-sided (the rewrites)
+            if r is not None:
+                return r
+        if f in _SWAP and rng.random() < p * 0.6:
             a, c = b.arguments
             return _SWAP[f](c, a)
         if f in _SWAP and rng.random() < p:
@@ -635,7 +793,7 @@ def restate(b, rng: random.Random, p: float = 0.5):
             return Q.eq(b.arguments[0], S.Zero)             # zero(x) is x = 0 for every scalar value
         if f == Q.eq and b.arguments[1] == S.Zero and _scalar(b.arguments[0]) and rng.random() < p:
             return Q.zero(b.arguments[0])
-        if f in _SWAP and rng.random() < p * 0.5:
+        if f in _SWAP and rng.random() < p * 1.6:
             r = _shift_relation(b, rng)
             if r is not None:
                 return r
@@ -767,6 +925,8 @@ class Violation:
     known: Optional[str] = None
     shrunk: bool = False
     prefix: List[Any] = dataclasses.field(default_factory=list)   # I7: the history
+    consistent_by: Optional[str] = None     # which guard path decided ("engine" / "model")
+    fingerprint: Optional[str] = None       # the probes that make the difference vanish
 
     def summary(self) -> str:
         k = f" known:{self.known}" if self.known else ""
@@ -778,19 +938,26 @@ class Violation:
                 "config": self.config.to_dict(), "prop": to_srepr(self.prop),
                 "assum": to_srepr(self.assum), "variant": self.variant, "base": self.base,
                 "other": self.other, "source": self.source, "shrunk": self.shrunk,
+                "consistent_by": self.consistent_by, "fingerprint": self.fingerprint,
                 "prefix": [{"prop": to_srepr(a.prop), "assum": to_srepr(a.assum)} for a in self.prefix]}
 
 
-def in_scope(prop, assum) -> bool:
-    """The query is within the engine's documented scope
-    (``sympy_api.out_of_scope``: no matrix atom, no unregistered custom
-    predicate, no ``Q.is_true`` over a non-relational, nothing but a
-    Boolean combination of applied predicates); relations are answered
-    by the theories, so the "relation" category is in scope."""
+def scope_of(prop, assum) -> str:
+    """The engine's documented scope category of the query
+    (``sympy_api.out_of_scope``: ``matrix``, ``custom`` (an unregistered
+    predicate or ``Q.is_true`` over a non-relational), ``other``), or
+    ``"in"``.  A *tag* recorded in the case: the invariants do not exempt
+    out-of-scope material (an answer changed by an unrelated conjunct the
+    engine calls out of scope is an I2 violation all the same)."""
     try:
-        return _api.out_of_scope(prop, assum) in (None, "relation")
-    except Exception:  # noqa: BLE001
-        return False
+        c = _api.out_of_scope(prop, assum)
+    except Exception as e:  # noqa: BLE001
+        return f"error:{type(e).__name__}"
+    return "in" if c in (None, "relation") else c
+
+
+def in_scope(prop, assum) -> bool:
+    return scope_of(prop, assum) == "in"
 
 
 def _severity_same(inv: str, base: str, other: str) -> Optional[str]:
@@ -853,6 +1020,19 @@ def check_I2(prop, assum, config, base, rng, variant=None):
         u = Unrelated(random.Random(rng.randrange(1 << 30)), "iu", mode)
         n = rng.choice([1, 1, 2, 3, 5, 8, 12, 12, 20, 30])
         parts = [u.piece(depth=rng.choice([1, 2, 3])) for _ in range(n)]
+        nblocks = 0
+        if rng.random() < I2_BLOCK_RATE:
+            # unrelated subsystems (blocks of conjuncts sharing symbols among
+            # themselves), each with a verified witness; constants of the
+            # query's set may recur in them (no shared variable: unrelated)
+            consts = [c for c in _consts_of(assum) + _consts_of(prop)][:6]
+            for _ in range(rng.choice([1, 1, 2])):
+                blk = u.block(consts if rng.random() < 0.5 else ())
+                if blk is not None:
+                    parts.extend(blk)
+                    nblocks += 1
+            if nblocks and rng.random() < 0.5:
+                parts = parts[n:]            # the blocks alone
         specs = []
         if rng.random() < I2_EXTENSION_RATE:
             for _ in range(rng.choice([1, 1, 2, 3])):
@@ -862,6 +1042,8 @@ def check_I2(prop, assum, config, base, rng, variant=None):
                     parts.append(atom)
         rng.shuffle(parts)
         variant = {"kind": "unrelated", "extra": to_srepr(And(*parts)), "mode": mode}
+        if nblocks:
+            variant["blocks"] = nblocks
         if specs:
             variant["extensions"] = specs
     extra = from_srepr(variant["extra"])
@@ -872,9 +1054,7 @@ def check_I2(prop, assum, config, base, rng, variant=None):
     if len(HANDLER_ERRORS) > n_err and _error(other):
         return None, other, variant          # the harness's handler raised: not the engine's error
     with registered(variant.get("extensions", [])):
-        scoped = in_scope(prop, new)
-    if not scoped:
-        return None, other, variant          # None by the documented contract, whatever the answer
+        variant = dict(variant, scope=scope_of(prop, new))   # a tag, never a veto (INVARIANTS.md)
     return _severity_same("I2", base, other), other, variant
 
 
@@ -927,6 +1107,13 @@ def check_I5(prop, assum, config, base, rng, variant=None):
         return None, base, variant or {"kind": "skip"}
     if variant is None and rng.random() < I5_SYNTAX_RATE:
         variant = {"kind": "syntax", "seed": rng.randrange(1 << 30)}
+    if variant is None and rng.random() < I5_PROP_RATE:
+        # the proposition restated (the set unchanged): ``restate`` on it,
+        # or padded with a tautology / contradiction over a fresh symbol
+        r = random.Random(rng.randrange(1 << 30))
+        q = restate_prop(prop, r)
+        if q != prop:
+            variant = {"kind": "prop", "prop": to_srepr(q)}
     if variant is None:
         cs = _conjuncts(assum)
         parts = list(cs)
@@ -941,11 +1128,13 @@ def check_I5(prop, assum, config, base, rng, variant=None):
         # rebuilt from the (possibly shrunk) conjuncts: the seed fixes the spelling
         new = syntax_form(_conjuncts(assum), random.Random(variant["seed"]))
         variant = dict(variant, assum=to_srepr(new))
+    elif variant["kind"] == "prop":
+        new = assum
     else:
         new = from_srepr(variant["assum"])
-    other = fresh_outcome(prop, new, config)
-    if not in_scope(prop, new):
-        return None, other, variant
+    new_prop = from_srepr(variant["prop"]) if "prop" in variant else prop
+    other = fresh_outcome(new_prop, new, config)
+    variant = dict(variant, scope=scope_of(new_prop, new))    # a tag, never a veto
     return _severity_same("I5", base, other), other, variant
 
 
@@ -984,6 +1173,13 @@ RENAME_LIMIT = 1500
 I1_BLOCKS_RATE = 1.0 if os.environ.get('I1_BLOCKS_ALL') else 0.3
 #: share of I2 checks that also register fresh extensions
 I2_EXTENSION_RATE = 0.3
+#: share of the I2 checks whose material holds an unrelated *block*
+I2_BLOCK_RATE = 0.4
+#: rate of out-of-scope pieces (matrix atom, ``Q.is_true`` over a
+#: non-relation, unregistered predicate) in the ``any`` mode
+OOS_RATE = 0.03
+#: share of the I5 checks that restate the proposition instead of the set
+I5_PROP_RATE = 0.3
 #: share of I5 checks that respell the conjunction (order, duplicate, nesting)
 #: instead of restating conjuncts
 I5_SYNTAX_RATE = 0.35
@@ -1098,6 +1294,38 @@ CHECKERS: Dict[str, Callable] = {
 # shrinking and replay
 # --------------------------------------------------------------------------
 
+def _consts_of(e) -> List[Any]:
+    """The finite real numeric constants occurring in ``e`` (shared with
+    the unrelated blocks: a constant is not a variable)."""
+    if not isinstance(e, Basic):
+        return []
+    from sympy import Number, NumberSymbol
+    out = []
+    for a in e.atoms(Number, NumberSymbol):
+        if a.is_finite and a.is_extended_real and a not in out and a not in (S.Zero, S.One, S.NegativeOne):
+            out.append(a)
+    return sorted(out, key=str)
+
+
+def restate_prop(p, rng: random.Random):
+    """An equivalent restatement of the proposition: ``restate`` on it, or
+    the proposition padded with a tautology (``And``) or a contradiction
+    (``Or``) over a fresh symbol (``w``, declared at random): the padding
+    has no model-theoretic effect on ``p``."""
+    if not isinstance(p, Basic) or isinstance(p, BooleanAtom):
+        return p
+    r = rng.random()
+    if r < 0.6:
+        q = restate(p, rng, p=0.7)
+        if q != p:
+            return q
+    w = Symbol("iw", **rng.choice([{}, {"real": True}, {"integer": True}, {"positive": True}]))
+    atom = getattr(Q, rng.choice(VALUE_PREDS))(w)
+    if rng.random() < 0.5:
+        return And(p, Or(atom, negate(atom)), evaluate=False)
+    return Or(p, And(atom, negate(atom)), evaluate=False)
+
+
 def _conjuncts(a) -> List[Any]:
     if a is True or a is S.true:
         return []
@@ -1128,7 +1356,7 @@ def _equivalent_set(v: Violation, assum, var) -> Optional[Any]:
     I6: the renamed set) or one whose consistency implies ``assum``'s
     (I2, I3: ``A & B``); None for the other invariants."""
     if v.inv == "I5":
-        return from_srepr(var["assum"])
+        return from_srepr(var["assum"]) if "assum" in var else None   # ``prop`` kind: the set itself
     if v.inv == "I6":
         return from_srepr(var["assum"])
     if v.inv == "I2":
@@ -1158,10 +1386,11 @@ def _guarded(v: Violation, prop, assum, variant) -> bool:
     alt = _equivalent_set(v, assum, var)
     if v.inv == "I3":
         # anything goes if A & B is inconsistent: A & B itself must have a model
-        return alt is not None and consistent(alt, v.config)
-    if consistent(assum, v.config):
-        return True
-    return alt is not None and consistent(alt, v.config)
+        by = alt is not None and consistent_by(alt, v.config)
+    else:
+        by = consistent_by(assum, v.config) or (alt is not None and consistent_by(alt, v.config))
+    v.consistent_by = by or None
+    return bool(by)
 
 
 def shrink(v: Violation, max_tests: int = 400) -> Violation:
@@ -1296,11 +1525,25 @@ def extra_kinds(extra, specs: Sequence[dict] = ()) -> List[str]:
     ``relation``, ``declared``, ``pred``, ``compound``, ``ext:<cls>:<shape>``.
     Reported with the case and used to tell families apart."""
     kinds = set()
-    for c in _conjuncts(extra):
+    cs = _conjuncts(extra)
+    seen_syms: set = set()
+    for c in cs:
+        fs = {s for s in getattr(c, "free_symbols", ()) if isinstance(s, Symbol)}
+        if fs & seen_syms:
+            kinds.add("block")          # conjuncts sharing a symbol among themselves
+        seen_syms |= fs
+    for c in cs:
         if isinstance(c, (And, Or, Implies, Equivalent)):
             kinds.add("compound")
             continue
         inner = c.args[0] if isinstance(c, Not) else c
+        if isinstance(inner, Basic) and inner.has(MatrixExpr):
+            kinds.add("oos:matrix")
+            continue
+        if isinstance(inner, AppliedPredicate) and inner.function == Q.is_true and inner.arguments \
+                and not isinstance(inner.arguments[0], Relational):
+            kinds.add("oos:is_true")
+            continue
         if isinstance(inner, AppliedPredicate) and inner.function == Q.is_true and inner.arguments:
             inner = inner.arguments[0]
         if isinstance(inner, Basic) and inner.has(S.Infinity, S.NegativeInfinity, S.ComplexInfinity):
