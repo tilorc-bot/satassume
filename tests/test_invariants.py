@@ -22,7 +22,7 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 
-from sympy import Q, Symbol  # noqa: E402
+from sympy import And, Not, Q, S, Symbol  # noqa: E402
 
 from harness.checker import Ask  # noqa: E402
 from harness.generators import random_stream  # noqa: E402
@@ -221,3 +221,82 @@ def test_restatements_agree_on_values():
                 assert a == b, (conj, other, vx, vy, a, b)
                 checked += 1
     assert checked > 80
+
+
+def test_given_restatements_agree_on_declared_values():
+    """Every equivalence of ``_GIVEN`` (and the relation complement under
+    real sides) agrees with the original at every pool value admissible
+    for the declared symbol, under SymPy's own ``ask`` and the harness's
+    conservative evaluator."""
+    from sympy import ask as sask
+    from harness.invariants import _GIVEN, restate_given
+    from harness.models import POOL, admissible, evaluate_at
+    checked = 0
+    for kw in ({"real": True}, {"integer": True}, {"finite": True}, {"extended_real": True},
+               {"positive": True}, {"integer": True, "nonnegative": True}):
+        x, y = Symbol("x", **kw), Symbol("y", **kw)
+        vals = [v for v in POOL if admissible(x, v)]
+        assert vals, kw
+        conjs = [f(x) for f in _GIVEN] + [Not(r(x, y), evaluate=False) for r in (Q.lt, Q.le, Q.gt, Q.ge)]
+        for conj in conjs:
+            seen = set()
+            for _ in range(8):
+                other = restate_given(conj, random.Random(len(seen)))
+                if other is None or other in seen:
+                    continue
+                seen.add(other)
+                for vx in vals:
+                    for vy in vals:
+                        subs = {x: vx, y: vy}
+                        a, b = evaluate_at(conj, subs), evaluate_at(other, subs)
+                        if a is not None and b is not None:
+                            assert a == b, (conj, other, vx, vy, a, b)
+                            checked += 1
+                        try:
+                            sa, sb = sask(conj.xreplace(subs)), sask(other.xreplace(subs))
+                        except Exception:  # noqa: BLE001
+                            continue
+                        if sa is not None and sb is not None:
+                            assert sa == sb, (conj, other, vx, vy, sa, sb)
+                            checked += 1
+    assert checked > 200
+
+
+def test_blocks_carry_a_verified_witness():
+    """Every unrelated block evaluates True at its witness, and the
+    witness respects the declarations of the block's symbols."""
+    from harness.invariants import Unrelated
+    from harness.models import admissible, evaluate_at
+    n = 0
+    for seed in range(40):
+        u = Unrelated(random.Random(seed), "t", random.Random(seed).choice(["any", "norel", "rel"]))
+        blk = u.block([S(7)])
+        if blk is None:
+            continue
+        w = u.last_witness
+        assert evaluate_at(And(*blk), w) is True, (blk, w)
+        assert all(admissible(s, v) for s, v in w.items())
+        assert len(blk) >= 2 and len({s for c in blk for s in c.free_symbols}) >= 2
+        n += 1
+    assert n >= 25
+
+
+def test_model_guard_and_scope_tag():
+    """The guard's second path finds a concrete model where the engine
+    cannot read the set (a Float relation under an unregistered
+    predicate), and out-of-scope material is a tag on the I2 case, never
+    a veto: the oracle is the same."""
+    from sympy import Float
+    from harness.invariants import check_I2, consistent_by, scope_of
+    from harness.sympy_io import custom_predicate
+    x, u = Symbol("x"), Symbol("u")
+    cfg = preset("default")
+    a = Q.gt(x, Float(2.5)) & Q.lt(x, 7)
+    assert consistent_by(a, cfg) in ("engine", "model")
+    assert consistent_by(Q.gt(x, 7) & Q.lt(x, Float(2.5)), cfg) is None
+    extra = custom_predicate("tscope", 1)(u)
+    assert scope_of(Q.positive(x), extra) == "custom"
+    variant = {"kind": "unrelated", "extra": to_srepr(extra), "mode": "any"}
+    sev, other, var = check_I2(Q.positive(x), Q.positive(x), cfg, "True", random.Random(0), variant)
+    assert var["scope"] == "custom"
+    assert sev == ("depends" if other == "None" else None), (sev, other)

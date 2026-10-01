@@ -526,6 +526,7 @@ class Unrelated:
             return None
         if evaluate_at(And(*out), subs) is not True:
             return None
+        self.last_witness = subs
         return out
 
     def extension(self):
@@ -769,12 +770,74 @@ def _shift_relation(b, rng: random.Random):
     return f(-c, -a)
 
 
+#: equivalences that hold only given a declared fact of the argument
+#: (``assumptions0`` of a ``Symbol``; never an ``ask``), each proved by hand
+#: for the declared class: ``real`` in SymPy is finite real, ``integer``
+#: is a finite real integer.  ``pred -> (fact, rewrite)``; the rewrite is
+#: the equivalent statement under ``fact``.  Covered by the value-level
+#: self-check in ``tests/test_invariants.py`` at declared sample values.
+_GIVEN = {
+    # x real (finite): the order relation to 0 is the sign predicate
+    Q.positive: [("real", lambda x: Q.gt(x, S.Zero)), ("real", lambda x: Not(Q.nonpositive(x), evaluate=False)),
+                 ("integer", lambda x: Q.ge(x, S.One))],
+    Q.negative: [("real", lambda x: Q.lt(x, S.Zero)), ("real", lambda x: Not(Q.nonnegative(x), evaluate=False)),
+                 ("integer", lambda x: Q.le(x, S.NegativeOne))],
+    Q.nonnegative: [("real", lambda x: Q.ge(x, S.Zero)), ("real", lambda x: Not(Q.negative(x), evaluate=False)),
+                    ("integer", lambda x: Q.gt(x, S.NegativeOne))],
+    Q.nonpositive: [("real", lambda x: Q.le(x, S.Zero)), ("real", lambda x: Not(Q.positive(x), evaluate=False))],
+    Q.nonzero: [("real", lambda x: Q.ne(x, S.Zero)), ("real", lambda x: Not(Q.zero(x), evaluate=False))],
+    Q.zero: [("real", lambda x: Not(Q.nonzero(x), evaluate=False)), ("integer", lambda x: Q.even(x) & Q.lt(x, S.One) & Q.gt(x, S.NegativeOne))],
+    Q.irrational: [("real", lambda x: Not(Q.rational(x), evaluate=False))],
+    Q.rational: [("real", lambda x: Not(Q.irrational(x), evaluate=False))],
+    Q.even: [("integer", lambda x: Not(Q.odd(x), evaluate=False))],
+    Q.odd: [("integer", lambda x: Not(Q.even(x), evaluate=False))],
+    Q.integer: [("real", lambda x: Not(Q.noninteger(x), evaluate=False))],
+    Q.noninteger: [("real", lambda x: Not(Q.integer(x), evaluate=False))],
+    Q.extended_real: [("finite", lambda x: Q.real(x))],
+    Q.extended_positive: [("finite", lambda x: Q.positive(x))],
+    Q.extended_negative: [("finite", lambda x: Q.negative(x))],
+    Q.extended_nonzero: [("finite", lambda x: Q.nonzero(x))],
+    Q.extended_nonnegative: [("finite", lambda x: Q.nonnegative(x))],
+    Q.extended_nonpositive: [("finite", lambda x: Q.nonpositive(x))],
+    Q.real: [("finite", lambda x: Q.extended_real(x)), ("extended_real", lambda x: Q.finite(x))],
+    Q.finite: [("extended_real", lambda x: Q.real(x))],
+}
+
+
+def restate_given(b, rng: random.Random):
+    """``b`` restated by an equivalence of ``_GIVEN`` whose fact the
+    argument's *declaration* guarantees (``Symbol.assumptions0``); None
+    when none applies.  Relations: ``~lt(x, y)`` is ``ge(x, y)`` when
+    both sides are declared real (finite reals are totally ordered)."""
+    if isinstance(b, Not) and isinstance(b.args[0], AppliedPredicate) and b.args[0].function in (Q.lt, Q.le, Q.gt, Q.ge):
+        inner = b.args[0]
+        x, y = inner.arguments
+        if all(isinstance(t, Symbol) and t.assumptions0.get("real") for t in (x, y)):
+            comp = {Q.lt: Q.ge, Q.le: Q.gt, Q.gt: Q.le, Q.ge: Q.lt}
+            return comp[inner.function](x, y)
+        return None
+    if not isinstance(b, AppliedPredicate) or len(b.arguments) != 1:
+        return None
+    x = b.arguments[0]
+    if not isinstance(x, Symbol):
+        return None
+    opts = [(fact, rw) for fact, rw in _GIVEN.get(b.function, ()) if x.assumptions0.get(fact)]
+    if not opts:
+        return None
+    fact, rw = rng.choice(opts)
+    return rw(x)
+
+
 def restate(b, rng: random.Random, p: float = 0.5):
     """An equivalent restatement of the Boolean ``b``: swapped relation
     sides (``lt(a, b)`` -> ``gt(b, a)``), the three spellings of a
     relation, ``Implies`` as ``Or``, ``Equivalent`` as two ``Implies``,
     ``Q.is_true`` around an atom, reordered ``And``/``Or`` arguments (SymPy
     re-sorts them, so this checks the engine's own ordering)."""
+    if rng.random() < p * 0.5:
+        g = restate_given(b, rng)                 # an equivalence under a declared fact
+        if g is not None:
+            return g
     if isinstance(b, AppliedPredicate):
         f = b.function
         if f in _SWAP and rng.random() < p * 0.8:
