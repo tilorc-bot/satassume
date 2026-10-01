@@ -249,7 +249,9 @@ def to_sympy(f):
         rel = REL_CLASS[op](a, b)
         return Q.is_true(rel) if style == "is_true" else rel
     if tag == "not":
-        return Not(to_sympy(f[1]))
+        # logical negation: SymPy's evaluating ``~`` flips a relational
+        # (``~(a <= b)`` -> ``a > b``), which differs for non-real sides (#80)
+        return Not(to_sympy(f[1]), evaluate=False)
     cls = {"and": And, "or": Or, "imp": Implies, "eqv": Equivalent}[tag]
     return cls(to_sympy(f[1]), to_sympy(f[2]))
 
@@ -449,6 +451,21 @@ def test_edge_cases_are_sound(prop, assum):
     syms = sorted(set().union(*(to_sympy(f).free_symbols for f in (prop, assum))),
                   key=str)
     check(prop, assum, {s: VALUES_2 for s in syms}, Engine())
+
+
+_I_SYM, _I_VALUES = OLD_SYMBOLS[8]
+_X_OLD_VALUES = [S(-1), S.Zero, Rational(1, 2), S(2), I, oo, -oo, zoo]
+
+
+@pytest.mark.parametrize("prop, assum, domains, fresh", [
+    # hypothesis examples from #80: ``~`` used to flip the negated relation
+    (("not", ("r", "le", x**2, x**2, "rel")), ("not", ("r", "lt", x, x, "Q")),
+     {x: VALUES_2}, False),
+    (("u", "positive", x), ("not", ("r", "lt", x, _I_SYM + x, "rel")),
+     {_I_SYM: _I_VALUES, x: _X_OLD_VALUES}, False),
+])
+def test_negated_relations_are_logical(prop, assum, domains, fresh):
+    check(prop, assum, domains, Engine() if fresh else None)
 
 
 def test_non_rational_numbers_do_not_crash():
