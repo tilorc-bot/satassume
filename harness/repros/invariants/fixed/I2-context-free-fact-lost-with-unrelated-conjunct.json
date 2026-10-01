@@ -10,7 +10,7 @@
   "cone_search": true,
   "cone_threshold": 3,
   "transfer": true,
-  "uninterpreted": "none",
+  "uninterpreted": "free",
   "relevance": true,
   "relations": "default",
   "cache_size": 200000,
@@ -18,15 +18,15 @@
   "answers_size": 100000,
   "splits_size": 20000
  },
- "prop": "Not(AppliedPredicate(Q.infinite, Function('f')(Mul(Integer(-1), Symbol('o', odd=True)))))",
- "assum": "AppliedPredicate(Q.infinite, Function('f')(Mul(Integer(-1), Symbol('o', odd=True))))",
+ "prop": "AppliedPredicate(Q.commutative, Add(Integer(1), Function('f')(Dummy('d', dummy_index=2637426))))",
+ "assum": "AppliedPredicate(Q.finite, Symbol('r', rational=True))",
  "variant": {
   "kind": "unrelated",
-  "extra": "StrictLessThan(Function('iuh4')(exp(Rational(1, 2))), Symbol('iuu5'))"
+  "extra": "AppliedBinaryRelation(Q.gt, Symbol('iuu5'), Function('iuh6')(Function('iuh7')(Integer(0))))"
  },
- "base": "False",
+ "base": "True",
  "other": "None",
- "source": "python -m harness invariants (invariants profile=relational seed=8 slice=0)",
+ "source": "python -m harness invariants (invariants profile=registry seed=10 slice=0)",
  "shrunk": true,
  "prefix": []
 }

@@ -64,7 +64,7 @@ class EngineConfig:
     cone_search: bool = True
     cone_threshold: int = 3
     transfer: bool = True
-    uninterpreted: str = "none"
+    uninterpreted: str = "free"
     relevance: bool = True
     relations: str = "default"
     cache_size: int = 200_000
@@ -168,8 +168,9 @@ PRESETS: Dict[str, EngineConfig] = {
     "notransfer": EngineConfig(name="notransfer", transfer=False),
     # relations out of scope (the scalar slice alone)
     "norel": EngineConfig(name="norel", relations="none"),
-    # uninterpreted relations stay free Booleans
-    "free": EngineConfig(name="free", uninterpreted="free"),
+    # unread assumption atoms sink the answer to None (the pre-opaque
+    # default; the engine default keeps them as free Booleans)
+    "none": EngineConfig(name="none", uninterpreted="none"),
     # the discovery budget binds on ordinary expressions
     "budget": EngineConfig(name="budget", discovery_budget=5),
     # every setting at its smallest legal value at once: one node of

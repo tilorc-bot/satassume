@@ -10,7 +10,7 @@
   "cone_search": true,
   "cone_threshold": 3,
   "transfer": true,
-  "uninterpreted": "none",
+  "uninterpreted": "free",
   "relevance": true,
   "relations": "default",
   "cache_size": 200000,
@@ -18,18 +18,15 @@
   "answers_size": 100000,
   "splits_size": 20000
  },
- "prop": "AppliedBinaryRelation(Q.ne, Symbol('m', negative=True), Dummy('d', dummy_index=8378571))",
- "assum": "AppliedPredicate(Q.zero, Dummy('d', dummy_index=8378571))",
+ "prop": "Not(AppliedPredicate(Q.infinite, Function('f')(Mul(Integer(-1), Symbol('o', odd=True)))))",
+ "assum": "AppliedPredicate(Q.infinite, Function('f')(Mul(Integer(-1), Symbol('o', odd=True))))",
  "variant": {
   "kind": "unrelated",
-  "extra": "Not(AppliedBinaryRelation(Q.gt, Rational(-2, 3), Float('2.5', precision=53)))",
-  "kinds": [
-   "closed"
-  ]
+  "extra": "StrictLessThan(Function('iuh4')(exp(Rational(1, 2))), Symbol('iuu5'))"
  },
- "base": "True",
+ "base": "False",
  "other": "None",
- "source": "invariants profile=relational seed=33 slice=0",
+ "source": "python -m harness invariants (invariants profile=relational seed=8 slice=0)",
  "shrunk": true,
  "prefix": []
 }
