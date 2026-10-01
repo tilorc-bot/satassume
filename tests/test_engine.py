@@ -119,16 +119,46 @@ def test_sessions_are_per_query_and_facts_persist():
     assert eng.stats['sessions'] == 11
 
 
-def test_context_session_is_reused_for_same_assumptions():
+def test_contextual_queries_build_and_discard():
+    """Every contextual query builds the session of its set (one set check
+    each) and discards it: no session is kept, whatever the assumptions;
+    the set's verdict is memoized (one memo per distinct formula)."""
     eng, cache = make()
     a = P('positive', 'x')
     assert eng.ask(P('real', 'x'), a) is True
     n = eng.stats['sessions']
+    assert n == 1 and eng.stats['set_checks'] == 1
     assert eng.ask(P('nonzero', 'x'), a) is True
-    assert eng.ask(P('real', ('add', 'x', 'x')), P('positive', 'x')) is True   # equal formula, same session
-    assert eng.stats['sessions'] == n
+    assert eng.ask(P('real', ('add', 'x', 'x')), P('positive', 'x')) is True   # equal formula
+    assert eng.stats['sessions'] == n + 2 and eng.stats['set_checks'] == 3
     assert eng.ask(P('real', 'x'), P('negative', 'x')) is True                 # different assumptions
-    assert eng.stats['sessions'] == n + 1
+    assert eng.stats['sessions'] == n + 3
+    assert not eng._context_sessions
+    assert len(eng._verdict) == 2
+    # the settings of the earlier reuse design are accepted and change nothing
+    eng.keep_sessions, eng.session_limit, eng.cone_search, eng.cone_threshold = 0, 1, False, 0
+    assert eng.ask(P('nonzero', 'x'), a) is True
+    assert eng.stats['sessions'] == n + 4 and not eng._context_sessions
+
+
+def test_stream_under_one_set_answers_as_a_fresh_engine():
+    """Fifty random contextual queries under one assumption set, in one
+    long-lived engine, give the answers a fresh engine gives each of them
+    (the harness checker's warm-versus-fresh comparison, ENGINE level,
+    on a CI-sized stream)."""
+    pytest.importorskip("sympy")
+    from harness.checker import Ask, ReferenceLevel, execute
+    from harness.generators import random_stream
+    from harness.state import preset
+    items = random_stream(97, n=50, nsets=1, relations=True, custom=False)
+    asks = [it for it in items if isinstance(it, Ask)]
+    sets = {it.assum for it in asks if it.assum is not True}
+    assert len(asks) == 50 and len(sets) == 1
+    assert sum(it.assum is not True for it in asks) >= 25
+    rows, eng = execute(items, preset("default"), ReferenceLevel.ENGINE)
+    bad = [(r.item, r.warm, r.ref) for r in rows if r.warm != r.ref]
+    assert bad == []
+    assert not eng._context_sessions and eng.stats["sessions"] >= 25
 
 
 def test_neighbourhood_contains_pred_and_rule_partners():

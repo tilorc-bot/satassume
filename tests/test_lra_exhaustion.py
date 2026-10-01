@@ -1,20 +1,27 @@
-"""Integer branch and bound runs out of budget along a history-dependent
-path: a query's answer must still be the one a fresh engine gives.
+"""Integer branch and bound runs out of budget along a path that depends
+on the solver state: a query's answer must still be the one a fresh
+engine gives.
 
 ``LRATheory.check`` branches at most ``BRANCH_BUDGET`` times; which checks
 run and in which order they branch depends on the tableau basis and the
-learnt clauses a reused contextual session carries from earlier queries.
-Both directions happened: a warm None where a fresh engine is definite (the
-warm search ran out) and a warm definite answer where a fresh engine gives
-None (the fresh search runs out).  ``Engine.ask`` answers such queries
-again in a freshly built session (``exhaust_reanswers``).
+learnt clauses the session carries.  When a contextual session was reused
+across queries both directions happened: a warm None where a fresh engine
+is definite (the warm search ran out) and a warm definite answer where a
+fresh engine gives None (the fresh search runs out); the engine then
+answered such queries again in a freshly built session.  Since issue #97
+every contextual query is answered in the session built for its set
+(``Engine._build_context``) and that session is discarded, so the path is
+the fresh engine's by construction; these tests pin that on the streams
+that used to diverge, and that every query builds exactly one session.
 
 With constants in the LRA payloads the theory can give up (an undecided
-sign, constfield's size budget) at points the search path decides; a
-query is answered again unless the session's atoms are certified
-(``LRATheory.certified``: no search over them can give up).
+sign, constfield's size budget) at points the search path decides; the
+same argument covers it.  ``LRATheory.certified`` (no search over the
+atoms can give up) is tested below on its own.
 """
 from fractions import Fraction as F
+
+import pytest
 
 from sympy import E, And, Q, Rational, pi, sqrt, symbols
 
@@ -51,11 +58,14 @@ def test_warm_equals_fresh(monkeypatch):
     fresh = ask(Q.ge(u0, 4), A & C, Engine())
     assert warm == fresh
     assert fresh is None
-    assert e.stats["exhaust_reanswers"]
+    assert not e._context_sessions           # no session survives a query
 
 
 def _divergences():
-    out, reanswers = [], 0
+    """Warm-versus-fresh disagreements over every ordered pair of QUERIES
+    under the sets, and the most sessions any engine kept between queries
+    (0 since issue #97)."""
+    out, kept = [], 0
     for s in (A & B, A & C):
         fresh = {p: _a(p, s, Engine()) for p in QUERIES}
         for p1 in QUERIES:
@@ -63,27 +73,27 @@ def _divergences():
                 e = Engine()
                 _a(p1, s, e)
                 w = _a(p2, s, e)
-                reanswers += e.stats.get("exhaust_reanswers", 0)
+                kept = max(kept, len(e._context_sessions))
                 if w != fresh[p2]:
                     out.append((s, p1, p2, w, fresh[p2]))
-    return out, reanswers
+    return out, kept
 
 
 def test_no_warm_fresh_divergence_budget_5(monkeypatch):
     # on main (80c91c0): 1 warm definite/fresh None (A & C, Q.gt(u0, 1)
     # then Q.ge(u0, 4)); budgets 1-4, 7-24 show none there with this probe
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
-    out, reanswers = _divergences()
+    out, kept = _divergences()
     assert out == []
-    assert reanswers
+    assert kept == 0
 
 
 def test_no_warm_fresh_divergence_budget_6(monkeypatch):
     # on main (80c91c0): the same divergence as at budget 5
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 6)
-    out, reanswers = _divergences()
+    out, kept = _divergences()
     assert out == []
-    assert reanswers
+    assert kept == 0
 
 
 def test_exhausted_set_check_is_unknown(monkeypatch):
@@ -99,7 +109,8 @@ def test_exhausted_set_check_is_unknown(monkeypatch):
 # -- constants ----------------------------------------------------------------
 
 def _sweep(sets, queries):
-    out, reanswers = [], 0
+    """As ``_divergences`` over ``sets`` and ``queries``."""
+    out, kept = [], 0
     for s in sets:
         fresh = {p: _a(p, s, Engine()) for p in queries}
         for p1 in queries:
@@ -107,10 +118,10 @@ def _sweep(sets, queries):
                 e = Engine()
                 _a(p1, s, e)
                 w = _a(p2, s, e)
-                reanswers += e.stats.get("exhaust_reanswers", 0)
+                kept = max(kept, len(e._context_sessions))
                 if w != fresh[p2]:
                     out.append((s, p1, p2, w, fresh[p2]))
-    return out, reanswers
+    return out, kept
 
 
 def _t(c):
@@ -126,9 +137,9 @@ def test_constants_no_warm_fresh_divergence():
     # certified (pi, 1/pi: rational rows, bounds in Q + Q*pi or Q + Q/pi)
     # and not (sqrt(2): algebraic; pi and E together)
     sets = [_t(pi / 3), _t(1 / pi), _t(7 * pi / 2), _t(sqrt(2) / 3), _t((pi + E) / 7)]
-    out, reanswers = _sweep(sets, CQUERIES)
+    out, kept = _sweep(sets, CQUERIES)
     assert out == []
-    assert reanswers
+    assert kept == 0
 
 
 def test_constants_no_warm_fresh_divergence_budget_3(monkeypatch):
@@ -137,39 +148,46 @@ def test_constants_no_warm_fresh_divergence_budget_3(monkeypatch):
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 3)
     sets = [Q.gt(x, y + c) & Q.ge(y, 0) & Q.le(y, 5) & B for c in (pi / 3, 1 / pi)]
     sets.append(Q.gt(x, pi * y / 4) & Q.ge(y, 0) & Q.le(y, 5) & B)
-    out, reanswers = _sweep(sets, QUERIES[:4])
+    out, kept = _sweep(sets, QUERIES[:4])
     assert out == []
-    assert reanswers
+    assert kept == 0
 
 
-def test_certified_constants_are_not_answered_again():
+def test_certified_constants_warm_equals_fresh():
+    # certified atoms (pi: rational rows, bounds in Q + Q*pi)
     s = _t(7 * pi / 2)
     e = Engine()
     for p in CQUERIES:
         assert _a(p, s, e) == _a(p, s, Engine())
-    assert e.stats["exhaust_reanswers"] == 0
+    assert not e._context_sessions
 
 
-def test_uncertified_constants_are_answered_again():
+def test_uncertified_constants_warm_equals_fresh():
+    # sqrt(2): algebraic, never certified; the theory may give up at a
+    # point of the path, which is the fresh engine's path
     s = _t(sqrt(2) / 3)
     e = Engine()
     for p in CQUERIES:
         assert _a(p, s, e) == _a(p, s, Engine())
-    assert e.stats["exhaust_reanswers"]
+    assert not e._context_sessions
 
 
 def test_constants_after_a_rational_branch_and_bound_in_the_set_check():
-    # the set check branches with no constant in the payloads; the values
-    # it leaves behind are recorded (Session.build_values) and certified
-    # with the queries' constants
+    # the set check branches with no constant in the payloads and leaves
+    # rational values in the assignment (n = 4 here); the queries bring
+    # constants.  Every query builds the set's session and runs the same
+    # check (Engine._build_context), so it starts from the same values as
+    # the fresh engine does
     s = Q.ge(n, 0) & Q.le(n, 3) & Q.ne(n, 1) & Q.ne(n, 2) & Q.gt(x, n + Rational(1, 2)) \
         & Q.lt(x, n + 3)
     queries = [Q.gt(x, pi), Q.ge(x, n + pi / 4), Q.ge(x, n + 1), Q.lt(x, 6 + pi)]
-    # (a verdict stores no session since R2: build one as a query does)
     built, _ = Engine()._build_context(_formula(s, True))
-    assert built.build_values == [(F(4), 1)]
-    out, _ = _sweep([s], queries)
+    lras = [t for t in built.solver._theories if hasattr(t, "branched_rational")]
+    assert [t.branched_rational for t in lras] == [True]
+    assert [t.rational_values() for t in lras] == [(F(4), 1)]
+    out, kept = _sweep([s], queries)
     assert out == []
+    assert kept == 0
 
 
 # -- the certificate (LRATheory.certified) --------------------------------------
@@ -254,29 +272,21 @@ def test_constants_small_limits_are_not_certified(monkeypatch):
     # test_certified_constants_are_not_answered_again) could give up: they
     # are not certified then, and definite answers are answered again
     monkeypatch.setattr(cf, "MAX_DEGREE", 1)
-    out, reanswers = _sweep([_t(7 * pi / 2)], CQUERIES)
+    out, kept = _sweep([_t(7 * pi / 2)], CQUERIES)
     assert out == []
-    assert reanswers
+    assert kept == 0
 
 
-def test_writeback_waits_for_the_standing_answer(monkeypatch):
-    # writeback="provenance"/"all": the session whose answer is discarded
-    # for a re-answer writes nothing (Engine.ask holds Session.writeback)
+@pytest.mark.parametrize("policy", ["provenance", "all"])
+def test_writeback_policies_warm_equals_fresh(policy, monkeypatch):
+    # writeback="provenance"/"all": a session writes its root facts back
+    # once its query is answered (Session.writeback); nothing is held for
+    # a re-answer since issue #97 (there is none), and the facts a
+    # discarded session wrote are those a fresh engine's same query writes
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
-    for policy in ("provenance", "all"):
-        e = Engine(writeback=policy)
-        ask(Q.gt(u0, 1), A & C, e)
-        held = []
-        monkeypatch.setattr(type(e), "_ask", _spy(type(e)._ask, held))
-        assert ask(Q.ge(u0, 4), A & C, e) is None
-        monkeypatch.undo()
-        monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
-        assert held[0] is True and held[1:] == [False]     # warm held; the re-answer not
-        assert e.stats["exhaust_reanswers"] == 1 and not e._hold_writeback
-
-
-def _spy(f, held):
-    def g(self, *args, **kw):
-        held.append(self._hold_writeback)
-        return f(self, *args, **kw)
-    return g
+    e = Engine(writeback=policy)
+    assert not hasattr(e, "_hold_writeback")
+    for p in (Q.gt(u0, 1), Q.ge(u0, 4), Q.gt(u0, 1)):
+        assert _a(p, A & C, e) == _a(p, A & C, Engine(writeback=policy))
+    assert _a(Q.ge(u0, 4), A & C, Engine(writeback=policy)) is None
+    assert not e._context_sessions
