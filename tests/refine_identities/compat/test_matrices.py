@@ -207,8 +207,8 @@ def test_wrapped_indices_are_not_zeroed(expr, idx):
     assert refine(X1[0, -1], Q.diagonal(X1)) != 0
 
 
-@pytest.mark.xfail(strict=True, reason="SymPy's ask derives Q.unitary from Q.orthogonal, false for a "
-                   "complex orthogonal matrix (needs/test_sympy_ask_bugs.py), so the unitary rows fire")
+# SymPy's ask derives Q.unitary from Q.orthogonal (needs/test_sympy_ask_bugs.py); the
+# combined backend corrects that fact (issue #67), so the unitary rows do not fire
 @pytest.mark.parametrize("expr, assumptions", [
     (Adjoint(X)*X, Q.orthogonal(X)),                     # complex orthogonal is not unitary
     (Inverse(X*Y), Q.orthogonal(X) & Q.unitary(Y)),
