@@ -1390,25 +1390,36 @@ class Solver:
             trail = trail[: self._trail_lim[0]]
         return [-(l >> 1) if l & 1 else l >> 1 for l in trail]
 
-    def implied(self, assumptions: Iterable[int] = ()) -> list[int] | None:
+    def implied(self, assumptions: Iterable[int] = (),
+                hold: int | None = None) -> list[int] | None:
         """Literals forced by unit propagation under ``assumptions``.
 
         Returns the list of *all* assigned literals (root facts, the
         assumptions and their consequences) or None if propagation runs into
         a conflict.  No search and no learning.  Root-level state is not
         changed beyond root propagation (the solver may keep the assumption
-        levels, see :meth:`_assume`).
+        levels, see :meth:`_assume`; ``hold``: keep only the first ``hold``
+        of them).
         """
-        trail = self._assume(assumptions)
+        trail = self._assume(assumptions, hold)
         if trail is None:
             return None
         return [-(l >> 1) if l & 1 else l >> 1 for l in trail]
 
-    def _assume(self, assumptions) -> list[int] | None:
+    def _assume(self, assumptions, hold: int | None = None) -> list[int] | None:
         """Propagate at root, then under ``assumptions`` (each at its own
         level); return the internal trail reached, or None on conflict.
         The returned list must not be mutated and is only valid until the
         next solver call.
+
+        Held prefix.  ``hold`` (default: all) is the number of leading
+        assumptions whose levels are kept afterwards.  If the held levels
+        are a proper prefix of ``assumptions``, propagation continues from
+        them: their trail is the propagation fixpoint under that prefix
+        (see below), so only the remaining assumptions are new.  This is
+        what lets a client assume a stable prefix (an assumption set's
+        selectors) followed by literals that change from call to call (a
+        query's own selectors) and still reuse the prefix's levels.
 
         Held levels.  A successful propagation keeps its assumption levels
         on the trail (``_held``) instead of backtracking; attached theories
@@ -1444,32 +1455,43 @@ class Solver:
         """
         lits = self._internal_lits(assumptions)
         self._mention(lits)
-        if self._held is not None:
-            if self._held == lits:
+        keep = len(lits) if hold is None else max(0, min(hold, len(lits)))
+        held = self._held
+        start = 0
+        if held is not None:
+            if held == lits:
                 return self._trail
-            self._backtrack(0)
+            if len(held) < len(lits) and lits[:len(held)] == held:
+                start = len(held)       # continue from the held prefix
+            else:
+                self._backtrack(0)
         elif self._trail_lim:
             self._backtrack(0)
         if not self._ok:
             return None
-        theories = self._theories
-        if (self._tpropagate() if theories else self._propagate()) is not None:
-            self._ok = False
-            return None
         stamp = self._stamp
-        key = (lits, stamp, len(self._trail))
-        cached = self._acache
-        if cached is not None and cached[0] == key:
-            return cached[1]
-        if self._assume_propagate(lits):
+        if start == 0:
+            theories = self._theories
+            if (self._tpropagate() if theories else self._propagate()) is not None:
+                self._ok = False
+                return None
+            stamp = self._stamp
+            key = (lits, stamp, len(self._trail))
+            cached = self._acache
+            if cached is not None and cached[0] == key:
+                return cached[1]
+        if self._assume_propagate(lits[start:]):
             trail = self._trail[:]
-            if self._trail_lim:
-                self._held = lits
+            if keep and self._trail_lim:
+                if len(self._trail_lim) > keep:
+                    self._backtrack(keep)
+                self._held = lits[:keep]
+            else:
+                self._backtrack(0)
         else:
             trail = None
-        if self._held is None:
             self._backtrack(0)
-        if self._ok and self._stamp == stamp:
+        if start == 0 and self._ok and self._stamp == stamp:
             self._acache = (key, trail)
         return trail
 
@@ -2586,7 +2608,8 @@ class Solver:
                     return False
         return True
 
-    def entails(self, lit: int, assumptions: Iterable[int] = ()) -> bool | None:
+    def entails(self, lit: int, assumptions: Iterable[int] = (),
+                hold: int | None = None) -> bool | None:
         """True if ``lit`` is forced under ``assumptions``, False if ``-lit``
         is, None if neither.  Raises ValueError if the assumptions are
         themselves inconsistent with the formula.
@@ -2595,14 +2618,16 @@ class Solver:
         is returned after making sure the assumptions are consistent: the
         model of the last successful solve is checked against them (free),
         and only if that fails is a search under the assumptions run (its
-        model is then cached for the next queries).
+        model is then cached for the next queries).  ``hold``: as for
+        :meth:`implied`, the number of leading assumptions whose levels
+        are kept afterwards (default: all).
         """
         assumptions = [int(x) for x in assumptions]    # as _assume reads them
         if lit == 0:
             raise ValueError("literal must be a nonzero integer")
         self.mention((lit,))
         # Cheap path: unit propagation only.
-        trail = self._assume(assumptions)
+        trail = self._assume(assumptions, hold)
         if trail is None:
             raise ValueError("inconsistent assumptions")
         v = -lit if lit < 0 else lit
@@ -2611,7 +2636,7 @@ class Solver:
         l = 2 * v + 1 if lit < 0 else 2 * v
         vl = True if l in trail else False if l ^ 1 in trail else None
         lits = self._internal_lits(assumptions)
-        k = len(lits)
+        k = len(lits) if hold is None else max(0, min(hold, len(lits)))
         if vl is not None:
             if self._witness_satisfies(assumptions) or self._solve(lits, k):
                 return vl

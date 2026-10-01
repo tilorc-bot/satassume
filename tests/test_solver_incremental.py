@@ -70,6 +70,10 @@ from theory_harness import ForbidTheory, Recorder, check_protocol
 
 SEEDS = int(os.environ.get("SOLVER_FUZZ_SEEDS", "500"))
 SEED0 = int(os.environ.get("SOLVER_FUZZ_SEED0", "0"))
+#: ``SOLVER_FUZZ_HOLD=1``: every seed also exercises ``implied(A, hold=k)``
+#: and ``entails(lit, A, hold=k)`` with random ``k`` and assumption lists
+#: that extend the held prefix (``Harness.hold``)
+HOLD = bool(int(os.environ.get("SOLVER_FUZZ_HOLD", "0")))
 CHUNKS = 6
 
 
@@ -99,9 +103,11 @@ class Harness:
 
     def __init__(self, seed: int, ops=None, setup: Callable | None = None,
                  hard: bool | None = None, nv: int | None = None,
-                 block: str | None = None, block_mode: str | None = None):
+                 block: str | None = None, block_mode: str | None = None, hold: bool | None = None):
         self.seed = seed
         self.rng = rng = random.Random(seed)
+        self.hold = HOLD if hold is None else hold
+        self.last_hold: int | None = None      # hold of the last implied/entails
         self.ops = list(ops if ops is not None else OPS)
         self.setup = setup
         self.hard = (rng.random() < 0.3) if hard is None else hard
@@ -441,6 +447,14 @@ def _assumptions(h: Harness, sizes=(1, 1, 1, 2, 3)) -> list[int]:
     usually read off a model of the current formula (consistent, like the
     engine's assumption sets nearly always are), sometimes random."""
     rng = h.rng
+    if h.hold and h.A is not None and h.last_hold and not h.A_bad and rng.random() < 0.5:
+        # keep the held prefix, change the rest: the case the engine makes
+        # (the set's selectors, then the query's)
+        k = h.last_hold
+        tail = h.rclause(rng.choice(sizes))
+        h.A = h.A[:k] + [x for x in tail if abs(x) not in {abs(y) for y in h.A[:k]}]
+        h.count("hold_prefix_reused")
+        return h.A
     if h.A is None or rng.random() < (0.8 if h.A_bad else 0.3):
         h.A_bad = False
         A = h.rclause(rng.choice(sizes))
@@ -451,6 +465,26 @@ def _assumptions(h: Harness, sizes=(1, 1, 1, 2, 3)) -> list[int]:
                 A = [v if m[v] else -v for v in map(abs, A)]
         h.A = A
     return h.A
+
+
+def _hold_of(h: Harness, A: list[int]) -> int | None:
+    """In hold mode: a random ``hold`` for this call (None: the default,
+    hold everything); remembered for the next assumption set."""
+    if not h.hold:
+        return None
+    r = h.rng.random()
+    if r < 0.3:
+        k = None
+    else:
+        k = h.rng.randint(0, len(A))
+    h.last_hold = k if k is not None else len(A)
+    if k is not None:
+        h.count("hold_calls")
+        if h.solver._held is not None and len(h.solver._held) <= len(A) \
+                and [Solver._to_int(x) for x in A[:len(h.solver._held)]] == h.solver._held \
+                and len(h.solver._held) < len(A):
+            h.count("hold_prefix_continued")
+    return k
 
 
 @op(19)
@@ -470,7 +504,8 @@ def _check_implied(h: Harness, A: list[int]) -> None:
     h.mention(A)
     if h.held_now(A):
         h.count("implied_from_held")
-    got = h.solver.implied(A)
+    hold = _hold_of(h, A)
+    got = h.solver.implied(A, hold) if hold is not None else h.solver.implied(A)
     ref = h.fresh().implied(A)
     if got is None:
         h.count("implied_none")
@@ -518,8 +553,9 @@ def entails(h: Harness) -> None:
         lit = h.rlit()
     h.record("entails", lit, A)
     h.mention(A + [lit])
+    hold = _hold_of(h, A)
     try:
-        got = h.solver.entails(lit, A)
+        got = h.solver.entails(lit, A, hold) if hold is not None else h.solver.entails(lit, A)
     except ValueError:
         got = "inconsistent"
     try:
@@ -946,6 +982,17 @@ COVERAGE: dict[str, int] = {}       # counters accumulated by the chunk tests
 def test_incremental_matches_fresh(chunk):
     for seed in _chunk(chunk):
         _merge(COVERAGE, run_seed(seed))
+
+
+@pytest.mark.parametrize("chunk", range(CHUNKS))
+def test_incremental_matches_fresh_with_hold(chunk):
+    """``implied``/``entails`` with a held prefix (``hold=k``) agree with
+    a fresh solver; the assumption lists often extend the held prefix."""
+    c: dict = {}
+    for seed in _chunk(chunk):
+        _merge(c, run_seed(seed, hold=True))
+    for key in ("hold_calls", "hold_prefix_reused", "hold_prefix_continued"):
+        assert c.get(key, 0) > 0, (key, c)
 
 
 def test_mix_covers_the_incremental_paths():

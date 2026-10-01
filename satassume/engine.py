@@ -270,6 +270,11 @@ class Session:
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.assumption_formula = None       # the formula of assume_formula()
+        #: the selector guarding the assumption formula's clauses (0: none)
+        self.sel = 0
+        #: the stable prefix of the last :meth:`assumption_lits`: the
+        #: assumption literals the solver keeps between queries
+        self.n_hold = 0
         #: relation atoms and their theories (satassume.relations); created
         #: at the first user formula when the engine has relation support
         self.relations: Optional[Relations] = None
@@ -944,10 +949,14 @@ class Session:
         # must be on the trail (Solver.mention)
         solver.mention((lit,))
         assumptions = list(assumptions)
+        # the solver keeps the levels of the stable prefix only (the set's
+        # selectors, see assumption_lits); holding fewer or more levels
+        # changes what is reused, never an answer
+        hold = self.n_hold if self.n_hold <= len(assumptions) else None
         if assumptions:
             # consistency of the assumptions is checked first, even when the
             # query is already decided at root, mirroring sympy.ask
-            implied = solver.implied(assumptions)
+            implied = solver.implied(assumptions, hold)
             if implied is None:
                 raise InconsistentAssumptions("inconsistent assumptions")
             s = set(implied)
@@ -962,7 +971,7 @@ class Session:
         if not search:
             return None
         try:
-            r = solver.entails(lit, assumptions)
+            r = solver.entails(lit, assumptions, hold)
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
         self.writeback()
@@ -974,6 +983,7 @@ class Session:
         self.assumption_formula = f
         self._ensure_atoms(f)
         s = self.table.aux()
+        self.sel = s
 
         def emit(clause):
             self._emit(clause + [-s])
@@ -987,6 +997,17 @@ class Session:
         self.n_assumption_nodes = len(self.base)
         self.n_assumption_constants = self.n_constants
         return [s]
+
+    def assumption_lits(self, prop=None) -> List[int]:
+        """The solver assumptions of a query ``prop`` (None: the set's own
+        check) under this session's assumption formula: the formula's
+        selector, then the selectors the set itself activates, then those
+        ``prop`` activates.  ``n_hold`` is set to the length of the stable
+        prefix (everything that depends on the set only), whose levels the
+        solver keeps between queries (``Solver.implied(..., hold=)``)."""
+        lits = [self.sel] if self.sel else []
+        self.n_hold = len(lits)
+        return lits
 
     def literal_of(self, f) -> int:
         lit = self.literals.get(f)
@@ -1749,7 +1770,7 @@ class Engine:
         s = self._fresh_session()
         lits = s.assume_formula(assumptions)
         try:
-            v = self._complete_check(s, lits)
+            v = self._complete_check(s, s.assumption_lits())
         except Uninterpreted:
             raise
         except Exception:
@@ -2111,6 +2132,9 @@ class Engine:
         polluted = (len(s.base) - s.n_assumption_nodes
                     - (s.n_constants - s.n_assumption_constants)) > self.cone_threshold
         q = self._literal(s, proposition)
+        # the set's selector and the selectors the query activates (also
+        # for a context-free query)
+        lits = s.assumption_lits(proposition)
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
@@ -2124,9 +2148,10 @@ class Engine:
                 s = self._fresh_session()
                 if used is not None:
                     used.append(s)
-                lits = s.assume_formula(assumptions)
+                base_lits = s.assume_formula(assumptions)
                 q = self._literal(s, proposition)
                 s.escalate()
+                lits = s.assumption_lits(proposition)
                 r = s.query_literal(q, lits, search=True)
                 # the cone session (assumptions + this query's cone, and
                 # what the search learned) replaces the polluted one, so the
@@ -2138,12 +2163,13 @@ class Engine:
                     s.verdict = (s0.verdict if s0.verdict is not None
                                  else self._verdict.get(assumptions))
                     s.build_values = s0.build_values
-                    self._context_sessions[assumptions] = (s, lits)
+                    self._context_sessions[assumptions] = (s, base_lits)
                     if r is not None:
-                        # "under these assumptions, q" is entailed by the
-                        # clause set (the selector guards the assumptions),
-                        # so a repeat is answered by propagation
-                        s._emit([-lits[0], q if r else -q])
+                        # "under these assumptions and the selectors this
+                        # query activated, q" is entailed by the clause
+                        # set, so a repeat is answered by propagation; the
+                        # selectors keep it inert for other queries
+                        s._emit([-l for l in lits] + [q if r else -q])
                 self._note_budget(s)
                 return r
             r = s.query_literal(q, lits, search=True)
