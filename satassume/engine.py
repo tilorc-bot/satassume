@@ -22,80 +22,49 @@ assigns at decision level 0 is a context-free fact and is written back to the
 cache, so one query about ``x + y`` also caches facts about ``x`` and ``y``.
 Search (CDCL) only runs when root-level propagation is inconclusive.
 
-A context-free query gets a session of its own: discovery only visits the
-cone of the queried expression, so search cost is bounded by the size of
-that expression and never by what was asked before.  Contextual queries
-reuse a session while the assumptions stay the same, which is the
-incremental case (many questions under one ``assuming(...)`` block).
+Every query gets a session of its own.  A context-free query's discovery
+only visits the cone of the queried expression, so search cost is bounded
+by the size of that expression and never by what was asked before.  A
+contextual query builds the session of its assumption set
+(``Engine._build_context``: the set's clauses and one complete
+consistency check of the set), answers in it, and discards it.  What the
+engine keeps of a set between queries is a function of the set alone:
+its verdict (``CONSISTENT``, ``INCONSISTENT`` or ``UNKNOWN``, from the
+check) and, for a set whose construction raised ``Uninterpreted``, the
+message.  So the solver state a query runs in, the search path it takes
+and the budget it has (integer branch and bound, :mod:`satassume.lra`,
+"Integrality"; giving up on a constant, :mod:`satassume.theory`) are
+those a fresh engine's same query has, whatever was asked before under
+the same or any other set: history independence by construction (see
+``docs/design.md``, "History independence").  The settings
+``keep_sessions``, ``session_limit``, ``cone_search`` and
+``cone_threshold`` of the earlier design (one reused session per set,
+replaced by a cone search when polluted) are kept as no-ops so that
+configurations stay valid; the per-query build costs about 1.3x on the
+refine stream (issue #97).
 
-Everything the engine keeps between queries (the fact caches, the reused
-sessions, the answer and split memos) is a function of the registry state:
-the registered clause-generating functions (``satassume.extensions``), the
-structural templates and the theory adapters.  Every change of that state
-starts a new registry epoch (:mod:`satassume.epoch`); every query compares
-the epoch its caches were filled under with the current one
-(``Engine._check_version``) and drops them all on a change, so an answer
-never depends on what was registered when an earlier query ran.  A reused
-session that a query under it made raise, or whose clause set the query's
-own nodes made unsatisfiable at root, is dropped (``dead_sessions``): the
-next query under the same assumptions builds a fresh one, as a fresh
-engine would, so that query alone raises.
+Everything the engine keeps between queries (the fact caches, the verdict
+and ``Uninterpreted`` memos, the answer and split memos) is a function of
+the registry state: the registered clause-generating functions
+(``satassume.extensions``), the structural templates and the theory
+adapters.  Every change of that state starts a new registry epoch
+(:mod:`satassume.epoch`); every query compares the epoch its caches were
+filled under with the current one (``Engine._check_version``) and drops
+them all on a change, so an answer never depends on what was registered
+when an earlier query ran.
 
-The relation glue a reused session accumulates (links, the clauses of
-relation atoms to unary atoms, predicate transfer) sits behind selectors,
-and each query assumes only those of its own proposition and assumptions
-(``Session.assumption_lits``; :mod:`satassume.relations`, "Switched
-glue"): the selectors of the assumptions form a stable prefix whose levels
-the solver keeps between queries (``Solver.implied(..., hold=k)``).
+The relation glue of a session (links, the clauses of relation atoms to
+unary atoms, predicate transfer) sits behind selectors; the set's glue is
+asserted at the root and a query assumes only the selectors its own
+proposition adds (``Session.assumption_lits``; :mod:`satassume.relations`,
+"Switched glue").  The selectors of the assumptions form a stable prefix
+whose solver levels the set's check leaves in place for the query
+(``Solver.implied(..., hold=k)``; ``Engine._ask`` releases the levels
+above it before the query adds clauses).
 
-Integer branch and bound (:mod:`satassume.lra`, "Integrality") is complete
-only up to a branch budget, and whether a search stays within it depends
-on the path: the tableau basis and the learnt clauses earlier queries left.
-With constants in the LRA payloads the same goes for giving up: which
-comparisons a pivot path makes decides whether one is undecidable.  A
-query in a reused session is therefore answered again, in a session built
-exactly as a fresh engine builds and uses one (``exhaust_reanswers``):
-when its search ran out of the budget or a theory gave up (its None may
-be a fresh engine's definite answer), and when it is definite (or raises)
-and a branch and bound found a conflict since the session was built (a
-lemma a fresh engine may not find within the budget) or a fresh engine
-might give up on a constant: the payloads have constants and the
-session's LRA atoms are not certified (``LRATheory.certified``, see
-``_cannot_give_up``).  The build is canonical: a fresh engine branches in
-it just the same; and a branch and bound that ends in a point or the
-budget leaves no clause and no bound behind.  A None found without
-running out or giving up is a genuine model: a point that satisfies
-every asserted integrality literal and every LRA atom, with the clauses
-of the reused session true.  A fresh engine's clauses are not a subset of
-those (a cone session that replaced the stored one lacks the set check's
-learnt clauses), but every clause it has is valid (the rules, the
-assumptions, lemmas and learnt clauses entailed by them) and its atoms
-are atoms of the reused session (see ``_cannot_give_up``), so the genuine
-model satisfies them all and the fresh engine cannot be definite.  A definite answer without branch
-conflicts since the build rests on the build's clauses and on conflicts
-of the simplex, the rounded bounds and the real disequality argument,
-which have no budget and are monotone in the asserted literals: a fresh
-engine meets one in every assignment it reaches, before it branches,
-unless it gives up first.  It cannot when its LRA atoms have no constant
-or are certified (a function of the atoms, monotone: the reused session
-has registered every atom a fresh engine registers, so certifying its
-atoms is enough), the values the set check's branch and bound left
-behind included (``Session.build_values``).
-
-With ``writeback="provenance"`` or ``"all"``, a query in a reused session
-holds the session's writeback (``Session.writeback``) until its answer
-stands: the facts of a session whose answer is discarded for a re-answer
-are not written, those of a standing answer are written once it stands
-(after a raise nothing is written then; a session kept writes its facts
-with the next standing answer in it).
-
-This argument is about the search; the relation glue an earlier query
-left is switched off for this one (above).  Such glue used to be a channel
-of its own: an integrality atom an earlier query registered on a slack
-term (``x - y`` after ``ask(Q.positive(x - y), Q.gt(x, y + 1/3))``) let the
-reused session refute the negation of ``Q.ge(x, y + 1)`` by bound rounding,
-without branching; the integrality atoms are switched by their links'
-selectors since #53 stage 5.
+With ``writeback="provenance"`` or ``"all"`` a session writes its root
+facts back when its query is answered (``Session.writeback``); with the
+default ``"root-only"`` contextual sessions write nothing.
 """
 from __future__ import annotations
 
@@ -261,19 +230,12 @@ class Session:
         self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
         self.n_assumption_nodes = 0           # nodes visited by assume_formula()
-        #: nodes that are closed irrational constants (pi, 1/pi); they do
-        #: not count as pollution (Engine.cone_threshold)
+        #: nodes that are closed irrational constants (pi, 1/pi), counted
+        #: apart from the others (their facts are context-free)
         self.n_constants = 0
         #: the verdict of the assumption set from the complete check run at
-        #: construction (``Engine._context_session``); None outside it
+        #: construction (``Engine._build_context``); None outside it
         self.verdict: Optional[str] = None
-        #: per LRA theory, the rational values the complete check at
-        #: construction left in the assignment when it branched while no
-        #: payload had constants (LRATheory.rational_values; None for a
-        #: theory that did not, False if they were not all rational): a
-        #: function of the set, carried over to a cone session that
-        #: replaces this one, like ``verdict`` (see ``_cannot_give_up``)
-        self.build_values: Optional[list] = None
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.assumption_formula = None       # the formula of assume_formula()
@@ -748,7 +710,7 @@ class Session:
         """
         engine = self.engine
         policy = engine._writeback
-        if policy == "root-only" or engine._hold_writeback:
+        if policy == "root-only":
             return
         trail = self.solver.root_trail()
         start = self.read_pos
@@ -1024,8 +986,9 @@ class Session:
         the root, :meth:`_set_glue`), then the selectors ``prop`` activates
         beyond the set's.  ``n_hold`` is set to the length of the stable
         prefix (everything that depends on the set only), whose levels the
-        solver keeps between queries (``Engine._ask`` releases the others
-        before the next query adds clauses, ``Solver.release``)."""
+        solver keeps from the set's check to the query (``Engine._ask``
+        releases the others before the query adds clauses,
+        ``Solver.release``)."""
         lits = [self.sel] if self.sel else []
         self.n_hold = len(lits)
         rel = self.relations
@@ -1292,39 +1255,28 @@ class Engine:
         query under a set whose own cone does (its verdict is ``UNKNOWN``);
         ``last_budget_limited`` tells.  A function of the query alone
         (``_within_budget``); every other query runs discovery and
-        escalation uncapped, so nothing is truncated.  Cost: a fresh
-        session loads at most the query's cone; a reused contextual
-        session's uncapped escalation may also do work that earlier
-        queries' nodes left (bounded by about ``session_limit`` times the
-        budget).  Answers are the same either way.
+        escalation uncapped, so nothing is truncated: a session loads at
+        most the query's cone (the set's and the proposition's).
     session_limit : int
-        A reused contextual session is replaced once it has visited this
-        many nodes.
+        No-op since issue #97 (every contextual query builds the session
+        of its set and discards it: nothing is reused, so no session
+        outgrows anything).  Kept so that configurations stay valid;
+        assigning it still drops the caches like every setting.
     cone_search : bool
-        Search (CDCL) decides every variable of a session, so a query that
-        needs search in a reused session holding nodes of earlier queries is
-        searched in a fresh session over its own cone instead; the cost of
-        search then depends on the query, not on what was asked before under
-        the same assumptions.  Propagation-decided queries keep reusing the
-        session.  The cone session then replaces the polluted one as the
-        reused session of these assumptions, so one rebuild serves the
-        following searches too.
+        No-op since issue #97: every query is searched in a session built
+        for its set alone, which the cone search of the earlier design
+        approximated (a fresh session over the assumptions and the query's
+        cone, replacing a session polluted by earlier queries' nodes).
+        Kept so that configurations stay valid.
     cone_threshold : int
-        The cone search only pays when the reused session holds more than
-        this many nodes beyond those of the assumptions: rebuilding a
-        session (re-grounding the assumptions, their relations and theory
-        atoms) costs about as much as searching a session a few nodes
-        larger than the cone.  Measured on the refine query stream: a
-        search in a session polluted by 1-3 nodes costs 0.9-1.1 ms, the
-        cone search 1.3-1.7 ms; from about 8 extra nodes on, the reused
-        search costs more (2.4 ms at 8-15, 3.7 ms at 16-31, 6.3 ms beyond),
-        since CDCL decides every variable of the session.  Nodes that are
-        closed irrational constants (``pi``, ``1/pi`` of ``x/pi``) do not
-        count: their facts are context-free, nearly all fixed at the root.
-        Counting them sent twice as many queries under assumption sets with
-        ``pi`` to a cone rebuild, which cost about 10% of their time.
+        No-op since issue #97 (the threshold from which the cone search
+        paid; there is no reused session to pollute).  Kept so that
+        configurations stay valid.
     keep_sessions : int
-        How many contextual sessions (distinct assumption sets) to keep.
+        No-op since issue #97: no contextual session is kept between
+        queries.  Measured before the change (issue #97, P0): dropping the
+        reuse (``keep_sessions=0``) cost 1.28x on the refine stream and
+        nothing on the corpus.  Kept so that configurations stay valid.
     extensions : satassume.extensions.Extensions or None
         Registered clause-generating functions for custom predicates and
         for vocabulary predicates on new classes.  Defaults to the global
@@ -1412,8 +1364,6 @@ class Engine:
         self._transfer = transfer
         self._uninterpreted = _check_uninterpreted(uninterpreted)
         self._writeback = _check_writeback(writeback)
-        #: Engine.ask holds Session.writeback while a re-answer may follow
-        self._hold_writeback = False
         #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
         #: (satassume.sympy_api), bounded; cleared when registrations change
         self.answers = AnswerMemo()
@@ -1421,6 +1371,9 @@ class Engine:
         #: SymPy assumptions -> their split into components
         #: (``sympy_api._Split``), cleared together with ``answers``
         self.splits = AnswerMemo(20_000)
+        #: always empty since issue #97 (no contextual session is kept
+        #: between queries); the attribute stays for the tools and the
+        #: harness that enumerate or clear it
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: the structural cones of the discovery budget (``_struct``,
@@ -1444,12 +1397,14 @@ class Engine:
         #: the registry epoch (:mod:`satassume.epoch`) the engine-level
         #: caches were filled under; -1 until the first query
         self._epoch = -1
+        #: counters; ``theory_gave_up``: contextual queries whose session's
+        #: theory gave up (satassume.theory, "Giving up"), answered None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
-                      "searches": 0, "cone_searches": 0, "sessions": 0,
+                      "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
-                      "version_clears": 0, "dead_sessions": 0, "set_checks": 0,
+                      "version_clears": 0, "set_checks": 0,
                       "writeback_refused": 0, "writeback_budget": 0,
-                      "budget_limited": 0, "exhaust_reanswers": 0}
+                      "budget_limited": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
@@ -1505,8 +1460,9 @@ class Engine:
 
     @property
     def session_limit(self):
-        """Setting: largest contextual session (in nodes) reused for a query.  Assigning a different
-        value drops this engine's caches (``_settings_changed``)."""
+        """Setting, a no-op since issue #97 (no session is reused; see the
+        class docstring).  Assigning a different value drops this engine's
+        caches (``_settings_changed``) like every setting."""
         return self._session_limit
 
     @session_limit.setter
@@ -1517,8 +1473,9 @@ class Engine:
 
     @property
     def keep_sessions(self):
-        """Setting: how many contextual sessions are kept.  Assigning a different
-        value drops this engine's caches (``_settings_changed``)."""
+        """Setting, a no-op since issue #97 (no contextual session is kept;
+        see the class docstring).  Assigning a different value drops this
+        engine's caches (``_settings_changed``) like every setting."""
         return self._keep_sessions
 
     @keep_sessions.setter
@@ -1529,8 +1486,10 @@ class Engine:
 
     @property
     def cone_search(self):
-        """Setting: search the cone of a polluted contextual session.  Assigning a different
-        value drops this engine's caches (``_settings_changed``)."""
+        """Setting, a no-op since issue #97 (every query is searched in a
+        session of its own; see the class docstring).  Assigning a
+        different value drops this engine's caches (``_settings_changed``)
+        like every setting."""
         return self._cone_search
 
     @cone_search.setter
@@ -1541,8 +1500,9 @@ class Engine:
 
     @property
     def cone_threshold(self):
-        """Setting: constants beyond the assumptions' that pollute a session.  Assigning a different
-        value drops this engine's caches (``_settings_changed``)."""
+        """Setting, a no-op since issue #97 (see ``cone_search``).
+        Assigning a different value drops this engine's caches
+        (``_settings_changed``) like every setting."""
         return self._cone_threshold
 
     @cone_threshold.setter
@@ -1625,8 +1585,8 @@ class Engine:
         Settings are not part of the registry epoch, so other engines keep
         their caches.  Before the first query (``_epoch == -1``) there is
         nothing to drop.  Otherwise this drops what :meth:`_check_version`
-        drops for the engine (the contextual sessions, the answer and split
-        memos, the ``Uninterpreted`` memo, the verdict memo), counted in
+        drops for the engine (the answer and split memos, the
+        ``Uninterpreted`` memo, the verdict memo), counted in
         ``stats["version_clears"]``, and the stores of the engine's fact
         caches (``cache``, ``custom_cache``): their facts can depend on
         ``templates``, ``discovery_budget`` (which cones fit),
@@ -1638,7 +1598,6 @@ class Engine:
         self._drop_cones()
         if self._epoch >= 0:
             self.stats["version_clears"] += 1
-            self._context_sessions.clear()
             self.answers.clear()
             self.splits.clear()
             self._failed.clear()
@@ -1648,9 +1607,9 @@ class Engine:
 
     def _check_version(self) -> None:
         """Drop every engine-level cache filled under an earlier registry
-        epoch (:mod:`satassume.epoch`): the fact caches, the contextual
-        sessions, the answer and split memos, the ``Uninterpreted`` memo
-        and the verdict memo all hold results computed under the registrations in force at the
+        epoch (:mod:`satassume.epoch`): the fact caches, the answer and
+        split memos, the ``Uninterpreted`` memo and the verdict memo all
+        hold results computed under the registrations in force at the
         time.  The entry of every query calls this when the engine's epoch
         is not the current one (``if self._epoch != _EPOCH[0]``); a
         ``DictCache`` records its own epoch, so a cache shared between
@@ -1663,7 +1622,6 @@ class Engine:
             self._drop_cones()
             if self._epoch >= 0:
                 self.stats["version_clears"] += 1
-                self._context_sessions.clear()
                 self.answers.clear()
                 self.splits.clear()
                 self._failed.clear()
@@ -1850,10 +1808,8 @@ class Engine:
         Decided from the structure alone, before any session work, so a
         function of the query, the registry and the settings: never of the
         sessions, the caches or earlier queries.  A query that passes runs
-        discovery and escalation uncapped (never truncated): a fresh
-        session visits at most its cone, a reused contextual session may
-        also escalate what earlier queries' nodes left (about
-        ``session_limit`` times the budget at most)."""
+        discovery and escalation uncapped (never truncated): its session
+        visits at most its cone."""
         _c, _w, rel, sums = self._query_cone(proposition, False)
         if assumptions is not None:
             _c, _w, rel_a, sums_a = self._query_cone(assumptions, False)
@@ -1880,25 +1836,15 @@ class Engine:
         return None
 
     def _context_session(self, assumptions) -> Tuple[Session, List[int]]:
+        """The session a contextual query within the budget is answered
+        in, with its assumption literals: built for this query by
+        :meth:`_build_context` and discarded by the caller (nothing is
+        stored in ``_context_sessions``).  Raises ``Uninterpreted`` or
+        ``InconsistentAssumptions`` as the construction does; both are
+        functions of the set and the registry epoch, so they are memoized
+        (``_failed``, ``_verdict``) and raised again without a build."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
-        hit = self._context_sessions.get(assumptions)
-        if hit is not None and not hit[0].solver.propagate():
-            # dead: a query's own nodes made the clause set unsatisfiable at
-            # root, and the query left some other way than by raising
-            # InconsistentAssumptions (an Uninterpreted relation, an error)
-            del self._context_sessions[assumptions]
-            self.stats["dead_sessions"] += 1
-            hit = None
-        if hit is not None and _gave_up(hit[0]):
-            # a theory stopped answering in an earlier query (see
-            # satassume.theory, "Giving up"): start over with a working one
-            del self._context_sessions[assumptions]
-            self.stats["theory_gave_up"] += 1
-            hit = None
-        if hit is not None and len(hit[0].base) <= self.session_limit:
-            self._context_sessions.move_to_end(assumptions)
-            return hit
         failed = self._failed
         msg = failed.get(assumptions)
         if msg is not None:
@@ -1923,20 +1869,18 @@ class Engine:
         self._verdict[assumptions] = v
         if v is INCONSISTENT:
             raise InconsistentAssumptions("inconsistent assumptions")
-        self._context_sessions[assumptions] = (s, lits)
-        while len(self._context_sessions) > self.keep_sessions:
-            self._context_sessions.popitem(last=False)
         return s, lits
 
     def _build_context(self, assumptions) -> Tuple[Session, List[int]]:
         """Build the contextual session of ``assumptions`` and run the set's
         complete check (:meth:`_complete_check`) in it; its verdict is
-        ``s.verdict``.  Every construction of a set's session, the first
-        or a rebuild (eviction, ``session_limit``, a dead session, a theory
-        that gave up), takes exactly these steps, whether a verdict is
-        memoized or not, so the session the queries use never depends on
-        what ran before.  What the check leaves in the session (the
-        escalated cone, learnt clauses) is a function of the set alone.
+        ``s.verdict``.  Every construction of a set's session (one per
+        contextual query, and one per :meth:`verdict` without a memo)
+        takes exactly these steps, whether a verdict is memoized or not,
+        so the session a query uses never depends on what ran before.
+        What the check leaves in the session (the escalated cone, learnt
+        clauses, the branch and bound's lemmas) is a function of the set
+        alone.
 
         If the check makes a theory give up (or errors), the session is
         replaced by a plain one (assumptions only, no check): a session
@@ -1962,11 +1906,6 @@ class Engine:
             lits = s.assume_formula(assumptions)
             v = UNKNOWN
         s.verdict = v
-        # branch conflicts in the check are part of the canonical build;
-        # only the queries' can make the session's answers path dependent
-        _clear_branched(s)
-        s.build_values = [(t.rational_values() or False) if t.branched_rational else None
-                          for t in s.solver._theories if hasattr(t, "branched_rational")]
         return s, lits
 
     def verdict(self, assumptions) -> str:
@@ -1976,17 +1915,13 @@ class Engine:
         built; raises ``Uninterpreted`` as that construction does, never
         ``InconsistentAssumptions``.
 
-        Answered from the verdict memo, or from the set's contextual
-        session if it has one; else the session is built by
-        :meth:`_build_context` and only its verdict is kept: the session
-        is not stored in ``_context_sessions``.  The caller of a verdict
-        is mostly the relevance layer deciding whether a set may raise
-        before it answers under a part of it; the part's session is the
-        one its queries use, and a never-queried whole session would only
-        evict it.  If the whole set is queried later its session is built
-        then, by the same steps (see :meth:`_build_context`), so what a
-        query sees does not depend on whether a verdict was asked
-        first.  A set whose structural cone outweighs ``discovery_budget``
+        Answered from the verdict memo; else the session is built by
+        :meth:`_build_context` and only its verdict is kept.  A query under
+        the set builds its own session by the same steps (see
+        :meth:`_build_context`), so what a query sees does not depend on
+        whether a verdict was asked first.  The caller of a verdict is
+        mostly the relevance layer deciding whether a set may raise before
+        it answers under a part of it.  A set whose structural cone outweighs ``discovery_budget``
         is ``UNKNOWN`` without any session (every query under it is over
         the budget too: ``_within_budget``)."""
         if self._epoch != _EPOCH[0]:
@@ -1996,22 +1931,18 @@ class Engine:
         v = self._verdict.get(assumptions)
         if v is not None:
             return v
-        hit = self._context_sessions.get(assumptions)
-        if hit is not None and hit[0].verdict is not None:
-            v = hit[0].verdict
-        else:
-            failed = self._failed
-            msg = failed.get(assumptions)
-            if msg is not None:
-                raise Uninterpreted(msg)
-            try:
-                s, _ = self._build_context(assumptions)
-            except Uninterpreted as e:
-                if len(failed) >= 10_000:
-                    failed.clear()
-                failed[assumptions] = str(e)
-                raise
-            v = s.verdict
+        failed = self._failed
+        msg = failed.get(assumptions)
+        if msg is not None:
+            raise Uninterpreted(msg)
+        try:
+            s, _ = self._build_context(assumptions)
+        except Uninterpreted as e:
+            if len(failed) >= 10_000:
+                failed.clear()
+            failed[assumptions] = str(e)
+            raise
+        v = s.verdict
         if len(self._verdict) >= 20_000:
             self._verdict.clear()
         self._verdict[assumptions] = v
@@ -2215,6 +2146,13 @@ class Engine:
         """Truth value of ``proposition`` (a formula over ``P`` atoms) given
         ``assumptions`` (a formula or None).  Raises
         ``InconsistentAssumptions`` if the assumptions contradict the facts.
+
+        Build, answer, discard: a contextual query is answered in the
+        session of its set built for it (:meth:`_context_session`,
+        :meth:`_build_context`), a context-free one in a fresh session; the
+        session is dropped when the query ends, so a query's answer and
+        cost depend on the query, the set and the registry, never on the
+        queries before it (the module docstring).
         """
         if self._epoch != _EPOCH[0]:
             self._check_version()
@@ -2227,89 +2165,26 @@ class Engine:
             # whether a set raises is a function of the set alone: one that
             # fits the budget and is INCONSISTENT raises for every query
             # under it, over the budget or not (a set over the budget is
-            # UNKNOWN: never raises).  verdict() is memoized and builds no
-            # stored session; it raises Uninterpreted as the session
-            # construction of a query within the budget would.
+            # UNKNOWN: never raises).  verdict() is memoized; it raises
+            # Uninterpreted as the session construction of a query within
+            # the budget would.
             if (contextual and self._within_budget(assumptions)
                     and self.verdict(assumptions) is INCONSISTENT):
                 raise InconsistentAssumptions("inconsistent assumptions")
             return self._over_budget()
-        s, lits, reused = self._open_session(assumptions, contextual)
-        used: List[Session] = []
-        # a re-answer may follow: write back only once the answer stands
-        hold = reused and self._writeback != "root-only"
-        self._hold_writeback = hold
-        try:
-            r = self._ask(s, lits, proposition, assumptions, contextual, used)
-        except InconsistentAssumptions:
-            self._hold_writeback = False
-            if contextual:
-                self._drop_dead(assumptions)
-            if not (reused and _path_dependent(s, used, True)):
-                raise
-        else:
-            self._hold_writeback = False
-            if not (reused and _path_dependent(s, used, r is not None)):
-                if hold:
-                    for x in (s, *used):
-                        x.writeback()
-                return r
-        finally:
-            self._hold_writeback = False
-        # The search ran out of branch budget or gave up, or found a
-        # definite answer (or raised) after a branch and bound conflict
-        # since the build or with constants: a fresh engine, searching
-        # along another path, may answer otherwise (see the module
-        # docstring).  Answer as it would: the session _context_session
-        # builds (the set check included), then the same steps, the cone
-        # search too if its size calls for it; whatever happens there,
-        # that answer stands.  The budget test above, a function of the
-        # query alone, passed: a fresh engine gets this far too
-        self.stats["exhaust_reanswers"] += 1
-        self._context_sessions.pop(assumptions, None)
-        s, lits, _ = self._open_session(assumptions, True)
-        try:
-            return self._ask(s, lits, proposition, assumptions, True)
-        except InconsistentAssumptions:
-            self._drop_dead(assumptions)
-            raise
-
-    def _open_session(self, assumptions, contextual: bool):
-        """The session a query within the budget is answered in, its
-        assumption literals, and whether it was reused (stored before this
-        query), with the branch-budget flags cleared.  The steps of a
-        fresh engine's query, and of a re-answer once the stored session
-        is popped (then nothing is reused)."""
         if contextual:
-            hit = self._context_sessions.get(assumptions)
             s, lits = self._context_session(assumptions)
-            reused = hit is not None and hit[0] is s
         else:
-            s, lits, reused = self._fresh_session(), [], False
-        _clear_exhausted(s)
-        return s, lits, reused
+            s = self._fresh_session()
+        return self._ask(s, lits, proposition, contextual)
 
-    def _drop_dead(self, assumptions) -> None:
-        """A query raised under a reused session.  Whether the raise
-        belongs to this query alone (its own nodes made the clause set
-        unsatisfiable, at root or only under the assumptions: a non-total
-        template block, an extension emitting contradictory facts) or to
-        the assumptions (they contradict the facts), the session must not
-        answer later queries under these assumptions: it is dropped, and
-        the next query builds a fresh one, as a fresh engine would.  An
-        inconsistent assumption set therefore raises for every query, from
-        a fresh session each time."""
-        if self._context_sessions.pop(assumptions, None) is not None:
-            self.stats["dead_sessions"] += 1
-
-    def _ask(self, s: Session, lits: List[int], proposition, assumptions,
-             contextual: bool, used: Optional[List[Session]] = None) -> Optional[bool]:
-        """Answer in ``s``; a cone search's own session is appended to
-        ``used``."""
-        polluted = (len(s.base) - s.n_assumption_nodes
-                    - (s.n_constants - s.n_assumption_constants)) > self.cone_threshold
-        # the solver holds the levels of the last query's assumptions; keep
-        # the set's (the stable prefix) while this query adds clauses
+    def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:
+        """Answer ``proposition`` in the session ``s`` just built for it:
+        propagation, escalation of the query's cone if that was not
+        enough, then search."""
+        # the solver holds the levels of the set's check (the stable
+        # prefix of the assumptions); release the others before this query
+        # adds clauses
         s.solver.release(s.n_hold)
         q = self._literal(s, proposition)
         # the set's selector and the selectors the query activates (also
@@ -2323,37 +2198,9 @@ class Engine:
             r = s.query_literal(q, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
-            if contextual and polluted and self.cone_search:
-                self.stats["cone_searches"] += 1
-                s0 = s
-                s = self._fresh_session()
-                if used is not None:
-                    used.append(s)
-                base_lits = s.assume_formula(assumptions)
-                q = self._literal(s, proposition)
-                s.escalate()
-                lits = s.assumption_lits(proposition)
-                r = s.query_literal(q, lits, search=True)
-                # the cone session (assumptions + this query's cone, and
-                # what the search learned) replaces the polluted one, so the
-                # next searches under these assumptions start small again
-                if self._context_sessions.get(assumptions, (None,))[0] is s0:
-                    # the verdict is a function of the set alone: carry it
-                    # over rather than run the check again (every context
-                    # session is built by _build_context, so s0 has one)
-                    s.verdict = (s0.verdict if s0.verdict is not None
-                                 else self._verdict.get(assumptions))
-                    s.build_values = s0.build_values
-                    self._context_sessions[assumptions] = (s, base_lits)
-                    if r is not None:
-                        # "under these assumptions and the selectors this
-                        # query activated, q" is entailed by the clause
-                        # set, so a repeat is answered by propagation; the
-                        # selectors keep it inert for other queries
-                        s._emit([-l for l in lits] + [q if r else -q])
-                self._note_budget(s)
-                return r
             r = s.query_literal(q, lits, search=True)
+        if contextual and _gave_up(s):
+            self.stats["theory_gave_up"] += 1
         self._note_budget(s)
         return r
 
@@ -2449,72 +2296,6 @@ def _exhausted(s: Session) -> bool:
         if getattr(t, "exhausted", False):
             return True
     return False
-
-
-def _clear_exhausted(s: Session) -> None:
-    for t in s.solver._theories:
-        if getattr(t, "exhausted", False):
-            t.exhausted = False
-
-
-def _clear_branched(s: Session) -> None:
-    for t in s.solver._theories:
-        if getattr(t, "branched", False):
-            t.branched = False
-
-
-def _branched(s: Session) -> bool:
-    """A theory of the session's solver found a branch and bound conflict
-    since the engine built the session (or ever, in a cone session, built
-    for its query alone): a definite answer may rest on a lemma whose
-    finding, within the budget, depends on the search path."""
-    for t in s.solver._theories:
-        if getattr(t, "branched", False):
-            return True
-    return False
-
-
-def _cannot_give_up(s: Session) -> bool:
-    """No theory can give up in the sessions a fresh engine would use for
-    the query just answered in the reused session ``s`` (its set check, its
-    query, its cone search).  LRA atoms are registered only where
-    ``Relations.process`` runs: for the assumptions (``assume_formula``)
-    and for a query (``Engine._literal``), each time for the relation
-    atoms that compilation queued since (the set check's escalation
-    included) and the expressions they link.  ``s`` came from the same
-    build (a cone session that replaced it covers that build's cone) and
-    has run ``process`` for the queries since and for this one, so every
-    LRA atom a fresh engine registers is registered in ``s`` too, unless a
-    discovery in ``s`` stopped on the budget (``truncated``).  Then a
-    fresh engine meets no constant if ``s``'s LRA payloads have none, and
-    cannot give up on one if ``s``'s LRA is certified (LRATheory.certified:
-    monotone in the atoms), also for the values a branch and bound without
-    constants in the set check left behind (``build_values``, recorded at
-    the build).  False when any of this fails."""
-    if s.truncated or _gave_up(s):
-        return False
-    lras = [t for t in s.solver._theories if hasattr(t, "certified")]
-    if not any(t.undecidable for t in lras):
-        return True
-    vals = None
-    for b in s.build_values or ():
-        if b is False:
-            return False
-        if b is not None:
-            vals = b if vals is None else (max(vals[0], b[0]), math.lcm(vals[1], b[1]))
-    return all(t.certified if vals is None else t.certified_with(vals) for t in lras)
-
-
-def _path_dependent(s: Session, used: List[Session], definite: bool) -> bool:
-    """The query just answered in the reused session ``s`` (and the cone
-    sessions ``used``) may have an answer that depends on the session's
-    history: a search ran out of branch budget or gave up, or the answer
-    is ``definite`` (or a raise) after a branch conflict, or while a fresh
-    engine's search might give up on a constant (``_cannot_give_up``)."""
-    for x in (s, *used):
-        if _exhausted(x) or _gave_up(x) or (definite and _branched(x)):
-            return True
-    return definite and not _cannot_give_up(s)
 
 
 def neighbourhood(pred) -> frozenset:
