@@ -57,15 +57,25 @@ def test_without_adapters_relations_stay_out_of_scope():
     assert out_of_scope(Q.lt(x, y)) == "relation"
 
 
-def test_uninterpreted_relation_gives_none():
-    # Only the UF stand-in: lt atoms have no theory, so the query is out of
-    # scope (None) even where propositional reasoning alone would decide it.
-    e = relation_engine(dummy_specs(order=False))
-    assert ask_with(e, Q.lt(x, y), Q.lt(x, y)) is None
+def test_uninterpreted_relation_is_a_free_atom():
+    # Only the UF stand-in: lt atoms have no theory.  By default
+    # (uninterpreted="free") such an atom is a free Boolean, so propositional
+    # reasoning alone decides p under p; with uninterpreted="none" (opt-in)
+    # the query is out of scope (None).
+    from satassume import Engine
+    from satassume.engine import DictCache
+
+    def none_engine(specs):
+        return Engine(cache=DictCache(), relations=specs, uninterpreted="none")
+    e =relation_engine(dummy_specs(order=False))
+    assert ask_with(e, Q.lt(x, y), Q.lt(x, y)) is True
+    assert ask_with(e, Q.lt(x, y), True) is None
     assert ask_with(e, Q.eq(x, y), Q.eq(y, x)) is True
+    assert ask_with(none_engine(dummy_specs(order=False)), Q.lt(x, y), Q.lt(x, y)) is None
     # nonlinear / unsupported argument for the order stand-in
     e = relation_engine(dummy_specs(uf=False))
-    assert ask_with(e, Q.lt(x * y, 1), Q.lt(x * y, 1)) is None
+    assert ask_with(e, Q.lt(x * y, 1), Q.lt(x * y, 1)) is True
+    assert ask_with(none_engine(dummy_specs(uf=False)), Q.lt(x * y, 1), Q.lt(x * y, 1)) is None
 
 
 # ----------------------------------------------------------------------
@@ -167,7 +177,9 @@ def test_real_euf_with_order_stand_in():
     assert ask_with(e, Q.eq(f(x), f(y)), x <= y) is None
     assert ask_with(e, Q.lt(x, z), Q.lt(x, y) & Q.eq(y, z)) is True
     assert ask_with(e, Q.ne(f(x), f(z)), Q.lt(x, y) & Q.lt(y, z)) is None
-    assert ask_with(e, Q.gt(f(x), 0), Q.eq(f(x), f(y)) & Q.gt(f(y), 0)) is None  # f(x) not a symbol for the stand-in
+    # f(x) is not a symbol for the stand-in: the gt atoms are free, and the
+    # sign link and the EUF class of f(x), f(y) carry the fact across
+    assert ask_with(e, Q.gt(f(x), 0), Q.eq(f(x), f(y)) & Q.gt(f(y), 0)) is True
 
 
 def test_sharing_bookkeeping():

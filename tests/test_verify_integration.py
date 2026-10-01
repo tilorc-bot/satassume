@@ -86,11 +86,14 @@ def test_theory_levels_match_the_solver_after_ask():
 
 
 def test_uninterpreted_assumption_is_none_and_not_cached():
-    eng = Engine()
+    # opt-in old behaviour: an unread relation makes the answer None
+    eng = Engine(uninterpreted="none")
     assum = Q.gt(r, 0) & Q.lt(0.5 * r, 1)  # LRA refuses a Float, EUF takes no lt
     assert ask(Q.positive(r), assum, engine=eng) is None
     assert ask(Q.positive(r), assum, engine=eng) is None
     assert not eng._context_sessions
+    # default: the Float relation is a free atom; Q.gt(r, 0) alone decides
+    assert ask(Q.positive(r), assum, engine=Engine()) is True
 
 
 def test_readme_usage_example():

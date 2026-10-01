@@ -692,11 +692,13 @@ class Engine:
         (:mod:`satassume.transfer`): ``Q.positive(y)`` from ``Q.eq(x, y) &
         Q.positive(x)``, ``Q.prime(x)`` from ``Q.eq(x, 2)``.  Engaged only in
         sessions with an equality atom.
-    uninterpreted : ``"none"`` or ``"free"``
+    uninterpreted : ``"free"`` or ``"none"``
         What a relation of the query or the assumptions that no theory
-        interprets does: ``"none"`` (default) makes ``ask`` return None;
-        ``"free"`` leaves it a free Boolean, so the rest of the assumptions
-        still answers (and an inconsistent rest raises).
+        interprets (a Float or ``AccumBounds`` bound) does: ``"free"``
+        (default) leaves it a free Boolean, so the rest of the assumptions
+        still answers (and an inconsistent rest raises); this only drops
+        what the relation says, which is sound.  ``"none"`` is the old
+        behaviour, opt-in: ``ask`` returns None.
     relevance : bool
         ``sympy_api.ask`` answers a query under the assumption conjuncts
         connected to it only (see ``sympy_api._relevant``), once the whole
@@ -708,7 +710,7 @@ class Engine:
                  session_limit: int = 2000, keep_sessions: int = 16,
                  cone_search: bool = True, extensions=None, relations=None,
                  cone_threshold: int = 3, transfer: bool = True,
-                 uninterpreted: str = "none", relevance: bool = True):
+                 uninterpreted: str = "free", relevance: bool = True):
         clause_templates = None
         if templates is None:
             import importlib.util

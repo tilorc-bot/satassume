@@ -64,7 +64,7 @@ class EngineConfig:
     cone_search: bool = True
     cone_threshold: int = 3
     transfer: bool = True
-    uninterpreted: str = "none"
+    uninterpreted: str = "free"
     relevance: bool = True
     relations: str = "default"
     cache_size: int = 200_000
@@ -168,8 +168,9 @@ PRESETS: Dict[str, EngineConfig] = {
     "notransfer": EngineConfig(name="notransfer", transfer=False),
     # relations out of scope (the scalar slice alone)
     "norel": EngineConfig(name="norel", relations="none"),
-    # uninterpreted relations stay free Booleans
-    "free": EngineConfig(name="free", uninterpreted="free"),
+    # unread assumption atoms sink the answer to None (the pre-opaque
+    # default; the engine default keeps them as free Booleans)
+    "none": EngineConfig(name="none", uninterpreted="none"),
     # the discovery budget binds on ordinary expressions
     "budget": EngineConfig(name="budget", discovery_budget=5),
     # every setting at its smallest legal value at once: one node of
@@ -231,6 +232,7 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.euf_adapter", "_STRUCTURAL"),
     ("satassume.sympy_api", "CATEGORIES"), ("satassume.sympy_api", "RELATION_PREDICATES"),
     ("satassume.sympy_api", "_FORMULAS_STATE"),   # reset with _FORMULAS below
+    ("satassume.sympy_api", "_KEYS_STATE"),       # reset with _KEYS below
     ("satassume.templates._common", "VOCAB"), ("satassume.templates._common", "SIGN_FLIP"),
     ("satassume.templates._common", "_SIGNED_INFINITE"),
     ("satassume.templates.atoms", "_ORACLE_PREDS"), ("satassume.templates.atoms", "_CONST_BASIS"),
@@ -313,6 +315,7 @@ def reset_module_state(sympy_cache: bool = True) -> None:
         getattr(mod, attr).clear()
     api = importlib.import_module("satassume.sympy_api")
     api._FORMULAS_STATE[0] = None
+    api._KEYS_STATE[0] = None
     api._MATRIX_PREDICATES = None
     from satassume.templates.registry import registry
     registry._clauses_cache.clear()

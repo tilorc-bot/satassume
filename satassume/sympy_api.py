@@ -26,8 +26,10 @@ scope so the caller can decide before asking.  The categories are
   assumptions.  :func:`out_of_scope` always reports this category, but
   :func:`ask` answers relations when the engine has theory adapters
   (``Engine.relation_specs``, by default LRA and EUF when present; see
-  :mod:`satassume.relations`) and returns None only when no theory
-  interprets one of the relations;
+  :mod:`satassume.relations`).  A relation no theory interprets (a Float
+  or ``AccumBounds`` bound) is a free Boolean atom by default, so the rest
+  of the assumptions still answers; ``Engine(uninterpreted="none")`` (the
+  old behaviour, opt-in) returns None instead;
 * ``"matrix"``: a matrix predicate (``Q.invertible`` and friends from
   ``sympy.assumptions.predicates.matrices``) or a vocabulary predicate
   applied to a non-scalar argument (a ``MatrixSymbol``, ...);
@@ -41,6 +43,17 @@ scope so the caller can decide before asking.  The categories are
   ``Expr``, an ``ITE``, ...).
 
 If several apply the first in this list is reported.
+
+Opaque conjuncts: in the *assumptions*, an applied predicate of category
+``"matrix"`` or ``"custom"`` is not out of scope.  It translates to an
+opaque atom (``P(OPAQUE, applied predicate)``): a free Boolean that no
+template, rule, theory, link or registered function reads, so keeping it
+only drops what it says (sound).  Equal conjuncts are one atom and
+``A & ~A`` is inconsistent (ValueError).  Its relevance keys are those of
+its arguments, so it does not sink unrelated components.  In the
+*proposition* these categories still give None (``ask(Q.invertible(M),
+Q.invertible(M))`` is None), and ``"other"`` is out of scope on both sides.
+:func:`out_of_scope` keeps reporting the categories of the input as such.
 
 ``to_formula`` translates a SymPy Boolean into a :mod:`satassume.formula`
 formula and raises :class:`Unsupported` (carrying the category) for
@@ -218,36 +231,60 @@ def _relation_formula(expr, parts, relations: bool):
     return relation_atom(name, lhs, rhs)
 
 
-def to_formula(expr, relations: bool = False):
+#: predicate name of an opaque atom (see :func:`to_formula`): not an
+#: identifier, so never the name of a registered predicate
+OPAQUE = "<opaque>"
+
+#: categories of an applied predicate that an assumption keeps as an opaque atom
+OPAQUE_CATEGORIES = frozenset({"matrix", "custom"})
+
+
+def to_formula(expr, relations: bool = False, opaque: bool = False):
     """Translate a SymPy Boolean over applied predicates into a formula.
     Raises :class:`Unsupported` for anything out of scope.  With
     ``relations`` (the engine has theory adapters, see
-    :mod:`satassume.relations`) relations become relation atoms."""
+    :mod:`satassume.relations`) relations become relation atoms.  With
+    ``opaque`` (the assumptions side) an applied predicate of category
+    ``"matrix"`` or ``"custom"`` becomes the opaque atom
+    ``P(OPAQUE, expr)``: a free Boolean that no template, rule, theory,
+    link or registered function reads, identified by the applied predicate
+    itself (equal conjuncts are one atom, ``A & ~A`` is a conflict).
+    Keeping it only drops what it says, which is sound."""
     if expr is True or isinstance(expr, _BTrue):
         return TRUE
     if expr is False or isinstance(expr, _BFalse):
         return FALSE
     if isinstance(expr, _Applied):
         name = str(expr.function.name)
+        if name == "is_true" and len(expr.arguments) == 1:
+            # Q.is_true of a Boolean constant is that constant (not an atom)
+            a = expr.arguments[0]
+            if a is True or isinstance(a, _BTrue):
+                return TRUE
+            if a is False or isinstance(a, _BFalse):
+                return FALSE
         if name in RELATION_PREDICATES or name == "is_true":
             parts = relation_parts(expr)
             if parts is not None:
                 return _relation_formula(expr, parts, relations)
         c = _applied_category(expr)
         if c is not None:
+            if opaque and c in OPAQUE_CATEGORIES:
+                return P(OPAQUE, expr)
             raise Unsupported(f"{expr} is out of scope ({c})", c)
         args = expr.arguments
         return P(name, args[0] if len(args) == 1 else Args(args))
     if isinstance(expr, _SAnd):
-        return And(*[to_formula(a, relations) for a in expr.args])
+        return And(*[to_formula(a, relations, opaque) for a in expr.args])
     if isinstance(expr, _SOr):
-        return Or(*[to_formula(a, relations) for a in expr.args])
+        return Or(*[to_formula(a, relations, opaque) for a in expr.args])
     if isinstance(expr, _SNot):
-        return Not(to_formula(expr.args[0], relations))
+        return Not(to_formula(expr.args[0], relations, opaque))
     if isinstance(expr, _SImplies):
-        return Implies(to_formula(expr.args[0], relations), to_formula(expr.args[1], relations))
+        return Implies(to_formula(expr.args[0], relations, opaque),
+                       to_formula(expr.args[1], relations, opaque))
     if isinstance(expr, _SEquivalent):
-        return Equivalent(*[to_formula(a, relations) for a in expr.args])
+        return Equivalent(*[to_formula(a, relations, opaque) for a in expr.args])
     if isinstance(expr, _Relational):
         return _relation_formula(expr, relation_parts(expr), relations)
     raise Unsupported(f"cannot translate {type(expr).__name__} (other)", "other")
@@ -263,11 +300,15 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
 
     * In-scope input (see the module docstring) is answered from the rule
       base, the templates and search; None means the engine cannot decide.
-    * Out-of-scope input (relations, matrix predicates, unregistered custom
-      predicates, non-scalar arguments, non-Boolean propositions) returns
-      None without touching the engine.  The caller is expected to route it
-      to SymPy's existing path; :func:`out_of_scope` tells which category
-      applies.
+    * An out-of-scope proposition (matrix predicates, unregistered custom
+      predicates, non-scalar arguments, non-Boolean propositions; relations
+      without theory adapters) returns None without touching the engine.
+      The caller is expected to route it to SymPy's existing path;
+      :func:`out_of_scope` tells which category applies.
+    * In the assumptions, matrix and unregistered custom predicates are
+      opaque atoms, and a relation no theory interprets is a free atom
+      (unless ``Engine(uninterpreted="none")``): see the module docstring,
+      "Opaque conjuncts".  Non-Boolean assumptions return None.
     * Custom predicates with a registered clause-generating function
       (:func:`register`, the counterpart of ``Predicate.register``) are in
       scope: their atoms take part in propagation and search.
@@ -315,19 +356,20 @@ _FORMULAS_STATE = [None]
 FORMULAS_SIZE = 100_000
 
 
-def _formula(expr, relations: bool):
-    """Memoized :func:`to_formula` (raises :class:`Unsupported` like it)."""
+def _formula(expr, relations: bool, opaque: bool = False):
+    """Memoized :func:`to_formula` (raises :class:`Unsupported` like it).
+    ``opaque``: translating assumptions (see :func:`to_formula`)."""
     if not isinstance(expr, _Basic):
-        return to_formula(expr, relations)
+        return to_formula(expr, relations, opaque)
     state = extensions.version
     if _FORMULAS_STATE[0] != state:
         _FORMULAS.clear()
         _FORMULAS_STATE[0] = state
-    key = (expr, relations)
+    key = (expr, relations, opaque)
     f = _FORMULAS.get(key)
     if f is None:
         try:
-            f = to_formula(expr, relations)
+            f = to_formula(expr, relations, opaque)
         except Unsupported as e:
             f = _Failed(str(e), e.category)
         if len(_FORMULAS) >= FORMULAS_SIZE:
@@ -421,14 +463,27 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 # to a common value connect as well; by default (``RELATIONAL``) such a set
 # is not split at all.
 #
-# Opaque (never split): a predicate outside the vocabulary (a custom
-# predicate: its registered function may mention any term), ``Q.is_true``
-# of a non-relational, anything that is not a Boolean over applied
+# An out-of-scope applied predicate of the assumptions (category
+# ``"matrix"`` or ``"custom"``: ``Q.invertible(M)``, ``Q.positive(M)``, an
+# unregistered predicate, ``Q.is_true`` of a non-relational) is an opaque
+# atom there (see ``to_formula``): its keys are those of its arguments, so
+# it is a component of its own (or joins the one sharing its symbols) and
+# no longer sinks the other components; a component of opaque atoms is
+# consistent unless it holds an atom and its negation.  As a proposition
+# it stays out of scope (None).
+#
+# Opaque (never split): a registered custom predicate (its function may
+# mention any term), anything that is not a Boolean over applied
 # predicates and relations; also any set when a vocabulary predicate is
 # registered for a class (its function may mention any term).
 
 _OPAQUE = None  # keys of an opaque expression
+#: Boolean -> ``(keys, has a relation)``; valid while the default
+#: registry's version (which decides whether a custom predicate is
+#: registered, so opaque, or unregistered, keyed by its arguments) is
+#: ``_KEYS_STATE``
 _KEYS: dict = {}
+_KEYS_STATE = [None]
 KEYS_SIZE = 100_000
 
 
@@ -466,6 +521,10 @@ def _keys(e):
 
 def _keys_rel(e):
     """``(keys, has a relation)`` of the Boolean ``e`` (keys as :func:`_keys`)."""
+    state = extensions.version
+    if _KEYS_STATE[0] != state:
+        _KEYS.clear()
+        _KEYS_STATE[0] = state
     k = _KEYS.get(e)
     if k is not None:
         return k
@@ -495,11 +554,17 @@ def _bool_keys(e, acc: set) -> bool:
         args = e.arguments
         if name in RELATION_PREDICATES:
             return _sides_keys(args, acc, name in ("eq", "ne"))
-        if name == "is_true":
-            return (len(args) == 1 and isinstance(args[0], _Relational)
-                    and _bool_keys(args[0], acc))
-        if name not in PRED_INDEX:
-            return False
+        if name == "is_true" and len(args) == 1 and isinstance(args[0], _Relational):
+            return _bool_keys(args[0], acc)
+        if name not in PRED_INDEX or name in matrix_predicates():
+            if _applied_category(e) not in OPAQUE_CATEGORIES:
+                return False            # a registered custom predicate, or "other"
+            # an opaque atom in the assumptions: keyed by its arguments
+            for a in args:
+                if not isinstance(a, _Basic):
+                    return False
+                _expr_keys(a, acc)
+            return True
         if name == "zero" and RELATIONAL == "rationals":
             acc.add(_S.Zero)            # zero(e) <-> eq(e, 0)
         for a in args:
@@ -618,10 +683,12 @@ def _relevant(p, a, eng: Engine):
         else:
             # no relation: the components share no solver variable, so the
             # set is consistent iff each component is.  Out of scope as a
-            # whole (a matrix predicate in another component): as before,
-            # the whole set answers (None)
+            # whole (an "other" conjunct, a vocabulary predicate of the
+            # wrong arity): as before, the whole set answers (None).  Matrix
+            # and unregistered custom predicates are opaque atoms here and
+            # translate
             try:
-                _formula(a, bool(eng.relation_specs))
+                _formula(a, bool(eng.relation_specs), True)
             except Unsupported:
                 ok = False
             else:
@@ -688,7 +755,7 @@ def _part_consistent(f, eng: Engine) -> bool:
     if ok is None:
         eng.stats["consistency_checks"] += 1
         try:
-            g = _formula(f, bool(eng.relation_specs))
+            g = _formula(f, bool(eng.relation_specs), True)
             s, lits = eng._context_session(g)
             if s.xfer is not None:
                 s.xfer.sync_transfer()
@@ -720,7 +787,7 @@ def _consistent(a, eng: Engine, count: bool = True, search: Optional[bool] = Non
         search = CHECK_SEARCH
     rel = bool(eng.relation_specs)
     try:
-        g = _formula(a, rel)
+        g = _formula(a, rel, True)
         if g is TRUE:
             return True
         if g is FALSE:
@@ -750,7 +817,7 @@ def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     rel = bool(eng.relation_specs)
     try:
         prop = _formula(proposition, rel)
-        assum = None if assumptions is True else _formula(assumptions, rel)
+        assum = None if assumptions is True else _formula(assumptions, rel, True)
     except Unsupported:
         return None
     if prop is TRUE:

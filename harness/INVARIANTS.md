@@ -165,10 +165,13 @@ the kinds `oos:matrix`, `oos:is_true`, `custom`.
 
 Before a candidate is shrunk it is **fingerprinted** (`fingerprint`):
 its variant is replayed under probes that switch one mechanism off
-(`PROBES`: `relevance=False`, `transfer=False`, `uninterpreted="free"`,
+(`PROBES`: `relevance=False`, `transfer=False`, `uninterpreted="none"`,
 no cone sessions, the discovery budget lifted to 400, relations off),
 and the probes under which the difference vanishes are the fingerprint
-(`"free,norel"`, `"-"` for none).  The **family key** is (invariant,
+(`"none,norel"`, `"-"` for none; the probe `none` makes unread
+assumption atoms sink the answer instead of staying opaque, the engine
+default since the opaque-conjuncts change; before it the probe was
+`free`, the other direction).  The **family key** is (invariant,
 severity, base, variant answer, kinds (I2) or variant kind (I5), fingerprint):
 two cases with the same answer shape but different fingerprints are
 different families.  The key is matched against the pinned cases of the
@@ -257,6 +260,30 @@ evaluation cannot settle: `cos(1)**2 + sin(1)**2 - 1`, `log(2) + log(3)
 it, relation sides use the real classes only, and an I2 case records the
 classes present in its material as `const:<class>` kinds).  Everything
 in "Keep" is kept.
+
+### Status after the opaque default (`uninterpreted="free"`)
+
+The harness's `EngineConfig` follows the engine default
+(`uninterpreted="free"`: an unread assumption conjunct is an opaque
+atom); the old behaviour is the preset `none` (which replaces the
+preset `free`).  The pinned cases had stored the old default in their
+`config`; they now replay with `"free"` (`budget`, `boundary`, `tight`
+too: those presets only change other fields).  The guard
+(`consistent_by`) still runs the engine with `"none"`: a model of the
+opaque abstraction is not a model of the set.  Moved to `fixed/`:
+
+* out-of-scope material (W2A3): `I2-matrix-atom-conjunct-loses-definite`,
+  `I2-unregistered-predicate-conjunct-loses-definite`, `-loses-true`,
+  `I2-compound-with-unregistered-predicate-loses-definite`;
+* the padded proposition (K4): `I5-proposition-padded-with-contradiction-lost`;
+* the unread unrelated relation (K2): `I2-closed-relation-conjunct-loses-definite`,
+  `I2-context-free-fact-lost-with-unrelated-conjunct`,
+  `I2-definite-lost-with-unrelated-conjuncts`,
+  `I2-definite-lost-with-unrelated-relation`,
+  `I2-self-assumption-lost-with-unrelated-conjunct`,
+  `I5-constant-relation-conjunct-restated`.
+
+The findings below describe the cases as found.
 
 ### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
 

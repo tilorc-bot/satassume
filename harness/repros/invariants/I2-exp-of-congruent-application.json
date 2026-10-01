@@ -10,7 +10,7 @@
   "cone_search": true,
   "cone_threshold": 3,
   "transfer": true,
-  "uninterpreted": "none",
+  "uninterpreted": "free",
   "relevance": true,
   "relations": "default",
   "cache_size": 200000,

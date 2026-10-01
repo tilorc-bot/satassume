@@ -18,15 +18,24 @@ class makes objects of that class ordinary nodes.
 
 Relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`, `Q.is_true(x < 0)`) are
 being added through theory solvers on the CDCL solver (DPLL(T), LRA and EUF;
-see `satassume/relations.py` and [docs/theories.md](docs/theories.md));
-without an adapter that
-interprets a relation, `ask` returns None as before.
+see `satassume/relations.py` and [docs/theories.md](docs/theories.md)).
+A relation in the assumptions that no adapter interprets (a Float or
+`AccumBounds` bound) is kept as a free Boolean atom by default, so the rest
+of the assumptions still answers (`Q.real(m)` under
+`Q.odd(m) & Q.ge(m, 1.5)` is True); this only drops what the relation
+says. `Engine(uninterpreted="none")` is the old behaviour, opt-in: `ask`
+returns None.
 Order relations are over the extended reals and assert that their sides
 are extended reals (`x < 1` implies `Q.extended_real(x)`, `x < oo` is
 `x` extended real and not `+oo`, `x < I` is false); `Eq`/`Ne` compare
 values in any domain and assert nothing about the sides.
 Out of scope for now: matrix predicates and matrix arguments, unregistered
-custom predicates, and replacing the old `expr.is_*` system.
+custom predicates, and replacing the old `expr.is_*` system. As a
+proposition such a predicate gives None; as a conjunct of the assumptions
+it is an opaque atom (a free Boolean nothing else reads), so it no longer
+sinks the rest: `Q.real(x)` under `Q.positive(x) & Q.invertible(M)` is
+True, and `Q.invertible(M) & ~Q.invertible(M)` raises like any
+inconsistent set.
 
 **Routing rule.** Any out-of-scope query makes `ask` return `None` without
 touching the engine. Relations are the exception once theory adapters are
@@ -271,10 +280,6 @@ until the case is moved and this list updated.
 
 Tracked in an issue:
 
-* an unread relation (a Float or `AccumBounds` bound) makes the whole query
-  None, also for facts unrelated to it (`Q.real(m)` under
-  `Q.odd(m) & Q.ge(m, 1.5)`): #64 proposes `uninterpreted="free"` as the
-  default;
 * differences whose sides are not known to be real (`Q.negative(a - b)`
   under `Q.positive(b - a)`, `Q.zero(a - b)` under `Q.eq(a, b)` with finite
   sides): #42;
@@ -295,7 +300,8 @@ caller has needed them:
 
 Deliberately not read: Float bounds. SymPy compares `Float(0.1) > 1/10`
 exactly but `Eq(Float(0.1), 1/10)` at the Float's precision, so there is no
-single right reading, and a Float bound is left to the uninterpreted path.
+single right reading, and a Float bound is left to the uninterpreted path
+(a free atom by default).
 
 ## License
 

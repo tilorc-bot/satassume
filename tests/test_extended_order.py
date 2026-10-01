@@ -176,16 +176,17 @@ def test_relationals_and_is_true_have_the_same_meaning():
     Q.real(x) & Q.lt(Integral(sin(y), (y, 0, 1)), x),
     Q.real(x) & Q.lt(oo * x, 1), Q.real(x) & Q.lt(x * zoo, 1),
 ], ids=str)
-def test_unreadable_relations_still_give_none(assum):
-    # decidable propositionally, but no theory reads the relation
-    assert _ask(Q.real(x), assum) is None
-    assert _ask(Q.real(x), assum, uninterpreted="free") is True
+def test_unreadable_relations_are_free_atoms(assum):
+    # no theory reads the relation: by default a free atom, so the query is
+    # decided propositionally; uninterpreted="none" (opt-in) gives None
+    assert _ask(Q.real(x), assum) is True
+    assert _ask(Q.real(x), assum, uninterpreted="none") is None
 
 
 def test_unreadable_relation_still_asserts_extended_real_sides():
-    # only under uninterpreted="free", where an unread atom is kept
-    assert _ask(Q.extended_real(x), Q.lt(x, 0.5), uninterpreted="free") is True
-    assert _ask(Q.extended_real(x), Q.lt(x, 0.5)) is None
+    # an unread atom is kept (the default uninterpreted="free")
+    assert _ask(Q.extended_real(x), Q.lt(x, 0.5)) is True
+    assert _ask(Q.extended_real(x), Q.lt(x, 0.5), uninterpreted="none") is None
 
 
 def test_inconsistent_assumptions():

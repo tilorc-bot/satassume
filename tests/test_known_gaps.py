@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import pytest
 from sympy import Function, Q, log, pi, re, im, symbols
-from sympy.calculus.accumulationbounds import AccumBounds
 
 from satassume.engine import Engine
 from satassume.sympy_api import ask
@@ -26,11 +25,6 @@ def _gap(name, reason, prop, assum, expected):
 
 
 CASES = [
-    # An unread relation (Float or AccumBounds bound) makes the whole query None;
-    # Engine(uninterpreted="free") answers these.
-    _gap("float-bound", "#64: unread relation", Q.real(m), Q.odd(m) & Q.ge(m, 1.5), True),
-    _gap("accumbounds-bound", "#64: unread relation", Q.real(m), Q.odd(m) & Q.ge(x, AccumBounds(0, 1)), True),
-    _gap("float-bound-2", "#64: unread relation", Q.real(x), Q.nonnegative(x) & Q.le(x, 1.5), True),
     # Differences whose sides are not known to be real.
     _gap("negated-difference", "#42: a - b is -(b - a)", Q.negative(a - b), Q.positive(b - a), True),
     _gap("zero-difference", "#42: a - b is -(b - a)", Q.zero(b - a), Q.zero(a - b), True),

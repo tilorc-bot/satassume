@@ -1,7 +1,7 @@
 """Relevance: a query is answered under the assumption conjuncts connected to
 it (``sympy_api._relevant``), once the whole set is known consistent."""
 import pytest
-from sympy import Function, MatrixSymbol, Q, Symbol, besselj, pi, sin, sqrt, symbols
+from sympy import Function, MatrixSymbol, Q, Symbol, besselj, false, pi, sin, sqrt, symbols
 from sympy.assumptions.assume import Predicate
 
 from satassume import sympy_api as api
@@ -150,16 +150,22 @@ def test_rational_argument_is_a_key():
 # -- no split -----------------------------------------------------------------
 
 def test_custom_predicate_is_not_split():
-    ext = Extensions()
     from sympy.assumptions.assume import Predicate
 
     class MyPred(Predicate):
         name = "mypred_rel"
     mp = MyPred()
-    ext.register("mypred_rel", Symbol)(lambda s: None)
-    eng = Engine(extensions=ext)
     a = mp(x) & Q.positive(y)
-    assert api._relevant(Q.positive(y), a, eng) is a
+    # unregistered: an opaque atom keyed by its argument, split off
+    assert used(Q.positive(y), a) == Q.positive(y)
+    api.register("mypred_rel", Symbol)(lambda s: None)
+    try:
+        # registered: its function may mention any term, never split (the
+        # key memo follows the registration)
+        assert used(Q.positive(y), a) is a
+    finally:
+        api.unregister("mypred_rel")
+    assert used(Q.positive(y), a) == Q.positive(y)
 
 
 def test_vocabulary_extension_is_not_split():
@@ -175,8 +181,11 @@ def test_vocabulary_extension_is_not_split():
 
 def test_query_without_keys_is_not_split():
     a = Q.positive(x) & Q.negative(y)
-    # Q.is_true over a non-relational is out of scope: opaque
-    assert used(Q.is_true(x), a) is a
+    assert used(false, a) is a
+    # Q.is_true over a non-relational is keyed by its argument (an opaque
+    # atom in the assumptions); as a proposition it stays out of scope
+    assert used(Q.is_true(x), a) == Q.positive(x)
+    assert both(Q.is_true(x), a) == [None, None]
 
 
 # -- errors and out of scope stay as before -----------------------------------
@@ -206,19 +215,27 @@ def test_inconsistent_only_by_search_still_raises():
     assert both(Q.positive(x), xor & Q.real(x)) == ["error", "error"]
     assert both(Q.positive(t), xor) == ["error", "error"]
 
-def test_out_of_scope_rest_keeps_none():
+def test_out_of_scope_rest_is_opaque():
+    # a matrix predicate (or a vocabulary predicate of a matrix) in the
+    # assumptions is an opaque atom: it no longer sinks the rest (W2A3)
     Y = MatrixSymbol("Y", 2, 2)
     a = Q.positive(x) & Q.invertible(Y)
-    assert both(Q.positive(x), a) == [None, None]
+    assert both(Q.positive(x), a) == [True, True]
+    assert both(Q.invertible(Y), a) == [None, None]
     a = Q.positive(x) & Q.zero(Y)
-    assert both(Q.positive(x), a) == [None, None]
+    assert both(Q.positive(x), a) == [True, True]
+    a = Q.positive(x) & Q.invertible(Y) & ~Q.invertible(Y)
+    assert both(Q.positive(x), a) == ["error", "error"]
 
 
-def test_uninterpreted_rest_keeps_none():
-    # a Float in a relation is not read by any theory
+def test_uninterpreted_rest_is_free():
+    # a Float in a relation is not read by any theory: a free atom by
+    # default (the set is not split, RELATIONAL "whole"), None with
+    # uninterpreted="none"
     a = Q.positive(x) & Q.gt(y, 0.5)
-    assert both(Q.positive(x), a) == [None, None]
+    assert both(Q.positive(x), a) == [True, True]
     assert both(Q.positive(t), a) == [None, None]
+    assert api.ask(Q.positive(x), a, engine=Engine(uninterpreted="none")) is None
 
 
 def test_relevance_off():

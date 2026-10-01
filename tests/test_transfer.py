@@ -82,11 +82,15 @@ def test_no_equality_no_transfer():
 
 def test_uninterpreted_option():
     a = Q.positive(x) & Q.lt(0.5 * x, 1)     # LRA does not read a Float
-    assert ask_with(eng(), Q.positive(x), a) is None
+    # default "free": the unread relation is a free atom (sound: it only
+    # drops information); "none" is the opt-in old behaviour
+    assert ask_with(eng(uninterpreted="none"), Q.positive(x), a) is None
     assert ask_with(eng(uninterpreted="free"), Q.positive(x), a) is True
+    assert ask_with(eng(), Q.positive(x), a) is True
     bad = Q.positive(x) & Q.negative(x) & Q.lt(0.5 * x, 1)
-    assert ask_with(eng(), Q.real(x), bad) is None
+    assert ask_with(eng(uninterpreted="none"), Q.real(x), bad) is None
     assert ask_with(eng(uninterpreted="free"), Q.real(x), bad) == "inconsistent"
+    assert ask_with(eng(), Q.real(x), bad) == "inconsistent"
     with pytest.raises(ValueError):
         Engine(uninterpreted="maybe")
 

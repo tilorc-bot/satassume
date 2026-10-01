@@ -57,9 +57,6 @@ def test_k1_unrelated_relation_enables_theories():
             == ask(Q.nonpositive(n), a & Q.gt(u, v), Engine()))
 
 
-@_xfail("K2 (I2, depends): a relation no theory reads (Float bound) sinks "
-        "the whole set to None; sympy_api.py _engine_ask (Uninterpreted -> "
-        "None) with _relevant (RELATIONAL 'whole')")
 def test_k2_uninterpreted_relation_sinks_answer():
     x, y = symbols('x y')
     assert (ask(Q.real(x), Q.real(x), Engine())
@@ -71,13 +68,16 @@ def test_k3_setting_change_after_queries():
     a = Q.real(x) & Q.le(y, 1.5)
     e = Engine()
     ask(Q.real(x), a, e)
-    e.uninterpreted = "free"
-    assert ask(Q.real(x), a, e) == ask(Q.real(x), a, Engine(uninterpreted="free"))
+    e.uninterpreted = "none"
+    assert ask(Q.real(x), a, e) == ask(Q.real(x), a, Engine(uninterpreted="none"))
 
 
 def test_k3b_generic_constants_flag_stale_process_memo():
+    # uninterpreted="none": with the default "free" the cold answer
+    # coincides (the relation's sign link decides it), hiding the stale memo
     x = Symbol('x')
     p, a = Q.gt(log(2)*x, 0), Q.gt(x, 1)
+    eng = lambda: Engine(uninterpreted="none")
     # the memo is one dict per flag value: {flag: {atom: ...}}
     memo = lra_adapter._INTERPRETED
     saved_flag = lra_adapter.GENERIC_CONSTANTS
@@ -90,11 +90,11 @@ def test_k3b_generic_constants_flag_stale_process_memo():
     try:
         clear()
         lra_adapter.GENERIC_CONSTANTS = True
-        ask(p, a, Engine())
+        ask(p, a, eng())
         lra_adapter.GENERIC_CONSTANTS = False
-        warm = ask(p, a, Engine())
+        warm = ask(p, a, eng())
         clear()
-        cold = ask(p, a, Engine())
+        cold = ask(p, a, eng())
     finally:
         lra_adapter.GENERIC_CONSTANTS = saved_flag
         for k, v in saved_memo.items():
@@ -103,9 +103,6 @@ def test_k3b_generic_constants_flag_stale_process_memo():
     assert warm == cold
 
 
-@_xfail("K4 (I5, depends): a constant-only proposition is answered without "
-        "the assumptions, its equivalent restatement is not; sympy_api.py "
-        "_ask (constant-proposition shortcut)")
 def test_k4_constant_prop_shortcut_vs_restated():
     x, w = symbols('x w')
     a = Q.le(x, Float('4.712'))
@@ -201,9 +198,6 @@ def test_w2a2_unrelated_sums_via_constant_key_engage_lra():
     assert ask(p, a, Engine()) == ask(p, a & b, Engine())
 
 
-@_xfail("W2A3 (I2, depends): an unrelated out-of-scope conjunct (matrix "
-        "predicate) sinks the answer to None; sympy_api.py _relevant "
-        "(Unsupported refuses the split)")
 def test_w2a3_unrelated_out_of_scope_conjunct_sinks_answer():
     x = Symbol('x')
     m = MatrixSymbol('M', 2, 2)
@@ -224,10 +218,6 @@ def test_w2a4_budget_cut_negation_asymmetry():
         r is not None and rn is not None and r != rn)
 
 
-@_xfail("W2A3c (I2, depends): a keyless proposition (the literal False) "
-        "is not split from an out-of-scope conjunct; sympy_api.py _relevant "
-        "(no key: the whole set) and _engine_ask (the set is translated "
-        "before the proposition is decided)")
 def test_w2a3c_keyless_proposition_with_out_of_scope_conjunct():
     m = MatrixSymbol('M', 2, 2)
     assert ask(false, True, Engine()) == ask(false, Q.symmetric(m), Engine())

@@ -187,10 +187,13 @@ def consistent_by(assum, config: EngineConfig) -> Optional[str]:
     else None (undecided: a candidate under such a set is not reported).
     The engine's "no model" is also what it says of a set it cannot read,
     so a model found after it is logged (``GUARD_DISAGREEMENTS``), never
-    reported."""
+    reported.  The engine path runs with ``uninterpreted="none"`` whatever
+    the configuration: under the default ``"free"`` an unread atom is a
+    free Boolean, so a satisfying assignment of the opaque abstraction is
+    not a model of the set (``x > 7 & x < 2.5`` with a Float side)."""
     if assum is True or assum is S.true:
         return "engine"
-    eng = config.make()
+    eng = config.replace(uninterpreted="none").make()
     try:
         if bool(_api._consistent(assum, eng, count=False, search=True)):
             return "engine"
@@ -1662,7 +1665,7 @@ def extra_kinds(extra, specs: Sequence[dict] = ()) -> List[str]:
 PROBES: Dict[str, dict] = {
     "relevance": {"relevance": False},
     "transfer": {"transfer": False},
-    "free": {"uninterpreted": "free"},
+    "none": {"uninterpreted": "none"},
     "cone": {"cone_search": False, "cone_threshold": 0},
     "budget": {"discovery_budget": 400},
     "norel": {"relations": "none"},

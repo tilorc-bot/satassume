@@ -419,15 +419,21 @@ def test_dead_session_after_an_uninterpreted_exit():
     ``Uninterpreted`` (a relation no theory reads: None), not by
     ``InconsistentAssumptions``: the dead session is found when it is
     reused."""
+    # (the Uninterpreted exit exists only with uninterpreted="none")
     extensions.register('real', AppliedUndef)(contradictory)
     a = Q.positive(x)
-    eng = fresh()
-    assert same_as_fresh(eng, Q.real(x), a) is True
-    assert same_as_fresh(eng, Q.real(f(x)) | Q.lt(x, I * x), a) is None
+    eng = fresh(uninterpreted="none")
+
+    def same(p):
+        warm = outcome(eng, p, a)
+        assert warm == outcome(fresh(uninterpreted="none"), p, a)
+        return warm
+    assert same(Q.real(x)) is True
+    assert same(Q.real(f(x)) | Q.lt(x, I * x)) is None
     assert eng.stats["dead_sessions"] == 0                   # nothing raised
-    assert same_as_fresh(eng, Q.negative(x), a) is False     # was ValueError
+    assert same(Q.negative(x)) is False     # was ValueError
     assert eng.stats["dead_sessions"] == 1
-    assert same_as_fresh(eng, Q.real(x), a) is True
+    assert same(Q.real(x)) is True
     assert same_as_fresh(eng, Q.zero(x + 1), a) is False
     assert eng.stats["dead_sessions"] == 1
 
@@ -452,7 +458,7 @@ def _no_templates(node):
 #: a non-default value of every engine setting
 SETTINGS = [("discovery_budget", 1), ("session_limit", 0), ("keep_sessions", 0),
             ("cone_search", False), ("cone_threshold", 0), ("transfer", False),
-            ("uninterpreted", "free"), ("relevance", False),
+            ("uninterpreted", "none"), ("relevance", False),
             ("templates", _no_templates)]
 
 SETTING_QUERIES = [(Q.real(x), Q.real(x) & Q.le(y, 1.5)),
@@ -536,4 +542,4 @@ def test_uninterpreted_is_validated_on_assignment():
     eng = fresh()
     with pytest.raises(ValueError):
         eng.uninterpreted = "bogus"
-    assert eng.uninterpreted == "none"
+    assert eng.uninterpreted == "free"
