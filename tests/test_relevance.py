@@ -1,7 +1,8 @@
 """Relevance: a query is answered under the assumption conjuncts connected to
 it (``sympy_api._relevant``), once the whole set is known consistent."""
 import pytest
-from sympy import Function, MatrixSymbol, Q, Symbol, besselj, false, pi, sin, sqrt, symbols
+from sympy import (E, Function, GoldenRatio, I, Integer, MatrixSymbol, Q, Rational, Symbol,
+                   TribonacciConstant, besselj, false, oo, pi, sin, sqrt, symbols, zoo)
 from sympy.assumptions.assume import Predicate
 
 from satassume import sympy_api as api
@@ -100,11 +101,12 @@ def test_irrational_constant_connects(rationals):
     assert both(Q.lt(xr, yr), a) == [True, True]
 
 
-def test_irrational_constant_is_a_key():
+def test_decided_irrational_constant_is_no_key():
     a = Q.positive(x * sqrt(2)) & Q.positive(y)
-    # sqrt(2) is a key (ask itself answers this constant proposition
-    # without the assumptions)
-    assert used(Q.positive(sqrt(2)), a) == Q.positive(x * sqrt(2))
+    # sqrt(2) inside x*sqrt(2) is no key: every fact of it is decided
+    # context-free, so it carries nothing between components (W2A2)
+    assert used(Q.positive(sqrt(2)), a) is True
+    assert both(Q.positive(sqrt(2)), a) == [True, True]
 
 
 # Terms pinned to the same value are merged in EUF, and congruence carries
@@ -169,14 +171,85 @@ def test_custom_predicate_is_not_split():
 
 
 def test_vocabulary_extension_is_not_split():
+    """A vocabulary registration on a class disables the split only of a
+    set or query with an instance of it (W2A1)."""
     ext = Extensions()
 
     class Thing(Symbol):
         pass
+    th = Thing("th")
     ext.register("positive", Thing)(lambda n: None)
     eng = Engine(extensions=ext)
     a = Q.positive(x) & Q.negative(y)
+    assert api._relevant(Q.positive(x), a, eng) == Q.positive(x)
+    b = Q.positive(x) & Q.negative(y + th)
+    assert api._relevant(Q.positive(x), b, eng) is b
+    assert api._relevant(Q.positive(x + th), a, eng) is a
+
+
+def test_vocabulary_extension_on_derived_class_is_not_split():
+    """A class templates derive nodes of (``b - 1``: Add) may meet any set."""
+    from sympy import Add
+    ext = Extensions()
+    ext.register("positive", Add)(lambda n: None)
+    eng = Engine(extensions=ext)
+    a = Q.positive(x) & Q.negative(y)
     assert api._relevant(Q.positive(x), a, eng) is a
+
+
+def keys(e):
+    return set(api._keys(e))
+
+
+def test_closed_term_keys():
+    from sympy import E, Float, cos, oo
+    # pi, sqrt(2), 2*pi, oo: every fact decided context-free, no key
+    assert keys(Q.positive(y + pi)) == {y}
+    assert keys(Q.positive(y + sqrt(2) + 2*pi)) == {y}
+    assert keys(Q.real(pi*y)) == {y}
+    assert keys(Q.positive(y + oo)) == {y}
+    # f(1): a free EUF term
+    assert keys(Q.positive(f(1) + y)) >= {y, f, f(1)}
+    # a Float: its rationality is open
+    assert Float(1.5) in keys(Q.positive(y + Float(1.5)))
+    # pi + E (rationality open), pi - 3 and cos(1) (sign not decided)
+    assert keys(Q.positive(y*(pi + E))) == {y, pi + E, pi, E}
+    assert pi - 3 in keys(Q.positive(y*(pi - 3)))
+    assert cos(1) in keys(Q.positive(y + cos(1)))
+    # a closed predicate argument and anything inside polar stay keys
+    assert keys(Q.negative(pi)) == {pi}
+    assert keys(polar(y*pi)) == {y, pi}
+
+
+@pytest.mark.parametrize("c", [
+    pi, sqrt(2), 2*pi, -pi, pi/2, 1/pi, pi**2, sqrt(pi), 3*sqrt(2),
+    2**Rational(1, 3), sqrt(2)*Rational(1, 3), Integer(2)**Rational(-1, 2),
+    E, GoldenRatio, TribonacciConstant, I, -I, 2*I, oo, -oo, zoo,
+])
+def test_unkeyed_constants_are_decided(c):
+    """Soundness of dropping a closed term's key (see "Closed terms" in
+    sympy_api): the engine's context-free clauses of every form of ``K``
+    fix every predicate of its block except ``polar``."""
+    from satassume.engine import Session
+    from satassume.rules import PREDICATES, PRED_INDEX
+    assert api._const_free(c)
+    s = Session(Engine())
+    s.ensure(c)
+    s.escalate(10**6)
+    assert s.solver.propagate()
+    b = s.base[c]
+    open_ = [p for p in PREDICATES
+             if p != "polar" and s.solver.value(b + PRED_INDEX[p]) is None]
+    assert not open_
+
+
+def test_unrelated_sums_through_pi_are_split():
+    """W2A2: pi no longer connects unrelated components."""
+    n = Symbol("n", integer=True)
+    u, v = symbols("u v")
+    a = Q.integer(n) & Q.negative(n - 1) & Q.real(pi*n)
+    b = Q.nonzero(u + v) & Q.positive(u + pi)
+    assert used(Q.negative(-n), a & b) == a
 
 
 def test_query_without_keys_is_not_split():

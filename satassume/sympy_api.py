@@ -77,7 +77,10 @@ from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE 
 from .relations import Uninterpreted, relation_atom, relational_name
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
+from sympy.core.add import Add as _SAdd
 from sympy.core.basic import Basic as _Basic
+from sympy.core.mul import Mul as _SMul
+from sympy.core.power import Pow as _SPow
 from sympy.core.expr import Expr as _Expr
 from sympy.core.relational import Relational as _Relational
 from sympy.core.numbers import Rational as _Rational
@@ -451,17 +454,48 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 # set); see docs/design.md, "Why splitting is sound", for the argument.
 #
 # Keys of an expression: its free symbols, the classes of its undefined
-# function applications (EUF congruence connects f(x) and f(y)), and every
-# closed subterm that is not a Rational (pi, sqrt(2), 2*pi, a Float, oo,
-# f(1)): such a term may carry facts the assumptions decide (pi is a bounded
-# LRA variable, a Float's rationality is open, f(1) is a free EUF term).
-# Rationals have all their facts decided context-free (except ``polar``),
-# so without relations a Rational inside a term connects nothing; a Rational
-# that is itself the argument of a predicate (``Q.polar(2)``) is a key.  A
-# relation's keys are those of both sides, so ``Q.eq(x, y)`` and ``x < y``
-# connect x and y.  With a relation in the set or the query, terms pinned
-# to a common value connect as well; by default (``RELATIONAL``) such a set
-# is not split at all.
+# function applications (EUF congruence connects f(x) and f(y)), and the
+# closed terms that may carry a fact the assumptions decide (see "Closed
+# terms" below).  Rationals have all their facts decided context-free
+# (except ``polar``), so without relations a Rational inside a term
+# connects nothing; a Rational that is itself the argument of a predicate
+# (``Q.polar(2)``) is a key.  A relation's keys are those of both sides,
+# so ``Q.eq(x, y)`` and ``x < y`` connect x and y.  With a relation in the
+# set or the query, terms pinned to a common value connect as well; by
+# default (``RELATIONAL``) such a set is not split at all.
+#
+# Closed terms (no symbol inside).  Rule: a maximal closed subterm ``c`` of
+# a predicate argument (its parent has a symbol) is no key if it lies in
+# the class ``K`` of :func:`_const_free` (Rationals; ``pi``, ``E``,
+# ``GoldenRatio``, ``TribonacciConstant``, ``I``, ``oo``, ``-oo``,
+# ``zoo``; ``b**r`` for ``b`` a positive Rational, ``pi`` or ``E`` and
+# ``r`` Rational; ``q*k`` for a Rational ``q`` and such a ``k``); else it
+# is a key together with every non-Rational closed subterm of it and the
+# classes of the undefined functions in it (``f(1)``: a free EUF term;
+# ``1.5``: rationality open; ``pi + E``: rationality open; ``pi - 3`` and
+# ``cos(1)``: the rule base does not decide their sign; anything else, out
+# of conservatism).  A closed term that is itself a predicate argument, a
+# relation side, or inside an application of ``polar``, is always keyed
+# that way (as is every closed term with ``RELATIONAL = "rationals"``).
+#
+# Why dropping the key of a ``K`` term is sound.  The engine's own
+# context-free clauses of a ``K`` term fix every predicate of its block but
+# ``polar`` (``tests/test_relevance.py::test_unkeyed_constants_are_decided``),
+# and templates derive closed nodes only from closed nodes (``b - 1``,
+# ``2*e`` need a non-number base or exponent; a Mul's coefficient-free
+# rest and the ``s`` of ``I*pi*c*s`` keep the Mul's symbols), while a ``K``
+# term derives none; so the solver variables two components can share
+# through ``K`` terms are fixed, and an assumption about such a term is
+# either already implied (nothing to carry) or contradicts its own
+# context-free facts (the component holding it is inconsistent by itself,
+# which the per-component consistency check reports).  What only a
+# relation could say about it (its *value*: ``x = pi``) does not arise:
+# sets and queries with a relation are not split.  ``polar`` is undecided
+# for numbers, but its clauses are definite Horn with ``polar`` of the node
+# as the only positive literal: with no ``polar`` application keyed to a
+# component, setting every ``polar`` the component does not force to True
+# satisfies them whatever another component says about a closed ``polar``;
+# an application of ``polar`` keys every closed term inside it.
 #
 # An out-of-scope applied predicate of the assumptions (category
 # ``"matrix"`` or ``"custom"``: ``Q.invertible(M)``, ``Q.positive(M)``, an
@@ -474,40 +508,110 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 #
 # Opaque (never split): a registered custom predicate (its function may
 # mention any term), anything that is not a Boolean over applied
-# predicates and relations; also any set when a vocabulary predicate is
-# registered for a class (its function may mention any term).
+# predicates and relations; also a set or query with a term of a class a
+# vocabulary predicate is registered for in the engine's registry (its
+# function may mention any term), or with any term when one is registered
+# for a class of the nodes templates derive (Add, Mul, Pow or a base of
+# them); see ``_vocab_blocks``.
 
 _OPAQUE = None  # keys of an opaque expression
-#: Boolean -> ``(keys, has a relation)``; valid while the default
-#: registry's version (which decides whether a custom predicate is
-#: registered, so opaque, or unregistered, keyed by its arguments) is
-#: ``_KEYS_STATE``
+#: Boolean -> ``(keys, has a relation)``; valid while the registry epoch
+#: (:mod:`satassume.epoch`: the default registry decides whether a custom
+#: predicate is registered, so opaque, or unregistered, keyed by its
+#: arguments; the templates decide what a closed term's block fixes) is
+#: ``_KEYS_STATE``.  ``_CONST`` (closed term -> in ``K``) shares it.
 _KEYS: dict = {}
+_CONST: dict = {}
 _KEYS_STATE = [None]
 KEYS_SIZE = 100_000
 
 
-def _expr_keys(e, acc: set) -> bool:
+#: the closed atoms of ``K`` (see "Closed terms" above)
+_K_ATOMS = frozenset([_S.Pi, _S.Exp1, _S.GoldenRatio, _S.TribonacciConstant,
+                      _S.ImaginaryUnit, _S.Infinity, _S.NegativeInfinity,
+                      _S.ComplexInfinity])
+
+
+def _const_base(c) -> bool:
+    """``c`` is a ``K`` atom or a power ``b**r`` (``b`` a positive Rational,
+    ``pi`` or ``E``; ``r`` Rational)."""
+    if c in _K_ATOMS:
+        return True
+    if c.is_Pow:
+        b, r = c.args
+        return r.is_Rational and ((b.is_Rational and b.is_positive)
+                                  or b is _S.Pi or b is _S.Exp1)
+    return False
+
+
+def _const_free(c) -> bool:
+    """Whether the closed term ``c`` is in ``K``: no key (see "Closed
+    terms" above).  Structural, so a function of ``c`` alone; memoized per
+    registry epoch with ``_KEYS``."""
+    v = _CONST.get(c)
+    if v is None:
+        if c.is_Rational or _const_base(c):
+            v = True
+        elif c.is_Mul:
+            rest = [a for a in c.args if not a.is_Rational]
+            v = len(rest) == 1 and len(c.args) <= 2 and _const_base(rest[0])
+        else:
+            v = False
+        if len(_CONST) >= KEYS_SIZE:
+            _CONST.clear()
+        _CONST[c] = v
+    return v
+
+
+def _closed_keys(c, acc: set, force: bool) -> None:
+    """Keys of the maximal closed term ``c``: none if it is in ``K`` (and
+    not ``force``), else every non-Rational closed subterm and the classes
+    of the undefined functions inside."""
+    from sympy.core.function import AppliedUndef
+    if c.is_Rational or (not force and RELATIONAL != "rationals" and _const_free(c)):
+        return
+    stack = [c]
+    while stack:
+        e = stack.pop()
+        if e.is_Rational:
+            continue
+        acc.add(e)
+        if isinstance(e, AppliedUndef):
+            acc.add(type(e))
+        stack.extend(e.args)
+    if RELATIONAL == "rationals":
+        # sin(2) is congruent to sin(x) once x = 2
+        acc.update(a for a in c.atoms(_Rational))
+
+
+def _expr_keys(e, acc: set, force: bool = False) -> bool:
     """Add the keys of the expression ``e`` to ``acc``; True if ``e`` is
-    closed (no symbol inside)."""
+    closed (no symbol inside), in which case nothing was added: the caller
+    keys it with :func:`_closed_keys` (a maximal closed term).  ``force``:
+    key every closed subterm (inside ``polar``)."""
     from sympy.core.function import AppliedUndef
     if e.is_Symbol:
         acc.add(e)
         return False
     if e.is_Rational:
         return True
-    closed = True
-    for a in e.args:
-        if not _expr_keys(a, acc):
-            closed = False
+    args = e.args
+    flags = [_expr_keys(a, acc, force) for a in args]
+    if all(flags):
+        return True
+    for a, closed in zip(args, flags):
+        if closed:
+            _closed_keys(a, acc, force)
     if isinstance(e, AppliedUndef):
         acc.add(type(e))
-    if closed:
-        acc.add(e)
-        if RELATIONAL == "rationals":
-            # sin(2) is congruent to sin(x) once x = 2
-            acc.update(a for a in e.atoms(_Rational))
-    return closed
+    return False
+
+
+def _arg_keys(a, acc: set, force: bool = False) -> None:
+    """Keys of a predicate argument or relation side ``a``: a closed one is
+    always keyed (like a Rational argument, ``Q.polar(2)``)."""
+    if _expr_keys(a, acc, force):
+        _closed_keys(a, acc, True)
 
 
 #: marker added by a relation while collecting keys (removed again)
@@ -521,9 +625,10 @@ def _keys(e):
 
 def _keys_rel(e):
     """``(keys, has a relation)`` of the Boolean ``e`` (keys as :func:`_keys`)."""
-    state = extensions.version
+    state = _EPOCH[0]
     if _KEYS_STATE[0] != state:
         _KEYS.clear()
+        _CONST.clear()
         _KEYS_STATE[0] = state
     k = _KEYS.get(e)
     if k is not None:
@@ -563,17 +668,18 @@ def _bool_keys(e, acc: set) -> bool:
             for a in args:
                 if not isinstance(a, _Basic):
                     return False
-                _expr_keys(a, acc)
+                _arg_keys(a, acc)
             return True
         if name == "zero" and RELATIONAL == "rationals":
             acc.add(_S.Zero)            # zero(e) <-> eq(e, 0)
+        polar = name == "polar"
         for a in args:
             if not isinstance(a, _Basic):
                 return False
             if a.is_Rational:
                 acc.add(a)
             else:
-                _expr_keys(a, acc)
+                _arg_keys(a, acc, polar)
         return True
     return False
 
@@ -586,17 +692,24 @@ def _sides_keys(args, acc: set, eq: bool = False) -> bool:
         if eq and a.is_Rational and RELATIONAL == "rationals":
             acc.add(a)                  # x = 2, y = 2: x ~ y in EUF
         else:
-            _expr_keys(a, acc)
+            # relational: not split unless RELATIONAL == "rationals",
+            # which keys every closed term anyway
+            _arg_keys(a, acc, True)
     return True
 
 
 class _Split:
     """The components of one set of assumptions."""
     __slots__ = ("whole", "conjuncts", "comps", "opaque", "relational", "keyless",
-                 "parts", "consistent")
+                 "parts", "consistent", "vocab")
 
     def __init__(self, a):
         self.whole = a
+        #: a term of the set has a vocabulary predicate registered for its
+        #: class (``_vocab_blocks``; None: not computed).  The split lives
+        #: in ``Engine.splits``, dropped with the registry epoch, and an
+        #: engine has one registry, so the flag cannot go stale
+        self.vocab = None
         cs = a.args if isinstance(a, _SAnd) else (a,)
         self.conjuncts = cs
         self.opaque = False
@@ -663,7 +776,11 @@ def _relevant(p, a, eng: Engine):
         return a
     ext = eng.extensions
     if ext is not None and ext._vocab:
-        return a
+        v = sp.vocab
+        if v is None:
+            v = sp.vocab = _vocab_blocks(a, ext)
+        if v or _vocab_blocks(p, ext):
+            return a
     pk, prel = _keys_rel(p)
     if not pk:
         # opaque, or no key at all: nothing to split by
@@ -695,6 +812,37 @@ def _relevant(p, a, eng: Engine):
                 ok = all(_part_consistent(sp.part((j,)), eng) for j in range(len(sp.comps)))
         sp.consistent = ok
     return f if ok else a
+
+
+#: classes of the nodes templates derive from a term (``b - 1``, ``2*e``, a
+#: Mul's rest): no subterm of the query or the set, so a vocabulary
+#: predicate registered for one of them (or a base) may apply to any set
+_DERIVED_CLASSES = (_SAdd, _SMul, _SPow)
+
+
+def _vocab_blocks(e, ext) -> bool:
+    """Whether the vocabulary predicates registered in ``ext`` (non-empty
+    ``_vocab``) may apply to a node of ``e`` (a SymPy Boolean): a subterm of
+    ``e`` is an instance of a registered class, or a registered class is a
+    base of a class of derived nodes.  Such a predicate's function may
+    mention any term, so ``e`` is not split (an unrelated registration no
+    longer disables the split of every set, W2A1).  Uses
+    ``Extensions.is_scalar_like`` (its per-class cache is cleared by every
+    vocabulary registration)."""
+    for c in _DERIVED_CLASSES:
+        if ext._node_handlers(c):
+            return True
+    stack = [e]
+    seen = set()
+    while stack:
+        n = stack.pop()
+        if ext.is_scalar_like(n):
+            return True
+        for a in getattr(n, "args", ()):
+            if isinstance(a, _Basic) and a not in seen:
+                seen.add(a)
+                stack.append(a)
+    return False
 
 
 #: how a set or query with a relation splits.  With a relation, the session
