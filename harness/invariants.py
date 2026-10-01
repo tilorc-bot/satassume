@@ -384,6 +384,8 @@ class Unrelated:
             cls = r.choice(["Symbol", "Basic", "AppliedUndef", "Symbol,Symbol"])
             polyadic = "," in cls
             if polyadic:
+                name += "2"          # one predicate object per name (custom_predicate caches by name): its own arity
+            if polyadic:
                 args = (self.sym(), self.sym())
             else:
                 args = (self.func()(self.sym()) if cls == "AppliedUndef" else self.sym(),)
@@ -395,6 +397,8 @@ class Unrelated:
         if c < 0.85:
             cls = r.choice(["Integer", "Rational", "Float", "NumberSymbol", "Add", "Mul", "Pow",
                             "Symbol", "Basic", "AppliedUndef", "Symbol,Symbol"])
+            if "," in cls:
+                name += "2"
             spec = {"pred": name, "cls": cls, "lit": r.choice(VALUE_PREDS), "neg": r.random() < 0.3,
                     "shape": r.choice(["implies", "iff", "or", "none", "true", "false", "chain"])}
             return spec, None
@@ -571,10 +575,11 @@ _SIGN_FLIP = {Q.positive: Q.negative, Q.negative: Q.positive}
 
 
 def _shift_relation(b, rng: random.Random):
-    """``rel(a, b)`` as ``rel(a + c, b + c)`` or ``rel(-b, -a)`` (a
-    swapped, negated relation), the same truth for every value of scalar
-    sides (in the extended reals ``oo + c`` is ``oo``; non-real sides make
-    every order relation false and equality is unchanged)."""
+    """``rel(a, b)`` as ``rel(a + c, b + c)`` or ``rel(-b, -a)`` (the same
+    relation on the negated, swapped sides: ``a < b`` is ``-b < -a``), the
+    same truth for every value of scalar sides (in the extended reals
+    ``oo + c`` is ``oo``; non-real sides make every order relation false
+    and equality is unchanged)."""
     a, c = b.arguments
     if not (_scalar(a) and _scalar(c)):
         return None
@@ -584,7 +589,7 @@ def _shift_relation(b, rng: random.Random):
     if rng.random() < 0.5:
         k = rng.choice([S.One, S(-2), Rational(1, 2)])
         return f(a + k, c + k)
-    return _SWAP[f](-c, -a)
+    return f(-c, -a)
 
 
 def restate(b, rng: random.Random, p: float = 0.5):
@@ -1231,6 +1236,38 @@ class InvReport:
                 "violations": [v.summary() for v in self.violations]}
 
 
+def extra_kinds(extra, specs: Sequence[dict] = ()) -> List[str]:
+    """The kinds of unrelated material in an I2 variant (after shrinking:
+    what suffices): ``closed`` (no fresh symbol), ``inf``, ``commutative``,
+    ``relation``, ``declared``, ``pred``, ``compound``, ``ext:<cls>:<shape>``.
+    Reported with the case and used to tell families apart."""
+    kinds = set()
+    for c in _conjuncts(extra):
+        if isinstance(c, (And, Or, Implies, Equivalent)):
+            kinds.add("compound")
+            continue
+        inner = c.args[0] if isinstance(c, Not) else c
+        if isinstance(inner, AppliedPredicate) and inner.function == Q.is_true and inner.arguments:
+            inner = inner.arguments[0]
+        if isinstance(inner, Basic) and inner.has(S.Infinity, S.NegativeInfinity, S.ComplexInfinity):
+            kinds.add("inf")
+        elif isinstance(inner, AppliedPredicate) and inner.function == Q.commutative:
+            kinds.add("commutative")
+        elif isinstance(inner, Basic) and not inner.free_symbols:
+            kinds.add("closed")
+        elif isinstance(inner, Relational) or (isinstance(inner, AppliedPredicate) and inner.function in _SWAP):
+            kinds.add("relation")
+        elif isinstance(inner, AppliedPredicate) and inner.function not in _SWAP and str(inner.function.name) not in PREDICATES:
+            kinds.add("custom")
+        elif isinstance(inner, AppliedPredicate) and any(s.assumptions0.get(k) for s in inner.free_symbols for k in _DECLARED):
+            kinds.add("declared")
+        else:
+            kinds.add("pred")
+    for spec in specs:
+        kinds.add(f"ext:{spec['cls']}:{spec['shape']}")
+    return sorted(kinds)
+
+
 def _known(v: Violation) -> Optional[str]:
     if v.inv == "I7":
         return "I7-settings"       # plain attributes, not keyed on the registry epoch
@@ -1241,7 +1278,7 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                source: str = "", max_violations: int = 5, shrink_them: bool = True,
                deadline: Optional[float] = None, progress: Optional[Callable[[str], None]] = None,
                i1_rounds: int = 3, slow_limit: float = 3.0, i2_rounds: int = 2,
-               clock: Callable[[], float] = time.time, family_cap: int = 2,
+               clock: Callable[[], float] = time.time, family_cap: int = 1,
                widen: bool = True) -> InvReport:
     """Every ``Ask`` of ``items`` (events are skipped: the registry is
     configuration, checked by ``python -m harness fuzz --custom``) through
@@ -1314,6 +1351,13 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                             progress(f"shrink failed: {type(e).__name__}: {e}")
                     if not _guarded(v, v.prop, v.assum, v.variant):
                         continue      # gone after shrinking: not reproducible
+                if inv == "I2":
+                    v.variant = dict(v.variant, kinds=extra_kinds(from_srepr(v.variant["extra"]),
+                                                                  v.variant.get("extensions", ())))
+                    fam2 = fam + (tuple(v.variant["kinds"]),)
+                    if any((w.inv, w.severity, w.base, w.other, tuple(w.variant.get("kinds", ()))) == fam2
+                           for w in rep.violations):
+                        continue      # the same shape by the same kind of material
                 rep.violations.append(v)
                 if progress:
                     progress("violation: " + v.summary())

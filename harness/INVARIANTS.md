@@ -13,10 +13,10 @@ consistent (below).  Losing definiteness is allowed under I1 only.
 | inv | statement | checker | variant | reports |
 |---|---|---|---|---|
 | I1 | dropping any subset of the clauses never flips a definite answer, never turns None definite | `check_I1` | `dropping_clauses(seed, rate)`: a test-time patch of `Solver.add_clause`, `add_clauses`, `add_internal` (the template patterns' path) and `add_pattern` (compiled blocks) dropping each clause by a hash of its literals and the seed, rate 3-50 %; two seeds per query | definite -> other definite (`wrong`), None -> definite (`wrong`), None -> engine error (`crash`) |
-| I2 | conjuncts, terms, extensions with no path through shared variables to the query or the set do not change the answer | `check_I2` | `Unrelated`: 1-12 conjuncts over fresh symbols and fresh undefined functions, each satisfiable on its own (a predicate on `u + T(v, ...)` where `u` occurs nowhere else, on `u*v`, `u**3`, `u**5`, `h(T)`; a relation between two such terms with different bases or a finite constant; a fact consistent with a fresh declared symbol), symbols disjoint across pieces: `A & B` is consistent iff `A` is; in 30 % of the checks (`I2_EXTENSION_RATE`) 1-3 *registered extensions* too (`Unrelated.extension`, `registered`): a fresh predicate `iuhNp` registered on `Symbol`, `Basic` or `AppliedUndef` whose handler relates it to one vocabulary literal on the same term (`implies`, `iff` or `Or`) or returns `None` / `True`, asserted on a fresh symbol or fresh `h(u)` in the added conjuncts so that the handler runs; the registry is restored afterwards; two variants per query | any change but an inconsistency report: definite vs definite (`wrong`), definite vs None (`depends`), error on one side (`crash`) |
+| I2 | conjuncts, terms, extensions with no path through shared variables to the query or the set do not change the answer | `check_I2` | `Unrelated`: 1-30 conjuncts over fresh symbols (10 % `Dummy`) and fresh undefined functions (unary and binary), each satisfiable on its own and symbols disjoint across pieces, so `A & B` is consistent iff `A` is: a predicate on `u + T(v, ...)` where `u` occurs nowhere else, on `u*v`, `u**3`, `u**5`, `h(T)`, a linear combination `u + 2*v - 3`, scaled terms; a relation between two such terms or a real constant (`Float`, `Rational`, `E`, `10**12`, `GoldenRatio`; `I` only inside terms); a **closed fact** SymPy's own assumptions decide (`Q.irrational(sin(sqrt(2)))`, `~Q.imaginary(7)`, `Q.lt(2, pi)`, `Q.is_true(Lt(2, 3))`, negated when false); a relation to an infinity (`Q.eq(u, -oo)`, `Q.lt(u, oo)`, `Q.ne(u, zoo)`, `Q.infinite(u) & Q.extended_real(u)`); `Q.commutative(u)` or `~Q.commutative(nc)` for a `commutative=False` symbol; a fact consistent with a declared fresh symbol; `Or`/`Implies`/`Equivalent` of two pieces; `Q.is_true` around a *relational* only (over anything else it is documented out of scope). In 30 % of the checks (`I2_EXTENSION_RATE`) 1-3 *registered extensions* too (`Unrelated.extension`, `registered`): (a) a fresh predicate asserted on a fresh symbol, fresh `h(u)` or a pair of fresh symbols (polyadic, registered on `(Symbol, Symbol)`), whose handler relates it to one vocabulary literal on that term (`implies`, `iff`, `Or`), chains to a second fresh predicate, or returns `None`/`True`; (b) a *registration only*, nothing asserted: a fresh predicate on `Integer`, `Rational`, `Float`, `NumberSymbol`, `Add`, `Mul`, `Pow`, `Symbol`, `Basic`, `AppliedUndef` or a pair, its handler as in (a) or returning `False`; a vocabulary predicate on a fresh function class (no application of it exists); a vocabulary predicate on `Symbol`/`Basic` whose handler returns `None` (no clause, no path). The registry is restored afterwards; an exception inside a harness handler (`HANDLER_ERRORS`) makes the check inconclusive, never an engine crash; two variants per query | any change but an inconsistency report: definite vs definite (`wrong`), definite vs None (`depends`), error on one side (`crash`); not when the extended set is out of the documented scope (`in_scope`) |
 | I3 | a definite answer under `A` stays under `A & B` | `check_I3` | `B` = `p` (answer True) or `negate(p)` (False), or a fact declared on a symbol of the query (`assumptions0`); the guard demands a model of `A & B` itself (anything goes when `A & B` is inconsistent) | flipped (`wrong`), None (`lost`), error (`crash`) |
 | I4 | `ask(p, A)` is True exactly when `ask(~p, A)` is False | `check_I4` | `negate(p)`: `Not(p, evaluate=False)` (`Not(Not(q))` is `q`).  SymPy's `Not(rel)` *rewrites* a `Relational` (`Not(x >= a)` is `x < a`), which is not the negation when `x` can be non-real: every round-1 I4 report was that rewrite | both definite and not opposite (`wrong`), one definite and the other None (`lost`), error on one side (`crash`) |
-| I5 | an equivalent restatement of the set gives the same answer | `check_I5` | 65 %: `restate` per conjunct: relation sides swapped (`lt(a, b)` -> `gt(b, a)`), the three spellings of a relation, `Implies` as `Or` or as its contrapositive, `Equivalent` as two `Implies`, `Q.is_true` around an atom, `~eq` <-> `ne` (complements for every value; `~lt` is *not* `ge`), `zero(x)` <-> `eq(x, 0)` for a commutative non-matrix `x`, De Morgan on a negated `And`/`Or`; the negations inside are `negate` (never SymPy's rewrite).  35 % (`I5_SYNTAX_RATE`): `syntax_form`, the same conjuncts reordered, one duplicated, nested once or twice, built with `And(..., evaluate=False)` so that SymPy keeps the spelling; rebuilt from a seed, so the shrinker can drop conjuncts | as I2 |
+| I5 | an equivalent restatement of the set gives the same answer | `check_I5` | 65 %: `restate` per conjunct: relation sides swapped (`lt(a, b)` -> `gt(b, a)`), the three spellings of a relation, a relation shifted (`rel(a, b)` -> `rel(a + c, b + c)` for a finite `c`, or `rel(-b, -a)`; scalar sides without `nan`), `Implies` as `Or` or as its contrapositive, `Equivalent` as two `Implies`, `Q.is_true` around an atom, `~eq` <-> `ne` (complements for every value; `~lt` is *not* `ge`), `zero(x)` <-> `eq(x, 0)` for a commutative non-matrix `x`, a predicate **split** by SymPy's own fact rules (`_SPLIT`: `real` as `negative | zero | positive`, `nonnegative` as `zero | positive`, `nonzero` as `positive | negative`, `positive` as `nonnegative & nonzero`, `zero` as `nonnegative & nonpositive`, `integer` as `even | odd`, `odd` as `integer & ~even`, `rational` as `real & ~irrational`, ...), a conjunct the predicate **implies** added (`_IMPLIED`: `positive(x)` -> `positive(x) & real(x)`, `prime` -> `+ integer`, `zero` -> `+ even`, `real` -> `+ hermitian`, ...: each pair is a rule of `sympy.core.assumptions._assume_rules`), the same predicate on a **transformed term** with the same truth for every scalar value (`_TERM_FORMS`: `positive(x)` <-> `positive(2*x)`, `<-> negative(-x)`, `zero(x)` <-> `zero(-x)`, `<-> zero(3*x)`, `even(x)` <-> `even(x + 2)`, `integer(x)` <-> `integer(x + 1)`, `real(x)` <-> `real(x + 1)`, `finite(x)` <-> `finite(2*x)`, ...), De Morgan on a negated `And`/`Or`; the negations inside are `negate` (never SymPy's rewrite).  35 % (`I5_SYNTAX_RATE`): `syntax_form`, the same conjuncts reordered, one duplicated, nested once or twice, built with `And(..., evaluate=False)` so that SymPy keeps the spelling; rebuilt from a seed, so the shrinker can drop conjuncts | as I2; not when the restated set is out of the documented scope |
 | I6 | renaming symbols and functions to fresh names gives the same answer | `check_I6` | `rename`: fresh `Symbol`/`Dummy` with the same `assumptions0`, fresh `Function`s, names whose sort order differs, rebuilt by `_rebuild` (keeps the spelling of `Not`/`And`/`Or` nodes; `xreplace` would rewrite them); in the same process, and for 4 % of the checks in a fresh interpreter under `PYTHONHASHSEED` 1-3 (`checker.process_outcome`) | as I2 |
 | I7 | changing a setting after queries gives the answers of a fresh engine with that setting | `check_I7` | 1-8 earlier stream queries in one engine, then `setattr(engine, setting, value)` (`discovery_budget`, `cone_threshold`, `transfer`, `cone_search`, `relevance`, `session_limit`, `keep_sessions`), against a fresh engine with the setting | as I2; always tagged `known:I7-settings` (plain attributes, not keyed on the registry epoch); one finding per run |
 
@@ -97,9 +97,14 @@ checkers takes 2-20 s (`deep`, `relational` are the slow profiles);
 170-200 slices, about 4,500 queries.  Round 1's runs stopped after
 485-569 s of user CPU because the budget was wall time on a loaded
 machine; it is CPU now, and each query does more (three I1 drops, two
-I2 variants).  At most five reports per invariant and two of one shape
-per slice (the I2 definite -> None family would otherwise spend the
-budget on shrinking).  Exit status 1 on an unknown violation
+I2 variants).  At most five reports per invariant and *one* of one shape
+(invariant, severity, base answer, variant answer) per slice (the I2
+definite -> None family would otherwise spend the budget on shrinking),
+and for I2 one per shape *and kind of unrelated material*
+(`extra_kinds`, recorded in the case as `kinds`: `closed`, `inf`,
+`commutative`, `relation`, `declared`, `pred`, `compound`,
+`ext:<class>:<shape>`), so that the same shape reached by different
+material is reported, and the kinds tell families apart.  Exit status 1 on an unknown violation
 (`--fail-on unknown`) or any.
 
 ## Generators
@@ -107,8 +112,24 @@ budget on shrinking).  Exit status 1 on an unknown violation
 The streams are the existing ones (`harness/generators.py`,
 `harness/profiles.py`: `base`, `related`, `declared`, `deep`,
 `relational`, `focus`, `links`, `transfer`); each `Ask` is checked once
-(repeats skipped).  The variants are the checkers' own (`Unrelated`,
-`restate`, `rename`, `dropping_clauses`).
+(repeats skipped).  `run_stream` adds **derived queries** to every
+stream (`derived_asks`, `WIDEN_RATE` 35 % of the queries): the
+proposition combined with a conjunct of its set (`And`, `Or` with the
+negation, `Implies`, `Equivalent`), wrapped in `Q.is_true` (a relational
+or applied predicate), negated, a conjunct asked back or negated, or a
+relation between two scalar terms of the query (or a term and `0`, `1`,
+`-1`, `oo`).  Every checker runs on them: they reach propositions the
+profiles do not (compound propositions for I4, relations as propositions
+for I2).  The variants are the checkers' own (`Unrelated`, `restate`,
+`rename`, `dropping_clauses`).
+
+## Scope filter
+
+`in_scope(prop, assum)` is `sympy_api.out_of_scope` allowing the
+"relation" category: a variant set holding a matrix atom, an unregistered
+custom predicate, `Q.is_true` over a non-relational or a non-Boolean is
+None by the documented contract, and I2/I5 do not report it (the
+generators avoid producing such sets; the filter is the safety net).
 
 ## Findings at f055b7b (`harness/repros/invariants/`)
 
