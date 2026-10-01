@@ -85,7 +85,10 @@ places, cheapest first:
   integrality literals are asserted; real-only problems never branch.
   At most :data:`BRANCH_BUDGET` branch nodes (of both kinds) per
   ``check``; when the budget runs out, the check reports no conflict and
-  sets :attr:`LRATheory.exhausted` (only the caller clears it).
+  sets :attr:`LRATheory.exhausted` (only the caller clears it).  With
+  constants in the payloads and the atoms certified (below), a variable
+  whose value exceeds the certificate's bound does not split either: the
+  same as running out.
 
 So integrality is sound but incomplete: a conflict is always valid (each
 split is a case split of an asserted literal, so a conflict of both cases
@@ -106,13 +109,52 @@ the rounded bounds of ``assert_lit`` and ``propagate`` and the real
 disequality argument of ``check`` cannot: each finds every conflict of
 its kind in the asserted literals, with no budget, and keeps finding it
 as literals are added.  The same holds for giving up with constants
-(:attr:`LRATheory.undecidable`): which comparisons a pivot path makes
-decides whether one is undecidable.  In a session reused across
-queries, the engine answers again in a freshly built one (as a fresh
-engine would) a query whose search exhausted the budget or gave up, and
-a definite answer after a branch and bound conflict since the session was
-built or with constants (``Engine.ask``); a set check that exhausted the budget
-gives the verdict ``UNKNOWN`` (``Engine._complete_check``).
+(:attr:`LRATheory.undecidable`), unless the atoms are certified (below):
+which comparisons a pivot path makes decides whether one is undecidable.
+In a session reused across queries, the engine answers again in a
+freshly built one (as a fresh engine would) a query whose search
+exhausted the budget or gave up, and a definite answer after a branch and
+bound conflict since the session was built or with constants that are not
+certified (``Engine.ask``); a set check that exhausted the budget gives
+the verdict ``UNKNOWN`` (``Engine._complete_check``).
+
+Certified constants
+-------------------
+
+:attr:`LRATheory.certified` says, from the registered atoms alone, that no
+search over them (or over a subset: it is monotone) can give up, whatever
+its path.  It holds when
+
+* every multi-term form has rational coefficients, so every tableau is
+  rational: its entries are ratios of minors of the integer rows, at most
+  their Hadamard bound ``had`` (and so is the basis determinant);
+* every atom bound, integrality multiplier ``m`` and offset ``k`` is a
+  Laurent polynomial in ``pi`` (``pi`` is the one constant with an explicit
+  irrationality measure here), ``m`` a monomial ``mu*pi**e``;
+* the exponents of ``pi`` that values can have (those of the atom bounds and
+  of the branch bounds ``(n - k)/m``) lie in ``{0, 1}`` or ``{-1, 0}``, and
+  so do those of each ``m*x + k`` that is floored, with 0;
+* the sizes below give every compared or floored number a numerator
+  ``A + B*pi`` (over a denominator ``D``) with ``|B|`` and ``D`` so small
+  that Mahler's bound ``|pi - p/q| > q**-42`` puts ``|A + B*pi|`` beyond
+  constfield's interval error at ``PREC_CAP`` (:func:`_decided`), and far
+  below the size budget.
+
+The sizes follow from what values can be: a nonbasic variable sits at 0
+or at a bound it was given (atom bounds and branch bounds), a basic one
+at the tableau's combination of those, over the basis determinant.  A
+branch bound ``(n - k)/m`` stays in the assignment after its pop, so its
+size must not grow with the number of checks: with constants and the
+atoms certified, a variable splits only while its value is at most ``Y``
+(``(nonbasic + 1) * had * (X + 1) * 2**16``, ``X`` the largest atom bound),
+which bounds ``n``; otherwise the check counts as having run out of
+budget (the engine handles that as above).  Values left from a branch and
+bound that ran while no payload had constants are certified separately
+(:meth:`LRATheory.certified_with`; the engine records those the set
+check leaves).  Everything else a check computes (the deltas of
+``_concrete``, the generic combination of points for disequalities) is
+bounded the same way; equality of two numbers in ``pi`` alone is formal
+and never raises.
 
 How it works
 ------------
@@ -146,8 +188,10 @@ from __future__ import annotations
 
 import math
 from fractions import Fraction
+from itertools import islice
 from typing import Any, Hashable, Iterable, NamedTuple
 
+from . import constfield as _cf
 from .constfield import Undecided, formally_zero, num
 
 __all__ = ["LRATheory", "Negated", "Integral", "constraint", "BRANCH_BUDGET"]
@@ -250,6 +294,167 @@ def _dedupe(lits: Iterable[int]) -> list[int]:
     return out
 
 
+_PI = _cf.PI.numerator[0]                   # the index of pi's indeterminate
+#: with constants, a variable splits in a branch and bound only while its
+#: value is at most 2**_GROWTH times what a combination of atom bounds can
+#: reach (LRATheory._certify: the room certification leaves branch bounds)
+_GROWTH = 16
+
+
+def _laurent(x) -> dict | None:
+    """``{j: c}`` with ``x = sum(c * pi**j)`` (rational ``c != 0``, integer
+    ``j``, negative too) for a Fraction, or an Element in pi alone whose
+    denominator is a power of pi; None for any other number."""
+    if type(x) is Fraction:
+        return {0: x} if x else {}
+    n, d = x.numerator, x.denominator
+    if type(d) is Fraction:
+        j0 = 0
+    else:
+        cs = d[1]
+        if d[0] != _PI or cs[-1] != 1 or any(type(c) is not Fraction or c for c in cs[:-1]):
+            return None
+        j0, d = len(cs) - 1, _ONE
+    if d != 1:
+        n = _cf._scale(n, 1 / d)
+    if type(n) is Fraction:
+        return {-j0: n}
+    if n[0] != _PI or any(type(c) is not Fraction for c in n[1]):
+        return None
+    return {i - j0: c for i, c in enumerate(n[1]) if c}
+
+
+def _ceil_abs(c: Fraction) -> int:
+    return -(-abs(c.numerator) // c.denominator)
+
+
+def _magnitude(lx: dict) -> int:
+    """An integer upper bound of ``|sum(c * pi**j)|`` (``pi**j <= 4**j``,
+    and ``<= 1`` for ``j <= 0``)."""
+    return sum(_ceil_abs(c) << (2 * j if j > 0 else 0) for j, c in lx.items())
+
+
+def _within(q, bound: Fraction) -> bool:
+    """``|q| <= bound`` shown by an enclosure at constfield's first
+    precision (never raises; False when it does not show it)."""
+    if type(q) is Fraction:
+        return abs(q) <= bound
+    e = q.enclosure(_cf.PREC_START)
+    if e is None:
+        return False
+    s = bound * (1 << _cf.PREC_START)
+    return -s <= e[0] and e[1] <= s
+
+
+def _window(exps: set) -> bool:
+    """Every number with these exponents is ``pi**j0 * (a + b*pi)``,
+    ``j0`` in {-1, 0}: its numerator in constfield has degree <= 1 and its
+    denominator is 1 or pi."""
+    return exps <= {0, 1} or exps <= {-1, 0}
+
+
+def _decided(den: int, height: int) -> bool:
+    """Whether constfield decides, by ``PREC_CAP``, the sign of every
+    ``pi**j0 * (A + B*pi) / den`` (``j0`` in {-1, 0}, integers ``A, B``
+    with ``|A|, |B| <= height``, not both 0) and the floor of every such
+    number with an irrational value.  Mahler (1953): ``|pi - p/q| >
+    q**-42`` for integers ``q >= 2``, so ``|A + B*pi| >= 1/(8*|B|**41)``
+    (for ``B != 0``, and ``>= 1/den`` otherwise); constfield's interval
+    evaluation errs by at most ``(3*|B| + 8) * 2**-prec`` (a pi enclosure
+    a few units wide).  For a floor ``B`` is replaced by ``B - N*den`` for
+    the integers ``N`` within 1 of the value, and an extra factor 4 covers
+    the division by pi: ``3*height + 2*den`` and 8 bits cover both."""
+    return (den.bit_length() + 41 * (3 * height + 2 * den).bit_length()
+            + (3 * height + 8).bit_length() + 8 <= _cf.PREC_CAP)
+
+
+class _CertAtoms:
+    """The registered atoms' part of :meth:`LRATheory._certify`, gathered
+    incrementally (atoms, integrality atoms and forms are only ever
+    added, and dicts keep their order)."""
+
+    __slots__ = ("ok", "na", "ni", "nf", "exps", "den", "top", "X", "neq", "had", "ints")
+
+    def __init__(self) -> None:
+        self.ok = True
+        self.na = self.ni = self.nf = 0
+        self.exps: set = set()              # exponents of pi in atom bounds
+        self.den = 1                        # lcm of their denominators
+        self.top = 0                        # an integer >= every |coefficient|
+        self.X = 0                          # an integer >= every |bound|
+        self.neq = 0                        # = and != atoms
+        self.had = 1                        # Hadamard bound of the rows
+        #: per integrality atom m*v + k, m = mu*pi**e: (e, mu, Laurent
+        #: exponents of k, lcm of the denominators its branch bounds can
+        #: have, their largest |coefficient| beside n/mu, and the part of
+        #: |n/mu - k_0/mu| beyond the value bound: (|k| + 1 + |k_0|)/|mu|,
+        #: the lcm of k's denominators and the largest |numerator| over it)
+        self.ints: list = []
+
+    def update(self, t: "LRATheory") -> bool:
+        """Take in the atoms registered since (the newest, from the end of
+        each dict); False when one is outside the certified kind of
+        payload."""
+        atoms, ints, forms = t._atoms, t._ints, t._slack_of
+        if len(atoms) > self.na:
+            for _, kind, b in islice(reversed(atoms.values()), len(atoms) - self.na):
+                if kind == "=" or kind == "!=":
+                    self.neq += 1
+                if type(b) is Fraction:             # the common case, in ints
+                    n, d = b.numerator, b.denominator
+                    if n:
+                        self.exps.add(0)
+                        if d != 1:
+                            self.den = math.lcm(self.den, d)
+                        n = -(-abs(n) // d)
+                        if n > self.top:
+                            self.top = n
+                        if n > self.X:
+                            self.X = n
+                    continue
+                lb = _laurent(b)
+                if lb is None:
+                    return False
+                for j, c in lb.items():
+                    self.exps.add(j)
+                    self.den = math.lcm(self.den, c.denominator)
+                    self.top = max(self.top, _ceil_abs(c))
+                self.X = max(self.X, _magnitude(lb))
+            self.na = len(atoms)
+        if len(ints) > self.ni:
+            for _, m, k in islice(reversed(ints.values()), len(ints) - self.ni):
+                lm, lk = _laurent(m), _laurent(k)
+                if lm is None or lk is None or len(lm) != 1:
+                    return False
+                ((e, mu),) = lm.items()
+                nm, dm = abs(mu.numerator), mu.denominator
+                lkd = math.lcm(1, *(c.denominator for c in lk.values()))
+                kc = max((abs(c.numerator) * (lkd // c.denominator) for c in lk.values()),
+                         default=0)
+                k0 = lk.get(0)
+                big = _magnitude(lk) + 1 + (_ceil_abs(k0) if k0 is not None else 0)
+                self.ints.append((
+                    e, mu, frozenset(lk), math.lcm(nm, lkd * nm),
+                    -(-kc * dm // (nm * lkd)),       # >= |c/mu| for c in k
+                    -(-big * dm // nm), lkd, kc))
+            self.ni = len(ints)
+        if len(forms) > self.nf:
+            # Hadamard: every minor of the integer rows (each form scaled by
+            # the lcm of its denominators) is at most the product of their
+            # norms; tableau entries are ratios of minors over det(basis)
+            for form in islice(reversed(forms), len(forms) - self.nf):
+                dl = 1
+                for _, a in form:
+                    if type(a) is not Fraction:
+                        return False
+                    dl = math.lcm(dl, a.denominator)
+                n2 = dl * dl + sum((a.numerator * (dl // a.denominator)) ** 2 for _, a in form)
+                r = math.isqrt(n2)
+                self.had *= r + (r * r < n2)
+            self.nf = len(forms)
+        return True
+
+
 class LRATheory:
     """Simplex-based LRA theory solver (see the module docstring).
 
@@ -271,6 +476,12 @@ class LRATheory:
         #: whose finding, within the budget, depends on the search path);
         #: cleared only by the caller (the engine, when it built a session)
         self.branched = False
+        #: set when a check branched while no payload had constants: its
+        #: bounds may have left values of any size behind (see
+        #: :attr:`certified`)
+        self.branched_rational = False
+        self._cert: dict = {}               # _certificate's memo
+        self._cagg = _CertAtoms()
         #: a payload had a number with constants (an Element): from then on
         #: pivots and updates compute before they write (arithmetic can
         #: raise TooLarge); without, the rational code paths run unchanged
@@ -324,6 +535,106 @@ class LRATheory:
         """A payload has constants: a comparison can be undecidable and
         make the theory give up, at a point the pivot path decides."""
         return self._fields
+
+    @property
+    def certified(self) -> bool:
+        """No search over the registered atoms, or over any subset of them,
+        can make this theory give up, whatever its path (see "Certified
+        constants" in the module docstring); False also when it is unknown.
+        A function of the registered atoms, monotone: more atoms never turn
+        it from False to True.  Not about values a check left behind while
+        no payload had constants (:attr:`branched_rational`): see
+        :meth:`certified_with`."""
+        return self._certificate()[0]
+
+    def certified_with(self, values) -> bool:
+        """:attr:`certified` for a search that also starts from rational
+        values ``values = (top, den)`` (absolute values at most ``top``,
+        denominators dividing ``den``) in the assignment, such as a branch
+        and bound without constants left (:meth:`rational_values`)."""
+        return self._certificate(values)[0]
+
+    def rational_values(self) -> tuple | None:
+        """``(top, den)`` of the values of the nonbasic variables (the
+        others are their combinations), if all are rational."""
+        vq, rows = self._vq, self._rows
+        top, den = _ZERO, 1
+        for v in range(len(vq)):
+            if v not in rows:
+                q = vq[v]
+                if type(q) is not Fraction:
+                    return None
+                top = max(top, abs(q))
+                den = math.lcm(den, q.denominator)
+        return top, den
+
+    def _certificate(self, values=None) -> tuple:
+        """``(certified, Y)``, ``Y`` the largest value a variable may have
+        to split in a branch and bound (:meth:`_branch`); memoized per
+        registered atom count."""
+        key = (len(self._atoms), len(self._ints), len(self._slack_of), len(self._key))
+        c = self._cert.get(values)
+        if c is None or c[0] != key:
+            try:
+                r = self._certify(values)
+            except Exception:                   # unknown is not certified
+                r = (False, None)
+            c = self._cert[values] = (key, r)
+        return c[1]
+
+    def _certify(self, values) -> tuple:
+        # The numbers a search can meet.  Values are rational combinations
+        # (the tableau is rational) of the bounds ever set (a nonbasic
+        # variable sits at 0 or at a bound it was given): the atom bounds,
+        # and branch bounds (n - k)/m with |n| <= |m|*Y + |k| + 1, as a
+        # variable splits only within Y (_branch).  Everything below is an
+        # upper bound, monotone in the atoms.
+        no = (False, None)
+        g = self._cagg
+        if not g.ok or not g.update(self):
+            g.ok = False
+            return no
+        exps, den, top, X = set(g.exps), g.den, g.top, g.X
+        had, neq, ints = g.had, g.neq, g.ints
+        if values is not None:
+            if values[0]:
+                exps.add(0)
+            vt = math.ceil(values[0])
+            top, X = max(top, vt), max(X, vt)
+            den = math.lcm(den, values[1])
+        nt = len(self._key) - len(self._rows)   # nonbasic variables
+        # a combination of atom bounds, with room for branch bounds to grow
+        Y = (nt + 1) * had * (X + 1) << _GROWTH
+        for e, mu, ek, dk, ck, nk, _, _ in ints:
+            # (n - k)/m, |n| <= |m|*Y + |k| + 1, |m| <= |mu|*4**max(e, 0)
+            exps.add(-e)
+            exps.update(j - e for j in ek)
+            den = math.lcm(den, dk)
+            top = max(top, ck, ((4 ** e if e > 0 else 1) * Y) + nk)
+        if not _window(exps):
+            return no
+        if any(not _window({j + e for j in exps} | ek | {0}) for e, _, ek, *_ in ints):
+            return no
+        hb = top * den
+        # value minus bound, over det * den (det <= had)
+        h1, d1 = (nt + 1) * had * hb, had * den
+        # _concrete's delta candidates (value - bound)/(eps/det), and the
+        # differences of two of them
+        dc = den * (nt + 1) * had
+        h3, d3 = 2 * h1 * dc, dc * dc
+        checks = [(d1, h1), (d3, h3)]
+        for _, mu, _, _, _, _, lkd, kc in ints:
+            # floors of m*x + k, x a value
+            dm, nm = mu.denominator, abs(mu.numerator)
+            checks.append((had * den * dm * lkd,
+                           nm * (nt + 1) * had * hb * lkd + kc * had * den * dm))
+        if not all(_decided(d, h) for d, h in checks):
+            return no
+        # sizes far below constfield's budget (degrees stay below 4): the
+        # weights t**i of _check's generic combination, t <= neq**2 + 1
+        if neq * (neq * neq + 2).bit_length() > _cf.MAX_BITS // 8:
+            return no
+        return True, Y
 
     # ------------------------------------------------------------------
     # registration
@@ -772,8 +1083,19 @@ class LRATheory:
         clause, or None (a point that satisfies every asserted integrality
         literal and is off every asserted disequality, or ``budget[0]``
         branchings spent).  Leaves the bounds as it found them; the
-        assignment then satisfies them (as after a pop)."""
-        vq, vd = self._vq, self._vd
+        assignment then satisfies them (as after a pop).
+
+        With constants in a payload and the atoms :attr:`certified`, a
+        literal splits only if its variable's value is within the
+        certificate's ``Y`` (an enclosure decides, it never raises); one
+        beyond counts as running out of the budget (sets
+        :attr:`exhausted`).  So the branch bounds, which stay in the
+        assignment after the pop, have a size the atoms bound, whatever
+        the number of checks before."""
+        vq, vd, lo = self._vq, self._vd, self._lo
+        fields = self._fields
+        Y = _MISSING                            # the certificate's, once needed
+        skipped = False
         for v, m, k, lit in self._int_lits:
             if m is _ONE and k is _ZERO:
                 nq, nd = vq[v], vd[v]
@@ -782,16 +1104,32 @@ class LRATheory:
             integral = not nd and (nq.denominator == 1 if type(nq) is Fraction
                                    else nq.is_integer())
             if lit > 0 and not integral:        # n <= floor(n) or n >= floor(n) + 1
+                if fields:
+                    if Y is _MISSING:
+                        Y = self._certificate()[1]
+                    if Y is not None and not _within(vq[v], Y):
+                        skipped = True
+                        continue
                 f = _floor(nq, nd)
                 cases = (("<=", f), (">=", f + 1))
                 break
             if lit < 0 and integral:            # n < value or n > value
+                if fields:
+                    if Y is _MISSING:
+                        Y = self._certificate()[1]
+                    if Y is not None and not _within(vq[v], Y):
+                        skipped = True
+                        continue
                 # first the side v can move to (v often sits at a bound)
-                down = self._lo[v] != (vq[v], _ZERO)
+                down = lo[v] != (vq[v], _ZERO)
                 cases = (("<", nq), (">", nq)) if down == (m > 0) \
                     else ((">", nq), ("<", nq))
                 break
         else:
+            if skipped:
+                self.exhausted = True
+                self.stats["exhausted"] += 1
+                return None
             # integral point: a disequality s != c it lies on splits into
             # s < c and s > c, both with the integrality literals (the
             # real argument of _check, a point of P off the hyperplane,
@@ -800,7 +1138,7 @@ class LRATheory:
             for v, c, lit in self._diseqs:
                 if vq[v] == c and not vd[v]:
                     m, k = _ONE, _ZERO
-                    down = self._lo[v] != (c, _ZERO)
+                    down = lo[v] != (c, _ZERO)
                     cases = (("<", c), (">", c)) if down else ((">", c), ("<", c))
                     break
             else:
@@ -811,6 +1149,8 @@ class LRATheory:
             return None
         budget[0] -= 1
         self.stats["branches"] += 1
+        if not fields:
+            self.branched_rational = True
         expl = [-lit]
         for kind, n in cases:
             if m < 0:

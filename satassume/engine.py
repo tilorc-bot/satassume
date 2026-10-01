@@ -51,21 +51,28 @@ exactly as a fresh engine builds and uses one (``exhaust_reanswers``):
 when its search ran out of the budget or a theory gave up (its None may
 be a fresh engine's definite answer), and when it is definite (or raises)
 and a branch and bound found a conflict since the session was built (a
-lemma a fresh engine may not find within the budget) or the payloads
-have constants (a fresh engine may give up).  The build is canonical: a
-fresh engine branches in it just the same; and a branch and bound that
-ends in a point or the budget leaves no clause and no bound behind.  A
-None found without running out or giving up is a model that satisfies
-every integrality atom, and a fresh engine's clauses are a subset of the
-reused session's, so the fresh engine cannot be definite.  A definite
-answer without branch conflicts since the build rests on the build's
-clauses and on conflicts of the simplex, the rounded bounds and the real
-disequality argument, which have no budget (without constants) and are
-monotone in the asserted literals: a fresh engine meets one in every
-assignment it reaches, before it branches.
+lemma a fresh engine may not find within the budget) or a fresh engine
+might give up on a constant: the payloads have constants and the
+session's LRA atoms are not certified (``LRATheory.certified``, see
+``_cannot_give_up``).  The build is canonical: a fresh engine branches in
+it just the same; and a branch and bound that ends in a point or the
+budget leaves no clause and no bound behind.  A None found without
+running out or giving up is a model that satisfies every integrality
+atom, and a fresh engine's clauses are a subset of the reused session's,
+so the fresh engine cannot be definite.  A definite answer without branch
+conflicts since the build rests on the build's clauses and on conflicts
+of the simplex, the rounded bounds and the real disequality argument,
+which have no budget and are monotone in the asserted literals: a fresh
+engine meets one in every assignment it reaches, before it branches,
+unless it gives up first.  It cannot when its LRA atoms have no constant
+or are certified (a function of the atoms, monotone: the reused session
+has registered every atom a fresh engine registers, so certifying its
+atoms is enough), the values the set check's branch and bound left
+behind included (``Session.build_values``).
 """
 from __future__ import annotations
 
+import math
 from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -233,6 +240,13 @@ class Session:
         #: the verdict of the assumption set from the complete check run at
         #: construction (``Engine._context_session``); None outside it
         self.verdict: Optional[str] = None
+        #: per LRA theory, the rational values the complete check at
+        #: construction left in the assignment when it branched while no
+        #: payload had constants (LRATheory.rational_values; None for a
+        #: theory that did not, False if they were not all rational): a
+        #: function of the set, carried over to a cone session that
+        #: replaces this one, like ``verdict`` (see ``_cannot_give_up``)
+        self.build_values: Optional[list] = None
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.assumption_formula = None       # the formula of assume_formula()
@@ -1732,6 +1746,8 @@ class Engine:
         # branch conflicts in the check are part of the canonical build;
         # only the queries' can make the session's answers path dependent
         _clear_branched(s)
+        s.build_values = [(t.rational_values() or False) if t.branched_rational else None
+                          for t in s.solver._theories if hasattr(t, "branched_rational")]
         return s, lits
 
     def verdict(self, assumptions) -> str:
@@ -2089,6 +2105,7 @@ class Engine:
                     # session is built by _build_context, so s0 has one)
                     s.verdict = (s0.verdict if s0.verdict is not None
                                  else self._verdict.get(assumptions))
+                    s.build_values = s0.build_values
                     self._context_sessions[assumptions] = (s, lits)
                     if r is not None:
                         # "under these assumptions, q" is entailed by the
@@ -2189,28 +2206,58 @@ def _clear_branched(s: Session) -> None:
             t.branched = False
 
 
-def _branched_or_undecidable(s: Session) -> bool:
+def _branched(s: Session) -> bool:
     """A theory of the session's solver found a branch and bound conflict
     since the engine built the session (or ever, in a cone session, built
-    for its query alone), or has payloads with constants: a definite
-    answer may rest on work that, within a budget, depends on the search
-    path."""
+    for its query alone): a definite answer may rest on a lemma whose
+    finding, within the budget, depends on the search path."""
     for t in s.solver._theories:
-        if getattr(t, "branched", False) or getattr(t, "undecidable", False):
+        if getattr(t, "branched", False):
             return True
     return False
+
+
+def _cannot_give_up(s: Session) -> bool:
+    """No theory can give up in the sessions a fresh engine would use for
+    the query just answered in the reused session ``s`` (its set check, its
+    query, its cone search).  LRA atoms are registered only where
+    ``Relations.process`` runs: for the assumptions (``assume_formula``)
+    and for a query (``Engine._literal``), each time for the relation
+    atoms that compilation queued since (the set check's escalation
+    included) and the expressions they link.  ``s`` came from the same
+    build (a cone session that replaced it covers that build's cone) and
+    has run ``process`` for the queries since and for this one, so every
+    LRA atom a fresh engine registers is registered in ``s`` too, unless a
+    discovery in ``s`` stopped on the budget (``truncated``).  Then a
+    fresh engine meets no constant if ``s``'s LRA payloads have none, and
+    cannot give up on one if ``s``'s LRA is certified (LRATheory.certified:
+    monotone in the atoms), also for the values a branch and bound without
+    constants in the set check left behind (``build_values``, recorded at
+    the build).  False when any of this fails."""
+    if s.truncated or _gave_up(s):
+        return False
+    lras = [t for t in s.solver._theories if hasattr(t, "certified")]
+    if not any(t.undecidable for t in lras):
+        return True
+    vals = None
+    for b in s.build_values or ():
+        if b is False:
+            return False
+        if b is not None:
+            vals = b if vals is None else (max(vals[0], b[0]), math.lcm(vals[1], b[1]))
+    return all(t.certified if vals is None else t.certified_with(vals) for t in lras)
 
 
 def _path_dependent(s: Session, used: List[Session], definite: bool) -> bool:
     """The query just answered in the reused session ``s`` (and the cone
     sessions ``used``) may have an answer that depends on the session's
     history: a search ran out of branch budget or gave up, or the answer
-    is ``definite`` (or a raise) after a branch conflict or with
-    constants."""
+    is ``definite`` (or a raise) after a branch conflict, or while a fresh
+    engine's search might give up on a constant (``_cannot_give_up``)."""
     for x in (s, *used):
-        if _exhausted(x) or _gave_up(x) or (definite and _branched_or_undecidable(x)):
+        if _exhausted(x) or _gave_up(x) or (definite and _branched(x)):
             return True
-    return False
+    return definite and not _cannot_give_up(s)
 
 
 def neighbourhood(pred) -> frozenset:
