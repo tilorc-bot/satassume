@@ -1228,6 +1228,11 @@ class Engine:
                 # what the search learned) replaces the polluted one, so the
                 # next searches under these assumptions start small again
                 if self._context_sessions.get(assumptions, (None,))[0] is s0:
+                    # the verdict is a function of the set alone: carry it
+                    # over rather than run the check again (every context
+                    # session is built by _build_context, so s0 has one)
+                    s.verdict = (s0.verdict if s0.verdict is not None
+                                 else self._verdict.get(assumptions))
                     self._context_sessions[assumptions] = (s, lits)
                     if r is not None:
                         # "under these assumptions, q" is entailed by the

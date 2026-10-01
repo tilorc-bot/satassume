@@ -135,3 +135,16 @@ def test_setting_change_recomputes_a_memoized_verdict():
     eng.discovery_budget = 3
     assert eng.verdict(f) is INCONSISTENT
     assert eng.stats["version_clears"] == 2
+
+
+def test_cone_search_keeps_the_verdict():
+    # the cone session that replaces a polluted one carries the set's verdict
+    from satassume.sympy_api import _formula
+    x, y, z, w = symbols('x y z w')
+    eng = Engine(cache=DictCache(), cone_threshold=0)
+    a = Q.positive(x) & Q.gt(y, 1)
+    assert eng.verdict(_formula(a, True)) is CONSISTENT
+    ask(Q.positive(z*w + 1), a, eng)  # pollutes the session
+    ask(Q.negative(x*y), a, eng)
+    assert eng.stats["cone_searches"] >= 1
+    assert eng.verdict(_formula(a, True)) is CONSISTENT

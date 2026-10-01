@@ -134,9 +134,6 @@ def test_k6b_undecided_escapes_relations():
     ask(Q.gt(x + c, 0), Q.gt(x, 0), Engine())
 
 
-@_xfail("K7 (I3, lost definiteness): an implied declared fact loses "
-        "definiteness at discovery_budget=5; engine.py Session._discover "
-        "(budget cut)")
 def test_k7_declared_fact_loses_definite():
     r = Symbol('r', rational=True)
     p = Q.hermitian(pi*(14.5 + 3/r)**2)
@@ -233,9 +230,6 @@ def test_w2b2_integer_bound_restated_strict():
             == ask(Q.eq(n, 1), Q.ge(n, 1) & Q.lt(n, 2), Engine()))
 
 
-@_xfail("W2B3 (I2, depends): an unrelated integer block exhausts the shared "
-        "branch budget; lra.py LRATheory._check/_branch (one BRANCH_BUDGET "
-        "per check, not per component)")
 def test_w2b3_unrelated_integer_block_exhausts_branch_budget():
     x, y, u, v = symbols('x y u v', integer=True)
     a = Q.gt(x, y + Rational(1, 3)) & Q.ge(y, 0) & Q.le(y, 5)
@@ -277,13 +271,20 @@ def test_h1_equality_of_nonreal_terms_restated():
             == ask(Q.eq(x, y), Q.eq(-x, -y), Engine()))
 
 
-@_xfail("H2 (I2, depends): unrelated predicate material consumes the "
-        "discovery budget of the query's own nodes (relevance=False, "
-        "discovery_budget=1); engine.py Session._discover/escalate (one "
-        "budget for every pending node, related or not)")
 def test_h2_unrelated_material_consumes_discovery_budget():
     x, u = symbols('x u')
     a = Q.positive(x - 1)
     assert (ask(Q.positive(x), a, Engine(discovery_budget=1, relevance=False))
             == ask(Q.positive(x), a & Q.real(1/u),
+                   Engine(discovery_budget=1, relevance=False)))
+
+@_xfail("H2b (I2, depends): unrelated predicate material consumes the "
+        "discovery budget of the query's own nodes (relevance=False, "
+        "discovery_budget=1); engine.py Session._discover/escalate (one "
+        "budget for every pending node, related or not)")
+def test_h2b_unrelated_material_consumes_discovery_budget():
+    x, u = symbols('x u')
+    a = Q.positive(x - 1)
+    assert (ask(Q.positive(x), a, Engine(discovery_budget=1, relevance=False))
+            == ask(Q.positive(x), a & Q.real(1/(u + 1)) & Q.real(1/(u + 2)),
                    Engine(discovery_budget=1, relevance=False)))
