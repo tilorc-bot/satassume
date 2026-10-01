@@ -451,6 +451,16 @@ def _assumptions(h: Harness, sizes=(1, 1, 1, 2, 3)) -> list[int]:
         # keep the held prefix, change the rest: the case the engine makes
         # (the set's selectors, then the query's)
         k = h.last_hold
+        if rng.random() < 0.3:
+            # keep a shorter prefix of it: the solver continues from the
+            # levels the two lists share (Solver._common); or the client
+            # releases some held levels first, as the engine does before a
+            # query adds clauses (Solver.release)
+            k = rng.randint(1, k)
+            h.count("hold_prefix_common")
+            if rng.random() < 0.5:
+                h.solver.release(rng.randint(0, k))
+                h.count("hold_released")
         tail = h.rclause(rng.choice(sizes))
         h.A = h.A[:k] + [x for x in tail if abs(x) not in {abs(y) for y in h.A[:k]}]
         h.count("hold_prefix_reused")
@@ -991,7 +1001,8 @@ def test_incremental_matches_fresh_with_hold(chunk):
     c: dict = {}
     for seed in _chunk(chunk):
         _merge(c, run_seed(seed, hold=True))
-    for key in ("hold_calls", "hold_prefix_reused", "hold_prefix_continued"):
+    for key in ("hold_calls", "hold_prefix_reused", "hold_prefix_continued",
+                "hold_prefix_common", "hold_released"):
         assert c.get(key, 0) > 0, (key, c)
 
 

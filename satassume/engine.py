@@ -964,14 +964,16 @@ class Session:
         # must be on the trail (Solver.mention)
         solver.mention((lit,))
         assumptions = list(assumptions)
-        # the solver keeps the levels of the stable prefix only (the set's
-        # selectors, see assumption_lits); holding fewer or more levels
-        # changes what is reused, never an answer
-        hold = self.n_hold if self.n_hold <= len(assumptions) else None
+        # the solver keeps the levels of all the assumptions and continues
+        # from the longest prefix the next call shares (the set's
+        # selectors, then the query's: see assumption_lits); the engine
+        # releases the query's before the next query adds clauses
+        # (Solver.release).  Holding fewer or more levels changes what is
+        # reused, never an answer
         if assumptions:
             # consistency of the assumptions is checked first, even when the
             # query is already decided at root, mirroring sympy.ask
-            implied = solver.implied(assumptions, hold)
+            implied = solver.implied(assumptions)
             if implied is None:
                 raise InconsistentAssumptions("inconsistent assumptions")
             s = set(implied)
@@ -986,7 +988,7 @@ class Session:
         if not search:
             return None
         try:
-            r = solver.entails(lit, assumptions, hold)
+            r = solver.entails(lit, assumptions)
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
         self.writeback()
@@ -1022,7 +1024,8 @@ class Session:
         the root, :meth:`_set_glue`), then the selectors ``prop`` activates
         beyond the set's.  ``n_hold`` is set to the length of the stable
         prefix (everything that depends on the set only), whose levels the
-        solver keeps between queries (``Solver.implied(..., hold=)``)."""
+        solver keeps between queries (``Engine._ask`` releases the others
+        before the next query adds clauses, ``Solver.release``)."""
         lits = [self.sel] if self.sel else []
         self.n_hold = len(lits)
         rel = self.relations
@@ -1167,12 +1170,14 @@ class Session:
             v = self.table.aux()
             self.solver.ensure_vars(v)
             g = groups[key] = [v, set(), stamp]
+            self.solver.set_inert(v)
         elif not g[0]:
             if not want:
                 g[2] = stamp
                 return 0
             g[0] = self.table.aux()
             self.solver.ensure_vars(g[0])
+            self.solver.set_inert(g[0])
         v, have = g[0], g[1]
         for x in sorted(want - have):
             self._emit([-v, x])
@@ -2303,6 +2308,9 @@ class Engine:
         ``used``."""
         polluted = (len(s.base) - s.n_assumption_nodes
                     - (s.n_constants - s.n_assumption_constants)) > self.cone_threshold
+        # the solver holds the levels of the last query's assumptions; keep
+        # the set's (the stable prefix) while this query adds clauses
+        s.solver.release(s.n_hold)
         q = self._literal(s, proposition)
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
@@ -2310,6 +2318,7 @@ class Engine:
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
+            s.solver.release(s.n_hold)
             s.escalate()
             r = s.query_literal(q, lits, search=False)
         if r is None:

@@ -212,7 +212,10 @@ the glue ``p`` and ``a`` themselves call for:
 
 When ``a`` holds a relation atom, its own selectors are on in every
 query of its session: they are root units there (``Session._set_glue``),
-and a query assumes only the selectors it adds.
+and a query assumes only the selectors it adds.  The selectors and the
+variables they imply are *inert* for the search (``Solver.set_inert``):
+never decided, False where nothing assigned them, which is the extension
+of the inertness argument (DESIGN I3) done by the solver itself.
 
 The remaining clauses of an atom (clauses 1 and 2 above, and the twins of
 an order atom, which LRA alone reads) constrain the atom given its sides,
@@ -563,10 +566,8 @@ class Relations:
         #: first query mentioning the atom runs them, whoever made it
         self._user_eq: set = set()
         #: what a theory may do with an atom is switched per role too (see
-        #: _add_role): relation atom -> its roles [(kind, guard)], and the
-        #: keys seen
+        #: _add_role): relation atom -> its roles [(kind, guard)]
         self._roles: dict = {}
-        self._rolekeys: set = set()
         #: interpreted atoms -> (theory twins [(t, guard)] of an equality,
         #: its LRA terms, its EUF terms), for roles added later
         self._info: dict = {}
@@ -703,6 +704,7 @@ class Relations:
         s = self.session
         sel = self.num_sel[e] = s.table.aux()
         s.solver.ensure_vars(sel)
+        s.solver.set_inert(sel)
         self._tsource(e, _IE, [-sel])
         self._xextra.append(e)
 
@@ -924,14 +926,13 @@ class Relations:
         atom's own variable happens under the guard of one of its roles
         (:meth:`_apply_role`); roles come in any order, before or after
         the atom is interpreted."""
-        key = (atom, kind, tuple(g))
-        if key in self._rolekeys:
-            return
-        self._rolekeys.add(key)
         roles = self._roles.get(atom)
         if roles is None:
             self._roles[atom] = [(kind, g)]
         else:
+            for k, h in roles:
+                if k == kind and h == g:
+                    return                      # a role it has already
             roles.append((kind, g))
         info = self._info.get(atom)
         if info is not None:
@@ -989,6 +990,8 @@ class Relations:
         lst = self._tsrc.get(key)
         if lst is None:
             self._tsrc[key] = [g]
+        elif lst[-1] is g:
+            return              # the same guard again (a link's three atoms)
         else:
             lst.append(g)
         tv = self._tv.get(u)
@@ -1021,6 +1024,7 @@ class Relations:
         s = self.session
         v = tv[k] = s.table.aux()
         s.solver.ensure_vars(v)
+        s.solver.set_inert(v)
         emit = s._emit
         if k == _MC:
             for j in (_SD, _EN):
@@ -1043,6 +1047,7 @@ class Relations:
             s = self.session
             sel = self.atom_sel[atom] = s.table.aux()
             s.solver.ensure_vars(sel)
+            s.solver.set_inert(sel)
         return sel
 
     def _eq_links(self, var: int, atom: P) -> None:
@@ -1223,10 +1228,12 @@ class Relations:
         sel = s.table.aux()
         s.solver.ensure_vars(sel)
         self.link_sel[e] = sel
+        s.solver.set_inert(sel)
         g = -sel
+        gl = [g]            # one guard object: _tsource drops repeats of it
         for f in (gta, lta, eqa):
             self._link_of[f] = e
-            self._add_role(f, [g], "link")
+            self._add_role(f, gl, "link")
         emit = s._emit
         emit([-pos, gt, g])
         emit([-gt, pos, g])
@@ -1431,6 +1438,7 @@ class Relations:
         sel = s.table.aux()
         solver.ensure_vars(sel)
         th.guard(sel)
+        s.solver.set_inert(sel)
         solver.register_atom(th, sel, ("enable",))
         self.xfer_sel = sel
         self._xadapter = ad

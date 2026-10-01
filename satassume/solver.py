@@ -82,6 +82,17 @@ class BlockOwner:
         return f"BlockOwner({self.base})"
 
 
+def _common(held: list, lits: list) -> int:
+    """The length of the common prefix of two literal lists."""
+    n = min(len(held), len(lits))
+    if lits[:n] == held[:n]:
+        return n
+    i = 0
+    while held[i] == lits[i]:
+        i += 1
+    return i
+
+
 def _is_learnt(c: list) -> bool:
     return c.__class__ is Clause and c.learnt
 
@@ -1406,6 +1417,18 @@ class Solver:
             return None
         return [-(l >> 1) if l & 1 else l >> 1 for l in trail]
 
+    def release(self, k: int) -> None:
+        """Keep only the first ``k`` held assumption levels (see
+        :meth:`_assume`).  For a client about to add clauses: a clause that
+        is unit at a held level below the top one drops every held level
+        (:meth:`_attach_held`), so levels that the next assumptions will
+        not share are better released first."""
+        held = self._held
+        if held is not None and len(held) > k:
+            self._backtrack(k)
+            if k:
+                self._held = held[:k]
+
     def _assume(self, assumptions, hold: int | None = None) -> list[int] | None:
         """Propagate at root, then under ``assumptions`` (each at its own
         level); return the internal trail reached, or None on conflict.
@@ -1461,10 +1484,12 @@ class Solver:
         if held is not None:
             if held == lits:
                 return self._trail
-            if len(held) < len(lits) and lits[:len(held)] == held:
-                start = len(held)       # continue from the held prefix
-            else:
-                self._backtrack(0)
+            start = _common(held, lits)
+            if start < len(held):
+                # continue from the levels of the common prefix
+                self._backtrack(start)
+                if start:
+                    self._held = held[:start]
         elif self._trail_lim:
             self._backtrack(0)
         if not self._ok:
@@ -2240,6 +2265,31 @@ class Solver:
                 return 2 * v + pol[v]
         return -1
 
+    def set_inert(self, v: int) -> None:
+        """Make variable ``v`` (not a rule-block variable) *inert*: the
+        search never decides it, and a model leaves it unassigned where
+        nothing assigned it, standing for False (:meth:`_fill`).  For a
+        client's selector-like variables: the client guarantees that every
+        clause with ``v`` (or another inert variable) positively but for a
+        unit also holds a negated inert variable, and that every attached
+        theory reads an unassigned inert atom as False.  Then a conflict-free
+        assignment of every other variable (unit propagation done) extends
+        to a model by setting the unassigned inert variables False: a clause
+        with an unassigned inert variable either holds a negated one, now
+        true, or holds it only positively, and then its other literals are
+        not all false (else propagation would have assigned it, the clause
+        being unit); learnt and theory clauses are implied by the problem
+        clauses and the theories, which that model satisfies.  So searching
+        without deciding them finds a model iff one exists, and answers are
+        unchanged; what is saved is a decision level (with theory pushes)
+        per variable the search would otherwise decide, and the work of
+        whatever deciding one True would switch on."""
+        if v > self._nvars:
+            self._grow(v)
+        if self._rb_base[v]:
+            raise ValueError(f"variable {v} is a rule-block variable")
+        self._lazy[v] = 1
+
     def _reduce_db(self) -> None:
         """Remove about half of the learned clauses with low activity."""
         learnts = self._learnts
@@ -2416,8 +2466,10 @@ class Solver:
                 self._n_ring_hits += 1
                 return True
         held = self._held
-        if held is not None and lits[:len(held)] == held:
-            pass                                # continue from held levels
+        j = _common(held, lits) if held is not None else 0
+        if j:
+            if j < len(held):
+                self._backtrack(j)              # the levels of the common prefix
         else:
             if self._trail_lim:
                 self._backtrack(0)
@@ -2469,9 +2521,13 @@ class Solver:
         block's segment of ``mv`` is completed with a model of the block
         containing its assigned values (one exists: their closure was
         consistent at the time of the model), so later reads agree; nothing
-        else constrained a lazy variable, so ``mv`` stays a model."""
+        else constrained a lazy variable, so ``mv`` stays a model.  An
+        inert variable (:meth:`set_inert`) is False."""
         b = self._rb_base[v]
         if not b:
+            if self._lazy[v]:
+                mv[v - 1] = False               # an inert variable (set_inert)
+                return False
             return None
         n = self._rb_n
         lo = b - 1
