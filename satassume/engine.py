@@ -40,6 +40,29 @@ session that a query under it made raise, or whose clause set the query's
 own nodes made unsatisfiable at root, is dropped (``dead_sessions``): the
 next query under the same assumptions builds a fresh one, as a fresh
 engine would, so that query alone raises.
+
+Integer branch and bound (:mod:`satassume.lra`, "Integrality") is complete
+only up to a branch budget, and whether a search stays within it depends
+on the path: the tableau basis and the learnt clauses earlier queries left.
+With constants in the LRA payloads the same goes for giving up: which
+comparisons a pivot path makes decides whether one is undecidable.  A
+query in a reused session is therefore answered again, in a session built
+exactly as a fresh engine builds and uses one (``exhaust_reanswers``):
+when its search ran out of the budget or a theory gave up (its None may
+be a fresh engine's definite answer), and when it is definite (or raises)
+and a branch and bound found a conflict since the session was built (a
+lemma a fresh engine may not find within the budget) or the payloads
+have constants (a fresh engine may give up).  The build is canonical: a
+fresh engine branches in it just the same; and a branch and bound that
+ends in a point or the budget leaves no clause and no bound behind.  A
+None found without running out or giving up is a model that satisfies
+every integrality atom, and a fresh engine's clauses are a subset of the
+reused session's, so the fresh engine cannot be definite.  A definite
+answer without branch conflicts since the build rests on the build's
+clauses and on conflicts of the simplex, the rounded bounds and the real
+disequality argument, which have no budget (without constants) and are
+monotone in the asserted literals: a fresh engine meets one in every
+assignment it reaches, before it branches.
 """
 from __future__ import annotations
 
@@ -58,9 +81,9 @@ Node = Any
 
 
 #: the verdicts of an assumption set (``Engine.verdict``): only
-#: ``INCONSISTENT`` makes a query raise; ``UNKNOWN`` (a theory gave up, the
-#: set's cone is over the discovery budget, the check could not conclude)
-#: never does
+#: ``INCONSISTENT`` makes a query raise; ``UNKNOWN`` (a theory gave up or
+#: ran out of its branch budget, the set's cone is over the discovery
+#: budget, the check could not conclude) never does
 CONSISTENT = "consistent"
 INCONSISTENT = "inconsistent"
 UNKNOWN = "unknown"
@@ -1193,7 +1216,7 @@ class Engine:
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "dead_sessions": 0, "set_checks": 0,
                       "writeback_refused": 0, "writeback_budget": 0,
-                      "budget_limited": 0}
+                      "budget_limited": 0, "exhaust_reanswers": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
@@ -1706,6 +1729,9 @@ class Engine:
             lits = s.assume_formula(assumptions)
             v = UNKNOWN
         s.verdict = v
+        # branch conflicts in the check are part of the canonical build;
+        # only the queries' can make the session's answers path dependent
+        _clear_branched(s)
         return s, lits
 
     def verdict(self, assumptions) -> str:
@@ -1764,10 +1790,12 @@ class Engine:
         search.  ``INCONSISTENT`` only on a conflict, which is sound even
         if a theory gave up afterwards (its earlier conflicts were valid,
         satassume.theory); ``UNKNOWN`` if no conflict was found but a
-        theory gave up or the session is truncated (only with an explicit
-        budget; a set over the discovery budget never gets here, see
-        :meth:`verdict`; then a model of the clauses is no model of the set);
-        ``CONSISTENT`` otherwise."""
+        theory gave up or ran out of its branch budget (an integral
+        conflict may be hidden), or the session is truncated (only with an
+        explicit budget; a set over the discovery budget never gets here,
+        see :meth:`verdict`; then a model of the clauses is no model of the
+        set); ``CONSISTENT`` otherwise.  The session is kept either way:
+        what the check left in it is a function of the set."""
         solver = s.solver
         if s.xfer is not None:
             s.xfer.sync_transfer()
@@ -1784,7 +1812,7 @@ class Engine:
         # which is a conflict; the caller maps them to UNKNOWN
         if not solver.solve(lits):
             return INCONSISTENT
-        if _gave_up(s) or s.incomplete or s.truncated:
+        if _gave_up(s) or _exhausted(s) or s.incomplete or s.truncated:
             return UNKNOWN
         return CONSISTENT
 
@@ -1970,16 +1998,50 @@ class Engine:
                     and self.verdict(assumptions) is INCONSISTENT):
                 raise InconsistentAssumptions("inconsistent assumptions")
             return self._over_budget()
-        if contextual:
-            s, lits = self._context_session(assumptions)
-        else:
-            s = self._fresh_session()
+        s, lits, reused = self._open_session(assumptions, contextual)
+        used: List[Session] = []
         try:
-            return self._ask(s, lits, proposition, assumptions, contextual)
+            r = self._ask(s, lits, proposition, assumptions, contextual, used)
         except InconsistentAssumptions:
             if contextual:
                 self._drop_dead(assumptions)
+            if not (reused and _path_dependent(s, used, True)):
+                raise
+        else:
+            if not (reused and _path_dependent(s, used, r is not None)):
+                return r
+        # The search ran out of branch budget or gave up, or found a
+        # definite answer (or raised) after a branch and bound conflict
+        # since the build or with constants: a fresh engine, searching
+        # along another path, may answer otherwise (see the module
+        # docstring).  Answer as it would: the session _context_session
+        # builds (the set check included), then the same steps, the cone
+        # search too if its size calls for it; whatever happens there,
+        # that answer stands.  The budget test above, a function of the
+        # query alone, passed: a fresh engine gets this far too
+        self.stats["exhaust_reanswers"] += 1
+        self._context_sessions.pop(assumptions, None)
+        s, lits, _ = self._open_session(assumptions, True)
+        try:
+            return self._ask(s, lits, proposition, assumptions, True)
+        except InconsistentAssumptions:
+            self._drop_dead(assumptions)
             raise
+
+    def _open_session(self, assumptions, contextual: bool):
+        """The session a query within the budget is answered in, its
+        assumption literals, and whether it was reused (stored before this
+        query), with the branch-budget flags cleared.  The steps of a
+        fresh engine's query, and of a re-answer once the stored session
+        is popped (then nothing is reused)."""
+        if contextual:
+            hit = self._context_sessions.get(assumptions)
+            s, lits = self._context_session(assumptions)
+            reused = hit is not None and hit[0] is s
+        else:
+            s, lits, reused = self._fresh_session(), [], False
+        _clear_exhausted(s)
+        return s, lits, reused
 
     def _drop_dead(self, assumptions) -> None:
         """A query raised under a reused session.  Whether the raise
@@ -1995,7 +2057,9 @@ class Engine:
             self.stats["dead_sessions"] += 1
 
     def _ask(self, s: Session, lits: List[int], proposition, assumptions,
-             contextual: bool) -> Optional[bool]:
+             contextual: bool, used: Optional[List[Session]] = None) -> Optional[bool]:
+        """Answer in ``s``; a cone search's own session is appended to
+        ``used``."""
         polluted = (len(s.base) - s.n_assumption_nodes
                     - (s.n_constants - s.n_assumption_constants)) > self.cone_threshold
         q = self._literal(s, proposition)
@@ -2010,6 +2074,8 @@ class Engine:
                 self.stats["cone_searches"] += 1
                 s0 = s
                 s = self._fresh_session()
+                if used is not None:
+                    used.append(s)
                 lits = s.assume_formula(assumptions)
                 q = self._literal(s, proposition)
                 s.escalate()
@@ -2098,6 +2164,51 @@ def _gave_up(s: Session) -> bool:
     """A theory of the session's solver gave up (satassume.theory)."""
     for t in s.solver._theories:
         if getattr(t, "gave_up", False):
+            return True
+    return False
+
+
+def _exhausted(s: Session) -> bool:
+    """A theory of the session's solver ran out of its branch budget
+    since the flag was last cleared (satassume.lra, "Integrality")."""
+    for t in s.solver._theories:
+        if getattr(t, "exhausted", False):
+            return True
+    return False
+
+
+def _clear_exhausted(s: Session) -> None:
+    for t in s.solver._theories:
+        if getattr(t, "exhausted", False):
+            t.exhausted = False
+
+
+def _clear_branched(s: Session) -> None:
+    for t in s.solver._theories:
+        if getattr(t, "branched", False):
+            t.branched = False
+
+
+def _branched_or_undecidable(s: Session) -> bool:
+    """A theory of the session's solver found a branch and bound conflict
+    since the engine built the session (or ever, in a cone session, built
+    for its query alone), or has payloads with constants: a definite
+    answer may rest on work that, within a budget, depends on the search
+    path."""
+    for t in s.solver._theories:
+        if getattr(t, "branched", False) or getattr(t, "undecidable", False):
+            return True
+    return False
+
+
+def _path_dependent(s: Session, used: List[Session], definite: bool) -> bool:
+    """The query just answered in the reused session ``s`` (and the cone
+    sessions ``used``) may have an answer that depends on the session's
+    history: a search ran out of branch budget or gave up, or the answer
+    is ``definite`` (or a raise) after a branch conflict or with
+    constants."""
+    for x in (s, *used):
+        if _exhausted(x) or _gave_up(x) or (definite and _branched_or_undecidable(x)):
             return True
     return False
 

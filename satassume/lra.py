@@ -84,7 +84,8 @@ places, cheapest first:
   look satisfiable for an integer ``n``.  These splits only happen when
   integrality literals are asserted; real-only problems never branch.
   At most :data:`BRANCH_BUDGET` branch nodes (of both kinds) per
-  ``check``; when the budget runs out, the check reports no conflict.
+  ``check``; when the budget runs out, the check reports no conflict and
+  sets :attr:`LRATheory.exhausted` (only the caller clears it).
 
 So integrality is sound but incomplete: a conflict is always valid (each
 split is a case split of an asserted literal, so a conflict of both cases
@@ -94,6 +95,24 @@ bounds and disequalities but not necessarily the integrality atoms.
 satassume reads a definite answer only from an unsatisfiable search; a
 satisfiable one gives None (or "the assumptions are consistent"), never a
 definite answer.
+
+Whether the budget runs out depends on the search path: the branch order
+follows the simplex point, which follows the basis earlier checks left
+in the tableau, and which checks run at all follows the learnt clauses.
+So once a check's branch and bound finds a conflict
+(:attr:`LRATheory.branched`) an answer can depend on the session's
+history, not only on its clauses; the simplex,
+the rounded bounds of ``assert_lit`` and ``propagate`` and the real
+disequality argument of ``check`` cannot: each finds every conflict of
+its kind in the asserted literals, with no budget, and keeps finding it
+as literals are added.  The same holds for giving up with constants
+(:attr:`LRATheory.undecidable`): which comparisons a pivot path makes
+decides whether one is undecidable.  In a session reused across
+queries, the engine answers again in a freshly built one (as a fresh
+engine would) a query whose search exhausted the budget or gave up, and
+a definite answer after a branch and bound conflict since the session was
+built or with constants (``Engine.ask``); a set check that exhausted the budget
+gives the verdict ``UNKNOWN`` (``Engine._complete_check``).
 
 How it works
 ------------
@@ -244,6 +263,14 @@ class LRATheory:
         self.eager = eager
         #: set when an undecidable comparison made the theory give up
         self.gave_up = False
+        #: set when a check ran out of :data:`BRANCH_BUDGET` (its sat claim
+        #: is sound but may hide an integral conflict); cleared only by the
+        #: caller (the engine, per query), not by ``pop_level``
+        self.exhausted = False
+        #: set when a check's branch and bound found a conflict (a lemma
+        #: whose finding, within the budget, depends on the search path);
+        #: cleared only by the caller (the engine, when it built a session)
+        self.branched = False
         #: a payload had a number with constants (an Element): from then on
         #: pivots and updates compute before they write (arithmetic can
         #: raise TooLarge); without, the rational code paths run unchanged
@@ -289,7 +316,14 @@ class LRATheory:
         self._dirty: set[int] = set()
         self._pending_ground: list[int] = []
         self.stats = {"pivots": 0, "checks": 0, "conflicts": 0,
-                      "propagations": 0, "branches": 0, "gave_up": 0}
+                      "propagations": 0, "branches": 0, "gave_up": 0,
+                      "exhausted": 0}
+
+    @property
+    def undecidable(self) -> bool:
+        """A payload has constants: a comparison can be undecidable and
+        make the theory give up, at a point the pivot path decides."""
+        return self._fields
 
     # ------------------------------------------------------------------
     # registration
@@ -772,6 +806,8 @@ class LRATheory:
             else:
                 return None
         if budget[0] <= 0:
+            self.exhausted = True
+            self.stats["exhausted"] += 1
             return None
         budget[0] -= 1
         self.stats["branches"] += 1
@@ -966,6 +1002,11 @@ class LRATheory:
         conflict = self._simplex()
         if conflict is None and self._int_lits:
             conflict = self._branch([BRANCH_BUDGET])
+            if conflict is not None:
+                # only here does branching leave a trace a later search
+                # can use: a branch and bound that ends in a point (or the
+                # budget) pops every bound it set and adds no clause
+                self.branched = True
         if conflict is not None:
             self.stats["conflicts"] += 1
             return (False, conflict)
