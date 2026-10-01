@@ -378,7 +378,7 @@ def cmd_invariants(args) -> int:
     invs = INVARIANTS if args.inv == "all" else tuple(args.inv.split(","))
     if args.nightly:
         profiles = ["base", "related", "declared", "deep", "relational", "focus", "links", "transfer"]
-        configs = _configs("default,budget,tight,reuse,whole")
+        configs = _configs("default,budget,tight,reuse,whole,notransfer,lean")
         minutes = args.minutes or 20.0
     else:
         profiles, configs, minutes = _profiles(args), _configs(args.config), args.minutes

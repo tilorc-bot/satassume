@@ -83,7 +83,7 @@ python -m pytest -q tests/test_invariants.py
 
 # nightly (20 minutes CPU on one core, self-bounded: the budget is user +
 # system CPU of the process and its finished children, `os.times`, not
-# wall time): 8 profiles x 5 configs x the seeds, visited round robin in
+# wall time): 8 profiles x 7 configs (`default`, `budget`, `tight`, `reuse`, `whole`, `notransfer`, `lean`) x the seeds, visited round robin in
 # slices of 30 queries until the budget is spent; I1 (three drops) and
 # I2 (two variants) run first on every query; the last line printed is
 # {"cpu_seconds", "rounds", "queries"}

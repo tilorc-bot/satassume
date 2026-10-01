@@ -158,6 +158,12 @@ PRESETS: Dict[str, EngineConfig] = {
     "cone": EngineConfig(name="cone", cone_threshold=-1),
     # whole assumption set always (no relevance split)
     "whole": EngineConfig(name="whole", relevance=False),
+    # no transfer between congruent applications (the relation glue alone)
+    "notransfer": EngineConfig(name="notransfer", transfer=False),
+    # a small discovery budget and the whole set: every optimisation that
+    # drops clauses engaged at once, no cone sessions
+    "lean": EngineConfig(name="lean", discovery_budget=12, relevance=False,
+                         cone_search=False, cone_threshold=0),
     # no predicate transfer between equal terms
     "notransfer": EngineConfig(name="notransfer", transfer=False),
     # relations out of scope (the scalar slice alone)

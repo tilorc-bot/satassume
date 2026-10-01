@@ -1156,6 +1156,19 @@ def shrink(v: Violation, max_tests: int = 400) -> Violation:
         if len(es) >= 2 and test_e(es):
             es = ddmin(es, test_e, max_tests)
             v.variant = dict(v.variant, extra=to_srepr(_join(es)))
+        specs = list(v.variant.get("extensions", []))
+        if specs:
+            # registrations whose atom was dropped (or which were registration
+            # only) may not matter: drop each that the violation survives without
+            def test_s(sub):
+                return _guarded(v, v.prop, v.assum, dict(v.variant, extensions=list(sub)))
+            if test_s([]):
+                specs = []
+            elif len(specs) >= 2:
+                specs = ddmin(specs, test_s, max_tests)
+            v.variant = dict(v.variant, extensions=specs)
+            if not specs:
+                del v.variant["extensions"]
     if v.inv == "I7" and len(v.prefix) >= 1:
         def test_p(sub):
             old, v.prefix = v.prefix, list(sub)

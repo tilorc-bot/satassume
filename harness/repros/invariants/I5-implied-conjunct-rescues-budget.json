@@ -1,0 +1,36 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "budget",
+  "discovery_budget": 5,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedPredicate(Q.real, Add(Integer(-2), Symbol('m', negative=True), GoldenRatio))",
+ "assum": "And(AppliedPredicate(Q.transcendental, Symbol('m', negative=True)), Not(AppliedPredicate(Q.extended_negative, Add(I, Mul(Integer(-7), Pow(Symbol('m', negative=True), Integer(-1))), Mul(Integer(3), E), Mul(Integer(3), Symbol('m', negative=True)), Mul(Float('1.5', precision=53), Pow(Add(E, I), Integer(3))), Mul(Pow(Integer(2), Rational(1, 2)), Add(E, I)), Mul(Pow(Symbol('c', complex=True), Rational(1, 2)), Add(I, Symbol('m', negative=True), Mul(Integer(2), Pow(pi, Integer(2))), Mul(Integer(3), E))), Mul(Pow(Symbol('m', negative=True), Integer(-1)), Pow(Dummy('d', dummy_index=8378571), Integer(-1))), Mul(Integer(2), pi, Add(Integer(-2), Symbol('m', negative=True), GoldenRatio)), Mul(Integer(-4), Pow(pi, Integer(3)), Add(I, Symbol('m', negative=True), Mul(Integer(2), Pow(pi, Integer(2))), Mul(Integer(3), E)), Function('f')(Mul(Integer(-3), Symbol('m', negative=True)))), Dummy('d', dummy_index=8378571), Function('f')(E), Function('f')(Mul(Integer(-3), Symbol('m', negative=True))), log(Integer(2))))))",
+ "variant": {
+  "kind": "restate",
+  "parts": [
+   "And(AppliedPredicate(Q.finite, Symbol('m', negative=True)), AppliedPredicate(Q.transcendental, Symbol('m', negative=True)))",
+   "Not(AppliedPredicate(Q.extended_negative, Add(I, Mul(Integer(-7), Pow(Symbol('m', negative=True), Integer(-1))), Mul(Integer(3), E), Mul(Integer(3), Symbol('m', negative=True)), Mul(Float('1.5', precision=53), Pow(Add(E, I), Integer(3))), Mul(Pow(Integer(2), Rational(1, 2)), Add(E, I)), Mul(Pow(Symbol('c', complex=True), Rational(1, 2)), Add(I, Symbol('m', negative=True), Mul(Integer(2), Pow(pi, Integer(2))), Mul(Integer(3), E))), Mul(Pow(Symbol('m', negative=True), Integer(-1)), Pow(Dummy('d', dummy_index=8378571), Integer(-1))), Mul(Integer(2), pi, Add(Integer(-2), Symbol('m', negative=True), GoldenRatio)), Mul(Integer(-4), Pow(pi, Integer(3)), Add(I, Symbol('m', negative=True), Mul(Integer(2), Pow(pi, Integer(2))), Mul(Integer(3), E)), Function('f')(Mul(Integer(-3), Symbol('m', negative=True)))), Dummy('d', dummy_index=8378571), Function('f')(E), Function('f')(Mul(Integer(-3), Symbol('m', negative=True))), log(Integer(2)))))"
+  ],
+  "assum": "And(AppliedPredicate(Q.finite, Symbol('m', negative=True)), AppliedPredicate(Q.transcendental, Symbol('m', negative=True)), Not(AppliedPredicate(Q.extended_negative, Add(I, Mul(Integer(-7), Pow(Symbol('m', negative=True), Integer(-1))), Mul(Integer(3), E), Mul(Integer(3), Symbol('m', negative=True)), Mul(Float('1.5', precision=53), Pow(Add(E, I), Integer(3))), Mul(Pow(Integer(2), Rational(1, 2)), Add(E, I)), Mul(Pow(Symbol('c', complex=True), Rational(1, 2)), Add(I, Symbol('m', negative=True), Mul(Integer(2), Pow(pi, Integer(2))), Mul(Integer(3), E))), Mul(Pow(Symbol('m', negative=True), Integer(-1)), Pow(Dummy('d', dummy_index=8378571), Integer(-1))), Mul(Integer(2), pi, Add(Integer(-2), Symbol('m', negative=True), GoldenRatio)), Mul(Integer(-4), Pow(pi, Integer(3)), Add(I, Symbol('m', negative=True), Mul(Integer(2), Pow(pi, Integer(2))), Mul(Integer(3), E)), Function('f')(Mul(Integer(-3), Symbol('m', negative=True)))), Dummy('d', dummy_index=8378571), Function('f')(E), Function('f')(Mul(Integer(-3), Symbol('m', negative=True))), log(Integer(2))))))"
+ },
+ "base": "None",
+ "other": "True",
+ "source": "invariants profile=deep seed=33 slice=0",
+ "shrunk": true,
+ "prefix": []
+}
