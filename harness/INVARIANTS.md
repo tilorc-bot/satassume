@@ -111,14 +111,16 @@ python -m harness invariants --nightly --seeds 0-2 --out harness-results/invaria
 python -m harness invariants --inv I1,I2 --profile transfer,links --config default,budget --seeds 0-4 --queries 120
 ```
 
-Measured (round 3, d21e655, this machine): a 30-query slice (plus its
-derived queries, about 40 queries) through all seven checkers takes
-2-8 s of CPU (`base`, `declared` fast; `related`, `deep`, `relational`
-slow); `--nightly --minutes 1.2 --seeds 36` visited 11 slices (450
-queries, 1,350 I1 checks, 900 I2 checks) in 73 s; `--minutes 2.5`
-visited one full round of 8 profiles x 5 configs (570-900 queries).
-The 20-minute run visits roughly 150-180 slices, about 6,000-7,000
-queries.  At most five reports per invariant and *one* of one shape
+Measured (round 4, fc1ad99, this machine): `--nightly --minutes 2.5`
+with one seed visits 18-19 slices (540-570 queries with their derived
+ones; 2,000 I1 checks, 2,000 I2 checks (three variants, 40 % with
+blocks), 680 each of I3/I4/I6/I7, 1,360 I5) in 150 s of CPU, about 8 s
+per slice including the fingerprints and the shrinks.  The 20-minute run
+visits roughly 140-150 slices, about 4,500 queries, 16,000 I1 checks and
+16,000 I2 checks; the family cap per run keeps the shrinking from
+repeating (52 `family_repeat` in 2.5 minutes before the cap, the first
+run with it is reported below).  Round 3 (d21e655): 2-8 s per slice,
+150-180 slices in 20 minutes.  At most five reports per invariant and *one* of one shape
 (invariant, severity, base answer, variant answer) per slice (the I2
 definite -> None family would otherwise spend the budget on shrinking),
 and for I2 one per shape *and kind of unrelated material*
@@ -244,11 +246,14 @@ declared values), **4c** the relation rewrites first and likely
 negated-swapped); **6** the `boundary` preset, `reuse` and `whole`
 dropped from the nightly; **7** fingerprints, the family key, pinned
 cases matched once per run and never shrunk, any family at most twice
-per run; **8** three I2 variants and two I5 rounds per query.  Not
-implemented: **5** the classified constant pool (the constants are still
-`_FINITE_CONSTS`/`_REAL_CONSTS`; the model pool `harness.models.POOL` is
-classified, the generators' is not, and no case records a constant
-class).
+per run; **8** three I2 variants and two I5 rounds per query; **5** the
+classified constant pool (`harness.models.CONSTANTS`: `rational`,
+`algebraic`, `transcendental`, `float`, `unsettled` (forms SymPy's exact
+evaluation cannot settle: `cos(1)**2 + sin(1)**2 - 1`, `log(2) + log(3)
+- log(6)`, ...), `nonreal`, `infinite`; `_FINITE_CONSTS` is built from
+it, relation sides use the real classes only, and an I2 case records the
+classes present in its material as `const:<class>` kinds).  Everything
+in "Keep" is kept.
 
 ### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
 
@@ -281,6 +286,15 @@ class).
   boundary-budget`): `ask(Q.lt(T, z), Q.lt(T, z))` under `boundary`
   (discovery budget 1) is True and None with the proposition spelled
   `Q.lt(-z, -T)`; fingerprint `budget` (lifting the budget removes it).
+* **I2, `crash`** (pinned: `I2-unsettled-constant-in-relation-raises-undecided`):
+  `ask(Q.zero(g(n) + 2), Q.zero(n))` is None and raises
+  `satassume.constfield.Undecided` ("cannot show Element(sin(pi/7)**2 +
+  cos(pi/7)**2 + -1) nonzero") with the unrelated conjunct
+  `Equivalent(Q.lt(u, oo), v - 1 + sin(pi/7)**2 + cos(pi/7)**2 >= 1.0e-9)`
+  added: `relations._link_integer` tests `payload.offset` for truth and
+  `constfield.Element.__bool__` raises on an unsettled constant; the
+  exception escapes `ask`.  Found by the constant pool in the CI stream
+  on its first run (`default` config; fingerprint `norel`).
 * **I2, blocks**: in the first runs every block finding was the
   known relation family (`None -> False` with a block holding a relation,
   fingerprint `norel`, the kinds `block, relation`); no new mechanism
