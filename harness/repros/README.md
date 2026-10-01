@@ -1,8 +1,9 @@
 # Minimal repros of history-dependent answers (engine at c26e5e1)
 
 All of them still reproduce at a186157, except G1-G6 (fixed by #51) and C,
-C2-C5, C4b (fixed by #54), and B, B2, E1c (fixed by the complete set
-check, #73), now in `fixed/`; `tests/test_history.py` pins each file here as a strict xfail.
+C2-C5, C4b (fixed by #54), B, B2, E1c (fixed by the complete set check,
+#73), and E1, E1b, L1, C6b, D (fixed by the writeback rule of #53 stage 3,
+`Session.writeback`), now in `fixed/`; `tests/test_history.py` pins each file here as a strict xfail.
 
 Each `NAME.py` runs standalone from the repository root
 (`PYTHONHASHSEED=0 python harness/repros/NAME.py`); each `NAME.json` can be

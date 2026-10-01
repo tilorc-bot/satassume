@@ -51,7 +51,7 @@ from .epoch import EPOCH as _EPOCH, bump as _bump
 from .formula import P, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted
 from .rules import NPRED, PRED_INDEX, PREDICATES, RULE_CLAUSES, RULE_INTERNAL
-from .solver import Solver
+from .solver import BOTTOM, BlockOwner, Solver
 
 Node = Any
 
@@ -66,6 +66,27 @@ UNKNOWN = "unknown"
 
 class InconsistentAssumptions(ValueError):
     pass
+
+
+#: Engine(writeback=...) policies (Session.writeback)
+_WRITEBACK = ("provenance", "root-only", "all")
+
+#: the home of a root literal whose provenance was not established cheaply
+#: (Session._home_of)
+_FOREIGN = object()
+
+
+def _same(a, b) -> bool:
+    """``a`` and ``b`` are the same object of a cone (a SymPy node or a
+    custom atom; never compared across the two kinds)."""
+    return a is b or (a.__class__ is b.__class__ and a == b)
+
+
+def _kid(atom):
+    """The object an atom of a template makes part of the cone: the
+    argument of a vocabulary atom, a custom atom itself (its extension
+    facts are its own, Session._custom)."""
+    return atom.expr if atom.pred in PRED_INDEX else atom
 
 
 # --------------------------------------------------------------------------
@@ -178,10 +199,6 @@ class Session:
         #: nodes that are closed irrational constants (pi, 1/pi); they do
         #: not count as pollution (Engine.cone_threshold)
         self.n_constants = 0
-        #: discovery (:meth:`_discover`) or :meth:`escalate` stopped on the
-        #: discovery budget and dropped frontier nodes it had not visited:
-        #: the session's cone is incomplete in a way ``incomplete`` misses
-        self.truncated = False
         #: the verdict of the assumption set from the complete check run at
         #: construction (``Engine._context_session``); None outside it
         self.verdict: Optional[str] = None
@@ -196,6 +213,30 @@ class Session:
         #: the Relations object once predicate transfer is engaged
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
+        # -- provenance writeback (see writeback) --
+        #: node (or custom atom) -> the objects its templates (its
+        #: extension facts) mention: the structural cone, one level; a
+        #: function of the node and the registry, not of what was loaded.
+        #: Kept only under Engine(writeback="provenance").
+        self.kids: Optional[Dict[Any, set]] = {} if engine.writeback_policy == "provenance" else None
+        #: a budget cut dropped work: :meth:`_discover` or :meth:`escalate`
+        #: stopped on the discovery budget with unvisited nodes (new, or
+        #: with parked templates) on its frontier, or :meth:`escalate`
+        #: stopped with parked templates or derived nodes left.  Once set,
+        #: it stays.  The session may lack part of a cone in a way
+        #: ``incomplete`` misses: it writes nothing back
+        #: (:meth:`writeback`, ``Engine.is_``) and its set's complete check
+        #: gives ``UNKNOWN`` (``Engine._complete_check``).  Frontier nodes
+        #: already visited with nothing parked do not count: dropping them
+        #: drops no work.
+        self.truncated = False
+        #: the node of the Engine.is_ query this session answers (None:
+        #: contextual, or a custom predicate); Engine(writeback="root-only")
+        self.subject = None
+        self._prov_memo: dict = {}           # var -> owners (Solver.provenance)
+        self._cone_memo: dict = {}           # (node, object) found in its cone
+        #: var -> its home (see _home_of), _FOREIGN if not established
+        self._home: dict = {}
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -229,6 +270,18 @@ class Session:
         table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
+        solver = self.solver
+        prev_owner = solver.owner
+        solver.owner = node
+        try:
+            self._visit(node, b, demanded)
+        finally:
+            solver.owner = prev_owner
+            constructing.discard(node)
+        return b
+
+    def _visit(self, node: Node, b: int, demanded) -> None:
+        """The body of :meth:`node` (``solver.owner`` is ``node``)."""
         engine = self.engine
         # 1. structural templates, and vocabulary predicates registered for
         #    the node's class (satassume.extensions)
@@ -239,6 +292,19 @@ class Session:
         ext = engine._extensions
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
+        items = [(f, atoms_of(f)) for f in formulas] if formulas else None
+        kids = self.kids
+        if kids is not None:
+            # every object the node's templates mention, parked ones too
+            k = set()
+            for comp in compiled:
+                objs, pat = comp.objs, comp.pattern
+                k.update(objs[i] for i in pat.used if i != pat.node)
+            if items:
+                for _, atoms in items:
+                    k.update(_kid(a) for a in atoms)
+                k.discard(node)
+            kids[node] = k
         # 2. single-node rule base (registered with the solver's rule-block
         #    propagator, no clauses), unless the node is a constant whose
         #    closed unit facts decide everything the rule base could say
@@ -263,15 +329,12 @@ class Session:
                                for p, v in facts.items() if v is not None and p in PRED_INDEX])
         if compiled:
             self._compile_patterns(node, compiled, demanded)
-        if formulas:
-            items = [(f, atoms_of(f)) for f in formulas]
+        if items:
             if demanded is None:
                 self._compile(node, items)
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
-        constructing.discard(node)
-        return b
 
     def _add_clauses(self, clauses) -> None:
         self.nclauses += len(clauses)
@@ -378,8 +441,16 @@ class Session:
         engine = self.engine
         v = engine.custom_cache.get(atom.expr, atom.pred)
         var = self.table.custom[atom]
+        solver = self.solver
+        prev_owner = solver.owner
         if v is not None:
-            self._emit([var if v else -var])
+            # a cached custom fact is the atom's own (a relation atom's:
+            # its interpretation is glue, so unowned)
+            solver.owner = BOTTOM if atom.pred in RELATION_ATOMS else atom
+            try:
+                self._emit([var if v else -var])
+            finally:
+                solver.owner = prev_owner
         if atom.pred in RELATION_ATOMS and engine._relation_specs:
             rel = self.relations
             if rel is None:
@@ -392,12 +463,31 @@ class Session:
         ext = engine._extensions
         if ext is None:
             return
-        for f in ext.facts_for(atom):
-            compile_formula(f, self.table, self._emit)
+        kids = self.kids
+        if kids is not None:
+            k = kids.setdefault(atom, set())
+        solver.owner = atom
+        try:
+            for f in ext.facts_for(atom):
+                if kids is not None:
+                    k.update(_kid(a) for a in atoms_of(f))
+                    k.discard(atom)
+                compile_formula(f, self.table, self._emit)
+        finally:
+            solver.owner = prev_owner
 
     def _compile_pending(self, node: Node, demanded) -> None:
         """Compile the parked formulas and clauses of ``node`` that mention
         a predicate in the neighbourhood of ``demanded`` (indices)."""
+        solver = self.solver
+        prev_owner = solver.owner
+        solver.owner = node
+        try:
+            self._compile_pending_owned(node, demanded)
+        finally:
+            solver.owner = prev_owner
+
+    def _compile_pending_owned(self, node: Node, demanded) -> None:
         want = want_of(demanded)
         pend_c = self.pending_c.get(node)
         if pend_c:
@@ -459,8 +549,9 @@ class Session:
             self.node(n, None if demanded is None else self.demand.get(n, set()))
             added += 1
         if self.frontier:
-            # budget spent with nodes left: they are dropped below
-            self.truncated = True
+            base = self.base
+            if any(n not in base or n in pending or n in pending_c for n in self.frontier):
+                self.truncated = True
         self.frontier = deque()
 
     @property
@@ -473,16 +564,26 @@ class Session:
         instantiation of the cone)."""
         budget = self.engine.discovery_budget if budget is None else budget
         added = 0
+        solver = self.solver
+        prev_owner = solver.owner
         while (self.pending or self.pending_c or self.deferred or self.frontier) \
                 and added < budget:
             if self.pending_c:
                 node, pend = self.pending_c.popitem()
-                for clauses, bases in pend:
-                    self._emit_pattern(clauses, bases)
+                solver.owner = node
+                try:
+                    for clauses, bases in pend:
+                        self._emit_pattern(clauses, bases)
+                finally:
+                    solver.owner = prev_owner
                 added += 1
             elif self.pending:
                 node, formulas = self.pending.popitem()
-                self._compile(node, formulas)
+                solver.owner = node
+                try:
+                    self._compile(node, formulas)
+                finally:
+                    solver.owner = prev_owner
                 added += 1
             elif self.frontier:
                 n = self.frontier.popleft()
@@ -494,30 +595,217 @@ class Session:
                 if n not in self.base:
                     self.node(n, None)
                     added += 1
-        if self.frontier:
-            # budget spent with nodes left: they are dropped below
-            self.truncated = True
+        if self.pending or self.pending_c or self.deferred or self.frontier:
+            base = self.base
+            if self.pending or self.pending_c or any(n not in base for n in self.deferred) \
+                    or any(n not in base for n in self.frontier):
+                self.truncated = True
         self.frontier = deque()
 
     # -- root facts -> cache ------------------------------------------------
     def writeback(self) -> None:
+        """Write the new root facts to the context-free caches, by the
+        policy ``Engine(writeback=...)``:
+
+        ``"provenance"`` (default)
+            A fact about node ``D`` (or custom atom ``D``) is written only if
+            the session is not budget-truncated and its *provenance* (the
+            owners of the clauses in its reason DAG, ``Solver.provenance``)
+            lies in ``{D} | cone(D)``: ``D``'s own rule block, templates,
+            extension facts and cached facts, and those of the objects its
+            templates mention, transitively (``self.kids``); never a learnt
+            or theory clause, relation glue or the assumptions (``BOTTOM``).
+            Every such clause is in any session that loads ``cone(D)``, in
+            particular a fresh ``Engine.is_(D, ...)``, and unit propagation
+            is confluent, so that query derives the fact too: the cache stays
+            a memo of ``is_`` (DESIGN.md 2.4; by induction, cached facts of
+            ``cone(D)`` asserted here are themselves such memos).
+        ``"root-only"``
+            Only the facts about the queried node of an ``Engine.is_``
+            session (whose clauses all come from that node's cone, so they
+            are memos by construction); nothing from contextual sessions.
+        ``"all"``
+            Every root literal, as before the provenance rule.  History-
+            dependent (a fact found with another node's template, a learnt
+            clause or relation glue is served later as a context-free fact):
+            kept for measurement only.
+        """
         trail = self.solver.root_trail()
+        start = self.read_pos
+        self.read_pos = len(trail)
+        if start == len(trail):
+            return
+        engine = self.engine
+        policy = engine.writeback_policy
+        if policy != "all":
+            if self.truncated:
+                return
+            if policy == "root-only":
+                self._writeback_subject(trail, start)
+                return
         slots = self.table.slots
-        cache = self.engine.cache
-        custom = self.engine.custom_cache
-        for lit in trail[self.read_pos:]:
+        cache = engine.cache
+        custom = engine.custom_cache
+        if policy == "all":
+            for lit in trail[start:]:
+                v = abs(lit)
+                atom = slots[v]
+                if type(atom) is tuple:
+                    # a node block's variable (VarTable.slots): P(pred, node)
+                    node, b = atom
+                    cache.put(node, PREDICATES[v - b], lit > 0)
+                elif atom is not None:
+                    if atom.pred in PRED_INDEX:
+                        cache.put(atom.expr, atom.pred, lit > 0)
+                    else:
+                        custom.put(atom.expr, atom.pred, lit > 0)
+            return
+        home_of = self._home_of
+        for lit in trail[start:]:
             v = abs(lit)
             atom = slots[v]
             if type(atom) is tuple:
-                # a node block's variable (VarTable.slots): P(pred, node)
                 node, b = atom
-                cache.put(node, PREDICATES[v - b], lit > 0)
-            elif atom is not None:
-                if atom.pred in PRED_INDEX:
-                    cache.put(atom.expr, atom.pred, lit > 0)
+                h = home_of(v, node)
+                pred = PREDICATES[v - b]
+                d = cache.facts(node)
+                if d is not None and pred in d:
+                    continue
+                if h is _FOREIGN and not self._walk(v, node):
+                    engine.stats["writeback_refused"] += 1
+                    continue
+                cache.put(node, pred, lit > 0)
+            elif atom is None:
+                home_of(v, None)
+            elif atom.pred in PRED_INDEX:
+                node = atom.expr
+                h = home_of(v, node)
+                d = cache.facts(node)
+                if d is not None and atom.pred in d:
+                    continue
+                if h is _FOREIGN and not self._walk(v, node):
+                    engine.stats["writeback_refused"] += 1
+                    continue
+                cache.put(node, atom.pred, lit > 0)
+            elif atom.pred in RELATION_ATOMS:
+                home_of(v, None)              # interpreted by glue: never written
+            else:
+                h = home_of(v, atom)
+                d = custom.facts(atom.expr)
+                if d is not None and atom.pred in d:
+                    continue
+                if h is _FOREIGN and not self._walk(v, atom):
+                    engine.stats["writeback_refused"] += 1
+                    continue
+                custom.put(atom.expr, atom.pred, lit > 0)
+
+    def _writeback_subject(self, trail, start: int) -> None:
+        """``writeback="root-only"``: the facts about the node of the
+        ``Engine.is_`` query this session answers."""
+        subject = self.subject
+        if subject is None:
+            return
+        b = self.base.get(subject)
+        if b is None:
+            return
+        cache = self.engine.cache
+        for lit in trail[start:]:
+            v = abs(lit)
+            if b <= v < b + NPRED:
+                cache.put(subject, PREDICATES[v - b], lit > 0)
+
+    def _home_of(self, v: int, subject) -> Any:
+        """The *home* of the root assignment of ``v``: an object ``H``
+        with ``provenance(v) <= {H} | cone(H)``, or ``_FOREIGN`` when that
+        is not established by this cheap test (the caller then walks).
+
+        The test looks at one step of the reason DAG only: the owner ``o``
+        of ``v``'s reason (its rule block's node, its template's node, ...)
+        and the homes of its antecedents, which are on the root trail before
+        ``v`` and so already have one (writeback visits the trail in order;
+        every root literal gets a home).  ``H`` is ``subject`` (the node or
+        custom atom ``v`` is about), or ``o`` for an auxiliary variable.  If
+        ``o`` and every antecedent's home are ``H`` or in ``cone(H)``, then,
+        by induction over the trail, every owner of ``v``'s reason DAG is in
+        ``{H} | cone(H)``: an antecedent's provenance lies in ``{h} |
+        cone(h)`` and ``cone(h) <= cone(H)`` for ``h`` in ``cone(H)`` (a
+        path of ``self.kids`` is a path of the structural cone, which is
+        transitive).  So ``home == D`` implies exactly what the provenance
+        rule of :meth:`writeback` asks for ``D``, without the walk; the
+        common case (a fact found by ``D``'s own rule block, templates and
+        its children's facts) costs one reason lookup and a few dict hits.
+        """
+        home = self._home
+        h = home.get(v)
+        if h is not None:
+            return h
+        step = self.solver.root_step(v)
+        h = _FOREIGN
+        if step is not None:
+            o, ants = step
+            if type(o) is BlockOwner:
+                o = self.table.slots[o.base][0]   # a rule block: its node
+            H = o if subject is None else subject
+            in_cone = self._in_cone
+            if _same(o, H) or in_cone(H, o):
+                for a in ants:
+                    ha = home.get(a, _FOREIGN)
+                    if ha is _FOREIGN or not (_same(ha, H) or in_cone(H, ha)):
+                        break
                 else:
-                    custom.put(atom.expr, atom.pred, lit > 0)
-        self.read_pos = len(trail)
+                    h = H
+        home[v] = h
+        return h
+
+    def _walk(self, v: int, node) -> bool:
+        """The exact provenance test for a fact about ``node`` whose home
+        was not established: every owner of its reason DAG is ``node``
+        or in its cone.  On success ``node`` becomes its home."""
+        prov = self.solver.provenance(v, self._prov_memo)
+        if BOTTOM in prov:
+            return False
+        slots = self.table.slots
+        in_cone = self._in_cone
+        for o in prov:
+            if type(o) is BlockOwner:
+                o = slots[o.base][0]
+            if not (_same(o, node) or in_cone(node, o)):
+                return False
+        self._home[v] = node
+        return True
+
+    def _in_cone(self, node, o) -> bool:
+        """``o`` is reachable from ``node`` through ``self.kids`` (the
+        structural cone as far as this session visited it; an unvisited
+        object has no entry, so the answer may be a false negative, never
+        a false positive).  Only positive answers are memoized: the kids
+        of an object never change once it is visited, but more objects get
+        visited."""
+        kids = self.kids
+        k = kids.get(node)
+        if not k:
+            return False
+        if o in k:
+            return True
+        memo = self._cone_memo
+        key = (node, o)
+        if key in memo:
+            return True
+        seen = {node}
+        stack = list(k)
+        seen.update(stack)
+        while stack:
+            ks = kids.get(stack.pop())
+            if not ks:
+                continue
+            if o in ks:
+                memo[key] = True
+                return True
+            for x in ks:
+                if x not in seen:
+                    seen.add(x)
+                    stack.append(x)
+        return False
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit: int, assumptions: Iterable[int] = (),
@@ -724,6 +1012,13 @@ class Engine:
         ``sympy_api.ask`` answers a query under the assumption conjuncts
         connected to it only (see ``sympy_api._relevant``), once the whole
         set is known to be consistent; False: always under the whole set.
+    writeback : ``"provenance"``, ``"root-only"`` or ``"all"``
+        Which root facts of a session go to the context-free caches
+        (``Session.writeback``): ``"provenance"`` (default) those derived
+        from the fact's own node's structural cone only, ``"root-only"``
+        only the queried node's facts of an ``is_`` session, ``"all"``
+        every root literal (history-dependent; for measurement only).
+        A budget-truncated session writes nothing but under ``"all"``.
     """
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
@@ -731,7 +1026,12 @@ class Engine:
                  session_limit: int = 2000, keep_sessions: int = 16,
                  cone_search: bool = True, extensions=None, relations=None,
                  cone_threshold: int = 3, transfer: bool = True,
-                 uninterpreted: str = "free", relevance: bool = True):
+                 uninterpreted: str = "free", relevance: bool = True,
+                 writeback: str = "provenance"):
+        if writeback not in _WRITEBACK:
+            raise ValueError(f"writeback must be one of {_WRITEBACK}, not {writeback!r}")
+        #: Session.writeback's policy
+        self.writeback_policy = writeback
         clause_templates = None
         if templates is None:
             import importlib.util
@@ -789,7 +1089,12 @@ class Engine:
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "cone_searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
-                      "version_clears": 0, "dead_sessions": 0, "set_checks": 0}
+                      "version_clears": 0, "dead_sessions": 0, "set_checks": 0,
+                      "writeback_refused": 0, "budget_limited": 0}
+        #: whether the last query's session ran out of discovery budget
+        #: (its answer is sound but may be less definite than with a larger
+        #: budget, and it wrote nothing back)
+        self.last_budget_limited = False
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
@@ -1135,6 +1440,7 @@ class Engine:
             return None
         self.stats["queries"] += 1
         s = self._fresh_session()
+        s.subject = node
         s.ensure(node, {pred})
         lit = s.base[node] + PRED_INDEX[pred]
         r = s.query_literal(lit, search=False)
@@ -1145,8 +1451,19 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, search=True)
-        self.cache.put(node, pred, r)
+        self._put_result(s, self.cache, node, pred, r)
         return r
+
+    def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
+        """Cache the answer of a context-free query, unless its session ran
+        out of discovery budget (then it is not a function of the node
+        alone, but of the budget's cut; ``"all"`` caches it anyway)."""
+        self.last_budget_limited = s.truncated
+        if s.truncated:
+            self.stats["budget_limited"] += 1
+            if self.writeback_policy != "all":
+                return
+        cache.put(node, pred, r)
 
     def _is_custom(self, node: Node, pred: str) -> Optional[bool]:
         if self._epoch != _EPOCH[0]:
@@ -1166,7 +1483,7 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, search=True)
-        self.custom_cache.put(node, pred, r)
+        self._put_result(s, self.custom_cache, node, pred, r)
         return r
 
     # -- contextual -----------------------------------------------------------
@@ -1239,9 +1556,16 @@ class Engine:
                         # clause set (the selector guards the assumptions),
                         # so a repeat is answered by propagation
                         s._emit([-lits[0], q if r else -q])
+                self._note_budget(s)
                 return r
             r = s.query_literal(q, lits, search=True)
+        self._note_budget(s)
         return r
+
+    def _note_budget(self, s: Session) -> None:
+        self.last_budget_limited = s.truncated
+        if s.truncated:
+            self.stats["budget_limited"] += 1
 
     @staticmethod
     def _literal(s: Session, proposition) -> int:
