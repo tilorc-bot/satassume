@@ -227,6 +227,68 @@ on the shrunk cases seen.
   (fewer clauses, yet an inconsistency report): not a violation as I1
   is stated, so not reported.
 
+## Round 4 (the review's recommendations)
+
+Implemented, in the review's order: **1** unrelated blocks with verified
+witnesses (`Unrelated.block`, `harness/models.py`; 40 % of the I2 checks,
+`blocks` in the case, the kind `block` when conjuncts of the material
+share a symbol); **2** the consistency guard with the concrete-model path
+(`consistent_by`, `find_model`, `consistent_by` in the case,
+`GUARD_DISAGREEMENTS` logged); **3** the `in_scope` veto removed from
+`check_I2`/`check_I5` (`scope` is a tag; out-of-scope material back in
+the unrelated material at `OOS_RATE`); **4a** the proposition restated
+(`restate_prop`, the second I5 round of every query), **4b** equivalences
+under a declared fact (`_GIVEN`, `restate_given`, self-checked at
+declared values), **4c** the relation rewrites first and likely
+(`_shift_relation`: constant shift, shift by a side, positive scaling,
+negated-swapped); **6** the `boundary` preset, `reuse` and `whole`
+dropped from the nightly; **7** fingerprints, the family key, pinned
+cases matched once per run and never shrunk, any family at most twice
+per run; **8** three I2 variants and two I5 rounds per query.  Not
+implemented: **5** the classified constant pool (the constants are still
+`_FINITE_CONSTS`/`_REAL_CONSTS`; the model pool `harness.models.POOL` is
+classified, the generators' is not, and no case records a constant
+class).
+
+### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
+
+* **I2, out-of-scope material** (three pinned:
+  `I2-matrix-atom-conjunct-loses-definite`,
+  `I2-unregistered-predicate-conjunct-loses-definite`, `-loses-true`,
+  and `I2-compound-with-unregistered-predicate-loses-definite`):
+  `ask(False, Q.extended_real(j))` is False and None with
+  `Q.symmetric(M)` (a fresh 2x2 `MatrixSymbol`) added; `ask(Q.finite(j),
+  True)` (`j` declared) is True and None with an unregistered predicate on
+  a fresh symbol added; the same with the predicate inside an `Or`.  The
+  engine answers None for the whole set by its documented contract
+  (`sympy_api.out_of_scope`), and the invariant does not exempt it: a
+  proposition that is `False` is False under every consistent set.
+  Fingerprint `-` (no mechanism switch removes it).  Reported in every
+  slice before pinning; once per run now.
+* **I5, shifted relations** (two pinned: `I5-shifted-equality-self-
+  assumption-lost`, `I5-shifted-order-relation-self-assumption-lost`):
+  `ask(Q.eq(sqrt(r), g(sqrt(r)/c)), Q.eq(sqrt(r), g(sqrt(r)/c)))` is True
+  (the set is the proposition) and None with the set spelled
+  `Q.eq(-g(sqrt(r)/c), -sqrt(r))` or `Q.eq(sqrt(r) + 1, g(sqrt(r)/c) + 1)`;
+  `ask(Q.lt(T, z), Q.lt(T, z))` (`T` a sum with `1/ep` and
+  `sqrt(3)*pi/2`) is True and None with the set `Q.lt(T - 2, z - 2)`.
+  The relation glue does not normalise a shifted or negated relation to
+  the one asked (every config, including `default`; fingerprint `-`:
+  not transfer, not relevance, not the budget).  The rewrite branches of
+  round 3 sat behind several coin flips; recommendation 4c reached them
+  in the first slice.
+* **I5, the proposition** (pinned: `I5-proposition-negated-swapped-
+  boundary-budget`): `ask(Q.lt(T, z), Q.lt(T, z))` under `boundary`
+  (discovery budget 1) is True and None with the proposition spelled
+  `Q.lt(-z, -T)`; fingerprint `budget` (lifting the budget removes it).
+* **I2, blocks**: in the first runs every block finding was the
+  known relation family (`None -> False` with a block holding a relation,
+  fingerprint `norel`, the kinds `block, relation`); no new mechanism
+  yet.  The witnesses verify (57 of 60 blocks built; the rest discarded).
+* **Guard disagreements**: none logged in the runs (every reported case
+  was decided by the engine, `consistent_by: engine`); the model path
+  decided no reported case, so no report rests on it.
+
 ## Findings of round 3 (db45182)
 
 * **I5, `depends`** (pinned: `I5-implied-conjunct-rescues-budget`):
@@ -314,14 +376,18 @@ on the shrunk cases seen.
 * I5 cannot vary what SymPy canonicalises (`And` order, duplicates,
   nesting); an engine-level entry taking a list of conjuncts would.
 * I5's restatements are per conjunct; a restatement across conjuncts
-  (`positive(x) & integer(x)` as `prime(x) | composite(x) | eq(x, 1)`),
-  and restatements of the *proposition* (I4 is the only one) are not
-  generated.
-* I2's unrelated material never includes a `Q.is_true` over a
-  non-relational, a matrix or an unregistered predicate (documented out
-  of scope), nor a second application of a function of the query.
-* The consistency guard loses candidates under sets the engine cannot
-  decide (matrices, relations without a theory); a SymPy-side model
-  check (`ask` with `satisfiable`) could rescue some.
+  (`positive(x) & integer(x)` as `prime(x) | composite(x) | eq(x, 1)`)
+  is not generated.  The proposition is restated (round 4) but not
+  across the proposition and the set.
+* I2's unrelated material never includes a second application of a
+  function of the query; the blocks hold no undefined function (the
+  witness could not be verified) and no infinity.
+* The model path of the guard cannot read a matrix atom, a custom
+  predicate or an undefined function (None: inconclusive), so a
+  candidate whose set the engine refuses *and* holds one of these is
+  still not reported.
+* The fingerprint probes are six fixed switches; a family that two
+  mechanisms produce under the same switches has one key.
+* No classified constant pool in the generators (recommendation 5).
 * No Hypothesis variant of the checkers (the ddmin shrink is the only
   shrinking); no cross-process confirmation of the cases.
