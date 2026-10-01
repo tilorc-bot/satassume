@@ -190,41 +190,60 @@ def _extended_real_true_checked(expr: Any, assumptions: Any) -> bool | None:
 # (``_corrected_facts``).  Only weakening a fact, this removes answers, never
 # adds one.
 
-def _orthogonal_unitary_clauses() -> tuple[frozenset, frozenset]:
-    """The CNF clause of ``orthogonal -> unitary`` and of its real-only version."""
+# The same base states ``Implies(Q.orthogonal(x), Q.positive_definite(x))``
+# (issue #82), false even for real matrices: ``-eye(2)`` is orthogonal and not
+# positive definite.  It is dropped as well; ``Q.invertible`` (and so
+# ``Q.fullrank``, ``Q.square``, not ``Q.singular``), which ``Q.orthogonal``
+# reached through it and, for a complex matrix, nowhere else once
+# ``orthogonal -> unitary`` is weakened, is true of every orthogonal matrix
+# (``A.T*A == I``), so ``Implies(Q.orthogonal(x), Q.invertible(x))`` replaces it.
+
+def _orthogonal_corrections() -> list[tuple[Any, Any]]:
+    """The wrong implications from ``Q.orthogonal`` and their replacements."""
+    from sympy import Implies, Q, Symbol
+    x = Symbol('x')
+    return [(Implies(Q.orthogonal(x), Q.unitary(x)),
+             Implies(Q.orthogonal(x) & Q.real_elements(x), Q.unitary(x))),
+            (Implies(Q.orthogonal(x), Q.positive_definite(x)),
+             Implies(Q.orthogonal(x), Q.invertible(x)))]
+
+
+def _orthogonal_clauses() -> list[tuple[frozenset, frozenset]]:
+    """The CNF clauses of the wrong implications and of their replacements."""
     from sympy import Q
     from sympy.assumptions.cnf import Literal
-    wrong = frozenset((Literal(Q.orthogonal, True), Literal(Q.unitary, False)))
-    right = frozenset((Literal(Q.orthogonal, True), Literal(Q.real_elements, True),
-                       Literal(Q.unitary, False)))
-    return wrong, right
+    o = Literal(Q.orthogonal, True)
+    return [(frozenset((o, Literal(Q.unitary, False))),
+             frozenset((o, Literal(Q.real_elements, True), Literal(Q.unitary, False)))),
+            (frozenset((o, Literal(Q.positive_definite, False))),
+             frozenset((o, Literal(Q.invertible, False))))]
 
 
 def _corrected_clauses(clauses: Any) -> Any:
-    wrong, right = _orthogonal_unitary_clauses()
-    if wrong not in clauses:
+    pairs = [(w, r) for w, r in _orthogonal_clauses() if w in clauses]
+    if not pairs:
         return clauses
-    return type(clauses)((clauses - {wrong}) | {right})
+    return type(clauses)((clauses - {w for w, _ in pairs}) | {r for _, r in pairs})
 
 
 def _corrected_facts_dict(facts: dict) -> dict:
-    """``get_known_facts_dict()`` under the corrected implication.
+    """``get_known_facts_dict()`` under the corrected implications.
 
-    Weakening one implication from ``Q.orthogonal`` can only shrink the entry
+    Weakening implications from ``Q.orthogonal`` can only shrink the entry
     of ``Q.orthogonal`` (no other predicate implies ``Q.orthogonal`` alone), so
     each of its implied and rejected predicates is re-checked against the
     corrected matrix facts."""
-    from sympy import And, Implies, Not, Q, Symbol
+    from sympy import And, Not, Q, Symbol
     from sympy.assumptions.facts import get_matrix_facts
     from sympy.logic.inference import satisfiable
     x = Symbol('x')
-    wrong = Implies(Q.orthogonal(x), Q.unitary(x))
     matrix = get_matrix_facts(x)
-    if wrong not in matrix.args or Q.orthogonal not in facts:
+    pairs = [(w, r) for w, r in _orthogonal_corrections() if w in matrix.args]
+    if not pairs or Q.orthogonal not in facts:
         return facts
-    corrected = And(*[a for a in matrix.args if a != wrong],
-                    Implies(Q.orthogonal(x) & Q.real_elements(x), Q.unitary(x)),
-                    Q.orthogonal(x))
+    wrong = {w for w, _ in pairs}
+    corrected = And(*[a for a in matrix.args if a not in wrong],
+                    *[r for _, r in pairs], Q.orthogonal(x))
     implied, rejected = facts[Q.orthogonal]
     entry = ({p for p in implied if satisfiable(And(corrected, Not(p(x)))) is False},
              {p for p in rejected if satisfiable(And(corrected, p(x))) is False})
