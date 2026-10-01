@@ -184,6 +184,34 @@ generators avoid producing such sets; the filter is the safety net).
   (fewer clauses, yet an inconsistency report): not a violation as I1
   is stated, so not reported.
 
+## Findings of round 3 (db45182)
+
+* **I5, `depends`** (pinned: `I5-implied-conjunct-rescues-budget`):
+  `ask(Q.real(m - 2 + GoldenRatio), Q.transcendental(m) & ~Q.extended_negative(T))`
+  (`m` declared negative, `T` a large term) is None under the `budget`
+  config and True once `Q.finite(m)`, which `Q.transcendental(m)` implies
+  (and the declaration too), is added: the discovery budget runs out
+  before the implied fact is found; the restatement that adds an implied
+  conjunct reaches it.  The same mechanism as the I3 budget case, through
+  an equivalent restatement.
+* **I2, `depends`** (pinned: `I2-closed-relation-conjunct-loses-definite`;
+  `kinds: closed`): `ask(Q.ne(m, d), Q.zero(d))` is True and None with
+  the closed fact `~Q.gt(-2/3, 2.5)` added (no symbol at all in the
+  conjunct).  The round-2 family of the unrelated relation, reached with
+  a relation over constants only; the nightly reports each `kinds` once
+  per slice (`closed`, `relation`, `compound`, `ext:...` seen in 2.5
+  minutes).
+* **Registration only, no change**: 3,080 checks of ten registration-only
+  extensions (vocabulary handlers returning None on `Symbol`, `Basic`,
+  `AppliedUndef`, a vocabulary handler on a fresh function class, fresh
+  predicates on `Basic`, `Symbol`, `Integer`, `Add`, a polyadic one, a
+  `chain`) over 7 profiles' queries and their derived queries: no answer
+  changed.  The registry epoch alone does not move a fresh engine's
+  answer; the asserted extension families are the ones reported.
+* I2 `crash`: every engine error seen with the widened material was the
+  harness's own polyadic handler (`P` takes an `Args` tuple); fixed and
+  guarded (`HANDLER_ERRORS`).  No engine crash in 1,900 nightly queries.
+
 ## Not violations (do not report)
 
 * A set with a *matrix* atom or an *unregistered custom* predicate:
@@ -224,6 +252,13 @@ generators avoid producing such sets; the filter is the safety net).
   tens of seconds); the hash-seed dimension is a 4 % sample only.
 * I5 cannot vary what SymPy canonicalises (`And` order, duplicates,
   nesting); an engine-level entry taking a list of conjuncts would.
+* I5's restatements are per conjunct; a restatement across conjuncts
+  (`positive(x) & integer(x)` as `prime(x) | composite(x) | eq(x, 1)`),
+  and restatements of the *proposition* (I4 is the only one) are not
+  generated.
+* I2's unrelated material never includes a `Q.is_true` over a
+  non-relational, a matrix or an unregistered predicate (documented out
+  of scope), nor a second application of a function of the query.
 * The consistency guard loses candidates under sets the engine cannot
   decide (matrices, relations without a theory); a SymPy-side model
   check (`ask` with `satisfiable`) could rescue some.
