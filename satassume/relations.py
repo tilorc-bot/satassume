@@ -199,8 +199,9 @@ the glue ``p`` and ``a`` themselves call for:
   current query's bounds on the sides of an atom an earlier query made
   would reach EUF and predicate transfer;
 * every lemma of predicate transfer carries ``xfer_sel``
-  (``TransferTheory.guard``); assumed iff ``p`` or ``a`` holds a relation
-  atom, the condition on which a fresh session engages transfer.  Each
+  (``TransferTheory.guard``); assumed iff the relation atoms of ``p`` and
+  ``a`` make an equality (:meth:`Relations.wants_transfer`), the condition
+  on which a fresh session engages transfer.  Each
   candidate term but a rational number takes part only while its enable
   variables say so (``TransferTheory.switch``): all its predicates while
   it is a side of a user or trichotomy equality the query activates, or a
@@ -208,6 +209,10 @@ the glue ``p`` and ``a`` themselves call for:
   while it is a link-only side (see :meth:`Relations.sync_transfer`).  A
   structural number argument of a vocabulary atom (``sin(2)``) has a
   selector of its own for that (``num_sel``).
+
+When ``a`` holds a relation atom, its own selectors are on in every
+query of its session: they are root units there (``Session._set_glue``),
+and a query assumes only the selectors it adds.
 
 The remaining clauses of an atom (clauses 1 and 2 above, and the twins of
 an order atom, which LRA alone reads) constrain the atom given its sides,
@@ -552,6 +557,8 @@ class Relations:
         #: the selector guarding every lemma of predicate transfer (None
         #: until transfer is engaged, see _engage_transfer)
         self.xfer_sel: Optional[int] = None
+        #: order atom -> its reverse, for the pairs _trichotomy related
+        self._tri_of: dict = {}
         #: equality atoms that got their user-atom clauses (_eq_links): the
         #: first query mentioning the atom runs them, whoever made it
         self._user_eq: set = set()
@@ -589,6 +596,7 @@ class Relations:
         self._xslot = 1                   # cursor into table.slots
         self._xterm = 0                   # cursor into the adapter's atom sides
         self._xnsides = -1                # _xside state seen by sync_transfer
+        self._xsides_n = 0                # changes to _xside so far
         self._xpart: set = set()          # link-only sides (polar registered)
         self._xheads: dict = {}           # (func, nargs) -> EUF terms
         self._xcounted: set = set()       # the terms in _xheads
@@ -624,11 +632,11 @@ class Relations:
             elif st is None:
                 unlinked.add(a)
         for a in user:
-            # transfer is engaged by any relation atom of a user formula
-            # (an equality may be derived from inequalities: F8, W2B4b),
-            # and switched on per query (Session.assumption_lits)
-            self._want_transfer = True
             if a.pred == "eq":
+                # transfer is engaged by an equality of a user formula (or
+                # a _trichotomy pair, W2B4b) and switched on per query
+                # (Session.assumption_lits, Relations.wants_transfer)
+                self._want_transfer = True
                 self._note_sides(a, 2)
                 var = s.table.custom.get(a)
                 if var is not None and a not in self._user_eq:
@@ -695,7 +703,7 @@ class Relations:
         s = self.session
         sel = self.num_sel[e] = s.table.aux()
         s.solver.ensure_vars(sel)
-        self._tsource(e, _IE, [-sel], False)
+        self._tsource(e, _IE, [-sel])
         self._xextra.append(e)
 
     def _link_later(self, e) -> None:
@@ -892,8 +900,12 @@ class Relations:
         eq = self._atom_var(eqa)
         # its sides are transfer candidates like a user equality's (with a
         # number side, x <= 2 <= x gives x every fact of 2), and its
-        # theories see it, in the queries that mention both atoms
+        # theories see it, in the queries that mention both atoms; those
+        # switch transfer on as an equality does (wants_transfer)
         self._note_sides(eqa, 2)
+        self._tri_of[atom] = rev
+        self._tri_of[rev] = atom
+        self._want_transfer = True
         both = [-self._atom_selector(atom), -self._atom_selector(rev)]
         self._add_role(eqa, both, "tri")
         clause = both + [var, rvar, eq]
@@ -951,29 +963,28 @@ class Relations:
             for t, guard in twins:
                 emit(guard + g + [-var, t])
                 emit(guard + g + [var, -t])
+        tsource = self._tsource
         if kind == "link":
             for u in lterms:
-                self._tsource(u, _IL, g, False)
+                tsource(u, _IL, g)
             for u in eterms:
-                self._tsource(u, _IE, g, False)
+                tsource(u, _IE, g)
         if atom.pred != "eq" or not eterms or kind == "iface":
             return
+        # transfer candidacy: the variables are allocated when a candidate
+        # is registered (_xswitch) or a congruence clause needs them
         if kind == "link":
-            self._tsource(self._link_of[atom], _SD, g, True)
-            from sympy import S
-            self._tsource(S.Zero, _SD, g, False)
+            tsource(self._link_of[atom], _SD, g)
+            tsource(atom.expr[0] if _is_number(atom.expr[0]) else atom.expr[1], _SD, g)
         else:
-            from sympy import Rational
             for e in atom.expr:
-                if isinstance(e, Rational):
-                    self._tsource(e, _SD, g, False)
-                else:
-                    self._tsource(e, _EN, g, True)
-                    self._tsource(e, _SD, g, True)
+                if not getattr(e, "is_Rational", False):
+                    tsource(e, _EN, g)
+                tsource(e, _SD, g)
 
-    def _tsource(self, u, k: int, g: list, alloc: bool) -> None:
+    def _tsource(self, u, k: int, g: list) -> None:
         """``g -> v`` for the variable ``v`` of kind ``k`` of term ``u``
-        (allocated now if ``alloc``, else once it is needed)."""
+        (now if it exists, else once it is allocated, :meth:`_tvar`)."""
         key = (u, k)
         lst = self._tsrc.get(key)
         if lst is None:
@@ -981,10 +992,11 @@ class Relations:
         else:
             lst.append(g)
         tv = self._tv.get(u)
-        if tv is not None and tv[k]:
-            self.session._emit(g + [tv[k]])
-        elif alloc or (tv is not None and tv[_MC] and k in (_SD, _EN)):
-            self._tvar(u, k)
+        if tv is not None:
+            if tv[k]:
+                self.session._emit(g + [tv[k]])
+            elif tv[_MC] and k < _MC:
+                self._tvar(u, k)              # links itself to MC
 
     def _tvar(self, u, k: int) -> int:
         """The variable of kind ``k`` of term ``u``, true exactly in the
@@ -1243,14 +1255,34 @@ class Relations:
                 out.extend(e for e in a.expr if not _is_number(e))
         return out
 
+    def wants_transfer(self, atoms) -> bool:
+        """Predicate transfer acts in a query whose relation atoms
+        (``atoms``, of the proposition and the assumptions) make an
+        equality: an ``eq`` atom (``ne`` is its negation), or an order atom
+        and its reverse that :meth:`_trichotomy` related (``Q.le(x, y) &
+        Q.ge(x, y)`` answers as ``Q.eq(x, y)``, W2B4b).  The same atoms
+        engage it (:meth:`process`, :meth:`_trichotomy`), so a fresh
+        session has it exactly then; a function of the atoms."""
+        tri = self._tri_of
+        for a in atoms:
+            if a.pred == "eq":
+                return True
+            if tri and a in tri and tri[a] in atoms:
+                return True
+        return False
+
     def selectors_for(self, f) -> list:
         """The selectors ``f`` activates once links are on: those of the
         links of its terms and of its relation atoms' clauses to unary
         atoms, in allocation order."""
+        return self.selectors_of(atoms_of(f))
+
+    def selectors_of(self, atoms) -> list:
+        """:meth:`selectors_for` a formula whose atoms are ``atoms``."""
         sel, nsel, status = self.link_sel, self.num_sel, self.status
         out = set()
         asel = self.atom_sel
-        for a in atoms_of(f):
+        for a in atoms:
             if a.pred in PRED_INDEX:
                 e = a.expr
                 if e in sel:
@@ -1373,6 +1405,7 @@ class Relations:
             lv = 2 if _is_number(e) else level
             if xs.get(e, 0) < lv:
                 xs[e] = lv
+                self._xsides_n += 1
 
     def _engage_transfer(self) -> None:
         s = self.session
@@ -1506,7 +1539,7 @@ class Relations:
         slots = s.table.slots
         xside = self._xside
         i, n = self._xslot, len(slots)
-        nside = len(xside) + sum(xside.values())
+        nside = self._xsides_n
         if i >= n and nside == self._xnsides and self._xhn == self._xhseen:
             return
         from sympy import Basic, Rational, nan

@@ -106,8 +106,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from .compile import VarTable, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
 from .formula import P, atoms_of
-from .relations import (RELATION_ATOMS, Relations, Uninterpreted, glue_objects,
-                        link_objects)
+from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
+                        glue_objects, link_objects)
 from .rules import NPRED, PRED_INDEX, PREDICATES, RULE_CLAUSES, RULE_INTERNAL
 from .solver import BOTTOM, BlockOwner, Solver
 
@@ -282,6 +282,14 @@ class Session:
         #: the stable prefix of the last :meth:`assumption_lits`: the
         #: assumption literals the solver keeps between queries
         self.n_hold = 0
+        #: group selectors of :meth:`assumption_lits` (key -> [var, implied
+        #: selectors, stamp]; key True: the set's glue at the root,
+        #: :meth:`_set_glue`)
+        self._groups: Dict[Any, list] = {}
+        #: the atoms of the assumption formula and its relation atoms (None:
+        #: not computed yet)
+        self._a_all: Optional[tuple] = None
+        self._a_atoms: frozenset = frozenset()
         #: relation atoms and their theories (satassume.relations); created
         #: at the first user formula when the engine has relation support
         self.relations: Optional[Relations] = None
@@ -988,6 +996,7 @@ class Session:
         """Turn a formula into solver assumption literals: its clauses are
         guarded by a fresh selector variable ``s`` and ``s`` is assumed."""
         self.assumption_formula = f
+        self._a_all = None
         self._ensure_atoms(f)
         s = self.table.aux()
         self.sel = s
@@ -1008,8 +1017,10 @@ class Session:
     def assumption_lits(self, prop=None) -> List[int]:
         """The solver assumptions of a query ``prop`` (None: the set's own
         check) under this session's assumption formula: the formula's
-        selector, then the selectors the set itself activates, then those
-        ``prop`` activates.  ``n_hold`` is set to the length of the stable
+        selector, then a group selector for the glue the set activates
+        (none when the set holds a relation atom: that glue is then on at
+        the root, :meth:`_set_glue`), then the selectors ``prop`` activates
+        beyond the set's.  ``n_hold`` is set to the length of the stable
         prefix (everything that depends on the set only), whose levels the
         solver keeps between queries (``Solver.implied(..., hold=)``)."""
         lits = [self.sel] if self.sel else []
@@ -1017,25 +1028,157 @@ class Session:
         rel = self.relations
         if rel is None:
             return lits
-        a = self.assumption_formula
-        a_rel = a is not None and _has_relation(a)
-        p_rel = prop is not None and _has_relation(prop)
-        if not (a_rel or p_rel or _links_wanted(a, prop)):
+        a_all = self._a_all
+        if a_all is None:
+            a = self.assumption_formula
+            a_all = self._a_all = atoms_of(a) if a is not None else ()
+            self._a_atoms = frozenset(x for x in a_all if x.pred in RELATION_ATOMS)
+        a_atoms = self._a_atoms
+        a_rel = bool(a_atoms)
+        p_all = atoms_of(prop) if prop is not None else ()
+        p_atoms = [x for x in p_all if x.pred in RELATION_ATOMS]
+        p_rel = bool(p_atoms)
+        if not (a_rel or p_rel or _links_wanted(a_all, p_all)):
             # no relation and no affine pair (_affine_links): the glue an
             # earlier query made stays switched off
             return lits
-        sa = rel.selectors_for(a) if a is not None else []
-        lits.extend(sa)
-        xs = rel.xfer_sel
-        if xs is not None and a_rel:
-            lits.append(xs)
+        a_x = a_rel and rel.wants_transfer(a_atoms)
+        if a_rel:
+            # The set's own glue is fixed at the root.  This session
+            # answers only queries under ``a`` (Engine._context_session
+            # keys it by the set), and with a relation atom in ``a`` the
+            # early return above never fires: the set's selectors
+            # (Relations.selectors_for(a), and transfer's when ``a``
+            # itself makes an equality) are assumed by every query the
+            # session ever answers, its own check included.  Glue that is
+            # on in every query is not history: a fresh session for
+            # (p, a) has Act(a) | Act(p); this one has Act(a) at the root
+            # and Act(p) - Act(a) switched on by the query's selectors
+            # below, and the switched-off glue of earlier queries is inert
+            # (I3, as in the module docstring of satassume.relations).
+            # What these selectors guard is a function of ``a`` alone:
+            # the links of a's terms (made while ``a`` was processed,
+            # their integrality, twins and share sources included), the
+            # clauses of a's equality atoms, a's numbers' congruence
+            # sources and transfer.  Glue a query made with an atom or
+            # term of ``a`` keeps a selector of the query: a _trichotomy
+            # pair with one atom of the query is guarded by both atoms'
+            # selectors, an interface equality (_share) by the share
+            # variables of both terms, which the query's links imply.  A
+            # root unit only differs from an assumption in what the
+            # solver keeps: it survives restarts and the held levels, so
+            # transfer is not switched on again (a rescan) per level.  The
+            # units are owned by no node (writeback never takes a fact
+            # they derive; contextual sessions write nothing by default).
+            seen = self._set_glue(a_all, a_x)
+        else:
+            # Without a relation atom in ``a`` the set's links are on only
+            # in the queries that call for them (``p`` holds a relation or
+            # makes an affine pair): one group selector stands for them,
+            # so the solver assumes them at one level (_group_sel); assumed
+            # or not, it is exactly as if its members were
+            seen = ()
+            if a_all:
+                ga = self._group_sel(None, a_all)
+                if ga:
+                    lits.append(ga)
+                    seen = self._groups[None][1]
         self.n_hold = len(lits)             # the stable prefix
-        if prop is not None:
-            seen = set(sa)
-            lits.extend(x for x in rel.selectors_for(prop) if x not in seen)
-            if xs is not None and p_rel and not a_rel:
+        if p_all:
+            # the query's delta: its selectors the set's glue does not hold
+            lits.extend(x for x in rel.selectors_of(p_all) if x not in seen)
+            xs = rel.xfer_sel
+            if xs is not None and p_rel and not a_x and rel.wants_transfer(
+                    a_atoms.union(p_atoms)):
                 lits.append(xs)
         return lits
+
+    def _set_glue(self, a_all, xfer: bool) -> set:
+        """Assert as root units the selectors of the glue of the assumption
+        formula, whose atoms are ``a_all`` (``Relations.selectors_of`` and,
+        if ``xfer``, transfer's), that are not yet; return the set of them.
+        Only for a formula with a relation atom, whose glue every query of
+        the session assumes (see :meth:`assumption_lits`).  Recomputed only
+        when a selector the formula may still get was allocated since: of
+        a term of it not linked yet, of a relation atom of it with none
+        yet (an order atom gets one when a query brings its reverse,
+        Relations._trichotomy), or transfer's."""
+        rel = self.relations
+        g = self._groups.get(True)
+        if g is None:
+            # [selectors, stamp, a term may still get one, an atom may]
+            g = self._groups[True] = [set(), None, True, True]
+        have = g[0]
+        stamp = (len(rel.link_sel) + len(rel.num_sel) if g[2] else -1,
+                 len(rel.atom_sel) if g[3] else -1,
+                 rel.xfer_sel if xfer else None)
+        if stamp == g[1]:
+            return have
+        want = set(rel.selectors_of(a_all))
+        if xfer and rel.xfer_sel is not None:
+            want.add(rel.xfer_sel)
+        new = want - have
+        if new:
+            solver = self.solver
+            prev = solver.owner
+            solver.owner = BOTTOM            # glue: no node's (writeback)
+            try:
+                for x in sorted(new):
+                    self._emit([x])
+            finally:
+                solver.owner = prev
+            have |= new
+        lsel, nsel, asel, status = rel.link_sel, rel.num_sel, rel.atom_sel, rel.status
+        tp = ap = False
+        for x in a_all:
+            if x.pred in PRED_INDEX:
+                e = x.expr
+                if e not in lsel and e not in nsel and not _is_number(e):
+                    tp = True
+            elif x.pred in RELATION_ATOMS:
+                if x not in asel:
+                    ap = True
+                if status.get(x) is not False and any(
+                        e not in lsel and not _is_number(e) for e in x.expr):
+                    tp = True
+        g[2], g[3] = tp, ap
+        g[1] = (len(lsel) + len(nsel) if tp else -1, len(asel) if ap else -1,
+                rel.xfer_sel if xfer else None)
+        return have
+
+    def _group_sel(self, key, atoms) -> int:
+        """A selector that implies the selectors a formula with the atoms
+        ``atoms`` activates (``Relations.selectors_of``): one per session
+        and ``key`` (None: the assumption formula), its implications
+        extended as selectors are allocated; 0 if there is none.  The
+        members are recomputed only when the session allocated selectors
+        since."""
+        rel = self.relations
+        groups = self._groups
+        g = groups.get(key)
+        stamp = (len(rel.link_sel), len(rel.atom_sel), len(rel.num_sel), rel.xfer_sel)
+        if g is not None and g[2] == stamp:
+            return g[0]
+        want = set(rel.selectors_of(atoms))
+        if g is None:
+            if not want:
+                groups[key] = [0, set(), stamp]
+                return 0
+            v = self.table.aux()
+            self.solver.ensure_vars(v)
+            g = groups[key] = [v, set(), stamp]
+        elif not g[0]:
+            if not want:
+                g[2] = stamp
+                return 0
+            g[0] = self.table.aux()
+            self.solver.ensure_vars(g[0])
+        v, have = g[0], g[1]
+        for x in sorted(want - have):
+            self._emit([-v, x])
+        have |= want
+        g[2] = stamp
+        return v
 
     def literal_of(self, f) -> int:
         lit = self.literals.get(f)
@@ -2264,22 +2407,15 @@ _NEIGH: Dict[int, frozenset] = {}
 _WANT: Dict[frozenset, frozenset] = {}
 
 
-def _has_relation(f) -> bool:
-    """``f`` holds a relation atom: the queries whose glue (links, the
-    relation atoms' clauses to unary atoms, predicate transfer) is on."""
-    return any(a.pred in RELATION_ATOMS for a in atoms_of(f))
-
-
-def _links_wanted(a, p) -> bool:
+def _links_wanted(a_all, p_all) -> bool:
     """Links are also on without a relation atom when two sign atoms of
-    ``a`` and ``p`` are on different sums sharing a symbol: the condition
-    on which :meth:`Session._affine_links` starts the relation machinery
-    (a function of the two formulas, whatever the session holds)."""
+    ``a`` and ``p`` (whose atoms are ``a_all`` and ``p_all``) are on
+    different sums sharing a symbol: the condition on which
+    :meth:`Session._affine_links` starts the relation machinery (a
+    function of the two formulas, whatever the session holds)."""
     sums = []
-    for f in (a, p):
-        if f is None:
-            continue
-        for at in atoms_of(f):
+    for atoms in (a_all, p_all):
+        for at in atoms:
             e = at.expr
             if at.pred in _SIGN_PREDS and getattr(e, "is_Add", False) and e not in sums:
                 sums.append(e)

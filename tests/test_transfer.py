@@ -68,11 +68,15 @@ def test_reused_session_and_cache_stay_contextual():
     assert ask_with(e, Q.prime(x), Q.eq(x, 4)) is False
 
 
-def test_no_relation_no_transfer():
-    """Sessions without a relation atom (only sign atoms on sums sharing a
-    symbol, which start the relation glue) never engage the transfer
-    theory; any relation atom of a user formula does (an equality can be
-    derived from inequalities, W2B4b), and its queries switch it on."""
+def test_transfer_needs_an_equality():
+    """Sessions without an equality never engage the transfer theory: not
+    with sign atoms on sums sharing a symbol (which start the relation
+    glue), nor with order atoms alone; an equality of a user formula does,
+    and so do an order atom and its reverse (they give the equality,
+    Relations._trichotomy, W2B4b).  Its queries switch it on
+    (Relations.wants_transfer)."""
+    def engaged(e):
+        return any(s.xfer is not None for s, _ in e._context_sessions.values())
     e = eng()
     ask_with(e, Q.positive(x + 1), Q.positive(x - 1) & Q.negative(1 - x))
     for s, _ in e._context_sessions.values():
@@ -80,7 +84,12 @@ def test_no_relation_no_transfer():
         assert s.xfer is None
         assert not any(type(t).__name__ == "TransferTheory" for t in s.solver.theories())
     ask_with(e, Q.positive(x), Q.lt(0, x) & Q.real(x))
-    assert any(s.xfer is not None for s, _ in e._context_sessions.values())
+    assert not engaged(e)
+    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.eq(x, y))
+    assert engaged(e)
+    e = eng()
+    ask_with(e, Q.positive(x), Q.le(x, y) & Q.ge(x, y))
+    assert engaged(e)
 
 
 def test_inequalities_restate_an_equality():

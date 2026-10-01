@@ -12,6 +12,7 @@ from sympy import Function, Q, Rational, Symbol, sin, symbols
 
 import satassume.engine as engine_mod
 from satassume.engine import DictCache, Engine
+from satassume.formula import P
 from satassume.sympy_api import ask
 
 a, b, c, u = symbols("a b c u")
@@ -51,6 +52,13 @@ CASES = {
                                 [Q.positive(f(u))], Q.prime(f(a))),
     # a number node an earlier query mentioned is no congruent partner
     "number-partner": (Q.eq(a, 2), [Q.positive(sin(2))], Q.positive(sin(a))),
+    # the set's glue is at the root (Session._set_glue), but a _trichotomy
+    # pair of a set atom (a <= b) and a query's (a >= b) keeps the query
+    # atom's selector: a = b only in the query that says a >= b
+    "tri-pair-set-and-query": (Q.le(a, b) & Q.prime(a) & Q.real(b), [Q.ge(a, b)],
+                               Q.prime(b)),
+    "tri-pair-set-and-query-eq": (Q.le(a, b) & Q.ge(a, 2) & Q.le(a, 2), [Q.ge(a, b)],
+                                  Q.prime(b)),
 }
 
 CONFIGS = {"default": {}, "notransfer": {"transfer": False}, "whole": {"relevance": False}}
@@ -94,3 +102,20 @@ def test_capability_kept():
     assert ask(Q.positive(sin(a)), Q.eq(a, 2) & Q.positive(sin(2)),
                Engine(cache=DictCache(), relevance=False)) is True
     assert ask(Q.prime(f(a)), Q.eq(f(a), b) & Q.eq(b, 2), e) is True
+
+
+def test_set_glue_at_the_root():
+    """The glue of a set with a relation atom is on in every query of its
+    session, so its selectors are root units (Session._set_glue); a
+    query's own glue stays switched (assumed per query)."""
+    e = Engine(cache=DictCache(), relevance=False)
+    s = Q.gt(a, 1) & Q.lt(a, 3) & Q.eq(c, 2)
+    assert ask(Q.positive(b), s, e) is None
+    (sess, _), = e._context_sessions.values()
+    rel, root = sess.relations, set(sess.solver.root_trail())
+    for x in (rel.link_sel[a], rel.link_sel[c], rel.xfer_sel):
+        assert x in root
+    sb = rel.link_sel[b]
+    assert sb not in root and -sb not in root
+    assert sess.assumption_lits(P("positive", b)) == [sess.sel, sb]
+    assert sess.assumption_lits(P("positive", a)) == [sess.sel]

@@ -141,12 +141,13 @@ def test_verdict_keeps_no_session():
     f = _formula(Q.positive(x) & Q.gt(y, 1), True)
     eng = Engine(cache=DictCache())
     assert eng.verdict(f) is CONSISTENT
-    # besides the set's session, the verdict ran context-free Engine.is_
-    # queries: the facts of the number 0 for predicate transfer, which the
-    # relation engages (#53 stage 5); they are cached, so the query's
-    # session below is the only new one
+    # the set's session is the only one: an order atom alone does not
+    # engage predicate transfer (an equality or a _trichotomy pair does,
+    # Relations.wants_transfer), so no context-free Engine.is_ query for
+    # the facts of a number side runs.  The point: no context session is
+    # kept
     n = eng.stats["sessions"]
-    assert n > 1 and not eng._context_sessions
+    assert n == 1 and not eng._context_sessions
     s, _ = eng._context_session(f)
     assert eng.stats["sessions"] == n + 1 and s.verdict is CONSISTENT
     assert len(eng._context_sessions) == 1
