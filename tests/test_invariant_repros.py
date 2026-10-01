@@ -47,9 +47,6 @@ def _xfail(reason, **kw):
     return pytest.mark.xfail(strict=True, reason=reason, **kw)
 
 
-@_xfail("K1 (I2, depends): an unrelated relation turns on LRA/EUF "
-        "(None -> definite); sympy_api.py _relevant (RELATIONAL 'whole') "
-        "and session setup enabling theories only when a relation is present")
 def test_k1_unrelated_relation_enables_theories():
     n, u, v = symbols('n u v')
     a = Q.integer(n) & Q.negative(n - 1)
@@ -111,9 +108,6 @@ def test_k4_constant_prop_shortcut_vs_restated():
     assert ask(Q.positive(2), a, Engine()) == ask(restated, a, Engine())
 
 
-@_xfail("K5 (I2, depends): an unrelated undecidable constant makes LRA give "
-        "up; lra.py LRATheory._give_up (one give-up per theory, not per "
-        "component)")
 def test_k5_unrelated_undecidable_constant_kills_lra():
     x, y = symbols('x y')
     c = cos(1)**2 + sin(1)**2 - 1
@@ -254,9 +248,6 @@ def test_w2b3_unrelated_integer_block_exhausts_branch_budget():
             == ask(Q.ge(x, y + 1), a & b, Engine()))
 
 
-@_xfail("W2B3b (I2, depends): an unrelated integer block exhausts the shared "
-        "branch budget; lra.py LRATheory._check/_branch (one BRANCH_BUDGET "
-        "per check, not per component)")
 def test_w2b3b_unrelated_integer_blocks_exhaust_branch_budget():
     x, y, u0, v0, u1, v1 = symbols('x y u0 v0 u1 v1', integer=True)
     a = Q.gt(x, y + Rational(1, 3)) & Q.ge(y, 0) & Q.le(y, 5)
@@ -266,9 +257,6 @@ def test_w2b3b_unrelated_integer_blocks_exhaust_branch_budget():
             == ask(Q.ge(x, y + 1), a & b, Engine()))
 
 
-@_xfail("W2B3c (I2, depends): an unrelated integer block exhausts the shared "
-        "branch budget; lra.py LRATheory._check/_branch (one BRANCH_BUDGET "
-        "per check, not per component)")
 def test_w2b3c_unrelated_bounded_integer_blocks_exhaust_branch_budget():
     x, y = symbols('x y', integer=True)
     a = Q.gt(x, y + Rational(1, 3)) & Q.ge(y, 0) & Q.le(y, 5)
@@ -279,9 +267,6 @@ def test_w2b3c_unrelated_bounded_integer_blocks_exhaust_branch_budget():
             == ask(Q.ge(x, y + 1), a & b, Engine()))
 
 
-@_xfail("W2B4 (I2, depends): an unrelated equality engages predicate "
-        "transfer for the whole session; relations.py "
-        "Relations._engage_transfer/_want_transfer")
 def test_w2b4_unrelated_equality_engages_transfer():
     x, y = symbols('x y', real=True)
     u, v = symbols('u v')

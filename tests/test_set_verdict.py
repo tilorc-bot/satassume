@@ -44,17 +44,23 @@ def test_issue73_raises_in_one_engine_in_every_order(order):
 
 def test_unknown_verdict_does_not_raise():
     # LRA gives up on the undecidable constant (K5): no conflict found, so
-    # the set is not inconsistent and its queries answer
+    # the set is not inconsistent and its queries answer (asked under the
+    # whole set: with relevance, x's component answers alone, see below)
+    x, a = _k5()
+    eng = Engine(relevance=False)
+    assert ask(Q.gt(x, 0), a, eng) is None
+    assert ask(Q.gt(x, 0), a, eng) is None
+
+
+def test_k5_set_answers_under_its_part():
+    # the whole set's verdict is unknown, which does not raise, and x's
+    # component answers as it does alone (#53 R2)
+    from satassume.sympy_api import _formula
     x, a = _k5()
     eng = Engine()
-    assert ask(Q.gt(x, 0), a, eng) is None
-    assert ask(Q.gt(x, 0), a, eng) is None
-
-
-@pytest.mark.xfail(strict=True, reason="needs R2")
-def test_k5_set_answers_under_its_part():
-    x, a = _k5()
-    assert ask(Q.gt(x, 0), a, Engine()) is True
+    assert ask(Q.gt(x, 0), a, eng) is True
+    assert eng.verdict(_formula(a, True, True)) is UNKNOWN
+    assert ask(Q.gt(x, 0), Q.gt(x, 1), Engine()) is True
 
 
 def test_verdicts():
@@ -69,7 +75,8 @@ def test_verdicts():
 
 def test_one_set_check_for_many_queries():
     x, y, z = symbols('x y z')
-    a = Q.positive(x) & Q.negative(y) & Q.gt(z, 1)
+    # one component (every query is answered under the whole set)
+    a = Q.positive(x) & Q.negative(y) & Q.gt(z, 1) & Q.lt(y, x) & Q.lt(x, z)
     eng = Engine()
     for p in (Q.positive(x), Q.negative(y), Q.positive(z), Q.real(x*y),
               Q.negative(x*y), Q.gt(z, 0), Q.zero(x + z), Q.positive(x + z)):
