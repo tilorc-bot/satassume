@@ -201,3 +201,21 @@ def test_shared_subterm_against_models():
     for p in _F_EQS:
         for a, b in itertools.combinations(_F_UNARY, 2):
             _check(p, [a, b], eng, _F_POINTS)
+
+
+def test_glue_made_equality_gets_user_clauses_when_asked():
+    """S1 (#53 stage 5): ``ask(Q.real(w), S)`` makes ``eq(q, w)`` as an
+    interface equality (glue) in the session of ``S``; asking that atom
+    afterwards must give it the user-atom clauses (``nonzero(q - w) ->
+    ~eq(q, w)``, :meth:`Relations._eq_links`) as a fresh session does, so
+    the reused session answers False like a fresh one (``w`` is
+    irrational, ``q`` rational)."""
+    yr = symbols("y", real=True)
+    q = symbols("q", rational=True)
+    m = symbols("m", nonnegative=True, integer=True)
+    w = symbols("w", nonzero=True)
+    s = Q.eq(yr, q) & Q.irrational(-1 / (m * w * yr))
+    e = Engine(cache=DictCache(), transfer=False)
+    ask(Q.real(w), s, e)
+    assert ask(Q.eq(q, w), s, e) is False
+    assert ask(Q.eq(q, w), s, Engine(cache=DictCache(), transfer=False)) is False

@@ -266,9 +266,6 @@ def test_w2b4_unrelated_equality_engages_transfer():
             == ask(Q.positive(f(x)), a & Q.eq(u, v), Engine()))
 
 
-@_xfail("W2B4b (I5, depends): an equality LRA derives from two inequalities "
-        "(x <= y & x >= y vs x = y) does not engage transfer; relations.py "
-        "Relations._want_transfer/_engage_transfer (only a syntactic eq atom)")
 def test_w2b4b_derived_equality_does_not_engage_transfer():
     x, y = symbols('x y')
     f = Function('f')

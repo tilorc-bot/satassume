@@ -67,17 +67,31 @@ def test_reused_session_and_cache_stay_contextual():
     assert ask_with(e, Q.prime(x), Q.eq(x, 4)) is False
 
 
-def test_no_equality_no_transfer():
-    """Sessions without an equality atom (links' eq(e, 0) do not count)
-    never engage the transfer theory."""
+def test_no_relation_no_transfer():
+    """Sessions without a relation atom (only sign atoms on sums sharing a
+    symbol, which start the relation glue) never engage the transfer
+    theory; any relation atom of a user formula does (an equality can be
+    derived from inequalities, W2B4b), and its queries switch it on."""
     e = eng()
-    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.real(x))
-    ask_with(e, Q.positive(x + 1), Q.positive(x))
+    ask_with(e, Q.positive(x + 1), Q.positive(x - 1) & Q.negative(1 - x))
     for s, _ in e._context_sessions.values():
+        assert s.relations is not None
         assert s.xfer is None
         assert not any(type(t).__name__ == "TransferTheory" for t in s.solver.theories())
-    ask_with(e, Q.positive(y), Q.eq(x, y) & Q.positive(x))
+    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.real(x))
     assert any(s.xfer is not None for s, _ in e._context_sessions.values())
+
+
+def test_inequalities_restate_an_equality():
+    """``x <= y & y <= x`` gives what ``x = y`` gives, through the
+    trichotomy clause (Relations._trichotomy), also for sides that may be
+    infinite (LRA alone needs real sides)."""
+    p = Q.positive(f(x))
+    assert ask_with(eng(), p, Q.positive(f(y)) & Q.eq(x, y)) is True
+    assert ask_with(eng(), p, Q.positive(f(y)) & Q.le(x, y) & Q.ge(x, y)) is True
+    assert ask_with(eng(), Q.prime(x), Q.le(x, 2) & Q.ge(x, 2)) is True
+    assert ask_with(eng(), Q.eq(x, y), Q.le(x, y) & Q.ge(x, y)) is True
+    assert ask_with(eng(), Q.eq(x, y), Q.le(x, y)) is None
 
 
 def test_uninterpreted_option():
@@ -109,6 +123,7 @@ def test_protocol_on_fuzz(monkeypatch):
     def factory(euf):
         r = Recorder(inner_cls(euf))
         r.set_fixed = r.inner.set_fixed      # not a protocol method
+        r.guard = r.inner.guard              # nor this (the selector is an atom)
         recs.append(r)
         return r
 

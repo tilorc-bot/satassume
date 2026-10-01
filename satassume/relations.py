@@ -96,7 +96,7 @@ Links to the unary vocabulary
 For every argument ``e`` of a relation in the query or the assumptions,
 and every argument of a vocabulary atom of the query or the assumptions
 once the session has relations, the engine adds (``gt(e, 0)`` is the atom
-``lt(0, e)``):
+``lt(0, e)``; each under the selector of ``e``, see "Switched glue"):
 
 ======================================  ======================================
 clause                                  why it is sound
@@ -157,12 +157,44 @@ of its own: its ``real`` literal would be false at the root anyway.
 
 Predicate transfer
 ------------------
-With the first equality atom that is not glue (a user or extension atom;
-the links' ``eq(e, 0)`` and interface equalities do not count), the session
-attaches a :class:`satassume.transfer.TransferTheory`: every node block is
+With the first relation atom of a user formula (an equality, or
+inequalities that may give one: ``x <= y`` and ``y <= x``, see
+:meth:`Relations._trichotomy`), the session attaches a
+:class:`satassume.transfer.TransferTheory`: every node block is
 registered with it under the node's EUF term, so terms in one EUF class
 share all unary facts (``Q.prime(x)`` from ``Q.eq(x, 2)``).  See
 :meth:`Relations._engage_transfer`.
+
+Switched glue
+-------------
+A session answers many queries, and glue made for one must not act in
+another (#53 stage 5): an answer is a function of the query, not of what
+the session met before.  So every clause that ties relations to unary
+atoms carries a *selector* variable, and ``Session.assumption_lits``
+assumes, for a query ``p`` under assumptions ``a``, only the selectors of
+the glue ``p`` and ``a`` themselves call for:
+
+* the link clauses of a term ``e`` (and its integrality clauses) carry
+  ``link_sel[e]``; assumed for the vocabulary-atom arguments and relation
+  sides of ``p`` and ``a`` (:meth:`Relations.link_terms`), only if ``p``
+  or ``a`` holds a relation atom or an affine pair (the trigger of
+  ``Session._affine_links``);
+* the clauses of :meth:`Relations._eq_infinity`, :meth:`Relations._eq_links`
+  and :meth:`Relations._trichotomy` carry their atoms' ``atom_sel``;
+  assumed for the relation atoms of ``p`` and ``a``.  The user-atom clauses
+  of an equality are added the first time a query mentions it, also if the
+  glue made the atom earlier;
+* every lemma of predicate transfer carries ``xfer_sel``
+  (``TransferTheory.guard``); assumed iff ``p`` or ``a`` holds a relation
+  atom, the condition on which a fresh session engages transfer.
+
+The remaining clauses of an atom (clauses 1 to 3 above) constrain the
+atom given its sides, never a side given the atom, so the relation atoms
+of other queries are free variables and need no selector.  A learnt clause
+that used a switched clause contains its negated selector and is inert
+wherever the selector is not assumed.  Interface equalities and transfer
+candidacy grow with the session unswitched; why that is harmless is at
+:meth:`Relations._share`.
 
 A relation no theory interprets stays a free Boolean (the default
 ``Engine(uninterpreted="free")``); with ``uninterpreted="none"`` (opt-in,
@@ -212,7 +244,7 @@ from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
-from .formula import And, Not, P
+from .formula import And, Not, P, atoms_of
 from .rules import NPRED, PRED_INDEX
 from .constfield import Undecided, sign
 from .theory import EqualitySharing
@@ -481,6 +513,19 @@ class Relations:
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
         self._pending_links: list = []
+        #: linked term -> the selector guarding its link clauses (see
+        #: "Switched glue"); assumed by the queries whose terms include it
+        self.link_sel: dict = {}
+        #: relation atom -> the selector guarding the clauses that tie it
+        #: to unary atoms (_eq_infinity, _eq_links, _trichotomy); assumed
+        #: by the queries that mention the atom
+        self.atom_sel: dict = {}
+        #: the selector guarding every lemma of predicate transfer (None
+        #: until transfer is engaged, see _engage_transfer)
+        self.xfer_sel: Optional[int] = None
+        #: equality atoms that got their user-atom clauses (_eq_links): the
+        #: first query mentioning the atom runs them, whoever made it
+        self._user_eq: set = set()
         #: eq atoms the glue made (links ``eq(e, 0)``, interface equalities);
         #: they do not engage predicate transfer by themselves
         self._aux_eq: set = set()
@@ -532,9 +577,20 @@ class Relations:
             elif st is None:
                 unlinked.add(a)
         for a in user:
+            # transfer is engaged by any relation atom of a user formula
+            # (an equality may be derived from inequalities: F8, W2B4b),
+            # and switched on per query (Session.assumption_lits)
+            self._want_transfer = True
             if a.pred == "eq":
-                self._want_transfer = True
                 self._note_sides(a, 2)
+                var = s.table.custom.get(a)
+                if var is not None and a not in self._user_eq:
+                    # the atom's role is a function of the query: its
+                    # user-atom clauses are added the first time a query
+                    # mentions it, even if the glue made it earlier (an
+                    # interface equality: S1), under its selector
+                    self._user_eq.add(a)
+                    self._eq_links(var, a)
         while True:
             s._flush()
             s._discover()
@@ -597,10 +653,13 @@ class Relations:
             s.ensure(link, {"extended_real"})
         elif order and self._order_sides(var, atom):
             return True                       # false: a side is no extended real
+        if order:
+            self._trichotomy(var, atom)
         if atom.pred == "eq":
+            # _eq_links is a user atom's (Relations.process); an equality a
+            # template or extension made would need its own (none exists:
+            # only this module makes eq atoms)
             self._eq_infinity(var, atom)
-            if atom not in self._aux_eq:
-                self._eq_links(var, atom)
         sat = sympy_atom(atom)
         ok = False
         for spec in self.specs:
@@ -666,11 +725,13 @@ class Relations:
             guard.append(-s.var("real", u))
         return guard
 
-    def _link_integer(self, ad, e) -> None:
+    def _link_integer(self, ad, e, g: int) -> None:
         """``guard -> (integer(e) <-> i)`` for the integrality atom ``i`` of
         ``e``'s linear form in the guarded adapter ``ad`` (see
-        "Integrality"); called once per linked expression.  When ``e`` is
-        its own term, ``integer(e)`` itself is the atom (no guard)."""
+        "Integrality"); called once per linked expression, ``g`` the
+        negated link selector of ``e``.  When ``e`` is its own term,
+        ``integer(e)`` itself is the atom (no guard, no selector: see the
+        comment at :meth:`_share`)."""
         form = ad.integer_form(e)
         if form is None:
             return
@@ -685,8 +746,8 @@ class Relations:
         ad.register_integer(s.solver, i, form)
         guard = self._guard(ad, form[1])
         z = s.var("integer", e)
-        s._emit(guard + [-z, i])
-        s._emit(guard + [z, -i])
+        s._emit(guard + [-z, i, g])
+        s._emit(guard + [z, -i, g])
 
     def _eq_infinity(self, var: int, atom: P) -> None:
         """``eq(e, oo) <-> positive_infinite(e)`` and ``eq(e, -oo) <->
@@ -710,9 +771,56 @@ class Relations:
                     return
             s.ensure(e, {pred})
             p = s.var(pred, e)
-            s._emit([-var, p])
-            s._emit([var, -p])
+            g = -self._atom_selector(atom)
+            s._emit([-var, p, g])
+            s._emit([var, -p, g])
             return
+
+    def _trichotomy(self, var: int, atom: P) -> None:
+        """``a <= b`` and ``b <= a`` give ``a = b`` (the extended reals are
+        totally ordered): for the ``lt`` atom ``var`` of ``a < b`` whose
+        reverse ``b < a`` exists,
+
+            extended_real(a) & extended_real(b) & ~(a < b) & ~(b < a)
+                -> eq(a, b)
+
+        guarded by both atoms' selectors (on for a query that mentions
+        both).  So ``Q.le(x, y) & Q.ge(x, y)`` puts ``x`` and ``y`` into one
+        EUF class as ``Q.eq(x, y)`` does, also where LRA cannot derive the
+        equality (sides that may be infinite).  Not for the two link atoms
+        ``0 < e`` and ``e < 0`` of one term: there the links and the rule
+        base give ``zero(e)``, i.e. ``eq(e, 0)``, already."""
+        a, b = atom.expr
+        s = self.session
+        rev = P("lt", Args((b, a)))
+        rvar = s.table.custom.get(rev)
+        if rvar is None:
+            return
+        lk = self._link_lt
+        if lk.get(atom) is not None and lk.get(atom) is lk.get(rev):
+            return
+        eqa = relation_atom("eq", a, b)
+        if eqa not in s.table.custom:
+            self._aux_eq.add(eqa)
+        eq = self._atom_var(eqa)
+        # its sides are transfer candidates like a user equality's (with a
+        # number side, x <= 2 <= x gives x every fact of 2)
+        self._note_sides(eqa, 2)
+        clause = [-self._atom_selector(atom), -self._atom_selector(rev), var, rvar, eq]
+        for e in _ext_atoms(a, b):
+            s.ensure(e.expr, {"extended_real"})
+            clause.append(-s.var("extended_real", e.expr))
+        s._emit(clause)
+
+    def _atom_selector(self, atom: P) -> int:
+        """The selector of ``atom``'s clauses to unary atoms (allocated on
+        first use), see "Switched glue"."""
+        sel = self.atom_sel.get(atom)
+        if sel is None:
+            s = self.session
+            sel = self.atom_sel[atom] = s.table.aux()
+            s.solver.ensure_vars(sel)
+        return sel
 
     def _eq_links(self, var: int, atom: P) -> None:
         """Two sufficient conditions of ``eq(a, b)`` and one of its negation, for
@@ -727,9 +835,10 @@ class Relations:
           nonzero.
 
         These hold in every domain (the sides may be complex).  The
-        difference is taken as ``a - b``, and also as ``b - a`` when the
-        session already has that term (``Q.zero(j - i)`` for ``Eq(i, j)``),
-        and only when SymPy built it term by term (:func:`_termwise`): its
+        difference is taken both as ``a - b`` and as ``b - a`` (``Q.zero(j -
+        i)`` for ``Eq(i, j)``; both always, so that the clauses are a
+        function of the atom and not of the nodes an earlier query left in
+        the session), and only when SymPy built it term by term (:func:`_termwise`): its
         value is then the value of ``a`` minus that of ``b`` at every point
         (an extended sum does not depend on grouping: a ``nan`` term, or
         infinities in different directions, make it nan).  SymPy cancels and merges
@@ -746,14 +855,17 @@ class Relations:
         if _is_number(a) or _is_number(b):
             return
         s = self.session
-        emit = s._emit
+        g = -self._atom_selector(atom)
+
+        def emit(clause):
+            s._emit(clause + [g])
         s.ensure(a, {"positive_infinite", "negative_infinite"})
         s.ensure(b, {"positive_infinite", "negative_infinite"})
         for pred in ("positive_infinite", "negative_infinite"):
             emit([-s.var(pred, a), -s.var(pred, b), var])
-        for p, q, needed in ((a, b, False), (b, a, True)):
+        for p, q in ((a, b), (b, a)):
             d = p - q
-            if _is_number(d) or needed and d not in s.base or not _termwise(p, q, d):
+            if _is_number(d) or not _termwise(p, q, d):
                 continue
             s.ensure(d, {"zero", "nonzero"})
             emit([-s.var("zero", d), var])
@@ -885,21 +997,75 @@ class Relations:
             self._aux_eq.add(eqa)
             self._link_eq.add(eqa)
         eq = self._atom_var(eqa)
+        sel = s.table.aux()
+        s.solver.ensure_vars(sel)
+        self.link_sel[e] = sel
+        g = -sel
         emit = s._emit
-        emit([-pos, gt])
-        emit([-gt, pos])
-        emit([-neg, lt])
-        emit([-lt, neg])
-        emit([-zero, eq])
-        emit([-eq, zero])
+        emit([-pos, gt, g])
+        emit([-gt, pos, g])
+        emit([-neg, lt, g])
+        emit([-lt, neg, g])
+        emit([-zero, eq, g])
+        emit([-eq, zero, g])
         if INTEGERS:
             for spec in self.specs:
                 if spec.guarded:
                     ad = self._adapter(spec)
                     if hasattr(ad, "integer_form"):
-                        self._link_integer(ad, e)
+                        self._link_integer(ad, e, g)
+
+    # -- switched glue: what a query activates ----------------------------
+    @staticmethod
+    def link_terms(f) -> list:
+        """The terms ``f`` links: the arguments of its vocabulary atoms and
+        the sides of its relation atoms (numbers excluded)."""
+        out = []
+        for a in atoms_of(f):
+            if a.pred in PRED_INDEX:
+                if not _is_number(a.expr):
+                    out.append(a.expr)
+            elif a.pred in RELATION_ATOMS:
+                out.extend(e for e in a.expr if not _is_number(e))
+        return out
+
+    def selectors_for(self, f) -> list:
+        """The selectors ``f`` activates once links are on: those of the
+        links of its terms and of its relation atoms' clauses to unary
+        atoms, in allocation order."""
+        sel = self.link_sel
+        out = {sel[e] for e in self.link_terms(f) if e in sel}
+        asel = self.atom_sel
+        if asel:
+            out.update(asel[a] for a in atoms_of(f) if a in asel)
+        return sorted(out)
 
     # -- equality sharing -------------------------------------------------
+    #
+    # Interface equalities are not switched, although the pairs grow with
+    # the session (EqualitySharing.update returns the new pairs only) and
+    # a pair may join a term of an earlier query with one of the current
+    # query.  They carry nothing across queries: an interface atom eq(a, b)
+    # is a glue atom, never assumed and in no clause but its theories' own
+    # registration (and the switched clauses of _eq_infinity/_eq_links/
+    # _trichotomy, inert unless a query mentions their atoms).  If a term,
+    # say a, occurs in no asserted atom of the current query, the theory
+    # that has it only through atoms of earlier queries (free variables
+    # now) can give it any value: LRA and EUF are stably infinite and
+    # convex, and every unswitched LRA atom on an opaque term is guarded by
+    # real(a), so either value of eq(a, b) extends a model of the current
+    # query's clauses.  If both terms occur in asserted atoms of the
+    # current query, a fresh session has the pair too.  The same holds for
+    # transfer candidacy (_xside, _xcand): a term of an earlier query joins
+    # a class of the current one only through an equality the current
+    # query asserts or forces (canonical) or a free one (false in the
+    # extending model); a candidate term in such a class only receives
+    # values its own block, a node of the session, admits (transfer is
+    # sound), so it adds nothing about the current query's atoms.  The
+    # integrality atom integer(e) a term that is its own linear form
+    # registers directly (_link_integer) constrains LRA only together with
+    # asserted bounds on e, i.e. when e is a side or argument of the
+    # current query, which a fresh session links too.
     def _share(self) -> bool:
         if len(self.adapters) < 2:
             return False
@@ -983,6 +1149,14 @@ class Relations:
         ad.attach(solver)
         th = TransferTheory(ad.theory)
         solver.attach_theory(th)
+        # every lemma is guarded by a selector the queries with a relation
+        # atom assume (Session.assumption_lits); registered as the
+        # theory's atom, so the theory follows its value level by level
+        sel = s.table.aux()
+        solver.ensure_vars(sel)
+        th.guard(sel)
+        solver.register_atom(th, sel, ("enable",))
+        self.xfer_sel = sel
         self._xadapter = ad
         self.xfer = th
         s.xfer = self

@@ -589,7 +589,9 @@ def _relation_in_prefix(d: Discrepancy) -> bool:
 
 #: family tags (``family_of``) of the defects documented in
 #: ``harness/repros/README.md``; ``new:...`` and ``?`` are not known
-KNOWN_FAMILIES = frozenset({"A", "B", "B/A", "B/C", "C", "C'", "D", "K", "E", "L", "G", "G'", "T"})
+#: G, G' and T left with #53 stage 5 (the relation glue and predicate
+#: transfer are switched per query: harness/repros/fixed)
+KNOWN_FAMILIES = frozenset({"A", "B", "B/A", "B/C", "C", "C'", "D", "K", "E", "L"})
 
 
 def is_known_family(fam: str, audit: bool = False) -> bool:

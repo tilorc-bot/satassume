@@ -162,6 +162,8 @@ def test_equality_sharing_is_needed_and_works(monkeypatch):
     prop, assum = Q.eq(f(x), f(y)), (x <= y) & (y <= x)
     assert ask_with(relation_engine(dummy_specs()), prop, assum) is True
     monkeypatch.setattr(Relations, "_share", lambda self: False)
+    # the trichotomy clause is the other way x = y gets to EUF
+    monkeypatch.setattr(Relations, "_trichotomy", lambda self, var, atom: None)
     assert ask_with(relation_engine(dummy_specs()), prop, assum) is None
 
 

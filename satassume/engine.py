@@ -41,6 +41,13 @@ own nodes made unsatisfiable at root, is dropped (``dead_sessions``): the
 next query under the same assumptions builds a fresh one, as a fresh
 engine would, so that query alone raises.
 
+The relation glue a reused session accumulates (links, the clauses of
+relation atoms to unary atoms, predicate transfer) sits behind selectors,
+and each query assumes only those of its own proposition and assumptions
+(``Session.assumption_lits``; :mod:`satassume.relations`, "Switched
+glue"): the selectors of the assumptions form a stable prefix whose levels
+the solver keeps between queries (``Solver.implied(..., hold=k)``).
+
 Integer branch and bound (:mod:`satassume.lra`, "Integrality") is complete
 only up to a branch budget, and whether a search stays within it depends
 on the path: the tableau basis and the learnt clauses earlier queries left.
@@ -1007,6 +1014,27 @@ class Session:
         solver keeps between queries (``Solver.implied(..., hold=)``)."""
         lits = [self.sel] if self.sel else []
         self.n_hold = len(lits)
+        rel = self.relations
+        if rel is None:
+            return lits
+        a = self.assumption_formula
+        a_rel = a is not None and _has_relation(a)
+        p_rel = prop is not None and _has_relation(prop)
+        if not (a_rel or p_rel or _links_wanted(a, prop)):
+            # no relation and no affine pair (_affine_links): the glue an
+            # earlier query made stays switched off
+            return lits
+        sa = rel.selectors_for(a) if a is not None else []
+        lits.extend(sa)
+        xs = rel.xfer_sel
+        if xs is not None and a_rel:
+            lits.append(xs)
+        self.n_hold = len(lits)             # the stable prefix
+        if prop is not None:
+            seen = set(sa)
+            lits.extend(x for x in rel.selectors_for(prop) if x not in seen)
+            if xs is not None and p_rel and not a_rel:
+                lits.append(xs)
         return lits
 
     def literal_of(self, f) -> int:
@@ -2022,14 +2050,15 @@ class Engine:
         self.stats["queries"] += 1
         s = self._fresh_session()
         lit = s.literal_of(atom)
-        r = s.query_literal(lit, search=False)
+        lits = s.assumption_lits(atom)        # the glue a relation atom activates
+        r = s.query_literal(lit, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
-            r = s.query_literal(lit, search=False)
+            r = s.query_literal(lit, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
-            r = s.query_literal(lit, search=True)
+            r = s.query_literal(lit, lits, search=True)
         self._put_result(s, self.custom_cache, atom, node, pred, r)
         return r
 
@@ -2233,6 +2262,31 @@ def affine_glue(f) -> bool:
 
 _NEIGH: Dict[int, frozenset] = {}
 _WANT: Dict[frozenset, frozenset] = {}
+
+
+def _has_relation(f) -> bool:
+    """``f`` holds a relation atom: the queries whose glue (links, the
+    relation atoms' clauses to unary atoms, predicate transfer) is on."""
+    return any(a.pred in RELATION_ATOMS for a in atoms_of(f))
+
+
+def _links_wanted(a, p) -> bool:
+    """Links are also on without a relation atom when two sign atoms of
+    ``a`` and ``p`` are on different sums sharing a symbol: the condition
+    on which :meth:`Session._affine_links` starts the relation machinery
+    (a function of the two formulas, whatever the session holds)."""
+    sums = []
+    for f in (a, p):
+        if f is None:
+            continue
+        for at in atoms_of(f):
+            e = at.expr
+            if at.pred in _SIGN_PREDS and getattr(e, "is_Add", False) and e not in sums:
+                sums.append(e)
+    if len(sums) < 2:
+        return False
+    syms = [e.free_symbols for e in sums]
+    return any(syms[i] & syms[j] for i in range(len(syms)) for j in range(i))
 
 
 def _gave_up(s: Session) -> bool:

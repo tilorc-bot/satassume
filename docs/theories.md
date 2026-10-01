@@ -148,15 +148,25 @@ EUF and, under the guard of clause 3, to LRA. More clauses in `Relations`
 (#26, #51):
 
 - `_eq_infinity`: `eq(e, oo) <-> positive_infinite(e)`, and for `-oo`;
-- `_eq_links`, for user and extension atoms with non-number
-  sides: `positive_infinite(a) & positive_infinite(b) -> eq(a, b)` (and
-  `-oo`), `zero(a - b) -> eq(a, b)`, `nonzero(a - b) -> ~eq(a, b)`. A zero
+- `_eq_links`, for user atoms with non-number sides, added the first time
+  a query mentions the atom, also when the glue made it before (an
+  interface equality, S1 of #53):
+  `positive_infinite(a) & positive_infinite(b) -> eq(a, b)` (and
+  `-oo`), `zero(a - b) -> eq(a, b)`, `nonzero(a - b) -> ~eq(a, b)`, and
+  the same with `b - a`. A zero
   or nonzero difference is finite, so it is 0 exactly when the sides are
   equal and finite; equal infinite sides have a nan difference. Only a
   difference SymPy builds term by term counts (`_termwise`): after
   cancellation (`x - (x + y)` is `-y`) it is not the difference where the
   cancelled part is infinite, so `Q.eq(x, x + y)` under `Q.positive(y)`
-  stays None.
+  stays None;
+- `_trichotomy`, for two atoms `lt(a, b)` and `lt(b, a)`:
+  `extended_real(a) & extended_real(b) & ~lt(a, b) & ~lt(b, a) -> eq(a, b)`,
+  so `Q.le(x, y) & Q.ge(x, y)` gives what `Q.eq(x, y)` gives (W2B4b), also
+  for sides that may be infinite.
+
+All three are switched per query (below, "Switched glue"): they carry the
+selector of their atom.
 
 `Eq` is reflexive and congruent even on terms that may evaluate to nan
 (`Q.eq(e, e)` is True, as in SymPy's `ask`; documented in
@@ -183,8 +193,7 @@ Each `Session` has its own adapters and theories, held by a
   [design.md](design.md), "Relevance").
 
 Until then the unary path pays one `is not None` test (the first wiring,
-with glue in every session, cost up to 10% on the unary microbenchmarks);
-the price is that answers can depend on query order (#42, below).
+with glue in every session, cost up to 10% on the unary microbenchmarks).
 `Relations.process`, at the end of `literal_of`, `assume_formula` and
 `Engine._literal`, interprets queued atoms with every adapter that accepts
 them, adds links, shares equalities and engages transfer until nothing
@@ -205,9 +214,39 @@ of a vocabulary atom of the user's formulas (numbers excluded):
 The rule base derives the rest. Link atoms get no clause 1 (implied), and
 no clauses 2 when `e` is its own opaque term (#45).
 
+**Switched glue** (#53 stage 5). A session outlives its queries, so glue
+made for one query must not act in another: every clause that ties a
+relation to unary atoms carries a selector, and each query assumes the
+selectors of its own glue only (`Session.assumption_lits`):
+
+- the links of a term carry the term's selector (`Relations.link_sel`,
+  also on its integrality clauses); a query assumes those of the
+  vocabulary-atom arguments and relation sides of its proposition `p` and
+  its assumptions `a` (`link_terms`), and only if `p` or `a` holds a
+  relation atom or an affine pair (`engine._links_wanted`, the
+  `_affine_links` trigger): a unary query under a unary set gets no links
+  however many relation queries the session answered before;
+- the clauses of `_eq_infinity`, `_eq_links` and `_trichotomy` carry their
+  atoms' selectors (`Relations.atom_sel`), assumed when the atom occurs in
+  `p` or `a`;
+- predicate transfer carries one selector (`Relations.xfer_sel`, below),
+  assumed iff `p` or `a` holds a relation atom.
+
+The selectors of `a` come first, after the set's own selector, and the
+solver keeps their levels between queries (`Solver.implied(...,
+hold=k)`); those of `p` follow. The other clauses of an atom
+(`_order_sides`, `_order_infinite`, the guarded LRA twins) constrain the
+atom given its sides and never a side given the atom, so another query's
+relation atom is a free variable and they stay unswitched. A learnt clause
+that used a switched clause keeps its negated selector, so it is inert
+where that selector is not assumed. Interface equalities and the transfer
+candidates (`_share`, `_xside`) grow with the session and are not
+switched: see the comment at `Relations._share`.
+
 **Integrality** (#38): each linked `e` whose linear form LRA reads
 (`lra_adapter.integer_form`) gets an integrality atom `i` with
-`real(u1) & ... & real(uk) -> (integer(e) <-> i)`; SymPy's `integer`
+`real(u1) & ... & real(uk) -> (integer(e) <-> i)` (under `e`'s link
+selector); SymPy's `integer`
 implies finite, so the guard is exact. When `e` is its own term,
 `integer(e)` itself is the atom, unguarded: if `e` is no finite real,
 `integer(e)` is false and the theory's value of `e` is free, since every
@@ -218,8 +257,9 @@ shared terms (`shared_terms()` of two adapters): `Relations._share`
 creates `eq(a, b)` for each pair (`theory.EqualitySharing`), delayed theory
 combination, complete because LRA and EUF are stably infinite, convex and
 share no symbols. With real `x`, `y`, `ask(Q.eq(f(x), f(y)), (x <= y) &
-(y <= x))` is True (for plain symbols None: the guard leaves `x <= y`
-without order meaning). The
+(y <= x))` is True through LRA and sharing (for plain symbols the guard
+leaves `x <= y` without order meaning in LRA, and `_trichotomy` gives the
+equality instead). The
 interface atoms are quadratic in the shared terms; Nelson-Oppen equality
 propagation would pay only beyond a few dozen shared terms per session,
 which no recorded query reaches. A pair with a non-rational constant term
@@ -336,9 +376,16 @@ calls `on_merge` on every union). Examples: `Q.prime(x)` under `Q.eq(x,
 `Q.eq(x, y)` False under `Q.prime(x) & ~Q.integer(y)`.
 
 `Relations._engage_transfer` attaches it once per session, at the first
-equality atom that is not glue (user, template or extension; not the
-links' `eq(e, 0)` nor interface equalities), unless
-`Engine(transfer=False)`. `Relations.sync_transfer` then registers only
+relation atom of a user formula (an equality, or inequalities that may
+give one: `Q.le(x, y) & Q.ge(x, y)`), unless `Engine(transfer=False)`.
+Its lemmas carry the selector `Relations.xfer_sel`
+(`TransferTheory.guard`, registered as an atom of the theory): while the
+selector is not true the theory propagates, checks and decides nothing,
+and it rescans every class when the selector turns true. A query assumes
+it iff its proposition or its assumptions hold a relation atom, the
+condition on which a fresh session engages transfer, so an earlier
+equality query no longer lends transfer to a later unary one (family T
+of #53). `Relations.sync_transfer` then registers only
 *candidate* nodes, those EUF could ever merge: atom sides and applications
 with a same-head partner whose arguments may merge. A side only of a link
 `eq(e, 0)` registers `polar` alone (`zero(e)` decides the rest); a side
@@ -385,13 +432,13 @@ precision would be sound under both readings; it was not built.
 
 ## Open questions and known gaps
 
-- Answers can depend on earlier queries (#42, item 3): the glue is
-  created lazily, so under `Q.integer(k) & Q.integer(x) & Q.positive(k) &
-  Q.positive(x)` a fresh engine answers `Q.zero(k + x - 1)` None, but
-  False after `Q.lt(k, 3)` was asked under the same assumptions. Creating
-  `Relations` in every session at `assume_formula` removed all 84
-  differences of a 550-query grid in an experiment; its cost is the reason
-  the glue is lazy.
+- #42, item 3 (answers depending on earlier queries through the lazily
+  created glue: `Q.zero(k + x - 1)` under `Q.integer(k) & Q.integer(x) &
+  Q.positive(k) & Q.positive(x)` was False after `Q.lt(k, 3)` and None
+  fresh) is fixed by the switched glue (#53 stage 5): None either way.
+  Linking every term in every session (fixing gap 1 below for real sides)
+  would be a capability change, measured at +70% CPU in the #53 design
+  prototype.
 - #42, gaps 1 and 2: unless the sides are known real, `Q.positive(b - a)`
   does not prove `Q.negative(a - b)`, nor `Q.zero(a - b)` `Q.zero(b - a)`,
   nor `Q.eq(a, b)` with finite sides `Q.zero(a - b)`.

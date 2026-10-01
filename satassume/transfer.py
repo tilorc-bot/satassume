@@ -55,7 +55,16 @@ vocabulary is a property of a value, so ``a = b`` and ``P(a)`` give
 ``P(b)``.  Ordering relations are not transferred (they are LRA's), and
 equalities LRA derives from inequalities are not handed to EUF.
 
-The session glue (which terms EUF sees, when the theory is engaged) is in
+Switched on per query: the session guards the theory with a selector
+variable (:meth:`TransferTheory.guard`), registered as one of its atoms.
+While the selector is not true the theory propagates, checks and decides
+nothing; every reason and conflict clause it returns ends with the
+negated selector, so a clause learnt from it is inert wherever the
+selector is not assumed; when the selector turns true at some level every
+class is rescanned, and popping that level switches the theory off again.
+
+The session glue (which terms EUF sees, when the theory is engaged and
+which queries assume its selector) is in
 :class:`satassume.relations.Relations`.
 """
 from __future__ import annotations
@@ -69,6 +78,12 @@ class TransferTheory:
 
     def __init__(self, euf):
         self.euf = euf
+        #: the selector guarding every lemma (see :meth:`guard`); None:
+        #: always on
+        self.sel: int | None = None
+        self.enabled = True
+        self._ehist: list[tuple[int, bool]] = []   # (level, previous enabled)
+        self._rescan = False
         self._atoms: dict[int, tuple] = {}       # var -> (term, pred)
         self._by_term: dict[int, dict] = {}      # term -> {pred: [var, ...]}
         self._val: dict[int, bool] = {}          # var -> asserted value
@@ -88,12 +103,26 @@ class TransferTheory:
         euf.on_merge = self._merged
         self.stats = {"propagated": 0, "conflicts": 0}
 
+    def guard(self, sel: int) -> None:
+        """Make every lemma conditional on the selector variable ``sel``,
+        which the caller registers as an atom of this theory: while ``sel``
+        is not assigned true the theory propagates, checks and decides
+        nothing; every reason and conflict clause it returns carries
+        ``-sel``; when ``sel`` turns true at some level every class is
+        looked at again, and when that level is popped the theory is off
+        again.  A clause the solver learns from a lemma therefore keeps
+        ``-sel`` and is inert where ``sel`` is not assumed."""
+        self.sel = sel
+        self.enabled = False
+
     # ------------------------------------------------------------------
     def _merged(self, ra: int, rb: int) -> None:
         self._dirty.append(rb)
         self._multi.append(rb)
 
     def register_atom(self, literal: int, payload) -> None:
+        if literal == self.sel:
+            return
         if literal <= 0 or literal in self._atoms:
             raise ValueError(f"bad or repeated atom variable {literal}")
         term, pred = payload[0], payload[1]
@@ -116,6 +145,14 @@ class TransferTheory:
 
     def assert_lit(self, literal: int):
         v = -literal if literal < 0 else literal
+        if v == self.sel:
+            on = literal > 0
+            if on != self.enabled:
+                self._ehist.append((len(self._lims), self.enabled))
+                self.enabled = on
+                if on:
+                    self._rescan = True
+            return None
         a = self._atoms.get(v)
         if a is None:
             return None
@@ -236,6 +273,16 @@ class TransferTheory:
 
     def propagate(self):
         dirty, dirty_p = self._dirty, self._dirty_p
+        if not self.enabled:
+            dirty.clear()
+            dirty_p.clear()
+            return []
+        if self._rescan:
+            # switched on: every class once (what was queued while off
+            # was dropped)
+            self._rescan = False
+            dirty.extend(self._by_term)
+            dirty.extend(self._fixed)
         if not dirty and not dirty_p:
             return []
         rep = self.euf._repr
@@ -252,9 +299,15 @@ class TransferTheory:
         dirty.clear()
         dirty_p.clear()
         self.stats["propagated"] += len(out)
+        if self.sel is not None:
+            g = -self.sel
+            for _, why in out:
+                why.append(g)
         return out
 
     def check(self):
+        if not self.enabled:
+            return None
         rep = self.euf._repr
         seen = set()
         out: list = []
@@ -268,6 +321,8 @@ class TransferTheory:
             b = val.get(-lit if lit < 0 else lit)
             if b is not None and b != (lit > 0):
                 self.stats["conflicts"] += 1
+                if self.sel is not None:
+                    why.append(-self.sel)
                 return (False, why)
         return None
 
@@ -295,7 +350,7 @@ class TransferTheory:
         is dropped."""
         multi = self._multi
         pterms = self._pterms
-        if not multi or not pterms:
+        if not multi or not pterms or not self.enabled:
             return None
         euf = self.euf
         rep, members = euf._repr, euf._members
@@ -353,6 +408,10 @@ class TransferTheory:
         trail, val = self._trail, self._val
         while len(trail) > lim:
             del val[trail.pop()]
+        eh = self._ehist
+        n = len(self._lims)
+        while eh and eh[-1][0] > n:
+            self.enabled = eh.pop()[1]
 
     # ------------------------------------------------------------------
     def level(self) -> int:
