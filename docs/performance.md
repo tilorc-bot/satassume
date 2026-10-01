@@ -229,12 +229,18 @@ replay.
   `P` objects. `VarTable.atom_of` builds a fresh list per access.
 - `Relations.session` is a weak proxy: nothing may call into a
   `Relations` after its `Session` is gone.
-- Relevance splits only relation-free sets (`RELATIONAL = "whole"`): its
-  soundness rests on "no relation, no theory in the session". A feature
-  that brings LRA or EUF into a relation-free session must also turn the
-  split off; `Session._affine_links` (#51) does not, and loses answers
-  (#15, [design.md](design.md), "Relevance"). The key memo `_KEYS` must be
-  cleared if `RELATIONAL` changes.
+- Relevance splits every set by key connectivity, relations included
+  (`RELATIONAL = "components"`, #53 R2). A set with a relation or a keyless
+  conjunct is certified by the whole set's verdict (answering under a part
+  of a set that is not inconsistent is sound by monotonicity); a
+  relation-free set by per-component checks, whose soundness rests on "no
+  relation, no theory in the session". A feature that brings LRA or EUF
+  into a relation-free session must also turn the split off;
+  `Session._affine_links` (#51) does not, and loses answers (#15,
+  [design.md](design.md), "Relevance"). `Engine.verdict` keeps no session
+  (only the verdict memo), so the whole set of a split set costs one
+  build and evicts no part session. The key memo `_KEYS` must be cleared
+  if `RELATIONAL` changes.
 - `cone_threshold = 3` counts nodes beyond the assumptions', not closed
   irrational constants; it was tuned on the refine stream (2 to 10 within
   noise; 0, 1 and 20 lose; no cone search at all took 10.1 s to 12.9 s at

@@ -369,8 +369,11 @@ scoreboard, for +3.2% on the Pi, and lost one combined-backend answer
 to keep before switching; on SymPy 1.14.0 that query raises `TypeError`
 instead, #65). Before constants were read it was worth 498
 stream answers and 6 scoreboard tests. Free is the default since #64.
-Under `sympy_api.RELATIONAL == "whole"` a set with such a relation is still
-not split. Out-of-scope applied predicates of the assumptions (matrix,
+Such a relation links nothing (`Relations.process` links the sides of a
+user relation only once a theory interprets it); with the default
+`sympy_api.RELATIONAL == "components"` it keys its sides like any relation,
+so it joins the component of its terms (a Float side is a key) and an
+unrelated query is answered without it. Out-of-scope applied predicates of the assumptions (matrix,
 unregistered custom) are likewise opaque free atoms (`sympy_api.to_formula`
 with `opaque`).
 
