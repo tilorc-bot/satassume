@@ -136,6 +136,17 @@ def _add_rules(n, consts):
                 other_signed = other.replace('extended_', '') + '_infinite'
                 rule([(k, 'infinite', True), (k, other_signed, False),
                       *lits(rest, other_signed, False)], (N, 'infinite', True))
+                # A -oo term (any term, not only a constant: a symbol
+                # declared negative_infinite IS -oo) plus terms that are
+                # extended real and not +oo is -oo, and symmetrically for
+                # +oo.  Pointwise: each other term is a finite real r or
+                # -oo, and -oo + r = -oo, -oo + (-oo) = -oo.  The rest
+                # cannot be weakened: -oo + oo and -oo + zoo are nan, and
+                # -oo + I (finite non-real) is an infinity off the real
+                # axis, not -oo.  Contrapositive (keeps node blocks
+                # total): N not -oo with such a rest means k is not -oo.
+                rule([(k, signed, True), *lits(rest, 'extended_real'),
+                      *lits(rest, other_signed, False)], (N, signed, True))
                 # A constant +oo plus terms that are >= 0 or finite real is +oo.
                 if k in consts:
                     for cond in (nonstrict, 'real'):
