@@ -172,6 +172,12 @@ PRESETS: Dict[str, EngineConfig] = {
     "free": EngineConfig(name="free", uninterpreted="free"),
     # the discovery budget binds on ordinary expressions
     "budget": EngineConfig(name="budget", discovery_budget=5),
+    # every setting at its smallest legal value at once: one node of
+    # discovery per demand, cone threshold 0, one-element sessions, no
+    # session kept, every bounded cache of size 2
+    "boundary": EngineConfig(name="boundary", discovery_budget=1, cone_threshold=0,
+                             session_limit=1, keep_sessions=0, cache_size=2,
+                             custom_cache_size=2, answers_size=2, splits_size=2),
     # sessions are replaced constantly, one at a time
     "churn": EngineConfig(name="churn", session_limit=3, keep_sessions=1),
     # the fact cache is cleared every few nodes, the memos every few answers

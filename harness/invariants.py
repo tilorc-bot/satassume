@@ -1101,19 +1101,22 @@ def check_I4(prop, assum, config, base, rng, variant=None):
     return sev, other, variant
 
 
-def check_I5(prop, assum, config, base, rng, variant=None):
-    """An equivalent restatement of the assumptions gives the same answer."""
-    if assum is True or assum is S.true:
+def check_I5(prop, assum, config, base, rng, variant=None, prop_only: bool = False):
+    """An equivalent restatement of the assumptions (or, ``prop_only`` /
+    the ``prop`` kind, of the proposition) gives the same answer."""
+    if (assum is True or assum is S.true) and not prop_only:
         return None, base, variant or {"kind": "skip"}
-    if variant is None and rng.random() < I5_SYNTAX_RATE:
+    if variant is None and not prop_only and rng.random() < I5_SYNTAX_RATE:
         variant = {"kind": "syntax", "seed": rng.randrange(1 << 30)}
-    if variant is None and rng.random() < I5_PROP_RATE:
+    if variant is None and (prop_only or rng.random() < I5_PROP_RATE):
         # the proposition restated (the set unchanged): ``restate`` on it,
         # or padded with a tautology / contradiction over a fresh symbol
         r = random.Random(rng.randrange(1 << 30))
         q = restate_prop(prop, r)
         if q != prop:
             variant = {"kind": "prop", "prop": to_srepr(q)}
+        elif prop_only:
+            return None, base, {"kind": "skip"}
     if variant is None:
         cs = _conjuncts(assum)
         parts = list(cs)
@@ -1565,16 +1568,109 @@ def extra_kinds(extra, specs: Sequence[dict] = ()) -> List[str]:
     return sorted(kinds)
 
 
+#: the probes of the fingerprint: each switches one mechanism off (or, for
+#: the discovery budget, lifts it); the fingerprint of a candidate is the
+#: set of probes under which the difference vanishes
+PROBES: Dict[str, dict] = {
+    "relevance": {"relevance": False},
+    "transfer": {"transfer": False},
+    "free": {"uninterpreted": "free"},
+    "cone": {"cone_search": False, "cone_threshold": 0},
+    "budget": {"discovery_budget": 400},
+    "norel": {"relations": "none"},
+}
+
+
+def fingerprint(v: Violation) -> str:
+    """The probes (``PROBES``) under which the candidate's difference
+    vanishes, as ``"a,b"`` (``"-"``: none); ``?`` after a probe that
+    errored.  With the kinds it keys the family: two cases with the same
+    answer shape but different fingerprints are different families."""
+    gone = []
+    for name, over in PROBES.items():
+        if all(getattr(v.config, k) == val for k, val in over.items()):
+            continue                      # the probe is the configuration itself
+        cfg = dataclasses.replace(v.config, name=f"{v.config.name}+{name}", **over)
+        w = dataclasses.replace(v, config=cfg)
+        try:
+            sev, base, other, _ = evaluate(w)
+        except Exception:  # noqa: BLE001
+            gone.append(name + "?")
+            continue
+        if sev is None:
+            gone.append(name)
+    return ",".join(gone) or "-"
+
+
+def family_key(v: Violation) -> tuple:
+    """(invariant, severity, base, other, kinds, fingerprint)."""
+    kinds = tuple(v.variant.get("kinds", ())) if v.inv == "I2" else (str(v.variant.get("kind", "")),)
+    return (v.inv, v.severity, v.base, v.other, kinds, v.fingerprint or "-")
+
+
+PINNED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "harness", "repros", "invariants")
+#: pinned cases by shape (inv, severity, base, other) -> [(stem, Violation)], loaded once
+_PINNED: Dict[tuple, list] = {}
+_PINNED_LOADED = False
+#: pinned families (family keys) reported in this run (``KNOWN_SEEN``)
+KNOWN_SEEN: set = set()
+
+
+def _pinned_with_shape(shape: tuple) -> list:
+    """The pinned cases of ``shape``, each with its fingerprint computed
+    (once per process, lazily: only shapes a candidate reaches)."""
+    global _PINNED_LOADED
+    if not _PINNED_LOADED:
+        _PINNED_LOADED = True
+        import glob
+        for path in sorted(glob.glob(os.path.join(PINNED_DIR, "*.json"))):
+            try:
+                with open(path) as f:
+                    w = violation_from_json(json.load(f))
+            except Exception:  # noqa: BLE001
+                continue
+            _PINNED.setdefault((w.inv, w.severity, w.base, w.other), []).append([os.path.basename(path)[:-5], w])
+    out = []
+    for entry in _PINNED.get(shape, []):
+        stem, w = entry
+        if w.fingerprint is None:
+            try:
+                sev, base, other, var = evaluate(w)
+                if sev is None:
+                    w.fingerprint = "gone"   # the pinned case no longer violates here
+                else:
+                    if w.inv == "I2" and "kinds" not in w.variant:
+                        w.variant = dict(w.variant, kinds=extra_kinds(from_srepr(w.variant["extra"]),
+                                                                      w.variant.get("extensions", ())))
+                    w.fingerprint = fingerprint(w)
+            except Exception:  # noqa: BLE001
+                w.fingerprint = "gone"
+        out.append((stem, w))
+    return out
+
+
 def _known(v: Violation) -> Optional[str]:
+    """``I7-settings`` for I7; ``pinned:<stem>`` when the candidate's
+    family key (kinds and fingerprint) is a pinned case's (the candidate
+    is fingerprinted here, before any shrinking)."""
     if v.inv == "I7":
         return "I7-settings"       # plain attributes, not keyed on the registry epoch
+    if v.inv == "I2" and "kinds" not in v.variant:
+        v.variant = dict(v.variant, kinds=extra_kinds(from_srepr(v.variant["extra"]),
+                                                      v.variant.get("extensions", ())))
+    if v.fingerprint is None:
+        v.fingerprint = fingerprint(v)
+    key = family_key(v)
+    for stem, w in _pinned_with_shape((v.inv, v.severity, v.base, v.other)):
+        if w.fingerprint not in (None, "gone") and family_key(w) == key:
+            return f"pinned:{stem}"
     return None
 
 
 def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str], seed: int,
                source: str = "", max_violations: int = 5, shrink_them: bool = True,
                deadline: Optional[float] = None, progress: Optional[Callable[[str], None]] = None,
-               i1_rounds: int = 3, slow_limit: float = 3.0, i2_rounds: int = 2,
+               i1_rounds: int = 3, slow_limit: float = 3.0, i2_rounds: int = 3, i5_rounds: int = 2,
                clock: Callable[[], float] = time.time, family_cap: int = 1,
                widen: bool = True) -> InvReport:
     """Every ``Ask`` of ``items`` (events are skipped: the registry is
@@ -1607,13 +1703,17 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
             # lost-definiteness one) must not stop the other checkers
             if sum(v.inv == inv for v in rep.violations) >= max_violations:
                 continue
-            rounds = {"I1": i1_rounds, "I2": i2_rounds}.get(inv, 1)
-            for _ in range(rounds):
+            rounds = {"I1": i1_rounds, "I2": i2_rounds, "I5": i5_rounds}.get(inv, 1)
+            for k in range(rounds):
                 try:
                     if inv == "I7":
                         prefix = asks[max(0, idx - rng.choice([1, 2, 4, 8])):idx]
                         sev, other, var = check_I7(it.prop, it.assum, config, base, rng, None, prefix)
                         b = var["fresh"]
+                    elif inv == "I5" and k == 1:
+                        prefix = []
+                        b = base
+                        sev, other, var = check_I5(it.prop, it.assum, config, base, rng, prop_only=True)
                     else:
                         prefix = []
                         b = base
@@ -1635,11 +1735,18 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                     rep.inconclusive[inv] = rep.inconclusive.get(inv, 0) + 1
                     continue
                 v.known = _known(v)
-                if v.known and any(w.known == v.known for w in rep.violations):
-                    continue          # one finding covers a known family
+                if v.known and (any(w.known == v.known for w in rep.violations) or v.known in KNOWN_SEEN):
+                    continue          # one finding covers a known family (per run for a pinned one)
                 fam = (inv, sev, b, other)
-                if sum((w.inv, w.severity, w.base, w.other) == fam for w in rep.violations) >= family_cap:
+                if sum((w.inv, w.severity, w.base, w.other) == fam for w in rep.violations) >= family_cap \
+                        and not (v.fingerprint and all(family_key(w) != family_key(v) for w in rep.violations)):
                     continue          # the same shape again (the I2 definite -> None flood): shrinking costs
+                if v.known:
+                    KNOWN_SEEN.add(v.known)
+                    rep.violations.append(v)     # tagged with the pinned case, never shrunk again
+                    if progress:
+                        progress("violation: " + v.summary())
+                    continue
                 if shrink_them:
                     try:
                         shrink(v)

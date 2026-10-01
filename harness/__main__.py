@@ -378,7 +378,10 @@ def cmd_invariants(args) -> int:
     invs = INVARIANTS if args.inv == "all" else tuple(args.inv.split(","))
     if args.nightly:
         profiles = ["base", "related", "declared", "deep", "relational", "focus", "links", "transfer"]
-        configs = _configs("default,budget,tight,reuse,whole,notransfer,lean")
+        # ``reuse`` and ``whole`` reported only what the other configs did
+        # in round 3: dropped for ``boundary`` (every setting at its
+        # smallest legal value) and for depth (more variants per query)
+        configs = _configs("default,budget,tight,notransfer,lean,boundary")
         minutes = args.minutes or 20.0
     else:
         profiles, configs, minutes = _profiles(args), _configs(args.config), args.minutes
@@ -387,6 +390,8 @@ def cmd_invariants(args) -> int:
     # loaded machine does not count, so the run does the documented work
     deadline = _cpu() + minutes * 60 if minutes else None
     seeds = _seeds(args.seeds)
+    from .invariants import KNOWN_SEEN
+    KNOWN_SEEN.clear()                 # a pinned family is reported once per run
     combos = [(pr, cfg, sd) for sd in seeds for pr in profiles for cfg in configs]
     bad = unknown = 0
     slice_n = args.queries if not minutes else max(10, args.queries // 4)
