@@ -35,6 +35,58 @@ _ORDER = {"lt": lambda a, b: a < b, "le": lambda a, b: a <= b,
 _RELNAMES = {"Lt": "lt", "Le": "le", "Gt": "gt", "Ge": "ge", "Equality": "eq", "Unequality": "ne",
              "StrictLessThan": "lt", "LessThan": "le", "StrictGreaterThan": "gt", "GreaterThan": "ge"}
 
+#: the classified constant pool shared by the generators and the guard:
+#: exact rationals, algebraic irrationals, transcendentals, Floats,
+#: constants whose sign or zero-ness exact evaluation cannot settle (they
+#: simplify to a simple value by an identity only: ``unsettled``, each
+#: equal to 0), non-real constants and infinities.  ``const_class`` names
+#: the class of a constant; the I2 case records the classes present.
+CONSTANTS: Dict[str, List[Any]] = {}
+
+
+def _build_constants():
+    from sympy import E, GoldenRatio, cos, cosh, exp, log, sin, sinh, zoo
+    CONSTANTS.update({
+        "rational": [S.Zero, S.One, S(2), S(-3), S(7), S.Half, Rational(-2, 3), S(10) ** 12],
+        "algebraic": [sqrt(2), -sqrt(3) / 2, GoldenRatio, S(2) ** Rational(1, 3)],
+        "transcendental": [pi, E, -pi / 2, exp(2)],
+        "float": [Float(2.5), Float(-0.1), Float("1e-9")],
+        "unsettled": [cos(1) ** 2 + sin(1) ** 2 - 1, log(2) + log(3) - log(6),
+                      cosh(1) ** 2 - sinh(1) ** 2 - 1, sin(pi / 7) ** 2 + cos(pi / 7) ** 2 - 1],
+        "nonreal": [I, 1 + I, exp(I * pi / 3)],
+        "infinite": [S.Infinity, S.NegativeInfinity, zoo],
+    })
+
+
+_build_constants()
+#: classes usable as a side of a relation (finite reals; ``unsettled``
+#: too: the set is judged by the guard)
+REAL_CLASSES = ("rational", "algebraic", "transcendental", "float", "unsettled")
+
+
+def const_class(c) -> Optional[str]:
+    """The class of a constant of the pool, or of any closed term by its
+    properties (None for a term with free symbols)."""
+    for name, cs in CONSTANTS.items():
+        if any(c == k for k in cs):
+            return name
+    if getattr(c, "free_symbols", None):
+        return None
+    if not c.is_finite:
+        return "infinite"
+    if c.is_extended_real is False:
+        return "nonreal"
+    if c.has(Float):
+        return "float"
+    if c.is_rational:
+        return "rational"
+    if c.is_algebraic:
+        return "algebraic"
+    if c.is_transcendental:
+        return "transcendental"
+    return "unsettled"
+
+
 #: the value pool of the model search (classes: exact rationals, algebraic
 #: and transcendental irrationals, a Float, a non-real, the infinities)
 POOL = [S.Zero, S.One, S.NegativeOne, S(2), S(-3), S(5), S(7), Rational(1, 2), Rational(-3, 2),

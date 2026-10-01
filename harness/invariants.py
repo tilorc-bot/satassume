@@ -228,10 +228,16 @@ _DECLARED = {
     "integer": ["positive", "negative", "zero", "even", "odd", "prime", "composite", "nonzero"],
     "real": ["positive", "negative", "zero", "integer", "irrational", "rational", "nonzero"],
 }
+from .models import CONSTANTS, REAL_CLASSES, const_class   # noqa: E402  (the classified pool)
+#: finite constants of every class (inside terms; ``nonreal`` included,
+#: ``unsettled`` and the extra Floats at a low weight: the first entries
+#: are the plain ones the blocks use)
 _FINITE_CONSTS = [S.Zero, S.One, S(2), S(-3), S.Half, pi, sqrt(2), S(7),
-                  Float(2.5), Rational(-2, 3), E, S(10) ** 12, I, GoldenRatio]
+                  Float(2.5), Rational(-2, 3), E, S(10) ** 12, I, GoldenRatio] + \
+                 [c for k in ("algebraic", "transcendental", "float", "unsettled", "nonreal") for c in CONSTANTS[k]]
+_FINITE_CONSTS = list(dict.fromkeys(_FINITE_CONSTS))
 #: real constants only: a relation to ``I`` is unsatisfiable
-_REAL_CONSTS = [c for c in _FINITE_CONSTS if c.is_extended_real]
+_REAL_CONSTS = [c for c in _FINITE_CONSTS if const_class(c) in REAL_CLASSES]
 #: infinities a fresh symbol may equal or be bounded by (each satisfiable)
 _INF_RELS = [lambda u: Q.eq(u, S.Infinity), lambda u: Q.eq(u, S.NegativeInfinity),
              lambda u: Q.eq(u, S.ComplexInfinity), lambda u: Q.ne(u, S.Infinity),
@@ -1628,6 +1634,22 @@ def extra_kinds(extra, specs: Sequence[dict] = ()) -> List[str]:
             kinds.add("pred")
     for spec in specs:
         kinds.add(f"ext:{spec['cls']}:{spec['shape']}")
+    # the classes of the constants in the material (the pool's classes)
+    from sympy import Number, NumberSymbol
+    classes = set()
+    for c in cs:
+        if not isinstance(c, Basic):
+            continue
+        for a in c.atoms(Number, NumberSymbol):
+            if a in (S.Zero, S.One, S.NegativeOne, S(2)):
+                continue
+            k = const_class(a)
+            if k:
+                classes.add(k)
+        for k in ("unsettled", "nonreal"):
+            if any(c.has(u) for u in CONSTANTS[k]):
+                classes.add(k)
+    kinds |= {f"const:{k}" for k in classes}
     return sorted(kinds)
 
 
