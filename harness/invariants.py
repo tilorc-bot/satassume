@@ -1740,20 +1740,25 @@ def _pinned_with_shape(shape: tuple) -> list:
     return out
 
 
-def _known(v: Violation) -> Optional[str]:
+def _known(v: Violation, subset: bool = False) -> Optional[str]:
     """``I7-settings`` for I7; ``pinned:<stem>`` when the candidate's
-    family key (kinds and fingerprint) is a pinned case's (the candidate
-    is fingerprinted here, before any shrinking)."""
+    family key (kinds and fingerprint) is a pinned case's.  The kinds and
+    the fingerprint are (re)computed here.  Before shrinking (``subset``)
+    the pinned case's kinds need only be *among* the candidate's (shrinking
+    removes material, never adds), so that a known family is recognised
+    without the shrink; after shrinking the kinds must agree."""
     if v.inv == "I7":
         return "I7-settings"       # plain attributes, not keyed on the registry epoch
-    if v.inv == "I2" and "kinds" not in v.variant:
+    if v.inv == "I2":
         v.variant = dict(v.variant, kinds=extra_kinds(from_srepr(v.variant["extra"]),
                                                       v.variant.get("extensions", ())))
-    if v.fingerprint is None:
-        v.fingerprint = fingerprint(v)
+    v.fingerprint = fingerprint(v)
     key = family_key(v)
     for stem, w in _pinned_with_shape((v.inv, v.severity, v.base, v.other)):
-        if w.fingerprint not in (None, "gone") and family_key(w) == key:
+        if w.fingerprint in (None, "gone"):
+            continue
+        wk = family_key(w)
+        if wk == key or (subset and wk[:4] == key[:4] and wk[5] == key[5] and set(wk[4]) <= set(key[4])):
             return f"pinned:{stem}"
     return None
 
@@ -1825,24 +1830,24 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                 if not _guarded(v, v.prop, v.assum, v.variant):
                     rep.inconclusive[inv] = rep.inconclusive.get(inv, 0) + 1
                     continue
-                v.known = _known(v)
+                v.known = _known(v, subset=True)     # kinds, fingerprint, pinned match (before shrinking)
                 if v.known and (any(w.known == v.known for w in rep.violations) or v.known in KNOWN_SEEN):
+                    rep.inconclusive["family_repeat"] = rep.inconclusive.get("family_repeat", 0) + 1
                     continue          # one finding covers a known family (per run for a pinned one)
                 fam = (inv, sev, b, other)
                 if sum((w.inv, w.severity, w.base, w.other) == fam for w in rep.violations) >= family_cap \
                         and not (v.fingerprint and all(family_key(w) != family_key(v) for w in rep.violations)):
                     continue          # the same shape again (the I2 definite -> None flood): shrinking costs
-                key = family_key(v)
-                if FAMILY_SEEN.get(key, 0) >= FAMILY_RUN_CAP:
-                    rep.inconclusive["family_repeat"] = rep.inconclusive.get("family_repeat", 0) + 1
-                    continue          # a family already reported in this run (kinds and fingerprint)
-                FAMILY_SEEN[key] = FAMILY_SEEN.get(key, 0) + 1
                 if v.known:
                     KNOWN_SEEN.add(v.known)
+                    FAMILY_SEEN[family_key(v)] = FAMILY_SEEN.get(family_key(v), 0) + 1
                     rep.violations.append(v)     # tagged with the pinned case, never shrunk again
                     if progress:
                         progress("violation: " + v.summary())
                     continue
+                if FAMILY_SEEN.get(family_key(v), 0) >= FAMILY_RUN_CAP:
+                    rep.inconclusive["family_repeat"] = rep.inconclusive.get("family_repeat", 0) + 1
+                    continue          # a family already reported in this run (kinds and fingerprint)
                 if shrink_them:
                     try:
                         shrink(v)
@@ -1851,13 +1856,18 @@ def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str],
                             progress(f"shrink failed: {type(e).__name__}: {e}")
                     if not _guarded(v, v.prop, v.assum, v.variant):
                         continue      # gone after shrinking: not reproducible
-                if inv == "I2":
-                    v.variant = dict(v.variant, kinds=extra_kinds(from_srepr(v.variant["extra"]),
-                                                                  v.variant.get("extensions", ())))
-                    fam2 = fam + (tuple(v.variant["kinds"]),)
-                    if any((w.inv, w.severity, w.base, w.other, tuple(w.variant.get("kinds", ()))) == fam2
-                           for w in rep.violations):
-                        continue      # the same shape by the same kind of material
+                # the family of the *shrunk* case (what suffices): kinds,
+                # fingerprint and the pinned match again
+                v.known = _known(v)
+                key = family_key(v)
+                if FAMILY_SEEN.get(key, 0) >= FAMILY_RUN_CAP or (v.known and v.known in KNOWN_SEEN):
+                    rep.inconclusive["family_repeat"] = rep.inconclusive.get("family_repeat", 0) + 1
+                    continue          # the same family once shrunk
+                FAMILY_SEEN[key] = FAMILY_SEEN.get(key, 0) + 1
+                if v.known:
+                    KNOWN_SEEN.add(v.known)
+                if any(family_key(w) == key for w in rep.violations):
+                    continue          # the same family in this slice
                 rep.violations.append(v)
                 if progress:
                     progress("violation: " + v.summary())
