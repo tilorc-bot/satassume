@@ -93,14 +93,14 @@ python -m harness invariants --nightly --seeds 0-2 --out harness-results/invaria
 python -m harness invariants --inv I1,I2 --profile transfer,links --config default,budget --seeds 0-4 --queries 120
 ```
 
-Measured (this machine, loaded): a 30-query slice through all seven
-checkers takes 2-20 s (`deep`, `relational` are the slow profiles);
-`--nightly --minutes 2.5 --seeds 13` visited 22 slices (573 queries,
-1,719 I1 checks, 1,146 I2 checks).  The 20-minute run visits roughly
-170-200 slices, about 4,500 queries.  Round 1's runs stopped after
-485-569 s of user CPU because the budget was wall time on a loaded
-machine; it is CPU now, and each query does more (three I1 drops, two
-I2 variants).  At most five reports per invariant and *one* of one shape
+Measured (round 3, d21e655, this machine): a 30-query slice (plus its
+derived queries, about 40 queries) through all seven checkers takes
+2-8 s of CPU (`base`, `declared` fast; `related`, `deep`, `relational`
+slow); `--nightly --minutes 1.2 --seeds 36` visited 11 slices (450
+queries, 1,350 I1 checks, 900 I2 checks) in 73 s; `--minutes 2.5`
+visited one full round of 8 profiles x 5 configs (570-900 queries).
+The 20-minute run visits roughly 150-180 slices, about 6,000-7,000
+queries.  At most five reports per invariant and *one* of one shape
 (invariant, severity, base answer, variant answer) per slice (the I2
 definite -> None family would otherwise spend the budget on shrinking),
 and for I2 one per shape *and kind of unrelated material*
