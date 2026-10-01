@@ -291,11 +291,17 @@ session is built (`Engine.verdict`: the whole cone escalated,
 propagation, search, in the session the set's queries then use).  The
 guard reads that verdict: only `consistent` is a model (`unknown`, a
 theory that gave up or a cone cut by the discovery budget, is none).
-The three `budget` cases (`discovery_budget=5`) no longer violate and
-move to `fixed/`: `I2-predicates-only-exhaust-discovery-budget`,
+The three `budget` cases (`discovery_budget=5`) no longer violate at
+that budget and move to `fixed/`:
+`I2-predicates-only-exhaust-discovery-budget`,
 `I3-declared-fact-loses-definiteness-budget` (K7),
-`I5-implied-conjunct-rescues-budget`.  The check's escalation moves
-where the budget cuts; the budget families (H2b) stay pinned in
+`I5-implied-conjunct-rescues-budget`.  The families are shifted, not
+fixed: the check's escalation only moves where the budget cuts (task 6 /
+R2).  Failing variants stay pinned:
+`I2-predicates-only-exhaust-discovery-budget-budget2`
+(`discovery_budget` 2) and `I5-implied-conjunct-rescues-budget-budget1`
+(`discovery_budget` 1) here; K7c (the I3 family, no failing budget with
+the original set), H2b, W2B3b and W2B3c in
 `tests/test_invariant_repros.py`.
 
 The findings below describe the cases as found.

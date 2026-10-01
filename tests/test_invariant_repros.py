@@ -142,6 +142,22 @@ def test_k7_declared_fact_loses_definite():
             == ask(p, a & ~Q.transcendental(r), Engine(discovery_budget=5)))
 
 
+@_xfail("K7c (I3, depends): an implied declared fact loses definiteness "
+        "at discovery_budget=3 with cone search; engine.py Session._discover "
+        "(budget cut, shifted by the set check); task 6")
+def test_k7c_declared_fact_loses_definite():
+    z0 = Symbol('z0', zero=True)
+    he = Symbol('he', hermitian=True)
+    f = Function('f')
+    p = Q.negative(1/(1 + z0))
+    a = Or(Q.positive(he), Q.negative_infinite(-3/sqrt(f(z0))),
+           Q.prime(f(he)), Q.irrational(f(f(z0))))
+
+    def eng():
+        return Engine(discovery_budget=3, cone_search=True, cone_threshold=3)
+    assert ask(p, a, eng()) == ask(p, a & Not(Q.irrational(z0)), eng())
+
+
 @_xfail("K8 (I5, depends): Implies(a, c) vs Or(c, ~a) at discovery_budget=5; "
         "engine.py Session._discover (budget cut)")
 def test_k8_implies_vs_or_restated():
@@ -234,6 +250,31 @@ def test_w2b3_unrelated_integer_block_exhausts_branch_budget():
     x, y, u, v = symbols('x y u v', integer=True)
     a = Q.gt(x, y + Rational(1, 3)) & Q.ge(y, 0) & Q.le(y, 5)
     b = Q.gt(u, v + Rational(1, 3)) & Q.ge(v, 0) & Q.ne(u, v + 1)
+    assert (ask(Q.ge(x, y + 1), a, Engine())
+            == ask(Q.ge(x, y + 1), a & b, Engine()))
+
+
+@_xfail("W2B3b (I2, depends): an unrelated integer block exhausts the shared "
+        "branch budget; lra.py LRATheory._check/_branch (one BRANCH_BUDGET "
+        "per check, not per component)")
+def test_w2b3b_unrelated_integer_blocks_exhaust_branch_budget():
+    x, y, u0, v0, u1, v1 = symbols('x y u0 v0 u1 v1', integer=True)
+    a = Q.gt(x, y + Rational(1, 3)) & Q.ge(y, 0) & Q.le(y, 5)
+    b = And(*[Q.gt(u, v + Rational(1, 3)) & Q.ge(v, 0) & Q.ne(u, v + 1)
+              for u, v in ((u0, v0), (u1, v1))])
+    assert (ask(Q.ge(x, y + 1), a, Engine())
+            == ask(Q.ge(x, y + 1), a & b, Engine()))
+
+
+@_xfail("W2B3c (I2, depends): an unrelated integer block exhausts the shared "
+        "branch budget; lra.py LRATheory._check/_branch (one BRANCH_BUDGET "
+        "per check, not per component)")
+def test_w2b3c_unrelated_bounded_integer_blocks_exhaust_branch_budget():
+    x, y = symbols('x y', integer=True)
+    a = Q.gt(x, y + Rational(1, 3)) & Q.ge(y, 0) & Q.le(y, 5)
+    b = And(*[Q.ge(u, Rational(1, 2)) & Q.le(u, 100) & Q.ne(u, 1)
+              & Q.ne(u, 2) & Q.ne(u, 3)
+              for u in symbols('u0 u1', integer=True)])
     assert (ask(Q.ge(x, y + 1), a, Engine())
             == ask(Q.ge(x, y + 1), a & b, Engine()))
 
