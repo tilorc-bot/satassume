@@ -256,6 +256,13 @@ def to_formula(expr, relations: bool = False, opaque: bool = False):
         return FALSE
     if isinstance(expr, _Applied):
         name = str(expr.function.name)
+        if name == "is_true" and len(expr.arguments) == 1:
+            # Q.is_true of a Boolean constant is that constant (not an atom)
+            a = expr.arguments[0]
+            if a is True or isinstance(a, _BTrue):
+                return TRUE
+            if a is False or isinstance(a, _BFalse):
+                return FALSE
         if name in RELATION_PREDICATES or name == "is_true":
             parts = relation_parts(expr)
             if parts is not None:

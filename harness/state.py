@@ -231,6 +231,7 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.euf_adapter", "_STRUCTURAL"),
     ("satassume.sympy_api", "CATEGORIES"), ("satassume.sympy_api", "RELATION_PREDICATES"),
     ("satassume.sympy_api", "_FORMULAS_STATE"),   # reset with _FORMULAS below
+    ("satassume.sympy_api", "_KEYS_STATE"),       # reset with _KEYS below
     ("satassume.templates._common", "VOCAB"), ("satassume.templates._common", "SIGN_FLIP"),
     ("satassume.templates._common", "_SIGNED_INFINITE"),
     ("satassume.templates.atoms", "_ORACLE_PREDS"), ("satassume.templates.atoms", "_CONST_BASIS"),
@@ -313,6 +314,7 @@ def reset_module_state(sympy_cache: bool = True) -> None:
         getattr(mod, attr).clear()
     api = importlib.import_module("satassume.sympy_api")
     api._FORMULAS_STATE[0] = None
+    api._KEYS_STATE[0] = None
     api._MATRIX_PREDICATES = None
     from satassume.templates.registry import registry
     registry._clauses_cache.clear()

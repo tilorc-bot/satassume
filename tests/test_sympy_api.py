@@ -345,3 +345,17 @@ def test_constant_route_needs_builtin_predicates_and_no_undefined_function(eng):
         assert ask(nice(Integer(2)), nice(Integer(2)), eng) is True
     finally:
         unregister('nice_constant_test')
+
+
+def test_is_true_of_boolean_constant_is_that_constant():
+    # Q.is_true(False) is not an opaque atom: it makes the set inconsistent
+    from sympy import true
+    from satassume.formula import TRUE, FALSE
+    x = Symbol('x')
+    assert to_formula(Q.is_true(false), opaque=True) is FALSE
+    assert to_formula(Q.is_true(true), opaque=True) is TRUE
+    for f in (False, false):
+        with pytest.raises(ValueError):
+            ask(Q.real(x), Q.real(x) & Q.is_true(f), Engine())
+    assert ask(Q.real(x), Q.real(x) & Q.is_true(True), Engine()) is True
+    assert ask(Q.real(x), Q.is_true(True), Engine()) is None
