@@ -1,0 +1,32 @@
+{
+ "inv": "I2",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "Not(AppliedPredicate(Q.extended_nonzero, Symbol('r', rational=True)))",
+ "assum": "Not(AppliedPredicate(Q.extended_nonzero, Symbol('r', rational=True)))",
+ "variant": {
+  "kind": "unrelated",
+  "extra": "AppliedBinaryRelation(Q.gt, Symbol('iuu5'), Function('iuh6')(Function('iuh7')(Integer(0))))"
+ },
+ "base": "True",
+ "other": "None",
+ "source": "python -m harness invariants (invariants profile=relational seed=10 slice=0)",
+ "shrunk": true,
+ "prefix": []
+}

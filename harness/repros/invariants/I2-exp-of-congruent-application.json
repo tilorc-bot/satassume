@@ -1,0 +1,32 @@
+{
+ "inv": "I2",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "And(Not(AppliedPredicate(Q.composite, Symbol('y', real=True))), AppliedPredicate(Q.zero, exp(Function('f')(Function('g')(Symbol('y', real=True))))))",
+ "assum": "And(AppliedPredicate(Q.zero, Symbol('y', real=True)), AppliedPredicate(Q.infinite, exp(Function('f')(Function('g')(Integer(0))))))",
+ "variant": {
+  "kind": "unrelated",
+  "extra": "Equality(Symbol('iuu1'), Symbol('iuu2'))"
+ },
+ "base": "None",
+ "other": "False",
+ "source": "python -m harness invariants (invariants profile=transfer seed=2 slice=0)",
+ "shrunk": true,
+ "prefix": []
+}

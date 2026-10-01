@@ -1,0 +1,47 @@
+{
+ "inv": "I2",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "budget",
+  "discovery_budget": 5,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "Not(AppliedPredicate(Q.nonpositive, Mul(Integer(-1), Symbol('t', real=True, nonzero=True))))",
+ "assum": "AppliedPredicate(Q.nonpositive, Add(Integer(1), Mul(Integer(-1), Symbol('t', real=True, nonzero=True))))",
+ "variant": {
+  "kind": "unrelated",
+  "extra": "And(Implies(AppliedPredicate(Q.positive, Integer(1000000)), AppliedPredicate(Q.commutative, Symbol('iuu7'))), AppliedPredicate(Q.real, Add(Symbol('iuu2'), Symbol('iuu4'), Symbol('iuu5'), Pow(Symbol('iuu3'), Integer(-1)))), Or(AppliedPredicate(Q.noninteger, Mul(Symbol('iuu10'), Dummy('iud11', dummy_index=1695674))), AppliedPredicate(Q.irrational, Mul(Integer(-1), sin(Integer(3))))))",
+  "mode": "norel",
+  "extensions": [
+   {
+    "pred": "real",
+    "cls": "Basic",
+    "lit": "positive",
+    "neg": false,
+    "shape": "none"
+   }
+  ],
+  "kinds": [
+   "compound",
+   "ext:Basic:none",
+   "pred"
+  ]
+ },
+ "base": "False",
+ "other": "None",
+ "source": "norel focus",
+ "shrunk": true,
+ "prefix": []
+}

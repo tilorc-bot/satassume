@@ -1,0 +1,35 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "boundary",
+  "discovery_budget": 1,
+  "session_limit": 1,
+  "keep_sessions": 0,
+  "cone_search": true,
+  "cone_threshold": 0,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 2,
+  "custom_cache_size": 2,
+  "answers_size": 2,
+  "splits_size": 2
+ },
+ "prop": "AppliedBinaryRelation(Q.lt, Add(Integer(-1), Symbol('np', nonpositive=True), Pow(Symbol('ep', extended_positive=True), Integer(-1)), Mul(Rational(1, 2), pi, Pow(Integer(3), Rational(1, 2)))), Symbol('z'))",
+ "assum": "AppliedBinaryRelation(Q.lt, Add(Integer(-1), Symbol('np', nonpositive=True), Pow(Symbol('ep', extended_positive=True), Integer(-1)), Mul(Rational(1, 2), pi, Pow(Integer(3), Rational(1, 2)))), Symbol('z'))",
+ "variant": {
+  "kind": "prop",
+  "prop": "AppliedBinaryRelation(Q.lt, Mul(Integer(-1), Symbol('z')), Add(Integer(1), Mul(Integer(-1), Symbol('np', nonpositive=True)), Mul(Integer(-1), Pow(Symbol('ep', extended_positive=True), Integer(-1))), Mul(Rational(-1, 2), pi, Pow(Integer(3), Rational(1, 2)))))",
+  "scope": "in"
+ },
+ "base": "True",
+ "other": "None",
+ "source": "round 4: invariants profile=declared seed=11 slice=0",
+ "shrunk": true,
+ "consistent_by": null,
+ "fingerprint": "budget",
+ "prefix": []
+}

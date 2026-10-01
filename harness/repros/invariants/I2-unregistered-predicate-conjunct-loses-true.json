@@ -1,0 +1,39 @@
+{
+ "inv": "I2",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "boundary",
+  "discovery_budget": 1,
+  "session_limit": 1,
+  "keep_sessions": 0,
+  "cone_search": true,
+  "cone_threshold": 0,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 2,
+  "custom_cache_size": 2,
+  "answers_size": 2,
+  "splits_size": 2
+ },
+ "prop": "AppliedPredicate(Q.finite, Symbol('j', integer=True, even=True))",
+ "assum": "True",
+ "variant": {
+  "kind": "unrelated",
+  "extra": "AppliedPredicate(Q.iuoos60, Symbol('iuu61'))",
+  "mode": "any",
+  "scope": "custom",
+  "kinds": [
+   "custom"
+  ]
+ },
+ "base": "True",
+ "other": "None",
+ "source": "round 4: invariants profile=related seed=11 slice=0",
+ "shrunk": true,
+ "consistent_by": null,
+ "fingerprint": "-",
+ "prefix": []
+}

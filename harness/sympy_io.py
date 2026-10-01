@@ -106,9 +106,24 @@ class _QProxy:
             return custom_predicate(name)
 
 
+def _exact(cls):
+    """``srepr`` prints the spelling of a Boolean node; rebuilding it with
+    SymPy's constructor would rewrite it (``Not(x >= a)`` becomes ``x < a``,
+    which means something else when ``x`` can be non-real; a nested or
+    reordered ``And`` is flattened and sorted).  ``evaluate=False`` keeps
+    what was printed, and equals the evaluated node whenever that node was
+    canonical to begin with."""
+    def build(*args, **kw):
+        kw.setdefault("evaluate", False)
+        return cls(*args, **kw)
+    return build
+
+
 _NS = _Namespace()
 _NS["True"], _NS["False"], _NS["None"] = True, False, None
 _NS["Q"] = _QProxy()
+from sympy.logic.boolalg import And as _And, Or as _Or, Not as _Not  # noqa: E402
+_NS["And"], _NS["Or"], _NS["Not"] = _exact(_And), _exact(_Or), _exact(_Not)
 
 
 def to_srepr(obj) -> str:

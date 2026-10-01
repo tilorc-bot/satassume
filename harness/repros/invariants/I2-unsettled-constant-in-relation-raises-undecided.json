@@ -1,0 +1,44 @@
+{
+ "inv": "I2",
+ "severity": "crash",
+ "known": null,
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedPredicate(Q.zero, Add(Integer(2), Function('g')(Symbol('n', integer=True))))",
+ "assum": "AppliedPredicate(Q.zero, Symbol('n', integer=True))",
+ "variant": {
+  "kind": "unrelated",
+  "extra": "Equivalent(AppliedBinaryRelation(Q.lt, Symbol('iuu18'), oo), GreaterThan(Add(Integer(-1), Symbol('iuu17'), Pow(cos(Mul(Rational(1, 7), pi)), Integer(2)), Pow(sin(Mul(Rational(1, 7), pi)), Integer(2))), Float('1.0000000000000001e-9', precision=53)))",
+  "mode": "rel",
+  "scope": "in",
+  "kinds": [
+   "compound",
+   "const:float",
+   "const:infinite",
+   "const:rational",
+   "const:transcendental",
+   "const:unsettled"
+  ]
+ },
+ "base": "None",
+ "other": "Error:Undecided",
+ "source": "round 4: ci transfer stream, the classified constant pool",
+ "shrunk": true,
+ "consistent_by": null,
+ "fingerprint": "norel",
+ "prefix": []
+}

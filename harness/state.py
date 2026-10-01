@@ -158,6 +158,12 @@ PRESETS: Dict[str, EngineConfig] = {
     "cone": EngineConfig(name="cone", cone_threshold=-1),
     # whole assumption set always (no relevance split)
     "whole": EngineConfig(name="whole", relevance=False),
+    # no transfer between congruent applications (the relation glue alone)
+    "notransfer": EngineConfig(name="notransfer", transfer=False),
+    # a small discovery budget and the whole set: every optimisation that
+    # drops clauses engaged at once, no cone sessions
+    "lean": EngineConfig(name="lean", discovery_budget=12, relevance=False,
+                         cone_search=False, cone_threshold=0),
     # no predicate transfer between equal terms
     "notransfer": EngineConfig(name="notransfer", transfer=False),
     # relations out of scope (the scalar slice alone)
@@ -166,6 +172,12 @@ PRESETS: Dict[str, EngineConfig] = {
     "free": EngineConfig(name="free", uninterpreted="free"),
     # the discovery budget binds on ordinary expressions
     "budget": EngineConfig(name="budget", discovery_budget=5),
+    # every setting at its smallest legal value at once: one node of
+    # discovery per demand, cone threshold 0, one-element sessions, no
+    # session kept, every bounded cache of size 2
+    "boundary": EngineConfig(name="boundary", discovery_budget=1, cone_threshold=0,
+                             session_limit=1, keep_sessions=0, cache_size=2,
+                             custom_cache_size=2, answers_size=2, splits_size=2),
     # sessions are replaced constantly, one at a time
     "churn": EngineConfig(name="churn", session_limit=3, keep_sessions=1),
     # the fact cache is cleared every few nodes, the memos every few answers

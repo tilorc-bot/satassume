@@ -1,0 +1,59 @@
+name: invariants
+# Nightly invariant campaign (harness/INVARIANTS.md): I1-I7 over the
+# nightly work list (8 profiles x 6 configs x the seeds, visited round
+# robin in slices until the budget is spent).  The budget is CPU time of
+# the process and its children (20 minutes by default), so the job takes
+# about as long as the longest history-fuzz shard.  The job fails only on
+# a violation outside the documented families (`--fail-on unknown`):
+# known families are tagged `known:` and pinned in
+# tests/test_invariant_repros.py.  Every violation found (known families
+# included) is uploaded as an artifact with a standalone repro.
+#
+# The seeds move every night (run number x 100) so successive runs cover
+# new streams; `seed_offset` pins them to rerun a night's campaign.
+on:
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "CPU budget in minutes (20 is the documented nightly)"
+        default: "20"
+      seeds:
+        description: "number of seeds (the work list is visited round robin)"
+        default: "3"
+      seed_offset:
+        description: "first seed (empty: run number x 100)"
+        default: ""
+
+env:
+  MINUTES: ${{ inputs.minutes || '20' }}
+  NSEEDS: ${{ inputs.seeds || '3' }}
+  PYTHONHASHSEED: "0"
+
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest hypothesis sympy mpmath z3-solver
+      - name: invariants (nightly work list)
+        env:
+          SEED_OFFSET: ${{ inputs.seed_offset }}
+        run: |
+          SEED_OFFSET=${SEED_OFFSET:-$(( (GITHUB_RUN_NUMBER % 10000) * 100 ))}
+          LAST=$(( SEED_OFFSET + NSEEDS - 1 ))
+          python -m harness invariants --nightly --minutes "$MINUTES" \
+            --seeds "$SEED_OFFSET-$LAST" --fail-on unknown --quiet \
+            --out harness-results/invariants
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invariants
+          path: harness-results/invariants
+          if-no-files-found: ignore
+          retention-days: 30
