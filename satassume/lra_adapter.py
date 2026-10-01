@@ -106,6 +106,7 @@ above covers both.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from fractions import Fraction
 from typing import Any
 
@@ -602,8 +603,10 @@ def integer_form(e):
 #: keyed by the SymPy atom itself (equal atoms linearise identically) and,
 #: through the outer dict, by the flag the results were computed under, so
 #: flipping the flag never serves the other value's linearisations.  One
-#: memo per flag value keeps a lookup at one more index.
-_INTERPRETED: dict = {True: {}, False: {}}
+#: memo per flag value keeps a lookup at one more index.  A
+#: ``defaultdict``, so emptying the outer dict (the harness's
+#: ``reset_module_state`` does ``_INTERPRETED.clear()``) leaves it usable.
+_INTERPRETED: dict = defaultdict(dict)
 #: size bound of each memo; a module constant, not a setting: changing it at run time is unsupported (answers memoized under the old value are kept)
 _INTERPRETED_MAX = 100_000
 

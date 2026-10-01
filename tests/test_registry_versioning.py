@@ -465,7 +465,7 @@ SETTING_QUERIES = [(Q.real(x), Q.real(x) & Q.le(y, 1.5)),
 @pytest.mark.parametrize("name,value", SETTINGS, ids=[s[0] for s in SETTINGS])
 def test_setting_change_after_queries_answers_as_fresh(name, value):
     """I7: a setting changed after queries gives the answers of a fresh
-    engine with that setting (the change starts a new registry epoch)."""
+    engine with that setting (the change drops this engine's caches)."""
     eng = fresh()
     for p, a in SETTING_QUERIES:
         outcome(eng, p, a)
@@ -494,6 +494,35 @@ def test_assigning_the_same_setting_clears_nothing(name):
         outcome(eng, p, a)
     assert eng.stats["version_clears"] == 0
     assert all(eng.answers.get(k) == v for k, v in memo.items())
+
+
+@pytest.mark.parametrize("name,value", SETTINGS, ids=[s[0] for s in SETTINGS])
+def test_setting_change_is_local_to_its_engine(name, value):
+    """A setting change drops the changed engine's caches (its fact caches
+    included) and nothing of another engine's: the registry epoch is not
+    bumped, so a long-lived engine keeps its history."""
+    other, eng = fresh(), fresh()
+    for p, a in SETTING_QUERIES:
+        outcome(other, p, a)
+        outcome(eng, p, a)
+    epoch = EPOCH[0]
+    memo, sessions = dict(other.answers), dict(other._context_sessions)
+    facts = dict(other.cache.store)
+    setattr(eng, name, value)
+    assert EPOCH[0] == epoch
+    assert eng.stats["version_clears"] == 1
+    assert not eng.answers and not eng.splits and not eng._context_sessions
+    assert not eng.cache.store and not eng.custom_cache.store
+    assert other.stats["version_clears"] == 0 and other._epoch == EPOCH[0]
+    assert dict(other.answers) == memo
+    assert dict(other._context_sessions) == sessions
+    assert dict(other.cache.store) == facts
+
+
+def test_setting_change_before_any_query_counts_nothing():
+    eng = fresh()
+    eng.transfer = False
+    assert eng.stats["version_clears"] == 0
 
 
 def test_construction_bumps_nothing():

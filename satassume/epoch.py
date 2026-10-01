@@ -12,12 +12,13 @@ Every change of one of these bumps :data:`EPOCH`:
 * ``Extensions.register`` and ``Extensions.unregister`` (through the
   ``version`` counter of the registry);
 * ``TemplateRegistry.register``;
-* assigning ``Engine.extensions`` or ``Engine.relation_specs``;
-* assigning a different value to an engine setting: ``templates``,
-  ``discovery_budget``, ``session_limit``, ``keep_sessions``,
-  ``cone_search``, ``cone_threshold``, ``transfer``, ``uninterpreted``,
-  ``relevance`` (construction bumps nothing; assigning the same value
-  bumps nothing).
+* assigning ``Engine.extensions`` or ``Engine.relation_specs``.
+
+The engine settings (``templates``, ``discovery_budget``,
+``session_limit``, ``keep_sessions``, ``cone_search``, ``cone_threshold``,
+``transfer``, ``uninterpreted``, ``relevance``) are not part of the epoch:
+they belong to one engine, and assigning a different value drops that
+engine's caches only (``Engine._settings_changed``).
 
 ``lra_adapter.GENERIC_CONSTANTS`` does not bump: its process-wide memo is
 keyed on the flag.  ``lra.BRANCH_BUDGET``, ``sympy_api.RELATIONAL``,
@@ -31,8 +32,7 @@ engines, or handed to an engine created after a registration, is dropped
 too.  The guard on the hot paths is one list index and one integer
 comparison.  The epoch is global, not per registry, so a change on one
 registry also drops the caches of engines using another; that is a
-needless clear, never a stale answer; the same holds for a setting
-changed on one engine.
+needless clear, never a stale answer.
 """
 from __future__ import annotations
 

@@ -734,9 +734,9 @@ class Engine:
         #: context-free facts (``DictCache``); set at construction
         self.cache = cache if cache is not None else DictCache()
         self.custom_cache = DictCache()
-        # the settings: properties whose setters start a new registry
-        # epoch on a real change (see "the registry epoch" below);
-        # construction assigns the fields and bumps nothing
+        # the settings: properties whose setters drop this engine's caches
+        # on a real change (``_settings_changed``); construction assigns
+        # the fields and drops nothing
         self._discovery_budget = discovery_budget
         self._session_limit = session_limit
         self._keep_sessions = keep_sessions
@@ -800,81 +800,81 @@ class Engine:
 
     @property
     def discovery_budget(self):
-        """Setting: nodes one discovery or escalation step may add.  Assigning a different value starts a new
-        registry epoch: every cache is dropped."""
+        """Setting: nodes one discovery or escalation step may add.  Assigning a different
+        value drops this engine's caches (``_settings_changed``)."""
         return self._discovery_budget
 
     @discovery_budget.setter
     def discovery_budget(self, value) -> None:
         if value != self._discovery_budget:
             self._discovery_budget = value
-            _bump()
+            self._settings_changed()
 
     @property
     def session_limit(self):
-        """Setting: largest contextual session (in nodes) reused for a query.  Assigning a different value starts a new
-        registry epoch: every cache is dropped."""
+        """Setting: largest contextual session (in nodes) reused for a query.  Assigning a different
+        value drops this engine's caches (``_settings_changed``)."""
         return self._session_limit
 
     @session_limit.setter
     def session_limit(self, value) -> None:
         if value != self._session_limit:
             self._session_limit = value
-            _bump()
+            self._settings_changed()
 
     @property
     def keep_sessions(self):
-        """Setting: how many contextual sessions are kept.  Assigning a different value starts a new
-        registry epoch: every cache is dropped."""
+        """Setting: how many contextual sessions are kept.  Assigning a different
+        value drops this engine's caches (``_settings_changed``)."""
         return self._keep_sessions
 
     @keep_sessions.setter
     def keep_sessions(self, value) -> None:
         if value != self._keep_sessions:
             self._keep_sessions = value
-            _bump()
+            self._settings_changed()
 
     @property
     def cone_search(self):
-        """Setting: search the cone of a polluted contextual session.  Assigning a different value starts a new
-        registry epoch: every cache is dropped."""
+        """Setting: search the cone of a polluted contextual session.  Assigning a different
+        value drops this engine's caches (``_settings_changed``)."""
         return self._cone_search
 
     @cone_search.setter
     def cone_search(self, value) -> None:
         if value != self._cone_search:
             self._cone_search = value
-            _bump()
+            self._settings_changed()
 
     @property
     def cone_threshold(self):
-        """Setting: constants beyond the assumptions' that pollute a session.  Assigning a different value starts a new
-        registry epoch: every cache is dropped."""
+        """Setting: constants beyond the assumptions' that pollute a session.  Assigning a different
+        value drops this engine's caches (``_settings_changed``)."""
         return self._cone_threshold
 
     @cone_threshold.setter
     def cone_threshold(self, value) -> None:
         if value != self._cone_threshold:
             self._cone_threshold = value
-            _bump()
+            self._settings_changed()
 
     @property
     def transfer(self):
-        """Setting: engage predicate transfer (satassume.transfer).  Assigning a different value starts a new
-        registry epoch: every cache is dropped."""
+        """Setting: engage predicate transfer (satassume.transfer).  Assigning a different
+        value drops this engine's caches (``_settings_changed``)."""
         return self._transfer
 
     @transfer.setter
     def transfer(self, value) -> None:
         if value != self._transfer:
             self._transfer = value
-            _bump()
+            self._settings_changed()
 
     @property
     def uninterpreted(self) -> str:
         """Setting: ``"none"`` or ``"free"`` (relations no theory reads are
-        free atoms).  Assigning a different value starts a new registry
-        epoch: every cache is dropped."""
+        free atoms).  Assigning a different value drops this engine's
+        caches (``_settings_changed``)."""
         return self._uninterpreted
 
     @uninterpreted.setter
@@ -882,26 +882,26 @@ class Engine:
         value = _check_uninterpreted(value)
         if value != self._uninterpreted:
             self._uninterpreted = value
-            _bump()
+            self._settings_changed()
 
     @property
     def relevance(self):
-        """Setting: drop assumption components irrelevant to the proposition.  Assigning a different value starts a new
-        registry epoch: every cache is dropped."""
+        """Setting: drop assumption components irrelevant to the proposition.  Assigning a different
+        value drops this engine's caches (``_settings_changed``)."""
         return self._relevance
 
     @relevance.setter
     def relevance(self, value) -> None:
         if value != self._relevance:
             self._relevance = value
-            _bump()
+            self._settings_changed()
 
     @property
     def templates(self):
         """Setting: ``node -> formulas``, the structural templates.
-        Assigning another function starts a new registry epoch (every
-        cache is dropped) and, as for ``Engine(templates=...)``, turns off
-        the compiled fast path (``clause_templates``)."""
+        Assigning another function drops this engine's caches
+        (``_settings_changed``) and, as for ``Engine(templates=...)``, turns
+        off the compiled fast path (``clause_templates``)."""
         return self._templates
 
     @templates.setter
@@ -909,7 +909,30 @@ class Engine:
         if value is not self._templates:
             self._templates = value
             self.clause_templates = None
-            _bump()
+            self._settings_changed()
+
+    def _settings_changed(self) -> None:
+        """A setting of this engine changed (the setters call this on a real
+        change only): drop what this engine computed under the old value.
+        Settings are not part of the registry epoch, so other engines keep
+        their caches.  Before the first query (``_epoch == -1``) there is
+        nothing to drop.  Otherwise this drops what :meth:`_check_version`
+        drops for the engine (the contextual sessions, the answer and split
+        memos, the ``Uninterpreted`` memo), counted in
+        ``stats["version_clears"]``, and the stores of the engine's fact
+        caches (``cache``, ``custom_cache``): their facts can depend on
+        ``templates``, ``discovery_budget`` (truncated sessions),
+        ``transfer`` and ``uninterpreted``.  A ``DictCache`` shared with
+        other engines is cleared for them too: a needless clear for them,
+        never a stale answer.  :data:`satassume.epoch.EPOCH` is untouched."""
+        if self._epoch >= 0:
+            self.stats["version_clears"] += 1
+            self._context_sessions.clear()
+            self.answers.clear()
+            self.splits.clear()
+            self._failed.clear()
+            self.cache.store.clear()
+            self.custom_cache.store.clear()
 
     def _check_version(self) -> None:
         """Drop every engine-level cache filled under an earlier registry
