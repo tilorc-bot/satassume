@@ -200,26 +200,19 @@ def preset(name: str) -> EngineConfig:
 # module-level state
 # --------------------------------------------------------------------------
 
-#: ``(module, attribute)`` of every module-level memo of the engine.  Each is
-#: a dict, list or set that ``reset_module_state`` empties.
-MODULE_STATE: Tuple[Tuple[str, str], ...] = (
-    ("satassume.sympy_api", "_FORMULAS"),
-    ("satassume.sympy_api", "_KEYS"),
-    ("satassume.sympy_api", "_CONST"),
-    ("satassume.sympy_api", "_NONCOMM"),
-    ("satassume.engine", "_NEIGH"),
-    ("satassume.engine", "_WANT"),
-    ("satassume.engine", "_SPLIT"),
-    ("satassume.solver", "_RULE_TABLES"),
-    ("satassume.relations", "_SYMPY_ATOMS"),
-    ("satassume.lra_adapter", "_BOUNDS"),
-    ("satassume.lra_adapter", "_INTERPRETED"),
-    ("satassume.lra_adapter", "_ENCLOSURES"),
-    ("satassume.lra_adapter", "_IV"),
-    ("satassume.euf_adapter", "_class_ok"),
-    ("satassume.templates._common", "_CACHE"),
-    ("satassume.templates.atoms", "_INGREDIENTS"),
-)
+# the modules that create process-wide memo tables (``satassume.memos``),
+# imported so that ``MODULE_STATE`` lists their tables
+import satassume.relations  # noqa: E402,F401
+import satassume.sympy_api  # noqa: E402,F401
+import satassume.templates  # noqa: E402,F401
+from satassume.memos import PROCESS as MEMOS, Table, module_locations  # noqa: E402
+
+#: ``(module, attribute)`` of every module-level memo of the engine: the
+#: process-wide memos registered with ``satassume.memos.PROCESS`` (tables
+#: and adopted containers), which ``reset_module_state`` empties with one
+#: ``MEMOS.clear()``.  A module-level memo that is not registered there is
+#: unclassified in ``inventory``.
+MODULE_STATE: Tuple[Tuple[str, str], ...] = tuple(module_locations())
 
 #: module-level containers that are constants (built at import, never
 #: written afterwards), so not state
@@ -235,8 +228,6 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.lra_adapter", "_BAD"),
     ("satassume.euf_adapter", "_STRUCTURAL"),
     ("satassume.sympy_api", "CATEGORIES"), ("satassume.sympy_api", "RELATION_PREDICATES"),
-    ("satassume.sympy_api", "_FORMULAS_STATE"),   # reset with _FORMULAS below
-    ("satassume.sympy_api", "_KEYS_STATE"),       # reset with _KEYS below
     ("satassume.templates._common", "VOCAB"), ("satassume.templates._common", "SIGN_FLIP"),
     ("satassume.templates._common", "_SIGNED_INFINITE"),
     ("satassume.templates.atoms", "_ORACLE_PREDS"), ("satassume.templates.atoms", "_CONST_BASIS"),
@@ -297,7 +288,7 @@ def inventory(kinds=(dict, list, set)) -> List[Tuple[str, str, str]]:
         for attr, val in vars(m).items():
             if attr.startswith("__"):
                 continue
-            if type(val) in kinds:
+            if type(val) in kinds or type(val) is Table:
                 key = (m.__name__, attr, type(val).__name__)
                 prev = by_id.get(id(val))
                 if prev is None or (prev[:2] not in known and key[:2] in known):
@@ -310,22 +301,14 @@ def inventory(kinds=(dict, list, set)) -> List[Tuple[str, str, str]]:
 
 
 def reset_module_state(sympy_cache: bool = True) -> None:
-    """Empty every module-level memo of the engine (``MODULE_STATE``), the
-    template registry's memos, the extension registry's per-class memo and,
+    """Empty every process-wide memo of the engine (``satassume.memos.PROCESS``:
+    the module-level memos of ``MODULE_STATE``, the template registry's
+    memos, the extension registry's per-class memo) and,
     with ``sympy_cache``, SymPy's ``cacheit`` cache.  Registrations are
     kept: they are configuration."""
-    for modname, attr in MODULE_STATE:
-        mod = importlib.import_module(modname)
-        getattr(mod, attr).clear()
+    MEMOS.clear()
     api = importlib.import_module("satassume.sympy_api")
-    api._FORMULAS_STATE[0] = None
-    api._KEYS_STATE[0] = None
     api._MATRIX_PREDICATES = None
-    from satassume.templates.registry import registry
-    registry._clauses_cache.clear()
-    registry._mro_cache.clear()
-    from satassume.extensions import extensions
-    extensions._node_cache.clear()
     if sympy_cache:
         from sympy.core.cache import clear_cache
         clear_cache()

@@ -74,6 +74,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
+from .memos import engine_memos
 from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_objects, link_objects)
@@ -1397,6 +1398,8 @@ class Engine:
         #: the registry epoch (:mod:`satassume.epoch`) the engine-level
         #: caches were filled under; -1 until the first query
         self._epoch = -1
+        #: this engine's memos, by name (:func:`satassume.memos.engine_memos`)
+        self.memos = engine_memos(self)
         #: counters; ``theory_gave_up``: contextual queries whose session's
         #: theory gave up (satassume.theory, "Giving up"), answered None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
