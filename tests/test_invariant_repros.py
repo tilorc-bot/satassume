@@ -277,10 +277,6 @@ def test_w2b4b_derived_equality_does_not_engage_transfer():
             == ask(p, Q.positive(f(y)) & Q.le(x, y) & Q.ge(x, y), Engine()))
 
 
-@_xfail("H1 (I5, depends): an equality of non-real terms restated "
-        "(x = y vs -x = -y) is not normalised: EUF has no arithmetic and "
-        "LRA needs real terms; relations.py Relations._eq_links (zero(a - b) "
-        "only for a difference SymPy builds term by term)")
 def test_h1_equality_of_nonreal_terms_restated():
     x, y = symbols('x y')
     assert (ask(Q.eq(x, y), Q.eq(x, y), Engine())

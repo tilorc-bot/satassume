@@ -278,10 +278,46 @@ def _ext_atoms(*sides) -> list:
                     or e is S.NegativeInfinity)]
 
 
+def _affine_strip(lhs, rhs):
+    """``(s, t)`` for ``lhs = k*s + c`` and ``rhs = k*t + c`` with the same
+    Rational ``c`` and the same nonzero Rational ``k`` (read off the sides
+    with ``as_coeff_Add`` / ``as_coeff_Mul``), repeated to a fixed point;
+    the sides unchanged otherwise.  A Float coefficient is left alone.
+
+    ``eq(k*s + c, k*t + c)`` and ``eq(s, t)`` agree at every point of the
+    extended domain: ``u -> k*u + c`` is injective on the complex numbers
+    and on ``oo``, ``-oo``, ``zoo`` (``k*oo`` is ``oo`` or ``-oo`` by the
+    sign of ``k``, ``zoo`` stays ``zoo``, adding ``c`` fixes each), sends
+    ``nan`` to ``nan`` and nothing else to ``nan``; a ``nan`` side equals
+    nothing (as :meth:`Relations._eq_links` assumes), so both relations
+    are false when either side is ``nan``.  A pure function of the two
+    sides, symmetric in them, and idempotent."""
+    from sympy import Expr
+    while True:
+        if not (isinstance(lhs, Expr) and isinstance(rhs, Expr)):
+            return lhs, rhs
+        c1, s = lhs.as_coeff_Add()
+        c2, t = rhs.as_coeff_Add()
+        if c1.is_Rational and c2.is_Rational and c1 != 0 and c1 == c2:
+            lhs, rhs = s, t
+            continue
+        k1, s = lhs.as_coeff_Mul()
+        k2, t = rhs.as_coeff_Mul()
+        if (k1.is_Rational and k2.is_Rational and k1 != 1 and k1 != 0
+                and k1 == k2):
+            lhs, rhs = s, t
+            continue
+        return lhs, rhs
+
+
 def relation_atom(name: str, lhs, rhs):
     """The formula for relation ``name`` (``eq ne lt le gt ge``)."""
     if name in ("eq", "ne"):
         from sympy import S
+        if not (_is_number(lhs) or _is_number(rhs)):
+            # canonical under shared affine bijections: -x = -y, x + 1 =
+            # y + 1 and 2*x = 2*y are all eq(x, y)
+            lhs, rhs = _affine_strip(lhs, rhs)
         if lhs is S.NaN or rhs is S.NaN:
             # never sort with nan: default_sort_key would compare it
             # numerically (SymPy 1.14 raises); nan goes last
