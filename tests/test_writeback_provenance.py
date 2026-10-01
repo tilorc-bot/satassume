@@ -3,7 +3,8 @@
 with a clause from outside their node's cone are not written (a clause the
 solver shortened with a foreign root fact included); facts of a node whose
 cone does not fit the discovery budget are not written; the
-``"root-only"`` policy; a budget-truncated session writes nothing."""
+``"root-only"`` policy (the default: no provenance bookkeeping); a
+budget-truncated session writes nothing."""
 import pytest
 
 from satassume import Engine, DictCache, P, Implies, Not, And, Or, allargs
@@ -111,6 +112,26 @@ def test_root_only_writes_only_the_queried_node():
     assert cache.facts('w') is None
 
 
+def test_root_only_is_the_default_and_keeps_no_provenance():
+    eng = Engine(templates=templates, cache=DictCache())
+    assert eng.writeback == "root-only"
+    s = eng._fresh_session()
+    assert not s.track and not s.solver.track_owners
+    eng, cache = _engine("root-only")
+    node = ('add', 'y', 'z')
+    s = eng._fresh_session()
+    s.ensure(node)
+    s.escalate()
+    s.query_literal(s.base[node], search=True)
+    sv = s.solver
+    assert sv.owner is BOTTOM
+    assert not sv._cowner and not sv._uowner and not sv._cante
+    # a complete session within the budget: written with no cone test
+    assert eng.is_(node, 'positive') is True
+    assert cache.get(node, 'real') is True
+    assert eng.stats["writeback_budget"] == 0
+
+
 def test_unknown_writeback_policy_raises():
     with pytest.raises(ValueError):
         Engine(templates=templates, writeback="sometimes")
@@ -140,10 +161,9 @@ def test_home_shortcut_implies_provenance_in_cone():
     from satassume.engine import _FOREIGN
     x = sympy.Symbol('x', positive=True)
     y = sympy.Symbol('y', integer=True)
-    eng = Engine()
+    eng = Engine(writeback="provenance")
     for e in (x * y + sympy.acos(x) - 1, sympy.exp(x) / (y ** 2 + 1)):
         s = eng._fresh_session()
-        s.subject = e
         s.ensure(e)
         s.escalate()
         b = s.base[e]
@@ -202,22 +222,24 @@ def _r1_templates(node):
     return []
 
 
-def _r1_engine():
+def _r1_engine(policy="provenance"):
     cache = DictCache()
     cache.put('e', 'real', True)
     cache.put(F1, 'nonzero', False)
-    return Engine(templates=_r1_templates, cache=cache)
+    return Engine(templates=_r1_templates, cache=cache, writeback=policy)
 
 
-def test_shortened_clause_keeps_its_foreign_antecedent():
-    eng = _r1_engine()
+@pytest.mark.parametrize("policy", ["provenance", "root-only"])
+def test_shortened_clause_keeps_its_foreign_antecedent(policy):
+    eng = _r1_engine(policy)
     # one session that visits F before D
     assert eng.ask(Or(P('nonzero', F1), P('positive', D1))) is True
     assert eng.cache.get(D1, 'positive', 'missing') == 'missing'
-    assert eng.stats["writeback_refused"] > 0
+    if policy == "provenance":
+        assert eng.stats["writeback_refused"] > 0
     assert eng.is_(D1, 'positive') is None
-    assert _r1_engine().is_(D1, 'positive') is None
-    assert _not_memos(eng, _r1_engine) == []
+    assert _r1_engine(policy).is_(D1, 'positive') is None
+    assert _not_memos(eng, lambda: _r1_engine(policy)) == []
 
 
 def _chain_engine(budget, policy="provenance"):
@@ -249,21 +271,23 @@ def test_reused_session_past_the_budget_writes_only_facts_of_cones_that_fit(poli
     assert eng.is_(e, 'positive') is None and eng.last_budget_limited
 
 
-def test_reused_session_past_the_budget_sympy():
+@pytest.mark.parametrize("policy", ["provenance", "root-only"])
+def test_reused_session_past_the_budget_sympy(policy):
     """a_final (fable review), on SymPy nodes: exp(exp(exp(x))) has a cone
     of 4 nodes, the budget is 3."""
     sympy = pytest.importorskip("sympy")
     x = sympy.Symbol('x', positive=True)
     y = sympy.Symbol('y')
-    eng = Engine(discovery_budget=3)
+    eng = Engine(discovery_budget=3, writeback=policy)
     e = x
     for _ in range(3):
         e = sympy.exp(e)
         eng.ask(P('positive', e), P('real', y))     # a reused session, one node more per call
     assert eng.cache.get(e, 'positive', 'missing') == 'missing'
-    assert eng.stats["writeback_budget"] > 0
-    assert _not_memos(eng, lambda: Engine(discovery_budget=3)) == []
-    fresh = Engine(discovery_budget=3)
+    if policy == "provenance":
+        assert eng.stats["writeback_budget"] > 0
+    assert _not_memos(eng, lambda: Engine(discovery_budget=3, writeback=policy)) == []
+    fresh = Engine(discovery_budget=3, writeback=policy)
     r = fresh.is_(e, 'positive')
     assert r is None and fresh.last_budget_limited
     # the warm is_ is budget-limited as well (it may be more definite, from

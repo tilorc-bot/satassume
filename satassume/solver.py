@@ -457,6 +457,11 @@ class Solver:
         # antecedents of every implication it makes: root_step adds them).
         # Every strengthening of a clause goes through _add_lits (the slow
         # paths of add_clauses, add_internal and add_pattern included).
+        # ``track_owners`` False (a client that never asks for provenance,
+        # e.g. Engine(writeback="root-only")): nothing of this is recorded,
+        # and the client leaves ``owner`` at BOTTOM, so every bookkeeping
+        # site takes its fast path.
+        self.track_owners = True
         self.owner = BOTTOM
         self._cowner: dict = {}
         self._uowner: dict = {}
@@ -656,17 +661,19 @@ class Solver:
         val = self._val
         level = self._level
         out: list[int] = []
-        dropped = None
         for l in raw:
             vl = val[l]
             if vl is not None and not level[l >> 1]:
                 if vl:
                     return True                 # satisfied at root
-                if dropped is None:
-                    dropped = []
-                dropped.append(l)
                 continue                        # false at root: drop literal
             out.append(l)
+        owner = self.owner
+        if owner is not BOTTOM:
+            # the root facts that shortened the clause (provenance)
+            dropped = None
+            if len(out) < len(raw):
+                dropped = [l for l in raw if val[l] is False and not level[l >> 1]]
         self._witness = None
         self._stamp += 1
         if len(out) < 2 and self._trail_lim:
@@ -680,16 +687,16 @@ class Solver:
             val[l ^ 1] = False
             self._level[l >> 1] = 0
             self._reason[l >> 1] = None
-            if self.owner is not BOTTOM:
-                self._uowner[l >> 1] = (self.owner, dropped or ())
+            if owner is not BOTTOM:
+                self._uowner[l >> 1] = (owner, dropped or ())
             self._trail.append(l)
             if self._propagate() is not None:
                 self._ok = False
                 return False
             return True
         self._clauses.append(out)
-        if self.owner is not BOTTOM:
-            self._cowner[id(out)] = self.owner
+        if owner is not BOTTOM:
+            self._cowner[id(out)] = owner
             if dropped is not None:
                 self._cante[id(out)] = dropped
         if self._trail_lim:
@@ -938,12 +945,14 @@ class Solver:
         val = self._val
         clauses = self._clauses
         watches = self._watches
-        cowner = None if self.owner is BOTTOM else self._cowner
+        if self.owner is BOTTOM:
+            append = clauses.append
+        else:
+            cowner, owner = self._cowner, self.owner
 
-        def append(c):
-            clauses.append(c)
-            if cowner is not None:
-                cowner[id(c)] = self.owner
+            def append(c):
+                clauses.append(c)
+                cowner[id(c)] = owner
         if val[lo:lo + n2].count(None) != n2:
             # Some target variable is assigned (at root, or at a held
             # level): clauses with an assigned literal take the slow path.
@@ -1146,8 +1155,8 @@ class Solver:
         level = self._level
         reason = self._reason
         trail = self._trail
-        uowner = self._uowner
-        own = BlockOwner(base)
+        uowner = self._uowner if self.track_owners else None
+        own = None if uowner is None else BlockOwner(base)
         while new:
             low = new & -new
             new ^= low
@@ -1157,7 +1166,8 @@ class Solver:
                 val[l ^ 1] = False
                 level[l >> 1] = 0
                 reason[l >> 1] = None
-                uowner[l >> 1] = (own, m)       # implied by the block from m
+                if uowner is not None:
+                    uowner[l >> 1] = (own, m)   # implied by the block from m
                 trail.append(l)
         if self._propagate() is not None:
             self._ok = False
@@ -1360,6 +1370,18 @@ class Solver:
         if self._trail_lim and self._level[v] > 0:
             return None
         return self._val[l]
+
+    def root_values(self, lo: int, n: int) -> list:
+        """``(k, value)`` for each variable ``lo + k`` (``0 <= k < n``)
+        assigned at root level."""
+        val = self._val
+        level = self._level
+        out = []
+        for v in range(lo, min(lo + n, self._nvars + 1)):
+            x = val[2 * v]
+            if x is not None and not level[v]:
+                out.append((v - lo, x))
+        return out
 
     def root_trail(self) -> list[int]:
         """All literals assigned at root level, in assignment order."""
