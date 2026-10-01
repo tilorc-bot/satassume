@@ -12,7 +12,8 @@ fails if they differ again); run from the repository root,
 | G1-G6 | G (relation glue, #42) | #51: sign facts on two sums reach LRA, so a fresh session proves the observers too |
 | C, C2, C3, C4, C4b, C5 | C (#47: a non-commutative factor made a product never zero) | #54: sound Mul/Pow templates for non-commutative factors |
 | R1-R4 | R (#53 group 6: the fact caches and the sessions survived registration changes) | #63: every engine cache and session is keyed on the registry epoch, which every registration and unregistration bumps |
-| A, T2 | A (#53 group 5), T (group 4): the prefix query raises in both engines and the session was kept, so the next query raised too | #63: a session under which a query raised is dropped, so the next query runs in a fresh session as a fresh engine does. The mechanisms of A and T remain (T1, T3, T4 stay pinned) |
+| A, T2 | A (#53 group 5), T (group 4): the prefix query raises in both engines and the session was kept, so the next query raised too | #63: a session under which a query raised is dropped, so the next query runs in a fresh session as a fresh engine does. The mechanisms of A and T remain |
+| T1, T3, T4, T5, Gp1 | T (#53 group 4: an equality query engages transfer), G' (#42: a query links the terms it mentions) | R2, component-scoped answering (#53): a set or query with a relation splits by component, so the prefix query (`Q.eq(u, y)`, `Q.positive(w)`) is answered in its own part's session and never engages transfer in, or links a term of, the observer's session. The mechanisms of T and G' remain within one component |
 
 The mechanism of G (the glue is switched on by the first relation query
 of a session) remains; see `../README.md`, G7.  The write-back of a

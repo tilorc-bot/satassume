@@ -213,14 +213,14 @@ def _plant(monkeypatch):
 def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
     """The strict xfail of a pinned repro accepts only its recorded pair:
     with the long-lived engine made to crash (``Error:RuntimeError``) or to
-    flip its True into False on the final query, the pinned test fails
+    flip its False into True on the final query (G7), the pinned test fails
     instead of xfailing."""
     import subprocess
     import sys
-    name = "T1-transfer-congruent-application"
+    name = "G7-links-zero-scaled-term-order-after-relation"
     with open(os.path.join(REPROS, name + ".json")) as fh:
         d = json.load(fh)
-    assert (d["warm"], d["ref"]) == ("True", "None") and len(d["prefix"]) == 1
+    assert (d["warm"], d["ref"]) == ("False", "None") and len(d["prefix"]) == 1
     (tmp_path / "history_plant.py").write_text(_PLANT)
     env = dict(os.environ, HISTORY_PLANT=how,
                PYTHONPATH=os.pathsep.join([str(tmp_path), ROOT, os.environ.get("PYTHONPATH", "")]))
@@ -231,14 +231,15 @@ def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
     tail = out.stdout[-3000:] + out.stderr[-3000:]
     assert out.returncode == 1, tail
     assert "1 failed" in out.stdout and "xfailed" not in out.stdout, tail
-    want = "engine error" if how == "crash" else "another disagreement than the recorded one: engine False"
+    want = "engine error" if how == "crash" else "another disagreement than the recorded one: engine True"
     assert want in out.stdout, tail
 
 
 def test_repros_are_pinned():
-    # 15 before B, B2 and E1c (the complete set check, #73) and E1, E1b,
-    # L1, C6b and D (the writeback rule, #53 stage 3) moved to fixed/
-    assert len(_repro_params()) >= 7
+    # 15 before B, B2 and E1c (the complete set check, #73), E1, E1b,
+    # L1, C6b and D (the writeback rule, #53 stage 3) and T1, T3-T5 and Gp1
+    # (component-scoped answering, #53 R2) moved to fixed/
+    assert len(_repro_params()) >= 3
     for path in glob.glob(os.path.join(REPROS, "*.json")):
         assert os.path.exists(path[:-5] + ".py"), f"no standalone script for {path}"
 
