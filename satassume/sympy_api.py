@@ -156,9 +156,28 @@ _NONCOMM: dict = {}
 NONCOMM_SIZE = 4096
 
 
+def _fixed_noncommutative(t) -> bool:
+    """Whether ``t`` is non-commutative by construction, read without
+    evaluating any assumption (``t.is_commutative`` would compute and cache
+    ``commutative`` in SymPy's ``_assumptions`` of compound expressions,
+    and the engine must never write SymPy's assumption caches).  Symbols
+    (``Dummy``, ``Wild``) carry their given assumptions in ``_assumptions0``;
+    undefined functions (``Function('g', commutative=False)``) and atom
+    types such as quantum operators fix ``is_commutative`` as a class
+    attribute; anything else is decided by its arguments."""
+    from sympy.core.symbol import Symbol
+    if isinstance(t, Symbol):
+        return dict(getattr(t, "_assumptions0", ())).get("commutative") is False
+    for k in type(t).__mro__:
+        v = k.__dict__.get("is_commutative", None)
+        if v is not None:
+            return v is False
+    return False
+
+
 def _noncommutative(e) -> bool:
-    """Whether ``e`` has a non-commutative subterm (``is_commutative is
-    False`` anywhere, ``e`` itself included, matrix expressions not
+    """Whether ``e`` has a non-commutative subterm (fixed non-commutative
+    by construction anywhere, see :func:`_fixed_noncommutative`, ``e`` itself included, matrix expressions not
     descended into).  The whole expression is not
     enough (``re(A)`` claims to be commutative), so this walks the tree;
     memoized, since it runs for every applied vocabulary predicate."""
@@ -173,7 +192,7 @@ def _noncommutative(e) -> bool:
             # a matrix expression reaches a scalar argument only through a
             # scalar-valued function of it (Trace(M), M[0, 0]): a number
             continue
-        if t.is_commutative is False:
+        if _fixed_noncommutative(t):
             r = True
             break
         stack.extend(t.args)
