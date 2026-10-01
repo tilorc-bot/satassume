@@ -1,0 +1,35 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "boundary",
+  "discovery_budget": 1,
+  "session_limit": 1,
+  "keep_sessions": 0,
+  "cone_search": true,
+  "cone_threshold": 0,
+  "transfer": true,
+  "uninterpreted": "none",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 2,
+  "custom_cache_size": 2,
+  "answers_size": 2,
+  "splits_size": 2
+ },
+ "prop": "AppliedBinaryRelation(Q.ne, Add(Mul(Integer(3), Symbol('m', negative=True)), Mul(Rational(-1, 3), Pow(Symbol('m', negative=True), Integer(-1)))), Mul(Rational(-1, 3), Pow(Symbol('m', negative=True), Integer(-1))))",
+ "assum": "Or(Not(AppliedPredicate(Q.commutative, Mul(Rational(-1, 3), Pow(Symbol('m', negative=True), Integer(-1))))), AppliedPredicate(Q.composite, Add(Mul(Integer(3), Symbol('m', negative=True)), Mul(Rational(-1, 3), Pow(Symbol('m', negative=True), Integer(-1))))))",
+ "variant": {
+  "kind": "prop",
+  "prop": "true",
+  "scope": "in"
+ },
+ "base": "None",
+ "other": "True",
+ "source": "round 4: invariants profile=related seed=13 slice=0",
+ "shrunk": true,
+ "consistent_by": null,
+ "fingerprint": "-",
+ "prefix": []
+}

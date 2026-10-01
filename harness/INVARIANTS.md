@@ -289,6 +289,23 @@ in "Keep" is kept.
   boundary-budget`): `ask(Q.lt(T, z), Q.lt(T, z))` under `boundary`
   (discovery budget 1) is True and None with the proposition spelled
   `Q.lt(-z, -T)`; fingerprint `budget` (lifting the budget removes it).
+* **I5, the proposition padded** (pinned:
+  `I5-proposition-padded-with-contradiction-lost`):
+  `ask(Q.hermitian(2 + sqrt(2)*(3 + pi)), Q.is_true(True))` is True and
+  None with the proposition spelled `p | (Q.extended_negative(iw) &
+  ~Q.extended_negative(iw))` (a contradiction over a fresh symbol, the
+  same models); `Q.prime(I)` is False and None padded with a tautology.
+  The set `Q.is_true(True)` is one the engine's guard does not read: the
+  concrete-model path decided it (`consistent_by: model`, trivially).
+* **I5, the proposition evaluated by SymPy** (pinned:
+  `I5-proposition-evaluated-by-sympy-gains-true`): `ask(Q.ne(3*m - 1/(3*m),
+  -1/(3*m)), ~Q.commutative(-1/(3*m)) | Q.composite(3*m - 1/(3*m)))` is
+  None under `boundary`; the proposition spelled `Ne(...)` evaluates to
+  `True` in SymPy (the difference is `3*m`, `m` declared nonzero: a sound
+  evaluation from the declaration) and the answer is True.  The
+  `Lt`/`Q.lt` spellings are taken as equivalent (above); this is the
+  pinned `I5-constant-relation-conjunct-restated` mechanism on the
+  proposition side.
 * **I2, `crash`** (pinned: `I2-unsettled-constant-in-relation-raises-undecided`):
   `ask(Q.zero(g(n) + 2), Q.zero(n))` is None and raises
   `satassume.constfield.Undecided` ("cannot show Element(sin(pi/7)**2 +
