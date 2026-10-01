@@ -34,8 +34,9 @@ A pair of answers is reported only when
    whatever the history, and the checker cannot tell whether the
    engine's report or its answer is the right one);
 3. the assumption set is consistent (`consistent_by`): **the engine or a
-   concrete model**.  `sympy_api._consistent(A, fresh engine, search=True)`
-   finds a model with full escalation and search, of `A` or of a set with
+   concrete model**.  `Engine.verdict` (a fresh engine, the set's
+   complete check: full escalation and search) is `consistent` for `A` or
+   for a set with
    the same models (the restated set for I5, the renamed one for I6) or of
    one whose consistency implies `A`'s (`A & B` for I2 and I3: `B` is
    satisfiable over fresh symbols, or `p`/`~p` as answered, or a declared

@@ -236,7 +236,8 @@ def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
 
 
 def test_repros_are_pinned():
-    assert len(_repro_params()) >= 14
+    # 12 since B, B2 and E1c moved to fixed/ (the complete set check, #73)
+    assert len(_repro_params()) >= 12
     for path in glob.glob(os.path.join(REPROS, "*.json")):
         assert os.path.exists(path[:-5] + ".py"), f"no standalone script for {path}"
 

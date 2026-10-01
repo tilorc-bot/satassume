@@ -232,8 +232,7 @@ non-commutative arguments (#62); a static totality check (PR #58).
 A relation-free assumption set is split into components, and a query is
 answered under the components connected to it once the whole set is known
 to be consistent (`sympy_api._relevant`, `_Split`, `_keys_rel`,
-`_part_consistent`, `_consistent`; switches `RELATIONAL`, `CHECK_SEARCH`,
-`CHECK_SEARCH_RELATIONS`, `CHECK_ESCALATE`; off with
+`_part_consistent`, `_consistent`; switch `RELATIONAL`; off with
 `Engine(relevance=False)`; `tests/test_relevance.py`). At landing (99e8827)
 the refine stream replay was 8.3% and 8.8% faster on the Pi than
 `c8361d7`, answers and errors identical. The saving comes from sharing:
@@ -244,10 +243,19 @@ every set with the same relevant part shares memo entries and session.
    memoizes keys, 100,000).
 2. The query's part is the union of the components whose keys meet its
    own. If that is all of `a`, nothing changes.
-3. Otherwise the set is certified once: `to_formula` must succeed and each
-   component must pass `_part_consistent` (propagation in the component's
-   contextual session, then `_consistent`: a fresh session, escalation if
-   incomplete, a search), memoized per component.
+3. Otherwise the set is certified once: `to_formula` must succeed and the
+   set's verdict (`Engine.verdict`), or each component's if it has no
+   relation, must not be inconsistent. The verdict comes from the one
+   complete check every assumption set gets when its contextual session is
+   built (`Engine._context_session`, `_complete_check`: a session of its
+   own, the whole cone escalated, propagation, then a search; memoized per
+   formula in `Engine._verdict`, counted in `stats["set_checks"]`). It is
+   three-valued: `inconsistent` (a conflict: every query under the set
+   raises), `unknown` (no conflict, but a theory gave up, the cone hit the
+   discovery budget or the check failed; never raises, and certifies) and
+   `consistent`. The switches `CHECK_SEARCH`, `CHECK_SEARCH_RELATIONS` and
+   `CHECK_ESCALATE` are gone: the complete check always escalates and
+   searches.
 4. A certified set answers `ask(p, part)`. Any other set (inconsistent, out
    of scope as a whole, an exception) is answered under the whole `a`,
    None or `ValueError` included.
@@ -345,8 +353,7 @@ the two modes of `RELATIONAL`:
   not the derived rows above, so it loses answers. Before landing it was
   worth about half a point of the replay on the Pi (-8.6% and -8.8%
   against -8.1% and -8.4% for `"whole"`); 167 of 3,244 split answers on
-  the stream involved a relation. The mode and the relational whole-set check
-  (`CHECK_SEARCH_RELATIONS`) remain as dormant code; changing `RELATIONAL`
+  the stream involved a relation. The mode remains as dormant code; changing `RELATIONAL`
   needs `_KEYS.clear()`, since keys depend on it.
 
 `tools/relevance_fuzz.py` (relevance on against off) is mostly relational:
