@@ -98,13 +98,16 @@ def test_setting_change_drops_the_verdict_memo():
 def test_truncated_cone_is_unknown():
     # the discovery budget drops frontier nodes (Session.truncated): a
     # check over the cut cone finds no conflict, which proves nothing
-    from sympy import Symbol
+    from sympy import Symbol, exp
     from satassume.sympy_api import _formula
     x = Symbol('x')
-    A = Symbol('A', commutative=False)
-    f = _formula(Q.algebraic(x + A), True)
+    f = _formula(Q.negative(exp(x) + x**2) & Q.real(x), True)
     assert Engine(cache=DictCache(), discovery_budget=2).verdict(f) is UNKNOWN
     assert Engine(cache=DictCache(), discovery_budget=3).verdict(f) is INCONSISTENT
+    # a non-commutative argument is out of scope: an opaque atom, no raise
+    A = Symbol('A', commutative=False)
+    g = _formula(Q.algebraic(x + A), True, True)
+    assert Engine(cache=DictCache(), discovery_budget=3).verdict(g) is CONSISTENT
 
 
 def test_check_runs_in_the_query_session():
@@ -123,11 +126,14 @@ def test_check_runs_in_the_query_session():
 def test_setting_change_recomputes_a_memoized_verdict():
     # the verdict memoized under discovery_budget=3 (inconsistent) is not
     # kept when the budget becomes 2, which truncates the cone (unknown)
-    from sympy import Symbol
+    from sympy import Symbol, exp
     from satassume.sympy_api import _formula
     x = Symbol('x')
     A = Symbol('A', commutative=False)
-    f = _formula(Q.algebraic(x + A), True, True)
+    # out of scope (non-commutative): opaque, consistent at any budget
+    g = _formula(Q.algebraic(x + A), True, True)
+    assert Engine(cache=DictCache(), discovery_budget=3).verdict(g) is CONSISTENT
+    f = _formula(Q.negative(exp(x) + x**2) & Q.real(x), True, True)
     eng = Engine(cache=DictCache(), discovery_budget=3)
     assert eng.verdict(f) is INCONSISTENT
     eng.discovery_budget = 2

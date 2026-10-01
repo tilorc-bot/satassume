@@ -74,12 +74,11 @@ def test_zero_factor_with_noncommutative_factor():
 
 
 def test_inverse_of_noncommutative():
-    # 1/A is no nonzero number (A would be its inverse), but it can be 0
-    # as far as the engine knows, so A need not be finite
-    assert ask(Q.positive(1/A), True, fresh()) is False
+    # non-commutative arguments are out of scope (#62): None, and in the
+    # assumptions an opaque atom (no inconsistency from Q.positive(1/A))
+    assert ask(Q.positive(1/A), True, fresh()) is None
     assert ask(Q.finite(A), True, fresh()) is None
-    with pytest.raises(ValueError):
-        ask(Q.finite(A), Q.positive(1/A), fresh())
+    assert ask(Q.finite(A), Q.positive(1/A), fresh()) is None
 
 
 def test_zero_divisors():
@@ -87,11 +86,11 @@ def test_zero_divisors():
     for q in (Q.zero(A*B), Q.zero(A**2), Q.zero(x*A*B), Q.positive(A**2),
               Q.positive(A*B), Q.zero(2*A*B)):
         assert ask(q, True, fresh()) is None, q
-    # still decided: a nonzero number times one non-commutative factor
-    assert ask(Q.zero(2*A), True, fresh()) is False
-    assert ask(Q.zero(x*A), ~Q.zero(x) & Q.complex(x), fresh()) is False
-    assert ask(Q.commutative(2*A), True, fresh()) is False
-    assert ask(Q.zero(A), True, fresh()) is False
+    # out of scope (#62), though the templates decide them (False)
+    assert ask(Q.zero(2*A), True, fresh()) is None
+    assert ask(Q.zero(x*A), ~Q.zero(x) & Q.complex(x), fresh()) is None
+    assert ask(Q.commutative(2*A), True, fresh()) is None
+    assert ask(Q.zero(A), True, fresh()) is None
 
 
 def test_no_leak_into_later_queries():
@@ -130,16 +129,14 @@ def test_sums_of_noncommutative_terms():
               Q.real(A - B), Q.zero(x*A - x*B), Q.zero(A*B - B*A), Q.zero(A + B + x)):
         assert ask(q, True, fresh()) is None, q
     assert ask(Q.zero(A + B), Q.zero(x), fresh()) is None
-    # still decided: a finite number plus one non-number is no number, and
-    # an infinite number plus a non-number is infinite
-    assert ask(Q.zero(A + 1), True, fresh()) is False
-    assert ask(Q.commutative(A + 1), True, fresh()) is False
-    assert ask(Q.commutative(x + A), Q.finite(x), fresh()) is False
-    assert ask(Q.zero(x + A), True, fresh()) is False
-    # complete check; becomes None with D4 (non-commutative out of scope)
-    with pytest.raises(ValueError):
-        ask(Q.zero(x), Q.zero(x + A), fresh())
-    assert ask(Q.finite(x + A), Q.infinite(x), fresh()) is False
+    # out of scope (#62), though the templates decide them (False)
+    assert ask(Q.zero(A + 1), True, fresh()) is None
+    assert ask(Q.commutative(A + 1), True, fresh()) is None
+    assert ask(Q.commutative(x + A), Q.finite(x), fresh()) is None
+    assert ask(Q.zero(x + A), True, fresh()) is None
+    assert ask(Q.finite(x + A), Q.infinite(x), fresh()) is None
+    # an opaque assumption says nothing about x
+    assert ask(Q.zero(x), Q.zero(x + A), fresh()) is None
     assert ask(Q.commutative(x + y), True, fresh()) is True
 
 
@@ -148,11 +145,11 @@ def test_functions_of_noncommutative_arguments():
     for q in (Q.zero(f(A)), Q.commutative(f(A)), Q.zero(f(A, x)), Q.zero(sin(A)),
               Q.positive(f(A)), Q.commutative(g(x)), Q.zero(g(x))):
         assert ask(q, True, fresh()) is None, q
-    # Abs(A) is extended real (a norm), not inconsistent
-    assert ask(Q.extended_real(Abs(A)), True, fresh()) is True
-    assert ask(Q.extended_nonnegative(Abs(A)), True, fresh()) is True
-    assert ask(Q.zero(Abs(A)), True, fresh()) is False
-    assert ask(Q.finite(A), Q.real(Abs(A)), fresh()) is True
+    # out of scope (#62), though the templates decide them
+    assert ask(Q.extended_real(Abs(A)), True, fresh()) is None
+    assert ask(Q.extended_nonnegative(Abs(A)), True, fresh()) is None
+    assert ask(Q.zero(Abs(A)), True, fresh()) is None
+    assert ask(Q.finite(A), Q.real(Abs(A)), fresh()) is None
     # functions of numbers are numbers
     assert ask(Q.commutative(f(x)), True, fresh()) is True
     assert ask(Q.commutative(f(x, 2)), True, fresh()) is True
@@ -165,7 +162,47 @@ def test_no_leak_from_sums_and_functions():
         assert ask(q, True, eng) == ask(q, True, fresh()), q
     assert ask(Q.finite(A), True, eng) is None
     assert ask(Q.zero(x), True, eng) is None
-    assert ask(Q.zero(A - B), Q.zero(A - B), eng) is True
+    # out of scope even when assumed (#62): the assumption is opaque, the
+    # proposition is not
+    assert ask(Q.zero(A - B), Q.zero(A - B), eng) is None
+
+
+# ---------------------------------------------------------------------------
+# non-commutative arguments are out of scope (#62, D4)
+# ---------------------------------------------------------------------------
+
+def test_issue_62_noncommutative_out_of_scope():
+    from sympy import im, log, re, sign
+    from satassume.sympy_api import out_of_scope
+    # items 1-3 of #62: the templates are about numbers, A may be a matrix
+    assert ask(Q.zero(re(A) + I*im(A) - A), Q.finite(A), fresh()) is None
+    assert ask(Q.zero(sign(A) - A), True, fresh()) is None
+    assert ask(Q.zero(A - sign(A)*Abs(A)), True, fresh()) is None
+    assert ask(Q.finite(log(A)), Q.finite(A), fresh()) is None
+    # re(A) claims to be commutative: the whole tree is walked
+    assert re(A).is_commutative is True
+    assert ask(Q.real(re(A)), True, fresh()) is None
+    # the predicate commutative itself (SymPy answers False there)
+    assert ask(Q.commutative(A), True, fresh()) is None
+    assert ask(Q.commutative(A), Q.commutative(A), fresh()) is None
+    assert out_of_scope(Q.commutative(A)) == "matrix"
+    assert out_of_scope(Q.zero(re(A))) == "matrix"
+    # a non-commutative function application
+    g = Function('g', commutative=False)
+    assert out_of_scope(Q.zero(g(x) + 1)) == "matrix"
+    # commutative ones stay in scope
+    assert out_of_scope(Q.zero(re(x))) is None
+    assert ask(Q.commutative(x), True, fresh()) is True
+
+
+def test_noncommutative_assumption_does_not_sink():
+    """A non-commutative conjunct is an opaque atom in the assumptions."""
+    from sympy import re
+    assert ask(Q.real(x), Q.positive(x) & Q.finite(A), fresh()) is True
+    assert ask(Q.real(x), Q.positive(x) & Q.zero(re(A) - A), fresh()) is True
+    assert ask(Q.real(x), Q.positive(x) & ~Q.commutative(A), fresh()) is True
+    with pytest.raises(ValueError):
+        ask(Q.real(x), Q.finite(A) & ~Q.finite(A), fresh())
 
 
 # ---------------------------------------------------------------------------

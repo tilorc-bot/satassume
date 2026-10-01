@@ -204,6 +204,7 @@ MODULE_STATE: Tuple[Tuple[str, str], ...] = (
     ("satassume.sympy_api", "_FORMULAS"),
     ("satassume.sympy_api", "_KEYS"),
     ("satassume.sympy_api", "_CONST"),
+    ("satassume.sympy_api", "_NONCOMM"),
     ("satassume.engine", "_NEIGH"),
     ("satassume.engine", "_WANT"),
     ("satassume.engine", "_SPLIT"),
