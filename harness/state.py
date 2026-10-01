@@ -203,6 +203,7 @@ def preset(name: str) -> EngineConfig:
 MODULE_STATE: Tuple[Tuple[str, str], ...] = (
     ("satassume.sympy_api", "_FORMULAS"),
     ("satassume.sympy_api", "_KEYS"),
+    ("satassume.sympy_api", "_CONST"),
     ("satassume.engine", "_NEIGH"),
     ("satassume.engine", "_WANT"),
     ("satassume.engine", "_SPLIT"),

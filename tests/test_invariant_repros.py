@@ -162,9 +162,6 @@ class _Unrelated(Basic):
     """A class no term of any query belongs to."""
 
 
-@_xfail("W2A1 (I2, depends): an unrelated vocabulary registration disables "
-        "the relevance split; sympy_api.py _relevant (ext._vocab early "
-        "return), then engine.py Session._affine_links engages LRA")
 def test_w2a1_unrelated_vocab_registration_disables_split():
     n = Symbol('n', integer=True)
     u, v = Symbol('u'), Symbol('v')
@@ -186,9 +183,6 @@ def test_w2a1_unrelated_vocab_registration_disables_split():
     assert plain == registered
 
 
-@_xfail("W2A2 (I2, depends): unrelated sums reach the query through a "
-        "constant relevance key and engage LRA; sympy_api.py _relevant "
-        "(_expr_keys on pi) and engine.py Session._affine_links")
 def test_w2a2_unrelated_sums_via_constant_key_engage_lra():
     n = Symbol('n', integer=True)
     u, v = Symbol('u'), Symbol('v')
