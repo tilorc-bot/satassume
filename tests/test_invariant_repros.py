@@ -23,7 +23,8 @@ hunts checked these invariants:
 
 Each test below pins one violation found at f055b7b by the invariant
 hunts: families K1-K8 (with the second entry paths K3b and K6b), W2A1-W2A4
-and W2B1-W2B4.  Each asserts that the invariant holds, so it xfails while
+and W2B1-W2B4; and the invariant harness's own findings that no earlier
+test covers: families H1-H2 and the entry path W2A3c.  Each asserts that the invariant holds, so it xfails while
 the bug is present and XPASSes (failing the run, ``strict=True``) once it
 is fixed: the PR that fixes a family removes its marker.
 
@@ -32,8 +33,8 @@ case), so no test depends on another or on the order they run in.
 """
 import pytest
 from sympy import (Basic, Float, Function, MatrixSymbol, Not, Or, And,
-                   Implies, Q, Rational, Symbol, cos, log, pi, sin, sqrt,
-                   symbols)
+                   Implies, Q, Rational, Symbol, cos, false, log, pi, sin,
+                   sqrt, symbols)
 
 import satassume.extensions as extensions
 from satassume import Engine, lra_adapter
@@ -227,6 +228,15 @@ def test_w2a4_budget_cut_negation_asymmetry():
         r is not None and rn is not None and r != rn)
 
 
+@_xfail("W2A3c (I2, depends): a keyless proposition (the literal False) "
+        "is not split from an out-of-scope conjunct; sympy_api.py _relevant "
+        "(no key: the whole set) and _engine_ask (the set is translated "
+        "before the proposition is decided)")
+def test_w2a3c_keyless_proposition_with_out_of_scope_conjunct():
+    m = MatrixSymbol('M', 2, 2)
+    assert ask(false, True, Engine()) == ask(false, Q.symmetric(m), Engine())
+
+
 @_xfail("W2B1 (I5, depends): a restated relation loses a term's sign "
         "(x > z vs x - z > 0, z positive); relations.py Relations._link "
         "(sign facts linked only for relation sides)")
@@ -266,3 +276,25 @@ def test_w2b4_unrelated_equality_engages_transfer():
     a = Q.positive(f(y)) & Q.le(x, y) & Q.ge(x, y)
     assert (ask(Q.positive(f(x)), a, Engine())
             == ask(Q.positive(f(x)), a & Q.eq(u, v), Engine()))
+
+
+@_xfail("H1 (I5, depends): an equality of non-real terms restated "
+        "(x = y vs -x = -y) is not normalised: EUF has no arithmetic and "
+        "LRA needs real terms; relations.py Relations._eq_links (zero(a - b) "
+        "only for a difference SymPy builds term by term)")
+def test_h1_equality_of_nonreal_terms_restated():
+    x, y = symbols('x y')
+    assert (ask(Q.eq(x, y), Q.eq(x, y), Engine())
+            == ask(Q.eq(x, y), Q.eq(-x, -y), Engine()))
+
+
+@_xfail("H2 (I2, depends): unrelated predicate material consumes the "
+        "discovery budget of the query's own nodes (relevance=False, "
+        "discovery_budget=1); engine.py Session._discover/escalate (one "
+        "budget for every pending node, related or not)")
+def test_h2_unrelated_material_consumes_discovery_budget():
+    x, u = symbols('x u')
+    a = Q.positive(x - 1)
+    assert (ask(Q.positive(x), a, Engine(discovery_budget=1, relevance=False))
+            == ask(Q.positive(x), a & Q.real(1/u),
+                   Engine(discovery_budget=1, relevance=False)))
