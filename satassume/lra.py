@@ -50,7 +50,8 @@ negation of an order atom is the complementary order atom
 (``not (s <= c)`` is ``s > c``), which is only right over the reals: the
 caller registers an atom only when its terms are finite reals (the engine's
 bridge clauses).  Disequalities (negated equalities) are decided exactly in
-:meth:`LRATheory.check`.
+:meth:`LRATheory.check` (with integrality atoms, up to the branch budget:
+see "Integrality").
 
 Integrality
 -----------
@@ -73,16 +74,26 @@ places, cheapest first:
   into ``< n`` and ``> n``), each branch a ``push_level`` with bounds
   that have no literal; if both branches conflict, the conflict is the
   union of their explanations plus the integrality literal (the branch
-  bounds drop out: they are the two cases of that literal).  At most
-  :data:`BRANCH_BUDGET` branch nodes per ``check``; when the budget runs
-  out, the check reports no conflict.
+  bounds drop out: they are the two cases of that literal).  Once the
+  point satisfies every integrality literal, an asserted disequality
+  ``s != c`` with ``s`` exactly ``c`` there (delta part 0) splits the same
+  way into ``s < c`` and ``s > c``, the conflict being the disequality
+  literal plus both explanations: the real argument for disequalities
+  (below, in ``check``: a point of the convex feasible set off the
+  hyperplane) ignores integrality, so ``1 <= n < 2``, ``n != 1`` would
+  look satisfiable for an integer ``n``.  These splits only happen when
+  integrality literals are asserted; real-only problems never branch.
+  At most :data:`BRANCH_BUDGET` branch nodes (of both kinds) per
+  ``check``; when the budget runs out, the check reports no conflict.
 
-So integrality is sound but incomplete: a conflict is always valid, a
-satisfiable check may be integrally infeasible (the budget), and the model
-``check`` returns satisfies the bounds and disequalities but not
-necessarily the integrality atoms.  satassume reads a definite answer only
-from an unsatisfiable search; a satisfiable one gives None (or "the
-assumptions are consistent"), never a definite answer.
+So integrality is sound but incomplete: a conflict is always valid (each
+split is a case split of an asserted literal, so a conflict of both cases
+is a conflict of that literal), a satisfiable check may be integrally
+infeasible (the budget), and the model ``check`` returns satisfies the
+bounds and disequalities but not necessarily the integrality atoms.
+satassume reads a definite answer only from an unsatisfiable search; a
+satisfiable one gives None (or "the assumptions are consistent"), never a
+definite answer.
 
 How it works
 ------------
@@ -107,7 +118,8 @@ Complexity (``k`` = number of rows containing a variable, ``m`` = rows):
   first model violates.
 * integrality: O(1) per asserted atom on a variable whose bound changes;
   ``check`` adds at most :data:`BRANCH_BUDGET` branchings (two simplex
-  runs each) when an integrality atom is violated by the simplex point.
+  runs each) when an integrality atom is violated by the simplex point,
+  or, with integrality atoms asserted, a disequality.
 * ``propagate``: O(atoms on the variables whose bounds changed).
 * ``register_atom``: O(length of the form * row length) for a new slack.
 """
@@ -722,9 +734,9 @@ class LRATheory:
     def _branch(self, budget: list[int]):
         """Branch and bound from a feasible simplex point: a conflict
         clause, or None (a point that satisfies every asserted integrality
-        literal, or ``budget[0]`` branchings spent).  Leaves the bounds as
-        it found them; the assignment then satisfies them (as after a
-        pop)."""
+        literal and is off every asserted disequality, or ``budget[0]``
+        branchings spent).  Leaves the bounds as it found them; the
+        assignment then satisfies them (as after a pop)."""
         vq, vd = self._vq, self._vd
         for v, m, k, lit in self._int_lits:
             if m is _ONE and k is _ZERO:
@@ -744,7 +756,19 @@ class LRATheory:
                     else ((">", nq), ("<", nq))
                 break
         else:
-            return None
+            # integral point: a disequality s != c it lies on splits into
+            # s < c and s > c, both with the integrality literals (the
+            # real argument of _check, a point of P off the hyperplane,
+            # ignores them).  Exact delta-rational test: a point off c
+            # stays off it for every small enough delta.
+            for v, c, lit in self._diseqs:
+                if vq[v] == c and not vd[v]:
+                    m, k = _ONE, _ZERO
+                    down = self._lo[v] != (c, _ZERO)
+                    cases = (("<", c), (">", c)) if down else ((">", c), ("<", c))
+                    break
+            else:
+                return None
         if budget[0] <= 0:
             return None
         budget[0] -= 1
@@ -952,6 +976,11 @@ class LRATheory:
         # of them.  For each violated s != c find a point of P off the
         # hyperplane (s < c or s > c); if neither exists, the bounds force
         # s = c: conflict.  Otherwise combine the points generically.
+        # With integrality literals, _branch has already put the point off
+        # every disequality (unless the budget ran out); this real argument
+        # then only refines a sat answer, and its conflicts are real
+        # conflicts, valid over the integers too.  The combined model may
+        # break integrality: a sat claim, never read as a definite answer.
         points = [p0]
         for v, c, lit in diseqs:
             if any(p[v] != c for p in points):
