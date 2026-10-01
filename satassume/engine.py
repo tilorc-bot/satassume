@@ -220,7 +220,7 @@ class Session:
         if engine.clause_templates is not None:
             compiled, formulas = engine.clause_templates(node)
         else:
-            compiled, formulas = (), engine.templates(node)
+            compiled, formulas = (), engine._templates(node)
         ext = engine._extensions
         if ext is not None and ext._vocab:
             formulas = list(formulas) + ext.node_facts(node)
@@ -630,6 +630,13 @@ class Session:
 # Engine
 # --------------------------------------------------------------------------
 
+
+def _check_uninterpreted(value: str) -> str:
+    if value not in ("none", "free"):
+        raise ValueError(f"uninterpreted must be 'none' or 'free', not {value!r}")
+    return value
+
+
 class Engine:
     """See module docstring.
 
@@ -719,7 +726,7 @@ class Engine:
             from .relations import default_specs
             relations = default_specs() if clause_templates is not None else []
         self._relation_specs: tuple = tuple(relations)
-        self.templates = templates
+        self._templates = templates
         #: ``node -> (compiled patterns, formulas)``; the fast path the SymPy
         #: template registry provides.  None: ``templates`` (formulas) only.
         self.clause_templates = clause_templates
@@ -727,19 +734,20 @@ class Engine:
         #: context-free facts (``DictCache``); set at construction
         self.cache = cache if cache is not None else DictCache()
         self.custom_cache = DictCache()
-        self.discovery_budget = discovery_budget
-        self.session_limit = session_limit
-        self.keep_sessions = keep_sessions
-        self.cone_search = cone_search
-        self.cone_threshold = cone_threshold
-        self.transfer = transfer
-        if uninterpreted not in ("none", "free"):
-            raise ValueError(f"uninterpreted must be 'none' or 'free', not {uninterpreted!r}")
-        self.uninterpreted = uninterpreted
+        # the settings: properties whose setters start a new registry
+        # epoch on a real change (see "the registry epoch" below);
+        # construction assigns the fields and bumps nothing
+        self._discovery_budget = discovery_budget
+        self._session_limit = session_limit
+        self._keep_sessions = keep_sessions
+        self._cone_search = cone_search
+        self._cone_threshold = cone_threshold
+        self._transfer = transfer
+        self._uninterpreted = _check_uninterpreted(uninterpreted)
         #: ``(proposition, assumptions) -> answer`` of the SymPy-level ``ask``
         #: (satassume.sympy_api), bounded; cleared when registrations change
         self.answers = AnswerMemo()
-        self.relevance = relevance
+        self._relevance = relevance
         #: SymPy assumptions -> their split into components
         #: (``sympy_api._Split``), cleared together with ``answers``
         self.splits = AnswerMemo(20_000)
@@ -788,6 +796,119 @@ class Engine:
         specs = tuple(specs)
         if specs != self._relation_specs:
             self._relation_specs = specs
+            _bump()
+
+    @property
+    def discovery_budget(self):
+        """Setting: nodes one discovery or escalation step may add.  Assigning a different value starts a new
+        registry epoch: every cache is dropped."""
+        return self._discovery_budget
+
+    @discovery_budget.setter
+    def discovery_budget(self, value) -> None:
+        if value != self._discovery_budget:
+            self._discovery_budget = value
+            _bump()
+
+    @property
+    def session_limit(self):
+        """Setting: largest contextual session (in nodes) reused for a query.  Assigning a different value starts a new
+        registry epoch: every cache is dropped."""
+        return self._session_limit
+
+    @session_limit.setter
+    def session_limit(self, value) -> None:
+        if value != self._session_limit:
+            self._session_limit = value
+            _bump()
+
+    @property
+    def keep_sessions(self):
+        """Setting: how many contextual sessions are kept.  Assigning a different value starts a new
+        registry epoch: every cache is dropped."""
+        return self._keep_sessions
+
+    @keep_sessions.setter
+    def keep_sessions(self, value) -> None:
+        if value != self._keep_sessions:
+            self._keep_sessions = value
+            _bump()
+
+    @property
+    def cone_search(self):
+        """Setting: search the cone of a polluted contextual session.  Assigning a different value starts a new
+        registry epoch: every cache is dropped."""
+        return self._cone_search
+
+    @cone_search.setter
+    def cone_search(self, value) -> None:
+        if value != self._cone_search:
+            self._cone_search = value
+            _bump()
+
+    @property
+    def cone_threshold(self):
+        """Setting: constants beyond the assumptions' that pollute a session.  Assigning a different value starts a new
+        registry epoch: every cache is dropped."""
+        return self._cone_threshold
+
+    @cone_threshold.setter
+    def cone_threshold(self, value) -> None:
+        if value != self._cone_threshold:
+            self._cone_threshold = value
+            _bump()
+
+    @property
+    def transfer(self):
+        """Setting: engage predicate transfer (satassume.transfer).  Assigning a different value starts a new
+        registry epoch: every cache is dropped."""
+        return self._transfer
+
+    @transfer.setter
+    def transfer(self, value) -> None:
+        if value != self._transfer:
+            self._transfer = value
+            _bump()
+
+    @property
+    def uninterpreted(self) -> str:
+        """Setting: ``"none"`` or ``"free"`` (relations no theory reads are
+        free atoms).  Assigning a different value starts a new registry
+        epoch: every cache is dropped."""
+        return self._uninterpreted
+
+    @uninterpreted.setter
+    def uninterpreted(self, value) -> None:
+        value = _check_uninterpreted(value)
+        if value != self._uninterpreted:
+            self._uninterpreted = value
+            _bump()
+
+    @property
+    def relevance(self):
+        """Setting: drop assumption components irrelevant to the proposition.  Assigning a different value starts a new
+        registry epoch: every cache is dropped."""
+        return self._relevance
+
+    @relevance.setter
+    def relevance(self, value) -> None:
+        if value != self._relevance:
+            self._relevance = value
+            _bump()
+
+    @property
+    def templates(self):
+        """Setting: ``node -> formulas``, the structural templates.
+        Assigning another function starts a new registry epoch (every
+        cache is dropped) and, as for ``Engine(templates=...)``, turns off
+        the compiled fast path (``clause_templates``)."""
+        return self._templates
+
+    @templates.setter
+    def templates(self, value) -> None:
+        if value is not self._templates:
+            self._templates = value
+            self.clause_templates = None
             _bump()
 
     def _check_version(self) -> None:

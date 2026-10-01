@@ -66,9 +66,6 @@ def test_k2_uninterpreted_relation_sinks_answer():
             == ask(Q.real(x), Q.real(x) & Q.le(y, 1.5), Engine()))
 
 
-@_xfail("K3 (I7, depends): an engine setting changed after queries keeps "
-        "the old answers; engine.py Engine.__init__ (settings not in the "
-        "epoch or cache keys), sympy_api.py ask (answer memo)")
 def test_k3_setting_change_after_queries():
     x, y = symbols('x y')
     a = Q.real(x) & Q.le(y, 1.5)
@@ -78,26 +75,31 @@ def test_k3_setting_change_after_queries():
     assert ask(Q.real(x), a, e) == ask(Q.real(x), a, Engine(uninterpreted="free"))
 
 
-@_xfail("K3b (I7, depends): lra_adapter.GENERIC_CONSTANTS survives into a "
-        "new Engine through the process-wide memo; lra_adapter.py "
-        "LRAAdapter.interpret (_INTERPRETED not keyed on the flag)")
 def test_k3b_generic_constants_flag_stale_process_memo():
     x = Symbol('x')
     p, a = Q.gt(log(2)*x, 0), Q.gt(x, 1)
+    # the memo is one dict per flag value: {flag: {atom: ...}}
     memo = lra_adapter._INTERPRETED
-    saved_flag, saved_memo = lra_adapter.GENERIC_CONSTANTS, dict(memo)
+    saved_flag = lra_adapter.GENERIC_CONSTANTS
+    saved_memo = {k: dict(v) for k, v in memo.items()}
+
+    def clear():
+        for v in memo.values():
+            v.clear()
+
     try:
-        memo.clear()
+        clear()
         lra_adapter.GENERIC_CONSTANTS = True
         ask(p, a, Engine())
         lra_adapter.GENERIC_CONSTANTS = False
         warm = ask(p, a, Engine())
-        memo.clear()
+        clear()
         cold = ask(p, a, Engine())
     finally:
         lra_adapter.GENERIC_CONSTANTS = saved_flag
-        memo.clear()
-        memo.update(saved_memo)
+        for k, v in saved_memo.items():
+            memo[k].clear()
+            memo[k].update(v)
     assert warm == cold
 
 

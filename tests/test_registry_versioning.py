@@ -441,3 +441,70 @@ def test_inconsistent_assumptions_still_raise_every_time():
     for p in (Q.real(x), Q.zero(x), Q.real(x)):
         assert same_as_fresh(eng, p, a) == "ValueError"
     assert eng.stats["dead_sessions"] == 3 and not eng._context_sessions
+
+
+# -- engine settings (I7) ----------------------------------------------------
+
+def _no_templates(node):
+    return ()
+
+
+#: a non-default value of every engine setting
+SETTINGS = [("discovery_budget", 1), ("session_limit", 0), ("keep_sessions", 0),
+            ("cone_search", False), ("cone_threshold", 0), ("transfer", False),
+            ("uninterpreted", "free"), ("relevance", False),
+            ("templates", _no_templates)]
+
+SETTING_QUERIES = [(Q.real(x), Q.real(x) & Q.le(y, 1.5)),
+                   (Q.real(x + 1), Q.real(x)),
+                   (Q.positive(x * y), Q.positive(x) & Q.gt(y, 0)),
+                   (Q.positive(y), Q.eq(x, y) & Q.positive(x)),
+                   (Q.nonzero(x + 1), Q.positive(x) & Q.real(z))]
+
+
+@pytest.mark.parametrize("name,value", SETTINGS, ids=[s[0] for s in SETTINGS])
+def test_setting_change_after_queries_answers_as_fresh(name, value):
+    """I7: a setting changed after queries gives the answers of a fresh
+    engine with that setting (the change starts a new registry epoch)."""
+    eng = fresh()
+    for p, a in SETTING_QUERIES:
+        outcome(eng, p, a)
+    setattr(eng, name, value)
+    assert getattr(eng, name) == value
+    kw = {name: value}
+    if name == "templates":
+        # Engine(templates=...) defaults to no adapters; keep the same ones
+        kw["relations"] = eng.relation_specs
+        assert eng.clause_templates is None
+    for p, a in SETTING_QUERIES:
+        assert outcome(eng, p, a) == outcome(fresh(**kw), p, a), (p, a)
+    assert eng.stats["version_clears"] == 1
+
+
+@pytest.mark.parametrize("name", [s[0] for s in SETTINGS])
+def test_assigning_the_same_setting_clears_nothing(name):
+    eng = fresh()
+    for p, a in SETTING_QUERIES:
+        outcome(eng, p, a)
+    epoch = EPOCH[0]
+    setattr(eng, name, getattr(eng, name))
+    assert EPOCH[0] == epoch
+    memo = dict(eng.answers)
+    for p, a in SETTING_QUERIES:
+        outcome(eng, p, a)
+    assert eng.stats["version_clears"] == 0
+    assert all(eng.answers.get(k) == v for k, v in memo.items())
+
+
+def test_construction_bumps_nothing():
+    epoch = EPOCH[0]
+    for name, value in SETTINGS:
+        Engine(**{name: value})
+    assert EPOCH[0] == epoch
+
+
+def test_uninterpreted_is_validated_on_assignment():
+    eng = fresh()
+    with pytest.raises(ValueError):
+        eng.uninterpreted = "bogus"
+    assert eng.uninterpreted == "none"
