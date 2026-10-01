@@ -12,7 +12,7 @@ sys.path.insert(0, _d)
 from harness.checker import Ask, Event, execute, ReferenceLevel
 from harness.state import EngineConfig
 from harness.sympy_io import from_srepr
-config = EngineConfig(**{'name': 'seed41', 'discovery_budget': 12, 'session_limit': 12, 'keep_sessions': 1, 'cone_search': False, 'cone_threshold': 0, 'transfer': False, 'uninterpreted': 'none', 'relevance': False, 'relations': 'default', 'cache_size': 200000, 'custom_cache_size': 200000, 'answers_size': 100000, 'splits_size': 20000})
+config = EngineConfig(**{'name': 'default-notransfer', 'discovery_budget': 400, 'session_limit': 2000, 'keep_sessions': 16, 'cone_search': True, 'cone_threshold': 3, 'transfer': False, 'uninterpreted': 'free', 'relevance': True, 'relations': 'default', 'cache_size': 200000, 'custom_cache_size': 200000, 'answers_size': 100000, 'splits_size': 20000})
 items = [
     Ask(from_srepr("AppliedPredicate(Q.real, Symbol('w', nonzero=True))"), from_srepr("And(AppliedBinaryRelation(Q.eq, Symbol('y', real=True), Symbol('q', rational=True)), AppliedPredicate(Q.irrational, Mul(Integer(-1), Pow(Symbol('y', real=True), Integer(-1)), Pow(Symbol('w', nonzero=True), Integer(-1)), Pow(Symbol('m', nonnegative=True, integer=True), Integer(-1)))))")),
     Ask(from_srepr("AppliedBinaryRelation(Q.eq, Symbol('q', rational=True), Symbol('w', nonzero=True))"), from_srepr("And(AppliedBinaryRelation(Q.eq, Symbol('y', real=True), Symbol('q', rational=True)), AppliedPredicate(Q.irrational, Mul(Integer(-1), Pow(Symbol('y', real=True), Integer(-1)), Pow(Symbol('w', nonzero=True), Integer(-1)), Pow(Symbol('m', nonnegative=True, integer=True), Integer(-1)))))")),
