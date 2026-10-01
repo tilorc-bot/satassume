@@ -499,6 +499,8 @@ def test_specific_expectations():
                        Not(P('negative_infinite', y))), P('infinite', x + y)) in facts
     assert Implies(And(P('extended_nonzero', x), P('imaginary', y)),
                    Not(P('imaginary', x + y))) in facts
+    assert Implies(And(P('extended_real', x + y), P('real', y)),
+                   P('extended_real', x)) in facts
     facts = registry.facts_for(x + oo)
     assert Implies(P('real', x), P('extended_positive', x + oo)) in facts
     assert Implies(Not(P('negative_infinite', x)), P('infinite', x + oo)) in facts
@@ -544,3 +546,33 @@ def test_specific_expectations():
     assert Implies(And(P('algebraic', x), Not(P('zero', x))), P('transcendental', cot(x))) in facts
     facts = registry.facts_for(Abs(x))
     assert P('extended_nonnegative', Abs(x)) in facts
+
+
+def test_add_extended_real_term_end_to_end():
+    """An extended-real sum whose other terms are finite reals has an
+    extended-real term, so a relation restated as ``lhs - rhs > 0`` keeps the
+    sign of the terms (#53, W2B1).  Each answer uses a fresh engine."""
+    from sympy import Q
+    from satassume import Engine
+    from satassume.sympy_api import ask
+
+    a, b = Symbol('a'), Symbol('b')
+    zp, wp = Symbol('zp', positive=True), Symbol('wp', positive=True)
+    zc = Symbol('zc', complex=True)
+    pairs = [
+        (Q.gt(a, zp), Q.gt(a - zp, 0)),
+        (Q.ge(a, zp), Q.ge(a - zp, 0)),
+        (Q.gt(2*a, 3*zp), Q.gt(2*a - 3*zp, 0)),
+        (Q.gt(a, zp + wp), Q.gt(a - zp - wp, 0)),
+    ]
+    for direct, restated in pairs:
+        assert ask(Q.gt(a, 0), direct, Engine()) is True, direct
+        assert ask(Q.gt(a, 0), restated, Engine()) is True, restated
+        assert ask(Q.extended_real(a), restated, Engine()) is True, restated
+    # a = oo satisfies a - zp > 0: a is extended positive, not known finite.
+    assert ask(Q.extended_positive(a), Q.gt(a - zp, 0), Engine()) is True
+    assert ask(Q.positive(a), Q.gt(a - zp, 0), Engine()) is None
+    assert ask(Q.infinite(a), Q.gt(a - zp, 0), Engine()) is None
+    # The other term must be real: a merely complex term gives nothing.
+    assert ask(Q.gt(a, 0), Q.gt(a - zc, 0), Engine()) is None
+    assert ask(Q.extended_real(a), Q.gt(a - zc, 0), Engine()) is None
