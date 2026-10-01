@@ -425,17 +425,12 @@ units, one reused session per assumption set, caches that omit the registry.
 Issue #53 is the umbrella (seven defect groups); group 1, non-total
 templates (`x*A`, `Abs(A)`), is fixed by #54 and #61. `harness/` (#55) checks the property
 differentially and pins the known cases as strict xfails in
-`tests/test_history.py`. Open PRs: #58 (totality gate), #63 (caches and
-sessions keyed on the registry state). The later stages proposed on #53 (restricted
-writeback, one complete consistency check per set, glue and transfer behind
-selectors) are not PRs yet. Still different on `main` (warm, then fresh):
-
-```python
-# x, u plain symbols, f = Function('f')
-ask(Q.lt(oo + x, 0)); ask(Q.extended_negative(oo + x))   # False; fresh: None
-C = Q.zero(u) & Q.positive(f(0))
-ask(Q.eq(u, 0), C); ask(Q.positive(f(u)), C)             # True; fresh: None
-```
+`tests/test_history.py` (fixed ones move to `harness/repros/fixed/`).
+Landed since: caches and sessions keyed on the registry state (#63),
+provenance writeback (stage 3), one complete consistency check per set
+(stage 4), and the relation glue and predicate transfer switched per
+query by selectors (stage 5, [theories.md](theories.md), "Switched
+glue"), which fixed families G, G', T and S.
 
 ## Beyond the current scope
 

@@ -107,9 +107,12 @@ def test_readme_usage_example():
 
 def test_sharing_example_needs_real_arguments():
     # the design note's section 5.4 example; with plain symbols the guard
-    # keeps LRA out, so sharing cannot fire
+    # keeps LRA out, so sharing cannot fire, and the trichotomy clause
+    # (Relations._trichotomy: x <= y and y <= x in the extended reals give
+    # x = y) gives the equality instead
     assert ask(Q.eq(f(r), f(s)), (r <= s) & (s <= r)) is True
-    assert ask(Q.eq(f(x), f(y)), (x <= y) & (y <= x)) is None
+    assert ask(Q.eq(f(x), f(y)), (x <= y) & (y <= x)) is True
+    assert ask(Q.eq(f(x), f(y)), x <= y) is None
 
 
 # ----------------------------------------------------------------------

@@ -223,6 +223,21 @@ class EUFAdapter:
                 nt[e] = th.term(e)
         return nt[expr]
 
+    def interned(self, exprs) -> list:
+        """The expressions :meth:`term` interns for ``exprs`` (each side and
+        its subterms, as far as congruence looks inside), each once."""
+        out, seen = [], set()
+        stack = list(exprs)
+        while stack:
+            e = stack.pop()
+            if e in seen:
+                continue
+            seen.add(e)
+            out.append(e)
+            if not isinstance(e, Rational) and _structural(e):
+                stack.extend(e.args)
+        return out
+
     def term_of(self, expr) -> int | None:
         """The term of ``expr`` if the adapter has interned it, else None."""
         return self._terms.get(expr)

@@ -9,9 +9,10 @@ engine and compare every answer with a fresh engine (``harness.checker``).
 Two parts:
 
 * **fast** (every push, about 10 s): the pinned repros, one strict xfail
-  per file in ``harness/repros``; the CI-sized ``links`` and ``transfer``
-  profile runs, also strict xfails, and the ``registry`` run, which must
-  find nothing since #63; the planted-defect tests
+  per file in ``harness/repros`` (none left since #53 stage 5), and the
+  fixed ones in ``harness/repros/fixed``, which must keep agreeing; the
+  CI-sized ``links``, ``transfer`` and ``registry`` profile runs, which
+  must find nothing (since stage 5 and #63); the planted-defect tests
   showing the checker, ddmin and the stream orders work; the inventory of
   module-level state.
 * **slow** (marked ``slow``, run with ``HISTORY_SLOW=1``, nightly in
@@ -63,7 +64,9 @@ SLOW = bool(os.environ.get("HISTORY_SLOW"))
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "harness-results", "pytest")
 CORPUS = os.path.join(ROOT, "queries.jsonl")
-REPROS = os.path.join(ROOT, "harness", "repros")
+#: the pinned repros (``HISTORY_REPROS``: another directory, for
+#: test_pinned_repro_fails_on_another_outcome)
+REPROS = os.environ.get("HISTORY_REPROS") or os.path.join(ROOT, "harness", "repros")
 
 slow = pytest.mark.slow
 needs_slow = pytest.mark.skipif(not SLOW, reason="slow history streams: set HISTORY_SLOW=1")
@@ -213,16 +216,23 @@ def _plant(monkeypatch):
 def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
     """The strict xfail of a pinned repro accepts only its recorded pair:
     with the long-lived engine made to crash (``Error:RuntimeError``) or to
-    flip its False into True on the final query (Gp2), the pinned test fails
-    instead of xfailing."""
+    flip its True into False on the final query, the pinned test fails
+    instead of xfailing.  The repro is G1 from ``fixed/`` pinned again in a
+    temporary directory (every pinned repro is fixed since #53 R2 and stage 5):
+    its recorded pair is True/None, both engines now answer True."""
+    import shutil
     import subprocess
     import sys
-    name = "Gp2-links-unary-mention-then-relation-observer"
-    with open(os.path.join(REPROS, name + ".json")) as fh:
+    name = "G1-links-lra-linear-relative"
+    src = os.path.join(ROOT, "harness", "repros", "fixed", name + ".json")
+    with open(src) as fh:
         d = json.load(fh)
-    assert (d["warm"], d["ref"]) == ("False", "None")
+    assert (d["warm"], d["ref"]) == ("True", "None") and len(d["prefix"]) == 1
+    pinned = tmp_path / "repros"
+    pinned.mkdir()
+    shutil.copy(src, pinned / (name + ".json"))
     (tmp_path / "history_plant.py").write_text(_PLANT)
-    env = dict(os.environ, HISTORY_PLANT=how,
+    env = dict(os.environ, HISTORY_PLANT=how, HISTORY_REPROS=str(pinned),
                PYTHONPATH=os.pathsep.join([str(tmp_path), ROOT, os.environ.get("PYTHONPATH", "")]))
     out = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                           "-p", "history_plant", "-rf",
@@ -231,16 +241,16 @@ def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
     tail = out.stdout[-3000:] + out.stderr[-3000:]
     assert out.returncode == 1, tail
     assert "1 failed" in out.stdout and "xfailed" not in out.stdout, tail
-    want = "engine error" if how == "crash" else "another disagreement than the recorded one: engine True"
+    want = "engine error" if how == "crash" else "another disagreement than the recorded one: engine False"
     assert want in out.stdout, tail
 
 
 def test_repros_are_pinned():
     # 15 before B, B2 and E1c (the complete set check, #73), E1, E1b,
-    # L1, C6b and D (the writeback rule, #53 stage 3) and T1, T3-T5 and Gp1
-    # (component-scoped answering, #53 R2) and G7 (T3: a reused session re-answers
-    # a query whose search used branch-and-bound) moved to fixed/
-    assert len(_repro_params()) >= 2
+    # L1, C6b and D (the writeback rule, #53 stage 3), T1, T3-T5 and Gp1
+    # (component-scoped answering, #53 R2), then G7, Gp2 and S1 (switched
+    # glue, #53 stage 5) moved to fixed/; a new pinned repro comes with its
+    # standalone script
     for path in glob.glob(os.path.join(REPROS, "*.json")):
         assert os.path.exists(path[:-5] + ".py"), f"no standalone script for {path}"
 
@@ -313,17 +323,15 @@ def test_registry_profile_finds_no_registration_dependence():
 def test_links_profile_finds_no_glue_dependence():
     """The ``links`` profile asks a relation query under a unary set and
     then order predicates about linear relatives of the set's terms.
-    Strict xfail: it turns into a failure once a session answers a unary
-    query the same way whether or not a relation was asked before."""
+    Family G (#42, fixed by #53 stage 5: the glue is switched per query)
+    made a session answer a unary query differently once a relation was
+    asked before."""
     cfg = preset("default")
     items = random_stream(13, n=100, nsets=4, profile="links")
     rep = Checker(cfg, ReferenceLevel.ENGINE, ("forward",), seed=13, max_discrepancies=1).run(items)
     _assert_no_discrepancy(rep)
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="family T: a session's predicate transfer is engaged by its first "
-                          "equality query and stays on (harness/repros/T*)")
 def test_transfer_profile_finds_no_transfer_dependence():
     """The ``transfer`` profile asks an equality query under a set that puts
     a term into an EUF class (``zero(u)``) and states facts about
@@ -450,21 +458,19 @@ def test_srepr_unknown_name_is_a_name_error():
         from_srepr("NoSuchSymPyClass(Integer(1))")
 
 
-def test_family_of_answer_memo_repeating_the_query(monkeypatch):
-    """E1 with the query repeated context-free in the prefix (the shape of
-    E1c): the relation query decides the sign of ``x + oo`` at the root and
-    writes it back, and the prefix's own copy of the query puts it in the
-    answer memo.  Only clearing both the cache and the memo restores the
-    fresh answer (carrier ``cache+answers``); the tag is the cache's
-    family, E.  Without the repeated query in the prefix the pair carrier
-    stays unexplained.
-
-    E1 is fixed by the writeback rule (``harness/repros/fixed``) and E1c's
-    prefix set now raises (the complete set check), so the attribution is
-    checked on E1 under ``Engine(writeback="all")``, the old
-    history-dependent writeback that produced the family."""
-    import dataclasses
-    from harness.checker import attribute, family_of, item_from_json
+def test_answer_memo_repeating_the_query_is_history_free(monkeypatch):
+    """E1 and C6b with the query repeated context-free in the prefix (the
+    shape of E1c), under ``Engine(writeback="all")``, the old
+    history-dependent writeback: before #53 stage 5 the prefix query wrote a
+    fact back (E1: a root fact from an unguarded link) and the prefix's own
+    copy of the query put it in the answer memo, so only clearing both the
+    cache and the memo restored the fresh answer (carrier
+    ``cache+answers``, the cache's family C').  With the glue switched per
+    query neither vehicle carries the dependence any more, under any
+    writeback, and no context-free vehicle is known (a search over the
+    fixed repros and ~26k pairs of C6b's shape found none): this is now a
+    regression test, warm == fresh."""
+    from harness.checker import item_from_json
     from harness.state import EngineConfig
     make = EngineConfig.make
 
@@ -473,25 +479,32 @@ def test_family_of_answer_memo_repeating_the_query(monkeypatch):
         eng.writeback = "all"
         return eng
     monkeypatch.setattr(EngineConfig, "make", make_all)
-    with open(os.path.join(REPROS, "fixed", "E1-order-clauses-write-back-oo-sum.json")) as fh:
-        rec = json.load(fh)
-    rec["prefix"] = rec["prefix"] + [rec["item"]]
-    seq = [item_from_json(i) for i in rec["prefix"]]
-    d = Discrepancy(EngineConfig.from_dict(rec["config"]), "pinned", len(seq),
-                    item_from_json(rec["item"]), rec["warm"], rec["ref"], ReferenceLevel.ENGINE,
-                    list(seq), shrunk=list(seq), shrunk_warm=rec["warm"], shrunk_ref=rec["ref"])
-    attribute(d)
-    assert d.confirmations["carrier"] == ["cache+answers"], d.confirmations
-    assert d.confirmations["family"] == "E"
-    other = dataclasses.replace(d, prefix=seq[:1], shrunk=seq[:1],
-                                confirmations=dict(d.confirmations))
-    assert family_of(other).startswith("new:cache+answers-")
+
+    def pinned(name):
+        with open(os.path.join(REPROS, "fixed", name)) as fh:
+            rec = json.load(fh)
+        rec["prefix"] = rec["prefix"] + [rec["item"]]
+        seq = [item_from_json(i) for i in rec["prefix"]]
+        return seq, Discrepancy(EngineConfig.from_dict(rec["config"]), "pinned", len(seq),
+                                item_from_json(rec["item"]), rec["warm"], rec["ref"],
+                                ReferenceLevel.ENGINE, list(seq), shrunk=list(seq),
+                                shrunk_warm=rec["warm"], shrunk_ref=rec["ref"])
+    from harness.checker import outcome
+    for name in ("E1-order-clauses-write-back-oo-sum.json", "C6b-derived-node-of-acos-found.json"):
+        seq, d = pinned(name)
+        eng = d.config.make()
+        for it in seq:
+            outcome(it.prop, it.assum, eng)
+        warm = outcome(d.item.prop, d.item.assum, eng)
+        assert warm == outcome(d.item.prop, d.item.assum, d.config.make()), name
 
 
 def test_known_families():
-    for fam in ("A", "C", "G", "G'", "T", "C+answers", "R:cache-none-vs-definite"):
+    for fam in ("A", "C", "C+answers", "R:cache-none-vs-definite"):
         assert is_known_family(fam), fam
-    for fam in ("?", "new:sessions-contradiction", "new:cache-none-vs-definite"):
+    # G, G' and T are fixed (#53 stage 5): finding one again is a failure
+    for fam in ("?", "new:sessions-contradiction", "new:cache-none-vs-definite",
+                "G", "G'", "T"):
         assert not is_known_family(fam), fam
     assert is_known_family("new:cache-none-vs-definite", audit=True)
     assert not is_known_family("new:cache-contradiction", audit=True)

@@ -978,3 +978,46 @@ def test_provenance_keeps_literals_dropped_from_a_shortened_clause(path):
     owner, ants = s.root_step(3)
     assert owner == "D" and sorted(ants) == [1, 2]
     assert s.provenance(3, {}) == {"D", "E", "F"}
+
+
+def test_inert_variables_are_never_decided_and_false_in_a_model():
+    # s guards x and y (selector-like: every clause holding s holds -s);
+    # the search never decides it, and a model leaves it False
+    s, x, y, z = 1, 2, 3, 4
+    solver = Solver()
+    for c in ([-s, x], [-s, y], [-x, -y, z], [x, y, z]):
+        solver.add_clause(c)
+    solver.set_inert(s)
+    assert solver.solve()
+    assert solver.model()[s] is False
+    assert solver.solve([-z]) and solver.model()[s] is False
+    # assumed, it acts as a selector does
+    assert solver.entails(z, [s]) is True
+    assert solver.solve([s]) and solver.model()[s] is True
+    assert solver.solve([-z]) and not solver.solve([s, -z])
+    assert solver.entails(z, []) is None
+
+
+def test_held_levels_continue_from_the_common_prefix():
+    # [a, b] then [a, c]: the level of a is kept (b's is dropped), and the
+    # answers are those of a fresh solver; release keeps a prefix only
+    a, b, c, x, y, z = 1, 2, 3, 4, 5, 6
+    clauses = ([-a, x], [-b, y], [-c, -y], [-x, -c, z])
+    solver = Solver()
+    for cl in clauses:
+        solver.add_clause(cl)
+    assert set(solver.implied([a, b])) >= {a, b, x, y}
+    assert solver._held == [2 * a, 2 * b]
+    got = solver.implied([a, c])
+    assert set(got) >= {a, c, x, -y, -b, z} and solver._held == [2 * a, 2 * c]
+    assert len(solver._trail_lim) == 2
+    solver.release(1)
+    assert solver._held == [2 * a] and len(solver._trail_lim) == 1
+    assert solver.entails(z, [a, c]) is True and solver.entails(b, [a, c]) is False
+    assert solver.entails(z, [a]) is None
+    solver.release(0)
+    assert solver._held is None and not solver._trail_lim
+    fresh = Solver()
+    for cl in clauses:
+        fresh.add_clause(cl)
+    assert fresh.entails(z, [a, c]) is True and fresh.entails(b, [a, c]) is False

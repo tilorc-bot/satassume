@@ -141,13 +141,20 @@ def test_verdict_keeps_no_session():
     f = _formula(Q.positive(x) & Q.gt(y, 1), True)
     eng = Engine(cache=DictCache())
     assert eng.verdict(f) is CONSISTENT
-    assert eng.stats["sessions"] == 1 and not eng._context_sessions
+    # the set's session is the only one: an order atom alone does not
+    # engage predicate transfer (an equality or a _trichotomy pair does,
+    # Relations.wants_transfer), so no context-free Engine.is_ query for
+    # the facts of a number side runs.  The point: no context session is
+    # kept
+    n = eng.stats["sessions"]
+    assert n == 1 and not eng._context_sessions
     s, _ = eng._context_session(f)
-    assert eng.stats["sessions"] == 2 and s.verdict is CONSISTENT
-    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == 2
+    assert eng.stats["sessions"] == n + 1 and s.verdict is CONSISTENT
+    assert len(eng._context_sessions) == 1
+    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == n + 1
     # a session's verdict answers when the memo has none
     eng._verdict.clear()
-    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == 2
+    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == n + 1
 
 
 def test_setting_change_recomputes_a_memoized_verdict():

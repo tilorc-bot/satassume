@@ -4,7 +4,12 @@ All of them still reproduce at a186157, except G1-G6 (fixed by #51) and C,
 C2-C5, C4b (fixed by #54), B, B2, E1c (fixed by the complete set check,
 #73), and E1, E1b, L1, C6b, D (fixed by the writeback rule of #53:
 `Engine(writeback="root-only")`, the default, and the opt-in
-`"provenance"`; `Session.writeback`, `Engine._put_root_only`), now in `fixed/`; `tests/test_history.py` pins each file here as a strict xfail.
+`"provenance"`; `Session.writeback`, `Engine._put_root_only`), T1,
+T3-T5, Gp1 (fixed by R2, component-scoped answering, #53), G7 (fixed by
+T3: a reused-session query whose search used branch and bound is
+answered again as a fresh engine would, #53) and Gp2, S1 (fixed by the
+switched glue of #53 stage 5), now in `fixed/`; `tests/test_history.py`
+pins each file here as a strict xfail (none is left).
 
 Each `NAME.py` runs standalone from the repository root
 (`PYTHONHASHSEED=0 python harness/repros/NAME.py`); each `NAME.json` can be
@@ -272,14 +277,23 @@ non-commutativity that made C4 wrong.
 | T5 | `ask(Q.is_true(Eq(u, y)), S)`, `S = Q.zero(u) & Q.positive(f(0) + 1)` | `ask(Q.positive(f(u) + 1), S)` | True | None | T |
 | S1 | `ask(Q.real(w), S)`, `S = Q.eq(y, q) & Q.irrational(-1/(m*w*y))` | `ask(Q.eq(q, w), S)` | None | False | S |
 
-S1 (reused-session glue, stage 5 of #53) uses `y` real, `q` rational, `m` nonnegative integer, `w` nonzero, and the harness default configuration with only `transfer=False` (it reproduces with the default settings except transfer=False; it was first found at seed 41 with small budgets, one kept session and relevance and cone search off); the fresh False is correct (`w` must be irrational).  It was found by the stage-3 review; no budget truncation is involved; stage 5 (selectors) is expected to fix it.
+S1 (reused-session glue, stage 5 of #53) uses `y` real, `q` rational, `m` nonnegative integer, `w` nonzero, and the harness default configuration with only `transfer=False` (it reproduces with the default settings except transfer=False; it was first found at seed 41 with small budgets, one kept session and relevance and cone search off); the fresh False is correct (`w` must be irrational).  It was found by the stage-3 review; no budget truncation is involved.  The first query makes `eq(q, w)` as an interface equality (glue) and interprets it; the second asks that atom, which then did not get the user-atom clauses (`Relations._eq_links`: `nonzero(q - w) -> ~eq(q, w)`) a fresh session gives it.
+
+**Gp2 and S1 are fixed by #53 stage 5** (T1, T3-T5 and Gp1 already
+by R2, see G' and T below, and G7 by T3; they pass under stage 5 too) (the
+glue switched per query: `satassume/relations.py`, "Switched glue") and
+moved to `fixed/`: links, the relation atoms' clauses to unary atoms and
+predicate transfer carry selectors that only the queries calling for them
+assume, and an equality's user-atom clauses are added the first time a
+query mentions it.  The descriptions below are the mechanisms as they
+were.
 
 G1-G6 were fixed on `main` by #51 (the sign facts of two sums now reach
 LRA in a fresh session, so a fresh engine answers them too): they moved to
 `fixed/`, where `tests/test_history.py` checks that they keep agreeing.
-The mechanism is not gone: G7 was found on `main` after #51 (`links`
-profile, seed 13), and the `links` and `transfer` profiles still find G in
-a few seeds out of twenty.
+The mechanism was not gone then: G7 was found on `main` after #51 (`links`
+profile, seed 13), and the `links` and `transfer` profiles still found G
+in a few seeds out of twenty, until #53 stage 5.
 
 with `x`, `y` real, `n` integer, `q` nonnegative, `u`, `v`, `z` plain, `w`
 nonzero, `c` complex, `f` an undefined function.  All confirmed in fresh interpreters
@@ -351,7 +365,8 @@ in a fresh session.  T1, T3, T4 and T5 no longer differ since R2
 (component-scoped answering, #53; they are in `fixed/`): the prefix
 equality's part does not hold the observer's application (`Q.eq(u, y)` is
 answered under `Q.zero(u)` alone), so its session, not the observer's,
-engages transfer.  The mechanism is unchanged within one component.
+engages transfer.  The mechanism is unchanged within one component (stage 5 of #53
+switches transfer per query there too).
 
 `Relations.process` (relations.py 409-411) sets `_want_transfer` for a
 user `eq` atom (also `ne`: it is `Not(eq)`), and `_engage_transfer`

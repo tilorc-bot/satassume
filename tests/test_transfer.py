@@ -6,6 +6,7 @@ from sympy import Function, Q, Rational, S, Symbol, symbols, pi
 
 from satassume.engine import DictCache, Engine
 from satassume.relations import Relations
+from satassume.rules import PRED_INDEX
 from theory_harness import Recorder, ask_with, check_protocol
 
 x, y, z = symbols("x y z")
@@ -67,17 +68,40 @@ def test_reused_session_and_cache_stay_contextual():
     assert ask_with(e, Q.prime(x), Q.eq(x, 4)) is False
 
 
-def test_no_equality_no_transfer():
-    """Sessions without an equality atom (links' eq(e, 0) do not count)
-    never engage the transfer theory."""
+def test_transfer_needs_an_equality():
+    """Sessions without an equality never engage the transfer theory: not
+    with sign atoms on sums sharing a symbol (which start the relation
+    glue), nor with order atoms alone; an equality of a user formula does,
+    and so do an order atom and its reverse (they give the equality,
+    Relations._trichotomy, W2B4b).  Its queries switch it on
+    (Relations.wants_transfer)."""
+    def engaged(e):
+        return any(s.xfer is not None for s, _ in e._context_sessions.values())
     e = eng()
-    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.real(x))
-    ask_with(e, Q.positive(x + 1), Q.positive(x))
+    ask_with(e, Q.positive(x + 1), Q.positive(x - 1) & Q.negative(1 - x))
     for s, _ in e._context_sessions.values():
+        assert s.relations is not None
         assert s.xfer is None
         assert not any(type(t).__name__ == "TransferTheory" for t in s.solver.theories())
-    ask_with(e, Q.positive(y), Q.eq(x, y) & Q.positive(x))
-    assert any(s.xfer is not None for s, _ in e._context_sessions.values())
+    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.real(x))
+    assert not engaged(e)
+    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.eq(x, y))
+    assert engaged(e)
+    e = eng()
+    ask_with(e, Q.positive(x), Q.le(x, y) & Q.ge(x, y))
+    assert engaged(e)
+
+
+def test_inequalities_restate_an_equality():
+    """``x <= y & y <= x`` gives what ``x = y`` gives, through the
+    trichotomy clause (Relations._trichotomy), also for sides that may be
+    infinite (LRA alone needs real sides)."""
+    p = Q.positive(f(x))
+    assert ask_with(eng(), p, Q.positive(f(y)) & Q.eq(x, y)) is True
+    assert ask_with(eng(), p, Q.positive(f(y)) & Q.le(x, y) & Q.ge(x, y)) is True
+    assert ask_with(eng(), Q.prime(x), Q.le(x, 2) & Q.ge(x, 2)) is True
+    assert ask_with(eng(), Q.eq(x, y), Q.le(x, y) & Q.ge(x, y)) is True
+    assert ask_with(eng(), Q.eq(x, y), Q.le(x, y)) is None
 
 
 def test_uninterpreted_option():
@@ -109,6 +133,9 @@ def test_protocol_on_fuzz(monkeypatch):
     def factory(euf):
         r = Recorder(inner_cls(euf))
         r.set_fixed = r.inner.set_fixed      # not a protocol method
+        r.guard = r.inner.guard              # nor this (the selector is an atom)
+        r.switch = r.inner.switch            # nor these (enable variables are atoms)
+        r.unswitch = r.inner.unswitch
         recs.append(r)
         return r
 
@@ -162,11 +189,19 @@ def _transfer_model_checker(counts):
         if not rep:
             return r
         model = self._model
+        if tr.sel is not None and not model[tr.sel]:
+            return r                       # switched off: no constraint
         seen: dict = {}
         for v, (t, p) in tr._atoms.items():
             c = rep.get(t)
             if c is None:
                 continue
+            sw = tr._sw.get(t)
+            if sw is not None:
+                # a switched term takes part as its enable variables say
+                if not (sw[0] and model[sw[0]]) and not (
+                        sw[1] and model[sw[1]] and p == PRED_INDEX["polar"]):
+                    continue
             key = (c, p)
             b = model[v]
             if key in seen:
