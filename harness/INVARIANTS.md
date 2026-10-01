@@ -220,6 +220,11 @@ generators avoid producing such sets; the filter is the safety net).
   `chain`) over 7 profiles' queries and their derived queries: no answer
   changed.  The registry epoch alone does not move a fresh engine's
   answer; the asserted extension families are the ones reported.
+* **I1 with the rule blocks as clauses**: 1,890 checks (every I1 check
+  of 540 queries over six profiles under `default`, `budget`, `lean`,
+  `I1_BLOCKS_ALL=1`), 498 inconclusive (an inconsistency report on one
+  side, or the eager reference differing), no violation: dropping among
+  the block clauses loses definiteness only.
 * I2 `crash`: every engine error seen with the widened material was the
   harness's own polyadic handler (`P` takes an `Args` tuple); fixed and
   guarded (`HANDLER_ERRORS`).  No engine crash in 1,900 nightly queries.
