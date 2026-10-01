@@ -136,7 +136,9 @@ def test_sums_of_noncommutative_terms():
     assert ask(Q.commutative(A + 1), True, fresh()) is False
     assert ask(Q.commutative(x + A), Q.finite(x), fresh()) is False
     assert ask(Q.zero(x + A), True, fresh()) is False
-    assert ask(Q.zero(x), Q.zero(x + A), fresh()) is False
+    # complete check; becomes None with D4 (non-commutative out of scope)
+    with pytest.raises(ValueError):
+        ask(Q.zero(x), Q.zero(x + A), fresh())
     assert ask(Q.finite(x + A), Q.infinite(x), fresh()) is False
     assert ask(Q.commutative(x + y), True, fresh()) is True
 

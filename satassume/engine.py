@@ -56,6 +56,14 @@ from .solver import Solver
 Node = Any
 
 
+#: the verdicts of an assumption set (``Engine.verdict``): only
+#: ``INCONSISTENT`` makes a query raise; ``UNKNOWN`` (a theory gave up, the
+#: cone was truncated, the check could not conclude) never does
+CONSISTENT = "consistent"
+INCONSISTENT = "inconsistent"
+UNKNOWN = "unknown"
+
+
 class InconsistentAssumptions(ValueError):
     pass
 
@@ -170,6 +178,13 @@ class Session:
         #: nodes that are closed irrational constants (pi, 1/pi); they do
         #: not count as pollution (Engine.cone_threshold)
         self.n_constants = 0
+        #: discovery (:meth:`_discover`) or :meth:`escalate` stopped on the
+        #: discovery budget and dropped frontier nodes it had not visited:
+        #: the session's cone is incomplete in a way ``incomplete`` misses
+        self.truncated = False
+        #: the verdict of the assumption set from the complete check run at
+        #: construction (``Engine._context_session``); None outside it
+        self.verdict: Optional[str] = None
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.assumption_formula = None       # the formula of assume_formula()
@@ -443,6 +458,9 @@ class Session:
                 continue
             self.node(n, None if demanded is None else self.demand.get(n, set()))
             added += 1
+        if self.frontier:
+            # budget spent with nodes left: they are dropped below
+            self.truncated = True
         self.frontier = deque()
 
     @property
@@ -476,6 +494,9 @@ class Session:
                 if n not in self.base:
                     self.node(n, None)
                     added += 1
+        if self.frontier:
+            # budget spent with nodes left: they are dropped below
+            self.truncated = True
         self.frontier = deque()
 
     # -- root facts -> cache ------------------------------------------------
@@ -758,13 +779,17 @@ class Engine:
         #: assumption formulas whose session construction raised
         #: ``Uninterpreted`` -> its message (see :meth:`_context_session`)
         self._failed: Dict[Any, str] = {}
+        #: assumption formula -> its verdict (``CONSISTENT``,
+        #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
+        #: (see :meth:`_context_session`); bounded, cleared with the sessions
+        self._verdict: Dict[Any, str] = {}
         #: the registry epoch (:mod:`satassume.epoch`) the engine-level
         #: caches were filled under; -1 until the first query
         self._epoch = -1
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "cone_searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
-                      "version_clears": 0, "dead_sessions": 0}
+                      "version_clears": 0, "dead_sessions": 0, "set_checks": 0}
 
     def _fresh_session(self) -> Session:
         self.stats["sessions"] += 1
@@ -920,27 +945,28 @@ class Engine:
         their caches.  Before the first query (``_epoch == -1``) there is
         nothing to drop.  Otherwise this drops what :meth:`_check_version`
         drops for the engine (the contextual sessions, the answer and split
-        memos, the ``Uninterpreted`` memo), counted in
+        memos, the ``Uninterpreted`` memo, the verdict memo), counted in
         ``stats["version_clears"]``, and the stores of the engine's fact
         caches (``cache``, ``custom_cache``): their facts can depend on
         ``templates``, ``discovery_budget`` (truncated sessions),
-        ``transfer`` and ``uninterpreted``.  A ``DictCache`` shared with
-        other engines is cleared for them too: a needless clear for them,
-        never a stale answer.  :data:`satassume.epoch.EPOCH` is untouched."""
+        ``transfer`` and ``uninterpreted``, as can a set's verdict.  A
+        ``DictCache`` shared with other engines is cleared for them too: a
+        needless clear for them, never a stale answer.  :data:`satassume.epoch.EPOCH` is untouched."""
         if self._epoch >= 0:
             self.stats["version_clears"] += 1
             self._context_sessions.clear()
             self.answers.clear()
             self.splits.clear()
             self._failed.clear()
+            self._verdict.clear()
             self.cache.store.clear()
             self.custom_cache.store.clear()
 
     def _check_version(self) -> None:
         """Drop every engine-level cache filled under an earlier registry
         epoch (:mod:`satassume.epoch`): the fact caches, the contextual
-        sessions, the answer and split memos and the ``Uninterpreted`` memo
-        all hold results computed under the registrations in force at the
+        sessions, the answer and split memos, the ``Uninterpreted`` memo
+        and the verdict memo all hold results computed under the registrations in force at the
         time.  The entry of every query calls this when the engine's epoch
         is not the current one (``if self._epoch != _EPOCH[0]``); a
         ``DictCache`` records its own epoch, so a cache shared between
@@ -956,6 +982,7 @@ class Engine:
                 self.answers.clear()
                 self.splits.clear()
                 self._failed.clear()
+                self._verdict.clear()
             self._epoch = epoch
         for cache in (self.cache, self.custom_cache):
             if cache._epoch != epoch:
@@ -989,18 +1016,107 @@ class Engine:
             # does depends only on the assumptions' relation atoms and the
             # registry epoch, which _check_version has just compared
             raise Uninterpreted(msg)
-        s = self._fresh_session()
+        if self._verdict.get(assumptions) is INCONSISTENT:
+            # the construction below would raise this again (it is the same
+            # every time, see _build_context); the memo only saves the work
+            raise InconsistentAssumptions("inconsistent assumptions")
         try:
-            lits = s.assume_formula(assumptions)
+            s, lits = self._build_context(assumptions)
         except Uninterpreted as e:
             if len(failed) >= 10_000:
                 failed.clear()
             failed[assumptions] = str(e)
             raise
+        v = s.verdict
+        if len(self._verdict) >= 20_000:
+            self._verdict.clear()
+        self._verdict[assumptions] = v
+        if v is INCONSISTENT:
+            raise InconsistentAssumptions("inconsistent assumptions")
         self._context_sessions[assumptions] = (s, lits)
         while len(self._context_sessions) > self.keep_sessions:
             self._context_sessions.popitem(last=False)
         return s, lits
+
+    def _build_context(self, assumptions) -> Tuple[Session, List[int]]:
+        """Build the contextual session of ``assumptions`` and run the set's
+        complete check (:meth:`_complete_check`) in it; its verdict is
+        ``s.verdict``.  Every construction of a set's session, the first
+        or a rebuild (eviction, ``session_limit``, a dead session, a theory
+        that gave up), takes exactly these steps, whether a verdict is
+        memoized or not, so the session the queries use never depends on
+        what ran before.  What the check leaves in the session (the
+        escalated cone, learnt clauses) is a function of the set alone.
+
+        If the check makes a theory give up (or errors), the session is
+        replaced by a plain one (assumptions only, no check): a session
+        whose theory gave up is useless to the queries (satassume.theory,
+        "Giving up"), and the plain build is just as deterministic."""
+        self.stats["set_checks"] += 1
+        s = self._fresh_session()
+        lits = s.assume_formula(assumptions)
+        try:
+            v = self._complete_check(s, lits)
+        except Uninterpreted:
+            raise
+        except Exception:
+            # the check could not conclude (an error in a theory, an
+            # undecidable constant): not evidence either way, and the
+            # session is in an unknown state
+            v = None
+        if v is INCONSISTENT:
+            s.verdict = v
+            return s, lits
+        if v is None or _gave_up(s):
+            s = self._fresh_session()
+            lits = s.assume_formula(assumptions)
+            v = UNKNOWN
+        s.verdict = v
+        return s, lits
+
+    def verdict(self, assumptions) -> str:
+        """The verdict of the assumption set ``assumptions`` (a formula):
+        ``CONSISTENT``, ``INCONSISTENT`` or ``UNKNOWN``, from the complete
+        check (:meth:`_complete_check`) run when its contextual session is
+        built.  Builds that session if it has none (the set's queries use
+        it); raises ``Uninterpreted`` as that construction does, never
+        ``InconsistentAssumptions``."""
+        try:
+            s, _ = self._context_session(assumptions)
+        except InconsistentAssumptions:
+            return INCONSISTENT
+        return s.verdict
+
+    @staticmethod
+    def _complete_check(s: Session, lits: List[int]) -> str:
+        """Whether the assumptions ``lits`` of the just-built session ``s``
+        are consistent with the facts: the whole cone of the assumptions
+        (derived nodes and parked clauses included), propagation, then
+        search.  ``INCONSISTENT`` only on a conflict, which is sound even
+        if a theory gave up afterwards (its earlier conflicts were valid,
+        satassume.theory); ``UNKNOWN`` if no conflict was found but a
+        theory gave up or the cone is truncated by the discovery budget
+        (then a model of the clauses is no model of the set);
+        ``CONSISTENT`` otherwise."""
+        solver = s.solver
+        if s.xfer is not None:
+            s.xfer.sync_transfer()
+        if not solver.propagate() or solver.implied(lits) is None:
+            return INCONSISTENT
+        if s.incomplete:
+            s.escalate()
+            if s.xfer is not None:
+                s.xfer.sync_transfer()
+            if not solver.propagate() or solver.implied(lits) is None:
+                return INCONSISTENT
+        # Solver.solve returns a bool: it raises only on a malformed
+        # literal or a theory protocol error (RuntimeError), neither of
+        # which is a conflict; the caller maps them to UNKNOWN
+        if not solver.solve(lits):
+            return INCONSISTENT
+        if _gave_up(s) or s.incomplete or s.truncated:
+            return UNKNOWN
+        return CONSISTENT
 
     # -- context-free ---------------------------------------------------------
     def is_(self, node: Node, pred: str) -> Optional[bool]:
@@ -1112,6 +1228,11 @@ class Engine:
                 # what the search learned) replaces the polluted one, so the
                 # next searches under these assumptions start small again
                 if self._context_sessions.get(assumptions, (None,))[0] is s0:
+                    # the verdict is a function of the set alone: carry it
+                    # over rather than run the check again (every context
+                    # session is built by _build_context, so s0 has one)
+                    s.verdict = (s0.verdict if s0.verdict is not None
+                                 else self._verdict.get(assumptions))
                     self._context_sessions[assumptions] = (s, lits)
                     if r is not None:
                         # "under these assumptions, q" is entailed by the

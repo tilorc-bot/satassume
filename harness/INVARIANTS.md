@@ -34,8 +34,9 @@ A pair of answers is reported only when
    whatever the history, and the checker cannot tell whether the
    engine's report or its answer is the right one);
 3. the assumption set is consistent (`consistent_by`): **the engine or a
-   concrete model**.  `sympy_api._consistent(A, fresh engine, search=True)`
-   finds a model with full escalation and search, of `A` or of a set with
+   concrete model**.  `Engine.verdict` (a fresh engine, the set's
+   complete check: full escalation and search) is `consistent` for `A` or
+   for a set with
    the same models (the restated set for I5, the renamed one for I6) or of
    one whose consistency implies `A`'s (`A & B` for I2 and I3: `B` is
    satisfiable over fresh symbols, or `p`/`~p` as answered, or a declared
@@ -282,6 +283,26 @@ opaque abstraction is not a model of the set.  Moved to `fixed/`:
   `I2-definite-lost-with-unrelated-relation`,
   `I2-self-assumption-lost-with-unrelated-conjunct`,
   `I5-constant-relation-conjunct-restated`.
+
+### Status after the complete set check (#73)
+
+Every assumption set gets one complete check when its contextual
+session is built (`Engine.verdict`: the whole cone escalated,
+propagation, search, in the session the set's queries then use).  The
+guard reads that verdict: only `consistent` is a model (`unknown`, a
+theory that gave up or a cone cut by the discovery budget, is none).
+The three `budget` cases (`discovery_budget=5`) no longer violate at
+that budget and move to `fixed/`:
+`I2-predicates-only-exhaust-discovery-budget`,
+`I3-declared-fact-loses-definiteness-budget` (K7),
+`I5-implied-conjunct-rescues-budget`.  The families are shifted, not
+fixed: the check's escalation only moves where the budget cuts (task 6 /
+R2).  Failing variants stay pinned:
+`I2-predicates-only-exhaust-discovery-budget-budget2`
+(`discovery_budget` 2) and `I5-implied-conjunct-rescues-budget-budget1`
+(`discovery_budget` 1) here; K7c (the I3 family, no failing budget with
+the original set), H2b, W2B3b and W2B3c in
+`tests/test_invariant_repros.py`.
 
 The findings below describe the cases as found.
 

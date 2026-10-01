@@ -1,7 +1,8 @@
 # Minimal repros of history-dependent answers (engine at c26e5e1)
 
 All of them still reproduce at a186157, except G1-G6 (fixed by #51) and C,
-C2-C5, C4b (fixed by #54), now in `fixed/`; `tests/test_history.py` pins each file here as a strict xfail.
+C2-C5, C4b (fixed by #54), and B, B2, E1c (fixed by the complete set
+check, #73), now in `fixed/`; `tests/test_history.py` pins each file here as a strict xfail.
 
 Each `NAME.py` runs standalone from the repository root
 (`PYTHONHASHSEED=0 python harness/repros/NAME.py`); each `NAME.json` can be
@@ -38,8 +39,12 @@ Two consequences follow.
 Repro A no longer differs since #63 (it is in `fixed/`): the prefix query
 raises in both engines, and the session under which a query raised is now
 dropped, so the final query is answered from a fresh session, as a fresh
-engine does.  The mechanism below remains (the consistency check itself is
-#53 group 5); no pinned repro of it is left.
+engine does.  Since #73 every assumption set gets one complete
+consistency check when its session is built (`Engine._context_session`,
+`Engine._complete_check`: the whole cone, propagation, then search,
+memoized per set), so an inconsistent set raises for every query,
+whatever the query and whatever ran before; the description below is of
+the engine before that.
 
 `Session.query_literal` (`satassume/engine.py`, lines 469-503) checks the
 assumptions' consistency with unit propagation only (`solver.implied`).
@@ -57,6 +62,10 @@ searching consistency check, but only when the query touches a strict
 subset of the set's components.
 
 ### B. A cached context-free fact contradicts an assumption that a lazily built session would accept
+
+*Fixed by the complete set check (#73, see A): the set's own check
+escalates the cone and finds the conflict, so both engines raise; B and B2
+are in `fixed/`.*
 
 `Session.node` compiles only the template clauses that mention a predicate
 in the rule-base neighbourhood of what the query demands (`_split`,
@@ -215,6 +224,11 @@ False, clearing both gives the fresh None (carrier `cache+answers`).
 `family_of` drops the memo from a pair carrier `X+answers` when the prefix
 asks the query itself, and tags by `X`.  Sound: `i + oo` is not an
 extended real, so not extended negative.
+Since #73 E1c no longer differs (it is in `fixed/`): `S` is inconsistent,
+and its complete check (`Engine._complete_check`, in a session of its own
+that writes nothing back) now raises before a session for the prefix query
+is built, so nothing reaches the fact cache.  Mechanism E itself remains,
+pinned by E1 and E1b.
 
 ### L. Learnt units are written back
 

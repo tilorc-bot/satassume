@@ -8,7 +8,7 @@ history) and compares the answers of fresh engines under the exact
 statement of the invariant.  Nothing here is heuristic: a pair of answers
 is reported only if the invariant as stated forbids it, the assumption set
 is known consistent (a model found by the engine's own solver with full
-escalation and search, ``sympy_api._consistent``, or a concrete
+escalation and search, ``Engine.verdict``, or a concrete
 assignment from a grid, ``harness.models.find_model``: ``consistent_by``),
 and neither answer is an inconsistency report (``ValueError``: allowed
 whatever the history).  The engine's documented scope is a tag on a case
@@ -45,6 +45,7 @@ from sympy.matrices.expressions import MatrixExpr
 from sympy.logic.boolalg import And, BooleanAtom, Equivalent, Implies, Not, Or
 
 import satassume.sympy_api as _api
+from satassume.engine import CONSISTENT
 from satassume.rules import PREDICATES
 from satassume.solver import Solver
 
@@ -195,7 +196,11 @@ def consistent_by(assum, config: EngineConfig) -> Optional[str]:
         return "engine"
     eng = config.replace(uninterpreted="none").make()
     try:
-        if bool(_api._consistent(assum, eng, count=False, search=True)):
+        # the set's complete check (Engine.verdict: whole cone, propagation,
+        # search); only CONSISTENT is a model (UNKNOWN: a theory gave up or
+        # the cone was truncated)
+        g = _api._formula(assum, bool(eng.relation_specs), True)
+        if g is _api.TRUE or g is not _api.FALSE and eng.verdict(g) == CONSISTENT:
             return "engine"
     except Exception:  # noqa: BLE001
         pass

@@ -71,6 +71,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
+from .engine import INCONSISTENT as _INCONSISTENT
 from .epoch import EPOCH as _EPOCH
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
@@ -796,7 +797,7 @@ def _relevant(p, a, eng: Engine):
     ok = sp.consistent
     if ok is None:
         if sp.relational or sp.keyless:
-            ok = _consistent(a, eng, search=CHECK_SEARCH or CHECK_SEARCH_RELATIONS)
+            ok = _consistent(a, eng)
         else:
             # no relation: the components share no solver variable, so the
             # set is consistent iff each component is.  Out of scope as a
@@ -864,99 +865,39 @@ def _vocab_blocks(e, ext) -> bool:
 #: See docs/design.md, "What connects".
 RELATIONAL = "whole"
 
-#: every consistency check also searches (``Solver.solve``, in a session of
-#: its own), not only propagates.  On: a Boolean conflict that propagation
-#: does not see (``(p | i) & (p | ~i) & (~p | i) & (~p | ~i)`` over the
-#: atoms of one symbol) makes the old path raise for every query that goes
-#: to search, including queries about other components.
-#: A module constant, not a setting: changing it at run time is unsupported
-#: (answers memoized under the old value are kept)
-CHECK_SEARCH = True
-
-#: the whole-set check of a set with relations searches: theory conflicts
-#: (``Q.eq(y, u) & Q.negative(u*y)``) often surface only in search, and the
-#: old path raises for any query that goes to search.
-#: A module constant, not a setting: changing it at run time is unsupported
-#: (answers memoized under the old value are kept)
-CHECK_SEARCH_RELATIONS = True
-
-#: a check whose session is incomplete (discovery left nodes or formulas
-#: parked) escalates once, as a query undecided by propagation does, before
-#: it certifies the set: the old path raises for such a query
-CHECK_ESCALATE = True
-
 
 _OK = object()
 
 
-def _gave_up(s) -> bool:
-    return any(getattr(t, "gave_up", False) for t in s.solver.theories())
-
-
 def _part_consistent(f, eng: Engine) -> bool:
     """:func:`_consistent` for a component without relations, memoized per
-    component (shared by every set it is part of), in the contextual session
-    the component's queries use (``Engine._context_session``)."""
+    component (shared by every set it is part of)."""
     key = (_OK, f)
     splits = eng.splits
     ok = splits.get(key)
     if ok is None:
-        eng.stats["consistency_checks"] += 1
-        try:
-            g = _formula(f, bool(eng.relation_specs), True)
-            s, lits = eng._context_session(g)
-            if s.xfer is not None:
-                s.xfer.sync_transfer()
-            solver = s.solver
-            ok = bool(solver.propagate()) and solver.implied(lits) is not None
-            if ok and _gave_up(s):
-                ok = False               # a theory gave up (satassume.theory): not known
-            if ok and (CHECK_SEARCH or CHECK_ESCALATE and s.incomplete):
-                # in a fresh session: the nodes escalation adds and what the
-                # search learns stay out of the session the queries use
-                ok = _consistent(f, eng, count=False)
-        except Exception:
-            ok = False
+        ok = _consistent(f, eng)
         splits.put(key, ok)
     return ok
 
 
-def _consistent(a, eng: Engine, count: bool = True, search: Optional[bool] = None) -> bool:
-    """``a`` is consistent as far as propagation in a session of its own
-    tells (what ``Session.query_literal`` checks before answering), after
-    escalation if the session is incomplete, and search with ``search``
-    (default :data:`CHECK_SEARCH`).  False
-    also when that cannot be decided (out of scope, a relation no theory
-    reads, an error): the caller then answers under ``a`` as a whole, so
-    whatever that does (None, ValueError) stays as it was."""
-    if count:
-        eng.stats["consistency_checks"] += 1
-    if search is None:
-        search = CHECK_SEARCH
-    rel = bool(eng.relation_specs)
+def _consistent(a, eng: Engine) -> bool:
+    """``a`` may be answered under a part: its verdict, from the one
+    complete check of the set (``Engine.verdict``: the whole cone,
+    propagation and search, memoized per formula in the engine, in the
+    contextual session the set's queries use), is consistent or unknown.
+    False if it is inconsistent, and also when the set cannot be checked
+    (out of scope, a relation no theory reads, an error): the caller then
+    answers under ``a`` as a whole, so whatever that does (None,
+    ValueError) stays as it was."""
+    eng.stats["consistency_checks"] += 1
     try:
-        g = _formula(a, rel, True)
+        g = _formula(a, bool(eng.relation_specs), True)
         if g is TRUE:
             return True
         if g is FALSE:
             return False
-        s = eng._fresh_session()
-        lits = s.assume_formula(g)
-        if s.xfer is not None:
-            s.xfer.sync_transfer()
-        solver = s.solver
-        if not solver.propagate() or solver.implied(lits) is None:
-            return False
-        if CHECK_ESCALATE and s.incomplete:
-            s.escalate()
-            if s.xfer is not None:
-                s.xfer.sync_transfer()
-            if not solver.propagate() or solver.implied(lits) is None:
-                return False
-        ok = not search or solver.solve(lits)
-        # a theory that gave up (satassume.theory) makes "no conflict found"
-        # no evidence of consistency
-        return ok and not _gave_up(s)
+        return eng.verdict(g) is not _INCONSISTENT
     except Exception:
         return False
 

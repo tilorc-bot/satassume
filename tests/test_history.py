@@ -236,7 +236,8 @@ def test_pinned_repro_fails_on_another_outcome(how, tmp_path):
 
 
 def test_repros_are_pinned():
-    assert len(_repro_params()) >= 14
+    # 12 since B, B2 and E1c moved to fixed/ (the complete set check, #73)
+    assert len(_repro_params()) >= 12
     for path in glob.glob(os.path.join(REPROS, "*.json")):
         assert os.path.exists(path[:-5] + ".py"), f"no standalone script for {path}"
 
@@ -451,18 +452,20 @@ def test_srepr_unknown_name_is_a_name_error():
 
 
 def test_family_of_answer_memo_repeating_the_query():
-    """The pinned E1c: a relation in a prefix set links ``i + oo``, the
-    extended-order clauses decide its sign at the root and write it back,
-    and the prefix also asks the query context-free, so the answer memo
-    holds a copy.  Only clearing both the cache and the memo restores the
-    fresh answer (carrier ``cache+answers``); the tag is the cache's
-    family, E.  Without the repeated query in the prefix the pair carrier
-    stays unexplained."""
+    """The pinned E1 with the query repeated context-free in the prefix
+    (the shape of E1c, which is fixed: its prefix set is inconsistent and
+    now raises before anything is written back): the relation query
+    decides the sign of ``x + oo`` at the root and writes it back, and the
+    prefix's own copy of the query puts it in the answer memo.  Only
+    clearing both the cache and the memo restores the fresh answer
+    (carrier ``cache+answers``); the tag is the cache's family, E.  Without
+    the repeated query in the prefix the pair carrier stays unexplained."""
     import dataclasses
     from harness.checker import attribute, family_of, item_from_json
     from harness.state import EngineConfig
-    with open(os.path.join(REPROS, "E1c-order-clauses-write-back-oo-sum-relation-in-set.json")) as fh:
+    with open(os.path.join(REPROS, "E1-order-clauses-write-back-oo-sum.json")) as fh:
         rec = json.load(fh)
+    rec["prefix"] = rec["prefix"] + [rec["item"]]
     seq = [item_from_json(i) for i in rec["prefix"]]
     d = Discrepancy(EngineConfig.from_dict(rec["config"]), "pinned", len(seq),
                     item_from_json(rec["item"]), rec["warm"], rec["ref"], ReferenceLevel.ENGINE,

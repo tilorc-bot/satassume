@@ -440,13 +440,14 @@ def test_dead_session_after_an_uninterpreted_exit():
 
 def test_inconsistent_assumptions_still_raise_every_time():
     """An inconsistent set raises for every query, as before and as a fresh
-    engine does: its session is dropped with each raise and rebuilt by the
-    next query, which raises again."""
+    engine does: the set's complete check (``Engine._complete_check``) finds
+    it inconsistent once, the verdict is memoized, and no session of it is
+    ever kept."""
     eng = fresh()
     a = Q.positive(x) & Q.negative(x)
     for p in (Q.real(x), Q.zero(x), Q.real(x)):
         assert same_as_fresh(eng, p, a) == "ValueError"
-    assert eng.stats["dead_sessions"] == 3 and not eng._context_sessions
+    assert eng.stats["set_checks"] == 1 and not eng._context_sessions
 
 
 # -- engine settings (I7) ----------------------------------------------------
