@@ -1692,8 +1692,12 @@ def fingerprint(v: Violation) -> str:
 
 
 def family_key(v: Violation) -> tuple:
-    """(invariant, severity, base, other, kinds, fingerprint)."""
-    kinds = tuple(v.variant.get("kinds", ())) if v.inv == "I2" else (str(v.variant.get("kind", "")),)
+    """(invariant, severity, base, other, kinds, fingerprint).  The
+    constant classes (``const:<class>``) are recorded in the case but are
+    not part of the key: the same mechanism reached with another constant
+    is the same family."""
+    kinds = tuple(k for k in v.variant.get("kinds", ()) if not k.startswith("const:")) if v.inv == "I2" \
+        else (str(v.variant.get("kind", "")),)
     return (v.inv, v.severity, v.base, v.other, kinds, v.fingerprint or "-")
 
 

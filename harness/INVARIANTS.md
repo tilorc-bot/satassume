@@ -118,8 +118,11 @@ blocks), 680 each of I3/I4/I6/I7, 1,360 I5) in 150 s of CPU, about 8 s
 per slice including the fingerprints and the shrinks.  The 20-minute run
 visits roughly 140-150 slices, about 4,500 queries, 16,000 I1 checks and
 16,000 I2 checks; the family cap per run keeps the shrinking from
-repeating (52 `family_repeat` in 2.5 minutes before the cap, the first
-run with it is reported below).  Round 3 (d21e655): 2-8 s per slice,
+repeating: with the cap (seed 13) the same 2.5 minutes visited 24
+slices (720 queries, 2,200 I1 and I2 checks), 122 candidates were
+family repeats (not shrunk), 4 of the 25 reports were pinned matches
+(tagged, not shrunk), and the constant classes are kept out of the
+family key (the same mechanism with another constant is one family).  Round 3 (d21e655): 2-8 s per slice,
 150-180 slices in 20 minutes.  At most five reports per invariant and *one* of one shape
 (invariant, severity, base answer, variant answer) per slice (the I2
 definite -> None family would otherwise spend the budget on shrinking),
