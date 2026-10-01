@@ -286,8 +286,10 @@ class Session:
         constructing = self.engine._constructing
         constructing.add(node)
         if not self.track:
-            self._visit(node, b, demanded)
-            constructing.discard(node)
+            try:
+                self._visit(node, b, demanded)
+            finally:
+                constructing.discard(node)
             return b
         solver = self.solver
         prev_owner = solver.owner
