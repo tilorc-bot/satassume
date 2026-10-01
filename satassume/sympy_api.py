@@ -32,7 +32,10 @@ scope so the caller can decide before asking.  The categories are
   old behaviour, opt-in) returns None instead;
 * ``"matrix"``: a matrix predicate (``Q.invertible`` and friends from
   ``sympy.assumptions.predicates.matrices``) or a vocabulary predicate
-  applied to a non-scalar argument (a ``MatrixSymbol``, ...);
+  applied to a non-scalar argument (a ``MatrixSymbol``, ...) or to an
+  argument with a non-commutative subterm (``Symbol('A',
+  commutative=False)``, ``re(A)``, ``g(x)`` for a non-commutative ``g``):
+  the templates are about numbers, ``A`` may be a matrix (issue #62);
 * ``"custom"``: any other predicate outside the vocabulary (user-defined
   predicates, ``Q.is_true`` over a non-relational) for which no
   clause-generating function is registered (see :func:`register` and
@@ -146,6 +149,40 @@ def _is_scalar(arg) -> bool:
     return isinstance(arg, _Expr) and bool(arg.is_scalar)
 
 
+#: memo of :func:`_noncommutative` (a function of the expression only:
+#: SymPy equality distinguishes ``Symbol('A')`` from the non-commutative
+#: ``A`` and ``Function('g')`` from ``Function('g', commutative=False)``)
+_NONCOMM: dict = {}
+NONCOMM_SIZE = 4096
+
+
+def _noncommutative(e) -> bool:
+    """Whether ``e`` has a non-commutative subterm (``is_commutative is
+    False`` anywhere, ``e`` itself included, matrix expressions not
+    descended into).  The whole expression is not
+    enough (``re(A)`` claims to be commutative), so this walks the tree;
+    memoized, since it runs for every applied vocabulary predicate."""
+    r = _NONCOMM.get(e)
+    if r is not None:
+        return r
+    r = False
+    stack = [e]
+    while stack:
+        t = stack.pop()
+        if not isinstance(t, _Basic) or getattr(t, "is_Matrix", False):
+            # a matrix expression reaches a scalar argument only through a
+            # scalar-valued function of it (Trace(M), M[0, 0]): a number
+            continue
+        if t.is_commutative is False:
+            r = True
+            break
+        stack.extend(t.args)
+    if len(_NONCOMM) >= NONCOMM_SIZE:
+        _NONCOMM.clear()
+    _NONCOMM[e] = r
+    return r
+
+
 def _applied_category(expr) -> Optional[str]:
     """Category of one ``AppliedPredicate``, or None if it is in scope."""
     Relational = _Relational
@@ -162,7 +199,9 @@ def _applied_category(expr) -> Optional[str]:
     if len(args) != 1:
         return "other"
     if _is_scalar(args[0]) or extensions.is_scalar_like(args[0]):
-        return None
+        # a non-commutative argument (a value that may be a matrix) is out
+        # of scope like a matrix one: the templates assume numbers (#62)
+        return "matrix" if _noncommutative(args[0]) else None
     return "matrix"
 
 
