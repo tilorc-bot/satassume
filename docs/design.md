@@ -229,9 +229,9 @@ non-commutative arguments (#62); a static totality check (PR #58).
 
 ## Relevance
 
-A relation-free assumption set is split into components, and a query is
-answered under the components connected to it once the whole set is known
-to be consistent (`sympy_api._relevant`, `_Split`, `_keys_rel`,
+An assumption set is split into components, and a query is answered under
+the components connected to it unless the whole set is inconsistent
+(`sympy_api._relevant`, `_Split`, `_keys_rel`,
 `_part_consistent`, `_consistent`; switch `RELATIONAL`; off with
 `Engine(relevance=False)`; `tests/test_relevance.py`). At landing (99e8827)
 the refine stream replay was 8.3% and 8.8% faster on the Pi than
@@ -244,16 +244,18 @@ every set with the same relevant part shares memo entries and session.
 2. The query's part is the union of the components whose keys meet its
    own. If that is all of `a`, nothing changes.
 3. Otherwise the set is certified once: `to_formula` must succeed and the
-   set's verdict (`Engine.verdict`), or each component's if it has no
-   relation, must not be inconsistent. The verdict comes from the one
+   whole set's verdict (`Engine.verdict`) if it has a relation or a keyless
+   conjunct, else each component's, must not be inconsistent. The verdict comes from the one
    complete check every assumption set gets when its contextual session is
    built (`Engine._build_context`, `_complete_check`: in that session, at
    every construction of it, first or rebuilt, the whole cone escalated,
    propagation, then a search, so the session the queries use is built the
    same way every time; if the check makes a theory give up, a plain
    session without the check replaces it. Counted in `stats["set_checks"]`;
-   `Engine._verdict` memoizes it per formula only to raise for an
-   inconsistent set without building anything). It is
+   `Engine._verdict` memoizes it per formula, to raise for an
+   inconsistent set without building anything and to answer
+   `Engine.verdict`, which keeps no session: the whole set of a split set
+   is usually never queried, and its session would evict the parts'). It is
    three-valued: `inconsistent` (a conflict: every query under the set
    raises), `unknown` (no conflict, but a theory gave up, the cone hit the
    discovery budget (`Session.truncated`) or the check failed; never raises, and certifies) and
@@ -265,14 +267,18 @@ every set with the same relevant part shares memo entries and session.
    None or `ValueError` included.
 
 Keys of an expression: its free symbols, the classes of its undefined
-function applications (`f(x)` and `f(y)` share `f`), every closed subterm
-that is not a Rational (`pi`, `sqrt(2)`, `2*pi`, Floats, `oo`, `f(1)`), and
-a Rational that is a predicate's argument (`Q.polar(2)`). No split for a
-predicate outside the vocabulary, `Q.is_true` of a non-relational, anything
-not a Boolean over applied predicates, a query without keys, any set while
-a vocabulary predicate is registered for a class (`Extensions._vocab`),
-and, with `RELATIONAL = "whole"`, a set or query with a relation or a
-keyless conjunct.
+function applications (`f(x)` and `f(y)` share `f`), the closed terms whose
+facts SymPy does not decide context-free (Floats, `f(1)`, `pi - 3`,
+undecidable constants; not Rationals nor the `K` constants of
+`_const_free`, `pi`, `E`, `sqrt(2)`, `2*pi`, ...), and a closed term or
+Rational that is a predicate's argument (`Q.polar(2)`, `Q.positive(pi)`).
+A relation's keys are those of its sides, with the same rule for a closed
+side: `x = 2` and `x < pi` key only `x`, `x = 1.5` keys `x` and `1.5`. No
+split for a registered custom predicate, `Q.is_true` of a non-relational,
+anything not a Boolean over applied predicates, a query without keys, a
+set or query with a term a vocabulary predicate is registered for
+(`_vocab_blocks`), and, with `RELATIONAL = "whole"`, a set or query with a
+relation or a keyless conjunct.
 
 ### Why splitting is sound
 
@@ -287,7 +293,8 @@ keyless conjunct.
   `Q.positive(y)`, `Q.integer(y)`, made the old path raise for
   `Q.positive(x)` under it `& Q.real(x)` while a propagation-only check
   certified the set. The search costs 0 to 0.5% of the replay.
-- **Why components are independent** (so the per-component check equals a
+- **Why components are independent** (for a relation-free set without
+  sign atoms on sums sharing a symbol, the per-component checks equal a
   whole-set check and the part answers as the whole set would): templates
   relate a node only to its own subterms and derived nodes built from them
   and create no relation atoms; constants in templates are resolved in
@@ -295,7 +302,13 @@ keyless conjunct.
   where it is a key; declared facts belong to the symbol's node, in one
   component; the `DictCache` holds root facts only; and without a relation
   no theory in the session merges terms. So components without shared keys
-  share no solver variable.
+  share no solver variable. For a set with a relation, a keyless conjunct
+  or such sign atoms (below), the theories can merge terms of different
+  components (a common value, D3 in "What connects"), so this identity is
+  not claimed: the whole set's verdict decides raising, and the part's
+  answer is sound (entailed by a sub-conjunction) and never the other
+  definite value, but may be less definite than the whole set's (None
+  where value merging across components decided it before).
 - **Closed non-Rational terms connect.** They became keys when `pi` was a
   bounded LRA variable (`x < pi` and `pi < y`, with `x` and `y` pinned on
   either side, are each consistent and together not). Since #48 `pi` and
@@ -307,35 +320,32 @@ keyless conjunct.
   theory relating terms of different components. A feature that brings a
   theory into such a session must connect only terms sharing a key, or
   turn the split off.
-- **Known gap: sign facts on sums break the invariant.**
+- **Sign facts on sums start the glue without a relation.**
   `Session._affine_links` (#51) starts the relation glue without a relation
-  atom when two sign atoms are on sums sharing a symbol
-  (`Q.positive(z - 1) & Q.negative(z - 3)`), and `_relevant` does not treat
-  such a set as relational. The trigger concerns one component, but once
-  the glue exists `Relations.note_formula` makes the argument of every
-  unary atom of the assumptions a link candidate, in every component:
-  `zero(x)` and `zero(y)` both become `eq(·, 0)`, `x` and `y` merge in EUF
-  and congruence merges their applications. Fresh engines,
-  `PYTHONHASHSEED` 0 to 2, `bj = besselj(1, ·)`:
-
-  | query | assumptions | whole set | relevance |
-  |---|---|---|---|
-  | `Q.zero(bj(x))` | `Q.zero(x) & Q.zero(y) & Q.zero(bj(y)) & Q.positive(z - 1) & Q.negative(z - 3)` | True | None |
-  | `Q.positive(z)` | the same `& Q.nonzero(bj(x))` | `ValueError` | True |
-
-  Without the `z` conjuncts both sides agree. The part's
-  answers stay entailed by the part; identity with the whole set and the
-  error set break. Sets of sign facts on sums alone do not show it (it
-  needs pinned terms and applications of them). Treating such a pair of
-  sign atoms as a relation in `_relevant` would restore the invariant.
+  atom when two sign atoms are on different sums sharing a symbol
+  (`Q.positive(z - 1) & Q.negative(z - 3)`). The trigger concerns one
+  component, but once the glue exists `Relations.note_formula` makes the
+  argument of every unary atom of the assumptions a link candidate, in
+  every component: `zero(x)` and `zero(y)` both become `eq(·, 0)`, `x` and
+  `y` merge in EUF and congruence merges their applications. So under
+  `Q.zero(x) & Q.zero(y) & Q.zero(bj(y)) & Q.nonzero(bj(x)) & Q.positive(z - 1)
+  & Q.negative(z - 3)` (`bj = besselj(1, ·)`) the whole set is inconsistent
+  while each component is consistent on its own. `_relevant` therefore
+  treats a set whose sign atoms on sums would start the glue
+  (`engine.affine_glue`) like a relational one: the whole set's verdict
+  decides raising, so every query under that set raises
+  (`test_sign_sums_set_raises_for_any_component`). The part's answers stay
+  sound; they may be less definite than the whole set's (`Q.zero(bj(x))`
+  under the set without `Q.nonzero(bj(x))`: True as a whole, None under
+  its part), as for a relational set.
 
 ### What connects
 
 With a relation in the set or the query, the session has the theories and
-every vocabulary argument `e` gets the link `zero(e) <-> eq(e, 0)`. Terms of
-different components then merge in EUF whenever they are pinned to a
-common value, congruence carries the merge to `sin(x)` and `sin(y)` (any
-head), and predicate transfer shares their facts:
+every vocabulary argument `e` gets the link `zero(e) <-> eq(e, 0)`. In one
+session, terms pinned to a common value merge in EUF, congruence carries
+the merge to `sin(x)` and `sin(y)` (any head), and predicate transfer
+shares their facts:
 
 | how the common value arises | example that connects `x` and `y` |
 |---|---|
@@ -346,19 +356,46 @@ head), and predicate transfer shares their facts:
 
 A key made of Rationals cannot describe this: the joining value may come
 from arithmetic, from order relations, or from no Rational at all. Hence
-the two modes of `RELATIONAL`:
+the three modes of `RELATIONAL`:
 
-- `"whole"` (default): a set or query with a relation, or with a keyless
-  conjunct (only Rationals inside relations, `Q.lt(1, 2)`), is not split;
-  its answers are the whole set's by construction.
-- `"rationals"` (measured, not used): relational sets split, with the
+- `"components"` (default since #53 R2): a set or query with a relation
+  splits by the keys above like a relation-free one; a common value does
+  not connect. Raising is decided by the whole set's verdict
+  (inconsistent: answered under the whole set, which raises; consistent or
+  unknown: under the part). Answering under a sub-conjunction is sound by
+  monotonicity whatever the verdict, so no argument about what the
+  theories could merge is needed; keys only decide which answers are kept.
+  The part's session holds only its component: its own theories, LRA
+  branch budget, give-up and transfer engagement, so an unrelated
+  relation, undecidable constant, integer block or equality no longer
+  changes an answer (K1, K5, W2B3b/c, W2B4 in
+  `tests/test_invariant_repros.py`). Keyless conjuncts (`Q.lt(1, 2)`,
+  `Q.lt(pi, 4)`) join no component; the whole-set verdict covers them.
+  **Behaviour change (decided, D3):** the rows above connect only within
+  one component. `Q.positive(sin(x))` under
+  `Q.eq(x, 2) & Q.eq(y, 2) & Q.positive(sin(y))` is answered under
+  `Q.eq(x, 2)`: None now, True under `"whole"`. (With an undefined `f` in
+  place of `sin`, the class of `f` is a key, `f(x)` and `f(y)` stay
+  connected, and the answer stays True.) The answers lost are exactly
+  those a common value carried between otherwise unrelated conjuncts.
+- `"whole"` (ablation, the default before R2): a set or query with a
+  relation, or with a keyless conjunct (only Rationals inside relations,
+  `Q.lt(1, 2)`), is not split; its answers are the whole set's by
+  construction, and unrelated conjuncts share one session's theories.
+- `"rationals"` (ablation, measured, not used): relational sets split, with the
   Rationals on the sides of an equality, the 0 of `zero` and the Rationals
   inside closed terms as extra keys. It connects `x = 2` with `y = 2` but
   not the derived rows above, so it loses answers. Before landing it was
   worth about half a point of the replay on the Pi (-8.6% and -8.8%
   against -8.1% and -8.4% for `"whole"`); 167 of 3,244 split answers on
-  the stream involved a relation. The mode remains as dormant code; changing `RELATIONAL`
-  needs `_KEYS.clear()`, since keys depend on it.
+  the stream involved a relation. The mode remains as dormant code.
+
+`RELATIONAL` is a module constant, not a setting: changing it needs
+`_KEYS.clear()`, since keys depend on it (the tests' fixtures do this).
+
+An opaque relation (one no theory interprets, a free atom with the default
+`uninterpreted="free"`) links nothing: `Relations.process` links the sides
+of a user relation only once a theory has interpreted it.
 
 `tools/relevance_fuzz.py` (relevance on against off) is mostly relational:
 at landing only about 5% of its queries went to a part, and it has no

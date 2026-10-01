@@ -203,8 +203,8 @@ python -m harness hashseed --seeds 0-3 --hashseeds 0,1,2,3,42 --config default -
 python -m harness hashseed --profile related --seeds 0-2 --hashseeds 0,1,2,42 --queries 250
 
 # re-run a saved discrepancy, optionally in a fresh interpreter under a seed
-python -m harness repro harness/repros/T1-transfer-congruent-application.json [--hashseed 7]
-python harness/repros/T1-transfer-congruent-application.py
+python -m harness repro harness/repros/G7-links-zero-scaled-term-order-after-relation.json [--hashseed 7]
+python harness/repros/G7-links-zero-scaled-term-order-after-relation.py
 python -m harness repro harness-results/fuzz-links-default-s0-0.json     # one a run wrote
 
 # the inventory of module-level state (fails if an unclassified container appears)
@@ -337,11 +337,11 @@ own tests) showed no discrepancy.
   component is the whole set (a relation query is always answered under
   the whole set).  The round-2 base stream had hit it (seed 19, tagged
   `new:sessions-none-vs-definite`, unanalysed).
-* **G'** (`Gp1*.py`): the same glue, per term: with the glue already on
+* **G'** (`Gp2*.py`; Gp1 in `repros/fixed/` since R2): the same glue, per term: with the glue already on
   (the set has a relation), a query that merely *mentions* a term links
   it, and a later query about a relative of that term is decided.  The
   round-2 `relational` profile had hit it (seed 9, tagged `K`).
-* **T** (`T*.py`; T2 in `repros/fixed/` since #63 drops a session with a raise): predicate transfer is engaged by the first equality
+* **T** (all in `repros/fixed/`: T2 since #63 drops a session with a raise, T1, T3-T5 since R2 answers the prefix equality in its own component's session; the mechanism remains within a component): predicate transfer is engaged by the first equality
   atom that is not glue; from then on every node of the session is a
   candidate for sharing its unary facts with its EUF class.  Under
   `Q.zero(u) & Q.positive(f(0))` the query `Q.positive(f(u))` is None

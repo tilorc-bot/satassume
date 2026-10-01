@@ -1164,8 +1164,10 @@ class Engine:
         behaviour, opt-in: ``ask`` returns None.
     relevance : bool
         ``sympy_api.ask`` answers a query under the assumption conjuncts
-        connected to it only (see ``sympy_api._relevant``), once the whole
-        set is known to be consistent; False: always under the whole set.
+        connected to it only (see ``sympy_api._relevant``) unless the whole
+        set is found inconsistent (then under the whole set, which raises);
+        a consistent or unknown set answers under the part.  False: always
+        under the whole set.
     writeback : ``"root-only"``, ``"provenance"`` or ``"all"``
         Which root facts of a session go to the context-free caches
         (``Session.writeback``, ``_put_root_only``): ``"root-only"``
@@ -1557,14 +1559,45 @@ class Engine:
         """The verdict of the assumption set ``assumptions`` (a formula):
         ``CONSISTENT``, ``INCONSISTENT`` or ``UNKNOWN``, from the complete
         check (:meth:`_complete_check`) run when its contextual session is
-        built.  Builds that session if it has none (the set's queries use
-        it); raises ``Uninterpreted`` as that construction does, never
-        ``InconsistentAssumptions``."""
-        try:
-            s, _ = self._context_session(assumptions)
-        except InconsistentAssumptions:
-            return INCONSISTENT
-        return s.verdict
+        built; raises ``Uninterpreted`` as that construction does, never
+        ``InconsistentAssumptions``.
+
+        Answered from the verdict memo, or from the set's contextual
+        session if it has one; else the session is built by
+        :meth:`_build_context` and only its verdict is kept: the session
+        is not stored in ``_context_sessions``.  The caller of a verdict
+        is mostly the relevance layer deciding whether a set may raise
+        before it answers under a part of it; the part's session is the
+        one its queries use, and a never-queried whole session would only
+        evict it.  If the whole set is queried later its session is built
+        then, by the same steps (see :meth:`_build_context`), so what a
+        query sees does not depend on whether a verdict was asked
+        first."""
+        if self._epoch != _EPOCH[0]:
+            self._check_version()
+        v = self._verdict.get(assumptions)
+        if v is not None:
+            return v
+        hit = self._context_sessions.get(assumptions)
+        if hit is not None and hit[0].verdict is not None:
+            v = hit[0].verdict
+        else:
+            failed = self._failed
+            msg = failed.get(assumptions)
+            if msg is not None:
+                raise Uninterpreted(msg)
+            try:
+                s, _ = self._build_context(assumptions)
+            except Uninterpreted as e:
+                if len(failed) >= 10_000:
+                    failed.clear()
+                failed[assumptions] = str(e)
+                raise
+            v = s.verdict
+        if len(self._verdict) >= 20_000:
+            self._verdict.clear()
+        self._verdict[assumptions] = v
+        return v
 
     @staticmethod
     def _complete_check(s: Session, lits: List[int]) -> str:
@@ -1848,6 +1881,29 @@ _SIGN_PREDS = frozenset({
     "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero",
     "extended_positive", "extended_negative", "extended_nonnegative",
     "extended_nonpositive", "extended_nonzero"})
+
+
+def affine_glue(f) -> bool:
+    """Whether the sign atoms of ``f`` alone start the relation glue of
+    :meth:`Session._affine_links` (two sign atoms on different sums sharing
+    a symbol), given an engine with relation specs.  Once started, the glue
+    links the argument of every unary atom of the assumptions, in every
+    component, so the relevance layer treats such a set as relational
+    (``satassume.sympy_api._relevant``)."""
+    sums: Dict[Any, frozenset] = {}
+    for a in atoms_of(f):
+        if a.pred not in _SIGN_PREDS:
+            continue
+        e = a.expr
+        if not getattr(e, "is_Add", False) or e in sums:
+            continue
+        symbols = e.free_symbols
+        if not symbols:
+            continue
+        if any(symbols & other for other in sums.values()):
+            return True
+        sums[e] = symbols
+    return False
 
 
 # --------------------------------------------------------------------------

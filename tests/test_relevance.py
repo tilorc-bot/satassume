@@ -38,6 +38,18 @@ def rationals():
     api._KEYS.clear()
 
 
+@pytest.fixture
+def whole():
+    """``RELATIONAL = "whole"`` (an ablation): sets and queries with a
+    relation are not split."""
+    old = api.RELATIONAL
+    api.RELATIONAL = "whole"
+    api._KEYS.clear()
+    yield
+    api.RELATIONAL = old
+    api._KEYS.clear()
+
+
 def used(p, a):
     """The assumptions the query is answered under (a fresh engine)."""
     return api._relevant(p, a, Engine())
@@ -66,7 +78,96 @@ def test_parts_share_the_answer_memo_and_session():
     assert eng.stats["queries"] == q
 
 
-def test_relation_is_not_split():
+def test_relation_splits_by_component():
+    # RELATIONAL "components" (the default): a set or query with a relation
+    # splits by key connectivity like a relation-free one (#53 R2)
+    a = Q.positive(x) & Q.lt(x, y) & Q.real(y) & Q.negative(z)
+    assert used(Q.positive(y), a) == Q.positive(x) & Q.lt(x, y) & Q.real(y)
+    assert used(Q.positive(z), a) == Q.negative(z)
+    assert both(Q.positive(y), a) == [True, True]
+    a = Q.positive(x) & Q.negative(z)
+    assert used(Q.lt(0, x), a) == Q.positive(x)
+    assert both(Q.lt(0, x), a) == [True, True]
+
+
+def test_common_value_does_not_connect():
+    # D3: a Rational side of an equality is no key, so x = 2 and y = 2 are
+    # two components and the value is not merged across them (True under
+    # RELATIONAL "whole"); within one component it still is.  (With an
+    # undefined f instead of sin, the class of f is a key and connects f(x)
+    # with f(y): one component, True.)
+    a = Q.eq(x, 2) & Q.eq(y, 2) & Q.positive(sin(y))
+    assert used(Q.positive(sin(x)), a) == Q.eq(x, 2)
+    assert api.ask(Q.positive(sin(x)), a, engine=Engine()) is None
+    b = Q.eq(x, 2) & Q.eq(y, 2) & Q.positive(f(y))
+    assert used(Q.positive(f(x)), b) is b
+    assert api.ask(Q.positive(f(x)), b, engine=Engine()) is True
+    b = Q.eq(x, 2) & Q.positive(sin(x))
+    assert used(Q.positive(sin(x)), b) is b
+    assert api.ask(Q.positive(sin(x)), b, engine=Engine()) is True
+    assert api.ask(Q.positive(f(x)), Q.eq(x, 2) & Q.positive(f(x)), engine=Engine()) is True
+
+
+def test_common_value_connects_whole(whole):
+    a = Q.eq(x, 2) & Q.eq(y, 2) & Q.positive(sin(y))
+    assert api.ask(Q.positive(sin(x)), a, engine=Engine()) is True
+
+
+def test_inconsistent_relational_set_raises_for_any_component():
+    # raising is decided by the whole set's verdict, not by the part
+    a = Q.gt(x, 1) & Q.lt(x, 0) & Q.positive(y)
+    assert used(Q.positive(y), a) is a
+    for p in (Q.positive(y), Q.lt(0, y), Q.positive(t)):
+        with pytest.raises(ValueError):
+            api.ask(p, a, engine=Engine())
+    # also a keyless conjunct, which joins no component
+    a = Q.lt(2, 1) & Q.positive(y) & Q.gt(x, 1)
+    with pytest.raises(ValueError):
+        api.ask(Q.positive(y), a, engine=Engine())
+
+
+def test_sign_sums_set_raises_for_any_component():
+    # sign atoms on sums sharing a symbol start the relation glue (#51) in
+    # the whole set's session, which links x and y (both zero) across
+    # components: the whole set is inconsistent while each component is
+    # consistent on its own, so the whole set's verdict decides raising
+    bj = lambda e: besselj(1, e)
+    a = (Q.zero(x) & Q.zero(y) & Q.zero(bj(y)) & Q.nonzero(bj(x))
+         & Q.positive(z - 1) & Q.negative(z - 3))
+    for p in (Q.gt(z, 0), Q.lt(0, z), Q.positive(z), Q.zero(bj(x))):
+        assert both(p, a) == ["error", "error"], p
+
+
+SPLIT_SWEEP = [
+    Q.positive(x) & Q.lt(x, y) & Q.negative(z) & Q.eq(t, 3),
+    Q.eq(x, 2) & Q.eq(y, 2) & Q.positive(sin(y)) & Q.lt(1, 2),
+    Q.integer(x) & Q.gt(x, Rational(1, 2)) & Q.lt(y, pi) & Q.ne(z, 1.5),
+    Q.eq(f(x), 1) & Q.gt(y, 0) & Q.positive(f(z)) & Q.lt(z, E),
+    Q.le(xr, yr) & Q.ge(xr, yr) & Q.positive(f(yr)) & Q.eq(z, t),
+]
+SWEEP_QUERIES = [Q.positive(x), Q.positive(y), Q.negative(z), Q.lt(x, 1), Q.gt(y, -1),
+                 Q.positive(f(x)), Q.positive(f(xr)), Q.eq(z, t), Q.integer(t), Q.real(x + y)]
+
+
+@pytest.mark.parametrize("a", SPLIT_SWEEP, ids=str)
+def test_split_relational_answer_is_the_part_answer(a):
+    # in one engine, in order: each answer equals the answer under the part
+    # it is asked under, as a whole set in a fresh engine
+    eng = Engine()
+    for p in SWEEP_QUERIES:
+        f = used(p, a)
+        try:
+            r = api.ask(p, a, engine=eng)
+        except ValueError:
+            r = "error"
+        try:
+            g = api.ask(p, f, engine=Engine(relevance=False))
+        except ValueError:
+            g = "error"
+        assert r == g, (p, f)
+
+
+def test_relation_is_not_split(whole):
     a = Q.positive(x) & Q.lt(x, y) & Q.real(y) & Q.negative(z)
     assert used(Q.positive(y), a) is a
     assert used(Q.positive(z), a) is a
@@ -132,9 +233,19 @@ DERIVED = [
 
 
 @pytest.mark.parametrize("p, a, r", PINNED + DERIVED)
-def test_pinned_values_connect(p, a, r):
+def test_pinned_values_connect(whole, p, a, r):
     assert used(p, a) is a
     assert both(p, a) == [r, r]
+
+
+@pytest.mark.parametrize("p, a, r", PINNED + DERIVED)
+def test_pinned_values_split(p, a, r):
+    # "components" (D3): a common value does not connect, the query is
+    # answered under its own component, as that component alone is
+    f = used(p, a)
+    assert f is not a
+    assert both(p, a) == [None, r]
+    assert api.ask(p, f, engine=Engine()) is None
 
 
 @pytest.mark.parametrize("p, a, r", PINNED)
@@ -303,8 +414,9 @@ def test_out_of_scope_rest_is_opaque():
 
 def test_uninterpreted_rest_is_free():
     # a Float in a relation is not read by any theory: a free atom by
-    # default (the set is not split, RELATIONAL "whole"), None with
-    # uninterpreted="none"
+    # default (the set splits, the Float side keys y's component), None
+    # with uninterpreted="none" (the whole set cannot be checked, so it
+    # answers as a whole)
     a = Q.positive(x) & Q.gt(y, 0.5)
     assert both(Q.positive(x), a) == [True, True]
     assert both(Q.positive(t), a) == [None, None]

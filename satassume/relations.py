@@ -484,9 +484,17 @@ class Relations:
         (by default such atoms stay free Booleans)."""
         s = self.session
         user = [a for a in user_atoms if a.pred in RELATION_ATOMS]
+        # the sides of a user relation are linked once a theory interprets
+        # it: an opaque relation (a free atom, uninterpreted="free")
+        # activates no theory and links nothing
+        unlinked = set()
         for a in user:
-            for side in a.expr:
-                self._link_later(side)
+            st = self.status.get(a)
+            if st:
+                for side in a.expr:
+                    self._link_later(side)
+            elif st is None:
+                unlinked.add(a)
         for a in user:
             if a.pred == "eq":
                 self._want_transfer = True
@@ -496,8 +504,15 @@ class Relations:
             s._discover()
             if self.queue:
                 atom = self.queue.pop()
-                self.status[atom] = self._interpret(atom)
+                ok = self.status[atom] = self._interpret(atom)
+                # also for an opaque relation (ok False): the glue then links
+                # every vocabulary argument of this session; the relevance
+                # layer splits a set by component (sympy_api.RELATIONAL), so
+                # that is only the session of the relation's component
                 self.active = True
+                if ok and atom in unlinked:
+                    for side in atom.expr:
+                        self._link_later(side)
                 continue
             if self.active and self.top:
                 top, self.top = self.top, {}

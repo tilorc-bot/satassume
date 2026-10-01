@@ -330,7 +330,10 @@ stays linked.  In Gp1, `ask(Q.positive(w), Q.eq(c, 1))` links `w`
 has LRA derive `w = 0` from `w + 1 = 1`, decide the linked `eq(w, 0)`,
 hence `zero(w)`, against `w` declared nonzero: the antecedent is false and
 the implication True.  A fresh session links `w + 1` (a side) but not
-`w`, and LRA's `w = 0` reaches no unary atom.  Gp2 is the same with the trigger in the prefix: a relation query
+`w`, and LRA's `w = 0` reaches no unary atom.  Gp1 no longer differs
+since R2 (component-scoped answering, #53; in `fixed/`): `Q.positive(w)`
+is answered under its own part (`w` is not connected to `c`), so the
+observer's session never linked `w`.  Gp2 is the same with the trigger in the prefix: a relation query
 switches the glue on, `Q.commutative(q)` links `q` (whose declared
 `nonnegative` then reaches LRA as `~lt(q, 0)`), and the later relation
 `q + 7 = 2` is refuted; a fresh session links `q + 7` but not `q`.  The
@@ -344,8 +347,11 @@ the terms it mentions) reproduces the discrepancy, which is what the tag
 T2 no longer differs since #63 (it is in `fixed/`): its prefix query
 raises in both engines (the set is inconsistent once transfer is
 engaged), and #63 drops a session with the raise, so the final query runs
-in a fresh session.  T1, T3 and T4 still reproduce and stay pinned; the
-mechanism is unchanged.
+in a fresh session.  T1, T3, T4 and T5 no longer differ since R2
+(component-scoped answering, #53; they are in `fixed/`): the prefix
+equality's part does not hold the observer's application (`Q.eq(u, y)` is
+answered under `Q.zero(u)` alone), so its session, not the observer's,
+engages transfer.  The mechanism is unchanged within one component.
 
 `Relations.process` (relations.py 409-411) sets `_want_transfer` for a
 user `eq` atom (also `ne`: it is `Not(eq)`), and `_engage_transfer`

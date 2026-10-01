@@ -75,6 +75,7 @@ from typing import Optional
 
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
+from .engine import affine_glue as _affine_glue
 from .epoch import EPOCH as _EPOCH
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
@@ -379,9 +380,10 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
       number without free symbols), which is answered without the
       assumptions and so never raises.
       A query is answered under the conjuncts of the assumptions connected
-      to it (by shared symbols, undefined functions and irrational
-      constants, transitively), once the whole set is known consistent,
-      if neither holds a relation; see ``_relevant``.
+      to it (by shared symbols, undefined functions and closed terms
+      whose facts are not decided context-free, transitively; a common
+      value such as ``x = 2``, ``y = 2`` does not connect), unless the
+      whole set is inconsistent; see ``_relevant``.
       Assumptions contradicting a fact declared on a symbol
       (``ask(Q.commutative(x), ~Q.commutative(x))``) count as inconsistent
       here, where SymPy trusts the assumption.
@@ -509,8 +511,9 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 #
 # The conjuncts of the assumptions split into components by shared *keys*
 # (transitively).  A query is answered under the components whose keys meet
-# its own, once the whole set is known to be consistent (checked once per
-# set); see docs/design.md, "Why splitting is sound", for the argument.
+# its own, unless the whole set is inconsistent (checked once per set: per
+# component without relations, as a whole with them); see docs/design.md,
+# "Why splitting is sound", for the argument.
 #
 # Keys of an expression: its free symbols, the classes of its undefined
 # function applications (EUF congruence connects f(x) and f(y)), and the
@@ -519,9 +522,12 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 # (except ``polar``), so without relations a Rational inside a term
 # connects nothing; a Rational that is itself the argument of a predicate
 # (``Q.polar(2)``) is a key.  A relation's keys are those of both sides,
-# so ``Q.eq(x, y)`` and ``x < y`` connect x and y.  With a relation in the
-# set or the query, terms pinned to a common value connect as well; by
-# default (``RELATIONAL``) such a set is not split at all.
+# so ``Q.eq(x, y)`` and ``x < y`` connect x and y; a Rational or ``K``
+# side is no key, so terms pinned to a common value (``x = 2``, ``y = 2``)
+# do not connect: a set or query with a relation splits like one without
+# (``RELATIONAL = "components"``), and only the raising of a set with a
+# relation (or a keyless conjunct, ``Q.lt(1, 2)``) is decided by the whole
+# set's verdict rather than per component (see ``RELATIONAL``).
 #
 # Closed terms (no symbol inside).  Rule: a maximal closed subterm ``c`` of
 # a predicate argument (its parent has a symbol) is no key if it lies in
@@ -533,9 +539,11 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 # classes of the undefined functions in it (``f(1)``: a free EUF term;
 # ``1.5``: rationality open; ``pi + E``: rationality open; ``pi - 3`` and
 # ``cos(1)``: the rule base does not decide their sign; anything else, out
-# of conservatism).  A closed term that is itself a predicate argument, a
-# relation side, or inside an application of ``polar``, is always keyed
-# that way (as is every closed term with ``RELATIONAL = "rationals"``).
+# of conservatism).  A closed term that is itself a predicate argument, or
+# inside an application of ``polar``, is always keyed that way; a closed
+# relation side follows the rule (``x = 2``, ``x < pi``: no key; ``x = 1.5``,
+# ``y = f(1)``: keys) unless ``RELATIONAL`` is ``"whole"`` or
+# ``"rationals"``, which key it (as ``"rationals"`` keys every closed term).
 #
 # Why dropping the key of a ``K`` term is sound.  The engine's own
 # context-free clauses of a ``K`` term fix every predicate of its block but
@@ -548,8 +556,10 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 # either already implied (nothing to carry) or contradicts its own
 # context-free facts (the component holding it is inconsistent by itself,
 # which the per-component consistency check reports).  What only a
-# relation could say about it (its *value*: ``x = pi``) does not arise:
-# sets and queries with a relation are not split.  ``polar`` is undecided
+# relation could say about it (its *value*: ``x = pi``) needs no such
+# argument: a set with a relation is not checked per component but as a
+# whole, and answering under a part of a set that is not inconsistent is
+# sound by monotonicity (see ``RELATIONAL``).  ``polar`` is undecided
 # for numbers, but its clauses are definite Horn with ``polar`` of the node
 # as the only positive literal: with no ``polar`` application keyed to a
 # component, setting every ``polar`` the component does not force to True
@@ -748,11 +758,17 @@ def _sides_keys(args, acc: set, eq: bool = False) -> bool:
     for a in args:
         if not isinstance(a, _Basic):
             return False
-        if eq and a.is_Rational and RELATIONAL == "rationals":
+        if RELATIONAL == "components":
+            # a side keys like a term inside a predicate argument: a
+            # Rational or a ``K`` constant (``x = 2``, ``x < pi``) is no
+            # key, so ``x = 2`` and ``y = 2`` stay apart (see RELATIONAL)
+            if _expr_keys(a, acc):
+                _closed_keys(a, acc, False)
+        elif eq and a.is_Rational and RELATIONAL == "rationals":
             acc.add(a)                  # x = 2, y = 2: x ~ y in EUF
         else:
-            # relational: not split unless RELATIONAL == "rationals",
-            # which keys every closed term anyway
+            # "whole": not split anyway; "rationals" keys every closed
+            # term
             _arg_keys(a, acc, True)
     return True
 
@@ -825,7 +841,14 @@ class _Split:
 def _relevant(p, a, eng: Engine):
     """The assumptions ``p`` is asked under: ``a`` itself, or the part of
     ``a`` (a SymPy Boolean, or True) connected to ``p`` if that is smaller
-    and ``a`` is consistent as a whole."""
+    and ``a`` is not found inconsistent.  Three-valued: a set whose verdict
+    is inconsistent answers under ``a`` (which raises); consistent or
+    unknown, under the part (sound by monotonicity).  The verdict is the
+    whole set's (:func:`_consistent`) when the set has a relation, a
+    keyless conjunct or sign atoms on sums that start the relation glue
+    (``engine.affine_glue``); otherwise the conjunction of the components'
+    verdicts, which equals it there (docs/design.md, "Why components are
+    independent")."""
     splits = eng.splits
     sp = splits.get(a)
     if sp is None:
@@ -845,8 +868,8 @@ def _relevant(p, a, eng: Engine):
         # opaque, or no key at all: nothing to split by
         return a
     if RELATIONAL == "whole" and (prel or sp.relational or sp.keyless):
-        # a relation brings in the theories, which connect terms of
-        # different components (see RELATIONAL)
+        # (ablation) a relation brings in the theories, which connect terms
+        # of different components (see RELATIONAL)
         return a
     mine = tuple(j for j, (k, _) in enumerate(sp.comps) if not k.isdisjoint(pk))
     f = sp.part(mine)
@@ -855,6 +878,8 @@ def _relevant(p, a, eng: Engine):
     ok = sp.consistent
     if ok is None:
         if sp.relational or sp.keyless:
+            # the whole set's verdict decides raising; the part answers
+            # unless it is inconsistent (see RELATIONAL)
             ok = _consistent(a, eng)
         else:
             # no relation: the components share no solver variable, so the
@@ -863,12 +888,22 @@ def _relevant(p, a, eng: Engine):
             # wrong arity): as before, the whole set answers (None).  Matrix
             # and unregistered custom predicates are opaque atoms here and
             # translate
+            rel = bool(eng.relation_specs)
             try:
-                _formula(a, bool(eng.relation_specs), True)
+                g = _formula(a, rel, True)
             except Unsupported:
                 ok = False
             else:
-                ok = all(_part_consistent(sp.part((j,)), eng) for j in range(len(sp.comps)))
+                if rel and _affine_glue(g):
+                    # sign atoms on sums sharing a symbol start the relation
+                    # glue in the whole set's session (#51), which then
+                    # links terms of every component: the per-component
+                    # checks could miss an inconsistency, so the whole
+                    # set's verdict decides, as for a relational set
+                    ok = _consistent(a, eng)
+                else:
+                    ok = all(_part_consistent(sp.part((j,)), eng)
+                             for j in range(len(sp.comps)))
         sp.consistent = ok
     return f if ok else a
 
@@ -912,16 +947,35 @@ def _vocab_blocks(e, ext) -> bool:
 #: meeting through interface equalities, and a zero the rule base derives
 #: from ``nonnegative & nonpositive``), and congruence merges ``sin(x)`` with
 #: ``sin(y)`` or ``sin(2)``, which carries facts across.
-#: ``"whole"``: a set or query with a relation is not split (the answers
-#: are those of the whole set); ``"rationals"``: it splits, with a Rational
-#: that is a side of an equality, the 0 of ``zero``, and the Rationals of
-#: a closed term as keys (connects ``x = 2`` with ``y = 2``, ``sin(2)``,
-#: ``polar(2)``, but not the values LRA or the rule base derive).
-#: The key memo ``_KEYS`` depends on it.  A module constant, not a
-#: setting: changing it at run time is unsupported (answers memoized under
-#: the old value are kept, and so are the keys in ``_KEYS``).
+#:
+#: ``"components"`` (the default): such a set or query splits by key
+#: connectivity like a relation-free one, with the keys of "Closed terms"
+#: above (a Rational or ``K`` side is no key): ``Q.positive(sin(x))`` under
+#: ``Q.eq(x, 2) & Q.eq(y, 2) & Q.positive(sin(y))`` is answered under
+#: ``Q.eq(x, 2)`` (None; a common value no longer merges across
+#: components).  Whether the set raises is decided by the whole set's
+#: verdict (:func:`_consistent`, ``Engine.verdict``): inconsistent, the
+#: query is answered under the whole set (which raises); consistent or
+#: unknown, under the part, which is sound by monotonicity whatever the
+#: verdict (a consequence of a sub-conjunction is one of the set).  The
+#: part's session holds only its component, so each part gets its own
+#: theories, LRA branch budget, give-up and transfer engagement, and an
+#: unrelated relation, undecidable constant or integer block no longer
+#: changes the answer (K1, K5, W2B3b/c, W2B4).
+#: ``"whole"`` (ablation): a set or query with a relation is not split (the
+#: answers are those of the whole set); ``"rationals"`` (ablation): it
+#: splits, with a Rational that is a side of an equality, the 0 of
+#: ``zero``, and the Rationals of a closed term as keys (connects ``x = 2``
+#: with ``y = 2``, ``sin(2)``, ``polar(2)``, but not the values LRA or the
+#: rule base derive).
+#: The key memo ``_KEYS`` depends on it, and so do the splits memoized in
+#: ``Engine.splits`` (``_Split``: the components and the consistency flag)
+#: and the answer memo.  A module constant, not a setting: changing it at
+#: run time is unsupported (answers, keys and splits memoized under the
+#: old value are kept); a test that switches it must clear ``_KEYS`` and
+#: use fresh engines.
 #: See docs/design.md, "What connects".
-RELATIONAL = "whole"
+RELATIONAL = "components"
 
 
 _OK = object()
@@ -942,8 +996,10 @@ def _part_consistent(f, eng: Engine) -> bool:
 def _consistent(a, eng: Engine) -> bool:
     """``a`` may be answered under a part: its verdict, from the one
     complete check of the set (``Engine.verdict``: the whole cone,
-    propagation and search, memoized per formula in the engine, in the
-    contextual session the set's queries use), is consistent or unknown.
+    propagation and search, memoized per formula in the engine; built like
+    the contextual session of a query under ``a`` but not kept, since the
+    queries of a split set run in their parts' sessions), is consistent or
+    unknown.
     False if it is inconsistent, and also when the set cannot be checked
     (out of scope, a relation no theory reads, an error): the caller then
     answers under ``a`` as a whole, so whatever that does (None,
