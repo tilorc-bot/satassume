@@ -236,7 +236,8 @@ replay.
   relation-free set by per-component checks, whose soundness rests on "no
   relation, no theory in the session". A feature that brings LRA or EUF
   into a relation-free session must also turn the split off;
-  `Session._affine_links` (#51) does not, and loses answers (#15,
+  the sign-on-sum glue (`scope.affine_pair`, #51; `Session._affine_links`
+  before #97 P3) does not, and loses answers (#15,
   [design.md](design.md), "Relevance"). `Engine.verdict` keeps no session
   (only the verdict memo), so the whole set of a split set costs one
   build and evicts no part session. The key memo `_KEYS` must be cleared

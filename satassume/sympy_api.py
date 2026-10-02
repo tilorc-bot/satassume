@@ -899,7 +899,7 @@ def _relevant(p, a, eng: Engine):
             except Unsupported:
                 ok = False
             else:
-                if rel and _theory_scope(g, None).glue:
+                if rel and _theory_scope(g, None, ext).glue:
                     # sign atoms on sums sharing a symbol start the relation
                     # glue in the whole set's session (#51), which then
                     # links terms of every component: the per-component

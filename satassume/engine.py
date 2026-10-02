@@ -85,7 +85,7 @@ from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_objects, link_objects)
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
-                    affine_pair as _affine_pair, theory_scope)
+                    affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .solver import Solver
 
 Node = Any
@@ -279,8 +279,13 @@ class Session:
         self._a_all: Optional[tuple] = None
         self._a_atoms: frozenset = frozenset()
         #: relation atoms and their theories (satassume.relations); created
-        #: at the first user formula when the engine has relation support
+        #: at construction when the scope has the glue (below), else by
+        #: ``_custom`` for a relation atom outside the scope (counted)
         self.relations: Optional[Relations] = None
+        #: the set's terms wait to be linked after the set's check
+        #: (:meth:`link_set`): the glue the query's scope brings beyond the
+        #: set's own must not take part in the check
+        self._link_pending = False
         #: the Relations object once predicate transfer is engaged
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
@@ -488,10 +493,12 @@ class Session:
         if atom.pred in RELATION_ATOMS and engine._relation_specs:
             rel = self.relations
             if rel is None:
-                # outside the session's scope: an extension fact's relation
-                # atom (spec open point 2), or a session built for a set
-                # alone and asked a relation (tests); counted, never on
-                # Engine.ask's path (scope.theory_scope covers the query)
+                # outside the session's scope: a session built for a set
+                # alone and asked a relation (tests), or a relation atom of
+                # a node fact (``Extensions.node_facts``, fired over the
+                # cone, which the syntax does not foresee; the facts of
+                # custom atoms are in the scope, ``scope.extension_atoms``);
+                # counted (stats["scope_misses"])
                 engine.stats["scope_misses"] += 1
                 rel = self.relations = Relations(self, engine._relation_specs)
                 if self.assumption_formula is not None:
@@ -671,10 +678,29 @@ class Session:
         self._flush()
         self._discover()
         if self.relations is not None:
-            self._relations(f)
+            if scope_of_atoms(atoms_of(f)).glue:
+                # the set's own scope has the glue (a relation atom or an
+                # affine pair of the set): its links are part of the set
+                # and of the set's check
+                self._relations(f)
+            else:
+                # the glue is the query's: the set's terms are linked after
+                # the set's check (link_set, Engine._build_context), so the
+                # check and its verdict are a function of the set
+                self._link_pending = True
         self.n_assumption_nodes = len(self.base)
         self.n_assumption_constants = self.n_constants
         return [s]
+
+    def link_set(self) -> None:
+        """Link the set's terms for the query's glue once the set's check
+        has run (``_link_pending``, :meth:`assume_formula`): the arguments
+        of the set's vocabulary atoms get their links under the query's
+        scope, as the lazy order linked them at the query's first relation
+        atom.  Called by :meth:`Engine._build_context`; idempotent."""
+        if self._link_pending:
+            self._link_pending = False
+            self._relations(self.assumption_formula)
 
     def assumption_lits(self, prop=None) -> List[int]:
         """The solver assumptions of a query ``prop`` (None: the set's own
@@ -692,6 +718,9 @@ class Session:
         rel = self.relations
         if rel is None:
             return lits
+        # the set's terms are linked before any query (link_set): the
+        # session is built by _build_context, never queried half-built
+        assert prop is None or not self._link_pending, "Session.link_set"
         a_all = self._a_all
         if a_all is None:
             a = self.assumption_formula
@@ -858,8 +887,9 @@ class Session:
     def _relations(self, f) -> None:
         """Interpret the relation atoms ``f`` brought in, link and share;
         raises ``Uninterpreted`` if a relation of ``f`` has no theory.  Only
-        called once the session has a relation atom (``self.relations``
-        is created by :meth:`_custom`), so the unary path pays one test."""
+        called once the session has a ``Relations`` object (built with
+        the scope, or by :meth:`_custom` outside it), so the unary path
+        pays one test."""
         rel = self.relations
         atoms = atoms_of(f)
         rel.note_formula(atoms)
@@ -1566,9 +1596,11 @@ class Engine:
         "Giving up"), and the plain build is just as deterministic."""
         self.stats["set_checks"] += 1
         # the theory scope of the query (``proposition`` None: of the set
-        # alone); the set's check assumes only the set's own glue, so its
-        # verdict is a function of the set whatever the query's scope
-        scope = theory_scope(assumptions, proposition)
+        # alone); the set's check runs before the query's glue links the
+        # set's terms (Session.link_set, below) and assumes only the set's
+        # own glue, so its verdict is a function of the set whatever the
+        # query's scope
+        scope = theory_scope(assumptions, proposition, self._extensions)
         s = self._fresh_session(scope)
         lits = s.assume_formula(assumptions)
         try:
@@ -1588,6 +1620,7 @@ class Engine:
             lits = s.assume_formula(assumptions)
             v = UNKNOWN
         s.verdict = v
+        s.link_set()
         return s, lits
 
     def verdict(self, assumptions) -> str:
@@ -1745,7 +1778,7 @@ class Engine:
             self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
-        s = self._fresh_session(theory_scope(None, atom))
+        s = self._fresh_session(theory_scope(None, atom, self._extensions))
         lit = s.literal_of(atom)
         lits = s.assumption_lits(atom)        # the glue a relation atom activates
         r = s.query_literal(lit, lits, search=False)
@@ -1793,7 +1826,7 @@ class Engine:
         if contextual:
             s, lits = self._context_session(assumptions, proposition)
         else:
-            s = self._fresh_session(theory_scope(None, proposition))
+            s = self._fresh_session(theory_scope(None, proposition, self._extensions))
         return self._ask(s, lits, proposition, contextual)
 
     def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:
