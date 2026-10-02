@@ -75,7 +75,6 @@ from typing import Optional
 
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
-from .engine import zero_glue as _zero_glue
 from .scope import theory_scope as _theory_scope
 from .epoch import EPOCH as _EPOCH
 from .memos import PROCESS as _PROCESS
@@ -869,9 +868,9 @@ def _relevant(p, a, eng: Engine):
     unknown, under the part (sound by monotonicity).  The verdict is the
     whole set's (:func:`_consistent`) when the set has a relation, a
     keyless conjunct or atoms that start the relation glue (sign atoms on
-    sums, ``scope.theory_scope``; a ``zero(t)`` with ``t`` under an
-    application, ``engine.zero_glue``);
-    otherwise the conjunction of the components'
+    sums; a ``zero(t)`` with ``t`` under an application, read as
+    ``eq(t, 0)``: the set's own ``scope.theory_scope``); otherwise the
+    conjunction of the components'
     verdicts, which equals it there (docs/design.md, "Why components are
     independent")."""
     splits = eng.splits
@@ -919,11 +918,11 @@ def _relevant(p, a, eng: Engine):
             except Unsupported:
                 ok = False
             else:
-                if rel and (_theory_scope(g, None, ext).glue or _zero_glue(g)):
-                    # sign atoms on sums sharing a symbol (#51, the set's
-                    # own scope), or a zero(t) with t under an application
-                    # of the set, which the glue reads as eq(t, 0), start
-                    # the relation glue in the whole set's session, which then
+                if rel and _theory_scope(g, None, ext).glue:
+                    # sign atoms on sums sharing a symbol (#51), or a
+                    # zero(t) with t under an application of the set, which
+                    # the glue reads as eq(t, 0) (#107): the set's own scope
+                    # starts the relation glue in the whole set's session, which then
                     # links terms of every component: the per-component
                     # checks could miss an inconsistency, so the whole
                     # set's verdict decides, as for a relational set

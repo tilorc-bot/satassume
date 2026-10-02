@@ -1952,7 +1952,8 @@ def zero_glue(f) -> bool:
     relation specs it starts the glue in the session of a set holding it,
     which then links terms of every component, so the relevance layer
     takes the whole set's verdict as for a relational set
-    (``satassume.sympy_api._relevant``).  A function of ``f``."""
+    (``satassume.sympy_api._relevant``, through the set's own theory scope,
+    ``scope.theory_scope``, which counts the twins).  A function of ``f``."""
     return bool(zero_twins(atoms_of(f)))
 
 

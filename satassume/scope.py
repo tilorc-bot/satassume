@@ -27,6 +27,24 @@ atom of a kind that the session meets:
   number argument of a vocabulary atom gets a congruence selector of its
   own instead, ``Relations._mention_number``).  Empty without ``glue``.
 
+Zero is an equality (#107).  A ``zero(t)`` atom (``t`` no number) whose
+``t`` occurs as an argument, at any depth, of an application of an
+undefined function in either formula is read by the glue as its twin
+``eq(t, 0)`` (:func:`satassume.relations.glue_atoms`; "Zero is an
+equality" in that module's docstring): the session allocates the twin
+with the formula (``Session._ensure_twins``) and the glue treats it as a
+user equality.  The scope counts the twins of ``a`` and ``p`` together
+(:func:`scope_of_atoms` folds ``glue_atoms`` over the atoms of both
+before the tests above), so such a query has ``glue`` and ``transfer``
+and ``t`` is in ``linked_terms``.  Without that the session built for
+the query would create the glue at the twin (``Session._custom``) and
+engage transfer at it (``Relations.process``): the counted fallback,
+taken by every family-A shape at the rebase onto #107 (two misses per
+query) and by none since (``tests/test_scope.py``).  A ``zero(t)`` with
+no application over ``t`` is a sign atom and starts nothing: #107's
+condition, chosen for its cost (the unconditional twin cost +56% on the
+refine stream), and the same answers outside it.
+
 Why this is sound (monotonicity).  Every clause the glue adds is a valid
 statement about the extended reals or about equality (the tables in the
 module docstring of :mod:`satassume.relations`), and every lemma of
@@ -80,7 +98,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, NamedTuple
 
 from .formula import P, atoms_of
-from .relations import RELATION_ATOMS, _is_number
+from .relations import RELATION_ATOMS, _is_number, glue_atoms
 from .rules import PRED_INDEX
 
 #: the predicates whose atoms the relation glue links to order atoms
@@ -151,8 +169,10 @@ def linked_terms(atoms: Iterable[P]) -> frozenset:
 
 def scope_of_atoms(atoms: Iterable[P]) -> Scope:
     """:func:`theory_scope` of the formulas whose atoms are ``atoms``
-    (those of ``a`` and ``p`` together)."""
-    atoms = tuple(atoms)
+    (those of ``a`` and ``p`` together).  The twins ``eq(t, 0)`` of the
+    ``zero(t)`` atoms with ``t`` under an application of either formula
+    count as relation atoms (``relations.glue_atoms``, #107)."""
+    atoms = glue_atoms(tuple(atoms))
     rel = any(a.pred in RELATION_ATOMS for a in atoms)
     glue = rel or affine_pair(atoms)
     if not glue:

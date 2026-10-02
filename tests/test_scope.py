@@ -176,3 +176,43 @@ def test_relevance_uses_the_scope_for_sum_pairs():
     with pytest.raises(ValueError):
         ask(Q.positive(z), a, e)
     assert ask(Q.zero(bj(x)), Q.zero(x) & Q.zero(y) & Q.zero(bj(y)), e) in (None, True)
+
+
+def test_zero_twins_are_in_the_scope():
+    """#107 reads a ``zero(t)`` whose ``t`` is under an application of
+    either formula as the equality ``eq(t, 0)`` (``relations.glue_atoms``),
+    a user equality that starts the glue and transfer: the syntactic scope
+    counts it, so ``Engine.ask`` never takes the counted fallback for such
+    a query, and a warm engine answers as a fresh one (the values of
+    ``tests/test_zero_glue.py``; pre-#107 P3 answered None where the twin
+    decides, the same elsewhere)."""
+    g = Function("g")
+    n, t, w = symbols("n t w")
+    cases = [  # (p, a, answer)
+        (Q.composite(g(n, 1)), Q.zero(n) & Q.composite(g(0, 1)), True),
+        (Q.nonzero(g(t, t)), Q.zero(g(0, 0)) & Q.zero(t), False),
+        (Q.zero(g(y)), Q.zero(y) & Q.zero(g(0)), True),
+        (Q.transcendental(g(y)), Q.zero(y) & Q.algebraic(g(0)), False),
+        (Q.integer(g(g(y))), Q.zero(y) & Q.integer(g(g(0)) + 2), True),
+        (Q.positive(f(x)), Q.zero(x) & Q.positive(f(0)), True),
+        (Q.zero(g(y)), Q.zero(y) & ~Q.finite(g(0)), False),
+        (Q.zero(g(x)), ~Q.zero(x) & Q.zero(g(0)), None),
+    ]
+    for p, a, want in cases:
+        sc = theory_scope(_formula(a, True, True), _formula(p, True))
+        assert sc.glue and sc.transfer, (p, a)
+        assert ask(p, a, eng()) == want, (p, a)
+    e = eng()
+    for p, a, want in cases:
+        assert ask(p, a, e) == want, (p, a)
+    assert e.stats["scope_misses"] == 0
+    # the set's own twin is the set's glue (#107's root glue): the set's
+    # check is the whole set's, in the scope
+    s = Q.zero(x) & Q.positive(g(x)) & Q.zero(w) & Q.negative(g(w))
+    assert theory_scope(_formula(s, True, True), None).glue
+    with pytest.raises(ValueError):
+        ask(Q.real(x), s, e)
+    assert e.stats["scope_misses"] == 0
+    # no application over t: zero(t) is a sign atom and starts nothing
+    assert theory_scope(_formula(Q.zero(x), True, True),
+                        _formula(Q.positive(x + 1), True)) is EMPTY

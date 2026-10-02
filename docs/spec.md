@@ -84,6 +84,17 @@ atoms (`scope.extension_atoms`: `Extensions.facts_for`, transitively):
   atoms (`scope.SIGN_PREDS`) of `A` and `p` together are on different `Add`
   nodes sharing a free symbol (`scope.affine_pair`; the pair may be one atom
   of each formula);
+- a `zero(t)` atom (`t` no number) whose `t` is under an application of an
+  undefined function in `A` or `p` counts as its twin `eq(t, 0)` (#107,
+  `relations.glue_atoms`, "Zero is an equality"; `scope.scope_of_atoms` folds
+  the twins of both formulas in before the tests above), so it gives `glue`
+  and `transfer` and puts `t` in `linked_terms`; a `zero(t)` with no
+  application over `t` is a sign atom. Decided from #107's code: the session
+  allocates the twin with the formula (`Session._ensure_twins`) and, with no
+  `Relations` object, creates the glue at it (`Session._custom`) and engages
+  transfer at it (`Relations.process`), the counted fallback; at the rebase
+  onto #107 every family-A shape took it (`scope_misses` 2 per query) until
+  the scope counted the twin (`tests/test_scope.py::test_zero_twins_are_in_the_scope`);
 - `transfer` iff `glue` and the relation atoms make an equality: an `eq`
   atom, or an order atom and its reverse (`scope.transfer_wanted`; the pair
   is what `Relations._trichotomy` relates, so `Q.le(x, y) & Q.ge(x, y)`
@@ -98,7 +109,8 @@ The session of a query is built with its scope (`Session(engine, scope)`;
 `glue` the `Relations` object exists from construction, with `transfer`
 predicate transfer is engaged there (`Relations.__init__`,
 `_engage_transfer`). The links of `A`'s own terms are made while `A` is
-assumed only when `A`'s own scope has the glue (`theory_scope(A, None).glue`,
+assumed only when `A`'s own scope has the glue (`theory_scope(A, None).glue`:
+a relation atom, an affine pair or a twin of `A`'s own, #107's root glue;
 `Session.assume_formula`); otherwise they are made after the set's complete
 check (`Session.link_set`, called by `_build_context`), so the check, and
 `verdict(A)` (section 7), see only the set's own glue and are a function of
