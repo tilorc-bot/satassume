@@ -1,0 +1,39 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "free",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedPredicate(Q.zero, nan)",
+ "assum": "AppliedPredicate(Q.positive, Symbol('x'))",
+ "variant": {
+  "kind": "prop",
+  "prop": "AppliedBinaryRelation(Q.eq, nan, Integer(0))",
+  "scope": "in",
+  "rewrite": [
+   "zero-eq(zero)[nan]"
+  ]
+ },
+ "base": "None",
+ "other": "False",
+ "source": "hand-reduced from nightly 36953488998 inv-I5-deep-default-s201-30-0 (invariants profile=deep seed=201 slice=0) after package NA: SymPy's ask leaves Q.zero(nan) None, Eq(nan, 0) is False",
+ "shrunk": true,
+ "consistent_by": "engine",
+ "fingerprint": "norel",
+ "prefix": [],
+ "config_specific": false
+}

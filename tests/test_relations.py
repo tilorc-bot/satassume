@@ -420,9 +420,11 @@ def test_unhandled_matrix_queries(real_eng):
     lambda: Q.eq(S.NaN, 1), lambda: Q.eq(1, S.NaN),
     lambda: Q.ne(S.NaN, 1), lambda: Q.ne(1, S.NaN)])
 def test_nan_eq_does_not_raise(prop):
-    # issue #65: SymPy 1.14 raised TypeError ordering nan against a number
+    # issue #65: SymPy 1.14 raised TypeError ordering nan against a number.
+    # Since package NA the answer is SymPy's Eq/Ne of nan (was None)
     from satassume.sympy_api import ask
-    assert ask(prop()) is None
+    p = prop()
+    assert ask(p) is (p.function.name == "ne")
 
 
 def test_nan_eq_atom_is_symmetric():

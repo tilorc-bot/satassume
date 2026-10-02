@@ -89,6 +89,8 @@ from sympy.core.mul import Mul as _SMul
 from sympy.core.power import Pow as _SPow
 from sympy.core.expr import Expr as _Expr
 from sympy.core.relational import Relational as _Relational
+from sympy.core.relational import (Eq as _Eq, Ne as _Ne, Lt as _Lt, Le as _Le,
+                                   Gt as _Gt, Ge as _Ge)
 from sympy.core.numbers import Rational as _Rational
 from sympy.core.singleton import S as _S
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
@@ -292,7 +294,69 @@ def _relation_formula(expr, parts, relations: bool):
     name, lhs, rhs = parts
     if not relations or not (_is_scalar(lhs) and _is_scalar(rhs)):
         raise Unsupported(f"{expr} is out of scope (relation)", "relation")
+    if lhs is _S.NaN or rhs is _S.NaN or (getattr(lhs, "is_Number", False)
+                                         and getattr(rhs, "is_Number", False)):
+        v = _closed_relation(name, lhs, rhs)
+        if v is not None:
+            return v
     return relation_atom(name, lhs, rhs)
+
+
+#: a Float whose binary exponent exceeds this many bits is not folded: its
+#: exact value ``Rational(f)`` has an integer of that many bits (an
+#: exponent of 4e9 took 30 s)
+_EXACT_BITS = 10_000
+
+_SREL = (("eq", _Eq), ("ne", _Ne), ("lt", _Lt), ("le", _Le), ("gt", _Gt), ("ge", _Ge))
+
+
+def _closed_relation(name, lhs, rhs):
+    """``TRUE``/``FALSE`` for a relation between two SymPy ``Number`` atoms
+    (Integer, Rational, Float, ``oo``, ``-oo``, ``nan``) or with a ``nan``
+    side, when SymPy's own ``Relational`` evaluates it (``Eq(nan, 0)`` is
+    False, ``Ne(nan, nan)`` True, ``Lt(0.5, 1)`` True); None when it does
+    not or raises (``Lt(nan, 1)``: the relation atom stays, and the order
+    glue makes it False, ``nan`` being no extended real).  These relations
+    have one value, the one SymPy gives the same relation spelled as a
+    ``Relational`` (to which the predicate form ``Q.lt(0.5, 1)`` is folded
+    by a restatement) and ``sympy.ask`` gives the predicate form (nightly
+    I5, package NA).
+
+    A Float side is folded only when SymPy's answer is also the answer on
+    the Float's exact value (``Rational(f)``): SymPy's ``Eq`` compares a
+    Float at its precision, which is not transitive (``Eq(0.1, 1/10)`` and
+    ``Eq(Float('0.1', 30), 1/10)`` are True, ``Eq(0.1, Float('0.1', 30))``
+    False), while EUF keeps Floats as opaque terms that a set can equate.
+    ``Eq(0.1, 1/10)`` and ``0.1 > 1/10`` therefore stay atoms;
+    ``Lt(0.5, 1)``, ``Eq(0.5, 1/2)``, ``Ge(2.0, 2)`` fold; a Float with a
+    binary exponent beyond ``_EXACT_BITS`` does not.  Two Float
+    sides never fold: ``Q.eq(x, 0.1) & Q.eq(x, Float('0.1', 30))`` has the
+    model ``x = 1/10`` under SymPy's ``Eq``, and EUF equates the two Floats
+    there, while their exact values differ.  Sides that are
+    other numbers (``pi``, ``atan(tan(r)**3)``) are left to the engine:
+    SymPy compares them by ``evalf``, which can be wrong
+    (``tests/test_lra_constants.py``)."""
+    if lhs.is_Float and rhs.is_Float:
+        return None
+    rel = dict(_SREL)[name]
+    try:
+        r = rel(lhs, rhs)
+    except TypeError:
+        return None
+    if not (r is True or r is False or isinstance(r, (_BTrue, _BFalse))):
+        return None
+    v = bool(r)
+    if lhs.is_Float or rhs.is_Float:
+        if any(e.is_Float and abs(e._mpf_[2]) > _EXACT_BITS for e in (lhs, rhs)):
+            return None                 # Rational(f) would build a huge integer
+        exact = [_Rational(e) if e.is_Float and e.is_finite else e for e in (lhs, rhs)]
+        try:
+            x = rel(*exact)
+        except TypeError:
+            return None
+        if not (x is True or x is False or isinstance(x, (_BTrue, _BFalse))) or bool(x) != v:
+            return None
+    return TRUE if v else FALSE
 
 
 #: predicate name of an opaque atom (see :func:`to_formula`): not an

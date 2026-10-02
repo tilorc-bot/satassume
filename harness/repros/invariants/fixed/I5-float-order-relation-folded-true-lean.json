@@ -1,0 +1,35 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "lean",
+  "discovery_budget": 12,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": false,
+  "cone_threshold": 0,
+  "transfer": true,
+  "uninterpreted": "free",
+  "relevance": false,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedBinaryRelation(Q.lt, Float('0.5', precision=53), Integer(1))",
+ "assum": "AppliedBinaryRelation(Q.eq, Add(Symbol('r', rational=True), Integer(1)), Integer(-1))",
+ "variant": {
+  "kind": "prop",
+  "prop": "true",
+  "scope": "in"
+ },
+ "base": "None",
+ "other": "True",
+ "source": "invariants profile=relational seed=201 slice=0",
+ "shrunk": true,
+ "consistent_by": "engine",
+ "fingerprint": "norel",
+ "prefix": []
+}
