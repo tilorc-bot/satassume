@@ -112,6 +112,84 @@ The rule base derives ``positive`` (``extended_positive & finite``),
 ``nonnegative``, ``nonzero`` and the rest from these three.  Numbers are
 not linked (their unary facts are closed already).
 
+Zero is an equality
+-------------------
+``zero(t)`` fixes the value of ``t`` exactly as ``eq(t, 0)`` does, and
+the glue reads it so where that matters: a ``zero(t)`` (``t`` no number)
+whose ``t`` occurs as an argument, at any depth, of an application of an
+undefined function (``g(t, 1)``, ``g(Abs(h(t)))``) gets the *twin*
+``eq(t, 0)`` as one more atom of the formula (:func:`zero_twins`,
+:func:`glue_atoms`): the session allocates the twin with the formula
+(``Session._ensure_atoms``), :meth:`Relations.process` gives it the
+clauses and the ``"user"`` role of an equality of the formula (so ``t``
+joins the EUF class of ``0`` and is a full transfer candidate, as for
+``Q.eq(t, 0)``), and ``Session.assumption_lits`` counts it for the gate,
+the selectors and :meth:`Relations.wants_transfer`.  ``Q.zero(t)`` and
+``Q.eq(t, 0)`` then call for the same glue, in the set and in the
+proposition (nightly family A).  Atoms carry no polarity, so
+``~Q.zero(t)`` calls for the glue of ``Q.ne(t, 0)`` under the same
+condition; ``Q.nonzero(t)`` (real and not zero) is a sign atom like
+``Q.positive(t)``, which is no order atom either, and has no twin.
+
+Where the condition is read.  The set's own twins (a ``zero(t)`` of
+``a`` with ``t`` under an application of ``a``) are the set's glue, at
+the root of its session: a function of ``a`` alone.  A query ``p`` reads
+the ``zero`` atoms of ``p`` and of ``a`` against the applications of
+``p`` and of ``a`` (``Session._glue_of``): a twin only the two together
+call for (``a`` holds ``zero(n)``, ``p`` asks about ``g(n, 1)``; or ``p``
+holds ``zero(n)`` and ``a`` mentions ``g(n)``) is the query's glue,
+switched on by its selectors like a relation atom of ``p``.  Either way
+it is a function of the formulas' atoms (their structure), never of what
+the session holds, so a fresh session for ``(p, a)`` switches on the same
+glue.  The discovery budget counts the twins of each formula in its cone
+and those of the pair in ``Engine._within_budget``; the relevance layer
+checks a set with a twin of its own whole (``engine.zero_glue``).
+
+Why only there.  What the twin adds over the link clause ``zero(t) <->
+eq(t, 0)`` that every linked ``t`` already has (below) is (1) congruence
+through the EUF class of ``0`` (``g(t) = g(0)``), (2) ``t`` as a transfer
+candidate, which moves unary facts between the members of an EUF class,
+and (3) switching the glue (links, LRA, transfer) on for a set or query
+with no relation atom of its own.  (1) needs an application with ``t``
+under it: without one no congruence involves ``t``.  (2) relates ``t`` to
+the numbers ``0`` and to terms equal to ``t``; ``zero(t)`` already
+fixes every unary fact of ``t`` through the rule base and ``0``'s are
+closed, so with no application over ``t`` it moves nothing new (a term
+equal to ``t`` comes from a relation atom, which switches the glue and
+links ``t`` anyway).  (3) without an application over ``t``, ``t = 0``
+reaches the other atoms only through the templates (which read
+``zero(t)`` itself) or through LRA and the link clauses of ``t``, which a
+relation atom or an affine pair switches on regardless of the spelling.
+Shapes checked to agree outside the condition (default,
+``relevance=False``, ``transfer=False``): ``zero(x)`` with
+``positive(y - x) & negative(y)``, ``positive(y + x)``, ``eq(y, x)``,
+``eq(y, x + 1)``, ``lt(y, x + 1)``, ``eq(u, x*v)``, ``zero(x - y)``,
+``ge(y, x)``, and ``zero`` in the proposition against ``eq(x, y) &
+zero(y)``, ``le(x, 0) & ge(x, 0)``, ``lt(x, y) & zero(y)``, ``eq(x*y,
+0)``, ``eq(x, -y)``.  Every nightly family-A finding (G1-G5) has ``t``
+under an application.  One shape where they still differ (by (3)): a
+``zero(s)`` on a sum ``s`` whose bounds come from facts on its terms
+only, with no relation atom and no affine pair: under ``integer(k) &
+integer(x) & negative(k) & positive(x)``, ``Q.zero(k - x + 1)`` is None
+(and ``~Q.zero``, ``Q.nonzero`` too) where ``Q.eq(k - x + 1, 0)`` is
+False, since only LRA sees ``k - x + 1 <= -1``; three refine-stream
+queries (12736, 12785, 12865) have it and no nightly finding.  Both
+answers are sound; ``tests/test_zero_glue.py`` pins it (strict xfail).
+Reading every ``zero(t)`` as a twin closed it but cost +56% on the
+refine stream, where ``zero(x)`` is common: it switched the glue on for
+many sets that never needed it.
+
+No clause is new: the twin is tied to ``zero(t)`` by the link clause
+``zero(t) <-> eq(t, 0)`` of ``t`` (under ``link_sel[t]``, which every
+query with the twin assumes, since ``t`` is a side of it), sound in every
+domain as the table says (``Eq(nan, 0)``, ``Eq(oo, 0)`` and ``Eq(zoo,
+0)`` are False and none of them is zero; the vocabulary's ``zero`` is
+the value 0, docs/design.md "Extended reals and ``nan`` in templates";
+the same link already ties every linked ``t``).  Everything else
+the twin brings is what a user ``eq(t, 0)`` brings, under its selectors,
+so the I3 argument of "Switched glue" covers it, and what a query
+switches on stays a function of its formulas' atoms.
+
 Integrality
 -----------
 Each linked ``e`` whose linear form a guarded adapter reads
@@ -182,7 +260,8 @@ the glue ``p`` and ``a`` themselves call for:
   ``link_sel[e]``; assumed for the vocabulary-atom arguments and the sides
   of the interpreted relation atoms of ``p`` and ``a``
   (:meth:`Relations.selectors_for`), only if ``p`` or ``a`` holds a
-  relation atom or an affine pair (the trigger of
+  relation atom (a ``zero(t)`` with ``t`` under an application counts as
+  ``eq(t, 0)``, see "Zero is an equality") or an affine pair (the trigger of
   ``Session._affine_links``);
 * the clauses of :meth:`Relations._eq_infinity`, :meth:`Relations._eq_links`
   and :meth:`Relations._trichotomy` carry their atoms' ``atom_sel``;
@@ -428,6 +507,112 @@ def sympy_atom(atom: P):
 
 def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
+
+
+_ZERO_TWINS = _PROCESS.table("satassume.relations._ZERO_TWINS", "pure", 100_000)
+_UNDER_APPS = _PROCESS.table("satassume.relations._UNDER_APPS", "pure", 100_000)
+
+
+def _under_apps(e) -> frozenset:
+    """The terms that occur in ``e`` (an atom's argument, or the tuple of a
+    relation's sides) as an argument, at any depth, of an application of
+    an undefined function (``AppliedUndef``): for ``g(Abs(h(y)), 1)``
+    ``Abs(h(y))``, ``h(y)``, ``y`` and ``1``.  Memoized per ``e``."""
+    r = _UNDER_APPS.get(e)
+    if r is not None:
+        return r
+    from sympy import Basic, preorder_traversal
+    from sympy.core.function import AppliedUndef
+    out = set()
+    for side in (e if isinstance(e, tuple) else (e,)):
+        if not isinstance(side, Basic):
+            continue
+        for app in side.atoms(AppliedUndef):
+            for arg in app.args:
+                out.update(preorder_traversal(arg))
+    r = frozenset(out)
+    if len(_UNDER_APPS) >= 100_000:
+        _UNDER_APPS.clear()
+    _UNDER_APPS[e] = r
+    return r
+
+
+def zero_args(atoms) -> tuple:
+    """The arguments ``t`` (no number) of the ``zero(t)`` atoms among
+    ``atoms``, in first-seen order."""
+    zs = ()
+    for a in atoms:
+        if a.pred == "zero":
+            e = a.expr
+            if e not in zs and not _is_number(e):
+                zs += (e,)
+    return zs
+
+
+def under_of(atoms) -> frozenset:
+    """The terms under an application in the atoms ``atoms``
+    (:func:`_under_apps` of each)."""
+    out = frozenset()
+    for a in atoms:
+        u = _under_apps(a.expr)
+        if u:
+            out = out | u
+    return out
+
+
+def zero_twin(e) -> P:
+    """The twin ``eq(e, 0)`` of ``zero(e)`` (memoized per ``e``)."""
+    tw = _ZERO_TWINS.get(e)
+    if tw is None:
+        from sympy import S
+        tw = relation_atom("eq", e, S.Zero)
+        if len(_ZERO_TWINS) >= 100_000:
+            _ZERO_TWINS.clear()
+        _ZERO_TWINS[e] = tw
+    return tw
+
+
+def zero_twins(atoms, context=(), cinfo=None) -> list:
+    """The twins ``eq(t, 0)`` of the ``zero(t)`` atoms among ``atoms`` and
+    ``context`` (``t`` no number) whose ``t`` occurs as an argument of an
+    application in one of them (:func:`_under_apps`), in first-seen
+    order: see "Zero is an equality" in the module docstring.  ``cinfo``:
+    ``(zero_args(context), under_of(context))`` if the caller has them.
+    A pure function of the two atom sequences."""
+    if cinfo is None:
+        czs = zero_args(context)
+        cunder = None
+    else:
+        czs, cunder = cinfo
+    zs = zero_args(atoms)
+    if not zs and not czs:
+        return []
+    if cunder is None:
+        cunder = under_of(context)
+    under = under_of(atoms)
+    if not under and not cunder:
+        return []
+    out = []
+    for e in zs + czs:
+        if (e in under or e in cunder):
+            tw = zero_twin(e)
+            if tw not in out:
+                out.append(tw)
+    return out
+
+
+def glue_atoms(atoms, context=(), cinfo=None) -> tuple:
+    """``atoms`` (of a user formula) and, after them, the twins
+    (:func:`zero_twins`) of the ``zero`` atoms of it and of ``context``
+    (the atoms of the assumption formula a query is asked under; ``()``
+    for the assumption formula itself) that it lacks: the atoms the
+    relation glue reads the formula by.  ``atoms`` itself if there is
+    none."""
+    twins = zero_twins(atoms, context, cinfo)
+    if not twins:
+        return atoms
+    have = set(atoms)
+    return tuple(atoms) + tuple(tw for tw in twins if tw not in have)
 
 
 def _termwise(a, b, d) -> bool:
