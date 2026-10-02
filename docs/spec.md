@@ -180,11 +180,11 @@ Property: every template rule is true at concrete values in Kleene logic
 ### 5.3 The memo of `is_` (no cached unit facts)
 
 Definition. No clause set contains a cached fact: no session asserts an entry of `Engine.cache` or
-`custom_cache` as a unit (since issue #97 P2). The caches are memos of `Engine.is_(node, pred)` (section 8,
-context-free): key `(node, pred)` under the registry epoch and the settings fingerprint `(templates, transfer,
-uninterpreted)` (`DictCache._epoch`, `_settings`; `Engine._check_version` drops a cache on a mismatch, so a cache
+`custom_cache` as a unit (since issue #97 P2). The caches are memos of `Engine.is_(node, pred)` (section 8, context-free):
+key `(node, pred)` under the registry epoch and the settings fingerprint `(templates, transfer, uninterpreted)` (`DictCache._epoch`, `_settings`; `Engine._check_version` drops a cache on a mismatch, so a cache
 shared between engines starts empty for an engine of other settings); value True or False, never None
 (`_put_result`). Property: an entry is the answer a fresh engine of the same settings gives, since the session of `is_` builds the set of 5.1, 5.2, 5.5 for `node` alone (harness `audit`, G6; `tests/test_writeback_provenance.py`).
+
 ### 5.4 The assumption selector
 
 Definition. `Session.assume_formula(A)` compiles `A`'s Tseitin clauses with
