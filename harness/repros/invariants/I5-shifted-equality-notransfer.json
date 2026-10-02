@@ -26,7 +26,10 @@
    "AppliedBinaryRelation(Q.eq, Add(Symbol('x'), Rational(3, 2)), Rational(3, 2))"
   ],
   "assum": "AppliedBinaryRelation(Q.eq, Add(Symbol('x'), Rational(3, 2)), Rational(3, 2))",
-  "scope": "in"
+  "scope": "in",
+  "rewrite": [
+   "shift-relation(eq)[expr,number]"
+  ]
  },
  "base": "True",
  "other": "None",
@@ -34,5 +37,6 @@
  "shrunk": true,
  "consistent_by": "engine",
  "fingerprint": "-",
- "prefix": []
+ "prefix": [],
+ "config_specific": true
 }
