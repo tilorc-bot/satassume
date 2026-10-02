@@ -369,10 +369,11 @@ relation or a keyless conjunct.
   theory into such a session must connect only terms sharing a key, or
   turn the split off.
 - **Sign facts on sums start the glue without a relation.**
-  `Session._affine_links` (#51) starts the relation glue without a relation
-  atom when two sign atoms are on different sums sharing a symbol
-  (`Q.positive(z - 1) & Q.negative(z - 3)`). The trigger concerns one
-  component, but once the glue exists `Relations.note_formula` makes the
+  The theory scope of a query (`scope.theory_scope`, #97 P3; before that
+  `Session._affine_links`, #51) has the relation glue without a relation
+  atom when two sign atoms of the set and the query are on different sums
+  sharing a symbol (`Q.positive(z - 1) & Q.negative(z - 3)`). The pair
+  concerns one component, but once the glue exists `Relations.note_formula` makes the
   argument of every unary atom of the assumptions a link candidate, in
   every component: `zero(x)` and `zero(y)` both become `eq(·, 0)`, `x` and
   `y` merge in EUF and congruence merges their applications. So under
@@ -380,7 +381,7 @@ relation or a keyless conjunct.
   & Q.negative(z - 3)` (`bj = besselj(1, ·)`) the whole set is inconsistent
   while each component is consistent on its own. `_relevant` therefore
   treats a set whose sign atoms on sums would start the glue
-  (`engine.affine_glue`) like a relational one: the whole set's verdict
+  (`theory_scope(a, None).glue`) like a relational one: the whole set's verdict
   decides raising, so every query under that set raises
   (`test_sign_sums_set_raises_for_any_component`). The part's answers stay
   sound; they may be less definite than the whole set's (`Q.zero(bj(x))`
@@ -389,7 +390,9 @@ relation or a keyless conjunct.
 
 ### What connects
 
-With a relation in the set or the query, the session has the theories and
+With a relation in the set or the query, the session is built with the
+theories (`scope.theory_scope`: glue, and predicate transfer when the
+relation atoms make an equality; nothing switches on later) and
 every vocabulary argument `e` gets the link `zero(e) <-> eq(e, 0)`. In one
 session, terms pinned to a common value merge in EUF, congruence carries
 the merge to `sin(x)` and `sin(y)` (any head), and predicate transfer
