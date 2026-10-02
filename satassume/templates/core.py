@@ -230,6 +230,64 @@ def _half_templates(expr, split):
     return facts(key, lambda: _half_rules(a0, odd, m), consts, objs, m)
 
 
+# Predicates P with P(r + c) <-> P(r) for every value r and every rational
+# c (``oo + c = oo``, ``zoo + c = zoo``, ``nan + c = nan``); ``integer``,
+# ``even``, ``odd`` and the signs depend on c (_shift_rules).
+_SHIFT_SAME = ('complex', 'real', 'finite', 'rational', 'algebraic',
+               'extended_real', 'infinite', 'positive_infinite', 'negative_infinite')
+
+
+def _shift_rules(integer: bool, odd: bool, positive: bool):
+    """Rules for ``N = r + c`` (slot 0 the node, slot 1 the derived node
+    ``r``) with ``c`` a nonzero Rational: ``integer`` whether it is an
+    integer, ``odd`` whether it is odd, ``positive`` its sign."""
+    R = Rules()
+    N, r = 0, 1
+    for pred in _SHIFT_SAME:
+        R.equiv((), (N, pred, True), (r, pred, True))
+    if integer:
+        R.equiv((), (N, 'integer', True), (r, 'integer', True))
+        for a, b in ((('even', 'odd'), ('odd', 'even')) if odd else
+                     (('even', 'even'), ('odd', 'odd'))):
+            R.equiv((), (N, a, True), (r, b, True))
+    else:
+        R.rule([(r, 'integer', True)], (N, 'integer', False))
+    # a nonzero real part cannot be cancelled: r imaginary -> r + c is not
+    R.rule([(r, 'imaginary', True)], (N, 'imaginary', False))
+    # r >= 0 -> r + c > 0 for c > 0, and r + c <= 0 -> r < 0 (both hold for
+    # r = oo, -oo; a value that is no extended real satisfies neither side)
+    up, down = ('extended_positive', 'extended_negative')[::1 if positive else -1]
+    up_ns, down_ns = ('extended_nonnegative', 'extended_nonpositive')[::1 if positive else -1]
+    R.rule([(r, up_ns, True)], (N, up, True))
+    R.rule([(N, down_ns, True)], (r, down, True))
+    return R.rules
+
+
+def _shift_template(expr, args):
+    """``expr == r + c`` for its Rational term ``c`` (``args[0]``, nonzero)
+    and the sum ``r`` of the other terms (at least two, so ``r`` is a sum
+    and no argument): ``r`` is a derived node.  Two terms of a query that
+    differ by a rational constant (``x + y + 1`` and ``x + y``, or ``x + y +
+    2``) then share their shift-invariant facts through ``r``, which the
+    direct arguments alone do not give (nightly-invariants finding, I5:
+    ``irrational(6*k + 3*x + EulerGamma + 1)`` under ``irrational(6*k +
+    3*x + EulerGamma)``)."""
+    c = args[0]
+    rest = Add(*args[1:])
+    if not rest.is_Add or len(rest.args) != len(args) - 1:
+        return None
+    integer = bool(c.is_Integer)
+    odd = integer and bool(c.p % 2)
+    positive = bool(c.is_positive)
+    comp = facts(('add_shift', integer, odd, positive),
+                 lambda: _shift_rules(integer, odd, positive), {}, (expr, rest), 0)
+    # r's terms are the node's arguments: r adds one node to the cone and
+    # nothing below it, so it does not weigh in the discovery budget
+    # unless the cone names it otherwise (Engine._cone_info)
+    comp.pattern.free_derived = True
+    return comp
+
+
 @registry.register(Add)
 def add_templates(expr):
     args = expr.args
@@ -237,12 +295,16 @@ def add_templates(expr):
     if n == 0:
         return ()
     consts = consts_of(args)
-    out = facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
-                consts, args + (expr,), n)
+    out = [facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
+                 consts, args + (expr,), n)]
     split = _half_split(args)
     if split is not None:
-        return [out, _half_templates(expr, split)]
-    return out
+        out.append(_half_templates(expr, split))
+    if n >= 3 and args[0].is_Rational and not args[0].is_zero:
+        shift = _shift_template(expr, args)
+        if shift is not None:
+            out.append(shift)
+    return out if len(out) > 1 else out[0]
 
 
 # ---------------------------------------------------------------------------

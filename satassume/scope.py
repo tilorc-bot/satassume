@@ -27,7 +27,9 @@ atom of a kind that the session meets:
   number argument of a vocabulary atom gets a congruence selector of its
   own instead, ``Relations._mention_number``).  Empty without ``glue``.
 
-Zero is an equality (#107).  A ``zero(t)`` atom (``t`` no number) whose
+Zero is an equality (#107).  A ``zero(t)`` atom (``t`` no number; or a
+split zero, ``nonnegative(t) & nonpositive(t)`` and the other sign pairs
+of :func:`satassume.relations.zero_args`) whose
 ``t`` occurs as an argument, at any depth, of an application of an
 undefined function in either formula is read by the glue as its twin
 ``eq(t, 0)`` (:func:`satassume.relations.glue_atoms`; "Zero is an

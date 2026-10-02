@@ -130,6 +130,17 @@ proposition (nightly family A).  Atoms carry no polarity, so
 ``~Q.zero(t)`` calls for the glue of ``Q.ne(t, 0)`` under the same
 condition; ``Q.nonzero(t)`` (real and not zero) is a sign atom like
 ``Q.positive(t)``, which is no order atom either, and has no twin.
+*Split zeros* count as ``zero(t)`` (:func:`zero_args`): a ``t`` with two
+sign atoms of one formula that bound it from both sides in some polarity
+(one of ``nonnegative``, ``negative`` and their ``extended_`` forms, one
+of ``nonpositive``, ``positive`` and theirs: ``Q.nonnegative(t) &
+Q.nonpositive(t)``, ``~Q.positive(t) & ~Q.negative(t) & Q.real(t)``),
+under the same condition on applications (nightly-invariants finding,
+I5: ``zero(3*z - pi)`` restated as its split linked ``f(3*z - pi)`` to
+``f(0)`` only in the ``zero`` spelling).  The twin is tied to the sign
+atoms through ``zero(t) <-> eq(t, 0)`` and the rule base, so it adds no
+clause either.  A split across the two formulas (one sign atom in ``a``,
+the other in ``p``) is not read.
 
 Where the condition is read.  The set's own twins (a ``zero(t)`` of
 ``a`` with ``t`` under an application of ``a``) are the set's glue, at
@@ -541,15 +552,44 @@ def _under_apps(e) -> frozenset:
     return r
 
 
+#: sign predicates that bound their argument from below, and from above,
+#: in one polarity or the other: an atom of each on one ``t`` can give
+#: ``zero(t)`` (``nonnegative(t) & nonpositive(t)``, ``~positive(t) &
+#: ~negative(t) & real(t)``, ``nonnegative(t) & ~positive(t)``, the
+#: ``extended_`` forms), see "Zero is an equality"
+_ZERO_LOW = frozenset({"nonnegative", "extended_nonnegative", "negative", "extended_negative"})
+_ZERO_HIGH = frozenset({"nonpositive", "extended_nonpositive", "positive", "extended_positive"})
+#: the predicates whose atoms :func:`zero_args` reads
+ZERO_PREDS = _ZERO_LOW | _ZERO_HIGH | {"zero"}
+
+
 def zero_args(atoms) -> tuple:
     """The arguments ``t`` (no number) of the ``zero(t)`` atoms among
-    ``atoms``, in first-seen order."""
+    ``atoms``, and of the *split zeros* among them: a ``t`` with an atom
+    of :data:`_ZERO_LOW` and one of :data:`_ZERO_HIGH` (the spellings of
+    ``zero(t)`` as two sign atoms, ``nonnegative(t) & nonpositive(t)``),
+    in first-seen order."""
     zs = ()
+    low = set()
+    high = set()
     for a in atoms:
-        if a.pred == "zero":
-            e = a.expr
-            if e not in zs and not _is_number(e):
+        pred = a.pred
+        if pred not in ZERO_PREDS:
+            continue
+        e = a.expr
+        if e in zs or _is_number(e):
+            continue
+        if pred == "zero":
+            zs += (e,)
+        elif pred in _ZERO_LOW:
+            if e in high:
                 zs += (e,)
+            else:
+                low.add(e)
+        elif e in low:
+            zs += (e,)
+        else:
+            high.add(e)
     return zs
 
 

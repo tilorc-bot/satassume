@@ -198,13 +198,21 @@ class Pattern:
 
     ``complete`` is set on a unit pattern whose facts, closed under the rule
     base, decide every predicate the rule base mentions: the engine then
-    asserts the closed units and skips the rule base for the node."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete')
+    asserts the closed units and skips the rule base for the node.
+
+    ``free_derived`` is set on a pattern whose derived nodes are made of
+    the node's own arguments (the ``r`` of ``r + c``,
+    ``templates.core._shift_template``): they are visited like any derived
+    node, but weigh nothing in the discovery budget unless another object
+    of the cone names them too (``Engine._cone_info``)."""
+    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete',
+                 'free_derived')
 
     def __init__(self, rules: List[Rule], node: int):
         self.rules = rules
         self.node = node
         self.complete = False
+        self.free_derived = False
         clauses = []
         used = set()
         child_preds: Dict[int, set] = {}
