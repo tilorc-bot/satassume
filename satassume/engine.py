@@ -8,19 +8,20 @@ One ``Engine`` answers two kinds of question with one propositional core:
   (MiniSat style) under a selector literal, never as permanent clauses, so
   nothing derived under them leaks into the cache.
 * **context-free** queries, ``engine.is_(expr, 'positive')``, used for
-  ``ask`` without assumptions and by the corpus tools.  Answers are cached
-  per expression node, so repeated queries cost a dictionary lookup, the
-  way the old ``expr.is_positive`` works; replacing that old system with
-  this path is the long-term goal, not the current scope.
+  ``ask`` without assumptions and by the corpus tools.  ``is_`` memoizes
+  its own answer per expression node and registry epoch (True or False,
+  never None), so repeated queries cost a dictionary lookup, the way the
+  old ``expr.is_positive`` works; replacing that old system with this
+  path is the long-term goal, not the current scope.
 
 Both go through a ``Session``: an incremental solver plus a table mapping
 ``(predicate, node)`` atoms to variables.  Visiting a node instantiates the
-single-node rule base for it, asserts its already-cached facts as unit
-clauses, asserts the structural templates registered for its class, and
-schedules the child nodes those templates mention.  Everything the solver
-assigns at decision level 0 is a context-free fact and is written back to the
-cache, so one query about ``x + y`` also caches facts about ``x`` and ``y``.
-Search (CDCL) only runs when root-level propagation is inconclusive.
+single-node rule base for it, asserts the structural templates registered
+for its class, and schedules the child nodes those templates mention.
+Nothing cached enters a session (no cached fact is asserted as a unit
+clause), so the clause set a query runs over is a function of the query,
+the registry and the settings alone.  Search (CDCL) only runs when
+root-level propagation is inconclusive.
 
 Every query gets a session of its own.  A context-free query's discovery
 only visits the cone of the queried expression, so search cost is bounded
@@ -62,13 +63,18 @@ whose solver levels the set's check leaves in place for the query
 (``Solver.implied(..., hold=k)``; ``Engine._ask`` releases the levels
 above it before the query adds clauses).
 
-With ``writeback="provenance"`` or ``"all"`` a session writes its root
-facts back when its query is answered (``Session.writeback``); with the
-default ``"root-only"`` contextual sessions write nothing.
+The fact caches (``cache``, ``custom_cache``) are pure memos of ``is_``:
+``Engine.is_(node, pred)`` (and ``_is_custom``) stores its own answer,
+True or False, never None, under the registry epoch it was derived in
+(``_put_result``); nothing else writes to them and no session reads them.
+``writeback`` stays as the name of the setting: ``"root-only"`` (the
+default) memoizes, ``"none"`` does not.  The ``"provenance"`` and
+``"all"`` policies of #53 stage 3 (``Session.writeback``: root facts of
+whole sessions, with owner tracking and a provenance test per fact) were
+removed by issue #97 (P2).
 """
 from __future__ import annotations
 
-import math
 from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -77,8 +83,8 @@ from .epoch import EPOCH as _EPOCH, bump as _bump
 from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_objects, link_objects)
-from .rules import NPRED, PRED_INDEX, PREDICATES, RULE_CLAUSES, RULE_INTERNAL
-from .solver import BOTTOM, BlockOwner, Solver
+from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
+from .solver import Solver
 
 Node = Any
 
@@ -96,14 +102,12 @@ class InconsistentAssumptions(ValueError):
     pass
 
 
-#: Engine(writeback=...) policies (Session.writeback); the first is the default
-_WRITEBACK = ("root-only", "provenance", "all")
-
-#: the home of a root literal whose provenance was not established cheaply
-#: (Session._home_of)
-_FOREIGN = object()
-#: a missing memo entry (Session._home_of, Session._cone)
-_NO_STEP = object()
+#: Engine(writeback=...) policies (Engine._put_result); the first is the
+#: default
+_WRITEBACK = ("root-only", "none")
+#: policies removed by issue #97 (P2): the fact cache is a memo of
+#: ``Engine.is_`` only, no session writes its root facts back
+_REMOVED_WRITEBACK = ("provenance", "all")
 
 #: the cap of discovery and escalation in the engine's sessions: none (the
 #: discovery budget is a test on the query's structural cone, made before
@@ -132,10 +136,14 @@ class DictCache:
       (``assumptions0``, see ``satassume/templates/atoms.py``) and the
       old-system properties of objects with a fixed value (numbers, ``pi``,
       ``oo``, ...), where every non-None property is a static fact;
-    * everything else is derived by the engine, and only the facts the
-      solver derives at decision level 0 (from the rule base, the templates
-      and the facts above, never from a query's assumptions) are stored
-      here.
+    * everything else is derived by the engine: the cache holds the answers
+      of ``Engine.is_`` (a context-free query, decided in a session over
+      the node's own cone: the rule base, the templates and the facts
+      above, never a query's assumptions), True or False, never None
+      (``Engine._put_result``).  Nothing else writes here, and no session
+      reads it: the engine's sessions assert no cached fact, so the cache
+      is a pure memo of ``is_`` (a fresh engine's same query gives the
+      same answer; the harness ``audit`` mode checks it).
 
     The cache is keyed by the node (hash and ``==``), so structurally equal
     nodes share facts, which is sound because a node's context-free facts
@@ -212,11 +220,6 @@ class Session:
     def __init__(self, engine: "Engine"):
         self.engine = engine
         self.solver = Solver()
-        #: Engine(writeback="provenance"): record clause owners
-        #: (``solver.owner`` around every emission) for its rule; under the
-        #: other policies no provenance bookkeeping runs at all
-        self.track = engine._writeback == "provenance"
-        self.solver.track_owners = self.track
         # the single-node rule base, propagated by the solver from shared
         # tables instead of 79 clauses per node (Solver.register_block)
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
@@ -260,13 +263,6 @@ class Session:
         #: the Relations object once predicate transfer is engaged
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
-        # -- provenance writeback (see writeback) --
-        #: node (or custom or relation atom) -> ``(kids, weight)``
-        #: (``Engine._struct``): the engine's memo, shared by its sessions
-        #: (a function of the object and the registry)
-        self.kids: Dict[Any, Any] = engine._kids
-        #: the budget the home memo was filled under (:meth:`_sync_budget`)
-        self._cone_budget = engine.discovery_budget
         #: a budget cut dropped work: :meth:`_discover` or :meth:`escalate`,
         #: called with an explicit ``budget``, stopped with unvisited nodes
         #: (new, or with parked templates) on its frontier, or with parked
@@ -275,15 +271,9 @@ class Session:
         #: answered None before any session work (``Engine._within_budget``)
         #: and every other query runs discovery and escalation uncapped, so
         #: a session the engine uses is never truncated (``Engine._note_budget``
-        #: checks it).  If set (a direct caller), the session writes nothing
-        #: back and its set's complete check gives ``UNKNOWN``.
+        #: checks it).  If set (a direct caller), its set's complete check
+        #: gives ``UNKNOWN``.
         self.truncated = False
-        #: the session asserted a cached fact (``engine.cache``,
-        #: ``custom_cache``): Engine._put_result
-        self.used_cache = False
-        self._prov_memo: dict = {}           # var -> owners (Solver.provenance)
-        #: var -> its home (see _home_of), _FOREIGN if not established
-        self._home: dict = {}
 
     # -- variables -------------------------------------------------------
     def var(self, pred: str, node: Node) -> int:
@@ -306,16 +296,7 @@ class Session:
         b = self.base.get(node)
         if b is not None:
             if demanded is not None and (node in self.pending or node in self.pending_c):
-                if self.track:
-                    solver = self.solver
-                    prev_owner = solver.owner
-                    solver.owner = node
-                    try:
-                        self._compile_pending(node, demanded)
-                    finally:
-                        solver.owner = prev_owner
-                else:
-                    self._compile_pending(node, demanded)
+                self._compile_pending(node, demanded)
             return b
         table = self.table
         b = table.node_base(node)
@@ -326,25 +307,14 @@ class Session:
         table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
-        if not self.track:
-            try:
-                self._visit(node, b, demanded)
-            finally:
-                constructing.discard(node)
-            return b
-        solver = self.solver
-        prev_owner = solver.owner
-        solver.owner = node
         try:
             self._visit(node, b, demanded)
         finally:
-            solver.owner = prev_owner
             constructing.discard(node)
         return b
 
     def _visit(self, node: Node, b: int, demanded) -> None:
-        """The body of :meth:`node` (``solver.owner`` is ``node`` if the
-        session tracks owners)."""
+        """The body of :meth:`node`."""
         engine = self.engine
         # 1. structural templates, and vocabulary predicates registered for
         #    the node's class (satassume.extensions)
@@ -373,12 +343,8 @@ class Session:
             self.solver.register_block(b, own)
         else:
             self.solver.ensure_vars(b + NPRED - 1)
-        # 3. cached context-free facts
-        facts = engine.cache.facts(node)
-        if facts:
-            self.used_cache = True
-            self._add_clauses([[b + PRED_INDEX[p]] if v else [-(b + PRED_INDEX[p])]
-                               for p, v in facts.items() if v is not None and p in PRED_INDEX])
+        # (no cached fact enters a session: the fact cache is a memo of
+        # Engine.is_, read by it alone)
         if compiled:
             self._compile_patterns(node, compiled, demanded)
         if items:
@@ -488,26 +454,10 @@ class Session:
         table.new_nodes = []
 
     def _custom(self, atom: P) -> None:
-        """A custom-predicate atom was allocated: assert its cached value
-        and the formulas its registered functions generate."""
+        """A custom-predicate atom was allocated: assert the formulas its
+        registered functions generate (a cached value of it is a memo of
+        ``Engine._is_custom`` and does not enter the session)."""
         engine = self.engine
-        v = engine.custom_cache.get(atom.expr, atom.pred)
-        var = self.table.custom[atom]
-        solver = self.solver
-        prev_owner = solver.owner
-        track = self.track
-        if v is not None:
-            self.used_cache = True
-            if track:
-                # a cached custom fact is the atom's own (a relation atom's:
-                # its interpretation is glue, so unowned)
-                solver.owner = BOTTOM if atom.pred in RELATION_ATOMS else atom
-                try:
-                    self._emit([var if v else -var])
-                finally:
-                    solver.owner = prev_owner
-            else:
-                self._emit([var if v else -var])
         if atom.pred in RELATION_ATOMS and engine._relation_specs:
             rel = self.relations
             if rel is None:
@@ -520,22 +470,12 @@ class Session:
         ext = engine._extensions
         if ext is None:
             return
-        if not track:
-            for f in ext.facts_for(atom):
-                compile_formula(f, self.table, self._emit)
-            return
-        solver.owner = atom
-        try:
-            for f in ext.facts_for(atom):
-                compile_formula(f, self.table, self._emit)
-        finally:
-            solver.owner = prev_owner
+        for f in ext.facts_for(atom):
+            compile_formula(f, self.table, self._emit)
 
     def _compile_pending(self, node: Node, demanded) -> None:
         """Compile the parked formulas and clauses of ``node`` that mention
-        a predicate in the neighbourhood of ``demanded`` (indices).  The
-        caller sets ``solver.owner`` to ``node`` if the session tracks
-        owners."""
+        a predicate in the neighbourhood of ``demanded`` (indices)."""
         want = want_of(demanded)
         pend_c = self.pending_c.get(node)
         if pend_c:
@@ -615,34 +555,16 @@ class Session:
         if budget is None:
             budget = _UNCAPPED
         added = 0
-        solver = self.solver
-        prev_owner = solver.owner
-        track = self.track
         while (self.pending or self.pending_c or self.deferred or self.frontier) \
                 and added < budget:
             if self.pending_c:
                 node, pend = self.pending_c.popitem()
-                if not track:
-                    for clauses, bases in pend:
-                        self._emit_pattern(clauses, bases)
-                else:
-                    solver.owner = node
-                    try:
-                        for clauses, bases in pend:
-                            self._emit_pattern(clauses, bases)
-                    finally:
-                        solver.owner = prev_owner
+                for clauses, bases in pend:
+                    self._emit_pattern(clauses, bases)
                 added += 1
             elif self.pending:
                 node, formulas = self.pending.popitem()
-                if not track:
-                    self._compile(node, formulas)
-                else:
-                    solver.owner = node
-                    try:
-                        self._compile(node, formulas)
-                    finally:
-                        solver.owner = prev_owner
+                self._compile(node, formulas)
                 added += 1
             elif self.frontier:
                 n = self.frontier.popleft()
@@ -661,258 +583,6 @@ class Session:
                 self.truncated = True
         self.frontier = deque()
 
-    # -- root facts -> cache ------------------------------------------------
-    def writeback(self) -> None:
-        """Write the new root facts to the context-free caches, by the
-        policy ``Engine(writeback=...)``:
-
-        ``"root-only"`` (default)
-            Nothing here: ``Engine._put_result`` writes the answer of an
-            ``Engine.is_`` session and the other facts about its queried
-            node, when a fresh ``is_`` is known to give them
-            (``Engine._put_root_only``); contextual sessions write nothing.
-            No provenance bookkeeping runs (``Session.track``).
-        ``"provenance"`` (opt-in)
-            A fact about node ``D`` (or custom atom ``D``) is written only if
-            the session is not budget-truncated, its *provenance* (the
-            owners of the clauses in its reason DAG, ``Solver.provenance``,
-            the root facts that shortened a clause included) lies in
-            ``cone(D)`` (``D``'s own rule block, templates, extension facts
-            and cached facts, and those of the objects its templates
-            mention, transitively: :meth:`_struct`), never a learnt or theory
-            clause, relation glue or the assumptions (``BOTTOM``), and
-            ``cone(D)`` *fits the discovery budget* (:meth:`_cone`; a
-            fresh ``is_`` of a ``D`` over it answers None whatever is
-            cached).  Every clause of ``cone(D)`` is then loaded by a fresh
-            ``Engine.is_(D, ...)`` that escalates, which passes the budget
-            test and runs uncapped (:meth:`_cone` says why), and unit
-            propagation is confluent, so that query derives the fact, or is
-            decided by propagation before it escalates, soundly and so the
-            same way: the cache stays a memo of ``is_`` (DESIGN.md 2.4; by
-            induction, cached facts of ``cone(D)`` asserted here are
-            themselves such memos, entailed by their own cones).  Neither
-            condition depends on the session or on history (the engine's
-            sessions are never truncated, ``Engine._within_budget``), so
-            this policy is history-independent at every budget, as
-            ``"root-only"`` is.  More cache reuse than
-            ``"root-only"`` (facts about every node of a session, contextual
-            ones included), at the measured cost of the owner bookkeeping
-            and the cone tests.
-        ``"all"``
-            Every root literal, as before the provenance rule.  History-
-            dependent (a fact found with another node's template, a learnt
-            clause or relation glue is served later as a context-free fact):
-            kept for measurement only.
-
-        Refusals are counted in ``Engine.stats``: ``writeback_refused``
-        (provenance outside the cone), ``writeback_budget`` (the cone does
-        not fit the budget).
-        """
-        engine = self.engine
-        policy = engine._writeback
-        if policy == "root-only":
-            return
-        trail = self.solver.root_trail()
-        start = self.read_pos
-        self.read_pos = len(trail)
-        if start == len(trail):
-            return
-        if policy != "all":
-            if self.truncated:
-                return
-            self._sync_budget()
-        slots = self.table.slots
-        cache = engine.cache
-        custom = engine.custom_cache
-        if policy == "all":
-            for lit in trail[start:]:
-                v = abs(lit)
-                atom = slots[v]
-                if type(atom) is tuple:
-                    # a node block's variable (VarTable.slots): P(pred, node)
-                    node, b = atom
-                    cache.put(node, PREDICATES[v - b], lit > 0)
-                elif atom is not None:
-                    if atom.pred in PRED_INDEX:
-                        cache.put(atom.expr, atom.pred, lit > 0)
-                    else:
-                        custom.put(atom.expr, atom.pred, lit > 0)
-            return
-        stats = engine.stats
-        cone_of = self._cone
-        home_of = self._home_of
-        for lit in trail[start:]:
-            v = abs(lit)
-            atom = slots[v]
-            if type(atom) is tuple:
-                # a node block's variable (VarTable.slots): P(pred, node)
-                subject, b = atom
-                pred = PREDICATES[v - b]
-                c, key = cache, subject
-            elif atom is None:
-                continue                        # auxiliary: never written
-            else:
-                pred = atom.pred
-                if pred in PRED_INDEX:
-                    subject = key = atom.expr
-                    c = cache
-                elif pred in RELATION_ATOMS:
-                    continue                    # interpreted by glue: never written
-                else:
-                    subject, key, c = atom, atom.expr, custom
-            d = c.facts(key)
-            if d is not None and pred in d:
-                continue                        # cached: no home needed
-            if cone_of(subject) is None:
-                stats["writeback_budget"] += 1
-                continue
-            if home_of(v, subject) is _FOREIGN and not self._walk(v, subject):
-                stats["writeback_refused"] += 1
-                continue
-            c.put(key, pred, lit > 0)
-
-    def _sync_budget(self) -> None:
-        """Drop the home memo if ``Engine.discovery_budget`` changed since
-        it was filled (whether a cone fits depends on it; the engine's cone
-        memos are dropped by the setting change itself)."""
-        budget = self.engine.discovery_budget
-        if budget != self._cone_budget:
-            self._cone_budget = budget
-            self._home.clear()
-
-    def _subject(self, v: int):
-        """What the root literal of ``v`` is about, for :meth:`_home_of`:
-        its node, its custom atom, or None (an auxiliary variable, a
-        relation atom: never written back)."""
-        atom = self.table.slots[v]
-        if type(atom) is tuple:
-            return atom[0]
-        if atom is None:
-            return None
-        pred = atom.pred
-        if pred in PRED_INDEX:
-            return atom.expr
-        if pred in RELATION_ATOMS:
-            return None
-        return atom
-
-    def _home_of(self, v: int, subject) -> Any:
-        """The *home* of the root assignment of ``v``: an object ``H``
-        with ``provenance(v) <= cone(H)`` (``H`` included), or ``_FOREIGN``
-        when that is not established by this cheap test (the caller then
-        walks).
-
-        The test looks at one step of the reason DAG only: the owner ``o``
-        of ``v``'s reason (its rule block's node, its template's node, ...)
-        and the homes of its antecedents (computed first, the same way,
-        with their own subjects; memoized, so each root literal is looked
-        at once per session, and only literals some writeback needs).  ``H``
-        is ``subject`` (the node or custom atom ``v`` is about), or ``o``
-        for an auxiliary variable.  If ``o`` and every antecedent's home
-        are in ``cone(H)``, then, by induction over the reason DAG (root
-        reasons only point to earlier root literals), every owner of
-        ``v``'s reason DAG is in ``cone(H)``: an antecedent's provenance
-        lies in ``cone(h)`` and ``cone(h) <= cone(H)`` for ``h`` in
-        ``cone(H)`` (cones are closed under :meth:`_struct`'s kids).  So
-        ``home == D`` implies exactly what the provenance rule of
-        :meth:`writeback` asks for ``D``, without the walk; the common case
-        (a fact found by ``D``'s own rule block, templates and its
-        children's facts) costs one reason lookup and a few set hits.  A
-        subject whose cone does not fit the budget gets no home (its cone
-        is not kept): conservative, the walk decides.
-        """
-        home = self._home
-        h = home.get(v)
-        if h is not None:
-            return h
-        root_step = self.solver.root_step
-        slots = self.table.slots
-        cone_of = self._cone
-        subject_of = self._subject
-        steps: dict = {}
-        stack = [(v, subject)]
-        while stack:
-            u, subj = stack[-1]
-            if u in home:
-                stack.pop()
-                continue
-            step = steps.get(u, _NO_STEP)
-            if step is _NO_STEP:
-                step = steps[u] = root_step(u)
-                if step is not None:
-                    todo = [a for a in step[1] if a not in home]
-                    if todo:
-                        stack.extend([(a, subject_of(a)) for a in todo])
-                        continue
-            h = _FOREIGN
-            if step is not None:
-                o, ants = step
-                if type(o) is BlockOwner:
-                    o = slots[o.base][0]        # a rule block: its node
-                H = o if subj is None else subj
-                cone = cone_of(H)
-                if cone is not None and o in cone:
-                    for a in ants:
-                        if home[a] not in cone:
-                            break
-                    else:
-                        h = H
-            home[u] = h
-            stack.pop()
-        return home[v]
-
-    def _walk(self, v: int, node) -> bool:
-        """The exact provenance test for a fact about ``node`` whose home
-        was not established: every owner of its reason DAG is in
-        ``cone(node)``, which fits the budget (the caller checked).  On
-        success ``node`` becomes its home."""
-        prov = self.solver.provenance(v, self._prov_memo)
-        if BOTTOM in prov:
-            return False
-        cone = self._cone(node)
-        if cone is None:
-            return False
-        slots = self.table.slots
-        for o in prov:
-            if type(o) is BlockOwner:
-                o = slots[o.base][0]
-            if o not in cone:
-                return False
-        self._home[v] = node
-        return True
-
-    def _in_cone(self, node, o) -> bool:
-        """``o`` is in ``cone(node)`` (``node`` included), and that cone
-        fits the budget (:meth:`_cone`; otherwise False)."""
-        cone = self._cone(node)
-        return cone is not None and o in cone
-
-    def _struct(self, o):
-        """``(kids, weight)`` of a cone object (``Engine._struct``)."""
-        return self.engine._struct(o)
-
-    def _cone(self, d):
-        """The structural cone of ``d`` (``d`` and every object reachable
-        through :meth:`_struct`'s kids) as a frozenset, if its weight fits
-        ``Engine.discovery_budget`` and it holds no relation atom; None
-        otherwise (``Engine._cone_info``).
-
-        Why a cone that fits makes a fresh ``Engine.is_(d, p)`` (and
-        ``_is_custom`` for a custom atom ``d``) load every clause of
-        ``cone(d)`` before it searches: it passes the budget test
-        (``Engine._within_budget``: the weight fits), and its discovery
-        (:meth:`_discover`) and escalation (:meth:`escalate`) then run
-        uncapped, visiting breadth-first the children the templates
-        schedule and every derived node, compiling every parked template.
-        With no relation atom in the cone nothing else visits nodes, so the
-        session holds exactly ``cone(d)`` once escalated, whatever its
-        cached facts made it skip before.  A relation atom brings glue
-        whose answers are not entailments of the clauses alone (a theory
-        may give up), so such a cone is refused here (writeback), though
-        it counts toward the budget test with its glue."""
-        c, _w, rel = self.engine._cone_info(d)
-        return None if rel else c
-
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit: int, assumptions: Iterable[int] = (),
                       search: bool = True) -> Optional[bool]:
@@ -920,8 +590,7 @@ class Session:
         if self.xfer is not None:
             self.xfer.sync_transfer()
         if not solver.propagate():
-            raise InconsistentAssumptions("rule base or cached facts are inconsistent")
-        self.writeback()
+            raise InconsistentAssumptions("rule base is inconsistent")
         # the query literal is read: its variable's rule-block implication
         # must be on the trail (Solver.mention)
         solver.mention((lit,))
@@ -953,7 +622,6 @@ class Session:
             r = solver.entails(lit, assumptions)
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
-        self.writeback()
         return r
 
     def assume_formula(self, f) -> List[int]:
@@ -1033,9 +701,9 @@ class Session:
             # variables of both terms, which the query's links imply.  A
             # root unit only differs from an assumption in what the
             # solver keeps: it survives restarts and the held levels, so
-            # transfer is not switched on again (a rescan) per level.  The
-            # units are owned by no node (writeback never takes a fact
-            # they derive; contextual sessions write nothing by default).
+            # transfer is not switched on again (a rescan) per level.  A
+            # root unit of the glue is never a context-free fact: no
+            # session writes to the caches.
             seen = self._set_glue(a_all, a_x)
         else:
             # Without a relation atom in ``a`` the set's links are on only
@@ -1085,14 +753,8 @@ class Session:
             want.add(rel.xfer_sel)
         new = want - have
         if new:
-            solver = self.solver
-            prev = solver.owner
-            solver.owner = BOTTOM            # glue: no node's (writeback)
-            try:
-                for x in sorted(new):
-                    self._emit([x])
-            finally:
-                solver.owner = prev
+            for x in sorted(new):
+                self._emit([x])
             have |= new
         lsel, nsel, asel, status = rel.link_sel, rel.num_sel, rel.atom_sel, rel.status
         tp = ap = False
@@ -1225,6 +887,9 @@ class Session:
 
 
 def _check_writeback(value: str) -> str:
+    if value in _REMOVED_WRITEBACK:
+        raise ValueError(f"writeback={value!r} was removed by issue #97 (P2): the fact "
+                         f"cache is a memo of Engine.is_ only; use one of {_WRITEBACK}")
     if value not in _WRITEBACK:
         raise ValueError(f"writeback must be one of {_WRITEBACK}, not {value!r}")
     return value
@@ -1304,19 +969,16 @@ class Engine:
         set is found inconsistent (then under the whole set, which raises);
         a consistent or unknown set answers under the part.  False: always
         under the whole set.
-    writeback : ``"root-only"``, ``"provenance"`` or ``"all"``
-        Which root facts of a session go to the context-free caches
-        (``Session.writeback``, ``_put_root_only``): ``"root-only"``
-        (default) only the answer and the queried node's facts of an
-        ``is_`` session, with no bookkeeping; ``"provenance"`` (opt-in:
-        a memo too, more cache reuse, at a measured cost) every fact
-        derived from its own node's structural cone only; ``"all"`` every
-        root literal (history-dependent; for measurement only).  Under
-        the first two a fact is written only when a fresh ``is_`` of it is
-        known to load all it needs (``Session._cone``); both are
-        history-independent at every budget (no session the engine uses
-        is truncated, and an ``is_`` over the budget is None whatever is
-        cached).  A setting:
+    writeback : ``"root-only"`` or ``"none"``
+        Whether ``Engine.is_`` memoizes its answer in the context-free
+        caches (``_put_result``): ``"root-only"`` (default) stores the
+        answer of ``is_(node, pred)`` under ``node`` (and of a custom
+        atom's query in ``custom_cache``), True or False, never None;
+        ``"none"`` stores nothing (for measurement).  Nothing else writes
+        to the caches and no session reads them, so the cache is a pure
+        memo of ``is_`` at every budget.  ``"provenance"`` and ``"all"``
+        (root facts of whole sessions, #53 stage 3) were removed by issue
+        #97 (P2) and raise ``ValueError``.  A setting:
         assigning a different value drops this engine's caches
         (``_settings_changed``).
     """
@@ -1403,7 +1065,6 @@ class Engine:
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "set_checks": 0,
-                      "writeback_refused": 0, "writeback_budget": 0,
                       "budget_limited": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
@@ -1539,10 +1200,10 @@ class Engine:
 
     @property
     def writeback(self) -> str:
-        """Setting: the writeback policy, ``"root-only"``, ``"provenance"``
-        or ``"all"`` (see the class docstring).  Assigning a different value
-        drops this engine's caches (``_settings_changed``): facts written
-        under ``"all"`` are not memos."""
+        """Setting: whether ``is_`` memoizes its answer, ``"root-only"``
+        or ``"none"`` (see the class docstring; ``"provenance"`` and
+        ``"all"`` are removed).  Assigning a different value drops this
+        engine's caches (``_settings_changed``), like every setting."""
         return self._writeback
 
     @writeback.setter
@@ -1984,10 +1645,11 @@ class Engine:
 
     # -- context-free ---------------------------------------------------------
     def is_(self, node: Node, pred: str) -> Optional[bool]:
-        """Context-free truth value of ``pred(node)``; cached on the node
-        (custom predicates: in the engine's own cache).  None if the cone
-        of ``node`` outweighs ``discovery_budget`` (``last_budget_limited``),
-        whatever is cached."""
+        """Context-free truth value of ``pred(node)``, memoized per node
+        and registry epoch in ``cache`` (custom predicates: in
+        ``custom_cache``), True or False only (``_put_result``).  None if
+        the cone of ``node`` outweighs ``discovery_budget``
+        (``last_budget_limited``), whatever is cached."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
         if pred not in PRED_INDEX:
@@ -2021,99 +1683,26 @@ class Engine:
         return r
 
     def _put_result(self, s: Session, cache: DictCache, subject, node, pred: str, r) -> None:
-        """Cache the answer ``r`` of the context-free query ``pred(node)``
-        (``subject``: ``node``, or the custom atom), unless a fresh engine's
-        same query could answer otherwise (``"all"`` caches it anyway).
-        ``s`` passed the budget test (``_within_budget``), ran uncapped and
-        is never truncated (a truncated session, possible only with an
-        explicit budget, would cache nothing).  ``"root-only"``:
-        :meth:`_put_root_only`.  ``"provenance"``: ``r`` is not cached if
-        it was decided before escalation with work still parked or deferred
-        (``s.incomplete``) and ``Session._cone`` refuses ``cone(subject)``.
-        The fresh query discovers the same nodes and parks the same clauses
-        (both depend on the node and the predicate only, not on cached
-        values), but without this engine's cached facts it may have to
-        escalate; it then loads the whole cone (uncapped) and searches.
-        So the fresh query either escalates exactly as this one did or does
-        not need to, and answers ``r``: the same clauses up to cached facts,
-        which are memos entailed by them, and a complete search.  A session that engaged
-        relation glue (only through extension facts naming relation atoms)
-        is cached only through the cone rule, which refuses cones with
-        relation atoms."""
+        """Memoize the answer ``r`` of the context-free query ``pred(node)``
+        (``subject``: ``node``, or the custom atom; kept for the call
+        shape) in ``cache``, keyed on ``node`` under the current registry
+        epoch (``DictCache._epoch``, ``_check_version``): True or False
+        only, never None.
+
+        Why the cache is a pure memo of ``is_``: ``s`` asserted no cached
+        fact (sessions never read the caches), so its clause set is the
+        one a fresh engine's ``is_(node, pred)`` builds (discovery, parking
+        and escalation depend on the node, the predicate, the registry and
+        the settings only); ``s`` passed the budget test
+        (``_within_budget``), ran uncapped and is never truncated, and its
+        answer is an entailment of that clause set (or a complete search's
+        verdict), so the fresh query answers ``r`` too.  Under
+        ``writeback="none"`` nothing is stored."""
         assert not s.truncated, "a session of a query within the budget was truncated"
-        self.last_budget_limited = s.truncated
-        policy = self._writeback
-        if s.truncated:
-            self.stats["budget_limited"] += 1
-            if policy != "all":
-                return
-        elif policy == "root-only":
-            self._put_root_only(s, cache, subject, node, pred, r)
+        self.last_budget_limited = False
+        if r is None or self._writeback != "root-only":
             return
-        elif policy == "provenance" and (s.incomplete or s.relations is not None):
-            s._sync_budget()
-            if s._cone(subject) is None:
-                self.stats["writeback_budget"] += 1
-                return
         cache.put(node, pred, r)
-
-    def _put_root_only(self, s: Session, cache: DictCache, subject, node, pred: str, r) -> None:
-        """``writeback="root-only"``: cache the answer ``r`` of the
-        non-truncated session ``s`` of ``Engine.is_(node, pred)`` and the
-        session's other root facts about ``node`` (a vocabulary query), each
-        only when a fresh engine's ``is_`` of it answers the same.  Every
-        value written is, besides, entailed by the clauses of the node's
-        structural cone (cached facts asserted in ``s`` are such values,
-        by induction).  Let ``V`` be the nodes ``s`` visited.
-
-        * ``s`` is *complete* (nothing parked or deferred, no relation
-          glue): it compiled every template of every node of ``V`` (and the
-          extension facts of every custom atom they mention), so ``V`` holds
-          every node any compilation from ``node`` allocates: ``V`` is
-          ``node``'s cone.  A fresh ``is_(node, pred)`` discovers and parks
-          as ``s`` did (cached values decide neither), so it escalates
-          exactly when ``s`` did (it propagates less), without truncation,
-          and answers ``r`` (``s``'s clauses minus cached facts entailed by
-          them, a complete search).  So ``r`` is written.  A fresh
-          ``is_(node, q)`` of another predicate passes the same budget test
-          (the cone of ``node``) and runs uncapped, so it is decided by
-          propagation (soundly) or loads every clause of ``V`` before it
-          searches, and answers the value ``s`` derived.
-        * ``s`` is incomplete: it was decided by propagation before
-          escalation.  If it asserted no cached fact, it *is* the fresh
-          session (nothing else of the engine enters a session), so ``r``
-          is written; the other facts need ``Session._cone``.  If it
-          asserted cached facts, a fresh session may need an escalation:
-          everything needs ``Session._cone`` (conservative: it refuses a
-          cone with a relation atom, whose glue this session never ran).
-
-        Cone tests run only when there is something to write that the
-        cheap tests do not settle; refusals count in ``writeback_budget``.
-        No provenance bookkeeping, no walk: the queried node's facts of a
-        session in which only its cone took part."""
-        complete = s.relations is None and not s.incomplete
-        if complete or (s.relations is None and not s.used_cache):
-            cache.put(node, pred, r)
-            todo = None
-        else:
-            todo = [(pred, r)]
-        if subject is node:
-            facts = cache.facts(node)
-            for p, v in s.solver.root_values(s.base[node], NPRED):
-                p = PREDICATES[p]
-                if p != pred and (facts is None or p not in facts):
-                    if todo is None:
-                        todo = []
-                    todo.append((p, v))
-        if not todo:
-            return
-        if not complete:
-            s._sync_budget()
-            if s._cone(subject) is None:
-                self.stats["writeback_budget"] += 1
-                return
-        for p, v in todo:
-            cache.put(node, p, v)
 
     def _is_custom(self, node: Node, pred: str) -> Optional[bool]:
         if self._epoch != _EPOCH[0]:
