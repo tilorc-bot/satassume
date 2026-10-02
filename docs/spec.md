@@ -64,38 +64,39 @@ in `p` it is `Unsupported` (`sympy_api.to_formula`, the docstring's
 
 ## 3. Theory scope
 
-Definition (P3, to be implemented). `theory_scope(A, p) = (glue, transfer,
-linked_terms)` is a function of the two formulas' atoms:
+Definition (P3, to be implemented). `theory_scope(A, p) = (glue, transfer, linked_terms)` is a function of the
+two formulas' glue atoms (below):
 
-- `glue` iff `A` or `p` holds a relation atom, or two sign atoms
-  (`_SIGN_PREDS`, `engine.py`) of `A` and `p` together are on different
-  `Add` nodes sharing a free symbol (the pair may be one atom of each formula);
+- `glue` iff `A` or `p` holds a relation atom, or two sign atoms (`_SIGN_PREDS`, `engine.py`) of `A` and `p`
+  together are on different `Add` nodes sharing a free symbol (the pair may be one atom of each formula);
 - `transfer` iff `A` or `p` holds an `eq` atom;
-- `linked_terms` is the set of arguments of vocabulary atoms and sides of
-  relation atoms of `A` and `p`, numbers excluded (P3's text says "cones" and
-  nothing on numbers; this spec and today's code use the atoms' arguments).
+- `linked_terms` is the set of arguments of vocabulary atoms and sides of relation atoms of `A` and `p`,
+  numbers excluded (P3's text says "cones" and nothing on numbers; this spec and today's code use the atoms'
+  arguments).
+
+Definition (PR #107, `relations.zero_twins`, `glue_atoms`). The *glue atoms* of a formula are its atoms
+followed by the *twin* `eq(t, 0)` of each `zero(t)` atom (`t` not a number) of `A` or `p` whose `t` occurs as
+an argument, at any depth, of an application of an undefined function (`AppliedUndef`: `g(t, 1)`,
+`g(Abs(h(t)))`) in `A` or `p`. `A`'s twins are `A`'s alone (`Session.assumption_lits`, root glue); `p`'s are
+the pair's (`Session._glue_of`; `ref._glue_atoms_of`). So such a `zero(t)` counts as an equality: it gives
+`glue` and `transfer` and links `t`, exactly as `Q.eq(t, 0)` in the formula would. `~zero(t)` reads as `ne(t,
+0)` under the same condition (atoms carry no polarity); `nonzero(t)` has no twin.
 
 Today's code computes the same three facts in three places, per query:
 
-- `glue`: `engine._links_wanted(atoms_of(A), atoms_of(p))` for the affine pair,
-  or a relation atom in `Session.assumption_lits` (`a_rel or p_rel or
-  _links_wanted(...)`); the budget's own link test is weaker (section 10, open
-  point 1). The glue object itself is created lazily, by the first relation
-  atom allocated (`Session._custom`, `Relations(...)`) or by
+- `glue`: `engine._links_wanted(a_all, p_all)` for the affine pair, or a relation atom (twins included) in
+  `Session.assumption_lits`; the budget's own link test is weaker (section 10, open point 1). The glue object
+  is created lazily, by the first relation atom allocated (`Session._custom`, `Relations(...)`) or by
   `Session._affine_links` when the pair appears.
-- `transfer`: `Relations.wants_transfer(atoms)` is true on an `eq` atom (and on
-  an order atom whose reverse `_trichotomy` paired, which P3's syntactic test
-  does not count: open point 1); engaged once per session
-  (`Relations._engage_transfer`), switched on per query (`Relations.xfer_sel`,
-  section 5.5).
-- `linked_terms`: `Relations.note_formula(atoms)` records every vocabulary
-  argument of a user formula as a link candidate; `Relations.process`
-  links the sides of a user relation once a theory interprets it;
-  `Relations._link(e)` skips numbers.
+- `transfer`: `Relations.wants_transfer(atoms)` is true on an `eq` atom (and on an order atom whose reverse
+  `_trichotomy` paired, which P3's syntactic test does not count: open point 1); engaged once per session
+  (`Relations._engage_transfer`), switched on per query (`Relations.xfer_sel`).
+- `linked_terms`: `Relations.note_formula(atoms)` records every vocabulary argument of a user formula as a
+  link candidate; `Relations.process` links the sides of a user relation once a theory interprets it;
+  `_link(e)` skips numbers.
 
-Property (P3's gate): with the scope on, an answer is the same as or more
-definite than without it, never the other definite value
-(`tools/relevance_fuzz.py`; the monotonicity argument is P3's report).
+Property (P3's gate): with the scope on, an answer is the same as or more definite than without it, never the
+other definite value (`tools/relevance_fuzz.py`; the monotonicity argument is P3's report).
 
 ## 4. The node cone
 
@@ -132,96 +133,96 @@ cone(A)` plus, in a reused contextual session, what earlier queries left
 
 ## 5. The clause set
 
-The clause set of a query is the union of the following, over the session
-that answers it (section 8 says which session).
+The clause set of a query is the union of the following, over the session that answers it (section 8 says
+which session).
 
 ### 5.1 Rule base per node
 
-Definition. `RULE_INSTANTIATED` is the 79-clause minimization of the 110
-clauses compiled from `RULES` (`rules.py`, `minimize_for_propagation`;
-design, "Rule base"). Every visited scalar node gets one copy over its 33
-variables, installed as a rule block (`Session._visit` step 2,
-`Solver.register_block`, `Solver.set_rule_block` in `satassume/solver.py`),
-unless the node's only template is a complete unit pattern
-(`Pattern.complete`: the closed units decide every predicate the rule base
-mentions), in which case the units stand alone.
+Definition. `RULE_INSTANTIATED` is the 79-clause minimization of the 110 clauses compiled from `RULES`
+(`rules.py`, `minimize_for_propagation`; design, "Rule base"). Every visited scalar node gets one copy over
+its 33 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
+`Solver.set_rule_block` in `satassume/solver.py`), unless the node's only template is a complete unit pattern
+(`Pattern.complete`: the closed units decide every predicate the rule base mentions), in which case the units
+stand alone.
 
 ### 5.2 Template clauses per node
 
-Definition. For a node `n`, `registry.clauses_for(n)` is `(compiled,
-formulas)`: for each template registered for a class in `type(n).__mro__`
-(`TemplateRegistry.templates_for`, most specific first), its result, a
-`Compiled` (a `Pattern` applied to concrete objects) or plain formulas
-(`templates/registry.py`). A `Pattern` holds rules `(premises, conclusion)`
-over slot literals `(k, pred, pos)` after `resolve` evaluated the constant
-slots (`_common.resolve`, `_resolve_lit`): a literal a constant decides is
-dropped (True) or kills the rule (False); a literal a constant cannot
-decide drops the rule; a rule whose conclusion a constant falsifies becomes
-the negation of its premises. `Compiled.formulas()` gives the rules as
-`Implies`/`Or` formulas over `P` atoms (`_common.instantiate`).
+Definition. For a node `n`, `registry.clauses_for(n)` is `(compiled, formulas)`: for each template registered
+for a class in `type(n).__mro__` (`TemplateRegistry.templates_for`, most specific first), its result, a
+`Compiled` (a `Pattern` applied to concrete objects) or plain formulas (`templates/registry.py`). A `Pattern`
+holds rules `(premises, conclusion)` over slot literals `(k, pred, pos)` after `resolve` evaluated the
+constant slots (`_common.resolve`, `_resolve_lit`): a literal a constant decides is dropped (True) or kills
+the rule (False); a literal a constant cannot decide drops the rule; a rule whose conclusion a constant
+falsifies becomes the negation of its premises. `Compiled.formulas()` gives the rules as `Implies`/`Or`
+formulas over `P` atoms (`_common.instantiate`).
 
-Definition. The clauses of `n` in the session are the clauses of its
-compiled patterns shifted by the base variables of `n`'s slot objects
-(`Session._compile_patterns`, `_emit_pattern`) and the Tseitin clauses of
-its plain formulas (`Session._compile`, `compile.compile_formula`), plus the
-node facts of registered vocabulary extensions (`Extensions.node_facts`).
+Definition. The clauses of `n` in the session are the clauses of its compiled patterns shifted by the base
+variables of `n`'s slot objects (`Session._compile_patterns`, `_emit_pattern`) and the Tseitin clauses of its
+plain formulas (`Session._compile`, `compile.compile_formula`), plus the node facts of registered vocabulary
+extensions (`Extensions.node_facts`).
 
-Definition. A node is visited with a demand set (`Session.ensure(node,
-demanded)`); clauses mentioning no predicate in `want_of(demanded)`
-(`engine.want_of`, `neighbourhood`) are parked in `pending_c`/`pending`,
-derived nodes in `deferred`; `Session.escalate` compiles all of it. Section
-8 says when; the clause set of the *answer* is always the full cone's
-(escalation is uncapped within the budget, `_UNCAPPED`).
+Definition. A node is visited with a demand set (`Session.ensure(node, demanded)`); clauses mentioning no
+predicate in `want_of(demanded)` (`engine.want_of`, `neighbourhood`) are parked in `pending_c`/`pending`,
+derived nodes in `deferred`; `Session.escalate` compiles all of it. Section 8 says when; the clause set of the
+*answer* is always the full cone's (escalation is uncapped within the budget, `_UNCAPPED`).
 
-Property: every template rule is true at concrete values in Kleene logic
-(`tests/test_templates.py`), total over non-commutative values
-(`tests/test_noncommutative.py`, `tests/test_totality.py`, `tests/test_total_templates.py`, G7).
+Property: every template rule is true at concrete values in Kleene logic (`tests/test_templates.py`), total
+over non-commutative values (`tests/test_noncommutative.py`, `tests/test_totality.py`,
+`tests/test_total_templates.py`, G7).
 
 ### 5.3 The memo of `is_` (no cached unit facts)
 
 Definition. No clause set contains a cached fact: no session asserts an entry of `Engine.cache` or
-`custom_cache` as a unit (since issue #97 P2). The caches are memos of `Engine.is_(node, pred)` (section 8, context-free):
-key `(node, pred)` under the registry epoch and the settings fingerprint `(templates, transfer, uninterpreted)` (`DictCache._epoch`, `_settings`; `Engine._check_version` drops a cache on a mismatch, so a cache
-shared between engines starts empty for an engine of other settings); value True or False, never None
-(`_put_result`). Property: an entry is the answer a fresh engine of the same settings gives, since the session of `is_` builds the set of 5.1, 5.2, 5.5 for `node` alone (harness `audit`, G6; `tests/test_writeback_provenance.py`).
+`custom_cache` as a unit (since issue #97 P2). The caches are memos of `Engine.is_(node, pred)` (section 8,
+context-free): key `(node, pred)` under the registry epoch and the settings fingerprint `(templates, transfer,
+uninterpreted)` (`DictCache._epoch`, `_settings`; `Engine._check_version` drops a cache on a mismatch, so a
+cache shared between engines starts empty for an engine of other settings); value True or False, never None
+(`_put_result`). Property: an entry is the answer a fresh engine of the same settings gives, since the session
+of `is_` builds the set of 5.1, 5.2, 5.5 for `node` alone (harness `audit`, G6;
+`tests/test_writeback_provenance.py`).
 
 ### 5.4 The assumption selector
 
-Definition. `Session.assume_formula(A)` compiles `A`'s Tseitin clauses with
-the fresh selector variable `s` added negated to each clause and returns
-`[s]`; a query assumes `s` (`Session.assumption_lits`, first element).
-Nothing derived under `s` reaches the root trail, hence the cache
-(design, "Sessions per assumption set").
+Definition. `Session.assume_formula(A)` compiles `A`'s Tseitin clauses with the fresh selector variable `s`
+added negated to each clause and returns `[s]`; a query assumes `s` (`Session.assumption_lits`, first
+element). Nothing derived under `s` reaches the root trail, hence the cache (design, "Sessions per assumption
+set").
 
 ### 5.5 Glue and theory clauses (only when `glue`)
 
-Definition. With `glue`, every linked term `e` gets the link clauses
-`extended_positive(e) <-> lt(0, e)`, `extended_negative(e) <-> lt(e, 0)`,
-`zero(e) <-> eq(e, 0)`, each guarded by the term's selector `link_sel[e]`
-(`Relations._link`), and an integrality atom when LRA reads its linear form
-(`Relations`, theories "Integrality", `relations.INTEGERS`). Every `lt` atom
-gets the side clauses, infinite-term clauses and a guarded LRA twin
-(`Relations._order_sides`, `_order_infinite`, `_interpret`); every `eq` atom
-goes to EUF and, under the real guard, to LRA; `_eq_infinity`, `_eq_links`,
-`_trichotomy` clauses carry their atoms' selectors (`Relations.atom_sel`).
-Interface equalities between LRA and EUF terms are added by
-`Relations._share`. Transfer lemmas `eq(a, b) -> (P(a) <-> P(b))` are
-enforced by `TransferTheory` (`satassume/transfer.py`) under `xfer_sel`.
+Definition. With `glue`, every linked term `e` gets the link clauses `extended_positive(e) <-> lt(0, e)`,
+`extended_negative(e) <-> lt(e, 0)`, `zero(e) <-> eq(e, 0)`, each guarded by the term's selector `link_sel[e]`
+(`Relations._link`), and an integrality atom when LRA reads its linear form (`Relations`, theories
+"Integrality", `relations.INTEGERS`). Every `lt` atom gets the side clauses, infinite-term clauses and a
+guarded LRA twin (`Relations._order_sides`, `_order_infinite`, `_interpret`); every `eq` atom goes to EUF and,
+under the real guard, to LRA; `_eq_infinity`, `_eq_links`, `_trichotomy` clauses carry their atoms' selectors
+(`Relations.atom_sel`). Interface equalities between LRA and EUF terms are added by `Relations._share`.
+Transfer lemmas `eq(a, b) -> (P(a) <-> P(b))` are enforced by `TransferTheory` (`satassume/transfer.py`) under
+`xfer_sel`.
 
-Definition. A query assumes, after `s`: the selectors of `A`'s links and
-atoms (as root units when `A` has a relation atom, `Session._set_glue`;
-else as one group selector, `Session._group_sel`), then the selectors of
-`p`'s links and atoms not already on (`Relations.selectors_of`), then
-`xfer_sel` when `transfer` holds (`Session.assumption_lits`). A clause
-whose selector is not assumed is inert for the query (theories, "Switched
-glue"). Property: the glue a query sees equals a fresh session's for
-`(p, A)` (`harness` profiles `links`, `transfer`, gate G5).
+Definition (zero as an equality, PR #107; `relations.glue_atoms`, `Relations.process`,
+`Session._ensure_twins`). A twin `eq(t, 0)` (section 3) is one more atom of its formula for the glue:
+allocated with the formula (`Session._ensure_atoms`; `ref._answer`), processed as a user `eq` atom of it (EUF,
+LRA under the real guard, `atom_sel`, `t` a transfer candidate), its selectors assumed as the formula's. It is
+tied to `zero(t)` by the link clause `zero(t) <-> eq(t, 0)` of `t` under `link_sel[t]`, which every query with
+the twin assumes (`t` is a side of it); no clause is new, so the twin is sound wherever the link is (every
+domain, `nan`, `oo`, `zoo` included). Why only `t` under an application (1df6e9b): the twin adds congruence
+through the class of `0` (`g(t) = g(0)`), which needs an application over `t`; reading every `zero(t)` cost
++56% on the refine stream (`zero(x)` is common there) and switched the glue on for sets that never needed it.
+Outside the condition the spellings agree on the shapes checked, except `zero(s)` on a sum bounded only by its
+terms' facts, which only LRA decides (`tests/test_zero_glue.py`, strict xfail).
+
+Definition. A query assumes, after `s`: the selectors of `A`'s links and atoms (as root units when `A` has a
+relation atom, `Session._set_glue`; else as one group selector, `Session._group_sel`), then the selectors of
+`p`'s links and atoms not already on (`Relations.selectors_of`), then `xfer_sel` when `transfer` holds
+(`Session.assumption_lits`). A clause whose selector is not assumed is inert for the query (theories,
+"Switched glue"). Property: the glue a query sees equals a fresh session's for `(p, A)` (`harness` profiles
+`links`, `transfer`, gate G5).
 
 ### 5.6 Clauses of custom atoms
 
-Definition. A custom atom asserts its cached value (`Engine.custom_cache`) and
-its registered clause-generating functions' formulas (`Session._custom`,
-`satassume/extensions.py`, `satassume.register`).
+Definition. A custom atom asserts its cached value (`Engine.custom_cache`) and its registered
+clause-generating functions' formulas (`Session._custom`, `satassume/extensions.py`, `satassume.register`).
 
 ## 6. The literal of `p`
 
@@ -355,21 +356,21 @@ only (`Engine._within_budget` docstring; `tests/test_budget_cone.py`,
 
 ## 11. Open points
 
-1. The engine's per-query theory scope is three tests in three places (section
-   3); `theory_scope` as one function is P3. Differences from P3:
-   `wants_transfer` counts a `_trichotomy` pair, which P3's syntactic test does
-   not; the budget's link test (section 10) counts sign-atom sums over disjoint
-   symbols, which `glue` does not.
-2. Glue is created at the first relation atom of *any* formula compiled in the
-   session, extension facts included (`Session._custom`); selectors keep it
-   inert, but `cone` counts `glue_objects` only for relation atoms of `p` and
-   `A`.
+1. The engine's per-query theory scope is three tests in three places (section 3); `theory_scope`
+   as one function is P3. Differences: `wants_transfer` counts a `_trichotomy` pair (P3's test does
+   not); the budget's link test (section 10) counts sign-atom sums over disjoint symbols (`glue` does not).
+2. Glue is created at the first relation atom of *any* formula compiled in the session, extension facts
+   included (`Session._custom`); selectors keep it inert, but `cone` counts `glue_objects` only for relation atoms of `p` and `A`.
 3. `out_of_scope` ignores the engine's adapters (section 1).
-4. The clause set is stated per session; no code names the session-independent
-   clause set the harness compares against (`ask_ref` is P5b). Section 8's "at
-   most two searches" is design.md's; `Engine._ask` is the code.
-5. Section 5.3's property (cached units change no answer) is checked by the
-   harness, not proved here; the provenance rule is `Engine._put_result`.
+4. The clause set is stated per session; `satassume.ref.ask_ref` (P5b) is the session-independent
+   one the harness compares against. Section 8's "at most two searches" is design.md's; `Engine._ask` is the code.
+5. Section 5.3's property (cached units change no answer) is checked by the harness, not
+   proved here; the provenance rule is `Engine._put_result`.
+6. Section 3's `glue` rule does not fire on a sign atom over a sum whose summand carries an
+   `infinite`/`finite` atom, although 5.5's clauses decide it (`~Q.nonzero(oo + acos(-1/x))`
+   under `Q.infinite(acos(-1/x))`); a relation atom unlocks the glue and the relevance split
+   (1.3, 7) discards it: `ask_ref` answers under the whole set, the engine does not (repro
+   `fixed/L1-learnt-unit-written-back` row 0, tag `relevance`). Sound, an accepted loss under 1.3; P3 follow-up.
 
 ## 12. Ten corpus records
 

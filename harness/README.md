@@ -30,6 +30,27 @@ reference to every k-th query and reports level-1/level-2 disagreements
 separately ("reference instability", a memo dependence).  Discrepancies
 are confirmed at level 3 with `--confirm` (several hash seeds).
 
+Level 4 `SPEC` (`--ref-level spec`, or `4`) computes the level-1 reference
+*and* `satassume.ref.ask_ref`, the eager reference implementation of
+`docs/spec.md` (one solver over the whole clause set: no sessions, memos,
+budgets or relevance split), and compares the warm answer with both; the
+default of every mode, preset, profile and test stays level 1.  A
+disagreement with the fresh engine is reported as before; one with
+`ask_ref` is a discrepancy with `level` SPEC, family `S:<tag>`, and the
+fresh engine's answer in its confirmations.  The tag (`checker.spec_tag`):
+`finding` (the engine definite, `ask_ref` None: the engine derived what
+the clause set does not entail), `budget` (the engine None, `ask_ref`
+definite or raising, `engine.last_budget_limited` set: spec section 10),
+`relevance` (the same pair
+without a budget: the relevance split answered under a part of the set;
+the discrepancy records a fresh `relevance=False` engine's answer), or
+`defect` (a contradiction, `ValueError` on one side only, an error).
+`--fail-on unknown` accepts `budget` and `relevance`, nothing else.  The
+`ask_ref` call is timed by wall clock and never interrupted; the JSON line
+gives `spec_seconds`, the count of references over 2 s (`spec_slow`) and
+the slowest.  `tests/test_history.py` replays the repros and the CI-sized
+`links`/`transfer` runs at both levels.
+
 Registrations (`satassume.register`) are configuration: a stream may carry
 `register`/`unregister` events, applied to the global registry as the
 stream runs; the reference for a query is computed under the same

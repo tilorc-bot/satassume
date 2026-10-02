@@ -14,7 +14,19 @@ reference* computed right after it:
   module-level memos of the engine and SymPy's ``cacheit`` cache emptied);
 * ``ReferenceLevel.PROCESS``: the single query in a fresh interpreter
   (``python -m harness repro``), optionally under another
-  ``PYTHONHASHSEED``.  Used to confirm discrepancies, not per query.
+  ``PYTHONHASHSEED``.  Used to confirm discrepancies, not per query;
+* ``ReferenceLevel.SPEC``: the ENGINE reference *and* ``satassume.ref.
+  ask_ref``, the eager reference implementation of ``docs/spec.md`` (no
+  sessions, memos, budgets or relevance split).  Each row carries both
+  references; a disagreement with either is a ``Discrepancy`` whose
+  ``level`` says which one found it.  A SPEC-level disagreement gets a
+  ``tag`` (``spec_tag``): ``finding`` (the engine definite, the spec None),
+  ``budget`` / ``relevance`` (the engine None, the spec definite, with or
+  without ``engine.last_budget_limited``; a budget-limited None against
+  the spec's ``ValueError`` is ``budget`` too) or ``defect`` (a
+  contradiction, any other one-sided ``ValueError``, an error).  The SPEC reference is
+  timed per query (wall clock, never interrupted); slow ones are listed in
+  ``Report.spec_slow``.
 
 Registrations in force when a query runs are the same for the engine
 under test and for the reference (they are configuration, not history):
@@ -75,6 +87,15 @@ class ReferenceLevel(IntEnum):
     ENGINE = 1
     MODULE = 2
     PROCESS = 3
+    #: ENGINE plus ``satassume.ref.ask_ref`` (both references per query)
+    SPEC = 4
+
+
+def parse_level(s: Union[str, int]) -> "ReferenceLevel":
+    """A reference level from its number or (case-insensitive) name."""
+    if isinstance(s, int) or str(s).isdigit():
+        return ReferenceLevel(int(s))
+    return ReferenceLevel[str(s).upper()]
 
 
 # --------------------------------------------------------------------------
@@ -116,6 +137,34 @@ def kind_of(warm: str, ref: str) -> str:
     if "ValueError" in (a, b):
         return "raise-vs-none" if "None" in (a, b) else "raise-vs-definite"
     return "none-vs-definite"
+
+
+#: tags of a SPEC-level disagreement (``spec_tag``)
+SPEC_TAGS = ("finding", "budget", "relevance", "defect")
+#: the SPEC tags that are expected differences, not defects: the engine
+#: answers None where the spec's clause set is definite because a budget
+#: bound it (spec section 10) or the relevance split answered under a part
+#: of the set (section 7); ``is_known_family`` accepts them
+SPEC_KNOWN_TAGS = ("budget", "relevance")
+#: a SPEC reference slower than this (ms) is listed in ``Report.spec_slow``
+SPEC_SLOW_MS = 2000.0
+
+
+def spec_tag(warm: str, spec: str, budget_limited: bool = False) -> Optional[str]:
+    """The tag of a disagreement between the engine (``warm``) and
+    ``ask_ref`` (``spec``), None if they agree.  A budget-limited None
+    against ``ValueError`` is ``budget`` too: a set over the budget has
+    verdict UNKNOWN and is not checked (docs/spec.md section 10, rule 1)."""
+    if warm == spec:
+        return None
+    definite = ("True", "False")
+    if warm in definite and spec == "None":
+        return "finding"
+    if warm == "None" and spec in definite:
+        return "budget" if budget_limited else "relevance"
+    if warm == "None" and spec == "ValueError" and budget_limited:
+        return "budget"
+    return "defect"
 
 
 def write_stream(path: str, items: Sequence[Item], meta: Optional[dict] = None) -> None:
@@ -204,9 +253,20 @@ def reference(item: Ask, config: EngineConfig, level: int, hashseed: Optional[in
     currently in force)."""
     if level == ReferenceLevel.PROCESS:
         return process_outcome(item, config, hashseed=hashseed)
+    if level == ReferenceLevel.SPEC:
+        return spec_reference(item, config)
     if level == ReferenceLevel.MODULE:
         reset_module_state()
     return outcome(item.prop, item.assum, config.make())
+
+
+def spec_reference(item: Ask, config: EngineConfig) -> str:
+    """``ask_ref`` of ``item`` under the settings of ``config`` that have a
+    counterpart in the spec (relations, transfer, uninterpreted); the
+    extension registry is the global one, as the engine's."""
+    from satassume.ref import ref_outcome
+    return ref_outcome(item.prop, item.assum, None, relations=config._relation_specs(),
+                       transfer=config.transfer, uninterpreted=config.uninterpreted)
 
 
 @dataclasses.dataclass
@@ -216,10 +276,33 @@ class Row:
     warm: str
     ref: Optional[str]
     ms: float = 0.0
+    #: the SPEC reference (``ask_ref``), at level SPEC only
+    spec: Optional[str] = None
+    spec_ms: float = 0.0
+    #: ``engine.last_budget_limited`` right after the warm answer
+    budget_limited: bool = False
 
     @property
     def mismatch(self) -> bool:
+        """The warm answer differs from the ENGINE (fresh-engine) reference."""
         return self.ref is not None and self.warm != self.ref
+
+    @property
+    def spec_mismatch(self) -> bool:
+        return self.spec is not None and self.warm != self.spec
+
+    @property
+    def spec_tag(self) -> Optional[str]:
+        return None if self.spec is None else spec_tag(self.warm, self.spec, self.budget_limited)
+
+    def mismatches(self) -> List[Tuple[int, str]]:
+        """(level, reference) of every reference the warm answer differs from."""
+        out: List[Tuple[int, str]] = []
+        if self.mismatch:
+            out.append((ReferenceLevel.ENGINE, self.ref))
+        if self.spec_mismatch:
+            out.append((ReferenceLevel.SPEC, self.spec))
+        return out
 
 
 def execute(items: Sequence[Item], config: EngineConfig,
@@ -230,7 +313,9 @@ def execute(items: Sequence[Item], config: EngineConfig,
     ``config``).  Every ``Ask`` gives a ``Row`` with the engine's answer and
     the reference at ``ref_level`` (None at level NONE, except that
     ``ref_for_last`` always references the last query, at level ENGINE).
-    The extension registry is restored afterwards."""
+    At level SPEC the row has the ENGINE reference in ``ref`` and
+    ``ask_ref``'s answer in ``spec``.  The extension registry is restored
+    afterwards."""
     snap = reg.snapshot()
     eng = engine if engine is not None else config.make()
     rows: List[Row] = []
@@ -243,12 +328,19 @@ def execute(items: Sequence[Item], config: EngineConfig,
             t0 = time.perf_counter()
             warm = outcome(it.prop, it.assum, eng)
             ms = (time.perf_counter() - t0) * 1000
-            ref = None
-            if ref_level:
+            budget_limited = bool(getattr(eng, "last_budget_limited", False))
+            ref = spec = None
+            spec_ms = 0.0
+            if ref_level == ReferenceLevel.SPEC:
+                ref = reference(it, config, ReferenceLevel.ENGINE)
+                t1 = time.perf_counter()
+                spec = spec_reference(it, config)
+                spec_ms = (time.perf_counter() - t1) * 1000
+            elif ref_level:
                 ref = reference(it, config, ref_level)
             elif ref_for_last and i == last:
                 ref = reference(it, config, ReferenceLevel.ENGINE)
-            row = Row(i, it, warm, ref, ms)
+            row = Row(i, it, warm, ref, ms, spec, spec_ms, budget_limited)
             rows.append(row)
             if on_row is not None:
                 on_row(row)
@@ -278,6 +370,17 @@ class Discrepancy:
     confirmations: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     group_size: int = 1
+    #: the reference level that found it (ENGINE, MODULE or SPEC; at a
+    #: SPEC-level run either ENGINE or SPEC); ``None``: ``ref_level``
+    level: Optional[int] = None
+    #: SPEC level only: ``spec_tag`` of the pair
+    tag: str = ""
+
+    def __post_init__(self) -> None:
+        if self.level is None:
+            self.level = ReferenceLevel.ENGINE if self.ref_level == ReferenceLevel.SPEC else self.ref_level
+        if self.level == ReferenceLevel.SPEC and not self.tag:
+            self.tag = spec_tag(self.warm, self.ref) or ""
 
     @property
     def kind(self) -> str:
@@ -287,7 +390,10 @@ class Discrepancy:
         n = len(self.prefix) if self.shrunk is None else len(self.shrunk)
         fam = self.confirmations.get("family")
         tag = f" family={fam} carrier={'+'.join(self.confirmations.get('carrier') or ['?'])}" if fam else ""
-        return (f"[{self.config.name}/{self.order}#{self.index} {self.kind}] {self.item}: "
+        if fam and self.level == ReferenceLevel.SPEC:
+            tag = f" family={fam} fresh_engine={self.confirmations.get('fresh_engine')}"
+        lvl = f" SPEC/{self.tag}" if self.level == ReferenceLevel.SPEC else ""
+        return (f"[{self.config.name}/{self.order}#{self.index} {self.kind}{lvl}] {self.item}: "
                 f"engine={self.warm} reference={self.ref} (prefix {n} items"
                 f"{'' if self.shrunk is None else ', shrunk'}; {self.group_size} in this group){tag}")
 
@@ -297,7 +403,7 @@ class Discrepancy:
             "config": self.config.to_dict(), "kind": self.kind, "group_size": self.group_size,
             "order": self.order, "index": self.index, "source": self.source,
             "item": item_to_json(self.item), "warm": self.warm, "ref": self.ref,
-            "ref_level": int(self.ref_level),
+            "ref_level": int(self.ref_level), "level": int(self.level), "tag": self.tag,
             "prefix": [item_to_json(i) for i in seq],
             "full_prefix_len": len(self.prefix),
             "shrunk": self.shrunk is not None,
@@ -362,7 +468,7 @@ def shrink(d: Discrepancy, max_tests: int = 2000, progress: Optional[Callable[[s
     query still answers differently from a fresh engine.  Also tries to
     drop the assumptions of prefix queries (a context-free query pollutes
     less state) so the repro is easier to read."""
-    ok, warm, ref = _reproduces(d.prefix, d.item, d.config, d.ref_level)
+    ok, warm, ref = _reproduces(d.prefix, d.item, d.config, d.level)
     if not ok:
         # not reproducible from the prefix alone (an order-independent
         # instability?): keep the full prefix, say so
@@ -372,7 +478,7 @@ def shrink(d: Discrepancy, max_tests: int = 2000, progress: Optional[Callable[[s
     d.confirmations["reproduces_from_prefix"] = True
 
     def test(seq: List[Item]) -> bool:
-        return _reproduces(seq, d.item, d.config, d.ref_level)[0]
+        return _reproduces(seq, d.item, d.config, d.level)[0]
 
     seq = ddmin(list(d.prefix), test, max_tests)
     # try simplifying the remaining prefix queries: drop assumptions, or
@@ -391,7 +497,7 @@ def shrink(d: Discrepancy, max_tests: int = 2000, progress: Optional[Callable[[s
                     seq, changed = trial, True
                     break
     d.shrunk = seq
-    _, d.shrunk_warm, d.shrunk_ref = _reproduces(seq, d.item, d.config, d.ref_level)
+    _, d.shrunk_warm, d.shrunk_ref = _reproduces(seq, d.item, d.config, d.level)
     if progress:
         progress(f"shrunk {len(d.prefix)} -> {len(seq)} items")
     return d
@@ -603,6 +709,10 @@ def is_known_family(fam: str, audit: bool = False) -> bool:
     sound write-back of the E, L or C' kind."""
     if fam in KNOWN_FAMILIES or fam.startswith("C+") or fam.startswith("R:"):
         return True
+    if fam.startswith("S:"):
+        # a SPEC-level difference: the budget and relevance tags are the
+        # engine's documented incompleteness against the spec's clause set
+        return fam[2:] in SPEC_KNOWN_TAGS
     return audit and fam.startswith("new:cache-none-vs-definite")
 
 
@@ -613,7 +723,11 @@ def family_of(d: Discrepancy) -> str:
     its arguments, ``D`` a binding discovery budget, ``G`` the relation glue
     a prefix relation query switched on in the session, ``T`` the predicate
     transfer an equality query engaged) or ``new:<carrier>-<kind>`` for
-    anything the known mechanisms do not explain.  Needs ``attribute``."""
+    anything the known mechanisms do not explain.  Needs ``attribute``.
+    A SPEC-level discrepancy is tagged ``S:<spec tag>`` (no attribution:
+    the reference is not an engine)."""
+    if d.level == ReferenceLevel.SPEC:
+        return "S:" + (d.tag or "?")
     if d.confirmations.get("carrier") is None:
         return "?"
     carrier = _effective_carrier(d)
@@ -711,12 +825,19 @@ def audit_cache(items: Sequence[Item], config: EngineConfig, source: str = "",
         store = {node: dict(facts) for node, facts in eng.cache.store.items()}
         bad: List[Tuple[Any, str, bool, Optional[bool]]] = []
         nfacts = 0
+        # what could not be checked (docs/agents.md, Gating rule 5): closed
+        # number nodes (skipped whole, with their facts) and cached None
+        # facts (nothing to compare a fresh engine's answer with)
+        skip_number_nodes = skip_number_facts = skip_none_facts = 0
         for node, facts in store.items():
             if getattr(node, "is_number", False) and not getattr(node, "free_symbols", None):
+                skip_number_nodes += 1
+                skip_number_facts += len(facts)
                 continue
             fresh = config.make()
             for pred, v in facts.items():
                 if v is None:
+                    skip_none_facts += 1
                     continue
                 nfacts += 1
                 try:
@@ -725,7 +846,11 @@ def audit_cache(items: Sequence[Item], config: EngineConfig, source: str = "",
                     r = f"Error:{type(e).__name__}"
                 if r is not v:
                     bad.append((node, pred, v, r))
-        stats = {"nodes": len(store), "facts": nfacts, "bad": len(bad)}
+        stats = {"nodes": len(store), "facts": nfacts, "bad": len(bad),
+                 "unchecked": skip_number_facts + skip_none_facts,
+                 "unchecked_reasons": {"number_nodes": skip_number_nodes,
+                                       "number_node_facts": skip_number_facts,
+                                       "none_facts": skip_none_facts}}
         found: List[Discrepancy] = []
         seen_nodes: set = set()
         for node, pred, v, r in bad:
@@ -788,6 +913,17 @@ def repro_script(d: Discrepancy) -> str:
             lines.append(f"    Ask(from_srepr({to_srepr(it.prop)!r}), from_srepr({to_srepr(it.assum)!r})),")
     lines += [
         "]",
+    ]
+    if d.level == ReferenceLevel.SPEC:
+        lines += [
+            "# SPEC level: the engine against satassume.ref.ask_ref (docs/spec.md)",
+            "rows, eng = execute(items, config, ref_level=ReferenceLevel.SPEC)",
+            "last = rows[-1]",
+            "print('engine after prefix:', last.warm, '  ask_ref:', last.spec, '  fresh engine:', last.ref)",
+            f"assert last.warm == {d.warm!r} and last.spec == {d.ref!r}, (last.warm, last.spec)",
+        ]
+        return "\n".join(lines) + "\n"
+    lines += [
         "rows, eng = execute(items, config, ref_level=ReferenceLevel.NONE, ref_for_last=True)",
         "last = rows[-1]",
         "print('engine after prefix:', last.warm, '  fresh engine:', last.ref)",
@@ -878,20 +1014,38 @@ class Report:
     #: (not of an ignored kind)
     first_hit: Optional[Dict[str, Any]] = None
     first_reported: Optional[Dict[str, Any]] = None
+    #: SPEC level: the run level, the warm-vs-``ask_ref`` disagreements
+    #: (``mismatches`` and ``kinds`` count the ENGINE level only), their
+    #: kinds and tags, the time spent in ``ask_ref`` and its slow queries
+    ref_level: int = ReferenceLevel.ENGINE
+    spec_mismatches: int = 0
+    spec_kinds: Dict[str, int] = dataclasses.field(default_factory=dict)
+    spec_tags: Dict[str, int] = dataclasses.field(default_factory=dict)
+    spec_seconds: float = 0.0
+    spec_slow: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
 
     def to_json(self) -> Dict[str, Any]:
-        return {"config": self.config.name, "queries": self.queries, "mismatches": self.mismatches,
-                "kinds": self.kinds, "groups": self.groups,
-                "outcomes": self.outcomes, "pairs": self.pairs,
-                "ref_instability": len(self.ref_instability), "seconds": round(self.seconds, 2),
-                "orders": self.orders, "first_hit": self.first_hit, "first_reported": self.first_reported,
-                "families": sorted({d.confirmations.get("family", "?") for d in self.discrepancies}),
-                "discrepancies": [d.summary() for d in self.discrepancies]}
+        d = {"config": self.config.name, "queries": self.queries, "mismatches": self.mismatches,
+             "kinds": self.kinds, "groups": self.groups,
+             "outcomes": self.outcomes, "pairs": self.pairs,
+             "ref_instability": len(self.ref_instability), "seconds": round(self.seconds, 2),
+             "orders": self.orders, "first_hit": self.first_hit, "first_reported": self.first_reported,
+             "families": sorted({d.confirmations.get("family", "?") for d in self.discrepancies}),
+             "discrepancies": [d.summary() for d in self.discrepancies]}
+        if self.ref_level == ReferenceLevel.SPEC:
+            d.update({"ref_level": "SPEC", "spec_mismatches": self.spec_mismatches,
+                      "spec_kinds": self.spec_kinds, "spec_tags": self.spec_tags,
+                      "spec_seconds": round(self.spec_seconds, 2),
+                      "spec_slow": len(self.spec_slow),
+                      "spec_slowest": max(self.spec_slow, key=lambda r: r["ms"]) if self.spec_slow else None})
+        return d
 
 
 class Checker:
     """Run a stream in several orders through a long-lived engine of
-    ``config``, each answer against a reference at ``ref_level``.
+    ``config``, each answer against a reference at ``ref_level`` (at
+    SPEC: against a fresh engine and against ``ask_ref``, each
+    disagreement a discrepancy of its own level).
 
     ``ref_check_every``: every k-th query also gets a MODULE-level
     reference; a difference between the two references is a memo
@@ -925,7 +1079,7 @@ class Checker:
         self.dedupe = dedupe
 
     def run(self, items: Sequence[Item]) -> Report:
-        rep = Report(self.config, orders=self.orders)
+        rep = Report(self.config, orders=self.orders, ref_level=self.ref_level)
         t0 = time.perf_counter()
         seen: set = set()
         for k, order in enumerate(self.orders):
@@ -942,25 +1096,43 @@ class Checker:
                     if r2 != row.ref:
                         rep.ref_instability.append({"item": str(row.item), "engine_ref": row.ref,
                                                     "module_ref": r2})
-                if row.mismatch:
-                    rep.mismatches += 1
-                    kind = kind_of(row.warm, row.ref)
-                    rep.kinds[kind] = rep.kinds.get(kind, 0) + 1
+                if row.spec is not None:
+                    rep.spec_seconds += row.spec_ms / 1000
+                    if row.spec_ms > SPEC_SLOW_MS:
+                        rep.spec_slow.append({"item": str(row.item), "ms": round(row.spec_ms, 1)})
+                for level, ref in row.mismatches():
+                    kind = kind_of(row.warm, ref)
+                    tag = ""
+                    if level == ReferenceLevel.SPEC:
+                        tag = row.spec_tag or ""
+                        rep.spec_mismatches += 1
+                        rep.spec_kinds[kind] = rep.spec_kinds.get(kind, 0) + 1
+                        rep.spec_tags[tag] = rep.spec_tags.get(tag, 0) + 1
+                    else:
+                        rep.mismatches += 1
+                        rep.kinds[kind] = rep.kinds.get(kind, 0) + 1
                     hit = {"order": order, "index": row.index, "queries": rep.queries, "kind": kind}
+                    if level == ReferenceLevel.SPEC:
+                        hit.update(level="SPEC", tag=tag)
                     if rep.first_hit is None:
                         rep.first_hit = hit
                     if kind in self.ignore_kinds:
-                        return
+                        continue
                     if rep.first_reported is None:
                         rep.first_reported = hit
-                    gkey = (to_srepr(row.item.assum), kind)
+                    # ENGINE-level keys stay as before; SPEC ones also by tag
+                    gkey = ((to_srepr(row.item.assum), kind) if level != ReferenceLevel.SPEC
+                            else (to_srepr(row.item.assum), kind, "SPEC", tag))
                     d = groups.get(gkey)
                     if d is not None:
                         d.group_size += 1
-                        return
+                        continue
                     d = Discrepancy(self.config, order, row.index, row.item, row.warm,
-                                    row.ref, self.ref_level, list(ordered[:row.index]),
-                                    source=self.source)
+                                    ref, self.ref_level, list(ordered[:row.index]),
+                                    source=self.source, level=level, tag=tag)
+                    if level == ReferenceLevel.SPEC:
+                        d.confirmations["fresh_engine"] = row.ref
+                        d.confirmations["budget_limited"] = row.budget_limited
                     groups[gkey] = d
                     self.progress(f"  mismatch: {d.summary()}")
 
@@ -975,9 +1147,16 @@ class Checker:
                 if kept >= self.max_discrepancies:
                     break
                 kept += 1
+                if d.level == ReferenceLevel.SPEC:
+                    d.confirmations["family"] = family_of(d)
+                    if d.tag == "relevance":
+                        # the split's part: a fresh engine without it
+                        # answers as the spec does when the split lost it
+                        d.confirmations["no_relevance"] = outcome(
+                            d.item.prop, d.item.assum, self.config.replace(relevance=False).make())
                 if self.shrink_them:
                     shrink(d, progress=self.progress)
-                    if self.attribute_them:
+                    if d.level != ReferenceLevel.SPEC and self.attribute_them:
                         try:
                             attribute(d)
                         except Exception as e:  # noqa: BLE001 - attribution is diagnostic only
