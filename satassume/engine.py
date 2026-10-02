@@ -83,7 +83,7 @@ from .epoch import EPOCH as _EPOCH, bump as _bump
 from .memos import engine_memos
 from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
-                        glue_objects, link_objects)
+                        glue_atoms, glue_objects, link_objects)
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .solver import Solver
 
@@ -683,11 +683,12 @@ class Session:
         a_all = self._a_all
         if a_all is None:
             a = self.assumption_formula
-            a_all = self._a_all = atoms_of(a) if a is not None else ()
+            # a zero(t) counts as its twin eq(t, 0) (relations.glue_atoms)
+            a_all = self._a_all = glue_atoms(atoms_of(a)) if a is not None else ()
             self._a_atoms = frozenset(x for x in a_all if x.pred in RELATION_ATOMS)
         a_atoms = self._a_atoms
         a_rel = bool(a_atoms)
-        p_all = atoms_of(prop) if prop is not None else ()
+        p_all = glue_atoms(atoms_of(prop)) if prop is not None else ()
         p_atoms = [x for x in p_all if x.pred in RELATION_ATOMS]
         p_rel = bool(p_atoms)
         if not (a_rel or p_rel or _links_wanted(a_all, p_all)):
@@ -853,7 +854,9 @@ class Session:
         atoms = atoms_of(f)
         rel.note_formula(atoms)
         if rel.active or rel.queue:
-            rel.process(atoms)
+            # the twins of zero atoms are user equalities of f
+            # (relations.glue_atoms, allocated by _ensure_atoms)
+            rel.process(glue_atoms(atoms))
 
     def _affine_links(self, f, keep: bool = False) -> None:
         """Start the relation machinery without a relation atom when two sign
@@ -893,10 +896,20 @@ class Session:
 
     def _ensure_atoms(self, f) -> None:
         """Visit the nodes of the vocabulary atoms of ``f``.  Custom atoms
-        are allocated when ``f`` is compiled (see :meth:`_custom`)."""
-        for atom in atoms_of(f):
+        are allocated when ``f`` is compiled (see :meth:`_custom`); the
+        twin ``eq(t, 0)`` of a ``zero(t)`` atom (``relations.glue_atoms``)
+        here, with an engine with relation specs: the first one makes the
+        session's relations (:meth:`_custom`, at the next ``_flush``)."""
+        atoms = atoms_of(f)
+        for atom in atoms:
             if atom.pred in PRED_INDEX:
                 self.ensure(atom.expr, {atom.pred})
+        if self.engine._relation_specs:
+            g = glue_atoms(atoms)
+            if g is not atoms:
+                var = self.table.var
+                for atom in g[len(atoms):]:
+                    var(atom)
 
 
 # --------------------------------------------------------------------------
@@ -1464,7 +1477,9 @@ class Engine:
         if r is not None:
             return r
         atoms = atoms_of(f)
-        objs = {_kid(a) for a in atoms}
+        # with the twins of zero atoms (relations.glue_atoms): their glue
+        # is the session's, and they make the query relational
+        objs = {_kid(a) for a in (glue_atoms(atoms) if self._relation_specs else atoms)}
         if link:
             specs, memo = self._relation_specs, self._glue_adapters
             for a in atoms:
@@ -1856,6 +1871,9 @@ class Engine:
     def _literal(s: Session, proposition) -> int:
         if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
             s.ensure(proposition.expr, {proposition.pred})
+            if proposition.pred == "zero":
+                s._ensure_atoms(proposition)    # its twin eq(t, 0)
+                s._flush()
             if s.relations is not None:
                 s._relations(proposition)
             else:
@@ -1871,6 +1889,16 @@ _SIGN_PREDS = frozenset({
     "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero",
     "extended_positive", "extended_negative", "extended_nonnegative",
     "extended_nonpositive", "extended_nonzero"})
+
+
+def zero_glue(f) -> bool:
+    """Whether ``f`` has a ``zero(t)`` atom with ``t`` no number, which
+    the relation glue reads as the equality ``eq(t, 0)``
+    (``relations.glue_atoms``): with relation specs it starts the glue in
+    the session of a set holding it, which then links terms of every
+    component, so the relevance layer takes the whole set's verdict as for
+    a relational set (``satassume.sympy_api._relevant``)."""
+    return any(a.pred == "zero" and not _is_number(a.expr) for a in atoms_of(f))
 
 
 def affine_glue(f) -> bool:

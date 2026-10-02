@@ -112,6 +112,34 @@ The rule base derives ``positive`` (``extended_positive & finite``),
 ``nonnegative``, ``nonzero`` and the rest from these three.  Numbers are
 not linked (their unary facts are closed already).
 
+Zero is an equality
+-------------------
+``zero(t)`` fixes the value of ``t`` exactly as ``eq(t, 0)`` does, so the
+glue reads a user formula with the twin ``eq(t, 0)`` of each of its
+``zero(t)`` atoms (``t`` no number) as one more atom of it
+(:func:`glue_atoms`): the session allocates the twin with the formula
+(``Session._ensure_atoms``), :meth:`Relations.process` gives it the
+clauses and the ``"user"`` role of an equality of the formula (so ``t``
+joins the EUF class of ``0`` and is a full transfer candidate, as for
+``Q.eq(t, 0)``), and ``Session.assumption_lits`` counts it for the gate,
+the selectors and :meth:`Relations.wants_transfer`.  ``Q.zero(t)`` and
+``Q.eq(t, 0)`` then call for the same glue, in the set and in the
+proposition (nightly family A).  Atoms carry no polarity, so
+``~Q.zero(t)`` calls for the glue of ``Q.ne(t, 0)``; ``Q.nonzero(t)``
+(real and not zero) is a sign atom like ``Q.positive(t)``, which is no
+order atom either, and has no twin.
+
+No clause is new: the twin is tied to ``zero(t)`` by the link clause
+``zero(t) <-> eq(t, 0)`` of ``t`` (under ``link_sel[t]``, which every
+query with the twin assumes, since ``t`` is a side of it), sound in every
+domain as the table says (``Eq(nan, 0)``, ``Eq(oo, 0)`` and ``Eq(zoo,
+0)`` are False and none of them is zero; the vocabulary's ``zero`` is
+the value 0, docs/design.md "Extended reals and ``nan`` in templates";
+the same link already ties every linked ``t``).  Everything else
+the twin brings is what a user ``eq(t, 0)`` brings, under its selectors,
+so the I3 argument of "Switched glue" covers it, and what a query
+switches on stays a function of its formulas' atoms.
+
 Integrality
 -----------
 Each linked ``e`` whose linear form a guarded adapter reads
@@ -182,7 +210,8 @@ the glue ``p`` and ``a`` themselves call for:
   ``link_sel[e]``; assumed for the vocabulary-atom arguments and the sides
   of the interpreted relation atoms of ``p`` and ``a``
   (:meth:`Relations.selectors_for`), only if ``p`` or ``a`` holds a
-  relation atom or an affine pair (the trigger of
+  relation atom (a ``zero(t)`` counts as ``eq(t, 0)``, see "Zero is an
+  equality") or an affine pair (the trigger of
   ``Session._affine_links``);
 * the clauses of :meth:`Relations._eq_infinity`, :meth:`Relations._eq_links`
   and :meth:`Relations._trichotomy` carry their atoms' ``atom_sel``;
@@ -428,6 +457,36 @@ def sympy_atom(atom: P):
 
 def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
+
+
+_ZERO_TWINS = _PROCESS.table("satassume.relations._ZERO_TWINS", "pure", 100_000)
+
+
+def glue_atoms(atoms) -> tuple:
+    """``atoms`` (of a user formula) and, after them, the *twin*
+    ``eq(t, 0)`` of each ``zero(t)`` among them whose ``t`` is no number:
+    the atoms the relation glue reads the formula by (see "Zero is an
+    equality" in the module docstring).  A pure function of ``atoms``
+    (the twins are memoized per ``t``)."""
+    twins = None
+    for a in atoms:
+        if a.pred == "zero" and not _is_number(a.expr):
+            e = a.expr
+            tw = _ZERO_TWINS.get(e)
+            if tw is None:
+                from sympy import S
+                tw = relation_atom("eq", e, S.Zero)
+                if len(_ZERO_TWINS) >= 100_000:
+                    _ZERO_TWINS.clear()
+                _ZERO_TWINS[e] = tw
+            if twins is None:
+                twins = [tw]
+            elif tw not in twins:
+                twins.append(tw)
+    if twins is None:
+        return atoms
+    have = set(atoms)
+    return tuple(atoms) + tuple(tw for tw in twins if tw not in have)
 
 
 def _termwise(a, b, d) -> bool:

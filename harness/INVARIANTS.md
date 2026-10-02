@@ -223,7 +223,8 @@ on the shrunk cases seen.
   `g(0)`).  The relation spelling engages the relation glue and transfer,
   the predicate spelling does not: the I2 transfer family reached through
   a restatement.  Nine cases in a 2,800-query I5 run (`transfer` profile,
-  every config).
+  every config).  Fixed (nightly family A): the glue reads `Q.zero(t)` as
+  the equality `t = 0` (`relations.glue_atoms`); both cases are in `fixed/`.
 * **I3, `lost`** (round 2, pinned: `I3-declared-fact-loses-definiteness-budget`):
   `ask(Q.negative(1/(z0 + 1)), Q.positive(he) | Q.negative_infinite(-3/sqrt(f(z0))))`
   is False under the `budget` config and None once `~Q.irrational(z0)`

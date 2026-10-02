@@ -58,18 +58,18 @@ def test_ci_stream_reports_only_what_replays():
         assert evaluate(v)[0] is not None, v.summary()
 
 
-def test_ci_stream_finds_the_pinned_i2_family():
-    """The I2 checker on the CI-sized transfer stream reports the pinned
-    family (a fact about f(0) under zero(z), asked about f(z), decided only
-    once an unrelated relation conjunct is present)."""
+def test_ci_stream_no_longer_finds_the_zero_i2_family():
+    """The I2 checker on the CI-sized transfer stream used to report the
+    pinned family (a fact about f(0) under zero(z), asked about f(z),
+    decided only once an unrelated relation conjunct is present; also the
+    Undecided crash of round 4).  Since zero(z) is the equality z = 0 for
+    the glue (nightly family A, ``relations.glue_atoms``) the unrelated
+    conjunct adds nothing, and the stream reports no violation."""
     cfg = preset("default")
     items = random_stream(3, 60, 4, profile="transfer")
     rep = run_stream(items, cfg, ("I2",), seed=3060, source="ci", max_violations=2, shrink_them=False)
-    assert rep.violations, rep.to_json()
-    # both directions of the family: None -> definite, and definite -> None;
-    # since round 4 also the Undecided crash (an unsettled constant in a relation)
-    assert all(v.severity in ("depends", "crash") for v in rep.violations), [v.summary() for v in rep.violations]
-    assert any(v.severity == "depends" for v in rep.violations), [v.summary() for v in rep.violations]
+    assert rep.checked.get("I2", 0) > 0, rep.to_json()
+    assert not rep.violations, [v.summary() for v in rep.violations]
 
 
 def test_drop_patch_drops_and_restores():
