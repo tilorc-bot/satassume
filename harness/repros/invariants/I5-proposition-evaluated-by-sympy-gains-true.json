@@ -23,7 +23,10 @@
  "variant": {
   "kind": "prop",
   "prop": "true",
-  "scope": "in"
+  "scope": "in",
+  "rewrite": [
+   "relational(ne)[expr]"
+  ]
  },
  "base": "None",
  "other": "True",
@@ -31,5 +34,6 @@
  "shrunk": true,
  "consistent_by": null,
  "fingerprint": "-",
- "prefix": []
+ "prefix": [],
+ "config_specific": false
 }

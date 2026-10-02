@@ -1526,6 +1526,17 @@ def shrink(v: Violation, max_tests: int = 400) -> Violation:
         if len(pairs) >= 2 and test_p5(pairs):
             pairs = ddmin(pairs, test_p5, max_tests)
             v.assum, v.variant = _join([c for c, _ in pairs]), variant_of(pairs)
+        # a conjunct the violation needs whose restatement it does not:
+        # spelled as it was, so that the case's rewrite (the family key)
+        # is the one that matters
+        for i in range(len(pairs)):
+            c, q = pairs[i]
+            if q == to_srepr(c):
+                continue
+            trial = pairs[:i] + [(c, to_srepr(c))] + pairs[i + 1:]
+            if test_p5(trial):
+                pairs = trial
+                v.variant = variant_of(pairs)
         cs = []                                  # done
 
     def test_a(sub):
@@ -1700,6 +1711,264 @@ def extra_kinds(extra, specs: Sequence[dict] = ()) -> List[str]:
     return sorted(kinds)
 
 
+# --------------------------------------------------------------------------
+# the rewrite of a variant (part of the family key, INVARIANTS.md)
+# --------------------------------------------------------------------------
+
+def term_class(t) -> str:
+    """The class of a term for the family key: ``nan``, ``inf`` (``oo``,
+    ``-oo``, ``zoo``), ``number`` (any other SymPy ``Number``), ``symbol``,
+    ``closed`` (no free symbol: ``pi``, ``sqrt(2)``, ``f(1)``), ``expr``."""
+    if t is S.NaN:
+        return "nan"
+    if t in (S.Infinity, S.NegativeInfinity, S.ComplexInfinity):
+        return "inf"
+    if getattr(t, "is_Number", False):
+        return "number"
+    if isinstance(t, Symbol):
+        return "symbol"
+    if isinstance(t, Basic) and not t.free_symbols:
+        return "closed"
+    return "expr"
+
+
+def _atom_head(b) -> str:
+    """The predicate or relation name of an atom (``Not`` looked through)."""
+    if isinstance(b, Not):
+        b = b.args[0]
+    if isinstance(b, AppliedPredicate):
+        return str(b.function.name)
+    if isinstance(b, Relational) and type(b) in _QREL:
+        return str(_QREL[type(b)].name)
+    return type(b).__name__
+
+
+def _atom_terms(b) -> str:
+    if isinstance(b, Not):
+        b = b.args[0]
+    args = b.arguments if isinstance(b, AppliedPredicate) else (b.args if isinstance(b, Relational) else ())
+    return ",".join(sorted({term_class(t) for t in args})) or "-"
+
+
+def _form_tag(g) -> str:
+    """``neg``, ``scale`` or ``shift``: which ``_TERM_FORMS`` transform ``g`` is."""
+    d = Dummy("d")
+    r = g(d)
+    if r == -d:
+        return "neg"
+    return "scale" if getattr(r / d, "is_Number", False) else "shift"
+
+
+def _atom_rewrites(b) -> List[Tuple[str, Any]]:
+    """Every output ``restate`` (and ``restate_given``) can give for the
+    atom ``b``, with the name of its rule, constants enumerated: the
+    rewrite of a variant is recomputed by matching against these, so it
+    needs no record of the random choices (and hand-written pins have one)."""
+    out: List[Tuple[str, Any]] = []
+
+    def add(rule, make):
+        try:
+            out.append((rule, make()))
+        except Exception:  # noqa: BLE001 - a rule that cannot build this atom
+            pass
+
+    if isinstance(b, Not):
+        inner = b.args[0]
+        if isinstance(inner, AppliedPredicate) and inner.function in (Q.lt, Q.le, Q.gt, Q.ge):
+            comp = {Q.lt: Q.ge, Q.le: Q.gt, Q.gt: Q.le, Q.ge: Q.lt}
+            add("given", lambda: comp[inner.function](*inner.arguments))
+        if isinstance(inner, AppliedPredicate) and inner.function in (Q.eq, Q.ne):
+            add("ne-eq", lambda: (Q.ne if inner.function == Q.eq else Q.eq)(*inner.arguments))
+        return out
+    if isinstance(b, AppliedPredicate):
+        f, args = b.function, b.arguments
+        if len(args) == 1 and isinstance(args[0], Symbol):
+            for fact, rw in _GIVEN.get(f, ()):
+                if args[0].assumptions0.get(fact):
+                    add("given", lambda rw=rw: rw(args[0]))
+        if f in _SWAP:
+            a, c = args
+            add("swap", lambda: _SWAP[f](c, a))
+            add("relational", lambda: {v: k for k, v in _QREL.items()}[f](a, c))
+            for k in (S.One, S(-2), Rational(1, 2)):
+                add("shift-relation", lambda k=k: f(a + k, c + k))
+            add("shift-relation", lambda: f(S.Zero, c - a))
+            add("shift-relation", lambda: f(a - c, S.Zero))
+            add("shift-relation", lambda: f(-c, -a))
+            for k in (S(2), S(3), Rational(1, 2)):
+                add("shift-relation", lambda k=k: f(k * a, k * c))
+        if len(args) == 1:
+            x = args[0]
+            if f == Q.zero:
+                add("zero-eq", lambda: Q.eq(x, S.Zero))
+            if f in _SPLIT:
+                add("split", lambda: _SPLIT[f](x))
+            for name in _IMPLIED.get(f, ()):
+                add("implied", lambda name=name: And(b, getattr(Q, name)(x)))
+            for g in _TERM_FORMS.get(f, ()):
+                add("term-form:" + _form_tag(g), lambda g=g: f(g(x)))
+            if f in _SIGN_FLIP:
+                add("sign-flip", lambda: _SIGN_FLIP[f](-x))
+        if f == Q.eq and len(args) == 2 and args[1] == S.Zero:
+            add("eq-zero", lambda: Q.zero(args[0]))
+        add("is_true", lambda: Q.is_true(b))
+    elif isinstance(b, Relational):
+        cls = type(b)
+        if cls in _QREL:
+            add("q-relation", lambda: _QREL[cls](*b.args))
+        add("is_true", lambda: Q.is_true(b))
+        if cls in _RSWAP:
+            add("swap", lambda: _RSWAP[cls](b.rhs, b.lhs))
+    return out
+
+
+def _rewrite(b, n, out: List[str]) -> bool:
+    """Append to ``out`` the rewrites that turn ``b`` into ``n`` (the
+    structure of ``restate``); False when ``n`` is not recognised."""
+    if n == b:
+        return True
+    if isinstance(n, Not) and isinstance(n.args[0], Not) and n.args[0].args[0] == b:
+        out.append("double-not")
+        return True
+    for rule, c in _atom_rewrites(b):
+        if c == n:
+            out.append(f"{rule}({_atom_head(b)})[{_atom_terms(b)}]")
+            return True
+    if isinstance(b, Not):
+        inner = b.args[0]
+        if isinstance(inner, (And, Or)) and isinstance(n, Or if isinstance(inner, And) else And):
+            tmp: List[str] = []
+            if _rewrite_args(inner.args, [negate(x) for x in n.args], tmp):
+                out.extend(tmp + ["de-morgan"])
+                return True
+        return _rewrite(inner, negate(n), out)
+    if isinstance(b, Implies):
+        a, c = b.args
+        if isinstance(n, Implies):
+            n1, n2 = n.args
+            for tag, pairs in (("", ((a, n1), (c, n2))), ("contrapositive", ((a, negate(n2)), (c, negate(n1))))):
+                tmp = []
+                if all(_rewrite(x, y, tmp) for x, y in pairs):
+                    out.extend(tmp + ([tag] if tag else []))
+                    return True
+        if isinstance(n, Or) and len(n.args) == 2:
+            for n1, n2 in (n.args, n.args[::-1]):
+                tmp = []
+                if _rewrite(a, negate(n1), tmp) and _rewrite(c, n2, tmp):
+                    out.extend(tmp + ["implies-or"])
+                    return True
+        return False
+    if isinstance(b, Equivalent) and len(b.args) == 2:
+        a, c = b.args
+        if isinstance(n, Equivalent) and len(n.args) == 2:
+            for n1, n2 in (n.args, n.args[::-1]):
+                tmp = []
+                if _rewrite(a, n1, tmp) and _rewrite(c, n2, tmp):
+                    out.extend(tmp)
+                    return True
+        if isinstance(n, (And, Or)):
+            tag = "equiv-implies" if isinstance(n, And) else "equiv-or"
+            want = Implies if isinstance(n, And) else And
+            for arg in n.args:
+                if isinstance(arg, want) and len(arg.args) == 2:
+                    for n1, n2 in (arg.args, arg.args[::-1]):
+                        tmp = []
+                        if _rewrite(a, n1, tmp) and _rewrite(c, n2, tmp):
+                            out.extend(tmp + [tag])
+                            return True
+        return False
+    if isinstance(b, (And, Or)) and type(n) is type(b):
+        tmp = []
+        if _rewrite_args(b.args, n.args, tmp):
+            out.extend(tmp)
+            return True
+    return False
+
+
+def _rewrite_args(orig: Sequence[Any], new: Sequence[Any], out: List[str]) -> bool:
+    """Each argument of ``new`` is an argument of ``orig`` or a rewrite of
+    one (SymPy reorders, merges duplicates and flattens ``And(b, implied)``)."""
+    for x in new:
+        if x in orig:
+            continue
+        for o in orig:
+            tmp: List[str] = []
+            if _rewrite(o, x, tmp):
+                out.extend(tmp)
+                break
+        else:
+            for o in orig:                # a flattened ``implied`` conjunct
+                if any(rule == "implied" and isinstance(c, And) and x in c.args for rule, c in _atom_rewrites(o)):
+                    out.append(f"implied({_atom_head(o)})[{_atom_terms(o)}]")
+                    break
+            else:
+                return False
+    return True
+
+
+def rewrite_of(b, n) -> List[str]:
+    """The rewrites that restated ``b`` as ``n`` (``prop-pad``: the
+    proposition padded by ``restate_prop``), each ``rule(head)[term
+    classes]`` for an atom rule (``zero-eq(zero)[nan]``,
+    ``shift-relation(eq)[expr,number]``, ``term-form:neg(zero)[expr]``);
+    ``?(<head>)`` when the restatement is not recognised."""
+    if isinstance(n, (And, Or)) and len(n.args) == 2 and n.args[0] == b \
+            and any(s.name == "iw" for s in n.args[1].free_symbols if isinstance(s, Symbol)):
+        return ["prop-pad"]
+    out: List[str] = []
+    if _rewrite(b, n, out):
+        return out
+    return [f"?({_atom_head(b)})"]
+
+
+def i5_rewrite(prop, assum, variant: dict) -> List[str]:
+    """The rewrite of an I5 variant (recomputed from the case: the
+    original and the restated conjuncts or proposition), sorted, without
+    repeats: ``["syntax"]`` for the syntax kind."""
+    kind = variant.get("kind")
+    if kind == "syntax":
+        return ["syntax"]
+    out: List[str] = []
+    if kind == "prop" and "prop" in variant:
+        out = rewrite_of(prop, from_srepr(variant["prop"]))
+    elif kind == "restate" and "parts" in variant:
+        cs = _conjuncts(assum)
+        parts = [from_srepr(q) for q in variant["parts"]]
+        for i, q in enumerate(parts):
+            if q in cs:
+                continue
+            # paired by position (``check_I5``, ``shrink`` keep the order),
+            # then any conjunct
+            order = ([cs[i]] if i < len(cs) and len(cs) == len(parts) else []) + cs
+            got = None
+            for c in order:
+                r = rewrite_of(c, q)
+                if not r[0].startswith("?"):
+                    got = r
+                    break
+            out.extend(got or [f"?({_atom_head(q)})"])
+    return sorted(set(out))
+
+
+def family_detail(v: "Violation") -> tuple:
+    """The component of the family key that names the variant's rewrite:
+    I5 the rewrites (``variant["rewrite"]``, computed when missing), I3 the
+    declared fact, I7 the setting, I1 the blocks mode; empty for I2 (the
+    kinds are its material's identity), I4 and I6 (one rewrite each)."""
+    var = v.variant
+    if v.inv == "I5":
+        if "rewrite" not in var:
+            v.variant = var = dict(var, rewrite=i5_rewrite(v.prop, v.assum, var))
+        return tuple(var["rewrite"])
+    if v.inv == "I3" and var.get("kind") == "declared":
+        return (f"declared:{var.get('pred')}={var.get('value')}",)
+    if v.inv == "I7":
+        return (f"setting:{var.get('name')}",)
+    if v.inv == "I1" and var.get("blocks"):
+        return ("blocks",)
+    return ()
+
+
 #: the probes of the fingerprint: each switches one mechanism off (or, for
 #: the discovery budget, lifts it); the fingerprint of a candidate is the
 #: set of probes under which the difference vanishes
@@ -1739,13 +2008,21 @@ def fingerprint(v: Violation) -> str:
 
 
 def family_key(v: Violation) -> tuple:
-    """(invariant, severity, base, other, kinds, fingerprint).  The
+    """(invariant, severity, base, other, kinds, fingerprint, detail).  The
     constant classes (``const:<class>``) are recorded in the case but are
-    not part of the key: the same mechanism reached with another constant
-    is the same family."""
+    not part of the I2 kinds: the same mechanism reached with another
+    constant is the same family.  ``detail`` (``family_detail``) names the
+    variant's rewrite (I5: rule, predicate, term classes); it was added
+    after the first six, which are the key before it, so a match of the
+    whole key is a match of the old one (INVARIANTS.md)."""
     kinds = tuple(k for k in v.variant.get("kinds", ()) if not k.startswith("const:")) if v.inv == "I2" \
         else (str(v.variant.get("kind", "")),)
-    return (v.inv, v.severity, v.base, v.other, kinds, v.fingerprint or "-")
+    return (v.inv, v.severity, v.base, v.other, kinds, v.fingerprint or "-", family_detail(v))
+
+
+def _settings(cfg: EngineConfig) -> EngineConfig:
+    """A configuration without its name (what the engine is built with)."""
+    return dataclasses.replace(cfg, name="")
 
 
 PINNED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "harness", "repros", "invariants")
@@ -1761,6 +2038,19 @@ FAMILY_SEEN: Dict[tuple, int] = {}
 FAMILY_RUN_CAP = 2
 
 
+#: the recorded family fields of each pinned case, by stem (``_pinned_with_shape``)
+_PIN_META: Dict[str, dict] = {}
+
+
+def _pin_recorded(stem: str, w: Violation) -> bool:
+    """The pinned case carries the fields of the current family key
+    (``config_specific``; I5: ``variant["rewrite"]``).  A pin recorded
+    before them matches nothing until ``python -m harness pins --write``
+    re-records it: old files are not matched more loosely."""
+    meta = _PIN_META.get(stem, {})
+    return isinstance(meta.get("config_specific"), bool) and (w.inv != "I5" or "rewrite" in w.variant)
+
+
 def _pinned_with_shape(shape: tuple) -> list:
     """The pinned cases of ``shape``, each with its fingerprint computed
     (once per process, lazily: only shapes a candidate reaches)."""
@@ -1771,10 +2061,13 @@ def _pinned_with_shape(shape: tuple) -> list:
         for path in sorted(glob.glob(os.path.join(PINNED_DIR, "*.json"))):
             try:
                 with open(path) as f:
-                    w = violation_from_json(json.load(f))
+                    d = json.load(f)
+                w = violation_from_json(d)
             except Exception:  # noqa: BLE001
                 continue
-            _PINNED.setdefault((w.inv, w.severity, w.base, w.other), []).append([os.path.basename(path)[:-5], w])
+            stem = os.path.basename(path)[:-5]
+            _PIN_META[stem] = {"config_specific": d.get("config_specific")}
+            _PINNED.setdefault((w.inv, w.severity, w.base, w.other), []).append([stem, w])
     out = []
     for entry in _PINNED.get(shape, []):
         stem, w = entry
@@ -1794,25 +2087,101 @@ def _pinned_with_shape(shape: tuple) -> list:
     return out
 
 
+def _match_pinned(v: Violation, key: tuple, subset: bool = False) -> Optional[str]:
+    """``pinned:<stem>`` of the first pinned case whose family key is
+    ``key`` (the candidate's): all seven components equal, and the same
+    configuration when the pin is ``config_specific``.  Before shrinking
+    (``subset``) the pinned case's I2 kinds need only be *among* the
+    candidate's (shrinking removes material, never adds); the rewrite is
+    compared exactly then too (a candidate with two rewritten conjuncts
+    is shrunk before it can match a one-rewrite pin)."""
+    for stem, w in _pinned_with_shape((v.inv, v.severity, v.base, v.other)):
+        if w.fingerprint in (None, "gone") or not _pin_recorded(stem, w):
+            continue
+        if _PIN_META[stem]["config_specific"] and _settings(w.config) != _settings(v.config):
+            continue
+        wk = family_key(w)
+        if wk == key or (subset and wk[:4] == key[:4] and wk[5:] == key[5:] and set(wk[4]) <= set(key[4])):
+            return f"pinned:{stem}"
+    return None
+
+
 def _known(v: Violation, subset: bool = False) -> Optional[str]:
-    """``pinned:<stem>`` when the candidate's
-    family key (kinds and fingerprint) is a pinned case's.  The kinds and
-    the fingerprint are (re)computed here.  Before shrinking (``subset``)
-    the pinned case's kinds need only be *among* the candidate's (shrinking
-    removes material, never adds), so that a known family is recognised
-    without the shrink; after shrinking the kinds must agree."""
+    """``pinned:<stem>`` when the candidate's family key is a pinned
+    case's (``_match_pinned``).  The kinds, the fingerprint and the
+    rewrite are (re)computed here."""
     if v.inv == "I2":
         v.variant = dict(v.variant, kinds=extra_kinds(from_srepr(v.variant["extra"]),
                                                       v.variant.get("extensions", ())))
+    if v.inv == "I5":
+        v.variant = dict(v.variant, rewrite=i5_rewrite(v.prop, v.assum, v.variant))
     v.fingerprint = fingerprint(v)
-    key = family_key(v)
-    for stem, w in _pinned_with_shape((v.inv, v.severity, v.base, v.other)):
-        if w.fingerprint in (None, "gone"):
-            continue
-        wk = family_key(w)
-        if wk == key or (subset and wk[:4] == key[:4] and wk[5] == key[5] and set(wk[4]) <= set(key[4])):
-            return f"pinned:{stem}"
-    return None
+    return _match_pinned(v, family_key(v), subset)
+
+
+def pin_record(path: str) -> Dict[str, Any]:
+    """The family fields of the pinned case at ``path`` recomputed by
+    replaying it: ``rewrite`` (I5), ``fingerprint``, ``config_specific``
+    (the case does not reproduce with the same answers under the
+    ``default`` preset, so its pin covers only its own configuration), the
+    key before (``old_key``, six components) and with them (``key``);
+    ``gone`` when the case no longer violates."""
+    from .state import preset
+    with open(path) as fh:
+        d = json.load(fh)
+    w = violation_from_json(d)
+    sev, base, other, _ = evaluate(w)
+    rec: Dict[str, Any] = {"stem": os.path.basename(path)[:-5], "gone": sev is None,
+                           "recorded": {"rewrite": d["variant"].get("rewrite"),
+                                        "config_specific": d.get("config_specific")}}
+    if sev is None:
+        return rec
+    if w.inv == "I2" and "kinds" not in w.variant:
+        w.variant = dict(w.variant, kinds=extra_kinds(from_srepr(w.variant["extra"]),
+                                                      w.variant.get("extensions", ())))
+    if w.inv == "I5":
+        w.variant = dict(w.variant, rewrite=i5_rewrite(w.prop, w.assum, w.variant))
+    w.fingerprint = fingerprint(w)
+    specific = False
+    if _settings(w.config) != _settings(preset("default")):
+        u = dataclasses.replace(w, config=preset("default"))
+        s2, b2, o2, _ = evaluate(u)
+        specific = s2 is None or (b2, o2) != (base, other)
+    key = family_key(w)
+    rec.update(rewrite=w.variant.get("rewrite"), fingerprint=w.fingerprint, config_specific=specific,
+               old_key=key[:6], key=key)
+    return rec
+
+
+def rerecord_pins(directory: str = PINNED_DIR, write: bool = False) -> List[Dict[str, Any]]:
+    """Every pinned case of ``directory`` (``*.json``, not ``fixed/``)
+    through ``pin_record``; with ``write`` the recomputed fields are
+    written back into the case (``variant.rewrite``, ``fingerprint``,
+    ``config_specific``), nothing else changes.  ``python -m harness pins
+    --write`` is the one-liner after a change of the family key or a
+    rebase that brings new pins; without ``--write`` it checks that every
+    pin is recorded and current."""
+    global _PINNED_LOADED
+    import glob
+    out = []
+    for path in sorted(glob.glob(os.path.join(directory, "*.json"))):
+        rec = pin_record(path)
+        rec["current"] = not rec["gone"] and rec["recorded"] == {"rewrite": rec.get("rewrite"),
+                                                                 "config_specific": rec.get("config_specific")}
+        if write and not rec["gone"]:
+            with open(path) as fh:
+                d = json.load(fh)
+            if rec.get("rewrite") is not None:
+                d["variant"]["rewrite"] = rec["rewrite"]
+            d["fingerprint"] = rec["fingerprint"]
+            d["config_specific"] = rec["config_specific"]
+            with open(path, "w") as fh:
+                json.dump(d, fh, indent=1)
+        out.append(rec)
+    _PINNED.clear()                       # reloaded with the new records on the next match
+    _PIN_META.clear()
+    _PINNED_LOADED = False
+    return out
 
 
 def run_stream(items: Sequence[Item], config: EngineConfig, invs: Sequence[str], seed: int,

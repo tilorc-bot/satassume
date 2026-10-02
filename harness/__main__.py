@@ -447,6 +447,26 @@ def cmd_invariants(args) -> int:
     return 1 if (unknown if args.fail_on == "unknown" else bad) else 0
 
 
+def cmd_pins(args) -> int:
+    """The pinned invariant cases (``harness/repros/invariants/*.json``)
+    with their family keys recomputed by replay (``rerecord_pins``);
+    ``--write`` records them in the files.  Exit status 1 when a pin is
+    not recorded or not current (without ``--write``)."""
+    from .invariants import PINNED_DIR, rerecord_pins
+    recs = rerecord_pins(args.dir or PINNED_DIR, write=args.write)
+    stale = 0
+    for r in recs:
+        if r["gone"]:
+            print(f"{r['stem']}: no longer violates (move it to fixed/)")
+            continue
+        state = "written" if args.write else ("current" if r["current"] else "NOT RECORDED")
+        stale += not args.write and not r["current"]
+        print(f"{r['stem']}: {state}  config_specific={r['config_specific']}\n"
+              f"    old key {r['old_key']}\n    new key {r['key']}")
+    print(f"{len(recs)} pins, {stale} not recorded", file=sys.stderr)
+    return 1 if stale else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m harness", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -514,6 +534,11 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("inventory")
     p.set_defaults(fn=cmd_inventory)
+
+    p = sub.add_parser("pins", help="recompute (--write: re-record) the pinned invariant cases' family keys")
+    p.add_argument("--write", action="store_true")
+    p.add_argument("--dir", default="")
+    p.set_defaults(fn=cmd_pins)
 
     p = sub.add_parser("invariants")
     p.add_argument("--inv", default="all", help="comma-separated subset of I1..I7, or all")
