@@ -23,7 +23,10 @@
  "variant": {
   "kind": "prop",
   "prop": "AppliedBinaryRelation(Q.eq, nan, Integer(0))",
-  "scope": "in"
+  "scope": "in",
+  "rewrite": [
+   "zero-eq(zero)[nan]"
+  ]
  },
  "base": "None",
  "other": "False",
@@ -31,5 +34,6 @@
  "shrunk": true,
  "consistent_by": "engine",
  "fingerprint": "norel",
- "prefix": []
+ "prefix": [],
+ "config_specific": false
 }

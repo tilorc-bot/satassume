@@ -153,3 +153,41 @@ def test_zero_and_eq_zero_agree_on_constants():
     for c in [zoo, oo, -oo, I, S.Zero, S.One, Rational(-1, 3), pi, E, Float(0.5),
               Float(0), sqrt(2), 1 + I]:
         assert ask(Q.zero(c), engine=Engine()) is ask(Q.eq(c, 0), engine=Engine()), c
+
+
+def test_nan_pin_is_narrow(monkeypatch):
+    """The real pin ``I5-nan-zero-is-none-eq-zero-is-false`` (real engine,
+    recorded with ``python -m harness pins --write``, #115's key) matches
+    its own case, and not the review's injected unsound fold of
+    ``Q.eq(y, 0)`` to False for a symbol ``y`` (``zero-eq(zero)[symbol]``
+    against the pin's ``zero-eq(zero)[nan]``): that one is unknown."""
+    import harness.invariants as inv
+    from harness.invariants import Violation, evaluate
+    from harness.state import preset
+    from harness.sympy_io import to_srepr
+    from sympy.assumptions.assume import AppliedPredicate
+
+    monkeypatch.setattr(inv, "_PINNED", {})
+    monkeypatch.setattr(inv, "_PIN_META", {})
+    monkeypatch.setattr(inv, "_PINNED_LOADED", False)
+    y = Symbol("y")
+    orig = inv.fresh_outcome
+
+    def patched(prop, assum, config):
+        if config.relations != "none" and isinstance(prop, AppliedPredicate) and prop.function == Q.eq \
+                and prop.arguments == (y, S.Zero):
+            return "False"
+        return orig(prop, assum, config)
+    monkeypatch.setattr(inv, "fresh_outcome", patched)
+    cfg = preset("default")
+
+    def case(t):
+        v = Violation("I5", "depends", cfg, Q.zero(t), Q.positive(x),
+                      {"kind": "prop", "prop": to_srepr(Q.eq(t, S.Zero))}, "None", "False")
+        sev, base, other, var = evaluate(v)
+        assert (sev, base, other) == ("depends", "None", "False"), (t, sev, base, other)
+        v.variant = {k: w for k, w in var.items() if k != "rewrite"}
+        return v
+
+    assert inv._known(case(nan)) == "pinned:I5-nan-zero-is-none-eq-zero-is-false"
+    assert inv._known(case(y)) is None
