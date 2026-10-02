@@ -190,6 +190,23 @@ def test_rewrite_names():
         ["de-morgan", "swap(lt)[symbol]", "zero-eq(zero)[symbol]"]
 
 
+def test_prop_pad_in_any_argument_order():
+    """Released SymPy (CI) orders the arguments of an unevaluated
+    ``And``/``Or``, the pinned dev SymPy keeps them: the padding is
+    recognised either way, and inside a flattened ``Or``."""
+    from sympy import And, Or, Not
+    x, iw = Symbol("x"), Symbol("iw")
+    b, pad = Q.positive(x), Q.real(iw)
+    taut, contra = Or(pad, Not(pad, evaluate=False)), And(pad, Not(pad, evaluate=False))
+    assert rewrite_of(b, And(b, taut, evaluate=False)) == ["prop-pad"]
+    assert rewrite_of(b, And(taut, b, evaluate=False)) == ["prop-pad"]
+    assert rewrite_of(b, Or(contra, b, evaluate=False)) == ["prop-pad"]
+    ob = Q.zero(x) | Q.lt(x, 1)
+    assert rewrite_of(ob, Or(*ob.args, contra)) == ["prop-pad"]
+    assert rewrite_of(ob, Or(contra, *ob.args, evaluate=False)) == ["prop-pad"]
+    assert rewrite_of(b, Or(contra, Q.negative(x), evaluate=False))[0].startswith("?")
+
+
 @pytest.mark.parametrize("profile", ["base", "related", "relational", "transfer", "deep"])
 def test_every_restatement_is_recognised(profile):
     """``restate`` and ``restate_prop`` over a generated stream: the

@@ -236,6 +236,9 @@ of another cause.  The key has a seventh component, `family_detail`:
   compares it with `rewrite_of`'s name; the one unavoidable disagreement
   is `is_true` around a `Relational`, which SymPy builds as the `Q`
   relation, the output of `q-relation` (the same variant either way).
+  `prop-pad` is matched as a set of arguments: released SymPy (CI) orders
+  the arguments of an unevaluated `And`/`Or`, the pinned dev SymPy keeps
+  them; the names are the same under both (6,314 restatements, 23 `?`).
 * **I3**: the declared fact of the `declared` kind (`declared:pred=value`).
 * **I7**: the setting changed (`setting:<name>`).
 * **I1**: `blocks` when the rule blocks were dropped as clauses.

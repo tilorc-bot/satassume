@@ -1935,9 +1935,17 @@ def rewrite_of(b, n) -> List[str]:
     classes]`` for an atom rule (``zero-eq(zero)[nan]``,
     ``shift-relation(eq)[expr,number]``, ``term-form:neg(zero)[expr]``);
     ``?(<head>)`` when the restatement is not recognised."""
-    if isinstance(n, (And, Or)) and len(n.args) == 2 and n.args[0] == b \
-            and any(s.name == "iw" for s in n.args[1].free_symbols if isinstance(s, Symbol)):
-        return ["prop-pad"]
+    if isinstance(n, (And, Or)):
+        # the padding (``restate_prop``: ``atom | ~atom`` or ``atom & ~atom``
+        # over the fresh ``iw``).  Matched as a set: released SymPy orders
+        # the arguments of an unevaluated ``And``/``Or`` and the pin's dev
+        # SymPy does not, and an ``Or`` proposition padded with ``Or`` is
+        # flattened by neither or both
+        pads = [a for a in n.args if isinstance(a, (And, Or)) and len(a.args) == 2
+                and any(isinstance(s, Symbol) and s.name == "iw" for s in a.free_symbols)]
+        rest = [a for a in n.args if a not in pads]
+        if pads and (rest == [b] or (type(b) is type(n) and set(rest) == set(b.args))):
+            return ["prop-pad"]
     out: List[str] = []
     if _rewrite(b, n, out):
         return out
