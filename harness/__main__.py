@@ -450,14 +450,20 @@ def cmd_invariants(args) -> int:
 def cmd_pins(args) -> int:
     """The pinned invariant cases (``harness/repros/invariants/*.json``)
     with their family keys recomputed by replay (``rerecord_pins``);
-    ``--write`` records them in the files.  Exit status 1 when a pin is
-    not recorded or not current (without ``--write``)."""
+    ``--write`` records them in the files (never a ``?(...)`` rewrite).
+    Exit status 1 when a pin is not recorded or not current (without
+    ``--write``), or has an unnamed rewrite."""
     from .invariants import PINNED_DIR, rerecord_pins
     recs = rerecord_pins(args.dir or PINNED_DIR, write=args.write)
     stale = 0
     for r in recs:
         if r["gone"]:
             print(f"{r['stem']}: no longer violates (move it to fixed/)")
+            continue
+        if r.get("unclassified"):
+            print(f"{r['stem']}: NOT WRITTEN, rewrite {r['rewrite']} has an unnamed restatement: "
+                  f"classify the rule first (harness/invariants.py, _atom_rewrites / rewrite_of)")
+            stale += 1
             continue
         state = "written" if args.write else ("current" if r["current"] else "NOT RECORDED")
         stale += not args.write and not r["current"]

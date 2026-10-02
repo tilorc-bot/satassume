@@ -220,3 +220,138 @@ def test_every_restatement_is_recognised(profile):
                 print("unrecognised", a.prop, "->", q)
     assert seen > 20
     assert bad <= seen // 100, (bad, seen)
+
+
+# --------------------------------------------------------------------------
+# review of #115
+# --------------------------------------------------------------------------
+
+def _two_conjunct_case(monkeypatch, revert_a_answer):
+    """``integer(z)`` under ``zero(x) & positive(y)``, restated
+    ``eq(x, 0) & gt(y, 0)``: True -> None (patched).  Both restatements are
+    needed for None; with ``zero(x)`` spelled as it was the answer is
+    ``revert_a_answer``; with ``positive(y)`` as it was, True."""
+    x, y, z = Symbol("x"), Symbol("y"), Symbol("z")
+    A, A2, B, B2 = Q.zero(x), Q.eq(x, 0), Q.positive(y), Q.gt(y, 0)
+    orig = inv.fresh_outcome
+
+    def patched(prop, assum, config):
+        if prop == Q.integer(z):
+            cs = set(_conjuncts(assum))
+            if {A2, B2} <= cs:
+                return "None"
+            if {A, B2} <= cs:
+                return revert_a_answer
+            return "True"
+        return orig(prop, assum, config)
+    monkeypatch.setattr(inv, "fresh_outcome", patched)
+    v = Violation("I5", "depends", preset("default"), Q.integer(z), A & B,
+                  {"kind": "restate", "parts": [],
+                   "assum": to_srepr(A2 & B2)}, "True", "None")
+    # parts in the order of the set's conjuncts
+    v.variant["parts"] = [to_srepr({A: A2, B: B2}[c]) for c in _conjuncts(v.assum)]
+    return v
+
+
+def test_shrink_keeps_a_restatement_whose_revert_changes_the_finding(monkeypatch):
+    """Reverting ``eq(x, 0)`` to ``zero(x)`` still violates (True vs False,
+    ``wrong``), but it is another finding: the revert is refused."""
+    v = _two_conjunct_case(monkeypatch, "False")
+    inv.shrink(v)
+    assert (v.severity, v.base, v.other) == ("depends", "True", "None")
+    rw = inv.i5_rewrite(v.prop, v.assum, v.variant)
+    assert len(rw) == 2 and "zero-eq(zero)[symbol]" in rw, rw
+
+
+def test_shrink_reverts_a_restatement_the_finding_does_not_need(monkeypatch):
+    v = _two_conjunct_case(monkeypatch, "None")
+    inv.shrink(v)
+    assert (v.severity, v.base, v.other) == ("depends", "True", "None")
+    rw = inv.i5_rewrite(v.prop, v.assum, v.variant)
+    assert len(rw) == 1 and not rw[0].startswith("zero-eq"), rw
+
+
+def test_pins_write_refuses_an_unnamed_rewrite(pin_dir, monkeypatch):
+    x = Symbol("x")
+    orig = inv.fresh_outcome
+    odd = Q.eq(x + 3, 3)                       # not an output of restate
+
+    def patched(prop, assum, config):
+        return "None" if assum == odd else orig(prop, assum, config)
+    monkeypatch.setattr(inv, "fresh_outcome", patched)
+    e = Q.eq(x + 1, 1)
+    v = Violation("I5", "depends", preset("default"), e, e,
+                  {"kind": "restate", "parts": [to_srepr(odd)], "assum": to_srepr(odd)}, "True", "None")
+    inv.write_case(v, str(pin_dir), "unnamed")
+    recs = inv.rerecord_pins(str(pin_dir), write=True)
+    assert recs[0]["unclassified"] and recs[0]["rewrite"] == ["?(eq)"]
+    with open(pin_dir / "unnamed.json") as fh:
+        assert "rewrite" not in json.load(fh)["variant"]
+
+
+def test_unnamed_head_is_the_original_atoms():
+    x = Symbol("x")
+    var = {"kind": "restate", "parts": [to_srepr(Q.positive(x + 7))], "assum": to_srepr(Q.positive(x + 7))}
+    assert inv.i5_rewrite(Q.zero(x), Q.zero(x), var) == ["?(zero)"]
+
+
+def test_i2_and_i6_details():
+    x, y = Symbol("x"), Symbol("y")
+    cfg = preset("default")
+    a = Violation("I2", "depends", cfg, Q.zero(x), Q.positive(y), {"kind": "unrelated", "extra": "true"}, "None", "True")
+    b = Violation("I2", "depends", cfg, Q.irrational(x), Q.positive(y), {"kind": "unrelated", "extra": "true"}, "None", "True")
+    assert inv.family_detail(a) == ("prop:zero",) and inv.family_detail(b) == ("prop:irrational",)
+    c = Violation("I6", "depends", cfg, Q.zero(x), Q.positive(y), {"kind": "rename", "hashseed": 2}, "None", "True")
+    assert inv.family_detail(c) == ("process",)
+    c.variant = {"kind": "rename"}
+    assert inv.family_detail(c) == ("in-process",)
+
+
+def test_family_key_has_no_side_effect():
+    x = Symbol("x")
+    v = Violation("I5", "depends", preset("default"), Q.zero(x), Q.positive(x),
+                  {"kind": "prop", "prop": to_srepr(Q.eq(x, 0))}, "None", "False")
+    family_key(v)
+    assert "rewrite" not in v.variant
+
+
+#: restate's ``is_true`` around a ``Relational``: SymPy builds
+#: ``Q.is_true(Lt(a, b))`` as ``Q.lt(a, b)``, the output of the
+#: ``q-relation`` rule, so the name cannot tell them apart (the same
+#: variant either way)
+_SAME_OUTPUT = {("is_true", "q-relation")}
+
+
+@pytest.mark.parametrize("profile", ["base", "related", "relational", "transfer", "deep", "declared"])
+def test_rewrite_name_is_the_restate_branch_that_fired(profile, monkeypatch):
+    """``restate`` traced (``_RESTATE_TRACE``) on single atoms: the rule
+    named by ``rewrite_of`` is the branch that produced the output, except
+    where two branches build the same expression (``_SAME_OUTPUT``)."""
+    from harness.checker import Ask
+    from sympy import Not
+    from sympy.core.relational import Relational
+    rng = random.Random(11)
+    asks = [it for it in random_stream(5, 60, 4, profile=profile) if isinstance(it, Ask)]
+    atoms = []
+    for a in asks:
+        for c in _conjuncts(a.assum) + [a.prop]:
+            inner = c.args[0] if isinstance(c, Not) else c
+            if isinstance(inner, (AppliedPredicate, Relational)):
+                atoms.append(c)
+    compared = 0
+    mismatches = []
+    for c in atoms:
+        for _ in range(4):
+            trace = []
+            monkeypatch.setattr(inv, "_RESTATE_TRACE", trace)
+            n = restate(c, random.Random(rng.randrange(1 << 30)))
+            monkeypatch.setattr(inv, "_RESTATE_TRACE", None)
+            if n == c or len(trace) != 1:
+                continue
+            names = rewrite_of(c, n)
+            got = [d.split("(")[0] for d in names]
+            compared += 1
+            if got != [trace[0]] and (trace[0], got[0] if got else "") not in _SAME_OUTPUT:
+                mismatches.append((str(c), str(n), trace[0], names))
+    assert compared > 20
+    assert not mismatches, mismatches[:5]

@@ -81,7 +81,8 @@ the unrelated conjuncts (I2) and the history (I7), keeping the guarded
 violation; for I5 it then spells each remaining conjunct as it was
 whenever the violation survives that (a conjunct the case needs whose
 restatement it does not need), so that the case's rewrite (the family
-key) is the one that matters.  The result is written as `NAME.json`
+key) is the one that matters; a revert is kept only when the severity
+and both answers are unchanged.  The result is written as `NAME.json`
 (srepr) and `NAME.py` (standalone: `PYTHONHASHSEED=0 python NAME.py`
 replays it and asserts the violation).
 
@@ -228,16 +229,30 @@ of another cause.  The key has a seventh component, `family_detail`:
   enumerated) and follows the structure of `restate` for compound
   formulas, so a shrunk case, a hand-reduced pin and an old finding file
   all get it.  A compound restatement SymPy flattens or evaluates beyond
-  that structure is `?(<head>)` (23 of 6,314 restatements over every
-  profile; `tests/test_pin_family_key.py` holds it under 1 %).
+  that structure is `?(<head of the original atom>)` (23 of 6,314
+  restatements over every profile; `tests/test_pin_family_key.py` holds
+  it under 1 %), and `pins --write` refuses to record it.  `restate`
+  traces the branch that fired (`_RESTATE_TRACE`, test only) and the test
+  compares it with `rewrite_of`'s name; the one unavoidable disagreement
+  is `is_true` around a `Relational`, which SymPy builds as the `Q`
+  relation, the output of `q-relation` (the same variant either way).
 * **I3**: the declared fact of the `declared` kind (`declared:pred=value`).
 * **I7**: the setting changed (`setting:<name>`).
 * **I1**: `blocks` when the rule blocks were dropped as clauses.
-* **I2**: nothing more: its kinds already name the unrelated material
-  (the generator of the variant), and the constant classes stay out of
-  them as before.  **I4** and **I6** have one rewrite each.
+* **I2**: the proposition's heads (`prop:<predicates and relations>`,
+  `prop_heads`).  The kinds (`relation`, `pred`, `closed`, ...) are as
+  coarse as the I5 kind was: a pin of kinds `('relation',)` would absorb
+  an unrelated `zero(g(0, ...))` and an `irrational(g(n))` finding.  On
+  the 24 I2 findings of the two nightly runs, matching one finding as a
+  pin against the others (kinds as a subset, as before shrinking) gives
+  30 absorptions under the old key and 16 under the new one.  The
+  constant classes stay out of the kinds as before.
+* **I6**: the mechanism, `in-process` (the renamed query) or `process`
+  (a `hashseed` subprocess).  **I4** has one rewrite.
 
-A pinned case also records **`config_specific`**: true when it does not
+The fingerprint is recomputed at match time and never read from a pin
+file; `pins --write` does not write it.  A pinned case also records
+**`config_specific`**: true when it does not
 reproduce with the same answers under the `default` preset (#113's pin:
 under `default` transfer supplies `real(x)`); such a pin matches only a
 finding under the same settings.  Before shrinking, the I2 kinds of a

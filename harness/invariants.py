@@ -868,6 +868,17 @@ def restate_given(b, rng: random.Random):
     return rw(x)
 
 
+#: when a list, ``restate`` appends the name of each atom rule it applies
+#: (``rewrite_of``'s names; the test compares the two)
+_RESTATE_TRACE: Optional[list] = None
+
+
+def _traced(rule, value):
+    if _RESTATE_TRACE is not None:
+        _RESTATE_TRACE.append(rule() if callable(rule) else rule)
+    return value
+
+
 def restate(b, rng: random.Random, p: float = 0.5):
     """An equivalent restatement of the Boolean ``b``: swapped relation
     sides (``lt(a, b)`` -> ``gt(b, a)``), the three spellings of a
@@ -877,51 +888,52 @@ def restate(b, rng: random.Random, p: float = 0.5):
     if rng.random() < p * 0.5:
         g = restate_given(b, rng)                 # an equivalence under a declared fact
         if g is not None:
-            return g
+            return _traced("given", g)
     if isinstance(b, AppliedPredicate):
         f = b.function
         if f in _SWAP and rng.random() < p * 0.8:
             r = _shift_relation(b, rng)         # first: shifted, scaled, one-sided (the rewrites)
             if r is not None:
-                return r
+                return _traced("shift-relation", r)
         if f in _SWAP and rng.random() < p * 0.6:
             a, c = b.arguments
-            return _SWAP[f](c, a)
+            return _traced("swap", _SWAP[f](c, a))
         if f in _SWAP and rng.random() < p:
             try:
-                return {v: k for k, v in _QREL.items()}[f](*b.arguments)
+                return _traced("relational", {v: k for k, v in _QREL.items()}[f](*b.arguments))
             except Exception:  # noqa: BLE001
                 return b
         if f == Q.zero and _scalar(b.arguments[0]) and rng.random() < p:
-            return Q.eq(b.arguments[0], S.Zero)             # zero(x) is x = 0 for every scalar value
+            return _traced("zero-eq", Q.eq(b.arguments[0], S.Zero))             # zero(x) is x = 0 for every scalar value
         if f == Q.eq and b.arguments[1] == S.Zero and _scalar(b.arguments[0]) and rng.random() < p:
-            return Q.zero(b.arguments[0])
+            return _traced("eq-zero", Q.zero(b.arguments[0]))
         if f in _SWAP and rng.random() < p * 1.6:
             r = _shift_relation(b, rng)
             if r is not None:
-                return r
+                return _traced("shift-relation", r)
         if f in _SPLIT and _scalar(b.arguments[0]) and rng.random() < p * 0.6:
-            return _SPLIT[f](*b.arguments)              # the predicate as a union / intersection of others
+            return _traced("split", _SPLIT[f](*b.arguments))              # the predicate as a union / intersection of others
         if f in _IMPLIED and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
-            return And(b, getattr(Q, rng.choice(_IMPLIED[f]))(*b.arguments))   # a conjunct it implies
+            return _traced("implied", And(b, getattr(Q, rng.choice(_IMPLIED[f]))(*b.arguments)))   # a conjunct it implies
         if f in _TERM_FORMS and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
             if f in _SIGN_FLIP and rng.random() < 0.4:
-                return _SIGN_FLIP[f](-b.arguments[0])
-            return f(rng.choice(_TERM_FORMS[f])(b.arguments[0]))
+                return _traced("sign-flip", _SIGN_FLIP[f](-b.arguments[0]))
+            g = rng.choice(_TERM_FORMS[f])
+            return _traced(lambda: "term-form:" + _form_tag(g), f(g(b.arguments[0])))
         if rng.random() < p * 0.6:
-            return Q.is_true(b)
+            return _traced("is_true", Q.is_true(b))
         return b
     if rng.random() < p * 0.15:
-        return Not(Not(b, evaluate=False), evaluate=False)   # a double negation, unevaluated
+        return _traced("double-not", Not(Not(b, evaluate=False), evaluate=False))   # a double negation, unevaluated
     if isinstance(b, Relational):
         cls = type(b)
         if cls in _QREL and rng.random() < p:
-            return _QREL[cls](*b.args)
+            return _traced("q-relation", _QREL[cls](*b.args))
         if rng.random() < p * 0.3:
-            return Q.is_true(b)
+            return _traced("is_true", Q.is_true(b))
         if cls in _RSWAP and rng.random() < p:
             try:
-                return _RSWAP[cls](b.rhs, b.lhs)
+                return _traced("swap", _RSWAP[cls](b.rhs, b.lhs))
             except Exception:  # noqa: BLE001
                 return b
         return b
@@ -930,7 +942,7 @@ def restate(b, rng: random.Random, p: float = 0.5):
         if isinstance(inner, AppliedPredicate) and inner.function in (Q.eq, Q.ne) and rng.random() < p:
             # ne is the complement of eq for every value (unlike lt/ge)
             f = Q.ne if inner.function == Q.eq else Q.eq
-            return f(*inner.arguments)
+            return _traced("ne-eq", f(*inner.arguments))
         if isinstance(inner, (And, Or)) and rng.random() < p:
             # De Morgan
             other = Or if isinstance(inner, And) else And
@@ -1528,13 +1540,16 @@ def shrink(v: Violation, max_tests: int = 400) -> Violation:
             v.assum, v.variant = _join([c for c, _ in pairs]), variant_of(pairs)
         # a conjunct the violation needs whose restatement it does not:
         # spelled as it was, so that the case's rewrite (the family key)
-        # is the one that matters
+        # is the one that matters.  Kept only when the severity and both
+        # answers are unchanged (a revert must not change the finding)
+        assum5 = _join([c for c, _ in pairs])
+        before = evaluate(v, v.prop, assum5, variant_of(pairs))[:3]
         for i in range(len(pairs)):
             c, q = pairs[i]
             if q == to_srepr(c):
                 continue
             trial = pairs[:i] + [(c, to_srepr(c))] + pairs[i + 1:]
-            if test_p5(trial):
+            if evaluate(v, v.prop, assum5, variant_of(trial))[:3] == before and test_p5(trial):
                 pairs = trial
                 v.variant = variant_of(pairs)
         cs = []                                  # done
@@ -1750,9 +1765,12 @@ def _atom_terms(b) -> str:
     return ",".join(sorted({term_class(t) for t in args})) or "-"
 
 
+_FORM_SYMBOL = Symbol("_form_tag_x")
+
+
 def _form_tag(g) -> str:
     """``neg``, ``scale`` or ``shift``: which ``_TERM_FORMS`` transform ``g`` is."""
-    d = Dummy("d")
+    d = _FORM_SYMBOL               # a Symbol: no Dummy (SymPy's global Dummy counter stays as on main)
     r = g(d)
     if r == -d:
         return "neg"
@@ -1951,20 +1969,39 @@ def i5_rewrite(prop, assum, variant: dict) -> List[str]:
                 if not r[0].startswith("?"):
                     got = r
                     break
-            out.extend(got or [f"?({_atom_head(q)})"])
+            out.extend(got or (rewrite_of(order[0], q) if order else [f"?({_atom_head(q)})"]))
     return sorted(set(out))
+
+
+def prop_heads(prop) -> str:
+    """``prop:<heads>``: the predicate and relation names of the
+    proposition's atoms, sorted (the I2 key: what was asked, whose answer
+    the unrelated material changed)."""
+    heads = set()
+
+    def walk(e):                  # the Boolean structure (``atoms`` misses some applied predicates)
+        if isinstance(e, (AppliedPredicate, Relational)):
+            heads.add(_atom_head(e))
+        elif isinstance(e, (Not, And, Or, Implies, Equivalent)):
+            for a in e.args:
+                walk(a)
+    walk(prop)
+    return "prop:" + (",".join(sorted(heads)) or "-")
 
 
 def family_detail(v: "Violation") -> tuple:
     """The component of the family key that names the variant's rewrite:
-    I5 the rewrites (``variant["rewrite"]``, computed when missing), I3 the
-    declared fact, I7 the setting, I1 the blocks mode; empty for I2 (the
-    kinds are its material's identity), I4 and I6 (one rewrite each)."""
+    I5 the rewrites (``variant["rewrite"]``, computed without storing when
+    missing), I2 the proposition's heads, I3 the declared fact, I7 the
+    setting, I1 the blocks mode, I6 the mechanism (in-process rename or a
+    ``hashseed`` subprocess); empty for I4 (one rewrite)."""
     var = v.variant
     if v.inv == "I5":
-        if "rewrite" not in var:
-            v.variant = var = dict(var, rewrite=i5_rewrite(v.prop, v.assum, var))
-        return tuple(var["rewrite"])
+        return tuple(var["rewrite"] if "rewrite" in var else i5_rewrite(v.prop, v.assum, var))
+    if v.inv == "I2":
+        return (prop_heads(v.prop),)
+    if v.inv == "I6":
+        return ("process" if var.get("hashseed") is not None else "in-process",)
     if v.inv == "I3" and var.get("kind") == "declared":
         return (f"declared:{var.get('pred')}={var.get('value')}",)
     if v.inv == "I7":
@@ -2161,8 +2198,10 @@ def pin_record(path: str) -> Dict[str, Any]:
 def rerecord_pins(directory: str = PINNED_DIR, write: bool = False) -> List[Dict[str, Any]]:
     """Every pinned case of ``directory`` (``*.json``, not ``fixed/``)
     through ``pin_record``; with ``write`` the recomputed fields are
-    written back into the case (``variant.rewrite``, ``fingerprint``,
-    ``config_specific``), nothing else changes.  ``python -m harness pins
+    written back into the case (``variant.rewrite``, ``config_specific``;
+    the fingerprint is recomputed at match time, never read from the
+    file), nothing else changes; a rewrite with ``?(...)`` (a restatement
+    ``rewrite_of`` does not name) is refused.  ``python -m harness pins
     --write`` is the one-liner after a change of the family key or a
     rebase that brings new pins; without ``--write`` it checks that every
     pin is recorded and current."""
@@ -2176,9 +2215,12 @@ def rerecord_pins(directory: str = PINNED_DIR, write: bool = False) -> List[Dict
         if write and not rec["gone"]:
             with open(path) as fh:
                 d = json.load(fh)
+            if any(r.startswith("?") for r in rec.get("rewrite") or ()):
+                rec["unclassified"] = True     # not written: classify the rule first
+                out.append(rec)
+                continue
             if rec.get("rewrite") is not None:
                 d["variant"]["rewrite"] = rec["rewrite"]
-            d["fingerprint"] = rec["fingerprint"]
             d["config_specific"] = rec["config_specific"]
             with open(path, "w") as fh:
                 json.dump(d, fh, indent=1)
