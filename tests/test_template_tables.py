@@ -169,10 +169,14 @@ def test_comparison_detects_a_wrong_row(monkeypatch):
     nodes = _subexprs([x * y, x**y, x**2])
     row = next(r for r in iter_rows(core.MUL_TABLE) if r.name == 'one_neg')
     new = _run(nodes)
-    with monkeypatch.context() as m:
-        m.setattr(row, "concl", (('N', 'extended_positive'),))
-        mutated = _run(nodes)
-    _clear()
+    try:
+        with monkeypatch.context() as m:
+            m.setattr(row, "concl", (('N', 'extended_positive'),))
+            row._compile()
+            mutated = _run(nodes)
+    finally:
+        row._compile()
+        _clear()
     assert new[x * y] != mutated[x * y]
 
 

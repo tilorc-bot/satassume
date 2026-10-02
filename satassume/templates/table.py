@@ -43,7 +43,7 @@ GE2 = 'int>=2'
 class Row:
     """One rule schema: ``And(prem) -> Or(concl)`` (``kind='rule'``) or
     ``prem -> (concl[0] <-> concl[1])`` (``kind='equiv'``)."""
-    __slots__ = ('concl', 'kind', 'name', 'note', 'preds', 'prem', 'when')
+    __slots__ = ('_concl', '_ge2', '_prem', 'concl', 'kind', 'name', 'note', 'preds', 'prem', 'when')
 
     def __init__(self, name: str, prem, concl, when=(), preds=None, kind='rule', note=''):
         self.name = name
@@ -58,6 +58,14 @@ class Row:
         self.note = note
         if kind == 'equiv' and len(concl) != 2:
             raise ValueError(f"{name}: an equiv row has two literals")
+        self._compile()
+
+    def _compile(self):
+        """Normalize the literals for the interpreter (called again by
+        whoever replaces ``prem`` or ``concl``, e.g. a mutation test)."""
+        self._prem = tuple(_norm(s) for s in self.prem)
+        self._concl = tuple(_norm(s) for s in self.concl)
+        self._ge2 = any(s[1] == GE2 for s in self.prem)
 
     def __repr__(self):
         return f"Row({self.name!r})"
@@ -110,33 +118,36 @@ def _holds(when, guards, ctx) -> bool:
     return True
 
 
-def _pred(p, cur):
-    if p == '$p':
-        return cur
-    if p == 'flip:$p':
-        return SIGN_FLIP.get(cur, cur)
-    return p
+def _norm(spec):
+    """``(slot, pred, pos, mode)``: mode 1 for ``'$p'``, 2 for ``'flip:$p'``."""
+    pred = spec[1]
+    mode = 1 if pred == '$p' else 2 if pred == 'flip:$p' else 0
+    return (spec[0], pred, spec[2] if len(spec) > 2 else True, mode)
 
 
 def _lits(spec, slots, cur):
-    """The literals of one row literal: one per index of its slot."""
-    k = spec[0]
-    pos = spec[2] if len(spec) > 2 else True
-    pred = _pred(spec[1], cur)
-    if isinstance(k, int):
-        return [(k, pred, pos)]
-    v = slots[k]
-    if isinstance(v, int):
+    """The literals of one (normalized) row literal: one per index of its
+    slot."""
+    k, pred, pos, mode = spec
+    if mode:
+        pred = cur if mode == 1 else SIGN_FLIP.get(cur, cur)
+    v = k if type(k) is int else slots[k]
+    if type(v) is int:
         return [(v, pred, pos)]
     return lits(v, pred, pos)
 
 
-def _premise_alternatives(prem, slots, cur):
+def _premise_alternatives(row, slots, cur):
     """The premise lists of a row (more than one only for ``int>=2``)."""
+    if not row._ge2:
+        prem = []
+        for spec in row._prem:
+            prem += _lits(spec, slots, cur)
+        return (prem,)
     alts = [[]]
-    for spec in prem:
+    for spec in row._prem:
         if spec[1] == GE2:
-            k = slots[spec[0]] if not isinstance(spec[0], int) else spec[0]
+            k = spec[0] if type(spec[0]) is int else slots[spec[0]]
             alts = [a + list(g) for a in alts for g in ge2_alternatives(k)]
         else:
             ls = _lits(spec, slots, cur)
@@ -145,17 +156,19 @@ def _premise_alternatives(prem, slots, cur):
 
 
 def _row_specs(row: Row, slots, cur):
-    for prem in _premise_alternatives(row.prem, slots, cur):
+    out = []
+    for prem in _premise_alternatives(row, slots, cur):
         if row.kind == 'equiv':
-            (a,), (b,) = (_lits(row.concl[0], slots, cur), _lits(row.concl[1], slots, cur))
+            (a,), (b,) = (_lits(row._concl[0], slots, cur), _lits(row._concl[1], slots, cur))
             # Rules.equiv: cond -> (a <-> b) as two rules
-            yield [*prem, a], [b]
-            yield [*prem, b], [a]
+            out.append(([*prem, a], [b]))
+            out.append(([*prem, b], [a]))
         else:
             concl = []
-            for spec in row.concl:
+            for spec in row._concl:
                 concl += _lits(spec, slots, cur)
-            yield prem, concl
+            out.append((prem, concl))
+    return out
 
 
 def _rows(rows, guards, ctx, slots) -> Iterator[tuple[Any, list, list]]:
@@ -165,9 +178,19 @@ def _rows(rows, guards, ctx, slots) -> Iterator[tuple[Any, list, list]]:
                 sctx = row.ctx(ctx)
                 yield from expand(row.table, row.guards, sctx, row.slots(ctx, slots))
             continue
-        if not _holds(row.when, guards, ctx):
+        if row.when and not _holds(row.when, guards, ctx):
             continue
+        fast = row.kind == 'rule' and not row._ge2
         for cur in (row.preds or (None,)):
+            if fast:
+                prem = []
+                for spec in row._prem:
+                    prem += _lits(spec, slots, cur)
+                concl = []
+                for spec in row._concl:
+                    concl += _lits(spec, slots, cur)
+                yield row, prem, concl
+                continue
             for prem, concl in _row_specs(row, slots, cur):
                 yield row, prem, concl
 
