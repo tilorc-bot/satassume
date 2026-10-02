@@ -352,11 +352,7 @@ with SymPy's on the corpus with `none=0` contradictions (`tools/compare.py
 
 Definition. A constant is an atom with `is_number` (`_common.is_constant`,
 `consts_of`). Its facts are `const_value(c, pred)`, SymPy's static `is_*`
-properties plus the derived new-system predicates (`_common.const_value`);
-a constant node also has `nan` as neither `complex` nor `extended_real`
-(`templates.atoms._NAN_FACTS`, closed under the rule base: every predicate
-implying a number or an extended real is False for `nan`, `finite`,
-`infinite` and `polar` stay open; SymPy leaves them all None).
+properties plus the derived new-system predicates (`_common.const_value`).
 
 Rules:
 

@@ -4,10 +4,8 @@ A relation whose two sides are numbers is the Boolean SymPy's own
 ``Relational`` gives it when that evaluates (``Eq(nan, 0)`` is False,
 ``Lt(0.5, 1)`` True; ``sympy_api._closed_relation``), so ``Q.lt(0.5, 1)``,
 ``Lt(0.5, 1)`` and ``True`` are one statement, as the I5 restatements
-assume.  ``nan`` is no number and no extended real
-(``templates.atoms._NAN_FACTS``), so ``Q.zero(nan)`` agrees with
-``Q.eq(nan, 0)``.  The pinned repros are
-``harness/repros/invariants/fixed/I5-nan-*`` and ``I5-float-*``.
+assume.  The fixed repros are ``harness/repros/invariants/fixed/I5-nan-*``
+and ``I5-float-*``.
 """
 import pytest
 
@@ -101,32 +99,23 @@ def test_invalid_comparison_keeps_the_relation_atom():
     assert ask(Q.le(nan, 1), engine=Engine()) is False
 
 
-NO_NUMBER = ["zero", "nonzero", "positive", "negative", "nonnegative", "nonpositive",
-             "real", "extended_real", "complex", "rational", "integer", "even", "odd",
-             "imaginary", "algebraic", "transcendental", "irrational", "noninteger",
-             "extended_positive", "extended_negative", "extended_nonzero",
-             "extended_nonnegative", "extended_nonpositive", "positive_infinite",
-             "negative_infinite", "prime", "composite"]
-
-
-@pytest.mark.parametrize("pred", NO_NUMBER)
-def test_nan_is_no_number(pred):
-    """Every predicate that implies a number or an extended real is False
-    for ``nan`` (SymPy: None), as the relation glue already reads it."""
-    p = getattr(Q, pred)(nan)
-    assert ask(p, engine=Engine()) is False
-    assert ask_ref(p) is False
-
-
-@pytest.mark.parametrize("pred", ["finite", "infinite"])
-def test_nan_finiteness_stays_open(pred):
-    assert ask(getattr(Q, pred)(nan), engine=Engine()) is None
+def test_nan_facts_stay_sympys():
+    """The unary facts of ``nan`` stay SymPy's (all None but commutative;
+    ``sympy/assumptions/tests/test_query.py`` asserts them), so
+    ``Q.zero(nan)`` is None while ``Q.eq(nan, 0)``, SymPy's ``Eq(nan, 0)``,
+    is False: SymPy's own answers break ``zero(x)`` <-> ``eq(x, 0)`` at
+    ``nan``, and the I5 restatement of it is pinned
+    (``harness/repros/invariants/I5-nan-zero-is-none-eq-zero-is-false``)."""
+    for pred in ("zero", "real", "extended_real", "complex", "positive", "finite"):
+        assert ask(getattr(Q, pred)(nan), engine=Engine()) is None
+        assert sympy.ask(getattr(Q, pred)(nan)) is None
+    assert ask(Q.eq(nan, 0), engine=Engine()) is False
     assert ask(Q.commutative(nan), engine=Engine()) is True
 
 
 def test_zero_and_eq_zero_agree_on_constants():
     """``zero(c)`` <-> ``eq(c, 0)`` (an I5 restatement) for the constants the
-    harness pools use."""
-    for c in [nan, zoo, oo, -oo, I, S.Zero, S.One, Rational(-1, 3), pi, E, Float(0.5),
-              Float(0), sqrt(2), pi - pi, 1 + I]:
+    harness pools use, ``nan`` excepted (above)."""
+    for c in [zoo, oo, -oo, I, S.Zero, S.One, Rational(-1, 3), pi, E, Float(0.5),
+              Float(0), sqrt(2), 1 + I]:
         assert ask(Q.zero(c), engine=Engine()) is ask(Q.eq(c, 0), engine=Engine()), c
