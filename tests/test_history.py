@@ -378,10 +378,11 @@ def test_checker_catches_a_planted_cache_leak(monkeypatch):
             orig_put(self, x, "positive", True)        # a fact no query derived
 
     monkeypatch.setattr(DictCache, "put", leaky_put)
-    # a context-free query writes the facts of its cone back (a contextual
-    # one parks the units outside the demanded neighbourhood, so it would
-    # write nothing about x here)
-    items = [Ask(Q.positive(x + 1), True), Ask(Q.positive(x), True)]
+    # the cache is a memo of is_ (#97 P2): a context-free query with a
+    # definite answer memoizes it, which is when the leak is planted (a
+    # None, as Q.positive(x + 1) for a plain x, is never written; a
+    # contextual query writes nothing)
+    items = [Ask(Q.commutative(x + 1), True), Ask(Q.positive(x), True)]
     rows, _ = execute(items, preset("default"), ReferenceLevel.ENGINE)
     assert [r.mismatch for r in rows] == [False, True], [(r.warm, r.ref) for r in rows]
 
@@ -458,27 +459,20 @@ def test_srepr_unknown_name_is_a_name_error():
         from_srepr("NoSuchSymPyClass(Integer(1))")
 
 
-def test_answer_memo_repeating_the_query_is_history_free(monkeypatch):
+def test_answer_memo_repeating_the_query_is_history_free():
     """E1 and C6b with the query repeated context-free in the prefix (the
-    shape of E1c), under ``Engine(writeback="all")``, the old
-    history-dependent writeback: before #53 stage 5 the prefix query wrote a
-    fact back (E1: a root fact from an unguarded link) and the prefix's own
-    copy of the query put it in the answer memo, so only clearing both the
-    cache and the memo restored the fresh answer (carrier
+    shape of E1c).  Before #53 stage 5, under the old history-dependent
+    writeback (``Engine(writeback="all")``, removed by #97 P2), the prefix
+    query wrote a fact back (E1: a root fact from an unguarded link) and
+    the prefix's own copy of the query put it in the answer memo, so only
+    clearing both the cache and the memo restored the fresh answer (carrier
     ``cache+answers``, the cache's family C').  With the glue switched per
-    query neither vehicle carries the dependence any more, under any
-    writeback, and no context-free vehicle is known (a search over the
-    fixed repros and ~26k pairs of C6b's shape found none): this is now a
-    regression test, warm == fresh."""
+    query and the cache a memo of ``is_`` neither vehicle carries the
+    dependence any more, and no context-free vehicle is known (a search
+    over the fixed repros and ~26k pairs of C6b's shape found none): this
+    is a regression test, warm == fresh, under the default engine."""
     from harness.checker import item_from_json
     from harness.state import EngineConfig
-    make = EngineConfig.make
-
-    def make_all(self):
-        eng = make(self)
-        eng.writeback = "all"
-        return eng
-    monkeypatch.setattr(EngineConfig, "make", make_all)
 
     def pinned(name):
         with open(os.path.join(REPROS, "fixed", name)) as fh:

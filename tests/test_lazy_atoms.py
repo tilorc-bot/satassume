@@ -1,5 +1,5 @@
 """VarTable builds node atoms lazily (perf round 3, B2a): the atom of every
-variable, and what writeback caches, are what the eager table gave."""
+variable, and what the memo of ``is_`` holds, are what the eager table gave."""
 from sympy import Symbol, symbols
 
 from satassume.compile import VarTable
@@ -30,14 +30,24 @@ def test_atoms_match_eager_layout():
     assert t.new_nodes == [x, y] and t.new_custom == [P("my_custom_pred", y)]
 
 
-def test_writeback_caches_node_facts():
+def test_memo_caches_the_answer_only():
+    # was test_writeback_caches_node_facts: the queried node's root facts
+    # were written back (writeback="root-only" before #97 P2)
     x = Symbol("x", positive=True)
     eng = Engine()
     assert eng.is_(x + 1, "positive") is True
-    # facts derived at root about the queried node are written back under
-    # it; the argument's are recomputed (writeback="root-only")
+    # only the answer is memoized, under the queried node: nothing about the
+    # argument, and no other fact of x + 1 (its vocabulary is not written)
+    assert eng.cache.store == {x + 1: {"positive": True}}
     assert eng.cache.get(x, "positive", "missing") == "missing"
     assert eng.is_(x, "positive") is True
     assert eng.cache.get(x + 1, "positive") is True
+    assert eng.cache.get(x + 1, "negative", "missing") == "missing"
+    # a fact derived at root while answering is recomputed, then memoized
+    hits, sessions = eng.stats["cache_hits"], eng.stats["sessions"]
+    assert eng.is_(x + 1, "negative") is False
+    assert eng.stats["cache_hits"] == hits and eng.stats["sessions"] == sessions + 1
     assert eng.cache.get(x + 1, "negative") is False
+    assert eng.is_(x + 1, "negative") is False
+    assert eng.stats["cache_hits"] == hits + 1 and eng.stats["sessions"] == sessions + 1
     assert ask(Q.nonzero(x + 1)) is True

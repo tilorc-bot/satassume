@@ -168,17 +168,24 @@ def test_re_registration_restores_the_fact():
 def test_fact_cache_is_keyed_on_the_registry():
     eng = fresh()
     assert eng.is_(f(y), 'real') is None
-    assert eng.cache.get(f(y), 'real', "miss") is None      # the None is cached
+    assert eng.cache.get(f(y), 'real', "miss") == "miss"    # a None is not memoized
     extensions.register('real', AppliedUndef)(undef_real)
     assert eng.is_(f(y), 'real') is True
+    assert eng.cache.get(f(y), 'real', "miss") is True      # the answer is
     assert eng.stats["version_clears"] == 1
     extensions.unregister('real')
     assert eng.is_(f(y), 'real') is None
     assert eng.stats["version_clears"] == 2
-    # the next query is a cache hit again: only a change clears
+    # a None is recomputed, and only a change clears
     hits = eng.stats["cache_hits"]
     assert eng.is_(f(y), 'real') is None
-    assert eng.stats["cache_hits"] == hits + 1 and eng.stats["version_clears"] == 2
+    assert eng.stats["cache_hits"] == hits and eng.stats["version_clears"] == 2
+    # the next query after a re-registration is a cache hit again
+    extensions.register('real', AppliedUndef)(undef_real)
+    assert eng.is_(f(y), 'real') is True
+    assert eng.stats["version_clears"] == 3
+    assert eng.is_(f(y), 'real') is True
+    assert eng.stats["cache_hits"] == hits + 1 and eng.stats["version_clears"] == 3
 
 
 def test_custom_cache_is_keyed_on_the_registry():
@@ -190,7 +197,7 @@ def test_custom_cache_is_keyed_on_the_registry():
     extensions.register('hbig', Symbol)(big_negative)
     assert eng.custom_cache.get(m, 'hbig', "miss") is False  # stale until the next query
     assert eng.is_(m, 'hbig') is None
-    assert eng.custom_cache.get(m, 'hbig', "miss") is None
+    assert eng.custom_cache.get(m, 'hbig', "miss") == "miss"   # the stale False dropped, no None memoized
     # the custom path is guarded on its own (tools/query_log.py calls it)
     extensions.unregister('hbig')
     extensions.register('hbig', Symbol)(big)
@@ -324,11 +331,14 @@ def test_shared_cache_created_before_a_registration():
     drops the cache's contents at its first query."""
     old = fresh()
     assert old.is_(f(y), 'real') is None
-    assert old.cache.get(f(y), 'real', "miss") is None       # the None is cached
+    assert old.cache.get(f(y), 'real', "miss") == "miss"     # a None is not memoized
+    assert old.is_(f(y), 'commutative') is True              # a fact of the old epoch
+    assert old.cache.store == {f(y): {'commutative': True}}
     extensions.register('real', AppliedUndef)(undef_real)
     new = Engine(cache=old.cache)
     assert new.is_(f(y), 'real') is True
     assert new.stats["version_clears"] == 0                  # nothing of its own to drop
+    assert new.cache.store == {f(y): {'real': True}}         # the old epoch's fact was dropped
     # the cache carries its own epoch: ``old`` drops its sessions and memos,
     # not what ``new`` derived into the shared cache under the current epoch
     hits = old.stats["cache_hits"]
@@ -482,7 +492,7 @@ def _no_templates(node):
 SETTINGS = [("discovery_budget", 1), ("session_limit", 0), ("keep_sessions", 0),
             ("cone_search", False), ("cone_threshold", 0), ("transfer", False),
             ("uninterpreted", "none"), ("relevance", False),
-            ("writeback", "provenance"), ("templates", _no_templates)]
+            ("writeback", "none"), ("templates", _no_templates)]
 
 SETTING_QUERIES = [(Q.real(x), Q.real(x) & Q.le(y, 1.5)),
                    (Q.real(x + 1), Q.real(x)),
