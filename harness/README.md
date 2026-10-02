@@ -153,12 +153,16 @@ after each registration event (six events per stream instead of three).
 
 `python -m harness audit` runs a stream through one engine, then compares
 *every fact in its cache* with what a fresh engine derives context-free for
-the same node (one fresh engine per node).  A cached fact a fresh engine
-does not derive flowed into the node from outside its own cone; the query
-that first wrote it is found by replay and the finding goes through the
-usual shrink, attribution and repro.  This finds the C-type flows
-deterministically instead of waiting for a lucky probe query, and it found
-the E, L and C' routes below.
+the same node (one fresh engine per node).  Since issue #97 (P2) the
+cache is a pure memo of `Engine.is_` (only `is_` writes, True or False,
+and no session reads it), so the audit checks exactly the memo property:
+a cached fact a fresh engine does not derive is a fact that some other
+path wrote, or an `is_` whose session was not the fresh engine's; the
+query that first wrote it is found by replay and the finding goes through
+the usual shrink, attribution and repro.  Before P2 a cached fact could
+also have flowed into the node from outside its own cone (a session's
+root facts written back); this mode found the E, L and C' routes below
+that way, deterministically instead of waiting for a lucky probe query.
 
 ## Modes
 

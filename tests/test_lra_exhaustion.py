@@ -304,12 +304,13 @@ def test_constants_small_limits_are_not_certified(monkeypatch):
     assert reached >= 1                      # the atoms were not certified
 
 
-@pytest.mark.parametrize("policy", ["provenance", "all"])
+@pytest.mark.parametrize("policy", ["root-only", "none"])
 def test_writeback_policies_warm_equals_fresh(policy, monkeypatch):
-    # writeback="provenance"/"all": a session writes its root facts back
-    # once its query is answered (Session.writeback); nothing is held for
-    # a re-answer since issue #97 (there is none), and the facts a
-    # discarded session wrote are those a fresh engine's same query writes
+    # writeback="root-only" memoizes the answer of is_, "none" memoizes
+    # nothing (the "provenance"/"all" policies, a session writing its root
+    # facts back, were removed by #97 P2); nothing is held for a re-answer
+    # since issue #97 (there is none), and no contextual session writes
+    # or reads a fact, so the warm engine answers as a fresh one
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
     e = Engine(writeback=policy)
     assert not hasattr(e, "_hold_writeback")

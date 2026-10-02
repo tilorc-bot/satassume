@@ -469,7 +469,7 @@ class Solver:
         # Every strengthening of a clause goes through _add_lits (the slow
         # paths of add_clauses, add_internal and add_pattern included).
         # ``track_owners`` False (a client that never asks for provenance,
-        # e.g. Engine(writeback="root-only")): nothing of this is recorded,
+        # e.g. the engine's sessions since #97 P2): nothing of this is recorded,
         # and the client leaves ``owner`` at BOTTOM, so every bookkeeping
         # site takes its fast path.
         self.track_owners = True

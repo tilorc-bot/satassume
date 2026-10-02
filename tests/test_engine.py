@@ -21,15 +21,24 @@ def templates(node):
     return []
 
 
-def make(**cache_facts):
+def make(**declared):
+    """An engine over ``templates`` whose leaves ``declared`` (``x={'positive':
+    True}``) carry those facts as template literals, the way a Symbol's
+    ``assumptions0`` do.  Before #97 (P2) the facts were put into the cache
+    and the sessions asserted them; the cache is a memo of ``is_`` now, a
+    session never reads it, so declared facts are inputs of the templates.
+    The cache is returned empty for the memo assertions."""
+    def declaring(node):
+        facts = declared.get(node) if isinstance(node, str) else None
+        if not facts:
+            return templates(node)
+        return [P(p, node) if v else Not(P(p, node)) for p, v in facts.items()]
     cache = DictCache()
-    for node, facts in cache_facts.items():
-        for p, v in facts.items():
-            cache.put(node, p, v)
-    return Engine(templates=templates, cache=cache), cache
+    return Engine(templates=declaring, cache=cache), cache
 
 
-def test_rule_closure_from_cached_fact():
+def test_rule_closure_from_declared_fact():
+    # was test_rule_closure_from_cached_fact: the fact was a cache input
     eng, cache = make(x={'positive': True})
     assert eng.is_('x', 'real') is True
     assert eng.is_('x', 'nonzero') is True
@@ -37,35 +46,50 @@ def test_rule_closure_from_cached_fact():
     assert eng.is_('x', 'complex') is True
     assert eng.is_('x', 'imaginary') is False
     assert eng.is_('x', 'integer') is None
-    # write-back: the closure landed in the cache, later hits are free
+    # the memo holds the answers given, True/False only, nothing of the
+    # closure that was not asked for; an answer, once given, is a free hit
+    assert cache.store['x'] == {'real': True, 'nonzero': True, 'negative': False,
+                               'complex': True, 'imaginary': False}
+    assert cache.get('x', 'extended_positive', 'missing') == 'missing'
+    hits, sessions = eng.stats['cache_hits'], eng.stats['sessions']
+    assert eng.is_('x', 'extended_positive') is True
+    assert eng.stats['cache_hits'] == hits and eng.stats['sessions'] == sessions + 1
     assert cache.get('x', 'extended_positive') is True
-    hits = eng.stats['cache_hits']
-    eng.is_('x', 'extended_positive')
-    assert eng.stats['cache_hits'] == hits + 1
+    assert eng.is_('x', 'extended_positive') is True
+    assert eng.stats['cache_hits'] == hits + 1 and eng.stats['sessions'] == sessions + 1
 
 
-def test_structural_template_and_child_writeback():
+def test_structural_template_and_child_facts_are_not_memoized():
+    # was test_structural_template_and_child_writeback
     eng, cache = make(x={'positive': True}, y={'positive': True})
     assert eng.is_(('add', 'x', 'y'), 'positive') is True
     assert eng.is_(('mul', 'x', 'y'), 'nonzero') is True
-    # derived about a child while answering the parent: the default
-    # writeback="root-only" caches only the queried node's facts, the child's
-    # are recomputed; writeback="provenance" caches them (they come from the
-    # child's own cone)
+    # derived about a child while answering the parent: only the queried
+    # node's answer is memoized, the child's facts are recomputed (the
+    # "provenance" policy that cached them was removed by #97 P2)
     assert cache.get('y', 'nonzero', 'missing') == 'missing'
+    assert cache.get('y', 'positive', 'missing') == 'missing'
     assert cache.get(('mul', 'x', 'y'), 'nonzero') is True
+    assert set(cache.store) == {('add', 'x', 'y'), ('mul', 'x', 'y')}
+    sessions = eng.stats['sessions']
     assert eng.is_('y', 'nonzero') is True
-    eng.writeback = "provenance"
-    cache.put('x', 'positive', True)
-    cache.put('y', 'positive', True)
-    assert eng.is_(('mul', 'x', 'y'), 'nonzero') is True
-    assert cache.get('y', 'nonzero') is True
+    assert eng.stats['sessions'] == sessions + 1
+    assert cache.store['y'] == {'nonzero': True}
+    with pytest.raises(ValueError, match="removed"):
+        eng.writeback = "provenance"
+    assert eng.writeback == "root-only"
 
 
-def test_unknown_stays_unknown_and_is_cached():
+def test_unknown_stays_unknown_and_is_not_memoized():
+    # was test_unknown_stays_unknown_and_is_cached: the None was cached
     eng, cache = make(x={'real': True}, y={'real': True})
     assert eng.is_(('add', 'x', 'y'), 'positive') is None
-    assert cache.get(('add', 'x', 'y'), 'positive', 'missing') is None
+    assert cache.get(('add', 'x', 'y'), 'positive', 'missing') == 'missing'
+    # a None is recomputed, never served from the cache
+    hits, sessions = eng.stats['cache_hits'], eng.stats['sessions']
+    assert eng.is_(('add', 'x', 'y'), 'positive') is None
+    assert eng.stats['cache_hits'] == hits and eng.stats['sessions'] == sessions + 1
+    assert ('add', 'x', 'y') not in cache.store
 
 
 def test_contextual_query_does_not_pollute_cache():
@@ -109,14 +133,18 @@ def test_sessions_are_per_query_and_facts_persist():
     for i in range(10):
         assert eng.is_(('add', 'x', f'z{i}'), 'real') is None
     assert eng.stats['sessions'] == 10
-    assert eng.is_('x', 'positive') is True     # cache hit, no new session
-    assert eng.stats['sessions'] == 10
-    # a fact about x derived while answering about x + z_i is not cached
-    # (writeback="root-only"): recomputed once, then cached as an answer
-    assert eng.is_('x', 'nonzero') is True
+    assert not cache.store                      # ten Nones: nothing memoized
+    # a fact about x used while answering about x + z_i is not memoized:
+    # computed once in its own session, then served as an answer
+    assert eng.is_('x', 'positive') is True
+    assert eng.stats['sessions'] == 11
+    assert eng.is_('x', 'positive') is True
     assert eng.stats['sessions'] == 11
     assert eng.is_('x', 'nonzero') is True
-    assert eng.stats['sessions'] == 11
+    assert eng.stats['sessions'] == 12
+    assert eng.is_('x', 'nonzero') is True
+    assert eng.stats['sessions'] == 12
+    assert cache.store == {'x': {'positive': True, 'nonzero': True}}
 
 
 def test_contextual_queries_build_and_discard():
@@ -169,9 +197,11 @@ def test_neighbourhood_contains_pred_and_rule_partners():
 
 
 def test_exactlyone_helper():
-    _, cache = make(x={'imaginary': True}, y={'real': True, 'nonzero': True})
     f = Implies(And(allargs('complex', ['x', 'y']), exactlyonearg('imaginary', ['x', 'y'])), P('imaginary', ('mul', 'x', 'y')))
-    # templates given at construction: assigning them later starts a new
-    # registry epoch, which drops the hand-filled cache
-    eng = Engine(templates=lambda n: [f] if n == ('mul', 'x', 'y') else templates(n), cache=cache)
+    # the declared facts of x and y are template literals (``make``); the
+    # product's own template is given at construction with them
+    eng, cache = make(x={'imaginary': True}, y={'real': True, 'nonzero': True})
+    declaring = eng.templates
+    eng = Engine(templates=lambda n: [f] if n == ('mul', 'x', 'y') else declaring(n), cache=cache)
     assert eng.is_(('mul', 'x', 'y'), 'imaginary') is True
+    assert cache.store == {('mul', 'x', 'y'): {'imaginary': True}}

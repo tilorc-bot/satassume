@@ -2,9 +2,10 @@
 
 All of them still reproduce at a186157, except G1-G6 (fixed by #51) and C,
 C2-C5, C4b (fixed by #54), B, B2, E1c (fixed by the complete set check,
-#73), and E1, E1b, L1, C6b, D (fixed by the writeback rule of #53:
-`Engine(writeback="root-only")`, the default, and the opt-in
-`"provenance"`; `Session.writeback`, `Engine._put_root_only`), T1,
+#73), and E1, E1b, L1, C6b, D (fixed by the writeback rule of #53,
+`Engine(writeback="root-only")`; since #97 P2 the cache is a pure memo of
+`Engine.is_`, `Engine._put_result`, and the opt-in `"provenance"` policy,
+`Session.writeback` and `Engine._put_root_only` are gone), T1,
 T3-T5, Gp1 (fixed by R2, component-scoped answering, #53), G7 (fixed by
 T3: a reused-session query whose search used branch and bound is
 answered again as a fresh engine would, #53) and Gp2, S1 (fixed by the
@@ -94,7 +95,8 @@ same with `prime(I*n)`.
 `fixed/`.  The carrier (write-back of a parent's structural facts to its
 arguments) remains; see C'.*
 
-`Session.writeback` writes every root literal of every node of a session
+`Session.writeback` (removed by #97 P2; no session writes to the cache
+now) wrote every root literal of every node of a session
 to the engine's `DictCache`, arguments included, and the templates have
 rules whose conclusions are about arguments (`_ADD_SUBTRACT`, the Mul
 zero rule, `commutative(node) -> commutative(arg)`, ...).  Whenever a
@@ -219,7 +221,7 @@ positive and zero links) for every vocabulary-atom argument of a query or
 assumption once the session has a relation atom, and `_order_infinite`
 decides `lt(e, 0)` at the root when `e` has an `oo` summand (a side that
 is `+oo` or undefined is never below anything).  The linked unary fact is
-a root literal and `Session.writeback` caches it on `e`; the unary
+a root literal and `Session.writeback` (removed by #97 P2) cached it on `e`; the unary
 templates alone do not derive it (`Add` with an `oo` term and an unknown
 term), so a fresh engine answers None.  Sound, more definite.
 
@@ -242,7 +244,8 @@ pinned by E1 and E1b.
 `Solver.entails` learns clauses; a learnt clause of length one is a root
 fact and is a consequence of the whole clause set of the session (the
 guarded assumption clauses are satisfiable with the selector false, so
-the consequence is context-free).  `writeback` caches it.  In L1 the
+the consequence is context-free).  `Session.writeback` cached it (removed
+by #97 P2: only the answer of `is_` is memoized now).  In L1 the
 search under `infinite(acos(-1/he))` settles the case split on the
 finiteness of `acos(-1/he)` and learns `~nonzero(inf + acos(-1/he))`
 (`inf` infinite: the sum is infinite or `nan`, never a nonzero real),
