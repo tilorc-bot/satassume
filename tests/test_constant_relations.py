@@ -191,3 +191,22 @@ def test_nan_pin_is_narrow(monkeypatch):
 
     assert inv._known(case(nan)) == "pinned:I5-nan-zero-is-none-eq-zero-is-false"
     assert inv._known(case(y)) is None
+
+
+def test_huge_exponent_float_is_not_folded_and_is_fast():
+    """``Rational(f)`` of a Float with a huge binary exponent builds an
+    integer of that many bits (review of #112: exponent 4e9, 30 s).  Past
+    ``_EXACT_BITS`` the relation is not folded (None, as on main), quickly;
+    exponents up to 1e8 only, on a shared host."""
+    import time
+    from satassume.sympy_api import _EXACT_BITS, _closed_relation
+    for e in (_EXACT_BITS + 1, 10**8, -10**8):
+        f = Float((0, 1, e, 1))
+        t = time.perf_counter()
+        for name, other in (("lt", S.One), ("eq", S.Zero), ("gt", S.Half)):
+            assert _closed_relation(name, f, other) is None, (e, name)
+        assert ask(Q.lt(f, 1), engine=Engine()) is None
+        assert ask(Q.gt(f, S.Half), engine=Engine()) is None
+        assert time.perf_counter() - t < 2.0, e
+    # at the bound it still folds: 2**10000 > 1 exactly and in SymPy
+    assert ask(Q.gt(Float((0, 1, _EXACT_BITS, 1)), 1), engine=Engine()) is True

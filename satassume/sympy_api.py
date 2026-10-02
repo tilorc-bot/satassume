@@ -302,6 +302,11 @@ def _relation_formula(expr, parts, relations: bool):
     return relation_atom(name, lhs, rhs)
 
 
+#: a Float whose binary exponent exceeds this many bits is not folded: its
+#: exact value ``Rational(f)`` has an integer of that many bits (an
+#: exponent of 4e9 took 30 s)
+_EXACT_BITS = 10_000
+
 _SREL = (("eq", _Eq), ("ne", _Ne), ("lt", _Lt), ("le", _Le), ("gt", _Gt), ("ge", _Ge))
 
 
@@ -323,7 +328,8 @@ def _closed_relation(name, lhs, rhs):
     ``Eq(Float('0.1', 30), 1/10)`` are True, ``Eq(0.1, Float('0.1', 30))``
     False), while EUF keeps Floats as opaque terms that a set can equate.
     ``Eq(0.1, 1/10)`` and ``0.1 > 1/10`` therefore stay atoms;
-    ``Lt(0.5, 1)``, ``Eq(0.5, 1/2)``, ``Ge(2.0, 2)`` fold.  Two Float
+    ``Lt(0.5, 1)``, ``Eq(0.5, 1/2)``, ``Ge(2.0, 2)`` fold; a Float with a
+    binary exponent beyond ``_EXACT_BITS`` does not.  Two Float
     sides never fold: ``Q.eq(x, 0.1) & Q.eq(x, Float('0.1', 30))`` has the
     model ``x = 1/10`` under SymPy's ``Eq``, and EUF equates the two Floats
     there, while their exact values differ.  Sides that are
@@ -341,6 +347,8 @@ def _closed_relation(name, lhs, rhs):
         return None
     v = bool(r)
     if lhs.is_Float or rhs.is_Float:
+        if any(e.is_Float and abs(e._mpf_[2]) > _EXACT_BITS for e in (lhs, rhs)):
+            return None                 # Rational(f) would build a huge integer
         exact = [_Rational(e) if e.is_Float and e.is_finite else e for e in (lhs, rhs)]
         try:
             x = rel(*exact)
