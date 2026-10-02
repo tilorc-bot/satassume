@@ -115,18 +115,22 @@ def exactlyonearg(pred: str, args: Iterable[Node]):
 
 
 def atoms_of(f) -> Tuple[P, ...]:
-    """All atoms occurring in a formula, in first-seen order."""
+    """All atoms occurring in a formula, in first-seen order (depth first,
+    left to right)."""
+    # an explicit stack, not a recursive closure: a nested function that
+    # calls itself is a reference cycle, left for the cyclic garbage
+    # collector at every call (most of the engine's cyclic garbage)
+    if isinstance(f, P):
+        return (f,)
     out = []
     seen = set()
-
-    def walk(g):
+    stack = [f]
+    while stack:
+        g = stack.pop()
         if isinstance(g, P):
             if g not in seen:
                 seen.add(g)
                 out.append(g)
         elif isinstance(g, Formula):
-            for a in g.args:
-                walk(a)
-
-    walk(f)
+            stack.extend(reversed(g.args))
     return tuple(out)
