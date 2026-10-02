@@ -221,6 +221,9 @@ class Session:
     def __init__(self, engine: "Engine"):
         self.engine = engine
         self.solver = Solver()
+        # no owner bookkeeping: nothing asks the solver for provenance
+        # (the provenance writeback of #53 stage 3 was removed by #97 P2)
+        self.solver.track_owners = False
         # the single-node rule base, propagated by the solver from shared
         # tables instead of 79 clauses per node (Solver.register_block)
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
