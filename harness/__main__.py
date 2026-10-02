@@ -2,6 +2,7 @@
 
     python -m harness fuzz     --seeds 0-9 --config default,tight [--queries N] [--sets K]
                                [--orders ...] [--custom] [--no-relations] [--confirm]
+                               [--ref-level engine|module|spec]
     python -m harness hypo     --examples N --config default [--custom]
     python -m harness replay   queries.jsonl --config default,reuse [--orders ...] [--limit N]
                                [--kinds ask,rec,old] [--chunk N]
@@ -95,10 +96,22 @@ def _ignore(args):
     return [k for k in args.ignore.split(",") if k]
 
 
+def _level(s) -> int:
+    """``--ref-level``: a number or a name (``engine``, ``module``, ``spec``)."""
+    from .checker import parse_level
+    try:
+        return int(parse_level(s))
+    except (KeyError, ValueError):
+        raise argparse.ArgumentTypeError(f"unknown reference level {s!r}")
+
+
 def _common(ap):
     ap.add_argument("--config", default="default", help="comma-separated presets, or 'all'")
     ap.add_argument("--orders", default=",".join(DEFAULT_ORDERS))
-    ap.add_argument("--ref-level", type=int, default=1, choices=(1, 2))
+    ap.add_argument("--ref-level", type=_level, default=1, choices=(1, 2, 4),
+                    help="1 (engine: a fresh engine, the default), 2 (module: also module "
+                         "memos reset) or 4 (spec: a fresh engine and satassume.ref.ask_ref, "
+                         "each disagreement tagged with its level); names accepted")
     ap.add_argument("--ref-check-every", type=int, default=0,
                     help="every k-th query also gets a module-level reference")
     ap.add_argument("--out", default="harness-results")
@@ -341,7 +354,8 @@ def cmd_exec(args) -> int:
     cfg = EngineConfig.from_dict(d["config"])
     items = [item_from_json(i) for i in d["items"]]
     rows, _ = execute(items, cfg, args.ref_level, ref_for_last=True)
-    print(json.dumps([{"index": r.index, "warm": r.warm, "ref": r.ref} for r in rows]))
+    print(json.dumps([{"index": r.index, "warm": r.warm, "ref": r.ref,
+                       **({"spec": r.spec} if r.spec is not None else {})} for r in rows]))
     return 0
 
 
@@ -495,7 +509,7 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("exec")
     p.add_argument("file")
-    p.add_argument("--ref-level", type=int, default=1)
+    p.add_argument("--ref-level", type=_level, default=1)
     p.set_defaults(fn=cmd_exec)
 
     p = sub.add_parser("inventory")

@@ -343,6 +343,125 @@ def test_transfer_profile_finds_no_transfer_dependence():
     _assert_no_discrepancy(rep)
 
 
+# -- both reference levels: a fresh engine (ENGINE) and the spec (SPEC) --------
+#
+# ``ReferenceLevel.SPEC`` compares the long-lived engine with a fresh engine
+# and with ``satassume.ref.ask_ref``, the eager reference of docs/spec.md.
+# The pinned and fixed repros are replayed at both levels, every row of the
+# replay checked; a SPEC-level disagreement is pinned below as a strict
+# xfail with its tag (``harness.checker.spec_tag``) and query.
+
+#: repro file -> (SPEC tag, the disagreeing query of its replay)
+SPEC_DIFFERENCES = {
+    "D-discovery-budget-truncates-fresh-cone": (
+        "budget", "ask(Q.lt(1, sqrt(2)) | Q.ne(E, w + (I*w)**(1/3)*Abs(j)**(2/3)), True): "
+        "engine None, ask_ref True (and the next prefix query, None vs False); "
+        "the repro's config has discovery_budget below the cone"),
+    "L1-learnt-unit-written-back": (
+        "relevance", "ask(Q.imaginary((ir + 2)*(inf - 1 + I)) | ~Q.nonzero(inf + acos(-1/he)), "
+        "Q.gt(-1/3, 1/(2*al)) & Q.infinite(acos(-1/he))): engine None, ask_ref True; "
+        "a fresh engine with relevance=False answers True"),
+}
+
+
+def _level_params():
+    out = []
+    pinned = sorted(glob.glob(os.path.join(REPROS, "*.json")))
+    fixed = sorted(glob.glob(os.path.join(REPROS, "fixed", "*.json")))
+    for level in (ReferenceLevel.ENGINE, ReferenceLevel.SPEC):
+        for path in pinned + fixed:
+            name = os.path.basename(path)[:-5]
+            marks = []
+            if level == ReferenceLevel.SPEC and name in SPEC_DIFFERENCES:
+                tag, query = SPEC_DIFFERENCES[name]
+                marks.append(pytest.mark.xfail(strict=True, raises=AssertionError,
+                                                reason=f"SPEC {tag}: {query}"))
+            elif level == ReferenceLevel.ENGINE and path in pinned:
+                marks.append(pytest.mark.xfail(strict=True, raises=AssertionError,
+                                                reason="pinned repro: harness/repros/README.md"))
+            out.append(pytest.param(level, path, id=f"{level.name}-{name}", marks=marks))
+    return out
+
+
+@pytest.mark.parametrize("level,path", _level_params())
+def test_repro_at_both_levels(level, path):
+    """Every query of a repro's replay (prefix and final query) agrees with
+    the reference of ``level``: a fresh engine (ENGINE) or a fresh engine
+    and ``ask_ref`` (SPEC).  An error on any side fails, not xfails."""
+    from harness.checker import item_from_json, spec_tag
+    from harness.state import EngineConfig
+    with open(path) as fh:
+        d = json.load(fh)
+    cfg = EngineConfig.from_dict(d["config"])
+    items = [item_from_json(i) for i in d["prefix"]] + [item_from_json(d["item"])]
+    rows, _ = execute(items, cfg, level)
+    for r in rows:
+        _fail_on_error(r.warm, r.ref)
+        if level == ReferenceLevel.SPEC:
+            _fail_on_error(r.warm, r.spec)
+            assert r.spec is not None
+    bad = [(str(r.item), r.warm, r.ref, r.spec, spec_tag(r.warm, r.spec, r.budget_limited)
+            if r.spec is not None else None) for r in rows if r.mismatches()]
+    assert not bad, bad
+
+
+@pytest.mark.parametrize("level", [ReferenceLevel.ENGINE, ReferenceLevel.SPEC], ids=lambda l: l.name)
+@pytest.mark.parametrize("profile,seed", [("links", 13), ("transfer", 2)])
+def test_ci_profiles_at_both_levels(profile, seed, level):
+    """The CI-sized ``links`` and ``transfer`` runs find nothing at either
+    level: at SPEC every warm answer is also ``ask_ref``'s (no finding, no
+    budget or relevance difference, no defect)."""
+    cfg = preset("default")
+    items = random_stream(seed, n=100, nsets=4, profile=profile)
+    rep = Checker(cfg, level, ("forward",), seed=seed, max_discrepancies=1).run(items)
+    _assert_no_discrepancy(rep)
+    assert rep.mismatches == 0 and rep.spec_mismatches == 0, rep.to_json()
+    if level == ReferenceLevel.SPEC:
+        assert rep.queries == len(items) and rep.spec_seconds > 0, rep.to_json()
+
+
+def test_spec_level_tags():
+    """``spec_tag`` and the SPEC-level discrepancy of a checker run: an
+    engine answer the spec does not entail is a ``finding``; None against
+    a definite spec answer is ``budget`` or ``relevance``; a contradiction
+    or a one-sided ValueError is a ``defect``."""
+    from harness.checker import spec_tag
+    assert spec_tag("True", "True") is None
+    assert spec_tag("True", "None") == "finding"
+    assert spec_tag("None", "False") == "relevance"
+    assert spec_tag("None", "False", budget_limited=True) == "budget"
+    assert spec_tag("True", "False") == "defect"
+    assert spec_tag("ValueError", "None") == "defect"
+    assert spec_tag("None", "ValueError") == "defect"
+    assert spec_tag("Error:TypeError", "True") == "defect"
+    assert is_known_family("S:budget") and is_known_family("S:relevance")
+    assert not is_known_family("S:finding") and not is_known_family("S:defect")
+
+
+def test_spec_level_catches_a_planted_engine_answer(monkeypatch):
+    """An engine answer the spec does not entail, the same warm and fresh
+    (so the ENGINE level cannot see it), is found at SPEC level only, as a
+    ``finding`` with level SPEC and family ``S:finding``."""
+    import satassume.ref as ref
+    x = Symbol("x")
+    orig = ref.ask_ref
+
+    def weak(p, A=True, extensions=None, **kw):
+        r = orig(p, A, extensions, **kw)
+        return None if p == Q.positive(x + 1) else r
+
+    monkeypatch.setattr(ref, "ask_ref", weak)
+    items = [Ask(Q.real(x), Q.positive(x)), Ask(Q.positive(x + 1), Q.positive(x))]
+    rep = Checker(preset("default"), ReferenceLevel.ENGINE, ("forward",)).run(items)
+    assert not rep.discrepancies, rep.to_json()
+    rep = Checker(preset("default"), ReferenceLevel.SPEC, ("forward",)).run(items)
+    assert rep.mismatches == 0 and rep.spec_mismatches == 1, rep.to_json()
+    (d,) = rep.discrepancies
+    assert (d.level, d.tag, d.warm, d.ref) == (ReferenceLevel.SPEC, "finding", "True", "None")
+    assert d.confirmations["family"] == "S:finding" and d.confirmations["fresh_engine"] == "True"
+    assert d.shrunk is not None and len(d.shrunk) <= 1, d.summary()
+
+
 # -- the checker catches planted defects ---------------------------------------
 
 def test_checker_catches_a_planted_history_dependence(monkeypatch):
