@@ -437,14 +437,18 @@ Three I5 `depends` cases, all `consistent_by: engine`, fingerprint `-`:
 * **Shifted equality without transfer** (pinned:
   `I5-shifted-equality-notransfer`; `relational` profile, `notransfer`):
   `ask(Q.eq(x + 1, 1), Q.eq(x + 3/2, 3/2))` is None (True under every
-  other config).  `x + 3/2 = 3/2` iff `x = 0` for every complex `x`, but
+  other config); its proposition form, `Q.eq(-1, -1 - x)` under
+  `Q.eq(x + 1, 1)`, is pinned too (`I5-shifted-equality-notransfer-prop`:
+  #115 keeps `prop` and `restate` variants apart).  Both pins are
+  `config_specific` with the rewrite `shift-relation(eq)[expr,number]`.  `x + 3/2 = 3/2` iff `x = 0` for every complex `x`, but
   LRA's twin of the equality is guarded by `real(x)`, which only transfer
   (the class of `3/2` passing `rational` to `x + 3/2`) supplies; the
   `notransfer` config switches it off on purpose and `ask_ref` with
-  `transfer=False` is None as well.  The pin is the known family: the
-  invariant nightly matches findings against the pinned cases' family
-  keys (`known:pinned:<stem>`), not against `checker.KNOWN_FAMILIES`
-  (the history-fuzz table).
+  `transfer=False` is None as well, and adding `Q.real(x)` to the set
+  answers True.  The pins are the known family: the invariant nightly
+  matches findings against the pinned cases' family keys
+  (`known:pinned:<stem>`), not against `checker.KNOWN_FAMILIES` (the
+  history-fuzz table).
 
 ### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
 

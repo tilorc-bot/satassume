@@ -267,3 +267,14 @@ def test_free_derived_node_weighs_nothing():
     assert w == wr                              # n counted, r not: same size
     # named otherwise (r asked about), r weighs again
     assert eng._union([n, r])[1] == w + 1
+
+
+def test_shifted_equality_without_transfer_in_the_proposition_is_none():
+    # the proposition form of the pinned case (pinned separately: #115
+    # keeps prop and restate variants apart): same cause, real(x) missing
+    a = Q.eq(x + 1, 1)
+    p = Q.eq(-1, -1 - x)
+    assert _ask(p, a, "default") is True
+    assert _ask(p, a, "notransfer") is None
+    assert _ref(p, a, "notransfer") is None
+    assert _ask(p, a & Q.real(x), "notransfer") is True
