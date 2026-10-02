@@ -210,7 +210,7 @@ def module_locations() -> List[Tuple[str, str]]:
 #: ``Engine._settings_changed``).  The fact caches are the engine's own
 #: unless a ``DictCache`` was passed to several engines on purpose.
 ENGINE_MEMOS: Tuple[str, ...] = (
-    "answers", "splits", "_kids", "_cones", "_free", "_charged", "_qcones", "_glue_adapters",
+    "answers", "splits", "_kids", "_cones", "_charged", "_qcones", "_glue_adapters",
     "_failed", "_verdict", "cache.store", "custom_cache.store",
 )
 

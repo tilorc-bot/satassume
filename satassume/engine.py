@@ -1094,10 +1094,8 @@ class Engine:
         #: the settings, dropped with the other caches
         self._kids: Dict[Any, Any] = {}
         self._cones: Dict[Any, Any] = {}
-        #: object -> its *free* kids (derived nodes of a ``free_derived``
-        #: pattern no other template of the object names), and cone object
-        #: -> the *charged* objects of its cone (``_cone_info``)
-        self._free: Dict[Any, Any] = {}
+        #: cone object -> the *charged* objects of its cone (``_cone_info``;
+        #: an entry of ``_cones`` without one is recomputed)
         self._charged: Dict[Any, Any] = {}
         self._qcones: Dict[Any, Any] = {}
         #: adapters that only read linear forms for the glue's weight
@@ -1324,7 +1322,6 @@ class Engine:
     def _drop_cones(self) -> None:
         self._kids.clear()
         self._cones.clear()
-        self._free.clear()
         self._charged.clear()
         self._qcones.clear()
         self._glue_adapters.clear()
@@ -1340,7 +1337,10 @@ class Engine:
         session visited ``o``.  ``weight``: 1 for a node, 2 for a node with
         both compiled patterns and formulas (both can be parked, and
         escalation handles each), 0 for a custom or relation atom (no node
-        of its own)."""
+        of its own).  A third element, when present, is the set of *free*
+        kids (derived nodes of a ``free_derived`` pattern no other template
+        of ``o`` names: ``_cone_info``); it lives in the same entry so that
+        no cap can drop it alone (:func:`_free_kids`)."""
         kids = self._kids
         r = kids.get(o)
         if r is not None:
@@ -1388,13 +1388,13 @@ class Engine:
             k.update(_kid(a) for a in atoms_of(f))
         free -= k
         free.discard(o)
-        if free:
-            if len(self._free) >= 200_000:
-                self._free.clear()
-            self._free[o] = frozenset(free)
-            k |= free
         k.discard(o)
-        r = kids[o] = (k, 2 if compiled and formulas else 1)
+        w = 2 if compiled and formulas else 1
+        if free:
+            k |= free
+            r = kids[o] = (k, w, frozenset(free))
+        else:
+            r = kids[o] = (k, w)
         return r
 
     def _cone_info(self, d):
@@ -1410,7 +1410,6 @@ class Engine:
             return r
         budget = self._discovery_budget
         struct = self._struct
-        free_of = self._free
         charged_of = self._charged
         seen = {d}
         # the charged objects: d and every kid some object of the cone
@@ -1424,10 +1423,13 @@ class Engine:
         over = False
         while stack:
             o = stack.pop()
-            k, _w = struct(o)
+            so = struct(o)
+            k = so[0]
             if type(o) is P and o.pred in RELATION_ATOMS:
                 rel = True
-            known = cones.get(o) if o is not d else None
+            # a known sub-cone is used only with its charged set (a cap may
+            # have dropped one memo and not the other: then expand it)
+            known = cones.get(o) if o is not d and o in charged_of else None
             if known is not None:
                 kc, _kw, krel = known
                 if kc is None:
@@ -1437,12 +1439,12 @@ class Engine:
                 # a known (closed) sub-cone: its objects and charged ones,
                 # no expansion (o itself is charged by the edge to it)
                 seen.update(kc)
-                for x in charged_of.get(o, kc):
+                for x in charged_of[o]:
                     if x not in charged and x != o:
                         charged.add(x)
                         total += struct(x)[1]
             else:
-                free = free_of.get(o, ())
+                free = _free_kids(so)
                 for x in k:
                     if x not in seen:
                         seen.add(x)
@@ -1510,7 +1512,14 @@ class Engine:
             if c is None:
                 return None, w, r, frozenset()
             rel = rel or r
-            ch = self._charged.get(o, c)
+            ch = self._charged.get(o)
+            if ch is None:
+                # _cones kept o and _charged did not (a cap): recompute
+                self._cones.pop(o, None)
+                c, w, r = self._cone_info(o)
+                if c is None:
+                    return None, w, r, frozenset()
+                ch = self._charged[o]
             if not cone:
                 cone, charged, weight = c, ch, w
                 continue
@@ -1907,6 +1916,12 @@ class Engine:
                 s._relations(proposition)
             return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
         return s.literal_of(proposition)
+
+
+def _free_kids(entry) -> frozenset:
+    """The free kids of an ``Engine._struct`` entry (its third element,
+    absent when there are none)."""
+    return entry[2] if len(entry) > 2 else frozenset()
 
 
 def zero_glue(f) -> bool:

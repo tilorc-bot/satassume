@@ -24,6 +24,8 @@ import pytest
 from sympy import (Abs, EulerGamma, Function, I, Q, Rational, S, Symbol, exp, log, nan, oo,
                    pi, sqrt, symbols, zoo)
 
+from sympy.assumptions.assume import AppliedPredicate
+
 from satassume.engine import DictCache, Engine
 from satassume.formula import P
 from satassume.ref import ask_ref
@@ -278,3 +280,33 @@ def test_shifted_equality_without_transfer_in_the_proposition_is_none():
     assert _ask(p, a, "notransfer") is None
     assert _ref(p, a, "notransfer") is None
     assert _ask(p, a & Q.real(x), "notransfer") is True
+
+
+#: the budget's memos; "_free" existed in an earlier version of #113 and is
+#: dropped here too if present (the review's simulation)
+_MEMOS = ("_kids", "_cones", "_free", "_charged", "_qcones")
+_DROPS = [(m,) for m in _MEMOS] + [tuple(m for m in _MEMOS if m != "_kids")]
+
+
+@pytest.mark.parametrize("cfg", ["tight", "lean", "budget", "default"])
+@pytest.mark.parametrize("drop", _DROPS, ids=lambda d: "+".join(d))
+def test_budget_survives_a_memo_dropped_alone(drop, cfg):
+    # each memo has its own cap and is cleared alone when it is reached:
+    # the free kids must not be lost then (review of #113: a separate
+    # _free memo cleared alone made r weigh again)
+    for i in (0, 4, 5):
+        p, a, _want, _other = BUDGET[i]
+        fresh = PRESETS[cfg].make()
+        terms = sorted({t.arguments[0] for f in (p, S.true if a is True else a)
+                        for t in f.atoms(AppliedPredicate)}, key=str)
+        want = ([fresh._cone_info(t)[1] for t in terms], ask(p, a, engine=PRESETS[cfg].make()))
+        eng = PRESETS[cfg].make()
+        ask(p, a, engine=eng)                       # fill every memo
+        for t in terms:
+            eng._cone_info(t)
+        for m in drop:
+            if hasattr(eng, m):
+                getattr(eng, m).clear()
+        eng.answers.clear()
+        got = ([eng._cone_info(t)[1] for t in terms], ask(p, a, engine=eng))
+        assert got == want, (i, drop)

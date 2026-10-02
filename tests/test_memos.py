@@ -104,8 +104,8 @@ def test_two_engines_do_not_share_memos():
     assert e1.memos is not e2.memos
     c1 = {n: c for n, _, c in e1.memos.items()}
     c2 = {n: c for n, _, c in e2.memos.items()}
-    # 12: "_free" and "_charged" (the free derived nodes of the budget, PR #113)
-    assert set(c1) == set(c2) == set(ENGINE_MEMOS) and len(ENGINE_MEMOS) == 12
+    # 11: "_charged" (the charged objects of a budget cone, PR #113)
+    assert set(c1) == set(c2) == set(ENGINE_MEMOS) and len(ENGINE_MEMOS) == 11
     assert not {id(c) for c in c1.values()} & {id(c) for c in c2.values()}
     y = Symbol('y')
     a = Q.positive(x) & Q.positive(y)
