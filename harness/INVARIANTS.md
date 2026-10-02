@@ -78,9 +78,12 @@ spellings (`Lt` <-> `Q.lt`) are taken as equivalent.
 
 `shrink` runs `checker.ddmin` over the conjuncts of the set, then over
 the unrelated conjuncts (I2) and the history (I7), keeping the guarded
-violation; the result is written as `NAME.json` (srepr) and `NAME.py`
-(standalone: `PYTHONHASHSEED=0 python NAME.py` replays it and asserts
-the violation).
+violation; for I5 it then spells each remaining conjunct as it was
+whenever the violation survives that (a conjunct the case needs whose
+restatement it does not need), so that the case's rewrite (the family
+key) is the one that matters.  The result is written as `NAME.json`
+(srepr) and `NAME.py` (standalone: `PYTHONHASHSEED=0 python NAME.py`
+replays it and asserts the violation).
 
 ## Commands and budgets
 
@@ -107,6 +110,11 @@ python -m pytest -q tests/test_invariants.py
 # proposition), I4 under every config; the last line printed is
 # {"cpu_seconds", "rounds", "queries"}
 python -m harness invariants --nightly --seeds 0-2 --out harness-results/invariants
+
+# the pinned cases' family keys recomputed by replay; exit 1 if a pin is
+# not recorded for the current key.  --write records them (after a change
+# of the key, or a rebase that brings new pins): the one-liner
+python -m harness pins --write
 
 # a subset, unbounded
 python -m harness invariants --inv I1,I2 --profile transfer,links --config default,budget --seeds 0-4 --queries 120
@@ -173,7 +181,8 @@ and the probes under which the difference vanishes are the fingerprint
 assumption atoms sink the answer instead of staying opaque, the engine
 default since the opaque-conjuncts change; before it the probe was
 `free`, the other direction).  The **family key** is (invariant,
-severity, base, variant answer, kinds (I2) or variant kind (I5), fingerprint):
+severity, base, variant answer, kinds (I2) or variant kind (I5), fingerprint,
+detail: the rewrite, see below):
 two cases with the same answer shape but different fingerprints are
 different families.  The key is matched against the pinned cases of the
 same shape (`harness/repros/invariants`, fingerprinted lazily once per
@@ -185,6 +194,64 @@ rest).  The per-slice caps of round 3 (five per invariant, one per shape
 and kinds) still hold; the fingerprint lets a new family through the
 shape cap.  Cost: a fingerprint is six replays of the pair, 10-100 ms
 on the shrunk cases seen.
+
+### The rewrite in the key (nightly package NC)
+
+The six components above did not say *which* restatement produced an I5
+variant, nor of what.  One pin then covered unrelated bugs of the same
+answer shape: #112's pin `I5-nan-zero-is-none-eq-zero-is-false`, key
+(I5, depends, None, False, prop, norel), also tagged a reviewer's injected
+unsound fold of `Q.eq(y, 0)` for a symbol `y`; #113's pin
+`I5-shifted-equality-notransfer`, key (I5, depends, True, None, restate,
+`-`), the most common I5 shape, absorbed a `zero(t)` / `zero(-t)` finding
+of another cause.  The key has a seventh component, `family_detail`:
+
+* **I5**: the variant's **rewrite** (`variant["rewrite"]`, `i5_rewrite`),
+  a sorted list of `rule(head)[term classes]`, one per rewritten conjunct
+  (or per rewritten atom of the proposition): the `restate` rule (`swap`,
+  `relational`, `q-relation`, `shift-relation`, `zero-eq`, `eq-zero`,
+  `split`, `implied`, `term-form:neg|scale|shift`, `sign-flip`, `given`,
+  `ne-eq`, `is_true`, and the compound ones `double-not`, `de-morgan`,
+  `contrapositive`, `implies-or`, `equiv-implies`, `equiv-or`; `prop-pad`
+  for `restate_prop`'s padding, `syntax` for the syntax kind), the
+  predicate or relation it rewrote, and the classes of that atom's terms
+  (`term_class`: `nan`, `inf`, `number`, `symbol`, `closed`, `expr`).
+  The two examples become `zero-eq(zero)[nan]` against
+  `zero-eq(zero)[symbol]`, and `shift-relation(eq)[expr,number]` against
+  `term-form:neg(zero)[symbol]`.  The rule alone separates the second,
+  the term class is needed for the first, the predicate keeps
+  `split(zero)` apart from `split(integer)`; nothing finer (which
+  constant a shift used, the shape of the term beyond its class) is in
+  the key.  The rewrite is *recomputed* from the case, not recorded at
+  generation: `rewrite_of` matches the restated atom against every output
+  `restate` can give for the original (`_atom_rewrites`, constants
+  enumerated) and follows the structure of `restate` for compound
+  formulas, so a shrunk case, a hand-reduced pin and an old finding file
+  all get it.  A compound restatement SymPy flattens or evaluates beyond
+  that structure is `?(<head>)` (23 of 6,314 restatements over every
+  profile; `tests/test_pin_family_key.py` holds it under 1 %).
+* **I3**: the declared fact of the `declared` kind (`declared:pred=value`).
+* **I7**: the setting changed (`setting:<name>`).
+* **I1**: `blocks` when the rule blocks were dropped as clauses.
+* **I2**: nothing more: its kinds already name the unrelated material
+  (the generator of the variant), and the constant classes stay out of
+  them as before.  **I4** and **I6** have one rewrite each.
+
+A pinned case also records **`config_specific`**: true when it does not
+reproduce with the same answers under the `default` preset (#113's pin:
+under `default` transfer supplies `real(x)`); such a pin matches only a
+finding under the same settings.  Before shrinking, the I2 kinds of a
+pin need only be among the candidate's as before; the rewrite is
+compared exactly (a candidate with two rewritten conjuncts is shrunk
+first).
+
+This is a tightening only: the first six components are the old key, so
+a match of the new key is a match of the old one, `config_specific` only
+removes matches, and a pin without the new fields (`variant["rewrite"]`
+for I5, `config_specific`) matches nothing until `python -m harness pins
+--write` re-records it.  `tests/test_pin_family_key.py` reproduces both
+reviewers' examples and checks that every pin is recorded and matches
+its own replay.
 
 ## Findings at f055b7b (`harness/repros/invariants/`)
 

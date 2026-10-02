@@ -1879,30 +1879,35 @@ def _rewrite(b, n, out: List[str]) -> bool:
         return False
     if isinstance(b, (And, Or)) and type(n) is type(b):
         tmp = []
-        if _rewrite_args(b.args, n.args, tmp):
+        if _rewrite_args(b.args, n.args, tmp, type(b)):
             out.extend(tmp)
             return True
     return False
 
 
-def _rewrite_args(orig: Sequence[Any], new: Sequence[Any], out: List[str]) -> bool:
+def _rewrite_args(orig: Sequence[Any], new: Sequence[Any], out: List[str], op=None) -> bool:
     """Each argument of ``new`` is an argument of ``orig`` or a rewrite of
-    one (SymPy reorders, merges duplicates and flattens ``And(b, implied)``)."""
-    for x in new:
-        if x in orig:
-            continue
+    one.  SymPy reorders, merges duplicates and flattens: a rewrite of an
+    argument that is itself an ``op`` (``split`` as an ``Or`` inside an
+    ``Or``, ``implied`` as an ``And`` inside an ``And``) appears as several
+    arguments of ``new``."""
+    rest = [x for x in new if x not in orig]
+    if op is not None:
+        for o in orig:
+            for rule, c in _atom_rewrites(o):
+                if isinstance(c, op) and len(c.args) > 1 and all(y in rest or y in orig for y in c.args) \
+                        and any(y in rest for y in c.args):
+                    rest = [y for y in rest if y not in c.args]
+                    out.append(f"{rule}({_atom_head(o)})[{_atom_terms(o)}]")
+                    break
+    for x in rest:
         for o in orig:
             tmp: List[str] = []
             if _rewrite(o, x, tmp):
                 out.extend(tmp)
                 break
         else:
-            for o in orig:                # a flattened ``implied`` conjunct
-                if any(rule == "implied" and isinstance(c, And) and x in c.args for rule, c in _atom_rewrites(o)):
-                    out.append(f"implied({_atom_head(o)})[{_atom_terms(o)}]")
-                    break
-            else:
-                return False
+            return False
     return True
 
 
