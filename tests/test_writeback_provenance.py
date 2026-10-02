@@ -505,3 +505,34 @@ def test_audit_on_sympy_nodes():
             eng.ask(P(pred, e), P('negative', y) & P('real', z))
     assert len(eng.cache.store) >= 4
     assert _not_memos(eng, Engine) == []
+
+
+# --------------------------------------------------------------------------
+# the memo key carries the settings (P2-fix2): engines of different
+# configurations sharing one cache never serve each other's answers
+# --------------------------------------------------------------------------
+
+def _declaring(node):
+    return [P('positive', 'x'), P('integer', 'x')] if node == 'x' else []
+
+
+def _silent(node):
+    return []
+
+
+def test_memo_shared_across_settings_stays_a_memo():
+    cache = DictCache()
+    configs = [dict(templates=_declaring), dict(templates=_silent),
+               dict(templates=_declaring, transfer=False),
+               dict(templates=_declaring, uninterpreted="free")]
+    engines = [Engine(cache=cache, **c) for c in configs]
+    nodes = ['x', ('add', 'x', 'y'), ('mul', 'x', 'x')]
+    preds = ['positive', 'integer', 'real', 'zero']
+    for _ in range(2):
+        for eng, cfg in zip(engines, configs):
+            for node in nodes:
+                for pred in preds:
+                    fresh = Engine(**cfg)
+                    assert eng.is_(node, pred) is fresh.is_(node, pred), (cfg, node, pred)
+            assert _not_memos(eng, lambda cfg=cfg: Engine(**cfg)) == []
+            assert cache._settings == (eng.templates, eng.transfer, eng.uninterpreted)
