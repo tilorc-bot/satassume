@@ -570,7 +570,8 @@ def zero_args(atoms) -> tuple:
     ``zero(t)`` as two sign atoms, ``nonnegative(t) & nonpositive(t)``),
     in first-seen order."""
     zs = ()
-    low = high = None
+    low = set()
+    high = set()
     for a in atoms:
         pred = a.pred
         if pred not in ZERO_PREDS:
@@ -581,17 +582,14 @@ def zero_args(atoms) -> tuple:
         if pred == "zero":
             zs += (e,)
         elif pred in _ZERO_LOW:
-            if high is not None and e in high:
+            if e in high:
                 zs += (e,)
             else:
-                low = (low or set())
                 low.add(e)
+        elif e in low:
+            zs += (e,)
         else:
-            if low is not None and e in low:
-                zs += (e,)
-            else:
-                high = (high or set())
-                high.add(e)
+            high.add(e)
     return zs
 
 

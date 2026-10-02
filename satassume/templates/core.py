@@ -252,6 +252,8 @@ def _shift_rules(integer: bool, odd: bool, positive: bool):
             R.equiv((), (N, a, True), (r, b, True))
     else:
         R.rule([(r, 'integer', True)], (N, 'integer', False))
+    # a nonzero real part cannot be cancelled: r imaginary -> r + c is not
+    R.rule([(r, 'imaginary', True)], (N, 'imaginary', False))
     # r >= 0 -> r + c > 0 for c > 0, and r + c <= 0 -> r < 0 (both hold for
     # r = oo, -oo; a value that is no extended real satisfies neither side)
     up, down = ('extended_positive', 'extended_negative')[::1 if positive else -1]
@@ -277,8 +279,13 @@ def _shift_template(expr, args):
     integer = bool(c.is_Integer)
     odd = integer and bool(c.p % 2)
     positive = bool(c.is_positive)
-    return facts(('add_shift', integer, odd, positive),
+    comp = facts(('add_shift', integer, odd, positive),
                  lambda: _shift_rules(integer, odd, positive), {}, (expr, rest), 0)
+    # r's terms are the node's arguments: r adds one node to the cone and
+    # nothing below it, so it does not weigh in the discovery budget
+    # unless the cone names it otherwise (Engine._cone_info)
+    comp.pattern.free_derived = True
+    return comp
 
 
 @registry.register(Add)

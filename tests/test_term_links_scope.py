@@ -21,7 +21,7 @@ semantics in the comments, and agrees with ``ask_ref``.
 import itertools
 
 import pytest
-from sympy import (Abs, EulerGamma, Function, I, Q, Rational, S, Symbol, nan, oo,
+from sympy import (Abs, EulerGamma, Function, I, Q, Rational, S, Symbol, exp, log, nan, oo,
                    pi, sqrt, symbols, zoo)
 
 from satassume.engine import DictCache, Engine
@@ -132,6 +132,7 @@ SHIFTED = [
     (Q.even(T - 3), Q.even(T), False),
     (Q.real(T + 1), Q.real(T), True),
     (Q.finite(T + 1), ~Q.finite(T), False),
+    (Q.imaginary(x + y + 1), Q.imaginary(x + y), False),
     (Q.positive_infinite(T - 7), Q.positive_infinite(T), True),
     # through the derived node r = x + y of both sums
     (Q.irrational(x + y + 2), Q.irrational(x + y + 1), True),
@@ -208,3 +209,61 @@ def test_shifted_equality_without_transfer_is_none():
     assert _ask(p, a, "default") is True
     assert _ask(p, a, "notransfer") is None
     assert _ref(p, a, "notransfer") is None
+
+
+# --------------------------------------------------------------------------
+# the derived r does not spend the discovery budget (PR #113 review)
+# --------------------------------------------------------------------------
+
+from harness.state import PRESETS  # noqa: E402
+
+_xr, _yr = symbols("x y", real=True)
+_zp, _wp = symbols("z w", positive=True)
+_a, _b, _c = symbols("a b c", nonnegative=True)
+_xi, _yi = symbols("x y", integer=True)
+_kr = Symbol("k", real=True)
+_ki = Symbol("k", integer=True)
+_w = Symbol("w")
+_xp, _yp = symbols("x y", positive=True)
+_kn = Symbol("k", nonnegative=True)
+_wi = Symbol("w", integer=True, positive=True)
+
+#: (proposition, set, the answer under every preset but those listed):
+#: each answered so at 51e8c58 and lost to the budget by the first version
+#: of the shift node, whose r weighed in the cone
+BUDGET = [
+    (Q.positive(exp(_xr + _yr + 1) + log(_wp + _zp + 2) + 1), True, True,
+     {"budget": None, "boundary": None}),
+    (Q.real(sqrt(_a + _b + _c + 1)), True, True, {"boundary": None}),
+    (Q.integer(_xi * _yi + exp(_xi) - Rational(3, 2)), True, False, {"boundary": None}),
+    (Q.finite(sqrt(_kr + sqrt(_yr) + 1)), True, True, {"boundary": None}),
+    # found by a sum-heavy fuzz against 51e8c58 under tight and lean
+    (Q.finite(_ki + _w + 9 * _xp**2 * _yp), Q.transcendental(3 * sqrt(_w) * _yp + _xp + 1),
+     True, {"budget": None, "boundary": None}),
+    (Q.positive(3 * _kn * _xp * z + _xp + sqrt(_kn + 5) + 1),
+     Q.algebraic(2 * _kn + _wi + 1) & Q.negative(3 * _kn * _xp * z + _xp + sqrt(_kn + 5) + Rational(5, 2)),
+     False, {"budget": None, "boundary": None, "norel": None}),
+]
+
+
+@pytest.mark.parametrize("cfg", list(PRESETS))
+@pytest.mark.parametrize("i", range(len(BUDGET)))
+def test_shift_node_spends_no_budget(i, cfg):
+    p, a, want, other = BUDGET[i]
+    try:
+        got = ask(p, a, engine=PRESETS[cfg].make())
+    except ValueError:
+        got = "error"
+    assert got == other.get(cfg, want)
+
+
+def test_free_derived_node_weighs_nothing():
+    eng = Engine()
+    n = _xp + 3 * sqrt(_w) * _yp + 1
+    r = n - 1
+    c, w, _rel = eng._cone_info(n)
+    assert r in c                               # visited like a derived node
+    cr, wr, _ = eng._cone_info(r)
+    assert w == wr                              # n counted, r not: same size
+    # named otherwise (r asked about), r weighs again
+    assert eng._union([n, r])[1] == w + 1

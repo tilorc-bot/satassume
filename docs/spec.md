@@ -381,7 +381,12 @@ Rules:
 Definition. `weight(cone)` sums the objects' weights: 1 per node, 2 per node
 with both compiled patterns and plain formulas, 0 per custom or relation atom
 (`Engine._struct`); it measures the clause set's size by nodes with their
-clauses (section 5), not by clause count. `within_budget(p, A)` iff
+clauses (section 5), not by clause count. Only *charged* objects weigh: the
+roots and every kid some object of the cone names, except a *free* kid, the
+`r` of a sum `r + c` (`Pattern.free_derived`, section 4), which weighs 0
+unless another object of the cone names it (`Engine._cone_info`, `_union`;
+`r`'s terms are the sum's own arguments, so it adds one node and nothing
+below it). `within_budget(p, A)` iff
 `weight(cone(p) | cone(A)) <= discovery_budget` (400), links included when a
 cone holds a relation atom or the cones hold two sign-atom sums with free
 symbols (`Engine._within_budget`, `len(sums) >= 2`: no shared-symbol test,

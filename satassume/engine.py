@@ -1094,6 +1094,11 @@ class Engine:
         #: the settings, dropped with the other caches
         self._kids: Dict[Any, Any] = {}
         self._cones: Dict[Any, Any] = {}
+        #: object -> its *free* kids (derived nodes of a ``free_derived``
+        #: pattern no other template of the object names), and cone object
+        #: -> the *charged* objects of its cone (``_cone_info``)
+        self._free: Dict[Any, Any] = {}
+        self._charged: Dict[Any, Any] = {}
         self._qcones: Dict[Any, Any] = {}
         #: adapters that only read linear forms for the glue's weight
         #: (``relations.glue_objects``), by spec name
@@ -1319,6 +1324,8 @@ class Engine:
     def _drop_cones(self) -> None:
         self._kids.clear()
         self._cones.clear()
+        self._free.clear()
+        self._charged.clear()
         self._qcones.clear()
         self._glue_adapters.clear()
 
@@ -1369,11 +1376,23 @@ class Engine:
             if mine:
                 constructing.discard(o)
         k = set()
+        free = set()
         for comp in compiled:
             objs, pat = comp.objs, comp.pattern
-            k.update(objs[i] for i in pat.used if i != pat.node)
+            if pat.free_derived:
+                free.update(objs[i] for i in pat.used if i > pat.node)
+                k.update(objs[i] for i in pat.used if i < pat.node)
+            else:
+                k.update(objs[i] for i in pat.used if i != pat.node)
         for f in formulas:
             k.update(_kid(a) for a in atoms_of(f))
+        free -= k
+        free.discard(o)
+        if free:
+            if len(self._free) >= 200_000:
+                self._free.clear()
+            self._free[o] = frozenset(free)
+            k |= free
         k.discard(o)
         r = kids[o] = (k, 2 if compiled and formulas else 1)
         return r
@@ -1391,15 +1410,21 @@ class Engine:
             return r
         budget = self._discovery_budget
         struct = self._struct
+        free_of = self._free
+        charged_of = self._charged
         seen = {d}
+        # the charged objects: d and every kid some object of the cone
+        # names other than as a free kid (_struct): the weight is theirs
+        # alone, so a free derived node (the r of r + c) weighs nothing
+        # unless the cone names it otherwise; a function of the cone
+        charged = {d}
         stack = [d]
-        total = 0
+        total = struct(d)[1]
         rel = False
         over = False
         while stack:
             o = stack.pop()
-            k, w = struct(o)
-            total += w
+            k, _w = struct(o)
             if type(o) is P and o.pred in RELATION_ATOMS:
                 rel = True
             known = cones.get(o) if o is not d else None
@@ -1409,27 +1434,36 @@ class Engine:
                     over = True                 # a sub-cone that does not fit
                     break
                 rel = rel or krel
-                # a known (closed) sub-cone: count its objects, no expansion
-                for x in kc:
-                    if x not in seen:
-                        seen.add(x)
+                # a known (closed) sub-cone: its objects and charged ones,
+                # no expansion (o itself is charged by the edge to it)
+                seen.update(kc)
+                for x in charged_of.get(o, kc):
+                    if x not in charged and x != o:
+                        charged.add(x)
                         total += struct(x)[1]
             else:
+                free = free_of.get(o, ())
                 for x in k:
                     if x not in seen:
                         seen.add(x)
                         stack.append(x)
+                    if x not in charged and x not in free:
+                        charged.add(x)
+                        total += struct(x)[1]
             if total > budget:
                 over = True
                 break
         r = (None, max(total, budget + 1), rel) if over else (frozenset(seen), total, rel)
         if len(cones) >= 100_000:
             cones.clear()
+            charged_of.clear()
         cones[d] = r
+        if not over:
+            charged_of[d] = frozenset(charged)
         return r
 
     def _query_cone(self, f, link: bool):
-        """``(cone, weight, rel, sums, zs)`` for a formula ``f`` (a query or an
+        """``(cone, weight, rel, charged, sums, zs)`` for a formula ``f`` (a query or an
         assumption set): the union of the cones of its atoms' objects
         (:func:`_kid`) and, with ``link`` (the session's relation glue
         runs), of the objects of the link of every vocabulary argument
@@ -1462,28 +1496,34 @@ class Engine:
         return r
 
     def _union(self, objs):
-        """``(cone, weight, rel)`` of the union of the cones of ``objs``
-        (cone None if it outweighs the budget)."""
+        """``(cone, weight, rel, charged)`` of the union of the cones of
+        ``objs`` (cone None if it outweighs the budget); ``charged``: the
+        objects whose weights make ``weight`` (``_cone_info``)."""
         budget = self._discovery_budget
         struct = self._struct
         cone = frozenset()
+        charged = frozenset()
         weight = 0
         rel = False
         for o in objs:
             c, w, r = self._cone_info(o)
             if c is None:
-                return None, w, r
+                return None, w, r, frozenset()
             rel = rel or r
+            ch = self._charged.get(o, c)
             if not cone:
-                cone, weight = c, w
+                cone, charged, weight = c, ch, w
                 continue
-            new = c - cone
+            # the weight of the union is that of the union of the charged
+            # sets (_cone_info): a free kid of one cone that another names
+            new = ch - charged
             if new:
-                weight += w if len(new) == len(c) else sum(struct(x)[1] for x in new)
+                weight += w if len(new) == len(ch) else sum(struct(x)[1] for x in new)
                 if weight > budget:
-                    return None, weight, rel
-                cone = cone | new
-        return cone, weight, rel
+                    return None, weight, rel, frozenset()
+                charged = charged | new
+            cone = cone | c
+        return cone, weight, rel, charged
 
     def _within_budget(self, proposition, assumptions=None) -> bool:
         """The discovery budget's test (``discovery_budget``): whether the
@@ -1497,10 +1537,10 @@ class Engine:
         sessions, the caches or earlier queries.  A query that passes runs
         discovery and escalation uncapped (never truncated): its session
         visits at most its cone."""
-        _c, _w, rel, sums, zp = self._query_cone(proposition, False)
+        _c, _w, rel, _h, sums, zp = self._query_cone(proposition, False)
         cross = ()
         if assumptions is not None:
-            _c, _w, rel_a, sums_a, za = self._query_cone(assumptions, False)
+            _c, _w, rel_a, _h, sums_a, za = self._query_cone(assumptions, False)
             rel = rel or rel_a
             sums = sums | sums_a
             if (zp or za) and self._relation_specs:
@@ -1513,23 +1553,24 @@ class Engine:
                          and (e in up or e in ua)]
                 rel = rel or bool(cross)
         link = bool(self._relation_specs) and (rel or len(sums) >= 2)
-        cp, wp, _r, _s, _z = self._query_cone(proposition, link)
+        cp, wp, _r, hp, _s, _z = self._query_cone(proposition, link)
         if cp is None:
             return False
         if assumptions is None:
             return True
-        ca, wa, _r, _s, _z = self._query_cone(assumptions, link)
+        ca, wa, _r, ha, _s, _z = self._query_cone(assumptions, link)
         if ca is None:
             return False
         if cross:
-            cx, wx, _r = self._union({_kid(x) for x in cross})
+            cx, wx, _r, hx = self._union({_kid(x) for x in cross})
             if cx is None:
                 return False
-            ca, wa = ca | cx, wa + wx
+            ca, wa, ha = ca | cx, wa + wx, ha | hx
         if wp + wa <= self._discovery_budget:
             return True
+        # the weight of the union: its charged objects (_cone_info)
         struct = self._struct
-        return wp + sum(struct(x)[1] for x in ca if x not in cp) <= self._discovery_budget
+        return wp + sum(struct(x)[1] for x in ha if x not in hp) <= self._discovery_budget
 
     def _over_budget(self) -> None:
         """A query over the discovery budget: None, no session touched."""
