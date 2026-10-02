@@ -131,18 +131,38 @@ reuse and the first of this design: a set's glue at the root, a query's
 delta switched). The four settings stay as documented no-ops so that
 configurations remain valid.
 
-### Context-free fact cache and writeback
+### Context-free fact cache: a memo of `is_`
 
 `DictCache` (200,000 nodes, cleared when full) maps a node, by hash and
-`==`, to its context-free facts; `custom_cache` holds custom-predicate and
-relation atoms. `Session.writeback` stores every literal of the root trail
-there, and `Engine.is_` stores its answer, None included. Structurally
-equal nodes share entries: a node's context-free facts depend only on its
-structure and declared assumptions. This is sound only if every root
-literal holds whatever the assumptions: the selector keeps the assumptions
-off the root, and the templates must be sound for every value. An unsound
-template does not stay local: its root consequences are cached and change
-later answers about other expressions (issue #47, below).
+`==`, to its context-free facts; `custom_cache` holds custom-predicate
+atoms. Since issue #97 (P2) the caches are pure memos of `Engine.is_`:
+`is_(node, pred)` stores its own answer under `node`, True or False,
+never None, keyed on the registry epoch (`DictCache._epoch`,
+`Engine._check_version`); nothing else writes there (`Engine._put_result`
+is the one writer), and no session reads there (a visited node asserts no
+cached fact as a unit clause; a contextual session derives every fact
+from its own clause set). The memo is sound because the session of
+`is_(node, pred)` is exactly the one a fresh engine builds for the same
+query: nothing of the engine's state enters a session, so its clause set
+is a function of the node, the predicate, the registry and the settings,
+and its answer is an entailment of that set (the harness `audit` mode and
+`tests/test_writeback_provenance.py` check the memo against a fresh engine
+per node). Structurally equal nodes share entries: a node's context-free
+facts depend only on its structure and declared assumptions. An unsound
+template still does not stay local: its consequences are memoized and
+change later answers about other expressions (issue #47, below).
+
+The `writeback` setting keeps its name: `"root-only"` (the default)
+memoizes, `"none"` memoizes nothing (for measurement). The policies of
+#53 stage 3, `"provenance"` (every root fact of a session whose provenance
+lay in its node's cone, with owner tracking in the solver and a
+provenance test per fact, `Session.writeback`, `_home_of`, `_walk`) and
+`"all"` (every root literal, history-dependent), are removed and raise
+`ValueError`; `_put_root_only`, which also wrote the queried node's other
+root facts, went with them. What was lost: a contextual session no longer
+starts from the memoized facts of its nodes (it propagates them again),
+and `is_` memoizes one fact per session instead of the node's vocabulary;
+the numbers are in the P2 report of issue #97.
 
 ## Semantic decisions
 
@@ -430,15 +450,18 @@ relation-free mode nor a fresh recheck of `whole-only` differences.
 The property: an answer of `ask` is a function of the proposition, the
 assumptions, the engine configuration and the registered extensions, never
 of earlier queries, of what is cached or evicted, or of `PYTHONHASHSEED`.
-State that can carry a dependence: writeback, cached facts asserted as
-units, one reused session per assumption set, caches that omit the registry.
+State that could carry a dependence: a session's root facts written to
+the cache and cached facts asserted as units (both gone with #97 P2: the
+cache is a memo of `is_` that no session reads), one reused session per
+assumption set (gone with #97 P1), caches that omit the registry (#63).
 
 Issue #53 is the umbrella (seven defect groups); group 1, non-total
 templates (`x*A`, `Abs(A)`), is fixed by #54 and #61. `harness/` (#55) checks the property
 differentially and pins the known cases as strict xfails in
 `tests/test_history.py` (fixed ones move to `harness/repros/fixed/`).
 Landed since: caches and sessions keyed on the registry state (#63),
-provenance writeback (stage 3), one complete consistency check per set
+provenance writeback (stage 3; replaced by the pure memo of `is_` in #97
+P2), one complete consistency check per set
 (stage 4), the relation glue and predicate transfer switched per
 query by selectors (stage 5, [theories.md](theories.md), "Switched
 glue"), which fixed families G, G', T and S, and the session built per
