@@ -16,7 +16,11 @@ reads of a session.
 Which spec section each function implements:
 
 * section 1 (routing: constant route, translation, ``TRUE``/``FALSE``,
-  ``Unsupported``, inconsistent ``A``): :func:`ask_ref`.  The relevance
+  ``Unsupported``, inconsistent ``A``): :func:`ask_ref`, :func:`_routed`.
+  SPEC-DIFF (1.2, 9.3): a constant proposition the constant's facts leave
+  None is answered under ``A`` as ``sympy_api._ask`` does (family C), so
+  an inconsistent set raises for it; the spec's "``A`` is ignored" is
+  older than that (P5b-fix2 report).  The relevance
   split (1.3, section 7) is *not* applied: ``ask_ref`` answers under the
   whole of ``A``, which by monotonicity is the same as or more definite
   than the engine's answer under the relevant part, and raises exactly
@@ -26,7 +30,10 @@ Which spec section each function implements:
   only after the set's verdict).
 * section 2 (translation): :func:`_translate`, through
   ``sympy_api._formula`` / ``to_formula`` and ``relations.relation_atom``.
-* section 3 (theory scope, P3's syntactic definition): :func:`theory_scope`.
+* section 3 (theory scope, P3's syntactic definition): :func:`theory_scope`,
+  over the glue atoms of ``A`` and ``p`` (:func:`_glue_atoms_of`): a
+  ``zero(t)`` whose ``t`` is under an application of ``A`` or ``p`` counts
+  as its twin ``eq(t, 0)`` (``relations.glue_atoms``, PR #107).
 * section 4 (the node cone): the eager closure of :meth:`_RefSession.node`
   over the frontier (:meth:`_RefSession._discover`); derived nodes are
   visited like direct arguments.  No separate cone computation is needed:
@@ -67,7 +74,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
 from .formula import FALSE, P, TRUE, atoms_of
-from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number
+from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
 from .rules import NPRED, PRED_INDEX, RULE_INTERNAL
 from .solver import Solver
 
@@ -409,10 +416,27 @@ def _entails(s: _RefSession, q: int, lits: List[int]) -> Optional[bool]:
     return solver.entails(q, lits)
 
 
+def _glue_atoms_of(a_atoms, p_atoms, rel: bool) -> Tuple[tuple, tuple]:
+    """The atoms the scope and the glue read ``A`` and ``p`` by (section 3,
+    5.5; ``relations.glue_atoms``, PR #107): each formula's atoms followed
+    by the twins ``eq(t, 0)`` of the ``zero(t)`` atoms (``t`` no number) of
+    ``A`` and ``p`` whose ``t`` is under an application of an undefined
+    function in ``A`` or ``p``.  ``A``'s twins are those of ``A`` alone
+    (``Session.assumption_lits``); ``p``'s are those of the pair
+    (``Session._glue_of``).  Without relation specs nothing is read."""
+    a_atoms, p_atoms = tuple(a_atoms), tuple(p_atoms)
+    if not rel:
+        return a_atoms, p_atoms
+    return glue_atoms(a_atoms), glue_atoms(p_atoms, a_atoms)
+
+
 def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     """Sections 3 to 8 for translated formulas."""
     a_atoms = atoms_of(assum) if assum is not None else ()
     p_atoms = atoms_of(prop)
+    # section 3 over the glue atoms: a twin is an eq atom, so it gives
+    # glue and transfer and links t, as Q.eq(t, 0) in the formula would
+    a_atoms, p_atoms = _glue_atoms_of(a_atoms, p_atoms, bool(engine._relation_specs))
     glue, transfer, linked = theory_scope(a_atoms, p_atoms)
     if not engine._relation_specs:
         glue = transfer = False
@@ -423,6 +447,14 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
         # allocated (Session._custom does the same)
         s.relations = Relations(s, engine._relation_specs)
         s.relations.active = True
+        # the twins are atoms of no compiled formula: allocated here, as
+        # Session._ensure_twins does, so that 5.5 processes them as user
+        # equalities of their formula (the link clause zero(t) <-> eq(t, 0)
+        # of t ties each to its zero atom)
+        for atom in a_atoms + p_atoms:
+            if atom.pred in RELATION_ATOMS and atom not in s.table.custom:
+                s.table.var(atom)
+        s._flush()
     if assum is not None:
         s.assume_formula(assum)
     q = s.literal_of(prop)
@@ -430,7 +462,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     if glue:
         rel = s.glue(a_atoms, p_atoms)
     s._discover()
-    lits = _assumption_lits(s, rel, tuple(a_atoms) + tuple(p_atoms), transfer)
+    lits = _assumption_lits(s, rel, a_atoms + p_atoms, transfer)
     info.nodes = len(s.base)
     info.clauses = s.nclauses
     try:
@@ -470,12 +502,25 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     from . import templates as _templates        # noqa: F401 (registers the templates)
     engine = _RefEngine(extensions, relations, transfer, uninterpreted)
     rel = bool(engine._relation_specs)
-    # 1.2: a constant proposition ignores the assumptions
+    # 1.2: a constant proposition is answered without the assumptions; one
+    # the constant's facts do not decide is then answered under them like
+    # any other (sympy_api._ask, nightly family C: the set's verdict counts,
+    # so an inconsistent set raises).  SPEC-DIFF: section 1.2 says "A is
+    # ignored", which is _ask before family C; P5b-fix2 report.
     if _is_constant_proposition(p):
-        A = True
         info.route = "constant"
+        r = _routed(p, True, engine, rel, info)
+        if r is not None or A is True:
+            return r
+        info.route = "constant+set"
     else:
         info.route = "engine"
+    return _routed(p, A, engine, rel, info)
+
+
+def _routed(p, A, engine: _RefEngine, rel: bool, info: RefInfo) -> Optional[bool]:
+    """Sections 1.4 to 8 for a routed ``(p, A)``."""
+    from .sympy_api import Unsupported
     # 1.4 and section 2: translation
     try:
         prop, assum = _translate(p, A, rel)

@@ -141,12 +141,26 @@ def test_hand_written_against_sympy(p, a):
 
 # --------------------------------------------------------------------------
 def test_constant_route_ignores_assumptions():
-    # spec section 9.3
+    """Spec section 1.2 and 9.3: a constant proposition is answered without
+    the assumptions (an inconsistent set does not raise, a definite answer
+    stands).  One the constant's facts leave None is then answered under
+    the set, as ``sympy_api._ask`` does (nightly family C; the spec's "A is
+    ignored" is older than that: P5b-fix2 report, SPEC-DIFF in
+    ``ask_ref``)."""
     assert ask_ref(Q.prime(S(7)), Q.composite(S(7))) is True
+    info = RefInfo()
+    assert ask_ref(Q.prime(S(7)), Q.composite(S(7)), info=info) is True
+    assert info.route == "constant"
     e = S.Exp1 ** pi - pi ** S.Exp1
     info = RefInfo()
-    assert ask_ref(Q.positive(e), Q.positive(e), info=info) is None
+    assert ask_ref(Q.positive(e), True, info=info) is None
     assert info.route == "constant"
+    info = RefInfo()
+    assert ask_ref(Q.positive(e), Q.positive(e), info=info) is True
+    assert info.route == "constant+set"
+    from satassume.engine import Engine
+    from satassume.sympy_api import ask as engine_ask
+    assert engine_ask(Q.positive(e), Q.positive(e), engine=Engine()) is True
 
 
 def test_inconsistent_assumptions_raise():
@@ -228,3 +242,85 @@ def test_inconsistent_set_raises_before_an_uninterpreted_relation():
     except ValueError:
         r = "ValueError"
     assert r == "ValueError", r
+
+
+# --------------------------------------------------------------------------
+# zero under an application is an equality for the glue (PR #107; spec
+# sections 3 and 5.5, ``ref._glue_atoms_of``)
+# --------------------------------------------------------------------------
+
+_f, _g = __import__("sympy").Function("f"), __import__("sympy").Function("g")
+_u, _v = Symbol("u"), Symbol("v")
+_yr = Symbol("y", real=True)
+
+# name: (proposition, set, engine config, whether the rule fires, expected)
+ZERO_GLUE = {
+    # the four pinned repros (harness/repros/fixed/T*.json, config "default"
+    # with uninterpreted="none"): the engine's answer at both levels
+    "T1-transfer-congruent-application": (
+        Q.positive(_f(_u)), Q.zero(_u) & Q.positive(_f(0)), "none", True, "True"),
+    "T2-transfer-raise": (
+        Q.real(_v), Q.zero(_u) & Q.negative(_f(_u)) & Q.positive(_f(0)), "none", True, "ValueError"),
+    "T4-transfer-two-zero-terms": (
+        Q.positive(_f(_u)), Q.zero(_u) & Q.zero(_v) & Q.positive(_f(_v)), "none", True, "True"),
+    "T5-transfer-add-congruence": (
+        Q.positive(1 + _f(_u)), Q.zero(_u) & Q.positive(1 + _f(0)), "none", True, "True"),
+    # hand-written: t under an application of the set (G2-unary shape)
+    "set-twin-nested": (Q.zero(_g(_yr)), Q.zero(_yr) & Q.zero(_g(0)), "free", True, "True"),
+    # t under an application of the proposition only: the pair's twin
+    "query-twin": (Q.positive(_f(x)) | ~Q.zero(x), Q.positive(_f(0)), "free", True, "True"),
+    # t not under any application: no twin, no glue, no transfer; zero(x)
+    # says nothing about f(0) against f(y)
+    "not-under-an-application": (
+        Q.positive(_f(0)), Q.zero(x) & Q.positive(_f(_yr)), "free", False, "None"),
+}
+
+
+@pytest.mark.parametrize("name", list(ZERO_GLUE), ids=list(ZERO_GLUE))
+def test_zero_under_an_application_is_an_equality(name):
+    """``ask_ref`` answers as the engine does (a fresh engine of the same
+    settings) and never contradicts SymPy; the scope shows whether the
+    twin fired (``glue`` and ``transfer`` on, ``t`` linked)."""
+    from satassume.engine import DictCache, Engine
+    from satassume.ref import ref_outcome
+    from satassume.sympy_api import ask as engine_ask
+    p, a, uninterpreted, fires, want = ZERO_GLUE[name]
+    info = RefInfo()
+    got = ref_outcome(p, a, uninterpreted=uninterpreted, info=info)
+    assert got == want
+    glue, transfer, linked = info.scope
+    assert (glue, transfer) == (fires, fires), info.scope
+    if fires:
+        assert any(z.expr in linked for z in atoms_of(to_formula(a)) + atoms_of(to_formula(p))
+                   if z.pred == "zero"), linked
+    try:
+        eng = engine_ask(p, a, engine=Engine(cache=DictCache(), uninterpreted=uninterpreted))
+    except ValueError:
+        eng = "ValueError"
+    assert str(eng) == want, f"engine {eng!r}, ask_ref {got!r}"
+    sym = sympy_ask(p, a)
+    assert sym is None or str(sym) == want, f"ask_ref {got!r} contradicts sympy.ask {sym!r}"
+
+
+def test_constant_proposition_under_an_inconsistent_set_raises():
+    """The ten raise-vs-None rows of the SPEC fuzz (P5b gate report,
+    ``fuzz --profile lazy --config default,whole --ref-level spec``, seed
+    3): ``o`` is an odd symbol, so the set is inconsistent by ``Q.zero(o)``
+    alone, with or without the twin of PR #107.  ``p`` is a constant
+    proposition the constant's facts leave None, so the engine answers it
+    under the set (``sympy_api._ask``, family C) and the set's verdict
+    raises (P5b-fix1 order); ``ask_ref`` does the same."""
+    from sympy import Abs, GoldenRatio, oo
+    from satassume.ref import ref_outcome
+    o, t = Symbol("o", odd=True), Symbol("t", real=True, nonzero=True)
+    a = Q.zero(o) & Q.integer(_g(0) + 2) & Q.positive(2 * Abs(t)) & ~Q.negative(o + 2 * t + Abs(t) + 1)
+    p = Q.extended_nonzero(GoldenRatio ** (-oo))
+    assert ref_outcome(p, True) == "None"
+    for uninterpreted in ("none", "free"):
+        info = RefInfo()
+        assert ref_outcome(p, a, uninterpreted=uninterpreted, info=info) == "ValueError"
+        assert info.route == "constant+set"
+    # the plain symbol: the set is consistent, the twin fires, the constant stays None
+    o = Symbol("o")
+    a = Q.zero(o) & Q.integer(_g(0) + 2) & Q.positive(2 * Abs(t)) & ~Q.negative(o + 2 * t + Abs(t) + 1)
+    assert ref_outcome(p, a) == "None"
