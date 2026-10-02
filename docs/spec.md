@@ -109,9 +109,11 @@ The session of a query is built with its scope (`Session(engine, scope)`;
 `glue` the `Relations` object exists from construction, with `transfer`
 predicate transfer is engaged there (`Relations.__init__`,
 `_engage_transfer`). The links of `A`'s own terms are made while `A` is
-assumed only when `A`'s own scope has the glue (`theory_scope(A, None).glue`:
-a relation atom, an affine pair or a twin of `A`'s own, #107's root glue;
-`Session.assume_formula`); otherwise they are made after the set's complete
+assumed only when `A`'s own scope has the glue (the scope the session is
+built with for the set alone, `theory_scope(A, None, extensions).glue`: a
+relation atom, an affine pair or a twin of `A`'s own, #107's root glue, or a
+relation atom of `A`'s extension facts, which the check must interpret,
+review 2; `Session.assume_formula`); otherwise they are made after the set's complete
 check (`Session.link_set`, called by `_build_context`), so the check, and
 `verdict(A)` (section 7), see only the set's own glue and are a function of
 `A` whatever the query's scope (P3-fix1; `tests/test_p3_review.py`). The
@@ -127,7 +129,10 @@ point 2). `Engine.ask` of a query without such facts never takes that path
 (`tests/test_scope.py`).
 
 Property (P3's gate): with the scope on, an answer is never the other
-definite value (the glue's clauses are valid: `scope.py` module docstring);
+definite value (the glue's clauses are valid, and a consistent set, one with
+a model in the intended structure, keeps that model under them: `scope.py`
+module docstring; for an inconsistent set the check missed, the query with
+the glue raises where the smaller scope answers);
 that it is the same or more definite is empirical under the engine's budgets
 (`tools/relevance_fuzz.py`; harness profiles `links`, `transfer`, `lazy`,
 gate G5), not a corollary of clause validity.

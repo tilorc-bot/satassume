@@ -54,11 +54,19 @@ with more theory is the clause set with less plus valid clauses: every
 model of the larger set is a model of the smaller one, and the smaller
 set's consequences are consequences of the larger.  An answer the
 relation-free session gives (``p`` entailed, or ``~p`` entailed) is
-therefore given by the session with the glue or transfer too; the extra
+therefore given by the session with the glue or transfer too.  Under the
+hypothesis that the set with the smaller theory, ``A`` with the clauses
+``C(S)``, has a model in the intended structure (the extended reals with
+equality: the set is consistent), the valid clauses keep that model for
+``C(S')``, so ``S'`` cannot entail both ``p`` and ``~p``: the extra
 theory can turn None into True or False, never True into False or the
-reverse.  The scope only chooses how much of this valid theory a query
-pays for; the answer with the whole of it is the ceiling, and no scope
-reaches a definite value the ceiling does not have.
+reverse.  Without the hypothesis (an inconsistent set whose budgeted
+check did not establish it) both answers are vacuous, and in practice
+the query with the glue raises ``InconsistentAssumptions`` where the
+smaller scope answers (#97 P3 review 2).  The scope only chooses how
+much of this valid theory a query pays for; the answer with the whole of
+it is the ceiling, and no scope reaches a definite value the ceiling
+does not have.
 
 That is an argument about entailment, not about the engine, which is
 budgeted (``Engine._exhausted``, ``_gave_up``, the discovery budget): more

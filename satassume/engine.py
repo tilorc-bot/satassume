@@ -686,10 +686,12 @@ class Session:
         self._flush()
         self._discover()
         if self.relations is not None:
-            if scope_of_atoms(atoms_of(f)).glue:
-                # the set's own scope has the glue (a relation atom or an
-                # affine pair of the set): its links are part of the set
-                # and of the set's check
+            if theory_scope(f, None, self.engine._extensions).glue:
+                # the set's own scope has the glue (a relation atom, an
+                # affine pair or a zero twin of the set, or a relation atom
+                # of its extension facts, the same scope the session is
+                # built with for the set alone): its links and interpreted
+                # relations are part of the set and of the set's check
                 self._relations(f)
             else:
                 # the glue is the query's: the set's terms are linked after
