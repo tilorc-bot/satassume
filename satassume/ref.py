@@ -61,7 +61,7 @@ from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number
 from .rules import NPRED, PRED_INDEX, RULE_INTERNAL
 from .solver import Solver
 
-__all__ = ["ask_ref", "ref_outcome", "theory_scope", "RefInfo", "last_info"]
+__all__ = ["ask_ref", "ref_outcome", "theory_scope", "RefInfo"]
 
 #: the sign predicates whose atoms on sums start the glue (engine._SIGN_PREDS)
 _SIGN_PREDS = frozenset({
@@ -71,7 +71,9 @@ _SIGN_PREDS = frozenset({
 
 
 class RefInfo:
-    """What the last :func:`ask_ref` built (for tools and tests)."""
+    """What one :func:`ask_ref` call built (for tools and tests): pass a
+    fresh one as ``info=`` and read it afterwards.  No module-level state
+    keeps the last one (``harness.state`` inventories module containers)."""
     __slots__ = ("nodes", "clauses", "scope", "gave_up", "exhausted",
                  "undecidable", "route", "searched")
 
@@ -90,14 +92,6 @@ class RefInfo:
         return (f"RefInfo(route={self.route}, nodes={self.nodes}, clauses={self.clauses}, "
                 f"scope=({g}, {t}, {len(linked)} terms), gave_up={self.gave_up}, "
                 f"exhausted={self.exhausted}, undecidable={self.undecidable})")
-
-
-_LAST = [RefInfo()]
-
-
-def last_info() -> RefInfo:
-    """The :class:`RefInfo` of the last :func:`ask_ref` call."""
-    return _LAST[0]
 
 
 # --------------------------------------------------------------------------
@@ -440,7 +434,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
 
 
 def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True,
-            uninterpreted: str = "free") -> Optional[bool]:
+            uninterpreted: str = "free", info: Optional[RefInfo] = None) -> Optional[bool]:
     """The specification's answer to ``ask(p, A)``: ``True``, ``False`` or
     ``None``; raises ``ValueError`` for inconsistent assumptions, like
     ``satassume.sympy_api.ask`` (section 1).
@@ -451,9 +445,12 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     uses, so the harness's register/unregister events apply).
     ``relations``: the adapter specs (default: ``relations.default_specs()``,
     the default engine's); ``transfer`` and ``uninterpreted`` as the
-    engine settings of the same names."""
+    engine settings of the same names.  ``info``: a :class:`RefInfo` to
+    fill with what the call built (route, nodes, clauses, scope, theory
+    flags)."""
     from .sympy_api import Unsupported, _is_constant_proposition
-    info = _LAST[0] = RefInfo()
+    if info is None:
+        info = RefInfo()
     if extensions is None:
         from .extensions import extensions as _ext
         extensions = _ext
