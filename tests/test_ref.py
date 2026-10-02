@@ -21,7 +21,7 @@ from sympy import I, Mul, Pow, Symbol, nan, oo, pi, zoo, S
 from sympy import ask as sympy_ask
 from sympy.assumptions import Q
 
-from satassume.ref import ask_ref, last_info, theory_scope
+from satassume.ref import RefInfo, ask_ref, theory_scope
 from satassume.formula import P, atoms_of
 from satassume.sympy_api import to_formula
 
@@ -144,8 +144,9 @@ def test_constant_route_ignores_assumptions():
     # spec section 9.3
     assert ask_ref(Q.prime(S(7)), Q.composite(S(7))) is True
     e = S.Exp1 ** pi - pi ** S.Exp1
-    assert ask_ref(Q.positive(e), Q.positive(e)) is None
-    assert last_info().route == "constant"
+    info = RefInfo()
+    assert ask_ref(Q.positive(e), Q.positive(e), info=info) is None
+    assert info.route == "constant"
 
 
 def test_inconsistent_assumptions_raise():
@@ -184,15 +185,17 @@ def test_theory_scope_by_syntax():
 def test_affine_pair_uses_the_glue():
     # the glue links the sign facts to the linear forms (spec 3, 5.5)
     assert ask_ref(Q.negative(1 - x), Q.positive(x - 1)) is True
-    assert ask_ref(Q.positive(1 - x), Q.positive(x - 1)) is False
-    g, t, _ = last_info().scope
+    info = RefInfo()
+    assert ask_ref(Q.positive(1 - x), Q.positive(x - 1), info=info) is False
+    g, t, _ = info.scope
     assert g and not t
 
 
 def test_relation_and_transfer():
     assert ask_ref(Q.lt(x, 0), x >= 0) is False
-    assert ask_ref(Q.positive(y), Q.eq(x, y) & Q.positive(x)) is True
-    assert last_info().scope[:2] == (True, True)
+    info = RefInfo()
+    assert ask_ref(Q.positive(y), Q.eq(x, y) & Q.positive(x), info=info) is True
+    assert info.scope[:2] == (True, True)
     assert ask_ref(Q.even(y), Q.eq(x, y) & Q.even(x)) is True
 
 

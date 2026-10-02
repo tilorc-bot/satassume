@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare import IN_SCOPE, classify, rebuild  # noqa: E402
 
 from satassume.engine import Engine  # noqa: E402
-from satassume.ref import ask_ref, last_info  # noqa: E402
+from satassume.ref import RefInfo, ask_ref  # noqa: E402
 from satassume.sympy_api import ask as sat_ask, out_of_scope  # noqa: E402
 
 REC_COLUMNS = ("agree", "extra", "none", "wrong", "error", "no_error", "unreplayable")
@@ -139,9 +139,10 @@ def main(argv=None):
                 got_eng = f"exc:{type(e).__name__}"
             budget = bool(eng.last_budget_limited)
             t_eng += time.perf_counter() - t
+            info = RefInfo()
             t = time.perf_counter()
             try:
-                got_ref = ask_ref(prop, assum)
+                got_ref = ask_ref(prop, assum, info=info)
             except ValueError:
                 got_ref = "error:ValueError"
             except Exception as e:   # noqa: BLE001 - counted, not fatal
@@ -150,7 +151,6 @@ def main(argv=None):
             t_ref += dt
             if dt > t_max[0]:
                 t_max = (dt, n, desc)
-            info = last_info()
             col = classify(got_ref, want)
             rec_stats[col] += 1
             if col != "agree":
