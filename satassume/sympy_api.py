@@ -80,7 +80,7 @@ from .epoch import EPOCH as _EPOCH
 from .memos import PROCESS as _PROCESS
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
-from .relations import Uninterpreted, relation_atom, relational_name
+from .relations import Uninterpreted, _is_number, relation_atom, relational_name
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
 from sympy.core.add import Add as _SAdd
@@ -89,6 +89,8 @@ from sympy.core.mul import Mul as _SMul
 from sympy.core.power import Pow as _SPow
 from sympy.core.expr import Expr as _Expr
 from sympy.core.relational import Relational as _Relational
+from sympy.core.relational import (Eq as _Eq, Ne as _Ne, Lt as _Lt, Le as _Le,
+                                   Gt as _Gt, Ge as _Ge)
 from sympy.core.numbers import Rational as _Rational
 from sympy.core.singleton import S as _S
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
@@ -292,7 +294,35 @@ def _relation_formula(expr, parts, relations: bool):
     name, lhs, rhs = parts
     if not relations or not (_is_scalar(lhs) and _is_scalar(rhs)):
         raise Unsupported(f"{expr} is out of scope (relation)", "relation")
+    if _is_number(lhs) and _is_number(rhs):
+        v = _closed_relation(name, lhs, rhs)
+        if v is not None:
+            return v
     return relation_atom(name, lhs, rhs)
+
+
+_SREL = {"eq": _Eq, "ne": _Ne, "lt": _Lt, "le": _Le, "gt": _Gt, "ge": _Ge}
+
+
+def _closed_relation(name, lhs, rhs):
+    """``TRUE``/``FALSE`` when SymPy's own relational over two numbers
+    (``Eq(nan, 0)``, ``Lt(0.5, 1)``, ``Ne(nan, nan)``) evaluates to a
+    Boolean, else None (unevaluated, or an invalid comparison: ``Lt(nan,
+    1)``, ``Lt(I, 1)`` raise and keep the relation atom).  A relation
+    between numbers has one value in every model, and this is the value
+    SymPy gives the same relation spelled as a ``Relational`` (and
+    ``sympy.ask`` gives the predicate form), so ``Q.lt(0.5, 1)``,
+    ``Lt(0.5, 1)`` and ``True`` are one statement (nightly I5, package
+    NA)."""
+    try:
+        r = _SREL[name](lhs, rhs)
+    except TypeError:
+        return None
+    if r is True or isinstance(r, _BTrue):
+        return TRUE
+    if r is False or isinstance(r, _BFalse):
+        return FALSE
+    return None
 
 
 #: predicate name of an opaque atom (see :func:`to_formula`): not an

@@ -21,6 +21,7 @@ from sympy.core.function import Function
 from sympy.core.mul import Mul
 from sympy.core.numbers import ComplexInfinity, ImaginaryUnit, Number, NumberSymbol
 from sympy.core.power import Pow
+from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 
 from ._common import VOCAB, const_key, const_value, units
@@ -40,6 +41,16 @@ _CONST_BASIS = (
 )
 
 
+# ``nan`` is no value: neither a complex number nor an extended real (as
+# in the relation glue, ``Relations._closed_extended_real``, and the
+# templates' soundness oracle, docs/design.md "Extended reals and ``nan``
+# in templates").  SymPy leaves every ``nan.is_*`` but ``is_commutative``
+# None; the closure then makes every predicate that implies a number or an
+# extended real False (``zero(nan)`` as ``Eq(nan, 0)`` is False) and leaves
+# ``finite``, ``infinite`` and ``polar`` open (nightly I5, package NA).
+_NAN_FACTS = [('complex', False), ('extended_real', False)]
+
+
 @registry.register(Symbol)
 def symbol_units(expr):
     a0 = expr.assumptions0
@@ -56,6 +67,8 @@ def constant_units(expr):
             value = const_value(expr, pred)
             if value is not None:
                 out.append((pred, value))
+        if expr is S.NaN:
+            out += _NAN_FACTS
         return out
     return units(('const', const_key(expr)), gen, expr)
 
