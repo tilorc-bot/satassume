@@ -76,6 +76,7 @@ from .compile import VarTable, compile_formula, formula_literal
 from .formula import FALSE, P, TRUE, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
 from .rules import NPRED, PRED_INDEX, RULE_INTERNAL
+from .scope import EMPTY as _EMPTY_SCOPE, Scope
 from .solver import Solver
 
 __all__ = ["ask_ref", "ref_outcome", "theory_scope", "RefInfo"]
@@ -172,6 +173,11 @@ class _RefEngine:
         self.transfer = transfer
         self.uninterpreted = uninterpreted
         self._is_memo: Dict[Tuple[Any, str], Optional[bool]] = {}
+        #: what ``Relations`` counts when the glue engages transfer at an
+        #: atom the session's scope did not foresee (P3; here, an order
+        #: atom whose reverse ``_trichotomy`` paired: the SPEC-DIFF of
+        #: :func:`theory_scope`); never read back by the reference
+        self.stats: Dict[str, int] = {"scope_misses": 0}
 
     def is_(self, node, pred: str) -> Optional[bool]:
         key = (node, pred)
@@ -196,8 +202,12 @@ class _RefSession:
     whole (all its patterns and formulas, section 5.1 and 5.2) and every
     node a template or the glue mentions is visited too (section 4)."""
 
-    def __init__(self, engine: _RefEngine) -> None:
+    def __init__(self, engine: _RefEngine, scope: Scope = _EMPTY_SCOPE) -> None:
         self.engine = engine
+        #: the theory scope ``Relations`` is built with (P3): with ``glue``
+        #: it links from construction, with ``transfer`` it engages
+        #: predicate transfer there; ``_answer`` passes section 3's values
+        self.scope = scope
         self.solver = Solver()
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
         self.table = VarTable()
@@ -441,7 +451,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     if not engine._relation_specs:
         glue = transfer = False
     info.scope = (glue, transfer, linked)
-    s = _RefSession(engine)
+    s = _RefSession(engine, Scope(glue, transfer, linked))
     if glue:
         # created first, so that relation atoms are queued as they are
         # allocated (Session._custom does the same)
