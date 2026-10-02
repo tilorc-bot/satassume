@@ -33,7 +33,7 @@ partial totals are printed every 500 records.  Nothing is excluded: the
 summary line and the partial totals count every line read (``records``),
 the ``old`` records and each out-of-scope category (``out_of_scope``'s
 name; ``in_scope`` for records ``--relations-only`` leaves out) next to
-``n``, so ``n`` + ``old`` + the categories = ``records``.
+``n``, so ``n`` + ``old`` + the categories + ``unreplayable`` = ``records``.
 """
 from __future__ import annotations
 
