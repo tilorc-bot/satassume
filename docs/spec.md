@@ -21,32 +21,30 @@ with `pred in PRED_INDEX`; a *relation atom* is `P("eq"|"lt", (a, b))`
 Definition. `ask(p, A)` returns one of `True`, `False`, `None`, or raises
 `ValueError`.
 
-1. Answer memo: if `(p, A)` is in `Engine.answers` the memo entry is the
-   answer (`sympy_api.ask`; `Engine.answers` is cleared with
-   `Engine.splits` when the registry epoch changes, `Engine._check_version`).
-   A budget-limited answer is never memoized (`sympy_api.ask`, the
-   `last_budget_limited` test), so a memo hit is never budget-limited.
+1. Answer memo: if `(p, A)` is in `Engine.answers` the memo entry is the answer
+   (`sympy_api.ask`; cleared with `Engine.splits` when the registry epoch
+   changes, `Engine._check_version`). A budget-limited answer is never memoized
+   (`sympy_api.ask`, `last_budget_limited`), so a memo hit never is.
 2. Constant route: if `_is_constant_proposition(p)` (every predicate of `p`
-   built in, every argument a number without free symbols and without
-   `AppliedUndef`), the answer is `ask(p, True)`: `A` is ignored
-   (`sympy_api._ask`). Section 9.
-3. Relevance: otherwise, if `Engine.relevance` and `A` is a SymPy Boolean,
-   the answer is `_engine_ask(p, part)` with `part = _relevant(p, A, eng)`
-   (section 7), memoized under `(p, part)` (`sympy_api._ask`).
+   built in, every argument a number without free symbols or `AppliedUndef`),
+   the answer is `ask(p, True)`: `A` is ignored (`sympy_api._ask`). Section 9.
+3. Relevance: else, if `Engine.relevance` and `A` is `And`, `Or`, `Not`,
+   `Implies`, `Equivalent`, predicate or relation (other Booleans reach step 4
+   unsplit), the answer is `_engine_ask(p, part)` (`sympy_api._ask`), memoized
+   under `(p, part)`, with `part = _relevant(p, A, eng)` (section 7).
 4. `_engine_ask(p, A)`: translate `p` by `_formula(p, rel)` and `A` by
-   `_formula(A, rel, opaque=True)` (`rel` is whether the engine has relation
-   specs); an `Unsupported` translation gives `None`; `p` translating to
-   `TRUE`/`FALSE` gives `True`/`False`; `A` translating to `FALSE` raises
-   `ValueError`; `A` translating to `TRUE` is no assumption. A single
-   vocabulary atom without assumptions goes to `Engine.is_(expr, pred)`,
-   anything else to `Engine.ask(p, A)`. `InconsistentAssumptions` becomes
-   `ValueError`, `Uninterpreted` becomes `None` (`sympy_api._engine_ask`).
+   `_formula(A, rel, opaque=True)` (`rel`: the engine has relation specs);
+   `Unsupported` gives `None`; `p` as `TRUE`/`FALSE` gives `True`/`False`; `A`
+   as `FALSE` raises `ValueError`, as `TRUE` is no assumption. One vocabulary
+   atom without assumptions goes to `Engine.is_(expr, pred)`, anything else to
+   `Engine.ask(p, A)`. `InconsistentAssumptions` becomes `ValueError`,
+   `Uninterpreted` `None` (`sympy_api._engine_ask`).
 
-Property: an out-of-scope query returns `None` before the engine is
-touched, and `out_of_scope(p, A)` names the category (`sympy_api.out_of_scope`,
-`CATEGORIES`; `tests/test_sympy_api.py`). Note: `out_of_scope` has no engine
-argument and reports `"relation"` for a relation the default engine does
-interpret (record 3135 below); it describes the engine without adapters.
+Property: an out-of-scope query returns `None` before the engine is touched,
+and `out_of_scope(p, A)` names the category (`sympy_api.out_of_scope`,
+`CATEGORIES`; `tests/test_sympy_api.py`). Note: `out_of_scope` takes no engine
+and reports `"relation"` for a relation the default engine interprets (record
+3135 below): it describes the engine without adapters.
 
 ## 2. Translation: the formulas of `p` and `A`
 
@@ -71,25 +69,25 @@ linked_terms)` is a function of the two formulas' atoms:
 
 - `glue` iff `A` or `p` holds a relation atom, or two sign atoms
   (`_SIGN_PREDS`, `engine.py`) of `A` and `p` together are on different
-  `Add` nodes sharing a free symbol;
+  `Add` nodes sharing a free symbol (the pair may be one atom of each formula);
 - `transfer` iff `A` or `p` holds an `eq` atom;
 - `linked_terms` is the set of arguments of vocabulary atoms and sides of
-  relation atoms of `A` and `p`, numbers excluded.
+  relation atoms of `A` and `p`, numbers excluded (P3's text says "cones" and
+  nothing on numbers; this spec and today's code use the atoms' arguments).
 
 Today's code computes the same three facts in three places, per query:
 
-- `glue`: `engine._links_wanted(atoms_of(A), atoms_of(p))` for the affine
-  pair, together with the presence of a relation atom in
-  `Session.assumption_lits` (`a_rel or p_rel or _links_wanted(...)`); the
-  budget test uses the same condition from the cones (`Engine._within_budget`,
-  `link = bool(specs) and (rel or len(sums) >= 2)`). The glue object itself
-  is created lazily, by the first relation atom allocated (`Session._custom`,
-  `Relations(...)`) or by `Session._affine_links` when the pair appears.
-- `transfer`: `Relations.wants_transfer(atoms)` is true on an `eq` atom
-  (and on an order atom whose reverse `_trichotomy` paired, which P3's
-  syntactic test does not count: a difference to record in P3). Transfer is
-  engaged once per session by `Relations._engage_transfer` and switched on
-  for a query by `Relations.xfer_sel` (section 5.5).
+- `glue`: `engine._links_wanted(atoms_of(A), atoms_of(p))` for the affine pair,
+  or a relation atom in `Session.assumption_lits` (`a_rel or p_rel or
+  _links_wanted(...)`); the budget's own link test is weaker (section 10, open
+  point 1). The glue object itself is created lazily, by the first relation
+  atom allocated (`Session._custom`, `Relations(...)`) or by
+  `Session._affine_links` when the pair appears.
+- `transfer`: `Relations.wants_transfer(atoms)` is true on an `eq` atom (and on
+  an order atom whose reverse `_trichotomy` paired, which P3's syntactic test
+  does not count: open point 1); engaged once per session
+  (`Relations._engage_transfer`), switched on per query (`Relations.xfer_sel`,
+  section 5.5).
 - `linked_terms`: `Relations.note_formula(atoms)` records every vocabulary
   argument of a user formula as a link candidate; `Relations.process`
   links the sides of a user relation once a theory interprets it;
@@ -278,25 +276,24 @@ assumption literals of section 5.4 and 5.5. Let `q` be the literal of `p`.
 - Else if `C & L |= q`: `True`; if `C & L |= ~q`: `False`; else `None`.
 
 Today's code computes this in steps (`Engine._ask`): `Session.query_literal(q,
-L, search=False)` reads the propagation closure (`Solver.implied(L)`
-raises on conflict); if open and the session is incomplete, `escalate`
-then propagate again; if still open, `Solver.entails(q, L)` searches, at
-most two searches (design, "Nodes, cones and discovery"). The session is:
-for `Engine.is_`, a fresh one over `cone(e)` (`Engine.is_`); for
-`Engine.ask` with assumptions, the contextual session of `A`
-(`Engine._context_session`, built by `_build_context`, LRU of
-`keep_sessions`, replaced after `session_limit` nodes), or, when search is
-needed and the session holds more than `cone_threshold` nodes beyond `A`'s,
-a fresh session over `A` and `cone(p)` (`Engine._ask`, `cone_search`).
-The clause `~L | q` (or `~q`) is then added so a repeat propagates.
+L, search=False)` reads the propagation closure (`Solver.implied(L)` raises on
+conflict); if open and the session is incomplete, `escalate` and propagate
+again; if still open, `Solver.entails(q, L)` searches, at most twice (design,
+"Nodes, cones and discovery"). The session: for `Engine.is_` a fresh one over
+`cone(e)`; for `Engine.ask` with assumptions the contextual session of `A`
+(`Engine._context_session`, built by `_build_context`, LRU of `keep_sessions`,
+replaced after `session_limit` nodes) or, when search is needed and it holds
+more than `cone_threshold` nodes beyond `A`'s, a fresh session over `A` and
+`cone(p)` (`Engine._ask`, `cone_search`). After a cone search, the clause
+`~L | q` (or `~q`) is added to the replacement session so a repeat propagates
+(`Session._emit` in `Engine._ask`); other paths add nothing.
 
 Property: the answer does not depend on which session answered, on earlier
-queries, on the caches or on `PYTHONHASHSEED` (design, "History
-independence"; `tests/test_history.py` gate G4; `harness fuzz` gate G5;
-`harness audit` gate G6). Where a reused session's answer could depend on
-its path (branch budget, give-up, undecidable LRA constants:
-`engine._path_dependent`, `_cannot_give_up`), the query is re-answered in a
-rebuilt session (`Engine.ask`, `stats["exhaust_reanswers"]`).
+queries, on the caches or on `PYTHONHASHSEED` (design, "History independence";
+gates G4 `tests/test_history.py`, G5 `harness fuzz`, G6 `harness audit`). Where
+a reused session's answer could depend on its path (branch budget, give-up,
+undecidable LRA constants: `engine._path_dependent`, `_cannot_give_up`), it is
+re-answered in a rebuilt session (`Engine.ask`, `stats["exhaust_reanswers"]`).
 
 Property: with `None` meaning "not entailed", the engine's answers agree
 with SymPy's on the corpus with `none=0` contradictions (`tools/compare.py
@@ -332,53 +329,56 @@ Rules:
 
 ## 10. Budgets
 
-Definition. `weight(cone)` is the sum of the objects' weights: 1 per node,
-2 per node with both compiled patterns and plain formulas, 0 per custom or
-relation atom (`Engine._struct`). `within_budget(p, A)` iff
-`weight(cone(p) | cone(A)) <= discovery_budget` (400), with the link objects
-included when `glue` (`Engine._within_budget`).
+Definition. `weight(cone)` sums the objects' weights: 1 per node, 2 per node
+with both compiled patterns and plain formulas, 0 per custom or relation atom
+(`Engine._struct`); it measures the clause set's size by nodes with their
+clauses (section 5), not by clause count. `within_budget(p, A)` iff
+`weight(cone(p) | cone(A)) <= discovery_budget` (400), links included when a
+cone holds a relation atom or the cones hold two sign-atom sums with free
+symbols (`Engine._within_budget`, `len(sums) >= 2`: no shared-symbol test,
+weaker than `glue`).
 
 Rules:
 
-1. A query over the budget is `None` without any session work
+1. A query over the budget is `None` without session work
    (`Engine._over_budget`, `last_budget_limited`, `stats["budget_limited"]`),
-   unless `A` fits the budget and `verdict(A)` is `INCONSISTENT`, in which
-   case it raises (`Engine.ask`). `Engine.is_` over the budget is `None`
-   whatever is cached (`Engine.is_`).
+   unless `A` fits the budget and `verdict(A)` is `INCONSISTENT`: then it
+   raises (`Engine.ask`). `Engine.is_` over the budget is `None` whatever is
+   cached.
 2. A set over the budget has verdict `UNKNOWN` and builds no session
    (`Engine.verdict`).
 3. A query within the budget runs discovery and escalation uncapped: no
    session of such a query is truncated (`Engine._note_budget` assertion).
 
-Property: the budget is a function of the query, the registry and the
-settings only (`Engine._within_budget` docstring; `tests/test_budget_cone.py`,
-`tests/test_set_verdict.py`).
-On the corpus and the stream the largest cone weighs 16 (design).
+Property: the budget is a function of the query, the registry and the settings
+only (`Engine._within_budget` docstring; `tests/test_budget_cone.py`,
+`tests/test_set_verdict.py`); largest corpus or stream cone: 16 (design).
 
 ## 11. Open points
 
-1. The engine's per-query theory scope is three tests in three places
-   (section 3); `theory_scope` as one function is P3. `wants_transfer`
-   also counts a `_trichotomy` pair, which P3's syntactic test does not.
-2. The glue object is created at the first relation atom of *any* formula
-   compiled in the session, extension facts included (`Session._custom`);
-   the selectors keep such glue inert, but `cone` counts `glue_objects`
-   only for relation atoms of `p` and `A`.
+1. The engine's per-query theory scope is three tests in three places (section
+   3); `theory_scope` as one function is P3. Differences from P3:
+   `wants_transfer` counts a `_trichotomy` pair, which P3's syntactic test does
+   not; the budget's link test (section 10) counts sign-atom sums over disjoint
+   symbols, which `glue` does not.
+2. Glue is created at the first relation atom of *any* formula compiled in the
+   session, extension facts included (`Session._custom`); selectors keep it
+   inert, but `cone` counts `glue_objects` only for relation atoms of `p` and
+   `A`.
 3. `out_of_scope` ignores the engine's adapters (section 1).
-4. The clause set is stated per session; no code names the
-   session-independent clause set the harness compares against (`ask_ref`
-   is P5b). Section 8's "at most two searches" comes from design.md;
-   `Engine._ask` is the code.
+4. The clause set is stated per session; no code names the session-independent
+   clause set the harness compares against (`ask_ref` is P5b). Section 8's "at
+   most two searches" is design.md's; `Engine._ask` is the code.
 5. Section 5.3's property (cached units change no answer) is checked by the
    harness, not proved here; the provenance rule is `Engine._put_result`.
 
 ## 12. Ten corpus records
 
-Sampled from `queries.jsonl` with `random.seed(97)` over kind-stratified
-pools (constant, unary, relational, Boolean, `old`), replacing one matrix
-record and one `prop == true` record; shapes computed with
-`Engine._query_cone`, `registry.templates_for`, `_relevant` and the
-section 3 definition. Scope is `(glue, transfer, linked_terms)`.
+Sampled from `queries.jsonl` with `random.seed(97)` over kind-stratified pools
+(constant, unary, relational, Boolean, `old`), replacing one matrix record and
+one `prop == true` record; shapes computed with `Engine._query_cone`,
+`registry.templates_for`, `_relevant` and the section 3 definition. Scope is
+`(glue, transfer, linked_terms)`.
 
 | line | query | route | cone nodes (templates firing) | scope | literal | answer |
 |---|---|---|---|---|---|---|
@@ -387,13 +387,14 @@ section 3 definition. Scope is `(glue, transfer, linked_terms)`.
 | 636 | `Q.algebraic(1 + I)`, `True` | constant, `Engine.is_` | `1 + I` (`add_templates`, 9 rules; `1`, `I` resolved in place) | `(F, F, {})` | `base[1+I]+algebraic` | True |
 | 1326 | `Q.rational(x**y)`, `Q.rational(y) & Q.eq(x, -1)` | `Engine.ask`, part = whole (relational) | `x**y` (`pow_templates`, 57 rules), derived `2*y`, `x - 1`, `x + 1` (`mul`/`add_templates`), `x`, `y`, `-1` (relation side), atom `eq(-1, x)` | `(T, T, {x, y, x**y})` | `base[x**y]+rational` | None |
 | 1875 | `Q.odd(2*x)`, `Q.irrational(x)` | `Engine.ask`, part = whole | `2*x` (`mul_templates`, 41 rules), `x` | `(F, F, {2*x, x})` | `base[2*x]+odd` | False |
-| 2369 | `Q.algebraic(log(x))`, `Q.algebraic(x)` | `Engine.ask`, part = whole | `log(x)` (`log_templates` + `function_commutative`, 18 rules), derived `x - 1` (`add_templates`), `x` | `(F, F, {log(x), x})` | `base[log(x)]+algebraic` | None |
+| 2369 | `Q.algebraic(log(x))`, `Q.algebraic(x)` | `Engine.ask`, part = whole | `log(x)` (`log_templates`, a name generated in `templates/functions.py`, + `function_commutative`, 18 rules), derived `x - 1` (`add_templates`), `x` | `(F, F, {log(x), x})` | `base[log(x)]+algebraic` | None |
 | 2514 | `Implies(Q.real(x), Q.positive(x))`, `True` | `Engine.ask`, no assumptions | `x` (`symbol_units`) | `(F, F, {x})` | `literal_of(Implies(...))` | None |
 | 2639 | old: `(x**2).is_imaginary` | `Engine.is_` | `x**2` (`pow_templates`, 32 rules), `x` | `(F, F, {x**2, x})` | `base[x**2]+imaginary` | None |
 | 2968 | `Q.integer(x)`, `Q.integer(x)` | `Engine.ask`, part = whole | `x` (`symbol_units`) | `(F, F, {x})` | `base[x]+integer` | True |
 | 3135 | `x < 0`, `x >= 0` | `Engine.ask`, part = whole (relational) | `x`, `0` (`constant_units`), atom `lt(x, 0)`; `A` is `extended_real(x) & ~lt(x, 0)` | `(T, F, {x})` | `literal_of(lt(x, 0))` (a relation atom is not a vocabulary literal) | False |
 
 Every record's engine answer equals its recorded value; the heaviest union
-`cone(p) | cone(A)` weighs 7 (record 1326), within the budget; every verdict
-is `CONSISTENT`; `structural_commutative` fires on every node and emits at
-most `commutative(e)`.
+`cone(p) | cone(A)` weighs 7 (record 1326), within budget; every verdict is
+`CONSISTENT`; `structural_commutative` is registered for every class and emits
+at most `commutative(e)` (`None` for `_STRUCTURAL` classes, matrices and
+`Function` nodes with `Expr` arguments, which `function_commutative` covers).
