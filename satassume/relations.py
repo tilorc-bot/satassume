@@ -159,9 +159,10 @@ of its own: its ``real`` literal would be false at the root anyway.
 
 Predicate transfer
 ------------------
-With the first relation atom of a user formula (an equality, or
-inequalities that may give one: ``x <= y`` and ``y <= x``, see
-:meth:`Relations._trichotomy`), the session attaches a
+When the relation atoms of the query make an equality (an ``eq`` atom, or
+inequalities that give one: ``x <= y`` and ``y <= x``, see
+:meth:`Relations._trichotomy`; ``satassume.scope.theory_scope``), the
+session attaches, at construction, a
 :class:`satassume.transfer.TransferTheory`: the node blocks of the
 candidate terms are registered with it under the nodes' EUF terms, so
 terms in one EUF class share all unary facts (``Q.prime(x)`` from
@@ -182,8 +183,8 @@ the glue ``p`` and ``a`` themselves call for:
   ``link_sel[e]``; assumed for the vocabulary-atom arguments and the sides
   of the interpreted relation atoms of ``p`` and ``a``
   (:meth:`Relations.selectors_for`), only if ``p`` or ``a`` holds a
-  relation atom or an affine pair (the trigger of
-  ``Session._affine_links``);
+  relation atom or an affine pair (``scope.affine_pair``: the ``glue`` of
+  the query's theory scope);
 * the clauses of :meth:`Relations._eq_infinity`, :meth:`Relations._eq_links`
   and :meth:`Relations._trichotomy` carry their atoms' ``atom_sel``;
   assumed for the relation atoms of ``p`` and ``a``.  The user-atom clauses
@@ -200,8 +201,9 @@ the glue ``p`` and ``a`` themselves call for:
   would reach EUF and predicate transfer;
 * every lemma of predicate transfer carries ``xfer_sel``
   (``TransferTheory.guard``); assumed iff the relation atoms of ``p`` and
-  ``a`` make an equality (:meth:`Relations.wants_transfer`), the condition
-  on which a fresh session engages transfer.  Each
+  ``a`` make an equality (:meth:`Relations.wants_transfer`, the
+  ``transfer`` of the query's theory scope), the condition on which the
+  session engaged transfer at construction.  Each
   candidate term but a rational number takes part only while its enable
   variables say so (``TransferTheory.switch``): all its predicates while
   it is a side of a user or trichotomy equality the query activates, or a

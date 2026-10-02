@@ -1,9 +1,13 @@
 """Triggers and observers for the engine's lazily switched-on capabilities.
 
-Some of the engine's capabilities are not there from the start of a
-session (or of the engine): they switch on when a certain kind of input
-first appears, and stay on.  A history-dependent answer of this kind needs
-two coordinated queries in one stream:
+Some of the engine's capabilities used to switch on when a certain kind
+of input first appeared in a session, and stay on; since #97 P3 the
+session of a query is built with its theory scope
+(``satassume.scope.theory_scope``: a function of the query's syntax), so
+the capabilities below exist from the session's construction or not at
+all, and the observers are expected to agree with a fresh engine.  The
+profiles stay as the check of that.  A history-dependent answer of this
+kind needs two coordinated queries in one stream:
 
 * a **trigger**: a query that switches the capability on in the session of
   an assumption set (a relation atom creates the relation glue, an
@@ -26,8 +30,9 @@ trigger/observer pairs into the base stream (``GenOptions.lazy``).
 Capabilities and their observers (see ``harness/README.md``, "Lazily
 switched-on capabilities"):
 
-``relations`` (per session; ``Session._custom`` creates ``Relations`` at
-    the first relation atom).  Links ``extended_positive(e) <-> gt(e, 0)``,
+``relations`` (per session; ``Session`` creates ``Relations`` at
+    construction when the query's scope has ``glue``: a relation atom or a
+    sign-on-sum pair).  Links ``extended_positive(e) <-> gt(e, 0)``,
     ``extended_negative(e) <-> lt(e, 0)``, ``zero(e) <-> eq(e, 0)`` for
     every argument ``e`` of a vocabulary atom of the assumptions and of
     every later query, whose sides LRA reads as linear forms over real
@@ -35,8 +40,9 @@ switched-on capabilities"):
     clauses for ``oo`` summands.  Observers: order predicates on *linear
     relatives* of the set's terms (shifts, scalings, sums and differences
     of them, with rational and irrational constants).
-``transfer`` (per session; ``Relations._engage_transfer`` at the first
-    equality atom that is not glue).  Every node of the session becomes a
+``transfer`` (per session; ``Relations._engage_transfer`` at
+    construction when the query's scope has ``transfer``: an equality
+    atom, or an order atom and its reverse).  Every node of the session becomes a
     candidate for sharing all its unary facts with the terms EUF puts in
     its class: through the links (``zero(e)`` puts ``e`` in the class of
     ``0``; ``eq(e, oo)`` makes ``positive_infinite(e)`` a class with
