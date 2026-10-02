@@ -1,9 +1,10 @@
 """Run ``satassume.ref.ask_ref`` over the recorded corpus.
 
-    python tools/ref_corpus.py queries.jsonl [--skip N] [--limit N] [--lines a,b,c]
+    python tools/ref_corpus.py queries.jsonl [--relations-only] [--skip N] [--limit N] [--lines a,b,c]
 
 Replays the in-scope records exactly as ``tools/compare.py --in-scope-only``
-selects them (its loader, ``rebuild`` and ``out_of_scope``, is imported, not
+selects them (with ``--relations-only``, the ``out:relation`` records as
+``compare.py --relations-only`` does) (its loader, ``rebuild`` and ``out_of_scope``, is imported, not
 copied) and answers each three ways: the recorded answer, the engine
 (``sympy_api.ask`` on one ``Engine``, as ``compare.py``) and ``ask_ref``.
 
@@ -92,6 +93,8 @@ def _fmt(v) -> str:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("file")
+    ap.add_argument("--relations-only", action="store_true",
+                    help="replay the relational records instead (compare.py --relations-only)")
     ap.add_argument("--skip", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--lines", default="", help="comma-separated line numbers only")
@@ -126,7 +129,7 @@ def main(argv=None):
             except Exception:   # noqa: BLE001 - as compare.py
                 rec_stats["unreplayable"] += 1
                 continue
-            if cat is not None:
+            if (cat != "relation") if args.relations_only else (cat is not None):
                 continue
             seen += 1
             desc = f"{prop} | {assum}"
