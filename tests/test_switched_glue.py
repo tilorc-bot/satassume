@@ -130,7 +130,7 @@ def test_set_glue_at_the_root():
     s = Q.gt(a, 1) & Q.lt(a, 3) & Q.eq(c, 2)
     assert ask(Q.positive(b), s, e) is None
     assert not e._context_sessions                  # built per query, discarded
-    sess, lits = e._build_context(_formula(s, True, True))
+    sess, lits = e._build_context(_formula(s, True, True), P("positive", b))
     assert e._ask(sess, lits, P("positive", b), True) is None
     rel, root = sess.relations, set(sess.solver.root_trail())
     for x in (rel.link_sel[a], rel.link_sel[c], rel.xfer_sel):

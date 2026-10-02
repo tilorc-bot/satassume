@@ -200,8 +200,9 @@ def test_theories_are_per_session(eng):
     sessions = []
     for p, a in ((Q.lt(x, z), Q.lt(x, y) & Q.lt(y, z)), (Q.lt(x, y), Q.lt(y, z))):
         ask_with(eng, p, a)
-        s, lits = eng._build_context(_formula(a, True, True))
-        eng._ask(s, lits, _formula(p, True), True)
+        q = _formula(p, True)
+        s, lits = eng._build_context(_formula(a, True, True), q)
+        eng._ask(s, lits, q, True)
         sessions.append(s)
     assert not eng._context_sessions
     theories = [id(ad.theory) for s in sessions if s.relations

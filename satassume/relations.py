@@ -143,7 +143,9 @@ it is a function of the formulas' atoms (their structure), never of what
 the session holds, so a fresh session for ``(p, a)`` switches on the same
 glue.  The discovery budget counts the twins of each formula in its cone
 and those of the pair in ``Engine._within_budget``; the relevance layer
-checks a set with a twin of its own whole (``engine.zero_glue``).
+checks a set with a twin of its own whole (the set's own scope,
+``scope.theory_scope``, which counts the twins; ``engine.zero_glue`` is
+the same condition on one formula).
 
 Why only there.  What the twin adds over the link clause ``zero(t) <->
 eq(t, 0)`` that every linked ``t`` already has (below) is (1) congruence
@@ -237,9 +239,10 @@ of its own: its ``real`` literal would be false at the root anyway.
 
 Predicate transfer
 ------------------
-With the first relation atom of a user formula (an equality, or
-inequalities that may give one: ``x <= y`` and ``y <= x``, see
-:meth:`Relations._trichotomy`), the session attaches a
+When the relation atoms of the query make an equality (an ``eq`` atom, or
+inequalities that give one: ``x <= y`` and ``y <= x``, see
+:meth:`Relations._trichotomy`; ``satassume.scope.theory_scope``), the
+session attaches, at construction, a
 :class:`satassume.transfer.TransferTheory`: the node blocks of the
 candidate terms are registered with it under the nodes' EUF terms, so
 terms in one EUF class share all unary facts (``Q.prime(x)`` from
@@ -261,8 +264,8 @@ the glue ``p`` and ``a`` themselves call for:
   of the interpreted relation atoms of ``p`` and ``a``
   (:meth:`Relations.selectors_for`), only if ``p`` or ``a`` holds a
   relation atom (a ``zero(t)`` with ``t`` under an application counts as
-  ``eq(t, 0)``, see "Zero is an equality") or an affine pair (the trigger of
-  ``Session._affine_links``);
+  ``eq(t, 0)``, see "Zero is an equality") or an affine pair
+  (``scope.affine_pair``: the ``glue`` of the query's theory scope);
 * the clauses of :meth:`Relations._eq_infinity`, :meth:`Relations._eq_links`
   and :meth:`Relations._trichotomy` carry their atoms' ``atom_sel``;
   assumed for the relation atoms of ``p`` and ``a``.  The user-atom clauses
@@ -279,8 +282,9 @@ the glue ``p`` and ``a`` themselves call for:
   would reach EUF and predicate transfer;
 * every lemma of predicate transfer carries ``xfer_sel``
   (``TransferTheory.guard``); assumed iff the relation atoms of ``p`` and
-  ``a`` make an equality (:meth:`Relations.wants_transfer`), the condition
-  on which a fresh session engages transfer.  Each
+  ``a`` make an equality (:meth:`Relations.wants_transfer`, the
+  ``transfer`` of the query's theory scope), the condition on which the
+  session engaged transfer at construction.  Each
   candidate term but a rational number takes part only while its enable
   variables say so (``TransferTheory.switch``): all its predicates while
   it is a side of a user or trichotomy equality the query activates, or a
@@ -789,6 +793,18 @@ class Relations:
         self._xcounted: set = set()       # the terms in _xheads
         self._xpend: list = []            # (node, base) not yet candidates
         self._xcand: set = set()          # candidate nodes (registered)
+        #: the theory scope the session was built for (satassume.scope):
+        #: with ``glue`` the vocabulary-atom arguments of its formulas are
+        #: linked from the start (``active``; the sides of its relation
+        #: atoms once a theory interprets them, ``process``), with ``transfer``
+        #: predicate transfer is engaged here, before any atom exists
+        scope = self.scope = session.scope
+        if scope.glue:
+            # the formulas arrive after this (note_formula records their
+            # vocabulary-atom arguments, process links them)
+            self.active = True
+            if scope.transfer:
+                self._engage_transfer()
 
     # -- entry points used by the session ------------------------------
     def enqueue(self, atom: P) -> None:
@@ -820,10 +836,17 @@ class Relations:
                 unlinked.add(a)
         for a in user:
             if a.pred == "eq":
-                # transfer is engaged by an equality of a user formula (or
-                # a _trichotomy pair, W2B4b) and switched on per query
-                # (Session.assumption_lits, Relations.wants_transfer)
-                self._want_transfer = True
+                # transfer is engaged at construction when the query's
+                # scope makes an equality (scope.transfer_wanted: an eq
+                # atom or a _trichotomy pair, W2B4b) and switched on per
+                # query (Session.assumption_lits, wants_transfer).  A user
+                # equality outside the scope (a session built for the set
+                # alone and asked an equality: tests, or an equality of a
+                # node fact, Extensions.node_facts) still engages it, and
+                # is counted (stats["scope_misses"])
+                if self.xfer is None and not self._want_transfer and s.engine.transfer:
+                    s.engine.stats["scope_misses"] += 1
+                    self._want_transfer = True
                 self._note_sides(a, 2)
                 var = s.table.custom.get(a)
                 if var is not None and a not in self._user_eq:
@@ -943,7 +966,12 @@ class Relations:
                     if eq and hasattr(ad, "node_term"):
                         eterms.extend(ad.interned(atom.expr))
                         if atom not in self._aux_eq:
-                            self._want_transfer = True
+                            # a user atom (engaged by the scope), or one a
+                            # template or extension made: a candidate side,
+                            # but no engagement, since transfer's selector
+                            # is assumed only when the user atoms make an
+                            # equality (wants_transfer), i.e. when the
+                            # scope engaged it already
                             self._note_sides(atom, 2)
                         elif atom in self._link_eq:
                             self._note_sides(atom, 1)
@@ -1093,7 +1121,9 @@ class Relations:
         self._note_sides(eqa, 2)
         self._tri_of[atom] = rev
         self._tri_of[rev] = atom
-        self._want_transfer = True
+        # a pair of user atoms is in the query's scope (scope.transfer_wanted
+        # counts it), which engaged transfer at construction; a pair with an
+        # extension atom switches nothing on (wants_transfer ignores it)
         both = [-self._atom_selector(atom), -self._atom_selector(rev)]
         self._add_role(eqa, both, "tri")
         clause = both + [var, rvar, eq]
@@ -1454,15 +1484,11 @@ class Relations:
         equality: an ``eq`` atom (``ne`` is its negation), or an order atom
         and its reverse that :meth:`_trichotomy` related (``Q.le(x, y) &
         Q.ge(x, y)`` answers as ``Q.eq(x, y)``, W2B4b).  The same atoms
-        engage it (:meth:`process`, :meth:`_trichotomy`), so a fresh
-        session has it exactly then; a function of the atoms."""
-        tri = self._tri_of
-        for a in atoms:
-            if a.pred == "eq":
-                return True
-            if tri and a in tri and tri[a] in atoms:
-                return True
-        return False
+        engage it at the session's construction
+        (:func:`satassume.scope.transfer_wanted`, the same syntactic test),
+        so a fresh session has it exactly then; a function of the atoms."""
+        from .scope import transfer_wanted
+        return transfer_wanted(atoms)
 
     def selectors_for(self, f) -> list:
         """The selectors ``f`` activates once links are on: those of the
@@ -1551,9 +1577,13 @@ class Relations:
 
     # -- predicate transfer (satassume.transfer) -------------------------
     #
-    # Engaged explicitly, once per session, by the first equality atom that
-    # is not glue (a user atom, or one a template or extension made); the
-    # links' eq(e, 0) and the interface equalities alone do not engage it.
+    # Engaged once per session, at construction, when the scope of the
+    # session's query makes an equality (satassume.scope, ``transfer``);
+    # the glue's own equalities (the links' eq(e, 0), the interface
+    # equalities) and those templates or extensions make never engage it.
+    # ``_want_transfer`` remains for a user equality outside the scope (a
+    # session built for a set alone and then asked an equality: counted
+    # as a scope miss by ``process``).
     # Engaging attaches the EUF adapter's theory (if not yet) and a
     # TransferTheory; from then on every node block of the session is
     # registered with it (its expression interned as an EUF term, so

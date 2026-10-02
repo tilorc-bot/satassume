@@ -16,7 +16,8 @@ timings in [performance.md](performance.md).
 | `satassume/constfield.py` | exact numbers in `Q(pi, E, sqrt(2), ...)` for LRA |
 | `satassume/euf.py`, `euf_adapter.py` | congruence closure; SymPy terms to EUF terms |
 | `satassume/transfer.py` | `TransferTheory`: unary facts across EUF classes |
-| `satassume/engine.py` | `Session._custom`, `_relations`, `_affine_links`; `Engine(relations=, transfer=, uninterpreted=)` |
+| `satassume/engine.py` | `Session._custom`, `_relations`, `link_set`; `Engine(relations=, transfer=, uninterpreted=)` |
+| `satassume/scope.py` | `theory_scope`, `affine_pair`, `transfer_wanted`, `extension_atoms`: the theory scope of a query (#97 P3) |
 | `tests/theory_harness.py` | testing a theory: `TheoryCase` with `check_solve`/`check_entails`/`check_implied` against independent brute-force checkers (Fourier-Motzkin, naive congruence closure; never the code under test), `Recorder` and `check_protocol` for the protocol, `ForbidTheory` as a 60-line example, `relation_engine` and `dummy_specs` end to end; `tests/real_theory_fuzz.py` fuzzes the solver with the real LRA and EUF |
 
 ## The DPLL(T) interface
@@ -177,17 +178,22 @@ containing a literal `nan` are refused by EUF and LRA.
 ## The glue: `Relations`
 
 Each `Session` has its own adapters and theories, held by a
-`relations.Relations` object (`Session.relations`). It is created lazily:
+`relations.Relations` object (`Session.relations`). It is created at
+construction, from the query's theory scope (`scope.theory_scope`, #97 P3),
+when:
 
-- by the first relation atom the session allocates (`Session._custom`),
-  in the assumptions, the query, a template or an extension; the unary
-  atoms of the assumptions then become link candidates;
-- or by `Session._affine_links` when two sign atoms (`positive`,
-  `nonzero`, `extended_negative`, ...; `_SIGN_PREDS`) of the assumptions
-  or the query are on different sums sharing a symbol, as in
-  `Q.negative(1 - x)` under `Q.positive(x - 1)`: only the glue links a
-  sign fact to its linear form, so without it LRA never compares the two
-  sums. The sums of the assumptions are kept, a query's are not. Once the
+- the assumptions or the query hold a relation atom (one in an extension
+  fact of a custom atom counts, `scope.extension_atoms`; one in a node fact
+  of a vocabulary predicate registered for a class does not: `Session._custom`
+  then creates the glue at the atom and counts it, `stats["scope_misses"]`).
+  The unary atoms of the assumptions become link candidates after the set's
+  complete check (`Session.link_set`), so the check sees only the set's own
+  glue;
+- or two sign atoms (`positive`, `nonzero`, `extended_negative`, ...;
+  `scope.SIGN_PREDS`) of the assumptions or the query are on different sums
+  sharing a symbol (`scope.affine_pair`), as in `Q.negative(1 - x)` under
+  `Q.positive(x - 1)`: only the glue links a sign fact to its linear form,
+  so without it LRA never compares the two sums. Once the
   glue exists it links every unary atom's argument, not only those sums,
   which lets facts cross the components of the relevance split (#15; see
   [design.md](design.md), "Relevance").
@@ -224,7 +230,7 @@ selectors of its own glue only (`Session.assumption_lits`):
   vocabulary-atom arguments and the sides of the interpreted relations of
   its proposition `p` and its assumptions `a` (`selectors_for`), and only
   if `p` or `a` holds a relation atom or an affine pair
-  (`engine._links_wanted`, the `_affine_links` trigger): a unary query
+  (`scope.affine_pair`): a unary query
   under a unary set gets no links however many relation queries the
   session answered before;
 - the clauses of `_eq_infinity`, `_eq_links` and `_trichotomy` carry their
@@ -479,7 +485,7 @@ precision would be sound under both readings; it was not built.
 |---|---|---|
 | FactTheory: unary facts as a lattice-valued DPLL(T) theory replacing the rule block, exact closure per term | +56% on the Pi stream against 6b935d7, answers identical | every predicate literal crosses the Python theory interface (about 660,000 events per pass against the rule block's in-loop writes); held levels with theories, `_tpending` and the lazy rule-block writes came out of it |
 | Engage EUF only on a user equality, defer the zero links (archived as tag `archive/relation-speed`) | -2.2% on the Pi against 66871eb after porting | under the 3% line; the first version lost congruence answers through the zero links (`ask(Q.zero(f(x)), Q.zero(x) & Q.zero(f(0)) & Q.lt(x, 1))`), and staying exact needed a subtle engagement argument |
-| Wider `_affine_links` trigger: a sum and any term sharing a symbol | 14 more-definite stream answers instead of 4, +65% (#51, against a861432) | cost |
+| Wider sign-on-sum trigger (`scope.affine_pair`; `_affine_links` then): a sum and any term sharing a symbol | 14 more-definite stream answers instead of 4, +65% (#51, against a861432) | cost |
 | Integrality link only in sessions mentioning an integer-family predicate | +2.4% instead of +3.75% (#38) | loses answers about declared-integer symbols (`Q.ge(k, 1)` under `Q.gt(k, 0)`) |
 | Integrality atoms for opaque terms; nudging off an integer before branching; skipping clause 2 for terms real at the root; deduplicating clauses | no extra answer, or no measurable gain (#38, #45) | nothing to gain |
 | Interface equalities and guard nodes for known-real constants | no stream answer; about 10% of decisions under `pi` sets | relaxation kept |

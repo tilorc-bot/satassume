@@ -115,7 +115,7 @@ def test_k5_unrelated_undecidable_constant_kills_lra():
             == ask(Q.gt(x, 0), Q.gt(x, 1) & Q.eq(y, c), Engine()))
 
 
-def test_k6_undecided_escapes_affine_links():
+def test_k6_undecided_escapes_the_affine_pair_glue():
     x, y = symbols('x y')
     c = cos(1)**2 + sin(1)**2 - 1
     a = Q.real(x) & Q.positive(y - 1) & Q.positive(y + c)

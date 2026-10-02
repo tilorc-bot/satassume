@@ -304,10 +304,12 @@ under hash seeds 0, 1, 2; carrier `sessions` in every case (clearing the
 contextual sessions before the query restores the fresh answer; the fact
 cache, the answer memo, the splits and the failed-set memo do not).
 
-### G. The relation glue is switched on by the first relation atom of a session, and stays on
+### G. The relation glue was switched on by the first relation atom of a session, and stayed on (since #97 P3: built with the query's scope)
 
-`Session._custom` (engine.py 342-349) creates the session's `Relations`
-object when the first relation atom is *allocated*: by a relation in the
+Until #97 P3, `Session._custom` created the session's `Relations`
+object when the first relation atom was *allocated* (now the session is
+built with its query's theory scope, `scope.theory_scope`, and discarded
+after the query, #97 P1): by a relation in the
 assumptions (then a fresh session has it too) or by a relation in any
 query under the set.  From then on every user formula goes through
 `Relations.process` (`Session._relations`, called from `assume_formula`,
@@ -359,7 +361,7 @@ of `checker.attribute` (each prefix query replaced by `Q.commutative` of
 the terms it mentions) reproduces the discrepancy, which is what the tag
 `G'` records.
 
-### T. Predicate transfer is engaged by the first equality atom of a session, and stays on
+### T. Predicate transfer was engaged by the first equality atom of a session, and stayed on (since #97 P3: engaged at construction from the query's scope)
 
 T2 no longer differs since #63 (it is in `fixed/`): its prefix query
 raises in both engines (the set is inconsistent once transfer is

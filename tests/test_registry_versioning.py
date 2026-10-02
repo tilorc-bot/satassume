@@ -110,8 +110,9 @@ def _session_after(eng, p, a):
     """The session of the set ``a`` built for the query ``p``, holding its
     answer: what ``Engine.ask`` builds, answers in and discards."""
     from satassume.sympy_api import _formula
-    s, lits = eng._build_context(_formula(a, True, True))
-    eng._ask(s, lits, _formula(p, True), True)
+    q = _formula(p, True)
+    s, lits = eng._build_context(_formula(a, True, True), q)   # the query's scope (#97 P3)
+    eng._ask(s, lits, q, True)
     return s
 
 
@@ -259,7 +260,7 @@ def test_adapter_change_clears_too():
 def test_adapter_change_answers_as_fresh():
     # was test_adapter_change_drops_the_session
     """Two sign atoms on sums sharing a symbol start the relation glue
-    without a relation atom (``Session._affine_links``), so the query's
+    without a relation atom (``scope.affine_pair``, #97 P3), so the query's
     session holds theory state; without adapters the same query is None,
     and the session built for it has no glue."""
     eng = fresh()
