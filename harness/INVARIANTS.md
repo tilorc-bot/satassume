@@ -417,6 +417,35 @@ not from soundness I1), and counts the exempt pairs in its report.
 
 The findings below describe the cases as found.
 
+### Nightly run 36953488998 (28c04d8), package NB: term links without a relation atom
+
+Three I5 `depends` cases, all `consistent_by: engine`, fingerprint `-`:
+
+* **Split zero** (fixed; `fixed/I5-split-zero-links-application`,
+  `-nested`, `-nested-tight`; `transfer` profile, `default` and `tight`):
+  `zero(3*z - pi)` linked `f(3*z - pi)` to `f(0)` through #107's twin, the
+  restatement `nonnegative(3*z - pi) & nonpositive(3*z - pi)` did not.  A
+  split zero (two sign atoms of one formula bounding `t` from both sides,
+  `relations.zero_args`) now gets the twin under the same condition.
+* **Sums that differ by a Rational** (fixed;
+  `fixed/I5-shifted-sum-shares-irrational-lean`, `-tight`; `related`
+  profile): `irrational(6*k + 3*x + EulerGamma)` did not give
+  `irrational(6*k + 3*x + EulerGamma + 1)` (the proposition restated by
+  the shift); no relation atom helped either, nothing related the two
+  sums.  A sum `r + c` of three or more terms with a nonzero Rational `c`
+  now has `r` as a derived node (`templates.core._shift_template`).
+* **Shifted equality without transfer** (pinned:
+  `I5-shifted-equality-notransfer`; `relational` profile, `notransfer`):
+  `ask(Q.eq(x + 1, 1), Q.eq(x + 3/2, 3/2))` is None (True under every
+  other config).  `x + 3/2 = 3/2` iff `x = 0` for every complex `x`, but
+  LRA's twin of the equality is guarded by `real(x)`, which only transfer
+  (the class of `3/2` passing `rational` to `x + 3/2`) supplies; the
+  `notransfer` config switches it off on purpose and `ask_ref` with
+  `transfer=False` is None as well.  The pin is the known family: the
+  invariant nightly matches findings against the pinned cases' family
+  keys (`known:pinned:<stem>`), not against `checker.KNOWN_FAMILIES`
+  (the history-fuzz table).
+
 ### Findings of round 4 (`harness/repros/invariants/`, all `depends`)
 
 * **I2, out-of-scope material** (three pinned:

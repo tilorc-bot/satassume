@@ -1,0 +1,35 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "tight",
+  "discovery_budget": 12,
+  "session_limit": 6,
+  "keep_sessions": 1,
+  "cone_search": true,
+  "cone_threshold": 0,
+  "transfer": true,
+  "uninterpreted": "free",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 64,
+  "custom_cache_size": 16,
+  "answers_size": 32,
+  "splits_size": 8
+ },
+ "prop": "And(AppliedPredicate(Q.irrational, Add(Mul(Integer(6), Symbol('k', integer=True, positive=True)), Mul(Integer(3), Symbol('x')), EulerGamma)), AppliedPredicate(Q.extended_negative, Add(Mul(Integer(-1), Integer(18), Symbol('k', integer=True, positive=True)), Mul(Integer(-1), Integer(9), Symbol('x')), Mul(Integer(-1), Integer(3), EulerGamma))))",
+ "assum": "And(AppliedPredicate(Q.irrational, Add(Mul(Integer(6), Symbol('k', integer=True, positive=True)), Mul(Integer(3), Symbol('x')), EulerGamma)), AppliedPredicate(Q.extended_negative, Add(Mul(Integer(-1), Integer(18), Symbol('k', integer=True, positive=True)), Mul(Integer(-1), Integer(9), Symbol('x')), Mul(Integer(-1), Integer(3), EulerGamma))))",
+ "variant": {
+  "kind": "prop",
+  "prop": "And(AppliedPredicate(Q.irrational, Add(Mul(Integer(6), Symbol('k', integer=True, positive=True)), Mul(Integer(3), Symbol('x')), EulerGamma, Integer(1))), AppliedPredicate(Q.extended_negative, Add(Mul(Integer(-1), Integer(18), Symbol('k', integer=True, positive=True)), Mul(Integer(-1), Integer(9), Symbol('x')), Mul(Integer(-1), Integer(3), EulerGamma))))",
+  "scope": "in"
+ },
+ "base": "True",
+ "other": "None",
+ "source": "invariants profile=related seed=200 slice=30",
+ "shrunk": true,
+ "consistent_by": "engine",
+ "fingerprint": "-",
+ "prefix": []
+}

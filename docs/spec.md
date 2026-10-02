@@ -68,7 +68,10 @@ in `p` it is `Unsupported` (`sympy_api.to_formula`, the docstring's
 ## 3. Theory scope
 
 Definition (PR #107, `relations.zero_twins`, `glue_atoms`). The *glue atoms* of a formula are its atoms
-followed by the *twin* `eq(t, 0)` of each `zero(t)` atom (`t` not a number) of `A` or `p` whose `t` occurs as
+followed by the *twin* `eq(t, 0)` of each `zero(t)` atom (`t` not a number) of `A` or `p`, and of each *split
+zero* of one formula (a `t` with an atom of `nonnegative`, `extended_nonnegative`, `negative`,
+`extended_negative` and one of `nonpositive`, `extended_nonpositive`, `positive`, `extended_positive`, the two
+sign atoms that spell `zero(t)` as `nonnegative(t) & nonpositive(t)`; `relations.zero_args`), whose `t` occurs as
 an argument, at any depth, of an application of an undefined function (`AppliedUndef`: `g(t, 1)`,
 `g(Abs(h(t)))`) in `A` or `p`. `A`'s twins are `A`'s alone (`Session.assumption_lits`, root glue); `p`'s are
 the pair's (`Session._glue_of`; `ref._glue_atoms_of`). So such a `zero(t)` counts as an equality: it gives
@@ -162,7 +165,10 @@ every vocabulary argument `e` (`Engine._query_cone`, `_union`).
 Definition. The derived nodes templates name: `2*e` of a power with
 exponent `e`; `b - 1`, `b + 1` of a power's base; `x - 1` of `log(x)`,
 `asin(x)`, `acos(x)`; `x*y` of a term `c*x*y` of a sum with half-integer
-coefficients (`templates/core.py` `pow_templates`, `_half_templates`;
+coefficients; the sum `r` of the other terms of a sum `r + c` of at least
+three terms with a nonzero Rational term `c` (`_shift_template`: `r` and
+`r + c` share their shift-invariant facts, so `x + y + 1` and `x + y + 2`
+are related through `x + y`) (`templates/core.py` `pow_templates`, `_half_templates`;
 `templates/functions.py` `_minus_one`). They are kids whatever holds of
 the base (record 1326: `x**y` has kids `2*y`, `x - 1`, `x + 1`).
 

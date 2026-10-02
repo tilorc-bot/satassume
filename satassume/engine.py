@@ -84,7 +84,7 @@ from .memos import engine_memos
 from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
-                        zero_args, zero_twin, zero_twins)
+                        ZERO_PREDS, zero_args, zero_twin, zero_twins)
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
@@ -922,7 +922,7 @@ class Session:
         session's set is fixed (``Engine._context_session`` keys it by the
         set), so a formula's twins are the same in every query."""
         a_zs = self._a_zs
-        if not a_zs and not any(x.pred == "zero" for x in atoms):
+        if not a_zs and not any(x.pred in ZERO_PREDS for x in atoms):
             return atoms
         u = self._a_under
         if u is None:

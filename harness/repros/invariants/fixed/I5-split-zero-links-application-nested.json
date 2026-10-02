@@ -1,0 +1,39 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "default",
+  "discovery_budget": 400,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "free",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "Implies(AppliedPredicate(Q.complex, Symbol('z')), AppliedPredicate(Q.transcendental, Function('f')(Function('f')(Add(Mul(Integer(3), Symbol('z')), Mul(Integer(-1), pi))))))",
+ "assum": "And(AppliedPredicate(Q.integer, Function('f')(Function('f')(Integer(0)))), AppliedPredicate(Q.zero, Add(Mul(Integer(3), Symbol('z')), Mul(Integer(-1), pi))))",
+ "variant": {
+  "kind": "restate",
+  "parts": [
+   "Or(AppliedPredicate(Q.even, Function('f')(Function('f')(Integer(0)))), AppliedPredicate(Q.odd, Function('f')(Function('f')(Integer(0)))))",
+   "And(AppliedPredicate(Q.nonnegative, Add(Mul(Integer(3), Symbol('z')), Mul(Integer(-1), pi))), AppliedPredicate(Q.nonpositive, Add(Mul(Integer(3), Symbol('z')), Mul(Integer(-1), pi))))"
+  ],
+  "assum": "And(AppliedPredicate(Q.nonnegative, Add(Mul(Integer(3), Symbol('z')), Mul(Integer(-1), pi))), AppliedPredicate(Q.nonpositive, Add(Mul(Integer(3), Symbol('z')), Mul(Integer(-1), pi))), Or(AppliedPredicate(Q.even, Function('f')(Function('f')(Integer(0)))), AppliedPredicate(Q.odd, Function('f')(Function('f')(Integer(0))))))",
+  "scope": "in"
+ },
+ "base": "False",
+ "other": "None",
+ "source": "invariants profile=transfer seed=201 slice=30",
+ "shrunk": true,
+ "consistent_by": "engine",
+ "fingerprint": "-",
+ "prefix": []
+}
