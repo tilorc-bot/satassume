@@ -236,6 +236,15 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.templates.core", "_COEFF_BACK"), ("satassume.templates.core", "_POW_RULES"),
     ("satassume.templates.core", "_POW_E_RULES"), ("satassume.templates.core", "_NOTUNIT"),
     ("satassume.templates.core", "_POW_ONE_EQUIV"),
+    # The Mul/Pow/exp tables and their guard and slot maps (#97, P6).  They
+    # are tuples of Rows and MappingProxyType, so ``inventory`` (which only
+    # looks at dict/list/set) does not see them; named here so that the
+    # classification is explicit, as the P6 review asked.
+    ("satassume.templates.core", "MUL_GUARDS"), ("satassume.templates.core", "POW_GUARDS"),
+    ("satassume.templates.core", "IPI_GUARDS"), ("satassume.templates.core", "POW_SLOTS"),
+    ("satassume.templates.core", "_POW_SLOT_NAMES"),
+    ("satassume.templates.core", "MUL_TABLE"), ("satassume.templates.core", "POW_TABLE"),
+    ("satassume.templates.core", "IPI_TABLE"),
 })
 
 #: intern tables: they grow with use and are never emptied, because live

@@ -36,6 +36,12 @@ Without ``--corpus``/``--stream`` only the synthetic list of ``load_exprs``
 is checked (about 2 s); with both, every subexpression of the corpus and
 the refine stream (about 380 blocks, about 6 s).
 
+For a Mul or Pow node the clauses come from the rule tables of
+``satassume/templates/core.py`` (``MUL_TABLE``, ``POW_TABLE``,
+``IPI_TABLE``; issue #97): each fired clause of a non-total block is
+printed with the names of the table rows that emit it
+(``core.table_provenance``), and ``--tables`` prints the tables.
+
 Only compiled patterns are checked.  The plain formulas some templates
 emit alongside them (the unit facts of a constant-argument node such as
 ``asin(7)`` or ``(-1)**I``: facts about the node alone, computed from the
@@ -406,11 +412,46 @@ def run(exprs, depth=1, independent=False, models=None):
     return failures, len(pats), formulas_only
 
 
+def fired_rows(e, pat, fired):
+    """For each fired clause, the names of the table rows that emit it
+    (Mul and Pow nodes; ``[]`` for a clause of another template)."""
+    from satassume.templates.core import table_provenance
+    prov = {}
+    for name, clause in table_provenance(e):
+        prov.setdefault(clause, []).append(name)
+    out = []
+    for lits, _, _ in fired:
+        cl = frozenset((pat.objs[k], PREDICATES[i], not neg) for k, i, neg in lits)
+        out.append(sorted(set(prov.get(cl, ()))))
+    return out
+
+
+def table_text():
+    """The rule tables of the Mul and Pow templates, one row per line."""
+    from satassume.templates import core
+    from satassume.templates.table import Section, Sub, count_rows
+    lines = []
+    for name in ("MUL_TABLE", "POW_TABLE", "IPI_TABLE"):
+        table = getattr(core, name)
+        lines.append(f"{name}: {count_rows(table)} rows")
+        for item in table:
+            if isinstance(item, Section):
+                when = f" [{', '.join(item.when)}]" if item.when else ""
+                lines.append(f"  section {item.over}{when}:")
+                lines.extend("    " + r.text() for r in item.rows)
+            elif isinstance(item, Sub):
+                lines.append(f"  {item.name}: [{', '.join(item.when)}] the rows of IPI_TABLE")
+            else:
+                lines.append("  " + item.text())
+    return "\n".join(lines)
+
+
 def describe(e, pat, assign, fired):
     """One failure as a JSON-friendly dict (used by ``--json`` and the test)."""
     return {"expr": repr(e), "type": type(e).__name__, "node": pat.node, "slots": list(pat.used),
             "assignment": {str(k): sorted(PREDICATES[i] for i in t) for k, t in assign.items()},
-            "fired": [clause_str(l, pat.node) for l, _, _ in fired]}
+            "fired": [clause_str(l, pat.node) for l, _, _ in fired],
+            "rows": fired_rows(e, pat, fired)}
 
 
 def main():
@@ -422,7 +463,12 @@ def main():
                     help="include the arguments' own blocks this many levels down (the gate: 1)")
     ap.add_argument("--independent", action="store_true",
                     help="treat derived slots as independent of the arguments (the naive check)")
+    ap.add_argument("--tables", action="store_true",
+                    help="print the Mul/Pow rule tables and exit")
     args = ap.parse_args()
+    if args.tables:
+        print(table_text())
+        return
     t0 = time.time()
     models = rule_models()
     print(f"rule-base models: {len(models)}")
@@ -438,8 +484,8 @@ def main():
             what = pat.objs[k] if k < len(pat.objs) else "(grandchild)"
             print(f"  slot {k} = {what}: {_describe(true)}")
         print("  fired clauses (all child literals false; no node model satisfies them together):")
-        for lits, _, _ in fired[:40]:
-            print("    " + clause_str(lits, pat.node))
+        for (lits, _, _), rows in zip(fired[:40], fired_rows(e, pat, fired[:40])):
+            print("    " + clause_str(lits, pat.node) + (f"    [rows: {', '.join(rows)}]" if rows else ""))
         out.append(describe(e, pat, assign, fired))
     fam = {}
     for e, pat, assign, fired in failures:
