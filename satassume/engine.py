@@ -86,6 +86,8 @@ from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
+from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
+                    affine_pair as _affine_pair, theory_scope)
 from .solver import Solver
 
 Node = Any
@@ -233,8 +235,12 @@ ObjectCache = DictCache
 # --------------------------------------------------------------------------
 
 class Session:
-    def __init__(self, engine: "Engine"):
+    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE):
         self.engine = engine
+        #: the theory scope the session is built for (``scope.theory_scope``
+        #: of its query): the relation glue and predicate transfer exist
+        #: from construction iff the scope says so (#97 P3)
+        self.scope = scope
         self.solver = Solver()
         # no owner bookkeeping: nothing asks the solver for provenance
         # (the provenance writeback of #53 stage 3 was removed by #97 P2)
@@ -280,8 +286,6 @@ class Session:
         #: relation atoms and their theories (satassume.relations); created
         #: at the first user formula when the engine has relation support
         self.relations: Optional[Relations] = None
-        #: sums under a sign atom -> their free symbols (:meth:`_affine_links`)
-        self._sign_sums: Dict[Any, frozenset] = {}
         #: the Relations object once predicate transfer is engaged
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
@@ -298,6 +302,12 @@ class Session:
         self.truncated = False
 
     # -- variables -------------------------------------------------------
+        if scope.glue and engine._relation_specs:
+            # the theory scope of the query is known at construction: the
+            # glue (and transfer, if the scope says so) exists before any
+            # atom is allocated, as a fresh engine for the query has it
+            self.relations = Relations(self, engine._relation_specs)
+
     def var(self, pred: str, node: Node) -> int:
         return self.node(node) + PRED_INDEX[pred]
 
@@ -483,6 +493,11 @@ class Session:
         if atom.pred in RELATION_ATOMS and engine._relation_specs:
             rel = self.relations
             if rel is None:
+                # outside the session's scope: an extension fact's relation
+                # atom (spec open point 2), or a session built for a set
+                # alone and asked a relation (tests); counted, never on
+                # Engine.ask's path (scope.theory_scope covers the query)
+                engine.stats["scope_misses"] += 1
                 rel = self.relations = Relations(self, engine._relation_specs)
                 if self.assumption_formula is not None:
                     # unary atoms of the assumptions become link candidates
@@ -665,8 +680,6 @@ class Session:
         self._discover()
         if self.relations is not None:
             self._relations(f)
-        else:
-            self._affine_links(f, keep=True)
         self.n_assumption_nodes = len(self.base)
         self.n_assumption_constants = self.n_constants
         return [s]
@@ -702,9 +715,10 @@ class Session:
         p_all = self._glue_of(atoms_of(prop)) if prop is not None else ()
         p_atoms = [x for x in p_all if x.pred in RELATION_ATOMS]
         p_rel = bool(p_atoms)
-        if not (a_rel or p_rel or _links_wanted(a_all, p_all)):
-            # no relation and no affine pair (_affine_links): the glue an
-            # earlier query made stays switched off
+        if not (a_rel or p_rel or _affine_pair(a_all + tuple(p_all))):
+            # no relation and no affine pair (scope.affine_pair): the glue
+            # the session has for its query's scope stays switched off (for
+            # the set's own check, prop None, whatever the query's scope)
             return lits
         a_x = a_rel and rel.wants_transfer(a_atoms)
         if a_rel:
@@ -850,8 +864,6 @@ class Session:
         self._discover()
         if self.relations is not None:
             self._relations(f)
-        else:
-            self._affine_links(f)
         self.literals[f] = lit
         return lit
 
@@ -884,42 +896,6 @@ class Session:
         if u is None:
             u = self._a_under = under_of(self._a_raw)
         return glue_atoms(atoms, cinfo=(a_zs, u))
-
-    def _affine_links(self, f, keep: bool = False) -> None:
-        """Start the relation machinery without a relation atom when two sign
-        atoms, of the assumptions or of ``f``, are on different sums sharing
-        a symbol (``Q.positive(x - 1)`` and ``Q.negative(1 - x)``): only the
-        relation glue links a sign fact to its linear form
-        (``extended_positive(e) <-> 0 < e``,
-        :meth:`satassume.relations.Relations._link`), so without a relation
-        atom LRA never compared the two sums.  Called while the session has
-        no relations; the sums of the assumptions are kept (``keep``), a
-        query's are not."""
-        engine = self.engine
-        if not engine._relation_specs:
-            return
-        atoms = atoms_of(f)
-        new = [a.expr for a in atoms if a.pred in _SIGN_PREDS and getattr(a.expr, "is_Add", False)]
-        if not new:
-            return
-        sums = self._sign_sums if keep else dict(self._sign_sums)
-        hit = False
-        for e in new:
-            if e in sums:
-                continue
-            symbols = e.free_symbols
-            if not symbols:
-                continue
-            hit = hit or any(symbols & other for other in sums.values())
-            sums[e] = symbols
-        if not hit:
-            return
-        rel = self.relations = Relations(self, engine._relation_specs)
-        if self.assumption_formula is not None:
-            rel.note_formula(atoms_of(self.assumption_formula))
-        rel.note_formula(atoms)
-        rel.active = True
-        rel.process(atoms)
 
     def _ensure_atoms(self, f) -> None:
         """Visit the nodes of the vocabulary atoms of ``f``.  Custom atoms
@@ -1137,15 +1113,15 @@ class Engine:
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "set_checks": 0,
-                      "budget_limited": 0}
+                      "budget_limited": 0, "scope_misses": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
         self.last_budget_limited = False
 
-    def _fresh_session(self) -> Session:
+    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE) -> Session:
         self.stats["sessions"] += 1
-        return Session(self)
+        return Session(self, scope)
 
     # -- the registry epoch ---------------------------------------------------
     @property
@@ -1505,7 +1481,7 @@ class Engine:
         (:func:`_kid`) and, with ``link`` (the session's relation glue
         runs), of the objects of the link of every vocabulary argument
         (``relations.link_objects``); cone None if it outweighs the budget.
-        ``sums``: the sums under its sign atoms (``Session._affine_links``);
+        ``sums``: the sums under its sign atoms (``scope.affine_pair``);
         ``zs``: the arguments of its zero atoms (``relations.zero_args``).
         Memoized per engine."""
         key = (f, link)
@@ -1562,7 +1538,7 @@ class Engine:
         cone(assumptions)`` (assumptions None: a query without them),
         weighs at most the budget; with the links of the relation glue
         when the query's session runs it (a relation atom in the cone, or
-        two sign atoms on sums, ``Session._affine_links``; conservative).
+        two sign atoms on sums, ``scope.affine_pair``; conservative).
         Decided from the structure alone, before any session work, so a
         function of the query, the registry and the settings: never of the
         sessions, the caches or earlier queries.  A query that passes runs
@@ -1608,7 +1584,7 @@ class Engine:
         self.stats["budget_limited"] += 1
         return None
 
-    def _context_session(self, assumptions) -> Tuple[Session, List[int]]:
+    def _context_session(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
         """The session a contextual query within the budget is answered
         in, with its assumption literals: built for this query by
         :meth:`_build_context` and discarded by the caller (nothing is
@@ -1630,7 +1606,7 @@ class Engine:
             # every time, see _build_context); the memo only saves the work
             raise InconsistentAssumptions("inconsistent assumptions")
         try:
-            s, lits = self._build_context(assumptions)
+            s, lits = self._build_context(assumptions, proposition)
         except Uninterpreted as e:
             if len(failed) >= 10_000:
                 failed.clear()
@@ -1644,7 +1620,7 @@ class Engine:
             raise InconsistentAssumptions("inconsistent assumptions")
         return s, lits
 
-    def _build_context(self, assumptions) -> Tuple[Session, List[int]]:
+    def _build_context(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
         """Build the contextual session of ``assumptions`` and run the set's
         complete check (:meth:`_complete_check`) in it; its verdict is
         ``s.verdict``.  Every construction of a set's session (one per
@@ -1660,7 +1636,11 @@ class Engine:
         whose theory gave up is useless to the queries (satassume.theory,
         "Giving up"), and the plain build is just as deterministic."""
         self.stats["set_checks"] += 1
-        s = self._fresh_session()
+        # the theory scope of the query (``proposition`` None: of the set
+        # alone); the set's check assumes only the set's own glue, so its
+        # verdict is a function of the set whatever the query's scope
+        scope = theory_scope(assumptions, proposition)
+        s = self._fresh_session(scope)
         lits = s.assume_formula(assumptions)
         try:
             v = self._complete_check(s, s.assumption_lits())
@@ -1675,7 +1655,7 @@ class Engine:
             s.verdict = v
             return s, lits
         if v is None or _gave_up(s):
-            s = self._fresh_session()
+            s = self._fresh_session(scope)
             lits = s.assume_formula(assumptions)
             v = UNKNOWN
         s.verdict = v
@@ -1836,7 +1816,7 @@ class Engine:
             self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
-        s = self._fresh_session()
+        s = self._fresh_session(theory_scope(None, atom))
         lit = s.literal_of(atom)
         lits = s.assumption_lits(atom)        # the glue a relation atom activates
         r = s.query_literal(lit, lits, search=False)
@@ -1882,9 +1862,9 @@ class Engine:
                 raise InconsistentAssumptions("inconsistent assumptions")
             return self._over_budget()
         if contextual:
-            s, lits = self._context_session(assumptions)
+            s, lits = self._context_session(assumptions, proposition)
         else:
-            s = self._fresh_session()
+            s = self._fresh_session(theory_scope(None, proposition))
         return self._ask(s, lits, proposition, contextual)
 
     def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:
@@ -1928,19 +1908,8 @@ class Engine:
                 s._flush()
             if s.relations is not None:
                 s._relations(proposition)
-            else:
-                s._affine_links(proposition)
             return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
         return s.literal_of(proposition)
-
-
-#: the predicates whose atoms the relation glue links to order atoms
-#: (``extended_positive``, ``extended_negative``, ``zero``) and those that imply
-#: or refute them for a finite argument
-_SIGN_PREDS = frozenset({
-    "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero",
-    "extended_positive", "extended_negative", "extended_nonnegative",
-    "extended_nonpositive", "extended_nonzero"})
 
 
 def zero_glue(f) -> bool:
@@ -1954,53 +1923,12 @@ def zero_glue(f) -> bool:
     return bool(zero_twins(atoms_of(f)))
 
 
-def affine_glue(f) -> bool:
-    """Whether the sign atoms of ``f`` alone start the relation glue of
-    :meth:`Session._affine_links` (two sign atoms on different sums sharing
-    a symbol), given an engine with relation specs.  Once started, the glue
-    links the argument of every unary atom of the assumptions, in every
-    component, so the relevance layer treats such a set as relational
-    (``satassume.sympy_api._relevant``)."""
-    sums: Dict[Any, frozenset] = {}
-    for a in atoms_of(f):
-        if a.pred not in _SIGN_PREDS:
-            continue
-        e = a.expr
-        if not getattr(e, "is_Add", False) or e in sums:
-            continue
-        symbols = e.free_symbols
-        if not symbols:
-            continue
-        if any(symbols & other for other in sums.values()):
-            return True
-        sums[e] = symbols
-    return False
-
-
 # --------------------------------------------------------------------------
 # rule-base neighbourhood used by demand-driven instantiation
 # --------------------------------------------------------------------------
 
 _NEIGH: Dict[int, frozenset] = {}
 _WANT: Dict[frozenset, frozenset] = {}
-
-
-def _links_wanted(a_all, p_all) -> bool:
-    """Links are also on without a relation atom when two sign atoms of
-    ``a`` and ``p`` (whose atoms are ``a_all`` and ``p_all``) are on
-    different sums sharing a symbol: the condition on which
-    :meth:`Session._affine_links` starts the relation machinery (a
-    function of the two formulas, whatever the session holds)."""
-    sums = []
-    for atoms in (a_all, p_all):
-        for at in atoms:
-            e = at.expr
-            if at.pred in _SIGN_PREDS and getattr(e, "is_Add", False) and e not in sums:
-                sums.append(e)
-    if len(sums) < 2:
-        return False
-    syms = [e.free_symbols for e in sums]
-    return any(syms[i] & syms[j] for i in range(len(syms)) for j in range(i))
 
 
 def _gave_up(s: Session) -> bool:

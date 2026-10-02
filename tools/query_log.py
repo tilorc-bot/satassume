@@ -170,8 +170,8 @@ def install(models=False):
 
     orig_fresh = Engine._fresh_session
 
-    def _fresh_session(self):
-        s = orig_fresh(self)
+    def _fresh_session(self, *args):
+        s = orig_fresh(self, *args)
         _next_id[0] += 1
         s._log_id = _next_id[0]
         ctx.built += 1
