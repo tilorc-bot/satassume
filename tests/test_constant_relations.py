@@ -22,7 +22,7 @@ r = Symbol("r", rational=True)
 x = Symbol("x")
 
 # (proposition, assumptions, answer); sympy.ask at the pin gives the same
-# answer, except None for Q.zero(nan) (it leaves every fact of nan open)
+# answer, except None for Q.zero(nan) under ~Q.antihermitian(nan)
 CASES = [
     # the nightly findings (I5, seed 201)
     (Q.eq(nan, 0), True, False),
@@ -58,7 +58,11 @@ CASES = [
 def test_constant_relation_answers(p, a, want):
     assert ask(p, a, engine=Engine()) is want
     assert ask_ref(p, a) is want
-    assert sympy.ask(p, a) in (want, None)       # None only for Q.zero(nan)
+    s = sympy.ask(p, a)
+    if p == Q.zero(nan):
+        assert s is None            # SymPy leaves every fact of nan open
+    else:
+        assert s is want
 
 
 @pytest.mark.parametrize("p", [Q.eq(nan, 0), Q.lt(Float(0.5), 1), Q.eq(nan, -1),
@@ -89,6 +93,36 @@ def test_other_numbers_are_left_to_the_engine():
     assert Lt(c, 0) is S.false
     assert ask(Q.lt(c, 0), engine=Engine()) is not False
     assert ask(Q.eq(sqrt(2), Float(1.4142135623730951)), engine=Engine()) is None
+
+
+def test_float_sides_fold_only_when_exact():
+    """SymPy's Eq compares a Float at its precision, which is not
+    transitive: Eq(a, 1/10) and Eq(b, 1/10) are True, Eq(a, b) False.  A
+    Float side folds only when SymPy agrees with the Float's exact value,
+    two Float sides never; so the set x = a & x = b answers as on main."""
+    a, b = Float(0.1), Float("0.1", 30)
+    assert Eq(a, S(1) / 10) is S.true and Eq(b, S(1) / 10) is S.true and Eq(a, b) is S.false
+    s = Q.eq(x, a) & Q.eq(x, b)
+    assert ask(Q.eq(a, b), s, engine=Engine()) is True
+    assert ask(Q.ne(a, b), s, engine=Engine()) is False
+    assert ask(Q.gt(a, b), s, engine=Engine()) is None
+    assert ask(Q.gt(x, x), s, engine=Engine()) is False
+    for p in (Q.eq(a, b), Q.gt(a, b), Q.eq(a, Rational(1, 10)), Q.gt(a, Rational(1, 10))):
+        assert ask(p, engine=Engine()) is None, p
+        assert ask_ref(p) is None, p
+
+
+@pytest.mark.parametrize("a", [Q.eq(nan, 0), Q.eq(x, nan), Q.eq(x, nan) & Q.eq(Symbol("y"), nan),
+                               Q.lt(Float(0.5), 0)])
+def test_folded_false_assumption_raises(a):
+    """A relation folded to False in the assumptions makes the set
+    inconsistent: ``ValueError``, where main and ``sympy.ask`` answer None
+    (``Q.eq(x, nan)`` is ``Eq(x, nan)``, False for every ``x``)."""
+    with pytest.raises(ValueError):
+        ask(Q.positive(x), a, engine=Engine())
+    with pytest.raises(ValueError):
+        ask_ref(Q.positive(x), a)
+    assert sympy.ask(Q.positive(x), a) is None
 
 
 def test_invalid_comparison_keeps_the_relation_atom():

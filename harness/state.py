@@ -235,7 +235,6 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.lra_adapter", "_BAD"),
     ("satassume.euf_adapter", "_STRUCTURAL"),
     ("satassume.sympy_api", "CATEGORIES"), ("satassume.sympy_api", "RELATION_PREDICATES"),
-    ("satassume.sympy_api", "_SREL"),
     ("satassume.templates._common", "VOCAB"), ("satassume.templates._common", "SIGN_FLIP"),
     ("satassume.templates._common", "_SIGNED_INFINITE"),
     ("satassume.templates.atoms", "_ORACLE_PREDS"), ("satassume.templates.atoms", "_CONST_BASIS"),

@@ -92,12 +92,8 @@ def test_floats_are_unreadable():
     for atom in (Q.gt(x, 0.1), Q.le(x, Float("1.571")), Q.lt(x, 0.5 * pi + 0.25),
                  Q.lt(x, Float(2.0) * pi), Q.eq(Float(0.1), Rational(1, 10))):
         assert ad.terms(atom) is None, atom
-    # a relation between two Number atoms is SymPy's own Relational since
-    # package NA (both were None; at the pinned SymPy Eq(0.1, 1/10) is True
-    # and 0.1 > 1/10 False): LRA still reads neither
-    assert _ask(Q.eq(Float(0.1), Rational(1, 10))) is True
-    assert _ask(Q.gt(Float(0.1), Rational(1, 10))) is False
-    assert _ask(Q.eq(xr, Rational(1, 10)), Q.eq(xr, Float(0.1))) is None
+    assert _ask(Q.eq(Float(0.1), Rational(1, 10))) is None
+    assert _ask(Q.gt(Float(0.1), Rational(1, 10))) is None
     assert _ask(Q.gt(xr, Rational(1, 10)), Q.gt(xr, 0.1)) is None
 
 

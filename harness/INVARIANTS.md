@@ -493,12 +493,14 @@ Fixed (each under two configs, in `fixed/`:
 `Q.lt(0.5, 1)` were None while their `Relational` spellings fold to
 `false`/`true`, and `Q.zero(nan)` under `~Q.antihermitian(nan)` was False
 while `Q.eq(nan, 0)` was None.  A relation between `Number` atoms or with
-a `nan` side is now SymPy's own `Relational` (`sympy_api._closed_relation`).
+a `nan` side is now SymPy's own `Relational` (`sympy_api._closed_relation`;
+a Float side only where that is also its exact value's answer).
 
 Pinned (`I5-nan-zero-is-none-eq-zero-is-false`, strict xfail, `depends`,
 fingerprint `norel`): `Q.zero(nan)` is None (SymPy's `ask` and its test
-suite, `test_query.py`, leave every fact of `nan` but `commutative` open)
-while `Q.eq(nan, 0)` is `Eq(nan, 0)`, False, so the `zero(x)` <->
+suite, `test_query.py`, leave every fact of `nan` but `commutative` open;
+the glue's link `zero(t) <-> eq(t, 0)` would make it False, but numbers
+are not linked) while `Q.eq(nan, 0)` is `Eq(nan, 0)`, False, so the `zero(x)` <->
 `eq(x, 0)` restatement is not an equivalence under SymPy's answers at
 `nan`.  Making `nan` neither `complex` nor `extended_real` closes it (tried:
 23 gate2 records more definite, all `Q.<pred>(nan)` None -> False against
