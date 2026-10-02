@@ -825,12 +825,19 @@ def audit_cache(items: Sequence[Item], config: EngineConfig, source: str = "",
         store = {node: dict(facts) for node, facts in eng.cache.store.items()}
         bad: List[Tuple[Any, str, bool, Optional[bool]]] = []
         nfacts = 0
+        # what could not be checked (docs/agents.md, Gating rule 5): closed
+        # number nodes (skipped whole, with their facts) and cached None
+        # facts (nothing to compare a fresh engine's answer with)
+        skip_number_nodes = skip_number_facts = skip_none_facts = 0
         for node, facts in store.items():
             if getattr(node, "is_number", False) and not getattr(node, "free_symbols", None):
+                skip_number_nodes += 1
+                skip_number_facts += len(facts)
                 continue
             fresh = config.make()
             for pred, v in facts.items():
                 if v is None:
+                    skip_none_facts += 1
                     continue
                 nfacts += 1
                 try:
@@ -839,7 +846,11 @@ def audit_cache(items: Sequence[Item], config: EngineConfig, source: str = "",
                     r = f"Error:{type(e).__name__}"
                 if r is not v:
                     bad.append((node, pred, v, r))
-        stats = {"nodes": len(store), "facts": nfacts, "bad": len(bad)}
+        stats = {"nodes": len(store), "facts": nfacts, "bad": len(bad),
+                 "unchecked": skip_number_facts + skip_none_facts,
+                 "unchecked_reasons": {"number_nodes": skip_number_nodes,
+                                       "number_node_facts": skip_number_facts,
+                                       "none_facts": skip_none_facts}}
         found: List[Discrepancy] = []
         seen_nodes: set = set()
         for node, pred, v, r in bad:

@@ -464,6 +464,19 @@ def test_spec_level_catches_a_planted_engine_answer(monkeypatch):
     assert d.shrunk is not None and len(d.shrunk) <= 1, d.summary()
 
 
+def test_cache_audit_counts_what_it_could_not_check():
+    """The cache audit prints what it skipped next to what it checked
+    (docs/agents.md, Gating rule 5): closed number nodes with their facts,
+    and cached None facts; the checked counts are unchanged."""
+    from harness.checker import audit_cache
+    items = random_stream(0, n=60, nsets=3)
+    _, stats = audit_cache(items, preset("default"))
+    why = stats["unchecked_reasons"]
+    assert stats["unchecked"] == why["number_node_facts"] + why["none_facts"], stats
+    assert why["number_nodes"] > 0 and why["number_node_facts"] > 0 and stats["facts"] > 0, stats
+    assert set(stats) >= {"nodes", "facts", "bad"}, stats
+
+
 # -- the checker catches planted defects ---------------------------------------
 
 def test_checker_catches_a_planted_history_dependence(monkeypatch):
