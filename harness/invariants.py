@@ -1361,14 +1361,14 @@ def derived_asks(asks: Sequence[Ask], rng: random.Random, rate: float = WIDEN_RA
         out.append(Ask(q, a))
     return out
 
+#: every assignable setting of ``EngineConfig`` (#97 P7 removed the no-op
+#: ``cone_threshold``, ``cone_search``, ``session_limit``, ``keep_sessions``
+#: and added ``uninterpreted``, a live setting the sweep had missed)
 I7_SETTINGS = {
     "discovery_budget": [5, 40, 400, 5000],
-    "cone_threshold": [0, 3, 1000],
     "transfer": [True, False],
-    "cone_search": [True, False],
     "relevance": [True, False],
-    "session_limit": [2, 2000],
-    "keep_sessions": [1, 16],
+    "uninterpreted": ["free", "none"],
 }
 
 
@@ -1700,7 +1700,10 @@ PROBES: Dict[str, dict] = {
     "relevance": {"relevance": False},
     "transfer": {"transfer": False},
     "none": {"uninterpreted": "none"},
-    "cone": {"cone_search": False, "cone_threshold": 0},
+    # #97 P7: the probe set only the removed no-op settings (cone_search,
+    # cone_threshold); it is the configuration itself now, so ``fingerprint``
+    # skips it.  Kept so that recorded fingerprint names stay meaningful.
+    "cone": {},
     "budget": {"discovery_budget": 400},
     "norel": {"relations": "none"},
 }

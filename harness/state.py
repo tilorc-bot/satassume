@@ -18,8 +18,9 @@ Engine-level state (one ``Engine``, see ``satassume/engine.py``):
   no solver state (visited nodes, learnt clauses, held levels, the witness
   ring, the relation glue and theory state) outlives a query.  The
   ``keep_sessions``, ``session_limit``, ``cone_search`` and
-  ``cone_threshold`` settings of the earlier reuse design are accepted and
-  change nothing; the presets that set them still run;
+  ``cone_threshold`` settings of the earlier reuse design were removed in
+  #97 P7 (no code path read them); the presets that set them are kept as
+  the equivalent live configurations;
 * ``_verdict`` (20k): per assumption set the verdict of its complete
   check (a function of the set and the settings);
 * ``_failed``: assumption sets whose session raised ``Uninterpreted``
@@ -54,6 +55,11 @@ from satassume.engine import AnswerMemo, DictCache, Engine
 # engine configuration
 # --------------------------------------------------------------------------
 
+#: settings of the earlier session-reuse design, no-ops since #97 P1 and
+#: removed from ``Engine`` in #97 P7 (``EngineConfig.from_dict`` ignores them)
+REMOVED_SETTINGS = frozenset({"session_limit", "keep_sessions", "cone_search",
+                              "cone_threshold"})
+
 @dataclasses.dataclass(frozen=True)
 class EngineConfig:
     """The declared configuration of an ``Engine`` (its keyword arguments
@@ -61,10 +67,6 @@ class EngineConfig:
 
     name: str = "default"
     discovery_budget: int = 400
-    session_limit: int = 2000
-    keep_sessions: int = 16
-    cone_search: bool = True
-    cone_threshold: int = 3
     transfer: bool = True
     uninterpreted: str = "free"
     relevance: bool = True
@@ -77,10 +79,6 @@ class EngineConfig:
     def make(self) -> Engine:
         eng = Engine(cache=DictCache(self.cache_size),
                      discovery_budget=self.discovery_budget,
-                     session_limit=self.session_limit,
-                     keep_sessions=self.keep_sessions,
-                     cone_search=self.cone_search,
-                     cone_threshold=self.cone_threshold,
                      transfer=self.transfer,
                      uninterpreted=self.uninterpreted,
                      relevance=self.relevance,
@@ -103,6 +101,10 @@ class EngineConfig:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "EngineConfig":
+        # repro files written before #97 P7 carry the removed no-op
+        # settings; they selected no code path, so dropping them replays
+        # the same configuration
+        d = {k: v for k, v in d.items() if k not in REMOVED_SETTINGS}
         return cls(**d)
 
     def replace(self, **kw) -> "EngineConfig":
@@ -126,10 +128,6 @@ def config_of(eng: Engine, name: str = "of-engine") -> EngineConfig:
     return EngineConfig(
         name=name,
         discovery_budget=eng.discovery_budget,
-        session_limit=eng.session_limit,
-        keep_sessions=eng.keep_sessions,
-        cone_search=eng.cone_search,
-        cone_threshold=eng.cone_threshold,
         transfer=eng.transfer,
         uninterpreted=eng.uninterpreted,
         relevance=eng.relevance,
@@ -142,30 +140,37 @@ def config_of(eng: Engine, name: str = "of-engine") -> EngineConfig:
 
 
 #: Configurations.  ``default`` is what ``sympy_api.default_engine()``
-#: builds.  The others stress one mechanism each: the reuse thresholds and
-#: the bounded caches at sizes a short stream crosses, and the switches
-#: that select the code paths (cone search, relevance, transfer, theories).
+#: builds.  The others stress one mechanism each: the bounded caches at
+#: sizes a short stream crosses, and the switches that select the code
+#: paths (relevance, transfer, theories).  #97 P7 removed the session-reuse
+#: settings (``session_limit``, ``keep_sessions``, ``cone_search``,
+#: ``cone_threshold``: no code path read them since #97 P1); the presets
+#: that set them keep their names and their live settings, so every preset
+#: still runs and repro files naming them still replay.
 PRESETS: Dict[str, EngineConfig] = {
     "default": EngineConfig(),
-    # every bounded cache and threshold small enough that a stream of a few
-    # hundred queries crosses it many times
-    "tight": EngineConfig(name="tight", discovery_budget=12, session_limit=6,
-                          keep_sessions=1, cone_threshold=0, cache_size=64,
+    # every bounded cache small enough that a stream of a few hundred
+    # queries crosses it many times (P7: dropped session_limit=6,
+    # keep_sessions=1, cone_threshold=0, no-ops; kept for the small caches)
+    "tight": EngineConfig(name="tight", discovery_budget=12, cache_size=64,
                           custom_cache_size=16, answers_size=32, splits_size=8),
-    # sessions are never replaced by cone sessions: every search runs in the
-    # reused, polluted session
-    "reuse": EngineConfig(name="reuse", cone_search=False, session_limit=10_000,
-                          keep_sessions=64),
-    # every search under assumptions runs in a fresh cone session
-    "cone": EngineConfig(name="cone", cone_threshold=-1),
+    # once: sessions never replaced by cone sessions.  P7: it set only
+    # removed no-ops (cone_search=False, session_limit=10_000,
+    # keep_sessions=64), so it is the default configuration; kept so that
+    # runs and repros naming it stay valid
+    "reuse": EngineConfig(name="reuse"),
+    # once: every search in a fresh cone session.  P7: it set only the
+    # removed no-op cone_threshold=-1, so it is the default configuration
+    # (every query now runs in a session of its own); kept by name
+    "cone": EngineConfig(name="cone"),
     # whole assumption set always (no relevance split)
     "whole": EngineConfig(name="whole", relevance=False),
     # no transfer between congruent applications (the relation glue alone)
     "notransfer": EngineConfig(name="notransfer", transfer=False),
     # a small discovery budget and the whole set: every optimisation that
-    # drops clauses engaged at once, no cone sessions
-    "lean": EngineConfig(name="lean", discovery_budget=12, relevance=False,
-                         cone_search=False, cone_threshold=0),
+    # drops clauses engaged at once (P7: dropped the no-ops
+    # cone_search=False, cone_threshold=0)
+    "lean": EngineConfig(name="lean", discovery_budget=12, relevance=False),
     # no predicate transfer between equal terms
     "notransfer": EngineConfig(name="notransfer", transfer=False),
     # relations out of scope (the scalar slice alone)
@@ -176,13 +181,14 @@ PRESETS: Dict[str, EngineConfig] = {
     # the discovery budget binds on ordinary expressions
     "budget": EngineConfig(name="budget", discovery_budget=5),
     # every setting at its smallest legal value at once: one node of
-    # discovery per demand, cone threshold 0, one-element sessions, no
-    # session kept, every bounded cache of size 2
-    "boundary": EngineConfig(name="boundary", discovery_budget=1, cone_threshold=0,
-                             session_limit=1, keep_sessions=0, cache_size=2,
+    # discovery per demand, every bounded cache of size 2 (P7: dropped the
+    # no-ops cone_threshold=0, session_limit=1, keep_sessions=0)
+    "boundary": EngineConfig(name="boundary", discovery_budget=1, cache_size=2,
                              custom_cache_size=2, answers_size=2, splits_size=2),
-    # sessions are replaced constantly, one at a time
-    "churn": EngineConfig(name="churn", session_limit=3, keep_sessions=1),
+    # once: sessions replaced constantly.  P7: it set only removed no-ops
+    # (session_limit=3, keep_sessions=1), so it is the default
+    # configuration; kept by name
+    "churn": EngineConfig(name="churn"),
     # the fact cache is cleared every few nodes, the memos every few answers
     "evict": EngineConfig(name="evict", cache_size=16, custom_cache_size=4,
                           answers_size=8, splits_size=2),

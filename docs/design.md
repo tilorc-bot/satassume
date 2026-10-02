@@ -118,7 +118,8 @@ own cone as well.
 Earlier designs reused one session per assumption set (`keep_sessions`
 = 16, LRU, replaced after `session_limit` = 2000 nodes, by a cone search
 of a fresh session over the assumptions and the query's cone once more
-than `cone_threshold` nodes polluted it, or when a theory in it gave up),
+than `cone_threshold` nodes polluted it, or when a theory in it gave up;
+the four settings were removed in #97 P7),
 and before that a single global session. Every reuse was a channel for
 history dependence (the learnt clauses, the tableau basis and the branch
 budget of integer branch and bound, giving up on constants, the glue of

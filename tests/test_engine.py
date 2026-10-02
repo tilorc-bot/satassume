@@ -163,8 +163,11 @@ def test_contextual_queries_build_and_discard():
     assert eng.stats['sessions'] == n + 3
     assert not eng._context_sessions
     assert len(eng._verdict) == 2
-    # the settings of the earlier reuse design are accepted and change nothing
-    eng.keep_sessions, eng.session_limit, eng.cone_search, eng.cone_threshold = 0, 1, False, 0
+    # the settings of the earlier reuse design were removed (#97 P7): the
+    # constructor refuses them, and the next query builds its own session
+    for name in ('keep_sessions', 'session_limit', 'cone_search', 'cone_threshold'):
+        with pytest.raises(TypeError):
+            Engine(**{name: 0})
     assert eng.ask(P('nonzero', 'x'), a) is True
     assert eng.stats['sessions'] == n + 4 and not eng._context_sessions
 

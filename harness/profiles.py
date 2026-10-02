@@ -29,7 +29,7 @@ purpose; ``random_stream(..., profile=NAME)`` selects it.
     Large expressions (sums and products of 6-30 terms, nested), whose
     cones exceed the default discovery and escalation budgets (400);
     propositions about the big terms and about their subterms, most under
-    one set (``session_limit`` is a no-op since issue #97).
+    one set.
 
 ``relational``
     Relation-heavy sets sharing conjuncts (equalities between symbols,

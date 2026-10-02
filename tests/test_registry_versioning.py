@@ -490,8 +490,8 @@ def _no_templates(node):
 
 
 #: a non-default value of every engine setting
-SETTINGS = [("discovery_budget", 1), ("session_limit", 0), ("keep_sessions", 0),
-            ("cone_search", False), ("cone_threshold", 0), ("transfer", False),
+#: (#97 P7 removed session_limit, keep_sessions, cone_search, cone_threshold)
+SETTINGS = [("discovery_budget", 1), ("transfer", False),
             ("uninterpreted", "none"), ("relevance", False),
             ("writeback", "none"), ("templates", _no_templates)]
 
