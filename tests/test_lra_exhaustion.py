@@ -27,7 +27,7 @@ from sympy import E, And, Q, Rational, pi, sqrt, symbols
 
 from satassume import constfield as cf
 from satassume import lra
-from satassume.engine import CONSISTENT, INCONSISTENT, UNKNOWN
+from satassume.engine import CONSISTENT, INCONSISTENT, UNKNOWN, _exhausted
 from satassume.lra import Integral, LRATheory, constraint
 from satassume.sympy_api import Engine, _formula, ask
 
@@ -47,6 +47,34 @@ def _a(p, s, e):
         return "raise"
 
 
+def _reached(p, s, e, flag):
+    """Whether the session ``e`` answers ``p`` under ``s`` in reaches the
+    path ``flag`` detects (``_exhausted``: this query's branch and bound
+    ran out of budget; ``_uncertified``: its atoms are not certified).
+    ``Engine.ask`` discards that session, so it is built here exactly as
+    ``ask`` builds it (``_build_context``, then ``_ask``) and inspected;
+    ``exhausted`` is cleared between the two (the set's own check may run
+    out, and only the caller clears the flag) so that it reports the
+    query's search.  The sweeps count the queries for which this holds,
+    so that ``out == []`` is not vacuous."""
+    rel = bool(e.relation_specs)
+    try:
+        sess, lits = e._build_context(_formula(s, rel, True))
+        for t in sess.solver._theories:
+            t.exhausted = False
+        e._ask(sess, lits, _formula(p, rel), True)
+    except ValueError:
+        return False
+    return flag(sess)
+
+
+def _uncertified(s):
+    """An LRA theory of the session is not certified (a search over its
+    atoms can give up)."""
+    return any(not t.certified for t in s.solver._theories
+               if isinstance(t, LRATheory))
+
+
 def test_warm_equals_fresh(monkeypatch):
     # on main (80c91c0): warm True (the first query's search left a basis
     # and clauses along which the second stays within the budget), fresh
@@ -61,39 +89,31 @@ def test_warm_equals_fresh(monkeypatch):
     assert not e._context_sessions           # no session survives a query
 
 
-def _divergences():
+def _divergences(flag=_exhausted):
     """Warm-versus-fresh disagreements over every ordered pair of QUERIES
-    under the sets, and the most sessions any engine kept between queries
-    (0 since issue #97)."""
-    out, kept = [], 0
-    for s in (A & B, A & C):
-        fresh = {p: _a(p, s, Engine()) for p in QUERIES}
-        for p1 in QUERIES:
-            for p2 in QUERIES:
-                e = Engine()
-                _a(p1, s, e)
-                w = _a(p2, s, e)
-                kept = max(kept, len(e._context_sessions))
-                if w != fresh[p2]:
-                    out.append((s, p1, p2, w, fresh[p2]))
-    return out, kept
+    under the sets, the most sessions any engine kept between queries
+    (0 since issue #97), and the number of warm queries whose session
+    reached the path ``flag`` detects (:func:`_reached`)."""
+    return _sweep((A & B, A & C), QUERIES, flag)
 
 
 def test_no_warm_fresh_divergence_budget_5(monkeypatch):
     # on main (80c91c0): 1 warm definite/fresh None (A & C, Q.gt(u0, 1)
     # then Q.ge(u0, 4)); budgets 1-4, 7-24 show none there with this probe
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 5)
-    out, kept = _divergences()
+    out, kept, reached = _divergences()
     assert out == []
     assert kept == 0
+    assert reached >= 1                      # the budget did run out
 
 
 def test_no_warm_fresh_divergence_budget_6(monkeypatch):
     # on main (80c91c0): the same divergence as at budget 5
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 6)
-    out, kept = _divergences()
+    out, kept, reached = _divergences()
     assert out == []
     assert kept == 0
+    assert reached >= 1                      # the budget did run out
 
 
 def test_exhausted_set_check_is_unknown(monkeypatch):
@@ -108,9 +128,12 @@ def test_exhausted_set_check_is_unknown(monkeypatch):
 
 # -- constants ----------------------------------------------------------------
 
-def _sweep(sets, queries):
-    """As ``_divergences`` over ``sets`` and ``queries``."""
-    out, kept = [], 0
+def _sweep(sets, queries, flag=_exhausted):
+    """Warm-versus-fresh disagreements over every ordered pair of
+    ``queries`` under ``sets``, the most sessions any engine kept between
+    queries (0 since issue #97), and the number of warm queries whose
+    session reached the path ``flag`` detects (:func:`_reached`)."""
+    out, kept, reached = [], 0, 0
     for s in sets:
         fresh = {p: _a(p, s, Engine()) for p in queries}
         for p1 in queries:
@@ -119,9 +142,10 @@ def _sweep(sets, queries):
                 _a(p1, s, e)
                 w = _a(p2, s, e)
                 kept = max(kept, len(e._context_sessions))
+                reached += _reached(p2, s, e, flag)
                 if w != fresh[p2]:
                     out.append((s, p1, p2, w, fresh[p2]))
-    return out, kept
+    return out, kept, reached
 
 
 def _t(c):
@@ -137,9 +161,10 @@ def test_constants_no_warm_fresh_divergence():
     # certified (pi, 1/pi: rational rows, bounds in Q + Q*pi or Q + Q/pi)
     # and not (sqrt(2): algebraic; pi and E together)
     sets = [_t(pi / 3), _t(1 / pi), _t(7 * pi / 2), _t(sqrt(2) / 3), _t((pi + E) / 7)]
-    out, kept = _sweep(sets, CQUERIES)
+    out, kept, reached = _sweep(sets, CQUERIES)
     assert out == []
     assert kept == 0
+    assert reached >= 1                      # the uncertified sets' searches ran out
 
 
 def test_constants_no_warm_fresh_divergence_budget_3(monkeypatch):
@@ -148,9 +173,10 @@ def test_constants_no_warm_fresh_divergence_budget_3(monkeypatch):
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 3)
     sets = [Q.gt(x, y + c) & Q.ge(y, 0) & Q.le(y, 5) & B for c in (pi / 3, 1 / pi)]
     sets.append(Q.gt(x, pi * y / 4) & Q.ge(y, 0) & Q.le(y, 5) & B)
-    out, kept = _sweep(sets, QUERIES[:4])
+    out, kept, reached = _sweep(sets, QUERIES[:4])
     assert out == []
     assert kept == 0
+    assert reached >= 1                      # the budget did run out
 
 
 def test_certified_constants_warm_equals_fresh():
@@ -185,7 +211,7 @@ def test_constants_after_a_rational_branch_and_bound_in_the_set_check():
     lras = [t for t in built.solver._theories if hasattr(t, "branched_rational")]
     assert [t.branched_rational for t in lras] == [True]
     assert [t.rational_values() for t in lras] == [(F(4), 1)]
-    out, kept = _sweep([s], queries)
+    out, kept, _ = _sweep([s], queries)
     assert out == []
     assert kept == 0
 
@@ -268,13 +294,14 @@ def test_certificate_reads_the_constfield_limits(monkeypatch):
 
 def test_constants_small_limits_are_not_certified(monkeypatch):
     # with constfield's size budget shrunk, a search over atoms certified
-    # at the default limits (no re-answer there, see
-    # test_certified_constants_are_not_answered_again) could give up: they
-    # are not certified then, and definite answers are answered again
+    # at the default limits (where it cannot give up, see
+    # test_certified_constants_warm_equals_fresh) can give up: they are not
+    # certified then, and the answer is still the fresh engine's
     monkeypatch.setattr(cf, "MAX_DEGREE", 1)
-    out, kept = _sweep([_t(7 * pi / 2)], CQUERIES)
+    out, kept, reached = _sweep([_t(7 * pi / 2)], CQUERIES, _uncertified)
     assert out == []
     assert kept == 0
+    assert reached >= 1                      # the atoms were not certified
 
 
 @pytest.mark.parametrize("policy", ["provenance", "all"])
