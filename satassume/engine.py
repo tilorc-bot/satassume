@@ -150,13 +150,24 @@ class DictCache:
     nodes share facts, which is sound because a node's context-free facts
     depend only on its structure and declared assumptions.
 
-    The facts also depend on the registrations in force (a vocabulary
-    handler adds facts to a node's block, a template derives them), so the
-    cache records the registry epoch (:mod:`satassume.epoch`) it was created
-    under and every engine using it drops its contents when that epoch is
-    over (``Engine._check_version``); a cache shared between engines, or
-    given to an engine created after a registration, is dropped like the
-    engine's own.
+    The memo key.  An entry is ``(node, pred)`` under the registry epoch
+    and the engine settings the facts were derived under: the cache
+    records the epoch (:mod:`satassume.epoch`, ``_epoch``) and the
+    settings fingerprint (``_settings``: the engine's ``templates``,
+    ``transfer`` and ``uninterpreted``, the settings a context-free
+    session's clause set reads; ``Engine._settings_fingerprint``).  Every
+    engine using the cache compares both at each query and drops the
+    whole store on a mismatch (``Engine._check_version``), so a cache
+    shared between engines, given to an engine created after a
+    registration, or written under other settings, starts empty for the
+    engine that looks; two engines with the same settings share hits.
+    A cache no engine has looked at (``_settings`` None) holds only what
+    its owner seeded by hand (``put``) and is adopted as it is.
+    The other settings are not in the key: ``discovery_budget`` decides
+    whether a query is answered, not its value (``Engine.is_`` tests the
+    cone before the lookup, and the session runs uncapped); ``writeback``
+    decides whether the answer is stored; ``relevance`` concerns
+    contextual queries only.
 
     The engine never reads or writes SymPy's per-object ``_assumptions``.
     Reading it would import whatever SymPy's ``_eval_is_*`` handlers cached
@@ -174,6 +185,9 @@ class DictCache:
         self.maxsize = maxsize
         #: the registry epoch the facts were derived under
         self._epoch = _EPOCH[0]
+        #: the settings fingerprint (``Engine._settings_fingerprint``) the
+        #: facts were derived under; None until an engine looks
+        self._settings = None
 
     def facts(self, node: Node) -> Optional[Dict[str, Optional[bool]]]:
         return self.store.get(node)
@@ -594,7 +608,7 @@ class Session:
         if self.xfer is not None:
             self.xfer.sync_transfer()
         if not solver.propagate():
-            raise InconsistentAssumptions("rule base is inconsistent")
+            raise InconsistentAssumptions("rule base or declared facts (templates) are inconsistent")
         # the query literal is read: its variable's rule-block implication
         # must be on the trail (Solver.mention)
         solver.mention((lit,))
@@ -1065,6 +1079,9 @@ class Engine:
         self._epoch = -1
         #: this engine's memos, by name (:func:`satassume.memos.engine_memos`)
         self.memos = engine_memos(self)
+        #: the fingerprint of the settings ``is_`` depends on
+        #: (``_settings_fingerprint``), part of the fact caches' memo key
+        self._settings_key = self._settings_fingerprint()
         #: counters; ``theory_gave_up``: contextual queries whose session's
         #: theory gave up (satassume.theory, "Giving up"), answered None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
@@ -1250,18 +1267,23 @@ class Engine:
         """A setting of this engine changed (the setters call this on a real
         change only): drop what this engine computed under the old value.
         Settings are not part of the registry epoch, so other engines keep
-        their caches.  Before the first query (``_epoch == -1``) there is
-        nothing to drop.  Otherwise this drops what :meth:`_check_version`
-        drops for the engine (the answer and split memos, the
-        ``Uninterpreted`` memo, the verdict memo), counted in
-        ``stats["version_clears"]``, and the stores of the engine's fact
-        caches (``cache``, ``custom_cache``): their facts can depend on
-        ``templates``, ``discovery_budget`` (which cones fit),
-        ``transfer``, ``uninterpreted`` and ``writeback``, as can a set's
-        verdict.  A ``DictCache`` shared with other engines is cleared for
-        them too: a needless clear for them, never a stale answer.
-        :data:`satassume.epoch.EPOCH` is untouched.  The structural cone
-        memos of the budget test are dropped in every case."""
+        their caches.  The settings fingerprint (``_settings_fingerprint``)
+        is recomputed in every case; a fact cache whose fingerprint differs
+        is dropped at the engine's next query (``_check_version``), so a
+        change before the first query (``_epoch == -1``) drops a cache
+        filled by another engine too.  After the first query this also
+        drops what :meth:`_check_version` drops for the engine (the answer
+        and split memos, the ``Uninterpreted`` memo, the verdict memo),
+        counted in ``stats["version_clears"]``, and the stores of the
+        engine's fact caches (``cache``, ``custom_cache``): their facts can
+        depend on ``templates``, ``transfer`` and ``uninterpreted``, and a
+        set's verdict on those, ``discovery_budget`` (which cones fit) and
+        ``writeback``.  A ``DictCache`` shared with other engines is
+        cleared for them too: a needless clear for them, never a stale
+        answer.  :data:`satassume.epoch.EPOCH` is untouched.  The
+        structural cone memos of the budget test are dropped in every
+        case."""
+        self._settings_key = self._settings_fingerprint()
         self._drop_cones()
         if self._epoch >= 0:
             self.stats["version_clears"] += 1
@@ -1278,12 +1300,16 @@ class Engine:
         split memos, the ``Uninterpreted`` memo and the verdict memo all
         hold results computed under the registrations in force at the
         time.  The entry of every query calls this when the engine's epoch
-        is not the current one (``if self._epoch != _EPOCH[0]``); a
-        ``DictCache`` records its own epoch, so a cache shared between
-        engines, or given to an engine created after a registration, is
-        dropped by the first engine that looks.  Nothing is counted before
-        the engine's first query, so registering before using an engine
-        costs nothing."""
+        is not the current one (``if self._epoch != _EPOCH[0]``), and
+        ``is_`` also when a fact cache's settings fingerprint is not the
+        engine's (one tuple comparison per query): a ``DictCache`` records
+        its own epoch and fingerprint (``DictCache._epoch``,
+        ``_settings``), so a cache shared between engines, given to an
+        engine created after a registration, or written under other
+        settings (``templates``, ``transfer``, ``uninterpreted``) is
+        dropped by the first engine that looks and starts empty for it.
+        Nothing is counted before the engine's first query, so registering
+        before using an engine costs nothing."""
         epoch = _EPOCH[0]
         if self._epoch != epoch:
             self._drop_cones()
@@ -1294,10 +1320,22 @@ class Engine:
                 self._failed.clear()
                 self._verdict.clear()
             self._epoch = epoch
+        key = self._settings_key
         for cache in (self.cache, self.custom_cache):
-            if cache._epoch != epoch:
+            # a cache no engine has looked at yet (``_settings`` None: it
+            # holds only what the caller seeded by hand) is adopted
+            if cache._epoch != epoch or (cache._settings is not None
+                                         and cache._settings != key):
                 cache.store.clear()
-                cache._epoch = epoch
+            cache._epoch = epoch
+            cache._settings = key
+
+    def _settings_fingerprint(self) -> tuple:
+        """The settings a context-free query's answer depends on, as the
+        part of the fact caches' memo key (``DictCache._settings``):
+        ``(templates, transfer, uninterpreted)``, compared with ``==``
+        (``templates`` by identity, as its setter does)."""
+        return (self._templates, self._transfer, self._uninterpreted)
 
     # -- the discovery budget: a test on the query's structural cone ----------
     def _drop_cones(self) -> None:
@@ -1656,7 +1694,7 @@ class Engine:
         ``custom_cache``), True or False only (``_put_result``).  None if
         the cone of ``node`` outweighs ``discovery_budget``
         (``last_budget_limited``), whatever is cached."""
-        if self._epoch != _EPOCH[0]:
+        if self._epoch != _EPOCH[0] or self.cache._settings != self._settings_key:
             self._check_version()
         if pred not in PRED_INDEX:
             return self._is_custom(node, pred)
@@ -1685,15 +1723,14 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, search=True)
-        self._put_result(s, self.cache, node, node, pred, r)
+        self._put_result(s, self.cache, node, pred, r)
         return r
 
-    def _put_result(self, s: Session, cache: DictCache, subject, node, pred: str, r) -> None:
+    def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
         """Memoize the answer ``r`` of the context-free query ``pred(node)``
-        (``subject``: ``node``, or the custom atom; kept for the call
-        shape) in ``cache``, keyed on ``node`` under the current registry
-        epoch (``DictCache._epoch``, ``_check_version``): True or False
-        only, never None.
+        in ``cache``, keyed on ``node`` under the current registry epoch
+        and settings fingerprint (``DictCache._epoch``, ``_settings``,
+        ``_check_version``): True or False only, never None.
 
         Why the cache is a pure memo of ``is_``: ``s`` asserted no cached
         fact (sessions never read the caches), so its clause set is the
@@ -1702,16 +1739,25 @@ class Engine:
         the settings only); ``s`` passed the budget test
         (``_within_budget``), ran uncapped and is never truncated, and its
         answer is an entailment of that clause set (or a complete search's
-        verdict), so the fresh query answers ``r`` too.  Under
+        verdict), so the fresh query answers ``r`` too.  Re-entrancy: the
+        one input of ``s`` a fresh engine could see differently is the
+        unmemoized None that ``is_`` answers for a node in
+        ``_constructing`` (a template evaluating that very node asks about
+        it), which a nested ``is_`` from relation glue inside ``s`` would
+        receive if its cone reached an ancestor under construction; that
+        needs a cycle through the templates, and no reachable case is
+        known (issue #97 P2 review, N2), so this is accepted, not proved.
+        Under
         ``writeback="none"`` nothing is stored."""
-        assert not s.truncated, "a session of a query within the budget was truncated"
+        if s.truncated:
+            raise RuntimeError("a session of a query within the budget was truncated")
         self.last_budget_limited = False
         if r is None or self._writeback != "root-only":
             return
         cache.put(node, pred, r)
 
     def _is_custom(self, node: Node, pred: str) -> Optional[bool]:
-        if self._epoch != _EPOCH[0]:
+        if self._epoch != _EPOCH[0] or self.custom_cache._settings != self._settings_key:
             self._check_version()
         atom = P(pred, node)
         if self._cone_info(atom)[0] is None:
@@ -1733,7 +1779,7 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, lits, search=True)
-        self._put_result(s, self.custom_cache, atom, node, pred, r)
+        self._put_result(s, self.custom_cache, node, pred, r)
         return r
 
     # -- contextual -----------------------------------------------------------

@@ -137,8 +137,12 @@ configurations remain valid.
 `==`, to its context-free facts; `custom_cache` holds custom-predicate
 atoms. Since issue #97 (P2) the caches are pure memos of `Engine.is_`:
 `is_(node, pred)` stores its own answer under `node`, True or False,
-never None, keyed on the registry epoch (`DictCache._epoch`,
-`Engine._check_version`); nothing else writes there (`Engine._put_result`
+never None, keyed on the registry epoch and the settings fingerprint
+`(templates, transfer, uninterpreted)` (`DictCache._epoch`, `_settings`;
+`Engine._check_version` drops a cache whose epoch or fingerprint is not
+the engine's, so a cache shared between engines of different settings
+starts empty for each, and engines of the same settings share hits);
+nothing else writes there (`Engine._put_result`
 is the one writer), and no session reads there (a visited node asserts no
 cached fact as a unit clause; a contextual session derives every fact
 from its own clause set). The memo is sound because the session of
