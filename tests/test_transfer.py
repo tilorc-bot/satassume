@@ -75,21 +75,28 @@ def test_transfer_needs_an_equality():
     and so do an order atom and its reverse (they give the equality,
     Relations._trichotomy, W2B4b).  Its queries switch it on
     (Relations.wants_transfer)."""
-    def engaged(e):
-        return any(s.xfer is not None for s, _ in e._context_sessions.values())
+    from satassume.sympy_api import _formula
+
+    def session(e, p, a):
+        # the session Engine.ask builds for the query and discards (#97
+        # P1), built the same way and kept for the inspection
+        ask_with(e, p, a)
+        assert not e._context_sessions
+        s, lits = e._build_context(_formula(a, True, True))
+        e._ask(s, lits, _formula(p, True), True)
+        return s
+
+    def engaged(e, p, a):
+        return session(e, p, a).xfer is not None
     e = eng()
-    ask_with(e, Q.positive(x + 1), Q.positive(x - 1) & Q.negative(1 - x))
-    for s, _ in e._context_sessions.values():
-        assert s.relations is not None
-        assert s.xfer is None
-        assert not any(type(t).__name__ == "TransferTheory" for t in s.solver.theories())
-    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.real(x))
-    assert not engaged(e)
-    ask_with(e, Q.positive(x), Q.lt(0, x) & Q.eq(x, y))
-    assert engaged(e)
+    s = session(e, Q.positive(x + 1), Q.positive(x - 1) & Q.negative(1 - x))
+    assert s.relations is not None
+    assert s.xfer is None
+    assert not any(type(t).__name__ == "TransferTheory" for t in s.solver.theories())
+    assert not engaged(e, Q.positive(x), Q.lt(0, x) & Q.real(x))
+    assert engaged(e, Q.positive(x), Q.lt(0, x) & Q.eq(x, y))
     e = eng()
-    ask_with(e, Q.positive(x), Q.le(x, y) & Q.ge(x, y))
-    assert engaged(e)
+    assert engaged(e, Q.positive(x), Q.le(x, y) & Q.ge(x, y))
 
 
 def test_inequalities_restate_an_equality():

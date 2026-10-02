@@ -51,11 +51,23 @@ def test_relations_off_gives_old_behaviour_and_same_unary_answers():
     assert ask(Q.positive(r), Q.gt(r, 0), engine=on) is True
 
 
+def _session_after(eng, p, a):
+    """The session of the set ``a`` built for the query ``p`` and holding
+    its answer: what ``Engine.ask`` builds, answers in and discards (#97
+    P1), built the same way and kept for the inspection."""
+    from satassume.sympy_api import _formula
+    sess, lits = eng._build_context(_formula(a, True, True))
+    eng._ask(sess, lits, _formula(p, True), True)
+    return sess
+
+
 def test_each_context_session_owns_its_adapters_and_theories():
     eng = Engine()
-    assert ask(Q.lt(r, t), Q.lt(r, s) & Q.lt(s, t), engine=eng) is True
-    assert ask(Q.gt(r, 0), Q.gt(r, 1), engine=eng) is True
-    sessions = [sess for sess, _ in eng._context_sessions.values()]
+    queries = [(Q.lt(r, t), Q.lt(r, s) & Q.lt(s, t)), (Q.gt(r, 0), Q.gt(r, 1))]
+    for p, a in queries:
+        assert ask(p, a, engine=eng) is True
+    assert not eng._context_sessions
+    sessions = [_session_after(eng, p, a) for p, a in queries]
     assert len(sessions) == 2
     ads = [sess.relations.adapters for sess in sessions]
     for name in ("lra",):
@@ -71,10 +83,14 @@ def test_theory_levels_match_the_solver_after_ask():
     # theories attached, see Solver._assume); every theory must then be at
     # the same level, and at 0 once the solver is back at root.
     eng = Engine()
-    ask(Q.eq(f(r), f(s)), Q.le(r, s) & Q.le(s, r), engine=eng)
-    ask(Q.lt(r, 3), Q.lt(r, s) & Q.lt(s, 2) & Q.ne(r, 0), engine=eng)
+    queries = [(Q.eq(f(r), f(s)), Q.le(r, s) & Q.le(s, r)),
+               (Q.lt(r, 3), Q.lt(r, s) & Q.lt(s, 2) & Q.ne(r, 0))]
+    for p, a in queries:
+        ask(p, a, engine=eng)
+    assert not eng._context_sessions
     held = 0
-    for sess, _ in eng._context_sessions.values():
+    for p, a in queries:
+        sess = _session_after(eng, p, a)
         solver = sess.solver
         held += bool(solver._trail_lim)
         for th in solver.theories():

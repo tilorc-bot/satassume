@@ -469,11 +469,23 @@ _sq = -2 * sqrt(2) + (1 + sqrt(2)) ** 2                    # 3, not formally
 
 @pytest.mark.parametrize("offset", [_log8, _sq], ids=["log8/log2", "sqrt2"])
 def test_integer_valued_offset_does_not_silence_the_theory(offset):
+    from satassume.engine import _gave_up
+    from satassume.sympy_api import _formula
     y = symbols("y")
     a = Q.integer(x + offset) & Q.gt(x, 1) & Q.gt(y, x + 1)
     eng = Engine(cache=DictCache())
+    # the property: the theory is not silenced at registration, so the
+    # set's complete check runs it and the bounds decide the query
+    s, _ = eng._build_context(_formula(a, True, True))
+    assert not _gave_up(s)
     assert ask(Q.gt(y, 2), a, eng) is True
-    assert eng.stats["theory_gave_up"] == 0
+    assert ask(Q.gt(y, 2), a, Engine(cache=DictCache())) is True
+    # (``stats["theory_gave_up"] == 0`` was asserted here; on main the
+    # counter was fed only when a kept session was reused by the next
+    # query, so a single query left it 0 whatever the theory did.  The
+    # branch and bound does give up on this query's integrality atom after
+    # the bounds have decided it, on main as well; since #97 P1 the counter
+    # counts that at the query, so the assertion would read 1.)
 
 
 @pytest.mark.parametrize("offset", [_log8, _sq], ids=["log8/log2", "sqrt2"])
