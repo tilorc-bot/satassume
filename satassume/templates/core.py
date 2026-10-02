@@ -779,6 +779,8 @@ POW_TABLE = (
     Row('|b|<1.finite', [('E', 'extended_positive')], ('N', 'finite'),
         when='b finite number, 0<|b|<1'),
     Row('|b|<1.zero', [('E', 'positive_infinite')], ('N', 'zero'), when='b finite number, 0<|b|<1'),
+    # Disagrees with SymPy for negative b ((-1/2)**(-oo) == nan); kept as is pending
+    # an owner decision, see tests/test_p6_review.py (issue #97 P6 review).
     Row('|b|<1.infinite', [('E', 'negative_infinite')], ('N', 'infinite'),
         when='b finite number, 0<|b|<1'),
     # b**e for integer b >= 2 is composite.

@@ -14,12 +14,12 @@ from satassume.sympy_api import ask  # noqa: E402
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "Pre-existing on main (876f37d), not a P6 regression: row |b|<1.infinite of "
-    "POW_TABLE says b**e is infinite for 0<|b|<1 and e == -oo, but SymPy at the pin "
-    "evaluates (-1/2)**(-oo) to nan (not infinite); only 0<b<1 gives oo.  satassume "
-    "answers True where a value of the node is nan.  Needs an owner decision "
-    "(restrict the row to positive b, or document the departure from SymPy) in a "
-    "separate PR."))
+    "Pinned repro, pre-existing on main (876f37d), not a P6 regression: row "
+    "|b|<1.infinite of POW_TABLE says b**e is infinite for 0<|b|<1 and e == -oo, "
+    "but SymPy at the pin gives (-1/2)**(-oo) == nan (not infinite); only 0<b<1 "
+    "gives oo.  satassume answers True where a value of the node is nan.  "
+    "Owner decision, issue #97 P6 review: restrict the row to positive b, or "
+    "document the departure from SymPy, in a separate PR."))
 def test_negative_base_below_one_to_minus_infinity_is_nan():
     y = symbols("y")
     assert Rational(-1, 2) ** (-oo) is S.NaN        # SymPy's value

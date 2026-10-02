@@ -94,6 +94,18 @@ def random_terms(n=N_RANDOM):
     return list(out)
 
 
+def synthetic_nodes():
+    """The node shapes of the totality checker, plus unevaluated nodes that
+    SymPy would otherwise rewrite before any template sees them (issue #97,
+    P6 review nit 2): ``Pow(E, x)`` becomes ``exp(x)`` and ``Pow(x, 1)``
+    becomes ``x``, so the ``pow.E.*`` and ``one`` rows of ``POW_TABLE`` are
+    reached only through these."""
+    from sympy import E, symbols
+    x = symbols("x")
+    extra = [Pow(E, x, evaluate=False), Pow(x, 1, evaluate=False)]
+    return _subexprs(list(totality.load_exprs()) + extra)
+
+
 def _clear():
     _common._CACHE.clear()
     registry._clauses_cache.clear()
@@ -158,8 +170,9 @@ def test_random_clauses_identical(monkeypatch):
 
 
 def test_synthetic_clauses_identical(monkeypatch):
-    # the node shapes of the totality checker (no corpus needed)
-    _compare(monkeypatch, _subexprs(totality.load_exprs()), "synthetic")
+    # the node shapes of the totality checker (no corpus needed), plus the
+    # unevaluated Pow nodes of synthetic_nodes()
+    _compare(monkeypatch, synthetic_nodes(), "synthetic")
 
 
 def test_comparison_detects_a_wrong_row(monkeypatch):
