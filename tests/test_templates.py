@@ -576,3 +576,22 @@ def test_add_extended_real_term_end_to_end():
     # The other term must be real: a merely complex term gives nothing.
     assert ask(Q.gt(a, 0), Q.gt(a - zc, 0), Engine()) is None
     assert ask(Q.extended_real(a), Q.gt(a - zc, 0), Engine()) is None
+
+
+def test_signed_infinite_summand_end_to_end():
+    """Nightly family B: a summand known to be -oo (a declared symbol, not
+    only the constant) makes the sum -oo when the rest is extended real
+    and not +oo, with or without a relation in the set."""
+    from sympy import I, Q, Symbol, symbols
+    from satassume import Engine
+    from satassume.sympy_api import ask
+    ninf = Symbol('ninf', negative_infinite=True)
+    pinf = Symbol('pinf', positive_infinite=True)
+    u, v = symbols('u v')
+    for a in (True, Q.eq(u, v)):
+        assert ask(Q.negative_infinite(ninf + 1), a, Engine()) is True
+        assert ask(Q.positive_infinite(pinf - 2), a, Engine()) is True
+        assert ask(Q.extended_negative(ninf + 1), a, Engine()) is True
+        # -oo + I is infinite off the real axis; -oo + oo is nan
+        assert ask(Q.negative_infinite(ninf + I), a, Engine()) is None
+        assert ask(Q.negative_infinite(ninf + pinf), a, Engine()) is None
