@@ -3,17 +3,17 @@
 Registering or unregistering a clause-generating function, registering a
 template or changing the theory adapters changes what an answer is; each
 starts a new registry epoch (``satassume.epoch``), and everything the engine
-keeps between queries (``Engine.cache``, ``Engine.custom_cache``, the reused
-contextual sessions, the answer and split memos) was computed under the
+keeps between queries (``Engine.cache``, ``Engine.custom_cache``, the set
+verdict and failed-set memos, the answer and split memos) was computed under the
 registrations in force at the time and is dropped at the next query
 (``Engine._check_version``).  The scenarios R1-R4 are the differential
 harness's recorded repros: the engine's answer after the prefix must equal a
 fresh engine's answer under the same registrations.
 
-A reused session that a query under it made raise, or whose clause set a
-query's own nodes made unsatisfiable at root, is dropped
-(``dead_sessions``): the raise belongs to that query, and later queries
-under the same assumptions are answered as in a fresh engine.
+A contextual query is answered in a session built for it and discarded
+(#97 P1): a query that makes that session raise, or whose own nodes make its
+clause set unsatisfiable at root, raises alone, and later queries under the
+same assumptions are answered as in a fresh engine.
 """
 import pytest
 
@@ -106,6 +106,15 @@ def same_as_fresh(eng, p, a=True):
     return warm
 
 
+def _session_after(eng, p, a):
+    """The session of the set ``a`` built for the query ``p``, holding its
+    answer: what ``Engine.ask`` builds, answers in and discards."""
+    from satassume.sympy_api import _formula
+    s, lits = eng._build_context(_formula(a, True, True))
+    eng._ask(s, lits, _formula(p, True), True)
+    return s
+
+
 # -- the recorded repros ----------------------------------------------------
 
 def test_r1_none_cached_before_registration():
@@ -189,15 +198,19 @@ def test_custom_cache_is_keyed_on_the_registry():
     assert eng.stats["version_clears"] == 2
 
 
-def test_sessions_are_keyed_on_the_registry():
+def test_contextual_answers_follow_the_registry():
+    # was test_sessions_are_keyed_on_the_registry: the set's session is
+    # built per query now; what the registry keys is the set's memos
     extensions.register('real', AppliedUndef)(undef_real)
     eng = fresh()
     a = P('positive', y)
     assert eng.ask(P('real', f(y)), a) is True
-    assert a in eng._context_sessions
+    assert not eng._context_sessions and a in eng._verdict
     extensions.unregister('real')
     assert eng.ask(P('real', f(y)), a) is None
-    assert a in eng._context_sessions and eng.stats["version_clears"] == 1
+    assert eng.ask(P('real', f(y)), a) == fresh().ask(P('real', f(y)), a)
+    assert not eng._context_sessions and a in eng._verdict
+    assert eng.stats["version_clears"] == 1
 
 
 def test_engine_entries_are_guarded_on_their_own():
@@ -236,20 +249,24 @@ def test_adapter_change_clears_too():
     assert eng.stats["version_clears"] == 1
 
 
-def test_adapter_change_drops_the_session():
+def test_adapter_change_answers_as_fresh():
+    # was test_adapter_change_drops_the_session
     """Two sign atoms on sums sharing a symbol start the relation glue
-    without a relation atom (``Session._affine_links``), so the session
-    holds theory state; without adapters the same query is None."""
+    without a relation atom (``Session._affine_links``), so the query's
+    session holds theory state; without adapters the same query is None,
+    and the session built for it has no glue."""
     eng = fresh()
     a, q = Q.positive(x - 1), Q.negative(1 - x)
     assert ask(q, a, eng) is True
-    assert eng._context_sessions
+    assert not eng._context_sessions
+    assert _session_after(eng, q, a).relations is not None   # the glue is on
     assert isinstance(eng.relation_specs, tuple)             # no in-place change
     eng.relation_specs = ()
     assert eng._epoch != EPOCH[0]                            # dropped at the next query
     assert ask(q, a, eng) is None
     assert ask(q, a, Engine(cache=DictCache(), relations=[])) is None
-    assert eng.stats["version_clears"] == 1 and len(eng._context_sessions) == 1
+    assert eng.stats["version_clears"] == 1 and not eng._context_sessions
+    assert _session_after(eng, q, a).relations is None       # built without it
 
 
 def test_assigning_equal_specs_or_a_tuple_clears_nothing():
@@ -266,7 +283,7 @@ def test_assigning_equal_specs_or_a_tuple_clears_nothing():
         assert eng.is_(y, 'real') is True
     assert eng.stats["version_clears"] == 0
     assert eng.stats["cache_hits"] == hits + 10
-    assert len(eng._context_sessions) == 1
+    assert not eng._context_sessions and len(eng._verdict) == 1   # the memo survived
 
 
 def test_splits_are_keyed_on_the_registry(template_class):
@@ -361,26 +378,28 @@ def test_no_clear_without_a_change():
         assert ask(Q.real(f(y)), True, eng) is True
         assert ask(Q.real(f(y)), Q.positive(y), eng) is True
     assert eng.stats["version_clears"] == 0
-    assert eng.cache.get(f(y), 'real') is True and len(eng._context_sessions) == 1
+    assert eng.cache.get(f(y), 'real') is True
+    assert not eng._context_sessions and len(eng._verdict) == 1   # the memo survived
 
 
-# -- dead sessions -----------------------------------------------------------
+# -- a raising query raises alone (no session outlives a query) --------------
 
-def test_dead_session_is_dropped():
-    """A query whose own nodes make the reused session unsatisfiable at
-    root raises, and only that query: later queries under the same
-    assumptions are answered as in a fresh engine."""
+def test_query_raising_at_root_raises_alone():
+    # was test_dead_session_is_dropped
+    """A query whose own nodes make its session unsatisfiable at root
+    raises, and only that query: the session was built for it and is
+    discarded, so later queries under the same assumptions are answered
+    as in a fresh engine."""
     extensions.register('real', AppliedUndef)(contradictory)
     a = Q.positive(x)
     eng = fresh()
     assert same_as_fresh(eng, Q.real(x), a) is True
     assert same_as_fresh(eng, Q.positive(f(x) + x), a) == "ValueError"
-    assert eng.stats["dead_sessions"] == 1
-    assert a not in eng._context_sessions
+    assert not eng._context_sessions and "dead_sessions" not in eng.stats
     assert same_as_fresh(eng, Q.real(x), a) is True
     assert same_as_fresh(eng, Q.negative(x), a) is False
     assert same_as_fresh(eng, Q.zero(x + 1), a) is False
-    assert eng.stats["dead_sessions"] == 1
+    assert not eng._context_sessions
 
 
 @pytest.mark.parametrize("relevance", [True, False])
@@ -398,27 +417,31 @@ def test_dead_session_noncommutative_abs(relevance):
         assert outcome(eng, p, a) == ref(p), p
 
 
-def test_session_raising_under_the_assumptions_only_is_dropped():
+def test_query_raising_under_the_assumptions_only_raises_alone():
+    # was test_session_raising_under_the_assumptions_only_is_dropped
     """The contradiction is with the assumptions only: the root stays
-    satisfiable, but the session holding the node raises for every later
-    query under the set, where a fresh engine answers."""
+    satisfiable, and a session holding the node would raise for every
+    later query under the set, where a fresh engine answers; no session
+    outlives the query, so they answer as fresh."""
     extensions.register('real', AppliedUndef)(contradictory_under_positive)
     a = Q.positive(x)
     eng = fresh()
     assert same_as_fresh(eng, Q.real(x), a) is True
     assert same_as_fresh(eng, Q.positive(f(x) + x), a) == "ValueError"
-    assert eng.stats["dead_sessions"] == 1 and a not in eng._context_sessions
+    assert not eng._context_sessions
     assert same_as_fresh(eng, Q.real(x), a) is True
     assert same_as_fresh(eng, Q.negative(x), a) is False
     assert same_as_fresh(eng, Q.zero(x + 1), a) is False
-    assert eng.stats["dead_sessions"] == 1
+    assert not eng._context_sessions
 
 
-def test_dead_session_after_an_uninterpreted_exit():
-    """The query's nodes kill the session at root, but the query leaves by
+def test_queries_after_an_uninterpreted_exit_answer_as_fresh():
+    # was test_dead_session_after_an_uninterpreted_exit
+    """The query's nodes kill its session at root, but the query leaves by
     ``Uninterpreted`` (a relation no theory reads: None), not by
-    ``InconsistentAssumptions``: the dead session is found when it is
-    reused."""
+    ``InconsistentAssumptions``; a kept session would have raised at the
+    next query (it did, before #97 P1), a session built per query does
+    not."""
     # (the Uninterpreted exit exists only with uninterpreted="none")
     extensions.register('real', AppliedUndef)(contradictory)
     a = Q.positive(x)
@@ -430,12 +453,11 @@ def test_dead_session_after_an_uninterpreted_exit():
         return warm
     assert same(Q.real(x)) is True
     assert same(Q.real(f(x)) | Q.lt(x, I * x)) is None
-    assert eng.stats["dead_sessions"] == 0                   # nothing raised
-    assert same(Q.negative(x)) is False     # was ValueError
-    assert eng.stats["dead_sessions"] == 1
+    assert not eng._context_sessions
+    assert same(Q.negative(x)) is False     # was ValueError with a kept session
     assert same(Q.real(x)) is True
     assert same_as_fresh(eng, Q.zero(x + 1), a) is False
-    assert eng.stats["dead_sessions"] == 1
+    assert not eng._context_sessions
 
 
 def test_inconsistent_assumptions_still_raise_every_time():

@@ -74,15 +74,20 @@ def test_verdicts():
     assert eng.verdict(_formula(_k5()[1], True)) is UNKNOWN
 
 
-def test_one_set_check_for_many_queries():
+def test_one_set_check_per_query():
+    # was test_one_set_check_for_many_queries: the set's session, and its
+    # complete check, are built for every contextual query (#97 P1); the
+    # verdict is memoized once per set
     x, y, z = symbols('x y z')
     # one component (every query is answered under the whole set)
     a = Q.positive(x) & Q.negative(y) & Q.gt(z, 1) & Q.lt(y, x) & Q.lt(x, z)
-    eng = Engine()
-    for p in (Q.positive(x), Q.negative(y), Q.positive(z), Q.real(x*y),
-              Q.negative(x*y), Q.gt(z, 0), Q.zero(x + z), Q.positive(x + z)):
+    eng = Engine(cache=DictCache())
+    props = (Q.positive(x), Q.negative(y), Q.positive(z), Q.real(x*y),
+             Q.negative(x*y), Q.gt(z, 0), Q.zero(x + z), Q.positive(x + z))
+    for p in props:
         ask(p, a, eng)
-    assert eng.stats["set_checks"] == 1
+    assert eng.stats["set_checks"] == len(props)
+    assert not eng._context_sessions and len(eng._verdict) == 1
 
 
 def test_setting_change_drops_the_verdict_memo():
@@ -132,9 +137,8 @@ def test_set_over_the_budget_is_unknown():
 def test_verdict_keeps_no_session():
     # Engine.verdict builds the set's session as a query would
     # (_build_context) but keeps only the verdict: the relevance layer asks
-    # it for sets it then answers under a part, whose sessions a
-    # never-queried whole session would evict.  A query under the whole
-    # set builds its session then, with the same verdict; later verdicts
+    # it for sets it then answers under a part.  A query under the whole
+    # set builds its own session, with the same verdict; later verdicts
     # come from the memo
     from satassume.sympy_api import _formula
     x, y = symbols('x y')
@@ -150,11 +154,12 @@ def test_verdict_keeps_no_session():
     assert n == 1 and not eng._context_sessions
     s, _ = eng._context_session(f)
     assert eng.stats["sessions"] == n + 1 and s.verdict is CONSISTENT
-    assert len(eng._context_sessions) == 1
+    assert not eng._context_sessions           # a query's session is not kept either
     assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == n + 1
-    # a session's verdict answers when the memo has none
+    # with no memo (and no kept session) the verdict is recomputed by one
+    # more build, with the same result
     eng._verdict.clear()
-    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == n + 1
+    assert eng.verdict(f) is CONSISTENT and eng.stats["sessions"] == n + 2
 
 
 def test_setting_change_recomputes_a_memoized_verdict():
@@ -177,17 +182,23 @@ def test_setting_change_recomputes_a_memoized_verdict():
     assert eng.stats["version_clears"] == 2
 
 
-def test_cone_search_keeps_the_verdict():
-    # the cone session that replaces a polluted one carries the set's verdict
+def test_search_keeps_the_verdict():
+    # was test_cone_search_keeps_the_verdict: a query that searches under
+    # the set (which once polluted a kept session and made the next search
+    # run in a cone session) leaves the set's verdict as it is, and the
+    # session built for the next query carries it
     from satassume.sympy_api import _formula
     x, y, z, w = symbols('x y z w')
-    # (relevance off: the queries are asked under the whole set)
+    # (relevance off: the queries are asked under the whole set;
+    # cone_threshold is accepted and changes nothing)
     eng = Engine(cache=DictCache(), cone_threshold=0, relevance=False)
     a = Q.positive(x) & Q.gt(y, 1)
     g = _formula(a, True, True)
     assert eng.verdict(g) is CONSISTENT
-    ask(Q.positive(z*w + 1), a, eng)  # pollutes the session
+    ask(Q.positive(z*w + 1), a, eng)  # searches under the set
+    assert eng.stats["searches"] >= 1 and "cone_searches" not in eng.stats
     ask(Q.negative(x*y), a, eng)
-    assert eng.stats["cone_searches"] >= 1
-    assert eng._context_sessions[g][0].verdict is CONSISTENT
+    assert not eng._context_sessions
+    s, _ = eng._context_session(g)
+    assert s.verdict is CONSISTENT
     assert eng.verdict(g) is CONSISTENT

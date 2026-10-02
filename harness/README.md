@@ -37,15 +37,17 @@ registrations.
 
 Each stream runs in several orders (`--orders`): `forward`, `reverse`,
 `shuffle`, `grouped` (sorted by assumption set: maximal session reuse),
-`interleave` (round robin over sets: LRU eviction), `repeat` (memo hits).
+`interleave` (round robin over sets), `repeat` (memo hits).
 
 Configurations (`harness/state.py`, `--config name,name` or `all`):
 `default`, and one preset per mechanism: `tight` (every bounded cache and
-threshold small), `reuse` (no cone sessions: searches in polluted
-sessions), `cone` (every contextual search in a cone session), `whole` (no
-relevance split), `notransfer`, `norel`, `free`, `budget` (discovery budget
-5), `churn` (sessions replaced constantly), `evict` (fact cache of 16
-nodes, memos of 8 and 2 entries).
+threshold small), `whole` (no relevance split), `notransfer`, `norel`,
+`free`, `budget` (discovery budget 5), `evict` (fact cache of 16 nodes,
+memos of 8 and 2 entries).  Since #97 P1 every contextual query builds the
+session of its set, answers and discards it; `reuse`, `cone` and `churn`
+set only the session-reuse settings that no longer do anything
+(`keep_sessions`, `session_limit`, `cone_search`, `cone_threshold`) and
+run as `default` does.
 
 Mismatches are classified (`contradiction`, `none-vs-definite`,
 `raise-vs-definite`, `raise-vs-none`, `error`) and grouped by (assumption
@@ -129,13 +131,13 @@ experiment):
 
 | capability | switched on by, where | scope | what only it can prove (the observers) |
 |---|---|---|---|
-| **relation glue** (`Session.relations`, a `Relations` object) | the first relation atom allocated in the session: `Session._custom` (engine.py 342-349) creates `Relations`, notes the assumptions' atoms, and from then on every user formula is passed to `Relations.process` (`Session._relations`); `_link` adds `extended_positive(e) <-> gt(e, 0)`, `extended_negative(e) <-> lt(e, 0)`, `zero(e) <-> eq(e, 0)` for every argument `e` of a vocabulary atom of the assumptions and of every later query, and every relation side (relations.py 392-445, 636-655); the LRA and EUF adapters attach at the first interpreted atom (`_adapter`, `_interpret`) | per session; never off within the session; a cone search or `session_limit` replaces the session by one without it | LRA over the links: order facts about **linear relatives** of the set's terms (`positive(x + y)` from `positive(x + y - 1)`, `positive(x - 3)` from `positive(x - pi)` with the constant's bounds, `positive(n - 2)` from `positive(n - 3)`, `zero(x - y)` from `nonnegative(x - y) & nonnegative(y - x)`), and the inconsistency of such sets (`positive(x + y - 1) & negative(x + y)`); the extended-order clauses (`_order_infinite`) for `oo` summands |
+| **relation glue** (`Session.relations`, a `Relations` object) | the first relation atom allocated in the session: `Session._custom` (engine.py 342-349) creates `Relations`, notes the assumptions' atoms, and from then on every user formula is passed to `Relations.process` (`Session._relations`); `_link` adds `extended_positive(e) <-> gt(e, 0)`, `extended_negative(e) <-> lt(e, 0)`, `zero(e) <-> eq(e, 0)` for every argument `e` of a vocabulary atom of the assumptions and of every later query, and every relation side (relations.py 392-445, 636-655); the LRA and EUF adapters attach at the first interpreted atom (`_adapter`, `_interpret`) | per session, which is built for the query and discarded (#97 P1) | LRA over the links: order facts about **linear relatives** of the set's terms (`positive(x + y)` from `positive(x + y - 1)`, `positive(x - 3)` from `positive(x - pi)` with the constant's bounds, `positive(n - 2)` from `positive(n - 3)`, `zero(x - y)` from `nonnegative(x - y) & nonnegative(y - x)`), and the inconsistency of such sets (`positive(x + y - 1) & negative(x + y)`); the extended-order clauses (`_order_infinite`) for `oo` summands |
 | **linked terms** (`Relations.linked`, `top`) | with the glue on, every term a query mentions (relation sides, vocabulary-atom arguments) is linked, for good; a fresh session links only the set's and the query's terms | per session, per term; grows | as above, through terms an *earlier* query mentioned: a relation in the query about `w + 1` decided because an earlier query mentioned `w` (family G') |
 | **predicate transfer** (`Relations.xfer`, `TransferTheory`) | the first equality atom that is not glue (a user or template `eq`/`ne`): `Relations.process` sets `_want_transfer`, `_engage_transfer` attaches EUF and the transfer theory (relations.py 409-411, 429-430, 723-743); candidacy (`sync_transfer`, `_congruent`) only grows | per session; never off | unary facts shared across an EUF class: **congruent applications** (`positive(f(u))` from `zero(u) & positive(f(0))`, `positive(f(u) + 1)`, `g(f(u))`), classes made by the links (`zero(e)`: `e ~ 0`; `eq(e, oo) <-> positive_infinite(e)`: `e ~ oo`), and by two zero terms (`f(u)` from `zero(u) & zero(v) & positive(f(v))`) |
 | constant bounds (`Relations._bounded`) | the first atom whose linear form has the constant term (`_bound`, relations.py 614-628) | per session, per constant | part of the glue's observers (`x - 3` from `x - pi`); not separately history-dependent: the bounds come with the atom that needs them |
 | infinity links (`_eq_infinity`) | each `eq(e, +-oo)` atom | per atom | part of transfer's observers (T3); the atom itself is the trigger |
-| escalation (`Session.escalate`) | a query propagation does not decide, in the reused session (`Engine.ask` 789-792); a context-free query in its own session | per session, permanent; a fresh session escalates for an undecided query too | the conflict of an inconsistent set at level 0 (family A); a fresh session for an undecided query escalates as well, so no none-vs-definite observer |
-| cone-session replacement and its memo clause (`Engine.ask` 795-813) | a search in a polluted reused session | per set | the answer of the replaced query by propagation (family K); the replacement also switches the glue and the transfer *off* again for the set (a later observer answers as a fresh engine: no discrepancy, but an order dependence within one history) |
+| escalation (`Session.escalate`) | a query propagation does not decide, in the session built for the query (`Engine._ask`) | per session, which is the query's own | the conflict of an inconsistent set at level 0 (family A); a fresh session for an undecided query escalates as well, so no none-vs-definite observer |
+| cone-session replacement and its memo clause (deleted in #97 P1 with the session reuse: a search runs in the query's own session) | was: a search in a polluted reused session | was: per set | was: the answer of the replaced query by propagation (family K) |
 | lazy rule-block writes, `Solver.mention` (solver.py 903-950, 1110-1135, 1255) | a variable mentioned by a clause, an assumption, a theory atom or the query literal | per session, grows | nothing at the API level: the query literal is mentioned, and compound queries' atoms by their clauses; read only |
 | held levels, the assumption cache, the witness ring (solver.py 1310-1380, 2265-2300, 2380-2440) | a successful `implied` or `solve` | per session | documented as pure functions of the clause set; read only (family K covers what learnt clauses add) |
 | the vocabulary registry (`extensions._vocab`, `_node_cache`), `_failed`, `_xbasis` | a registration; an `Uninterpreted` set; a number's basis | per engine | family R (the first); the other two are memos of pure functions, read only |
