@@ -2,7 +2,7 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 from sympy import (Symbol, Q, exp, sqrt, I, pi, Integer, Rational, oo, Abs,
-                   Eq, Predicate, MatrixSymbol)
+                   Eq, Predicate, MatrixSymbol, nan, E, Equivalent)
 
 from satassume import Engine, DictCache
 from satassume.formula import P
@@ -301,15 +301,60 @@ def test_function_closures(eng):
     assert ask(Q.finite(sin(x)), Q.finite(x), eng) is True
 
 
-# -- constants: answered without the assumptions -------------------------------
+# -- constants: context-free first, then under the assumptions ----------------
 
-def test_constant_proposition_ignores_assumptions(eng):
+_TAUT = Q.complex(Symbol('iw')) | ~Q.complex(Symbol('iw'))
+
+
+def _both(p, a, eng):
+    """The answers to ``p`` and to ``p`` padded with a tautology over a fresh
+    symbol (``"raises"`` for ValueError): invariant I5 wants them equal on a
+    consistent set."""
+    out = []
+    for q in (p, p & _TAUT):
+        try:
+            out.append(ask(q, a, eng))
+        except ValueError:
+            out.append("raises")
+    return out
+
+
+@pytest.mark.parametrize("p, a, want", [
+    # nightly family C (inv-I5-base-default-s102-30-0, -30-1,
+    # inv-I5-base-budget-s102-30-0): nan, pi + E are not decided
+    # context-free, so the assumptions about them count
+    (Q.extended_real(nan), Equivalent(Q.finite(Integer(1)), Q.irrational(nan)), True),
+    (~Q.extended_real(nan), Equivalent(Q.finite(Integer(1)), Q.irrational(nan)), False),
+    (~Q.nonnegative(nan), Q.nonnegative(nan), False),
+    (Q.rational(pi + E), Q.rational(pi + E), True),
+])
+def test_constant_proposition_falls_back_to_its_assumptions(eng, p, a, want):
+    assert _both(p, a, eng) == [want, want]
+
+
+def test_constant_proposition_decided_context_free(eng):
     x = Symbol('x')
-    # inconsistent assumptions do not raise for a question about constants
+    # a definite context-free answer is unchanged
+    assert _both(Q.positive(pi), Q.positive(x), eng) == [True, True]
+    assert _both(Q.rational(pi), Q.rational(x), eng) == [False, False]
+    assert _both(~Q.zero(Integer(-1)) & Q.negative(Integer(-1)), True, eng) == [True, True]
+    assert _both(Q.lt(pi, 4), Q.gt(x, 5), eng) == [True, True]
+
+
+def test_constant_proposition_under_inconsistent_assumptions(eng):
+    x = Symbol('x')
+    # a definite context-free answer is returned, never raises (the padded
+    # form takes the general path and raises)
     assert ask(Q.positive(pi), Q.positive(x) & Q.negative(x), eng) is True
     assert ask(~Q.zero(Integer(-1)) & Q.negative(Integer(-1)), Q.zero(x) & ~Q.zero(x), eng) is True
-    # an assumption about something else does not change the answer
-    assert ask(Q.rational(pi), Q.rational(x), eng) is False
+    assert ask(Q.positive(pi), Q.negative(pi), eng) is True
+    assert ask(Q.lt(pi, 4), Q.lt(pi, 3), eng) is True
+    # context-free None: answered under the assumptions, which raises
+    assert _both(Q.rational(pi + E), Q.positive(pi + E) & Q.negative(pi + E),
+                 eng) == ["raises", "raises"]
+    assert _both(Q.rational(pi + E), Q.positive(x) & Q.negative(x), eng) == ["raises", "raises"]
+    assert _both(~Q.nonnegative(nan), Q.nonnegative(nan) & ~Q.nonnegative(nan),
+                 eng) == ["raises", "raises"]
     # a proposition with a free symbol still reads the assumptions and raises
     with pytest.raises(ValueError):
         ask(Q.positive(x + pi), Q.positive(x) & Q.negative(x), eng)

@@ -215,6 +215,9 @@ def _oracle_con(kind, lhs, rhs):
 def _expected(assumptions, query):
     qc = _oracle_con(*query)
     # a constant-only query is answered without the assumptions (sympy_api)
+    # when that is definite; the oracle always is (60 digits).  If the
+    # engine is undecided there it falls back to the assumptions: see
+    # check_case for the inconsistent set
     constant = not (query[1].free_symbols or query[2].free_symbols)
     cons = [] if constant else [_oracle_con(*a) for a in assumptions]
     if not fm_feasible(cons):
@@ -234,6 +237,10 @@ def check_case(assumptions, query, stats=None):
     # instead of the error only means the bounds could not see the
     # inconsistency (unchecked, like None)
     missed = r is None or (expected == "inconsistent" and r != expected)
+    if r == "inconsistent" and not (query[1].free_symbols or query[2].free_symbols):
+        # a constant query undecided context-free is answered under the
+        # assumptions and raises for an inconsistent set (sympy_api)
+        missed = not fm_feasible([_oracle_con(*a) for a in assumptions])
     if stats is not None:
         stats["cases"] += 1
         if r != expected:

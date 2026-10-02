@@ -377,8 +377,11 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
       scope: their atoms take part in propagation and search.
     * Inconsistent assumptions raise ``ValueError`` like ``sympy.ask``,
       except for a proposition about constants only (every argument a
-      number without free symbols), which is answered without the
-      assumptions and so never raises.
+      number without free symbols) that is decided without the
+      assumptions: that answer is returned and never raises.  When the
+      context-free answer is None (``Q.rational(pi + E)``, facts of
+      ``nan``), the proposition is answered under the assumptions like any
+      other, and so raises for an inconsistent set.
       A query is answered under the conjuncts of the assumptions connected
       to it (by shared symbols, undefined functions and closed terms
       whose facts are not decided context-free, transitively; a common
@@ -466,10 +469,13 @@ def _is_constant_proposition(prop) -> bool:
     because the assumptions may be all that is known about it.
 
     Such a proposition (``Q.negative(-1)``, ``~Q.zero(pi)``,
-    ``Q.eq(zoo, 1)``) is answered by the engine without the assumptions
-    (its context-free path): the facts of a constant do not depend on them.
-    So it never raises for inconsistent assumptions, and a relation no
-    theory interprets in the assumptions no longer sinks it."""
+    ``Q.eq(zoo, 1)``) is first answered by the engine without the
+    assumptions (its context-free path): the facts of a constant do not
+    depend on them.  A definite answer is returned, so it never raises for
+    inconsistent assumptions, and a relation no theory interprets in the
+    assumptions no longer sinks it.  If that answer is None (a constant not
+    decided context-free: ``pi + E``, ``nan``, Floats), ``_ask`` answers it
+    under the assumptions like any other proposition (nightly family C)."""
     from sympy.logic.boolalg import BooleanFunction
     from sympy.assumptions.relation.binrel import AppliedBinaryRelation
     from sympy.core.function import AppliedUndef
@@ -488,7 +494,21 @@ def _is_constant_proposition(prop) -> bool:
 def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     if isinstance(proposition, _Basic):
         if _is_constant_proposition(proposition):
-            return _engine_ask(proposition, True, eng)
+            r = _engine_ask(proposition, True, eng)
+            if r is not None or assumptions is True:
+                return r
+            # not decided context-free: the assumptions about the constant
+            # count, as for the same proposition padded with a tautology (I5).
+            # The answer also rests on that None: keep its budget flag.
+            limited = eng.last_budget_limited
+            r = _ask_general(proposition, assumptions, eng)
+            eng.last_budget_limited = eng.last_budget_limited or limited
+            return r
+    return _ask_general(proposition, assumptions, eng)
+
+
+def _ask_general(proposition, assumptions, eng: Engine) -> Optional[bool]:
+    if isinstance(proposition, _Basic):
         if eng.relevance and isinstance(assumptions, (_SAnd, _Applied, _Relational, _SOr,
                                                       _SNot, _SImplies, _SEquivalent)):
             f = _relevant(proposition, assumptions, eng)
