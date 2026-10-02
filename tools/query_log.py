@@ -7,20 +7,17 @@ unless ``--log`` is given).  One JSON object per query, in stream order:
     i            stream index
     path         stages taken, in order: "memo" (answer memo in
                  sympy_api.ask), "propagation" (Session.query_literal without
-                 search), "escalation" (Session.escalate), "cone" (Engine.ask
-                 built a cone session; the cone's own escalate is part of
-                 this stage and not logged separately), "search"
+                 search), "escalation" (Session.escalate), "search"
                  (Session.query_literal with search, i.e. Solver.entails)
     outcome      true | false | null | "error" (ValueError: inconsistent)
     session      id of the session that answered (null if none did)
-    session_new  why a session was built for this query: "reused" (the
-                 contextual session was reused), "first" (first time these
-                 assumptions are seen), "evicted" (seen before, the session
-                 was dropped from the LRU, or rebuilt because it outgrew
-                 Engine.session_limit; see "evict_reason"), "cone" (the
-                 answering session is a cone rebuild), "context_free"
-                 (Engine.is_ / Engine.ask without assumptions: a fresh
-                 session per query, by design); null if no session
+    session_new  why a session was built for this query (since #97 P1 a
+                 contextual query builds the session of its set, answers
+                 and discards it; no session is reused): "first" (first
+                 time these assumptions are seen), "rebuilt" (seen before:
+                 built again for this query), "context_free" (Engine.is_ /
+                 Engine.ask without assumptions: a fresh session per query,
+                 by design); null if no session
     vars         answering session's solver variable count after the query
     root_len     its root trail length after the query
     solves       one per Solver._solve call during the query:
@@ -56,11 +53,12 @@ unless ``--log`` is given).  One JSON object per query, in stream order:
     session_error  only if building the contextual session raised: the
                  exception's class name ("Uninterpreted": the assumptions
                  hold a relation no theory interprets, so the session is
-                 never stored and is rebuilt on every such query; those
-                 queries then show session_new "evicted" or "first", an
-                 empty path and session null)
-    evict_reason "lru" (dropped by Engine.keep_sessions) or "limit" (outgrew
-                 Engine.session_limit); only with session_new "evicted"
+                 raised again from the failed-set memo; those queries show
+                 session_new "rebuilt" or "first", an empty path and
+                 session null)
+    evict_reason always "none": the LRU of Engine.keep_sessions and the
+                 Engine.session_limit rebuilds are gone (#97 P1); the
+                 column is kept so older analysis scripts still read it
 """
 import json, time
 
@@ -83,7 +81,7 @@ class _Ctx:
         self.session = None
         self.session_new = None
         self.in_ctx_session = False
-        self.evict_reason = None
+        self.evict_reason = "none"
         self.session_error = None
         self.built = 0
         self.solves = []
@@ -156,14 +154,8 @@ def install(models=False):
 
     def _context_session(self, assumptions):
         if ctx.depth == 1:
-            hit = self._context_sessions.get(assumptions)
-            if hit is not None and len(hit[0].base) <= self.session_limit:
-                ctx.session_new = "reused"
-            elif assumptions in _seen_assumptions:
-                ctx.session_new = "evicted"
-                ctx.evict_reason = "limit" if hit is not None else "lru"
-            else:
-                ctx.session_new = "first"
+            # built for this query (no session is reused, #97 P1)
+            ctx.session_new = "rebuilt" if assumptions in _seen_assumptions else "first"
             _seen_assumptions.add(assumptions)
         ctx.in_ctx_session = True
         try:
@@ -184,11 +176,7 @@ def install(models=False):
         s._log_id = _next_id[0]
         ctx.built += 1
         if ctx.depth == 1 and not ctx.in_ctx_session:
-            if "propagation" in ctx.path:
-                ctx.path.append("cone")
-                ctx.session_new = "cone"
-            else:
-                ctx.session_new = "context_free"
+            ctx.session_new = "context_free"
         return s
     Engine._fresh_session = _fresh_session
 
@@ -204,8 +192,7 @@ def install(models=False):
     orig_esc = Session.escalate
 
     def escalate(self, budget=None):
-        if "cone" not in ctx.path:
-            _stage("escalation")
+        _stage("escalation")
         return orig_esc(self, budget)
     Session.escalate = escalate
 
@@ -291,8 +278,7 @@ def run(stream, out_path, models=False):
             if s is not None:
                 sv = s.solver
                 rec["root_len"] = sv._trail_lim[0] if sv._trail_lim else len(sv._trail)
-            if ctx.session_new == "evicted":
-                rec["evict_reason"] = ctx.evict_reason
+            rec["evict_reason"] = ctx.evict_reason          # always "none" (#97 P1)
             if ctx.session_error is not None:
                 rec["session_error"] = ctx.session_error
             rec["built"] = ctx.built

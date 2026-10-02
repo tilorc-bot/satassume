@@ -12,14 +12,16 @@ Engine-level state (one ``Engine``, see ``satassume/engine.py``):
 * ``splits`` (20k): per assumption set its component split and whether the
   whole set was found consistent; per component whether it is consistent
   (``(_OK, part)``);
-* ``_context_sessions`` (LRU of ``keep_sessions``): one incremental solver
-  per assumption set, with every node earlier queries under the same
-  assumptions visited, their parked templates, deferred derived nodes,
-  learnt clauses, held assumption levels, the witness ring of the last two
-  models, the relation glue (links, candidacy for predicate transfer, EUF
-  and LRA state, constant bounds) and the ``[-selector, q]`` clauses cone
-  searches add; replaced when it outgrows ``session_limit``, or by the cone
-  session of a search;
+* ``_context_sessions``: always empty since #97 P1.  A contextual query
+  builds the session of its set (``Engine._build_context``: the set's
+  clauses and its one complete check), answers in it and discards it, so
+  no solver state (visited nodes, learnt clauses, held levels, the witness
+  ring, the relation glue and theory state) outlives a query.  The
+  ``keep_sessions``, ``session_limit``, ``cone_search`` and
+  ``cone_threshold`` settings of the earlier reuse design are accepted and
+  change nothing; the presets that set them still run;
+* ``_verdict`` (20k): per assumption set the verdict of its complete
+  check (a function of the set and the settings);
 * ``_failed``: assumption sets whose session raised ``Uninterpreted``
   (dropped with every other cache when the registry epoch moves on);
 * ``_xbasis`` (set by ``relations._number_basis``): per number, its basis

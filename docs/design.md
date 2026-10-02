@@ -98,27 +98,38 @@ compiled patterns and formulas). Over the budget the query is None
 a set over it is `unknown` without a check; within it, discovery and
 escalation run uncapped, so no session is ever truncated and the answer is
 that of the whole cone. Both are functions of the query, never of earlier
-queries, a reused session or the caches. On the corpus and the stream the
-largest cone weighs 16, so no default query is budget-limited.
+queries or the caches (sessions are no longer reused). On the corpus and
+the stream the largest cone weighs 16, so no default query is
+budget-limited.
 
-### Sessions per assumption set
+### A session per query
 
-`Engine._context_session` keeps one session per assumption formula
-(`keep_sessions` = 16, LRU; replaced after `session_limit` = 2000 nodes or
-when a theory in it gave up). `Session.assume_formula` guards every clause
-of the formula by a fresh selector variable and passes the selector as a
-solver assumption, so nothing derived under the assumptions reaches level
-0, hence the cache, while the session and its learnt clauses serve every
-later query under the same assumptions.
+`Engine.ask` builds the session of the query's assumption set
+(`Engine._build_context`: `Session.assume_formula`, then the set's
+complete consistency check), answers the proposition in it and discards
+it (issue #97). `Session.assume_formula` guards every clause of the
+formula by a fresh selector variable and passes the selector as a solver
+assumption, so nothing derived under the assumptions reaches level 0,
+hence the cache. What the engine keeps of a set between queries is a
+function of the set alone: its verdict and, when its construction raised
+`Uninterpreted`, the message. `Engine.is_` uses a fresh session over its
+own cone as well.
 
-Search decides every variable of a session, so its cost grows with what
-earlier queries left there. When a query needs search and the session
-holds more than `cone_threshold` (3) nodes beyond the assumptions' (closed
-irrational constants not counted), it searches a fresh session over the
-assumptions and its own cone, which then replaces the reused one, with the
-clause `selector -> answer` so a repeat propagates. `Engine.is_` always
-uses a fresh session over its own cone. A single global session was tried
-first and dropped: its search cost grew with everything asked before.
+Earlier designs reused one session per assumption set (`keep_sessions`
+= 16, LRU, replaced after `session_limit` = 2000 nodes, by a cone search
+of a fresh session over the assumptions and the query's cone once more
+than `cone_threshold` nodes polluted it, or when a theory in it gave up),
+and before that a single global session. Every reuse was a channel for
+history dependence (the learnt clauses, the tableau basis and the branch
+budget of integer branch and bound, giving up on constants, the glue of
+earlier queries), each closed by a mechanism of its own (a cone search,
+re-answering a query in a rebuilt session, dropping dead sessions,
+holding writeback); issue #97 replaced them by the build per query, at
+1.3x the cost on the refine stream and no cost on the corpus (the
+per-query switching of the glue, #53 stage 5, was the last step of
+reuse and the first of this design: a set's glue at the root, a query's
+delta switched). The four settings stay as documented no-ops so that
+configurations remain valid.
 
 ### Context-free fact cache and writeback
 
@@ -440,9 +451,15 @@ differentially and pins the known cases as strict xfails in
 `tests/test_history.py` (fixed ones move to `harness/repros/fixed/`).
 Landed since: caches and sessions keyed on the registry state (#63),
 provenance writeback (stage 3), one complete consistency check per set
-(stage 4), and the relation glue and predicate transfer switched per
+(stage 4), the relation glue and predicate transfer switched per
 query by selectors (stage 5, [theories.md](theories.md), "Switched
-glue"), which fixed families G, G', T and S.
+glue"), which fixed families G, G', T and S, and the session built per
+query and discarded (#97 P1, "A session per query" above): the reused
+session, the carrier of the remaining known families (the branch budget
+and the constants of integer branch and bound, `tests/test_lra_exhaustion.py`),
+no longer exists, and with it went the mechanisms that argued each
+case (`_path_dependent`, the re-answer, the cone search, dead sessions,
+held writeback).
 
 ## Beyond the current scope
 

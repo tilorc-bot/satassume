@@ -1,19 +1,23 @@
 """History independence of the switched relation glue (#53 stage 5): a
-query in a reused session answers as a fresh engine does, whatever the
-session's earlier queries made.  Each case is (assumptions, prefix
-queries, final query); the long-lived engine answers the prefix first.
+query in a long-lived engine answers as a fresh engine does, whatever the
+engine's earlier queries under the set made.  Each case is (assumptions,
+prefix queries, final query); the long-lived engine answers the prefix
+first.
 
 Some of these differed on ``main`` only until T3's re-answer
-(``engine._path_dependent``) happened to catch them (a branch-and-bound
-conflict, uncertified constants); the ``unmasked`` variant switches that
-re-answer off, so the glue itself is what is tested."""
+(``engine._path_dependent``, deleted in #97 P1 with the session reuse it
+patched) happened to catch them (a branch-and-bound conflict, uncertified
+constants); the ``unmasked`` variant pins that no such re-answer exists
+and compares the final query at the engine level (``Engine.ask`` on the
+translated formulas: no answer memo, no relevance split), so the glue in
+the session built for the query is what is tested."""
 import pytest
 from sympy import Function, Q, Rational, Symbol, sin, symbols
 
 import satassume.engine as engine_mod
 from satassume.engine import DictCache, Engine
 from satassume.formula import P
-from satassume.sympy_api import ask
+from satassume.sympy_api import _formula, ask
 
 a, b, c, u = symbols("a b c u")
 f = Function("f")
@@ -86,11 +90,25 @@ def test_warm_answers_as_fresh(name, cfg):
     assert warm == fresh
 
 
+def _engine_ask(p, s, e):
+    try:
+        return e.ask(_formula(p, True), _formula(s, True, True))
+    except Exception as ex:          # noqa: BLE001 (compared as an outcome)
+        return type(ex).__name__
+
+
 @pytest.mark.parametrize("name", list(CASES))
-def test_warm_answers_as_fresh_unmasked(name, monkeypatch):
-    monkeypatch.setattr(engine_mod, "_path_dependent", lambda *args: False)
-    warm, fresh = _pair(name, "default")
-    assert warm == fresh
+def test_warm_answers_as_fresh_unmasked(name):
+    # the re-answer the old variant switched off is gone with the reuse
+    assert not hasattr(engine_mod, "_path_dependent")
+    s, prefix, p = CASES[name]
+    e = Engine(cache=DictCache())
+    for q in prefix:
+        _ask(q, s, e)
+    warm = _engine_ask(p, s, e)
+    assert warm == _engine_ask(p, s, Engine(cache=DictCache()))
+    assert warm == _pair(name, "default")[1]
+    assert not e._context_sessions
 
 
 def test_capability_kept():
@@ -111,7 +129,9 @@ def test_set_glue_at_the_root():
     e = Engine(cache=DictCache(), relevance=False)
     s = Q.gt(a, 1) & Q.lt(a, 3) & Q.eq(c, 2)
     assert ask(Q.positive(b), s, e) is None
-    (sess, _), = e._context_sessions.values()
+    assert not e._context_sessions                  # built per query, discarded
+    sess, lits = e._build_context(_formula(s, True, True))
+    assert e._ask(sess, lits, P("positive", b), True) is None
     rel, root = sess.relations, set(sess.solver.root_trail())
     for x in (rel.link_sel[a], rel.link_sel[c], rel.xfer_sel):
         assert x in root

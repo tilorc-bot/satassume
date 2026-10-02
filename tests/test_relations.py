@@ -194,9 +194,16 @@ def test_sharing_bookkeeping():
 
 
 def test_theories_are_per_session(eng):
-    ask_with(eng, Q.lt(x, z), Q.lt(x, y) & Q.lt(y, z))
-    ask_with(eng, Q.lt(x, y), Q.lt(y, z))
-    sessions = [s for s, _ in eng._context_sessions.values()]
+    # the sessions a query builds (Engine.ask builds, answers and discards
+    # them, #97 P1): built here the same way and kept for the inspection
+    from satassume.sympy_api import _formula
+    sessions = []
+    for p, a in ((Q.lt(x, z), Q.lt(x, y) & Q.lt(y, z)), (Q.lt(x, y), Q.lt(y, z))):
+        ask_with(eng, p, a)
+        s, lits = eng._build_context(_formula(a, True, True))
+        eng._ask(s, lits, _formula(p, True), True)
+        sessions.append(s)
+    assert not eng._context_sessions
     theories = [id(ad.theory) for s in sessions if s.relations
                 for ad in s.relations.adapters.values()]
     assert len(theories) == len(set(theories)) > 0
