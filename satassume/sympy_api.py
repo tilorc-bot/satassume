@@ -75,7 +75,7 @@ from typing import Optional
 
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
-from .engine import affine_glue as _affine_glue
+from .scope import theory_scope as _theory_scope
 from .epoch import EPOCH as _EPOCH
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
@@ -851,7 +851,7 @@ def _relevant(p, a, eng: Engine):
     unknown, under the part (sound by monotonicity).  The verdict is the
     whole set's (:func:`_consistent`) when the set has a relation, a
     keyless conjunct or sign atoms on sums that start the relation glue
-    (``engine.affine_glue``); otherwise the conjunction of the components'
+    (``scope.theory_scope``); otherwise the conjunction of the components'
     verdicts, which equals it there (docs/design.md, "Why components are
     independent")."""
     splits = eng.splits
@@ -899,7 +899,7 @@ def _relevant(p, a, eng: Engine):
             except Unsupported:
                 ok = False
             else:
-                if rel and _affine_glue(g):
+                if rel and _theory_scope(g, None).glue:
                     # sign atoms on sums sharing a symbol start the relation
                     # glue in the whole set's session (#51), which then
                     # links terms of every component: the per-component
