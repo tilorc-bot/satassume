@@ -319,17 +319,36 @@ def _both(p, a, eng):
     return out
 
 
+_EPE = E**pi - pi**E      # sign not decided context-free
+
+
 @pytest.mark.parametrize("p, a, want", [
     # nightly family C (inv-I5-base-default-s102-30-0, -30-1,
-    # inv-I5-base-budget-s102-30-0): nan, pi + E are not decided
-    # context-free, so the assumptions about them count
-    (Q.extended_real(nan), Equivalent(Q.finite(Integer(1)), Q.irrational(nan)), True),
-    (~Q.extended_real(nan), Equivalent(Q.finite(Integer(1)), Q.irrational(nan)), False),
-    (~Q.nonnegative(nan), Q.nonnegative(nan), False),
+    # inv-I5-base-budget-s102-30-0): pi + E, E**pi - pi**E are not decided
+    # context-free, so the assumptions about them count.  The nightly cases
+    # were about nan, which is no number since package NA (its rows are in
+    # test_nan_facts_are_decided_context_free); the same shapes over a
+    # constant whose sign is open:
+    (Q.positive(_EPE), Equivalent(Q.finite(Integer(1)), Q.positive(_EPE)), True),
+    (~Q.positive(_EPE), Equivalent(Q.finite(Integer(1)), Q.positive(_EPE)), False),
+    (~Q.nonnegative(_EPE), Q.nonnegative(_EPE), False),
     (Q.rational(pi + E), Q.rational(pi + E), True),
 ])
 def test_constant_proposition_falls_back_to_its_assumptions(eng, p, a, want):
     assert _both(p, a, eng) == [want, want]
+
+
+@pytest.mark.parametrize("p, a, want", [
+    # the family C rows over nan before package NA (True, False, False
+    # then): nan is now no number and no extended real context-free, so
+    # the constant route answers without the set, and the padded form,
+    # answered under the set, raises (the set contradicts nan's facts)
+    (Q.extended_real(nan), Equivalent(Q.finite(Integer(1)), Q.irrational(nan)), False),
+    (~Q.extended_real(nan), Equivalent(Q.finite(Integer(1)), Q.irrational(nan)), True),
+    (~Q.nonnegative(nan), Q.nonnegative(nan), True),
+])
+def test_nan_facts_are_decided_context_free(eng, p, a, want):
+    assert _both(p, a, eng) == [want, "raises"]
 
 
 def test_constant_proposition_decided_context_free(eng):
@@ -353,8 +372,12 @@ def test_constant_proposition_under_inconsistent_assumptions(eng):
     assert _both(Q.rational(pi + E), Q.positive(pi + E) & Q.negative(pi + E),
                  eng) == ["raises", "raises"]
     assert _both(Q.rational(pi + E), Q.positive(x) & Q.negative(x), eng) == ["raises", "raises"]
-    assert _both(~Q.nonnegative(nan), Q.nonnegative(nan) & ~Q.nonnegative(nan),
+    assert _both(~Q.nonnegative(_EPE), Q.nonnegative(_EPE) & ~Q.nonnegative(_EPE),
                  eng) == ["raises", "raises"]
+    # nan's facts are decided context-free since package NA (was
+    # ["raises", "raises"])
+    assert _both(~Q.nonnegative(nan), Q.nonnegative(nan) & ~Q.nonnegative(nan),
+                 eng) == [True, "raises"]
     # a proposition with a free symbol still reads the assumptions and raises
     with pytest.raises(ValueError):
         ask(Q.positive(x + pi), Q.positive(x) & Q.negative(x), eng)

@@ -1,0 +1,35 @@
+{
+ "inv": "I5",
+ "severity": "depends",
+ "known": null,
+ "config": {
+  "name": "budget",
+  "discovery_budget": 5,
+  "session_limit": 2000,
+  "keep_sessions": 16,
+  "cone_search": true,
+  "cone_threshold": 3,
+  "transfer": true,
+  "uninterpreted": "free",
+  "relevance": true,
+  "relations": "default",
+  "cache_size": 200000,
+  "custom_cache_size": 200000,
+  "answers_size": 100000,
+  "splits_size": 20000
+ },
+ "prop": "AppliedBinaryRelation(Q.eq, nan, Integer(-1))",
+ "assum": "AppliedPredicate(Q.rational, nan)",
+ "variant": {
+  "kind": "prop",
+  "prop": "false",
+  "scope": "in"
+ },
+ "base": "None",
+ "other": "False",
+ "source": "invariants profile=deep seed=201 slice=30",
+ "shrunk": true,
+ "consistent_by": "engine",
+ "fingerprint": "-",
+ "prefix": []
+}

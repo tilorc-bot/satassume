@@ -48,7 +48,7 @@ _CONST_BASIS = (
 # None; the closure then makes every predicate that implies a number or an
 # extended real False (``zero(nan)`` as ``Eq(nan, 0)`` is False) and leaves
 # ``finite``, ``infinite`` and ``polar`` open (nightly I5, package NA).
-_NAN_FACTS = [('complex', False), ('extended_real', False)]
+_NAN_FACTS = (("complex", False), ("extended_real", False))
 
 
 @registry.register(Symbol)

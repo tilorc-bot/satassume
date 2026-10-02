@@ -80,7 +80,7 @@ from .epoch import EPOCH as _EPOCH
 from .memos import PROCESS as _PROCESS
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
-from .relations import Uninterpreted, _is_number, relation_atom, relational_name
+from .relations import Uninterpreted, relation_atom, relational_name
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
 from sympy.core.add import Add as _SAdd
@@ -294,7 +294,8 @@ def _relation_formula(expr, parts, relations: bool):
     name, lhs, rhs = parts
     if not relations or not (_is_scalar(lhs) and _is_scalar(rhs)):
         raise Unsupported(f"{expr} is out of scope (relation)", "relation")
-    if _is_number(lhs) and _is_number(rhs):
+    if lhs is _S.NaN or rhs is _S.NaN or (getattr(lhs, "is_Number", False)
+                                         and getattr(rhs, "is_Number", False)):
         v = _closed_relation(name, lhs, rhs)
         if v is not None:
             return v
@@ -305,15 +306,20 @@ _SREL = {"eq": _Eq, "ne": _Ne, "lt": _Lt, "le": _Le, "gt": _Gt, "ge": _Ge}
 
 
 def _closed_relation(name, lhs, rhs):
-    """``TRUE``/``FALSE`` when SymPy's own relational over two numbers
-    (``Eq(nan, 0)``, ``Lt(0.5, 1)``, ``Ne(nan, nan)``) evaluates to a
-    Boolean, else None (unevaluated, or an invalid comparison: ``Lt(nan,
-    1)``, ``Lt(I, 1)`` raise and keep the relation atom).  A relation
-    between numbers has one value in every model, and this is the value
-    SymPy gives the same relation spelled as a ``Relational`` (and
-    ``sympy.ask`` gives the predicate form), so ``Q.lt(0.5, 1)``,
-    ``Lt(0.5, 1)`` and ``True`` are one statement (nightly I5, package
-    NA)."""
+    """``TRUE``/``FALSE`` for a relation between two SymPy ``Number`` atoms
+    (Integer, Rational, Float, ``oo``, ``-oo``, ``nan``) or with a ``nan``
+    side, when SymPy's own ``Relational`` evaluates it (``Eq(nan, 0)`` is
+    False, ``Ne(nan, nan)`` True, ``Lt(0.5, 1)`` True); None when it does
+    not or raises (``Lt(nan, 1)``: the relation atom stays, and the order
+    glue makes it False, ``nan`` being no extended real).  These relations
+    have one value, the one SymPy gives the same relation spelled as a
+    ``Relational`` (to which the predicate form ``Q.lt(0.5, 1)`` is
+    folded by a restatement) and ``sympy.ask`` gives the predicate form
+    (nightly I5, package NA).  Floats follow SymPy (at the pinned SymPy
+    ``Eq(0.1, 1/10)`` is True and ``0.1 > 1/10`` False; LRA reads no
+    Float, so nothing else relates them).  Sides that are other numbers (``pi``,
+    ``atan(tan(r)**3)``) are left to the engine: SymPy compares them by
+    ``evalf``, which can be wrong (``tests/test_lra_constants.py``)."""
     try:
         r = _SREL[name](lhs, rhs)
     except TypeError:
