@@ -26,6 +26,10 @@ keyed on a counter records the value it was filled under in
 :attr:`Table.stamp`; the function using it compares and calls
 :meth:`Table.restamp` (one attribute read and one comparison on the hit
 path, like the ``[state]`` lists it replaces).
+
+An adopted name that no longer resolves (an attribute renamed in its
+module or on ``Engine``) raises from :meth:`Memos.items` and
+:meth:`Memos.clear`, so ``harness inventory`` and the tests notice.
 """
 from __future__ import annotations
 
@@ -54,7 +58,9 @@ class Table(dict):
         self.name, self.key, self.size, self.stamp = name, key, int(size), None
 
     def put(self, k, v):
-        """``self[k] = v``, emptying the table first when it is full."""
+        """``self[k] = v``, emptying the table first when it is full
+        (the ``sympy_api`` answer and split memos use it; the others keep
+        their own size test next to the lookup)."""
         if len(self) >= self.size:
             dict.clear(self)
         self[k] = v
@@ -66,6 +72,9 @@ class Table(dict):
         self.stamp = stamp
 
     def reset(self) -> None:
+        """Empty the table and forget its stamp, so the next use restamps
+        it (what :meth:`Memos.clear` does); ``clear()`` only empties it,
+        and it refills under the same stamp."""
         dict.clear(self)
         self.stamp = None
 
@@ -96,14 +105,16 @@ class Memos:
 
     def adopt(self, name: str, getter: Callable[[], Any], key: str = "pure") -> None:
         """Register a container this object does not own: ``getter()``
-        returns it (or None); :meth:`clear` calls its ``clear()``."""
+        returns it, None when its owner is not loaded, or raises when the
+        name does not resolve; :meth:`clear` calls its ``clear()``."""
         if key not in KEYS or (self is PROCESS and key not in PROCESS_KEYS):
             raise ValueError(f"memo {name}: bad key {key!r}")
         self._adopted[name] = (key, getter)
 
     def items(self) -> Iterator[Tuple[str, str, Any]]:
         """``(name, key, container)`` of every memo, adopted ones whose
-        owner is not loaded left out."""
+        owner is not loaded left out; an adopted name whose owner is
+        loaded but which does not resolve raises ``AttributeError``."""
         for name, t in self._tables.items():
             yield name, t.key, t
         for name, (key, get) in self._adopted.items():
@@ -135,10 +146,19 @@ PROCESS = Memos("process")
 
 
 def _path(obj, path: str):
+    """Attribute ``path`` (dotted) of ``obj``; None when ``obj`` is None
+    (the owning module is not imported, or the engine is gone).  A part
+    that does not resolve raises ``AttributeError``: an adopted memo that
+    is renamed must fail loudly, not drop out of :meth:`Memos.items`,
+    :meth:`Memos.clear` and the inventory (#97 P4 review)."""
+    if obj is None:
+        return None
     for part in path.split("."):
-        if obj is None:
-            return None
-        obj = getattr(obj, part, None)
+        try:
+            obj = getattr(obj, part)
+        except AttributeError:
+            raise AttributeError(f"adopted memo {path!r}: {obj!r} has no "
+                                 f"attribute {part!r}") from None
     return obj
 
 
@@ -152,7 +172,8 @@ def _module_attr(module: str, path: str) -> Callable[[], Any]:
 #: object alive and compare it by identity; ``_INTERPRETED`` is keyed on
 #: ``GENERIC_CONSTANTS``; the template registry's memos follow its own
 #: version counter).  ``templates._common._CACHE`` holds compiled patterns
-#: by template key.
+#: by template key, and a later registration may reuse a key, so
+#: ``TemplateRegistry.register`` empties it: keyed on the epoch.
 ADOPTED: Tuple[Tuple[str, str, str], ...] = (
     ("satassume.engine", "_NEIGH", "pure"),
     ("satassume.engine", "_WANT", "pure"),
@@ -163,7 +184,7 @@ ADOPTED: Tuple[Tuple[str, str, str], ...] = (
     ("satassume.lra_adapter", "_ENCLOSURES", "pure"),
     ("satassume.lra_adapter", "_IV", "pure"),
     ("satassume.euf_adapter", "_class_ok", "pure"),
-    ("satassume.templates._common", "_CACHE", "pure"),
+    ("satassume.templates._common", "_CACHE", "epoch"),
     ("satassume.templates.registry", "registry._clauses_cache", "epoch"),
     ("satassume.templates.registry", "registry._mro_cache", "epoch"),
     ("satassume.extensions", "extensions._node_cache", "extensions"),

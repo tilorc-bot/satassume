@@ -239,6 +239,13 @@ class Compiled:
         return instantiate(self.pattern.rules, self.objs)
 
 
+#: compiled patterns by the key the template passes to :func:`facts` or
+#: :func:`units`.  Keyed on that key and the registry epoch: a key names
+#: one generator only among the templates registered at a time, and
+#: ``TemplateRegistry.register`` (the only way the set of templates
+#: changes) empties this table before bumping the epoch, so a later
+#: template that reuses a key never gets an earlier template's pattern.
+#: Registered with ``satassume.memos.PROCESS`` as ``"epoch"``.
 _CACHE: Dict[Any, Pattern] = {}
 MAX_CACHE = 4096
 
