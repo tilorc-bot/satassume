@@ -98,8 +98,9 @@ compiled patterns and formulas). Over the budget the query is None
 a set over it is `unknown` without a check; within it, discovery and
 escalation run uncapped, so no session is ever truncated and the answer is
 that of the whole cone. Both are functions of the query, never of earlier
-queries, a reused session or the caches. On the corpus and the stream the
-largest cone weighs 16, so no default query is budget-limited.
+queries or the caches (sessions are no longer reused). On the corpus and
+the stream the largest cone weighs 16, so no default query is
+budget-limited.
 
 ### A session per query
 
