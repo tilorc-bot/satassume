@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Iterable, List
 
 from ..epoch import bump as _bump
 from ..formula import Formula, P
+from . import _common
 from ._common import Compiled
 
 Template = Callable[[Any], Any]
@@ -41,6 +42,9 @@ class TemplateRegistry:
                 self._by_class.setdefault(cls, []).append(f)
             self._mro_cache.clear()
             self._clauses_cache.clear()
+            # compiled patterns are keyed on the template's own key, which
+            # a later template may reuse with other rules (#97 P4 review)
+            _common._CACHE.clear()
             # the engines' caches hold facts the old templates derived
             _bump()
             return f
