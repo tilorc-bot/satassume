@@ -22,8 +22,9 @@ reference* computed right after it:
   ``level`` says which one found it.  A SPEC-level disagreement gets a
   ``tag`` (``spec_tag``): ``finding`` (the engine definite, the spec None),
   ``budget`` / ``relevance`` (the engine None, the spec definite, with or
-  without ``engine.last_budget_limited``) or ``defect`` (a contradiction,
-  a ``ValueError`` on one side only, an error).  The SPEC reference is
+  without ``engine.last_budget_limited``; a budget-limited None against
+  the spec's ``ValueError`` is ``budget`` too) or ``defect`` (a
+  contradiction, any other one-sided ``ValueError``, an error).  The SPEC reference is
   timed per query (wall clock, never interrupted); slow ones are listed in
   ``Report.spec_slow``.
 
@@ -151,7 +152,9 @@ SPEC_SLOW_MS = 2000.0
 
 def spec_tag(warm: str, spec: str, budget_limited: bool = False) -> Optional[str]:
     """The tag of a disagreement between the engine (``warm``) and
-    ``ask_ref`` (``spec``), None if they agree."""
+    ``ask_ref`` (``spec``), None if they agree.  A budget-limited None
+    against ``ValueError`` is ``budget`` too: a set over the budget has
+    verdict UNKNOWN and is not checked (docs/spec.md section 10, rule 1)."""
     if warm == spec:
         return None
     definite = ("True", "False")
@@ -159,6 +162,8 @@ def spec_tag(warm: str, spec: str, budget_limited: bool = False) -> Optional[str
         return "finding"
     if warm == "None" and spec in definite:
         return "budget" if budget_limited else "relevance"
+    if warm == "None" and spec == "ValueError" and budget_limited:
+        return "budget"
     return "defect"
 
 
