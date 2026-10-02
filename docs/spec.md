@@ -60,7 +60,13 @@ a relation becomes `relation_atom` (theories, "What relations mean"):
 `Eq(a, b)` is `eq(a, b)` with sides in `default_sort_key` order, `a < b` is
 `lt(a, b)`, `a > b` is `lt(b, a)`, `a != b` is `~eq(a, b)`, `a <= b` is
 `extended_real(a) & extended_real(b) & ~lt(b, a)` with no conjunct for a
-Rational or infinite side (`relations.relation_atom`). With `opaque`, a
+Rational or infinite side (`relations.relation_atom`). Before that, a
+relation whose sides are both SymPy `Number` atoms (Integer, Rational,
+Float, `oo`, `-oo`, `nan`), or which has a `nan` side, is `TRUE`/`FALSE`
+when SymPy's own `Relational` of it evaluates to a Boolean (`Eq(nan, 0)`
+False, `Lt(0.5, 1)` True), and stays an atom when it does not or raises
+(`Lt(nan, 1)`) (`sympy_api._closed_relation`; nightly I5, package NA).
+With `opaque`, a
 matrix or unregistered custom predicate in `A` becomes a free custom atom;
 in `p` it is `Unsupported` (`sympy_api.to_formula`, the docstring's
 "Opaque conjuncts").
@@ -346,7 +352,11 @@ with SymPy's on the corpus with `none=0` contradictions (`tools/compare.py
 
 Definition. A constant is an atom with `is_number` (`_common.is_constant`,
 `consts_of`). Its facts are `const_value(c, pred)`, SymPy's static `is_*`
-properties plus the derived new-system predicates (`_common.const_value`).
+properties plus the derived new-system predicates (`_common.const_value`);
+a constant node also has `nan` as neither `complex` nor `extended_real`
+(`templates.atoms._NAN_FACTS`, closed under the rule base: every predicate
+implying a number or an extended real is False for `nan`, `finite`,
+`infinite` and `polar` stay open; SymPy leaves them all None).
 
 Rules:
 

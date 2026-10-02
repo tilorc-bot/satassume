@@ -211,7 +211,7 @@ Fallback on None (nightly family C): when the context-free answer is None
 the proposition is answered under the assumptions like any other (the
 general path, with relevance), and so raises for an inconsistent set. The
 shortcut alone used to drop the assumptions about a constant not decided
-context-free (`nan`, `pi + E`, Floats): `ask(Q.rational(pi + E),
+context-free (`nan` then, `pi + E`, Floats): `ask(Q.rational(pi + E),
 Q.rational(pi + E))` was None but True once the proposition was padded
 with a tautology over another symbol (invariant I5); likewise
 `Q.positive(E**pi - pi**E)` and `Q.positive(g(1))` (`class g(Function)`)
@@ -240,7 +240,13 @@ Templates are theorems about the value of the node under SymPy's
 conventions (`1/0 = zoo`, `0**0 = 1`), and `nan` counts as no value: the
 soundness oracle makes every predicate implying a number False for `nan`,
 leaves `finite`, `infinite` and `commutative` unknown, and skips points
-where a direct argument is `nan`. So:
+where a direct argument is `nan`. A `nan` node has the same facts
+(`templates.atoms._NAN_FACTS`: neither `complex` nor `extended_real`, closed
+under the rule base), so `Q.zero(nan)` is False like `Q.eq(nan, 0)`, which
+is SymPy's `Eq(nan, 0)` (relations between `Number` atoms and with a `nan`
+side are SymPy's own `Relational`, `sympy_api._closed_relation`; nightly
+package NA). SymPy's `ask` leaves every fact of `nan` but `commutative`
+None. So:
 
 - `extended_real` is not closed under `Add` (`oo - oo`) or `Mul` (`0*oo`);
   an infinite term that is not `-oo` makes a sum infinite only if no other

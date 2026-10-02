@@ -484,6 +484,20 @@ The findings below describe the cases as found.
   was decided by the engine, `consistent_by: engine`); the model path
   decided no reported case, so no report rests on it.
 
+### Nightly of 2026-10-02 (run 36953488998), package NA: fixed
+
+Three I5 `depends` cases (each under two configs, in `fixed/`:
+`I5-nan-zero-as-eq-under-assumption[-budget]`,
+`I5-nan-equality-folded-false[-budget]`,
+`I5-float-order-relation-folded-true-{lean,tight}`): `Q.eq(nan, -1)` and
+`Q.lt(0.5, 1)` were None while their `Relational` spellings fold to
+`false`/`true`, and `Q.zero(nan)` under `~Q.antihermitian(nan)` was False
+while `Q.eq(nan, 0)` was None.  A relation between `Number` atoms or with
+a `nan` side is now SymPy's own `Relational` (`sympy_api._closed_relation`),
+and `nan` is neither `complex` nor `extended_real`
+(`templates.atoms._NAN_FACTS`), so the `zero(x)` <-> `eq(x, 0)`
+restatement also holds at `nan` without assumptions.
+
 ## Findings of round 3 (db45182)
 
 * **I5, `depends`** (pinned: `I5-implied-conjunct-rescues-budget`):
