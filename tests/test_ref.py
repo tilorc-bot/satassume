@@ -206,18 +206,15 @@ def test_ref_outcome_form():
     assert ref_outcome(Q.real(x), True) == "None"
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="SPEC defect found by harness fuzz --config all --ref-level spec "
-                          "(preset 'none', seed 1): with uninterpreted='none', ask_ref raises "
-                          "Uninterpreted (None) on the query's uninterpreted relation before "
-                          "checking the set; the engine decides the set first and raises "
-                          "ValueError. satassume/ref.py (or docs/spec.md 1.4's order) to change")
 def test_inconsistent_set_raises_before_an_uninterpreted_relation():
     """``ask(z > 0.5, Q.rational(sqrt(3)/2 + I))`` under
     ``uninterpreted="none"``: the set is inconsistent (``sqrt(3)/2 + I`` is
     not rational) and the relation ``z > 0.5`` (a Float bound) is one no
     theory interprets.  The engine raises ``ValueError``, as it does with
-    ``uninterpreted="free"`` and as ``ask_ref`` does there."""
+    ``uninterpreted="free"`` and as ``ask_ref`` does there.  Was a strict
+    xfail (found by ``harness fuzz --config all --ref-level spec``, preset
+    ``none``, seed 1): fixed by P5b-fix1, ``ask_ref`` decides the set's
+    verdict before ``Uninterpreted`` turns the answer into None."""
     from sympy import Float, sqrt
     from harness.outcomes import outcome
     from harness.state import preset

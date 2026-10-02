@@ -29,7 +29,11 @@ three classifications (issue #97 plan, P5b item 4):
 Every difference between ``ask_ref`` and the record is listed too (a
 ``none`` there with the engine also None is a corpus miss the baseline
 counts).  Each record is wrapped so one exception is counted, not fatal;
-partial totals are printed every 500 records.  Nothing is excluded.
+partial totals are printed every 500 records.  Nothing is excluded: the
+summary line and the partial totals count every line read (``records``),
+the ``old`` records and each out-of-scope category (``out_of_scope``'s
+name; ``in_scope`` for records ``--relations-only`` leaves out) next to
+``n``, so ``n`` + ``old`` + the categories = ``records``.
 """
 from __future__ import annotations
 
@@ -110,7 +114,13 @@ def main(argv=None):
     diffs_rec = []      # (line, desc, ref, eng, want, column)
     t_ref = t_eng = 0.0
     t_max = (0.0, 0, "")
-    n = seen = 0
+    n = seen = records = 0
+    skipped = collections.Counter()     # old, and each out-of-scope category
+
+    def _skipped():
+        return (f"records={records} old={skipped['old']} " +
+                " ".join(f"{c}={v}" for c, v in sorted(skipped.items()) if c != "old"))
+
     with open(args.file) as f:
         for line in f:
             n += 1
@@ -118,8 +128,10 @@ def main(argv=None):
                 continue
             if args.limit and n > args.skip + args.limit:
                 break
+            records += 1
             rec = json.loads(line)
             if rec["kind"] == "old":
+                skipped["old"] += 1
                 continue
             want = rec["value"]
             try:
@@ -130,6 +142,7 @@ def main(argv=None):
                 rec_stats["unreplayable"] += 1
                 continue
             if (cat != "relation") if args.relations_only else (cat is not None):
+                skipped[cat if cat is not None else "in_scope"] += 1
                 continue
             seen += 1
             desc = f"{prop} | {assum}"
@@ -165,12 +178,12 @@ def main(argv=None):
                 classes[cls] += 1
                 diffs_eng.append((n, desc, got_ref, got_eng, want, kind, cls, budget, info))
             if seen % args.every == 0:
-                print(f"[partial] line {n}: n={seen} vs record "
+                print(f"[partial] line {n}: n={seen} {_skipped()} vs record "
                       f"{dict((c, rec_stats[c]) for c in REC_COLUMNS if rec_stats[c])} "
                       f"vs engine {dict((c, eng_stats[c]) for c in ENG_COLUMNS if eng_stats[c])} "
                       f"ref {t_ref:.1f}s eng {t_eng:.1f}s", flush=True)
 
-    print(f"\nask_ref vs record: n={seen} " +
+    print(f"\nask_ref vs record: n={seen} {_skipped()} " +
           " ".join(f"{c}={rec_stats[c]}" for c in REC_COLUMNS))
     print(f"ask_ref vs engine: n={seen} " +
           " ".join(f"{c}={eng_stats[c]}" for c in ENG_COLUMNS))

@@ -4,7 +4,9 @@
 defines it, as one function of the query and the registry: the whole clause
 set of ``cone(p) | cone(A)`` is built eagerly (no demand-driven parking, no
 deferred derived nodes, no fact or answer memo, no budget), in one fresh
-solver, and the answer is one complete entailment check.  It is the
+solver, and the answer is one complete entailment check.  The one memo is
+``_RefEngine._is_memo``, the nested context-free queries of section 9,
+created per ``ask_ref`` call: no state crosses calls.  It is the
 session-independent clause set the harness compares the engine against
 (spec, open point 4).  It uses neither ``satassume.engine.Engine`` nor
 ``satassume.engine.Session``; the relation glue (``satassume.relations``)
@@ -19,7 +21,9 @@ Which spec section each function implements:
   whole of ``A``, which by monotonicity is the same as or more definite
   than the engine's answer under the relevant part, and raises exactly
   when the whole set is inconsistent (which is what certification decides
-  in the engine too).
+  in the engine too): raising is a property of the set, decided even when
+  ``p`` carries an uninterpreted relation (``Uninterpreted`` gives None
+  only after the set's verdict).
 * section 2 (translation): :func:`_translate`, through
   ``sympy_api._formula`` / ``to_formula`` and ``relations.relation_atom``.
 * section 3 (theory scope, P3's syntactic definition): :func:`theory_scope`.
@@ -44,7 +48,13 @@ Which spec section each function implements:
 * section 9 (undecidable constants): nothing to implement here, the
   templates and theories do it; :meth:`_RefEngine.is_` gives the glue the
   context-free facts of a closed side (``Relations._closed_extended_real``,
-  ``_number_basis``) by a nested context-free reference query.
+  ``_number_basis``) by a nested context-free reference query;
+  ``_RefEngine.is_`` gives None where that query's set is inconsistent
+  (``Engine.is_`` lets the conflict propagate; reachable only with a
+  contradicting extension fact on a closed term).
+* section 8's "at most two searches" is design.md's wording;
+  ``Solver.entails`` runs up to two searches plus a witness check (no
+  effect on the answer).
 * section 10 (budgets): not applied, by design.
 
 Where the spec says today's code differs from the definition implemented
@@ -482,6 +492,14 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     try:
         return _answer(prop, assum, engine, info)
     except Uninterpreted:
+        # 1.4, 7, 10 rule 1: raising is the set's verdict, independent of
+        # ``p``.  ``FALSE``'s literal under ``s`` is forced false, so this
+        # raises exactly when ``C(A) & s`` is unsat and returns False otherwise.
+        if assum is not None:
+            try:
+                _answer(FALSE, assum, engine, RefInfo())
+            except Uninterpreted:
+                pass                # UNKNOWN, as the engine's verdict
         return None
 
 

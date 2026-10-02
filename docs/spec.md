@@ -355,21 +355,21 @@ only (`Engine._within_budget` docstring; `tests/test_budget_cone.py`,
 
 ## 11. Open points
 
-1. The engine's per-query theory scope is three tests in three places (section
-   3); `theory_scope` as one function is P3. Differences from P3:
-   `wants_transfer` counts a `_trichotomy` pair, which P3's syntactic test does
-   not; the budget's link test (section 10) counts sign-atom sums over disjoint
-   symbols, which `glue` does not.
-2. Glue is created at the first relation atom of *any* formula compiled in the
-   session, extension facts included (`Session._custom`); selectors keep it
-   inert, but `cone` counts `glue_objects` only for relation atoms of `p` and
-   `A`.
+1. The engine's per-query theory scope is three tests in three places (section 3); `theory_scope`
+   as one function is P3. Differences: `wants_transfer` counts a `_trichotomy` pair (P3's test does
+   not); the budget's link test (section 10) counts sign-atom sums over disjoint symbols (`glue` does not).
+2. Glue is created at the first relation atom of *any* formula compiled in the session, extension facts
+   included (`Session._custom`); selectors keep it inert, but `cone` counts `glue_objects` only for relation atoms of `p` and `A`.
 3. `out_of_scope` ignores the engine's adapters (section 1).
-4. The clause set is stated per session; no code names the session-independent
-   clause set the harness compares against (`ask_ref` is P5b). Section 8's "at
-   most two searches" is design.md's; `Engine._ask` is the code.
-5. Section 5.3's property (cached units change no answer) is checked by the
-   harness, not proved here; the provenance rule is `Engine._put_result`.
+4. The clause set is stated per session; `satassume.ref.ask_ref` (P5b) is the session-independent
+   one the harness compares against. Section 8's "at most two searches" is design.md's; `Engine._ask` is the code.
+5. Section 5.3's property (cached units change no answer) is checked by the harness, not
+   proved here; the provenance rule is `Engine._put_result`.
+6. Section 3's `glue` rule does not fire on a sign atom over a sum whose summand carries an
+   `infinite`/`finite` atom, although 5.5's clauses decide it (`~Q.nonzero(oo + acos(-1/x))`
+   under `Q.infinite(acos(-1/x))`); a relation atom unlocks the glue and the relevance split
+   (1.3, 7) discards it: `ask_ref` answers under the whole set, the engine does not (repro
+   `fixed/L1-learnt-unit-written-back` row 0, tag `relevance`). Sound, an accepted loss under 1.3; P3 follow-up.
 
 ## 12. Ten corpus records
 
