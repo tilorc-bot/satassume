@@ -40,9 +40,9 @@ the same or any other set: history independence by construction (see
 ``docs/design.md``, "History independence").  The settings
 ``keep_sessions``, ``session_limit``, ``cone_search`` and
 ``cone_threshold`` of the earlier design (one reused session per set,
-replaced by a cone search when polluted) are kept as no-ops so that
-configurations stay valid; the per-query build costs about 1.3x on the
-refine stream (issue #97).
+replaced by a cone search when polluted) selected no code path after
+issue #97 P1 and were removed in P7; the per-query build costs about 1.3x
+on the refine stream (issue #97).
 
 Everything the engine keeps between queries (the fact caches, the verdict
 and ``Uninterpreted`` memos, the answer and split memos) is a function of
@@ -997,26 +997,6 @@ class Engine:
         (``_within_budget``); every other query runs discovery and
         escalation uncapped, so nothing is truncated: a session loads at
         most the query's cone (the set's and the proposition's).
-    session_limit : int
-        No-op since issue #97 (every contextual query builds the session
-        of its set and discards it: nothing is reused, so no session
-        outgrows anything).  Kept so that configurations stay valid;
-        assigning it still drops the caches like every setting.
-    cone_search : bool
-        No-op since issue #97: every query is searched in a session built
-        for its set alone, which the cone search of the earlier design
-        approximated (a fresh session over the assumptions and the query's
-        cone, replacing a session polluted by earlier queries' nodes).
-        Kept so that configurations stay valid.
-    cone_threshold : int
-        No-op since issue #97 (the threshold from which the cone search
-        paid; there is no reused session to pollute).  Kept so that
-        configurations stay valid.
-    keep_sessions : int
-        No-op since issue #97: no contextual session is kept between
-        queries.  Measured before the change (issue #97, P0): dropping the
-        reuse (``keep_sessions=0``) cost 1.28x on the refine stream and
-        nothing on the corpus.  Kept so that configurations stay valid.
     extensions : satassume.extensions.Extensions or None
         Registered clause-generating functions for custom predicates and
         for vocabulary predicates on new classes.  Defaults to the global
@@ -1060,9 +1040,7 @@ class Engine:
 
     def __init__(self, templates=None, cache: Optional[DictCache] = None,
                  discovery_budget: int = 400,
-                 session_limit: int = 2000, keep_sessions: int = 16,
-                 cone_search: bool = True, extensions=None, relations=None,
-                 cone_threshold: int = 3, transfer: bool = True,
+                 extensions=None, relations=None, transfer: bool = True,
                  uninterpreted: str = "free", relevance: bool = True,
                  writeback: str = "root-only"):
         clause_templates = None
@@ -1094,10 +1072,6 @@ class Engine:
         # on a real change (``_settings_changed``); construction assigns
         # the fields and drops nothing
         self._discovery_budget = discovery_budget
-        self._session_limit = session_limit
-        self._keep_sessions = keep_sessions
-        self._cone_search = cone_search
-        self._cone_threshold = cone_threshold
         self._transfer = transfer
         self._uninterpreted = _check_uninterpreted(uninterpreted)
         self._writeback = _check_writeback(writeback)
@@ -1197,59 +1171,6 @@ class Engine:
     def discovery_budget(self, value) -> None:
         if value != self._discovery_budget:
             self._discovery_budget = value
-            self._settings_changed()
-
-    @property
-    def session_limit(self):
-        """Setting, a no-op since issue #97 (no session is reused; see the
-        class docstring).  Assigning a different value drops this engine's
-        caches (``_settings_changed``) like every setting."""
-        return self._session_limit
-
-    @session_limit.setter
-    def session_limit(self, value) -> None:
-        if value != self._session_limit:
-            self._session_limit = value
-            self._settings_changed()
-
-    @property
-    def keep_sessions(self):
-        """Setting, a no-op since issue #97 (no contextual session is kept;
-        see the class docstring).  Assigning a different value drops this
-        engine's caches (``_settings_changed``) like every setting."""
-        return self._keep_sessions
-
-    @keep_sessions.setter
-    def keep_sessions(self, value) -> None:
-        if value != self._keep_sessions:
-            self._keep_sessions = value
-            self._settings_changed()
-
-    @property
-    def cone_search(self):
-        """Setting, a no-op since issue #97 (every query is searched in a
-        session of its own; see the class docstring).  Assigning a
-        different value drops this engine's caches (``_settings_changed``)
-        like every setting."""
-        return self._cone_search
-
-    @cone_search.setter
-    def cone_search(self, value) -> None:
-        if value != self._cone_search:
-            self._cone_search = value
-            self._settings_changed()
-
-    @property
-    def cone_threshold(self):
-        """Setting, a no-op since issue #97 (see ``cone_search``).
-        Assigning a different value drops this engine's caches
-        (``_settings_changed``) like every setting."""
-        return self._cone_threshold
-
-    @cone_threshold.setter
-    def cone_threshold(self, value) -> None:
-        if value != self._cone_threshold:
-            self._cone_threshold = value
             self._settings_changed()
 
     @property

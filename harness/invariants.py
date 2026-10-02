@@ -51,7 +51,7 @@ from satassume.solver import Solver
 
 from .checker import Ask, Event, Item, ddmin
 from .outcomes import outcome
-from .state import EngineConfig
+from .state import REMOVED_SETTINGS, EngineConfig
 from .sympy_io import custom_predicate, from_srepr, to_srepr
 
 INVARIANTS = ("I1", "I2", "I3", "I4", "I5", "I6", "I7")
@@ -1361,14 +1361,14 @@ def derived_asks(asks: Sequence[Ask], rng: random.Random, rate: float = WIDEN_RA
         out.append(Ask(q, a))
     return out
 
+#: every assignable setting of ``EngineConfig`` (#97 P7 removed the no-op
+#: ``cone_threshold``, ``cone_search``, ``session_limit``, ``keep_sessions``
+#: and added ``uninterpreted``, a live setting the sweep had missed)
 I7_SETTINGS = {
     "discovery_budget": [5, 40, 400, 5000],
-    "cone_threshold": [0, 3, 1000],
     "transfer": [True, False],
-    "cone_search": [True, False],
     "relevance": [True, False],
-    "session_limit": [2, 2000],
-    "keep_sessions": [1, 16],
+    "uninterpreted": ["free", "none"],
 }
 
 
@@ -1380,12 +1380,19 @@ def check_I7(prop, assum, config, base, rng, variant=None, prefix: Sequence[Ask]
         name = rng.choice(list(I7_SETTINGS))
         vals = [v for v in I7_SETTINGS[name] if v != getattr(config, name)]
         variant = {"kind": "setting", "name": name, "value": rng.choice(vals)}
-    cfg2 = config.replace(**{variant["name"]: variant["value"]}, name=f"{config.name}+{variant['name']}")
+    # A recorded variant over a setting removed in #97 P7 (``REMOVED_SETTINGS``)
+    # was a no-op when it was recorded and stays one: the variant config is the
+    # config itself and the assignment is skipped, so the case still replays
+    # and counts as checked (``harness/repros/invariants/fixed/I7-...``).
+    removed = variant["name"] in REMOVED_SETTINGS
+    changes = {} if removed else {variant["name"]: variant["value"]}
+    cfg2 = config.replace(**changes, name=f"{config.name}+{variant['name']}")
     ref = fresh_outcome(prop, assum, cfg2)
     eng = config.make()
     for a in prefix:
         outcome(a.prop, a.assum, eng)
-    setattr(eng, variant["name"], variant["value"])
+    if not removed:
+        setattr(eng, variant["name"], variant["value"])
     other = outcome(prop, assum, eng)
     return _severity_same("I7", ref, other), other, dict(variant, fresh=ref)
 
@@ -1700,7 +1707,10 @@ PROBES: Dict[str, dict] = {
     "relevance": {"relevance": False},
     "transfer": {"transfer": False},
     "none": {"uninterpreted": "none"},
-    "cone": {"cone_search": False, "cone_threshold": 0},
+    # #97 P7: the probe set only the removed no-op settings (cone_search,
+    # cone_threshold); it is the configuration itself now, so ``fingerprint``
+    # skips it.  Kept so that recorded fingerprint names stay meaningful.
+    "cone": {},
     "budget": {"discovery_budget": 400},
     "norel": {"relations": "none"},
 }

@@ -145,7 +145,8 @@ def test_k7c_declared_fact_loses_definite():
            Q.prime(f(he)), Q.irrational(f(f(z0))))
 
     def eng():
-        return Engine(discovery_budget=3, cone_search=True, cone_threshold=3)
+        # cone_search=True, cone_threshold=3 dropped with the settings (#97 P7)
+        return Engine(discovery_budget=3)
     assert ask(p, a, eng()) == ask(p, a & Not(Q.irrational(z0)), eng())
 
 

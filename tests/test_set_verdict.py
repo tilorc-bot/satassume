@@ -190,8 +190,8 @@ def test_search_keeps_the_verdict():
     from satassume.sympy_api import _formula
     x, y, z, w = symbols('x y z w')
     # (relevance off: the queries are asked under the whole set;
-    # cone_threshold is accepted and changes nothing)
-    eng = Engine(cache=DictCache(), cone_threshold=0, relevance=False)
+    # cone_threshold=0 was dropped with the setting, #97 P7)
+    eng = Engine(cache=DictCache(), relevance=False)
     a = Q.positive(x) & Q.gt(y, 1)
     g = _formula(a, True, True)
     assert eng.verdict(g) is CONSISTENT

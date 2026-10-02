@@ -14,9 +14,8 @@ Every change of one of these bumps :data:`EPOCH`:
 * ``TemplateRegistry.register``;
 * assigning ``Engine.extensions`` or ``Engine.relation_specs``.
 
-The engine settings (``templates``, ``discovery_budget``,
-``session_limit``, ``keep_sessions``, ``cone_search``, ``cone_threshold``,
-``transfer``, ``uninterpreted``, ``relevance``) are not part of the epoch:
+The engine settings (``templates``, ``discovery_budget``, ``transfer``,
+``uninterpreted``, ``relevance``) are not part of the epoch:
 they belong to one engine, and assigning a different value drops that
 engine's caches only (``Engine._settings_changed``).
 

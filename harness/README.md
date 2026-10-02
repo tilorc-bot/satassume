@@ -65,10 +65,13 @@ Configurations (`harness/state.py`, `--config name,name` or `all`):
 threshold small), `whole` (no relevance split), `notransfer`, `norel`,
 `free`, `budget` (discovery budget 5), `evict` (fact cache of 16 nodes,
 memos of 8 and 2 entries).  Since #97 P1 every contextual query builds the
-session of its set, answers and discards it; `reuse`, `cone` and `churn`
-set only the session-reuse settings that no longer do anything
-(`keep_sessions`, `session_limit`, `cone_search`, `cone_threshold`) and
-run as `default` does.
+session of its set, answers and discards it; #97 P7 removed the
+session-reuse settings that no longer did anything (`keep_sessions`,
+`session_limit`, `cone_search`, `cone_threshold`).  `reuse`, `cone` and
+`churn` set only those, so they are kept by name as the default
+configuration; `tight`, `lean` and `boundary` keep their live settings.
+Repro files that still name the removed settings replay unchanged
+(`EngineConfig.from_dict` drops them).
 
 Mismatches are classified (`contradiction`, `none-vs-definite`,
 `raise-vs-definite`, `raise-vs-none`, `error`) and grouped by (assumption
@@ -119,7 +122,7 @@ selects one in `fuzz`, `hypo`, `audit` and `hashseed`:
 |---|---|---|
 | `related` | sets are random subsets of one conjunct pool (shared components, nesting, single conjuncts); propositions are the conjuncts, their negations, sibling predicates on their nodes, subterm probes, context-free probes | the relevance layer's cross-set memos and part sessions, cache flows between a set's nodes and subterms |
 | `focus` | one or two symbols, a small term pool, most queries under one set, compound propositions | long sessions: model reuse, held levels, learnt clauses, accumulated demand |
-| `deep` | sums and products of 6-30 terms, nested; propositions about the big terms and their subterms | the discovery and escalation budgets (400) and `session_limit` in the default configuration |
+| `deep` | sums and products of 6-30 terms, nested; propositions about the big terms and their subterms | the discovery and escalation budgets (400) in the default configuration |
 | `relational` | relation-heavy sets sharing conjuncts (equalities to symbols, terms, numbers; order chains); unary propositions on sides and on `f(side)`; `Implies(eq, unary)`; relation propositions under unary sets | EUF congruence, predicate transfer, links added after the session exists |
 | `declared` | symbols declared with every kind of fact (zero, infinite, prime, composite, irrational, `integer=False`, `finite=False`, polar, ...) and same-name variants | declared facts against assumptions and templates |
 | `registry` | the same batch of queries about the objects a registration affects before `register`, after it, and after `unregister`; other registrations switched meanwhile (`--custom`) | the fact caches and sessions across registration changes (family R) |

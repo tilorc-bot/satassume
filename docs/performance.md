@@ -90,7 +90,7 @@ best cold passes.
 |---|---|---|---|
 | answer memo, `None` answers included | `328bdbb` | 0.70x | `sympy_api.ask`, `Engine.answers` (`AnswerMemo`) |
 | LRA linearisation and relation atoms memoized across sessions | `a36d19f` | 0.94x | `lra_adapter._INTERPRETED`, `relations._SYMPY_ATOMS` |
-| cone search only above 3 polluting nodes; the cone session replaces the polluted one | `d34da8b`, `35d5358` | 0.95x, 0.93x | `Engine.ask`, `Engine.cone_threshold` |
+| cone search only above 3 polluting nodes; the cone session replaces the polluted one | `d34da8b`, `35d5358` | 0.95x, 0.93x | `Engine.ask`, `Engine.cone_threshold` (removed, #97 P7) |
 | propagation under assumptions cached | `ddb7bfb` | 0.89x (Pi) | `Solver._assume` (`_acache`) |
 | cheaper clause insertion (plain lists for problem clauses) | `7197c28`, `c56dda8` | 0.935x; -3.4% to -4.6% | `Solver._add_lits`, `add_internal` |
 | held assumption levels between calls | `9e33d28` | 0.94x (Pi) | `Solver._assume`, `_attach_held`, `_solve` |
@@ -132,7 +132,7 @@ cost is relation reasoning, not the constants.
 | phase heuristic | ceiling 4.9%, about 2.7% | median 11 decisions and 0 conflicts per solve |
 | base-session clone for cone rebuilds | 1.6% (5.1% with a free clone) | a base session is about 50 variables and 130 clauses; copying it costs nearly as much as building it |
 | atomic fast path before any session | 0.9% | the other 5% (from the fact cache) skips the consistency check and changes 399 answers |
-| `keep_sessions` 32 or 64 | 0.4%, 0.7% | after the failed-set memo only 143 sessions per pass are LRU rebuilds |
+| `keep_sessions` 32 or 64 (setting removed, #97 P7) | 0.4%, 0.7% | after the failed-set memo only 143 sessions per pass are LRU rebuilds |
 | root units inserted under held levels | 0.6% | the units are node facts emitted when a node is added, not the writeback; nothing to batch |
 | first attempt on a polluted session (early cone) | 3.3% (ceiling 6.0%) | wasted and useful attempts look alike beforehand; the naive early cone lost 2 answers (relation atoms of earlier queries decided them) |
 | memo and API overhead | 1.5% | 2 µs per memo hit; the engine is 97% of the pass |
@@ -242,7 +242,8 @@ replay.
   (only the verdict memo), so the whole set of a split set costs one
   build and evicts no part session. The key memo `_KEYS` must be cleared
   if `RELATIONAL` changes.
-- `cone_threshold = 3` counts nodes beyond the assumptions', not closed
+- (historical; the setting was removed in #97 P7, no session is reused)
+  `cone_threshold = 3` counted nodes beyond the assumptions', not closed
   irrational constants; it was tuned on the refine stream (2 to 10 within
   noise; 0, 1 and 20 lose; no cone search at all took 10.1 s to 12.9 s at
   the time).

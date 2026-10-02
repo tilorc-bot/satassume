@@ -490,8 +490,8 @@ def _no_templates(node):
 
 
 #: a non-default value of every engine setting
-SETTINGS = [("discovery_budget", 1), ("session_limit", 0), ("keep_sessions", 0),
-            ("cone_search", False), ("cone_threshold", 0), ("transfer", False),
+#: (#97 P7 removed session_limit, keep_sessions, cone_search, cone_threshold)
+SETTINGS = [("discovery_budget", 1), ("transfer", False),
             ("uninterpreted", "none"), ("relevance", False),
             ("writeback", "none"), ("templates", _no_templates)]
 
@@ -557,6 +557,36 @@ def test_setting_change_is_local_to_its_engine(name, value):
     assert dict(other.answers) == memo
     assert dict(other._context_sessions) == sessions
     assert dict(other.cache.store) == facts
+
+
+#: the session-reuse settings removed in #97 P7 (no code path read them
+#: since #97 P1), with the non-default value ``SETTINGS`` once swept
+REMOVED = [("session_limit", 0), ("keep_sessions", 0), ("cone_search", False),
+           ("cone_threshold", 0)]
+
+
+@pytest.mark.parametrize("name,value", REMOVED, ids=[s[0] for s in REMOVED])
+def test_removed_setting_is_refused_and_replays_as_default(name, value):
+    """Replaces this file's three setting tests for the removed settings:
+    ``Engine`` refuses the keyword, assigning it is no setting (no cache is
+    dropped), and a recorded configuration naming it replays as the
+    configuration without it, with a fresh default engine's answers."""
+    from harness.state import EngineConfig
+    with pytest.raises(TypeError):
+        Engine(**{name: value})
+    eng = fresh()
+    for p, a in SETTING_QUERIES:
+        outcome(eng, p, a)
+    memo = dict(eng.answers)
+    setattr(eng, name, value)
+    assert eng.stats["version_clears"] == 0 and dict(eng.answers) == memo
+    d = EngineConfig().to_dict()
+    assert name not in d
+    cfg = EngineConfig.from_dict(dict(d, **{name: value}))
+    assert cfg == EngineConfig()
+    built = cfg.make()
+    for p, a in SETTING_QUERIES:
+        assert outcome(built, p, a) == outcome(fresh(), p, a), (p, a)
 
 
 def test_setting_change_before_any_query_counts_nothing():
