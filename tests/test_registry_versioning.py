@@ -110,8 +110,9 @@ def _session_after(eng, p, a):
     """The session of the set ``a`` built for the query ``p``, holding its
     answer: what ``Engine.ask`` builds, answers in and discards."""
     from satassume.sympy_api import _formula
-    s, lits = eng._build_context(_formula(a, True, True))
-    eng._ask(s, lits, _formula(p, True), True)
+    q = _formula(p, True)
+    s, lits = eng._build_context(_formula(a, True, True), q)   # the query's scope (#97 P3)
+    eng._ask(s, lits, q, True)
     return s
 
 
