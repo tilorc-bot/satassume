@@ -82,8 +82,9 @@ def test_transfer_needs_an_equality():
         # P1), built the same way and kept for the inspection
         ask_with(e, p, a)
         assert not e._context_sessions
-        s, lits = e._build_context(_formula(a, True, True))
-        e._ask(s, lits, _formula(p, True), True)
+        q = _formula(p, True)
+        s, lits = e._build_context(_formula(a, True, True), q)   # the query's scope
+        e._ask(s, lits, q, True)
         return s
 
     def engaged(e, p, a):
