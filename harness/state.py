@@ -56,7 +56,8 @@ from satassume.engine import AnswerMemo, DictCache, Engine
 # --------------------------------------------------------------------------
 
 #: settings of the earlier session-reuse design, no-ops since #97 P1 and
-#: removed from ``Engine`` in #97 P7 (``EngineConfig.from_dict`` ignores them)
+#: removed from ``Engine`` in #97 P7 (``EngineConfig.from_dict`` ignores them;
+#: ``check_I7`` replays a recorded variant over one of them as the no-op it was)
 REMOVED_SETTINGS = frozenset({"session_limit", "keep_sessions", "cone_search",
                               "cone_threshold"})
 
