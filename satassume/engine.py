@@ -2493,7 +2493,9 @@ def _cannot_give_up(s: Session) -> bool:
     the build).  False when any of this fails."""
     if s.truncated or _gave_up(s):
         return False
-    lras = [t for t in s.solver._theories if hasattr(t, "certified")]
+    # on the class: hasattr on the instance would evaluate the property
+    # (the certificate) for every query, wanted or not
+    lras = [t for t in s.solver._theories if hasattr(type(t), "certified")]
     if not any(t.undecidable for t in lras):
         return True
     vals = None
