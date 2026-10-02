@@ -260,7 +260,7 @@ def test_adapter_change_clears_too():
 def test_adapter_change_answers_as_fresh():
     # was test_adapter_change_drops_the_session
     """Two sign atoms on sums sharing a symbol start the relation glue
-    without a relation atom (``Session._affine_links``), so the query's
+    without a relation atom (``scope.affine_pair``, #97 P3), so the query's
     session holds theory state; without adapters the same query is None,
     and the session built for it has no glue."""
     eng = fresh()

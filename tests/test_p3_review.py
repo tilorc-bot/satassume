@@ -41,6 +41,27 @@ def test_set_verdict_does_not_depend_on_the_query_scope():
     assert s1.verdict is s0.verdict
 
 
+def test_set_verdict_does_not_depend_on_a_transfer_scope_either():
+    """The same with a query whose scope engages predicate transfer at
+    construction (``scope.transfer``): the check still sees only the set
+    (P3-fix1)."""
+    e = eng()
+    s0, _ = e._build_context(F(A))
+    s1, _ = e._build_context(F(A), _formula(Q.eq(x, z), True))
+    assert s0.verdict is CONSISTENT
+    assert s1.verdict is s0.verdict
+    assert s1.xfer is not None and s1.relations.linked
+
+
+def test_the_query_still_gets_the_set_links_after_the_check():
+    """Deferring the set's links to after the check (``Session.link_set``)
+    loses no answer: the set's sum is linked for the query (P3-fix1)."""
+    e = eng()
+    assert ask(Q.lt(0, x + y), A, e) is True
+    assert ask(Q.positive(x + y), A, e) is True
+    assert e.stats["scope_misses"] == 0
+
+
 def test_verdict_memo_is_not_history_dependent():
     """``Engine.verdict(a)`` after a relational query under ``a`` must equal
     the verdict a fresh engine computes (the memo is "a function of the

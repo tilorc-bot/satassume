@@ -839,8 +839,9 @@ class Relations:
                 # atom or a _trichotomy pair, W2B4b) and switched on per
                 # query (Session.assumption_lits, wants_transfer).  A user
                 # equality outside the scope (a session built for the set
-                # alone and asked an equality: tests) still engages it, and
-                # is counted; never on Engine.ask's path
+                # alone and asked an equality: tests, or an equality of a
+                # node fact, Extensions.node_facts) still engages it, and
+                # is counted (stats["scope_misses"])
                 if self.xfer is None and not self._want_transfer and s.engine.transfer:
                     s.engine.stats["scope_misses"] += 1
                     self._want_transfer = True

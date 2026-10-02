@@ -919,7 +919,7 @@ def _relevant(p, a, eng: Engine):
             except Unsupported:
                 ok = False
             else:
-                if rel and (_theory_scope(g, None).glue or _zero_glue(g)):
+                if rel and (_theory_scope(g, None, ext).glue or _zero_glue(g)):
                     # sign atoms on sums sharing a symbol (#51, the set's
                     # own scope), or a zero(t) with t under an application
                     # of the set, which the glue reads as eq(t, 0), start

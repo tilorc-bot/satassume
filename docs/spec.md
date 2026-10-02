@@ -64,39 +64,61 @@ in `p` it is `Unsupported` (`sympy_api.to_formula`, the docstring's
 
 ## 3. Theory scope
 
-Definition (P3, to be implemented). `theory_scope(A, p) = (glue, transfer, linked_terms)` is a function of the
-two formulas' glue atoms (below):
-
-- `glue` iff `A` or `p` holds a relation atom, or two sign atoms (`_SIGN_PREDS`, `engine.py`) of `A` and `p`
-  together are on different `Add` nodes sharing a free symbol (the pair may be one atom of each formula);
-- `transfer` iff `A` or `p` holds an `eq` atom;
-- `linked_terms` is the set of arguments of vocabulary atoms and sides of relation atoms of `A` and `p`,
-  numbers excluded (P3's text says "cones" and nothing on numbers; this spec and today's code use the atoms'
-  arguments).
-
 Definition (PR #107, `relations.zero_twins`, `glue_atoms`). The *glue atoms* of a formula are its atoms
 followed by the *twin* `eq(t, 0)` of each `zero(t)` atom (`t` not a number) of `A` or `p` whose `t` occurs as
 an argument, at any depth, of an application of an undefined function (`AppliedUndef`: `g(t, 1)`,
 `g(Abs(h(t)))`) in `A` or `p`. `A`'s twins are `A`'s alone (`Session.assumption_lits`, root glue); `p`'s are
 the pair's (`Session._glue_of`; `ref._glue_atoms_of`). So such a `zero(t)` counts as an equality: it gives
 `glue` and `transfer` and links `t`, exactly as `Q.eq(t, 0)` in the formula would. `~zero(t)` reads as `ne(t,
-0)` under the same condition (atoms carry no polarity); `nonzero(t)` has no twin.
+0)` under the same condition (atoms carry no polarity); `nonzero(t)` has no twin. P3's `theory_scope` folds these twins in
+(`scope.scope_of_atoms` runs `relations.glue_atoms` over the atoms of both
+formulas before its tests; `tests/test_scope.py::test_zero_twins_are_in_the_scope`),
+so this paragraph and the definition below describe one function.
 
-Today's code computes the same three facts in three places, per query:
+Definition (`satassume/scope.py`, #97 P3). `theory_scope(A, p, extensions) =
+(glue, transfer, linked_terms)` is a function of the atoms of the two
+formulas and of the facts the engine's extensions generate for their custom
+atoms (`scope.extension_atoms`: `Extensions.facts_for`, transitively):
 
-- `glue`: `engine._links_wanted(a_all, p_all)` for the affine pair, or a relation atom (twins included) in
-  `Session.assumption_lits`; the budget's own link test is weaker (section 10, open point 1). The glue object
-  is created lazily, by the first relation atom allocated (`Session._custom`, `Relations(...)`) or by
-  `Session._affine_links` when the pair appears.
-- `transfer`: `Relations.wants_transfer(atoms)` is true on an `eq` atom (and on an order atom whose reverse
-  `_trichotomy` paired, which P3's syntactic test does not count: open point 1); engaged once per session
-  (`Relations._engage_transfer`), switched on per query (`Relations.xfer_sel`).
-- `linked_terms`: `Relations.note_formula(atoms)` records every vocabulary argument of a user formula as a
-  link candidate; `Relations.process` links the sides of a user relation once a theory interprets it;
-  `_link(e)` skips numbers.
+- `glue` iff `A` or `p` (or such a fact) holds a relation atom, or two sign
+  atoms (`scope.SIGN_PREDS`) of `A` and `p` together are on different `Add`
+  nodes sharing a free symbol (`scope.affine_pair`; the pair may be one atom
+  of each formula);
+- `transfer` iff `glue` and the relation atoms make an equality: an `eq`
+  atom, or an order atom and its reverse (`scope.transfer_wanted`; the pair
+  is what `Relations._trichotomy` relates, so `Q.le(x, y) & Q.ge(x, y)`
+  answers as `Q.eq(x, y)`, W2B4b). The test over-approximates: it counts the
+  pair even when `uninterpreted="free"` leaves the atoms opaque (harmless:
+  every transfer lemma is guarded);
+- `linked_terms` is the set of arguments of vocabulary atoms and sides of
+  relation atoms of `A` and `p`, numbers excluded (`scope.linked_terms`).
 
-Property (P3's gate): with the scope on, an answer is the same as or more definite than without it, never the
-other definite value (`tools/relevance_fuzz.py`; the monotonicity argument is P3's report).
+The session of a query is built with its scope (`Session(engine, scope)`;
+`Engine._build_context`, `Engine.ask`, `Engine._is_custom` compute it): with
+`glue` the `Relations` object exists from construction, with `transfer`
+predicate transfer is engaged there (`Relations.__init__`,
+`_engage_transfer`). The links of `A`'s own terms are made while `A` is
+assumed only when `A`'s own scope has the glue (`theory_scope(A, None).glue`,
+`Session.assume_formula`); otherwise they are made after the set's complete
+check (`Session.link_set`, called by `_build_context`), so the check, and
+`verdict(A)` (section 7), see only the set's own glue and are a function of
+`A` whatever the query's scope (P3-fix1; `tests/test_p3_review.py`). The
+sides of a relation atom are linked once a theory interprets it
+(`Relations.process`); under `uninterpreted="free"` the sides of an opaque
+relation are in `linked_terms` but get no link.
+
+Outside the scope: a relation atom of a node fact (`Extensions.node_facts`,
+a vocabulary predicate registered for a class, fired over the cone as the
+session visits it) is not foreseen by the syntax; `Session._custom` then
+creates the glue at the atom and counts it (`stats["scope_misses"]`, open
+point 2). `Engine.ask` of a query without such facts never takes that path
+(`tests/test_scope.py`).
+
+Property (P3's gate): with the scope on, an answer is never the other
+definite value (the glue's clauses are valid: `scope.py` module docstring);
+that it is the same or more definite is empirical under the engine's budgets
+(`tools/relevance_fuzz.py`; harness profiles `links`, `transfer`, `lazy`,
+gate G5), not a corollary of clause validity.
 
 ## 4. The node cone
 
@@ -232,7 +254,7 @@ Definition. If `p` is a vocabulary atom `P(pred, e)`, its literal is
 (`Session.literal_of`, `compile.formula_literal`), memoized in
 `Session.literals`. In both cases the nodes of `p`'s vocabulary atoms are
 visited (`Session._ensure_atoms`) and the glue is told about `p`
-(`Session._relations` or `Session._affine_links`).
+(`Session._relations`).
 
 ## 7. The verdict of `A` and the relevant part
 
@@ -256,7 +278,7 @@ Definition. `_relevant(p, A)` returns `A` itself when: the split is opaque,
 a vocabulary extension blocks it (`_vocab_blocks`), `p` has no keys, the
 part is all of `A`, or `A` is not certified. Else it returns `part`.
 Certification: when `A` has a relation atom or a keyless conjunct, or
-`engine.affine_glue(A)` holds, `A` is certified iff `verdict(A)` is not
+`theory_scope(A, None).glue` holds (an affine pair, section 3), `A` is certified iff `verdict(A)` is not
 `INCONSISTENT` (`_consistent`); otherwise iff every component's verdict is
 not `INCONSISTENT` (`_part_consistent`). With `RELATIONAL == "whole"` a
 relational or keyless set is never split (`sympy_api.RELATIONAL`).
@@ -356,11 +378,16 @@ only (`Engine._within_budget` docstring; `tests/test_budget_cone.py`,
 
 ## 11. Open points
 
-1. The engine's per-query theory scope is three tests in three places (section 3); `theory_scope`
-   as one function is P3. Differences: `wants_transfer` counts a `_trichotomy` pair (P3's test does
-   not); the budget's link test (section 10) counts sign-atom sums over disjoint symbols (`glue` does not).
-2. Glue is created at the first relation atom of *any* formula compiled in the session, extension facts
-   included (`Session._custom`); selectors keep it inert, but `cone` counts `glue_objects` only for relation atoms of `p` and `A`.
+1. Resolved by P3: `theory_scope` is one function (section 3) and its
+   `transfer` counts the `_trichotomy` pair. The budget's link test (section
+   10) still counts sign-atom sums over disjoint symbols: a cone-weight
+   over-estimate, not a scope (it decides whether a query is answered, never
+   what its session holds).
+2. Glue outside the scope: a relation atom of a node fact
+   (`Extensions.node_facts`) creates the glue when it is allocated
+   (`Session._custom`, counted); the facts of custom atoms are in the scope
+   (`scope.extension_atoms`, section 3). Selectors keep such glue inert, but
+   `cone` counts `glue_objects` only for relation atoms of `p` and `A`.
 3. `out_of_scope` ignores the engine's adapters (section 1).
 4. The clause set is stated per session; `satassume.ref.ask_ref` (P5b) is the session-independent
    one the harness compares against. Section 8's "at most two searches" is design.md's; `Engine._ask` is the code.

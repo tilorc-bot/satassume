@@ -4,7 +4,8 @@
   eq(a, b)`` (and ``negative_infinite``), ``zero(a - b) -> eq(a, b)`` and
   ``nonzero(a - b) -> ~eq(a, b)``, in every domain: a zero or nonzero
   difference is finite, and equal infinite sides have a nan difference.
-* ``Session._affine_links``: sign atoms on two sums sharing a symbol start
+* ``scope.affine_pair`` (``Session._affine_links`` before #97 P3): sign
+  atoms on two sums sharing a symbol start
   the relation glue, so LRA compares them (``Q.negative(1 - x)`` from
   ``Q.positive(x - 1)``) without a relation atom.
 

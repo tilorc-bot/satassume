@@ -42,6 +42,16 @@ reverse.  The scope only chooses how much of this valid theory a query
 pays for; the answer with the whole of it is the ceiling, and no scope
 reaches a definite value the ceiling does not have.
 
+That is an argument about entailment, not about the engine, which is
+budgeted (``Engine._exhausted``, ``_gave_up``, the discovery budget): more
+valid clauses can exhaust a branch budget the smaller clause set did not,
+and turn a definite answer into None (the set's check showed the mechanism
+when the query's glue linked the set's terms before it, #97 P3 review
+finding 1; hence ``Session.link_set``).  What the validity of the clause
+families gives is "never the other definite value"; "same or more
+definite" is an empirical property, checked by ``tools/relevance_fuzz.py``
+and the harness profiles of gate G5, not a corollary of clause validity.
+
 Resolution of the three differences of the spec (``docs/spec.md``,
 "Theory scope", open point 1) between this function and the code it
 replaces:
@@ -52,6 +62,9 @@ replaces:
    both are atoms of ``a`` or ``p``, so :func:`transfer_wanted` tests the
    pair syntactically (an atom and its reverse among the atoms) and gives
    the same value with no session state; ``wants_transfer`` delegates.
+   It over-approximates: the pair is counted even when
+   ``uninterpreted="free"`` leaves the atoms opaque and ``_trichotomy``
+   never relates them (harmless: every transfer lemma is guarded).
 2. The discovery budget's link test (``Engine._within_budget``) counts
    sign-atom sums over disjoint symbols too, a conservative over-estimate
    of the cone's weight.  It is a budget, not a scope: it decides whether
@@ -64,9 +77,10 @@ replaces:
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, NamedTuple, Optional
+from typing import Any, Dict, Iterable, NamedTuple
 
 from .formula import P, atoms_of
+from .relations import RELATION_ATOMS, _is_number
 from .rules import PRED_INDEX
 
 #: the predicates whose atoms the relation glue links to order atoms
@@ -76,10 +90,6 @@ SIGN_PREDS = frozenset({
     "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero",
     "extended_positive", "extended_negative", "extended_nonnegative",
     "extended_nonpositive", "extended_nonzero"})
-
-#: the predicates of relation atoms (``satassume.relations.RELATION_ATOMS``;
-#: repeated here so that this module imports nothing of the theories)
-RELATION_ATOMS = frozenset({"eq", "lt"})
 
 
 class Scope(NamedTuple):
@@ -91,10 +101,6 @@ class Scope(NamedTuple):
 
 #: the scope of a query without relations or sign-on-sum pairs
 EMPTY = Scope(False, False, frozenset())
-
-
-def _is_number(e) -> bool:
-    return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
 
 def affine_pair(atoms: Iterable[P]) -> bool:
@@ -154,13 +160,45 @@ def scope_of_atoms(atoms: Iterable[P]) -> Scope:
     return Scope(True, rel and transfer_wanted(atoms), linked_terms(atoms))
 
 
-def theory_scope(assumptions, proposition) -> Scope:
+def theory_scope(assumptions, proposition, extensions=None) -> Scope:
     """The theory scope of ``proposition`` under ``assumptions`` (formulas
     over ``P`` atoms, or None): ``(glue, transfer, linked_terms)`` as the
-    module docstring defines them.  A function of the two formulas'
-    atoms."""
+    module docstring defines them.  A function of the two formulas' atoms
+    and, with ``extensions`` (the engine's :class:`Extensions`), of the
+    facts it generates for their custom atoms (:func:`extension_atoms`)."""
     atoms = []
     for f in (assumptions, proposition):
         if f is not None and f is not True:
             atoms.extend(atoms_of(f))
+    if extensions is not None:
+        atoms.extend(extension_atoms(atoms, extensions))
     return scope_of_atoms(atoms)
+
+
+def _custom_pred(a: P) -> bool:
+    return a.pred not in PRED_INDEX and a.pred not in RELATION_ATOMS
+
+
+def extension_atoms(atoms: Iterable[P], extensions) -> list:
+    """The atoms of the facts ``extensions`` generates for the custom
+    atoms among ``atoms``, transitively (a fact may hold custom atoms of
+    its own): what ``Session._custom`` compiles for them, so a relation
+    atom among them is in the scope (spec open point 2).  Not foreseen:
+    the facts of a vocabulary predicate registered for a class
+    (``Extensions.node_facts``), which fire over the cone as the session
+    visits its nodes; a relation atom among those creates the glue outside
+    the scope (``Session._custom``, counted in ``stats["scope_misses"]``)."""
+    out: list = []
+    seen: set = set()
+    stack = [a for a in atoms if _custom_pred(a)]
+    while stack:
+        a = stack.pop()
+        if a in seen:
+            continue
+        seen.add(a)
+        for f in extensions.facts_for(a):
+            for b in atoms_of(f):
+                out.append(b)
+                if _custom_pred(b):
+                    stack.append(b)
+    return out
