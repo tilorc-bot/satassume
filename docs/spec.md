@@ -27,7 +27,10 @@ Definition. `ask(p, A)` returns one of `True`, `False`, `None`, or raises
    (`sympy_api.ask`, `last_budget_limited`), so a memo hit never is.
 2. Constant route: if `_is_constant_proposition(p)` (every predicate of `p`
    built in, every argument a number without free symbols or `AppliedUndef`),
-   the answer is `ask(p, True)`: `A` is ignored (`sympy_api._ask`). Section 9.
+   the answer is `ask(p, True)` when that is definite (`A` is ignored, an
+   inconsistent `A` does not raise); one left `None` is answered under `A`
+   by steps 3-4, where an inconsistent `A` raises (`sympy_api._ask`, PR #103).
+   Section 9.
 3. Relevance: else, if `Engine.relevance` and `A` is `And`, `Or`, `Not`,
    `Implies`, `Equivalent`, predicate or relation (other Booleans reach step 4
    unsplit), the answer is `_engine_ask(p, part)` (`sympy_api._ask`), memoized
@@ -319,13 +322,13 @@ L, search=False)` reads the propagation closure (`Solver.implied(L)` raises on
 conflict); if open and the session is incomplete, `escalate` and propagate
 again; if still open, `Solver.entails(q, L)` searches, at most twice (design,
 "Nodes, cones and discovery"). The session: for `Engine.is_` a fresh one over
-`cone(e)`; for `Engine.ask` with assumptions the contextual session of `A`
-(`Engine._context_session`, built by `_build_context`, LRU of `keep_sessions`,
-replaced after `session_limit` nodes) or, when search is needed and it holds
-more than `cone_threshold` nodes beyond `A`'s, a fresh session over `A` and
-`cone(p)` (`Engine._ask`, `cone_search`). After a cone search, the clause
-`~L | q` (or `~q`) is added to the replacement session so a repeat propagates
-(`Session._emit` in `Engine._ask`); other paths add nothing.
+`cone(e)`; for `Engine.ask` with assumptions a session of `A` and `p` built
+for that query alone (`Engine._build_context`: the set's clauses and its one
+complete check) and discarded after it, since #97 P1. The session-reuse
+settings of the earlier design (`keep_sessions`, `session_limit`,
+`cone_search`, `cone_threshold`: an LRU of sessions per set, replaced when
+large, and cone sessions for polluted ones) were removed in #97 P7. No
+clause is added after an answer (no session outlives the query).
 
 Property: the answer does not depend on which session answered, on earlier
 queries, on the caches or on `PYTHONHASHSEED` (design, "History independence";
@@ -355,11 +358,12 @@ Rules:
    `constant_units` closed under the rule base (`templates/atoms.py`,
    `_common.units`), or its structural templates; `polar` is undecidable for
    every number (`atoms.py` comment).
-3. A constant proposition is answered without `A` (section 1.2), so
-   `ask(Q.positive(E**pi - pi**E), Q.positive(E**pi - pi**E))` is `None`
-   and `ask(Q.prime(7), Q.composite(7))` is `True` (design, "Constant
-   propositions ignore the assumptions"; `tests/test_sympy_api.py`,
-   `tests/test_lra_constants.py`).
+3. A constant proposition its facts decide is answered without `A`
+   (section 1.2): `ask(Q.prime(7), Q.composite(7))` is `True`. One they
+   leave `None` is answered under `A` (`sympy_api._ask`, PR #103), so
+   `ask(Q.positive(E**pi - pi**E), Q.positive(E**pi - pi**E))` is `True`
+   and an inconsistent `A` raises; `ask_ref` follows (`tests/test_ref.py`,
+   `test_constant_route_ignores_assumptions`; `tests/test_lra_constants.py`).
 4. In LRA, a comparison a pivot path cannot decide marks the theory
    `undecidable`; the query is then answered as a fresh engine would
    (`engine._cannot_give_up`, `_path_dependent`; `theories.md`, "LRA").
