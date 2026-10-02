@@ -868,7 +868,8 @@ def _relevant(p, a, eng: Engine):
     unknown, under the part (sound by monotonicity).  The verdict is the
     whole set's (:func:`_consistent`) when the set has a relation, a
     keyless conjunct or atoms that start the relation glue (sign atoms on
-    sums, ``engine.affine_glue``; a ``zero(t)``, ``engine.zero_glue``);
+    sums, ``engine.affine_glue``; a ``zero(t)`` with ``t`` under an
+    application, ``engine.zero_glue``);
     otherwise the conjunction of the components'
     verdicts, which equals it there (docs/design.md, "Why components are
     independent")."""
@@ -919,7 +920,8 @@ def _relevant(p, a, eng: Engine):
             else:
                 if rel and (_affine_glue(g) or _zero_glue(g)):
                     # sign atoms on sums sharing a symbol (#51), or a
-                    # zero(t), which the glue reads as eq(t, 0), start the
+                    # zero(t) with t under an application of the set, which
+                    # the glue reads as eq(t, 0), start the
                     # relation glue in the whole set's session, which then
                     # links terms of every component: the per-component
                     # checks could miss an inconsistency, so the whole

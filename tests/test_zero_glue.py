@@ -1,12 +1,16 @@
-"""``Q.zero(t)`` is the equality ``t = 0`` for the relation glue (nightly
-family A, ``relations.glue_atoms``): the ``zero`` and ``eq`` spellings
-answer alike, in the set and in the proposition, and a relation unrelated
-to the query adds nothing to a set whose glue a ``zero`` atom switches on.
-Each answer below is the correct one (``t = 0`` pointwise)."""
+"""``Q.zero(t)`` is the equality ``t = 0`` for the relation glue when
+``t`` is under an application of the set or the query (nightly family A,
+``relations.zero_twins``): the ``zero`` and ``eq`` spellings answer alike,
+in the set and in the proposition, and a relation unrelated to the query
+adds nothing to a set whose glue a ``zero`` atom switches on.  Outside the
+condition the spellings agree without the twin.  Each answer below is the
+correct one (``t = 0`` pointwise)."""
 import pytest
 from sympy import Abs, Function, Q, Symbol, sqrt, symbols
 
 from satassume.engine import DictCache, Engine
+from satassume.formula import P
+from satassume.relations import relation_atom, zero_twins
 from satassume.sympy_api import ask
 
 g = Function("g")
@@ -94,6 +98,73 @@ def test_set_verdict_is_the_whole_sets(cfg):
     assert _ask(Q.real(x), zs, cfg) == _ask(Q.real(x), es, cfg) == "ValueError"
 
 
+@pytest.mark.parametrize("cfg", list(CONFIGS))
+def test_zero_and_application_in_different_formulas(cfg):
+    # zero(n) in the proposition, g(n, 1) in the set: the query's twin
+    s = ~Q.composite(g(n, 1)) & Q.composite(g(0, 1))
+    want = None if cfg == "notransfer" else True
+    assert _ask(~Q.zero(n), s, cfg) == _ask(Q.ne(n, 0), s, cfg) == want
+
+
+def test_the_condition():
+    z = symbols("z")
+    zx, zy = P("zero", x), P("zero", y)
+    tx, ty = relation_atom("eq", x, 0), relation_atom("eq", y, 0)
+    assert zero_twins((zx, P("positive", y - x))) == []
+    assert zero_twins((zx, P("positive", g(Abs(x) + 1)))) == [tx]
+    assert zero_twins((zx, zy, P("zero", g(y)))) == [ty]
+    assert zero_twins((zx,), (P("finite", g(z, x)),)) == [tx]
+    assert zero_twins((P("finite", g(z, x)),), (zx,)) == [tx]
+    assert zero_twins((P("zero", g(0)),)) == []
+    # a relation's sides count
+    assert zero_twins((zx, relation_atom("lt", g(x), u))) == [tx]
+
+
+# zero(x) with no application over x: the twin is not read, and the two
+# spellings agree all the same (relations, "Zero is an equality")
+OUTSIDE = [
+    (Q.real(y), lambda z: z & Q.positive(y - x) & Q.negative(y)),
+    (Q.positive(y), lambda z: z & Q.positive(y - x)),
+    (Q.positive(y), lambda z: z & Q.positive(y + x)),
+    (Q.even(y), lambda z: z & Q.eq(y, x)),
+    (Q.integer(y), lambda z: z & Q.eq(y, x + 1)),
+    (Q.lt(y, 1), lambda z: z & Q.lt(y, x + 1)),
+    (Q.zero(u), lambda z: z & Q.eq(u, x * v)),
+    (Q.zero(y), lambda z: z & Q.zero(x - y)),
+    (Q.ge(y, 0), lambda z: z & Q.ge(y, x)),
+]
+
+
+@pytest.mark.parametrize("cfg", list(CONFIGS))
+@pytest.mark.parametrize("i", range(len(OUTSIDE)))
+def test_outside_the_condition_the_spellings_agree(i, cfg):
+    p, mk = OUTSIDE[i]
+    assert _ask(p, mk(Q.zero(x)), cfg) == _ask(p, mk(Q.eq(x, 0)), cfg)
+
+
+@pytest.mark.parametrize("cfg", list(CONFIGS))
+@pytest.mark.parametrize("p, s", [
+    (Q.zero(x), Q.eq(x, y) & Q.zero(y)),
+    (Q.zero(x), Q.le(x, 0) & Q.ge(x, 0)),
+    (~Q.zero(x), Q.lt(x, y) & Q.zero(y)),
+    (Q.zero(x) | Q.zero(y), Q.eq(x * y, 0)),
+    (Q.zero(n), Q.lt(n, 1) & Q.gt(n, -1)),
+])
+def test_outside_the_condition_in_the_proposition(p, s, cfg):
+    e = {Q.zero(x): Q.eq(x, 0), ~Q.zero(x): Q.ne(x, 0), Q.zero(n): Q.eq(n, 0),
+         Q.zero(x) | Q.zero(y): Q.eq(x, 0) | Q.eq(y, 0)}[p]
+    assert _ask(p, s, cfg) == _ask(e, s, cfg)
+
+
+@pytest.mark.xfail(strict=True, reason="known: zero(s) on a sum bounded only by its "
+                   "terms' facts does not switch LRA on (relations, 'Zero is an equality')")
+@pytest.mark.parametrize("cfg", list(CONFIGS))
+def test_outside_the_condition_a_bounded_sum(cfg):
+    k = Symbol("k")
+    s = Q.integer(k) & Q.integer(x) & Q.negative(k) & Q.positive(x)
+    assert _ask(Q.zero(k - x + 1), s, cfg) == _ask(Q.eq(k - x + 1, 0), s, cfg) is False
+
+
 # warm (one engine, prefix answered first) vs fresh, mixing zero sets and
 # eq / order queries
 WARM = {
@@ -110,6 +181,15 @@ WARM = {
                               [Q.zero(y), Q.zero(g(y)) | ~Q.zero(y)], Q.zero(g(y))),
     "zero-or-set": ((Q.zero(y) | Q.positive(y)) & ~Q.finite(g(0)),
                     [Q.eq(y, 0), Q.zero(y)], Q.zero(g(y))),
+    # the query's twin of a set's zero(n) (g(n, 1) only in the prefix)
+    "query-twin-prefix": (Q.zero(n) & Q.composite(g(0, 1)) & Q.positive(u - v),
+                          [Q.composite(g(n, 1)), Q.zero(g(n, 1) - g(0, 1))],
+                          Q.positive(u - v + n)),
+    "query-twin-then-plain": (Q.zero(n) & Q.composite(g(0, 1)),
+                              [Q.composite(g(n, 1)), Q.prime(g(n, 1))],
+                              Q.composite(g(0, 1) + n)),
+    "set-app-zero-prefix": (~Q.composite(g(n, 1)) & Q.composite(g(0, 1)),
+                            [~Q.zero(n), Q.eq(n, 0)], Q.positive(n) | Q.negative(n)),
 }
 
 

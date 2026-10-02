@@ -83,7 +83,8 @@ from .epoch import EPOCH as _EPOCH, bump as _bump
 from .memos import engine_memos
 from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
-                        glue_atoms, glue_objects, link_objects)
+                        glue_atoms, glue_objects, link_objects, under_of,
+                        zero_args, zero_twin, zero_twins)
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .solver import Solver
 
@@ -260,6 +261,9 @@ class Session:
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.assumption_formula = None       # the formula of assume_formula()
+        self._a_raw = ()                     # its atoms (atoms_of)
+        self._a_zs = ()                      # their zero_args
+        self._a_under = None                 # their under_of (lazily)
         #: the selector guarding the assumption formula's clauses (0: none)
         self.sel = 0
         #: the stable prefix of the last :meth:`assumption_lits`: the
@@ -646,6 +650,9 @@ class Session:
         """Turn a formula into solver assumption literals: its clauses are
         guarded by a fresh selector variable ``s`` and ``s`` is assumed."""
         self.assumption_formula = f
+        self._a_raw = atoms_of(f)
+        self._a_zs = zero_args(self._a_raw)
+        self._a_under = None
         self._a_all = None
         self._ensure_atoms(f)
         s = self.table.aux()
@@ -682,13 +689,17 @@ class Session:
             return lits
         a_all = self._a_all
         if a_all is None:
-            a = self.assumption_formula
-            # a zero(t) counts as its twin eq(t, 0) (relations.glue_atoms)
-            a_all = self._a_all = glue_atoms(atoms_of(a)) if a is not None else ()
+            # a zero(t) whose t is under an application of the set counts
+            # as its twin eq(t, 0) (relations.glue_atoms): root glue, a
+            # function of the set alone
+            a_all = self._a_all = glue_atoms(self._a_raw)
             self._a_atoms = frozenset(x for x in a_all if x.pred in RELATION_ATOMS)
         a_atoms = self._a_atoms
         a_rel = bool(a_atoms)
-        p_all = glue_atoms(atoms_of(prop)) if prop is not None else ()
+        # and the query's: the twins of the zero(t) of p and of the set
+        # whose t is under an application of p or of the set, a function
+        # of (p, a); those the set has alone are in seen below
+        p_all = self._glue_of(atoms_of(prop)) if prop is not None else ()
         p_atoms = [x for x in p_all if x.pred in RELATION_ATOMS]
         p_rel = bool(p_atoms)
         if not (a_rel or p_rel or _links_wanted(a_all, p_all)):
@@ -856,7 +867,23 @@ class Session:
         if rel.active or rel.queue:
             # the twins of zero atoms are user equalities of f
             # (relations.glue_atoms, allocated by _ensure_atoms)
-            rel.process(glue_atoms(atoms))
+            rel.process(self._glue_of(atoms))
+
+    def _glue_of(self, atoms) -> tuple:
+        """The atoms the relation glue reads a formula of this session by
+        (``relations.glue_atoms``), ``atoms`` and the twins of zero atoms:
+        for the assumption formula its own; for a query ``p``, those of
+        ``p`` and the set together (a ``zero(n)`` of the set whose ``n`` is
+        under an application of ``p``), a function of ``(p, a)``.  The
+        session's set is fixed (``Engine._context_session`` keys it by the
+        set), so a formula's twins are the same in every query."""
+        a_zs = self._a_zs
+        if not a_zs and not any(x.pred == "zero" for x in atoms):
+            return atoms
+        u = self._a_under
+        if u is None:
+            u = self._a_under = under_of(self._a_raw)
+        return glue_atoms(atoms, cinfo=(a_zs, u))
 
     def _affine_links(self, f, keep: bool = False) -> None:
         """Start the relation machinery without a relation atom when two sign
@@ -904,12 +931,21 @@ class Session:
         for atom in atoms:
             if atom.pred in PRED_INDEX:
                 self.ensure(atom.expr, {atom.pred})
-        if self.engine._relation_specs:
-            g = glue_atoms(atoms)
-            if g is not atoms:
-                var = self.table.var
-                for atom in g[len(atoms):]:
-                    var(atom)
+        self._ensure_twins(atoms)
+
+    def _ensure_twins(self, atoms) -> bool:
+        """Allocate the twins of the zero atoms the glue reads a formula
+        with the atoms ``atoms`` with (:meth:`_glue_of`); whether it has
+        any."""
+        if not self.engine._relation_specs:
+            return False
+        g = self._glue_of(atoms)
+        if g is atoms:
+            return False
+        var = self.table.var
+        for atom in g[len(atoms):]:
+            var(atom)
+        return True
 
 
 # --------------------------------------------------------------------------
@@ -1464,12 +1500,13 @@ class Engine:
         return r
 
     def _query_cone(self, f, link: bool):
-        """``(cone, weight, rel, sums)`` for a formula ``f`` (a query or an
+        """``(cone, weight, rel, sums, zs)`` for a formula ``f`` (a query or an
         assumption set): the union of the cones of its atoms' objects
         (:func:`_kid`) and, with ``link`` (the session's relation glue
         runs), of the objects of the link of every vocabulary argument
         (``relations.link_objects``); cone None if it outweighs the budget.
-        ``sums``: the sums under its sign atoms (``Session._affine_links``).
+        ``sums``: the sums under its sign atoms (``Session._affine_links``);
+        ``zs``: the arguments of its zero atoms (``relations.zero_args``).
         Memoized per engine."""
         key = (f, link)
         qc = self._qcones
@@ -1477,8 +1514,9 @@ class Engine:
         if r is not None:
             return r
         atoms = atoms_of(f)
-        # with the twins of zero atoms (relations.glue_atoms): their glue
-        # is the session's, and they make the query relational
+        # with the twins of f's zero atoms (relations.glue_atoms): their
+        # glue is the session's, and they make the query relational (the
+        # twins p and a call for only together: _within_budget)
         objs = {_kid(a) for a in (glue_atoms(atoms) if self._relation_specs else atoms)}
         if link:
             specs, memo = self._relation_specs, self._glue_adapters
@@ -1488,7 +1526,7 @@ class Engine:
         sums = frozenset(a.expr for a in atoms if a.pred in _SIGN_PREDS
                          and getattr(a.expr, "is_Add", False)
                          and getattr(a.expr, "free_symbols", None))
-        r = self._union(objs) + (sums,)
+        r = self._union(objs) + (sums, zero_args(atoms))
         if len(qc) >= 50_000:
             qc.clear()
         qc[key] = r
@@ -1530,20 +1568,35 @@ class Engine:
         sessions, the caches or earlier queries.  A query that passes runs
         discovery and escalation uncapped (never truncated): its session
         visits at most its cone."""
-        _c, _w, rel, sums = self._query_cone(proposition, False)
+        _c, _w, rel, sums, zp = self._query_cone(proposition, False)
+        cross = ()
         if assumptions is not None:
-            _c, _w, rel_a, sums_a = self._query_cone(assumptions, False)
+            _c, _w, rel_a, sums_a, za = self._query_cone(assumptions, False)
             rel = rel or rel_a
             sums = sums | sums_a
+            if (zp or za) and self._relation_specs:
+                # the twins of zero atoms only p and a together call for
+                # (a zero(n) of a, n under an application of p:
+                # Session._glue_of), which neither cone counts
+                up, ua = under_of(atoms_of(proposition)), under_of(atoms_of(assumptions))
+                cross = [zero_twin(e) for e in dict.fromkeys(zp + za)
+                         if not (e in zp and e in up) and not (e in za and e in ua)
+                         and (e in up or e in ua)]
+                rel = rel or bool(cross)
         link = bool(self._relation_specs) and (rel or len(sums) >= 2)
-        cp, wp, _r, _s = self._query_cone(proposition, link)
+        cp, wp, _r, _s, _z = self._query_cone(proposition, link)
         if cp is None:
             return False
         if assumptions is None:
             return True
-        ca, wa, _r, _s = self._query_cone(assumptions, link)
+        ca, wa, _r, _s, _z = self._query_cone(assumptions, link)
         if ca is None:
             return False
+        if cross:
+            cx, wx, _r = self._union({_kid(x) for x in cross})
+            if cx is None:
+                return False
+            ca, wa = ca | cx, wa + wx
         if wp + wa <= self._discovery_budget:
             return True
         struct = self._struct
@@ -1871,8 +1924,7 @@ class Engine:
     def _literal(s: Session, proposition) -> int:
         if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
             s.ensure(proposition.expr, {proposition.pred})
-            if proposition.pred == "zero":
-                s._ensure_atoms(proposition)    # its twin eq(t, 0)
+            if s._ensure_twins((proposition,)):    # twins eq(t, 0)
                 s._flush()
             if s.relations is not None:
                 s._relations(proposition)
@@ -1892,13 +1944,14 @@ _SIGN_PREDS = frozenset({
 
 
 def zero_glue(f) -> bool:
-    """Whether ``f`` has a ``zero(t)`` atom with ``t`` no number, which
-    the relation glue reads as the equality ``eq(t, 0)``
-    (``relations.glue_atoms``): with relation specs it starts the glue in
-    the session of a set holding it, which then links terms of every
-    component, so the relevance layer takes the whole set's verdict as for
-    a relational set (``satassume.sympy_api._relevant``)."""
-    return any(a.pred == "zero" and not _is_number(a.expr) for a in atoms_of(f))
+    """Whether ``f`` has a ``zero(t)`` atom whose ``t`` (no number) is under
+    an application of ``f``, which the relation glue of ``f`` as a set
+    reads as the equality ``eq(t, 0)`` (``relations.zero_twins``): with
+    relation specs it starts the glue in the session of a set holding it,
+    which then links terms of every component, so the relevance layer
+    takes the whole set's verdict as for a relational set
+    (``satassume.sympy_api._relevant``).  A function of ``f``."""
+    return bool(zero_twins(atoms_of(f)))
 
 
 def affine_glue(f) -> bool:
