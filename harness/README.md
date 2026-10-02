@@ -40,7 +40,8 @@ disagreement with the fresh engine is reported as before; one with
 fresh engine's answer in its confirmations.  The tag (`checker.spec_tag`):
 `finding` (the engine definite, `ask_ref` None: the engine derived what
 the clause set does not entail), `budget` (the engine None, `ask_ref`
-definite, `engine.last_budget_limited` set), `relevance` (the same pair
+definite or raising, `engine.last_budget_limited` set: spec section 10),
+`relevance` (the same pair
 without a budget: the relevance split answered under a part of the set;
 the discrepancy records a fresh `relevance=False` engine's answer), or
 `defect` (a contradiction, `ValueError` on one side only, an error).

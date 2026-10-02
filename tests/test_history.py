@@ -433,6 +433,8 @@ def test_spec_level_tags():
     assert spec_tag("True", "False") == "defect"
     assert spec_tag("ValueError", "None") == "defect"
     assert spec_tag("None", "ValueError") == "defect"
+    assert spec_tag("None", "ValueError", budget_limited=True) == "budget"   # spec 10, rule 1
+    assert spec_tag("ValueError", "None", budget_limited=True) == "defect"
     assert spec_tag("Error:TypeError", "True") == "defect"
     assert is_known_family("S:budget") and is_known_family("S:relevance")
     assert not is_known_family("S:finding") and not is_known_family("S:defect")
