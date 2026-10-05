@@ -278,6 +278,11 @@ def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int)
     return Compiled(objs, pat)
 
 
+#: the tag of the unit patterns' own keys in ``_CACHE`` (no template key
+#: can equal it)
+_UNITS = object()
+
+
 def units(key, gen: Callable[[], list], obj) -> Compiled:
     """Unit facts about one object: ``gen()`` returns ``(pred, value)``
     pairs; the pattern is cached under ``key``.  The facts are closed under
@@ -291,7 +296,7 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
         # the pattern is a function of the facts alone: keys with the same
         # facts (the constants 3 and 5, symbols with the same assumptions
         # in another order of creation) share it
-        fkey = ('units', facts)
+        fkey = (_UNITS, facts)
         pat = _CACHE.get(fkey)
         if pat is None:
             lits = [PRED_INDEX[pred] + 1 if value else -(PRED_INDEX[pred] + 1)

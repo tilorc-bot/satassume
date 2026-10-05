@@ -109,6 +109,9 @@ _UNSAT = object()
 #: models found by a search are kept with the cone (a copy of a cone gets
 #: them too); a stored model only spares a search for a satisfiable call
 CONE_RING = True
+#: how many models a cone session keeps (``Solver._RING`` is 2): more
+#: repeated queries of a cone are answered None from a stored model pair
+CONE_RING_SIZE = 8
 #: a search runs in the cached cone session itself, which keeps what it
 #: learnt for the next query (True), or in a copy of it taken before any
 #: search (False)
@@ -1853,7 +1856,7 @@ class Engine:
             return None
         s.engine = None
         s.cone_weight = weight
-        s.solver._RING = 8
+        s.solver._RING = CONE_RING_SIZE
         #: the base variable of the node (read without a lookup of the node)
         s.cone_base = s.base[node]
         #: answers given in this cone (``CONE_MEMO``)
