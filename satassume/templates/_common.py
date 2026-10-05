@@ -128,23 +128,32 @@ _SIGNED_INFINITE = {'positive_infinite': 'positive', 'negative_infinite': 'negat
 def resolve(rules, consts: Dict[int, Any]) -> List[Rule]:
     """Resolve constants, then drop duplicate and subsumed rules."""
     keyed = []
+    # the resolution of each literal about a constant slot, computed once
+    memo: Dict[Lit, Any] = {}
     for prem, concl in rules:
         ps = []
         for lit in prem:
-            r = _resolve_lit(lit, consts)
-            if r is True:
-                continue
-            if r is False or r is None:
-                break
-            ps.append(r)
+            if lit[0] in consts:
+                r = memo.get(lit, memo)
+                if r is memo:
+                    r = memo[lit] = _resolve_lit(lit, consts)
+                if r is True:
+                    continue
+                if r is False or r is None:
+                    break
+            ps.append(lit)
         else:
             cs = []
             for lit in concl:
-                r = _resolve_lit(lit, consts)
-                if r is True or r is None:
-                    break
-                if r is not False:
-                    cs.append(r)
+                if lit[0] in consts:
+                    r = memo.get(lit, memo)
+                    if r is memo:
+                        r = memo[lit] = _resolve_lit(lit, consts)
+                    if r is True or r is None:
+                        break
+                    if r is False:
+                        continue
+                cs.append(lit)
             else:
                 if not cs:
                     # A constant violates the conclusion: the premises
@@ -208,20 +217,27 @@ class Pattern:
         clauses = []
         used = set()
         child_preds: Dict[int, set] = {}
+        pidx = PRED_INDEX
         for ps, cs in rules:
-            lits = [(k, PRED_INDEX[p], pos) for k, p, pos in ps]
-            lits += [(k, PRED_INDEX[p], not pos) for k, p, pos in cs]
-            lits = list(dict.fromkeys(lits))
-            if len({(k, i) for k, i, _ in lits}) < len(lits):
-                continue    # tautology (no duplicates left: a repeated
-                            # (slot, predicate) has both signs)
-            npreds = frozenset(i for k, i, _ in lits if k == node)
+            lits = [(k, pidx[p], pos) for k, p, pos in ps]
+            lits += [(k, pidx[p], not pos) for k, p, pos in cs]
+            if len(lits) > 1:
+                lits = list(dict.fromkeys(lits))
+                if len({(k, i) for k, i, _ in lits}) < len(lits):
+                    continue    # tautology (no duplicates left: a repeated
+                                # (slot, predicate) has both signs)
+            npreds = frozenset([i for k, i, _ in lits if k == node])
             # internal literal = 2*base_of_slot + (2*pidx + neg)
-            clauses.append((tuple(lits), npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
+            clauses.append((tuple(lits), npreds,
+                            tuple([(k, 2 * i + (1 if neg else 0)) for k, i, neg in lits])))
             for k, i, _ in lits:
-                used.add(k)
                 if k != node:
-                    child_preds.setdefault(k, set()).add(i)
+                    cp = child_preds.get(k)
+                    if cp is None:
+                        child_preds[k] = {i}
+                    else:
+                        cp.add(i)
+            used.update([k for k, _, _ in lits])
         self.clauses = clauses
         self.used = tuple(sorted(used))
         self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
@@ -271,15 +287,23 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
     if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        facts = list(gen())
-        lits = [PRED_INDEX[pred] + 1 if value else -(PRED_INDEX[pred] + 1) for pred, value in facts]
-        closed = unit_propagate(RULE_INSTANTIATED, lits)
-        if closed is not None:
-            facts = [(PREDICATES[abs(l) - 1], l > 0) for l in sorted(closed, key=abs)]
-        pat = Pattern([((), ((0, pred, value),)) for pred, value in facts], 0)
-        if closed is not None:
-            decided = {abs(l) - 1 for l in closed}
-            pat.complete = len(decided | RULE_FREE) == NPRED
+        facts = tuple(gen())
+        # the pattern is a function of the facts alone: keys with the same
+        # facts (the constants 3 and 5, symbols with the same assumptions
+        # in another order of creation) share it
+        fkey = ('units', facts)
+        pat = _CACHE.get(fkey)
+        if pat is None:
+            lits = [PRED_INDEX[pred] + 1 if value else -(PRED_INDEX[pred] + 1)
+                    for pred, value in facts]
+            closed = unit_propagate(RULE_INSTANTIATED, lits)
+            if closed is not None:
+                facts = [(PREDICATES[abs(l) - 1], l > 0) for l in sorted(closed, key=abs)]
+            pat = Pattern([((), ((0, pred, value),)) for pred, value in facts], 0)
+            if closed is not None:
+                decided = {abs(l) - 1 for l in closed}
+                pat.complete = len(decided | RULE_FREE) == NPRED
+            _CACHE[fkey] = pat
         _CACHE[key] = pat
     return Compiled((obj,), pat)
 
