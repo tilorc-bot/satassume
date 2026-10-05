@@ -377,13 +377,7 @@ class Session:
                     for k, m in _split(comp.pattern.clauses, want)[3]:
                         if k == k0:
                             own |= m
-            if self.solver.has_block(b):
-                # registered already as a slot of a pattern propagator
-                # (Solver.add_propagator) of a node visited earlier
-                if own:
-                    self.solver.mention_blocks(((b, own),))
-            else:
-                self.solver.register_block(b, own)
+            self.solver.register_block(b, own)
         else:
             self.solver.ensure_vars(b + NPRED - 1)
         # (no cached fact enters a session: the fact cache is a memo of
@@ -454,15 +448,19 @@ class Session:
         self.nclauses += len(clauses)
         solver = self.solver
         solver.ensure_vars(len(self.table))
-        prog, rest = _prog_of(clauses, node_k)
+        r = _PROGS.get(id(clauses))
+        if r is None or r[0] is not clauses:
+            r = _prog_of(clauses, node_k)
+        prog = r[1]
         if prog is None:
-            solver.add_internal([[bases[k] + off for k, off in li] for li in rest],
+            solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
                                 [(bases[k] >> 1, m) for k, m in ment])
             return
+        rest = r[2]
         solver.mention_blocks([(bases[k] >> 1, m) for k, m in ment])
         if rest:
             solver.add_internal([[bases[k] + off for k, off in li] for li in rest], ())
-        solver.add_propagator(prog, tuple([bases[k] for k in prog.slots]))
+        solver.add_propagator(prog, bases)
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
@@ -1939,19 +1937,18 @@ def neighbourhood(pred) -> frozenset:
 
 _SPLIT: dict = {}
 _PROGS: dict = {}
+import os as _os
+_LCG_MIN = int(_os.environ.get("SA_LCG_MIN", "1"))   # experiment knob
 
 
 def _prog_of(clauses, node_k):
-    """``(prog, rest)`` for the pattern clauses ``clauses`` (as in
+    """``(clauses, prog, rest)`` for the pattern clauses ``clauses`` (as in
     :func:`_split`) of a pattern whose node is slot ``node_k``: ``prog``
     the :class:`~satassume.solver._PatProg` of the clauses over two or more
     slots, all at most ``node_k`` (None if there are none), ``rest`` the
-    other clauses' ``(slot, offset)`` literal tuples.  Memoized per clause
-    list (kept alive here, like ``_SPLIT``)."""
-    key = (id(clauses), node_k)
-    r = _PROGS.get(key)
-    if r is not None and r[0] is clauses:
-        return r[1], r[2]
+    other clauses' ``(slot, offset)`` literal tuples.  Memoized in
+    ``_PROGS`` per clause list (kept alive there, like ``_SPLIT``; a list
+    belongs to one pattern, hence one ``node_k``)."""
     prop, rest = [], []
     for _, _, li in clauses:
         ks = {k for k, _ in li}
@@ -1959,11 +1956,14 @@ def _prog_of(clauses, node_k):
             prop.append(li)
         else:
             rest.append(li)
+    if len(prop) < _LCG_MIN:
+        rest = [li for _, _, li in clauses]
+        prop = None
     prog = _PatProg(prop, sorted({k for li in prop for k, _ in li})) if prop else None
     if len(_PROGS) >= 100_000:
         _PROGS.clear()
-    _PROGS[key] = (clauses, prog, rest)
-    return prog, rest
+    r = _PROGS[id(clauses)] = (clauses, prog, rest)
+    return r
 
 
 def _split(clauses, want):

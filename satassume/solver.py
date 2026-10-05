@@ -356,10 +356,11 @@ class _PatProg:
     one constraint per instance instead of as watched clauses (lazy clause
     generation, issue #118).
 
-    Clauses are in *position space*: a literal is ``(j, off)``, ``off`` the
-    relative literal (``2*pidx + neg``) of the ``j``-th slot the program
-    uses (``slots``).  An instance is the tuple ``b2`` of twice the base
-    variable of each slot, every slot a registered rule block.  It is woken
+    Clauses are the pattern's own, in slot space: a literal is ``(j,
+    off)``, ``off`` the relative literal (``2*pidx + neg``) of slot ``j``;
+    ``slots`` the slots they use.  An instance is the sequence ``b2`` of
+    twice the base variable of each slot of the pattern (not changed
+    afterwards), every slot the program uses a registered rule block.  It is woken
     by its slots' block closures (``Solver._rb_cl``): when the closure of
     slot ``j`` gains bits of ``trig[j]`` (the negations of the program's
     literals at ``j``), the clauses with a literal those bits falsify
@@ -368,35 +369,46 @@ class _PatProg:
     itself, built only when conflict analysis reads it
     (:meth:`Solver._pt_reason`)."""
 
-    __slots__ = ("cls", "slots", "trig", "occ", "nclauses", "wake")
+    __slots__ = ("cls", "slots", "trig", "occ", "nclauses", "wake", "ent")
 
     def __init__(self, cls, slots):
-        pos = {k: j for j, k in enumerate(slots)}
-        self.slots = tuple(slots)
-        self.cls = tuple(tuple((pos[k], off) for k, off in c) for c in cls)
-        trig = [0] * len(slots)
-        occ = [[[] for _ in range(128)] for _ in slots]
-        for c in self.cls:
-            for i, (j, off) in enumerate(c):
-                trig[j] |= 1 << (off ^ 1)
-                # the clause woken by ``off ^ 1`` at slot j: its other
-                # literals, then the clause (the reason)
-                occ[j][off ^ 1].append((c[:i] + c[i + 1:], c))
+        self.slots = slots = tuple(slots)
+        self.cls = cls = tuple(cls)
+        n = slots[-1] + 1
+        trig = [0] * n
+        occ = [None] * n
+        for k in slots:
+            occ[k] = {}
+        for c in cls:
+            for k, off in c:
+                q = off ^ 1
+                trig[k] |= 1 << q
+                o = occ[k].get(q)
+                if o is None:
+                    occ[k][q] = [c]
+                elif o[-1] is not c:
+                    o.append(c)
         self.trig = tuple(trig)
-        self.occ = tuple(tuple(tuple(x) for x in o) for o in occ)
-        self.nclauses = len(self.cls)
-        # per slot: woken bits -> the clauses they wake, each once
-        self.wake = tuple({} for _ in slots)
+        self.occ = occ
+        self.nclauses = len(cls)
+        # per slot: woken bits -> the clauses they wake
+        self.wake = tuple({} if x is not None else None for x in occ)
+        # per slot: the static part of a watcher (see Solver._rb_pw)
+        self.ent = tuple((trig[k], self.wake[k], self, k) for k in slots)
 
     def woken(self, j: int, dm: int) -> tuple:
+        """The clauses with a literal the bits ``dm`` gained by slot
+        ``j``'s closure falsify, each once."""
         occ = self.occ[j]
         out = {}
         b = dm
         while b:
             low = b & -b
             b ^= low
-            for _, c in occ[low.bit_length() - 1]:
-                out[c] = None
+            o = occ.get(low.bit_length() - 1)
+            if o is not None:
+                for c in o:
+                    out[c] = None
         r = tuple(out)
         w = self.wake[j]
         if len(w) >= 50_000:
@@ -1138,6 +1150,12 @@ class Solver:
             raise ValueError("register_block takes a positive base variable")
         if not self._ok:
             return False
+        rb_base = self._rb_base
+        if base < len(rb_base) and rb_base[base] == base:
+            # registered already (e.g. as a pattern propagator's slot)
+            if mentions:
+                self.mention_blocks(((base, mentions),))
+            return True
         if self._trail_lim and self._held is None:
             self._backtrack(0)
         n = self._rb_n
@@ -1293,57 +1311,66 @@ class Solver:
         if self._trail_lim:
             self._backtrack(0)
         rb_base = self._rb_base
-        bu = []
-        for j, x in enumerate(b2):
-            b = x >> 1
+        pw = self._rb_pw
+        rb_cl = self._rb_cl
+        hit = False
+        for t, wk, _, sj in prog.ent:
+            b = b2[sj] >> 1
             if b >= len(rb_base) or rb_base[b] != b:
                 if not self.register_block(b):
                     return False
-            bu.append((b, prog.trig[j]))
-        pw = self._rb_pw
-        for sj, (b, t) in enumerate(bu):
-            e = (t, prog.wake[sj], prog, sj, b2)
+                pw = self._rb_pw
+                rb_cl = self._rb_cl
             w = pw[b]
             if w is None:
-                pw[b] = [e]
+                pw[b] = [(t, wk, prog, sj, b2)]
             else:
-                w.append(e)
+                w.append((t, wk, prog, sj, b2))
+            if rb_cl[b] & t:
+                hit = True
         self._pinst.append((prog, b2))
         self._pt_nclauses += prog.nclauses
         self._witness = None
         self._stamp += 1
-        # the slots' closures so far (later trail literals wake it again)
+        if hit:
+            return self._pt_root(prog, b2)
+        return True
+
+    def _pt_root(self, prog: _PatProg, b2: tuple) -> bool:
+        """Propagate a pattern instance just added at root over its slots'
+        closures so far (later trail literals wake it again)."""
         rb_cl = self._rb_cl
         val = self._val
         level = self._level
         reason = self._reason
         trail = self._trail
-        rbc = self._rbc
-        for (b, t), occ in zip(bu, prog.occ):
-            dm = rb_cl[b] & t
+        for t, wk, _, sj in prog.ent:
+            dm = rb_cl[b2[sj] >> 1] & t
             if not dm:
                 continue
-            for q in rbc.lits_of(dm):
-                for rest, pc in occ[q]:
-                    unk = -1
-                    for j, off in rest:
-                        l = b2[j] + off
-                        x = val[l]
-                        if x is True:
+            cs = wk.get(dm)
+            if cs is None:
+                cs = prog.woken(sj, dm)
+            for pc in cs:
+                unk = -1
+                for j, off in pc:
+                    l = b2[j] + off
+                    x = val[l]
+                    if x is True:
+                        break
+                    if x is None:
+                        if unk >= 0:
                             break
-                        if x is None:
-                            if unk >= 0:
-                                break
-                            unk = l
-                    else:
-                        if unk < 0:
-                            self._ok = False
-                            return False
-                        val[unk] = True
-                        val[unk ^ 1] = False
-                        level[unk >> 1] = 0
-                        reason[unk >> 1] = None
-                        trail.append(unk)
+                        unk = l
+                else:
+                    if unk < 0:
+                        self._ok = False
+                        return False
+                    val[unk] = True
+                    val[unk ^ 1] = False
+                    level[unk >> 1] = 0
+                    reason[unk >> 1] = None
+                    trail.append(unk)
         return True
 
     # ------------------------------------------------------------------
@@ -1786,6 +1813,7 @@ class Solver:
                     new = c & ~cl & ~bit
                     if dl:
                         new &= rb_ment[base]
+                    pw = rb_pw[base]
                     if new:
                         lo = base << 1
                         why = (m << 32) | base
@@ -1794,25 +1822,25 @@ class Solver:
                             rels = rbc.lits_of(new)
                         for l in rels:
                             l += lo
-                            x = val[l]
-                            if x is None:
+                            if val[l] is None:
                                 v = l >> 1
                                 val[l] = True
                                 val[l ^ 1] = False
                                 level[v] = dl
                                 reason[v] = why
                                 trail.append(l)
-                            elif x is False:
-                                # the block implies a literal whose negation
-                                # is on the trail, not yet processed: a
-                                # conflict now (pattern propagators read the
-                                # closure and rely on it being on the trail)
-                                confl = [l] + [(q + lo) ^ 1 for q in rbc.explain(m, l - lo)]
+                        if pw is not None:
+                            # pattern propagators read this closure and rely
+                            # on it being on the trail: a literal it implies
+                            # whose negation is on the trail, not yet
+                            # processed, is a conflict now
+                            for l in rels:
+                                if val[l + lo] is False:
+                                    confl = [l + lo] + [(q + lo) ^ 1 for q in rbc.explain(m, l)]
+                                    break
+                            if confl is not None:
+                                qhead = len(trail)
                                 break
-                        if confl is not None:
-                            qhead = len(trail)
-                            break
-                    pw = rb_pw[base]
                     if pw is not None:
                         d = c & ~cl
                         for t, wk, prog, sj, b2 in pw:
