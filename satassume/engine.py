@@ -95,8 +95,13 @@ Node = Any
 #: cone sessions of ``Engine.is_`` (``Engine._cone_session``)
 _CONE_SESSIONS: Dict[Any, Any] = {}
 _CONE_MAX = 4096
-_CONE_CACHE = [True]
-_CONE_CLONE = [True]
+#: answer ``Engine.is_`` misses in cone sessions (False: the per-query
+#: path only); constants, switched only by benchmarks
+CONE_SESSIONS = True
+#: a search runs in the cached cone session itself, which keeps what it
+#: learnt for the next query (True), or in a copy of it taken before any
+#: search (False)
+CONE_REUSE = True
 
 
 #: the verdicts of an assumption set (``Engine.verdict``): only
@@ -1736,14 +1741,23 @@ class Engine:
             self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
-        if _CONE_CACHE[0]:
+        if CONE_SESSIONS:
             s = self._cone_session(node)
             if s is not None:
                 lit = s.base[node] + PRED_INDEX[pred]
-                r = s.query_literal(lit, search=False)
+                r = s.solver.value(lit)
                 if r is None:
                     self.stats["searches"] += 1
-                    r = s.query_literal(lit, search=True)
+                    solver = s.solver if CONE_REUSE else s.solver.clone()
+                    try:
+                        r = solver.entails(lit)
+                    except ValueError as e:
+                        # the cone is unsatisfiable: from now on its node
+                        # takes the per-query path, as if never cached (a
+                        # search of the cone may have learnt units that
+                        # would decide later queries the old path raises on)
+                        self._cone_drop(node)
+                        raise InconsistentAssumptions(str(e)) from e
                 self._put_result(s, self.cache, node, pred, r)
                 return r
         s = self._fresh_session()
@@ -1767,7 +1781,7 @@ class Engine:
         process with the same configuration; None if the cone is not a
         pure propositional one (formulas, custom or relation atoms,
         theories), which take the per-query path."""
-        cfg = (_EPOCH[0], self._settings_key, self.clause_templates, self._extensions)
+        cfg = self._cone_cfg()
         cones = _CONE_SESSIONS.get(cfg)
         if cones is None:
             if len(_CONE_SESSIONS) >= 8:
@@ -1780,18 +1794,26 @@ class Engine:
             return ent if ent is not False else None
         s = self._fresh_session()
         self.stats["cone_builds"] += 1
-        if _CONE_CLONE[0]:
-            best = None
-            for k in self._struct(node)[0]:
-                c = cones.get(k)
-                if c and (best is None or c.solver._nvars > best.solver._nvars):
-                    best = c
-            if best is not None:
-                s.adopt(best)
+        # start from a copy of the largest cached cone among the node's
+        # kids: a sub-cone of this one, its clauses a subset of ours
+        best = None
+        for k in self._struct(node)[0]:
+            c = cones.get(k)
+            if c and (best is None or c.solver._nvars > best.solver._nvars):
+                best = c
+        if best is not None:
+            s.adopt(best)
         s.ensure(node, None)
         s.escalate()
         ok = (not s.table.custom and s.table.naux == 0 and s.relations is None
               and not s.solver._theories and not s.truncated)
+        if ok:
+            # every literal of the node is read: their rule-block
+            # implications are on the root trail (Solver.mention), so a
+            # query decided by propagation reads its answer there
+            b = s.base[node]
+            s.solver.mention(range(b, b + NPRED))
+            ok = s.solver.propagate()
         if len(cones) >= _CONE_MAX:
             cones.clear()
         cones[node] = s if ok else False
@@ -1799,6 +1821,14 @@ class Engine:
             return None
         s.engine = None
         return s
+
+    def _cone_drop(self, node: Node) -> None:
+        cones = _CONE_SESSIONS.get(self._cone_cfg())
+        if cones is not None:
+            cones[node] = False
+
+    def _cone_cfg(self) -> tuple:
+        return (_EPOCH[0], self._settings_key, self.clause_templates, self._extensions)
 
     def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
         """Memoize the answer ``r`` of the context-free query ``pred(node)``
