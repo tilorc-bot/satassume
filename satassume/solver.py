@@ -359,68 +359,49 @@ class _PatProg:
     Clauses are in *position space*: a literal is ``(j, off)``, ``off`` the
     relative literal (``2*pidx + neg``) of the ``j``-th slot the program
     uses (``slots``).  An instance is the tuple ``b2`` of twice the base
-    variable of each slot, every slot a registered rule block.  Its state is
-    each slot's block closure (``Solver._rb_cl``) masked to the literals the
-    program mentions (``umask``); :meth:`run` is unit propagation over the
-    clauses from that state to fixpoint, memoized per state (``memo``,
-    shared by every solver).  It returns the derived literals in
-    derivation order as ``(j, off, clause)`` triples, ending with
-    ``(-1, 0, clause)`` if a clause is false (in the state extended by the
-    derived literals before it).  The reason of a derived literal is the
-    clause itself, built only when conflict analysis reads it
+    variable of each slot, every slot a registered rule block.  It is woken
+    by its slots' block closures (``Solver._rb_cl``): when the closure of
+    slot ``j`` gains bits of ``trig[j]`` (the negations of the program's
+    literals at ``j``), the clauses with a literal those bits falsify
+    (``occ[j][bit]``) are checked on the trail values and, if unit, their
+    last literal is implied.  The reason of an implied literal is the clause
+    itself, built only when conflict analysis reads it
     (:meth:`Solver._pt_reason`)."""
 
-    __slots__ = ("cls", "slots", "umask", "memo", "nclauses")
+    __slots__ = ("cls", "slots", "trig", "occ", "nclauses", "wake")
 
     def __init__(self, cls, slots):
         pos = {k: j for j, k in enumerate(slots)}
         self.slots = tuple(slots)
         self.cls = tuple(tuple((pos[k], off) for k, off in c) for c in cls)
-        um = [0] * len(slots)
+        trig = [0] * len(slots)
+        occ = [[[] for _ in range(128)] for _ in slots]
         for c in self.cls:
-            for j, off in c:
-                um[j] |= 3 << (off & ~1)
-        self.umask = tuple(um)
-        self.memo: dict = {}
+            for i, (j, off) in enumerate(c):
+                trig[j] |= 1 << (off ^ 1)
+                # the clause woken by ``off ^ 1`` at slot j: its other
+                # literals, then the clause (the reason)
+                occ[j][off ^ 1].append((c[:i] + c[i + 1:], c))
+        self.trig = tuple(trig)
+        self.occ = tuple(tuple(tuple(x) for x in o) for o in occ)
         self.nclauses = len(self.cls)
+        # per slot: woken bits -> the clauses they wake, each once
+        self.wake = tuple({} for _ in slots)
 
-    def run(self, key: tuple):
-        S = list(key)
-        out = []
-        cls = self.cls
-        changed = True
-        while changed:
-            changed = False
-            for ci, c in enumerate(cls):
-                unk = None
-                n = 0
-                for j, off in c:
-                    s = S[j]
-                    if (s >> off) & 1:
-                        n = 2
-                        break
-                    if not (s >> (off ^ 1)) & 1:
-                        n += 1
-                        if n > 1:
-                            break
-                        unk = (j, off)
-                if n > 1:
-                    continue
-                if n == 0:
-                    out.append((-1, 0, c))      # conflict, after the above
-                    break
-                j, off = unk
-                S[j] |= 1 << off
-                out.append((j, off, c))
-                changed = True
-            else:
-                continue
-            break
+    def woken(self, j: int, dm: int) -> tuple:
+        occ = self.occ[j]
+        out = {}
+        b = dm
+        while b:
+            low = b & -b
+            b ^= low
+            for _, c in occ[low.bit_length() - 1]:
+                out[c] = None
         r = tuple(out)
-        memo = self.memo
-        if len(memo) >= 200_000:
-            memo.clear()
-        memo[key] = r
+        w = self.wake[j]
+        if len(w) >= 50_000:
+            w.clear()
+        w[dm] = r
         return r
 
 
@@ -558,7 +539,7 @@ class Solver:
         self._rb_nclauses = 0                # clauses they stand for
         self._rb_bases: list[int] = []       # bases, in registration order
         # Pattern propagators (add_propagator): per block base, the
-        # watchers ``(umask, prog, bu, b2)`` of the instances using the
+        # watchers ``(trig, occ, b2)`` of the instances using the
         # block as a slot (None: none); every instance ``(prog, b2)`` in
         # registration order; the clauses they stand for.
         self._rb_pw: list = [None]
@@ -1318,46 +1299,51 @@ class Solver:
             if b >= len(rb_base) or rb_base[b] != b:
                 if not self.register_block(b):
                     return False
-            bu.append((b, prog.umask[j]))
-        bu = tuple(bu)
+            bu.append((b, prog.trig[j]))
         pw = self._rb_pw
-        for b, u in bu:
+        for sj, (b, t) in enumerate(bu):
+            e = (t, prog.wake[sj], prog, sj, b2)
             w = pw[b]
             if w is None:
-                pw[b] = [(u, prog, bu, b2)]
+                pw[b] = [e]
             else:
-                w.append((u, prog, bu, b2))
+                w.append(e)
         self._pinst.append((prog, b2))
         self._pt_nclauses += prog.nclauses
         self._witness = None
         self._stamp += 1
-        # the slots' closures so far (later trail literals trigger it again)
+        # the slots' closures so far (later trail literals wake it again)
         rb_cl = self._rb_cl
-        key = tuple([rb_cl[b] & u for b, u in bu])
-        r = prog.memo.get(key)
-        if r is None:
-            r = prog.run(key)
-        if not r:
-            return True
         val = self._val
         level = self._level
         reason = self._reason
         trail = self._trail
-        for j, off, c in r:
-            if j < 0:
-                self._ok = False
-                return False
-            l = b2[j] + off
-            x = val[l]
-            if x is None:
-                val[l] = True
-                val[l ^ 1] = False
-                level[l >> 1] = 0
-                reason[l >> 1] = None
-                trail.append(l)
-            elif x is False:
-                self._ok = False
-                return False
+        rbc = self._rbc
+        for (b, t), occ in zip(bu, prog.occ):
+            dm = rb_cl[b] & t
+            if not dm:
+                continue
+            for q in rbc.lits_of(dm):
+                for rest, pc in occ[q]:
+                    unk = -1
+                    for j, off in rest:
+                        l = b2[j] + off
+                        x = val[l]
+                        if x is True:
+                            break
+                        if x is None:
+                            if unk >= 0:
+                                break
+                            unk = l
+                    else:
+                        if unk < 0:
+                            self._ok = False
+                            return False
+                        val[unk] = True
+                        val[unk ^ 1] = False
+                        level[unk >> 1] = 0
+                        reason[unk >> 1] = None
+                        trail.append(unk)
         return True
 
     # ------------------------------------------------------------------
@@ -1829,31 +1815,34 @@ class Solver:
                     pw = rb_pw[base]
                     if pw is not None:
                         d = c & ~cl
-                        for u, prog, bu, b2 in pw:
-                            if not d & u:
+                        for t, wk, prog, sj, b2 in pw:
+                            dm = d & t
+                            if not dm:
                                 continue
-                            key = tuple([rb_cl[b] & uu for b, uu in bu])
-                            r = prog.memo.get(key)
-                            if r is None:
-                                r = prog.run(key)
-                            if not r:
-                                continue
-                            for j, off, pc in r:
-                                if j < 0:
-                                    confl = [b2[jj] + oo for jj, oo in pc]
-                                    break
-                                l = b2[j] + off
-                                x = val[l]
-                                if x is None:
-                                    v = l >> 1
-                                    val[l] = True
-                                    val[l ^ 1] = False
+                            cs = wk.get(dm)
+                            if cs is None:
+                                cs = prog.woken(sj, dm)
+                            for pc in cs:
+                                unk = -1
+                                for j, off in pc:
+                                    l = b2[j] + off
+                                    x = val[l]
+                                    if x is True:
+                                        break
+                                    if x is None:
+                                        if unk >= 0:
+                                            break
+                                        unk = l
+                                else:
+                                    if unk < 0:
+                                        confl = [b2[j] + off for j, off in pc]
+                                        break
+                                    v = unk >> 1
+                                    val[unk] = True
+                                    val[unk ^ 1] = False
                                     level[v] = dl
                                     reason[v] = (b2, pc) if dl else None
-                                    trail.append(l)
-                                elif x is False:
-                                    confl = [b2[jj] + oo for jj, oo in pc]
-                                    break
+                                    trail.append(unk)
                             if confl is not None:
                                 break
                         if confl is not None:
