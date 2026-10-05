@@ -967,11 +967,15 @@ class Solver:
         cls = self._clauses
         owner = self.owner
         cowner = None if owner is BOTTOM else self._cowner
+        level = self._level
         for lits in clauses:
             if len(lits) == 1 and self._trail_lim:
                 self._backtrack(0)              # root change: drop held levels
             for l in lits:
-                if val[l] is not None:
+                v = val[l]
+                if v is not None:
+                    if v and not level[l >> 1]:
+                        break                   # satisfied at root: dropped
                     if not self._add_lits(list(lits), True):
                         return False
                     break
