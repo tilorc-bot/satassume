@@ -112,8 +112,52 @@ formula by a fresh selector variable and passes the selector as a solver
 assumption, so nothing derived under the assumptions reaches level 0,
 hence the cache. What the engine keeps of a set between queries is a
 function of the set alone: its verdict and, when its construction raised
-`Uninterpreted`, the message. `Engine.is_` uses a fresh session over its
-own cone as well.
+`Uninterpreted`, the message.
+
+### Cone sessions of `Engine.is_` (#116)
+
+A context-free query `is_(node, pred)` that the fact cache does not answer
+is answered in the *cone session* of `node` (`Engine._cone_session`): a
+session over the whole cone of the node (`ensure(node, None)`, then
+`escalate()`), built once per process and configuration and kept in
+`engine._CONE_SESSIONS[cfg][node]`, where `cfg` is the registry epoch, the
+settings fingerprint, the templates, the extension registry and the
+relation specs (`Engine._cone_cfg`). Every engine of that configuration
+shares it, and every later query about the node, whatever the predicate,
+reads its answer there: the root value of the literal, else a complete
+search (`Solver.entails`) (`Engine._cone_answer`). A new cone starts from
+a copy (`Solver.clone`, `Session.adopt`) of the largest cached cone among
+the node's kids, a sub-cone of it. The cone session also carries the
+weight of its cone, so a hit skips the budget walk (`_cone_info`), and the
+answers given in it, None included (`CONE_MEMO`).
+
+Only pure propositional cones are cached: no custom or relation atom, no
+Tseitin auxiliary, no theory, not truncated, no conflict at root. Any other
+cone, and a cone that a search finds unsatisfiable, takes the per-query
+path (a fresh session per query, demand-driven discovery, escalation only
+when propagation does not decide), which answers or raises as before.
+
+Why answers do not depend on earlier queries: let F be the clause set a
+fresh session builds for the whole cone, a function of the node and `cfg`.
+The cone session's clause database is F plus clauses and root units
+derived from F by propagation and conflict analysis (all entailed by F),
+and a copy of a child's cone holds the child's F, a subset of the
+parent's. So it is equivalent to F. Its answers are True iff F entails
+`pred(node)` (a root value is entailed; `entails` searches without a
+conflict or time budget, so its SAT/UNSAT calls are exact), False iff F
+entails the negation, None otherwise. That is the answer of the per-query
+path too: propagation over part of F is sound for F, and when it does not
+decide, that path escalates to all of F and searches it completely; if F is
+unsatisfiable without a root conflict, both search and the cone is dropped
+before anything learnt in it can be read. Learnt clauses, saved phases,
+activities, stored models (`CONE_RING`) and the order of the watches change
+which model a search finds and how fast, never whether one exists. The
+state of a cone session is history-dependent (which queries searched in it,
+which child it was copied from); its answers are not. `CONE_REUSE = False`
+answers every search in a copy of the cone taken before any search (no
+learnt clause, no root unit carried over; the stored models are kept),
+at about +7% of the corpus `is_` time; without the models too it costs
+about +20% (numbers in PR #119).
 
 Earlier designs reused one session per assumption set (`keep_sessions`
 = 16, LRU, replaced after `session_limit` = 2000 nodes, by a cone search

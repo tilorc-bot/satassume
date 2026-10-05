@@ -507,7 +507,7 @@ class Solver:
     def nvars(self) -> int:
         return self._nvars
 
-    def clone(self) -> "Solver":
+    def clone(self, models: bool = False) -> "Solver":
         """A copy of this solver at root, for a client that goes on adding
         clauses to the copy (``Engine._cone_session``: the cone of a child
         as the start of its parent's).  The copy has the problem clauses
@@ -562,7 +562,9 @@ class Solver:
         s._uowner = {}
         s._cante = {}
         s._rb_bases = self._rb_bases[:]
-        s._ring = []
+        # the stored models stay models of the copy's formula as it grows:
+        # _ring_hit checks what was added since each was found
+        s._ring = self._ring[:] if models else []
         s._max_learnts = 0.0
         s._stamp += 1
         return s
