@@ -129,15 +129,17 @@ search (`Solver.entails`) (`Engine._cone_answer`). A new cone starts from
 a copy (`Solver.clone`, `Session.adopt`) of the largest cached cone among
 the node's kids, a sub-cone of it. The cone session also carries the
 weight of its cone, so a hit skips the budget walk (`_cone_info`), and the
-answers given in it, None included (`CONE_MEMO`), and up to
-`CONE_RING_SIZE` = 8 models found by its searches (`CONE_RING`; the solver
+answers given in it, None included, and up to
+`CONE_RING_SIZE` = 8 models found by its searches (the solver
 default is 2): a later query of another predicate of the node whose
 literal differs between two stored models is answered None without a
 search.
 
 Only pure propositional cones are cached: no custom or relation atom, no
-Tseitin auxiliary, no theory, not truncated, no conflict at root. Any other
-cone, and a cone that a search finds unsatisfiable, takes the per-query
+Tseitin auxiliary, no theory, not truncated, no conflict at root, weight
+(`_cone_info`) at most `CONE_WEIGHT_MAX` = 64. A cone with a relation atom
+(`_cone_info` says so) is marked without a build. Any other cone, and a
+cone that a search finds unsatisfiable, takes the per-query
 path (a fresh session per query, demand-driven discovery, escalation only
 when propagation does not decide), which answers or raises as before.
 
@@ -154,7 +156,7 @@ path too: propagation over part of F is sound for F, and when it does not
 decide, that path escalates to all of F and searches it completely; if F is
 unsatisfiable without a root conflict, both search and the cone is dropped
 before anything learnt in it can be read. Learnt clauses, saved phases,
-activities, stored models (`CONE_RING`) and the order of the watches change
+activities, stored models and the order of the watches change
 which model a search finds and how fast, never whether one exists. The
 state of a cone session is history-dependent (which queries searched in it,
 which child it was copied from); its answers are not. `CONE_REUSE = False`
@@ -163,9 +165,27 @@ learnt clause, no root unit carried over; the stored models are kept),
 at about +7% of the corpus `is_` time; without the models too it costs
 about +20% (numbers in PR #119).
 
-Cone sessions are mutable state shared by every engine of a configuration:
-a search writes to the session's solver, so engines of one configuration
-must not answer `is_` from several threads at once.
+Memory: a cone session costs about 0.4-0.75 KB per solver variable
+(clauses included); the corpus `is_` replay keeps 461 sessions, 45k
+variables, ~20 MB. The cache is bounded by size. `CONE_BUDGET` = 2^17
+variables (~50-100 MB) bounds all cached sessions of the process together;
+past it, `_cone_trim` drops the other configurations' sessions (oldest
+first), then the least recently used sessions of the current one (a hit
+moves a session to the end of its `_Cones`). A built session over
+`CONE_SIZE_MAX` = 2^13 variables answers its query and is not kept; a cone
+over `CONE_WEIGHT_MAX` is not built at all (it would be the largest
+sessions, tens of MB at weight 300). A configuration holds at most
+`_CONE_MAX` = 4096 entries and there are at most `_CONE_CFGS` = 8
+configurations; making one drops those of earlier registry epochs, which
+no engine uses again. Eviction changes what a later query rebuilds, never
+its answer (see above).
+
+Cone sessions are mutable state shared by every engine of a configuration
+(a search writes to the session's solver), so `_CONE_LOCK`, a re-entrant
+lock (a template may query `is_` while a cone is built), serializes their
+lookup, build, search and eviction. Only `is_` misses that reach a cone
+take it. A template or extension must not wait on another thread that
+queries `is_` while it runs.
 
 Earlier designs reused one session per assumption set (`keep_sessions`
 = 16, LRU, replaced after `session_limit` = 2000 nodes, by a cone search

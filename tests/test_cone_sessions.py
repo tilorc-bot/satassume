@@ -5,11 +5,11 @@ was copied from (docs/design.md, "Cone sessions of ``Engine.is_``")."""
 import random
 
 import pytest
-from sympy import Symbol, sqrt, symbols
+from sympy import S, Symbol, sqrt, symbols
 
 import satassume.engine as E
 from satassume import Engine, Extensions, InconsistentAssumptions, Not, P
-from satassume.formula import Or
+from satassume.formula import Implies, Or
 from satassume.rules import PREDICATES
 from satassume.solver import Solver
 
@@ -94,16 +94,140 @@ def test_settings_select_their_own_cone_sessions():
     assert a._cone_cfg() == Engine()._cone_cfg()
 
 
-def test_cone_sessions_are_bounded(monkeypatch):
+def _stored():
+    return [s for d in E._CONE_SESSIONS.values() for s in d.values() if s]
+
+
+def _check_sizes():
+    """Each configuration's ``size`` is the sum of its sessions' sizes."""
+    for d in E._CONE_SESSIONS.values():
+        assert d.size == sum(s.cone_size for s in d.values() if s)
+
+
+def test_cone_sessions_are_bounded_by_count(monkeypatch):
     monkeypatch.setattr(E, "_CONE_MAX", 4)
     qs = [(e, p) for e in NODES for p in ("positive", "integer", "real")]
     ref = _reference(qs)
     eng = Engine(writeback="none")
     assert {q: _ask(eng, *q) for q in qs} == ref
     assert all(len(d) <= 4 for d in E._CONE_SESSIONS.values())
+    _check_sizes()
     for k in range(10):
         Engine(templates=lambda node: ()).is_(z, "real")
-    assert len(E._CONE_SESSIONS) <= 8
+    assert len(E._CONE_SESSIONS) <= E._CONE_CFGS
+
+
+@pytest.mark.parametrize("reuse", [True, False])
+def test_cone_sessions_are_bounded_by_size(monkeypatch, reuse):
+    """``CONE_BUDGET`` bounds the variables of all cached sessions; the
+    least recently used go first, and answers do not change."""
+    monkeypatch.setattr(E, "CONE_REUSE", reuse)
+    qs = [(e, p) for e in NODES for p in PREDICATES]
+    ref = _reference(qs)
+    Engine(writeback="none").is_(NODES[-2], "positive")
+    full = sum(s.cone_size for s in _stored())
+    assert full > 0
+    budget = max(s.cone_size for s in _stored())
+    monkeypatch.setattr(E, "CONE_BUDGET", budget)
+    rng = random.Random(2)
+    for order in (qs, rng.sample(qs, len(qs))):
+        E._CONE_SESSIONS.clear()
+        eng = Engine(writeback="none")
+        got = {}
+        for q in order:
+            got[q] = _ask(eng, *q)
+            _check_sizes()
+            assert sum(d.size for d in E._CONE_SESSIONS.values()) <= budget
+        assert got == ref
+    # the most recently used session survives
+    eng = Engine(writeback="none")
+    eng.is_(x + 1, "positive")
+    eng.is_(z + 1, "integer")
+    assert eng._cone_dict().get(z + 1)
+
+
+def test_heavy_cones_are_not_kept(monkeypatch):
+    qs = [(e, p) for e in NODES for p in ("positive", "integer", "real")]
+    ref = _reference(qs)
+    monkeypatch.setattr(E, "CONE_WEIGHT_MAX", 2)
+    eng = Engine(writeback="none")
+    assert {q: _ask(eng, *q) for q in qs} == ref
+    assert all(s.cone_weight <= 2 for s in _stored())
+    assert eng._cone_dict().get((x + 1) ** 2 + z * (z + 1)) is None
+    E._CONE_SESSIONS.clear()
+    monkeypatch.setattr(E, "CONE_WEIGHT_MAX", 64)
+    monkeypatch.setattr(E, "CONE_SIZE_MAX", 40)
+    eng = Engine(writeback="none")
+    assert {q: _ask(eng, *q) for q in qs} == ref
+    assert _stored() and all(s.cone_size <= 40 for s in _stored())
+    _check_sizes()
+
+
+def test_a_large_sum_is_not_kept():
+    """A cone over ``CONE_WEIGHT_MAX`` (a 100-term sum, tens of MB as a
+    session) takes the per-query path and leaves nothing cached."""
+    xs = symbols("a0:40", positive=True)
+    e = sum(xs[j % 39] / (j + 1) + sqrt(xs[(j + 1) % 39]) for j in range(100))
+    eng = Engine(writeback="none")
+    assert eng._cone_info(e)[1] > E.CONE_WEIGHT_MAX
+    assert eng.is_(e, "positive") is True
+    assert eng._cone_dict().get(e) is None
+    assert sum(d.size for d in E._CONE_SESSIONS.values()) == 0
+
+
+def test_a_new_epoch_drops_the_old_cone_sessions():
+    ext = Extensions()
+    eng = Engine(extensions=ext)
+    eng.is_(z + 1, "real")
+    other = Engine(transfer=False)
+    other.is_(z + 1, "real")
+    assert len(E._CONE_SESSIONS) == 2
+    epoch = eng._cone_cfg()[0]
+    ext.register("integer", Symbol)(lambda n: True if n == z else None)
+    assert eng.is_(z + 1, "integer") is True
+    assert eng._cone_cfg()[0] != epoch
+    assert list(E._CONE_SESSIONS) == [eng._cone_cfg()]
+
+
+def test_relation_cones_are_not_built():
+    ext = Extensions()
+    ext.register("positive", Symbol)(
+        lambda n: Implies(P("positive", n), P("lt", (S.Zero, n))) if n == z else None)
+    qs = [(e, p) for e in (z, z + 1) for p in ("positive", "real", "integer")]
+    ref = _reference(qs, extensions=ext)
+    eng = Engine(writeback="none", extensions=ext)
+    assert {q: _ask(eng, *q) for q in qs} == ref
+    assert eng._cone_dict().get(z + 1) is False
+    assert eng.stats["cone_builds"] == 0
+
+
+def test_threads_share_cone_sessions():
+    """Engines of one configuration in several threads (``_CONE_LOCK``)."""
+    import sys
+    import threading
+    saved = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    qs = [(e, p) for e in NODES for p in PREDICATES]
+    ref = _reference(qs)
+    got, errors = [], []
+
+    def run(seed):
+        try:
+            eng = Engine(writeback="none")
+            order = random.Random(seed).sample(qs, len(qs))
+            got.append({q: _ask(eng, *q) for q in order})
+        except Exception as e:                  # pragma: no cover
+            errors.append(e)
+    try:
+        threads = [threading.Thread(target=run, args=(i,)) for i in range(4)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+    finally:
+        sys.setswitchinterval(saved)
+    assert not errors and len(got) == 4
+    assert all(g == ref for g in got)
 
 
 def test_solver_clone_is_independent():
