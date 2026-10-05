@@ -257,19 +257,24 @@ ObjectCache = DictCache
 # --------------------------------------------------------------------------
 
 class Session:
-    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE):
+    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE,
+                 solver: Optional[Solver] = None):
         self.engine = engine
         #: the theory scope the session is built for (``scope.theory_scope``
         #: of its query): the relation glue and predicate transfer exist
         #: from construction iff the scope says so (#97 P3)
         self.scope = scope
-        self.solver = Solver()
-        # no owner bookkeeping: nothing asks the solver for provenance
-        # (the provenance writeback of #53 stage 3 was removed by #97 P2)
-        self.solver.track_owners = False
-        # the single-node rule base, propagated by the solver from shared
-        # tables instead of 79 clauses per node (Solver.register_block)
-        self.solver.set_rule_block(RULE_INTERNAL, NPRED)
+        if solver is None:
+            solver = Solver()
+            # no owner bookkeeping: nothing asks the solver for provenance
+            # (the provenance writeback of #53 stage 3 was removed by #97 P2)
+            solver.track_owners = False
+            # the single-node rule base, propagated by the solver from
+            # shared tables instead of 79 clauses per node
+            # (Solver.register_block)
+            solver.set_rule_block(RULE_INTERNAL, NPRED)
+        # else: a copy of a cone session's solver (:meth:`adopt`)
+        self.solver = solver
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
@@ -336,11 +341,10 @@ class Session:
             self.relations = Relations(self, engine._relation_specs)
 
     def adopt(self, other: "Session") -> None:
-        """Start this (new, empty) session from a copy of the complete
-        session ``other`` of a cone this session's cone contains
-        (``Engine._cone_session``): its solver (:meth:`Solver.clone`), its
-        variable table and visited nodes."""
-        self.solver = other.solver.clone(CONE_RING)
+        """Start this new session, created with a copy of the solver
+        (:meth:`Solver.clone`) of the complete session ``other`` of a cone
+        this session's cone contains (``Engine._cone_session``), from
+        ``other``'s variable table and visited nodes."""
         t, ot = self.table, other.table
         t.base_of = dict(ot.base_of)
         t.slots = ot.slots[:]
@@ -1163,9 +1167,9 @@ class Engine:
         #: the key of the engine's cone sessions (``_cone_cfg``)
         self._cone_key = None
 
-    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE) -> Session:
+    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE, solver=None) -> Session:
         self.stats["sessions"] += 1
-        return Session(self, scope)
+        return Session(self, scope, solver)
 
     # -- the registry epoch ---------------------------------------------------
     @property
@@ -1815,7 +1819,6 @@ class Engine:
             self.stats["sessions"] += 1
             self.stats["cone_hits"] += 1
             return ent if ent is not False else None
-        s = self._fresh_session()
         self.stats["cone_builds"] += 1
         # start from a copy of the largest cached cone among the node's
         # kids: a sub-cone of this one, its clauses a subset of ours
@@ -1825,7 +1828,10 @@ class Engine:
             if c and (best is None or c.solver._nvars > best.solver._nvars):
                 best = c
         if best is not None:
+            s = self._fresh_session(solver=best.solver.clone(CONE_RING))
             s.adopt(best)
+        else:
+            s = self._fresh_session()
         s.ensure(node, None)
         s.escalate()
         ok = (not s.table.custom and s.table.naux == 0 and s.relations is None
@@ -1847,6 +1853,9 @@ class Engine:
             return None
         s.engine = None
         s.cone_weight = weight
+        s.solver._RING = 8
+        #: the base variable of the node (read without a lookup of the node)
+        s.cone_base = s.base[node]
         #: answers given in this cone (``CONE_MEMO``)
         s.answers = {}
         return s
@@ -1862,7 +1871,7 @@ class Engine:
         r = memo.get(pred, _UNSAT)
         if r is not _UNSAT:
             return r
-        lit = s.base[node] + PRED_INDEX[pred]
+        lit = s.cone_base + PRED_INDEX[pred]
         solver = s.solver
         r = solver.value(lit)
         if r is None:
