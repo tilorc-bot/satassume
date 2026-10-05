@@ -507,6 +507,66 @@ class Solver:
     def nvars(self) -> int:
         return self._nvars
 
+    def clone(self) -> "Solver":
+        """A copy of this solver at root, for a client that goes on adding
+        clauses to the copy (``Engine._cone_session``: the cone of a child
+        as the start of its parent's).  The copy has the problem clauses
+        (as they stand: shortened by root facts, watched literals first),
+        the root trail, the registered blocks and the variable order; not
+        the learnt clauses, the stored models (they are models of this
+        formula, not of what the copy grows into) or any held level.  A
+        solver without theories and without owner tracking only."""
+        if self._theories or self.track_owners:
+            raise ValueError("clone: a solver with theories or owner tracking")
+        if self._trail_lim:
+            self._backtrack(0)
+        s = Solver.__new__(Solver)
+        d = s.__dict__
+        d.update(self.__dict__)
+        cls = list(map(list, self._clauses))
+        w = [[] for _ in range(len(self._val))]
+        for c in cls:
+            w[c[0]].append(c)
+            w[c[1]].append(c)
+        s._clauses = cls
+        s._watches = w
+        s._learnts = []
+        s._val = self._val[:]
+        s._level = self._level[:]
+        s._reason = self._reason[:]
+        s._act = self._act[:]
+        s._polarity = self._polarity[:]
+        s._hpos = self._hpos[:]
+        s._seen = self._seen[:]
+        s._heap = self._heap[:]
+        s._trail = self._trail[:]
+        s._trail_lim = []
+        s._assumptions = []
+        s._mvals = s._mdict = s._witness = s._acache = s._held = None
+        s._conflict = []
+        s._tmap = {}
+        s._tprops = []
+        s._tdecides = []
+        s._tmodels = None
+        s._theories = []
+        s._rb_base = self._rb_base[:]
+        s._rb_mask = self._rb_mask[:]
+        s._rb_ment = self._rb_ment[:]
+        s._rb_saved = self._rb_saved[:]
+        s._rb_cl = self._rb_cl[:]
+        s._rb_undo = []
+        s._rb_ulim = []
+        s._ment = bytearray(self._ment)
+        s._lazy = bytearray(self._lazy)
+        s._cowner = {}
+        s._uowner = {}
+        s._cante = {}
+        s._rb_bases = self._rb_bases[:]
+        s._ring = []
+        s._max_learnts = 0.0
+        s._stamp += 1
+        return s
+
     def _grow(self, v: int) -> None:
         """Make sure variables ``1..v`` exist."""
         n = self._nvars

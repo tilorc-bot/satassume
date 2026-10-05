@@ -92,6 +92,12 @@ from .solver import Solver
 
 Node = Any
 
+#: cone sessions of ``Engine.is_`` (``Engine._cone_session``)
+_CONE_SESSIONS: Dict[Any, Any] = {}
+_CONE_MAX = 4096
+_CONE_CACHE = [True]
+_CONE_CLONE = [True]
+
 
 #: the verdicts of an assumption set (``Engine.verdict``): only
 #: ``INCONSISTENT`` makes a query raise; ``UNKNOWN`` (a theory gave up or
@@ -312,6 +318,19 @@ class Session:
             # glue (and transfer, if the scope says so) exists before any
             # atom is allocated, as a fresh engine for the query has it
             self.relations = Relations(self, engine._relation_specs)
+
+    def adopt(self, other: "Session") -> None:
+        """Start this (new, empty) session from a copy of the complete
+        session ``other`` of a cone this session's cone contains
+        (``Engine._cone_session``): its solver (:meth:`Solver.clone`), its
+        variable table and visited nodes."""
+        self.solver = other.solver.clone()
+        t, ot = self.table, other.table
+        t.base_of = dict(ot.base_of)
+        t.slots = ot.slots[:]
+        self.base = dict(other.base)
+        self.nclauses = other.nclauses
+        self.n_constants = other.n_constants
 
     def var(self, pred: str, node: Node) -> int:
         return self.node(node) + PRED_INDEX[pred]
@@ -1119,7 +1138,8 @@ class Engine:
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "set_checks": 0,
-                      "budget_limited": 0, "scope_misses": 0}
+                      "budget_limited": 0, "scope_misses": 0,
+                      "cone_hits": 0, "cone_builds": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
@@ -1716,6 +1736,16 @@ class Engine:
             self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
+        if _CONE_CACHE[0]:
+            s = self._cone_session(node)
+            if s is not None:
+                lit = s.base[node] + PRED_INDEX[pred]
+                r = s.query_literal(lit, search=False)
+                if r is None:
+                    self.stats["searches"] += 1
+                    r = s.query_literal(lit, search=True)
+                self._put_result(s, self.cache, node, pred, r)
+                return r
         s = self._fresh_session()
         s.ensure(node, {pred})
         lit = s.base[node] + PRED_INDEX[pred]
@@ -1729,6 +1759,46 @@ class Engine:
             r = s.query_literal(lit, search=True)
         self._put_result(s, self.cache, node, pred, r)
         return r
+
+    def _cone_session(self, node: Node) -> Optional[Session]:
+        """The session of the whole cone of ``node`` (discovery with every
+        predicate demanded, then escalation: a function of the node, the
+        registry epoch and the settings), shared by every engine of the
+        process with the same configuration; None if the cone is not a
+        pure propositional one (formulas, custom or relation atoms,
+        theories), which take the per-query path."""
+        cfg = (_EPOCH[0], self._settings_key, self.clause_templates, self._extensions)
+        cones = _CONE_SESSIONS.get(cfg)
+        if cones is None:
+            if len(_CONE_SESSIONS) >= 8:
+                _CONE_SESSIONS.clear()
+            cones = _CONE_SESSIONS[cfg] = {}
+        ent = cones.get(node)
+        if ent is not None:
+            self.stats["sessions"] += 1
+            self.stats["cone_hits"] += 1
+            return ent if ent is not False else None
+        s = self._fresh_session()
+        self.stats["cone_builds"] += 1
+        if _CONE_CLONE[0]:
+            best = None
+            for k in self._struct(node)[0]:
+                c = cones.get(k)
+                if c and (best is None or c.solver._nvars > best.solver._nvars):
+                    best = c
+            if best is not None:
+                s.adopt(best)
+        s.ensure(node, None)
+        s.escalate()
+        ok = (not s.table.custom and s.table.naux == 0 and s.relations is None
+              and not s.solver._theories and not s.truncated)
+        if len(cones) >= _CONE_MAX:
+            cones.clear()
+        cones[node] = s if ok else False
+        if not ok:
+            return None
+        s.engine = None
+        return s
 
     def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
         """Memoize the answer ``r`` of the context-free query ``pred(node)``
