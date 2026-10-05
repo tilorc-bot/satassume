@@ -1937,8 +1937,6 @@ def neighbourhood(pred) -> frozenset:
 
 _SPLIT: dict = {}
 _PROGS: dict = {}
-import os as _os
-_LCG_MIN = int(_os.environ.get("SA_LCG_MIN", "1"))   # experiment knob
 
 
 def _prog_of(clauses, node_k):
@@ -1956,9 +1954,6 @@ def _prog_of(clauses, node_k):
             prop.append(li)
         else:
             rest.append(li)
-    if len(prop) < _LCG_MIN:
-        rest = [li for _, _, li in clauses]
-        prop = None
     prog = _PatProg(prop, sorted({k for li in prop for k, _ in li})) if prop else None
     if len(_PROGS) >= 100_000:
         _PROGS.clear()
