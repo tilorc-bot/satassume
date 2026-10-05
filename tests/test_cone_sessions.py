@@ -120,7 +120,7 @@ def test_cone_sessions_are_bounded_by_count(monkeypatch):
 @pytest.mark.parametrize("reuse", [True, False])
 def test_cone_sessions_are_bounded_by_size(monkeypatch, reuse):
     """``CONE_BUDGET`` bounds the variables of all cached sessions; the
-    least recently used go first, and answers do not change."""
+    sessions not used recently go first (CLOCK), and answers do not change."""
     monkeypatch.setattr(E, "CONE_REUSE", reuse)
     qs = [(e, p) for e in NODES for p in PREDICATES]
     ref = _reference(qs)
@@ -144,6 +144,28 @@ def test_cone_sessions_are_bounded_by_size(monkeypatch, reuse):
     eng.is_(x + 1, "positive")
     eng.is_(z + 1, "integer")
     assert eng._cone_dict().get(z + 1)
+
+
+def test_eviction_gives_used_sessions_a_second_chance():
+    class S:
+        def __init__(self, n):
+            self.cone_size, self.cone_ref = n, False
+    d = E._Cones()
+    a, b, c = S(1), S(2), S(4)
+    for k, s in zip("abc", (a, b, c)):
+        d.put(k, s)
+    d.put("f", False)
+    assert d.size == 7
+    a.cone_ref = True
+    d._evict()                                  # a gets a second chance
+    assert list(d) == ["c", "f", "a"] and d.size == 5 and not a.cone_ref
+    d._evict()
+    d._evict()                                  # False entries cost nothing
+    assert list(d) == ["a"] and d.size == 1
+    d.put("a", b)                               # replacing keeps the count
+    assert d.size == 2
+    d.clear()
+    assert d.size == 0
 
 
 def test_heavy_cones_are_not_kept(monkeypatch):

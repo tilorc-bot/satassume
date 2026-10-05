@@ -103,8 +103,8 @@ _CONE_CFGS = 8
 _CONE_MAX = 4096
 #: the memory bound: solver variables of all cached cone sessions together
 #: (a session costs about 0.4-0.75 KB per variable, clauses included, so
-#: 2**17 variables are about 50-100 MB); past it the least recently used
-#: sessions are dropped, other configurations first
+#: 2**17 variables are about 50-100 MB); past it sessions not used
+#: recently are dropped (CLOCK, ``_Cones``), other configurations first
 CONE_BUDGET = 1 << 17
 #: a cone heavier than this (``_cone_info`` weight) is not cached: it takes
 #: the per-query path, which builds only what the query demands
@@ -130,8 +130,13 @@ _CONE_LOCK = threading.RLock()
 
 class _Cones(dict):
     """The cone sessions of one configuration: node -> session, or False
-    for a cone that takes the per-query path; least recently used first.
-    ``size``: the variables of its sessions (``CONE_BUDGET``)."""
+    for a cone that takes the per-query path, oldest first.  Eviction is
+    CLOCK (second chance), an approximation of LRU: a hit only sets the
+    session's ``cone_ref`` (moving it in the dict would compare the
+    queried node with the key, a deep SymPy ``==`` when the node is an
+    equal copy); an evicted entry with ``cone_ref`` set is moved to the end
+    with the flag cleared instead.  ``size``: the variables of its
+    sessions (``CONE_BUDGET``)."""
     __slots__ = ("size",)
 
     def __init__(self):
@@ -153,15 +158,22 @@ class _Cones(dict):
             self._evict()
 
     def _evict(self) -> None:
-        old = self.pop(next(iter(self)))
-        if old:
-            self.size -= old.cone_size
+        while True:
+            k = next(iter(self))
+            old = self.pop(k)
+            if old and old.cone_ref:
+                old.cone_ref = False
+                self[k] = old
+                continue
+            if old:
+                self.size -= old.cone_size
+            return
 
 
 def _cone_trim(cones: _Cones) -> None:
     """Bring the cached cone sessions within ``CONE_BUDGET``: drop other
-    configurations (oldest first), then the least recently used sessions
-    of ``cones``."""
+    configurations (oldest first), then sessions of ``cones`` not used
+    recently (``_Cones._evict``)."""
     total = sum(d.size for d in _CONE_SESSIONS.values())
     if total <= CONE_BUDGET:
         return
@@ -1812,7 +1824,8 @@ class Engine:
                 # a cached cone session carries the weight of its cone (a
                 # function of the node and the configuration): the budget
                 # test without walking the cone again
-                ent = self._cone_dict().get(node)
+                cones = self._cone_dict()
+                ent = cones.get(node)
             if ent:
                 if ent.cone_weight > self._discovery_budget:
                     return self._over_budget()
@@ -1830,17 +1843,13 @@ class Engine:
         self.stats["queries"] += 1
         if CONE_SESSIONS:
             with _CONE_LOCK:
-                cones = self._cone_dict()
                 if ent:
                     s = ent
+                    s.cone_ref = True               # used (``_Cones``)
                     self.stats["sessions"] += 1
                     self.stats["cone_hits"] += 1
-                    if cones.get(node) is ent:
-                        # least recently used last (``_Cones``)
-                        del cones[node]
-                        cones[node] = ent
                 else:
-                    s = self._cone_session(cones, node, c)
+                    s = self._cone_session(self._cone_dict(), node, c)
                 if s is not None:
                     r = self._cone_answer(s, node, pred)
                     if r is not _UNSAT:
@@ -1894,8 +1903,7 @@ class Engine:
             self.stats["cone_hits"] += 1
             if not ent:
                 return None
-            del cones[node]                     # least recently used last
-            cones[node] = ent
+            ent.cone_ref = True                 # used (``_Cones``)
             return ent
         weight = c[1]
         if weight > CONE_WEIGHT_MAX:
@@ -1938,6 +1946,8 @@ class Engine:
         s.answers = {}
         #: what the session counts for in ``CONE_BUDGET``
         s.cone_size = s.solver._nvars
+        #: queried since it was last passed by an eviction (``_Cones``)
+        s.cone_ref = False
         if s.cone_size <= CONE_SIZE_MAX:
             cones.put(node, s)
             _cone_trim(cones)

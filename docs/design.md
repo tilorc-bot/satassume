@@ -170,8 +170,11 @@ Memory: a cone session costs about 0.4-0.75 KB per solver variable
 variables, ~20 MB. The cache is bounded by size. `CONE_BUDGET` = 2^17
 variables (~50-100 MB) bounds all cached sessions of the process together;
 past it, `_cone_trim` drops the other configurations' sessions (oldest
-first), then the least recently used sessions of the current one (a hit
-moves a session to the end of its `_Cones`). A built session over
+first), then sessions of the current one not used recently: CLOCK
+(second chance), oldest first, where a hit only sets a flag on the session
+and an evicted session with the flag set goes back to the end with the flag
+cleared (moving the entry on every hit would compare the queried node with
+the key, a deep SymPy `==` when the node is an equal copy). A built session over
 `CONE_SIZE_MAX` = 2^13 variables answers its query and is not kept; a cone
 over `CONE_WEIGHT_MAX` is not built at all (it would be the largest
 sessions, tens of MB at weight 300). A configuration holds at most
