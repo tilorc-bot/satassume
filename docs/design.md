@@ -129,7 +129,11 @@ search (`Solver.entails`) (`Engine._cone_answer`). A new cone starts from
 a copy (`Solver.clone`, `Session.adopt`) of the largest cached cone among
 the node's kids, a sub-cone of it. The cone session also carries the
 weight of its cone, so a hit skips the budget walk (`_cone_info`), and the
-answers given in it, None included (`CONE_MEMO`).
+answers given in it, None included (`CONE_MEMO`), and up to
+`CONE_RING_SIZE` = 8 models found by its searches (`CONE_RING`; the solver
+default is 2): a later query of another predicate of the node whose
+literal differs between two stored models is answered None without a
+search.
 
 Only pure propositional cones are cached: no custom or relation atom, no
 Tseitin auxiliary, no theory, not truncated, no conflict at root. Any other
