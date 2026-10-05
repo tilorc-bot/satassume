@@ -31,6 +31,7 @@ from ..formula import Not, P
 
 from ._common import (
     VOCAB,
+    ConstView,
     Rules,
     const_key,
     consts_of,
@@ -226,7 +227,7 @@ def _half_templates(expr, split):
     odd = tuple(a for a, _ in terms)
     objs = tuple(t for _, t in terms) + (expr,)
     consts = consts_of(objs[:m])
-    key = ('add_half', a0, odd, tuple((k, type(c), c) for k, c in sorted(consts.items())))
+    key = ('add_half', a0, odd, tuple((k, type(c), c) for k, c in sorted(dict.items(consts))))
     return facts(key, lambda: _half_rules(a0, odd, m), consts, objs, m)
 
 
@@ -644,12 +645,22 @@ def ipi_rules(rule, c, iS, N):
                                  {'S': iS, 'N': N}):
         rule(prem, concl)
 
+def _b(x):
+    """The constant base of a Pow context (None if symbolic)."""
+    return x['consts'].get(_B)
+
+
+def _e(x):
+    """The constant exponent of a Pow context (None if symbolic)."""
+    return x['consts'].get(_E)
+
+
 def _num(x):
-    return x['b'] is not None and x['b'].is_Number and x['b'].is_finite
+    return _b(x) is not None and _b(x).is_Number and _b(x).is_finite
 
 
 def _e_ratio(x):
-    e = x['e']
+    e = _e(x)
     return e is not None and e.is_Rational and not e.is_Integer
 
 
@@ -657,7 +668,7 @@ def _b_not_qth_power(x):
     """b**(p/q) with gcd(p, q) == 1 is rational iff b is a perfect q-th
     power (exact integer arithmetic): here b is a positive rational that
     is not one."""
-    b, e = x['b'], x['e']
+    b, e = _b(x), _e(x)
     if not (b is not None and b.is_Rational and b.is_positive):
         return False
     return not (integer_nthroot(b.p, e.q)[1] and integer_nthroot(b.q, e.q)[1])
@@ -666,32 +677,32 @@ def _b_not_qth_power(x):
 #: Conditions on the pattern of a Pow (``b``/``e`` the constant base or
 #: exponent or None, and the flags of ``pow_templates``).
 POW_GUARDS = MappingProxyType({
-    'b is E': lambda x: x['b'] is S.Exp1,
+    'b is E': lambda x: _b(x) is S.Exp1,
     'ipi': lambda x: x['ipi'] is not None,
     'b is e': lambda x: x['same'],
-    'e is 1': lambda x: x['e'] is S.One,
+    'e is 1': lambda x: _e(x) is S.One,
     'b unit angle': lambda x: x['angle'] is not None,
     'u slot': lambda x: x['has_u'],
     'b-1, b+1 slots': lambda x: x['has_b1'],
     '2*e slot': lambda x: x['has_t'],
     'e rational non-integer': _e_ratio,
-    'e.q==2': lambda x: x['e'].q == 2,
-    'e.q!=2': lambda x: x['e'].q != 2,
-    'e.p==1': lambda x: x['e'].p == 1,
-    'e.p==-1': lambda x: x['e'].p == -1,
+    'e.q==2': lambda x: _e(x).q == 2,
+    'e.q!=2': lambda x: _e(x).q != 2,
+    'e.p==1': lambda x: _e(x).p == 1,
+    'e.p==-1': lambda x: _e(x).p == -1,
     'b positive rational, not a q-th power': _b_not_qth_power,
-    'e is -1': lambda x: x['e'] is S.NegativeOne,
-    'b is -1': lambda x: x['b'] is S.NegativeOne,
-    'b integer, |b|>=2': lambda x: (x['b'] is not None and x['b'] is not S.NegativeOne
-                                    and x['b'].is_Integer and (x['b'].p >= 2 or x['b'].p <= -2)),
-    'b algebraic, not 0 or 1': lambda x: (x['b'] is not None and x['b'].is_algebraic
-                                          and x['b'].is_zero is False and x['b'] is not S.One),
-    'b finite number, |b|>1': lambda x: _num(x) and abs(x['b']) > 1,
-    'b finite number, 0<|b|<1': lambda x: (_num(x) and not abs(x['b']) > 1
-                                           and x['b'].is_zero is False and abs(x['b']) < 1),
-    'e integer >= 2': lambda x: x['e'] is not None and x['e'].is_Integer and x['e'].p >= 2,
-    'e algebraic irrational': lambda x: (x['e'] is not None and x['e'].is_algebraic
-                                         and x['e'].is_rational is False),
+    'e is -1': lambda x: _e(x) is S.NegativeOne,
+    'b is -1': lambda x: _b(x) is S.NegativeOne,
+    'b integer, |b|>=2': lambda x: (_b(x) is not None and _b(x) is not S.NegativeOne
+                                    and _b(x).is_Integer and (_b(x).p >= 2 or _b(x).p <= -2)),
+    'b algebraic, not 0 or 1': lambda x: (_b(x) is not None and _b(x).is_algebraic
+                                          and _b(x).is_zero is False and _b(x) is not S.One),
+    'b finite number, |b|>1': lambda x: _num(x) and abs(_b(x)) > 1,
+    'b finite number, 0<|b|<1': lambda x: (_num(x) and not abs(_b(x)) > 1
+                                           and _b(x).is_zero is False and abs(_b(x)) < 1),
+    'e integer >= 2': lambda x: _e(x) is not None and _e(x).is_Integer and _e(x).p >= 2,
+    'e algebraic irrational': lambda x: (_e(x) is not None and _e(x).is_algebraic
+                                         and _e(x).is_rational is False),
 })
 
 _POW_SLOT_NAMES = MappingProxyType({_B: 'B', _E: 'E', _N: 'N'})
@@ -791,14 +802,14 @@ POW_TABLE = (
 )
 
 
-def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
-    """The specs of ``POW_TABLE``.  ``b``/``e`` are the constant
-    base/exponent or ``None`` if symbolic; ``angle`` is
+def _pow_rules(consts, same, angle, has_u, ipi, has_t, has_b1):
+    """The specs of ``POW_TABLE``.  ``consts`` holds the constant
+    base/exponent (slots ``_B``/``_E``) if any; ``angle`` is
     ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the argument of an
     ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and exponent
     ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``: slots
     ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
-    return rules_of(POW_TABLE, POW_GUARDS, _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1),
+    return rules_of(POW_TABLE, POW_GUARDS, _pow_ctx(consts, same, angle, has_u, ipi, has_t, has_b1),
                     POW_SLOTS)
 
 def _unit_power_units(angle, e, expr):
@@ -840,7 +851,7 @@ def _exp_arg(b):
 def pow_templates(expr):
     consts, objs, key, pargs = _pow_pattern(expr)
     out = facts(key, lambda: _pow_rules(*pargs), consts, tuple(objs), _N)
-    angle, e = pargs[3], expr.args[1]
+    angle, e = pargs[2], expr.args[1]
     if angle is not None and e.is_number:
         return [out, *_unit_power_units(angle, e, expr)]
     return out
@@ -850,7 +861,7 @@ def _pow_pattern(expr):
     """``(consts, objs, key, pargs)`` of the Pow block of ``expr``:
     ``pargs`` are the arguments of ``_pow_rules``."""
     b, e = expr.args
-    consts = {}
+    consts = ConstView()
     if b.is_Atom and b.is_number:
         consts[_B] = b
     if e.is_Atom and e.is_number:
@@ -884,12 +895,12 @@ def _pow_pattern(expr):
            const_key(e) if _E in consts else None, same, angle,
            const_key(u) if _U in consts else u is not None, ipi,
            const_key(objs[_S]) if _S in consts else None, has_t, has_b1)
-    pargs = (consts.get(_B), consts.get(_E), same, angle, u is not None, ipi, has_t, has_b1)
+    pargs = (consts, same, angle, u is not None, ipi, has_t, has_b1)
     return consts, objs, key, pargs
 
 
-def _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1):
-    return {'b': b, 'e': e, 'same': same, 'angle': angle, 'has_u': has_u, 'ipi': ipi,
+def _pow_ctx(consts, same, angle, has_u, ipi, has_t, has_b1):
+    return {'consts': consts, 'same': same, 'angle': angle, 'has_u': has_u, 'ipi': ipi,
             'has_t': has_t, 'has_b1': has_b1}
 
 

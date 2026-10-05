@@ -108,7 +108,14 @@ def synthetic_nodes():
 
 def _clear():
     _common._CACHE.clear()
+    _common._SIG.clear()
     registry._clauses_cache.clear()
+
+
+def _legacy_pow_rules(consts, *rest):
+    """``legacy.pow_rules`` behind the ``_pow_rules`` signature (the tables
+    read the constant base and exponent from ``consts``)."""
+    return legacy.pow_rules(dict.get(consts, core._B), dict.get(consts, core._E), *rest)
 
 
 def _canonical(e):
@@ -135,7 +142,9 @@ def _run(nodes):
 def _with_legacy(monkeypatch, nodes):
     with monkeypatch.context() as m:
         m.setattr(core, "_mul_rules", legacy.mul_rules)
-        m.setattr(core, "_pow_rules", legacy.pow_rules)
+        m.setattr(core, "_pow_rules", _legacy_pow_rules)
+        # the legacy functions read the constants directly: exact keys only
+        m.setattr(_common, "SIGNATURES", False)
         m.setattr(core, "ipi_rules", legacy.ipi_rules)
         m.setattr(functions, "ipi_rules", legacy.ipi_rules)
         try:
