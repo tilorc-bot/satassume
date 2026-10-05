@@ -163,6 +163,10 @@ learnt clause, no root unit carried over; the stored models are kept),
 at about +7% of the corpus `is_` time; without the models too it costs
 about +20% (numbers in PR #119).
 
+Cone sessions are mutable state shared by every engine of a configuration:
+a search writes to the session's solver, so engines of one configuration
+must not answer `is_` from several threads at once.
+
 Earlier designs reused one session per assumption set (`keep_sessions`
 = 16, LRU, replaced after `session_limit` = 2000 nodes, by a cone search
 of a fresh session over the assumptions and the query's cone once more

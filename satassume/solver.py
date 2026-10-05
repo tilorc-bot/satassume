@@ -513,9 +513,10 @@ class Solver:
         as the start of its parent's).  The copy has the problem clauses
         (as they stand: shortened by root facts, watched literals first),
         the root trail, the registered blocks and the variable order; not
-        the learnt clauses, the stored models (they are models of this
-        formula, not of what the copy grows into) or any held level.  A
-        solver without theories and without owner tracking only."""
+        the learnt clauses or any held level.  The stored models only with
+        ``models`` (:meth:`_ring_hit` checks each against what the copy
+        added since it was found).  A solver without theories and without
+        owner tracking only."""
         if self._theories or self.track_owners:
             raise ValueError("clone: a solver with theories or owner tracking")
         if self._trail_lim:
