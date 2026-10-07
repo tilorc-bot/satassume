@@ -138,6 +138,10 @@ class _Unhandled(Exception):
     pass
 
 
+_ZERO = Fraction(0)
+_ONE = Fraction(1)
+
+
 #: read every closed real constant that has rigorous bounds as a number of
 #: the exact field (``log(2)*x`` readable, ``x < log(2)`` exact); False:
 #: only pi, E and rational powers of rationals (with ``+ - * /``), other
@@ -171,9 +175,10 @@ def relation(atom) -> tuple[str, Any, Any] | None:
     return name, atom.lhs, atom.rhs
 
 
-def _lin(e, scale: Fraction, out: dict, const: list) -> None:
-    """Add ``scale * e`` to the linear form ``out`` (term -> coefficient)
-    and ``const[0]``."""
+def _lin(e, scale: Fraction, out: list, const: list) -> None:
+    """Append the contributions of ``scale * e``: ``(term, coefficient)``
+    pairs to ``out`` and constants to ``const``, in reading order (see
+    :func:`_parts`)."""
     if not isinstance(e, Expr) or getattr(e, "is_Matrix", False) \
             or getattr(e, "is_MatrixExpr", False):
         raise _Unhandled(e)
@@ -209,10 +214,10 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
         if len(rest) == 1:
             _lin(rest[0], scale, out, const)
             return
-    out[e] = out.get(e, Fraction(0)) + scale
+    out.append((e, scale))
 
 
-def _closed(e, scale, out: dict, const: list) -> None:
+def _closed(e, scale, out: list, const: list) -> None:
     """``_lin`` for a subexpression without free symbols: rationals go to
     the constant, sums are split, a rational factor is pulled out; a
     number of the exact field (:func:`satassume.constfield.from_sympy`:
@@ -220,7 +225,7 @@ def _closed(e, scale, out: dict, const: list) -> None:
     constant too; what is left must be a real constant without Floats and
     with rigorous bounds (:func:`constant_bounds`); it becomes a term."""
     if e.is_Rational:
-        const[0] += scale * Fraction(int(e.p), int(e.q))
+        const.append(scale * Fraction(int(e.p), int(e.q)))
         return
     if e.is_Add:
         for a in e.args:
@@ -232,13 +237,13 @@ def _closed(e, scale, out: dict, const: list) -> None:
         return
     v = from_sympy(e, generic=GENERIC_CONSTANTS)
     if v is not None:
-        const[0] += scale * v
+        const.append(scale * v)
         return
     if e.has(Float):
         raise _Unhandled(e)                  # Floats: see the module docstring
     if constant_bounds(e) is None:
         raise _Unhandled(e)
-    out[e] = out.get(e, Fraction(0)) + scale
+    out.append((e, scale))
 
 
 #: working precision (bits) of the interval evaluation behind a constant's bounds
@@ -466,17 +471,101 @@ def _iv_exp(x, prec: int = _IV_PREC):
     return _loose(_iv_context(prec).exp(x), prec)
 
 
+def _form(terms, form=None) -> dict:
+    """The linear form ``{term: coefficient}`` of the contributions
+    ``terms`` (:func:`_lin`), summed in order onto ``form``."""
+    if form is None:
+        form = {}
+    get = form.get
+    for t, c in terms:
+        form[t] = get(t, _ZERO) + c
+    return form
+
+
+def _parts(e):
+    """``(form, const, terms, consts)`` for an expression ``e`` (an
+    ``Expr``): the contributions :func:`_lin` reads off ``e`` at scale 1,
+    ``terms`` (``(term, coefficient)`` pairs) and ``consts``, in reading
+    order, and their sums ``form`` (:func:`_form`) and ``const``; None when
+    reading raises one of ``_UNREAD``.  Memoized per expression in
+    :data:`_INTERPRETED` under the flag (never mutate the result): every
+    relation atom about ``e`` (the links ``0 < e``, ``e < 0``, ``e = 0``,
+    their order sides, ``Q.integer(e)``, the budget's cone) reads it once.
+
+    Composing the memoized parts gives exactly what one :func:`_lin` pass
+    over both sides of a relation gives: the same coefficients (the
+    arithmetic is exact, and :mod:`satassume.constfield` numbers have a
+    normal form) in the same dict order (the left side's terms first, then
+    the right side's new ones, each in reading order)."""
+    memo = _INTERPRETED[GENERIC_CONSTANTS]
+    key = ("lin", e)
+    try:
+        return memo[key]
+    except KeyError:
+        pass
+    terms: list = []
+    consts: list = []
+    try:
+        _lin(e, _ONE, terms, consts)
+    except _UNREAD:
+        r = None
+    else:
+        const = _ZERO
+        for v in consts:
+            const += v
+        r = (_form(terms), const, terms, consts)
+    if len(memo) >= _INTERPRETED_MAX:
+        memo.clear()
+    memo[key] = r
+    return r
+
+
+def _bad(e) -> bool:
+    """``e.has(*_BAD)`` for an ``Expr``, memoized like :func:`_parts`."""
+    memo = _INTERPRETED[GENERIC_CONSTANTS]
+    key = ("bad", e)
+    r = memo.get(key)
+    if r is None:
+        r = e.has(*_BAD)
+        if len(memo) >= _INTERPRETED_MAX:
+            memo.clear()
+        memo[key] = r
+    return r
+
+
+def _sort_key(t):
+    """``default_sort_key(t)``, memoized like :func:`_parts`."""
+    memo = _INTERPRETED[GENERIC_CONSTANTS]
+    key = ("sort", t)
+    r = memo.get(key)
+    if r is None:
+        r = default_sort_key(t)
+        if len(memo) >= _INTERPRETED_MAX:
+            memo.clear()
+        memo[key] = r
+    return r
+
+
 def _linear(name, lhs, rhs):
     """``(form, constant)`` with form ``{term: coeff}`` (zeros kept) for
     ``lhs - rhs``; raises _Unhandled."""
     for side in (lhs, rhs):
-        if not isinstance(side, Expr) or side.has(*_BAD):
+        if not isinstance(side, Expr) or _bad(side):
             raise _Unhandled(side)
-    form: dict = {}
-    const = [Fraction(0)]
-    _lin(lhs, Fraction(1), form, const)
-    _lin(rhs, Fraction(-1), form, const)
-    return form, const[0]
+    a = _parts(lhs)
+    if a is None:
+        raise _Unhandled(lhs)
+    b = _parts(rhs)
+    if b is None:
+        raise _Unhandled(rhs)
+    form = dict(a[0])
+    get = form.get
+    for t, c in b[2]:
+        form[t] = get(t, _ZERO) + -c
+    const = a[1]
+    for v in b[3]:
+        const += -v
+    return form, const
 
 
 def to_constraint(atom):
@@ -501,7 +590,7 @@ def _constraint(name, form, k):
         k = -k
         name = "lt" if name == "gt" else "le"
     items = sorted(((t, c) for t, c in form.items() if c),
-                   key=lambda tc: default_sort_key(tc[0]))
+                   key=lambda tc: _sort_key(tc[0]))
     if name in ("eq", "ne") and items and items[0][1] < 0:
         items = [(t, -c) for t, c in items]
         k = -k
@@ -525,7 +614,7 @@ def interpret(atom):
         c = _constraint(rel[0], form, k)
     except _UNREAD:
         return None
-    return c, sorted(form, key=default_sort_key)
+    return c, sorted(form, key=_sort_key)
 
 
 def terms(atom) -> list | None:
@@ -543,10 +632,20 @@ def _side(e):
     if not isinstance(e, Expr) or getattr(e, "is_Matrix", False) \
             or getattr(e, "is_MatrixExpr", False):
         raise _Unhandled(e)
+    args = Add.make_args(e)
+    if not any(t is S.Infinity or t is S.NegativeInfinity for t in args):
+        # no oo summand: the form of e itself (the same reading, term by
+        # term, and the same checks)
+        if _bad(e):
+            raise _Unhandled(e)
+        p = _parts(e)
+        if p is None:
+            raise _Unhandled(e)
+        return p[0], 0
     inf = 0
-    form: dict = {}
-    const = [Fraction(0)]
-    for t in Add.make_args(e):
+    out: list = []
+    const: list = []
+    for t in args:
         if t is S.Infinity or t is S.NegativeInfinity:
             sign = 1 if t is S.Infinity else -1
             if inf and inf != sign:
@@ -555,8 +654,8 @@ def _side(e):
             continue
         if t.has(*_BAD):
             raise _Unhandled(t)
-        _lin(t, Fraction(1), form, const)
-    return form, inf
+        _lin(t, _ONE, out, const)
+    return _form(out), inf
 
 
 def order_sides(atom):
@@ -583,23 +682,24 @@ def integer_form(e):
     and its opaque terms (as :func:`terms`); None when ``e`` is not read
     (as a side of :func:`interpret`: no ``oo``, ``nan``, ``Float``,
     non-rational factor of a symbol, ...)."""
-    if not isinstance(e, Expr) or e.has(*_BAD):
+    if not isinstance(e, Expr) or _bad(e):
         return None
-    form: dict = {}
-    const = [Fraction(0)]
+    p = _parts(e)
+    if p is None:
+        return None
+    form, const = p[0], p[1]
     try:
-        _lin(e, Fraction(1), form, const)
-        keys = sorted(form, key=default_sort_key)
+        keys = sorted(form, key=_sort_key)
         items = tuple((t, form[t]) for t in keys if form[t])
         # decide here what callers read (offset nonzero, unit coefficient):
         # an undecidable constant reads as "not read" (no integrality
         # link, a relaxation) instead of raising Undecided later
-        bool(const[0])
+        bool(const)
         for _t, c in items:
             bool(c == 1)
     except _UNREAD:
         return None
-    return Integral(items, const[0]), keys
+    return Integral(items, const), keys
 
 
 #: ``GENERIC_CONSTANTS -> {atom -> interpret(atom)}`` (and the
