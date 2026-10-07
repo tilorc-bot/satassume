@@ -521,6 +521,24 @@ def sympy_atom(atom: P):
     return r
 
 
+def has_any(e, atoms: frozenset) -> bool:
+    """``e.has(*atoms)`` for SymPy singletons such as ``nan``, ``oo``,
+    ``-oo`` and ``zoo`` (given as a frozenset), in one walk.
+
+    ``Basic.has`` walks ``e`` once testing membership in the patterns, then
+    once more per pattern with its ``_has_matcher`` (``==``).  For these
+    atoms ``==`` is identity (``Float('inf')`` is ``oo``, ``Float('nan')``
+    is ``nan``), so the later walks never find what the first missed.  The
+    walk visits what ``iterargs`` does: ``e`` and every ``args``, at any
+    depth."""
+    todo = [e]
+    for t in todo:
+        if t in atoms:
+            return True
+        todo.extend(t.args)
+    return False
+
+
 def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
@@ -1935,14 +1953,14 @@ class Relations:
         nside = self._xsides_n
         if i >= n and nside == self._xnsides and self._xhn == self._xhseen:
             return
-        from sympy import Basic, Rational, nan
-        from .euf_adapter import _structural
+        from sympy import Basic, Rational
+        from .euf_adapter import _NAN, _structural
         pend = self._xpend
         while i < n:
             e = slots[i]
             if type(e) is tuple and e[1] == i:
                 node = e[0]
-                if isinstance(node, Basic) and not node.has(nan):
+                if isinstance(node, Basic) and not has_any(node, _NAN):
                     pend.append((node, i))
                 i += NPRED
             else:

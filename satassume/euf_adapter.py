@@ -50,10 +50,12 @@ from sympy.core.relational import Equality, Unequality
 from sympy.integrals.transforms import IntegralTransform
 
 from .euf import EqAtom, EUFTheory
+from .relations import has_any
 
 __all__ = ["EUFAdapter"]
 
 _STRUCTURAL = (Add, Mul, Pow, Application)
+_NAN = frozenset((nan,))       # for has_any: ``e.has(nan)`` in one walk
 
 
 _class_ok: dict[type, bool] = {}
@@ -128,7 +130,7 @@ class EUFAdapter:
             return None
         if len(args) != 2 or not all(isinstance(a, Basic) for a in args):
             return None
-        if any(a.has(nan) for a in args):
+        if any(has_any(a, _NAN) for a in args):
             return None
         return args[0], args[1], positive
 

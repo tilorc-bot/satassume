@@ -16,7 +16,7 @@ except the structural ``is_commutative`` (``atoms.structural_commutative``).
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
 from ..rules import NPRED, PRED_INDEX, PREDICATES, RULE_FREE, RULE_INSTANTIATED, unit_propagate
@@ -43,8 +43,11 @@ SIGN_FLIP = {
     'extended_nonpositive': 'extended_nonnegative',
 }
 
-Lit = Tuple[int, str, bool]
-Rule = Tuple[Tuple[Lit, ...], Tuple[Lit, ...]]
+if TYPE_CHECKING:
+    # for annotations only: subscripting typing generics costs about 50 us
+    # at import, which the first relation query of a process pays
+    Lit = Tuple[int, str, bool]
+    Rule = Tuple[Tuple[Lit, ...], Tuple[Lit, ...]]
 
 
 def is_constant(obj) -> bool:

@@ -22,14 +22,15 @@ from __future__ import annotations
 
 import importlib
 import sys
-from typing import Any, Callable, Dict, Iterable, List, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Tuple
 
 from ..epoch import bump as _bump
 from ..formula import Formula, P
 from . import _common
 from ._common import Compiled
 
-Template = Callable[[Any], Any]
+if TYPE_CHECKING:
+    Template = Callable[[Any], Any]     # for annotations only (see _common)
 
 #: bound of the :meth:`TemplateRegistry.clauses_for` memo (cleared when full)
 CLAUSES_CACHE_SIZE = 50_000

@@ -123,6 +123,7 @@ from sympy.core.sorting import default_sort_key
 
 from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
+from .relations import has_any
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
            "integer_form"]
@@ -131,7 +132,7 @@ _PRED = {Q.lt: "lt", Q.le: "le", Q.gt: "gt", Q.ge: "ge", Q.eq: "eq",
          Q.ne: "ne"}
 _REL = {StrictLessThan: "lt", LessThan: "le", StrictGreaterThan: "gt",
         GreaterThan: "ge", Equality: "eq", Unequality: "ne"}
-_BAD = (S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity)
+_BAD = frozenset((S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity))
 
 
 class _Unhandled(Exception):
@@ -310,12 +311,13 @@ def _parts(e):
 
 
 def _bad(e) -> bool:
-    """``e.has(*_BAD)`` for an ``Expr``, memoized like :func:`_parts`."""
+    """``e.has(*_BAD)`` for an ``Expr`` (one walk, ``relations.has_any``),
+    memoized like :func:`_parts`."""
     memo = _INTERPRETED[GENERIC_CONSTANTS]
     key = ("bad", e)
     r = memo.get(key)
     if r is None:
-        r = e.has(*_BAD)
+        r = has_any(e, _BAD)
         if len(memo) >= _INTERPRETED_MAX:
             memo.clear()
         memo[key] = r
@@ -441,7 +443,7 @@ def _side(e):
                 raise _Unhandled(e)              # oo - oo does not stay unevaluated
             inf = sign
             continue
-        if t.has(*_BAD):
+        if has_any(t, _BAD):
             raise _Unhandled(t)
         _lin(t, _ONE, out, const)
     return _form(out), inf
