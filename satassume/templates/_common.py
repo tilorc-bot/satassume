@@ -228,11 +228,13 @@ class Pattern:
             lits = [(k, index[p], pos) for k, p, pos in ps]
             lits += [(k, index[p], not pos) for k, p, pos in cs]
             lits = list(dict.fromkeys(lits))
-            if any((k, i, not neg) in lits for k, i, neg in lits):
-                continue    # tautology
-            npreds = frozenset(i for k, i, _ in lits if k == node)
+            # tautology: after deduplication, a (slot, predicate) pair
+            # that occurs twice occurs with both signs
+            if len({(k, i) for k, i, _ in lits}) < len(lits):
+                continue
+            npreds = frozenset([i for k, i, _ in lits if k == node])
             # internal literal = 2*base_of_slot + (2*pidx + neg)
-            clauses.append((tuple(lits), npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
+            clauses.append((tuple(lits), npreds, tuple([(k, 2 * i + (1 if neg else 0)) for k, i, neg in lits])))
             for k, i, _ in lits:
                 used.add(k)
                 if k != node:
