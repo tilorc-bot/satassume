@@ -107,7 +107,8 @@ def _unary(tag, gen, slots=None, units=None):
 
 
 def _minus_one(x):
-    return (x - S.One,)
+    from ..relations import difference
+    return (difference(x, S.One),)
 
 
 def _commutative_rules(n):
