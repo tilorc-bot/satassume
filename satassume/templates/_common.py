@@ -208,9 +208,25 @@ class Pattern:
         clauses = []
         used = set()
         child_preds: Dict[int, set] = {}
+        index = PRED_INDEX
         for ps, cs in rules:
-            lits = [(k, PRED_INDEX[p], pos) for k, p, pos in ps]
-            lits += [(k, PRED_INDEX[p], not pos) for k, p, pos in cs]
+            if not ps and len(cs) == 1:
+                # a unit clause (all of a units() pattern): nothing to
+                # deduplicate, no tautology
+                k, p, pos = cs[0]
+                i = index[p]
+                lits = ((k, i, not pos),)
+                internal = ((k, 2 * i + (0 if pos else 1)),)
+                if k == node:
+                    npreds = frozenset((i,))
+                else:
+                    npreds = frozenset()
+                    child_preds.setdefault(k, set()).add(i)
+                used.add(k)
+                clauses.append((lits, npreds, internal))
+                continue
+            lits = [(k, index[p], pos) for k, p, pos in ps]
+            lits += [(k, index[p], not pos) for k, p, pos in cs]
             lits = list(dict.fromkeys(lits))
             if any((k, i, not neg) in lits for k, i, neg in lits):
                 continue    # tautology
