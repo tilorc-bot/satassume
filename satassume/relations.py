@@ -637,6 +637,101 @@ def _termwise(a, b, d) -> bool:
     return Counter(terms(d)) == Counter(terms(a) + [-t for t in terms(b)])
 
 
+def difference(a, b):
+    """SymPy's ``a - b``: an equal node (same class, same args in the same
+    order), built without ``Add.flatten`` when both are single terms (or the
+    second a nonzero Rational).
+
+    ``Add.flatten`` imports ``sympy.tensor.tensor`` (and with it
+    ``sympy.combinatorics``, about 11 ms) the first time a process calls
+    it, so a query whose own text holds no sum paid that import inside its
+    first ``ask`` when satassume built the difference of an equality's
+    sides (:meth:`Relations._eq_links`, :func:`glue_objects`) or the
+    ``x - 1`` of the ``log`` templates.  For those arguments this follows
+    ``Add.flatten`` step by step:
+
+    * ``a`` a single term (:func:`_single_term`) and ``b`` a nonzero
+      Rational: ``Add(-b, a)`` (the Rational in slot 0; ``Add.flatten``
+      returns a two-argument Rational and Mul as they are, and keeps any
+      other term with coefficient 1);
+    * ``a`` and ``-b`` single terms with Rational or Float coefficients
+      (``as_coeff_Mul`` of a Mul, 1 otherwise): the coefficients of equal
+      non-numeric parts added up, each part with a nonzero coefficient
+      rebuilt as ``Add.flatten`` does (``s`` for coefficient 1,
+      ``s._new_rawargs(c, *s.args)`` for a Mul part, an unevaluated
+      ``Mul(c, s)`` for a sum, ``Mul(c, s)`` otherwise), sorted with
+      ``_addsort`` (``Add._from_args`` makes no args 0 and one arg that
+      arg).
+
+    The node is made with ``Add._from_args`` and passed through
+    ``Add._exec_constructor_postprocessors`` as ``AssocOp.__new__`` does.
+    Anything else (a sum or a number side, an infinite coefficient,
+    evaluation turned off, a class with its own ``__sub__`` or a higher
+    ``_op_priority``) is ``a - b``."""
+    from sympy import Add, Expr, Mul, S
+    from sympy.core.add import _addsort
+    from sympy.core.parameters import global_parameters
+    if not (global_parameters.evaluate and isinstance(a, Expr) and isinstance(b, Expr)
+            and type(a).__sub__ is Expr.__sub__ and _single_term(a)
+            and not b._op_priority > a._op_priority):
+        return a - b
+    if b.is_Rational:
+        if b.is_zero:
+            return a - b
+        args = [-b, a]
+    elif not _single_term(b):
+        return a - b
+    else:
+        nb = -b
+        if not _single_term(nb):
+            return a - b
+        terms = {}
+        for o in (a, nb):
+            c, s = o.as_coeff_Mul() if o.is_Mul else (S.One, o)
+            if not (c.is_Rational or c.is_Float):
+                return a - b
+            terms[s] = terms[s] + c if s in terms else c
+        args = []
+        for s, c in terms.items():
+            if c.is_zero:
+                continue
+            if c is S.One:
+                args.append(s)
+            elif s.is_Mul:
+                args.append(s._new_rawargs(*((c,) + s.args)))
+            elif s.is_Add:
+                args.append(Mul(c, s, evaluate=False))
+            else:
+                args.append(Mul(c, s))
+        _addsort(args)
+    return Add._exec_constructor_postprocessors(Add._from_args(args, True))
+
+
+def _single_term(o) -> bool:
+    """``o`` is one term for ``Add.flatten`` that it keeps as it is: a
+    commutative ``Expr`` that is not a sum, a number, ``zoo``, an
+    ``Order``, an ``AccumBounds``, a matrix or tensor expression, or an
+    unevaluated power of a number that ``Add.flatten`` would evaluate."""
+    import sys
+    from sympy import Expr, S
+    if not isinstance(o, Expr) or o.is_Add or o.is_Number or o is S.ComplexInfinity:
+        return False
+    if o.is_Order or o.is_commutative is not True:
+        return False
+    from sympy.calculus.accumulationbounds import AccumBounds
+    from sympy.matrices.expressions.matexpr import MatrixExpr
+    if isinstance(o, (AccumBounds, MatrixExpr)):
+        return False
+    tensor = sys.modules.get("sympy.tensor.tensor")
+    if tensor is not None and isinstance(o, tensor.TensExpr):
+        return False
+    if o.is_Pow:
+        base, e = o.as_base_exp()
+        if base.is_Number and (e.is_Integer or (e.is_Rational and e.is_negative)):
+            return False
+    return True
+
+
 def _constant_term(e) -> bool:
     """``e`` is a closed constant that is not a rational number (``pi``,
     ``sqrt(2)``): an LRA term with bounds, left out of equality sharing."""
@@ -1308,7 +1403,7 @@ class Relations:
         for pred in ("positive_infinite", "negative_infinite"):
             emit([-s.var(pred, a), -s.var(pred, b), var])
         for p, q in ((a, b), (b, a)):
-            d = p - q
+            d = difference(p, q)
             if _is_number(d) or not _termwise(p, q, d):
                 continue
             s.ensure(d, {"zero", "nonzero"})
@@ -1980,7 +2075,7 @@ def glue_objects(atom: P, specs, memo: dict) -> set:
         if not (_is_number(a) or _is_number(b)):
             for p, q in ((a, b), (b, a)):
                 try:
-                    d = p - q
+                    d = difference(p, q)
                     if not _is_number(d) and _termwise(p, q, d):
                         k.add(d)
                 except Exception:   # noqa: BLE001 (sides that do not subtract)
