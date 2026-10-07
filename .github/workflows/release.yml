@@ -1,0 +1,58 @@
+name: release
+# Publish to PyPI when a version tag (v*) is pushed.  Uses PyPI trusted
+# publishing (OIDC): no API token is stored in the repository.  One-time
+# setup on pypi.org: Account -> Publishing -> add a pending publisher with
+# owner tilorc-bot, repository satassume, workflow release.yml and
+# environment pypi.  The tag must match satassume.__version__ (v0.0.1 for
+# "0.0.1"); the build job refuses to publish otherwise.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - name: tag matches version
+        run: |
+          VERSION=$(python -c "import ast; t = ast.parse(open('satassume/__init__.py').read()); print(next(n.value.value for n in t.body if isinstance(n, ast.Assign) and n.targets[0].id == '__version__'))")
+          test "v$VERSION" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match version $VERSION"; exit 1; }
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - name: smoke test the wheel
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install "$(ls dist/*.whl)[sympy]"
+          cd /tmp && /tmp/smoke/bin/python -c "from sympy import Symbol, Q, exp; from satassume.sympy_api import ask; y = Symbol('y'); assert ask(Q.positive(exp(y)), Q.real(y)) is True"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest hypothesis sympy mpmath z3-solver
+      - run: python -m pytest -q tests
+
+  publish:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -6,4 +6,4 @@ from .formula import P, And, Or, Not, Implies, Equivalent, Exclusive, allargs, a
 __all__ = ["Engine", "InconsistentAssumptions", "DictCache", "ObjectCache", "P", "And", "Or",
            "Not", "Implies", "Equivalent", "Exclusive", "allargs", "anyarg", "exactlyonearg",
            "Extensions", "register", "unregister"]
-__version__ = "0.1.0"
+__version__ = "0.0.1"
