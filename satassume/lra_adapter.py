@@ -123,6 +123,7 @@ from sympy.core.sorting import default_sort_key
 
 from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
+from .relations import has_any
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
            "integer_form"]
@@ -131,11 +132,15 @@ _PRED = {Q.lt: "lt", Q.le: "le", Q.gt: "gt", Q.ge: "ge", Q.eq: "eq",
          Q.ne: "ne"}
 _REL = {StrictLessThan: "lt", LessThan: "le", StrictGreaterThan: "gt",
         GreaterThan: "ge", Equality: "eq", Unequality: "ne"}
-_BAD = (S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity)
+_BAD = frozenset((S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity))
 
 
 class _Unhandled(Exception):
     pass
+
+
+_ZERO = Fraction(0)
+_ONE = Fraction(1)
 
 
 #: read every closed real constant that has rigorous bounds as a number of
@@ -155,10 +160,14 @@ def relation(atom) -> tuple[str, Any, Any] | None:
     ``lt le gt ge eq ne``; None otherwise."""
     if isinstance(atom, AppliedPredicate):
         f = atom.function
-        if f == Q.is_true:
-            return relation(atom.arguments[0]) if len(atom.arguments) == 1 else None
         name = _PRED.get(f)
-        if name is None or len(atom.arguments) != 2:
+        if name is None:
+            # by name: reading ``Q.is_true`` imports SymPy's handler modules
+            # (about 1 ms, once per process) for every relation atom
+            if getattr(f, "name", None) == "is_true":
+                return relation(atom.arguments[0]) if len(atom.arguments) == 1 else None
+            return None
+        if len(atom.arguments) != 2:
             return None
         return (name,) + tuple(atom.arguments)
     name = _REL.get(type(atom))
@@ -167,9 +176,10 @@ def relation(atom) -> tuple[str, Any, Any] | None:
     return name, atom.lhs, atom.rhs
 
 
-def _lin(e, scale: Fraction, out: dict, const: list) -> None:
-    """Add ``scale * e`` to the linear form ``out`` (term -> coefficient)
-    and ``const[0]``."""
+def _lin(e, scale: Fraction, out: list, const: list) -> None:
+    """Append the contributions of ``scale * e``: ``(term, coefficient)``
+    pairs to ``out`` and constants to ``const``, in reading order (see
+    :func:`_parts`)."""
     if not isinstance(e, Expr) or getattr(e, "is_Matrix", False) \
             or getattr(e, "is_MatrixExpr", False):
         raise _Unhandled(e)
@@ -205,10 +215,10 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
         if len(rest) == 1:
             _lin(rest[0], scale, out, const)
             return
-    out[e] = out.get(e, Fraction(0)) + scale
+    out.append((e, scale))
 
 
-def _closed(e, scale, out: dict, const: list) -> None:
+def _closed(e, scale, out: list, const: list) -> None:
     """``_lin`` for a subexpression without free symbols: rationals go to
     the constant, sums are split, a rational factor is pulled out; a
     number of the exact field (:func:`satassume.constfield.from_sympy`:
@@ -216,7 +226,7 @@ def _closed(e, scale, out: dict, const: list) -> None:
     constant too; what is left must be a real constant without Floats and
     with rigorous bounds (:func:`constant_bounds`); it becomes a term."""
     if e.is_Rational:
-        const[0] += scale * Fraction(int(e.p), int(e.q))
+        const.append(scale * Fraction(int(e.p), int(e.q)))
         return
     if e.is_Add:
         for a in e.args:
@@ -228,251 +238,125 @@ def _closed(e, scale, out: dict, const: list) -> None:
         return
     v = from_sympy(e, generic=GENERIC_CONSTANTS)
     if v is not None:
-        const[0] += scale * v
+        const.append(scale * v)
         return
     if e.has(Float):
         raise _Unhandled(e)                  # Floats: see the module docstring
     if constant_bounds(e) is None:
         raise _Unhandled(e)
-    out[e] = out.get(e, Fraction(0)) + scale
-
-
-#: working precision (bits) of the interval evaluation behind a constant's bounds
-_IV_PREC = 128
-#: constants of magnitude beyond ``2**±_MAX_BITS`` get no bounds: the
-#: exact rationals would be integers of that many bits
-#: (``exp(exp(exp(5)))`` is about ``2**(4e64)``)
-_MAX_BITS = 4096
-#: constant -> (lo, hi) or None (see constant_bounds); shared, pure
-_BOUNDS: dict = {}
+    out.append((e, scale))
 
 
 def constant_bounds(c):
     """Rational bounds ``(lo, hi)`` with ``lo < c < hi`` for a closed
-    expression ``c`` that SymPy says is a finite (extended) real number, or
-    None: not such a constant, or no rigorous bound.
-
-    The value comes from interval arithmetic (:func:`_interval`: mpmath's
-    interval context at 128 bits, outward rounded at every step, over
-    rationals, pi, E, ``+``, ``*``, ``**``, exp, log, sin, cos, tan, atan);
-    the interval is widened outward to rationals on a grid 72 bits below
-    its magnitude.  A constant that SymPy cannot show to be zero still gets
-    a narrow interval around 0.  Memoized per constant."""
-    try:
-        return _BOUNDS[c]
-    except KeyError:
-        pass
-    except TypeError:
-        return _bounds(c)
-    if len(_BOUNDS) >= _INTERPRETED_MAX:
-        _BOUNDS.clear()
-    r = _BOUNDS[c] = _bounds(c)
-    return r
-
-
-def _bounds(c):
-    iv = _interval(c)
-    if iv is None:
-        return None
-    a, b = iv._mpi_
-    lo, hi = _rational(a), _rational(b)
-    top = max(_mag(a), _mag(b), -_MAX_BITS)
-    q = Fraction(2) ** (top - 72)            # a coarse grid, strictly outside
-    return ((lo / q).__floor__() - 1) * q, ((hi / q).__ceil__() + 1) * q
-
-
-#: precision -> mpmath interval context at that precision
-_IV: dict = {}
-
-
-def _iv_context(prec: int = _IV_PREC):
-    ctx = _IV.get(prec)
-    if ctx is None:
-        from mpmath.ctx_iv import MPIntervalContext
-        ctx = _IV[prec] = MPIntervalContext()
-        ctx.prec = prec
-    return ctx
-
-
-#: (constant, working precision) -> rational enclosure or None
-_ENCLOSURES: dict = {}
+    constant, or None (:func:`satassume.lra_bounds.constant_bounds`; that
+    module is loaded by the first query with such a constant)."""
+    from .lra_bounds import constant_bounds
+    return constant_bounds(c)
 
 
 def constant_enclosure(c, prec: int):
-    """Rational ``(lo, hi)`` with ``lo <= c <= hi`` and ``hi - lo`` about
-    ``2**-prec`` relative, for a closed constant with
-    :func:`constant_bounds` (None otherwise): the interval evaluation of
-    :func:`_interval` at working precision ``prec + 16`` bits, rounded
-    outward.  Used to refine a constant of :mod:`satassume.constfield`
-    beyond the 128 bits of its bounds."""
-    key = (c, prec)
+    """:func:`satassume.lra_bounds.constant_enclosure`."""
+    from .lra_bounds import constant_enclosure
+    return constant_enclosure(c, prec)
+
+
+def _form(terms, form=None) -> dict:
+    """The linear form ``{term: coefficient}`` of the contributions
+    ``terms`` (:func:`_lin`), summed in order onto ``form``."""
+    if form is None:
+        form = {}
+    get = form.get
+    for t, c in terms:
+        form[t] = get(t, _ZERO) + c
+    return form
+
+
+def _parts(e):
+    """``(form, const, terms, consts)`` for an expression ``e`` (an
+    ``Expr``): the contributions :func:`_lin` reads off ``e`` at scale 1,
+    ``terms`` (``(term, coefficient)`` pairs) and ``consts``, in reading
+    order, and their sums ``form`` (:func:`_form`) and ``const``; None when
+    reading raises one of ``_UNREAD``.  Memoized per expression in
+    :data:`_INTERPRETED` under the flag (never mutate the result): every
+    relation atom about ``e`` (the links ``0 < e``, ``e < 0``, ``e = 0``,
+    their order sides, ``Q.integer(e)``, the budget's cone) reads it once.
+
+    Composing the memoized parts gives exactly what one :func:`_lin` pass
+    over both sides of a relation gives: the same coefficients (the
+    arithmetic is exact, and :mod:`satassume.constfield` numbers have a
+    normal form) in the same dict order (the left side's terms first, then
+    the right side's new ones, each in reading order)."""
+    memo = _INTERPRETED[GENERIC_CONSTANTS]
+    key = ("lin", e)
     try:
-        return _ENCLOSURES[key]
+        return memo[key]
     except KeyError:
         pass
-    except TypeError:
-        return _enclosure(c, prec)
-    if len(_ENCLOSURES) >= _INTERPRETED_MAX:
-        _ENCLOSURES.clear()
-    r = _ENCLOSURES[key] = _enclosure(c, prec)
-    return r
-
-
-def _enclosure(c, prec: int):
-    if constant_bounds(c) is None:           # also: SymPy says a finite real
-        return None
-    iv = _interval(c, max(prec + 16, _IV_PREC))
-    if iv is None:
-        return None
-    a, b = iv._mpi_
-    return _rational(a), _rational(b)
-
-
-def _rational(x) -> Fraction:
-    """The exact value of a finite raw mpf (bounded by the caller)."""
-    from mpmath.libmp import to_rational
-    p, q = to_rational(x)
-    return Fraction(p, q)
-
-
-def _mag(x) -> float:
-    """``k`` with ``|x| < 2**k`` for a raw mpf; -inf for zero, inf for an
-    infinity or nan."""
-    sign, man, exp, bc = x
-    if man:
-        return exp + bc
-    return float("-inf") if not exp else float("inf")
-
-
-def _sign(x) -> int:
-    from mpmath.libmp import mpf_sign
-    return mpf_sign(x)
-
-
-def _interval(e, prec: int = _IV_PREC):
-    """An interval (mpmath, outward rounded at every step) that holds the
-    real value of the closed expression ``e``, or None.
-
-    Only rationals, pi, E, ``+``, ``*``, ``**``, exp, log, sin, cos, tan and
-    atan are evaluated; a step outside its real domain (log of an interval
-    that reaches 0, a fractional power of one that reaches below 0, tan
-    across a pole, 1/x across 0) gives None, so a result is also a proof
-    that the value is real.  Every intermediate value must stay within
-    ``2**±_MAX_BITS`` (exp is checked before it is applied), so nothing huge
-    is built: ``exp(exp(exp(5)))`` and ``sin(exp(exp(exp(5))))`` are None
-    at once.  No error estimate of SymPy's evalf is trusted (it claims full
-    accuracy for ``sign``, ``tanh``, ``tan`` next to a pole, ``log`` next to
-    1)."""
-    iv = _iv_context(prec)
-    from sympy import Pow, exp, log, sin, cos, tan, atan
-    if e.is_Rational:
-        if e.p and abs(e.p.bit_length() - e.q.bit_length()) > _MAX_BITS:
-            return None
-        return iv.mpf(e.p) / iv.mpf(e.q)
-    if e is S.Pi:
-        return iv.pi + 0
-    if e is S.Exp1:
-        return iv.e + 0
-    head = type(e)
-    if head not in (Add, Mul, Pow, exp, log, sin, cos, tan, atan):
-        return None
-    args = []
-    for a in e.args:
-        x = _interval(a, prec)
-        if x is None:
-            return None
-        args.append(x)
+    terms: list = []
+    consts: list = []
     try:
-        if head is Add:
-            r = args[0]
-            for x in args[1:]:
-                r = r + x
-        elif head is Mul:
-            r = args[0]
-            for x in args[1:]:
-                r = r * x
-        elif head is Pow:
-            b, x = args
-            n = e.args[1]
-            ba, bb = b._mpi_
-            if n.is_Integer:
-                if n < 0 and _sign(ba) <= 0 <= _sign(bb):
-                    return None
-                if abs(int(n)).bit_length() > prec:
-                    return None              # not exact at this precision: mpmath goes through log/exp
-                r = b ** int(n)
-            else:
-                if _sign(ba) <= 0:
-                    return None
-                r = _iv_exp(x * _loose(iv.log(b), prec), prec)
-        elif head is exp:
-            r = _iv_exp(args[0], prec)
-        elif head is log:
-            if _sign(args[0]._mpi_[0]) <= 0:
-                return None
-            r = _loose(iv.log(args[0]), prec)
-        elif head is atan:
-            from mpmath.libmp import mpf_atan
-            x = args[0]
-            import mpmath
-            mk = mpmath.mp.make_mpf       # atan is increasing: round the ends outward
-            xa, xb = args[0]._mpi_
-            r = _loose(iv.mpf([mk(mpf_atan(xa, prec, "f")), mk(mpf_atan(xb, prec, "c"))]), prec)
-        else:
-            r = _loose({sin: iv.sin, cos: iv.cos, tan: iv.tan}[head](args[0]), prec)
-    except Exception:                        # noqa: BLE001 - a step mpmath refuses decides nothing
-        return None
-    if r is None or type(r) is not type(args[0]):
-        return None                          # complex
-    a, b = r._mpi_
-    if max(_mag(a), _mag(b)) > _MAX_BITS:
-        return None                          # huge, infinite or nan
-    if (a[1] and _mag(a) < -_MAX_BITS) or (b[1] and _mag(b) < -_MAX_BITS):
-        # a tiny end moves outward to 0 or 2**-_MAX_BITS: its exact rational
-        # would be huge (``pi**-(10**9)``, ``tan(22)**(10**100)``)
-        from mpmath.libmp import fzero
-        if a[1] and _mag(a) < -_MAX_BITS:
-            a = (1, 1, -_MAX_BITS, 1) if a[0] else fzero
-        if b[1] and _mag(b) < -_MAX_BITS:
-            b = fzero if b[0] else (0, 1, -_MAX_BITS, 1)
-        r = iv.make_mpf((a, b))
+        _lin(e, _ONE, terms, consts)
+    except _UNREAD:
+        r = None
+    else:
+        const = _ZERO
+        for v in consts:
+            const += v
+        r = (_form(terms), const, terms, consts)
+    if len(memo) >= _INTERPRETED_MAX:
+        memo.clear()
+    memo[key] = r
     return r
 
 
-def _loose(r, prec: int = _IV_PREC):
-    """``r`` widened outward by ``2**(8 - prec)`` relative at each end
-    (``2**-120`` at the 128 bits of :func:`constant_bounds`).  mpmath's
-    exp, log, atan, sin, cos and tan round an approximation (a few units in
-    the last place at 10 to 30 guard bits) in the requested direction,
-    which is wrong when the true value is that close to a 128-bit number:
-    ``exp(891)`` and ``log(156434)`` come out with an upper end below the
-    value, and a cancelling parent (``pi*(log(156434) - Y)``) exposes it."""
-    from mpmath.libmp import mpf_abs, mpf_add, mpf_shift, mpf_sub
-    a, b = r._mpi_
-    a = mpf_sub(a, mpf_shift(mpf_abs(a), 8 - prec), prec, "f")
-    b = mpf_add(b, mpf_shift(mpf_abs(b), 8 - prec), prec, "c")
-    return _iv_context(prec).make_mpf((a, b))
+def _bad(e) -> bool:
+    """``e.has(*_BAD)`` for an ``Expr`` (one walk, ``relations.has_any``),
+    memoized like :func:`_parts`."""
+    memo = _INTERPRETED[GENERIC_CONSTANTS]
+    key = ("bad", e)
+    r = memo.get(key)
+    if r is None:
+        r = has_any(e, _BAD)
+        if len(memo) >= _INTERPRETED_MAX:
+            memo.clear()
+        memo[key] = r
+    return r
 
 
-def _iv_exp(x, prec: int = _IV_PREC):
-    # exp of anything beyond about 2839 in size would be beyond 2**±4096;
-    # the check allows |x| < 2048
-    if x is None or max(_mag(x._mpi_[0]), _mag(x._mpi_[1])) > 11:
-        return None                          # |x| >= 2048
-    return _loose(_iv_context(prec).exp(x), prec)
+def _sort_key(t):
+    """``default_sort_key(t)``, memoized like :func:`_parts`."""
+    memo = _INTERPRETED[GENERIC_CONSTANTS]
+    key = ("sort", t)
+    r = memo.get(key)
+    if r is None:
+        r = default_sort_key(t)
+        if len(memo) >= _INTERPRETED_MAX:
+            memo.clear()
+        memo[key] = r
+    return r
 
 
 def _linear(name, lhs, rhs):
     """``(form, constant)`` with form ``{term: coeff}`` (zeros kept) for
     ``lhs - rhs``; raises _Unhandled."""
     for side in (lhs, rhs):
-        if not isinstance(side, Expr) or side.has(*_BAD):
+        if not isinstance(side, Expr) or _bad(side):
             raise _Unhandled(side)
-    form: dict = {}
-    const = [Fraction(0)]
-    _lin(lhs, Fraction(1), form, const)
-    _lin(rhs, Fraction(-1), form, const)
-    return form, const[0]
+    a = _parts(lhs)
+    if a is None:
+        raise _Unhandled(lhs)
+    b = _parts(rhs)
+    if b is None:
+        raise _Unhandled(rhs)
+    form = dict(a[0])
+    get = form.get
+    for t, c in b[2]:
+        form[t] = get(t, _ZERO) + -c
+    const = a[1]
+    for v in b[3]:
+        const += -v
+    return form, const
 
 
 def to_constraint(atom):
@@ -497,7 +381,7 @@ def _constraint(name, form, k):
         k = -k
         name = "lt" if name == "gt" else "le"
     items = sorted(((t, c) for t, c in form.items() if c),
-                   key=lambda tc: default_sort_key(tc[0]))
+                   key=lambda tc: _sort_key(tc[0]))
     if name in ("eq", "ne") and items and items[0][1] < 0:
         items = [(t, -c) for t, c in items]
         k = -k
@@ -521,7 +405,7 @@ def interpret(atom):
         c = _constraint(rel[0], form, k)
     except _UNREAD:
         return None
-    return c, sorted(form, key=default_sort_key)
+    return c, sorted(form, key=_sort_key)
 
 
 def terms(atom) -> list | None:
@@ -539,20 +423,30 @@ def _side(e):
     if not isinstance(e, Expr) or getattr(e, "is_Matrix", False) \
             or getattr(e, "is_MatrixExpr", False):
         raise _Unhandled(e)
+    args = Add.make_args(e)
+    if not any(t is S.Infinity or t is S.NegativeInfinity for t in args):
+        # no oo summand: the form of e itself (the same reading, term by
+        # term, and the same checks)
+        if _bad(e):
+            raise _Unhandled(e)
+        p = _parts(e)
+        if p is None:
+            raise _Unhandled(e)
+        return p[0], 0
     inf = 0
-    form: dict = {}
-    const = [Fraction(0)]
-    for t in Add.make_args(e):
+    out: list = []
+    const: list = []
+    for t in args:
         if t is S.Infinity or t is S.NegativeInfinity:
             sign = 1 if t is S.Infinity else -1
             if inf and inf != sign:
                 raise _Unhandled(e)              # oo - oo does not stay unevaluated
             inf = sign
             continue
-        if t.has(*_BAD):
+        if has_any(t, _BAD):
             raise _Unhandled(t)
-        _lin(t, Fraction(1), form, const)
-    return form, inf
+        _lin(t, _ONE, out, const)
+    return _form(out), inf
 
 
 def order_sides(atom):
@@ -579,23 +473,24 @@ def integer_form(e):
     and its opaque terms (as :func:`terms`); None when ``e`` is not read
     (as a side of :func:`interpret`: no ``oo``, ``nan``, ``Float``,
     non-rational factor of a symbol, ...)."""
-    if not isinstance(e, Expr) or e.has(*_BAD):
+    if not isinstance(e, Expr) or _bad(e):
         return None
-    form: dict = {}
-    const = [Fraction(0)]
+    p = _parts(e)
+    if p is None:
+        return None
+    form, const = p[0], p[1]
     try:
-        _lin(e, Fraction(1), form, const)
-        keys = sorted(form, key=default_sort_key)
+        keys = sorted(form, key=_sort_key)
         items = tuple((t, form[t]) for t in keys if form[t])
         # decide here what callers read (offset nonzero, unit coefficient):
         # an undecidable constant reads as "not read" (no integrality
         # link, a relaxation) instead of raising Undecided later
-        bool(const[0])
+        bool(const)
         for _t, c in items:
             bool(c == 1)
     except _UNREAD:
         return None
-    return Integral(items, const[0]), keys
+    return Integral(items, const), keys
 
 
 #: ``GENERIC_CONSTANTS -> {atom -> interpret(atom)}`` (and the

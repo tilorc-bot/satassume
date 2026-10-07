@@ -1045,15 +1045,17 @@ class Engine:
                  writeback: str = "root-only"):
         clause_templates = None
         if templates is None:
-            import importlib.util
-            if importlib.util.find_spec("sympy") is None:  # pragma: no cover
+            try:
+                from .templates import registry
+            except ModuleNotFoundError as e:  # pragma: no cover
+                # a broken template package must not turn into silent
+                # Nones: only a missing SymPy means "no templates"
+                if e.name != "sympy":
+                    raise
                 templates = lambda node: ()
             else:
-                # a broken template package must not turn into silent Nones
-                from .templates import registry
                 templates = registry.facts_for
                 clause_templates = registry.clauses_for
-                registry.warm_up()
         if extensions is None:
             from .extensions import extensions
         if relations is None:
@@ -1910,6 +1912,16 @@ def neighbourhood(pred) -> frozenset:
     clause with it, as indices."""
     i = PRED_INDEX[pred] if isinstance(pred, str) else pred
     n = _NEIGH.get(i)
+    if n is None and not _NEIGH:
+        # all of them in one pass over the rule clauses
+        adj = [{k} for k in range(NPRED)]
+        for c in RULE_CLAUSES:
+            idx = [abs(l) - 1 for l in c]
+            for k in idx:
+                adj[k].update(idx)
+        for k, a in enumerate(adj):
+            _NEIGH[k] = frozenset(a)
+        n = _NEIGH.get(i)
     if n is None:
         acc = {i}
         for c in RULE_CLAUSES:

@@ -16,7 +16,7 @@ except the structural ``is_commutative`` (``atoms.structural_commutative``).
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
 from ..rules import NPRED, PRED_INDEX, PREDICATES, RULE_FREE, RULE_INSTANTIATED, unit_propagate
@@ -43,8 +43,11 @@ SIGN_FLIP = {
     'extended_nonpositive': 'extended_nonnegative',
 }
 
-Lit = Tuple[int, str, bool]
-Rule = Tuple[Tuple[Lit, ...], Tuple[Lit, ...]]
+if TYPE_CHECKING:
+    # for annotations only: subscripting typing generics costs about 50 us
+    # at import, which the first relation query of a process pays
+    Lit = Tuple[int, str, bool]
+    Rule = Tuple[Tuple[Lit, ...], Tuple[Lit, ...]]
 
 
 def is_constant(obj) -> bool:
@@ -208,9 +211,25 @@ class Pattern:
         clauses = []
         used = set()
         child_preds: Dict[int, set] = {}
+        index = PRED_INDEX
         for ps, cs in rules:
-            lits = [(k, PRED_INDEX[p], pos) for k, p, pos in ps]
-            lits += [(k, PRED_INDEX[p], not pos) for k, p, pos in cs]
+            if not ps and len(cs) == 1:
+                # a unit clause (all of a units() pattern): nothing to
+                # deduplicate, no tautology
+                k, p, pos = cs[0]
+                i = index[p]
+                lits = ((k, i, not pos),)
+                internal = ((k, 2 * i + (0 if pos else 1)),)
+                if k == node:
+                    npreds = frozenset((i,))
+                else:
+                    npreds = frozenset()
+                    child_preds.setdefault(k, set()).add(i)
+                used.add(k)
+                clauses.append((lits, npreds, internal))
+                continue
+            lits = [(k, index[p], pos) for k, p, pos in ps]
+            lits += [(k, index[p], not pos) for k, p, pos in cs]
             lits = list(dict.fromkeys(lits))
             if any((k, i, not neg) in lits for k, i, neg in lits):
                 continue    # tautology
