@@ -208,15 +208,33 @@ class Pattern:
         clauses = []
         used = set()
         child_preds: Dict[int, set] = {}
+        index = PRED_INDEX
         for ps, cs in rules:
-            lits = [(k, PRED_INDEX[p], pos) for k, p, pos in ps]
-            lits += [(k, PRED_INDEX[p], not pos) for k, p, pos in cs]
+            if not ps and len(cs) == 1:
+                # a unit clause (all of a units() pattern): nothing to
+                # deduplicate, no tautology
+                k, p, pos = cs[0]
+                i = index[p]
+                lits = ((k, i, not pos),)
+                internal = ((k, 2 * i + (0 if pos else 1)),)
+                if k == node:
+                    npreds = frozenset((i,))
+                else:
+                    npreds = frozenset()
+                    child_preds.setdefault(k, set()).add(i)
+                used.add(k)
+                clauses.append((lits, npreds, internal))
+                continue
+            lits = [(k, index[p], pos) for k, p, pos in ps]
+            lits += [(k, index[p], not pos) for k, p, pos in cs]
             lits = list(dict.fromkeys(lits))
-            if any((k, i, not neg) in lits for k, i, neg in lits):
-                continue    # tautology
-            npreds = frozenset(i for k, i, _ in lits if k == node)
+            # tautology: after deduplication, a (slot, predicate) pair
+            # that occurs twice occurs with both signs
+            if len({(k, i) for k, i, _ in lits}) < len(lits):
+                continue
+            npreds = frozenset([i for k, i, _ in lits if k == node])
             # internal literal = 2*base_of_slot + (2*pidx + neg)
-            clauses.append((tuple(lits), npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
+            clauses.append((tuple(lits), npreds, tuple([(k, 2 * i + (1 if neg else 0)) for k, i, neg in lits])))
             for k, i, _ in lits:
                 used.add(k)
                 if k != node:
