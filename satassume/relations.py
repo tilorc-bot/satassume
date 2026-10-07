@@ -355,6 +355,7 @@ from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
+from .epoch import EPOCH as _EPOCH
 from .formula import And, Not, P, atoms_of
 from .rules import NPRED, PRED_INDEX
 from .constfield import Undecided, sign
@@ -658,24 +659,31 @@ def _number_basis(engine, c, facts=False) -> tuple:
     r = memo.get(c)
     if r is not None:
         return r[1] if facts else r[0]
-    from .rules import PREDICATES, RULE_INSTANTIATED, unit_propagate
+    from .rules import PREDICATES, RULE_INSTANTIATED, closure_mask, lit_bit, lits_mask
     decided, open_ = [], []
-    for k, p in enumerate(PREDICATES):
-        v = engine.is_(c, p)
+    for k, v in enumerate(_number_values(engine, c)):
         if v is None:
             open_.append(k)
         else:
             decided.append(k + 1 if v else -(k + 1))
-    want = set(decided)
+    want = lits_mask(decided)
 
     def closes(lits):
-        d = unit_propagate(RULE_INSTANTIATED, lits)
-        return d is not None and want <= set(d) | set(lits)
+        m = lits_mask(lits)
+        d = closure_mask(RULE_INSTANTIATED, m)
+        return d >= 0 and not want & ~(d | m)
+    # greedy: a decided literal the closure of the basis so far does not
+    # give joins it; the closure grows incrementally (unit propagation is
+    # monotone: closing the closure plus a literal closes the set plus it)
     basis = []
+    closed = 0                            # closure of ``basis``; -1: conflict
     for l in decided:
-        d = unit_propagate(RULE_INSTANTIATED, basis)
-        if d is None or l not in set(d) | set(basis):
-            basis.append(l)
+        bit = 1 << lit_bit(l)
+        if closed >= 0 and closed & bit:
+            continue
+        basis.append(l)
+        if closed >= 0:
+            closed = closure_mask(RULE_INSTANTIATED, closed | bit)
     for l in list(basis):
         rest = [m for m in basis if m != l]
         if closes(rest):
@@ -686,6 +694,61 @@ def _number_basis(engine, c, facts=False) -> tuple:
          tuple((abs(l) - 1, l > 0) for l in basis))
     memo[c] = r
     return r[1] if facts else r[0]
+
+
+def _number_values(engine, c) -> list:
+    """``[engine.is_(c, p) for p in PREDICATES]`` from one session instead
+    of one per predicate (33 sessions were about 1.2 ms of a cold equality
+    query).  The facts of a number are context-free and its cone is the
+    number itself, so a session with every predicate demanded answers each
+    predicate as ``is_`` does: a definite answer is an entailment of the
+    node's clauses, which ``is_``'s session holds too once escalated, and
+    both searches are complete.  Cached facts are read first and the
+    computed ones stored, as ``is_`` reads and stores them; the cases
+    ``is_`` treats specially (a node under construction, a cone over the
+    budget) go to ``is_`` itself."""
+    from .rules import PREDICATES
+    if not hasattr(engine, "_fresh_session"):
+        # a reference engine (satassume.ref): its is_ alone
+        return [engine.is_(c, p) for p in PREDICATES]
+    if engine._epoch != _EPOCH[0] or engine.cache._settings != engine._settings_key:
+        engine._check_version()
+    facts = engine.cache.facts(c)
+    out = [None] * len(PREDICATES)
+    todo = []
+    for k, p in enumerate(PREDICATES):
+        if facts is not None and p in facts:
+            out[k] = facts[p]
+        else:
+            todo.append(k)
+    if facts is not None:
+        engine.stats["cache_hits"] += len(PREDICATES) - len(todo)
+    if not todo:
+        return out
+    if c in engine._constructing or engine._cone_info(c)[0] is None:
+        for k in todo:
+            out[k] = engine.is_(c, PREDICATES[k])
+        return out
+    engine.stats["queries"] += len(todo)
+    s = engine._fresh_session()
+    s.ensure(c, set(PREDICATES))
+    base = s.base[c]
+    for k in todo:
+        out[k] = s.query_literal(base + k, search=False)
+    left = [k for k in todo if out[k] is None]
+    if left and s.incomplete:
+        engine.stats["escalations"] += 1
+        s.escalate()
+        for k in left:
+            out[k] = s.query_literal(base + k, search=False)
+        left = [k for k in left if out[k] is None]
+    for k in left:
+        engine.stats["searches"] += 1
+        out[k] = s.query_literal(base + k, search=True)
+    cache = engine.cache
+    for k in todo:
+        engine._put_result(s, cache, c, PREDICATES[k], out[k])
+    return out
 
 
 def _number_facts(engine, c) -> tuple:

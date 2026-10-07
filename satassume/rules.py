@@ -152,35 +152,94 @@ RULE_CLAUSES: Tuple[Clause, ...] = tuple(compile_rules())
 NPRED = len(PREDICATES)
 
 
-def unit_propagate(clauses: Sequence[Clause], assumptions: Sequence[int]):
-    """Unit propagation to a fixpoint over signed-integer clauses; returns
-    the set of derived literals (including ``assumptions``) or None on a
-    conflict."""
-    assigned = set(assumptions)
-    if any(-l in assigned for l in assigned):
-        return None
+#: clause tuple (by id, kept alive) -> its clause masks (:func:`_masks`)
+_MASKS: dict = {}
+
+
+def lit_bit(l: int) -> int:
+    """The bit of the signed literal ``l`` in a literal mask: ``2*(|l| -
+    1)`` for a positive literal, one more for a negative one."""
+    return 2 * (l - 1) if l > 0 else 2 * (-l - 1) + 1
+
+
+def lits_mask(lits: Sequence[int]) -> int:
+    """The mask of the signed literals ``lits``."""
+    m = 0
+    for l in lits:
+        m |= 1 << lit_bit(l)
+    return m
+
+
+def mask_lits(m: int) -> set:
+    """The signed literals of the mask ``m``."""
+    out = set()
+    while m:
+        low = m & -m
+        m ^= low
+        b = low.bit_length() - 1
+        out.add(-(b >> 1) - 1 if b & 1 else (b >> 1) + 1)
+    return out
+
+
+def _masks(clauses: Sequence[Clause]) -> Tuple[Tuple[int, ...], int]:
+    """``(masks, even)``: each clause as the mask of its literals, and the
+    mask of the positive literal of every variable the clauses mention.
+    Memoized for a tuple of clauses (the rule base)."""
+    key = id(clauses)
+    hit = _MASKS.get(key)
+    if hit is not None and hit[0] is clauses:
+        return hit[1]
+    masks = []
+    top = 0
+    for c in clauses:
+        m = 0
+        for l in c:
+            m |= 1 << lit_bit(l)
+            if abs(l) > top:
+                top = abs(l)
+        masks.append(m)
+    r = (tuple(masks), (4 ** top - 1) // 3)
+    if type(clauses) is tuple:
+        if len(_MASKS) >= 64:
+            _MASKS.clear()
+        _MASKS[key] = (clauses, r)
+    return r
+
+
+def closure_mask(clauses: Sequence[Clause], a: int) -> int:
+    """The unit-propagation fixpoint of the literal mask ``a`` under
+    ``clauses``, as a mask, or -1 on a conflict.  ``sw`` is ``a`` with
+    every literal replaced by its complement, so ``m & ~sw`` are the
+    unassigned literals of a clause none of whose literals is true."""
+    masks, even = _masks(clauses)
+    nvars = (a.bit_length() + 1) // 2          # variables ``a`` reaches
+    if nvars > (even.bit_length() + 1) // 2:
+        even = (4 ** nvars - 1) // 3
+    sw = ((a & even) << 1) | ((a >> 1) & even)
+    if a & sw:
+        return -1
     changed = True
     while changed:
         changed = False
-        for c in clauses:
-            unassigned = None
-            satisfied = False
-            n_unassigned = 0
-            for l in c:
-                if l in assigned:
-                    satisfied = True
-                    break
-                if -l not in assigned:
-                    n_unassigned += 1
-                    unassigned = l
-            if satisfied:
+        for m in masks:
+            if a & m:
                 continue
-            if n_unassigned == 0:
-                return None
-            if n_unassigned == 1:
-                assigned.add(unassigned)
+            free = m & ~sw
+            if not free:
+                return -1
+            if not free & (free - 1):
+                a |= free
+                sw |= free << 1 if free & even else free >> 1
                 changed = True
-    return assigned
+    return a
+
+
+def unit_propagate(clauses: Sequence[Clause], assumptions: Sequence[int]):
+    """Unit propagation to a fixpoint over signed-integer clauses; returns
+    the set of derived literals (including ``assumptions``) or None on a
+    conflict (:func:`closure_mask` over literal masks)."""
+    r = closure_mask(clauses, lits_mask(assumptions))
+    return None if r < 0 else mask_lits(r)
 
 
 def minimize_for_propagation(clauses: Sequence[Clause]) -> Tuple[Clause, ...]:
