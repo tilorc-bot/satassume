@@ -66,17 +66,33 @@ done by :mod:`satassume.transfer` on top of this theory's classes.
 """
 from __future__ import annotations
 
-from collections import namedtuple
+from operator import itemgetter
 from typing import Any, Hashable, Iterable
 
 __all__ = ["EUFTheory", "EqAtom"]
 
 
-EqAtom = namedtuple("EqAtom", "lhs rhs positive", defaults=(True,))
-EqAtom.__doc__ = """Payload of an EUF atom: ``lhs == rhs`` between term ids.
+class EqAtom(tuple):
+    """Payload of an EUF atom: ``lhs == rhs`` between term ids.
 
-With ``positive=False`` the variable stands for ``lhs != rhs``.  A plain
-``(lhs, rhs)`` tuple is accepted as well."""
+    With ``positive=False`` the variable stands for ``lhs != rhs``.  A plain
+    ``(lhs, rhs)`` tuple is accepted as well.  (A tuple with named fields
+    written out: ``collections.namedtuple`` costs more to build at import.)"""
+    __slots__ = ()
+    _fields = ("lhs", "rhs", "positive")
+
+    def __new__(cls, lhs, rhs, positive=True):
+        return tuple.__new__(cls, (lhs, rhs, positive))
+
+    def __getnewargs__(self):
+        return tuple(self)
+
+    def __repr__(self):
+        return f"EqAtom(lhs={self[0]!r}, rhs={self[1]!r}, positive={self[2]!r})"
+
+    lhs = property(itemgetter(0))
+    rhs = property(itemgetter(1))
+    positive = property(itemgetter(2))
 
 # Trail opcodes
 _UNION, _LOOKUP, _ASSIGN, _DISEQ, _REG_APP, _REG_ATOM, _USE = range(7)
