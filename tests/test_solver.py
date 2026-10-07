@@ -1021,3 +1021,69 @@ def test_held_levels_continue_from_the_common_prefix():
     for cl in clauses:
         fresh.add_clause(cl)
     assert fresh.entails(z, [a, c]) is True and fresh.entails(b, [a, c]) is False
+
+
+# -- _block_models against a set-based reference --------------------------
+
+def _block_models_reference(clauses, n):
+    """The enumeration _block_models replaced (sets of literals): DPLL with
+    unit propagation over relative literals, every model as a mask."""
+    out = []
+    cls = [tuple(c) for c in clauses]
+
+    def up(a):
+        changed = True
+        while changed:
+            changed = False
+            for c in cls:
+                free = -1
+                for l in c:
+                    if l in a:
+                        break
+                    if l ^ 1 not in a:
+                        if free >= 0:
+                            break
+                        free = l
+                else:
+                    if free < 0:
+                        return False
+                    a.add(free)
+                    changed = True
+        return True
+
+    def rec(a):
+        if not up(a):
+            return
+        for i in range(n):
+            if 2 * i not in a and 2 * i + 1 not in a:
+                rec(a | {2 * i + 1})
+                rec(a | {2 * i})
+                return
+        m = 0
+        for l in a:
+            m |= 1 << l
+        out.append(m)
+
+    rec(set())
+    return tuple(sorted(set(out)))
+
+
+def test_block_models_rule_base_matches_reference():
+    from satassume.rules import NPRED, RULE_INTERNAL
+    from satassume.solver import _block_models
+    models = _block_models(RULE_INTERNAL, NPRED)
+    assert models == _block_models_reference(RULE_INTERNAL, NPRED)
+    assert len(models) == 48
+
+
+def test_block_models_random_blocks_match_reference():
+    from satassume.solver import _block_models
+    rng = random.Random(7)
+    for _ in range(300):
+        n = rng.randint(2, 9)
+        clauses = []
+        for _ in range(rng.randint(1, 14)):
+            k = rng.randint(2, min(4, n))
+            vs = rng.sample(range(n), k)
+            clauses.append(tuple(2 * v + rng.randint(0, 1) for v in vs))
+        assert _block_models(clauses, n) == _block_models_reference(clauses, n)

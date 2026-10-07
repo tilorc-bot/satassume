@@ -124,44 +124,50 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
     ``2*i + 1`` if it is false.  DPLL with unit propagation; the engine's
     rule base has 48 models."""
     out: list[int] = []
-    cls = [tuple(c) for c in clauses]
-
-    def up(a: set) -> bool:
-        changed = True
-        while changed:
-            changed = False
-            for c in cls:
-                free = -1
-                for l in c:
-                    if l in a:
-                        break
-                    if l ^ 1 not in a:
-                        if free >= 0:
-                            break
-                        free = l
-                else:
-                    if free < 0:
-                        return False
-                    a.add(free)
-                    changed = True
-        return True
-
-    def rec(a: set) -> None:
-        if not up(a):
-            return
-        for i in range(n):
-            if 2 * i not in a and 2 * i + 1 not in a:
-                rec(a | {2 * i + 1})
-                rec(a | {2 * i})
-                return
+    cls: list[int] = []
+    for c in clauses:
         m = 0
-        for l in a:
+        for l in c:
             m |= 1 << l
-        out.append(m)
+        cls.append(m)
+    even = _EVEN & ((1 << (2 * n)) - 1)    # the positive literal of each variable
+
+    def up(a: int) -> int:
+        """The unit-propagation closure of the assignment ``a``, -1 on a
+        conflict.  ``sw`` is ``a`` with each literal replaced by its
+        complement, so ``cm & ~sw`` are the clause's unassigned literals
+        when none of its literals is true."""
+        sw = ((a & _EVEN) << 1) | ((a >> 1) & _EVEN)
+        while True:
+            changed = False
+            for cm in cls:
+                if a & cm:
+                    continue
+                free = cm & ~sw
+                if not free:
+                    return -1
+                if not free & (free - 1):      # one unassigned literal: unit
+                    a |= free
+                    sw |= free << 1 if free & _EVEN else free >> 1
+                    changed = True
+            if not changed:
+                return a
+
+    def rec(a: int) -> None:
+        a = up(a)
+        if a < 0:
+            return
+        unassigned = even & ~(a | (a >> 1))
+        if unassigned:
+            low = unassigned & -unassigned      # the lowest unassigned variable
+            rec(a | (low << 1))
+            rec(a | low)
+            return
+        out.append(a)
         if len(out) > 1 << 16:
             raise ValueError("rule block has too many models")
 
-    rec(set())
+    rec(0)
     return tuple(sorted(set(out)))
 
 
