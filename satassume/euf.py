@@ -107,7 +107,8 @@ class EUFTheory:
     :meth:`equal` and :meth:`explain`.
     """
 
-    def __init__(self) -> None:
+    def __init__(self):
+        # type: () -> None
         self._keys: dict[Any, int] = {}       # interning key -> term
         self._app: list = []                  # term -> (f, a) or None
         self._repr: list[int] = []            # term -> class representative
@@ -133,7 +134,8 @@ class EUFTheory:
     # Terms
     # ------------------------------------------------------------------
 
-    def _new(self, key, app=None, value=False) -> int:
+    def _new(self, key, app=None, value=False):
+        # type: (Any, Any, Any) -> int
         t = len(self._repr)
         self._keys[key] = t
         self._app.append(app)
@@ -147,7 +149,8 @@ class EUFTheory:
         self._atoms_of.append([])
         return t
 
-    def term(self, head: Hashable, args: Iterable[int] = ()) -> int:
+    def term(self, head, args=()):
+        # type: (Hashable, Iterable[int]) -> int
         """The term ``head(*args)``, or the constant ``head`` if ``args`` is
         empty.  ``args`` are term ids.  Interned: equal inputs give the
         same id."""
@@ -168,14 +171,16 @@ class EUFTheory:
             t = self._apply(t, a)
         return t
 
-    def value(self, key: Hashable) -> int:
+    def value(self, key):
+        # type: (Hashable) -> int
         """An interpreted constant.  ``value(k1)`` and ``value(k2)`` are
         distinct terms that can never be equal iff ``k1 != k2``."""
         k = ("v", key)
         t = self._keys.get(k)
         return self._new(k, value=True) if t is None else t
 
-    def _apply(self, f: int, a: int) -> int:
+    def _apply(self, f, a):
+        # type: (int, int) -> int
         key = ("a", f, a)
         t = self._keys.get(key)
         if t is None:
@@ -184,7 +189,8 @@ class EUFTheory:
             self._process()
         return t
 
-    def _index_app(self, t: int) -> None:
+    def _index_app(self, t):
+        # type: (int) -> None
         """Enter application ``t`` into the lookup table and use lists, or
         queue its merge with a congruent application."""
         lims = self._lims
@@ -208,10 +214,12 @@ class EUFTheory:
         elif rep[o] != rep[t]:
             self._pending.append((t, o, (t, o)))
 
-    def num_terms(self) -> int:
+    def num_terms(self):
+        # type: () -> int
         return len(self._repr)
 
-    def members(self, t: int) -> list[int]:
+    def members(self, t):
+        # type: (int) -> list[int]
         """The terms of ``t``'s class (the live list: do not modify)."""
         return self._members[self._repr[t]]
 
@@ -219,14 +227,17 @@ class EUFTheory:
     # Queries
     # ------------------------------------------------------------------
 
-    def find(self, t: int) -> int:
+    def find(self, t):
+        # type: (int) -> int
         """The representative of ``t``'s class."""
         return self._repr[t]
 
-    def equal(self, a: int, b: int) -> bool:
+    def equal(self, a, b):
+        # type: (int, int) -> bool
         return self._repr[a] == self._repr[b]
 
-    def explain(self, a: int, b: int) -> list[int]:
+    def explain(self, a, b):
+        # type: (int, int) -> list[int]
         """The asserted literals (true under the current assignment) whose
         conjunction implies ``a == b``.  ``a`` and ``b`` must be equal."""
         if self._repr[a] != self._repr[b]:
@@ -237,7 +248,8 @@ class EUFTheory:
     # Union and the proof forest
     # ------------------------------------------------------------------
 
-    def _reroot(self, x: int) -> int:
+    def _reroot(self, x):
+        # type: (int) -> int
         """Make ``x`` the root of its proof tree by reversing the path to
         the old root.  Returns the old root."""
         pfp, pfl = self._pfp, self._pfl
@@ -248,7 +260,8 @@ class EUFTheory:
             prev, plab, cur = cur, lab, nxt
         return prev
 
-    def _union(self, a: int, b: int, label) -> None:
+    def _union(self, a, b, label):
+        # type: (int, int, Any) -> None
         rep = self._repr
         ra, rb = rep[a], rep[b]
         if ra == rb:
@@ -329,7 +342,8 @@ class EUFTheory:
         if set_val:
             self._val[rb] = -1
 
-    def _process(self) -> None:
+    def _process(self):
+        # type: () -> None
         pending = self._pending
         i = 0
         while i < len(pending) and self._conflict is None:
@@ -338,7 +352,8 @@ class EUFTheory:
             self._union(a, b, label)
         pending.clear()
 
-    def _explain_edge(self, cur, out, todo, aux, high) -> int:
+    def _explain_edge(self, cur, out, todo, aux, high):
+        # type: (Any, Any, Any, Any, Any) -> int
         """Explain the proof-forest edge from ``cur`` to its parent; return
         the next node to look at."""
         p = self._pfp[cur]
@@ -357,7 +372,8 @@ class EUFTheory:
         aux[cur] = p
         return high(p)
 
-    def _explain(self, a: int, b: int, out: set) -> set:
+    def _explain(self, a, b, out):
+        # type: (int, int, set) -> set
         """Add to ``out`` the asserted literals behind ``a == b``."""
         pfp = self._pfp
         aux: dict[int, int] = {}
@@ -402,7 +418,8 @@ class EUFTheory:
     # Theory protocol
     # ------------------------------------------------------------------
 
-    def register_atom(self, literal: int, payload) -> None:
+    def register_atom(self, literal, payload):
+        # type: (int, Any) -> None
         if literal <= 0 or literal in self._atoms:
             raise ValueError(f"bad or repeated atom variable {literal}")
         if isinstance(payload, EqAtom):
@@ -416,7 +433,8 @@ class EUFTheory:
         self._atoms[literal] = (s, t, bool(pos))
         self._index_atom(literal)
 
-    def _index_atom(self, v: int) -> None:
+    def _index_atom(self, v):
+        # type: (int) -> None
         s, t, _ = self._atoms[v]
         rep = self._repr
         rs, rt = rep[s], rep[t]
@@ -428,7 +446,8 @@ class EUFTheory:
         elif v not in self._assigned:
             self._propq.append(v)
 
-    def assert_lit(self, literal: int):
+    def assert_lit(self, literal):
+        # type: (int) -> Any
         v = abs(literal)
         atom = self._atoms.get(v)
         if atom is None:
@@ -481,10 +500,12 @@ class EUFTheory:
         q.clear()
         return out
 
-    def push_level(self) -> None:
+    def push_level(self):
+        # type: () -> None
         self._lims.append(len(self._trail))
 
-    def pop_level(self) -> None:
+    def pop_level(self):
+        # type: () -> None
         lim = self._lims.pop()
         trail = self._trail
         redo_apps: list[int] = []
@@ -524,9 +545,11 @@ class EUFTheory:
 
     # ------------------------------------------------------------------
 
-    def level(self) -> int:
+    def level(self):
+        # type: () -> int
         return len(self._lims)
 
-    def __repr__(self) -> str:
+    def __repr__(self):
+        # type: () -> str
         return (f"<EUFTheory {len(self._repr)} terms, {len(self._atoms)} atoms, "
                 f"level {len(self._lims)}>")

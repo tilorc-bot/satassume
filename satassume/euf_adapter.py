@@ -41,6 +41,8 @@ so interning by expression is sound.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sympy import Add, Mul, Pow, Rational, nan
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.ask import Q
@@ -61,14 +63,16 @@ _NAN = frozenset((nan,))       # for has_any: ``e.has(nan)`` in one walk
 _class_ok: dict[type, bool] = {}
 
 
-def _inherits_from_basic(cls, name) -> bool:
+def _inherits_from_basic(cls, name):
+    # type: (Any, Any) -> bool
     for c in cls.__mro__:
         if name in c.__dict__:
             return c is Basic
     return True
 
 
-def _structural(expr) -> bool:
+def _structural(expr):
+    # type: (Any) -> bool
     """True iff congruence may look inside ``expr``: a function-like class
     that binds no variable.
 
@@ -100,7 +104,8 @@ class EUFAdapter:
     theory to the solver on first use.
     """
 
-    def __init__(self, theory: EUFTheory | None = None):
+    def __init__(self, theory=None):
+        # type: (EUFTheory | None) -> None
         self.theory = theory if theory is not None else EUFTheory()
         self._terms: dict[Basic, int] = {}
         #: terms interned for the transfer layer only (session nodes, see
@@ -134,10 +139,12 @@ class EUFAdapter:
             return None
         return args[0], args[1], positive
 
-    def interprets(self, atom) -> bool:
+    def interprets(self, atom):
+        # type: (Any) -> bool
         return self.parse(atom) is not None
 
-    def register(self, solver, var: int, atom) -> bool:
+    def register(self, solver, var, atom):
+        # type: (Any, int, Any) -> bool
         """Register solver variable ``var`` as ``atom`` with the theory.
         Returns False, registering nothing, if EUF does not interpret the
         atom."""
@@ -151,7 +158,8 @@ class EUFAdapter:
         solver.register_atom(self.theory, var, payload)
         return True
 
-    def attach(self, solver) -> None:
+    def attach(self, solver):
+        # type: (Any) -> None
         """Attach the theory to ``solver`` (once; :meth:`register` does it
         on first use)."""
         if self._solver is solver:
@@ -164,7 +172,8 @@ class EUFAdapter:
 
     # ------------------------------------------------------------------
 
-    def term(self, expr) -> int:
+    def term(self, expr):
+        # type: (Any) -> int
         """The theory term of SymPy expression ``expr`` (interned)."""
         terms = self._terms
         t = terms.get(expr)
@@ -190,7 +199,8 @@ class EUFAdapter:
                 terms[e] = th.term(e)
         return terms[expr]
 
-    def node_term(self, expr) -> int:
+    def node_term(self, expr):
+        # type: (Any) -> int
         """The theory term of ``expr`` for predicate transfer
         (:mod:`satassume.transfer`): interned like :meth:`term`, with the
         same ids, but remembered apart so that it does not become a
@@ -225,7 +235,8 @@ class EUFAdapter:
                 nt[e] = th.term(e)
         return nt[expr]
 
-    def interned(self, exprs) -> list:
+    def interned(self, exprs):
+        # type: (Any) -> list
         """The expressions :meth:`term` interns for ``exprs`` (each side and
         its subterms, as far as congruence looks inside), each once."""
         out, seen = [], set()
@@ -240,15 +251,18 @@ class EUFAdapter:
                 stack.extend(e.args)
         return out
 
-    def term_of(self, expr) -> int | None:
+    def term_of(self, expr):
+        # type: (Any) -> int | None
         """The term of ``expr`` if the adapter has interned it, else None."""
         return self._terms.get(expr)
 
-    def terms(self) -> dict:
+    def terms(self):
+        # type: () -> dict
         """Every interned SymPy expression, mapped to its term id."""
         return dict(self._terms)
 
-    def shared_terms(self) -> set:
+    def shared_terms(self):
+        # type: () -> set
         """Candidate interface terms for combination with another theory.
 
         This is every SymPy expression interned so far: the sides of every

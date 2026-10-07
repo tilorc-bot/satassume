@@ -266,7 +266,8 @@ class Integral(tuple):
     offset = property(itemgetter(1))
 
 
-def constraint(terms, op: str, rhs=0):
+def constraint(terms, op, rhs=0):
+    # type: (Any, str, Any) -> Any
     """Convenience payload builder: ``sum(c*t) op rhs`` with ``op`` one of
     ``< <= > >= = == !=``.  ``>``/``>=`` are negated into ``<``/``<=``;
     ``!=`` gives ``Negated`` of the equality."""
@@ -288,7 +289,8 @@ def constraint(terms, op: str, rhs=0):
     raise ValueError(f"unknown operator {op!r}")
 
 
-def _is_int(q) -> bool:
+def _is_int(q):
+    # type: (Any) -> bool
     """``q`` (a Fraction or an :class:`~satassume.constfield.Element`) is
     an integer.  An Element is False when its value is proven not to be an
     integer and raises Undecided otherwise, never True (its value may still
@@ -299,7 +301,8 @@ def _is_int(q) -> bool:
     return q.is_integer()
 
 
-def _floor(q, d) -> int:
+def _floor(q, d):
+    # type: (Any, Any) -> int
     """The largest integer ``<= q + d*delta`` for every small ``delta > 0``
     (for an Element: ``floor(q)``, exact or Undecided, ``d`` unused: an
     integer value makes it Undecided, as its enclosures contain the
@@ -313,7 +316,8 @@ def _floor(q, d) -> int:
     return math.floor(q)
 
 
-def _ceil(q, d) -> int:
+def _ceil(q, d):
+    # type: (Any, Any) -> int
     """The smallest integer ``>= q + d*delta`` for every small ``delta > 0``
     (for an Element: ``ceil(q)``, at worst one too small for ``d > 0``,
     see :func:`_floor`)."""
@@ -324,13 +328,15 @@ def _ceil(q, d) -> int:
     return math.ceil(q)
 
 
-def _within_cert(q, bound) -> bool:
+def _within_cert(q, bound):
+    # type: (Any, Any) -> bool
     """:func:`satassume.lra_cert.within` (only with constants)."""
     from .lra_cert import within
     return within(q, bound)
 
 
-def _dedupe(lits: Iterable[int]) -> list[int]:
+def _dedupe(lits):
+    # type: (Iterable[int]) -> list[int]
     out: list[int] = []
     seen = set()
     for l in lits:
@@ -349,7 +355,8 @@ class LRATheory:
     leaves the simplex to :meth:`check`.
     """
 
-    def __init__(self, eager: bool = True) -> None:
+    def __init__(self, eager=True):
+        # type: (bool) -> None
         self.eager = eager
         #: set when an undecidable comparison made the theory give up
         self.gave_up = False
@@ -416,13 +423,15 @@ class LRATheory:
                       "exhausted": 0}
 
     @property
-    def undecidable(self) -> bool:
+    def undecidable(self):
+        # type: () -> bool
         """A payload has constants: a comparison can be undecidable and
         make the theory give up, at a point the pivot path decides."""
         return self._fields
 
     @property
-    def certified(self) -> bool:
+    def certified(self):
+        # type: () -> bool
         """No search over the registered atoms, or over any subset of them,
         can make this theory give up, whatever its path (see "Certified
         constants" in the module docstring); False also when it is unknown.
@@ -432,14 +441,16 @@ class LRATheory:
         :meth:`certified_with`."""
         return self._certificate()[0]
 
-    def certified_with(self, values) -> bool:
+    def certified_with(self, values):
+        # type: (Any) -> bool
         """:attr:`certified` for a search that also starts from rational
         values ``values = (top, den)`` (absolute values at most ``top``,
         denominators dividing ``den``) in the assignment, such as a branch
         and bound without constants left (:meth:`rational_values`)."""
         return self._certificate(values)[0]
 
-    def rational_values(self) -> tuple | None:
+    def rational_values(self):
+        # type: () -> tuple | None
         """``(top, den)`` of the values of the nonbasic variables (the
         others are their combinations), if all are rational."""
         vq, rows = self._vq, self._rows
@@ -453,7 +464,8 @@ class LRATheory:
                 den = math.lcm(den, q.denominator)
         return top, den
 
-    def _certificate(self, values=None) -> tuple:
+    def _certificate(self, values=None):
+        # type: (Any) -> tuple
         """``(certified, Y)``, ``Y`` the largest value a variable may have
         to split in a branch and bound (:meth:`_branch`); memoized per
         registered atom count."""
@@ -471,7 +483,8 @@ class LRATheory:
             c = self._cert[values] = (key, r)
         return c[1]
 
-    def _certify(self, values) -> tuple:
+    def _certify(self, values):
+        # type: (Any) -> tuple
         """The certificate itself (:func:`satassume.lra_cert.certify`,
         imported only by a theory whose payloads have constants)."""
         from .lra_cert import certify
@@ -481,7 +494,8 @@ class LRATheory:
     # registration
     # ------------------------------------------------------------------
 
-    def _new_var(self, key: Hashable | None) -> int:
+    def _new_var(self, key):
+        # type: (Hashable | None) -> int
         v = len(self._key)
         self._key.append(key)
         self._lo.append(None)
@@ -496,11 +510,13 @@ class LRATheory:
             self._var_of[key] = v
         return v
 
-    def _term_var(self, key: Hashable) -> int:
+    def _term_var(self, key):
+        # type: (Hashable) -> int
         v = self._var_of.get(key)
         return self._new_var(key) if v is None else v
 
-    def _slack(self, form: tuple[tuple[int, Fraction], ...]) -> int:
+    def _slack(self, form):
+        # type: (tuple[tuple[int, Fraction], ...]) -> int
         s = self._slack_of.get(form)
         if s is not None:
             return s
@@ -543,11 +559,13 @@ class LRATheory:
     # propagate alone skips an implication it cannot decide and goes on
     # (propagation is optional).
 
-    def _give_up(self) -> None:
+    def _give_up(self):
+        # type: () -> None
         self.gave_up = True
         self.stats["gave_up"] += 1
 
-    def register_atom(self, literal: int, payload: Any) -> None:
+    def register_atom(self, literal, payload):
+        # type: (int, Any) -> None
         if self.gave_up:
             return
         try:
@@ -555,7 +573,8 @@ class LRATheory:
         except Undecided:
             self._give_up()
 
-    def assert_lit(self, literal: int):
+    def assert_lit(self, literal):
+        # type: (int) -> Any
         if self.gave_up:
             return None
         try:
@@ -648,7 +667,8 @@ class LRATheory:
             self._give_up()
             return []
 
-    def _register_atom(self, literal: int, payload: Any) -> None:
+    def _register_atom(self, literal, payload):
+        # type: (int, Any) -> None
         if literal <= 0:
             raise ValueError("register_atom takes a positive literal")
         if literal in self._atoms or literal in self._ground \
@@ -683,7 +703,8 @@ class LRATheory:
         self._atoms_on[v].append(literal)
         self._dirty.add(v)
 
-    def _lin(self, terms) -> dict:
+    def _lin(self, terms):
+        # type: (Any) -> dict
         """``{term: coefficient}`` of a payload's terms, repeated terms
         summed and zeros dropped; every term gets a variable (also one with
         coefficient 0, so that it has a model value)."""
@@ -703,7 +724,8 @@ class LRATheory:
         # and any use of its sign gives up
         return {t: c for t, c in lin.items() if type(c) is not Fraction or c}
 
-    def _var_of_form(self, lin: dict) -> tuple[int, Fraction]:
+    def _var_of_form(self, lin):
+        # type: (dict) -> tuple[int, Fraction]
         """``(v, c)`` with ``sum(a*t) == c*v`` for the non-empty form
         ``lin``: the term's variable, or the slack of the form normalised to
         leading coefficient 1.  Memoized per form (the atoms of one
@@ -721,7 +743,8 @@ class LRATheory:
         self._forms[key] = r
         return r
 
-    def _register_integral(self, literal: int, payload: Integral) -> None:
+    def _register_integral(self, literal, payload):
+        # type: (int, Integral) -> None
         lin = self._lin(payload.terms)
         k = num(payload.offset)
         if type(k) is not Fraction:
@@ -751,17 +774,20 @@ class LRATheory:
     # levels
     # ------------------------------------------------------------------
 
-    def push_level(self) -> None:
+    def push_level(self):
+        # type: () -> None
         if not self.gave_up:
             self._lims.append(len(self._trail))
 
-    def pop_level(self) -> None:
+    def pop_level(self):
+        # type: () -> None
         # after giving up (possibly inside an internal level of check) the
         # state is never read again: levels need no bookkeeping
         if not self.gave_up:
             self._undo_to(self._lims.pop())
 
-    def _undo_to(self, n: int) -> None:
+    def _undo_to(self, n):
+        # type: (int) -> None
         trail = self._trail
         while len(trail) > n:
             e = trail.pop()
@@ -783,7 +809,8 @@ class LRATheory:
     # asserting
     # ------------------------------------------------------------------
 
-    def _assert_kind(self, v: int, kind: str, c: Fraction, lit: int):
+    def _assert_kind(self, v, kind, c, lit):
+        # type: (int, str, Fraction, int) -> Any
         if kind == "<=":
             return self._set_upper(v, (c, _ZERO), lit)
         if kind == "<":
@@ -803,7 +830,8 @@ class LRATheory:
             return _dedupe([-lit, -self._lo_r[v], -self._up_r[v]])
         return None
 
-    def _set_upper(self, v: int, b: tuple, lit: int):
+    def _set_upper(self, v, b, lit):
+        # type: (int, tuple, int) -> Any
         up = self._up[v]
         if up is not None and up <= b:
             return None
@@ -818,7 +846,8 @@ class LRATheory:
             self._update(v, b)
         return None
 
-    def _set_lower(self, v: int, b: tuple, lit: int):
+    def _set_lower(self, v, b, lit):
+        # type: (int, tuple, int) -> Any
         lo = self._lo[v]
         if lo is not None and lo >= b:
             return None
@@ -833,7 +862,8 @@ class LRATheory:
             self._update(v, b)
         return None
 
-    def _update(self, v: int, b: tuple) -> None:
+    def _update(self, v, b):
+        # type: (int, tuple) -> None
         """Move nonbasic ``v`` to value ``b``, keeping every row satisfied
         (computed first, then written: see :meth:`_pivot`)."""
         dq = b[0] - self._vq[v]
@@ -859,7 +889,8 @@ class LRATheory:
     # integrality
     # ------------------------------------------------------------------
 
-    def _assert_integral(self, literal: int, it: tuple):
+    def _assert_integral(self, literal, it):
+        # type: (int, tuple) -> Any
         """Assert ``m*v + k`` in Z (``literal > 0``) or not in Z."""
         self._assigned[abs(literal)] = literal > 0
         self._trail.append((_ASG, abs(literal)))
@@ -872,7 +903,8 @@ class LRATheory:
             return (False, _dedupe([-literal] + [-l for l in r[1]]))
         return None
 
-    def _int_verdict(self, v: int, m: Fraction, k: Fraction):
+    def _int_verdict(self, v, m, k):
+        # type: (int, Fraction, Fraction) -> Any
         """Truth of ``m*v + k`` in Z implied by the bounds of ``v`` itself:
         False if the rounded range of ``m*v + k`` holds no integer, True if
         the bounds pin ``v`` to a value where it is an integer, else None;
@@ -909,7 +941,8 @@ class LRATheory:
             return (False, why)
         return None
 
-    def _int_bounds(self, v: int):
+    def _int_bounds(self, v):
+        # type: (int) -> Any
         """A conflict between the bounds of ``v`` and an asserted
         integrality literal on ``v``, or None."""
         for w, m, k, lit in self._int_lits:
@@ -919,7 +952,8 @@ class LRATheory:
                     return _dedupe([-lit] + [-l for l in r[1]])
         return None
 
-    def _branch(self, budget: list[int]):
+    def _branch(self, budget):
+        # type: (list[int]) -> Any
         """Branch and bound from a feasible simplex point: a conflict
         clause, or None (a point that satisfies every asserted integrality
         literal and is off every asserted disequality, or ``budget[0]``
@@ -1057,7 +1091,8 @@ class LRATheory:
                 return _dedupe(expl)
             self._pivot_and_update(b, enter, lo[b] if below else up[b])
 
-    def _pivot_and_update(self, b: int, j: int, target: tuple) -> None:
+    def _pivot_and_update(self, b, j, target):
+        # type: (int, int, tuple) -> None
         rows, cols, vq, vd = self._rows, self._cols, self._vq, self._vd
         a = rows[b][j]
         tq = (target[0] - vq[b]) / a
@@ -1082,7 +1117,8 @@ class LRATheory:
             vq[k] = q
             vd[k] = d
 
-    def _pivot_rational(self, b: int, j: int) -> None:
+    def _pivot_rational(self, b, j):
+        # type: (int, int) -> None
         """:meth:`_pivot` in place, for a tableau of Fractions only."""
         self.stats["pivots"] += 1
         rows, cols = self._rows, self._cols
@@ -1112,7 +1148,8 @@ class LRATheory:
         for k in newrow:
             cols[k].add(j)
 
-    def _pivot(self, b: int, j: int) -> None:
+    def _pivot(self, b, j):
+        # type: (int, int) -> None
         """Make ``j`` basic in place of ``b`` (``b`` becomes nonbasic).
 
         All arithmetic (which can raise for numbers with constants: a
@@ -1160,7 +1197,8 @@ class LRATheory:
     # models
     # ------------------------------------------------------------------
 
-    def _concrete(self) -> list[Fraction]:
+    def _concrete(self):
+        # type: () -> list[Fraction]
         """Values of all variables with delta replaced by a small rational
         that satisfies every current bound."""
         vq, vd, lo, up = self._vq, self._vd, self._lo, self._up
@@ -1175,7 +1213,8 @@ class LRATheory:
                 delta = min(delta, (u[0] - q) / (d - u[1]))
         return [q + delta * d for q, d in zip(vq, vd)]
 
-    def _model(self, point: list[Fraction]) -> dict:
+    def _model(self, point):
+        # type: (list[Fraction]) -> dict
         return {k: point[v] for v, k in enumerate(self._key) if k is not None}
 
     def _check(self):
@@ -1275,6 +1314,7 @@ class LRATheory:
             return (False, [self._lo_r[v] if kind[0] == "<" else self._up_r[v]])
         return None
 
-    def __repr__(self) -> str:
+    def __repr__(self):
+        # type: () -> str
         return (f"LRATheory({len(self._key)} vars, {len(self._rows)} rows, "
                 f"{len(self._atoms)} atoms, level {len(self._lims)})")

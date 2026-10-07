@@ -80,6 +80,8 @@ which queries assume its selector) is in
 """
 from __future__ import annotations
 
+from typing import Any
+
 from .rules import PRED_INDEX
 
 __all__ = ["TransferTheory"]
@@ -126,7 +128,8 @@ class TransferTheory:
         euf.on_merge = self._merged
         self.stats = {"propagated": 0, "conflicts": 0}
 
-    def guard(self, sel: int) -> None:
+    def guard(self, sel):
+        # type: (int) -> None
         """Make every lemma conditional on the selector variable ``sel``,
         which the caller registers as an atom of this theory: while ``sel``
         is not assigned true the theory propagates, checks and decides
@@ -138,7 +141,8 @@ class TransferTheory:
         self.sel = sel
         self.enabled = False
 
-    def switch(self, term: int, full: int, polar: int) -> list:
+    def switch(self, term, full, polar):
+        # type: (int, int, int) -> list
         """Make ``term``'s atoms take part only while ``full`` (all of them)
         or ``polar`` (its ``polar`` atom alone) is true; 0 for none.  May be
         called again with new variables for a term.  Returns the variables
@@ -154,13 +158,15 @@ class TransferTheory:
         self._dirty.append(term)
         return new
 
-    def unswitch(self, term: int) -> None:
+    def unswitch(self, term):
+        # type: (int) -> None
         """``term`` takes part always from now on (a candidate for another
         reason, see ``Relations.sync_transfer``)."""
         if self._sw.pop(term, None) is not None:
             self._dirty.append(term)
 
-    def _kind(self, m: int) -> int:
+    def _kind(self, m):
+        # type: (int) -> int
         """2: every predicate of term ``m`` takes part, 1: ``polar`` only,
         0: none (see :meth:`switch`)."""
         sw = self._sw.get(m)
@@ -173,7 +179,8 @@ class TransferTheory:
             return 1
         return 0
 
-    def _why(self, m: int, k: int) -> list:
+    def _why(self, m, k):
+        # type: (int, int) -> list
         """The negated enable variable term ``m`` takes part by (kind ``k``),
         for a lemma: [] if ``m`` is not switched."""
         sw = self._sw.get(m)
@@ -182,11 +189,13 @@ class TransferTheory:
         return [-sw[0]] if k == 2 else [-sw[1]]
 
     # ------------------------------------------------------------------
-    def _merged(self, ra: int, rb: int) -> None:
+    def _merged(self, ra, rb):
+        # type: (int, int) -> None
         self._dirty.append(rb)
         self._multi.append(rb)
 
-    def register_atom(self, literal: int, payload) -> None:
+    def register_atom(self, literal, payload):
+        # type: (int, Any) -> None
         if literal == self.sel or literal in self._onv:
             return
         if literal <= 0 or literal in self._atoms:
@@ -209,7 +218,8 @@ class TransferTheory:
             vs.append(literal)
         self._dirty.append(term)
 
-    def assert_lit(self, literal: int):
+    def assert_lit(self, literal):
+        # type: (int) -> Any
         v = -literal if literal < 0 else literal
         if v == self.sel:
             on = literal > 0
@@ -239,7 +249,8 @@ class TransferTheory:
         return None
 
     # ------------------------------------------------------------------
-    def set_fixed(self, term: int, facts) -> None:
+    def set_fixed(self, term, facts):
+        # type: (int, Any) -> None
         """Give ``term`` fixed, context-free facts ``[(pred, value), ...]``
         (a number's, see ``Relations._transfer_terms``) without a variable:
         every term EUF puts into its class gets them, with reasons made of
@@ -250,7 +261,8 @@ class TransferTheory:
         self._fixed[term] = dict(facts)
         self._dirty.append(term)
 
-    def _explain(self, a: int, b: int, memo: dict) -> list:
+    def _explain(self, a, b, memo):
+        # type: (int, int, dict) -> list
         if a == b:
             return []
         e = memo.get((a, b))
@@ -282,7 +294,8 @@ class TransferTheory:
                 out.append((m, d, 2))
         return out
 
-    def _scan(self, r: int, out: list) -> None:
+    def _scan(self, r, out):
+        # type: (int, list) -> None
         """Append to ``out`` the transfers the class of representative
         ``r`` implies (including ones whose literal is already false:
         conflicts)."""
@@ -343,7 +356,8 @@ class TransferTheory:
                     lit = v if wb else -v
                     out.append((lit, [lit] + head + tail))
 
-    def _spread(self, v: int, out: list) -> None:
+    def _spread(self, v, out):
+        # type: (int, list) -> None
         """Append the transfers of asserted variable ``v``'s value to the
         other variables of its predicate in its class (and the conflict with
         a fixed fact of the class, if any)."""
@@ -389,7 +403,8 @@ class TransferTheory:
                 lit = u if wb else -u
                 out.append((lit, [lit] + wneg + self._explain(wm, m, memo) + list(whym)))
 
-    def _classes(self) -> list:
+    def _classes(self):
+        # type: () -> list
         """The representatives of the classes with two or more members
         (each once), from ``_multi``, which is pruned to them: a class
         that is a singleton now stays one until a merge notes it again
@@ -514,11 +529,13 @@ class TransferTheory:
                         return first
         return None
 
-    def push_level(self) -> None:
+    def push_level(self):
+        # type: () -> None
         self._lims.append(len(self._trail))
         self._olims.append(len(self._otrail))
 
-    def pop_level(self) -> None:
+    def pop_level(self):
+        # type: () -> None
         lim = self._lims.pop()
         trail, val = self._trail, self._val
         while len(trail) > lim:
@@ -533,9 +550,11 @@ class TransferTheory:
             self.enabled = eh.pop()[1]
 
     # ------------------------------------------------------------------
-    def level(self) -> int:
+    def level(self):
+        # type: () -> int
         return len(self._lims)
 
-    def __repr__(self) -> str:
+    def __repr__(self):
+        # type: () -> str
         return (f"<TransferTheory {len(self._atoms)} atoms over "
                 f"{len(self._by_term)} terms, level {len(self._lims)}>")

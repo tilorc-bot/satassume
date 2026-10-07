@@ -155,7 +155,8 @@ GENERIC_CONSTANTS = True
 _UNREAD = (_Unhandled, TypeError, ValueError, Undecided, ZeroDivisionError)
 
 
-def relation(atom) -> tuple[str, Any, Any] | None:
+def relation(atom):
+    # type: (Any) -> tuple[str, Any, Any] | None
     """``(name, lhs, rhs)`` for a supported relation atom, name one of
     ``lt le gt ge eq ne``; None otherwise."""
     if isinstance(atom, AppliedPredicate):
@@ -176,7 +177,8 @@ def relation(atom) -> tuple[str, Any, Any] | None:
     return name, atom.lhs, atom.rhs
 
 
-def _lin(e, scale: Fraction, out: list, const: list) -> None:
+def _lin(e, scale, out, const):
+    # type: (Any, Fraction, list, list) -> None
     """Append the contributions of ``scale * e``: ``(term, coefficient)``
     pairs to ``out`` and constants to ``const``, in reading order (see
     :func:`_parts`)."""
@@ -218,7 +220,8 @@ def _lin(e, scale: Fraction, out: list, const: list) -> None:
     out.append((e, scale))
 
 
-def _closed(e, scale, out: list, const: list) -> None:
+def _closed(e, scale, out, const):
+    # type: (Any, Any, list, list) -> None
     """``_lin`` for a subexpression without free symbols: rationals go to
     the constant, sums are split, a rational factor is pulled out; a
     number of the exact field (:func:`satassume.constfield.from_sympy`:
@@ -255,13 +258,15 @@ def constant_bounds(c):
     return constant_bounds(c)
 
 
-def constant_enclosure(c, prec: int):
+def constant_enclosure(c, prec):
+    # type: (Any, int) -> Any
     """:func:`satassume.lra_bounds.constant_enclosure`."""
     from .lra_bounds import constant_enclosure
     return constant_enclosure(c, prec)
 
 
-def _form(terms, form=None) -> dict:
+def _form(terms, form=None):
+    # type: (Any, Any) -> dict
     """The linear form ``{term: coefficient}`` of the contributions
     ``terms`` (:func:`_lin`), summed in order onto ``form``."""
     if form is None:
@@ -310,7 +315,8 @@ def _parts(e):
     return r
 
 
-def _bad(e) -> bool:
+def _bad(e):
+    # type: (Any) -> bool
     """``e.has(*_BAD)`` for an ``Expr`` (one walk, ``relations.has_any``),
     memoized like :func:`_parts`."""
     memo = _INTERPRETED[GENERIC_CONSTANTS]
@@ -408,7 +414,8 @@ def interpret(atom):
     return c, sorted(form, key=_sort_key)
 
 
-def terms(atom) -> list | None:
+def terms(atom):
+    # type: (Any) -> list | None
     """The opaque terms of ``atom`` (including ones that cancel, e.g.
     ``[x]`` for ``Q.lt(x, x + 1)``), in a canonical order; ``[]`` for a
     purely numeric relation; None if the atom is not interpreted."""
@@ -518,12 +525,14 @@ class LRAAdapter:
     registers nothing, when the atom is not interpreted.
     """
 
-    def __init__(self, theory: LRATheory | None = None) -> None:
+    def __init__(self, theory=None):
+        # type: (LRATheory | None) -> None
         self.theory = theory if theory is not None else LRATheory()
         self._solver = None
         self._shared: set = set()
 
-    def register(self, solver, var: int, atom, interpreted=None) -> bool:
+    def register(self, solver, var, atom, interpreted=None):
+        # type: (Any, int, Any, Any) -> bool
         """``interpreted``: optionally the result of :func:`interpret`
         for ``atom`` already at hand (saves a second linearisation).
 
@@ -545,7 +554,8 @@ class LRAAdapter:
         self._shared.update(atom_terms)
         return True
 
-    def _attach(self, solver) -> None:
+    def _attach(self, solver):
+        # type: (Any) -> None
         if self._solver is not solver:
             if self._solver is not None:
                 raise ValueError("an LRAAdapter serves a single solver")
@@ -596,7 +606,8 @@ class LRAAdapter:
         except TypeError:
             return integer_form(e)
 
-    def register_integer(self, solver, var, form) -> None:
+    def register_integer(self, solver, var, form):
+        # type: (Any, Any, Any) -> None
         """Register ``var`` for the ``Integral`` payload of ``form`` (a
         result of :meth:`integer_form`), attaching the theory to ``solver``
         as :meth:`register` does.  Its terms are not shared terms: an
@@ -604,7 +615,8 @@ class LRAAdapter:
         self._attach(solver)
         solver.register_atom(self.theory, var, form[0])
 
-    def terms(self, atom) -> list | None:
+    def terms(self, atom):
+        # type: (Any) -> list | None
         """:func:`terms` through the cache; None: not interpreted."""
         r = self.interpret(atom)
         return None if r is None else r[1]
@@ -614,7 +626,8 @@ class LRAAdapter:
         r = self.interpret(atom)
         return None if r is None else r[0]
 
-    def register_bounds(self, solver, term, new_var) -> list:
+    def register_bounds(self, solver, term, new_var):
+        # type: (Any, Any, Any) -> list
         """Register the bounds ``lo < term < hi`` of a constant term
         (:func:`constant_bounds`) on fresh variables ``new_var()``; returns
         those variables, to be asserted true (``[]`` for any other term).
@@ -631,6 +644,7 @@ class LRAAdapter:
             out.append(v)
         return out
 
-    def shared_terms(self) -> set:
+    def shared_terms(self):
+        # type: () -> set
         """Every opaque term of every atom registered through this adapter."""
         return set(self._shared)

@@ -24,7 +24,8 @@ __all__ = ['TemplateRegistry', 'registry']
 _warm = False
 
 
-def warm_up() -> None:
+def warm_up():
+    # type: () -> None
     """Build the patterns of the most common node shapes once per process
     (a few milliseconds), so no query pays for them.  Called by the engine
     on construction."""

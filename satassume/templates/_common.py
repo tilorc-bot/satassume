@@ -50,7 +50,8 @@ if TYPE_CHECKING:
     Rule = Tuple[Tuple[Lit, ...], Tuple[Lit, ...]]
 
 
-def is_constant(obj) -> bool:
+def is_constant(obj):
+    # type: (Any) -> bool
     """True for SymPy atoms whose ``is_*`` properties are static facts.
 
     Both flags are class attributes on atoms: no assumption query is made.
@@ -63,7 +64,8 @@ def const_key(obj):
     return (type(obj), obj)
 
 
-def lits(ks, pred: str, pos: bool = True) -> List[Lit]:
+def lits(ks, pred, pos=True):
+    # type: (Any, str, bool) -> List[Lit]
     return [(k, pred, pos) for k in ks]
 
 
@@ -74,24 +76,28 @@ class Rules:
     def __init__(self):
         self.rules: List[Tuple[list, list]] = []
 
-    def rule(self, premises, conclusion) -> None:
+    def rule(self, premises, conclusion):
+        # type: (Any, Any) -> None
         """``And(premises) -> conclusion`` (a literal or a list = ``Or``)."""
         self.rules.append((list(premises),
                            conclusion if isinstance(conclusion, list) else [conclusion]))
 
-    def equiv(self, cond, a: Lit, b: Lit) -> None:
+    def equiv(self, cond, a, b):
+        # type: (Any, Lit, Lit) -> None
         """``cond -> (a <-> b)`` as two rules."""
         self.rule([*cond, a], b)
         self.rule([*cond, b], a)
 
 
-def ge2_alternatives(k: int):
+def ge2_alternatives(k):
+    # type: (int) -> Any
     """Premise alternatives meaning ``objs[k]`` is an integer >= 2."""
     return ([(k, 'prime', True)], [(k, 'composite', True)],
             [(k, 'even', True), (k, 'positive', True)])
 
 
-def const_value(c, pred: str):
+def const_value(c, pred):
+    # type: (Any, str) -> Any
     """Static truth value of ``pred`` for the constant ``c`` (None if the
     constant does not decide it).  Beyond the old-system property this
     derives the new-system predicates the old system does not store."""
@@ -111,7 +117,8 @@ def const_value(c, pred: str):
     return v
 
 
-def _resolve_lit(lit: Lit, consts):
+def _resolve_lit(lit, consts):
+    # type: (Lit, Any) -> Any
     c = consts.get(lit[0])
     if c is not None:
         v = const_value(c, lit[1])
@@ -128,7 +135,8 @@ def _resolve_lit(lit: Lit, consts):
 _SIGNED_INFINITE = {'positive_infinite': 'positive', 'negative_infinite': 'negative'}
 
 
-def resolve(rules, consts: Dict[int, Any]) -> List[Rule]:
+def resolve(rules, consts):
+    # type: (Any, Dict[int, Any]) -> List[Rule]
     """Resolve constants, then drop duplicate and subsumed rules."""
     keyed = []
     for prem, concl in rules:
@@ -169,7 +177,8 @@ def resolve(rules, consts: Dict[int, Any]) -> List[Rule]:
     return out
 
 
-def instantiate(resolved: List[Rule], objs) -> List:
+def instantiate(resolved, objs):
+    # type: (List[Rule], Any) -> List
     """Build the formulas of ``resolved`` over the concrete ``objs``."""
     atoms: Dict[Tuple[int, str], P] = {}
     out = []
@@ -204,7 +213,8 @@ class Pattern:
     asserts the closed units and skips the rule base for the node."""
     __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete')
 
-    def __init__(self, rules: List[Rule], node: int):
+    def __init__(self, rules, node):
+        # type: (List[Rule], int) -> None
         self.rules = rules
         self.node = node
         self.complete = False
@@ -250,11 +260,13 @@ class Compiled:
     engine.  ``instantiate(c.pattern.rules, c.objs)`` gives the formulas."""
     __slots__ = ('objs', 'pattern')
 
-    def __init__(self, objs, pattern: Pattern):
+    def __init__(self, objs, pattern):
+        # type: (Any, Pattern) -> None
         self.objs = objs
         self.pattern = pattern
 
-    def formulas(self) -> List:
+    def formulas(self):
+        # type: () -> List
         return instantiate(self.pattern.rules, self.objs)
 
 
@@ -269,7 +281,8 @@ _CACHE: Dict[Any, Pattern] = {}
 MAX_CACHE = 4096
 
 
-def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int) -> Compiled:
+def facts(key, gen, consts, objs, node):
+    # type: (Any, Callable[[], list], Dict[int, Any], Any, int) -> Compiled
     """The (cached) resolved rules of ``key`` applied to ``objs``; slot
     ``node`` holds the node itself."""
     pat = _CACHE.get(key)
@@ -280,7 +293,8 @@ def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int)
     return Compiled(objs, pat)
 
 
-def units(key, gen: Callable[[], list], obj) -> Compiled:
+def units(key, gen, obj):
+    # type: (Any, Callable[[], list], Any) -> Compiled
     """Unit facts about one object: ``gen()`` returns ``(pred, value)``
     pairs; the pattern is cached under ``key``.  The facts are closed under
     the rule base (unit propagation); when the closure decides every
@@ -302,9 +316,11 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
     return Compiled((obj,), pat)
 
 
-def consts_of(args) -> Dict[int, Any]:
+def consts_of(args):
+    # type: (Any) -> Dict[int, Any]
     return {k: a for k, a in enumerate(args) if a.is_Atom and a.is_number}
 
 
-def pattern_key(tag, n: int, consts: Dict[int, Any]):
+def pattern_key(tag, n, consts):
+    # type: (Any, int, Dict[int, Any]) -> Any
     return (tag, n, tuple((k, type(c), c) for k, c in sorted(consts.items())))

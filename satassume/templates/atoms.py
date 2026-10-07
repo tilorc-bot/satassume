@@ -15,6 +15,8 @@ Any other leaf emits nothing.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.function import Function
@@ -68,7 +70,8 @@ _INGREDIENTS_MAX = 50_000
 _INGREDIENTS = _PROCESS.table("satassume.templates.atoms._INGREDIENTS", "pure", _INGREDIENTS_MAX)
 
 
-def _commutative_ingredients(expr) -> bool:
+def _commutative_ingredients(expr):
+    # type: (Any) -> bool
     """Every scalar subexpression of ``expr`` (``expr`` included) is
     commutative by SymPy's ``is_commutative``.  Non-expressions (tuples,
     conditions) and matrix expressions are not themselves scalars and are

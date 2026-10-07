@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from itertools import product
 from types import MappingProxyType
+from typing import Any
 
 from sympy import S
 from sympy.core.add import Add
@@ -963,7 +964,8 @@ _TABLE_BUILDERS = MappingProxyType({
 })
 
 
-def _table(name: str) -> tuple:
+def _table(name):
+    # type: (str) -> tuple
     """The rule table ``name`` (``MUL_TABLE``, ``POW_TABLE``, ``IPI_TABLE``),
     built once and then a module attribute."""
     t = globals().get(name)
@@ -972,7 +974,8 @@ def _table(name: str) -> tuple:
     return t
 
 
-def __getattr__(name: str):
+def __getattr__(name):
+    # type: (str) -> Any
     if name in _TABLE_BUILDERS:
         return _table(name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -45,7 +45,8 @@ class Row:
     ``prem -> (concl[0] <-> concl[1])`` (``kind='equiv'``)."""
     __slots__ = ('_concl', '_ge2', '_prem', 'concl', 'kind', 'name', 'note', 'preds', 'prem', 'when')
 
-    def __init__(self, name: str, prem, concl, when=(), preds=None, kind='rule', note=''):
+    def __init__(self, name, prem, concl, when=(), preds=None, kind='rule', note=''):
+        # type: (str, Any, Any, Any, Any, Any, Any) -> None
         self.name = name
         self.prem = tuple(prem)
         concl = tuple(concl)
@@ -71,7 +72,8 @@ class Row:
     def __repr__(self):
         return f"Row({self.name!r})"
 
-    def text(self) -> str:
+    def text(self):
+        # type: () -> str
         """The row as one line: ``[when] premises -> conclusion``."""
         def lit(l):
             s = f"{l[1]}({l[0]})"
@@ -90,7 +92,8 @@ class Section:
     """Rows quantified together over the arguments (see the module doc)."""
     __slots__ = ('over', 'rows', 'when')
 
-    def __init__(self, over: str, rows, when=()):
+    def __init__(self, over, rows, when=()):
+        # type: (str, Any, Any) -> None
         if over not in ('each', 'pairs', 'negsets'):
             raise ValueError(over)
         self.over = over
@@ -103,7 +106,8 @@ class Sub:
     and the slots ``slots(parent_ctx, parent_slots)``."""
     __slots__ = ('ctx', 'guards', 'name', 'slots', 'table', 'when')
 
-    def __init__(self, name, table, guards, ctx: Callable, slots: Callable, when=()):
+    def __init__(self, name, table, guards, ctx, slots, when=()):
+        # type: (Any, Any, Any, Callable, Callable, Any) -> None
         self.name = name
         self.table = table
         self.guards = guards
@@ -112,7 +116,8 @@ class Sub:
         self.when = (when,) if isinstance(when, str) else tuple(when)
 
 
-def _holds(when, guards, ctx) -> bool:
+def _holds(when, guards, ctx):
+    # type: (Any, Any, Any) -> bool
     for g in when:
         if not guards[g](ctx):
             return False
@@ -156,7 +161,8 @@ def _premise_alternatives(row, slots, cur):
     return alts
 
 
-def _row_specs(row: Row, slots, cur):
+def _row_specs(row, slots, cur):
+    # type: (Row, Any, Any) -> Any
     out = []
     for prem in _premise_alternatives(row, slots, cur):
         if row.kind == 'equiv':
@@ -172,7 +178,8 @@ def _row_specs(row: Row, slots, cur):
     return out
 
 
-def _rows(rows, guards, ctx, slots) -> Iterator[tuple[Any, list, list]]:
+def _rows(rows, guards, ctx, slots):
+    # type: (Any, Any, Any, Any) -> Iterator[tuple[Any, list, list]]
     for row in rows:
         if isinstance(row, Sub):
             if _holds(row.when, guards, ctx):
@@ -216,8 +223,8 @@ def _bindings(over, A):
                 yield {'m': m}, {'neg': list(neg), 'rest': [j for j in A if j not in neg]}
 
 
-def expand(table, guards: dict[str, Callable], ctx: dict[str, Any],
-           slots: dict[str, Any]) -> Iterator[tuple[Any, list, list]]:
+def expand(table, guards, ctx, slots):
+    # type: (Any, dict[str, Callable], dict[str, Any], dict[str, Any]) -> Iterator[tuple[Any, list, list]]
     """``(row, premises, conclusion)`` for every rule the table emits, in
     table order.  ``slots['*']`` is the list of argument indices for
     sections."""
@@ -232,7 +239,8 @@ def expand(table, guards: dict[str, Callable], ctx: dict[str, Any],
             yield from _rows((item,), guards, ctx, slots)
 
 
-def rules_of(table, guards, ctx, slots, R: Rules | None = None):
+def rules_of(table, guards, ctx, slots, R=None):
+    # type: (Any, Any, Any, Any, Rules | None) -> Any
     """Feed the expanded table to ``Rules.rule``; return ``R.rules``."""
     if R is None:
         R = Rules()
@@ -252,5 +260,6 @@ def iter_rows(table):
             yield item
 
 
-def count_rows(table) -> int:
+def count_rows(table):
+    # type: (Any) -> int
     return sum(1 for _ in iter_rows(table))

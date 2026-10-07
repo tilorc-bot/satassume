@@ -37,7 +37,8 @@ CLAUSES_CACHE_SIZE = 50_000
 
 
 class TemplateRegistry:
-    def __init__(self) -> None:
+    def __init__(self):
+        # type: () -> None
         self._by_class: Dict[type, List[Template]] = {}
         self._mro_cache: Dict[type, List[Template]] = {}
         #: ``expr -> (compiled, formulas)`` of :meth:`clauses_for`; templates
@@ -49,7 +50,8 @@ class TemplateRegistry:
         #: only (:meth:`lazy`)
         self._lazy: List[Tuple[tuple, str]] = []
 
-    def lazy(self, module: str, *classes: type) -> None:
+    def lazy(self, module, *classes):
+        # type: (str, *type) -> None
         """Declare the built-in template module ``module`` (a module name),
         which registers templates for ``classes`` and their subclasses only;
         it is imported by the first :meth:`templates_for` of such a class
@@ -63,7 +65,8 @@ class TemplateRegistry:
         when the modules were loaded."""
         self._lazy.append((classes, module))
 
-    def _load(self, cls) -> None:
+    def _load(self, cls):
+        # type: (Any) -> None
         """Import the declared modules covering ``cls`` (all of them for
         None)."""
         todo = [m for c, m in self._lazy if cls is None or issubclass(cls, c)]
@@ -73,17 +76,20 @@ class TemplateRegistry:
             # itself: drop what is loaded now
             self._lazy = [(c, n) for c, n in self._lazy if n != m and n not in sys.modules]
 
-    def load_all(self) -> None:
+    def load_all(self):
+        # type: () -> None
         """Import every declared module (:meth:`lazy`)."""
         if self._lazy:
             self._load(None)
 
-    def register(self, *classes: type):
+    def register(self, *classes):
+        # type: (*type) -> Any
         """Decorator registering ``f`` as a template for ``classes``."""
         if not classes:
             raise TypeError("register() needs at least one class")
 
-        def deco(f: Template) -> Template:
+        def deco(f):
+            # type: (Template) -> Template
             mod = getattr(f, "__module__", None)
             covers = [c for c, m in self._lazy if m == mod]
             if covers:
@@ -111,7 +117,8 @@ class TemplateRegistry:
 
         return deco
 
-    def templates_for(self, cls: type) -> List[Template]:
+    def templates_for(self, cls):
+        # type: (type) -> List[Template]
         """All templates applying to ``cls``, most specific class first.
         The declared modules covering ``cls`` are imported first
         (:meth:`lazy`), so neither this memo nor the ones built from it
@@ -128,7 +135,8 @@ class TemplateRegistry:
             self._mro_cache[cls] = out
         return out
 
-    def facts_for(self, expr: Any) -> List[Any]:
+    def facts_for(self, expr):
+        # type: (Any) -> List[Any]
         """Every formula emitted by every template matching ``type(expr)``
         (compiled patterns expanded to formulas)."""
         out: List[Any] = []
@@ -136,7 +144,8 @@ class TemplateRegistry:
             _collect(f(expr), out)
         return out
 
-    def clauses_for(self, expr: Any):
+    def clauses_for(self, expr):
+        # type: (Any) -> Any
         """``(compiled, formulas)``: the compiled patterns and the plain
         formulas emitted by the templates matching ``type(expr)``.  This is
         what the engine uses; :meth:`facts_for` is the same information as
@@ -158,12 +167,14 @@ class TemplateRegistry:
         r = cache[expr] = (compiled, formulas)
         return r
 
-    def classes(self) -> Iterable[type]:
+    def classes(self):
+        # type: () -> Iterable[type]
         self.load_all()
         return self._by_class.keys()
 
 
-def _collect(result: Any, out: List[Any]) -> None:
+def _collect(result, out):
+    # type: (Any, List[Any]) -> None
     if result is None or result is True:
         # ``True`` is the degenerate formula (e.g. ``allargs`` of no args):
         # asserting it is a no-op.
@@ -178,7 +189,8 @@ def _collect(result: Any, out: List[Any]) -> None:
         _collect(r, out)
 
 
-def _split(result: Any, compiled: List[Compiled], formulas: List[Any]) -> None:
+def _split(result, compiled, formulas):
+    # type: (Any, List[Compiled], List[Any]) -> None
     if result is None or result is True:
         return
     if type(result) is Compiled:
