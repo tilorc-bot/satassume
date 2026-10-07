@@ -1,5 +1,8 @@
 # satassume
 
+> **Disclaimer:** this is an experimental project. Everything in this
+> description was written by AI.
+
 A SAT-based engine for SymPy's `ask(proposition, assumptions)`, currently
 scoped to exactly one slice: **unary scalar predicates on scalar
 expressions**, answered purely by the SAT engine. Propositions and
