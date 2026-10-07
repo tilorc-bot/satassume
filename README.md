@@ -71,6 +71,16 @@ for context-free queries and the corpus tools replay old-system records
 through it for information, but nothing here hooks it into SymPy. See
 [PLAN.md](PLAN.md).
 
+## Installation
+
+```
+pip install "satassume[sympy]"
+```
+
+The core engine (`satassume`) has no dependencies; `satassume.sympy_api`
+and the templates need SymPy, which the `sympy` extra installs. This is an
+early, experimental release: the API may change between versions.
+
 ## Usage
 
 ```python

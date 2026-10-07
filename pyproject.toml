@@ -4,16 +4,39 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "satassume"
-version = "0.1.0"
+dynamic = ["version"]
 description = "An incremental SAT-based engine for SymPy's ask(): unary scalar predicates on scalar expressions"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "BSD-3-Clause"}
+authors = [{name = "satassume contributors"}]
+keywords = ["sympy", "assumptions", "sat", "cdcl", "smt", "symbolic"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/tilorc-bot/satassume"
+Source = "https://github.com/tilorc-bot/satassume"
+Issues = "https://github.com/tilorc-bot/satassume/issues"
+Documentation = "https://github.com/tilorc-bot/satassume/tree/main/docs"
 
 [project.optional-dependencies]
 sympy = ["sympy>=1.12", "mpmath"]
 dev = ["pytest", "hypothesis"]
+
+[tool.setuptools.dynamic]
+version = {attr = "satassume.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["satassume*"]
