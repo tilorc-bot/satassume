@@ -708,6 +708,9 @@ def _number_values(engine, c) -> list:
     ``is_`` treats specially (a node under construction, a cone over the
     budget) go to ``is_`` itself."""
     from .rules import PREDICATES
+    if not hasattr(engine, "_fresh_session"):
+        # a reference engine (satassume.ref): its is_ alone
+        return [engine.is_(c, p) for p in PREDICATES]
     if engine._epoch != _EPOCH[0] or engine.cache._settings != engine._settings_key:
         engine._check_version()
     facts = engine.cache.facts(c)
