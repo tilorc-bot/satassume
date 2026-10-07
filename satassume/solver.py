@@ -132,15 +132,26 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
         cls.append(m)
     even = _EVEN & ((1 << (2 * n)) - 1)    # the positive literal of each variable
 
-    def up(a: int) -> int:
-        """The unit-propagation closure of the assignment ``a``, -1 on a
-        conflict.  ``sw`` is ``a`` with each literal replaced by its
-        complement, so ``cm & ~sw`` are the clause's unassigned literals
-        when none of its literals is true."""
+    # occ[l]: the clauses holding literal l; only they can become unit or
+    # false when the complement of l is assigned
+    occ: list[list[int]] = [[] for _ in range(2 * n)]
+    for cm in cls:
+        m = cm
+        while m:
+            low = m & -m
+            m ^= low
+            occ[low.bit_length() - 1].append(cm)
+
+    def up(a: int, lit: int) -> int:
+        """The unit-propagation closure of the assignment ``a``, which the
+        literal ``lit`` (a bit) just joined, -1 on a conflict.  ``sw`` is
+        ``a`` with each literal replaced by its complement, so ``cm & ~sw``
+        are the clause's unassigned literals when none of them is true."""
         sw = ((a & _EVEN) << 1) | ((a >> 1) & _EVEN)
-        while True:
-            changed = False
-            for cm in cls:
+        queue = [lit]
+        while queue:
+            l = queue.pop()
+            for cm in occ[(l << 1 if l & _EVEN else l >> 1).bit_length() - 1]:
                 if a & cm:
                     continue
                 free = cm & ~sw
@@ -149,25 +160,33 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
                 if not free & (free - 1):      # one unassigned literal: unit
                     a |= free
                     sw |= free << 1 if free & _EVEN else free >> 1
-                    changed = True
-            if not changed:
-                return a
+                    queue.append(free)
+        return a
 
     def rec(a: int) -> None:
-        a = up(a)
-        if a < 0:
-            return
         unassigned = even & ~(a | (a >> 1))
         if unassigned:
             low = unassigned & -unassigned      # the lowest unassigned variable
-            rec(a | (low << 1))
-            rec(a | low)
+            for bit in (low << 1, low):
+                b = up(a | bit, bit)
+                if b >= 0:
+                    rec(b)
             return
         out.append(a)
         if len(out) > 1 << 16:
             raise ValueError("rule block has too many models")
 
-    rec(0)
+    a = 0                                   # unit clauses, if any, at the root
+    for cm in cls:
+        if not cm:
+            return ()
+        if not cm & (cm - 1) and not a & cm:
+            if a & (cm << 1 if cm & _EVEN else cm >> 1):
+                return ()
+            a = up(a | cm, cm)
+            if a < 0:
+                return ()
+    rec(a)
     return tuple(sorted(set(out)))
 
 
