@@ -115,6 +115,8 @@ _RULE_TABLES: dict = {}
 _EVEN = int("01" * 64, 2)          # bits 0, 2, 4, ... (positive relative literals)
 _BIT = tuple(1 << i for i in range(128))       # relative literal -> its bit
 _NBIT = tuple(~(1 << i) for i in range(128))   # ... and the complement
+_MENTIONED_OF = bytes.maketrans(b"01", b"\x00\x01")   # see _BlockClosure.flags
+_LAZY_OF = bytes.maketrans(b"01", b"\x01\x00")
 
 
 def _block_models(clauses, n: int) -> tuple[int, ...]:
@@ -214,13 +216,16 @@ class _BlockClosure:
         self.models = models = _block_models(clauses, n)
         # per relative literal, the set of models containing it (a bit per
         # model); closures are memoized per model set too.  The transpose
-        # of the models' bit matrix: row j is model j as 2*n binary digits
-        # (literal 2*n - 1 first), the last model on top, so column c
-        # read as a binary number has bit j iff model j holds literal
-        # 2*n - 1 - c.
-        rows = [format(x, "0%db" % (2 * n)) for x in reversed(models)]
-        self.msets = tuple(int("".join(col), 2) for col in zip(*rows))[::-1] if rows \
-            else (0,) * (2 * n)
+        # of the models' bit matrix: the models as rows of 2*n binary
+        # digits (literal 2*n - 1 first), the last model on top, one row
+        # after the other in ``grid``; column c, ``grid[c::w]``, read as a
+        # binary number has bit j iff model j holds literal 2*n - 1 - c.
+        w = 2 * n
+        if models:
+            grid = "".join([format(x, "0%db" % w) for x in reversed(models)])
+            self.msets = tuple([int(grid[c::w], 2) for c in range(w - 1, -1, -1)])
+        else:
+            self.msets = (0,) * w
         self.all = (1 << len(models)) - 1
         self.cls: dict[int, int] = {}
         self.memo: dict[int, int] = {}
@@ -237,9 +242,11 @@ class _BlockClosure:
         for the mention mask ``mm``."""
         r = self.fmemo.get(mm)
         if r is None:
+            # the bits 0, 2, ..., 2*n - 2 of mm as the characters "0"/"1",
+            # lowest first, mapped to the bytes 0/1 (mentioned) and 1/0 (lazy)
             n = self.n
-            mt = bytes(1 if (mm >> (2 * i)) & 1 else 0 for i in range(n))
-            r = (bytes(1 - x for x in mt), mt)
+            digits = format(mm, "b").zfill(2 * n)[::-1][:2 * n:2].encode()
+            r = (digits.translate(_LAZY_OF), digits.translate(_MENTIONED_OF))
             if len(self.fmemo) >= 100_000:
                 self.fmemo.clear()
             self.fmemo[mm] = r

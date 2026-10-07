@@ -1087,3 +1087,33 @@ def test_block_models_random_blocks_match_reference():
             vs = rng.sample(range(n), k)
             clauses.append(tuple(2 * v + rng.randint(0, 1) for v in vs))
         assert _block_models(clauses, n) == _block_models_reference(clauses, n)
+
+
+# -- _BlockClosure tables against direct computations -----------------------
+
+def test_block_closure_msets_and_flags_match_direct():
+    from satassume.solver import _BlockClosure
+    rng = random.Random(11)
+    blocks = [(RULE_INTERNAL, NPRED)]
+    for _ in range(200):
+        n = rng.randint(1, 9)
+        clauses = []
+        for _ in range(rng.randint(0, 10)):
+            if n < 2:
+                break
+            k = rng.randint(2, min(3, n))
+            vs = rng.sample(range(n), k)
+            clauses.append(tuple(2 * v + rng.randint(0, 1) for v in vs))
+        blocks.append((tuple(clauses), n))
+    for clauses, n in blocks:
+        bc = _BlockClosure(clauses, n)
+        # msets[l]: bit j iff model j holds the relative literal l
+        assert len(bc.msets) == 2 * n
+        for lit in range(2 * n):
+            want = sum(1 << j for j, x in enumerate(bc.models) if (x >> lit) & 1)
+            assert bc.msets[lit] == want
+        # flags(mm): (lazy, mentioned) per variable, from bit 2*i of mm
+        for _ in range(20):
+            mm = rng.getrandbits(2 * n + rng.randint(0, 4))
+            mt = bytes((mm >> (2 * i)) & 1 for i in range(n))
+            assert bc.flags(mm) == (bytes(1 - x for x in mt), mt)
