@@ -1912,6 +1912,16 @@ def neighbourhood(pred) -> frozenset:
     clause with it, as indices."""
     i = PRED_INDEX[pred] if isinstance(pred, str) else pred
     n = _NEIGH.get(i)
+    if n is None and not _NEIGH:
+        # all of them in one pass over the rule clauses
+        adj = [{k} for k in range(NPRED)]
+        for c in RULE_CLAUSES:
+            idx = [abs(l) - 1 for l in c]
+            for k in idx:
+                adj[k].update(idx)
+        for k, a in enumerate(adj):
+            _NEIGH[k] = frozenset(a)
+        n = _NEIGH.get(i)
     if n is None:
         acc = {i}
         for c in RULE_CLAUSES:
