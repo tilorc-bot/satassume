@@ -299,116 +299,124 @@ MUL_GUARDS = MappingProxyType({
 # Slots: 'N' the node, '*' all arguments; in a section 'k' the argument of
 # the iteration, 'rest' the others ('l' the other one when there is one),
 # 'neg' the negative set; 0 and 1 the coefficient and the other factor.
-MUL_TABLE = (
-    Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED),
-    # Extended reals, all finite or all nonzero (no 0*oo).
-    Row('ext_real.finite', [('*', 'extended_real'), ('*', 'finite')], ('N', 'extended_real')),
-    Row('ext_real.nonzero', [('*', 'extended_real'), ('*', 'zero', False)], ('N', 'extended_real')),
-    # A commutative product has a commutative factor k when every other
-    # factor is a nonzero number: k is the product divided by them.  Not
-    # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
-    Section('each', when='n<=MAX_ONEOUT', rows=[
-        Row('commutative.back', [('N', 'commutative'), ('rest', 'complex'), ('rest', 'zero', False)],
-            ('k', 'commutative')),
-    ]),
-    # Zero: some zero factor with the rest finite; nonzero: all nonzero and
-    # at most one of them non-commutative (non-commutative values have zero
-    # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
-    Section('each', rows=[
-        Row('zero', [('k', 'zero'), ('rest', 'finite')], ('N', 'zero')),
-    ]),
-    Section('each', when='n<=MAX_ONEOUT', rows=[
-        Row('nonzero', [('rest', 'commutative')], [('*', 'zero'), ('N', 'zero', False)]),
-    ]),
-    Row('nonzero.commutative', [('*', 'commutative')], [('*', 'zero'), ('N', 'zero', False)],
-        when='n>MAX_ONEOUT'),
-    # Hermitian product of commuting hermitian factors.
-    Row('hermitian', [('*', 'commutative'), ('*', 'hermitian')], ('N', 'hermitian')),
-    # Polar: all polar, or one polar factor and the rest positive.
-    Row('polar', [('*', 'polar')], ('N', 'polar')),
-    Section('each', rows=[
-        Row('polar.one', [('k', 'polar'), ('rest', 'positive')], ('N', 'polar')),
-    ]),
-    Row('primes', [('*', 'prime')], ('N', 'composite'), when='n>=2'),
-    # All factors negative / nonpositive / imaginary: parity of n.
-    Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'), when='n even'),
-    Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'), when='n odd'),
-    Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'), when='n even'),
-    Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'), when='n odd'),
-    Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'), when='n even'),
-    Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'), when='n odd'),
-    Row('all_odd', [('*', 'odd')], ('N', 'odd')),
-    Section('each', when='n<=MAX_ONEOUT', rows=[
-        # One infinite factor and the rest nonzero -> infinite.
-        Row('one_infinite', [('k', 'infinite'), ('rest', 'zero', False)], ('N', 'infinite')),
-        # Exactly one negative factor (rest positive) -> negative.
-        Row('one_neg', [('k', 'extended_negative'), ('rest', 'extended_positive')],
-            ('N', 'extended_negative')),
-        Row('one_nonpos', [('k', 'nonpositive'), ('rest', 'nonnegative')], ('N', 'nonpositive')),
-        # One even factor and the rest integers -> even.
-        Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even')),
-        # One composite factor and the rest integers -> not prime (the
-        # product is 0, negative, or a multiple of a composite).
-        Row('one_composite', [('k', 'composite'), ('rest', 'integer')], ('N', 'prime', False)),
-        # One irrational factor and the rest nonzero rationals -> irrational.
-        Row('one_irrational', [('k', 'irrational'), ('rest', 'rational'), ('rest', 'zero', False)],
-            ('N', 'irrational')),
-        # One transcendental factor and the rest nonzero algebraics ->
-        # transcendental (the algebraic numbers are a field).
-        Row('one_transcendental',
-            [('k', 'transcendental'), ('rest', 'algebraic'), ('rest', 'zero', False)],
-            ('N', 'transcendental')),
-        # One non-real factor and the rest nonzero extended reals -> not real.
-        Row('one_non_real', [('k', 'extended_real', False), ('rest', 'extended_nonzero')],
-            ('N', 'extended_real', False)),
-        # One imaginary factor and the rest nonzero finite reals -> imaginary;
-        # with the rest merely real the product may also be zero.
-        Row('one_imag', [('k', 'imaginary'), ('rest', 'real'), ('rest', 'zero', False)],
-            ('N', 'imaginary')),
-        Row('one_imag.or_zero', [('k', 'imaginary'), ('rest', 'real')],
-            [('N', 'imaginary'), ('N', 'zero')]),
-        # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
-        # the product is real iff the other factor is imaginary or
-        # zero, and imaginary iff the other factor is a nonzero real.
-        Row('imag_times.real', [('k', 'imaginary'), ('l', 'complex'), ('N', 'extended_real')],
-            [('l', 'imaginary'), ('l', 'zero')], when='n==2'),
-        Row('imag_times.imag', [('k', 'imaginary'), ('l', 'complex'), ('N', 'imaginary')],
-            ('l', 'real'), when='n==2'),
-    ]),
-    # Sign of a product with m negative factors, 2 <= m < n (one negative
-    # factor is above, all negative is above).
-    Section('negsets', when='3<=n<=MAX_PAIRS', rows=[
-        Row('m_neg.even', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
-            ('N', 'extended_positive'), when='m even'),
-        Row('m_neg.odd', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
-            ('N', 'extended_negative'), when='m odd'),
-        Row('m_nonpos.even', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-            ('N', 'nonnegative'), when='m even'),
-        Row('m_nonpos.odd', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-            ('N', 'nonpositive'), when='m odd'),
-    ]),
-    Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
-        Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
-                         ('rest', 'zero', False)], ('N', 'nonzero')),
-    ]),
-    # Numeric coefficient c*x: transfer facts back from the product to x.
-    Row('coeff.back', [('N', '$p')], (1, '$p'), when=('coeff', 'c not negative'),
-        preds=_COEFF_BACK),
-    Row('coeff.back.flip', [('N', '$p')], (1, 'flip:$p'), when=('coeff', 'c negative'),
-        preds=_COEFF_BACK),
-    Row('coeff.rational', [('N', 'rational')], (1, 'rational'), when=('coeff', 'c rational')),
-    Row('coeff.algebraic', [('N', 'algebraic')], (1, 'algebraic'), when=('coeff', 'c rational')),
-    # (p/2)*x for integer x is an integer iff x is even.
-    Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
-        when=('coeff', 'c rational', 'c.q==2')),
-    Row('coeff.minus_one', [('N', '$p')], (1, '$p'), when=('coeff', 'c rational', 'c==-1'),
-        preds=('integer', 'even', 'odd')),
-)
+def _mul_table_rows():
+    """The rows of ``MUL_TABLE`` (built on first use, :func:`_table`)."""
+    return (
+        Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED),
+        # Extended reals, all finite or all nonzero (no 0*oo).
+        Row('ext_real.finite', [('*', 'extended_real'), ('*', 'finite')], ('N', 'extended_real')),
+        Row('ext_real.nonzero', [('*', 'extended_real'), ('*', 'zero', False)],
+            ('N', 'extended_real')),
+        # A commutative product has a commutative factor k when every other
+        # factor is a nonzero number: k is the product divided by them.  Not
+        # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
+        Section('each', when='n<=MAX_ONEOUT', rows=[
+            Row('commutative.back',
+                [('N', 'commutative'), ('rest', 'complex'), ('rest', 'zero', False)],
+                ('k', 'commutative')),
+        ]),
+        # Zero: some zero factor with the rest finite; nonzero: all nonzero and
+        # at most one of them non-commutative (non-commutative values have zero
+        # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
+        Section('each', rows=[
+            Row('zero', [('k', 'zero'), ('rest', 'finite')], ('N', 'zero')),
+        ]),
+        Section('each', when='n<=MAX_ONEOUT', rows=[
+            Row('nonzero', [('rest', 'commutative')], [('*', 'zero'), ('N', 'zero', False)]),
+        ]),
+        Row('nonzero.commutative', [('*', 'commutative')], [('*', 'zero'), ('N', 'zero', False)],
+            when='n>MAX_ONEOUT'),
+        # Hermitian product of commuting hermitian factors.
+        Row('hermitian', [('*', 'commutative'), ('*', 'hermitian')], ('N', 'hermitian')),
+        # Polar: all polar, or one polar factor and the rest positive.
+        Row('polar', [('*', 'polar')], ('N', 'polar')),
+        Section('each', rows=[
+            Row('polar.one', [('k', 'polar'), ('rest', 'positive')], ('N', 'polar')),
+        ]),
+        Row('primes', [('*', 'prime')], ('N', 'composite'), when='n>=2'),
+        # All factors negative / nonpositive / imaginary: parity of n.
+        Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
+            when='n even'),
+        Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'), when='n odd'),
+        Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'), when='n even'),
+        Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'), when='n odd'),
+        Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'), when='n even'),
+        Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'), when='n odd'),
+        Row('all_odd', [('*', 'odd')], ('N', 'odd')),
+        Section('each', when='n<=MAX_ONEOUT', rows=[
+            # One infinite factor and the rest nonzero -> infinite.
+            Row('one_infinite', [('k', 'infinite'), ('rest', 'zero', False)], ('N', 'infinite')),
+            # Exactly one negative factor (rest positive) -> negative.
+            Row('one_neg', [('k', 'extended_negative'), ('rest', 'extended_positive')],
+                ('N', 'extended_negative')),
+            Row('one_nonpos', [('k', 'nonpositive'), ('rest', 'nonnegative')],
+                ('N', 'nonpositive')),
+            # One even factor and the rest integers -> even.
+            Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even')),
+            # One composite factor and the rest integers -> not prime (the
+            # product is 0, negative, or a multiple of a composite).
+            Row('one_composite', [('k', 'composite'), ('rest', 'integer')], ('N', 'prime', False)),
+            # One irrational factor and the rest nonzero rationals -> irrational.
+            Row('one_irrational',
+                [('k', 'irrational'), ('rest', 'rational'), ('rest', 'zero', False)],
+                ('N', 'irrational')),
+            # One transcendental factor and the rest nonzero algebraics ->
+            # transcendental (the algebraic numbers are a field).
+            Row('one_transcendental',
+                [('k', 'transcendental'), ('rest', 'algebraic'), ('rest', 'zero', False)],
+                ('N', 'transcendental')),
+            # One non-real factor and the rest nonzero extended reals -> not real.
+            Row('one_non_real', [('k', 'extended_real', False), ('rest', 'extended_nonzero')],
+                ('N', 'extended_real', False)),
+            # One imaginary factor and the rest nonzero finite reals -> imaginary;
+            # with the rest merely real the product may also be zero.
+            Row('one_imag', [('k', 'imaginary'), ('rest', 'real'), ('rest', 'zero', False)],
+                ('N', 'imaginary')),
+            Row('one_imag.or_zero', [('k', 'imaginary'), ('rest', 'real')],
+                [('N', 'imaginary'), ('N', 'zero')]),
+            # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
+            # the product is real iff the other factor is imaginary or
+            # zero, and imaginary iff the other factor is a nonzero real.
+            Row('imag_times.real', [('k', 'imaginary'), ('l', 'complex'), ('N', 'extended_real')],
+                [('l', 'imaginary'), ('l', 'zero')], when='n==2'),
+            Row('imag_times.imag', [('k', 'imaginary'), ('l', 'complex'), ('N', 'imaginary')],
+                ('l', 'real'), when='n==2'),
+        ]),
+        # Sign of a product with m negative factors, 2 <= m < n (one negative
+        # factor is above, all negative is above).
+        Section('negsets', when='3<=n<=MAX_PAIRS', rows=[
+            Row('m_neg.even', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
+                ('N', 'extended_positive'), when='m even'),
+            Row('m_neg.odd', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
+                ('N', 'extended_negative'), when='m odd'),
+            Row('m_nonpos.even', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
+                ('N', 'nonnegative'), when='m even'),
+            Row('m_nonpos.odd', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
+                ('N', 'nonpositive'), when='m odd'),
+        ]),
+        Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
+            Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
+                             ('rest', 'zero', False)], ('N', 'nonzero')),
+        ]),
+        # Numeric coefficient c*x: transfer facts back from the product to x.
+        Row('coeff.back', [('N', '$p')], (1, '$p'), when=('coeff', 'c not negative'),
+            preds=_COEFF_BACK),
+        Row('coeff.back.flip', [('N', '$p')], (1, 'flip:$p'), when=('coeff', 'c negative'),
+            preds=_COEFF_BACK),
+        Row('coeff.rational', [('N', 'rational')], (1, 'rational'), when=('coeff', 'c rational')),
+        Row('coeff.algebraic', [('N', 'algebraic')], (1, 'algebraic'),
+            when=('coeff', 'c rational')),
+        # (p/2)*x for integer x is an integer iff x is even.
+        Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
+            when=('coeff', 'c rational', 'c.q==2')),
+        Row('coeff.minus_one', [('N', '$p')], (1, '$p'), when=('coeff', 'c rational', 'c==-1'),
+            preds=('integer', 'even', 'odd')),
+    )
 
 
 def _mul_rules(n, consts):
     """The specs of ``MUL_TABLE`` for a Mul of ``n`` arguments."""
-    return rules_of(MUL_TABLE, MUL_GUARDS, {'n': n, 'consts': consts},
+    return rules_of(_table('MUL_TABLE'), MUL_GUARDS, {'n': n, 'consts': consts},
                     {'N': n, '*': range(n)})
 
 
@@ -610,37 +618,39 @@ IPI_GUARDS = MappingProxyType({
 })
 
 # Slots: 'N' the node exp(I*pi*c*s), 'S' the s (only with an s).
-IPI_TABLE = (
-    Row('ipi.int', [], ('N', 'odd'), when=('no s', 'c integer')),
-    Row('ipi.int.even', [], ('N', 'positive'), when=('no s', 'c even integer')),
-    Row('ipi.int.odd', [], ('N', 'negative'), when=('no s', 'c odd integer')),
-    Row('ipi.half.imaginary', [], ('N', 'imaginary'), when=('no s', 'c half-odd')),
-    Row('ipi.half.algebraic', [], ('N', 'algebraic'), when=('no s', 'c half-odd')),
-    Row('ipi.other.algebraic', [], ('N', 'algebraic'), when=('no s', 'c other')),
-    Row('ipi.other.not_real', [], ('N', 'extended_real', False), when=('no s', 'c other')),
-    Row('ipi.other.not_imaginary', [], ('N', 'imaginary', False), when=('no s', 'c other')),
-    Row('ipi.other.nonzero', [], ('N', 'zero', False), when=('no s', 'c other')),
-    Row('ipi.s.algebraic', [('S', 'integer')], ('N', 'algebraic'), when='s'),
-    Row('ipi.s.complex', [('S', 'real')], ('N', 'complex'), when='s'),
-    Row('ipi.s.nonzero', [('S', 'real')], ('N', 'zero', False), when='s'),
-    Row('ipi.s.int', [('S', 'integer')], ('N', 'odd'), when=('s', 'c integer')),
-    Row('ipi.s.int.even', [('S', 'integer')], ('N', 'positive'), when=('s', 'c even integer')),
-    Row('ipi.s.int.odd.even', [('S', 'even')], ('N', 'positive'), when=('s', 'c odd integer')),
-    Row('ipi.s.int.odd.odd', [('S', 'odd')], ('N', 'negative'), when=('s', 'c odd integer')),
-    Row('ipi.s.int.odd.back_even', [('S', 'integer'), ('N', 'positive')], ('S', 'even'),
-        when=('s', 'c odd integer')),
-    Row('ipi.s.int.odd.back_odd', [('S', 'integer'), ('N', 'negative')], ('S', 'odd'),
-        when=('s', 'c odd integer')),
-    Row('ipi.s.half.even', [('S', 'even')], ('N', 'odd'), when=('s', 'c half-odd')),
-    Row('ipi.s.half.odd', [('S', 'odd')], ('N', 'imaginary'), when=('s', 'c half-odd')),
-)
+def _ipi_table_rows():
+    """The rows of ``IPI_TABLE`` (built on first use, :func:`_table`)."""
+    return (
+        Row('ipi.int', [], ('N', 'odd'), when=('no s', 'c integer')),
+        Row('ipi.int.even', [], ('N', 'positive'), when=('no s', 'c even integer')),
+        Row('ipi.int.odd', [], ('N', 'negative'), when=('no s', 'c odd integer')),
+        Row('ipi.half.imaginary', [], ('N', 'imaginary'), when=('no s', 'c half-odd')),
+        Row('ipi.half.algebraic', [], ('N', 'algebraic'), when=('no s', 'c half-odd')),
+        Row('ipi.other.algebraic', [], ('N', 'algebraic'), when=('no s', 'c other')),
+        Row('ipi.other.not_real', [], ('N', 'extended_real', False), when=('no s', 'c other')),
+        Row('ipi.other.not_imaginary', [], ('N', 'imaginary', False), when=('no s', 'c other')),
+        Row('ipi.other.nonzero', [], ('N', 'zero', False), when=('no s', 'c other')),
+        Row('ipi.s.algebraic', [('S', 'integer')], ('N', 'algebraic'), when='s'),
+        Row('ipi.s.complex', [('S', 'real')], ('N', 'complex'), when='s'),
+        Row('ipi.s.nonzero', [('S', 'real')], ('N', 'zero', False), when='s'),
+        Row('ipi.s.int', [('S', 'integer')], ('N', 'odd'), when=('s', 'c integer')),
+        Row('ipi.s.int.even', [('S', 'integer')], ('N', 'positive'), when=('s', 'c even integer')),
+        Row('ipi.s.int.odd.even', [('S', 'even')], ('N', 'positive'), when=('s', 'c odd integer')),
+        Row('ipi.s.int.odd.odd', [('S', 'odd')], ('N', 'negative'), when=('s', 'c odd integer')),
+        Row('ipi.s.int.odd.back_even', [('S', 'integer'), ('N', 'positive')], ('S', 'even'),
+            when=('s', 'c odd integer')),
+        Row('ipi.s.int.odd.back_odd', [('S', 'integer'), ('N', 'negative')], ('S', 'odd'),
+            when=('s', 'c odd integer')),
+        Row('ipi.s.half.even', [('S', 'even')], ('N', 'odd'), when=('s', 'c half-odd')),
+        Row('ipi.s.half.odd', [('S', 'odd')], ('N', 'imaginary'), when=('s', 'c half-odd')),
+    )
 
 
 def ipi_rules(rule, c, iS, N):
     """Rules for ``node == exp(I*pi*c*s)``: a root of unity when ``s`` is an
     integer, on the unit circle when ``s`` is real.  ``iS`` is the slot of
     ``s`` (None: ``s == 1``).  The rows are ``IPI_TABLE``."""
-    for _, prem, concl in expand(IPI_TABLE, IPI_GUARDS, {'c': c, 'has_s': iS is not None},
+    for _, prem, concl in expand(_table('IPI_TABLE'), IPI_GUARDS, {'c': c, 'has_s': iS is not None},
                                  {'S': iS, 'N': N}):
         rule(prem, concl)
 
@@ -711,84 +721,95 @@ POW_SLOTS = MappingProxyType({'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': 
 
 # Slots: 'B' base, 'E' exponent, 'N' node, 'U' the u of an exp(u) base,
 # 'S' the s of an I*pi*c*s exponent of E, 'T' 2*e, 'BM'/'BP' b - 1, b + 1.
-POW_TABLE = (
-    *_pairs_rows('pow', _POW_RULES),
-    *_pairs_rows('pow.E', _POW_E_RULES, when='b is E'),
-    Sub('ipi', IPI_TABLE, IPI_GUARDS, lambda x: {'c': x['ipi'][0], 'has_s': x['ipi'][1]},
-        lambda x, s: {'S': _S if x['ipi'][1] else None, 'N': _N}, when=('b is E', 'ipi')),
-    Row('same', [('B', 'extended_nonnegative')], ('N', 'extended_positive'), when='b is e'),
-    Row('one', [], [('N', '$p'), ('B', '$p')], kind='equiv', preds=_POW_ONE_EQUIV, when='e is 1'),
-    # A power of a composite is 1, a fraction or composite.
-    Row('composite_base', [('B', 'composite'), ('E', 'integer')], ('N', 'prime', False)),
-    # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
-    # exp(-t*phi)*exp(I*t*log(r)) with r algebraic; t*log(r) in pi*Q with
-    # t algebraic nonzero forces log(r)/(I*pi) algebraic, hence rational
-    # (Gelfond-Schneider), hence r == 1.  So b**e is never imaginary, and
-    # it is real iff |b| == 1 (then it is positive).
-    Row('gs.imaginary_exp', [('B', 'algebraic'), ('B', 'zero', False), ('E', 'imaginary'),
-                             ('E', 'algebraic')], ('N', 'imaginary', False)),
-    Row('gs.imaginary_exp.not_unit', [('B', '$p'), ('B', 'algebraic'), ('E', 'imaginary'),
-                                      ('E', 'algebraic')], ('N', 'extended_real', False),
-        preds=_NOTUNIT),
-    Row('unit_base.imaginary_exp', [('E', 'imaginary')], ('N', 'positive'), when='b unit angle'),
-    # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
-    Row('exp_base.imaginary', [('U', 'imaginary'), ('E', 'imaginary')], ('N', 'positive'),
-        when='u slot'),
-    # An integer other than 0 and +-1 to a negative integer power is a
-    # fraction (0 gives zoo).
-    Row('int_base.negative_int_exp', [('B', 'integer'), ('E', 'integer'), ('E', 'negative'),
-                                      ('BM', 'zero', False), ('BP', 'zero', False)],
-        ('N', 'integer', False), when='b-1, b+1 slots'),
-    # Real base, rational exponent: imaginary iff the base is negative
-    # and the exponent is half an odd integer.
-    Row('rational_exp.not_half', [('B', 'extended_real'), ('E', 'rational'), ('T', 'integer', False)],
-        ('N', 'imaginary', False), when='2*e slot'),
-    Row('rational_exp.half_odd', [('B', 'negative'), ('E', 'rational'), ('T', 'integer'),
-                                  ('E', 'integer', False)], ('N', 'imaginary'), when='2*e slot'),
-    # b**(k/2) for real b is imaginary iff b is a negative real.
-    Row('e=k/2.imaginary', [('B', 'extended_real')], [('N', 'imaginary'), ('B', 'negative')],
-        kind='equiv', when=('e rational non-integer', 'e.q==2')),
-    Row('e=k/2.not_negative', [('B', 'extended_real')], ('N', 'extended_negative', False),
-        when=('e rational non-integer', 'e.q==2')),
-    Row('e=p/q.not_imaginary', [('B', 'extended_real')], ('N', 'imaginary', False),
-        when=('e rational non-integer', 'e.q!=2')),
-    # (b**(1/q))**q == b: a non-real base gives a non-real root.
-    Row('e=1/q.non_real', [('B', 'extended_real', False)], ('N', 'extended_real', False),
-        when=('e rational non-integer', 'e.p==1')),
-    # Likewise for 1/b**(1/q), but zoo**(-1/2) == 0 is real.
-    Row('e=-1/q.non_real', [('B', 'extended_real', False), ('B', 'finite')],
-        ('N', 'extended_real', False), when=('e rational non-integer', 'e.p==-1')),
-    Row('e=p/q.irrational', [], ('N', 'irrational'),
-        when=('e rational non-integer', 'b positive rational, not a q-th power')),
-    # 1/b is rational iff b is (nonzero) rational.
-    Row('e=-1.irrational', [('B', 'irrational')], ('N', 'irrational'), when='e is -1'),
-    # b is the inverse of a nonzero number 1/b.
-    Row('e=-1.commutative', [('N', 'complex'), ('N', 'zero', False)], ('B', 'commutative'),
-        when='e is -1'),
-    Row('b=-1.odd', [('E', 'integer')], ('N', 'odd'), when='b is -1'),
-    # |b|**e < 1 for negative e.
-    Row('b=int.negative_exp', [('E', 'negative')], ('N', 'integer', False),
-        when='b integer, |b|>=2'),
-    Row('b=algebraic.gs', [('E', 'algebraic')], [('N', 'algebraic'), ('E', 'rational')],
-        kind='equiv', when='b algebraic, not 0 or 1'),
-    # Exact comparisons of a number with 1 (no assumptions involved).
-    Row('|b|>1.finite', [('E', 'extended_negative')], ('N', 'finite'), when='b finite number, |b|>1'),
-    Row('|b|>1.zero', [('E', 'negative_infinite')], ('N', 'zero'), when='b finite number, |b|>1'),
-    Row('|b|>1.infinite', [('E', 'positive_infinite')], ('N', 'infinite'),
-        when='b finite number, |b|>1'),
-    Row('|b|<1.finite', [('E', 'extended_positive')], ('N', 'finite'),
-        when='b finite number, 0<|b|<1'),
-    Row('|b|<1.zero', [('E', 'positive_infinite')], ('N', 'zero'), when='b finite number, 0<|b|<1'),
-    # Disagrees with SymPy for negative b ((-1/2)**(-oo) == nan); kept as is pending
-    # an owner decision, see tests/test_p6_review.py (issue #97 P6 review).
-    Row('|b|<1.infinite', [('E', 'negative_infinite')], ('N', 'infinite'),
-        when='b finite number, 0<|b|<1'),
-    # b**e for integer b >= 2 is composite.
-    Row('e>=2.composite', [('B', 'int>=2')], ('N', 'composite'), when='e integer >= 2'),
-    # Gelfond-Schneider: b not in {0, 1} algebraic, e algebraic irrational.
-    Row('e=algebraic_irrational.gs', [('B', '$p'), ('B', 'algebraic')], ('N', 'algebraic', False),
-        preds=_NOT01, when='e algebraic irrational'),
-)
+def _pow_table_rows():
+    """The rows of ``POW_TABLE`` (built on first use, :func:`_table`)."""
+    return (
+        *_pairs_rows('pow', _POW_RULES),
+        *_pairs_rows('pow.E', _POW_E_RULES, when='b is E'),
+        Sub('ipi', _table('IPI_TABLE'), IPI_GUARDS,
+            lambda x: {'c': x['ipi'][0], 'has_s': x['ipi'][1]},
+            lambda x, s: {'S': _S if x['ipi'][1] else None, 'N': _N}, when=('b is E', 'ipi')),
+        Row('same', [('B', 'extended_nonnegative')], ('N', 'extended_positive'), when='b is e'),
+        Row('one', [], [('N', '$p'), ('B', '$p')], kind='equiv', preds=_POW_ONE_EQUIV,
+            when='e is 1'),
+        # A power of a composite is 1, a fraction or composite.
+        Row('composite_base', [('B', 'composite'), ('E', 'integer')], ('N', 'prime', False)),
+        # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
+        # exp(-t*phi)*exp(I*t*log(r)) with r algebraic; t*log(r) in pi*Q with
+        # t algebraic nonzero forces log(r)/(I*pi) algebraic, hence rational
+        # (Gelfond-Schneider), hence r == 1.  So b**e is never imaginary, and
+        # it is real iff |b| == 1 (then it is positive).
+        Row('gs.imaginary_exp', [('B', 'algebraic'), ('B', 'zero', False), ('E', 'imaginary'),
+                                 ('E', 'algebraic')], ('N', 'imaginary', False)),
+        Row('gs.imaginary_exp.not_unit', [('B', '$p'), ('B', 'algebraic'), ('E', 'imaginary'),
+                                          ('E', 'algebraic')], ('N', 'extended_real', False),
+            preds=_NOTUNIT),
+        Row('unit_base.imaginary_exp', [('E', 'imaginary')], ('N', 'positive'),
+            when='b unit angle'),
+        # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
+        Row('exp_base.imaginary', [('U', 'imaginary'), ('E', 'imaginary')], ('N', 'positive'),
+            when='u slot'),
+        # An integer other than 0 and +-1 to a negative integer power is a
+        # fraction (0 gives zoo).
+        Row('int_base.negative_int_exp', [('B', 'integer'), ('E', 'integer'), ('E', 'negative'),
+                                          ('BM', 'zero', False), ('BP', 'zero', False)],
+            ('N', 'integer', False), when='b-1, b+1 slots'),
+        # Real base, rational exponent: imaginary iff the base is negative
+        # and the exponent is half an odd integer.
+        Row('rational_exp.not_half',
+            [('B', 'extended_real'), ('E', 'rational'), ('T', 'integer', False)],
+            ('N', 'imaginary', False), when='2*e slot'),
+        Row('rational_exp.half_odd', [('B', 'negative'), ('E', 'rational'), ('T', 'integer'),
+                                      ('E', 'integer',
+                                       False)], ('N', 'imaginary'), when='2*e slot'),
+        # b**(k/2) for real b is imaginary iff b is a negative real.
+        Row('e=k/2.imaginary', [('B', 'extended_real')], [('N', 'imaginary'), ('B', 'negative')],
+            kind='equiv', when=('e rational non-integer', 'e.q==2')),
+        Row('e=k/2.not_negative', [('B', 'extended_real')], ('N', 'extended_negative', False),
+            when=('e rational non-integer', 'e.q==2')),
+        Row('e=p/q.not_imaginary', [('B', 'extended_real')], ('N', 'imaginary', False),
+            when=('e rational non-integer', 'e.q!=2')),
+        # (b**(1/q))**q == b: a non-real base gives a non-real root.
+        Row('e=1/q.non_real', [('B', 'extended_real', False)], ('N', 'extended_real', False),
+            when=('e rational non-integer', 'e.p==1')),
+        # Likewise for 1/b**(1/q), but zoo**(-1/2) == 0 is real.
+        Row('e=-1/q.non_real', [('B', 'extended_real', False), ('B', 'finite')],
+            ('N', 'extended_real', False), when=('e rational non-integer', 'e.p==-1')),
+        Row('e=p/q.irrational', [], ('N', 'irrational'),
+            when=('e rational non-integer', 'b positive rational, not a q-th power')),
+        # 1/b is rational iff b is (nonzero) rational.
+        Row('e=-1.irrational', [('B', 'irrational')], ('N', 'irrational'), when='e is -1'),
+        # b is the inverse of a nonzero number 1/b.
+        Row('e=-1.commutative', [('N', 'complex'), ('N', 'zero', False)], ('B', 'commutative'),
+            when='e is -1'),
+        Row('b=-1.odd', [('E', 'integer')], ('N', 'odd'), when='b is -1'),
+        # |b|**e < 1 for negative e.
+        Row('b=int.negative_exp', [('E', 'negative')], ('N', 'integer', False),
+            when='b integer, |b|>=2'),
+        Row('b=algebraic.gs', [('E', 'algebraic')], [('N', 'algebraic'), ('E', 'rational')],
+            kind='equiv', when='b algebraic, not 0 or 1'),
+        # Exact comparisons of a number with 1 (no assumptions involved).
+        Row('|b|>1.finite', [('E', 'extended_negative')], ('N', 'finite'),
+            when='b finite number, |b|>1'),
+        Row('|b|>1.zero', [('E', 'negative_infinite')], ('N', 'zero'),
+            when='b finite number, |b|>1'),
+        Row('|b|>1.infinite', [('E', 'positive_infinite')], ('N', 'infinite'),
+            when='b finite number, |b|>1'),
+        Row('|b|<1.finite', [('E', 'extended_positive')], ('N', 'finite'),
+            when='b finite number, 0<|b|<1'),
+        Row('|b|<1.zero', [('E', 'positive_infinite')], ('N', 'zero'),
+            when='b finite number, 0<|b|<1'),
+        # Disagrees with SymPy for negative b ((-1/2)**(-oo) == nan); kept as is pending
+        # an owner decision, see tests/test_p6_review.py (issue #97 P6 review).
+        Row('|b|<1.infinite', [('E', 'negative_infinite')], ('N', 'infinite'),
+            when='b finite number, 0<|b|<1'),
+        # b**e for integer b >= 2 is composite.
+        Row('e>=2.composite', [('B', 'int>=2')], ('N', 'composite'), when='e integer >= 2'),
+        # Gelfond-Schneider: b not in {0, 1} algebraic, e algebraic irrational.
+        Row('e=algebraic_irrational.gs', [('B', '$p'), ('B', 'algebraic')],
+            ('N', 'algebraic', False),
+            preds=_NOT01, when='e algebraic irrational'),
+    )
 
 
 def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
@@ -798,7 +819,8 @@ def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
     ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and exponent
     ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``: slots
     ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
-    return rules_of(POW_TABLE, POW_GUARDS, _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1),
+    return rules_of(_table('POW_TABLE'), POW_GUARDS,
+                    _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1),
                     POW_SLOTS)
 
 def _unit_power_units(angle, e, expr):
@@ -904,11 +926,12 @@ def table_provenance(expr):
         for f in _mul_factor_sets(expr):
             n = len(f)
             blocks.append((consts_of(f), tuple(f) + (expr,),
-                           expand(MUL_TABLE, MUL_GUARDS, {'n': n, 'consts': consts_of(f)},
+                           expand(_table('MUL_TABLE'), MUL_GUARDS, {'n': n, 'consts': consts_of(f)},
                                   {'N': n, '*': range(n)})))
     elif isinstance(expr, Pow):
         consts, objs, _, pargs = _pow_pattern(expr)
-        blocks = [(consts, tuple(objs), expand(POW_TABLE, POW_GUARDS, _pow_ctx(*pargs), POW_SLOTS))]
+        blocks = [(consts, tuple(objs),
+                   expand(_table('POW_TABLE'), POW_GUARDS, _pow_ctx(*pargs), POW_SLOTS))]
     else:
         return []
     out = []
@@ -922,3 +945,34 @@ def table_provenance(expr):
                 out.append((row.name, frozenset([(objs[k], p, not pos) for k, p, pos in ps]
                                                 + [(objs[k], p, pos) for k, p, pos in cs])))
     return out
+
+
+# ---------------------------------------------------------------------------
+# The tables, built on first use
+# ---------------------------------------------------------------------------
+
+#: builders of the rule tables, by module attribute name.  A table is a
+#: constant (a tuple of rows), built the first time it is read: through
+#: :func:`_table` here, as ``core.MUL_TABLE`` (the module ``__getattr__``)
+#: elsewhere.  A query without a product or a power then never builds the
+#: Mul or Pow table (most of this module's import time and allocations).
+_TABLE_BUILDERS = MappingProxyType({
+    'MUL_TABLE': _mul_table_rows,
+    'POW_TABLE': _pow_table_rows,
+    'IPI_TABLE': _ipi_table_rows,
+})
+
+
+def _table(name: str) -> tuple:
+    """The rule table ``name`` (``MUL_TABLE``, ``POW_TABLE``, ``IPI_TABLE``),
+    built once and then a module attribute."""
+    t = globals().get(name)
+    if t is None:
+        t = globals()[name] = _TABLE_BUILDERS[name]()
+    return t
+
+
+def __getattr__(name: str):
+    if name in _TABLE_BUILDERS:
+        return _table(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
