@@ -124,44 +124,69 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
     ``2*i + 1`` if it is false.  DPLL with unit propagation; the engine's
     rule base has 48 models."""
     out: list[int] = []
-    cls = [tuple(c) for c in clauses]
-
-    def up(a: set) -> bool:
-        changed = True
-        while changed:
-            changed = False
-            for c in cls:
-                free = -1
-                for l in c:
-                    if l in a:
-                        break
-                    if l ^ 1 not in a:
-                        if free >= 0:
-                            break
-                        free = l
-                else:
-                    if free < 0:
-                        return False
-                    a.add(free)
-                    changed = True
-        return True
-
-    def rec(a: set) -> None:
-        if not up(a):
-            return
-        for i in range(n):
-            if 2 * i not in a and 2 * i + 1 not in a:
-                rec(a | {2 * i + 1})
-                rec(a | {2 * i})
-                return
+    cls: list[int] = []
+    for c in clauses:
         m = 0
-        for l in a:
+        for l in c:
             m |= 1 << l
-        out.append(m)
+        cls.append(m)
+    even = _EVEN & ((1 << (2 * n)) - 1)    # the positive literal of each variable
+
+    # occ[l]: the clauses holding literal l; only they can become unit or
+    # false when the complement of l is assigned
+    occ: list[list[int]] = [[] for _ in range(2 * n)]
+    for cm in cls:
+        m = cm
+        while m:
+            low = m & -m
+            m ^= low
+            occ[low.bit_length() - 1].append(cm)
+
+    def up(a: int, lit: int) -> int:
+        """The unit-propagation closure of the assignment ``a``, which the
+        literal ``lit`` (a bit) just joined, -1 on a conflict.  ``sw`` is
+        ``a`` with each literal replaced by its complement, so ``cm & ~sw``
+        are the clause's unassigned literals when none of them is true."""
+        sw = ((a & _EVEN) << 1) | ((a >> 1) & _EVEN)
+        queue = [lit]
+        while queue:
+            l = queue.pop()
+            for cm in occ[(l << 1 if l & _EVEN else l >> 1).bit_length() - 1]:
+                if a & cm:
+                    continue
+                free = cm & ~sw
+                if not free:
+                    return -1
+                if not free & (free - 1):      # one unassigned literal: unit
+                    a |= free
+                    sw |= free << 1 if free & _EVEN else free >> 1
+                    queue.append(free)
+        return a
+
+    def rec(a: int) -> None:
+        unassigned = even & ~(a | (a >> 1))
+        if unassigned:
+            low = unassigned & -unassigned      # the lowest unassigned variable
+            for bit in (low << 1, low):
+                b = up(a | bit, bit)
+                if b >= 0:
+                    rec(b)
+            return
+        out.append(a)
         if len(out) > 1 << 16:
             raise ValueError("rule block has too many models")
 
-    rec(set())
+    a = 0                                   # unit clauses, if any, at the root
+    for cm in cls:
+        if not cm:
+            return ()
+        if not cm & (cm - 1) and not a & cm:
+            if a & (cm << 1 if cm & _EVEN else cm >> 1):
+                return ()
+            a = up(a | cm, cm)
+            if a < 0:
+                return ()
+    rec(a)
     return tuple(sorted(set(out)))
 
 
