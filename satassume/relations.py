@@ -412,8 +412,18 @@ class Uninterpreted(Exception):
 # --------------------------------------------------------------------------
 
 def _key(e):
-    from sympy.core.sorting import default_sort_key
-    return default_sort_key(e)
+    """``default_sort_key(e)``, memoized (a pure function of ``e``): the
+    sides of every equality atom are sorted by it, and a linked term is a
+    side of several (its link ``e = 0``, interface and trichotomy
+    equalities, the budget's cone builds them again)."""
+    r = _SORT_KEYS.get(e)
+    if r is None:
+        from sympy.core.sorting import default_sort_key
+        r = default_sort_key(e)
+        if len(_SORT_KEYS) >= _SORT_KEYS.size:
+            _SORT_KEYS.clear()
+        _SORT_KEYS[e] = r
+    return r
 
 
 def _ext_atoms(*sides) -> list:
@@ -494,6 +504,7 @@ def relational_name(rel) -> str:
 
 
 _SYMPY_ATOMS = _PROCESS.table("satassume.relations._SYMPY_ATOMS", "pure", 100_000)
+_SORT_KEYS = _PROCESS.table("satassume.relations._SORT_KEYS", "pure", 100_000)
 
 
 def sympy_atom(atom: P):
