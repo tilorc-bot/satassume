@@ -1045,12 +1045,15 @@ class Engine:
                  writeback: str = "root-only"):
         clause_templates = None
         if templates is None:
-            import importlib.util
-            if importlib.util.find_spec("sympy") is None:  # pragma: no cover
+            try:
+                from .templates import registry
+            except ModuleNotFoundError as e:  # pragma: no cover
+                # a broken template package must not turn into silent
+                # Nones: only a missing SymPy means "no templates"
+                if e.name != "sympy":
+                    raise
                 templates = lambda node: ()
             else:
-                # a broken template package must not turn into silent Nones
-                from .templates import registry
                 templates = registry.facts_for
                 clause_templates = registry.clauses_for
                 registry.warm_up()
