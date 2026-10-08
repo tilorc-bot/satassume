@@ -152,8 +152,9 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
     ``dv(dn, need)`` gives the shared definitional literal of a derived
     atom, with the direction(s) ``need`` of its definition emitted
     (``'pos'``: literal -> definition, ``'neg'``: definition -> literal,
-    ``'both'``; ``'negunit'``: as ``'neg'``, or None to expand the
-    atom instead).  With it, a derived atom that the clauses cannot just
+    ``'both'``; ``'negunit'``/``'posunit'``: as ``'neg'``/``'pos'``, or
+    None to expand the atom instead; ``'basis'``: ``dn`` is a basis or
+    custom atom, and the result its variable, which the session links to the node's derived ones).  With it, a derived atom that the clauses cannot just
     expand into basis literals (a conjunction under a wide disjunction, a
     negated conjunction) gets the same variable wherever it occurs (the
     assumptions, the proposition, relations), so a unit on one occurrence
@@ -166,9 +167,16 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
         return
     if isinstance(f, P):
         if f.pred in _DEF_LITS:
+            if dv is not None and _DEF_LITS[f.pred][0] == '|':
+                # an asserted disjunction (antihermitian): as a negated
+                # conjunction below
+                v = dv(_def(f), 'posunit')
+                if v is not None:
+                    emit([v])
+                    return
             compile_formula(basis_formula(f), table, emit, dv)
         else:
-            emit([table.var(f)])
+            emit([dv(f, 'basis') if dv is not None else table.var(f)])
         return
     if isinstance(f, Not) and isinstance(f.args[0], And) and dv is not None:
         dn = _def(f.args[0])
@@ -191,7 +199,7 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
                     return
             compile_formula(Not(basis_formula(f.args[0])), table, emit, dv)
         else:
-            emit([-table.var(f.args[0])])
+            emit([-(dv(f.args[0], 'basis') if dv is not None else table.var(f.args[0]))])
         return
     if isinstance(f, And):
         for a in f.args:
@@ -357,7 +365,7 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
             if dv is not None:
                 return dv(_def(f), 'both')
             return _literal(basis_formula(f), table, emit, dv)
-        return table.var(f)
+        return dv(f, 'basis') if dv is not None else table.var(f)
     if isinstance(f, Not):
         inner = f.args[0]
         if isinstance(inner, P):
@@ -365,7 +373,7 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
                 if dv is not None:
                     return -dv(_def(inner), 'both')
                 return -_literal(basis_formula(inner), table, emit, dv)
-            return -table.var(inner)
+            return -(dv(inner, 'basis') if dv is not None else table.var(inner))
         return -_literal(inner, table, emit, dv)
     if isinstance(f, Implies):
         return _literal(Or(Not(f.args[0]), f.args[1]), table, emit, dv)

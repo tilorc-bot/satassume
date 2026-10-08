@@ -359,19 +359,32 @@ class Session:
         the directions ``need`` of its definition emitted (``'pos'``: the
         variable implies the definition, ``'neg'``: the converse,
         ``'both'``; see :func:`satassume.compile.compile_formula`).  A
-        definition of one basis literal (``infinite``) is that literal."""
+        definition of one basis literal (``infinite``) is that literal.
+        ``need='basis'``: ``dn`` is a basis or custom atom under a
+        connective of a formula, and the result its variable; a basis one
+        is linked like a derived one (``extended_positive ->
+        extended_nonnegative``, :meth:`_link`)."""
+        if need == 'basis':
+            v = self.table.var(dn)
+            i = BASIS_INDEX.get(dn.pred)
+            if i is not None:
+                self._link(('&', (i + 1,)), dn.expr, v)
+            return v
         d, node = dn
         op, ls = d
-        if need == 'negunit':
-            # a negated conjunction asserted by the assumptions: its own
-            # literal only in a set with many (one clause and a variable
-            # more each, against a search conflict each when a wide
-            # proposition holds them; see assume_formula)
+        if need in ('negunit', 'posunit'):
+            # a negated conjunction (an asserted disjunction) of the
+            # assumptions: its own literal only in a set with many (one
+            # clause and a variable more each, against a search conflict
+            # each when a wide proposition holds them; see assume_formula)
             if not self._neg_shared or len(ls) < 2:
                 return None
-            need = 'neg'
+            need = 'neg' if need == 'negunit' else 'pos'
         if len(ls) == 1:
-            return self.node(node) + ls[0] - 1 if ls[0] > 0 else -(self.node(node) - ls[0] - 1)
+            b = self.node(node)
+            v = b + ls[0] - 1 if ls[0] > 0 else -(b - ls[0] - 1)
+            self._link(d, node, v)
+            return v
         return self._dvar(d, node, 3 if need == 'both' else 1 if need == 'pos' else 2, True)
 
     def _dvar(self, d: tuple, node: Node, need: int, link: bool = False) -> int:
@@ -385,17 +398,8 @@ class Session:
             e = self._dv[key] = [v, 0, False]
         v, have, linked = e
         if link and not linked:
-            # binary clauses the rule base gives between this and the
-            # node's other linked literals (positive -> nonnegative), so
-            # a unit on one propagates to the others as with a variable
-            # per predicate; only for the literals of formulas (``dv``),
-            # not for those relations and decisions ask for (:meth:`var`)
             e[2] = True
-            others = self._dv_node.setdefault(node, [])
-            for d2, v2 in others:
-                for s1, s2 in def_implications(d, d2):
-                    emit([s1 * v, s2 * v2])
-            others.append((d, v))
+            self._link(d, node, v)
         missing = need & ~have
         if missing:
             op, ls = d
@@ -414,6 +418,31 @@ class Session:
                     emit([-v] + lits)
             e[1] = have | need
         return v
+
+    def _link(self, d, node: Node, v: int) -> None:
+        """Link literal ``v`` of definition ``d`` (``(op, literals)``; a
+        basis atom is ``('&', (i,))``) at ``node`` to the node's other
+        linked literals by the binary clauses the rule base gives
+        (``positive -> nonnegative``, ``extended_positive ->
+        extended_nonnegative``), so a unit on one propagates to the others
+        as with a variable per predicate; without it a wide formula of one
+        against a wide formula of the other costs a search conflict per
+        disjunct.  Only for the literals of formulas (``dv``), not for
+        those relations and decisions ask for (:meth:`var`).  Clauses
+        between two single literals are the rule base's, and those between
+        a definition and one of its own literals are its definition's."""
+        others = self._dv_node.setdefault(node, [])
+        if (d, v) in others:
+            return
+        own = {abs(l) for l in d[1]}
+        for d2, v2 in others:
+            if len(d[1]) == 1 and (len(d2[1]) == 1 or own <= {abs(l) for l in d2[1]}):
+                continue
+            if len(d2[1]) == 1 and abs(d2[1][0]) in own:
+                continue
+            for s1, s2 in def_implications(d, d2):
+                self._emit([s1 * v, s2 * v2])
+        others.append((d, v))
 
     def query_lit(self, pred: str, node: Node):
         """What :meth:`query_literal` decides for ``pred(node)``: the
