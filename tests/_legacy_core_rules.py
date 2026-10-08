@@ -79,6 +79,7 @@ def mul_rules(n, consts):
     even_n = n % 2 == 0
     rule(lits(A, 'extended_negative'),
          (N, 'extended_positive' if even_n else 'extended_negative', True))
+    rule(lits(A, 'nonpositive'), (N, 'nonnegative' if even_n else 'nonpositive', True))
     rule(lits(A, 'imaginary'), (N, 'nonzero' if even_n else 'imaginary', True))
     rule(lits(A, 'odd'), (N, 'odd', True))
 
@@ -131,6 +132,8 @@ def mul_rules(n, consts):
                 sign = 'extended_positive' if m % 2 == 0 else 'extended_negative'
                 rule([*lits(neg, 'extended_negative'), *lits(rest, 'extended_positive')],
                      (N, sign, True))
+                sign = 'nonnegative' if m % 2 == 0 else 'nonpositive'
+                rule([*lits(neg, 'nonpositive'), *lits(rest, 'nonnegative')], (N, sign, True))
         for k, l in combinations(A, 2):
             rest = [j for j in A if j != k and j != l]
             rule([(k, 'imaginary', True), (l, 'imaginary', True),
