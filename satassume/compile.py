@@ -179,11 +179,16 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None]) -> No
     raise TypeError(f"cannot compile {f!r}")
 
 
+#: most clauses :func:`_or_cnf` makes by distributing conjunctions
+MAX_DISTRIBUTE = 16
+
+
 def _or_cnf(f: Or, table: VarTable, emit) -> List[List[int]]:
     """``f`` as clauses: one clause, except that a derived atom whose
     definition is a conjunction (``real``: ``extended_real & finite``), or
     the negation of one whose definition is a disjunction, splits it (an
-    empty list: ``f`` holds)."""
+    empty list: ``f`` holds); past :data:`MAX_DISTRIBUTE` clauses the
+    largest conjunctions get Tseitin variables instead."""
     clause: List[int] = []
     parts: List[List[int]] = []       # conjunctions distributed over ``clause``
     for a in f.args:
@@ -219,6 +224,21 @@ def _or_cnf(f: Or, table: VarTable, emit) -> List[List[int]]:
                 parts.append([[l] for l in lits])
             continue
         clause.append(_literal(a, table, emit))
+    # distribute the conjunctions over ``clause``, while the product stays
+    # small; a larger conjunction gets a Tseitin variable ``t`` instead
+    # (``t`` implies each of its clauses), so the clauses grow linearly
+    # with ``f``, not exponentially
+    size = 1
+    for part in parts:
+        size *= len(part)
+    parts.sort(key=len)
+    while size > MAX_DISTRIBUTE:
+        part = parts.pop()
+        size //= len(part)
+        t = table.aux()
+        for c in part:
+            emit([-t] + c)
+        clause.append(t)
     out = [clause]
     for part in parts:
         out = [c + d for c in out for d in part]

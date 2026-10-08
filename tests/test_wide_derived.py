@@ -1,0 +1,93 @@
+"""Wide disjunctions and conjunctions of derived predicates stay linear.
+
+A derived predicate is a conjunction (or disjunction) of basis literals
+(``nonnegative = extended_real & finite & ~extended_negative``), so a
+clause of n of them distributes to up to 3**n clauses.  ``compile._or_cnf``
+distributes only up to ``MAX_DISTRIBUTE`` clauses and gives the larger
+conjunctions Tseitin variables; ``templates._common.Pattern`` hands rules
+that would expand past ``MAX_EXPAND`` clauses over as formulas.
+"""
+import time
+
+import pytest
+from sympy import Add, And, Implies, Not, Or, Q, symbols
+
+from satassume.compile import VarTable, compile_formula
+from satassume.formula import P
+from satassume.formula import And as FAnd, Implies as FImplies, Not as FNot, Or as FOr
+from satassume.sympy_api import ask
+from satassume.templates.registry import registry
+
+xs = symbols("x0:12")
+DERIVED = ['nonnegative', 'nonpositive', 'positive', 'negative', 'real', 'nonzero',
+           'extended_nonnegative', 'positive_infinite', 'negative_infinite',
+           'irrational', 'odd', 'antihermitian', 'infinite', 'transcendental']
+
+
+def _nclauses(f):
+    out = []
+    compile_formula(f, VarTable(), out.append)
+    return len(out)
+
+
+@pytest.mark.parametrize("pred", DERIVED)
+def test_compiled_wide_formulas_are_linear(pred):
+    atoms = [P(pred, x) for x in xs]
+    shapes = [
+        FOr(*atoms),
+        FOr(*[FNot(a) for a in atoms]),
+        FNot(FAnd(*atoms)),
+        FNot(FOr(*atoms)),
+        FAnd(*atoms),
+        FImplies(FAnd(*atoms), P('positive', xs[0])),
+        FImplies(FAnd(*[FNot(a) for a in atoms]), P('nonnegative', xs[0])),
+        FOr(*[FAnd(a, P('real', a.expr)) for a in atoms]),
+        FOr(FOr(*atoms[:6]), FOr(*atoms[6:])),
+    ]
+    for f in shapes:
+        assert _nclauses(f) <= 50 * len(xs), f
+
+
+ALL = And(*[Q.positive(x) for x in xs])
+CASES = [
+    (Or(*[Q.nonnegative(x) for x in xs]), True, None),
+    (Q.real(xs[0]), Or(*[Q.nonnegative(x) for x in xs]), None),
+    (Or(*[Q.nonnegative(x) for x in xs]), Or(*[Q.positive(x) for x in xs]), True),
+    (Or(*[Q.positive(x) for x in xs]),
+     Not(And(*[Q.nonpositive(x) for x in xs])) & And(*[Q.real(x) for x in xs]), True),
+    (And(*[Q.nonnegative(x) for x in xs]), ALL, True),
+    (Not(Or(*[Q.negative(x) for x in xs])), And(*[Q.nonnegative(x) for x in xs]), True),
+    (Or(*[Q.real(x) for x in xs]), Or(*[Q.positive(x) for x in xs]), True),
+    (Q.nonnegative(xs[0]),
+     Implies(And(*[Q.nonnegative(x) for x in xs[1:]]), Q.positive(xs[0]))
+     & And(*[Q.positive(x) for x in xs[1:]]), True),
+    (Or(*[Q.finite(x) for x in xs]), Or(*[And(Q.positive(x), Q.real(x)) for x in xs]), True),
+    (Q.nonnegative(xs[0]),
+     Or(Not(Or(*[Q.nonnegative(x) for x in xs[1:]])), Q.positive(xs[0]))
+     & Or(*[Q.positive(x) for x in xs[1:]]), True),
+    (Q.negative_infinite(xs[11]), Or(*[Q.negative_infinite(x) for x in xs]) & Q.real(xs[0])
+     & And(*[~Q.negative_infinite(x) for x in xs[1:11]]), True),
+    (Q.positive(xs[0]), Or(*[Q.negative_infinite(x) for x in xs]) & Q.real(xs[0])
+     & And(*[~Q.negative_infinite(x) for x in xs[1:11]]), None),
+    (Or(*[Q.antihermitian(x) for x in xs]), And(*[Q.zero(x) for x in xs]), True),
+]
+
+
+@pytest.mark.parametrize("prop, assumptions, expected", CASES)
+def test_wide_queries_are_fast(prop, assumptions, expected):
+    t = time.perf_counter()
+    assert ask(prop, assumptions) is expected
+    assert time.perf_counter() - t < 2.0
+
+
+@pytest.mark.parametrize("n", [3, 6, 12])
+def test_wide_add_templates_are_linear(n):
+    comp, formulas = registry.clauses_for(Add(*xs[:n], evaluate=False))
+    assert sum(len(c.pattern.clauses) for c in comp) <= 40 * n + 100
+    s = Add(*xs[:n])
+    a = Q.positive_infinite(xs[0]) & And(*[Q.extended_real(x) & ~Q.negative_infinite(x) for x in xs[1:n]])
+    t = time.perf_counter()
+    expected = True if n < 12 else None   # as on the 33-predicate main
+    assert ask(Q.positive_infinite(s), a) is expected
+    assert ask(Q.infinite(s), a) is expected
+    assert time.perf_counter() - t < 2.0

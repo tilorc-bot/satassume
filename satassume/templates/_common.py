@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
-from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, expand_clause, unit_propagate
+from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
 
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
@@ -212,6 +212,10 @@ def _unsubsumed(clauses):
     return out
 
 
+#: most clauses one rule may expand to in a pattern (see ``Pattern.wide``)
+MAX_EXPAND = 16
+
+
 class Pattern:
     """The resolved rules of one template pattern, also as clauses in
     *slot space*: a literal is ``(k, pidx, neg)`` for predicate index
@@ -222,7 +226,7 @@ class Pattern:
     ``complete`` is set on a unit pattern whose facts, closed under the rule
     base, decide every predicate the rule base mentions: the engine then
     asserts the closed units and skips the rule base for the node."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete')
+    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete', 'wide')
 
     def __init__(self, rules: List[Rule], node: int):
         self.rules = rules
@@ -232,7 +236,21 @@ class Pattern:
         used = set()
         child_preds: Dict[int, set] = {}
         expanded = []
+        #: rules whose clauses over the basis would be too many (a wide
+        #: Add's ``~positive_infinite(x_i)`` premises: 2**n clauses); they
+        #: are handed over as formulas (``Compiled.wide_formulas``), which
+        #: ``compile_formula`` encodes with Tseitin variables past
+        #: ``compile.MAX_DISTRIBUTE``
+        self.wide = wide = []
         for ps, cs in rules:
+            n = 1
+            for k, p, pos in ps:
+                n *= len(cnf_of(p, not pos))
+            for k, p, pos in cs:
+                n *= len(cnf_of(p, pos))
+            if n > MAX_EXPAND:
+                wide.append((ps, cs))
+                continue
             # over the basis: a derived predicate is its definition
             # (rules.expand_clause), so one rule may give several clauses
             for lits in expand_clause([(k, p, not pos) for k, p, pos in ps]
@@ -264,6 +282,11 @@ class Compiled:
 
     def formulas(self) -> List:
         return instantiate(self.pattern.rules, self.objs)
+
+    def wide_formulas(self) -> List:
+        """The formulas of the pattern's wide rules (``Pattern.wide``),
+        which its clauses leave out."""
+        return instantiate(self.pattern.wide, self.objs)
 
 
 #: compiled patterns by the key the template passes to :func:`facts` or
