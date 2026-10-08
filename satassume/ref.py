@@ -165,7 +165,7 @@ class _RefEngine:
     ``s.engine.uninterpreted``), its memo dict (``_number_basis`` keeps
     ``_xbasis`` in ``engine.__dict__``) and ``is_`` for context-free facts
     of closed terms (spec section 9), answered by a nested reference query
-    with no assumptions and no glue."""
+    with no assumptions and no glue (``is_many``: a loop of ``is_``)."""
 
     def __init__(self, extensions, specs, transfer: bool, uninterpreted: str) -> None:
         self._extensions = extensions
@@ -193,6 +193,11 @@ class _RefEngine:
             r = None
         memo[key] = r
         return r
+
+    def is_many(self, node, preds) -> List[Optional[bool]]:
+        """``[self.is_(node, p) for p in preds]``: the reference answers
+        each predicate by its own query (``Engine.is_many`` batches them)."""
+        return [self.is_(node, p) for p in preds]
 
 
 class _RefSession:
