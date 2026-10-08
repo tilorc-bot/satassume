@@ -191,23 +191,35 @@ def instantiate(resolved: List[Rule], objs) -> List:
 
 def _unsubsumed(clauses):
     """``clauses`` (tuples of hashable literals) without duplicates and
-    without the clauses a shorter one subsumes, shortest first."""
+    without the clauses a shorter one subsumes, shortest first.
+
+    Each kept clause is indexed under one literal only, its rarest, and is
+    a bit mask over the literals, so a candidate checks every kept clause
+    at most once, with one mask operation (wide Add/Mul patterns have
+    hundreds of clauses of 100+ literals)."""
     by_len = sorted(dict.fromkeys(frozenset(c) for c in clauses), key=len)
-    kept: List[frozenset] = []
-    holding: Dict[Any, list] = {}         # literal -> kept clauses holding it
-    out = []
+    bit: Dict[Any, int] = {}
+    count: Dict[Any, int] = {}
     for c in by_len:
         for l in c:
-            for d in holding.get(l, ()):
-                if d <= c:
-                    break
-            else:
-                continue
-            break
+            if l not in bit:
+                bit[l] = 1 << len(bit)
+            count[l] = count.get(l, 0) + 1
+    index: Dict[Any, list] = {}           # literal -> masks of kept clauses
+    out = []
+    for c in by_len:
+        m = 0
+        for l in c:
+            m |= bit[l]
+        rest = ~m
+        for l in c:
+            if any(not d & rest for d in index.get(l, ())):
+                break
         else:
-            kept.append(c)
-            for l in c:
-                holding.setdefault(l, []).append(c)
+            if c:
+                index.setdefault(min(c, key=count.__getitem__), []).append(m)
+            else:
+                index = {l: [0] for l in bit}
             out.append(tuple(sorted(c)))
     return out
 

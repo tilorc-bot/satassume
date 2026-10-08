@@ -233,7 +233,8 @@ def expand_clause(lits: Sequence[Tuple[int, str, bool]]) -> List[Tuple[Tuple[int
     seen = set()
     for c in out:
         c = tuple(dict.fromkeys(c))
-        if any((k, i, not p) in c for k, i, p in c):
+        cs = set(c)
+        if any((k, i, not p) in cs for k, i, p in c):
             continue
         key = frozenset(c)
         if key in seen:

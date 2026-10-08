@@ -10,7 +10,7 @@ that would expand past ``MAX_EXPAND`` clauses over as formulas.
 import time
 
 import pytest
-from sympy import Add, And, Implies, Not, Or, Q, symbols
+from sympy import Add, And, Implies, Mul, Not, Or, Q, symbols
 
 from satassume.compile import VarTable, compile_formula
 from satassume.formula import P
@@ -91,3 +91,44 @@ def test_wide_add_templates_are_linear(n):
     assert ask(Q.positive_infinite(s), a) is expected
     assert ask(Q.infinite(s), a) is expected
     assert time.perf_counter() - t < 2.0
+
+
+# compile time, not only output size: the choice in compile._or_cnf and the
+# subsumption check in templates._common._unsubsumed were cubic / super-cubic
+# in the width (OR of 200 derived atoms 2.6 s, cold Add of 80 symbols 11 s;
+# main: 0.06 s, 0.3 s).  Wide enough that the old code takes far longer than
+# the bounds here.
+
+@pytest.mark.parametrize("pred", ["nonnegative", "positive", "nonzero"])
+def test_wide_or_compiles_in_linear_time(pred):
+    ys = symbols("y0:1000")
+    t = time.perf_counter()
+    assert _nclauses(FOr(*[P(pred, y) for y in ys])) <= 5 * len(ys)
+    assert _nclauses(FOr(*[FNot(P(pred, y)) for y in ys[:500]]
+                         + [P(pred, y) for y in ys[500:]])) <= 5 * len(ys)
+    assert time.perf_counter() - t < 1.0
+
+
+@pytest.mark.parametrize("build", [Add, Mul])
+@pytest.mark.parametrize("pred", ["positive", "nonnegative", "extended_positive"])
+def test_wide_pattern_builds_are_fast(build, pred):
+    from satassume.templates import _common
+    ys = symbols("w0:150")
+    _common._CACHE.clear()
+    t = time.perf_counter()
+    assert ask(getattr(Q, pred)(build(*ys)), And(*[Q.positive(y) for y in ys])) is True
+    assert time.perf_counter() - t < 4.0
+
+
+def test_unsubsumed_matches_brute_force():
+    import random
+    from satassume.templates._common import _unsubsumed
+    rng = random.Random(0)
+    for _ in range(200):
+        cs = [tuple(rng.sample(range(12), rng.randint(0, 5))) for _ in range(rng.randint(0, 30))]
+        if rng.random() < 0.8:
+            cs = [c for c in cs if c]
+        uniq = sorted(dict.fromkeys(frozenset(c) for c in cs), key=len)
+        want = [tuple(sorted(c)) for i, c in enumerate(uniq)
+                if not any(d <= c for d in uniq[:i])]
+        assert _unsubsumed(cs) == want

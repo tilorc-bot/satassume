@@ -7,6 +7,7 @@ clause is a list of non-zero integers; ``-v`` is the negation of ``v``.
 """
 from __future__ import annotations
 
+import heapq
 from typing import Any, Callable, Dict, List, Sequence
 
 from .formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
@@ -181,6 +182,9 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None]) -> No
 
 #: most clauses :func:`_or_cnf` makes by distributing conjunctions
 MAX_DISTRIBUTE = 16
+#: most conjunctions :func:`_or_cnf` weighs one by one (more cannot all
+#: be distributed: each has two clauses or more)
+MAX_EXACT = 8
 
 
 def _or_cnf(f: Or, table: VarTable, emit) -> List[List[int]]:
@@ -242,6 +246,14 @@ def _or_cnf(f: Or, table: VarTable, emit) -> List[List[int]]:
             return n, n * (len(clause) + extra) + sum(n // m * l for m, l, _ in info)
 
         chosen = []
+        if len(info) > MAX_EXACT:
+            # more conjunctions of at least two clauses each than can stay
+            # below MAX_DISTRIBUTE anyway: the largest get variables right
+            # away (the greedy choice below would pick them one by one, at
+            # cubic cost), the MAX_EXACT smallest go to the exact choice
+            keep = set(map(id, heapq.nsmallest(MAX_EXACT, info, key=lambda i: (i[0], i[1]))))
+            chosen = [i[2] for i in info if id(i) not in keep]
+            info = [i for i in info if id(i) in keep]
         while info:
             n, best = cost(info, len(chosen))
             pick = None
