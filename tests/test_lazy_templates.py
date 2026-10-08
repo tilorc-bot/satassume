@@ -79,7 +79,7 @@ def test_declared_module_registering_outside_its_classes():
 def test_user_registration_loads_all_builtins_first():
     _run("""
 import sys
-from sympy import Add, Function
+from sympy import Add, exp
 from satassume.epoch import EPOCH
 from satassume.templates.registry import registry
 CORE, FUNCS = "satassume.templates.core", "satassume.templates.functions"
@@ -90,13 +90,13 @@ epoch = EPOCH[0]
 def user_add(expr):
     return None
 
-@registry.register(Function)
+@registry.register(exp)
 def user_function(expr):
     return None
 
 assert CORE in sys.modules and FUNCS in sys.modules and not registry._lazy
 assert EPOCH[0] > epoch
-for cls, user, mod in ((Add, user_add, CORE), (Function, user_function, FUNCS)):
+for cls, user, mod in ((Add, user_add, CORE), (exp, user_function, FUNCS)):
     ts = registry.templates_for(cls)
     own = registry._by_class[cls]
     assert own[-1] is user and len(own) > 1
