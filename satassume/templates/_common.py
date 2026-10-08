@@ -21,6 +21,10 @@ from typing import Any, Callable, Dict, List, Tuple
 from ..formula import And, Implies, Not, Or, P
 from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, expand_clause, unit_propagate
 
+import os as _os
+#: template clause pruning (session 2 experiment): "rup" or "rules"
+PRUNE_MODE = _os.environ.get("SATASSUME_PRUNE", "rup")
+
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
     'algebraic', 'antihermitian', 'commutative', 'complex', 'composite',
@@ -212,6 +216,67 @@ def _unsubsumed(clauses):
     return out
 
 
+def _up(clauses, assign):
+    """Unit propagation over ``clauses`` from ``assign`` (var -> bool),
+    in place; False on a conflict."""
+    changed = True
+    while changed:
+        changed = False
+        for c in clauses:
+            free = None
+            nfree = 0
+            for l in c:
+                v = assign.get(abs(l))
+                if v is None:
+                    nfree += 1
+                    free = l
+                    if nfree > 1:
+                        break
+                elif v == (l > 0):
+                    break
+            else:
+                if nfree == 0:
+                    return False
+                assign[abs(free)] = free > 0
+                changed = True
+    return True
+
+
+def _rup_redundant(clauses, slots):
+    """Indices of ``clauses`` (tuples of ``(slot, basis index, neg)``) to
+    drop: every implication of each (one literal from the negation of the
+    others) follows by unit propagation from the clauses kept so far (and,
+    with PRUNE_MODE "rupb", the rule block of each slot), so unit
+    propagation over the block derives what it derived before.  Longest
+    clauses are tried first."""
+    def var(k, i):
+        return k * NPRED + i + 1
+    base = [tuple((abs(l) + k * NPRED) * (1 if l > 0 else -1) for l in c)
+            for k in slots for c in RULE_INSTANTIATED
+            if PRUNE_MODE != "rupn" or k == slots[-1]] if PRUNE_MODE in ("rupb", "rupc", "rupn") else []
+    own = [tuple(-var(k, i) if neg else var(k, i) for k, i, neg in c) for c in clauses]
+    alive = [True] * len(own)
+    drop = set()
+    for j in sorted(range(len(own)), key=lambda j: -len(own[j])):
+        c = own[j]
+        if len(c) < 2:
+            continue
+        others = base + [d for t, d in enumerate(own) if alive[t] and t != j]
+        ok = True
+        if PRUNE_MODE in ("rupc", "rupo", "rupn"):
+            ok = not _up(others, {abs(m): m < 0 for m in c})
+            c = ()
+        for l in c:
+            assign = {abs(m): m < 0 for m in c if m != l}
+            if _up(others, assign) and assign.get(abs(l)) != (l > 0):
+                ok = False
+                break
+        if ok:
+            alive[j] = False
+            drop.add(j)
+    return drop
+
+
 class Pattern:
     """The resolved rules of one template pattern, also as clauses in
     *slot space*: a literal is ``(k, pidx, neg)`` for predicate index
@@ -232,14 +297,27 @@ class Pattern:
         used = set()
         child_preds: Dict[int, set] = {}
         expanded = []
-        for ps, cs in rules:
+        origin = {}
+        for r, (ps, cs) in enumerate(rules):
             # over the basis: a derived predicate is its definition
             # (rules.expand_clause), so one rule may give several clauses
             for lits in expand_clause([(k, p, not pos) for k, p, pos in ps]
                                       + [(k, p, pos) for k, p, pos in cs]):
                 # (slot, basis index, neg)
-                expanded.append(tuple((k, i, not pos) for k, i, pos in lits))
-        for lits in _unsubsumed(expanded):
+                c = tuple((k, i, not pos) for k, i, pos in lits)
+                expanded.append(c)
+                origin.setdefault(frozenset(c), r)
+        kept = _unsubsumed(expanded)
+        if PRUNE_MODE in ("rup", "rupb", "rupc", "rupo", "rupn") and len(kept) > 1:
+            slots = sorted({k for c in kept for k, _, _ in c})
+            if PRUNE_MODE == "rupn":
+                slots = [k for k in slots if k != node] + [node]
+            drop = _rup_redundant(kept, slots)
+            kept = [c for j, c in enumerate(kept) if j not in drop]
+        # the rules that give a kept clause: the others are implied by them
+        need = {origin[frozenset(c)] for c in kept}
+        self.rules = rules = [r for j, r in enumerate(rules) if j in need]
+        for lits in kept:
             if True:
                 npreds = frozenset(i for k, i, _ in lits if k == node)
                 # internal literal = 2*base_of_slot + (2*pidx + neg)
