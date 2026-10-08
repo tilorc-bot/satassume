@@ -85,8 +85,8 @@ from .formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
-from .rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
-                    basis_lits, def_implications)
+from .rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_CORE_INTERNAL,
+                    SIDE_INTERNAL, basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .solver import Solver
@@ -248,7 +248,7 @@ class Session:
         self.solver.track_owners = False
         # the single-node rule base, propagated by the solver from shared
         # tables instead of 79 clauses per node (Solver.register_block)
-        self.solver.set_rule_block(RULE_INTERNAL, NPRED)
+        self.solver.set_rule_block(RULE_CORE_INTERNAL, NPRED, side=SIDE_INTERNAL)
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()

@@ -111,7 +111,9 @@ def dropping_clauses(seed: int, rate: float, stats: Optional[dict] = None, block
         # dropped ones; the reference of such a check is the same patch at
         # rate 0 (eager blocks, nothing dropped), see ``check_I1``
         n["blocks"] += 1
-        return add_pattern(self, self._rb_clauses, base, self._rb_n)
+        # (with the side groups, see set_rule_block: all of them, eagerly)
+        side = tuple(c for _, g in self._side for c in g)
+        return add_pattern(self, tuple(self._rb_clauses) + side, base, self._rb_n)
 
     def add_clause(self, lits):
         lits = list(lits)

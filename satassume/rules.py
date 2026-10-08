@@ -437,3 +437,44 @@ def instantiate(var_of_pred) -> List[List[int]]:
     vars_ = [var_of_pred(i) for i in range(NPRED)]
     return [[(vars_[abs(l) - 1] if l > 0 else -vars_[abs(l) - 1]) for l in c]
             for c in RULE_CLAUSES]
+
+
+# ----------------------------------------------------------------------
+# Side predicates: instantiated per node only when a node needs them.
+# ----------------------------------------------------------------------
+#: Basis predicates whose rule clauses leave the per-node rule block.  A
+#: node's side variable that nothing mentions or fixes is constrained only
+#: by its own rule clauses, which some value of it always satisfies
+#: (prime := even & extended_positive & !composite, composite := even &
+#: extended_positive & !prime, imaginary := false), so those clauses only
+#: matter once the variable is touched (see Solver.set_rule_block).
+SIDE: Tuple[str, ...] = ('prime', 'composite', 'imaginary')
+_SIDE_IDX = frozenset(BASIS_INDEX[p] for p in SIDE)
+
+
+def _side_of(c: Clause) -> frozenset:
+    return frozenset(abs(l) - 1 for l in c if abs(l) - 1 in _SIDE_IDX)
+
+
+def _internal(c: Clause) -> Tuple[int, ...]:
+    return tuple(2 * (abs(l) - 1) + (1 if l < 0 else 0) for l in c)
+
+
+#: The rule clauses kept in the per-node block (no side predicate).
+RULE_CORE: Tuple[Clause, ...] = tuple(c for c in RULE_INSTANTIATED if not _side_of(c))
+#: ``(side indices, clauses)``: the clauses mentioning exactly those side
+#: predicates, instantiated for a node once all of them are touched.  The
+#: groups together with ``RULE_CORE`` are ``RULE_INSTANTIATED``; for every
+#: set T of touched side predicates, the core plus the groups within T has
+#: the same models as the full rules with the side variables outside T
+#: projected away (tests/test_side_preds.py).
+SIDE_GROUPS: Tuple[Tuple[frozenset, Tuple[Clause, ...]], ...] = tuple(
+    (s, tuple(c for c in RULE_INSTANTIATED if _side_of(c) == s))
+    for s in sorted({_side_of(c) for c in RULE_INSTANTIATED if _side_of(c)},
+                    key=lambda s: (len(s), sorted(s))))
+RULE_CORE_INTERNAL: Tuple[Tuple[int, ...], ...] = tuple(_internal(c) for c in RULE_CORE)
+#: The side groups as :meth:`Solver.set_rule_block` takes them: ``(variable
+#: mask, clauses)``, bit i of the mask for basis index i, the clauses in the
+#: block-relative internal encoding.
+SIDE_INTERNAL: Tuple[Tuple[int, Tuple[Tuple[int, ...], ...]], ...] = tuple(
+    (sum(1 << i for i in s), tuple(_internal(c) for c in cls)) for s, cls in SIDE_GROUPS)

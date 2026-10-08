@@ -164,11 +164,16 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
 
     # branch on the variables with the most occurrences first: they
     # propagate the most (the set of models does not depend on the order)
-    order = sorted(range(n), key=lambda v: -(len(occ[2 * v]) + len(occ[2 * v + 1])))
+    # a variable no clause mentions is a wildcard: both its literals in
+    # every model (see _BlockClosure), not enumerated
+    order = sorted((v for v in range(n) if occ[2 * v] or occ[2 * v + 1]),
+                   key=lambda v: -(len(occ[2 * v]) + len(occ[2 * v + 1])))
     vbits = [1 << (2 * v) for v in order]
+    wild = sum(3 << (2 * v) for v in range(n) if not (occ[2 * v] or occ[2 * v + 1]))
+    nk = len(vbits)
 
     def rec(a: int, k: int) -> None:
-        while k < n:
+        while k < nk:
             low = vbits[k]                      # the next unassigned variable
             if not a & (low | (low << 1)):
                 for bit in (low << 1, low):
@@ -177,7 +182,7 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
                         rec(b, k + 1)
                 return
             k += 1
-        out.append(a)
+        out.append(a | wild)
         if len(out) > 1 << 16:
             raise ValueError("rule block has too many models")
 
@@ -206,10 +211,16 @@ class _BlockClosure:
     over the models that must be excluded, then minimal by deletion."""
 
     __slots__ = ("models", "memo", "expl", "values", "vmemo", "bits", "fmemo", "n",
-                 "msets", "all", "cls")
+                 "msets", "all", "cls", "wild")
 
     def __init__(self, clauses, n: int):
         self.n = n
+        # Variables no clause mentions (free) are wildcards: every model
+        # holds both of their literals, so they never restrict the models
+        # containing a set; closure and values_of then take their literals
+        # from the set itself (a closure never implies one).
+        used = {l >> 1 for c in clauses for l in c}
+        self.wild = sum(3 << (2 * v) for v in range(n) if v not in used)
         self.fmemo: dict[int, tuple] = {}
         self.models = models = _block_models(clauses, n)
         # per relative literal, the set of models containing it (a bit per
@@ -266,6 +277,8 @@ class _BlockClosure:
         r = self.vmemo.get(m)
         if r is None:
             x = self.model_of(m)
+            if self.wild:                       # wildcards: True iff m has it
+                x &= ~self.wild | (m & _EVEN)
             r = self.values.get(x)
             if r is None:
                 r = self.values[x] = [bool((x >> (2 * i)) & 1) for i in range(self.n)]
@@ -296,6 +309,12 @@ class _BlockClosure:
                     x ^= low
                 r = acc if S else 0
                 self.cls[S] = r
+            if r and self.wild:                 # wildcards: only m's own literals
+                w = m & self.wild
+                if w & (w >> 1) & _EVEN:
+                    r = 0                       # both literals of one variable
+                else:
+                    r = (r & ~self.wild) | w
             memo = self.memo
             if len(memo) >= 400_000:
                 memo.clear()
@@ -523,6 +542,16 @@ class Solver:
         self._rb_blocks = 0                  # registered blocks
         self._rb_nclauses = 0                # clauses they stand for
         self._rb_bases: list[int] = []       # bases, in registration order
+        # Side groups of the block (see set_rule_block): the groups, the
+        # literal bits of their variables, per block base the groups
+        # instantiated so far, the bases touched since the last flush, and
+        # how much of the root trail has been scanned for side literals.
+        self._side: tuple = ()
+        self._side_lm = 0
+        self._side_offs: tuple = ()
+        self._side_done: dict[int, int] = {}
+        self._side_pend: set[int] = set()
+        self._side_scan = 0
         # The last models found by search (see _ring_hit): tuples
         # (values of variables 1..n, len(_clauses), root trail length,
         # registered blocks, theories, theory atoms, theory models).
@@ -1031,7 +1060,7 @@ class Solver:
     # Rule block: a fixed clause pattern propagated without clauses
     # ------------------------------------------------------------------
 
-    def set_rule_block(self, block, nvars: int | None = None) -> None:
+    def set_rule_block(self, block, nvars: int | None = None, side=()) -> None:
         """Install ``block`` as the rule block of this solver: clauses in
         internal encoding relative to variable 0 (like :meth:`add_pattern`;
         tautology- and duplicate-free, at least two literals each) over
@@ -1069,15 +1098,40 @@ class Solver:
         :meth:`implied` may leave out literals of unmentioned variables
         that clause propagation would list; every other answer is as with
         clauses (or more definite).
+
+        **Side groups.**  ``side``: ``(mask, clauses)`` pairs, ``mask`` a set
+        of block variables (bit i for relative variable i), ``clauses`` in
+        the block-relative encoding over them and other block variables.
+        A group is instantiated on a block (added with :meth:`add_internal`,
+        before the next propagation or search) once every variable of its
+        mask is *touched* there: mentioned (as above, assumptions included)
+        or fixed at root, or a theory atom (even with mention=False:
+        the theory may set it).  The caller guarantees that for every set of
+        touched side variables the block plus the groups within it has the
+        models of the block plus all groups, the untouched side variables
+        projected away (so an untouched side variable can always be given a
+        value satisfying every group; a stored model gets one in
+        :meth:`_fill`).  The block itself must not mention the side
+        variables.
         """
         tables, n = _rule_tables(block, nvars)
+        side = tuple((int(m), tuple(tuple(c) for c in cls)) for m, cls in side)
         if self._rb_clauses is not None:
-            if tables[0] == self._rb_clauses and n == self._rb_n:
+            if tables[0] == self._rb_clauses and n == self._rb_n and side == self._side:
                 return
             raise ValueError("the rule block is already set")
         self._rb_clauses = tables[0]
         self._rb_n = n
         self._rbc = tables[1]
+        if side:
+            vm = 0
+            for m, _ in side:
+                vm |= m
+            if vm >> n:
+                raise ValueError("side group beyond the block size")
+            self._side = side
+            self._side_offs = tuple(i for i in range(n) if vm >> i & 1)
+            self._side_lm = sum(3 << (2 * i) for i in self._side_offs)
 
     def register_block(self, base: int, mentions: int = 0) -> bool:
         """Instantiate the rule block (:meth:`set_rule_block`) on variables
@@ -1156,6 +1210,8 @@ class Solver:
                 if ment[base + i]:
                     mm |= 3 << (2 * i)
         self._rb_ment[base] = mm
+        if self._side:
+            self._side_pend.add(base)           # side variables touched earlier
         lz, mt = self._rbc.flags(mm)
         self._lazy[base:top + 1] = lz
         ment[base:top + 1] = mt
@@ -1269,6 +1325,47 @@ class Solver:
                 rb_ment[b] = mm
                 self._rb_mentioned(b, new, mm)
 
+    def _side_flush(self) -> None:
+        """Instantiate the side groups (see :meth:`set_rule_block`) whose
+        variables are all touched on their block: mentioned, or fixed at
+        root (the root trail is scanned from where the last flush left
+        off).  Called before propagation and search."""
+        rb_base = self._rb_base
+        pend = self._side_pend
+        trail = self._trail
+        top = self._trail_lim[0] if self._trail_lim else len(trail)
+        lm = self._side_lm
+        for k in range(self._side_scan, top):
+            v = trail[k] >> 1
+            b = rb_base[v]
+            if b and lm >> (2 * (v - b)) & 1:
+                pend.add(b)
+        self._side_scan = top
+        while pend and self._ok:
+            val = self._val
+            level = self._level
+            rb_ment = self._rb_ment
+            tmap = self._tmap
+            done = self._side_done
+            out = []
+            for b in sorted(pend):
+                mm = rb_ment[b]
+                t = 0
+                for i in self._side_offs:
+                    if mm >> (2 * i) & 3 or (b + i) in tmap or (
+                            val[2 * (b + i)] is not None and not level[b + i]):
+                        t |= 1 << i
+                d = done.get(b, 0)
+                for g, (m, cls) in enumerate(self._side):
+                    if not d >> g & 1 and m & t == m:
+                        d |= 1 << g
+                        lo = 2 * b
+                        out.extend([l + lo for l in c] for c in cls)
+                done[b] = d
+            pend.clear()
+            if out:
+                self.add_internal(out)
+
     def _rb_room(self, base: int) -> None:
         """Make ``_rb_mask`` and ``_rb_ment`` (indexed by block base, grown
         on demand rather than per variable) cover ``base``."""
@@ -1326,6 +1423,8 @@ class Solver:
         per-variable flags, put variables that are no longer lazy back
         into the activity heap, and drop held levels if the block implies
         a newly mentioned variable there without having written it."""
+        if new & self._side_lm:
+            self._side_pend.add(base)
         n = self._rb_n
         lz, mt = self._rbc.flags(mm)
         self._lazy[base:base + n] = lz
@@ -1396,6 +1495,8 @@ class Solver:
 
     def propagate(self) -> bool:
         """Run unit propagation at root; False iff there is a root conflict."""
+        if self._side:
+            self._side_flush()
         if not self._ok:
             return False
         if self._held is not None:
@@ -1517,6 +1618,8 @@ class Solver:
         """
         lits = self._internal_lits(assumptions)
         self._mention(lits)
+        if self._side:
+            self._side_flush()
         keep = len(lits) if hold is None else max(0, min(hold, len(lits)))
         held = self._held
         start = 0
@@ -1910,6 +2013,8 @@ class Solver:
             self._grow(var)
         if mention:
             self._mention((2 * var,))
+        elif self._side and self._rb_base[var]:
+            self._side_pend.add(self._rb_base[var])     # a side variable the theory may set
         if self._trail_lim:
             self._backtrack(0)
         self._n_registered += 1
@@ -2466,6 +2571,8 @@ class Solver:
         """
         lits = self._internal_lits(list(assumptions))
         self._mention(lits)
+        if self._side:
+            self._side_flush()
         held = self._held
         keep = len(held) if held is not None and lits[:len(held)] == held else 0
         return self._solve(lits, keep)
@@ -2574,8 +2681,28 @@ class Solver:
         for i, x in enumerate(mv[lo:lo + n]):
             if x is not None:
                 m |= 1 << (2 * i + (0 if x else 1))
-        mv[lo:lo + n] = self._rbc.values_of(m)
+        lazy = [i for i, x in enumerate(mv[lo:lo + n]) if x is None] if self._side else ()
+        mv[lo:lo + n] = vals = list(self._rbc.values_of(m))
+        if lazy:
+            self._side_fill(vals, lazy)
+            mv[lo:lo + n] = vals
         return mv[v - 1]
+
+    def _side_fill(self, vals: list, lazy: list) -> None:
+        """Give the lazy (untouched) side variables among ``lazy`` of one
+        block's model ``vals`` values satisfying every side group (one
+        exists, see :meth:`set_rule_block`), preferring False."""
+        lm = self._side_lm
+        free = [i for i in lazy if lm >> (2 * i) & 1]
+        if not free:
+            return
+        cls = [c for _, g in self._side for c in g]
+        for k in range(1 << len(free)):
+            for j, i in enumerate(free):
+                vals[i] = bool(k >> j & 1)
+            if all(any(vals[l >> 1] != bool(l & 1) for l in c) for c in cls):
+                return
+        raise AssertionError("side groups without a model")
 
     @property
     def _model(self) -> dict[int, bool] | None:

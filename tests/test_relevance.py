@@ -347,8 +347,11 @@ def test_unkeyed_constants_are_decided(c):
     s = Session(Engine())
     s.ensure(c)
     s.escalate(10**6)
-    assert s.solver.propagate()
     b = s.base[c]
+    # side predicates (rules.SIDE) get their rule clauses once touched
+    from satassume.rules import SIDE
+    s.solver.mention([b + BASIS_INDEX[p] for p in SIDE])
+    assert s.solver.propagate()
     # the derived predicates are functions of the basis
     open_ = [p for p in BASIS
              if p != "polar" and s.solver.value(b + BASIS_INDEX[p]) is None]

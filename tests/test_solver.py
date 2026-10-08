@@ -1068,14 +1068,29 @@ def _block_models_reference(clauses, n):
     return tuple(sorted(set(out)))
 
 
+def _wild(clauses, n):
+    """Both literals of every variable no clause mentions (a wildcard in
+    the models of _block_models)."""
+    used = {l >> 1 for c in clauses for l in c}
+    return sum(3 << (2 * v) for v in range(n) if v not in used)
+
+
+def _block_models_wild(clauses, n):
+    """The reference models with the wildcard variables collapsed."""
+    w = _wild(clauses, n)
+    return tuple(sorted({x | w for x in _block_models_reference(clauses, n)}))
+
+
 def test_block_models_rule_base_matches_reference():
     from satassume.rules import NPRED, RULE_INTERNAL
     from satassume.solver import _block_models
     models = _block_models(RULE_INTERNAL, NPRED)
-    assert models == _block_models_reference(RULE_INTERNAL, NPRED)
-    # 44: commutative is no basis variable (true by definition); with it
-    # the 15-variable rule base had 48 (non-complex, non-real objects)
-    assert len(models) == 44
+    assert models == _block_models_wild(RULE_INTERNAL, NPRED)
+    # 44 with polar enumerated (it is in no rule: a wildcard, so 22);
+    # commutative is no basis variable (true by definition); with it the
+    # 15-variable rule base had 48 (non-complex, non-real objects)
+    assert len(models) == 22
+    assert len(_block_models_reference(RULE_INTERNAL, NPRED)) == 44
 
 
 def test_block_models_random_blocks_match_reference():
@@ -1088,7 +1103,7 @@ def test_block_models_random_blocks_match_reference():
             k = rng.randint(2, min(4, n))
             vs = rng.sample(range(n), k)
             clauses.append(tuple(2 * v + rng.randint(0, 1) for v in vs))
-        assert _block_models(clauses, n) == _block_models_reference(clauses, n)
+        assert _block_models(clauses, n) == _block_models_wild(clauses, n)
 
 
 # -- _BlockClosure tables against their direct definitions -----------------
@@ -1145,7 +1160,11 @@ def test_block_closure_msets_and_values_match_direct():
         assert bc.msets == _msets_direct(models, n)
         assert bc.all == (1 << len(models)) - 1
         values = _values_direct(models, n)
+        w = _wild(clauses, n)
         for x in models:
             # the model itself, a random subset of it, and the empty set
             for m in (x, x & rng.getrandbits(2 * n), 0):
-                assert bc.values_of(m) == values[bc.model_of(m)]
+                # a wildcard variable is True iff m holds its positive literal
+                want = [bool((m >> (2 * i)) & 1) if (w >> (2 * i)) & 1 else y
+                        for i, y in enumerate(values[bc.model_of(m)])]
+                assert bc.values_of(m) == want
