@@ -146,11 +146,7 @@ class TemplateRegistry:
         compiled: List[Compiled] = []
         formulas: List[Any] = []
         for f in self.templates_for(type(expr)):
-            r = f(expr)
-            if type(r) is Compiled:
-                compiled.append(r)
-            else:
-                _split(r, compiled, formulas)
+            _split(f(expr), compiled, formulas)
         cache = self._clauses_cache
         if len(cache) >= CLAUSES_CACHE_SIZE:
             cache.clear()
@@ -182,6 +178,8 @@ def _split(result: Any, compiled: List[Compiled], formulas: List[Any]) -> None:
         return
     if type(result) is Compiled:
         compiled.append(result)
+        if result.pattern.wide:
+            formulas.extend(result.wide_formulas())
         return
     if result is False or isinstance(result, (P, Formula)):
         formulas.append(result)

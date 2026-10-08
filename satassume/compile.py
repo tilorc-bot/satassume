@@ -7,9 +7,27 @@ clause is a list of non-zero integers; ``-v`` is the negation of ``v``.
 """
 from __future__ import annotations
 
+import heapq
 from typing import Any, Callable, Dict, List, Sequence
 
 from .formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
+from .rules import BASIS, DEF_LITS as _DEF_LITS
+
+
+def basis_formula(atom: P):
+    """The atom of a derived predicate as its definition over basis atoms
+    of the same node (``And``/``Or`` of basis atoms and their negations);
+    a basis or custom atom itself."""
+    d = _DEF_LITS.get(atom.pred)
+    if d is None:
+        return atom
+    op, ls = d
+    args = [P(BASIS[l - 1], atom.expr) if l > 0 else Not(P(BASIS[-l - 1], atom.expr)) for l in ls]
+    return And(*args) if op == '&' else Or(*args)
+
+
+def _derived(f) -> bool:
+    return isinstance(f, P) and f.pred in _DEF_LITS
 
 
 class VarTable:
@@ -34,10 +52,10 @@ class VarTable:
     """
 
     def __init__(self):
-        from .rules import PREDICATES, PRED_INDEX
-        self._preds = PREDICATES
-        self._pidx = PRED_INDEX
-        self._npred = len(PREDICATES)
+        from .rules import BASIS, BASIS_INDEX
+        self._preds = BASIS
+        self._pidx = BASIS_INDEX
+        self._npred = len(BASIS)
         self.base_of: Dict[Any, int] = {}
         self.slots: List[Any] = [None]
         self.new_nodes: List[Any] = []
@@ -55,8 +73,12 @@ class VarTable:
         return b
 
     def var(self, atom: P) -> int:
+        """The variable of a basis or custom atom (a derived predicate has
+        no variable of its own: see :func:`basis_formula`)."""
         idx = self._pidx.get(atom.pred)
         if idx is None:
+            if atom.pred in _DEF_LITS:
+                raise ValueError(f"derived predicate {atom.pred!r} has no variable")
             v = self.custom.get(atom)
             if v is None:
                 v = self.custom[atom] = len(self.slots)
@@ -94,105 +116,231 @@ class VarTable:
         return ("~" if lit < 0 else "") + s
 
 
-def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None]) -> None:
-    """Assert ``f`` by emitting clauses through ``emit``."""
+def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=None) -> None:
+    """Assert ``f`` by emitting clauses through ``emit``.
+
+    ``dv`` (optional, a session's :meth:`~satassume.engine.Session.dvar`):
+    ``dv(atom, need)`` gives the shared definitional literal of a derived
+    atom, with the direction(s) ``need`` of its definition emitted
+    (``'pos'``: literal -> definition, ``'neg'``: definition -> literal,
+    ``'both'``; ``'negunit'``: as ``'neg'``, or None to expand the
+    atom instead).  With it, a derived atom that the clauses cannot just
+    expand into basis literals (a conjunction under a wide disjunction, a
+    negated conjunction) gets the same variable wherever it occurs (the
+    assumptions, the proposition, relations), so a unit on one occurrence
+    propagates to the others; without it, Plaisted-Greenbaum variables
+    private to each occurrence."""
     if f is TRUE:
         return
     if f is FALSE:
         emit([])
         return
     if isinstance(f, P):
-        emit([table.var(f)])
+        if f.pred in _DEF_LITS:
+            compile_formula(basis_formula(f), table, emit, dv)
+        else:
+            emit([table.var(f)])
         return
     if isinstance(f, Not) and isinstance(f.args[0], P):
-        emit([-table.var(f.args[0])])
+        if f.args[0].pred in _DEF_LITS:
+            if dv is not None and _DEF_LITS[f.args[0].pred][0] == '&':
+                # a negated conjunction: the atom's shared literal if the
+                # session wants it (``dv`` answers None otherwise), so
+                # that an occurrence of it in the proposition is decided
+                # by propagation
+                v = dv(f.args[0], 'negunit')
+                if v is not None:
+                    emit([-v])
+                    return
+            compile_formula(Not(basis_formula(f.args[0])), table, emit, dv)
+        else:
+            emit([-table.var(f.args[0])])
         return
     if isinstance(f, And):
         for a in f.args:
-            compile_formula(a, table, emit)
+            compile_formula(a, table, emit, dv)
         return
     if isinstance(f, Or):
-        clause = _flat_or(f, table, emit)
-        if clause is not None:
+        for clause in _or_cnf(f, table, emit, dv):
             emit(clause)
         return
     if isinstance(f, Implies):
         a, b = f.args
         if isinstance(a, And):
-            compile_formula(Or(*[Not(x) for x in a.args], b), table, emit)
+            compile_formula(Or(*[Not(x) for x in a.args], b), table, emit, dv)
         else:
-            compile_formula(Or(Not(a), b), table, emit)
+            compile_formula(Or(Not(a), b), table, emit, dv)
         return
     if isinstance(f, Equivalent):
         args = f.args
         for i in range(len(args) - 1):
-            compile_formula(Implies(args[i], args[i + 1]), table, emit)
-            compile_formula(Implies(args[i + 1], args[i]), table, emit)
+            compile_formula(Implies(args[i], args[i + 1]), table, emit, dv)
+            compile_formula(Implies(args[i + 1], args[i]), table, emit, dv)
         return
     if isinstance(f, Exclusive):
-        lits = [_literal(a, table, emit) for a in f.args]
-        for i in range(len(lits)):
-            for j in range(i + 1, len(lits)):
-                emit([-lits[i], -lits[j]])
+        args = f.args
+        for i in range(len(args)):
+            for j in range(i + 1, len(args)):
+                compile_formula(Or(Not(args[i]), Not(args[j])), table, emit, dv)
         return
     if isinstance(f, Not):
         inner = f.args[0]
         if isinstance(inner, Not):
-            compile_formula(inner.args[0], table, emit)
+            compile_formula(inner.args[0], table, emit, dv)
         elif isinstance(inner, And):
-            compile_formula(Or(*[Not(a) for a in inner.args]), table, emit)
+            compile_formula(Or(*[Not(a) for a in inner.args]), table, emit, dv)
         elif isinstance(inner, Or):
             for a in inner.args:
-                compile_formula(Not(a), table, emit)
+                compile_formula(Not(a), table, emit, dv)
         elif isinstance(inner, Implies):
             a, b = inner.args
-            compile_formula(And(a, Not(b)), table, emit)
+            compile_formula(And(a, Not(b)), table, emit, dv)
         else:
-            emit([-_literal(inner, table, emit)])
+            emit([-_literal(inner, table, emit, dv)])
         return
     raise TypeError(f"cannot compile {f!r}")
 
 
-def _flat_or(f: Or, table: VarTable, emit) -> List[int] | None:
+#: most clauses :func:`_or_cnf` makes by distributing conjunctions
+MAX_DISTRIBUTE = 16
+#: most conjunctions :func:`_or_cnf` weighs one by one (more cannot all
+#: be distributed: each has two clauses or more)
+MAX_EXACT = 8
+
+
+def _or_cnf(f: Or, table: VarTable, emit, dv=None) -> List[List[int]]:
+    """``f`` as clauses: one clause, except that a derived atom whose
+    definition is a conjunction (``real``: ``extended_real & finite``), or
+    the negation of one whose definition is a disjunction, splits it (an
+    empty list: ``f`` holds); past :data:`MAX_DISTRIBUTE` clauses the
+    largest conjunctions get Tseitin variables instead."""
     clause: List[int] = []
+    parts: List[List[int]] = []       # conjunctions distributed over ``clause``
+    srcs: Dict[int, tuple] = {}       # id(part) -> (derived atom, negated)
     for a in f.args:
+        while isinstance(a, Not) and isinstance(a.args[0], Not):
+            a = a.args[0].args[0]           # Implies(And(.., Not(p)), ..)
         if a is TRUE:
-            return None
+            return []
         if a is FALSE:
             continue
         if isinstance(a, Or):
-            sub = _flat_or(a, table, emit)
-            if sub is None:
-                return None
-            clause.extend(sub)
-        else:
-            clause.append(_literal(a, table, emit))
-    return clause
+            sub = _or_cnf(a, table, emit, dv)
+            if not sub:
+                return []
+            if len(sub) == 1:
+                clause.extend(sub[0])
+                continue
+            parts.append(sub)
+            continue
+        g = a
+        neg = False
+        if isinstance(a, Not) and _derived(a.args[0]):
+            g, neg = a.args[0], True
+        if _derived(g):
+            op, ls = _DEF_LITS[g.pred]
+            b = table.node_base(g.expr)
+            lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
+            if neg:
+                lits = [-l for l in lits]
+                op = '|' if op == '&' else '&'
+            if op == '|':
+                clause.extend(lits)
+            else:
+                part = [[l] for l in lits]
+                srcs[id(part)] = (g, neg)
+                parts.append(part)
+            continue
+        clause.append(_literal(a, table, emit, dv))
+    # per conjunction: distribute it over ``clause`` or give it a
+    # definitional variable ``t`` (Plaisted-Greenbaum: only ``t`` implies
+    # each of its clauses, the direction an asserted disjunction needs),
+    # whichever gives fewer literals by the estimate below; past
+    # MAX_DISTRIBUTE clauses always the variable, so the output stays linear
+    # in ``f``.  Distributing parts p_1..p_m over ``clause`` gives
+    # N = prod |p_i| clauses of N*|clause| + sum_i N/|p_i| * lits(p_i)
+    # literals; the variable costs lits(p) + |p| + 1.
+    if parts:
+        info = [[len(part), sum(len(d) for d in part), part] for part in parts]
+
+        def cost(info, extra):
+            n = 1
+            for m, _, _ in info:
+                n *= m
+            return n, n * (len(clause) + extra) + sum(n // m * l for m, l, _ in info)
+
+        chosen = []
+        if len(info) > MAX_EXACT:
+            # more conjunctions of at least two clauses each than can stay
+            # below MAX_DISTRIBUTE anyway: the largest get variables right
+            # away (the greedy choice below would pick them one by one, at
+            # cubic cost), the MAX_EXACT smallest go to the exact choice
+            keep = set(map(id, heapq.nsmallest(MAX_EXACT, info, key=lambda i: (i[0], i[1]))))
+            chosen = [i[2] for i in info if id(i) not in keep]
+            info = [i for i in info if id(i) in keep]
+        while info:
+            n, best = cost(info, len(chosen))
+            pick = None
+            for j, (m, l, _) in enumerate(info):
+                rest = info[:j] + info[j + 1:]
+                c = cost(rest, len(chosen) + 1)[1] + l + m
+                if c < best or (n > MAX_DISTRIBUTE and (pick is None or c < pick[1])):
+                    if pick is None or c < pick[1]:
+                        pick = (j, c)
+            if pick is None:
+                break
+            chosen.append(info.pop(pick[0])[2])
+        for part in chosen:
+            src = srcs.get(id(part)) if dv is not None else None
+            if src is not None:
+                # the derived atom's shared literal, one direction
+                g, neg = src
+                t = dv(g, 'neg' if neg else 'pos')
+                clause.append(-t if neg else t)
+                continue
+            t = table.aux()
+            for c in part:
+                emit([-t] + c)
+            clause.append(t)
+        parts = [part for _, _, part in info]
+    out = [clause]
+    for part in parts:
+        out = [c + d for c in out for d in part]
+    return out
 
 
-def formula_literal(f, table: VarTable, emit) -> int:
-    """Public: a literal equivalent to ``f`` (Tseitin)."""
-    return _literal(f, table, emit)
+def formula_literal(f, table: VarTable, emit, dv=None) -> int:
+    """Public: a literal equivalent to ``f`` (Tseitin); ``dv`` as for
+    :func:`compile_formula`."""
+    return _literal(f, table, emit, dv)
 
 
-def _literal(f, table: VarTable, emit) -> int:
+def _literal(f, table: VarTable, emit, dv=None) -> int:
     """Return a literal equivalent to ``f``, introducing Tseitin variables as needed."""
     if isinstance(f, P):
+        if f.pred in _DEF_LITS:
+            if dv is not None:
+                return dv(f, 'both')
+            return _literal(basis_formula(f), table, emit, dv)
         return table.var(f)
     if isinstance(f, Not):
         inner = f.args[0]
         if isinstance(inner, P):
+            if inner.pred in _DEF_LITS:
+                if dv is not None:
+                    return -dv(inner, 'both')
+                return -_literal(basis_formula(inner), table, emit, dv)
             return -table.var(inner)
-        return -_literal(inner, table, emit)
+        return -_literal(inner, table, emit, dv)
     if isinstance(f, Implies):
-        return _literal(Or(Not(f.args[0]), f.args[1]), table, emit)
+        return _literal(Or(Not(f.args[0]), f.args[1]), table, emit, dv)
     if isinstance(f, Equivalent) and len(f.args) == 2:
         a, b = f.args
-        return _literal(And(Implies(a, b), Implies(b, a)), table, emit)
+        return _literal(And(Implies(a, b), Implies(b, a)), table, emit, dv)
     if isinstance(f, Exclusive):
-        lits = [_literal(a, table, emit) for a in f.args]
+        lits = [_literal(a, table, emit, dv) for a in f.args]
         pairs = [Or(Not(_Lit(x)), Not(_Lit(y))) for i, x in enumerate(lits) for y in lits[i + 1:]]
-        return _literal(And(*pairs), table, emit) if pairs else _true_lit(table, emit)
+        return _literal(And(*pairs), table, emit, dv) if pairs else _true_lit(table, emit)
     if isinstance(f, _Lit):
         return f.lit
     if f is TRUE:
@@ -200,7 +348,7 @@ def _literal(f, table: VarTable, emit) -> int:
     if f is FALSE:
         return -_true_lit(table, emit)
     if isinstance(f, And):
-        lits = [_literal(a, table, emit) for a in f.args]
+        lits = [_literal(a, table, emit, dv) for a in f.args]
         if not lits:
             return _true_lit(table, emit)
         if len(lits) == 1:
@@ -211,7 +359,7 @@ def _literal(f, table: VarTable, emit) -> int:
         emit([t] + [-l for l in lits])
         return t
     if isinstance(f, Or):
-        lits = [_literal(a, table, emit) for a in f.args]
+        lits = [_literal(a, table, emit, dv) for a in f.args]
         if not lits:
             return -_true_lit(table, emit)
         if len(lits) == 1:

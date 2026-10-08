@@ -85,7 +85,8 @@ from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
-from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
+from .rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
+                    basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .solver import Solver
@@ -266,6 +267,15 @@ class Session:
         self.verdict: Optional[str] = None
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
+        self.defvars: Dict[Any, int] = {}     # (derived predicate, node) -> its variable
+        #: (definition, node) -> [variable, directions emitted (1: var ->
+        #: definition, 2: definition -> var)]: the shared literal of a
+        #: derived atom of several basis literals (:meth:`dvar`)
+        self._dv: Dict[Any, list] = {}
+        self._dv_node: Dict[Any, list] = {}  # node -> [(definition, variable)] linked
+        #: whether asserted negated conjunctions get their shared literal
+        #: (assume_formula: a set with many of them)
+        self._neg_shared = False
         self.assumption_formula = None       # the formula of assume_formula()
         self._a_raw = ()                     # its atoms (atoms_of)
         self._a_zs = ()                      # their zero_args
@@ -314,7 +324,95 @@ class Session:
             self.relations = Relations(self, engine._relation_specs)
 
     def var(self, pred: str, node: Node) -> int:
-        return self.node(node) + PRED_INDEX[pred]
+        """The variable of ``pred(node)``: the node's block variable of a
+        basis predicate; for a derived predicate (``rules.DEFINITIONS``)
+        its definitional variable, allocated with the clauses of its
+        definition the first time it is asked for."""
+        i = BASIS_INDEX.get(pred)
+        if i is not None:
+            return self.node(node) + i
+        if len(DEF_LITS[pred][1]) > 1:
+            return self._dvar(pred, node, 3)
+        key = (pred, node)
+        v = self.defvars.get(key)
+        if v is None:
+            b = self.node(node)
+            op, ls = basis_lits(pred)
+            lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
+            v = self.defvars[key] = self.table.aux()
+            self.solver.ensure_vars(v)
+            emit = self._emit
+            if op == '&':
+                for l in lits:
+                    emit([-v, l])
+                emit([v] + [-l for l in lits])
+            else:
+                for l in lits:
+                    emit([-l, v])
+                emit([-v] + lits)
+        return v
+
+    def dvar(self, atom: P, need: str = 'both') -> int:
+        """The literal of the derived atom ``atom`` shared by all its
+        occurrences (the assumptions, the proposition, :meth:`var`), with
+        the directions ``need`` of its definition emitted (``'pos'``: the
+        variable implies the definition, ``'neg'``: the converse,
+        ``'both'``; see :func:`satassume.compile.compile_formula`).  A
+        definition of one basis literal (``infinite``) is that literal."""
+        op, ls = DEF_LITS[atom.pred]
+        if need == 'negunit':
+            # a negated conjunction asserted by the assumptions: its own
+            # literal only in a set with many (one clause and a variable
+            # more each, against a search conflict each when a wide
+            # proposition holds them; see assume_formula)
+            if not self._neg_shared or len(ls) < 2:
+                return None
+            need = 'neg'
+        if len(ls) == 1:
+            return self.node(atom.expr) + ls[0] - 1 if ls[0] > 0 else -(self.node(atom.expr) - ls[0] - 1)
+        return self._dvar(atom.pred, atom.expr, 3 if need == 'both' else 1 if need == 'pos' else 2, True)
+
+    def _dvar(self, pred: str, node: Node, need: int, link: bool = False) -> int:
+        d = DEF_LITS[pred]
+        key = (d, node)
+        e = self._dv.get(key)
+        b = self.node(node)
+        emit = self._emit
+        if e is None:
+            v = self.table.aux()
+            self.solver.ensure_vars(v)
+            e = self._dv[key] = [v, 0, False]
+        v, have, linked = e
+        if link and not linked:
+            # binary clauses the rule base gives between this and the
+            # node's other linked literals (positive -> nonnegative), so
+            # a unit on one propagates to the others as with a variable
+            # per predicate; only for the literals of formulas (``dv``),
+            # not for those relations and decisions ask for (:meth:`var`)
+            e[2] = True
+            others = self._dv_node.setdefault(node, [])
+            for d2, v2 in others:
+                for s1, s2 in def_implications(d, d2):
+                    emit([s1 * v, s2 * v2])
+            others.append((d, v))
+        missing = need & ~have
+        if missing:
+            op, ls = d
+            lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
+            if op == '&':
+                if missing & 1:
+                    for l in lits:
+                        emit([-v, l])
+                if missing & 2:
+                    emit([v] + [-l for l in lits])
+            else:
+                if missing & 2:
+                    for l in lits:
+                        emit([-l, v])
+                if missing & 1:
+                    emit([-v] + lits)
+            e[1] = have | need
+        return v
 
     def _emit(self, clause: List[int]) -> None:
         self.nclauses += 1
@@ -466,7 +564,7 @@ class Session:
                     d = demand.get(atom.expr)
                     if d is None:
                         d = demand[atom.expr] = set()
-                    d.add(PRED_INDEX[atom.pred])
+                    d.update(BASIS_OF[atom.pred])
             compile_formula(f, table, emit)
         self._flush(node)
 
@@ -543,7 +641,7 @@ class Session:
         for item in pend:
             f, atoms = item
             for a in atoms:
-                if a.expr == node and PRED_INDEX.get(a.pred) in want:
+                if a.expr == node and not BASIS_OF.get(a.pred, _NO_BASIS).isdisjoint(want):
                     now.append(item)
                     break
             else:
@@ -563,7 +661,9 @@ class Session:
         A visited node with nothing parked is only recorded (the discovery
         below would skip it at once)."""
         if demanded is not None:
-            self.demand.setdefault(node, set()).update(PRED_INDEX[p] for p in demanded)
+            d = self.demand.setdefault(node, set())
+            for p in demanded:
+                d.update(BASIS_OF[p])
         if node in self.base and node not in self.pending and node not in self.pending_c:
             if self.frontier:
                 self.frontier = deque()
@@ -679,10 +779,15 @@ class Session:
         self._ensure_atoms(f)
         s = self.table.aux()
         self.sel = s
+        # many derived atoms of several basis literals: their negations,
+        # if asserted, get the atoms' shared literals (Session.dvar), which
+        # a wide proposition over them then meets by propagation instead
+        # of one search conflict per atom; a function of the set
+        self._neg_shared = sum(1 for a in self._a_raw if len(DEF_LITS.get(a.pred, ((), ()))[1]) > 1) >= _NEG_SHARED
 
         def emit(clause):
             self._emit(clause + [-s])
-        compile_formula(f, self.table, emit)
+        compile_formula(f, self.table, emit, self.dvar)
         self._flush()
         self._discover()
         if self.relations is not None:
@@ -890,7 +995,7 @@ class Session:
         if lit is not None:
             return lit
         self._ensure_atoms(f)
-        lit = formula_literal(f, self.table, self._emit)
+        lit = formula_literal(f, self.table, self._emit, self.dvar)
         self._flush()
         self._discover()
         if self.relations is not None:
@@ -1720,7 +1825,7 @@ class Engine:
         self.stats["queries"] += 1
         s = self._fresh_session()
         s.ensure(node, {pred})
-        r = self._decide(s, s.base[node] + PRED_INDEX[pred])
+        r = self._decide(s, s.var(pred, node))
         self._put_result(s, self.cache, node, pred, r)
         return r
 
@@ -1765,11 +1870,10 @@ class Engine:
         self.stats["queries"] += len(todo)
         s = self._fresh_session()
         s.ensure(node, {preds[k] for k in todo})
-        base = s.base[node]
         cache = self.cache
         for k in todo:
             pred = preds[k]
-            r = out[k] = self._decide(s, base + PRED_INDEX[pred])
+            r = out[k] = self._decide(s, s.var(pred, node))
             self._put_result(s, cache, node, pred, r)
         return out
 
@@ -1937,8 +2041,13 @@ class Engine:
                 s._flush()
             if s.relations is not None:
                 s._relations(proposition)
-            return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
+            return s.var(proposition.pred, proposition.expr)
         return s.literal_of(proposition)
+
+
+#: fewest derived atoms of several basis literals in an assumption set for
+#: which asserted negations of them get their shared literals
+_NEG_SHARED = 8
 
 
 def zero_glue(f) -> bool:
@@ -1958,6 +2067,7 @@ def zero_glue(f) -> bool:
 # --------------------------------------------------------------------------
 
 _NEIGH: Dict[int, frozenset] = {}
+_NO_BASIS: frozenset = frozenset()
 _WANT: Dict[frozenset, frozenset] = {}
 
 
@@ -1981,7 +2091,12 @@ def _exhausted(s: Session) -> bool:
 def neighbourhood(pred) -> frozenset:
     """``pred`` (a name or index) plus every predicate sharing a rule
     clause with it, as indices."""
-    i = PRED_INDEX[pred] if isinstance(pred, str) else pred
+    if isinstance(pred, str):
+        acc = set()
+        for i in BASIS_OF[pred]:
+            acc.update(neighbourhood(i))
+        return frozenset(acc)
+    i = pred
     n = _NEIGH.get(i)
     if n is None:
         acc = {i}
@@ -2026,13 +2141,13 @@ def _split(clauses, want):
 
 
 def want_of(demanded) -> frozenset:
-    """Union of the neighbourhoods of the demanded predicate indices."""
+    """The demanded basis predicate indices, as the set a pattern clause
+    must mention to be emitted before escalation.  (The union of their
+    rule-base neighbourhoods, which the 33-predicate rule base used, is
+    most of the basis: :func:`neighbourhood`.)"""
     key = frozenset(demanded)
     w = _WANT.get(key)
     if w is None:
-        acc = set()
-        for i in key:
-            acc.update(neighbourhood(i))
-        w = _WANT[key] = frozenset(acc)
+        w = _WANT[key] = key
     return w
 

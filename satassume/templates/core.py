@@ -28,6 +28,7 @@ from sympy.core.power import Pow
 from sympy.functions.elementary.exponential import exp
 
 from ..formula import Not, P
+from ..rules import BASIS, expand_clause
 
 from ._common import (
     VOCAB,
@@ -942,8 +943,10 @@ def table_provenance(expr):
             except ValueError:
                 continue
             for ps, cs in resolved:
-                out.append((row.name, frozenset([(objs[k], p, not pos) for k, p, pos in ps]
-                                                + [(objs[k], p, pos) for k, p, pos in cs])))
+                # over the basis, as the compiled block (rules.expand_clause)
+                lits = [(k, p, not pos) for k, p, pos in ps] + [(k, p, pos) for k, p, pos in cs]
+                for c in expand_clause(lits):
+                    out.append((row.name, frozenset((objs[k], BASIS[i], pos) for k, i, pos in c)))
     return out
 
 

@@ -343,19 +343,37 @@ def test_constant_units_match_oracle(c):
     assert 'commutative' in preds
 
 
+def _holds(lit, facts):
+    """``lit`` follows from the unit ``facts`` (basis literals): a derived
+    predicate is read through its definition (rules.DEFINITIONS)."""
+    from satassume.rules import BASIS, basis_lits
+    atom, pos = (lit, True) if isinstance(lit, P) else (lit.args[0], False)
+    facts = set(facts)
+    if atom.pred in BASIS:
+        return lit in facts
+    op, ls = basis_lits(atom.pred)
+    got = [(P(BASIS[abs(l) - 1], atom.expr) if l > 0 else Not(P(BASIS[abs(l) - 1], atom.expr))) in facts
+           for l in ls]
+    neg = [(Not(P(BASIS[abs(l) - 1], atom.expr)) if l > 0 else P(BASIS[abs(l) - 1], atom.expr)) in facts
+           for l in ls]
+    if (op == '&') == pos:
+        return all(got) if pos else all(neg)
+    return any(got) if pos else any(neg)
+
+
 def test_signed_infinity_units():
-    assert P('positive_infinite', oo) in registry.facts_for(oo)
-    assert P('negative_infinite', -oo) in registry.facts_for(-oo)
-    assert Not(P('positive_infinite', zoo)) in registry.facts_for(zoo)
-    assert Not(P('positive_infinite', Integer(2))) in registry.facts_for(Integer(2))
+    assert _holds(P('positive_infinite', oo), registry.facts_for(oo))
+    assert _holds(P('negative_infinite', -oo), registry.facts_for(-oo))
+    assert _holds(Not(P('positive_infinite', zoo)), registry.facts_for(zoo))
+    assert _holds(Not(P('positive_infinite', Integer(2))), registry.facts_for(Integer(2)))
 
 
 @pytest.mark.parametrize("cls", [Symbol, Dummy])
 def test_symbol_units(cls):
     s = cls('s', positive=True)
     facts = set(registry.facts_for(s))
-    assert P('positive', s) in facts
-    assert P('real', s) in facts
+    assert _holds(P('positive', s), facts)
+    assert _holds(P('real', s), facts)
     assert Not(P('zero', s)) in facts
     for f in facts:
         atom = f if isinstance(f, P) else f.args[0]
@@ -367,13 +385,13 @@ def test_symbol_units(cls):
         atom = f if isinstance(f, P) else f.args[0]
         old = getattr(s, 'is_' + atom.pred, None)
         assert old is None or old is isinstance(f, P), (f, old)
-    assert Not(P('positive_infinite', s)) in facts
-    assert Not(P('antihermitian', s)) in facts
+    assert _holds(Not(P('positive_infinite', s)), facts)
+    assert _holds(Not(P('antihermitian', s)), facts)
     plain = cls('t')
     assert registry.facts_for(plain) == [P('commutative', plain)]
     nc = cls('A', commutative=False)
     assert Not(P('commutative', nc)) in registry.facts_for(nc)
-    assert Not(P('real', nc)) in registry.facts_for(nc)
+    assert _holds(Not(P('real', nc)), registry.facts_for(nc))
 
 
 def test_wild_units():
@@ -467,11 +485,15 @@ def test_specific_expectations():
             compile_formula(f, table, out.append)
         return table, out
 
-    # Every template compiles, and to plain clauses (no Tseitin variables).
+    # Every template is a set of clauses-shaped formulas (literals,
+    # implications, disjunctions) and compiles to few clauses per formula
+    # (compile._or_cnf may give a derived conjunction a definitional
+    # variable when that is fewer literals than distributing it).
     for expr in ALL_SAMPLES:
-        table, _ = clauses_of(expr)
-        assert table.naux == 0, (expr, [f for f in registry.facts_for(expr)
-                                        if not isinstance(f, (P, Implies, Or, Not))])
+        facts = registry.facts_for(expr)
+        assert all(isinstance(f, (P, Implies, Or, Not)) for f in facts), expr
+        table, out = clauses_of(expr)
+        assert len(out) <= 16 * max(1, len(facts)), expr
 
     # Constant arguments are resolved statically: premises about ``-1`` or
     # ``2`` do not appear in the clauses.

@@ -157,10 +157,16 @@ CQUERIES = [Q.ge(x, y + 1), Q.ge(x, y + 2), Q.ge(u0, 2), Q.lt(x, 13), Q.ge(u0, y
             Q.gt(x - u0, 1)]
 
 
-def test_constants_no_warm_fresh_divergence():
+def test_constants_no_warm_fresh_divergence(monkeypatch):
     # certified (pi, 1/pi: rational rows, bounds in Q + Q*pi or Q + Q/pi)
     # and not (sqrt(2): algebraic; pi and E together)
     sets = [_t(pi / 3), _t(1 / pi), _t(7 * pi / 2), _t(sqrt(2) / 3), _t((pi + E) / 7)]
+    out, kept, reached = _sweep(sets, CQUERIES)
+    assert out == []
+    assert kept == 0
+    # with the basis encoding the default budget suffices for every query
+    # here; a smaller one makes the uncertified sets' searches run out
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 10)
     out, kept, reached = _sweep(sets, CQUERIES)
     assert out == []
     assert kept == 0

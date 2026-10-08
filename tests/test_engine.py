@@ -193,10 +193,12 @@ def test_stream_under_one_set_answers_as_a_fresh_engine():
 
 
 def test_neighbourhood_contains_pred_and_rule_partners():
-    from satassume.rules import PRED_INDEX
+    from satassume.rules import BASIS_INDEX
     n = neighbourhood('even')
-    assert all(PRED_INDEX[p] in n for p in ('even', 'integer', 'odd', 'zero'))
-    assert PRED_INDEX['polar'] not in n and PRED_INDEX['hermitian'] not in n
+    assert all(BASIS_INDEX[p] in n for p in ('even', 'integer', 'zero'))
+    assert BASIS_INDEX['polar'] not in n
+    # a derived predicate: the neighbourhoods of its basis literals
+    assert neighbourhood('odd') == neighbourhood(BASIS_INDEX['integer']) | neighbourhood(BASIS_INDEX['even'])
 
 
 def test_exactlyone_helper():

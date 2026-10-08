@@ -75,7 +75,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .compile import VarTable, compile_formula, formula_literal
 from .formula import FALSE, P, TRUE, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
-from .rules import NPRED, PRED_INDEX, RULE_INTERNAL
+from .rules import BASIS_INDEX, NPRED, PRED_INDEX, RULE_INTERNAL, basis_lits
 from .scope import EMPTY as _EMPTY_SCOPE, Scope
 from .solver import Solver
 
@@ -223,6 +223,7 @@ class _RefSession:
         self.xfer = None                 # Relations sets it when transfer engages
         self.sel = 0
         self.literals: Dict[Any, int] = {}
+        self.defvars: Dict[Any, int] = {}
         self._visiting: set = set()
 
     # -- what Relations calls -------------------------------------------
@@ -231,7 +232,26 @@ class _RefSession:
         self.solver.add_clause(clause)
 
     def var(self, pred: str, node) -> int:
-        return self.node(node) + PRED_INDEX[pred]
+        i = BASIS_INDEX.get(pred)
+        if i is not None:
+            return self.node(node) + i
+        key = (pred, node)
+        v = self.defvars.get(key)
+        if v is None:                       # as Session.var
+            b = self.node(node)
+            op, ls = basis_lits(pred)
+            lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
+            v = self.defvars[key] = self.table.aux()
+            self.solver.ensure_vars(v)
+            if op == '&':
+                for l in lits:
+                    self._emit([-v, l])
+                self._emit([v] + [-l for l in lits])
+            else:
+                for l in lits:
+                    self._emit([-l, v])
+                self._emit([-v] + lits)
+        return v
 
     def ensure(self, node, demanded=None, budget=None) -> None:
         self.node(node)
@@ -355,7 +375,7 @@ class _RefSession:
         if lit is not None:
             return lit
         if isinstance(f, P) and f.pred in PRED_INDEX:
-            lit = self.node(f.expr) + PRED_INDEX[f.pred]
+            lit = self.var(f.pred, f.expr)
         else:
             for atom in atoms_of(f):
                 if atom.pred in PRED_INDEX:

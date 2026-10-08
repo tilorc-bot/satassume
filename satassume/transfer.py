@@ -80,11 +80,11 @@ which queries assume its selector) is in
 """
 from __future__ import annotations
 
-from .rules import PRED_INDEX
+from .rules import BASIS_INDEX
 
 __all__ = ["TransferTheory"]
 
-_POLAR = PRED_INDEX["polar"]
+_POLAR = BASIS_INDEX["polar"]
 _POLAR_ONLY = frozenset({_POLAR})
 
 

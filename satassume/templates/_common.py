@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
-from ..rules import NPRED, PRED_INDEX, PREDICATES, RULE_FREE, RULE_INSTANTIATED, unit_propagate
+from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
 
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
@@ -189,6 +189,45 @@ def instantiate(resolved: List[Rule], objs) -> List:
     return out
 
 
+def _unsubsumed(clauses):
+    """``clauses`` (tuples of hashable literals) without duplicates and
+    without the clauses a shorter one subsumes, shortest first.
+
+    Each kept clause is indexed under one literal only, its rarest, and is
+    a bit mask over the literals, so a candidate checks every kept clause
+    at most once, with one mask operation (wide Add/Mul patterns have
+    hundreds of clauses of 100+ literals)."""
+    by_len = sorted(dict.fromkeys(frozenset(c) for c in clauses), key=len)
+    bit: Dict[Any, int] = {}
+    count: Dict[Any, int] = {}
+    for c in by_len:
+        for l in c:
+            if l not in bit:
+                bit[l] = 1 << len(bit)
+            count[l] = count.get(l, 0) + 1
+    index: Dict[Any, list] = {}           # literal -> masks of kept clauses
+    out = []
+    for c in by_len:
+        m = 0
+        for l in c:
+            m |= bit[l]
+        rest = ~m
+        for l in c:
+            if any(not d & rest for d in index.get(l, ())):
+                break
+        else:
+            if c:
+                index.setdefault(min(c, key=count.__getitem__), []).append(m)
+            else:
+                index = {l: [0] for l in bit}
+            out.append(tuple(sorted(c)))
+    return out
+
+
+#: most clauses one rule may expand to in a pattern (see ``Pattern.wide``)
+MAX_EXPAND = 16
+
+
 class Pattern:
     """The resolved rules of one template pattern, also as clauses in
     *slot space*: a literal is ``(k, pidx, neg)`` for predicate index
@@ -199,7 +238,7 @@ class Pattern:
     ``complete`` is set on a unit pattern whose facts, closed under the rule
     base, decide every predicate the rule base mentions: the engine then
     asserts the closed units and skips the rule base for the node."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete')
+    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete', 'wide')
 
     def __init__(self, rules: List[Rule], node: int):
         self.rules = rules
@@ -208,19 +247,37 @@ class Pattern:
         clauses = []
         used = set()
         child_preds: Dict[int, set] = {}
+        expanded = []
+        #: rules whose clauses over the basis would be too many (a wide
+        #: Add's ``~positive_infinite(x_i)`` premises: 2**n clauses); they
+        #: are handed over as formulas (``Compiled.wide_formulas``), which
+        #: ``compile_formula`` encodes with Tseitin variables past
+        #: ``compile.MAX_DISTRIBUTE``
+        self.wide = wide = []
         for ps, cs in rules:
-            lits = [(k, PRED_INDEX[p], pos) for k, p, pos in ps]
-            lits += [(k, PRED_INDEX[p], not pos) for k, p, pos in cs]
-            lits = list(dict.fromkeys(lits))
-            if any((k, i, not neg) in lits for k, i, neg in lits):
-                continue    # tautology
-            npreds = frozenset(i for k, i, _ in lits if k == node)
-            # internal literal = 2*base_of_slot + (2*pidx + neg)
-            clauses.append((tuple(lits), npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
-            for k, i, _ in lits:
-                used.add(k)
-                if k != node:
-                    child_preds.setdefault(k, set()).add(i)
+            n = 1
+            for k, p, pos in ps:
+                n *= len(cnf_of(p, not pos))
+            for k, p, pos in cs:
+                n *= len(cnf_of(p, pos))
+            if n > MAX_EXPAND:
+                wide.append((ps, cs))
+                continue
+            # over the basis: a derived predicate is its definition
+            # (rules.expand_clause), so one rule may give several clauses
+            for lits in expand_clause([(k, p, not pos) for k, p, pos in ps]
+                                      + [(k, p, pos) for k, p, pos in cs]):
+                # (slot, basis index, neg)
+                expanded.append(tuple((k, i, not pos) for k, i, pos in lits))
+        for lits in _unsubsumed(expanded):
+            if True:
+                npreds = frozenset(i for k, i, _ in lits if k == node)
+                # internal literal = 2*base_of_slot + (2*pidx + neg)
+                clauses.append((lits, npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
+                for k, i, _ in lits:
+                    used.add(k)
+                    if k != node:
+                        child_preds.setdefault(k, set()).add(i)
         self.clauses = clauses
         self.used = tuple(sorted(used))
         self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
@@ -237,6 +294,11 @@ class Compiled:
 
     def formulas(self) -> List:
         return instantiate(self.pattern.rules, self.objs)
+
+    def wide_formulas(self) -> List:
+        """The formulas of the pattern's wide rules (``Pattern.wide``),
+        which its clauses leave out."""
+        return instantiate(self.pattern.wide, self.objs)
 
 
 #: compiled patterns by the key the template passes to :func:`facts` or
@@ -270,12 +332,44 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
     if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        facts = list(gen())
-        lits = [PRED_INDEX[pred] + 1 if value else -(PRED_INDEX[pred] + 1) for pred, value in facts]
+        # the facts over the basis: a derived predicate's value is a
+        # conjunction of basis units, or (``antihermitian``) one clause
+        lits, rest = [], []
+        for pred, value in gen():
+            for c in expand_clause([(0, pred, value)]):
+                if len(c) == 1:
+                    lits.append(c[0][1] + 1 if c[0][2] else -(c[0][1] + 1))
+                else:
+                    rest.append(((), tuple((0, BASIS[i], pos) for _, i, pos in c)))
         closed = unit_propagate(RULE_INSTANTIATED, lits)
         if closed is not None:
-            facts = [(PREDICATES[abs(l) - 1], l > 0) for l in sorted(closed, key=abs)]
-        pat = Pattern([((), ((0, pred, value),)) for pred, value in facts], 0)
+            lits = sorted(closed, key=abs)
+        if rest:
+            # a clause the units satisfy is dropped; a false literal leaves
+            # a clause (``antihermitian(c)`` of a non-zero ``c`` is
+            # ``imaginary(c)``), a new unit is closed again
+            units = set(lits)
+            while True:
+                keep, new = [], []
+                for ps, cs in rest:
+                    cl = [(k, p, pos) for k, p, pos in cs
+                          if (BASIS.index(p) + 1 if not pos else -(BASIS.index(p) + 1)) not in units]
+                    if any((BASIS.index(p) + 1 if pos else -(BASIS.index(p) + 1)) in units for k, p, pos in cl):
+                        continue
+                    if len(cl) == 1 and closed is not None:
+                        new.append(BASIS.index(cl[0][1]) + 1 if cl[0][2] else -(BASIS.index(cl[0][1]) + 1))
+                    else:
+                        keep.append((ps, tuple(cl)))
+                rest = keep
+                if not new:
+                    break
+                closed = unit_propagate(RULE_INSTANTIATED, sorted(units) + new)
+                if closed is None:
+                    break
+                lits = sorted(closed, key=abs)
+                units = set(lits)
+        facts = [(BASIS[abs(l) - 1], l > 0) for l in lits]
+        pat = Pattern([((), ((0, pred, value),)) for pred, value in facts] + rest, 0)
         if closed is not None:
             decided = {abs(l) - 1 for l in closed}
             pat.complete = len(decided | RULE_FREE) == NPRED
