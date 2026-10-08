@@ -388,7 +388,8 @@ refute a satisfiable assignment.
 
 `TransferTheory` (`satassume/transfer.py`) closes the gap EUF leaves:
 whenever EUF puts two terms in one class, every one of the 33 unary
-predicates holds for one iff it holds for the other, which is sound
+predicates holds for one iff it holds for the other (enforced on the 15
+basis variables of the node blocks; the 18 definitions follow from them), which is sound
 because every predicate is a property of a value. It enforces
 `eq(a, b) -> (P(a) <-> P(b))` without materialising it: its atoms are
 node-block predicate variables with payload `(EUF term, predicate)`,
