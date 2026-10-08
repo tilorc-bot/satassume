@@ -224,47 +224,54 @@ def _unsubsumed(clauses):
     return out
 
 
-def _up(clauses, assign):
-    """Unit propagation over ``clauses`` from ``assign`` (var -> bool),
-    in place; False on a conflict."""
-    changed = True
-    while changed:
-        changed = False
-        for c in clauses:
-            free = None
-            nfree = 0
-            for l in c:
-                v = assign.get(abs(l))
-                if v is None:
-                    nfree += 1
-                    free = l
-                    if nfree > 1:
-                        break
-                elif v == (l > 0):
-                    break
-            else:
-                if nfree == 0:
-                    return False
-                assign[abs(free)] = free > 0
-                changed = True
-    return True
-
-
 def _rup_redundant(clauses):
     """Indices of ``clauses`` (tuples of ``(slot, basis index, neg)``) that
     are implied by the others kept: unit propagation over the kept clauses
     from the negation of the clause reaches a conflict (RUP).  Longest
-    clauses are tried first, so short clauses are kept."""
-    own = [tuple(-(k * NPRED + i + 1) if neg else k * NPRED + i + 1
-                 for k, i, neg in c) for c in clauses]
-    alive = [True] * len(own)
+    clauses are tried first, so short clauses are kept.
+
+    Clauses are bit masks over literals (bit ``2*v`` for literal ``v``,
+    ``2*v + 1`` for its negation), so propagation costs one mask operation
+    per clause and pass (wide Add/Mul patterns: hundreds of clauses of 100+
+    literals)."""
+    var: Dict[Any, int] = {}
+    masks = []
+    comps = []
+    for c in clauses:
+        m = n = 0
+        for k, i, neg in c:
+            v = var.setdefault((k, i), len(var))
+            m |= 1 << (2 * v + neg)
+            n |= 1 << (2 * v + 1 - neg)
+        masks.append(m)
+        comps.append(n)
+    alive = [True] * len(masks)
     drop = set()
-    for j in sorted(range(len(own)), key=lambda j: -len(own[j])):
-        c = own[j]
-        if len(c) < 2:
+    for j in sorted(range(len(masks)), key=lambda j: -len(clauses[j])):
+        if len(clauses[j]) < 2:
             continue
-        others = [d for t, d in enumerate(own) if alive[t] and t != j]
-        if not _up(others, {abs(m): m < 0 for m in c}):
+        false, true = masks[j], comps[j]
+        live = [masks[t] for t in range(len(masks)) if alive[t] and t != j
+                and not masks[t] & true]
+        conflict = False
+        while live and not conflict:
+            changed = False
+            for d in live:
+                if d & true:
+                    continue
+                rem = d & ~false
+                if not rem:
+                    conflict = True
+                    break
+                if not rem & (rem - 1):           # unit: one literal left
+                    true |= rem
+                    p = rem.bit_length() - 1
+                    false |= rem << 1 if p % 2 == 0 else rem >> 1
+                    changed = True
+            if not changed:
+                break
+            live = [d for d in live if not d & true]
+        if conflict:
             alive[j] = False
             drop.add(j)
     return drop
@@ -272,6 +279,10 @@ def _rup_redundant(clauses):
 
 #: most clauses one rule may expand to in a pattern (see ``Pattern.wide``)
 MAX_EXPAND = 16
+
+#: most clauses a pattern is pruned over (:func:`_rup_redundant` is
+#: quadratic; wide Add/Mul patterns have hundreds and lose next to nothing)
+MAX_RUP = 320
 
 
 class Pattern:
@@ -322,7 +333,7 @@ class Pattern:
                 origin.setdefault(frozenset(c), r)
         kept = _unsubsumed(expanded)
         # drop clauses the other kept clauses imply (RUP)
-        if len(kept) > 1:
+        if 1 < len(kept) <= MAX_RUP:
             drop = _rup_redundant(kept)
             kept = [c for j, c in enumerate(kept) if j not in drop]
         # the rules that give a kept clause: the others are implied by them
