@@ -658,24 +658,31 @@ def _number_basis(engine, c, facts=False) -> tuple:
     r = memo.get(c)
     if r is not None:
         return r[1] if facts else r[0]
-    from .rules import PREDICATES, RULE_INSTANTIATED, unit_propagate
+    from .rules import PREDICATES, RULE_INSTANTIATED, closure_mask, lit_bit, lits_mask
     decided, open_ = [], []
-    for k, p in enumerate(PREDICATES):
-        v = engine.is_(c, p)
+    for k, v in enumerate(engine.is_many(c, PREDICATES)):
         if v is None:
             open_.append(k)
         else:
             decided.append(k + 1 if v else -(k + 1))
-    want = set(decided)
+    want = lits_mask(decided)
 
     def closes(lits):
-        d = unit_propagate(RULE_INSTANTIATED, lits)
-        return d is not None and want <= set(d) | set(lits)
+        m = lits_mask(lits)
+        d = closure_mask(RULE_INSTANTIATED, m)
+        return d >= 0 and not want & ~(d | m)
+    # greedy: a decided literal the closure of the basis so far does not
+    # give joins it; the closure grows incrementally (unit propagation is
+    # monotone: closing the closure plus a literal closes the set plus it)
     basis = []
+    closed = 0                            # closure of ``basis``; -1: conflict
     for l in decided:
-        d = unit_propagate(RULE_INSTANTIATED, basis)
-        if d is None or l not in set(d) | set(basis):
-            basis.append(l)
+        bit = 1 << lit_bit(l)
+        if closed >= 0 and closed & bit:
+            continue
+        basis.append(l)
+        if closed >= 0:
+            closed = closure_mask(RULE_INSTANTIATED, closed | bit)
     for l in list(basis):
         rest = [m for m in basis if m != l]
         if closes(rest):

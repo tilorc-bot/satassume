@@ -179,6 +179,7 @@ ADOPTED: Tuple[Tuple[str, str, str], ...] = (
     ("satassume.engine", "_WANT", "pure"),
     ("satassume.engine", "_SPLIT", "pure"),
     ("satassume.solver", "_RULE_TABLES", "pure"),
+    ("satassume.rules", "_MASKS", "pure"),
     ("satassume.lra_bounds", "_BOUNDS", "pure"),
     ("satassume.lra_adapter", "_INTERPRETED", "pure"),
     ("satassume.lra_bounds", "_ENCLOSURES", "pure"),
