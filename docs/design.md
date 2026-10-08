@@ -283,7 +283,7 @@ numbers, so terms with a non-commutative subterm never reach the rule base:
 (category `"matrix"`; an opaque atom in the assumptions), and `Engine`, used
 directly, answers None for `is_`/`is_many` on such a term and for `ask`
 when a vocabulary atom of the proposition or the assumptions has one
-(`engine._noncommutative`). A function registered for `commutative`
+(`engine._noncommutative`), and `verdict` is `UNKNOWN` for a set with one. A function registered for `commutative`
 (`extensions.register`) is refused with a ValueError: there is no variable
 it could set. `structural_commutative` and `function_commutative` are gone.
 

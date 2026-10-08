@@ -485,6 +485,26 @@ def test_engine_ask_none_on_noncommutative_terms():
     assert e.ask(FNot(P("commutative", A))) is None
 
 
+
+def test_engine_verdict_unknown_on_noncommutative_terms():
+    # verdict is gated like is_/ask: a set about a non-commutative term is
+    # UNKNOWN (main: CONSISTENT; without the gate, INCONSISTENT)
+    from sympy import Symbol
+    from satassume.engine import CONSISTENT, INCONSISTENT, UNKNOWN, Engine
+    from satassume.formula import And as FAnd, Not as FNot, P
+    A, B = Symbol("A", commutative=False), Symbol("B", commutative=False)
+    x = Symbol("x")
+    e = Engine()
+    nilpotent = FAnd(FNot(P("zero", A)), FNot(P("zero", B)), P("zero", A * B))
+    assert e.verdict(nilpotent) is UNKNOWN
+    assert e.verdict(FNot(P("commutative", A))) is UNKNOWN
+    assert e.verdict(P("commutative", A)) is UNKNOWN
+    # and ask under such a set answers None, never a raise
+    assert e.ask(P("zero", A), nilpotent) is None
+    # commutative terms are unaffected
+    assert e.verdict(FNot(P("commutative", x))) is INCONSISTENT
+    assert e.verdict(P("positive", x)) is CONSISTENT
+
 def test_register_commutative_is_refused():
     from sympy import Symbol
     from satassume.extensions import Extensions
