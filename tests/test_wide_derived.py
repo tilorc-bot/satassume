@@ -201,3 +201,29 @@ def test_wide_derived_or_against_or_is_fast(pk, ak):
     ask(_SHAPES[pk](Q.nonnegative, ys), _SHAPES[ak](Q.positive, ys))
     ask(_SHAPES[pk](Q.nonzero, ys), _SHAPES[ak](Q.nonzero, ys))
     assert time.perf_counter() - t < 2.0
+
+
+# ORs of conjunctions of one node's literals (Or(And(nonnegative(y),
+# nonzero(y)), ...)): each conjunction got a Tseitin variable of its own
+# per occurrence, and a negated one in the assumptions a clause over basis
+# literals, so again one search conflict per disjunct (quadratic, as on the
+# original main).  compile._def makes such a conjunction a derived atom of
+# its own (the conjunction of its basis literals), with one shared literal.
+def _nonneg_nonzero(y):
+    return And(Q.nonnegative(y), Q.nonzero(y))
+
+
+@pytest.mark.parametrize("pp,ap", [(_nonneg_nonzero, _nonneg_nonzero),
+                                   (_nonneg_nonzero, Q.positive),
+                                   (Q.positive, _nonneg_nonzero)])
+def test_wide_conjunctions_propagate(pp, ap, solvers):
+    ys = symbols("v0:60")
+    got = ""
+    for pk in _SHAPES:
+        for ak in _SHAPES:
+            solvers.clear()
+            r = ask(_SHAPES[pk](pp, ys), _SHAPES[ak](ap, ys))
+            got += {True: "T", False: "F", None: "N"}[r]
+            conflicts = sum(s._n_conflicts for s in solvers)
+            assert conflicts <= 2, (pk, ak, conflicts)
+    assert got == dict(_WIDE_ANSWERS)["positive/positive"]
