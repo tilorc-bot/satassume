@@ -231,6 +231,30 @@ next to the pass count; "0 unsound" means nothing without "N unchecked".
   reproduces in fresh engines; a None on one side only is allowed. It
   exercises the component split on under 5% of queries (its generator is
   about 40% relations).
+* `harness/reffuzz.py`: differential fuzz of `ask` against the
+  specification, `satassume.ref.ask_ref`. Each random query is answered
+  on a fresh `Engine`, twice on an engine reused across a stream of 20
+  queries, and by `ask_ref`. A finding is True vs False, a value vs
+  `ValueError`, an engine answer where `ask_ref` says None, the fresh and
+  reused engines disagreeing, an error or a timeout. `ask_ref` definite
+  where the engine says None is counted (`lost`), not reported (the
+  discovery budget and the relevance split allow it). Two generators:
+  `general` (every predicate including `polar`, Add/Mul up to 12 terms,
+  Pow/Abs/exp/log/trig/re/im, wide And/Or/Not, relations, `oo`/`-oo`/`zoo`/`I`)
+  and `inconsistent` (`--inconsistent`: edge values inside Add/Mul with
+  finite/infinite and extended-sign facts, so about half of the sets raise
+  in `ask_ref`). `KNOWN` in the module lists the accepted differences with
+  their reasons (7, all from the relevance split, the same on ca49991); a
+  finding whose outcomes match an entry exactly is counted as `known`.
+  - CI slice: `tests/test_ref_fuzz.py`, seeds 0-1 x 150 queries per
+    generator (about 4 s), plus `test_known_differences`, which pins each
+    `KNOWN` entry; a change that makes one agree with `ask_ref` must drop
+    it. `REFFUZZ_SEEDS=0-9 REFFUZZ_N=3000` widens the slice.
+  - Longer runs: `PYTHONHASHSEED=0 python -m harness.reffuzz --seeds 0-9 -n 3000
+    [--inconsistent] [--out F.jsonl]`, about 30 s per 3000-query seed; run seeds
+    as parallel processes. Exit 1 on any finding, each printed with its query.
+    `--diff A.jsonl B.jsonl` compares two versions' `--out` files over the same
+    seeds (flips, lost and gained answers per column).
 * Hypothesis: `test_verify_soundness.py` (`ask` against concrete points
   including `I`, `oo`, `zoo`, `nan`), `test_lra_fuzz.py` (Fourier-Motzkin
   oracle), `test_euf_fuzz.py` (naive congruence closure) and others.
