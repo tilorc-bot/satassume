@@ -55,8 +55,7 @@ PRED_INDEX: Dict[str, int] = {p: i for i, p in enumerate(PREDICATES)}
 
 #: The encoded predicates: one solver variable per node for each.
 BASIS: Tuple[str, ...] = (
-    'algebraic', 'commutative', 'complex', 'composite', 'even',
-    'extended_negative', 'extended_positive', 'extended_real', 'finite',
+    'algebraic', 'complex', 'composite', 'even', 'extended_negative', 'extended_positive', 'extended_real', 'finite',
     'imaginary', 'integer', 'polar', 'prime', 'rational', 'zero',
 )
 BASIS_INDEX: Dict[str, int] = {p: i for i, p in enumerate(BASIS)}
@@ -83,6 +82,11 @@ DEFINITIONS: Dict[str, str] = {
     'noninteger':           'extended_real & !integer',
     'transcendental':       'complex & !algebraic',
     'antihermitian':        'zero | imaginary',
+    # every term in scope is commutative: SymPy's commutativity is fixed by
+    # construction, and an argument with a non-commutative subterm is out
+    # of scope (``sympy_api``, category "matrix"), so ``commutative`` is the
+    # empty conjunction (true) and needs no variable, rule or template
+    'commutative':          '',
 }
 assert set(DEFINITIONS).isdisjoint(BASIS) and set(DEFINITIONS) | set(BASIS) == set(PREDICATES)
 
@@ -94,9 +98,7 @@ RULES: Tuple[str, ...] = (
     'rational       ->  extended_real',
     'rational       ->  algebraic',
     'algebraic      ->  complex',
-    'complex        ->  commutative',
     'complex        ->  finite',
-    'extended_real  ->  commutative',
     'extended_real & finite -> complex',
     'extended_real  ==  extended_negative | zero | extended_positive',
     'extended_negative -> !zero',
@@ -129,6 +131,8 @@ def _lit(tok: str, index: Dict[str, int] = BASIS_INDEX) -> int:
 
 
 def _side(s: str, index=BASIS_INDEX) -> Tuple[str, List[int]]:
+    if not s.strip():
+        return '&', []                    # the empty conjunction: true
     if '&' in s and '|' in s:
         raise ValueError(f"mixed & and | in {s!r}")
     if '|' in s:
