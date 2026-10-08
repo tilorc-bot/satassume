@@ -485,11 +485,15 @@ def test_specific_expectations():
             compile_formula(f, table, out.append)
         return table, out
 
-    # Every template compiles, and to plain clauses (no Tseitin variables).
+    # Every template is a set of clauses-shaped formulas (literals,
+    # implications, disjunctions) and compiles to few clauses per formula
+    # (compile._or_cnf may give a derived conjunction a definitional
+    # variable when that is fewer literals than distributing it).
     for expr in ALL_SAMPLES:
-        table, _ = clauses_of(expr)
-        assert table.naux == 0, (expr, [f for f in registry.facts_for(expr)
-                                        if not isinstance(f, (P, Implies, Or, Not))])
+        facts = registry.facts_for(expr)
+        assert all(isinstance(f, (P, Implies, Or, Not)) for f in facts), expr
+        table, out = clauses_of(expr)
+        assert len(out) <= 16 * max(1, len(facts)), expr
 
     # Constant arguments are resolved statically: premises about ``-1`` or
     # ``2`` do not appear in the clauses.

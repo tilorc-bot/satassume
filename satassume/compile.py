@@ -224,21 +224,42 @@ def _or_cnf(f: Or, table: VarTable, emit) -> List[List[int]]:
                 parts.append([[l] for l in lits])
             continue
         clause.append(_literal(a, table, emit))
-    # distribute the conjunctions over ``clause``, while the product stays
-    # small; a larger conjunction gets a Tseitin variable ``t`` instead
-    # (``t`` implies each of its clauses), so the clauses grow linearly
-    # with ``f``, not exponentially
-    size = 1
-    for part in parts:
-        size *= len(part)
-    parts.sort(key=len)
-    while size > MAX_DISTRIBUTE:
-        part = parts.pop()
-        size //= len(part)
-        t = table.aux()
-        for c in part:
-            emit([-t] + c)
-        clause.append(t)
+    # per conjunction: distribute it over ``clause`` or give it a
+    # definitional variable ``t`` (Plaisted-Greenbaum: only ``t`` implies
+    # each of its clauses, the direction an asserted disjunction needs),
+    # whichever gives fewer literals by the estimate below; past
+    # MAX_DISTRIBUTE clauses always the variable, so the output stays linear
+    # in ``f``.  Distributing parts p_1..p_m over ``clause`` gives
+    # N = prod |p_i| clauses of N*|clause| + sum_i N/|p_i| * lits(p_i)
+    # literals; the variable costs lits(p) + |p| + 1.
+    if parts:
+        info = [[len(part), sum(len(d) for d in part), part] for part in parts]
+
+        def cost(info, extra):
+            n = 1
+            for m, _, _ in info:
+                n *= m
+            return n, n * (len(clause) + extra) + sum(n // m * l for m, l, _ in info)
+
+        chosen = []
+        while info:
+            n, best = cost(info, len(chosen))
+            pick = None
+            for j, (m, l, _) in enumerate(info):
+                rest = info[:j] + info[j + 1:]
+                c = cost(rest, len(chosen) + 1)[1] + l + m
+                if c < best or (n > MAX_DISTRIBUTE and (pick is None or c < pick[1])):
+                    if pick is None or c < pick[1]:
+                        pick = (j, c)
+            if pick is None:
+                break
+            chosen.append(info.pop(pick[0])[2])
+        for part in chosen:
+            t = table.aux()
+            for c in part:
+                emit([-t] + c)
+            clause.append(t)
+        parts = [part for _, _, part in info]
     out = [clause]
     for part in parts:
         out = [c + d for c in out for d in part]
