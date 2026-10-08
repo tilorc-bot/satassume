@@ -34,19 +34,114 @@ replace those handlers, not to wrap them.
 
 ### Rule base (`satassume/rules.py`)
 
-One list of 48 rules in the old system's string syntax over the 33
-predicates of `PREDICATES`: the rules of `sympy/core/assumptions.py`, the
-new-system predicates, and `hermitian == real`, `antihermitian == zero |
-imaginary`, which is what SymPy's generic scalar handlers compute (the rule
-base is instantiated only for scalar nodes). The 110 compiled clauses are
-reduced to 79 (`RULE_INSTANTIATED`) by `minimize_for_propagation`, which
-drops a clause only when, for each of its literals, falsifying the others
-lets the rest derive it by unit propagation: same models, same
-propagation. Dropping clauses that are merely implied would have moved
-answers from propagation to search. The solver installs these clauses once
-as a rule block (`Solver.set_rule_block`, `register_block` per node) and
-propagates it by its exact closure, writing implied literals above the
-root only for variables something mentions (see that docstring).
+The vocabulary (`PREDICATES`, 33 predicates: what a query may mention) is
+wider than what is encoded. A node gets one solver variable per **basis**
+predicate (`BASIS`, 15: `algebraic commutative complex composite even
+extended_negative extended_positive extended_real finite imaginary integer
+polar prime rational zero`). The other 18 are **definitions**
+(`DEFINITIONS`): each is a conjunction or a disjunction of basis literals,
+exactly equivalent to the predicate under SymPy's rule base, for example
+`real = extended_real & finite`, `nonnegative = extended_real & finite &
+!extended_negative`, `odd = integer & !even`, `antihermitian = zero |
+imaginary`. One is a single literal (`infinite = !finite`) and needs no
+variable at all. `hermitian == real` and `antihermitian == zero | imaginary`
+are what SymPy's generic scalar handlers compute; the rule base is
+instantiated only for scalar nodes.
+
+`RULES` are 23 rules in the old system's string syntax over the basis
+only; `tests/test_rules.py` checks that, under the definitions, their
+models are exactly those of SymPy's rules over the whole vocabulary
+(`sympy/core/assumptions.py` plus `sympy/assumptions/facts.py`). Their 26
+compiled clauses (`RULE_CLAUSES`) are reduced to 24 (`RULE_INSTANTIATED`) by
+`minimize_for_propagation`, which drops a clause only when, for each of its
+literals, falsifying the others lets the rest derive it by unit
+propagation: same models, same propagation. Dropping clauses that are
+merely implied would move answers from propagation to search. The solver
+installs these clauses once as a rule block (`Solver.set_rule_block`,
+`register_block` per node) and propagates it by its exact closure. `polar`
+is in no rule (`RULE_FREE`).
+
+#### Where a derived predicate goes
+
+A derived predicate never reaches the solver as a variable of its own
+node block. Its literal is rewritten into basis literals wherever a clause
+is formed, and how depends on its polarity in that clause:
+
+* **Templates** (`templates/_common.Pattern`): a rule's literals are
+  expanded by `rules.expand_clause` / `cnf_of(pred, pos)`. A conjunction in
+  positive position (`... -> positive(x)`) splits the rule into one clause
+  per conjunct; a conjunction in negative position (a premise
+  `positive(x) -> ...`) becomes a disjunction inside the one clause. A
+  disjunctive definition behaves the other way round. Premises such as
+  `~positive_infinite(x_i)` of the wide Add rules *distribute*: each is two
+  literals, so a rule over n of them is 2**n clauses. A rule whose
+  expansion would exceed `MAX_EXPAND` (16) clauses is not expanded but
+  handed over as a formula (`Pattern.wide`, `Compiled.wide_formulas`).
+* **Formulas** (assumptions, the proposition, wide template rules;
+  `compile.compile_formula`): a derived atom is its basis formula. In a
+  disjunction (`_or_cnf`) conjunctions are distributed up to
+  `MAX_DISTRIBUTE` (16) clauses; past that the largest conjunctions get
+  Tseitin variables (Plaisted-Greenbaum, one direction only), choosing
+  exactly among at most `MAX_EXACT` (8) of them.
+* **Queries** (`Session.query_lit`): `pred(node)` is a basis variable, a
+  single basis literal, or `(op, literals)`, the definition over the
+  node's block, decided by `query_literal` / `_query_all` without a new
+  variable or clause.
+* **Shared definitional literals** (`Session.dvar`, `Session._dvar`): a
+  derived atom that a formula cannot just expand into basis literals (a
+  conjunction under a disjunction, a negated conjunction) gets one variable
+  per `(definition, node)`, shared by every occurrence (assumptions,
+  proposition, relations), with only the direction(s) of its definition
+  that the occurrence needs (`'pos'`: variable -> definition, `'neg'`:
+  definition -> variable, `'both'`). Linked literals also get the binary
+  clauses the rule base gives between definitions of one node
+  (`rules.def_implications`, e.g. `positive -> nonnegative`), so a unit on
+  one propagates to the others as with a variable per predicate.
+  `Session.var` (relations, `is_`) always asks for `'both'`.
+* **The shared-variable threshold** (`engine._NEG_SHARED` = 8): an asserted
+  *negated* conjunction (`~nonnegative(x)`) is normally expanded into the
+  disjunction of negated basis literals. Only when the assumption set has
+  at least 8 derived atoms of two or more basis literals does it get its
+  shared literal instead (`dvar(atom, 'negunit')`), so that a wide
+  proposition over the same atoms is settled by propagation rather than
+  one search conflict per atom. This is a function of the set alone.
+
+#### What these encodings do not preserve
+
+The clause sets are equivalent to the old per-predicate encoding (same
+models), but unit propagation is weaker wherever a derived literal was
+distributed or replaced by a one-direction Tseitin variable. Code that
+decides by propagation alone must stay sound when propagation finds less:
+in particular it must not take "no conflict by propagation" as proof that
+an assumption set is consistent (a set inconsistent only through the
+Add-with-`oo` rules and the relation glue propagates cleanly under the
+basis; see "Inconsistent assumptions raise `ValueError`").
+
+#### Adding a predicate or a template rule
+
+* A new predicate goes into `PREDICATES` and into exactly one of `BASIS`
+  or `DEFINITIONS` (the module asserts the partition). Prefer a
+  definition: it costs no variable per node and no rule clause. It must be
+  a single conjunction or disjunction of basis literals, exactly equivalent
+  under the rule base; `tests/test_rules.py` checks this against SymPy's
+  rules over the whole vocabulary (`FULL_RULES`), so state its SymPy rules
+  there. A basis predicate needs
+  its rules in `RULES` over basis predicates only.
+* A template rule may mention any predicate of the vocabulary; it is
+  expanded over the basis as above. Count the clauses: a derived
+  conjunction as a premise (or a derived disjunction as a conclusion)
+  multiplies them, and past `MAX_EXPAND` the rule becomes a formula with
+  Tseitin variables, which propagates less. Prefer basis literals where
+  the rule allows it (`extended_positive` rather than `positive` when
+  finiteness is stated elsewhere).
+* Keep the definitions exact: the relation glue (`relations.py`), the
+  relevance layer and `def_implications` read `DEF_LITS` and assume that a
+  derived literal and its basis formula are interchangeable.
+* Check answers against the reference: `satassume.ref.ask_ref` builds the
+  whole clause set eagerly and is the specification. Run the differential
+  fuzz (`harness/reffuzz.py` on `wip/ci-fuzz`, including inconsistent sets with `oo`,
+  `zoo`, `finite`/`infinite`, `extended_*` predicates and relations) and
+  the wide-shape tests (`tests/test_wide_derived.py`).
 
 ### Structural templates (`satassume/templates/`)
 
