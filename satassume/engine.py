@@ -332,7 +332,7 @@ class Session:
         if i is not None:
             return self.node(node) + i
         if len(DEF_LITS[pred][1]) > 1:
-            return self._dvar(pred, node, 3)
+            return self._dvar(DEF_LITS[pred], node, 3)
         key = (pred, node)
         v = self.defvars.get(key)
         if v is None:
@@ -352,14 +352,16 @@ class Session:
                 emit([-v] + lits)
         return v
 
-    def dvar(self, atom: P, need: str = 'both') -> int:
-        """The literal of the derived atom ``atom`` shared by all its
+    def dvar(self, dn: tuple, need: str = 'both') -> int:
+        """The literal of the derived atom ``dn = (definition, node)`` (see
+        :func:`satassume.compile._def`) shared by all its
         occurrences (the assumptions, the proposition, :meth:`var`), with
         the directions ``need`` of its definition emitted (``'pos'``: the
         variable implies the definition, ``'neg'``: the converse,
         ``'both'``; see :func:`satassume.compile.compile_formula`).  A
         definition of one basis literal (``infinite``) is that literal."""
-        op, ls = DEF_LITS[atom.pred]
+        d, node = dn
+        op, ls = d
         if need == 'negunit':
             # a negated conjunction asserted by the assumptions: its own
             # literal only in a set with many (one clause and a variable
@@ -369,11 +371,10 @@ class Session:
                 return None
             need = 'neg'
         if len(ls) == 1:
-            return self.node(atom.expr) + ls[0] - 1 if ls[0] > 0 else -(self.node(atom.expr) - ls[0] - 1)
-        return self._dvar(atom.pred, atom.expr, 3 if need == 'both' else 1 if need == 'pos' else 2, True)
+            return self.node(node) + ls[0] - 1 if ls[0] > 0 else -(self.node(node) - ls[0] - 1)
+        return self._dvar(d, node, 3 if need == 'both' else 1 if need == 'pos' else 2, True)
 
-    def _dvar(self, pred: str, node: Node, need: int, link: bool = False) -> int:
-        d = DEF_LITS[pred]
+    def _dvar(self, d: tuple, node: Node, need: int, link: bool = False) -> int:
         key = (d, node)
         e = self._dv.get(key)
         b = self.node(node)
