@@ -84,7 +84,8 @@ def _add_rules(n, consts):
         rule(lits(A, pred), (N, pred, True))
     # Extended reals without both +oo and -oo among the terms (not implied
     # by the other rules for 7 or more terms: rd/semdrop review)
-    for inf in ('positive_infinite', 'negative_infinite'):
+    # (implied by the infinite-sum rules below up to MAX_ONEOUT terms: s16)
+    for inf in (() if n <= MAX_ONEOUT else ('positive_infinite', 'negative_infinite')):
         rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
     if n > MAX_ADD_SMALL:
         rule(lits(A, 'even'), (N, 'even', True))
