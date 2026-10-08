@@ -35,7 +35,9 @@ def _def(f):
     (``nonnegative(x) & nonzero(x)``: ``extended_real & finite &
     !extended_negative & !zero`` of ``x``); such a conjunction is compiled
     as a derived atom, so that all its occurrences share one literal.  None
-    otherwise."""
+    otherwise, also when a literal is a disjunction or constant FALSE (the
+    negation of an empty definition, ``('|', ())``); a constant TRUE literal
+    (``('&', ())``) adds no basis literal."""
     if isinstance(f, P):
         d = _DEF_LITS.get(f.pred)
         return None if d is None else (d, f.expr)
@@ -49,7 +51,7 @@ def _def(f):
         if not isinstance(a, P) or (a.pred not in BASIS_INDEX and a.pred not in _DEF_LITS):
             return None
         op, ls = basis_lits(a.pred, pos)
-        if op != '&' and len(ls) > 1:
+        if op != '&' and len(ls) != 1:
             return None
         derived |= a.pred in _DEF_LITS
         lits.update(ls)
