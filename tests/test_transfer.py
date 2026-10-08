@@ -219,8 +219,16 @@ def _transfer_model_checker(counts):
                 counts["pairs"] += 1
             else:
                 seen[key] = (v, b)
+        size: dict = {}
+        for c in rep.values():
+            size[c] = size.get(c, 0) + 1
         for t, facts in tr._fixed.items():
             c = rep.get(t)
+            if size.get(c, 0) < 2:
+                # a number alone in its class: the theory transfers nothing
+                # (TransferTheory._scan); its own atoms are its node's, set by
+                # its templates where demanded and otherwise read by nothing
+                continue
             for p, b in facts.items():
                 if (c, p) in seen:
                     assert seen[(c, p)][1] == b, f"atom {seen[(c, p)][0]} against a fixed fact"

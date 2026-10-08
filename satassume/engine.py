@@ -769,16 +769,22 @@ class Session:
         # (Solver.release).  Holding fewer or more levels changes what is
         # reused, never an answer
         if assumptions:
-            # consistency of the assumptions is checked first, even when the
-            # query is already decided at root, mirroring sympy.ask
+            # consistency of the assumptions is checked before any answer,
+            # even when the query is already decided at root, mirroring
+            # sympy.ask: by propagation first, then (below, or in
+            # Solver.entails) by a model of the clauses under them
             implied = solver.implied(assumptions)
             if implied is None:
                 raise InconsistentAssumptions("inconsistent assumptions")
             s = set(implied)
-            if lit in s:
-                return True
-            if -lit in s:
-                return False
+            r = True if lit in s else False if -lit in s else None
+            if r is not None:
+                # settled by propagation: returned only once the assumptions
+                # are known consistent with the clauses (as Solver.entails
+                # does), since propagation need not find a conflict
+                if not solver.consistent(assumptions):
+                    raise InconsistentAssumptions("inconsistent assumptions")
+                return r
         else:
             v = solver.value(lit)
             if v is not None:
@@ -806,6 +812,8 @@ class Session:
                 raise InconsistentAssumptions("inconsistent assumptions")
             s = set(implied)
             vals = [True if l in s else False if -l in s else None for l in ls]
+            if (False in vals or all(vals)) and not solver.consistent(assumptions):
+                raise InconsistentAssumptions("inconsistent assumptions")
         else:
             vals = [solver.value(l) for l in ls]
         if False in vals:

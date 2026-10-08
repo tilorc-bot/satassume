@@ -316,18 +316,27 @@ would raise.
 
 ### Inconsistent assumptions raise `ValueError`
 
-`Session.query_literal` checks `implied(assumptions)` before reading the
-answer, even when the query is decided at the root, as `sympy.ask` does; a
-conflict there or in `entails` raises `InconsistentAssumptions`, turned
-into `ValueError`. Facts a symbol was declared with are facts of its node,
+`Session.query_literal` checks the assumptions before it returns any
+answer, even when the query is decided at the root, as `sympy.ask` does:
+`implied(assumptions)` first, and when propagation settles the query,
+`Solver.consistent` (the last model if it satisfies them, else a search),
+the check `entails` makes on its own propagation path. A conflict in
+either raises `InconsistentAssumptions`, turned into `ValueError`.
+Propagation alone is not enough: under the basis encoding a set such as
+`Q.extended_positive(x+z+oo) & Q.finite(x+z+oo)` with a relation query
+propagates without conflict (the Add-with-`oo` rules distribute their
+derived premises) and only a model shows it is inconsistent. Facts a symbol was declared with are facts of its node,
 so assumptions contradicting them are inconsistent:
 `ask(Q.commutative(x), ~Q.commutative(x))` raises, where SymPy's handler
 path trusts the assumption (the five "raises" of the README). Keeping this
 or trusting the assumption is still the owner's call; no issue tracks it.
 
-It raises only for conflicts it finds: under a set whose conflict only
-search reveals, a query decided by propagation answers while one that
-searches raises, and which is which can depend on history (#53, group 5).
+Whether a query raises therefore depends on the clauses of its session
+(the set's cone, the query's cone and their glue), not on whether
+propagation or search decided it. The relevance split (below) still
+answers under the relevant part of a set whose own verdict is consistent,
+so a set that is inconsistent only with a relation query's glue can
+answer a query about an unrelated part (as before #137).
 
 ### Extended reals and `nan` in templates
 
