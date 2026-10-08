@@ -224,6 +224,52 @@ def _unsubsumed(clauses):
     return out
 
 
+def _up(clauses, assign):
+    """Unit propagation over ``clauses`` from ``assign`` (var -> bool),
+    in place; False on a conflict."""
+    changed = True
+    while changed:
+        changed = False
+        for c in clauses:
+            free = None
+            nfree = 0
+            for l in c:
+                v = assign.get(abs(l))
+                if v is None:
+                    nfree += 1
+                    free = l
+                    if nfree > 1:
+                        break
+                elif v == (l > 0):
+                    break
+            else:
+                if nfree == 0:
+                    return False
+                assign[abs(free)] = free > 0
+                changed = True
+    return True
+
+
+def _rup_redundant(clauses):
+    """Indices of ``clauses`` (tuples of ``(slot, basis index, neg)``) that
+    are implied by the others kept: unit propagation over the kept clauses
+    from the negation of the clause reaches a conflict (RUP).  Longest
+    clauses are tried first, so short clauses are kept."""
+    own = [tuple(-(k * NPRED + i + 1) if neg else k * NPRED + i + 1
+                 for k, i, neg in c) for c in clauses]
+    alive = [True] * len(own)
+    drop = set()
+    for j in sorted(range(len(own)), key=lambda j: -len(own[j])):
+        c = own[j]
+        if len(c) < 2:
+            continue
+        others = [d for t, d in enumerate(own) if alive[t] and t != j]
+        if not _up(others, {abs(m): m < 0 for m in c}):
+            alive[j] = False
+            drop.add(j)
+    return drop
+
+
 #: most clauses one rule may expand to in a pattern (see ``Pattern.wide``)
 MAX_EXPAND = 16
 
@@ -254,7 +300,9 @@ class Pattern:
         #: ``compile_formula`` encodes with Tseitin variables past
         #: ``compile.MAX_DISTRIBUTE``
         self.wide = wide = []
-        for ps, cs in rules:
+        need = set()
+        origin = {}
+        for r, (ps, cs) in enumerate(rules):
             n = 1
             for k, p, pos in ps:
                 n *= len(cnf_of(p, not pos))
@@ -262,22 +310,32 @@ class Pattern:
                 n *= len(cnf_of(p, pos))
             if n > MAX_EXPAND:
                 wide.append((ps, cs))
+                need.add(r)
                 continue
             # over the basis: a derived predicate is its definition
             # (rules.expand_clause), so one rule may give several clauses
             for lits in expand_clause([(k, p, not pos) for k, p, pos in ps]
                                       + [(k, p, pos) for k, p, pos in cs]):
                 # (slot, basis index, neg)
-                expanded.append(tuple((k, i, not pos) for k, i, pos in lits))
-        for lits in _unsubsumed(expanded):
-            if True:
-                npreds = frozenset(i for k, i, _ in lits if k == node)
-                # internal literal = 2*base_of_slot + (2*pidx + neg)
-                clauses.append((lits, npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
-                for k, i, _ in lits:
-                    used.add(k)
-                    if k != node:
-                        child_preds.setdefault(k, set()).add(i)
+                c = tuple((k, i, not pos) for k, i, pos in lits)
+                expanded.append(c)
+                origin.setdefault(frozenset(c), r)
+        kept = _unsubsumed(expanded)
+        # drop clauses the other kept clauses imply (RUP)
+        if len(kept) > 1:
+            drop = _rup_redundant(kept)
+            kept = [c for j, c in enumerate(kept) if j not in drop]
+        # the rules that give a kept clause: the others are implied by them
+        need.update(origin[frozenset(c)] for c in kept)
+        self.rules = rules = [r for j, r in enumerate(rules) if j in need]
+        for lits in kept:
+            npreds = frozenset(i for k, i, _ in lits if k == node)
+            # internal literal = 2*base_of_slot + (2*pidx + neg)
+            clauses.append((lits, npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
+            for k, i, _ in lits:
+                used.add(k)
+                if k != node:
+                    child_preds.setdefault(k, set()).add(i)
         self.clauses = clauses
         self.used = tuple(sorted(used))
         self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
