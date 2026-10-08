@@ -764,6 +764,138 @@ class Session:
                 self.truncated = True
         self.frontier = deque()
 
+    # -- lazy escalation ----------------------------------------------------
+    def lazy_ready(self) -> bool:
+        """True if what :meth:`escalate` would add is only parked pattern
+        clauses (``pending_c``) over nodes the session already has: then
+        :meth:`decide_lazy` can stand in for it."""
+        return bool(self.pending_c) and not (self.pending or self.deferred or self.frontier)
+
+    def prepare_lazy(self) -> None:
+        """Visit the derived nodes and the frontier as :meth:`escalate`
+        does, but with no predicate demanded: their pattern clauses are
+        parked (``pending_c``) instead of emitted, for :meth:`decide_lazy`.
+        Blocks and anything else a visit adds are added as by escalate."""
+        while self.deferred or self.frontier:
+            n = self.frontier.popleft() if self.frontier else self.deferred.pop()
+            if n not in self.base:
+                self.node(n, frozenset())
+        self.frontier = deque()
+
+    def _take_violated(self) -> bool:
+        """Emit the parked pattern clauses that the model of the solver's
+        last successful solve falsifies and unpark them; False if the model
+        satisfies every parked clause (it is then a model of the escalated
+        clause set too: those clauses are all escalation would add)."""
+        solver = self.solver
+        model = solver._model
+        get = model.get
+        # a lazy block variable (never decided) has a value filled in from
+        # a model of its block (Solver._fill), which nothing else
+        # constrained; but if it is a theory atom no theory checked that
+        # value, so its literals count as false there
+        ment = solver._ment
+        nment = len(ment)
+        tmap = solver._tmap
+        found = False
+        for node in list(self.pending_c):
+            keep = []
+            for clauses, bases in self.pending_c[node]:
+                bad, rest = [], []
+                for c in clauses:
+                    for k, off in c[2]:
+                        l = bases[k] + off
+                        v = l >> 1
+                        if get(v) is (not (l & 1)) and (v not in tmap or (v < nment and ment[v])):
+                            rest.append(c)
+                            break
+                    else:
+                        bad.append(c)
+                if bad:
+                    found = True
+                    self._emit_pattern(bad, bases)
+                if rest:
+                    keep.append((rest if bad else clauses, bases))
+            if keep:
+                self.pending_c[node] = keep
+            else:
+                del self.pending_c[node]
+        return found
+
+    def check_lazy(self, lits) -> Optional[str]:
+        """:meth:`Engine._complete_check` after the parked clauses without
+        handing them all to the solver: search, and emit the parked clauses
+        the model falsifies until a model satisfies them all (a model of
+        the escalated set: ``CONSISTENT``) or there is none
+        (``INCONSISTENT``, sound for the subset).  None (the caller
+        escalates) if a theory gave up or ran out of budget, or the session
+        is truncated."""
+        solver = self.solver
+        while True:
+            if not solver.solve(lits):
+                return INCONSISTENT
+            if _gave_up(self) or _exhausted(self) or self.truncated:
+                return None
+            if not self._take_violated():
+                return CONSISTENT
+
+    def decide_lazy(self, lit, assumptions, release=None) -> Optional[bool]:
+        """:meth:`query_literal` (with search) of the escalated clause set
+        without handing it all to the solver (counterexample-guided
+        escalation).  Precondition :meth:`lazy_ready`.
+
+        A definite answer of a subset of the escalated clauses is one of
+        the whole set (entailment and inconsistency are monotone in the
+        clauses).  An open answer stands only if each side (``lit`` true,
+        ``lit`` false) has a model that also satisfies every parked clause,
+        i.e. a model of the escalated set; a parked clause a model
+        falsifies is emitted and the query repeated.  Ends: each round
+        emits at least one parked clause.  If a theory gave up or ran out
+        of budget, everything parked is emitted (plain escalation) and the
+        query is answered as before."""
+        solver = self.solver
+        if type(lit) is tuple:
+            op, ls = lit
+            if op == '|':
+                sides = ([[l] for l in ls], [[-l for l in ls]])
+            else:
+                sides = ([list(ls)], [[-l] for l in ls])
+        else:
+            sides = ([[lit]], [[-lit]])
+        assumptions = list(assumptions)
+        while True:
+            r = self.query_literal(lit, assumptions, search=True)
+            if _gave_up(self) or _exhausted(self):
+                break
+            if r is not None or not self.pending_c:
+                return r
+            again = False
+            for alts in sides:
+                for extra in alts:
+                    if solver.solve(assumptions + extra):
+                        if _gave_up(self) or _exhausted(self):
+                            again = None
+                        elif self._take_violated():
+                            again = True
+                        break
+                else:
+                    again = None            # no model on a side the query left open
+                if again is not False:
+                    break
+            if again is None:
+                break
+            if not again:
+                return None
+            if release is not None:
+                release()
+        if release is not None:
+            release()
+        self.escalate()
+        r = self.query_literal(lit, assumptions, search=False)
+        if r is None:
+            r = self.query_literal(lit, assumptions, search=True)
+        return r
+
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
                       search: bool = True) -> Optional[bool]:
@@ -1861,6 +1993,12 @@ class Engine:
             s.xfer.sync_transfer()
         if not solver.propagate() or solver.implied(lits) is None:
             return INCONSISTENT
+        if s.incomplete and _LAZY:
+            s.prepare_lazy()
+            if s.lazy_ready():
+                v = s.check_lazy(lits)
+                if v is not None:
+                    return v
         if s.incomplete:
             s.escalate()
             if s.xfer is not None:
@@ -1973,6 +2111,12 @@ class Engine:
         test_transfer_numbers.py`` checks this against a loop of ``is_``
         under every harness preset."""
         r = s.query_literal(lit, search=False)
+        if r is None and s.incomplete and _LAZY:
+            s.prepare_lazy()
+        if r is None and s.incomplete and _LAZY and s.lazy_ready():
+            self.stats["escalations"] += 1
+            self.stats["searches"] += 1
+            return s.decide_lazy(lit, ())
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
@@ -2091,7 +2235,15 @@ class Engine:
         # for a context-free query)
         lits = s.assumption_lits(proposition)
         r = s.query_literal(q, lits, search=False)
-        if r is None and s.incomplete:
+        if r is None and s.incomplete and _LAZY:
+            s.solver.release(s.n_hold)
+            s.prepare_lazy()
+        if r is None and s.incomplete and _LAZY and s.lazy_ready():
+            self.stats["escalations"] += 1
+            self.stats["searches"] += 1
+            s.solver.release(s.n_hold)
+            r = s.decide_lazy(q, lits, lambda: s.solver.release(s.n_hold))
+        elif r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.solver.release(s.n_hold)
             s.escalate()
@@ -2147,6 +2299,9 @@ def zero_glue(f) -> bool:
 _NEIGH: Dict[int, frozenset] = {}
 _NO_BASIS: frozenset = frozenset()
 _WANT: Dict[frozenset, frozenset] = {}
+
+
+_LAZY = __import__('os').environ.get('SA_NOLAZY') is None
 
 
 def _gave_up(s: Session) -> bool:
