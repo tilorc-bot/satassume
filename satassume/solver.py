@@ -35,7 +35,7 @@ by unit propagation, by unit clauses, or as learned unit clauses).
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 
 class Clause(list):
@@ -2744,6 +2744,37 @@ class Solver:
         if not self._solve(lits + [l], k):
             return False
         return None
+
+    def entails_all(self, lits: Sequence[int], assumptions: Iterable[int] = (),
+                    hold: int | None = None) -> bool | None:
+        """:meth:`entails` of the conjunction of ``lits`` without a variable
+        for it: True if every literal is forced under ``assumptions``,
+        False if their conjunction is refuted, None if neither.  Raises
+        ValueError if the assumptions are inconsistent with the formula."""
+        lits = [int(x) for x in lits]
+        if len(lits) == 1:
+            return self.entails(lits[0], assumptions, hold)
+        assumptions = [int(x) for x in assumptions]
+        self.mention(lits)
+        trail = self._assume(assumptions, hold)
+        if trail is None:
+            raise ValueError("inconsistent assumptions")
+        ins = self._internal_lits(lits)
+        alits = self._internal_lits(assumptions)
+        k = len(alits) if hold is None else max(0, min(hold, len(alits)))
+        vals = [True if l in trail else False if l ^ 1 in trail else None for l in ins]
+        if False in vals or all(vals):
+            if self._witness_satisfies(assumptions) or self._solve(alits, k):
+                return all(vals)
+            raise ValueError("inconsistent assumptions")
+        if not self._solve(alits + ins, k):
+            if not self._solve(alits, k):
+                raise ValueError("inconsistent assumptions")
+            return False
+        for l, v in zip(ins, vals):
+            if v is None and self._solve(alits + [l ^ 1], k):
+                return None
+        return True
 
     # ------------------------------------------------------------------
     # Provenance of root facts
