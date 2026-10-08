@@ -130,7 +130,6 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
         for l in c:
             m |= 1 << l
         cls.append(m)
-    even = _EVEN & ((1 << (2 * n)) - 1)    # the positive literal of each variable
 
     # occ[l]: the clauses holding literal l; only they can become unit or
     # false when the complement of l is assigned
@@ -163,15 +162,21 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
                     queue.append(free)
         return a
 
-    def rec(a: int) -> None:
-        unassigned = even & ~(a | (a >> 1))
-        if unassigned:
-            low = unassigned & -unassigned      # the lowest unassigned variable
-            for bit in (low << 1, low):
-                b = up(a | bit, bit)
-                if b >= 0:
-                    rec(b)
-            return
+    # branch on the variables with the most occurrences first: they
+    # propagate the most (the set of models does not depend on the order)
+    order = sorted(range(n), key=lambda v: -(len(occ[2 * v]) + len(occ[2 * v + 1])))
+    vbits = [1 << (2 * v) for v in order]
+
+    def rec(a: int, k: int) -> None:
+        while k < n:
+            low = vbits[k]                      # the next unassigned variable
+            if not a & (low | (low << 1)):
+                for bit in (low << 1, low):
+                    b = up(a | bit, bit)
+                    if b >= 0:
+                        rec(b, k + 1)
+                return
+            k += 1
         out.append(a)
         if len(out) > 1 << 16:
             raise ValueError("rule block has too many models")
@@ -186,7 +191,7 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
             a = up(a | cm, cm)
             if a < 0:
                 return ()
-    rec(a)
+    rec(a, 0)
     return tuple(sorted(set(out)))
 
 
@@ -206,17 +211,23 @@ class _BlockClosure:
     def __init__(self, clauses, n: int):
         self.n = n
         self.fmemo: dict[int, tuple] = {}
-        self.models = _block_models(clauses, n)
+        self.models = models = _block_models(clauses, n)
         # per relative literal, the set of models containing it (a bit per
-        # model); closures are memoized per model set too
-        self.msets = tuple(sum(1 << j for j, x in enumerate(self.models) if (x >> r) & 1)
-                           for r in range(2 * n))
-        self.all = (1 << len(self.models)) - 1
+        # model); closures are memoized per model set too.  The transpose
+        # of the models' bit matrix: row j is model j as 2*n binary digits
+        # (literal 2*n - 1 first), the last model on top, so column c
+        # read as a binary number has bit j iff model j holds literal
+        # 2*n - 1 - c.
+        rows = [format(x, "0%db" % (2 * n)) for x in reversed(models)]
+        self.msets = tuple(int("".join(col), 2) for col in zip(*rows))[::-1] if rows \
+            else (0,) * (2 * n)
+        self.all = (1 << len(models)) - 1
         self.cls: dict[int, int] = {}
         self.memo: dict[int, int] = {}
         self.expl: dict = {}
-        # per model, the values of the n variables (for model completion)
-        self.values = {x: [bool((x >> (2 * i)) & 1) for i in range(n)] for x in self.models}
+        # per model, the values of the n variables (for model completion),
+        # built on first use (values_of)
+        self.values: dict[int, list] = {}
         self.vmemo: dict[int, list] = {}
         # mask -> its relative literals, ascending
         self.bits: dict[int, tuple] = {}
@@ -254,7 +265,10 @@ class _BlockClosure:
         ``m``."""
         r = self.vmemo.get(m)
         if r is None:
-            r = self.values[self.model_of(m)]
+            x = self.model_of(m)
+            r = self.values.get(x)
+            if r is None:
+                r = self.values[x] = [bool((x >> (2 * i)) & 1) for i in range(self.n)]
             if len(self.vmemo) >= 100_000:
                 self.vmemo.clear()
             self.vmemo[m] = r
