@@ -1846,9 +1846,13 @@ class Engine:
         mostly the relevance layer deciding whether a set may raise before
         it answers under a part of it.  A set whose structural cone outweighs ``discovery_budget``
         is ``UNKNOWN`` without any session (every query under it is over
-        the budget too: ``_within_budget``)."""
+        the budget too: ``_within_budget``).  A set with a vocabulary atom
+        about a non-commutative term is ``UNKNOWN`` (out of scope, as for
+        :meth:`ask`: ``_noncommutative``)."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
+        if _noncommutative_atoms(assumptions):
+            return UNKNOWN
         if not self._within_budget(assumptions):
             return UNKNOWN
         v = self._verdict.get(assumptions)
