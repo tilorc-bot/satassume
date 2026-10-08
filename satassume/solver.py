@@ -124,44 +124,74 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
     ``2*i + 1`` if it is false.  DPLL with unit propagation; the engine's
     rule base has 48 models."""
     out: list[int] = []
-    cls = [tuple(c) for c in clauses]
-
-    def up(a: set) -> bool:
-        changed = True
-        while changed:
-            changed = False
-            for c in cls:
-                free = -1
-                for l in c:
-                    if l in a:
-                        break
-                    if l ^ 1 not in a:
-                        if free >= 0:
-                            break
-                        free = l
-                else:
-                    if free < 0:
-                        return False
-                    a.add(free)
-                    changed = True
-        return True
-
-    def rec(a: set) -> None:
-        if not up(a):
-            return
-        for i in range(n):
-            if 2 * i not in a and 2 * i + 1 not in a:
-                rec(a | {2 * i + 1})
-                rec(a | {2 * i})
-                return
+    cls: list[int] = []
+    for c in clauses:
         m = 0
-        for l in a:
+        for l in c:
             m |= 1 << l
-        out.append(m)
+        cls.append(m)
+
+    # occ[l]: the clauses holding literal l; only they can become unit or
+    # false when the complement of l is assigned
+    occ: list[list[int]] = [[] for _ in range(2 * n)]
+    for cm in cls:
+        m = cm
+        while m:
+            low = m & -m
+            m ^= low
+            occ[low.bit_length() - 1].append(cm)
+
+    def up(a: int, lit: int) -> int:
+        """The unit-propagation closure of the assignment ``a``, which the
+        literal ``lit`` (a bit) just joined, -1 on a conflict.  ``sw`` is
+        ``a`` with each literal replaced by its complement, so ``cm & ~sw``
+        are the clause's unassigned literals when none of them is true."""
+        sw = ((a & _EVEN) << 1) | ((a >> 1) & _EVEN)
+        queue = [lit]
+        while queue:
+            l = queue.pop()
+            for cm in occ[(l << 1 if l & _EVEN else l >> 1).bit_length() - 1]:
+                if a & cm:
+                    continue
+                free = cm & ~sw
+                if not free:
+                    return -1
+                if not free & (free - 1):      # one unassigned literal: unit
+                    a |= free
+                    sw |= free << 1 if free & _EVEN else free >> 1
+                    queue.append(free)
+        return a
+
+    # branch on the variables with the most occurrences first: they
+    # propagate the most (the set of models does not depend on the order)
+    order = sorted(range(n), key=lambda v: -(len(occ[2 * v]) + len(occ[2 * v + 1])))
+    vbits = [1 << (2 * v) for v in order]
+
+    def rec(a: int, k: int) -> None:
+        while k < n:
+            low = vbits[k]                      # the next unassigned variable
+            if not a & (low | (low << 1)):
+                for bit in (low << 1, low):
+                    b = up(a | bit, bit)
+                    if b >= 0:
+                        rec(b, k + 1)
+                return
+            k += 1
+        out.append(a)
         if len(out) > 1 << 16:
             raise ValueError("rule block has too many models")
 
-    rec(set())
+    a = 0                                   # unit clauses, if any, at the root
+    for cm in cls:
+        if not cm:
+            return ()
+        if not cm & (cm - 1) and not a & cm:
+            if a & (cm << 1 if cm & _EVEN else cm >> 1):
+                return ()
+            a = up(a | cm, cm)
+            if a < 0:
+                return ()
+    rec(a, 0)
     return tuple(sorted(set(out)))
 
 
@@ -181,17 +211,23 @@ class _BlockClosure:
     def __init__(self, clauses, n: int):
         self.n = n
         self.fmemo: dict[int, tuple] = {}
-        self.models = _block_models(clauses, n)
+        self.models = models = _block_models(clauses, n)
         # per relative literal, the set of models containing it (a bit per
-        # model); closures are memoized per model set too
-        self.msets = tuple(sum(1 << j for j, x in enumerate(self.models) if (x >> r) & 1)
-                           for r in range(2 * n))
-        self.all = (1 << len(self.models)) - 1
+        # model); closures are memoized per model set too.  The transpose
+        # of the models' bit matrix: row j is model j as 2*n binary digits
+        # (literal 2*n - 1 first), the last model on top, so column c
+        # read as a binary number has bit j iff model j holds literal
+        # 2*n - 1 - c.
+        rows = [format(x, "0%db" % (2 * n)) for x in reversed(models)]
+        self.msets = tuple(int("".join(col), 2) for col in zip(*rows))[::-1] if rows \
+            else (0,) * (2 * n)
+        self.all = (1 << len(models)) - 1
         self.cls: dict[int, int] = {}
         self.memo: dict[int, int] = {}
         self.expl: dict = {}
-        # per model, the values of the n variables (for model completion)
-        self.values = {x: [bool((x >> (2 * i)) & 1) for i in range(n)] for x in self.models}
+        # per model, the values of the n variables (for model completion),
+        # built on first use (values_of)
+        self.values: dict[int, list] = {}
         self.vmemo: dict[int, list] = {}
         # mask -> its relative literals, ascending
         self.bits: dict[int, tuple] = {}
@@ -229,7 +265,10 @@ class _BlockClosure:
         ``m``."""
         r = self.vmemo.get(m)
         if r is None:
-            r = self.values[self.model_of(m)]
+            x = self.model_of(m)
+            r = self.values.get(x)
+            if r is None:
+                r = self.values[x] = [bool((x >> (2 * i)) & 1) for i in range(self.n)]
             if len(self.vmemo) >= 100_000:
                 self.vmemo.clear()
             self.vmemo[m] = r

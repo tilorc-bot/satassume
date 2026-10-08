@@ -155,10 +155,17 @@ def relation(atom) -> tuple[str, Any, Any] | None:
     ``lt le gt ge eq ne``; None otherwise."""
     if isinstance(atom, AppliedPredicate):
         f = atom.function
-        if f == Q.is_true:
-            return relation(atom.arguments[0]) if len(atom.arguments) == 1 else None
         name = _PRED.get(f)
-        if name is None or len(atom.arguments) != 2:
+        if name is None:
+            # by name: reading ``Q.is_true`` imports SymPy's handler modules
+            # (about 1 ms, once per process) for every relation atom.  Only
+            # ``Q.is_true`` matches: ``Predicate("is_true")`` is a different
+            # object (an UndefinedPredicate whose ``.name`` is a ``Str``, not
+            # equal to the string), so this behaves like ``f == Q.is_true``
+            if getattr(f, "name", None) == "is_true":
+                return relation(atom.arguments[0]) if len(atom.arguments) == 1 else None
+            return None
+        if len(atom.arguments) != 2:
             return None
         return (name,) + tuple(atom.arguments)
     name = _REL.get(type(atom))

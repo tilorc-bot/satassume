@@ -404,3 +404,14 @@ def test_is_true_of_boolean_constant_is_that_constant():
             ask(Q.real(x), Q.real(x) & Q.is_true(f), Engine())
     assert ask(Q.real(x), Q.real(x) & Q.is_true(True), Engine()) is True
     assert ask(Q.real(x), Q.is_true(True), Engine()) is None
+
+
+def test_vocabulary_names_are_not_matrix_predicates():
+    # _is_matrix_predicate skips the matrix-predicate import for a
+    # vocabulary name on the strength of this disjointness
+    from satassume.rules import PREDICATES
+    from satassume.sympy_api import _is_matrix_predicate, matrix_predicates
+    assert set(PREDICATES).isdisjoint(matrix_predicates())
+    assert not _is_matrix_predicate(Q.positive, "positive")
+    assert _is_matrix_predicate(Q.invertible, "invertible")
+    assert _is_matrix_predicate(Q.invertible, str(Q.invertible.name))

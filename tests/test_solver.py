@@ -1021,3 +1021,129 @@ def test_held_levels_continue_from_the_common_prefix():
     for cl in clauses:
         fresh.add_clause(cl)
     assert fresh.entails(z, [a, c]) is True and fresh.entails(b, [a, c]) is False
+
+
+# -- _block_models against a set-based reference --------------------------
+
+def _block_models_reference(clauses, n):
+    """The enumeration _block_models replaced (sets of literals): DPLL with
+    unit propagation over relative literals, every model as a mask."""
+    out = []
+    cls = [tuple(c) for c in clauses]
+
+    def up(a):
+        changed = True
+        while changed:
+            changed = False
+            for c in cls:
+                free = -1
+                for l in c:
+                    if l in a:
+                        break
+                    if l ^ 1 not in a:
+                        if free >= 0:
+                            break
+                        free = l
+                else:
+                    if free < 0:
+                        return False
+                    a.add(free)
+                    changed = True
+        return True
+
+    def rec(a):
+        if not up(a):
+            return
+        for i in range(n):
+            if 2 * i not in a and 2 * i + 1 not in a:
+                rec(a | {2 * i + 1})
+                rec(a | {2 * i})
+                return
+        m = 0
+        for l in a:
+            m |= 1 << l
+        out.append(m)
+
+    rec(set())
+    return tuple(sorted(set(out)))
+
+
+def test_block_models_rule_base_matches_reference():
+    from satassume.rules import NPRED, RULE_INTERNAL
+    from satassume.solver import _block_models
+    models = _block_models(RULE_INTERNAL, NPRED)
+    assert models == _block_models_reference(RULE_INTERNAL, NPRED)
+    assert len(models) == 48
+
+
+def test_block_models_random_blocks_match_reference():
+    from satassume.solver import _block_models
+    rng = random.Random(7)
+    for _ in range(300):
+        n = rng.randint(2, 9)
+        clauses = []
+        for _ in range(rng.randint(1, 14)):
+            k = rng.randint(2, min(4, n))
+            vs = rng.sample(range(n), k)
+            clauses.append(tuple(2 * v + rng.randint(0, 1) for v in vs))
+        assert _block_models(clauses, n) == _block_models_reference(clauses, n)
+
+
+# -- _BlockClosure tables against their direct definitions -----------------
+
+def _msets_direct(models, n):
+    """The direct definition of _BlockClosure.msets (before the
+    transposition): per relative literal, bit j iff model j holds it."""
+    return tuple(sum(1 << j for j, x in enumerate(models) if (x >> r) & 1)
+                 for r in range(2 * n))
+
+
+def _values_direct(models, n):
+    """The direct definition of _BlockClosure.values (before it was built
+    on first use): per model, the values of the n variables."""
+    return {x: [bool((x >> (2 * i)) & 1) for i in range(n)] for x in models}
+
+
+def _random_block(rng, n):
+    """A random block over n variables with unit, empty, duplicate,
+    conflicting (complementary units) and tautological clauses; for large
+    n most variables are fixed by units so the model count stays small."""
+    clauses = []
+    free = rng.sample(range(n), rng.randint(1, min(n, 9)))
+    for v in set(range(n)) - set(free):
+        clauses.append((2 * v + rng.randint(0, 1),))
+    for _ in range(rng.randint(0, 12)):
+        k = 1 if len(free) < 2 or rng.random() < 0.1 else rng.randint(2, min(4, len(free)))
+        clauses.append(tuple(2 * v + rng.randint(0, 1) for v in rng.sample(free, k)))
+    if clauses and rng.random() < 0.3:
+        clauses.append(rng.choice(clauses))                 # duplicate clause
+    if rng.random() < 0.05:
+        clauses.append(())                                  # empty clause
+    if rng.random() < 0.05:
+        u = 2 * rng.randrange(n) + rng.randint(0, 1)
+        clauses += [(u,), (u ^ 1,)]                         # conflicting units
+    if rng.random() < 0.2:
+        v = rng.randrange(n)
+        clauses.append((2 * v, 2 * v + 1))                  # tautology
+    rng.shuffle(clauses)
+    return tuple(clauses)
+
+
+def test_block_closure_msets_and_values_match_direct():
+    from satassume.rules import NPRED, RULE_INTERNAL
+    from satassume.solver import _BlockClosure
+    rng = random.Random(11)
+    blocks = [(RULE_INTERNAL, NPRED), ((), 1), (((),), 3), (((0,), (1,)), 2)]
+    for _ in range(1000):
+        n = rng.choice((rng.randint(1, 9), rng.randint(1, 64)))
+        blocks.append((_random_block(rng, n), n))
+    for clauses, n in blocks:
+        bc = _BlockClosure(clauses, n)
+        models = bc.models
+        assert bc.msets == _msets_direct(models, n)
+        assert bc.all == (1 << len(models)) - 1
+        values = _values_direct(models, n)
+        for x in models:
+            # the model itself, a random subset of it, and the empty set
+            for m in (x, x & rng.getrandbits(2 * n), 0):
+                assert bc.values_of(m) == values[bc.model_of(m)]
