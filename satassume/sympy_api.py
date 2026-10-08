@@ -147,6 +147,21 @@ def matrix_predicates() -> frozenset:
     return _MATRIX_PREDICATES
 
 
+_MATRIX_MODULE = "sympy.assumptions.predicates.matrices"
+
+
+def _is_matrix_predicate(pred, name: str) -> bool:
+    """``name in matrix_predicates()``, without importing SymPy's matrix
+    predicates (about 1 ms, once per process) for a vocabulary name: none
+    of those names a matrix predicate (``tests/test_sympy_api.py``), and a
+    matrix predicate class is recognised by its module anyway."""
+    # correctness rests on test_vocabulary_names_are_not_matrix_predicates
+    # (the two name sets are disjoint); the module check is only a guard
+    if name in PRED_INDEX and type(pred).__module__ != _MATRIX_MODULE:
+        return False
+    return name in matrix_predicates()
+
+
 def _is_scalar(arg) -> bool:
     return isinstance(arg, _Expr) and bool(arg.is_scalar)
 
@@ -213,7 +228,7 @@ def _applied_category(expr) -> Optional[str]:
         return "relation"
     if name == "is_true":
         return "relation" if any(isinstance(a, Relational) for a in args) else "custom"
-    if name in matrix_predicates():
+    if _is_matrix_predicate(expr.function, name):
         return "matrix"
     if name not in PRED_INDEX:
         return None if extensions.is_registered(name, len(args)) else "custom"
@@ -752,7 +767,7 @@ def _bool_keys(e, acc: set) -> bool:
             return _sides_keys(args, acc, name in ("eq", "ne"))
         if name == "is_true" and len(args) == 1 and isinstance(args[0], _Relational):
             return _bool_keys(args[0], acc)
-        if name not in PRED_INDEX or name in matrix_predicates():
+        if name not in PRED_INDEX or _is_matrix_predicate(e.function, name):
             if _applied_category(e) not in OPAQUE_CATEGORIES:
                 return False            # a registered custom predicate, or "other"
             # an opaque atom in the assumptions: keyed by its arguments
