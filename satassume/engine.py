@@ -514,7 +514,7 @@ class Session:
                     for k, m in _split(comp.pattern.clauses, want)[3]:
                         if k == k0:
                             own |= m
-            if _LAZYB and not self.theory_bound():
+            if _LAZY and not self.theory_bound():
                 self.solver.ensure_vars(b + NPRED - 1)
                 self.lazy_blocks[b] = own
             else:
@@ -2351,8 +2351,6 @@ _WANT: Dict[frozenset, frozenset] = {}
 
 
 _LAZY = __import__('os').environ.get('SA_NOLAZY') is None
-_BFIRST = __import__("os").environ.get("SA_BFIRST") is not None
-_LAZYB = _LAZY and __import__('os').environ.get('SA_LAZYB') is not None
 
 
 def _gave_up(s: Session) -> bool:
