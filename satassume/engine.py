@@ -85,7 +85,7 @@ from .formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
-from .rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
+from .rules import (SHARED, BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
@@ -390,11 +390,12 @@ class Session:
             return self.node(atom.expr) + ls[0] - 1 if ls[0] > 0 else -(self.node(atom.expr) - ls[0] - 1)
         return self._dvar(atom.pred, atom.expr, 3 if need == 'both' else 1 if need == 'pos' else 2, True)
 
-    def _dvar(self, pred: str, node: Node, need: int, link: bool = False) -> int:
+    def _dvar(self, pred: str, node: Node, need: int, link: bool = False, b: int = 0) -> int:
         d = DEF_LITS[pred]
         key = (d, node)
         e = self._dv.get(key)
-        b = self.node(node)
+        if not b:
+            b = self.node(node)
         emit = self._emit
         if e is None:
             v = self.table.aux()
@@ -505,7 +506,7 @@ class Session:
                 want = None if demanded is None else want_of(demanded)
                 for comp in compiled:
                     k0 = comp.pattern.node
-                    for k, m in _split(comp.pattern.clauses, want)[3]:
+                    for k, m in _split(comp.pattern.eclauses, want)[3]:
                         if k == k0:
                             own |= m
             self.solver.register_block(b, own)
@@ -549,11 +550,13 @@ class Session:
                     bb = table.node_base(o)
                     new.append(k)
                 bases[k] = 2 * bb
-            _, now, later, ment = _split(pat.clauses, want)
+            eclauses = pat.eclauses
+            sh = None if eclauses is pat.clauses else objs
+            _, now, later, ment = _split(eclauses, want)
             if later is not None:
-                self.pending_c.setdefault(node, []).append((later, bases))
+                self.pending_c.setdefault(node, []).append((later, bases, sh))
             if now:
-                self._emit_pattern(now, bases, ment)
+                self._emit_pattern(now, bases, ment, sh)
             for k, preds in pat.child_preds.items():
                 d = demand.get(objs[k])
                 if d is None:
@@ -567,16 +570,34 @@ class Session:
                     self.deferred.append(objs[k])
         table.new_nodes = []
 
-    def _emit_pattern(self, clauses, bases, ment=None) -> None:
+    def _emit_pattern(self, clauses, bases, ment=None, objs=None) -> None:
         """``bases[k]`` is twice the base variable of slot ``k``; ``ment``
-        the slots' mention masks of ``clauses`` (see :func:`_split`)."""
+        the slots' mention masks of ``clauses`` (see :func:`_split`);
+        ``objs`` the slots' nodes if the clauses have shared literals
+        (offset ``-1 - j``: ``Pattern.eclauses``)."""
         if ment is None:
             ment = _split(clauses, None)[3]
         self.nclauses += len(clauses)
         solver = self.solver
-        solver.ensure_vars(len(self.table))
-        solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
-                            [(bases[k] >> 1, m) for k, m in ment])
+        if objs is None:
+            solver.ensure_vars(len(self.table))
+            out = [[bases[k] + off for k, off in li] for _, _, li in clauses]
+        else:
+            shared = self._shared_lit
+            out = [[bases[k] + off if off >= 0 else shared(objs[k], bases[k] >> 1, off)
+                    for k, off in li] for _, _, li in clauses]
+            solver.ensure_vars(len(self.table))
+        solver.add_internal(out, [(bases[k] >> 1, m) for k, m in ment])
+
+    def _shared_lit(self, obj, b: int, off: int) -> int:
+        """The internal literal of shared literal ``off`` (``-1 - j``: see
+        ``rules.SHARED``) of node ``obj`` with base ``b``: its
+        definitional variable with the variable -> definition direction."""
+        pred, pos = SHARED[-1 - off]
+        if pos:      # a conjunction: v -> each conjunct
+            return 2 * self._dvar(pred, obj, 1, b=b)
+        # a negated disjunction: ~v, with each disjunct -> v
+        return 2 * self._dvar(pred, obj, 2, b=b) + 1
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
@@ -655,14 +676,14 @@ class Session:
         pend_c = self.pending_c.get(node)
         if pend_c:
             keep = []
-            for clauses, bases in pend_c:
+            for clauses, bases, sh in pend_c:
                 _, now, later, ment = _split(clauses, want)
                 if now:
-                    self._emit_pattern(now, bases, ment)
+                    self._emit_pattern(now, bases, ment, sh)
                     if later is not None:
-                        keep.append((later, bases))
+                        keep.append((later, bases, sh))
                 else:
-                    keep.append((clauses, bases))
+                    keep.append((clauses, bases, sh))
             if keep:
                 self.pending_c[node] = keep
             else:
@@ -736,8 +757,8 @@ class Session:
                 and added < budget:
             if self.pending_c:
                 node, pend = self.pending_c.popitem()
-                for clauses, bases in pend:
-                    self._emit_pattern(clauses, bases)
+                for clauses, bases, sh in pend:
+                    self._emit_pattern(clauses, bases, None, sh)
                 added += 1
             elif self.pending:
                 node, formulas = self.pending.popitem()
@@ -2239,7 +2260,8 @@ def _split(clauses, want):
     acc: dict = {}
     for _, _, li in now:
         for k, off in li:
-            acc[k] = acc.get(k, 0) | (3 << (off & ~1))
+            if off >= 0:      # not a shared literal (Pattern.eclauses)
+                acc[k] = acc.get(k, 0) | (3 << (off & ~1))
     r = (clauses, now, later, tuple(acc.items()))
     if len(_SPLIT) >= 100_000:
         _SPLIT.clear()
