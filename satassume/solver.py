@@ -2703,6 +2703,18 @@ class Solver:
                     return False
         return True
 
+    def consistent(self, assumptions: Iterable[int] = (),
+                   hold: int | None = None) -> bool:
+        """Whether the formula is satisfiable under ``assumptions``: the
+        model of the last successful solve if it satisfies them (free),
+        else a search.  The check :meth:`entails` makes before it returns
+        an answer that unit propagation settled."""
+        assumptions = [int(x) for x in assumptions]
+        lits = self._internal_lits(assumptions)
+        self._mention(lits)
+        k = len(lits) if hold is None else max(0, min(hold, len(lits)))
+        return self._witness_satisfies(assumptions) or self._solve(lits, k)
+
     def entails(self, lit: int, assumptions: Iterable[int] = (),
                 hold: int | None = None) -> bool | None:
         """True if ``lit`` is forced under ``assumptions``, False if ``-lit``

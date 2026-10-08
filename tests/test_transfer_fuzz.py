@@ -185,10 +185,12 @@ def run_seed(seed, setup="euf", log=None):
             log.append((assum, q, a, o))
         where = f"seed {seed} ({setup}): ask({q}, {assum}) = {a}, oracle {o}"
         if a != o and inconsistent(specs, oracle_assumptions(assum, q)):
-            # The engine checks the assumptions by propagation only when
-            # propagation decides the query (Session.query_literal), so under
-            # inconsistent assumptions either side may give a definite answer
-            # where the other finds the inconsistency.  Never None.
+            # The oracle's assumptions differ from the engine's (its
+            # transfer axioms are spelled out, oracle_assumptions), and the
+            # relevance split answers under the relevant part of a set whose
+            # own verdict is consistent, so under inconsistent assumptions
+            # either side may give a definite answer where the other finds
+            # the inconsistency.  Never None.
             assert a is not None and o is not None, where
             counts["inconsistent_differs"] = counts.get("inconsistent_differs", 0) + 1
             continue
