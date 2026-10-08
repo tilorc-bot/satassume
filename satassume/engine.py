@@ -249,6 +249,14 @@ class Session:
         # the single-node rule base, propagated by the solver from shared
         # tables instead of 79 clauses per node (Solver.register_block)
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
+        # rule blocks not yet registered (lazy blocks): base -> own mask.
+        # A node's block is kept here at visit, unless a theory or the
+        # transfer is bound (they read block facts), and registered when a
+        # model violates it (_take_violated), or by escalate.  Sound for the
+        # same reason as parked clauses: a definite answer of a subset of
+        # the clauses is one of the whole set, and an open answer or
+        # CONSISTENT stands only with a model that satisfies every block.
+        self.lazy_blocks: Dict[int, int] = {}
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
@@ -512,7 +520,11 @@ class Session:
                     for k, m in _split(comp.pattern.clauses, want)[3]:
                         if k == k0:
                             own |= m
-            self.solver.register_block(b, own)
+            if _LAZY and not self.theory_bound():
+                self.solver.ensure_vars(b + NPRED - 1)
+                self.lazy_blocks[b] = own
+            else:
+                self.solver.register_block(b, own)
         else:
             self.solver.ensure_vars(b + NPRED - 1)
         # (no cached fact enters a session: the fact cache is a memo of
@@ -728,13 +740,14 @@ class Session:
     @property
     def incomplete(self) -> bool:
         """True while :meth:`escalate` has something left to do."""
-        return bool(self.pending or self.pending_c or self.deferred)
+        return bool(self.pending or self.pending_c or self.deferred or self.lazy_blocks)
 
     def escalate(self, budget: Optional[int] = None) -> None:
         """Compile every parked formula and visit every derived node (full
         instantiation of the cone); ``budget`` as for :meth:`ensure`."""
         if budget is None:
             budget = _UNCAPPED
+        self.register_lazy_blocks()
         added = 0
         while (self.pending or self.pending_c or self.deferred or self.frontier) \
                 and added < budget:
@@ -769,7 +782,7 @@ class Session:
         """True if what :meth:`escalate` would add is only parked pattern
         clauses (``pending_c``) over nodes the session already has: then
         :meth:`decide_lazy` can stand in for it."""
-        return bool(self.pending_c) and not (self.pending or self.deferred or self.frontier)
+        return bool(self.pending_c or self.lazy_blocks) and not (self.pending or self.deferred or self.frontier)
 
     def prepare_lazy(self) -> None:
         """Visit the derived nodes and the frontier as :meth:`escalate`
@@ -783,10 +796,13 @@ class Session:
         self.frontier = deque()
 
     def _take_violated(self) -> bool:
-        """Emit the parked pattern clauses that the model of the solver's
-        last successful solve falsifies and unpark them; False if the model
-        satisfies every parked clause (it is then a model of the escalated
-        clause set too: those clauses are all escalation would add)."""
+        """Register the lazy rule blocks (:attr:`lazy_blocks`) on which the
+        model of the solver's last successful solve has no model of the
+        block, or if there are none, emit the parked pattern clauses that
+        the model falsifies and unpark them; False if the model satisfies
+        every lazy block and every parked clause (it is then a model of the
+        escalated clause set too: those blocks and clauses are all
+        escalation would add)."""
         solver = self.solver
         model = solver._model
         get = model.get
@@ -798,6 +814,33 @@ class Session:
         nment = len(ment)
         tmap = solver._tmap
         found = False
+        if self.lazy_blocks and self.theory_bound():
+            # theories read block facts the search does not see in a
+            # model: register every block before an open answer stands
+            self.register_lazy_blocks()
+            found = True
+        if self.lazy_blocks:
+            # a lazy block whose relevant variables (mentioned, or fixed at
+            # root) carry values no model of the block has is registered
+            models = solver._rbc.models
+            n = NPRED
+            for b in list(self.lazy_blocks):
+                a = 0
+                for i in range(n):
+                    v = b + i
+                    mv = get(v)
+                    if mv is None or (v in tmap and not (v < nment and ment[v])):
+                        continue
+                    a |= 1 << (2 * i + (0 if mv else 1))
+                if a:
+                    for m in models:
+                        if m & a == a:
+                            break
+                    else:
+                        found = True
+                        self.solver.register_block(b, self.lazy_blocks.pop(b))
+        if found:
+            return True
         for node in list(self.pending_c):
             keep = []
             for clauses, bases in self.pending_c[node]:
@@ -821,6 +864,17 @@ class Session:
             else:
                 del self.pending_c[node]
         return found
+
+    def theory_bound(self) -> bool:
+        """Whether a theory (or the transfer of facts between terms) is
+        attached: it reads block facts, so blocks are not kept lazy."""
+        return bool(self.solver._theories) or self.xfer is not None
+
+    def register_lazy_blocks(self) -> None:
+        """Register every lazy rule block (plain escalation)."""
+        while self.lazy_blocks:
+            b, own = self.lazy_blocks.popitem()
+            self.solver.register_block(b, own)
 
     def check_lazy(self, lits) -> Optional[str]:
         """:meth:`Engine._complete_check` after the parked clauses without
@@ -867,7 +921,7 @@ class Session:
             r = self.query_literal(lit, assumptions, search=True)
             if _gave_up(self) or _exhausted(self):
                 break
-            if r is not None or not self.pending_c:
+            if r is not None or not (self.pending_c or self.lazy_blocks):
                 return r
             again = False
             for alts in sides:
@@ -899,6 +953,8 @@ class Session:
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
                       search: bool = True) -> Optional[bool]:
+        if self.lazy_blocks and self.theory_bound():
+            self.register_lazy_blocks()
         if type(lit) is tuple:
             # a derived predicate (query_lit): a disjunction is decided as
             # the negation of the conjunction of the negated literals
@@ -1989,6 +2045,8 @@ class Engine:
         set); ``CONSISTENT`` otherwise.  The session is kept either way:
         what the check left in it is a function of the set."""
         solver = s.solver
+        if s.lazy_blocks and s.theory_bound():
+            s.register_lazy_blocks()
         if s.xfer is not None:
             s.xfer.sync_transfer()
         if not solver.propagate() or solver.implied(lits) is None:
