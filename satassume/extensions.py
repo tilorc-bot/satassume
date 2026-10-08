@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from .epoch import bump as _bump
 from .formula import Formula, Not, P
-from .rules import PRED_INDEX
+from .rules import BASIS_OF, PRED_INDEX
 
 Handler = Callable[..., Any]
 
@@ -80,6 +80,10 @@ class Extensions:
         name = _name(pred)
         if not classes:
             raise TypeError("register() needs at least one argument class")
+        if name in PRED_INDEX and not BASIS_OF[name]:
+            # ``commutative``: true of every term in scope by definition
+            # (rules.DEFINITIONS), with no variable a function could set
+            raise ValueError(f"{name!r} is decided by definition and takes no registered function")
 
         def deco(f: Handler) -> Handler:
             self._handlers.setdefault(name, []).append((classes, f))

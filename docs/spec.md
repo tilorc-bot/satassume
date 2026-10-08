@@ -435,7 +435,7 @@ one `prop == true` record; shapes computed with `Engine._query_cone`,
 | 636 | `Q.algebraic(1 + I)`, `True` | constant, `Engine.is_` | `1 + I` (`add_templates`, 9 rules; `1`, `I` resolved in place) | `(F, F, {})` | `base[1+I]+algebraic` | True |
 | 1326 | `Q.rational(x**y)`, `Q.rational(y) & Q.eq(x, -1)` | `Engine.ask`, part = whole (relational) | `x**y` (`pow_templates`, 57 rules), derived `2*y`, `x - 1`, `x + 1` (`mul`/`add_templates`), `x`, `y`, `-1` (relation side), atom `eq(-1, x)` | `(T, T, {x, y, x**y})` | `base[x**y]+rational` | None |
 | 1875 | `Q.odd(2*x)`, `Q.irrational(x)` | `Engine.ask`, part = whole | `2*x` (`mul_templates`, 41 rules), `x` | `(F, F, {2*x, x})` | `base[2*x]+odd` | False |
-| 2369 | `Q.algebraic(log(x))`, `Q.algebraic(x)` | `Engine.ask`, part = whole | `log(x)` (`log_templates`, a name generated in `templates/functions.py`, + `function_commutative`, 18 rules), derived `x - 1` (`add_templates`), `x` | `(F, F, {log(x), x})` | `base[log(x)]+algebraic` | None |
+| 2369 | `Q.algebraic(log(x))`, `Q.algebraic(x)` | `Engine.ask`, part = whole | `log(x)` (`log_templates`, a name generated in `templates/functions.py`), derived `x - 1` (`add_templates`), `x` | `(F, F, {log(x), x})` | `base[log(x)]+algebraic` | None |
 | 2514 | `Implies(Q.real(x), Q.positive(x))`, `True` | `Engine.ask`, no assumptions | `x` (`symbol_units`) | `(F, F, {x})` | `literal_of(Implies(...))` | None |
 | 2639 | old: `(x**2).is_imaginary` | `Engine.is_` | `x**2` (`pow_templates`, 32 rules), `x` | `(F, F, {x**2, x})` | `base[x**2]+imaginary` | None |
 | 2968 | `Q.integer(x)`, `Q.integer(x)` | `Engine.ask`, part = whole | `x` (`symbol_units`) | `(F, F, {x})` | `base[x]+integer` | True |
@@ -443,6 +443,8 @@ one `prop == true` record; shapes computed with `Engine._query_cone`,
 
 Every record's engine answer equals its recorded value; the heaviest union
 `cone(p) | cone(A)` weighs 7 (record 1326), within budget; every verdict is
-`CONSISTENT`; `structural_commutative` is registered for every class and emits
-at most `commutative(e)` (`None` for `_STRUCTURAL` classes, matrices and
-`Function` nodes with `Expr` arguments, which `function_commutative` covers).
+`CONSISTENT`. (These records predate the removal of `structural_commutative`
+and `function_commutative`: `commutative` is now true by definition,
+`rules.DEFINITIONS`, and has no template; an `Engine` query about a term
+with a non-commutative subterm is None, see design.md, "Non-commutative
+symbols".)
