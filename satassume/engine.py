@@ -88,7 +88,7 @@ from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
 from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
-from .solver import Solver
+from .solver import Solver, _PatProg
 
 Node = Any
 
@@ -420,9 +420,9 @@ class Session:
                 bases[k] = 2 * bb
             _, now, later, ment = _split(pat.clauses, want)
             if later is not None:
-                self.pending_c.setdefault(node, []).append((later, bases))
+                self.pending_c.setdefault(node, []).append((later, bases, pat.node))
             if now:
-                self._emit_pattern(now, bases, ment)
+                self._emit_pattern(now, bases, ment, pat.node)
             for k, preds in pat.child_preds.items():
                 d = demand.get(objs[k])
                 if d is None:
@@ -436,16 +436,31 @@ class Session:
                     self.deferred.append(objs[k])
         table.new_nodes = []
 
-    def _emit_pattern(self, clauses, bases, ment=None) -> None:
+    def _emit_pattern(self, clauses, bases, ment=None, node_k=None) -> None:
         """``bases[k]`` is twice the base variable of slot ``k``; ``ment``
-        the slots' mention masks of ``clauses`` (see :func:`_split`)."""
+        the slots' mention masks of ``clauses`` (see :func:`_split`);
+        ``node_k`` the slot of the node.  The clauses over two or more of
+        the slots up to the node's become a pattern propagator
+        (``Solver.add_propagator``, issue #118); the rest (single-slot
+        clauses, clauses about derived nodes) are added as clauses."""
         if ment is None:
             ment = _split(clauses, None)[3]
         self.nclauses += len(clauses)
         solver = self.solver
         solver.ensure_vars(len(self.table))
-        solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
-                            [(bases[k] >> 1, m) for k, m in ment])
+        r = _PROGS.get(id(clauses))
+        if r is None or r[0] is not clauses:
+            r = _prog_of(clauses, node_k)
+        prog = r[1]
+        if prog is None:
+            solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
+                                [(bases[k] >> 1, m) for k, m in ment])
+            return
+        rest = r[2]
+        solver.mention_blocks([(bases[k] >> 1, m) for k, m in ment])
+        if rest:
+            solver.add_internal([[bases[k] + off for k, off in li] for li in rest], ())
+        solver.add_propagator(prog, bases)
 
     def _compile(self, node: Node, items) -> None:
         """Compile ``(formula, atoms)`` pairs of ``node``; schedule the
@@ -524,14 +539,14 @@ class Session:
         pend_c = self.pending_c.get(node)
         if pend_c:
             keep = []
-            for clauses, bases in pend_c:
+            for clauses, bases, node_k in pend_c:
                 _, now, later, ment = _split(clauses, want)
                 if now:
-                    self._emit_pattern(now, bases, ment)
+                    self._emit_pattern(now, bases, ment, node_k)
                     if later is not None:
-                        keep.append((later, bases))
+                        keep.append((later, bases, node_k))
                 else:
-                    keep.append((clauses, bases))
+                    keep.append((clauses, bases, node_k))
             if keep:
                 self.pending_c[node] = keep
             else:
@@ -603,8 +618,8 @@ class Session:
                 and added < budget:
             if self.pending_c:
                 node, pend = self.pending_c.popitem()
-                for clauses, bases in pend:
-                    self._emit_pattern(clauses, bases)
+                for clauses, bases, node_k in pend:
+                    self._emit_pattern(clauses, bases, None, node_k)
                 added += 1
             elif self.pending:
                 node, formulas = self.pending.popitem()
@@ -1921,6 +1936,29 @@ def neighbourhood(pred) -> frozenset:
 
 
 _SPLIT: dict = {}
+_PROGS: dict = {}
+
+
+def _prog_of(clauses, node_k):
+    """``(clauses, prog, rest)`` for the pattern clauses ``clauses`` (as in
+    :func:`_split`) of a pattern whose node is slot ``node_k``: ``prog``
+    the :class:`~satassume.solver._PatProg` of the clauses over two or more
+    slots, all at most ``node_k`` (None if there are none), ``rest`` the
+    other clauses' ``(slot, offset)`` literal tuples.  Memoized in
+    ``_PROGS`` per clause list (kept alive there, like ``_SPLIT``; a list
+    belongs to one pattern, hence one ``node_k``)."""
+    prop, rest = [], []
+    for _, _, li in clauses:
+        ks = {k for k, _ in li}
+        if node_k is not None and len(ks) > 1 and max(ks) <= node_k:
+            prop.append(li)
+        else:
+            rest.append(li)
+    prog = _PatProg(prop, sorted({k for li in prop for k, _ in li})) if prop else None
+    if len(_PROGS) >= 100_000:
+        _PROGS.clear()
+    r = _PROGS[id(clauses)] = (clauses, prog, rest)
+    return r
 
 
 def _split(clauses, want):
