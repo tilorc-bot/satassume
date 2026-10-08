@@ -82,6 +82,10 @@ def _add_rules(n, consts):
 
     for pred in _ADD_CLOSED:
         rule(lits(A, pred), (N, pred, True))
+    # Extended reals without both +oo and -oo among the terms (not implied
+    # by the other rules for 7 or more terms: rd/semdrop review)
+    for inf in ('positive_infinite', 'negative_infinite'):
+        rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
     if n > MAX_ADD_SMALL:
         rule(lits(A, 'even'), (N, 'even', True))
 
@@ -334,6 +338,8 @@ def _mul_table_rows():
         Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
             when='n even'),
         Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'), when='n odd'),
+        Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'), when='n even'),
+        Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'), when='n odd'),
         Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'), when='n even'),
         Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'), when='n odd'),
         Row('all_odd', [('*', 'odd')], ('N', 'odd')),
@@ -383,6 +389,10 @@ def _mul_table_rows():
                 ('N', 'extended_positive'), when='m even'),
             Row('m_neg.odd', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
                 ('N', 'extended_negative'), when='m odd'),
+            Row('m_nonpos.even', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
+                ('N', 'nonnegative'), when='m even'),
+            Row('m_nonpos.odd', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
+                ('N', 'nonpositive'), when='m odd'),
         ]),
         Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
             Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
