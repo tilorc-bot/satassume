@@ -22,6 +22,8 @@ def basis_formula(atom: P):
     if d is None:
         return atom
     op, ls = d
+    if not ls:                            # ``commutative``: true
+        return TRUE if op == '&' else FALSE
     args = [P(BASIS[l - 1], atom.expr) if l > 0 else Not(P(BASIS[-l - 1], atom.expr)) for l in ls]
     return And(*args) if op == '&' else Or(*args)
 
@@ -287,6 +289,10 @@ def _or_cnf(f: Or, table: VarTable, emit, dv=None) -> List[List[int]]:
             if neg:
                 lits = [-l for l in lits]
                 op = '|' if op == '&' else '&'
+            if not lits:                    # the empty conjunction holds
+                if op == '&':
+                    return []
+                continue
             if op == '|':
                 clause.extend(lits)
             else:

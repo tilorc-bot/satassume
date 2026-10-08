@@ -45,8 +45,9 @@ def _non_total():
     return {repr(e): totality.describe(e, pat, assign, fired) for e, pat, assign, fired in failures}
 
 
-def test_rule_base_has_48_models():
-    assert len(totality.rule_models()) == 48
+def test_rule_base_has_44_models():
+    # the 48 of the full rule base with ``commutative`` true (rules.DEFINITIONS)
+    assert len(totality.rule_models()) == 44
 
 
 def test_every_node_block_is_total_at_depth_1():
@@ -64,30 +65,32 @@ def test_allowlist_entries_are_still_needed():
 
 
 def test_canary_a_non_total_block_is_reported():
-    """The checker itself: a block with the old downward rule of #47 next
-    to an unconditional scalar fact must be reported for a non-commutative
-    argument, and the same block without the downward rule must pass."""
+    """The checker itself: a block with a downward rule (the shape of the
+    old rule of #47, there ``commutative(x*A) -> commutative(A)``) next to
+    an unconditional fact about the node must be reported for an argument
+    the rule does not hold of, and the same block without the downward
+    rule must pass."""
     from sympy import Function, Symbol
 
     from satassume.templates._common import Rules, facts
 
-    A = Symbol('A', commutative=False)
-    node = Function('canary')(A)
+    x = Symbol('x')
+    node = Function('canary')(x)
     models = totality.rule_models()
 
     def block(downward):
         R = Rules()
-        R.rule([], (1, 'extended_real', True))
+        R.rule([], (1, 'extended_positive', True))
         if downward:
-            R.rule([(1, 'commutative', True)], (0, 'commutative', True))
-        return [facts(('canary', downward), lambda: R.rules, {}, (A, node), 1)]
+            R.rule([(1, 'extended_positive', True)], (0, 'extended_positive', True))
+        return [facts(('canary', downward), lambda: R.rules, {}, (x, node), 1)]
 
     r = totality.check_block(node, block(True), models, depth=1)
     assert r is not None
     pat, assign, fired = r
     d = totality.describe(node, pat, assign, fired)
-    assert 'commutative' not in d['assignment']['0']      # the counterexample: A non-commutative
-    assert any('commutative' in c for c in d['fired'])
+    assert 'extended_positive' not in d['assignment']['0']   # the counterexample: x not positive
+    assert any('extended_positive' in c for c in d['fired'])
     assert totality.check_block(node, block(False), models, depth=1) is None
 
 

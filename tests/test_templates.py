@@ -207,7 +207,10 @@ def make_valuation(assignment):
 def check_sound(expr):
     """Check every template formula of ``expr`` against concrete values."""
     facts = registry.facts_for(expr)
-    assert facts, f"no templates fired for {expr!r}"
+    # (``-oo + oo`` is nan: no fact; ``commutative``, the one fact it had,
+    # is true of every term in scope and has no clauses)
+    assert facts or expr is S.NaN or expr.func(*expr.args) is S.NaN, \
+        f"no templates fired for {expr!r}"
     syms = sorted(expr.free_symbols, key=lambda s: s.name)
     pool = pool_for(len(syms))
     failures = []
@@ -339,8 +342,10 @@ def test_constant_units_match_oracle(c):
             assert got == truth, (c, f)
     if c is not nan:
         assert facts
+    # ``commutative`` is true of every term in scope (rules.DEFINITIONS):
+    # no unit for it
     preds = {(f if isinstance(f, P) else f.args[0]).pred for f in facts}
-    assert 'commutative' in preds
+    assert 'commutative' not in preds
 
 
 def _holds(lit, facts):
@@ -387,16 +392,18 @@ def test_symbol_units(cls):
         assert old is None or old is isinstance(f, P), (f, old)
     assert _holds(Not(P('positive_infinite', s)), facts)
     assert _holds(Not(P('antihermitian', s)), facts)
+    # ``commutative`` is not a fact of the templates: true of every term in
+    # scope, and a non-commutative symbol is out of scope (sympy_api)
     plain = cls('t')
-    assert registry.facts_for(plain) == [P('commutative', plain)]
+    assert registry.facts_for(plain) == []
     nc = cls('A', commutative=False)
-    assert Not(P('commutative', nc)) in registry.facts_for(nc)
-    assert _holds(Not(P('real', nc)), registry.facts_for(nc))
+    assert all((f if isinstance(f, P) else f.args[0]).pred != 'commutative'
+               for f in registry.facts_for(nc))
 
 
 def test_wild_units():
-    facts = registry.facts_for(Wild('w'))
-    assert facts == [P('commutative', Wild('w'))]
+    # its one fact, ``commutative``, is true of every term (no clause)
+    assert registry.facts_for(Wild('w')) == []
 
 
 def test_other_leaves_emit_nothing():

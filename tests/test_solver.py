@@ -1073,7 +1073,9 @@ def test_block_models_rule_base_matches_reference():
     from satassume.solver import _block_models
     models = _block_models(RULE_INTERNAL, NPRED)
     assert models == _block_models_reference(RULE_INTERNAL, NPRED)
-    assert len(models) == 48
+    # 44: commutative is no basis variable (true by definition); with it
+    # the 15-variable rule base had 48 (non-complex, non-real objects)
+    assert len(models) == 44
 
 
 def test_block_models_random_blocks_match_reference():
