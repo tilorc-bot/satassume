@@ -2091,13 +2091,6 @@ class Engine:
         self.last_budget_limited = False
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
-        if not contextual:
-            # a predicate true or false by definition (``commutative``,
-            # rules.DEFINITIONS) of a term: decided without a session
-            a = proposition.args[0] if isinstance(proposition, Not) else proposition
-            c = basis_formula(a) if isinstance(a, P) else None
-            if c is TRUE or c is FALSE:
-                return (c is TRUE) != isinstance(proposition, Not)
         if not self._within_budget(proposition, assumptions if contextual else None):
             # whether a set raises is a function of the set alone: one that
             # fits the budget and is INCONSISTENT raises for every query
@@ -2109,6 +2102,15 @@ class Engine:
                     and self.verdict(assumptions) is INCONSISTENT):
                 raise InconsistentAssumptions("inconsistent assumptions")
             return self._over_budget()
+        if not contextual:
+            # a predicate true or false by definition (``commutative``,
+            # rules.DEFINITIONS) of a term: decided without a session,
+            # after the budget test as in is_ (a query over the budget is
+            # None for an atom and its negation alike)
+            a = proposition.args[0] if isinstance(proposition, Not) else proposition
+            c = basis_formula(a) if isinstance(a, P) else None
+            if c is TRUE or c is FALSE:
+                return (c is TRUE) != isinstance(proposition, Not)
         if contextual:
             s, lits = self._context_session(assumptions, proposition)
         else:
