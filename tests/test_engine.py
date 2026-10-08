@@ -106,7 +106,9 @@ def test_case_split_needs_search():
     eng, cache = make()
     # even | odd  ->  integer  requires reasoning by cases
     assert eng.ask(P('integer', 'x'), Or(P('even', 'x'), P('odd', 'x'))) is True
-    assert eng.stats['searches'] >= 1
+    # (the search may be the assumption set's consistency check: the block
+    # clauses it emits for its model, even -> integer, decide this by UP)
+    assert eng.stats['searches'] + eng.stats['set_checks'] >= 1
     # (positive | negative) -> nonzero and real
     assert eng.ask(P('nonzero', 'x'), Or(P('positive', 'x'), P('negative', 'x'))) is True
     assert eng.ask(P('zero', 'x'), Or(P('positive', 'x'), P('negative', 'x'))) is False

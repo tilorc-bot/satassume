@@ -257,6 +257,8 @@ class Session:
         # the clauses is one of the whole set, and an open answer or
         # CONSISTENT stands only with a model that satisfies every block.
         self.lazy_blocks: Dict[int, int] = {}
+        # lazy block base -> number of its clauses emitted as plain clauses
+        self.lazy_part: Dict[int, int] = {}
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
@@ -838,7 +840,24 @@ class Session:
                             break
                     else:
                         found = True
-                        self.solver.register_block(b, self.lazy_blocks.pop(b))
+                        # the block's clauses the model falsifies, as plain
+                        # clauses; the whole block once that grows past
+                        # _BLOCK_CAP clauses (or if none is falsified: the
+                        # assignment only has no extension)
+                        bad = [c for c in RULE_INTERNAL if all((a >> (l ^ 1)) & 1 for l in c)]
+                        k = self.lazy_part.get(b, 0) + len(bad)
+                        if bad and k <= _BLOCK_CAP:
+                            self.lazy_part[b] = k
+                            self.nclauses += len(bad)
+                            b2 = 2 * b
+                            mm = 0
+                            for c in bad:
+                                for l in c:
+                                    mm |= 1 << l
+                            self.solver.add_internal([[b2 + l for l in c] for c in bad], [(b, mm)])
+                        else:
+                            self.lazy_part.pop(b, None)
+                            self.solver.register_block(b, self.lazy_blocks.pop(b))
         if found:
             return True
         for node in list(self.pending_c):
@@ -872,6 +891,7 @@ class Session:
 
     def register_lazy_blocks(self) -> None:
         """Register every lazy rule block (plain escalation)."""
+        self.lazy_part.clear()
         while self.lazy_blocks:
             b, own = self.lazy_blocks.popitem()
             self.solver.register_block(b, own)
@@ -2360,6 +2380,7 @@ _WANT: Dict[frozenset, frozenset] = {}
 
 
 _LAZY = __import__('os').environ.get('SA_NOLAZY') is None
+_BLOCK_CAP = int(__import__('os').environ.get('SA_BCAP', '8'))
 
 
 def _gave_up(s: Session) -> bool:
