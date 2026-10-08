@@ -45,6 +45,7 @@ class TemplateRegistry:
             # compiled patterns are keyed on the template's own key, which
             # a later template may reuse with other rules (#97 P4 review)
             _common._CACHE.clear()
+            _common._SIG.clear()
             # the engines' caches hold facts the old templates derived
             _bump()
             return f

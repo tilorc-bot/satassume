@@ -109,9 +109,15 @@ def const_value(c, pred: str):
 
 
 def _resolve_lit(lit: Lit, consts):
-    c = consts.get(lit[0])
+    c = dict.get(consts, lit[0])
     if c is not None:
-        v = const_value(c, lit[1])
+        i = PRED_INDEX.get(lit[1])
+        if i is None:
+            v = const_value(c, lit[1])
+            if _REC is not None:
+                _REC.raw = True
+        else:
+            v = const_facts(c)[i]
         if v is not None:
             return v is lit[2]
         # A constant decides all it ever will right here (its node would
@@ -252,13 +258,340 @@ MAX_CACHE = 4096
 
 def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int) -> Compiled:
     """The (cached) resolved rules of ``key`` applied to ``objs``; slot
-    ``node`` holds the node itself."""
+    ``node`` holds the node itself.
+
+    A key with constants is also looked up by its *value signature* (see
+    :data:`_SIG`): a pattern compiled for other values of the constants is
+    reused when the new values give the same outcome to everything the
+    compilation read about them."""
     pat = _CACHE.get(key)
     if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node)
+            _SIG.clear()
+        if consts and SIGNATURES and type(consts) is ConstView:
+            pat = _signature_facts(key, gen, consts, node)
+        else:
+            pat = Pattern(resolve(gen(), consts), node)
+        _CACHE[key] = pat
     return Compiled(objs, pat)
+
+
+class ConstView(dict):
+    """The constants of a node by slot, as the template hands them to its
+    rule generator.  While a pattern is compiled for :data:`_SIG`, reading a
+    value outside a table guard (``consts[k]``, ``consts.get(k)``, iterating
+    the values) marks the compilation as value-dependent, so its pattern is
+    kept under the exact key only.  ``k in consts`` (which slots hold
+    constants) is part of the signature key and free to read."""
+    __slots__ = ()
+
+    def __getitem__(self, k):
+        _raw_read()
+        return dict.__getitem__(self, k)
+
+    def get(self, k, default=None):
+        _raw_read()
+        return dict.get(self, k, default)
+
+    def values(self):
+        _raw_read()
+        return dict.values(self)
+
+    def items(self):
+        _raw_read()
+        return dict.items(self)
+
+    def __iter__(self):
+        _raw_read()
+        return dict.__iter__(self)
+
+    def copy(self):
+        _raw_read()
+        return dict.copy(self)
+
+    def __eq__(self, other):
+        _raw_read()
+        return dict.__eq__(self, other)
+
+    def __ne__(self, other):
+        _raw_read()
+        return dict.__ne__(self, other)
+
+    __hash__ = None
+
+    def __or__(self, other):
+        _raw_read()
+        return dict.__or__(self, other)
+
+    def __ror__(self, other):
+        _raw_read()
+        return dict.__ror__(self, other)
+
+    def pop(self, *a):
+        _raw_read()
+        return dict.pop(self, *a)
+
+    def popitem(self):
+        _raw_read()
+        return dict.popitem(self)
+
+    def setdefault(self, *a):
+        _raw_read()
+        return dict.setdefault(self, *a)
+
+
+class _Recorder:
+    """What one compilation read about its constants: ``guards`` the table
+    guard calls ``(guard, name, rest, result)`` whose context holds the
+    :class:`ConstView` under ``name`` (``rest``: the other context items);
+    ``raw`` a value read outside them."""
+    __slots__ = ('view', 'guards', 'results', 'seen', 'raw', 'depth', 'ctxs', 'keep')
+
+    def __init__(self, view):
+        self.view = view
+        self.guards = []
+        self.results = []
+        self.seen = set()
+        self.ctxs = {}
+        self.keep = []
+        self.raw = False
+        self.depth = 0
+
+
+#: the recorder of the compilation in progress (None: not recording)
+_REC = None
+
+
+def _raw_read():
+    rec = _REC
+    if rec is not None and not rec.depth:
+        rec.raw = True
+
+
+def guard(fn, ctx):
+    """``fn(ctx)`` for a table guard; recorded when ``ctx`` holds the
+    constants being compiled (see :data:`_SIG`)."""
+    rec = _REC
+    if rec is None:
+        return fn(ctx)
+    rest = rec.ctxs.get(id(ctx))
+    if rest is None:
+        view = rec.view
+        name = None
+        for k, v in ctx.items():
+            if v is view:
+                name = k
+                break
+        if name is None:
+            rest = ()
+        else:
+            rest = (name, tuple([(k, v) for k, v in ctx.items() if k != name]))
+            try:
+                hash(rest)
+            except TypeError:
+                rec.raw = True      # cannot be keyed: keep the pattern exact
+                rest = ()
+        rec.ctxs[id(ctx)] = rest
+        rec.keep.append(ctx)        # ids stay unique while recording
+    if not rest:
+        return fn(ctx)
+    rec.depth += 1
+    try:
+        r = bool(fn(ctx))
+    finally:
+        rec.depth -= 1
+    tag = (fn, rest)
+    if tag not in rec.seen:
+        rec.seen.add(tag)
+        rec.guards.append(tag)
+        rec.results.append(r)
+    return r
+
+
+#: Patterns by *value signature*.  A compilation is a deterministic
+#: function of the key's parts other than the constant values, the slots
+#: that hold constants, the outcomes of the table guards it evaluated on
+#: the constants (:class:`ConstView` and :func:`guard` record them; a
+#: compilation that read a value any other way is not entered here), and
+#: the values of the constant literals of the generated rules, which is all
+#: ``resolve`` can read (``const_value`` of each).
+#: ``_SIG[skey]`` (``skey``: the key with its constant values abstracted,
+#: :func:`_abstract`) lists *probes* ``(guards, facts, table)``: the reads
+#: of a compilation (the guard calls and the constant literals of its rules)
+#: and ``table[answers] = pattern``, where ``answers`` are the guard
+#: outcomes then the literals' values.  New constants whose answers to
+#: a probe's reads are in its table get that pattern: the compilation would
+#: have read the same things in the same order, with the same results.
+#: Emptied with ``_CACHE``.  Registered with ``satassume.memos.PROCESS``
+#: as ``"epoch"``.
+_SIG: Dict[Any, list] = {}
+#: switch for :data:`_SIG` (False: exact keys only)
+SIGNATURES = True
+
+
+class _Slot:
+    """Stands for a constant value in a signature key."""
+    __slots__ = ()
+
+    def __repr__(self):
+        return '<const>'
+
+
+_SLOT = _Slot()
+
+
+def _abstract(key, ids):
+    """``key`` with each constant value that it holds as ``type(c), c`` (the
+    form of :func:`const_key` and :func:`pattern_key`) replaced by
+    ``_SLOT, _SLOT``; anything else, values derived from a constant
+    included, stays as it is."""
+    if type(key) is not tuple:
+        return key
+    out = []
+    i, n = 0, len(key)
+    while i < n:
+        x = key[i]
+        if i + 1 < n and id(key[i + 1]) in ids and type(key[i + 1]) is x:
+            out += (_SLOT, _SLOT)
+            i += 2
+            continue
+        out.append(_abstract(x, ids) if type(x) is tuple else x)
+        i += 1
+    return tuple(out)
+
+
+def _captures(obj, ids, depth=0) -> bool:
+    """``obj`` is, or holds in a tuple, list or plain dict (to depth 2), one
+    of the objects ``ids``."""
+    if id(obj) in ids:
+        return True
+    if depth < 2:
+        t = type(obj)
+        if t is tuple or t is list:
+            return any(_captures(x, ids, depth + 1) for x in obj)
+        if t is dict:
+            return any(_captures(x, ids, depth + 1) for x in obj.values())
+    return False
+
+
+def _signature_facts(key, gen, consts, node) -> Pattern:
+    global _REC
+    ids = {id(c) for c in dict.values(consts)}
+    skey = _abstract(key, ids)
+    if skey == key or any(_captures(cell.cell_contents, ids)
+                          for cell in getattr(gen, '__closure__', None) or ()):
+        # nothing to share, or the generator holds a constant value itself
+        # (not through the ConstView): exact key only
+        return Pattern(resolve(gen(), consts), node)
+    probes = _SIG.get(skey)
+    classes = None
+    if probes is not None:
+        classes = tuple([const_class(c) for _, c in sorted(dict.items(consts))])
+        for guards, table in probes:
+            pat = table.get((_answers(guards, consts), classes))
+            if pat is not None:
+                return pat
+    rec = _REC = _Recorder(consts)
+    try:
+        pat = Pattern(resolve(gen(), consts), node)
+    finally:
+        _REC = None
+    if not rec.raw:
+        guards = tuple(rec.guards)
+        if classes is None:
+            classes = tuple([const_class(c) for _, c in sorted(dict.items(consts))])
+        answers = (tuple(rec.results), classes)
+        if probes is None:
+            probes = _SIG[skey] = []
+        for g, table in probes:
+            if g == guards:
+                table[answers] = pat
+                break
+        else:
+            probes.append((guards, {answers: pat}))
+    return pat
+
+
+_FAILED = object()
+
+
+def _answers(guards, consts) -> tuple:
+    out = []
+    ctxs = {}
+    for fn, (name, rest) in guards:
+        ctx = ctxs.get(rest)
+        if ctx is None:
+            ctx = ctxs[rest] = dict(rest)
+            ctx[name] = consts
+        try:
+            out.append(bool(fn(ctx)))
+        except Exception:   # noqa: BLE001  (a read the compilation did not make)
+            return (_FAILED,)
+    return tuple(out)
+
+
+def const_class(c):
+    """The *fact class* of a constant: constants of one class have the
+    same ``const_value`` for every predicate.  An integer's facts are fixed
+    by its sign, parity and whether it is 1, a prime or composite; a
+    non-integer rational's by its sign.  Any other constant is its own
+    class (:func:`const_key`).  ``tests/test_value_signatures.py`` checks
+    the claim against SymPy."""
+    k = (type(c), c)
+    cls = _CLASS.get(k)
+    if cls is None:
+        if len(_CLASS) >= _CFACTS_MAX:
+            _CLASS.clear()
+        if c.is_Integer:
+            from sympy.ntheory.primetest import isprime
+            p = c.p
+            cls = ('Z', (p > 0) - (p < 0), p & 1,
+                   0 if p <= 0 else 1 if p == 1 else 2 if isprime(p) else 3)
+        elif c.is_Rational:
+            cls = ('Q', (c.p > 0) - (c.p < 0))
+        else:
+            cls = k
+        _CLASS[k] = cls
+    return cls
+
+
+#: ``const_value`` of every predicate (by ``PRED_INDEX``) for the constants
+#: of a fact class (:func:`const_class`), filled lazily; and the class of a
+#: constant by :func:`const_key`.  Pure functions of their keys.
+#: Registered with ``satassume.memos.PROCESS``.
+_CFACTS: Dict[Any, Any] = {}
+_CLASS: Dict[Any, Any] = {}
+_CFACTS_MAX = 4096
+_UNKNOWN = object()
+
+
+def const_facts(c):
+    """``const_value(c, pred)`` by predicate index (``const_facts(c)[i]``),
+    shared by the constants of a fact class (:func:`const_class`) and
+    computed on first use of each entry."""
+    cls = const_class(c)
+    fv = _CFACTS.get(cls)
+    if fv is None:
+        if len(_CFACTS) >= _CFACTS_MAX:
+            _CFACTS.clear()
+        fv = _CFACTS[cls] = _Facts(c)
+    return fv
+
+
+class _Facts:
+    """``const_value(c, PREDICATES[i])`` as ``self[i]``, memoized."""
+    __slots__ = ('c', 'v')
+
+    def __init__(self, c):
+        self.c = c
+        self.v = [_UNKNOWN] * NPRED
+
+    def __getitem__(self, i):
+        v = self.v[i]
+        if v is _UNKNOWN:
+            v = self.v[i] = const_value(self.c, PREDICATES[i])
+        return v
 
 
 def units(key, gen: Callable[[], list], obj) -> Compiled:
@@ -283,9 +616,9 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
     return Compiled((obj,), pat)
 
 
-def consts_of(args) -> Dict[int, Any]:
-    return {k: a for k, a in enumerate(args) if a.is_Atom and a.is_number}
+def consts_of(args) -> ConstView:
+    return ConstView([(k, a) for k, a in enumerate(args) if a.is_Atom and a.is_number])
 
 
 def pattern_key(tag, n: int, consts: Dict[int, Any]):
-    return (tag, n, tuple((k, type(c), c) for k, c in sorted(consts.items())))
+    return (tag, n, tuple((k, type(c), c) for k, c in sorted(dict.items(consts))))

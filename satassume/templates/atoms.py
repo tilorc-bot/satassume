@@ -23,7 +23,8 @@ from sympy.core.numbers import ComplexInfinity, ImaginaryUnit, Number, NumberSym
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 
-from ._common import VOCAB, const_key, const_value, units
+from ._common import VOCAB, const_facts, const_key, units
+from ..rules import PRED_INDEX
 from .registry import registry
 from ..memos import PROCESS as _PROCESS
 
@@ -52,8 +53,9 @@ def symbol_units(expr):
 def constant_units(expr):
     def gen():
         out = []
+        facts = const_facts(expr)
         for pred in _CONST_BASIS:
-            value = const_value(expr, pred)
+            value = facts[PRED_INDEX[pred]]
             if value is not None:
                 out.append((pred, value))
         return out

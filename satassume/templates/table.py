@@ -33,7 +33,7 @@ from collections.abc import Callable, Iterator
 from itertools import combinations
 from typing import Any
 
-from ._common import SIGN_FLIP, Rules, ge2_alternatives, lits
+from ._common import SIGN_FLIP, Rules, ge2_alternatives, guard, lits
 
 __all__ = ['Row', 'Section', 'Sub', 'count_rows', 'expand', 'iter_rows', 'rules_of']
 
@@ -113,7 +113,7 @@ class Sub:
 
 def _holds(when, guards, ctx) -> bool:
     for g in when:
-        if not guards[g](ctx):
+        if not guard(guards[g], ctx):
             return False
     return True
 
