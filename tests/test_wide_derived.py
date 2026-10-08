@@ -201,3 +201,18 @@ def test_wide_derived_or_against_or_is_fast(pk, ak):
     ask(_SHAPES[pk](Q.nonnegative, ys), _SHAPES[ak](Q.positive, ys))
     ask(_SHAPES[pk](Q.nonzero, ys), _SHAPES[ak](Q.nonzero, ys))
     assert time.perf_counter() - t < 2.0
+
+
+@pytest.mark.parametrize("pred", ["positive", "negative", "nonnegative", "nonpositive", "real"])
+def test_many_negated_conjunctions_keep_their_meaning(pred):
+    """A set with many negated conjunctive atoms asserts each through its
+    shared literal (``Session.dvar(atom, negunit)``): the literal must
+    carry definition -> literal, or ``~positive(x)`` would assert nothing."""
+    xs = symbols("x0:10")
+    P_ = getattr(Q, pred)
+    negs = And(*[Not(P_(x)) for x in xs])
+    assert ask(P_(xs[0]), negs) is False
+    assert ask(Not(P_(xs[3])), negs) is True
+    if pred == "positive":
+        assert ask(Q.finite(xs[0]), And(negs, Q.extended_positive(xs[0]))) is False
+        assert ask(Q.infinite(xs[1]), And(negs, Q.extended_positive(xs[1]))) is True
