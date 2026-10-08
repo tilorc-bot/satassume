@@ -356,7 +356,7 @@ from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
 from .formula import And, Not, P, atoms_of
-from .rules import NPRED, PRED_INDEX
+from .rules import BASIS_INDEX, NPRED, PRED_INDEX
 from .constfield import Undecided, sign
 from .theory import EqualitySharing
 from .memos import PROCESS as _PROCESS
@@ -658,9 +658,9 @@ def _number_basis(engine, c, facts=False) -> tuple:
     r = memo.get(c)
     if r is not None:
         return r[1] if facts else r[0]
-    from .rules import PREDICATES, RULE_INSTANTIATED, closure_mask, lit_bit, lits_mask
+    from .rules import BASIS, RULE_INSTANTIATED, closure_mask, lit_bit, lits_mask
     decided, open_ = [], []
-    for k, v in enumerate(engine.is_many(c, PREDICATES)):
+    for k, v in enumerate(engine.is_many(c, BASIS)):
         if v is None:
             open_.append(k)
         else:
@@ -1792,7 +1792,7 @@ class Relations:
         part = self._xpart
         ad = self._xadapter
         solver, th = s.solver, self.xfer
-        polar = PRED_INDEX["polar"]
+        polar = BASIS_INDEX["polar"]
         changed = True
         while changed and pend:
             changed = False

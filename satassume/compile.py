@@ -10,6 +10,23 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Sequence
 
 from .formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
+from .rules import BASIS, DEF_LITS as _DEF_LITS
+
+
+def basis_formula(atom: P):
+    """The atom of a derived predicate as its definition over basis atoms
+    of the same node (``And``/``Or`` of basis atoms and their negations);
+    a basis or custom atom itself."""
+    d = _DEF_LITS.get(atom.pred)
+    if d is None:
+        return atom
+    op, ls = d
+    args = [P(BASIS[l - 1], atom.expr) if l > 0 else Not(P(BASIS[-l - 1], atom.expr)) for l in ls]
+    return And(*args) if op == '&' else Or(*args)
+
+
+def _derived(f) -> bool:
+    return isinstance(f, P) and f.pred in _DEF_LITS
 
 
 class VarTable:
@@ -34,10 +51,10 @@ class VarTable:
     """
 
     def __init__(self):
-        from .rules import PREDICATES, PRED_INDEX
-        self._preds = PREDICATES
-        self._pidx = PRED_INDEX
-        self._npred = len(PREDICATES)
+        from .rules import BASIS, BASIS_INDEX
+        self._preds = BASIS
+        self._pidx = BASIS_INDEX
+        self._npred = len(BASIS)
         self.base_of: Dict[Any, int] = {}
         self.slots: List[Any] = [None]
         self.new_nodes: List[Any] = []
@@ -55,8 +72,12 @@ class VarTable:
         return b
 
     def var(self, atom: P) -> int:
+        """The variable of a basis or custom atom (a derived predicate has
+        no variable of its own: see :func:`basis_formula`)."""
         idx = self._pidx.get(atom.pred)
         if idx is None:
+            if atom.pred in _DEF_LITS:
+                raise ValueError(f"derived predicate {atom.pred!r} has no variable")
             v = self.custom.get(atom)
             if v is None:
                 v = self.custom[atom] = len(self.slots)
@@ -102,18 +123,23 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None]) -> No
         emit([])
         return
     if isinstance(f, P):
-        emit([table.var(f)])
+        if f.pred in _DEF_LITS:
+            compile_formula(basis_formula(f), table, emit)
+        else:
+            emit([table.var(f)])
         return
     if isinstance(f, Not) and isinstance(f.args[0], P):
-        emit([-table.var(f.args[0])])
+        if f.args[0].pred in _DEF_LITS:
+            compile_formula(Not(basis_formula(f.args[0])), table, emit)
+        else:
+            emit([-table.var(f.args[0])])
         return
     if isinstance(f, And):
         for a in f.args:
             compile_formula(a, table, emit)
         return
     if isinstance(f, Or):
-        clause = _flat_or(f, table, emit)
-        if clause is not None:
+        for clause in _or_cnf(f, table, emit):
             emit(clause)
         return
     if isinstance(f, Implies):
@@ -130,10 +156,10 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None]) -> No
             compile_formula(Implies(args[i + 1], args[i]), table, emit)
         return
     if isinstance(f, Exclusive):
-        lits = [_literal(a, table, emit) for a in f.args]
-        for i in range(len(lits)):
-            for j in range(i + 1, len(lits)):
-                emit([-lits[i], -lits[j]])
+        args = f.args
+        for i in range(len(args)):
+            for j in range(i + 1, len(args)):
+                compile_formula(Or(Not(args[i]), Not(args[j])), table, emit)
         return
     if isinstance(f, Not):
         inner = f.args[0]
@@ -153,21 +179,48 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None]) -> No
     raise TypeError(f"cannot compile {f!r}")
 
 
-def _flat_or(f: Or, table: VarTable, emit) -> List[int] | None:
+def _or_cnf(f: Or, table: VarTable, emit) -> List[List[int]]:
+    """``f`` as clauses: one clause, except that a derived atom whose
+    definition is a conjunction (``real``: ``extended_real & finite``), or
+    the negation of one whose definition is a disjunction, splits it (an
+    empty list: ``f`` holds)."""
     clause: List[int] = []
+    parts: List[List[int]] = []       # conjunctions distributed over ``clause``
     for a in f.args:
         if a is TRUE:
-            return None
+            return []
         if a is FALSE:
             continue
         if isinstance(a, Or):
-            sub = _flat_or(a, table, emit)
-            if sub is None:
-                return None
-            clause.extend(sub)
-        else:
-            clause.append(_literal(a, table, emit))
-    return clause
+            sub = _or_cnf(a, table, emit)
+            if not sub:
+                return []
+            if len(sub) == 1:
+                clause.extend(sub[0])
+                continue
+            parts.append(sub)
+            continue
+        g = a
+        neg = False
+        if isinstance(a, Not) and _derived(a.args[0]):
+            g, neg = a.args[0], True
+        if _derived(g):
+            op, ls = _DEF_LITS[g.pred]
+            b = table.node_base(g.expr)
+            lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
+            if neg:
+                lits = [-l for l in lits]
+                op = '|' if op == '&' else '&'
+            if op == '|':
+                clause.extend(lits)
+            else:
+                parts.append([[l] for l in lits])
+            continue
+        clause.append(_literal(a, table, emit))
+    out = [clause]
+    for part in parts:
+        out = [c + d for c in out for d in part]
+    return out
 
 
 def formula_literal(f, table: VarTable, emit) -> int:
@@ -178,10 +231,14 @@ def formula_literal(f, table: VarTable, emit) -> int:
 def _literal(f, table: VarTable, emit) -> int:
     """Return a literal equivalent to ``f``, introducing Tseitin variables as needed."""
     if isinstance(f, P):
+        if f.pred in _DEF_LITS:
+            return _literal(basis_formula(f), table, emit)
         return table.var(f)
     if isinstance(f, Not):
         inner = f.args[0]
         if isinstance(inner, P):
+            if inner.pred in _DEF_LITS:
+                return -_literal(basis_formula(inner), table, emit)
             return -table.var(inner)
         return -_literal(inner, table, emit)
     if isinstance(f, Implies):
