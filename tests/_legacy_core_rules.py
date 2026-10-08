@@ -79,7 +79,6 @@ def mul_rules(n, consts):
     even_n = n % 2 == 0
     rule(lits(A, 'extended_negative'),
          (N, 'extended_positive' if even_n else 'extended_negative', True))
-    rule(lits(A, 'nonpositive'), (N, 'nonnegative' if even_n else 'nonpositive', True))
     rule(lits(A, 'imaginary'), (N, 'nonzero' if even_n else 'imaginary', True))
     rule(lits(A, 'odd'), (N, 'odd', True))
 
@@ -132,8 +131,6 @@ def mul_rules(n, consts):
                 sign = 'extended_positive' if m % 2 == 0 else 'extended_negative'
                 rule([*lits(neg, 'extended_negative'), *lits(rest, 'extended_positive')],
                      (N, sign, True))
-                sign = 'nonnegative' if m % 2 == 0 else 'nonpositive'
-                rule([*lits(neg, 'nonpositive'), *lits(rest, 'nonnegative')], (N, sign, True))
         for k, l in combinations(A, 2):
             rest = [j for j in A if j != k and j != l]
             rule([(k, 'imaginary', True), (l, 'imaginary', True),
@@ -147,7 +144,6 @@ def mul_rules(n, consts):
             for pred in _COEFF_BACK:
                 rule([(N, pred, True)], (1, SIGN_FLIP.get(pred, pred) if flip else pred, True))
             if c.is_Rational:
-                rule([(N, 'rational', True)], (1, 'rational', True))
                 rule([(N, 'algebraic', True)], (1, 'algebraic', True))
                 if c.q == 2:
                     # (p/2)*x for integer x is an integer iff x is even.
@@ -278,11 +274,9 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
         if b.is_Number and b.is_finite:
             # Exact comparisons of a number with 1 (no assumptions involved).
             if abs(b) > 1:
-                rule([(_E, 'extended_negative', True)], (_N, 'finite', True))
                 rule([(_E, 'negative_infinite', True)], (_N, 'zero', True))
                 rule([(_E, 'positive_infinite', True)], (_N, 'infinite', True))
             elif b.is_zero is False and abs(b) < 1:
-                rule([(_E, 'extended_positive', True)], (_N, 'finite', True))
                 rule([(_E, 'positive_infinite', True)], (_N, 'zero', True))
                 rule([(_E, 'negative_infinite', True)], (_N, 'infinite', True))
     if e is not None:

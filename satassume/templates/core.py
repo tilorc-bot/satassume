@@ -82,9 +82,6 @@ def _add_rules(n, consts):
 
     for pred in _ADD_CLOSED:
         rule(lits(A, pred), (N, pred, True))
-    # Extended reals without both +oo and -oo among the terms.
-    for inf in ('positive_infinite', 'negative_infinite'):
-        rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
     if n > MAX_ADD_SMALL:
         rule(lits(A, 'even'), (N, 'even', True))
 
@@ -105,8 +102,6 @@ def _add_rules(n, consts):
         # One strictly signed term among same-signed terms.
         for strict, nonstrict in _STRICT:
             rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
-        # Imaginary term plus finite reals is not real.
-        rule([(k, 'imaginary', True), *lits(rest, 'real')], (N, 'extended_real', False))
         # An extended-real sum whose other terms are finite reals has an
         # extended-real term k: with r = rest real, k = oo or -oo gives
         # N = k, a finite real k gives N real, and a k that is not extended
@@ -339,8 +334,6 @@ def _mul_table_rows():
         Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
             when='n even'),
         Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'), when='n odd'),
-        Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'), when='n even'),
-        Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'), when='n odd'),
         Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'), when='n even'),
         Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'), when='n odd'),
         Row('all_odd', [('*', 'odd')], ('N', 'odd')),
@@ -390,10 +383,6 @@ def _mul_table_rows():
                 ('N', 'extended_positive'), when='m even'),
             Row('m_neg.odd', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
                 ('N', 'extended_negative'), when='m odd'),
-            Row('m_nonpos.even', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonnegative'), when='m even'),
-            Row('m_nonpos.odd', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonpositive'), when='m odd'),
         ]),
         Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
             Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
@@ -404,7 +393,6 @@ def _mul_table_rows():
             preds=_COEFF_BACK),
         Row('coeff.back.flip', [('N', '$p')], (1, 'flip:$p'), when=('coeff', 'c negative'),
             preds=_COEFF_BACK),
-        Row('coeff.rational', [('N', 'rational')], (1, 'rational'), when=('coeff', 'c rational')),
         Row('coeff.algebraic', [('N', 'algebraic')], (1, 'algebraic'),
             when=('coeff', 'c rational')),
         # (p/2)*x for integer x is an integer iff x is even.
@@ -475,7 +463,6 @@ _B, _E, _N = 0, 1, 2
 _POW_RULES = (
     # --- sign ---
     (((_B, 'positive'), (_E, 'real')), (_N, 'positive')),
-    (((_B, 'extended_positive'), (_E, 'positive')), (_N, 'extended_positive')),
     # A finite exponent: 1**oo and 1**-oo are nan.
     (((_B, 'extended_positive'), (_E, 'real')), (_N, 'extended_nonnegative')),
     (((_B, 'extended_nonnegative'), (_E, 'nonnegative')), (_N, 'extended_nonnegative')),
@@ -488,10 +475,8 @@ _POW_RULES = (
     (((_B, 'extended_negative'), (_E, 'odd')), (_N, 'extended_nonpositive')),
     (((_B, 'extended_nonpositive'), (_E, 'odd')), (_N, 'extended_positive', False)),
     (((_N, 'positive'), (_B, 'real'), (_E, 'odd')), (_B, 'positive')),
-    (((_N, 'negative'), (_B, 'real'), (_E, 'odd')), (_B, 'negative')),
     # --- zero base, zero exponent (b**0 == 1, also for zoo and nan) ---
     (((_B, 'zero'), (_E, 'extended_positive')), (_N, 'zero')),
-    (((_B, 'zero'), (_E, 'extended_nonpositive')), (_N, 'zero', False)),
     (((_B, 'zero'), (_E, 'extended_negative')), (_N, 'infinite')),
     (((_E, 'zero'),), (_N, 'positive')),
     # SymPy leaves ``oo**0.0`` unevaluated and calls it non-integer.
@@ -512,27 +497,22 @@ _POW_RULES = (
     (((_B, 'odd'), (_E, 'integer'), (_E, 'nonnegative')), (_N, 'odd')),
     (((_B, 'rational'), (_B, 'integer', False), (_E, 'rational'), (_E, 'positive')),
      (_N, 'integer', False)),
-    (((_B, 'rational'), (_E, 'integer'), (_E, 'nonnegative')), (_N, 'rational')),
     (((_B, 'rational'), (_E, 'integer'), (_B, 'zero', False)), (_N, 'rational')),
     # --- extended real / imaginary ---
     (((_B, 'extended_nonzero'), (_E, 'integer')), (_N, 'extended_real')),
     (((_B, 'extended_real'), (_E, 'integer'), (_E, 'nonnegative')), (_N, 'extended_real')),
     (((_B, 'negative'), (_E, 'real'), (_E, 'integer', False)), (_N, 'extended_real', False)),
-    (((_B, 'extended_real'), (_E, 'integer')), (_N, 'imaginary', False)),
     (((_B, 'extended_real'), (_E, 'extended_real'), (_E, 'rational', False)),
      (_N, 'imaginary', False)),
-    (((_B, 'positive'), (_E, 'extended_real')), (_N, 'imaginary', False)),
     (((_B, 'imaginary'), (_E, 'even')), (_N, 'nonzero')),
     (((_B, 'imaginary'), (_E, 'odd')), (_N, 'imaginary')),
     # --- complex ---
     (((_B, 'complex'), (_E, 'complex'), (_B, 'zero', False)), (_N, 'complex')),
-    (((_B, 'complex'), (_E, 'complex'), (_E, 'nonnegative')), (_N, 'complex')),
     # --- prime ---
     (((_B, 'integer'), (_E, 'prime')), (_N, 'prime', False)),
     (((_B, 'integer'), (_E, 'even'), (_E, 'positive')), (_N, 'prime', False)),
     # --- algebraic ---
     (((_B, 'algebraic'), (_E, 'rational'), (_B, 'zero', False)), (_N, 'algebraic')),
-    (((_B, 'algebraic'), (_E, 'rational'), (_E, 'positive')), (_N, 'algebraic')),
     (((_B, 'transcendental'), (_E, 'rational'), (_E, 'zero', False)), (_N, 'algebraic', False)),
     # --- polar / commutative ---
     (((_B, 'polar'),), (_N, 'polar')),
@@ -547,7 +527,6 @@ _POW_E_RULES = (
     (((_E, 'extended_real'),), (_N, 'extended_nonnegative')),
     (((_E, 'real'),), (_N, 'positive')),
     (((_E, 'complex'),), (_N, 'complex')),
-    (((_E, 'extended_negative'),), (_N, 'complex')),
     (((_E, 'finite'),), (_N, 'finite')),
     (((_E, 'finite'),), (_N, 'zero', False)),
     (((_E, 'algebraic'), (_E, 'zero', False)), (_N, 'transcendental')),
@@ -790,14 +769,10 @@ def _pow_table_rows():
         Row('b=algebraic.gs', [('E', 'algebraic')], [('N', 'algebraic'), ('E', 'rational')],
             kind='equiv', when='b algebraic, not 0 or 1'),
         # Exact comparisons of a number with 1 (no assumptions involved).
-        Row('|b|>1.finite', [('E', 'extended_negative')], ('N', 'finite'),
-            when='b finite number, |b|>1'),
         Row('|b|>1.zero', [('E', 'negative_infinite')], ('N', 'zero'),
             when='b finite number, |b|>1'),
         Row('|b|>1.infinite', [('E', 'positive_infinite')], ('N', 'infinite'),
             when='b finite number, |b|>1'),
-        Row('|b|<1.finite', [('E', 'extended_positive')], ('N', 'finite'),
-            when='b finite number, 0<|b|<1'),
         Row('|b|<1.zero', [('E', 'positive_infinite')], ('N', 'zero'),
             when='b finite number, 0<|b|<1'),
         # Disagrees with SymPy for negative b ((-1/2)**(-oo) == nan); kept as is pending
