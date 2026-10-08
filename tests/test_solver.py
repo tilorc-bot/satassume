@@ -702,15 +702,15 @@ def test_rule_block_random_search_like_clauses():
 def test_rule_block_with_held_levels():
     """Held levels over registered blocks: clauses added while held,
     queries answered from the held levels, search continuing from them."""
-    link = [[1 + 5, -(NPRED + 1 + 7)]]
+    link = [[1 + 4, -(NPRED + 1 + 3)]]
     p, c = _block_pair(RULE_INTERNAL, NPRED, [1, NPRED + 1], link)
-    A = [1 + 2]
-    ment = {1 + 5, NPRED + 1 + 7, 1 + 2}
+    A = [1 + 10]
+    ment = {1 + 4, NPRED + 1 + 3, 1 + 10}
     _implied_agrees(p, c, A, ment)
     assert p._held is not None
-    p.add_clause([-(1 + 2), NPRED + 1 + 20])
-    c.add_clause([-(1 + 2), NPRED + 1 + 20])
-    ment.add(NPRED + 1 + 20)
+    p.add_clause([-(1 + 10), NPRED + 1 + 6])
+    c.add_clause([-(1 + 10), NPRED + 1 + 6])
+    ment.add(NPRED + 1 + 6)
     assert p._held is not None                      # attached while held
     _implied_agrees(p, c, A, ment)
     # a variable implied at the held level becomes mentioned: written there
@@ -723,7 +723,7 @@ def test_rule_block_with_held_levels():
     _implied_agrees(p, c, A, ment)
     for y in range(1, 2 * NPRED + 1):
         assert p.entails(y, A) == c.entails(y, A)
-    assert p.solve(A + [-(NPRED + 1 + 30)]) == c.solve(A + [-(NPRED + 1 + 30)])
+    assert p.solve(A + [-(NPRED + 1 + 14)]) == c.solve(A + [-(NPRED + 1 + 14)])
 
 
 def test_register_block_while_levels_are_held():

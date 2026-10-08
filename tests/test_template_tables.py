@@ -207,7 +207,7 @@ def test_table_sizes_and_names():
 def test_provenance_covers_every_table_clause():
     """Every clause of a Mul/Pow table block is named by some row
     (``core.table_provenance``, used by ``tools/totality.py``)."""
-    from satassume.rules import PREDICATES
+    from satassume.rules import BASIS
     missing = []
     for e in _subexprs(totality.load_exprs()):
         if not isinstance(e, (Mul, Pow)):
@@ -218,7 +218,7 @@ def test_provenance_covers_every_table_clause():
         compiled, _ = registry.clauses_for(e)
         for c in compiled:
             for lits, _, _ in c.pattern.clauses:
-                cl = frozenset((c.objs[k], PREDICATES[i], not neg) for k, i, neg in lits)
+                cl = frozenset((c.objs[k], BASIS[i], not neg) for k, i, neg in lits)
                 if cl not in prov:
                     missing.append((e, cl))
     assert not missing, missing[:5]

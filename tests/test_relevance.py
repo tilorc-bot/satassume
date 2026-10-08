@@ -342,15 +342,16 @@ def test_unkeyed_constants_are_decided(c):
     sympy_api): the engine's context-free clauses of every form of ``K``
     fix every predicate of its block except ``polar``."""
     from satassume.engine import Session
-    from satassume.rules import PREDICATES, PRED_INDEX
+    from satassume.rules import BASIS, BASIS_INDEX
     assert api._const_free(c)
     s = Session(Engine())
     s.ensure(c)
     s.escalate(10**6)
     assert s.solver.propagate()
     b = s.base[c]
-    open_ = [p for p in PREDICATES
-             if p != "polar" and s.solver.value(b + PRED_INDEX[p]) is None]
+    # the derived predicates are functions of the basis
+    open_ = [p for p in BASIS
+             if p != "polar" and s.solver.value(b + BASIS_INDEX[p]) is None]
     assert not open_
 
 

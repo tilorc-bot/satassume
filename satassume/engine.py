@@ -85,7 +85,7 @@ from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
-from .rules import NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL
+from .rules import BASIS_INDEX, BASIS_OF, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL, basis_lits
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .solver import Solver
@@ -266,6 +266,7 @@ class Session:
         self.verdict: Optional[str] = None
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
+        self.defvars: Dict[Any, int] = {}     # (derived predicate, node) -> its variable
         self.assumption_formula = None       # the formula of assume_formula()
         self._a_raw = ()                     # its atoms (atoms_of)
         self._a_zs = ()                      # their zero_args
@@ -314,7 +315,31 @@ class Session:
             self.relations = Relations(self, engine._relation_specs)
 
     def var(self, pred: str, node: Node) -> int:
-        return self.node(node) + PRED_INDEX[pred]
+        """The variable of ``pred(node)``: the node's block variable of a
+        basis predicate; for a derived predicate (``rules.DEFINITIONS``)
+        its definitional variable, allocated with the clauses of its
+        definition the first time it is asked for."""
+        i = BASIS_INDEX.get(pred)
+        if i is not None:
+            return self.node(node) + i
+        key = (pred, node)
+        v = self.defvars.get(key)
+        if v is None:
+            b = self.node(node)
+            op, ls = basis_lits(pred)
+            lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
+            v = self.defvars[key] = self.table.aux()
+            self.solver.ensure_vars(v)
+            emit = self._emit
+            if op == '&':
+                for l in lits:
+                    emit([-v, l])
+                emit([v] + [-l for l in lits])
+            else:
+                for l in lits:
+                    emit([-l, v])
+                emit([-v] + lits)
+        return v
 
     def _emit(self, clause: List[int]) -> None:
         self.nclauses += 1
@@ -466,7 +491,7 @@ class Session:
                     d = demand.get(atom.expr)
                     if d is None:
                         d = demand[atom.expr] = set()
-                    d.add(PRED_INDEX[atom.pred])
+                    d.update(BASIS_OF[atom.pred])
             compile_formula(f, table, emit)
         self._flush(node)
 
@@ -543,7 +568,7 @@ class Session:
         for item in pend:
             f, atoms = item
             for a in atoms:
-                if a.expr == node and PRED_INDEX.get(a.pred) in want:
+                if a.expr == node and not BASIS_OF.get(a.pred, _NO_BASIS).isdisjoint(want):
                     now.append(item)
                     break
             else:
@@ -563,7 +588,9 @@ class Session:
         A visited node with nothing parked is only recorded (the discovery
         below would skip it at once)."""
         if demanded is not None:
-            self.demand.setdefault(node, set()).update(PRED_INDEX[p] for p in demanded)
+            d = self.demand.setdefault(node, set())
+            for p in demanded:
+                d.update(BASIS_OF[p])
         if node in self.base and node not in self.pending and node not in self.pending_c:
             if self.frontier:
                 self.frontier = deque()
@@ -1720,7 +1747,7 @@ class Engine:
         self.stats["queries"] += 1
         s = self._fresh_session()
         s.ensure(node, {pred})
-        r = self._decide(s, s.base[node] + PRED_INDEX[pred])
+        r = self._decide(s, s.var(pred, node))
         self._put_result(s, self.cache, node, pred, r)
         return r
 
@@ -1765,11 +1792,10 @@ class Engine:
         self.stats["queries"] += len(todo)
         s = self._fresh_session()
         s.ensure(node, {preds[k] for k in todo})
-        base = s.base[node]
         cache = self.cache
         for k in todo:
             pred = preds[k]
-            r = out[k] = self._decide(s, base + PRED_INDEX[pred])
+            r = out[k] = self._decide(s, s.var(pred, node))
             self._put_result(s, cache, node, pred, r)
         return out
 
@@ -1937,7 +1963,7 @@ class Engine:
                 s._flush()
             if s.relations is not None:
                 s._relations(proposition)
-            return s.base[proposition.expr] + PRED_INDEX[proposition.pred]
+            return s.var(proposition.pred, proposition.expr)
         return s.literal_of(proposition)
 
 
@@ -1958,6 +1984,7 @@ def zero_glue(f) -> bool:
 # --------------------------------------------------------------------------
 
 _NEIGH: Dict[int, frozenset] = {}
+_NO_BASIS: frozenset = frozenset()
 _WANT: Dict[frozenset, frozenset] = {}
 
 
@@ -1981,7 +2008,12 @@ def _exhausted(s: Session) -> bool:
 def neighbourhood(pred) -> frozenset:
     """``pred`` (a name or index) plus every predicate sharing a rule
     clause with it, as indices."""
-    i = PRED_INDEX[pred] if isinstance(pred, str) else pred
+    if isinstance(pred, str):
+        acc = set()
+        for i in BASIS_OF[pred]:
+            acc.update(neighbourhood(i))
+        return frozenset(acc)
+    i = pred
     n = _NEIGH.get(i)
     if n is None:
         acc = {i}
@@ -2026,13 +2058,13 @@ def _split(clauses, want):
 
 
 def want_of(demanded) -> frozenset:
-    """Union of the neighbourhoods of the demanded predicate indices."""
+    """The demanded basis predicate indices, as the set a pattern clause
+    must mention to be emitted before escalation.  (The union of their
+    rule-base neighbourhoods, which the 33-predicate rule base used, is
+    most of the basis: :func:`neighbourhood`.)"""
     key = frozenset(demanded)
     w = _WANT.get(key)
     if w is None:
-        acc = set()
-        for i in key:
-            acc.update(neighbourhood(i))
-        w = _WANT[key] = frozenset(acc)
+        w = _WANT[key] = key
     return w
 

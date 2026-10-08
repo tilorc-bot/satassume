@@ -58,7 +58,7 @@ import json
 import pickle
 import time
 
-from satassume.rules import NPRED, PREDICATES, PRED_INDEX, RULE_CLAUSES
+from satassume.rules import NPRED, BASIS, BASIS_INDEX, RULE_CLAUSES
 from satassume.solver import Solver
 
 
@@ -80,7 +80,7 @@ def rule_models():
 
 
 def _describe(true):
-    return " ".join(sorted(PREDICATES[i] for i in true))
+    return " ".join(sorted(BASIS[i] for i in true))
 
 
 _NUMBER_ENGINE = None
@@ -96,10 +96,10 @@ def number_units(k, o):
         from satassume import Engine
         _NUMBER_ENGINE = Engine()
     out = []
-    for pred in PREDICATES:
+    for pred in BASIS:
         v = _NUMBER_ENGINE.is_(o, pred)
         if v is not None:
-            out.append(((k, PRED_INDEX[pred], not v),))
+            out.append(((k, BASIS_INDEX[pred], not v),))
     return out
 
 
@@ -220,7 +220,7 @@ def check_pattern(pat, models, extra=()):
 def clause_str(lits, node):
     def name(k):
         return "N" if k == node else f"s{k}"
-    return " | ".join(("~" if neg else "") + f"{PREDICATES[i]}({name(k)})" for k, i, neg in lits)
+    return " | ".join(("~" if neg else "") + f"{BASIS[i]}({name(k)})" for k, i, neg in lits)
 
 
 def collect_patterns(exprs):
@@ -421,7 +421,7 @@ def fired_rows(e, pat, fired):
         prov.setdefault(clause, []).append(name)
     out = []
     for lits, _, _ in fired:
-        cl = frozenset((pat.objs[k], PREDICATES[i], not neg) for k, i, neg in lits)
+        cl = frozenset((pat.objs[k], BASIS[i], not neg) for k, i, neg in lits)
         out.append(sorted(set(prov.get(cl, ()))))
     return out
 
@@ -449,7 +449,7 @@ def table_text():
 def describe(e, pat, assign, fired):
     """One failure as a JSON-friendly dict (used by ``--json`` and the test)."""
     return {"expr": repr(e), "type": type(e).__name__, "node": pat.node, "slots": list(pat.used),
-            "assignment": {str(k): sorted(PREDICATES[i] for i in t) for k, t in assign.items()},
+            "assignment": {str(k): sorted(BASIS[i] for i in t) for k, t in assign.items()},
             "fired": [clause_str(l, pat.node) for l, _, _ in fired],
             "rows": fired_rows(e, pat, fired)}
 

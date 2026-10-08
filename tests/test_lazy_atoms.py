@@ -5,7 +5,7 @@ from sympy import Symbol, symbols
 from satassume.compile import VarTable
 from satassume.engine import Engine
 from satassume.formula import P
-from satassume.rules import PREDICATES
+from satassume.rules import BASIS
 from satassume.sympy_api import ask
 from sympy import Q
 
@@ -18,15 +18,15 @@ def test_atoms_match_eager_layout():
     c = t.var(P("my_custom_pred", y))
     by = t.node_base(y)
     assert t.node_base(x) == bx
-    expected = [None] + [P(p, x) for p in PREDICATES] + [None, P("my_custom_pred", y)] \
-        + [P(p, y) for p in PREDICATES]
+    expected = [None] + [P(p, x) for p in BASIS] + [None, P("my_custom_pred", y)] \
+        + [P(p, y) for p in BASIS]
     assert len(t) == len(expected) - 1
     assert t.atom_of == expected
     for v in range(1, len(expected)):
         assert t.atom(v) == expected[v]
     assert t.atom(a) is None and t.atom(c) == P("my_custom_pred", y)
-    assert t.var(P("positive", y)) == by + PREDICATES.index("positive")
-    assert t.lit_name(-(bx + PREDICATES.index("zero"))) == "~" + repr(P("zero", x))
+    assert t.var(P("extended_positive", y)) == by + BASIS.index("extended_positive")
+    assert t.lit_name(-(bx + BASIS.index("zero"))) == "~" + repr(P("zero", x))
     assert t.new_nodes == [x, y] and t.new_custom == [P("my_custom_pred", y)]
 
 
