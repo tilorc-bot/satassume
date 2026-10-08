@@ -203,7 +203,8 @@ from __future__ import annotations
 import math
 from fractions import Fraction
 from itertools import islice
-from typing import Any, Hashable, Iterable, NamedTuple
+from operator import itemgetter
+from typing import Any, Hashable, Iterable
 
 from . import constfield as _cf
 from .constfield import Undecided, formally_zero, num
@@ -229,15 +230,42 @@ _MISSING = object()
 BRANCH_BUDGET = 16
 
 
-class Negated(NamedTuple):
+# Negated and Integral are tuples with named fields, written out rather than
+# made by typing.NamedTuple, whose class construction costs more than the
+# rest of this module's import (they are built on the first relation query).
+class Negated(tuple):
     """Payload wrapper: the registered atom is the negation of ``payload``."""
-    payload: Any
+    __slots__ = ()
+    _fields = ("payload",)
+
+    def __new__(cls, payload):
+        return tuple.__new__(cls, (payload,))
+
+    def __getnewargs__(self):
+        return tuple(self)
+
+    def __repr__(self):
+        return f"Negated(payload={self[0]!r})"
+
+    payload = property(itemgetter(0))
 
 
-class Integral(NamedTuple):
+class Integral(tuple):
     """Payload: ``sum(c*t for t, c in terms) + offset`` is an integer."""
-    terms: Any
-    offset: Any = 0
+    __slots__ = ()
+    _fields = ("terms", "offset")
+
+    def __new__(cls, terms, offset=0):
+        return tuple.__new__(cls, (terms, offset))
+
+    def __getnewargs__(self):
+        return tuple(self)
+
+    def __repr__(self):
+        return f"Integral(terms={self[0]!r}, offset={self[1]!r})"
+
+    terms = property(itemgetter(0))
+    offset = property(itemgetter(1))
 
 
 def constraint(terms, op: str, rhs=0):
