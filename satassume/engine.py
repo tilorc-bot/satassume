@@ -78,10 +78,10 @@ from __future__ import annotations
 from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .compile import VarTable, compile_formula, formula_literal
+from .compile import VarTable, basis_formula, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
 from .memos import engine_memos
-from .formula import P, atoms_of
+from .formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
@@ -1873,6 +1873,14 @@ class Engine:
             self.stats["cache_hits"] += 1
             self.last_budget_limited = False
             return facts[pred]
+        if not BASIS_OF[pred]:
+            # true or false by definition (``commutative``): no session,
+            # memoized as _put_result would
+            self.last_budget_limited = False
+            r = basis_lits(pred)[0] == '&'
+            if self._writeback == "root-only":
+                self.cache.put(node, pred, r)
+            return r
         self.stats["queries"] += 1
         s = self._fresh_session()
         s.ensure(node, {pred})
@@ -1916,6 +1924,17 @@ class Engine:
                 else:
                     left.append(k)
             todo = left
+        left = []
+        for k in todo:
+            if BASIS_OF[preds[k]]:
+                left.append(k)
+            else:
+                # true or false by definition (``commutative``)
+                self.last_budget_limited = False
+                r = out[k] = basis_lits(preds[k])[0] == '&'
+                if self._writeback == "root-only":
+                    self.cache.put(node, preds[k], r)
+        todo = left
         if not todo:
             return out
         self.stats["queries"] += len(todo)
@@ -2034,6 +2053,13 @@ class Engine:
         self.last_budget_limited = False
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
+        if not contextual:
+            # a predicate true or false by definition (``commutative``,
+            # rules.DEFINITIONS) of a term: decided without a session
+            a = proposition.args[0] if isinstance(proposition, Not) else proposition
+            c = basis_formula(a) if isinstance(a, P) else None
+            if c is TRUE or c is FALSE:
+                return (c is TRUE) != isinstance(proposition, Not)
         if not self._within_budget(proposition, assumptions if contextual else None):
             # whether a set raises is a function of the set alone: one that
             # fits the budget and is INCONSISTENT raises for every query

@@ -110,7 +110,9 @@ def test_basis_rules_have_the_models_of_the_full_rule_base():
             f[PRED_INDEX[p] + 1] = all(vals) if op == '&' else any(vals)
         assert all(any(f[abs(l)] == (l > 0) for l in c) for c in full), a
         seen.add(tuple(sorted(f.items())))
-    assert len(seen) == _count_models([tuple(c) for c in full], len(PREDICATES))
+    # ``commutative`` is true by definition: the models with it true
+    comm = (PRED_INDEX['commutative'] + 1,)
+    assert len(seen) == _count_models([tuple(c) for c in full] + [comm], len(PREDICATES))
 
 
 def test_instantiated_rules_propagate_like_the_full_rule_base():
