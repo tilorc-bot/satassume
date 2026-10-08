@@ -120,6 +120,24 @@ _REMOVED_WRITEBACK = ("provenance", "all")
 _UNCAPPED = float("inf")
 
 
+def _noncommutative(term) -> bool:
+    """Whether ``term`` has a non-commutative subterm (``Symbol('A',
+    commutative=False)``, ``re(A)``): see :func:`satassume.sympy_api._noncommutative`.
+    Such a term may stand for a matrix, while the rule base and the
+    templates assume numbers (``commutative`` is true by definition,
+    ``rules.DEFINITIONS``); the engine answers None about it (``sympy_api``
+    keeps it out of scope before it reaches the engine)."""
+    from .sympy_api import _noncommutative as nc
+    return nc(term)
+
+
+def _noncommutative_atoms(*formulas) -> bool:
+    """Whether a vocabulary atom of ``formulas`` (None skipped) has a
+    non-commutative term (:func:`_noncommutative`)."""
+    return any(a.pred in PRED_INDEX and _noncommutative(a.expr)
+               for f in formulas if f is not None for a in atoms_of(f))
+
+
 def _kid(atom):
     """The object an atom of a template makes part of the cone: the
     argument of a vocabulary atom, a custom atom itself (its extension
@@ -1901,6 +1919,8 @@ class Engine:
         if node in self._constructing:
             # re-entrant query from a template evaluating this very node
             return None
+        if _noncommutative(node):
+            return None
         c = self._cones.get(node)
         if c is None:
             c = self._cone_info(node)
@@ -1936,10 +1956,11 @@ class Engine:
             self._check_version()
         out: List[Optional[bool]] = [None] * len(preds)
         todo = []
+        noncomm = _noncommutative(node)
         for k, pred in enumerate(preds):
             if pred not in PRED_INDEX:
                 out[k] = self._is_custom(node, pred)
-            else:
+            elif not noncomm:
                 todo.append(k)
         if not todo or node in self._constructing:
             return out
@@ -2091,6 +2112,9 @@ class Engine:
         self.last_budget_limited = False
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
+        if _noncommutative_atoms(proposition, assumptions if contextual else None):
+            # out of scope (_noncommutative): None, never a raise
+            return None
         if not self._within_budget(proposition, assumptions if contextual else None):
             # whether a set raises is a function of the set alone: one that
             # fits the budget and is INCONSISTENT raises for every query

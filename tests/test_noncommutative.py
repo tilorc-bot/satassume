@@ -455,3 +455,39 @@ def test_ask_sound_for_noncommutative_factors():
     # and nothing about plain symbols leaked from these queries
     for pred in ('zero', 'finite', 'nonzero', 'complex'):
         assert ask(getattr(Q, pred)(x), True, eng) is None
+
+
+# ``commutative`` is true by definition (rules.DEFINITIONS): the rule base
+# and the templates assume numbers.  The Engine, used directly, answers
+# None about a term with a non-commutative subterm (sympy_api keeps such
+# terms out of scope before), and a function registered for
+# ``commutative`` is refused.
+def test_engine_is_none_on_noncommutative_terms():
+    from sympy import Symbol
+    from satassume.engine import Engine
+    A = Symbol("A", commutative=False)
+    x = Symbol("x")
+    e = Engine()
+    assert e.is_(A, "commutative") is None
+    assert e.is_many(A, ["commutative", "zero"]) == [None, None]
+    assert e.is_(x, "commutative") is True
+
+
+def test_engine_ask_none_on_noncommutative_terms():
+    from sympy import Symbol
+    from satassume.engine import Engine
+    from satassume.formula import And as FAnd, Not as FNot, P
+    A, B = Symbol("A", commutative=False), Symbol("B", commutative=False)
+    e = Engine()
+    # A*B can be zero without a zero factor (nilpotent matrices)
+    assert e.ask(P("zero", A * B), FAnd(FNot(P("zero", A)), FNot(P("zero", B)))) is None
+    assert e.ask(P("commutative", A)) is None
+    assert e.ask(FNot(P("commutative", A))) is None
+
+
+def test_register_commutative_is_refused():
+    from sympy import Symbol
+    from satassume.extensions import Extensions
+    from satassume.formula import P
+    with pytest.raises(ValueError, match="by definition"):
+        Extensions().register("commutative", Symbol)(lambda s: P("commutative", s))
