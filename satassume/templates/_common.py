@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
-from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
+from ..rules import BASIS, BASIS_OF, NPRED, RULE_FREE, SHARED, SHARED_INDEX, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
 
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
@@ -357,6 +357,33 @@ def _rup_redundant(clauses):
 #: most clauses one rule may expand to in a pattern (see ``Pattern.wide``)
 MAX_EXPAND = 16
 
+#: fewest clauses a rule must expand to for the engine to get it with one
+#: shared definitional variable per distributing literal instead
+#: (``Pattern.eclauses``)
+MIN_SHARED = 8
+
+
+
+def _shared_clauses(lits) -> List[Tuple[Tuple[int, int, bool], ...]]:
+    """``expand_clause`` with each distributing literal kept as the one
+    literal ``(slot, NPRED + j, True)`` of its shared variable
+    (``rules.SHARED[j]``)."""
+    out: List[Tuple[Tuple[int, int, bool], ...]] = [()]
+    for k, pred, pos in lits:
+        cnf = cnf_of(pred, pos)
+        if len(cnf) > 1:
+            ext = ((k, NPRED + SHARED_INDEX[(pred, pos)], True),)
+            out = [c + ext for c in out]
+        else:
+            out = [c + tuple((k, abs(l) - 1, l > 0) for l in cl) for c in out for cl in cnf]
+    res = []
+    for c in out:
+        c = tuple(dict.fromkeys(c))
+        cs = set(c)
+        if not any((k, i, not p) in cs for k, i, p in c):
+            res.append(c)
+    return res
+
 #: most clauses a pattern is pruned over (:func:`_rup_redundant` is
 #: quadratic; wide Add/Mul patterns have hundreds and lose next to nothing)
 MAX_RUP = 320
@@ -372,7 +399,7 @@ class Pattern:
     ``complete`` is set on a unit pattern whose facts, closed under the rule
     base, decide every predicate the rule base mentions: the engine then
     asserts the closed units and skips the rule base for the node."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete', 'wide')
+    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete', 'wide', 'eclauses')
 
     def __init__(self, rules: List[Rule], node: int):
         self.rules = rules
@@ -390,6 +417,8 @@ class Pattern:
         self.wide = wide = []
         need = set()
         origin = {}
+        big: Dict[int, list] = {}     # rule -> its clauses, if MIN_SHARED or more
+        small = set()                 # clauses of the other rules
         for r, (ps, cs) in enumerate(rules):
             n = 1
             for k, p, pos in ps:
@@ -408,11 +437,44 @@ class Pattern:
                 c = tuple((k, i, not pos) for k, i, pos in lits)
                 expanded.append(c)
                 origin.setdefault(frozenset(c), r)
+                if n >= MIN_SHARED:
+                    big.setdefault(r, []).append(frozenset(c))
+                else:
+                    small.add(frozenset(c))
         kept = _unsubsumed(expanded)
         # drop clauses the other kept clauses imply (RUP)
         if 1 < len(kept) <= MAX_RUP:
             drop = _rup_redundant(kept)
             kept = [c for j, c in enumerate(kept) if j not in drop]
+        eclauses = None
+        if big:
+            # the engine's clauses: a rule that expands to MIN_SHARED or more
+            # clauses, with one shared literal per distributing literal (see
+            # SHARED; ``engine.Session._dvar`` gives each a definitional
+            # variable per node with only the variable -> definition
+            # direction, which propagates as the expanded clauses do)
+            keptset = set(map(frozenset, kept))
+            ek = [c for c in kept if frozenset(c) in small]
+            for r, fcs in big.items():
+                if any(fc in keptset and fc not in small for fc in fcs):
+                    ps, cs = rules[r]
+                    ek.extend(tuple((k, i, not pos) for k, i, pos in lits) for lits in _shared_clauses(
+                        [(k, p, not pos) for k, p, pos in ps] + [(k, p, pos) for k, p, pos in cs]))
+            eclauses = []
+            for lits in _unsubsumed(ek):
+                npreds = set()
+                li = []
+                for k, i, neg in lits:
+                    if i < NPRED:
+                        li.append((k, 2 * i + (1 if neg else 0)))
+                        if k == node:
+                            npreds.add(i)
+                    else:
+                        # a shared literal: offset -1 - j (never negated)
+                        li.append((k, NPRED - 1 - i))
+                        if k == node:
+                            npreds.update(BASIS_OF[SHARED[i - NPRED][0]])
+                eclauses.append((lits, frozenset(npreds), tuple(li)))
         # the rules that give a kept clause: the others are implied by them
         need.update(origin[frozenset(c)] for c in kept)
         self.rules = rules = [r for j, r in enumerate(rules) if j in need]
@@ -425,6 +487,9 @@ class Pattern:
                 if k != node:
                     child_preds.setdefault(k, set()).add(i)
         self.clauses = clauses
+        #: the clauses the engine emits: ``clauses``, or with shared
+        #: literals (offset ``-1 - j`` for SHARED[j]; see above)
+        self.eclauses = clauses if eclauses is None else eclauses
         self.used = tuple(sorted(used))
         self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
 

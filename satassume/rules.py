@@ -204,6 +204,16 @@ def cnf_of(pred: str, pos: bool = True) -> Tuple[Clause, ...]:
     return _CNF_POS[pred] if pos else _CNF_NEG[pred]
 
 
+#: the distributing literals: ``(pred, pos)`` whose CNF has several (unit)
+#: clauses, i.e. a positive conjunction (``positive_infinite``) or a negated
+#: disjunction (``~antihermitian``).  A template rule that expands to many
+#: clauses is emitted with one literal per such literal instead, the shared
+#: definitional variable of ``(pred, node)`` (``templates._common.Pattern``,
+#: ``engine.Session._shared_lit``)
+SHARED: Tuple[Tuple[str, bool], ...] = tuple(
+    (p, pos) for p in PREDICATES for pos in (True, False) if len(cnf_of(p, pos)) > 1)
+SHARED_INDEX: Dict[Tuple[str, bool], int] = {key: j for j, key in enumerate(SHARED)}
+
 #: predicate name -> the 0-based basis indices it reads
 BASIS_OF: Dict[str, frozenset] = {
     p: frozenset(abs(l) - 1 for c in _CNF_POS[p] for l in c) for p in PREDICATES}

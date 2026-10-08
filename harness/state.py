@@ -229,6 +229,7 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.rules", "RULE_INSTANTIATED"), ("satassume.rules", "RULE_INTERNAL"),
     ("satassume.rules", "RULE_FREE"),
     ("satassume.rules", "BASIS"), ("satassume.rules", "BASIS_INDEX"), ("satassume.rules", "BASIS_OF"),
+    ("satassume.rules", "SHARED"), ("satassume.rules", "SHARED_INDEX"),
     ("satassume.rules", "DEFINITIONS"), ("satassume.rules", "DEF_LITS"),
     ("satassume.rules", "_CNF_POS"), ("satassume.rules", "_CNF_NEG"),
     ("satassume.solver", "_BIT"), ("satassume.solver", "_NBIT"),
