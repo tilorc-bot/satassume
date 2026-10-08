@@ -56,13 +56,13 @@ MAX_ADD_SMALL = 3
 # ---------------------------------------------------------------------------
 
 # Closed under addition (all args -> node).  ``real``, ``zero`` and the
-# finite sign predicates are derived by the rule base from these.
+# finite sign predicates are derived by the rule base from these, and the
+# other extended signs from extended_nonnegative and the other Add rules.
 # ``extended_real`` is not: ``oo - oo`` is nan (see _add_rules).
 _ADD_CLOSED = (
     'complex', 'integer', 'rational', 'algebraic', 'finite',
     'hermitian', 'antihermitian', 'commutative',
-    'extended_positive', 'extended_negative',
-    'extended_nonnegative', 'extended_nonpositive',
+    'extended_nonnegative',
 )
 
 # Closed under subtraction of finite values: pred(node) & pred(rest) -> pred(a).
@@ -254,7 +254,7 @@ def add_templates(expr):
 # is nan (see _mul_rules).
 _MUL_CLOSED = (
     'complex', 'integer', 'rational', 'algebraic', 'finite',
-    'commutative', 'extended_positive', 'nonnegative',
+    'commutative', 'extended_positive',
 )
 
 # Backward transfer for a nonzero real numeric coefficient c: pred(c*x) -> pred(x)
@@ -372,8 +372,6 @@ def _mul_table_rows():
             # with the rest merely real the product may also be zero.
             Row('one_imag', [('k', 'imaginary'), ('rest', 'real'), ('rest', 'zero', False)],
                 ('N', 'imaginary')),
-            Row('one_imag.or_zero', [('k', 'imaginary'), ('rest', 'real')],
-                [('N', 'imaginary'), ('N', 'zero')]),
             # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
             # the product is real iff the other factor is imaginary or
             # zero, and imaginary iff the other factor is a nonzero real.
@@ -409,7 +407,7 @@ def _mul_table_rows():
         Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
             when=('coeff', 'c rational', 'c.q==2')),
         Row('coeff.minus_one', [('N', '$p')], (1, '$p'), when=('coeff', 'c rational', 'c==-1'),
-            preds=('integer', 'even', 'odd')),
+            preds=('integer', 'odd')),
     )
 
 
@@ -480,9 +478,7 @@ _POW_RULES = (
     (((_B, 'extended_real'), (_E, 'even')), (_N, 'extended_negative', False)),
     (((_B, 'nonzero'), (_E, 'even')), (_N, 'positive')),
     # (-oo)**(-2) == 0, so the extended version needs a nonnegative exponent.
-    (((_B, 'extended_negative'), (_E, 'even'), (_E, 'nonnegative')), (_N, 'extended_positive')),
     (((_B, 'negative'), (_E, 'odd')), (_N, 'negative')),
-    (((_B, 'extended_negative'), (_E, 'odd')), (_N, 'extended_nonpositive')),
     (((_B, 'extended_nonpositive'), (_E, 'odd')), (_N, 'extended_positive', False)),
     (((_N, 'positive'), (_B, 'real'), (_E, 'odd')), (_B, 'positive')),
     # --- zero base, zero exponent (b**0 == 1, also for zoo and nan) ---
@@ -752,9 +748,10 @@ def _pow_table_rows():
         Row('rational_exp.half_odd', [('B', 'negative'), ('E', 'rational'), ('T', 'integer'),
                                       ('E', 'integer',
                                        False)], ('N', 'imaginary'), when='2*e slot'),
-        # b**(k/2) for real b is imaginary iff b is a negative real.
-        Row('e=k/2.imaginary', [('B', 'extended_real')], [('N', 'imaginary'), ('B', 'negative')],
-            kind='equiv', when=('e rational non-integer', 'e.q==2')),
+        # b**(k/2) for a negative real b is imaginary (the converse follows
+        # from the other rows and the rule base).
+        Row('e=k/2.imaginary', [('B', 'extended_real'), ('B', 'negative')], ('N', 'imaginary'),
+            when=('e rational non-integer', 'e.q==2')),
         Row('e=k/2.not_negative', [('B', 'extended_real')], ('N', 'extended_negative', False),
             when=('e rational non-integer', 'e.q==2')),
         Row('e=p/q.not_imaginary', [('B', 'extended_real')], ('N', 'imaginary', False),

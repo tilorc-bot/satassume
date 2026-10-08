@@ -223,7 +223,7 @@ def _abs(R, c):
     R.rule([(N, 'finite', True)], (X, 'finite', True))
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
     R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
-    _equiv(R, [(X, 'extended_real', True)], ('integer', 'rational', 'even', 'odd', 'algebraic'))
+    _equiv(R, [(X, 'extended_real', True)], ('integer', 'rational', 'odd', 'algebraic'))
     # Abs(x) == x for x >= 0.
     _equiv(R, [(X, 'extended_nonnegative', True)], ('prime', 'composite'))
 
@@ -239,8 +239,8 @@ def _re(R, c):
     R.rule([(X, 'zero', True)], (N, 'zero', True))
     R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
     _equiv(R, [(X, 'extended_real', True)], (
-        'zero', 'extended_positive', 'extended_negative', 'integer', 'rational',
-        'even', 'odd', 'algebraic', 'finite', 'prime', 'composite'))
+        'extended_positive', 'extended_negative', 'integer', 'rational',
+        'odd', 'algebraic', 'finite', 'prime', 'composite'))
 
 
 def _im(R, c):
@@ -271,8 +271,8 @@ def _sign(R, c):
 # Invariant under conjugation; the rule base derives the rest (real, the
 # finite sign predicates, nonzero, infinite, irrational, transcendental...).
 _CONJUGATE_INVARIANT = (
-    'extended_real', 'finite', 'zero', 'extended_positive', 'extended_negative',
-    'integer', 'rational', 'even', 'odd', 'algebraic', 'complex', 'imaginary',
+    'extended_real', 'finite', 'extended_positive', 'extended_negative',
+    'integer', 'rational', 'odd', 'algebraic', 'complex', 'imaginary',
     'prime', 'composite', 'commutative', 'hermitian', 'antihermitian',
 )
 
@@ -301,16 +301,16 @@ def _round(R, c):
     # a real value of floor/ceiling is an integer (floor(1 + I/2) == 1 is
     # real; floor(oo) == oo is not)
     R.rule([(N, 'real', True)], (N, 'integer', True))
-    _equiv(R, [(X, 'integer', True)], ('even', 'odd', 'zero', 'positive', 'negative'))
+    _equiv(R, [(X, 'integer', True)], ('odd', 'positive', 'negative'))
 
 
 def _floor(R, c):
-    for pred in ('negative', 'extended_negative', 'nonnegative', 'extended_nonnegative'):
+    for pred in ('extended_negative', 'extended_nonnegative'):
         R.rule([(X, pred, True)], (N, pred, True))
 
 
 def _ceiling(R, c):
-    for pred in ('positive', 'extended_positive', 'nonpositive', 'extended_nonpositive'):
+    for pred in ('extended_positive', 'extended_nonpositive'):
         R.rule([(X, pred, True)], (N, pred, True))
 
 
@@ -516,7 +516,7 @@ _COSH = (
 
 def _sinh(R, c):
     _table(R, _SINH)
-    _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative', 'zero'))
+    _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative'))
     R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
 
 

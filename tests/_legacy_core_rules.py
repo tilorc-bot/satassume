@@ -111,8 +111,6 @@ def mul_rules(n, consts):
             # with the rest merely real the product may also be zero.
             rule([(k, 'imaginary', True), *lits(rest, 'real'), *lits(rest, 'zero', False)],
                  (N, 'imaginary', True))
-            rule([(k, 'imaginary', True), *lits(rest, 'real')],
-                 [(N, 'imaginary', True), (N, 'zero', True)])
             if n == 2:
                 # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
                 # the product is real iff the other factor is imaginary or
@@ -152,7 +150,7 @@ def mul_rules(n, consts):
                     # (p/2)*x for integer x is an integer iff x is even.
                     R.equiv([(1, 'integer', True)], (N, 'integer', True), (1, 'even', True))
                 elif c is S.NegativeOne:
-                    for pred in ('integer', 'even', 'odd'):
+                    for pred in ('integer', 'odd'):
                         rule([(N, pred, True)], (1, pred, True))
     return R.rules
 
@@ -245,7 +243,7 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
     if e is not None and e.is_Rational and not e.is_Integer:
         if e.q == 2:
             # b**(k/2) for real b is imaginary iff b is a negative real.
-            R.equiv([(_B, 'extended_real', True)], (_N, 'imaginary', True), (_B, 'negative', True))
+            rule([(_B, 'extended_real', True), (_B, 'negative', True)], (_N, 'imaginary', True))
             rule([(_B, 'extended_real', True)], (_N, 'extended_negative', False))
         else:
             rule([(_B, 'extended_real', True)], (_N, 'imaginary', False))

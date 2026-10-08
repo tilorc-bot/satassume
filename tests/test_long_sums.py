@@ -32,3 +32,17 @@ def test_products_of_nonpositives(n):
     want = 'positive' if n % 2 == 0 else 'negative'
     assert ask(getattr(Q, want)(p), neg) is True
     assert ask(Q.nonnegative(p) if n % 2 == 0 else Q.nonpositive(p), nonpos) is True
+
+
+@pytest.mark.parametrize("n", range(2, 11))
+def test_products_of_integers(n):
+    # integer closure of Mul is not implied by the other rows for >= 7
+    # factors (rd/semdrop2 had dropped it)
+    xs = symbols(f"z0:{n}")
+    p = Mul(*xs)
+    ints = And(*[Q.integer(x) for x in xs])
+    evens = And(*[Q.even(x) for x in xs])
+    assert ask(Q.integer(p), ints) is True
+    assert ask(Q.noninteger(p), ints) is False
+    assert ask(Q.integer(p), evens) is True
+    assert ask(Q.integer(p), And(*[Q.odd(x) for x in xs[:-1]], Q.integer(xs[-1]))) is True
