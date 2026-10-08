@@ -341,6 +341,21 @@ class Session:
                 emit([-v] + lits)
         return v
 
+    def query_lit(self, pred: str, node: Node):
+        """What :meth:`query_literal` decides for ``pred(node)``: the
+        variable of a basis predicate, the basis literal of a derived one
+        defined by a single literal, else ``(op, literals)``, the
+        definition over the node's block (no variable, no clauses)."""
+        i = BASIS_INDEX.get(pred)
+        if i is not None:
+            return self.node(node) + i
+        b = self.node(node)
+        op, ls = basis_lits(pred)
+        lits = tuple(b + l - 1 if l > 0 else -(b - l - 1) for l in ls)
+        if len(lits) == 1:
+            return lits[0]
+        return op, lits
+
     def _emit(self, clause: List[int]) -> None:
         self.nclauses += 1
         self.solver.add_clause(clause)
@@ -655,8 +670,16 @@ class Session:
         self.frontier = deque()
 
     # -- queries -------------------------------------------------------------
-    def query_literal(self, lit: int, assumptions: Iterable[int] = (),
+    def query_literal(self, lit, assumptions: Iterable[int] = (),
                       search: bool = True) -> Optional[bool]:
+        if type(lit) is tuple:
+            # a derived predicate (query_lit): a disjunction is decided as
+            # the negation of the conjunction of the negated literals
+            op, ls = lit
+            if op == '|':
+                r = self._query_all([-l for l in ls], assumptions, search)
+                return None if r is None else not r
+            return self._query_all(list(ls), assumptions, search)
         solver = self.solver
         if self.xfer is not None:
             self.xfer.sync_transfer()
@@ -694,6 +717,34 @@ class Session:
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
         return r
+
+    def _query_all(self, ls: List[int], assumptions, search: bool) -> Optional[bool]:
+        """:meth:`query_literal` of the conjunction of ``ls``."""
+        solver = self.solver
+        if self.xfer is not None:
+            self.xfer.sync_transfer()
+        if not solver.propagate():
+            raise InconsistentAssumptions("rule base or declared facts (templates) are inconsistent")
+        solver.mention(ls)
+        assumptions = list(assumptions)
+        if assumptions:
+            implied = solver.implied(assumptions)
+            if implied is None:
+                raise InconsistentAssumptions("inconsistent assumptions")
+            s = set(implied)
+            vals = [True if l in s else False if -l in s else None for l in ls]
+        else:
+            vals = [solver.value(l) for l in ls]
+        if False in vals:
+            return False
+        if all(vals):
+            return True
+        if not search:
+            return None
+        try:
+            return solver.entails_all(ls, assumptions)
+        except ValueError as e:
+            raise InconsistentAssumptions(str(e)) from e
 
     def assume_formula(self, f) -> List[int]:
         """Turn a formula into solver assumption literals: its clauses are
@@ -1747,7 +1798,7 @@ class Engine:
         self.stats["queries"] += 1
         s = self._fresh_session()
         s.ensure(node, {pred})
-        r = self._decide(s, s.var(pred, node))
+        r = self._decide(s, s.query_lit(pred, node))
         self._put_result(s, self.cache, node, pred, r)
         return r
 
@@ -1795,7 +1846,7 @@ class Engine:
         cache = self.cache
         for k in todo:
             pred = preds[k]
-            r = out[k] = self._decide(s, s.var(pred, node))
+            r = out[k] = self._decide(s, s.query_lit(pred, node))
             self._put_result(s, cache, node, pred, r)
         return out
 
@@ -1963,7 +2014,7 @@ class Engine:
                 s._flush()
             if s.relations is not None:
                 s._relations(proposition)
-            return s.var(proposition.pred, proposition.expr)
+            return s.query_lit(proposition.pred, proposition.expr)
         return s.literal_of(proposition)
 
 
