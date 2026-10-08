@@ -36,6 +36,7 @@ it is real, minus its conjugate iff it is zero or imaginary).
 from __future__ import annotations
 
 from typing import Dict, List, Sequence, Tuple
+from .memos import PROCESS as _PROCESS
 
 # The predicate vocabulary.  This is the union of the old system's
 # ``_assume_defined`` and the unary, scalar predicates of the new system.
@@ -214,6 +215,57 @@ def basis_lits(pred: str, pos: bool = True) -> Tuple[str, Tuple[int, ...]]:
     if pos:
         return op, ls
     return ('|' if op == '&' else '&'), tuple(-l for l in ls)
+
+
+def _basis_models() -> Tuple[Tuple[bool, ...], ...]:
+    """The models of the rule base (:data:`RULE_CLAUSES`) over the basis,
+    each a tuple of NPRED truth values."""
+    last: List[List[Clause]] = [[] for _ in range(NPRED)]   # clauses by largest index
+    for c in RULE_CLAUSES:
+        last[max(abs(l) for l in c) - 1].append(c)
+    out = []
+    a = [False] * NPRED
+
+    def dfs(i):
+        if i == NPRED:
+            out.append(tuple(a))
+            return
+        for v in (False, True):
+            a[i] = v
+            if all(any(a[l - 1] if l > 0 else not a[-l - 1] for l in c) for c in last[i]):
+                dfs(i + 1)
+    dfs(0)
+    return tuple(out)
+
+
+_DEF_IMPL = _PROCESS.table("satassume.rules._DEF_IMPL", "pure", 10_000)
+
+
+def def_implications(d1, d2) -> Tuple[Tuple[int, int], ...]:
+    """For two definitions of several basis literals (``(op, lits)`` as in
+    :data:`DEF_LITS`): the binary clauses ``s1*v1 | s2*v2`` over variables
+    ``v1 <-> d1``, ``v2 <-> d2`` that every model of the rule base satisfies,
+    as sign pairs (``positive -> nonnegative`` is ``((-1, 1),)``); used by
+    ``engine.Session.dvar``.  Memoized (the models too, under ``None``)."""
+    r = _DEF_IMPL.get((d1, d2))
+    if r is not None:
+        return r
+    models = _DEF_IMPL.get(None)
+    if models is None:
+        models = _basis_models()
+        _DEF_IMPL.put(None, models)
+
+    def val(d, m):
+        t = [m[l - 1] if l > 0 else not m[-l - 1] for l in d[1]]
+        return all(t) if d[0] == '&' else any(t)
+    vals = {(val(d1, m), val(d2, m)) for m in models}
+    # the clause s1*v1 | s2*v2 fails exactly on v1 == (s1 < 0), v2 == (s2 < 0);
+    # kept if no model does that and neither literal is constant
+    r = tuple((s1, s2) for s1 in (1, -1) for s2 in (1, -1)
+              if (s1 < 0, s2 < 0) not in vals and any(v1 == (s1 < 0) for v1, _ in vals)
+              and any(v2 == (s2 < 0) for _, v2 in vals))
+    _DEF_IMPL.put((d1, d2), r)
+    return r
 
 
 def expand_clause(lits: Sequence[Tuple[int, str, bool]]) -> List[Tuple[Tuple[int, int, bool], ...]]:

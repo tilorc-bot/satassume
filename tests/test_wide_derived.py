@@ -132,3 +132,72 @@ def test_unsubsumed_matches_brute_force():
         want = [tuple(sorted(c)) for i, c in enumerate(uniq)
                 if not any(d <= c for d in uniq[:i])]
         assert _unsubsumed(cs) == want
+
+
+# A wide formula of derived atoms against another one over the same terms:
+# the shapes below, (proposition, assumptions) in every pairing, with the
+# answers of the encoding with one variable per predicate (ca49991).  With
+# a derived atom's definition expanded into basis literals at each
+# occurrence (a private Plaisted-Greenbaum variable under a disjunction, a
+# clause for a negated conjunction), the negated proposition did not
+# propagate into the assumptions: the solver found one conflict per
+# disjunct, each after deciding most of the formula's variables
+# (quadratic: 400 disjuncts took seconds).  Session.dvar gives every
+# occurrence the atom's shared variable, linked to the node's other
+# derived variables by the rule base's binary implications, so one
+# propagation decides these queries.
+_SHAPES = {
+    "or": lambda p, ys: Or(*[p(y) for y in ys]),
+    "and": lambda p, ys: And(*[p(y) for y in ys]),
+    "ornot": lambda p, ys: Or(*[Not(p(y)) for y in ys]),
+    "nand": lambda p, ys: Not(And(*[p(y) for y in ys])),
+    "nor": lambda p, ys: Not(Or(*[p(y) for y in ys])),
+}
+_WIDE_ANSWERS = [   # proposition/assumptions predicates, answers in _SHAPES x _SHAPES order
+    ("positive/positive", "TTNNFNTFFFNFTTTNFTTTFFNNT"),
+    ("nonnegative/positive", "TTNNNNTNNNNFNNNNFNNNFFNNN"),
+    ("positive/nonnegative", "NNNNFNNFFFNNTTTNNTTTNNNNT"),
+    ("real/positive", "TTNNNNTNNNNFNNNNFNNNFFNNN"),
+    ("nonzero/nonzero", "TTNNFNTFFFNFTTTNFTTTFFNNT"),
+    ("odd/integer", "NNNNFNNFFFNNTTTNNTTTNNNNT"),
+    ("positive/negative", "NFNNNFFNNNTTNNNTTNNNNTNNN"),
+    ("antihermitian/imaginary", "TTNNNNTNNNNFNNNNFNNNFFNNN"),
+    ("infinite/positive_infinite", "TTNNNNTNNNNFNNNNFNNNFFNNN"),
+]
+
+
+@pytest.fixture
+def solvers(monkeypatch):
+    from satassume.solver import Solver
+    made = []
+    init = Solver.__init__
+
+    def tracked(self, *a, **k):
+        init(self, *a, **k)
+        made.append(self)
+    monkeypatch.setattr(Solver, "__init__", tracked)
+    return made
+
+
+@pytest.mark.parametrize("preds,answers", _WIDE_ANSWERS)
+def test_wide_derived_queries_propagate(preds, answers, solvers):
+    pp, ap = [getattr(Q, p) for p in preds.split("/")]
+    ys = symbols("v0:60")
+    got = ""
+    for pk in _SHAPES:
+        for ak in _SHAPES:
+            solvers.clear()
+            r = ask(_SHAPES[pk](pp, ys), _SHAPES[ak](ap, ys))
+            got += {True: "T", False: "F", None: "N"}[r]
+            conflicts = sum(s._n_conflicts for s in solvers)
+            assert conflicts <= 2, (pk, ak, conflicts)
+    assert got == answers
+
+
+@pytest.mark.parametrize("pk,ak", [("or", "or"), ("or", "nor"), ("nor", "or"), ("nor", "nor")])
+def test_wide_derived_or_against_or_is_fast(pk, ak):
+    ys = symbols("v0:400")
+    t = time.perf_counter()
+    ask(_SHAPES[pk](Q.nonnegative, ys), _SHAPES[ak](Q.positive, ys))
+    ask(_SHAPES[pk](Q.nonzero, ys), _SHAPES[ak](Q.nonzero, ys))
+    assert time.perf_counter() - t < 2.0

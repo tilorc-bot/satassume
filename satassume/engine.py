@@ -85,7 +85,8 @@ from .formula import P, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
-from .rules import BASIS_INDEX, BASIS_OF, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL, basis_lits
+from .rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
+                    basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .solver import Solver
@@ -267,6 +268,14 @@ class Session:
         self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.defvars: Dict[Any, int] = {}     # (derived predicate, node) -> its variable
+        #: (definition, node) -> [variable, directions emitted (1: var ->
+        #: definition, 2: definition -> var)]: the shared literal of a
+        #: derived atom of several basis literals (:meth:`dvar`)
+        self._dv: Dict[Any, list] = {}
+        self._dv_node: Dict[Any, list] = {}  # node -> [(definition, variable)] linked
+        #: whether asserted negated conjunctions get their shared literal
+        #: (assume_formula: a set with many of them)
+        self._neg_shared = False
         self.assumption_formula = None       # the formula of assume_formula()
         self._a_raw = ()                     # its atoms (atoms_of)
         self._a_zs = ()                      # their zero_args
@@ -322,6 +331,8 @@ class Session:
         i = BASIS_INDEX.get(pred)
         if i is not None:
             return self.node(node) + i
+        if len(DEF_LITS[pred][1]) > 1:
+            return self._dvar(pred, node, 3)
         key = (pred, node)
         v = self.defvars.get(key)
         if v is None:
@@ -339,6 +350,68 @@ class Session:
                 for l in lits:
                     emit([-l, v])
                 emit([-v] + lits)
+        return v
+
+    def dvar(self, atom: P, need: str = 'both') -> int:
+        """The literal of the derived atom ``atom`` shared by all its
+        occurrences (the assumptions, the proposition, :meth:`var`), with
+        the directions ``need`` of its definition emitted (``'pos'``: the
+        variable implies the definition, ``'neg'``: the converse,
+        ``'both'``; see :func:`satassume.compile.compile_formula`).  A
+        definition of one basis literal (``infinite``) is that literal."""
+        op, ls = DEF_LITS[atom.pred]
+        if need == 'negunit':
+            # a negated conjunction asserted by the assumptions: its own
+            # literal only in a set with many (one clause and a variable
+            # more each, against a search conflict each when a wide
+            # proposition holds them; see assume_formula)
+            if not self._neg_shared or len(ls) < 2:
+                return None
+            need = 'neg'
+        if len(ls) == 1:
+            return self.node(atom.expr) + ls[0] - 1 if ls[0] > 0 else -(self.node(atom.expr) - ls[0] - 1)
+        return self._dvar(atom.pred, atom.expr, 3 if need == 'both' else 1 if need == 'pos' else 2, True)
+
+    def _dvar(self, pred: str, node: Node, need: int, link: bool = False) -> int:
+        d = DEF_LITS[pred]
+        key = (d, node)
+        e = self._dv.get(key)
+        b = self.node(node)
+        emit = self._emit
+        if e is None:
+            v = self.table.aux()
+            self.solver.ensure_vars(v)
+            e = self._dv[key] = [v, 0, False]
+        v, have, linked = e
+        if link and not linked:
+            # binary clauses the rule base gives between this and the
+            # node's other linked literals (positive -> nonnegative), so
+            # a unit on one propagates to the others as with a variable
+            # per predicate; only for the literals of formulas (``dv``),
+            # not for those relations and decisions ask for (:meth:`var`)
+            e[2] = True
+            others = self._dv_node.setdefault(node, [])
+            for d2, v2 in others:
+                for s1, s2 in def_implications(d, d2):
+                    emit([s1 * v, s2 * v2])
+            others.append((d, v))
+        missing = need & ~have
+        if missing:
+            op, ls = d
+            lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
+            if op == '&':
+                if missing & 1:
+                    for l in lits:
+                        emit([-v, l])
+                if missing & 2:
+                    emit([v] + [-l for l in lits])
+            else:
+                if missing & 2:
+                    for l in lits:
+                        emit([-l, v])
+                if missing & 1:
+                    emit([-v] + lits)
+            e[1] = have | need
         return v
 
     def _emit(self, clause: List[int]) -> None:
@@ -706,10 +779,15 @@ class Session:
         self._ensure_atoms(f)
         s = self.table.aux()
         self.sel = s
+        # many derived atoms of several basis literals: their negations,
+        # if asserted, get the atoms' shared literals (Session.dvar), which
+        # a wide proposition over them then meets by propagation instead
+        # of one search conflict per atom; a function of the set
+        self._neg_shared = sum(1 for a in self._a_raw if len(DEF_LITS.get(a.pred, ((), ()))[1]) > 1) >= _NEG_SHARED
 
         def emit(clause):
             self._emit(clause + [-s])
-        compile_formula(f, self.table, emit)
+        compile_formula(f, self.table, emit, self.dvar)
         self._flush()
         self._discover()
         if self.relations is not None:
@@ -917,7 +995,7 @@ class Session:
         if lit is not None:
             return lit
         self._ensure_atoms(f)
-        lit = formula_literal(f, self.table, self._emit)
+        lit = formula_literal(f, self.table, self._emit, self.dvar)
         self._flush()
         self._discover()
         if self.relations is not None:
@@ -1965,6 +2043,11 @@ class Engine:
                 s._relations(proposition)
             return s.var(proposition.pred, proposition.expr)
         return s.literal_of(proposition)
+
+
+#: fewest derived atoms of several basis literals in an assumption set for
+#: which asserted negations of them get their shared literals
+_NEG_SHARED = 8
 
 
 def zero_glue(f) -> bool:
