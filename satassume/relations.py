@@ -356,6 +356,7 @@ from typing import Any, Callable, List, NamedTuple, Optional
 
 from .extensions import Args
 from .formula import And, Not, P, atoms_of
+from .compile import alias_of
 from .rules import BASIS_INDEX, NPRED, PRED_INDEX
 from .constfield import Undecided, sign
 from .theory import EqualitySharing
@@ -1698,6 +1699,8 @@ class Relations:
                 if isinstance(e, Expr) and e not in s.base:
                     s.ensure(e)
                     visited = True
+                if alias_of(e) is not e:
+                    s.mirror(e)
         terms = ad._terms
         nt = len(terms)
         extra = self._xextra
@@ -1727,6 +1730,8 @@ class Relations:
                         if isinstance(e, Expr) and e not in base:
                             s.ensure(e)
                             visited = True
+                        if alias_of(e) is not e:
+                            s.mirror(e)
         return visited
 
     def sync_transfer(self) -> None:

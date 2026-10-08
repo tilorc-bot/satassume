@@ -154,6 +154,11 @@ its structural subterms EUF reads, the opaque terms of its linear forms,
 its integrality form), and for `eq` the termwise differences of the sides
 (`Engine._struct`, `engine._kid`).
 
+A node `conjugate(a)` has no block, rule block or template clauses of its
+own: it shares the variables of `a` (every basis predicate is invariant
+under conjugation; `compile.alias_of`, `VarTable.node_base`,
+`Session.node`), and `kids(conjugate(a)) = {a}`.
+
 Definition. `cone(o)` is the closure of `{o}` under `kids`
 (`Engine._cone_info`). `cone(f)` of a formula is the union of the cones of
 `_kid(a)` for its atoms `a`, plus, when `glue` holds, `link_objects(e)` for

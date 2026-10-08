@@ -78,7 +78,7 @@ from __future__ import annotations
 from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .compile import VarTable, compile_formula, formula_literal
+from .compile import VarTable, alias_of, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
 from .memos import engine_memos
 from .formula import P, atoms_of
@@ -433,6 +433,19 @@ class Session:
         self.nclauses += 1
         self.solver.add_clause(clause)
 
+    def mirror(self, node) -> None:
+        """Give the aliased node ``node`` (``conjugate(a)``) a mirror block
+        equivalent to the block of ``a`` (``VarTable.mirror``): the transfer
+        theory registers the variables of a term per term."""
+        r = self.table.mirror(node)
+        if r is None:
+            return
+        b, t = r
+        self.solver.ensure_vars(b + NPRED - 1)
+        for k in range(NPRED):
+            self._emit([-(b + k), t + k])
+            self._emit([b + k, -(t + k)])
+
     def node(self, node: Node, demanded=None) -> int:
         """Visit ``node`` if new; return its base variable.
 
@@ -443,6 +456,15 @@ class Session:
         case (a direct structural rule decides the query) never pays for the
         long tail of rules.
         """
+        target = alias_of(node)
+        if target is not node:
+            # conjugate(a): the block of a (compile.alias_of)
+            if demanded is not None:
+                self.demand.setdefault(target, set()).update(demanded)
+            b = self.node(target, demanded)
+            self.base[node] = b
+            self.table.node_base(node)
+            return b
         b = self.base.get(node)
         if b is not None:
             if demanded is not None and (node in self.pending or node in self.pending_c):
@@ -1511,6 +1533,11 @@ class Engine:
                     k.update(_kid(a) for a in atoms_of(f))
                 k.discard(o)
             r = kids[o] = (k, 0)
+            return r
+        target = alias_of(o)
+        if target is not o:
+            # conjugate(a): a's block, no node of its own (compile.alias_of)
+            r = kids[o] = ({target}, 0)
             return r
         constructing = self._constructing
         mine = o not in constructing

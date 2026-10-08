@@ -72,7 +72,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from .compile import VarTable, compile_formula, formula_literal
+from .compile import VarTable, alias_of, compile_formula, formula_literal
 from .formula import FALSE, P, TRUE, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
 from .rules import BASIS_INDEX, NPRED, PRED_INDEX, RULE_INTERNAL, basis_lits
@@ -227,6 +227,19 @@ class _RefSession:
         self._visiting: set = set()
 
     # -- what Relations calls -------------------------------------------
+    def mirror(self, node) -> None:
+        """Give the aliased node ``node`` (``conjugate(a)``) a mirror block
+        equivalent to the block of ``a`` (``VarTable.mirror``): the transfer
+        theory registers the variables of a term per term."""
+        r = self.table.mirror(node)
+        if r is None:
+            return
+        b, t = r
+        self.solver.ensure_vars(b + NPRED - 1)
+        for k in range(NPRED):
+            self._emit([-(b + k), t + k])
+            self._emit([b + k, -(t + k)])
+
     def _emit(self, clause: List[int]) -> None:
         self.nclauses += 1
         self.solver.add_clause(clause)
@@ -281,6 +294,12 @@ class _RefSession:
     def node(self, node) -> int:
         b = self.base.get(node)
         if b is not None:
+            return b
+        target = alias_of(node)
+        if target is not node:
+            # conjugate(a) shares the block of a (compile.alias_of)
+            b = self.base[node] = self.node(target)
+            self.table.node_base(node)
             return b
         b = self.table.node_base(node)
         self.base[node] = b

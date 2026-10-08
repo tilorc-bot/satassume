@@ -268,17 +268,11 @@ def _sign(R, c):
     R.rule([(X, 'extended_real', True), (N, 'negative', True)], (X, 'extended_negative', True))
 
 
-# Invariant under conjugation; the rule base derives the rest (real, the
-# finite sign predicates, nonzero, infinite, irrational, transcendental...).
-_CONJUGATE_INVARIANT = (
-    'extended_real', 'finite', 'extended_positive', 'extended_negative',
-    'integer', 'rational', 'odd', 'algebraic', 'complex', 'imaginary',
-    'prime', 'composite', 'commutative', 'hermitian', 'antihermitian',
-)
-
-
+# Every basis predicate is invariant under conjugation, so the engine gives
+# ``conjugate(a)`` the variable block of ``a`` (``compile.alias_of``) and no
+# rules of its own; the template only puts ``conjugate`` in scope.
 def _conjugate(R, c):
-    _equiv(R, [], _CONJUGATE_INVARIANT)
+    pass
 
 
 registry.register(Abs)(_unary('Abs', _abs))

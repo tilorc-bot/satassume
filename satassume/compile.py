@@ -14,6 +14,19 @@ from .formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, T
 from .rules import BASIS, DEF_LITS as _DEF_LITS
 
 
+def alias_of(node):
+    """The node whose variable block ``node`` shares: ``conjugate(a)`` is
+    ``a`` (every basis predicate, ``polar`` included, is invariant under
+    conjugation, an involution), so it gets no block, rule block or
+    template clauses of its own.  Other nodes are their own."""
+    if type(node).__name__ != 'conjugate':     # (no SymPy import here)
+        return node
+    from sympy.functions.elementary.complexes import conjugate
+    while type(node) is conjugate:
+        node = node.args[0]
+    return node
+
+
 def basis_formula(atom: P):
     """The atom of a derived predicate as its definition over basis atoms
     of the same node (``And``/``Or`` of basis atoms and their negations);
@@ -62,15 +75,34 @@ class VarTable:
         self.custom: Dict[P, int] = {}
         self.new_custom: List[P] = []
         self.naux = 0
+        self.mirrors: Dict[Any, int] = {}
 
     def node_base(self, node) -> int:
         b = self.base_of.get(node)
         if b is None:
+            t = alias_of(node)
+            if t is not node:
+                b = self.base_of[node] = self.node_base(t)
+                return b
             b = len(self.slots)
             self.base_of[node] = b
             self.slots.extend([(node, b)] * self._npred)
             self.new_nodes.append(node)
         return b
+
+    def mirror(self, node):
+        """A block of variables of its own for an aliased node (see
+        :func:`alias_of`) that the transfer theory needs as a term of its
+        own: ``(mirror base, shared base)``, or None if it has one already.
+        The caller makes each mirror variable equivalent to the shared one.
+        Its slots name ``node``, so the transfer glue finds it like a node
+        block."""
+        if node in self.mirrors:
+            return None
+        t = self.node_base(node)
+        b = self.mirrors[node] = len(self.slots)
+        self.slots.extend([(node, b)] * self._npred)
+        return b, t
 
     def var(self, atom: P) -> int:
         """The variable of a basis or custom atom (a derived predicate has
