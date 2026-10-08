@@ -39,6 +39,25 @@ assert CORE in sys.modules and FUNCS not in sys.modules
 """)
 
 
+def test_tables_on_first_read_and_no_bounds_without_constants():
+    # templates.core builds MUL_TABLE on first read (the module __getattr__),
+    # and a relation query without constants never imports lra_bounds.
+    _run("""
+import sys
+from sympy import Q, Symbol
+import satassume.templates.core as core
+assert "MUL_TABLE" not in vars(core)
+table = core.MUL_TABLE
+assert table == core._table("MUL_TABLE") and table is core.MUL_TABLE
+from satassume.sympy_api import ask
+x, y, z = (Symbol(n, real=True) for n in "xyz")
+assert ask(Q.gt(x, z), Q.gt(x, y) & Q.gt(y, z)) is True
+assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y)) is True
+assert ask(Q.positive(x*y), Q.positive(x) & Q.positive(y)) is True
+assert "satassume.lra_adapter" in sys.modules
+assert "satassume.lra_bounds" not in sys.modules
+""")
+
 def test_declared_module_registering_outside_its_classes():
     r = TemplateRegistry()
     r.lazy("satassume_test_lazy_mod", Add)
