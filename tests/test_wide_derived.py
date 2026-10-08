@@ -201,3 +201,52 @@ def test_wide_derived_or_against_or_is_fast(pk, ak):
     ask(_SHAPES[pk](Q.nonnegative, ys), _SHAPES[ak](Q.positive, ys))
     ask(_SHAPES[pk](Q.nonzero, ys), _SHAPES[ak](Q.nonzero, ys))
     assert time.perf_counter() - t < 2.0
+
+def _rup_reference(clauses):
+    """Sequential RUP, longest clause first, with plain sets of literals."""
+    alive = set(range(len(clauses)))
+    drop = set()
+    for j in sorted(range(len(clauses)), key=lambda j: -len(clauses[j])):
+        if len(clauses[j]) < 2:
+            continue
+        val = {(k, i): bool(neg) for k, i, neg in clauses[j]}  # literal false
+        conflict = False
+        changed = True
+        while changed and not conflict:
+            changed = False
+            for t in alive - {j}:
+                free = []
+                for k, i, neg in clauses[t]:
+                    v = val.get((k, i))
+                    if v is None:
+                        free.append((k, i, neg))
+                    elif v != bool(neg):
+                        break                           # literal true
+                else:
+                    if not free:
+                        conflict = True
+                        break
+                    if len(free) == 1:
+                        k, i, neg = free[0]
+                        val[(k, i)] = not neg
+                        changed = True
+        if conflict:
+            alive.discard(j)
+            drop.add(j)
+    return drop
+
+
+def test_rup_redundant_matches_reference():
+    # the pruning in templates._common.Pattern: a bit-sliced prefilter over
+    # all clauses, then the exact sequential test on its candidates only
+    import random
+    from satassume.templates._common import _rup_redundant
+    rng = random.Random(1)
+    for _ in range(1500):
+        nv = rng.randint(2, 9)
+        cs = []
+        for _ in range(rng.randint(2, 24)):
+            vs = rng.sample(range(nv), rng.randint(1 if rng.random() < 0.3 else 2, min(nv, 5)))
+            cs.append(tuple(sorted((v % 3, v, rng.random() < 0.5) for v in vs)))
+        cs = list(dict.fromkeys(cs))
+        assert _rup_redundant(cs) == _rup_reference(cs), cs

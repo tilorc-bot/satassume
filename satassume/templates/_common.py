@@ -224,31 +224,109 @@ def _unsubsumed(clauses):
     return out
 
 
+def _rup_candidates(cls):
+    """Bit ``j`` of the result is set if unit propagation over all clauses
+    of ``cls`` but ``j`` (lists of literals ``2*v + neg``), from the negation
+    of clause ``j``, reaches a conflict.  All tests run at once, bit-sliced:
+    ``F[l]``/``T[l]`` are the tests in which literal ``l`` is false/true, and
+    after the first pass only the clauses of literals that changed are
+    looked at again."""
+    nl = 2 + max(max(c) for c in cls) // 2 * 2
+    F = [0] * nl
+    T = [0] * nl
+    occ = [[] for _ in range(nl)]
+    for j, c in enumerate(cls):
+        b = 1 << j
+        for l in c:
+            F[l] |= b
+            T[l ^ 1] |= b
+            occ[l].append(j)
+            occ[l ^ 1].append(j)
+    full = (1 << len(cls)) - 1
+    done = 0
+    todo = range(len(cls))
+    while todo:
+        dirty = set()
+        for j in todo:
+            c = cls[j]
+            sat = one = two = 0
+            for l in c:
+                sat |= T[l]
+                nf = ~F[l]
+                two |= one & nf
+                one |= nf
+            act = full & ~(done | sat | (1 << j))
+            if not act:
+                continue
+            done |= act & ~one              # all literals false: conflict
+            unit = act & one & ~two         # one literal not false: unit
+            if unit:
+                for l in c:
+                    u = unit & ~(F[l] | T[l])
+                    if u:
+                        T[l] |= u
+                        F[l ^ 1] |= u
+                        dirty.add(l)
+        todo = sorted({t for l in dirty for t in occ[l]})
+    return done
+
+
 def _rup_redundant(clauses):
     """Indices of ``clauses`` (tuples of ``(slot, basis index, neg)``) that
     are implied by the others kept: unit propagation over the kept clauses
     from the negation of the clause reaches a conflict (RUP).  Longest
     clauses are tried first, so short clauses are kept.
 
-    Clauses are bit masks over literals (bit ``2*v`` for literal ``v``,
-    ``2*v + 1`` for its negation), so propagation costs one mask operation
-    per clause and pass (wide Add/Mul patterns: hundreds of clauses of 100+
-    literals)."""
+    Most clauses are not implied, and a pattern is built on first use (cold
+    time), so a cheap filter comes first: unit clauses (never tested, never
+    dropped) are applied to the others once, and :func:`_rup_candidates`
+    runs every test at once over all clauses, an over-approximation of the
+    sequential test (more clauses only propagate more).  Only its
+    candidates get the exact test, in which clauses dropped before are left
+    out: bit masks over literals (bit ``2*v`` for literal ``v``, ``2*v + 1``
+    for its negation), one mask operation per clause and pass."""
     var: Dict[Any, int] = {}
+    cls = [[2 * var.setdefault((k, i), len(var)) + neg for k, i, neg in c]
+           for c in clauses]
+    units = {c[0] for c in cls if len(c) == 1}
+    # contradicting units: every clause is implied
+    cand = 0 if units.isdisjoint([u ^ 1 for u in units]) else (1 << len(cls)) - 1
+    idx = []
+    red = []
+    for j, c in enumerate(cls):
+        if len(c) < 2:
+            continue
+        r = [l for l in c if l ^ 1 not in units]
+        if not r:
+            # the units falsify a clause: every clause is implied
+            cand = (1 << len(cls)) - 1
+            break
+        if not units.isdisjoint(r):
+            # true under the units (subsumed): conflict right away
+            cand |= 1 << j
+            continue
+        idx.append(j)
+        red.append(r)
+    if red and cand != (1 << len(cls)) - 1:
+        got = _rup_candidates(red)
+        for b, j in enumerate(idx):
+            if got >> b & 1:
+                cand |= 1 << j
+    drop = set()
+    if not cand:
+        return drop
     masks = []
     comps = []
-    for c in clauses:
+    for c in cls:
         m = n = 0
-        for k, i, neg in c:
-            v = var.setdefault((k, i), len(var))
-            m |= 1 << (2 * v + neg)
-            n |= 1 << (2 * v + 1 - neg)
+        for l in c:
+            m |= 1 << l
+            n |= 1 << (l ^ 1)
         masks.append(m)
         comps.append(n)
     alive = [True] * len(masks)
-    drop = set()
     for j in sorted(range(len(masks)), key=lambda j: -len(clauses[j])):
-        if len(clauses[j]) < 2:
+        if len(clauses[j]) < 2 or not cand >> j & 1:
             continue
         false, true = masks[j], comps[j]
         live = [masks[t] for t in range(len(masks)) if alive[t] and t != j
