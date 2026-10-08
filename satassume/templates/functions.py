@@ -136,13 +136,10 @@ def function_commutative(expr):
 # ---------------------------------------------------------------------------
 
 _EXP = (
-    (('extended_real',), 'extended_real'),
-    (('extended_real',), 'extended_nonnegative'),
     (('real',), 'positive'),
     (('finite',), 'finite'),
     (('finite',), ('zero', False)),
     (('complex',), 'complex'),
-    (('extended_negative',), 'complex'),
     (('algebraic', ('zero', False)), 'transcendental'),
     (('infinite', 'extended_negative'), 'zero'),
     (('infinite', 'extended_positive'), 'infinite'),
@@ -167,7 +164,6 @@ def _exp(R, c, ipi=None):
     _table(R, _EXP)
     # exp(0) == 1
     R.rule([(X, 'zero', True)], (N, 'odd', True))
-    R.rule([(X, 'zero', True)], (N, 'positive', True))
     if ipi is not None:
         c, has_s = ipi
         ipi_rules(R.rule, c, M if has_s else None, N)
@@ -208,7 +204,6 @@ def _log(R, c):
     # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.
     R.equiv([], (N, 'zero', True), (M, 'zero', True))
     R.rule([(M, 'extended_positive', True)], (N, 'extended_positive', True))
-    R.rule([(M, 'negative', True), (X, 'positive', True)], (N, 'negative', True))
     R.rule([(X, 'positive', True), (N, 'positive', True)], (M, 'positive', True))
     R.rule([(X, 'positive', True), (N, 'negative', True)], (M, 'negative', True))
     R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
@@ -223,11 +218,9 @@ registry.register(log)(_unary('log', _log, slots=_minus_one))
 # ---------------------------------------------------------------------------
 
 def _abs(R, c):
-    R.rule([], (N, 'extended_real', True))
     R.rule([], (N, 'extended_nonnegative', True))
     R.rule([(X, 'finite', True)], (N, 'real', True))
     R.rule([(N, 'finite', True)], (X, 'finite', True))
-    R.rule([(X, 'infinite', True)], (N, 'extended_positive', True))
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
     R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
     _equiv(R, [(X, 'extended_real', True)], ('integer', 'rational', 'even', 'odd', 'algebraic'))
@@ -242,7 +235,6 @@ def _abs(R, c):
 # real one gives itself (``re``) or zero (``im``).
 def _re(R, c):
     R.rule([(X, 'finite', True)], (N, 'real', True))
-    R.rule([(X, 'extended_real', True)], (N, 'extended_real', True))
     R.rule([(X, 'imaginary', True)], (N, 'zero', True))
     R.rule([(X, 'zero', True)], (N, 'zero', True))
     R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
@@ -259,11 +251,8 @@ def _im(R, c):
 
 
 _SIGN = (
-    (('extended_real',), 'integer'),
     (('imaginary',), 'imaginary'),
-    (('extended_positive',), 'positive'),
     (('extended_positive',), 'odd'),
-    (('extended_negative',), 'negative'),
     (('extended_negative',), 'odd'),
     (('extended_nonnegative',), 'nonnegative'),
     (('extended_nonpositive',), 'nonpositive'),
@@ -396,9 +385,7 @@ _COS = (
     _TRANSCENDENTAL,
 )
 _TAN = (
-    # tan(pi/2) == zoo, so realness needs finiteness of the value.
-    (('real',), ('imaginary', False)), (('zero',), 'zero'),
-    (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
+    (('zero',), 'zero'), (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
 )
 
 
@@ -417,15 +404,12 @@ def _tan(R, c):
 
 _COT = (
     # cot(k*pi) == zoo, so realness needs finiteness of the value.
-    (('real',), ('imaginary', False)),
     (('imaginary',), 'imaginary'),          # cot(I*t) == -I*coth(t)
-    (('zero',), 'infinite'),
     (('zero',), ('extended_real', False)),
     # cot(x) == cos(x)/sin(x) is finite for algebraic x != 0 (sin(x) == 0
     # only at multiples of pi) and transcendental by Lindemann-Weierstrass:
     # cot(x) == a algebraic would make exp(2*I*x) algebraic.
     (('algebraic', ('zero', False)), 'transcendental'),
-    (('algebraic',), ('algebraic', False)),
 )
 
 
@@ -438,7 +422,6 @@ def _cot(R, c):
 def _asin(R, c):
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
     R.rule([(N, 'real', True)], (X, 'real', True))
-    R.equiv([(N, 'real', True)], (N, 'positive', True), (X, 'positive', True))
     R.equiv([(N, 'real', True)], (N, 'negative', True), (X, 'negative', True))
     # asin is real on [-1, 1].
     R.rule([(X, 'nonnegative', True), (M, 'nonpositive', True)], (N, 'real', True))
@@ -482,7 +465,6 @@ def _in_unit_interval_units(kind):
 def _atan(R, c):
     R.rule([(X, 'extended_real', True)], (N, 'real', True))
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.equiv([(X, 'extended_real', True)], (N, 'positive', True), (X, 'extended_positive', True))
     R.equiv([(X, 'extended_real', True)], (N, 'negative', True), (X, 'extended_negative', True))
     # atan(I) == oo*I, so restrict to real arguments.
     R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
@@ -493,14 +475,10 @@ def _atan(R, c):
 
 
 _ACOT = (
-    (('extended_real',), 'real'),
-    (('nonnegative',), 'positive'),           # acot(0) == pi/2
-    (('negative',), 'negative'),
     (('extended_nonnegative',), 'nonnegative'),
     (('extended_negative',), 'nonpositive'),  # acot(-oo) == 0
     (('real',), ('zero', False)),
     (('infinite', 'extended_real'), 'zero'),
-    (('real', 'algebraic'), 'transcendental'),
     (('imaginary',), ('extended_real', False)),
     # acot(0) == pi/2, acot(+-I) is infinite, acot(x) == atan(1/x) otherwise.
     (('algebraic',), ('algebraic', False)),
@@ -550,7 +528,6 @@ def _tanh(R, c):
     _table(R, ((('extended_real',), 'real'), _TRANSCENDENTAL))
     for pred in ('positive', 'negative'):
         R.equiv([(X, 'extended_real', True)], (N, pred, True), (X, 'extended_' + pred, True))
-    R.equiv([(X, 'extended_real', True)], (N, 'zero', True), (X, 'zero', True))
 
 
 for _cls, _tag, _gen in ((sinh, 'sinh', _sinh), (cosh, 'cosh', _cosh), (tanh, 'tanh', _tanh)):
