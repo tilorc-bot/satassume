@@ -76,7 +76,7 @@ removed by issue #97 (P2).
 from __future__ import annotations
 
 from collections import OrderedDict, deque
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .compile import VarTable, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
@@ -1717,7 +1717,76 @@ class Engine:
         self.stats["queries"] += 1
         s = self._fresh_session()
         s.ensure(node, {pred})
-        lit = s.base[node] + PRED_INDEX[pred]
+        r = self._decide(s, s.base[node] + PRED_INDEX[pred])
+        self._put_result(s, self.cache, node, pred, r)
+        return r
+
+    def is_many(self, node: Node, preds: Sequence[str]) -> List[Optional[bool]]:
+        """``[self.is_(node, p) for p in preds]``, with the built-in
+        predicates not cached decided in one session that demands all of
+        them instead of one session each.  Same answers and same cache
+        contents (``_put_result``): see :meth:`_decide` for why the
+        predicates a session demands do not change its answers."""
+        if self._epoch != _EPOCH[0] or self.cache._settings != self._settings_key:
+            self._check_version()
+        out: List[Optional[bool]] = [None] * len(preds)
+        todo = []
+        for k, pred in enumerate(preds):
+            if pred not in PRED_INDEX:
+                out[k] = self._is_custom(node, pred)
+            else:
+                todo.append(k)
+        if not todo or node in self._constructing:
+            return out
+        c = self._cones.get(node)
+        if c is None:
+            c = self._cone_info(node)
+        if c[0] is None:
+            for _ in todo:
+                self._over_budget()
+            return out
+        facts = self.cache.facts(node)
+        if facts is not None:
+            left = []
+            for k in todo:
+                pred = preds[k]
+                if pred in facts:
+                    self.stats["cache_hits"] += 1
+                    self.last_budget_limited = False
+                    out[k] = facts[pred]
+                else:
+                    left.append(k)
+            todo = left
+        if not todo:
+            return out
+        self.stats["queries"] += len(todo)
+        s = self._fresh_session()
+        s.ensure(node, {preds[k] for k in todo})
+        base = s.base[node]
+        cache = self.cache
+        for k in todo:
+            pred = preds[k]
+            r = out[k] = self._decide(s, base + PRED_INDEX[pred])
+            self._put_result(s, cache, node, pred, r)
+        return out
+
+    def _decide(self, s: Session, lit: int) -> Optional[bool]:
+        """The context-free answer of the literal ``lit`` of a fresh
+        session ``s`` (``is_``, ``is_many``): unit propagation; if that
+        leaves it open and ``s`` is incomplete, propagation again after
+        the escalation that instantiates the whole cone; then a complete
+        search.
+
+        Why ``is_many`` may decide several predicates of a node in one
+        session, which demands all of them: an answer by propagation is
+        an entailment of clauses of the node's cone, and a predicate
+        still open after propagation (and after the escalation, if
+        anything was parked) is decided by a complete search, so the
+        answer is the verdict of the cone's clauses on that predicate
+        whichever predicates the session demanded, and whatever the
+        session learned deciding the others.  ``tests/
+        test_transfer_numbers.py`` checks this against a loop of ``is_``
+        under every harness preset."""
         r = s.query_literal(lit, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
@@ -1726,7 +1795,6 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, search=True)
-        self._put_result(s, self.cache, node, pred, r)
         return r
 
     def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
@@ -1736,13 +1804,16 @@ class Engine:
         ``_check_version``): True or False only, never None.
 
         Why the cache is a pure memo of ``is_``: ``s`` asserted no cached
-        fact (sessions never read the caches), so its clause set is the
-        one a fresh engine's ``is_(node, pred)`` builds (discovery, parking
-        and escalation depend on the node, the predicate, the registry and
-        the settings only); ``s`` passed the budget test
-        (``_within_budget``), ran uncapped and is never truncated, and its
-        answer is an entailment of that clause set (or a complete search's
-        verdict), so the fresh query answers ``r`` too.  Re-entrancy: the
+        fact (sessions never read the caches), so its clause set depends
+        on the node, the predicates it demands, the registry and the
+        settings only (discovery, parking and escalation); ``s`` passed
+        the budget test (``_within_budget``), ran uncapped and is never
+        truncated, and its answer is an entailment of that clause set (or
+        a complete search's verdict).  For ``is_`` that clause set is the
+        one a fresh engine's ``is_(node, pred)`` builds, so the fresh
+        query answers ``r`` too; for ``is_many``, whose session demands
+        several predicates, the fresh query answers ``r`` by the argument
+        in :meth:`_decide`.  Re-entrancy: the
         one input of ``s`` a fresh engine could see differently is the
         unmemoized None that ``is_`` answers for a node in
         ``_constructing`` (a template evaluating that very node asks about

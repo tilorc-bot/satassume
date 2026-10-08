@@ -184,7 +184,9 @@ def mask_lits(m: int) -> set:
 def _masks(clauses: Sequence[Clause]) -> Tuple[Tuple[int, ...], int]:
     """``(masks, even)``: each clause as the mask of its literals, and the
     mask of the positive literal of every variable the clauses mention.
-    Memoized for a tuple of clauses (the rule base)."""
+    Memoized for a tuple of clauses (the rule base, ``RULE_INSTANTIATED``);
+    any other sequence is converted again on every call, so a caller that
+    propagates over the same clauses repeatedly passes them as a tuple."""
     key = id(clauses)
     hit = _MASKS.get(key)
     if hit is not None and hit[0] is clauses:
@@ -237,7 +239,8 @@ def closure_mask(clauses: Sequence[Clause], a: int) -> int:
 def unit_propagate(clauses: Sequence[Clause], assumptions: Sequence[int]):
     """Unit propagation to a fixpoint over signed-integer clauses; returns
     the set of derived literals (including ``assumptions``) or None on a
-    conflict (:func:`closure_mask` over literal masks)."""
+    conflict (:func:`closure_mask` over literal masks; ``clauses`` as a
+    tuple reuses its masks, see :func:`_masks`)."""
     r = closure_mask(clauses, lits_mask(assumptions))
     return None if r < 0 else mask_lits(r)
 
