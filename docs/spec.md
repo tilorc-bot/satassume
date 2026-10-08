@@ -10,8 +10,9 @@ says "P3, to be implemented" and gives both. "Design" cites
 `docs/design.md`, "theories" cites `docs/theories.md`.
 
 Notation. `V` is `PREDICATES`, 33 unary predicate names (`rules.py`). A
-*node* is a SymPy expression the session gives 33 solver variables
-(`Session.base[node]`, `engine.py`). A *vocabulary atom* is `P(pred, expr)`
+*node* is a SymPy expression the session gives 15 solver variables, one per
+basis predicate (`rules.BASIS`; `Session.base[node]`, `engine.py`); the 18
+other predicates of `V` are definitions over them (design.md, "Rule base"). A *vocabulary atom* is `P(pred, expr)`
 with `pred in PRED_INDEX`; a *relation atom* is `P("eq"|"lt", (a, b))`
 (`RELATION_ATOMS`, `relations.py`); a *custom atom* is any other `P`
 (`formula.py`; `atoms_of(f)` lists a formula's atoms).
@@ -182,7 +183,7 @@ which session).
 
 Definition. `RULE_INSTANTIATED` is the 24-clause minimization of the 26 clauses compiled from `RULES` (over the 15 basis predicates, `rules.BASIS`; design.md, "Rule base")
 (`rules.py`, `minimize_for_propagation`; design, "Rule base"). Every visited scalar node gets one copy over
-its 33 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
+its 15 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
 `Solver.set_rule_block` in `satassume/solver.py`), unless the node's only template is a complete unit pattern
 (`Pattern.complete`: the closed units decide every predicate the rule base mentions), in which case the units
 stand alone.
@@ -269,8 +270,11 @@ clause-generating functions' formulas (`Session._custom`, `satassume/extensions.
 ## 6. The literal of `p`
 
 Definition. If `p` is a vocabulary atom `P(pred, e)`, its literal is
-`base[e] + PRED_INDEX[pred]` after `Session.ensure(e, {pred})`
-(`Engine._literal`). Otherwise it is the Tseitin literal of the formula
+`Session.query_lit(pred, e)` after `Session.ensure(e, {pred})`
+(`Engine._literal`): `base[e] + BASIS_INDEX[pred]` for a basis predicate,
+the single basis literal of a derived predicate defined by one, else
+`(op, literals)`, the definition over `e`'s block (`rules.basis_lits`),
+which `query_literal` decides without a new variable. Otherwise it is the Tseitin literal of the formula
 (`Session.literal_of`, `compile.formula_literal`), memoized in
 `Session.literals`. In both cases the nodes of `p`'s vocabulary atoms are
 visited (`Session._ensure_atoms`) and the glue is told about `p`
@@ -426,11 +430,13 @@ Sampled from `queries.jsonl` with `random.seed(97)` over kind-stratified pools
 (constant, unary, relational, Boolean, `old`), replacing one matrix record and
 one `prop == true` record; shapes computed with `Engine._query_cone`,
 `registry.templates_for`, `_relevant` and the section 3 definition. Scope is
-`(glue, transfer, linked_terms)`.
+`(glue, transfer, linked_terms)`. In the literal column `base[e]+pred` stands for
+`Session.query_lit(pred, e)` (section 6): a variable of `e`'s block for a basis
+predicate, a definition over that block for a derived one.
 
 | line | query | route | cone nodes (templates firing) | scope | literal | answer |
 |---|---|---|---|---|---|---|
-| 374 | `Q.negative(zoo)`, `True` | constant, `Engine.is_` | `zoo` (`constant_units`, 32 units) | `(F, F, {})` | `base[zoo]+negative` | False |
+| 374 | `Q.negative(zoo)`, `True` | constant, `Engine.is_` | `zoo` (`constant_units`, 14 units) | `(F, F, {})` | `base[zoo]+negative` | False |
 | 392 | `Q.positive_infinite(I*x)`, `Q.real(x)` | `Engine.ask`, part = whole | `I*x` (`mul_templates`, 16 rules), `x` (`symbol_units`) | `(F, F, {I*x, x})` | `base[I*x]+positive_infinite` | False |
 | 636 | `Q.algebraic(1 + I)`, `True` | constant, `Engine.is_` | `1 + I` (`add_templates`, 9 rules; `1`, `I` resolved in place) | `(F, F, {})` | `base[1+I]+algebraic` | True |
 | 1326 | `Q.rational(x**y)`, `Q.rational(y) & Q.eq(x, -1)` | `Engine.ask`, part = whole (relational) | `x**y` (`pow_templates`, 57 rules), derived `2*y`, `x - 1`, `x + 1` (`mul`/`add_templates`), `x`, `y`, `-1` (relation side), atom `eq(-1, x)` | `(T, T, {x, y, x**y})` | `base[x**y]+rational` | None |

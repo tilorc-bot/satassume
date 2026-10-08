@@ -250,7 +250,7 @@ class Session:
         # tables instead of 79 clauses per node (Solver.register_block)
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
         self.table = VarTable()
-        self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
+        self.base: Dict[Node, int] = {}      # visited node -> variable of BASIS[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
         self.nclauses = 0
         self.frontier: deque = deque()

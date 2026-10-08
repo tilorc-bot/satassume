@@ -34,9 +34,9 @@ class VarTable:
     """Bijection between atoms and positive integers.
 
     Variables are allocated per *node*: the first time any atom of a node is
-    seen, one variable per predicate is allocated contiguously, in
-    ``PREDICATES`` order, so ``var(P(pred, node)) == base_of[node] +
-    PRED_INDEX[pred]``.  Newly seen nodes are appended to ``new_nodes`` so a
+    seen, one variable per basis predicate is allocated contiguously, in
+    ``BASIS`` order, so ``var(P(pred, node)) == base_of[node] +
+    BASIS_INDEX[pred]`` (derived predicates have no variable of their own).  Newly seen nodes are appended to ``new_nodes`` so a
     caller can discover children without a separate walk of the formula.
 
     An atom whose predicate is not in the vocabulary (a custom predicate,
@@ -46,8 +46,8 @@ class VarTable:
     ``slots[v]`` says what variable ``v`` stands for: ``None`` (an auxiliary
     variable), the custom atom ``P`` itself, or, for the ``NPRED`` variables
     of a node block, the shared pair ``(node, base)``; the atom of such a
-    variable is ``P(PREDICATES[v - base], node)``, built only when asked for
-    (:meth:`atom`): most of a block's atoms are never read, and creating 33
+    variable is ``P(BASIS[v - base], node)``, built only when asked for
+    (:meth:`atom`): most of a block's atoms are never read, and creating all
     of them per node was 5% of the replay.
     """
 

@@ -170,8 +170,8 @@ rounding, `factorial` and a generic `Function` template.
 
 ### Nodes, cones and discovery (`satassume/engine.py`)
 
-A `Session` holds a solver and a `VarTable` giving each visited node 33
-variables. `Session.node` registers the rule block, asserts the node's
+A `Session` holds a solver and a `VarTable` giving each visited node 15
+variables (one per basis predicate). `Session.node` registers the rule block, asserts the node's
 cached context-free facts as units and emits its template clauses, but
 only those about the rule-base neighbourhood of what the query asks
 (`want_of`); the rest is parked (`pending_c`, `pending`). Children are
