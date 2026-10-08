@@ -155,6 +155,8 @@ def _is_matrix_predicate(pred, name: str) -> bool:
     predicates (about 1 ms, once per process) for a vocabulary name: none
     of those names a matrix predicate (``tests/test_sympy_api.py``), and a
     matrix predicate class is recognised by its module anyway."""
+    # correctness rests on test_vocabulary_names_are_not_matrix_predicates
+    # (the two name sets are disjoint); the module check is only a guard
     if name in PRED_INDEX and type(pred).__module__ != _MATRIX_MODULE:
         return False
     return name in matrix_predicates()
