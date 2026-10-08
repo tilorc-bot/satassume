@@ -75,6 +75,7 @@ removed by issue #97 (P2).
 """
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -91,6 +92,97 @@ from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
 from .solver import Solver
 
 Node = Any
+
+#: cone sessions of ``Engine.is_`` (``Engine._cone_session``): one
+#: ``_Cones`` per configuration (``Engine._cone_cfg``), at most
+#: ``_CONE_CFGS`` of them, those of an earlier registry epoch dropped when a
+#: new one is made
+_CONE_SESSIONS: Dict[Any, Any] = {}
+_CONE_CFGS = 8
+#: entries (sessions and non-pure cones) per configuration
+_CONE_MAX = 4096
+#: the memory bound: solver variables of all cached cone sessions together
+#: (a session costs about 0.4-0.75 KB per variable, clauses included, so
+#: 2**17 variables are about 50-100 MB); past it sessions not used
+#: recently are dropped (CLOCK, ``_Cones``), other configurations first
+CONE_BUDGET = 1 << 17
+#: a cone heavier than this (``_cone_info`` weight) is not cached: it takes
+#: the per-query path, which builds only what the query demands
+CONE_WEIGHT_MAX = 64
+#: a built cone session with more variables than this is used once and
+#: not kept
+CONE_SIZE_MAX = CONE_BUDGET // 16
+#: answer ``Engine.is_`` misses in cone sessions (False: the per-query
+#: path only); a constant, switched only by benchmarks and tests
+CONE_SESSIONS = True
+_UNSAT = object()
+#: how many models a cone session keeps (``Solver._RING`` is 2): more
+#: repeated queries of a cone are answered None from a stored model pair
+CONE_RING_SIZE = 8
+#: a search runs in the cached cone session itself, which keeps what it
+#: learnt for the next query (True), or in a copy of it taken before any
+#: search (False)
+CONE_REUSE = True
+#: cone sessions are shared mutable state: one thread at a time builds,
+#: searches or evicts them (re-entrant: a template may query ``is_``)
+_CONE_LOCK = threading.RLock()
+
+
+class _Cones(dict):
+    """The cone sessions of one configuration: node -> session, or False
+    for a cone that takes the per-query path, oldest first.  Eviction is
+    CLOCK (second chance), an approximation of LRU: a hit only sets the
+    session's ``cone_ref`` (moving it in the dict would compare the
+    queried node with the key, a deep SymPy ``==`` when the node is an
+    equal copy); an evicted entry with ``cone_ref`` set is moved to the end
+    with the flag cleared instead.  ``size``: the variables of its
+    sessions (``CONE_BUDGET``)."""
+    __slots__ = ("size",)
+
+    def __init__(self):
+        super().__init__()
+        self.size = 0
+
+    def clear(self) -> None:
+        dict.clear(self)
+        self.size = 0
+
+    def put(self, node, s) -> None:
+        old = self.pop(node, None)
+        if old:
+            self.size -= old.cone_size
+        self[node] = s
+        if s:
+            self.size += s.cone_size
+        while len(self) > _CONE_MAX:
+            self._evict()
+
+    def _evict(self) -> None:
+        while True:
+            k = next(iter(self))
+            old = self.pop(k)
+            if old and old.cone_ref:
+                old.cone_ref = False
+                self[k] = old
+                continue
+            if old:
+                self.size -= old.cone_size
+            return
+
+
+def _cone_trim(cones: _Cones) -> None:
+    """Bring the cached cone sessions within ``CONE_BUDGET``: drop other
+    configurations (oldest first), then sessions of ``cones`` not used
+    recently (``_Cones._evict``)."""
+    total = sum(d.size for d in _CONE_SESSIONS.values())
+    if total <= CONE_BUDGET:
+        return
+    for k in [k for k, d in _CONE_SESSIONS.items() if d is not cones]:
+        total -= _CONE_SESSIONS.pop(k).size
+        if total <= CONE_BUDGET:
+            return
+    while cones.size > CONE_BUDGET and cones:
+        cones._evict()
 
 
 #: the verdicts of an assumption set (``Engine.verdict``): only
@@ -235,19 +327,24 @@ ObjectCache = DictCache
 # --------------------------------------------------------------------------
 
 class Session:
-    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE):
+    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE,
+                 solver: Optional[Solver] = None):
         self.engine = engine
         #: the theory scope the session is built for (``scope.theory_scope``
         #: of its query): the relation glue and predicate transfer exist
         #: from construction iff the scope says so (#97 P3)
         self.scope = scope
-        self.solver = Solver()
-        # no owner bookkeeping: nothing asks the solver for provenance
-        # (the provenance writeback of #53 stage 3 was removed by #97 P2)
-        self.solver.track_owners = False
-        # the single-node rule base, propagated by the solver from shared
-        # tables instead of 79 clauses per node (Solver.register_block)
-        self.solver.set_rule_block(RULE_INTERNAL, NPRED)
+        if solver is None:
+            solver = Solver()
+            # no owner bookkeeping: nothing asks the solver for provenance
+            # (the provenance writeback of #53 stage 3 was removed by #97 P2)
+            solver.track_owners = False
+            # the single-node rule base, propagated by the solver from
+            # shared tables instead of 79 clauses per node
+            # (Solver.register_block)
+            solver.set_rule_block(RULE_INTERNAL, NPRED)
+        # else: a copy of a cone session's solver (:meth:`adopt`)
+        self.solver = solver
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
         self.read_pos = 0                    # cursor into solver.root_trail()
@@ -312,6 +409,18 @@ class Session:
             # glue (and transfer, if the scope says so) exists before any
             # atom is allocated, as a fresh engine for the query has it
             self.relations = Relations(self, engine._relation_specs)
+
+    def adopt(self, other: "Session") -> None:
+        """Start this new session, created with a copy of the solver
+        (:meth:`Solver.clone`) of the complete session ``other`` of a cone
+        this session's cone contains (``Engine._cone_session``), from
+        ``other``'s variable table and visited nodes."""
+        t, ot = self.table, other.table
+        t.base_of = dict(ot.base_of)
+        t.slots = ot.slots[:]
+        self.base = dict(other.base)
+        self.nclauses = other.nclauses
+        self.n_constants = other.n_constants
 
     def var(self, pred: str, node: Node) -> int:
         return self.node(node) + PRED_INDEX[pred]
@@ -1119,15 +1228,18 @@ class Engine:
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "set_checks": 0,
-                      "budget_limited": 0, "scope_misses": 0}
+                      "budget_limited": 0, "scope_misses": 0,
+                      "cone_hits": 0, "cone_builds": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
         self.last_budget_limited = False
+        #: the key of the engine's cone sessions (``_cone_cfg``)
+        self._cone_key = None
 
-    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE) -> Session:
+    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE, solver=None) -> Session:
         self.stats["sessions"] += 1
-        return Session(self, scope)
+        return Session(self, scope, solver)
 
     # -- the registry epoch ---------------------------------------------------
     @property
@@ -1706,9 +1818,22 @@ class Engine:
             # re-entrant query from a template evaluating this very node
             return None
         c = self._cones.get(node)
+        ent = None
         if c is None:
-            c = self._cone_info(node)
-        if c[0] is None:
+            if CONE_SESSIONS:
+                # a cached cone session carries the weight of its cone (a
+                # function of the node and the configuration): the budget
+                # test without walking the cone again
+                cones = self._cone_dict()
+                ent = cones.get(node)
+            if ent:
+                if ent.cone_weight > self._discovery_budget:
+                    return self._over_budget()
+            else:
+                c = self._cone_info(node)
+                if c[0] is None:
+                    return self._over_budget()
+        elif c[0] is None:
             return self._over_budget()
         facts = self.cache.facts(node)
         if facts is not None and pred in facts:
@@ -1716,6 +1841,20 @@ class Engine:
             self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
+        if CONE_SESSIONS:
+            with _CONE_LOCK:
+                if ent:
+                    s = ent
+                    s.cone_ref = True               # used (``_Cones``)
+                    self.stats["sessions"] += 1
+                    self.stats["cone_hits"] += 1
+                else:
+                    s = self._cone_session(self._cone_dict(), node, c)
+                if s is not None:
+                    r = self._cone_answer(s, node, pred)
+                    if r is not _UNSAT:
+                        self._put_result(s, self.cache, node, pred, r)
+                        return r
         s = self._fresh_session()
         s.ensure(node, {pred})
         lit = s.base[node] + PRED_INDEX[pred]
@@ -1729,6 +1868,148 @@ class Engine:
             r = s.query_literal(lit, search=True)
         self._put_result(s, self.cache, node, pred, r)
         return r
+
+    def _cone_dict(self) -> _Cones:
+        """The cone sessions of this engine's configuration.  Making them
+        drops those of earlier registry epochs (never used again) and, past
+        ``_CONE_CFGS`` configurations, the oldest."""
+        cfg = self._cone_cfg()
+        cones = _CONE_SESSIONS.get(cfg)
+        if cones is None:
+            with _CONE_LOCK:
+                cones = _CONE_SESSIONS.get(cfg)
+                if cones is None:
+                    for k in [k for k in _CONE_SESSIONS if k[0] != cfg[0]]:
+                        del _CONE_SESSIONS[k]
+                    while len(_CONE_SESSIONS) >= _CONE_CFGS:
+                        del _CONE_SESSIONS[next(iter(_CONE_SESSIONS))]
+                    cones = _CONE_SESSIONS[cfg] = _Cones()
+        return cones
+
+    def _cone_session(self, cones: _Cones, node: Node, c) -> Optional[Session]:
+        """The session of the whole cone of ``node`` (discovery with every
+        predicate demanded, then escalation: a function of the node, the
+        registry epoch and the settings), shared by every engine of the
+        process with the same configuration (``cones``); ``c`` is the
+        node's ``_cone_info``.  None if the cone is not a pure
+        propositional one (formulas, custom or relation atoms, theories),
+        or is heavier than ``CONE_WEIGHT_MAX``: those take the per-query
+        path.  A session with more than ``CONE_SIZE_MAX`` variables answers
+        and is not kept; keeping one may drop others (``CONE_BUDGET``).
+        Called under ``_CONE_LOCK``."""
+        ent = cones.get(node)
+        if ent is not None:
+            self.stats["sessions"] += 1
+            self.stats["cone_hits"] += 1
+            if not ent:
+                return None
+            ent.cone_ref = True                 # used (``_Cones``)
+            return ent
+        weight = c[1]
+        if weight > CONE_WEIGHT_MAX:
+            return None
+        if c[2]:
+            # a relation atom in the cone: never pure, no build
+            cones.put(node, False)
+            return None
+        self.stats["cone_builds"] += 1
+        # start from a copy of the largest cached cone among the node's
+        # kids: a sub-cone of this one, its clauses a subset of ours
+        best = None
+        for k in self._struct(node)[0]:
+            b = cones.get(k)
+            if b and (best is None or b.solver._nvars > best.solver._nvars):
+                best = b
+        if best is not None:
+            s = self._fresh_session(solver=best.solver.clone(True))
+            s.adopt(best)
+        else:
+            s = self._fresh_session()
+        s.ensure(node, None)
+        s.escalate()
+        # a root conflict: the per-query path answers (propagation over
+        # part of the cone can decide a query before it)
+        ok = (not s.table.custom and s.table.naux == 0 and s.relations is None
+              and not s.solver._theories and not s.truncated
+              and s.solver.propagate())
+        if not ok:
+            cones.put(node, False)
+            return None
+        s.engine = None
+        s.cone_weight = weight
+        s.solver._RING = CONE_RING_SIZE
+        #: the base variable of the node (read without a lookup of the node)
+        s.cone_base = s.base[node]
+        #: answers given in this cone, None included (a complete search
+        #: over the cone's clause set: a function of the node, the
+        #: predicate and the configuration)
+        s.answers = {}
+        #: what the session counts for in ``CONE_BUDGET``
+        s.cone_size = s.solver._nvars
+        #: queried since it was last passed by an eviction (``_Cones``)
+        s.cone_ref = False
+        if s.cone_size <= CONE_SIZE_MAX:
+            cones.put(node, s)
+            _cone_trim(cones)
+        return s
+
+    def _cone_answer(self, s: Session, node: Node, pred: str):
+        """The answer to ``pred(node)`` in the cone session ``s`` of
+        ``node``: its root value, else a complete search (in ``s`` itself
+        or, without ``CONE_REUSE``, in a copy of it).  ``_UNSAT`` if the
+        cone turns out unsatisfiable: the cone is dropped and the query
+        takes the per-query path, which answers or raises as it always
+        did."""
+        memo = s.answers
+        r = memo.get(pred, _UNSAT)
+        if r is not _UNSAT:
+            return r
+        lit = s.cone_base + PRED_INDEX[pred]
+        solver = s.solver
+        r = solver.value(lit)
+        if r is None:
+            if not CONE_REUSE:
+                solver = solver.clone(True)
+            solver.mention((lit,))
+            if not solver.propagate():
+                self._cone_drop(node, s)
+                return _UNSAT
+            r = solver.value(lit)
+            if r is None:
+                self.stats["searches"] += 1
+                try:
+                    r = solver.entails(lit)
+                    if not CONE_REUSE:
+                        # the models found: models of the cone's formula
+                        s.solver._ring = solver._ring[:]
+                except ValueError:
+                    # a search of the cone may have learnt units that
+                    # would decide later queries: dropped
+                    self._cone_drop(node, s)
+                    return _UNSAT
+        memo[pred] = r
+        return r
+
+    def _cone_drop(self, node: Node, s: Session) -> None:
+        """The cone session ``s`` of ``node`` is unsatisfiable: the node
+        takes the per-query path from now on."""
+        cones = _CONE_SESSIONS.get(self._cone_cfg())
+        if cones is not None and cones.get(node) is s:
+            cones.put(node, False)
+
+    def _cone_cfg(self) -> tuple:
+        """The key of this engine's cone sessions: what a cone's clause set
+        depends on besides the node (the registry epoch, the settings
+        fingerprint, the templates, the extension registry, the relation
+        specs, which also decide what the budget test walks).  Remembered
+        per epoch and settings fingerprint, which change whenever a part
+        does."""
+        k = self._cone_key
+        if k is not None and k[0] == _EPOCH[0] and k[1] is self._settings_key:
+            return k
+        k = self._cone_key = (_EPOCH[0], self._settings_key, self.clause_templates,
+                              self._extensions, self._relation_specs)
+        return k
 
     def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
         """Memoize the answer ``r`` of the context-free query ``pred(node)``

@@ -178,6 +178,7 @@ ADOPTED: Tuple[Tuple[str, str, str], ...] = (
     ("satassume.engine", "_NEIGH", "pure"),
     ("satassume.engine", "_WANT", "pure"),
     ("satassume.engine", "_SPLIT", "pure"),
+    ("satassume.engine", "_CONE_SESSIONS", "epoch"),
     ("satassume.solver", "_RULE_TABLES", "pure"),
     ("satassume.lra_adapter", "_BOUNDS", "pure"),
     ("satassume.lra_adapter", "_INTERPRETED", "pure"),
