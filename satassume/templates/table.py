@@ -58,11 +58,12 @@ class Row:
         self.note = note
         if kind == 'equiv' and len(concl) != 2:
             raise ValueError(f"{name}: an equiv row has two literals")
-        self._compile()
+        self._prem = None       # normalized on first use (_rows)
 
     def _compile(self):
-        """Normalize the literals for the interpreter (called again by
-        whoever replaces ``prem`` or ``concl``, e.g. a mutation test)."""
+        """Normalize the literals for the interpreter (done when the
+        interpreter first meets the row; called again by whoever replaces
+        ``prem`` or ``concl``, e.g. a mutation test)."""
         self._prem = tuple(_norm(s) for s in self.prem)
         self._concl = tuple(_norm(s) for s in self.concl)
         self._ge2 = any(s[1] == GE2 for s in self.prem)
@@ -180,6 +181,8 @@ def _rows(rows, guards, ctx, slots) -> Iterator[tuple[Any, list, list]]:
             continue
         if row.when and not _holds(row.when, guards, ctx):
             continue
+        if row._prem is None:
+            row._compile()
         fast = row.kind == 'rule' and not row._ge2
         for cur in (row.preds or (None,)):
             if fast:

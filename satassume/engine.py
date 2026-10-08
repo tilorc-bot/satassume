@@ -1053,7 +1053,6 @@ class Engine:
                 from .templates import registry
                 templates = registry.facts_for
                 clause_templates = registry.clauses_for
-                registry.warm_up()
         if extensions is None:
             from .extensions import extensions
         if relations is None:
