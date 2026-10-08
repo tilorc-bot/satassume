@@ -249,7 +249,13 @@ class Session:
         # the single-node rule base, propagated by the solver from shared
         # tables instead of 79 clauses per node (Solver.register_block)
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
-        # rule blocks not yet registered (lazy blocks): base -> own mask
+        # rule blocks not yet registered (lazy blocks): base -> own mask.
+        # A node's block is kept here at visit, unless a theory or the
+        # transfer is bound (they read block facts), and registered when a
+        # model violates it (_take_violated), or by escalate.  Sound for the
+        # same reason as parked clauses: a definite answer of a subset of
+        # the clauses is one of the whole set, and an open answer or
+        # CONSISTENT stands only with a model that satisfies every block.
         self.lazy_blocks: Dict[int, int] = {}
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of PREDICATES[0]
@@ -790,10 +796,13 @@ class Session:
         self.frontier = deque()
 
     def _take_violated(self) -> bool:
-        """Emit the parked pattern clauses that the model of the solver's
-        last successful solve falsifies and unpark them; False if the model
-        satisfies every parked clause (it is then a model of the escalated
-        clause set too: those clauses are all escalation would add)."""
+        """Register the lazy rule blocks (:attr:`lazy_blocks`) on which the
+        model of the solver's last successful solve has no model of the
+        block, or if there are none, emit the parked pattern clauses that
+        the model falsifies and unpark them; False if the model satisfies
+        every lazy block and every parked clause (it is then a model of the
+        escalated clause set too: those blocks and clauses are all
+        escalation would add)."""
         solver = self.solver
         model = solver._model
         get = model.get
