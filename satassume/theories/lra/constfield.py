@@ -6,9 +6,10 @@ rational coefficients; this module extends it to coefficients such as
 ``pi``, ``1/pi``, ``3*pi/2 + E`` and ``sqrt(2)``, so that ``x/pi + 1/2``
 is a linear form whose endpoint ties (``x = -pi/2`` makes it exactly 0)
 are decided exactly rather than by interval arithmetic.  Nothing here
-imports SymPy except :func:`from_sympy` and :meth:`Element.to_sympy`
-(lazily), and ``sympy.polys`` for gcds beyond the small univariate
-case (see Limits).
+imports SymPy at module level; :func:`from_sympy`, :meth:`Element.to_sympy`,
+the bounds of other constants (:mod:`.lra_bounds`) and ``sympy.polys``
+for gcds beyond the small univariate case (see Limits) import it inside
+functions.
 
 Following de Moura and Passmore, "Computation in Real Closed Infinitesimal
 and Transcendental Extensions of the Rationals" (CADE 2013; z3's ``rcf``
@@ -1408,6 +1409,9 @@ def _generic(e):
     (:func:`satassume.theories.lra.lra_bounds.constant_bounds`), enclosed at any
     precision by the same interval evaluation at a higher working
     precision (:func:`satassume.theories.lra.lra_bounds.constant_enclosure`)."""
+    # inside the function: lra_bounds imports SymPy at module level, and
+    # constfield must stay importable without SymPy (tests/test_layering.py);
+    # e is a SymPy constant here, so SymPy is loaded already
     from .lra_bounds import constant_bounds, constant_enclosure
     b = constant_bounds(e)
     if b is None:
