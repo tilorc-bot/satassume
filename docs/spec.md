@@ -314,7 +314,7 @@ the whole set's verdict decides raising (design, "Why splitting is sound";
 ## 8. The answer as entailment
 
 Definition. Let `C` be the clause set of section 5 over the session's
-nodes `cone(p) | cone(A)` with the theories LRA (`satassume/lra*.py`),
+nodes `cone(p) | cone(A)` with the theories LRA (`satassume/theories/lra/`),
 EUF (`satassume/theories/euf/euf.py`) and transfer attached when `glue`, and `L` the
 assumption literals of section 5.4 and 5.5. Let `q` be the literal of `p`.
 

@@ -35,6 +35,11 @@ layers below it):
 | 1 | `sat/` (`formula`, `solver`, `theory`) | propositional formulas and CDCL search, with the DPLL(T) theory contract; no vocabulary |
 | 0 | `state/` (`epoch`, `memos`) | when kept state is invalidated: the registry epoch and the process-wide memo tables; owners register their own tables |
 
+Outside the layers: `_compat.py` (imported only by the package
+`__init__`, first) keeps the old flat module names importable during the
+transition; see "Old module names" below. It imports nothing from the
+package, and the layering test treats it as the top.
+
 The rule counts every import, at module level, inside a function or
 under `TYPE_CHECKING`, and module names given as strings (`importlib`,
 `sys.modules`, `__name__ + ".x"`). Inside `theories` the theories do not
@@ -52,8 +57,9 @@ Why the cut is where it is:
   (`transfer` 9, `lra_adapter` 5, `euf_adapter` 4). `scope` reads only the
   query and decides how much of `relations` it gets; all four of its
   commits changed `sympy_api`, `relations` or `engine` too. So
-  `theories/` holds only decision procedures, and both modules keep
-  their paths. `transfer` changed together with `relations` in 9 of its
+  `theories/` holds the decision procedures and, next to each, its
+  adapter from SymPy terms (`lra/lra_adapter.py`, `euf/euf_adapter.py`,
+  which `relations` instantiates), and both modules keep their paths. `transfer` changed together with `relations` in 9 of its
   10 commits; it is still a theory (`TransferTheory`, the contract of
   `sat/theory.py`, reading atoms only), and `relations` is its one client,
   as `engine` is the main client of `compile`. Client and provider in
@@ -101,9 +107,16 @@ outside the list above loads neither SymPy nor mpmath.
 The flat module names before the package move (`satassume.rules`,
 `satassume.templates.core`, ...) still import, as the moved module
 objects themselves, with a `DeprecationWarning` (`satassume/_compat.py`),
-so monkeypatching through an old name still patches the real module. They
-are for code written against the flat layout that runs against a later
-checkout: branches opened before the move, scripts, an older checkout's
+so monkeypatching through an old name still patches the real module.
+As before the move, importing a module by its new name also enters its
+old name in `sys.modules` (`import satassume.sympy_api` makes
+`sys.modules["satassume.rules"]` the rules module), `satassume.rules` is
+an attribute of the package, and the few names the old modules had and
+the moved ones do not (`memos.engine_memos`, `euf_adapter._structural`,
+`relations._optional`) are still served, with a warning. What does not
+carry over: a function's `__module__` and a module's `__name__` are the
+new names. The aliases are for code written against the flat layout
+that runs against a later checkout: branches opened before the move, scripts, an older checkout's
 tools. Nothing in this repository uses them (`tests/test_layering.py`
 checks the package, `tests/`, `harness/`, `tools/` and `benchmarks/`).
 They are removed after the class-level follow-up of the move (PLAN.md,
