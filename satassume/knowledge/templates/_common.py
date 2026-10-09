@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from ...sat.formula import And, Implies, Not, Or, P
 from ...state.memos import adopt as _adopt_memo
-from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
+from ..rules import BASIS, BASIS_INDEX, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
 
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
@@ -270,14 +270,13 @@ class Pattern:
                 # (slot, basis index, neg)
                 expanded.append(tuple((k, i, not pos) for k, i, pos in lits))
         for lits in _unsubsumed(expanded):
-            if True:
-                npreds = frozenset(i for k, i, _ in lits if k == node)
-                # internal literal = 2*base_of_slot + (2*pidx + neg)
-                clauses.append((lits, npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
-                for k, i, _ in lits:
-                    used.add(k)
-                    if k != node:
-                        child_preds.setdefault(k, set()).add(i)
+            npreds = frozenset(i for k, i, _ in lits if k == node)
+            # internal literal = 2*base_of_slot + (2*pidx + neg)
+            clauses.append((lits, npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
+            for k, i, _ in lits:
+                used.add(k)
+                if k != node:
+                    child_preds.setdefault(k, set()).add(i)
         self.clauses = clauses
         self.used = tuple(sorted(used))
         self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
@@ -339,7 +338,7 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
         for pred, value in gen():
             for c in expand_clause([(0, pred, value)]):
                 if len(c) == 1:
-                    lits.append(c[0][1] + 1 if c[0][2] else -(c[0][1] + 1))
+                    lits.append(_signed(c[0][1], c[0][2]))
                 else:
                     rest.append(((), tuple((0, BASIS[i], pos) for _, i, pos in c)))
         closed = unit_propagate(RULE_INSTANTIATED, lits)
@@ -354,11 +353,11 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
                 keep, new = [], []
                 for ps, cs in rest:
                     cl = [(k, p, pos) for k, p, pos in cs
-                          if (BASIS.index(p) + 1 if not pos else -(BASIS.index(p) + 1)) not in units]
-                    if any((BASIS.index(p) + 1 if pos else -(BASIS.index(p) + 1)) in units for k, p, pos in cl):
+                          if _signed(BASIS_INDEX[p], not pos) not in units]
+                    if any(_signed(BASIS_INDEX[p], pos) in units for k, p, pos in cl):
                         continue
                     if len(cl) == 1 and closed is not None:
-                        new.append(BASIS.index(cl[0][1]) + 1 if cl[0][2] else -(BASIS.index(cl[0][1]) + 1))
+                        new.append(_signed(BASIS_INDEX[cl[0][1]], cl[0][2]))
                     else:
                         keep.append((ps, tuple(cl)))
                 rest = keep
@@ -376,6 +375,11 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
             pat.complete = len(decided | RULE_FREE) == NPRED
         _CACHE[key] = pat
     return Compiled((obj,), pat)
+
+
+def _signed(i: int, pos: bool) -> int:
+    """The signed 1-based literal of basis index ``i``."""
+    return i + 1 if pos else -(i + 1)
 
 
 def consts_of(args) -> Dict[int, Any]:
