@@ -163,8 +163,9 @@ rounding, `factorial` and a generic `Function` template.
   an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
   coefficients (`_half_templates`).
 - SymPy objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
-  properties of atoms with a fixed value (`is_constant`, `constant_units`)
-  and the structural `is_commutative` (`structural_commutative`).
+  properties of atoms with a fixed value (`is_constant`, `constant_units`).
+  `commutative` has no template: it is true by definition (see
+  "Non-commutative symbols").
 - `tests/test_templates.py` evaluates every rule at concrete values, in
   Kleene logic over SymPy's values of the atoms; none may be False.
 
@@ -378,18 +379,23 @@ inconsistent, and through writeback changed later answers about `x`
 | Pow, nonzero power | needs `commutative(b)` |
 | Function, downward | dropped; the upward rule stays, but not for `Function(..., commutative=False)` |
 
-These rules need commutative premises, which nothing asserted for terms no
-template relates to their arguments (`Max`, `Integral`, `Piecewise`,
-`Trace`, `M[0, 0]`, ...; the first version of #54 lost 72 answers on them).
-`structural_commutative` emits `commutative(e)`, never its negation, when
-SymPy's `is_commutative` is True for `e` and every scalar ingredient;
-`e` alone is not enough, since `Subs(x, x, A)` claims True.
+The table is history: `commutative` is now true by definition
+(`rules.DEFINITIONS`: no basis variable, no rule, no template), so these
+premises hold and the rules apply to every term. That is sound only for
+numbers, so terms with a non-commutative subterm never reach the rule base:
+`sympy_api` puts a vocabulary predicate of such an argument out of scope
+(category `"matrix"`; an opaque atom in the assumptions), and `Engine`, used
+directly, answers None for `is_`/`is_many` on such a term and for `ask`
+when a vocabulary atom of the proposition or the assumptions has one
+(`engine._noncommutative`), and `verdict` is `UNKNOWN` for a set with one. A function registered for `commutative`
+(`extensions.register`) is refused with a ValueError: there is no variable
+it could set. `structural_commutative` and `function_commutative` are gone.
 
 The answers differ from `sympy.ask`, which reads commutativity
-structurally: `Q.zero(A*B)` and `Q.zero(A - B)` are None (SymPy: False);
-`Q.zero(x*A)` under `Q.zero(x)` is None (SymPy: True; `0*(A + oo)` is nan),
-True with `Q.finite(A)` added. `tests/test_noncommutative.py` model-checks
-the templates over 2x2 matrices. Open: `re`, `im`, `sign`, `log` of
+structurally: through `sympy_api`, `Q.zero(A*B)` and `Q.zero(A - B)` are
+None (out of scope, category `"matrix"`; SymPy: False). `tests/test_noncommutative.py`
+model-checks the templates over 2x2 matrices and checks the Engine's
+None answers. Open: `re`, `im`, `sign`, `log` of
 non-commutative arguments (#62); a static totality check (PR #58).
 
 ## Relevance

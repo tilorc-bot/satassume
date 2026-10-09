@@ -78,10 +78,10 @@ from __future__ import annotations
 from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .compile import VarTable, compile_formula, formula_literal
+from .compile import VarTable, basis_formula, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
 from .memos import engine_memos
-from .formula import P, atoms_of
+from .formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
@@ -118,6 +118,24 @@ _REMOVED_WRITEBACK = ("provenance", "all")
 #: discovery budget is a test on the query's structural cone, made before
 #: any session work: Engine._within_budget)
 _UNCAPPED = float("inf")
+
+
+def _noncommutative(term) -> bool:
+    """Whether ``term`` has a non-commutative subterm (``Symbol('A',
+    commutative=False)``, ``re(A)``): see :func:`satassume.sympy_api._noncommutative`.
+    Such a term may stand for a matrix, while the rule base and the
+    templates assume numbers (``commutative`` is true by definition,
+    ``rules.DEFINITIONS``); the engine answers None about it (``sympy_api``
+    keeps it out of scope before it reaches the engine)."""
+    from .sympy_api import _noncommutative as nc
+    return nc(term)
+
+
+def _noncommutative_atoms(*formulas) -> bool:
+    """Whether a vocabulary atom of ``formulas`` (None skipped) has a
+    non-commutative term (:func:`_noncommutative`)."""
+    return any(a.pred in PRED_INDEX and _noncommutative(a.expr)
+               for f in formulas if f is not None for a in atoms_of(f))
 
 
 def _kid(atom):
@@ -1828,9 +1846,13 @@ class Engine:
         mostly the relevance layer deciding whether a set may raise before
         it answers under a part of it.  A set whose structural cone outweighs ``discovery_budget``
         is ``UNKNOWN`` without any session (every query under it is over
-        the budget too: ``_within_budget``)."""
+        the budget too: ``_within_budget``).  A set with a vocabulary atom
+        about a non-commutative term is ``UNKNOWN`` (out of scope, as for
+        :meth:`ask`: ``_noncommutative``)."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
+        if _noncommutative_atoms(assumptions):
+            return UNKNOWN
         if not self._within_budget(assumptions):
             return UNKNOWN
         v = self._verdict.get(assumptions)
@@ -1901,6 +1923,8 @@ class Engine:
         if node in self._constructing:
             # re-entrant query from a template evaluating this very node
             return None
+        if _noncommutative(node):
+            return None
         c = self._cones.get(node)
         if c is None:
             c = self._cone_info(node)
@@ -1911,6 +1935,14 @@ class Engine:
             self.stats["cache_hits"] += 1
             self.last_budget_limited = False
             return facts[pred]
+        if not BASIS_OF[pred]:
+            # true or false by definition (``commutative``): no session,
+            # memoized as _put_result would
+            self.last_budget_limited = False
+            r = basis_lits(pred)[0] == '&'
+            if self._writeback == "root-only":
+                self.cache.put(node, pred, r)
+            return r
         self.stats["queries"] += 1
         s = self._fresh_session()
         s.ensure(node, {pred})
@@ -1928,10 +1960,11 @@ class Engine:
             self._check_version()
         out: List[Optional[bool]] = [None] * len(preds)
         todo = []
+        noncomm = _noncommutative(node)
         for k, pred in enumerate(preds):
             if pred not in PRED_INDEX:
                 out[k] = self._is_custom(node, pred)
-            else:
+            elif not noncomm:
                 todo.append(k)
         if not todo or node in self._constructing:
             return out
@@ -1954,6 +1987,17 @@ class Engine:
                 else:
                     left.append(k)
             todo = left
+        left = []
+        for k in todo:
+            if BASIS_OF[preds[k]]:
+                left.append(k)
+            else:
+                # true or false by definition (``commutative``)
+                self.last_budget_limited = False
+                r = out[k] = basis_lits(preds[k])[0] == '&'
+                if self._writeback == "root-only":
+                    self.cache.put(node, preds[k], r)
+        todo = left
         if not todo:
             return out
         self.stats["queries"] += len(todo)
@@ -2072,6 +2116,9 @@ class Engine:
         self.last_budget_limited = False
         lits: List[int] = []
         contextual = assumptions is not None and assumptions is not True
+        if _noncommutative_atoms(proposition, assumptions if contextual else None):
+            # out of scope (_noncommutative): None, never a raise
+            return None
         if not self._within_budget(proposition, assumptions if contextual else None):
             # whether a set raises is a function of the set alone: one that
             # fits the budget and is INCONSISTENT raises for every query
@@ -2083,6 +2130,15 @@ class Engine:
                     and self.verdict(assumptions) is INCONSISTENT):
                 raise InconsistentAssumptions("inconsistent assumptions")
             return self._over_budget()
+        if not contextual:
+            # a predicate true or false by definition (``commutative``,
+            # rules.DEFINITIONS) of a term: decided without a session,
+            # after the budget test as in is_ (a query over the budget is
+            # None for an atom and its negation alike)
+            a = proposition.args[0] if isinstance(proposition, Not) else proposition
+            c = basis_formula(a) if isinstance(a, P) else None
+            if c is TRUE or c is FALSE:
+                return (c is TRUE) != isinstance(proposition, Not)
         if contextual:
             s, lits = self._context_session(assumptions, proposition)
         else:
