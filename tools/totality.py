@@ -1,7 +1,7 @@
 """Totality checker for satassume's compiled template blocks (issue #53).
 
 A node's *block* is the union of its compiled patterns
-(``satassume.templates._common.Pattern``): clauses in slot space, with
+(``satassume.knowledge.templates._common.Pattern``): clauses in slot space, with
 literals ``(k, pidx, neg)`` over the slots of the node's templates (direct
 arguments, the node, derived nodes).  The block is *total* if for every
 assignment of the non-node slots that is consistent with the rule base
@@ -37,7 +37,7 @@ is checked (about 2 s); with both, every subexpression of the corpus and
 the refine stream (about 380 blocks, about 6 s).
 
 For a Mul or Pow node the clauses come from the rule tables of
-``satassume/templates/core.py`` (``MUL_TABLE``, ``POW_TABLE``,
+``satassume/knowledge/templates/core.py`` (``MUL_TABLE``, ``POW_TABLE``,
 ``IPI_TABLE``; issue #97): each fired clause of a non-total block is
 printed with the names of the table rows that emit it
 (``core.table_provenance``), and ``--tables`` prints the tables.
@@ -58,8 +58,8 @@ import json
 import pickle
 import time
 
-from satassume.rules import NPRED, BASIS, BASIS_INDEX, RULE_CLAUSES
-from satassume.solver import Solver
+from satassume.knowledge.rules import NPRED, BASIS, BASIS_INDEX, RULE_CLAUSES
+from satassume.sat.solver import Solver
 
 
 def rule_models():
@@ -110,7 +110,7 @@ def derived_constraints(comp, depth=1):
     ``depth`` >= 1 the direct arguments' own blocks are included too (one
     level down per unit of depth), so that arguments and derived nodes
     built from the same subterms are related through them."""
-    from satassume.templates import registry
+    from satassume.knowledge.templates import registry
     pat = comp.pattern
     objs = list(comp.objs)
     slot_of = {id(o): k for k, o in enumerate(objs)}
@@ -229,7 +229,7 @@ def collect_patterns(exprs):
     representative per combination of compiled patterns, and the number of
     nodes that also emit plain formulas.  A template that raises on an
     expression propagates: nothing is skipped."""
-    from satassume.templates import registry
+    from satassume.knowledge.templates import registry
     seen = {}
     formulas_only = 0
     walk = set()
@@ -415,7 +415,7 @@ def run(exprs, depth=1, independent=False, models=None):
 def fired_rows(e, pat, fired):
     """For each fired clause, the names of the table rows that emit it
     (Mul and Pow nodes; ``[]`` for a clause of another template)."""
-    from satassume.templates.core import table_provenance
+    from satassume.knowledge.templates.core import table_provenance
     prov = {}
     for name, clause in table_provenance(e):
         prov.setdefault(clause, []).append(name)
@@ -428,8 +428,8 @@ def fired_rows(e, pat, fired):
 
 def table_text():
     """The rule tables of the Mul and Pow templates, one row per line."""
-    from satassume.templates import core
-    from satassume.templates.table import Section, Sub, count_rows
+    from satassume.knowledge.templates import core
+    from satassume.knowledge.templates.table import Section, Sub, count_rows
     lines = []
     for name in ("MUL_TABLE", "POW_TABLE", "IPI_TABLE"):
         table = getattr(core, name)

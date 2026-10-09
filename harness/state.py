@@ -39,7 +39,7 @@ between reference queries (``ReferenceLevel.MODULE``) to test that claim.
 
 Declared configuration (must be identical on both sides of a comparison):
 the ``Engine`` keyword arguments, the sizes of the bounded caches, the
-registered extensions (``satassume.extensions.extensions``), the template
+registered extensions (``satassume.knowledge.extensions.extensions``), the template
 registry and the theory adapters.
 """
 from __future__ import annotations
@@ -207,15 +207,19 @@ def preset(name: str) -> EngineConfig:
 # module-level state
 # --------------------------------------------------------------------------
 
-# the modules that create process-wide memo tables (``satassume.memos``),
-# imported so that ``MODULE_STATE`` lists their tables
+# the modules that create or adopt process-wide memos (``satassume.state.memos``),
+# imported so that ``MODULE_STATE`` lists their tables and containers (each
+# registers its own when it is imported)
+import satassume.theories.euf.euf_adapter  # noqa: E402,F401
+import satassume.theories.lra.lra_adapter  # noqa: E402,F401
+import satassume.theories.lra.lra_bounds  # noqa: E402,F401
 import satassume.relations  # noqa: E402,F401
 import satassume.sympy_api  # noqa: E402,F401
-import satassume.templates  # noqa: E402,F401
-from satassume.memos import PROCESS as MEMOS, Table, module_locations  # noqa: E402
+import satassume.knowledge.templates  # noqa: E402,F401
+from satassume.state.memos import PROCESS as MEMOS, Table, module_locations  # noqa: E402
 
 #: ``(module, attribute)`` of every module-level memo of the engine: the
-#: process-wide memos registered with ``satassume.memos.PROCESS`` (tables
+#: process-wide memos registered with ``satassume.state.memos.PROCESS`` (tables
 #: and adopted containers), which ``reset_module_state`` empties with one
 #: ``MEMOS.clear()``.  A module-level memo that is not registered there is
 #: unclassified in ``inventory``.
@@ -224,37 +228,40 @@ MODULE_STATE: Tuple[Tuple[str, str], ...] = tuple(module_locations())
 #: module-level containers that are constants (built at import, never
 #: written afterwards), so not state
 MODULE_CONSTANTS: frozenset = frozenset({
-    ("satassume.rules", "PREDICATES"), ("satassume.rules", "PRED_INDEX"),
-    ("satassume.rules", "RULES"), ("satassume.rules", "RULE_CLAUSES"),
-    ("satassume.rules", "RULE_INSTANTIATED"), ("satassume.rules", "RULE_INTERNAL"),
-    ("satassume.rules", "RULE_FREE"),
-    ("satassume.rules", "BASIS"), ("satassume.rules", "BASIS_INDEX"), ("satassume.rules", "BASIS_OF"),
-    ("satassume.rules", "DEFINITIONS"), ("satassume.rules", "DEF_LITS"),
-    ("satassume.rules", "_CNF_POS"), ("satassume.rules", "_CNF_NEG"),
-    ("satassume.solver", "_BIT"), ("satassume.solver", "_NBIT"),
+    ("satassume._compat", "ALIASES"),
+    ("satassume._compat", "RENAMED"),
+    ("satassume._compat", "_OLD"),
+    ("satassume.knowledge.rules", "PREDICATES"), ("satassume.knowledge.rules", "PRED_INDEX"),
+    ("satassume.knowledge.rules", "RULES"), ("satassume.knowledge.rules", "RULE_CLAUSES"),
+    ("satassume.knowledge.rules", "RULE_INSTANTIATED"), ("satassume.knowledge.rules", "RULE_INTERNAL"),
+    ("satassume.knowledge.rules", "RULE_FREE"),
+    ("satassume.knowledge.rules", "BASIS"), ("satassume.knowledge.rules", "BASIS_INDEX"), ("satassume.knowledge.rules", "BASIS_OF"),
+    ("satassume.knowledge.rules", "DEFINITIONS"), ("satassume.knowledge.rules", "DEF_LITS"),
+    ("satassume.knowledge.rules", "_CNF_POS"), ("satassume.knowledge.rules", "_CNF_NEG"),
+    ("satassume.sat.solver", "_BIT"), ("satassume.sat.solver", "_NBIT"),
     ("satassume.relations", "RELATION_ATOMS"), ("satassume.relations", "_OPS"),
-    ("satassume.lra", "_NEG"), ("satassume.lra", "_FLIP"),
-    ("satassume.lra_adapter", "_PRED"), ("satassume.lra_adapter", "_REL"),
-    ("satassume.lra_adapter", "_BAD"),
-    ("satassume.euf_adapter", "_STRUCTURAL"),
+    ("satassume.theories.lra.lra", "_NEG"), ("satassume.theories.lra.lra", "_FLIP"),
+    ("satassume.theories.lra.lra_adapter", "_PRED"), ("satassume.theories.lra.lra_adapter", "_REL"),
+    ("satassume.theories.lra.lra_adapter", "_BAD"),
+    ("satassume.theories.euf.euf_adapter", "_STRUCTURAL"),
     ("satassume.sympy_api", "CATEGORIES"), ("satassume.sympy_api", "RELATION_PREDICATES"),
-    ("satassume.templates._common", "VOCAB"), ("satassume.templates._common", "SIGN_FLIP"),
-    ("satassume.templates._common", "_SIGNED_INFINITE"),
-    ("satassume.templates.atoms", "_ORACLE_PREDS"), ("satassume.templates.atoms", "_CONST_BASIS"),
-    ("satassume.templates.core", "_ADD_CLOSED"), ("satassume.templates.core", "_ADD_SUBTRACT"),
-    ("satassume.templates.core", "_STRICT"), ("satassume.templates.core", "_MUL_CLOSED"),
-    ("satassume.templates.core", "_COEFF_BACK"), ("satassume.templates.core", "_POW_RULES"),
-    ("satassume.templates.core", "_POW_E_RULES"), ("satassume.templates.core", "_NOTUNIT"),
-    ("satassume.templates.core", "_POW_ONE_EQUIV"),
+    ("satassume.knowledge.templates._common", "VOCAB"), ("satassume.knowledge.templates._common", "SIGN_FLIP"),
+    ("satassume.knowledge.templates._common", "_SIGNED_INFINITE"),
+    ("satassume.knowledge.templates.atoms", "_ORACLE_PREDS"), ("satassume.knowledge.templates.atoms", "_CONST_BASIS"),
+    ("satassume.knowledge.templates.core", "_ADD_CLOSED"), ("satassume.knowledge.templates.core", "_ADD_SUBTRACT"),
+    ("satassume.knowledge.templates.core", "_STRICT"), ("satassume.knowledge.templates.core", "_MUL_CLOSED"),
+    ("satassume.knowledge.templates.core", "_COEFF_BACK"), ("satassume.knowledge.templates.core", "_POW_RULES"),
+    ("satassume.knowledge.templates.core", "_POW_E_RULES"), ("satassume.knowledge.templates.core", "_NOTUNIT"),
+    ("satassume.knowledge.templates.core", "_POW_ONE_EQUIV"),
     # The Mul/Pow/exp tables and their guard and slot maps (#97, P6).  They
     # are tuples of Rows and MappingProxyType, so ``inventory`` (which only
     # looks at dict/list/set) does not see them; named here so that the
     # classification is explicit, as the P6 review asked.
-    ("satassume.templates.core", "MUL_GUARDS"), ("satassume.templates.core", "POW_GUARDS"),
-    ("satassume.templates.core", "IPI_GUARDS"), ("satassume.templates.core", "POW_SLOTS"),
-    ("satassume.templates.core", "_POW_SLOT_NAMES"),
-    ("satassume.templates.core", "MUL_TABLE"), ("satassume.templates.core", "POW_TABLE"),
-    ("satassume.templates.core", "IPI_TABLE"),
+    ("satassume.knowledge.templates.core", "MUL_GUARDS"), ("satassume.knowledge.templates.core", "POW_GUARDS"),
+    ("satassume.knowledge.templates.core", "IPI_GUARDS"), ("satassume.knowledge.templates.core", "POW_SLOTS"),
+    ("satassume.knowledge.templates.core", "_POW_SLOT_NAMES"),
+    ("satassume.knowledge.templates.core", "MUL_TABLE"), ("satassume.knowledge.templates.core", "POW_TABLE"),
+    ("satassume.knowledge.templates.core", "IPI_TABLE"),
 })
 
 #: intern tables: they grow with use and are never emptied, because live
@@ -263,16 +270,18 @@ MODULE_CONSTANTS: frozenset = frozenset({
 #: their order of first use is checked only by the fresh-process reference
 #: (``hashseed``, ``--confirm``)
 MODULE_INTERNED: frozenset = frozenset({
-    ("satassume.constfield", "_CONSTANTS"), ("satassume.constfield", "_BY_KEY"),
+    ("satassume.theories.lra.constfield", "_CONSTANTS"), ("satassume.theories.lra.constfield", "_BY_KEY"),
 })
 
 #: objects that are configuration (registrations), not history
 MODULE_CONFIG: frozenset = frozenset({
-    ("satassume.extensions", "extensions"),
-    ("satassume.templates.registry", "registry"),
-    ("satassume.epoch", "EPOCH"),                 # the registry epoch: bumped by every
+    ("satassume.knowledge.extensions", "extensions"),
+    ("satassume.knowledge.templates.registry", "registry"),
+    ("satassume.state.epoch", "EPOCH"),                 # the registry epoch: bumped by every
                                                   # registration, never reset (#63)
     ("satassume.sympy_api", "_engine"),           # the default engine itself
+    ("satassume.state.memos", "_ADOPTED"),              # the adopted memos, registered by
+                                                  # their modules at import
 })
 
 
@@ -320,7 +329,7 @@ def inventory(kinds=(dict, list, set)) -> List[Tuple[str, str, str]]:
 
 
 def reset_module_state(sympy_cache: bool = True) -> None:
-    """Empty every process-wide memo of the engine (``satassume.memos.PROCESS``:
+    """Empty every process-wide memo of the engine (``satassume.state.memos.PROCESS``:
     the module-level memos of ``MODULE_STATE``, the template registry's
     memos, the extension registry's per-class memo) and,
     with ``sympy_cache``, SymPy's ``cacheit`` cache.  Registrations are

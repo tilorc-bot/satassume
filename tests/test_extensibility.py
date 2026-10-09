@@ -10,7 +10,7 @@ None or formulas over ``P`` atoms.
 import pytest
 
 from satassume import Engine, DictCache, Extensions, Implies, InconsistentAssumptions, Not, P
-from satassume.extensions import Args
+from satassume.knowledge.extensions import Args
 
 
 # -- engine level, no SymPy ------------------------------------------------------
@@ -207,7 +207,7 @@ def test_registration_version_clears_answer_memo(eng):
     class VersionPredicate(Predicate):
         pass
 
-    from satassume.extensions import extensions
+    from satassume.knowledge.extensions import extensions
     try:
         Q.vkey = VersionPredicate()
         v0 = extensions.version

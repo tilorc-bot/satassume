@@ -1,22 +1,24 @@
-"""The certificate of :class:`satassume.lra.LRATheory` for payloads with
+"""The certificate of :class:`satassume.theories.lra.lra.LRATheory` for payloads with
 constants (``pi``): whether no search over the registered atoms can give
 up, and the bound ``Y`` within which a variable may split in a branch and
 bound.  The argument is "Certified constants" in the docstring of
-:mod:`satassume.lra`.  Only a theory whose payloads have constants
+:mod:`satassume.theories.lra.lra`.  Only a theory whose payloads have constants
 (:attr:`LRATheory.undecidable`) reads it, so it is a module of its own:
 the rational case, every query without such constants, does not load it.
+
+The theory hands in what the certificate reads (its atoms, integrality
+atoms, slack forms and number of nonbasic variables) and keeps the
+:class:`CertAtoms` aggregate; this module does not know
+:class:`LRATheory`, so :mod:`satassume.theories.lra.lra` is the only side of the
+dependency.
 """
 from __future__ import annotations
 
 import math
 from fractions import Fraction
 from itertools import islice
-from typing import TYPE_CHECKING
 
 from . import constfield as _cf
-
-if TYPE_CHECKING:  # pragma: no cover
-    from .lra import LRATheory
 
 __all__ = ["CertAtoms", "certify", "limits", "within"]
 
@@ -146,11 +148,10 @@ class CertAtoms:
         #: the lcm of k's denominators and the largest |numerator| over it)
         self.ints: list = []
 
-    def update(self, t: LRATheory) -> bool:
+    def update(self, atoms: dict, ints: dict, forms: dict) -> bool:
         """Take in the atoms registered since (the newest, from the end of
-        each dict); False when one is outside the certified kind of
-        payload."""
-        atoms, ints, forms = t._atoms, t._ints, t._slack_of
+        each dict: the theory's atoms, integrality atoms and slack forms);
+        False when one is outside the certified kind of payload."""
         if len(atoms) > self.na:
             for _, kind, b in islice(reversed(atoms.values()), len(atoms) - self.na):
                 if kind == "=" or kind == "!=":
@@ -210,10 +211,13 @@ class CertAtoms:
         return True
 
 
-def certify(t: LRATheory, values) -> tuple:
-    """``(certified, Y)`` for the theory ``t`` (memoized by
-    :meth:`satassume.lra.LRATheory._certificate`); the argument is
-    "Certified constants" in the docstring of :mod:`satassume.lra`."""
+def certify(g: CertAtoms, atoms: dict, int_atoms: dict, forms: dict, nt: int,
+            values) -> tuple:
+    """``(certified, Y)`` for a theory with these atoms, integrality atoms,
+    slack forms and ``nt`` nonbasic variables, whose aggregate of the atoms
+    taken in so far is ``g`` (memoized by
+    :meth:`satassume.theories.lra.lra.LRATheory._certificate`); the argument is
+    "Certified constants" in the docstring of :mod:`satassume.theories.lra.lra`."""
     # The numbers a search can meet.  Values are rational combinations
     # (the tableau is rational) of the bounds ever set (a nonbasic
     # variable sits at 0 or at a bound it was given): the atom bounds,
@@ -223,10 +227,7 @@ def certify(t: LRATheory, values) -> tuple:
     no = (False, None)
     if not _limits_suffice():
         return no
-    g = t._cagg
-    if g is None:
-        g = t._cagg = CertAtoms()
-    if not g.ok or not g.update(t):
+    if not g.ok or not g.update(atoms, int_atoms, forms):
         g.ok = False
         return no
     exps, den, top, X = set(g.exps), g.den, g.top, g.X
@@ -237,7 +238,6 @@ def certify(t: LRATheory, values) -> tuple:
         vt = math.ceil(values[0])
         top, X = max(top, vt), max(X, vt)
         den = math.lcm(den, values[1])
-    nt = len(t._key) - len(t._rows)   # nonbasic variables
     # a combination of atom bounds, with room for branch bounds to grow
     Y = (nt + 1) * had * (X + 1) << _GROWTH
     for e, mu, ek, dk, ck, nk, _, _ in ints:

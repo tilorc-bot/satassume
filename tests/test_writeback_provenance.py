@@ -19,7 +19,7 @@ import itertools
 import pytest
 
 from satassume import Engine, DictCache, P, Implies, Not, And, Or, allargs
-from satassume.solver import BOTTOM, Solver
+from satassume.sat.solver import BOTTOM, Solver
 
 
 def test_solver_provenance_through_a_reason_dag():
@@ -181,7 +181,7 @@ def test_sessions_read_nothing():
 
 
 def test_memo_is_keyed_on_the_registry_epoch():
-    from satassume.epoch import EPOCH, bump
+    from satassume.state.epoch import EPOCH, bump
     eng, cache = _engine()
     assert eng.is_(('add', 'y', 'z'), 'positive') is True
     assert cache.store and cache._epoch == EPOCH[0]

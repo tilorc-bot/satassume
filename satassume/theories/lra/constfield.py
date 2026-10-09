@@ -1,14 +1,15 @@
 """Exact numbers in ``Q(c1, ..., ck)``: rationals extended by real constants.
 
-The LRA simplex (:mod:`satassume.lra`) needs a field with exact ``+ - * /``
+The LRA simplex (:mod:`satassume.theories.lra.lra`) needs a field with exact ``+ - * /``
 and an exact sign test.  :class:`fractions.Fraction` is that field for
 rational coefficients; this module extends it to coefficients such as
 ``pi``, ``1/pi``, ``3*pi/2 + E`` and ``sqrt(2)``, so that ``x/pi + 1/2``
 is a linear form whose endpoint ties (``x = -pi/2`` makes it exactly 0)
 are decided exactly rather than by interval arithmetic.  Nothing here
-imports SymPy except :func:`from_sympy` and :meth:`Element.to_sympy`
-(lazily), and ``sympy.polys`` for gcds beyond the small univariate
-case (see Limits).
+imports SymPy at module level; :func:`from_sympy`, :meth:`Element.to_sympy`,
+the bounds of other constants (:mod:`.lra_bounds`) and ``sympy.polys``
+for gcds beyond the small univariate case (see Limits) import it inside
+functions.
 
 Following de Moura and Passmore, "Computation in Real Closed Infinitesimal
 and Transcendental Extensions of the Rationals" (CADE 2013; z3's ``rcf``
@@ -116,7 +117,7 @@ not trusted.  :func:`from_sympy` reads Rationals, ``pi``, ``E``,
 positive rationals (``sqrt(2)``, ``3**(2/3)``: a power of the
 indeterminate ``r**(1/b)``, enclosed at any precision by integer roots)
 and, as a last resort, any closed real constant that
-:func:`satassume.lra_adapter.constant_bounds` bounds (``log(2)``,
+:func:`satassume.theories.lra.lra_bounds.constant_bounds` bounds (``log(2)``,
 ``sin(1)``, ``pi**pi``): an indeterminate with those 128-bit bounds only,
 so comparisons closer than about ``2**-70`` relative are
 :class:`Undecided`.  Distinct spellings of one value (``log(8)`` and
@@ -1405,10 +1406,13 @@ def _from_sympy(e, generic=True):
 
 def _generic(e):
     """An indeterminate for a closed real constant with rigorous bounds
-    (:func:`satassume.lra_adapter.constant_bounds`), enclosed at any
+    (:func:`satassume.theories.lra.lra_bounds.constant_bounds`), enclosed at any
     precision by the same interval evaluation at a higher working
-    precision (:func:`satassume.lra_adapter.constant_enclosure`)."""
-    from .lra_adapter import constant_bounds, constant_enclosure
+    precision (:func:`satassume.theories.lra.lra_bounds.constant_enclosure`)."""
+    # inside the function: lra_bounds imports SymPy at module level, and
+    # constfield must stay importable without SymPy (tests/test_layering.py);
+    # e is a SymPy constant here, so SymPy is loaded already
+    from .lra_bounds import constant_bounds, constant_enclosure
     b = constant_bounds(e)
     if b is None:
         raise _Unread(e)

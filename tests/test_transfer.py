@@ -1,4 +1,4 @@
-"""Predicate transfer across equal terms (satassume.transfer) end to end,
+"""Predicate transfer across equal terms (satassume.theories.transfer) end to end,
 the engine option for uninterpreted relations, and the theory protocol of
 TransferTheory (theory_harness.Recorder) on the transfer fuzz."""
 import pytest
@@ -6,7 +6,7 @@ from sympy import Function, Q, Rational, S, Symbol, symbols, pi
 
 from satassume.engine import DictCache, Engine
 from satassume.relations import Relations
-from satassume.rules import PRED_INDEX
+from satassume.knowledge.rules import PRED_INDEX
 from theory_harness import Recorder, ask_with, check_protocol
 
 x, y, z = symbols("x y z")
@@ -132,7 +132,7 @@ def test_uninterpreted_option():
 # ----------------------------------------------------------------------
 
 def test_protocol_on_fuzz(monkeypatch):
-    import satassume.transfer as tr
+    import satassume.theories.transfer as tr
     import test_transfer_fuzz as fz
 
     recs = []
@@ -178,8 +178,8 @@ def _transfer_model_checker(counts):
     completes them) gives every atom of one predicate the same value
     across a class of the EUF model, and a number's fixed facts to its
     class."""
-    from satassume.solver import Solver
-    from satassume.transfer import TransferTheory
+    from satassume.sat.solver import Solver
+    from satassume.theories.transfer import TransferTheory
     orig = Solver._solve
 
     def solve(self, lits, keep):
@@ -240,7 +240,7 @@ def _transfer_model_checker(counts):
 
 def test_models_respect_transfer(monkeypatch):
     import test_transfer_fuzz as fz
-    from satassume.solver import Solver
+    from satassume.sat.solver import Solver
 
     counts = {"models": 0, "pairs": 0, "fixed": 0}
     monkeypatch.setattr(Solver, "_solve", _transfer_model_checker(counts))

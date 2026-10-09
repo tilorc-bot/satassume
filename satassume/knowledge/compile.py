@@ -1,4 +1,4 @@
-"""Compile :mod:`satassume.formula` objects to integer clauses.
+"""Compile :mod:`satassume.sat.formula` objects to integer clauses.
 
 A ``VarTable`` allocates one solver variable per atom.  Compilation is direct
 for clausal shapes (implications between literals, disjunctions, exclusions)
@@ -10,7 +10,7 @@ from __future__ import annotations
 import heapq
 from typing import Any, Callable, Dict, List, Sequence
 
-from .formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
+from ..sat.formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
 from .rules import BASIS, BASIS_INDEX, DEF_LITS as _DEF_LITS, basis_lits
 
 
@@ -71,7 +71,7 @@ class VarTable:
     caller can discover children without a separate walk of the formula.
 
     An atom whose predicate is not in the vocabulary (a custom predicate,
-    see :mod:`satassume.extensions`) gets a single variable of its own,
+    see :mod:`satassume.knowledge.extensions`) gets a single variable of its own,
     outside any node block; such atoms are appended to ``new_custom``.
 
     ``slots[v]`` says what variable ``v`` stands for: ``None`` (an auxiliary

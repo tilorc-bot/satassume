@@ -2,10 +2,10 @@
 variable, and what the memo of ``is_`` holds, are what the eager table gave."""
 from sympy import Symbol, symbols
 
-from satassume.compile import VarTable
+from satassume.knowledge.compile import VarTable
 from satassume.engine import Engine
-from satassume.formula import P
-from satassume.rules import BASIS
+from satassume.sat.formula import P
+from satassume.knowledge.rules import BASIS
 from satassume.sympy_api import ask
 from sympy import Q
 

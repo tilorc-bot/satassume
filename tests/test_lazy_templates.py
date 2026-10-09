@@ -1,5 +1,5 @@
-"""The templates of sums, products, powers (``satassume.templates.core``)
-and functions (``satassume.templates.functions``) are imported on first use
+"""The templates of sums, products, powers (``satassume.knowledge.templates.core``)
+and functions (``satassume.knowledge.templates.functions``) are imported on first use
 (``TemplateRegistry.lazy``).  What is loaded depends on what the process has
 already done, so the checks that look at ``sys.modules`` run in a fresh
 interpreter."""
@@ -12,8 +12,8 @@ sympy = pytest.importorskip("sympy")
 
 from sympy import Add, Mul, Symbol  # noqa: E402
 
-from satassume.epoch import EPOCH  # noqa: E402
-from satassume.templates.registry import TemplateRegistry  # noqa: E402
+from satassume.state.epoch import EPOCH  # noqa: E402
+from satassume.knowledge.templates.registry import TemplateRegistry  # noqa: E402
 
 
 def _run(code):
@@ -28,7 +28,7 @@ def test_symbol_only_query_does_not_load_core():
 import sys
 from sympy import Q, Symbol
 from satassume.sympy_api import ask
-CORE, FUNCS = "satassume.templates.core", "satassume.templates.functions"
+CORE, FUNCS = "satassume.knowledge.templates.core", "satassume.knowledge.templates.functions"
 x, y, z = (Symbol(n, real=True) for n in "xyz")
 assert ask(Q.positive(x), Q.gt(x, y) & Q.positive(y)) is True
 assert ask(Q.gt(x, z), Q.gt(x, y) & Q.gt(y, z)) is True
@@ -45,7 +45,7 @@ def test_tables_on_first_read_and_no_bounds_without_constants():
     _run("""
 import sys
 from sympy import Q, Symbol
-import satassume.templates.core as core
+import satassume.knowledge.templates.core as core
 assert "MUL_TABLE" not in vars(core)
 table = core.MUL_TABLE
 assert table == core._table("MUL_TABLE") and table is core.MUL_TABLE
@@ -54,8 +54,8 @@ x, y, z = (Symbol(n, real=True) for n in "xyz")
 assert ask(Q.gt(x, z), Q.gt(x, y) & Q.gt(y, z)) is True
 assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y)) is True
 assert ask(Q.positive(x*y), Q.positive(x) & Q.positive(y)) is True
-assert "satassume.lra_adapter" in sys.modules
-assert "satassume.lra_bounds" not in sys.modules
+assert "satassume.theories.lra.lra_adapter" in sys.modules
+assert "satassume.theories.lra.lra_bounds" not in sys.modules
 """)
 
 def test_declared_module_registering_outside_its_classes():
@@ -80,9 +80,9 @@ def test_user_registration_loads_all_builtins_first():
     _run("""
 import sys
 from sympy import Add, exp
-from satassume.epoch import EPOCH
-from satassume.templates.registry import registry
-CORE, FUNCS = "satassume.templates.core", "satassume.templates.functions"
+from satassume.state.epoch import EPOCH
+from satassume.knowledge.templates.registry import registry
+CORE, FUNCS = "satassume.knowledge.templates.core", "satassume.knowledge.templates.functions"
 assert CORE not in sys.modules and FUNCS not in sys.modules
 epoch = EPOCH[0]
 

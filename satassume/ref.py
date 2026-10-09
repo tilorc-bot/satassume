@@ -72,12 +72,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from .compile import VarTable, compile_formula, formula_literal
-from .formula import FALSE, P, TRUE, atoms_of
+from .knowledge.compile import VarTable, compile_formula, formula_literal
+from .sat.formula import FALSE, P, TRUE, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
-from .rules import BASIS_INDEX, NPRED, PRED_INDEX, RULE_INTERNAL, basis_lits
+from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX, RULE_INTERNAL, basis_lits
 from .scope import EMPTY as _EMPTY_SCOPE, Scope
-from .solver import Solver
+from .sat.solver import Solver
 
 __all__ = ["ask_ref", "ref_outcome", "theory_scope", "RefInfo"]
 
@@ -288,7 +288,7 @@ class _RefSession:
         return b
 
     def _visit(self, node, b: int) -> None:
-        from .templates import registry
+        from .knowledge.templates import registry
         # 5.2: the templates of the node's class, and the vocabulary
         # extensions registered for the class
         compiled, formulas = registry.clauses_for(node)
@@ -517,7 +517,7 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     ``satassume.sympy_api.ask`` (section 1).
 
     ``p`` and ``A`` are SymPy Booleans (``A`` may be ``True``).
-    ``extensions``: the :class:`satassume.extensions.Extensions` registry
+    ``extensions``: the :class:`satassume.knowledge.extensions.Extensions` registry
     whose registrations are in force (default: the global one the engine
     uses, so the harness's register/unregister events apply).
     ``relations``: the adapter specs (default: ``relations.default_specs()``,
@@ -529,12 +529,12 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     if info is None:
         info = RefInfo()
     if extensions is None:
-        from .extensions import extensions as _ext
+        from .knowledge.extensions import extensions as _ext
         extensions = _ext
     if relations is None:
         from .relations import default_specs
         relations = default_specs()
-    from . import templates as _templates        # noqa: F401 (registers the templates)
+    from .knowledge import templates as _templates        # noqa: F401 (registers the templates)
     engine = _RefEngine(extensions, relations, transfer, uninterpreted)
     rel = bool(engine._relation_specs)
     # 1.2: a constant proposition is answered without the assumptions; one

@@ -160,7 +160,7 @@ A change that breaks one of these either costs speed or, worse, returns a
 stale answer. The gates catch some of them only on the workloads they
 replay.
 
-**Solver (`satassume/solver.py`).**
+**Solver (`satassume/sat/solver.py`).**
 
 - The watched-clause scan exists twice: in `_propagate` (after the rule
   block hook) and in `_propagate_clauses` (solvers without a rule block,

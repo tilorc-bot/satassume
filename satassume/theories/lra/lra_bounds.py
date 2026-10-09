@@ -1,7 +1,7 @@
 """Rigorous rational bounds of closed real constants (``pi``, ``log(2)``,
 ``sqrt(2)*exp(3)``, ...) by interval evaluation (mpmath's interval
-context), for :mod:`satassume.lra_adapter`: a constant that is no element
-of :mod:`satassume.constfield` becomes an LRA term between its bounds
+context), for :mod:`satassume.theories.lra.lra_adapter`: a constant that is no element
+of :mod:`satassume.theories.lra.constfield` becomes an LRA term between its bounds
 (``LRAAdapter.register_bounds``), and constfield encloses such a
 constant at any precision (:func:`constant_enclosure`).  A module of its
 own because only a query with such a constant needs it.
@@ -13,6 +13,8 @@ from fractions import Fraction
 from sympy import S
 from sympy.core.add import Add
 from sympy.core.mul import Mul
+
+from ...state.memos import adopt as _adopt_memo
 
 __all__ = ["constant_bounds", "constant_enclosure"]
 
@@ -27,6 +29,7 @@ _IV_PREC = 128
 _MAX_BITS = 4096
 #: constant -> (lo, hi) or None (see constant_bounds); shared, pure
 _BOUNDS: dict = {}
+_adopt_memo(__name__, "_BOUNDS")
 
 
 def constant_bounds(c):
@@ -65,6 +68,7 @@ def _bounds(c):
 
 #: precision -> mpmath interval context at that precision
 _IV: dict = {}
+_adopt_memo(__name__, "_IV")
 
 
 def _iv_context(prec: int = _IV_PREC):
@@ -78,6 +82,7 @@ def _iv_context(prec: int = _IV_PREC):
 
 #: (constant, working precision) -> rational enclosure or None
 _ENCLOSURES: dict = {}
+_adopt_memo(__name__, "_ENCLOSURES")
 
 
 def constant_enclosure(c, prec: int):
@@ -85,7 +90,7 @@ def constant_enclosure(c, prec: int):
     ``2**-prec`` relative, for a closed constant with
     :func:`constant_bounds` (None otherwise): the interval evaluation of
     :func:`_interval` at working precision ``prec + 16`` bits, rounded
-    outward.  Used to refine a constant of :mod:`satassume.constfield`
+    outward.  Used to refine a constant of :mod:`satassume.theories.lra.constfield`
     beyond the 128 bits of its bounds."""
     key = (c, prec)
     try:

@@ -5,9 +5,9 @@
    ``N = c0 + sum(c_k*t_k)`` with rational coefficients of least common
    denominator 2 and integer ``t_k``, ``2*N`` is an integer of parity
    ``2*c0 + #{k : 2*c_k odd and t_k odd}`` (mod 2), and ``N`` is an integer
-   iff that is even (``satassume/templates/core.py``, ``_half_rules``).
+   iff that is even (``satassume/knowledge/templates/core.py``, ``_half_rules``).
 2. ``re`` and ``im`` of ``floor(y)`` / ``ceiling(y)`` are integers for a
-   finite, possibly complex ``y`` (``satassume/templates/functions.py``).
+   finite, possibly complex ``y`` (``satassume/knowledge/templates/functions.py``).
 
 Every definite answer is also checked against concrete values.
 """

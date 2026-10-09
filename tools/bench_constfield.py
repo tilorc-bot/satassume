@@ -1,4 +1,4 @@
-"""Micro-benchmark of satassume/constfield.py: the rational fast path
+"""Micro-benchmark of satassume/theories/lra/constfield.py: the rational fast path
 against plain Fraction, and typical operations on rows with pi.
 
     PYTHONPATH=. python tools/bench_constfield.py
@@ -18,8 +18,8 @@ import sys
 import timeit
 from fractions import Fraction as F
 
-from satassume import constfield as cf
-from satassume.constfield import PI, E, num
+from satassume.theories.lra import constfield as cf
+from satassume.theories.lra.constfield import PI, E, num
 
 
 def bench(label, stmt, g, number=None):

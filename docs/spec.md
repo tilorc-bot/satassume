@@ -56,7 +56,7 @@ Definition. `to_formula(expr, relations, opaque)` maps a SymPy Boolean to a
 formula over `P` atoms (`sympy_api.to_formula`, memoized by
 `sympy_api._formula` in `_FORMULAS`): `Q.pred(e)` with `pred in V` becomes
 the vocabulary atom `P(pred, e)`; `And`, `Or`, `Not`, `Implies`,
-`Equivalent` become the formula connectives (`satassume/formula.py`);
+`Equivalent` become the formula connectives (`satassume/sat/formula.py`);
 a relation becomes `relation_atom` (theories, "What relations mean"):
 `Eq(a, b)` is `eq(a, b)` with sides in `default_sort_key` order, `a < b` is
 `lt(a, b)`, `a > b` is `lt(b, a)`, `a != b` is `~eq(a, b)`, `a <= b` is
@@ -100,7 +100,7 @@ atoms (`scope.extension_atoms`: `Extensions.facts_for`, transitively):
   onto #107 every family-A shape took it (`scope_misses` 2 per query) until
   the scope counted the twin (`tests/test_scope.py::test_zero_twins_are_in_the_scope`);
 - `transfer` iff `glue` and the relation atoms make an equality: an `eq`
-  atom, or an order atom and its reverse (`scope.transfer_wanted`; the pair
+  atom, or an order atom and its reverse (`transfer.transfer_wanted`; the pair
   is what `Relations._trichotomy` relates, so `Q.le(x, y) & Q.ge(x, y)`
   answers as `Q.eq(x, y)`, W2B4b). The test over-approximates: it counts the
   pair even when `uninterpreted="free"` leaves the atoms opaque (harmless:
@@ -184,7 +184,7 @@ which session).
 Definition. `RULE_INSTANTIATED` is the 24-clause minimization of the 26 clauses compiled from `RULES` (over the 15 basis predicates, `rules.BASIS`; design.md, "Rule base")
 (`rules.py`, `minimize_for_propagation`; design, "Rule base"). Every visited scalar node gets one copy over
 its 15 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
-`Solver.set_rule_block` in `satassume/solver.py`), unless the node's only template is a complete unit pattern
+`Solver.set_rule_block` in `satassume/sat/solver.py`), unless the node's only template is a complete unit pattern
 (`Pattern.complete`: the closed units decide every predicate the rule base mentions), in which case the units
 stand alone.
 
@@ -240,7 +240,7 @@ Definition. With `glue`, every linked term `e` gets the link clauses `extended_p
 guarded LRA twin (`Relations._order_sides`, `_order_infinite`, `_interpret`); every `eq` atom goes to EUF and,
 under the real guard, to LRA; `_eq_infinity`, `_eq_links`, `_trichotomy` clauses carry their atoms' selectors
 (`Relations.atom_sel`). Interface equalities between LRA and EUF terms are added by `Relations._share`.
-Transfer lemmas `eq(a, b) -> (P(a) <-> P(b))` are enforced by `TransferTheory` (`satassume/transfer.py`) under
+Transfer lemmas `eq(a, b) -> (P(a) <-> P(b))` are enforced by `TransferTheory` (`satassume/theories/transfer.py`) under
 `xfer_sel`.
 
 Definition (zero as an equality, PR #107; `relations.glue_atoms`, `Relations.process`,
@@ -265,7 +265,7 @@ relation atom, `Session._set_glue`; else as one group selector, `Session._group_
 ### 5.6 Clauses of custom atoms
 
 Definition. A custom atom asserts its cached value (`Engine.custom_cache`) and its registered
-clause-generating functions' formulas (`Session._custom`, `satassume/extensions.py`, `satassume.register`).
+clause-generating functions' formulas (`Session._custom`, `satassume/knowledge/extensions.py`, `satassume.register`).
 
 ## 6. The literal of `p`
 
@@ -314,8 +314,8 @@ the whole set's verdict decides raising (design, "Why splitting is sound";
 ## 8. The answer as entailment
 
 Definition. Let `C` be the clause set of section 5 over the session's
-nodes `cone(p) | cone(A)` with the theories LRA (`satassume/lra*.py`),
-EUF (`satassume/euf.py`) and transfer attached when `glue`, and `L` the
+nodes `cone(p) | cone(A)` with the theories LRA (`satassume/theories/lra/`),
+EUF (`satassume/theories/euf/euf.py`) and transfer attached when `glue`, and `L` the
 assumption literals of section 5.4 and 5.5. Let `q` be the literal of `p`.
 
 - If `C & L` is unsatisfiable: `ask` raises `ValueError` (section 1.4).

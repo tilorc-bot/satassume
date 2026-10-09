@@ -7,9 +7,9 @@ there (see ``reports/p3-review.md``).
 from sympy import Q, S, Symbol, symbols
 from sympy.assumptions import Predicate
 
-from satassume import extensions as X
+from satassume.knowledge import extensions as X
 from satassume.engine import CONSISTENT, DictCache, Engine
-from satassume.formula import Implies, P
+from satassume.sat.formula import Implies, P
 from satassume.sympy_api import _formula, ask
 
 x, y, z = symbols("x y z")

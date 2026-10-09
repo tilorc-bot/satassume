@@ -1,5 +1,5 @@
 """Closed real constants (``pi``, ``sqrt(2)``, ``E``, ``sin(1)``) in
-linear relations (``satassume.lra_adapter``;
+linear relations (``satassume.theories.lra.lra_adapter``;
 ``docs/theories.md``, "Constants").
 
 A constant in a linear position is an LRA term with rigorous rational
@@ -29,8 +29,8 @@ from sympy.calculus.accumulationbounds import AccumBounds
 from test_lra import fm_feasible
 
 from satassume import DictCache, Engine
-from satassume import constfield as cf
-from satassume import lra_adapter as ad
+from satassume.theories.lra import constfield as cf
+from satassume.theories.lra import lra_adapter as ad
 from satassume.sympy_api import ask
 
 x, y = symbols("x y")
@@ -50,7 +50,7 @@ def _ask(prop, assum=True):
 
 def test_pi_is_a_number_of_the_constant():
     # pi, E and rational powers of rationals are exact numbers
-    # (satassume.constfield), folded into the constant, not terms
+    # (satassume.theories.lra.constfield), folded into the constant, not terms
     for c in (pi / 2, pi, 3 * pi / 2, -pi, 2 * pi + 1, pi / 2 - S(1) / 3):
         assert ad.terms(Q.lt(x, c)) == [x]
     (items, rhs, strict, eq), pos = ad.to_constraint(Q.le(x, 3 * pi / 2 + 1))
@@ -307,7 +307,7 @@ def test_huge_and_tiny_constants_get_no_bounds_quickly():
     all memory; constants beyond 2**±4096 are not read."""
     import time
     from sympy import exp, factorial
-    from satassume.lra_adapter import constant_bounds
+    from satassume.theories.lra.lra_adapter import constant_bounds
     t = time.time()
     for c in (exp(exp(exp(5))), exp(-exp(exp(5))), exp(-3000), factorial(10**5)):
         assert constant_bounds(c) is None
@@ -323,7 +323,7 @@ def test_constants_evalf_cannot_bound_rigorously_are_not_read():
     huge argument makes evalf work at that many bits."""
     import time
     from sympy import sign, tanh, erf
-    from satassume.lra_adapter import constant_bounds
+    from satassume.theories.lra.lra_adapter import constant_bounds
     Z = cos(pi/7) + cos(3*pi/7) + cos(5*pi/7) - S.Half
     for c in (sign(Z), tanh(10**300*Z), erf(10**300*Z)):
         assert constant_bounds(c) is None
@@ -345,7 +345,7 @@ def test_loose_node_under_a_saturating_parent_gets_true_bounds():
     accuracy; their two evaluations disagree, but atan saturates and hid
     that.  Every argument now needs bounds of its own."""
     from sympy import atan, tan
-    from satassume.lra_adapter import constant_bounds
+    from satassume.theories.lra.lra_adapter import constant_bounds
     r = Rational(157079632679489661923132169163975144209858469968755291049, 10**56)
     c1 = atan(tan(r)**3)                     # r is just past pi/2: about -pi/2
     c2 = atan(10**100 * log(1 - Rational(1, 10**200)))   # about -1e-100
@@ -370,7 +370,7 @@ def test_directed_rounding_of_mpmath_is_not_trusted():
     a wrong True.  Transcendental results are widened by 2**-120."""
     import mpmath
     from mpmath.libmp import from_int, mpf_exp, mpf_log
-    from satassume.lra_adapter import constant_bounds
+    from satassume.theories.lra.lra_adapter import constant_bounds
     for sf, mf, n in ((exp, mpf_exp, 891), (log, mpf_log, 156434)):
         with mpmath.workprec(800):
             t = (mpmath.exp if sf is exp else mpmath.log)(n)
@@ -394,7 +394,7 @@ def test_tiny_ends_do_not_build_huge_rationals():
     ask; pi**-(10**9) took a minute and 900 MB."""
     import time
     from sympy import Pow, tan
-    from satassume.lra_adapter import constant_bounds
+    from satassume.theories.lra.lra_adapter import constant_bounds
     t = time.time()
     for c in (Pow(pi, -10**20), Pow(pi, -10**9), tan(22)**(10**100), exp(-2047)**3):
         b = constant_bounds(c)

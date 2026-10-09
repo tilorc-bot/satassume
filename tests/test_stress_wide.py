@@ -59,7 +59,7 @@ BUDGET = {100: 2.0, 200: 5.0, 400: 15.0}
 
 @pytest.fixture
 def solvers(monkeypatch):
-    from satassume.solver import Solver
+    from satassume.sat.solver import Solver
     made = []
     init = Solver.__init__
 

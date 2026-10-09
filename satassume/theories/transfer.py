@@ -1,7 +1,7 @@
 """Predicate transfer across equal terms: facts shared between equal expressions.
 
 :class:`TransferTheory` is a propagating theory (contract in
-:mod:`satassume.theory`) that closes the gap :mod:`satassume.euf` leaves
+:mod:`satassume.sat.theory`) that closes the gap :mod:`satassume.theories.euf.euf` leaves
 out: *substitution of equals into unary predicates*.  Whenever the EUF
 theory of a session has two terms ``a`` and ``b`` in one congruence class
 (from equality atoms, transitivity, congruence ``f(x) = f(y)`` from
@@ -80,17 +80,35 @@ which queries assume its selector) is in
 """
 from __future__ import annotations
 
-from .rules import BASIS_INDEX
+from typing import Iterable
 
-__all__ = ["TransferTheory"]
+from ..sat.formula import P
+from ..knowledge.rules import BASIS_INDEX
+
+__all__ = ["TransferTheory", "transfer_wanted"]
 
 _POLAR = BASIS_INDEX["polar"]
 _POLAR_ONLY = frozenset({_POLAR})
 
 
+def transfer_wanted(atoms: Iterable[P]) -> bool:
+    """Whether the relation atoms among ``atoms`` make an equality: an
+    ``eq`` atom, or an order atom and its reverse (see the docstring of
+    :mod:`satassume.scope`, resolution 1)."""
+    atoms = tuple(atoms)
+    for a in atoms:
+        if a.pred == "eq":
+            return True
+    lts = {a.expr for a in atoms if a.pred == "lt"}
+    for x, y in lts:
+        if (y, x) in lts:
+            return True
+    return False
+
+
 class TransferTheory:
     """Unary facts shared across the congruence classes of one
-    :class:`satassume.euf.EUFTheory`."""
+    :class:`satassume.theories.euf.euf.EUFTheory`."""
 
     def __init__(self, euf):
         self.euf = euf

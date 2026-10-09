@@ -5,18 +5,21 @@ them all with one :meth:`Memos.clear`.  There are two kinds of owner:
 
 * :data:`PROCESS`, the memos shared by every engine of the process.  Only
   a pure function of its key and of the registry epoch
-  (:mod:`satassume.epoch`) or the default registry's version may live
+  (:mod:`satassume.state.epoch`) or the default registry's version may live
   here: sharing such a memo between engines, or keeping it across
   queries, can change how fast an answer comes but never the answer.  The
   tables that ``satassume`` modules create with :meth:`Memos.table` are
-  registered here when the module is imported; memos owned by modules
-  that keep a plain container (``engine._SPLIT``, ``solver._RULE_TABLES``,
-  ...) are *adopted* by location (:data:`ADOPTED`), so :meth:`clear` and
-  ``python -m harness inventory`` see them too.
-* one per engine, ``Engine.memos`` (:func:`engine_memos`): the memos of
-  that engine, which may depend on its settings (the answer and split
-  memos, the structural cones, the verdict and ``Uninterpreted`` memos).
-  Two engines never share one.
+  registered here when the module is imported; a module that keeps a
+  plain container (``engine._SPLIT``, ``solver._RULE_TABLES``, ...)
+  *adopts* it by location when it is imported (:func:`adopt`,
+  :data:`ADOPTED`), so :meth:`clear` and ``python -m harness inventory``
+  see them too.  Every owner names itself (``__name__``): this module
+  names no module and no class above it.
+* one per object that owns memos (:func:`owner_memos`), such as
+  ``Engine.memos`` (``satassume.engine.engine_memos``): the memos of that
+  engine, which may depend on its settings (the answer and split memos,
+  the structural cones, the verdict and ``Uninterpreted`` memos).  Two
+  engines never share one.
 
 Each table declares what it is keyed on besides its own key (``key``):
 ``"pure"`` (nothing), ``"epoch"`` (the registry epoch),
@@ -28,14 +31,14 @@ keyed on a counter records the value it was filled under in
 path, like the ``[state]`` lists it replaces).
 
 An adopted name that no longer resolves (an attribute renamed in its
-module or on ``Engine``) raises from :meth:`Memos.items` and
+module or on its owner object) raises from :meth:`Memos.items` and
 :meth:`Memos.clear`, so ``harness inventory`` and the tests notice.
 """
 from __future__ import annotations
 
 import sys
 import weakref
-from typing import Any, Callable, Dict, Iterator, List, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Tuple
 
 #: what a table may be keyed on besides its key; only the first three may
 #: live on :data:`PROCESS`
@@ -167,67 +170,79 @@ def _module_attr(module: str, path: str) -> Callable[[], Any]:
 
 
 #: ``(module, attribute path, key)`` of the process-wide memos that their
-#: modules keep as plain containers (or on a registry object).  Each is a
-#: pure function of its key (``_SPLIT`` and ``_RULE_TABLES`` keep the keyed
-#: object alive and compare it by identity; ``_INTERPRETED`` is keyed on
-#: ``GENERIC_CONSTANTS``; the template registry's memos follow its own
+#: modules keep as plain containers (or on a registry object), filled by
+#: :func:`adopt` when each owner module is imported.  Read it as
+#: ``memos.ADOPTED`` (the module ``__getattr__``), which imports every
+#: owner first (:func:`load_owners`), so it lists every adopted memo,
+#: not only those of the modules loaded so far.  Each is a pure function
+#: of its key (``engine._SPLIT`` and ``solver._RULE_TABLES`` keep the keyed object
+#: alive and compare it by identity; ``lra_adapter._INTERPRETED`` is keyed
+#: on ``GENERIC_CONSTANTS``; the template registry's memos follow its own
 #: version counter).  ``templates._common._CACHE`` holds compiled patterns
 #: by template key, and a later registration may reuse a key, so
 #: ``TemplateRegistry.register`` empties it: keyed on the epoch.
-ADOPTED: Tuple[Tuple[str, str, str], ...] = (
-    ("satassume.engine", "_NEIGH", "pure"),
-    ("satassume.engine", "_WANT", "pure"),
-    ("satassume.engine", "_SPLIT", "pure"),
-    ("satassume.solver", "_RULE_TABLES", "pure"),
-    ("satassume.rules", "_MASKS", "pure"),
-    ("satassume.lra_bounds", "_BOUNDS", "pure"),
-    ("satassume.lra_adapter", "_INTERPRETED", "pure"),
-    ("satassume.lra_bounds", "_ENCLOSURES", "pure"),
-    ("satassume.lra_bounds", "_IV", "pure"),
-    ("satassume.euf_adapter", "_class_ok", "pure"),
-    ("satassume.templates._common", "_CACHE", "epoch"),
-    ("satassume.templates.registry", "registry._clauses_cache", "epoch"),
-    ("satassume.templates.registry", "registry._mro_cache", "epoch"),
-    ("satassume.extensions", "extensions._node_cache", "extensions"),
-)
+_ADOPTED: List[Tuple[str, str, str]] = []
 
-for _mod, _attr, _key in ADOPTED:
-    PROCESS.adopt(f"{_mod}.{_attr}", _module_attr(_mod, _attr), _key)
-del _mod, _attr, _key
+
+def load_owners() -> None:
+    """Import every module of the package, so that each owner of a
+    process-wide memo has registered it (a module registers its memos
+    when it is imported, and some are imported lazily: the LRA bounds,
+    the templates of sums and of functions).  Names no module: it walks
+    the package's own path.  A module whose optional dependency is
+    missing is skipped."""
+    import importlib
+    import pkgutil
+    root = __name__.partition(".")[0]
+    package = sys.modules[root]
+    for info in pkgutil.walk_packages(package.__path__, root + ".", onerror=lambda name: None):
+        if info.name not in sys.modules:
+            try:
+                importlib.import_module(info.name)
+            except ImportError:
+                pass
+
+
+def __getattr__(name: str):
+    if name == "ADOPTED":
+        load_owners()
+        return _ADOPTED
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def adopt(module: str, path: str, key: str = "pure") -> None:
+    """Adopt the container at attribute ``path`` (dotted) of ``module`` as a
+    process-wide memo named ``module.path``.  The owner module calls it
+    with its own ``__name__`` right after the container exists, so this
+    module names no module above it and a moved module keeps its memos."""
+    PROCESS.adopt(f"{module}.{path}", _module_attr(module, path), key)
+    _ADOPTED[:] = [a for a in _ADOPTED if a[:2] != (module, path)] + [(module, path, key)]
 
 
 def module_locations() -> List[Tuple[str, str]]:
     """``(module, attribute)`` of every process-wide memo that is a
     module-level name: the tables (named ``module.attribute``) and the
-    adopted containers that are not attributes of a registry object."""
+    adopted containers that are not attributes of a registry object.
+    Every owner is imported first (:func:`load_owners`), so the list does
+    not depend on which modules earlier code happened to load."""
+    load_owners()
     out = [tuple(name.rpartition(".")[::2]) for name in PROCESS._tables]
-    out += [(m, p) for m, p, _ in ADOPTED if "." not in p]
+    out += [(m, p) for m, p, _ in _ADOPTED if "." not in p]
     return out
 
 
-#: the per-engine memos: attributes of :class:`satassume.engine.Engine`
-#: that hold what the engine computed (all keyed on the epoch and the
-#: engine's settings, dropped by ``Engine._check_version`` and
-#: ``Engine._settings_changed``).  The fact caches are the engine's own
-#: unless a ``DictCache`` was passed to several engines on purpose.
-ENGINE_MEMOS: Tuple[str, ...] = (
-    "answers", "splits", "_kids", "_cones", "_qcones", "_glue_adapters",
-    "_failed", "_verdict", "cache.store", "custom_cache.store",
-)
-
-
-def engine_memos(engine) -> Memos:
-    """The :class:`Memos` of ``engine`` (``Engine.memos``): its memo
-    attributes (:data:`ENGINE_MEMOS`), held through a weak reference so the
-    object keeps no engine alive."""
-    ref = weakref.ref(engine)
-    m = Memos(f"engine@{id(engine):x}")
+def owner_memos(obj, attrs: Iterable[str], key: str = "settings") -> Memos:
+    """The :class:`Memos` of the memo attributes ``attrs`` (dotted paths)
+    of ``obj``, all keyed on ``key``, held through a weak reference so the
+    object does not keep ``obj`` alive (``Engine.memos`` is one)."""
+    ref = weakref.ref(obj)
+    m = Memos(f"{type(obj).__name__.lower()}@{id(obj):x}")
 
     def getter(attr):
         def get():
             return _path(ref(), attr)
         return get
 
-    for attr in ENGINE_MEMOS:
-        m.adopt(attr, getter(attr), "settings")
+    for attr in attrs:
+        m.adopt(attr, getter(attr), key)
     return m

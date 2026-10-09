@@ -5,7 +5,7 @@ from sympy import (Symbol, Q, exp, sqrt, I, pi, Integer, Rational, oo, Abs,
                    Eq, Predicate, MatrixSymbol, nan, E, Equivalent)
 
 from satassume import Engine, DictCache
-from satassume.formula import P
+from satassume.sat.formula import P
 from satassume.sympy_api import ask, out_of_scope, to_formula, Unsupported, OPAQUE
 from sympy import MatrixSymbol, false
 from sympy.calculus.accumulationbounds import AccumBounds
@@ -372,7 +372,7 @@ def test_constant_route_needs_builtin_predicates_and_no_undefined_function(eng):
     from sympy import Function, Integral
     from satassume import Implies
     from satassume.sympy_api import _is_constant_proposition
-    from satassume.formula import P
+    from satassume.sat.formula import P
     f, x = Function('f'), Symbol('x')
     assert _is_constant_proposition(Q.positive(pi) & Q.lt(pi, 4))
     assert not _is_constant_proposition(Q.positive(Integral(f(x), (x, 0, 1))))
@@ -395,7 +395,7 @@ def test_constant_route_needs_builtin_predicates_and_no_undefined_function(eng):
 def test_is_true_of_boolean_constant_is_that_constant():
     # Q.is_true(False) is not an opaque atom: it makes the set inconsistent
     from sympy import true
-    from satassume.formula import TRUE, FALSE
+    from satassume.sat.formula import TRUE, FALSE
     x = Symbol('x')
     assert to_formula(Q.is_true(false), opaque=True) is FALSE
     assert to_formula(Q.is_true(true), opaque=True) is TRUE
@@ -409,7 +409,7 @@ def test_is_true_of_boolean_constant_is_that_constant():
 def test_vocabulary_names_are_not_matrix_predicates():
     # _is_matrix_predicate skips the matrix-predicate import for a
     # vocabulary name on the strength of this disjointness
-    from satassume.rules import PREDICATES
+    from satassume.knowledge.rules import PREDICATES
     from satassume.sympy_api import _is_matrix_predicate, matrix_predicates
     assert set(PREDICATES).isdisjoint(matrix_predicates())
     assert not _is_matrix_predicate(Q.positive, "positive")

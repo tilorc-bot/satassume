@@ -18,6 +18,110 @@ Inside the engine there is no fallback to SymPy's `_eval_is_*` handlers,
 hides every template gap from `tools/compare.py`, and the engine exists to
 replace those handlers, not to wrap them.
 
+## Package layers
+
+The package is cut into layers. Top-down (each layer imports only the
+layers below it):
+
+| Layer | Path | The decision it hides |
+|---|---|---|
+| 8 | `ref.py` | the reference implementation of [spec.md](spec.md) |
+| 7 | `sympy_api.py` | the SymPy front end: how `ask`'s propositions become formulas |
+| 6 | `engine.py` | sessions, discovery and caching: how a query is decided |
+| 5 | `scope.py` | which of the relation machinery a query gets |
+| 4 | `relations.py` | what relation atoms mean: normalisation of SymPy relations, their links to the unary vocabulary, which theories a session gets and which terms each sees |
+| 3 | `theories/` (`lra/`, `euf/`, `transfer.py`) | how relation atoms are decided: one DPLL(T) theory per subpackage or module, told its atoms by `relations` |
+| 2 | `knowledge/` (`rules`, `compile`, `extensions`, `domain`, `templates/`) | what is known about predicates and expression classes, and its clause encoding |
+| 1 | `sat/` (`formula`, `solver`, `theory`) | propositional formulas and CDCL search, with the DPLL(T) theory contract; no vocabulary |
+| 0 | `state/` (`epoch`, `memos`) | when kept state is invalidated: the registry epoch and the process-wide memo tables; owners register their own tables |
+
+Outside the layers: `_compat.py` (imported only by the package
+`__init__`, first) keeps the old flat module names importable during the
+transition; see "Old module names" below. It imports nothing from the
+package, and the layering test treats it as the top.
+
+The rule counts every import, at module level, inside a function or
+under `TYPE_CHECKING`, and module names given as strings (`importlib`,
+`sys.modules`, `__name__ + ".x"`). Inside `theories` the theories do not
+import each other. The lazy imports that keep SymPy, mpmath or rarely
+needed code deferred stay lazy; they only point down.
+`tests/test_layering.py` checks all of this on the AST of every module.
+
+Why the cut is where it is:
+
+* `relations` and `scope` sit above the theories, not in `theories/`.
+  `relations` is the engine's glue to the theories: it is created per
+  session, it reads the engine's node facts and the registered
+  extensions, and it instantiates the adapters; it changed together with
+  `engine` in 25 of its 51 commits on `main`, more than with any theory
+  (`transfer` 9, `lra_adapter` 5, `euf_adapter` 4). `scope` reads only the
+  query and decides how much of `relations` it gets; all four of its
+  commits changed `sympy_api`, `relations` or `engine` too. So
+  `theories/` holds the decision procedures and, next to each, its
+  adapter from SymPy terms (`lra/lra_adapter.py`, `euf/euf_adapter.py`,
+  which `relations` instantiates), and both modules keep their paths. `transfer` changed together with `relations` in 9 of its
+  10 commits; it is still a theory (`TransferTheory`, the contract of
+  `sat/theory.py`, reading atoms only), and `relations` is its one client,
+  as `engine` is the main client of `compile`. Client and provider in
+  adjacent layers change together; that is not a reason to merge them.
+* `compile` is in `knowledge`, not `sat`: it encodes formulas over the
+  predicate basis that `rules` defines (basis literals, definitional
+  literals), and both `engine` and `ref` use it.
+* `solver` and `theory` stay together in `sat` (4 of `theory`'s 6
+  commits changed both): `theory` is the solver's hook contract.
+* `constfield` and `lra_bounds` are in `theories/lra/`: only LRA (and
+  `relations`, through the LRA adapter's linear forms) reads them.
+* `templates/` is in `knowledge`: it is the third source of clauses for a
+  node, next to the rule base and the extensions (`rules` and
+  `templates/_common` changed together in 6 of 9 commits).
+* `engine`, `sympy_api` and `ref` stay modules at the top. Splitting
+  `engine` is class-level work; `satassume.sympy_api` is the most
+  imported path (SymPy and satrefine import it).
+
+### Where SymPy is imported
+
+SymPy is the input language. Only the modules whose job is to read SymPy
+objects import it at module level:
+
+* `knowledge/templates/` (the knowledge per SymPy expression class) and
+  `knowledge/domain.py` (which SymPy terms are commutative scalars);
+* the theory adapters, which turn SymPy terms into a theory's terms:
+  `theories/lra/lra_adapter.py`, `theories/lra/lra_bounds.py` (bounds of
+  SymPy constants; mpmath only inside functions), `theories/euf/euf_adapter.py`;
+* `sympy_api.py`, the front end.
+
+`relations.py` and `theories/lra/constfield.py` import SymPy only inside
+the functions that receive or return SymPy objects. Every other module
+imports neither SymPy nor mpmath: `state`, `sat`, `rules`, `compile`,
+`extensions`, the decision procedures `lra/lra.py`, `lra/lra_cert.py`,
+`euf/euf.py` and `transfer.py`, `scope`, `engine` and `ref`. The engine
+handles SymPy objects (it visits expression trees) without importing
+SymPy: it imports `templates` and `domain` inside functions. So `import
+satassume` loads no SymPy, and each theory is a SymPy-free decision
+procedure plus an adapter. `tests/test_layering.py` checks the imports
+and, in a fresh interpreter, that importing the package and every module
+outside the list above loads neither SymPy nor mpmath.
+
+### Old module names (transitional)
+
+The flat module names before the package move (`satassume.rules`,
+`satassume.templates.core`, ...) still import, as the moved module
+objects themselves, with a `DeprecationWarning` (`satassume/_compat.py`),
+so monkeypatching through an old name still patches the real module.
+As before the move, importing a module by its new name also enters its
+old name in `sys.modules` (`import satassume.sympy_api` makes
+`sys.modules["satassume.rules"]` the rules module), `satassume.rules` is
+an attribute of the package, and the few names the old modules had and
+the moved ones do not (`memos.engine_memos`, `euf_adapter._structural`,
+`relations._optional`) are still served, with a warning. What does not
+carry over: a function's `__module__` and a module's `__name__` are the
+new names. The aliases are for code written against the flat layout
+that runs against a later checkout: branches opened before the move, scripts, an older checkout's
+tools. Nothing in this repository uses them (`tests/test_layering.py`
+checks the package, `tests/`, `harness/`, `tools/` and `benchmarks/`).
+They are removed after the class-level follow-up of the move (PLAN.md,
+"Package move: remove the flat aliases").
+
 ## Pipeline
 
 `sympy_api.ask(p, a)` does, in order:
@@ -32,7 +136,7 @@ replace those handlers, not to wrap them.
    to `Engine.is_`, anything else to `Engine.ask`. `InconsistentAssumptions`
    becomes `ValueError`; `Uninterpreted` (no theory reads a relation), None.
 
-### Rule base (`satassume/rules.py`)
+### Rule base (`satassume/knowledge/rules.py`)
 
 The vocabulary (`PREDICATES`, 33 predicates: what a query may mention) is
 wider than what is encoded. A node gets one solver variable per **basis**
@@ -143,7 +247,33 @@ basis; see "Inconsistent assumptions raise `ValueError`").
   `zoo`, `finite`/`infinite`, `extended_*` predicates and relations) and
   the wide-shape tests (`tests/test_wide_derived.py`).
 
-### Structural templates (`satassume/templates/`)
+#### Adding a theory
+
+* Put it in its own package `satassume/theories/<name>/`: the decision
+  procedure (a class implementing the contract of `satassume/sat/theory.py`,
+  importing no SymPy) and, if it reads SymPy terms, an adapter module
+  `<name>_adapter.py` with the interface of `EUFAdapter` (`parse`,
+  `interprets`, `register`, `attach`, the term maps `relations` reads).
+  It may import `state`, `sat` and `knowledge`, not the other theories.
+* List the adapter in `relations.default_specs` (an explicit relative
+  import, an `AdapterSpec(name, factory, guarded)`; a missing module is
+  skipped). An engine can also be given its own specs
+  (`Engine(relations=...)`, `Engine.relation_specs`) without touching
+  `default_specs`.
+* Add the adapter module to `SYMPY_AT_IMPORT` in `tests/test_layering.py`
+  if it imports SymPy at module level. The layer rules need no change:
+  every `theories/<name>/` package imports only itself.
+* Mention it in the `theories/__init__.py` docstring and in the tables of
+  this section and of README.md, "Layout".
+
+`default_specs` names the adapters instead of discovering them (by
+scanning `theories/` or by entry points) on purpose: a discovered adapter
+is a dependency that import analysis cannot see, which is what the
+string lookup `importlib.import_module("satassume.lra_adapter")` was
+before the package move, and the default theories of an engine are a
+decision that should be visible in one place.
+
+### Structural templates (`satassume/knowledge/templates/`)
 
 `registry.py` maps SymPy classes to template functions along the MRO;
 `atoms.py` gives unit facts for symbols and fixed-value atoms, `core.py`
@@ -162,7 +292,7 @@ rounding, `factorial` and a generic `Function` template.
   `2*e` of a power, `x - 1` of `log`/`acos`/`asin`, `b - 1` and `b + 1` of
   an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
   coefficients (`_half_templates`).
-- SymPy objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
+- SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
   properties of atoms with a fixed value (`is_constant`, `constant_units`).
   `commutative` has no template: it is true by definition (see
   "Non-commutative symbols").
@@ -179,7 +309,7 @@ only those about the rule-base neighbourhood of what the query asks
 visited breadth-first; derived nodes wait in `deferred`. A query runs root propagation; if that leaves it
 open and the session is `incomplete`, `escalate` compiles everything
 parked and visits the derived nodes; only then does search run
-(`Solver.entails` in `satassume/solver.py`, MiniSat-style CDCL under
+(`Solver.entails` in `satassume/sat/solver.py`, MiniSat-style CDCL under
 solver assumptions, at most two searches). A template's query about the
 node being built returns None (`Engine._constructing`).
 

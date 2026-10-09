@@ -73,7 +73,7 @@ def test_ci_stream_no_longer_finds_the_zero_i2_family():
 
 
 def test_drop_patch_drops_and_restores():
-    from satassume.solver import Solver
+    from satassume.sat.solver import Solver
     orig = Solver.add_clause
     x = Symbol("x", positive=True)
     stats = {}
@@ -132,7 +132,7 @@ def test_planted_defects_are_caught(monkeypatch):
 
     # I1: an engine that answers the opposite while the dropping patch is
     # active (a subset of the clauses must never flip a definite answer)
-    from satassume.solver import Solver
+    from satassume.sat.solver import Solver
     real_int = Solver.add_internal
 
     def ask_i1(self, proposition, assumptions=None):

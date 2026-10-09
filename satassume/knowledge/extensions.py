@@ -7,7 +7,7 @@ applied predicate and returns what it knows:
 * ``True`` / ``False``: the predicate holds / does not hold for these
   arguments (a unit clause);
 * ``None``: nothing;
-* a formula over :class:`satassume.formula.P` atoms (or an iterable of
+* a formula over :class:`satassume.sat.formula.P` atoms (or an iterable of
   them), asserted as clauses.  The atom for the predicate itself is
   ``P(name, arg)`` for a unary predicate and ``P(name, (arg1, arg2, ...))``
   for a polyadic one; the formula may also mention vocabulary atoms about
@@ -16,7 +16,7 @@ applied predicate and returns what it knows:
 
 Two kinds of registration are useful:
 
-* a **custom predicate** (a name outside :data:`satassume.rules.PREDICATES`)
+* a **custom predicate** (a name outside :data:`satassume.knowledge.rules.PREDICATES`)
   gets its own atom variable per argument tuple, outside the per-node rule
   block, so it takes part in propagation and search like any other atom
   (``ask(Q.mersenne(n), Q.mersenne(n))`` is decided propositionally);
@@ -31,8 +31,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Tuple
 
-from .epoch import bump as _bump
-from .formula import Formula, Not, P
+from ..state.epoch import bump as _bump
+from ..sat.formula import Formula, Not, P
+from ..state.memos import adopt as _adopt_memo
 from .rules import BASIS_OF, PRED_INDEX
 
 Handler = Callable[..., Any]
@@ -64,7 +65,7 @@ class Extensions:
     def version(self) -> int:
         """Bumped by every registration and unregistration; what depends on
         the registrations compares it instead of the handler lists.  Every
-        assignment also starts a new registry epoch (:mod:`satassume.epoch`),
+        assignment also starts a new registry epoch (:mod:`satassume.state.epoch`),
         which drops the caches of every engine."""
         return self._version
 
@@ -168,6 +169,7 @@ def _collect(result, atom: P, out: List[Any]) -> None:
 
 #: The default registry, used by :func:`satassume.sympy_api.ask`.
 extensions = Extensions()
+_adopt_memo(__name__, "extensions._node_cache", "extensions")
 
 
 def register(pred, *classes: type):

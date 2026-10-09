@@ -1,4 +1,4 @@
-"""Tests of satassume/constfield.py: exact numbers in Q(pi, E, sqrt(2), ...).
+"""Tests of satassume/theories/lra/constfield.py: exact numbers in Q(pi, E, sqrt(2), ...).
 
 Oracles independent of the implementation:
 
@@ -21,8 +21,8 @@ import pytest
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
-from satassume import constfield as cf
-from satassume.constfield import PI, E, Element, Undecided, from_sympy
+from satassume.theories.lra import constfield as cf
+from satassume.theories.lra.constfield import PI, E, Element, Undecided, from_sympy
 
 mpmath = pytest.importorskip("mpmath")
 mp = mpmath.mp

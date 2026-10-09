@@ -1,5 +1,5 @@
 """LRA with constants in the coefficients (``pi*x``, ``x/pi``, ``sqrt(2)*x``):
-the theory over :mod:`satassume.constfield` numbers, the adapter, the
+the theory over :mod:`satassume.theories.lra.constfield` numbers, the adapter, the
 integrality link, and giving up on undecidable comparisons.
 
 Oracles independent of the simplex:
@@ -25,9 +25,9 @@ from sympy import E as sE
 from sympy import Q, Rational, pi, sqrt, symbols
 
 from satassume import DictCache, Engine
-from satassume import constfield as cf
-from satassume import lra
-from satassume.constfield import PI, num
+from satassume.theories.lra import constfield as cf
+from satassume.theories.lra import lra
+from satassume.theories.lra.constfield import PI, num
 from satassume.sympy_api import ask
 
 F = cf.Fraction
@@ -372,11 +372,11 @@ def test_end_to_end_answers(prop, assum, expected):
     assert _ask(prop, assum) == expected
 
 
-@pytest.mark.skipif(not __import__("satassume.lra_adapter").lra_adapter.GENERIC_CONSTANTS,
+@pytest.mark.skipif(not __import__("satassume.theories.lra.lra_adapter").theories.lra.lra_adapter.GENERIC_CONSTANTS,
                     reason="general constants are bounded terms")
 def test_general_constants_are_numbers():
     from sympy import log, sin
-    from satassume import lra_adapter as ad
+    from satassume.theories.lra import lra_adapter as ad
     assert ad.terms(Q.lt(x, log(2))) == [x] and ad.terms(Q.lt(log(2) * x, 1)) == [x]
     assert _ask(Q.lt(xr, 2), Q.le(log(2) * xr, 1)) is True           # xr <= 1.44...
     assert _ask(Q.lt(xr, Rational(144, 100)), Q.le(log(2) * xr, 1)) is None

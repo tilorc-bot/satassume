@@ -9,13 +9,13 @@ timings in [performance.md](performance.md).
 
 | Path | What |
 |---|---|
-| `satassume/theory.py` | the theory contract (`TheorySolver`, `PropagatingTheory`), `EqualitySharing` |
-| `satassume/solver.py` | the hooks: `attach_theory`, `register_atom`, `_tpropagate`, `_theory_sync`, `_theory_decide`, `_theory_check`, `theory_models` |
+| `satassume/sat/theory.py` | the theory contract (`TheorySolver`, `PropagatingTheory`), `EqualitySharing` |
+| `satassume/sat/solver.py` | the hooks: `attach_theory`, `register_atom`, `_tpropagate`, `_theory_sync`, `_theory_decide`, `_theory_check`, `theory_models` |
 | `satassume/relations.py` | normalisation (`relation_atom`), the per-session glue `Relations`, `AdapterSpec`, `default_specs`, `Uninterpreted` |
-| `satassume/lra.py`, `lra_adapter.py` | simplex LRA with integrality; SymPy atoms to linear forms |
-| `satassume/constfield.py` | exact numbers in `Q(pi, E, sqrt(2), ...)` for LRA |
-| `satassume/euf.py`, `euf_adapter.py` | congruence closure; SymPy terms to EUF terms |
-| `satassume/transfer.py` | `TransferTheory`: unary facts across EUF classes |
+| `satassume/theories/lra/lra.py`, `lra_adapter.py` | simplex LRA with integrality; SymPy atoms to linear forms |
+| `satassume/theories/lra/constfield.py` | exact numbers in `Q(pi, E, sqrt(2), ...)` for LRA |
+| `satassume/theories/euf/euf.py`, `euf_adapter.py` | congruence closure; SymPy terms to EUF terms |
+| `satassume/theories/transfer.py` | `TransferTheory`: unary facts across EUF classes |
 | `satassume/engine.py` | `Session._custom`, `_relations`, `link_set`; `Engine(relations=, transfer=, uninterpreted=)` |
 | `satassume/scope.py` | `theory_scope`, `affine_pair`, `transfer_wanted`, `extension_atoms`: the theory scope of a query (#97 P3) |
 | `tests/theory_harness.py` | testing a theory: `TheoryCase` with `check_solve`/`check_entails`/`check_implied` against independent brute-force checkers (Fourier-Motzkin, naive congruence closure; never the code under test), `Recorder` and `check_protocol` for the protocol, `ForbidTheory` as a 60-line example, `relation_engine` and `dummy_specs` end to end; `tests/real_theory_fuzz.py` fuzzes the solver with the real LRA and EUF |
@@ -25,7 +25,7 @@ timings in [performance.md](performance.md).
 A theory implements `register_atom(v, payload)`, `assert_lit(lit)`,
 `check()`, `push_level()`, `pop_level()`, and optionally `propagate()` and
 `decide()`. The full contract is the module docstring of
-`satassume/theory.py`; the essentials:
+`satassume/sat/theory.py`; the essentials:
 
 | method | returns | called |
 |---|---|---|
@@ -294,7 +294,7 @@ query and cost about 10% of the decisions under assumption sets with
 
 ## LRA
 
-`LRATheory` (`satassume/lra.py`) is the general simplex of Dutertre and de
+`LRATheory` (`satassume/theories/lra/lra.py`) is the general simplex of Dutertre and de
 Moura (CAV 2006): Bland's rule, exact arithmetic, delta-rationals for
 strict bounds, one slack per linear form normalised to leading coefficient
 1, a tableau kept across levels (backtracking restores bounds only), the
@@ -330,7 +330,7 @@ stays undecided). `Q.ge(k, 1)` for an integer `k > 0` is True.
 (`sqrt(2)`) with `+ - * /` and integer powers, and every other closed real
 constant with rigorous bounds (`log(2)`, `sin(1)`, `2**pi`;
 `lra_adapter.GENERIC_CONSTANTS = True`) are exact numbers of
-`satassume/constfield.py`, in constants and coefficients alike: `x <=
+`satassume/theories/lra/constfield.py`, in constants and coefficients alike: `x <=
 3*pi/2`, `x/pi`, `pi*x`, `log(2)*x`. So refine's `Q.integer(x/pi + 1/2)`
 under `-pi/2 < x < pi/2` is False, with the endpoint tie decided exactly.
 
@@ -373,7 +373,7 @@ to within `2**-120` relative.
 
 ## EUF and predicate transfer
 
-`EUFTheory` (`satassume/euf.py`) is incremental congruence closure after
+`EUFTheory` (`satassume/theories/euf/euf.py`) is incremental congruence closure after
 Nieuwenhuis and Oliveras (2007): curried applications, union by size,
 explanations from a proof forest, undo by trail. Disequalities and
 distinct values are checked eagerly in `assert_lit`; `propagate` reports
@@ -386,7 +386,7 @@ congruence under a binder is unsound. Floats, `pi` and `oo` are opaque:
 `Eq(0.1, 1/10)` is True in SymPy, so a Float as a distinct value could
 refute a satisfiable assignment.
 
-`TransferTheory` (`satassume/transfer.py`) closes the gap EUF leaves:
+`TransferTheory` (`satassume/theories/transfer.py`) closes the gap EUF leaves:
 whenever EUF puts two terms in one class, every one of the 33 unary
 predicates holds for one iff it holds for the other (enforced on the 15
 basis variables of the node blocks; the 18 definitions follow from them), which is sound

@@ -6,7 +6,7 @@ import pytest
 from sympy import Function, Q, S, pi, sqrt, symbols
 
 from satassume.engine import DictCache, Engine
-from satassume.formula import And, Not, Or, P
+from satassume.sat.formula import And, Not, Or, P
 from satassume.scope import (EMPTY, Scope, affine_pair, linked_terms, theory_scope,
                              transfer_wanted)
 from satassume.sympy_api import _formula, ask

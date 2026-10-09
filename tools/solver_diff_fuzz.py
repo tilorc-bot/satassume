@@ -1,6 +1,8 @@
 """Differential fuzz of an incremental solver against fresh reference solvers.
 
-    python tools/solver_diff_fuzz.py NEW/satassume/solver.py REF/satassume/solver.py SEED0 N
+    python tools/solver_diff_fuzz.py NEW/satassume/sat/solver.py REF/satassume/sat/solver.py SEED0 N
+
+(for a REF checkout before the package move: REF/satassume/solver.py)
 
 Runs N random seeds.  Each seed drives one long-lived ``Solver`` of NEW through
 a random mix of ``add_clause``/``add_clauses``/``add_internal``/``add_pattern``,
@@ -10,10 +12,27 @@ same clauses (the oracle), so state held between calls (cached propagation,
 held assumption levels) cannot change an answer.  Written for the solver
 commits of September 2026; NEW and REF may be the same file.
 """
-import importlib.util, random, sys
+import importlib.util, os, random, sys, types
 def load(path, name):
-    spec = importlib.util.spec_from_file_location(name, path)
-    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+    """The module at ``path`` under the private name ``name`` (so that two
+    checkouts load side by side).  The package directories above it become
+    empty packages under ``name`` (their ``__init__`` is not run), so that a
+    relative import in the solver (``from .memos import adopt``) loads its
+    target from the same checkout."""
+    path = os.path.abspath(path)
+    dirs, d = [], os.path.dirname(path)
+    while os.path.isfile(os.path.join(d, "__init__.py")):
+        dirs.insert(0, d); d = os.path.dirname(d)
+    full = name
+    for i, d in enumerate(dirs):
+        if i:
+            full += "." + os.path.basename(d)
+        pkg = types.ModuleType(full); pkg.__path__ = [d]; sys.modules[full] = pkg
+    if dirs:
+        full += "." + os.path.basename(path)[:-3]
+    spec = importlib.util.spec_from_file_location(full, path)
+    m = importlib.util.module_from_spec(spec); sys.modules[full] = m
+    spec.loader.exec_module(m); return m
 New = load(sys.argv[1], "newsolver").Solver
 Old = load(sys.argv[2], "oldsolver").Solver
 seed0 = int(sys.argv[3]); n = int(sys.argv[4])

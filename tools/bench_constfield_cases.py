@@ -1,4 +1,4 @@
-"""Worst cases of satassume/constfield.py (reviewer D's): a degree-70
+"""Worst cases of satassume/theories/lra/constfield.py (reviewer D's): a degree-70
 univariate gcd with 166-bit coefficients, a degree-4096 power in
 from_sympy, and Gaussian elimination on random n x n matrices whose
 entries are, with probability 1/2, numbers with constants (an Undecided,
@@ -12,8 +12,8 @@ default 120 s).
 import random, signal, sys, time
 from fractions import Fraction as F
 import sympy
-from satassume import constfield as cf
-from satassume.constfield import E, PI, TooLarge, Undecided
+from satassume.theories.lra import constfield as cf
+from satassume.theories.lra.constfield import E, PI, TooLarge, Undecided
 
 SQ2 = cf.radical(2, 2); SQ3 = cf.radical(3, 2); L2 = cf.from_sympy(sympy.log(2))
 

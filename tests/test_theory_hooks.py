@@ -1,9 +1,9 @@
-"""The DPLL(T) hooks of satassume.solver.Solver (see satassume/theory.py)."""
+"""The DPLL(T) hooks of satassume.sat.solver.Solver (see satassume/sat/theory.py)."""
 import pytest
 from hypothesis import given, settings, strategies as st, HealthCheck
 
-from satassume.solver import Solver
-from satassume.theory import TheorySolver, PropagatingTheory
+from satassume.sat.solver import Solver
+from satassume.sat.theory import TheorySolver, PropagatingTheory
 
 from theory_harness import (TheoryCase, ForbidTheory, Recorder, check_protocol,
                             check_solve, check_entails, check_implied)

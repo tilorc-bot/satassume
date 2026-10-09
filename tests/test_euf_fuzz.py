@@ -38,7 +38,7 @@ import time
 import pytest
 from hypothesis import HealthCheck, example, given, settings, strategies as st
 
-euf = pytest.importorskip("satassume.euf")
+euf = pytest.importorskip("satassume.theories.euf.euf")
 EUFTheory = euf.EUFTheory
 EqAtom = euf.EqAtom
 
@@ -861,7 +861,7 @@ REFERENCE_FLAWS = {
         "Q.prime(x) = TRUE; SymPy marks this as needing a redesign "
         "(issue 25485).  EUF itself stays out of it (adapter-level entails "
         "are None); the engine answers them with predicate transfer "
-        "(satassume.transfer): True, never False.",
+        "(satassume.theories.transfer): True, never False.",
         ["test_euf_adapter.py::test_equality_failing_cases_are_not_wrong",
          "test_euf_adapter.py::test_engine_equality_failing_is_not_wrong"]),
     "30327-random-test-unseeded": (

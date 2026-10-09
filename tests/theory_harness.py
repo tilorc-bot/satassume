@@ -26,7 +26,7 @@ The pieces
 ``Recorder(inner, solver=None)``
     Wraps any theory, forwards every call and records it in ``events``;
     ``check_protocol(recorder)`` verifies the solver-side guarantees of
-    ``satassume/theory.py`` on the recorded trace, and the recorder checks
+    ``satassume/sat/theory.py`` on the recorded trace, and the recorder checks
     live that ``check()`` only sees total assignments and that every
     conflict clause the theory returns is false under the solver's
     assignment.  Wrapping your theory in a Recorder in a fuzz test checks
@@ -46,7 +46,7 @@ from __future__ import annotations
 import itertools
 from typing import Any, Callable, Iterable
 
-from satassume.solver import Solver
+from satassume.sat.solver import Solver
 
 
 # ----------------------------------------------------------------------

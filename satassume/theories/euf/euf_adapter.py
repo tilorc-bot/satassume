@@ -1,4 +1,4 @@
-"""Map SymPy equality atoms to :class:`satassume.euf.EUFTheory` payloads.
+"""Map SymPy equality atoms to :class:`satassume.theories.euf.euf.EUFTheory` payloads.
 
 ``EUFAdapter.register(solver, var, atom)`` interprets ``Q.eq(a, b)``,
 ``Q.ne(a, b)``, ``Eq(a, b)`` and ``Ne(a, b)``.  The first time it sees a
@@ -20,7 +20,7 @@ Flattening (:meth:`EUFAdapter.term`)
   value is a function of the values of the arguments.  Excluded: integral
   transforms (``LaplaceTransform`` and friends are ``Function``
   subclasses but bind a variable) and any class that overrides
-  ``free_symbols`` or ``bound_symbols`` (see ``_structural``).
+  ``free_symbols`` or ``bound_symbols`` (see ``structural``).
   ``Add`` and ``Mul`` are opaque, variadic heads applied to SymPy's
   canonical argument tuple.  There is no AC reasoning.  ``x + y`` and
   ``y + x`` are one term only because SymPy already sorts them;
@@ -50,13 +50,15 @@ from sympy.core.relational import Equality, Unequality
 from sympy.integrals.transforms import IntegralTransform
 
 from .euf import EqAtom, EUFTheory
+from ...state.memos import adopt as _adopt_memo
 
-__all__ = ["EUFAdapter"]
+__all__ = ["EUFAdapter", "structural"]
 
 _STRUCTURAL = (Add, Mul, Pow, Application)
 
 
 _class_ok: dict[type, bool] = {}
+_adopt_memo(__name__, "_class_ok")
 
 
 def _inherits_from_basic(cls, name) -> bool:
@@ -66,7 +68,7 @@ def _inherits_from_basic(cls, name) -> bool:
     return True
 
 
-def _structural(expr) -> bool:
+def structural(expr) -> bool:
     """True iff congruence may look inside ``expr``: a function-like class
     that binds no variable.
 
@@ -178,7 +180,7 @@ class EUFAdapter:
                 continue
             if isinstance(e, Rational):
                 terms[e] = th.value(e)
-            elif _structural(e):
+            elif structural(e):
                 if ready:
                     terms[e] = th.term(e.func, [terms[a] for a in e.args])
                 else:
@@ -190,7 +192,7 @@ class EUFAdapter:
 
     def node_term(self, expr) -> int:
         """The theory term of ``expr`` for predicate transfer
-        (:mod:`satassume.transfer`): interned like :meth:`term`, with the
+        (:mod:`satassume.theories.transfer`): interned like :meth:`term`, with the
         same ids, but remembered apart so that it does not become a
         candidate interface term (:meth:`shared_terms`).  Interning more
         terms only adds congruences over the new terms; the equalities
@@ -211,7 +213,7 @@ class EUFAdapter:
                 continue
             if isinstance(e, Rational):
                 nt[e] = th.value(e)
-            elif _structural(e):
+            elif structural(e):
                 if ready:
                     nt[e] = th.term(e.func, [terms[a] if a in terms else nt[a]
                                              for a in e.args])
@@ -234,7 +236,7 @@ class EUFAdapter:
                 continue
             seen.add(e)
             out.append(e)
-            if not isinstance(e, Rational) and _structural(e):
+            if not isinstance(e, Rational) and structural(e):
                 stack.extend(e.args)
         return out
 

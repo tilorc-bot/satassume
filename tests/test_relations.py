@@ -15,9 +15,9 @@ from sympy import Symbol, symbols, Q, Function, Rational, oo, I, S
 from sympy.core.relational import Relational
 
 from satassume.relations import Relations, relation_atom, default_specs
-from satassume.theory import EqualitySharing
-from satassume.formula import And, Not, P
-from satassume.extensions import Args
+from satassume.sat.theory import EqualitySharing
+from satassume.sat.formula import And, Not, P
+from satassume.knowledge.extensions import Args
 from satassume.sympy_api import out_of_scope
 
 from theory_harness import (relation_engine, dummy_specs, ask_with, OrderTheory,
@@ -169,7 +169,7 @@ def test_equality_sharing_is_needed_and_works(monkeypatch):
 
 def test_real_euf_with_order_stand_in():
     # the real EUF adapter combined with the dummy order theory (LRA stand-in)
-    from satassume.euf_adapter import EUFAdapter
+    from satassume.theories.euf.euf_adapter import EUFAdapter
     from satassume.relations import AdapterSpec
     from theory_harness import OrderAdapter
     specs = [AdapterSpec("order", OrderAdapter, True),
@@ -308,7 +308,7 @@ def test_random_order_queries_are_sound(prop_t, assum_ts):
 # ----------------------------------------------------------------------
 
 import importlib.util
-_HAVE_LRA = importlib.util.find_spec("satassume.lra_adapter") is not None
+_HAVE_LRA = importlib.util.find_spec("satassume.theories.lra.lra_adapter") is not None
 # strict once LRA is present: these must then pass
 _real = pytest.mark.xfail(not _HAVE_LRA, reason="waits for the LRA adapter", strict=True)
 
@@ -400,7 +400,7 @@ def test_equality(real_eng):   # EUF
 
 
 def test_equality_failing(real_eng):
-    # XFAIL in SymPy; answered here by predicate transfer (satassume.transfer)
+    # XFAIL in SymPy; answered here by predicate transfer (satassume.theories.transfer)
     e = real_eng
     assert ask_with(e, Q.prime(x), Q.eq(x, y) & Q.prime(y)) is True
     assert ask_with(e, Q.real(x), Q.eq(x, y) & Q.real(y)) is True

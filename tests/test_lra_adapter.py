@@ -1,4 +1,4 @@
-"""Tests for the SymPy -> LRA adapter (satassume/lra_adapter.py).
+"""Tests for the SymPy -> LRA adapter (satassume/theories/lra/lra_adapter.py).
 
 Assumed interface (agreed with lra-impl):
 
@@ -42,11 +42,11 @@ from sympy.calculus.accumulationbounds import AccumBounds
 from test_lra import _hang_guard, holds, payload_constraint  # noqa: F401
 
 try:
-    ad = importlib.import_module(os.environ.get("SATASSUME_LRA_ADAPTER", "satassume.lra_adapter"))
+    ad = importlib.import_module(os.environ.get("SATASSUME_LRA_ADAPTER", "satassume.theories.lra.lra_adapter"))
 except ImportError as e:  # pragma: no cover
     ad = None
     _ERR = e
-needs_adapter = pytest.mark.skipif(ad is None, reason="satassume.lra_adapter not available")
+needs_adapter = pytest.mark.skipif(ad is None, reason="satassume.theories.lra.lra_adapter not available")
 
 x, y, z = symbols("x y z")
 f = Function("f")
@@ -318,7 +318,7 @@ def test_nonlinear_terms_are_opaque_or_uninterpreted(i):
 # ----------------------------------------------------------------------
 
 def _solver_with(atoms):
-    from satassume.solver import Solver
+    from satassume.sat.solver import Solver
     s = Solver()
     adapter = ad.LRAAdapter()
     ok = {}

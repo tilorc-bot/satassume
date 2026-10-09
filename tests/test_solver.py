@@ -1,11 +1,11 @@
-"""Tests for satassume.solver (pure stdlib + pytest)."""
+"""Tests for satassume.sat.solver (pure stdlib + pytest)."""
 import itertools
 import random
 import time
 
 import pytest
 
-from satassume.solver import Solver
+from satassume.sat.solver import Solver
 
 # ----------------------------------------------------------------------
 # Brute-force reference
@@ -546,7 +546,7 @@ def test_performance_implication_chains():
 # The rule block as a propagator (set_rule_block / register_block)
 # ----------------------------------------------------------------------
 
-from satassume.rules import NPRED, RULE_INTERNAL  # noqa: E402
+from satassume.knowledge.rules import NPRED, RULE_INTERNAL  # noqa: E402
 
 
 class _CountingSolver(Solver):
@@ -955,7 +955,7 @@ def test_provenance_keeps_literals_dropped_from_a_shortened_clause(path):
     slow path of every bulk method).  When 2 then becomes true (owned by
     E), 3's reason is the stored clause, but F's fact took part too: the
     dropped literal stays an antecedent of the clause's implications."""
-    from satassume.solver import BOTTOM
+    from satassume.sat.solver import BOTTOM
     s = Solver()
     for _ in range(4):
         s.new_var()
@@ -1069,8 +1069,8 @@ def _block_models_reference(clauses, n):
 
 
 def test_block_models_rule_base_matches_reference():
-    from satassume.rules import NPRED, RULE_INTERNAL
-    from satassume.solver import _block_models
+    from satassume.knowledge.rules import NPRED, RULE_INTERNAL
+    from satassume.sat.solver import _block_models
     models = _block_models(RULE_INTERNAL, NPRED)
     assert models == _block_models_reference(RULE_INTERNAL, NPRED)
     # 44: commutative is no basis variable (true by definition); with it
@@ -1079,7 +1079,7 @@ def test_block_models_rule_base_matches_reference():
 
 
 def test_block_models_random_blocks_match_reference():
-    from satassume.solver import _block_models
+    from satassume.sat.solver import _block_models
     rng = random.Random(7)
     for _ in range(300):
         n = rng.randint(2, 9)
@@ -1132,8 +1132,8 @@ def _random_block(rng, n):
 
 
 def test_block_closure_msets_and_values_match_direct():
-    from satassume.rules import NPRED, RULE_INTERNAL
-    from satassume.solver import _BlockClosure
+    from satassume.knowledge.rules import NPRED, RULE_INTERNAL
+    from satassume.sat.solver import _BlockClosure
     rng = random.Random(11)
     blocks = [(RULE_INTERNAL, NPRED), ((), 1), (((),), 3), (((0,), (1,)), 2)]
     for _ in range(1000):

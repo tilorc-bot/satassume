@@ -3,10 +3,10 @@ depends on besides its inputs.
 
 An ``ask`` answer is a function of the proposition, the assumptions, the
 engine's configuration and the registrations in force: the clause-generating
-functions of every :class:`satassume.extensions.Extensions` registry (the
+functions of every :class:`satassume.knowledge.extensions.Extensions` registry (the
 default one also decides the scope of ``sympy_api.ask``, whichever registry
 an engine uses), the structural templates
-(``satassume.templates.registry``) and the theory adapters of the engine.
+(``satassume.knowledge.templates.registry``) and the theory adapters of the engine.
 Every change of one of these bumps :data:`EPOCH`:
 
 * ``Extensions.register`` and ``Extensions.unregister`` (through the

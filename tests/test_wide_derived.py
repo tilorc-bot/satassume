@@ -12,11 +12,11 @@ import time
 import pytest
 from sympy import Add, And, Implies, Mul, Not, Or, Q, symbols
 
-from satassume.compile import VarTable, compile_formula
-from satassume.formula import P
-from satassume.formula import And as FAnd, Implies as FImplies, Not as FNot, Or as FOr
+from satassume.knowledge.compile import VarTable, compile_formula
+from satassume.sat.formula import P
+from satassume.sat.formula import And as FAnd, Implies as FImplies, Not as FNot, Or as FOr
 from satassume.sympy_api import ask
-from satassume.templates.registry import registry
+from satassume.knowledge.templates.registry import registry
 
 xs = symbols("x0:12")
 DERIVED = ['nonnegative', 'nonpositive', 'positive', 'negative', 'real', 'nonzero',
@@ -112,7 +112,7 @@ def test_wide_or_compiles_in_linear_time(pred):
 @pytest.mark.parametrize("build", [Add, Mul])
 @pytest.mark.parametrize("pred", ["positive", "nonnegative", "extended_positive"])
 def test_wide_pattern_builds_are_fast(build, pred):
-    from satassume.templates import _common
+    from satassume.knowledge.templates import _common
     ys = symbols("w0:150")
     _common._CACHE.clear()
     t = time.perf_counter()
@@ -122,7 +122,7 @@ def test_wide_pattern_builds_are_fast(build, pred):
 
 def test_unsubsumed_matches_brute_force():
     import random
-    from satassume.templates._common import _unsubsumed
+    from satassume.knowledge.templates._common import _unsubsumed
     rng = random.Random(0)
     for _ in range(200):
         cs = [tuple(rng.sample(range(12), rng.randint(0, 5))) for _ in range(rng.randint(0, 30))]
@@ -168,7 +168,7 @@ _WIDE_ANSWERS = [   # proposition/assumptions predicates, answers in _SHAPES x _
 
 @pytest.fixture
 def solvers(monkeypatch):
-    from satassume.solver import Solver
+    from satassume.sat.solver import Solver
     made = []
     init = Solver.__init__
 
@@ -251,8 +251,8 @@ def test_wide_conjunctions_propagate(pp, ap, solvers):
 # conjunction to the general encoding).  Built with stand-in predicates so
 # that it runs whether or not some predicate's definition is empty.
 def test_conjunction_with_constant_literal(monkeypatch):
-    from satassume import rules
-    from satassume.compile import _def
+    from satassume.knowledge import rules
+    from satassume.knowledge.compile import _def
     from satassume.engine import Engine
     monkeypatch.setitem(rules.DEF_LITS, "_const_true", ("&", ()))
     monkeypatch.setitem(rules.DEF_LITS, "_const_false", ("|", ()))

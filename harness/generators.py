@@ -4,7 +4,7 @@ One builder (``QueryGen``) is driven either by a seeded ``random.Random``
 (``RandomDraw``: fast fuzzing over many seeds) or by Hypothesis
 (``HypothesisDraw`` inside ``stream_strategy``: shrinking).  It reaches:
 
-* every predicate of the vocabulary (``satassume.rules.PREDICATES``, 33),
+* every predicate of the vocabulary (``satassume.knowledge.rules.PREDICATES``, 33),
   ``Q.is_true`` over an applied predicate, custom predicates registered
   through ``harness.registry`` (unary, polyadic, and vocabulary
   predicates on a class) and unregistered custom predicates (out of
@@ -42,7 +42,7 @@ from sympy import (Abs, Dummy, E, Eq, EulerGamma, Float, Function, Ge, GoldenRat
                    floor, im, log, nan, oo, pi, re, sign, sin, sinh, sqrt, tan, tanh, zoo)
 from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or
 
-from satassume.rules import PREDICATES
+from satassume.knowledge.rules import PREDICATES
 
 from . import registry as reg
 from .checker import Ask, Event, Item

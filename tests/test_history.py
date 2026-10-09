@@ -530,7 +530,7 @@ def test_ddmin_shrinks_to_the_responsible_query(monkeypatch):
     def bad_ask(self, proposition, assumptions=None):
         r = orig(self, proposition, assumptions)
         seen = self.__dict__.setdefault("_seen", set())
-        from satassume.formula import P
+        from satassume.sat.formula import P
         if isinstance(proposition, P) and proposition.expr == y + 1:
             seen.add("t")
         if "t" in seen and isinstance(proposition, P) and proposition.expr == x and r is None:

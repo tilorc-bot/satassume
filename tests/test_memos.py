@@ -7,9 +7,9 @@ sympy = pytest.importorskip("sympy")
 
 from sympy import Predicate, Q, Symbol  # noqa: E402
 
-from satassume.formula import P  # noqa: E402
+from satassume.sat.formula import P  # noqa: E402
 from satassume.sympy_api import _formula, to_formula, Unsupported, register, unregister  # noqa: E402
-from satassume.templates.registry import TemplateRegistry  # noqa: E402
+from satassume.knowledge.templates.registry import TemplateRegistry  # noqa: E402
 
 x = Symbol('x')
 
@@ -98,7 +98,8 @@ def test_two_engines_do_not_share_memos():
     ``memos.PROCESS``, and only memos keyed on nothing but their key and
     the registry epoch (or the default registry's version) may live there."""
     from satassume import Engine
-    from satassume.memos import ENGINE_MEMOS, PROCESS, PROCESS_KEYS
+    from satassume.engine import ENGINE_MEMOS
+    from satassume.state.memos import PROCESS, PROCESS_KEYS
     from satassume.sympy_api import ask
     e1, e2 = Engine(), Engine()
     assert e1.memos is not e2.memos
@@ -128,7 +129,7 @@ def test_process_memos_registered_and_cleared():
     module is imported), and one ``PROCESS.clear()`` empties all of them
     and forgets the stamps of the epoch-keyed tables."""
     from harness.state import MODULE_STATE, import_all
-    from satassume import memos
+    from satassume.state import memos
     from satassume import sympy_api as api
     import_all()
     assert set(memos.module_locations()) == set(MODULE_STATE)
@@ -143,7 +144,7 @@ def test_process_memos_registered_and_cleared():
 
 
 def test_table_bound_and_process_key_check():
-    from satassume.memos import Memos, PROCESS, Table
+    from satassume.state.memos import Memos, PROCESS, Table
     t = Memos("t").table("t.x", "settings", size=2)
     assert isinstance(t, Table) and type(t).get is dict.get
     t.put(1, 1); t.put(2, 2); t.put(3, 3)
@@ -154,3 +155,27 @@ def test_table_bound_and_process_key_check():
         PROCESS.table("satassume.test.bad", "settings")
     with pytest.raises(ValueError):
         Memos("t").table("t.y", "nonsense")
+
+
+def test_memo_registry_lists_every_owner():
+    """``memos.ADOPTED`` and ``memos.module_locations()`` import every
+    owner first, so they list the memos of modules that nothing has
+    loaded yet (in a fresh interpreter; final review B3)."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    import satassume
+    root = str(Path(satassume.__file__).resolve().parent.parent)
+    code = (
+        "import sys\n"
+        "from satassume.state import memos\n"
+        "assert 'satassume.theories.lra.lra_bounds' not in sys.modules\n"
+        "owners = {m for m, _, _ in memos.ADOPTED}\n"
+        "assert 'satassume.theories.lra.lra_bounds' in owners, owners\n"
+        "assert 'satassume.theories.euf.euf_adapter' in owners, owners\n"
+        "assert ('satassume.theories.lra.lra_bounds', '_BOUNDS') in memos.module_locations()\n"
+        "print('ok')\n")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       cwd=root, env={**os.environ, "PYTHONPATH": root})
+    assert r.returncode == 0 and r.stdout.strip() == "ok", r.stderr

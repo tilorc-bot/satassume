@@ -12,8 +12,8 @@ import os
 import pytest
 
 import real_theory_fuzz as rtf
-from satassume.lra import LRATheory, constraint
-from satassume.solver import Solver
+from satassume.theories.lra.lra import LRATheory, constraint
+from satassume.sat.solver import Solver
 
 SEEDS = int(os.environ.get("REAL_THEORY_SEEDS", "150"))
 

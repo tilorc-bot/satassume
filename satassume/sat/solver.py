@@ -11,7 +11,7 @@ direct, MiniSat-flavoured CDCL solver:
 * MiniSat-style assumptions (the first decisions of a search) with a proper
   final-conflict analysis (:meth:`Solver.conflict`);
 * optional theory solvers (DPLL(T), :meth:`Solver.attach_theory`, contract
-  in :mod:`satassume.theory`); without one every hook is skipped after a
+  in :mod:`satassume.sat.theory`); without one every hook is skipped after a
   single attribute test;
 * an optional rule block (:meth:`Solver.set_rule_block`): one fixed clause
   pattern instantiated per base variable (:meth:`Solver.register_block`)
@@ -36,6 +36,8 @@ by unit propagation, by unit clauses, or as learned unit clauses).
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+
+from ..state.memos import adopt as _adopt_memo
 
 
 class Clause(list):
@@ -112,6 +114,7 @@ def _luby(y: float, x: int) -> float:
 
 
 _RULE_TABLES: dict = {}
+_adopt_memo(__name__, "_RULE_TABLES")
 _EVEN = int("01" * 64, 2)          # bits 0, 2, 4, ... (positive relative literals)
 _BIT = tuple(1 << i for i in range(128))       # relative literal -> its bit
 _NBIT = tuple(~(1 << i) for i in range(128))   # ... and the complement
@@ -457,7 +460,7 @@ class Solver:
         # Decision mode of the current solve: next variable index to scan,
         # or 0 for VSIDS (see _pick_branch).
         self._scan = 0
-        # Theories (see satassume/theory.py).  ``_theories`` is the guard of
+        # Theories (see satassume/sat/theory.py).  ``_theories`` is the guard of
         # every hook: the no-theory path pays one attribute test per call.
         self._theories: list = []
         self._tmap: dict[int, list] = {}     # variable -> theories that registered it
@@ -1859,11 +1862,11 @@ class Solver:
         del trail_lim[lvl:]
 
     # ------------------------------------------------------------------
-    # Theories (DPLL(T)); see satassume/theory.py for the contract
+    # Theories (DPLL(T)); see satassume/sat/theory.py for the contract
     # ------------------------------------------------------------------
 
     def attach_theory(self, theory) -> None:
-        """Attach a theory solver (see :class:`satassume.theory.TheorySolver`).
+        """Attach a theory solver (see :class:`satassume.sat.theory.TheorySolver`).
 
         Several theories may be attached; each sees only the variables
         registered for it with :meth:`register_atom`.  The theory must be
@@ -1899,7 +1902,7 @@ class Solver:
         root and the search does not decide it.  The theory is still told
         every value it gets on the trail; it must then not need a total
         assignment of its atoms: what it needs decided it asks for with
-        ``decide`` (see :mod:`satassume.theory`).
+        ``decide`` (see :mod:`satassume.sat.theory`).
         """
         if not any(t is theory for t in self._theories):
             raise ValueError("theory not attached")

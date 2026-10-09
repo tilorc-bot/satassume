@@ -6,7 +6,7 @@ The engine answers ``ask`` for **unary scalar predicates on scalar
 expressions**: propositions and assumptions that are Boolean combinations
 (``And``, ``Or``, ``Not``, ``Implies``, ``Equivalent``) of applied
 predicates ``Q.<name>(expr)`` where ``name`` is in the vocabulary of
-:mod:`satassume.rules` (``PREDICATES``) and ``expr`` is a scalar
+:mod:`satassume.knowledge.rules` (``PREDICATES``) and ``expr`` is a scalar
 :class:`~sympy.core.expr.Expr`.  Everything is answered by the SAT engine
 alone: the rule base, the structural templates and search.  The engine
 never consults SymPy's ``_eval_is_*`` handlers or SymPy's own
@@ -39,7 +39,7 @@ scope so the caller can decide before asking.  The categories are
 * ``"custom"``: any other predicate outside the vocabulary (user-defined
   predicates, ``Q.is_true`` over a non-relational) for which no
   clause-generating function is registered (see :func:`register` and
-  :mod:`satassume.extensions`); a registered predicate is in scope, with
+  :mod:`satassume.knowledge.extensions`); a registered predicate is in scope, with
   the arity it was registered for;
 * ``"other"``: the proposition or the assumptions are not a Boolean
   combination of applied predicates at all (a bare ``Q.positive``, an
@@ -58,7 +58,7 @@ its arguments, so it does not sink unrelated components.  In the
 Q.invertible(M))`` is None), and ``"other"`` is out of scope on both sides.
 :func:`out_of_scope` keeps reporting the categories of the input as such.
 
-``to_formula`` translates a SymPy Boolean into a :mod:`satassume.formula`
+``to_formula`` translates a SymPy Boolean into a :mod:`satassume.sat.formula`
 formula and raises :class:`Unsupported` (carrying the category) for
 out-of-scope input.
 
@@ -76,11 +76,12 @@ from typing import Optional
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
 from .scope import theory_scope as _theory_scope
-from .epoch import EPOCH as _EPOCH
-from .memos import PROCESS as _PROCESS
-from .extensions import Args, extensions, register, unregister  # noqa: F401
-from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
+from .state.epoch import EPOCH as _EPOCH
+from .state.memos import PROCESS as _PROCESS
+from .knowledge.extensions import Args, extensions, register, unregister  # noqa: F401
+from .sat.formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
+from .knowledge.domain import NONCOMM_SIZE, _NONCOMM, _fixed_noncommutative, _noncommutative  # noqa: F401
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
 from sympy.core.add import Add as _SAdd
@@ -94,7 +95,7 @@ from sympy.core.singleton import S as _S
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
                                  Implies as _SImplies, Equivalent as _SEquivalent,
                                  BooleanTrue as _BTrue, BooleanFalse as _BFalse)
-from .rules import PRED_INDEX
+from .knowledge.rules import PRED_INDEX
 
 
 CATEGORIES = ("relation", "matrix", "custom", "other")
@@ -164,59 +165,6 @@ def _is_matrix_predicate(pred, name: str) -> bool:
 
 def _is_scalar(arg) -> bool:
     return isinstance(arg, _Expr) and bool(arg.is_scalar)
-
-
-#: memo of :func:`_noncommutative` (a function of the expression only:
-#: SymPy equality distinguishes ``Symbol('A')`` from the non-commutative
-#: ``A`` and ``Function('g')`` from ``Function('g', commutative=False)``)
-NONCOMM_SIZE = 4096
-_NONCOMM = _PROCESS.table("satassume.sympy_api._NONCOMM", "pure", NONCOMM_SIZE)
-
-
-def _fixed_noncommutative(t) -> bool:
-    """Whether ``t`` is non-commutative by construction, read without
-    evaluating any assumption (``t.is_commutative`` would compute and cache
-    ``commutative`` in SymPy's ``_assumptions`` of compound expressions,
-    and the engine must never write SymPy's assumption caches).  Symbols
-    (``Dummy``, ``Wild``) carry their given assumptions in ``_assumptions0``;
-    undefined functions (``Function('g', commutative=False)``) and atom
-    types such as quantum operators fix ``is_commutative`` as a class
-    attribute; anything else is decided by its arguments."""
-    from sympy.core.symbol import Symbol
-    if isinstance(t, Symbol):
-        return dict(getattr(t, "_assumptions0", ())).get("commutative") is False
-    for k in type(t).__mro__:
-        v = k.__dict__.get("is_commutative", None)
-        if v is not None:
-            return v is False
-    return False
-
-
-def _noncommutative(e) -> bool:
-    """Whether ``e`` has a non-commutative subterm (fixed non-commutative
-    by construction anywhere, see :func:`_fixed_noncommutative`, ``e`` itself included, matrix expressions not
-    descended into).  The whole expression is not
-    enough (``re(A)`` claims to be commutative), so this walks the tree;
-    memoized, since it runs for every applied vocabulary predicate."""
-    r = _NONCOMM.get(e)
-    if r is not None:
-        return r
-    r = False
-    stack = [e]
-    while stack:
-        t = stack.pop()
-        if not isinstance(t, _Basic) or getattr(t, "is_Matrix", False):
-            # a matrix expression reaches a scalar argument only through a
-            # scalar-valued function of it (Trace(M), M[0, 0]): a number
-            continue
-        if _fixed_noncommutative(t):
-            r = True
-            break
-        stack.extend(t.args)
-    if len(_NONCOMM) >= NONCOMM_SIZE:
-        _NONCOMM.clear()
-    _NONCOMM[e] = r
-    return r
 
 
 def _applied_category(expr) -> Optional[str]:
@@ -409,7 +357,7 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
     """
     eng = engine or default_engine()
     # answer memo (see Engine.answers): keyed by the SymPy objects
-    # themselves, valid while the registry epoch (satassume.epoch: the
+    # themselves, valid while the registry epoch (satassume.state.epoch: the
     # registrations that decide the scope and add facts, the templates,
     # the adapters) is the one it was filled under.  An answer over the
     # discovery budget is not memoized, so a hit is never budget-limited
@@ -438,7 +386,7 @@ _MISS = object()
 #: :func:`to_formula` on SymPy Booleans; valid while the default registry's
 #: version (which decides the scope of custom predicates) is ``_FORMULAS.stamp``
 FORMULAS_SIZE = 100_000
-_FORMULAS = _PROCESS.table("satassume.sympy_api._FORMULAS", "extensions", FORMULAS_SIZE)
+_FORMULAS = _PROCESS.table(f"{__name__}._FORMULAS", "extensions", FORMULAS_SIZE)
 
 
 def _formula(expr, relations: bool, opaque: bool = False):
@@ -624,13 +572,13 @@ def _ask_general(proposition, assumptions, eng: Engine) -> Optional[bool]:
 
 _OPAQUE = None  # keys of an opaque expression
 #: Boolean -> ``(keys, has a relation)``; valid while the registry epoch
-#: (:mod:`satassume.epoch`: the default registry decides whether a custom
+#: (:mod:`satassume.state.epoch`: the default registry decides whether a custom
 #: predicate is registered, so opaque, or unregistered, keyed by its
 #: arguments; the templates decide what a closed term's block fixes) is
 #: ``_KEYS.stamp``.  ``_CONST`` (closed term -> in ``K``) is dropped with it.
 KEYS_SIZE = 100_000
-_KEYS = _PROCESS.table("satassume.sympy_api._KEYS", "epoch", KEYS_SIZE)
-_CONST = _PROCESS.table("satassume.sympy_api._CONST", "epoch", KEYS_SIZE)
+_KEYS = _PROCESS.table(f"{__name__}._KEYS", "epoch", KEYS_SIZE)
+_CONST = _PROCESS.table(f"{__name__}._CONST", "epoch", KEYS_SIZE)
 
 
 #: the closed atoms of ``K`` (see "Closed terms" above)

@@ -2,7 +2,7 @@
 
 A *theory solver* decides consistency of a conjunction of theory atoms
 (linear constraints for LRA, equalities between terms for EUF).  The SAT
-solver (:class:`satassume.solver.Solver`) owns the search; it tells each
+solver (:class:`satassume.sat.solver.Solver`) owns the search; it tells each
 attached theory which of the theory's atoms it has assigned, and the theory
 answers with a *conflict clause* when those assignments are inconsistent.
 
@@ -11,7 +11,7 @@ atom registered for variable ``v`` holds, ``-v`` meaning its negation holds.
 This module imports nothing from SymPy and the solver never looks inside a
 payload, so the solver stays theory- and SymPy-agnostic.
 
-Wiring (done by an adapter, e.g. ``satassume/lra_adapter.py``)::
+Wiring (done by an adapter, e.g. ``satassume/theories/lra/lra_adapter.py``)::
 
     theory = MyTheory()
     solver.attach_theory(theory)
@@ -89,7 +89,7 @@ called when every other variable is assigned, before ``check``, it returns
 an unassigned registered variable it needs a value of, or None; the solver
 decides it, in the phase the variable's rule block implies if any.  The
 transfer theory uses this: equal terms' blocks are completed alike without
-deciding their variables (see :mod:`satassume.transfer`).
+deciding their variables (see :mod:`satassume.theories.transfer`).
 
 A theory is informed consistently on every solver path: ``solve``,
 ``entails``, ``implied``, ``propagate`` and root-level unit clauses.

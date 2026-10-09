@@ -1,9 +1,9 @@
-"""Integrality in the LRA theory (``satassume.lra``, "Integrality") and its
+"""Integrality in the LRA theory (``satassume.theories.lra.lra``, "Integrality") and its
 link to ``Q.integer`` (``satassume.relations``, "Integrality").
 
 Three layers:
 
-1. unit tests of :class:`satassume.lra.LRATheory` with ``Integral`` atoms
+1. unit tests of :class:`satassume.theories.lra.lra.LRATheory` with ``Integral`` atoms
    (rounded bounds, propagation, branch and bound, levels, the budget);
 2. a random fuzz of the theory against an exact oracle: every term is boxed,
    so an integrality atom's form has finitely many integer values, and the
@@ -23,8 +23,8 @@ from fractions import Fraction as F
 
 import pytest
 
-from satassume import lra
-from satassume.lra import Integral, LRATheory, constraint
+from satassume.theories.lra import lra
+from satassume.theories.lra.lra import Integral, LRATheory, constraint
 
 from test_lra import fm_feasible  # noqa: E402
 
@@ -380,7 +380,7 @@ def test_solver_with_integrality_against_the_oracle(seed, monkeypatch):
     solved several times under random assumptions (levels pushed and
     popped, learnt theory clauses kept): each answer against the oracle
     over all assignments of the atoms."""
-    from satassume.solver import Solver
+    from satassume.sat.solver import Solver
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 10_000)
     rng = random.Random(seed)
     atoms, lits, meaning = _instance(rng)
