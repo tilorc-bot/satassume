@@ -110,7 +110,7 @@ from collections import defaultdict
 from fractions import Fraction
 from typing import Any
 
-from sympy import Float, Rational, S
+from sympy import Float, S
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.ask import Q
 from sympy.core.add import Add

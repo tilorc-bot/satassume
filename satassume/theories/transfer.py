@@ -142,7 +142,6 @@ class TransferTheory:
         self._otrail: list[int] = []
         self._olims: list[int] = []
         euf.on_merge = self._merged
-        self.stats = {"propagated": 0, "conflicts": 0}
 
     def guard(self, sel: int) -> None:
         """Make every lemma conditional on the selector variable ``sel``,
@@ -448,7 +447,6 @@ class TransferTheory:
                 self._spread(v, out)
         dirty.clear()
         dirty_p.clear()
-        self.stats["propagated"] += len(out)
         if self.sel is not None:
             g = -self.sel
             for _, why in out:
@@ -465,7 +463,6 @@ class TransferTheory:
         for lit, why in out:
             b = val.get(-lit if lit < 0 else lit)
             if b is not None and b != (lit > 0):
-                self.stats["conflicts"] += 1
                 if self.sel is not None:
                     why.append(-self.sel)
                 return (False, why)
