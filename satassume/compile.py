@@ -11,7 +11,7 @@ import heapq
 from typing import Any, Callable, Dict, List, Sequence
 
 from .formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
-from .rules import BASIS, DEF_LITS as _DEF_LITS
+from .rules import BASIS, BASIS_INDEX, DEF_LITS as _DEF_LITS, basis_lits
 
 
 def basis_formula(atom: P):
@@ -26,8 +26,37 @@ def basis_formula(atom: P):
     return And(*args) if op == '&' else Or(*args)
 
 
-def _derived(f) -> bool:
-    return isinstance(f, P) and f.pred in _DEF_LITS
+def _def(f):
+    """``(definition, node)`` (definition as in ``DEF_LITS``) of a derived
+    atom ``f``, or of a conjunction of literals of one node, one of them
+    derived, that is a conjunction of basis literals
+    (``nonnegative(x) & nonzero(x)``: ``extended_real & finite &
+    !extended_negative & !zero`` of ``x``); such a conjunction is compiled
+    as a derived atom, so that all its occurrences share one literal.  None
+    otherwise, also when a literal is a disjunction or constant FALSE (the
+    negation of an empty definition, ``('|', ())``); a constant TRUE literal
+    (``('&', ())``) adds no basis literal."""
+    if isinstance(f, P):
+        d = _DEF_LITS.get(f.pred)
+        return None if d is None else (d, f.expr)
+    if not isinstance(f, And):
+        return None
+    lits, nodes, derived = set(), set(), False
+    for a in f.args:
+        pos = not isinstance(a, Not)
+        if not pos:
+            a = a.args[0]
+        if not isinstance(a, P) or (a.pred not in BASIS_INDEX and a.pred not in _DEF_LITS):
+            return None
+        op, ls = basis_lits(a.pred, pos)
+        if op != '&' and len(ls) != 1:
+            return None
+        derived |= a.pred in _DEF_LITS
+        lits.update(ls)
+        nodes.add(a.expr)
+    if not derived or len(nodes) != 1:
+        return None
+    return ('&', tuple(sorted(lits, key=abs))), nodes.pop()
 
 
 class VarTable:
@@ -120,7 +149,7 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
     """Assert ``f`` by emitting clauses through ``emit``.
 
     ``dv`` (optional, a session's :meth:`~satassume.engine.Session.dvar`):
-    ``dv(atom, need)`` gives the shared definitional literal of a derived
+    ``dv(dn, need)`` gives the shared definitional literal of a derived
     atom, with the direction(s) ``need`` of its definition emitted
     (``'pos'``: literal -> definition, ``'neg'``: definition -> literal,
     ``'both'``; ``'negunit'``: as ``'neg'``, or None to expand the
@@ -141,6 +170,14 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
         else:
             emit([table.var(f)])
         return
+    if isinstance(f, Not) and isinstance(f.args[0], And) and dv is not None:
+        dn = _def(f.args[0])
+        if dn is not None:
+            # a negated conjunction of one node: as a negated derived atom
+            v = dv(dn, 'negunit')
+            if v is not None:
+                emit([-v])
+                return
     if isinstance(f, Not) and isinstance(f.args[0], P):
         if f.args[0].pred in _DEF_LITS:
             if dv is not None and _DEF_LITS[f.args[0].pred][0] == '&':
@@ -148,7 +185,7 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
                 # session wants it (``dv`` answers None otherwise), so
                 # that an occurrence of it in the proposition is decided
                 # by propagation
-                v = dv(f.args[0], 'negunit')
+                v = dv(_def(f.args[0]), 'negunit')
                 if v is not None:
                     emit([-v])
                     return
@@ -233,13 +270,11 @@ def _or_cnf(f: Or, table: VarTable, emit, dv=None) -> List[List[int]]:
                 continue
             parts.append(sub)
             continue
-        g = a
-        neg = False
-        if isinstance(a, Not) and _derived(a.args[0]):
-            g, neg = a.args[0], True
-        if _derived(g):
-            op, ls = _DEF_LITS[g.pred]
-            b = table.node_base(g.expr)
+        g, neg = (a.args[0], True) if isinstance(a, Not) else (a, False)
+        g = _def(g)
+        if g is not None:
+            (op, ls), node = g
+            b = table.node_base(node)
             lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
             if neg:
                 lits = [-l for l in lits]
@@ -320,7 +355,7 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
     if isinstance(f, P):
         if f.pred in _DEF_LITS:
             if dv is not None:
-                return dv(f, 'both')
+                return dv(_def(f), 'both')
             return _literal(basis_formula(f), table, emit, dv)
         return table.var(f)
     if isinstance(f, Not):
@@ -328,7 +363,7 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
         if isinstance(inner, P):
             if inner.pred in _DEF_LITS:
                 if dv is not None:
-                    return -dv(inner, 'both')
+                    return -dv(_def(inner), 'both')
                 return -_literal(basis_formula(inner), table, emit, dv)
             return -table.var(inner)
         return -_literal(inner, table, emit, dv)
@@ -348,6 +383,10 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
     if f is FALSE:
         return -_true_lit(table, emit)
     if isinstance(f, And):
+        if dv is not None:
+            dn = _def(f)
+            if dn is not None:
+                return dv(dn, 'both')
         lits = [_literal(a, table, emit, dv) for a in f.args]
         if not lits:
             return _true_lit(table, emit)

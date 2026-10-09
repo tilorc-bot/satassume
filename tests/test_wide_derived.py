@@ -216,3 +216,58 @@ def test_many_negated_conjunctions_keep_their_meaning(pred):
     if pred == "positive":
         assert ask(Q.finite(xs[0]), And(negs, Q.extended_positive(xs[0]))) is False
         assert ask(Q.infinite(xs[1]), And(negs, Q.extended_positive(xs[1]))) is True
+
+
+# ORs of conjunctions of one node's literals (Or(And(nonnegative(y),
+# nonzero(y)), ...)): each conjunction got a Tseitin variable of its own
+# per occurrence, and a negated one in the assumptions a clause over basis
+# literals, so again one search conflict per disjunct (quadratic, as on the
+# original main).  compile._def makes such a conjunction a derived atom of
+# its own (the conjunction of its basis literals), with one shared literal.
+def _nonneg_nonzero(y):
+    return And(Q.nonnegative(y), Q.nonzero(y))
+
+
+@pytest.mark.parametrize("pp,ap", [(_nonneg_nonzero, _nonneg_nonzero),
+                                   (_nonneg_nonzero, Q.positive),
+                                   (Q.positive, _nonneg_nonzero)])
+def test_wide_conjunctions_propagate(pp, ap, solvers):
+    ys = symbols("v0:60")
+    got = ""
+    for pk in _SHAPES:
+        for ak in _SHAPES:
+            solvers.clear()
+            r = ask(_SHAPES[pk](pp, ys), _SHAPES[ak](ap, ys))
+            got += {True: "T", False: "F", None: "N"}[r]
+            conflicts = sum(s._n_conflicts for s in solvers)
+            assert conflicts <= 2, (pk, ak, conflicts)
+    assert got == dict(_WIDE_ANSWERS)["positive/positive"]
+
+
+# A literal whose definition is a constant (a derived predicate with an
+# empty definition, as ``commutative`` with rd/nocomm: ``('&', ())`` is
+# TRUE, its negation ``('|', ())`` FALSE) adds no basis literal: TRUE may
+# be dropped from a conjunction, FALSE may not (compile._def leaves such a
+# conjunction to the general encoding).  Built with stand-in predicates so
+# that it runs whether or not some predicate's definition is empty.
+def test_conjunction_with_constant_literal(monkeypatch):
+    from satassume import rules
+    from satassume.compile import _def
+    from satassume.engine import Engine
+    monkeypatch.setitem(rules.DEF_LITS, "_const_true", ("&", ()))
+    monkeypatch.setitem(rules.DEF_LITS, "_const_false", ("|", ()))
+    x = xs[0]
+    nn = P("nonnegative", x)
+    want = (("&", tuple(sorted(rules.DEF_LITS["nonnegative"][1], key=abs))), x)
+    for t in (P("_const_true", x), FNot(P("_const_false", x))):
+        assert _def(FAnd(t, nn)) == want
+    for f in (P("_const_false", x), FNot(P("_const_true", x))):
+        assert _def(FAnd(f, nn)) is None
+    # end to end with commutative (TRUE for every term in scope, by
+    # definition or by its basis variable)
+    c = P("commutative", x)
+    assert Engine().ask(FAnd(FNot(c), nn), nn) is False
+    assert Engine().ask(FNot(FAnd(FNot(c), nn)), nn) is True
+    assert Engine().ask(FAnd(c, nn), nn) is True
+    assert Engine().ask(FOr(FAnd(FNot(c), nn), nn)) is None
+    assert ask(~Q.commutative(x) & Q.nonnegative(x), Q.nonnegative(x)) is False
