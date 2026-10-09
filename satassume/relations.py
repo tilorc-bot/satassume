@@ -261,7 +261,7 @@ the glue ``p`` and ``a`` themselves call for:
 * the link clauses of a term ``e`` (and its integrality clauses) carry
   ``link_sel[e]``; assumed for the vocabulary-atom arguments and the sides
   of the interpreted relation atoms of ``p`` and ``a``
-  (:meth:`Relations.selectors_for`), only if ``p`` or ``a`` holds a
+  (:meth:`Relations.selectors_of`), only if ``p`` or ``a`` holds a
   relation atom (a ``zero(t)`` with ``t`` under an application counts as
   ``eq(t, 0)``, see "Zero is an equality") or an affine pair
   (``scope.affine_pair``: the ``glue`` of the query's theory scope);
@@ -353,7 +353,7 @@ from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .knowledge.extensions import Args
-from .sat.formula import And, Not, P, atoms_of
+from .sat.formula import And, Not, P
 from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX
 from .theories.lra.constfield import Undecided, sign
 from .sat.theory import EqualitySharing
@@ -761,8 +761,6 @@ class Relations:
         #: the selector guarding every lemma of predicate transfer (None
         #: until transfer is engaged, see _engage_transfer)
         self.xfer_sel: Optional[int] = None
-        #: order atom -> its reverse, for the pairs _trichotomy related
-        self._tri_of: dict = {}
         #: equality atoms that got their user-atom clauses (_eq_links): the
         #: first query mentioning the atom runs them, whoever made it
         self._user_eq: set = set()
@@ -912,7 +910,7 @@ class Relations:
         a user formula (``sin(2)`` of ``Q.positive(sin(2))``) takes part in
         congruence as a term EUF reads would (:meth:`_congruence_pairs`),
         under a selector of its own that the queries mentioning it assume
-        (``selectors_for``).  Numbers are not linked, and a number node an
+        (``selectors_of``).  Numbers are not linked, and a number node an
         earlier query left in the session must not find a congruent partner
         for the current one."""
         if e in self.num_sel:
@@ -1135,8 +1133,6 @@ class Relations:
         # theories see it, in the queries that mention both atoms; those
         # switch transfer on as an equality does (wants_transfer)
         self._note_sides(eqa, 2)
-        self._tri_of[atom] = rev
-        self._tri_of[rev] = atom
         # a pair of user atoms is in the query's scope (transfer.transfer_wanted
         # counts it), which engaged transfer at construction; a pair with an
         # extension atom switches nothing on (wants_transfer ignores it)
@@ -1467,19 +1463,6 @@ class Relations:
                         self._link_integer(ad, e, g)
 
     # -- switched glue: what a query activates ----------------------------
-    @staticmethod
-    def link_terms(f) -> list:
-        """The terms ``f`` links: the arguments of its vocabulary atoms and
-        the sides of its relation atoms (numbers excluded)."""
-        out = []
-        for a in atoms_of(f):
-            if a.pred in PRED_INDEX:
-                if not _is_number(a.expr):
-                    out.append(a.expr)
-            elif a.pred in RELATION_ATOMS:
-                out.extend(e for e in a.expr if not _is_number(e))
-        return out
-
     def wants_transfer(self, atoms) -> bool:
         """Predicate transfer acts in a query whose relation atoms
         (``atoms``, of the proposition and the assumptions) make an
@@ -1491,14 +1474,10 @@ class Relations:
         so a fresh session has it exactly then; a function of the atoms."""
         return transfer_wanted(atoms)
 
-    def selectors_for(self, f) -> list:
-        """The selectors ``f`` activates once links are on: those of the
-        links of its terms and of its relation atoms' clauses to unary
-        atoms, in allocation order."""
-        return self.selectors_of(atoms_of(f))
-
     def selectors_of(self, atoms) -> list:
-        """:meth:`selectors_for` a formula whose atoms are ``atoms``."""
+        """The selectors a formula whose atoms are ``atoms`` activates once
+        links are on: those of the links of its terms and of its relation
+        atoms' clauses to unary atoms, in allocation order."""
         sel, nsel, status = self.link_sel, self.num_sel, self.status
         out = set()
         asel = self.atom_sel

@@ -228,7 +228,7 @@ selectors of its own glue only (`Session.assumption_lits`):
 - the links of a term carry the term's selector (`Relations.link_sel`,
   also on its integrality clauses); a query assumes those of the
   vocabulary-atom arguments and the sides of the interpreted relations of
-  its proposition `p` and its assumptions `a` (`selectors_for`), and only
+  its proposition `p` and its assumptions `a` (`selectors_of`), and only
   if `p` or `a` holds a relation atom or an affine pair
   (`scope.affine_pair`): a unary query
   under a unary set gets no links however many relation queries the

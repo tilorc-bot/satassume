@@ -995,7 +995,7 @@ class Session:
             # answers only queries under ``a`` (Engine._context_session
             # keys it by the set), and with a relation atom in ``a`` the
             # early return above never fires: the set's selectors
-            # (Relations.selectors_for(a), and transfer's when ``a``
+            # (Relations.selectors_of(a), and transfer's when ``a``
             # itself makes an equality) are assumed by every query the
             # session ever answers, its own check included.  Glue that is
             # on in every query is not history: a fresh session for
