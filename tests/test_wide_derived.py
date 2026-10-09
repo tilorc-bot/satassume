@@ -271,3 +271,32 @@ def test_conjunction_with_constant_literal(monkeypatch):
     assert Engine().ask(FAnd(c, nn), nn) is True
     assert Engine().ask(FOr(FAnd(FNot(c), nn), nn)) is None
     assert ask(~Q.commutative(x) & Q.nonnegative(x), Q.nonnegative(x)) is False
+
+
+# A basis atom under a connective (``extended_positive``) and a unit of one
+# (``~complex``) are linked to the node's derived literals like two derived
+# ones (Session._link: ``extended_positive -> extended_nonnegative``,
+# ``nonnegative -> complex``), and an asserted disjunction (``antihermitian``)
+# in a set with many derived atoms gets its shared literal like a negated
+# conjunction; without them each of these shapes cost one search conflict
+# per disjunct (0.75 s at width 400 against 0.03 s before the basis).
+_MIXED_PAIRS = [
+    "extended_nonnegative/extended_positive", "extended_nonpositive/extended_negative",
+    "extended_nonzero/extended_positive", "extended_positive/extended_nonnegative",
+    "antihermitian/antihermitian", "extended_positive/antihermitian",
+    "nonnegative/complex", "hermitian/complex", "irrational/complex", "infinite/finite",
+]
+
+
+@pytest.mark.parametrize("preds", _MIXED_PAIRS)
+def test_wide_basis_against_derived_propagates(preds, solvers):
+    pp, ap = [getattr(Q, p) for p in preds.split("/")]
+    ys = symbols("v0:60")
+    narrow = symbols("v0:9")
+    for pk in _SHAPES:
+        for ak in _SHAPES:
+            solvers.clear()
+            r = ask(_SHAPES[pk](pp, ys), _SHAPES[ak](ap, ys))
+            conflicts = sum(s._n_conflicts for s in solvers)
+            assert conflicts <= 2, (pk, ak, conflicts)
+            assert r is ask(_SHAPES[pk](pp, narrow), _SHAPES[ak](ap, narrow)), (pk, ak)
