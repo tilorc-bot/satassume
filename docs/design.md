@@ -140,23 +140,24 @@ They are removed after the class-level follow-up of the move (PLAN.md,
 
 The vocabulary (`PREDICATES`, 33 predicates: what a query may mention) is
 wider than what is encoded. A node gets one solver variable per **basis**
-predicate (`BASIS`, 15: `algebraic commutative complex composite even
+predicate (`BASIS`, 14: `algebraic complex composite even
 extended_negative extended_positive extended_real finite imaginary integer
-polar prime rational zero`). The other 18 are **definitions**
+polar prime rational zero`). The other 19 are **definitions**
 (`DEFINITIONS`): each is a conjunction or a disjunction of basis literals,
 exactly equivalent to the predicate under SymPy's rule base, for example
 `real = extended_real & finite`, `nonnegative = extended_real & finite &
 !extended_negative`, `odd = integer & !even`, `antihermitian = zero |
-imaginary`. One is a single literal (`infinite = !finite`) and needs no
-variable at all. `hermitian == real` and `antihermitian == zero | imaginary`
+imaginary`. One is a single literal (`infinite = !finite`), and
+`commutative` is the empty conjunction (true of every term in scope, see
+"Non-commutative symbols"). `hermitian == real` and `antihermitian == zero | imaginary`
 are what SymPy's generic scalar handlers compute; the rule base is
 instantiated only for scalar nodes.
 
-`RULES` are 23 rules in the old system's string syntax over the basis
+`RULES` are 21 rules in the old system's string syntax over the basis
 only; `tests/test_rules.py` checks that, under the definitions, their
 models are exactly those of SymPy's rules over the whole vocabulary
-(`sympy/core/assumptions.py` plus `sympy/assumptions/facts.py`). Their 26
-compiled clauses (`RULE_CLAUSES`) are reduced to 24 (`RULE_INSTANTIATED`) by
+(`sympy/core/assumptions.py` plus `sympy/assumptions/facts.py`). Their 24
+compiled clauses (`RULE_CLAUSES`) are reduced to 22 (`RULE_INSTANTIATED`) by
 `minimize_for_propagation`, which drops a clause only when, for each of its
 literals, falsifying the others lets the rest derive it by unit
 propagation: same models, same propagation. Dropping clauses that are
@@ -301,7 +302,7 @@ rounding, `factorial` and a generic `Function` template.
 
 ### Nodes, cones and discovery (`satassume/engine.py`)
 
-A `Session` holds a solver and a `VarTable` giving each visited node 15
+A `Session` holds a solver and a `VarTable` giving each visited node 14
 variables (one per basis predicate). `Session.node` registers the rule block, asserts the node's
 cached context-free facts as units and emits its template clauses, but
 only those about the rule-base neighbourhood of what the query asks

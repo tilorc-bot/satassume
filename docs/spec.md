@@ -181,9 +181,9 @@ which session).
 
 ### 5.1 Rule base per node
 
-Definition. `RULE_INSTANTIATED` is the 24-clause minimization of the 26 clauses compiled from `RULES` (over the 15 basis predicates, `rules.BASIS`; design.md, "Rule base")
+Definition. `RULE_INSTANTIATED` is the 22-clause minimization of the 24 clauses compiled from `RULES` (over the 14 basis predicates, `rules.BASIS`; design.md, "Rule base")
 (`rules.py`, `minimize_for_propagation`; design, "Rule base"). Every visited scalar node gets one copy over
-its 15 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
+its 14 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
 `Solver.set_rule_block` in `satassume/sat/solver.py`), unless the node's only template is a complete unit pattern
 (`Pattern.complete`: the closed units decide every predicate the rule base mentions), in which case the units
 stand alone.
