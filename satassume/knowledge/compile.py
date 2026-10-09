@@ -83,7 +83,6 @@ class VarTable:
     """
 
     def __init__(self):
-        from .rules import BASIS, BASIS_INDEX
         self._preds = BASIS
         self._pidx = BASIS_INDEX
         self._npred = len(BASIS)
@@ -93,6 +92,8 @@ class VarTable:
         self.custom: Dict[P, int] = {}
         self.new_custom: List[P] = []
         self.naux = 0
+        #: the auxiliary variable asserted true (:func:`_true_lit`), once needed
+        self.true_var: int | None = None
 
     def node_base(self, node) -> int:
         b = self.base_of.get(node)
@@ -434,7 +435,7 @@ class _Lit(Formula):
 
 
 def _true_lit(table: VarTable, emit) -> int:
-    v = getattr(table, 'true_var', None)
+    v = table.true_var
     if v is None:
         v = table.true_var = table.aux()
         emit([v])
