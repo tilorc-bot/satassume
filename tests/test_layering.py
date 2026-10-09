@@ -394,6 +394,34 @@ def test_old_name_is_a_package_attribute(old):
         "else:\n    raise AssertionError\n")
 
 
+@pytest.mark.parametrize("module, name", [(m, n) for m, names in sorted(_compat.RENAMED.items())
+                                          for n in sorted(names)])
+def test_renamed_names_are_served(module, name):
+    """Names the old modules had and the moved ones do not are served,
+    with a DeprecationWarning (final review B2)."""
+    mod = importlib.import_module(f"{PKG}.{module}")
+    where, attr = _compat.RENAMED[module][name]
+    with pytest.warns(DeprecationWarning, match=name):
+        got = getattr(mod, name)
+    assert got is getattr(importlib.import_module(f"{PKG}.{where}"), attr)
+    with pytest.raises(AttributeError):
+        getattr(mod, name + "_no_such_name")
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_renamed_names_through_the_old_names():
+    from satassume.memos import ENGINE_MEMOS, engine_memos  # noqa: F401
+    from satassume.engine import ENGINE_MEMOS as E
+    assert ENGINE_MEMOS is E
+    from satassume.euf_adapter import _structural
+    from satassume.theories.euf.euf_adapter import structural
+    assert _structural is structural
+    from satassume.relations import _optional
+    from satassume.theories.lra.lra_adapter import LRAAdapter
+    assert _optional("satassume.lra_adapter", "LRAAdapter") is LRAAdapter
+    assert _optional("satassume.no_such_module", "X") is None
+
+
 @pytest.mark.parametrize("missing, left", [
     ("satassume.theories.lra.lra_adapter", ["euf"]),
     ("satassume.theories.euf.euf_adapter", ["lra"]),

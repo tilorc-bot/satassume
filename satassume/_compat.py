@@ -25,7 +25,7 @@ templates a second time, under a second name.  :class:`AliasFinder`
 therefore comes first on ``sys.meta_path``: for every import it does one
 string prefix test and declines every name outside the package, and
 every name of the package that is neither an old name (:data:`ALIASES`,
-or under one) nor a moved module.  For an old
+or under one) nor a moved module or one in :data:`RENAMED`.  For an old
 name its loader imports the new module and hands back that very object,
 so the old name is the *same* module (monkeypatching through an old path
 reaches the code that runs, and no module is ever loaded twice).
@@ -38,7 +38,9 @@ Both make scripts that look a module up by its old name keep working
 (``sys.modules.get("satassume.rules")``).  The DeprecationWarning comes
 from an import of an old name that is not loaded yet and from an
 attribute access ``satassume.<old>``; a plain ``sys.modules`` lookup
-cannot warn.
+cannot warn.  For the same scripts, :data:`RENAMED` serves the names the
+old modules had and the new ones do not (``memos.engine_memos``,
+``euf_adapter._structural``, ``relations._optional``).
 
 This module imports nothing heavier than :mod:`importlib.machinery`
 (``importlib.abc`` and ``importlib.util`` pull in ``importlib.resources``,
@@ -51,7 +53,7 @@ import importlib
 import importlib.machinery
 import sys
 import warnings
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 #: old name (relative to ``satassume``) -> new name (relative to ``satassume``)
 ALIASES = {
@@ -72,6 +74,18 @@ ALIASES = {
     "lra_cert": "theories.lra.lra_cert",
     "euf": "theories.euf.euf",
     "euf_adapter": "theories.euf.euf_adapter",
+}
+
+#: names a module had before the move that it no longer has: module
+#: (relative to ``satassume``) -> {old attribute: (module, attribute) it
+#: is now}; served, with a DeprecationWarning, by a module ``__getattr__``
+#: that :class:`AliasFinder` adds when the module is imported
+RENAMED: Dict[str, Dict[str, Tuple[str, str]]] = {
+    "state.memos": {"ENGINE_MEMOS": ("engine", "ENGINE_MEMOS"),
+                    "engine_memos": ("engine", "engine_memos")},
+    "theories.euf.euf_adapter": {"_structural": ("theories.euf.euf_adapter", "structural")},
+    # no public replacement (``relations.default_specs`` inlines it)
+    "relations": {"_optional": ("_compat", "_optional")},
 }
 
 _PACKAGE = __name__.rpartition(".")[0]
@@ -126,6 +140,40 @@ def package_getattr(name: str):
     return module
 
 
+def _optional(module: str, attr: str):
+    """``module.attr`` if ``module`` exists, else None; a broken module
+    raises (``relations._optional`` before the move)."""
+    try:
+        mod = importlib.import_module(module)
+    except ModuleNotFoundError as e:
+        if e.name == module:
+            return None
+        raise
+    return getattr(mod, attr)
+
+
+def _add_renamed(module, names: Dict[str, Tuple[str, str]]) -> None:
+    """Give ``module`` a ``__getattr__`` that serves ``names`` (keeping a
+    ``__getattr__`` the module defines itself)."""
+    own = module.__dict__.get("__getattr__")
+
+    def __getattr__(name):
+        target = names.get(name)
+        if target is not None:
+            where = _PREFIX + target[0]
+            if target[0] == "_compat":
+                warnings.warn(f"{module.__name__}.{name} is deprecated and will be removed",
+                              DeprecationWarning, stacklevel=2)
+            else:
+                _deprecated(f"{module.__name__}.{name}", f"{where}.{target[1]}", stacklevel=2)
+            return getattr(importlib.import_module(where), target[1])
+        if own is not None:
+            return own(name)
+        raise AttributeError(f"module {module.__name__!r} has no attribute {name!r}")
+
+    module.__getattr__ = __getattr__
+
+
 class _AliasLoader:
     """Loads an old name as the new module object itself."""
 
@@ -155,12 +203,13 @@ class _AliasLoader:
 
 
 class _MovedLoader:
-    """Wraps the loader of a moved module for its first load: after the
-    module has run, it enters the old name in ``sys.modules``.  The module
-    keeps its own loader (``__loader__`` and ``__spec__.loader``)."""
+    """Wraps the loader of a moved module (or of one in :data:`RENAMED`)
+    for its first load: after the module has run, it enters the old name
+    in ``sys.modules`` and adds the renamed names.  The module keeps its
+    own loader (``__loader__`` and ``__spec__.loader``)."""
 
-    def __init__(self, loader, old: str):
-        self.loader, self.old = loader, old
+    def __init__(self, loader, old: Optional[str], renamed):
+        self.loader, self.old, self.renamed = loader, old, renamed
 
     def __getattr__(self, name):          # get_source, get_resource_reader, ...
         return getattr(self.loader, name)
@@ -175,7 +224,10 @@ class _MovedLoader:
         if module.__dict__.get("__loader__") is self:
             module.__loader__ = self.loader
         self.loader.exec_module(module)
-        sys.modules.setdefault(self.old, module)
+        if self.old is not None:
+            sys.modules.setdefault(self.old, module)
+        if self.renamed:
+            _add_renamed(module, self.renamed)
 
 
 class AliasFinder:
@@ -190,7 +242,8 @@ class AliasFinder:
         if new is not None:
             return importlib.machinery.ModuleSpec(fullname, _AliasLoader(new))
         old = old_name(fullname)
-        if old is None:
+        renamed = RENAMED.get(fullname[len(_PREFIX):])
+        if old is None and renamed is None:
             return None
         for finder in sys.meta_path:
             if finder is self or not hasattr(finder, "find_spec"):
@@ -201,7 +254,7 @@ class AliasFinder:
         else:
             return None
         if spec.loader is not None and hasattr(spec.loader, "exec_module"):
-            spec.loader = _MovedLoader(spec.loader, old)
+            spec.loader = _MovedLoader(spec.loader, old, renamed)
         return spec
 
     def invalidate_caches(self) -> None:
