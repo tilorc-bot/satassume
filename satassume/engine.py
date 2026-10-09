@@ -381,7 +381,7 @@ class Session:
             lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
             v = self.defvars[key] = self.table.aux()
             self.solver.ensure_vars(v)
-            emit = self._emit
+            emit = self.emit
             if op == '&':
                 for l in lits:
                     emit([-v, l])
@@ -431,7 +431,7 @@ class Session:
         key = (d, node)
         e = self._dv.get(key)
         b = self.node(node)
-        emit = self._emit
+        emit = self.emit
         if e is None:
             v = self.table.aux()
             self.solver.ensure_vars(v)
@@ -481,7 +481,7 @@ class Session:
             if len(d2[1]) == 1 and abs(d2[1][0]) in own:
                 continue
             for s1, s2 in def_implications(d, d2):
-                self._emit([s1 * v, s2 * v2])
+                self.emit([s1 * v, s2 * v2])
         others.append((d, v))
 
     def query_lit(self, pred: str, node: Node):
@@ -499,7 +499,7 @@ class Session:
             return lits[0]
         return op, lits
 
-    def _emit(self, clause: List[int]) -> None:
+    def emit(self, clause: List[int]) -> None:
         self.solver.add_clause(clause)
 
     def node(self, node: Node, demanded=None) -> int:
@@ -632,7 +632,7 @@ class Session:
         the derived node it is already visited and its atoms are shared.
         """
         table = self.table
-        emit = self._emit
+        emit = self.emit
         demand = self.demand
         for f, atoms in items:
             for atom in atoms:
@@ -689,7 +689,7 @@ class Session:
         if ext is None:
             return
         for f in ext.facts_for(atom):
-            compile_formula(f, self.table, self._emit)
+            compile_formula(f, self.table, self.emit)
 
     def _compile_pending(self, node: Node, demanded) -> None:
         """Compile the parked formulas and clauses of ``node`` that mention
@@ -746,6 +746,15 @@ class Session:
             return
         self.frontier = deque([node])
         self._discover(demanded, budget)
+
+    def discover(self) -> None:
+        """Visit what the clauses emitted since the last visit mention: run
+        the clause generators of newly allocated custom atoms, then visit
+        the newly mentioned nodes breadth-first, uncapped.  Called after a
+        user formula is compiled and by the relation glue after it adds
+        clauses (``Relations.process``)."""
+        self._flush()
+        self._discover()
 
     def _discover(self, demanded=None, budget: Optional[int] = None) -> None:
         if budget is None:
@@ -906,10 +915,9 @@ class Session:
         self._neg_shared = sum(1 for a in self._a_raw if len(DEF_LITS.get(a.pred, ((), ()))[1]) > 1) >= _NEG_SHARED
 
         def emit(clause):
-            self._emit(clause + [-s])
+            self.emit(clause + [-s])
         compile_formula(f, self.table, emit, self.dvar)
-        self._flush()
-        self._discover()
+        self.discover()
         if self.relations is not None:
             if theory_scope(f, None, self.engine._extensions).glue:
                 # the set's own scope has the glue (a relation atom, an
@@ -1052,7 +1060,7 @@ class Session:
         new = want - have
         if new:
             for x in sorted(new):
-                self._emit([x])
+                self.emit([x])
             have |= new
         lsel, nsel, asel, status = rel.link_sel, rel.num_sel, rel.atom_sel, rel.status
         tp = ap = False
@@ -1103,7 +1111,7 @@ class Session:
             self.solver.set_inert(g[0])
         v, have = g[0], g[1]
         for x in sorted(want - have):
-            self._emit([-v, x])
+            self.emit([-v, x])
         have |= want
         g[2] = stamp
         return v
@@ -1113,9 +1121,8 @@ class Session:
         if lit is not None:
             return lit
         self._ensure_atoms(f)
-        lit = formula_literal(f, self.table, self._emit, self.dvar)
-        self._flush()
-        self._discover()
+        lit = formula_literal(f, self.table, self.emit, self.dvar)
+        self.discover()
         if self.relations is not None:
             self._relations(f)
         self.literals[f] = lit

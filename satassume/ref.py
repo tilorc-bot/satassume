@@ -35,7 +35,7 @@ Which spec section each function implements:
   ``zero(t)`` whose ``t`` is under an application of ``A`` or ``p`` counts
   as its twin ``eq(t, 0)`` (``relations.glue_atoms``, PR #107).
 * section 4 (the node cone): the eager closure of :meth:`_RefSession.node`
-  over the frontier (:meth:`_RefSession._discover`); derived nodes are
+  over the frontier (:meth:`_RefSession.discover`); derived nodes are
   visited like direct arguments.  No separate cone computation is needed:
   the visited nodes *are* ``cone(p) | cone(A)`` (plus the glue's link
   objects when ``glue`` holds).
@@ -186,7 +186,7 @@ class _RefEngine:
             return memo[key]
         s = _RefSession(self)
         q = s.literal_of(P(pred, node))
-        s._discover()
+        s.discover()
         try:
             r = _entails(s, q, [])
         except ValueError:
@@ -226,8 +226,8 @@ class _RefSession:
         self.defvars: Dict[Any, int] = {}
         self._visiting: set = set()
 
-    # -- what Relations calls -------------------------------------------
-    def _emit(self, clause: List[int]) -> None:
+    # -- what Relations calls (emit, var, ensure, discover) ---------------
+    def emit(self, clause: List[int]) -> None:
         self.nclauses += 1
         self.solver.add_clause(clause)
 
@@ -245,12 +245,12 @@ class _RefSession:
             self.solver.ensure_vars(v)
             if op == '&':
                 for l in lits:
-                    self._emit([-v, l])
-                self._emit([v] + [-l for l in lits])
+                    self.emit([-v, l])
+                self.emit([v] + [-l for l in lits])
             else:
                 for l in lits:
-                    self._emit([-l, v])
-                self._emit([-v] + lits)
+                    self.emit([-l, v])
+                self.emit([-v] + lits)
         return v
 
     def ensure(self, node, demanded=None, budget=None) -> None:
@@ -268,7 +268,7 @@ class _RefSession:
             self.frontier.extend(n for n in table.new_nodes if n not in self.base)
             table.new_nodes = []
 
-    def _discover(self) -> None:
+    def discover(self) -> None:
         """Visit everything on the frontier until the cone is closed."""
         self._flush()
         while self.frontier:
@@ -336,7 +336,7 @@ class _RefSession:
 
     def _compile(self, formulas) -> None:
         for f in formulas:
-            compile_formula(f, self.table, self._emit)
+            compile_formula(f, self.table, self.emit)
 
     def _custom(self, atom: P) -> None:
         """A custom atom was allocated: a relation atom goes to the glue
@@ -354,7 +354,7 @@ class _RefSession:
         if ext is None:
             return
         for f in ext.facts_for(atom):
-            compile_formula(f, self.table, self._emit)
+            compile_formula(f, self.table, self.emit)
 
     # -- section 5.4 and 6: the assumptions and the literal ------------------
     def assume_formula(self, f) -> List[int]:
@@ -365,9 +365,9 @@ class _RefSession:
         self.sel = s
 
         def emit(clause):
-            self._emit(clause + [-s])
+            self.emit(clause + [-s])
         compile_formula(f, self.table, emit)
-        self._discover()
+        self.discover()
         return [s]
 
     def literal_of(self, f) -> int:
@@ -380,8 +380,8 @@ class _RefSession:
             for atom in atoms_of(f):
                 if atom.pred in PRED_INDEX:
                     self.node(atom.expr)
-            lit = formula_literal(f, self.table, self._emit)
-        self._discover()
+            lit = formula_literal(f, self.table, self.emit)
+        self.discover()
         self.literals[f] = lit
         return lit
 
@@ -402,12 +402,12 @@ class _RefSession:
         atoms = tuple(a_atoms) + tuple(p_atoms)
         rel.note_formula(atoms)
         rel.process(atoms)
-        self._discover()
+        self.discover()
         # the glue may have visited nodes whose templates made relation
         # atoms: interpret them too, until nothing is queued
         while rel.queue or rel._pending_links or self.frontier:
             rel.process(())
-            self._discover()
+            self.discover()
         return rel
 
 
@@ -496,7 +496,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     rel = None
     if glue:
         rel = s.glue(a_atoms, p_atoms)
-    s._discover()
+    s.discover()
     lits = _assumption_lits(s, rel, a_atoms + p_atoms, transfer)
     info.nodes = len(s.base)
     info.clauses = s.nclauses

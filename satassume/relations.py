@@ -869,8 +869,7 @@ class Relations:
                     self._eq_links(var, a)
                     self._add_role(a, [-self._atom_selector(a)], "user")
         while True:
-            s._flush()
-            s._discover()
+            s.discover()
             if self.queue:
                 atom = self.queue.pop()
                 ok = self.status[atom] = self._interpret(atom)
@@ -1018,8 +1017,8 @@ class Relations:
                 # atom some earlier query made to EUF (and back)
                 twins.append((t, guard))
                 continue
-            s._emit(guard + [-var, t])
-            s._emit(guard + [var, -t])
+            s.emit(guard + [-var, t])
+            s.emit(guard + [var, -t])
         info = self._info[atom] = (twins, lterms, eterms)
         for kind, g in self._roles.get(atom, ()):
             self._apply_role(atom, info, kind, g)
@@ -1068,8 +1067,8 @@ class Relations:
         ad.register_integer(s.solver, i, form)
         guard = self._guard(ad, form[1])
         z = s.var("integer", e)
-        s._emit(guard + [-z, i, g])
-        s._emit(guard + [z, -i, g])
+        s.emit(guard + [-z, i, g])
+        s.emit(guard + [z, -i, g])
 
     def _eq_infinity(self, var: int, atom: P) -> None:
         """``eq(e, oo) <-> positive_infinite(e)`` and ``eq(e, -oo) <->
@@ -1089,13 +1088,13 @@ class Relations:
             if _is_number(e):
                 v = s.engine.is_(e, pred)
                 if v is not None:
-                    s._emit([var] if v else [-var])
+                    s.emit([var] if v else [-var])
                     return
             s.ensure(e, {pred})
             p = s.var(pred, e)
             g = -self._atom_selector(atom)
-            s._emit([-var, p, g])
-            s._emit([var, -p, g])
+            s.emit([-var, p, g])
+            s.emit([var, -p, g])
             return
 
     def _trichotomy(self, var: int, atom: P) -> None:
@@ -1141,7 +1140,7 @@ class Relations:
         for e in _ext_atoms(a, b):
             s.ensure(e.expr, {"extended_real"})
             clause.append(-s.var("extended_real", e.expr))
-        s._emit(clause)
+        s.emit(clause)
 
     def _add_role(self, atom: P, g: list, kind: str) -> None:
         """Give the relation atom ``atom`` a role under the guard ``g``
@@ -1185,7 +1184,7 @@ class Relations:
         clauses 1 and 2 constrain them given their sides."""
         twins, lterms, eterms = info
         s = self.session
-        emit = s._emit
+        emit = s.emit
         if twins:
             var = s.table.custom[atom]
             for t, guard in twins:
@@ -1224,7 +1223,7 @@ class Relations:
         tv = self._tv.get(u)
         if tv is not None:
             if tv[k]:
-                self.session._emit(g + [tv[k]])
+                self.session.emit(g + [tv[k]])
             elif tv[_MC] and k < _MC:
                 self._tvar(u, k)              # links itself to MC
 
@@ -1252,7 +1251,7 @@ class Relations:
         v = tv[k] = s.table.aux()
         s.solver.ensure_vars(v)
         s.solver.set_inert(v)
-        emit = s._emit
+        emit = s.emit
         if k == _MC:
             for j in (_SD, _EN):
                 if tv[j]:
@@ -1313,7 +1312,7 @@ class Relations:
         g = -self._atom_selector(atom)
 
         def emit(clause):
-            s._emit(clause + [g])
+            s.emit(clause + [g])
         s.ensure(a, {"positive_infinite", "negative_infinite"})
         s.ensure(b, {"positive_infinite", "negative_infinite"})
         for pred in ("positive_infinite", "negative_infinite"):
@@ -1348,13 +1347,13 @@ class Relations:
         for e in atom.expr:
             v = self._closed_extended_real(e)
             if v is False:
-                s._emit([-var])
+                s.emit([-var])
                 return True
             if v is None:
                 need.append(e)
         for e in need:
             s.ensure(e, {"extended_real"})
-            s._emit([-var, s.var("extended_real", e)])
+            s.emit([-var, s.var("extended_real", e)])
         return False
 
     def _order_infinite(self, var: int, sides) -> None:
@@ -1362,7 +1361,7 @@ class Relations:
         ``((form_a, inf_a), (form_b, inf_b))`` (``form``: term ->
         coefficient; ``inf``: +1/-1 for an ``oo``/``-oo`` summand, else 0)."""
         s = self.session
-        emit = s._emit
+        emit = s.emit
         push = []                             # per side: (up lits, down lits, const up, const down)
         ext = []                              # -extended_real(u) for every term
         exact = True
@@ -1429,7 +1428,7 @@ class Relations:
             s.solver.ensure_vars(v)
             return v
         for v in register(s.solver, c, new_var):
-            s._emit([v])
+            s.emit([v])
 
     # -- links to the unary vocabulary ----------------------------------
     def _atom_var(self, f) -> int:
@@ -1461,7 +1460,7 @@ class Relations:
         for f in (gta, lta, eqa):
             self._link_of[f] = e
             self._add_role(f, gl, "link")
-        emit = s._emit
+        emit = s.emit
         emit([-pos, gt, g])
         emit([-gt, pos, g])
         emit([-neg, lt, g])
@@ -1848,7 +1847,7 @@ class Relations:
         the terms and sides the query activates.  A pair whose arguments
         cannot be merged yet is looked at again on a later call."""
         xside, cand, done = self._xside, self._xcand, self._xpairs
-        emit = self.session._emit
+        emit = self.session.emit
         tvar = self._tvar
         for group in self._xheads.values():
             if len(group) < 2:
