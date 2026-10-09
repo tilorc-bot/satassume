@@ -474,8 +474,11 @@ class LRATheory:
     def _certify(self, values) -> tuple:
         """The certificate itself (:func:`satassume.lra_cert.certify`,
         imported only by a theory whose payloads have constants)."""
-        from .lra_cert import certify
-        return certify(self, values)
+        from .lra_cert import CertAtoms, certify
+        if self._cagg is None:
+            self._cagg = CertAtoms()
+        return certify(self._cagg, self._atoms, self._ints, self._slack_of,
+                       len(self._key) - len(self._rows), values)
 
     # ------------------------------------------------------------------
     # registration
