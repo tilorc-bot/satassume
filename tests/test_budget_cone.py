@@ -90,7 +90,10 @@ def test_no_session_is_truncated_within_the_budget():
     # never set (Engine._note_budget asserts it) in any session the engine
     # builds.  The sessions are collected as they are built: since #97 no
     # session is kept (_context_sessions stays empty), so the check used
-    # to look at none of them
+    # to look at none of them.  Only Session.escalate with a finite budget
+    # sets truncated and the engine calls it uncapped, so this guards
+    # against a cap coming back; if escalate loses its budget parameter,
+    # truncated can never be set and this test should go with it
     eng = Engine(discovery_budget=5, cache=DictCache(), relevance=False)
     built = []
     fresh = eng._fresh_session
