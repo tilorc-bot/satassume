@@ -624,3 +624,20 @@ def test_signed_infinite_summand_end_to_end():
         # -oo + I is infinite off the real axis; -oo + oo is nan
         assert ask(Q.negative_infinite(ninf + I), a, Engine()) is None
         assert ask(Q.negative_infinite(ninf + pinf), a, Engine()) is None
+
+
+def test_pattern_cache_rejects_a_key_reused_for_another_shape():
+    """``_common.facts`` caches a pattern per key; a key reused with another
+    node slot (another arity) is a template bug and raises instead of
+    handing out the other template's pattern."""
+    from sympy import S
+    from satassume.knowledge.templates import _common as C
+    x, y = Symbol('x'), Symbol('y')
+    key = ('test_pattern_cache_key',)
+    try:
+        a = C.facts(key, lambda: [], {}, (x,), 0)
+        assert C.facts(key, lambda: [], {}, (y,), 0).pattern is a.pattern
+        with pytest.raises(ValueError, match="test_pattern_cache_key"):
+            C.facts(key, lambda: [], {0: S(2)}, (S(2), y), 1)
+    finally:
+        C._CACHE.pop(key, None)

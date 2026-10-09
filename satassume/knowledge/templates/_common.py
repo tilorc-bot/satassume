@@ -298,6 +298,11 @@ class Compiled:
 #: ``TemplateRegistry.register`` (the only way the set of templates
 #: changes) empties this table before bumping the epoch, so a later
 #: template that reuses a key never gets an earlier template's pattern.
+#: Within one epoch the key must determine the rules, the constants they
+#: are resolved against and the node slot; templates build it from all
+#: three (:func:`pattern_key`, :func:`const_key`).  :func:`facts` checks
+#: the node slot on a hit (a key reused for another arity raises); the
+#: constants are not compared, since ``Float(2.0) == Integer(2)``.
 #: Registered with ``satassume.state.memos.PROCESS`` as ``"epoch"``.
 _CACHE: Dict[Any, Pattern] = {}
 _adopt_memo(__name__, "_CACHE", "epoch")
@@ -312,6 +317,9 @@ def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int)
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
         pat = _CACHE[key] = Pattern(resolve(gen(), consts), node)
+    elif pat.node != node:
+        raise ValueError(f"template key {key!r} is cached with node slot "
+                         f"{pat.node}, used with {node}")
     return Compiled(objs, pat)
 
 
