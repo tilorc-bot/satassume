@@ -104,19 +104,22 @@ def _instrument():
     """Patch ``Solver`` and ``Session`` (where they exist) so every instance
     lands in ``_SEEN``."""
     import importlib
-    found = set()
-    # the old flat path too: asv replays this file over commits before the
-    # package move (satassume.solver)
-    for mod, name, key in (("satassume.sat.solver", "Solver", "solvers"),
-                           ("satassume.solver", "Solver", "solvers"),
-                           ("satassume.engine", "Session", "sessions")):
-        if key in found:
+    # asv runs this file (from the current checkout) against every commit
+    # of main (asv.conf.json), also those before the package move, where
+    # the solver is satassume.solver; after the move that name is a
+    # deprecated alias that will be removed (satassume/_compat.py), so the
+    # new path is tried first and the old one only when it does not exist
+    for key, name, paths in (("solvers", "Solver", ("satassume.sat.solver", "satassume.solver")),
+                             ("sessions", "Session", ("satassume.engine",))):
+        cls = None
+        for mod in paths:
+            try:
+                cls = getattr(importlib.import_module(mod), name)
+                break
+            except (ImportError, AttributeError):
+                continue
+        if cls is None:
             continue
-        try:
-            cls = getattr(importlib.import_module(mod), name)
-        except (ImportError, AttributeError):
-            continue
-        found.add(key)
         if getattr(cls, "_asv_patched", False):
             continue
         orig = cls.__init__
