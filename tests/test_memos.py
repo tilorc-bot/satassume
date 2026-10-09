@@ -5,7 +5,7 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 
-from sympy import Predicate, Q, Symbol  # noqa: E402
+from sympy import S, Predicate, Q, Symbol  # noqa: E402
 
 from satassume.sat.formula import P  # noqa: E402
 from satassume.sympy_api import _formula, to_formula, Unsupported, register, unregister  # noqa: E402
@@ -105,7 +105,7 @@ def test_two_engines_do_not_share_memos():
     assert e1.memos is not e2.memos
     c1 = {n: c for n, _, c in e1.memos.items()}
     c2 = {n: c for n, _, c in e2.memos.items()}
-    assert set(c1) == set(c2) == set(ENGINE_MEMOS) and len(ENGINE_MEMOS) == 10
+    assert set(c1) == set(c2) == set(ENGINE_MEMOS) and len(ENGINE_MEMOS) == 11
     assert not {id(c) for c in c1.values()} & {id(c) for c in c2.values()}
     y = Symbol('y')
     a = Q.positive(x) & Q.positive(y)
@@ -179,3 +179,45 @@ def test_memo_registry_lists_every_owner():
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                        cwd=root, env={**os.environ, "PYTHONPATH": root})
     assert r.returncode == 0 and r.stdout.strip() == "ok", r.stderr
+
+
+def test_number_basis_memo_follows_settings_and_epoch():
+    """The transfer basis of a number (``relations._number_basis``, kept in
+    the engine's ``_xbasis``) comes from the engine's own context-free
+    facts, so it depends on the settings: a settings change or a new
+    registry epoch drops it with the other set memos, and an engine whose
+    settings changed answers as a fresh engine with those settings does."""
+    from satassume import DictCache, Engine
+    from satassume.sympy_api import ask
+
+    def no_templates(n):
+        return ()
+
+    q, a = Q.prime(x), Q.eq(x, 4)
+    e = Engine(cache=DictCache())
+    assert ask(q, a, engine=e) is False
+    assert e._xbasis                          # the basis of 4 (and of 0)
+    e.templates = no_templates
+    assert not e._xbasis
+    fresh = ask(q, a, engine=Engine(cache=DictCache(), templates=no_templates))
+    assert fresh is None
+    assert ask(q, a, engine=e) is fresh
+    assert e._xbasis
+
+    class BasisKey(Predicate):
+        pass
+
+    try:
+        Q.basis_key = BasisKey()
+        register(Q.basis_key, Symbol)(lambda s: None)     # a new epoch
+        assert ask(q, a, engine=e) is fresh
+        assert set(e._xbasis) <= {S(0), S(4)}
+        e._xbasis[S(5)] = "stale"
+        unregister(Q.basis_key)                           # and another
+        assert ask(q, a, engine=e) is fresh
+        assert S(5) not in e._xbasis
+    finally:
+        unregister(Q.basis_key)
+        del Q.basis_key
+    e.memos.clear()
+    assert not e._xbasis

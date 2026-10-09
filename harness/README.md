@@ -164,7 +164,7 @@ experiment):
 | cone-session replacement and its memo clause (deleted in #97 P1 with the session reuse: a search runs in the query's own session) | was: a search in a polluted reused session | was: per set | was: the answer of the replaced query by propagation (family K) |
 | lazy rule-block writes, `Solver.mention` (solver.py 903-950, 1110-1135, 1255) | a variable mentioned by a clause, an assumption, a theory atom or the query literal | per session, grows | nothing at the API level: the query literal is mentioned, and compound queries' atoms by their clauses; read only |
 | held levels, the assumption cache, the witness ring (solver.py 1310-1380, 2265-2300, 2380-2440) | a successful `implied` or `solve` | per session | documented as pure functions of the clause set; read only (family K covers what learnt clauses add) |
-| the vocabulary registry (`extensions._vocab`, `_node_cache`), `_failed`, `_xbasis` | a registration; an `Uninterpreted` set; a number's basis | per engine | family R (the first); the other two are memos of pure functions, read only |
+| the vocabulary registry (`extensions._vocab`, `_node_cache`), `_failed`, `_xbasis` | a registration; an `Uninterpreted` set; a number's basis | per engine | family R (the first); the other two are memos of functions of the set or number, the registry and the settings, dropped when either changes; read only |
 
 `links`, `transfer` and `lazy` generate trigger/observer pairs for the
 first three rows without reference to any particular defect; the

@@ -162,8 +162,8 @@ def theory_scope(a_atoms, p_atoms) -> Tuple[bool, bool, frozenset]:
 
 class _RefEngine:
     """The settings the glue reads of an engine (``s.engine.transfer``,
-    ``s.engine.uninterpreted``), its memo dict (``_number_basis`` keeps
-    ``_xbasis`` in ``engine.__dict__``) and ``is_`` for context-free facts
+    ``s.engine.uninterpreted``), the memo ``_xbasis`` of
+    ``relations._number_basis`` and ``is_`` for context-free facts
     of closed terms (spec section 9), answered by a nested reference query
     with no assumptions and no glue (``is_many``: a loop of ``is_``)."""
 
@@ -173,6 +173,7 @@ class _RefEngine:
         self.transfer = transfer
         self.uninterpreted = uninterpreted
         self._is_memo: Dict[Tuple[Any, str], Optional[bool]] = {}
+        self._xbasis: Dict[Any, Any] = {}
         #: what ``Relations`` counts when the glue engages transfer at an
         #: atom the session's scope did not foresee (P3; here, an order
         #: atom whose reverse ``_trichotomy`` paired: the SPEC-DIFF of

@@ -380,7 +380,10 @@ is the one writer), and no session reads there (a visited node asserts no
 cached fact as a unit clause; a contextual session derives every fact
 from its own clause set). The memo is sound because the session of
 `is_(node, pred)` is exactly the one a fresh engine builds for the same
-query: nothing of the engine's state enters a session, so its clause set
+query: nothing of the engine's state enters a session except the
+numbers' transfer bases (`Engine._xbasis`), which are the engine's own
+context-free answers and are dropped with the other set memos when the
+settings or the registry epoch change, so its clause set
 is a function of the node, the predicate, the registry and the settings,
 and its answer is an entailment of that set (the harness `audit` mode and
 `tests/test_writeback_provenance.py` check the memo against a fresh engine

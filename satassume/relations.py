@@ -659,8 +659,10 @@ def _number_basis(engine, c, facts=False) -> tuple:
     ``RULE_INTERNAL``, the same clauses as ``RULE_INSTANTIATED`` used here);
     a contradiction with a non-basis fact shows up in that block.  The open
     predicates are transferred as they are.  Memoized per engine and
-    number (a number's facts are context-free)."""
-    memo = engine.__dict__.setdefault("_xbasis", {})
+    number in ``engine._xbasis``: a number's facts are context-free, but
+    they are the engine's answers, so the engine drops the memo with its
+    other set memos when its settings or the registry epoch change."""
+    memo = engine._xbasis
     r = memo.get(c)
     if r is not None:
         return r[1] if facts else r[0]

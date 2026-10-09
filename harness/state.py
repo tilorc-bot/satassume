@@ -26,7 +26,9 @@ Engine-level state (one ``Engine``, see ``satassume/engine.py``):
 * ``_failed``: assumption sets whose session raised ``Uninterpreted``
   (dropped with every other cache when the registry epoch moves on);
 * ``_xbasis`` (set by ``relations._number_basis``): per number, its basis
-  of facts for predicate transfer;
+  of facts for predicate transfer, read from the engine's own ``is_many``
+  (dropped with ``_failed`` and ``_verdict`` on a settings change or a new
+  registry epoch);
 * ``stats``, ``_constructing``.
 
 Module-level state (survives ``Engine()``; see ``MODULE_STATE``): the

@@ -100,7 +100,7 @@ Node = Any
 #: to several engines on purpose.
 ENGINE_MEMOS: Tuple[str, ...] = (
     "answers", "splits", "_kids", "_cones", "_qcones", "_glue_adapters",
-    "_failed", "_verdict", "cache.store", "custom_cache.store",
+    "_failed", "_verdict", "_xbasis", "cache.store", "custom_cache.store",
 )
 
 
@@ -1343,6 +1343,11 @@ class Engine:
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
+        #: number -> its basis of facts for predicate transfer
+        #: (``relations._number_basis``): read from this engine's own
+        #: ``is_many``, so it depends on the settings and the registry epoch
+        #: and is dropped with the other set memos
+        self._xbasis: Dict[Any, Any] = {}
         #: the registry epoch (:mod:`satassume.state.epoch`) the engine-level
         #: caches were filled under; -1 until the first query
         self._epoch = -1
@@ -1540,14 +1545,16 @@ class Engine:
 
     def _drop_set_memos(self) -> None:
         """Drop the memos of whole queries and sets (the answer and split
-        memos, the ``Uninterpreted`` and verdict memos), counted in
-        ``stats["version_clears"]``: what an epoch or a settings change
-        invalidates besides the fact caches and the cones."""
+        memos, the ``Uninterpreted`` and verdict memos, the numbers'
+        transfer bases), counted in ``stats["version_clears"]``: what an
+        epoch or a settings change invalidates besides the fact caches and
+        the cones."""
         self.stats["version_clears"] += 1
         self.answers.clear()
         self.splits.clear()
         self._failed.clear()
         self._verdict.clear()
+        self._xbasis.clear()
 
     # -- the discovery budget: a test on the query's structural cone ----------
     def _drop_cones(self) -> None:
