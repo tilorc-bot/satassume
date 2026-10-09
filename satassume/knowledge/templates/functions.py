@@ -16,7 +16,6 @@ conclusion on the node.
 from __future__ import annotations
 
 from sympy import S
-from sympy.core.function import Function
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs, conjugate, im, re, sign
 from sympy.functions.elementary.exponential import exp, log
@@ -37,11 +36,8 @@ from ...sat.formula import Not, P
 from ._common import (
     Rules,
     const_key,
-    consts_of,
     facts,
     ge2_alternatives,
-    lits,
-    pattern_key,
 )
 from .core import ipi_rules, ipi_split
 from .registry import registry

@@ -279,7 +279,8 @@ decision that should be visible in one place.
 `registry.py` maps SymPy classes to template functions along the MRO;
 `atoms.py` gives unit facts for symbols and fixed-value atoms, `core.py`
 covers `Add`, `Mul` and `Pow`, `functions.py` the elementary functions,
-rounding, `factorial` and a generic `Function` template.
+rounding and `factorial` (an undefined function such as `f(x)` has no
+template).
 
 - A rule is an index-based spec `(premises, conclusion)` over literals
   `(k, pred, pos)` (`_common.py`). Specs depend only on the node's pattern

@@ -8,7 +8,7 @@ clause is a list of non-zero integers; ``-v`` is the negation of ``v``.
 from __future__ import annotations
 
 import heapq
-from typing import Any, Callable, Dict, List, Sequence
+from typing import Any, Callable, Dict, List
 
 from ..sat.formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
 from .rules import BASIS, BASIS_INDEX, DEF_LITS as _DEF_LITS, basis_lits
