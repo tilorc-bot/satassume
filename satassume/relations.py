@@ -359,6 +359,7 @@ from .formula import And, Not, P, atoms_of
 from .rules import BASIS_INDEX, NPRED, PRED_INDEX
 from .constfield import Undecided, sign
 from .theory import EqualitySharing
+from .transfer import transfer_wanted
 from .memos import PROCESS as _PROCESS
 
 #: atom predicates the engine gives to theories
@@ -844,7 +845,7 @@ class Relations:
         for a in user:
             if a.pred == "eq":
                 # transfer is engaged at construction when the query's
-                # scope makes an equality (scope.transfer_wanted: an eq
+                # scope makes an equality (transfer.transfer_wanted: an eq
                 # atom or a _trichotomy pair, W2B4b) and switched on per
                 # query (Session.assumption_lits, wants_transfer).  A user
                 # equality outside the scope (a session built for the set
@@ -1128,7 +1129,7 @@ class Relations:
         self._note_sides(eqa, 2)
         self._tri_of[atom] = rev
         self._tri_of[rev] = atom
-        # a pair of user atoms is in the query's scope (scope.transfer_wanted
+        # a pair of user atoms is in the query's scope (transfer.transfer_wanted
         # counts it), which engaged transfer at construction; a pair with an
         # extension atom switches nothing on (wants_transfer ignores it)
         both = [-self._atom_selector(atom), -self._atom_selector(rev)]
@@ -1492,9 +1493,8 @@ class Relations:
         and its reverse that :meth:`_trichotomy` related (``Q.le(x, y) &
         Q.ge(x, y)`` answers as ``Q.eq(x, y)``, W2B4b).  The same atoms
         engage it at the session's construction
-        (:func:`satassume.scope.transfer_wanted`, the same syntactic test),
+        (:func:`satassume.transfer.transfer_wanted`, the same syntactic test),
         so a fresh session has it exactly then; a function of the atoms."""
-        from .scope import transfer_wanted
         return transfer_wanted(atoms)
 
     def selectors_for(self, f) -> list:

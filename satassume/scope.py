@@ -85,7 +85,7 @@ replaces:
 1. ``Relations.wants_transfer`` counted a ``_trichotomy`` pair through the
    session's ``_tri_of`` table, which is filled when both atoms are
    allocated.  In a session built for one query both are allocated iff
-   both are atoms of ``a`` or ``p``, so :func:`transfer_wanted` tests the
+   both are atoms of ``a`` or ``p``, so :func:`satassume.transfer.transfer_wanted` tests the
    pair syntactically (an atom and its reverse among the atoms) and gives
    the same value with no session state; ``wants_transfer`` delegates.
    It over-approximates: the pair is counted even when
@@ -108,6 +108,7 @@ from typing import Any, Dict, Iterable, NamedTuple
 from .formula import P, atoms_of
 from .relations import RELATION_ATOMS, _is_number, glue_atoms
 from .rules import PRED_INDEX
+from .transfer import transfer_wanted
 
 #: the predicates whose atoms the relation glue links to order atoms
 #: (``extended_positive``, ``extended_negative``, ``zero``) and those that
@@ -143,21 +144,6 @@ def affine_pair(atoms: Iterable[P]) -> bool:
         if any(symbols & other for other in sums.values()):
             return True
         sums[e] = symbols
-    return False
-
-
-def transfer_wanted(atoms: Iterable[P]) -> bool:
-    """Whether the relation atoms among ``atoms`` make an equality: an
-    ``eq`` atom, or an order atom and its reverse (see the module
-    docstring, resolution 1)."""
-    atoms = tuple(atoms)
-    for a in atoms:
-        if a.pred == "eq":
-            return True
-    lts = {a.expr for a in atoms if a.pred == "lt"}
-    for x, y in lts:
-        if (y, x) in lts:
-            return True
     return False
 
 

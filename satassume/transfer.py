@@ -80,12 +80,30 @@ which queries assume its selector) is in
 """
 from __future__ import annotations
 
+from typing import Iterable
+
+from .formula import P
 from .rules import BASIS_INDEX
 
-__all__ = ["TransferTheory"]
+__all__ = ["TransferTheory", "transfer_wanted"]
 
 _POLAR = BASIS_INDEX["polar"]
 _POLAR_ONLY = frozenset({_POLAR})
+
+
+def transfer_wanted(atoms: Iterable[P]) -> bool:
+    """Whether the relation atoms among ``atoms`` make an equality: an
+    ``eq`` atom, or an order atom and its reverse (see the docstring of
+    :mod:`satassume.scope`, resolution 1)."""
+    atoms = tuple(atoms)
+    for a in atoms:
+        if a.pred == "eq":
+            return True
+    lts = {a.expr for a in atoms if a.pred == "lt"}
+    for x, y in lts:
+        if (y, x) in lts:
+            return True
+    return False
 
 
 class TransferTheory:
