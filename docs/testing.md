@@ -23,6 +23,9 @@ Which checks a change needs:
 `test_euf.py`, `test_constfield.py`, `test_templates.py`, ...), end-to-end
 tests through `sympy_api.ask` (`test_sympy_api.py`, `test_relations.py`,
 `test_noncommutative.py`, ...), and fuzzers written as tests (below).
+`tests/test_layering.py` checks the package structure: the layers, where
+SymPy may be imported, and that no in-repo code uses the transitional
+old module names (docs/design.md, "Package layers").
 Tests that need SymPy call `pytest.importorskip("sympy")`.
 `tests/theory_harness.py` (`Recorder`, `check_protocol`, `ForbidTheory`)
 and `tests/real_theory_fuzz.py` are helpers, not test files.
@@ -218,9 +221,10 @@ next to the pass count; "0 unsound" means nothing without "N unchecked".
   meaning when the op mix is edited; a failure prints its seed and
   operation log. By hand: `python tests/test_solver_incremental.py 0 2000
   [block|theory]`, split by seed range to keep each run under 2 minutes.
-* `tools/solver_diff_fuzz.py NEW/satassume/solver.py REF/satassume/solver.py SEED0 N`:
-  the original form of the above, for comparing two versions of
-  `solver.py`.
+* `tools/solver_diff_fuzz.py NEW/satassume/sat/solver.py REF/satassume/sat/solver.py SEED0 N`:
+  the original form of the above, for comparing two versions of the
+  solver (a checkout before the package move has it at
+  `satassume/solver.py`).
 * `tests/real_theory_fuzz.py SEED0 N [lra|euf|both]`: the long-lived
   solver with the real LRA and EUF theories against fresh solvers
   (`test_solver_real_theories.py` runs it). It also collects steps where

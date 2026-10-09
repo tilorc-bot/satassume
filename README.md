@@ -4,7 +4,7 @@ A SAT-based engine for SymPy's `ask(proposition, assumptions)`, currently
 scoped to exactly one slice: **unary scalar predicates on scalar
 expressions**, answered purely by the SAT engine. Propositions and
 assumptions are Boolean combinations of `Q.<name>(expr)` where `name` is in
-the vocabulary of `satassume/rules.py` (`integer`, `real`, `positive`,
+the vocabulary of `satassume/knowledge/rules.py` (`integer`, `real`, `positive`,
 `prime`, `hermitian`, ...) and `expr` is a scalar `Expr`. Everything is
 answered from one rule base, one set of structural templates and one
 incremental CDCL solver; the engine never consults SymPy's `_eval_is_*`
@@ -13,7 +13,7 @@ handlers or SymPy's own `ask`/`satask`.
 Custom predicates are in scope once a clause-generating function is
 registered for them with `satassume.register(pred, *classes)`, the
 counterpart of SymPy's `Predicate.register` (see
-`satassume/extensions.py`); a registered vocabulary predicate on a new
+`satassume/knowledge/extensions.py`); a registered vocabulary predicate on a new
 class makes objects of that class ordinary nodes.
 
 Relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`, `Q.is_true(x < 0)`) are
@@ -39,8 +39,8 @@ inconsistent set.
 
 **Routing rule.** Any out-of-scope query makes `ask` return `None` without
 touching the engine. Relations are the exception once theory adapters are
-present (the default when `satassume/lra_adapter.py` and
-`satassume/euf_adapter.py` exist): they reach the engine, and `ask` returns
+present (the default when `satassume/theories/lra/lra_adapter.py` and
+`satassume/theories/euf/euf_adapter.py` exist): they reach the engine, and `ask` returns
 None only when no theory interprets one of them; `out_of_scope` still
 reports them as `relation`. That is scoping, not a fallback: the caller (SymPy's
 `ask`) is expected to route such inputs to its existing path (`satask`, the
@@ -96,7 +96,7 @@ ask(Q.extended_positive(y), Q.gt(y, 0))       # True: y > 0 makes y an extended 
 ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
 ask(Q.integer(y), Q.gt(y, 0) & Q.lt(y, 1))    # False (integrality in LRA: bounds rounded, branch and bound)
 from sympy import S, pi
-ask(Q.integer(y/pi + S.Half), Q.gt(y, -pi/2) & Q.lt(y, pi/2))  # False (exact pi coefficients, satassume/constfield.py)
+ask(Q.integer(y/pi + S.Half), Q.gt(y, -pi/2) & Q.lt(y, pi/2))  # False (exact pi coefficients, satassume/theories/lra/constfield.py)
 out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
 from sympy import Integer, Predicate, log
@@ -118,7 +118,7 @@ context-free facts it derives. It never reads or writes SymPy's per-object
 `_assumptions`: those hold whatever SymPy's `_eval_is_*` handlers cached,
 which can be wrong (`(0**n).is_finite` is True for a plain `n`), and a
 `Symbol`'s `_assumptions` is one fact base shared by every symbol with the
-same assumptions. SymPy objects enter only through the templates: the
+same assumptions. SymPy's own facts about objects enter only through the templates: the
 assumptions a symbol was declared with, and the properties of fixed-value
 constants. Assumptions enter the solver as solver assumptions under
 a selector literal and never touch the cache; the session is reused while
@@ -137,16 +137,29 @@ only when propagation is inconclusive.
 
 ## Layout
 
+The package is layered. The table lists the layers top-down: each layer
+imports only the layers below it (lazy imports and module names given as
+strings included; `tests/test_layering.py` checks it). Why the layers are
+cut where they are, and which modules may import SymPy:
+[design.md](docs/design.md), "Package layers". `satassume/_compat.py`
+keeps the flat module names of earlier versions (`satassume.rules`, ...)
+importable, with a `DeprecationWarning`, until the aliases are removed
+(PLAN.md); nothing in this repository uses them.
+
+| Path | The decision it hides | Modules |
+|---|---|---|
+| `satassume/ref.py` | `ask_ref`, the reference implementation of [docs/spec.md](docs/spec.md) | |
+| `satassume/sympy_api.py` | the SymPy front end: `ask`, `out_of_scope`, `to_formula`, `Unsupported` | |
+| `satassume/engine.py` | sessions, discovery, caching | |
+| `satassume/scope.py` | which relation machinery a query gets | |
+| `satassume/relations.py` | what relation atoms mean, their links to the unary vocabulary, the theories of a session | |
+| `satassume/theories/` | how relation atoms are decided: DPLL(T) theories, each a SymPy-free solver plus a SymPy adapter | `lra/` (`lra.py`, `lra_cert.py`, `constfield.py`: exact numbers in `Q(pi, E, sqrt(2), ...)`; `lra_adapter.py`, `lra_bounds.py`), `euf/` (`euf.py`; `euf_adapter.py`), `transfer.py` |
+| `satassume/knowledge/` | what is known about predicates and expression classes, and its clause encoding | `rules.py` (the rule base and vocabulary), `compile.py`, `extensions.py` (`register(pred, *classes)`), `domain.py` (commutative scalars), `templates/` (structural rules per SymPy class) |
+| `satassume/sat/` | propositional formulas and CDCL search (assumptions, root-level propagation, `entails`) with the DPLL(T) theory contract; no SymPy, no vocabulary | `formula.py` (atoms `P(pred, expr)`), `solver.py`, `theory.py` |
+| `satassume/state/` | process-wide state: the registry epoch and the memo tables keyed on it | `epoch.py`, `memos.py` |
+
 | Path | What |
 |---|---|
-| `satassume/rules.py` | the single rule base and predicate vocabulary, in the old system's string syntax |
-| `satassume/formula.py`, `compile.py` | atoms `P(pred, expr)`, formulas, clause compilation |
-| `satassume/solver.py` | incremental CDCL with assumptions, root-level propagation, `entails` |
-| `satassume/engine.py` | sessions, discovery, caching |
-| `satassume/templates/` | structural rules per SymPy class |
-| `satassume/sympy_api.py` | `ask`, `out_of_scope`, `to_formula`, `Unsupported` |
-| `satassume/constfield.py` | exact numbers in `Q(pi, E, sqrt(2), ...)` for LRA coefficients and bounds (signs by interval refinement, `Undecided` when out of reach) |
-| `satassume/extensions.py` | `register(pred, *classes)`: clause-generating functions for custom predicates and for vocabulary predicates on new classes |
 | `tools/record_queries.py` | pytest plugin recording every query SymPy's tests make |
 | `tools/compare.py` | replay a recorded corpus, classified in scope / out of scope, and report agreement |
 | `tools/bench.py` | contextual `ask` microbenchmarks, SymPy versus satassume |

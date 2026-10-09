@@ -5,11 +5,11 @@
 The repository does one thing for now: answer `ask(proposition, assumptions)`
 for **unary scalar predicates on scalar expressions**, purely with the SAT
 engine. Propositions and assumptions are Boolean combinations of
-`Q.<name>(expr)` with `name` in the vocabulary of `satassume/rules.py` and
+`Q.<name>(expr)` with `name` in the vocabulary of `satassume/knowledge/rules.py` and
 `expr` a scalar `Expr`.
 
 Custom predicates are in scope once a clause-generating function is
-registered for them (`satassume.register`, see `satassume/extensions.py`).
+registered for them (`satassume.register`, see `satassume/knowledge/extensions.py`).
 
 Out of scope for now: relations (`Q.eq/ne/lt/le/gt/ge`, `Eq`, `x < 0`
 propositions, `Q.is_true` over a relational), matrix predicates and matrix
@@ -127,15 +127,29 @@ Conclusions that drive the design:
 ## 2. Architecture (implemented here)
 
 ```
-satassume/
-  rules.py       one rule base (old string syntax + new-system extras) -> clause patterns
-  formula.py     P(pred, expr) atoms; And/Or/Not/Implies/Equivalent/Exclusive; allargs/anyarg/exactlyonearg
-  compile.py     formulas -> integer clauses (direct where clausal, Tseitin otherwise)
-  solver.py      incremental CDCL: add_clause any time, root propagation, implied(), solve(assumptions), entails()
-  engine.py      Engine: DictCache (engine-owned; never SymPy's _assumptions), Session (solver + atom table),
-                 demand-driven discovery, level-0 write-back
-  sympy_api.py   ask(prop, assumptions), out_of_scope(), to_formula(), Unsupported
-  templates/     structural clause generators per SymPy class (Symbol, numbers, Add, Mul, Pow, functions)
+satassume/              top-down: each layer imports only the layers below it (docs/design.md, "Package layers")
+  ref.py                ask_ref, the reference implementation of docs/spec.md
+  sympy_api.py          ask(prop, assumptions), out_of_scope(), to_formula(), Unsupported
+  engine.py             Engine: DictCache (engine-owned; never SymPy's _assumptions), Session (solver + atom table),
+                        demand-driven discovery, level-0 write-back
+  scope.py              which relation machinery a query gets (theory scope)
+  relations.py          relation atoms, their links to the unary vocabulary, the theories of a session
+  theories/             DPLL(T) theories, each a SymPy-free solver plus a SymPy adapter
+    lra/                simplex LRA over Q(pi, E, ...) (lra.py, lra_cert.py, constfield.py; lra_adapter.py, lra_bounds.py)
+    euf/                congruence closure (euf.py; euf_adapter.py)
+    transfer.py         predicate transfer across equal terms
+  knowledge/
+    rules.py            one rule base (old string syntax + new-system extras) -> clause patterns
+    compile.py          formulas -> integer clauses (direct where clausal, Tseitin otherwise)
+    extensions.py       register(pred, *classes)
+    domain.py           the commutative scalar domain of rules and templates
+    templates/          structural clause generators per SymPy class (Symbol, numbers, Add, Mul, Pow, functions)
+  sat/                  no SymPy, no vocabulary
+    formula.py          P(pred, expr) atoms; And/Or/Not/Implies/Equivalent/Exclusive; allargs/anyarg/exactlyonearg
+    solver.py           incremental CDCL: add_clause any time, root propagation, implied(), solve(assumptions), entails()
+    theory.py           the DPLL(T) theory contract
+  state/                epoch.py (registry epoch), memos.py (process-wide memo tables keyed on it)
+  _compat.py            transitional aliases of the flat module names before the package move
 tools/
   record_queries.py   pytest plugin: record every query SymPy's tests make (old and new system)
   compare.py          replay the corpus, classified in scope / out of scope: agreement / misses / contradictions / time
@@ -187,6 +201,19 @@ Rules of engagement for templates:
   with `evalf`, `_monotonic_sign`) becomes a clause-generating function that
   does the arithmetic in Python and emits unit facts, kept separate from the
   purely structural templates.
+
+### Package move: remove the flat aliases
+
+The package move (PR #147) left `satassume/_compat.py`: the old flat
+module names (`satassume.rules`, `satassume.lra_adapter`, ...) import as
+the moved modules, with a `DeprecationWarning`. Nothing in this
+repository uses them (`tests/test_layering.py`). Delete `_compat.py`, its
+`install()` call in `satassume/__init__.py`, its alias tests and the
+`("satassume._compat", "ALIASES")` entry in `harness/state.py` in the
+first PR after the class-level follow-up of the move has merged; by then
+no branch opened before the move is still open.
+`benchmarks/counters.py` keeps its fallback to `satassume.solver` for as
+long as asv compares commits before the move.
 
 ## 3. Later stages
 

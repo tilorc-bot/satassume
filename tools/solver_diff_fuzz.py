@@ -2,6 +2,8 @@
 
     python tools/solver_diff_fuzz.py NEW/satassume/sat/solver.py REF/satassume/sat/solver.py SEED0 N
 
+(for a REF checkout before the package move: REF/satassume/solver.py)
+
 Runs N random seeds.  Each seed drives one long-lived ``Solver`` of NEW through
 a random mix of ``add_clause``/``add_clauses``/``add_internal``/``add_pattern``,
 ``implied``, ``entails``, ``solve``, ``propagate``, ``root_trail`` and

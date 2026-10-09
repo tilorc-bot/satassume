@@ -384,7 +384,7 @@ The findings below describe the cases as found.
   proposition side.
 * **I2, `crash`** (pinned: `I2-unsettled-constant-in-relation-raises-undecided`):
   `ask(Q.zero(g(n) + 2), Q.zero(n))` is None and raises
-  `satassume.constfield.Undecided` ("cannot show Element(sin(pi/7)**2 +
+  `satassume.theories.lra.constfield.Undecided` ("cannot show Element(sin(pi/7)**2 +
   cos(pi/7)**2 + -1) nonzero") with the unrelated conjunct
   `Equivalent(Q.lt(u, oo), v - 1 + sin(pi/7)**2 + cos(pi/7)**2 >= 1.0e-9)`
   added: `relations._link_integer` tests `payload.offset` for truth and
