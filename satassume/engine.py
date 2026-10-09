@@ -344,10 +344,10 @@ class Session:
         #: the Relations object once predicate transfer is engaged
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
-        #: a budget cut dropped work: :meth:`_discover` or :meth:`escalate`,
-        #: called with an explicit ``budget``, stopped with unvisited nodes
-        #: (new, or with parked templates) on its frontier, or with parked
-        #: templates or derived nodes left.  The engine never passes one:
+        #: a budget cut dropped work: :meth:`escalate`, called with an
+        #: explicit ``budget``, stopped with unvisited nodes (new, or with
+        #: parked templates) on its frontier, or with parked templates or
+        #: derived nodes left.  The engine never passes one:
         #: a query whose structural cone exceeds ``discovery_budget`` is
         #: answered None before any session work (``Engine._within_budget``)
         #: and every other query runs discovery and escalation uncapped, so
@@ -729,10 +729,10 @@ class Session:
         if now:
             self._compile(node, now)
 
-    def ensure(self, node: Node, demanded=None, budget: Optional[int] = None) -> None:
+    def ensure(self, node: Node, demanded=None) -> None:
         """Demand-driven discovery: visit ``node`` and, breadth-first, the
-        nodes its templates mention, up to ``budget`` new nodes (None: no
-        cap; the engine's queries passed ``Engine._within_budget``).
+        nodes its templates mention, uncapped (the engine's queries passed
+        ``Engine._within_budget``).
 
         A visited node with nothing parked is only recorded (the discovery
         below would skip it at once)."""
@@ -745,7 +745,7 @@ class Session:
                 self.frontier = deque()
             return
         self.frontier = deque([node])
-        self._discover(demanded, budget)
+        self._discover(demanded)
 
     def discover(self) -> None:
         """Visit what the clauses emitted since the last visit mention: run
@@ -756,21 +756,13 @@ class Session:
         self._flush()
         self._discover()
 
-    def _discover(self, demanded=None, budget: Optional[int] = None) -> None:
-        if budget is None:
-            budget = _UNCAPPED
-        added = 0
+    def _discover(self, demanded=None) -> None:
         pending, pending_c = self.pending, self.pending_c
-        while self.frontier and added < budget:
+        while self.frontier:
             n = self.frontier.popleft()
             if n in self.base and n not in pending and n not in pending_c:
                 continue
             self.node(n, None if demanded is None else self.demand.get(n, set()))
-            added += 1
-        if self.frontier:
-            base = self.base
-            if any(n not in base or n in pending or n in pending_c for n in self.frontier):
-                self.truncated = True
         self.frontier = deque()
 
     @property

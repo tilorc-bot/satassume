@@ -253,7 +253,7 @@ class _RefSession:
                 self.emit([-v] + lits)
         return v
 
-    def ensure(self, node, demanded=None, budget=None) -> None:
+    def ensure(self, node, demanded=None) -> None:
         self.node(node)
 
     def _flush(self) -> None:
