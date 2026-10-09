@@ -47,14 +47,6 @@ Lit = Tuple[int, str, bool]
 Rule = Tuple[Tuple[Lit, ...], Tuple[Lit, ...]]
 
 
-def is_constant(obj) -> bool:
-    """True for SymPy atoms whose ``is_*`` properties are static facts.
-
-    Both flags are class attributes on atoms: no assumption query is made.
-    """
-    return bool(obj.is_Atom and obj.is_number)
-
-
 def const_key(obj):
     """Cache-key component for a constant (``Float(2.0) == Integer(2)``!)."""
     return (type(obj), obj)
@@ -383,6 +375,10 @@ def _signed(i: int, pos: bool) -> int:
 
 
 def consts_of(args) -> Dict[int, Any]:
+    """The constants among ``args`` by position: the SymPy atoms whose
+    ``is_*`` properties are static facts (``is_Atom and is_number``, both
+    class attributes on atoms: no assumption query is made).  The
+    templates write the same test inline where they look at one object."""
     return {k: a for k, a in enumerate(args) if a.is_Atom and a.is_number}
 
 

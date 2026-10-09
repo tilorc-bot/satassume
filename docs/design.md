@@ -295,7 +295,7 @@ template).
   an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
   coefficients (`_half_templates`).
 - SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
-  properties of atoms with a fixed value (`is_constant`, `constant_units`).
+  properties of atoms with a fixed value (`consts_of`, `constant_units`).
   `commutative` has no template: it is true by definition (see
   "Non-commutative symbols").
 - `tests/test_templates.py` evaluates every rule at concrete values, in

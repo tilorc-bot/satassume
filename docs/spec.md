@@ -348,8 +348,7 @@ with SymPy's on the corpus with `none=0` contradictions (`tools/compare.py
 
 ## 9. Undecidable constants
 
-Definition. A constant is an atom with `is_number` (`_common.is_constant`,
-`consts_of`). Its facts are `const_value(c, pred)`, SymPy's static `is_*`
+Definition. A constant is an atom with `is_number` (`_common.consts_of`). Its facts are `const_value(c, pred)`, SymPy's static `is_*`
 properties plus the derived new-system predicates (`_common.const_value`).
 
 Rules:
