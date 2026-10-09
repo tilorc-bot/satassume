@@ -220,8 +220,10 @@ of a vocabulary atom of the user's formulas (numbers excluded):
 The rule base derives the rest. Link atoms get no clause 1 (implied), and
 no clauses 2 when `e` is its own opaque term (#45).
 
-**Switched glue** (#53 stage 5). A session outlives its queries, so glue
-made for one query must not act in another: every clause that ties a
+**Switched glue** (#53 stage 5, when a session answered many queries).
+Glue made for one query must not act in another; since #97 a session
+serves its set's check and then one query, and the switching keeps the
+check to the set's own glue: every clause that ties a
 relation to unary atoms carries a selector, and each query assumes the
 selectors of its own glue only (`Session.assumption_lits`):
 

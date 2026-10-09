@@ -250,9 +250,11 @@ terms in one EUF class share all unary facts (``Q.prime(x)`` from
 
 Switched glue
 -------------
-A session answers many queries, and glue made for one must not act in
-another (#53 stage 5): an answer is a function of the query, not of what
-the session met before.  So every clause that ties relations to unary
+Glue made for one query must not act in another (#53 stage 5, written
+when a session answered many queries): an answer is a function of the
+query, not of what the session met before.  Since #97 a session serves
+the check of its set and then one query (``Engine._build_context``), and
+the selectors keep the check to the set's own glue.  So every clause that ties relations to unary
 atoms, and everything a theory does with an atom beyond reading its own
 variable, carries a *selector* variable, and ``Session.assumption_lits``
 assumes, for a query ``p`` under assumptions ``a``, only the selectors of
