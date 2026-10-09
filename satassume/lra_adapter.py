@@ -123,6 +123,7 @@ from sympy.core.sorting import default_sort_key
 
 from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
+from .memos import adopt as _adopt_memo
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
            "integer_form"]
@@ -403,6 +404,7 @@ def integer_form(e):
 #: ``defaultdict``, so emptying the outer dict (the harness's
 #: ``reset_module_state`` does ``_INTERPRETED.clear()``) leaves it usable.
 _INTERPRETED: dict = defaultdict(dict)
+_adopt_memo(__name__, "_INTERPRETED")
 #: size bound of each memo; a module constant, not a setting: changing it at run time is unsupported (answers memoized under the old value are kept)
 _INTERPRETED_MAX = 100_000
 

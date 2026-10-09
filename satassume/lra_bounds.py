@@ -14,6 +14,8 @@ from sympy import S
 from sympy.core.add import Add
 from sympy.core.mul import Mul
 
+from .memos import adopt as _adopt_memo
+
 __all__ = ["constant_bounds", "constant_enclosure"]
 
 #: bound of each memo below (as ``lra_adapter._INTERPRETED_MAX``)
@@ -27,6 +29,7 @@ _IV_PREC = 128
 _MAX_BITS = 4096
 #: constant -> (lo, hi) or None (see constant_bounds); shared, pure
 _BOUNDS: dict = {}
+_adopt_memo(__name__, "_BOUNDS")
 
 
 def constant_bounds(c):
@@ -65,6 +68,7 @@ def _bounds(c):
 
 #: precision -> mpmath interval context at that precision
 _IV: dict = {}
+_adopt_memo(__name__, "_IV")
 
 
 def _iv_context(prec: int = _IV_PREC):
@@ -78,6 +82,7 @@ def _iv_context(prec: int = _IV_PREC):
 
 #: (constant, working precision) -> rational enclosure or None
 _ENCLOSURES: dict = {}
+_adopt_memo(__name__, "_ENCLOSURES")
 
 
 def constant_enclosure(c, prec: int):

@@ -170,7 +170,7 @@ def _is_scalar(arg) -> bool:
 #: SymPy equality distinguishes ``Symbol('A')`` from the non-commutative
 #: ``A`` and ``Function('g')`` from ``Function('g', commutative=False)``)
 NONCOMM_SIZE = 4096
-_NONCOMM = _PROCESS.table("satassume.sympy_api._NONCOMM", "pure", NONCOMM_SIZE)
+_NONCOMM = _PROCESS.table(f"{__name__}._NONCOMM", "pure", NONCOMM_SIZE)
 
 
 def _fixed_noncommutative(t) -> bool:
@@ -438,7 +438,7 @@ _MISS = object()
 #: :func:`to_formula` on SymPy Booleans; valid while the default registry's
 #: version (which decides the scope of custom predicates) is ``_FORMULAS.stamp``
 FORMULAS_SIZE = 100_000
-_FORMULAS = _PROCESS.table("satassume.sympy_api._FORMULAS", "extensions", FORMULAS_SIZE)
+_FORMULAS = _PROCESS.table(f"{__name__}._FORMULAS", "extensions", FORMULAS_SIZE)
 
 
 def _formula(expr, relations: bool, opaque: bool = False):
@@ -629,8 +629,8 @@ _OPAQUE = None  # keys of an opaque expression
 #: arguments; the templates decide what a closed term's block fixes) is
 #: ``_KEYS.stamp``.  ``_CONST`` (closed term -> in ``K``) is dropped with it.
 KEYS_SIZE = 100_000
-_KEYS = _PROCESS.table("satassume.sympy_api._KEYS", "epoch", KEYS_SIZE)
-_CONST = _PROCESS.table("satassume.sympy_api._CONST", "epoch", KEYS_SIZE)
+_KEYS = _PROCESS.table(f"{__name__}._KEYS", "epoch", KEYS_SIZE)
+_CONST = _PROCESS.table(f"{__name__}._CONST", "epoch", KEYS_SIZE)
 
 
 #: the closed atoms of ``K`` (see "Closed terms" above)

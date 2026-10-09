@@ -207,8 +207,12 @@ def preset(name: str) -> EngineConfig:
 # module-level state
 # --------------------------------------------------------------------------
 
-# the modules that create process-wide memo tables (``satassume.memos``),
-# imported so that ``MODULE_STATE`` lists their tables
+# the modules that create or adopt process-wide memos (``satassume.memos``),
+# imported so that ``MODULE_STATE`` lists their tables and containers (each
+# registers its own when it is imported)
+import satassume.euf_adapter  # noqa: E402,F401
+import satassume.lra_adapter  # noqa: E402,F401
+import satassume.lra_bounds  # noqa: E402,F401
 import satassume.relations  # noqa: E402,F401
 import satassume.sympy_api  # noqa: E402,F401
 import satassume.templates  # noqa: E402,F401
@@ -273,6 +277,8 @@ MODULE_CONFIG: frozenset = frozenset({
     ("satassume.epoch", "EPOCH"),                 # the registry epoch: bumped by every
                                                   # registration, never reset (#63)
     ("satassume.sympy_api", "_engine"),           # the default engine itself
+    ("satassume.memos", "ADOPTED"),               # the adopted memos, registered by
+                                                  # their modules at import
 })
 
 

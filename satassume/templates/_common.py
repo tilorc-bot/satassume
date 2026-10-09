@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 
 from ..formula import And, Implies, Not, Or, P
+from ..memos import adopt as _adopt_memo
 from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
 
 #: The predicate vocabulary templates may emit.
@@ -308,6 +309,7 @@ class Compiled:
 #: template that reuses a key never gets an earlier template's pattern.
 #: Registered with ``satassume.memos.PROCESS`` as ``"epoch"``.
 _CACHE: Dict[Any, Pattern] = {}
+_adopt_memo(__name__, "_CACHE", "epoch")
 MAX_CACHE = 4096
 
 

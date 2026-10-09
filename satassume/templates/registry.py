@@ -26,6 +26,7 @@ from typing import Any, Callable, Dict, Iterable, List, Tuple
 
 from ..epoch import bump as _bump
 from ..formula import Formula, P
+from ..memos import adopt as _adopt_memo
 from . import _common
 from ._common import Compiled
 
@@ -189,3 +190,5 @@ def _split(result: Any, compiled: List[Compiled], formulas: List[Any]) -> None:
 
 
 registry = TemplateRegistry()
+_adopt_memo(__name__, "registry._clauses_cache", "epoch")
+_adopt_memo(__name__, "registry._mro_cache", "epoch")

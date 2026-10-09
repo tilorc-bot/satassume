@@ -36,7 +36,7 @@ it is real, minus its conjugate iff it is zero or imaginary).
 from __future__ import annotations
 
 from typing import Dict, List, Sequence, Tuple
-from .memos import PROCESS as _PROCESS
+from .memos import PROCESS as _PROCESS, adopt as _adopt_memo
 
 # The predicate vocabulary.  This is the union of the old system's
 # ``_assume_defined`` and the unary, scalar predicates of the new system.
@@ -242,7 +242,7 @@ def _basis_models() -> Tuple[Tuple[bool, ...], ...]:
     return tuple(out)
 
 
-_DEF_IMPL = _PROCESS.table("satassume.rules._DEF_IMPL", "pure", 10_000)
+_DEF_IMPL = _PROCESS.table(f"{__name__}._DEF_IMPL", "pure", 10_000)
 
 
 def def_implications(d1, d2) -> Tuple[Tuple[int, int], ...]:
@@ -302,6 +302,7 @@ def expand_clause(lits: Sequence[Tuple[int, str, bool]]) -> List[Tuple[Tuple[int
 
 #: clause tuple (by id, kept alive) -> its clause masks (:func:`_masks`)
 _MASKS: dict = {}
+_adopt_memo(__name__, "_MASKS")
 
 
 def lit_bit(l: int) -> int:

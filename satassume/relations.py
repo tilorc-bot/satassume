@@ -493,7 +493,7 @@ def relational_name(rel) -> str:
     return _OPS[rel.rel_op]
 
 
-_SYMPY_ATOMS = _PROCESS.table("satassume.relations._SYMPY_ATOMS", "pure", 100_000)
+_SYMPY_ATOMS = _PROCESS.table(f"{__name__}._SYMPY_ATOMS", "pure", 100_000)
 
 
 def sympy_atom(atom: P):
@@ -513,8 +513,8 @@ def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
 
-_ZERO_TWINS = _PROCESS.table("satassume.relations._ZERO_TWINS", "pure", 100_000)
-_UNDER_APPS = _PROCESS.table("satassume.relations._UNDER_APPS", "pure", 100_000)
+_ZERO_TWINS = _PROCESS.table(f"{__name__}._ZERO_TWINS", "pure", 100_000)
+_UNDER_APPS = _PROCESS.table(f"{__name__}._UNDER_APPS", "pure", 100_000)
 
 
 def _under_apps(e) -> frozenset:

@@ -98,7 +98,8 @@ def test_two_engines_do_not_share_memos():
     ``memos.PROCESS``, and only memos keyed on nothing but their key and
     the registry epoch (or the default registry's version) may live there."""
     from satassume import Engine
-    from satassume.memos import ENGINE_MEMOS, PROCESS, PROCESS_KEYS
+    from satassume.engine import ENGINE_MEMOS
+    from satassume.memos import PROCESS, PROCESS_KEYS
     from satassume.sympy_api import ask
     e1, e2 = Engine(), Engine()
     assert e1.memos is not e2.memos

@@ -37,6 +37,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
+from .memos import adopt as _adopt_memo
+
 
 class Clause(list):
     """A clause created during search: a list of internal literals plus an
@@ -112,6 +114,7 @@ def _luby(y: float, x: int) -> float:
 
 
 _RULE_TABLES: dict = {}
+_adopt_memo(__name__, "_RULE_TABLES")
 _EVEN = int("01" * 64, 2)          # bits 0, 2, 4, ... (positive relative literals)
 _BIT = tuple(1 << i for i in range(128))       # relative literal -> its bit
 _NBIT = tuple(~(1 << i) for i in range(128))   # ... and the complement

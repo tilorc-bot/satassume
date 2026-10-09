@@ -80,7 +80,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .compile import VarTable, basis_formula, compile_formula, formula_literal
 from .epoch import EPOCH as _EPOCH, bump as _bump
-from .memos import engine_memos
+from .memos import Memos, adopt as _adopt_memo, owner_memos
 from .formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
@@ -92,6 +92,23 @@ from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
 from .solver import Solver
 
 Node = Any
+
+#: the per-engine memos: attributes of :class:`Engine` that hold what the
+#: engine computed (all keyed on the epoch and the engine's settings,
+#: dropped by ``Engine._check_version`` and ``Engine._settings_changed``).
+#: The fact caches are the engine's own unless a ``DictCache`` was passed
+#: to several engines on purpose.
+ENGINE_MEMOS: Tuple[str, ...] = (
+    "answers", "splits", "_kids", "_cones", "_qcones", "_glue_adapters",
+    "_failed", "_verdict", "cache.store", "custom_cache.store",
+)
+
+
+def engine_memos(engine) -> Memos:
+    """The :class:`Memos` of ``engine`` (``Engine.memos``):
+    its memo attributes (:data:`ENGINE_MEMOS`), held through a weak
+    reference so the object keeps no engine alive."""
+    return owner_memos(engine, ENGINE_MEMOS, "settings")
 
 
 #: the verdicts of an assumption set (``Engine.verdict``): only
@@ -1322,7 +1339,7 @@ class Engine:
         #: the registry epoch (:mod:`satassume.epoch`) the engine-level
         #: caches were filled under; -1 until the first query
         self._epoch = -1
-        #: this engine's memos, by name (:func:`satassume.memos.engine_memos`)
+        #: this engine's memos, by name (:func:`engine_memos`)
         self.memos = engine_memos(self)
         #: the fingerprint of the settings ``is_`` depends on
         #: (``_settings_fingerprint``), part of the fact caches' memo key
@@ -2214,6 +2231,8 @@ def zero_glue(f) -> bool:
 _NEIGH: Dict[int, frozenset] = {}
 _NO_BASIS: frozenset = frozenset()
 _WANT: Dict[frozenset, frozenset] = {}
+_adopt_memo(__name__, "_NEIGH")
+_adopt_memo(__name__, "_WANT")
 
 
 def _gave_up(s: Session) -> bool:
@@ -2254,6 +2273,7 @@ def neighbourhood(pred) -> frozenset:
 
 
 _SPLIT: dict = {}
+_adopt_memo(__name__, "_SPLIT")
 
 
 def _split(clauses, want):

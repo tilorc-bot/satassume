@@ -33,6 +33,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from .epoch import bump as _bump
 from .formula import Formula, Not, P
+from .memos import adopt as _adopt_memo
 from .rules import BASIS_OF, PRED_INDEX
 
 Handler = Callable[..., Any]
@@ -168,6 +169,7 @@ def _collect(result, atom: P, out: List[Any]) -> None:
 
 #: The default registry, used by :func:`satassume.sympy_api.ask`.
 extensions = Extensions()
+_adopt_memo(__name__, "extensions._node_cache", "extensions")
 
 
 def register(pred, *classes: type):

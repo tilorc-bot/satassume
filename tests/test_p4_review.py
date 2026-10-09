@@ -43,7 +43,8 @@ def test_every_adopted_memo_name_resolves():
     """An adopted name that does not resolve must fail, not silently drop
     out of ``Memos.items``, ``clear`` and the inventory."""
     from harness.state import import_all
-    from satassume.memos import ADOPTED, ENGINE_MEMOS, PROCESS
+    from satassume.engine import ENGINE_MEMOS
+    from satassume.memos import ADOPTED, PROCESS
     import_all()
     e = Engine()
     assert {n for n, _, _ in e.memos.items()} == set(ENGINE_MEMOS)
@@ -51,16 +52,17 @@ def test_every_adopted_memo_name_resolves():
     assert adopted <= {n for n, _, _ in PROCESS.items()}
     # and the check itself must catch a renamed attribute: a name that
     # does not resolve raises from ``items()`` (and so from ``clear()``)
+    import satassume.engine as engine_mod
     import satassume.memos as memos
-    memos.ENGINE_MEMOS = ENGINE_MEMOS + ("_no_such_memo",)
+    engine_mod.ENGINE_MEMOS = ENGINE_MEMOS + ("_no_such_memo",)
     try:
-        from satassume.memos import engine_memos
+        from satassume.engine import engine_memos
         with pytest.raises(AttributeError, match="_no_such_memo"):
             list(engine_memos(e).items())
         with pytest.raises(AttributeError, match="_no_such_memo"):
             engine_memos(e).clear()
     finally:
-        memos.ENGINE_MEMOS = ENGINE_MEMOS
+        engine_mod.ENGINE_MEMOS = ENGINE_MEMOS
     # the same for a process-wide path on a loaded module
     m = PROCESS._adopted["satassume.engine._SPLIT"]
     PROCESS._adopted["satassume.engine._SPLIT"] = (m[0], memos._module_attr("satassume.engine", "_NO_SUCH_SPLIT"))

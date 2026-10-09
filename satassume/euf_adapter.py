@@ -50,6 +50,7 @@ from sympy.core.relational import Equality, Unequality
 from sympy.integrals.transforms import IntegralTransform
 
 from .euf import EqAtom, EUFTheory
+from .memos import adopt as _adopt_memo
 
 __all__ = ["EUFAdapter"]
 
@@ -57,6 +58,7 @@ _STRUCTURAL = (Add, Mul, Pow, Application)
 
 
 _class_ok: dict[type, bool] = {}
+_adopt_memo(__name__, "_class_ok")
 
 
 def _inherits_from_basic(cls, name) -> bool:
