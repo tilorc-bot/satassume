@@ -139,12 +139,12 @@ _UNCAPPED = float("inf")
 
 def _noncommutative(term) -> bool:
     """Whether ``term`` has a non-commutative subterm (``Symbol('A',
-    commutative=False)``, ``re(A)``): see :func:`satassume.sympy_api._noncommutative`.
+    commutative=False)``, ``re(A)``): see :func:`satassume.domain._noncommutative`.
     Such a term may stand for a matrix, while the rule base and the
     templates assume numbers (``commutative`` is true by definition,
     ``rules.DEFINITIONS``); the engine answers None about it (``sympy_api``
     keeps it out of scope before it reaches the engine)."""
-    from .sympy_api import _noncommutative as nc
+    from .domain import _noncommutative as nc
     return nc(term)
 
 

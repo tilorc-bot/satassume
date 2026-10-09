@@ -81,6 +81,7 @@ from .memos import PROCESS as _PROCESS
 from .extensions import Args, extensions, register, unregister  # noqa: F401
 from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
+from .domain import NONCOMM_SIZE, _NONCOMM, _fixed_noncommutative, _noncommutative  # noqa: F401
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
 from sympy.core.add import Add as _SAdd
@@ -164,59 +165,6 @@ def _is_matrix_predicate(pred, name: str) -> bool:
 
 def _is_scalar(arg) -> bool:
     return isinstance(arg, _Expr) and bool(arg.is_scalar)
-
-
-#: memo of :func:`_noncommutative` (a function of the expression only:
-#: SymPy equality distinguishes ``Symbol('A')`` from the non-commutative
-#: ``A`` and ``Function('g')`` from ``Function('g', commutative=False)``)
-NONCOMM_SIZE = 4096
-_NONCOMM = _PROCESS.table(f"{__name__}._NONCOMM", "pure", NONCOMM_SIZE)
-
-
-def _fixed_noncommutative(t) -> bool:
-    """Whether ``t`` is non-commutative by construction, read without
-    evaluating any assumption (``t.is_commutative`` would compute and cache
-    ``commutative`` in SymPy's ``_assumptions`` of compound expressions,
-    and the engine must never write SymPy's assumption caches).  Symbols
-    (``Dummy``, ``Wild``) carry their given assumptions in ``_assumptions0``;
-    undefined functions (``Function('g', commutative=False)``) and atom
-    types such as quantum operators fix ``is_commutative`` as a class
-    attribute; anything else is decided by its arguments."""
-    from sympy.core.symbol import Symbol
-    if isinstance(t, Symbol):
-        return dict(getattr(t, "_assumptions0", ())).get("commutative") is False
-    for k in type(t).__mro__:
-        v = k.__dict__.get("is_commutative", None)
-        if v is not None:
-            return v is False
-    return False
-
-
-def _noncommutative(e) -> bool:
-    """Whether ``e`` has a non-commutative subterm (fixed non-commutative
-    by construction anywhere, see :func:`_fixed_noncommutative`, ``e`` itself included, matrix expressions not
-    descended into).  The whole expression is not
-    enough (``re(A)`` claims to be commutative), so this walks the tree;
-    memoized, since it runs for every applied vocabulary predicate."""
-    r = _NONCOMM.get(e)
-    if r is not None:
-        return r
-    r = False
-    stack = [e]
-    while stack:
-        t = stack.pop()
-        if not isinstance(t, _Basic) or getattr(t, "is_Matrix", False):
-            # a matrix expression reaches a scalar argument only through a
-            # scalar-valued function of it (Trace(M), M[0, 0]): a number
-            continue
-        if _fixed_noncommutative(t):
-            r = True
-            break
-        stack.extend(t.args)
-    if len(_NONCOMM) >= NONCOMM_SIZE:
-        _NONCOMM.clear()
-    _NONCOMM[e] = r
-    return r
 
 
 def _applied_category(expr) -> Optional[str]:
