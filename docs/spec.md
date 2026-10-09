@@ -10,8 +10,8 @@ says "P3, to be implemented" and gives both. "Design" cites
 `docs/design.md`, "theories" cites `docs/theories.md`.
 
 Notation. `V` is `PREDICATES`, 33 unary predicate names (`rules.py`). A
-*node* is a SymPy expression the session gives 15 solver variables, one per
-basis predicate (`rules.BASIS`; `Session.base[node]`, `engine.py`); the 18
+*node* is a SymPy expression the session gives 14 solver variables, one per
+basis predicate (`rules.BASIS`; `Session.base[node]`, `engine.py`); the 19
 other predicates of `V` are definitions over them (design.md, "Rule base"). A *vocabulary atom* is `P(pred, expr)`
 with `pred in PRED_INDEX`; a *relation atom* is `P("eq"|"lt", (a, b))`
 (`RELATION_ATOMS`, `relations.py`); a *custom atom* is any other `P`

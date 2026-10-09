@@ -312,8 +312,8 @@ A `Session` holds a solver and a `VarTable` giving each visited node 14
 variables (one per basis predicate). `Session.node` registers the rule block
 and emits its template clauses, but only those about a basis predicate the
 query demands of the node (`want_of`); the rest is parked (`pending_c`,
-`pending`). No cached fact enters a session (see "Context-free fact cache"
-below). Children are
+`pending`). No cached fact enters a session as a clause (see
+"Context-free fact cache" below). Children are
 visited breadth-first; derived nodes wait in `deferred`. A query runs root propagation; if that leaves it
 open and the session is `incomplete`, `escalate` compiles everything
 parked and visits the derived nodes; only then does search run
@@ -378,14 +378,17 @@ never None, keyed on the registry epoch and the settings fingerprint
 the engine's, so a cache shared between engines of different settings
 starts empty for each, and engines of the same settings share hits);
 nothing else writes there (`Engine._put_result`
-is the one writer), and no session reads there (a visited node asserts no
-cached fact as a unit clause; a contextual session derives every fact
-from its own clause set). The memo is sound because the session of
-`is_(node, pred)` is exactly the one a fresh engine builds for the same
-query: nothing of the engine's state enters a session except the
-numbers' transfer bases (`Engine._xbasis`), which are the engine's own
-context-free answers and are dropped with the other set memos when the
-settings or the registry epoch change, so its clause set
+is the one writer), and no session takes its entries as clauses (a
+visited node asserts no cached fact as a unit clause; a contextual
+session derives every fact from its own clause set). The memo is sound
+because the session of `is_(node, pred)` is the one a fresh engine
+with the same settings builds for the same query: what enters a session
+from the engine's state is the engine's own context-free answers (the
+glue's `engine.is_` calls on closed numbers in `relations.py`, which may
+be answered from this cache, and the numbers' transfer bases built from
+them, `Engine._xbasis`), each a function of the registry and the
+settings, and dropped with the other set memos when either changes. So
+its clause set
 is a function of the node, the predicate, the registry and the settings,
 and its answer is an entailment of that set (the harness `audit` mode and
 `tests/test_writeback_provenance.py` check the memo against a fresh engine
@@ -723,7 +726,7 @@ assumptions, the engine configuration and the registered extensions, never
 of earlier queries, of what is cached or evicted, or of `PYTHONHASHSEED`.
 State that could carry a dependence: a session's root facts written to
 the cache and cached facts asserted as units (both gone with #97 P2: the
-cache is a memo of `is_` that no session reads), one reused session per
+cache is a memo of `is_` that no session takes as clauses), one reused session per
 assumption set (gone with #97 P1), caches that omit the registry (#63).
 
 Issue #53 is the umbrella (seven defect groups); group 1, non-total

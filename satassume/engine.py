@@ -1504,7 +1504,8 @@ class Engine:
         change before the first query (``_epoch == -1``) drops a cache
         filled by another engine too.  After the first query this also
         drops what :meth:`_check_version` drops for the engine (the answer
-        and split memos, the ``Uninterpreted`` memo, the verdict memo),
+        and split memos, the ``Uninterpreted`` memo, the verdict memo, the
+        numbers' transfer bases ``_xbasis``: ``_drop_set_memos``),
         counted in ``stats["version_clears"]``, and the stores of the
         engine's fact caches (``cache``, ``custom_cache``): their facts can
         depend on ``templates``, ``transfer`` and ``uninterpreted``, and a
@@ -1524,9 +1525,10 @@ class Engine:
     def _check_version(self) -> None:
         """Drop every engine-level cache filled under an earlier registry
         epoch (:mod:`satassume.state.epoch`): the fact caches, the answer and
-        split memos, the ``Uninterpreted`` memo and the verdict memo all
-        hold results computed under the registrations in force at the
-        time.  The entry of every query calls this when the engine's epoch
+        split memos, the ``Uninterpreted`` memo, the verdict memo and the
+        numbers' transfer bases (``_xbasis``; all but the fact caches via
+        ``_drop_set_memos``) hold results computed under the registrations
+        in force at the time.  The entry of every query calls this when the engine's epoch
         is not the current one (``if self._epoch != _EPOCH[0]``), and
         ``is_`` also when a fact cache's settings fingerprint is not the
         engine's (one tuple comparison per query): a ``DictCache`` records
