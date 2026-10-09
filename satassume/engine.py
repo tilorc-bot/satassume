@@ -2237,7 +2237,7 @@ _adopt_memo(__name__, "_WANT")
 
 def _gave_up(s: Session) -> bool:
     """A theory of the session's solver gave up (satassume.sat.theory)."""
-    for t in s.solver._theories:
+    for t in s.solver.theories():
         if getattr(t, "gave_up", False):
             return True
     return False
@@ -2246,7 +2246,7 @@ def _gave_up(s: Session) -> bool:
 def _exhausted(s: Session) -> bool:
     """A theory of the session's solver ran out of its branch budget
     since the flag was last cleared (satassume.theories.lra.lra, "Integrality")."""
-    for t in s.solver._theories:
+    for t in s.solver.theories():
         if getattr(t, "exhausted", False):
             return True
     return False

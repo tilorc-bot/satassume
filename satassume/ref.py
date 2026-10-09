@@ -503,7 +503,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     try:
         r = _entails(s, q, lits)
     finally:
-        theories = s.solver._theories
+        theories = s.solver.theories()
         info.gave_up = any(getattr(t, "gave_up", False) for t in theories)
         info.exhausted = any(getattr(t, "exhausted", False) for t in theories)
         info.undecidable = any(getattr(t, "undecidable", False) for t in theories)

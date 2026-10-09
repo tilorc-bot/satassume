@@ -1887,6 +1887,7 @@ class Solver:
         self._stamp += 1
 
     def theories(self) -> list:
+        """The attached theories, in attachment order (a copy)."""
         return list(self._theories)
 
     def register_atom(self, theory, var: int, payload, mention: bool = True) -> bool:
