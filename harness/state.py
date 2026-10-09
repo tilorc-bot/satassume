@@ -240,7 +240,7 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.knowledge.rules", "BASIS"), ("satassume.knowledge.rules", "BASIS_INDEX"), ("satassume.knowledge.rules", "BASIS_OF"),
     ("satassume.knowledge.rules", "DEFINITIONS"), ("satassume.knowledge.rules", "DEF_LITS"),
     ("satassume.knowledge.rules", "_CNF_POS"), ("satassume.knowledge.rules", "_CNF_NEG"),
-    ("satassume.sat.solver", "_BIT"), ("satassume.sat.solver", "_NBIT"),
+    ("satassume.sat.solver", "_BIT"),
     ("satassume.relations", "RELATION_ATOMS"), ("satassume.relations", "_OPS"),
     ("satassume.theories.lra.lra", "_NEG"), ("satassume.theories.lra.lra", "_FLIP"),
     ("satassume.theories.lra.lra_adapter", "_PRED"), ("satassume.theories.lra.lra_adapter", "_REL"),
