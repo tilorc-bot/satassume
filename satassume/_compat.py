@@ -28,12 +28,16 @@ string prefix test and declines every name that is not in
 new module and hands back that very object, so the old name is the
 *same* module (monkeypatching through an old path reaches the code that
 runs, and no module is ever loaded twice).
+
+This module imports nothing heavier than :mod:`importlib.machinery`
+(``importlib.abc`` and ``importlib.util`` pull in ``importlib.resources``,
+several milliseconds at every ``import satassume``); the finder and the
+loader implement the import protocols without the ABC base classes.
 """
 from __future__ import annotations
 
 import importlib
-import importlib.abc
-import importlib.util
+import importlib.machinery
 import sys
 import warnings
 from typing import Optional
@@ -75,7 +79,7 @@ def new_name(fullname: str) -> Optional[str]:
     return _PREFIX + new + dot + tail
 
 
-class _AliasLoader(importlib.abc.Loader):
+class _AliasLoader:
     """Loads an old name as the new module object itself."""
 
     def __init__(self, target: str):
@@ -104,14 +108,19 @@ class _AliasLoader(importlib.abc.Loader):
         module.__spec__ = self.spec
 
 
-class AliasFinder(importlib.abc.MetaPathFinder):
-    """Finds the old names (:data:`ALIASES`)."""
+class AliasFinder:
+    """Finds the old names (:data:`ALIASES`).  A ``sys.meta_path`` finder
+    (it needs no ``importlib.abc`` base class)."""
 
     def find_spec(self, fullname, path=None, target=None):
         new = new_name(fullname)
         if new is None:
             return None
-        return importlib.util.spec_from_loader(fullname, _AliasLoader(new))
+        return importlib.machinery.ModuleSpec(fullname, _AliasLoader(new))
+
+
+    def invalidate_caches(self) -> None:
+        pass
 
 
 def install() -> None:
