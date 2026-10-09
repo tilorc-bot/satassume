@@ -102,21 +102,18 @@ definite answer.
 Whether the budget runs out depends on the search path: the branch order
 follows the simplex point, which follows the basis earlier checks left
 in the tableau, and which checks run at all follows the learnt clauses.
-So once a check's branch and bound finds a conflict
-(:attr:`LRATheory.branched`) an answer can depend on the session's
-history, not only on its clauses; the simplex,
+So once a check's branch and bound finds a conflict an answer can
+depend on the session's history, not only on its clauses; the simplex,
 the rounded bounds of ``assert_lit`` and ``propagate`` and the real
 disequality argument of ``check`` cannot: each finds every conflict of
 its kind in the asserted literals, with no budget, and keeps finding it
 as literals are added.  The same holds for giving up with constants
 (:attr:`LRATheory.undecidable`), unless the atoms are certified (below):
 which comparisons a pivot path makes decides whether one is undecidable.
-In a session reused across queries, the engine answers again in a
-freshly built one (as a fresh engine would) a query whose search
-exhausted the budget or gave up, and a definite answer after a branch and
-bound conflict since the session was built or with constants that are not
-certified (``Engine.ask``); a set check that exhausted the budget gives
-the verdict ``UNKNOWN`` (``Engine._complete_check``).
+The engine answers every query in a session built for it and then
+discarded (``Engine._build_context``, issue #97), so that history is the
+fresh session's by construction; a set check that exhausted the budget or
+gave up gives the verdict ``UNKNOWN`` (``Engine._complete_check``).
 
 Certified constants
 -------------------
@@ -157,15 +154,14 @@ atoms certified, a variable splits only while its value is at most ``Y``
 (``(nonbasic + 1) * had * (X + 1) * 2**16``, ``X`` the largest atom bound),
 which bounds ``n``; otherwise the check counts as having run out of
 budget (the engine handles that as above).  This changes what a search
-may do, a fresh engine's too: a split beyond ``Y`` that the search
-without the bound would make now counts as running out (the answer of
-such a query is the one of the freshly built session, None if it runs out
-there too, where without the bound it might have been definite).  On the
+may do: a split beyond ``Y`` that the search without the bound would
+make now counts as running out (such a query is None where without the
+bound it might have been definite).  On the
 stream no split ever goes beyond ``Y``; the answers are a function of the
 atoms and the configuration either way.  Values left from a branch and
 bound that ran while no payload had constants are certified separately
-(:meth:`LRATheory.certified_with`; the engine records those the set
-check leaves).  Everything else a check computes (the deltas of
+(:meth:`LRATheory.certified_with`; the engine no longer reads it: the
+set check and the query share one freshly built session, #97).  Everything else a check computes (the deltas of
 ``_concrete``, the generic combination of points for disequalities) is
 bounded the same way; equality of two numbers in ``pi`` alone is formal
 and never raises.
@@ -357,10 +353,6 @@ class LRATheory:
         #: is sound but may hide an integral conflict); cleared only by the
         #: caller (the engine, per query), not by ``pop_level``
         self.exhausted = False
-        #: set when a check's branch and bound found a conflict (a lemma
-        #: whose finding, within the budget, depends on the search path);
-        #: cleared only by the caller (the engine, when it built a session)
-        self.branched = False
         #: set when a check branched while no payload had constants: its
         #: bounds may have left values of any size behind (see
         #: :attr:`certified`)
@@ -1186,11 +1178,6 @@ class LRATheory:
         conflict = self._simplex()
         if conflict is None and self._int_lits:
             conflict = self._branch([BRANCH_BUDGET])
-            if conflict is not None:
-                # only here does branching leave a trace a later search
-                # can use: a branch and bound that ends in a point (or the
-                # budget) pops every bound it set and adds no clause
-                self.branched = True
         if conflict is not None:
             self.stats["conflicts"] += 1
             return (False, conflict)

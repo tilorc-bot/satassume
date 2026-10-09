@@ -208,13 +208,6 @@ class EUFTheory:
         elif rep[o] != rep[t]:
             self._pending.append((t, o, (t, o)))
 
-    def num_terms(self) -> int:
-        return len(self._repr)
-
-    def members(self, t: int) -> list[int]:
-        """The terms of ``t``'s class (the live list: do not modify)."""
-        return self._members[self._repr[t]]
-
     # ------------------------------------------------------------------
     # Queries
     # ------------------------------------------------------------------
@@ -523,9 +516,6 @@ class EUFTheory:
             self._index_atom(v)
 
     # ------------------------------------------------------------------
-
-    def level(self) -> int:
-        return len(self._lims)
 
     def __repr__(self) -> str:
         return (f"<EUFTheory {len(self._repr)} terms, {len(self._atoms)} atoms, "

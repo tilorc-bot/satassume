@@ -426,14 +426,11 @@ class LRAAdapter:
         self._solver = None
         self._shared: set = set()
 
-    def register(self, solver, var: int, atom, interpreted=None) -> bool:
-        """``interpreted``: optionally the result of :func:`interpret`
-        for ``atom`` already at hand (saves a second linearisation).
-
-        An adapter owns one theory and so serves a single solver: a
+    def register(self, solver, var: int, atom) -> bool:
+        """An adapter owns one theory and so serves a single solver: a
         second solver raises ValueError (the theory's bounds would leak
         between them)."""
-        it = self.interpret(atom) if interpreted is None else interpreted
+        it = self.interpret(atom)
         if it is None:
             return False
         r, atom_terms = it

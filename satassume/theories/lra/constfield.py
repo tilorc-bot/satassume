@@ -275,17 +275,6 @@ def _mul(a, b):
     return (a[0], tuple(_mul(x, b) for x in a[1]))
 
 
-def _pow(p, k: int):
-    r = _ONE
-    while k:
-        if k & 1:
-            r = _mul(r, p)
-        k >>= 1
-        if k:
-            p = _mul(p, p)
-    return r
-
-
 def _too_many_bits(q: Fraction) -> bool:
     return q.denominator.bit_length() > MAX_BITS or q.numerator.bit_length() > MAX_BITS
 
@@ -1198,13 +1187,6 @@ class Element:
             r = (lo, hi)
         self._enc = (prec, r)
         return r
-
-    def approx(self, prec: int = 64) -> tuple[Fraction, Fraction] | None:
-        """Rational bounds ``lo <= value <= hi`` at ``prec`` bits, or None."""
-        e = self.enclosure(prec)
-        if e is None:
-            return None
-        return Fraction(e[0], 1 << prec), Fraction(e[1], 1 << prec)
 
     def _cmp(self, o) -> int:
         """sign(self - o) for a Fraction or Element ``o``."""

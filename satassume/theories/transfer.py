@@ -172,12 +172,6 @@ class TransferTheory:
         self._dirty.append(term)
         return new
 
-    def unswitch(self, term: int) -> None:
-        """``term`` takes part always from now on (a candidate for another
-        reason, see ``Relations.sync_transfer``)."""
-        if self._sw.pop(term, None) is not None:
-            self._dirty.append(term)
-
     def _kind(self, m: int) -> int:
         """2: every predicate of term ``m`` takes part, 1: ``polar`` only,
         0: none (see :meth:`switch`)."""
@@ -276,7 +270,7 @@ class TransferTheory:
             e = memo[(a, b)] = [-l for l in self.euf.explain(a, b)]
         return e
 
-    def _members_on(self, members, p=None):
+    def _members_on(self, members):
         """``(term, {pred: vars}, kind)`` for the members of a class that
         take part (see :meth:`switch`); a member with ``polar`` only is
         given its ``polar`` atoms alone."""
@@ -551,9 +545,6 @@ class TransferTheory:
             self.enabled = eh.pop()[1]
 
     # ------------------------------------------------------------------
-    def level(self) -> int:
-        return len(self._lims)
-
     def __repr__(self) -> str:
         return (f"<TransferTheory {len(self._atoms)} atoms over "
                 f"{len(self._by_term)} terms, level {len(self._lims)}>")

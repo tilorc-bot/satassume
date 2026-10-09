@@ -142,8 +142,7 @@ def test_protocol_on_fuzz(monkeypatch):
         r = Recorder(inner_cls(euf))
         r.set_fixed = r.inner.set_fixed      # not a protocol method
         r.guard = r.inner.guard              # nor this (the selector is an atom)
-        r.switch = r.inner.switch            # nor these (enable variables are atoms)
-        r.unswitch = r.inner.unswitch
+        r.switch = r.inner.switch            # nor this (enable variables are atoms)
         recs.append(r)
         return r
 
