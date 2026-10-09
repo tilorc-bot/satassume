@@ -1476,11 +1476,7 @@ class Engine:
         self._settings_key = self._settings_fingerprint()
         self._drop_cones()
         if self._epoch >= 0:
-            self.stats["version_clears"] += 1
-            self.answers.clear()
-            self.splits.clear()
-            self._failed.clear()
-            self._verdict.clear()
+            self._drop_set_memos()
             self.cache.store.clear()
             self.custom_cache.store.clear()
 
@@ -1504,11 +1500,7 @@ class Engine:
         if self._epoch != epoch:
             self._drop_cones()
             if self._epoch >= 0:
-                self.stats["version_clears"] += 1
-                self.answers.clear()
-                self.splits.clear()
-                self._failed.clear()
-                self._verdict.clear()
+                self._drop_set_memos()
             self._epoch = epoch
         key = self._settings_key
         for cache in (self.cache, self.custom_cache):
@@ -1526,6 +1518,17 @@ class Engine:
         ``(templates, transfer, uninterpreted)``, compared with ``==``
         (``templates`` by identity, as its setter does)."""
         return (self._templates, self._transfer, self._uninterpreted)
+
+    def _drop_set_memos(self) -> None:
+        """Drop the memos of whole queries and sets (the answer and split
+        memos, the ``Uninterpreted`` and verdict memos), counted in
+        ``stats["version_clears"]``: what an epoch or a settings change
+        invalidates besides the fact caches and the cones."""
+        self.stats["version_clears"] += 1
+        self.answers.clear()
+        self.splits.clear()
+        self._failed.clear()
+        self._verdict.clear()
 
     # -- the discovery budget: a test on the query's structural cone ----------
     def _drop_cones(self) -> None:
