@@ -384,9 +384,17 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
         return -_literal(inner, table, emit, dv)
     if isinstance(f, Implies):
         return _literal(Or(Not(f.args[0]), f.args[1]), table, emit, dv)
-    if isinstance(f, Equivalent) and len(f.args) == 2:
-        a, b = f.args
-        return _literal(And(Implies(a, b), Implies(b, a)), table, emit, dv)
+    if isinstance(f, Equivalent):
+        if len(f.args) == 2:
+            a, b = f.args
+            return _literal(And(Implies(a, b), Implies(b, a)), table, emit, dv)
+        # n-ary (``to_formula`` keeps SymPy's): all arguments equal, a
+        # cycle of implications over their literals
+        lits = [_Lit(_literal(a, table, emit, dv)) for a in f.args]
+        if len(lits) < 2:
+            return _true_lit(table, emit)
+        return _literal(And(*[Implies(lits[i - 1], l) for i, l in enumerate(lits)]),
+                        table, emit, dv)
     if isinstance(f, Exclusive):
         lits = [_literal(a, table, emit, dv) for a in f.args]
         pairs = [Or(Not(_Lit(x)), Not(_Lit(y))) for i, x in enumerate(lits) for y in lits[i + 1:]]

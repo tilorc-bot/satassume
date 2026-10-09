@@ -415,3 +415,28 @@ def test_vocabulary_names_are_not_matrix_predicates():
     assert not _is_matrix_predicate(Q.positive, "positive")
     assert _is_matrix_predicate(Q.invertible, "invertible")
     assert _is_matrix_predicate(Q.invertible, str(Q.invertible.name))
+
+
+def test_n_ary_equivalent_in_the_proposition(eng):
+    """``to_formula`` keeps an n-ary ``Equivalent`` (all arguments equal);
+    a proposition that needs its literal (under ``Not``, in a disjunction)
+    is answered as the chain of binary equivalences is, not a
+    ``TypeError``."""
+    from sympy import And, Not, Or
+    x = Symbol('x')
+    pos, real, integer = Q.positive(x), Q.real(x), Q.integer(x)
+    three = Equivalent(pos, real, integer)
+    chain = And(Equivalent(pos, real), Equivalent(real, integer))
+    cases = [
+        (Not(three), True),
+        (Not(three), pos),
+        (Not(three), pos & integer),
+        (Not(three), pos & ~integer),
+        (Or(three, Q.zero(x)), ~real),
+        (Or(three, Q.zero(x)), pos & ~integer),
+        (Not(Equivalent(pos, Q.negative(x), Q.zero(x))), real),
+    ]
+    got = [ask(p, a, eng) for p, a in cases]
+    assert got == [None, None, False, True, True, False, True]
+    for (p, a), r in zip(cases, got):
+        assert ask(p.subs(three, chain), a, Engine(cache=DictCache())) is r
