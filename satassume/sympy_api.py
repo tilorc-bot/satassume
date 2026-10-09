@@ -844,7 +844,7 @@ def _relevant(p, a, eng: Engine):
     if sp.opaque:
         return a
     ext = eng.extensions
-    if ext is not None and ext._vocab:
+    if ext is not None and ext.has_node_facts:
         v = sp.vocab
         if v is None:
             v = sp.vocab = _vocab_blocks(a, ext)
@@ -904,16 +904,16 @@ _DERIVED_CLASSES = (_SAdd, _SMul, _SPow)
 
 
 def _vocab_blocks(e, ext) -> bool:
-    """Whether the vocabulary predicates registered in ``ext`` (non-empty
-    ``_vocab``) may apply to a node of ``e`` (a SymPy Boolean): a subterm of
+    """Whether the vocabulary predicates registered in ``ext``
+    (``has_node_facts``) may apply to a node of ``e`` (a SymPy Boolean): a subterm of
     ``e`` is an instance of a registered class, or a registered class is a
     base of a class of derived nodes.  Such a predicate's function may
     mention any term, so ``e`` is not split (an unrelated registration no
     longer disables the split of every set, W2A1).  Uses
-    ``Extensions.is_scalar_like`` (its per-class cache is cleared by every
+    ``Extensions.is_scalar_class`` (its per-class cache is cleared by every
     vocabulary registration)."""
     for c in _DERIVED_CLASSES:
-        if ext._node_handlers(c):
+        if ext.is_scalar_class(c):
             return True
     stack = [e]
     seen = set()

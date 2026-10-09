@@ -82,21 +82,17 @@ def remove(reg_id: str) -> None:
 
 
 def snapshot():
-    return ({k: list(v) for k, v in extensions._handlers.items()},
-            {k: list(v) for k, v in extensions._vocab.items()})
+    return extensions.snapshot()
 
 
 def restore(snap) -> None:
-    handlers, vocab = snap
-    extensions._handlers = {k: list(v) for k, v in handlers.items()}
-    extensions._vocab = {k: list(v) for k, v in vocab.items()}
-    extensions._node_cache.clear()
-    extensions.version += 1
+    extensions.restore(snap)
 
 
 def active_ids() -> List[str]:
     out = []
+    registered = extensions.snapshot()
     for rid, r in REGISTRATIONS.items():
-        if any(f is r.fn for _, f in extensions._handlers.get(r.pred, ())):
+        if any(f is r.fn for _, f in registered.get(r.pred, ())):
             out.append(rid)
     return out

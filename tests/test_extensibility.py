@@ -53,6 +53,39 @@ def test_custom_atoms_in_the_engine():
         eng.ask(P('same', Args(('x', 'y'))), P('same', Args(('x', 'y'))))
 
 
+def test_snapshot_restore_and_node_fact_flag():
+    """``snapshot``/``restore`` round-trip the registrations, the
+    vocabulary index included, and keep ``has_node_facts`` (read per node
+    by the engine) and the per-class lookup in step."""
+    class Thing:
+        pass
+
+    class Sub(Thing):
+        pass
+
+    ext = Extensions()
+    assert not ext.has_node_facts and not ext.is_scalar_class(Sub)
+    snap = ext.snapshot()
+    ext.register('mine', Thing)(lambda n: True)
+    assert not ext.has_node_facts                  # a custom predicate
+    ext.register('positive', Thing)(lambda n: True)
+    ext.register('positive', Thing, Thing)(lambda a, b: None)
+    assert ext.has_node_facts and ext.is_scalar_class(Sub) and ext.is_scalar_like(Sub())
+    assert ext.node_facts(Sub()) and not ext.is_scalar_class(int)
+    full = ext.snapshot()
+    v = ext.version
+    ext.restore(snap)
+    assert ext.version > v
+    assert not ext.has_node_facts and not ext.is_scalar_class(Sub)
+    assert ext.snapshot() == {} and ext.node_facts(Sub()) == []
+    ext.restore(full)
+    assert ext.has_node_facts and ext.is_scalar_class(Sub)
+    assert [len(h) for h in ext.snapshot().values()] == [1, 2]
+    assert len(ext.node_facts(Sub())) == 1
+    ext.unregister('positive')
+    assert not ext.has_node_facts and not ext.is_scalar_class(Sub)
+
+
 # -- the four SymPy tests ----------------------------------------------------------
 
 sympy = pytest.importorskip("sympy")

@@ -538,7 +538,7 @@ class Session:
         else:
             compiled, formulas = (), engine._templates(node)
         ext = engine._extensions
-        if ext is not None and ext._vocab:
+        if ext is not None and ext.has_node_facts:
             formulas = list(formulas) + ext.node_facts(node)
         items = [(f, atoms_of(f)) for f in formulas] if formulas else None
         # 2. single-node rule base (registered with the solver's rule-block
@@ -1594,7 +1594,7 @@ class Engine:
                 compiled, formulas = self.clause_templates(o)
             else:
                 compiled, formulas = (), self.templates(o)
-            if ext is not None and ext._vocab:
+            if ext is not None and ext.has_node_facts:
                 formulas = list(formulas) + ext.node_facts(o)
         finally:
             if mine:
