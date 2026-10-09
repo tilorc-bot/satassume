@@ -228,6 +228,18 @@ class DictCache:
         #: facts were derived under; None until an engine looks
         self._settings = None
 
+    def check(self, epoch: int, settings: tuple) -> None:
+        """Make the store one filled under ``epoch`` and ``settings``
+        (``Engine._check_version``): empty it if it was filled under
+        another epoch or other settings, then record both.  A cache no
+        engine has looked at yet (``_settings`` None: it holds only what
+        the caller seeded by hand) is adopted as it is."""
+        if self._epoch != epoch or (self._settings is not None
+                                    and self._settings != settings):
+            self.store.clear()
+        self._epoch = epoch
+        self._settings = settings
+
     def facts(self, node: Node) -> Optional[Dict[str, Optional[bool]]]:
         return self.store.get(node)
 
@@ -1502,15 +1514,8 @@ class Engine:
             if self._epoch >= 0:
                 self._drop_set_memos()
             self._epoch = epoch
-        key = self._settings_key
-        for cache in (self.cache, self.custom_cache):
-            # a cache no engine has looked at yet (``_settings`` None: it
-            # holds only what the caller seeded by hand) is adopted
-            if cache._epoch != epoch or (cache._settings is not None
-                                         and cache._settings != key):
-                cache.store.clear()
-            cache._epoch = epoch
-            cache._settings = key
+        self.cache.check(epoch, self._settings_key)
+        self.custom_cache.check(epoch, self._settings_key)
 
     def _settings_fingerprint(self) -> tuple:
         """The settings a context-free query's answer depends on, as the
