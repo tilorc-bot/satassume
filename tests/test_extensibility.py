@@ -86,6 +86,34 @@ def test_snapshot_restore_and_node_fact_flag():
     assert not ext.has_node_facts and not ext.is_scalar_class(Sub)
 
 
+
+def test_snapshot_restore_keeps_the_vocabulary_order():
+    """The vocabulary index is ordered by each predicate's first one-class
+    registration, which can differ from the order of the names (a
+    two-class registration came first); ``restore`` keeps it, so node
+    facts and clauses come in the same order (final review B5)."""
+    class Thing:
+        pass
+
+    ext = Extensions()
+    ext.register('positive', Thing, Thing)(lambda a, b: None)
+    ext.register('real', Thing)(lambda n: True)
+    ext.register('positive', Thing)(lambda n: True)
+    assert list(ext._vocab) == ['real', 'positive']
+    t = Thing()
+    before = ext.node_facts(t)
+    snap = ext.snapshot()
+    ext.unregister('real')
+    ext.unregister('positive')
+    ext.restore(snap)
+    assert list(ext._vocab) == ['real', 'positive']
+    assert ext.node_facts(t) == before
+    assert snap == {'positive': snap['positive'], 'real': snap['real']}    # still the dict
+    # a plain dict (no recorded order) restores in the order of its names
+    ext.restore(dict(snap))
+    assert list(ext._vocab) == ['positive', 'real']
+
+
 # -- the four SymPy tests ----------------------------------------------------------
 
 sympy = pytest.importorskip("sympy")

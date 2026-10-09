@@ -54,6 +54,12 @@ def _name(pred) -> str:
     return name
 
 
+class Snapshot(dict):
+    """:meth:`Extensions.snapshot`: the registrations by name, plus the
+    order of the vocabulary index (``vocab_order``)."""
+    vocab_order: Tuple[str, ...] = ()
+
+
 class Extensions:
     def __init__(self) -> None:
         self._handlers: Dict[str, List[Tuple[Tuple[type, ...], Handler]]] = {}
@@ -114,20 +120,28 @@ class Extensions:
         self._node_cache.clear()
         self.has_node_facts = bool(self._vocab)
 
-    def snapshot(self) -> Dict[str, List[Tuple[Tuple[type, ...], Handler]]]:
+    def snapshot(self) -> "Snapshot":
         """The registrations, ``{name: [(classes, function), ...]}`` in
         registration order, for :meth:`restore` (a test or the harness
-        that registers temporarily)."""
-        return {k: list(v) for k, v in self._handlers.items()}
+        that registers temporarily).  It also records the order of the
+        vocabulary index (:attr:`Snapshot.vocab_order`), which can differ
+        from the order of the names: it orders node facts and clauses."""
+        snap = Snapshot((k, list(v)) for k, v in self._handlers.items())
+        snap.vocab_order = tuple(self._vocab)
+        return snap
 
     def restore(self, snap) -> None:
         """Make the registrations those of :meth:`snapshot` ``snap``; a new
-        version, like any registration."""
+        version, like any registration.  The vocabulary index is rebuilt
+        from the handlers (so the two cannot disagree), in the snapshot's
+        order; a plain dict gives the order of its names."""
         self._handlers = {k: list(v) for k, v in snap.items()}
+        order = list(getattr(snap, "vocab_order", ()))
+        order += [k for k in self._handlers if k not in order]
         self._vocab = {}
-        for name, lst in self._handlers.items():
+        for name in order:
             if name in PRED_INDEX:
-                vocab = [e for e in lst if len(e[0]) == 1]
+                vocab = [e for e in self._handlers.get(name, ()) if len(e[0]) == 1]
                 if vocab:
                     self._vocab[name] = vocab
         self._vocab_changed()
