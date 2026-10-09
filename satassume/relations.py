@@ -144,8 +144,7 @@ the session holds, so a fresh session for ``(p, a)`` switches on the same
 glue.  The discovery budget counts the twins of each formula in its cone
 and those of the pair in ``Engine._within_budget``; the relevance layer
 checks a set with a twin of its own whole (the set's own scope,
-``scope.theory_scope``, which counts the twins; ``engine.zero_glue`` is
-the same condition on one formula).
+``scope.theory_scope``, which counts the twins).
 
 Why only there.  What the twin adds over the link clause ``zero(t) <->
 eq(t, 0)`` that every linked ``t`` already has (below) is (1) congruence

@@ -84,7 +84,7 @@ from .state.memos import Memos, adopt as _adopt_memo, owner_memos
 from .sat.formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
-                        zero_args, zero_twin, zero_twins)
+                        zero_args, zero_twin)
 from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
@@ -281,26 +281,19 @@ class Session:
         # no owner bookkeeping: nothing asks the solver for provenance
         # (the provenance writeback of #53 stage 3 was removed by #97 P2)
         self.solver.track_owners = False
-        # the single-node rule base, propagated by the solver from shared
-        # tables instead of 79 clauses per node (Solver.register_block)
+        # the single-node rule base, propagated by the solver from the
+        # exact closure of each node's block (Solver.register_block)
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of BASIS[0]
-        self.read_pos = 0                    # cursor into solver.root_trail()
-        self.nclauses = 0
         self.frontier: deque = deque()
         self.pending: Dict[Node, list] = {}   # node -> template formulas not yet compiled
         self.pending_c: Dict[Node, list] = {}  # node -> (clauses, bases) pairs not yet emitted
         self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
-        self.n_assumption_nodes = 0           # nodes visited by assume_formula()
-        #: nodes that are closed irrational constants (pi, 1/pi), counted
-        #: apart from the others (their facts are context-free)
-        self.n_constants = 0
         #: the verdict of the assumption set from the complete check run at
         #: construction (``Engine._build_context``); None outside it
         self.verdict: Optional[str] = None
-        self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.defvars: Dict[Any, int] = {}     # (derived predicate, node) -> its variable
         #: (definition, node) -> [variable, directions emitted (1: var ->
@@ -350,13 +343,13 @@ class Session:
         #: checks it).  If set (a direct caller), its set's complete check
         #: gives ``UNKNOWN``.
         self.truncated = False
-
-    # -- variables -------------------------------------------------------
         if scope.glue and engine._relation_specs:
             # the theory scope of the query is known at construction: the
             # glue (and transfer, if the scope says so) exists before any
             # atom is allocated, as a fresh engine for the query has it
             self.relations = Relations(self, engine._relation_specs)
+
+    # -- variables -------------------------------------------------------
 
     def var(self, pred: str, node: Node) -> int:
         """The variable of ``pred(node)``: the node's block variable of a
@@ -495,7 +488,6 @@ class Session:
         return op, lits
 
     def _emit(self, clause: List[int]) -> None:
-        self.nclauses += 1
         self.solver.add_clause(clause)
 
     def node(self, node: Node, demanded=None) -> int:
@@ -516,9 +508,6 @@ class Session:
         table = self.table
         b = table.node_base(node)
         self.base[node] = b
-        if getattr(node, "is_number", False) and not node.is_Rational \
-                and not node.free_symbols:
-            self.n_constants += 1
         table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
@@ -569,10 +558,6 @@ class Session:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
 
-    def _add_clauses(self, clauses) -> None:
-        self.nclauses += len(clauses)
-        self.solver.add_clauses(clauses)
-
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
         """Emit the clauses of the compiled patterns of ``node`` (see
@@ -619,7 +604,6 @@ class Session:
         the slots' mention masks of ``clauses`` (see :func:`_split`)."""
         if ment is None:
             ment = _split(clauses, None)[3]
-        self.nclauses += len(clauses)
         solver = self.solver
         solver.ensure_vars(len(self.table))
         solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
@@ -927,8 +911,6 @@ class Session:
                 # the set's check (link_set, Engine._build_context), so the
                 # check and its verdict are a function of the set
                 self._link_pending = True
-        self.n_assumption_nodes = len(self.base)
-        self.n_assumption_constants = self.n_constants
         return [s]
 
     def link_set(self) -> None:
@@ -1314,8 +1296,7 @@ class Engine:
         #: (``sympy_api._Split``), cleared together with ``answers``
         self.splits = AnswerMemo(20_000)
         #: always empty since issue #97 (no contextual session is kept
-        #: between queries); the attribute stays for the tools and the
-        #: harness that enumerate or clear it
+        #: between queries); the tests assert that it stays empty
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: the structural cones of the discovery budget (``_struct``,
@@ -2210,18 +2191,6 @@ class Engine:
 #: fewest derived atoms of several basis literals in an assumption set for
 #: which asserted negations of them get their shared literals
 _NEG_SHARED = 8
-
-
-def zero_glue(f) -> bool:
-    """Whether ``f`` has a ``zero(t)`` atom whose ``t`` (no number) is under
-    an application of ``f``, which the relation glue of ``f`` as a set
-    reads as the equality ``eq(t, 0)`` (``relations.zero_twins``): with
-    relation specs it starts the glue in the session of a set holding it,
-    which then links terms of every component, so the relevance layer
-    takes the whole set's verdict as for a relational set
-    (``satassume.sympy_api._relevant``, through the set's own theory scope,
-    ``scope.theory_scope``, which counts the twins).  A function of ``f``."""
-    return bool(zero_twins(atoms_of(f)))
 
 
 # --------------------------------------------------------------------------
