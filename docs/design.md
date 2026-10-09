@@ -254,7 +254,9 @@ basis; see "Inconsistent assumptions raise `ValueError`").
   procedure (a class implementing the contract of `satassume/sat/theory.py`,
   importing no SymPy) and, if it reads SymPy terms, an adapter module
   `<name>_adapter.py` with the interface of `EUFAdapter` (`parse`,
-  `interprets`, `register`, `attach`, the term maps `relations` reads).
+  `interprets`, `register`, `attach`, and what `relations` reads of its
+  terms: `shared_terms`, `interned`, `term_of`, `terms_since`,
+  `node_term`).
   It may import `state`, `sat` and `knowledge`, not the other theories.
 * List the adapter in `relations.default_specs` (an explicit relative
   import, an `AdapterSpec(name, factory, guarded)`; a missing module is

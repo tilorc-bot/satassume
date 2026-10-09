@@ -41,6 +41,8 @@ so interning by expression is sound.
 """
 from __future__ import annotations
 
+from itertools import islice
+
 from sympy import Add, Mul, Pow, Rational, nan
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.ask import Q
@@ -230,9 +232,13 @@ class EUFAdapter:
         """The term of ``expr`` if the adapter has interned it, else None."""
         return self._terms.get(expr)
 
-    def terms(self) -> dict:
-        """Every interned SymPy expression, mapped to its term id."""
-        return dict(self._terms)
+    def terms_since(self, start: int) -> list:
+        """The expressions :meth:`term` interned after the first ``start``
+        ones, in interning order (``[]`` at once when there are none)."""
+        terms = self._terms
+        if start >= len(terms):
+            return []
+        return list(islice(terms, start, None))
 
     def shared_terms(self) -> set:
         """Candidate interface terms for combination with another theory.

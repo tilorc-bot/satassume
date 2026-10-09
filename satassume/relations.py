@@ -1611,7 +1611,7 @@ class Relations:
         differs."""
         others = self._xheads.get((node.func, len(node.args)))
         if not others or len(others) < 2 or (
-                node not in self._xadapter._terms and node not in self.num_sel):
+                self._xadapter.term_of(node) is None and node not in self.num_sel):
             return False
         cand, xside = self._xcand, self._xside
         args = node.args
@@ -1700,12 +1700,10 @@ class Relations:
                 if isinstance(e, Expr) and e not in s.base:
                     s.ensure(e)
                     visited = True
-        terms = ad._terms
-        nt = len(terms)
+        new = ad.terms_since(self._xtcur)
         extra = self._xextra
-        if self._xtcur < nt or extra:
-            new = list(islice(terms, self._xtcur, nt))
-            self._xtcur = nt
+        if new or extra:
+            self._xtcur += len(new)
             if extra:
                 new.extend(extra)
                 extra.clear()
