@@ -128,8 +128,9 @@ They are removed after the class-level follow-up of the move (PLAN.md,
 
 1. **Answer memo** `Engine.answers` (100,000 entries), keyed by the SymPy
    objects `(p, a)` and cleared, with `Engine.splits`, when
-   `_registry_state` (extension registry and version, theory adapters)
-   changes.
+   the registry epoch (`satassume/state/epoch.py`: extension registries,
+   templates, the engine's extensions and theory adapters) changes
+   (`Engine._check_version`).
 2. **Constant route**, then **relevance** (below; memoized as `(p, part)`).
 3. `_engine_ask`: `to_formula` (memoized in `_formula`) translates both
    sides, `Unsupported` gives None; a single atom without assumptions goes

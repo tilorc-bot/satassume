@@ -203,14 +203,17 @@ replay.
 **Engine and API memos.**
 
 - The answer memo (`Engine.answers`) is keyed on the SymPy objects
-  `(proposition, assumptions)` and valid under `_registry_state()`: the
-  extension registry, its version and `tuple(relation_specs)`. It stores
+  `(proposition, assumptions)` and valid within one registry epoch
+  (`satassume/state/epoch.py`; `Engine._check_version` drops it): every
+  registration, a new `Engine.extensions` or `Engine.relation_specs`. It stores
   `None` too, so the first `None` stands even if later queries would have
   grounded enough to decide it; on gate2 and the stream this changes no
   answer. An adapter spec mutated in place does not invalidate it.
-- `Engine.cache`, `Engine.custom_cache` and the contextual sessions are not
-  keyed on the registry state on `main`: a fact cached before a
-  registration is served after it. PR #63 fixes this (issue #53).
+- `Engine.cache` and `Engine.custom_cache` record the epoch and the
+  settings fingerprint they were filled under and are emptied when either
+  differs (`DictCache.check`); before PR #63 (issue #53) a fact cached
+  before a registration was served after it. No contextual session is
+  kept between queries (#97).
 - The failed-set memo (`Engine._failed`) assumes that whether building a
   session raises `Uninterpreted` depends only on the assumptions' relation
   atoms and the adapters: `LRAAdapter.register` and `EUFAdapter.register`

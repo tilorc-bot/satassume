@@ -336,10 +336,11 @@ clause is added after an answer (no session outlives the query).
 
 Property: the answer does not depend on which session answered, on earlier
 queries, on the caches or on `PYTHONHASHSEED` (design, "History independence";
-gates G4 `tests/test_history.py`, G5 `harness fuzz`, G6 `harness audit`). Where
-a reused session's answer could depend on its path (branch budget, give-up,
-undecidable LRA constants: `engine._path_dependent`, `_cannot_give_up`), it is
-re-answered in a rebuilt session (`Engine.ask`, `stats["exhaust_reanswers"]`).
+gates G4 `tests/test_history.py`, G5 `harness fuzz`, G6 `harness audit`). What
+could depend on a session's path (branch budget, give-up, undecidable LRA
+constants) is the path of the query's own session: every query builds a fresh
+one (design, "A session per query"; the re-answering in a rebuilt session,
+`engine._path_dependent`, went with session reuse in #97).
 
 Property: with `None` meaning "not entailed", the engine's answers agree
 with SymPy's on the corpus with `none=0` contradictions (`tools/compare.py
@@ -368,8 +369,8 @@ Rules:
    and an inconsistent `A` raises; `ask_ref` follows (`tests/test_ref.py`,
    `test_constant_route_ignores_assumptions`; `tests/test_lra_constants.py`).
 4. In LRA, a comparison a pivot path cannot decide marks the theory
-   `undecidable`; the query is then answered as a fresh engine would
-   (`engine._cannot_give_up`, `_path_dependent`; `theories.md`, "LRA").
+   `undecidable`; the query is then answered as a fresh engine would, since its
+   session is built for it alone (`theories.md`, "LRA").
 5. EUF interns Rationals as pairwise-distinct values; Floats, `pi`, `oo`
    are opaque constants (`euf_adapter.EUFAdapter.term`).
 
