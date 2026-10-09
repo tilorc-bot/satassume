@@ -211,7 +211,7 @@ replay.
   answer. An adapter spec mutated in place does not invalidate it.
 - `Engine.cache` and `Engine.custom_cache` record the epoch and the
   settings fingerprint they were filled under and are emptied when either
-  differs (`DictCache.check`); before PR #63 (issue #53) a fact cached
+  differs (`DictCache.sync`); before PR #63 (issue #53) a fact cached
   before a registration was served after it. No contextual session is
   kept between queries (#97).
 - The failed-set memo (`Engine._failed`) assumes that whether building a

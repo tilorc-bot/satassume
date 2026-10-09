@@ -193,6 +193,8 @@ def basis_lits(pred: str, pos: bool = True) -> Tuple[str, Tuple[int, ...]]:
 
 
 def _cnf(op: str, lits: Tuple[int, ...]) -> Tuple[Clause, ...]:
+    """The clauses of ``(op, lits)`` as :func:`basis_lits` gives it: a unit
+    clause per literal for ``'&'``, one clause for ``'|'``."""
     return tuple((l,) for l in lits) if op == '&' else (lits,)
 
 

@@ -109,6 +109,8 @@ class Extensions:
             self._vocab_changed()
 
     def _vocab_changed(self) -> None:
+        """After a vocabulary registration or removal: drop the per-class
+        memo of node-fact handlers and recompute :attr:`has_node_facts`."""
         self._node_cache.clear()
         self.has_node_facts = bool(self._vocab)
 

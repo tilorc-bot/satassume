@@ -316,7 +316,7 @@ after the query, #97 P1): by a relation in the
 assumptions (then a fresh session has it too) or by a relation in any
 query under the set.  From then on every user formula goes through
 `Relations.process` (`Session._relations`, called from `assume_formula`,
-`literal_of` and `Session.query_lit_of` only while `self.relations is not
+`literal_of` and `Session.prepare_query` only while `self.relations is not
 None`), which links every argument `e` of a vocabulary atom of the
 assumptions and of the query (`note_formula`, `top`, `_link`): `extended_positive(e) <->
 lt(0, e)`, `extended_negative(e) <-> lt(e, 0)`, `zero(e) <-> eq(e, 0)`.

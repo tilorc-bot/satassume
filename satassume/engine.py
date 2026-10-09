@@ -228,8 +228,8 @@ class DictCache:
         #: facts were derived under; None until an engine looks
         self._settings = None
 
-    def check(self, epoch: int, settings: tuple) -> None:
-        """Make the store one filled under ``epoch`` and ``settings``
+    def sync(self, epoch: int, settings: tuple) -> None:
+        """Bring the store up to ``epoch`` and ``settings``
         (``Engine._check_version``): empty it if it was filled under
         another epoch or other settings, then record both.  A cache no
         engine has looked at yet (``_settings`` None: it holds only what
@@ -499,9 +499,12 @@ class Session:
             return lits[0]
         return op, lits
 
-    def query_lit_of(self, proposition):
-        """What :meth:`query_literal` decides for the query ``proposition``
-        (``Engine._ask``): for a vocabulary atom, :meth:`query_lit` of it
+    def prepare_query(self, proposition):
+        """Make the session ready to answer ``proposition`` and return what
+        :meth:`query_literal` then decides (``Engine._ask``; not to be
+        confused with :meth:`query_lit`, which only reads a visited
+        node's block, or :meth:`query_literal`, which decides): for a
+        vocabulary atom, :meth:`query_lit` of it
         once its node is visited for its predicate, the twins ``eq(t, 0)``
         of its zero atom are allocated and the glue has read it (no
         variable of its own); for any other formula, :meth:`literal_of`."""
@@ -515,6 +518,9 @@ class Session:
         return self.literal_of(proposition)
 
     def emit(self, clause: List[int]) -> None:
+        """Add ``clause`` (signed variables of this session's table) to the
+        session's solver: how the glue (``relations``) and the compilers
+        add clauses to a session."""
         self.solver.add_clause(clause)
 
     def node(self, node: Node, demanded=None) -> int:
@@ -1537,8 +1543,8 @@ class Engine:
             if self._epoch >= 0:
                 self._drop_set_memos()
             self._epoch = epoch
-        self.cache.check(epoch, self._settings_key)
-        self.custom_cache.check(epoch, self._settings_key)
+        self.cache.sync(epoch, self._settings_key)
+        self.custom_cache.sync(epoch, self._settings_key)
 
     def _settings_fingerprint(self) -> tuple:
         """The settings a context-free query's answer depends on, as the
@@ -1796,12 +1802,12 @@ class Engine:
             # the construction below would raise this again (it is the same
             # every time, see _build_context); the memo only saves the work
             raise InconsistentAssumptions("inconsistent assumptions")
-        s, lits = self._build_memoized(assumptions, proposition)
+        s, lits = self._build_context_memoized(assumptions, proposition)
         if s.verdict is INCONSISTENT:
             raise InconsistentAssumptions("inconsistent assumptions")
         return s, lits
 
-    def _build_memoized(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
+    def _build_context_memoized(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
         """:meth:`_build_context` behind the set's memos, for
         :meth:`_context_session` and :meth:`verdict`: a set whose
         construction raised ``Uninterpreted`` raises it again without a
@@ -1896,7 +1902,7 @@ class Engine:
         v = self._verdict.get(assumptions)
         if v is not None:
             return v
-        return self._build_memoized(assumptions)[0].verdict
+        return self._build_context_memoized(assumptions)[0].verdict
 
     @staticmethod
     def _complete_check(s: Session, lits: List[int]) -> str:
@@ -2170,7 +2176,7 @@ class Engine:
         # prefix of the assumptions); release the others before this query
         # adds clauses
         s.solver.release(s.n_hold)
-        q = s.query_lit_of(proposition)
+        q = s.prepare_query(proposition)
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
         lits = s.assumption_lits(proposition)
