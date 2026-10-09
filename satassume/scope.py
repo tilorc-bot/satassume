@@ -83,8 +83,8 @@ Resolution of the three differences of the spec (``docs/spec.md``,
 replaces:
 
 1. ``Relations.wants_transfer`` counted a ``_trichotomy`` pair through the
-   session's ``_tri_of`` table, which is filled when both atoms are
-   allocated.  In a session built for one query both are allocated iff
+   session's ``_tri_of`` table (since deleted), which was filled when both
+   atoms were allocated.  In a session built for one query both are allocated iff
    both are atoms of ``a`` or ``p``, so :func:`satassume.theories.transfer.transfer_wanted` tests the
    pair syntactically (an atom and its reverse among the atoms) and gives
    the same value with no session state; ``wants_transfer`` delegates.

@@ -1710,7 +1710,7 @@ class Relations:
         A term joins a class only through a union: as the side of an atom,
         or as an application congruent to another one with the same head
         (function and arity) whose arguments were merged.  So a node is a
-        *candidate* (all 33 variables registered) iff it is a side of a user,
+        *candidate* (all ``NPRED`` = 14 basis variables registered) iff it is a side of a user,
         :meth:`_trichotomy` or extension equality atom, a number side, or a
         term EUF reads (:meth:`_transfer_terms` visits those) whose head
         occurs on another term EUF reads, the arguments of the two being
@@ -1776,7 +1776,7 @@ class Relations:
                     cand.add(node)
                     changed = True
                     t = ad.node_term(node)
-                    solver.ensure_vars(b + NPRED - 1)     # one _grow, not 33
+                    solver.ensure_vars(b + NPRED - 1)     # one _grow, not NPRED
                     rational = isinstance(node, Rational)
                     if rational:
                         preds = _number_basis(s.engine, node)

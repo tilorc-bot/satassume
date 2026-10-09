@@ -474,7 +474,8 @@ class Solver:
         # variable, whether anything outside the block mentions it.
         self._rb_mask: list[int] = [0]
         self._rb_ment: list[int] = [0]
-        # Undo of the masks: (base, mask) pairs, flat, each saved at the
+        # Undo of the masks: (base, mask, closure) triples, flat (the
+        # block's ``_rb_mask`` and ``_rb_cl`` entries), each saved at the
         # first change of the block's mask at a level (``_rb_saved[base]``
         # is the id of that level, ``_uid`` the id of the newest level),
         # and per level the length of ``_rb_undo`` when it began

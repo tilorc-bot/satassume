@@ -187,8 +187,10 @@ is formed, and how depends on its polarity in that clause:
   `compile.compile_formula`): a derived atom is its basis formula. In a
   disjunction (`_or_cnf`) conjunctions are distributed up to
   `MAX_DISTRIBUTE` (16) clauses; past that the largest conjunctions get
-  Tseitin variables (Plaisted-Greenbaum, one direction only), choosing
-  exactly among at most `MAX_EXACT` (8) of them.
+  Tseitin variables (Plaisted-Greenbaum, one direction only): past
+  `MAX_EXACT` (8) conjunctions the largest get variables at once, and
+  among the rest a greedy loop gives a variable to one conjunction at a
+  time while that lowers the estimated literal count.
 * **Queries** (`Session.query_lit`): `pred(node)` is a basis variable, a
   single basis literal, or `(op, literals)`, the definition over the
   node's block, decided by `query_literal` / `_query_all` without a new

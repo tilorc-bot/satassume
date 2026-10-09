@@ -109,6 +109,10 @@ class EUFTheory:
     The classes are public for merge listeners (:attr:`on_merge`; the
     transfer theory reads them on its hot path, where a method call per
     look-up would cost): :attr:`rep` and :attr:`members`.  Read only.
+    ``members[r]`` is a class only for a representative ``r``
+    (``rep[r] == r``): a union leaves the absorbed representative's list
+    as it was (the undo reads it back), so a client reads
+    ``members[rep[t]]``.
     """
 
     def __init__(self) -> None:

@@ -787,7 +787,11 @@ class Session:
 
     def escalate(self, budget: Optional[int] = None) -> None:
         """Compile every parked formula and visit every derived node (full
-        instantiation of the cone); ``budget`` as for :meth:`ensure`."""
+        instantiation of the cone).  ``budget`` caps the steps (a parked
+        node's patterns or formulas compiled, a new node visited); None is
+        no cap, which is how the engine calls it.  Work left over when the
+        budget runs out sets ``truncated``; the frontier is emptied either
+        way."""
         if budget is None:
             budget = _UNCAPPED
         added = 0

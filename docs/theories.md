@@ -388,10 +388,20 @@ congruence under a binder is unsound. Floats, `pi` and `oo` are opaque:
 `Eq(0.1, 1/10)` is True in SymPy, so a Float as a distinct value could
 refute a satisfiable assignment.
 
+Other theories read EUF's classes directly, through two public read-only
+attributes: `rep` (term to its class representative) and `members`
+(representative to the terms of its class), plus the `on_merge` listener
+called on every union. They are attributes rather than methods because
+transfer reads them per literal. `members[r]` is only meaningful when `r`
+is a representative: a union leaves the absorbed representative's list
+unchanged (undo reads it back), so it goes stale, and clients read
+`members[rep[t]]` (transfer does, or keeps representatives it got from
+`on_merge` and re-checks them through `rep`).
+
 `TransferTheory` (`satassume/theories/transfer.py`) closes the gap EUF leaves:
 whenever EUF puts two terms in one class, every one of the 33 unary
-predicates holds for one iff it holds for the other (enforced on the 15
-basis variables of the node blocks; the 18 definitions follow from them), which is sound
+predicates holds for one iff it holds for the other (enforced on the 14
+basis variables of the node blocks; the 19 definitions follow from them), which is sound
 because every predicate is a property of a value. It enforces
 `eq(a, b) -> (P(a) <-> P(b))` without materialising it: its atoms are
 node-block predicate variables with payload `(EUF term, predicate)`,

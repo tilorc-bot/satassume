@@ -149,16 +149,19 @@ non-commutativity is what supplies a structural refutation of `zero`.
 ### D. A binding discovery budget truncates a fresh cone; cached facts fill it in a warm engine
 
 Configuration `budget` (`discovery_budget=5`; the default is 400).
-`Session._discover` visits at most `discovery_budget` new nodes per query
-and drops the rest of the frontier (engine.py 403-413), and `escalate`
-has the same bound, so a fresh session for a query over a large cone is
+History: this describes the mechanism when the repro was recorded, which
+is gone. `Session._discover` visited at most `discovery_budget` new nodes
+per query and dropped the rest of the frontier, and `escalate` had the
+same bound; today the budget is a test on the query's structural cone
+before any session work (`Engine._within_budget`), and sessions are not
+reused (#97). Then a fresh session for a query over a large cone is
 incomplete and answers None.  In a long-lived engine, earlier queries
 visited the missing subterms and their level-0 facts are asserted as
 units, so the same query is decided.  Repro D (`budget`): after
 `ask(Q.lt(1, sqrt(2)) | Q.ne(E, w + (I*w)**(1/3)*Abs(j)**(2/3)), True)`,
 `ask(Q.noninteger((I*w)**(1/3)*Abs(j)**(2/3)), True)` is False, None in a
 fresh engine; with the default budget both answer False.  The mechanism
-applies to the default configuration for cones of more than 400 nodes.
+applied to the default configuration for cones of more than 400 nodes.
 
 ## Second round (profiles and the cache audit)
 

@@ -324,10 +324,14 @@ def _or_cnf(f: Or, table: VarTable, emit, dv=None) -> List[List[int]]:
             # more conjunctions of at least two clauses each than can stay
             # below MAX_DISTRIBUTE anyway: the largest get variables right
             # away (the greedy choice below would pick them one by one, at
-            # cubic cost), the MAX_EXACT smallest go to the exact choice
+            # cubic cost), the MAX_EXACT smallest go to the greedy loop
             keep = set(map(id, heapq.nsmallest(MAX_EXACT, info, key=lambda i: (i[0], i[1]))))
             chosen = [i[2] for i in info if id(i) not in keep]
             info = [i for i in info if id(i) in keep]
+        # greedy, one conjunction at a time: give a variable to the one
+        # whose removal lowers the estimate most (while over MAX_DISTRIBUTE
+        # clauses, the cheapest removal even if the estimate rises); stop
+        # when no removal lowers it
         while info:
             n, best = cost(info, len(chosen))
             pick = None
