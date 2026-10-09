@@ -87,13 +87,27 @@ def test_warm_chain_equals_fresh(budget):
 
 def test_no_session_is_truncated_within_the_budget():
     # every query that passes the test runs uncapped: Session.truncated is
-    # never set (Engine._note_budget asserts it), whatever the reused
-    # contextual session already holds
+    # never set (Engine._note_budget asserts it) in any session the engine
+    # builds.  The sessions are collected as they are built: since #97 no
+    # session is kept (_context_sessions stays empty), so the check used
+    # to look at none of them.  Only Session.escalate with a finite budget
+    # sets truncated and the engine calls it uncapped, so this guards
+    # against a cap coming back; if escalate loses its budget parameter,
+    # truncated can never be set and this test should go with it
     eng = Engine(discovery_budget=5, cache=DictCache(), relevance=False)
+    built = []
+    fresh = eng._fresh_session
+
+    def record(*args):
+        s = fresh(*args)
+        built.append(s)
+        return s
+    eng._fresh_session = record
     for p, a in HISTORY + TARGETS:
         _outcome(eng, p, a)
-    for s, _ in eng._context_sessions.values():
-        assert not s.truncated
+    assert not eng._context_sessions
+    assert len(built) >= 10
+    assert not any(s.truncated for s in built)
 
 
 def test_answer_memo_hit_restores_last_budget_limited():

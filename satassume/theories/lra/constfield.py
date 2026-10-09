@@ -155,7 +155,7 @@ from fractions import Fraction
 from math import gcd as _igcd
 
 __all__ = ["Element", "Constant", "Undecided", "TooLarge", "PI", "E", "constant",
-           "radical", "from_sympy", "sign", "num", "formally_zero",
+           "radical", "from_sympy", "sign", "num", "formally_zero", "pi_laurent",
            "PREC_START", "PREC_CAP", "MAX_DEGREE", "MAX_TERMS", "MAX_BITS", "MAX_WORK"]
 
 #: first precision (bits after the binary point) of a sign test
@@ -273,17 +273,6 @@ def _mul(a, b):
     if va < vb:
         a, b = b, a
     return (a[0], tuple(_mul(x, b) for x in a[1]))
-
-
-def _pow(p, k: int):
-    r = _ONE
-    while k:
-        if k & 1:
-            r = _mul(r, p)
-        k >>= 1
-        if k:
-            p = _mul(p, p)
-    return r
 
 
 def _too_many_bits(q: Fraction) -> bool:
@@ -1199,13 +1188,6 @@ class Element:
         self._enc = (prec, r)
         return r
 
-    def approx(self, prec: int = 64) -> tuple[Fraction, Fraction] | None:
-        """Rational bounds ``lo <= value <= hi`` at ``prec`` bits, or None."""
-        e = self.enclosure(prec)
-        if e is None:
-            return None
-        return Fraction(e[0], 1 << prec), Fraction(e[1], 1 << prec)
-
     def _cmp(self, o) -> int:
         """sign(self - o) for a Fraction or Element ``o``."""
         if o is self or (type(o) is Element and o._n == self._n and o._d == self._d):
@@ -1336,6 +1318,32 @@ class Element:
 PI = constant("pi", _pi_enclose, transcendental=True, name="pi")
 #: Euler's number (Hermite 1873: transcendental)
 E = constant("E", _e_enclose, transcendental=True, name="E")
+
+_PI_INDEX = PI._n[0]                        # the index of pi's indeterminate
+
+
+def pi_laurent(x) -> dict | None:
+    """``{j: c}`` with ``x = sum(c * pi**j)`` (rational ``c != 0``, integer
+    ``j``, negative too) for a Fraction, or an Element in pi alone whose
+    denominator is a power of pi; None for any other number.  What the
+    certificate of :mod:`satassume.theories.lra.lra_cert` reads of a bound."""
+    if type(x) is Fraction:
+        return {0: x} if x else {}
+    n, d = x._n, x._d
+    if type(d) is Fraction:
+        j0 = 0
+    else:
+        cs = d[1]
+        if d[0] != _PI_INDEX or cs[-1] != 1 or any(type(c) is not Fraction or c for c in cs[:-1]):
+            return None
+        j0, d = len(cs) - 1, _ONE
+    if d != 1:
+        n = _scale(n, 1 / d)
+    if type(n) is Fraction:
+        return {-j0: n}
+    if n[0] != _PI_INDEX or any(type(c) is not Fraction for c in n[1]):
+        return None
+    return {i - j0: c for i, c in enumerate(n[1]) if c}
 
 
 # ----------------------------------------------------------------------

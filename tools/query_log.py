@@ -272,7 +272,7 @@ def run(stream, out_path, models=False):
             rec = {"i": i, "path": path, "outcome": outcome,
                    "session": getattr(s, "_log_id", None) if s is not None else None,
                    "session_new": ctx.session_new,
-                   "vars": s.solver._nvars if s is not None else None,
+                   "vars": s.solver.nvars() if s is not None else None,
                    "root_len": None, "solves": ctx.solves, "ms": round(ms, 4),
                    "via": ctx.via, "nested": ctx.nested}
             if s is not None:

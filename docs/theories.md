@@ -201,7 +201,7 @@ when:
 Until then the unary path pays one `is not None` test (the first wiring,
 with glue in every session, cost up to 10% on the unary microbenchmarks).
 `Relations.process`, at the end of `literal_of`, `assume_formula` and
-`Engine._literal`, interprets queued atoms with every adapter that accepts
+`Session.prepare_query`, interprets queued atoms with every adapter that accepts
 them, adds links, shares equalities and engages transfer until nothing
 changes; a user relation no theory interprets stays a free Boolean (the
 default `uninterpreted="free"`), or raises `Uninterpreted` with
@@ -220,15 +220,17 @@ of a vocabulary atom of the user's formulas (numbers excluded):
 The rule base derives the rest. Link atoms get no clause 1 (implied), and
 no clauses 2 when `e` is its own opaque term (#45).
 
-**Switched glue** (#53 stage 5). A session outlives its queries, so glue
-made for one query must not act in another: every clause that ties a
+**Switched glue** (#53 stage 5, when a session answered many queries).
+Glue made for one query must not act in another; since #97 a session
+serves its set's check and then one query, and the switching keeps the
+check to the set's own glue: every clause that ties a
 relation to unary atoms carries a selector, and each query assumes the
 selectors of its own glue only (`Session.assumption_lits`):
 
 - the links of a term carry the term's selector (`Relations.link_sel`,
   also on its integrality clauses); a query assumes those of the
   vocabulary-atom arguments and the sides of the interpreted relations of
-  its proposition `p` and its assumptions `a` (`selectors_for`), and only
+  its proposition `p` and its assumptions `a` (`selectors_of`), and only
   if `p` or `a` holds a relation atom or an affine pair
   (`scope.affine_pair`): a unary query
   under a unary set gets no links however many relation queries the
@@ -386,10 +388,20 @@ congruence under a binder is unsound. Floats, `pi` and `oo` are opaque:
 `Eq(0.1, 1/10)` is True in SymPy, so a Float as a distinct value could
 refute a satisfiable assignment.
 
+Other theories read EUF's classes directly, through two public read-only
+attributes: `rep` (term to its class representative) and `members`
+(representative to the terms of its class), plus the `on_merge` listener
+called on every union. They are attributes rather than methods because
+transfer reads them per literal. `members[r]` is only meaningful when `r`
+is a representative: a union leaves the absorbed representative's list
+unchanged (undo reads it back), so it goes stale, and clients read
+`members[rep[t]]` (transfer does, or keeps representatives it got from
+`on_merge` and re-checks them through `rep`).
+
 `TransferTheory` (`satassume/theories/transfer.py`) closes the gap EUF leaves:
 whenever EUF puts two terms in one class, every one of the 33 unary
-predicates holds for one iff it holds for the other (enforced on the 15
-basis variables of the node blocks; the 18 definitions follow from them), which is sound
+predicates holds for one iff it holds for the other (enforced on the 14
+basis variables of the node blocks; the 19 definitions follow from them), which is sound
 because every predicate is a property of a value. It enforces
 `eq(a, b) -> (P(a) <-> P(b))` without materialising it: its atoms are
 node-block predicate variables with payload `(EUF term, predicate)`,

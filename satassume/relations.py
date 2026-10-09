@@ -144,8 +144,7 @@ the session holds, so a fresh session for ``(p, a)`` switches on the same
 glue.  The discovery budget counts the twins of each formula in its cone
 and those of the pair in ``Engine._within_budget``; the relevance layer
 checks a set with a twin of its own whole (the set's own scope,
-``scope.theory_scope``, which counts the twins; ``engine.zero_glue`` is
-the same condition on one formula).
+``scope.theory_scope``, which counts the twins).
 
 Why only there.  What the twin adds over the link clause ``zero(t) <->
 eq(t, 0)`` that every linked ``t`` already has (below) is (1) congruence
@@ -251,9 +250,11 @@ terms in one EUF class share all unary facts (``Q.prime(x)`` from
 
 Switched glue
 -------------
-A session answers many queries, and glue made for one must not act in
-another (#53 stage 5): an answer is a function of the query, not of what
-the session met before.  So every clause that ties relations to unary
+Glue made for one query must not act in another (#53 stage 5, written
+when a session answered many queries): an answer is a function of the
+query, not of what the session met before.  Since #97 a session serves
+the check of its set and then one query (``Engine._build_context``), and
+the selectors keep the check to the set's own glue.  So every clause that ties relations to unary
 atoms, and everything a theory does with an atom beyond reading its own
 variable, carries a *selector* variable, and ``Session.assumption_lits``
 assumes, for a query ``p`` under assumptions ``a``, only the selectors of
@@ -262,7 +263,7 @@ the glue ``p`` and ``a`` themselves call for:
 * the link clauses of a term ``e`` (and its integrality clauses) carry
   ``link_sel[e]``; assumed for the vocabulary-atom arguments and the sides
   of the interpreted relation atoms of ``p`` and ``a``
-  (:meth:`Relations.selectors_for`), only if ``p`` or ``a`` holds a
+  (:meth:`Relations.selectors_of`), only if ``p`` or ``a`` holds a
   relation atom (a ``zero(t)`` with ``t`` under an application counts as
   ``eq(t, 0)``, see "Zero is an equality") or an affine pair
   (``scope.affine_pair``: the ``glue`` of the query's theory scope);
@@ -354,7 +355,7 @@ from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .knowledge.extensions import Args
-from .sat.formula import And, Not, P, atoms_of
+from .sat.formula import And, Not, P
 from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX
 from .theories.lra.constfield import Undecided, sign
 from .sat.theory import EqualitySharing
@@ -658,8 +659,10 @@ def _number_basis(engine, c, facts=False) -> tuple:
     ``RULE_INTERNAL``, the same clauses as ``RULE_INSTANTIATED`` used here);
     a contradiction with a non-basis fact shows up in that block.  The open
     predicates are transferred as they are.  Memoized per engine and
-    number (a number's facts are context-free)."""
-    memo = engine.__dict__.setdefault("_xbasis", {})
+    number in ``engine._xbasis``: a number's facts are context-free, but
+    they are the engine's answers, so the engine drops the memo with its
+    other set memos when its settings or the registry epoch change."""
+    memo = engine._xbasis
     r = memo.get(c)
     if r is not None:
         return r[1] if facts else r[0]
@@ -762,8 +765,6 @@ class Relations:
         #: the selector guarding every lemma of predicate transfer (None
         #: until transfer is engaged, see _engage_transfer)
         self.xfer_sel: Optional[int] = None
-        #: order atom -> its reverse, for the pairs _trichotomy related
-        self._tri_of: dict = {}
         #: equality atoms that got their user-atom clauses (_eq_links): the
         #: first query mentioning the atom runs them, whoever made it
         self._user_eq: set = set()
@@ -870,8 +871,7 @@ class Relations:
                     self._eq_links(var, a)
                     self._add_role(a, [-self._atom_selector(a)], "user")
         while True:
-            s._flush()
-            s._discover()
+            s.discover()
             if self.queue:
                 atom = self.queue.pop()
                 ok = self.status[atom] = self._interpret(atom)
@@ -914,7 +914,7 @@ class Relations:
         a user formula (``sin(2)`` of ``Q.positive(sin(2))``) takes part in
         congruence as a term EUF reads would (:meth:`_congruence_pairs`),
         under a selector of its own that the queries mentioning it assume
-        (``selectors_for``).  Numbers are not linked, and a number node an
+        (``selectors_of``).  Numbers are not linked, and a number node an
         earlier query left in the session must not find a congruent partner
         for the current one."""
         if e in self.num_sel:
@@ -922,10 +922,7 @@ class Relations:
         from .theories.euf.euf_adapter import structural
         if not structural(e):
             return
-        s = self.session
-        sel = self.num_sel[e] = s.table.aux()
-        s.solver.ensure_vars(sel)
-        s.solver.set_inert(sel)
+        sel = self.num_sel[e] = self._fresh(inert=True)
         self._tsource(e, _IE, [-sel])
         self._xextra.append(e)
 
@@ -933,6 +930,17 @@ class Relations:
         if e not in self.linked and not _is_number(e):
             self.linked.add(e)
             self._pending_links.append(e)
+
+    def _fresh(self, inert: bool = False) -> int:
+        """A new auxiliary solver variable; ``inert`` (``Solver.set_inert``)
+        for a selector and the variables selectors imply (see "Switched
+        glue")."""
+        s = self.session
+        v = s.table.aux()
+        s.solver.ensure_vars(v)
+        if inert:
+            s.solver.set_inert(v)
+        return v
 
     # -- interpretation ------------------------------------------------
     def _adapter(self, spec):
@@ -1005,8 +1013,7 @@ class Relations:
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
                 continue
-            t = s.table.aux()
-            solver.ensure_vars(t)
+            t = self._fresh()
             if not ad.register(solver, t, sat):
                 continue
             ok = True
@@ -1019,8 +1026,8 @@ class Relations:
                 # atom some earlier query made to EUF (and back)
                 twins.append((t, guard))
                 continue
-            s._emit(guard + [-var, t])
-            s._emit(guard + [var, -t])
+            s.emit(guard + [-var, t])
+            s.emit(guard + [var, -t])
         info = self._info[atom] = (twins, lterms, eterms)
         for kind, g in self._roles.get(atom, ()):
             self._apply_role(atom, info, kind, g)
@@ -1064,13 +1071,12 @@ class Relations:
         if form is None:
             return
         s = self.session
-        i = s.table.aux()
-        s.solver.ensure_vars(i)
+        i = self._fresh()
         ad.register_integer(s.solver, i, form)
         guard = self._guard(ad, form[1])
         z = s.var("integer", e)
-        s._emit(guard + [-z, i, g])
-        s._emit(guard + [z, -i, g])
+        s.emit(guard + [-z, i, g])
+        s.emit(guard + [z, -i, g])
 
     def _eq_infinity(self, var: int, atom: P) -> None:
         """``eq(e, oo) <-> positive_infinite(e)`` and ``eq(e, -oo) <->
@@ -1090,13 +1096,13 @@ class Relations:
             if _is_number(e):
                 v = s.engine.is_(e, pred)
                 if v is not None:
-                    s._emit([var] if v else [-var])
+                    s.emit([var] if v else [-var])
                     return
             s.ensure(e, {pred})
             p = s.var(pred, e)
             g = -self._atom_selector(atom)
-            s._emit([-var, p, g])
-            s._emit([var, -p, g])
+            s.emit([-var, p, g])
+            s.emit([var, -p, g])
             return
 
     def _trichotomy(self, var: int, atom: P) -> None:
@@ -1131,8 +1137,6 @@ class Relations:
         # theories see it, in the queries that mention both atoms; those
         # switch transfer on as an equality does (wants_transfer)
         self._note_sides(eqa, 2)
-        self._tri_of[atom] = rev
-        self._tri_of[rev] = atom
         # a pair of user atoms is in the query's scope (transfer.transfer_wanted
         # counts it), which engaged transfer at construction; a pair with an
         # extension atom switches nothing on (wants_transfer ignores it)
@@ -1142,7 +1146,7 @@ class Relations:
         for e in _ext_atoms(a, b):
             s.ensure(e.expr, {"extended_real"})
             clause.append(-s.var("extended_real", e.expr))
-        s._emit(clause)
+        s.emit(clause)
 
     def _add_role(self, atom: P, g: list, kind: str) -> None:
         """Give the relation atom ``atom`` a role under the guard ``g``
@@ -1186,7 +1190,7 @@ class Relations:
         clauses 1 and 2 constrain them given their sides."""
         twins, lterms, eterms = info
         s = self.session
-        emit = s._emit
+        emit = s.emit
         if twins:
             var = s.table.custom[atom]
             for t, guard in twins:
@@ -1225,7 +1229,7 @@ class Relations:
         tv = self._tv.get(u)
         if tv is not None:
             if tv[k]:
-                self.session._emit(g + [tv[k]])
+                self.session.emit(g + [tv[k]])
             elif tv[_MC] and k < _MC:
                 self._tvar(u, k)              # links itself to MC
 
@@ -1249,11 +1253,8 @@ class Relations:
         v = tv[k]
         if v:
             return v
-        s = self.session
-        v = tv[k] = s.table.aux()
-        s.solver.ensure_vars(v)
-        s.solver.set_inert(v)
-        emit = s._emit
+        v = tv[k] = self._fresh(inert=True)
+        emit = self.session.emit
         if k == _MC:
             for j in (_SD, _EN):
                 if tv[j]:
@@ -1272,10 +1273,7 @@ class Relations:
         first use), see "Switched glue"."""
         sel = self.atom_sel.get(atom)
         if sel is None:
-            s = self.session
-            sel = self.atom_sel[atom] = s.table.aux()
-            s.solver.ensure_vars(sel)
-            s.solver.set_inert(sel)
+            sel = self.atom_sel[atom] = self._fresh(inert=True)
         return sel
 
     def _eq_links(self, var: int, atom: P) -> None:
@@ -1314,7 +1312,7 @@ class Relations:
         g = -self._atom_selector(atom)
 
         def emit(clause):
-            s._emit(clause + [g])
+            s.emit(clause + [g])
         s.ensure(a, {"positive_infinite", "negative_infinite"})
         s.ensure(b, {"positive_infinite", "negative_infinite"})
         for pred in ("positive_infinite", "negative_infinite"):
@@ -1349,13 +1347,13 @@ class Relations:
         for e in atom.expr:
             v = self._closed_extended_real(e)
             if v is False:
-                s._emit([-var])
+                s.emit([-var])
                 return True
             if v is None:
                 need.append(e)
         for e in need:
             s.ensure(e, {"extended_real"})
-            s._emit([-var, s.var("extended_real", e)])
+            s.emit([-var, s.var("extended_real", e)])
         return False
 
     def _order_infinite(self, var: int, sides) -> None:
@@ -1363,7 +1361,7 @@ class Relations:
         ``((form_a, inf_a), (form_b, inf_b))`` (``form``: term ->
         coefficient; ``inf``: +1/-1 for an ``oo``/``-oo`` summand, else 0)."""
         s = self.session
-        emit = s._emit
+        emit = s.emit
         push = []                             # per side: (up lits, down lits, const up, const down)
         ext = []                              # -extended_real(u) for every term
         exact = True
@@ -1424,13 +1422,8 @@ class Relations:
         if register is None:
             return
         s = self.session
-
-        def new_var():
-            v = s.table.aux()
-            s.solver.ensure_vars(v)
-            return v
-        for v in register(s.solver, c, new_var):
-            s._emit([v])
+        for v in register(s.solver, c, self._fresh):
+            s.emit([v])
 
     # -- links to the unary vocabulary ----------------------------------
     def _atom_var(self, f) -> int:
@@ -1453,16 +1446,13 @@ class Relations:
             self._aux_eq.add(eqa)
             self._link_eq.add(eqa)
         eq = self._atom_var(eqa)
-        sel = s.table.aux()
-        s.solver.ensure_vars(sel)
-        self.link_sel[e] = sel
-        s.solver.set_inert(sel)
+        sel = self.link_sel[e] = self._fresh(inert=True)
         g = -sel
         gl = [g]            # one guard object: _tsource drops repeats of it
         for f in (gta, lta, eqa):
             self._link_of[f] = e
             self._add_role(f, gl, "link")
-        emit = s._emit
+        emit = s.emit
         emit([-pos, gt, g])
         emit([-gt, pos, g])
         emit([-neg, lt, g])
@@ -1477,19 +1467,6 @@ class Relations:
                         self._link_integer(ad, e, g)
 
     # -- switched glue: what a query activates ----------------------------
-    @staticmethod
-    def link_terms(f) -> list:
-        """The terms ``f`` links: the arguments of its vocabulary atoms and
-        the sides of its relation atoms (numbers excluded)."""
-        out = []
-        for a in atoms_of(f):
-            if a.pred in PRED_INDEX:
-                if not _is_number(a.expr):
-                    out.append(a.expr)
-            elif a.pred in RELATION_ATOMS:
-                out.extend(e for e in a.expr if not _is_number(e))
-        return out
-
     def wants_transfer(self, atoms) -> bool:
         """Predicate transfer acts in a query whose relation atoms
         (``atoms``, of the proposition and the assumptions) make an
@@ -1501,14 +1478,10 @@ class Relations:
         so a fresh session has it exactly then; a function of the atoms."""
         return transfer_wanted(atoms)
 
-    def selectors_for(self, f) -> list:
-        """The selectors ``f`` activates once links are on: those of the
-        links of its terms and of its relation atoms' clauses to unary
-        atoms, in allocation order."""
-        return self.selectors_of(atoms_of(f))
-
     def selectors_of(self, atoms) -> list:
-        """:meth:`selectors_for` a formula whose atoms are ``atoms``."""
+        """The selectors a formula whose atoms are ``atoms`` activates once
+        links are on: those of the links of its terms and of its relation
+        atoms' clauses to unary atoms, in allocation order."""
         sel, nsel, status = self.link_sel, self.num_sel, self.status
         out = set()
         asel = self.atom_sel
@@ -1613,7 +1586,7 @@ class Relations:
         differs."""
         others = self._xheads.get((node.func, len(node.args)))
         if not others or len(others) < 2 or (
-                node not in self._xadapter._terms and node not in self.num_sel):
+                self._xadapter.term_of(node) is None and node not in self.num_sel):
             return False
         cand, xside = self._xcand, self._xside
         args = node.args
@@ -1662,10 +1635,8 @@ class Relations:
         # every lemma is guarded by a selector the queries with a relation
         # atom assume (Session.assumption_lits); registered as the
         # theory's atom, so the theory follows its value level by level
-        sel = s.table.aux()
-        solver.ensure_vars(sel)
+        sel = self._fresh(inert=True)
         th.guard(sel)
-        s.solver.set_inert(sel)
         solver.register_atom(th, sel, ("enable",))
         self.xfer_sel = sel
         self._xadapter = ad
@@ -1702,12 +1673,10 @@ class Relations:
                 if isinstance(e, Expr) and e not in s.base:
                     s.ensure(e)
                     visited = True
-        terms = ad._terms
-        nt = len(terms)
+        new = ad.terms_since(self._xtcur)
         extra = self._xextra
-        if self._xtcur < nt or extra:
-            new = list(islice(terms, self._xtcur, nt))
-            self._xtcur = nt
+        if new or extra:
+            self._xtcur += len(new)
             if extra:
                 new.extend(extra)
                 extra.clear()
@@ -1741,7 +1710,7 @@ class Relations:
         A term joins a class only through a union: as the side of an atom,
         or as an application congruent to another one with the same head
         (function and arity) whose arguments were merged.  So a node is a
-        *candidate* (all 33 variables registered) iff it is a side of a user,
+        *candidate* (all ``NPRED`` = 14 basis variables registered) iff it is a side of a user,
         :meth:`_trichotomy` or extension equality atom, a number side, or a
         term EUF reads (:meth:`_transfer_terms` visits those) whose head
         occurs on another term EUF reads, the arguments of the two being
@@ -1807,7 +1776,7 @@ class Relations:
                     cand.add(node)
                     changed = True
                     t = ad.node_term(node)
-                    solver.ensure_vars(b + NPRED - 1)     # one _grow, not 33
+                    solver.ensure_vars(b + NPRED - 1)     # one _grow, not NPRED
                     rational = isinstance(node, Rational)
                     if rational:
                         preds = _number_basis(s.engine, node)
@@ -1849,7 +1818,7 @@ class Relations:
         the terms and sides the query activates.  A pair whose arguments
         cannot be merged yet is looked at again on a later call."""
         xside, cand, done = self._xside, self._xcand, self._xpairs
-        emit = self.session._emit
+        emit = self.session.emit
         tvar = self._tvar
         for group in self._xheads.values():
             if len(group) < 2:

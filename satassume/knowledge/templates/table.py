@@ -183,17 +183,7 @@ def _rows(rows, guards, ctx, slots) -> Iterator[tuple[Any, list, list]]:
             continue
         if row._prem is None:
             row._compile()
-        fast = row.kind == 'rule' and not row._ge2
         for cur in (row.preds or (None,)):
-            if fast:
-                prem = []
-                for spec in row._prem:
-                    prem += _lits(spec, slots, cur)
-                concl = []
-                for spec in row._concl:
-                    concl += _lits(spec, slots, cur)
-                yield row, prem, concl
-                continue
             for prem, concl in _row_specs(row, slots, cur):
                 yield row, prem, concl
 

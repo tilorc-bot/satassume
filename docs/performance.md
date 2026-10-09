@@ -105,7 +105,7 @@ best cold passes.
 | held levels with theories attached; new theory atom asked about at root | `e2aa724`, `3fc0244` | -4.2% to -4.7% (Pi); theory tax +14.1% to +4.9% | `Solver._assume`, `_attach_held`, `register_atom` (`_tpending`) |
 | predicate transfer, tuned | `1e0bada`..`f26dc20`, `b8b781e` | cost +12.1% cut to +5.5%, +6.4% (Pi) | `transfer.py`, `Relations._engage_transfer`, `Relations.sync_transfer` |
 | rule block by exact closure, implications written above root only to mentioned variables; transfer atoms registered lazy, `decide()` hook | `affd45d`, `256a1fb`, `2d2b5af`, `ef0e59b` | -4.7% (Pi, both together); decisions 64,141 to 36,453 | `_BlockClosure`, `Solver._propagate`, `mention`, `mention_blocks`, `engine._split`, `register_atom(..., mention=False)`, `TransferTheory.decide` |
-| constant terms: no guard node, no interface equality with a non-rational constant, not counted as pollution | in `b208af3` | the capability's cost +38% to +30% (Pi) | `relations.py` ("Constant terms"), `Session.n_constants` |
+| constant terms: no guard node, no interface equality with a non-rational constant, not counted as pollution | in `b208af3` | the capability's cost +38% to +30% (Pi) | `relations.py` ("Constant terms"), `Session.n_constants` (removed; it served `cone_threshold`, #97 P7) |
 | relevance: a relation-free set split into components by shared symbols | `99e8827` | -8.3%, -8.8% (Pi) | `sympy_api._relevant`, `_Split`, `_part_consistent` |
 | relation setup: no-op `ensure`, guard and LRA form memos, no redundant link clauses, a term's own `integer` variable as integrality atom | `4fa0153`, `e14aad4`, `67cead8` | #38's +8.0% to +2.4% (16,232 stream) | `Session.ensure`, `Relations._guard`, `Relations._closed_extended_real`, `relations._own_term`, `LRATheory._var_of_form` |
 
@@ -203,14 +203,17 @@ replay.
 **Engine and API memos.**
 
 - The answer memo (`Engine.answers`) is keyed on the SymPy objects
-  `(proposition, assumptions)` and valid under `_registry_state()`: the
-  extension registry, its version and `tuple(relation_specs)`. It stores
+  `(proposition, assumptions)` and valid within one registry epoch
+  (`satassume/state/epoch.py`; `Engine._check_version` drops it): every
+  registration, a new `Engine.extensions` or `Engine.relation_specs`. It stores
   `None` too, so the first `None` stands even if later queries would have
   grounded enough to decide it; on gate2 and the stream this changes no
   answer. An adapter spec mutated in place does not invalidate it.
-- `Engine.cache`, `Engine.custom_cache` and the contextual sessions are not
-  keyed on the registry state on `main`: a fact cached before a
-  registration is served after it. PR #63 fixes this (issue #53).
+- `Engine.cache` and `Engine.custom_cache` record the epoch and the
+  settings fingerprint they were filled under and are emptied when either
+  differs (`DictCache.sync`); before PR #63 (issue #53) a fact cached
+  before a registration was served after it. No contextual session is
+  kept between queries (#97).
 - The failed-set memo (`Engine._failed`) assumes that whether building a
   session raises `Uninterpreted` depends only on the assumptions' relation
   atoms and the adapters: `LRAAdapter.register` and `EUFAdapter.register`

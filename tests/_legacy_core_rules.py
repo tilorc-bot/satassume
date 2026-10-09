@@ -28,8 +28,12 @@ from satassume.knowledge.templates.core import (
     _U,
     MAX_ONEOUT,
     MAX_PAIRS,
-    _lit,
 )
+
+
+def _lit(spec):
+    """A ``(slot, pred[, pos])`` row literal as ``(slot, pred, pos)``."""
+    return (spec[0], spec[1], spec[2] if len(spec) > 2 else True)
 
 
 def mul_rules(n, consts):

@@ -29,13 +29,13 @@ Which spec section each function implements:
   ``p`` carries an uninterpreted relation (``Uninterpreted`` gives None
   only after the set's verdict).
 * section 2 (translation): :func:`_translate`, through
-  ``sympy_api._formula`` / ``to_formula`` and ``relations.relation_atom``.
+  ``sympy_api.to_formula`` and ``relations.relation_atom``.
 * section 3 (theory scope, P3's syntactic definition): :func:`theory_scope`,
   over the glue atoms of ``A`` and ``p`` (:func:`_glue_atoms_of`): a
   ``zero(t)`` whose ``t`` is under an application of ``A`` or ``p`` counts
   as its twin ``eq(t, 0)`` (``relations.glue_atoms``, PR #107).
 * section 4 (the node cone): the eager closure of :meth:`_RefSession.node`
-  over the frontier (:meth:`_RefSession._discover`); derived nodes are
+  over the frontier (:meth:`_RefSession.discover`); derived nodes are
   visited like direct arguments.  No separate cone computation is needed:
   the visited nodes *are* ``cone(p) | cone(A)`` (plus the glue's link
   objects when ``glue`` holds).
@@ -162,8 +162,8 @@ def theory_scope(a_atoms, p_atoms) -> Tuple[bool, bool, frozenset]:
 
 class _RefEngine:
     """The settings the glue reads of an engine (``s.engine.transfer``,
-    ``s.engine.uninterpreted``), its memo dict (``_number_basis`` keeps
-    ``_xbasis`` in ``engine.__dict__``) and ``is_`` for context-free facts
+    ``s.engine.uninterpreted``), the memo ``_xbasis`` of
+    ``relations._number_basis`` and ``is_`` for context-free facts
     of closed terms (spec section 9), answered by a nested reference query
     with no assumptions and no glue (``is_many``: a loop of ``is_``)."""
 
@@ -173,6 +173,7 @@ class _RefEngine:
         self.transfer = transfer
         self.uninterpreted = uninterpreted
         self._is_memo: Dict[Tuple[Any, str], Optional[bool]] = {}
+        self._xbasis: Dict[Any, Any] = {}
         #: what ``Relations`` counts when the glue engages transfer at an
         #: atom the session's scope did not foresee (P3; here, an order
         #: atom whose reverse ``_trichotomy`` paired: the SPEC-DIFF of
@@ -186,7 +187,7 @@ class _RefEngine:
             return memo[key]
         s = _RefSession(self)
         q = s.literal_of(P(pred, node))
-        s._discover()
+        s.discover()
         try:
             r = _entails(s, q, [])
         except ValueError:
@@ -226,8 +227,8 @@ class _RefSession:
         self.defvars: Dict[Any, int] = {}
         self._visiting: set = set()
 
-    # -- what Relations calls -------------------------------------------
-    def _emit(self, clause: List[int]) -> None:
+    # -- what Relations calls (emit, var, ensure, discover) ---------------
+    def emit(self, clause: List[int]) -> None:
         self.nclauses += 1
         self.solver.add_clause(clause)
 
@@ -245,15 +246,15 @@ class _RefSession:
             self.solver.ensure_vars(v)
             if op == '&':
                 for l in lits:
-                    self._emit([-v, l])
-                self._emit([v] + [-l for l in lits])
+                    self.emit([-v, l])
+                self.emit([v] + [-l for l in lits])
             else:
                 for l in lits:
-                    self._emit([-l, v])
-                self._emit([-v] + lits)
+                    self.emit([-l, v])
+                self.emit([-v] + lits)
         return v
 
-    def ensure(self, node, demanded=None, budget=None) -> None:
+    def ensure(self, node, demanded=None) -> None:
         self.node(node)
 
     def _flush(self) -> None:
@@ -268,7 +269,7 @@ class _RefSession:
             self.frontier.extend(n for n in table.new_nodes if n not in self.base)
             table.new_nodes = []
 
-    def _discover(self) -> None:
+    def discover(self) -> None:
         """Visit everything on the frontier until the cone is closed."""
         self._flush()
         while self.frontier:
@@ -336,7 +337,7 @@ class _RefSession:
 
     def _compile(self, formulas) -> None:
         for f in formulas:
-            compile_formula(f, self.table, self._emit)
+            compile_formula(f, self.table, self.emit)
 
     def _custom(self, atom: P) -> None:
         """A custom atom was allocated: a relation atom goes to the glue
@@ -354,7 +355,7 @@ class _RefSession:
         if ext is None:
             return
         for f in ext.facts_for(atom):
-            compile_formula(f, self.table, self._emit)
+            compile_formula(f, self.table, self.emit)
 
     # -- section 5.4 and 6: the assumptions and the literal ------------------
     def assume_formula(self, f) -> List[int]:
@@ -365,9 +366,9 @@ class _RefSession:
         self.sel = s
 
         def emit(clause):
-            self._emit(clause + [-s])
+            self.emit(clause + [-s])
         compile_formula(f, self.table, emit)
-        self._discover()
+        self.discover()
         return [s]
 
     def literal_of(self, f) -> int:
@@ -380,8 +381,8 @@ class _RefSession:
             for atom in atoms_of(f):
                 if atom.pred in PRED_INDEX:
                     self.node(atom.expr)
-            lit = formula_literal(f, self.table, self._emit)
-        self._discover()
+            lit = formula_literal(f, self.table, self.emit)
+        self.discover()
         self.literals[f] = lit
         return lit
 
@@ -402,12 +403,12 @@ class _RefSession:
         atoms = tuple(a_atoms) + tuple(p_atoms)
         rel.note_formula(atoms)
         rel.process(atoms)
-        self._discover()
+        self.discover()
         # the glue may have visited nodes whose templates made relation
         # atoms: interpret them too, until nothing is queued
-        while rel.queue or rel._pending_links or self.frontier:
+        while rel.queue or self.frontier:
             rel.process(())
-            self._discover()
+            self.discover()
         return rel
 
 
@@ -417,11 +418,12 @@ class _RefSession:
 
 def _translate(p, A, rel: bool):
     """``(prop, assum)`` formulas of a SymPy ``p`` and ``A`` (section 2);
-    ``assum`` None when ``A`` is ``True``; raises ``Unsupported`` as
-    ``sympy_api._formula`` does."""
-    from .sympy_api import _formula
-    prop = _formula(p, rel)
-    assum = None if A is True else _formula(A, rel, True)
+    ``assum`` None when ``A`` is ``True``; raises ``Unsupported``
+    (``sympy_api.to_formula``; the engine's path memoizes it in
+    ``sympy_api._formula``, which the reference does not need)."""
+    from .sympy_api import to_formula
+    prop = to_formula(p, rel)
+    assum = None if A is True else to_formula(A, rel, True)
     return prop, assum
 
 
@@ -496,14 +498,14 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     rel = None
     if glue:
         rel = s.glue(a_atoms, p_atoms)
-    s._discover()
+    s.discover()
     lits = _assumption_lits(s, rel, a_atoms + p_atoms, transfer)
     info.nodes = len(s.base)
     info.clauses = s.nclauses
     try:
         r = _entails(s, q, lits)
     finally:
-        theories = s.solver._theories
+        theories = s.solver.theories()
         info.gave_up = any(getattr(t, "gave_up", False) for t in theories)
         info.exhausted = any(getattr(t, "exhausted", False) for t in theories)
         info.undecidable = any(getattr(t, "undecidable", False) for t in theories)
@@ -525,7 +527,7 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     engine settings of the same names.  ``info``: a :class:`RefInfo` to
     fill with what the call built (route, nodes, clauses, scope, theory
     flags)."""
-    from .sympy_api import Unsupported, _is_constant_proposition
+    from .sympy_api import Unsupported, is_constant_proposition
     if info is None:
         info = RefInfo()
     if extensions is None:
@@ -542,7 +544,7 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     # any other (sympy_api._ask, nightly family C: the set's verdict counts,
     # so an inconsistent set raises).  SPEC-DIFF: section 1.2 says "A is
     # ignored", which is _ask before family C; P5b-fix2 report.
-    if _is_constant_proposition(p):
+    if is_constant_proposition(p):
         info.route = "constant"
         r = _routed(p, True, engine, rel, info)
         if r is not None or A is True:

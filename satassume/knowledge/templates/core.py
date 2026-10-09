@@ -567,10 +567,6 @@ _POW_ONE_EQUIV = tuple(sorted(VOCAB - {'commutative'}))
 _U, _S, _T, _BM, _BP = 3, 4, 5, 6, 7
 
 
-def _lit(spec):
-    return (spec[0], spec[1], spec[2] if len(spec) > 2 else True)
-
-
 def _unit_angle(b):
     """``theta/pi`` as a Rational for the constants ``I``, ``-I``, ``-1``
     (``b == exp(I*pi*theta/pi)``), else None."""

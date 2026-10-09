@@ -69,7 +69,7 @@ it is the ceiling, and no scope reaches a definite value the ceiling
 does not have.
 
 That is an argument about entailment, not about the engine, which is
-budgeted (``Engine._exhausted``, ``_gave_up``, the discovery budget): more
+budgeted (``engine._exhausted``, ``_gave_up``, the discovery budget): more
 valid clauses can exhaust a branch budget the smaller clause set did not,
 and turn a definite answer into None (the set's check showed the mechanism
 when the query's glue linked the set's terms before it, #97 P3 review
@@ -83,8 +83,8 @@ Resolution of the three differences of the spec (``docs/spec.md``,
 replaces:
 
 1. ``Relations.wants_transfer`` counted a ``_trichotomy`` pair through the
-   session's ``_tri_of`` table, which is filled when both atoms are
-   allocated.  In a session built for one query both are allocated iff
+   session's ``_tri_of`` table (since deleted), which was filled when both
+   atoms were allocated.  In a session built for one query both are allocated iff
    both are atoms of ``a`` or ``p``, so :func:`satassume.theories.transfer.transfer_wanted` tests the
    pair syntactically (an atom and its reverse among the atoms) and gives
    the same value with no session state; ``wants_transfer`` delegates.
@@ -97,7 +97,7 @@ replaces:
    a query is answered at all, never what its session contains, so it is
    left as it is (``engine.py``, P2's file).
 3. The sign-on-sum pair is taken across both formulas, as
-   ``engine._links_wanted`` already did for the selectors (the old
+   ``Session.assumption_lits`` does for the selectors (the old
    ``Session._affine_links`` kept the assumptions' sums and tested the
    query's against them, the same pairs).
 """

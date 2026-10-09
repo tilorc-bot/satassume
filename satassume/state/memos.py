@@ -62,8 +62,8 @@ class Table(dict):
 
     def put(self, k, v):
         """``self[k] = v``, emptying the table first when it is full
-        (the ``sympy_api`` answer and split memos use it; the others keep
-        their own size test next to the lookup)."""
+        (``rules._DEF_IMPL`` uses it; the others keep their own size test
+        next to the lookup)."""
         if len(self) >= self.size:
             dict.clear(self)
         self[k] = v

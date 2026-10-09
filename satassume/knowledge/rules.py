@@ -178,35 +178,6 @@ RULE_CLAUSES: Tuple[Clause, ...] = tuple(compile_rules())
 DEF_LITS: Dict[str, Tuple[str, Tuple[int, ...]]] = {
     p: (lambda s: (s[0], tuple(s[1])))(_side(d)) for p, d in DEFINITIONS.items()}
 
-#: predicate name -> its CNF as a positive literal, as a tuple of clauses
-#: over signed 1-based basis indices; the negation is :func:`cnf_of`
-_CNF_POS: Dict[str, Tuple[Clause, ...]] = {}
-_CNF_NEG: Dict[str, Tuple[Clause, ...]] = {}
-for _p in PREDICATES:
-    if _p in BASIS_INDEX:
-        _CNF_POS[_p] = ((BASIS_INDEX[_p] + 1,),)
-        _CNF_NEG[_p] = ((-(BASIS_INDEX[_p] + 1),),)
-    else:
-        _op, _ls = DEF_LITS[_p]
-        if _op == '&':
-            _CNF_POS[_p] = tuple((l,) for l in _ls)
-            _CNF_NEG[_p] = (tuple(-l for l in _ls),)
-        else:
-            _CNF_POS[_p] = (tuple(_ls),)
-            _CNF_NEG[_p] = tuple((-l,) for l in _ls)
-del _p, _op, _ls
-
-
-def cnf_of(pred: str, pos: bool = True) -> Tuple[Clause, ...]:
-    """The literal ``pred`` (negated if not ``pos``) as a conjunction of
-    clauses over signed 1-based basis indices: one unit clause for a basis
-    predicate; the definition's literals for a derived one."""
-    return _CNF_POS[pred] if pos else _CNF_NEG[pred]
-
-
-#: predicate name -> the 0-based basis indices it reads
-BASIS_OF: Dict[str, frozenset] = {
-    p: frozenset(abs(l) - 1 for c in _CNF_POS[p] for l in c) for p in PREDICATES}
 
 
 def basis_lits(pred: str, pos: bool = True) -> Tuple[str, Tuple[int, ...]]:
@@ -219,6 +190,30 @@ def basis_lits(pred: str, pos: bool = True) -> Tuple[str, Tuple[int, ...]]:
     if pos:
         return op, ls
     return ('|' if op == '&' else '&'), tuple(-l for l in ls)
+
+
+def _cnf(op: str, lits: Tuple[int, ...]) -> Tuple[Clause, ...]:
+    """The clauses of ``(op, lits)`` as :func:`basis_lits` gives it: a unit
+    clause per literal for ``'&'``, one clause for ``'|'``."""
+    return tuple((l,) for l in lits) if op == '&' else (lits,)
+
+
+#: predicate name -> its CNF as a positive (negative) literal, as a tuple
+#: of clauses over signed 1-based basis indices (:func:`cnf_of`)
+_CNF_POS: Dict[str, Tuple[Clause, ...]] = {p: _cnf(*basis_lits(p, True)) for p in PREDICATES}
+_CNF_NEG: Dict[str, Tuple[Clause, ...]] = {p: _cnf(*basis_lits(p, False)) for p in PREDICATES}
+
+
+def cnf_of(pred: str, pos: bool = True) -> Tuple[Clause, ...]:
+    """The literal ``pred`` (negated if not ``pos``) as a conjunction of
+    clauses over signed 1-based basis indices: one unit clause for a basis
+    predicate; the definition's literals for a derived one."""
+    return _CNF_POS[pred] if pos else _CNF_NEG[pred]
+
+
+#: predicate name -> the 0-based basis indices it reads
+BASIS_OF: Dict[str, frozenset] = {
+    p: frozenset(abs(l) - 1 for c in _CNF_POS[p] for l in c) for p in PREDICATES}
 
 
 def _basis_models() -> Tuple[Tuple[bool, ...], ...]:
@@ -429,12 +424,3 @@ RULE_INTERNAL: Tuple[Tuple[int, ...], ...] = tuple(
 #: Basis predicates no instantiated rule clause mentions (``polar``).
 RULE_FREE: frozenset = frozenset(range(NPRED)) - {abs(l) - 1 for c in RULE_INSTANTIATED for l in c}
 
-
-def instantiate(var_of_pred) -> List[List[int]]:
-    """Instantiate the rule clauses for one node.
-
-    ``var_of_pred(i)`` maps a 0-based basis index to a solver variable.
-    """
-    vars_ = [var_of_pred(i) for i in range(NPRED)]
-    return [[(vars_[abs(l) - 1] if l > 0 else -vars_[abs(l) - 1]) for l in c]
-            for c in RULE_CLAUSES]

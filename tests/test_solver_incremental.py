@@ -297,7 +297,7 @@ class Harness:
             self.count("blocks_registered")
             # A block over assigned variables propagates its root units at
             # once, but without the theories (as a unit clause does).
-            self.after_prop = self.after_prop and not s._theories
+            self.after_prop = self.after_prop and not s.theories()
         else:
             self.record("add_pattern_block", base)
             r = s.add_pattern(self.block, base, self.bk)
@@ -370,7 +370,7 @@ def add_clause(h: Harness) -> None:
     h.check(r or not h.sat([]), "add_clause False but SAT")
     # A clause unit at root is propagated at once, but without the theories
     # (they hear of it at the next propagate or search).
-    h.after_prop = len(c) != 1 and h.after_prop and not h.solver._theories
+    h.after_prop = len(c) != 1 and h.after_prop and not h.solver.theories()
 
 
 @op(8)
@@ -796,7 +796,7 @@ def late_mention(h: Harness) -> None:
         _note_add(h)
         r = s.add_clause(c)
         h.check(r or not h.sat([]), "add_clause False but SAT")
-        h.after_prop = h.after_prop and not s._theories
+        h.after_prop = h.after_prop and not s.theories()
     h.count("late_mentions_dropped_held", s._n_late - late)
     h.count("late_mentions_written_held", s._n_late_written - written)
     _check_implied(h, A)

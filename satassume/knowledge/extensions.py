@@ -54,11 +54,21 @@ def _name(pred) -> str:
     return name
 
 
+class Snapshot(dict):
+    """:meth:`Extensions.snapshot`: the registrations by name, plus the
+    order of the vocabulary index (``vocab_order``)."""
+    vocab_order: Tuple[str, ...] = ()
+
+
 class Extensions:
     def __init__(self) -> None:
         self._handlers: Dict[str, List[Tuple[Tuple[type, ...], Handler]]] = {}
         self._vocab: Dict[str, List[Tuple[Tuple[type, ...], Handler]]] = {}
         self._node_cache: Dict[type, List[Tuple[str, Handler]]] = {}
+        #: whether a vocabulary predicate has a function registered for a
+        #: node class (:meth:`node_facts` can say anything); a plain
+        #: attribute, read per node by the engine
+        self.has_node_facts = False
         self._version = 0
 
     @property
@@ -91,7 +101,7 @@ class Extensions:
             self.version += 1
             if name in PRED_INDEX and len(classes) == 1:
                 self._vocab.setdefault(name, []).append((classes, f))
-                self._node_cache.clear()
+                self._vocab_changed()
             return f
 
         return deco
@@ -102,7 +112,40 @@ class Extensions:
         self._handlers.pop(name, None)
         self.version += 1
         if self._vocab.pop(name, None) is not None:
-            self._node_cache.clear()
+            self._vocab_changed()
+
+    def _vocab_changed(self) -> None:
+        """After a vocabulary registration or removal: drop the per-class
+        memo of node-fact handlers and recompute :attr:`has_node_facts`."""
+        self._node_cache.clear()
+        self.has_node_facts = bool(self._vocab)
+
+    def snapshot(self) -> "Snapshot":
+        """The registrations, ``{name: [(classes, function), ...]}`` in
+        registration order, for :meth:`restore` (a test or the harness
+        that registers temporarily).  It also records the order of the
+        vocabulary index (:attr:`Snapshot.vocab_order`), which can differ
+        from the order of the names: it orders node facts and clauses."""
+        snap = Snapshot((k, list(v)) for k, v in self._handlers.items())
+        snap.vocab_order = tuple(self._vocab)
+        return snap
+
+    def restore(self, snap) -> None:
+        """Make the registrations those of :meth:`snapshot` ``snap``; a new
+        version, like any registration.  The vocabulary index is rebuilt
+        from the handlers (so the two cannot disagree), in the snapshot's
+        order; a plain dict gives the order of its names."""
+        self._handlers = {k: list(v) for k, v in snap.items()}
+        order = list(getattr(snap, "vocab_order", ()))
+        order += [k for k in self._handlers if k not in order]
+        self._vocab = {}
+        for name in order:
+            if name in PRED_INDEX:
+                vocab = [e for e in self._handlers.get(name, ()) if len(e[0]) == 1]
+                if vocab:
+                    self._vocab[name] = vocab
+        self._vocab_changed()
+        self.version += 1
 
     def is_registered(self, pred, arity: int = 1) -> bool:
         """Whether ``pred`` has a function registered for ``arity`` arguments
@@ -119,9 +162,15 @@ class Extensions:
     def is_scalar_like(self, obj) -> bool:
         """Whether ``type(obj)`` has a vocabulary predicate registered: such
         objects are nodes of the engine like any scalar expression."""
+        return self.is_scalar_class(type(obj))
+
+    def is_scalar_class(self, cls: type) -> bool:
+        """Whether a vocabulary predicate is registered for ``cls`` (or a
+        base of it): :meth:`node_facts` may say something about its
+        instances."""
         if not self._vocab:
             return False
-        return bool(self._node_handlers(type(obj)))
+        return bool(self._node_handlers(cls))
 
     def facts_for(self, atom: P) -> List[Any]:
         """Formulas for a custom-predicate atom ``P(name, arg | Args)``."""

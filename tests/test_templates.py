@@ -624,3 +624,53 @@ def test_signed_infinite_summand_end_to_end():
         # -oo + I is infinite off the real axis; -oo + oo is nan
         assert ask(Q.negative_infinite(ninf + I), a, Engine()) is None
         assert ask(Q.negative_infinite(ninf + pinf), a, Engine()) is None
+
+
+def test_pattern_cache_rejects_a_key_reused_for_another_shape():
+    """``_common.facts`` caches a pattern per key; a key reused with another
+    node slot or another number of objects is a template bug and raises
+    ``TemplateKeyError`` (not a ``ValueError``) instead of handing out the
+    other template's pattern."""
+    from sympy import S
+    from satassume.knowledge.templates import _common as C
+    x, y, z = Symbol('x'), Symbol('y'), Symbol('z')
+    key = ('test_pattern_cache_key',)
+    try:
+        a = C.facts(key, lambda: [], {}, (x,), 0)
+        assert C.facts(key, lambda: [], {}, (y,), 0).pattern is a.pattern
+        with pytest.raises(C.TemplateKeyError, match="test_pattern_cache_key"):
+            C.facts(key, lambda: [], {0: S(2)}, (S(2), y), 1)
+        # the same node slot over another number of objects
+        with pytest.raises(C.TemplateKeyError, match="over 1 objects, used with node slot 0 over 2"):
+            C.facts(key, lambda: [], {}, (x, z), 0)
+        assert not issubclass(C.TemplateKeyError, ValueError)
+    finally:
+        C._CACHE.pop(key, None)
+
+
+def test_template_key_error_is_not_read_as_inconsistent():
+    """A third-party template that reuses a shipped key for another shape
+    makes ``ask`` raise ``TemplateKeyError``, not the ``ValueError`` that
+    means inconsistent assumptions (final review B4)."""
+    from sympy import Function, Q
+    from satassume import Engine
+    from satassume.knowledge.templates import _common as C
+    from satassume.knowledge.templates.core import _add_rules
+    from satassume.knowledge.templates.registry import registry
+    from satassume.sympy_api import ask
+
+    class G(Function):
+        nargs = 2
+
+    x, y = Symbol('x'), Symbol('y')
+
+    # G is local to this test: its template stays registered, harmlessly
+    @registry.register(G)
+    def g_templates(expr):
+        a, b = expr.args
+        return C.facts(C.pattern_key('add', 2, {}), lambda: _add_rules(2, {}), {}, (expr, a, b), 0)
+
+    e = Engine()
+    assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y), engine=e) is True
+    with pytest.raises(C.TemplateKeyError):
+        ask(Q.positive(G(x, y)), Q.positive(x) & Q.positive(y), engine=e)

@@ -10,8 +10,8 @@ says "P3, to be implemented" and gives both. "Design" cites
 `docs/design.md`, "theories" cites `docs/theories.md`.
 
 Notation. `V` is `PREDICATES`, 33 unary predicate names (`rules.py`). A
-*node* is a SymPy expression the session gives 15 solver variables, one per
-basis predicate (`rules.BASIS`; `Session.base[node]`, `engine.py`); the 18
+*node* is a SymPy expression the session gives 14 solver variables, one per
+basis predicate (`rules.BASIS`; `Session.base[node]`, `engine.py`); the 19
 other predicates of `V` are definitions over them (design.md, "Rule base"). A *vocabulary atom* is `P(pred, expr)`
 with `pred in PRED_INDEX`; a *relation atom* is `P("eq"|"lt", (a, b))`
 (`RELATION_ATOMS`, `relations.py`); a *custom atom* is any other `P`
@@ -26,7 +26,7 @@ Definition. `ask(p, A)` returns one of `True`, `False`, `None`, or raises
    (`sympy_api.ask`; cleared with `Engine.splits` when the registry epoch
    changes, `Engine._check_version`). A budget-limited answer is never memoized
    (`sympy_api.ask`, `last_budget_limited`), so a memo hit never is.
-2. Constant route: if `_is_constant_proposition(p)` (every predicate of `p`
+2. Constant route: if `is_constant_proposition(p)` (every predicate of `p`
    built in, every argument a number without free symbols or `AppliedUndef`),
    the answer is `ask(p, True)` when that is definite (`A` is ignored, an
    inconsistent `A` does not raise); one left `None` is answered under `A`
@@ -181,9 +181,9 @@ which session).
 
 ### 5.1 Rule base per node
 
-Definition. `RULE_INSTANTIATED` is the 24-clause minimization of the 26 clauses compiled from `RULES` (over the 15 basis predicates, `rules.BASIS`; design.md, "Rule base")
+Definition. `RULE_INSTANTIATED` is the 22-clause minimization of the 24 clauses compiled from `RULES` (over the 14 basis predicates, `rules.BASIS`; design.md, "Rule base")
 (`rules.py`, `minimize_for_propagation`; design, "Rule base"). Every visited scalar node gets one copy over
-its 15 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
+its 14 variables, installed as a rule block (`Session._visit` step 2, `Solver.register_block`,
 `Solver.set_rule_block` in `satassume/sat/solver.py`), unless the node's only template is a complete unit pattern
 (`Pattern.complete`: the closed units decide every predicate the rule base mentions), in which case the units
 stand alone.
@@ -205,7 +205,7 @@ plain formulas (`Session._compile`, `compile.compile_formula`), plus the node fa
 extensions (`Extensions.node_facts`).
 
 Definition. A node is visited with a demand set (`Session.ensure(node, demanded)`); clauses mentioning no
-predicate in `want_of(demanded)` (`engine.want_of`, `neighbourhood`) are parked in `pending_c`/`pending`,
+predicate in `want_of(demanded)` (`engine.want_of`: the demanded basis predicates themselves) are parked in `pending_c`/`pending`,
 derived nodes in `deferred`; `Session.escalate` compiles all of it. Section 8 says when; the clause set of the
 *answer* is always the full cone's (escalation is uncapped within the budget, `_UNCAPPED`).
 
@@ -271,7 +271,7 @@ clause-generating functions' formulas (`Session._custom`, `satassume/knowledge/e
 
 Definition. If `p` is a vocabulary atom `P(pred, e)`, its literal is
 `Session.query_lit(pred, e)` after `Session.ensure(e, {pred})`
-(`Engine._literal`): `base[e] + BASIS_INDEX[pred]` for a basis predicate,
+(`Session.prepare_query`): `base[e] + BASIS_INDEX[pred]` for a basis predicate,
 the single basis literal of a derived predicate defined by one, else
 `(op, literals)`, the definition over `e`'s block (`rules.basis_lits`),
 which `query_literal` decides without a new variable. Otherwise it is the Tseitin literal of the formula
@@ -336,10 +336,11 @@ clause is added after an answer (no session outlives the query).
 
 Property: the answer does not depend on which session answered, on earlier
 queries, on the caches or on `PYTHONHASHSEED` (design, "History independence";
-gates G4 `tests/test_history.py`, G5 `harness fuzz`, G6 `harness audit`). Where
-a reused session's answer could depend on its path (branch budget, give-up,
-undecidable LRA constants: `engine._path_dependent`, `_cannot_give_up`), it is
-re-answered in a rebuilt session (`Engine.ask`, `stats["exhaust_reanswers"]`).
+gates G4 `tests/test_history.py`, G5 `harness fuzz`, G6 `harness audit`). What
+could depend on a session's path (branch budget, give-up, undecidable LRA
+constants) is the path of the query's own session: every query builds a fresh
+one (design, "A session per query"; the re-answering in a rebuilt session,
+`engine._path_dependent`, went with session reuse in #97).
 
 Property: with `None` meaning "not entailed", the engine's answers agree
 with SymPy's on the corpus with `none=0` contradictions (`tools/compare.py
@@ -348,8 +349,7 @@ with SymPy's on the corpus with `none=0` contradictions (`tools/compare.py
 
 ## 9. Undecidable constants
 
-Definition. A constant is an atom with `is_number` (`_common.is_constant`,
-`consts_of`). Its facts are `const_value(c, pred)`, SymPy's static `is_*`
+Definition. A constant is an atom with `is_number` (`_common.consts_of`). Its facts are `const_value(c, pred)`, SymPy's static `is_*`
 properties plus the derived new-system predicates (`_common.const_value`).
 
 Rules:
@@ -369,8 +369,8 @@ Rules:
    and an inconsistent `A` raises; `ask_ref` follows (`tests/test_ref.py`,
    `test_constant_route_ignores_assumptions`; `tests/test_lra_constants.py`).
 4. In LRA, a comparison a pivot path cannot decide marks the theory
-   `undecidable`; the query is then answered as a fresh engine would
-   (`engine._cannot_give_up`, `_path_dependent`; `theories.md`, "LRA").
+   `undecidable`; the query is then answered as a fresh engine would, since its
+   session is built for it alone (`theories.md`, "LRA").
 5. EUF interns Rationals as pairwise-distinct values; Floats, `pi`, `oo`
    are opaque constants (`euf_adapter.EUFAdapter.term`).
 

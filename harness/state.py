@@ -26,7 +26,9 @@ Engine-level state (one ``Engine``, see ``satassume/engine.py``):
 * ``_failed``: assumption sets whose session raised ``Uninterpreted``
   (dropped with every other cache when the registry epoch moves on);
 * ``_xbasis`` (set by ``relations._number_basis``): per number, its basis
-  of facts for predicate transfer;
+  of facts for predicate transfer, read from the engine's own ``is_many``
+  (dropped with ``_failed`` and ``_verdict`` on a settings change or a new
+  registry epoch);
 * ``stats``, ``_constructing``.
 
 Module-level state (survives ``Engine()``; see ``MODULE_STATE``): the
@@ -238,7 +240,7 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.knowledge.rules", "BASIS"), ("satassume.knowledge.rules", "BASIS_INDEX"), ("satassume.knowledge.rules", "BASIS_OF"),
     ("satassume.knowledge.rules", "DEFINITIONS"), ("satassume.knowledge.rules", "DEF_LITS"),
     ("satassume.knowledge.rules", "_CNF_POS"), ("satassume.knowledge.rules", "_CNF_NEG"),
-    ("satassume.sat.solver", "_BIT"), ("satassume.sat.solver", "_NBIT"),
+    ("satassume.sat.solver", "_BIT"),
     ("satassume.relations", "RELATION_ATOMS"), ("satassume.relations", "_OPS"),
     ("satassume.theories.lra.lra", "_NEG"), ("satassume.theories.lra.lra", "_FLIP"),
     ("satassume.theories.lra.lra_adapter", "_PRED"), ("satassume.theories.lra.lra_adapter", "_REL"),

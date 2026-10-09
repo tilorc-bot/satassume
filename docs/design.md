@@ -128,8 +128,9 @@ They are removed after the class-level follow-up of the move (PLAN.md,
 
 1. **Answer memo** `Engine.answers` (100,000 entries), keyed by the SymPy
    objects `(p, a)` and cleared, with `Engine.splits`, when
-   `_registry_state` (extension registry and version, theory adapters)
-   changes.
+   the registry epoch (`satassume/state/epoch.py`: extension registries,
+   templates, the engine's extensions and theory adapters) changes
+   (`Engine._check_version`).
 2. **Constant route**, then **relevance** (below; memoized as `(p, part)`).
 3. `_engine_ask`: `to_formula` (memoized in `_formula`) translates both
    sides, `Unsupported` gives None; a single atom without assumptions goes
@@ -140,23 +141,24 @@ They are removed after the class-level follow-up of the move (PLAN.md,
 
 The vocabulary (`PREDICATES`, 33 predicates: what a query may mention) is
 wider than what is encoded. A node gets one solver variable per **basis**
-predicate (`BASIS`, 15: `algebraic commutative complex composite even
+predicate (`BASIS`, 14: `algebraic complex composite even
 extended_negative extended_positive extended_real finite imaginary integer
-polar prime rational zero`). The other 18 are **definitions**
+polar prime rational zero`). The other 19 are **definitions**
 (`DEFINITIONS`): each is a conjunction or a disjunction of basis literals,
 exactly equivalent to the predicate under SymPy's rule base, for example
 `real = extended_real & finite`, `nonnegative = extended_real & finite &
 !extended_negative`, `odd = integer & !even`, `antihermitian = zero |
-imaginary`. One is a single literal (`infinite = !finite`) and needs no
-variable at all. `hermitian == real` and `antihermitian == zero | imaginary`
+imaginary`. One is a single literal (`infinite = !finite`), and
+`commutative` is the empty conjunction (true of every term in scope, see
+"Non-commutative symbols"). `hermitian == real` and `antihermitian == zero | imaginary`
 are what SymPy's generic scalar handlers compute; the rule base is
 instantiated only for scalar nodes.
 
-`RULES` are 23 rules in the old system's string syntax over the basis
+`RULES` are 21 rules in the old system's string syntax over the basis
 only; `tests/test_rules.py` checks that, under the definitions, their
 models are exactly those of SymPy's rules over the whole vocabulary
-(`sympy/core/assumptions.py` plus `sympy/assumptions/facts.py`). Their 26
-compiled clauses (`RULE_CLAUSES`) are reduced to 24 (`RULE_INSTANTIATED`) by
+(`sympy/core/assumptions.py` plus `sympy/assumptions/facts.py`). Their 24
+compiled clauses (`RULE_CLAUSES`) are reduced to 22 (`RULE_INSTANTIATED`) by
 `minimize_for_propagation`, which drops a clause only when, for each of its
 literals, falsifying the others lets the rest derive it by unit
 propagation: same models, same propagation. Dropping clauses that are
@@ -185,8 +187,10 @@ is formed, and how depends on its polarity in that clause:
   `compile.compile_formula`): a derived atom is its basis formula. In a
   disjunction (`_or_cnf`) conjunctions are distributed up to
   `MAX_DISTRIBUTE` (16) clauses; past that the largest conjunctions get
-  Tseitin variables (Plaisted-Greenbaum, one direction only), choosing
-  exactly among at most `MAX_EXACT` (8) of them.
+  Tseitin variables (Plaisted-Greenbaum, one direction only): past
+  `MAX_EXACT` (8) conjunctions the largest get variables at once, and
+  among the rest a greedy loop gives a variable to one conjunction at a
+  time while that lowers the estimated literal count.
 * **Queries** (`Session.query_lit`): `pred(node)` is a basis variable, a
   single basis literal, or `(op, literals)`, the definition over the
   node's block, decided by `query_literal` / `_query_all` without a new
@@ -253,7 +257,9 @@ basis; see "Inconsistent assumptions raise `ValueError`").
   procedure (a class implementing the contract of `satassume/sat/theory.py`,
   importing no SymPy) and, if it reads SymPy terms, an adapter module
   `<name>_adapter.py` with the interface of `EUFAdapter` (`parse`,
-  `interprets`, `register`, `attach`, the term maps `relations` reads).
+  `interprets`, `register`, `attach`, and what `relations` reads of its
+  terms: `shared_terms`, `interned`, `term_of`, `terms_since`,
+  `node_term`).
   It may import `state`, `sat` and `knowledge`, not the other theories.
 * List the adapter in `relations.default_specs` (an explicit relative
   import, an `AdapterSpec(name, factory, guarded)`; a missing module is
@@ -278,7 +284,8 @@ decision that should be visible in one place.
 `registry.py` maps SymPy classes to template functions along the MRO;
 `atoms.py` gives unit facts for symbols and fixed-value atoms, `core.py`
 covers `Add`, `Mul` and `Pow`, `functions.py` the elementary functions,
-rounding, `factorial` and a generic `Function` template.
+rounding and `factorial` (an undefined function such as `f(x)` has no
+template).
 
 - A rule is an index-based spec `(premises, conclusion)` over literals
   `(k, pred, pos)` (`_common.py`). Specs depend only on the node's pattern
@@ -293,7 +300,7 @@ rounding, `factorial` and a generic `Function` template.
   an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
   coefficients (`_half_templates`).
 - SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
-  properties of atoms with a fixed value (`is_constant`, `constant_units`).
+  properties of atoms with a fixed value (`consts_of`, `constant_units`).
   `commutative` has no template: it is true by definition (see
   "Non-commutative symbols").
 - `tests/test_templates.py` evaluates every rule at concrete values, in
@@ -301,11 +308,12 @@ rounding, `factorial` and a generic `Function` template.
 
 ### Nodes, cones and discovery (`satassume/engine.py`)
 
-A `Session` holds a solver and a `VarTable` giving each visited node 15
-variables (one per basis predicate). `Session.node` registers the rule block, asserts the node's
-cached context-free facts as units and emits its template clauses, but
-only those about the rule-base neighbourhood of what the query asks
-(`want_of`); the rest is parked (`pending_c`, `pending`). Children are
+A `Session` holds a solver and a `VarTable` giving each visited node 14
+variables (one per basis predicate). `Session.node` registers the rule block
+and emits its template clauses, but only those about a basis predicate the
+query demands of the node (`want_of`); the rest is parked (`pending_c`,
+`pending`). No cached fact enters a session as a clause (see
+"Context-free fact cache" below). Children are
 visited breadth-first; derived nodes wait in `deferred`. A query runs root propagation; if that leaves it
 open and the session is `incomplete`, `escalate` compiles everything
 parked and visits the derived nodes; only then does search run
@@ -355,8 +363,8 @@ holding writeback); issue #97 replaced them by the build per query, at
 1.3x the cost on the refine stream and no cost on the corpus (the
 per-query switching of the glue, #53 stage 5, was the last step of
 reuse and the first of this design: a set's glue at the root, a query's
-delta switched). The four settings stay as documented no-ops so that
-configurations remain valid.
+delta switched). The four settings were documented no-ops from P1 to P7;
+the constructor now refuses them (`TypeError`).
 
 ### Context-free fact cache: a memo of `is_`
 
@@ -370,11 +378,17 @@ never None, keyed on the registry epoch and the settings fingerprint
 the engine's, so a cache shared between engines of different settings
 starts empty for each, and engines of the same settings share hits);
 nothing else writes there (`Engine._put_result`
-is the one writer), and no session reads there (a visited node asserts no
-cached fact as a unit clause; a contextual session derives every fact
-from its own clause set). The memo is sound because the session of
-`is_(node, pred)` is exactly the one a fresh engine builds for the same
-query: nothing of the engine's state enters a session, so its clause set
+is the one writer), and no session takes its entries as clauses (a
+visited node asserts no cached fact as a unit clause; a contextual
+session derives every fact from its own clause set). The memo is sound
+because the session of `is_(node, pred)` is the one a fresh engine
+with the same settings builds for the same query: what enters a session
+from the engine's state is the engine's own context-free answers (the
+glue's `engine.is_` calls on closed numbers in `relations.py`, which may
+be answered from this cache, and the numbers' transfer bases built from
+them, `Engine._xbasis`), each a function of the registry and the
+settings, and dropped with the other set memos when either changes. So
+its clause set
 is a function of the node, the predicate, the registry and the settings,
 and its answer is an entailment of that set (the harness `audit` mode and
 `tests/test_writeback_provenance.py` check the memo against a fresh engine
@@ -415,7 +429,7 @@ pins the defect; the SymPy bug is not filed upstream.
 
 ### Constant propositions: context-free first
 
-`_is_constant_proposition`: every predicate is built in (vocabulary or
+`is_constant_proposition`: every predicate is built in (vocabulary or
 relation) and every argument has no free symbols, is a number and contains
 no `AppliedUndef` (also not inside `Integral`, `Sum` or `Subs`). Such a
 proposition goes to the context-free path: a constant's facts do not
@@ -712,7 +726,7 @@ assumptions, the engine configuration and the registered extensions, never
 of earlier queries, of what is cached or evicted, or of `PYTHONHASHSEED`.
 State that could carry a dependence: a session's root facts written to
 the cache and cached facts asserted as units (both gone with #97 P2: the
-cache is a memo of `is_` that no session reads), one reused session per
+cache is a memo of `is_` that no session takes as clauses), one reused session per
 assumption set (gone with #97 P1), caches that omit the registry (#63).
 
 Issue #53 is the umbrella (seven defect groups); group 1, non-total

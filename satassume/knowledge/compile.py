@@ -8,7 +8,7 @@ clause is a list of non-zero integers; ``-v`` is the negation of ``v``.
 from __future__ import annotations
 
 import heapq
-from typing import Any, Callable, Dict, List, Sequence
+from typing import Any, Callable, Dict, List
 
 from ..sat.formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
 from .rules import BASIS, BASIS_INDEX, DEF_LITS as _DEF_LITS, basis_lits
@@ -83,7 +83,6 @@ class VarTable:
     """
 
     def __init__(self):
-        from .rules import BASIS, BASIS_INDEX
         self._preds = BASIS
         self._pidx = BASIS_INDEX
         self._npred = len(BASIS)
@@ -93,6 +92,8 @@ class VarTable:
         self.custom: Dict[P, int] = {}
         self.new_custom: List[P] = []
         self.naux = 0
+        #: the auxiliary variable asserted true (:func:`_true_lit`), once needed
+        self.true_var: int | None = None
 
     def node_base(self, node) -> int:
         b = self.base_of.get(node)
@@ -323,10 +324,14 @@ def _or_cnf(f: Or, table: VarTable, emit, dv=None) -> List[List[int]]:
             # more conjunctions of at least two clauses each than can stay
             # below MAX_DISTRIBUTE anyway: the largest get variables right
             # away (the greedy choice below would pick them one by one, at
-            # cubic cost), the MAX_EXACT smallest go to the exact choice
+            # cubic cost), the MAX_EXACT smallest go to the greedy loop
             keep = set(map(id, heapq.nsmallest(MAX_EXACT, info, key=lambda i: (i[0], i[1]))))
             chosen = [i[2] for i in info if id(i) not in keep]
             info = [i for i in info if id(i) in keep]
+        # greedy, one conjunction at a time: give a variable to the one
+        # whose removal lowers the estimate most (while over MAX_DISTRIBUTE
+        # clauses, the cheapest removal even if the estimate rises); stop
+        # when no removal lowers it
         while info:
             n, best = cost(info, len(chosen))
             pick = None
@@ -383,9 +388,17 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
         return -_literal(inner, table, emit, dv)
     if isinstance(f, Implies):
         return _literal(Or(Not(f.args[0]), f.args[1]), table, emit, dv)
-    if isinstance(f, Equivalent) and len(f.args) == 2:
-        a, b = f.args
-        return _literal(And(Implies(a, b), Implies(b, a)), table, emit, dv)
+    if isinstance(f, Equivalent):
+        if len(f.args) == 2:
+            a, b = f.args
+            return _literal(And(Implies(a, b), Implies(b, a)), table, emit, dv)
+        # n-ary (``to_formula`` keeps SymPy's): all arguments equal, a
+        # cycle of implications over their literals
+        lits = [_Lit(_literal(a, table, emit, dv)) for a in f.args]
+        if len(lits) < 2:
+            return _true_lit(table, emit)
+        return _literal(And(*[Implies(lits[i - 1], l) for i, l in enumerate(lits)]),
+                        table, emit, dv)
     if isinstance(f, Exclusive):
         lits = [_literal(a, table, emit, dv) for a in f.args]
         pairs = [Or(Not(_Lit(x)), Not(_Lit(y))) for i, x in enumerate(lits) for y in lits[i + 1:]]
@@ -434,7 +447,7 @@ class _Lit(Formula):
 
 
 def _true_lit(table: VarTable, emit) -> int:
-    v = getattr(table, 'true_var', None)
+    v = table.true_var
     if v is None:
         v = table.true_var = table.aux()
         emit([v])

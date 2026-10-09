@@ -130,8 +130,8 @@ Conclusions that drive the design:
 satassume/              top-down: each layer imports only the layers below it (docs/design.md, "Package layers")
   ref.py                ask_ref, the reference implementation of docs/spec.md
   sympy_api.py          ask(prop, assumptions), out_of_scope(), to_formula(), Unsupported
-  engine.py             Engine: DictCache (engine-owned; never SymPy's _assumptions), Session (solver + atom table),
-                        demand-driven discovery, level-0 write-back
+  engine.py             Engine: DictCache (engine-owned memo of is_; never SymPy's _assumptions), Session (solver +
+                        atom table, built per query), demand-driven discovery, the discovery budget
   scope.py              which relation machinery a query gets (theory scope)
   relations.py          relation atoms, their links to the unary vocabulary, the theories of a session
   theories/             DPLL(T) theories, each a SymPy-free solver plus a SymPy adapter
@@ -160,31 +160,31 @@ Query path for `ask(prop, assumptions)`:
 
 1. `to_formula` translates both SymPy Booleans; anything out of scope
    raises `Unsupported` and `ask` returns None;
-2. the assumptions formula is compiled under a fresh selector variable `s`
-   in a session keyed by the assumptions, and `s` is passed as a solver
-   assumption, so nothing derived under it is ever at level 0 and nothing
-   leaks into the cache. The session is reused while the assumptions stay
-   the same (many questions under one `assuming(...)` block); learned
-   clauses stay valid across queries;
-3. visiting a node allocates 33 variables, instantiates the rule base (79
-   clauses, the propagation-minimal form of the 110), asserts its cached
-   context-free facts as units, emits the precompiled clause patterns of
-   the class templates whose conclusions the query demands, and
-   breadth-first visits the child nodes they mention (bounded by
-   `discovery_budget`); derived nodes wait for escalation;
-4. root-level propagation, then the assumptions' implied literals; every
-   literal assigned at level 0 is a context-free fact and is written back to
-   the cache of its node;
-5. if the query literal is still undecided: escalate (compile the parked
-   templates, visit the derived nodes), then CDCL `entails()` (two solves
-   under assumptions), in a fresh session over the query's cone when the
-   reused session already holds other queries' nodes.
+2. a query whose structural cone (`cone(p) | cone(a)`) outweighs
+   `discovery_budget` is None before any session work; every other query
+   runs uncapped;
+3. a session is built for the query and discarded after it (issue #97):
+   the assumptions formula is compiled under a fresh selector variable `s`,
+   passed as a solver assumption, so nothing derived under it is ever at
+   level 0; the set gets one complete consistency check, whose verdict
+   (and an `Uninterpreted` failure) is the only thing the engine keeps of
+   the set;
+4. visiting a node allocates its 14 variables (one per basis predicate),
+   registers the rule base as the solver's rule-block propagator (the
+   exact closure of the node's block, no clauses), emits the precompiled
+   clause patterns of the class templates about the predicates the query
+   demands, and breadth-first visits the child nodes they mention;
+   derived nodes and the other patterns wait for escalation. No cached
+   fact enters a session;
+5. root-level propagation under the assumptions; if the query literal is
+   still undecided: escalate (compile the parked templates, visit the
+   derived nodes), then CDCL `entails()` (at most two searches under
+   assumptions).
 
 A proposition with no assumptions is a context-free query and goes through
-`Engine.is_`: cache hit in the engine's `DictCache`, else a session of its own
-over the cone of the expression. Sessions are generational: after
-`session_limit` nodes the solver is discarded; level-0 facts already live
-in the engine's cache, so nothing is lost and memory stays bounded.
+`Engine.is_`: a hit in the engine's `DictCache`, else a session of its own
+over the cone of the expression, whose answer (True or False, never None)
+is memoized under the node; nothing else writes to the cache.
 
 Rules of engagement for templates:
 

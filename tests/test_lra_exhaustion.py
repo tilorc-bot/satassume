@@ -60,7 +60,7 @@ def _reached(p, s, e, flag):
     rel = bool(e.relation_specs)
     try:
         sess, lits = e._build_context(_formula(s, rel, True))
-        for t in sess.solver._theories:
+        for t in sess.solver.theories():
             t.exhausted = False
         e._ask(sess, lits, _formula(p, rel), True)
     except ValueError:
@@ -71,7 +71,7 @@ def _reached(p, s, e, flag):
 def _uncertified(s):
     """An LRA theory of the session is not certified (a search over its
     atoms can give up)."""
-    return any(not t.certified for t in s.solver._theories
+    return any(not t.certified for t in s.solver.theories()
                if isinstance(t, LRATheory))
 
 
@@ -214,7 +214,7 @@ def test_constants_after_a_rational_branch_and_bound_in_the_set_check():
         & Q.lt(x, n + 3)
     queries = [Q.gt(x, pi), Q.ge(x, n + pi / 4), Q.ge(x, n + 1), Q.lt(x, 6 + pi)]
     built, _ = Engine()._build_context(_formula(s, True))
-    lras = [t for t in built.solver._theories if hasattr(t, "branched_rational")]
+    lras = [t for t in built.solver.theories() if hasattr(t, "branched_rational")]
     assert [t.branched_rational for t in lras] == [True]
     assert [t.rational_values() for t in lras] == [(F(4), 1)]
     out, kept, _ = _sweep([s], queries)

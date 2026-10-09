@@ -117,7 +117,6 @@ _RULE_TABLES: dict = {}
 _adopt_memo(__name__, "_RULE_TABLES")
 _EVEN = int("01" * 64, 2)          # bits 0, 2, 4, ... (positive relative literals)
 _BIT = tuple(1 << i for i in range(128))       # relative literal -> its bit
-_NBIT = tuple(~(1 << i) for i in range(128))   # ... and the complement
 
 
 def _block_models(clauses, n: int) -> tuple[int, ...]:
@@ -125,7 +124,7 @@ def _block_models(clauses, n: int) -> tuple[int, ...]:
     variable 0) over ``n`` variables, each as a mask over the ``2*n``
     relative literals: bit ``2*i`` if variable ``i`` is true, bit
     ``2*i + 1`` if it is false.  DPLL with unit propagation; the engine's
-    rule base has 48 models."""
+    rule base has 44 models."""
     out: list[int] = []
     cls: list[int] = []
     for c in clauses:
@@ -324,12 +323,7 @@ class _BlockClosure:
             bad = list(self.models)
         else:
             bad = [x for x in self.models if not (x >> t) & 1]
-        lits = []
-        b = m
-        while b:
-            low = b & -b
-            lits.append(low.bit_length() - 1)
-            b ^= low
+        lits = self.lits_of(m)
         chosen: list[int] = []
         rest = bad
         while rest:
@@ -480,7 +474,8 @@ class Solver:
         # variable, whether anything outside the block mentions it.
         self._rb_mask: list[int] = [0]
         self._rb_ment: list[int] = [0]
-        # Undo of the masks: (base, mask) pairs, flat, each saved at the
+        # Undo of the masks: (base, mask, closure) triples, flat (the
+        # block's ``_rb_mask`` and ``_rb_cl`` entries), each saved at the
         # first change of the block's mask at a level (``_rb_saved[base]``
         # is the id of that level, ``_uid`` the id of the newest level),
         # and per level the length of ``_rb_undo`` when it began
@@ -1369,7 +1364,7 @@ class Solver:
         for q in rbc.lits_of(m):
             if level[(q + lo) >> 1] < dl:
                 low |= 1 << q
-        if rbc.closure(low) & imp if low else rbc.closure(0) & imp:
+        if rbc.closure(low) & imp:
             self._n_late += 1
             self._backtrack(0)
             return
@@ -1423,18 +1418,6 @@ class Solver:
         if self._trail_lim and self._level[v] > 0:
             return None
         return self._val[l]
-
-    def root_values(self, lo: int, n: int) -> list:
-        """``(k, value)`` for each variable ``lo + k`` (``0 <= k < n``)
-        assigned at root level."""
-        val = self._val
-        level = self._level
-        out = []
-        for v in range(lo, min(lo + n, self._nvars + 1)):
-            x = val[2 * v]
-            if x is not None and not level[v]:
-                out.append((v - lo, x))
-        return out
 
     def root_trail(self) -> list[int]:
         """All literals assigned at root level, in assignment order."""
@@ -1887,6 +1870,7 @@ class Solver:
         self._stamp += 1
 
     def theories(self) -> list:
+        """The attached theories, in attachment order (a copy)."""
         return list(self._theories)
 
     def register_atom(self, theory, var: int, payload, mention: bool = True) -> bool:
@@ -2119,8 +2103,10 @@ class Solver:
         return None
 
     def _learn(self, confl: Clause) -> bool:
-        """Conflict analysis and learning for a conflict found outside the
-        propagation loop of :meth:`_search`.  False iff UNSAT at root."""
+        """Conflict analysis and learning: analyze ``confl``, backtrack,
+        learn the clause and assert its first literal.  False iff UNSAT at
+        root.  :meth:`_search` calls it for every conflict, from
+        propagation and from a theory's final check."""
         self._n_conflicts += 1
         self._scan = 0
         if not self._trail_lim:
@@ -2375,39 +2361,9 @@ class Solver:
         while True:
             confl = propagate()
             if confl is not None:
-                self._n_conflicts += 1
-                self._scan = 0
                 conflict_c += 1
-                if not trail_lim:
-                    self._ok = False
+                if not self._learn(confl):
                     return False
-                learnt, bt = self._analyze(confl)
-                self._backtrack(bt)
-                self._n_learned += 1
-                self._stamp += 1
-                l0 = learnt[0]
-                v0 = l0 >> 1
-                if len(learnt) == 1:
-                    val[l0] = True
-                    val[l0 ^ 1] = False
-                    level[v0] = 0
-                    reason[v0] = None
-                    trail.append(l0)
-                else:
-                    c = Clause(learnt)
-                    c.learnt = True
-                    c.act = 0.0
-                    self._bump_clause(c)
-                    self._learnts.append(c)
-                    self._watches[learnt[0]].append(c)
-                    self._watches[learnt[1]].append(c)
-                    val[l0] = True
-                    val[l0 ^ 1] = False
-                    level[v0] = len(trail_lim)
-                    reason[v0] = c
-                    trail.append(l0)
-                self._var_inc /= self._var_decay
-                self._cla_inc /= self._cla_decay
             else:
                 if conflict_c >= nof_conflicts:
                     self._backtrack(0)

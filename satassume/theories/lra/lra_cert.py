@@ -22,36 +22,10 @@ from . import constfield as _cf
 
 __all__ = ["CertAtoms", "certify", "limits", "within"]
 
-_ONE = Fraction(1)
-
-_PI = _cf.PI.numerator[0]                   # the index of pi's indeterminate
 #: with constants, a variable splits in a branch and bound only while its
 #: value is at most 2**_GROWTH times what a combination of atom bounds can
 #: reach (LRATheory._certify: the room certification leaves branch bounds)
 _GROWTH = 16
-
-
-def _laurent(x) -> dict | None:
-    """``{j: c}`` with ``x = sum(c * pi**j)`` (rational ``c != 0``, integer
-    ``j``, negative too) for a Fraction, or an Element in pi alone whose
-    denominator is a power of pi; None for any other number."""
-    if type(x) is Fraction:
-        return {0: x} if x else {}
-    n, d = x.numerator, x.denominator
-    if type(d) is Fraction:
-        j0 = 0
-    else:
-        cs = d[1]
-        if d[0] != _PI or cs[-1] != 1 or any(type(c) is not Fraction or c for c in cs[:-1]):
-            return None
-        j0, d = len(cs) - 1, _ONE
-    if d != 1:
-        n = _cf._scale(n, 1 / d)
-    if type(n) is Fraction:
-        return {-j0: n}
-    if n[0] != _PI or any(type(c) is not Fraction for c in n[1]):
-        return None
-    return {i - j0: c for i, c in enumerate(n[1]) if c}
 
 
 def _ceil_abs(c: Fraction) -> int:
@@ -168,7 +142,7 @@ class CertAtoms:
                         if n > self.X:
                             self.X = n
                     continue
-                lb = _laurent(b)
+                lb = _cf.pi_laurent(b)
                 if lb is None:
                     return False
                 for j, c in lb.items():
@@ -179,7 +153,7 @@ class CertAtoms:
             self.na = len(atoms)
         if len(ints) > self.ni:
             for _, m, k in islice(reversed(ints.values()), len(ints) - self.ni):
-                lm, lk = _laurent(m), _laurent(k)
+                lm, lk = _cf.pi_laurent(m), _cf.pi_laurent(k)
                 if lm is None or lk is None or len(lm) != 1:
                     return False
                 ((e, mu),) = lm.items()

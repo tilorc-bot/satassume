@@ -84,7 +84,7 @@ from .state.memos import Memos, adopt as _adopt_memo, owner_memos
 from .sat.formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
-                        zero_args, zero_twin, zero_twins)
+                        zero_args, zero_twin)
 from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
@@ -100,7 +100,7 @@ Node = Any
 #: to several engines on purpose.
 ENGINE_MEMOS: Tuple[str, ...] = (
     "answers", "splits", "_kids", "_cones", "_qcones", "_glue_adapters",
-    "_failed", "_verdict", "cache.store", "custom_cache.store",
+    "_failed", "_verdict", "_xbasis", "cache.store", "custom_cache.store",
 )
 
 
@@ -228,6 +228,18 @@ class DictCache:
         #: facts were derived under; None until an engine looks
         self._settings = None
 
+    def sync(self, epoch: int, settings: tuple) -> None:
+        """Bring the store up to ``epoch`` and ``settings``
+        (``Engine._check_version``): empty it if it was filled under
+        another epoch or other settings, then record both.  A cache no
+        engine has looked at yet (``_settings`` None: it holds only what
+        the caller seeded by hand) is adopted as it is."""
+        if self._epoch != epoch or (self._settings is not None
+                                    and self._settings != settings):
+            self.store.clear()
+        self._epoch = epoch
+        self._settings = settings
+
     def facts(self, node: Node) -> Optional[Dict[str, Optional[bool]]]:
         return self.store.get(node)
 
@@ -281,26 +293,19 @@ class Session:
         # no owner bookkeeping: nothing asks the solver for provenance
         # (the provenance writeback of #53 stage 3 was removed by #97 P2)
         self.solver.track_owners = False
-        # the single-node rule base, propagated by the solver from shared
-        # tables instead of 79 clauses per node (Solver.register_block)
+        # the single-node rule base, propagated by the solver from the
+        # exact closure of each node's block (Solver.register_block)
         self.solver.set_rule_block(RULE_INTERNAL, NPRED)
         self.table = VarTable()
         self.base: Dict[Node, int] = {}      # visited node -> variable of BASIS[0]
-        self.read_pos = 0                    # cursor into solver.root_trail()
-        self.nclauses = 0
         self.frontier: deque = deque()
         self.pending: Dict[Node, list] = {}   # node -> template formulas not yet compiled
         self.pending_c: Dict[Node, list] = {}  # node -> (clauses, bases) pairs not yet emitted
         self.demand: Dict[Node, set] = {}     # node -> predicate indices the query needs
         self.deferred: List[Node] = []        # derived nodes, visited only by escalate()
-        self.n_assumption_nodes = 0           # nodes visited by assume_formula()
-        #: nodes that are closed irrational constants (pi, 1/pi), counted
-        #: apart from the others (their facts are context-free)
-        self.n_constants = 0
         #: the verdict of the assumption set from the complete check run at
         #: construction (``Engine._build_context``); None outside it
         self.verdict: Optional[str] = None
-        self.n_assumption_constants = 0
         self.literals: Dict[Any, int] = {}    # compound formula -> Tseitin literal
         self.defvars: Dict[Any, int] = {}     # (derived predicate, node) -> its variable
         #: (definition, node) -> [variable, directions emitted (1: var ->
@@ -339,10 +344,10 @@ class Session:
         #: the Relations object once predicate transfer is engaged
         #: (Relations._engage_transfer); None on every other path
         self.xfer = None
-        #: a budget cut dropped work: :meth:`_discover` or :meth:`escalate`,
-        #: called with an explicit ``budget``, stopped with unvisited nodes
-        #: (new, or with parked templates) on its frontier, or with parked
-        #: templates or derived nodes left.  The engine never passes one:
+        #: a budget cut dropped work: :meth:`escalate`, called with an
+        #: explicit ``budget``, stopped with unvisited nodes (new, or with
+        #: parked templates) on its frontier, or with parked templates or
+        #: derived nodes left.  The engine never passes one:
         #: a query whose structural cone exceeds ``discovery_budget`` is
         #: answered None before any session work (``Engine._within_budget``)
         #: and every other query runs discovery and escalation uncapped, so
@@ -350,13 +355,13 @@ class Session:
         #: checks it).  If set (a direct caller), its set's complete check
         #: gives ``UNKNOWN``.
         self.truncated = False
-
-    # -- variables -------------------------------------------------------
         if scope.glue and engine._relation_specs:
             # the theory scope of the query is known at construction: the
             # glue (and transfer, if the scope says so) exists before any
             # atom is allocated, as a fresh engine for the query has it
             self.relations = Relations(self, engine._relation_specs)
+
+    # -- variables -------------------------------------------------------
 
     def var(self, pred: str, node: Node) -> int:
         """The variable of ``pred(node)``: the node's block variable of a
@@ -376,7 +381,7 @@ class Session:
             lits = [b + l - 1 if l > 0 else -(b - l - 1) for l in ls]
             v = self.defvars[key] = self.table.aux()
             self.solver.ensure_vars(v)
-            emit = self._emit
+            emit = self.emit
             if op == '&':
                 for l in lits:
                     emit([-v, l])
@@ -426,7 +431,7 @@ class Session:
         key = (d, node)
         e = self._dv.get(key)
         b = self.node(node)
-        emit = self._emit
+        emit = self.emit
         if e is None:
             v = self.table.aux()
             self.solver.ensure_vars(v)
@@ -476,7 +481,7 @@ class Session:
             if len(d2[1]) == 1 and abs(d2[1][0]) in own:
                 continue
             for s1, s2 in def_implications(d, d2):
-                self._emit([s1 * v, s2 * v2])
+                self.emit([s1 * v, s2 * v2])
         others.append((d, v))
 
     def query_lit(self, pred: str, node: Node):
@@ -494,8 +499,28 @@ class Session:
             return lits[0]
         return op, lits
 
-    def _emit(self, clause: List[int]) -> None:
-        self.nclauses += 1
+    def prepare_query(self, proposition):
+        """Make the session ready to answer ``proposition`` and return what
+        :meth:`query_literal` then decides (``Engine._ask``; not to be
+        confused with :meth:`query_lit`, which only reads a visited
+        node's block, or :meth:`query_literal`, which decides): for a
+        vocabulary atom, :meth:`query_lit` of it
+        once its node is visited for its predicate, the twins ``eq(t, 0)``
+        of its zero atom are allocated and the glue has read it (no
+        variable of its own); for any other formula, :meth:`literal_of`."""
+        if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
+            self.ensure(proposition.expr, {proposition.pred})
+            if self._ensure_twins((proposition,)):    # twins eq(t, 0)
+                self._flush()
+            if self.relations is not None:
+                self._relations(proposition)
+            return self.query_lit(proposition.pred, proposition.expr)
+        return self.literal_of(proposition)
+
+    def emit(self, clause: List[int]) -> None:
+        """Add ``clause`` (signed variables of this session's table) to the
+        session's solver: how the glue (``relations``) and the compilers
+        add clauses to a session."""
         self.solver.add_clause(clause)
 
     def node(self, node: Node, demanded=None) -> int:
@@ -516,9 +541,6 @@ class Session:
         table = self.table
         b = table.node_base(node)
         self.base[node] = b
-        if getattr(node, "is_number", False) and not node.is_Rational \
-                and not node.free_symbols:
-            self.n_constants += 1
         table.new_nodes = []
         constructing = self.engine._constructing
         constructing.add(node)
@@ -538,7 +560,7 @@ class Session:
         else:
             compiled, formulas = (), engine._templates(node)
         ext = engine._extensions
-        if ext is not None and ext._vocab:
+        if ext is not None and ext.has_node_facts:
             formulas = list(formulas) + ext.node_facts(node)
         items = [(f, atoms_of(f)) for f in formulas] if formulas else None
         # 2. single-node rule base (registered with the solver's rule-block
@@ -568,10 +590,6 @@ class Session:
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
-
-    def _add_clauses(self, clauses) -> None:
-        self.nclauses += len(clauses)
-        self.solver.add_clauses(clauses)
 
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
@@ -619,7 +637,6 @@ class Session:
         the slots' mention masks of ``clauses`` (see :func:`_split`)."""
         if ment is None:
             ment = _split(clauses, None)[3]
-        self.nclauses += len(clauses)
         solver = self.solver
         solver.ensure_vars(len(self.table))
         solver.add_internal([[bases[k] + off for k, off in li] for _, _, li in clauses],
@@ -636,7 +653,7 @@ class Session:
         the derived node it is already visited and its atoms are shared.
         """
         table = self.table
-        emit = self._emit
+        emit = self.emit
         demand = self.demand
         for f, atoms in items:
             for atom in atoms:
@@ -693,7 +710,7 @@ class Session:
         if ext is None:
             return
         for f in ext.facts_for(atom):
-            compile_formula(f, self.table, self._emit)
+            compile_formula(f, self.table, self.emit)
 
     def _compile_pending(self, node: Node, demanded) -> None:
         """Compile the parked formulas and clauses of ``node`` that mention
@@ -733,10 +750,10 @@ class Session:
         if now:
             self._compile(node, now)
 
-    def ensure(self, node: Node, demanded=None, budget: Optional[int] = None) -> None:
+    def ensure(self, node: Node, demanded=None) -> None:
         """Demand-driven discovery: visit ``node`` and, breadth-first, the
-        nodes its templates mention, up to ``budget`` new nodes (None: no
-        cap; the engine's queries passed ``Engine._within_budget``).
+        nodes its templates mention, uncapped (the engine's queries passed
+        ``Engine._within_budget``).
 
         A visited node with nothing parked is only recorded (the discovery
         below would skip it at once)."""
@@ -749,23 +766,24 @@ class Session:
                 self.frontier = deque()
             return
         self.frontier = deque([node])
-        self._discover(demanded, budget)
+        self._discover(demanded)
 
-    def _discover(self, demanded=None, budget: Optional[int] = None) -> None:
-        if budget is None:
-            budget = _UNCAPPED
-        added = 0
+    def discover(self) -> None:
+        """Visit what the clauses emitted since the last visit mention: run
+        the clause generators of newly allocated custom atoms, then visit
+        the newly mentioned nodes breadth-first, uncapped.  Called after a
+        user formula is compiled and by the relation glue after it adds
+        clauses (``Relations.process``)."""
+        self._flush()
+        self._discover()
+
+    def _discover(self, demanded=None) -> None:
         pending, pending_c = self.pending, self.pending_c
-        while self.frontier and added < budget:
+        while self.frontier:
             n = self.frontier.popleft()
             if n in self.base and n not in pending and n not in pending_c:
                 continue
             self.node(n, None if demanded is None else self.demand.get(n, set()))
-            added += 1
-        if self.frontier:
-            base = self.base
-            if any(n not in base or n in pending or n in pending_c for n in self.frontier):
-                self.truncated = True
         self.frontier = deque()
 
     @property
@@ -775,7 +793,11 @@ class Session:
 
     def escalate(self, budget: Optional[int] = None) -> None:
         """Compile every parked formula and visit every derived node (full
-        instantiation of the cone); ``budget`` as for :meth:`ensure`."""
+        instantiation of the cone).  ``budget`` caps the steps (a parked
+        node's patterns or formulas compiled, a new node visited); None is
+        no cap, which is how the engine calls it.  Work left over when the
+        budget runs out sets ``truncated``; the frontier is emptied either
+        way."""
         if budget is None:
             budget = _UNCAPPED
         added = 0
@@ -910,10 +932,9 @@ class Session:
         self._neg_shared = sum(1 for a in self._a_raw if len(DEF_LITS.get(a.pred, ((), ()))[1]) > 1) >= _NEG_SHARED
 
         def emit(clause):
-            self._emit(clause + [-s])
+            self.emit(clause + [-s])
         compile_formula(f, self.table, emit, self.dvar)
-        self._flush()
-        self._discover()
+        self.discover()
         if self.relations is not None:
             if theory_scope(f, None, self.engine._extensions).glue:
                 # the set's own scope has the glue (a relation atom, an
@@ -927,8 +948,6 @@ class Session:
                 # the set's check (link_set, Engine._build_context), so the
                 # check and its verdict are a function of the set
                 self._link_pending = True
-        self.n_assumption_nodes = len(self.base)
-        self.n_assumption_constants = self.n_constants
         return [s]
 
     def link_set(self) -> None:
@@ -986,7 +1005,7 @@ class Session:
             # answers only queries under ``a`` (Engine._context_session
             # keys it by the set), and with a relation atom in ``a`` the
             # early return above never fires: the set's selectors
-            # (Relations.selectors_for(a), and transfer's when ``a``
+            # (Relations.selectors_of(a), and transfer's when ``a``
             # itself makes an equality) are assumed by every query the
             # session ever answers, its own check included.  Glue that is
             # on in every query is not history: a fresh session for
@@ -1058,7 +1077,7 @@ class Session:
         new = want - have
         if new:
             for x in sorted(new):
-                self._emit([x])
+                self.emit([x])
             have |= new
         lsel, nsel, asel, status = rel.link_sel, rel.num_sel, rel.atom_sel, rel.status
         tp = ap = False
@@ -1109,7 +1128,7 @@ class Session:
             self.solver.set_inert(g[0])
         v, have = g[0], g[1]
         for x in sorted(want - have):
-            self._emit([-v, x])
+            self.emit([-v, x])
         have |= want
         g[2] = stamp
         return v
@@ -1119,9 +1138,8 @@ class Session:
         if lit is not None:
             return lit
         self._ensure_atoms(f)
-        lit = formula_literal(f, self.table, self._emit, self.dvar)
-        self._flush()
-        self._discover()
+        lit = formula_literal(f, self.table, self.emit, self.dvar)
+        self.discover()
         if self.relations is not None:
             self._relations(f)
         self.literals[f] = lit
@@ -1219,7 +1237,7 @@ class Engine:
     discovery_budget : int
         The largest structural cone a query may have: a query whose cone,
         ``cone(p) | cone(a)`` (templates, derived nodes, extension facts
-        and relation glue, weighted as ``Session._cone`` explains), weighs
+        and relation glue, weighted as ``_struct`` explains), weighs
         more is answered None before any session work, and so is every
         query under a set whose own cone does (its verdict is ``UNKNOWN``);
         ``last_budget_limited`` tells.  A function of the query alone
@@ -1314,8 +1332,7 @@ class Engine:
         #: (``sympy_api._Split``), cleared together with ``answers``
         self.splits = AnswerMemo(20_000)
         #: always empty since issue #97 (no contextual session is kept
-        #: between queries); the attribute stays for the tools and the
-        #: harness that enumerate or clear it
+        #: between queries); the tests assert that it stays empty
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: the structural cones of the discovery budget (``_struct``,
@@ -1336,6 +1353,11 @@ class Engine:
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
+        #: number -> its basis of facts for predicate transfer
+        #: (``relations._number_basis``): read from this engine's own
+        #: ``is_many``, so it depends on the settings and the registry epoch
+        #: and is dropped with the other set memos
+        self._xbasis: Dict[Any, Any] = {}
         #: the registry epoch (:mod:`satassume.state.epoch`) the engine-level
         #: caches were filled under; -1 until the first query
         self._epoch = -1
@@ -1482,7 +1504,8 @@ class Engine:
         change before the first query (``_epoch == -1``) drops a cache
         filled by another engine too.  After the first query this also
         drops what :meth:`_check_version` drops for the engine (the answer
-        and split memos, the ``Uninterpreted`` memo, the verdict memo),
+        and split memos, the ``Uninterpreted`` memo, the verdict memo, the
+        numbers' transfer bases ``_xbasis``: ``_drop_set_memos``),
         counted in ``stats["version_clears"]``, and the stores of the
         engine's fact caches (``cache``, ``custom_cache``): their facts can
         depend on ``templates``, ``transfer`` and ``uninterpreted``, and a
@@ -1495,20 +1518,17 @@ class Engine:
         self._settings_key = self._settings_fingerprint()
         self._drop_cones()
         if self._epoch >= 0:
-            self.stats["version_clears"] += 1
-            self.answers.clear()
-            self.splits.clear()
-            self._failed.clear()
-            self._verdict.clear()
+            self._drop_set_memos()
             self.cache.store.clear()
             self.custom_cache.store.clear()
 
     def _check_version(self) -> None:
         """Drop every engine-level cache filled under an earlier registry
         epoch (:mod:`satassume.state.epoch`): the fact caches, the answer and
-        split memos, the ``Uninterpreted`` memo and the verdict memo all
-        hold results computed under the registrations in force at the
-        time.  The entry of every query calls this when the engine's epoch
+        split memos, the ``Uninterpreted`` memo, the verdict memo and the
+        numbers' transfer bases (``_xbasis``; all but the fact caches via
+        ``_drop_set_memos``) hold results computed under the registrations
+        in force at the time.  The entry of every query calls this when the engine's epoch
         is not the current one (``if self._epoch != _EPOCH[0]``), and
         ``is_`` also when a fact cache's settings fingerprint is not the
         engine's (one tuple comparison per query): a ``DictCache`` records
@@ -1523,21 +1543,10 @@ class Engine:
         if self._epoch != epoch:
             self._drop_cones()
             if self._epoch >= 0:
-                self.stats["version_clears"] += 1
-                self.answers.clear()
-                self.splits.clear()
-                self._failed.clear()
-                self._verdict.clear()
+                self._drop_set_memos()
             self._epoch = epoch
-        key = self._settings_key
-        for cache in (self.cache, self.custom_cache):
-            # a cache no engine has looked at yet (``_settings`` None: it
-            # holds only what the caller seeded by hand) is adopted
-            if cache._epoch != epoch or (cache._settings is not None
-                                         and cache._settings != key):
-                cache.store.clear()
-            cache._epoch = epoch
-            cache._settings = key
+        self.cache.sync(epoch, self._settings_key)
+        self.custom_cache.sync(epoch, self._settings_key)
 
     def _settings_fingerprint(self) -> tuple:
         """The settings a context-free query's answer depends on, as the
@@ -1545,6 +1554,19 @@ class Engine:
         ``(templates, transfer, uninterpreted)``, compared with ``==``
         (``templates`` by identity, as its setter does)."""
         return (self._templates, self._transfer, self._uninterpreted)
+
+    def _drop_set_memos(self) -> None:
+        """Drop the memos of whole queries and sets (the answer and split
+        memos, the ``Uninterpreted`` and verdict memos, the numbers'
+        transfer bases), counted in ``stats["version_clears"]``: what an
+        epoch or a settings change invalidates besides the fact caches and
+        the cones."""
+        self.stats["version_clears"] += 1
+        self.answers.clear()
+        self.splits.clear()
+        self._failed.clear()
+        self._verdict.clear()
+        self._xbasis.clear()
 
     # -- the discovery budget: a test on the query's structural cone ----------
     def _drop_cones(self) -> None:
@@ -1594,7 +1616,7 @@ class Engine:
                 compiled, formulas = self.clause_templates(o)
             else:
                 compiled, formulas = (), self.templates(o)
-            if ext is not None and ext._vocab:
+            if ext is not None and ext.has_node_facts:
                 formulas = list(formulas) + ext.node_facts(o)
         finally:
             if mine:
@@ -1778,17 +1800,26 @@ class Engine:
         (``_failed``, ``_verdict``) and raised again without a build."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
-        failed = self._failed
-        msg = failed.get(assumptions)
-        if msg is not None:
-            # the construction below would raise this again: whether it
-            # does depends only on the assumptions' relation atoms and the
-            # registry epoch, which _check_version has just compared
-            raise Uninterpreted(msg)
         if self._verdict.get(assumptions) is INCONSISTENT:
             # the construction below would raise this again (it is the same
             # every time, see _build_context); the memo only saves the work
             raise InconsistentAssumptions("inconsistent assumptions")
+        s, lits = self._build_context_memoized(assumptions, proposition)
+        if s.verdict is INCONSISTENT:
+            raise InconsistentAssumptions("inconsistent assumptions")
+        return s, lits
+
+    def _build_context_memoized(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
+        """:meth:`_build_context` behind the set's memos, for
+        :meth:`_context_session` and :meth:`verdict`: a set whose
+        construction raised ``Uninterpreted`` raises it again without a
+        build (whether it does depends only on the assumptions' relation
+        atoms and the registry epoch, which the caller has just compared);
+        otherwise the set's verdict is recorded (``_verdict``)."""
+        failed = self._failed
+        msg = failed.get(assumptions)
+        if msg is not None:
+            raise Uninterpreted(msg)
         try:
             s, lits = self._build_context(assumptions, proposition)
         except Uninterpreted as e:
@@ -1796,12 +1827,10 @@ class Engine:
                 failed.clear()
             failed[assumptions] = str(e)
             raise
-        v = s.verdict
-        if len(self._verdict) >= 20_000:
-            self._verdict.clear()
-        self._verdict[assumptions] = v
-        if v is INCONSISTENT:
-            raise InconsistentAssumptions("inconsistent assumptions")
+        verdicts = self._verdict
+        if len(verdicts) >= 20_000:
+            verdicts.clear()
+        verdicts[assumptions] = s.verdict
         return s, lits
 
     def _build_context(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
@@ -1875,22 +1904,7 @@ class Engine:
         v = self._verdict.get(assumptions)
         if v is not None:
             return v
-        failed = self._failed
-        msg = failed.get(assumptions)
-        if msg is not None:
-            raise Uninterpreted(msg)
-        try:
-            s, _ = self._build_context(assumptions)
-        except Uninterpreted as e:
-            if len(failed) >= 10_000:
-                failed.clear()
-            failed[assumptions] = str(e)
-            raise
-        v = s.verdict
-        if len(self._verdict) >= 20_000:
-            self._verdict.clear()
-        self._verdict[assumptions] = v
-        return v
+        return self._build_context_memoized(assumptions)[0].verdict
 
     @staticmethod
     def _complete_check(s: Session, lits: List[int]) -> str:
@@ -2027,12 +2041,13 @@ class Engine:
             self._put_result(s, cache, node, pred, r)
         return out
 
-    def _decide(self, s: Session, lit: int) -> Optional[bool]:
+    def _decide(self, s: Session, lit: int, lits=()) -> Optional[bool]:
         """The context-free answer of the literal ``lit`` of a fresh
-        session ``s`` (``is_``, ``is_many``): unit propagation; if that
-        leaves it open and ``s`` is incomplete, propagation again after
-        the escalation that instantiates the whole cone; then a complete
-        search.
+        session ``s`` (``is_``, ``is_many``, ``_is_custom``, which passes
+        the selectors ``lits`` of the glue its atom activates): unit
+        propagation; if that leaves it open and ``s`` is incomplete,
+        propagation again after the escalation that instantiates the whole
+        cone; then a complete search.
 
         Why ``is_many`` may decide several predicates of a node in one
         session, which demands all of them: an answer by propagation is
@@ -2044,14 +2059,14 @@ class Engine:
         session learned deciding the others.  ``tests/
         test_transfer_numbers.py`` checks this against a loop of ``is_``
         under every harness preset."""
-        r = s.query_literal(lit, search=False)
+        r = s.query_literal(lit, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
-            r = s.query_literal(lit, search=False)
+            r = s.query_literal(lit, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
-            r = s.query_literal(lit, search=True)
+            r = s.query_literal(lit, lits, search=True)
         return r
 
     def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
@@ -2101,15 +2116,8 @@ class Engine:
         self.stats["queries"] += 1
         s = self._fresh_session(theory_scope(None, atom, self._extensions))
         lit = s.literal_of(atom)
-        lits = s.assumption_lits(atom)        # the glue a relation atom activates
-        r = s.query_literal(lit, lits, search=False)
-        if r is None and s.incomplete:
-            self.stats["escalations"] += 1
-            s.escalate()
-            r = s.query_literal(lit, lits, search=False)
-        if r is None:
-            self.stats["searches"] += 1
-            r = s.query_literal(lit, lits, search=True)
+        # under the glue a relation atom activates
+        r = self._decide(s, lit, s.assumption_lits(atom))
         self._put_result(s, self.custom_cache, node, pred, r)
         return r
 
@@ -2170,7 +2178,7 @@ class Engine:
         # prefix of the assumptions); release the others before this query
         # adds clauses
         s.solver.release(s.n_hold)
-        q = self._literal(s, proposition)
+        q = s.prepare_query(proposition)
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
         lits = s.assumption_lits(proposition)
@@ -2195,33 +2203,10 @@ class Engine:
         if s.truncated:
             self.stats["budget_limited"] += 1
 
-    @staticmethod
-    def _literal(s: Session, proposition) -> int:
-        if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
-            s.ensure(proposition.expr, {proposition.pred})
-            if s._ensure_twins((proposition,)):    # twins eq(t, 0)
-                s._flush()
-            if s.relations is not None:
-                s._relations(proposition)
-            return s.query_lit(proposition.pred, proposition.expr)
-        return s.literal_of(proposition)
-
 
 #: fewest derived atoms of several basis literals in an assumption set for
 #: which asserted negations of them get their shared literals
 _NEG_SHARED = 8
-
-
-def zero_glue(f) -> bool:
-    """Whether ``f`` has a ``zero(t)`` atom whose ``t`` (no number) is under
-    an application of ``f``, which the relation glue of ``f`` as a set
-    reads as the equality ``eq(t, 0)`` (``relations.zero_twins``): with
-    relation specs it starts the glue in the session of a set holding it,
-    which then links terms of every component, so the relevance layer
-    takes the whole set's verdict as for a relational set
-    (``satassume.sympy_api._relevant``, through the set's own theory scope,
-    ``scope.theory_scope``, which counts the twins).  A function of ``f``."""
-    return bool(zero_twins(atoms_of(f)))
 
 
 # --------------------------------------------------------------------------
@@ -2237,7 +2222,7 @@ _adopt_memo(__name__, "_WANT")
 
 def _gave_up(s: Session) -> bool:
     """A theory of the session's solver gave up (satassume.sat.theory)."""
-    for t in s.solver._theories:
+    for t in s.solver.theories():
         if getattr(t, "gave_up", False):
             return True
     return False
@@ -2246,7 +2231,7 @@ def _gave_up(s: Session) -> bool:
 def _exhausted(s: Session) -> bool:
     """A theory of the session's solver ran out of its branch budget
     since the flag was last cleared (satassume.theories.lra.lra, "Integrality")."""
-    for t in s.solver._theories:
+    for t in s.solver.theories():
         if getattr(t, "exhausted", False):
             return True
     return False

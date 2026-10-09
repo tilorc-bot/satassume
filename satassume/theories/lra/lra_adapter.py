@@ -110,7 +110,7 @@ from collections import defaultdict
 from fractions import Fraction
 from typing import Any
 
-from sympy import Float, Rational, S
+from sympy import Float, S
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.ask import Q
 from sympy.core.add import Add
@@ -409,6 +409,21 @@ _adopt_memo(__name__, "_INTERPRETED")
 _INTERPRETED_MAX = 100_000
 
 
+def _memoized(key, read, arg):
+    """``read(arg)`` through the memo of the current flag under ``key``
+    (an unhashable ``arg`` is read every time)."""
+    memo = _INTERPRETED[GENERIC_CONSTANTS]
+    try:
+        return memo[key]
+    except KeyError:
+        if len(memo) >= _INTERPRETED_MAX:
+            memo.clear()
+        r = memo[key] = read(arg)
+        return r
+    except TypeError:                   # unhashable: do not cache
+        return read(arg)
+
+
 class LRAAdapter:
     """Registers SymPy relation atoms with one :class:`LRATheory`.
 
@@ -426,14 +441,11 @@ class LRAAdapter:
         self._solver = None
         self._shared: set = set()
 
-    def register(self, solver, var: int, atom, interpreted=None) -> bool:
-        """``interpreted``: optionally the result of :func:`interpret`
-        for ``atom`` already at hand (saves a second linearisation).
-
-        An adapter owns one theory and so serves a single solver: a
+    def register(self, solver, var: int, atom) -> bool:
+        """An adapter owns one theory and so serves a single solver: a
         second solver raises ValueError (the theory's bounds would leak
         between them)."""
-        it = self.interpret(atom) if interpreted is None else interpreted
+        it = self.interpret(atom)
         if it is None:
             return False
         r, atom_terms = it
@@ -460,44 +472,15 @@ class LRAAdapter:
         """``(constraint, terms)`` in one call (see :func:`interpret`),
         memoized across adapters: it is a pure function of the atom (the
         result is shared, never mutate it)."""
-        memo = _INTERPRETED[GENERIC_CONSTANTS]
-        try:
-            return memo[atom]
-        except KeyError:
-            if len(memo) >= _INTERPRETED_MAX:
-                memo.clear()
-            r = memo[atom] = interpret(atom)
-            return r
-        except TypeError:                   # unhashable: do not cache
-            return interpret(atom)
+        return _memoized(atom, interpret, atom)
 
     def order_sides(self, atom):
         """:func:`order_sides`, memoized like :meth:`interpret`."""
-        key = ("sides", atom)
-        memo = _INTERPRETED[GENERIC_CONSTANTS]
-        try:
-            return memo[key]
-        except KeyError:
-            if len(memo) >= _INTERPRETED_MAX:
-                memo.clear()
-            r = memo[key] = order_sides(atom)
-            return r
-        except TypeError:
-            return order_sides(atom)
+        return _memoized(("sides", atom), order_sides, atom)
 
     def integer_form(self, e):
         """:func:`integer_form`, memoized like :meth:`interpret`."""
-        key = ("integer", e)
-        memo = _INTERPRETED[GENERIC_CONSTANTS]
-        try:
-            return memo[key]
-        except KeyError:
-            if len(memo) >= _INTERPRETED_MAX:
-                memo.clear()
-            r = memo[key] = integer_form(e)
-            return r
-        except TypeError:
-            return integer_form(e)
+        return _memoized(("integer", e), integer_form, e)
 
     def register_integer(self, solver, var, form) -> None:
         """Register ``var`` for the ``Integral`` payload of ``form`` (a

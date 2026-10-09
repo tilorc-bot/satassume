@@ -173,17 +173,13 @@ def test_w2a1_unrelated_vocab_registration_disables_split():
     a = Q.integer(n) & Q.negative(n - 1) & Q.nonzero(u + v) & Q.nonzero(u + 2*v)
     plain = ask(p, a, Engine())
     reg = extensions.extensions
-    saved = ({k: list(v) for k, v in reg._handlers.items()},
-             {k: list(v) for k, v in reg._vocab.items()})
+    saved = reg.snapshot()
     extensions.register('prime', _Unrelated)(lambda e: None)
     try:
         registered = ask(p, a, Engine())
     finally:
         extensions.unregister('prime')
-        reg._handlers = {k: list(v) for k, v in saved[0].items()}
-        reg._vocab = {k: list(v) for k, v in saved[1].items()}
-        reg._node_cache.clear()
-        reg.version += 1
+        reg.restore(saved)
     assert plain == registered
 
 

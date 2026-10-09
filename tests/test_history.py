@@ -107,13 +107,17 @@ def _check(cfg, items, orders, seed=0, **kw):
 def test_module_state_inventory_is_classified():
     """Every module-level container of the engine is a known memo (reset by
     ``reset_module_state``), a constant, an intern table, or configuration.
-    A cache added later shows up here.  Every module is imported first, so
+    A cache added later shows up here, and a classified name the code no
+    longer has is reported too.  Every module is imported first, so
     the result does not depend on what earlier tests loaded."""
+    import importlib
     from harness.state import MODULE_INTERNED, import_all
     import_all()
     known = set(MODULE_STATE) | MODULE_CONSTANTS | MODULE_CONFIG | MODULE_INTERNED
     unknown = [(m, a, t) for m, a, t in inventory() if (m, a) not in known]
     assert not unknown, f"unclassified module-level state: {unknown}"
+    gone = sorted((m, a) for m, a in known if not hasattr(importlib.import_module(m), a))
+    assert not gone, f"classified names the modules no longer define: {gone}"
     reset_module_state()
 
 

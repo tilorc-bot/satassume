@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from ...sat.formula import And, Implies, Not, Or, P
 from ...state.memos import adopt as _adopt_memo
-from ..rules import BASIS, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
+from ..rules import BASIS, BASIS_INDEX, NPRED, RULE_FREE, RULE_INSTANTIATED, cnf_of, expand_clause, unit_propagate
 
 #: The predicate vocabulary templates may emit.
 VOCAB = frozenset({
@@ -45,14 +45,6 @@ SIGN_FLIP = {
 
 Lit = Tuple[int, str, bool]
 Rule = Tuple[Tuple[Lit, ...], Tuple[Lit, ...]]
-
-
-def is_constant(obj) -> bool:
-    """True for SymPy atoms whose ``is_*`` properties are static facts.
-
-    Both flags are class attributes on atoms: no assumption query is made.
-    """
-    return bool(obj.is_Atom and obj.is_number)
 
 
 def const_key(obj):
@@ -238,11 +230,13 @@ class Pattern:
     ``complete`` is set on a unit pattern whose facts, closed under the rule
     base, decide every predicate the rule base mentions: the engine then
     asserts the closed units and skips the rule base for the node."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete', 'wide')
+    __slots__ = ('rules', 'node', 'nobjs', 'clauses', 'used', 'child_preds', 'complete', 'wide')
 
-    def __init__(self, rules: List[Rule], node: int):
+    def __init__(self, rules: List[Rule], node: int, nobjs: int = 1):
         self.rules = rules
         self.node = node
+        #: the number of objects (slots) the pattern was built for
+        self.nobjs = nobjs
         self.complete = False
         clauses = []
         used = set()
@@ -270,17 +264,23 @@ class Pattern:
                 # (slot, basis index, neg)
                 expanded.append(tuple((k, i, not pos) for k, i, pos in lits))
         for lits in _unsubsumed(expanded):
-            if True:
-                npreds = frozenset(i for k, i, _ in lits if k == node)
-                # internal literal = 2*base_of_slot + (2*pidx + neg)
-                clauses.append((lits, npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
-                for k, i, _ in lits:
-                    used.add(k)
-                    if k != node:
-                        child_preds.setdefault(k, set()).add(i)
+            npreds = frozenset(i for k, i, _ in lits if k == node)
+            # internal literal = 2*base_of_slot + (2*pidx + neg)
+            clauses.append((lits, npreds, tuple((k, 2 * i + (1 if neg else 0)) for k, i, neg in lits)))
+            for k, i, _ in lits:
+                used.add(k)
+                if k != node:
+                    child_preds.setdefault(k, set()).add(i)
         self.clauses = clauses
         self.used = tuple(sorted(used))
         self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
+
+
+class TemplateKeyError(RuntimeError):
+    """A template passed :func:`facts` a key that is cached for a pattern
+    of another shape (another node slot or number of objects): a bug in
+    the template, not a property of the query.  Not a ``ValueError``, so
+    ``ask`` and its callers do not read it as inconsistent assumptions."""
 
 
 class Compiled:
@@ -307,6 +307,14 @@ class Compiled:
 #: ``TemplateRegistry.register`` (the only way the set of templates
 #: changes) empties this table before bumping the epoch, so a later
 #: template that reuses a key never gets an earlier template's pattern.
+#: Within one epoch the key must determine the rules, the constants they
+#: are resolved against and the shape (node slot and number of objects);
+#: templates build it from all three (:func:`pattern_key`,
+#: :func:`const_key`).  :func:`facts` checks the shape on a hit (a key
+#: reused for another node slot or another number of objects raises
+#: :class:`TemplateKeyError`); it does not compare the rules or the
+#: constants (``Float(2.0) == Integer(2)``), so a key reused for other
+#: rules of the same shape is still served the cached pattern.
 #: Registered with ``satassume.state.memos.PROCESS`` as ``"epoch"``.
 _CACHE: Dict[Any, Pattern] = {}
 _adopt_memo(__name__, "_CACHE", "epoch")
@@ -320,7 +328,11 @@ def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int)
     if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node)
+        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node, len(objs))
+    elif pat.node != node or pat.nobjs != len(objs):
+        raise TemplateKeyError(f"template key {key!r} is cached with node slot "
+                               f"{pat.node} over {pat.nobjs} objects, used with "
+                               f"node slot {node} over {len(objs)}")
     return Compiled(objs, pat)
 
 
@@ -339,7 +351,7 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
         for pred, value in gen():
             for c in expand_clause([(0, pred, value)]):
                 if len(c) == 1:
-                    lits.append(c[0][1] + 1 if c[0][2] else -(c[0][1] + 1))
+                    lits.append(_signed(c[0][1], c[0][2]))
                 else:
                     rest.append(((), tuple((0, BASIS[i], pos) for _, i, pos in c)))
         closed = unit_propagate(RULE_INSTANTIATED, lits)
@@ -354,11 +366,11 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
                 keep, new = [], []
                 for ps, cs in rest:
                     cl = [(k, p, pos) for k, p, pos in cs
-                          if (BASIS.index(p) + 1 if not pos else -(BASIS.index(p) + 1)) not in units]
-                    if any((BASIS.index(p) + 1 if pos else -(BASIS.index(p) + 1)) in units for k, p, pos in cl):
+                          if _signed(BASIS_INDEX[p], not pos) not in units]
+                    if any(_signed(BASIS_INDEX[p], pos) in units for k, p, pos in cl):
                         continue
                     if len(cl) == 1 and closed is not None:
-                        new.append(BASIS.index(cl[0][1]) + 1 if cl[0][2] else -(BASIS.index(cl[0][1]) + 1))
+                        new.append(_signed(BASIS_INDEX[cl[0][1]], cl[0][2]))
                     else:
                         keep.append((ps, tuple(cl)))
                 rest = keep
@@ -378,7 +390,16 @@ def units(key, gen: Callable[[], list], obj) -> Compiled:
     return Compiled((obj,), pat)
 
 
+def _signed(i: int, pos: bool) -> int:
+    """The signed 1-based literal of basis index ``i``."""
+    return i + 1 if pos else -(i + 1)
+
+
 def consts_of(args) -> Dict[int, Any]:
+    """The constants among ``args`` by position: the SymPy atoms whose
+    ``is_*`` properties are static facts (``is_Atom and is_number``, both
+    class attributes on atoms: no assumption query is made).  The
+    templates write the same test inline where they look at one object."""
     return {k: a for k, a in enumerate(args) if a.is_Atom and a.is_number}
 
 

@@ -423,7 +423,7 @@ class _Failed:
 # constants: answered without the assumptions
 # --------------------------------------------------------------------------
 
-def _is_constant_proposition(prop) -> bool:
+def is_constant_proposition(prop) -> bool:
     """Every predicate in the proposition is built in, and every expression
     it is applied to has no free symbols, is a number and holds no undefined
     function (so not ``f(1)`` or ``Integral(f(x), (x, 0, 1))``, about which
@@ -449,13 +449,13 @@ def _is_constant_proposition(prop) -> bool:
         return bool(args) and all(isinstance(a, _Expr) and not a.free_symbols and a.is_number
                                   and not a.has(AppliedUndef) for a in args)
     if isinstance(prop, BooleanFunction):
-        return bool(prop.args) and all(_is_constant_proposition(a) for a in prop.args)
+        return bool(prop.args) and all(is_constant_proposition(a) for a in prop.args)
     return False
 
 
 def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     if isinstance(proposition, _Basic):
-        if _is_constant_proposition(proposition):
+        if is_constant_proposition(proposition):
             r = _engine_ask(proposition, True, eng)
             if r is not None or assumptions is True:
                 return r
@@ -844,7 +844,7 @@ def _relevant(p, a, eng: Engine):
     if sp.opaque:
         return a
     ext = eng.extensions
-    if ext is not None and ext._vocab:
+    if ext is not None and ext.has_node_facts:
         v = sp.vocab
         if v is None:
             v = sp.vocab = _vocab_blocks(a, ext)
@@ -904,16 +904,16 @@ _DERIVED_CLASSES = (_SAdd, _SMul, _SPow)
 
 
 def _vocab_blocks(e, ext) -> bool:
-    """Whether the vocabulary predicates registered in ``ext`` (non-empty
-    ``_vocab``) may apply to a node of ``e`` (a SymPy Boolean): a subterm of
+    """Whether the vocabulary predicates registered in ``ext``
+    (``has_node_facts``) may apply to a node of ``e`` (a SymPy Boolean): a subterm of
     ``e`` is an instance of a registered class, or a registered class is a
     base of a class of derived nodes.  Such a predicate's function may
     mention any term, so ``e`` is not split (an unrelated registration no
     longer disables the split of every set, W2A1).  Uses
-    ``Extensions.is_scalar_like`` (its per-class cache is cleared by every
+    ``Extensions.is_scalar_class`` (its per-class cache is cleared by every
     vocabulary registration)."""
     for c in _DERIVED_CLASSES:
-        if ext._node_handlers(c):
+        if ext.is_scalar_class(c):
             return True
     stack = [e]
     seen = set()
