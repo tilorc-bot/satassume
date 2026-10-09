@@ -230,11 +230,13 @@ class Pattern:
     ``complete`` is set on a unit pattern whose facts, closed under the rule
     base, decide every predicate the rule base mentions: the engine then
     asserts the closed units and skips the rule base for the node."""
-    __slots__ = ('rules', 'node', 'clauses', 'used', 'child_preds', 'complete', 'wide')
+    __slots__ = ('rules', 'node', 'nobjs', 'clauses', 'used', 'child_preds', 'complete', 'wide')
 
-    def __init__(self, rules: List[Rule], node: int):
+    def __init__(self, rules: List[Rule], node: int, nobjs: int = 1):
         self.rules = rules
         self.node = node
+        #: the number of objects (slots) the pattern was built for
+        self.nobjs = nobjs
         self.complete = False
         clauses = []
         used = set()
@@ -274,6 +276,13 @@ class Pattern:
         self.child_preds = {k: frozenset(v) for k, v in child_preds.items()}
 
 
+class TemplateKeyError(RuntimeError):
+    """A template passed :func:`facts` a key that is cached for a pattern
+    of another shape (another node slot or number of objects): a bug in
+    the template, not a property of the query.  Not a ``ValueError``, so
+    ``ask`` and its callers do not read it as inconsistent assumptions."""
+
+
 class Compiled:
     """A pattern applied to concrete objects: what a template hands the
     engine.  ``instantiate(c.pattern.rules, c.objs)`` gives the formulas."""
@@ -299,10 +308,13 @@ class Compiled:
 #: changes) empties this table before bumping the epoch, so a later
 #: template that reuses a key never gets an earlier template's pattern.
 #: Within one epoch the key must determine the rules, the constants they
-#: are resolved against and the node slot; templates build it from all
-#: three (:func:`pattern_key`, :func:`const_key`).  :func:`facts` checks
-#: the node slot on a hit (a key reused for another arity raises); the
-#: constants are not compared, since ``Float(2.0) == Integer(2)``.
+#: are resolved against and the shape (node slot and number of objects);
+#: templates build it from all three (:func:`pattern_key`,
+#: :func:`const_key`).  :func:`facts` checks the shape on a hit (a key
+#: reused for another node slot or another number of objects raises
+#: :class:`TemplateKeyError`); it does not compare the rules or the
+#: constants (``Float(2.0) == Integer(2)``), so a key reused for other
+#: rules of the same shape is still served the cached pattern.
 #: Registered with ``satassume.state.memos.PROCESS`` as ``"epoch"``.
 _CACHE: Dict[Any, Pattern] = {}
 _adopt_memo(__name__, "_CACHE", "epoch")
@@ -316,10 +328,11 @@ def facts(key, gen: Callable[[], list], consts: Dict[int, Any], objs, node: int)
     if pat is None:
         if len(_CACHE) >= MAX_CACHE:
             _CACHE.clear()
-        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node)
-    elif pat.node != node:
-        raise ValueError(f"template key {key!r} is cached with node slot "
-                         f"{pat.node}, used with {node}")
+        pat = _CACHE[key] = Pattern(resolve(gen(), consts), node, len(objs))
+    elif pat.node != node or pat.nobjs != len(objs):
+        raise TemplateKeyError(f"template key {key!r} is cached with node slot "
+                               f"{pat.node} over {pat.nobjs} objects, used with "
+                               f"node slot {node} over {len(objs)}")
     return Compiled(objs, pat)
 
 
