@@ -166,29 +166,10 @@ class EUFAdapter:
 
     def term(self, expr) -> int:
         """The theory term of SymPy expression ``expr`` (interned)."""
-        terms = self._terms
-        t = terms.get(expr)
+        t = self._terms.get(expr)
         if t is not None:
             return t
-        th = self.theory
-        # iterative post-order, so deep expressions do not hit the
-        # recursion limit
-        stack = [(expr, False)]
-        while stack:
-            e, ready = stack.pop()
-            if e in terms:
-                continue
-            if isinstance(e, Rational):
-                terms[e] = th.value(e)
-            elif structural(e):
-                if ready:
-                    terms[e] = th.term(e.func, [terms[a] for a in e.args])
-                else:
-                    stack.append((e, True))
-                    stack.extend((a, False) for a in e.args if a not in terms)
-            else:
-                terms[e] = th.term(e)
-        return terms[expr]
+        return self._intern(expr, self._terms, ())
 
     def node_term(self, expr) -> int:
         """The theory term of ``expr`` for predicate transfer
@@ -200,30 +181,35 @@ class EUFAdapter:
         t = self._terms.get(expr)
         if t is not None:
             return t
-        nt = self._node_terms
-        t = nt.get(expr)
+        t = self._node_terms.get(expr)
         if t is not None:
             return t
-        terms = self._terms
+        return self._intern(expr, self._node_terms, self._terms)
+
+    def _intern(self, expr, out: dict, known) -> int:
+        """Intern ``expr`` and its subterms that are in neither ``out`` nor
+        ``known`` (a dict of terms, or ``()``) into ``out``; return the
+        term of ``expr``.  Iterative
+        post-order, so deep expressions do not hit the recursion limit."""
         th = self.theory
         stack = [(expr, False)]
         while stack:
             e, ready = stack.pop()
-            if e in nt or e in terms:
+            if e in out or e in known:
                 continue
             if isinstance(e, Rational):
-                nt[e] = th.value(e)
+                out[e] = th.value(e)
             elif structural(e):
                 if ready:
-                    nt[e] = th.term(e.func, [terms[a] if a in terms else nt[a]
-                                             for a in e.args])
+                    out[e] = th.term(e.func, [known[a] if a in known else out[a]
+                                              for a in e.args])
                 else:
                     stack.append((e, True))
                     stack.extend((a, False) for a in e.args
-                                 if a not in terms and a not in nt)
+                                 if a not in out and a not in known)
             else:
-                nt[e] = th.term(e)
-        return nt[expr]
+                out[e] = th.term(e)
+        return out[expr]
 
     def interned(self, exprs) -> list:
         """The expressions :meth:`term` interns for ``exprs`` (each side and
