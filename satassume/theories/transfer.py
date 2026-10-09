@@ -132,8 +132,8 @@ class TransferTheory:
         self._pterms: dict[int, set] = {}
         #: representatives of classes that had two or more members when
         #: noted (for ``decide``; stale entries are dropped there)
-        self._multi: list[int] = [r for r, ms in enumerate(euf._members)
-                                  if len(ms) > 1 and euf._repr[r] == r]
+        self._multi: list[int] = [r for r, ms in enumerate(euf.members)
+                                  if len(ms) > 1 and euf.rep[r] == r]
         #: switched terms (:meth:`switch`): term -> (full var, polar var),
         #: 0 for none; and enable variable -> (term, kind: 2 full, 1 polar)
         self._sw: dict[int, tuple] = {}
@@ -246,7 +246,7 @@ class TransferTheory:
         if self._lims:
             self._trail.append(v)
         euf = self.euf
-        if len(euf._members[euf._repr[a[0]]]) > 1:
+        if len(euf.members[euf.rep[a[0]]]) > 1:
             self._dirty_p.append(v)
         return None
 
@@ -299,7 +299,7 @@ class TransferTheory:
         ``r`` implies (including ones whose literal is already false:
         conflicts)."""
         euf = self.euf
-        members = euf._members[r]
+        members = euf.members[r]
         if len(members) < 2:
             return
         fixed = self._fixed
@@ -371,7 +371,7 @@ class TransferTheory:
                 return
             wneg += self._why(wm, k)
         euf = self.euf
-        members = euf._members[euf._repr[wm]]
+        members = euf.members[euf.rep[wm]]
         by_term, val, fixed = self._by_term, self._val, self._fixed
         memo: dict = {}
         for m in members:
@@ -407,7 +407,7 @@ class TransferTheory:
         that is a singleton now stays one until a merge notes it again
         (backtracking only splits classes)."""
         euf = self.euf
-        rep, members = euf._repr, euf._members
+        rep, members = euf.rep, euf.members
         keep, reps, kept, seen = [], [], set(), set()
         for r0 in self._multi:
             r = rep[r0]
@@ -435,7 +435,7 @@ class TransferTheory:
             dirty.extend(self._classes())
         if not dirty and not dirty_p:
             return []
-        rep = self.euf._repr
+        rep = self.euf.rep
         seen = set()
         out: list = []
         for t in dirty:
@@ -494,7 +494,7 @@ class TransferTheory:
         if not self._multi or not (self._pterms or self._sw) or not self.enabled:
             return None
         pterms = self._pterms
-        members = self.euf._members
+        members = self.euf.members
         val = self._val
         for r in self._classes():
             ds = self._members_on(members[r])

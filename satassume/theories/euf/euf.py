@@ -15,8 +15,8 @@ extensions" (Inf. Comput. 2007):
   share a partial application, so ``f(a) = f(b)`` says nothing about
   ``f(a, c)`` and ``f(b, c)``.  Heads live in their own namespace, apart
   from constants.
-* **Closure.**  There is one representative per class (``_repr`` is a
-  direct pointer, and each class keeps a member list).  Union by size moves
+* **Closure.**  There is one representative per class (``rep`` is a
+  direct pointer, and each class keeps a member list, ``members``).  Union by size moves
   the members of the smaller class.  Each class has a use list of the
   applications that have an argument in it, and ``_lookup`` maps
   ``(repr f, repr a)`` to an application.  Merges go through a pending
@@ -105,13 +105,19 @@ class EUFTheory:
     registered with :meth:`register_atom` (payload :class:`EqAtom`).  The
     other public methods are the theory protocol plus :meth:`find`,
     :meth:`equal` and :meth:`explain`.
+
+    The classes are public for merge listeners (:attr:`on_merge`; the
+    transfer theory reads them on its hot path, where a method call per
+    look-up would cost): :attr:`rep` and :attr:`members`.  Read only.
     """
 
     def __init__(self) -> None:
         self._keys: dict[Any, int] = {}       # interning key -> term
         self._app: list = []                  # term -> (f, a) or None
-        self._repr: list[int] = []            # term -> class representative
-        self._members: list[list[int]] = []   # rep -> members of its class
+        #: term -> its class representative (read only outside this class)
+        self.rep: list[int] = []
+        #: representative -> the members of its class (read only outside)
+        self.members: list[list[int]] = []
         self._use: list[list[int]] = []       # rep -> apps with an argument in the class
         self._lookup: dict[tuple, int] = {}   # (repr f, repr a) -> app
         self._pfp: list[int] = []             # proof forest parent (-1: root)
@@ -134,11 +140,11 @@ class EUFTheory:
     # ------------------------------------------------------------------
 
     def _new(self, key, app=None, value=False) -> int:
-        t = len(self._repr)
+        t = len(self.rep)
         self._keys[key] = t
         self._app.append(app)
-        self._repr.append(t)
-        self._members.append([t])
+        self.rep.append(t)
+        self.members.append([t])
         self._use.append([])
         self._pfp.append(-1)
         self._pfl.append(None)
@@ -156,7 +162,7 @@ class EUFTheory:
             key = ("c", head)
             t = self._keys.get(key)
             return self._new(key) if t is None else t
-        n = len(self._repr)
+        n = len(self.rep)
         for a in args:
             if not (isinstance(a, int) and 0 <= a < n):
                 raise ValueError(f"not a term id: {a!r}")
@@ -191,7 +197,7 @@ class EUFTheory:
         if lims:
             self._trail.append((_REG_APP, t))
         f, a = self._app[t]
-        rep = self._repr
+        rep = self.rep
         rf, ra = rep[f], rep[a]
         key = (rf, ra)
         o = self._lookup.get(key)
@@ -214,15 +220,15 @@ class EUFTheory:
 
     def find(self, t: int) -> int:
         """The representative of ``t``'s class."""
-        return self._repr[t]
+        return self.rep[t]
 
     def equal(self, a: int, b: int) -> bool:
-        return self._repr[a] == self._repr[b]
+        return self.rep[a] == self.rep[b]
 
     def explain(self, a: int, b: int) -> list[int]:
         """The asserted literals (true under the current assignment) whose
         conjunction implies ``a == b``.  ``a`` and ``b`` must be equal."""
-        if self._repr[a] != self._repr[b]:
+        if self.rep[a] != self.rep[b]:
             raise ValueError("explain: terms are not equal")
         return sorted(self._explain(a, b, set()))
 
@@ -242,11 +248,11 @@ class EUFTheory:
         return prev
 
     def _union(self, a: int, b: int, label) -> None:
-        rep = self._repr
+        rep = self.rep
         ra, rb = rep[a], rep[b]
         if ra == rb:
             return
-        members = self._members
+        members = self.members
         if len(members[ra]) > len(members[rb]):
             a, b, ra, rb = b, a, rb, ra
         old_root = self._reroot(a)
@@ -310,10 +316,10 @@ class EUFTheory:
         self._pfp[a] = -1
         self._pfl[a] = None
         self._reroot(old_root)
-        ma = self._members[ra]
-        mb = self._members[rb]
+        ma = self.members[ra]
+        mb = self.members[rb]
         del mb[len(mb) - len(ma):]
-        rep = self._repr
+        rep = self.rep
         for c in ma:
             rep[c] = ra
         del self._use[rb][nuse:]
@@ -403,7 +409,7 @@ class EUFTheory:
         else:
             s, t = payload
             pos = True
-        n = len(self._repr)
+        n = len(self.rep)
         if not (isinstance(s, int) and isinstance(t, int) and 0 <= s < n and 0 <= t < n):
             raise ValueError(f"EUF atom over unknown terms: {payload!r}")
         self._atoms[literal] = (s, t, bool(pos))
@@ -411,7 +417,7 @@ class EUFTheory:
 
     def _index_atom(self, v: int) -> None:
         s, t, _ = self._atoms[v]
-        rep = self._repr
+        rep = self.rep
         rs, rt = rep[s], rep[t]
         if self._lims:
             self._trail.append((_REG_ATOM, v, rs, rt))
@@ -432,7 +438,7 @@ class EUFTheory:
         self._assigned[v] = literal
         if self._lims:
             self._trail.append((_ASSIGN, v))
-        rep = self._repr
+        rep = self.rep
         if (literal > 0) == pos:
             self._pending.append((s, t, literal))
             self._process()
@@ -453,7 +459,7 @@ class EUFTheory:
     def check(self):
         if self._conflict is not None:
             return self._conflict
-        return (True, dict(enumerate(self._repr)))
+        return (True, dict(enumerate(self.rep)))
 
     def propagate(self):
         q = self._propq
@@ -461,7 +467,7 @@ class EUFTheory:
             return []
         out = []
         seen = set()
-        rep, atoms, assigned = self._repr, self._atoms, self._assigned
+        rep, atoms, assigned = self.rep, self._atoms, self._assigned
         for v in q:
             if v in assigned or v in seen:
                 continue
@@ -518,5 +524,5 @@ class EUFTheory:
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        return (f"<EUFTheory {len(self._repr)} terms, {len(self._atoms)} atoms, "
+        return (f"<EUFTheory {len(self.rep)} terms, {len(self._atoms)} atoms, "
                 f"level {len(self._lims)}>")
