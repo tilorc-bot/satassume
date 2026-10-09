@@ -2102,8 +2102,10 @@ class Solver:
         return None
 
     def _learn(self, confl: Clause) -> bool:
-        """Conflict analysis and learning for a conflict found outside the
-        propagation loop of :meth:`_search`.  False iff UNSAT at root."""
+        """Conflict analysis and learning: analyze ``confl``, backtrack,
+        learn the clause and assert its first literal.  False iff UNSAT at
+        root.  :meth:`_search` calls it for every conflict, from
+        propagation and from a theory's final check."""
         self._n_conflicts += 1
         self._scan = 0
         if not self._trail_lim:
@@ -2358,39 +2360,9 @@ class Solver:
         while True:
             confl = propagate()
             if confl is not None:
-                self._n_conflicts += 1
-                self._scan = 0
                 conflict_c += 1
-                if not trail_lim:
-                    self._ok = False
+                if not self._learn(confl):
                     return False
-                learnt, bt = self._analyze(confl)
-                self._backtrack(bt)
-                self._n_learned += 1
-                self._stamp += 1
-                l0 = learnt[0]
-                v0 = l0 >> 1
-                if len(learnt) == 1:
-                    val[l0] = True
-                    val[l0 ^ 1] = False
-                    level[v0] = 0
-                    reason[v0] = None
-                    trail.append(l0)
-                else:
-                    c = Clause(learnt)
-                    c.learnt = True
-                    c.act = 0.0
-                    self._bump_clause(c)
-                    self._learnts.append(c)
-                    self._watches[learnt[0]].append(c)
-                    self._watches[learnt[1]].append(c)
-                    val[l0] = True
-                    val[l0 ^ 1] = False
-                    level[v0] = len(trail_lim)
-                    reason[v0] = c
-                    trail.append(l0)
-                self._var_inc /= self._var_decay
-                self._cla_inc /= self._cla_decay
             else:
                 if conflict_c >= nof_conflicts:
                     self._backtrack(0)
