@@ -1227,7 +1227,7 @@ class Engine:
     discovery_budget : int
         The largest structural cone a query may have: a query whose cone,
         ``cone(p) | cone(a)`` (templates, derived nodes, extension facts
-        and relation glue, weighted as ``Session._cone`` explains), weighs
+        and relation glue, weighted as ``_struct`` explains), weighs
         more is answered None before any session work, and so is every
         query under a set whose own cone does (its verdict is ``UNKNOWN``);
         ``last_budget_limited`` tells.  A function of the query alone

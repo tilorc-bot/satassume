@@ -205,7 +205,7 @@ plain formulas (`Session._compile`, `compile.compile_formula`), plus the node fa
 extensions (`Extensions.node_facts`).
 
 Definition. A node is visited with a demand set (`Session.ensure(node, demanded)`); clauses mentioning no
-predicate in `want_of(demanded)` (`engine.want_of`, `neighbourhood`) are parked in `pending_c`/`pending`,
+predicate in `want_of(demanded)` (`engine.want_of`: the demanded basis predicates themselves) are parked in `pending_c`/`pending`,
 derived nodes in `deferred`; `Session.escalate` compiles all of it. Section 8 says when; the clause set of the
 *answer* is always the full cone's (escalation is uncapped within the budget, `_UNCAPPED`).
 

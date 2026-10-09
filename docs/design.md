@@ -304,10 +304,11 @@ template).
 ### Nodes, cones and discovery (`satassume/engine.py`)
 
 A `Session` holds a solver and a `VarTable` giving each visited node 14
-variables (one per basis predicate). `Session.node` registers the rule block, asserts the node's
-cached context-free facts as units and emits its template clauses, but
-only those about the rule-base neighbourhood of what the query asks
-(`want_of`); the rest is parked (`pending_c`, `pending`). Children are
+variables (one per basis predicate). `Session.node` registers the rule block
+and emits its template clauses, but only those about a basis predicate the
+query demands of the node (`want_of`); the rest is parked (`pending_c`,
+`pending`). No cached fact enters a session (see "Context-free fact cache"
+below). Children are
 visited breadth-first; derived nodes wait in `deferred`. A query runs root propagation; if that leaves it
 open and the session is `incomplete`, `escalate` compiles everything
 parked and visits the derived nodes; only then does search run
@@ -357,8 +358,8 @@ holding writeback); issue #97 replaced them by the build per query, at
 1.3x the cost on the refine stream and no cost on the corpus (the
 per-query switching of the glue, #53 stage 5, was the last step of
 reuse and the first of this design: a set's glue at the root, a query's
-delta switched). The four settings stay as documented no-ops so that
-configurations remain valid.
+delta switched). The four settings were documented no-ops from P1 to P7;
+the constructor now refuses them (`TypeError`).
 
 ### Context-free fact cache: a memo of `is_`
 

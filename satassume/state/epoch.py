@@ -15,13 +15,12 @@ Every change of one of these bumps :data:`EPOCH`:
 * assigning ``Engine.extensions`` or ``Engine.relation_specs``.
 
 The engine settings (``templates``, ``discovery_budget``, ``transfer``,
-``uninterpreted``, ``relevance``) are not part of the epoch:
+``uninterpreted``, ``relevance``, ``writeback``) are not part of the epoch:
 they belong to one engine, and assigning a different value drops that
 engine's caches only (``Engine._settings_changed``).
 
 ``lra_adapter.GENERIC_CONSTANTS`` does not bump: its process-wide memo is
-keyed on the flag.  ``lra.BRANCH_BUDGET``, ``sympy_api.RELATIONAL``,
-``sympy_api.CHECK_SEARCH``, ``sympy_api.CHECK_SEARCH_RELATIONS`` and
+keyed on the flag.  ``lra.BRANCH_BUDGET``, ``sympy_api.RELATIONAL`` and
 ``lra_adapter._INTERPRETED_MAX`` are module constants, not settings.
 
 Everything an engine keeps between queries records the epoch it was filled
