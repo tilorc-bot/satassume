@@ -919,8 +919,8 @@ class Relations:
         for the current one."""
         if e in self.num_sel:
             return
-        from .euf_adapter import _structural
-        if not _structural(e):
+        from .euf_adapter import structural
+        if not structural(e):
             return
         s = self.session
         sel = self.num_sel[e] = s.table.aux()
@@ -1680,7 +1680,7 @@ class Relations:
         True if a node was visited."""
         from itertools import islice
         from sympy import Basic, Expr, Rational
-        from .euf_adapter import _structural
+        from .euf_adapter import structural
         s = self.session
         ad, th = self._xadapter, self.xfer
         visited = False
@@ -1714,7 +1714,7 @@ class Relations:
             heads, counted = self._xheads, self._xcounted
             grown = {}
             for e in new:
-                if e not in counted and isinstance(e, Basic) and _structural(e):
+                if e not in counted and isinstance(e, Basic) and structural(e):
                     counted.add(e)
                     k = (e.func, len(e.args))
                     h = heads.get(k)
@@ -1778,7 +1778,7 @@ class Relations:
         if i >= n and nside == self._xnsides and self._xhn == self._xhseen:
             return
         from sympy import Basic, Rational, nan
-        from .euf_adapter import _structural
+        from .euf_adapter import structural
         pend = self._xpend
         while i < n:
             e = slots[i]
@@ -1803,7 +1803,7 @@ class Relations:
             keep = []
             for node, b in pend:
                 lv = xside.get(node, 0)
-                if lv == 2 or (_structural(node) and self._congruent(node)):
+                if lv == 2 or (structural(node) and self._congruent(node)):
                     cand.add(node)
                     changed = True
                     t = ad.node_term(node)
@@ -1936,16 +1936,16 @@ def _structural_subterms(e) -> list:
     (``EUFAdapter.interned``): ``_transfer_terms`` may visit them, once
     ``eq(e, 0)`` is read by EUF and another term shares their head."""
     try:
-        from .euf_adapter import _structural
+        from .euf_adapter import structural
     except ImportError:         # no EUF adapter: nothing is visited for it
         return []
     from sympy import Basic, Rational
     out, seen = [], set()
-    stack = list(e.args) if isinstance(e, Basic) and _structural(e) else []
+    stack = list(e.args) if isinstance(e, Basic) and structural(e) else []
     while stack:
         x = stack.pop()
         if x in seen or isinstance(x, Rational) or not isinstance(x, Basic) \
-                or not _structural(x):
+                or not structural(x):
             continue
         seen.add(x)
         out.append(x)
