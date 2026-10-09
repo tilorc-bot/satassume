@@ -423,7 +423,7 @@ class _Failed:
 # constants: answered without the assumptions
 # --------------------------------------------------------------------------
 
-def _is_constant_proposition(prop) -> bool:
+def is_constant_proposition(prop) -> bool:
     """Every predicate in the proposition is built in, and every expression
     it is applied to has no free symbols, is a number and holds no undefined
     function (so not ``f(1)`` or ``Integral(f(x), (x, 0, 1))``, about which
@@ -449,13 +449,13 @@ def _is_constant_proposition(prop) -> bool:
         return bool(args) and all(isinstance(a, _Expr) and not a.free_symbols and a.is_number
                                   and not a.has(AppliedUndef) for a in args)
     if isinstance(prop, BooleanFunction):
-        return bool(prop.args) and all(_is_constant_proposition(a) for a in prop.args)
+        return bool(prop.args) and all(is_constant_proposition(a) for a in prop.args)
     return False
 
 
 def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     if isinstance(proposition, _Basic):
-        if _is_constant_proposition(proposition):
+        if is_constant_proposition(proposition):
             r = _engine_ask(proposition, True, eng)
             if r is not None or assumptions is True:
                 return r

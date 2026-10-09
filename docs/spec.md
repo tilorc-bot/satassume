@@ -26,7 +26,7 @@ Definition. `ask(p, A)` returns one of `True`, `False`, `None`, or raises
    (`sympy_api.ask`; cleared with `Engine.splits` when the registry epoch
    changes, `Engine._check_version`). A budget-limited answer is never memoized
    (`sympy_api.ask`, `last_budget_limited`), so a memo hit never is.
-2. Constant route: if `_is_constant_proposition(p)` (every predicate of `p`
+2. Constant route: if `is_constant_proposition(p)` (every predicate of `p`
    built in, every argument a number without free symbols or `AppliedUndef`),
    the answer is `ask(p, True)` when that is definite (`A` is ignored, an
    inconsistent `A` does not raise); one left `None` is answered under `A`

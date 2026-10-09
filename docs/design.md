@@ -421,7 +421,7 @@ pins the defect; the SymPy bug is not filed upstream.
 
 ### Constant propositions: context-free first
 
-`_is_constant_proposition`: every predicate is built in (vocabulary or
+`is_constant_proposition`: every predicate is built in (vocabulary or
 relation) and every argument has no free symbols, is a number and contains
 no `AppliedUndef` (also not inside `Integral`, `Sum` or `Subs`). Such a
 proposition goes to the context-free path: a constant's facts do not

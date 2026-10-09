@@ -29,7 +29,7 @@ Which spec section each function implements:
   ``p`` carries an uninterpreted relation (``Uninterpreted`` gives None
   only after the set's verdict).
 * section 2 (translation): :func:`_translate`, through
-  ``sympy_api._formula`` / ``to_formula`` and ``relations.relation_atom``.
+  ``sympy_api.to_formula`` and ``relations.relation_atom``.
 * section 3 (theory scope, P3's syntactic definition): :func:`theory_scope`,
   over the glue atoms of ``A`` and ``p`` (:func:`_glue_atoms_of`): a
   ``zero(t)`` whose ``t`` is under an application of ``A`` or ``p`` counts
@@ -417,11 +417,12 @@ class _RefSession:
 
 def _translate(p, A, rel: bool):
     """``(prop, assum)`` formulas of a SymPy ``p`` and ``A`` (section 2);
-    ``assum`` None when ``A`` is ``True``; raises ``Unsupported`` as
-    ``sympy_api._formula`` does."""
-    from .sympy_api import _formula
-    prop = _formula(p, rel)
-    assum = None if A is True else _formula(A, rel, True)
+    ``assum`` None when ``A`` is ``True``; raises ``Unsupported``
+    (``sympy_api.to_formula``; the engine's path memoizes it in
+    ``sympy_api._formula``, which the reference does not need)."""
+    from .sympy_api import to_formula
+    prop = to_formula(p, rel)
+    assum = None if A is True else to_formula(A, rel, True)
     return prop, assum
 
 
@@ -525,7 +526,7 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     engine settings of the same names.  ``info``: a :class:`RefInfo` to
     fill with what the call built (route, nodes, clauses, scope, theory
     flags)."""
-    from .sympy_api import Unsupported, _is_constant_proposition
+    from .sympy_api import Unsupported, is_constant_proposition
     if info is None:
         info = RefInfo()
     if extensions is None:
@@ -542,7 +543,7 @@ def ask_ref(p, A=True, extensions=None, *, relations=None, transfer: bool = True
     # any other (sympy_api._ask, nightly family C: the set's verdict counts,
     # so an inconsistent set raises).  SPEC-DIFF: section 1.2 says "A is
     # ignored", which is _ask before family C; P5b-fix2 report.
-    if _is_constant_proposition(p):
+    if is_constant_proposition(p):
         info.route = "constant"
         r = _routed(p, True, engine, rel, info)
         if r is not None or A is True:

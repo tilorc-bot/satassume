@@ -588,8 +588,8 @@ def test_random_ask_matches_oracle(lits, ql, qr):
         olits.append((k + 1) if pos else -(k + 1))
     atoms.append((_spec(ql, terms, index), _spec(qr, terms, index), True))
     q = len(atoms)
-    from satassume.sympy_api import _is_constant_proposition
-    if _is_constant_proposition(Q.eq(ql, qr)):
+    from satassume.sympy_api import is_constant_proposition
+    if is_constant_proposition(Q.eq(ql, qr)):
         olits = []       # a question about constants is answered without the assumptions
     if not oracle_consistent(terms, atoms, olits):
         want = "inconsistent"
