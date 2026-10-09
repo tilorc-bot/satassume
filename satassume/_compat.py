@@ -23,16 +23,27 @@ under an old package: ``import satassume.templates.core`` would find
 ``core.py`` through the aliased package's ``__path__`` and load the
 templates a second time, under a second name.  :class:`AliasFinder`
 therefore comes first on ``sys.meta_path``: for every import it does one
-string prefix test and declines every name that is not in
-:data:`ALIASES` (or under one).  For an old name its loader imports the
-new module and hands back that very object, so the old name is the
-*same* module (monkeypatching through an old path reaches the code that
-runs, and no module is ever loaded twice).
+string prefix test and declines every name outside the package, and
+every name of the package that is neither an old name (:data:`ALIASES`,
+or under one) nor a moved module.  For an old
+name its loader imports the new module and hands back that very object,
+so the old name is the *same* module (monkeypatching through an old path
+reaches the code that runs, and no module is ever loaded twice).
+
+Old names are also entered in ``sys.modules`` when their module is
+imported by its new name (``import satassume.sympy_api`` enters
+``satassume.rules``, as it did before the move), and ``satassume.rules``
+resolves as an attribute of the package (``satassume.__getattr__``).
+Both make scripts that look a module up by its old name keep working
+(``sys.modules.get("satassume.rules")``).  The DeprecationWarning comes
+from an import of an old name that is not loaded yet and from an
+attribute access ``satassume.<old>``; a plain ``sys.modules`` lookup
+cannot warn.
 
 This module imports nothing heavier than :mod:`importlib.machinery`
 (``importlib.abc`` and ``importlib.util`` pull in ``importlib.resources``,
 several milliseconds at every ``import satassume``); the finder and the
-loader implement the import protocols without the ABC base classes.
+loaders implement the import protocols without the ABC base classes.
 """
 from __future__ import annotations
 
@@ -65,6 +76,8 @@ ALIASES = {
 
 _PACKAGE = __name__.rpartition(".")[0]
 _PREFIX = _PACKAGE + "."
+#: new name (relative) -> old name (relative), for :func:`old_name`
+_OLD = {new: old for old, new in ALIASES.items()}
 
 
 def new_name(fullname: str) -> Optional[str]:
@@ -79,6 +92,40 @@ def new_name(fullname: str) -> Optional[str]:
     return _PREFIX + new + dot + tail
 
 
+def old_name(fullname: str) -> Optional[str]:
+    """The old name of the moved module ``fullname`` (or of a module under
+    a moved package), or None."""
+    if not fullname.startswith(_PREFIX):
+        return None
+    rel = fullname[len(_PREFIX):]
+    head, tail = rel, ""
+    while True:
+        old = _OLD.get(head)
+        if old is not None:
+            return _PREFIX + old + tail
+        head, dot, last = head.rpartition(".")
+        if not dot:
+            return None
+        tail = "." + last + tail
+
+
+def _deprecated(what: str, new: str, stacklevel: int) -> None:
+    warnings.warn(f"{what} is a transitional alias of {new}; use {new}",
+                  DeprecationWarning, stacklevel=stacklevel + 1)
+
+
+def package_getattr(name: str):
+    """``satassume.<name>`` for an old module name (the package's
+    ``__getattr__``): the moved module, imported if needed."""
+    new = ALIASES.get(name)
+    if new is None:
+        raise AttributeError(f"module {_PACKAGE!r} has no attribute {name!r}")
+    _deprecated(_PREFIX + name, _PREFIX + new, stacklevel=3)
+    module = importlib.import_module(_PREFIX + new)
+    setattr(sys.modules[_PACKAGE], name, module)
+    return module
+
+
 class _AliasLoader:
     """Loads an old name as the new module object itself."""
 
@@ -87,8 +134,7 @@ class _AliasLoader:
         self.spec = None
 
     def create_module(self, spec):
-        warnings.warn(f"{spec.name} is a transitional alias of {self.target}; "
-                      f"import {self.target}", DeprecationWarning, stacklevel=2)
+        _deprecated(spec.name, self.target, stacklevel=2)
         module = importlib.import_module(self.target)
         self.spec = module.__spec__
         if hasattr(module, "__path__"):
@@ -108,16 +154,55 @@ class _AliasLoader:
         module.__spec__ = self.spec
 
 
+class _MovedLoader:
+    """Wraps the loader of a moved module for its first load: after the
+    module has run, it enters the old name in ``sys.modules``.  The module
+    keeps its own loader (``__loader__`` and ``__spec__.loader``)."""
+
+    def __init__(self, loader, old: str):
+        self.loader, self.old = loader, old
+
+    def __getattr__(self, name):          # get_source, get_resource_reader, ...
+        return getattr(self.loader, name)
+
+    def create_module(self, spec):
+        return self.loader.create_module(spec)
+
+    def exec_module(self, module) -> None:
+        spec = module.__spec__
+        if spec is not None and spec.loader is self:
+            spec.loader = self.loader
+        if module.__dict__.get("__loader__") is self:
+            module.__loader__ = self.loader
+        self.loader.exec_module(module)
+        sys.modules.setdefault(self.old, module)
+
+
 class AliasFinder:
-    """Finds the old names (:data:`ALIASES`).  A ``sys.meta_path`` finder
+    """Finds the old names (:data:`ALIASES`), and wraps the loader of the
+    moved modules (:class:`_MovedLoader`).  A ``sys.meta_path`` finder
     (it needs no ``importlib.abc`` base class)."""
 
     def find_spec(self, fullname, path=None, target=None):
-        new = new_name(fullname)
-        if new is None:
+        if not fullname.startswith(_PREFIX):
             return None
-        return importlib.machinery.ModuleSpec(fullname, _AliasLoader(new))
-
+        new = new_name(fullname)
+        if new is not None:
+            return importlib.machinery.ModuleSpec(fullname, _AliasLoader(new))
+        old = old_name(fullname)
+        if old is None:
+            return None
+        for finder in sys.meta_path:
+            if finder is self or not hasattr(finder, "find_spec"):
+                continue
+            spec = finder.find_spec(fullname, path, target)
+            if spec is not None:
+                break
+        else:
+            return None
+        if spec.loader is not None and hasattr(spec.loader, "exec_module"):
+            spec.loader = _MovedLoader(spec.loader, old)
+        return spec
 
     def invalidate_caches(self) -> None:
         pass

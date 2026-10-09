@@ -346,6 +346,54 @@ def test_old_name_first_loads_no_second_module():
     assert r.returncode == 0 and r.stdout.strip() == "ok", r.stderr
 
 
+def _fresh(code: str) -> None:
+    r = subprocess.run([sys.executable, "-W", "error::DeprecationWarning", "-c", code + "\nprint('ok')\n"],
+                       capture_output=True, text=True, cwd=str(ROOT.parent),
+                       env={**os.environ, "PYTHONPATH": str(ROOT.parent)})
+    assert r.returncode == 0 and r.stdout.strip().endswith("ok"), r.stderr
+
+
+def test_new_name_import_enters_the_old_name():
+    """Importing a moved module by its new name enters its old name in
+    ``sys.modules`` (as ``import satassume.sympy_api`` did before the
+    move: ``sys.modules.get("satassume.rules")`` in the eval scripts),
+    only for modules actually loaded, without a warning, and the module
+    keeps its own loader (final review B1)."""
+    _fresh(
+        "import sys\n"
+        "import satassume.sympy_api as api\n"
+        "from sympy import Q, Symbol\n"
+        "assert 'satassume.templates.core' not in sys.modules\n"
+        "x = Symbol('x')\n"
+        "api.ask(Q.positive(x + 1), Q.positive(x))\n"
+        "rules = sys.modules.get('satassume.rules')\n"
+        "assert rules is sys.modules['satassume.knowledge.rules']\n"
+        "assert len(rules.PREDICATES) and len(rules.RULES)\n"
+        "assert sys.modules['satassume.solver'] is sys.modules['satassume.sat.solver']\n"
+        "assert sys.modules['satassume.templates.core'] is sys.modules['satassume.knowledge.templates.core']\n"
+        "assert 'satassume.lra_adapter' in sys.modules\n"
+        "assert 'satassume.lra_bounds' not in sys.modules\n"
+        "assert type(rules.__loader__).__name__ == 'SourceFileLoader', rules.__loader__\n"
+        "assert rules.__spec__.loader is rules.__loader__\n"
+        "assert 'importlib.abc' not in sys.modules and 'importlib.resources' not in sys.modules\n")
+
+
+@pytest.mark.parametrize("old", sorted(_compat.ALIASES))
+def test_old_name_is_a_package_attribute(old):
+    """``satassume.<old>`` resolves (the package ``__getattr__``), with a
+    DeprecationWarning, also when the module was loaded by its new name."""
+    new = _compat.ALIASES[old]
+    _fresh(
+        "import importlib, warnings, satassume\n"
+        f"m = importlib.import_module('satassume.{new}')\n"
+        "with warnings.catch_warnings(record=True) as w:\n"
+        "    warnings.simplefilter('always')\n"
+        f"    assert satassume.{old} is m\n"
+        f"assert any('satassume.{new}' in str(x.message) for x in w), w\n"
+        "try:\n    satassume.no_such_name\nexcept AttributeError:\n    pass\n"
+        "else:\n    raise AssertionError\n")
+
+
 @pytest.mark.parametrize("missing, left", [
     ("satassume.theories.lra.lra_adapter", ["euf"]),
     ("satassume.theories.euf.euf_adapter", ["lra"]),

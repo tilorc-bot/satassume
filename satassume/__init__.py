@@ -10,3 +10,9 @@ __all__ = ["Engine", "InconsistentAssumptions", "DictCache", "ObjectCache", "P",
            "Not", "Implies", "Equivalent", "Exclusive", "allargs", "anyarg", "exactlyonearg",
            "Extensions", "register", "unregister"]
 __version__ = "0.0.1"
+
+
+def __getattr__(name):
+    """``satassume.rules`` and the other old flat module names
+    (:data:`satassume._compat.ALIASES`), with a DeprecationWarning."""
+    return _compat.package_getattr(name)
