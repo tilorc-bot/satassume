@@ -228,6 +228,7 @@ MODULE_STATE: Tuple[Tuple[str, str], ...] = tuple(module_locations())
 #: module-level containers that are constants (built at import, never
 #: written afterwards), so not state
 MODULE_CONSTANTS: frozenset = frozenset({
+    ("satassume._compat", "ALIASES"),
     ("satassume.knowledge.rules", "PREDICATES"), ("satassume.knowledge.rules", "PRED_INDEX"),
     ("satassume.knowledge.rules", "RULES"), ("satassume.knowledge.rules", "RULE_CLAUSES"),
     ("satassume.knowledge.rules", "RULE_INSTANTIATED"), ("satassume.knowledge.rules", "RULE_INTERNAL"),
