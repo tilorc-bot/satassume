@@ -349,7 +349,6 @@ as without relation support: ``sympy_api.ask`` returns None for relations.
 """
 from __future__ import annotations
 
-import importlib
 import weakref
 from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
@@ -381,25 +380,30 @@ class AdapterSpec(NamedTuple):
     guarded: bool
 
 
-def _optional(module: str, attr: str):
-    """``module.attr`` if ``module`` exists; a broken module raises."""
-    try:
-        mod = importlib.import_module(module)
-    except ModuleNotFoundError as e:
-        if e.name == module:
-            return None
-        raise
-    return getattr(mod, attr)
+def _missing(e: ModuleNotFoundError, module: str) -> bool:
+    """Whether ``e`` says that ``module`` (relative to this package) does
+    not exist, not that a module it imports is missing."""
+    return e.name == f"{__package__}.{module}"
 
 
 def default_specs() -> List[AdapterSpec]:
+    """The real adapters: an adapter module that does not exist is left
+    out; one that exists but fails to import raises."""
     specs = []
-    lra = _optional("satassume.lra_adapter", "LRAAdapter")
-    if lra is not None:
-        specs.append(AdapterSpec("lra", lra, True))
-    euf = _optional("satassume.euf_adapter", "EUFAdapter")
-    if euf is not None:
-        specs.append(AdapterSpec("euf", euf, False))
+    try:
+        from .lra_adapter import LRAAdapter
+    except ModuleNotFoundError as e:
+        if not _missing(e, "lra_adapter"):
+            raise
+    else:
+        specs.append(AdapterSpec("lra", LRAAdapter, True))
+    try:
+        from .euf_adapter import EUFAdapter
+    except ModuleNotFoundError as e:
+        if not _missing(e, "euf_adapter"):
+            raise
+    else:
+        specs.append(AdapterSpec("euf", EUFAdapter, False))
     return specs
 
 
