@@ -920,10 +920,7 @@ class Relations:
         from .theories.euf.euf_adapter import structural
         if not structural(e):
             return
-        s = self.session
-        sel = self.num_sel[e] = s.table.aux()
-        s.solver.ensure_vars(sel)
-        s.solver.set_inert(sel)
+        sel = self.num_sel[e] = self._fresh(inert=True)
         self._tsource(e, _IE, [-sel])
         self._xextra.append(e)
 
@@ -931,6 +928,17 @@ class Relations:
         if e not in self.linked and not _is_number(e):
             self.linked.add(e)
             self._pending_links.append(e)
+
+    def _fresh(self, inert: bool = False) -> int:
+        """A new auxiliary solver variable; ``inert`` (``Solver.set_inert``)
+        for a selector and the variables selectors imply (see "Switched
+        glue")."""
+        s = self.session
+        v = s.table.aux()
+        s.solver.ensure_vars(v)
+        if inert:
+            s.solver.set_inert(v)
+        return v
 
     # -- interpretation ------------------------------------------------
     def _adapter(self, spec):
@@ -1003,8 +1011,7 @@ class Relations:
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
                 continue
-            t = s.table.aux()
-            solver.ensure_vars(t)
+            t = self._fresh()
             if not ad.register(solver, t, sat):
                 continue
             ok = True
@@ -1062,8 +1069,7 @@ class Relations:
         if form is None:
             return
         s = self.session
-        i = s.table.aux()
-        s.solver.ensure_vars(i)
+        i = self._fresh()
         ad.register_integer(s.solver, i, form)
         guard = self._guard(ad, form[1])
         z = s.var("integer", e)
@@ -1247,11 +1253,8 @@ class Relations:
         v = tv[k]
         if v:
             return v
-        s = self.session
-        v = tv[k] = s.table.aux()
-        s.solver.ensure_vars(v)
-        s.solver.set_inert(v)
-        emit = s.emit
+        v = tv[k] = self._fresh(inert=True)
+        emit = self.session.emit
         if k == _MC:
             for j in (_SD, _EN):
                 if tv[j]:
@@ -1270,10 +1273,7 @@ class Relations:
         first use), see "Switched glue"."""
         sel = self.atom_sel.get(atom)
         if sel is None:
-            s = self.session
-            sel = self.atom_sel[atom] = s.table.aux()
-            s.solver.ensure_vars(sel)
-            s.solver.set_inert(sel)
+            sel = self.atom_sel[atom] = self._fresh(inert=True)
         return sel
 
     def _eq_links(self, var: int, atom: P) -> None:
@@ -1422,12 +1422,7 @@ class Relations:
         if register is None:
             return
         s = self.session
-
-        def new_var():
-            v = s.table.aux()
-            s.solver.ensure_vars(v)
-            return v
-        for v in register(s.solver, c, new_var):
+        for v in register(s.solver, c, self._fresh):
             s.emit([v])
 
     # -- links to the unary vocabulary ----------------------------------
@@ -1451,10 +1446,7 @@ class Relations:
             self._aux_eq.add(eqa)
             self._link_eq.add(eqa)
         eq = self._atom_var(eqa)
-        sel = s.table.aux()
-        s.solver.ensure_vars(sel)
-        self.link_sel[e] = sel
-        s.solver.set_inert(sel)
+        sel = self.link_sel[e] = self._fresh(inert=True)
         g = -sel
         gl = [g]            # one guard object: _tsource drops repeats of it
         for f in (gta, lta, eqa):
@@ -1660,10 +1652,8 @@ class Relations:
         # every lemma is guarded by a selector the queries with a relation
         # atom assume (Session.assumption_lits); registered as the
         # theory's atom, so the theory follows its value level by level
-        sel = s.table.aux()
-        solver.ensure_vars(sel)
+        sel = self._fresh(inert=True)
         th.guard(sel)
-        s.solver.set_inert(sel)
         solver.register_atom(th, sel, ("enable",))
         self.xfer_sel = sel
         self._xadapter = ad
