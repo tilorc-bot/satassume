@@ -280,7 +280,7 @@ MODULE_CONFIG: frozenset = frozenset({
     ("satassume.state.epoch", "EPOCH"),                 # the registry epoch: bumped by every
                                                   # registration, never reset (#63)
     ("satassume.sympy_api", "_engine"),           # the default engine itself
-    ("satassume.state.memos", "ADOPTED"),               # the adopted memos, registered by
+    ("satassume.state.memos", "_ADOPTED"),              # the adopted memos, registered by
                                                   # their modules at import
 })
 

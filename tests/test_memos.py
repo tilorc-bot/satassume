@@ -155,3 +155,27 @@ def test_table_bound_and_process_key_check():
         PROCESS.table("satassume.test.bad", "settings")
     with pytest.raises(ValueError):
         Memos("t").table("t.y", "nonsense")
+
+
+def test_memo_registry_lists_every_owner():
+    """``memos.ADOPTED`` and ``memos.module_locations()`` import every
+    owner first, so they list the memos of modules that nothing has
+    loaded yet (in a fresh interpreter; final review B3)."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    import satassume
+    root = str(Path(satassume.__file__).resolve().parent.parent)
+    code = (
+        "import sys\n"
+        "from satassume.state import memos\n"
+        "assert 'satassume.theories.lra.lra_bounds' not in sys.modules\n"
+        "owners = {m for m, _, _ in memos.ADOPTED}\n"
+        "assert 'satassume.theories.lra.lra_bounds' in owners, owners\n"
+        "assert 'satassume.theories.euf.euf_adapter' in owners, owners\n"
+        "assert ('satassume.theories.lra.lra_bounds', '_BOUNDS') in memos.module_locations()\n"
+        "print('ok')\n")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       cwd=root, env={**os.environ, "PYTHONPATH": root})
+    assert r.returncode == 0 and r.stdout.strip() == "ok", r.stderr

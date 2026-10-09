@@ -171,15 +171,43 @@ def _module_attr(module: str, path: str) -> Callable[[], Any]:
 
 #: ``(module, attribute path, key)`` of the process-wide memos that their
 #: modules keep as plain containers (or on a registry object), filled by
-#: :func:`adopt` when each owner module is imported (so it lists the
-#: adopted memos of the loaded modules).  Each is a pure function of its
-#: key (``engine._SPLIT`` and ``solver._RULE_TABLES`` keep the keyed object
+#: :func:`adopt` when each owner module is imported.  Read it as
+#: ``memos.ADOPTED`` (the module ``__getattr__``), which imports every
+#: owner first (:func:`load_owners`), so it lists every adopted memo,
+#: not only those of the modules loaded so far.  Each is a pure function
+#: of its key (``engine._SPLIT`` and ``solver._RULE_TABLES`` keep the keyed object
 #: alive and compare it by identity; ``lra_adapter._INTERPRETED`` is keyed
 #: on ``GENERIC_CONSTANTS``; the template registry's memos follow its own
 #: version counter).  ``templates._common._CACHE`` holds compiled patterns
 #: by template key, and a later registration may reuse a key, so
 #: ``TemplateRegistry.register`` empties it: keyed on the epoch.
-ADOPTED: List[Tuple[str, str, str]] = []
+_ADOPTED: List[Tuple[str, str, str]] = []
+
+
+def load_owners() -> None:
+    """Import every module of the package, so that each owner of a
+    process-wide memo has registered it (a module registers its memos
+    when it is imported, and some are imported lazily: the LRA bounds,
+    the templates of sums and of functions).  Names no module: it walks
+    the package's own path.  A module whose optional dependency is
+    missing is skipped."""
+    import importlib
+    import pkgutil
+    root = __name__.partition(".")[0]
+    package = sys.modules[root]
+    for info in pkgutil.walk_packages(package.__path__, root + ".", onerror=lambda name: None):
+        if info.name not in sys.modules:
+            try:
+                importlib.import_module(info.name)
+            except ImportError:
+                pass
+
+
+def __getattr__(name: str):
+    if name == "ADOPTED":
+        load_owners()
+        return _ADOPTED
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def adopt(module: str, path: str, key: str = "pure") -> None:
@@ -188,15 +216,18 @@ def adopt(module: str, path: str, key: str = "pure") -> None:
     with its own ``__name__`` right after the container exists, so this
     module names no module above it and a moved module keeps its memos."""
     PROCESS.adopt(f"{module}.{path}", _module_attr(module, path), key)
-    ADOPTED[:] = [a for a in ADOPTED if a[:2] != (module, path)] + [(module, path, key)]
+    _ADOPTED[:] = [a for a in _ADOPTED if a[:2] != (module, path)] + [(module, path, key)]
 
 
 def module_locations() -> List[Tuple[str, str]]:
     """``(module, attribute)`` of every process-wide memo that is a
     module-level name: the tables (named ``module.attribute``) and the
-    adopted containers that are not attributes of a registry object."""
+    adopted containers that are not attributes of a registry object.
+    Every owner is imported first (:func:`load_owners`), so the list does
+    not depend on which modules earlier code happened to load."""
+    load_owners()
     out = [tuple(name.rpartition(".")[::2]) for name in PROCESS._tables]
-    out += [(m, p) for m, p, _ in ADOPTED if "." not in p]
+    out += [(m, p) for m, p, _ in _ADOPTED if "." not in p]
     return out
 
 
