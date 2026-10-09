@@ -499,6 +499,21 @@ class Session:
             return lits[0]
         return op, lits
 
+    def query_lit_of(self, proposition):
+        """What :meth:`query_literal` decides for the query ``proposition``
+        (``Engine._ask``): for a vocabulary atom, :meth:`query_lit` of it
+        once its node is visited for its predicate, the twins ``eq(t, 0)``
+        of its zero atom are allocated and the glue has read it (no
+        variable of its own); for any other formula, :meth:`literal_of`."""
+        if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
+            self.ensure(proposition.expr, {proposition.pred})
+            if self._ensure_twins((proposition,)):    # twins eq(t, 0)
+                self._flush()
+            if self.relations is not None:
+                self._relations(proposition)
+            return self.query_lit(proposition.pred, proposition.expr)
+        return self.literal_of(proposition)
+
     def emit(self, clause: List[int]) -> None:
         self.solver.add_clause(clause)
 
@@ -2144,7 +2159,7 @@ class Engine:
         # prefix of the assumptions); release the others before this query
         # adds clauses
         s.solver.release(s.n_hold)
-        q = self._literal(s, proposition)
+        q = s.query_lit_of(proposition)
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
         lits = s.assumption_lits(proposition)
@@ -2168,17 +2183,6 @@ class Engine:
         self.last_budget_limited = s.truncated
         if s.truncated:
             self.stats["budget_limited"] += 1
-
-    @staticmethod
-    def _literal(s: Session, proposition) -> int:
-        if isinstance(proposition, P) and proposition.pred in PRED_INDEX:
-            s.ensure(proposition.expr, {proposition.pred})
-            if s._ensure_twins((proposition,)):    # twins eq(t, 0)
-                s._flush()
-            if s.relations is not None:
-                s._relations(proposition)
-            return s.query_lit(proposition.pred, proposition.expr)
-        return s.literal_of(proposition)
 
 
 #: fewest derived atoms of several basis literals in an assumption set for

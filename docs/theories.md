@@ -201,7 +201,7 @@ when:
 Until then the unary path pays one `is not None` test (the first wiring,
 with glue in every session, cost up to 10% on the unary microbenchmarks).
 `Relations.process`, at the end of `literal_of`, `assume_formula` and
-`Engine._literal`, interprets queued atoms with every adapter that accepts
+`Session.query_lit_of`, interprets queued atoms with every adapter that accepts
 them, adds links, shares equalities and engages transfer until nothing
 changes; a user relation no theory interprets stays a free Boolean (the
 default `uninterpreted="free"`), or raises `Uninterpreted` with

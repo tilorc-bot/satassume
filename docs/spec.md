@@ -271,7 +271,7 @@ clause-generating functions' formulas (`Session._custom`, `satassume/knowledge/e
 
 Definition. If `p` is a vocabulary atom `P(pred, e)`, its literal is
 `Session.query_lit(pred, e)` after `Session.ensure(e, {pred})`
-(`Engine._literal`): `base[e] + BASIS_INDEX[pred]` for a basis predicate,
+(`Session.query_lit_of`): `base[e] + BASIS_INDEX[pred]` for a basis predicate,
 the single basis literal of a derived predicate defined by one, else
 `(op, literals)`, the definition over `e`'s block (`rules.basis_lits`),
 which `query_literal` decides without a new variable. Otherwise it is the Tseitin literal of the formula
