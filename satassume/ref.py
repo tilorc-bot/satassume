@@ -405,7 +405,7 @@ class _RefSession:
         self.discover()
         # the glue may have visited nodes whose templates made relation
         # atoms: interpret them too, until nothing is queued
-        while rel.queue or rel._pending_links or self.frontier:
+        while rel.queue or self.frontier:
             rel.process(())
             self.discover()
         return rel
