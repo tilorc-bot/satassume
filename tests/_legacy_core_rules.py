@@ -9,8 +9,8 @@ from itertools import combinations
 from sympy import S
 from sympy.core.intfunc import integer_nthroot
 
-from satassume.templates._common import SIGN_FLIP, Rules, ge2_alternatives, lits
-from satassume.templates.core import (
+from satassume.knowledge.templates._common import SIGN_FLIP, Rules, ge2_alternatives, lits
+from satassume.knowledge.templates.core import (
     _B,
     _BM,
     _BP,

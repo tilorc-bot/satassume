@@ -35,7 +35,7 @@ from sympy.assumptions.assume import Predicate
 from sympy import (Abs, Add, And, E, I, Integer, Mul, Not, Or, Pow, Q, Rational, S, Symbol,
                    conjugate, cos, exp, im, log, oo, pi, re, sin, sqrt, srepr, zoo)
 
-#: unary predicates of the vocabulary (satassume.rules.PREDICATES)
+#: unary predicates of the vocabulary (satassume.knowledge.rules.PREDICATES)
 PREDS = (
     'algebraic', 'antihermitian', 'commutative', 'complex', 'composite',
     'even', 'extended_negative', 'extended_nonnegative',

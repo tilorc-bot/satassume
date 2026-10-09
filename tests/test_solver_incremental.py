@@ -64,8 +64,8 @@ from collections.abc import Callable
 
 import pytest
 
-from satassume.rules import NPRED, RULE_INTERNAL
-from satassume.solver import Solver
+from satassume.knowledge.rules import NPRED, RULE_INTERNAL
+from satassume.sat.solver import Solver
 from theory_harness import ForbidTheory, Recorder, check_protocol
 
 SEEDS = int(os.environ.get("SOLVER_FUZZ_SEEDS", "500"))

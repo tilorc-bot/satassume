@@ -1,6 +1,6 @@
 """EUF: equality with uninterpreted functions, as a DPLL(T) theory solver.
 
-:class:`EUFTheory` implements the protocol of :mod:`satassume.theory`
+:class:`EUFTheory` implements the protocol of :mod:`satassume.sat.theory`
 (``register_atom``, ``assert_lit``, ``check``, ``push_level``,
 ``pop_level`` and ``propagate``) with an incremental congruence closure in
 the style of Nieuwenhuis and Oliveras, "Fast congruence closure and
@@ -57,12 +57,12 @@ Merge hook: if :attr:`EUFTheory.on_merge` is set, it is called as
 was retired and ``rb`` the one that now stands for the merged class.
 Nothing is called on undo; a listener must not keep state that a
 ``pop_level`` would have to revert, or must revert it through its own
-``pop_level`` (the transfer layer, :mod:`satassume.transfer`, recomputes
+``pop_level`` (the transfer layer, :mod:`satassume.theories.transfer`, recomputes
 from the current classes and needs no undo).
 
 Out of scope here: arithmetic and AC reasoning.  Substitution of equals
 into unary predicates (``Q.prime(x)`` from ``Q.eq(x, y) & Q.prime(y)``) is
-done by :mod:`satassume.transfer` on top of this theory's classes.
+done by :mod:`satassume.theories.transfer` on top of this theory's classes.
 """
 from __future__ import annotations
 

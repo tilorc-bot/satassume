@@ -6,7 +6,7 @@ The engine answers ``ask`` for **unary scalar predicates on scalar
 expressions**: propositions and assumptions that are Boolean combinations
 (``And``, ``Or``, ``Not``, ``Implies``, ``Equivalent``) of applied
 predicates ``Q.<name>(expr)`` where ``name`` is in the vocabulary of
-:mod:`satassume.rules` (``PREDICATES``) and ``expr`` is a scalar
+:mod:`satassume.knowledge.rules` (``PREDICATES``) and ``expr`` is a scalar
 :class:`~sympy.core.expr.Expr`.  Everything is answered by the SAT engine
 alone: the rule base, the structural templates and search.  The engine
 never consults SymPy's ``_eval_is_*`` handlers or SymPy's own
@@ -39,7 +39,7 @@ scope so the caller can decide before asking.  The categories are
 * ``"custom"``: any other predicate outside the vocabulary (user-defined
   predicates, ``Q.is_true`` over a non-relational) for which no
   clause-generating function is registered (see :func:`register` and
-  :mod:`satassume.extensions`); a registered predicate is in scope, with
+  :mod:`satassume.knowledge.extensions`); a registered predicate is in scope, with
   the arity it was registered for;
 * ``"other"``: the proposition or the assumptions are not a Boolean
   combination of applied predicates at all (a bare ``Q.positive``, an
@@ -58,7 +58,7 @@ its arguments, so it does not sink unrelated components.  In the
 Q.invertible(M))`` is None), and ``"other"`` is out of scope on both sides.
 :func:`out_of_scope` keeps reporting the categories of the input as such.
 
-``to_formula`` translates a SymPy Boolean into a :mod:`satassume.formula`
+``to_formula`` translates a SymPy Boolean into a :mod:`satassume.sat.formula`
 formula and raises :class:`Unsupported` (carrying the category) for
 out-of-scope input.
 
@@ -76,12 +76,12 @@ from typing import Optional
 from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
 from .scope import theory_scope as _theory_scope
-from .epoch import EPOCH as _EPOCH
-from .memos import PROCESS as _PROCESS
-from .extensions import Args, extensions, register, unregister  # noqa: F401
-from .formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
+from .state.epoch import EPOCH as _EPOCH
+from .state.memos import PROCESS as _PROCESS
+from .knowledge.extensions import Args, extensions, register, unregister  # noqa: F401
+from .sat.formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
-from .domain import NONCOMM_SIZE, _NONCOMM, _fixed_noncommutative, _noncommutative  # noqa: F401
+from .knowledge.domain import NONCOMM_SIZE, _NONCOMM, _fixed_noncommutative, _noncommutative  # noqa: F401
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
 from sympy.core.add import Add as _SAdd
@@ -95,7 +95,7 @@ from sympy.core.singleton import S as _S
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
                                  Implies as _SImplies, Equivalent as _SEquivalent,
                                  BooleanTrue as _BTrue, BooleanFalse as _BFalse)
-from .rules import PRED_INDEX
+from .knowledge.rules import PRED_INDEX
 
 
 CATEGORIES = ("relation", "matrix", "custom", "other")
@@ -357,7 +357,7 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
     """
     eng = engine or default_engine()
     # answer memo (see Engine.answers): keyed by the SymPy objects
-    # themselves, valid while the registry epoch (satassume.epoch: the
+    # themselves, valid while the registry epoch (satassume.state.epoch: the
     # registrations that decide the scope and add facts, the templates,
     # the adapters) is the one it was filled under.  An answer over the
     # discovery budget is not memoized, so a hit is never budget-limited
@@ -572,7 +572,7 @@ def _ask_general(proposition, assumptions, eng: Engine) -> Optional[bool]:
 
 _OPAQUE = None  # keys of an opaque expression
 #: Boolean -> ``(keys, has a relation)``; valid while the registry epoch
-#: (:mod:`satassume.epoch`: the default registry decides whether a custom
+#: (:mod:`satassume.state.epoch`: the default registry decides whether a custom
 #: predicate is registered, so opaque, or unregistered, keyed by its
 #: arguments; the templates decide what a closed term's block fixes) is
 #: ``_KEYS.stamp``.  ``_CONST`` (closed term -> in ``K``) is dropped with it.

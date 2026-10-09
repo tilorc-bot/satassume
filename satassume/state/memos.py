@@ -5,7 +5,7 @@ them all with one :meth:`Memos.clear`.  There are two kinds of owner:
 
 * :data:`PROCESS`, the memos shared by every engine of the process.  Only
   a pure function of its key and of the registry epoch
-  (:mod:`satassume.epoch`) or the default registry's version may live
+  (:mod:`satassume.state.epoch`) or the default registry's version may live
   here: sharing such a memo between engines, or keeping it across
   queries, can change how fast an answer comes but never the answer.  The
   tables that ``satassume`` modules create with :meth:`Memos.table` are

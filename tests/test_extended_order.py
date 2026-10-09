@@ -24,8 +24,8 @@ from sympy import (Eq, I, Integral, Matrix, Q, S, im, nan, oo, pi, re, sin, sqrt
 from sympy.logic.boolalg import And
 
 from satassume import DictCache, Engine
-from satassume import constfield as cf
-from satassume import lra_adapter as ad
+from satassume.theories.lra import constfield as cf
+from satassume.theories.lra import lra_adapter as ad
 from satassume.sympy_api import ask
 
 x, y = symbols("x y")

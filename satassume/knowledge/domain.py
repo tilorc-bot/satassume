@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from sympy.core.basic import Basic as _Basic
 
-from .memos import PROCESS as _PROCESS
+from ..state.memos import PROCESS as _PROCESS
 
 
 #: memo of :func:`_noncommutative` (a function of the expression only:

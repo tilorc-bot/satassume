@@ -28,7 +28,7 @@ from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import And, BooleanAtom, Equivalent, Implies, Not, Or
 
-from satassume.rules import PREDICATES
+from satassume.knowledge.rules import PREDICATES
 
 _ORDER = {"lt": lambda a, b: a < b, "le": lambda a, b: a <= b,
           "gt": lambda a, b: a > b, "ge": lambda a, b: a >= b}

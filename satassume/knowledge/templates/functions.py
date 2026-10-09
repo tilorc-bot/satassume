@@ -33,7 +33,7 @@ from sympy.functions.elementary.trigonometric import (
     tan,
 )
 
-from ..formula import Not, P
+from ...sat.formula import Not, P
 from ._common import (
     Rules,
     const_key,

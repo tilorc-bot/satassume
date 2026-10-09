@@ -46,8 +46,8 @@ from sympy.logic.boolalg import And, BooleanAtom, Equivalent, Implies, Not, Or
 
 import satassume.sympy_api as _api
 from satassume.engine import CONSISTENT
-from satassume.rules import PREDICATES
-from satassume.solver import Solver
+from satassume.knowledge.rules import PREDICATES
+from satassume.sat.solver import Solver
 
 from .checker import Ask, Event, Item, ddmin
 from .outcomes import outcome
@@ -625,7 +625,7 @@ HANDLER_ERRORS: List[str] = []
 
 
 def extension_handler(spec: dict):
-    from satassume.formula import Implies, Not as FNot, Or as FOr, P
+    from satassume.sat.formula import Implies, Not as FNot, Or as FOr, P
 
     def fn(*ts):
         try:
@@ -649,7 +649,7 @@ def _handler_body(spec, ts, Implies, FNot, FOr, P):
         if spec["neg"]:
             lit = FNot(lit)
         if len(ts) > 1:
-            from satassume.extensions import Args
+            from satassume.knowledge.extensions import Args
             me = P(spec["pred"], Args(ts))            # a polyadic atom's expr is its argument tuple
         else:
             me = P(spec["pred"], t)
@@ -681,7 +681,7 @@ def registered(specs: Sequence[dict]):
     """The extensions of ``specs`` registered while active (the registry
     is restored afterwards, as ``harness.registry`` does)."""
     from .registry import restore, snapshot
-    from satassume.extensions import extensions
+    from satassume.knowledge.extensions import extensions
     snap = snapshot()
     try:
         for spec in specs:

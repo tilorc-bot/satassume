@@ -64,7 +64,7 @@ import json, time
 
 import satassume.sympy_api as api
 from satassume.engine import Engine, Session
-from satassume.solver import Solver
+from satassume.sat.solver import Solver
 
 
 class _Ctx:
@@ -134,7 +134,7 @@ def install(models=False):
     orig_is = Engine.is_
 
     wrapped_is = entry("is_", orig_is)
-    from satassume.rules import PRED_INDEX
+    from satassume.knowledge.rules import PRED_INDEX
 
     def is_(self, node, pred):
         if pred not in PRED_INDEX:

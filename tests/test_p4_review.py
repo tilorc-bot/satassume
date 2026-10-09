@@ -12,8 +12,8 @@ def test_reregistered_template_key_does_not_reuse_compiled_pattern():
     clear it.  A later template that reuses an earlier template's key gets
     the earlier compiled pattern: here facts saying ``positive`` for a
     class whose template says ``negative``."""
-    from satassume.templates import registry
-    from satassume.templates._common import units
+    from satassume.knowledge.templates import registry
+    from satassume.knowledge.templates._common import units
 
     class _P4A(Symbol):
         pass
@@ -44,7 +44,7 @@ def test_every_adopted_memo_name_resolves():
     out of ``Memos.items``, ``clear`` and the inventory."""
     from harness.state import import_all
     from satassume.engine import ENGINE_MEMOS
-    from satassume.memos import ADOPTED, PROCESS
+    from satassume.state.memos import ADOPTED, PROCESS
     import_all()
     e = Engine()
     assert {n for n, _, _ in e.memos.items()} == set(ENGINE_MEMOS)
@@ -53,7 +53,7 @@ def test_every_adopted_memo_name_resolves():
     # and the check itself must catch a renamed attribute: a name that
     # does not resolve raises from ``items()`` (and so from ``clear()``)
     import satassume.engine as engine_mod
-    import satassume.memos as memos
+    import satassume.state.memos as memos
     engine_mod.ENGINE_MEMOS = ENGINE_MEMOS + ("_no_such_memo",)
     try:
         from satassume.engine import engine_memos

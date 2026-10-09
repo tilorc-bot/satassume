@@ -11,7 +11,7 @@ sympy = pytest.importorskip("sympy")
 from sympy import exp
 from sympy.abc import x, y
 
-from satassume.templates import registry
+from satassume.knowledge.templates import registry
 
 BUDGETS = [
     # 45: 38 structural rules plus the two infinite-sum rules per term, the

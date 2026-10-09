@@ -1,14 +1,14 @@
 """Linear real arithmetic (LRA) theory solver for satassume's DPLL(T) layer.
 
-The solver implements :class:`satassume.theory.TheorySolver` (plus the
+The solver implements :class:`satassume.sat.theory.TheorySolver` (plus the
 optional ``propagate``) for conjunctions of linear constraints over the
 reals, with the general simplex of Dutertre and de Moura, "A Fast
 Linear-Arithmetic Solver for DPLL(T)" (CAV 2006).  Arithmetic is exact
 (:class:`fractions.Fraction`, and numbers with constants such as ``pi``,
-``1/pi``, ``sqrt(2)`` from :mod:`satassume.constfield` where a payload has
+``1/pi``, ``sqrt(2)`` from :mod:`satassume.theories.lra.constfield` where a payload has
 them); strict bounds use delta-rationals ``q + d*delta``
 for an infinitesimal ``delta > 0``.  Nothing here imports SymPy: terms are
-opaque hashable keys, the SymPy boundary is :mod:`satassume.lra_adapter`.
+opaque hashable keys, the SymPy boundary is :mod:`satassume.theories.lra.lra_adapter`.
 
 Payloads
 --------
@@ -26,16 +26,16 @@ Payloads
 * ``Integral(terms, offset)``: ``sum(c*t for t, c in terms) + offset`` is
   an integer (``terms`` as above).  Its negation is "not an integer".
 
-Coefficients and constants may be :class:`satassume.constfield.Element`
+Coefficients and constants may be :class:`satassume.theories.lra.constfield.Element`
 numbers (``pi``, ``3*pi/2``, ``1/pi``); a payload of Fractions only costs
 nothing extra (constant-free results stay Fractions).  With constants a
-comparison can be undecidable (:class:`satassume.constfield.Undecided`:
+comparison can be undecidable (:class:`satassume.theories.lra.constfield.Undecided`:
 a formal expression whose value is 0, ``sqrt(2)**2 - 2``, or one over the
 size budget).  No comparison takes a default branch then: the theory
-*gives up* (see "Giving up" in :mod:`satassume.theory`): it reports no
+*gives up* (see "Giving up" in :mod:`satassume.sat.theory`): it reports no
 conflict, propagation or model from then on, which is incompleteness, not
 unsoundness.  Rows drop a coefficient only when it is formally 0
-(:func:`~satassume.constfield.formally_zero`), pivots and assignment
+(:func:`~satassume.theories.lra.constfield.formally_zero`), pivots and assignment
 updates compute every new value before writing any, and integrality
 never calls an Element integral or non-integral by default
 (:func:`_is_int`).
@@ -137,14 +137,14 @@ its path.  It holds when
 * the sizes below give every compared or floored number a numerator
   ``A + B*pi`` (over a denominator ``D``) with ``|B|`` and ``D`` so small
   that Mahler's bound ``|pi - p/q| > q**-42`` puts ``|A + B*pi|`` beyond
-  constfield's interval error at ``PREC_CAP`` (:func:`satassume.lra_cert._decided`), and far
+  constfield's interval error at ``PREC_CAP`` (:func:`satassume.theories.lra.lra_cert._decided`), and far
   below the size budget;
 * constfield's limits, read when the certificate is computed (it is
   recomputed when they change), admit the argument: numbers of degree at
   most 3 in ``pi`` and products of two of them (``MAX_DEGREE >= 6``,
   ``MAX_TERMS >= 7``, ``MAX_WORK >= 16``), coefficients of 8 times the
   bits of the heights above (``MAX_BITS``) and the precision ``PREC_CAP``
-  of :func:`satassume.lra_cert._decided`; with smaller limits a certified search could give
+  of :func:`satassume.theories.lra.lra_cert._decided`; with smaller limits a certified search could give
   up, so nothing is certified.  The certificate is a function of the
   atoms and of this configuration.
 
@@ -289,7 +289,7 @@ def constraint(terms, op: str, rhs=0):
 
 
 def _is_int(q) -> bool:
-    """``q`` (a Fraction or an :class:`~satassume.constfield.Element`) is
+    """``q`` (a Fraction or an :class:`~satassume.theories.lra.constfield.Element`) is
     an integer.  An Element is False when its value is proven not to be an
     integer and raises Undecided otherwise, never True (its value may still
     be one, ``sqrt(2)**2``): so no Element is ever declared non-integral
@@ -325,7 +325,7 @@ def _ceil(q, d) -> int:
 
 
 def _within_cert(q, bound) -> bool:
-    """:func:`satassume.lra_cert.within` (only with constants)."""
+    """:func:`satassume.theories.lra.lra_cert.within` (only with constants)."""
     from .lra_cert import within
     return within(q, bound)
 
@@ -472,7 +472,7 @@ class LRATheory:
         return c[1]
 
     def _certify(self, values) -> tuple:
-        """The certificate itself (:func:`satassume.lra_cert.certify`,
+        """The certificate itself (:func:`satassume.theories.lra.lra_cert.certify`,
         imported only by a theory whose payloads have constants)."""
         from .lra_cert import CertAtoms, certify
         if self._cagg is None:
@@ -534,11 +534,11 @@ class LRATheory:
     # the theory boundary: Undecided -> give up
     # ------------------------------------------------------------------
     #
-    # With constants in the coefficients (satassume.constfield) a sign, a
+    # With constants in the coefficients (satassume.theories.lra.constfield) a sign, a
     # comparison or a floor can be undecidable (Undecided, or TooLarge for
     # the size budget).  No comparison here has a default branch for that:
     # the exception leaves the method, and the theory gives up
-    # (satassume.theory, "Giving up"): it reports nothing more (no
+    # (satassume.sat.theory, "Giving up"): it reports nothing more (no
     # conflict, no propagation, None from check), whatever state the
     # interrupted call left is never read again, and the engine discards
     # the session after the query.  Conflicts and propagations reported
@@ -1119,7 +1119,7 @@ class LRATheory:
         """Make ``j`` basic in place of ``b`` (``b`` becomes nonbasic).
 
         All arithmetic (which can raise for numbers with constants: a
-        size budget, see :mod:`satassume.constfield`) is done before the
+        size budget, see :mod:`satassume.theories.lra.constfield`) is done before the
         tableau is written, so the tableau is never left half pivoted."""
         self.stats["pivots"] += 1
         rows, cols = self._rows, self._cols

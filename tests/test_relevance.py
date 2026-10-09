@@ -7,7 +7,7 @@ from sympy.assumptions.assume import Predicate
 
 from satassume import sympy_api as api
 from satassume.engine import Engine
-from satassume.extensions import Extensions
+from satassume.knowledge.extensions import Extensions
 
 x, y, z, t = symbols("x y z t")
 xr, yr, zr = symbols("xr yr zr", real=True)
@@ -342,7 +342,7 @@ def test_unkeyed_constants_are_decided(c):
     sympy_api): the engine's context-free clauses of every form of ``K``
     fix every predicate of its block except ``polar``."""
     from satassume.engine import Session
-    from satassume.rules import BASIS, BASIS_INDEX
+    from satassume.knowledge.rules import BASIS, BASIS_INDEX
     assert api._const_free(c)
     s = Session(Engine())
     s.ensure(c)

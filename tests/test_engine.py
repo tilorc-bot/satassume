@@ -193,7 +193,7 @@ def test_stream_under_one_set_answers_as_a_fresh_engine():
 
 
 def test_neighbourhood_contains_pred_and_rule_partners():
-    from satassume.rules import BASIS_INDEX
+    from satassume.knowledge.rules import BASIS_INDEX
     n = neighbourhood('even')
     assert all(BASIS_INDEX[p] in n for p in ('even', 'integer', 'zero'))
     assert BASIS_INDEX['polar'] not in n

@@ -1,4 +1,4 @@
-"""Soundness tests for :mod:`satassume.templates`.
+"""Soundness tests for :mod:`satassume.knowledge.templates`.
 
 The key test substitutes concrete numbers for the symbols of many template
 instantiations and checks, under the old assumption system's truth values
@@ -61,7 +61,7 @@ from sympy import (
 from sympy import E as _E
 from sympy.calculus.accumulationbounds import AccumBounds
 
-from satassume.formula import (
+from satassume.sat.formula import (
     And,
     Equivalent,
     Exclusive,
@@ -72,8 +72,8 @@ from satassume.formula import (
     P,
     atoms_of,
 )
-from satassume.templates import registry
-from satassume.templates._common import VOCAB
+from satassume.knowledge.templates import registry
+from satassume.knowledge.templates._common import VOCAB
 
 x, y, z, w = (Symbol(n) for n in "xyzw")
 
@@ -351,7 +351,7 @@ def test_constant_units_match_oracle(c):
 def _holds(lit, facts):
     """``lit`` follows from the unit ``facts`` (basis literals): a derived
     predicate is read through its definition (rules.DEFINITIONS)."""
-    from satassume.rules import BASIS, basis_lits
+    from satassume.knowledge.rules import BASIS, basis_lits
     atom, pos = (lit, True) if isinstance(lit, P) else (lit.args[0], False)
     facts = set(facts)
     if atom.pred in BASIS:
@@ -449,7 +449,7 @@ def test_facts_for_x_plus_y_shape():
 
 
 def test_registry_mro_and_ordering():
-    from satassume.templates.registry import TemplateRegistry
+    from satassume.knowledge.templates.registry import TemplateRegistry
 
     class Base:
         pass
@@ -483,7 +483,7 @@ def test_registry_mro_and_ordering():
 
 def test_specific_expectations():
     """A few spot checks that the important rules are actually present."""
-    from satassume.compile import VarTable, compile_formula
+    from satassume.knowledge.compile import VarTable, compile_formula
 
     def clauses_of(expr):
         table = VarTable()

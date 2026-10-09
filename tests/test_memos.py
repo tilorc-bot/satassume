@@ -7,9 +7,9 @@ sympy = pytest.importorskip("sympy")
 
 from sympy import Predicate, Q, Symbol  # noqa: E402
 
-from satassume.formula import P  # noqa: E402
+from satassume.sat.formula import P  # noqa: E402
 from satassume.sympy_api import _formula, to_formula, Unsupported, register, unregister  # noqa: E402
-from satassume.templates.registry import TemplateRegistry  # noqa: E402
+from satassume.knowledge.templates.registry import TemplateRegistry  # noqa: E402
 
 x = Symbol('x')
 
@@ -99,7 +99,7 @@ def test_two_engines_do_not_share_memos():
     the registry epoch (or the default registry's version) may live there."""
     from satassume import Engine
     from satassume.engine import ENGINE_MEMOS
-    from satassume.memos import PROCESS, PROCESS_KEYS
+    from satassume.state.memos import PROCESS, PROCESS_KEYS
     from satassume.sympy_api import ask
     e1, e2 = Engine(), Engine()
     assert e1.memos is not e2.memos
@@ -129,7 +129,7 @@ def test_process_memos_registered_and_cleared():
     module is imported), and one ``PROCESS.clear()`` empties all of them
     and forgets the stamps of the epoch-keyed tables."""
     from harness.state import MODULE_STATE, import_all
-    from satassume import memos
+    from satassume.state import memos
     from satassume import sympy_api as api
     import_all()
     assert set(memos.module_locations()) == set(MODULE_STATE)
@@ -144,7 +144,7 @@ def test_process_memos_registered_and_cleared():
 
 
 def test_table_bound_and_process_key_check():
-    from satassume.memos import Memos, PROCESS, Table
+    from satassume.state.memos import Memos, PROCESS, Table
     t = Memos("t").table("t.x", "settings", size=2)
     assert isinstance(t, Table) and type(t).get is dict.get
     t.put(1, 1); t.put(2, 2); t.put(3, 3)

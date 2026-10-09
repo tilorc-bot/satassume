@@ -1,5 +1,5 @@
 import random
-from satassume.rules import (RULES, RULE_CLAUSES, PREDICATES, PRED_INDEX, BASIS_INDEX,
+from satassume.knowledge.rules import (RULES, RULE_CLAUSES, PREDICATES, PRED_INDEX, BASIS_INDEX,
                              compile_rule, compile_rules)
 
 
@@ -96,7 +96,7 @@ def test_basis_rules_have_the_models_of_the_full_rule_base():
     """RULES over the basis, with every other predicate read through its
     definition, has exactly the models of FULL_RULES over the vocabulary."""
     from itertools import product
-    from satassume.rules import NPRED, basis_lits
+    from satassume.knowledge.rules import NPRED, basis_lits
     full = compile_rules(FULL_RULES, PRED_INDEX)
     seen = set()
     for bits in product((False, True), repeat=NPRED):
@@ -119,7 +119,7 @@ def test_instantiated_rules_propagate_like_the_full_rule_base():
     """The minimised clause set derives exactly the same literals by unit
     propagation as the full rule base, from every literal and every pair."""
     from itertools import combinations
-    from satassume.rules import RULE_INSTANTIATED, NPRED, unit_propagate
+    from satassume.knowledge.rules import RULE_INSTANTIATED, NPRED, unit_propagate
     assert len(RULE_INSTANTIATED) < len(RULE_CLAUSES)
     lits = [l for i in range(1, NPRED + 1) for l in (i, -i)]
     for a in lits:
@@ -129,8 +129,8 @@ def test_instantiated_rules_propagate_like_the_full_rule_base():
 
 
 def test_instantiated_rules_have_the_same_models():
-    from satassume.rules import RULE_INSTANTIATED, NPRED
-    from satassume.solver import Solver
+    from satassume.knowledge.rules import RULE_INSTANTIATED, NPRED
+    from satassume.sat.solver import Solver
     for c in RULE_CLAUSES:
         s = Solver()
         for r in RULE_INSTANTIATED:
@@ -170,7 +170,7 @@ def _unit_propagate_reference(clauses, assumptions):
 
 
 def test_unit_propagate_matches_reference_on_the_rule_base():
-    from satassume.rules import NPRED, RULE_INSTANTIATED, unit_propagate
+    from satassume.knowledge.rules import NPRED, RULE_INSTANTIATED, unit_propagate
     rng = random.Random(11)
     for _ in range(200):
         lits = [rng.choice([-1, 1]) * v for v in rng.sample(range(1, NPRED + 1), rng.randint(0, 4))]
@@ -178,7 +178,7 @@ def test_unit_propagate_matches_reference_on_the_rule_base():
 
 
 def test_unit_propagate_matches_reference_on_random_clauses():
-    from satassume.rules import unit_propagate
+    from satassume.knowledge.rules import unit_propagate
     rng = random.Random(5)
     conflicts = 0
     for _ in range(1500):
@@ -199,7 +199,7 @@ def test_unit_propagate_matches_reference_on_random_clauses():
 
 
 def test_closure_mask_round_trip():
-    from satassume.rules import closure_mask, lits_mask, mask_lits
+    from satassume.knowledge.rules import closure_mask, lits_mask, mask_lits
     assert mask_lits(lits_mask([3, -1, 7])) == {3, -1, 7}
     assert closure_mask(((1, 2), (-2, 3)), lits_mask([-1])) == lits_mask([-1, 2, 3])
     assert closure_mask(((1, 2), (-2, 3), (-3,)), lits_mask([-1])) == -1

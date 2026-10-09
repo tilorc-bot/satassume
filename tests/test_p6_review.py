@@ -1,6 +1,6 @@
 """Pinned repros from the P6 review (issue #97, branch issue-97/p6-template-tables).
 
-The Pow row ``|b|<1.infinite`` (``POW_TABLE`` in ``satassume/templates/core.py``:
+The Pow row ``|b|<1.infinite`` (``POW_TABLE`` in ``satassume/knowledge/templates/core.py``:
 ``[b finite number, 0<|b|<1] negative_infinite(E) -> infinite(N)``) was
 transcribed unchanged from ``_pow_rules`` at 876f37d, so the clause set is
 identical on ``main``; the issue is pre-existing, not introduced by P6.

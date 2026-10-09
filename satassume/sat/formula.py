@@ -2,7 +2,7 @@
 
 Atoms are ``P(pred, expr)``: a predicate name applied to an opaque, hashable
 expression (a SymPy object in practice, but this module never imports SymPy).
-Formulas are compiled to integer clauses by :mod:`satassume.compile`.
+Formulas are compiled to integer clauses by :mod:`satassume.knowledge.compile`.
 """
 from __future__ import annotations
 

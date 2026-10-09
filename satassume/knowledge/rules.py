@@ -36,7 +36,7 @@ it is real, minus its conjugate iff it is zero or imaginary).
 from __future__ import annotations
 
 from typing import Dict, List, Sequence, Tuple
-from .memos import PROCESS as _PROCESS, adopt as _adopt_memo
+from ..state.memos import PROCESS as _PROCESS, adopt as _adopt_memo
 
 # The predicate vocabulary.  This is the union of the old system's
 # ``_assume_defined`` and the unary, scalar predicates of the new system.

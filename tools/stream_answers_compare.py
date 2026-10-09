@@ -16,9 +16,9 @@ from collections import Counter
 from sympy import Float, I, S, Mul, Add, Pow, Symbol
 from sympy.core.relational import Relational
 
-from satassume import lra_adapter
-from satassume.euf_adapter import EUFAdapter
-from satassume.formula import atoms_of
+from satassume.theories.lra import lra_adapter
+from satassume.theories.euf.euf_adapter import EUFAdapter
+from satassume.sat.formula import atoms_of
 from satassume.relations import RELATION_ATOMS, sympy_atom
 from satassume.sympy_api import Unsupported, to_formula
 

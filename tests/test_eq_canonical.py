@@ -8,7 +8,7 @@ import pytest
 from sympy import Float, I, Q, Rational, S, oo, symbols, zoo, nan
 
 from satassume import Engine
-from satassume.formula import Not, P
+from satassume.sat.formula import Not, P
 from satassume.relations import relation_atom
 from satassume.sympy_api import ask
 

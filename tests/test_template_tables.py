@@ -1,10 +1,10 @@
 """The Mul and Pow templates as tables (issue #97, P6) emit exactly the
 clauses of the hand-written functions they replace.
 
-``satassume/templates/core.py`` writes ``_mul_rules``, ``_pow_rules`` and
+``satassume/knowledge/templates/core.py`` writes ``_mul_rules``, ``_pow_rules`` and
 ``ipi_rules`` as the tables ``MUL_TABLE``, ``POW_TABLE`` and ``IPI_TABLE``
 (rows of premises over argument facts and conclusion facts, interpreted by
-``satassume/templates/table.py`` through the spec builders of
+``satassume/knowledge/templates/table.py`` through the spec builders of
 ``_common``).  The functions as they were at 876f37d are kept verbatim in
 ``tests/_legacy_core_rules.py``.  For every node, the compiled clauses of
 every template block (and the plain formulas) are computed once with the
@@ -35,8 +35,8 @@ import _legacy_core_rules as legacy  # noqa: E402
 import totality  # noqa: E402
 from sympy import Mul, Pow  # noqa: E402
 
-from satassume.templates import _common, core, functions, registry  # noqa: E402
-from satassume.templates.table import count_rows, iter_rows  # noqa: E402
+from satassume.knowledge.templates import _common, core, functions, registry  # noqa: E402
+from satassume.knowledge.templates.table import count_rows, iter_rows  # noqa: E402
 
 CORPUS = os.path.join(ROOT, "queries.jsonl")
 N_RANDOM = 2000
@@ -207,7 +207,7 @@ def test_table_sizes_and_names():
 def test_provenance_covers_every_table_clause():
     """Every clause of a Mul/Pow table block is named by some row
     (``core.table_provenance``, used by ``tools/totality.py``)."""
-    from satassume.rules import BASIS
+    from satassume.knowledge.rules import BASIS
     missing = []
     for e in _subexprs(totality.load_exprs()):
         if not isinstance(e, (Mul, Pow)):

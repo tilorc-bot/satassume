@@ -1,4 +1,4 @@
-"""Unit tests for the EUF theory solver (satassume/euf.py).
+"""Unit tests for the EUF theory solver (satassume/theories/euf/euf.py).
 
 Written against the announced interface, independently of the
 implementation:
@@ -29,7 +29,7 @@ import itertools
 
 import pytest
 
-euf = pytest.importorskip("satassume.euf")
+euf = pytest.importorskip("satassume.theories.euf.euf")
 EUFTheory = euf.EUFTheory
 EqAtom = euf.EqAtom
 

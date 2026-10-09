@@ -3,9 +3,9 @@
 """
 from sympy import S, Symbol, symbols
 
-from satassume import extensions as X
+from satassume.knowledge import extensions as X
 from satassume.engine import DictCache, Engine, INCONSISTENT
-from satassume.formula import And, Implies, P
+from satassume.sat.formula import And, Implies, P
 
 x, y = symbols("x y")
 

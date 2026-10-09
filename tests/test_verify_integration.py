@@ -12,7 +12,7 @@ import pytest
 from sympy import Float, Function, Q, pi, symbols
 
 from satassume import Engine
-from satassume.solver import Solver
+from satassume.sat.solver import Solver
 from satassume.sympy_api import ask, out_of_scope
 
 r, s, t = symbols("r s t", real=True)
@@ -136,8 +136,8 @@ def test_sharing_example_needs_real_arguments():
 # ----------------------------------------------------------------------
 
 def test_float_is_uninterpreted_by_lra_and_opaque_to_euf():
-    from satassume.euf_adapter import EUFAdapter
-    from satassume.lra_adapter import to_constraint
+    from satassume.theories.euf.euf_adapter import EUFAdapter
+    from satassume.theories.lra.lra_adapter import to_constraint
     assert to_constraint(Q.lt(r, Float(0.5))) is None
     assert EUFAdapter.parse(Q.eq(x, Float(1.0))) is not None
     # opaque, not a distinct value: Eq(x, 1.0) must not refute Eq(x, 1)
@@ -212,7 +212,7 @@ def test_register_atom_on_var_already_reported_at_root_asserts_at_once():
 
 
 def test_lra_adapter_refuses_a_second_solver():
-    from satassume.lra_adapter import LRAAdapter
+    from satassume.theories.lra.lra_adapter import LRAAdapter
     ad = LRAAdapter()
     s1, s2 = Solver(), Solver()
     s1.ensure_vars(2)

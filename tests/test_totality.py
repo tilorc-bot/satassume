@@ -72,7 +72,7 @@ def test_canary_a_non_total_block_is_reported():
     rule must pass."""
     from sympy import Function, Symbol
 
-    from satassume.templates._common import Rules, facts
+    from satassume.knowledge.templates._common import Rules, facts
 
     x = Symbol('x')
     node = Function('canary')(x)
@@ -98,7 +98,7 @@ def test_a_template_that_raises_fails_the_gate(monkeypatch):
     """A block that cannot be compiled is an error, not a skipped block."""
     from sympy import Symbol
 
-    from satassume.templates import registry
+    from satassume.knowledge.templates import registry
 
     def boom(expr):
         raise RuntimeError("canary")

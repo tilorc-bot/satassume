@@ -9,7 +9,7 @@ import pytest
 from sympy import Abs, Function, Q, Symbol, sqrt, symbols
 
 from satassume.engine import DictCache, Engine
-from satassume.formula import P
+from satassume.sat.formula import P
 from satassume.relations import relation_atom, zero_twins
 from satassume.sympy_api import ask
 

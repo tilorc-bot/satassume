@@ -1,4 +1,4 @@
-"""Map SymPy equality atoms to :class:`satassume.euf.EUFTheory` payloads.
+"""Map SymPy equality atoms to :class:`satassume.theories.euf.euf.EUFTheory` payloads.
 
 ``EUFAdapter.register(solver, var, atom)`` interprets ``Q.eq(a, b)``,
 ``Q.ne(a, b)``, ``Eq(a, b)`` and ``Ne(a, b)``.  The first time it sees a
@@ -50,7 +50,7 @@ from sympy.core.relational import Equality, Unequality
 from sympy.integrals.transforms import IntegralTransform
 
 from .euf import EqAtom, EUFTheory
-from .memos import adopt as _adopt_memo
+from ...state.memos import adopt as _adopt_memo
 
 __all__ = ["EUFAdapter", "structural"]
 
@@ -192,7 +192,7 @@ class EUFAdapter:
 
     def node_term(self, expr) -> int:
         """The theory term of ``expr`` for predicate transfer
-        (:mod:`satassume.transfer`): interned like :meth:`term`, with the
+        (:mod:`satassume.theories.transfer`): interned like :meth:`term`, with the
         same ids, but remembered apart so that it does not become a
         candidate interface term (:meth:`shared_terms`).  Interning more
         terms only adds congruences over the new terms; the equalities

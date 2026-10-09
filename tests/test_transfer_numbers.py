@@ -40,7 +40,7 @@ def test_is_many_matches_is_and_leaves_the_same_cache():
     # over the budget), for numbers and for non-numbers
     from sympy import S, Rational, Float, pi, E, I, oo, zoo, nan, sqrt
     from harness.state import PRESETS
-    from satassume.rules import PREDICATES
+    from satassume.knowledge.rules import PREDICATES
     nums = (S.Zero, S.One, S(-3), Rational(1, 2), Rational(-5, 10**20 + 1),
             S(10)**30, Float("0.5"), pi, E - 2, I, 1 + I, oo, zoo, nan,
             sqrt(2) - 1, x, x + 1)
@@ -62,9 +62,9 @@ def test_reference_is_many_is_its_is_loop():
     from sympy import Rational
     from satassume.ref import _RefEngine
     from satassume.relations import default_specs
-    from satassume.rules import PREDICATES
-    from satassume.extensions import extensions
-    import satassume.templates  # noqa: F401 (registers the templates)
+    from satassume.knowledge.rules import PREDICATES
+    from satassume.knowledge.extensions import extensions
+    import satassume.knowledge.templates  # noqa: F401 (registers the templates)
     e = _RefEngine(extensions, default_specs(), True, "free")
     c = Rational(3, 7)
     assert e.is_many(c, PREDICATES) == [e.is_(c, p) for p in PREDICATES]

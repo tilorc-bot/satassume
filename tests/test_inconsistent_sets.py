@@ -12,7 +12,7 @@ import pytest
 from sympy import Not, Q, Symbol, oo, symbols
 
 from satassume.ref import ref_outcome
-from satassume.solver import Solver
+from satassume.sat.solver import Solver
 from satassume.sympy_api import ask
 
 x, y, z, w = symbols("x y z w")

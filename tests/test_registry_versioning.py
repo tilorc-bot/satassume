@@ -2,7 +2,7 @@
 
 Registering or unregistering a clause-generating function, registering a
 template or changing the theory adapters changes what an answer is; each
-starts a new registry epoch (``satassume.epoch``), and everything the engine
+starts a new registry epoch (``satassume.state.epoch``), and everything the engine
 keeps between queries (``Engine.cache``, ``Engine.custom_cache``, the set
 verdict and failed-set memos, the answer and split memos) was computed under the
 registrations in force at the time and is dropped at the next query
@@ -23,11 +23,11 @@ from sympy import Abs, Function, I, Predicate, Q, Symbol  # noqa: E402
 from sympy.core.function import AppliedUndef  # noqa: E402
 
 from satassume import DictCache, Engine  # noqa: E402
-from satassume.epoch import EPOCH  # noqa: E402
-from satassume.extensions import Extensions, extensions  # noqa: E402
-from satassume.formula import Implies, Not, P  # noqa: E402
+from satassume.state.epoch import EPOCH  # noqa: E402
+from satassume.knowledge.extensions import Extensions, extensions  # noqa: E402
+from satassume.sat.formula import Implies, Not, P  # noqa: E402
 from satassume.sympy_api import ask  # noqa: E402
-from satassume.templates.registry import registry  # noqa: E402
+from satassume.knowledge.templates.registry import registry  # noqa: E402
 
 x = Symbol('x')
 y = Symbol('y', real=True)

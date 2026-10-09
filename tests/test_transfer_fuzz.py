@@ -1,4 +1,4 @@
-"""Fuzz: predicate transfer (satassume.transfer) against explicit clauses.
+"""Fuzz: predicate transfer (satassume.theories.transfer) against explicit clauses.
 
 The engine with transfer (``Engine(transfer=True)``) is compared with an
 oracle engine without it (``transfer=False``) that gets the transfer as
@@ -51,10 +51,10 @@ sympy = pytest.importorskip("sympy") if __name__ != "__main__" else __import__("
 from sympy import Function, Rational, S, Symbol
 
 from satassume.engine import Engine, InconsistentAssumptions
-from satassume.euf_adapter import EUFAdapter
-from satassume.formula import And, Equivalent, Implies, Not, Or, P
+from satassume.theories.euf.euf_adapter import EUFAdapter
+from satassume.sat.formula import And, Equivalent, Implies, Not, Or, P
 from satassume.relations import AdapterSpec, default_specs, relation_atom
-from satassume.rules import PREDICATES
+from satassume.knowledge.rules import PREDICATES
 
 x, y, z = Symbol("x"), Symbol("y"), Symbol("z")
 f = Function("f")
@@ -117,12 +117,12 @@ class Gen:
 
 
 def _has_eq(f):
-    from satassume.formula import atoms_of
+    from satassume.sat.formula import atoms_of
     return any(a.pred == "eq" for a in atoms_of(f))
 
 
 def _terms(*fs):
-    from satassume.formula import atoms_of
+    from satassume.sat.formula import atoms_of
     out = []
     for fm in fs:
         for a in atoms_of(fm):

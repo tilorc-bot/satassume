@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, NamedTuple, Tuple
 
-from satassume.extensions import extensions
-from satassume.formula import Implies, Not, P
+from satassume.knowledge.extensions import extensions
+from satassume.sat.formula import Implies, Not, P
 
 
 class Registration(NamedTuple):

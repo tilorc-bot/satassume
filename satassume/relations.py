@@ -51,7 +51,7 @@ An ``lt`` atom ``r`` for ``a < b`` gets these clauses
    ``extended_real`` rules (a sum or product of extended reals need not
    be one: ``oo - oo`` and ``0*oo`` are nan).
 2. *infinite terms* (when the guarded adapter can split both sides into
-   linear forms, :func:`satassume.lra_adapter.order_sides`): each side is
+   linear forms, :func:`satassume.theories.lra.lra_adapter.order_sides`): each side is
    ``sum(c_i * u_i) + k`` (rational ``c_i``, opaque terms ``u_i``, a
    rational ``k``, and possibly one ``oo`` or ``-oo`` summand).  A term
    pushes its side *up* if it is ``positive_infinite`` with ``c > 0`` or
@@ -195,10 +195,10 @@ switches on stays a function of its formulas' atoms.
 Integrality
 -----------
 Each linked ``e`` whose linear form a guarded adapter reads
-(:func:`satassume.lra_adapter.integer_form`: ``sum(c_i*u_i) + k`` with
+(:func:`satassume.theories.lra.lra_adapter.integer_form`: ``sum(c_i*u_i) + k`` with
 rational ``c_i``, ``k`` and opaque or constant terms ``u_i``, as a side of
 an LRA atom) also gets an integrality atom ``i`` ("the form is an
-integer", :class:`satassume.lra.Integral`) and, with the guard of
+integer", :class:`satassume.theories.lra.lra.Integral`) and, with the guard of
 clause 3,
 
     real(u1) & ... & real(uk)  ->  (integer(e) <-> i)
@@ -213,7 +213,7 @@ the integrality of ``e`` only in the queries that link ``e`` (bounds on
 any linear form holding ``e`` are rounded with it: ``0 < 2*n < 2`` for an
 integer ``n`` is refuted only where ``n`` itself is linked, as in a fresh
 session).  The theory rounds bounds and branches (see
-:mod:`satassume.lra`, "Integrality"), so ``Q.integer(t)`` is False under
+:mod:`satassume.theories.lra.lra`, "Integrality"), so ``Q.integer(t)`` is False under
 ``0 < t < 1`` and ``Q.ge(n, 1)`` is True for an integer ``n > 0``; the
 ``<-`` half gives True where the bounds pin ``e`` to an integer
 (``Q.integer(x)`` under ``2 <= x <= 2``).  The opaque terms themselves
@@ -224,12 +224,12 @@ Constant terms
 --------------
 ``pi``, ``E`` and rational powers of rationals (``sqrt(2)``), with
 ``+ - * /``, are exact numbers of the LRA form (constants and coefficients:
-``x <= 3*pi/2``, ``x/pi``; :mod:`satassume.constfield`), not terms.  So is
+``x <= 3*pi/2``, ``x/pi``; :mod:`satassume.theories.lra.constfield`), not terms.  So is
 every other closed real constant with rigorous bounds (``log(2)`` of
 ``x <= log(2)``), as an indeterminate of the field, while
-:data:`satassume.lra_adapter.GENERIC_CONSTANTS` is True (the default).
+:data:`satassume.theories.lra.lra_adapter.GENERIC_CONSTANTS` is True (the default).
 Without it, such a constant is
-a term of the LRA form (see :mod:`satassume.lra_adapter`); its guard
+a term of the LRA form (see :mod:`satassume.theories.lra.lra_adapter`); its guard
 ``real(pi)`` is decided at the root by the rule base, and the first atom
 that brings it in has the adapter register its rational bounds
 ``lo < pi < hi`` as two theory atoms asserted by unit clauses, once per
@@ -243,7 +243,7 @@ When the relation atoms of the query make an equality (an ``eq`` atom, or
 inequalities that give one: ``x <= y`` and ``y <= x``, see
 :meth:`Relations._trichotomy`; ``satassume.scope.theory_scope``), the
 session attaches, at construction, a
-:class:`satassume.transfer.TransferTheory`: the node blocks of the
+:class:`satassume.theories.transfer.TransferTheory`: the node blocks of the
 candidate terms are registered with it under the nodes' EUF terms, so
 terms in one EUF class share all unary facts (``Q.prime(x)`` from
 ``Q.eq(x, 2)``).  See :meth:`Relations._engage_transfer` and
@@ -319,7 +319,7 @@ interface atoms: whenever a term becomes known to two adapters
 (``shared_terms()``), the atom ``eq(a, b)`` is created for it and every
 other shared term, and registered like any other relation atom, so each
 theory sees the same Boolean (delayed theory combination; see
-:class:`satassume.theory.EqualitySharing`).  A pair with a constant term
+:class:`satassume.sat.theory.EqualitySharing`).  A pair with a constant term
 that is not rational (``eq(pi, x)``) gets no interface atom.  Such an
 atom passes an equality with the constant between the theories, e.g.
 ``x = pi`` derived by LRA from ``x <= pi <= x`` reaching EUF, where it
@@ -340,7 +340,7 @@ object with
   atom, for the guard;
 * optionally ``order_sides(atom)`` (guarded adapters): the linear forms of
   the two sides of ``Q.lt(a, b)`` with their ``oo`` summands, for
-  clauses 2 (see :func:`satassume.lra_adapter.order_sides`);
+  clauses 2 (see :func:`satassume.theories.lra.lra_adapter.order_sides`);
 * ``shared_terms() -> set``: every term the adapter's theory knows.
 
 The default specs are the LRA and EUF adapters when their modules exist
@@ -353,13 +353,13 @@ import weakref
 from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
-from .extensions import Args
-from .formula import And, Not, P, atoms_of
-from .rules import BASIS_INDEX, NPRED, PRED_INDEX
-from .constfield import Undecided, sign
-from .theory import EqualitySharing
-from .transfer import transfer_wanted
-from .memos import PROCESS as _PROCESS
+from .knowledge.extensions import Args
+from .sat.formula import And, Not, P, atoms_of
+from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX
+from .theories.lra.constfield import Undecided, sign
+from .sat.theory import EqualitySharing
+from .theories.transfer import transfer_wanted
+from .state.memos import PROCESS as _PROCESS
 
 #: atom predicates the engine gives to theories
 RELATION_ATOMS = frozenset({"eq", "lt"})
@@ -391,16 +391,16 @@ def default_specs() -> List[AdapterSpec]:
     out; one that exists but fails to import raises."""
     specs = []
     try:
-        from .lra_adapter import LRAAdapter
+        from .theories.lra.lra_adapter import LRAAdapter
     except ModuleNotFoundError as e:
-        if not _missing(e, "lra_adapter"):
+        if not _missing(e, "theories.lra.lra_adapter"):
             raise
     else:
         specs.append(AdapterSpec("lra", LRAAdapter, True))
     try:
-        from .euf_adapter import EUFAdapter
+        from .theories.euf.euf_adapter import EUFAdapter
     except ModuleNotFoundError as e:
-        if not _missing(e, "euf_adapter"):
+        if not _missing(e, "theories.euf.euf_adapter"):
             raise
     else:
         specs.append(AdapterSpec("euf", EUFAdapter, False))
@@ -663,7 +663,7 @@ def _number_basis(engine, c, facts=False) -> tuple:
     r = memo.get(c)
     if r is not None:
         return r[1] if facts else r[0]
-    from .rules import BASIS, RULE_INSTANTIATED, closure_mask, lit_bit, lits_mask
+    from .knowledge.rules import BASIS, RULE_INSTANTIATED, closure_mask, lit_bit, lits_mask
     decided, open_ = [], []
     for k, v in enumerate(engine.is_many(c, BASIS)):
         if v is None:
@@ -710,7 +710,7 @@ _INF_PREDS = frozenset({"extended_real", "positive_infinite", "negative_infinite
 
 
 def _own_term(sides, e) -> bool:
-    """The order sides (:func:`satassume.lra_adapter.order_sides`) of
+    """The order sides (:func:`satassume.theories.lra.lra_adapter.order_sides`) of
     ``0 < e`` or ``e < 0`` are ``0`` and ``e`` itself as the only term,
     with coefficient 1 and no ``oo`` summand."""
     (fa, ia), (fb, ib) = sides
@@ -792,7 +792,7 @@ class Relations:
         #: extension atom, or a number) or 1 (only a link's eq(e, 0));
         #: interface equalities add nothing (see sync_transfer)
         self._xside: dict = {}
-        #: predicate transfer (satassume.transfer), engaged by the first
+        #: predicate transfer (satassume.theories.transfer), engaged by the first
         #: user or template equality atom; None until then
         self.xfer = None
         self._xadapter = None
@@ -919,7 +919,7 @@ class Relations:
         for the current one."""
         if e in self.num_sel:
             return
-        from .euf_adapter import structural
+        from .theories.euf.euf_adapter import structural
         if not structural(e):
             return
         s = self.session
@@ -1497,7 +1497,7 @@ class Relations:
         and its reverse that :meth:`_trichotomy` related (``Q.le(x, y) &
         Q.ge(x, y)`` answers as ``Q.eq(x, y)``, W2B4b).  The same atoms
         engage it at the session's construction
-        (:func:`satassume.transfer.transfer_wanted`, the same syntactic test),
+        (:func:`satassume.theories.transfer.transfer_wanted`, the same syntactic test),
         so a fresh session has it exactly then; a function of the atoms."""
         return transfer_wanted(atoms)
 
@@ -1586,7 +1586,7 @@ class Relations:
         with ``u`` among its terms (``EUFAdapter.interned``)."""
         return [-self._tvar(u, _IL), -self._tvar(u, _IE)]
 
-    # -- predicate transfer (satassume.transfer) -------------------------
+    # -- predicate transfer (satassume.theories.transfer) -------------------------
     #
     # Engaged once per session, at construction, when the scope of the
     # session's query makes an equality (satassume.scope, ``transfer``);
@@ -1654,7 +1654,7 @@ class Relations:
                     break
         if ad is None:
             return
-        from .transfer import TransferTheory
+        from .theories.transfer import TransferTheory
         solver = s.solver
         ad.attach(solver)
         th = TransferTheory(ad.theory)
@@ -1680,7 +1680,7 @@ class Relations:
         True if a node was visited."""
         from itertools import islice
         from sympy import Basic, Expr, Rational
-        from .euf_adapter import structural
+        from .theories.euf.euf_adapter import structural
         s = self.session
         ad, th = self._xadapter, self.xfer
         visited = False
@@ -1778,7 +1778,7 @@ class Relations:
         if i >= n and nside == self._xnsides and self._xhn == self._xhseen:
             return
         from sympy import Basic, Rational, nan
-        from .euf_adapter import structural
+        from .theories.euf.euf_adapter import structural
         pend = self._xpend
         while i < n:
             e = slots[i]
@@ -1936,7 +1936,7 @@ def _structural_subterms(e) -> list:
     (``EUFAdapter.interned``): ``_transfer_terms`` may visit them, once
     ``eq(e, 0)`` is read by EUF and another term shares their head."""
     try:
-        from .euf_adapter import structural
+        from .theories.euf.euf_adapter import structural
     except ImportError:         # no EUF adapter: nothing is visited for it
         return []
     from sympy import Basic, Rational

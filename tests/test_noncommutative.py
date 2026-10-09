@@ -46,9 +46,9 @@ from sympy.core.function import AppliedUndef
 from test_templates import evaluate
 
 from satassume import DictCache, Engine
-from satassume.formula import atoms_of
+from satassume.sat.formula import atoms_of
 from satassume.sympy_api import ask
-from satassume.templates import registry
+from satassume.knowledge.templates import registry
 
 A = Symbol('A', commutative=False)
 B = Symbol('B', commutative=False)
@@ -476,7 +476,7 @@ def test_engine_is_none_on_noncommutative_terms():
 def test_engine_ask_none_on_noncommutative_terms():
     from sympy import Symbol
     from satassume.engine import Engine
-    from satassume.formula import And as FAnd, Not as FNot, P
+    from satassume.sat.formula import And as FAnd, Not as FNot, P
     A, B = Symbol("A", commutative=False), Symbol("B", commutative=False)
     e = Engine()
     # A*B can be zero without a zero factor (nilpotent matrices)
@@ -491,7 +491,7 @@ def test_engine_verdict_unknown_on_noncommutative_terms():
     # UNKNOWN (main: CONSISTENT; without the gate, INCONSISTENT)
     from sympy import Symbol
     from satassume.engine import CONSISTENT, INCONSISTENT, UNKNOWN, Engine
-    from satassume.formula import And as FAnd, Not as FNot, P
+    from satassume.sat.formula import And as FAnd, Not as FNot, P
     A, B = Symbol("A", commutative=False), Symbol("B", commutative=False)
     x = Symbol("x")
     e = Engine()
@@ -507,7 +507,7 @@ def test_engine_verdict_unknown_on_noncommutative_terms():
 
 def test_register_commutative_is_refused():
     from sympy import Symbol
-    from satassume.extensions import Extensions
-    from satassume.formula import P
+    from satassume.knowledge.extensions import Extensions
+    from satassume.sat.formula import P
     with pytest.raises(ValueError, match="by definition"):
         Extensions().register("commutative", Symbol)(lambda s: P("commutative", s))

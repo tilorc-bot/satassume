@@ -1,6 +1,6 @@
 """Differential fuzz of an incremental solver against fresh reference solvers.
 
-    python tools/solver_diff_fuzz.py NEW/satassume/solver.py REF/satassume/solver.py SEED0 N
+    python tools/solver_diff_fuzz.py NEW/satassume/sat/solver.py REF/satassume/sat/solver.py SEED0 N
 
 Runs N random seeds.  Each seed drives one long-lived ``Solver`` of NEW through
 a random mix of ``add_clause``/``add_clauses``/``add_internal``/``add_pattern``,

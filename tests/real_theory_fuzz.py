@@ -16,9 +16,9 @@ import random
 import sys
 from fractions import Fraction
 
-from satassume.solver import Solver
-from satassume.lra import LRATheory, constraint
-from satassume.euf import EUFTheory, EqAtom
+from satassume.sat.solver import Solver
+from satassume.theories.lra.lra import LRATheory, constraint
+from satassume.theories.euf.euf import EUFTheory, EqAtom
 from theory_harness import Recorder
 from theory_harness import check_protocol
 

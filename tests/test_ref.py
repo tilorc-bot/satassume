@@ -22,7 +22,7 @@ from sympy import ask as sympy_ask
 from sympy.assumptions import Q
 
 from satassume.ref import RefInfo, ask_ref, theory_scope
-from satassume.formula import P, atoms_of
+from satassume.sat.formula import P, atoms_of
 from satassume.sympy_api import to_formula
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

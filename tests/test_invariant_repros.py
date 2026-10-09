@@ -37,9 +37,10 @@ from sympy import (Basic, Float, Function, MatrixSymbol, Not, Or, And,
                    Implies, Q, Rational, Symbol, cos, false, log, pi, sin,
                    sqrt, symbols)
 
-import satassume.extensions as extensions
-from satassume import Engine, lra_adapter
-from satassume.constfield import Undecided
+import satassume.knowledge.extensions as extensions
+from satassume import Engine
+from satassume.theories.lra import lra_adapter
+from satassume.theories.lra.constfield import Undecided
 from satassume.sympy_api import ask
 
 

@@ -25,10 +25,10 @@ import pytest
 
 from sympy import E, And, Q, Rational, pi, sqrt, symbols
 
-from satassume import constfield as cf
-from satassume import lra
+from satassume.theories.lra import constfield as cf
+from satassume.theories.lra import lra
 from satassume.engine import CONSISTENT, INCONSISTENT, UNKNOWN, _exhausted
-from satassume.lra import Integral, LRATheory, constraint
+from satassume.theories.lra.lra import Integral, LRATheory, constraint
 from satassume.sympy_api import Engine, _formula, ask
 
 x, y, u0, v0, u1, v1, n = symbols('x y u0 v0 u1 v1 n', integer=True)

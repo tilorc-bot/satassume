@@ -1,15 +1,15 @@
-"""The certificate of :class:`satassume.lra.LRATheory` for payloads with
+"""The certificate of :class:`satassume.theories.lra.lra.LRATheory` for payloads with
 constants (``pi``): whether no search over the registered atoms can give
 up, and the bound ``Y`` within which a variable may split in a branch and
 bound.  The argument is "Certified constants" in the docstring of
-:mod:`satassume.lra`.  Only a theory whose payloads have constants
+:mod:`satassume.theories.lra.lra`.  Only a theory whose payloads have constants
 (:attr:`LRATheory.undecidable`) reads it, so it is a module of its own:
 the rational case, every query without such constants, does not load it.
 
 The theory hands in what the certificate reads (its atoms, integrality
 atoms, slack forms and number of nonbasic variables) and keeps the
 :class:`CertAtoms` aggregate; this module does not know
-:class:`LRATheory`, so :mod:`satassume.lra` is the only side of the
+:class:`LRATheory`, so :mod:`satassume.theories.lra.lra` is the only side of the
 dependency.
 """
 from __future__ import annotations
@@ -216,8 +216,8 @@ def certify(g: CertAtoms, atoms: dict, int_atoms: dict, forms: dict, nt: int,
     """``(certified, Y)`` for a theory with these atoms, integrality atoms,
     slack forms and ``nt`` nonbasic variables, whose aggregate of the atoms
     taken in so far is ``g`` (memoized by
-    :meth:`satassume.lra.LRATheory._certificate`); the argument is
-    "Certified constants" in the docstring of :mod:`satassume.lra`."""
+    :meth:`satassume.theories.lra.lra.LRATheory._certificate`); the argument is
+    "Certified constants" in the docstring of :mod:`satassume.theories.lra.lra`."""
     # The numbers a search can meet.  Values are rational combinations
     # (the tableau is rational) of the bounds ever set (a nonbasic
     # variable sits at 0 or at a bound it was given): the atom bounds,

@@ -1,4 +1,4 @@
-"""Unit tests for the LRA theory solver (satassume/lra.py).
+"""Unit tests for the LRA theory solver (satassume/theories/lra/lra.py).
 
 The module has three parts:
 
@@ -10,7 +10,7 @@ The module has three parts:
    ``fm_feasible``).  ``test_lra_fuzz.py`` and ``test_lra_adapter.py``
    import it from here.
 2. **Driver**: a checked wrapper around a theory instance that follows the
-   protocol of ``satassume/theory.py`` and verifies every answer (conflict
+   protocol of ``satassume/sat/theory.py`` and verifies every answer (conflict
    clauses are false, theory-valid and, where required, minimal; models
    satisfy every asserted literal exactly).
 3. **Unit tests** of the theory through its public methods.
@@ -18,7 +18,7 @@ The module has three parts:
 Assumed interface (agreed with lra-impl; adjust ``new_theory`` /
 ``payload`` / ``model_values`` below if it changes):
 
-* ``satassume.lra.LRATheory()``: the five protocol methods (plus optional
+* ``satassume.theories.lra.lra.LRATheory()``: the five protocol methods (plus optional
   ``propagate``).
 * payload ``(terms, constant, strict, equality)``: ``terms`` a tuple of
   ``(term, Fraction)`` pairs, meaning ``sum(c*t) < constant`` (strict),
@@ -47,7 +47,7 @@ import pytest
 # Loading the implementation (the file must import cleanly without it)
 # ----------------------------------------------------------------------
 
-_IMPL_NAME = os.environ.get("SATASSUME_LRA_IMPL", "satassume.lra")
+_IMPL_NAME = os.environ.get("SATASSUME_LRA_IMPL", "satassume.theories.lra.lra")
 try:
     lra = importlib.import_module(_IMPL_NAME)
     _IMPORT_ERROR = None
@@ -500,7 +500,7 @@ class Driver:
 
 
 def tableau_invariants(t, feasible=False):
-    """White-box checks of satassume.lra's tableau (skipped for another
+    """White-box checks of satassume.theories.lra.lra's tableau (skipped for another
     implementation): every row equation holds for the current assignment
     (both the rational and the delta part), rows only mention nonbasic
     variables, the column index matches the rows, and after a successful
@@ -625,7 +625,7 @@ def test_oracle_against_grid():
 
 @needs_lra
 def test_protocol_surface():
-    from satassume.theory import TheorySolver
+    from satassume.sat.theory import TheorySolver
     t = new_theory()
     assert isinstance(t, TheorySolver)
     for name in ("register_atom", "assert_lit", "check", "push_level", "pop_level"):

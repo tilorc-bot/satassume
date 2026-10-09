@@ -16,7 +16,7 @@ from sympy import Function, Q, Rational, Symbol, sin, symbols
 
 import satassume.engine as engine_mod
 from satassume.engine import DictCache, Engine
-from satassume.formula import P
+from satassume.sat.formula import P
 from satassume.sympy_api import _formula, ask
 
 a, b, c, u = symbols("a b c u")

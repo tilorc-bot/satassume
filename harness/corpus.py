@@ -50,7 +50,7 @@ def old_records(path: str, limit: Optional[int] = None) -> List[Ask]:
     """The old-system records (``expr.is_<fact>``) as context-free queries
     ``ask(Q.<fact>(expr), True)``: the same path ``Engine.is_`` serves."""
     from sympy import Q
-    from satassume.rules import PRED_INDEX
+    from satassume.knowledge.rules import PRED_INDEX
     out: List[Ask] = []
     with open(path) as fh:
         for line in fh:

@@ -33,8 +33,8 @@ engine keeps of a set between queries is a function of the set alone:
 its verdict (``CONSISTENT``, ``INCONSISTENT`` or ``UNKNOWN``, from the
 check) and, for a set whose construction raised ``Uninterpreted``, the
 message.  So the solver state a query runs in, the search path it takes
-and the budget it has (integer branch and bound, :mod:`satassume.lra`,
-"Integrality"; giving up on a constant, :mod:`satassume.theory`) are
+and the budget it has (integer branch and bound, :mod:`satassume.theories.lra.lra`,
+"Integrality"; giving up on a constant, :mod:`satassume.sat.theory`) are
 those a fresh engine's same query has, whatever was asked before under
 the same or any other set: history independence by construction (see
 ``docs/design.md``, "History independence").  The settings
@@ -47,9 +47,9 @@ on the refine stream (issue #97).
 Everything the engine keeps between queries (the fact caches, the verdict
 and ``Uninterpreted`` memos, the answer and split memos) is a function of
 the registry state: the registered clause-generating functions
-(``satassume.extensions``), the structural templates and the theory
+(``satassume.knowledge.extensions``), the structural templates and the theory
 adapters.  Every change of that state starts a new registry epoch
-(:mod:`satassume.epoch`); every query compares the epoch its caches were
+(:mod:`satassume.state.epoch`); every query compares the epoch its caches were
 filled under with the current one (``Engine._check_version``) and drops
 them all on a change, so an answer never depends on what was registered
 when an earlier query ran.
@@ -78,18 +78,18 @@ from __future__ import annotations
 from collections import OrderedDict, deque
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .compile import VarTable, basis_formula, compile_formula, formula_literal
-from .epoch import EPOCH as _EPOCH, bump as _bump
-from .memos import Memos, adopt as _adopt_memo, owner_memos
-from .formula import FALSE, Not, P, TRUE, atoms_of
+from .knowledge.compile import VarTable, basis_formula, compile_formula, formula_literal
+from .state.epoch import EPOCH as _EPOCH, bump as _bump
+from .state.memos import Memos, adopt as _adopt_memo, owner_memos
+from .sat.formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin, zero_twins)
-from .rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
+from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
-from .solver import Solver
+from .sat.solver import Solver
 
 Node = Any
 
@@ -139,12 +139,12 @@ _UNCAPPED = float("inf")
 
 def _noncommutative(term) -> bool:
     """Whether ``term`` has a non-commutative subterm (``Symbol('A',
-    commutative=False)``, ``re(A)``): see :func:`satassume.domain._noncommutative`.
+    commutative=False)``, ``re(A)``): see :func:`satassume.knowledge.domain._noncommutative`.
     Such a term may stand for a matrix, while the rule base and the
     templates assume numbers (``commutative`` is true by definition,
     ``rules.DEFINITIONS``); the engine answers None about it (``sympy_api``
     keeps it out of scope before it reaches the engine)."""
-    from .domain import _noncommutative as nc
+    from .knowledge.domain import _noncommutative as nc
     return nc(term)
 
 
@@ -173,7 +173,7 @@ class DictCache:
 
     * the engine's inputs from SymPy objects are only what the structural
       templates read: the assumptions a ``Symbol`` was *declared* with
-      (``assumptions0``, see ``satassume/templates/atoms.py``) and the
+      (``assumptions0``, see ``satassume/knowledge/templates/atoms.py``) and the
       old-system properties of objects with a fixed value (numbers, ``pi``,
       ``oo``, ...), where every non-None property is a static fact;
     * everything else is derived by the engine: the cache holds the answers
@@ -191,7 +191,7 @@ class DictCache:
 
     The memo key.  An entry is ``(node, pred)`` under the registry epoch
     and the engine settings the facts were derived under: the cache
-    records the epoch (:mod:`satassume.epoch`, ``_epoch``) and the
+    records the epoch (:mod:`satassume.state.epoch`, ``_epoch``) and the
     settings fingerprint (``_settings``: the engine's ``templates``,
     ``transfer`` and ``uninterpreted``, the settings a context-free
     session's clause set reads; ``Engine._settings_fingerprint``).  Every
@@ -389,11 +389,11 @@ class Session:
 
     def dvar(self, dn: tuple, need: str = 'both') -> int:
         """The literal of the derived atom ``dn = (definition, node)`` (see
-        :func:`satassume.compile._def`) shared by all its
+        :func:`satassume.knowledge.compile._def`) shared by all its
         occurrences (the assumptions, the proposition, :meth:`var`), with
         the directions ``need`` of its definition emitted (``'pos'``: the
         variable implies the definition, ``'neg'``: the converse,
-        ``'both'``; see :func:`satassume.compile.compile_formula`).  A
+        ``'both'``; see :func:`satassume.knowledge.compile.compile_formula`).  A
         definition of one basis literal (``infinite``) is that literal.
         ``need='basis'``: ``dn`` is a basis or custom atom under a
         connective of a formula, and the result its variable; a basis one
@@ -532,7 +532,7 @@ class Session:
         """The body of :meth:`node`."""
         engine = self.engine
         # 1. structural templates, and vocabulary predicates registered for
-        #    the node's class (satassume.extensions)
+        #    the node's class (satassume.knowledge.extensions)
         if engine.clause_templates is not None:
             compiled, formulas = engine.clause_templates(node)
         else:
@@ -576,7 +576,7 @@ class Session:
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
         """Emit the clauses of the compiled patterns of ``node`` (see
-        ``satassume.templates._common.Pattern``): allocate the variable
+        ``satassume.knowledge.templates._common.Pattern``): allocate the variable
         blocks of the objects the patterns mention, emit the clauses about
         a demanded predicate of the node now and park the rest, schedule the
         newly seen direct arguments (frontier) and derived nodes (deferred).
@@ -1226,10 +1226,10 @@ class Engine:
         (``_within_budget``); every other query runs discovery and
         escalation uncapped, so nothing is truncated: a session loads at
         most the query's cone (the set's and the proposition's).
-    extensions : satassume.extensions.Extensions or None
+    extensions : satassume.knowledge.extensions.Extensions or None
         Registered clause-generating functions for custom predicates and
         for vocabulary predicates on new classes.  Defaults to the global
-        registry ``satassume.extensions.extensions``.
+        registry ``satassume.knowledge.extensions.extensions``.
     relations : sequence of satassume.relations.AdapterSpec, or None
         Theory adapters for relation atoms.  None: the LRA and EUF adapters
         if present (with the SymPy templates only); ``[]``: relations are
@@ -1237,7 +1237,7 @@ class Engine:
         (or ``extensions``) after construction drops the caches.
     transfer : bool
         Share unary facts between terms EUF puts in one class
-        (:mod:`satassume.transfer`): ``Q.positive(y)`` from ``Q.eq(x, y) &
+        (:mod:`satassume.theories.transfer`): ``Q.positive(y)`` from ``Q.eq(x, y) &
         Q.positive(x)``, ``Q.prime(x)`` from ``Q.eq(x, 2)``.  Engaged only in
         sessions with an equality atom.
     uninterpreted : ``"free"`` or ``"none"``
@@ -1275,7 +1275,7 @@ class Engine:
         clause_templates = None
         if templates is None:
             try:
-                from .templates import registry
+                from .knowledge.templates import registry
             except ModuleNotFoundError as e:  # pragma: no cover
                 # a broken template package must not turn into silent
                 # Nones: only a missing SymPy means "no templates"
@@ -1286,7 +1286,7 @@ class Engine:
                 templates = registry.facts_for
                 clause_templates = registry.clauses_for
         if extensions is None:
-            from .extensions import extensions
+            from .knowledge.extensions import extensions
         if relations is None:
             from .relations import default_specs
             relations = default_specs() if clause_templates is not None else []
@@ -1336,7 +1336,7 @@ class Engine:
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
-        #: the registry epoch (:mod:`satassume.epoch`) the engine-level
+        #: the registry epoch (:mod:`satassume.state.epoch`) the engine-level
         #: caches were filled under; -1 until the first query
         self._epoch = -1
         #: this engine's memos, by name (:func:`engine_memos`)
@@ -1345,7 +1345,7 @@ class Engine:
         #: (``_settings_fingerprint``), part of the fact caches' memo key
         self._settings_key = self._settings_fingerprint()
         #: counters; ``theory_gave_up``: contextual queries whose session's
-        #: theory gave up (satassume.theory, "Giving up"), answered None
+        #: theory gave up (satassume.sat.theory, "Giving up"), answered None
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
@@ -1364,7 +1364,7 @@ class Engine:
     @property
     def extensions(self):
         """The registry of clause-generating functions
-        (``satassume.extensions.Extensions``) or None.  Assigning another
+        (``satassume.knowledge.extensions.Extensions``) or None.  Assigning another
         one starts a new registry epoch: every cache is dropped."""
         return self._extensions
 
@@ -1406,7 +1406,7 @@ class Engine:
 
     @property
     def transfer(self):
-        """Setting: engage predicate transfer (satassume.transfer).  Assigning a different
+        """Setting: engage predicate transfer (satassume.theories.transfer).  Assigning a different
         value drops this engine's caches (``_settings_changed``)."""
         return self._transfer
 
@@ -1489,7 +1489,7 @@ class Engine:
         set's verdict on those, ``discovery_budget`` (which cones fit) and
         ``writeback``.  A ``DictCache`` shared with other engines is
         cleared for them too: a needless clear for them, never a stale
-        answer.  :data:`satassume.epoch.EPOCH` is untouched.  The
+        answer.  :data:`satassume.state.epoch.EPOCH` is untouched.  The
         structural cone memos of the budget test are dropped in every
         case."""
         self._settings_key = self._settings_fingerprint()
@@ -1505,7 +1505,7 @@ class Engine:
 
     def _check_version(self) -> None:
         """Drop every engine-level cache filled under an earlier registry
-        epoch (:mod:`satassume.epoch`): the fact caches, the answer and
+        epoch (:mod:`satassume.state.epoch`): the fact caches, the answer and
         split memos, the ``Uninterpreted`` memo and the verdict memo all
         hold results computed under the registrations in force at the
         time.  The entry of every query calls this when the engine's epoch
@@ -1817,7 +1817,7 @@ class Engine:
 
         If the check makes a theory give up (or errors), the session is
         replaced by a plain one (assumptions only, no check): a session
-        whose theory gave up is useless to the queries (satassume.theory,
+        whose theory gave up is useless to the queries (satassume.sat.theory,
         "Giving up"), and the plain build is just as deterministic."""
         self.stats["set_checks"] += 1
         # the theory scope of the query (``proposition`` None: of the set
@@ -1899,7 +1899,7 @@ class Engine:
         (derived nodes and parked clauses included), propagation, then
         search.  ``INCONSISTENT`` only on a conflict, which is sound even
         if a theory gave up afterwards (its earlier conflicts were valid,
-        satassume.theory); ``UNKNOWN`` if no conflict was found but a
+        satassume.sat.theory); ``UNKNOWN`` if no conflict was found but a
         theory gave up or ran out of its branch budget (an integral
         conflict may be hidden), or the session is truncated (only with an
         explicit budget; a set over the discovery budget never gets here,
@@ -2236,7 +2236,7 @@ _adopt_memo(__name__, "_WANT")
 
 
 def _gave_up(s: Session) -> bool:
-    """A theory of the session's solver gave up (satassume.theory)."""
+    """A theory of the session's solver gave up (satassume.sat.theory)."""
     for t in s.solver._theories:
         if getattr(t, "gave_up", False):
             return True
@@ -2245,7 +2245,7 @@ def _gave_up(s: Session) -> bool:
 
 def _exhausted(s: Session) -> bool:
     """A theory of the session's solver ran out of its branch budget
-    since the flag was last cleared (satassume.lra, "Integrality")."""
+    since the flag was last cleared (satassume.theories.lra.lra, "Integrality")."""
     for t in s.solver._theories:
         if getattr(t, "exhausted", False):
             return True

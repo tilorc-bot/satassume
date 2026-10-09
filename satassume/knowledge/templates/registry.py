@@ -6,7 +6,7 @@ one or more classes; :meth:`TemplateRegistry.facts_for` walks the MRO of the
 expression's type, so a template registered for a base class also applies
 to every subclass.  Most-specific classes come first in the result.
 
-The built-in template modules other than :mod:`satassume.templates.atoms`
+The built-in template modules other than :mod:`satassume.knowledge.templates.atoms`
 are imported on first use (:meth:`TemplateRegistry.lazy`): a module is
 loaded when the templates of a class it registers for, or of a subclass,
 are first asked for, so a query whose nodes are all symbols and numbers
@@ -24,9 +24,9 @@ import importlib
 import sys
 from typing import Any, Callable, Dict, Iterable, List, Tuple
 
-from ..epoch import bump as _bump
-from ..formula import Formula, P
-from ..memos import adopt as _adopt_memo
+from ...state.epoch import bump as _bump
+from ...sat.formula import Formula, P
+from ...state.memos import adopt as _adopt_memo
 from . import _common
 from ._common import Compiled
 

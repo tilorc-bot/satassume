@@ -27,7 +27,7 @@ from sympy.core.intfunc import integer_nthroot
 from sympy.core.power import Pow
 from sympy.functions.elementary.exponential import exp
 
-from ..formula import Not, P
+from ...sat.formula import Not, P
 from ..rules import BASIS, expand_clause
 
 from ._common import (

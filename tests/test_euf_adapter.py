@@ -1,4 +1,4 @@
-"""Tests for the SymPy adapter of the EUF theory (satassume/euf_adapter.py).
+"""Tests for the SymPy adapter of the EUF theory (satassume/theories/euf/euf_adapter.py).
 
 The adapter maps ``Q.eq``/``Q.ne``/``Eq``/``Ne`` atoms to EUF atoms over
 flattened terms.  The documented rules (euf_adapter.py docstring):
@@ -27,7 +27,7 @@ from __future__ import annotations
 import pytest
 
 sympy = pytest.importorskip("sympy")
-pytest.importorskip("satassume.euf_adapter")
+pytest.importorskip("satassume.theories.euf.euf_adapter")
 
 from sympy import (Eq, Ne, Function, symbols, S, Rational, Float, sqrt, pi,  # noqa: E402
                    E, oo, zoo, nan, Sum, Integral, Subs, Lambda, sin, exp, Abs,
@@ -36,8 +36,8 @@ from sympy.assumptions.ask import Q  # noqa: E402
 from sympy.integrals.transforms import LaplaceTransform, FourierTransform  # noqa: E402
 from hypothesis import example, given, settings, strategies as st, HealthCheck  # noqa: E402
 
-from satassume.solver import Solver  # noqa: E402
-from satassume.euf_adapter import EUFAdapter  # noqa: E402
+from satassume.sat.solver import Solver  # noqa: E402
+from satassume.theories.euf.euf_adapter import EUFAdapter  # noqa: E402
 
 x, y, z, u, w, s, t = symbols("x y z u w s t")
 f, g, h = symbols("f g h", cls=Function)
@@ -197,7 +197,7 @@ def test_engine_equality():
 
 def test_engine_equality_failing_is_not_wrong():
     # test_equality_failing: EUF does not substitute; the engine does, by
-    # predicate transfer (satassume.transfer).  True, never False.
+    # predicate transfer (satassume.theories.transfer).  True, never False.
     assert _ask(Q.prime(x), Q.eq(x, y) & Q.prime(y)) is True
     assert _ask(Q.real(x), Q.eq(x, y) & Q.real(y)) is True
     assert _ask(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) is True

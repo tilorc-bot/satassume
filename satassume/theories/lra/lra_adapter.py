@@ -1,4 +1,4 @@
-"""Turn SymPy relation atoms into :mod:`satassume.lra` payloads.
+"""Turn SymPy relation atoms into :mod:`satassume.theories.lra.lra` payloads.
 
 This is the only LRA module that imports SymPy.  Interpreted atoms:
 
@@ -14,7 +14,7 @@ Rules
 sums are split, a product with a numeric factor is scaled (``2*(x + y)``
 is ``2*x + 2*y``; the factor may involve constants: ``pi*x``, ``x/pi``,
 ``x*(pi + 1)``, ``sqrt(2)*x`` have the exact coefficients ``pi``,
-``1/pi``, ``pi + 1``, ``sqrt(2)`` of :mod:`satassume.constfield`), and
+``1/pi``, ``pi + 1``, ``sqrt(2)`` of :mod:`satassume.theories.lra.constfield`), and
 every other subexpression with free
 symbols (``x``, ``x*y``, ``sin(x)``, ``x**2``, ``f(x)``) is an *opaque
 term*, an independent real variable for the theory.  Treating a nonlinear
@@ -31,7 +31,7 @@ The atom is not interpreted (``None``) if
   of the exact field (``0.5*x``, ``I*x``; ``log(2)*x`` without
   :data:`GENERIC_CONSTANTS`);
 * a coefficient's sign cannot be decided, or the arithmetic exceeds the
-  field's size budget (:class:`satassume.constfield.Undecided`: a formal
+  field's size budget (:class:`satassume.theories.lra.constfield.Undecided`: a formal
   expression whose value is 0, ``((1 + sqrt(2))**2 - 3 - 2*sqrt(2))*x``);
 * a subexpression without free symbols is none of the readable constants
   below (``I``, ``I*pi``, ``f(1)``, ``AccumBounds(0, 1)``, anything SymPy
@@ -50,7 +50,7 @@ Constants
 A subexpression without free symbols in a linear position is read as
 follows (:func:`_closed`): a ``Rational`` is a constant; a sum is split
 and a rational factor pulled out; a number of the exact field
-(:func:`satassume.constfield.from_sympy`: ``pi``, ``E``, ``exp(n)``,
+(:func:`satassume.theories.lra.constfield.from_sympy`: ``pi``, ``E``, ``exp(n)``,
 rational powers of rationals such as ``sqrt(2)``, with ``+ - * /`` and
 integer powers: ``3*pi/2 + 1``, ``pi**2``, ``1/(pi + E)``) is part of the
 constant, exact (``x/pi + 1/2`` at ``x = -pi/2`` is exactly 0).  With
@@ -94,7 +94,7 @@ Integrality
 -----------
 :func:`integer_form` reads ``Q.integer(e)`` for a scalar ``e`` like one
 side of a relation: ``e`` as ``sum(c*u) + k`` over the same opaque terms and
-constant terms, as an :class:`satassume.lra.Integral` payload.  The engine
+constant terms, as an :class:`satassume.theories.lra.lra.Integral` payload.  The engine
 registers it under the same kind of guard (every opaque term a finite
 real, then ``e`` is exactly that form, and ``Q.integer(e)`` holds iff the
 form's value is an integer; see :meth:`satassume.relations.Relations._link_integer`).
@@ -123,7 +123,7 @@ from sympy.core.sorting import default_sort_key
 
 from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
-from .memos import adopt as _adopt_memo
+from ...state.memos import adopt as _adopt_memo
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
            "integer_form"]
@@ -147,7 +147,7 @@ class _Unhandled(Exception):
 GENERIC_CONSTANTS = True
 
 #: what reading can raise besides _Unhandled: undecidable signs of
-#: coefficients with constants, and the size budget (satassume.constfield)
+#: coefficients with constants, and the size budget (satassume.theories.lra.constfield)
 _UNREAD = (_Unhandled, TypeError, ValueError, Undecided, ZeroDivisionError)
 
 
@@ -219,7 +219,7 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
 def _closed(e, scale, out: dict, const: list) -> None:
     """``_lin`` for a subexpression without free symbols: rationals go to
     the constant, sums are split, a rational factor is pulled out; a
-    number of the exact field (:func:`satassume.constfield.from_sympy`:
+    number of the exact field (:func:`satassume.theories.lra.constfield.from_sympy`:
     ``pi``, ``3*pi/2``, ``1/pi``, ``E**2``, ``sqrt(2)``) goes to the
     constant too; what is left must be a real constant without Floats and
     with rigorous bounds (:func:`constant_bounds`); it becomes a term."""
@@ -247,14 +247,14 @@ def _closed(e, scale, out: dict, const: list) -> None:
 
 def constant_bounds(c):
     """Rational bounds ``(lo, hi)`` with ``lo < c < hi`` for a closed
-    constant, or None (:func:`satassume.lra_bounds.constant_bounds`; that
+    constant, or None (:func:`satassume.theories.lra.lra_bounds.constant_bounds`; that
     module is loaded by the first query with such a constant)."""
     from .lra_bounds import constant_bounds
     return constant_bounds(c)
 
 
 def constant_enclosure(c, prec: int):
-    """:func:`satassume.lra_bounds.constant_enclosure`."""
+    """:func:`satassume.theories.lra.lra_bounds.constant_enclosure`."""
     from .lra_bounds import constant_enclosure
     return constant_enclosure(c, prec)
 
@@ -276,7 +276,7 @@ def to_constraint(atom):
     """Interpret ``atom``.
 
     Returns ``(payload, positive)`` where ``payload`` is an
-    :mod:`satassume.lra` record ``(terms, constant, strict, equality)`` and
+    :mod:`satassume.theories.lra.lra` record ``(terms, constant, strict, equality)`` and
     ``positive`` is False when the atom is the negation of the payload
     (``Q.ne``/``Ne``); ``True``/``False`` when the relation has no terms
     left (its value for all finite reals); None when not interpreted.
@@ -372,7 +372,7 @@ def order_sides(atom):
 
 def integer_form(e):
     """``(payload, terms)`` for ``Q.integer(e)``: an
-    :class:`~satassume.lra.Integral` payload for the linear form of ``e``
+    :class:`~satassume.theories.lra.lra.Integral` payload for the linear form of ``e``
     and its opaque terms (as :func:`terms`); None when ``e`` is not read
     (as a side of :func:`interpret`: no ``oo``, ``nan``, ``Float``,
     non-rational factor of a symbol, ...)."""
