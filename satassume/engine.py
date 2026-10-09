@@ -1759,17 +1759,26 @@ class Engine:
         (``_failed``, ``_verdict``) and raised again without a build."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
-        failed = self._failed
-        msg = failed.get(assumptions)
-        if msg is not None:
-            # the construction below would raise this again: whether it
-            # does depends only on the assumptions' relation atoms and the
-            # registry epoch, which _check_version has just compared
-            raise Uninterpreted(msg)
         if self._verdict.get(assumptions) is INCONSISTENT:
             # the construction below would raise this again (it is the same
             # every time, see _build_context); the memo only saves the work
             raise InconsistentAssumptions("inconsistent assumptions")
+        s, lits = self._build_memoized(assumptions, proposition)
+        if s.verdict is INCONSISTENT:
+            raise InconsistentAssumptions("inconsistent assumptions")
+        return s, lits
+
+    def _build_memoized(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
+        """:meth:`_build_context` behind the set's memos, for
+        :meth:`_context_session` and :meth:`verdict`: a set whose
+        construction raised ``Uninterpreted`` raises it again without a
+        build (whether it does depends only on the assumptions' relation
+        atoms and the registry epoch, which the caller has just compared);
+        otherwise the set's verdict is recorded (``_verdict``)."""
+        failed = self._failed
+        msg = failed.get(assumptions)
+        if msg is not None:
+            raise Uninterpreted(msg)
         try:
             s, lits = self._build_context(assumptions, proposition)
         except Uninterpreted as e:
@@ -1777,12 +1786,10 @@ class Engine:
                 failed.clear()
             failed[assumptions] = str(e)
             raise
-        v = s.verdict
-        if len(self._verdict) >= 20_000:
-            self._verdict.clear()
-        self._verdict[assumptions] = v
-        if v is INCONSISTENT:
-            raise InconsistentAssumptions("inconsistent assumptions")
+        verdicts = self._verdict
+        if len(verdicts) >= 20_000:
+            verdicts.clear()
+        verdicts[assumptions] = s.verdict
         return s, lits
 
     def _build_context(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
@@ -1856,22 +1863,7 @@ class Engine:
         v = self._verdict.get(assumptions)
         if v is not None:
             return v
-        failed = self._failed
-        msg = failed.get(assumptions)
-        if msg is not None:
-            raise Uninterpreted(msg)
-        try:
-            s, _ = self._build_context(assumptions)
-        except Uninterpreted as e:
-            if len(failed) >= 10_000:
-                failed.clear()
-            failed[assumptions] = str(e)
-            raise
-        v = s.verdict
-        if len(self._verdict) >= 20_000:
-            self._verdict.clear()
-        self._verdict[assumptions] = v
-        return v
+        return self._build_memoized(assumptions)[0].verdict
 
     @staticmethod
     def _complete_check(s: Session, lits: List[int]) -> str:
