@@ -2008,12 +2008,13 @@ class Engine:
             self._put_result(s, cache, node, pred, r)
         return out
 
-    def _decide(self, s: Session, lit: int) -> Optional[bool]:
+    def _decide(self, s: Session, lit: int, lits=()) -> Optional[bool]:
         """The context-free answer of the literal ``lit`` of a fresh
-        session ``s`` (``is_``, ``is_many``): unit propagation; if that
-        leaves it open and ``s`` is incomplete, propagation again after
-        the escalation that instantiates the whole cone; then a complete
-        search.
+        session ``s`` (``is_``, ``is_many``, ``_is_custom``, which passes
+        the selectors ``lits`` of the glue its atom activates): unit
+        propagation; if that leaves it open and ``s`` is incomplete,
+        propagation again after the escalation that instantiates the whole
+        cone; then a complete search.
 
         Why ``is_many`` may decide several predicates of a node in one
         session, which demands all of them: an answer by propagation is
@@ -2025,14 +2026,14 @@ class Engine:
         session learned deciding the others.  ``tests/
         test_transfer_numbers.py`` checks this against a loop of ``is_``
         under every harness preset."""
-        r = s.query_literal(lit, search=False)
+        r = s.query_literal(lit, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
-            r = s.query_literal(lit, search=False)
+            r = s.query_literal(lit, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
-            r = s.query_literal(lit, search=True)
+            r = s.query_literal(lit, lits, search=True)
         return r
 
     def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
@@ -2082,15 +2083,8 @@ class Engine:
         self.stats["queries"] += 1
         s = self._fresh_session(theory_scope(None, atom, self._extensions))
         lit = s.literal_of(atom)
-        lits = s.assumption_lits(atom)        # the glue a relation atom activates
-        r = s.query_literal(lit, lits, search=False)
-        if r is None and s.incomplete:
-            self.stats["escalations"] += 1
-            s.escalate()
-            r = s.query_literal(lit, lits, search=False)
-        if r is None:
-            self.stats["searches"] += 1
-            r = s.query_literal(lit, lits, search=True)
+        # under the glue a relation atom activates
+        r = self._decide(s, lit, s.assumption_lits(atom))
         self._put_result(s, self.custom_cache, node, pred, r)
         return r
 
