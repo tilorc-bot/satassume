@@ -46,6 +46,7 @@ class ClassAdapter:
     def _init_tables(cls) -> None:
         offs = tuple(BASIS_INDEX[p] for p in cls.PREDS)
         cls._OFFSETS = offs
+        cls._DEMANDED = frozenset(offs)
         #: 1-based basis index -> index in PREDS (-1: not one of them)
         cls._PIDX = tuple(offs.index(k - 1) if k - 1 in offs else -1
                           for k in range(max(BASIS_INDEX.values()) + 2))
@@ -105,7 +106,12 @@ class ClassAdapter:
             return t
         t = self.terms[e] = th.term()
         s = self.session
-        b = s.node(e)
+        if e in s.base and hasattr(s, 'demand'):
+            # visited, maybe with the rows about these predicates parked
+            # (the engine's demand-driven compilation): compile them now
+            b = s.node(e, self._DEMANDED)
+        else:
+            b = s.node(e)
         solver = s.solver
         pmask = self.PRED_MASK
         for p, k in enumerate(self._OFFSETS):

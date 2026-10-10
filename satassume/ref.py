@@ -473,14 +473,24 @@ def _node_theories(s: _RefSession) -> None:
     with the sums and products of the cone its adapter's ``over_cap``
     selects (over the templates' arity caps), as the engine."""
     from .theories.sign import closure_adapter as cl, sign_adapter as sg
-    ops = [n for n in s.base if (getattr(n, 'is_Add', False) or getattr(n, 'is_Mul', False))
-           and n.args]
-    for cls in (sg.SignAdapter, cl.ClosureAdapter):
-        nodes = [n for n in ops if cls.over_cap(n)]
-        if nodes:
-            a = cls(s)
-            for n in nodes:
-                a.add(n)
+    classes = (sg.SignAdapter, cl.ClosureAdapter)
+    adapters: dict = {}
+    seen: set = set()
+    while True:
+        ops = [n for n in list(s.base) if n not in seen
+               and (getattr(n, 'is_Add', False) or getattr(n, 'is_Mul', False)) and n.args]
+        if not ops:
+            return
+        seen.update(ops)
+        for i, cls in enumerate(classes):
+            for n in ops:
+                if cls.over_cap(n):
+                    a = adapters.get(i)
+                    if a is None:
+                        a = adapters[i] = cls(s)
+                    a.add(n)
+        # an argument first visited by its theory: close the cone below it
+        s.discover()
 
 
 def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:

@@ -868,6 +868,12 @@ class Session:
                 if a is None:
                     a = ths[i] = _NODE_THEORIES[i](self)
                 a.add(n)
+            # an argument no clause mentioned (a sum over the caps has no
+            # closure or sign rows) was first visited just now: visit what
+            # its own rows mention (its arguments, with the predicates
+            # those rows demand), or the theory would see it unconstrained
+            self._flush()
+            self._discover(())
             nodes = self._theory_nodes
         for a in ths.values():
             a.sync_derived()
