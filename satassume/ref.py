@@ -467,25 +467,41 @@ def _glue_atoms_of(a_atoms, p_atoms, rel: bool) -> Tuple[tuple, tuple]:
     return glue_atoms(a_atoms), glue_atoms(p_atoms, a_atoms)
 
 
-def _node_theories(s: _RefSession) -> None:
+def _node_theories(s: _RefSession, gated: bool = True) -> bool:
     """Section 5.5, the node theories (``satassume.theories.sign``: the
     sign theory, issue #149 T1, the closure theory, T3, and the trans
     theory, T6): each attached with the nodes of the cone its adapter's
     ``selects`` takes (sums and products over the templates' arity caps;
-    elementary functions and powers), as the engine."""
+    elementary functions and powers), as the engine.  A ``GATED``
+    adapter (trans) is told only the nodes its ``engages`` takes under
+    the class scope ``s.classes``, until a call with ``gated`` False
+    (the query still open after its search: ``Session.unpark``) tells it
+    the others.  True iff a node was parked before that call."""
     from .theories.sign import closure_adapter as cl, sign_adapter as sg, trans_adapter as tr
     classes = (sg.SignAdapter, cl.ClosureAdapter, tr.TransAdapter)
-    adapters: dict = {}
-    seen: set = set()
+    st = s.__dict__.setdefault("_node_theories", ({}, set(), []))
+    adapters, seen, parked = st
     in_scope = getattr(s, "classes", frozenset())
+    had = bool(parked)
+    if not gated:
+        for i, n in parked:
+            a = adapters.get(i)
+            if a is None:
+                a = adapters[i] = classes[i](s)
+            a.add(n)
+        parked.clear()
+        s.discover()
     while True:
         ops = [n for n in list(s.base) if n not in seen and getattr(n, 'args', None)]
         if not ops:
-            return
+            return had
         seen.update(ops)
         for i, cls in enumerate(classes):
             for n in ops:
-                if cls.selects(n) and (not cls.GATED or cls.engages(n, in_scope)):
+                if cls.selects(n):
+                    if gated and cls.GATED and not cls.engages(n, in_scope):
+                        parked.append((i, n))
+                        continue
                     a = adapters.get(i)
                     if a is None:
                         a = adapters[i] = cls(s)
@@ -534,6 +550,10 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     info.clauses = s.nclauses
     try:
         r = _entails(s, q, lits)
+        if r is None and _node_theories(s, gated=False):
+            # still open: the nodes the class-scope gate parked
+            # (Session.unpark), then the search again
+            r = _entails(s, q, lits)
     finally:
         theories = s.solver.theories()
         info.gave_up = any(getattr(t, "gave_up", False) for t in theories)

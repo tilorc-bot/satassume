@@ -312,10 +312,11 @@ class Session:
         #: node theory (``GATED``: trans) is told the nodes its
         #: ``engages`` takes under it; the others wait in ``_parked``
         #: until it grows (``Engine._build_context``: from the set's to the
-        #: query's)
+        #: query's) or :meth:`unpark` lifts the gate
         self.classes = classes
         self._parked: List[Tuple[int, Node]] = []
         self._parked_at = classes
+        self._gated = True
         #: the theory scope the session is built for (``scope.theory_scope``
         #: of its query): the relation glue and predicate transfer exist
         #: from construction iff the scope says so (#97 P3)
@@ -884,7 +885,7 @@ class Session:
         the templates leave out by construction).  True iff something
         was registered."""
         nodes = self._theory_nodes
-        if self._parked and self._parked_at is not self.classes:
+        if self._parked and (self._parked_at is not self.classes or not self._gated):
             nodes = self._parked + nodes
             self._parked = []
             self._parked_at = self.classes
@@ -897,7 +898,7 @@ class Session:
             told = False
             for i, n in nodes:
                 cls = _NODE_THEORIES[i]
-                if cls.GATED and not cls.engages(n, self.classes):
+                if cls.GATED and self._gated and not cls.engages(n, self.classes):
                     # (the trans theory outside the class scope)
                     self._parked.append((i, n))
                     continue
@@ -919,6 +920,19 @@ class Session:
         for a in ths.values():
             a.sync_derived()
         return added
+
+    def unpark(self) -> bool:
+        """Lift the class-scope gate: tell the gated theories every node
+        parked so far and every node visited from now on.  The engine
+        calls it when a query is still open after its complete search
+        (:meth:`Engine._ask`, :meth:`Engine._decide`), so the gate never
+        costs an answer: it only saves the work of the parked nodes on
+        the queries decided without them.  True iff something was
+        registered."""
+        if not self._parked:
+            return False
+        self._gated = False
+        return self.node_theories_sync()
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
@@ -1463,7 +1477,7 @@ class Engine:
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "set_checks": 0,
-                      "budget_limited": 0, "scope_misses": 0}
+                      "budget_limited": 0, "scope_misses": 0, "unparks": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
@@ -2168,6 +2182,9 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, lits, search=True)
+            if r is None and s.unpark():
+                self.stats["unparks"] += 1
+                r = s.query_literal(lit, lits, search=True)
         return r
 
     def _put_result(self, s: Session, cache: DictCache, node, pred: str, r) -> None:
@@ -2296,6 +2313,13 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(q, lits, search=True)
+            if r is None and s._parked:
+                # still open: the parked nodes of the class-scope gate
+                # (Session.unpark), then the search again
+                s.solver.release(s.n_hold)
+                if s.unpark():
+                    self.stats["unparks"] += 1
+                    r = s.query_literal(q, lits, search=True)
         if contextual and _gave_up(s):
             self.stats["theory_gave_up"] += 1
         self._note_budget(s)

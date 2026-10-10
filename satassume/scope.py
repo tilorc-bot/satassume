@@ -202,10 +202,11 @@ def class_symbols(atoms: Iterable[P]) -> frozenset:
     ``p``, with the extension atoms): the free symbols of the class atoms
     (:data:`CLASS_PREDS`) and of the equalities (an ``eq`` atom, or an
     order atom and its reverse: predicate transfer carries the class facts
-    of a number).  The trans theory is told a node it selects iff each
-    argument is a number or has a free symbol in it
-    (``TransAdapter.engages``): what the theory decides needs class facts
-    of every argument it reads.  (A glue twin ``eq(t, 0)`` is not counted:
+    of a number).  The trans theory is told a node it selects at once
+    iff no argument is a plain arithmetic expression over symbols outside
+    it (``TransAdapter.engages``): what the theory decides needs class
+    facts of every argument it reads; the others when the query is still
+    open after its search (``Session.unpark``).  (A glue twin ``eq(t, 0)`` is not counted:
     its class facts are those of ``zero(t)``, which is counted for a
     sum ``t`` with a number or a term in the scope: ``zero(y - 1)`` says
     ``y == 1``.)  Sound whatever the set

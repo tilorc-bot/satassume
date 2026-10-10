@@ -39,6 +39,21 @@ def _classes() -> dict:
     return _CLASSES
 
 
+def _applied(e) -> bool:
+    """Whether ``e`` has a subterm other than a symbol, a number or a sum,
+    product or power (a function application: ``floor(x)``, ``f(1)``)."""
+    stack = [e]
+    while stack:
+        t = stack.pop()
+        if t.is_Symbol or t.is_number:
+            continue
+        if t.is_Add or t.is_Mul or t.is_Pow:
+            stack.extend(t.args)
+            continue
+        return True
+    return False
+
+
 def op_args(node):
     """``(op, args)`` of a node the theory takes, else None."""
     op = _classes().get(type(node))
@@ -82,18 +97,28 @@ class TransAdapter(ClassAdapter):
 
     @staticmethod
     def engages(node, classes: frozenset) -> bool:
-        """Whether each argument is a number (``exp(2)``, ``2**sqrt(2)``) or
-        has a free symbol in ``classes`` (the symbols of the query's class
-        atoms and equalities): every table entry that claims something
-        reads a class fact of each argument (``POW``: of the base and the
-        exponent), which an argument outside the scope has only by a zero
-        fact (``0``, where the templates decide the functions) or a chain
-        of rows from a class atom over its symbols."""
+        """Whether the theory is told ``node`` under the class scope
+        ``classes`` (:func:`satassume.scope.class_symbols`): iff no argument
+        is *plain*, an arithmetic expression (sums, products and powers)
+        over symbols outside ``classes`` that is not a number.  Every table
+        entry that claims something reads a class fact of each argument
+        (``POW``: of the base and the exponent).  A plain argument gets
+        one only from a fact that makes it 0 (where the templates decide
+        the functions and powers) or a chain of rows from a class atom or
+        equality over its symbols, which puts them in ``classes``; every
+        other argument (a number, a function application anywhere in it:
+        ``floor(x)``, ``sign(x)``, ``f(1)``, ``f(x) + 1``, whose class
+        facts may come from template rows or from EUF) is taken.  A node
+        left out waits in the session (``Session._parked``) until the
+        scope widens, or until the query is still open after its search,
+        when every parked node is told (``Session.unpark``): the gate
+        saves work only on queries that are decided without it."""
         oa = op_args(node)
         if oa is None:
             return False
         for a in oa[1]:
-            if not (a.is_number or (classes and not classes.isdisjoint(a.free_symbols))):
+            if not (a.is_number or (classes and not classes.isdisjoint(a.free_symbols))
+                    or _applied(a)):
                 return False
         return True
 
