@@ -369,10 +369,14 @@ RELATION_ATOMS = frozenset({"eq", "lt"})
 #: "Integrality")
 INTEGERS = True
 
+#: monotone-function and range lemmas for applications that are LRA terms
+#: (see "Monotone functions"; :mod:`satassume.theories.mono`)
+MONO = True
+
 _OPS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 
 #: kinds of the per-term variables of a session's glue (Relations._tvar)
-_SD, _EN, _MC, _IE, _IL = range(5)
+_SD, _EN, _MC, _IE, _IL, _MO = range(6)
 
 
 class AdapterSpec(NamedTuple):
@@ -724,6 +728,25 @@ def _own_term(sides, e) -> bool:
     return not fa and len(fb) == 1 and fb.get(e) == 1
 
 
+def _csign(e):
+    """The sign (-1, 0, 1) of the closed constant ``e`` if it is a finite
+    real the exact field reads (:func:`satassume.theories.lra.constfield.from_sympy`),
+    decided rigorously; None otherwise."""
+    from .theories.lra.constfield import from_sympy
+    v = from_sympy(e, generic=True)
+    if v is None:
+        return None
+    try:
+        return sign(v)
+    except Undecided:
+        return None
+
+
+def _mono_guards(name):
+    from .theories.mono import GUARDS
+    return GUARDS[name]
+
+
 # --------------------------------------------------------------------------
 # per-session glue
 # --------------------------------------------------------------------------
@@ -806,6 +829,21 @@ class Relations:
         self._xcounted: set = set()       # the terms in _xheads
         self._xpend: list = []            # (node, base) not yet candidates
         self._xcand: set = set()          # candidate nodes (registered)
+        #: MONO (_mono_step): atoms LRA read, not yet looked at
+        self._mono_todo: list = []
+        self._mono_ad = None              # the LRA adapter
+        self._mono_seen: set = set()      # terms looked up in the table
+        self._mono_apps: dict = {}        # application -> its mono.Spec
+        self._mono_raw: list = []         # atoms read before any application
+        #: terms key -> [(expr, coeffs, app, spec, is_arg)]: arguments and
+        #: applications whose thresholds matter
+        self._mono_int: dict = {}
+        #: terms key -> [(var, side, c0, dir, coeffs)]: threshold atoms
+        self._mono_thr: dict = {}
+        self._mono_pairs: list = []       # (var, a, b) for lt(a, b), no number side
+        self._mono_by_arg: dict = {}      # argument -> its applications
+        self._mono_done: set = set()      # lemma keys emitted
+        self._mono_made: dict = {}        # atom made by an inverse -> app
         #: the theory scope the session was built for (satassume.scope):
         #: with ``glue`` the vocabulary-atom arguments of its formulas are
         #: linked from the start (``active``; the sides of its relation
@@ -893,6 +931,8 @@ class Relations:
                         self._link_later(e)
             if self._pending_links:
                 self._link(self._pending_links.pop())
+                continue
+            if self._mono_todo and self._mono_step():
                 continue
             if self._share():
                 continue
@@ -1019,6 +1059,9 @@ class Relations:
             ok = True
             guard = self._guard(ad, terms)
             lterms.extend(terms)
+            if MONO and hasattr(ad, "integer_form"):
+                self._mono_ad = ad
+                self._mono_todo.append((atom, var))
             if eq:
                 # an equality's twin is switched by its roles (_add_role):
                 # with EUF reading the atom itself, an unswitched twin
@@ -1249,7 +1292,7 @@ class Relations:
         """
         tv = self._tv.get(u)
         if tv is None:
-            tv = self._tv[u] = [0, 0, 0, 0, 0]
+            tv = self._tv[u] = [0, 0, 0, 0, 0, 0]
         v = tv[k]
         if v:
             return v
@@ -1424,6 +1467,270 @@ class Relations:
         s = self.session
         for v in register(s.solver, c, self._fresh):
             s.emit([v])
+
+    # -- monotone functions (MONO, satassume.theories.mono) ---------------
+    def _mono_step(self) -> bool:
+        """Read the atoms LRA interpreted since the last call: register the
+        applications of listed functions among their terms, and the atoms
+        as thresholds (one number side) or pairs (none); emit the lemmas
+        of every new (application, threshold) and (applications, pair)
+        combination.  True if it made atoms (the caller loops)."""
+        todo, self._mono_todo = self._mono_todo, []
+        n = len(self.session.table.custom)
+        from .theories.mono import spec
+        seen, apps = self._mono_seen, self._mono_apps
+        ad = self._mono_ad
+        for atom, var in todo:
+            for t in ad.terms(sympy_atom(atom)) or ():
+                if t in seen:
+                    continue
+                seen.add(t)
+                sp = spec(t)
+                if sp is not None:
+                    if not apps:
+                        raw, self._mono_raw = self._mono_raw, None
+                        apps[t] = sp
+                        for a, v in raw:
+                            self._mono_read(a, v)
+                    else:
+                        apps[t] = sp
+                    self._mono_app(t, sp)
+            if self._mono_raw is not None:
+                self._mono_raw.append((atom, var))
+            else:
+                self._mono_read(atom, var)
+        return len(self.session.table.custom) != n
+
+    def _mono_key(self, e):
+        """``(key, coeffs)`` of the linear form of ``e`` (its opaque terms in
+        canonical order and their rational coefficients), or None."""
+        form = self._mono_ad.integer_form(e)
+        if form is None:
+            return None
+        items = form[0].terms
+        if not items or any(type(c) is not Fraction for _t, c in items):
+            return None
+        return tuple(t for t, _c in items), tuple(c for _t, c in items)
+
+    def _mono_read(self, atom: P, var: int) -> None:
+        """Register ``atom`` as a threshold (``side OP c0``) or a pair."""
+        a, b = atom.expr
+        na, nb = _is_number(a), _is_number(b)
+        lt = atom.pred == "lt"
+        if na == nb:
+            if lt and not na:
+                self._mono_pairs.append((var, a, b))
+                self._mono_pair(var, a, b)
+            return
+        side, c0 = (b, a) if na else (a, b)
+        d = 0 if not lt else (1 if na else -1)       # side > c0, side < c0
+        k = self._mono_key(side)
+        if k is None:
+            return
+        rec = (var, side, c0, d, k[1])
+        self._mono_thr.setdefault(k[0], []).append(rec)
+        for it in self._mono_int.get(k[0], ()):
+            self._mono_match(it, rec)
+
+    def _mono_app(self, app, sp) -> None:
+        """A new application: its rows, its argument and itself as terms
+        whose thresholds matter, and its pairs."""
+        s = self.session
+        mo = self._tvar(app, _MO)
+        self._tsource(app, _MO, [-self._tvar(app, _IL)])
+        u = sp.arg
+        # an application inside the argument matters where this one does
+        lk = self._mono_key(u)
+        if lk is not None:
+            for t in lk[0]:
+                self._tsource(t, _MO, [-mo])
+        g = [-mo]
+        for row in sp.rows:
+            f = relation_atom("lt", row.lhs(u, app), row.rhs(u, app))
+            v = self._mono_var(f)
+            s.emit(self._mono_guard(u, _mono_guards(row.guard)) + g
+                   + [v if row.positive else -v])
+        if not sp.pieces:
+            return
+        self._mono_by_arg.setdefault(u, []).append(app)
+        for e, key, is_arg in ((u, lk, True), (app, self._mono_key(app), False)):
+            if key is None:
+                continue
+            it = (e, key[1], app, sp, is_arg)
+            self._mono_int.setdefault(key[0], []).append(it)
+            for rec in self._mono_thr.get(key[0], ()):
+                self._mono_match(it, rec)
+        for var, a, b in self._mono_pairs:
+            if a == u or b == u or a == app or b == app:
+                self._mono_pair(var, a, b)
+
+    def _mono_var(self, f) -> int:
+        """The variable of a relation atom the lemmas need (made if new);
+        an equality the glue makes engages nothing (``_aux_eq``)."""
+        custom = self.session.table.custom
+        v = custom.get(f)
+        if v is None:
+            if f.pred == "eq":
+                self._aux_eq.add(f)
+            v = self._atom_var(f)
+        return v
+
+    def _mono_guard(self, e, lits) -> list:
+        """The negations of the basis literals ``lits`` of ``e``."""
+        s = self.session
+        if not lits:
+            return []
+        s.ensure(e, {p for p, _ in lits})
+        return [-s.var(p, e) if pos else s.var(p, e) for p, pos in lits]
+
+    def _mono_match(self, it, rec) -> None:
+        """A threshold atom ``rec`` on the linear form of ``it``'s term."""
+        e, ecoef, app, sp, is_arg = it
+        var, side, c0, d, scoef = rec
+        if self._mono_made.get(var) is app:
+            return                        # made by this application's inverse
+        lam = scoef[0] / ecoef[0]
+        if any(sc != lam * ec for sc, ec in zip(scoef, ecoef)):
+            return
+        from sympy import Rational
+        rl = Rational(lam.numerator, lam.denominator)
+        rest = side - rl * e
+        if not _is_number(rest):
+            return
+        c = (c0 - rest) / rl
+        if lam < 0:
+            d = -d
+        if is_arg:
+            self._mono_forward(app, sp, var, c, d)
+        else:
+            self._mono_inverse(app, sp, var, c, d)
+
+    def _mono_forward(self, app, sp, p: int, c, d: int) -> None:
+        """Lemmas between the atom ``p`` (``u > c``, ``u < c`` or ``u = c``
+        for ``d`` 1, -1, 0; ``u`` the argument) and the atoms of ``f(u)``
+        at ``f(c)``, one set per piece holding ``c``."""
+        key = ("f", app, p)
+        if key in self._mono_done:
+            return
+        self._mono_done.add(key)
+        sg = _csign(c)
+        if sg is None:
+            return
+        fc = sp.apply(c)
+        if _csign(fc) is None:
+            return                        # not a finite real LRA reads
+        for piece in sp.pieces:
+            if piece.holds(sg):
+                self._mono_lemmas(app, sp, piece, p, d, fc, sg)
+        if d == 0:
+            # u = c -> f(u) = f(c), for any c with a finite real f(c)
+            q = self._mono_var(relation_atom("eq", app, fc))
+            self.session.emit([-p, q, -self._tvar(app, _MO)])
+
+    def _mono_lemmas(self, app, sp, piece, p: int, d: int, fc, sg: int,
+                     q: Optional[int] = None) -> None:
+        """For ``c`` in ``piece`` (sign ``sg``) and ``p`` the atom ``u OP c``
+        (``d``): ``p & G -> q`` and ``q & G -> p``, ``q`` the atom ``f(u)
+        OP' f(c)`` (made unless given) and ``G`` the piece's guard on
+        ``u``, left out of the first clause where ``u OP c`` alone puts
+        ``u`` in the piece (``u > c`` on a piece up to ``oo``)."""
+        if sg == 0 and (d == 1 and piece.hi != "oo" or d == -1 and piece.lo != "-oo"):
+            return                        # u OP 0 leaves the piece
+        if q is None:
+            if d == 0:
+                f = relation_atom("eq", app, fc)
+            elif d * piece.dir > 0:
+                f = relation_atom("lt", fc, app)
+            else:
+                f = relation_atom("lt", app, fc)
+            q = self._mono_var(f)
+        u = sp.arg
+        g = self._mono_guard(u, piece.guard())
+        mo = [-self._tvar(app, _MO)]
+        free = d == 1 and piece.hi == "oo" or d == -1 and piece.lo == "-oo"
+        emit = self.session.emit
+        if d:
+            emit([-p, q] + ([] if free else g) + mo)
+        emit([-q, p] + g + mo)
+
+    def _mono_inverse(self, app, sp, q: int, dv, d: int) -> None:
+        """The atom ``q`` says ``f(u) OP dv``: for each piece and each ``c``
+        in it with ``f(c) = dv``, make the atom ``u OP' c`` and relate the
+        two (:meth:`_mono_lemmas`)."""
+        key = ("i", app, q)
+        if key in self._mono_done:
+            return
+        self._mono_done.add(key)
+        if _csign(dv) is None:
+            return
+        lo, hi, nonzero = sp.inv_range
+        if (lo is not None and _csign(dv - lo) != 1
+                or hi is not None and _csign(hi - dv) != 1
+                or nonzero and _csign(dv) == 0):
+            return
+        u = sp.arg
+        for c in sp.inverse(dv):
+            sg = _csign(c)
+            if sg is None or sp.apply(c) != dv:
+                continue
+            for piece in sp.pieces:
+                if not piece.holds(sg):
+                    continue
+                du = d * piece.dir
+                if du == 0:
+                    f = relation_atom("eq", u, c)
+                elif du > 0:
+                    f = relation_atom("lt", c, u)
+                else:
+                    f = relation_atom("lt", u, c)
+                p = self._mono_var(f)
+                self._mono_made.setdefault(p, app)
+                self._mono_lemmas(app, sp, piece, p, du, dv, sg, q=q)
+
+    def _mono_pair(self, var: int, a, b) -> None:
+        """``a < b`` (``var``): with ``f(a)`` and ``f(b)`` applications of
+        one listed function, the lemmas of each piece between ``var`` and
+        the atom comparing ``f(a)`` and ``f(b)``; with ``a = f(x)`` and
+        ``b = f(y)`` and ``f`` increasing on the whole line, between
+        ``var`` and the atom ``x < y`` (made)."""
+        apps, by_arg = self._mono_apps, self._mono_by_arg
+        for fa in by_arg.get(a, ()):
+            for fb in by_arg.get(b, ()):
+                spa, spb = apps[fa], apps[fb]
+                if spa.family != spb.family:
+                    continue
+                key = ("p", var, fa, fb)
+                if key in self._mono_done:
+                    continue
+                self._mono_done.add(key)
+                for piece in spa.pieces:
+                    f = (relation_atom("lt", fa, fb) if piece.dir > 0
+                         else relation_atom("lt", fb, fa))
+                    self._mono_pair_lemmas(piece, var, self._mono_var(f), a, b, fa, fb)
+        spa, spb = apps.get(a), apps.get(b)
+        if (spa is not None and spb is not None and spa.family == spb.family
+                and len(spa.pieces) == 1 and spa.pieces[0][:2] == ("-oo", "oo")):
+            key = ("q", var)
+            if key not in self._mono_done:
+                self._mono_done.add(key)
+                piece = spa.pieces[0]
+                if piece.dir < 0:         # f(a) < f(b) iff b's argument is below
+                    a, b, spa, spb = b, a, spb, spa
+                p = self._mono_var(relation_atom("lt", spa.arg, spb.arg))
+                self._mono_made.setdefault(p, a)
+                self._mono_pair_lemmas(piece, p, var, spa.arg, spb.arg, a, b)
+
+    def _mono_pair_lemmas(self, piece, p: int, q: int, a, b, fa, fb) -> None:
+        """``p`` is ``a < b``, ``q`` the atom of ``f(a)``, ``f(b)`` in the
+        same order on ``piece``: ``p & G -> q``, ``q & G -> p`` with the
+        piece's guard on both arguments (in the first clause only on the
+        argument ``a < b`` does not already put in the piece)."""
+        gl = piece.guard()
+        ga, gb = self._mono_guard(a, gl), self._mono_guard(b, gl)
+        mo = [-self._tvar(fa, _MO), -self._tvar(fb, _MO)]
+        emit = self.session.emit
+        emit([-p, q] + (ga if piece.hi != "oo" else []) + (gb if piece.lo != "-oo" else []) + mo)
+        emit([-q, p] + ga + gb + mo)
 
     # -- links to the unary vocabulary ----------------------------------
     def _atom_var(self, f) -> int:
