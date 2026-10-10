@@ -335,6 +335,17 @@ def _fsign(q) -> Optional[int]:
         return None
 
 
+#: bit size above which a rational gets no image or preimage: the bounds
+#: branch and bound tries can grow without end through links (``n**3`` of
+#: an integer ``n``), and SymPy's powers and roots of such numbers are slow
+_BITS = 64
+
+
+def _big(q) -> bool:
+    return type(q) is Fraction and (q.numerator.bit_length() > _BITS
+                                    or q.denominator.bit_length() > _BITS)
+
+
 class LinkMap:
     """What LRA needs of a :class:`Spec` to relate the variable of ``f(u)``
     to the linear form of ``u`` (``satassume.theories.lra.lra.MonoLink``),
@@ -350,6 +361,8 @@ class LinkMap:
       reads, else None;
     * :meth:`preimage` ``(d, i)``: the ``c`` in piece ``i`` with ``f(c) =
       d``, for ``d`` inside the open inverse range, or None.
+
+    Neither is computed for a rational of more than ``_BITS`` bits.
 
     Answers are memoized per instance (one per application)."""
     __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "_img", "_pre", "_rng")
@@ -374,6 +387,8 @@ class LinkMap:
         self._pre: dict = {}
 
     def image(self, c):
+        if _big(c):
+            return None
         try:
             return self._img[c]
         except KeyError:
@@ -388,6 +403,8 @@ class LinkMap:
         return r
 
     def preimage(self, d, i: int):
+        if _big(d):
+            return None
         key = (d, i)
         try:
             return self._pre[key]
