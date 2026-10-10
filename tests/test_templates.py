@@ -622,7 +622,7 @@ def test_signed_infinite_summand_end_to_end():
         assert ask(Q.positive_infinite(pinf - 2), a, Engine()) is True
         assert ask(Q.extended_negative(ninf + 1), a, Engine()) is True
         # -oo + I is infinite off the real axis; -oo + oo is nan
-        assert ask(Q.negative_infinite(ninf + I), a, Engine()) is None
+        assert ask(Q.negative_infinite(ninf + I), a, Engine()) is False   # sign theory
         assert ask(Q.negative_infinite(ninf + pinf), a, Engine()) is None
 
 

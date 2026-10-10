@@ -54,6 +54,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
+from ...state.memos import adopt as _adopt_memo
+
 #: the basis predicates the theory reads and writes, by local index
 PREDS = ("extended_real", "finite", "zero", "extended_positive", "extended_negative",
          "imaginary")
@@ -151,7 +153,8 @@ def _mul_atoms(a: int, b: int) -> int:
 
 ADD, MUL = 0, 1
 _ATOM_OPS = (_add_atoms, _mul_atoms)
-_MEMO: Dict[Tuple[int, int, int], int] = {}
+_MEMO: Dict[Tuple[int, int, int], int] = {}     # a pure function of its key
+_adopt_memo(__name__, "_MEMO")
 
 
 def mop(op: int, ma: int, mb: int) -> int:
@@ -168,8 +171,6 @@ def mop(op: int, ma: int, mb: int) -> int:
                 for b in range(12):
                     if mb >> b & 1:
                         r |= f(a, b)
-        if len(_MEMO) > 100000:
-            _MEMO.clear()
         _MEMO[key] = r
     return r
 
