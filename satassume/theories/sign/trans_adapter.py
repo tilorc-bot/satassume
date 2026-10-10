@@ -105,17 +105,19 @@ class TransAdapter(ClassAdapter):
         and carry no class assumption of their own (``Symbol('n',
         integer=True)``).  Every table entry that claims something reads a
         class fact of each argument (``POW``: of the base and the
-        exponent), and a plain argument has none: its class facts could
-        only come from a class atom or an equality over its symbols, or
-        from a ``zero`` atom of one of them, and those put the symbols in
+        exponent).  The usual sources of a class fact of an arithmetic
+        argument are a class atom or an equality over its symbols and a
+        ``zero`` atom of one of them, and those put the symbols in
         ``classes``.  An argument with a function application anywhere in
         it (``floor(x)``, ``sign(x)``, ``f(1)``, ``f(x) + 1``) is never
         plain: its class facts may come from template rows or from EUF.
         A node left out waits in the session (``Session._parked``) until
-        the scope widens.  What this costs is measured, not proved: a
-        class fact of a plain argument by another chain (a sign fact
-        ``x - 1`` neither positive nor negative); the audit of PR #154
-        found none."""
+        the scope widens: from the set's to the query's, or by the
+        symbols of the query's zero atoms when it is still open after its
+        search (``Session.unpark``: ``zero(x**2 + y**2)``).  What this
+        costs is measured, not proved (a class fact of a plain argument by
+        a chain the scope does not see, such as a sign fact): the audit of
+        PR #154 found no answer that differs from the ungated theory."""
         oa = op_args(node)
         if oa is None:
             return False

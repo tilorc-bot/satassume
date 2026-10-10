@@ -725,23 +725,30 @@ E, pi*I, oo, -oo, zoo, oo*I) by `tests/test_trans_theory.py`; the clause-validit
 **Nodes and engagement.** `trans_adapter.TransAdapter.selects`: the 13 functions, `E**x` (as `exp(x)`) and
 every `Pow` whose exponent is not a rational constant (`x**2`, `1/x`, `sqrt(x)` stay with the templates).
 Constants are read exactly (`1` is `ONE`, another integer `ZI`). A node is told at once only if no
-argument is *plain* (`TransAdapter.engages`): a plain argument is an arithmetic expression (sums, products,
-powers) that is not a number and has no free symbol in the query's *class scope* (`scope.class_symbols`:
-the symbols of a class atom, `algebraic`, `transcendental`, `rational`, `irrational`, `integer`,
-`noninteger`, `even`, `odd`, `prime`, `composite`, or of an equality, `eq` or an order atom and its
-reverse). An argument with a function application anywhere in it (`floor(x)`, `sign(x)`, `f(1)`,
-`f(x) + 1`) is never plain: its class facts may come from template rows or EUF. The set's complete check
-uses the set's own scope, so its verdict stays a function of the set. Other nodes stay parked
-(`Session._parked`); they are told if the scope grows (set to query), and all of them when the query is
-still open after its complete search (`Session.unpark`, then the search again; `ref.py` does the same).
-So the gate never leaves open a query the ungated theory decides; it saves the work of the parked
-nodes on the queries decided without them. What it can still cost is an inconsistency of the set that only a parked node shows (a definite
-answer instead of "inconsistent"), which needs class facts of a plain argument without a class atom or
-an equality over its symbols (a symbol's own assumptions, `zero(x)`, sign facts). The audit
-(`GATED = False` against the gated engine, fresh engine per query, on 4000 queries over `floor`,
-`ceiling`, `sign`, `Abs`, `factorial`, `binomial` and `AppliedUndef` arguments, 17136 queries on plain
-arguments with assumption symbols, sign and zero facts, and the 3999-query TRANS corpus) found no
-difference. Rows of the told terms that are parked stay parked (`DEMAND = False`; the escalation compiles
+argument is *plain* (`TransAdapter.engages`). A plain argument is an arithmetic expression (sums, products,
+powers) that is not a number, has no function application in it, and whose free symbols are outside the
+query's *class scope* and have no class assumption of their own (`knowledge.domain.classed`:
+`Symbol('n', integer=True)`). The class scope (`scope.class_symbols`) is the symbols of a class atom
+(`algebraic`, `transcendental`, `rational`, `irrational`, `integer`, `noninteger`, `even`, `odd`, `prime`,
+`composite`), of an equality (`eq`, or an order atom and its reverse), of `zero(x)` for a symbol, and of a
+`zero(t)` chain through a number, a scoped term or a classed symbol. An argument with a function
+application (`floor(x)`, `sign(x)`, `f(1)`, `f(x) + 1`) is never plain, because its class facts may come
+from template rows or EUF. The set's complete check uses the set's own scope, so its verdict stays a
+function of the set. Other nodes stay parked (`Session._parked`). They are told if the scope grows (set to
+query). They are also told when a contextual query is still open after its complete search: `Session.unpark`
+then widens the scope by the symbols of the query's `zero` atoms of sums and `nonzero` atoms of symbols
+(`scope.zero_symbols`: `zero(x**2 + y**2)` pins `x` to 0) and searches again; `ref.py` does the same.
+
+**What the gate costs** is measured, not proved. A plain argument could still get a class fact by a chain the
+scope does not see, such as a sign fact (`x - 1` neither positive nor negative) or `zero(x*y)`. A missed
+fact could give None instead of an answer, or a definite answer instead of "inconsistent". The audit sets
+`TransAdapter.GATED = False` against the gated engine on the same queries, with a fresh engine per query
+(`pareto0:~/th/A6/corpus/audit.py`). It found no difference on three corpora:
+- 4000 queries over `floor`, `ceiling`, `sign`, `Abs`, `factorial`, `binomial` and `AppliedUndef` arguments;
+- 17136 queries on plain arguments with assumption symbols and 17 kinds of fact that are not class atoms;
+- the 3999-query TRANS corpus.
+
+Rows of the told terms that are parked stay parked (`DEMAND = False`; the escalation compiles
 them if the query needs them).
 
 **Rows removed** (`~/th/ideas/count_rules.py`: 1219 -> 1211 rules, 1536 -> 1522 clauses; over the 13
