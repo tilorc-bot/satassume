@@ -821,7 +821,11 @@ node (the other adapters return None). `ref.py` sessions compile everything and 
 **Cost.** Each session that engages pays a fixed ~0.2 ms (atom registration and backtracking to the root
 in `register_atom`, `_tpropagate` in place of `_propagate`, the demanded `integer`/`even` rows of the
 terms; the theory's own code is about a fifth of it). On the refine stream (`tools/ab.py`, pinned, best of
-3) the candidate is +4.2% against its base. Measured and dropped:
+3) the candidate is +4.2% to +5.2% against its base (454 of 4911 sessions engage); the first ask in a fresh
+process is unchanged (0.163 s). On a generated corpus of this class (8000 queries, forms with rational
+coefficients, a fresh engine per query, pinned) it is +16% to +33%: there most sessions engage, and the
+theory's propagation (`refutes` re-closes the lattice per candidate atom) is about a third of the extra.
+Measured and dropped:
 
 | Variant | ab.py | Why dropped |
 |---|---|---|
