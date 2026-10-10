@@ -368,6 +368,14 @@ class ClassTheory:
                 return m
             return m & allowed(op, acc, newn)
 
+        if op >= L.nfold:
+            # a map op (no fold, no prefixes): each test is _slot itself
+            def advance(a: int) -> None:
+                pass
+
+            def slot(a: int) -> int:
+                return self._slot(i, masks, j)
+
         for k in range(len(slots)):
             if ls[k] and masks[k] != wide[k]:
                 old = masks[k]
