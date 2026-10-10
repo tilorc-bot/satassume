@@ -142,12 +142,19 @@ class Spec(NamedTuple):
     pieces: Tuple[Piece, ...]
     apply: Callable[[Any], Any]   # c -> f(c) (SymPy, evaluated)
     #: d -> candidates c with f(c) = d; the caller keeps a candidate only
-    #: if ``d`` is in ``inv_range``, ``c`` in a piece and ``apply(c) == d``
+    #: if ``d`` is in ``inv_range``, ``c`` in a piece and (unless
+    #: ``exact``) ``apply(c) == d``
     inverse: Callable[[Any], tuple]
     #: the open interval ``(lo, hi)`` of values ``d`` the inverse is read
     #: at (None: unbounded), and whether ``d = 0`` is excluded
     inv_range: Tuple[Any, Any, bool]
     rows: Tuple[Row, ...]
+    #: ``f(c) = d`` holds for every candidate ``c`` of every ``d`` in
+    #: ``inv_range`` (``asinh(sinh(d)) = d``, ``atan(tan(d)) = d`` on
+    #: ``(-pi/2, pi/2)``, ``cosh(+-acosh(d)) = d`` on ``(1, oo)``), which
+    #: SymPy's evaluation does not always show; False for ``Pow`` (the
+    #: candidates ``+-|d|**(1/k)`` are preimages only for some signs)
+    exact: bool = False
 
 
 _WHOLE = (Piece("-oo", "oo", 1),)
@@ -233,31 +240,31 @@ def _spec(t) -> Optional[Spec]:
     if name == "exp":
         return Spec(("exp",), u, _WHOLE, exp, lambda d: (log(d),), (S.Zero, None, False),
                     (Row("real", _const(S.Zero), _app, True),
-                     Row("extended_real", _app, _const(S.Zero), False)))
+                     Row("extended_real", _app, _const(S.Zero), False)), True)
     if name == "log":
         return Spec(("log",), u, (Piece("0+", "oo", 1),), log,
-                    lambda d: (exp(d),), _ANY, ())
+                    lambda d: (exp(d),), _ANY, (), True)
     if name == "atan":
         return Spec(("atan",), u, _WHOLE, atan,
                     lambda d: (tan(d),), (-half, half, False),
-                    _bounded_rows(-half, half))
+                    _bounded_rows(-half, half), True)
     if name == "tanh":
         return Spec(("tanh",), u, _WHOLE, tanh,
                     lambda d: (atanh(d),), (S.NegativeOne, S.One, False),
-                    _bounded_rows(S.NegativeOne, S.One))
+                    _bounded_rows(S.NegativeOne, S.One), True)
     if name == "sinh":
-        return Spec(("sinh",), u, _WHOLE, sinh, lambda d: (asinh(d),), _ANY, ())
+        return Spec(("sinh",), u, _WHOLE, sinh, lambda d: (asinh(d),), _ANY, (), True)
     if name == "asinh":
-        return Spec(("asinh",), u, _WHOLE, asinh, lambda d: (sinh(d),), _ANY, ())
+        return Spec(("asinh",), u, _WHOLE, asinh, lambda d: (sinh(d),), _ANY, (), True)
     if name == "cosh":
         return Spec(("cosh",), u, (Piece("0", "oo", 1), Piece("-oo", "0", -1)), cosh,
                     lambda d: (acosh(d), -acosh(d)), (S.One, None, False),
-                    (Row("extended_real", _app, _const(S.One), False),))
+                    (Row("extended_real", _app, _const(S.One), False),), True)
     if name == "acot":
         return Spec(("acot",), u, (Piece("0+", "oo", -1), Piece("-oo", "0-", -1)), acot,
                     lambda d: (cot(d),), (-half, half, True),
                     (Row("extended_real", _const(half), _app, False),
-                     Row("extended_real", _app, _const(-half), False)))
+                     Row("extended_real", _app, _const(-half), False)), True)
     return None
 
 
