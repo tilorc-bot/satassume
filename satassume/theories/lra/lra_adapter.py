@@ -126,7 +126,7 @@ from .lra import Integral, LRATheory, Negated
 from ...state.memos import adopt as _adopt_memo
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
-           "integer_form"]
+           "integer_form", "cinterpret"]
 
 _PRED = {Q.lt: "lt", Q.le: "le", Q.gt: "gt", Q.ge: "ge", Q.eq: "eq",
          Q.ne: "ne"}
@@ -395,6 +395,155 @@ def integer_form(e):
     return Integral(items, const[0]), keys
 
 
+# ---------------------------------------------------------------------------
+# CLRA: linear forms over the Gaussian field (issue #149, proposal T4)
+# ---------------------------------------------------------------------------
+#
+# An equality ``a = b`` whose difference has a coefficient or constant with
+# ``I`` (``x + I*y = 1``, ``x = 1 + 2*I``, ``I*x = pi*I``) is no real linear
+# form, so :func:`interpret` leaves it unread.  :func:`cinterpret` splits it
+# into two real ones: with every opaque term ``u`` written ``re(u) + I*im(u)``
+# and every coefficient ``c = cr + I*ci`` (``cr``, ``ci`` numbers of the
+# exact field), ``a - b = 0`` holds iff the real form ``sum(cr*re(u) -
+# ci*im(u)) + kr = 0`` and the imaginary form ``sum(cr*im(u) + ci*re(u)) +
+# ki = 0`` both hold, for finite complex terms.  The parts are theory
+# variables named by the SymPy terms ``re(u)`` and ``im(u)``, the very terms
+# a user writes, so ``Q.eq(x, 1 + 2*I)`` and ``Q.eq(re(x), 1)`` share the
+# variable ``re(x)``.  A term that is real by construction (``re(w)``,
+# ``im(w)``, or extended real context-free) is its own real part, with
+# imaginary part 0.
+#
+# The caller vouches that every term is finite: :data:`REAL` terms real
+# (guard ``real(u)``), :data:`COMPLEX` terms complex (guard ``complex(u)``).
+# Under that guard each part variable holds the value of its SymPy term, so
+# the two forms are exact (``re(u)`` and ``im(u)`` of a finite complex ``u``
+# are finite reals; ``re(zoo) = nan`` is excluded by the guard).
+
+REAL, COMPLEX = "real", "complex"
+
+
+def _cmul(a, b):
+    return (a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0])
+
+
+def _part_kind(u):
+    from sympy import re as _re, im as _im
+    if isinstance(u, (_re, _im)) or u.is_extended_real is True:
+        return REAL
+    return COMPLEX
+
+
+def _ccoeff(c):
+    """``(cr, ci)`` for a closed factor ``c`` of a product: ``c`` itself
+    (a number of the exact field) or ``b*I`` with ``b`` one; raises
+    _Unhandled."""
+    from sympy import I
+    b = c.as_coefficient(I) if c.has(I) else None
+    if b is None:
+        if c.has(I):
+            raise _Unhandled(c)
+        v = from_sympy(c, generic=GENERIC_CONSTANTS)
+        if v is None:
+            raise _Unhandled(c)
+        return (v, Fraction(0))
+    if b.has(I):
+        raise _Unhandled(c)
+    v = from_sympy(b, generic=GENERIC_CONSTANTS)
+    if v is None:
+        raise _Unhandled(c)
+    return (Fraction(0), v)
+
+
+def _clin(e, scale, fr: dict, fi: dict, const: list, kinds: dict) -> None:
+    """Add ``scale * e`` (``scale = (cr, ci)``) to the real form ``fr``, the
+    imaginary form ``fi`` and ``const = [kr, ki]``; record each opaque
+    term's kind in ``kinds``."""
+    from sympy import I, im as _im
+    if not isinstance(e, Expr) or getattr(e, "is_Matrix", False) \
+            or getattr(e, "is_MatrixExpr", False):
+        raise _Unhandled(e)
+    if e.is_Add:
+        for a in e.args:
+            _clin(a, scale, fr, fi, const, kinds)
+        return
+    if not e.free_symbols:
+        if e.has(I):
+            b = e.as_coefficient(I)
+            if b is None or b.has(I):
+                raise _Unhandled(e)
+            scale, e = _cmul(scale, (Fraction(0), Fraction(1))), b
+        cr, ci = scale
+        kr, ki = [Fraction(0)], [Fraction(0)]
+        _closed(e, cr, fr, kr)
+        _closed(e, ci, fi, ki)
+        const[0] += kr[0]
+        const[1] += ki[0]
+        for t in e.atoms() if False else ():
+            pass
+        return
+    if e.is_Mul:
+        rest, closed = [], []
+        for f in e.args:
+            (rest if f.free_symbols else closed).append(f)
+        if closed:
+            c = _ccoeff(Mul(*closed))
+            _clin(Mul(*rest), _cmul(scale, c), fr, fi, const, kinds)
+            return
+    cr, ci = scale
+    kind = kinds[e] = _part_kind(e)
+    if kind == REAL:
+        fr[e] = fr.get(e, Fraction(0)) + cr
+        fi[e] = fi.get(e, Fraction(0)) + ci
+        return
+    from sympy import re as _re
+    U, V = _re(e), _im(e)
+    fr[U] = fr.get(U, Fraction(0)) + cr
+    fr[V] = fr.get(V, Fraction(0)) - ci
+    fi[V] = fi.get(V, Fraction(0)) + cr
+    fi[U] = fi.get(U, Fraction(0)) + ci
+
+
+def cinterpret(atom):
+    """The split of an equality the real path does not read:
+    ``((real, imag), terms, kinds)`` where ``real`` and ``imag`` are what
+    :func:`_constraint` gives for the two forms (a payload and polarity, or
+    True/False), ``terms`` the opaque terms in canonical order and ``kinds``
+    maps each to :data:`REAL` or :data:`COMPLEX`; None when not read.  Only
+    an atom whose difference involves ``I`` is split here; one without is
+    :func:`interpret`'s."""
+    from sympy import I
+    rel = relation(atom)
+    if rel is None or rel[0] not in ("eq", "ne"):
+        return None
+    name, lhs, rhs = rel
+    try:
+        for side in (lhs, rhs):
+            if not isinstance(side, Expr) or side.has(*_BAD):
+                raise _Unhandled(side)
+        if not (lhs.has(I) or rhs.has(I)):
+            return None
+        fr: dict = {}
+        fi: dict = {}
+        const = [Fraction(0), Fraction(0)]
+        kinds: dict = {}
+        _clin(lhs, (Fraction(1), Fraction(0)), fr, fi, const, kinds)
+        _clin(rhs, (Fraction(-1), Fraction(0)), fr, fi, const, kinds)
+        # a part that is a closed constant term (bounded) is no opaque term
+        for t in list(fr) + list(fi):
+            if not t.free_symbols:
+                kinds.setdefault(t, REAL)
+        out = (_constraint("eq", fr, const[0]), _constraint("eq", fi, const[1]))
+    except _UNREAD:
+        return None
+    return out, sorted(kinds, key=default_sort_key), kinds
+
+
+def part_constraint(form):
+    """The payload of ``sum(c*t) = 0`` for ``form`` ``{term: c}`` (rational
+    ``c``), or True/False; used for the links between a term and its parts."""
+    return _constraint("eq", form, Fraction(0))
+
+
 #: ``GENERIC_CONSTANTS -> {atom -> interpret(atom)}`` (and the
 #: ``order_sides`` and ``integer_form`` results), shared by every adapter:
 #: keyed by the SymPy atom itself (equal atoms linearise identically) and,
@@ -481,6 +630,23 @@ class LRAAdapter:
     def integer_form(self, e):
         """:func:`integer_form`, memoized like :meth:`interpret`."""
         return _memoized(("integer", e), integer_form, e)
+
+    def cinterpret(self, atom):
+        """:func:`cinterpret`, memoized like :meth:`interpret`."""
+        return _memoized(("complex", atom), cinterpret, atom)
+
+    def register_payload(self, solver, var: int, r) -> None:
+        """Register ``var`` for ``r``, a result of :func:`_constraint`
+        (payload and polarity, or True/False for a ground atom), attaching
+        the theory as :meth:`register` does."""
+        if r is True or r is False:
+            payload: Any = ((), Fraction(0) if r else Fraction(-1), False, False)
+        else:
+            payload, positive = r
+            if not positive:
+                payload = Negated(payload)
+        self._attach(solver)
+        solver.register_atom(self.theory, var, payload)
 
     def register_integer(self, solver, var, form) -> None:
         """Register ``var`` for the ``Integral`` payload of ``form`` (a

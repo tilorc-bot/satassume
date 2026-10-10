@@ -558,6 +558,10 @@ def sympy_atom(atom: P):
     return r
 
 
+def _is_zero(e) -> bool:
+    return getattr(e, "is_zero", None) is True and getattr(e, "is_Number", False)
+
+
 def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
@@ -857,6 +861,8 @@ class Relations:
         #: interpreted atoms -> (theory twins [(t, guard)] of an equality,
         #: its LRA terms, its EUF terms), for roles added later
         self._info: dict = {}
+        #: CLRA: complex term -> the clauses of :meth:`_parts`
+        self._part_links: dict = {}
         #: link atoms -> the term e of the link (_link)
         self._link_of: dict = {}
         #: per term, the variables of what the current query makes of it
@@ -1147,6 +1153,9 @@ class Relations:
                         continue
             terms = ad.terms(sat)
             if terms is None:                 # not interpreted: no variable
+                if eq and hasattr(ad, "cinterpret") and \
+                        self._interpret_complex(ad, atom, sat, twins, lterms):
+                    ok = True
                 continue
             t = self._fresh()
             if not ad.register(solver, t, sat):
@@ -1171,18 +1180,99 @@ class Relations:
             self._apply_role(atom, info, kind, g)
         return ok
 
-    def _guard(self, ad, terms) -> list:
+    def _interpret_complex(self, ad, atom: P, sat, twins: list, lterms: list) -> bool:
+        """CLRA (issue #149, T4): an equality whose difference has ``I`` in a
+        coefficient or constant (``x = 1 + 2*I``, ``x + I*y = 0``) splits
+        into a real and an imaginary linear form
+        (:func:`satassume.theories.lra.lra_adapter.cinterpret`) over the
+        parts ``re(u)``, ``im(u)`` of its opaque terms.  The twin is
+        ``guard -> (atom <-> tr & ti)`` with ``guard`` the finiteness of every
+        term (``complex(u)``, or ``real(u)`` for a term real by
+        construction), where both forms are exact.  It carries, under the
+        same role guard, the part links of each complex term
+        (:meth:`_parts`) and, for ``eq(e, 0)``, ``real(e)`` and
+        ``imaginary(e)`` read off the two forms."""
+        c = ad.cinterpret(sat)
+        if c is None:
+            return False
+        (rr, ri), terms, kinds = c
+        s = self.session
+        tr, ti = self._fresh(), self._fresh()
+        ad.register_payload(s.solver, tr, rr)
+        ad.register_payload(s.solver, ti, ri)
+        guard = self._guard(ad, terms, kinds)
+        extra = []
+        for u in terms:
+            if kinds[u] == "complex":
+                self._parts(ad, u)
+        a, b = atom.expr
+        e = a if _is_zero(b) else b if _is_zero(a) else None
+        if e is not None:
+            # e is a finite complex number under the guard: real iff its
+            # imaginary form is 0, imaginary iff its real form is 0 and its
+            # imaginary form is not
+            s.ensure(e, {"real", "imaginary"})
+            real, imag = s.var("real", e), s.var("imaginary", e)
+            extra += [guard + [-real, ti], guard + [-ti, real],
+                      guard + [-imag, tr], guard + [-imag, -ti],
+                      guard + [-tr, ti, imag]]
+        twins.append((tr, ti, guard, extra))
+        lterms.extend(terms)
+        return True
+
+    def _parts(self, ad, u) -> None:
+        """Emit, once per session, the links of a complex term ``u`` to its part variables ``re(u)``
+        and ``im(u)`` (memoized per session): ``real(u)`` gives ``im(u) = 0``
+        and ``re(u) = u`` (the variable of ``u`` on the real path), and is
+        given by ``complex(u) & im(u) = 0``; ``imaginary(u)`` gives ``re(u) =
+        0`` and ``im(u) != 0`` and is given by them with ``complex(u)``.
+        Each holds for every value of ``u``: the part variables are the
+        values of the parts whenever ``complex(u)`` holds (the guard of every
+        atom that reads them as parts), and ``real(u)`` implies it.  They
+        are not switched: true of every value, they constrain only their own
+        fresh atoms, whose part variables other atoms constrain under
+        switched roles alone (or are free)."""
+        if u in self._part_links:
+            return
+        self._part_links[u] = True
+        from sympy import re, im
+        from .theories.lra.lra_adapter import part_constraint
+        s = self.session
+        s.ensure(u, {"real", "complex", "imaginary"})
+        real, cpx, imag = (s.var(p, u) for p in ("real", "complex", "imaginary"))
+        zi, zr, ru = self._fresh(), self._fresh(), self._fresh()
+        U, V = re(u), im(u)
+        ad.register_payload(s.solver, zi, part_constraint({V: Fraction(1)}))
+        ad.register_payload(s.solver, zr, part_constraint({U: Fraction(1)}))
+        ad.register_payload(s.solver, ru, part_constraint({U: Fraction(1), u: Fraction(-1)}))
+        # finite parts make a finite number (#19): no infinite u has two
+        # finite parts (re(zoo) = re(nan) = nan, re(oo) = oo, im(oo*I) = oo)
+        s.ensure(U, {"real"})
+        s.ensure(V, {"real"})
+        for c in ([-real, zi], [-real, ru], [-cpx, -zi, real],
+                  [-imag, zr], [-imag, -zi], [-cpx, -zr, zi, imag],
+                  [-s.var("real", U), -s.var("real", V), cpx]):
+            s.emit(c)
+
+    def _guard(self, ad, terms, kinds=None) -> list:
         """``[-real(u), ...]`` for the opaque terms ``u`` of a guarded
         theory atom (clause 3); a constant term gets its bounds asserted
         (once per session) and no literal when it is real at the root.
         Memoized per session and term list (never mutate the result)."""
-        key = (ad, tuple(terms))
+        key = (ad, tuple(terms), kinds is not None)
         guard = self._guards.get(key)
         if guard is not None:
             return guard
         s = self.session
         guard = self._guards[key] = []
+        clra = hasattr(ad, "cinterpret")
+        if clra:
+            from sympy import re, im
+            from .theories.lra.lra_adapter import _part_kind
         for u in terms:
+            if clra and isinstance(u, (re, im)) and u.args[0].free_symbols \
+                    and _part_kind(u.args[0]) == "complex":
+                self._parts(ad, u.args[0])     # re(w), im(w): w's part links
             if _is_number(u):
                 if u not in self._bounded:
                     self._bounded.add(u)
@@ -1191,8 +1281,9 @@ class Relations:
                     # real(u) holds at the root: its guard literal is
                     # false everywhere, and u needs no node here
                     continue
-            s.ensure(u, {"real"})
-            guard.append(-s.var("real", u))
+            pred = "complex" if kinds is not None and kinds[u] == "complex" else "real"
+            s.ensure(u, {pred})
+            guard.append(-s.var(pred, u))
         return guard
 
     def _link_integer(self, ad, e, g: int) -> None:
@@ -1334,9 +1425,19 @@ class Relations:
         emit = s.emit
         if twins:
             var = s.table.custom[atom]
-            for t, guard in twins:
-                emit(guard + g + [-var, t])
-                emit(guard + g + [var, -t])
+            for tw in twins:
+                if len(tw) == 2:
+                    t, guard = tw
+                    emit(guard + g + [-var, t])
+                    emit(guard + g + [var, -t])
+                    continue
+                # CLRA (_interpret_complex): the real and imaginary forms
+                tr, ti, guard, extra = tw
+                emit(guard + g + [-var, tr])
+                emit(guard + g + [-var, ti])
+                emit(guard + g + [var, -tr, -ti])
+                for c in extra:
+                    emit(c + g)
         tsource = self._tsource
         if kind == "link":
             for u in lterms:
