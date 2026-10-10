@@ -66,13 +66,11 @@ def _equiv(R, cond, preds):
         R.equiv(cond, (N, pred, True), (X, pred, True))
 
 
-def _unary(tag, gen, slots=None, units=None, closed=None):
+def _unary(tag, gen, slots=None, units=None):
     """Template for a unary function: ``gen(R, c)`` fills ``R`` (``c`` is the
     constant argument or ``None``).  ``slots(x)`` may supply extra objects
     the rules refer to by index 2, 3, ... (``arg - 1`` for log); ``units(c,
-    expr)`` may supply unit facts for a constant argument ``c``;
-    ``closed(R)`` adds rows for an argument without free symbols only
-    (the sign rows MONO gives for the others)."""
+    expr)`` may supply unit facts for a constant argument ``c``."""
     def template(expr):
         x = expr.args[0]
         consts = {}
@@ -80,9 +78,6 @@ def _unary(tag, gen, slots=None, units=None, closed=None):
         if x.is_Atom and x.is_number:
             consts[X] = x
             key[1] = const_key(x)
-        is_closed = closed is not None and not x.free_symbols
-        if is_closed:
-            key.append('closed')
         objs = [x, expr]
         if slots is not None:
             for obj in slots(x):
@@ -97,8 +92,6 @@ def _unary(tag, gen, slots=None, units=None, closed=None):
         def build():
             R = Rules()
             gen(R, consts.get(X))
-            if is_closed:
-                closed(R)
             return R.rules
 
         out = facts(tuple(key), build, consts, tuple(objs), N)
@@ -111,21 +104,6 @@ def _unary(tag, gen, slots=None, units=None, closed=None):
 
 def _minus_one(x):
     return (x - S.One,)
-
-
-# The sign rows of atan, tanh and sinh (``extended_real(u) ->
-# (positive(f(u)) <-> extended_positive(u))``, ...)
-# are MONO's (:mod:`satassume.theories.mono`, ``SIGN_FUNCS``): the glue
-# links every application of them with a free symbol and its argument, and
-# the threshold-0 lemmas give the same facts in every position of the cone.
-# A closed argument (``sinh(4)``, ``atan(sqrt(2))``) has no MONO lemma (they
-# need a free symbol), so these rows stay for it (``_unary(closed=...)``).
-# log keeps its rows for every argument (see ``_log``).
-
-def _sign_equivs(R, preds):
-    """``extended_real(x) -> (pred(node) <-> extended_pred(x))``."""
-    for pred in preds:
-        R.equiv([(X, 'extended_real', True)], (N, pred, True), (X, 'extended_' + pred, True))
 
 
 # ---------------------------------------------------------------------------
@@ -202,10 +180,7 @@ def exp_templates(expr):
 
 def _log(R, c):
     _table(R, _LOG)
-    # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.  Kept
-    # for every argument: MONO gives the same through the glue, but
-    # switching the glue on for every query with a log cost +4% on the
-    # refine stream (#150), against 5 rules and the node x - 1
+    # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.
     R.equiv([], (N, 'zero', True), (M, 'zero', True))
     R.rule([(M, 'extended_positive', True)], (N, 'extended_positive', True))
     R.rule([(M, 'negative', True), (X, 'positive', True)], (N, 'negative', True))
@@ -482,16 +457,14 @@ def _in_unit_interval_units(kind):
 def _atan(R, c):
     R.rule([(X, 'extended_real', True)], (N, 'real', True))
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
+    R.equiv([(X, 'extended_real', True)], (N, 'positive', True), (X, 'extended_positive', True))
+    R.equiv([(X, 'extended_real', True)], (N, 'negative', True), (X, 'extended_negative', True))
     # atan(I) == oo*I, so restrict to real arguments.
     R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
            (N, 'transcendental', True))
     # atan(x) is real iff x is real (atan(I*t) is imaginary, infinite or
     # non-real complex).
     R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-
-
-def _atan_closed(R):
-    _sign_equivs(R, ('positive', 'negative'))
 
 
 _ACOT = (
@@ -514,9 +487,8 @@ def _acot(R, c):
 
 
 for _cls, _tag, _gen in ((sin, 'sin', _sin), (cos, 'cos', _cos), (tan, 'tan', _tan),
-                         (cot, 'cot', _cot), (acot, 'acot', _acot)):
+                         (cot, 'cot', _cot), (atan, 'atan', _atan), (acot, 'acot', _acot)):
     registry.register(_cls)(_unary(_tag, _gen))
-registry.register(atan)(_unary('atan', _atan, closed=_atan_closed))
 registry.register(asin)(_unary('asin', _asin, slots=_minus_one,
                                units=_in_unit_interval_units('asin')))
 registry.register(acos)(_unary('acos', _acos, slots=_minus_one,
@@ -541,11 +513,8 @@ _COSH = (
 
 def _sinh(R, c):
     _table(R, _SINH)
-    R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
-
-
-def _sinh_closed(R):
     _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative', 'zero'))
+    R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
 
 
 def _cosh(R, c):
@@ -554,13 +523,10 @@ def _cosh(R, c):
 
 def _tanh(R, c):
     _table(R, ((('extended_real',), 'real'), _TRANSCENDENTAL))
-
-
-def _tanh_closed(R):
-    _sign_equivs(R, ('positive', 'negative'))
+    for pred in ('positive', 'negative'):
+        R.equiv([(X, 'extended_real', True)], (N, pred, True), (X, 'extended_' + pred, True))
     R.equiv([(X, 'extended_real', True)], (N, 'zero', True), (X, 'zero', True))
 
 
-registry.register(sinh)(_unary('sinh', _sinh, closed=_sinh_closed))
-registry.register(cosh)(_unary('cosh', _cosh))
-registry.register(tanh)(_unary('tanh', _tanh, closed=_tanh_closed))
+for _cls, _tag, _gen in ((sinh, 'sinh', _sinh), (cosh, 'cosh', _cosh), (tanh, 'tanh', _tanh)):
+    registry.register(_cls)(_unary(_tag, _gen))

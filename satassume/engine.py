@@ -88,8 +88,7 @@ from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
 from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
-                    affine_pair as _affine_pair, links_wanted as _links_wanted,
-                    mono_terms as _mono_terms, scope_of_atoms, theory_scope)
+                    affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
 from .theories.sign import closure_adapter as _closure, sign_adapter as _sign
 
@@ -1045,9 +1044,8 @@ class Session:
         p_all = self._glue_of(atoms_of(prop)) if prop is not None else ()
         p_atoms = [x for x in p_all if x.pred in RELATION_ATOMS]
         p_rel = bool(p_atoms)
-        if not (a_rel or p_rel or _links_wanted(a_all + tuple(p_all))):
-            # no relation, no affine pair (scope.affine_pair) and no MONO
-            # sign term (scope.mono_terms): the glue
+        if not (a_rel or p_rel or _affine_pair(a_all + tuple(p_all))):
+            # no relation and no affine pair (scope.affine_pair): the glue
             # the session has for its query's scope stays switched off (for
             # the set's own check, prop None, whatever the query's scope)
             return lits
@@ -1144,8 +1142,6 @@ class Session:
                 if status.get(x) is not False and any(
                         e not in lsel and not _is_number(e) for e in x.expr):
                     tp = True
-        if not tp and any(t not in lsel for t in _mono_terms(a_all)):
-            tp = True
         g[2], g[3] = tp, ap
         g[1] = (len(lsel) + len(nsel) if tp else -1, len(asel) if ap else -1,
                 rel.xfer_sel if xfer else None)
@@ -2032,26 +2028,11 @@ class Engine:
                 self.cache.put(node, pred, r)
             return r
         self.stats["queries"] += 1
-        if _mono_terms((P(pred, node),)):
-            s, r = self._is_glued(node, pred)
-        else:
-            s = self._fresh_session()
-            s.ensure(node, {pred})
-            r = self._decide(s, s.query_lit(pred, node))
+        s = self._fresh_session()
+        s.ensure(node, {pred})
+        r = self._decide(s, s.query_lit(pred, node))
         self._put_result(s, self.cache, node, pred, r)
         return r
-
-    def _is_glued(self, node: Node, pred: str):
-        """``(session, answer)`` of the context-free ``pred(node)`` whose
-        cone holds an application MONO gives the sign of
-        (``scope.mono_terms``): in a session with the glue of its scope,
-        as :meth:`_is_custom` answers a custom atom, since the templates
-        no longer carry those signs.  The glue's clauses are valid, so the
-        answer is a context-free fact like any other."""
-        atom = P(pred, node)
-        s = self._fresh_session(theory_scope(None, atom, self._extensions))
-        lit = s.prepare_query(atom)
-        return s, self._decide(s, lit, s.assumption_lits(atom))
 
     def is_many(self, node: Node, preds: Sequence[str]) -> List[Optional[bool]]:
         """``[self.is_(node, p) for p in preds]``, with the built-in
@@ -2104,12 +2085,6 @@ class Engine:
         if not todo:
             return out
         self.stats["queries"] += len(todo)
-        if _mono_terms((P(preds[todo[0]], node),)):
-            for k in todo:
-                s, r = self._is_glued(node, preds[k])
-                out[k] = r
-                self._put_result(s, self.cache, node, preds[k], r)
-            return out
         s = self._fresh_session()
         s.ensure(node, {preds[k] for k in todo})
         cache = self.cache

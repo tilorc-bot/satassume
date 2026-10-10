@@ -926,13 +926,6 @@ class Relations:
         for a in atoms:
             if a.pred in PRED_INDEX and a.expr not in self.linked:
                 self.top[a.expr] = None
-        if MONO:
-            # the terms whose sign MONO gives (mono.SIGN_FUNCS): linked
-            # as vocabulary-atom arguments are
-            from .theories.mono import atom_sign_terms
-            for t in atom_sign_terms(atoms):
-                if t not in self.linked:
-                    self.top[t] = None
 
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
@@ -1674,20 +1667,17 @@ class Relations:
         if made is not None and (made[0] == "f" and not is_arg
                                  or made[0] == "i" and is_arg and made[1] is app):
             return                        # back where it came from
-        if side == e:
-            c = c0                        # the common case: no arithmetic
-        else:
-            lam = scoef[0] / ecoef[0]
-            if any(sc != lam * ec for sc, ec in zip(scoef, ecoef)):
-                return
-            from sympy import Rational
-            rl = Rational(lam.numerator, lam.denominator)
-            rest = side - rl * e
-            if not _is_number(rest):
-                return
-            c = (c0 - rest) / rl
-            if lam < 0:
-                d = -d
+        lam = scoef[0] / ecoef[0]
+        if any(sc != lam * ec for sc, ec in zip(scoef, ecoef)):
+            return
+        from sympy import Rational
+        rl = Rational(lam.numerator, lam.denominator)
+        rest = side - rl * e
+        if not _is_number(rest):
+            return
+        c = (c0 - rest) / rl
+        if lam < 0:
+            d = -d
         if is_arg:
             self._mono_forward(app, sp, var, c, d)
         else:
@@ -1945,9 +1935,6 @@ class Relations:
                     out.update(sel[e] for e in a.expr if e in sel)
                 if a in asel:
                     out.add(asel[a])
-        if MONO:
-            from .theories.mono import atom_sign_terms
-            out.update(sel[t] for t in atom_sign_terms(atoms) if t in sel)
         return sorted(out)
 
     # -- equality sharing -------------------------------------------------

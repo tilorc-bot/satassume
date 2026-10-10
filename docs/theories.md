@@ -613,26 +613,25 @@ than an in-range threshold reads it. Made atoms are tagged so the
 image/inverse cascade between sibling applications (`f(n)`, `f(n - 1)`)
 ends.
 
-Template rows MONO replaces (`mono.SIGN_FUNCS`: `atan`, `tanh`, `sinh`).
-Their sign rows (`extended_real(u) -> (positive(f(u)) <->
-extended_positive(u))`, the same for `negative` and, for `tanh`/`sinh`,
-`zero`: 8 equivalences) are gone for arguments with a free symbol.
-`scope.mono_terms` collects every application of these functions at any
-depth of a query's atoms, its argument and the opaque terms of an `Add`
-argument; the scope then has the glue (even without a relation atom),
-these terms are linked like vocabulary-atom arguments
-(`Relations.note_formula`, `selectors_of`, `Session.assumption_lits`,
-`Engine.is_` for context-free queries) and the threshold-0 lemmas give the
-signs in every position of the cone. Closed arguments (`sinh(4)`) keep the
-rows (`_unary(closed=...)` in `templates/functions.py`): MONO needs a free
-symbol. `log` keeps its `x - 1` rows and node: moving it too answered the
-same but cost +4% on the refine stream (its 56 log queries ran 6x
-slower), against +0.3% for `atan`/`tanh`/`sinh`. `log` and `atan` are
-injective on their whole domain (`exp(log(z)) = z`, `tan(atan(z)) = z`),
-so `f(u) = f(c) -> u = c` is emitted without the piece guard
-(`mono.INJECTIVE`). Not moved: `exp` (2 rows, but the glue in every exp
-query), `Abs`/`floor`/`ceiling` (their sign rows are the templates'
-basis), `acot` (MONO's pieces do not give its sign at 0).
+`log` and `atan` are injective on their whole domain (`exp(log(z)) = z`,
+`tan(atan(z)) = z`), so `f(u) = f(c) -> u = c` is emitted without the
+piece guard (`mono.INJECTIVE`): `Q.eq(x, E)` under `Q.eq(log(x), 1)` and
+`Q.eq(x, 1)` under `Q.eq(atan(x), pi/4)` are True.
+
+Measured and dropped: stage 2 of T5, retiring template sign rows. The
+sign equivalences of `atan`, `tanh` and `sinh` (8 rows,
+`extended_real(u) -> (positive(f(u)) <-> extended_positive(u))` and the
+like) and `log`'s `x - 1` rows and node stay in `templates/functions.py`.
+MONO gives these signs only once the glue links `f(u)` and `u`, so moving
+them needed the glue forced on for every query with such an application
+(seven hooks in scope, relations and the engine, plus the rows kept for
+closed arguments). On a 5000-query sign corpus that took solver clauses
+per query from 2.7 to 128.6, variables from 70 to 140 and time 6x, for
+41 new answers out of 5000 and +1.7% on the refine stream; moving `log` too
+cost +4% on the stream (its 56 log queries ran 6x slower). MONO is
+therefore an answers-only addition for queries that read an application
+as an LRA term. A cheaper sign-only engagement (or a sign theory, #149 T1)
+is the place to retire these rows.
 
 Limits: a threshold whose constant the exact field cannot read
 (`asinh(2)`, `sinh(1)`) gets no lemma; `tan`, `cot`, `asin`, `acos`,

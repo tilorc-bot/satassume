@@ -76,7 +76,7 @@ from .knowledge.compile import VarTable, compile_formula, formula_literal
 from .sat.formula import FALSE, P, TRUE, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
 from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX, RULE_INTERNAL, basis_lits
-from .scope import EMPTY as _EMPTY_SCOPE, Scope, mono_terms
+from .scope import EMPTY as _EMPTY_SCOPE, Scope
 from .sat.solver import Solver
 
 __all__ = ["ask_ref", "ref_outcome", "theory_scope", "RefInfo"]
@@ -121,9 +121,7 @@ def theory_scope(a_atoms, p_atoms) -> Tuple[bool, bool, frozenset]:
     (spec section 3, P3's definition):
 
     * ``glue`` iff a relation atom occurs, or two sign atoms (of ``A`` and
-      ``p`` together) are on different ``Add`` nodes sharing a free symbol,
-      or an atom's expression holds an application MONO gives the sign of
-      (``scope.mono_terms``, which joins ``linked_terms``);
+      ``p`` together) are on different ``Add`` nodes sharing a free symbol;
     * ``transfer`` iff an ``eq`` atom occurs;
     * ``linked_terms``: the arguments of the vocabulary atoms and the
       sides of the relation atoms, numbers excluded.
@@ -155,12 +153,6 @@ def theory_scope(a_atoms, p_atoms) -> Tuple[bool, bool, frozenset]:
                     if any(symbols & other for other in sums.values()):
                         glue = True
                     sums[e] = frozenset(symbols)
-    # the applications whose sign MONO gives and their arguments
-    # (scope.mono_terms): linked, and the glue on, as in the engine
-    mono = mono_terms(atoms)
-    if mono:
-        glue = True
-        linked |= mono
     return glue, transfer, frozenset(linked)
 
 
