@@ -37,6 +37,13 @@ class ClassAdapter:
     PREDS = PREDS
     PRED_MASK = PRED_MASK
     ALL = ALL
+    #: read-only basis predicates and their atom sets (registered with
+    #: payload ``(t, m, True)``; :mod:`.trans` only)
+    ONESIDED: tuple = ()
+    ONESIDED_MASK: tuple = ()
+    #: whether registering a visited term compiles its parked rows about
+    #: PREDS (the engine's demand-driven compilation)
+    DEMAND = True
 
     def __init_subclass__(cls, **kw):
         super().__init_subclass__(**kw)
@@ -46,7 +53,8 @@ class ClassAdapter:
     def _init_tables(cls) -> None:
         offs = tuple(BASIS_INDEX[p] for p in cls.PREDS)
         cls._OFFSETS = offs
-        cls._DEMANDED = frozenset(offs)
+        cls._ONESIDED = tuple((BASIS_INDEX[p], m) for p, m in zip(cls.ONESIDED, cls.ONESIDED_MASK))
+        cls._DEMANDED = frozenset(offs) | frozenset(k for k, _ in cls._ONESIDED)
         #: 1-based basis index -> index in PREDS (-1: not one of them)
         cls._PIDX = tuple(offs.index(k - 1) if k - 1 in offs else -1
                           for k in range(max(BASIS_INDEX.values()) + 2))
@@ -54,6 +62,19 @@ class ClassAdapter:
     @staticmethod
     def over_cap(node) -> bool:
         return over_cap(node)
+
+    @staticmethod
+    def kinds(cls: type) -> bool:
+        """Whether :meth:`selects` may take a node of type ``cls``."""
+        return bool(getattr(cls, 'is_Add', False) or getattr(cls, 'is_Mul', False))
+
+    @classmethod
+    def selects(cls, node) -> bool:
+        """Whether a session tells this theory ``node`` (``Session._visit``,
+        ``ref._node_theories``): for the sums and products, those over the
+        templates' arity caps (:meth:`over_cap`)."""
+        return ((getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False))
+                and bool(node.args) and cls.over_cap(node))
 
     @classmethod
     def const_mask(cls, c) -> int:
@@ -106,7 +127,11 @@ class ClassAdapter:
             return t
         t = self.terms[e] = th.term()
         s = self.session
-        if e in s.base and hasattr(s, 'demand'):
+        if e in s.base and not self.DEMAND:
+            # visited; rows about these predicates that are parked stay
+            # parked (compiled by the escalation if the query needs them)
+            b = s.base[e]
+        elif e in s.base and hasattr(s, 'demand'):
             # visited, maybe with the rows about these predicates parked
             # (the engine's demand-driven compilation): compile them now
             b = s.node(e, self._DEMANDED)
@@ -116,7 +141,19 @@ class ClassAdapter:
         pmask = self.PRED_MASK
         for p, k in enumerate(self._OFFSETS):
             solver.register_atom(th, b + k, (t, pmask[p]))
+        if e in self.oneside_terms:
+            self._oneside(b, t)
         return t
+
+    #: the terms that get the read-only atoms (:attr:`ONESIDED`)
+    oneside_terms: frozenset = frozenset()
+
+    def _oneside(self, b: int, t: int) -> None:
+        """Register the read-only atoms of term ``t`` (base variable ``b``):
+        never decided by the search for the theory's sake."""
+        th, solver = self.theory, self.session.solver
+        for k, m in self._ONESIDED:
+            solver.register_atom(th, b + k, (t, m, True), mention=False)
 
     def sync_derived(self) -> None:
         """Register the derived atoms of the terms (``Session._dv``:

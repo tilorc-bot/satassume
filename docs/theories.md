@@ -668,6 +668,95 @@ Limits: a threshold whose constant the exact field cannot read
 the piece guard (`log(x) = 2` does not give `x = exp(2)` unless `x` is
 known extended positive, since `log(-oo) = oo`).
 
+## TRANS: transcendence of function values and powers
+
+`satassume/theories/sign/trans.py` (issue #149, proposal T6) decides `integer`, `rational`, `algebraic`,
+`complex`, `finite`, `extended_real` and `zero` of `exp`, `log`, `sin`, `cos`, `tan`, `cot`, `sinh`, `cosh`,
+`tanh`, `asin`, `acos`, `atan`, `acot` applications and of powers, and of their arguments, in both directions
+(Lindemann-Weierstrass and Gelfond-Schneider as one procedure). It is the third lattice of the SIGN machinery,
+with *map* operations next to the folds: `Lattice.add_map(fn, arity)` takes a table over atom tuples of arity
+1 or 2 (not commutative: `Pow(b, e)`). Forward, `S(N) &= F(S(A1) x ... x S(An))` unless some tuple maps to a
+set with `NAN` (then no claim on the node); backward, an atom `c` stays in `S(Ak)` iff some tuple with `c` in
+slot `k` (the others in their sets) maps to a set holding `NAN` or meeting `S(N)`. `node_masks` and
+`ClassTheory._slot` branch once on `op >= nfold`, so the ADD/MUL paths of SIGN and CLOSURE are unchanged.
+
+**Atoms.** `Z0` = {0}, `ONE` = {1}, `ZI` (the other integers), `Q1` (non-integer rationals), `AR`/`AC`
+(real/non-real irrational algebraic numbers), `TR`/`TC` (real/non-real transcendental numbers), `FX` (finite
+not complex, vacuous as in CLOSURE), `IR` (`oo`, `-oo`), `IC` (other infinities), plus `NAN` for a node.
+`ONE` is apart from `ZI` because Gelfond-Schneider needs a base outside {0, 1} and `exp(0) = 1`,
+`log(1) = 0`, `acos(1) = 0`. The basis predicates cannot tell `ONE` from `ZI`, so `TransTheory` also takes
+*one-sided* read-only atoms: `prime(x)` and `composite(x)` put `x` in `ZI`, `extended_negative(x)` in
+`ZI|Q1|AR|TR|IR`; their negation says nothing, they are never propagated and enter a reason only when true.
+They are registered only on the bases of powers (the only table that reads `ONE` versus `ZI` of an
+argument).
+
+**Tables.** One unary table per function and a binary `POW` table, each entry commented in `trans.py` with
+its theorem or SymPy convention, and each over-approximating SymPy's value:
+- Lindemann-Weierstrass: `exp(a)` for algebraic `a != 0` is transcendental; so are `log(a)` for algebraic
+  `a` not 0 or 1, and `sin`, `cos`, `tan`, `cot`, `sinh`, `cosh`, `tanh`, `asin`, `acos`, `atan`, `acot` of
+  a nonzero algebraic argument, except `acos(1) = 0`, `acos(0) = acot(0) = pi/2` (transcendental too),
+  `atan(+-I)`, `acot(+-I)` (infinite), `cot(0) = zoo`, `log(0) = zoo`, `log(1) = 0`, `exp(0) = 1`,
+  `cos(0) = cosh(0) = 1`.
+- Gelfond-Schneider: `b**e` with `b` algebraic not in {0, 1} and `e` algebraic irrational is transcendental.
+  Algebraic closure: `b**e` with `b` algebraic nonzero and `e` rational is algebraic nonzero. `e = 0` gives
+  `1` for every base (SymPy: `oo**0 = zoo**0 = 1`), `0**e` is `0` or `zoo` for real `e` (`Z0|IC`), `1**e = 1`.
+  Every other tuple (a transcendental base or exponent, `FX`) is "no claim" (`ALL|NAN`).
+- Realness and finiteness only where certain (`exp`, `sin`, `cos`, ... of a finite real are finite real;
+  `log` of a positive real is real, of a negative real it is not).
+- Infinite arguments follow SymPy: `sin(oo)` is `AccumBounds` (no claim), `exp(-oo) = 0`, `exp(oo) = oo`,
+  `log(oo) = log(-oo) = oo` (with the `_LOG` row: infinite and extended real is extended positive),
+  `atan(oo) = pi/2`, `acot(oo) = 0`, `asin(oo) = -oo*I`, `tanh(oo) = 1`; `IC` arguments are no claim except
+  where SymPy's value is known.
+
+**Soundness of the removed and added rules.** The theory adds only valid clauses (each reason is a subset of
+the literals under which the table step holds; any subset is sound since the sets only widen), so removing
+the rows it subsumes is sound; whether each removed row's answer is still produced is checked by
+`test_answers` in `tests/test_trans_theory.py`. Per case: `0` is `Z0` (`exp(0) = 1`, `log(0) = zoo`,
+`cot(0) = zoo`, `0**e` in `Z0|IC`, `0**0 = 1`); `oo`, `-oo` are `IR` and `zoo` is `IC` with SymPy's values
+above, and `nan` is never an argument (the atom sets of arguments exclude `NAN`; a node that may be `nan` or
+unevaluated is not constrained). Extended reals: `extended_real` is `Z0..TR|IR` and `finite` excludes `IR`,
+`IC`, so a row about `positive_infinite(x)` stays with the templates. Non-commutative terms are never told
+(`domain._noncommutative`: a matrix power is not a number), so `x**y` over matrices keeps the template rows
+only. A `Float` is read only for `finite`, `extended_real` and `zero`. `FX` entries are no claim. The tables
+are checked against SymPy at sample points of every atom (0, 1, -1, 2, 1/2, sqrt(2), I, 1+I, sqrt(2)*I, pi,
+E, pi*I, oo, -oo, zoo, oo*I) by `tests/test_trans_theory.py`; the clause-validity property test
+(`tests/test_class_clauses.py`) covers the map ops and the one-sided atoms with pop/push.
+
+**Nodes and engagement.** `trans_adapter.TransAdapter.selects`: the 13 functions, `E**x` (as `exp(x)`) and
+every `Pow` whose exponent is not a rational constant (`x**2`, `1/x`, `sqrt(x)` stay with the templates).
+Constants are read exactly (`1` is `ONE`, another integer `ZI`). Every selected node of the cone is told,
+in the set's complete check and in the query alike (`Session.node_theories_sync`, `ref._node_theories`).
+There is no gate on which nodes are told: an argument can be pinned to a number by any route (order and
+MONO reasoning such as `x <= 1 & exp(x) >= E`, a sign pair `nonnegative(x - 1) & nonpositive(x - 1)`, a zero
+atom of a product, power or `Abs`, EUF, template rows of `floor` or `sign`), so a gate that decides from the
+query's atoms which nodes the theory may need loses answers (PR #154 reviews: two rounds of a class-scope
+gate, 14 of 4200 audit queries lost, and on the tree with MONO an inconsistent set answered True).
+`tests/test_trans_theory.py::test_answers_from_elsewhere` keeps those queries.
+
+Rows of the told terms that are parked stay parked (`DEMAND = False`; the escalation compiles
+them if the query needs them).
+
+**Rows removed** (`~/th/ideas/count_rules.py`: 1219 -> 1211 rules, 1536 -> 1522 clauses; over the 13
+functions and 9 `Pow` shapes 397 -> 367 rules, 441 -> 399 clauses): `functions.py` `_TRANSCENDENTAL` (`exp`,
+`sin`, `cos`, `tan`, `asin`, `sinh`, `cosh`, `tanh`), the transcendental rules of `log`, `acos`, `atan`, both
+rows of `cot` and `acot`; `core.py` the `pow.E` transcendental row, `b=algebraic.gs`,
+`e=algebraic_irrational.gs` and `_NOT01`. Per pattern: `x**I` 14 -> 9 rules, `x**GoldenRatio` 19 -> 14,
+about one rule and two clauses fewer per function. Every other row is kept.
+
+**New answers**, e.g. `transcendental(x**y)` under algebraic `x` not 0/1 (by `prime`, `negative`, even
+nonzero) and algebraic irrational `y`; `algebraic(x)` False under `algebraic(exp(x)) & ~zero(x)`;
+`rational(y)` under `algebraic(x**y) & prime(x) & algebraic(y)`; `algebraic(Pow(1, x))`.
+
+**Measured alternatives** (`tools/ab.py` on the refine stream, 5 rounds, pinned, against `theories`
+2222668). Telling every selected node costs +4.4%: the theory attached at all routes every propagation
+through the theory sync, and almost no stream query gets an answer from it. A class-scope gate (tell a
+node only if each argument is a number or has a symbol of a class atom or equality of the query) cost
++0.6% to +2.3% but lost answers. Keeping that gate and telling the theory every parked node when a query
+is still open after its search (then searching again) loses no answer either, but cost +5.1%: the 288
+stream queries it unparks are open by nature and pay a second search. Registering the basis atoms
+unmentioned (`mention=False`) changed nothing measurable; compiling the told terms' parked rows
+(`DEMAND = True`) added clauses.
+
 ## Open questions and known gaps
 
 - #42, item 3 (answers depending on earlier queries through the lazily

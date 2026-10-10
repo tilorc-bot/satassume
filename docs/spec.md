@@ -228,6 +228,13 @@ attaches `ClosureTheory` with the node (`Session.node_theories_sync`, `closure_a
 propagates `integer`, `rational`, `algebraic`, `complex`, `finite`, `extended_real`, `zero` of the node and
 its arguments the same way. An argument first visited by a node theory has the cone below it visited too.
 
+Definition (TRANS, issue #149 T6; `docs/theories.md`, "TRANS"). The applications of `exp`, `log`, `sin`, `cos`,
+`tan`, `cot`, `sinh`, `cosh`, `tanh`, `asin`, `acos`, `atan`, `acot`, `E**x` and every commutative `Pow` whose
+exponent is not a rational constant (`trans_adapter.op_args`) are told to `TransTheory`, which propagates
+`integer`, `rational`, `algebraic`, `complex`, `finite`, `extended_real`, `zero` of the node and its arguments
+(reading `prime`, `composite`, `extended_negative` of a power's base one-sidedly). The templates'
+transcendence rows are removed.
+
 ### 5.3 The memo of `is_` (no cached unit facts)
 
 Definition. No clause set contains a cached fact: no session asserts an entry of `Engine.cache` or

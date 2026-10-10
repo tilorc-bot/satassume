@@ -90,12 +90,28 @@ from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
-from .theories.sign import closure_adapter as _closure, sign_adapter as _sign
+from .theories.sign import (closure_adapter as _closure, sign_adapter as _sign,
+                             trans_adapter as _trans)
 
-#: the node theories (class propagators over sums and products,
-#: ``satassume.theories.sign.lattice``): adapter classes, each told the
-#: nodes its ``over_cap`` selects (``Session.node_theories_sync``)
-_NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter)
+#: the node theories (class propagators, ``satassume.theories.sign.lattice``:
+#: SIGN and CLOSURE over sums and products, TRANS over the elementary
+#: functions and powers): adapter classes, each told the nodes its
+#: ``selects`` takes (``Session.node_theories_sync``)
+_NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter, _trans.TransAdapter)
+
+#: node type -> ``(index, over_cap)`` of the node theories that may select
+#: its nodes (their ``kinds``; ``over_cap`` is ``selects`` for a node of
+#: such a type with arguments): ``Session._visit`` asks only those
+_SELECTORS: Dict[type, tuple] = {}
+
+
+_adopt_memo(__name__, "_SELECTORS")
+
+
+def _selectors(cls: type) -> tuple:
+    sel = _SELECTORS[cls] = tuple((i, a.over_cap) for i, a in enumerate(_NODE_THEORIES)
+                                  if a.kinds(cls))
+    return sel
 
 Node = Any
 
@@ -602,10 +618,14 @@ class Session:
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
-        if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) and node.args:
-            # the node theories' nodes: those over the templates' arity caps
-            for i, a in enumerate(_NODE_THEORIES):
-                if a.over_cap(node):
+        sel = _SELECTORS.get(type(node))
+        if sel is None:
+            sel = _selectors(type(node))
+        if sel and node.args:
+            # the node theories' nodes: sums and products over the
+            # templates' arity caps, the elementary functions and powers
+            for i, f in sel:
+                if f(node):
                     self._theory_nodes.append((i, node))
 
     # -- compiled template patterns (the fast path) -------------------------
@@ -847,9 +867,10 @@ class Session:
         self.frontier = deque()
 
     def node_theories_sync(self) -> bool:
-        """Engage each node theory (``_NODE_THEORIES``: the sign and the
-        closure theories of ``satassume.theories.sign``) once the cone
-        holds a sum or product over its arity caps, and tell it those
+        """Engage each node theory (``_NODE_THEORIES``: the sign, closure
+        and trans theories of ``satassume.theories.sign``) once the cone
+        holds a node it selects (a sum or product over its arity caps; an
+        elementary function or power for trans), and tell it those
         visited since the last sync (each theory then decides only what
         the templates leave out by construction).  True iff something
         was registered."""

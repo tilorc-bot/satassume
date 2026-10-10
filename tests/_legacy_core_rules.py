@@ -18,7 +18,6 @@ from satassume.knowledge.templates.core import (
     _E,
     _MUL_CLOSED,
     _N,
-    _NOT01,
     _NOTUNIT,
     _POW_E_RULES,
     _POW_ONE_EQUIV,
@@ -285,8 +284,8 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
         elif b.is_Integer and (b.p >= 2 or b.p <= -2):
             # |b|**e < 1 for negative e.
             rule([(_E, 'negative', True)], (_N, 'integer', False))
-        if b.is_algebraic and b.is_zero is False and b is not S.One:
-            R.equiv([(_E, 'algebraic', True)], (_N, 'algebraic', True), (_E, 'rational', True))
+        # (the Gelfond-Schneider equivalence went with the TRANS change: the
+        # theory decides it, satassume/theories/sign/trans.py)
         if b.is_Number and b.is_finite:
             # Exact comparisons of a number with 1 (no assumptions involved).
             if abs(b) > 1:
@@ -302,8 +301,5 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
             # b**e for integer b >= 2 is composite.
             for prem in ge2_alternatives(_B):
                 rule(prem, (_N, 'composite', True))
-        if e.is_algebraic and e.is_rational is False:
-            for pred in _NOT01:
-                rule([(_B, pred, True), (_B, 'algebraic', True)], (_N, 'algebraic', False))
     return R.rules
 
