@@ -843,7 +843,11 @@ class Relations:
         self._mono_pairs: list = []       # (var, a, b) for lt(a, b), no number side
         self._mono_by_arg: dict = {}      # argument -> its applications
         self._mono_done: set = set()      # lemma keys emitted
-        self._mono_made: dict = {}        # atom made by an inverse -> app
+        #: atoms the lemmas made -> ("f", app) for an image of a forward
+        #: lemma (never read back through an inverse), ("i", app) for an
+        #: atom an inverse made (no forward lemma with that app): images
+        #: move outward and inverses inward, so the cascade is finite
+        self._mono_made: dict = {}
         #: the theory scope the session was built for (satassume.scope):
         #: with ``glue`` the vocabulary-atom arguments of its formulas are
         #: linked from the start (``active``; the sides of its relation
@@ -1564,15 +1568,18 @@ class Relations:
             if a == u or b == u or a == app or b == app:
                 self._mono_pair(var, a, b)
 
-    def _mono_var(self, f) -> int:
-        """The variable of a relation atom the lemmas need (made if new);
-        an equality the glue makes engages nothing (``_aux_eq``)."""
+    def _mono_var(self, f, made=None) -> int:
+        """The variable of a relation atom the lemmas need (made if new,
+        and then recorded as ``made``, see ``_mono_made``); an equality
+        the glue makes engages nothing (``_aux_eq``)."""
         custom = self.session.table.custom
         v = custom.get(f)
         if v is None:
             if f.pred == "eq":
                 self._aux_eq.add(f)
             v = self._atom_var(f)
+            if made is not None:
+                self._mono_made[v] = made
         return v
 
     def _mono_guard(self, e, lits) -> list:
@@ -1587,8 +1594,10 @@ class Relations:
         """A threshold atom ``rec`` on the linear form of ``it``'s term."""
         e, ecoef, app, sp, is_arg = it
         var, side, c0, d, scoef = rec
-        if self._mono_made.get(var) is app:
-            return                        # made by this application's inverse
+        made = self._mono_made.get(var)
+        if made is not None and (made[0] == "f" and not is_arg
+                                 or made[0] == "i" and is_arg and made[1] is app):
+            return                        # back where it came from
         lam = scoef[0] / ecoef[0]
         if any(sc != lam * ec for sc, ec in zip(scoef, ecoef)):
             return
@@ -1624,7 +1633,7 @@ class Relations:
                 self._mono_lemmas(app, sp, piece, p, d, fc, sg)
         if d == 0:
             # u = c -> f(u) = f(c), for any c with a finite real f(c)
-            q = self._mono_var(relation_atom("eq", app, fc))
+            q = self._mono_var(relation_atom("eq", app, fc), ("f", app))
             self.session.emit([-p, q, -self._tvar(app, _MO)])
 
     def _mono_lemmas(self, app, sp, piece, p: int, d: int, fc, sg: int,
@@ -1643,7 +1652,7 @@ class Relations:
                 f = relation_atom("lt", fc, app)
             else:
                 f = relation_atom("lt", app, fc)
-            q = self._mono_var(f)
+            q = self._mono_var(f, ("f", app))
         u = sp.arg
         g = self._mono_guard(u, piece.guard())
         mo = [-self._tvar(app, _MO)]
@@ -1683,8 +1692,9 @@ class Relations:
                     f = relation_atom("lt", c, u)
                 else:
                     f = relation_atom("lt", u, c)
-                p = self._mono_var(f)
-                self._mono_made.setdefault(p, app)
+                p = self._mono_var(f, ("i", app))
+                if self._mono_made.get(p) == ("f", app):
+                    continue
                 self._mono_lemmas(app, sp, piece, p, du, dv, sg, q=q)
 
     def _mono_pair(self, var: int, a, b) -> None:
@@ -1706,9 +1716,11 @@ class Relations:
                 for piece in spa.pieces:
                     f = (relation_atom("lt", fa, fb) if piece.dir > 0
                          else relation_atom("lt", fb, fa))
-                    self._mono_pair_lemmas(piece, var, self._mono_var(f), a, b, fa, fb)
+                    self._mono_pair_lemmas(piece, var, self._mono_var(f, ("f", None)),
+                                           a, b, fa, fb)
         spa, spb = apps.get(a), apps.get(b)
         if (spa is not None and spb is not None and spa.family == spb.family
+                and self._mono_made.get(var, ("",))[0] != "f"
                 and len(spa.pieces) == 1 and spa.pieces[0][:2] == ("-oo", "oo")):
             key = ("q", var)
             if key not in self._mono_done:
@@ -1716,20 +1728,23 @@ class Relations:
                 piece = spa.pieces[0]
                 if piece.dir < 0:         # f(a) < f(b) iff b's argument is below
                     a, b, spa, spb = b, a, spb, spa
-                p = self._mono_var(relation_atom("lt", spa.arg, spb.arg))
-                self._mono_made.setdefault(p, a)
+                p = self._mono_var(relation_atom("lt", spa.arg, spb.arg), ("i", None))
                 self._mono_pair_lemmas(piece, p, var, spa.arg, spb.arg, a, b)
 
     def _mono_pair_lemmas(self, piece, p: int, q: int, a, b, fa, fb) -> None:
         """``p`` is ``a < b``, ``q`` the atom of ``f(a)``, ``f(b)`` in the
         same order on ``piece``: ``p & G -> q``, ``q & G -> p`` with the
-        piece's guard on both arguments (in the first clause only on the
-        argument ``a < b`` does not already put in the piece)."""
+        piece's guard on both arguments.  In the first clause ``a < b``
+        puts ``b`` in a piece up to ``oo`` once ``a`` is in it, and ``a``
+        in a piece from ``-oo`` once ``b`` is: one guard does there, none
+        on the whole line (the atom says both are extended reals)."""
         gl = piece.guard()
         ga, gb = self._mono_guard(a, gl), self._mono_guard(b, gl)
         mo = [-self._tvar(fa, _MO), -self._tvar(fb, _MO)]
         emit = self.session.emit
-        emit([-p, q] + (ga if piece.hi != "oo" else []) + (gb if piece.lo != "-oo" else []) + mo)
+        up, down = piece.hi == "oo", piece.lo == "-oo"
+        fwd = [] if up and down else ga if up else gb if down else ga + gb
+        emit([-p, q] + fwd + mo)
         emit([-q, p] + ga + gb + mo)
 
     # -- links to the unary vocabulary ----------------------------------

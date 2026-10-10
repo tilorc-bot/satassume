@@ -75,7 +75,10 @@ are ``+-1``, which no unary predicate names), ``sin``/``cos``
 """
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any, Callable, NamedTuple, Optional, Tuple
+
+from ..state.memos import PROCESS as _PROCESS
 
 #: piece ends: lower ``'-oo'`` (closed at -oo), ``'0'`` (closed at 0),
 #: ``'0+'`` (open at 0); upper ``'oo'``, ``'0'``, ``'0-'``
@@ -105,22 +108,22 @@ class Piece(NamedTuple):
 
 #: (lo, hi) -> the basis literals (pred, polarity) whose conjunction says
 #: that an extended real ``u`` lies in the piece (and that ``u`` is one)
-_PIECE_GUARD = {
+_PIECE_GUARD = MappingProxyType({
     ("-oo", "oo"): (("extended_real", True),),
     ("0", "oo"): (("extended_real", True), ("extended_negative", False)),
     ("0+", "oo"): (("extended_positive", True),),
     ("-oo", "0"): (("extended_real", True), ("extended_positive", False)),
     ("-oo", "0-"): (("extended_negative", True),),
-}
+})
 
 #: guard names of :class:`Row` -> basis literals (as ``_PIECE_GUARD``)
-GUARDS = {
+GUARDS = MappingProxyType({
     None: (),
     "extended_real": (("extended_real", True),),
     "real": (("extended_real", True), ("finite", True)),
     "extended_nonnegative": (("extended_real", True), ("extended_negative", False)),
     "extended_nonpositive": (("extended_real", True), ("extended_positive", False)),
-}
+})
 
 
 class Row(NamedTuple):
@@ -167,8 +170,7 @@ def _bounded_rows(lo, hi):
             Row("extended_real", _app, _const(lo), False))
 
 
-_SPECS: dict = {}
-_SPECS_MAX = 100_000
+_SPECS = _PROCESS.table(f"{__name__}._SPECS", "pure", 100_000)
 
 
 def spec(term) -> Optional[Spec]:
@@ -181,7 +183,7 @@ def spec(term) -> Optional[Spec]:
     except TypeError:
         return None
     r = _spec(term)
-    if len(_SPECS) >= _SPECS_MAX:
+    if len(_SPECS) >= _SPECS.size:
         _SPECS.clear()
     _SPECS[term] = r
     return r
