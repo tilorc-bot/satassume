@@ -1587,14 +1587,20 @@ class Relations:
             self._mono_rows(app, sp)
         if sp.pieces:
             self._mono_by_arg.setdefault(u, []).append(app)
-            if form is not None and form[0].terms:
-                self._mono_link(app, mo, form, all(
-                    type(c) is Fraction for _t, c in form[0].terms))
+            if form is not None and form[0].terms and all(
+                    type(c) is Fraction for _t, c in form[0].terms):
+                self._mono_link(app, mo, form)
+            elif not u.is_number:
+                # u not read as a rational linear form (a Float, an
+                # irrational coefficient: sqrt(2)/2*sqrt(e)): u itself is
+                # the one opaque term (its range bounds and realness)
+                from .theories.lra.lra import Integral
+                self._mono_link(app, mo, (Integral(((u, Fraction(1)),), Fraction(0)), [u]))
         for var, a, b in self._mono_pairs:
             if a == u or b == u or a == app or b == app:
                 self._mono_pair(var, a, b)
 
-    def _mono_link(self, app, mo: int, form, rational: bool) -> None:
+    def _mono_link(self, app, mo: int, form) -> None:
         """Register the LRA link ``app = f(u)`` (``form`` the integer form
         of ``u``) on a fresh inert *enable* variable ``e``: ``e <-> MO(app)
         & real(app) & real(s)`` for the opaque terms ``s`` of ``u``.  While
@@ -1602,9 +1608,7 @@ class Relations:
         it: ``Spec.real_arg``), the LRA values of ``app`` and of ``u``'s terms are
         their values, so LRA may derive bounds of ``app`` from those of
         ``u`` and back (``lra.LRATheory._mono_link``), each with ``e`` in
-        its reason: no atom and no clause per threshold.  The realness
-        clauses come first; the link itself needs ``rational`` coefficients
-        of ``u`` (not ``sqrt(2)/2*sqrt(e)``)."""
+        its reason: no atom and no clause per threshold."""
         from sympy import S
         from .theories.mono import link_map
         fm = link_map(app)
@@ -1641,8 +1645,6 @@ class Relations:
             if ga:
                 s.ensure(terms[0], {"real", "finite"})
                 s.emit([-mo, ga[0], s.var("real", terms[0]), -s.var("finite", terms[0])])
-        if not rational:
-            return
         guard = self._guard(ad, list(terms) + [app])
         e = self._fresh(inert=True)
         s.emit([-e, mo])
