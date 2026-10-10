@@ -590,6 +590,84 @@ same predicate as `real`) went. The `root` rows need a base that is a number (`A
 **Not done (stage 2 of T3).** `algebraic(x)` under `algebraic(p(x))` for a polynomial `p` with algebraic
 coefficients (`x**3 + x`); `rational(x)` under `rational(x**3)` is rightly open (`2**(1/3)`).
 
+## Monotone functions (MONO)
+
+`satassume/theories/mono.py` is a table: for an application `f(u)` of
+`exp`, `log`, `atan`, `tanh`, `sinh`, `asinh`, `cosh`, `acot` or `u**k`
+(Rational `k`) it gives the pieces of the extended real line where `f` is
+strictly monotone (ends `-oo`, `0`, `oo`, open or closed, SymPy's values at
+the infinite ends included), `f(c)`, the inverse at a constant, and the
+range rows (`exp(u) > 0` for real `u`, `-pi/2 < atan(u) < pi/2`,
+`cosh(u) >= 1`, `u**2 >= 0`, `acot` bounds); for `Abs`, `floor`,
+`ceiling` only sandwich rows (`floor(u) <= u < floor(u) + 1`,
+`Abs(u) >= +-u`). The glue (`Relations._mono_*`, flag `MONO`) turns it into
+lemmas between relation atoms: forward images (`x > 2 -> x**2 > 4` on the
+piece `[0, oo]`, with the piece's guard on `u` where the threshold alone
+does not keep `u` in the piece), inverse preimages (`log(x) > 0 & x > 0
+-> x > 1`), pairs (`x < y -> exp(x) < exp(y)`) and rows. A threshold may
+be any atom with one number side whose other side is proportional to `u`
+or to `f(u)` up to a constant. The lemmas carry the term's `MO` switch,
+implied by its link selector, so they act only where the query reads the
+application as an LRA term, and rows are made only where something other
+than an in-range threshold reads it. Made atoms are tagged so the
+image/inverse cascade between sibling applications (`f(n)`, `f(n - 1)`)
+ends.
+
+`log` and `atan` are injective on their whole domain (`exp(log(z)) = z`,
+`tan(atan(z)) = z`), so `f(u) = f(c) -> u = c` is emitted without the
+piece guard (`mono.INJECTIVE`): `Q.eq(x, E)` under `Q.eq(log(x), 1)` and
+`Q.eq(x, 1)` under `Q.eq(atan(x), pi/4)` are True.
+
+Measured and dropped: stage 2 of T5, retiring template sign rows. The
+sign equivalences of `atan`, `tanh` and `sinh` (8 rows,
+`extended_real(u) -> (positive(f(u)) <-> extended_positive(u))` and the
+like) and `log`'s `x - 1` rows and node stay in `templates/functions.py`.
+MONO gives these signs only once the glue links `f(u)` and `u`, so moving
+them needed the glue forced on for every query with such an application
+(seven hooks in scope, relations and the engine, plus the rows kept for
+closed arguments). On a 5000-query sign corpus that took solver clauses
+per query from 2.7 to 128.6, variables from 70 to 140 and time 6x, for
+41 new answers out of 5000 and +1.7% on the refine stream; moving `log` too
+cost +4% on the stream (its 56 log queries ran 6x slower). MONO is
+therefore an answers-only addition for queries that read an application
+as an LRA term. A cheaper sign-only engagement (or a sign theory, #149 T1)
+is the place to retire these rows.
+
+**Pow on sign links.** A sign link (`0 < e`, `e < 0`, `e = 0` of a linked
+term, `Relations._link`) is a threshold like any other, and on the
+harness's relational and base workloads the links of the nodes around
+`u**-1` (every division), `u**(1/3)` and `u**2` made about 10000 image and
+preimage atoms per 1800 queries and decided nothing: the profiles were
+10-13% slower than the base. For `Pow` (`relations._MONO_LAZY`) a
+threshold that is only a sign link (no query mentions it, no other role)
+now relates existing atoms only, and makes atoms only where a query reads
+the power or a term of its base: an LRA term of a relation the query
+mentions, or of the linear form of a unary predicate's argument
+(`Q.positive(x**3 - 1)` under `Q.positive(x - 2)` reads `x**3` and `x`).
+At the constant 0 (`u OP 0`, `u**k OP 0`) the lemmas only move a sign the
+templates already give, so they are made only where a *relation* reads
+the other term (the power for a link of the base, a term of the base for
+a link of the power); an application of a listed function other than a
+power inside the base of a read power counts as read (`atan(q)` in
+`atan(q)**2`, `_mono_note_inner`), a plain symbol does not (that would
+cost 12% on the relational profile for one answer in our corpora).
+Matches skipped this way wait on the atom and on those terms and are
+redone when a later formula of the session reads one (`_mono_wait`,
+`_mono_note_user`). The sign facts of `u` and `u**k` themselves are the
+Pow templates' rows. Equalities the lemmas make (`x = 1/6 -> sqrt(x) =
+sqrt(6)/6`) had no role, so LRA never saw them (`_aux_eq`); they now get
+the role `"mono"` under the application's `MO` switch, which turns on
+their LRA twin and nothing else (no transfer candidacy). Soundness: the
+first change only drops lemmas; the twin of a made equality is the
+equality itself, asserted under a switch, as for a user equality.
+Measured (pareto1, pinned): see PR #150.
+
+Limits: a threshold whose constant the exact field cannot read
+(`asinh(2)`, `sinh(1)`) gets no lemma; `tan`, `cot`, `asin`, `acos`,
+`sin`, `cos` and Float constants are not in the table; inverse lemmas need
+the piece guard (`log(x) = 2` does not give `x = exp(2)` unless `x` is
+known extended positive, since `log(-oo) = oo`).
+
 ## Open questions and known gaps
 
 - #42, item 3 (answers depending on earlier queries through the lazily
