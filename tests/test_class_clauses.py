@@ -1,6 +1,7 @@
-"""The sign theory's clauses, checked directly (issue #149, T1 stage 1).
+"""The class theories' clauses, checked directly (issue #149: SIGN, T1, and
+CLOSURE, T3; both are :class:`.lattice.ClassTheory` over a lattice).
 
-Soundness of :class:`SignTheory` rests on every clause it returns (each
+Soundness of each theory rests on every clause it returns (each
 propagation's reason, each conflict clause, the clause of ``check``)
 being valid: true at every point of the terms' values.  This test builds
 one small node (2 to 4 arguments, ``ADD`` or ``MUL``, sometimes with a
@@ -16,7 +17,10 @@ node's atom.  Each such
 tuple must satisfy the clause.  The test also checks that ``pop_level``
 restores each term's set to its ``fixed`` set narrowed by the literals
 still asserted.  No SymPy: the theory's own tables define the semantics
-(``tests/test_sign_theory.py`` checks those against SymPy).
+(``tests/test_sign_theory.py`` and ``tests/test_closure_theory.py``
+check those against SymPy).  Between levels it also pops and re-pushes
+(interleaved), as the solver's backjumps do, and checks the restore and
+the clauses of the levels pushed again.
 """
 from __future__ import annotations
 
@@ -26,48 +30,69 @@ from itertools import product
 
 import pytest
 
-from satassume.theories.sign.sign import (ADD, ALL, FIN, INF, MUL, NANB, PRED_MASK, F,
-                                          SignTheory, mop)
+from satassume.theories.sign import closure as C
+from satassume.theories.sign.sign import (ADD, FIN, INF, MUL, PRED_MASK, F, SIGN,
+                                          SignTheory)
 
 SEEDS = int(os.environ.get("SIGN_CLAUSE_SEEDS", "1500"))
 
-_PREDS = list(PRED_MASK)
+
+class _Lat:
+    """One lattice under test: its theory, predicates and constants."""
+
+    def __init__(self, name, theory, L, preds, consts):
+        self.name, self.theory, self.L = name, theory, L
+        self.preds = list(preds)
+        self.consts = consts
+        self.n = L.natoms
+        self.ALL, self.NANB = L.ALL, L.NANB
+        self.value_sets = {}
+
+    def __repr__(self):
+        return self.name
 
 
-def _rand_mask(rng: random.Random) -> int:
+def _bs(*atoms):
+    return sum(1 << a for a in atoms)
+
+
+SIGN_L = _Lat("sign", SignTheory, SIGN, PRED_MASK,
+              (1 << F(1, 0), 1 << F(-1, 0), 1 << F(0, 0), 1 << F(0, 1), 1 << F(1, 1),
+               1 << 9, 1 << 10, 1 << 11, (1 << F(1, 0)) | (1 << F(-1, 0)), FIN, INF))
+CLOSURE_L = _Lat("closure", C.ClosureTheory, C.CLOSURE, C.PRED_MASK,
+                 tuple(1 << a for a in (C.Z0, C.Z1, C.Q1, C.AR, C.AC, C.TR, C.TC, C.IR, C.IC))
+                 + (_bs(C.Z0, C.Z1), _bs(C.AR, C.TR), _bs(*C.CPX), C.INF))
+LATTICES = (SIGN_L, CLOSURE_L)
+
+
+def _rand_mask(lat, rng: random.Random) -> int:
     """A basis predicate, or a derived-style set over two or three of
     them (``sign_adapter.def_mask``: '&' or '|' of signed literals)."""
+    ALL = lat.ALL
     if rng.random() < 0.5:
-        return rng.choice(_PREDS)
+        return rng.choice(lat.preds)
     k = rng.randint(2, 3)
-    parts = [m if rng.random() < 0.6 else ALL & ~m for m in rng.sample(_PREDS, k)]
+    parts = [m if rng.random() < 0.6 else ALL & ~m for m in rng.sample(lat.preds, k)]
     r = ALL if rng.random() < 0.5 else 0
     for m in parts:
         r = r & m if r == ALL or rng.random() < 0.5 and r != 0 else r | m
     return r & ALL
 
 
-_CONSTS = (1 << F(1, 0), 1 << F(-1, 0), 1 << F(0, 0), 1 << F(0, 1), 1 << F(1, 1),
-           1 << 9, 1 << 10, 1 << 11, (1 << F(1, 0)) | (1 << F(-1, 0)), FIN, INF)
-
-
-def _value_set(op, atoms):
+def _value_set(lat, op, atoms):
     """The atoms the node may take for arguments in the single ``atoms``:
     the intersection, over every bracketing of every order of the
     arguments, of the folded set.  The tables over-approximate each step,
     so each bracketing holds the true value and so does the intersection
     (the theory folds prefixes and suffixes in its own bracketings)."""
     key = (op, tuple(sorted(atoms)))
-    r = _VALUE_SETS.get(key)
+    r = lat.value_sets.get(key)
     if r is None:
-        r = _VALUE_SETS[key] = _bracketings(op, key[1])
+        r = lat.value_sets[key] = _bracketings(lat, op, key[1])
     return r
 
 
-_VALUE_SETS: dict = {}
-
-
-def _bracketings(op, atoms):
+def _bracketings(lat, op, atoms):
     n = len(atoms)
     memo = {}
 
@@ -78,11 +103,11 @@ def _bracketings(op, atoms):
             if len(idx) == 1:
                 r = 1 << atoms[idx[0]]
             else:
-                r = ALL | NANB
+                r = lat.ALL | lat.NANB
                 part = (sub - 1) & sub
                 while part:
                     if part < sub ^ part:       # each split once
-                        r &= mop(op, rec(part), rec(sub ^ part))
+                        r &= lat.L.mop(op, rec(part), rec(sub ^ part))
                     part = (part - 1) & sub
             memo[sub] = r
         return r
@@ -90,19 +115,19 @@ def _bracketings(op, atoms):
     return rec((1 << n) - 1)
 
 
-def _models(op, slots, fixed, nterms):
+def _models(lat, op, slots, fixed, nterms):
     """Every atom tuple (one atom per term) at which the node is defined:
     each atom in its term's fixed set, the arguments' value set
     (:func:`_value_set`) without NAN and holding the node's atom."""
     node, args = slots[0], slots[1:]
     free = [u for u in range(nterms) if u != node]
     out = []
-    for atoms in product(*[[a for a in range(12) if fixed[u] >> a & 1] for u in free]):
+    for atoms in product(*[[a for a in range(lat.n) if fixed[u] >> a & 1] for u in free]):
         val = dict(zip(free, atoms))
-        acc = _value_set(op, [val[u] for u in args])
-        if acc & NANB:
+        acc = _value_set(lat, op, [val[u] for u in args])
+        if acc & lat.NANB:
             continue
-        for a in range(12):
+        for a in range(lat.n):
             if acc >> a & 1 and fixed[node] >> a & 1:
                 full = dict(val)
                 full[node] = a
@@ -113,13 +138,9 @@ def _models(op, slots, fixed, nterms):
 def _satisfied(clause, model, atom):
     for l in clause:
         t, m = atom[abs(l)]
-        if (model[t] in _bits(m)) == (l > 0):
+        if (m >> model[t] & 1) == (l > 0):
             return True
     return False
-
-
-def _bits(m):
-    return {a for a in range(12) if m >> a & 1}
 
 
 def _restore_ok(th):
@@ -133,17 +154,17 @@ def _restore_ok(th):
     return True
 
 
-def _one(seed):
+def _one(lat, seed):
     rng = random.Random(seed)
     op = rng.choice((ADD, MUL))
     n = rng.randint(2, 4) if rng.random() < 0.3 else rng.randint(2, 3)
-    th = SignTheory()
+    th = lat.theory()
     nterms = n + 1
     fixed = []
     for u in range(nterms):
-        f = ALL
+        f = lat.ALL
         if u and rng.random() < 0.2:
-            f = rng.choice(_CONSTS)
+            f = rng.choice(lat.consts)
         fixed.append(f)
         th.term(f)
     args = list(range(1, nterms))
@@ -156,32 +177,35 @@ def _one(seed):
     for u in range(nterms):
         for _ in range(rng.randint(1, 4)):
             v += 1
-            th.register_atom(v, (u, _rand_mask(rng)))
+            th.register_atom(v, (u, _rand_mask(lat, rng)))
     used = sorted(set(slots))
-    models = _models(op, slots, fixed, nterms)
-    kinds = {"prop": 0, "conflict": 0}
+    models = _models(lat, op, slots, fixed, nterms)
+    kinds = {"prop": 0, "conflict": 0, "repush": 0}
 
     def check(clause, kind):
         kinds[kind] += 1
         assert clause, "empty clause"
         for mdl in models:
             if not _satisfied(clause, mdl, th.atom):
-                raise AssertionError(f"seed {seed}: clause {clause} false at {mdl} "
+                raise AssertionError(f"{lat} seed {seed}: clause {clause} false at {mdl} "
                                      f"(atoms {th.atom}, fixed {fixed}, op {op}, args {args})")
 
     nvars = v
-    for level in range(rng.randint(1, 4)):
+
+    def level():
+        """Push a level, assert random literals and what the theory
+        implies; True iff it ended in a conflict."""
         th.push_level()
         for _ in range(rng.randint(1, 4)):
             x = rng.randint(1, nvars)
             if x in th.val:
                 continue
             th.assert_lit(x if rng.random() < 0.5 else -x)
-        conflict = False
         for _ in range(4):
             got = th.propagate()
             if not got:
                 break
+            conflict = False
             for lit, clause in got:
                 assert lit in clause
                 if abs(lit) not in th.val:
@@ -192,29 +216,38 @@ def _one(seed):
                     check(clause, "conflict")
                     conflict = True
             if conflict:
-                break
-        if not conflict:
-            r = th.check()
-            if r is not None:
-                check(r[1], "conflict")
-                conflict = True
+                return True
+        r = th.check()
+        if r is not None:
+            check(r[1], "conflict")
+            return True
+        return False
+
+    for _ in range(rng.randint(1, 6)):
+        conflict = level()
         assert _restore_ok(th)
-        if conflict:
-            break
+        if conflict or rng.random() < 0.3:
+            # backjump: pop one or more levels, then go on pushing
+            for _ in range(rng.randint(1, len(th.lim))):
+                th.pop_level()
+                assert _restore_ok(th), f"{lat} seed {seed}: pop_level left {th.cur}"
+            kinds["repush"] += 1
     while th.lim:
         th.pop_level()
-        assert _restore_ok(th), f"seed {seed}: pop_level left {th.cur}"
+        assert _restore_ok(th), f"{lat} seed {seed}: pop_level left {th.cur}"
     assert not th.val and all(th.cur[t] == th.fixed[t] for t in used)
     return kinds
 
 
-def test_clauses_hold_at_every_atom_tuple():
-    total = {"prop": 0, "conflict": 0}
+@pytest.mark.parametrize("lat", LATTICES, ids=repr)
+def test_clauses_hold_at_every_atom_tuple(lat):
+    total = {"prop": 0, "conflict": 0, "repush": 0}
     for s in range(SEEDS):
-        for k, c in _one(s).items():
+        for k, c in _one(lat, s).items():
             total[k] += c
-    # the generator does reach both kinds of clause
+    # the generator does reach both kinds of clause, and backjumps
     assert total["prop"] > SEEDS // 4 and total["conflict"] > SEEDS // 20, total
+    assert total["repush"] > SEEDS // 4, total
 
 
 def test_restore_after_partial_pop():
@@ -233,4 +266,4 @@ def test_restore_after_partial_pop():
     th.pop_level()
     assert th.cur[1] == FIN and _restore_ok(th)
     th.pop_level()
-    assert th.cur[1] == ALL and not th.val
+    assert th.cur[1] == SIGN.ALL and not th.val

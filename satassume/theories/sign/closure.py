@@ -20,9 +20,9 @@ needs no SymPy: :mod:`.closure_adapter` tells it the terms.
   (the finite complex numbers are the disjoint union of these seven);
 * ``FX``: a finite value that is not complex.  The rule block allows
   ``finite & ~complex`` (SymPy's facts do), though no value in scope is
-  one; the theory claims nothing about a node with such an argument
-  (every operation with ``FX`` may be ``NAN``), so it never decides more
-  than the rule block about it;
+  one; its entries (:func:`_fx_atoms`) are vacuously sound and say what
+  the closure rows of small arities say (``FX`` with a complex term stays
+  ``FX``), so the theory rules out no ``FX`` term the rows allow;
 * ``IR`` (``oo``, ``-oo``) and ``IC`` (every other infinity: ``zoo``,
   ``oo*I``, ``oo + I``), as ``PI``/``NI`` and ``IN`` of :mod:`.sign`;
 * ``NAN``: the node may be ``nan`` (``oo - oo``, ``0*oo``): no claim.
@@ -133,9 +133,32 @@ def _table(ok, a: int, b: int) -> int:
     return _b(*(c for c in CPX if ok(a, b, c)))
 
 
+_FIN = _b(*CPX, FX)
+
+
+def _fx_atoms(a: int, b: int, op: int) -> int:
+    """``FX`` with another atom.  No value in scope lies in ``FX``, so any
+    entry is sound; these are what the closure rows of small arities
+    already say, so the theory never rules out an ``FX`` term the rows
+    allow: a finite non-complex term with a complex one (nonzero, for a
+    product) gives a finite non-complex node (the subtraction and field
+    rows: node and the rest complex put the last term in ``C``), zero
+    times a finite term is zero, two such terms give a finite node, and
+    with an infinity there is no claim."""
+    if a != FX:
+        a, b = b, a
+    if b == FX:
+        return _FIN
+    if b in _C:
+        if op == MUL and b == Z0:
+            return 1 << Z0
+        return 1 << FX
+    return ALL | NANB
+
+
 def _add_atoms(a: int, b: int) -> int:
     if a == FX or b == FX:
-        return ALL | NANB                   # no claim (see the module doc)
+        return _fx_atoms(a, b, ADD)
     if a < FX and b < FX:
         return _table(_add_ok, a, b)
     if a < FX:
@@ -155,7 +178,7 @@ def _add_atoms(a: int, b: int) -> int:
 
 def _mul_atoms(a: int, b: int) -> int:
     if a == FX or b == FX:
-        return ALL | NANB
+        return _fx_atoms(a, b, MUL)
     if a < FX and b < FX:
         return _table(_mul_ok, a, b)
     if a < FX:
