@@ -66,7 +66,8 @@ def owns(node) -> bool:
     too (:meth:`IntLatAdapter.form`)."""
     if node.is_Add:
         args = node.args
-        return len(args) > MAX_ADD_SMALL or any(_fractional(a) for a in args)
+        return len(args) > MAX_ADD_SMALL or any(
+            _fractional(a) for a in args if not a.is_Rational)
     if node.is_Mul:
         c = node.args[0]
         return bool(c.is_Rational) and c.q > 2
