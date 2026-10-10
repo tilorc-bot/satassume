@@ -168,6 +168,11 @@ class Spec(NamedTuple):
     #: at ``+-oo``/``zoo`` (so not ``atan``, ``acot`` or ``k < 0``:
     #: ``atan(oo) = pi/2``, ``1/oo = 0``)
     real_arg: bool = False
+    #: a real ``f(u)`` has a real or an infinite ``u`` (``atan``, ``acot``
+    #: and powers ``k < 0`` where ``real_arg`` fails only at infinities:
+    #: no finite non-real ``z`` has a real ``atan(z)``, ``acot(z)`` or
+    #: ``z**k`` for ``-1 < k < 0`` or ``k = -1``)
+    real_arg_inf: bool = False
 
 
 _WHOLE = (Piece("-oo", "oo", 1),)
@@ -256,7 +261,7 @@ def _spec(t) -> Optional[Spec]:
     if name == "atan":
         return Spec(("atan",), u, _WHOLE, atan,
                     lambda d: (tan(d),), (-half, half, False),
-                    (), True, (-half, True, half, True))
+                    (), True, (-half, True, half, True), real_arg_inf=True)
     if name == "tanh":
         return Spec(("tanh",), u, _WHOLE, tanh,
                     lambda d: (atanh(d),), (S.NegativeOne, S.One, False),
@@ -273,7 +278,7 @@ def _spec(t) -> Optional[Spec]:
     if name == "acot":
         return Spec(("acot",), u, (Piece("0+", "oo", -1), Piece("-oo", "0-", -1)), acot,
                     lambda d: (cot(d),), (-half, half, True),
-                    (), True, (-half, True, half, False))
+                    (), True, (-half, True, half, False), real_arg_inf=True)
     return None
 
 
@@ -308,7 +313,7 @@ def _pow_spec(t, u, k) -> Spec:
         return (r, -r)
 
     return Spec(("Pow", k), u, pieces, lambda c: Pow(c, k), inverse, _ANY, (),
-                False, bounds, not k.is_Integer, 0 < k < 1)
+                False, bounds, not k.is_Integer, 0 < k < 1, k < 0 and (k > -1 or k == -1))
 
 
 # -- the field-number view LRA uses (lra.MonoLink) ------------------------
@@ -348,6 +353,36 @@ def _big(q) -> bool:
                                     or q.denominator.bit_length() > _BITS)
 
 
+def _at_inf(sp: Spec) -> tuple:
+    """The values of ``f(u)`` at an infinite ``u`` that MONO states:
+    ``("finite", v, fv)`` if ``f`` takes the finite real ``v`` (field number
+    ``fv``) at every infinity SymPy evaluates (``1/oo = 1/zoo = 0``,
+    ``acot``), else ``("positive_infinite", v, fv)`` and
+    ``("negative_infinite", v, fv)`` for ``f(oo)`` and ``f(-oo)`` where that is
+    ``oo``, ``-oo`` (``fv`` None) or a finite real (``atan(oo) = pi/2``)."""
+    from sympy import AccumBounds, I, S, oo, zoo
+
+    def val(c):
+        try:
+            v = sp.apply(c)
+        except Exception:
+            return None
+        if v is S.Infinity or v is S.NegativeInfinity:
+            return (v, None)
+        if isinstance(v, AccumBounds) or v.free_symbols or not (
+                v.is_real and v.is_finite):
+            return None
+        fv = _field(v)
+        return None if fv is None else (v, fv)
+
+    vs = [val(c) for c in (oo, -oo, zoo, oo * I, -oo * I)]
+    if vs[0] is not None and vs[0][1] is not None and all(
+            v is not None and v[0] == vs[0][0] for v in vs):
+        return (("finite",) + vs[0],)
+    return tuple((p,) + v for p, v in zip(("positive_infinite", "negative_infinite"), vs)
+                 if v is not None)
+
+
 class LinkMap:
     """What LRA needs of a :class:`Spec` to relate the variable of ``f(u)``
     to the linear form of ``u`` (``satassume.theories.lra.lra.MonoLink``),
@@ -357,6 +392,7 @@ class LinkMap:
     * ``bounds``: the range ``(lo, lo_strict, hi, hi_strict)`` of ``f(u)``
       for a real ``u`` with a real image (None ends unbounded), or None;
     * ``covered``: such a ``u`` lies in the only piece;
+    * ``at_inf``: the values at infinite ``u`` (:func:`_at_inf`);
     * ``vshape``: ``f`` decreases on ``[-oo, 0]`` and increases on
       ``[0, oo]``;
     * :meth:`image` ``(c)``: ``f(c)`` if it is a finite real the field
@@ -367,7 +403,8 @@ class LinkMap:
     Neither is computed for a rational of more than ``_BITS`` bits.
 
     Answers are memoized per instance (one per application)."""
-    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "_img", "_pre", "_rng")
+    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "at_inf", "_img", "_pre",
+                 "_rng")
 
     def __init__(self, sp: Spec):
         self.sp = sp
@@ -385,6 +422,7 @@ class LinkMap:
         lo, hi, nz = sp.inv_range
         self._rng = (None if lo is None else _field(lo),
                      None if hi is None else _field(hi), nz)
+        self.at_inf = _at_inf(sp)
         self._img: dict = {}
         self._pre: dict = {}
 

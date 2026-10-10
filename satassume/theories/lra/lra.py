@@ -203,7 +203,7 @@ from typing import Any, Hashable, Iterable
 
 from .constfield import Undecided, formally_zero, num
 
-__all__ = ["LRATheory", "Negated", "Integral", "MonoLink", "MonoPiece", "constraint",
+__all__ = ["LRATheory", "Negated", "Integral", "MonoLink", "MonoPiece", "MonoValue", "constraint",
            "BRANCH_BUDGET"]
 
 _ZERO = Fraction(0)
@@ -339,6 +339,20 @@ class MonoPiece(tuple):
 
     def __new__(cls, e, i):
         return tuple.__new__(cls, (e, i))
+
+    def __getnewargs__(self):
+        return tuple(self)
+
+
+class MonoValue(tuple):
+    """Payload of a variable ``c`` that, while true, pins the term ``t`` to
+    the exact-field number ``value`` (MONO: ``f(u)`` at an infinite ``u``,
+    ``atan(oo) = pi/2``); false, it says nothing.  The caller makes ``c``
+    imply that ``t`` is real and has that value."""
+    __slots__ = ()
+
+    def __new__(cls, t, value):
+        return tuple.__new__(cls, (t, value))
 
     def __getnewargs__(self):
         return tuple(self)
@@ -512,6 +526,8 @@ class LRATheory:
         # links on it; vars whose bounds changed (_mono_run)
         self._mlinks: dict = {}
         self._mpieces: dict = {}
+        # MonoValue var -> (t var, value)
+        self._mvals: dict = {}
         self._mon: dict = {}
         self._mq: list = []
         # propagation work list
@@ -676,6 +692,22 @@ class LRATheory:
                     return self._assert_integral(literal, it)
                 link = self._mlinks.get(a)
                 piece = link is None and self._mpieces.get(a)
+                if link is None and not piece and a in self._mvals:
+                    self._assigned[a] = literal > 0
+                    self._trail.append((_ASG, a))
+                    if literal < 0:
+                        return None
+                    tv, val = self._mvals[a]
+                    conflict = (self._set_lower(tv, (val, _ZERO), (a,))
+                                or self._set_upper(tv, (val, _ZERO), (a,)))
+                    if conflict is None and self._mq:
+                        conflict = self._mono_run()
+                    if conflict is None and self.eager:
+                        conflict = self._simplex()
+                    if conflict is not None:
+                        self.stats["conflicts"] += 1
+                        return (False, conflict)
+                    return None
                 if link is not None or piece:
                     self._assigned[a] = literal > 0
                     self._trail.append((_ASG, a))
@@ -788,6 +820,12 @@ class LRATheory:
             return
         if isinstance(payload, MonoLink):
             self._register_mono(literal, payload)
+            return
+        if isinstance(payload, MonoValue):
+            val = num(payload[1])
+            if type(val) is not Fraction:
+                self._fields = True
+            self._mvals[literal] = (self._term_var(payload[0]), val)
             return
         if isinstance(payload, MonoPiece):
             link = self._mlinks.get(payload[0])

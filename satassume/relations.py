@@ -1600,6 +1600,7 @@ class Relations:
         their values, so LRA may derive bounds of ``app`` from those of
         ``u`` and back (``lra.LRATheory._mono_link``), each with ``e`` in
         its reason: no atom and no clause per threshold."""
+        from sympy import S
         from .theories.mono import link_map
         fm = link_map(app)
         if fm is None:
@@ -1615,6 +1616,12 @@ class Relations:
                 s.ensure(terms[0], {"real"})
                 s.emit([-mo, ga[0], s.var("real", terms[0])])
             terms = ()
+        elif sp.real_arg_inf and len(terms) == 1:
+            # real(f(u)) gives real(u) or an infinite u: real(s) | ~finite(s)
+            ga = self._guard(ad, [app])
+            if ga:
+                s.ensure(terms[0], {"real", "finite"})
+                s.emit([-mo, ga[0], s.var("real", terms[0]), -s.var("finite", terms[0])])
         guard = self._guard(ad, list(terms) + [app])
         e = self._fresh(inert=True)
         s.emit([-e, mo])
@@ -1622,9 +1629,30 @@ class Relations:
             s.emit([-e, -g])
         s.emit([e, -mo] + guard)
         ad.register_mono(s.solver, e, app, form, fm)
+        u = sp.arg
+        self._mono_inf(app, mo, u, fm.at_inf)
+        # the sign atoms of u at the pieces' ends at 0 (0 < u for an open
+        # end 0+ or a closed upper end 0, u < 0 for 0- or a closed lower end
+        # 0), so that the bounds LRA has for u reach the sign literals that
+        # real(app) and the piece variables depend on (real(log(u)) once
+        # u > 1): two atoms per link at most, none per threshold
+        want = set()
+        for piece in sp.pieces:
+            if piece.lo in ("0+", "0-") or piece.hi == "0":
+                want.add("extended_positive")
+            if piece.hi in ("0-", "0+") or piece.lo == "0":
+                want.add("extended_negative")
+        if want:
+            s.ensure(u, want)
+        for pred in sorted(want):
+            # the atom is the sign (as u's own link, _link, which may be off)
+            f = (relation_atom("lt", S.Zero, u) if pred == "extended_positive"
+                 else relation_atom("lt", u, S.Zero))
+            a, b = self._mono_var(f), s.var(pred, u)
+            s.emit([-mo, -a, b])
+            s.emit([-mo, a, -b])
         if fm.covered:
             return
-        u = sp.arg
         for i, piece in enumerate(sp.pieces):
             if piece.lo == "-oo" and piece.hi == "oo":
                 continue
@@ -1636,6 +1664,33 @@ class Relations:
                 s.emit([-pe, -x])
             s.emit([pe, -e] + g)
             ad.register_mono_piece(s.solver, pe, e, i)
+
+    def _mono_inf(self, app, mo: int, u, at_inf) -> None:
+        """``app = f(u)`` at an infinite ``u`` (``LinkMap.at_inf``), where the
+        link, on real values, says nothing: under ``MO(app)``,
+        ``positive_infinite(u)`` (``negative_infinite(u)``, ``~finite(u)``)
+        gives ``positive_infinite(app)`` for ``f = oo`` there (likewise
+        ``-oo``), and for a finite real value ``v`` a fresh inert variable
+        ``c <-> MO & (that case)``, with ``c -> real(app)``, on which LRA
+        pins ``app`` to ``v`` (``lra.MonoValue``)."""
+        s = self.session
+        for pred, v, fv in at_inf:
+            s.ensure(u, {pred})
+            cond = s.var(pred, u)
+            if pred == "finite":
+                cond = -cond
+            if fv is None:
+                ip = "positive_infinite" if v.is_extended_positive else "negative_infinite"
+                s.ensure(app, {ip})
+                s.emit([-mo, -cond, s.var(ip, app)])
+                continue
+            c = self._fresh(inert=True)
+            s.emit([-c, mo])
+            s.emit([-c, cond])
+            s.emit([c, -mo, -cond])
+            s.ensure(app, {"real"})
+            s.emit([-c, s.var("real", app)])
+            self._mono_ad.register_mono_value(s.solver, c, app, fv)
 
     def _mono_open(self, t) -> None:
         """Switch on the sandwich rows of the application ``t`` (``Abs``,

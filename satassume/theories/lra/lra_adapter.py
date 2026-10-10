@@ -122,7 +122,7 @@ from sympy.core.relational import (Equality, GreaterThan, LessThan,
 from sympy.core.sorting import default_sort_key
 
 from .constfield import Undecided, from_sympy
-from .lra import Integral, LRATheory, MonoLink, MonoPiece, Negated
+from .lra import Integral, LRATheory, MonoLink, MonoPiece, MonoValue, Negated
 from ...state.memos import adopt as _adopt_memo
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
@@ -506,6 +506,13 @@ class LRAAdapter:
         """Register ``var`` as the enable variable of piece ``i`` of the
         MONO link enabled by ``enable`` (registered before)."""
         solver.register_atom(self.theory, var, MonoPiece(enable, i))
+
+    def register_mono_value(self, solver, var, term, value) -> None:
+        """Register ``var`` as a variable that, while true, pins ``term``
+        to the exact-field number ``value``
+        (:class:`~satassume.theories.lra.lra.MonoValue`)."""
+        self._attach(solver)
+        solver.register_atom(self.theory, var, MonoValue(term, value))
 
     def terms(self, atom) -> list | None:
         """:func:`terms` through the cache; None: not interpreted."""
