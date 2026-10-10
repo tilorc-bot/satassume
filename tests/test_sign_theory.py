@@ -237,7 +237,8 @@ def test_rows_over_the_caps_are_left_to_the_theory():
     assert core.sign_owns(True, 5) and not core.sign_owns(True, 4)
     assert len(core._add_rules(7, {})) < len(core._add_rules(6, {})) // 4
     assert len(core._mul_rules(5, {})) < len(core._mul_rules(4, {})) // 2
-    assert 'even' in preds(core._add_rules(7, {}))
+    assert 'composite' in preds(core._add_rules(7, {}))
+    assert 'even' not in preds(core._add_rules(7, {}))        # INTLAT's (intlat_adapter.owns)
     assert 'integer' not in preds(core._add_rules(7, {}))     # CLOSURE's (closure_owns)
     assert 'extended_positive' not in preds(core._add_rules(7, {}))
 

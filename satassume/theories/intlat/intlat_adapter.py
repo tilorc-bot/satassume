@@ -22,7 +22,6 @@ from __future__ import annotations
 from fractions import Fraction
 
 from ...knowledge.rules import BASIS_INDEX
-from ...knowledge.templates.core import MAX_ADD_SMALL
 from .intlat import CONST, IntLatTheory
 
 _INT = BASIS_INDEX["integer"]
@@ -30,6 +29,9 @@ _EVEN = BASIS_INDEX["even"]
 _DEMANDED = frozenset((_INT, _EVEN))
 _HALF = Fraction(1, 2)
 _ONE = Fraction(1)
+#: ``templates.core.MAX_ADD_SMALL`` (that module loads SymPy; the test of
+#: ownership checks the two agree)
+MAX_ADD_SMALL = 3
 
 
 def linear(node) -> bool:

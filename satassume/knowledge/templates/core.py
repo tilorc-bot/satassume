@@ -126,7 +126,7 @@ def _add_rules(n, consts):
     for inf in ('positive_infinite', 'negative_infinite') if sign else ():
         rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
     # (integrality and parity of a sum over MAX_ADD_SMALL terms, or with a
-    # non-integer coefficient: the INTLAT theory, ``intlat_owns``)
+    # non-integer coefficient: the INTLAT theory, ``intlat_adapter.owns``)
 
     # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
     if sign:

@@ -225,6 +225,11 @@ def test_owns(node, owned):
     assert IA.owns(node) is owned
 
 
+def test_cap_agrees_with_the_templates():
+    from satassume.knowledge.templates import core
+    assert IA.MAX_ADD_SMALL == core.MAX_ADD_SMALL
+
+
 # ---------------------------------------------------------------------------
 # answers
 # ---------------------------------------------------------------------------
