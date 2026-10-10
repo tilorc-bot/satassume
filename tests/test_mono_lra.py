@@ -25,7 +25,7 @@ FAMILIES = [exp(x), log(x), atan(x), tanh(x), sinh(x), asinh(x), cosh(x), acot(x
             x**2, x**3, x**-1, x**-2, sqrt(x), x**Rational(1, 3), x**Rational(2, 3),
             x**Rational(-1, 2), x**Rational(3, 2), x**4,
             exp(2*x - 1), log(1 - x), atan(2*x - Rational(1, 2)), (1 - x)**2,
-            (2*x + 1)**-1, cosh(3*x - 2), sqrt(2 - x)]
+            (2*x + 1)**-1, cosh(3*x - 2), sqrt(2 - x), acot(2*x - 1), x**-3, asinh(3*x)]
 CS = [Fraction(v, 4) for v in range(-12, 13, 2)] + [Fraction(1, 3), Fraction(-5, 7)]
 OPS = ["<", "<=", ">", ">=", "="]
 
@@ -195,3 +195,80 @@ def test_no_link_without_enable():
     assert th.assert_lit(v) is None
     out = th.propagate()
     assert all(atoms[abs(l)][0] == x for l, _r in out)
+
+
+# -- end-to-end: infinite arguments, enclosures, piece exclusion ----------
+
+from sympy import AccumBounds, Basic, E, I, oo, zoo, Q, Symbol, sqrt, sinh, tanh, asinh as _asinh, acot as _acot, tan as _tan, atan as _atan
+from satassume.sympy_api import ask as _ask
+
+_z = Symbol("z")
+_INF_FAMILIES = [exp(_z), log(_z), atan(_z), tanh(_z), sinh(_z), asinh(_z), cosh(_z),
+                 acot(_z), _z**2, _z**3, 1 / _z, _z**-2, sqrt(_z), _z**Rational(1, 3),
+                 _z**Rational(-1, 2)]
+_INF_VALUES = [oo, -oo, zoo, oo * I, -oo * I]
+
+
+def _num_truth(pred, w):
+    """``pred`` of the SymPy number ``w``, None if SymPy cannot say."""
+    from sympy import ask as sask
+    try:
+        return sask(pred(w))
+    except TypeError:             # SymPy's own ask on oo*I
+        return None
+
+
+@pytest.mark.parametrize("f", _INF_FAMILIES, ids=str)
+def test_infinite_argument_never_contradicted(f):
+    """``ask(P(f(z)), Q.eq(z, v))`` at each infinity ``v``: never a
+    definite answer SymPy's value ``f(v)`` contradicts, and never a
+    spurious inconsistency (the assumptions hold at ``z = v``)."""
+    preds = [Q.real, Q.extended_real, Q.finite, Q.zero, Q.positive, Q.negative,
+             Q.extended_positive, Q.extended_negative]
+    for v in _INF_VALUES:
+        w = f.subs(_z, v)
+        if not isinstance(w, Basic) or w.has(AccumBounds) or w is S.NaN:
+            continue              # no value SymPy states
+        for P in preds:
+            truth = _num_truth(P, w)
+            got = _ask(P(f), Q.eq(_z, v))
+            assert got is None or truth is None or got == truth, (f, v, P, w, got)
+        if w.is_extended_real:
+            for c in (S(-2), S.Zero, S.One, pi / 2):
+                try:
+                    truth = bool(w < c)
+                except TypeError:
+                    continue
+                got = _ask(Q.lt(f, c), Q.eq(_z, v))
+                assert got is None or got == truth, (f, v, c, w, got)
+
+
+@pytest.mark.parametrize("q, a, want", [
+    # enclosures of images the field does not read (asinh(-3))
+    ("Q.ne(asinh(n), E)", "Q.lt(n, 0) & Q.eq(-n - 1, 2)", True),
+    ("Q.ne(3*asinh(z) + 1, 0)", "Q.eq(z, pi/2)", True),
+    ("Q.eq(asinh(-2*z), -2)", "Q.gt(-4*z - 1, S.Half)", False),
+    ("Q.le(r, -pi/2)", "Q.eq(3*sinh(r) - 1, -S.Half)", False),
+    # a bound of f(u) beyond a piece's image (acot(u) > 0 excludes u < 0)
+    ("Q.gt(r, 1)", "Q.lt(acot(r), pi/4) & Q.gt(acot(r), 0)", True),
+    ("Q.ge(r, 0)", "Q.gt(acot(r), 0)", True),
+    ("Q.gt(r, 0)", "Q.gt(acot(r), 0)", None),          # acot(0) = pi/2
+    ("Q.negative(r)", "Q.lt(1/r, -2)", True),
+    # an undecidable comparison skips a bound (no give-up of LRA)
+    ("Q.le(-sqrt(2)*sqrt(r), S.Half)", "Q.gt(sqrt(2)*sqrt(r), 1)", True),
+    # u not a rational linear form: one opaque term (range, realness)
+    ("Q.eq(tanh(n + 0.5), -2)", "True", False),
+    ("Q.extended_real(asinh(sqrt(e/2)))", "Q.lt(sqrt(e/2), log(2))", True),
+    # regressions of session 2
+    ("Q.zero(1/y)", "Q.gt(y, pi/2)", None),
+    ("Q.eq(z, oo)", "Q.eq(atan(z), pi/2)", None),
+    ("Q.real(n**3)", "Q.lt(2*n - 1, 1)", True),
+    ("Q.lt(exp(e)**2, S(1)/9)", "Q.lt(e, -2)", True),
+    ("Q.lt((2*r + 1)**-1, -1)", "Q.gt(r, -1) & Q.lt(r, -S.Half)", True),
+])
+def test_mono_answers(q, a, want):
+    ns = dict(globals())
+    ns.update(n=Symbol("n", integer=True), r=Symbol("r", real=True),
+              e=Symbol("e", extended_real=True), y=Symbol("y"), z=_z,
+              E=E, asinh=_asinh, acot=_acot)
+    assert _ask(eval(q, ns), eval(a, ns)) == want
