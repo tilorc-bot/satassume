@@ -12,7 +12,8 @@ fold(S(Aj), j != k))`` may be ``NAN`` or meets ``S(N)``.  A literal of a
 term is an atom set (its predicate); it is implied when the term's set lies
 inside or outside it, and an empty set is a conflict.  The reason of each
 is a subset of the node's and the arguments' literals that suffices,
-minimised by deletion.
+minimised by deletion; for a propagated literal it is computed only when
+the solver reads it (a lazy reason, :mod:`satassume.sat.theory`).
 
 Two lattices use it: :mod:`.sign` (signs of the real and imaginary parts,
 zero, finiteness: issue #149 T1) and :mod:`.closure` (membership in the

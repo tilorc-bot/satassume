@@ -98,7 +98,7 @@ conflicts and ``propagate`` implications but never call ``check``.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Protocol, runtime_checkable
+from typing import Any, Callable, Iterable, Protocol, runtime_checkable
 
 #: ``(False, conflict_clause)``
 Conflict = tuple  # tuple[bool, list[int]]
@@ -172,13 +172,29 @@ class PropagatingTheory(TheorySolver, Protocol):
     conflict if ``literal`` is already false) and then tells every theory
     about it through ``assert_lit`` as usual, including the propagating
     theory itself.  Returning an empty iterable is always allowed;
-    implementers may skip this method entirely.  Reasons are eager (no
-    ``provide_reason`` callback as in SymPy PR 30098): a theory that only
-    propagates cheap implications (bound refinement in LRA, congruence in
-    EUF) has the explanation at hand when it propagates.
+    implementers may skip this method entirely.
+
+    *Lazy reasons* (the ``provide_reason`` design of SymPy PR 30098):
+    ``reason`` may instead be a function of no arguments returning that
+    clause.  The solver then assigns the literal without a clause and calls
+    the function only where the reason is read: conflict analysis
+    (learnt-clause minimisation and the final conflict over assumptions
+    included), or at once if the literal is already false (the clause is a
+    conflict).  It is called at most once per propagation, at any later
+    time while the literal is still assigned, possibly after the theory was
+    told more literals, so it must explain from the literals asserted when
+    ``propagate`` returned it (all of them earlier on the trail), not from
+    the theory's state when it is called.  At root no reason is kept, so it
+    is never called there.  A lazy reason is not added to the learnt
+    clauses (an eager one is, watched): after a backtrack the theory, not
+    unit propagation, derives the literal again.  The class propagators
+    (``satassume.theories.sign.lattice``) use it: most literals they
+    propagate never take part in a conflict, and explaining one is a
+    minimisation over the node's literals.  LRA and EUF give eager reasons,
+    whose explanation they have at hand.
     """
 
-    def propagate(self) -> Iterable[tuple[int, list[int]]]:
+    def propagate(self) -> Iterable[tuple[int, list[int] | Callable[[], list[int]]]]:
         ...
 
 
