@@ -30,15 +30,27 @@ _DEMANDED = frozenset((_INT, _EVEN))
 _HALF = Fraction(1, 2)
 
 
-def owns(node) -> bool:
+def linear(node) -> bool:
     """Whether ``node`` is a linear node (a sum, or ``c*t`` with a nonzero
-    Rational ``c``), whose integrality and parity this theory decides."""
+    Rational ``c``): the adapter reads its form through it."""
     if getattr(node, "is_Add", False):
         return bool(node.args)
     if getattr(node, "is_Mul", False):
         args = node.args
         return len(args) >= 2 and args[0].is_Rational and not args[0].is_zero
     return False
+
+
+import os
+_X = os.environ.get("INTLAT_X", "")
+_MENTION = os.environ.get("INTLAT_M", "1") == "1"
+
+
+def owns(node) -> bool:
+    """Whether a session tells the theory ``node``: every linear node
+    (``templates.core.intlat_owns``: the templates have no integrality or
+    parity rows for it)."""
+    return linear(node)
 
 
 def _rat(c) -> Fraction:
@@ -101,7 +113,7 @@ class IntLatAdapter:
         if e.is_Rational:
             acc[CONST] = acc.get(CONST, 0) + c * _rat(e)
             return
-        if owns(e):
+        if linear(e):
             if e.is_Add:
                 for a in e.args:
                     self._lin(a, c, acc)
@@ -124,19 +136,20 @@ class IntLatAdapter:
             return
         self.done.add(e)
         s = self.session
-        if e in s.base and hasattr(s, "demand"):
-            b = s.node(e, _DEMANDED)
-        else:
-            b = s.node(e)
+        # visited (or visited now) with the rows about these predicates
+        # compiled (the engine's demand-driven compilation; ref.py's
+        # session compiles everything)
+        b = s.node(e, _DEMANDED) if hasattr(s, "demand") else s.node(e)
         reg = s.solver.register_atom
         th = self.theory
         f, exact = fe
-        reg(th, b + _INT, (f, exact))
-        reg(th, b + _EVEN, ({k: x * _HALF for k, x in f.items()}, exact))
+        m = _MENTION
+        reg(th, b + _INT, (f, exact), mention=m)
+        reg(th, b + _EVEN, ({k: x * _HALF for k, x in f.items()}, exact), mention=m)
 
     def add(self, node) -> None:
         """Tell the theory the linear node ``node``."""
-        if node in self.done:
+        if node in self.done or _X == "noreg":
             return
         f = self.form(node)
         self._register(node, f)

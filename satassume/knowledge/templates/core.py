@@ -17,7 +17,6 @@ numeric coefficients, which is what the old assumption system relies on
 """
 from __future__ import annotations
 
-from itertools import product
 from types import MappingProxyType
 
 from sympy import S
@@ -79,6 +78,22 @@ def closure_owns(is_mul: bool, n: int) -> bool:
     return n > (MAX_PAIRS if is_mul else MAX_ADD_SMALL)
 
 
+def intlat_owns(is_mul: bool, consts) -> bool:
+    """Whether the integrality and parity rows (``integer``, ``even``,
+    ``odd``) of an Add (``is_mul`` false) or Mul with the constants
+    ``consts`` are left to the INTLAT theory
+    (``satassume.theories.intlat``, issue #149 T2): every sum, and every
+    product ``c*t`` with a nonzero Rational coefficient ``c`` (slot 0).
+    Every session tells the theory those nodes (``intlat_adapter.owns``),
+    which decides integrality and parity of their linear forms over the
+    session's terms, for any arity and any rational coefficients
+    (``docs/theories.md``, "INTLAT")."""
+    if not is_mul:
+        return True
+    c = consts.get(0)
+    return c is not None and bool(c.is_Rational) and not c.is_zero
+
+
 # ---------------------------------------------------------------------------
 # Add
 # ---------------------------------------------------------------------------
@@ -119,14 +134,15 @@ def _add_rules(n, consts):
     # extended_real literals of the sum (``sign_owns``).
     sign = not sign_owns(False, n)
     closure = not closure_owns(False, n)
+    # every sum is the INTLAT theory's (``intlat_owns``): no row about
+    # ``integer``, ``even`` or ``odd``
     for pred in _ADD_CLOSED:
-        if (sign or pred not in _ADD_SIGN) and (closure or pred not in _ADD_CLOSURE):
+        if (sign or pred not in _ADD_SIGN) and (closure or pred not in _ADD_CLOSURE) \
+                and pred != 'integer':
             rule(lits(A, pred), (N, pred, True))
     # Extended reals without both +oo and -oo among the terms.
     for inf in ('positive_infinite', 'negative_infinite') if sign else ():
         rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
-    if n > MAX_ADD_SMALL:
-        rule(lits(A, 'even'), (N, 'even', True))
 
     # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
     if sign:
@@ -151,9 +167,8 @@ def _add_rules(n, consts):
         rule([(N, 'extended_real', True), *lits(rest, 'real')], (k, 'extended_real', True))
         if closure:     # (n <= MAX_ADD_SMALL; above, the CLOSURE theory)
             for pred in _ADD_SUBTRACT:
-                rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
-        elif n <= MAX_ONEOUT:
-            rule([(k, 'odd', True), *lits(rest, 'even')], (N, 'odd', True))
+                if pred != 'integer':
+                    rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
         if n <= MAX_ONEOUT:
             # A nonzero real part (finite or infinite) cannot be cancelled by
             # imaginary terms.
@@ -186,81 +201,10 @@ def _add_rules(n, consts):
                     for cond in (nonstrict, 'real'):
                         rule([(k, signed, True), *lits(rest, cond)], (N, strict, True))
 
-    # Parity of a sum of integers.
-    if n <= MAX_ADD_SMALL:
-        for parities in product(('even', 'odd'), repeat=n):
-            result = 'odd' if parities.count('odd') % 2 else 'even'
-            rule([(k, p, True) for k, p in enumerate(parities)], (N, result, True))
     # A sum of two or more positive even integers is at least 4, hence composite.
     if n >= 2:
         rule([*lits(A, 'even'), *lits(A, 'positive')], (N, 'composite', True))
     return R.rules
-
-
-#: Largest number of odd-coefficient terms whose parity cases are enumerated
-#: for a sum with half-integer coefficients (2**k rules).
-MAX_HALF_ODD = 4
-
-
-def _half_split(args):
-    """A sum ``c0 + sum(c_k*t_k)`` whose rational coefficients have least
-    common denominator 2, as ``(a0 % 2, [(a_k % 2, t_k)])`` with ``a = 2*c``
-    (integers), or None.
-
-    ``c0`` is the Rational term (0 if none), a term ``c*t`` is a ``Mul``
-    with a Rational first factor, any other term has coefficient 1.  None
-    unless some coefficient has denominator 2 and none a larger one.
-    """
-    half = False
-    for a in args:
-        c = a if a.is_Rational else (a.args[0] if a.is_Mul and a.args[0].is_Rational else None)
-        if c is not None and c.q != 1:
-            if c.q != 2:
-                return None
-            half = True
-    if not half:
-        return None
-    a0, terms = 0, []
-    for a in args:
-        if a.is_Rational:
-            a0 = (2*a).p % 2
-        elif a.is_Mul and a.args[0].is_Rational:
-            c = a.args[0]
-            rest = a.args[1:]
-            terms.append(((2*c).p % 2, rest[0] if len(rest) == 1 else Mul(*rest)))
-        else:
-            terms.append((0, a))
-    return a0, terms
-
-
-def _half_rules(a0, odd, m):
-    """Rules for ``N = (a0 + sum a_k*t_k)/2`` over integer ``t_k``: slots
-    ``0..m-1`` are the terms (``odd[k]`` tells whether ``a_k`` is odd), slot
-    ``m`` the node.  With every term an integer the numerator is an integer
-    whose parity is ``a0`` plus the number of odd ``t_k`` with odd ``a_k``,
-    and ``N`` is an integer iff that is even (``N`` is rational either way)."""
-    R = Rules()
-    rule = R.rule
-    T = range(m)
-    ints = lits(T, 'integer')
-    rule(ints, (m, 'rational', True))
-    O = [k for k in T if odd[k]]
-    if len(O) > MAX_HALF_ODD:
-        return R.rules
-    for parities in product(('even', 'odd'), repeat=len(O)):
-        num_odd = (a0 + parities.count('odd')) % 2
-        rule([*ints, *[(k, p, True) for k, p in zip(O, parities)]], (m, 'integer', not num_odd))
-    return R.rules
-
-
-def _half_templates(expr, split):
-    a0, terms = split
-    m = len(terms)
-    odd = tuple(a for a, _ in terms)
-    objs = tuple(t for _, t in terms) + (expr,)
-    consts = consts_of(objs[:m])
-    key = ('add_half', a0, odd, tuple((k, type(c), c) for k, c in sorted(consts.items())))
-    return facts(key, lambda: _half_rules(a0, odd, m), consts, objs, m)
 
 
 @registry.register(Add)
@@ -270,12 +214,8 @@ def add_templates(expr):
     if n == 0:
         return ()
     consts = consts_of(args)
-    out = facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
-                consts, args + (expr,), n)
-    split = _half_split(args)
-    if split is not None:
-        return [out, _half_templates(expr, split)]
-    return out
+    return facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
+                 consts, args + (expr,), n)
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +226,7 @@ def add_templates(expr):
 # are derived by the rule base (``extended_* & finite``).
 # ``extended_real`` is not: ``0*oo`` is nan (see _mul_rules).  Left to the
 # CLOSURE theory over its cap (``closure_owns``).
-_MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic')
+_MUL_CLOSED = ('complex', 'rational', 'algebraic')
 # Fields: the node and every factor but one in the field, those nonzero,
 # put the last factor in it (it is the node divided by them).
 _MUL_FIELDS = ('rational', 'algebraic')
@@ -321,6 +261,9 @@ MUL_GUARDS = MappingProxyType({
     'sign rows': lambda c: not sign_owns(True, c['n']),
     # the closure rows, left to the CLOSURE theory over the cap (closure_owns)
     'closure rows': lambda c: not closure_owns(True, c['n']),
+    # the integrality and parity rows, left to the INTLAT theory for a
+    # product with a Rational coefficient (intlat_owns)
+    'integer rows': lambda c: not intlat_owns(True, c['consts']),
     'n>=2': lambda c: c['n'] >= 2,
     'n==2': lambda c: c['n'] == 2,
     'n even': lambda c: c['n'] % 2 == 0,
@@ -331,9 +274,6 @@ MUL_GUARDS = MappingProxyType({
     'coeff': _coeff,
     'c negative': lambda c: bool(c['consts'][0].is_negative),
     'c not negative': lambda c: not c['consts'][0].is_negative,
-    'c rational': lambda c: bool(c['consts'][0].is_Rational),
-    'c.q==2': lambda c: c['consts'][0].q == 2,
-    'c==-1': lambda c: c['consts'][0] is S.NegativeOne,
 })
 
 # Slots: 'N' the node, '*' all arguments; in a section 'k' the argument of
@@ -343,6 +283,8 @@ def _mul_table_rows():
     """The rows of ``MUL_TABLE`` (built on first use, :func:`_table`)."""
     return (
         Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED, when='closure rows'),
+        Row('closed.integer', [('*', 'integer')], ('N', 'integer'),
+            when=('closure rows', 'integer rows')),
         Row('closed.sign', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED_SIGN,
             when='sign rows'),
         # Extended reals, all finite or all nonzero (no 0*oo).
@@ -391,7 +333,7 @@ def _mul_table_rows():
             when=('n even', 'sign rows')),
         Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'),
             when=('n odd', 'sign rows')),
-        Row('all_odd', [('*', 'odd')], ('N', 'odd')),
+        Row('all_odd', [('*', 'odd')], ('N', 'odd'), when='integer rows'),
         Section('each', when='n<=MAX_ONEOUT', rows=[
             # One infinite factor and the rest nonzero -> infinite.
             Row('one_infinite', [('k', 'infinite'), ('rest', 'zero', False)], ('N', 'infinite'),
@@ -404,7 +346,8 @@ def _mul_table_rows():
                 ('N', 'nonpositive'),
                 when='sign rows'),
             # One even factor and the rest integers -> even.
-            Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even')),
+            Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even'),
+                when='integer rows'),
             # One composite factor and the rest integers -> not prime (the
             # product is 0, negative, or a multiple of a composite).
             Row('one_composite', [('k', 'composite'), ('rest', 'integer')], ('N', 'prime', False)),
@@ -449,11 +392,6 @@ def _mul_table_rows():
             preds=_COEFF_BACK),
         Row('coeff.back.flip', [('N', '$p')], (1, 'flip:$p'), when=('coeff', 'c negative'),
             preds=_COEFF_BACK),
-        # (p/2)*x for integer x is an integer iff x is even.
-        Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
-            when=('coeff', 'c rational', 'c.q==2')),
-        Row('coeff.minus_one', [('N', '$p')], (1, '$p'), when=('coeff', 'c rational', 'c==-1'),
-            preds=('integer', 'even', 'odd')),
     )
 
 
@@ -484,13 +422,6 @@ def _mul_factor_sets(expr):
     # tools/totality.py; the relation must sit in the block whose node
     # is the Mul, not in the deriving block, which is local to its node).
     out = [args]
-    c = args[0]
-    if n >= 3 and c.is_Rational and not c.is_zero:
-        # c*t: the coefficient-free t of the half-integer split of an Add
-        # (x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
-        rest = Mul(*args[1:])
-        if rest.is_Mul and len(rest.args) == n - 1:
-            out.append((c, rest))
     split = ipi_split(expr)
     if split is not None and split[1] is not None and split[1].is_Mul:
         # I*pi*c*s: the s of exp(I*pi*c*s) and E**(I*pi*c*s)

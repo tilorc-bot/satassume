@@ -37,55 +37,59 @@ integrality as a premise).  A non-integral atom says nothing about its
 terms (``oo``, ``nan`` and Floats are non-integers): it is only ever used
 against an ``M`` whose own literals make its terms finite and exact.
 
-Reasons are the asserted literals the derivation used (a superset kept
-per lattice row, minimised by deletion when short enough).
+**Representation.**  Every form is scaled by ``D``, the least common
+multiple of 2 and of the denominators of the registered forms, so the
+lattice is one of integer vectors (``D*M``; the constant ``1`` is ``D`` at
+:data:`CONST`).  The lattice of each decision level is kept (copied on
+the first change of a level) and grows by one insertion per asserted
+literal.  Reasons are the asserted literals the derivation used (a
+superset kept per lattice row, minimised by deletion when short).
 """
 from __future__ import annotations
 
 from fractions import Fraction
+from math import gcd
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
 #: the column of the constant (after every term column: echelon order puts
 #: the constant row last, so it is ``M``'s intersection with the constants)
 CONST = 1 << 40
+import os
+_NOOP = os.environ.get("INTLAT_X", "") == "noop"
 
-Vec = Dict[int, Fraction]
-Rows = Dict[int, Tuple[Vec, FrozenSet[int]]]
+Vec = Dict[int, int]
 
 _EMPTY: FrozenSet[int] = frozenset()
-_ONE = Fraction(1)
-_HALF = Fraction(1, 2)
+_MARK: FrozenSet[int] = frozenset((0,))
 
 
-def _bezout(a: int, b: int) -> Tuple[int, int]:
-    """``(x, y)`` with ``a*x + b*y == gcd(a, b)`` (``a, b`` coprime here)."""
+def _bezout(a: int, b: int) -> Tuple[int, int, int]:
+    """``(g, x, y)`` with ``a*x + b*y == g == gcd(a, b) > 0``."""
     x0, x1, y0, y1 = 1, 0, 0, 1
     while b:
-        q, a, b = a // b, b, a - (a // b) * b
+        q = a // b
+        a, b = b, a - q * b
         x0, x1 = x1, x0 - q * x1
         y0, y1 = y1, y0 - q * y1
-    return (x0, y0) if a > 0 else (-x0, -y0)
+    return (a, x0, y0) if a > 0 else (-a, -x0, -y0)
 
 
-def _comb(a: Fraction, u: Vec, b: Fraction, v: Vec) -> Vec:
-    """``a*u + b*v`` (new dict, zero entries dropped)."""
-    out: Vec = {}
-    if a:
-        for k, x in u.items():
-            out[k] = a * x
+def _comb(a: int, u: Vec, b: int, v: Vec) -> Vec:
+    """``a*u + b*v`` (a new dict, zero entries dropped)."""
+    out: Vec = {k: a * x for k, x in u.items()} if a else {}
     if b:
         for k, x in v.items():
             y = out.get(k, 0) + b * x
             if y:
                 out[k] = y
             else:
-                out.pop(k, None)
+                del out[k]
     return out
 
 
-def insert(rows: Rows, v: Vec, why: FrozenSet[int]) -> None:
-    """Add ``v`` (with reason ``why``) to the lattice ``rows`` in place:
-    echelon form over Z, one row per pivot column."""
+def insert(rows: dict, v: Vec, why: FrozenSet[int]) -> None:
+    """Add ``v`` (with reason ``why``) to the lattice ``rows`` (pivot
+    column -> ``(row, reason)``, echelon form over Z) in place."""
     while v:
         p = min(v)
         r = rows.get(p)
@@ -94,21 +98,21 @@ def insert(rows: Rows, v: Vec, why: FrozenSet[int]) -> None:
             return
         rv, rwhy = r
         a, b = rv[p], v[p]
-        q = b / a
-        why = why | rwhy
-        if q.denominator == 1:
-            v = _comb(_ONE, v, -q, rv)
+        if rwhy is not why:
+            why = why | rwhy
+        if b % a == 0:
+            v = _comb(1, v, -(b // a), rv)
             continue
-        # gcd step: q = P/Qd in lowest terms, a = Qd*g, b = P*g with g the
-        # gcd; x*Qd + y*P = 1 gives a row with pivot g, and Qd*v - P*r
-        # clears the column (the 2x2 transformation is unimodular)
-        P, Qd = q.numerator, q.denominator
-        x, y = _bezout(Qd, P)
-        rows[p] = (_comb(Fraction(x), rv, Fraction(y), v), why)
-        v = _comb(Fraction(Qd), v, Fraction(-P), rv)
+        # the Euclidean step: x*a + y*b = g, the gcd of the pivots; the
+        # rows x*r + y*v (pivot g) and (b/g)*r - (a/g)*v (pivot 0) span
+        # the same lattice as r and v (the 2x2 transformation is
+        # unimodular)
+        g, x, y = _bezout(a, b)
+        rows[p] = (_comb(x, rv, y, v), why)
+        v = _comb(b // g, rv, -(a // g), v)
 
 
-def reduce(rows: Rows, f: Vec) -> Optional[FrozenSet[int]]:
+def reduce(rows: dict, f: Vec) -> Optional[FrozenSet[int]]:
     """The reason of ``f`` in the lattice ``rows`` (the union of the rows
     used), or None if ``f`` is not in it."""
     why = _EMPTY
@@ -118,116 +122,104 @@ def reduce(rows: Rows, f: Vec) -> Optional[FrozenSet[int]]:
         if r is None:
             return None
         rv, rwhy = r
-        q = f[p] / rv[p]
-        if q.denominator != 1:
+        q, m = divmod(f[p], rv[p])
+        if m:
             return None
-        f = _comb(_ONE, f, -q, rv)
-        why = why | rwhy
+        f = _comb(1, f, -q, rv)
+        if rwhy:
+            why = why | rwhy
     return why
 
 
-def const_conflict(rows: Rows) -> Optional[FrozenSet[int]]:
-    """The reason of a non-integer constant in the lattice, or None."""
-    r = rows.get(CONST)
-    if r is None:
-        return None
-    c = r[0][CONST]
-    if c.denominator != 1:
-        return r[1]
+def _close(rows: dict, supp: set, negs: list, used: set, d: int) -> Optional[FrozenSet[int]]:
+    """Close the lattice ``rows`` (term columns ``supp``) under the parity
+    step with the non-integral forms ``negs`` (``(form, literal,
+    columns)``; ``used``: the indices already stepped) in place; the
+    literals of a conflict, or None.  A form with a column outside
+    ``supp`` is neither in the lattice nor twice in it."""
+    changed = True
+    while changed:
+        changed = False
+        cv, cwhy = rows[CONST]
+        if cv[CONST] % d:
+            return cwhy
+        for i, (h, lit, cols) in enumerate(negs):
+            if not cols <= supp:
+                continue
+            w = reduce(rows, h)
+            if w is not None:
+                return w | {lit}
+            if i in used:
+                continue
+            w = reduce(rows, {k: 2 * x for k, x in h.items()})
+            if w is not None:
+                # 2*h is an integer and h is not: h - 1/2 is one
+                used.add(i)
+                g = dict(h)
+                y = g.get(CONST, 0) - d // 2
+                if y:
+                    g[CONST] = y
+                else:
+                    del g[CONST]
+                insert(rows, g, w | {lit})
+                changed = True
     return None
 
 
-def scale(f: Vec, c: Fraction) -> Vec:
-    return {k: c * x for k, x in f.items()}
-
-
-def shift(f: Vec, c: Fraction) -> Vec:
-    out = dict(f)
-    y = out.get(CONST, 0) + c
-    if y:
-        out[CONST] = y
-    else:
-        out.pop(CONST, None)
-    return out
-
-
 class Lattice:
-    """The closure of a set of integral forms (``pos``: ``(form, lit)``)
-    and non-integral forms (``neg``), with reasons: :attr:`rows` is the
-    module, :attr:`conflict` a reason clause's negation (the literals) or
-    None."""
+    """The closure of integral forms and non-integral forms (scaled by
+    ``d``), with reasons.  :attr:`rows`: the module; :attr:`negs`: the
+    ``(form, literal, columns)`` asserted non-integral; :attr:`conflict`:
+    the literals of a conflict, or None; :attr:`supp`: the term columns of
+    the rows."""
 
-    __slots__ = ("rows", "conflict", "neg")
+    __slots__ = ("d", "rows", "negs", "used", "conflict", "supp")
 
-    def __init__(self, pos, neg):
-        rows: Rows = {CONST: ({CONST: _ONE}, _EMPTY)}
-        for f, lit in pos:
-            insert(rows, f, frozenset((lit,)))
-        self.rows = rows
-        self.neg = neg
-        self.conflict = None
-        self._close()
+    def __init__(self, d: int):
+        self.d = d
+        self.rows = {CONST: ({CONST: d}, _EMPTY)}
+        self.negs: list = []
+        self.used: set = set()
+        self.conflict: Optional[FrozenSet[int]] = None
+        self.supp: set = set()
 
-    def _close(self) -> None:
-        rows = self.rows
-        used = set()
-        changed = True
-        while changed:
-            changed = False
-            c = const_conflict(rows)
-            if c is not None:
-                self.conflict = c
-                return
-            for i, (h, lit) in enumerate(self.neg):
-                w = reduce(rows, h)
-                if w is not None:
-                    self.conflict = w | {lit}
-                    return
-                if i in used:
-                    continue
-                w = reduce(rows, scale(h, Fraction(2)))
-                if w is not None:
-                    # 2*h is an integer and h is not: h - 1/2 is one
-                    used.add(i)
-                    insert(rows, shift(h, -_HALF), w | {lit})
-                    changed = True
+    def copy(self) -> "Lattice":
+        c = Lattice.__new__(Lattice)
+        c.d = self.d
+        c.rows = dict(self.rows)
+        c.negs = list(self.negs)
+        c.used = set(self.used)
+        c.conflict = self.conflict
+        c.supp = set(self.supp)
+        return c
+
+    def add_pos(self, f: Vec, lit: int, cols) -> None:
+        if self.conflict is not None:
+            return
+        insert(self.rows, f, frozenset((lit,)))
+        self.supp.update(cols)
+        self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d)
+
+    def add_neg(self, h: Vec, lit: int, cols) -> None:
+        if self.conflict is not None:
+            return
+        self.negs.append((h, lit, cols))
+        if cols <= self.supp:
+            self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d)
 
     def implies(self, f: Vec) -> Optional[FrozenSet[int]]:
         """The reason of ``f`` integral, or None."""
         return reduce(self.rows, f)
 
-    def refutes(self, f: Vec) -> Optional[FrozenSet[int]]:
-        """The reason of ``f`` not integral (``M + Z*f`` holds a non-integer
-        constant or a form asserted non-integral, after the parity step),
-        or None."""
+    def refutes(self, f: Vec, cols) -> Optional[FrozenSet[int]]:
+        """The reason of ``f`` not integral, or None: ``M + Z*f`` (closed
+        again) is in conflict."""
         rows = dict(self.rows)
-        insert(rows, f, frozenset((0,)))
-        c = const_conflict(rows)
-        if c is not None:
-            return c - {0}
-        for h, lit in self.neg:
-            w = reduce(rows, h)
-            if w is not None:
-                return (w | {lit}) - {0}
-        # the parity step under f: h non-integral with 2*h in M + Z*f
-        # gives h - 1/2, which may meet the constant or another h
-        extra = []
-        for h, lit in self.neg:
-            w = reduce(rows, scale(h, Fraction(2)))
-            if w is not None:
-                extra.append((shift(h, -_HALF), w | {lit}))
-        if not extra:
+        insert(rows, f, _MARK)
+        w = _close(rows, self.supp | cols, self.negs, set(self.used), self.d)
+        if w is None or 0 not in w:
             return None
-        for g, w in extra:
-            insert(rows, g, w)
-        c = const_conflict(rows)
-        if c is not None:
-            return c - {0}
-        for h, lit in self.neg:
-            w = reduce(rows, h)
-            if w is not None:
-                return (w | {lit}) - {0}
-        return None
+        return w - _MARK
 
 
 class IntLatTheory:
@@ -241,76 +233,112 @@ class IntLatTheory:
 
     gave_up = False
     #: reasons with at most this many literals are minimised by deletion
-    MIN_WHY = 12
+    MIN_WHY = 8
 
     def __init__(self):
-        self.form: Dict[int, Vec] = {}
+        self.frac: Dict[int, Dict[int, Fraction]] = {}   # variable -> form
+        self.form: Dict[int, Vec] = {}       # variable -> form scaled by d
+        self.cols: Dict[int, frozenset] = {}  # variable -> its term columns
         self.inexact: set = set()
+        self.d = 2
         self.order: List[int] = []           # registered variables
         self.val: Dict[int, bool] = {}
         self.trail: List[int] = []
-        self.lim: List[int] = []
-        self._lat: Optional[Lattice] = None  # of the current trail (None: stale)
-        self._done = 0                       # trail length propagated
+        self.lim: List[Tuple[int, Optional[Lattice]]] = []
+        self.lat: Optional[Lattice] = None   # of the trail (None: rebuild)
+        self.shared = False                  # lat is saved by a level
+        self._done = False                   # propagated since the last change
         self.stats = {"props": 0, "conflicts": 0, "builds": 0}
 
     # -- the contract -----------------------------------------------------
     def register_atom(self, v: int, payload) -> None:
-        if v in self.form:
+        if v in self.frac:
             return
         f, exact = payload
-        self.form[v] = f
+        self.frac[v] = f
         if not exact:
             self.inexact.add(v)
+        d = self.d
+        for x in f.values():
+            q = x.denominator
+            if d % q:
+                d = d * q // gcd(d, q)
+        if d != self.d:
+            # a new denominator: rescale every form, rebuild the lattices
+            self.d = d
+            for u, g in self.frac.items():
+                self.form[u] = {k: int(x * d) for k, x in g.items()}
+            self.lat = None
+            self.lim = [(k, None) for k, _ in self.lim]
+        else:
+            self.form[v] = {k: int(x * d) for k, x in f.items()}
+        self.cols[v] = frozenset(k for k in f if k != CONST)
         self.order.append(v)
-        self._done = -1                     # a new atom may be implied
+        self._done = False
 
     def assert_lit(self, lit: int):
         v = lit if lit > 0 else -lit
-        if v not in self.form or v in self.val:
+        if v not in self.frac or v in self.val:
             return None
         self.val[v] = lit > 0
         self.trail.append(v)
-        self._lat = None
+        self._done = False
+        if _NOOP:
+            return None
+        lat = self.lat
+        if lat is None:
+            return None
+        if lit < 0 and v in self.inexact:
+            return None
+        if self.shared:
+            lat = self.lat = lat.copy()
+            self.shared = False
+        if lit > 0:
+            lat.add_pos(self.form[v], v, self.cols[v])
+        else:
+            lat.add_neg(self.form[v], lit, self.cols[v])
         return None
 
     def push_level(self) -> None:
-        self.lim.append(len(self.trail))
+        self.lim.append((len(self.trail), self.lat))
+        self.shared = True
 
     def pop_level(self) -> None:
-        k = self.lim.pop()
+        k, lat = self.lim.pop()
         trail, val = self.trail, self.val
-        if len(trail) > k:
-            while len(trail) > k:
-                del val[trail.pop()]
-            self._lat = None
-            self._done = -1
+        while len(trail) > k:
+            del val[trail.pop()]
+        self.lat = lat
+        self.shared = True
+        self._done = False
 
     # -- reasoning ---------------------------------------------------------
-    def _lits(self):
-        pos, neg = [], []
-        form, val = self.form, self.val
-        for v in self.trail:
-            if val[v]:
-                pos.append((form[v], v))
-            elif v not in self.inexact:
-                neg.append((form[v], -v))
-        return pos, neg
+    def _build(self, lits) -> Lattice:
+        lat = Lattice(self.d)
+        form, cols = self.form, self.cols
+        for l in lits:
+            if l > 0:
+                lat.add_pos(form[l], l, cols[l])
+            elif -l not in self.inexact:
+                lat.add_neg(form[-l], l, cols[-l])
+            if lat.conflict is not None:
+                break
+        return lat
 
     def lattice(self) -> Lattice:
-        lat = self._lat
+        lat = self.lat
         if lat is None:
-            pos, neg = self._lits()
-            lat = self._lat = Lattice(pos, neg)
+            val = self.val
+            lat = self.lat = self._build([v if val[v] else -v for v in self.trail])
+            self.shared = False
             self.stats["builds"] += 1
         return lat
 
     def _minimise(self, why, test):
-        """Drop literals of ``why`` (a set of asserted literals) that
-        ``test`` (a function of a literal subset: still derivable?) does
-        not need."""
+        """Drop literals of ``why`` that ``test`` (on a literal subset:
+        still derivable?) does not need."""
         if len(why) > self.MIN_WHY or len(why) <= 1:
-            return why
+            return list(why)
         keep = sorted(why, key=abs)
         i = 0
         while i < len(keep):
@@ -321,47 +349,57 @@ class IntLatTheory:
                 i += 1
         return keep
 
-    def _sub(self, lits) -> Lattice:
-        form = self.form
-        pos = [(form[l], l) for l in lits if l > 0]
-        neg = [(form[-l], l) for l in lits if l < 0]
-        return Lattice(pos, neg)
+    def _conflict(self, lat):
+        why = self._minimise(lat.conflict, lambda ls: self._build(ls).conflict is not None)
+        self.stats["conflicts"] += 1
+        return [-l for l in why]
 
     def propagate(self):
-        if self.gave_up or self._done == len(self.trail):
+        if _NOOP:
             return ()
+        if self.gave_up or self._done:
+            return ()
+        self._done = True
         lat = self.lattice()
-        self._done = len(self.trail)
         if lat.conflict is not None:
-            why = self._minimise(lat.conflict, lambda ls: self._sub(ls).conflict is not None)
-            self.stats["conflicts"] += 1
-            clause = [-l for l in why]
+            clause = self._conflict(lat)
             return [(clause[0], clause)]
         out = []
-        val, form = self.val, self.form
+        val, form, cols, supp = self.val, self.form, self.cols, lat.supp
+        # a form with columns outside the lattice's support is not in it,
+        # and M + Z*f can only meet a non-integral form h with the same
+        # columns outside it (h - k*f in M for some k != 0)
+        outs = {}
+        for h, _, hc in lat.negs:
+            o = hc - supp
+            if o:
+                outs[o] = True
         for v in self.order:
             if v in val:
                 continue
-            f = form[v]
-            why = lat.implies(f) if v not in self.inexact else None
-            if why is not None:
-                why = self._minimise(why, lambda ls, f=f: self._sub(ls).implies(f) is not None)
-                out.append((v, [v] + [-l for l in why]))
-                self.stats["props"] += 1
+            fc = cols[v]
+            out_f = fc - supp
+            if out_f and out_f not in outs:
                 continue
-            why = lat.refutes(f)
+            f = form[v]
+            if not out_f and v not in self.inexact:
+                why = lat.implies(f)
+                if why is not None:
+                    why = self._minimise(why, lambda ls, f=f: self._build(ls).implies(f) is not None)
+                    out.append((v, [v] + [-l for l in why]))
+                    self.stats["props"] += 1
+                    continue
+            why = lat.refutes(f, fc)
             if why is not None:
-                why = self._minimise(why, lambda ls, f=f: self._sub(ls).refutes(f) is not None)
+                why = self._minimise(why, lambda ls, f=f, fc=fc: self._build(ls).refutes(f, fc) is not None)
                 out.append((-v, [-v] + [-l for l in why]))
                 self.stats["props"] += 1
         return out
 
     def check(self):
-        if self.gave_up:
+        if self.gave_up or _NOOP:
             return None
         lat = self.lattice()
         if lat.conflict is not None:
-            why = self._minimise(lat.conflict, lambda ls: self._sub(ls).conflict is not None)
-            self.stats["conflicts"] += 1
-            return (False, [-l for l in why])
+            return (False, self._conflict(lat))
         return None
