@@ -724,29 +724,14 @@ E, pi*I, oo, -oo, zoo, oo*I) by `tests/test_trans_theory.py`; the clause-validit
 
 **Nodes and engagement.** `trans_adapter.TransAdapter.selects`: the 13 functions, `E**x` (as `exp(x)`) and
 every `Pow` whose exponent is not a rational constant (`x**2`, `1/x`, `sqrt(x)` stay with the templates).
-Constants are read exactly (`1` is `ONE`, another integer `ZI`). A node is told at once only if no
-argument is *plain* (`TransAdapter.engages`). A plain argument is an arithmetic expression (sums, products,
-powers) that is not a number, has no function application in it, and whose free symbols are outside the
-query's *class scope* and have no class assumption of their own (`knowledge.domain.classed`:
-`Symbol('n', integer=True)`). The class scope (`scope.class_symbols`) is the symbols of a class atom
-(`algebraic`, `transcendental`, `rational`, `irrational`, `integer`, `noninteger`, `even`, `odd`, `prime`,
-`composite`), of an equality (`eq`, or an order atom and its reverse), of `zero(x)` for a symbol, and of a
-`zero(t)` chain through a number, a scoped term or a classed symbol. An argument with a function
-application (`floor(x)`, `sign(x)`, `f(1)`, `f(x) + 1`) is never plain, because its class facts may come
-from template rows or EUF. The set's complete check uses the set's own scope, so its verdict stays a
-function of the set. Other nodes stay parked (`Session._parked`). They are told if the scope grows (set to
-query). They are also told when a contextual query is still open after its complete search: `Session.unpark`
-then widens the scope by the symbols of the query's `zero` atoms of sums and `nonzero` atoms of symbols
-(`scope.zero_symbols`: `zero(x**2 + y**2)` pins `x` to 0) and searches again; `ref.py` does the same.
-
-**What the gate costs** is measured, not proved. A plain argument could still get a class fact by a chain the
-scope does not see, such as a sign fact (`x - 1` neither positive nor negative) or `zero(x*y)`. A missed
-fact could give None instead of an answer, or a definite answer instead of "inconsistent". The audit sets
-`TransAdapter.GATED = False` against the gated engine on the same queries, with a fresh engine per query
-(`pareto0:~/th/A6/corpus/audit.py`). It found no difference on three corpora:
-- 4000 queries over `floor`, `ceiling`, `sign`, `Abs`, `factorial`, `binomial` and `AppliedUndef` arguments;
-- 17136 queries on plain arguments with assumption symbols and 17 kinds of fact that are not class atoms;
-- the 3999-query TRANS corpus.
+Constants are read exactly (`1` is `ONE`, another integer `ZI`). Every selected node of the cone is told,
+in the set's complete check and in the query alike (`Session.node_theories_sync`, `ref._node_theories`).
+There is no gate on which nodes are told: an argument can be pinned to a number by any route (order and
+MONO reasoning such as `x <= 1 & exp(x) >= E`, a sign pair `nonnegative(x - 1) & nonpositive(x - 1)`, a zero
+atom of a product, power or `Abs`, EUF, template rows of `floor` or `sign`), so a gate that decides from the
+query's atoms which nodes the theory may need loses answers (PR #154 reviews: two rounds of a class-scope
+gate, 14 of 4200 audit queries lost, and on the tree with MONO an inconsistent set answered True).
+`tests/test_trans_theory.py::test_answers_from_elsewhere` keeps those queries.
 
 Rows of the told terms that are parked stay parked (`DEMAND = False`; the escalation compiles
 them if the query needs them).
@@ -762,12 +747,15 @@ about one rule and two clauses fewer per function. Every other row is kept.
 nonzero) and algebraic irrational `y`; `algebraic(x)` False under `algebraic(exp(x)) & ~zero(x)`;
 `rational(y)` under `algebraic(x**y) & prime(x) & algebraic(y)`; `algebraic(Pow(1, x))`.
 
-**Measured alternatives.** Engaging every selected node (no class scope) cost +5.5% on the refine stream
-(`tools/ab.py`, 5 rounds, pinned): the theory attached at all routes every propagation through the theory
-sync, and 414 of the 415 queries with a told node got no answer from it. A boolean scope (any class atom
-or equality) still cost +2.4%, mostly `x**n` with an `even(n)` exponent; the per-symbol scope with the
-cheaper selection gives +0.6%. Registering the basis atoms unmentioned (`mention=False`) changed nothing
-measurable; compiling the told terms' parked rows (`DEMAND = True`) added clauses.
+**Measured alternatives** (`tools/ab.py` on the refine stream, 5 rounds, pinned, against `theories`
+2222668). Telling every selected node costs +4.4%: the theory attached at all routes every propagation
+through the theory sync, and almost no stream query gets an answer from it. A class-scope gate (tell a
+node only if each argument is a number or has a symbol of a class atom or equality of the query) cost
++0.6% to +2.3% but lost answers. Keeping that gate and telling the theory every parked node when a query
+is still open after its search (then searching again) loses no answer either, but cost +5.1%: the 288
+stream queries it unparks are open by nature and pay a second search. Registering the basis atoms
+unmentioned (`mention=False`) changed nothing measurable; compiling the told terms' parked rows
+(`DEMAND = True`) added clauses.
 
 ## Open questions and known gaps
 
