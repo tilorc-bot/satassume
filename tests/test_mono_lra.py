@@ -24,7 +24,7 @@ x = Symbol("x")
 FAMILIES = [exp(x), log(x), atan(x), tanh(x), sinh(x), asinh(x), cosh(x), acot(x),
             x**2, x**3, x**-1, x**-2, sqrt(x), x**Rational(1, 3), x**Rational(2, 3),
             x**Rational(-1, 2), x**Rational(3, 2), x**4,
-            exp(2*x - 1), log(1 - x), atan(-x + Rational(1, 2)), (1 - x)**2,
+            exp(2*x - 1), log(1 - x), atan(2*x - Rational(1, 2)), (1 - x)**2,
             (2*x + 1)**-1, cosh(3*x - 2), sqrt(2 - x)]
 CS = [Fraction(v, 4) for v in range(-12, 13, 2)] + [Fraction(1, 3), Fraction(-5, 7)]
 OPS = ["<", "<=", ">", ">=", "="]

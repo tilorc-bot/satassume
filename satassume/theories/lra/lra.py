@@ -1087,7 +1087,8 @@ class LRATheory:
             if fm.covered:
                 inlo = inup = ()
             elif pes[i] and asg.get(pes[i]) is True:
-                inlo, inup = (pes[i],), ()
+                # the piece literal puts u in the piece at both ends
+                inlo = inup = (pes[i],)
             else:
                 inlo = _in_lo(plo, ulo, slo)
                 inup = _in_up(phi, uup, sup)
@@ -1123,7 +1124,7 @@ class LRATheory:
                 if a is None:
                     continue
                 strict = tb[1] != 0
-                r = (e,) + inlo + inup + _lits(tr)
+                r = (e,) + (inlo if inlo is inup else inlo + inup) + _lits(tr)
                 wv = (a - k) / c
                 if (t_lower == (d > 0)) == (c > 0):      # a lower bound of w
                     x = self._set_lower(w, (wv, _ONE if strict else _ZERO), r)
