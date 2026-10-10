@@ -363,7 +363,9 @@ def test_one_sided_atoms():
     th.push_level()
     th.assert_lit(2)
     assert th.cur[1] == 1 << T.ZI
-    got = dict(th.propagate())
+    # a propagated literal's reason may be lazy: explain it (as conflict
+    # analysis does) before reading it
+    got = {l: r() if callable(r) else r for l, r in th.propagate()}
     assert sorted(got[-5]) == sorted([-5, -1, -2, -3, 4]) or set(got[-5]) <= {-5, -2, -3, 4}
     assert all(abs(l) != 2 for l in got)
     th.pop_level()
