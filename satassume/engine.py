@@ -356,12 +356,11 @@ class Session:
         #: checks it).  If set (a direct caller), its set's complete check
         #: gives ``UNKNOWN``.
         self.truncated = False
-        #: the sign theory once engaged (``sign_sync``), the sums and
-        #: products visited since its last sync, and whether one of them
-        #: is over the templates' arity caps (``sign_adapter.over_cap``)
+        #: the sign theory once engaged (``sign_sync``) and the sums and
+        #: products over the templates' arity caps
+        #: (``sign_adapter.over_cap``) visited since its last sync
         self.sign = None
         self._sign_nodes: List[Node] = []
-        self._sign_over = False
         if scope.glue and engine._relation_specs:
             # the theory scope of the query is known at construction: the
             # glue (and transfer, if the scope says so) exists before any
@@ -597,14 +596,10 @@ class Session:
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
-        if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) and node.args:
+        if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) \
+                and node.args and _sign.over_cap(node):
             # the sign theory's nodes: those over the templates' arity caps
-            # (ENGAGE 'cap'), or every sum and product
-            if _sign.over_cap(node):
-                self._sign_over = True
-                self._sign_nodes.append(node)
-            elif _sign.ENGAGE in ('escalate', 'always'):
-                self._sign_nodes.append(node)
+            self._sign_nodes.append(node)
 
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
@@ -844,13 +839,11 @@ class Session:
                 self.truncated = True
         self.frontier = deque()
 
-    def sign_sync(self, open_query: bool = False) -> bool:
-        """Engage the sign theory (``satassume.theories.sign``) as
-        ``sign_adapter.ENGAGE`` says and tell it the sums and products
-        visited since the last sync (with 'cap', the default, only those
-        over the templates' arity caps: the theory then decides only what
-        the templates leave out by construction); ``open_query``: the
-        query is open after propagation and escalation.  True iff
+    def sign_sync(self) -> bool:
+        """Engage the sign theory (``satassume.theories.sign``) once the
+        cone holds a sum or product over the templates' arity caps, and
+        tell it those visited since the last sync (the theory then decides
+        only what the templates leave out by construction).  True iff
         something was registered."""
         nodes = self._sign_nodes
         if not nodes:
@@ -858,10 +851,6 @@ class Session:
                 self.sign.sync_derived()
             return False
         if self.sign is None:
-            mode = _sign.ENGAGE
-            if not (mode == 'always' or self._sign_over and mode != 'off'
-                    or open_query and mode == 'escalate'):
-                return False
             self.sign = _sign.SignAdapter(self)
         self._sign_nodes = []
         for n in nodes:
@@ -2109,8 +2098,6 @@ class Engine:
             s.escalate()
             s.sign_sync()
             r = s.query_literal(lit, lits, search=False)
-        if r is None and s.sign_sync(True):
-            r = s.query_literal(lit, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(lit, lits, search=True)
@@ -2236,8 +2223,6 @@ class Engine:
             s.solver.release(s.n_hold)
             s.escalate()
             s.sign_sync()
-            r = s.query_literal(q, lits, search=False)
-        if r is None and s.sign_sync(True):
             r = s.query_literal(q, lits, search=False)
         if r is None:
             self.stats["searches"] += 1

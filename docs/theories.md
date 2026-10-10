@@ -520,7 +520,7 @@ x11)` under `positive_infinite(x0)` needs no search (25 ms; 13.5 s before).
 case separately: after `MAX_CONFLICTS` = 2000 theory conflicts in one search it gives up (`gave_up`,
 `satassume.sat.theory`, "Giving up"), and the query's answer is `None`; the flag resets at the root.
 
-**Engagement** (`sign_adapter.ENGAGE`). `'cap'` (the default): a session tells the theory the sums and
+**Engagement**. A session tells the theory the sums and
 products over the caps (`sign_adapter.over_cap` = `templates.core.sign_owns`), and only those. For such a
 node the templates leave out the rows the theory decides (`sign_owns`): for Add the closures of
 `finite` and the four extended signs, the `extended_real` closure, the imaginary sum, the per-term strict
@@ -528,12 +528,11 @@ sign, imaginary-plus-reals and `extended_real` backward rows; for Mul the sign c
 `extended_positive`, `nonnegative`), `ext_real.*`, `zero`, `all_neg.*`, `all_nonpos.*`, `all_imag.*` and,
 for 5 and 6 factors, `one_infinite`, `one_neg`, `one_nonpos`, `one_non_real`, `one_imag*`. Template rules per
 node: Add of 7 terms 45 -> 9, Mul of 5/6/7 factors 87/101/32 -> 44/51/17. The rows of other predicates
-(`integer`, `commutative`, `even`, `polar`, ...) stay. `'escalate'` also hands every sum and product to the
-theory for each query left open after propagation, `'always'` from the start, `'off'` never (a debug mode:
-over the caps it then has neither the rows nor the theory). On the refine stream `'escalate'` adds no
-answer and costs +29% (`tools/ab.py`), most of it in the interface (`_theory_sync`, `register_atom`,
-propagate: no single hotspot); this is why stage 1 keeps the rows of small nodes. `ref.py` attaches the
-theory under the same mode, so the reference sees the same clause set.
+(`integer`, `commutative`, `even`, `polar`, ...) stay. Two wider engagements were measured and removed:
+handing every sum and product to the theory for each query left open after propagation, or from the start.
+On the refine stream the first adds no answer and costs +29% (`tools/ab.py`), most of it in the interface
+(`_theory_sync`, `register_atom`, propagate: no single hotspot); this is why stage 1 keeps the rows of
+small nodes. `ref.py` attaches the theory to the same nodes, so the reference sees the same clause set.
 
 **Stage 2 and 3** (issue #149): Pow and the integer-magnitude classes (dropping the derived nodes `b-1`,
 `b+1`), then the rows of all arities once the interface cost is within the 3% line.

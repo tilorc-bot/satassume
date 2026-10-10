@@ -14,22 +14,14 @@ from .sign import ADD, ALL, MUL, PRED_MASK, PREDS, SignTheory
 
 _OFFSETS = tuple(BASIS_INDEX[p] for p in PREDS)
 
-#: When a session engages the theory, and with which nodes
-#: (``Session.sign_sync``): ``'cap'`` (the default) once its cone holds a
-#: sum or product over the arity caps of the templates, with those nodes
-#: only; ``'escalate'`` also, with every sum and product, for each query
-#: that propagation (and escalation) left open, before the search;
-#: ``'always'`` with every sum and product from the start; ``'off'``
-#: never.  On the refine stream 'escalate' adds no answer and costs +29%
-#: (``tools/ab.py``), 'cap' +0.4% (docs/theories.md, "SIGN").
-ENGAGE = 'cap'
-
-
 def over_cap(node) -> bool:
     """Whether the templates of ``node`` (an Add or a Mul) are capped:
     the sign rows of Mul stop at ``MAX_PAIRS`` factors (``negsets``), those
     of Add at ``MAX_ONEOUT`` terms (infinite sums).  Such nodes have no
-    sign rows (``templates.core.sign_owns``): this theory decides them."""
+    sign rows (``templates.core.sign_owns``): this theory decides them.
+    A session engages the theory with these nodes only
+    (``Session.sign_sync``; docs/theories.md, "SIGN", for the measured
+    alternatives)."""
     from ...knowledge.templates.core import sign_owns
     return sign_owns(bool(node.is_Mul), len(node.args))
 

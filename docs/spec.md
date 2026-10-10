@@ -215,8 +215,7 @@ over non-commutative values (`tests/test_noncommutative.py`, `tests/test_totalit
 
 Definition (SIGN, issue #149 T1; `docs/theories.md`, "SIGN"). For an `Add` of more than `MAX_ONEOUT` terms or a
 `Mul` of more than `MAX_PAIRS` factors (`templates.core.sign_owns`), the pattern leaves out its sign rows and
-the session attaches `SignTheory` with the node (`Session.sign_sync`, `sign_adapter.over_cap`; `ENGAGE`
-'cap'): the theory propagates the six basis predicates `extended_real`, `finite`, `zero`,
+the session attaches `SignTheory` with the node (`Session.sign_sync`, `sign_adapter.over_cap`): the theory propagates the six basis predicates `extended_real`, `finite`, `zero`,
 `extended_positive`, `extended_negative`, `imaginary` (and the derived variables over them) of the node and
 its arguments, each with a clause of their literals as its reason. Its clauses are the dropped rows' and more
 (any arity), so the clause set of 5.2 is the templates' plus the theory's lemmas; a session whose theory

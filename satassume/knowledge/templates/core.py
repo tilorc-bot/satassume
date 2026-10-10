@@ -57,7 +57,7 @@ def sign_owns(is_mul: bool, n: int) -> bool:
     issue #149 T1): the nodes over the arity caps, where the rows stop
     (``MAX_PAIRS`` factors: ``negsets``; ``MAX_ONEOUT`` terms: infinite
     sums).  Every session tells the theory those nodes
-    (``sign_adapter.over_cap``, any ``ENGAGE`` but 'off'), and the theory
+    (``sign_adapter.over_cap``), and the theory
     derives every literal the dropped rows give (each row's reason is a
     clause the theory explains on demand; ``docs/theories.md``, "SIGN").
     The rows that stay for such nodes are those of other predicates
