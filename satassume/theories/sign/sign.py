@@ -153,7 +153,7 @@ def _mul_atoms(a: int, b: int) -> int:
 
 ADD, MUL = 0, 1
 _ATOM_OPS = (_add_atoms, _mul_atoms)
-_MEMO: Dict[Tuple[int, int, int], int] = {}     # a pure function of its key
+_MEMO: Dict[tuple, int] = {}     # mop and allowed: a pure function of its key
 _adopt_memo(__name__, "_MEMO")
 
 
@@ -171,6 +171,23 @@ def mop(op: int, ma: int, mb: int) -> int:
                 for b in range(12):
                     if mb >> b & 1:
                         r |= f(a, b)
+        _MEMO[key] = r
+    return r
+
+
+def allowed(op: int, rest: int, newn: int) -> int:
+    """The atoms ``c`` with ``op(c, rest)`` holding ``NAN`` or meeting
+    ``newn``: those an argument keeps when the others fold to ``rest``
+    and the node lies in ``newn`` (memoised with :func:`mop`, under keys
+    of their own length)."""
+    key = (op, rest, newn, 0)
+    r = _MEMO.get(key)
+    if r is None:
+        r = 0
+        for c in range(12):
+            m = mop(op, 1 << c, rest)
+            if m & NANB or m & newn:
+                r |= 1 << c
         _MEMO[key] = r
     return r
 
@@ -205,13 +222,7 @@ def node_masks(op: int, nmask: int, amasks: List[int]) -> Tuple[int, List[int]]:
         suf = m if suf is None else mop(op, suf, m)
         if rest & NANB:
             continue
-        keep = 0
-        for c in range(12):
-            if m >> c & 1:
-                r = mop(op, 1 << c, rest)
-                if r & NANB or r & newn:
-                    keep |= 1 << c
-        out[i] = keep
+        out[i] = m & allowed(op, rest, newn)
     return newn, out
 
 
@@ -339,13 +350,7 @@ class SignTheory:
         rest = fold(op, am[:j - 1] + am[j:])
         if rest & NANB:
             return m
-        keep = 0
-        for c in range(12):
-            if m >> c & 1:
-                r = mop(op, 1 << c, rest)
-                if r & NANB or r & newn:
-                    keep |= 1 << c
-        return keep
+        return m & allowed(op, rest, newn)
 
     #: over this many arguments, a reason keeps every literal of a term it
     #: needs (no deletion of single literals): the deletion is quadratic
@@ -399,10 +404,10 @@ class SignTheory:
     def _node(self, i: int, out: list, seen: set) -> bool:
         """Propagate node ``i`` into ``out``; False after a conflict."""
         op, t, args = self.nodes[i]
-        cur = self.cur
-        am = [cur[u] for u in args]
-        newn, newa = node_masks(op, cur[t], am)
-        if newn == cur[t] and newa == am and newn:
+        cm = self.cur
+        am = [cm[u] for u in args]
+        newn, newa = node_masks(op, cm[t], am)
+        if newn == cm[t] and newa == am and newn:
             # no set narrows: every literal it could imply is implied by
             # the term's own literals (the rule block and the definitions
             # of the derived atoms write those)
@@ -411,6 +416,8 @@ class SignTheory:
         val = self.val
         for j, u in enumerate((t, *args)):
             m = newn if j == 0 else newa[j - 1]
+            if m == cm[u] and m:
+                continue                    # (as above, for this slot)
             if not m:
                 why = self._why(i, lits, j, lambda s: not s)
                 if not why:
