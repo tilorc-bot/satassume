@@ -847,6 +847,8 @@ class Session:
         propagation and escalation.  True iff something was registered."""
         nodes = self._sign_nodes
         if not nodes:
+            if self.sign is not None:
+                self.sign.sync_derived()
             return False
         if self.sign is None:
             mode = _sign.ENGAGE
@@ -857,6 +859,7 @@ class Session:
         self._sign_nodes = []
         for n in nodes:
             self.sign.add(n)
+        self.sign.sync_derived()
         return True
 
     # -- queries -------------------------------------------------------------

@@ -218,14 +218,17 @@ def node_masks(op: int, nmask: int, amasks: List[int]) -> Tuple[int, List[int]]:
 class SignTheory:
     """The theory (contract: :mod:`satassume.sat.theory`)."""
 
-    gave_up = False
+    gave_up = False     # in the current search (reset at the root)
+    #: theory conflicts allowed between two returns to the root level
+    MAX_CONFLICTS = 2000
+    budget = MAX_CONFLICTS
 
     def __init__(self):
-        self.tvars: List[List[int]] = []     # term -> its variables by PREDS (0: none)
+        self.tvars: List[List[Tuple[int, int]]] = []   # term -> its (variable, atom set)
         self.fixed: List[int] = []           # term -> atom set known from its value
         self.tnodes: List[List[int]] = []    # term -> the nodes it takes part in
         self.nodes: List[Tuple[int, int, Tuple[int, ...]]] = []   # (op, node, args)
-        self.atom: Dict[int, Tuple[int, int]] = {}   # variable -> (term, pred)
+        self.atom: Dict[int, Tuple[int, int]] = {}   # variable -> (term, atom set)
         self.val: Dict[int, bool] = {}
         self.trail: List[int] = []
         self.lim: List[int] = []
@@ -234,7 +237,7 @@ class SignTheory:
 
     # -- structure (told by the adapter) ----------------------------------
     def term(self, fixed: int = ALL) -> int:
-        self.tvars.append([0] * len(PREDS))
+        self.tvars.append([])
         self.fixed.append(fixed)
         self.tnodes.append([])
         return len(self.tvars) - 1
@@ -248,9 +251,15 @@ class SignTheory:
 
     # -- the contract -------------------------------------------------------
     def register_atom(self, v: int, payload) -> None:
-        t, p = payload
-        self.tvars[t][p] = v
-        self.atom[v] = (t, p)
+        """``payload = (t, m)``: ``v`` says that term ``t`` lies in the
+        atom set ``m`` (a basis predicate, :data:`PRED_MASK`, or a derived
+        one over them, ``sign_adapter.def_mask``), and ``-v`` that it lies
+        outside it."""
+        t, m = payload
+        if v in self.atom:
+            return
+        self.tvars[t].append((v, m))
+        self.atom[v] = (t, m)
         self.dirty.update(self.tnodes[t])
 
     def assert_lit(self, lit: int):
@@ -272,17 +281,25 @@ class SignTheory:
         while len(trail) > k:
             del val[trail.pop()]
         # sets only widen on backtrack: no propagation is owed
+        if not self.lim:
+            # back at the root: a new search, a new budget (a theory that
+            # gave up in the last one has missed no literal: assert_lit
+            # records them all; the propagation it owes is redone)
+            self.budget = self.MAX_CONFLICTS
+            if self.gave_up:
+                self.gave_up = False
+                self.dirty = set(range(len(self.nodes)))
 
     # -- propagation ----------------------------------------------------------
     def _lits(self, t: int) -> List[int]:
         val = self.val
-        return [v if val[v] else -v for v in self.tvars[t] if v and v in val]
+        return [v if val[v] else -v for v, _ in self.tvars[t] if v in val]
 
     def _mask(self, t: int, lits) -> int:
         m = self.fixed[t]
         atom = self.atom
         for l in lits:
-            pm = PRED_MASK[atom[l if l > 0 else -l][1]]
+            pm = atom[l if l > 0 else -l][1]
             m &= pm if l > 0 else ~pm
         return m
 
@@ -290,18 +307,83 @@ class SignTheory:
         op, t, args = self.nodes[i]
         return node_masks(op, self._mask(t, lits[t]), [self._mask(u, lits[u]) for u in args])
 
+    def _width(self, l: int) -> int:
+        m = self.atom[l if l > 0 else -l][1]
+        return bin(m if l > 0 else ALL & ~m).count("1")
+
+    def _slot(self, i: int, masks: List[int], j: int) -> int:
+        """The new set of slot ``j`` of node ``i`` (0 the node, ``k + 1``
+        argument ``k``) for the sets ``masks`` of the node and its
+        arguments: the same set as :func:`node_masks` gives, computing only
+        what slot ``j`` needs (the forward fold for the node)."""
+        op = self.nodes[i][0]
+        nm, am = masks[0], masks[1:]
+        total = fold(op, am)
+        newn = nm if total & NANB else nm & total
+        if j == 0:
+            return newn
+        m = am[j - 1]
+        if newn & ALL == ALL or len(am) < 2:
+            return m
+        rest = fold(op, am[:j - 1] + am[j:])
+        if rest & NANB:
+            return m
+        keep = 0
+        for c in range(12):
+            if m >> c & 1:
+                r = mop(op, 1 << c, rest)
+                if r & NANB or r & newn:
+                    keep |= 1 << c
+        return keep
+
+    #: over this many arguments, a reason keeps every literal of a term it
+    #: needs (no deletion of single literals): the deletion is quadratic
+    WHY_FINE = 16
+
     def _why(self, i: int, lits, j: int, test) -> List[int]:
         """A subset of the literals ``lits`` (term -> literals) of node
         ``i`` under which ``test`` still holds of the new set of slot ``j``
-        (0 the node, ``k + 1`` argument ``k``); greedy deletion."""
-        keep = {u: list(ls) for u, ls in lits.items()}
-        for u in list(keep):
-            for l in list(keep[u]):
-                keep[u].remove(l)
-                nn, na = self._round(i, keep)
-                if not test(nn if j == 0 else na[j - 1]):
-                    keep[u].append(l)
-        return [l for ls in keep.values() for l in ls]
+        (0 the node, ``k + 1`` argument ``k``): greedy deletion, first of
+        the whole literal set of each slot, then of single literals of the
+        slots kept.  Any subset is a sound reason (the sets only widen as
+        literals go); the deletion only makes it shorter."""
+        op, t, args = self.nodes[i]
+        slots = (t, *args)
+        ls = [lits[u] for u in slots]
+        masks = [self._mask(u, l) for u, l in zip(slots, ls)]
+        wide = [self.fixed[u] for u in slots]
+        for k in range(len(slots)):
+            if ls[k] and masks[k] != wide[k]:
+                old = masks[k]
+                masks[k] = wide[k]
+                if test(self._slot(i, masks, j)):
+                    ls[k] = ()
+                else:
+                    masks[k] = old
+            elif ls[k]:
+                ls[k] = ()          # the literals say no more than the value
+        if len(args) <= self.WHY_FINE:
+            for k in range(len(slots)):
+                if len(ls[k]) < 2:
+                    continue
+                kept = list(ls[k])
+                # the narrowest literals first: a reason that keeps the wide
+                # ones (``~negative_infinite(x)`` over ``finite(x)``) holds
+                # in more branches, and so does the clause learnt from it
+                for l in sorted(kept, key=self._width):
+                    kept.remove(l)
+                    masks[k] = self._mask(slots[k], kept)
+                    if not test(self._slot(i, masks, j)):
+                        kept.append(l)
+                masks[k] = self._mask(slots[k], kept)
+                ls[k] = kept
+        # a term may fill several slots (``x*x``): its literals once
+        out = []
+        for l in ls:
+            for x in l:
+                if x not in out:
+                    out.append(x)
+        return out
 
     def _node(self, i: int, out: list, seen: set) -> bool:
         """Propagate node ``i`` into ``out``; False after a conflict."""
@@ -316,15 +398,19 @@ class SignTheory:
                 if not why:
                     continue                # (only constants: not a claim)
                 self.stats["conflicts"] += 1
+                self.budget -= 1
+                if self.budget < 0:
+                    # a search that splits on many arguments without a
+                    # shared literal (the reasons differ per case): stop
+                    # contributing (satassume.sat.theory, "Giving up")
+                    self.gave_up = True
+                    return True
                 c = [-l for l in why]
                 out.append((c[0], c))
                 return False
             if m & NANB:
                 continue
-            for p, v in enumerate(self.tvars[u]):
-                if not v:
-                    continue
-                pm = PRED_MASK[p]
+            for v, pm in self.tvars[u]:
                 if not m & ~pm:
                     lit = v
                     test = (lambda s, pm=pm: not s & ~pm)
@@ -341,22 +427,28 @@ class SignTheory:
                 self.stats["props"] += 1
                 out.append((lit, [lit] + [-l for l in why if l != -lit]))
                 if cur is not None:
+                    self.stats["conflicts"] += 1
+                    self.budget -= 1
                     return False            # the literal is false: a conflict
         return True
 
     def propagate(self):
-        if not self.dirty:
+        if not self.dirty or self.gave_up:
             return ()
         out: list = []
         seen: set = set()
         dirty, self.dirty = self.dirty, set()
         for i in sorted(dirty):
+            if self.gave_up:
+                break
             if not self._node(i, out, seen):
                 self.dirty |= dirty
                 break
         return out
 
     def check(self):
+        if self.gave_up:
+            return None
         self.dirty = set(range(len(self.nodes)))
         for lit, why in self.propagate():
             v = lit if lit > 0 else -lit

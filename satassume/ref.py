@@ -467,6 +467,21 @@ def _glue_atoms_of(a_atoms, p_atoms, rel: bool) -> Tuple[tuple, tuple]:
     return glue_atoms(a_atoms), glue_atoms(p_atoms, a_atoms)
 
 
+def _sign(s: _RefSession) -> None:
+    """Section 5.5, the sign theory (``satassume.theories.sign``, issue
+    #149 T1): attached for every sum and product of the cone.  The engine
+    engages it only for some queries (``sign_adapter.ENGAGE``); a theory
+    only adds valid consequences, so the reference's answer is the same or
+    more definite (as for the relevance split, section 1)."""
+    from .theories.sign.sign_adapter import SignAdapter
+    nodes = [n for n in s.base if (getattr(n, 'is_Add', False) or getattr(n, 'is_Mul', False))
+             and n.args]
+    if nodes:
+        a = SignAdapter(s)
+        for n in nodes:
+            a.add(n)
+
+
 def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     """Sections 3 to 8 for translated formulas."""
     a_atoms = atoms_of(assum) if assum is not None else ()
@@ -499,6 +514,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     if glue:
         rel = s.glue(a_atoms, p_atoms)
     s.discover()
+    _sign(s)
     lits = _assumption_lits(s, rel, a_atoms + p_atoms, transfer)
     info.nodes = len(s.base)
     info.clauses = s.nclauses
