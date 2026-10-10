@@ -434,24 +434,26 @@ def _part_kind(u):
 
 
 def _ccoeff(c):
-    """``(cr, ci)`` for a closed factor ``c`` of a product: ``c`` itself
-    (a number of the exact field) or ``b*I`` with ``b`` one; raises
-    _Unhandled."""
-    from sympy import I
-    b = c.as_coefficient(I) if c.has(I) else None
-    if b is None:
-        if c.has(I):
+    """``(cr, ci)``, numbers of the exact field, for a closed ``c = cr +
+    I*ci`` written as a sum of field numbers and field numbers times ``I``
+    (``2*I``, ``1 + I``, ``pi*I/2``; also a product of such sums, expanded);
+    raises _Unhandled."""
+    from sympy import I, expand_mul
+    if c.has(I) and not c.is_Add:
+        c = expand_mul(c)
+    cr, ci = Fraction(0), Fraction(0)
+    for t in Add.make_args(c):
+        b = t.as_coefficient(I) if t.has(I) else None
+        if (b is None and t.has(I)) or (b is not None and b.has(I)):
             raise _Unhandled(c)
-        v = from_sympy(c, generic=GENERIC_CONSTANTS)
+        v = from_sympy(t if b is None else b, generic=GENERIC_CONSTANTS)
         if v is None:
             raise _Unhandled(c)
-        return (v, Fraction(0))
-    if b.has(I):
-        raise _Unhandled(c)
-    v = from_sympy(b, generic=GENERIC_CONSTANTS)
-    if v is None:
-        raise _Unhandled(c)
-    return (Fraction(0), v)
+        if b is None:
+            cr = cr + v
+        else:
+            ci = ci + v
+    return (cr, ci)
 
 
 def _clin(e, scale, fr: dict, fi: dict, const: list, kinds: dict) -> None:
@@ -468,10 +470,10 @@ def _clin(e, scale, fr: dict, fi: dict, const: list, kinds: dict) -> None:
         return
     if not e.free_symbols:
         if e.has(I):
-            b = e.as_coefficient(I)
-            if b is None or b.has(I):
-                raise _Unhandled(e)
-            scale, e = _cmul(scale, (Fraction(0), Fraction(1))), b
+            c = _cmul(scale, _ccoeff(e))
+            const[0] += c[0]
+            const[1] += c[1]
+            return
         cr, ci = scale
         kr, ki = [Fraction(0)], [Fraction(0)]
         _closed(e, cr, fr, kr)
