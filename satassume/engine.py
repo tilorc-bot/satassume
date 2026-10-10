@@ -92,12 +92,14 @@ from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
 from .sat.solver import Solver
 from .theories.sign import (closure_adapter as _closure, sign_adapter as _sign,
                              trans_adapter as _trans)
+from .theories.intlat import intlat_adapter as _intlat
 
 #: the node theories (class propagators, ``satassume.theories.sign.lattice``:
 #: SIGN and CLOSURE over sums and products, TRANS over the elementary
 #: functions and powers): adapter classes, each told the nodes its
 #: ``selects`` takes (``Session.node_theories_sync``)
-_NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter, _trans.TransAdapter)
+_NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter, _trans.TransAdapter,
+                  _intlat.IntLatAdapter)
 
 #: node type -> ``(index, over_cap)`` of the node theories that may select
 #: its nodes (their ``kinds``; ``over_cap`` is ``selects`` for a node of
