@@ -90,6 +90,7 @@ from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
+from .theories.sign import sign_adapter as _sign
 
 Node = Any
 
@@ -355,6 +356,12 @@ class Session:
         #: checks it).  If set (a direct caller), its set's complete check
         #: gives ``UNKNOWN``.
         self.truncated = False
+        #: the sign theory once engaged (``sign_sync``), the sums and
+        #: products visited since its last sync, and whether one of them
+        #: is over the templates' arity caps (``sign_adapter.over_cap``)
+        self.sign = None
+        self._sign_nodes: List[Node] = []
+        self._sign_over = False
         if scope.glue and engine._relation_specs:
             # the theory scope of the query is known at construction: the
             # glue (and transfer, if the scope says so) exists before any
@@ -590,6 +597,10 @@ class Session:
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
+        if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) and node.args:
+            self._sign_nodes.append(node)
+            if not self._sign_over and _sign.over_cap(node):
+                self._sign_over = True
 
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
@@ -828,6 +839,25 @@ class Session:
                     or any(n not in base for n in self.frontier):
                 self.truncated = True
         self.frontier = deque()
+
+    def sign_sync(self, open_query: bool = False) -> bool:
+        """Engage the sign theory (``satassume.theories.sign``) as
+        ``sign_adapter.ENGAGE`` says and tell it the sums and products
+        visited since the last sync; ``open_query``: the query is open after
+        propagation and escalation.  True iff something was registered."""
+        nodes = self._sign_nodes
+        if not nodes:
+            return False
+        if self.sign is None:
+            mode = _sign.ENGAGE
+            if not (mode == 'always' or self._sign_over and mode != 'off'
+                    or open_query and mode == 'escalate'):
+                return False
+            self.sign = _sign.SignAdapter(self)
+        self._sign_nodes = []
+        for n in nodes:
+            self.sign.add(n)
+        return True
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
@@ -1931,6 +1961,9 @@ class Engine:
                 s.xfer.sync_transfer()
             if not solver.propagate() or solver.implied(lits) is None:
                 return INCONSISTENT
+        if s.sign_sync():
+            if not solver.propagate() or solver.implied(lits) is None:
+                return INCONSISTENT
         # Solver.solve returns a bool: it raises only on a malformed
         # literal or a theory protocol error (RuntimeError), neither of
         # which is a conflict; the caller maps them to UNKNOWN
@@ -2059,10 +2092,14 @@ class Engine:
         session learned deciding the others.  ``tests/
         test_transfer_numbers.py`` checks this against a loop of ``is_``
         under every harness preset."""
+        s.sign_sync()
         r = s.query_literal(lit, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
+            s.sign_sync()
+            r = s.query_literal(lit, lits, search=False)
+        if r is None and s.sign_sync(True):
             r = s.query_literal(lit, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
@@ -2182,11 +2219,15 @@ class Engine:
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
         lits = s.assumption_lits(proposition)
+        s.sign_sync()
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.solver.release(s.n_hold)
             s.escalate()
+            s.sign_sync()
+            r = s.query_literal(q, lits, search=False)
+        if r is None and s.sign_sync(True):
             r = s.query_literal(q, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
