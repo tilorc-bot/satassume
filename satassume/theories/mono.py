@@ -392,6 +392,7 @@ class LinkMap:
     * ``bounds``: the range ``(lo, lo_strict, hi, hi_strict)`` of ``f(u)``
       for a real ``u`` with a real image (None ends unbounded), or None;
     * ``covered``: such a ``u`` lies in the only piece;
+    * ``whole``: the pieces cover the real line (``f`` real on it);
     * ``at_inf``: the values at infinite ``u`` (:func:`_at_inf`);
     * ``vshape``: ``f`` decreases on ``[-oo, 0]`` and increases on
       ``[0, oo]``;
@@ -403,7 +404,7 @@ class LinkMap:
     Neither is computed for a rational of more than ``_BITS`` bits.
 
     Answers are memoized per instance (one per application)."""
-    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "at_inf", "_img", "_pre",
+    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "whole", "at_inf", "_img", "_pre",
                  "_rng")
 
     def __init__(self, sp: Spec):
@@ -419,6 +420,8 @@ class LinkMap:
         #: decreasing on ``[-oo, 0]``, increasing on ``[0, oo]`` (``cosh``,
         #: even powers): on ``[a, b]`` around 0, ``f <= max(f(a), f(b))``
         self.vshape = set(self.pieces) == {("0", "oo", 1), ("-oo", "0", -1)}
+        #: the pieces cover the real line with closed ends: f is real on it
+        self.whole = self.vshape or self.pieces == (("-oo", "oo", 1),)
         lo, hi, nz = sp.inv_range
         self._rng = (None if lo is None else _field(lo),
                      None if hi is None else _field(hi), nz)

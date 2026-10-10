@@ -1527,7 +1527,10 @@ class Relations:
             terms = ad.terms(sympy_atom(atom)) or ()
             for t in terms:
                 self._mono_term(t)
-            if apps and atom not in link_of and atom not in aux:
+            # a sign link of the application alone (0 < floor(u)) gets the
+            # templates' facts; one of a sum with it (x - floor(x) < 0) and
+            # any other atom open its rows
+            if apps and atom not in aux and (atom not in link_of or len(terms) > 1):
                 for t in terms:
                     if t in apps:
                         self._mono_open(t)
@@ -1609,6 +1612,13 @@ class Relations:
         ad = self._mono_ad
         sp = self._mono_apps[app]
         terms = form[1]
+        if fm.whole:
+            # f is real on the reals: real(s) for all s gives real(f(u)),
+            # which the link's enable needs (a bound LRA derives makes no
+            # relation atom, whose sides would be extended reals)
+            ga = self._guard(ad, [app])
+            if ga:
+                s.emit([-mo] + self._guard(ad, list(terms)) + [-ga[0]])
         if sp.real_arg and len(terms) == 1:
             # real(f(u)) gives real(u), u = a*s + b: real(s)
             ga = self._guard(ad, [app])
