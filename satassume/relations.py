@@ -236,6 +236,45 @@ session (:meth:`Relations._bound`).  A constant the engine knows to be
 real context-free (``Engine.is_``) gets no guard literal and hence no node
 of its own: its ``real`` literal would be false at the root anyway.
 
+Monotone functions
+------------------
+An application ``f(u)`` of a function :mod:`satassume.theories.mono` lists
+(``exp``, ``log``, ``atan``, ``tanh``, ``sinh``, ``asinh``, ``cosh``,
+``acot``, ``u**k`` with a Rational ``k``; ``Abs``, ``floor``, ``ceiling``
+for rows only) is an opaque LRA term, so ``x > 1`` and ``log(x) > 0`` are
+unrelated atoms for LRA.  ``_mono_step`` reads every atom LRA interprets:
+a *threshold* is an atom with one number side whose other side is
+proportional to ``u`` or to ``f(u)`` up to a constant (``2*x + 1 < 3``,
+``-atan(x) > -1``); a *pair* is ``a < b`` with ``f(a)``, ``f(b)`` of one
+function.  On each piece of the table (an interval of the extended reals
+where ``f`` is strictly monotone, ends included) it emits
+
+* forward: for ``u OP c`` with ``c`` in the piece, ``p & G -> q`` and
+  ``q & G -> p`` with ``q`` the atom ``f(u) OP' f(c)`` (made if new) and
+  ``G`` the piece's guard on ``u`` (dropped from the first clause where
+  ``u OP c`` alone keeps ``u`` in the piece: ``u > c`` on a piece up to
+  ``oo``); ``u = c -> f(u) = f(c)``;
+* inverse: for ``f(u) OP d`` with ``d`` inside the range, the same two
+  clauses with the atom ``u OP' c`` for each preimage ``c`` of ``d`` (the
+  table's inverse; exact by identity for the transcendental functions,
+  checked with SymPy for powers);
+* pairs: ``a < b`` against ``f(a) < f(b)`` (or ``>`` on a decreasing
+  piece), and ``f(a) < f(b)`` against ``a < b`` for a function increasing
+  on the whole line;
+* rows: the range and sandwich facts (``exp(u) > 0``, ``atan(u) <
+  pi/2``, ``floor(u) <= u``), made where something other than an in-range
+  threshold reads ``f(u)`` (``_mono_open``).
+
+Every clause carries ``~MO(f(u))``, a switch variable implied by the
+term's link selector (``IL``), so the lemmas act only in the queries that
+read ``f(u)`` as an LRA term (see "Switched glue").  Made atoms are tagged
+(``_mono_made``) so that images move outward and inverses inward: ``f(n)``
+and ``f(n - 1)`` would otherwise reflect thresholds forever.  Each lemma
+is an implication between relation atoms that holds at every point of the
+extended domain (SymPy's values at ``+-oo``, ``log(-oo) = oo``, a non-real
+``u`` excluded by the guards), so it changes no answer it does not make
+definite.
+
 Predicate transfer
 ------------------
 When the relation atoms of the query make an equality (an ``eq`` atom, or

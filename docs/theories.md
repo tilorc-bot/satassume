@@ -590,6 +590,35 @@ same predicate as `real`) went. The `root` rows need a base that is a number (`A
 **Not done (stage 2 of T3).** `algebraic(x)` under `algebraic(p(x))` for a polynomial `p` with algebraic
 coefficients (`x**3 + x`); `rational(x)` under `rational(x**3)` is rightly open (`2**(1/3)`).
 
+## Monotone functions (MONO)
+
+`satassume/theories/mono.py` is a table: for an application `f(u)` of
+`exp`, `log`, `atan`, `tanh`, `sinh`, `asinh`, `cosh`, `acot` or `u**k`
+(Rational `k`) it gives the pieces of the extended real line where `f` is
+strictly monotone (ends `-oo`, `0`, `oo`, open or closed, SymPy's values at
+the infinite ends included), `f(c)`, the inverse at a constant, and the
+range rows (`exp(u) > 0` for real `u`, `-pi/2 < atan(u) < pi/2`,
+`cosh(u) >= 1`, `u**2 >= 0`, `acot` bounds); for `Abs`, `floor`,
+`ceiling` only sandwich rows (`floor(u) <= u < floor(u) + 1`,
+`Abs(u) >= +-u`). The glue (`Relations._mono_*`, flag `MONO`) turns it into
+lemmas between relation atoms: forward images (`x > 2 -> x**2 > 4` on the
+piece `[0, oo]`, with the piece's guard on `u` where the threshold alone
+does not keep `u` in the piece), inverse preimages (`log(x) > 0 & x > 0
+-> x > 1`), pairs (`x < y -> exp(x) < exp(y)`) and rows. A threshold may
+be any atom with one number side whose other side is proportional to `u`
+or to `f(u)` up to a constant. The lemmas carry the term's `MO` switch,
+implied by its link selector, so they act only where the query reads the
+application as an LRA term, and rows are made only where something other
+than an in-range threshold reads it. Made atoms are tagged so the
+image/inverse cascade between sibling applications (`f(n)`, `f(n - 1)`)
+ends.
+
+Limits: a threshold whose constant the exact field cannot read
+(`asinh(2)`, `sinh(1)`) gets no lemma; `tan`, `cot`, `asin`, `acos`,
+`sin`, `cos` and Float constants are not in the table; inverse lemmas need
+the piece guard (`log(x) = 2` does not give `x = exp(2)` unless `x` is
+known extended positive, since `log(-oo) = oo`).
+
 ## Open questions and known gaps
 
 - #42, item 3 (answers depending on earlier queries through the lazily
