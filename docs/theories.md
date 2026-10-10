@@ -595,78 +595,87 @@ coefficients (`x**3 + x`); `rational(x)` under `rational(x**3)` is rightly open 
 `satassume/theories/mono.py` is a table: for an application `f(u)` of
 `exp`, `log`, `atan`, `tanh`, `sinh`, `asinh`, `cosh`, `acot` or `u**k`
 (Rational `k`) it gives the pieces of the extended real line where `f` is
-strictly monotone (ends `-oo`, `0`, `oo`, open or closed, SymPy's values at
-the infinite ends included), `f(c)`, the inverse at a constant, and the
-range rows (`exp(u) > 0` for real `u`, `-pi/2 < atan(u) < pi/2`,
-`cosh(u) >= 1`, `u**2 >= 0`, `acot` bounds); for `Abs`, `floor`,
-`ceiling` only sandwich rows (`floor(u) <= u < floor(u) + 1`,
-`Abs(u) >= +-u`). The glue (`Relations._mono_*`, flag `MONO`) turns it into
-lemmas between relation atoms: forward images (`x > 2 -> x**2 > 4` on the
-piece `[0, oo]`, with the piece's guard on `u` where the threshold alone
-does not keep `u` in the piece), inverse preimages (`log(x) > 0 & x > 0
--> x > 1`), pairs (`x < y -> exp(x) < exp(y)`) and rows. A threshold may
-be any atom with one number side whose other side is proportional to `u`
-or to `f(u)` up to a constant. The lemmas carry the term's `MO` switch,
-implied by its link selector, so they act only where the query reads the
-application as an LRA term, and rows are made only where something other
-than an in-range threshold reads it. Made atoms are tagged so the
-image/inverse cascade between sibling applications (`f(n)`, `f(n - 1)`)
-ends.
+real and strictly monotone (ends `-oo`, `0`, `oo`, open or closed), `f(c)`,
+the inverse at a constant, the range of `f(u)` (`exp(u) > 0`, `-pi/2 <
+atan(u) < pi/2`, `cosh(u) >= 1`) and SymPy's values at the infinities;
+for `Abs`, `floor`, `ceiling` only sandwich rows (`floor(u) <= u <
+floor(u) + 1`, `Abs(u) >= +-u`). `LinkMap` is the part LRA reads, in
+exact-field numbers.
 
-`log` and `atan` are injective on their whole domain (`exp(log(z)) = z`,
-`tan(atan(z)) = z`), so `f(u) = f(c) -> u = c` is emitted without the
-piece guard (`mono.INJECTIVE`): `Q.eq(x, E)` under `Q.eq(log(x), 1)` and
-`Q.eq(x, 1)` under `Q.eq(atan(x), pi/4)` are True.
+**A propagator inside LRA, not lemma clauses.** Each application `f(u)`
+the query reads as an LRA term (its `MO` switch, implied by its link
+selector) gets one *link* (`Relations._mono_link`, payload
+`lra.MonoLink`): a fresh inert enable variable `e <-> MO & real(f(u)) &
+real(s)` for the opaque terms `s` of `u = c*w + k`. While `e` holds, LRA
+derives bounds of `f(u)` from those of `u` and back
+(`LRATheory._mono_link`), each with a reason made of `e` and the literals
+of the bounds it used; no atom and no clause per threshold:
 
-Measured and dropped: stage 2 of T5, retiring template sign rows. The
-sign equivalences of `atan`, `tanh` and `sinh` (8 rows,
-`extended_real(u) -> (positive(f(u)) <-> extended_positive(u))` and the
-like) and `log`'s `x - 1` rows and node stay in `templates/functions.py`.
-MONO gives these signs only once the glue links `f(u)` and `u`, so moving
-them needed the glue forced on for every query with such an application
-(seven hooks in scope, relations and the engine, plus the rows kept for
-closed arguments). On a 5000-query sign corpus that took solver clauses
-per query from 2.7 to 128.6, variables from 70 to 140 and time 6x, for
-41 new answers out of 5000 and +1.7% on the refine stream; moving `log` too
-cost +4% on the stream (its 56 log queries ran 6x slower). MONO is
-therefore an answers-only addition for queries that read an application
-as an LRA term. A cheaper sign-only engagement (or a sign theory, #149 T1)
-is the place to retire these rows.
+* forward: a bound `u >= a` inside a piece gives `f(u) >= f(a)` (`<=` on a
+  decreasing piece), likewise strict and upper bounds;
+* inverse: a bound `f(u) >= d` with `u` in a piece gives `u >= f^-1(d)`;
+* range: on `e`, the range bounds of `f(u)`;
+* V shape (`cosh`, even powers): `u` in `[a, b]` around 0 gives `f(u) <=
+  max(f(a), f(b))`;
+* piece exclusion: a bound of `f(u)` beyond the image of a piece (from `f`
+  at its closed end 0 and SymPy's `f(+-oo)` at an infinite end) puts `u`
+  outside it (`acot(u) > 0` gives `u >= 0`, and `u > 0` once `acot(u) <
+  pi/4` excludes `f(0) = pi/2`; `1/u < -2` gives `u < 0`, `1/0` not
+  being real).
 
-**Pow on sign links.** A sign link (`0 < e`, `e < 0`, `e = 0` of a linked
-term, `Relations._link`) is a threshold like any other, and on the
-harness's relational and base workloads the links of the nodes around
-`u**-1` (every division), `u**(1/3)` and `u**2` made about 10000 image and
-preimage atoms per 1800 queries and decided nothing: the profiles were
-10-13% slower than the base. For `Pow` (`relations._MONO_LAZY`) a
-threshold that is only a sign link (no query mentions it, no other role)
-now relates existing atoms only, and makes atoms only where a query reads
-the power or a term of its base: an LRA term of a relation the query
-mentions, or of the linear form of a unary predicate's argument
-(`Q.positive(x**3 - 1)` under `Q.positive(x - 2)` reads `x**3` and `x`).
-At the constant 0 (`u OP 0`, `u**k OP 0`) the lemmas only move a sign the
-templates already give, so they are made only where a *relation* reads
-the other term (the power for a link of the base, a term of the base for
-a link of the power); an application of a listed function other than a
-power inside the base of a read power counts as read (`atan(q)` in
-`atan(q)**2`, `_mono_note_inner`), a plain symbol does not (that would
-cost 12% on the relational profile for one answer in our corpora).
-Matches skipped this way wait on the atom and on those terms and are
-redone when a later formula of the session reads one (`_mono_wait`,
-`_mono_note_user`). The sign facts of `u` and `u**k` themselves are the
-Pow templates' rows. Equalities the lemmas make (`x = 1/6 -> sqrt(x) =
-sqrt(6)/6`) had no role, so LRA never saw them (`_aux_eq`); they now get
-the role `"mono"` under the application's `MO` switch, which turns on
-their LRA twin and nothing else (no transfer candidacy). Soundness: the
-first change only drops lemmas; the twin of a made equality is the
-equality itself, asserted under a switch, as for a user equality.
-Measured (pareto1, pinned): see PR #150.
+Membership of `u` in a piece comes from `u`'s bounds, from a piece
+variable `p <-> e & guard(u)` (`lra.MonoPiece`, the sign of `u`) or from
+`LinkMap.covered` (`log`, non-integer powers: a real `u` with a real
+image is in the only piece). A value the field does not read (`asinh(-3)`,
+`sinh(E)`) is used through a rational enclosure `lo < v < hi`
+(`lra.Approx`, grid `2**-40`, from a 30-digit evaluation): the derived
+bound is the strict `> lo` or `< hi`, which `v`'s bound implies. A derived
+bound whose comparison the field cannot decide (`sqrt(2)/2` against
+`1/sqrt(2)`) is skipped (`LRATheory._mono_set`): propagation is optional,
+and LRA does not give up. Rationals over 64 bits get no image (branch and
+bound through `n**3` of an integer `n` grows them without end). `u` not
+read as a rational linear form (a Float, an irrational coefficient) is
+linked as one opaque term: range and realness only.
 
-Limits: a threshold whose constant the exact field cannot read
-(`asinh(2)`, `sinh(1)`) gets no lemma; `tan`, `cot`, `asin`, `acos`,
-`sin`, `cos` and Float constants are not in the table; inverse lemmas need
-the piece guard (`log(x) = 2` does not give `x = exp(2)` unless `x` is
-known extended positive, since `log(-oo) = oo`).
+The links talk about finite reals. The glue adds the clauses around them,
+each under `MO`: `real(s) -> real(f(u))` where `f` is real on the reals
+(`LinkMap.whole`) or `u` is in a piece (`sqrt(x)` for `x >= 0`);
+`extended_real(s) -> extended_real(f(u))` for one term and `f` extended
+real at `+-oo`; `real(f(u)) -> real(s)` for `log`, `asinh`, `0 < k < 1`
+(`Spec.real_arg`) and `real(f(u)) -> real(s) | ~finite(s)` for `atan`,
+`acot`, `-1 <= k < 0` (`real_arg_inf`: `atan(oo) = pi/2`, `1/oo = 0`); the
+sign atoms `0 < u`, `u < 0` at pieces' ends at 0, tied to
+`extended_positive(u)`, `extended_negative(u)`; and the values at
+infinite `u` (`_mono_inf`, `mono._at_inf`): `positive_infinite(u) ->
+positive_infinite(f(u))` for `f(oo) = oo`, and a finite value `v`
+(`atan(oo) = pi/2`) pinned in LRA by an inert variable `c_v`
+(`lra.MonoValue`), with `~finite(u) [& real(f(u))] -> OR c_v` over the
+values `f` takes at `oo, -oo, zoo, +-oo*I`. Pairs `a < b` of applications
+of one function and the `Abs`/`floor`/`ceiling` rows stay clauses
+(`_mono_pair`, `_mono_rows`). `a*f(u) + b = 0` gives `real(f(u))`
+(`_mono_eq`), so `log(x) = 1` reaches `x = E` through the inverse.
+
+Soundness: every derived bound holds at every point where its reason
+holds: under `e` the LRA values of `f(u)` and of `u`'s terms are their
+values and both are finite reals, and `f` is real, continuous and strictly
+monotone on each piece; an enclosure only weakens a bound; the clauses
+above are checked against SymPy's values at `0, +-oo, zoo, +-oo*I`
+(`tests/test_mono_lra.py`: every conflict and propagation reason of the
+link on all families at sample points, the backtracking restore, the
+answers at each infinity against SymPy's value). Non-commutative symbols
+are not linked (no LRA term).
+
+Not done: retiring template sign rows (stage 2 of T5). In #150 the cost
+was the glue being forced on for every query with such an application
+(solver clauses per query 2.7 -> 128.6 on a sign corpus), not the lemma
+clauses; the propagator makes a link cheaper but not the engagement, so
+the sign rows of `atan`, `tanh`, `sinh` and `log`'s `x - 1` node stay in
+`templates/functions.py` (a sign theory, #149 T1, is the place).
+
+Limits: `u` whose terms are not known real (`log(x + y)` with complex `x`,
+`y`) gets no link, as LRA reads no atom over such a sum (`x + y > 2` does
+not give `x + y > 1` either); `tan`, `cot`, `asin`, `acos`, `sin`, `cos`
+are not in the table.
 
 ## TRANS: transcendence of function values and powers
 
