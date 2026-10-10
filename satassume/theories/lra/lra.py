@@ -232,6 +232,31 @@ def _lits(r) -> tuple:
     return (r,) if r else ()
 
 
+class Approx(tuple):
+    """``(lo, hi)``: rationals with ``lo < v < hi`` around a number ``v``
+    the field does not read (``asinh(3)``), from :mod:`mono`'s
+    ``LinkMap``; a bound at ``v`` is used as the strict bound ``> lo``
+    (a lower bound) or ``< hi`` (an upper bound), which ``v``'s bound
+    implies."""
+    __slots__ = ()
+    lo = property(itemgetter(0))
+    hi = property(itemgetter(1))
+
+
+def _blo(a, strict):
+    """The lower bound at ``a`` (strict or not) in the bounds' form."""
+    if type(a) is Approx:
+        return (a[0], _ONE)
+    return (a, _ONE if strict else _ZERO)
+
+
+def _bup(a, strict):
+    """The upper bound at ``a`` (strict or not) in the bounds' form."""
+    if type(a) is Approx:
+        return (a[1], -_ONE)
+    return (a, -_ONE if strict else _ZERO)
+
+
 def _sg(x):
     """The sign of a field number, None if undecided."""
     if type(x) is Fraction:
@@ -1136,9 +1161,9 @@ class LRATheory:
                 if fa is not None:
                     r = (e,) + _lits(ulo[2]) + inup
                     if d > 0:
-                        x = self._set_lower(tv, (fa, _ONE if ulo[1] else _ZERO), r)
+                        x = self._set_lower(tv, _blo(fa, ulo[1]), r)
                     else:
-                        x = self._set_upper(tv, (fa, -_ONE if ulo[1] else _ZERO), r)
+                        x = self._set_upper(tv, _bup(fa, ulo[1]), r)
                     if x is not None:
                         return x
             if inlo is not None and uup is not None and _at_up(phi, sup):
@@ -1146,9 +1171,9 @@ class LRATheory:
                 if fa is not None:
                     r = (e,) + _lits(uup[2]) + inlo
                     if d > 0:
-                        x = self._set_upper(tv, (fa, -_ONE if uup[1] else _ZERO), r)
+                        x = self._set_upper(tv, _bup(fa, uup[1]), r)
                     else:
-                        x = self._set_lower(tv, (fa, _ONE if uup[1] else _ZERO), r)
+                        x = self._set_lower(tv, _blo(fa, uup[1]), r)
                     if x is not None:
                         return x
             # inverse: the preimage of a bound of t, u in the piece
@@ -1163,8 +1188,13 @@ class LRATheory:
                     continue
                 strict = tb[1] != 0
                 r = (e,) + (inlo if inlo is inup else inlo + inup) + _lits(tr)
+                w_lower = (t_lower == (d > 0)) == (c > 0)
+                if type(a) is Approx:
+                    # u beyond a: w beyond (a - k)/c, so beyond the
+                    # rational end of a on w's side (strictly)
+                    a, strict = a[0] if w_lower == (c > 0) else a[1], True
                 wv = (a - k) / c
-                if (t_lower == (d > 0)) == (c > 0):      # a lower bound of w
+                if w_lower:
                     x = self._set_lower(w, (wv, _ONE if strict else _ZERO), r)
                 else:
                     x = self._set_upper(w, (wv, -_ONE if strict else _ZERO), r)
@@ -1174,6 +1204,18 @@ class LRATheory:
                 and sup is not None and slo < 0 < sup:
             # u in [a, b] around the minimum at 0: f(u) <= max(f(a), f(b))
             fa, fb = fm.image(ulo[0]), fm.image(uup[0])
+            if type(fa) is Approx or type(fb) is Approx:
+                # f <= max(f(a), f(b)) <= the larger upper end
+                if fa is not None and fb is not None:
+                    fa = fa[1] if type(fa) is Approx else fa
+                    fb = fb[1] if type(fb) is Approx else fb
+                    sd = _sg(fa - fb)
+                    if sd is not None:
+                        r = (e,) + _lits(ulo[2]) + _lits(uup[2])
+                        x = self._set_upper(tv, (fa if sd >= 0 else fb, _ZERO), r)
+                        if x is not None:
+                            return x
+                fa = fb = None
             if fa is not None and fb is not None:
                 sd = _sg(fa - fb)
                 if sd is not None:

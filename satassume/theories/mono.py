@@ -75,6 +75,7 @@ are ``+-1``, which no unary predicate names), ``sin``/``cos``
 """
 from __future__ import annotations
 
+import math
 from fractions import Fraction
 from types import MappingProxyType
 from typing import Any, Callable, NamedTuple, Optional, Tuple
@@ -325,6 +326,26 @@ def _field(e):
     return from_sympy(e, generic=True)
 
 
+#: the grid of the rational ends of an Approx (lra.Approx)
+_GRID = 1 << 40
+
+
+def _approx(v):
+    """``lra.Approx(lo, hi)`` with rationals ``lo < v < hi`` on the grid
+    ``1/_GRID`` for the finite real closed SymPy number ``v``, from a
+    30-digit evaluation (error far below the grid), or None."""
+    from sympy import Rational
+    from .lra.lra import Approx
+    if v.free_symbols or v.is_extended_real is not True or v.is_finite is not True:
+        return None
+    f = v.evalf(30)
+    if not f.is_Float or abs(f) > 1e12:
+        return None
+    q = Rational(f)
+    q = Fraction(int(q.p), int(q.q)) * _GRID
+    return Approx((Fraction(math.floor(q) - 1, _GRID), Fraction(math.ceil(q) + 1, _GRID)))
+
+
 def _sympy_of(q):
     if type(q) is Fraction:
         from sympy import Rational
@@ -449,7 +470,10 @@ class LinkMap:
         if len(self._img) > 512:
             self._img.clear()
         try:
-            r = _field(self.sp.apply(_sympy_of(c)))
+            v = self.sp.apply(_sympy_of(c))
+            r = _field(v)
+            if r is None:
+                r = _approx(v)
         except Exception:                 # SymPy failing on a value: no image
             r = None
         self._img[c] = r
@@ -487,8 +511,12 @@ class LinkMap:
                 continue                  # 1/u = 0 at u = +-oo: no finite c
             v = _field(c)
             if v is None:
-                continue
-            sg = _fsign(v)
+                v = _approx(c)
+                if v is None:
+                    continue
+                sg = 1 if v[0] >= 0 else -1 if v[1] <= 0 else None
+            else:
+                sg = _fsign(v)
             if sg is None or not piece.holds(sg):
                 continue
             if not sp.exact and sp.apply(c) != ds:
