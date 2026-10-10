@@ -19,9 +19,19 @@ zero, finiteness: issue #149 T1) and :mod:`.closure` (membership in the
 integers, rationals, algebraic numbers, reals and complex numbers: T3).
 Both operations are commutative and associative on values and each table
 over-approximates its step, so any bracketing of a fold is sound.
+
+Besides the folds, a lattice may have *map* operations (:meth:`Lattice.add_map`):
+a function of a fixed arity (1 or 2, not commutative: ``Pow(b, e)``) given
+by a table over atom tuples.  Forward, ``S(N) &= F(S(A1) x ... x S(An))``
+unless some tuple maps to a set with ``NAN``; backward, an atom ``c`` stays
+in ``S(Ak)`` iff some tuple with ``c`` in slot ``k`` (the others in their
+sets) maps to a set holding ``NAN`` or meeting ``S(N)``.  Map op ids follow
+the fold ids (``op >= len(ops)``).  :mod:`.trans` (transcendence: T6) uses
+them.
 """
 from __future__ import annotations
 
+from itertools import product as _product
 from typing import Callable, Dict, List, Sequence, Tuple
 
 ADD, MUL = 0, 1
@@ -39,7 +49,49 @@ class Lattice:
         self.ALL = (1 << natoms) - 1
         self.NANB = 1 << natoms
         self.ops = tuple(ops)
+        #: the first map op id (:meth:`add_map`); fold ops are below it
+        self.nfold = len(self.ops)
+        #: map op id - nfold -> (arity, table: atom tuple -> atom set)
+        self.maps: List[Tuple[int, Dict[tuple, int]]] = []
         self.memo = memo
+
+    def add_map(self, fn: Callable[..., int], arity: int) -> int:
+        """Add the map operation ``fn`` (``fn(a)`` or ``fn(a, b)``: the
+        atom set, possibly with ``NAN``, of the value at arguments in the
+        atoms ``a``, ``b``) of ``arity`` 1 or 2; returns its op id."""
+        if arity not in (1, 2):
+            raise ValueError("a map op has arity 1 or 2")
+        rng = range(self.natoms)
+        table = {tp: fn(*tp) for tp in _product(rng, repeat=arity)}
+        self.maps.append((arity, table))
+        return self.nfold + len(self.maps) - 1
+
+    def map_masks(self, op: int, nmask: int, amasks) -> Tuple[int, List[int]]:
+        """:meth:`node_masks` of the map op ``op``: one round over ``N =
+        F(A1, ..., An)`` (memoised per op, sets of the node and the
+        arguments)."""
+        key = ('map', op, nmask, *amasks)
+        memo = self.memo
+        r = memo.get(key)
+        if r is None:
+            arity, table = self.maps[op - self.nfold]
+            if len(amasks) != arity:
+                raise ValueError("map op %d takes %d arguments" % (op, arity))
+            nanb = self.NANB
+            atoms = [[a for a in range(self.natoms) if m >> a & 1] for m in amasks]
+            tuples = list(_product(*atoms))
+            imgs = [table[tp] for tp in tuples]
+            total = 0
+            for im in imgs:
+                total |= im
+            newn = nmask if total & nanb else nmask & total
+            out = [0] * arity
+            for tp, im in zip(tuples, imgs):
+                if im & nanb or im & newn:
+                    for k, c in enumerate(tp):
+                        out[k] |= 1 << c
+            r = memo[key] = (newn, tuple(out))
+        return r[0], list(r[1])
 
     def mop(self, op: int, ma: int, mb: int) -> int:
         """The atom set of ``a op b`` for ``a`` in ``ma`` and ``b`` in ``mb``."""
@@ -91,6 +143,8 @@ class Lattice:
         """One round of propagation over ``N = op(A1, ..., An)``: the new
         set of the node and of each argument (an empty set is a
         conflict)."""
+        if op >= self.nfold:
+            return self.map_masks(op, nmask, amasks)
         mop, nanb = self.mop, self.NANB
         n = len(amasks)
         pre: list = [None] * n
@@ -238,6 +292,9 @@ class ClassTheory:
         node)."""
         L = self.L
         op = self.nodes[i][0]
+        if op >= L.nfold:
+            newn, out = L.map_masks(op, masks[0], masks[1:])
+            return newn if j == 0 else out[j - 1]
         nm, am = masks[0], masks[1:]
         total = L.fold(op, am)
         newn = nm if total & L.NANB else nm & total

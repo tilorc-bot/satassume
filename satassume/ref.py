@@ -469,22 +469,22 @@ def _glue_atoms_of(a_atoms, p_atoms, rel: bool) -> Tuple[tuple, tuple]:
 
 def _node_theories(s: _RefSession) -> None:
     """Section 5.5, the node theories (``satassume.theories.sign``: the
-    sign theory, issue #149 T1, and the closure theory, T3): each attached
-    with the sums and products of the cone its adapter's ``over_cap``
-    selects (over the templates' arity caps), as the engine."""
-    from .theories.sign import closure_adapter as cl, sign_adapter as sg
-    classes = (sg.SignAdapter, cl.ClosureAdapter)
+    sign theory, issue #149 T1, the closure theory, T3, and the trans
+    theory, T6): each attached with the nodes of the cone its adapter's
+    ``selects`` takes (sums and products over the templates' arity caps;
+    elementary functions and powers), as the engine."""
+    from .theories.sign import closure_adapter as cl, sign_adapter as sg, trans_adapter as tr
+    classes = (sg.SignAdapter, cl.ClosureAdapter, tr.TransAdapter)
     adapters: dict = {}
     seen: set = set()
     while True:
-        ops = [n for n in list(s.base) if n not in seen
-               and (getattr(n, 'is_Add', False) or getattr(n, 'is_Mul', False)) and n.args]
+        ops = [n for n in list(s.base) if n not in seen and getattr(n, 'args', None)]
         if not ops:
             return
         seen.update(ops)
         for i, cls in enumerate(classes):
             for n in ops:
-                if cls.over_cap(n):
+                if cls.selects(n):
                     a = adapters.get(i)
                     if a is None:
                         a = adapters[i] = cls(s)

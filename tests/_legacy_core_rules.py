@@ -9,6 +9,9 @@ from itertools import combinations
 from sympy import S
 from sympy.core.intfunc import integer_nthroot
 
+# (removed from core.py with the Gelfond-Schneider rows, TRANS theory)
+_NOT01 = ("irrational", "noninteger", "negative", "prime", "composite")
+
 from satassume.knowledge.templates._common import SIGN_FLIP, Rules, ge2_alternatives, lits
 from satassume.knowledge.templates.core import (
     _B,
@@ -18,7 +21,6 @@ from satassume.knowledge.templates.core import (
     _E,
     _MUL_CLOSED,
     _N,
-    _NOT01,
     _NOTUNIT,
     _POW_E_RULES,
     _POW_ONE_EQUIV,

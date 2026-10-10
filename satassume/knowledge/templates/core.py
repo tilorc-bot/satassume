@@ -579,6 +579,8 @@ _POW_RULES = (
     (((_B, 'polar'),), (_N, 'polar')),
 )
 
+# (exp(e) transcendental for algebraic e != 0, and the Gelfond-Schneider rows
+# of b**e, are the TRANS theory's: satassume.theories.sign.trans.)
 _POW_E_RULES = (
     (((_E, 'extended_real'),), (_N, 'extended_real')),
     (((_E, 'extended_real'),), (_N, 'extended_nonnegative')),
@@ -587,13 +589,9 @@ _POW_E_RULES = (
     (((_E, 'extended_negative'),), (_N, 'complex')),
     (((_E, 'finite'),), (_N, 'finite')),
     (((_E, 'finite'),), (_N, 'zero', False)),
-    (((_E, 'algebraic'), (_E, 'zero', False)), (_N, 'transcendental')),
     (((_E, 'infinite'), (_E, 'extended_negative')), (_N, 'zero')),
 )
 
-# Gelfond-Schneider: for algebraic b not in {0, 1} and algebraic e,
-# b**e is algebraic iff e is rational.  Ways to say "b not in {0, 1}":
-_NOT01 = ('irrational', 'noninteger', 'negative', 'prime', 'composite')
 # Ways to say "b is real with |b| not in {0, 1}".
 _NOTUNIT = ('irrational', 'noninteger', 'prime', 'composite')
 
@@ -729,14 +727,10 @@ POW_GUARDS = MappingProxyType({
     'b is -1': lambda x: x['b'] is S.NegativeOne,
     'b integer, |b|>=2': lambda x: (x['b'] is not None and x['b'] is not S.NegativeOne
                                     and x['b'].is_Integer and (x['b'].p >= 2 or x['b'].p <= -2)),
-    'b algebraic, not 0 or 1': lambda x: (x['b'] is not None and x['b'].is_algebraic
-                                          and x['b'].is_zero is False and x['b'] is not S.One),
     'b finite number, |b|>1': lambda x: _num(x) and abs(x['b']) > 1,
     'b finite number, 0<|b|<1': lambda x: (_num(x) and not abs(x['b']) > 1
                                            and x['b'].is_zero is False and abs(x['b']) < 1),
     'e integer >= 2': lambda x: x['e'] is not None and x['e'].is_Integer and x['e'].p >= 2,
-    'e algebraic irrational': lambda x: (x['e'] is not None and x['e'].is_algebraic
-                                         and x['e'].is_rational is False),
 })
 
 _POW_SLOT_NAMES = MappingProxyType({_B: 'B', _E: 'E', _N: 'N'})
@@ -831,8 +825,6 @@ def _pow_table_rows():
         # |b|**e < 1 for negative e.
         Row('b=int.negative_exp', [('E', 'negative')], ('N', 'integer', False),
             when='b integer, |b|>=2'),
-        Row('b=algebraic.gs', [('E', 'algebraic')], [('N', 'algebraic'), ('E', 'rational')],
-            kind='equiv', when='b algebraic, not 0 or 1'),
         # Exact comparisons of a number with 1 (no assumptions involved).
         Row('|b|>1.finite', [('E', 'extended_negative')], ('N', 'finite'),
             when='b finite number, |b|>1'),
@@ -850,10 +842,6 @@ def _pow_table_rows():
             when='b finite number, 0<|b|<1'),
         # b**e for integer b >= 2 is composite.
         Row('e>=2.composite', [('B', 'int>=2')], ('N', 'composite'), when='e integer >= 2'),
-        # Gelfond-Schneider: b not in {0, 1} algebraic, e algebraic irrational.
-        Row('e=algebraic_irrational.gs', [('B', '$p'), ('B', 'algebraic')],
-            ('N', 'algebraic', False),
-            preds=_NOT01, when='e algebraic irrational'),
     )
 
 

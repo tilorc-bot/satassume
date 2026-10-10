@@ -3,7 +3,8 @@
 Only statements that are theorems about the function's *value* under
 SymPy's conventions are emitted (``log(0) = zoo``, ``acot(0) = pi/2``,
 ``atan(oo) = pi/2``, ``factorial(-1) = zoo``, principal branches, ...).
-Transcendence facts follow from the Lindemann-Weierstrass theorem.
+Transcendence facts (Lindemann-Weierstrass) are not rows: the TRANS theory
+(``satassume.theories.sign.trans``) decides them in both directions.
 Predicates the rule base derives from the emitted ones (``positive`` from
 ``extended_positive & finite``, ``irrational`` from ``real & !rational``,
 ...) are not repeated.
@@ -118,7 +119,6 @@ _EXP = (
     (('finite',), ('zero', False)),
     (('complex',), 'complex'),
     (('extended_negative',), 'complex'),
-    (('algebraic', ('zero', False)), 'transcendental'),
     (('infinite', 'extended_negative'), 'zero'),
     (('infinite', 'extended_positive'), 'infinite'),
     (('infinite', 'extended_positive'), 'extended_positive'),
@@ -186,8 +186,6 @@ def _log(R, c):
     R.rule([(M, 'negative', True), (X, 'positive', True)], (N, 'negative', True))
     R.rule([(X, 'positive', True), (N, 'positive', True)], (M, 'positive', True))
     R.rule([(X, 'positive', True), (N, 'negative', True)], (M, 'negative', True))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
 
 
 registry.register(log)(_unary('log', _log, slots=_minus_one))
@@ -358,22 +356,22 @@ registry.register(factorial)(_unary('factorial', _factorial))
 # trigonometric
 # ---------------------------------------------------------------------------
 
-_TRANSCENDENTAL = (('algebraic', ('zero', False)), 'transcendental')
+# The transcendence of f(x) for algebraic x (Lindemann-Weierstrass) is the
+# TRANS theory's (satassume.theories.sign.trans), for every function here.
 
 # sin(oo*I) == oo*I, so finiteness of the value needs a finite argument.
 _SIN = (
     (('real',), 'real'), (('complex',), 'complex'), (('finite',), 'finite'),
-    (('zero',), 'zero'), (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
+    (('zero',), 'zero'), (('imaginary',), 'imaginary'),
 )
 _COS = (
     (('real',), 'real'), (('complex',), 'complex'), (('finite',), 'finite'),
     (('zero',), 'odd'), (('zero',), 'positive'), (('imaginary',), 'positive'),
-    _TRANSCENDENTAL,
 )
 _TAN = (
     # tan(pi/2) == zoo, so realness needs finiteness of the value.
     (('real',), ('imaginary', False)), (('zero',), 'zero'),
-    (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
+    (('imaginary',), 'imaginary'),
 )
 
 
@@ -396,11 +394,6 @@ _COT = (
     (('imaginary',), 'imaginary'),          # cot(I*t) == -I*coth(t)
     (('zero',), 'infinite'),
     (('zero',), ('extended_real', False)),
-    # cot(x) == cos(x)/sin(x) is finite for algebraic x != 0 (sin(x) == 0
-    # only at multiples of pi) and transcendental by Lindemann-Weierstrass:
-    # cot(x) == a algebraic would make exp(2*I*x) algebraic.
-    (('algebraic', ('zero', False)), 'transcendental'),
-    (('algebraic',), ('algebraic', False)),
 )
 
 
@@ -418,7 +411,7 @@ def _asin(R, c):
     # asin is real on [-1, 1].
     R.rule([(X, 'nonnegative', True), (M, 'nonpositive', True)], (N, 'real', True))
     _table(R, ((('finite',), 'finite'), (('complex',), 'complex'),
-               (('imaginary',), 'imaginary'), _TRANSCENDENTAL))
+               (('imaginary',), 'imaginary')))
 
 
 def _acos(R, c):
@@ -427,7 +420,6 @@ def _acos(R, c):
     # acos(x) == 0 iff x == 1.
     R.equiv([], (N, 'zero', True), (M, 'zero', True))
     _table(R, ((('zero',), 'positive'), (('finite',), 'finite'), (('complex',), 'complex')))
-    R.rule([(X, 'algebraic', True), (N, 'zero', False)], (N, 'transcendental', True))
 
 
 def _in_unit_interval_units(kind):
@@ -459,9 +451,6 @@ def _atan(R, c):
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
     R.equiv([(X, 'extended_real', True)], (N, 'positive', True), (X, 'extended_positive', True))
     R.equiv([(X, 'extended_real', True)], (N, 'negative', True), (X, 'extended_negative', True))
-    # atan(I) == oo*I, so restrict to real arguments.
-    R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
-           (N, 'transcendental', True))
     # atan(x) is real iff x is real (atan(I*t) is imaginary, infinite or
     # non-real complex).
     R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
@@ -475,10 +464,7 @@ _ACOT = (
     (('extended_negative',), 'nonpositive'),  # acot(-oo) == 0
     (('real',), ('zero', False)),
     (('infinite', 'extended_real'), 'zero'),
-    (('real', 'algebraic'), 'transcendental'),
     (('imaginary',), ('extended_real', False)),
-    # acot(0) == pi/2, acot(+-I) is infinite, acot(x) == atan(1/x) otherwise.
-    (('algebraic',), ('algebraic', False)),
 )
 
 
@@ -502,12 +488,12 @@ registry.register(acos)(_unary('acos', _acos, slots=_minus_one,
 _SINH = (
     (('real',), 'real'), (('extended_real',), 'extended_real'),
     (('finite',), 'finite'), (('complex',), 'complex'),
-    (('infinite', 'extended_real'), 'infinite'), _TRANSCENDENTAL,
+    (('infinite', 'extended_real'), 'infinite'),
 )
 _COSH = (
     (('real',), 'positive'), (('extended_real',), 'extended_positive'),
     (('finite',), 'finite'), (('complex',), 'complex'), (('zero',), 'odd'),
-    (('imaginary',), 'real'), _TRANSCENDENTAL,
+    (('imaginary',), 'real'),
 )
 
 
@@ -522,7 +508,7 @@ def _cosh(R, c):
 
 
 def _tanh(R, c):
-    _table(R, ((('extended_real',), 'real'), _TRANSCENDENTAL))
+    _table(R, ((('extended_real',), 'real'),))
     for pred in ('positive', 'negative'):
         R.equiv([(X, 'extended_real', True)], (N, pred, True), (X, 'extended_' + pred, True))
     R.equiv([(X, 'extended_real', True)], (N, 'zero', True), (X, 'zero', True))
