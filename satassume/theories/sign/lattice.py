@@ -353,6 +353,13 @@ class ClassTheory:
                     out.append(x)
         return out
 
+    def _reason(self, i: int, lits, j: int, test, lit: int):
+        """The lazy reason of ``lit``, implied at slot ``j`` of node ``i``
+        under the literals ``lits``: a function returning the clause."""
+        def reason():
+            return [lit] + [-l for l in self._why(i, lits, j, test) if l != -lit]
+        return reason
+
     def _node(self, i: int, out: list, seen: set) -> bool:
         """Propagate node ``i`` into ``out``; False after a conflict."""
         nanb = self.L.NANB
@@ -400,14 +407,19 @@ class ClassTheory:
                 cur = val.get(v)
                 if (cur is not None and cur == (lit > 0)) or lit in seen:
                     continue
-                why = self._why(i, lits, j, test)
                 seen.add(lit)
                 self.stats["props"] += 1
+                if cur is None:
+                    # a lazy reason (satassume.sat.theory): explained only
+                    # if conflict analysis reads it, from the literals
+                    # asserted now (``lits`` is not changed afterwards)
+                    out.append((lit, self._reason(i, lits, j, test, lit)))
+                    continue
+                why = self._why(i, lits, j, test)
                 out.append((lit, [lit] + [-l for l in why if l != -lit]))
-                if cur is not None:
-                    self.stats["conflicts"] += 1
-                    self.budget -= 1
-                    return False            # the literal is false: a conflict
+                self.stats["conflicts"] += 1
+                self.budget -= 1
+                return False                # the literal is false: a conflict
         return True
 
     def propagate(self):
