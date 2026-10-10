@@ -202,11 +202,11 @@ def class_symbols(atoms: Iterable[P]) -> frozenset:
     ``p``, with the extension atoms): the free symbols of the class atoms
     (:data:`CLASS_PREDS`) and of the equalities (an ``eq`` atom, or an
     order atom and its reverse: predicate transfer carries the class facts
-    of a number).  The trans theory is told a node it selects at once
-    iff no argument is a plain arithmetic expression over symbols outside
-    it (``TransAdapter.engages``): what the theory decides needs class
-    facts of every argument it reads; the others when the query is still
-    open after its search (``Session.unpark``).  (A glue twin ``eq(t, 0)`` is not counted:
+    of a number), and the symbols of ``zero(x)``, ``nonzero(x)``.  The trans theory
+    is told a node it selects iff no argument is a plain arithmetic
+    expression over symbols outside it (``TransAdapter.engages``): what
+    the theory decides needs class facts of every argument it reads.
+    (A glue twin ``eq(t, 0)`` is not counted:
     its class facts are those of ``zero(t)``, which is counted for a
     sum ``t`` with a number or a term in the scope: ``zero(y - 1)`` says
     ``y == 1``.)  Sound whatever the set
@@ -220,6 +220,9 @@ def class_symbols(atoms: Iterable[P]) -> frozenset:
         elif p == "eq":
             for e in a.expr:
                 out |= _symbols(e)
+        elif p == "zero" and getattr(a.expr, "is_Symbol", False):
+            # zero(x), nonzero(x): the class facts of 0 (x + 1 is then 1)
+            out.add(a.expr)
         elif p == "zero" and getattr(a.expr, "is_Add", False):
             if zs is None:
                 zs = []
@@ -235,18 +238,25 @@ def class_symbols(atoms: Iterable[P]) -> frozenset:
                 out |= _symbols(x) | _symbols(y)
     if zs:
         # ``zero(t)`` of a sum is an equality between its terms: with a
-        # number among them (``zero(y - 1)``: ``y == 1``) or a term in the
-        # class scope (``zero(x - y)``), it gives the others class facts
+        # number among them (``zero(y - 1)``: ``y == 1``), a term in the
+        # class scope (``zero(x - y)``) or a symbol with a class
+        # assumption, it gives the others class facts
         new = True
         while new and zs:
             new = False
             for t in list(zs):
                 st = _symbols(t)
-                if st & out or any(u.is_number for u in t.args):
+                if st & out or any(u.is_number for u in t.args) \
+                        or any(map(_classed(), st)):
                     out |= st
                     zs.remove(t)
                     new = True
     return frozenset(out)
+
+
+def _classed():
+    from .knowledge.domain import classed
+    return classed
 
 
 def _symbols(e) -> set:
@@ -278,6 +288,25 @@ def classes_scope(assumptions, proposition, extensions=None) -> frozenset:
     if extensions is not None:
         atoms.extend(extension_atoms(atoms, extensions))
     return class_symbols(atoms)
+
+
+def zero_symbols(assumptions, proposition, extensions=None) -> frozenset:
+    """The free symbols of the ``zero`` and ``nonzero`` atoms of the two
+    formulas (gathered as :func:`classes_scope` does): a ``zero(t)`` the
+    class scope leaves out (``zero(x**2 + y**2)``) may still pin its
+    symbols to numbers, so a query still open after its search widens the
+    class scope by them (``Session.unpark``)."""
+    atoms = []
+    for f in (assumptions, proposition):
+        if f is not None and f is not True:
+            atoms.extend(atoms_of(f))
+    if extensions is not None:
+        atoms.extend(extension_atoms(atoms, extensions))
+    out: set = set()
+    for a in atoms:
+        if a.pred == "zero" and a.expr.is_Add or a.pred == "nonzero" and a.expr.is_Symbol:
+            out |= _symbols(a.expr)
+    return frozenset(out)
 
 
 def _custom_pred(a: P) -> bool:

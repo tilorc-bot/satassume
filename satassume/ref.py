@@ -76,7 +76,7 @@ from .knowledge.compile import VarTable, compile_formula, formula_literal
 from .sat.formula import FALSE, P, TRUE, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
 from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX, RULE_INTERNAL, basis_lits
-from .scope import EMPTY as _EMPTY_SCOPE, Scope, classes_scope
+from .scope import EMPTY as _EMPTY_SCOPE, Scope, classes_scope, zero_symbols
 from .sat.solver import Solver
 
 __all__ = ["ask_ref", "ref_outcome", "theory_scope", "RefInfo"]
@@ -467,39 +467,38 @@ def _glue_atoms_of(a_atoms, p_atoms, rel: bool) -> Tuple[tuple, tuple]:
     return glue_atoms(a_atoms), glue_atoms(p_atoms, a_atoms)
 
 
-def _node_theories(s: _RefSession, gated: bool = True) -> bool:
+def _node_theories(s: _RefSession) -> bool:
     """Section 5.5, the node theories (``satassume.theories.sign``: the
     sign theory, issue #149 T1, the closure theory, T3, and the trans
     theory, T6): each attached with the nodes of the cone its adapter's
     ``selects`` takes (sums and products over the templates' arity caps;
     elementary functions and powers), as the engine.  A ``GATED``
     adapter (trans) is told only the nodes its ``engages`` takes under
-    the class scope ``s.classes``, until a call with ``gated`` False
-    (the query still open after its search: ``Session.unpark``) tells it
-    the others.  True iff a node was parked before that call."""
+    the class scope ``s.classes``; a later call after ``s.classes`` grew
+    (``Session.unpark``) tells it those it then takes.  True iff a node
+    is still parked."""
     from .theories.sign import closure_adapter as cl, sign_adapter as sg, trans_adapter as tr
     classes = (sg.SignAdapter, cl.ClosureAdapter, tr.TransAdapter)
-    st = s.__dict__.setdefault("_node_theories", ({}, set(), []))
-    adapters, seen, parked = st
+    adapters, seen, parked = s.__dict__.setdefault("_node_theories", ({}, set(), []))
     in_scope = getattr(s, "classes", frozenset())
-    had = bool(parked)
-    if not gated:
-        for i, n in parked:
-            a = adapters.get(i)
-            if a is None:
-                a = adapters[i] = classes[i](s)
-            a.add(n)
-        parked.clear()
+    ops = [(i, n) for i, n in parked if classes[i].engages(n, in_scope)]
+    for i, n in ops:
+        parked.remove((i, n))
+        a = adapters.get(i)
+        if a is None:
+            a = adapters[i] = classes[i](s)
+        a.add(n)
+    if ops:
         s.discover()
     while True:
         ops = [n for n in list(s.base) if n not in seen and getattr(n, 'args', None)]
         if not ops:
-            return had
+            return bool(parked)
         seen.update(ops)
         for i, cls in enumerate(classes):
             for n in ops:
                 if cls.selects(n):
-                    if gated and cls.GATED and not cls.engages(n, in_scope):
+                    if cls.GATED and not cls.engages(n, in_scope):
                         parked.append((i, n))
                         continue
                     a = adapters.get(i)
@@ -550,10 +549,16 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     info.clauses = s.nclauses
     try:
         r = _entails(s, q, lits)
-        if r is None and _node_theories(s, gated=False):
-            # still open: the nodes the class-scope gate parked
+        if r is None and s.__dict__["_node_theories"][2]:
+            # still open: widen the class scope by the zero atoms' symbols
             # (Session.unpark), then the search again
-            r = _entails(s, q, lits)
+            wider = zero_symbols(assum, prop, engine._extensions)
+            if not wider <= s.classes:
+                s.classes = s.classes | wider
+                n = len(s.__dict__["_node_theories"][2])
+                _node_theories(s)
+                if len(s.__dict__["_node_theories"][2]) < n:
+                    r = _entails(s, q, lits)
     finally:
         theories = s.solver.theories()
         info.gave_up = any(getattr(t, "gave_up", False) for t in theories)

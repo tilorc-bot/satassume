@@ -308,7 +308,7 @@ def test_engages():
     assert TransAdapter.engages(exp(x), frozenset({x}))
 
 
-def test_unpark_matches_the_ungated_theory(monkeypatch):
+def test_gate_matches_the_ungated_theory(monkeypatch):
     """The gate saves work, never an answer: gated and ungated agree."""
     from satassume.engine import Engine
     from satassume.state.memos import PROCESS

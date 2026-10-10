@@ -26,6 +26,15 @@ NONCOMM_SIZE = 4096
 _NONCOMM = _PROCESS.table(f"{__name__}._NONCOMM", "pure", NONCOMM_SIZE)
 
 
+def classed(s) -> bool:
+    """Whether the symbol ``s`` has a class fact of its own assumptions
+    (``Symbol('n', integer=True)``, ``Symbol('a', algebraic=True)``): the
+    trans theory's class scope (``scope.class_symbols``,
+    ``TransAdapter.engages``)."""
+    return (s.is_rational is not None or s.is_algebraic is not None
+            or s.is_integer is not None or s.is_zero is True)
+
+
 def _fixed_noncommutative(t) -> bool:
     """Whether ``t`` is non-commutative by construction, read without
     evaluating any assumption (``t.is_commutative`` would compute and cache

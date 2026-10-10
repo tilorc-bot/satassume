@@ -28,13 +28,14 @@ _FLOAT_READ = frozenset(("finite", "extended_real", "zero"))
 #: loads no SymPy)
 _CLASSES: dict = {}
 _noncommutative = None
+classed = None
 
 
 def _classes() -> dict:
-    global _noncommutative
+    global _noncommutative, classed
     if not _CLASSES:
         import sympy
-        from ...knowledge.domain import _noncommutative
+        from ...knowledge.domain import _noncommutative, classed
         _CLASSES.update((getattr(sympy, name), op) for name, op in OPS.items())
     return _CLASSES
 
@@ -100,25 +101,27 @@ class TransAdapter(ClassAdapter):
         """Whether the theory is told ``node`` under the class scope
         ``classes`` (:func:`satassume.scope.class_symbols`): iff no argument
         is *plain*, an arithmetic expression (sums, products and powers)
-        over symbols outside ``classes`` that is not a number.  Every table
-        entry that claims something reads a class fact of each argument
-        (``POW``: of the base and the exponent).  A plain argument gets
-        one only from a fact that makes it 0 (where the templates decide
-        the functions and powers) or a chain of rows from a class atom or
-        equality over its symbols, which puts them in ``classes``; every
-        other argument (a number, a function application anywhere in it:
-        ``floor(x)``, ``sign(x)``, ``f(1)``, ``f(x) + 1``, whose class
-        facts may come from template rows or from EUF) is taken.  A node
-        left out waits in the session (``Session._parked``) until the
-        scope widens, or until the query is still open after its search,
-        when every parked node is told (``Session.unpark``): the gate
-        saves work only on queries that are decided without it."""
+        that is not a number, whose free symbols are outside ``classes``
+        and carry no class assumption of their own (``Symbol('n',
+        integer=True)``).  Every table entry that claims something reads a
+        class fact of each argument (``POW``: of the base and the
+        exponent), and a plain argument has none: its class facts could
+        only come from a class atom or an equality over its symbols, or
+        from a ``zero`` atom of one of them, and those put the symbols in
+        ``classes``.  An argument with a function application anywhere in
+        it (``floor(x)``, ``sign(x)``, ``f(1)``, ``f(x) + 1``) is never
+        plain: its class facts may come from template rows or from EUF.
+        A node left out waits in the session (``Session._parked``) until
+        the scope widens.  What this costs is measured, not proved: a
+        class fact of a plain argument by another chain (a sign fact
+        ``x - 1`` neither positive nor negative); the audit of PR #154
+        found none."""
         oa = op_args(node)
         if oa is None:
             return False
         for a in oa[1]:
-            if not (a.is_number or (classes and not classes.isdisjoint(a.free_symbols))
-                    or _applied(a)):
+            if not (a.is_number or _applied(a) or any(
+                    s in classes or classed(s) for s in a.free_symbols)):
                 return False
         return True
 
