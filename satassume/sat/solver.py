@@ -2101,10 +2101,15 @@ class Solver:
         if l not in raw:
             raise RuntimeError(f"theory reason for {self._to_ext(l)} does not contain it")
         raw.remove(l)
+        level = self._level
+        lv = level[v]
         for q in raw:
-            if val[q] is not False:
+            # (assigned no later than the literal: a reason explains from
+            # the literals asserted when ``propagate`` returned it)
+            if val[q] is not False or level[q >> 1] > lv:
                 raise RuntimeError(
-                    f"theory reason literal {self._to_ext(q)} for {self._to_ext(l)} is not false")
+                    f"theory reason literal {self._to_ext(q)} for {self._to_ext(l)} is not false"
+                    " at or below its level")
         c = Clause([l] + raw)
         self._reason[v] = c
         return c
