@@ -590,6 +590,43 @@ same predicate as `real`) went. The `root` rows need a base that is a number (`A
 **Not done (stage 2 of T3).** `algebraic(x)` under `algebraic(p(x))` for a polynomial `p` with algebraic
 coefficients (`x**3 + x`); `rational(x)` under `rational(x**3)` is rightly open (`2**(1/3)`).
 
+## CLRA: equalities over the Gaussian rationals
+
+An equality whose difference has `I` in a coefficient or constant
+(`Q.eq(x, 1 + 2*I)`, `Q.eq(x + I*y, 0)`, the link atom `eq(I*x + 2*I*y,
+0)`) is no real linear form, so the real path leaves it unread.
+`lra_adapter.cinterpret` splits it (issue #149, proposal T4): every opaque
+term `u` is `re(u) + I*im(u)`, every coefficient `cr + I*ci` with `cr`,
+`ci` numbers of the exact field, and `a - b = 0` holds iff the real form
+`sum(cr*re(u) - ci*im(u)) + kr` and the imaginary form `sum(cr*im(u) +
+ci*re(u)) + ki` are both 0. The part variables are named by the SymPy
+terms `re(u)` and `im(u)`, the very terms a user writes, so `Q.eq(x, 1 +
+2*I)` and `Q.eq(re(x), 1)` share the variable `re(x)`. A term real by
+construction (`re(w)`, `im(w)`, or extended real context-free) is its own
+real part with imaginary part 0.
+
+`Relations._interpret_complex` registers both forms (`tr`, `ti`) and makes
+the twin `guard -> (atom <-> tr & ti)`, switched by the atom's roles like
+every equality twin, with `guard` the finiteness of each term
+(`complex(u)`, or `real(u)` for a term real by construction): there each
+part variable holds its part's value, so both forms are exact, and
+`re(zoo) = nan` is excluded. For `eq(e, 0)` the same twin reads `real(e)
+<-> ti` and `imaginary(e) <-> tr & ~ti` (under the guard `e` is a finite
+complex number). `Relations._parts` links a complex term `u` to its parts,
+once per session and unswitched (each clause holds for every value, and
+constrains only fresh atoms over part variables that other atoms constrain
+under switched roles alone): `real(u) -> im(u) = 0 & re(u) = u` (the real
+path's variable of `u`), `complex(u) & im(u) = 0 -> real(u)`,
+`imaginary(u) <-> complex(u) & re(u) = 0 & im(u) != 0`, and
+`real(re(u)) & real(im(u)) -> complex(u)` (#19: no infinite `u` has two
+finite parts). They are made for each complex term of a split equality and
+for `w` when a guarded atom reads `re(w)` or `im(w)`.
+
+Order atoms keep the real path. Splitting every equality with a term not
+real at the root (so that `Q.eq(a, b)` with finite sides gives `zero(a -
+b)`, #42) gave no new answer on the stream or gate2 and took one stream
+pass from 3.8 s to 17.3 s (unpinned, on a loaded host); it was dropped.
+
 ## Monotone functions (MONO)
 
 `satassume/theories/mono.py` is a table: for an application `f(u)` of
