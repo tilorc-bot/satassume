@@ -383,6 +383,7 @@ as without relation support: ``sympy_api.ask`` returns None for relations.
 """
 from __future__ import annotations
 
+import functools
 import weakref
 from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
@@ -784,17 +785,14 @@ def _csign(e):
     return r
 
 
-_MONO_FIELD: list = []
-
-
+@functools.lru_cache(maxsize=None)
 def _mono_field():
-    """LRA's field for :func:`satassume.theories.mono.link_map` (made once)."""
-    if not _MONO_FIELD:
-        from .theories.lra.constfield import Undecided, from_sympy, sign
-        from .theories.lra.lra import Approx
-        from .theories.mono import Field
-        _MONO_FIELD.append(Field(from_sympy, sign, Undecided, Approx))
-    return _MONO_FIELD[0]
+    """LRA's field for :func:`satassume.theories.mono.link_map` (made once:
+    a constant, not module state)."""
+    from .theories.lra.constfield import Undecided, from_sympy, sign
+    from .theories.lra.lra import Approx
+    from .theories.mono import Field
+    return Field(from_sympy, sign, Undecided, Approx)
 
 
 def _mono_guards(name):
