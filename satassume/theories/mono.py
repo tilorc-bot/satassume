@@ -204,7 +204,13 @@ _NAMES = frozenset({"exp", "log", "atan", "tanh", "sinh", "asinh", "cosh",
 #: extended_positive(u))`` and the like): the threshold-0 lemmas of their
 #: :class:`Spec` give them, once the glue links ``f(u)`` and ``u``
 #: (:func:`sign_terms`, ``satassume.scope``)
-SIGN_FUNCS = frozenset({"atan", "tanh", "sinh"})
+SIGN_FUNCS = frozenset({"atan", "tanh", "sinh", "log"})
+
+#: functions with a left inverse on their whole domain (``exp(log(z)) =
+#: z``, ``tan(atan(z)) = z``): ``f(u) = f(c)`` gives ``u = c`` with no
+#: piece guard (``Relations._mono_lemmas``), as the templates' unguarded
+#: ``zero(log(x)) <-> zero(x - 1)`` and ``zero(atan(x)) <-> zero(x)`` did
+INJECTIVE = frozenset({"log", "atan"})
 
 _SIGN_TERMS = _PROCESS.table(f"{__name__}._SIGN_TERMS", "pure", 100_000)
 
@@ -232,6 +238,13 @@ def sign_terms(e) -> frozenset:
             u = args[0]
             if u.free_symbols:
                 out.add(u)
+                if u.is_Add:
+                    # the opaque terms of u's linear form (xp of xp + 1):
+                    # their signs bound u against the thresholds
+                    for a in u.args:
+                        r = a.as_coeff_Mul()[1]
+                        if r.free_symbols:
+                            out.add(r)
         stack.extend(args)
     r = frozenset(out)
     if len(_SIGN_TERMS) >= _SIGN_TERMS.size:
