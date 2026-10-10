@@ -90,7 +90,12 @@ from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
-from .theories.sign import sign_adapter as _sign
+from .theories.sign import closure_adapter as _closure, sign_adapter as _sign
+
+#: the node theories (class propagators over sums and products,
+#: ``satassume.theories.sign.lattice``): adapter classes, each told the
+#: nodes its ``over_cap`` selects (``Session.node_theories_sync``)
+_NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter)
 
 Node = Any
 
@@ -356,11 +361,12 @@ class Session:
         #: checks it).  If set (a direct caller), its set's complete check
         #: gives ``UNKNOWN``.
         self.truncated = False
-        #: the sign theory once engaged (``sign_sync``) and the sums and
-        #: products over the templates' arity caps
-        #: (``sign_adapter.over_cap``) visited since its last sync
-        self.sign = None
-        self._sign_nodes: List[Node] = []
+        #: the node theories once engaged (``node_theories_sync``), by
+        #: index in ``_NODE_THEORIES``, and the ``(index, node)`` of the
+        #: sums and products over the templates' arity caps (each
+        #: adapter's ``over_cap``) visited since the last sync
+        self.node_theories: Dict[int, Any] = {}
+        self._theory_nodes: List[Tuple[int, Node]] = []
         if scope.glue and engine._relation_specs:
             # the theory scope of the query is known at construction: the
             # glue (and transfer, if the scope says so) exists before any
@@ -596,10 +602,11 @@ class Session:
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
-        if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) \
-                and node.args and _sign.over_cap(node):
-            # the sign theory's nodes: those over the templates' arity caps
-            self._sign_nodes.append(node)
+        if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) and node.args:
+            # the node theories' nodes: those over the templates' arity caps
+            for i, a in enumerate(_NODE_THEORIES):
+                if a.over_cap(node):
+                    self._theory_nodes.append((i, node))
 
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
@@ -839,27 +846,37 @@ class Session:
                 self.truncated = True
         self.frontier = deque()
 
-    def sign_sync(self) -> bool:
-        """Engage the sign theory (``satassume.theories.sign``) once the
-        cone holds a sum or product over the templates' arity caps, and
-        tell it those visited since the last sync (the theory then decides
-        only what the templates leave out by construction).  True iff
-        something was registered."""
-        nodes = self._sign_nodes
+    def node_theories_sync(self) -> bool:
+        """Engage each node theory (``_NODE_THEORIES``: the sign and the
+        closure theories of ``satassume.theories.sign``) once the cone
+        holds a sum or product over its arity caps, and tell it those
+        visited since the last sync (each theory then decides only what
+        the templates leave out by construction).  True iff something
+        was registered."""
+        nodes = self._theory_nodes
+        ths = self.node_theories
         if not nodes:
-            if self.sign is not None:
-                self.sign.sync_derived()
+            for a in ths.values():
+                a.sync_derived()
             return False
-        if self.sign is None:
-            self.sign = _sign.SignAdapter(self)
         while nodes:
             # registering a node visits its arguments, which may be sums
             # or products over the caps themselves: until none is left
-            self._sign_nodes = []
-            for n in nodes:
-                self.sign.add(n)
-            nodes = self._sign_nodes
-        self.sign.sync_derived()
+            self._theory_nodes = []
+            for i, n in nodes:
+                a = ths.get(i)
+                if a is None:
+                    a = ths[i] = _NODE_THEORIES[i](self)
+                a.add(n)
+            # an argument no clause mentioned (a sum over the caps has no
+            # closure or sign rows) was first visited just now: visit what
+            # its own rows mention (its arguments, with the predicates
+            # those rows demand), or the theory would see it unconstrained
+            self._flush()
+            self._discover(())
+            nodes = self._theory_nodes
+        for a in ths.values():
+            a.sync_derived()
         return True
 
     # -- queries -------------------------------------------------------------
@@ -1964,7 +1981,7 @@ class Engine:
                 s.xfer.sync_transfer()
             if not solver.propagate() or solver.implied(lits) is None:
                 return INCONSISTENT
-        if s.sign_sync():
+        if s.node_theories_sync():
             if not solver.propagate() or solver.implied(lits) is None:
                 return INCONSISTENT
         # Solver.solve returns a bool: it raises only on a malformed
@@ -2095,12 +2112,12 @@ class Engine:
         session learned deciding the others.  ``tests/
         test_transfer_numbers.py`` checks this against a loop of ``is_``
         under every harness preset."""
-        s.sign_sync()
+        s.node_theories_sync()
         r = s.query_literal(lit, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
-            s.sign_sync()
+            s.node_theories_sync()
             r = s.query_literal(lit, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
@@ -2220,13 +2237,13 @@ class Engine:
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
         lits = s.assumption_lits(proposition)
-        s.sign_sync()
+        s.node_theories_sync()
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.solver.release(s.n_hold)
             s.escalate()
-            s.sign_sync()
+            s.node_theories_sync()
             r = s.query_literal(q, lits, search=False)
         if r is None:
             self.stats["searches"] += 1

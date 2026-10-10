@@ -541,8 +541,10 @@ def test_specific_expectations():
     facts = registry.facts_for(4*x)
     assert Implies(P('integer', x), Not(P('prime', 4*x))) in facts
     facts = registry.facts_for(sqrt(2)*x)
-    assert Implies(And(P('irrational', sqrt(2)), P('rational', x), Not(P('zero', x))),
-                   P('irrational', sqrt(2)*x)) in facts
+    # division in the field Q (its contrapositive: an irrational factor
+    # times a nonzero rational is not rational; issue #149 T3)
+    assert Implies(And(P('rational', sqrt(2)*x), P('rational', x), Not(P('zero', x))),
+                   P('rational', sqrt(2))) in facts
     assert P('irrational', sqrt(2)) in registry.facts_for(sqrt(2))
     assert P('irrational', sqrt(2)) not in registry.facts_for(unevaluated(Pow, 4, S.Half))
     facts = registry.facts_for(x**y)

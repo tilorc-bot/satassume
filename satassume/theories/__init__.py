@@ -2,7 +2,8 @@
 
 Linear real arithmetic (:mod:`.lra`), equality with uninterpreted
 functions (:mod:`.euf`), predicate transfer across equal terms
-(:mod:`.transfer`) and the signs of sums and products (:mod:`.sign`).  Hides how relation atoms are decided: each theory
+(:mod:`.transfer`) and the signs and ring/field memberships of sums and products
+(:mod:`.sign`: SIGN and CLOSURE).  Hides how relation atoms are decided: each theory
 implements the contract of :mod:`satassume.sat.theory` and is told its
 atoms and terms by the layer above.  Which theories a session gets, how
 SymPy relations become relation atoms and how those are linked to the
