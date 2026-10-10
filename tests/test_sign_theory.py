@@ -239,3 +239,13 @@ def test_rows_over_the_caps_are_left_to_the_theory():
     assert len(core._mul_rules(5, {})) < len(core._mul_rules(4, {})) // 2
     assert 'integer' in preds(core._add_rules(7, {}))
     assert 'extended_positive' not in preds(core._add_rules(7, {}))
+
+
+def test_nodes_reached_through_a_registered_node_are_registered():
+    # the 7-term sum is the only node over the caps the query visits; the
+    # theory registering it visits its products of 5 and 6 factors, over the
+    # caps too: the same sync registers them (the answer needs both)
+    b, c, e, v, x, y = symbols("b c e v x y")
+    s = -oo + v + x - I + 2*y + b*c*v*x**2*y**2 - I*v*e**2*x**2*y**2
+    a = And(Q.even(e), Q.integer(y), Q.nonpositive(x), Q.nonzero(v), Q.odd(b), Q.prime(c))
+    assert ask(Q.extended_positive(s), a) is False

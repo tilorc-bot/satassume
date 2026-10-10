@@ -852,9 +852,13 @@ class Session:
             return False
         if self.sign is None:
             self.sign = _sign.SignAdapter(self)
-        self._sign_nodes = []
-        for n in nodes:
-            self.sign.add(n)
+        while nodes:
+            # registering a node visits its arguments, which may be sums
+            # or products over the caps themselves: until none is left
+            self._sign_nodes = []
+            for n in nodes:
+                self.sign.add(n)
+            nodes = self._sign_nodes
         self.sign.sync_derived()
         return True
 
