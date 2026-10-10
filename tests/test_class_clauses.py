@@ -21,6 +21,16 @@ still asserted.  No SymPy: the theory's own tables define the semantics
 check those against SymPy).  Between levels it also pops and re-pushes
 (interleaved), as the solver's backjumps do, and checks the restore and
 the clauses of the levels pushed again.
+
+TRANS (T6) is checked the same way over its *map* operations (one unary
+table per function, the binary ``Pow`` table; argument order matters, and
+``x**x`` puts a term in both slots): the node's set is the table entry of
+the argument atoms.  Its *one-sided* atoms (``prime``, ``composite``,
+``even``, ``extended_negative``: true puts the term in a set, false says
+nothing) are registered and asserted too; a clause must hold for every
+value of them their meaning allows (false always, true only inside the
+set), so a one-sided literal in a clause counts as false, and its negation
+as true only outside the set.  The theory must never propagate one.
 """
 from __future__ import annotations
 
@@ -31,6 +41,7 @@ from itertools import product
 import pytest
 
 from satassume.theories.sign import closure as C
+from satassume.theories.sign import trans as T
 from satassume.theories.sign.sign import (ADD, FIN, INF, MUL, PRED_MASK, F, SIGN,
                                           SignTheory)
 
@@ -38,15 +49,19 @@ SEEDS = int(os.environ.get("SIGN_CLAUSE_SEEDS", "1500"))
 
 
 class _Lat:
-    """One lattice under test: its theory, predicates and constants."""
+    """One lattice under test: its theory, predicates and constants; the
+    ops of its nodes (``(op, arity)``, arity None for a fold of 2 to 4
+    arguments) and its one-sided atom sets."""
 
-    def __init__(self, name, theory, L, preds, consts):
+    def __init__(self, name, theory, L, preds, consts, ops=None, onesided=()):
         self.name, self.theory, self.L = name, theory, L
         self.preds = list(preds)
         self.consts = consts
         self.n = L.natoms
         self.ALL, self.NANB = L.ALL, L.NANB
         self.value_sets = {}
+        self.ops = ops or [(ADD, None), (MUL, None)]
+        self.onesided = tuple(onesided)
 
     def __repr__(self):
         return self.name
@@ -62,7 +77,13 @@ SIGN_L = _Lat("sign", SignTheory, SIGN, PRED_MASK,
 CLOSURE_L = _Lat("closure", C.ClosureTheory, C.CLOSURE, C.PRED_MASK,
                  tuple(1 << a for a in (C.Z0, C.Z1, C.Q1, C.AR, C.AC, C.TR, C.TC, C.IR, C.IC))
                  + (_bs(C.Z0, C.Z1), _bs(C.AR, C.TR), _bs(*C.CPX), C.INF))
-LATTICES = (SIGN_L, CLOSURE_L)
+TRANS_L = _Lat("trans", T.TransTheory, T.TRANS, T.PRED_MASK,
+               tuple(1 << a for a in (T.Z0, T.ONE, T.ZI, T.Q1, T.AR, T.AC, T.TR, T.TC, T.IR,
+                                      T.IC))
+               + (_bs(T.Z0, T.ONE, T.ZI), _bs(T.AR, T.TR), _bs(*T.CPX)),
+               ops=[(op, 1) for op in T.OPS.values()] + [(T.POW, 2)] * 6,
+               onesided=T.ONESIDED_MASK)
+LATTICES = (SIGN_L, CLOSURE_L, TRANS_L)
 
 
 def _rand_mask(lat, rng: random.Random) -> int:
@@ -84,7 +105,11 @@ def _value_set(lat, op, atoms):
     the intersection, over every bracketing of every order of the
     arguments, of the folded set.  The tables over-approximate each step,
     so each bracketing holds the true value and so does the intersection
-    (the theory folds prefixes and suffixes in its own bracketings)."""
+    (the theory folds prefixes and suffixes in its own bracketings).  For
+    a map op, the table entry of the atoms in their order."""
+    L = lat.L
+    if op >= L.nfold:
+        return L.maps[op - L.nfold][1][tuple(atoms)]
     key = (op, tuple(sorted(atoms)))
     r = lat.value_sets.get(key)
     if r is None:
@@ -135,9 +160,15 @@ def _models(lat, op, slots, fixed, nterms):
     return out
 
 
-def _satisfied(clause, model, atom):
+def _satisfied(clause, model, atom, oneside=frozenset()):
     for l in clause:
         t, m = atom[abs(l)]
+        if abs(l) in oneside:
+            # the worst value the atom may take: false for ``v``, true
+            # (where its set allows it) for ``-v``
+            if l < 0 and not m >> model[t] & 1:
+                return True
+            continue
         if (m >> model[t] & 1) == (l > 0):
             return True
     return False
@@ -149,6 +180,9 @@ def _restore_ok(th):
         for v, pm in th.tvars[t]:
             if v in th.val:
                 m &= pm if th.val[v] else ~pm
+        for v, pm in getattr(th, "ovars", [()] * len(th.cur))[t]:
+            if th.val.get(v):
+                m &= pm
         if th.cur[t] != m:
             return False
     return True
@@ -156,8 +190,11 @@ def _restore_ok(th):
 
 def _one(lat, seed):
     rng = random.Random(seed)
-    op = rng.choice((ADD, MUL))
-    n = rng.randint(2, 4) if rng.random() < 0.3 else rng.randint(2, 3)
+    op, arity = rng.choice(lat.ops)
+    if arity is None:
+        n = rng.randint(2, 4) if rng.random() < 0.3 else rng.randint(2, 3)
+    else:
+        n = arity
     th = lat.theory()
     nterms = n + 1
     fixed = []
@@ -168,16 +205,21 @@ def _one(lat, seed):
         fixed.append(f)
         th.term(f)
     args = list(range(1, nterms))
-    if n >= 3 and rng.random() < 0.2:
-        # a term in two slots (``x*x``): one atom for both
+    if (n >= 3 or arity == 2) and rng.random() < 0.2:
+        # a term in two slots (``x*x``, ``x**x``): one atom for both
         args[-1] = args[0]
     th.add_node(op, 0, args)
     slots = [0] + args
     v = 0
+    oneside = set()
     for u in range(nterms):
         for _ in range(rng.randint(1, 4)):
             v += 1
-            th.register_atom(v, (u, _rand_mask(lat, rng)))
+            if lat.onesided and rng.random() < 0.3:
+                th.register_atom(v, (u, rng.choice(lat.onesided), True))
+                oneside.add(v)
+            else:
+                th.register_atom(v, (u, _rand_mask(lat, rng)))
     used = sorted(set(slots))
     models = _models(lat, op, slots, fixed, nterms)
     kinds = {"prop": 0, "conflict": 0, "repush": 0}
@@ -186,7 +228,7 @@ def _one(lat, seed):
         kinds[kind] += 1
         assert clause, "empty clause"
         for mdl in models:
-            if not _satisfied(clause, mdl, th.atom):
+            if not _satisfied(clause, mdl, th.atom, oneside):
                 raise AssertionError(f"{lat} seed {seed}: clause {clause} false at {mdl} "
                                      f"(atoms {th.atom}, fixed {fixed}, op {op}, args {args})")
 
@@ -209,6 +251,7 @@ def _one(lat, seed):
             for lit, clause in got:
                 assert lit in clause
                 if abs(lit) not in th.val:
+                    assert abs(lit) not in oneside, "a one-sided atom was propagated"
                     check(clause, "prop")
                     th.assert_lit(lit)
                 else:
@@ -267,3 +310,38 @@ def test_restore_after_partial_pop():
     assert th.cur[1] == FIN and _restore_ok(th)
     th.pop_level()
     assert th.cur[1] == SIGN.ALL and not th.val
+
+
+def test_one_sided_atoms():
+    """``prime(b)`` puts ``b`` in ``ZI`` (Gelfond-Schneider's ``b not in
+    {0, 1}``); ``~prime(b)`` says nothing; neither is ever propagated, and
+    a partial pop restores the set."""
+    PM = dict(zip(T.PREDS, T.PRED_MASK))
+    th = T.TransTheory()
+    for _ in range(3):
+        th.term()
+    th.add_node(T.POW, 0, (1, 2))                        # N = b**e
+    th.register_atom(1, (1, PM["algebraic"]))            # algebraic(b)
+    th.register_atom(2, (1, T.ONESIDED_MASK[0], True))   # prime(b)
+    th.register_atom(3, (2, PM["algebraic"]))            # algebraic(e)
+    th.register_atom(4, (2, PM["rational"]))             # rational(e)
+    th.register_atom(5, (0, PM["algebraic"]))            # algebraic(N)
+    th.push_level()
+    for l in (1, 3, -4):
+        th.assert_lit(l)
+    got = dict(th.propagate())
+    assert 5 not in got and -5 not in got                # b may be 0 or 1
+    th.push_level()
+    th.assert_lit(-2)                                    # ~prime(b): no claim
+    assert th.cur[1] == PM["algebraic"] and not th.propagate()
+    th.pop_level()
+    th.push_level()
+    th.assert_lit(2)
+    assert th.cur[1] == 1 << T.ZI
+    got = dict(th.propagate())
+    assert sorted(got[-5]) == sorted([-5, -1, -2, -3, 4]) or set(got[-5]) <= {-5, -2, -3, 4}
+    assert all(abs(l) != 2 for l in got)
+    th.pop_level()
+    assert th.cur[1] == PM["algebraic"] and _restore_ok(th)
+    th.pop_level()
+    assert th.cur[1] == T.ALL and not th.val
