@@ -88,7 +88,7 @@ from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
 from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
-                    affine_pair as _affine_pair, scope_of_atoms, theory_scope)
+                    affine_pair as _affine_pair, classes_scope, query_scope, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
 from .theories.sign import (closure_adapter as _closure, sign_adapter as _sign,
                              trans_adapter as _trans)
@@ -98,6 +98,17 @@ from .theories.sign import (closure_adapter as _closure, sign_adapter as _sign,
 #: functions and powers): adapter classes, each told the nodes its
 #: ``selects`` takes (``Session.node_theories_sync``)
 _NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter, _trans.TransAdapter)
+
+#: node type -> ``(index, over_cap)`` of the node theories that may select
+#: its nodes (their ``kinds``; ``over_cap`` is ``selects`` for a node of
+#: such a type with arguments): ``Session._visit`` asks only those
+_SELECTORS: Dict[type, tuple] = {}
+
+
+def _selectors(cls: type) -> tuple:
+    sel = _SELECTORS[cls] = tuple((i, a.over_cap) for i, a in enumerate(_NODE_THEORIES)
+                                  if a.kinds(cls))
+    return sel
 
 Node = Any
 
@@ -291,8 +302,17 @@ ObjectCache = DictCache
 # --------------------------------------------------------------------------
 
 class Session:
-    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE):
+    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE,
+                 classes: frozenset = frozenset()):
         self.engine = engine
+        #: the class scope (``scope.class_symbols`` of the query): a gated
+        #: node theory (``GATED``: trans) is told the nodes its
+        #: ``engages`` takes under it; the others wait in ``_parked``
+        #: until it grows (``Engine._build_context``: from the set's to the
+        #: query's)
+        self.classes = classes
+        self._parked: List[Tuple[int, Node]] = []
+        self._parked_at = classes
         #: the theory scope the session is built for (``scope.theory_scope``
         #: of its query): the relation glue and predicate transfer exist
         #: from construction iff the scope says so (#97 P3)
@@ -604,11 +624,14 @@ class Session:
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
-        if getattr(node, "args", None):
+        sel = _SELECTORS.get(type(node))
+        if sel is None:
+            sel = _selectors(type(node))
+        if sel and node.args:
             # the node theories' nodes: sums and products over the
             # templates' arity caps, the elementary functions and powers
-            for i, a in enumerate(_NODE_THEORIES):
-                if a.selects(node):
+            for i, f in sel:
+                if f(node):
                     self._theory_nodes.append((i, node))
 
     # -- compiled template patterns (the fast path) -------------------------
@@ -858,20 +881,31 @@ class Session:
         the templates leave out by construction).  True iff something
         was registered."""
         nodes = self._theory_nodes
+        if self._parked and self._parked_at is not self.classes:
+            nodes = self._parked + nodes
+            self._parked = []
+            self._parked_at = self.classes
         ths = self.node_theories
-        if not nodes:
-            for a in ths.values():
-                a.sync_derived()
-            return False
+        added = False
         while nodes:
             # registering a node visits its arguments, which may be sums
             # or products over the caps themselves: until none is left
             self._theory_nodes = []
+            told = False
             for i, n in nodes:
+                cls = _NODE_THEORIES[i]
+                if cls.GATED and not cls.engages(n, self.classes):
+                    # (the trans theory outside the class scope)
+                    self._parked.append((i, n))
+                    continue
                 a = ths.get(i)
                 if a is None:
-                    a = ths[i] = _NODE_THEORIES[i](self)
+                    a = ths[i] = cls(self)
                 a.add(n)
+                told = True
+            if not told:
+                break
+            added = True
             # an argument no clause mentioned (a sum over the caps has no
             # closure or sign rows) was first visited just now: visit what
             # its own rows mention (its arguments, with the predicates
@@ -881,7 +915,7 @@ class Session:
             nodes = self._theory_nodes
         for a in ths.values():
             a.sync_derived()
-        return True
+        return added
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
@@ -1432,9 +1466,10 @@ class Engine:
         #: no session touched); a function of the query, cache hit or not
         self.last_budget_limited = False
 
-    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE) -> Session:
+    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE,
+                       classes: frozenset = frozenset()) -> Session:
         self.stats["sessions"] += 1
-        return Session(self, scope)
+        return Session(self, scope, classes)
 
     # -- the registry epoch ---------------------------------------------------
     @property
@@ -1908,8 +1943,11 @@ class Engine:
         # set's terms (Session.link_set, below) and assumes only the set's
         # own glue, so its verdict is a function of the set whatever the
         # query's scope
-        scope = theory_scope(assumptions, proposition, self._extensions)
-        s = self._fresh_session(scope)
+        # (and the trans theory's class scope: the set's own for the
+        # check, so that its verdict stays a function of the set; the
+        # query's after it)
+        scope, cl_set, cl = query_scope(assumptions, proposition, self._extensions)
+        s = self._fresh_session(scope, cl_set)
         lits = s.assume_formula(assumptions)
         try:
             v = self._complete_check(s, s.assumption_lits())
@@ -1924,10 +1962,11 @@ class Engine:
             s.verdict = v
             return s, lits
         if v is None or _gave_up(s):
-            s = self._fresh_session(scope)
+            s = self._fresh_session(scope, cl_set)
             lits = s.assume_formula(assumptions)
             v = UNKNOWN
         s.verdict = v
+        s.classes = cl
         s.link_set()
         return s, lits
 
@@ -2173,7 +2212,8 @@ class Engine:
             self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
-        s = self._fresh_session(theory_scope(None, atom, self._extensions))
+        s = self._fresh_session(theory_scope(None, atom, self._extensions),
+                                classes_scope(None, atom, self._extensions))
         lit = s.literal_of(atom)
         # under the glue a relation atom activates
         r = self._decide(s, lit, s.assumption_lits(atom))
@@ -2226,7 +2266,8 @@ class Engine:
         if contextual:
             s, lits = self._context_session(assumptions, proposition)
         else:
-            s = self._fresh_session(theory_scope(None, proposition, self._extensions))
+            s = self._fresh_session(theory_scope(None, proposition, self._extensions),
+                                    classes_scope(None, proposition, self._extensions))
         return self._ask(s, lits, proposition, contextual)
 
     def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:

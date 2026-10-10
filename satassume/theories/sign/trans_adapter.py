@@ -25,13 +25,15 @@ from .trans import (ALL, ONE, ONESIDED, ONESIDED_MASK, OPS, POW, PRED_MASK, PRED
 _FLOAT_READ = frozenset(("finite", "extended_real", "zero"))
 
 _CLASSES = None
+_noncommutative = None
 
 
 def _classes():
     """SymPy function class -> map op id (imported on first use)."""
-    global _CLASSES
+    global _CLASSES, _noncommutative
     if _CLASSES is None:
         import sympy
+        from ...knowledge.domain import _noncommutative
         _CLASSES = {getattr(sympy, name): op for name, op in OPS.items()}
     return _CLASSES
 
@@ -53,7 +55,6 @@ def op_args(node):
             op, args = POW, (b, e)
     else:
         return None
-    from ...knowledge.domain import _noncommutative
     if _noncommutative(node):
         return None
     return op, args
@@ -70,6 +71,30 @@ class TransAdapter(ClassAdapter):
     #: the other rows of a term stay parked until the escalation (fewer
     #: clauses per query: ~/th/A6/scripts/measure_trans.py)
     DEMAND = False
+    #: told the nodes it selects that :meth:`engages` takes under the
+    #: query's class scope (``scope.class_symbols``)
+    GATED = True
+
+    @staticmethod
+    def kinds(cls: type) -> bool:
+        return cls in _classes() or bool(getattr(cls, 'is_Pow', False))
+
+    @staticmethod
+    def engages(node, classes: frozenset) -> bool:
+        """Whether each argument is a number (``exp(2)``, ``2**sqrt(2)``) or
+        has a free symbol in ``classes`` (the symbols of the query's class
+        atoms and equalities): every table entry that claims something
+        reads a class fact of each argument (``POW``: of the base and the
+        exponent), which an argument outside the scope has only by a zero
+        fact (``0``, where the templates decide the functions) or a chain
+        of rows from a class atom over its symbols."""
+        oa = op_args(node)
+        if oa is None:
+            return False
+        for a in oa[1]:
+            if not (a.is_number or (classes and not classes.isdisjoint(a.free_symbols))):
+                return False
+        return True
 
     @staticmethod
     def over_cap(node) -> bool:
@@ -93,6 +118,10 @@ class TransAdapter(ClassAdapter):
             return None
         return getattr(c, 'is_' + pred, None)
 
+    def __init__(self, session):
+        super().__init__(session)
+        self.oneside_terms = set()
+
     def add(self, node) -> None:
         """Tell the theory the function application or power ``node``."""
         if node in self.done:
@@ -102,6 +131,15 @@ class TransAdapter(ClassAdapter):
             return
         self.done.add(node)
         op, args = oa
+        if op == POW:
+            # the read-only atoms separate ONE from ZI: only the POW table
+            # reads that (Gelfond-Schneider's base not in {0, 1})
+            b = args[0]
+            if b not in self.oneside_terms:
+                self.oneside_terms.add(b)
+                tb = self.terms.get(b)
+                if tb is not None and b in self.session.base:
+                    self._oneside(self.session.base[b], tb)
         t = self.term(node)
         self.theory.add_node(op, t, [self.term(a) for a in args])
 

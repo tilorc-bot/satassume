@@ -76,7 +76,7 @@ from .knowledge.compile import VarTable, compile_formula, formula_literal
 from .sat.formula import FALSE, P, TRUE, atoms_of
 from .relations import RELATION_ATOMS, Relations, Uninterpreted, _is_number, glue_atoms
 from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX, RULE_INTERNAL, basis_lits
-from .scope import EMPTY as _EMPTY_SCOPE, Scope
+from .scope import EMPTY as _EMPTY_SCOPE, Scope, classes_scope
 from .sat.solver import Solver
 
 __all__ = ["ask_ref", "ref_outcome", "theory_scope", "RefInfo"]
@@ -477,6 +477,7 @@ def _node_theories(s: _RefSession) -> None:
     classes = (sg.SignAdapter, cl.ClosureAdapter, tr.TransAdapter)
     adapters: dict = {}
     seen: set = set()
+    in_scope = getattr(s, "classes", frozenset())
     while True:
         ops = [n for n in list(s.base) if n not in seen and getattr(n, 'args', None)]
         if not ops:
@@ -484,7 +485,7 @@ def _node_theories(s: _RefSession) -> None:
         seen.update(ops)
         for i, cls in enumerate(classes):
             for n in ops:
-                if cls.selects(n):
+                if cls.selects(n) and (not cls.GATED or cls.engages(n, in_scope)):
                     a = adapters.get(i)
                     if a is None:
                         a = adapters[i] = cls(s)
@@ -505,6 +506,8 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
         glue = transfer = False
     info.scope = (glue, transfer, linked)
     s = _RefSession(engine, Scope(glue, transfer, linked))
+    # the trans theory's class scope (the engine's: ``Engine._build_context``)
+    s.classes = classes_scope(assum, prop, engine._extensions)
     if glue:
         # created first, so that relation atoms are queued as they are
         # allocated (Session._custom does the same)

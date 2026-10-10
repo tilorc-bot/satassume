@@ -189,6 +189,77 @@ def theory_scope(assumptions, proposition, extensions=None) -> Scope:
     return scope_of_atoms(atoms)
 
 
+#: the predicates whose definitions read a number class (``rules.DEF_LITS``:
+#: ``algebraic``, ``integer``, ``rational``, ``even``, ``prime``,
+#: ``composite`` and those derived from them)
+CLASS_PREDS = frozenset({
+    "algebraic", "transcendental", "rational", "irrational", "integer",
+    "noninteger", "even", "odd", "prime", "composite"})
+
+
+def class_symbols(atoms: Iterable[P]) -> frozenset:
+    """The *class scope* of a query with ``atoms`` (those of ``a`` and
+    ``p``, with the extension atoms): the free symbols of the class atoms
+    (:data:`CLASS_PREDS`) and of the equalities (an ``eq`` atom, or an
+    order atom and its reverse: predicate transfer carries the class facts
+    of a number).  The trans theory is told a node it selects iff each
+    argument is a number or has a free symbol in it
+    (``TransAdapter.engages``): what the theory decides needs class facts
+    of every argument it reads.  (A glue twin ``eq(t, 0)`` is not counted:
+    its class facts are those of ``zero(t)``.)  Sound whatever the set
+    (the theory only adds valid clauses: "Why this is sound" above)."""
+    out: set = set()
+    lts = None
+    for a in atoms:
+        p = a.pred
+        if p in CLASS_PREDS:
+            out |= _symbols(a.expr)
+        elif p == "eq":
+            for e in a.expr:
+                out |= _symbols(e)
+        elif p == "lt":
+            if lts is None:
+                lts = set()
+            lts.add(a.expr)
+    if lts:
+        # an order atom and its reverse make an equality (transfer_wanted)
+        for x, y in lts:
+            if (y, x) in lts:
+                out |= _symbols(x) | _symbols(y)
+    return frozenset(out)
+
+
+def _symbols(e) -> set:
+    return getattr(e, "free_symbols", None) or set()
+
+
+def query_scope(assumptions, proposition, extensions=None):
+    """``(theory_scope(a, p), class_symbols of a, class_symbols of a and
+    p)``: the theory scope and the class scopes of the set alone and of
+    the query, from one pass over the formulas' atoms."""
+    a = list(atoms_of(assumptions)) if assumptions is not None and assumptions is not True else []
+    p = list(atoms_of(proposition)) if proposition is not None and proposition is not True else []
+    atoms = a + p
+    ext = extension_atoms(atoms, extensions) if extensions is not None else ()
+    atoms.extend(ext)
+    cl = class_symbols(atoms)
+    # (the set's is a subset of the query's: mostly both empty)
+    cl_set = cl and class_symbols(a + extension_atoms(a, extensions) if ext else a)
+    return scope_of_atoms(atoms), cl_set, cl
+
+
+def classes_scope(assumptions, proposition, extensions=None) -> frozenset:
+    """:func:`class_symbols` of the atoms of the two formulas (either may
+    be None), gathered as :func:`theory_scope` does."""
+    atoms = []
+    for f in (assumptions, proposition):
+        if f is not None and f is not True:
+            atoms.extend(atoms_of(f))
+    if extensions is not None:
+        atoms.extend(extension_atoms(atoms, extensions))
+    return class_symbols(atoms)
+
+
 def _custom_pred(a: P) -> bool:
     return a.pred not in PRED_INDEX and a.pred not in RELATION_ATOMS
 

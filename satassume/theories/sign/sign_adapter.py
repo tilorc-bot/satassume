@@ -44,6 +44,9 @@ class ClassAdapter:
     #: whether registering a visited term compiles its parked rows about
     #: PREDS (the engine's demand-driven compilation)
     DEMAND = True
+    #: whether a session tells this theory only the nodes :meth:`engages`
+    #: takes under its class scope (``scope.class_symbols``; trans)
+    GATED = False
 
     def __init_subclass__(cls, **kw):
         super().__init_subclass__(**kw)
@@ -62,6 +65,17 @@ class ClassAdapter:
     @staticmethod
     def over_cap(node) -> bool:
         return over_cap(node)
+
+    @staticmethod
+    def kinds(cls: type) -> bool:
+        """Whether :meth:`selects` may take a node of type ``cls``."""
+        return bool(getattr(cls, 'is_Add', False) or getattr(cls, 'is_Mul', False))
+
+    @staticmethod
+    def engages(node, classes: frozenset) -> bool:
+        """For a ``GATED`` theory: whether a session with the class scope
+        ``classes`` tells it ``node``."""
+        return True
 
     @classmethod
     def selects(cls, node) -> bool:
@@ -136,11 +150,19 @@ class ClassAdapter:
         pmask = self.PRED_MASK
         for p, k in enumerate(self._OFFSETS):
             solver.register_atom(th, b + k, (t, pmask[p]))
-        for k, m in self._ONESIDED:
-            # read-only atoms (``trans.TransTheory``): never decided by
-            # the search for the theory's sake
-            solver.register_atom(th, b + k, (t, m, True), mention=False)
+        if e in self.oneside_terms:
+            self._oneside(b, t)
         return t
+
+    #: the terms that get the read-only atoms (:attr:`ONESIDED`)
+    oneside_terms: frozenset = frozenset()
+
+    def _oneside(self, b: int, t: int) -> None:
+        """Register the read-only atoms of term ``t`` (base variable ``b``):
+        never decided by the search for the theory's sake."""
+        th, solver = self.theory, self.session.solver
+        for k, m in self._ONESIDED:
+            solver.register_atom(th, b + k, (t, m, True), mention=False)
 
     def sync_derived(self) -> None:
         """Register the derived atoms of the terms (``Session._dv``:
