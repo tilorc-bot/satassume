@@ -675,7 +675,14 @@ the sign rows of `atan`, `tanh`, `sinh` and `log`'s `x - 1` node stay in
 Limits: `u` whose terms are not known real (`log(x + y)` with complex `x`,
 `y`) gets no link, as LRA reads no atom over such a sum (`x + y > 2` does
 not give `x + y > 1` either); `tan`, `cot`, `asin`, `acos`, `sin`, `cos`
-are not in the table.
+are not in the table. MONO lives in the relation glue, which a query's
+scope turns on only for a relation atom (`satassume/scope.py`): alone,
+`Q.extended_real(z)` under `Q.nonzero(1/z)` is None, and with any relation
+atom the glue keeps (`Q.ne(z, 5)`, or an unrelated one the relevance layer
+keeps beside a custom atom) it is True (`Q.nonzero` is real, so `real(1/z)`
+gives `real(z)` or an infinite `z`, where `1/z = 0`). The invariant
+harness reports that as I2 (an unrelated conjunct makes the answer
+definite); the definite answer is the correct one.
 
 ## TRANS: transcendence of function values and powers
 
