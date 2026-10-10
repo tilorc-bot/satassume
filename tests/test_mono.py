@@ -174,3 +174,62 @@ def test_cascade_between_sibling_applications_ends():
 def test_inconsistent_assumptions_found(assum):
     with pytest.raises(ValueError):
         ask(Q.real(x), assum, engine=Engine())
+
+
+# -- the sign rows MONO replaces (SIGN_FUNCS: atan, tanh, sinh, log) ----------
+
+_xp = Symbol("xp", positive=True)
+_xr = Symbol("xr", real=True)
+
+SIGNS = [
+    # unary queries: no relation atom, the glue is on for the application
+    (Q.positive(atan(x)), Q.positive(x), True),
+    (Q.negative(atan(x)), Q.nonnegative(x), False),
+    (Q.nonnegative(tanh(x)), Q.extended_nonnegative(x), True),
+    (Q.zero(tanh(x)), Q.zero(x), True),
+    (Q.negative(sinh(x + 1)), Q.negative(x + 1), True),
+    (Q.extended_positive(sinh(x)), Q.extended_negative(x), False),
+    (Q.positive(atan(_xp)), True, True),
+    (Q.negative(atan(_xp) + _xp), True, False),
+    # in any position of the cone
+    (Q.positive(atan(x) * y), Q.positive(x) & Q.positive(y), True),
+    (Q.negative(sinh(x) * y), Q.negative(x) & Q.positive(y), True),
+    (Q.positive(tanh(atan(x))), Q.positive(x), True),
+    # log against x - 1 (template rows; MONO in relational queries)
+    (Q.positive(log(x)), Q.positive(x - 1), True),
+    (Q.negative(log(x)), Q.positive(x) & Q.negative(x - 1), True),
+    (Q.zero(log(x)), Q.zero(x - 1), True),
+    (Q.positive(x - 1), Q.positive(x) & Q.positive(log(x)), True),
+    (Q.negative(log(_xp + 1)), True, False),
+    (Q.positive(log(x) * y), Q.positive(y) & Q.gt(x, 1), None),   # x = oo
+    # log(u) = 0 -> u = 1 holds for any u (exp(log(u)) = u): no guard
+    (Q.eq(x, 1), Q.zero(log(x)), True),
+    (Q.zero(x), Q.zero(log(x + 1)), True),
+    (Q.zero(x), Q.zero(atan(x)), True),
+    # closed arguments keep their template rows (no MONO lemma without a
+    # free symbol)
+    (Q.positive(sinh(4)), True, True),
+    (Q.negative(log(Rational(1, 2))), True, True),
+    (Q.negative(tanh(-3)), True, True),
+    (Q.eq(sinh(4), sinh(y)), Q.gt(-S.Half, y), False),
+]
+
+
+@pytest.mark.parametrize("prop,assum,want", SIGNS)
+def test_signs_from_mono(prop, assum, want):
+    assert ask(prop, assum, engine=Engine()) is want
+
+
+def test_sign_terms_and_scope():
+    from satassume.scope import mono_terms, scope_of_atoms
+    from satassume.sat.formula import P
+    assert mono.sign_terms(atan(x) * y) == {atan(x), x}
+    assert mono.sign_terms(atan(_xp + 1)) == {atan(_xp + 1), _xp + 1, _xp}
+    assert mono.sign_terms(log(x)) == frozenset()     # log keeps its rows
+    assert mono.sign_terms(sinh(4)) == frozenset()
+    assert mono.sign_terms(exp(x) + cosh(y)) == frozenset()
+    atoms = [P("positive", atan(x) * y), P("positive", y)]
+    assert mono_terms(atoms) == {atan(x), x}
+    sc = scope_of_atoms(atoms)
+    assert sc.glue and not sc.transfer and {atan(x), x} <= sc.linked_terms
+    assert not scope_of_atoms([P("positive", exp(x)), P("real", x)]).glue

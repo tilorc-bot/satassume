@@ -72,7 +72,7 @@ def _unary(tag, gen, slots=None, units=None, closed=None):
     the rules refer to by index 2, 3, ... (``arg - 1`` for log); ``units(c,
     expr)`` may supply unit facts for a constant argument ``c``;
     ``closed(R)`` adds rows for an argument without free symbols only
-    (the sign rows MONO gives for the others: ``CLOSED_SIGNS``)."""
+    (the sign rows MONO gives for the others)."""
     def template(expr):
         x = expr.args[0]
         consts = {}
@@ -113,13 +113,14 @@ def _minus_one(x):
     return (x - S.One,)
 
 
-# The sign rows of atan, tanh, sinh and log (``extended_real(u) ->
-# (positive(f(u)) <-> extended_positive(u))``, ``log(x) > 0 iff x > 1``, ...)
+# The sign rows of atan, tanh and sinh (``extended_real(u) ->
+# (positive(f(u)) <-> extended_positive(u))``, ...)
 # are MONO's (:mod:`satassume.theories.mono`, ``SIGN_FUNCS``): the glue
 # links every application of them with a free symbol and its argument, and
 # the threshold-0 lemmas give the same facts in every position of the cone.
-# A closed argument (``sinh(4)``, ``log(sqrt(2))``) has no MONO lemma (they
+# A closed argument (``sinh(4)``, ``atan(sqrt(2))``) has no MONO lemma (they
 # need a free symbol), so these rows stay for it (``_unary(closed=...)``).
+# log keeps its rows for every argument (see ``_log``).
 
 def _sign_equivs(R, preds):
     """``extended_real(x) -> (pred(node) <-> extended_pred(x))``."""
@@ -201,25 +202,20 @@ def exp_templates(expr):
 
 def _log(R, c):
     _table(R, _LOG)
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _log_closed(R):
-    # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.
+    # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.  Kept
+    # for every argument: MONO gives the same through the glue, but
+    # switching the glue on for every query with a log cost +4% on the
+    # refine stream (#150), against 5 rules and the node x - 1
     R.equiv([], (N, 'zero', True), (M, 'zero', True))
     R.rule([(M, 'extended_positive', True)], (N, 'extended_positive', True))
     R.rule([(M, 'negative', True), (X, 'positive', True)], (N, 'negative', True))
     R.rule([(X, 'positive', True), (N, 'positive', True)], (M, 'positive', True))
     R.rule([(X, 'positive', True), (N, 'negative', True)], (M, 'negative', True))
+    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
+           (N, 'transcendental', True))
 
 
-def _minus_one_closed(x):
-    """``x - 1`` for a closed ``x`` only (the slot of ``_log_closed``)."""
-    return () if x.free_symbols else _minus_one(x)
-
-
-registry.register(log)(_unary('log', _log, slots=_minus_one_closed, closed=_log_closed))
+registry.register(log)(_unary('log', _log, slots=_minus_one))
 
 
 # ---------------------------------------------------------------------------
@@ -545,11 +541,11 @@ _COSH = (
 
 def _sinh(R, c):
     _table(R, _SINH)
+    R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
 
 
 def _sinh_closed(R):
     _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative', 'zero'))
-    R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
 
 
 def _cosh(R, c):

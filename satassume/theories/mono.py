@@ -204,7 +204,7 @@ _NAMES = frozenset({"exp", "log", "atan", "tanh", "sinh", "asinh", "cosh",
 #: extended_positive(u))`` and the like): the threshold-0 lemmas of their
 #: :class:`Spec` give them, once the glue links ``f(u)`` and ``u``
 #: (:func:`sign_terms`, ``satassume.scope``)
-SIGN_FUNCS = frozenset({"atan", "tanh", "sinh", "log"})
+SIGN_FUNCS = frozenset({"atan", "tanh", "sinh"})
 
 #: functions with a left inverse on their whole domain (``exp(log(z)) =
 #: z``, ``tan(atan(z)) = z``): ``f(u) = f(c)`` gives ``u = c`` with no
