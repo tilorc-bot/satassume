@@ -129,7 +129,7 @@ _ARITH = [
     ("nonzero", "nonzero", None, True),
     ("finite", "finite", True, True),
     ("negative", "negative", True, None),
-    ("odd", "even", None, False),   # a product of odds is odd; ask_ref: None for the sum
+    ("odd", "even", None, False),   # a product of odds is odd; the sum: below
 ]
 
 
@@ -147,6 +147,8 @@ def test_wide_add_mul(n, solvers):
     for fact, asked, add_ans, mul_ans in _ARITH:
         a = And(*[getattr(Q, fact)(x) for x in xs])
         q = getattr(Q, asked)
+        if fact == "odd":           # n odds: INTLAT's parity of a long sum
+            add_ans = n % 2 == 0
         assert ask_(q(Add(*xs)), a) is add_ans, (fact, "Add")
         r = ask_(q(Mul(*xs)), a)
         if fact == "negative":      # sign of a product of n negatives

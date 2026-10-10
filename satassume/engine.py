@@ -92,12 +92,14 @@ from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
 from .sat.solver import Solver
 from .theories.sign import (closure_adapter as _closure, sign_adapter as _sign,
                              trans_adapter as _trans)
+from .theories.intlat import intlat_adapter as _intlat
 
 #: the node theories (class propagators, ``satassume.theories.sign.lattice``:
 #: SIGN and CLOSURE over sums and products, TRANS over the elementary
 #: functions and powers): adapter classes, each told the nodes its
 #: ``selects`` takes (``Session.node_theories_sync``)
-_NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter, _trans.TransAdapter)
+_NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter, _trans.TransAdapter,
+                  _intlat.IntLatAdapter)
 
 #: node type -> ``(index, over_cap)`` of the node theories that may select
 #: its nodes (their ``kinds``; ``over_cap`` is ``selects`` for a node of
@@ -876,29 +878,38 @@ class Session:
         was registered."""
         nodes = self._theory_nodes
         ths = self.node_theories
-        if not nodes:
+        told = False
+        while True:
+            while nodes:
+                # registering a node visits its arguments, which may be sums
+                # or products over the caps themselves: until none is left
+                told = True
+                self._theory_nodes = []
+                for i, n in nodes:
+                    a = ths.get(i)
+                    if a is None:
+                        a = ths[i] = _NODE_THEORIES[i](self)
+                    a.add(n)
+                # an argument no clause mentioned (a sum over the caps has no
+                # closure or sign rows) was first visited just now: visit what
+                # its own rows mention (its arguments, with the predicates
+                # those rows demand), or the theory would see it unconstrained
+                self._flush()
+                self._discover(())
+                nodes = self._theory_nodes
+            # a theory may register late (INTLAT tells a parked node once
+            # it is demanded): True from sync_derived, and what that
+            # visited is synced in turn
+            late = False
             for a in ths.values():
-                a.sync_derived()
-            return False
-        while nodes:
-            # registering a node visits its arguments, which may be sums
-            # or products over the caps themselves: until none is left
-            self._theory_nodes = []
-            for i, n in nodes:
-                a = ths.get(i)
-                if a is None:
-                    a = ths[i] = _NODE_THEORIES[i](self)
-                a.add(n)
-            # an argument no clause mentioned (a sum over the caps has no
-            # closure or sign rows) was first visited just now: visit what
-            # its own rows mention (its arguments, with the predicates
-            # those rows demand), or the theory would see it unconstrained
+                if a.sync_derived():
+                    late = True
+            if not late:
+                return told
+            told = True
             self._flush()
             self._discover(())
             nodes = self._theory_nodes
-        for a in ths.values():
-            a.sync_derived()
-        return True
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),

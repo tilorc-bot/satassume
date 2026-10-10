@@ -97,6 +97,8 @@ ask(Q.positive(y), Q.gt(y, 0) & Q.real(y))    # True (LRA theory)
 ask(Q.integer(y), Q.gt(y, 0) & Q.lt(y, 1))    # False (integrality in LRA: bounds rounded, branch and bound)
 from sympy import S, pi
 ask(Q.integer(y/pi + S.Half), Q.gt(y, -pi/2) & Q.lt(y, pi/2))  # False (exact pi coefficients, satassume/theories/lra/constfield.py)
+n, m = Symbol('n'), Symbol('m')
+ask(Q.integer(n/2 + m/3), Q.odd(n) & Q.integer(m))   # False ((3n + 2m)/6 with 3n + 2m odd, satassume/theories/intlat/)
 out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
 from sympy import Integer, Predicate, log
@@ -153,7 +155,7 @@ importable, with a `DeprecationWarning`, until the aliases are removed
 | `satassume/engine.py` | sessions, discovery, caching | |
 | `satassume/scope.py` | which relation machinery a query gets | |
 | `satassume/relations.py` | what relation atoms mean, their links to the unary vocabulary, the theories of a session | |
-| `satassume/theories/` | how relation atoms are decided: DPLL(T) theories, each a SymPy-free solver plus a SymPy adapter | `lra/` (`lra.py`, `lra_cert.py`, `constfield.py`: exact numbers in `Q(pi, E, sqrt(2), ...)`; `lra_adapter.py`, `lra_bounds.py`), `euf/` (`euf.py`; `euf_adapter.py`), `sign/` (`lattice.py`: class propagators over sums and products of any arity and over function applications; `sign.py`: their signs, `closure.py`: membership in `Z`, `Q`, the algebraic numbers, `R`, `C`; `trans.py`: transcendence of `exp`, `log`, the trigonometric functions and powers (map operations); `sign_adapter.py`, `closure_adapter.py`, `trans_adapter.py`), `transfer.py` |
+| `satassume/theories/` | how relation atoms are decided: DPLL(T) theories, each a SymPy-free solver plus a SymPy adapter | `lra/` (`lra.py`, `lra_cert.py`, `constfield.py`: exact numbers in `Q(pi, E, sqrt(2), ...)`; `lra_adapter.py`, `lra_bounds.py`), `euf/` (`euf.py`; `euf_adapter.py`), `sign/` (`lattice.py`: class propagators over sums and products of any arity and over function applications; `sign.py`: their signs, `closure.py`: membership in `Z`, `Q`, the algebraic numbers, `R`, `C`; `trans.py`: transcendence of `exp`, `log`, the trigonometric functions and powers (map operations); `sign_adapter.py`, `closure_adapter.py`, `trans_adapter.py`), `intlat/` (`intlat.py`: the Z-module of integral linear forms with rational coefficients, integrality and parity of sums and `c*t`; `intlat_adapter.py`), `transfer.py` |
 | `satassume/knowledge/` | what is known about predicates and expression classes, and its clause encoding | `rules.py` (the rule base and vocabulary), `compile.py`, `extensions.py` (`register(pred, *classes)`), `domain.py` (commutative scalars), `templates/` (structural rules per SymPy class) |
 | `satassume/sat/` | propositional formulas and CDCL search (assumptions, root-level propagation, `entails`) with the DPLL(T) theory contract; no SymPy, no vocabulary | `formula.py` (atoms `P(pred, expr)`), `solver.py`, `theory.py` |
 | `satassume/state/` | process-wide state: the registry epoch and the memo tables keyed on it | `epoch.py`, `memos.py` |

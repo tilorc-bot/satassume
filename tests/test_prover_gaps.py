@@ -5,7 +5,8 @@
    ``N = c0 + sum(c_k*t_k)`` with rational coefficients of least common
    denominator 2 and integer ``t_k``, ``2*N`` is an integer of parity
    ``2*c0 + #{k : 2*c_k odd and t_k odd}`` (mod 2), and ``N`` is an integer
-   iff that is even (``satassume/knowledge/templates/core.py``, ``_half_rules``).
+   iff that is even (the INTLAT theory, ``satassume/theories/intlat/``, decides
+   these for any rational coefficients).
 2. ``re`` and ``im`` of ``floor(y)`` / ``ceiling(y)`` are integers for a
    finite, possibly complex ``y`` (``satassume/knowledge/templates/functions.py``).
 
@@ -39,7 +40,7 @@ n, m, k, y = symbols('n m k y')
     (n/2 + m/2 + k/2 + S.Half, Q.odd(n) & Q.odd(m) & Q.odd(k), True),
     ((n - 1)/2, Q.integer(n), None),
     ((n - 1)/2, Q.odd(n) | Q.imaginary(n), None),
-    (n/2 + m/3, Q.odd(n) & Q.integer(m), None),     # denominator 6: not decided
+    (n/2 + m/3, Q.odd(n) & Q.integer(m), False),    # (3n + 2m)/6 with 3n + 2m odd: INTLAT
 ])
 def test_half_integer_sums(expr, facts, answer):
     assert ask(Q.integer(expr), facts) is answer
