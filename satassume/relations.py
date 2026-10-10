@@ -1625,6 +1625,15 @@ class Relations:
             ga = self._guard(ad, [app])
             if ga:
                 s.emit([-mo] + self._guard(ad, list(terms)) + [-ga[0]])
+        else:
+            # f is real on each piece (sqrt on u >= 0, log on u > 0): u's
+            # sign there and real(s) give real(f(u)), which the enable needs
+            ga = self._guard(ad, [app])
+            if ga:
+                gt = self._guard(ad, list(terms))
+                for piece in sp.pieces:
+                    s.emit([-mo] + gt + self._mono_guard(sp.arg, piece.guard()) + [-ga[0]])
+        if fm.whole:
             if len(terms) == 1 and {p for p, _v, _f in fm.at_inf[0]} == {
                     "positive_infinite", "negative_infinite"}:
                 # and an extended real at +-oo: extended_real(s) gives
