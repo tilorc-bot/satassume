@@ -297,8 +297,8 @@ template).
 - A template mentions the node, its direct arguments and a few derived
   nodes built from them where the vocabulary cannot say a fact otherwise:
   `2*e` of a power, `x - 1` of `log`/`acos`/`asin`, `b - 1` and `b + 1` of
-  an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
-  coefficients (`_half_templates`).
+  an integer base, `x*y` of a product `c*x*y` with a Rational `c`
+  (`_mul_factor_sets`).
 - SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
   properties of atoms with a fixed value (`consts_of`, `constant_units`).
   `commutative` has no template: it is true by definition (see

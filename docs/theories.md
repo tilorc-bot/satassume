@@ -757,6 +757,80 @@ stream queries it unparks are open by nature and pay a second search. Registerin
 unmentioned (`mention=False`) changed nothing measurable; compiling the told terms' parked rows
 (`DEMAND = True`) added clauses.
 
+## INTLAT: integrality and parity of linear forms
+
+`satassume/theories/intlat/` (issue #149, proposal T2, stage A) decides `integer` and `even` of sums and of
+products `c*t` with a Rational `c`, for any arity and any rational coefficients. It replaces the template
+machinery that enumerated parities: the half-integer split of a sum (`_half_split`, `_half_rules`,
+`_half_templates`: 2^k rules per sum with k odd-coefficient terms, up to `MAX_HALF_ODD` = 4, and an extra
+template per such sum) and the even closure of a sum over `MAX_ADD_SMALL` terms.
+
+**Atoms.** The adapter (`intlat_adapter.py`) reads a node's *form* `c_1*u_1 + ... + c_k*u_k + c`
+through sums and products with a nonzero Rational first factor, down to the first other subterms, the
+*terms* (`x`, `x*y`, `sin(x)`, `pi`, `2.0`). For each node and term it registers two theory atoms on the
+session's basis variables: `integer(e)` is "the form of `e` is an integer", `even(e)` is "the form of `e/2`
+is an integer". `odd` is `integer & ~even` and `zero` is even (`rules.DEFINITIONS`), so they need no atom.
+
+**What it decides** (`intlat.py`). The forms asserted integral, with the constant 1, generate a Z-module
+`M`, kept in echelon form over Z (Hermite reduction with the Euclidean step; every form is scaled by `D`,
+the lcm of 2 and the registered denominators, so the rows are integer vectors). Then:
+- a conflict when `M` holds a non-integer constant (`x` and `x + 1/2` both integral) or a form asserted
+  non-integral;
+- `f` integral for an atom whose form lies in `M` (`integer(x/2) & integer(x/3)` give `integer(x/6)`);
+- `f` not integral when `M + Z*f` holds a non-integer constant or a form asserted non-integral
+  (`integer(x)` refutes `integer(x/2 + 1/3)`; `odd(n) & integer(m)` refutes `integer(n/2 + m/3)`);
+- the parity step: a form `h` asserted non-integral with `2*h` in `M` is a half-odd integer, so `h - 1/2`
+  joins `M` (`odd(x)`: `x` integral and `x/2` not, so `(x - 1)/2` is integral; two odd terms make an even
+  sum).
+
+The reason of each derivation is the asserted literals its rows used (kept per row, minimised by deletion
+up to 8 literals): one clause, generated on demand. The lattice of each decision level is copied on its
+first change, so backtracking restores it by reference.
+
+**Soundness.** The atoms are about values: `integer(e)` holds iff the value of `e` is an integer. A sum or
+a product with a nonzero Rational coefficient is infinite or `nan` as soon as one of its arguments is, and a
+Float when one is a Float, so a form asserted integral has finite, exact terms and its value is the
+rational combination of their values. Every conclusion is an identity between such combinations: a
+conclusion about `f` uses only asserted forms whose terms cover `f`'s, or `f`'s integrality as a premise. A
+non-integral atom says nothing about its terms (`oo`, `nan`, `zoo`, `2.0` are non-integers) and is only
+used against a module whose own literals make its terms finite and exact. A node whose terms cancel in its
+form (`x + 2*(y - x/2)` built unevaluated) is *inexact*: its value may be `nan` while its form is an
+integer, so only its positive literal is read and only its negation derived. Non-commutative terms do not
+occur: every term in scope is commutative (`rules.DEFINITIONS`). `tests/test_intlat_theory.py` checks every
+clause the theory emits (propagations and conflicts, over random forms of 2 and 3 terms with
+coefficients of denominators 1 to 6, inexact nodes, random assertion and backtracking sequences) against
+all term values on a grid of rationals plus a non-finite value, and that a popped theory derives what a
+fresh one derives from the remaining trail.
+
+**Engagement.** The theory is told only the nodes the templates no longer cover (`intlat_adapter.owns`):
+- a sum of more than `MAX_ADD_SMALL` (3) terms;
+- a sum with a term `c*t` whose Rational `c` is not an integer (`x/2 + y`, `k/2 - 1/2`);
+- a product `c*t` with a Rational `c` whose denominator is above 2 (`x/3`; `x/2` keeps its `coeff.half`
+  row).
+
+A sum whose only non-integer Rational is its constant (`x/y + 1/2`, `x + y + 1/3`) stays with the
+templates: their integer subtraction row (`integer(N) & integer(rest) -> integer(k)`, with `integer(1/2)`
+false) already says the sum is not an integer when the other terms are. Every linear node met while
+reading an owned node's form is told too (the inner `x + y` of `(x + y)/3`). An owned node is told when
+`integer` or `even` is demanded of it (`Session.demand`), or once the session has nothing parked: the
+templates' demand-driven compilation parks a row until it mentions a demanded predicate of its node, and
+every removed row mentions `integer` or `even` of the node, so the theory sees a node at least whenever a
+removed row would have been compiled. `Session.node_theories_sync` loops when `sync_derived` tells a parked
+node (the other adapters return None). `ref.py` sessions compile everything and tell every owned node.
+
+**Cost.** Each session that engages pays a fixed ~0.2 ms (atom registration and backtracking to the root
+in `register_atom`, `_tpropagate` in place of `_propagate`, the demanded `integer`/`even` rows of the
+terms; the theory's own code is about a fifth of it). On the refine stream (`tools/ab.py`, pinned, best of
+3) the candidate is +4.2% against its base. Measured and dropped:
+
+| Variant | ab.py | Why dropped |
+|---|---|---|
+| Own every linear node, drop all integer/parity rows of sums and `c*t` | +22%, 3 lost stream answers | the sign facts of `-x*y` from `x*y` came from the `c*t` derived block; most sessions engage |
+| Own sums with half constants (`x/y + 1/2`) too | +6.3% | the subtraction rows already decide them |
+| No `refutes` in `propagate` | +7.0% | more search |
+| Term atoms registered unmentioned | +7.2% | no gain |
+| Attach only when the query names an integer-family predicate | 867 of 1173 sessions | heuristic gate, little gain |
+
 ## Open questions and known gaps
 
 - #42, item 3 (answers depending on earlier queries through the lazily
