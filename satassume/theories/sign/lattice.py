@@ -54,6 +54,9 @@ class Lattice:
         #: map op id - nfold -> (arity, table: atom tuple -> atom set)
         self.maps: List[Tuple[int, Dict[tuple, int]]] = []
         self.memo = memo
+        #: ``ops[op](a, b)`` by ``op`` and ``a * natoms + b``, filled on
+        #: first use (a miss of :meth:`mop` reads each pair it covers)
+        self.pairs = [[None] * (natoms * natoms) for _ in self.ops]
 
     def add_map(self, fn: Callable[..., int], arity: int) -> int:
         """Add the map operation ``fn`` (``fn(a)`` or ``fn(a, b)``: the
@@ -103,13 +106,17 @@ class Lattice:
             r = nanb if (ma | mb) & nanb else 0
             ma &= full
             mb &= full
-            f = self.ops[op]
+            pairs = self.pairs[op]
             n = self.natoms
+            bs = [b for b in range(n) if mb >> b & 1]
             for a in range(n):
                 if ma >> a & 1:
-                    for b in range(n):
-                        if mb >> b & 1:
-                            r |= f(a, b)
+                    k = a * n
+                    for b in bs:
+                        x = pairs[k + b]
+                        if x is None:
+                            x = pairs[k + b] = self.ops[op](a, b)
+                        r |= x
             memo[key] = r
         return r
 
