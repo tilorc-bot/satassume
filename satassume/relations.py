@@ -911,13 +911,17 @@ class Relations:
         self._mono_made: dict = {}
         #: terms whose range rows are on (``_mono_open``)
         self._mono_opened: set = set()
-        #: sign-link atom -> [(item, threshold)] matched without making
-        #: atoms (``_mono_match``), matched again once another role names it
+        #: sign-link atom -> [(item, threshold)] not matched yet
+        #: (``_mono_match``), matched once a query or another role names it
         self._mono_wait: dict = {}
         self._mono_retry: list = []
         self._mono_user: set = set()      # relation atoms a query mentioned
-        self._mono_uterms: set = set()    # LRA terms of those atoms
+        #: LRA terms of those atoms, and with them the terms of the
+        #: linear forms of the queries' unary predicate arguments
+        self._mono_rterms: set = set()
+        self._mono_uterms: set = set()
         self._mono_uargs: set = set()     # vocabulary-atom args of queries
+        self._mono_upend: list = []       # ... their terms not noted yet
         self._mono_wait_t: dict = {}      # such a term -> as _mono_wait
         #: the theory scope the session was built for (satassume.scope):
         #: with ``glue`` the vocabulary-atom arguments of its formulas are
@@ -944,12 +948,9 @@ class Relations:
                 e = a.expr
                 if e not in self.linked:
                     self.top[e] = None
-                if MONO and e not in self._mono_uargs and not _is_number(e):
+                if MONO and e not in self._mono_uargs:
                     self._mono_uargs.add(e)
-                    from .theories.lra.lra_adapter import integer_form
-                    form = integer_form(e)
-                    if form is not None:
-                        self._mono_note_user(form[1])
+                    self._mono_upend.append(e)
 
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
@@ -1574,9 +1575,6 @@ class Relations:
         combination.  True if it made atoms (the caller loops)."""
         todo, self._mono_todo = self._mono_todo, []
         n = len(self.session.table.custom)
-        retry, self._mono_retry = self._mono_retry, []
-        for it, rec in retry:
-            self._mono_match(it, rec)
         from .theories.mono import spec
         seen, apps = self._mono_seen, self._mono_apps
         ad = self._mono_ad
@@ -1607,15 +1605,22 @@ class Relations:
                 self._mono_raw.append((atom, var))
             else:
                 self._mono_read(atom, var)
+        while self._mono_retry:           # waiting matches now wanted
+            retry, self._mono_retry = self._mono_retry, []
+            for it, rec in retry:
+                self._mono_match(it, rec)
         return len(self.session.table.custom) != n
 
-    def _mono_note_user(self, terms) -> None:
-        """The LRA terms of an atom a query mentioned: lemmas on a sign
+    def _mono_note_user(self, terms, relation=True) -> None:
+        """The LRA terms of a relation atom a query mentioned (or of a
+        unary predicate's argument, not ``relation``): lemmas on a sign
         link may make atoms on them (``_mono_match``)."""
-        ut = self._mono_uterms
+        ut, rt = self._mono_uterms, self._mono_rterms
         for t in terms or ():
-            if t not in ut:
+            if t not in ut or relation and t not in rt:
                 ut.add(t)
+                if relation:
+                    rt.add(t)
                 w = self._mono_wait_t.pop(t, None)
                 if w:
                     self._mono_retry.extend(w)
@@ -1686,18 +1691,15 @@ class Relations:
             if a == u or b == u or a == app or b == app:
                 self._mono_pair(var, a, b)
 
-    def _mono_var(self, f, made=None, make=True) -> Optional[int]:
-        """The variable of a relation atom the lemmas need (made if new
-        and ``make``, and then recorded as ``made``, see ``_mono_made``;
-        None if new and not ``make``).  An equality the glue makes engages
+    def _mono_var(self, f, made=None) -> int:
+        """The variable of a relation atom the lemmas need (made if new,
+        and then recorded as ``made``, see ``_mono_made``).  An equality the glue makes engages
         nothing (``_aux_eq``); one an application's lemma makes gets the
         role ``"mono"`` under its ``MO`` switch, which turns on its LRA
         twin (``x = 1/6`` must reach LRA as ``sqrt(x) = sqrt(6)/6``)."""
         custom = self.session.table.custom
         v = custom.get(f)
         if v is None:
-            if not make:
-                return None
             if f.pred == "eq":
                 self._aux_eq.add(f)
             v = self._atom_var(f)
@@ -1738,22 +1740,37 @@ class Relations:
         c = (c0 - rest) / rl
         if lam < 0:
             d = -d
-        make = sp.family[0] not in _MONO_LAZY or not self._mono_link_only(atom)
-        if not make:
-            # ... or where a query reads the application or a term of its
-            # argument (as an LRA term of a relation it mentions)
+        if sp.family[0] in _MONO_LAZY and self._mono_link_only(atom):
+            # a sign link alone: at 0 (u OP 0, f(u) OP 0) the lemmas are
+            # sign facts the templates give; else lemmas only where a
+            # query reads the application or a term of its argument (an
+            # LRA term of a relation it mentions, or of a unary
+            # predicate's argument), or once one does (_mono_note_user) or
+            # a query or another role names the atom (process, _add_role)
+            if self._mono_upend:
+                pend, self._mono_upend = self._mono_upend, []
+                for a in pend:
+                    k = None if _is_number(a) else self._mono_key(a)
+                    if k is not None:
+                        self._mono_note_user(k[0], False)
             uk = self._mono_key(sp.arg)
-            read = (app,) + (uk[0] if uk else ())
-            ut = self._mono_uterms
-            make = any(t in ut for t in read)
-            if not make:
+            if c == 0:
+                # the sign of the other term reaches LRA only where a
+                # relation reads that term
+                read = (app,) if is_arg else uk[0] if uk else ()
+                ut = self._mono_rterms
+            else:
+                read = (app,) + (uk[0] if uk else ())
+                ut = self._mono_uterms
+            if not any(t in ut for t in read):
                 self._mono_wait.setdefault(atom, []).append((it, rec))
                 for t in read:
                     self._mono_wait_t.setdefault(t, []).append((it, rec))
+                return
         if is_arg:
-            self._mono_forward(app, sp, var, c, d, make)
+            self._mono_forward(app, sp, var, c, d)
         else:
-            self._mono_inverse(app, sp, var, c, d, make)
+            self._mono_inverse(app, sp, var, c, d)
 
     def _mono_link_only(self, atom) -> bool:
         """True if ``atom`` is a sign link (``0 < e``, ``e < 0``, ``e = 0``
@@ -1793,12 +1810,11 @@ class Relations:
             self.session.emit(self._mono_guard(u, _mono_guards(row.guard)) + g
                               + [v if row.positive else -v])
 
-    def _mono_forward(self, app, sp, p: int, c, d: int, make=True) -> None:
+    def _mono_forward(self, app, sp, p: int, c, d: int) -> None:
         """Lemmas between the atom ``p`` (``u > c``, ``u < c`` or ``u = c``
         for ``d`` 1, -1, 0; ``u`` the argument) and the atoms of ``f(u)``
-        at ``f(c)``, one set per piece holding ``c`` (only those that
-        exist unless ``make``)."""
-        key = ("f", app, p, make)
+        at ``f(c)``, one set per piece holding ``c``."""
+        key = ("f", app, p)
         if key in self._mono_done:
             return
         self._mono_done.add(key)
@@ -1810,15 +1826,14 @@ class Relations:
             return                        # not a finite real LRA reads
         for piece in sp.pieces:
             if piece.holds(sg):
-                self._mono_lemmas(app, sp, piece, p, d, fc, sg, make=make)
+                self._mono_lemmas(app, sp, piece, p, d, fc, sg)
         if d == 0:
             # u = c -> f(u) = f(c), for any c with a finite real f(c)
-            q = self._mono_var(relation_atom("eq", app, fc), ("f", app), make)
-            if q is not None:
-                self.session.emit([-p, q, -self._tvar(app, _MO)])
+            q = self._mono_var(relation_atom("eq", app, fc), ("f", app))
+            self.session.emit([-p, q, -self._tvar(app, _MO)])
 
     def _mono_lemmas(self, app, sp, piece, p: int, d: int, fc, sg: int,
-                     q: Optional[int] = None, make=True) -> None:
+                     q: Optional[int] = None) -> None:
         """For ``c`` in ``piece`` (sign ``sg``) and ``p`` the atom ``u OP c``
         (``d``): ``p & G -> q`` and ``q & G -> p``, ``q`` the atom ``f(u)
         OP' f(c)`` (made unless given) and ``G`` the piece's guard on
@@ -1833,9 +1848,7 @@ class Relations:
                 f = relation_atom("lt", fc, app)
             else:
                 f = relation_atom("lt", app, fc)
-            q = self._mono_var(f, ("f", app), make)
-            if q is None:
-                return
+            q = self._mono_var(f, ("f", app))
         u = sp.arg
         g = self._mono_guard(u, piece.guard())
         mo = [-self._tvar(app, _MO)]
@@ -1847,11 +1860,11 @@ class Relations:
             g = []                        # f(u) = f(c) -> u = c anywhere
         emit([-q, p] + g + mo)
 
-    def _mono_inverse(self, app, sp, q: int, dv, d: int, make=True) -> None:
+    def _mono_inverse(self, app, sp, q: int, dv, d: int) -> None:
         """The atom ``q`` says ``f(u) OP dv``: for each piece and each ``c``
-        in it with ``f(c) = dv``, make the atom ``u OP' c`` (unless it is
-        new and not ``make``) and relate the two (:meth:`_mono_lemmas`)."""
-        key = ("i", app, q, make)
+        in it with ``f(c) = dv``, make the atom ``u OP' c`` and relate the
+        two (:meth:`_mono_lemmas`)."""
+        key = ("i", app, q)
         if key in self._mono_done:
             return
         self._mono_done.add(key)
@@ -1885,8 +1898,8 @@ class Relations:
                     f = relation_atom("lt", c, u)
                 else:
                     f = relation_atom("lt", u, c)
-                p = self._mono_var(f, ("i", app), make)
-                if p is None or self._mono_made.get(p) == ("f", app):
+                p = self._mono_var(f, ("i", app))
+                if self._mono_made.get(p) == ("f", app):
                     continue
                 self._mono_lemmas(app, sp, piece, p, du, dv, sg, q=q)
                 if du == 0:               # u = c -> f(u) = f(c) = dv
