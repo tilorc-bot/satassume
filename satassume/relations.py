@@ -784,6 +784,14 @@ def _csign(e):
     return r
 
 
+def _mono_field():
+    """LRA's field for :func:`satassume.theories.mono.link_map`."""
+    from .theories.lra.constfield import Undecided, from_sympy, sign
+    from .theories.lra.lra import Approx
+    from .theories.mono import Field
+    return Field(from_sympy, sign, Undecided, Approx)
+
+
 def _mono_guards(name):
     from .theories.mono import GUARDS
     return GUARDS[name]
@@ -1611,7 +1619,7 @@ class Relations:
         its reason: no atom and no clause per threshold."""
         from sympy import S
         from .theories.mono import link_map
-        fm = link_map(app)
+        fm = link_map(app, _mono_field())
         if fm is None:
             return
         s = self.session

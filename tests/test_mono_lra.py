@@ -19,6 +19,7 @@ from sympy import (Rational, S, Symbol, acot, asinh, atan, cosh, exp, log, pi,
 from satassume.theories.lra.constfield import from_sympy
 from satassume.theories.lra.lra import LRATheory, MonoLink, MonoPiece, constraint
 from satassume.theories.mono import link_map
+from satassume.relations import _mono_field
 
 x = Symbol("x")
 FAMILIES = [exp(x), log(x), atan(x), tanh(x), sinh(x), asinh(x), cosh(x), acot(x),
@@ -58,7 +59,7 @@ def _truth(op, lhs, rhs):
 
 def _setup(app):
     from satassume.theories.lra.lra_adapter import integer_form
-    fm = link_map(app)
+    fm = link_map(app, _mono_field())
     sp = fm.sp
     th = LRATheory()
     atoms = {}                   # var -> (key, op, value)

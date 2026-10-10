@@ -319,23 +319,22 @@ def _pow_spec(t, u, k) -> Spec:
 
 # -- the field-number view LRA uses (lra.MonoLink) ------------------------
 
-def _field(e):
+def _field(e, fld):
     """The exact-field number of the closed SymPy constant ``e`` if it is a
     finite real the field reads, else None."""
-    from .lra.constfield import from_sympy
-    return from_sympy(e, generic=True)
+    return fld.from_sympy(e, generic=True)
 
 
 #: the grid of the rational ends of an Approx (lra.Approx)
 _GRID = 1 << 40
 
 
-def _approx(v):
+def _approx(v, fld):
     """``lra.Approx(lo, hi)`` with rationals ``lo < v < hi`` on the grid
     ``1/_GRID`` for the finite real closed SymPy number ``v``, from a
     30-digit evaluation (error far below the grid), or None."""
     from sympy import Rational
-    from .lra.lra import Approx
+    Approx = fld.Approx
     if v.free_symbols or v.is_extended_real is not True or v.is_finite is not True:
         return None
     f = v.evalf(30)
@@ -353,13 +352,12 @@ def _sympy_of(q):
     return q.to_sympy()
 
 
-def _fsign(q) -> Optional[int]:
-    from .lra.constfield import Undecided, sign
+def _fsign(q, fld) -> Optional[int]:
     if type(q) is Fraction:
         return (q > 0) - (q < 0)
     try:
-        return sign(q)
-    except Undecided:
+        return fld.sign(q)
+    except fld.Undecided:
         return None
 
 
@@ -374,7 +372,7 @@ def _big(q) -> bool:
                                     or q.denominator.bit_length() > _BITS)
 
 
-def _at_inf(sp: Spec) -> tuple:
+def _at_inf(sp: Spec, fld) -> tuple:
     """The values of ``f(u)`` at an infinite ``u`` that MONO states, as
     ``(side, anyv, total)``:
 
@@ -399,7 +397,7 @@ def _at_inf(sp: Spec) -> tuple:
         if isinstance(v, AccumBounds) or v.free_symbols or not (
                 v.is_real and v.is_finite):
             return "?" if v.has(zoo) and v is not zoo and not v.has(S.NaN) else None
-        fv = _field(v)
+        fv = _field(v, fld)
         return None if fv is None else (v, fv)
 
     vs = [val(c) for c in (oo, -oo, zoo, oo * I, -oo * I)]
@@ -414,7 +412,7 @@ def _at_inf(sp: Spec) -> tuple:
     return (side, anyv, total)
 
 
-def _f0(sp: Spec):
+def _f0(sp: Spec, fld):
     """:attr:`LinkMap.f0`."""
     from sympy import S
     try:
@@ -423,7 +421,7 @@ def _f0(sp: Spec):
         return None
     if v.is_extended_real is False or v.is_finite is False or v is S.NaN or v.has(S.ComplexInfinity):
         return False
-    return _field(v) if v.is_real else None
+    return _field(v, fld) if v.is_real else None
 
 
 def _ranges(sp: Spec, side, f0) -> tuple:
@@ -449,6 +447,15 @@ def _ranges(sp: Spec, side, f0) -> tuple:
         (a, ao), (b, bo) = ends if pc.dir > 0 else ends[::-1]
         out.append((a, ao, b, bo))
     return tuple(out)
+
+
+class Field(NamedTuple):
+    """What :class:`LinkMap` uses of LRA's exact field
+    (``satassume.theories.lra.constfield`` and ``lra.Approx``)."""
+    from_sympy: Callable
+    sign: Callable
+    Undecided: type
+    Approx: type
 
 
 class LinkMap:
@@ -477,17 +484,21 @@ class LinkMap:
 
     Neither is computed for a rational of more than ``_BITS`` bits.
 
+    ``fld`` is LRA's field (:class:`Field`, given by the glue: a theory
+    imports no other theory).
+
     Answers are memoized per instance (one per application)."""
-    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "whole", "at_inf", "ranges", "f0",
+    __slots__ = ("sp", "fld", "pieces", "bounds", "covered", "vshape", "whole", "at_inf", "ranges", "f0",
                  "_img", "_pre", "_rng")
 
-    def __init__(self, sp: Spec):
+    def __init__(self, sp: Spec, fld):
         self.sp = sp
+        self.fld = fld
         self.pieces = tuple((p.lo, p.hi, p.dir) for p in sp.pieces)
         b = sp.bounds
         if b is not None:
-            lo = None if b[0] is None else _field(b[0])
-            hi = None if b[2] is None else _field(b[2])
+            lo = None if b[0] is None else _field(b[0], fld)
+            hi = None if b[2] is None else _field(b[2], fld)
             b = (lo, b[1], hi, b[3])
         self.bounds = b
         self.covered = sp.covered and len(sp.pieces) == 1
@@ -497,10 +508,10 @@ class LinkMap:
         #: the pieces cover the real line with closed ends: f is real on it
         self.whole = self.vshape or self.pieces == (("-oo", "oo", 1),)
         lo, hi, nz = sp.inv_range
-        self._rng = (None if lo is None else _field(lo),
-                     None if hi is None else _field(hi), nz)
-        self.at_inf = _at_inf(sp)
-        self.f0 = _f0(sp)
+        self._rng = (None if lo is None else _field(lo, fld),
+                     None if hi is None else _field(hi, fld), nz)
+        self.at_inf = _at_inf(sp, fld)
+        self.f0 = _f0(sp, fld)
         self.ranges = _ranges(sp, self.at_inf[0], self.f0) if len(sp.pieces) > 1 else ()
         self._img: dict = {}
         self._pre: dict = {}
@@ -508,6 +519,7 @@ class LinkMap:
     def image(self, c):
         if _big(c):
             return None
+        fld = self.fld
         try:
             return self._img[c]
         except KeyError:
@@ -516,9 +528,9 @@ class LinkMap:
             self._img.clear()
         try:
             v = self.sp.apply(_sympy_of(c))
-            r = _field(v)
+            r = _field(v, fld)
             if r is None:
-                r = _approx(v)
+                r = _approx(v, fld)
         except Exception:                 # SymPy failing on a value: no image
             r = None
         self._img[c] = r
@@ -543,25 +555,26 @@ class LinkMap:
         return r
 
     def _preimage(self, d, i: int):
+        fld = self.fld
         lo, hi, nz = self._rng
         sp = self.sp
-        if (lo is not None and _fsign(d - lo) != 1
-                or hi is not None and _fsign(hi - d) != 1
-                or nz and _fsign(d) != 1 and _fsign(d) != -1):
+        if (lo is not None and _fsign(d - lo, fld) != 1
+                or hi is not None and _fsign(hi - d, fld) != 1
+                or nz and _fsign(d, fld) != 1 and _fsign(d, fld) != -1):
             return None
         piece = sp.pieces[i]
         ds = _sympy_of(d)
         for c in sp.inverse(ds):
             if c.is_finite is False:
                 continue                  # 1/u = 0 at u = +-oo: no finite c
-            v = _field(c)
+            v = _field(c, fld)
             if v is None:
-                v = _approx(c)
+                v = _approx(c, fld)
                 if v is None:
                     continue
                 sg = 1 if v[0] >= 0 else -1 if v[1] <= 0 else None
             else:
-                sg = _fsign(v)
+                sg = _fsign(v, fld)
             if sg is None or not piece.holds(sg):
                 continue
             if not sp.exact and sp.apply(c) != ds:
@@ -573,7 +586,7 @@ class LinkMap:
 _LINKMAPS = _PROCESS.table(f"{__name__}._LINKMAPS", "pure", 100_000)
 
 
-def link_map(term) -> Optional[LinkMap]:
+def link_map(term, fld) -> Optional[LinkMap]:
     """The :class:`LinkMap` of an application with pieces, or None
     (memoized per term)."""
     try:
@@ -583,7 +596,7 @@ def link_map(term) -> Optional[LinkMap]:
     except TypeError:
         return None
     sp = spec(term)
-    r = LinkMap(sp) if sp is not None and sp.pieces else None
+    r = LinkMap(sp, fld) if sp is not None and sp.pieces else None
     if len(_LINKMAPS) >= _LINKMAPS.size:
         _LINKMAPS.clear()
     _LINKMAPS[term] = r
