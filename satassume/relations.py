@@ -1587,14 +1587,14 @@ class Relations:
             self._mono_rows(app, sp)
         if sp.pieces:
             self._mono_by_arg.setdefault(u, []).append(app)
-            if form is not None and form[0].terms and all(
-                    type(c) is Fraction for _t, c in form[0].terms):
-                self._mono_link(app, mo, form)
+            if form is not None and form[0].terms:
+                self._mono_link(app, mo, form, all(
+                    type(c) is Fraction for _t, c in form[0].terms))
         for var, a, b in self._mono_pairs:
             if a == u or b == u or a == app or b == app:
                 self._mono_pair(var, a, b)
 
-    def _mono_link(self, app, mo: int, form) -> None:
+    def _mono_link(self, app, mo: int, form, rational: bool) -> None:
         """Register the LRA link ``app = f(u)`` (``form`` the integer form
         of ``u``) on a fresh inert *enable* variable ``e``: ``e <-> MO(app)
         & real(app) & real(s)`` for the opaque terms ``s`` of ``u``.  While
@@ -1602,7 +1602,9 @@ class Relations:
         it: ``Spec.real_arg``), the LRA values of ``app`` and of ``u``'s terms are
         their values, so LRA may derive bounds of ``app`` from those of
         ``u`` and back (``lra.LRATheory._mono_link``), each with ``e`` in
-        its reason: no atom and no clause per threshold."""
+        its reason: no atom and no clause per threshold.  The realness
+        clauses come first; the link itself needs ``rational`` coefficients
+        of ``u`` (not ``sqrt(2)/2*sqrt(e)``)."""
         from sympy import S
         from .theories.mono import link_map
         fm = link_map(app)
@@ -1619,6 +1621,13 @@ class Relations:
             ga = self._guard(ad, [app])
             if ga:
                 s.emit([-mo] + self._guard(ad, list(terms)) + [-ga[0]])
+            if len(terms) == 1 and {p for p, _v, _f in fm.at_inf[0]} == {
+                    "positive_infinite", "negative_infinite"}:
+                # and an extended real at +-oo: extended_real(s) gives
+                # extended_real(f(u)) (asinh(oo) = oo, atan(-oo) = -pi/2)
+                s.ensure(terms[0], {"extended_real"})
+                s.ensure(app, {"extended_real"})
+                s.emit([-mo, -s.var("extended_real", terms[0]), s.var("extended_real", app)])
         if sp.real_arg and len(terms) == 1:
             # real(f(u)) gives real(u), u = a*s + b: real(s)
             ga = self._guard(ad, [app])
@@ -1632,6 +1641,8 @@ class Relations:
             if ga:
                 s.ensure(terms[0], {"real", "finite"})
                 s.emit([-mo, ga[0], s.var("real", terms[0]), -s.var("finite", terms[0])])
+        if not rational:
+            return
         guard = self._guard(ad, list(terms) + [app])
         e = self._fresh(inert=True)
         s.emit([-e, mo])
