@@ -97,29 +97,46 @@ class Lattice:
     def node_masks(self, op: int, nmask: int, amasks: List[int]) -> Tuple[int, List[int]]:
         """One round of propagation over ``N = op(A1, ..., An)``: the new
         set of the node and of each argument (an empty set is a
-        conflict)."""
-        mop, nanb = self.mop, self.NANB
+        conflict).  The folds are those of :meth:`mop` and :meth:`allowed`
+        in the same order, their memo read in place (most calls hit it:
+        the call is what costs)."""
+        memo, mop, nanb = self.memo, self.mop, self.NANB
         n = len(amasks)
-        pre: list = [None] * n
-        acc = None
-        for i in range(n):
+        # pre[i]: the fold of the arguments before i (i >= 1)
+        pre = [0] * n
+        acc = amasks[0]
+        for i in range(1, n):
             pre[i] = acc
-            acc = amasks[i] if acc is None else mop(op, acc, amasks[i])
+            m = amasks[i]
+            r = memo.get((op, acc, m) if acc <= m else (op, m, acc))
+            acc = mop(op, acc, m) if r is None else r
         total = acc
         newn = nmask if total & nanb else nmask & total
         out = list(amasks)
         if newn & self.ALL == self.ALL or n < 2:
             return newn, out
-        suf = None
         allowed = self.allowed
-        for i in range(n - 1, -1, -1):
-            p = pre[i]
-            rest = p if suf is None else (suf if p is None else mop(op, p, suf))
+        last = n - 1
+        suf = 0                 # the fold of the arguments after i (i < last)
+        for i in range(last, -1, -1):
             m = amasks[i]
-            suf = m if suf is None else mop(op, suf, m)
+            if i == last:
+                rest = pre[i]
+                suf = m
+            else:
+                if i:
+                    p = pre[i]
+                    r = memo.get((op, p, suf) if p <= suf else (op, suf, p))
+                    rest = mop(op, p, suf) if r is None else r
+                else:
+                    rest = suf
+                if i:
+                    r = memo.get((op, suf, m) if suf <= m else (op, m, suf))
+                    suf = mop(op, suf, m) if r is None else r
             if rest & nanb:
                 continue
-            out[i] = m & allowed(op, rest, newn)
+            r = memo.get((op, rest, newn, 0))
+            out[i] = m & (allowed(op, rest, newn) if r is None else r)
         return newn, out
 
 
@@ -264,37 +281,90 @@ class ClassTheory:
         (0 the node, ``k + 1`` argument ``k``): greedy deletion, first of
         the whole literal set of each slot, then of single literals of the
         slots kept.  Any subset is a sound reason (the sets only widen as
-        literals go); the deletion only makes it shorter."""
+        literals go); the deletion only makes it shorter.
+
+        Each test is :meth:`_slot` of the trial sets.  The deletion goes
+        through the slots in order, so the folds over the arguments before
+        the one on trial are those of the sets already decided: they are
+        kept (``pre``, and ``rpre`` for the fold without argument ``j -
+        1``), and a test folds only from the argument on trial on, in the
+        same left-to-right order as :meth:`Lattice.fold` (the set
+        operations are not associative: the order is kept, so the sets,
+        and the reason, are the same as :meth:`_slot` gives)."""
         op, t, args = self.nodes[i]
         slots = (t, *args)
         ls = [lits[u] for u in slots]
         masks = [self._mask(u, l) for u, l in zip(slots, ls)]
         wide = [self.fixed[u] for u in slots]
+        L = self.L
+        mop, nanb, full, allowed = L.mop, L.NANB, L.ALL, L.allowed
+        n = len(args)
+        r = j - 1                   # the argument whose set is tested (j > 0)
+        # pre[a + 1], rpre[a + 1]: the fold of masks[1 .. a + 1] (arguments
+        # 0 .. a), without argument r for rpre; None for no argument yet
+        pre = [None] * (n + 1)
+        rpre = [None] * (n + 1)
+
+        def advance(a: int) -> None:
+            # argument a is decided: extend the prefixes over it
+            m = masks[a + 1]
+            p = pre[a]
+            pre[a + 1] = m if p is None else mop(op, p, m)
+            p = rpre[a]
+            rpre[a + 1] = p if a == r else (m if p is None else mop(op, p, m))
+
+        def slot(a: int) -> int:
+            # _slot(i, masks, j), the prefixes valid for the arguments
+            # before a (a = 0 for a trial of the node's own set)
+            acc = pre[a]
+            for x in range(a, n):
+                m = masks[x + 1]
+                acc = m if acc is None else mop(op, acc, m)
+            newn = masks[0] if acc & nanb else masks[0] & acc
+            if j == 0:
+                return newn
+            m = masks[j]
+            if newn & full == full or n < 2:
+                return m
+            acc = rpre[a]
+            for x in range(a, n):
+                if x != r:
+                    q = masks[x + 1]
+                    acc = q if acc is None else mop(op, acc, q)
+            if acc & nanb:
+                return m
+            return m & allowed(op, acc, newn)
+
         for k in range(len(slots)):
             if ls[k] and masks[k] != wide[k]:
                 old = masks[k]
                 masks[k] = wide[k]
-                if test(self._slot(i, masks, j)):
+                if test(slot(k - 1 if k else 0)):
                     ls[k] = ()
                 else:
                     masks[k] = old
             elif ls[k]:
                 ls[k] = ()          # the literals say no more than the value
-        if len(args) <= self.WHY_FINE:
+            if k:
+                advance(k - 1)
+        if n <= self.WHY_FINE:
             for k in range(len(slots)):
-                if len(ls[k]) < 2:
-                    continue
-                kept = list(ls[k])
-                # the narrowest literals first: a reason that keeps the wide
-                # ones (``~negative_infinite(x)`` over ``finite(x)``) holds
-                # in more branches, and so does the clause learnt from it
-                for l in sorted(kept, key=self._width):
-                    kept.remove(l)
+                if len(ls[k]) >= 2:
+                    kept = list(ls[k])
+                    a = k - 1 if k else 0
+                    # the narrowest literals first: a reason that keeps the
+                    # wide ones (``~negative_infinite(x)`` over ``finite(x)``)
+                    # holds in more branches, and so does the clause learnt
+                    # from it
+                    for l in sorted(kept, key=self._width):
+                        kept.remove(l)
+                        masks[k] = self._mask(slots[k], kept)
+                        if not test(slot(a)):
+                            kept.append(l)
                     masks[k] = self._mask(slots[k], kept)
-                    if not test(self._slot(i, masks, j)):
-                        kept.append(l)
-                masks[k] = self._mask(slots[k], kept)
-                ls[k] = kept
+                    ls[k] = kept
+                if k:
+                    advance(k - 1)
         # a term may fill several slots (``x*x``): its literals once
         out = []
         for l in ls:
