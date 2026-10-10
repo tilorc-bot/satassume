@@ -1081,6 +1081,29 @@ class LRATheory:
         if w != tv:
             self._mon.setdefault(w, []).append(link)
 
+    def _mono_set(self, lower: bool, v: int, b: tuple, lit):
+        """:meth:`_set_lower` (``lower``) or :meth:`_set_upper` for a bound
+        MONO derived, skipped (propagation is optional) where a comparison
+        it makes cannot be decided (two field numbers equal in value but
+        not shown equal: ``sqrt(2)/2`` and ``1/sqrt(2)``), instead of the
+        theory giving up."""
+        try:
+            # the comparisons the setter makes, decided here first
+            lo, up = self._lo[v], self._up[v]
+            free = v not in self._rows
+            cur = (self._vq[v], self._vd[v])
+            if lower:
+                if lo is not None and lo >= b:
+                    return None
+                _ = (up is not None and b > up, free and cur < b)
+            else:
+                if up is not None and up <= b:
+                    return None
+                _ = (lo is not None and b < lo, free and cur > b)
+        except Undecided:
+            return None
+        return self._set_lower(v, b, lit) if lower else self._set_upper(v, b, lit)
+
     def _mono_on(self, link):
         """The enable literal of ``link`` was asserted: the range bounds of
         ``f(u)``, then the images and preimages of the current bounds."""
@@ -1089,11 +1112,11 @@ class LRATheory:
         if b is not None:
             lo, ls, hi, hs = b
             if lo is not None:
-                r = self._set_lower(tv, (lo, _ONE if ls else _ZERO), (e,))
+                r = self._mono_set(True, tv, (lo, _ONE if ls else _ZERO), (e,))
                 if r is not None:
                     return r
             if hi is not None:
-                r = self._set_upper(tv, (hi, -_ONE if hs else _ZERO), (e,))
+                r = self._mono_set(False, tv, (hi, -_ONE if hs else _ZERO), (e,))
                 if r is not None:
                     return r
         self._mq.append(tv)
@@ -1165,9 +1188,9 @@ class LRATheory:
                             strict, reason = True, reason + _lits(self._up_r[tv])
             wv = -k / c
             if u_lower == (c > 0):
-                x = self._set_lower(w, (wv, _ONE if strict else _ZERO), reason)
+                x = self._mono_set(True, w, (wv, _ONE if strict else _ZERO), reason)
             else:
-                x = self._set_upper(w, (wv, -_ONE if strict else _ZERO), reason)
+                x = self._mono_set(False, w, (wv, -_ONE if strict else _ZERO), reason)
             if x is not None:
                 return x
         return None
@@ -1217,9 +1240,9 @@ class LRATheory:
                 if fa is not None:
                     r = (e,) + _lits(ulo[2]) + inup
                     if d > 0:
-                        x = self._set_lower(tv, _blo(fa, ulo[1]), r)
+                        x = self._mono_set(True, tv, _blo(fa, ulo[1]), r)
                     else:
-                        x = self._set_upper(tv, _bup(fa, ulo[1]), r)
+                        x = self._mono_set(False, tv, _bup(fa, ulo[1]), r)
                     if x is not None:
                         return x
             if inlo is not None and uup is not None and _at_up(phi, sup):
@@ -1227,9 +1250,9 @@ class LRATheory:
                 if fa is not None:
                     r = (e,) + _lits(uup[2]) + inlo
                     if d > 0:
-                        x = self._set_upper(tv, _bup(fa, uup[1]), r)
+                        x = self._mono_set(False, tv, _bup(fa, uup[1]), r)
                     else:
-                        x = self._set_lower(tv, _blo(fa, uup[1]), r)
+                        x = self._mono_set(True, tv, _blo(fa, uup[1]), r)
                     if x is not None:
                         return x
             # inverse: the preimage of a bound of t, u in the piece
@@ -1251,9 +1274,9 @@ class LRATheory:
                     a, strict = a[0] if w_lower == (c > 0) else a[1], True
                 wv = (a - k) / c
                 if w_lower:
-                    x = self._set_lower(w, (wv, _ONE if strict else _ZERO), r)
+                    x = self._mono_set(True, w, (wv, _ONE if strict else _ZERO), r)
                 else:
-                    x = self._set_upper(w, (wv, -_ONE if strict else _ZERO), r)
+                    x = self._mono_set(False, w, (wv, -_ONE if strict else _ZERO), r)
                 if x is not None:
                     return x
         if fm.vshape and ulo is not None and uup is not None and slo is not None \
@@ -1268,7 +1291,7 @@ class LRATheory:
                     sd = _sg(fa - fb)
                     if sd is not None:
                         r = (e,) + _lits(ulo[2]) + _lits(uup[2])
-                        x = self._set_upper(tv, (fa if sd >= 0 else fb, _ZERO), r)
+                        x = self._mono_set(False, tv, (fa if sd >= 0 else fb, _ZERO), r)
                         if x is not None:
                             return x
                 fa = fb = None
@@ -1282,7 +1305,7 @@ class LRATheory:
                     else:
                         b, strict = fa, False
                     r = (e,) + _lits(ulo[2]) + _lits(uup[2])
-                    x = self._set_upper(tv, (b, -_ONE if strict else _ZERO), r)
+                    x = self._mono_set(False, tv, (b, -_ONE if strict else _ZERO), r)
                     if x is not None:
                         return x
         return None
