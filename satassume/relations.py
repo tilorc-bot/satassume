@@ -886,7 +886,8 @@ class Relations:
         #: terms key -> [(expr, coeffs, app, spec, is_arg)]: arguments and
         #: applications whose thresholds matter
         self._mono_int: dict = {}
-        #: terms key -> [(var, side, c0, dir, coeffs)]: threshold atoms
+        #: terms key -> [(var, side, c0, dir, coeffs, is a link atom)]:
+        #: threshold atoms
         self._mono_thr: dict = {}
         self._mono_pairs: list = []       # (var, a, b) for lt(a, b), no number side
         self._mono_by_arg: dict = {}      # argument -> its applications
@@ -1587,7 +1588,7 @@ class Relations:
         k = self._mono_key(side)
         if k is None:
             return
-        rec = (var, side, c0, d, k[1])
+        rec = (var, side, c0, d, k[1], atom in self._link_of)
         self._mono_thr.setdefault(k[0], []).append(rec)
         for it in self._mono_int.get(k[0], ()):
             self._mono_match(it, rec)
@@ -1607,14 +1608,16 @@ class Relations:
         if lk is not None:
             for t in lk[0]:
                 self._mono_open(t)
-        if not sp.pieces:
-            # the sandwich rows of Abs, floor, ceiling relate it to u
-            self._mono_rows(app, sp)
-            return
         if app in self._mono_opened:
             self._mono_rows(app, sp)
-        self._mono_by_arg.setdefault(u, []).append(app)
-        for e, key, is_arg in ((u, lk, True), (app, self._mono_key(app), False)):
+        if sp.pieces:
+            self._mono_by_arg.setdefault(u, []).append(app)
+            todo = ((u, lk, True), (app, self._mono_key(app), False))
+        else:
+            # Abs, floor, ceiling: their sandwich rows are all there is,
+            # wanted once a threshold or another atom reads the application
+            todo = ((app, self._mono_key(app), False),)
+        for e, key, is_arg in todo:
             if key is None:
                 continue
             it = (e, key[1], app, sp, is_arg)
@@ -1650,7 +1653,11 @@ class Relations:
     def _mono_match(self, it, rec) -> None:
         """A threshold atom ``rec`` on the linear form of ``it``'s term."""
         e, ecoef, app, sp, is_arg = it
-        var, side, c0, d, scoef = rec
+        var, side, c0, d, scoef, link = rec
+        if not sp.pieces:
+            if not link:                  # a sign link: the templates' facts
+                self._mono_open(app)
+            return
         made = self._mono_made.get(var)
         if made is not None and (made[0] == "f" and not is_arg
                                  or made[0] == "i" and is_arg and made[1] is app):
@@ -1680,7 +1687,11 @@ class Relations:
         ``t``: an atom with another term or no number side (``f(u) + y >
         0``, ``f(u) < y``), the argument of an application (whose piece
         guards ask for its sign), or a threshold the inverse lemmas do not
-        map (``d`` outside the range, or no exact preimage)."""
+        map (``d`` outside the range, or no exact preimage).  ``Abs``,
+        ``floor`` and ``ceiling`` have rows only: any threshold opens them
+        except a sign link (``0 < floor(u)`` of ``Q.positive(floor(u))``,
+        whose facts the templates give; on the refine stream these links
+        made most of the rows and decided nothing)."""
         if t in self._mono_opened:
             return
         self._mono_opened.add(t)
