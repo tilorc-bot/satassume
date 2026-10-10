@@ -206,7 +206,8 @@ def class_symbols(atoms: Iterable[P]) -> frozenset:
     argument is a number or has a free symbol in it
     (``TransAdapter.engages``): what the theory decides needs class facts
     of every argument it reads.  (A glue twin ``eq(t, 0)`` is not counted:
-    its class facts are those of ``zero(t)``.)  Sound whatever the set
+    its class facts are those of ``zero(t)``, which is counted for a
+    compound ``t``: ``zero(y - 1)`` says ``y == 1``.)  Sound whatever the set
     (the theory only adds valid clauses: "Why this is sound" above)."""
     out: set = set()
     lts = None
@@ -217,6 +218,10 @@ def class_symbols(atoms: Iterable[P]) -> frozenset:
         elif p == "eq":
             for e in a.expr:
                 out |= _symbols(e)
+        elif p == "zero" and not getattr(a.expr, "is_Symbol", True):
+            # ``zero(y - 1)`` is an equality: the class facts of ``y``
+            # follow from it (closure), as from ``eq(y, 1)``
+            out |= _symbols(a.expr)
         elif p == "lt":
             if lts is None:
                 lts = set()

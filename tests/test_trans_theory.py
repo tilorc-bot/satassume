@@ -237,6 +237,9 @@ GS = Q.algebraic(x) & Q.algebraic(y) & Q.irrational(y)
     (Q.transcendental(atan(x)), ALG_NZ, None),          # atan(I) = oo*I
     (Q.zero(exp(x)), Q.negative_infinite(x), True),
     (Q.transcendental(x**y), Q.prime(x) & Q.algebraic(y), None),
+    # class facts from a zero of a compound term (an equality): engaged
+    (Q.zero(sin(x)), Q.zero(x - 1), False),
+    (Q.transcendental(exp(x)), Q.zero(x - 1), True),
 ])
 def test_answers(prop, assum, expected):
     assert ask(prop, assum) is expected
