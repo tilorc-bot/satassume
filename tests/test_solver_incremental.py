@@ -331,6 +331,8 @@ def run_seed(seed: int, ops=None, setup=None, steps=None, **kw) -> dict[str, int
     h.count("seeds")
     h.count("witness_hits", st["witness_hits"])
     h.count("theory_decisions", st["theory_decisions"])
+    h.count("lazy_reasons_read", sum(getattr(getattr(t, "inner", t), "read", 0)
+                                     for t in getattr(h.solver, "fuzz_theories", ())))
     h.count("conflicts", st["conflicts"])
     h.count("restarts", st["restarts"])
     h.count("reductions", h.solver._n_reductions)
@@ -839,15 +841,18 @@ def theory_setup(seed: int) -> Callable:
     # the theory asks for the unassigned ones with ``decide`` before its
     # check (a separate generator keeps the other draws of the seed).
     lazy_atoms = random.Random(10007 * seed + 2).random() < 0.5
+    # Half the seeds give lazy reasons from ``propagate`` (functions the
+    # solver calls only where conflict analysis reads the reason).
+    lazy_reasons = random.Random(10007 * seed + 3).random() < 0.5
 
     def setup(s: Solver) -> None:
-        t = ForbidTheory(forbidden, mode)
+        t = ForbidTheory(forbidden, mode, lazy_reasons)
         if lazy_atoms:
             t.decide = _forbid_decide(t)
         if isinstance(s, BlockSolver):
             t = s.recorder = Recorder(t, s)
         s.attach_theory(t)
-        t2 = ForbidTheory(forbidden2, mode2)
+        t2 = ForbidTheory(forbidden2, mode2, lazy_reasons)
         s.attach_theory(t2)
         s.fuzz_theories = [t, t2]
         for v in atoms:
@@ -1087,7 +1092,7 @@ def test_block_mix_covers_the_propagator_paths():
                 "late_mentions_dropped_held", "implied_lazy_skipped",
                 "solve_from_held", "reductions", "solve_unsat", "witness_hits", "entails_None",
                 "entails_True", "entails_False", "entails_inconsistent",
-                "implied_lazy_atoms_sound_only", "theory_decisions"):
+                "implied_lazy_atoms_sound_only", "theory_decisions", "lazy_reasons_read"):
         assert c.get(key, 0) > 0, (key, c)
 
 
