@@ -633,6 +633,28 @@ therefore an answers-only addition for queries that read an application
 as an LRA term. A cheaper sign-only engagement (or a sign theory, #149 T1)
 is the place to retire these rows.
 
+**Pow on sign links.** A sign link (`0 < e`, `e < 0`, `e = 0` of a linked
+term, `Relations._link`) is a threshold like any other, and on the
+harness's relational and base workloads the links of the nodes around
+`u**-1` (every division), `u**(1/3)` and `u**2` made about 10000 image and
+preimage atoms per 1800 queries and decided nothing: the profiles were
+10-13% slower than the base. For `Pow` (`relations._MONO_LAZY`) a
+threshold that is only a sign link (no query mentions it, no other role)
+now relates existing atoms only, and makes atoms only where a query reads
+the power or a term of its base: an LRA term of a relation the query
+mentions, or of the linear form of a unary predicate's argument
+(`Q.positive(x**3 - 1)` under `Q.positive(x - 2)` reads `x**3` and `x`).
+Matches skipped this way wait on the atom and on those terms and are
+redone when a later formula of the session reads one (`_mono_wait`,
+`_mono_note_user`). The sign facts of `u` and `u**k` themselves are the
+Pow templates' rows. Equalities the lemmas make (`x = 1/6 -> sqrt(x) =
+sqrt(6)/6`) had no role, so LRA never saw them (`_aux_eq`); they now get
+the role `"mono"` under the application's `MO` switch, which turns on
+their LRA twin and nothing else (no transfer candidacy). Soundness: the
+first change only drops lemmas; the twin of a made equality is the
+equality itself, asserted under a switch, as for a user equality.
+Measured (pareto1, pinned): see PR #150.
+
 Limits: a threshold whose constant the exact field cannot read
 (`asinh(2)`, `sinh(1)`) gets no lemma; `tan`, `cot`, `asin`, `acos`,
 `sin`, `cos` and Float constants are not in the table; inverse lemmas need

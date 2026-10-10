@@ -222,3 +222,22 @@ SIGNS = [
 def test_signs_with_mono(prop, assum, want):
     assert ask(prop, assum, engine=Engine()) is want
 
+
+
+# -- Pow on sign links (_MONO_LAZY): atoms only where a query reads the
+# power or its base; equalities the lemmas make reach LRA ("mono" role)
+POW_LINKS = [
+    # the query reads the power and the base (unary predicates)
+    (Q.positive(x**3 - 1), Q.positive(x - 2), True),
+    (Q.ge(2*sqrt(x + 1) + 1, 1), Q.extended_positive(x + 1), True),
+    (Q.gt(sqrt(y), log(2)), Q.ge(sqrt(y), log(y + 2)), True),
+    # a made equality: x = 1/6 -> sqrt(x) = sqrt(6)/6 in LRA
+    (Q.ne(6*x - 1, 0), Q.gt(sqrt(2*x), pi/2), True),
+    (Q.eq(n**-1, 2), Q.real(n), False),
+    (Q.ne((n - 1)**-2, S.Half), Q.positive((n - 1)**-2) & Q.gt(3*n, S.Half), True),
+]
+
+
+@pytest.mark.parametrize("prop,assum,want", POW_LINKS)
+def test_pow_on_sign_links(prop, assum, want):
+    assert ask(prop, assum, engine=Engine()) is want
