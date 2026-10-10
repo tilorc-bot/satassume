@@ -87,7 +87,7 @@ def test_wide_add_templates_are_linear(n):
     s = Add(*xs[:n])
     a = Q.positive_infinite(xs[0]) & And(*[Q.extended_real(x) & ~Q.negative_infinite(x) for x in xs[1:n]])
     t = time.perf_counter()
-    expected = True if n < 12 else None   # as on the 33-predicate main
+    expected = True   # n = 12: None on the templates alone, True by the sign theory (#149)
     assert ask(Q.positive_infinite(s), a) is expected
     assert ask(Q.infinite(s), a) is expected
     assert time.perf_counter() - t < 2.0

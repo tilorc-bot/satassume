@@ -90,6 +90,7 @@ from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
+from .theories.sign import sign_adapter as _sign
 
 Node = Any
 
@@ -355,6 +356,11 @@ class Session:
         #: checks it).  If set (a direct caller), its set's complete check
         #: gives ``UNKNOWN``.
         self.truncated = False
+        #: the sign theory once engaged (``sign_sync``) and the sums and
+        #: products over the templates' arity caps
+        #: (``sign_adapter.over_cap``) visited since its last sync
+        self.sign = None
+        self._sign_nodes: List[Node] = []
         if scope.glue and engine._relation_specs:
             # the theory scope of the query is known at construction: the
             # glue (and transfer, if the scope says so) exists before any
@@ -590,6 +596,10 @@ class Session:
             else:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
+        if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) \
+                and node.args and _sign.over_cap(node):
+            # the sign theory's nodes: those over the templates' arity caps
+            self._sign_nodes.append(node)
 
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
@@ -828,6 +838,29 @@ class Session:
                     or any(n not in base for n in self.frontier):
                 self.truncated = True
         self.frontier = deque()
+
+    def sign_sync(self) -> bool:
+        """Engage the sign theory (``satassume.theories.sign``) once the
+        cone holds a sum or product over the templates' arity caps, and
+        tell it those visited since the last sync (the theory then decides
+        only what the templates leave out by construction).  True iff
+        something was registered."""
+        nodes = self._sign_nodes
+        if not nodes:
+            if self.sign is not None:
+                self.sign.sync_derived()
+            return False
+        if self.sign is None:
+            self.sign = _sign.SignAdapter(self)
+        while nodes:
+            # registering a node visits its arguments, which may be sums
+            # or products over the caps themselves: until none is left
+            self._sign_nodes = []
+            for n in nodes:
+                self.sign.add(n)
+            nodes = self._sign_nodes
+        self.sign.sync_derived()
+        return True
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
@@ -1931,6 +1964,9 @@ class Engine:
                 s.xfer.sync_transfer()
             if not solver.propagate() or solver.implied(lits) is None:
                 return INCONSISTENT
+        if s.sign_sync():
+            if not solver.propagate() or solver.implied(lits) is None:
+                return INCONSISTENT
         # Solver.solve returns a bool: it raises only on a malformed
         # literal or a theory protocol error (RuntimeError), neither of
         # which is a conflict; the caller maps them to UNKNOWN
@@ -2059,10 +2095,12 @@ class Engine:
         session learned deciding the others.  ``tests/
         test_transfer_numbers.py`` checks this against a loop of ``is_``
         under every harness preset."""
+        s.sign_sync()
         r = s.query_literal(lit, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.escalate()
+            s.sign_sync()
             r = s.query_literal(lit, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
@@ -2182,11 +2220,13 @@ class Engine:
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
         lits = s.assumption_lits(proposition)
+        s.sign_sync()
         r = s.query_literal(q, lits, search=False)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.solver.release(s.n_hold)
             s.escalate()
+            s.sign_sync()
             r = s.query_literal(q, lits, search=False)
         if r is None:
             self.stats["searches"] += 1

@@ -51,6 +51,20 @@ MAX_PAIRS = 4
 MAX_ADD_SMALL = 3
 
 
+def sign_owns(is_mul: bool, n: int) -> bool:
+    """Whether the sign rows of an Add (``is_mul`` false) or Mul of ``n``
+    arguments are left to the SIGN theory (``satassume.theories.sign``,
+    issue #149 T1): the nodes over the arity caps, where the rows stop
+    (``MAX_PAIRS`` factors: ``negsets``; ``MAX_ONEOUT`` terms: infinite
+    sums).  Every session tells the theory those nodes
+    (``sign_adapter.over_cap``), and the theory
+    derives every literal the dropped rows give (each row's reason is a
+    clause the theory explains on demand; ``docs/theories.md``, "SIGN").
+    The rows that stay for such nodes are those of other predicates
+    (``integer``, ``commutative``, ``even``, ...)."""
+    return n > (MAX_PAIRS if is_mul else MAX_ONEOUT)
+
+
 # ---------------------------------------------------------------------------
 # Add
 # ---------------------------------------------------------------------------
@@ -70,6 +84,10 @@ _ADD_CLOSED = (
 # and with the closure rules also irrational/transcendental/noninteger sums.)
 _ADD_SUBTRACT = ('real', 'complex', 'integer', 'rational', 'algebraic', 'finite')
 
+# The closures the SIGN theory decides over the cap (``sign_owns``).
+_ADD_SIGN = ('finite', 'extended_positive', 'extended_negative',
+             'extended_nonnegative', 'extended_nonpositive')
+
 _STRICT = (('extended_positive', 'extended_nonnegative'),
            ('extended_negative', 'extended_nonpositive'))
 
@@ -80,16 +98,21 @@ def _add_rules(n, consts):
     N = n
     A = range(n)
 
+    # Over the cap the SIGN theory decides the sign, zero, finite and
+    # extended_real literals of the sum (``sign_owns``).
+    sign = not sign_owns(False, n)
     for pred in _ADD_CLOSED:
-        rule(lits(A, pred), (N, pred, True))
+        if sign or pred not in _ADD_SIGN:
+            rule(lits(A, pred), (N, pred, True))
     # Extended reals without both +oo and -oo among the terms.
-    for inf in ('positive_infinite', 'negative_infinite'):
+    for inf in ('positive_infinite', 'negative_infinite') if sign else ():
         rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
     if n > MAX_ADD_SMALL:
         rule(lits(A, 'even'), (N, 'even', True))
 
     # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
-    rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
+    if sign:
+        rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
 
     # A commutative sum has a commutative term k when every other term is a
     # finite number: k is the sum minus them.  Not in general: ``A - B`` is
@@ -100,7 +123,7 @@ def _add_rules(n, consts):
             rule([(N, 'commutative', True), *lits(rest, 'commutative'), *lits(rest, 'finite')],
                  (k, 'commutative', True))
 
-    for k in A:
+    for k in A if sign else ():
         rest = [j for j in A if j != k]
         # One strictly signed term among same-signed terms.
         for strict, nonstrict in _STRICT:
@@ -253,10 +276,9 @@ def add_templates(expr):
 # Closed under multiplication.  ``real`` and ``positive`` are derived by the
 # rule base (``extended_* & finite``).  ``extended_real`` is not: ``0*oo``
 # is nan (see _mul_rules).
-_MUL_CLOSED = (
-    'complex', 'integer', 'rational', 'algebraic', 'finite',
-    'commutative', 'extended_positive', 'nonnegative',
-)
+_MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic', 'commutative')
+# (the sign ones, left to the SIGN theory over the cap: ``sign_owns``)
+_MUL_CLOSED_SIGN = ('finite', 'extended_positive', 'nonnegative')
 
 # Backward transfer for a nonzero real numeric coefficient c: pred(c*x) -> pred(x)
 # (sign predicates flipped for negative c).  The forward directions follow
@@ -282,6 +304,8 @@ def _coeff(ctx):
 MUL_GUARDS = MappingProxyType({
     'n<=MAX_ONEOUT': lambda c: c['n'] <= MAX_ONEOUT,
     'n>MAX_ONEOUT': lambda c: c['n'] > MAX_ONEOUT,
+    # the sign rows, left to the SIGN theory over the cap (sign_owns)
+    'sign rows': lambda c: not sign_owns(True, c['n']),
     'n>=2': lambda c: c['n'] >= 2,
     'n==2': lambda c: c['n'] == 2,
     'n even': lambda c: c['n'] % 2 == 0,
@@ -304,10 +328,13 @@ def _mul_table_rows():
     """The rows of ``MUL_TABLE`` (built on first use, :func:`_table`)."""
     return (
         Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED),
+        Row('closed.sign', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED_SIGN,
+            when='sign rows'),
         # Extended reals, all finite or all nonzero (no 0*oo).
-        Row('ext_real.finite', [('*', 'extended_real'), ('*', 'finite')], ('N', 'extended_real')),
+        Row('ext_real.finite', [('*', 'extended_real'), ('*', 'finite')], ('N', 'extended_real'),
+            when='sign rows'),
         Row('ext_real.nonzero', [('*', 'extended_real'), ('*', 'zero', False)],
-            ('N', 'extended_real')),
+            ('N', 'extended_real'), when='sign rows'),
         # A commutative product has a commutative factor k when every other
         # factor is a nonzero number: k is the product divided by them.  Not
         # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
@@ -319,7 +346,7 @@ def _mul_table_rows():
         # Zero: some zero factor with the rest finite; nonzero: all nonzero and
         # at most one of them non-commutative (non-commutative values have zero
         # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
-        Section('each', rows=[
+        Section('each', when='sign rows', rows=[
             Row('zero', [('k', 'zero'), ('rest', 'finite')], ('N', 'zero')),
         ]),
         Section('each', when='n<=MAX_ONEOUT', rows=[
@@ -337,21 +364,29 @@ def _mul_table_rows():
         Row('primes', [('*', 'prime')], ('N', 'composite'), when='n>=2'),
         # All factors negative / nonpositive / imaginary: parity of n.
         Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
-            when='n even'),
-        Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'), when='n odd'),
-        Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'), when='n even'),
-        Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'), when='n odd'),
-        Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'), when='n even'),
-        Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'), when='n odd'),
+            when=('n even', 'sign rows')),
+        Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'),
+            when=('n odd', 'sign rows')),
+        Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'),
+            when=('n even', 'sign rows')),
+        Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'),
+            when=('n odd', 'sign rows')),
+        Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'),
+            when=('n even', 'sign rows')),
+        Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'),
+            when=('n odd', 'sign rows')),
         Row('all_odd', [('*', 'odd')], ('N', 'odd')),
         Section('each', when='n<=MAX_ONEOUT', rows=[
             # One infinite factor and the rest nonzero -> infinite.
-            Row('one_infinite', [('k', 'infinite'), ('rest', 'zero', False)], ('N', 'infinite')),
+            Row('one_infinite', [('k', 'infinite'), ('rest', 'zero', False)], ('N', 'infinite'),
+                when='sign rows'),
             # Exactly one negative factor (rest positive) -> negative.
             Row('one_neg', [('k', 'extended_negative'), ('rest', 'extended_positive')],
-                ('N', 'extended_negative')),
+                ('N', 'extended_negative'),
+                when='sign rows'),
             Row('one_nonpos', [('k', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonpositive')),
+                ('N', 'nonpositive'),
+                when='sign rows'),
             # One even factor and the rest integers -> even.
             Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even')),
             # One composite factor and the rest integers -> not prime (the
@@ -368,13 +403,16 @@ def _mul_table_rows():
                 ('N', 'transcendental')),
             # One non-real factor and the rest nonzero extended reals -> not real.
             Row('one_non_real', [('k', 'extended_real', False), ('rest', 'extended_nonzero')],
-                ('N', 'extended_real', False)),
+                ('N', 'extended_real', False),
+                when='sign rows'),
             # One imaginary factor and the rest nonzero finite reals -> imaginary;
             # with the rest merely real the product may also be zero.
             Row('one_imag', [('k', 'imaginary'), ('rest', 'real'), ('rest', 'zero', False)],
-                ('N', 'imaginary')),
+                ('N', 'imaginary'),
+                when='sign rows'),
             Row('one_imag.or_zero', [('k', 'imaginary'), ('rest', 'real')],
-                [('N', 'imaginary'), ('N', 'zero')]),
+                [('N', 'imaginary'), ('N', 'zero')],
+                when='sign rows'),
             # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
             # the product is real iff the other factor is imaginary or
             # zero, and imaginary iff the other factor is a nonzero real.

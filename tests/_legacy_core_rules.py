@@ -26,8 +26,10 @@ from satassume.knowledge.templates.core import (
     _S,
     _T,
     _U,
+    _MUL_CLOSED_SIGN,
     MAX_ONEOUT,
     MAX_PAIRS,
+    sign_owns,
 )
 
 
@@ -42,11 +44,14 @@ def mul_rules(n, consts):
     N = n
     A = range(n)
 
-    for pred in _MUL_CLOSED:
+    # over the cap the sign rows are left to the SIGN theory (sign_owns)
+    sign = not sign_owns(True, n)
+    for pred in _MUL_CLOSED + (_MUL_CLOSED_SIGN if sign else ()):
         rule(lits(A, pred), (N, pred, True))
     # Extended reals, all finite or all nonzero (no 0*oo).
-    rule([*lits(A, 'extended_real'), *lits(A, 'finite')], (N, 'extended_real', True))
-    rule([*lits(A, 'extended_real'), *lits(A, 'zero', False)], (N, 'extended_real', True))
+    if sign:
+        rule([*lits(A, 'extended_real'), *lits(A, 'finite')], (N, 'extended_real', True))
+        rule([*lits(A, 'extended_real'), *lits(A, 'zero', False)], (N, 'extended_real', True))
     # A commutative product has a commutative factor k when every other
     # factor is a nonzero number: k is the product divided by them.  Not
     # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
@@ -59,7 +64,7 @@ def mul_rules(n, consts):
     # Zero: some zero factor with the rest finite; nonzero: all nonzero and
     # at most one of them non-commutative (non-commutative values have zero
     # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
-    for k in A:
+    for k in A if sign else ():
         rule([(k, 'zero', True), *lits([j for j in A if j != k], 'finite')], (N, 'zero', True))
     if n <= MAX_ONEOUT:
         for k in A:
@@ -81,21 +86,24 @@ def mul_rules(n, consts):
 
     # All factors negative / nonpositive / imaginary: parity of n.
     even_n = n % 2 == 0
-    rule(lits(A, 'extended_negative'),
-         (N, 'extended_positive' if even_n else 'extended_negative', True))
-    rule(lits(A, 'nonpositive'), (N, 'nonnegative' if even_n else 'nonpositive', True))
-    rule(lits(A, 'imaginary'), (N, 'nonzero' if even_n else 'imaginary', True))
+    if sign:
+        rule(lits(A, 'extended_negative'),
+             (N, 'extended_positive' if even_n else 'extended_negative', True))
+        rule(lits(A, 'nonpositive'), (N, 'nonnegative' if even_n else 'nonpositive', True))
+        rule(lits(A, 'imaginary'), (N, 'nonzero' if even_n else 'imaginary', True))
     rule(lits(A, 'odd'), (N, 'odd', True))
 
     if n <= MAX_ONEOUT:
         for k in A:
             rest = [j for j in A if j != k]
             # One infinite factor and the rest nonzero -> infinite.
-            rule([(k, 'infinite', True), *lits(rest, 'zero', False)], (N, 'infinite', True))
-            # Exactly one negative factor (rest positive) -> negative.
-            rule([(k, 'extended_negative', True), *lits(rest, 'extended_positive')],
-                 (N, 'extended_negative', True))
-            rule([(k, 'nonpositive', True), *lits(rest, 'nonnegative')], (N, 'nonpositive', True))
+            if sign:
+                rule([(k, 'infinite', True), *lits(rest, 'zero', False)], (N, 'infinite', True))
+                # Exactly one negative factor (rest positive) -> negative.
+                rule([(k, 'extended_negative', True), *lits(rest, 'extended_positive')],
+                     (N, 'extended_negative', True))
+                rule([(k, 'nonpositive', True), *lits(rest, 'nonnegative')],
+                     (N, 'nonpositive', True))
             # One even factor and the rest integers -> even.
             rule([(k, 'even', True), *lits(rest, 'integer')], (N, 'even', True))
             # One composite factor and the rest integers -> not prime (the
@@ -109,14 +117,15 @@ def mul_rules(n, consts):
             rule([(k, 'transcendental', True), *lits(rest, 'algebraic'), *lits(rest, 'zero', False)],
                  (N, 'transcendental', True))
             # One non-real factor and the rest nonzero extended reals -> not real.
-            rule([(k, 'extended_real', False), *lits(rest, 'extended_nonzero')],
-                 (N, 'extended_real', False))
-            # One imaginary factor and the rest nonzero finite reals -> imaginary;
-            # with the rest merely real the product may also be zero.
-            rule([(k, 'imaginary', True), *lits(rest, 'real'), *lits(rest, 'zero', False)],
-                 (N, 'imaginary', True))
-            rule([(k, 'imaginary', True), *lits(rest, 'real')],
-                 [(N, 'imaginary', True), (N, 'zero', True)])
+            if sign:
+                rule([(k, 'extended_real', False), *lits(rest, 'extended_nonzero')],
+                     (N, 'extended_real', False))
+                # One imaginary factor and the rest nonzero finite reals -> imaginary;
+                # with the rest merely real the product may also be zero.
+                rule([(k, 'imaginary', True), *lits(rest, 'real'), *lits(rest, 'zero', False)],
+                     (N, 'imaginary', True))
+                rule([(k, 'imaginary', True), *lits(rest, 'real')],
+                     [(N, 'imaginary', True), (N, 'zero', True)])
             if n == 2:
                 # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
                 # the product is real iff the other factor is imaginary or
