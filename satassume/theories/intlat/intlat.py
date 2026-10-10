@@ -129,39 +129,50 @@ def reduce(rows: dict, f: Vec) -> Optional[FrozenSet[int]]:
     return why
 
 
-def _close(rows: dict, supp: set, negs: list, used: set, d: int) -> Optional[FrozenSet[int]]:
+def _close(rows: dict, supp: set, negs: list, used: set, d: int,
+           start: int = 0) -> Optional[FrozenSet[int]]:
     """Close the lattice ``rows`` (term columns ``supp``) under the parity
     step with the non-integral forms ``negs`` (``(form, literal,
     columns)``; ``used``: the indices already stepped) in place; the
     literals of a conflict, or None.  A form with a column outside
-    ``supp`` is neither in the lattice nor twice in it."""
-    changed = True
-    while changed:
-        changed = False
+    ``supp`` is neither in the lattice nor twice in it.  ``start``: the
+    lattice is closed for ``negs[:start]`` (only forms were appended
+    since), so the first pass looks at the others only.
+
+    A form ``h`` not stepped yet is looked at through ``2*h`` first: if
+    ``2*h`` is not in the lattice, neither is ``h``.  A stepped form is not
+    looked at again: ``h - 1/2`` is in the lattice, so ``h`` is iff ``1/2``
+    is, which the constant row says (its reason holds the step's)."""
+    while True:
         cv, cwhy = rows[CONST]
         if cv[CONST] % d:
             return cwhy
-        for i, (h, lit, cols) in enumerate(negs):
+        changed = False
+        for i in range(start, len(negs)):
+            if i in used:
+                continue
+            h, lit, cols = negs[i]
             if not cols <= supp:
+                continue
+            w2 = reduce(rows, {k: 2 * x for k, x in h.items()})
+            if w2 is None:
                 continue
             w = reduce(rows, h)
             if w is not None:
                 return w | {lit}
-            if i in used:
-                continue
-            w = reduce(rows, {k: 2 * x for k, x in h.items()})
-            if w is not None:
-                # 2*h is an integer and h is not: h - 1/2 is one
-                used.add(i)
-                g = dict(h)
-                y = g.get(CONST, 0) - d // 2
-                if y:
-                    g[CONST] = y
-                else:
-                    del g[CONST]
-                insert(rows, g, w | {lit})
-                changed = True
-    return None
+            # 2*h is an integer and h is not: h - 1/2 is one
+            used.add(i)
+            g = dict(h)
+            y = g.get(CONST, 0) - d // 2
+            if y:
+                g[CONST] = y
+            else:
+                del g[CONST]
+            insert(rows, g, w2 | {lit})
+            changed = True
+        if not changed:
+            return None
+        start = 0
 
 
 class Lattice:
@@ -203,7 +214,8 @@ class Lattice:
             return
         self.negs.append((h, lit, cols))
         if cols <= self.supp:
-            self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d)
+            self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d,
+                                   len(self.negs) - 1)
 
     def implies(self, f: Vec) -> Optional[FrozenSet[int]]:
         """The reason of ``f`` integral, or None."""
