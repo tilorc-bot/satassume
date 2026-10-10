@@ -266,10 +266,19 @@ def test_infinite_argument_never_contradicted(f):
     ("Q.real(n**3)", "Q.lt(2*n - 1, 1)", True),
     ("Q.lt(exp(e)**2, S(1)/9)", "Q.lt(e, -2)", True),
     ("Q.lt((2*r + 1)**-1, -1)", "Q.gt(r, -1) & Q.lt(r, -S.Half)", True),
+    # Q.nonzero and Q.negative are real: real(1/y) gives real(y) or an
+    # infinite y, where 1/y = 0 (new answers once the glue is on; the
+    # invariant harness's I2 found them through an unrelated relation atom)
+    ("Q.extended_real(y)", "Q.nonzero(1/y) & Q.ne(y, 5)", True),
+    ("Q.real(y)", "Q.negative(1/y) & Q.ne(y, 5)", True),
+    ("Q.real(y)", "Q.positive(1/y) & Q.ne(y, 5)", True),
+    ("~(Implies(Q.positive(sre(x)**2), Q.infinite(y**2)))",
+     "Q.negative(1/y) & Q.irrational(x*y**2*(2*y + sre(x))**2) & Q.ne(y, 5)", True),
 ])
 def test_mono_answers(q, a, want):
     ns = dict(globals())
     ns.update(n=Symbol("n", integer=True), r=Symbol("r", real=True),
               e=Symbol("e", extended_real=True), y=Symbol("y"), z=_z,
-              E=E, asinh=_asinh, acot=_acot)
+              E=E, asinh=_asinh, acot=_acot, sre=__import__("sympy").re,
+              Implies=__import__("sympy").Implies)
     assert _ask(eval(q, ns), eval(a, ns)) == want
