@@ -467,17 +467,20 @@ def _glue_atoms_of(a_atoms, p_atoms, rel: bool) -> Tuple[tuple, tuple]:
     return glue_atoms(a_atoms), glue_atoms(p_atoms, a_atoms)
 
 
-def _sign(s: _RefSession) -> None:
-    """Section 5.5, the sign theory (``satassume.theories.sign``, issue
-    #149 T1): attached with the sums and products of the cone over the
-    templates' arity caps (``sign_adapter.over_cap``), as the engine."""
-    from .theories.sign import sign_adapter as sg
-    nodes = [n for n in s.base if (getattr(n, 'is_Add', False) or getattr(n, 'is_Mul', False))
-             and n.args and sg.over_cap(n)]
-    if nodes:
-        a = sg.SignAdapter(s)
-        for n in nodes:
-            a.add(n)
+def _node_theories(s: _RefSession) -> None:
+    """Section 5.5, the node theories (``satassume.theories.sign``: the
+    sign theory, issue #149 T1, and the closure theory, T3): each attached
+    with the sums and products of the cone its adapter's ``over_cap``
+    selects (over the templates' arity caps), as the engine."""
+    from .theories.sign import closure_adapter as cl, sign_adapter as sg
+    ops = [n for n in s.base if (getattr(n, 'is_Add', False) or getattr(n, 'is_Mul', False))
+           and n.args]
+    for cls in (sg.SignAdapter, cl.ClosureAdapter):
+        nodes = [n for n in ops if cls.over_cap(n)]
+        if nodes:
+            a = cls(s)
+            for n in nodes:
+                a.add(n)
 
 
 def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
@@ -512,7 +515,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
     if glue:
         rel = s.glue(a_atoms, p_atoms)
     s.discover()
-    _sign(s)
+    _node_theories(s)
     lits = _assumption_lits(s, rel, a_atoms + p_atoms, transfer)
     info.nodes = len(s.base)
     info.clauses = s.nclauses

@@ -10,9 +10,9 @@ attributes of the terms are read.
 from __future__ import annotations
 
 from ...knowledge.rules import BASIS_INDEX
-from .sign import ADD, ALL, MUL, PRED_MASK, PREDS, SignTheory
+from .lattice import ADD, MUL
+from .sign import ALL, PRED_MASK, PREDS, SignTheory
 
-_OFFSETS = tuple(BASIS_INDEX[p] for p in PREDS)
 
 def over_cap(node) -> bool:
     """Whether the templates of ``node`` (an Add or a Mul) are capped:
@@ -20,50 +20,75 @@ def over_cap(node) -> bool:
     of Add at ``MAX_ONEOUT`` terms (infinite sums).  Such nodes have no
     sign rows (``templates.core.sign_owns``): this theory decides them.
     A session engages the theory with these nodes only
-    (``Session.sign_sync``; docs/theories.md, "SIGN", for the measured
-    alternatives)."""
+    (``Session.node_theories_sync``; docs/theories.md, "SIGN", for the
+    measured alternatives)."""
     from ...knowledge.templates.core import sign_owns
     return sign_owns(bool(node.is_Mul), len(node.args))
 
 
-def const_mask(c) -> int:
-    """The atom set of an atomic number from its static ``is_*`` facts."""
-    m = ALL
-    for p, pred in enumerate(PREDS):
-        v = getattr(c, 'is_' + pred, None)
-        if v is True:
-            m &= PRED_MASK[p]
-        elif v is False:
-            m &= ~PRED_MASK[p]
-    return m
+class ClassAdapter:
+    """The theory of one session and the nodes it was told, for the
+    lattice of :attr:`THEORY` whose predicates (basis predicates of the
+    rule block) are :attr:`PREDS` with atom sets :attr:`PRED_MASK`.  A
+    subclass names those and :meth:`over_cap`, the nodes a session tells
+    it (``Session.node_theories_sync``)."""
 
+    THEORY = SignTheory
+    PREDS = PREDS
+    PRED_MASK = PRED_MASK
+    ALL = ALL
 
-#: 1-based basis index -> index in PREDS (-1: not one of them)
-_PIDX = tuple(_OFFSETS.index(k - 1) if k - 1 in _OFFSETS else -1
-              for k in range(max(_OFFSETS) + 2))
+    def __init_subclass__(cls, **kw):
+        super().__init_subclass__(**kw)
+        cls._init_tables()
 
+    @classmethod
+    def _init_tables(cls) -> None:
+        offs = tuple(BASIS_INDEX[p] for p in cls.PREDS)
+        cls._OFFSETS = offs
+        #: 1-based basis index -> index in PREDS (-1: not one of them)
+        cls._PIDX = tuple(offs.index(k - 1) if k - 1 in offs else -1
+                          for k in range(max(BASIS_INDEX.values()) + 2))
 
-def def_mask(d):
-    """The atom set of a derived definition ``d = (op, lits)`` (signed
-    1-based basis indices, ``rules.DEF_LITS``), or None if it reads a
-    basis predicate other than the six."""
-    op, ls = d
-    m = ALL if op == '&' else 0
-    for l in ls:
-        p = _PIDX[abs(l)] if abs(l) < len(_PIDX) else -1
-        if p < 0:
-            return None
-        pm = PRED_MASK[p] if l > 0 else ALL & ~PRED_MASK[p]
-        m = m & pm if op == '&' else m | pm
-    return m
+    @staticmethod
+    def over_cap(node) -> bool:
+        return over_cap(node)
 
+    @classmethod
+    def const_mask(cls, c) -> int:
+        """The atom set of an atomic number from its static ``is_*`` facts."""
+        m = cls.ALL
+        for p, pred in enumerate(cls.PREDS):
+            v = cls._const_fact(c, pred)
+            if v is True:
+                m &= cls.PRED_MASK[p]
+            elif v is False:
+                m &= ~cls.PRED_MASK[p]
+        return m
 
-class SignAdapter:
-    """The theory of one session and the nodes it was told."""
+    @staticmethod
+    def _const_fact(c, pred):
+        return getattr(c, 'is_' + pred, None)
+
+    @classmethod
+    def def_mask(cls, d):
+        """The atom set of a derived definition ``d = (op, lits)`` (signed
+        1-based basis indices, ``rules.DEF_LITS``), or None if it reads a
+        basis predicate outside :attr:`PREDS`."""
+        op, ls = d
+        full, pidx, pmask = cls.ALL, cls._PIDX, cls.PRED_MASK
+        m = full if op == '&' else 0
+        for l in ls:
+            p = pidx[abs(l)] if abs(l) < len(pidx) else -1
+            if p < 0:
+                return None
+            pm = pmask[p] if l > 0 else full & ~pmask[p]
+            m = m & pm if op == '&' else m | pm
+        return m
 
     def __init__(self, session):
         self.session = session
-        self.theory = SignTheory()
+        self.theory = self.THEORY()
         session.solver.attach_theory(self.theory)
         self.terms = {}
         self.done = set()
@@ -76,14 +101,15 @@ class SignAdapter:
             return t
         th = self.theory
         if e.is_Atom and e.is_number:
-            t = self.terms[e] = th.term(const_mask(e))
+            t = self.terms[e] = th.term(self.const_mask(e))
             return t
         t = self.terms[e] = th.term()
         s = self.session
         b = s.node(e)
         solver = s.solver
-        for p, k in enumerate(_OFFSETS):
-            solver.register_atom(th, b + k, (t, PRED_MASK[p]))
+        pmask = self.PRED_MASK
+        for p, k in enumerate(self._OFFSETS):
+            solver.register_atom(th, b + k, (t, pmask[p]))
         return t
 
     def sync_derived(self) -> None:
@@ -112,7 +138,7 @@ class SignAdapter:
             if t is None:
                 self._later.append(key)
                 continue
-            m = def_mask(d)
+            m = self.def_mask(d)
             if m is not None:
                 solver.register_atom(th, s._dvar(d, node, 3), (t, m), mention=False)
 
@@ -124,3 +150,14 @@ class SignAdapter:
         t = self.term(node)
         args = [self.term(a) for a in node.args]
         self.theory.add_node(ADD if node.is_Add else MUL, t, args)
+
+
+ClassAdapter._init_tables()
+
+
+class SignAdapter(ClassAdapter):
+    """The sign theory (:mod:`.sign`)."""
+
+
+const_mask = SignAdapter.const_mask
+def_mask = SignAdapter.def_mask

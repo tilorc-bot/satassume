@@ -28,6 +28,7 @@ from sympy.core.power import Pow
 from sympy.functions.elementary.exponential import exp
 
 from ...sat.formula import Not, P
+from ..domain import _noncommutative
 from ..rules import BASIS, expand_clause
 
 from ._common import (
@@ -65,16 +66,30 @@ def sign_owns(is_mul: bool, n: int) -> bool:
     return n > (MAX_PAIRS if is_mul else MAX_ONEOUT)
 
 
+def closure_owns(is_mul: bool, n: int) -> bool:
+    """Whether the closure rows (``integer``, ``rational``, ``algebraic``,
+    ``complex``: a ring keeps the node, a group or field gives back the
+    last argument) of an Add or Mul of ``n`` arguments are left to the
+    CLOSURE theory (``satassume.theories.sign.closure``, issue #149 T3):
+    the sums over ``MAX_ADD_SMALL`` terms, where the subtraction rows
+    stop, and the products over ``MAX_PAIRS`` factors (as ``sign_owns``).
+    Every session tells the theory those nodes
+    (``closure_adapter.over_cap``), and it derives every literal the
+    dropped rows give, for any arity (``docs/theories.md``, "CLOSURE")."""
+    return n > (MAX_PAIRS if is_mul else MAX_ADD_SMALL)
+
+
 # ---------------------------------------------------------------------------
 # Add
 # ---------------------------------------------------------------------------
 
-# Closed under addition (all args -> node).  ``real``, ``zero`` and the
-# finite sign predicates are derived by the rule base from these.
-# ``extended_real`` is not: ``oo - oo`` is nan (see _add_rules).
+# Closed under addition (all args -> node).  ``real`` (and ``hermitian``,
+# the same predicate), ``zero`` and the finite sign predicates are derived
+# by the rule base from these.  ``extended_real`` is not: ``oo - oo`` is
+# nan (see _add_rules).  ``commutative`` is true of every term in scope
+# (``rules.DEFINITIONS``): no row speaks of it.
 _ADD_CLOSED = (
-    'complex', 'integer', 'rational', 'algebraic', 'finite',
-    'hermitian', 'antihermitian', 'commutative',
+    'complex', 'integer', 'rational', 'algebraic', 'finite', 'antihermitian',
     'extended_positive', 'extended_negative',
     'extended_nonnegative', 'extended_nonpositive',
 )
@@ -87,6 +102,8 @@ _ADD_SUBTRACT = ('real', 'complex', 'integer', 'rational', 'algebraic', 'finite'
 # The closures the SIGN theory decides over the cap (``sign_owns``).
 _ADD_SIGN = ('finite', 'extended_positive', 'extended_negative',
              'extended_nonnegative', 'extended_nonpositive')
+# The closures the CLOSURE theory decides over its cap (``closure_owns``).
+_ADD_CLOSURE = ('complex', 'integer', 'rational', 'algebraic')
 
 _STRICT = (('extended_positive', 'extended_nonnegative'),
            ('extended_negative', 'extended_nonpositive'))
@@ -101,8 +118,9 @@ def _add_rules(n, consts):
     # Over the cap the SIGN theory decides the sign, zero, finite and
     # extended_real literals of the sum (``sign_owns``).
     sign = not sign_owns(False, n)
+    closure = not closure_owns(False, n)
     for pred in _ADD_CLOSED:
-        if sign or pred not in _ADD_SIGN:
+        if (sign or pred not in _ADD_SIGN) and (closure or pred not in _ADD_CLOSURE):
             rule(lits(A, pred), (N, pred, True))
     # Extended reals without both +oo and -oo among the terms.
     for inf in ('positive_infinite', 'negative_infinite') if sign else ():
@@ -113,15 +131,6 @@ def _add_rules(n, consts):
     # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
     if sign:
         rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
-
-    # A commutative sum has a commutative term k when every other term is a
-    # finite number: k is the sum minus them.  Not in general: ``A - B`` is
-    # 0 for ``B = A``, and ``A + B`` is 1 for ``B = 1 - A``.
-    if n <= MAX_ONEOUT:
-        for k in A:
-            rest = [j for j in A if j != k]
-            rule([(N, 'commutative', True), *lits(rest, 'commutative'), *lits(rest, 'finite')],
-                 (k, 'commutative', True))
 
     for k in A if sign else ():
         rest = [j for j in A if j != k]
@@ -140,7 +149,7 @@ def _add_rules(n, consts):
         # This is what lets ``x - z > 0`` (which says ``extended_real(x -
         # z)``) give ``extended_real(x)``, as ``x > z`` does (#53, W2B1).
         rule([(N, 'extended_real', True), *lits(rest, 'real')], (k, 'extended_real', True))
-        if n <= MAX_ADD_SMALL:
+        if closure:     # (n <= MAX_ADD_SMALL; above, the CLOSURE theory)
             for pred in _ADD_SUBTRACT:
                 rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
         elif n <= MAX_ONEOUT:
@@ -273,10 +282,14 @@ def add_templates(expr):
 # Mul
 # ---------------------------------------------------------------------------
 
-# Closed under multiplication.  ``real`` and ``positive`` are derived by the
-# rule base (``extended_* & finite``).  ``extended_real`` is not: ``0*oo``
-# is nan (see _mul_rules).
-_MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic', 'commutative')
+# Closed under multiplication.  ``real`` (``hermitian``) and ``positive``
+# are derived by the rule base (``extended_* & finite``).
+# ``extended_real`` is not: ``0*oo`` is nan (see _mul_rules).  Left to the
+# CLOSURE theory over its cap (``closure_owns``).
+_MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic')
+# Fields: the node and every factor but one in the field, those nonzero,
+# put the last factor in it (it is the node divided by them).
+_MUL_FIELDS = ('rational', 'algebraic')
 # (the sign ones, left to the SIGN theory over the cap: ``sign_owns``)
 _MUL_CLOSED_SIGN = ('finite', 'extended_positive', 'nonnegative')
 
@@ -306,6 +319,8 @@ MUL_GUARDS = MappingProxyType({
     'n>MAX_ONEOUT': lambda c: c['n'] > MAX_ONEOUT,
     # the sign rows, left to the SIGN theory over the cap (sign_owns)
     'sign rows': lambda c: not sign_owns(True, c['n']),
+    # the closure rows, left to the CLOSURE theory over the cap (closure_owns)
+    'closure rows': lambda c: not closure_owns(True, c['n']),
     'n>=2': lambda c: c['n'] >= 2,
     'n==2': lambda c: c['n'] == 2,
     'n even': lambda c: c['n'] % 2 == 0,
@@ -327,7 +342,7 @@ MUL_GUARDS = MappingProxyType({
 def _mul_table_rows():
     """The rows of ``MUL_TABLE`` (built on first use, :func:`_table`)."""
     return (
-        Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED),
+        Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED, when='closure rows'),
         Row('closed.sign', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED_SIGN,
             when='sign rows'),
         # Extended reals, all finite or all nonzero (no 0*oo).
@@ -335,13 +350,16 @@ def _mul_table_rows():
             when='sign rows'),
         Row('ext_real.nonzero', [('*', 'extended_real'), ('*', 'zero', False)],
             ('N', 'extended_real'), when='sign rows'),
-        # A commutative product has a commutative factor k when every other
-        # factor is a nonzero number: k is the product divided by them.  Not
-        # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
-        Section('each', when='n<=MAX_ONEOUT', rows=[
-            Row('commutative.back',
-                [('N', 'commutative'), ('rest', 'complex'), ('rest', 'zero', False)],
-                ('k', 'commutative')),
+        # Division in a field.  The contrapositives are the one-irrational
+        # and one-transcendental rules: an irrational (transcendental)
+        # factor among nonzero rationals (algebraics) makes the product
+        # irrational (transcendental; the closure rows make it real or
+        # complex), a factor that is not one makes it not rational
+        # (algebraic), and with a numeric coefficient ``c*x`` the
+        # backward transfer of rationality.
+        Section('each', when='closure rows', rows=[
+            Row('field', [('N', '$p'), ('rest', '$p'), ('rest', 'zero', False)], ('k', '$p'),
+                preds=_MUL_FIELDS),
         ]),
         # Zero: some zero factor with the rest finite; nonzero: all nonzero and
         # at most one of them non-commutative (non-commutative values have zero
@@ -354,8 +372,6 @@ def _mul_table_rows():
         ]),
         Row('nonzero.commutative', [('*', 'commutative')], [('*', 'zero'), ('N', 'zero', False)],
             when='n>MAX_ONEOUT'),
-        # Hermitian product of commuting hermitian factors.
-        Row('hermitian', [('*', 'commutative'), ('*', 'hermitian')], ('N', 'hermitian')),
         # Polar: all polar, or one polar factor and the rest positive.
         Row('polar', [('*', 'polar')], ('N', 'polar')),
         Section('each', rows=[
@@ -392,15 +408,6 @@ def _mul_table_rows():
             # One composite factor and the rest integers -> not prime (the
             # product is 0, negative, or a multiple of a composite).
             Row('one_composite', [('k', 'composite'), ('rest', 'integer')], ('N', 'prime', False)),
-            # One irrational factor and the rest nonzero rationals -> irrational.
-            Row('one_irrational',
-                [('k', 'irrational'), ('rest', 'rational'), ('rest', 'zero', False)],
-                ('N', 'irrational')),
-            # One transcendental factor and the rest nonzero algebraics ->
-            # transcendental (the algebraic numbers are a field).
-            Row('one_transcendental',
-                [('k', 'transcendental'), ('rest', 'algebraic'), ('rest', 'zero', False)],
-                ('N', 'transcendental')),
             # One non-real factor and the rest nonzero extended reals -> not real.
             Row('one_non_real', [('k', 'extended_real', False), ('rest', 'extended_nonzero')],
                 ('N', 'extended_real', False),
@@ -442,9 +449,6 @@ def _mul_table_rows():
             preds=_COEFF_BACK),
         Row('coeff.back.flip', [('N', '$p')], (1, 'flip:$p'), when=('coeff', 'c negative'),
             preds=_COEFF_BACK),
-        Row('coeff.rational', [('N', 'rational')], (1, 'rational'), when=('coeff', 'c rational')),
-        Row('coeff.algebraic', [('N', 'algebraic')], (1, 'algebraic'),
-            when=('coeff', 'c rational')),
         # (p/2)*x for integer x is an integer iff x is even.
         Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
             when=('coeff', 'c rational', 'c.q==2')),
@@ -571,13 +575,8 @@ _POW_RULES = (
     # --- algebraic ---
     (((_B, 'algebraic'), (_E, 'rational'), (_B, 'zero', False)), (_N, 'algebraic')),
     (((_B, 'algebraic'), (_E, 'rational'), (_E, 'positive')), (_N, 'algebraic')),
-    (((_B, 'transcendental'), (_E, 'rational'), (_E, 'zero', False)), (_N, 'algebraic', False)),
-    # --- polar / commutative ---
+    # --- polar ---
     (((_B, 'polar'),), (_N, 'polar')),
-    # Not ``commutative(b**e) -> commutative(b)`` (``A**2`` is 1 for a
-    # reflection ``A``, ``A**0 == 1``) or ``-> commutative(e)``
-    # (``1**A == 1``); see #47 and the rule for ``1/b`` in ``_pow_rules``.
-    (((_B, 'commutative'), (_E, 'commutative')), (_N, 'commutative')),
 )
 
 _POW_E_RULES = (
@@ -712,6 +711,7 @@ def _b_not_qth_power(x):
 #: exponent or None, and the flags of ``pow_templates``).
 POW_GUARDS = MappingProxyType({
     'b is E': lambda x: x['b'] is S.Exp1,
+    'b number': lambda x: not x['nc'],
     'ipi': lambda x: x['ipi'] is not None,
     'b is e': lambda x: x['same'],
     'e is 1': lambda x: x['e'] is S.One,
@@ -767,6 +767,16 @@ def _pow_table_rows():
         Row('same', [('B', 'extended_nonnegative')], ('N', 'extended_positive'), when='b is e'),
         Row('one', [], [('N', '$p'), ('B', '$p')], kind='equiv', preds=_POW_ONE_EQUIV,
             when='e is 1'),
+        # Roots: for rational e = p/q != 0, (b**e)**q == b**p, so b is a
+        # root of x**|p| - c with c algebraic (complex) when b**e is: the
+        # algebraic numbers are algebraically closed.  A negative e needs a
+        # finite b (oo**(-1/2) == 0).  The contrapositives: a
+        # transcendental b gives a transcendental b**e.  Not for a base
+        # that may not be a number (``A**2 == 1`` for a reflection ``A``).
+        Row('root', [('N', '$p'), ('E', 'rational'), ('E', 'positive')], ('B', '$p'),
+            preds=('algebraic', 'complex'), when='b number'),
+        Row('root.negative', [('N', 'algebraic'), ('E', 'rational'), ('E', 'negative'),
+                              ('B', 'finite')], ('B', 'algebraic'), when='b number'),
         # A power of a composite is 1, a fraction or composite.
         Row('composite_base', [('B', 'composite'), ('E', 'integer')], ('N', 'prime', False)),
         # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
@@ -812,10 +822,10 @@ def _pow_table_rows():
             ('N', 'extended_real', False), when=('e rational non-integer', 'e.p==-1')),
         Row('e=p/q.irrational', [], ('N', 'irrational'),
             when=('e rational non-integer', 'b positive rational, not a q-th power')),
-        # 1/b is rational iff b is (nonzero) rational.
-        Row('e=-1.irrational', [('B', 'irrational')], ('N', 'irrational'), when='e is -1'),
-        # b is the inverse of a nonzero number 1/b.
-        Row('e=-1.commutative', [('N', 'complex'), ('N', 'zero', False)], ('B', 'commutative'),
+        # 1/b is rational iff b is (nonzero) rational: b == 1/(1/b) for a
+        # finite b (1/b is then nonzero; 1/0 == zoo is not rational).  The
+        # contrapositive: an irrational b has an irrational 1/b.
+        Row('e=-1.field', [('N', 'rational'), ('B', 'finite')], ('B', 'rational'),
             when='e is -1'),
         Row('b=-1.odd', [('E', 'integer')], ('N', 'odd'), when='b is -1'),
         # |b|**e < 1 for negative e.
@@ -847,15 +857,17 @@ def _pow_table_rows():
     )
 
 
-def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
+def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc):
     """The specs of ``POW_TABLE``.  ``b``/``e`` are the constant
     base/exponent or ``None`` if symbolic; ``angle`` is
     ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the argument of an
     ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and exponent
     ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``: slots
-    ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
+    ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``; ``nc``: the base has a
+    non-commutative subterm (``domain._noncommutative``: it may not be a
+    number)."""
     return rules_of(_table('POW_TABLE'), POW_GUARDS,
-                    _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1),
+                    _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1, nc),
                     POW_SLOTS)
 
 def _unit_power_units(angle, e, expr):
@@ -941,13 +953,16 @@ def _pow_pattern(expr):
            const_key(e) if _E in consts else None, same, angle,
            const_key(u) if _U in consts else u is not None, ipi,
            const_key(objs[_S]) if _S in consts else None, has_t, has_b1)
-    pargs = (consts.get(_B), consts.get(_E), same, angle, u is not None, ipi, has_t, has_b1)
+    nc = _B not in consts and _noncommutative(b)
+    if nc:
+        key += ('nc',)
+    pargs = (consts.get(_B), consts.get(_E), same, angle, u is not None, ipi, has_t, has_b1, nc)
     return consts, objs, key, pargs
 
 
-def _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1):
+def _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
     return {'b': b, 'e': e, 'same': same, 'angle': angle, 'has_u': has_u, 'ipi': ipi,
-            'has_t': has_t, 'has_b1': has_b1}
+            'has_t': has_t, 'has_b1': has_b1, 'nc': nc}
 
 
 def table_provenance(expr):

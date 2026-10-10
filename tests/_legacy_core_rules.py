@@ -29,6 +29,8 @@ from satassume.knowledge.templates.core import (
     _MUL_CLOSED_SIGN,
     MAX_ONEOUT,
     MAX_PAIRS,
+    _MUL_FIELDS,
+    closure_owns,
     sign_owns,
 )
 
@@ -46,20 +48,24 @@ def mul_rules(n, consts):
 
     # over the cap the sign rows are left to the SIGN theory (sign_owns)
     sign = not sign_owns(True, n)
-    for pred in _MUL_CLOSED + (_MUL_CLOSED_SIGN if sign else ()):
+    # and the closure rows to the CLOSURE theory (closure_owns)
+    closure = not closure_owns(True, n)
+    for pred in (_MUL_CLOSED if closure else ()) + (_MUL_CLOSED_SIGN if sign else ()):
         rule(lits(A, pred), (N, pred, True))
     # Extended reals, all finite or all nonzero (no 0*oo).
     if sign:
         rule([*lits(A, 'extended_real'), *lits(A, 'finite')], (N, 'extended_real', True))
         rule([*lits(A, 'extended_real'), *lits(A, 'zero', False)], (N, 'extended_real', True))
-    # A commutative product has a commutative factor k when every other
-    # factor is a nonzero number: k is the product divided by them.  Not
-    # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
-    if n <= MAX_ONEOUT:
+    # Division in a field (the CLOSURE change, issue #149 T3: it replaces
+    # the one-irrational and one-transcendental rules and the rational
+    # coefficient transfers; the commutative and hermitian rules are gone,
+    # they gave no clause the rule block does not derive).
+    if closure:
         for k in A:
             rest = [j for j in A if j != k]
-            rule([(N, 'commutative', True), *lits(rest, 'complex'), *lits(rest, 'zero', False)],
-                 (k, 'commutative', True))
+            for pred in _MUL_FIELDS:
+                rule([(N, pred, True), *lits(rest, pred), *lits(rest, 'zero', False)],
+                     (k, pred, True))
 
     # Zero: some zero factor with the rest finite; nonzero: all nonzero and
     # at most one of them non-commutative (non-commutative values have zero
@@ -72,8 +78,6 @@ def mul_rules(n, consts):
     else:
         rule(lits(A, 'commutative'), [*lits(A, 'zero'), (N, 'zero', False)])
 
-    # Hermitian product of commuting hermitian factors.
-    rule([*lits(A, 'commutative'), *lits(A, 'hermitian')], (N, 'hermitian', True))
 
     # Polar: all polar, or one polar factor and the rest positive.
     rule(lits(A, 'polar'), (N, 'polar', True))
@@ -109,13 +113,6 @@ def mul_rules(n, consts):
             # One composite factor and the rest integers -> not prime (the
             # product is 0, negative, or a multiple of a composite).
             rule([(k, 'composite', True), *lits(rest, 'integer')], (N, 'prime', False))
-            # One irrational factor and the rest nonzero rationals -> irrational.
-            rule([(k, 'irrational', True), *lits(rest, 'rational'), *lits(rest, 'zero', False)],
-                 (N, 'irrational', True))
-            # One transcendental factor and the rest nonzero algebraics ->
-            # transcendental (the algebraic numbers are a field).
-            rule([(k, 'transcendental', True), *lits(rest, 'algebraic'), *lits(rest, 'zero', False)],
-                 (N, 'transcendental', True))
             # One non-real factor and the rest nonzero extended reals -> not real.
             if sign:
                 rule([(k, 'extended_real', False), *lits(rest, 'extended_nonzero')],
@@ -160,8 +157,6 @@ def mul_rules(n, consts):
             for pred in _COEFF_BACK:
                 rule([(N, pred, True)], (1, SIGN_FLIP.get(pred, pred) if flip else pred, True))
             if c.is_Rational:
-                rule([(N, 'rational', True)], (1, 'rational', True))
-                rule([(N, 'algebraic', True)], (1, 'algebraic', True))
                 if c.q == 2:
                     # (p/2)*x for integer x is an integer iff x is even.
                     R.equiv([(1, 'integer', True)], (N, 'integer', True), (1, 'even', True))
@@ -205,7 +200,7 @@ def ipi_rules(rule, c, iS, N):
 
 
 
-def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
+def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
     """``b``/``e`` are the constant base/exponent or ``None`` if symbolic;
     ``angle`` is ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the
     argument of an ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and
@@ -226,6 +221,12 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
     if e is S.One:
         for pred in _POW_ONE_EQUIV:
             R.equiv([], (_N, pred, True), (_B, pred, True))
+    # Roots (the CLOSURE change): b**(p/q) algebraic (complex) -> b.
+    if not nc:
+        for pred in ('algebraic', 'complex'):
+            rule([(_N, pred, True), (_E, 'rational', True), (_E, 'positive', True)], (_B, pred, True))
+        rule([(_N, 'algebraic', True), (_E, 'rational', True), (_E, 'negative', True),
+              (_B, 'finite', True)], (_B, 'algebraic', True))
     # A power of a composite is 1, a fraction or composite.
     rule([(_B, 'composite', True), (_E, 'integer', True)], (_N, 'prime', False))
     # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
@@ -276,10 +277,8 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
             if not (integer_nthroot(b.p, e.q)[1] and integer_nthroot(b.q, e.q)[1]):
                 rule([], (_N, 'irrational', True))
     if e is S.NegativeOne:
-        # 1/b is rational iff b is (nonzero) rational.
-        rule([(_B, 'irrational', True)], (_N, 'irrational', True))
-        # b is the inverse of a nonzero number 1/b.
-        rule([(_N, 'complex', True), (_N, 'zero', False)], (_B, 'commutative', True))
+        # 1/b is rational iff b is (nonzero) rational (the CLOSURE change).
+        rule([(_N, 'rational', True), (_B, 'finite', True)], (_B, 'rational', True))
     if b is not None:
         if b is S.NegativeOne:
             rule([(_E, 'integer', True)], (_N, 'odd', True))
