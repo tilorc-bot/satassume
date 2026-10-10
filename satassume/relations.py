@@ -1690,8 +1690,8 @@ class Relations:
         ad = self._mono_ad
         cv = {}
 
-        def value(v, fv, conds):
-            c = self._fresh(inert=True)
+        def value(v, fv, conds, inert=True):
+            c = self._fresh(inert=inert)
             s.emit([-c, mo])
             for x in conds:
                 s.emit([-c, x])
@@ -1704,7 +1704,9 @@ class Relations:
             s.ensure(u, {"finite"})
             fin = s.var("finite", u)
             for v, fv in anyv:
-                cv[v] = value(v, fv, [-fin])
+                # an inert variable is forced by a unit (Solver.set_inert):
+                # a choice among several values is a decision
+                cv[v] = value(v, fv, [-fin], len(anyv) == 1)
             s.ensure(app, {"real"})
             s.emit([-mo, fin] + ([] if total else [-s.var("real", app)]) + list(cv.values()))
         for pred, v, fv in side:
