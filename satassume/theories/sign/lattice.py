@@ -90,29 +90,46 @@ class Lattice:
     def node_masks(self, op: int, nmask: int, amasks: List[int]) -> Tuple[int, List[int]]:
         """One round of propagation over ``N = op(A1, ..., An)``: the new
         set of the node and of each argument (an empty set is a
-        conflict)."""
-        mop, nanb = self.mop, self.NANB
+        conflict).  The folds are those of :meth:`mop` and :meth:`allowed`
+        in the same order, their memo read in place (most calls hit it:
+        the call is what costs)."""
+        memo, mop, nanb = self.memo, self.mop, self.NANB
         n = len(amasks)
-        pre: list = [None] * n
-        acc = None
-        for i in range(n):
+        # pre[i]: the fold of the arguments before i (i >= 1)
+        pre = [0] * n
+        acc = amasks[0]
+        for i in range(1, n):
             pre[i] = acc
-            acc = amasks[i] if acc is None else mop(op, acc, amasks[i])
+            m = amasks[i]
+            r = memo.get((op, acc, m) if acc <= m else (op, m, acc))
+            acc = mop(op, acc, m) if r is None else r
         total = acc
         newn = nmask if total & nanb else nmask & total
         out = list(amasks)
         if newn & self.ALL == self.ALL or n < 2:
             return newn, out
-        suf = None
         allowed = self.allowed
-        for i in range(n - 1, -1, -1):
-            p = pre[i]
-            rest = p if suf is None else (suf if p is None else mop(op, p, suf))
+        last = n - 1
+        suf = 0                 # the fold of the arguments after i (i < last)
+        for i in range(last, -1, -1):
             m = amasks[i]
-            suf = m if suf is None else mop(op, suf, m)
+            if i == last:
+                rest = pre[i]
+                suf = m
+            else:
+                if i:
+                    p = pre[i]
+                    r = memo.get((op, p, suf) if p <= suf else (op, suf, p))
+                    rest = mop(op, p, suf) if r is None else r
+                else:
+                    rest = suf
+                if i:
+                    r = memo.get((op, suf, m) if suf <= m else (op, m, suf))
+                    suf = mop(op, suf, m) if r is None else r
             if rest & nanb:
                 continue
-            out[i] = m & allowed(op, rest, newn)
+            r = memo.get((op, rest, newn, 0))
+            out[i] = m & (allowed(op, rest, newn) if r is None else r)
         return newn, out
 
 
