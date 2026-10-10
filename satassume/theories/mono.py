@@ -162,9 +162,11 @@ class Spec(NamedTuple):
     #: a real ``u`` with a real ``f(u)`` lies in the only piece
     #: (``log``, non-integer powers: the principal branch)
     covered: bool = False
-    #: a real ``f(u)`` has a real ``u`` (a left inverse real on reals:
-    #: ``exp(log(z)) = z``, ``tan(atan(z)) = z``, ``(z**k)**(1/k) = z`` on
-    #: the principal branch for ``|k| < 1`` or ``k = -1``)
+    #: a real ``f(u)`` has a real ``u``: ``f`` has a left inverse real on
+    #: reals (``exp(log(z)) = z``, ``sinh(asinh(z)) = z``, ``(z**k)**(1/k)
+    #: = z`` on the principal branch for ``0 < k < 1``) and no real value
+    #: at ``+-oo``/``zoo`` (so not ``atan``, ``acot`` or ``k < 0``:
+    #: ``atan(oo) = pi/2``, ``1/oo = 0``)
     real_arg: bool = False
 
 
@@ -254,7 +256,7 @@ def _spec(t) -> Optional[Spec]:
     if name == "atan":
         return Spec(("atan",), u, _WHOLE, atan,
                     lambda d: (tan(d),), (-half, half, False),
-                    (), True, (-half, True, half, True), False, True)
+                    (), True, (-half, True, half, True))
     if name == "tanh":
         return Spec(("tanh",), u, _WHOLE, tanh,
                     lambda d: (atanh(d),), (S.NegativeOne, S.One, False),
@@ -271,7 +273,7 @@ def _spec(t) -> Optional[Spec]:
     if name == "acot":
         return Spec(("acot",), u, (Piece("0+", "oo", -1), Piece("-oo", "0-", -1)), acot,
                     lambda d: (cot(d),), (-half, half, True),
-                    (), True, (-half, True, half, False), False, True)
+                    (), True, (-half, True, half, False))
     return None
 
 
@@ -306,7 +308,7 @@ def _pow_spec(t, u, k) -> Spec:
         return (r, -r)
 
     return Spec(("Pow", k), u, pieces, lambda c: Pow(c, k), inverse, _ANY, (),
-                False, bounds, not k.is_Integer, abs(k) < 1 or k == -1)
+                False, bounds, not k.is_Integer, 0 < k < 1)
 
 
 # -- the field-number view LRA uses (lra.MonoLink) ------------------------
