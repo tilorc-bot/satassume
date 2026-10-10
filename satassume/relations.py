@@ -784,12 +784,17 @@ def _csign(e):
     return r
 
 
+_MONO_FIELD: list = []
+
+
 def _mono_field():
-    """LRA's field for :func:`satassume.theories.mono.link_map`."""
-    from .theories.lra.constfield import Undecided, from_sympy, sign
-    from .theories.lra.lra import Approx
-    from .theories.mono import Field
-    return Field(from_sympy, sign, Undecided, Approx)
+    """LRA's field for :func:`satassume.theories.mono.link_map` (made once)."""
+    if not _MONO_FIELD:
+        from .theories.lra.constfield import Undecided, from_sympy, sign
+        from .theories.lra.lra import Approx
+        from .theories.mono import Field
+        _MONO_FIELD.append(Field(from_sympy, sign, Undecided, Approx))
+    return _MONO_FIELD[0]
 
 
 def _mono_guards(name):
