@@ -40,6 +40,9 @@ class Lattice:
         self.NANB = 1 << natoms
         self.ops = tuple(ops)
         self.memo = memo
+        #: ``ops[op](a, b)`` by ``op`` and ``a * natoms + b``, filled on
+        #: first use (a miss of :meth:`mop` reads each pair it covers)
+        self.pairs = [[None] * (natoms * natoms) for _ in self.ops]
 
     def mop(self, op: int, ma: int, mb: int) -> int:
         """The atom set of ``a op b`` for ``a`` in ``ma`` and ``b`` in ``mb``."""
@@ -51,13 +54,17 @@ class Lattice:
             r = nanb if (ma | mb) & nanb else 0
             ma &= full
             mb &= full
-            f = self.ops[op]
+            pairs = self.pairs[op]
             n = self.natoms
+            bs = [b for b in range(n) if mb >> b & 1]
             for a in range(n):
                 if ma >> a & 1:
-                    for b in range(n):
-                        if mb >> b & 1:
-                            r |= f(a, b)
+                    k = a * n
+                    for b in bs:
+                        x = pairs[k + b]
+                        if x is None:
+                            x = pairs[k + b] = self.ops[op](a, b)
+                        r |= x
             memo[key] = r
         return r
 
