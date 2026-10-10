@@ -14,8 +14,10 @@ The product ``t`` of the factors after the coefficient of ``c*x*y`` is a
 node of its own (``x*y``, visited here), so the form of ``c*x*y`` is
 ``c*t``.  A number other than a Rational is a term like any other: the
 session knows its predicates (``integer(pi)`` is false at the root), and
-``2.0`` is never integral (a Float is no integer, and a Float term makes
-every form above it a Float).
+a Float is the number it denotes (``2.0 - 2`` evaluates to the Integer
+0), as in the templates.  A product of three or more factors is linear
+only if the product of the factors after its coefficient, built, keeps
+those factors (:func:`linear`); otherwise it is a term.
 """
 from __future__ import annotations
 
@@ -41,8 +43,24 @@ def linear(node) -> bool:
         return bool(node.args)
     if getattr(node, "is_Mul", False):
         args = node.args
-        return len(args) >= 2 and args[0].is_Rational and not args[0].is_zero
+        if not (len(args) >= 2 and args[0].is_Rational and not args[0].is_zero):
+            return False
+        # c*t reads t as the product of the other factors: only if that
+        # product, built, is those factors (an unevaluated
+        # Mul(1/3, x, 3/x) or Mul(1/3, x, 0) would read as 1 or
+        # 0, but is nan at x = 0 or oo); the guard of
+        # templates.core._mul_factor_sets
+        if len(args) == 2:
+            return True
+        t = _rest(node)
+        return t.func is node.func and t.args == args[1:]
     return False
+
+
+def _rest(node):
+    """The product of the factors of node after the first."""
+    rest = node.args[1:]
+    return rest[0] if len(rest) == 1 else node.func(*rest)
 
 
 def _fractional(a) -> bool:
@@ -72,7 +90,7 @@ def owns(node) -> bool:
             _fractional(a) for a in args if not a.is_Rational)
     if node.is_Mul:
         c = node.args[0]
-        return bool(c.is_Rational) and c.q > 2
+        return bool(c.is_Rational) and c.q > 2 and linear(node)
     return False
 
 
@@ -82,10 +100,9 @@ def _rat(c) -> Fraction:
 
 def coeff_rest(node):
     """``(c, t)`` for a linear product ``c*t``: ``t`` the product of the
-    other factors (one factor: that factor itself)."""
-    args = node.args
-    rest = args[1:]
-    return args[0], (rest[0] if len(rest) == 1 else node.func(*rest))
+    other factors (one factor: that factor itself), whose arguments are
+    those factors (:func:`linear`)."""
+    return node.args[0], _rest(node)
 
 
 class IntLatAdapter:

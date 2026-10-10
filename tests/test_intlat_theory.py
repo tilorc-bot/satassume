@@ -281,3 +281,184 @@ def _holds(p, sub):
         return all(_holds(q, sub) for q in p.args)
     v = p.arguments[0].subs(sub)
     return {Q.integer: v.is_integer, Q.even: v.is_even, Q.odd: v.is_odd}[p.function]
+
+
+# ---------------------------------------------------------------------------
+# unevaluated products (review of #160): c*t is read through t only when the
+# product of the other factors, built, is those factors
+# ---------------------------------------------------------------------------
+
+def _uneval_cases():
+    from sympy import Mul
+    x, y = symbols('x y')
+    R = Rational
+    e1 = Mul(R(1, 3), x, 3 / x, evaluate=False)      # nan at x = 0
+    e2 = Mul(R(1, 3), x, 0, evaluate=False)           # nan at x = oo
+    e3 = Mul(3, x, 1 / x, evaluate=False) + y / 3     # nan at x = 0
+    e4 = Mul(R(1, 3), x, 0, evaluate=False) + y       # nan at x = oo
+    return [
+        (Q.integer(e1), True), (Q.odd(e1), True),
+        (Q.integer(e2), True), (Q.even(e2), True),
+        (Q.integer(e3), Q.integer(y / 3)), (Q.integer(e4), Q.integer(y)),
+    ]
+
+
+@pytest.mark.parametrize("prop,assum", _uneval_cases())
+def test_unevaluated_product_is_not_read_as_its_value(prop, assum):
+    assert ask(prop, assum) is not True
+
+
+def test_linear_needs_the_rest_to_keep_its_factors():
+    from sympy import Mul
+    x, y = symbols('x y')
+    third = Rational(1, 3)
+    assert not IA.linear(Mul(third, x, 3 / x, evaluate=False))
+    assert not IA.linear(Mul(third, x, 0, evaluate=False))
+    assert not IA.owns(Mul(third, x, 0, evaluate=False))
+    assert IA.linear(Mul(third, x, y, evaluate=False))
+    assert IA.linear(Mul(third, x * y / 3, evaluate=False))   # two factors: c*t
+    assert IA.linear(third * x * y) and IA.owns(third * x * y)
+
+
+# ---------------------------------------------------------------------------
+# clause validity through the adapter: random, partly unevaluated SymPy
+# nodes on a real session, every clause checked on substituted values
+# ---------------------------------------------------------------------------
+
+def _rebuild(e):
+    """The value of ``e`` with every node evaluated (an unevaluated
+    ``Mul(x, 1/x)`` at x = 0 is ``nan``)."""
+    if not e.args:
+        return e
+    return e.func(*[_rebuild(a) for a in e.args])
+
+
+def _random_node(rng, syms, depth):
+    from sympy import Add, Float, I, Mul, oo, pi
+    x, y = syms
+    leaves = [x, y, x, y, x * y, 1 / x, S.Zero, oo, I, Float(2.0), pi, Rational(1, 2), S(3)]
+    coeffs = [Rational(1, 2), Rational(-1, 2), Rational(1, 3), Rational(2, 3), Rational(3, 2),
+              S(2), S(-1), S(3), Rational(1, 6)]
+
+    def sub():
+        if depth > 0 and rng.random() < 0.35:
+            return _random_node(rng, syms, depth - 1)
+        return rng.choice(leaves)
+
+    ev = rng.random() < 0.3
+    if rng.random() < 0.5:
+        args = [sub() for _ in range(rng.randint(2, 5))]
+        args = [Mul(rng.choice(coeffs), a, evaluate=ev) if rng.random() < 0.5 else a for a in args]
+        return Add(*args, evaluate=ev)
+    factors = [sub() for _ in range(rng.randint(1, 3))]
+    return Mul(rng.choice(coeffs), *factors, evaluate=ev)
+
+
+#: values of x and y: integers, fractions, infinities, a non-real and a Float
+def _values():
+    from sympy import Float, I, oo, zoo
+    R = Rational
+    return [S.Zero, S.One, S(-1), S(2), S(3), R(1, 2), R(1, 3), R(-2, 3), R(5, 6),
+            oo, -oo, zoo, I, 1 + I, Float(2.0)]
+
+
+def _truth(v, pred):
+    """Whether the value ``v`` is an (even) integer.  A Float is the
+    number it denotes (the session knows nothing of ``integer(2.0)``, and
+    SymPy evaluates ``2.0 - 2`` to the Integer 0)."""
+    if getattr(v, "is_Float", False) and v.is_finite:
+        if not float(v).is_integer():
+            return False
+        n = int(v)
+    elif getattr(v, "is_Integer", False):
+        n = int(v)
+    else:
+        return False
+    return pred == "integer" or n % 2 == 0
+
+
+@pytest.mark.parametrize("seeds", [range(0, 100), range(100, 200), range(200, 300)])
+def test_adapter_clauses_are_valid_on_values(seeds):
+    from satassume.engine import Engine, Session
+    syms = symbols('x y')
+    vals = _values()
+    assigns = [{syms[0]: a, syms[1]: b} for a in vals for b in vals]
+    full = (1 << len(assigns)) - 1
+    checked = told = 0
+    for seed in seeds:
+        rng = random.Random(seed)
+        session = Session(Engine())
+        ad = IA.IntLatAdapter(session)
+        nodes = [_random_node(rng, syms, 2) for _ in range(rng.randint(1, 3))]
+        for n in nodes:
+            if IA.linear(n):
+                ad.tell(n)
+                told += 1
+        if not ad.attached:
+            continue
+        th = ad.theory
+        atoms = {}
+        for n in ad.done:
+            b = session.base[n]
+            atoms[b + IA._INT] = (n, "integer")
+            atoms[b + IA._EVEN] = (n, "even")
+        masks = {}
+        values = {}
+        for v, (n, pred) in atoms.items():
+            if n not in values:
+                row = []
+                for a in assigns:
+                    try:
+                        row.append(_rebuild(n.xreplace(a)))
+                    except Exception:   # noqa: BLE001 - an undefined value: no atom holds
+                        row.append(S.NaN)
+                values[n] = row
+            m = 0
+            for i, val in enumerate(values[n]):
+                if _truth(val, pred):
+                    m |= 1 << i
+            masks[v] = m
+        assert set(th.frac) <= set(masks)
+
+        def valid(clause):
+            m = 0
+            for l in clause:
+                m |= masks[l] if l > 0 else full & ~masks[-l]
+            return m == full
+
+        for _run in range(3):
+            val = dict(th.val)
+            th.push_level()
+            for _step in range(6):
+                free = [v for v in th.frac if v not in val]
+                if not free:
+                    break
+                v = rng.choice(free)
+                lit = v if rng.random() < 0.5 else -v
+                val[v] = lit > 0
+                th.assert_lit(lit)
+                conflict = False
+                while not conflict:
+                    r = th.check()
+                    if r is not None:
+                        assert valid(r[1]), r[1]
+                        checked += 1
+                        conflict = True
+                        break
+                    out = list(th.propagate())
+                    if not out:
+                        break
+                    for l, clause in out:
+                        assert valid(clause), clause
+                        checked += 1
+                        u = abs(l)
+                        if u in val:
+                            if val[u] != (l > 0):
+                                conflict = True
+                            continue
+                        val[u] = l > 0
+                        th.assert_lit(l)
+                if conflict:
+                    break
+            th.pop_level()
+    assert told and checked

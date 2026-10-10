@@ -262,8 +262,8 @@ MUL_GUARDS = MappingProxyType({
     'c negative': lambda c: bool(c['consts'][0].is_negative),
     'c not negative': lambda c: not c['consts'][0].is_negative,
     'c rational': lambda c: bool(c['consts'][0].is_Rational),
-    'c==-1': lambda c: c['consts'][0] is S.NegativeOne,
     'c.q==2': lambda c: c['consts'][0].q == 2,
+    'c==-1': lambda c: c['consts'][0] is S.NegativeOne,
 })
 
 # Slots: 'N' the node, '*' all arguments; in a section 'k' the argument of

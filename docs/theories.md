@@ -788,19 +788,28 @@ up to 8 literals): one clause, generated on demand. The lattice of each decision
 first change, so backtracking restores it by reference.
 
 **Soundness.** The atoms are about values: `integer(e)` holds iff the value of `e` is an integer. A sum or
-a product with a nonzero Rational coefficient is infinite or `nan` as soon as one of its arguments is, and a
-Float when one is a Float, so a form asserted integral has finite, exact terms and its value is the
-rational combination of their values. Every conclusion is an identity between such combinations: a
+a product with a nonzero Rational coefficient is infinite or `nan` as soon as one of its arguments is, so a
+form asserted integral has finite terms and its value is the rational combination of their values. A Float
+is the number it denotes (`2.0 - 2` evaluates to the Integer 0; the session reads Floats only for
+`finite`, `extended_real` and `zero` and, like the templates, does not model rounding). A product
+`c*t` of three or more factors is read through only when the product of the factors after `c`, built, has
+exactly those factors as arguments (the guard of `templates.core._mul_factor_sets`): `Mul(1/3, x, 3/x)`
+or `Mul(1/3, x, 0)` built unevaluated is `nan` at `x = 0` or `x = oo`, while `x*(3/x)` and `x*0` build to
+`3` and `0`; such a product is a term. Every conclusion is an identity between such combinations: a
 conclusion about `f` uses only asserted forms whose terms cover `f`'s, or `f`'s integrality as a premise. A
-non-integral atom says nothing about its terms (`oo`, `nan`, `zoo`, `2.0` are non-integers) and is only
-used against a module whose own literals make its terms finite and exact. A node whose terms cancel in its
+non-integral atom says nothing about its terms (`oo`, `nan`, `zoo` are non-integers) and is only
+used against a module whose own literals make its terms finite. A node whose terms cancel in its
 form (`x + 2*(y - x/2)` built unevaluated) is *inexact*: its value may be `nan` while its form is an
 integer, so only its positive literal is read and only its negation derived. Non-commutative terms do not
 occur: every term in scope is commutative (`rules.DEFINITIONS`). `tests/test_intlat_theory.py` checks every
 clause the theory emits (propagations and conflicts, over random forms of 2 and 3 terms with
 coefficients of denominators 1 to 6, inexact nodes, random assertion and backtracking sequences) against
 all term values on a grid of rationals plus a non-finite value, and that a popped theory derives what a
-fresh one derives from the remaining trail.
+fresh one derives from the remaining trail. Through the adapter, it builds random linear SymPy nodes, some
+unevaluated, over `x`, `y` and factors such as `0`, `1/x`, `x*y`, `oo`, `I`, `pi`, `2.0`, tells them to an
+`IntLatAdapter` on a real session, and checks every clause emitted along random assertion sequences
+against the values of each atom's node, evaluated in SymPy, at all pairs of values of `x` and `y` from
+integers, fractions, `oo`, `-oo`, `zoo`, `I`, `1 + I` and `2.0`.
 
 **Engagement.** The theory is told only the nodes the templates no longer cover (`intlat_adapter.owns`):
 - a sum of more than `MAX_ADD_SMALL` (3) terms;
