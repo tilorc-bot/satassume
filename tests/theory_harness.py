@@ -358,12 +358,17 @@ class ForbidTheory:
     ``mode``: ``"eager"`` reports conflicts from ``assert_lit``, ``"lazy"``
     only from ``check``, ``"propagate"`` is eager and also propagates the
     last literal of a forbidden set once all others hold.
+    ``lazy_reasons``: ``"propagate"`` gives each reason as a function
+    returning the clause (``PropagatingTheory``, lazy reasons); ``read``
+    counts the calls.
     """
 
-    def __init__(self, forbidden=(), mode="eager"):
+    def __init__(self, forbidden=(), mode="eager", lazy_reasons=False):
         assert mode in ("eager", "lazy", "propagate")
         self.forbidden = [frozenset(f) for f in forbidden]
         self.mode = mode
+        self.lazy_reasons = lazy_reasons
+        self.read = 0
         self.trail: list[int] = []
         self.lims: list[int] = []
         self.atoms: dict[int, Any] = {}
@@ -412,8 +417,15 @@ class ForbidTheory:
             if len(rest) == 1:
                 (last,) = rest
                 if -last not in true:
-                    out.append((-last, sorted(-l for l in f)))
+                    c = sorted(-l for l in f)
+                    out.append((-last, self._thunk(c) if self.lazy_reasons else c))
         return out
+
+    def _thunk(self, c):
+        def reason():
+            self.read += 1
+            return list(c)
+        return reason
 
 
 # ----------------------------------------------------------------------
