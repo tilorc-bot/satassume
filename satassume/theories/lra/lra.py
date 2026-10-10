@@ -1120,6 +1120,58 @@ class LRATheory:
                     return r
         return None
 
+    def _mono_exclude(self, link):
+        """A bound of ``t`` beyond the image of a piece (``LinkMap.ranges``)
+        puts ``u`` outside it: ``acot(u) > 0`` excludes ``u < 0``, whose
+        images are negative, so ``u >= 0`` (a bound of ``w``), with the
+        enable literal and the bound's reasons.  A conflict or None."""
+        e, tv, w, c, k, fm, _pes = link
+        tl, tu = self._lo[tv], self._up[tv]
+        if tl is None and tu is None:
+            return None
+        for (plo, phi, _d), (a, ao, b, bo) in zip(fm.pieces, fm.ranges):
+            r = None
+            if b is not None and tl is not None:
+                s = _sg(tl[0] - b)
+                if s is not None and (s > 0 or s == 0 and (tl[1] > 0 or bo)):
+                    r = self._lo_r[tv]
+            if r is None and a is not None and tu is not None:
+                s = _sg(a - tu[0])
+                if s is not None and (s > 0 or s == 0 and (tu[1] < 0 or ao)):
+                    r = self._up_r[tv]
+            if r is None:
+                continue
+            # u is not in the piece: beyond its end at 0
+            if plo == "-oo" and phi in ("0", "0-"):
+                u_lower, strict = True, phi == "0"
+            elif phi == "oo" and plo in ("0", "0+"):
+                u_lower, strict = False, plo == "0"
+            else:
+                continue
+            reason = (e,) + _lits(r)
+            if not strict:
+                # u = 0 too is out if f(0) is not real or beyond t's bounds
+                f0 = fm.f0
+                if f0 is False:
+                    strict = True
+                elif f0 is not None:
+                    if tl is not None:
+                        s = _sg(tl[0] - f0)
+                        if s is not None and (s > 0 or s == 0 and tl[1] > 0):
+                            strict, reason = True, reason + _lits(self._lo_r[tv])
+                    if not strict and tu is not None:
+                        s = _sg(f0 - tu[0])
+                        if s is not None and (s > 0 or s == 0 and tu[1] < 0):
+                            strict, reason = True, reason + _lits(self._up_r[tv])
+            wv = -k / c
+            if u_lower == (c > 0):
+                x = self._set_lower(w, (wv, _ONE if strict else _ZERO), reason)
+            else:
+                x = self._set_upper(w, (wv, -_ONE if strict else _ZERO), reason)
+            if x is not None:
+                return x
+        return None
+
     def _mono_link(self, link):
         """One active link ``t = f(u)``, ``u = c*w + k`` (both real): on each
         piece ``u`` lies in (by the bounds of ``u``, or by the link itself
@@ -1146,6 +1198,10 @@ class LRATheory:
         slo = None if ulo is None else _sg(ulo[0])
         sup = None if uup is None else _sg(uup[0])
         asg = self._assigned
+        if fm.ranges and not fm.covered:
+            x = self._mono_exclude(link)
+            if x is not None:
+                return x
         for i, (plo, phi, d) in enumerate(fm.pieces):
             if fm.covered:
                 inlo = inup = ()

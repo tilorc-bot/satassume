@@ -414,6 +414,43 @@ def _at_inf(sp: Spec) -> tuple:
     return (side, anyv, total)
 
 
+def _f0(sp: Spec):
+    """:attr:`LinkMap.f0`."""
+    from sympy import S
+    try:
+        v = sp.apply(S.Zero)
+    except Exception:
+        return None
+    if v.is_extended_real is False or v.is_finite is False or v is S.NaN or v.has(S.ComplexInfinity):
+        return False
+    return _field(v) if v.is_real else None
+
+
+def _ranges(sp: Spec, side, f0) -> tuple:
+    """:attr:`LinkMap.ranges`: ``f`` on a piece is continuous and strictly
+    monotone, so its image of the piece's finite reals lies between the
+    values at its ends: ``f(0)`` at a closed end ``0`` (attained), SymPy's
+    ``f(+-oo)`` at an infinite end (the limit, not attained); the end
+    ``0+``/``0-`` is not computed (a limit)."""
+    at = {p: fv for p, _v, fv in side}
+    f0 = f0 or None
+    out = []
+    for pc in sp.pieces:
+        ends = []
+        for end in (pc.lo, pc.hi):
+            if end == "0":
+                ends.append((f0, False))
+            elif end == "-oo":
+                ends.append((at.get("negative_infinite"), True))
+            elif end == "oo":
+                ends.append((at.get("positive_infinite"), True))
+            else:
+                ends.append((None, True))
+        (a, ao), (b, bo) = ends if pc.dir > 0 else ends[::-1]
+        out.append((a, ao, b, bo))
+    return tuple(out)
+
+
 class LinkMap:
     """What LRA needs of a :class:`Spec` to relate the variable of ``f(u)``
     to the linear form of ``u`` (``satassume.theories.lra.lra.MonoLink``),
@@ -425,6 +462,12 @@ class LinkMap:
     * ``covered``: such a ``u`` lies in the only piece;
     * ``whole``: the pieces cover the real line (``f`` real on it);
     * ``at_inf``: the values at infinite ``u`` (:func:`_at_inf`);
+    * ``ranges``: per piece, the ends ``(lo, lo_open, hi, hi_open)`` of
+      the image of its finite reals (None: not known, or unbounded),
+      from ``f`` at the piece's closed end ``0`` and at ``+-oo`` (an
+      open end, the limit there); an end at ``0+``/``0-`` is None;
+    * ``f0``: ``f(0)`` as a field number, False if it is not a finite real
+      (``1/0 = zoo``: a real ``f(u)`` has ``u != 0``), None if not read;
     * ``vshape``: ``f`` decreases on ``[-oo, 0]`` and increases on
       ``[0, oo]``;
     * :meth:`image` ``(c)``: ``f(c)`` if it is a finite real the field
@@ -435,8 +478,8 @@ class LinkMap:
     Neither is computed for a rational of more than ``_BITS`` bits.
 
     Answers are memoized per instance (one per application)."""
-    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "whole", "at_inf", "_img", "_pre",
-                 "_rng")
+    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "whole", "at_inf", "ranges", "f0",
+                 "_img", "_pre", "_rng")
 
     def __init__(self, sp: Spec):
         self.sp = sp
@@ -457,6 +500,8 @@ class LinkMap:
         self._rng = (None if lo is None else _field(lo),
                      None if hi is None else _field(hi), nz)
         self.at_inf = _at_inf(sp)
+        self.f0 = _f0(sp)
+        self.ranges = _ranges(sp, self.at_inf[0], self.f0) if len(sp.pieces) > 1 else ()
         self._img: dict = {}
         self._pre: dict = {}
 
