@@ -258,14 +258,18 @@ def test_inconsistent_assumptions_raise():
         ask(Q.real(y), Q.algebraic(3**y) & Q.algebraic(y) & Q.irrational(y))
 
 
-# -- the class-scope gate (TransAdapter.engages, Session.unpark) -------------
+# -- answers that need the class facts of an argument from elsewhere ----------
 
 _f = sympy.Function("f")
 _m = Symbol("m", positive=True, integer=True)
+_r = Symbol("r", real=True)
+_p = Symbol("p", positive=True)
+_q = Symbol("q", nonnegative=True)
 
 #: answers whose argument's class facts come from template rows (floor,
 #: ceiling, sign), from EUF (a closed term ``f(1)``), from the symbol's own
-#: assumptions or from facts that are no class atom (PR #154 review)
+#: assumptions or from facts that are no class atom (PR #154 reviews; they
+#: guarded the class-scope gate that the theory no longer has)
 GATE_ANSWERS = [
     (Q.zero(cos(sympy.floor(x))), Q.real(x), False),
     (Q.zero(sin(sympy.ceiling(x))), Q.positive(x), False),
@@ -278,55 +282,41 @@ GATE_ANSWERS = [
     (Q.zero(sin(x + 1)), Q.zero(x), False),
     (Q.zero(sin(x)), Q.zero(x - y) & Q.zero(y - 2), False),
     (Q.zero(sin(x + 1)), Q.real(x) & ~Q.nonzero(x), False),
+    # an argument pinned to a number by order, MONO or sign reasoning, or by
+    # a zero atom of a product, power or Abs (PR #154 re-review)
+    (Q.zero(sin(x)), Q.le(x, 1) & Q.ge(exp(x), E), False),
+    (Q.zero(sin(x)), Q.le(x, 1) & Q.ge(x**3, 1), False),
+    (Q.zero(sin(_r)), Q.ge(_r, 1) & Q.le(_r**2, 1), False),
+    (Q.zero(sin(_r)), Q.le(_r, 1) & Q.ge(sympy.atan(_r), pi / 4), False),
+    (Q.zero(cos(_p)), Q.le(_p, 1) & Q.ge(sqrt(_p), 1), False),
+    (Q.finite(sympy.cot(x)), Q.le(x, 1) & Q.ge(exp(x), E), True),
+    (Q.zero(sin(x)), Q.le(x, 1) & Q.ge(2 * x, 2), False),
+    (Q.zero(sin(x)), Q.ge(x, y) & Q.ge(y, 1) & Q.le(x, 1), False),
+    (Q.zero(sin(x)), Q.real(x) & ~Q.positive(x - 1) & ~Q.negative(x - 1), False),
+    (Q.zero(sin(x)), Q.nonnegative(x - 1) & Q.nonpositive(x - 1), False),
+    (Q.zero(sin(x)), Q.zero(sympy.Abs(x - 1)), False),
+    (Q.zero(sin(x)), Q.zero((x - 1)**2), False),
+    (Q.zero(sin(x)), Q.zero(y * (x - 1)) & ~Q.zero(y), False),
+    (sympy.Implies(Q.zero(sympy.Abs(x - 1)), ~Q.zero(sin(x))), True, True),
+    (Q.zero(sin(x)), Q.lt(x, 2) & Q.gt(x, 0) & Q.eq(sympy.floor(x), x), False),
 ]
 
 
 @pytest.mark.parametrize("prop, assum, expected", GATE_ANSWERS)
-def test_gate_loses_no_answer(prop, assum, expected):
+def test_answers_from_elsewhere(prop, assum, expected):
     from satassume.engine import Engine
     from satassume.ref import ask_ref
     assert ask(prop, assum, engine=Engine()) is expected
     assert ask_ref(prop, assum) is expected
 
 
-def test_gate_inconsistent_sets():
+def test_inconsistent_sets_from_elsewhere():
     from satassume.engine import Engine
     for assum in (Q.real(_f(1)) & Q.integer(_f(1)) & Q.eq(_f(1), 2) & Q.integer(tanh(_f(1))),
-                  Q.real(x) & ~Q.zero(sympy.floor(x)) & Q.algebraic(cos(sympy.floor(x)))):
+                  Q.real(x) & ~Q.zero(sympy.floor(x)) & Q.algebraic(cos(sympy.floor(x))),
+                  # q = 0 by MONO and LRA, then cosh(-1) = 1 by the theory
+                  Q.ge(1 - _q, sympy.cosh(3 * _q - 1))):
+        # (a query about the set's symbols: the relation glue of a set
+        # whose query reads none of its terms is not built, as on theories)
         with pytest.raises(ValueError):
-            ask(Q.real(x), assum, engine=Engine())
-
-
-def test_engages():
-    fl = sympy.floor(x)
-    yes = [exp(fl), sin(_f(1)), exp(_f(x) + 1), 2**fl, exp(sqrt(2)), sin(x + y)]
-    no = [exp(x), sin(x + 1), x**y, exp(I * x)]
-    for n in yes:
-        assert TransAdapter.engages(n, frozenset({y})), n
-    for n in no:
-        assert not TransAdapter.engages(n, frozenset({y})), n
-    assert TransAdapter.engages(exp(x), frozenset({x}))
-
-
-def test_gate_matches_the_ungated_theory(monkeypatch):
-    """The gate saves work, never an answer: gated and ungated agree."""
-    from satassume.engine import Engine
-    from satassume.state.memos import PROCESS
-    queries = [(p, a) for p, a, _ in GATE_ANSWERS] + [
-        (Q.transcendental(exp(x)), Q.algebraic(x) & ~Q.zero(x)),
-        (Q.algebraic(x**y), Q.prime(x) & Q.algebraic(y) & Q.irrational(y)),
-        (Q.real(exp(x)), Q.real(x)), (Q.zero(sin(x)), Q.positive(x))]
-
-    def run():
-        out = []
-        for p, a in queries:
-            PROCESS.clear()
-            try:
-                out.append(ask(p, a, engine=Engine()))
-            except ValueError:
-                out.append("inconsistent")
-        return out
-
-    gated = run()
-    monkeypatch.setattr(TransAdapter, "GATED", False)
-    assert run() == gated
+            ask(Q.nonnegative(_q**2) & Q.real(x), assum, engine=Engine())

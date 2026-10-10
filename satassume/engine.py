@@ -88,8 +88,7 @@ from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
 from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
-                    affine_pair as _affine_pair, classes_scope, query_scope, scope_of_atoms, theory_scope,
-                    zero_symbols)
+                    affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
 from .theories.sign import (closure_adapter as _closure, sign_adapter as _sign,
                              trans_adapter as _trans)
@@ -306,20 +305,8 @@ ObjectCache = DictCache
 # --------------------------------------------------------------------------
 
 class Session:
-    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE,
-                 classes: frozenset = frozenset()):
+    def __init__(self, engine: "Engine", scope: Scope = _EMPTY_SCOPE):
         self.engine = engine
-        #: the class scope (``scope.class_symbols`` of the query): a gated
-        #: node theory (``GATED``: trans) is told the nodes its
-        #: ``engages`` takes under it; the others wait in ``_parked``
-        #: until it grows (``Engine._build_context``: from the set's to the
-        #: query's)
-        self.classes = classes
-        self._parked: List[Tuple[int, Node]] = []
-        self._parked_at = classes
-        #: ``(assumptions, proposition, extensions)`` of a contextual
-        #: query (``Engine._build_context``), for :meth:`unpark`
-        self.unpark_of = None
         #: the theory scope the session is built for (``scope.theory_scope``
         #: of its query): the relation glue and predicate transfer exist
         #: from construction iff the scope says so (#97 P3)
@@ -888,31 +875,20 @@ class Session:
         the templates leave out by construction).  True iff something
         was registered."""
         nodes = self._theory_nodes
-        if self._parked and self._parked_at is not self.classes:
-            nodes = self._parked + nodes
-            self._parked = []
-            self._parked_at = self.classes
         ths = self.node_theories
-        added = False
+        if not nodes:
+            for a in ths.values():
+                a.sync_derived()
+            return False
         while nodes:
             # registering a node visits its arguments, which may be sums
             # or products over the caps themselves: until none is left
             self._theory_nodes = []
-            told = False
             for i, n in nodes:
-                cls = _NODE_THEORIES[i]
-                if cls.GATED and not cls.engages(n, self.classes):
-                    # (the trans theory outside the class scope)
-                    self._parked.append((i, n))
-                    continue
                 a = ths.get(i)
                 if a is None:
-                    a = ths[i] = cls(self)
+                    a = ths[i] = _NODE_THEORIES[i](self)
                 a.add(n)
-                told = True
-            if not told:
-                break
-            added = True
             # an argument no clause mentioned (a sum over the caps has no
             # closure or sign rows) was first visited just now: visit what
             # its own rows mention (its arguments, with the predicates
@@ -922,22 +898,7 @@ class Session:
             nodes = self._theory_nodes
         for a in ths.values():
             a.sync_derived()
-        return added
-
-    def unpark(self) -> bool:
-        """Widen the class scope by the symbols of the query's ``zero``
-        and ``nonzero`` atoms (``scope.zero_symbols``) and tell the gated
-        theories the parked nodes it then takes.  The engine calls it when
-        a contextual query is still open after its complete search
-        (:meth:`Engine._ask`).  True iff something was registered."""
-        if not self._parked or self.unpark_of is None:
-            return False
-        wider = zero_symbols(*self.unpark_of)
-        self.unpark_of = None
-        if wider <= self.classes:
-            return False
-        self.classes = self.classes | wider
-        return self.node_theories_sync()
+        return True
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
@@ -1482,16 +1443,15 @@ class Engine:
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "set_checks": 0,
-                      "budget_limited": 0, "scope_misses": 0, "unparks": 0}
+                      "budget_limited": 0, "scope_misses": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
         self.last_budget_limited = False
 
-    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE,
-                       classes: frozenset = frozenset()) -> Session:
+    def _fresh_session(self, scope: Scope = _EMPTY_SCOPE) -> Session:
         self.stats["sessions"] += 1
-        return Session(self, scope, classes)
+        return Session(self, scope)
 
     # -- the registry epoch ---------------------------------------------------
     @property
@@ -1965,11 +1925,8 @@ class Engine:
         # set's terms (Session.link_set, below) and assumes only the set's
         # own glue, so its verdict is a function of the set whatever the
         # query's scope
-        # (and the trans theory's class scope: the set's own for the
-        # check, so that its verdict stays a function of the set; the
-        # query's after it)
-        scope, cl_set, cl = query_scope(assumptions, proposition, self._extensions)
-        s = self._fresh_session(scope, cl_set)
+        scope = theory_scope(assumptions, proposition, self._extensions)
+        s = self._fresh_session(scope)
         lits = s.assume_formula(assumptions)
         try:
             v = self._complete_check(s, s.assumption_lits())
@@ -1984,12 +1941,10 @@ class Engine:
             s.verdict = v
             return s, lits
         if v is None or _gave_up(s):
-            s = self._fresh_session(scope, cl_set)
+            s = self._fresh_session(scope)
             lits = s.assume_formula(assumptions)
             v = UNKNOWN
         s.verdict = v
-        s.classes = cl
-        s.unpark_of = (assumptions, proposition, self._extensions)
         s.link_set()
         return s, lits
 
@@ -2235,8 +2190,7 @@ class Engine:
             self.last_budget_limited = False
             return facts[pred]
         self.stats["queries"] += 1
-        s = self._fresh_session(theory_scope(None, atom, self._extensions),
-                                classes_scope(None, atom, self._extensions))
+        s = self._fresh_session(theory_scope(None, atom, self._extensions))
         lit = s.literal_of(atom)
         # under the glue a relation atom activates
         r = self._decide(s, lit, s.assumption_lits(atom))
@@ -2289,8 +2243,7 @@ class Engine:
         if contextual:
             s, lits = self._context_session(assumptions, proposition)
         else:
-            s = self._fresh_session(theory_scope(None, proposition, self._extensions),
-                                    classes_scope(None, proposition, self._extensions))
+            s = self._fresh_session(theory_scope(None, proposition, self._extensions))
         return self._ask(s, lits, proposition, contextual)
 
     def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:
@@ -2316,13 +2269,6 @@ class Engine:
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(q, lits, search=True)
-            if r is None and s._parked and s.unpark_of is not None:
-                # still open: the parked nodes the query's zero atoms may
-                # decide (Session.unpark), then the search again
-                s.solver.release(s.n_hold)
-                if s.unpark():
-                    self.stats["unparks"] += 1
-                    r = s.query_literal(q, lits, search=True)
         if contextual and _gave_up(s):
             self.stats["theory_gave_up"] += 1
         self._note_budget(s)

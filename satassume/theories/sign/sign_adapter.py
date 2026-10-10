@@ -44,9 +44,6 @@ class ClassAdapter:
     #: whether registering a visited term compiles its parked rows about
     #: PREDS (the engine's demand-driven compilation)
     DEMAND = True
-    #: whether a session tells this theory only the nodes :meth:`engages`
-    #: takes under its class scope (``scope.class_symbols``; trans)
-    GATED = False
 
     def __init_subclass__(cls, **kw):
         super().__init_subclass__(**kw)
@@ -70,12 +67,6 @@ class ClassAdapter:
     def kinds(cls: type) -> bool:
         """Whether :meth:`selects` may take a node of type ``cls``."""
         return bool(getattr(cls, 'is_Add', False) or getattr(cls, 'is_Mul', False))
-
-    @staticmethod
-    def engages(node, classes: frozenset) -> bool:
-        """For a ``GATED`` theory: whether a session with the class scope
-        ``classes`` tells it ``node``."""
-        return True
 
     @classmethod
     def selects(cls, node) -> bool:

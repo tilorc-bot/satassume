@@ -28,31 +28,15 @@ _FLOAT_READ = frozenset(("finite", "extended_real", "zero"))
 #: loads no SymPy)
 _CLASSES: dict = {}
 _noncommutative = None
-classed = None
 
 
 def _classes() -> dict:
-    global _noncommutative, classed
+    global _noncommutative
     if not _CLASSES:
         import sympy
-        from ...knowledge.domain import _noncommutative, classed
+        from ...knowledge.domain import _noncommutative
         _CLASSES.update((getattr(sympy, name), op) for name, op in OPS.items())
     return _CLASSES
-
-
-def _applied(e) -> bool:
-    """Whether ``e`` has a subterm other than a symbol, a number or a sum,
-    product or power (a function application: ``floor(x)``, ``f(1)``)."""
-    stack = [e]
-    while stack:
-        t = stack.pop()
-        if t.is_Symbol or t.is_number:
-            continue
-        if t.is_Add or t.is_Mul or t.is_Pow:
-            stack.extend(t.args)
-            continue
-        return True
-    return False
 
 
 def op_args(node):
@@ -88,44 +72,9 @@ class TransAdapter(ClassAdapter):
     #: the other rows of a term stay parked until the escalation (fewer
     #: clauses per query: ~/th/A6/scripts/measure_trans.py)
     DEMAND = False
-    #: told the nodes it selects that :meth:`engages` takes under the
-    #: query's class scope (``scope.class_symbols``)
-    GATED = True
-
     @staticmethod
     def kinds(cls: type) -> bool:
         return cls in _classes() or bool(getattr(cls, 'is_Pow', False))
-
-    @staticmethod
-    def engages(node, classes: frozenset) -> bool:
-        """Whether the theory is told ``node`` under the class scope
-        ``classes`` (:func:`satassume.scope.class_symbols`): iff no argument
-        is *plain*, an arithmetic expression (sums, products and powers)
-        that is not a number, whose free symbols are outside ``classes``
-        and carry no class assumption of their own (``Symbol('n',
-        integer=True)``).  Every table entry that claims something reads a
-        class fact of each argument (``POW``: of the base and the
-        exponent).  The usual sources of a class fact of an arithmetic
-        argument are a class atom or an equality over its symbols and a
-        ``zero`` atom of one of them, and those put the symbols in
-        ``classes``.  An argument with a function application anywhere in
-        it (``floor(x)``, ``sign(x)``, ``f(1)``, ``f(x) + 1``) is never
-        plain: its class facts may come from template rows or from EUF.
-        A node left out waits in the session (``Session._parked``) until
-        the scope widens: from the set's to the query's, or by the
-        symbols of the query's zero atoms when it is still open after its
-        search (``Session.unpark``: ``zero(x**2 + y**2)``).  What this
-        costs is measured, not proved (a class fact of a plain argument by
-        a chain the scope does not see, such as a sign fact): the audit of
-        PR #154 found no answer that differs from the ungated theory."""
-        oa = op_args(node)
-        if oa is None:
-            return False
-        for a in oa[1]:
-            if not (a.is_number or _applied(a) or any(
-                    s in classes or classed(s) for s in a.free_symbols)):
-                return False
-        return True
 
     @staticmethod
     def over_cap(node) -> bool:
