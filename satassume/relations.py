@@ -1624,6 +1624,25 @@ class Relations:
                 w = self._mono_wait_t.pop(t, None)
                 if w:
                     self._mono_retry.extend(w)
+                if relation and t in self._mono_apps:
+                    k = self._mono_key(self._mono_apps[t].arg)
+                    if k is not None:
+                        self._mono_note_inner(k[0])
+
+    def _mono_note_inner(self, terms) -> None:
+        """The terms of the argument of an application a relation reads:
+        those that are applications of a listed function other than a power
+        (``atan(q)`` in ``atan(q)**2``) count as read by the relation, so a
+        sign link of their own argument (``0 <= q``) gives their sign in
+        LRA.  Plain symbols and powers are left out: their sign lemmas at 0
+        would fire on every power of a symbol a relation reads (+12% time on
+        the relational fuzz profile) for one more answer in the corpora
+        (``Q.gt(sqrt(y), log(2))`` under ``Q.ge(sqrt(y), log(y + 2))`` stays
+        None)."""
+        from .theories.mono import spec
+        inner = [a for a in terms if not a.is_Pow and spec(a) is not None]
+        if inner:
+            self._mono_note_user(inner)
 
     def _mono_key(self, e):
         """``(key, coeffs)`` of the linear form of ``e`` (its opaque terms in
@@ -1671,6 +1690,8 @@ class Relations:
         if lk is not None:
             for t in lk[0]:
                 self._mono_open(t)
+            if app in self._mono_rterms:
+                self._mono_note_inner(lk[0])
         if app in self._mono_opened:
             self._mono_rows(app, sp)
         if sp.pieces:
@@ -1729,17 +1750,22 @@ class Relations:
         if made is not None and (made[0] == "f" and not is_arg
                                  or made[0] == "i" and is_arg and made[1] is app):
             return                        # back where it came from
-        lam = scoef[0] / ecoef[0]
-        if any(sc != lam * ec for sc, ec in zip(scoef, ecoef)):
-            return
-        from sympy import Rational
-        rl = Rational(lam.numerator, lam.denominator)
-        rest = side - rl * e
-        if not _is_number(rest):
-            return
-        c = (c0 - rest) / rl
-        if lam < 0:
-            d = -d
+        if (("f" if is_arg else "i"), app, var) in self._mono_done:
+            return                        # matched before
+        if side == e:
+            c = c0
+        else:
+            lam = scoef[0] / ecoef[0]
+            if any(sc != lam * ec for sc, ec in zip(scoef, ecoef)):
+                return
+            from sympy import Rational
+            rl = Rational(lam.numerator, lam.denominator)
+            rest = side - rl * e
+            if not _is_number(rest):
+                return
+            c = (c0 - rest) / rl
+            if lam < 0:
+                d = -d
         if sp.family[0] in _MONO_LAZY and self._mono_link_only(atom):
             # a sign link alone: at 0 (u OP 0, f(u) OP 0) the lemmas are
             # sign facts the templates give; else lemmas only where a

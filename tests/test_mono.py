@@ -230,7 +230,12 @@ POW_LINKS = [
     # the query reads the power and the base (unary predicates)
     (Q.positive(x**3 - 1), Q.positive(x - 2), True),
     (Q.ge(2*sqrt(x + 1) + 1, 1), Q.extended_positive(x + 1), True),
-    (Q.gt(sqrt(y), log(2)), Q.ge(sqrt(y), log(y + 2)), True),
+    # an application inside a power a relation reads is read too:
+    # q >= 0 -> atan(q) >= 0 (with atan(q) < pi/2) -> atan(q)**2 < pi**2/4
+    (Q.gt((1 - x)**2, atan(Symbol("q", nonnegative=True))**2), Q.gt(x, 3), True),
+    # not derived (by design): the base y of sqrt(y) is read only inside
+    # log(y + 2), and a plain symbol inside an application is not read, so
+    # Q.gt(sqrt(y), log(2)) under Q.ge(sqrt(y), log(y + 2)) stays None
     # a made equality: x = 1/6 -> sqrt(x) = sqrt(6)/6 in LRA
     (Q.ne(6*x - 1, 0), Q.gt(sqrt(2*x), pi/2), True),
     (Q.eq(n**-1, 2), Q.real(n), False),

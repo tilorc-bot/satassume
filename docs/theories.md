@@ -644,6 +644,13 @@ now relates existing atoms only, and makes atoms only where a query reads
 the power or a term of its base: an LRA term of a relation the query
 mentions, or of the linear form of a unary predicate's argument
 (`Q.positive(x**3 - 1)` under `Q.positive(x - 2)` reads `x**3` and `x`).
+At the constant 0 (`u OP 0`, `u**k OP 0`) the lemmas only move a sign the
+templates already give, so they are made only where a *relation* reads
+the other term (the power for a link of the base, a term of the base for
+a link of the power); an application of a listed function other than a
+power inside the base of a read power counts as read (`atan(q)` in
+`atan(q)**2`, `_mono_note_inner`), a plain symbol does not (that would
+cost 12% on the relational profile for one answer in our corpora).
 Matches skipped this way wait on the atom and on those terms and are
 redone when a later formula of the session reads one (`_mono_wait`,
 `_mono_note_user`). The sign facts of `u` and `u**k` themselves are the
