@@ -199,6 +199,62 @@ def spec(term) -> Optional[Spec]:
 _NAMES = frozenset({"exp", "log", "atan", "tanh", "sinh", "asinh", "cosh",
                     "acot", "Abs", "floor", "ceiling"})
 
+#: the functions whose sign rows the templates no longer carry
+#: (``templates/functions.py``: ``extended_real(u) -> (positive(f(u)) <->
+#: extended_positive(u))`` and the like): the threshold-0 lemmas of their
+#: :class:`Spec` give them, once the glue links ``f(u)`` and ``u``
+#: (:func:`sign_terms`, ``satassume.scope``)
+SIGN_FUNCS = frozenset({"atan", "tanh", "sinh"})
+
+_SIGN_TERMS = _PROCESS.table(f"{__name__}._SIGN_TERMS", "pure", 100_000)
+
+
+def sign_terms(e) -> frozenset:
+    """The applications ``f(u)`` of a :data:`SIGN_FUNCS` function with a
+    :class:`Spec`, at any depth of ``e``, and their arguments ``u`` (not
+    numbers): the terms whose sign links stand in for the removed rows.
+    Memoized per expression (a pure function of it)."""
+    try:
+        return _SIGN_TERMS[e]
+    except KeyError:
+        pass
+    except TypeError:
+        return frozenset()
+    out = set()
+    stack = [e]
+    while stack:
+        t = stack.pop()
+        args = getattr(t, "args", ())
+        if not args:
+            continue
+        if type(t).__name__ in SIGN_FUNCS and spec(t) is not None:
+            out.add(t)
+            u = args[0]
+            if u.free_symbols:
+                out.add(u)
+        stack.extend(args)
+    r = frozenset(out)
+    if len(_SIGN_TERMS) >= _SIGN_TERMS.size:
+        _SIGN_TERMS.clear()
+    _SIGN_TERMS[e] = r
+    return r
+
+
+def atom_sign_terms(atoms) -> frozenset:
+    """:func:`sign_terms` of the expressions of the atoms ``atoms`` (the
+    sides of a relation atom ``eq``/``lt``): the terms the glue links as if
+    they were arguments of vocabulary atoms (``Relations.note_formula``,
+    ``selectors_of``; ``scope.mono_terms``).  Empty without an application
+    of a :data:`SIGN_FUNCS` function: then the query is as without MONO."""
+    out = frozenset()
+    for a in atoms:
+        e = a.expr
+        for side in (e if a.pred in ("eq", "lt") else (e,)):
+            t = sign_terms(side)
+            if t:
+                out = out | t
+    return out
+
 
 def _spec(t) -> Optional[Spec]:
     name = type(t).__name__

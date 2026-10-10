@@ -106,9 +106,10 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, NamedTuple
 
 from .sat.formula import P, atoms_of
-from .relations import RELATION_ATOMS, _is_number, glue_atoms
+from .relations import MONO, RELATION_ATOMS, _is_number, glue_atoms
 from .knowledge.rules import PRED_INDEX
 from .theories.transfer import transfer_wanted
+from .theories.mono import atom_sign_terms
 
 #: the predicates whose atoms the relation glue links to order atoms
 #: (``extended_positive``, ``extended_negative``, ``zero``) and those that
@@ -161,6 +162,25 @@ def linked_terms(atoms: Iterable[P]) -> frozenset:
     return frozenset(out)
 
 
+def mono_terms(atoms: Iterable[P]) -> frozenset:
+    """The applications of the functions whose template sign rows MONO
+    replaces (:data:`satassume.theories.mono.SIGN_FUNCS`: ``atan``,
+    ``tanh``, ``sinh``) at any depth of the atoms' expressions, and their
+    arguments: the glue links them as it links the arguments of
+    vocabulary atoms (``extended_positive(e) <-> gt(e, 0)``, ...), and
+    MONO's threshold-0 lemmas relate the signs of ``f(u)`` and ``u`` as the
+    removed rows did, in every position of the cone.  Empty for a query
+    without such an application (then the scope is as without MONO)."""
+    return atom_sign_terms(atoms) if MONO else frozenset()
+
+
+def links_wanted(atoms) -> bool:
+    """Whether the glue of a query without relation atoms is on: an affine
+    pair (:func:`affine_pair`) or a :func:`mono_terms` term among
+    ``atoms`` (``Session.assumption_lits``)."""
+    return affine_pair(atoms) or bool(mono_terms(atoms))
+
+
 def scope_of_atoms(atoms: Iterable[P]) -> Scope:
     """:func:`theory_scope` of the formulas whose atoms are ``atoms``
     (those of ``a`` and ``p`` together).  The twins ``eq(t, 0)`` of the
@@ -168,10 +188,11 @@ def scope_of_atoms(atoms: Iterable[P]) -> Scope:
     count as relation atoms (``relations.glue_atoms``, #107)."""
     atoms = glue_atoms(tuple(atoms))
     rel = any(a.pred in RELATION_ATOMS for a in atoms)
-    glue = rel or affine_pair(atoms)
+    mono = mono_terms(atoms)
+    glue = rel or bool(mono) or affine_pair(atoms)
     if not glue:
         return EMPTY
-    return Scope(True, rel and transfer_wanted(atoms), linked_terms(atoms))
+    return Scope(True, rel and transfer_wanted(atoms), linked_terms(atoms) | mono)
 
 
 def theory_scope(assumptions, proposition, extensions=None) -> Scope:

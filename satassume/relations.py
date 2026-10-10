@@ -921,6 +921,13 @@ class Relations:
         for a in atoms:
             if a.pred in PRED_INDEX and a.expr not in self.linked:
                 self.top[a.expr] = None
+        if MONO:
+            # the terms whose sign MONO gives (mono.SIGN_FUNCS): linked
+            # as vocabulary-atom arguments are
+            from .theories.mono import atom_sign_terms
+            for t in atom_sign_terms(atoms):
+                if t not in self.linked:
+                    self.top[t] = None
 
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
@@ -1928,6 +1935,9 @@ class Relations:
                     out.update(sel[e] for e in a.expr if e in sel)
                 if a in asel:
                     out.add(asel[a])
+        if MONO:
+            from .theories.mono import atom_sign_terms
+            out.update(sel[t] for t in atom_sign_terms(atoms) if t in sel)
         return sorted(out)
 
     # -- equality sharing -------------------------------------------------

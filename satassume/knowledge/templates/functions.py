@@ -457,8 +457,8 @@ def _in_unit_interval_units(kind):
 def _atan(R, c):
     R.rule([(X, 'extended_real', True)], (N, 'real', True))
     R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.equiv([(X, 'extended_real', True)], (N, 'positive', True), (X, 'extended_positive', True))
-    R.equiv([(X, 'extended_real', True)], (N, 'negative', True), (X, 'extended_negative', True))
+    # the sign of atan(u) for extended real u is MONO's (theories/mono.py,
+    # SIGN_FUNCS: the glue links atan(u) and u in every query that has one)
     # atan(I) == oo*I, so restrict to real arguments.
     R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
            (N, 'transcendental', True))
@@ -513,7 +513,7 @@ _COSH = (
 
 def _sinh(R, c):
     _table(R, _SINH)
-    _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative', 'zero'))
+    # sign: MONO (theories/mono.py, SIGN_FUNCS)
     R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
 
 
@@ -523,9 +523,7 @@ def _cosh(R, c):
 
 def _tanh(R, c):
     _table(R, ((('extended_real',), 'real'), _TRANSCENDENTAL))
-    for pred in ('positive', 'negative'):
-        R.equiv([(X, 'extended_real', True)], (N, pred, True), (X, 'extended_' + pred, True))
-    R.equiv([(X, 'extended_real', True)], (N, 'zero', True), (X, 'zero', True))
+    # sign: MONO (theories/mono.py, SIGN_FUNCS)
 
 
 for _cls, _tag, _gen in ((sinh, 'sinh', _sinh), (cosh, 'cosh', _cosh), (tanh, 'tanh', _tanh)):
