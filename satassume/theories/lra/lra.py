@@ -1203,7 +1203,7 @@ class LRATheory:
         r = self._int_verdict(v, m, k)
         if r is not None and r[0] != (literal > 0):
             self.stats["conflicts"] += 1
-            return (False, _dedupe([-literal] + [-l for l in r[1]]))
+            return (False, _dedupe([-literal] + [-l for l in _flat(r[1])]))
         return None
 
     def _int_verdict(self, v: int, m: Fraction, k: Fraction):

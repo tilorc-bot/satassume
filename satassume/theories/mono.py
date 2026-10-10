@@ -354,12 +354,18 @@ def _big(q) -> bool:
 
 
 def _at_inf(sp: Spec) -> tuple:
-    """The values of ``f(u)`` at an infinite ``u`` that MONO states:
-    ``("finite", v, fv)`` if ``f`` takes the finite real ``v`` (field number
-    ``fv``) at every infinity SymPy evaluates (``1/oo = 1/zoo = 0``,
-    ``acot``), else ``("positive_infinite", v, fv)`` and
-    ``("negative_infinite", v, fv)`` for ``f(oo)`` and ``f(-oo)`` where that is
-    ``oo``, ``-oo`` (``fv`` None) or a finite real (``atan(oo) = pi/2``)."""
+    """The values of ``f(u)`` at an infinite ``u`` that MONO states, as
+    ``(side, anyv, total)``:
+
+    * ``side``: ``(pred, v, fv)`` for ``pred`` ``positive_infinite`` (``u =
+      oo``) and ``negative_infinite`` where SymPy's ``f(+-oo)`` is ``oo``,
+      ``-oo`` (``fv`` None) or a finite real ``v`` (field number ``fv``);
+    * ``anyv``: the finite reals ``(v, fv)`` ``f`` takes at the infinities
+      ``oo, -oo, zoo, oo*I, -oo*I`` if each value is one or stays
+      unevaluated (``atan(zoo)``), else ``()``: a real ``f(u)`` at an
+      infinite ``u`` is one of them;
+    * ``total``: every one evaluated (``1/zoo = acot(zoo) = 0``), so an
+      infinite ``u`` gives one of them without a real ``f(u)``."""
     from sympy import AccumBounds, I, S, oo, zoo
 
     def val(c):
@@ -371,16 +377,20 @@ def _at_inf(sp: Spec) -> tuple:
             return (v, None)
         if isinstance(v, AccumBounds) or v.free_symbols or not (
                 v.is_real and v.is_finite):
-            return None
+            return "?" if v.has(zoo) and v is not zoo and not v.has(S.NaN) else None
         fv = _field(v)
         return None if fv is None else (v, fv)
 
     vs = [val(c) for c in (oo, -oo, zoo, oo * I, -oo * I)]
-    if vs[0] is not None and vs[0][1] is not None and all(
-            v is not None and v[0] == vs[0][0] for v in vs):
-        return (("finite",) + vs[0],)
-    return tuple((p,) + v for p, v in zip(("positive_infinite", "negative_infinite"), vs)
-                 if v is not None)
+    side = tuple((p,) + v for p, v in zip(("positive_infinite", "negative_infinite"), vs)
+                 if v is not None and v != "?")
+    anyv, total = (), False
+    if all(v is not None and (v == "?" or v[1] is not None) for v in vs):
+        anyv = tuple(dict.fromkeys(v for v in vs if v != "?"))
+        total = "?" not in vs and bool(anyv)
+        if not anyv:
+            anyv = ()
+    return (side, anyv, total)
 
 
 class LinkMap:

@@ -1677,30 +1677,47 @@ class Relations:
 
     def _mono_inf(self, app, mo: int, u, at_inf) -> None:
         """``app = f(u)`` at an infinite ``u`` (``LinkMap.at_inf``), where the
-        link, on real values, says nothing: under ``MO(app)``,
-        ``positive_infinite(u)`` (``negative_infinite(u)``, ``~finite(u)``)
-        gives ``positive_infinite(app)`` for ``f = oo`` there (likewise
-        ``-oo``), and for a finite real value ``v`` a fresh inert variable
-        ``c <-> MO & (that case)``, with ``c -> real(app)``, on which LRA
-        pins ``app`` to ``v`` (``lra.MonoValue``)."""
+        link, on real values, says nothing.  Under ``MO(app)``: for each
+        finite real ``v`` of ``anyv`` a fresh inert variable ``c_v`` on which
+        LRA pins ``app`` to ``v`` (``lra.MonoValue``), with ``c_v -> MO``,
+        ``c_v -> ~finite(u)`` and ``c_v -> real(app)``, and ``~finite(u)``
+        (with ``real(app)`` unless ``total``) gives some ``c_v``
+        (``atan(u) = +-pi/2``); ``positive_infinite(u)`` (likewise ``-oo``)
+        gives ``positive_infinite(app)`` for ``f(oo) = oo``, and ``c_v`` (or
+        such a variable of its own) for a finite real ``v = f(oo)``."""
+        side, anyv, total = at_inf
         s = self.session
-        for pred, v, fv in at_inf:
+        ad = self._mono_ad
+        cv = {}
+
+        def value(v, fv, conds):
+            c = self._fresh(inert=True)
+            s.emit([-c, mo])
+            for x in conds:
+                s.emit([-c, x])
+            s.ensure(app, {"real"})
+            s.emit([-c, s.var("real", app)])
+            ad.register_mono_value(s.solver, c, app, fv)
+            return c
+
+        if anyv:
+            s.ensure(u, {"finite"})
+            fin = s.var("finite", u)
+            for v, fv in anyv:
+                cv[v] = value(v, fv, [-fin])
+            s.ensure(app, {"real"})
+            s.emit([-mo, fin] + ([] if total else [-s.var("real", app)]) + list(cv.values()))
+        for pred, v, fv in side:
             s.ensure(u, {pred})
             cond = s.var(pred, u)
-            if pred == "finite":
-                cond = -cond
             if fv is None:
                 ip = "positive_infinite" if v.is_extended_positive else "negative_infinite"
                 s.ensure(app, {ip})
                 s.emit([-mo, -cond, s.var(ip, app)])
-                continue
-            c = self._fresh(inert=True)
-            s.emit([-c, mo])
-            s.emit([-c, cond])
-            s.emit([c, -mo, -cond])
-            s.ensure(app, {"real"})
-            s.emit([-c, s.var("real", app)])
-            self._mono_ad.register_mono_value(s.solver, c, app, fv)
+            elif v in cv:
+                s.emit([-mo, -cond, cv[v]])
+            else:
+                s.emit([value(v, fv, [cond]), -mo, -cond])
 
     def _mono_open(self, t) -> None:
         """Switch on the sandwich rows of the application ``t`` (``Abs``,
