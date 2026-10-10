@@ -14,12 +14,15 @@ from .sign import ADD, ALL, MUL, PRED_MASK, PREDS, SignTheory
 
 _OFFSETS = tuple(BASIS_INDEX[p] for p in PREDS)
 
-#: When a session engages the theory (``Session.sign_sync``): ``'cap'``
-#: only when its cone holds a sum or product over the arity caps of the
-#: templates; ``'escalate'`` also for every query that propagation (and
-#: escalation) left open, before the search; ``'always'`` whenever the
-#: cone holds a sum or product; ``'off'`` never.
-ENGAGE = 'escalate'
+#: When a session engages the theory, and with which nodes
+#: (``Session.sign_sync``): ``'cap'`` (the default) once its cone holds a
+#: sum or product over the arity caps of the templates, with those nodes
+#: only; ``'escalate'`` also, with every sum and product, for each query
+#: that propagation (and escalation) left open, before the search;
+#: ``'always'`` with every sum and product from the start; ``'off'``
+#: never.  On the refine stream 'escalate' adds no answer and costs +29%
+#: (``tools/ab.py``), 'cap' +0.4% (docs/theories.md, "SIGN").
+ENGAGE = 'cap'
 
 
 def over_cap(node) -> bool:

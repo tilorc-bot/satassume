@@ -598,9 +598,13 @@ class Session:
                 self.pending[node] = items
                 self._compile_pending(node, demanded)
         if (getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)) and node.args:
-            self._sign_nodes.append(node)
-            if not self._sign_over and _sign.over_cap(node):
+            # the sign theory's nodes: those over the templates' arity caps
+            # (ENGAGE 'cap'), or every sum and product
+            if _sign.over_cap(node):
                 self._sign_over = True
+                self._sign_nodes.append(node)
+            elif _sign.ENGAGE in ('escalate', 'always'):
+                self._sign_nodes.append(node)
 
     # -- compiled template patterns (the fast path) -------------------------
     def _compile_patterns(self, node: Node, compiled, demanded) -> None:
@@ -843,8 +847,11 @@ class Session:
     def sign_sync(self, open_query: bool = False) -> bool:
         """Engage the sign theory (``satassume.theories.sign``) as
         ``sign_adapter.ENGAGE`` says and tell it the sums and products
-        visited since the last sync; ``open_query``: the query is open after
-        propagation and escalation.  True iff something was registered."""
+        visited since the last sync (with 'cap', the default, only those
+        over the templates' arity caps: the theory then decides only what
+        the templates leave out by construction); ``open_query``: the
+        query is open after propagation and escalation.  True iff
+        something was registered."""
         nodes = self._sign_nodes
         if not nodes:
             if self.sign is not None:

@@ -8,7 +8,7 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 
-from sympy import (Add, I, Mul, Q, Rational, S, Symbol, im, nan, oo, pi, re, sqrt,
+from sympy import (Add, And, I, Mul, Q, Rational, S, Symbol, im, nan, oo, pi, re, sqrt,
                    symbols, zoo)
 
 from satassume.sympy_api import ask
@@ -150,3 +150,61 @@ def test_inconsistent_wide_product_raises():
     with pytest.raises(ValueError):
         ask(Q.real(x), Q.positive(a*b*c*d*e) & Q.negative(a) & Q.positive(b) & Q.positive(c)
             & Q.positive(d) & Q.positive(e))
+
+
+def test_derived_atoms_are_theory_atoms():
+    """``~negative_infinite(x)`` (a disjunction of basis literals) reaches the
+    theory as one literal of its derived atom (``sign_adapter.def_mask``):
+    the sum is decided by propagation instead of a search over both cases of
+    every term (``Session._dv``; there are enough such atoms for the set to
+    share them, ``engine._NEG_SHARED``)."""
+    from satassume.engine import Engine
+    xs = symbols("x0:12")
+    s = Add(*xs)
+    a = Q.positive_infinite(xs[0]) & And(*[Q.extended_real(t) & ~Q.negative_infinite(t)
+                                          for t in xs[1:]])
+    eng = Engine()
+    assert ask(Q.positive_infinite(s), a, engine=eng) is True
+    assert eng.stats["searches"] == 0
+
+
+def test_def_mask():
+    from satassume.knowledge.rules import DEF_LITS
+    m = sign_adapter.def_mask(DEF_LITS["negative_infinite"])
+    assert m == 1 << NI
+    assert sign_adapter.def_mask(DEF_LITS["positive"]) == 1 << F(1, 0)
+    assert sign_adapter.def_mask(("&", (999,))) is None
+
+
+def _theory_with_sum():
+    from satassume.theories.sign.sign import SignTheory
+    th = SignTheory()
+    x, y, n = th.term(), th.term(), th.term()
+    th.add_node(ADD, n, [x, y])
+    pos = PRED_MASK[PREDS.index("extended_positive")]
+    for v, t in ((1, x), (2, y), (3, n)):
+        th.register_atom(v, (t, pos))
+    return th
+
+
+def test_conflict_and_budget():
+    """``x, y`` extended positive and ``x + y`` not: a conflict; past the
+    conflict budget the theory gives up instead (no claim), and is back at
+    the root with a new budget (``satassume.sat.theory``, "Giving up")."""
+    th = _theory_with_sum()
+    th.push_level()
+    for lit in (1, 2, -3):
+        th.assert_lit(lit)
+    out = th.propagate()
+    assert out and sorted(out[-1][1]) == [-2, -1, 3]
+    assert th.check() is not None
+    th.pop_level()
+    th = _theory_with_sum()
+    th.budget = 0
+    th.push_level()
+    for lit in (1, 2, -3):
+        th.assert_lit(lit)
+    assert th.propagate() == [] and th.gave_up
+    assert th.check() is None
+    th.pop_level()
+    assert not th.gave_up and th.budget == th.MAX_CONFLICTS

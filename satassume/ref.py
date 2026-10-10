@@ -469,15 +469,20 @@ def _glue_atoms_of(a_atoms, p_atoms, rel: bool) -> Tuple[tuple, tuple]:
 
 def _sign(s: _RefSession) -> None:
     """Section 5.5, the sign theory (``satassume.theories.sign``, issue
-    #149 T1): attached for every sum and product of the cone.  The engine
-    engages it only for some queries (``sign_adapter.ENGAGE``); a theory
-    only adds valid consequences, so the reference's answer is the same or
-    more definite (as for the relevance split, section 1)."""
-    from .theories.sign.sign_adapter import SignAdapter
+    #149 T1): attached with the sums and products of the cone over the
+    templates' arity caps (``sign_adapter.ENGAGE`` 'cap', the default), or
+    with all of them (the other modes; the engine then engages it only for
+    some queries, and since a theory only adds valid consequences the
+    reference's answer is the same or more definite, as for the relevance
+    split of section 1)."""
+    from .theories.sign import sign_adapter as sg
+    if sg.ENGAGE == 'off':
+        return
+    every = sg.ENGAGE != 'cap'
     nodes = [n for n in s.base if (getattr(n, 'is_Add', False) or getattr(n, 'is_Mul', False))
-             and n.args]
+             and n.args and (every or sg.over_cap(n))]
     if nodes:
-        a = SignAdapter(s)
+        a = sg.SignAdapter(s)
         for n in nodes:
             a.add(n)
 
