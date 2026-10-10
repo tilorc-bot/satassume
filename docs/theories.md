@@ -528,7 +528,7 @@ sign, imaginary-plus-reals and `extended_real` backward rows; for Mul the sign c
 `extended_positive`, `nonnegative`), `ext_real.*`, `zero`, `all_neg.*`, `all_nonpos.*`, `all_imag.*` and,
 for 5 and 6 factors, `one_infinite`, `one_neg`, `one_nonpos`, `one_non_real`, `one_imag*`. Template rules per
 node: Add of 7 terms 45 -> 9, Mul of 5/6/7 factors 87/101/32 -> 44/51/17. The rows of other predicates
-(`integer`, `commutative`, `even`, `polar`, ...) stay. Two wider engagements were measured and removed:
+(`even`, `polar`, ...) stay; those of `integer`, `rational`, `algebraic` and `complex` are CLOSURE's (below). Two wider engagements were measured and removed:
 handing every sum and product to the theory for each query left open after propagation, or from the start.
 On the refine stream the first adds no answer and costs +29% (`tools/ab.py`), most of it in the interface
 (`_theory_sync`, `register_atom`, propagate: no single hotspot); this is why stage 1 keeps the rows of
@@ -536,6 +536,59 @@ small nodes. `ref.py` attaches the theory to the same nodes, so the reference se
 
 **Stage 2 and 3** (issue #149): Pow and the integer-magnitude classes (dropping the derived nodes `b-1`,
 `b+1`), then the rows of all arities once the interface cost is within the 3% line.
+
+## CLOSURE: ring and field membership of sums and products
+
+`satassume/theories/sign/closure.py` (issue #149, proposal T3) decides whether an `Add` or `Mul` of any arity
+and its arguments lie in `Z`, `Q`, the algebraic numbers, `R` and `C` (`integer`, `rational`, `algebraic`,
+`extended_real`, `complex`, with `finite` and `zero`), in both directions. It is the second lattice of the
+class-propagator machinery of SIGN (`lattice.py`: `Lattice` folds the tables, `ClassTheory` propagates and
+explains; `sign_adapter.ClassAdapter` maps session nodes and constants onto it), so propagation, reasons,
+derived atoms, budget and engagement are SIGN's, above.
+
+**Atoms.** `Z0` = {0}, `Z1` the nonzero integers, `Q1` the non-integer rationals, `AR`/`AC` the real/non-real
+irrational algebraic numbers, `TR`/`TC` the real/non-real transcendental numbers (the seven partition the
+finite complex numbers), `FX` (finite but not complex: the rule block allows `finite & ~complex`, though no
+value in scope is one), `IR` (`oo`, `-oo`) and `IC` (every other infinity), plus `NAN` for a node.
+`irrational`, `transcendental`, `noninteger` and the rest reach these through the rule block.
+
+**Tables from axioms.** For finite complex atoms the tables are not written by hand: `c` is in `a op b` iff
+the triple violates none of the axioms (`_add_ok`, `_mul_ok`), each a theorem about numbers. `Z`, `Q`, the
+algebraic numbers, `R` and `C` are groups under `+` (never exactly two of `a`, `b`, `a + b` in one of them);
+`Z` is closed under `*`; `Q`, the algebraic numbers, `R` and `C` without 0 are groups under `*`; zero rules
+(`0 + b = b`, `a + b = 0` puts `a` in `b`'s atom, `0*b = 0`, no zero divisors). Every true value satisfies
+the axioms, so each table holds the true atom (it over-approximates). The ring and field rules follow:
+all arguments in a ring put the node in it (forward); the node and all arguments but one in a group put
+the last one in it, for a product when the others are nonzero (backward: division in a field; no such
+rule for `Z`, `2*(1/2) = 1`); the contrapositives are the one-irrational and one-transcendental rules. The
+infinities follow SymPy as SIGN does (`oo + r` is `oo` for real `r`, `oo - oo` and `0*oo` are `NAN`, an
+infinity times a non-real is off the axis). `FX` entries are vacuously sound; they say what the rows of
+small arities say (`FX` with a complex term stays `FX`, `0*FX = 0`), so the theory rules out no `FX` term
+the rows allow, and with an infinity there is no claim. A `Float` is read only for `finite`,
+`extended_real` and `zero` (SymPy calls `2.0` not an integer). `tests/test_closure_theory.py` checks the
+tables against SymPy at sample points of every atom (pairs, 3-argument folds, the backward sets), and
+`tests/test_class_clauses.py` checks every reason and conflict clause of both theories at every atom
+tuple, with interleaved pops and re-pushes.
+
+**Engagement and rows dropped.** A session tells the theory the sums of more than `MAX_ADD_SMALL` = 3
+terms and the products of more than `MAX_PAIRS` = 4 factors (`templates.core.closure_owns`,
+`closure_adapter.over_cap`). For those the templates leave out the closure rows of `complex`, `integer`,
+`rational`, `algebraic` (Add and Mul `closed`, Mul `field`) and the subtraction rows of Add. Over both caps
+(a sum of 7 or more terms) a compound argument (`3**(1/3)*(-2)**(2/3)/3`) may be mentioned by no row; the
+session then visits the cone below it when the theory registers it (`Session.node_theories_sync`).
+Independently of the theory the rows were tidied: Mul `one_irrational`, `one_transcendental`,
+`coeff.rational`, `coeff.algebraic` became one `field` row (the node and the nonzero others in a field put
+the last factor in it; the old rows are its contrapositives and its `c*x` case), Pow gained `root`
+(`b**(p/q)` algebraic or complex with `p/q > 0` puts `b` there: `(b**e)**q = b**p` and the algebraic numbers
+are algebraically closed) and `root.negative` (the same for `p/q < 0` and finite `b`), which replace the
+`transcendental b` row and `e=-1.irrational` (`e=-1.field`: rational `1/b` and finite `b` give rational
+`b`); the rows about `commutative` (true of every term in scope, `rules.DEFINITIONS`) and `hermitian` (the
+same predicate as `real`) went. The `root` rows need a base that is a number (`A**2 == 1` for a reflection
+`A`, `tests/test_noncommutative.py`): the pattern key carries the `nc` flag. Template rules over the
+`count_rules.py` set: 1346 -> 1219, clauses 1620 -> 1536 (Add4 61 -> 51 rules, Mul5 44 -> 23).
+
+**Not done (stage 2 of T3).** `algebraic(x)` under `algebraic(p(x))` for a polynomial `p` with algebraic
+coefficients (`x**3 + x`); `rational(x)` under `rational(x**3)` is rightly open (`2**(1/3)`).
 
 ## Open questions and known gaps
 
