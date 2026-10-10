@@ -231,7 +231,9 @@ class SignTheory:
         self.atom: Dict[int, Tuple[int, int]] = {}   # variable -> (term, atom set)
         self.val: Dict[int, bool] = {}
         self.trail: List[int] = []
-        self.lim: List[int] = []
+        self.lim: List[Tuple[int, int]] = []
+        self.cur: List[int] = []             # term -> its set under the asserted literals
+        self.mtrail: List[Tuple[int, int]] = []   # (term, its set before) to undo
         self.dirty: set = set()
         self.stats = {"props": 0, "conflicts": 0}
 
@@ -239,6 +241,7 @@ class SignTheory:
     def term(self, fixed: int = ALL) -> int:
         self.tvars.append([])
         self.fixed.append(fixed)
+        self.cur.append(fixed)
         self.tnodes.append([])
         return len(self.tvars) - 1
 
@@ -260,7 +263,7 @@ class SignTheory:
             return
         self.tvars[t].append((v, m))
         self.atom[v] = (t, m)
-        self.dirty.update(self.tnodes[t])
+        self.dirty.update(self.tnodes[t])     # (it may imply the new atom)
 
     def assert_lit(self, lit: int):
         v = lit if lit > 0 else -lit
@@ -269,17 +272,29 @@ class SignTheory:
             return None
         self.val[v] = lit > 0
         self.trail.append(v)
-        self.dirty.update(self.tnodes[a[0]])
+        t, m = a
+        old = self.cur[t]
+        new = old & m if lit > 0 else old & ~m
+        if new != old:
+            # only a narrower set can propagate: the theory's own
+            # implications, once asserted, mostly leave it as it is
+            self.mtrail.append((t, old))
+            self.cur[t] = new
+            self.dirty.update(self.tnodes[t])
         return None
 
     def push_level(self) -> None:
-        self.lim.append(len(self.trail))
+        self.lim.append((len(self.trail), len(self.mtrail)))
 
     def pop_level(self) -> None:
-        k = self.lim.pop()
+        k, km = self.lim.pop()
         trail, val = self.trail, self.val
         while len(trail) > k:
             del val[trail.pop()]
+        mtrail, cur = self.mtrail, self.cur
+        while len(mtrail) > km:
+            t, m = mtrail.pop()
+            cur[t] = m
         # sets only widen on backtrack: no propagation is owed
         if not self.lim:
             # back at the root: a new search, a new budget (a theory that
@@ -302,10 +317,6 @@ class SignTheory:
             pm = atom[l if l > 0 else -l][1]
             m &= pm if l > 0 else ~pm
         return m
-
-    def _round(self, i: int, lits: Dict[int, List[int]]):
-        op, t, args = self.nodes[i]
-        return node_masks(op, self._mask(t, lits[t]), [self._mask(u, lits[u]) for u in args])
 
     def _width(self, l: int) -> int:
         m = self.atom[l if l > 0 else -l][1]
@@ -388,8 +399,15 @@ class SignTheory:
     def _node(self, i: int, out: list, seen: set) -> bool:
         """Propagate node ``i`` into ``out``; False after a conflict."""
         op, t, args = self.nodes[i]
+        cur = self.cur
+        am = [cur[u] for u in args]
+        newn, newa = node_masks(op, cur[t], am)
+        if newn == cur[t] and newa == am and newn:
+            # no set narrows: every literal it could imply is implied by
+            # the term's own literals (the rule block and the definitions
+            # of the derived atoms write those)
+            return True
         lits = {u: self._lits(u) for u in (t, *args)}
-        newn, newa = self._round(i, lits)
         val = self.val
         for j, u in enumerate((t, *args)):
             m = newn if j == 0 else newa[j - 1]
