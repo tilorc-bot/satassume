@@ -99,6 +99,17 @@ def _is_learnt(c: list) -> bool:
     return c.__class__ is Clause and c.learnt
 
 
+class _LazyReason:
+    """The reason of a theory propagation not computed yet: ``fn()``
+    returns the theory's clause (``satassume.sat.theory``,
+    ``PropagatingTheory``).  :meth:`Solver._lazy_reason` turns it into a
+    :class:`Clause` where a reason is read (conflict analysis), once."""
+    __slots__ = ("fn",)
+
+    def __init__(self, fn):
+        self.fn = fn
+
+
 def _luby(y: float, x: int) -> float:
     """The x-th element of the Luby restart sequence with base y."""
     size = 1
@@ -2023,7 +2034,26 @@ class Solver:
         return c
 
     def _theory_imply(self, x: int, lits) -> Clause | None:
-        """A theory propagation: ``x`` is implied by clause ``lits``."""
+        """A theory propagation: ``x`` is implied by clause ``lits``, or by
+        the clause ``lits()`` returns (a lazy reason: computed only if
+        conflict analysis reads it, :meth:`_lazy_reason`)."""
+        if callable(lits):
+            val = self._val
+            l = 2 * x if x > 0 else -2 * x + 1
+            vl = val[l]
+            if vl is True:
+                return None
+            if vl is False:
+                return self._theory_conflict(lits())
+            dl = len(self._trail_lim)
+            v = l >> 1
+            val[l] = True
+            val[l ^ 1] = False
+            self._level[v] = dl
+            # (at root no reason is kept, as for an eager one)
+            self._reason[v] = None if dl == 0 else _LazyReason(lits)
+            self._trail.append(l)
+            return None
         raw = self._theory_clause(lits, "reason")
         val = self._val
         l = 2 * x if x > 0 else -2 * x + 1
@@ -2059,6 +2089,25 @@ class Solver:
         self._reason[v] = reason
         self._trail.append(l)
         return None
+
+    def _lazy_reason(self, v: int, r: _LazyReason) -> Clause:
+        """The clause of the lazy reason ``r`` of variable ``v``, with the
+        literal of ``v`` first, checked as an eager reason is
+        (:meth:`_theory_imply`) and kept as ``v``'s reason from then on.
+        It is not added to the learnt clauses: it is read, not watched."""
+        raw = self._theory_clause(r.fn(), "reason")
+        val = self._val
+        l = 2 * v if val[2 * v] else 2 * v + 1
+        if l not in raw:
+            raise RuntimeError(f"theory reason for {self._to_ext(l)} does not contain it")
+        raw.remove(l)
+        for q in raw:
+            if val[q] is not False:
+                raise RuntimeError(
+                    f"theory reason literal {self._to_ext(q)} for {self._to_ext(l)} is not false")
+        c = Clause([l] + raw)
+        self._reason[v] = c
+        return c
 
     def _theory_decide(self) -> int:
         """Every variable the search decides is assigned: a decision a
@@ -2184,6 +2233,8 @@ class Solver:
             confl = reason[pv]
             if confl.__class__ is int:
                 confl = self._rb_reason(pv, confl)
+            elif confl.__class__ is _LazyReason:
+                confl = self._lazy_reason(pv, confl)
         learnt[0] = p ^ 1
 
         # Basic clause minimization: drop literals whose reason clause is
@@ -2199,6 +2250,8 @@ class Solver:
                     continue
                 if r.__class__ is int:
                     r = self._rb_reason(q >> 1, r)
+                elif r.__class__ is _LazyReason:
+                    r = self._lazy_reason(q >> 1, r)
                 keep = False
                 for m in range(1, len(r)):
                     u = r[m] >> 1
@@ -2250,6 +2303,8 @@ class Solver:
                 else:
                     if r.__class__ is int:
                         r = self._rb_reason(v, r)
+                    elif r.__class__ is _LazyReason:
+                        r = self._lazy_reason(v, r)
                     for k in range(1, len(r)):
                         u = r[k] >> 1
                         if level[u] > 0:

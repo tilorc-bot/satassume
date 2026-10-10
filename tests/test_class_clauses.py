@@ -243,12 +243,35 @@ def _one(lat, seed):
             if x in th.val:
                 continue
             th.assert_lit(x if rng.random() < 0.5 else -x)
+        lazy = []
+
+        def explain():
+            # the lazy reasons, explained after later literals were asserted
+            # (as conflict analysis does): from the literals asserted
+            # before the propagation only, all of them false
+            for lit, reason, k in lazy:
+                clause = reason()
+                assert clause[0] == lit
+                before = set(th.trail[:k])
+                for l in clause[1:]:
+                    assert abs(l) in before and th.val[abs(l)] == (l < 0), (lit, clause)
+                check(clause, "prop")
+
         for _ in range(4):
             got = th.propagate()
             if not got:
                 break
             conflict = False
+            k = len(th.trail)
             for lit, clause in got:
+                if callable(clause):
+                    if abs(lit) not in th.val:
+                        lazy.append((lit, clause, k))
+                        th.assert_lit(lit)
+                        continue
+                    # (the other literal came first in this round: the
+                    # solver explains this one now, as a conflict)
+                    clause = clause()
                 assert lit in clause
                 if abs(lit) not in th.val:
                     assert abs(lit) not in oneside, "a one-sided atom was propagated"
@@ -259,7 +282,9 @@ def _one(lat, seed):
                     check(clause, "conflict")
                     conflict = True
             if conflict:
+                explain()
                 return True
+        explain()
         r = th.check()
         if r is not None:
             check(r[1], "conflict")
