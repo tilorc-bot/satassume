@@ -574,7 +574,8 @@ def test_specific_expectations():
     assert P('positive', acos(Rational(1, 7))) in registry.facts_for(acos(Rational(1, 7)))
     assert P('imaginary', acos(7)) in registry.facts_for(acos(7))
     facts = registry.facts_for(cot(x))
-    assert Implies(And(P('algebraic', x), Not(P('zero', x))), P('transcendental', cot(x))) in facts
+    # the transcendence rows are the trans theory's (issue #149 T6)
+    assert Implies(And(P('algebraic', x), Not(P('zero', x))), P('transcendental', cot(x))) not in facts
     facts = registry.facts_for(Abs(x))
     assert P('extended_nonnegative', Abs(x)) in facts
 

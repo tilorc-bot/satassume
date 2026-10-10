@@ -105,6 +105,9 @@ _NODE_THEORIES = (_sign.SignAdapter, _closure.ClosureAdapter, _trans.TransAdapte
 _SELECTORS: Dict[type, tuple] = {}
 
 
+_adopt_memo(__name__, "_SELECTORS")
+
+
 def _selectors(cls: type) -> tuple:
     sel = _SELECTORS[cls] = tuple((i, a.over_cap) for i, a in enumerate(_NODE_THEORIES)
                                   if a.kinds(cls))

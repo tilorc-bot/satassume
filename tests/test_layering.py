@@ -61,7 +61,8 @@ SYMPY_AT_IMPORT = ("satassume.knowledge.templates", "satassume.knowledge.domain"
 #: modules that import SymPy only inside the functions that receive or
 #: return SymPy objects
 SYMPY_IN_FUNCTIONS = ("satassume.theories.lra.constfield", "satassume.relations",
-                      "satassume.theories.mono")
+                      "satassume.theories.mono",
+                      "satassume.theories.sign.trans_adapter")
 
 _MODNAME = re.compile(r"^satassume(\.[A-Za-z_]\w*)+$")
 _SYMPY = ("sympy", "mpmath")

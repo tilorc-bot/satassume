@@ -24,17 +24,18 @@ from .trans import (ALL, ONE, ONESIDED, ONESIDED_MASK, OPS, POW, PRED_MASK, PRED
 
 _FLOAT_READ = frozenset(("finite", "extended_real", "zero"))
 
-_CLASSES = None
+#: SymPy function class -> map op id (built on first use: the module
+#: loads no SymPy)
+_CLASSES: dict = {}
 _noncommutative = None
 
 
-def _classes():
-    """SymPy function class -> map op id (imported on first use)."""
-    global _CLASSES, _noncommutative
-    if _CLASSES is None:
+def _classes() -> dict:
+    global _noncommutative
+    if not _CLASSES:
         import sympy
         from ...knowledge.domain import _noncommutative
-        _CLASSES = {getattr(sympy, name): op for name, op in OPS.items()}
+        _CLASSES.update((getattr(sympy, name), op) for name, op in OPS.items())
     return _CLASSES
 
 
