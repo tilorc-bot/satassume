@@ -72,6 +72,7 @@ ZERO = F(0, 0)
 FIN = (1 << 9) - 1
 ALL = (1 << 12) - 1            # every atom but NAN: an argument's widest set
 NANB = 1 << NAN
+INF = (1 << PI) | (1 << NI) | (1 << IN)
 
 
 def _b(*atoms) -> int:
@@ -144,11 +145,16 @@ def _mul_atoms(a: int, b: int) -> int:
                 return 1 << IN              # oo*I, oo*(1 + I)
             return 1 << (PI if (br > 0) == (a == PI) else NI)
         # zoo*r = zoo and (oo + I)*r = r*oo + r*I for a nonzero real r;
-        # a non-real factor of an infinity off the axis is not tracked
-        return 1 << IN if bi == 0 else NANB
+        # a non-real factor turns an infinity off the axis in any
+        # direction, onto the axes too (``oo*I*I = -oo``): an infinity
+        # (the templates' ``one_infinite``: an infinite factor and the
+        # rest nonzero)
+        return 1 << IN if bi == 0 else INF
     if a in (PI, NI) and b in (PI, NI):
         return 1 << (PI if a == b else NI)
-    return NANB                             # IN times an infinity: not tracked
+    if a in (PI, NI) or b in (PI, NI):
+        return 1 << IN                      # a real sign keeps it off the axis
+    return INF                              # IN*IN: ``oo*I*oo*I = -oo``, ``zoo*zoo``
 
 
 ADD, MUL = 0, 1

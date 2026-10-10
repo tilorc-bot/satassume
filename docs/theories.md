@@ -479,6 +479,65 @@ but decides `Eq` at the Float's precision, so any fixed reading
 contradicts it somewhere. A Float as a bounded unknown within its own
 precision would be sound under both readings; it was not built.
 
+## SIGN: the class of sums and products
+
+`satassume/theories/sign/` (issue #149, proposal T1, stage 1) decides the sign, zero, finiteness and
+realness of an `Add` or `Mul` of any arity from those of its arguments, in both directions. It replaces the
+sign rows of the templates for the nodes over their arity caps, where the rows stopped (`negsets` and
+`pairs` of Mul stop at `MAX_PAIRS` = 4 factors, the infinite-sum rows of Add at `MAX_ONEOUT` = 6 terms).
+
+**Atoms.** The value of a term is one of 12 atoms of the extended complex plane: the 9 finite atoms
+`F(sr, si)` by the signs of the real and imaginary parts (`F(0, 0)` is 0), `oo`, `-oo`, and `IN` (every other
+infinity: `zoo`, `oo*I`, `oo + I`), plus `NAN` for a node only. A literal of one of the six basis predicates
+the theory reads (`extended_real`, `finite`, `zero`, `extended_positive`, `extended_negative`, `imaginary`)
+is a set of atoms; the other predicates reach these through the rule block (`prime -> extended_positive`).
+`NAN` is "no claim": a node whose folded set may be `nan` (`0*oo`, `oo - oo`, `zoo + zoo`) gets no literal,
+as in the templates (`docs/design.md`, "Extended reals and nan in templates"), and arguments are never
+`nan` (the convention of the templates' oracle).
+
+**Operations.** `_add_atoms`/`_mul_atoms` give the atoms of `a + b` and `a * b` for two atoms: interval
+arithmetic on the signs of the parts plus SymPy's conventions for infinities; a node folds them over its
+arguments (sound in any order: the set operations over-approximate each step and `NAN` absorbs). An
+infinity times a nonzero value is an infinity (`IN` times a real stays `IN`; `IN` times a non-real or `IN`
+may land on an axis, `oo*I*I = -oo`, so the result is "some infinity"). `tests/test_sign_theory.py` checks
+both tables against SymPy at sample points of every atom and the folds against n-ary `Add`/`Mul`.
+
+**Propagation and reasons.** Forward: the node's set is narrowed to the fold of its arguments' sets
+unless the fold holds `NAN`. Backward: an atom `c` stays in argument `k`'s set only if `op(c, fold of the
+others)` holds `NAN` or meets the node's set. A literal is implied when a set lies inside or outside its
+predicate's set; an empty set is a conflict. The reason is a subset of the node's and arguments' literals,
+minimised by deletion (whole argument slots first, then single literals of the kept slots, narrowest
+first, up to `WHY_FINE` = 16 arguments): one clause, the template row it stands for, generated on demand.
+Term sets are incremental (`cur`, `mtrail`): a node is propagated only when a set narrowed, and the
+backward set `allowed(op, rest, node)` is memoised.
+
+**Derived atoms.** The session's derived variables over the basis (`Session._dv`: `nonzero(x)`,
+`~negative_infinite(x)`) are registered as theory atoms with their own atom set (`sign_adapter.def_mask`,
+`sync_derived`), and their definitions are completed in both directions, so `positive_infinite(x0 + ... +
+x11)` under `positive_infinite(x0)` needs no search (25 ms; 13.5 s before).
+
+**Budget.** A search that splits on many arguments without a shared literal makes the theory explain each
+case separately: after `MAX_CONFLICTS` = 2000 theory conflicts in one search it gives up (`gave_up`,
+`satassume.sat.theory`, "Giving up"), and the query's answer is `None`; the flag resets at the root.
+
+**Engagement** (`sign_adapter.ENGAGE`). `'cap'` (the default): a session tells the theory the sums and
+products over the caps (`sign_adapter.over_cap` = `templates.core.sign_owns`), and only those. For such a
+node the templates leave out the rows the theory decides (`sign_owns`): for Add the closures of
+`finite` and the four extended signs, the `extended_real` closure, the imaginary sum, the per-term strict
+sign, imaginary-plus-reals and `extended_real` backward rows; for Mul the sign closures (`finite`,
+`extended_positive`, `nonnegative`), `ext_real.*`, `zero`, `all_neg.*`, `all_nonpos.*`, `all_imag.*` and,
+for 5 and 6 factors, `one_infinite`, `one_neg`, `one_nonpos`, `one_non_real`, `one_imag*`. Template rules per
+node: Add of 7 terms 45 -> 9, Mul of 5/6/7 factors 87/101/32 -> 44/51/17. The rows of other predicates
+(`integer`, `commutative`, `even`, `polar`, ...) stay. `'escalate'` also hands every sum and product to the
+theory for each query left open after propagation, `'always'` from the start, `'off'` never (a debug mode:
+over the caps it then has neither the rows nor the theory). On the refine stream `'escalate'` adds no
+answer and costs +29% (`tools/ab.py`), most of it in the interface (`_theory_sync`, `register_atom`,
+propagate: no single hotspot); this is why stage 1 keeps the rows of small nodes. `ref.py` attaches the
+theory under the same mode, so the reference sees the same clause set.
+
+**Stage 2 and 3** (issue #149): Pow and the integer-magnitude classes (dropping the derived nodes `b-1`,
+`b+1`), then the rows of all arities once the interface cost is within the 3% line.
+
 ## Open questions and known gaps
 
 - #42, item 3 (answers depending on earlier queries through the lazily

@@ -28,9 +28,10 @@ ENGAGE = 'cap'
 def over_cap(node) -> bool:
     """Whether the templates of ``node`` (an Add or a Mul) are capped:
     the sign rows of Mul stop at ``MAX_PAIRS`` factors (``negsets``), those
-    of Add at ``MAX_ONEOUT`` terms (infinite sums)."""
-    from ...knowledge.templates.core import MAX_ONEOUT, MAX_PAIRS
-    return len(node.args) > (MAX_PAIRS if node.is_Mul else MAX_ONEOUT)
+    of Add at ``MAX_ONEOUT`` terms (infinite sums).  Such nodes have no
+    sign rows (``templates.core.sign_owns``): this theory decides them."""
+    from ...knowledge.templates.core import sign_owns
+    return sign_owns(bool(node.is_Mul), len(node.args))
 
 
 def const_mask(c) -> int:

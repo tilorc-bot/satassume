@@ -141,6 +141,21 @@ a, b, c, d, e, x, y, z, w = symbols("a b c d e x y z w")
     (Q.zero(a*b*c*d*e), Q.zero(a) & Q.infinite(b), None),
     (Q.finite(a*b*c*d*e), Q.zero(a) & Q.infinite(b), None),
     (Q.positive(a*b*c*d*e), Q.positive(a) & Q.positive(b) & Q.positive(c) & Q.positive(d), None),
+    # an infinity times a non-real or an infinity off the axis: an infinity
+    (Q.finite(a*b*c*d*(1 + I)),
+     Q.infinite(a) & Q.nonzero(b) & Q.nonzero(c) & Q.nonzero(d), False),
+    (Q.finite(a*b*c*d*e), Q.infinite(a) & Q.infinite(b) & Q.imaginary(c) & Q.nonzero(d)
+     & Q.nonzero(e), False),
+    # -oo*d*(positive) is -oo: d (infinite) is +oo, not an infinity off the axis
+    (Q.extended_positive(d), Q.extended_negative(e) & Q.infinite(d) & Q.negative_infinite(a)
+     & Q.negative(x) & Q.negative_infinite(pi*a*d*e**2*x**2), True),
+    # rows dropped over the caps (templates.core.sign_owns): the theory decides
+    (Q.extended_real(Add(a, b, c, d, e, w, x)), And(*[Q.real(t) for t in (a, b, c, d, e, w, x)]),
+     True),
+    (Q.extended_real(Add(a, b, c, d, e, w, x)), Q.imaginary(a) & And(*[Q.real(t) for t in
+                                                                      (b, c, d, e, w, x)]), False),
+    (Q.zero(a*b*c*d*e*x), Q.zero(a) & Q.finite(b) & Q.finite(c) & Q.finite(d) & Q.finite(e)
+     & Q.finite(x), True),
 ])
 def test_answers(prop, assum, expected):
     assert ask(prop, assum) is expected
@@ -208,3 +223,19 @@ def test_conflict_and_budget():
     assert th.check() is None
     th.pop_level()
     assert not th.gave_up and th.budget == th.MAX_CONFLICTS
+
+
+def test_rows_over_the_caps_are_left_to_the_theory():
+    """Over the arity caps the templates leave the sign rows out
+    (``templates.core.sign_owns``) and keep the others."""
+    from satassume.knowledge.templates import core
+
+    def preds(rules):
+        return {lit[1] for _, concl in rules for lit in (concl if isinstance(concl, list)
+                                                        else [concl])}
+    assert core.sign_owns(False, 7) and not core.sign_owns(False, 6)
+    assert core.sign_owns(True, 5) and not core.sign_owns(True, 4)
+    assert len(core._add_rules(7, {})) < len(core._add_rules(6, {})) // 4
+    assert len(core._mul_rules(5, {})) < len(core._mul_rules(4, {})) // 2
+    assert 'integer' in preds(core._add_rules(7, {}))
+    assert 'extended_positive' not in preds(core._add_rules(7, {}))
