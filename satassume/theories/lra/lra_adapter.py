@@ -122,7 +122,7 @@ from sympy.core.relational import (Equality, GreaterThan, LessThan,
 from sympy.core.sorting import default_sort_key
 
 from .constfield import Undecided, from_sympy
-from .lra import Integral, LRATheory, Negated
+from .lra import Integral, LRATheory, MonoLink, MonoPiece, Negated
 from ...state.memos import adopt as _adopt_memo
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
@@ -489,6 +489,23 @@ class LRAAdapter:
         integrality atom alone connects nothing."""
         self._attach(solver)
         solver.register_atom(self.theory, var, form[0])
+
+    def register_mono(self, solver, var, term, form, fmap) -> None:
+        """Register ``var`` as the enable variable of the MONO link
+        ``term = f(u)`` (:class:`~satassume.theories.lra.lra.MonoLink`):
+        ``form`` is :meth:`integer_form` of ``u`` (the payload's terms and
+        offset are read), ``fmap`` the function's
+        :class:`~satassume.theories.mono.LinkMap`.  Attaches the theory as
+        :meth:`register` does.  The terms are not shared terms."""
+        self._attach(solver)
+        payload = form[0]
+        solver.register_atom(self.theory, var,
+                             MonoLink(term, payload[0], payload[1], fmap))
+
+    def register_mono_piece(self, solver, var, enable, i) -> None:
+        """Register ``var`` as the enable variable of piece ``i`` of the
+        MONO link enabled by ``enable`` (registered before)."""
+        solver.register_atom(self.theory, var, MonoPiece(enable, i))
 
     def terms(self, atom) -> list | None:
         """:func:`terms` through the cache; None: not interpreted."""

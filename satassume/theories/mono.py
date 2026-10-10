@@ -75,6 +75,7 @@ are ``+-1``, which no unary predicate names), ``sin``/``cos``
 """
 from __future__ import annotations
 
+from fractions import Fraction
 from types import MappingProxyType
 from typing import Any, Callable, NamedTuple, Optional, Tuple
 
@@ -155,6 +156,16 @@ class Spec(NamedTuple):
     #: SymPy's evaluation does not always show; False for ``Pow`` (the
     #: candidates ``+-|d|**(1/k)`` are preimages only for some signs)
     exact: bool = False
+    #: range of ``f(u)`` for a real ``u`` whose image is real:
+    #: ``(lo, lo_strict, hi, hi_strict)``, None ends unbounded
+    bounds: Optional[tuple] = None
+    #: a real ``u`` with a real ``f(u)`` lies in the only piece
+    #: (``log``, non-integer powers: the principal branch)
+    covered: bool = False
+    #: a real ``f(u)`` has a real ``u`` (a left inverse real on reals:
+    #: ``exp(log(z)) = z``, ``tan(atan(z)) = z``, ``(z**k)**(1/k) = z`` on
+    #: the principal branch for ``|k| < 1`` or ``k = -1``)
+    real_arg: bool = False
 
 
 _WHOLE = (Piece("-oo", "oo", 1),)
@@ -166,15 +177,6 @@ def _app(u, a):
 
 def _const(v):
     return lambda u, a: v
-
-
-def _bounded_rows(lo, hi):
-    """Range rows of an increasing ``f`` on ``[-oo, oo]`` with
-    ``f(-oo) = lo``, ``f(oo) = hi`` (finite)."""
-    return (Row("real", _app, _const(hi), True),
-            Row("real", _const(lo), _app, True),
-            Row("extended_real", _const(hi), _app, False),
-            Row("extended_real", _app, _const(lo), False))
 
 
 _SPECS = _PROCESS.table(f"{__name__}._SPECS", "pure", 100_000)
@@ -245,32 +247,31 @@ def _spec(t) -> Optional[Spec]:
     half = pi / 2
     if name == "exp":
         return Spec(("exp",), u, _WHOLE, exp, lambda d: (log(d),), (S.Zero, None, False),
-                    (Row("real", _const(S.Zero), _app, True),
-                     Row("extended_real", _app, _const(S.Zero), False)), True)
+                    (), True, (S.Zero, True, None, False))
     if name == "log":
         return Spec(("log",), u, (Piece("0+", "oo", 1),), log,
-                    lambda d: (exp(d),), _ANY, (), True)
+                    lambda d: (exp(d),), _ANY, (), True, None, True, True)
     if name == "atan":
         return Spec(("atan",), u, _WHOLE, atan,
                     lambda d: (tan(d),), (-half, half, False),
-                    _bounded_rows(-half, half), True)
+                    (), True, (-half, True, half, True), False, True)
     if name == "tanh":
         return Spec(("tanh",), u, _WHOLE, tanh,
                     lambda d: (atanh(d),), (S.NegativeOne, S.One, False),
-                    _bounded_rows(S.NegativeOne, S.One), True)
+                    (), True, (S.NegativeOne, True, S.One, True))
     if name == "sinh":
         return Spec(("sinh",), u, _WHOLE, sinh, lambda d: (asinh(d),), _ANY, (), True)
     if name == "asinh":
-        return Spec(("asinh",), u, _WHOLE, asinh, lambda d: (sinh(d),), _ANY, (), True)
+        return Spec(("asinh",), u, _WHOLE, asinh, lambda d: (sinh(d),), _ANY, (), True,
+                    None, False, True)
     if name == "cosh":
         return Spec(("cosh",), u, (Piece("0", "oo", 1), Piece("-oo", "0", -1)), cosh,
                     lambda d: (acosh(d), -acosh(d)), (S.One, None, False),
-                    (Row("extended_real", _app, _const(S.One), False),), True)
+                    (), True, (S.One, False, None, False))
     if name == "acot":
         return Spec(("acot",), u, (Piece("0+", "oo", -1), Piece("-oo", "0-", -1)), acot,
                     lambda d: (cot(d),), (-half, half, True),
-                    (Row("extended_real", _const(half), _app, False),
-                     Row("extended_real", _app, _const(-half), False)), True)
+                    (), True, (-half, True, half, False), False, True)
     return None
 
 
@@ -293,13 +294,154 @@ def _pow_spec(t, u, k) -> Spec:
                       else (Piece("0+", "oo", -1), Piece("-oo", "0-", 1)))
     else:
         pieces = (Piece("0", "oo", 1),) if k > 0 else (Piece("0+", "oo", -1),)
-    rows = ()
-    if k > 0 and k.is_Integer and not k % 2:
-        rows = (Row("extended_real", _app, _const(S.Zero), False),)
+    # the image of a real u is real only at u >= 0 (u > 0 for k < 0) for a
+    # non-integer k, and only at u != 0 for an integer k < 0
+    bounds = None
+    if not k.is_Integer or not k % 2:
+        bounds = (S.Zero, k < 0, None, False)
     inv = 1 / k
 
     def inverse(d):
         r = Pow(Abs(d), inv)
         return (r, -r)
 
-    return Spec(("Pow", k), u, pieces, lambda c: Pow(c, k), inverse, _ANY, rows)
+    return Spec(("Pow", k), u, pieces, lambda c: Pow(c, k), inverse, _ANY, (),
+                False, bounds, not k.is_Integer, abs(k) < 1 or k == -1)
+
+
+# -- the field-number view LRA uses (lra.MonoLink) ------------------------
+
+def _field(e):
+    """The exact-field number of the closed SymPy constant ``e`` if it is a
+    finite real the field reads, else None."""
+    from .lra.constfield import from_sympy
+    return from_sympy(e, generic=True)
+
+
+def _sympy_of(q):
+    if type(q) is Fraction:
+        from sympy import Rational
+        return Rational(q.numerator, q.denominator)
+    return q.to_sympy()
+
+
+def _fsign(q) -> Optional[int]:
+    from .lra.constfield import Undecided, sign
+    if type(q) is Fraction:
+        return (q > 0) - (q < 0)
+    try:
+        return sign(q)
+    except Undecided:
+        return None
+
+
+class LinkMap:
+    """What LRA needs of a :class:`Spec` to relate the variable of ``f(u)``
+    to the linear form of ``u`` (``satassume.theories.lra.lra.MonoLink``),
+    in exact-field numbers (``Fraction`` or ``constfield.Element``):
+
+    * ``pieces``: ``(lo, hi, dir)`` of each :class:`Piece`;
+    * ``bounds``: the range ``(lo, lo_strict, hi, hi_strict)`` of ``f(u)``
+      for a real ``u`` with a real image (None ends unbounded), or None;
+    * ``covered``: such a ``u`` lies in the only piece;
+    * ``vshape``: ``f`` decreases on ``[-oo, 0]`` and increases on
+      ``[0, oo]``;
+    * :meth:`image` ``(c)``: ``f(c)`` if it is a finite real the field
+      reads, else None;
+    * :meth:`preimage` ``(d, i)``: the ``c`` in piece ``i`` with ``f(c) =
+      d``, for ``d`` inside the open inverse range, or None.
+
+    Answers are memoized per instance (one per application)."""
+    __slots__ = ("sp", "pieces", "bounds", "covered", "vshape", "_img", "_pre", "_rng")
+
+    def __init__(self, sp: Spec):
+        self.sp = sp
+        self.pieces = tuple((p.lo, p.hi, p.dir) for p in sp.pieces)
+        b = sp.bounds
+        if b is not None:
+            lo = None if b[0] is None else _field(b[0])
+            hi = None if b[2] is None else _field(b[2])
+            b = (lo, b[1], hi, b[3])
+        self.bounds = b
+        self.covered = sp.covered and len(sp.pieces) == 1
+        #: decreasing on ``[-oo, 0]``, increasing on ``[0, oo]`` (``cosh``,
+        #: even powers): on ``[a, b]`` around 0, ``f <= max(f(a), f(b))``
+        self.vshape = set(self.pieces) == {("0", "oo", 1), ("-oo", "0", -1)}
+        lo, hi, nz = sp.inv_range
+        self._rng = (None if lo is None else _field(lo),
+                     None if hi is None else _field(hi), nz)
+        self._img: dict = {}
+        self._pre: dict = {}
+
+    def image(self, c):
+        try:
+            return self._img[c]
+        except KeyError:
+            pass
+        if len(self._img) > 512:
+            self._img.clear()
+        try:
+            r = _field(self.sp.apply(_sympy_of(c)))
+        except Exception:                 # SymPy failing on a value: no image
+            r = None
+        self._img[c] = r
+        return r
+
+    def preimage(self, d, i: int):
+        key = (d, i)
+        try:
+            return self._pre[key]
+        except KeyError:
+            pass
+        if len(self._pre) > 512:
+            self._pre.clear()
+        r = None
+        try:
+            r = self._preimage(d, i)
+        except Exception:
+            r = None
+        self._pre[key] = r
+        return r
+
+    def _preimage(self, d, i: int):
+        lo, hi, nz = self._rng
+        sp = self.sp
+        if (lo is not None and _fsign(d - lo) != 1
+                or hi is not None and _fsign(hi - d) != 1
+                or nz and _fsign(d) != 1 and _fsign(d) != -1):
+            return None
+        piece = sp.pieces[i]
+        ds = _sympy_of(d)
+        for c in sp.inverse(ds):
+            if c.is_finite is False:
+                continue                  # 1/u = 0 at u = +-oo: no finite c
+            v = _field(c)
+            if v is None:
+                continue
+            sg = _fsign(v)
+            if sg is None or not piece.holds(sg):
+                continue
+            if not sp.exact and sp.apply(c) != ds:
+                continue                  # not a preimage SymPy shows
+            return v
+        return None
+
+
+_LINKMAPS = _PROCESS.table(f"{__name__}._LINKMAPS", "pure", 100_000)
+
+
+def link_map(term) -> Optional[LinkMap]:
+    """The :class:`LinkMap` of an application with pieces, or None
+    (memoized per term)."""
+    try:
+        return _LINKMAPS[term]
+    except KeyError:
+        pass
+    except TypeError:
+        return None
+    sp = spec(term)
+    r = LinkMap(sp) if sp is not None and sp.pieces else None
+    if len(_LINKMAPS) >= _LINKMAPS.size:
+        _LINKMAPS.clear()
+    _LINKMAPS[term] = r
+    return r

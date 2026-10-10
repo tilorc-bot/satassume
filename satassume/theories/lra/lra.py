@@ -203,7 +203,8 @@ from typing import Any, Hashable, Iterable
 
 from .constfield import Undecided, formally_zero, num
 
-__all__ = ["LRATheory", "Negated", "Integral", "constraint", "BRANCH_BUDGET"]
+__all__ = ["LRATheory", "Negated", "Integral", "MonoLink", "MonoPiece", "constraint",
+           "BRANCH_BUDGET"]
 
 _ZERO = Fraction(0)
 _ONE = Fraction(1)
@@ -222,6 +223,57 @@ _MISSING = object()
 #: A module constant, not a setting: changing it at run time is unsupported
 #: (answers memoized under the old value are kept)
 BRANCH_BUDGET = 16
+
+
+def _lits(r) -> tuple:
+    """The true literals behind a bound reason (see :func:`_neg`)."""
+    if type(r) is tuple:
+        return r
+    return (r,) if r else ()
+
+
+def _sg(x):
+    """The sign of a field number, None if undecided."""
+    if type(x) is Fraction:
+        return (x > 0) - (x < 0)
+    try:
+        return x.sign()
+    except Undecided:
+        return None
+
+
+def _in_lo(plo, b, sg):
+    """The reason literals by which the lower bound ``b`` (sign ``sg``)
+    keeps ``u`` at or above the piece's lower end, or None."""
+    if plo == "-oo":
+        return ()
+    if b is None or sg is None:
+        return None
+    if sg > 0 or sg == 0 and (plo == "0" or b[1]):
+        return _lits(b[2])
+    return None
+
+
+def _in_up(phi, b, sg):
+    """As :func:`_in_lo` for an upper bound and the piece's upper end."""
+    if phi == "oo":
+        return ()
+    if b is None or sg is None:
+        return None
+    if sg < 0 or sg == 0 and (phi == "0" or b[1]):
+        return _lits(b[2])
+    return None
+
+
+def _at_lo(plo, sg) -> bool:
+    """A value of sign ``sg`` lies at or above the piece's lower end and
+    has an image there (not at the open end ``0+``)."""
+    return plo == "-oo" or sg is not None and (sg > 0 or sg == 0 and plo == "0")
+
+
+def _at_up(phi, sg) -> bool:
+    """As :func:`_at_lo` for the upper end."""
+    return phi == "oo" or sg is not None and (sg < 0 or sg == 0 and phi == "0")
 
 
 # Negated and Integral are tuples with named fields, written out rather than
@@ -260,6 +312,41 @@ class Integral(tuple):
 
     terms = property(itemgetter(0))
     offset = property(itemgetter(1))
+
+
+class MonoLink(tuple):
+    """Payload of a MONO link, registered on its *enable* variable ``e``:
+    while ``e`` holds, the term ``t`` is ``f(u)`` for the linear form ``u =
+    sum(c*s) + k`` (``items`` the ``(s, c)`` pairs, rational ``c``) and
+    both are real, where ``f`` is the strictly monotone map described by
+    ``fmap`` (:class:`satassume.theories.mono.LinkMap`).  The caller makes
+    ``e`` imply that (see :meth:`LRATheory._mono_link`)."""
+    __slots__ = ()
+
+    def __new__(cls, t, items, k, fmap):
+        return tuple.__new__(cls, (t, items, k, fmap))
+
+    def __getnewargs__(self):
+        return tuple(self)
+
+
+class MonoPiece(tuple):
+    """Payload of a piece-enable variable ``p`` of the MONO link enabled by
+    ``e``: ``p`` implies ``e`` and that ``u`` lies in piece ``i`` of the
+    map (the caller's clauses), so the piece's images and preimages need
+    no bound of ``u`` to place it there."""
+    __slots__ = ()
+
+    def __new__(cls, e, i):
+        return tuple.__new__(cls, (e, i))
+
+    def __getnewargs__(self):
+        return tuple(self)
+
+
+#: derived bounds per MONO run (one assert); a safety net, never reached
+#: by the links of distinct applications (each derivation tightens a bound)
+MONO_STEPS = 256
 
 
 def constraint(terms, op: str, rhs=0):
@@ -336,6 +423,26 @@ def _dedupe(lits: Iterable[int]) -> list[int]:
     return out
 
 
+def _neg(r) -> list:
+    """The negations of the literals behind a bound reason: a literal
+    (0 for a branch bound: none) or, for a bound MONO derived, the tuple of
+    true literals it rests on (:meth:`LRATheory._mono_run`)."""
+    if type(r) is tuple:
+        return [-l for l in r]
+    return [-r]
+
+
+def _flat(rs) -> list:
+    """The literals behind a list of bound reasons (see :func:`_neg`)."""
+    out = []
+    for r in rs:
+        if type(r) is tuple:
+            out.extend(r)
+        else:
+            out.append(r)
+    return out
+
+
 class LRATheory:
     """Simplex-based LRA theory solver (see the module docstring).
 
@@ -400,6 +507,13 @@ class LRATheory:
         # undo trail and level marks
         self._trail: list[tuple] = []
         self._lims: list[int] = []
+        # MONO links: enable var -> [e, t var, u var, coeff, offset, fmap,
+        # piece-enable vars]; piece-enable var -> its link; LRA var -> the
+        # links on it; vars whose bounds changed (_mono_run)
+        self._mlinks: dict = {}
+        self._mpieces: dict = {}
+        self._mon: dict = {}
+        self._mq: list = []
         # propagation work list
         self._dirty: set[int] = set()
         self._pending_ground: list[int] = []
@@ -560,6 +674,24 @@ class LRATheory:
                 it = self._ints.get(a)
                 if it is not None:
                     return self._assert_integral(literal, it)
+                link = self._mlinks.get(a)
+                piece = link is None and self._mpieces.get(a)
+                if link is not None or piece:
+                    self._assigned[a] = literal > 0
+                    self._trail.append((_ASG, a))
+                    if literal < 0:
+                        return None
+                    if piece:
+                        self._mq.append(piece[1])
+                        conflict = self._mono_run()
+                    else:
+                        conflict = self._mono_on(link)
+                    if conflict is None and self.eager:
+                        conflict = self._simplex()
+                    if conflict is not None:
+                        self.stats["conflicts"] += 1
+                        return (False, conflict)
+                    return None
                 truth = self._ground.get(a)
                 if truth is None:
                     return None
@@ -575,6 +707,8 @@ class LRATheory:
             if literal < 0:
                 kind = _NEG[kind]
             conflict = self._assert_kind(v, kind, c, literal)
+            if conflict is None and self._mq:
+                conflict = self._mono_run()
             if conflict is None and self._int_lits and v in self._ints_on:
                 conflict = self._int_bounds(v)
             if conflict is None and self.eager and kind != "!=":
@@ -625,7 +759,7 @@ class LRATheory:
                     if val is None:
                         continue
                     lit = a if val[0] else -a
-                    out.append((lit, _dedupe([lit] + [-r for r in val[1]])))
+                    out.append((lit, _dedupe([lit] + [-r for r in _flat(val[1])])))
                 for a in ints_on.get(v, ()):
                     if a in assigned:
                         continue
@@ -635,7 +769,7 @@ class LRATheory:
                         continue
                     if val is not None:
                         lit = a if val[0] else -a
-                        out.append((lit, _dedupe([lit] + [-r for r in val[1]])))
+                        out.append((lit, _dedupe([lit] + [-r for r in _flat(val[1])])))
             self._dirty = set()
             self.stats["propagations"] += len(out)
             return out
@@ -651,6 +785,15 @@ class LRATheory:
             raise ValueError(f"literal {literal} registered twice")
         if isinstance(payload, Integral):
             self._register_integral(literal, payload)
+            return
+        if isinstance(payload, MonoLink):
+            self._register_mono(literal, payload)
+            return
+        if isinstance(payload, MonoPiece):
+            link = self._mlinks.get(payload[0])
+            if link is not None:
+                link[6][payload[1]] = literal
+                self._mpieces[literal] = link
             return
         negated = False
         while isinstance(payload, Negated):
@@ -773,6 +916,7 @@ class LRATheory:
                 self._diseqs.pop()
             else:
                 self._int_lits.pop()
+        self._mq.clear()
 
     # ------------------------------------------------------------------
     # asserting
@@ -795,7 +939,7 @@ class LRATheory:
         self._trail.append((_DIS,))
         lo, up = self._lo[v], self._up[v]
         if lo is not None and lo == up == (c, _ZERO):
-            return _dedupe([-lit, -self._lo_r[v], -self._up_r[v]])
+            return _dedupe([-lit] + _neg(self._lo_r[v]) + _neg(self._up_r[v]))
         return None
 
     def _set_upper(self, v: int, b: tuple, lit: int):
@@ -804,11 +948,13 @@ class LRATheory:
             return None
         lo = self._lo[v]
         if lo is not None and b < lo:
-            return _dedupe([-lit, -self._lo_r[v]])
+            return _dedupe(_neg(lit) + _neg(self._lo_r[v]))
         self._trail.append((_UP, v, up, self._up_r[v]))
         self._up[v] = b
         self._up_r[v] = lit
         self._dirty.add(v)
+        if v in self._mon:
+            self._mq.append(v)
         if v not in self._rows and (self._vq[v], self._vd[v]) > b:
             self._update(v, b)
         return None
@@ -819,11 +965,13 @@ class LRATheory:
             return None
         up = self._up[v]
         if up is not None and b > up:
-            return _dedupe([-lit, -self._up_r[v]])
+            return _dedupe(_neg(lit) + _neg(self._up_r[v]))
         self._trail.append((_LO, v, lo, self._lo_r[v]))
         self._lo[v] = b
         self._lo_r[v] = lit
         self._dirty.add(v)
+        if v in self._mon:
+            self._mq.append(v)
         if v not in self._rows and (self._vq[v], self._vd[v]) < b:
             self._update(v, b)
         return None
@@ -849,6 +997,158 @@ class LRATheory:
             vd[r] = d
         vq[v] = b[0]
         vd[v] = b[1]
+
+    # ------------------------------------------------------------------
+    # MONO links (satassume.theories.mono)
+    # ------------------------------------------------------------------
+
+    def _register_mono(self, literal: int, payload: MonoLink) -> None:
+        t, items, k, fmap = payload
+        lin = self._lin(items)
+        if not lin:
+            return
+        tv = self._term_var(t)
+        w, c = self._var_of_form(lin)
+        k = num(k)
+        if type(k) is not Fraction:
+            self._fields = True
+        link = [literal, tv, w, c, k, fmap, [0] * len(fmap.pieces)]
+        self._mlinks[literal] = link
+        self._mon.setdefault(tv, []).append(link)
+        if w != tv:
+            self._mon.setdefault(w, []).append(link)
+
+    def _mono_on(self, link):
+        """The enable literal of ``link`` was asserted: the range bounds of
+        ``f(u)``, then the images and preimages of the current bounds."""
+        e, tv = link[0], link[1]
+        b = link[5].bounds
+        if b is not None:
+            lo, ls, hi, hs = b
+            if lo is not None:
+                r = self._set_lower(tv, (lo, _ONE if ls else _ZERO), (e,))
+                if r is not None:
+                    return r
+            if hi is not None:
+                r = self._set_upper(tv, (hi, -_ONE if hs else _ZERO), (e,))
+                if r is not None:
+                    return r
+        self._mq.append(tv)
+        return self._mono_run()
+
+    def _mono_run(self):
+        """Derive bounds through the active links on the variables whose
+        bounds changed (:meth:`_mono_link`) until nothing changes; a
+        conflict clause or None."""
+        q = self._mq
+        mon, asg = self._mon, self._assigned
+        n = 0
+        while q:
+            for link in mon[q.pop()]:
+                if asg.get(link[0]) is not True:
+                    continue
+                n += 1
+                if n > MONO_STEPS:
+                    q.clear()
+                    return None
+                r = self._mono_link(link)
+                if r is not None:
+                    q.clear()
+                    return r
+        return None
+
+    def _mono_link(self, link):
+        """One active link ``t = f(u)``, ``u = c*w + k`` (both real): on each
+        piece ``u`` lies in (by the bounds of ``u``, or by the link itself
+        when ``fmap.covered``), a bound ``u >= a`` (``> a``) with ``a`` in
+        the piece gives ``t >= f(a)`` (``>``; ``<=`` on a decreasing piece),
+        likewise for an upper bound, and a bound ``t >= d`` gives ``u >=
+        f^-1(d)`` (``<=`` decreasing).  Each derived bound's reason is the
+        enable literal and the reasons of the bounds it used.  A value or
+        sign the field cannot decide derives nothing."""
+        e, tv, w, c, k, fm, pes = link
+        lo, up = self._lo, self._up
+        lw, uw = lo[w], up[w]
+        ulo = uup = None
+        if c > 0:
+            if lw is not None:
+                ulo = (c * lw[0] + k, lw[1] != 0, self._lo_r[w])
+            if uw is not None:
+                uup = (c * uw[0] + k, uw[1] != 0, self._up_r[w])
+        else:
+            if uw is not None:
+                ulo = (c * uw[0] + k, uw[1] != 0, self._up_r[w])
+            if lw is not None:
+                uup = (c * lw[0] + k, lw[1] != 0, self._lo_r[w])
+        slo = None if ulo is None else _sg(ulo[0])
+        sup = None if uup is None else _sg(uup[0])
+        asg = self._assigned
+        for i, (plo, phi, d) in enumerate(fm.pieces):
+            if fm.covered:
+                inlo = inup = ()
+            elif pes[i] and asg.get(pes[i]) is True:
+                inlo, inup = (pes[i],), ()
+            else:
+                inlo = _in_lo(plo, ulo, slo)
+                inup = _in_up(phi, uup, sup)
+            # forward: the image of a bound of u inside the piece
+            if inup is not None and ulo is not None and _at_lo(plo, slo):
+                fa = fm.image(ulo[0])
+                if fa is not None:
+                    r = (e,) + _lits(ulo[2]) + inup
+                    if d > 0:
+                        x = self._set_lower(tv, (fa, _ONE if ulo[1] else _ZERO), r)
+                    else:
+                        x = self._set_upper(tv, (fa, -_ONE if ulo[1] else _ZERO), r)
+                    if x is not None:
+                        return x
+            if inlo is not None and uup is not None and _at_up(phi, sup):
+                fa = fm.image(uup[0])
+                if fa is not None:
+                    r = (e,) + _lits(uup[2]) + inlo
+                    if d > 0:
+                        x = self._set_upper(tv, (fa, -_ONE if uup[1] else _ZERO), r)
+                    else:
+                        x = self._set_lower(tv, (fa, _ONE if uup[1] else _ZERO), r)
+                    if x is not None:
+                        return x
+            # inverse: the preimage of a bound of t, u in the piece
+            if inlo is None or inup is None:
+                continue
+            for tb, tr, t_lower in ((lo[tv], self._lo_r[tv], True),
+                                    (up[tv], self._up_r[tv], False)):
+                if tb is None:
+                    continue
+                a = fm.preimage(tb[0], i)
+                if a is None:
+                    continue
+                strict = tb[1] != 0
+                r = (e,) + inlo + inup + _lits(tr)
+                wv = (a - k) / c
+                if (t_lower == (d > 0)) == (c > 0):      # a lower bound of w
+                    x = self._set_lower(w, (wv, _ONE if strict else _ZERO), r)
+                else:
+                    x = self._set_upper(w, (wv, -_ONE if strict else _ZERO), r)
+                if x is not None:
+                    return x
+        if fm.vshape and ulo is not None and uup is not None and slo is not None \
+                and sup is not None and slo < 0 < sup:
+            # u in [a, b] around the minimum at 0: f(u) <= max(f(a), f(b))
+            fa, fb = fm.image(ulo[0]), fm.image(uup[0])
+            if fa is not None and fb is not None:
+                sd = _sg(fa - fb)
+                if sd is not None:
+                    if sd > 0 or sd == 0 and ulo[1] and uup[1]:
+                        b, strict = fa, ulo[1]
+                    elif sd < 0:
+                        b, strict = fb, uup[1]
+                    else:
+                        b, strict = fa, False
+                    r = (e,) + _lits(ulo[2]) + _lits(uup[2])
+                    x = self._set_upper(tv, (b, -_ONE if strict else _ZERO), r)
+                    if x is not None:
+                        return x
+        return None
 
     # ------------------------------------------------------------------
     # integrality
@@ -880,7 +1180,7 @@ class LRATheory:
             # verdict depends only on the bounds, which their literals
             # identify (branch bounds have literal 0: not cached)
             lr, ur = self._lo_r[v], self._up_r[v]
-            if lr and ur:
+            if lr and ur and type(lr) is int and type(ur) is int:
                 key = (v, m, k, lr, ur)
                 r = self._int_memo.get(key, _MISSING)
                 if r is _MISSING:
@@ -911,7 +1211,7 @@ class LRATheory:
             if w == v:
                 r = self._int_verdict(v, m, k)
                 if r is not None and r[0] != (lit > 0):
-                    return _dedupe([-lit] + [-l for l in r[1]])
+                    return _dedupe([-lit] + [-l for l in _flat(r[1])])
         return None
 
     def _branch(self, budget: list[int]):
@@ -993,6 +1293,8 @@ class LRATheory:
                 kind = _FLIP[kind]
             self.push_level()
             r = self._assert_kind(v, kind, (n - k) / m, 0)   # no literal
+            if r is None and self._mq:
+                r = self._mono_run()
             if r is None:
                 r = self._simplex()
                 if r is None:
@@ -1042,13 +1344,13 @@ class LRATheory:
                         enter = j
             if enter == -1:
                 if below:
-                    expl = [-self._lo_r[b]]
+                    expl = _neg(self._lo_r[b])
                     for j, a in row.items():
-                        expl.append(-(self._up_r[j] if a > 0 else self._lo_r[j]))
+                        expl.extend(_neg(self._up_r[j] if a > 0 else self._lo_r[j]))
                 else:
-                    expl = [-self._up_r[b]]
+                    expl = _neg(self._up_r[b])
                     for j, a in row.items():
-                        expl.append(-(self._lo_r[j] if a > 0 else self._up_r[j]))
+                        expl.extend(_neg(self._lo_r[j] if a > 0 else self._up_r[j]))
                 return _dedupe(expl)
             self._pivot_and_update(b, enter, lo[b] if below else up[b])
 
@@ -1204,6 +1506,8 @@ class LRATheory:
             for kind in ("<", ">"):
                 self.push_level()
                 r = self._assert_kind(v, kind, c, 0)
+                if r is None and self._mq:
+                    r = self._mono_run()
                 if r is None:
                     r = self._simplex()
                 if r is None:
