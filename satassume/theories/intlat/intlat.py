@@ -54,8 +54,6 @@ from typing import Dict, FrozenSet, List, Optional, Tuple
 #: the column of the constant (after every term column: echelon order puts
 #: the constant row last, so it is ``M``'s intersection with the constants)
 CONST = 1 << 40
-import os
-_NOOP = os.environ.get("INTLAT_X", "") == "noop"
 
 Vec = Dict[int, int]
 
@@ -283,8 +281,6 @@ class IntLatTheory:
         self.val[v] = lit > 0
         self.trail.append(v)
         self._done = False
-        if _NOOP:
-            return None
         lat = self.lat
         if lat is None:
             return None
@@ -355,8 +351,6 @@ class IntLatTheory:
         return [-l for l in why]
 
     def propagate(self):
-        if _NOOP:
-            return ()
         if self.gave_up or self._done:
             return ()
         self._done = True
@@ -397,7 +391,7 @@ class IntLatTheory:
         return out
 
     def check(self):
-        if self.gave_up or _NOOP:
+        if self.gave_up:
             return None
         lat = self.lattice()
         if lat.conflict is not None:

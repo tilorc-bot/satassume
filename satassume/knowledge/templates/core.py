@@ -17,6 +17,7 @@ numeric coefficients, which is what the old assumption system relies on
 """
 from __future__ import annotations
 
+from itertools import product
 from types import MappingProxyType
 
 from sympy import S
@@ -78,22 +79,6 @@ def closure_owns(is_mul: bool, n: int) -> bool:
     return n > (MAX_PAIRS if is_mul else MAX_ADD_SMALL)
 
 
-def intlat_owns(is_mul: bool, consts) -> bool:
-    """Whether the integrality and parity rows (``integer``, ``even``,
-    ``odd``) of an Add (``is_mul`` false) or Mul with the constants
-    ``consts`` are left to the INTLAT theory
-    (``satassume.theories.intlat``, issue #149 T2): every sum, and every
-    product ``c*t`` with a nonzero Rational coefficient ``c`` (slot 0).
-    Every session tells the theory those nodes (``intlat_adapter.owns``),
-    which decides integrality and parity of their linear forms over the
-    session's terms, for any arity and any rational coefficients
-    (``docs/theories.md``, "INTLAT")."""
-    if not is_mul:
-        return True
-    c = consts.get(0)
-    return c is not None and bool(c.is_Rational) and not c.is_zero
-
-
 # ---------------------------------------------------------------------------
 # Add
 # ---------------------------------------------------------------------------
@@ -134,15 +119,14 @@ def _add_rules(n, consts):
     # extended_real literals of the sum (``sign_owns``).
     sign = not sign_owns(False, n)
     closure = not closure_owns(False, n)
-    # every sum is the INTLAT theory's (``intlat_owns``): no row about
-    # ``integer``, ``even`` or ``odd``
     for pred in _ADD_CLOSED:
-        if (sign or pred not in _ADD_SIGN) and (closure or pred not in _ADD_CLOSURE) \
-                and pred != 'integer':
+        if (sign or pred not in _ADD_SIGN) and (closure or pred not in _ADD_CLOSURE):
             rule(lits(A, pred), (N, pred, True))
     # Extended reals without both +oo and -oo among the terms.
     for inf in ('positive_infinite', 'negative_infinite') if sign else ():
         rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
+    # (integrality and parity of a sum over MAX_ADD_SMALL terms, or with a
+    # non-integer coefficient: the INTLAT theory, ``intlat_owns``)
 
     # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
     if sign:
@@ -167,8 +151,9 @@ def _add_rules(n, consts):
         rule([(N, 'extended_real', True), *lits(rest, 'real')], (k, 'extended_real', True))
         if closure:     # (n <= MAX_ADD_SMALL; above, the CLOSURE theory)
             for pred in _ADD_SUBTRACT:
-                if pred != 'integer':
-                    rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
+                rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
+        elif n <= MAX_ONEOUT:
+            rule([(k, 'odd', True), *lits(rest, 'even')], (N, 'odd', True))
         if n <= MAX_ONEOUT:
             # A nonzero real part (finite or infinite) cannot be cancelled by
             # imaginary terms.
@@ -201,6 +186,11 @@ def _add_rules(n, consts):
                     for cond in (nonstrict, 'real'):
                         rule([(k, signed, True), *lits(rest, cond)], (N, strict, True))
 
+    # Parity of a sum of integers.
+    if n <= MAX_ADD_SMALL:
+        for parities in product(('even', 'odd'), repeat=n):
+            result = 'odd' if parities.count('odd') % 2 else 'even'
+            rule([(k, p, True) for k, p in enumerate(parities)], (N, result, True))
     # A sum of two or more positive even integers is at least 4, hence composite.
     if n >= 2:
         rule([*lits(A, 'even'), *lits(A, 'positive')], (N, 'composite', True))
@@ -226,7 +216,7 @@ def add_templates(expr):
 # are derived by the rule base (``extended_* & finite``).
 # ``extended_real`` is not: ``0*oo`` is nan (see _mul_rules).  Left to the
 # CLOSURE theory over its cap (``closure_owns``).
-_MUL_CLOSED = ('complex', 'rational', 'algebraic')
+_MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic')
 # Fields: the node and every factor but one in the field, those nonzero,
 # put the last factor in it (it is the node divided by them).
 _MUL_FIELDS = ('rational', 'algebraic')
@@ -261,9 +251,6 @@ MUL_GUARDS = MappingProxyType({
     'sign rows': lambda c: not sign_owns(True, c['n']),
     # the closure rows, left to the CLOSURE theory over the cap (closure_owns)
     'closure rows': lambda c: not closure_owns(True, c['n']),
-    # the integrality and parity rows, left to the INTLAT theory for a
-    # product with a Rational coefficient (intlat_owns)
-    'integer rows': lambda c: not intlat_owns(True, c['consts']),
     'n>=2': lambda c: c['n'] >= 2,
     'n==2': lambda c: c['n'] == 2,
     'n even': lambda c: c['n'] % 2 == 0,
@@ -274,6 +261,9 @@ MUL_GUARDS = MappingProxyType({
     'coeff': _coeff,
     'c negative': lambda c: bool(c['consts'][0].is_negative),
     'c not negative': lambda c: not c['consts'][0].is_negative,
+    'c rational': lambda c: bool(c['consts'][0].is_Rational),
+    'c==-1': lambda c: c['consts'][0] is S.NegativeOne,
+    'c.q==2': lambda c: c['consts'][0].q == 2,
 })
 
 # Slots: 'N' the node, '*' all arguments; in a section 'k' the argument of
@@ -283,8 +273,6 @@ def _mul_table_rows():
     """The rows of ``MUL_TABLE`` (built on first use, :func:`_table`)."""
     return (
         Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED, when='closure rows'),
-        Row('closed.integer', [('*', 'integer')], ('N', 'integer'),
-            when=('closure rows', 'integer rows')),
         Row('closed.sign', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED_SIGN,
             when='sign rows'),
         # Extended reals, all finite or all nonzero (no 0*oo).
@@ -333,7 +321,7 @@ def _mul_table_rows():
             when=('n even', 'sign rows')),
         Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'),
             when=('n odd', 'sign rows')),
-        Row('all_odd', [('*', 'odd')], ('N', 'odd'), when='integer rows'),
+        Row('all_odd', [('*', 'odd')], ('N', 'odd')),
         Section('each', when='n<=MAX_ONEOUT', rows=[
             # One infinite factor and the rest nonzero -> infinite.
             Row('one_infinite', [('k', 'infinite'), ('rest', 'zero', False)], ('N', 'infinite'),
@@ -346,8 +334,7 @@ def _mul_table_rows():
                 ('N', 'nonpositive'),
                 when='sign rows'),
             # One even factor and the rest integers -> even.
-            Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even'),
-                when='integer rows'),
+            Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even')),
             # One composite factor and the rest integers -> not prime (the
             # product is 0, negative, or a multiple of a composite).
             Row('one_composite', [('k', 'composite'), ('rest', 'integer')], ('N', 'prime', False)),
@@ -392,6 +379,11 @@ def _mul_table_rows():
             preds=_COEFF_BACK),
         Row('coeff.back.flip', [('N', '$p')], (1, 'flip:$p'), when=('coeff', 'c negative'),
             preds=_COEFF_BACK),
+        # (p/2)*x for integer x is an integer iff x is even.
+        Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
+            when=('coeff', 'c rational', 'c.q==2')),
+        Row('coeff.minus_one', [('N', '$p')], (1, '$p'), when=('coeff', 'c rational', 'c==-1'),
+            preds=('integer', 'even', 'odd')),
     )
 
 
@@ -422,6 +414,13 @@ def _mul_factor_sets(expr):
     # tools/totality.py; the relation must sit in the block whose node
     # is the Mul, not in the deriving block, which is local to its node).
     out = [args]
+    c = args[0]
+    if n >= 3 and c.is_Rational and not c.is_zero:
+        # c*t: the coefficient-free product t (the coefficient rows relate
+        # -x*y to x*y; x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
+        rest = Mul(*args[1:])
+        if rest.is_Mul and len(rest.args) == n - 1:
+            out.append((c, rest))
     split = ipi_split(expr)
     if split is not None and split[1] is not None and split[1].is_Mul:
         # I*pi*c*s: the s of exp(I*pi*c*s) and E**(I*pi*c*s)

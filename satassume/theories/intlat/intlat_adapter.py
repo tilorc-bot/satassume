@@ -22,12 +22,14 @@ from __future__ import annotations
 from fractions import Fraction
 
 from ...knowledge.rules import BASIS_INDEX
+from ...knowledge.templates.core import MAX_ADD_SMALL
 from .intlat import CONST, IntLatTheory
 
 _INT = BASIS_INDEX["integer"]
 _EVEN = BASIS_INDEX["even"]
 _DEMANDED = frozenset((_INT, _EVEN))
 _HALF = Fraction(1, 2)
+_ONE = Fraction(1)
 
 
 def linear(node) -> bool:
@@ -41,16 +43,34 @@ def linear(node) -> bool:
     return False
 
 
-import os
-_X = os.environ.get("INTLAT_X", "")
-_MENTION = os.environ.get("INTLAT_M", "1") == "1"
+def _fractional(a) -> bool:
+    """Whether the summand ``a`` is a non-integer Rational or has one as
+    its coefficient (``x/2``, ``2*x/3``)."""
+    if a.is_Rational:
+        return a.q != 1
+    if a.is_Mul:
+        c = a.args[0]
+        return bool(c.is_Rational) and c.q != 1
+    return False
 
 
 def owns(node) -> bool:
-    """Whether a session tells the theory ``node``: every linear node
-    (``templates.core.intlat_owns``: the templates have no integrality or
-    parity rows for it)."""
-    return linear(node)
+    """Whether a session tells the theory ``node``: a sum of more than
+    ``MAX_ADD_SMALL`` terms (the templates enumerate parities up to that
+    arity) or with a non-integer coefficient, and a product whose
+    coefficient is a non-integer Rational.  The templates have no
+    integrality or parity rows of their own for those (no half-integer
+    split of a sum, no ``coeff.half`` row of ``x/2``, no even closure of a
+    long sum): the theory decides them for any arity and any rational
+    coefficients.  The linear nodes inside an owned node's form are told
+    too (:meth:`IntLatAdapter.form`)."""
+    if node.is_Add:
+        args = node.args
+        return len(args) > MAX_ADD_SMALL or any(_fractional(a) for a in args)
+    if node.is_Mul:
+        c = node.args[0]
+        return bool(c.is_Rational) and c.q > 2
+    return False
 
 
 def _rat(c) -> Fraction:
@@ -71,10 +91,11 @@ class IntLatAdapter:
     def __init__(self, session):
         self.session = session
         self.theory = IntLatTheory()
-        session.solver.attach_theory(self.theory)
+        self.attached = False   # attached at the first node told
         self.terms = {}         # term -> column
         self.forms = {}         # linear node -> its form
         self.done = set()       # nodes whose atoms are registered
+        self.parked = []        # owned nodes not wanted yet (:meth:`wanted`)
 
     # -- the engine's node-theory protocol (Session.node_theories_sync) ----
     @staticmethod
@@ -89,8 +110,36 @@ class IntLatAdapter:
     def selects(node) -> bool:
         return owns(node)
 
-    def sync_derived(self) -> None:
-        return None
+    def sync_derived(self) -> bool:
+        """Tell the parked nodes that are wanted now; True iff one was."""
+        parked = self.parked
+        if not parked:
+            return False
+        self.parked = []
+        told = False
+        for n in parked:
+            if self.wanted(n):
+                self.tell(n)
+                told = True
+            else:
+                self.parked.append(n)
+        return told
+
+    def wanted(self, node) -> bool:
+        """Whether the session needs ``node``'s integrality: as the
+        templates' demand-driven compilation (``Session.node``), which
+        parks a pattern clause until it mentions a demanded predicate of
+        its node or the session escalates.  The rows the theory replaces
+        mention the node's ``integer`` or ``even``: so the theory is told
+        the node once one of those is demanded of it, or once nothing is
+        parked any more (after an escalation; ref.py's session compiles
+        everything)."""
+        s = self.session
+        demand = getattr(s, "demand", None)
+        if demand is None or not s.incomplete:
+            return True
+        d = demand.get(node)
+        return d is not None and (_INT in d or _EVEN in d)
 
     # -- forms ---------------------------------------------------------------
     def form(self, e):
@@ -100,7 +149,12 @@ class IntLatAdapter:
         if f is not None:
             return f
         acc: dict = {}
-        self._lin(e, Fraction(1), acc)
+        if e.is_Add:
+            for a in e.args:
+                self._lin(a, _ONE, acc)
+        else:
+            k, t = coeff_rest(e)
+            self._lin(t, _rat(k), acc)
         g = {k: x for k, x in acc.items() if x}
         # a term whose coefficients cancel (``x + 2*(y - x/2)`` built
         # unevaluated) still makes ``e`` infinite or nan when it is: the
@@ -114,12 +168,21 @@ class IntLatAdapter:
             acc[CONST] = acc.get(CONST, 0) + c * _rat(e)
             return
         if linear(e):
-            if e.is_Add:
-                for a in e.args:
-                    self._lin(a, c, acc)
+            f = self.form(e)
+            self._register(e, f)
+            g, exact = f
+            if not exact:
+                # read through the node's arguments, so that the
+                # cancelled terms stay in the outer form's term set
+                if e.is_Add:
+                    for a in e.args:
+                        self._lin(a, c, acc)
+                else:
+                    k, t = coeff_rest(e)
+                    self._lin(t, c * _rat(k), acc)
                 return
-            k, t = coeff_rest(e)
-            self._lin(t, c * _rat(k), acc)
+            for k, x in g.items():
+                acc[k] = acc.get(k, 0) + c * x
             return
         col = self.term(e)
         acc[col] = acc.get(col, 0) + c
@@ -143,13 +206,24 @@ class IntLatAdapter:
         reg = s.solver.register_atom
         th = self.theory
         f, exact = fe
-        m = _MENTION
-        reg(th, b + _INT, (f, exact), mention=m)
-        reg(th, b + _EVEN, ({k: x * _HALF for k, x in f.items()}, exact), mention=m)
+        reg(th, b + _INT, (f, exact))
+        reg(th, b + _EVEN, ({k: x * _HALF for k, x in f.items()}, exact))
 
     def add(self, node) -> None:
-        """Tell the theory the linear node ``node``."""
-        if node in self.done or _X == "noreg":
+        """The engine visited the owned node ``node``: tell the theory, or
+        park it until it is :meth:`wanted`."""
+        if node in self.done:
             return
-        f = self.form(node)
-        self._register(node, f)
+        if self.wanted(node):
+            self.tell(node)
+        else:
+            self.parked.append(node)
+
+    def tell(self, node) -> None:
+        """Tell the theory the linear node ``node``."""
+        if node in self.done:
+            return
+        if not self.attached:
+            self.session.solver.attach_theory(self.theory)
+            self.attached = True
+        self._register(node, self.form(node))
