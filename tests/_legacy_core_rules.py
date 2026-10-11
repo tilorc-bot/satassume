@@ -12,6 +12,8 @@ from sympy.core.intfunc import integer_nthroot
 from satassume.knowledge.templates._common import SIGN_FLIP, Rules, ge2_alternatives, lits
 from satassume.knowledge.templates.core import (
     _B,
+    _BM,
+    _BP,
     _COEFF_BACK,
     _E,
     _MUL_CLOSED,
@@ -255,6 +257,8 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, sym, nc=False):
         rule(ie + [(_N, 'integer', True)], (_B, pred, False))
     for pred in ('prime', 'composite'):
         rule(ie, (_N, pred, False))
+    if sym:
+        rule(ie + [(_BM, 'zero', False), (_BP, 'zero', False)], (_N, 'integer', False))
     if has_t:
         # Real base, rational exponent: imaginary iff the base is negative
         # and the exponent is half an odd integer.

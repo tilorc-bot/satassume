@@ -556,7 +556,7 @@ _NOTUNIT = ('irrational', 'noninteger', 'prime', 'composite')
 _POW_ONE_EQUIV = tuple(sorted(VOCAB - {'commutative'}))
 
 # Extra object slots after base 0, exponent 1, node 2 (see ``pow_templates``).
-_U, _S, _T = 3, 4, 5
+_U, _S, _T, _BM, _BP = 3, 4, 5, 6, 7
 
 
 def _unit_angle(b):
@@ -682,6 +682,7 @@ POW_GUARDS = MappingProxyType({
     'e is 1': lambda x: x['e'] is S.One,
     'b unit angle': lambda x: x['angle'] is not None,
     'u slot': lambda x: x['has_u'],
+    'b-1, b+1 slots': lambda x: x['sym'],
     '2*e slot': lambda x: x['has_t'],
     'e rational non-integer': _e_ratio,
     'e.q==2': lambda x: x['e'].q == 2,
@@ -725,10 +726,11 @@ _POW_SIGN_ROWS = frozenset({0, 1, 2, 3, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 
 
 
 #: Slot names of a Pow block (see ``pow_templates``).
-POW_SLOTS = MappingProxyType({'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': _T})
+POW_SLOTS = MappingProxyType({'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': _T,
+                              'BM': _BM, 'BP': _BP})
 
 # Slots: 'B' base, 'E' exponent, 'N' node, 'U' the u of an exp(u) base,
-# 'S' the s of an I*pi*c*s exponent of E, 'T' 2*e.
+# 'S' the s of an I*pi*c*s exponent of E, 'T' 2*e, 'BM'/'BP' b - 1, b + 1.
 def _pow_table_rows():
     """The rows of ``POW_TABLE`` (built on first use, :func:`_table`)."""
     return (
@@ -770,9 +772,6 @@ def _pow_table_rows():
         # An integer b to a negative integer power e is an integer only for
         # b = +-1: |b**e| <= 1/2 for |b| >= 2, and 0**e is zoo.  So b is odd
         # and neither prime nor composite, and b**e = +-1 is neither either.
-        # (These replace the derived nodes b - 1 and b + 1 of every power
-        # with a symbolic base and exponent: "b is not 0 or +-1" came from
-        # their zero literals; issue #149 T1 stage 2.)
         Row('int_base.negative_int_exp',
             [('B', 'integer'), ('E', 'integer'), ('E', 'negative'), ('N', 'integer')],
             ('B', 'odd')),
@@ -782,6 +781,12 @@ def _pow_table_rows():
         Row('int_base.negative_int_exp.unit',
             [('B', 'integer'), ('E', 'integer'), ('E', 'negative')], ('N', '$p', False),
             preds=('prime', 'composite')),
+        # The direct form, for facts about b - 1 and b + 1 themselves
+        # (``~zero(b - 1)``, ``positive(b - 1)``, a compound base).
+        Row('int_base.negative_int_exp.not_unit',
+            [('B', 'integer'), ('E', 'integer'), ('E', 'negative'),
+             ('BM', 'zero', False), ('BP', 'zero', False)],
+            ('N', 'integer', False), when='b-1, b+1 slots'),
         # Real base, rational exponent: imaginary iff the base is negative
         # and the exponent is half an odd integer.
         Row('rational_exp.not_half',
@@ -840,7 +845,8 @@ def _pow_rules(b, e, same, angle, has_u, ipi, has_t, sym, nc):
     ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the argument of an
     ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and exponent
     ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``sym``: the base and
-    the exponent are both symbolic (``sign_owns_pow``); ``nc``: the base has a
+    the exponent are both symbolic (``sign_owns_pow``), and slots
+    ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``; ``nc``: the base has a
     non-commutative subterm (``domain._noncommutative``: it may not be a
     number)."""
     return rules_of(_table('POW_TABLE'), POW_GUARDS,
@@ -903,7 +909,7 @@ def _pow_pattern(expr):
         consts[_E] = e
     same = b is e
     angle = _unit_angle(b)
-    objs = [b, e, expr, None, None, None]
+    objs = [b, e, expr, None, None, None, None, None]
     u = _exp_arg(b)
     if u is not None:
         objs[_U] = u
@@ -923,6 +929,9 @@ def _pow_pattern(expr):
     if has_t:
         objs[_T] = Mul(S(2), e)
     sym = has_t and _B not in consts and not b.is_number
+    if sym:
+        objs[_BM] = b - S.One
+        objs[_BP] = b + S.One
     key = ('pow', const_key(b) if _B in consts else None,
            const_key(e) if _E in consts else None, same, angle,
            const_key(u) if _U in consts else u is not None, ipi,
