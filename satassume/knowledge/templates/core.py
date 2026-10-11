@@ -70,6 +70,19 @@ def sign_owns(is_mul: bool, n: int) -> bool:
     return n >= SIGN_MIN_ARGS
 
 
+def sign_owns_pow(e) -> bool:
+    """Whether the SIGN theory decides the sign rows of a power with
+    exponent ``e`` (``sign_adapter.over_cap``): the powers with a symbolic
+    exponent (the theory's ``POW`` map op; docs/theories.md, "SIGN")."""
+    return not e.is_number
+
+
+def _pow_sign_owned(x) -> bool:
+    """``sign_owns_pow`` on the pattern context of a Pow block: ``has_t``
+    is "the exponent is not a number"."""
+    return x['has_t']
+
+
 def closure_owns(is_mul: bool, n: int) -> bool:
     """Whether the closure rows (``integer``, ``rational``, ``algebraic``,
     ``complex``: a ring keeps the node, a group or field gives back the
@@ -659,6 +672,9 @@ def _b_not_qth_power(x):
 #: exponent or None, and the flags of ``pow_templates``).
 POW_GUARDS = MappingProxyType({
     'b is E': lambda x: x['b'] is S.Exp1,
+    # the sign rows, left to the SIGN theory for a symbolic exponent
+    # (``sign_owns_pow``)
+    'sign rows': lambda x: not _pow_sign_owned(x),
     'b number': lambda x: not x['nc'],
     'ipi': lambda x: x['ipi'] is not None,
     'b is e': lambda x: x['same'],
@@ -686,12 +702,26 @@ POW_GUARDS = MappingProxyType({
 _POW_SLOT_NAMES = MappingProxyType({_B: 'B', _E: 'E', _N: 'N'})
 
 
-def _pairs_rows(prefix, pairs, when=()):
-    """Rows from the ``((premises), conclusion)`` tuples of ``_POW_RULES``."""
+def _pairs_rows(prefix, pairs, when=(), sign=frozenset()):
+    """Rows from the ``((premises), conclusion)`` tuples of ``_POW_RULES``;
+    those at the indices ``sign`` are sign rows (guard ``'sign rows'``)."""
     def name(l):
         return (_POW_SLOT_NAMES[l[0]], *l[1:])
-    return tuple(Row(f'{prefix}.{i}', [name(p) for p in prem], name(concl), when=when)
+    def guard(i):
+        if i not in sign:
+            return when
+        return (*((when,) if isinstance(when, str) else when), 'sign rows')
+    return tuple(Row(f'{prefix}.{i}', [name(p) for p in prem], name(concl), when=guard(i))
                  for i, (prem, concl) in enumerate(pairs))
+
+
+#: The rows of ``_POW_RULES`` that the SIGN theory's ``POW`` map op derives
+#: (``sign_owns_pow``; ``tests/test_sign_pow.py`` checks that it derives
+#: each): the signs of a positive base, the zero base, the zero exponent,
+#: zero/nonzero and finite/infinite.  The rows that need the parity of the
+#: exponent (``even``/``odd``) or that a ``nan`` cell blocks (``1**oo``)
+#: stay.
+_POW_SIGN_ROWS = frozenset({0, 1, 2, 3, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24})
 
 
 #: Slot names of a Pow block (see ``pow_templates``).
@@ -703,7 +733,7 @@ POW_SLOTS = MappingProxyType({'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': 
 def _pow_table_rows():
     """The rows of ``POW_TABLE`` (built on first use, :func:`_table`)."""
     return (
-        *_pairs_rows('pow', _POW_RULES),
+        *_pairs_rows('pow', _POW_RULES, sign=_POW_SIGN_ROWS),
         *_pairs_rows('pow.E', _POW_E_RULES, when='b is E'),
         Sub('ipi', _table('IPI_TABLE'), IPI_GUARDS,
             lambda x: {'c': x['ipi'][0], 'has_s': x['ipi'][1]},

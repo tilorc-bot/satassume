@@ -11,16 +11,19 @@ from __future__ import annotations
 
 from ...knowledge.rules import BASIS_INDEX
 from .lattice import ADD, MUL
-from .sign import ALL, PRED_MASK, PREDS, SignTheory
+from .sign import ALL, POW, PRED_MASK, PREDS, SignTheory
 
 
 def over_cap(node) -> bool:
-    """Whether the sign rows of ``node`` (an Add or a Mul) are left to
-    this theory: the nodes of three or more arguments
-    (``templates.core.sign_owns``).  A session engages the theory with
+    """Whether the sign rows of ``node`` (an Add, a Mul or a Pow) are left
+    to this theory: the sums and products of three or more arguments
+    (``templates.core.sign_owns``) and the powers with a symbolic exponent
+    (``templates.core.sign_owns_pow``).  A session engages the theory with
     these nodes only (``Session.node_theories_sync``; docs/theories.md,
     "SIGN", for the measured alternatives)."""
-    from ...knowledge.templates.core import sign_owns
+    from ...knowledge.templates.core import sign_owns, sign_owns_pow
+    if node.is_Pow:
+        return sign_owns_pow(node.args[1])
     return sign_owns(bool(node.is_Mul), len(node.args))
 
 
@@ -66,12 +69,16 @@ class ClassAdapter:
         """Whether :meth:`selects` may take a node of type ``cls``."""
         return bool(getattr(cls, 'is_Add', False) or getattr(cls, 'is_Mul', False))
 
+    #: whether the adapter takes powers too (:class:`SignAdapter`)
+    POWERS = False
+
     @classmethod
     def selects(cls, node) -> bool:
         """Whether a session tells this theory ``node`` (``Session._visit``,
         ``ref._node_theories``): for the sums and products, those over the
         templates' arity caps (:meth:`over_cap`)."""
-        return ((getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False))
+        return ((getattr(node, 'is_Add', False) or getattr(node, 'is_Mul', False)
+                 or (cls.POWERS and getattr(node, 'is_Pow', False)))
                 and bool(node.args) and cls.over_cap(node))
 
     @classmethod
@@ -199,6 +206,13 @@ ClassAdapter._init_tables()
 class SignAdapter(ClassAdapter):
     """The sign theory (:mod:`.sign`)."""
 
+    POWERS = True
+
+    @staticmethod
+    def kinds(cls: type) -> bool:
+        return bool(getattr(cls, 'is_Add', False) or getattr(cls, 'is_Mul', False)
+                    or getattr(cls, 'is_Pow', False))
+
     def add(self, node) -> None:
         """Tell the theory the sum or product ``node`` and, for a product,
         its derived products of three or more factors: the templates of a
@@ -206,6 +220,12 @@ class SignAdapter(ClassAdapter):
         (``I*pi*s`` for ``I*pi*x*y``, ``templates.core._mul_factor_sets``),
         and such a block has no sign rows either (``sign_owns``)."""
         if node in self.done:
+            return
+        if node.is_Pow:
+            # ``b**e``: the map op of :mod:`.sign` (``_pow_atoms``)
+            self.done.add(node)
+            t = self.term(node)
+            self.theory.add_node(POW, t, [self.term(a) for a in node.args])
             return
         super().add(node)
         if node.is_Mul:

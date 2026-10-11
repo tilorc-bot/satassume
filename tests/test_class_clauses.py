@@ -42,7 +42,7 @@ import pytest
 
 from satassume.theories.sign import closure as C
 from satassume.theories.sign import trans as T
-from satassume.theories.sign.sign import (ADD, FIN, INF, MUL, PRED_MASK, F, SIGN,
+from satassume.theories.sign.sign import (ADD, FIN, INF, MUL, POW, PRED_MASK, F, SIGN,
                                           SignTheory)
 
 SEEDS = int(os.environ.get("SIGN_CLAUSE_SEEDS", "1500"))
@@ -73,7 +73,8 @@ def _bs(*atoms):
 
 SIGN_L = _Lat("sign", SignTheory, SIGN, PRED_MASK,
               (1 << F(1, 0), 1 << F(-1, 0), 1 << F(0, 0), 1 << F(0, 1), 1 << F(1, 1),
-               1 << 9, 1 << 10, 1 << 11, (1 << F(1, 0)) | (1 << F(-1, 0)), FIN, INF))
+               1 << 9, 1 << 10, 1 << 11, (1 << F(1, 0)) | (1 << F(-1, 0)), FIN, INF),
+              ops=[(ADD, None), (MUL, None), (POW, 2)])
 CLOSURE_L = _Lat("closure", C.ClosureTheory, C.CLOSURE, C.PRED_MASK,
                  tuple(1 << a for a in (C.Z0, C.Z1, C.Q1, C.AR, C.AC, C.TR, C.TC, C.IR, C.IC))
                  + (_bs(C.Z0, C.Z1), _bs(C.AR, C.TR), _bs(*C.CPX), C.INF))

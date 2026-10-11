@@ -580,7 +580,20 @@ per term, `_theory_sync`, a theory level per decision) and their template rows a
 clauses. Handing every sum and product to the theory for each query left open after propagation was
 also measured in stage 1 (+29%, no new answer).
 
-**Stage 2** (issue #149): Pow and the integer-magnitude classes (dropping the derived nodes `b-1`, `b+1`).
+**Powers** (stage 2, issue #149, in progress). `b**e` with a symbolic exponent (`templates.core.sign_owns_pow`:
+the exponent is not a number) is a node of the map op `POW` (`sign._pow_atoms`, a table over atom pairs:
+SymPy's principal power with its conventions `x**0 = 1`, `0**-1 = zoo`, `0**-oo = zoo`, `0**I = nan`,
+`oo**(a + t*I)` zoo/0/nan by the sign of `a`, `1**oo = nan`, `(-2)**oo = oo + oo*I`; a cell with a `nan`
+value is "no claim"). `tests/test_sign_pow.py` checks the table against SymPy at sample points of every atom
+pair (end points `1`, `-1` included) and that the rows the block of such a power leaves out
+(`core._POW_SIGN_ROWS`: rows 0-3, 13-16, 18-24 of `_POW_RULES`, the signs of a positive base, the zero base,
+the zero exponent, zero/nonzero and finite/infinite) are exactly the rows the map op derives. The rows that
+need the parity of the exponent (`even`/`odd`) or that a `nan` cell blocks (`1**oo`: row 4) stay template
+rows, and so do the derived nodes `b-1`, `b+1` (their only row needs `|b| >= 2` for an integer `b`, which the
+12 atoms cannot express: the integer-magnitude classes are the next step). Measured on 5,000 generated
+power-heavy queries (fresh engine per query): 0 lost, 0 flips, 2 new answers (`oo**oo` cases), clauses per
+query -7%, variables flat; the refine stream is flat (-0.3% on `theories`, 0.0% with #156 + #158), but a
+power-heavy corpus pays the theory's interface: +12% warm time per query.
 
 ## CLOSURE: ring and field membership of sums and products
 

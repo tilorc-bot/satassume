@@ -22,6 +22,7 @@ from satassume.knowledge.templates.core import (
     _POW_E_RULES,
     _POW_ONE_EQUIV,
     _POW_RULES,
+    _POW_SIGN_ROWS,
     _S,
     _T,
     _U,
@@ -208,7 +209,11 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
     slots ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
     R = Rules()
     rule = R.rule
-    for prem, concl in _POW_RULES:
+    for i, (prem, concl) in enumerate(_POW_RULES):
+        # a symbolic exponent leaves the sign rows to the SIGN theory
+        # (sign_owns_pow)
+        if has_t and i in _POW_SIGN_ROWS:
+            continue
         rule([_lit(p) for p in prem], _lit(concl))
     if b is S.Exp1:
         for prem, concl in _POW_E_RULES:

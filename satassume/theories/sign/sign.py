@@ -185,12 +185,68 @@ def _mul_atoms(a: int, b: int) -> int:
     return INF                              # IN*IN: ``oo*I*oo*I = -oo``, ``zoo*zoo``
 
 
+#: the finite atoms off zero, and "no claim"
+_NZF = FIN & ~(1 << ZERO)
+_ANY = ALL | NANB
+
+
+def _pow_atoms(b: int, e: int) -> int:
+    """The atoms of ``b**e`` for a base in atom ``b`` and an exponent in atom
+    ``e``: SymPy's principal power ``exp(e*log(b))`` with its conventions
+    (``Pow.__new__`` and ``_eval_power`` of ``Zero``, ``Infinity``,
+    ``NegativeInfinity``, ``ComplexInfinity`` and ``Rational``).  ``NAN``
+    where some value of the cell is ``nan`` (no claim); a cell that is
+    not worked out exactly is the widest set (``_ANY``)."""
+    if e == ZERO:
+        return 1 << F(1, 0)                 # x**0 == 1, also 0**0, zoo**0, oo**0
+    er, ei = _fin(e) if e < 9 else (None, None)
+    if b == ZERO:
+        if e in (PI,) or (e < 9 and er == 1 and ei == 0):
+            return 1 << ZERO                # 0**2, 0**oo
+        if e == NI or (e < 9 and er == -1 and ei == 0):
+            return 1 << IN                  # 0**-1 == zoo, 0**-oo == zoo
+        return NANB                         # 0**I, 0**(1 + I), 0**zoo: nan
+    if b < 9:                               # a finite nonzero base
+        if e < 9:
+            # |b**e| == exp(re(e*log(b))) is finite and positive; a positive
+            # base to a real power stays positive, anything else may turn
+            if b == F(1, 0) and ei == 0:
+                return 1 << F(1, 0)
+            return _NZF
+        if e in (PI, NI):
+            # |b| > 1 gives an infinity (2**oo == oo, (-2)**oo == oo + oo*I),
+            # |b| < 1 gives 0, |b| == 1 gives nan (1**oo, (-1)**oo)
+            if b == F(1, 0):
+                return _b(ZERO, PI) | NANB
+            if b == F(-1, 0):
+                return _b(ZERO, IN) | NANB
+            return INF | (1 << ZERO) | NANB
+        return _ANY                         # 2**zoo, 2**(oo*I)
+    # an infinite base
+    if e < 9:
+        if ei == 0:
+            if er < 0:
+                return 1 << ZERO            # oo**-1 == 0, |b|**e -> 0
+            if b == PI:
+                return 1 << PI              # oo**(1/2) == oo
+            return INF                      # (-oo)**2 == oo, (-oo)**3 == -oo, zoo**2
+        if b in (PI, NI):
+            # oo**(a + t*I): zoo for a > 0, 0 for a < 0, nan for a == 0
+            return (1 << IN if er > 0 else 1 << ZERO if er < 0 else NANB)
+        return _ANY
+    if b == PI:
+        return 1 << (PI if e == PI else ZERO) if e != IN else _ANY
+    return _ANY                             # (-oo)**oo == nan, zoo**oo, ...
+
+
 _ATOM_OPS = (_add_atoms, _mul_atoms)
 _MEMO: Dict[tuple, int] = {}     # mop and allowed: a pure function of its key
 _adopt_memo(__name__, "_MEMO")
 
 #: the lattice (:mod:`.lattice`): its folds are this module's functions
 SIGN = Lattice(12, _ATOM_OPS, _MEMO)
+#: ``b**e`` (a map op: :meth:`.lattice.Lattice.add_map`)
+POW = SIGN.add_map(_pow_atoms, 2)
 mop = SIGN.mop
 allowed = SIGN.allowed
 fold = SIGN.fold
