@@ -203,7 +203,7 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
     """``b``/``e`` are the constant base/exponent or ``None`` if symbolic;
     ``angle`` is ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the
     argument of an ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and
-    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``:
+    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds a node whose integrality gives that of ``2*e`` (2: iff); ``has_b1``:
     slots ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
     R = Rules()
     rule = R.rule
@@ -248,11 +248,12 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
         # fraction (0 gives zoo).
         rule([(_B, 'integer', True), (_E, 'integer', True), (_E, 'negative', True),
               (_BM, 'zero', False), (_BP, 'zero', False)], (_N, 'integer', False))
-    if has_t:
+    if has_t == 2:
         # Real base, rational exponent: imaginary iff the base is negative
         # and the exponent is half an odd integer.
         rule([(_B, 'extended_real', True), (_E, 'rational', True), (_T, 'integer', False)],
              (_N, 'imaginary', False))
+    if has_t:
         rule([(_B, 'negative', True), (_E, 'rational', True), (_T, 'integer', True),
               (_E, 'integer', False)], (_N, 'imaginary', True))
 

@@ -160,12 +160,11 @@ Definition. `cone(o)` is the closure of `{o}` under `kids`
 `_kid(a)` for its atoms `a`, plus, when `glue` holds, `link_objects(e)` for
 every vocabulary argument `e` (`Engine._query_cone`, `_union`).
 
-Definition. The derived nodes templates name: `2*e` of a power with
-exponent `e`; `b - 1`, `b + 1` of a power's base; `x - 1` of `log(x)`,
+Definition. The derived nodes templates name: `b - 1`, `b + 1` of a power's base; `x - 1` of `log(x)`,
 `asin(x)`, `acos(x)`; `x*y` of a product `c*x*y` with a Rational `c`
 (`templates/core.py` `pow_templates`, `_mul_factor_sets`;
 `templates/functions.py` `_minus_one`). They are kids whatever holds of
-the base (record 1326: `x**y` has kids `2*y`, `x - 1`, `x + 1`).
+the base (record 1326: `x**y` has kids `x - 1`, `x + 1`).
 
 Property: `cone` is a function of `o`, the registry and the settings, never
 of a session (`Engine._struct` docstring; `Engine._cones`, `_kids` are
@@ -461,7 +460,7 @@ predicate, a definition over that block for a derived one.
 | 374 | `Q.negative(zoo)`, `True` | constant, `Engine.is_` | `zoo` (`constant_units`, 14 units) | `(F, F, {})` | `base[zoo]+negative` | False |
 | 392 | `Q.positive_infinite(I*x)`, `Q.real(x)` | `Engine.ask`, part = whole | `I*x` (`mul_templates`, 16 rules), `x` (`symbol_units`) | `(F, F, {I*x, x})` | `base[I*x]+positive_infinite` | False |
 | 636 | `Q.algebraic(1 + I)`, `True` | constant, `Engine.is_` | `1 + I` (`add_templates`, 9 rules; `1`, `I` resolved in place) | `(F, F, {})` | `base[1+I]+algebraic` | True |
-| 1326 | `Q.rational(x**y)`, `Q.rational(y) & Q.eq(x, -1)` | `Engine.ask`, part = whole (relational) | `x**y` (`pow_templates`, 57 rules), derived `2*y`, `x - 1`, `x + 1` (`mul`/`add_templates`), `x`, `y`, `-1` (relation side), atom `eq(-1, x)` | `(T, T, {x, y, x**y})` | `base[x**y]+rational` | None |
+| 1326 | `Q.rational(x**y)`, `Q.rational(y) & Q.eq(x, -1)` | `Engine.ask`, part = whole (relational) | `x**y` (`pow_templates`, 57 rules), derived `x - 1`, `x + 1` (`mul`/`add_templates`), `x`, `y`, `-1` (relation side), atom `eq(-1, x)` | `(T, T, {x, y, x**y})` | `base[x**y]+rational` | None |
 | 1875 | `Q.odd(2*x)`, `Q.irrational(x)` | `Engine.ask`, part = whole | `2*x` (`mul_templates`, 41 rules), `x` | `(F, F, {2*x, x})` | `base[2*x]+odd` | False |
 | 2369 | `Q.algebraic(log(x))`, `Q.algebraic(x)` | `Engine.ask`, part = whole | `log(x)` (`log_templates`, a name generated in `templates/functions.py`), derived `x - 1` (`add_templates`), `x` | `(F, F, {log(x), x})` | `base[log(x)]+algebraic` | None |
 | 2514 | `Implies(Q.real(x), Q.positive(x))`, `True` | `Engine.ask`, no assumptions | `x` (`symbol_units`) | `(F, F, {x})` | `literal_of(Implies(...))` | None |

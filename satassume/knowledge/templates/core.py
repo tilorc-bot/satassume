@@ -689,7 +689,8 @@ POW_GUARDS = MappingProxyType({
     'b unit angle': lambda x: x['angle'] is not None,
     'u slot': lambda x: x['has_u'],
     'b-1, b+1 slots': lambda x: x['has_b1'],
-    '2*e slot': lambda x: x['has_t'],
+    'T implies 2*e': lambda x: x['has_t'] >= 1,
+    'T iff 2*e': lambda x: x['has_t'] == 2,
     'e rational non-integer': _e_ratio,
     'e.q==2': lambda x: x['e'].q == 2,
     'e.q!=2': lambda x: x['e'].q != 2,
@@ -722,7 +723,8 @@ POW_SLOTS = MappingProxyType({'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': 
                               'BM': _BM, 'BP': _BP})
 
 # Slots: 'B' base, 'E' exponent, 'N' node, 'U' the u of an exp(u) base,
-# 'S' the s of an I*pi*c*s exponent of E, 'T' 2*e, 'BM'/'BP' b - 1, b + 1.
+# 'S' the s of an I*pi*c*s exponent of E, 'T' a node whose integrality gives
+# that of 2*e (:func:`_twice`), 'BM'/'BP' b - 1, b + 1.
 def _pow_table_rows():
     """The rows of ``POW_TABLE`` (built on first use, :func:`_table`)."""
     return (
@@ -770,10 +772,10 @@ def _pow_table_rows():
         # and the exponent is half an odd integer.
         Row('rational_exp.not_half',
             [('B', 'extended_real'), ('E', 'rational'), ('T', 'integer', False)],
-            ('N', 'imaginary', False), when='2*e slot'),
+            ('N', 'imaginary', False), when='T iff 2*e'),
         Row('rational_exp.half_odd', [('B', 'negative'), ('E', 'rational'), ('T', 'integer'),
                                       ('E', 'integer',
-                                       False)], ('N', 'imaginary'), when='2*e slot'),
+                                       False)], ('N', 'imaginary'), when='T implies 2*e'),
         # b**(k/2) for real b is imaginary iff b is a negative real.
         Row('e=k/2.imaginary', [('B', 'extended_real')], [('N', 'imaginary'), ('B', 'negative')],
             kind='equiv', when=('e rational non-integer', 'e.q==2')),
@@ -823,7 +825,7 @@ def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc):
     base/exponent or ``None`` if symbolic; ``angle`` is
     ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the argument of an
     ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and exponent
-    ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``: slots
+    ``I*pi*c*s``; ``has_t``: slot ``_T`` holds the ``s`` of :func:`_twice` (``has_t``: its ``k``); ``has_b1``: slots
     ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``; ``nc``: the base has a
     non-commutative subterm (``domain._noncommutative``: it may not be a
     number)."""
@@ -903,10 +905,10 @@ def _pow_pattern(expr):
                 objs[_S] = s_
                 if s_.is_Atom and s_.is_number:
                     consts[_S] = s_
-    has_t = _E not in consts and not e.is_number
+    t, has_t = _twice(e) if _E not in consts else (None, 0)
     if has_t:
-        objs[_T] = Mul(S(2), e)
-    has_b1 = has_t and _B not in consts and not b.is_number
+        objs[_T] = t
+    has_b1 = _E not in consts and not e.is_number and _B not in consts and not b.is_number
     if has_b1:
         objs[_BM] = b - S.One
         objs[_BP] = b + S.One
@@ -919,6 +921,47 @@ def _pow_pattern(expr):
         key += ('nc',)
     pargs = (consts.get(_B), consts.get(_E), same, angle, u is not None, ipi, has_t, has_b1, nc)
     return consts, objs, key, pargs
+
+
+def _twice(e):
+    """``(s, k)`` for an exponent with a node ``s`` whose integrality
+    gives that of ``2*e``: ``k == 2`` if ``integer(s) <-> integer(2*e)``
+    (``e = s/2`` or ``-s/2``: ``-s`` is an integer iff ``s`` is), ``k == 1``
+    if only ``integer(s) -> integer(2*e)`` (``e = c*s`` with ``2*c`` an
+    odd integer, ``e = s + c`` with ``2*c`` an odd integer); else ``(None,
+    0)``.  ``s`` is a node of the session already: the factor after the
+    coefficient, the derived rest of a longer product
+    (:func:`_mul_factor_sets`), or the other term of a sum ``s + c``.
+    For an exponent with a Rational of denominator above 2 (``2*n/3``,
+    ``n + 1/3``, ``n/4``) ``s`` is the derived node ``2*e``, ``k == 2``:
+    its integrality is a lattice question (INTLAT owns ``c*t`` and sums
+    with such coefficients; ``coeff.half`` decides ``n/2``).  Other
+    exponents derive no node ``2*e`` (it was one, with its Mul block, in
+    every Pow with a symbolic exponent): the rows about ``integer(2*e)``
+    decide whether a power of a real base is imaginary, which needs
+    ``e`` half an odd integer."""
+    args = e.args
+    if len(args) < 2:
+        return None, 0
+    if any(_coeff_q(a) > 2 for a in (args if e.is_Add else (e,))):
+        return Mul(S(2), e), 2
+    c = args[0]
+    if e.is_Mul and c.is_Rational and c.q == 2:
+        s_ = args[1] if len(args) == 2 else kept_product(args[1:])
+        if s_ is None:
+            return None, 0
+        return s_, (2 if abs(c.p) == 1 else 1)
+    if e.is_Add and len(args) == 2 and c.is_Rational and c.q == 2:
+        return args[1], 1
+    return None, 0
+
+
+def _coeff_q(a) -> int:
+    """The denominator of the Rational ``a`` or of the Rational
+    coefficient of the product ``a`` (1 if none)."""
+    if a.is_Mul:
+        a = a.args[0]
+    return a.q if a.is_Rational else 1
 
 
 def _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):

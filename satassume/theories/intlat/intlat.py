@@ -295,7 +295,7 @@ def _relations(poly: Poly, fp, p: int, e: int):
     return out
 
 
-def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int, focus=None) -> bool:
+def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int) -> bool:
     """Insert the rows the products ``polys`` give (whose bases are
     integral in the lattice ``rows``); True iff the lattice grew.
 
@@ -306,44 +306,46 @@ def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int, focus=None) ->
     (residues of each base and of ``u`` alone, :func:`_residue`) are
     integral: ``u``'s value is the polynomial of the bases' values, and
     the residues the lattice allows contain the actual ones.  No vector
-    allowed: the relation ``1/m``, a conflict.  The reason: the
-    literals that make the bases integral and give those residues.
-    ``pdone``: per product, the residues it was last stepped with (the
-    lattice only grows, so the same residues add nothing new).  ``focus``:
-    if given, only the products with a column in it are looked at."""
+    allowed: the relation ``1/m``, a conflict.  The reason of a row: the
+    literals that make the bases integral, and for a relation modulo
+    ``m`` those that give the residues modulo ``m`` (a modulus that adds
+    no row adds nothing to any reason).  ``pdone``: per product, the
+    residues it was last stepped with (the lattice only grows, so the
+    same residues add nothing new)."""
     grew = False
     mods = None
     for i, P in enumerate(polys):
         if not P.cols <= supp:
             continue
-        if focus is not None and P.u not in focus and not (P.cols & focus):
-            continue
-        why = _EMPTY
+        base = _EMPTY
         for c in P.bases:
             w = reduce(rows, {c: d})
             if w is None:
                 break
-            why = why | w
+            base = base | w
         else:
             if mods is None:
                 mods = _moduli(d)
             cols = P.bases + (P.u,)
             facts = []
+            whys = []
             for p, e in mods:
                 fp = []
+                why = base
                 for c in cols:
                     j, a, w = _residue(rows, c, d, p, e)
                     fp.append((j, a))
                     if w:
                         why = why | w
                 facts.append(tuple(fp))
+                whys.append(why)
             sig = (d, tuple(facts))
             if pdone.get(i) == sig:
                 continue
             pdone[i] = sig
-            vecs = [{P.u: d}]
+            vecs = [({P.u: d}, base)]
             order = (P.u,) + P.bases
-            for (p, e), fp in zip(mods, facts):
+            for (p, e), fp, why in zip(mods, facts, whys):
                 basis = _relations(P, fp, p, e)
                 if basis is None:
                     continue
@@ -353,8 +355,8 @@ def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int, focus=None) ->
                     if b[-1]:
                         v[CONST] = s * b[-1]
                     if v:
-                        vecs.append(v)
-            for v in vecs:
+                        vecs.append((v, why))
+            for v, why in vecs:
                 if reduce(rows, v) is None:
                     insert(rows, v, why)
                     supp.add(P.u)
@@ -363,7 +365,7 @@ def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int, focus=None) ->
 
 
 def _close(rows: dict, supp: set, negs: list, used: set, d: int,
-           start: int = 0, polys=(), pdone=None, focus=None) -> Optional[FrozenSet[int]]:
+           start: int = 0, polys=(), pdone=None) -> Optional[FrozenSet[int]]:
     """Close the lattice ``rows`` (term columns ``supp``) under the parity
     step with the non-integral forms ``negs`` (``(form, literal,
     columns)``; ``used``: the indices already stepped) in place; the
@@ -404,7 +406,7 @@ def _close(rows: dict, supp: set, negs: list, used: set, d: int,
             insert(rows, g, w2 | {lit})
             changed = True
         if not changed and polys:
-            changed = _poly_step(rows, supp, polys, pdone, d, focus)
+            changed = _poly_step(rows, supp, polys, pdone, d)
         if not changed:
             return None
         start = 0
@@ -585,8 +587,10 @@ class IntLatTheory:
         self._done = False
 
     # -- reasoning ---------------------------------------------------------
-    def _build(self, lits) -> Lattice:
-        lat = Lattice(self.d, self.polys)
+    def _build(self, lits, polys: bool = True) -> Lattice:
+        """The lattice of the literals ``lits``, closed (under the
+        products' step too iff ``polys``)."""
+        lat = Lattice(self.d, self.polys if polys else ())
         form, cols = self.form, self.cols
         for l in lits:
             if l > 0:
@@ -613,22 +617,26 @@ class IntLatTheory:
         return lat
 
     def _minimise(self, why, test):
-        """Drop literals of ``why`` that ``test`` (on a literal subset:
-        still derivable?) does not need."""
+        """Drop literals of ``why`` that ``test`` (on the lattice of a
+        literal subset: still derivable?) does not need.  If the lattice
+        of ``why`` derives it without the products' step, the subsets are
+        tried without it too (a subset that needs the step is kept out:
+        the reason is still valid, and the step is the costly part)."""
         if len(why) > self.MIN_WHY or len(why) <= 1:
             return list(why)
         keep = sorted(why, key=abs)
+        polys = bool(self.polys) and not test(self._build(keep, False))
         i = 0
         while i < len(keep):
             trial = keep[:i] + keep[i + 1:]
-            if test(trial):
+            if test(self._build(trial, polys)):
                 keep = trial
             else:
                 i += 1
         return keep
 
     def _conflict(self, lat):
-        why = self._minimise(lat.conflict, lambda ls: self._build(ls).conflict is not None)
+        why = self._minimise(lat.conflict, lambda lat: lat.conflict is not None)
         self.stats["conflicts"] += 1
         return [-l for l in why]
 
@@ -661,13 +669,13 @@ class IntLatTheory:
             if not out_f and v not in self.inexact:
                 why = lat.implies(f)
                 if why is not None:
-                    why = self._minimise(why, lambda ls, f=f: self._build(ls).implies(f) is not None)
+                    why = self._minimise(why, lambda lat, f=f: lat.implies(f) is not None)
                     out.append((v, [v] + [-l for l in why]))
                     self.stats["props"] += 1
                     continue
             why = lat.refutes(f, fc)
             if why is not None:
-                why = self._minimise(why, lambda ls, f=f, fc=fc: self._build(ls).refutes(f, fc) is not None)
+                why = self._minimise(why, lambda lat, f=f, fc=fc: lat.refutes(f, fc) is not None)
                 out.append((-v, [-v] + [-l for l in why]))
                 self.stats["props"] += 1
         return out
