@@ -673,8 +673,8 @@ def _b_not_qth_power(x):
 #: exponent or None, and the flags of ``pow_templates``).
 POW_GUARDS = MappingProxyType({
     'b is E': lambda x: x['b'] is S.Exp1,
-    # the sign rows, left to the SIGN theory for a symbolic exponent
-    # (``sign_owns_pow``)
+    # the sign rows, left to the SIGN theory for a symbolic base and a
+    # symbolic exponent (``sign_owns_pow``)
     'sign rows': lambda x: not _pow_sign_owned(x),
     'b number': lambda x: not x['nc'],
     'ipi': lambda x: x['ipi'] is not None,
@@ -771,7 +771,8 @@ def _pow_table_rows():
             when='u slot'),
         # An integer b to a negative integer power e is an integer only for
         # b = +-1: |b**e| <= 1/2 for |b| >= 2, and 0**e is zoo.  So b is odd
-        # and neither prime nor composite, and b**e = +-1 is neither either.
+        # and neither prime nor composite, and b**e = +-1 is neither either,
+        # and odd.
         Row('int_base.negative_int_exp',
             [('B', 'integer'), ('E', 'integer'), ('E', 'negative'), ('N', 'integer')],
             ('B', 'odd')),
@@ -781,6 +782,9 @@ def _pow_table_rows():
         Row('int_base.negative_int_exp.unit',
             [('B', 'integer'), ('E', 'integer'), ('E', 'negative')], ('N', '$p', False),
             preds=('prime', 'composite')),
+        Row('int_base.negative_int_exp.odd',
+            [('B', 'integer'), ('E', 'integer'), ('E', 'negative'), ('N', 'integer')],
+            ('N', 'odd')),
         # The direct form, for facts about b - 1 and b + 1 themselves
         # (``~zero(b - 1)``, ``positive(b - 1)``, a compound base).
         Row('int_base.negative_int_exp.not_unit',

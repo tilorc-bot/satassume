@@ -210,8 +210,8 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, sym, nc=False):
     R = Rules()
     rule = R.rule
     for i, (prem, concl) in enumerate(_POW_RULES):
-        # a symbolic exponent leaves the sign rows to the SIGN theory
-        # (sign_owns_pow)
+        # a symbolic base and exponent leave the sign rows to the SIGN
+        # theory (sign_owns_pow)
         if sym and i in _POW_SIGN_ROWS:
             continue
         rule([_lit(p) for p in prem], _lit(concl))
@@ -250,9 +250,12 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, sym, nc=False):
         # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
         rule([(_U, 'imaginary', True), (_E, 'imaginary', True)], (_N, 'positive', True))
     # An integer b to a negative integer power is an integer only for
-    # b = +-1 (issue #149 T1 stage 2: replaces the b - 1, b + 1 slots).
+    # b = +-1 (issue #149 T1 stage 2: these rows hold for every power; the
+    # direct form with the b - 1, b + 1 slots stays for a symbolic base and
+    # exponent).
     ie = [(_B, 'integer', True), (_E, 'integer', True), (_E, 'negative', True)]
     rule(ie + [(_N, 'integer', True)], (_B, 'odd', True))
+    rule(ie + [(_N, 'integer', True)], (_N, 'odd', True))
     for pred in ('prime', 'composite'):
         rule(ie + [(_N, 'integer', True)], (_B, pred, False))
     for pred in ('prime', 'composite'):

@@ -417,7 +417,7 @@ def run(exprs, depth=1, independent=False, models=None):
 @contextlib.contextmanager
 def _sign_rows():
     """Check with the sign rows of every sum, product and power as template
-    rows.  From three arguments, and for a symbolic exponent, the templates
+    rows.  From three arguments, and for a symbolic base and exponent, the templates
     leave them to the SIGN theory (``templates.core.sign_owns``,
     ``sign_owns_pow``, issue #149 T1), which every session
     attaches to each such node and which derives every literal those rows

@@ -601,13 +601,27 @@ never prime or composite. So `integer(1/b)` under `prime(b)`, `integer(b**-2)` u
 and `b + 1` of a power with a symbolic base and exponent, stays: only those nodes carry facts about `b - 1`,
 `b + 1` themselves (`~zero(x - 1)`, gate2 record 1605; `positive(b - 1)`; a compound base, `(x + 2)**e` with a
 positive integer `x`). Dropping the nodes was measured: clauses per query -20% and variables -14% on the
-power-heavy corpus and the theory's cost gone (+1% warm time instead of +7%), but those answers lost. The
+power-heavy corpus and the theory's cost gone (+1% warm time instead of the +5% of this split), but those
+answers lost. The
 integer-magnitude classes of the issue (`(0, 1)`, `1`, `(1, oo)` and their negatives as atoms) would make the
 nodes unnecessary, at the cost of 16 atoms in every SIGN node.
 
+The net change per class of power (template rows of its block):
+
+- symbolic base and symbolic exponent (`x**y`, `(x + 1)**y`): -15 sign rows (`_POW_SIGN_ROWS`, now derived
+  by the map op), +4 integer-base rows;
+- numeric base or exponent (`1/x`, `x**-2`, `x**3`, `2**x`, ...): +4 integer-base rows and nothing dropped;
+  they fold to at most 6 extra clauses, for a negative integer exponent, and to none otherwise.
+
+The fourth integer-base row, `int_base.negative_int_exp.odd` (`b**e` an integer gives `b**e` odd, since it is
+then `+-1`), decides `even(b**e)` and `odd(1/b)` under `integer(1/b)`.
+
 Measured against `theories` (fresh engine per query, generated corpora; the numbers are in the PR): no lost
-answers, no flips, clauses per query -6% on power-heavy queries; warm time +5% per query on that class
-(+4% with the lazy reasons of #158), the refine stream flat (+0.4%).
+answers, no flips; clauses per query -3.9% on the power corpus and -4.2% on powers under relations (-4.1% on
+integer powers), about 0 (-0.3%) on mixed corpora; variables flat. The cost: warm time +5-6% per query on
+power-heavy queries, about +1% on the refine stream (`tools/ab.py`), +2% cold time on held-out query shapes.
+The structural gain is the 15 rows moved into the decision procedure; the clause and variable gains of
+dropping the `b - 1`, `b + 1` nodes need the integer-magnitude atoms above.
 
 ## CLOSURE: ring and field membership of sums and products
 

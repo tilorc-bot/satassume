@@ -1,9 +1,9 @@
 """SIGN's ``POW`` map op (issue #149, T1 stage 2): the table against SymPy,
 the template rows it replaces, and answers through the engine.
 
-``b**e`` with a symbolic exponent is told to the SIGN theory
-(``templates.core.sign_owns_pow``), and the sign rows of ``_POW_RULES`` at
-``_POW_SIGN_ROWS`` are left out of its block.  Clause validity of the
+``b**e`` with a symbolic base and a symbolic exponent is told to the SIGN
+theory (``templates.core.sign_owns_pow``), and the sign rows of
+``_POW_RULES`` at ``_POW_SIGN_ROWS`` are left out of its block.  Clause validity of the
 reasons (every atom tuple, with pop/restore) is in
 ``tests/test_class_clauses.py`` (``POW`` is one of SIGN's ops there).
 """
@@ -109,8 +109,9 @@ def _derives(prem, concl) -> bool:
 
 
 def test_pow_sign_rows_are_derived():
-    """The rows the templates leave out for a symbolic exponent are exactly
-    the rows of ``_POW_RULES`` the map op derives from their premises."""
+    """The rows the templates leave out for a symbolic base and exponent are
+    exactly the rows of ``_POW_RULES`` the map op derives from their
+    premises."""
     derived = {i for i, (p, c) in enumerate(_POW_RULES) if _derives(p, c)}
     assert derived == set(_POW_SIGN_ROWS)
 
@@ -158,6 +159,9 @@ def _ask(q, A=True):
     (Q.integer(b**e), Q.composite(b) & Q.integer(e) & Q.negative(e), False),
     (Q.integer(1/b), Q.prime(b), False),
     (Q.integer(b**-2), Q.composite(b), False),
+    # b**e an integer is then +-1, so odd
+    (Q.even(b**e), Q.integer(b) & Q.integer(e) & Q.negative(e), False),
+    (Q.odd(1/b), Q.integer(b) & Q.integer(1/b), True),
     (Q.integer(b**-3), Q.even(b), False),
     (Q.prime(b**b), Q.negative(b), False),
     (Q.composite(b**e), Q.integer(b) & Q.integer(e) & Q.negative(e), False),
