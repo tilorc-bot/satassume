@@ -219,3 +219,13 @@ def test_numeric_part_folds_into_the_constant():
     assert ask(Q.eq(im(w), 2), Q.eq(w, 2 * I)) is True
     assert ask(Q.eq(w, 2 * I), Q.eq(im(w), 2)) is True
     assert ask(Q.zero(re(x)), Q.eq(x + w, 2 * I) & Q.complex(x)) is True
+
+
+def test_unevaluated_product_not_split():
+    """An unevaluated product whose factors do not multiply to what the
+    split reads (``I*x*(1/x)`` is nan at ``x = 0``; ``0*I*x``) is left
+    unread, as on the real path (#161)."""
+    from sympy import Mul
+    assert cinterpret(Q.eq(Mul(I, x, 1 / x, evaluate=False), I)) is None
+    assert cinterpret(Q.eq(Mul(0, I, x, evaluate=False), 0)) is None
+    assert cinterpret(Q.eq(2 * I * x, I)) is not None

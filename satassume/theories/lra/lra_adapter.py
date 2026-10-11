@@ -492,8 +492,13 @@ def _clin(e, scale, fr: dict, fi: dict, const: list, kinds: dict) -> None:
         for f in e.args:
             (rest if f.free_symbols else closed).append(f)
         if closed:
+            # the rest must be what the node multiplies, as in _lin (#161)
+            from ...knowledge.templates.core import kept_product
+            t = rest[0] if len(rest) == 1 else kept_product(rest)
             c = _ccoeff(Mul(*closed))
-            _clin(Mul(*rest), _cmul(scale, c), fr, fi, const, kinds)
+            if t is None or c == (0, 0):
+                raise _Unhandled(e)
+            _clin(t, _cmul(scale, c), fr, fi, const, kinds)
             return
     cr, ci = scale
     kind = kinds[e] = _part_kind(e)
