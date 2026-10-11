@@ -822,20 +822,31 @@ lattice's scale `d` (`p <= 13`, `m <= 64`), `_poly_step` takes the residues that
 base and the term alone (`(x - a)/p**j` in the lattice, found by reducing `x/p**j` to a constant), lists
 the base residue vectors they allow (at most 256), and inserts the relations `(c_u*u + c.x + c_0)/m` that
 hold at all of them: the kernel modulo `m` of the vectors `(P(r), r, 1)` (`_kernel`, Euclid on the values,
-cached per product and residues). No vector allowed gives the relation `1/m`, a conflict. The reason is the
-literals that made the bases integral and gave the residues. Sound because the allowed residue vectors
+cached per product and residues). No vector allowed gives the relation `1/m`, a conflict. The reason of a row is the
+literals that made the bases integral and, for a relation modulo `m`, those that gave the residues modulo
+`m` (a modulus that adds no row adds nothing to any reason). Sound because the allowed residue vectors
 contain the actual ones and `u`'s value is `P` of the bases' values once they are finite integers (a
 product's value is the product of its arguments' values, evaluated or not). This decides
 `integer(n*(n + 1)*(n + 2)/6)` and `integer((n**3 - n)/6)` under `integer(n)`, `integer((n**2 - 1)/8)` under
 `odd(n)`, `integer(n**2/4)` (True under `even(n)`, False under `odd(n)`), `integer(n*m/4)` under even `n`,
 `m`, and backward `even(n)` from `integer(n**2/4)`. The step runs once per batch of assertions
 (`Lattice.settle`, at `propagate`/`check`), not inside `refutes`: what it would find there, the search finds
-by asserting the atom. Engagement is unchanged (a product term only occurs in a form the theory already
+by asserting the atom. A propagation reason is minimised by deletion on rebuilt lattices; when the lattice
+of the whole reason derives the literal without the products' step, the trial subsets are closed without
+it too (the step is the costly part, and a reason that needs no product stays valid). Engagement is unchanged (a product term only occurs in a form the theory already
 owns), so no template row is dropped: the parity rows of products (`all_odd`, `one_even`, the Pow
 integer/even/odd rows) cover every product in every session, and owning products would engage the theory
 in most sessions (the +22% row below). `tests/test_intlat_theory.py` checks every clause over random
 products of 1 and 2 bases (integer base values covering every residue modulo 72, fractions, a non-finite
 value), backtracking, the kernel and residue helpers, and end-to-end answers against values.
+
+**The `2*e` node of a power.** The Pow rows `rational_exp.not_half` and `rational_exp.half_odd` (a real
+base to a rational exponent is imaginary iff the base is negative and `2*e` is an odd integer) read a
+node whose integrality gives that of `2*e` (`core._twice`). The derived node `2*e` is kept for a symbol,
+a function, a power, and an exponent with a Rational of denominator above 2 (`2*n/3`, `n/4`: a lattice
+question). For `e = +-s/2` the slot is `s` itself, for `c*s` and `s + c` with `2*c` odd it is `s` (one
+way: `half_odd` only), and an exponent that is a sum or product with integer coefficients (`n*m`, `n + 1`)
+derives no node: only an assumption naming `2*e` could say it is an integer while `e` is not.
 
 **Engagement.** The theory is told only the nodes the templates no longer cover (`intlat_adapter.owns`):
 - a sum of more than `MAX_ADD_SMALL` (3) terms;

@@ -296,7 +296,8 @@ template).
   (`_resolve_lit`), so constants never become nodes through templates.
 - A template mentions the node, its direct arguments and a few derived
   nodes built from them where the vocabulary cannot say a fact otherwise:
-  `x - 1` of `log`/`acos`/`asin`, `b - 1` and `b + 1` of
+  `2*e` of a power (not for an exponent that is a sum or product with integer
+  coefficients, or half of a node, `core._twice`), `x - 1` of `log`/`acos`/`asin`, `b - 1` and `b + 1` of
   an integer base, `x*y` of a product `c*x*y` with a Rational `c`
   (`_mul_factor_sets`).
 - SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
