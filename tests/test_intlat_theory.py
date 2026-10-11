@@ -462,3 +462,197 @@ def test_adapter_clauses_are_valid_on_values(seeds):
                     break
             th.pop_level()
     assert told and checked
+
+
+# ---------------------------------------------------------------------------
+# stage B: products of integral forms (Poly), brute force over base values
+# ---------------------------------------------------------------------------
+
+_PCOEFFS = [F(1), F(-1), F(1, 2), F(1, 3), F(1, 4), F(3, 4), F(1, 6), F(1, 8), F(3, 8),
+            F(5, 12), F(1, 9)]
+_PCONSTS = [F(0), F(0), F(1, 2), F(-1, 4), F(1, 8), F(1, 3), F(-1, 6)]
+
+
+def _poly_case(rng):
+    """Bases ``0..nb-1``, the product term ``nb`` (a random
+    :class:`Poly`), random atoms over the three; the assignments: base
+    values (integers covering every residue mod 72, fractions, None for
+    a non-finite one), the product's value the polynomial's (None when a
+    base is None)."""
+    from satassume.theories.intlat.intlat import Poly
+    nb = rng.choice((1, 1, 2))
+    u = nb
+    factors = []
+    for _ in range(rng.randint(1, 3)):
+        a = tuple(rng.randint(-2, 2) for _ in range(nb))
+        if not any(a):
+            a = (1,) + a[1:]
+        factors.append((a, rng.randint(-2, 2), rng.randint(1, 3)))
+    poly = Poly(u, tuple(range(nb)), factors)
+    if nb == 1:
+        vals = [F(i) for i in range(-36, 36)] + [F(1, 2), F(-3, 2), F(1, 3), F(5, 4), None]
+    else:
+        vals = [F(i) for i in range(-12, 12)] + [F(1, 2), F(2, 3), None]
+    assigns = [()]
+    for _ in range(nb):
+        assigns = [a + (v,) for a in assigns for v in vals]
+    rows = []
+    for a in assigns:
+        if any(v is None for v in a):
+            rows.append(a + (None,))
+            continue
+        p = F(1)
+        for co, c, k in factors:
+            p *= (sum(x * v for x, v in zip(co, a)) + c) ** k
+        rows.append(a + (p,))
+    atoms = {}
+    for v in range(1, rng.randint(4, 8)):
+        if rng.random() < 0.6:
+            cols = [u] + [b for b in range(nb) if rng.random() < 0.4]
+        else:
+            cols = rng.sample(range(nb), rng.randint(1, nb))
+        f = {c: rng.choice(_PCOEFFS) for c in cols}
+        k = rng.choice(_PCONSTS)
+        if k:
+            f[CONST] = k
+        atoms[v] = f
+    for b in range(nb):         # integer(x) for each base
+        atoms[len(atoms) + 1] = {b: F(1)}
+    masks = {}
+    for v, f in atoms.items():
+        m = 0
+        for i, row in enumerate(rows):
+            if any(row[c] is None for c in f if c != CONST):
+                continue
+            val = f.get(CONST, 0) + sum(x * row[c] for c, x in f.items() if c != CONST)
+            if val.denominator == 1:
+                m |= 1 << i
+        masks[v] = m
+    return poly, atoms, masks, (1 << len(rows)) - 1
+
+
+def _poly_theory(poly, atoms):
+    th = IntLatTheory()
+    for v, f in atoms.items():
+        th.register_atom(v, (f, True))
+    th.define_poly(poly)
+    return th
+
+
+@pytest.mark.parametrize("seeds", [range(0, 120), range(120, 240)])
+def test_poly_clauses_are_valid_and_pop_restores(seeds):
+    checked = [0]
+    for seed in seeds:
+        rng = random.Random(seed)
+        poly, atoms, masks, full = _poly_case(rng)
+
+        def derived(trail):
+            th = _poly_theory(poly, atoms)
+            th.push_level()
+            for l in trail:
+                th.assert_lit(l)
+            if th.check() is not None:
+                return None
+            return sorted(l for l, _ in th.propagate())
+
+        for _run in range(4):
+            th = _poly_theory(poly, atoms)
+            val, levels = {}, []
+            for _step in range(8):
+                free = [v for v in atoms if v not in val]
+                if not free:
+                    break
+                v = rng.choice(free)
+                # the bases' integrality first, mostly: the products' rows need it
+                ints = [w for w in free if len(atoms[w]) == 1 and poly.u not in atoms[w]
+                        and atoms[w].get(next(iter(atoms[w]))) == 1]
+                if ints and rng.random() < 0.7:
+                    v, lit = ints[0], ints[0]
+                else:
+                    lit = v if rng.random() < 0.5 else -v
+                th.push_level()
+                levels.append(dict(val))
+                val[v] = lit > 0
+                th.assert_lit(lit)
+                ok = _fixpoint(th, val, masks, full, checked)
+                if not ok or rng.random() < 0.3:
+                    th.pop_level()
+                    val = levels.pop()
+                    got = derived([v if b else -v for v, b in val.items()])
+                    assert (th.check() is None) == (got is not None)
+                    if got is not None:
+                        assert sorted(l for l, _ in th.propagate()) == got
+    assert checked[0] > 100
+
+
+def test_kernel_and_residue():
+    from satassume.theories.intlat.intlat import _kernel, _residue, _moduli
+    # u = x**2 at every x mod 8: u - x**2 is 0, so the relations with
+    # (c_u, c_x, c_0) and c_u*x**2 + c_x*x + c_0 == 0 mod 8 for all x
+    pts = {(x * x % 8, x, 1) for x in range(8)}
+    basis = _kernel(pts, 3, 8)
+    for v in basis:
+        assert all(sum(a * b for a, b in zip(v, p)) % 8 == 0 for p in pts)
+    # (u - x)/2 is a relation (x**2 == x mod 2): 4*(1, -1, 0) is in span + 8Z^3
+    lat = {}
+    for v in basis + [[8, 0, 0], [0, 8, 0], [0, 0, 8]]:
+        insert(lat, {i: x for i, x in enumerate(v) if x}, frozenset())
+    assert reduce(lat, {0: 4, 1: -4}) is not None
+    assert reduce(lat, {0: 2, 1: -2}) is None
+    # odd x: (x - 1)/2 and x/1 integral -> residue (1, 1) mod 2
+    rows = {CONST: ({CONST: 8}, frozenset())}
+    insert(rows, {0: 8}, frozenset({1}))
+    insert(rows, {0: 4, CONST: -4}, frozenset({2}))
+    assert _residue(rows, 0, 8, 2, 3) == (1, 1, frozenset({1, 2}))
+    assert _moduli(24) == [(2, 3), (3, 1)] and _moduli(1000003) == []
+    assert _moduli(128) == [(2, 6)]
+
+
+n_, m_ = symbols('n m')
+POLY_ANSWERS = [
+    (Q.integer(n_*(n_ + 1)*(n_ + 2)/6), Q.integer(n_), True),
+    (Q.integer((n_**2 - 1)/8), Q.odd(n_), True),
+    (Q.integer(n_**2/4), Q.even(n_), True),
+    (Q.integer(n_*m_/4), Q.even(n_) & Q.even(m_), True),
+    (Q.integer((n_**3 - n_)/6), Q.integer(n_), True),
+    (Q.integer(n_**2/4), Q.odd(n_), False),
+    (Q.integer((n_**2 + 1)/4), Q.integer(n_), False),
+    (Q.integer((n_**2 + 1)/2), Q.odd(n_), True),
+    (Q.even(n_), Q.integer(n_) & Q.integer(n_**2/4), True),
+    (Q.odd(n_), Q.integer(n_) & Q.integer((n_**2 - 1)/8), True),
+    (Q.integer(n_**4/16 + n_/2), Q.even(n_), True),
+    (Q.integer(n_*(n_ + 1)*(2*n_ + 1)/6), Q.integer(n_), True),
+    (Q.integer((n_**5 - n_)/30), Q.integer(n_), True),
+    (Q.integer(n_*m_*(n_ + m_)/2), Q.integer(n_) & Q.integer(m_), True),
+    (Q.integer(n_**2/3 + m_/3), Q.integer(n_) & Q.integer((m_ - 1)/3), False),
+]
+
+
+@pytest.mark.parametrize("prop,assum,expected", POLY_ANSWERS)
+def test_poly_answers(prop, assum, expected):
+    assert ask(prop, assum) is expected
+
+
+@pytest.mark.parametrize("prop,assum,expected", POLY_ANSWERS)
+def test_poly_answers_against_values(prop, assum, expected):
+    rng = random.Random(1)
+    syms = sorted(prop.free_symbols | assum.free_symbols, key=str)
+    seen = 0
+    for _ in range(600):
+        sub = {s: Rational(rng.randint(-30, 30), rng.choice((1, 1, 1, 2, 3))) for s in syms}
+        if not _holds(assum, sub):
+            continue
+        seen += 1
+        assert _holds(prop, sub) is expected, sub
+    assert seen
+
+
+def test_poly_is_not_read_through_other_factors():
+    # pi, 1/x, a non-integer coefficient inside a factor, a symbolic
+    # power, a Float factor: no product of integral forms (each is not an
+    # integer at some even x, y; Mul(x, 1/x, y) is nan at x = 0)
+    from sympy import Float, Mul, pi
+    x, y = symbols('x y')
+    for t in (pi*x*y, x*y/(x + 1), x**y*y, x*(x + Rational(1, 3))*y,
+              Mul(x, 1/x, y, evaluate=False), Mul(x, y, Float(0.5), y, evaluate=False)):
+        assert ask(Q.integer(t/4), Q.even(x) & Q.even(y)) is not True, t

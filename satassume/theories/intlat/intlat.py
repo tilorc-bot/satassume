@@ -181,20 +181,39 @@ def _moduli(d: int) -> List[Tuple[int, int]]:
 def _residue(rows: dict, col: int, d: int, p: int, e: int):
     """``(j, a, why)``: the largest ``j <= e`` and ``a`` (``0 <= a <
     p**j``) with ``(x - a)/p**j`` in the lattice, ``x`` the term of
-    ``col``; ``why`` the reason."""
+    ``col``; ``why`` the reason.
+
+    ``x/q`` is reduced by the rows down to a constant ``w/d`` (else no
+    ``(x - a)/q`` is in the lattice, nor any ``(x - a)/(p*q)``); then
+    ``(x - a)/q`` is in it iff ``w/d - a/q`` is an integer (the lattice's
+    constants are the integers: no conflict), i.e. ``d/q`` divides ``w``
+    and ``a == w/(d/q) (mod q)``."""
     j, a, why = 0, 0, _EMPTY
     while j < e:
-        step = p ** j
-        s = d // (step * p)
-        for t in range(p):
-            b = a + t * step
-            v = {col: s, CONST: -b * s} if b else {col: s}
-            w = reduce(rows, v)
-            if w is not None:
+        q = p ** (j + 1)
+        s = d // q
+        f = {col: s}
+        w = _EMPTY
+        while True:
+            k = min(f)
+            if k == CONST:
                 break
-        else:
-            break
-        j, a, why = j + 1, b, why | w
+            r = rows.get(k)
+            if r is None:
+                return j, a, why
+            rv, rwhy = r
+            t, m = divmod(f[k], rv[k])
+            if m:
+                return j, a, why
+            f = _comb(1, f, -t, rv)
+            if rwhy:
+                w = w | rwhy
+            if not f:
+                break
+        c = f.get(CONST, 0)
+        if c % s:
+            return j, a, why
+        j, a, why = j + 1, (c // s) % q, why | w
     return j, a, why
 
 
@@ -255,7 +274,26 @@ def _product(ranges):
     return out
 
 
-def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int) -> bool:
+#: (factors, residue facts, p, e) -> the kernel of :func:`_points` (a pure
+#: function of the key; bounded by clearing)
+_KERNELS: dict = {}
+
+
+def _relations(poly: Poly, fp, p: int, e: int):
+    """The kernel basis for ``poly`` at the residue facts ``fp`` modulo
+    ``p**e`` (None: too many residue vectors), cached."""
+    key = (poly.factors, fp, p, e)
+    out = _KERNELS.get(key, _MARK)
+    if out is _MARK:
+        pts = _points(poly, fp, p, e)
+        out = None if pts is None else _kernel(pts, len(poly.bases) + 2, p ** e)
+        if len(_KERNELS) > 4096:
+            _KERNELS.clear()
+        _KERNELS[key] = out
+    return out
+
+
+def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int, focus=None) -> bool:
     """Insert the rows the products ``polys`` give (whose bases are
     integral in the lattice ``rows``); True iff the lattice grew.
 
@@ -269,11 +307,14 @@ def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int) -> bool:
     allowed: the relation ``1/m``, a conflict.  The reason: the
     literals that make the bases integral and give those residues.
     ``pdone``: per product, the residues it was last stepped with (the
-    lattice only grows, so the same residues add nothing new)."""
+    lattice only grows, so the same residues add nothing new).  ``focus``:
+    if given, only the products with a column in it are looked at."""
     grew = False
     mods = None
     for i, P in enumerate(polys):
         if not P.cols <= supp:
+            continue
+        if focus is not None and P.u not in focus and not (P.cols & focus):
             continue
         why = _EMPTY
         for c in P.bases:
@@ -301,12 +342,11 @@ def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int) -> bool:
             vecs = [{P.u: d}]
             order = (P.u,) + P.bases
             for (p, e), fp in zip(mods, facts):
-                pts = _points(P, fp, p, e)
-                if pts is None:
+                basis = _relations(P, fp, p, e)
+                if basis is None:
                     continue
-                m = p ** e
-                s = d // m
-                for b in _kernel(pts, len(order) + 1, m):
+                s = d // p ** e
+                for b in basis:
                     v = {k: s * x for k, x in zip(order, b) if x}
                     if b[-1]:
                         v[CONST] = s * b[-1]
@@ -321,7 +361,7 @@ def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int) -> bool:
 
 
 def _close(rows: dict, supp: set, negs: list, used: set, d: int,
-           start: int = 0, polys=(), pdone=None) -> Optional[FrozenSet[int]]:
+           start: int = 0, polys=(), pdone=None, focus=None) -> Optional[FrozenSet[int]]:
     """Close the lattice ``rows`` (term columns ``supp``) under the parity
     step with the non-integral forms ``negs`` (``(form, literal,
     columns)``; ``used``: the indices already stepped) in place; the
@@ -362,7 +402,7 @@ def _close(rows: dict, supp: set, negs: list, used: set, d: int,
             insert(rows, g, w2 | {lit})
             changed = True
         if not changed and polys:
-            changed = _poly_step(rows, supp, polys, pdone, d)
+            changed = _poly_step(rows, supp, polys, pdone, d, focus)
         if not changed:
             return None
         start = 0
@@ -375,12 +415,14 @@ class Lattice:
     the literals of a conflict, or None; :attr:`supp`: the term columns of
     the rows."""
 
-    __slots__ = ("d", "rows", "negs", "used", "conflict", "supp", "polys", "pdone")
+    __slots__ = ("d", "rows", "negs", "used", "conflict", "supp", "polys", "pdone",
+                 "pdirty")
 
     def __init__(self, d: int, polys=()):
         self.d = d
-        self.polys = polys
-        self.pdone: dict = {}
+        self.polys = polys      # the products (:class:`Poly`)
+        self.pdone: dict = {}   # :func:`_poly_step`'s memo
+        self.pdirty = False     # rows added since the products' last step
         self.rows = {CONST: ({CONST: d}, _EMPTY)}
         self.negs: list = []
         self.used: set = set()
@@ -397,6 +439,7 @@ class Lattice:
         c.supp = set(self.supp)
         c.polys = self.polys
         c.pdone = dict(self.pdone)
+        c.pdirty = self.pdirty
         return c
 
     def add_pos(self, f: Vec, lit: int, cols) -> None:
@@ -404,8 +447,8 @@ class Lattice:
             return
         insert(self.rows, f, frozenset((lit,)))
         self.supp.update(cols)
-        self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d,
-                               0, self.polys, self.pdone)
+        self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d)
+        self.pdirty = True
 
     def add_neg(self, h: Vec, lit: int, cols) -> None:
         if self.conflict is not None:
@@ -413,7 +456,17 @@ class Lattice:
         self.negs.append((h, lit, cols))
         if cols <= self.supp:
             self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d,
-                                   len(self.negs) - 1, self.polys, self.pdone)
+                                   len(self.negs) - 1)
+            self.pdirty = True
+
+    def settle(self) -> None:
+        """Close under the products' step too (once per batch of
+        insertions: :meth:`IntLatTheory.lattice`)."""
+        if self.pdirty:
+            self.pdirty = False
+            if self.polys and self.conflict is None:
+                self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d,
+                                       len(self.negs), self.polys, self.pdone)
 
     def implies(self, f: Vec) -> Optional[FrozenSet[int]]:
         """The reason of ``f`` integral, or None."""
@@ -424,8 +477,9 @@ class Lattice:
         again) is in conflict."""
         rows = dict(self.rows)
         insert(rows, f, _MARK)
-        w = _close(rows, self.supp | cols, self.negs, set(self.used), self.d,
-                   0, self.polys, dict(self.pdone))
+        # without the products' step: what it would find here, the search
+        # finds by asserting f (a conflict of the closed lattice)
+        w = _close(rows, self.supp | cols, self.negs, set(self.used), self.d)
         if w is None or 0 not in w:
             return None
         return w - _MARK
@@ -539,6 +593,7 @@ class IntLatTheory:
                 lat.add_neg(form[-l], l, cols[-l])
             if lat.conflict is not None:
                 break
+        lat.settle()
         return lat
 
     def lattice(self) -> Lattice:
@@ -548,6 +603,11 @@ class IntLatTheory:
             lat = self.lat = self._build([v if val[v] else -v for v in self.trail])
             self.shared = False
             self.stats["builds"] += 1
+        elif lat.pdirty:
+            if self.shared:
+                lat = self.lat = lat.copy()
+                self.shared = False
+            lat.settle()
         return lat
 
     def _minimise(self, why, test):
