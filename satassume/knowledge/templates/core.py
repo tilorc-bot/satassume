@@ -17,6 +17,7 @@ numeric coefficients, which is what the old assumption system relies on
 """
 from __future__ import annotations
 
+from collections import Counter
 from itertools import product
 from types import MappingProxyType
 
@@ -490,8 +491,8 @@ def _mul_factor_sets(expr):
     if n >= 3 and c.is_Rational and not c.is_zero:  # sympy-boundary: c Rational
         # c*t: the coefficient-free t of the half-integer split of an Add
         # (x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
-        rest = Mul(*args[1:])
-        if rest.is_Mul and len(rest.args) == n - 1:
+        rest = kept_product(args[1:])
+        if rest is not None:
             out.append((c, rest))
     split = ipi_split(expr)
     if split is not None and split[1] is not None and split[1].is_Mul:
@@ -499,6 +500,20 @@ def _mul_factor_sets(expr):
         c, s_ = split
         out.append(((c,) if c is not S.One else ()) + (S.ImaginaryUnit, S.Pi, s_))
     return out
+
+
+def kept_product(factors):
+    """``Mul(*factors)`` if the built product keeps exactly these factors
+    (its commutative ones in any order), else None.  Building evaluates:
+    the rest of an unevaluated ``Mul(c, x, 1/x)`` or ``Mul(c, x, 0)``
+    would build to ``1`` or ``0``, but the node is nan at ``x = 0`` or
+    ``x = oo``, so a block over the built rest would relate the node to a
+    different value (#161)."""
+    t = Mul(*factors)
+    if t.is_Mul and len(t.args) == len(factors) \
+            and Counter(t.args) == Counter(factors):
+        return t
+    return None
 
 
 def _product_block(factors, expr):
@@ -644,7 +659,14 @@ def ipi_split(arg):
             rest.append(f)
     if not (seen_i and seen_pi):
         return None
-    return c, (None if not rest else rest[0] if len(rest) == 1 else Mul(*rest))
+    if not rest:
+        return c, None
+    if c.is_zero:
+        return None                     # Mul(I, pi, 0, x): nan at x = oo
+    if len(rest) == 1:
+        return c, rest[0]
+    s = kept_product(rest)              # Mul(I, pi, x, 1/x) is not I*pi
+    return None if s is None else (c, s)
 
 
 #: Conditions on ``exp(I*pi*c*s)`` (``c`` rational; ``has_s``: an ``s`` slot).

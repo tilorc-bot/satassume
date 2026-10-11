@@ -124,6 +124,7 @@ from sympy.core.sorting import default_sort_key
 from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
 from ...state.memos import adopt as _adopt_memo
+from ...knowledge.templates.core import kept_product
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
            "integer_form"]
@@ -199,16 +200,21 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
                 coeff *= f
             else:
                 closed.append(f)             # pi, 1/pi, pi + 1, sqrt(2); I, 0.5
-        if closed:
-            c = from_sympy(Mul(*closed), generic=GENERIC_CONSTANTS)
-            if c is None:
-                raise _Unhandled(e)          # I*x, 0.5*x, log(2)*x (see GENERIC_CONSTANTS)
-            c = c * Fraction(int(coeff.p), int(coeff.q))
-            _lin(Mul(*rest), scale * c, out, const)
-            return
-        if coeff != 1:
-            _lin(Mul(*rest), scale * Fraction(int(coeff.p), int(coeff.q)),
-                 out, const)
+        if closed or coeff != 1:
+            # the rest is read as the product of the symbolic factors,
+            # which must be what the node multiplies (#161): an
+            # unevaluated Mul(c, x, 1/x) or Mul(0, x) is nan at x = 0
+            # or x = oo, not c or 0
+            t = rest[0] if len(rest) == 1 else kept_product(rest)
+            if t is None or coeff.is_zero:
+                raise _Unhandled(e)
+            c = Fraction(int(coeff.p), int(coeff.q))
+            if closed:
+                k = from_sympy(Mul(*closed), generic=GENERIC_CONSTANTS)
+                if k is None:
+                    raise _Unhandled(e)      # I*x, 0.5*x, log(2)*x (see GENERIC_CONSTANTS)
+                c = k * c
+            _lin(t, scale * c, out, const)
             return
         if len(rest) == 1:
             _lin(rest[0], scale, out, const)
