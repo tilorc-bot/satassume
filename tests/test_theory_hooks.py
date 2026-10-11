@@ -1,4 +1,6 @@
 """The DPLL(T) hooks of satassume.sat.solver.Solver (see satassume/sat/theory.py)."""
+import random
+
 import pytest
 from hypothesis import given, settings, strategies as st, HealthCheck
 
@@ -6,7 +8,7 @@ from satassume.sat.solver import Solver
 from satassume.sat.theory import TheorySolver, PropagatingTheory
 
 from theory_harness import (TheoryCase, ForbidTheory, Recorder, check_protocol,
-                            check_solve, check_entails, check_implied)
+                            check_solve, check_entails, check_implied, brute_models)
 
 
 def test_dummy_theories_satisfy_protocol():
@@ -196,6 +198,123 @@ def test_assumptions_already_true_open_levels_too():
 
 
 # ----------------------------------------------------------------------
+# Lazy reasons (PropagatingTheory: ``propagate`` returns a function)
+# ----------------------------------------------------------------------
+
+_LAZY_SITES = ("resolution", "minimisation", "final", "conflict")
+
+
+def _lazy_counts(s):
+    st = s.stats()
+    return {k: st["lazy_reasons_" + k] for k in _LAZY_SITES}
+
+
+class CheckedLazyForbid(ForbidTheory):
+    """ForbidTheory in ``propagate`` mode with lazy reasons that check how
+    the solver calls them: at most once each, and either while the literal
+    is assigned above the root (a reason read by conflict analysis) or at
+    once while it is false (the propagation is a conflict)."""
+
+    def __init__(self, forbidden):
+        super().__init__(forbidden, "propagate", lazy_reasons=True)
+        self.solver = None
+
+    def _thunk(self, c, lit):
+        called = []
+
+        def reason():
+            assert not called, f"lazy reason of {lit} called twice"
+            called.append(1)
+            s = self.solver
+            val = s._val[2 * abs(lit) + (lit < 0)]
+            if val is True:
+                assert s._level[abs(lit)] > 0, f"lazy reason of {lit} read at root"
+            else:
+                assert val is False, f"lazy reason of unassigned {lit} read"
+            self.read += 1
+            return list(c)
+        return reason
+
+
+def _lazy_case(forbidden, atoms, clauses, nvars=None):
+    t = CheckedLazyForbid(forbidden)
+    c = TheoryCase(t, {v: None for v in atoms}, clauses, nvars=nvars)
+    t.solver = c.solver
+    return t, c
+
+
+def test_lazy_reason_already_false_is_a_conflict_at_once():
+    # With 1 true, {1, 2} and {1, -2} propagate -2 and 2 in one batch: the
+    # second is already false, so its reason is explained at once as a
+    # conflict clause.
+    t, c = _lazy_case([{1, 2}, {1, -2}], (1, 2), [])
+    assert c.solve([1]) is False
+    assert c.solver.conflict() == [1]
+    n = _lazy_counts(c.solver)
+    assert n["conflict"] == 1, n
+    assert c.solve() is True and c.solver.value(1) is False
+    # at root (clause [1]) nothing is kept as a reason, the conflict is
+    # still explained at once and makes the solver unsat
+    t, c = _lazy_case([{1, 2}, {1, -2}], (1, 2), [[1]])
+    assert c.solve() is False
+    assert _lazy_counts(c.solver)["conflict"] == 1
+
+
+def _reference(forbidden, n, clauses):
+    """The same problem with an eager theory (no propagation, no reasons
+    to read): the reference for answers and learnt clauses."""
+    return TheoryCase(ForbidTheory(forbidden, "eager"), {v: None for v in range(1, n + 1)},
+                      clauses, nvars=n)
+
+
+def _learnts_hold(c, ref):
+    """Every learnt clause of ``c`` (theory conflicts included) is implied
+    by the clauses and the theory: its negation is unsat in ``ref``."""
+    s = c.solver
+    for d in s._learnts:
+        ext = [s._to_ext(l) for l in d]
+        assert ref.solve([-l for l in ext]) is False, f"unsound learnt clause {ext}"
+
+
+def test_lazy_reasons_read_at_every_site_are_sound():
+    # Random 3-CNF plus many forbidden atom sets, propagated with lazy
+    # reasons; answers and every learnt clause are checked against the
+    # same problem with an eager theory.  A reason read wrongly anywhere (a
+    # lazy reason taken as a decision, or as covered in minimisation, or a
+    # literal lost from it) shows up as an unsound learnt clause, a wrong
+    # answer or a wrong final conflict.  Deterministic seeds.
+    total = dict.fromkeys(_LAZY_SITES, 0)
+    for seed in range(120):
+        rng = random.Random(seed)
+        n = rng.randint(16, 24)
+        lit = lambda: rng.choice((1, -1)) * rng.randint(1, n)
+        clauses = [[lit() for _ in range(3)] for _ in range(int(1.2 * n))]
+        forbidden = [{lit() for _ in range(rng.randint(2, 3))} for _ in range(rng.randint(20, 40))]
+        t, c = _lazy_case(forbidden, range(1, n + 1), clauses, nvars=n)
+        ref = _reference(forbidden, n, clauses)
+        assert c.solve() is ref.solve()
+        _learnts_hold(c, ref)
+        for _ in range(4):
+            a = list({abs(l): l for l in (lit() for _ in range(rng.randint(1, 4)))}.values())
+            r = c.solve(a)
+            assert r is ref.solve(a), (seed, a)
+            if not r:
+                # the final conflict is a subset of the assumptions that is
+                # itself inconsistent
+                core = c.solver.conflict()
+                assert set(core) <= set(a), (core, a)
+                assert ref.solve(core) is False, (core, a)
+            else:
+                q = lit()
+                assert c.entails(q, a) == ref.entails(q, a), (seed, q, a)
+            _learnts_hold(c, ref)
+        for k, v in _lazy_counts(c.solver).items():
+            total[k] += v
+    # every place a reason is read saw lazy reasons
+    assert all(total[k] >= 20 for k in _LAZY_SITES), total
+
+
+# ----------------------------------------------------------------------
 # Random: CNF plus forbidden partial assignments versus brute force
 # ----------------------------------------------------------------------
 
@@ -208,16 +327,17 @@ def cases(draw):
     alit = st.sampled_from(atoms).flatmap(lambda v: st.sampled_from([v, -v]))
     forbidden = draw(st.lists(st.sets(alit, min_size=1, max_size=3), max_size=6))
     mode = draw(st.sampled_from(["eager", "lazy", "propagate"]))
+    lazy_reasons = mode == "propagate" and draw(st.booleans())
     assumptions = draw(st.lists(lit, max_size=3, unique_by=abs))
     query = draw(lit)
-    return n, clauses, atoms, forbidden, mode, assumptions, query
+    return n, clauses, atoms, forbidden, mode, lazy_reasons, assumptions, query
 
 
 @settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(cases())
 def test_random_forbid_theory_matches_brute_force(case):
-    n, clauses, atoms, forbidden, mode, assumptions, query = case
-    theory = ForbidTheory(forbidden, mode)
+    n, clauses, atoms, forbidden, mode, lazy_reasons, assumptions, query = case
+    theory = ForbidTheory(forbidden, mode, lazy_reasons)
     rec = Recorder(theory)
     c = TheoryCase(rec, {v: None for v in atoms}, clauses, nvars=n)
     oracle = theory.consistent
