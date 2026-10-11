@@ -145,6 +145,12 @@ def _eq(a, b):
     if ka == "nan" or kb == "nan":
         return None if ka == kb else False
     if ka == "other" or kb == "other":
+        # e.g. oo + I: equal values agree on finiteness and on being
+        # extended real (Eq(oo + I, 1/2) and Eq(-oo + I, -oo) are False)
+        for p in ("is_finite", "is_extended_real"):
+            pa, pb = getattr(a, p), getattr(b, p)
+            if pa is not None and pb is not None and pa != pb:
+                return False
         return None
     return bool(a == b)
 
