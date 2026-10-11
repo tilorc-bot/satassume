@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 sympy = pytest.importorskip("sympy")
-from sympy import (E, Eq, Ge, Gt, I, Lt, Mul, Ne, Pow, Q, Rational as R, S, exp, nan,
+from sympy import (Add, E, Eq, Ge, Gt, I, Lt, Mul, Ne, Pow, Q, Rational as R, S, exp, nan,
                    oo, pi, sqrt, symbols, zoo)
 
 from satassume.engine import Engine
@@ -34,9 +34,19 @@ def test_kept_product():
     assert kept_product((A, B)) == A * B
     assert kept_product((x, 1 / x)) is None           # builds to 1
     assert kept_product((x, S.Zero)) is None          # builds to 0
-    assert kept_product((x, x)) is None               # builds to x**2
+    assert kept_product((x**2, 1 / x)) is None        # builds to x
     assert kept_product((U(x, 1 / x), y)) is None     # flattens to y
-    assert kept_product((S(2), S(3), x)) is None      # merges the numbers
+    assert kept_product((S(2), Add(x, -x, evaluate=False))) is None
+    # merges that hold at every value: positive exponents, numbers
+    assert kept_product((x, x)) == x**2
+    assert kept_product((S(2), x, S(3), sqrt(y), sqrt(y))) == 6 * x * y
+    assert kept_product((A, A, B)) == A**2 * B
+    assert kept_product((U(x, x), y)) == x**2 * y     # flattened, nothing cancels
+    assert kept_product((pi, pi, x)) == pi**2 * x
+    assert kept_product((Pow(0, 2, evaluate=False), x)) is None   # 0*oo is nan
+    # Mul reads exp(w) as E**w and rebuilds it: exp(Mul(x, 1/x)) became E
+    assert kept_product((I, pi, exp(U(R(1, 2), U(x, 1 / x), U(2, x, 1 / x)),
+                                    evaluate=False))) is None
 
 
 def test_ipi_split():
@@ -61,6 +71,8 @@ REPROS = [
     (Q.positive(E1), True), (Q.real(E1), True), (Q.finite(E1), True),
     (Q.positive(E1), Q.real(x)), (Q.negative(E2), True), (Q.real(E2), True),
     (Q.integer(U(R(3, 2), U(x, 1 / x), x / 6)), Q.zero(x)),
+    (Q.extended_real(Pow(U(3, I, pi, exp(U(R(1, 2), U(x, 1 / x), U(2, x, 1 / x)),
+                                         evaluate=False)), 2, evaluate=False)), True),
 ]
 
 
@@ -77,6 +89,10 @@ def test_kept_products_still_answer():
                engine=Engine()) is True
     assert ask(Q.positive(exp(U(2, I, pi, x, y), evaluate=False)),
                Q.integer(x) & Q.integer(y), engine=Engine()) is True
+    assert ask(Q.lt(U(-1, x, x, y, 2), 0), Q.positive(x) & Q.negative(y),
+               engine=Engine()) is False
+    assert ask(Q.lt(U(-1, U(x, x), y, 2), 0), Q.positive(x) & Q.negative(y),
+               engine=Engine()) is False
 
 
 # --- brute force ------------------------------------------------------------

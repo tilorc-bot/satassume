@@ -431,17 +431,38 @@ def _mul_factor_sets(expr):
 
 
 def kept_product(factors):
-    """``Mul(*factors)`` if the built product keeps exactly these factors
-    (its commutative ones in any order), else None.  Building evaluates:
-    the rest of an unevaluated ``Mul(c, x, 1/x)`` or ``Mul(c, x, 0)``
-    would build to ``1`` or ``0``, but the node is nan at ``x = 0`` or
-    ``x = oo``, so a block over the built rest would relate the node to a
-    different value (#161)."""
+    """``Mul(*factors)`` if building it keeps the value of the product of
+    these factors at every point, else None.  Building evaluates, and an
+    unevaluated ``Mul(c, x, 1/x)`` or ``Mul(c, x, 0)`` would build to
+    ``c`` or ``0`` although it is nan at ``x = 0`` or ``x = oo`` (#161).
+    The build is kept when it keeps exactly these factors (its commutative
+    ones in any order), or when every factor is a nonzero number or a
+    positive rational power of a base that is not a sum, product, power
+    or zero (``x``, ``x**2``, ``sqrt(y)``, ``sin(x)``, ``pi``), or a product of
+    such factors (it is flattened): then the build only
+    multiplies numbers and adds positive exponents of a common base
+    (``x*x == x**2``, ``2*x*3 == 6*x``), which holds at every value of the
+    base, 0 and the infinities included."""
     t = Mul(*factors)
     if t.is_Mul and len(t.args) == len(factors) \
             and Counter(t.args) == Counter(factors):
         return t
+    if all(_merges_exactly(f) for f in factors):
+        return t
     return None
+
+
+def _merges_exactly(f) -> bool:
+    if f.is_Number:
+        return not (f.is_zero or f is S.NaN)
+    if f.is_Mul:
+        return all(_merges_exactly(a) for a in f.args)    # flattened
+    b, e = f.as_base_exp()              # Mul reads exp(w) as E**w
+    if b.is_Mul or b.is_Add or b.is_Pow:
+        return False                    # flattened or distributed
+    if not b.free_symbols and not (b.is_Atom and b.is_zero is False):
+        return False                    # 0**2, nan**2: evaluated
+    return bool(e.is_Rational and e.is_positive)
 
 
 def _product_block(factors, expr):

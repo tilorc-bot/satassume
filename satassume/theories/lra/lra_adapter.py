@@ -124,7 +124,6 @@ from sympy.core.sorting import default_sort_key
 from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
 from ...state.memos import adopt as _adopt_memo
-from ...knowledge.templates.core import kept_product
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
            "integer_form"]
@@ -205,6 +204,7 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
             # which must be what the node multiplies (#161): an
             # unevaluated Mul(c, x, 1/x) or Mul(0, x) is nan at x = 0
             # or x = oo, not c or 0
+            from ...knowledge.templates.core import kept_product
             t = rest[0] if len(rest) == 1 else kept_product(rest)
             if t is None or coeff.is_zero:
                 raise _Unhandled(e)
