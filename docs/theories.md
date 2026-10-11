@@ -639,8 +639,21 @@ the answers compared:
 - `parts_of_round_templates`: 216 lost on the corpus, 8 on the stream (4
   distinct).
 
-Engaging the glue for unary atoms so that it could take over those rows
-is the phase-b cost above, or more.
+Engaging the split for unary atoms does take over the three `_re`/`_im`
+rows, but at a higher cost than the rows. Measured (PR #163 review): every
+`re(w)`/`im(w)` (`w` not real by construction) in any atom of a query is
+linked like a relation side, so `_parts(w)` ties it to `w`; `_parts` reads
+`extended_real(w)` (not only `real(w)`) for `im(w) = 0` and
+`extended_real(w) -> real(im(w))`; the engine switches that glue on for
+such a query. With the three rows removed, no answer was lost (unary
+corpus 62,928 queries: +3; products corpus 145,728: +166; stream: 0 lost),
+but clauses per query on the unary corpus went from 1.10 to 23.2 (vars
+21.9 -> 37.3) and its time from 7.2 s to 30 s; on the stream from 7.34 to
+8.84 (+20%). Linking only the parts when nothing else switches the glue
+on: unary corpus 11.5 clauses per query (vars 31.2), 7.2 s -> 19.9 s;
+stream 8.15 (+11%), vars +4%. A template row is one clause on a node the
+query already has; a link is three atoms, their LRA twins and the part
+links. So the rows stay.
 
 ## Monotone functions (MONO)
 
