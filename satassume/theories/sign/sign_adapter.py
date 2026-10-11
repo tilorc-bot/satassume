@@ -15,13 +15,11 @@ from .sign import ALL, PRED_MASK, PREDS, SignTheory
 
 
 def over_cap(node) -> bool:
-    """Whether the templates of ``node`` (an Add or a Mul) are capped:
-    the sign rows of Mul stop at ``MAX_PAIRS`` factors (``negsets``), those
-    of Add at ``MAX_ONEOUT`` terms (infinite sums).  Such nodes have no
-    sign rows (``templates.core.sign_owns``): this theory decides them.
-    A session engages the theory with these nodes only
-    (``Session.node_theories_sync``; docs/theories.md, "SIGN", for the
-    measured alternatives)."""
+    """Whether the sign rows of ``node`` (an Add or a Mul) are left to
+    this theory: the nodes of three or more arguments
+    (``templates.core.sign_owns``).  A session engages the theory with
+    these nodes only (``Session.node_theories_sync``; docs/theories.md,
+    "SIGN", for the measured alternatives)."""
     from ...knowledge.templates.core import sign_owns
     return sign_owns(bool(node.is_Mul), len(node.args))
 
@@ -200,6 +198,22 @@ ClassAdapter._init_tables()
 
 class SignAdapter(ClassAdapter):
     """The sign theory (:mod:`.sign`)."""
+
+    def add(self, node) -> None:
+        """Tell the theory the sum or product ``node`` and, for a product,
+        its derived products of three or more factors: the templates of a
+        Mul relate it to products over other factors of the same value
+        (``I*pi*s`` for ``I*pi*x*y``, ``templates.core._mul_factor_sets``),
+        and such a block has no sign rows either (``sign_owns``)."""
+        if node in self.done:
+            return
+        super().add(node)
+        if node.is_Mul:
+            from ...knowledge.templates.core import _mul_factor_sets, sign_owns
+            t = self.terms[node]
+            for f in _mul_factor_sets(node)[1:]:
+                if sign_owns(True, len(f)):
+                    self.theory.add_node(MUL, t, [self.term(a) for a in f])
 
 
 const_mask = SignAdapter.const_mask

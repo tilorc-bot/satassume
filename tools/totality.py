@@ -54,6 +54,7 @@ because a block was skipped.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import pickle
 import time
@@ -402,14 +403,38 @@ def run(exprs, depth=1, independent=False, models=None):
     and ``main`` both run this."""
     if models is None:
         models = rule_models()
-    pats, formulas_only = collect_patterns(exprs)
-    failures = []
-    for e, compiled in pats.values():
-        r = check_block(e, compiled, models, depth, independent)
-        if r is not None:
-            pat, assign, fired = r
-            failures.append((e, pat, assign, fired))
+    with _sign_rows():
+        pats, formulas_only = collect_patterns(exprs)
+        failures = []
+        for e, compiled in pats.values():
+            r = check_block(e, compiled, models, depth, independent)
+            if r is not None:
+                pat, assign, fired = r
+                failures.append((e, pat, assign, fired))
     return failures, len(pats), formulas_only
+
+
+@contextlib.contextmanager
+def _sign_rows():
+    """Check with the sign rows of every sum and product as template rows.
+    From three arguments the templates leave them to the SIGN theory
+    (``templates.core.sign_owns``, issue #149 T1), which every session
+    attaches to each such node and which derives every literal those rows
+    give; the checker reads blocks alone, so it reads those rows in their
+    place (the compiled-pattern caches are cleared on both sides)."""
+    from satassume.knowledge.templates import _common, core, registry
+
+    def clear():
+        _common._CACHE.clear()
+        registry._clauses_cache.clear()
+    saved = core.sign_owns
+    core.sign_owns = lambda is_mul, n: False
+    clear()
+    try:
+        yield
+    finally:
+        core.sign_owns = saved
+        clear()
 
 
 def fired_rows(e, pat, fired):

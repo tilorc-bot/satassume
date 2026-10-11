@@ -481,23 +481,55 @@ precision would be sound under both readings; it was not built.
 
 ## SIGN: the class of sums and products
 
-`satassume/theories/sign/` (issue #149, proposal T1, stage 1) decides the sign, zero, finiteness and
+`satassume/theories/sign/` (issue #149, proposal T1, stages 1 and 3) decides the sign, zero, finiteness and
 realness of an `Add` or `Mul` of any arity from those of its arguments, in both directions. It replaces the
-sign rows of the templates for the nodes over their arity caps, where the rows stopped (`negsets` and
-`pairs` of Mul stop at `MAX_PAIRS` = 4 factors, the infinite-sum rows of Add at `MAX_ONEOUT` = 6 terms).
+sign rows of the templates for every sum and product of three or more arguments (`templates.core.sign_owns`,
+`SIGN_MIN_ARGS` = 3); the two-argument nodes keep their rows (see "Engagement" for why).
 
 **Atoms.** The value of a term is one of 12 atoms of the extended complex plane: the 9 finite atoms
 `F(sr, si)` by the signs of the real and imaginary parts (`F(0, 0)` is 0), `oo`, `-oo`, and `IN` (every other
 infinity: `zoo`, `oo*I`, `oo + I`), plus `NAN` for a node only. A literal of one of the six basis predicates
 the theory reads (`extended_real`, `finite`, `zero`, `extended_positive`, `extended_negative`, `imaginary`)
 is a set of atoms; the other predicates reach these through the rule block (`prime -> extended_positive`).
-`NAN` is "no claim": a node whose folded set may be `nan` (`0*oo`, `oo - oo`, `zoo + zoo`) gets no literal,
-as in the templates (`docs/design.md`, "Extended reals and nan in templates"), and arguments are never
-`nan` (the convention of the templates' oracle).
+`NAN` is "no claim": a node whose folded set may be `oo - oo` or `0*oo` gets no literal from it, and arguments
+are never `nan` (the convention of the templates' oracle, `docs/design.md`, "Extended reals and nan in
+templates").
+
+**`nan` sums off the real axis.** `zoo + oo`, `zoo + zoo`, `oo*I - oo*I` and `(oo + I) - oo` are `nan` in
+SymPy, but the fold gives `IN` for them (an off-axis infinity plus any infinity is `IN`): `IN` is
+"infinite, and not `extended_real`, `zero`, `extended_positive`, `extended_negative` or `imaginary`". This
+is sound under the oracle's convention for `nan`: every predicate implying a number (`extended_real`,
+`zero`, the signs, `imaginary`, `real`, `nonzero`, ...) is False for `nan`, and `finite`/`infinite` are
+left open, so each literal `IN` implies holds for `nan` or is one the oracle does not judge. The templates
+made the same claim before (the Add row "an infinite term that is not `-oo` makes the sum infinite unless
+some other term is `-oo`" fires on `zoo + oo`). `oo - oo` and `0*oo` stay `NAN`: there SymPy's `ask` says True
+for `extended_real(x + y)` under `Q.positive_infinite(x) & Q.negative_infinite(y)` and for `zero(x*y)` under
+`Q.zero(x) & Q.infinite(y)`, and a False would contradict it (README, deliberate misses).
+The fold is not associative under this reading: `(oo - oo) + I` folds to `NAN`, but `oo + (-oo + I)` folds to
+`IN + oo = IN`, and the backward pass (which folds the other arguments for each `k`) uses such groupings. So
+`oo - oo + I`, and any real cancellation of infinities plus a finite non-real term, is read as `IN` too:
+`Q.finite(x + y + I)` is False under `Q.positive_infinite(x) & Q.negative_infinite(y)`, `Q.finite(a + b + oo + I)`
+is False with no assumptions, and `Q.extended_real(x)` under `Q.finite(x + y + I) & Q.positive_infinite(y)` is
+inconsistent (`x = -oo` would make the sum `nan`, which the convention counts as infinite). The two-term
+`x + y` stays `NAN`: `Q.extended_real(x)` under `Q.finite(x + y) & Q.positive_infinite(y)` is True, and
+`Q.finite(a + b + oo)` stays None. This is sound by the same argument (each step's set covers SymPy's value,
+with `nan` read as `NAN`, or as `IN` when an operand is an off-axis infinity), and `tests/test_sign_theory.py`
+pins these cases.
+This is where the new "inconsistent" verdicts of stage 3 come from: assumptions that pin a sum of three or
+more terms holding an off-axis infinity (`zoo`, `x + 2*I` with `x` infinite) to a real, zero or signed
+value, such as `Q.positive(d + d + f + zoo + d)` or `Q.extended_nonnegative(d + b + 2 + a)` under
+`Q.positive_infinite(d) & ~Q.extended_real(a)`. Every such value is an infinity off the axis or `nan`, for
+which those predicates are False, so no value satisfies the assumptions (checked by sampling every
+atom combination, `tests/test_sign_theory.py`).
+
+**Non-commutative terms** never reach the theory: a query whose atoms have a non-commutative subterm is
+out of scope (`engine._noncommutative_atoms`; the engine answers None), so the commutative atom
+arithmetic of `_mul_atoms` is never applied to matrices or operators.
 
 **Operations.** `_add_atoms`/`_mul_atoms` give the atoms of `a + b` and `a * b` for two atoms: interval
 arithmetic on the signs of the parts plus SymPy's conventions for infinities; a node folds them over its
-arguments (sound in any order: the set operations over-approximate each step and `NAN` absorbs). An
+arguments (sound in any order because each step's set covers SymPy's value under the `nan` reading above, not
+because the values associate; `NAN` absorbs). An
 infinity times a nonzero value is an infinity (`IN` times a real stays `IN`; `IN` times a non-real or `IN`
 may land on an axis, `oo*I*I = -oo`, so the result is "some infinity"). `tests/test_sign_theory.py` checks
 both tables against SymPy at sample points of every atom and the folds against n-ary `Add`/`Mul`.
@@ -520,22 +552,35 @@ x11)` under `positive_infinite(x0)` needs no search (25 ms; 13.5 s before).
 case separately: after `MAX_CONFLICTS` = 2000 theory conflicts in one search it gives up (`gave_up`,
 `satassume.sat.theory`, "Giving up"), and the query's answer is `None`; the flag resets at the root.
 
-**Engagement**. A session tells the theory the sums and
-products over the caps (`sign_adapter.over_cap` = `templates.core.sign_owns`), and only those. For such a
-node the templates leave out the rows the theory decides (`sign_owns`): for Add the closures of
-`finite` and the four extended signs, the `extended_real` closure, the imaginary sum, the per-term strict
-sign, imaginary-plus-reals and `extended_real` backward rows; for Mul the sign closures (`finite`,
-`extended_positive`, `nonnegative`), `ext_real.*`, `zero`, `all_neg.*`, `all_nonpos.*`, `all_imag.*` and,
-for 5 and 6 factors, `one_infinite`, `one_neg`, `one_nonpos`, `one_non_real`, `one_imag*`. Template rules per
-node: Add of 7 terms 45 -> 9, Mul of 5/6/7 factors 87/101/32 -> 44/51/17. The rows of other predicates
-(`even`, `polar`, ...) stay; those of `integer`, `rational`, `algebraic` and `complex` are CLOSURE's (below). Two wider engagements were measured and removed:
-handing every sum and product to the theory for each query left open after propagation, or from the start.
-On the refine stream the first adds no answer and costs +29% (`tools/ab.py`), most of it in the interface
-(`_theory_sync`, `register_atom`, propagate: no single hotspot); this is why stage 1 keeps the rows of
-small nodes. `ref.py` attaches the theory to the same nodes, so the reference sees the same clause set.
+**Engagement**. A session tells the theory the sums and products of three or more arguments
+(`sign_adapter.over_cap` = `templates.core.sign_owns`), and only those. For such a node the templates leave
+out the rows the theory decides: for Add the closures of `finite` and the four extended signs, the
+`extended_real` closure, the imaginary sum, the per-term strict sign, imaginary-plus-reals, `extended_real`
+and `real`/`finite` subtraction rows, the nonzero-real-part row and the infinite-sum rows; for Mul the sign
+closures (`finite`, `extended_positive`, `nonnegative`), `ext_real.*`, `zero`, `nonzero`, `all_neg`,
+`all_nonpos`, `all_imag`, `one_infinite`, `one_neg`, `one_nonpos`, `one_non_real`, `one_imag*`. The
+`negsets` and `pairs` sections (sign of a product with `m` negative factors, two imaginary factors), the
+odd-arity `all_*.odd` rows and `nonzero.commutative` only applied to products of three or more factors, so
+they are gone. Template rules per node (`_add_rules`/`_mul_rules`, before -> after): Add of 3/4/5/6 terms
+67/50/60/70 -> 26/6/7/8; Mul of 3/4/5/6/7 factors 63/93/23/27/11 -> 22/27/18/21/10. The rows of other
+predicates (`even`, `polar`, ...) stay; those of `integer`, `rational`, `algebraic` and `complex` are
+CLOSURE's (below). `ref.py` attaches the theory to the same nodes, so the reference sees the same clause set.
+A Mul's templates also relate it to products over other factors of the same value (`I*pi*s` for
+`I*pi*x*y`, `templates.core._mul_factor_sets`); such a block of three or more factors has no sign rows either,
+so `SignAdapter.add` tells the theory that product as a second node of the same term. `tools/totality.py`
+checks blocks alone, so it reads the sign rows the theory decides as template rows (`_sign_rows`).
 
-**Stage 2 and 3** (issue #149): Pow and the integer-magnitude classes (dropping the derived nodes `b-1`,
-`b+1`), then the rows of all arities once the interface cost is within the 3% line.
+**Why three arguments** (stage 3, issue #149). Measured on 12,000 generated queries (sums, products,
+functions, relations; fresh engine per query) against the templates of stage 1, owning every node of three
+or more arguments loses no answer, adds 72 definite answers and cuts the clauses per query by 17-32%
+(variables by 2-4%). Owning the two-argument nodes too cuts clauses by about 42% and also loses nothing,
+but on the refine stream it costs +23% (with the lazy reasons of #158) to +37% (without), against +2-5% for
+three arguments: two-argument nodes are most of the nodes, each pays the interface (registering six atoms
+per term, `_theory_sync`, a theory level per decision) and their template rows are a handful of short
+clauses. Handing every sum and product to the theory for each query left open after propagation was
+also measured in stage 1 (+29%, no new answer).
+
+**Stage 2** (issue #149): Pow and the integer-magnitude classes (dropping the derived nodes `b-1`, `b+1`).
 
 ## CLOSURE: ring and field membership of sums and products
 

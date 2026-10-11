@@ -35,9 +35,26 @@ extended_real & finite``), which writes their literals on the trail.
 atoms ``a + b`` and ``a * b`` can take for ``a``, ``b`` in two atoms:
 interval arithmetic on the signs of the parts (``re(a*b) = ar*br -
 ai*bi``) plus SymPy's conventions for infinities (each case commented
-there).  A node folds them over its arguments: both operations are
-commutative and associative on values, and the set operation
-over-approximates each step, so any order is sound; ``NAN`` absorbs.
+there).  A node folds them over its arguments; ``NAN`` absorbs.
+
+**Soundness of a fold.**  The tables are commutative, but the fold is not
+associative once an off-axis infinity meets a real cancellation:
+``(oo + -oo) + I`` folds to ``NAN``, while ``oo + (-oo + I)`` folds to
+``IN + oo = IN``, and the backward pass, which folds the other arguments
+for each ``k``, picks up such groupings.  Soundness rests on coverage, not
+on associativity: each step's set covers SymPy's value of that step, with
+``nan`` read as ``NAN``, or as ``IN`` when an operand is an off-axis
+infinity (``zoo + oo``, ``zoo + zoo``, ``(oo + I) - oo``).  Every literal
+``IN`` implies is either the negation of a predicate that is False for
+``nan`` (``extended_real``, ``zero``, ``extended_positive``,
+``extended_negative``, ``imaginary``) or ``finite``/``infinite``, which
+the oracle leaves open for ``nan``; so every bracketing covers the node's
+value under that convention.  Hence the theory also reads a real
+cancellation plus a finite non-real term as ``IN``:
+``Q.finite(x + y + I)`` is False under ``Q.positive_infinite(x) &
+Q.negative_infinite(y)``, while the two-term ``x + y`` stays ``NAN`` (no
+claim) and ``Q.finite(a + b + oo)`` stays None
+(``tests/test_sign_theory.py`` pins both).
 ``tests/test_sign_theory.py`` checks both tables against SymPy at sample
 points of every atom and the folds against n-ary ``Add`` and ``Mul``.
 
@@ -124,7 +141,17 @@ def _add_atoms(a: int, b: int) -> int:
         return 1 << IN if bi == 0 else _b(PI, NI, IN)
     if a == b and a != IN:
         return 1 << a                       # oo + oo, -oo - oo
-    return NANB                             # oo - oo, zoo + zoo, oo + zoo, ...
+    if a != IN and b != IN:
+        return NANB                         # oo - oo
+    # an infinity off the real axis plus another infinity: an infinity
+    # (``oo*I + oo*I = oo*I``, ``(oo + I) + (oo - I) = oo``) or ``nan``
+    # (``zoo + oo``, ``zoo + zoo``), counted as an infinity off the real
+    # axis, as in the templates' infinite sums (an infinite term that is not
+    # ``-oo`` and a rest that is not ``-oo`` make the sum infinite).  The
+    # predicates of ``IN`` are those ``nan`` has (not extended real, zero
+    # or imaginary) and ``infinite``, which the convention leaves open for
+    # ``nan``.  Only ``IN`` plus ``IN`` can land on the real axis
+    return INF if a == b else 1 << IN
 
 
 def _mul_atoms(a: int, b: int) -> int:

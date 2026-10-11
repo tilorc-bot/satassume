@@ -51,20 +51,23 @@ MAX_ONEOUT = 6
 MAX_PAIRS = 4
 #: Largest arity for subtraction rules and parity case enumeration of Add.
 MAX_ADD_SMALL = 3
+#: Smallest arity whose sign rows the SIGN theory decides (``sign_owns``).
+SIGN_MIN_ARGS = 3
 
 
 def sign_owns(is_mul: bool, n: int) -> bool:
     """Whether the sign rows of an Add (``is_mul`` false) or Mul of ``n``
     arguments are left to the SIGN theory (``satassume.theories.sign``,
-    issue #149 T1): the nodes over the arity caps, where the rows stop
-    (``MAX_PAIRS`` factors: ``negsets``; ``MAX_ONEOUT`` terms: infinite
-    sums).  Every session tells the theory those nodes
-    (``sign_adapter.over_cap``), and the theory
-    derives every literal the dropped rows give (each row's reason is a
-    clause the theory explains on demand; ``docs/theories.md``, "SIGN").
-    The rows that stay for such nodes are those of other predicates
-    (``integer``, ``commutative``, ``even``, ...)."""
-    return n > (MAX_PAIRS if is_mul else MAX_ONEOUT)
+    issue #149 T1): every sum and product of three or more arguments.
+    Every session tells the theory those nodes (``sign_adapter.over_cap``),
+    and the theory derives every literal the dropped rows give (each row's
+    reason is a clause the theory explains on demand; ``docs/theories.md``,
+    "SIGN").  The two-argument nodes keep their rows: there the templates
+    are a handful of short clauses, cheaper than engaging the theory (the
+    measurements are in ``docs/theories.md``).  The rows that stay for the
+    nodes the theory owns are those of other predicates (``integer``,
+    ``commutative``, ``even``, ...)."""
+    return n >= SIGN_MIN_ARGS
 
 
 def closure_owns(is_mul: bool, n: int) -> bool:
@@ -73,7 +76,7 @@ def closure_owns(is_mul: bool, n: int) -> bool:
     last argument) of an Add or Mul of ``n`` arguments are left to the
     CLOSURE theory (``satassume.theories.sign.closure``, issue #149 T3):
     the sums over ``MAX_ADD_SMALL`` terms, where the subtraction rows
-    stop, and the products over ``MAX_PAIRS`` factors (as ``sign_owns``).
+    stop, and the products over ``MAX_PAIRS`` factors.
     Every session tells the theory those nodes
     (``closure_adapter.over_cap``), and it derives every literal the
     dropped rows give, for any arity (``docs/theories.md``, "CLOSURE")."""
@@ -99,8 +102,10 @@ _ADD_CLOSED = (
 # (The contrapositives give "one non-integer term -> non-integer sum" etc.,
 # and with the closure rules also irrational/transcendental/noninteger sums.)
 _ADD_SUBTRACT = ('real', 'complex', 'integer', 'rational', 'algebraic', 'finite')
+# (``real`` and ``finite`` are the SIGN theory's where it owns the sum)
+_ADD_SUBTRACT_NOSIGN = ('complex', 'integer', 'rational', 'algebraic')
 
-# The closures the SIGN theory decides over the cap (``sign_owns``).
+# The closures the SIGN theory decides from three terms (``sign_owns``).
 _ADD_SIGN = ('finite', 'extended_positive', 'extended_negative',
              'extended_nonnegative', 'extended_nonpositive')
 # The closures the CLOSURE theory decides over its cap (``closure_owns``).
@@ -116,7 +121,7 @@ def _add_rules(n, consts):
     N = n
     A = range(n)
 
-    # Over the cap the SIGN theory decides the sign, zero, finite and
+    # From three terms the SIGN theory decides the sign, zero, finite and
     # extended_real literals of the sum (``sign_owns``).
     sign = not sign_owns(False, n)
     closure = not closure_owns(False, n)
@@ -133,29 +138,30 @@ def _add_rules(n, consts):
     if sign:
         rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
 
-    for k in A if sign else ():
+    for k in A:
         rest = [j for j in A if j != k]
-        # One strictly signed term among same-signed terms.
-        for strict, nonstrict in _STRICT:
-            rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
-        # Imaginary term plus finite reals is not real.
-        rule([(k, 'imaginary', True), *lits(rest, 'real')], (N, 'extended_real', False))
-        # An extended-real sum whose other terms are finite reals has an
-        # extended-real term k: with r = rest real, k = oo or -oo gives
-        # N = k, a finite real k gives N real, and a k that is not extended
-        # real (finite non-real, zoo, or an infinity off the real axis such
-        # as oo*I) gives N = k + r not extended real (nan + r = nan, the
-        # same value as k).  Contrapositive: a
-        # non-extended-real term plus finite reals is not extended real.
-        # This is what lets ``x - z > 0`` (which says ``extended_real(x -
-        # z)``) give ``extended_real(x)``, as ``x > z`` does (#53, W2B1).
-        rule([(N, 'extended_real', True), *lits(rest, 'real')], (k, 'extended_real', True))
+        if sign:
+            # One strictly signed term among same-signed terms.
+            for strict, nonstrict in _STRICT:
+                rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
+            # Imaginary term plus finite reals is not real.
+            rule([(k, 'imaginary', True), *lits(rest, 'real')], (N, 'extended_real', False))
+            # An extended-real sum whose other terms are finite reals has an
+            # extended-real term k: with r = rest real, k = oo or -oo gives
+            # N = k, a finite real k gives N real, and a k that is not extended
+            # real (finite non-real, zoo, or an infinity off the real axis such
+            # as oo*I) gives N = k + r not extended real (nan + r = nan, the
+            # same value as k).  Contrapositive: a
+            # non-extended-real term plus finite reals is not extended real.
+            # This is what lets ``x - z > 0`` (which says ``extended_real(x -
+            # z)``) give ``extended_real(x)``, as ``x > z`` does (#53, W2B1).
+            rule([(N, 'extended_real', True), *lits(rest, 'real')], (k, 'extended_real', True))
         if closure:     # (n <= MAX_ADD_SMALL; above, the CLOSURE theory)
-            for pred in _ADD_SUBTRACT:
+            for pred in _ADD_SUBTRACT if sign else _ADD_SUBTRACT_NOSIGN:
                 rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
         elif n <= MAX_ONEOUT:
             rule([(k, 'odd', True), *lits(rest, 'even')], (N, 'odd', True))
-        if n <= MAX_ONEOUT:
+        if sign:
             # A nonzero real part (finite or infinite) cannot be cancelled by
             # imaginary terms.
             rule([(k, 'extended_nonzero', True), *lits(rest, 'imaginary')],
@@ -221,7 +227,7 @@ _MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic')
 # Fields: the node and every factor but one in the field, those nonzero,
 # put the last factor in it (it is the node divided by them).
 _MUL_FIELDS = ('rational', 'algebraic')
-# (the sign ones, left to the SIGN theory over the cap: ``sign_owns``)
+# (the sign ones, left to the SIGN theory from three factors: ``sign_owns``)
 _MUL_CLOSED_SIGN = ('finite', 'extended_positive', 'nonnegative')
 
 # Backward transfer for a nonzero real numeric coefficient c: pred(c*x) -> pred(x)
@@ -243,22 +249,17 @@ def _coeff(ctx):
     return bool(c.is_finite and c.is_extended_real and not c.is_zero)
 
 
-#: Conditions on the pattern of a Mul (``n`` arguments, ``consts``; ``m``
-#: the size of the negative set in a ``negsets`` section).
+#: Conditions on the pattern of a Mul (``n`` arguments, ``consts``).
 MUL_GUARDS = MappingProxyType({
     'n<=MAX_ONEOUT': lambda c: c['n'] <= MAX_ONEOUT,
-    'n>MAX_ONEOUT': lambda c: c['n'] > MAX_ONEOUT,
-    # the sign rows, left to the SIGN theory over the cap (sign_owns)
+    # the sign rows, left to the SIGN theory from three factors (sign_owns;
+    # the theory is told the derived blocks of _mul_factor_sets too)
     'sign rows': lambda c: not sign_owns(True, c['n']),
     # the closure rows, left to the CLOSURE theory over the cap (closure_owns)
     'closure rows': lambda c: not closure_owns(True, c['n']),
     'n>=2': lambda c: c['n'] >= 2,
     'n==2': lambda c: c['n'] == 2,
     'n even': lambda c: c['n'] % 2 == 0,
-    'n odd': lambda c: c['n'] % 2 != 0,
-    '3<=n<=MAX_PAIRS': lambda c: 3 <= c['n'] <= MAX_PAIRS,
-    'm even': lambda c: c['m'] % 2 == 0,
-    'm odd': lambda c: c['m'] % 2 != 0,
     'coeff': _coeff,
     'c negative': lambda c: bool(c['consts'][0].is_negative),
     'c not negative': lambda c: not c['consts'][0].is_negative,
@@ -298,11 +299,9 @@ def _mul_table_rows():
         Section('each', when='sign rows', rows=[
             Row('zero', [('k', 'zero'), ('rest', 'finite')], ('N', 'zero')),
         ]),
-        Section('each', when='n<=MAX_ONEOUT', rows=[
+        Section('each', when='sign rows', rows=[
             Row('nonzero', [('rest', 'commutative')], [('*', 'zero'), ('N', 'zero', False)]),
         ]),
-        Row('nonzero.commutative', [('*', 'commutative')], [('*', 'zero'), ('N', 'zero', False)],
-            when='n>MAX_ONEOUT'),
         # Polar: all polar, or one polar factor and the rest positive.
         Row('polar', [('*', 'polar')], ('N', 'polar')),
         Section('each', rows=[
@@ -312,16 +311,10 @@ def _mul_table_rows():
         # All factors negative / nonpositive / imaginary: parity of n.
         Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
             when=('n even', 'sign rows')),
-        Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'),
-            when=('n odd', 'sign rows')),
         Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'),
             when=('n even', 'sign rows')),
-        Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'),
-            when=('n odd', 'sign rows')),
         Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'),
             when=('n even', 'sign rows')),
-        Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'),
-            when=('n odd', 'sign rows')),
         Row('all_odd', [('*', 'odd')], ('N', 'odd')),
         Section('each', when='n<=MAX_ONEOUT', rows=[
             # One infinite factor and the rest nonzero -> infinite.
@@ -358,22 +351,6 @@ def _mul_table_rows():
                 [('l', 'imaginary'), ('l', 'zero')], when='n==2'),
             Row('imag_times.imag', [('k', 'imaginary'), ('l', 'complex'), ('N', 'imaginary')],
                 ('l', 'real'), when='n==2'),
-        ]),
-        # Sign of a product with m negative factors, 2 <= m < n (one negative
-        # factor is above, all negative is above).
-        Section('negsets', when='3<=n<=MAX_PAIRS', rows=[
-            Row('m_neg.even', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
-                ('N', 'extended_positive'), when='m even'),
-            Row('m_neg.odd', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
-                ('N', 'extended_negative'), when='m odd'),
-            Row('m_nonpos.even', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonnegative'), when='m even'),
-            Row('m_nonpos.odd', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonpositive'), when='m odd'),
-        ]),
-        Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
-            Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
-                             ('rest', 'zero', False)], ('N', 'nonzero')),
         ]),
         # Numeric coefficient c*x: transfer facts back from the product to x.
         Row('coeff.back', [('N', '$p')], (1, '$p'), when=('coeff', 'c not negative'),
