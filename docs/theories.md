@@ -591,7 +591,7 @@ the zero exponent, zero/nonzero and finite/infinite) are exactly the rows the ma
 need the parity of the exponent (`even`/`odd`) or that a `nan` cell blocks (`1**oo`: row 4) stay template
 rows. A numeric base or exponent keeps the rows: they fold to a few short clauses there, and engaging the
 theory for `2**x` or `x**3` cost more than it saved (measured: owning every power with a symbolic exponent
-was +7% warm time on a power-heavy corpus, against +4% for this split, with the same answers).
+was +7% warm time on a power-heavy corpus, against +5% for this split, with the same answers).
 
 For an integer `b` and a negative integer `e`, `b**e` is an integer only if `b = +-1` (`|b**e| <= 1/2` for
 `|b| >= 2`, and `0**e = zoo`). The rows `int_base.negative_int_exp*` state this for every power without a
@@ -606,8 +606,8 @@ integer-magnitude classes of the issue (`(0, 1)`, `1`, `(1, oo)` and their negat
 nodes unnecessary, at the cost of 16 atoms in every SIGN node.
 
 Measured against `theories` (fresh engine per query, generated corpora; the numbers are in the PR): no lost
-answers, no flips, clauses per query -6% on power-heavy queries; warm time +5-7% per query on that class
-(+3% with the lazy reasons of #158), the refine stream flat.
+answers, no flips, clauses per query -6% on power-heavy queries; warm time +5% per query on that class
+(+4% with the lazy reasons of #158), the refine stream flat (+0.4%).
 
 ## CLOSURE: ring and field membership of sums and products
 
