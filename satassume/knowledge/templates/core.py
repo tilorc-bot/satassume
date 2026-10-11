@@ -924,25 +924,31 @@ def _pow_pattern(expr):
 
 
 def _twice(e):
-    """``(s, k)`` for an exponent with a node ``s`` whose integrality
-    gives that of ``2*e``: ``k == 2`` if ``integer(s) <-> integer(2*e)``
-    (``e = s/2`` or ``-s/2``: ``-s`` is an integer iff ``s`` is), ``k == 1``
-    if only ``integer(s) -> integer(2*e)`` (``e = c*s`` with ``2*c`` an
-    odd integer, ``e = s + c`` with ``2*c`` an odd integer); else ``(None,
-    0)``.  ``s`` is a node of the session already: the factor after the
-    coefficient, the derived rest of a longer product
-    (:func:`_mul_factor_sets`), or the other term of a sum ``s + c``.
-    For an exponent with a Rational of denominator above 2 (``2*n/3``,
-    ``n + 1/3``, ``n/4``) ``s`` is the derived node ``2*e``, ``k == 2``:
-    its integrality is a lattice question (INTLAT owns ``c*t`` and sums
-    with such coefficients; ``coeff.half`` decides ``n/2``).  Other
-    exponents derive no node ``2*e`` (it was one, with its Mul block, in
-    every Pow with a symbolic exponent): the rows about ``integer(2*e)``
-    decide whether a power of a real base is imaginary, which needs
-    ``e`` half an odd integer."""
+    """``(s, k)``: a node ``s`` whose integrality gives that of ``2*e``,
+    ``k == 2`` if ``integer(s) <-> integer(2*e)``, ``k == 1`` if only
+    ``integer(s) -> integer(2*e)``; ``(None, 0)`` if none.
+
+    * ``e = s/2`` or ``-s/2``: ``s`` (``-s`` is an integer iff ``s`` is),
+      ``k == 2``; ``e = c*s`` with ``2*c`` an odd integer, ``e = s + c``
+      with ``2*c`` an odd integer: ``s``, ``k == 1``.  ``s`` is a node of
+      the session already (the factor after the coefficient, the
+      derived rest of a longer product, :func:`_mul_factor_sets`, the
+      other term of the sum).
+    * Another sum or product with integer coefficients (``n*m``,
+      ``n + 1``, ``2*n``): none.  ``2*e`` is an integer iff ``e`` is
+      ``k/2`` for an integer ``k``; for such an exponent only an
+      assumption about ``2*e`` itself (or a half-integral term inside it)
+      says so, which the rows of its terms cannot relate to the power.
+    * A symbol, a function, a power, or a sum or product with a Rational
+      of denominator above 2 (``2*n/3``, ``n + 1/3``, ``n/4``): the
+      derived node ``2*e``, ``k == 2`` (an assumption may name ``2*y``;
+      the integrality of ``4*n/3`` is INTLAT's).
+
+    The rows about ``integer(2*e)`` decide whether a power of a real
+    base is imaginary, which needs ``e`` half an odd integer."""
+    if not (e.is_Add or e.is_Mul):
+        return Mul(S(2), e), 2
     args = e.args
-    if len(args) < 2:
-        return None, 0
     if any(_coeff_q(a) > 2 for a in (args if e.is_Add else (e,))):
         return Mul(S(2), e), 2
     c = args[0]
