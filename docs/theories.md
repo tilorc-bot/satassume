@@ -627,6 +627,21 @@ real at the root (so that `Q.eq(a, b)` with finite sides gives `zero(a -
 b)`, #42) gave no new answer on the stream or gate2 and took one stream
 pass from 3.8 s to 17.3 s (unpinned, on a loaded host); it was dropped.
 
+CLRA replaces no template row. It reads relation atoms only, and the rows
+it overlaps answer queries that have none. Each candidate was removed and
+the answers compared:
+- `_re`/`_im` (`imaginary(w) -> zero(re(w))`, `extended_real(w) ->
+  zero(im(w))`, `imaginary(w) -> nonzero(im(w))`): 4,431 answers lost on a
+  unary corpus of 62,928 queries, and 74 on the stream (64 distinct);
+- `imag_times.real`/`.imag` (core.py): 82 lost on products of two
+  symbols (`imaginary(x) & complex(y) & real(x*y) -> imaginary(y)`),
+  which are not linear;
+- `parts_of_round_templates`: 216 lost on the corpus, 8 on the stream (4
+  distinct).
+
+Engaging the glue for unary atoms so that it could take over those rows
+is the phase-b cost above, or more.
+
 ## Monotone functions (MONO)
 
 `satassume/theories/mono.py` is a table: for an application `f(u)` of
