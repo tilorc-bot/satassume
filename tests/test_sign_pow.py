@@ -117,8 +117,9 @@ def test_pow_sign_rows_are_derived():
 
 def test_ownership():
     x, y = symbols('x y')
-    assert sign_owns_pow(y) and not sign_owns_pow(S(2)) and not sign_owns_pow(sqrt(2))
-    assert over_cap(x**y) and over_cap(2**y) and not over_cap(x**2) and not over_cap(x**pi)
+    assert sign_owns_pow(x, y) and sign_owns_pow(x + 1, y)
+    assert not sign_owns_pow(S(2), y) and not sign_owns_pow(x, sqrt(2))
+    assert over_cap(x**y) and not over_cap(2**y) and not over_cap(x**2) and not over_cap(x**pi)
     assert SignAdapter.selects(x**y) and not SignAdapter.selects(x**3)
 
 
@@ -151,6 +152,17 @@ def _ask(q, A=True):
     # no claim where a value may be nan (1**oo, 0**I)
     (Q.extended_real(b**e), Q.positive(b) & Q.positive_infinite(e), None),
     (Q.zero(b**e), Q.zero(b) & Q.imaginary(e), None),
+    # integer bases, negative integer exponents (no b - 1, b + 1 nodes)
+    (Q.integer(b**e), Q.even(b) & Q.integer(e) & Q.negative(e), False),
+    (Q.integer(b**e), Q.prime(b) & Q.integer(e) & Q.negative(e), False),
+    (Q.integer(b**e), Q.composite(b) & Q.integer(e) & Q.negative(e), False),
+    (Q.integer(1/b), Q.prime(b), False),
+    (Q.integer(b**-2), Q.composite(b), False),
+    (Q.integer(b**-3), Q.even(b), False),
+    (Q.prime(b**b), Q.negative(b), False),
+    (Q.composite(b**e), Q.integer(b) & Q.integer(e) & Q.negative(e), False),
+    (Q.odd(b), Q.integer(b**e) & Q.integer(b) & Q.integer(e) & Q.negative(e), True),
+    (Q.integer(b**e), Q.odd(b) & Q.integer(e) & Q.negative(e), None),
 ])
 def test_answers(q, A, want):
     assert _ask(q, A) is want

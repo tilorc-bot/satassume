@@ -580,20 +580,32 @@ per term, `_theory_sync`, a theory level per decision) and their template rows a
 clauses. Handing every sum and product to the theory for each query left open after propagation was
 also measured in stage 1 (+29%, no new answer).
 
-**Powers** (stage 2, issue #149, in progress). `b**e` with a symbolic exponent (`templates.core.sign_owns_pow`:
-the exponent is not a number) is a node of the map op `POW` (`sign._pow_atoms`, a table over atom pairs:
-SymPy's principal power with its conventions `x**0 = 1`, `0**-1 = zoo`, `0**-oo = zoo`, `0**I = nan`,
-`oo**(a + t*I)` zoo/0/nan by the sign of `a`, `1**oo = nan`, `(-2)**oo = oo + oo*I`; a cell with a `nan`
-value is "no claim"). `tests/test_sign_pow.py` checks the table against SymPy at sample points of every atom
-pair (end points `1`, `-1` included) and that the rows the block of such a power leaves out
+**Powers** (stage 2, issue #149). `b**e` with a symbolic base and a symbolic exponent
+(`templates.core.sign_owns_pow`: neither is a number) is a node of the map op `POW` (`sign._pow_atoms`, a table
+over atom pairs: SymPy's principal power with its conventions `x**0 = 1`, `0**-1 = zoo`, `0**-oo = zoo`,
+`0**I = nan`, `oo**(a + t*I)` zoo/0/nan by the sign of `a`, `1**oo = nan`, `(-2)**oo = oo + oo*I`; a cell with
+a `nan` value is "no claim"). `tests/test_sign_pow.py` checks the table against SymPy at sample points of every
+atom pair (end points `1`, `-1` included) and that the rows the block of such a power leaves out
 (`core._POW_SIGN_ROWS`: rows 0-3, 13-16, 18-24 of `_POW_RULES`, the signs of a positive base, the zero base,
 the zero exponent, zero/nonzero and finite/infinite) are exactly the rows the map op derives. The rows that
 need the parity of the exponent (`even`/`odd`) or that a `nan` cell blocks (`1**oo`: row 4) stay template
-rows, and so do the derived nodes `b-1`, `b+1` (their only row needs `|b| >= 2` for an integer `b`, which the
-12 atoms cannot express: the integer-magnitude classes are the next step). Measured on 5,000 generated
-power-heavy queries (fresh engine per query): 0 lost, 0 flips, 2 new answers (`oo**oo` cases), clauses per
-query -7%, variables flat; the refine stream is flat (-0.3% on `theories`, 0.0% with #156 + #158), but a
-power-heavy corpus pays the theory's interface: +12% warm time per query.
+rows. A numeric base or exponent keeps the rows: they fold to a few short clauses there, and engaging the
+theory for `2**x` or `x**3` cost more than it saved (measured: owning every power with a symbolic exponent
+was +7% warm time on a power-heavy corpus, against +4% for this split, with the same answers).
+
+The same powers lost their derived nodes `b - 1` and `b + 1` (two `Add` blocks per power). Their only row
+was `int_base.negative_int_exp` ("an integer `b` other than `0`, `+-1` to a negative integer power is not an
+integer"). It is now stated from the other side, with no node: for integer `b` and negative integer `e`,
+`b**e` is an integer only if `b = +-1` (`|b**e| <= 1/2` for `|b| >= 2`, `0**e = zoo`), so then `b` is odd and
+neither prime nor composite, and `b**e` (`+-1`, a fraction or `zoo`) is never prime or composite. These rows
+hold for every power, so `integer(1/b)` under `prime(b)` and `integer(b**-2)` under `composite(b)` are now
+False (they were None). The nodes answered where `b - 1`, `b + 1` have facts of their own: assumptions about
+them (`positive(b - 1)`) or a compound base (`(x + 2)**e` with a positive integer `x`). Those answers are lost
+(see the PR for the counts). The integer-magnitude classes of the issue would recover them, at the cost of
+16 atoms in every SIGN node.
+
+Measured on 14,000 generated power-heavy queries and 3,000 integer-power queries (fresh engine per query):
+see the PR (#TBD) for the tables.
 
 ## CLOSURE: ring and field membership of sums and products
 

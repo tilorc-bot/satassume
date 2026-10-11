@@ -17,13 +17,13 @@ from .sign import ALL, POW, PRED_MASK, PREDS, SignTheory
 def over_cap(node) -> bool:
     """Whether the sign rows of ``node`` (an Add, a Mul or a Pow) are left
     to this theory: the sums and products of three or more arguments
-    (``templates.core.sign_owns``) and the powers with a symbolic exponent
-    (``templates.core.sign_owns_pow``).  A session engages the theory with
+    (``templates.core.sign_owns``) and the powers with a symbolic base and
+    exponent (``templates.core.sign_owns_pow``).  A session engages the theory with
     these nodes only (``Session.node_theories_sync``; docs/theories.md,
     "SIGN", for the measured alternatives)."""
     from ...knowledge.templates.core import sign_owns, sign_owns_pow
     if node.is_Pow:
-        return sign_owns_pow(node.args[1])
+        return sign_owns_pow(*node.args)
     return sign_owns(bool(node.is_Mul), len(node.args))
 
 
