@@ -17,6 +17,7 @@ numeric coefficients, which is what the old assumption system relies on
 """
 from __future__ import annotations
 
+from collections import Counter
 from itertools import product
 from types import MappingProxyType
 
@@ -418,8 +419,8 @@ def _mul_factor_sets(expr):
     if n >= 3 and c.is_Rational and not c.is_zero:
         # c*t: the coefficient-free product t (the coefficient rows relate
         # -x*y to x*y; x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
-        rest = Mul(*args[1:])
-        if rest.is_Mul and len(rest.args) == n - 1:
+        rest = kept_product(args[1:])
+        if rest is not None:
             out.append((c, rest))
     split = ipi_split(expr)
     if split is not None and split[1] is not None and split[1].is_Mul:
@@ -427,6 +428,41 @@ def _mul_factor_sets(expr):
         c, s_ = split
         out.append(((c,) if c is not S.One else ()) + (S.ImaginaryUnit, S.Pi, s_))
     return out
+
+
+def kept_product(factors):
+    """``Mul(*factors)`` if building it keeps the value of the product of
+    these factors at every point, else None.  Building evaluates, and an
+    unevaluated ``Mul(c, x, 1/x)`` or ``Mul(c, x, 0)`` would build to
+    ``c`` or ``0`` although it is nan at ``x = 0`` or ``x = oo`` (#161).
+    The build is kept when it keeps exactly these factors (its commutative
+    ones in any order), or when every factor is a nonzero number or a
+    positive rational power of a base that is not a sum, product, power
+    or zero (``x``, ``x**2``, ``sqrt(y)``, ``sin(x)``, ``pi``), or a product of
+    such factors (it is flattened): then the build only
+    multiplies numbers and adds positive exponents of a common base
+    (``x*x == x**2``, ``2*x*3 == 6*x``), which holds at every value of the
+    base, 0 and the infinities included."""
+    t = Mul(*factors)
+    if t.is_Mul and len(t.args) == len(factors) \
+            and Counter(t.args) == Counter(factors):
+        return t
+    if all(_merges_exactly(f) for f in factors):
+        return t
+    return None
+
+
+def _merges_exactly(f) -> bool:
+    if f.is_Number:
+        return not (f.is_zero or f is S.NaN)
+    if f.is_Mul:
+        return all(_merges_exactly(a) for a in f.args)    # flattened
+    b, e = f.as_base_exp()              # Mul reads exp(w) as E**w
+    if b.is_Mul or b.is_Add or b.is_Pow:
+        return False                    # flattened or distributed
+    if not b.free_symbols and not (b.is_Atom and b.is_zero is False):
+        return False                    # 0**2, nan**2: evaluated
+    return bool(e.is_Rational and e.is_positive)
 
 
 def _product_block(factors, expr):
@@ -565,7 +601,14 @@ def ipi_split(arg):
             rest.append(f)
     if not (seen_i and seen_pi):
         return None
-    return c, (None if not rest else rest[0] if len(rest) == 1 else Mul(*rest))
+    if not rest:
+        return c, None
+    if c.is_zero:
+        return None                     # Mul(I, pi, 0, x): nan at x = oo
+    if len(rest) == 1:
+        return c, rest[0]
+    s = kept_product(rest)              # Mul(I, pi, x, 1/x) is not I*pi
+    return None if s is None else (c, s)
 
 
 #: Conditions on ``exp(I*pi*c*s)`` (``c`` rational; ``has_s``: an ``s`` slot).
