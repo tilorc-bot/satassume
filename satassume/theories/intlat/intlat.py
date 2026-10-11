@@ -129,8 +129,199 @@ def reduce(rows: dict, f: Vec) -> Optional[FrozenSet[int]]:
     return why
 
 
+class Poly:
+    """A term ``u`` that is a product of powers of integral linear forms
+    over *base* columns: ``u = prod_i (a_i . x + c_i)**k_i`` (integer
+    ``a_i``, ``c_i``; ``k_i >= 1``).  When every base is an integer, so is
+    ``u``, and ``u``'s residue modulo ``m`` is a function of the bases'
+    residues modulo ``m``: :func:`_poly_step` turns that into rows of the
+    lattice (stage B of T2)."""
+
+    __slots__ = ("u", "bases", "cols", "factors")
+
+    def __init__(self, u: int, bases: Tuple[int, ...], factors):
+        self.u = u
+        self.bases = bases            # the base columns, in a fixed order
+        self.cols = frozenset(bases)
+        self.factors = tuple(factors)  # (coefficients by base, constant, k)
+
+    def value(self, r, m: int) -> int:
+        """``u`` modulo ``m`` at base residues ``r``."""
+        out = 1
+        for a, c, k in self.factors:
+            out = out * pow((sum(x * y for x, y in zip(a, r)) + c) % m, k, m) % m
+        return out
+
+
+#: the moduli :func:`_poly_step` works with: prime powers ``p**e`` of the
+#: lattice's ``d`` with ``p <= MAX_P``, ``e`` lowered to ``p**e <= MAX_MOD``
+#: (relations modulo a divisor of ``d`` are rows of the lattice too)
+MAX_P = 13
+MAX_MOD = 64
+#: the base residue vectors enumerated per modulus (more: the modulus is
+#: skipped, which only loses relations)
+MAX_POINTS = 256
+
+
+def _moduli(d: int) -> List[Tuple[int, int]]:
+    """``(p, e)`` for :data:`MAX_P`-small primes ``p`` of ``d``."""
+    out = []
+    for p in (2, 3, 5, 7, 11, 13):
+        if p > MAX_P or d % p:
+            continue
+        e, q = 0, d
+        while q % p == 0 and p ** (e + 1) <= MAX_MOD:
+            q //= p
+            e += 1
+        if e:
+            out.append((p, e))
+    return out
+
+
+def _residue(rows: dict, col: int, d: int, p: int, e: int):
+    """``(j, a, why)``: the largest ``j <= e`` and ``a`` (``0 <= a <
+    p**j``) with ``(x - a)/p**j`` in the lattice, ``x`` the term of
+    ``col``; ``why`` the reason."""
+    j, a, why = 0, 0, _EMPTY
+    while j < e:
+        step = p ** j
+        s = d // (step * p)
+        for t in range(p):
+            b = a + t * step
+            v = {col: s, CONST: -b * s} if b else {col: s}
+            w = reduce(rows, v)
+            if w is not None:
+                break
+        else:
+            break
+        j, a, why = j + 1, b, why | w
+    return j, a, why
+
+
+def _kernel(points, n: int, m: int) -> List[List[int]]:
+    """Vectors ``B`` with ``span(B) + m*Z^n`` the integer vectors ``v``
+    with ``v . a == 0 (mod m)`` for every ``a`` of ``points``.
+
+    Start from ``Z^n``.  For a point ``a``, a unimodular change of basis
+    (Euclid on the values ``b . a``) leaves one vector with a nonzero
+    value ``g`` (mod ``m``); that vector times ``m/gcd(g, m)`` and the
+    others span the vectors of the old lattice that satisfy ``a``.  The
+    vectors ``m*w`` satisfy every point, so the basis is kept mod ``m``."""
+    basis = [[int(i == j) for j in range(n)] for i in range(n)]
+    for a in points:
+        s = [sum(x * y for x, y in zip(b, a)) % m for b in basis]
+        nz = [i for i in range(n) if s[i]]
+        if not nz:
+            continue
+        i0 = nz[0]
+        for i in nz[1:]:
+            g, x, y = _bezout(s[i0], s[i])
+            u, w = basis[i0], basis[i]
+            basis[i0] = [(x * p + y * q) % m for p, q in zip(u, w)]
+            basis[i] = [((s[i] // g) * p - (s[i0] // g) * q) % m for p, q in zip(u, w)]
+            s[i0] = g
+        k = m // gcd(s[i0], m)
+        basis[i0] = [(k * p) % m for p in basis[i0]]
+    return basis
+
+
+def _points(poly: Poly, facts, p: int, e: int):
+    """The vectors ``(u, x_1, ..., x_k, 1)`` modulo ``p**e`` over the base
+    residues allowed by ``facts`` (``(j, a)`` per base, then ``u``'s), or
+    None if there are more than :data:`MAX_POINTS`."""
+    m = p ** e
+    ranges = []
+    size = 1
+    for j, a in facts[:-1]:
+        step = p ** j
+        size *= m // step
+        if size > MAX_POINTS:
+            return None
+        ranges.append(range(a, m, step))
+    ju, au = facts[-1]
+    qu = p ** ju
+    out = set()
+    for r in _product(ranges):
+        val = poly.value(r, m)
+        if val % qu == au:
+            out.add((val,) + r + (1,))
+    return out
+
+
+def _product(ranges):
+    out = [()]
+    for rg in ranges:
+        out = [t + (x,) for t in out for x in rg]
+    return out
+
+
+def _poly_step(rows: dict, supp: set, polys, pdone: dict, d: int) -> bool:
+    """Insert the rows the products ``polys`` give (whose bases are
+    integral in the lattice ``rows``); True iff the lattice grew.
+
+    For a product ``u`` of integral forms of integer bases ``x``: ``u`` is
+    an integer, and for each modulus ``m = p**e`` of :func:`_moduli` the
+    relations ``(c_u*u + c . x + c_0)/m`` integral that hold at every
+    residue vector of the bases modulo ``m`` that the lattice allows
+    (residues of each base and of ``u`` alone, :func:`_residue`) are
+    integral: ``u``'s value is the polynomial of the bases' values, and
+    the residues the lattice allows contain the actual ones.  No vector
+    allowed: the relation ``1/m``, a conflict.  The reason: the
+    literals that make the bases integral and give those residues.
+    ``pdone``: per product, the residues it was last stepped with (the
+    lattice only grows, so the same residues add nothing new)."""
+    grew = False
+    mods = None
+    for i, P in enumerate(polys):
+        if not P.cols <= supp:
+            continue
+        why = _EMPTY
+        for c in P.bases:
+            w = reduce(rows, {c: d})
+            if w is None:
+                break
+            why = why | w
+        else:
+            if mods is None:
+                mods = _moduli(d)
+            cols = P.bases + (P.u,)
+            facts = []
+            for p, e in mods:
+                fp = []
+                for c in cols:
+                    j, a, w = _residue(rows, c, d, p, e)
+                    fp.append((j, a))
+                    if w:
+                        why = why | w
+                facts.append(tuple(fp))
+            sig = (d, tuple(facts))
+            if pdone.get(i) == sig:
+                continue
+            pdone[i] = sig
+            vecs = [{P.u: d}]
+            order = (P.u,) + P.bases
+            for (p, e), fp in zip(mods, facts):
+                pts = _points(P, fp, p, e)
+                if pts is None:
+                    continue
+                m = p ** e
+                s = d // m
+                for b in _kernel(pts, len(order) + 1, m):
+                    v = {k: s * x for k, x in zip(order, b) if x}
+                    if b[-1]:
+                        v[CONST] = s * b[-1]
+                    if v:
+                        vecs.append(v)
+            for v in vecs:
+                if reduce(rows, v) is None:
+                    insert(rows, v, why)
+                    supp.add(P.u)
+                    grew = True
+    return grew
+
+
 def _close(rows: dict, supp: set, negs: list, used: set, d: int,
-           start: int = 0) -> Optional[FrozenSet[int]]:
+           start: int = 0, polys=(), pdone=None) -> Optional[FrozenSet[int]]:
     """Close the lattice ``rows`` (term columns ``supp``) under the parity
     step with the non-integral forms ``negs`` (``(form, literal,
     columns)``; ``used``: the indices already stepped) in place; the
@@ -170,6 +361,8 @@ def _close(rows: dict, supp: set, negs: list, used: set, d: int,
                 del g[CONST]
             insert(rows, g, w2 | {lit})
             changed = True
+        if not changed and polys:
+            changed = _poly_step(rows, supp, polys, pdone, d)
         if not changed:
             return None
         start = 0
@@ -182,10 +375,12 @@ class Lattice:
     the literals of a conflict, or None; :attr:`supp`: the term columns of
     the rows."""
 
-    __slots__ = ("d", "rows", "negs", "used", "conflict", "supp")
+    __slots__ = ("d", "rows", "negs", "used", "conflict", "supp", "polys", "pdone")
 
-    def __init__(self, d: int):
+    def __init__(self, d: int, polys=()):
         self.d = d
+        self.polys = polys
+        self.pdone: dict = {}
         self.rows = {CONST: ({CONST: d}, _EMPTY)}
         self.negs: list = []
         self.used: set = set()
@@ -200,6 +395,8 @@ class Lattice:
         c.used = set(self.used)
         c.conflict = self.conflict
         c.supp = set(self.supp)
+        c.polys = self.polys
+        c.pdone = dict(self.pdone)
         return c
 
     def add_pos(self, f: Vec, lit: int, cols) -> None:
@@ -207,7 +404,8 @@ class Lattice:
             return
         insert(self.rows, f, frozenset((lit,)))
         self.supp.update(cols)
-        self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d)
+        self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d,
+                               0, self.polys, self.pdone)
 
     def add_neg(self, h: Vec, lit: int, cols) -> None:
         if self.conflict is not None:
@@ -215,7 +413,7 @@ class Lattice:
         self.negs.append((h, lit, cols))
         if cols <= self.supp:
             self.conflict = _close(self.rows, self.supp, self.negs, self.used, self.d,
-                                   len(self.negs) - 1)
+                                   len(self.negs) - 1, self.polys, self.pdone)
 
     def implies(self, f: Vec) -> Optional[FrozenSet[int]]:
         """The reason of ``f`` integral, or None."""
@@ -226,7 +424,8 @@ class Lattice:
         again) is in conflict."""
         rows = dict(self.rows)
         insert(rows, f, _MARK)
-        w = _close(rows, self.supp | cols, self.negs, set(self.used), self.d)
+        w = _close(rows, self.supp | cols, self.negs, set(self.used), self.d,
+                   0, self.polys, dict(self.pdone))
         if w is None or 0 not in w:
             return None
         return w - _MARK
@@ -252,6 +451,7 @@ class IntLatTheory:
         self.inexact: set = set()
         self.d = 2
         self.order: List[int] = []           # registered variables
+        self.polys: List[Poly] = []          # products of integral forms
         self.val: Dict[int, bool] = {}
         self.trail: List[int] = []
         self.lim: List[Tuple[int, Optional[Lattice]]] = []
@@ -284,6 +484,14 @@ class IntLatTheory:
             self.form[v] = {k: int(x * d) for k, x in f.items()}
         self.cols[v] = frozenset(k for k in f if k != CONST)
         self.order.append(v)
+        self._done = False
+
+    def define_poly(self, poly: Poly) -> None:
+        """Tell the theory that the term of column ``poly.u`` is that
+        product (the lattices are rebuilt with it)."""
+        self.polys.append(poly)
+        self.lat = None
+        self.lim = [(k, None) for k, _ in self.lim]
         self._done = False
 
     def assert_lit(self, lit: int):
@@ -322,7 +530,7 @@ class IntLatTheory:
 
     # -- reasoning ---------------------------------------------------------
     def _build(self, lits) -> Lattice:
-        lat = Lattice(self.d)
+        lat = Lattice(self.d, self.polys)
         form, cols = self.form, self.cols
         for l in lits:
             if l > 0:

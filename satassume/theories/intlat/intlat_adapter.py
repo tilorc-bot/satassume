@@ -24,7 +24,7 @@ from __future__ import annotations
 from fractions import Fraction
 
 from ...knowledge.rules import BASIS_INDEX
-from .intlat import CONST, IntLatTheory
+from .intlat import CONST, IntLatTheory, Poly
 
 _INT = BASIS_INDEX["integer"]
 _EVEN = BASIS_INDEX["even"]
@@ -34,6 +34,8 @@ _ONE = Fraction(1)
 #: ``templates.core.MAX_ADD_SMALL`` (that module loads SymPy; the test of
 #: ownership checks the two agree)
 MAX_ADD_SMALL = 3
+#: a product term with more base terms is not read as a product
+MAX_BASES = 3
 
 
 def linear(node) -> bool:
@@ -212,7 +214,58 @@ class IntLatAdapter:
         if col is None:
             col = self.terms[e] = len(self.terms)
             self._register(e, ({col: Fraction(1)}, True))
+            self._define(e, col)
         return col
+
+    def _define(self, e, col: int) -> None:
+        """Tell the theory the term ``e`` (column ``col``) as a product of
+        integral forms, if it is one (:class:`.intlat.Poly`)."""
+        if not (getattr(e, "is_Mul", False) or getattr(e, "is_Pow", False)):
+            return
+        if not e.is_commutative:
+            return
+        facs: list = []
+        if not self._factors(e, 1, facs):
+            return
+        bases = sorted({k for f, _ in facs for k in f if k != CONST})
+        if not bases or len(bases) > MAX_BASES:
+            return
+        factors = []
+        for f, k in facs:
+            if any(x.denominator != 1 for x in f.values()):
+                return
+            factors.append((tuple(int(f.get(b, 0)) for b in bases),
+                            int(f.get(CONST, 0)), k))
+        self.theory.define_poly(Poly(col, tuple(bases), factors))
+
+    def _factors(self, e, k: int, out: list) -> bool:
+        """Append ``(form, power)`` for the factors of ``e**k``: ``e`` read
+        through products (the value of a product, evaluated or not, is
+        the product of its arguments' values) and powers with a positive
+        Integer exponent, down to Rationals, linear nodes with an exact
+        form, and terms.  False if a factor is something else (a number
+        that is not a Rational: a Float, ``pi``, ``I``; a negative or
+        symbolic power)."""
+        if e.is_Rational:
+            out.append(({CONST: _rat(e)}, k))
+            return True
+        if e.is_number:
+            return False
+        if e.is_Pow:
+            b, x = e.args
+            if not (x.is_Integer and x > 0):
+                return False
+            return self._factors(b, k * int(x), out)
+        if linear(e):
+            f, exact = self.form(e)
+            if not exact:
+                return False
+            out.append((f, k))
+            return True
+        if e.is_Mul:
+            return all(self._factors(a, k, out) for a in e.args)
+        out.append(({self.term(e): _ONE}, k))
+        return True
 
     def _register(self, e, fe) -> None:
         if e in self.done:
