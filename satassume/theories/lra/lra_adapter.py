@@ -486,8 +486,6 @@ def _clin(e, scale, fr: dict, fi: dict, const: list, kinds: dict) -> None:
         _closed(e, ci, fi, ki)
         const[0] += kr[0]
         const[1] += ki[0]
-        for t in e.atoms() if False else ():
-            pass
         return
     if e.is_Mul:
         rest, closed = [], []

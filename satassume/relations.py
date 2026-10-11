@@ -562,6 +562,19 @@ def _is_zero(e) -> bool:
     return getattr(e, "is_zero", None) is True and getattr(e, "is_Number", False)
 
 
+#: ``(re, im)``, the SymPy classes, imported on first use (no module-top
+#: SymPy import here)
+_REIM: tuple = ()
+
+
+def _reim() -> tuple:
+    global _REIM
+    if not _REIM:
+        from sympy import re, im
+        _REIM = (re, im)
+    return _REIM
+
+
 def _is_number(e) -> bool:
     return bool(getattr(e, "is_number", False)) and not getattr(e, "free_symbols", True)
 
@@ -1235,7 +1248,7 @@ class Relations:
         if u in self._part_links:
             return
         self._part_links[u] = True
-        from sympy import re, im
+        re, im = _reim()
         from .theories.lra.lra_adapter import part_constraint
         s = self.session
         s.ensure(u, {"real", "complex", "imaginary"})
@@ -1265,13 +1278,10 @@ class Relations:
             return guard
         s = self.session
         guard = self._guards[key] = []
-        clra = hasattr(ad, "cinterpret")
-        if clra:
-            from sympy import re, im
-            from .theories.lra.lra_adapter import _part_kind
+        reim = _reim() if hasattr(ad, "cinterpret") else ()
         for u in terms:
-            if clra and isinstance(u, (re, im)) and u.args[0].free_symbols \
-                    and _part_kind(u.args[0]) == "complex":
+            if reim and isinstance(u, reim) and u.args[0].free_symbols \
+                    and not u.args[0].is_extended_real:
                 self._parts(ad, u.args[0])     # re(w), im(w): w's part links
             if _is_number(u):
                 if u not in self._bounded:
