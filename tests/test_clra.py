@@ -128,3 +128,53 @@ def test_split_matches_random_values():
         env = {x: rnd.choice(VALUES), y: rnd.choice(VALUES), z: rnd.choice(VALUES)}
         truth = (lhs - rhs).subs(env).expand() == 0
         assert truth == (_holds(rr, env) and _holds(ri, env)), (atom, env)
+
+
+# ---------------------------------------------------------------------------
+# Backtracking and session restore: the split twins are switched by their
+# roles and the part links hold for every value, so an engine that answered
+# other queries first (same atoms under other assumptions, conflicting
+# assumption sets) answers each query as a fresh engine does.
+# ---------------------------------------------------------------------------
+
+SESSION = CASES + [
+    (Q.eq(re(x), 1), Q.complex(x) & Q.eq(x, 2), False),
+    (Q.eq(re(x), 1), Q.eq(x, 1 + 2 * I), True),
+    (Q.eq(re(x), 2), Q.eq(x, 1 + 2 * I), False),
+    (Q.real(x), Q.eq(x, 1 + 2 * I), False),
+    (Q.imaginary(x), Q.eq(x, 3 * I), True),
+    (Q.eq(x, y), Q.eq(x + I * y, 0) & Q.real(x) & Q.real(y), True),
+    # open: x - y is no relation atom (the eq/zero gap of #42)
+    (Q.zero(x - y), Q.eq(x, 1 + I) & Q.eq(y, 1 + I), None),
+    (Q.positive(re(x)), Q.eq(I * x, 2 * y - I) & Q.positive(im(y)), None),
+    (Q.negative(im(x)), Q.eq(I * x, 2 * y - I) & Q.real(y) & Q.positive(y), True),
+]
+
+
+def _fresh(p, a):
+    from satassume import DictCache, Engine
+    return ask(p, a, Engine(cache=DictCache()))
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_shared_engine_matches_fresh(seed):
+    from satassume import DictCache, Engine
+    rnd = random.Random(seed)
+    order = list(SESSION) * 2
+    rnd.shuffle(order)
+    eng = Engine(cache=DictCache())
+    for p, a, _ in order:
+        try:
+            got = ask(p, a, eng)
+        except ValueError:
+            got = "inconsistent"
+        try:
+            want = _fresh(p, a)
+        except ValueError:
+            want = "inconsistent"
+        assert got == want, (p, a)
+    # an inconsistent set in the middle of a session leaves the engine usable
+    with pytest.raises(ValueError):
+        ask(Q.real(x), Q.eq(x, I) & Q.real(x), eng)
+    for p, a, expected in SESSION:
+        assert ask(p, a, eng) is _fresh(p, a) is expected, (p, a)
