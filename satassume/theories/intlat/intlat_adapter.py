@@ -96,6 +96,33 @@ def owns(node) -> bool:
     return False
 
 
+def _factors(e, k: int, out: list) -> bool:
+    """Append ``(kind, factor, power)`` for the factors of ``e**k``: ``e``
+    read through products (the value of a product, evaluated or not, is
+    the product of its arguments' values) and powers with a positive
+    Integer exponent, down to Rationals (``'q'``), linear nodes
+    (``'lin'``, read only if their form is exact) and terms (``'t'``).
+    False if a factor is something else (a number that is not a
+    Rational: a Float, ``pi``, ``I``; a negative or symbolic power)."""
+    if e.is_Rational:
+        out.append(('q', e, k))
+        return True
+    if e.is_number:
+        return False
+    if e.is_Pow:
+        b, x = e.args
+        if not (x.is_Integer and x > 0):
+            return False
+        return _factors(b, k * int(x), out)
+    if linear(e):
+        out.append(('lin', e, k))
+        return True
+    if e.is_Mul:
+        return all(_factors(a, k, out) for a in e.args)
+    out.append(('t', e, k))
+    return True
+
+
 def _rat(c) -> Fraction:
     return Fraction(int(c.p), int(c.q))
 
@@ -224,9 +251,22 @@ class IntLatAdapter:
             return
         if not e.is_commutative:
             return
-        facs: list = []
-        if not self._factors(e, 1, facs):
+        parts: list = []
+        if not _factors(e, 1, parts):
             return
+        # registered only once the whole product reads (a rejected
+        # product adds no atoms)
+        facs: list = []
+        for kind, a, k in parts:
+            if kind == 'q':
+                facs.append(({CONST: _rat(a)}, k))
+            elif kind == 'lin':
+                f, exact = self.form(a)
+                if not exact:
+                    return
+                facs.append((f, k))
+            else:
+                facs.append(({self.term(a): _ONE}, k))
         bases = sorted({k for f, _ in facs for k in f if k != CONST})
         if not bases or len(bases) > MAX_BASES:
             return
@@ -237,35 +277,6 @@ class IntLatAdapter:
             factors.append((tuple(int(f.get(b, 0)) for b in bases),
                             int(f.get(CONST, 0)), k))
         self.theory.define_poly(Poly(col, tuple(bases), factors))
-
-    def _factors(self, e, k: int, out: list) -> bool:
-        """Append ``(form, power)`` for the factors of ``e**k``: ``e`` read
-        through products (the value of a product, evaluated or not, is
-        the product of its arguments' values) and powers with a positive
-        Integer exponent, down to Rationals, linear nodes with an exact
-        form, and terms.  False if a factor is something else (a number
-        that is not a Rational: a Float, ``pi``, ``I``; a negative or
-        symbolic power)."""
-        if e.is_Rational:
-            out.append(({CONST: _rat(e)}, k))
-            return True
-        if e.is_number:
-            return False
-        if e.is_Pow:
-            b, x = e.args
-            if not (x.is_Integer and x > 0):
-                return False
-            return self._factors(b, k * int(x), out)
-        if linear(e):
-            f, exact = self.form(e)
-            if not exact:
-                return False
-            out.append((f, k))
-            return True
-        if e.is_Mul:
-            return all(self._factors(a, k, out) for a in e.args)
-        out.append(({self.term(e): _ONE}, k))
-        return True
 
     def _register(self, e, fe) -> None:
         if e in self.done:

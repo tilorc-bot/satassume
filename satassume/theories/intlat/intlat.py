@@ -618,18 +618,19 @@ class IntLatTheory:
 
     def _minimise(self, why, test):
         """Drop literals of ``why`` that ``test`` (on the lattice of a
-        literal subset: still derivable?) does not need.  If the lattice
-        of ``why`` derives it without the products' step, the subsets are
-        tried without it too (a subset that needs the step is kept out:
-        the reason is still valid, and the step is the costly part)."""
+        literal subset: still derivable?) does not need, on lattices
+        closed without the products' step.  A reason that needs the step
+        is kept as it is: its product rows' reasons are per modulus
+        already, and the step is the costly part of a rebuild."""
         if len(why) > self.MIN_WHY or len(why) <= 1:
             return list(why)
         keep = sorted(why, key=abs)
-        polys = bool(self.polys) and not test(self._build(keep, False))
+        if self.polys and not test(self._build(keep, False)):
+            return keep
         i = 0
         while i < len(keep):
             trial = keep[:i] + keep[i + 1:]
-            if test(self._build(trial, polys)):
+            if test(self._build(trial, False)):
                 keep = trial
             else:
                 i += 1

@@ -831,9 +831,9 @@ product's value is the product of its arguments' values, evaluated or not). This
 `odd(n)`, `integer(n**2/4)` (True under `even(n)`, False under `odd(n)`), `integer(n*m/4)` under even `n`,
 `m`, and backward `even(n)` from `integer(n**2/4)`. The step runs once per batch of assertions
 (`Lattice.settle`, at `propagate`/`check`), not inside `refutes`: what it would find there, the search finds
-by asserting the atom. A propagation reason is minimised by deletion on rebuilt lattices; when the lattice
-of the whole reason derives the literal without the products' step, the trial subsets are closed without
-it too (the step is the costly part, and a reason that needs no product stays valid). Engagement is unchanged (a product term only occurs in a form the theory already
+by asserting the atom. A propagation reason is minimised by deletion on lattices rebuilt without the
+products' step; a reason that needs a product row is kept as it is (each product row's reason is already
+per modulus, and minimising it re-ran the step for every trial subset: +6% on the class corpora). Engagement is unchanged (a product term only occurs in a form the theory already
 owns), so no template row is dropped: the parity rows of products (`all_odd`, `one_even`, the Pow
 integer/even/odd rows) cover every product in every session, and owning products would engage the theory
 in most sessions (the +22% row below). `tests/test_intlat_theory.py` checks every clause over random
