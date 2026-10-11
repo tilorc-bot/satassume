@@ -1253,19 +1253,43 @@ class Relations:
         s = self.session
         s.ensure(u, {"real", "complex", "imaginary"})
         real, cpx, imag = (s.var(p, u) for p in ("real", "complex", "imaginary"))
-        zi, zr, ru = self._fresh(), self._fresh(), self._fresh()
         U, V = re(u), im(u)
-        ad.register_payload(s.solver, zi, part_constraint({V: Fraction(1)}))
-        ad.register_payload(s.solver, zr, part_constraint({U: Fraction(1)}))
-        ad.register_payload(s.solver, ru, part_constraint({U: Fraction(1), u: Fraction(-1)}))
+
+        def part(form, t):
+            # the atom ``form = 0`` over the part t, or its truth value when
+            # t evaluates to a number (re(w) = 0 for an imaginary w)
+            if t.free_symbols:
+                v = self._fresh()
+                ad.register_payload(s.solver, v, part_constraint(form))
+                return v
+            return t.is_zero
+
+        def real_part(t):
+            if t.free_symbols:
+                s.ensure(t, {"real"})
+                return s.var("real", t)
+            return t.is_real
+
+        zi, zr = part({V: Fraction(1)}, V), part({U: Fraction(1)}, U)
+        ru = part({U: Fraction(1), u: Fraction(-1)}, U) if U.free_symbols else None
         # finite parts make a finite number (#19): no infinite u has two
         # finite parts (re(zoo) = re(nan) = nan, re(oo) = oo, im(oo*I) = oo)
-        s.ensure(U, {"real"})
-        s.ensure(V, {"real"})
-        for c in ([-real, zi], [-real, ru], [-cpx, -zi, real],
-                  [-imag, zr], [-imag, -zi], [-cpx, -zr, zi, imag],
-                  [-s.var("real", U), -s.var("real", V), cpx]):
-            s.emit(c)
+        for c in (((real, False), (zi, True)), ((real, False), (ru, True)),
+                  ((cpx, False), (zi, False), (real, True)),
+                  ((imag, False), (zr, True)), ((imag, False), (zi, False)),
+                  ((cpx, False), (zr, False), (zi, True), (imag, True)),
+                  ((real_part(U), False), (real_part(V), False), (cpx, True))):
+            out = []
+            for v, pos in c:
+                if v is None:              # unknown truth value: no clause
+                    break
+                if v is True or v is False:
+                    if v is pos:           # a true literal: the clause holds
+                        break
+                    continue               # a false literal: dropped
+                out.append(v if pos else -v)
+            else:
+                s.emit(out)
 
     def _guard(self, ad, terms, kinds=None) -> list:
         """``[-real(u), ...]`` for the opaque terms ``u`` of a guarded

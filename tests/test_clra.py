@@ -199,3 +199,23 @@ def test_zero_atom_clauses(atom):
         tr, ti = _holds(rr, env), _holds(ri, env)
         assert (v.is_real is True) == ti, (atom, env)
         assert (v.is_imaginary is True) == (tr and not ti), (atom, env)
+
+
+def test_numeric_part_folds_into_the_constant():
+    """A part that evaluates to a number (``re(w) = 0`` for an imaginary
+    ``w``) goes to the constant: no theory variable is named by a number."""
+    from sympy import Symbol
+    w = Symbol("w", imaginary=True)
+    for atom in (Eq(w, 2 * I, evaluate=False), Eq(x + w, 1 + 2 * I, evaluate=False),
+                 Eq(I * w, 3, evaluate=False)):
+        (rr, ri), terms, kinds = cinterpret(Q.eq(*atom.args))
+        for r in (rr, ri):
+            if r is not True and r is not False:
+                assert all(t.free_symbols for t, _ in r[0][0])
+        assert all(t.free_symbols for t in terms)
+        for env in ({w: 2 * I, x: S(1)}, {w: -I, x: 1 + 3 * I}, {w: 3 * I, x: 1 - I}):
+            want = (atom.lhs - atom.rhs).subs(env).expand() == 0
+            assert (_holds(rr, env) and _holds(ri, env)) == want
+    assert ask(Q.eq(im(w), 2), Q.eq(w, 2 * I)) is True
+    assert ask(Q.eq(w, 2 * I), Q.eq(im(w), 2)) is True
+    assert ask(Q.zero(re(x)), Q.eq(x + w, 2 * I) & Q.complex(x)) is True

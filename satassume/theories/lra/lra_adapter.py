@@ -503,10 +503,23 @@ def _clin(e, scale, fr: dict, fi: dict, const: list, kinds: dict) -> None:
         return
     from sympy import re as _re
     U, V = _re(e), _im(e)
-    fr[U] = fr.get(U, Fraction(0)) + cr
-    fr[V] = fr.get(V, Fraction(0)) - ci
-    fi[V] = fi.get(V, Fraction(0)) + cr
-    fi[U] = fi.get(U, Fraction(0)) + ci
+    _cpart(U, cr, fr, const, 0)
+    _cpart(V, -ci, fr, const, 0)
+    _cpart(V, cr, fi, const, 1)
+    _cpart(U, ci, fi, const, 1)
+
+
+def _cpart(t, c, form: dict, const: list, i: int) -> None:
+    """Add ``c * t`` for a part ``t`` (``re(u)`` or ``im(u)``) to ``form``
+    and ``const[i]``: a part that evaluates to a number (``re(w) = 0`` for
+    an imaginary ``w``) goes to the constant (:func:`_closed`), any other is
+    a variable."""
+    if t.free_symbols:
+        form[t] = form.get(t, Fraction(0)) + c
+        return
+    k = [Fraction(0)]
+    _closed(t, c, form, k)
+    const[i] += k[0]
 
 
 def cinterpret(atom):
