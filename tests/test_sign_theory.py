@@ -250,8 +250,9 @@ def test_rows_from_three_arguments_are_left_to_the_theory():
     assert 'even' not in preds(core._add_rules(7, {}))        # INTLAT's (intlat_adapter.owns)
     assert 'integer' not in preds(core._add_rules(7, {}))     # CLOSURE's (closure_owns)
     assert 'even' in preds(core._mul_rules(3, {}))
-    for p in ('extended_positive', 'zero', 'finite'):
+    for p in ('extended_positive', 'finite'):
         assert p in preds(core._add_rules(2, {})) and p in preds(core._mul_rules(2, {}))
+    assert 'zero' in preds(core._mul_rules(2, {}))   # (Add: rule base, tools/minimise.py)
 
 
 @pytest.mark.parametrize("prop, assum, expected", [

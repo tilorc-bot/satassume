@@ -453,7 +453,7 @@ def test_facts_for_x_plus_y_shape():
             assert a.expr in {x + y, x, y}
             assert a.pred in VOCAB
     # facts are about the node, not just unit facts about args
-    assert any(P('real', x + y) in atoms_of(f) for f in facts)
+    assert any(P('extended_real', x + y) in atoms_of(f) for f in facts)
 
 
 def test_registry_mro_and_ordering():
@@ -514,7 +514,7 @@ def test_specific_expectations():
     # ``2`` do not appear in the clauses.
     facts = registry.facts_for(-x)
     assert Implies(P('extended_positive', x), P('extended_negative', -x)) in facts
-    assert Implies(P('negative', -x), P('positive', x)) in facts
+    # (negative(-x) -> positive(x): test_deleted_row_spot_checks)
     assert Implies(P('integer', -x), P('integer', x)) in facts
     facts = registry.facts_for(x**2)
     assert Implies(P('nonzero', x), P('positive', x**2)) in facts
@@ -539,7 +539,7 @@ def test_specific_expectations():
     assert Implies(And(P('extended_real', x + y), P('real', y)),
                    P('extended_real', x)) in facts
     facts = registry.facts_for(x + oo)
-    assert Implies(P('real', x), P('extended_positive', x + oo)) in facts
+    # (real(x) -> extended_positive(x + oo): test_deleted_row_spot_checks)
     assert Implies(Not(P('negative_infinite', x)), P('infinite', x + oo)) in facts
     facts = registry.facts_for(I*x)
     assert Implies(And(P('complex', x), P('extended_real', I*x)),
@@ -586,6 +586,41 @@ def test_specific_expectations():
     assert Implies(And(P('algebraic', x), Not(P('zero', x))), P('transcendental', cot(x))) not in facts
     facts = registry.facts_for(Abs(x))
     assert P('extended_nonnegative', Abs(x)) in facts
+
+
+@pytest.mark.parametrize("expr, premise, conclusion", [
+    # coeff.minus_one, one_neg and the rule base (the deleted backward
+    # coefficient transfers of _COEFF_BACK)
+    (-x, ('negative', 'N'), ('positive', 'x')),
+    # the strict and signed-infinite rows of _add_rules (the deleted
+    # constant +oo row)
+    (x + oo, ('real', 'x'), ('extended_positive', 'N')),
+])
+def test_deleted_row_spot_checks(expr, premise, conclusion):
+    """Two implications whose rows issue #149 R1a deleted from the Add
+    and Mul templates still follow from the rows the template gives now
+    and the rule base (proved with ``tools/minimise.py``'s z3 checker),
+    and not from the rule base alone."""
+    pytest.importorskip("z3")
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+    import minimise
+    from satassume.knowledge.templates._common import Rules, consts_of
+
+    kind = 'mul' if expr.is_Mul else 'add'
+    args = expr.args
+    n = len(args)
+    consts = consts_of(args)
+    slot = {'N': n, 'x': args.index(x)}
+    R = Rules()
+    R.rule([(slot[premise[1]], premise[0], True)], (slot[conclusion[1]], conclusion[0], True))
+    goals = minimise.basis_clauses(R.rules, consts)
+    kept = minimise.basis_clauses([(p, c) for _, p, c in minimise.tagged_rules(kind, n, consts)],
+                                  consts)
+    check = minimise.checker(n + 1)
+    assert not check.unimplied(kept, goals)
+    assert check.unimplied([], goals)
 
 
 def test_add_extended_real_term_end_to_end():

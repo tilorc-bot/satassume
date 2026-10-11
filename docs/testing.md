@@ -278,6 +278,20 @@ next to the pass count; "0 unsound" means nothing without "N unchecked".
 * #58, not merged: `tools/totality.py` checks statically that every
   node's template block is satisfiable for every allowed assignment of its
   children; `tests/test_totality.py` runs it with an empty allowlist.
+* `tools/minimise.py` (issue #149, R1a) finds the rows of the Add and
+  Mul templates whose clauses the other rows and the rule base imply in
+  every pattern (876 shapes: arities 1 to 5 with no, one or two constants
+  of every kind), by z3 (`--semantic`) or by unit propagation (the
+  default: a deletion that keeps propagation too).  Such rows were deleted
+  by hand; `tests/test_template_minimal.py` keeps them as they were and
+  re-proves over the same shapes that each clause they gave still follows,
+  so the deletion keeps every pattern equivalent and a later edit that
+  removes what one relied on fails there.  The test guards only the rows
+  listed in its `deleted_add_rows` / `deleted_mul_rows`: a later
+  hand-deletion must be added there, or the test says nothing about it.
+  It proves semantic equivalence only (z3), which is what answers need
+  (the engine escalates and searches when propagation leaves a query
+  open).
 
 ## Benchmarks (asv)
 

@@ -53,8 +53,7 @@ def mul_rules(n, consts):
         rule(lits(A, pred), (N, pred, True))
     # Extended reals, all finite or all nonzero (no 0*oo).
     if sign:
-        rule([*lits(A, 'extended_real'), *lits(A, 'finite')], (N, 'extended_real', True))
-        rule([*lits(A, 'extended_real'), *lits(A, 'zero', False)], (N, 'extended_real', True))
+        pass    # (the extended-real closures: issue #149 R1a, tests/test_template_minimal.py)
     # Division in a field (the CLOSURE change, issue #149 T3: it replaces
     # the one-irrational and one-transcendental rules and the rational
     # coefficient transfers; the commutative and hermitian rules are gone,
@@ -93,7 +92,6 @@ def mul_rules(n, consts):
     if sign:
         rule(lits(A, 'extended_negative'),
              (N, 'extended_positive' if even_n else 'extended_negative', True))
-        rule(lits(A, 'nonpositive'), (N, 'nonnegative' if even_n else 'nonpositive', True))
         rule(lits(A, 'imaginary'), (N, 'nonzero' if even_n else 'imaginary', True))
     rule(lits(A, 'odd'), (N, 'odd', True))
 
@@ -106,8 +104,6 @@ def mul_rules(n, consts):
                 # Exactly one negative factor (rest positive) -> negative.
                 rule([(k, 'extended_negative', True), *lits(rest, 'extended_positive')],
                      (N, 'extended_negative', True))
-                rule([(k, 'nonpositive', True), *lits(rest, 'nonnegative')],
-                     (N, 'nonpositive', True))
             # One even factor and the rest integers -> even.
             rule([(k, 'even', True), *lits(rest, 'integer')], (N, 'even', True))
             # One composite factor and the rest integers -> not prime (the
@@ -119,8 +115,6 @@ def mul_rules(n, consts):
                      (N, 'extended_real', False))
                 # One imaginary factor and the rest nonzero finite reals -> imaginary;
                 # with the rest merely real the product may also be zero.
-                rule([(k, 'imaginary', True), *lits(rest, 'real'), *lits(rest, 'zero', False)],
-                     (N, 'imaginary', True))
                 rule([(k, 'imaginary', True), *lits(rest, 'real')],
                      [(N, 'imaginary', True), (N, 'zero', True)])
             if n == 2:
@@ -161,7 +155,7 @@ def mul_rules(n, consts):
                     # (p/2)*x for integer x is an integer iff x is even.
                     R.equiv([(1, 'integer', True)], (N, 'integer', True), (1, 'even', True))
                 elif c is S.NegativeOne:
-                    for pred in ('integer', 'even', 'odd'):
+                    for pred in ('integer',):
                         rule([(N, pred, True)], (1, pred, True))
     return R.rules
 

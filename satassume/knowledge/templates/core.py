@@ -91,23 +91,25 @@ def closure_owns(is_mul: bool, n: int) -> bool:
 # the same predicate), ``zero`` and the finite sign predicates are derived
 # by the rule base from these.  ``extended_real`` is not: ``oo - oo`` is
 # nan (see _add_rules).  ``commutative`` is true of every term in scope
-# (``rules.DEFINITIONS``): no row speaks of it.
+# (``rules.DEFINITIONS``): no row speaks of it.  ``extended_positive`` and
+# ``extended_negative`` are the strict rows' (``_STRICT``) with every term
+# strict; ``antihermitian`` (imaginary or zero) also gives the sum of
+# imaginaries (tools/minimise.py, tests/test_template_minimal.py).
 _ADD_CLOSED = (
     'complex', 'integer', 'rational', 'algebraic', 'finite', 'antihermitian',
-    'extended_positive', 'extended_negative',
     'extended_nonnegative', 'extended_nonpositive',
 )
 
 # Closed under subtraction of finite values: pred(node) & pred(rest) -> pred(a).
 # (The contrapositives give "one non-integer term -> non-integer sum" etc.,
 # and with the closure rules also irrational/transcendental/noninteger sums.)
-_ADD_SUBTRACT = ('real', 'complex', 'integer', 'rational', 'algebraic', 'finite')
-# (``real`` and ``finite`` are the SIGN theory's where it owns the sum)
+# (``real`` follows from ``finite`` and the extended-real row of _add_rules)
+_ADD_SUBTRACT = ('complex', 'integer', 'rational', 'algebraic', 'finite')
+# (``finite`` is the SIGN theory's where it owns the sum)
 _ADD_SUBTRACT_NOSIGN = ('complex', 'integer', 'rational', 'algebraic')
 
 # The closures the SIGN theory decides from three terms (``sign_owns``).
-_ADD_SIGN = ('finite', 'extended_positive', 'extended_negative',
-             'extended_nonnegative', 'extended_nonpositive')
+_ADD_SIGN = ('finite', 'extended_nonnegative', 'extended_nonpositive')
 # The closures the CLOSURE theory decides over its cap (``closure_owns``).
 _ADD_CLOSURE = ('complex', 'integer', 'rational', 'algebraic')
 
@@ -134,18 +136,14 @@ def _add_rules(n, consts):
     # (integrality and parity of a sum over MAX_ADD_SMALL terms, or with a
     # non-integer coefficient: the INTLAT theory, ``intlat_adapter.owns``)
 
-    # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
-    if sign:
-        rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
-
     for k in A:
         rest = [j for j in A if j != k]
         if sign:
             # One strictly signed term among same-signed terms.
             for strict, nonstrict in _STRICT:
                 rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
-            # Imaginary term plus finite reals is not real.
-            rule([(k, 'imaginary', True), *lits(rest, 'real')], (N, 'extended_real', False))
+            # (An imaginary term plus finite reals is not real: the
+            # contrapositive of the row below.)
             # An extended-real sum whose other terms are finite reals has an
             # extended-real term k: with r = rest real, k = oo or -oo gives
             # N = k, a finite real k gives N real, and a k that is not extended
@@ -188,10 +186,8 @@ def _add_rules(n, consts):
                 # total): N not -oo with such a rest means k is not -oo.
                 rule([(k, signed, True), *lits(rest, 'extended_real'),
                       *lits(rest, other_signed, False)], (N, signed, True))
-                # A constant +oo plus terms that are >= 0 or finite real is +oo.
-                if k in consts:
-                    for cond in (nonstrict, 'real'):
-                        rule([(k, signed, True), *lits(rest, cond)], (N, strict, True))
+                # (A constant +oo plus terms that are >= 0 or finite real is
+                # +oo: this row and the strict ones.)
 
     # Parity of a sum of integers.
     if n <= MAX_ADD_SMALL:
@@ -228,16 +224,17 @@ _MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic')
 # put the last factor in it (it is the node divided by them).
 _MUL_FIELDS = ('rational', 'algebraic')
 # (the sign ones, left to the SIGN theory from three factors: ``sign_owns``)
-_MUL_CLOSED_SIGN = ('finite', 'extended_positive', 'nonnegative')
+# (``nonnegative``: a zero factor makes the product zero, positive ones
+# positive; ``extended_real``: by the signs of the factors, as below.)
+_MUL_CLOSED_SIGN = ('finite', 'extended_positive')
 
 # Backward transfer for a nonzero real numeric coefficient c: pred(c*x) -> pred(x)
 # (sign predicates flipped for negative c).  The forward directions follow
-# from the closure and per-argument rules.
-_COEFF_BACK = (
-    'positive', 'negative', 'nonnegative', 'nonpositive',
-    'extended_positive', 'extended_negative', 'real', 'extended_real',
-    'finite', 'complex', 'imaginary',
-)
+# from the closure and per-argument rules; so do the backward ones of
+# ``extended_real`` (``one_non_real``), ``finite`` (``one_infinite``) and,
+# with the rule base, the signs (``zero``, ``one_neg``, ``all_neg.even``):
+# tools/minimise.py, tests/test_template_minimal.py.
+_COEFF_BACK = ('complex', 'imaginary')
 
 
 def _coeff(ctx):
@@ -277,11 +274,8 @@ def _mul_table_rows():
         Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED, when='closure rows'),
         Row('closed.sign', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED_SIGN,
             when='sign rows'),
-        # Extended reals, all finite or all nonzero (no 0*oo).
-        Row('ext_real.finite', [('*', 'extended_real'), ('*', 'finite')], ('N', 'extended_real'),
-            when='sign rows'),
-        Row('ext_real.nonzero', [('*', 'extended_real'), ('*', 'zero', False)],
-            ('N', 'extended_real'), when='sign rows'),
+        # (Extended reals, all finite or all nonzero: by the signs of the
+        # factors, ``zero``, ``closed.sign``, ``one_neg``, ``all_neg.even``.)
         # Division in a field.  The contrapositives are the one-irrational
         # and one-transcendental rules: an irrational (transcendental)
         # factor among nonzero rationals (algebraics) makes the product
@@ -311,8 +305,6 @@ def _mul_table_rows():
         # All factors negative / nonpositive / imaginary: parity of n.
         Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
             when=('n even', 'sign rows')),
-        Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'),
-            when=('n even', 'sign rows')),
         Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'),
             when=('n even', 'sign rows')),
         Row('all_odd', [('*', 'odd')], ('N', 'odd')),
@@ -323,9 +315,6 @@ def _mul_table_rows():
             # Exactly one negative factor (rest positive) -> negative.
             Row('one_neg', [('k', 'extended_negative'), ('rest', 'extended_positive')],
                 ('N', 'extended_negative'),
-                when='sign rows'),
-            Row('one_nonpos', [('k', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonpositive'),
                 when='sign rows'),
             # One even factor and the rest integers -> even.
             Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even')),
@@ -338,9 +327,6 @@ def _mul_table_rows():
                 when='sign rows'),
             # One imaginary factor and the rest nonzero finite reals -> imaginary;
             # with the rest merely real the product may also be zero.
-            Row('one_imag', [('k', 'imaginary'), ('rest', 'real'), ('rest', 'zero', False)],
-                ('N', 'imaginary'),
-                when='sign rows'),
             Row('one_imag.or_zero', [('k', 'imaginary'), ('rest', 'real')],
                 [('N', 'imaginary'), ('N', 'zero')],
                 when='sign rows'),
@@ -361,7 +347,7 @@ def _mul_table_rows():
         Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
             when=('coeff', 'c rational', 'c.q==2')),
         Row('coeff.minus_one', [('N', '$p')], (1, '$p'), when=('coeff', 'c rational', 'c==-1'),
-            preds=('integer', 'even', 'odd')),
+            preds=('integer',)),    # (even and odd: all_odd, one_even)
     )
 
 
