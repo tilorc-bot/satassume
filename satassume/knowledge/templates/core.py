@@ -252,7 +252,8 @@ def _coeff(ctx):
 #: Conditions on the pattern of a Mul (``n`` arguments, ``consts``).
 MUL_GUARDS = MappingProxyType({
     'n<=MAX_ONEOUT': lambda c: c['n'] <= MAX_ONEOUT,
-    # the sign rows, left to the SIGN theory from three factors (sign_owns)
+    # the sign rows, left to the SIGN theory from three factors (sign_owns;
+    # the theory is told the derived blocks of _mul_factor_sets too)
     'sign rows': lambda c: not sign_owns(True, c['n']),
     # the closure rows, left to the CLOSURE theory over the cap (closure_owns)
     'closure rows': lambda c: not closure_owns(True, c['n']),

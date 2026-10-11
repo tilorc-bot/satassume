@@ -188,6 +188,9 @@ def pool_for(nsyms):
     return {1: POOL, 2: POOL_MEDIUM, 3: POOL_SMALL}.get(nsyms, POOL_TINY)
 
 
+from satassume.knowledge.templates.core import closure_owns, sign_owns  # noqa: E402
+
+
 def make_valuation(assignment):
     """Atom valuation under ``assignment`` (symbol -> concrete value)."""
     cache = {}
@@ -209,7 +212,12 @@ def check_sound(expr):
     facts = registry.facts_for(expr)
     # (``-oo + oo`` is nan: no fact; ``commutative``, the one fact it had,
     # is true of every term in scope and has no clauses)
-    assert facts or expr is S.NaN or expr.func(*expr.args) is S.NaN, \
+    # (a sum of non-integer multiples over the caps has none either: its
+    # sign, closure and parity rows are the SIGN, CLOSURE and INTLAT
+    # theories', issue #149)
+    assert facts or expr is S.NaN or expr.func(*expr.args) is S.NaN or (
+        expr.is_Add and sign_owns(False, len(expr.args))
+        and closure_owns(False, len(expr.args))), \
         f"no templates fired for {expr!r}"
     syms = sorted(expr.free_symbols, key=lambda s: s.name)
     pool = pool_for(len(syms))

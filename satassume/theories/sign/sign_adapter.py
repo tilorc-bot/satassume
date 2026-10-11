@@ -199,6 +199,22 @@ ClassAdapter._init_tables()
 class SignAdapter(ClassAdapter):
     """The sign theory (:mod:`.sign`)."""
 
+    def add(self, node) -> None:
+        """Tell the theory the sum or product ``node`` and, for a product,
+        its derived products of three or more factors: the templates of a
+        Mul relate it to products over other factors of the same value
+        (``I*pi*s`` for ``I*pi*x*y``, ``templates.core._mul_factor_sets``),
+        and such a block has no sign rows either (``sign_owns``)."""
+        if node in self.done:
+            return
+        super().add(node)
+        if node.is_Mul:
+            from ...knowledge.templates.core import _mul_factor_sets, sign_owns
+            t = self.terms[node]
+            for f in _mul_factor_sets(node)[1:]:
+                if sign_owns(True, len(f)):
+                    self.theory.add_node(MUL, t, [self.term(a) for a in f])
+
 
 const_mask = SignAdapter.const_mask
 def_mask = SignAdapter.def_mask

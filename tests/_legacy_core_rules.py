@@ -45,7 +45,7 @@ def mul_rules(n, consts):
     N = n
     A = range(n)
 
-    # over the cap the sign rows are left to the SIGN theory (sign_owns)
+    # from three factors the sign rows are left to the SIGN theory (sign_owns)
     sign = not sign_owns(True, n)
     # and the closure rows to the CLOSURE theory (closure_owns)
     closure = not closure_owns(True, n)
