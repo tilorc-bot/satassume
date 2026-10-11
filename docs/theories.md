@@ -580,7 +580,49 @@ per term, `_theory_sync`, a theory level per decision) and their template rows a
 clauses. Handing every sum and product to the theory for each query left open after propagation was
 also measured in stage 1 (+29%, no new answer).
 
-**Stage 2** (issue #149): Pow and the integer-magnitude classes (dropping the derived nodes `b-1`, `b+1`).
+**Powers** (stage 2, issue #149). `b**e` with a symbolic base and a symbolic exponent
+(`templates.core.sign_owns_pow`: neither is a number) is a node of the map op `POW` (`sign._pow_atoms`, a table
+over atom pairs: SymPy's principal power with its conventions `x**0 = 1`, `0**-1 = zoo`, `0**-oo = zoo`,
+`0**I = nan`, `oo**(a + t*I)` zoo/0/nan by the sign of `a`, `1**oo = nan`, `(-2)**oo = oo + oo*I`; a cell with
+a `nan` value is "no claim"). `tests/test_sign_pow.py` checks the table against SymPy at sample points of every
+atom pair (end points `1`, `-1` included) and that the rows the block of such a power leaves out
+(`core._POW_SIGN_ROWS`: rows 0-3, 13-16, 18-24 of `_POW_RULES`, the signs of a positive base, the zero base,
+the zero exponent, zero/nonzero and finite/infinite) are exactly the rows the map op derives. The rows that
+need the parity of the exponent (`even`/`odd`) or that a `nan` cell blocks (`1**oo`: row 4) stay template
+rows. A numeric base or exponent keeps the rows: they fold to a few short clauses there, and engaging the
+theory for `2**x` or `x**3` cost more than it saved (measured: owning every power with a symbolic exponent
+was +7% warm time on a power-heavy corpus, against +5% for this split, with the same answers).
+
+For an integer `b` and a negative integer `e`, `b**e` is an integer only if `b = +-1` (`|b**e| <= 1/2` for
+`|b| >= 2`, and `0**e = zoo`). The rows `int_base.negative_int_exp*` state this for every power without a
+derived node: then `b` is odd and neither prime nor composite, and `b**e` (`+-1`, a fraction or `zoo`) is
+never prime or composite. So `integer(1/b)` under `prime(b)`, `integer(b**-2)` under `composite(b)` and
+`integer(b**e)` under `even(b)` are False (they were None). The direct form, with the derived nodes `b - 1`
+and `b + 1` of a power with a symbolic base and exponent, stays: only those nodes carry facts about `b - 1`,
+`b + 1` themselves (`~zero(x - 1)`, gate2 record 1605; `positive(b - 1)`; a compound base, `(x + 2)**e` with a
+positive integer `x`). Dropping the nodes was measured: clauses per query -20% and variables -14% on the
+power-heavy corpus and the theory's cost gone (+1% warm time instead of the +5% of this split), but those
+answers lost. The
+integer-magnitude classes of the issue (`(0, 1)`, `1`, `(1, oo)` and their negatives as atoms) would make the
+nodes unnecessary, at the cost of 16 atoms in every SIGN node.
+
+The net change per class of power (template rows of its block):
+
+- symbolic base and symbolic exponent (`x**y`, `(x + 1)**y`): -15 sign rows (`_POW_SIGN_ROWS`, now derived
+  by the map op), +4 integer-base rows;
+- numeric base or exponent (`1/x`, `x**-2`, `x**3`, `2**x`, ...): +4 integer-base rows and nothing dropped;
+  they fold to at most 6 extra clauses, for a negative integer exponent, and to none otherwise.
+
+The fourth integer-base row, `int_base.negative_int_exp.odd` (`b**e` an integer gives `b**e` odd, since it is
+then `+-1`), decides `even(b**e)` and `odd(1/b)` under `integer(1/b)`.
+
+Measured against `theories` (fresh engine per query, generated corpora; the numbers are in the PR): no lost
+answers, no flips; clauses per query -3.5% on the power corpus and -3.8% on powers under relations (-3.7% on
+integer powers; the `odd` row costs +0.4% of these), about 0 (-0.2%) on mixed corpora; variables flat. The
+cost: warm time +5-6% per query on power-heavy queries (+4-5% with the lazy reasons of #158), about +1% on the
+refine stream (`tools/ab.py`), +2% cold time on held-out query shapes.
+The structural gain is the 15 rows moved into the decision procedure; the clause and variable gains of
+dropping the `b - 1`, `b + 1` nodes need the integer-magnitude atoms above.
 
 ## CLOSURE: ring and field membership of sums and products
 

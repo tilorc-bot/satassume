@@ -22,6 +22,7 @@ from satassume.knowledge.templates.core import (
     _POW_E_RULES,
     _POW_ONE_EQUIV,
     _POW_RULES,
+    _POW_SIGN_ROWS,
     _S,
     _T,
     _U,
@@ -194,15 +195,19 @@ def ipi_rules(rule, c, iS, N):
 
 
 
-def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
+def pow_rules(b, e, same, angle, has_u, ipi, has_t, sym, nc=False):
     """``b``/``e`` are the constant base/exponent or ``None`` if symbolic;
     ``angle`` is ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the
     argument of an ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and
-    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``:
-    slots ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
+    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``sym``:
+    base and exponent are symbolic (``sign_owns_pow``)."""
     R = Rules()
     rule = R.rule
-    for prem, concl in _POW_RULES:
+    for i, (prem, concl) in enumerate(_POW_RULES):
+        # a symbolic base and exponent leave the sign rows to the SIGN
+        # theory (sign_owns_pow)
+        if sym and i in _POW_SIGN_ROWS:
+            continue
         rule([_lit(p) for p in prem], _lit(concl))
     if b is S.Exp1:
         for prem, concl in _POW_E_RULES:
@@ -238,11 +243,19 @@ def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
     if has_u:
         # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
         rule([(_U, 'imaginary', True), (_E, 'imaginary', True)], (_N, 'positive', True))
-    if has_b1:
-        # An integer other than 0 and +-1 to a negative integer power is a
-        # fraction (0 gives zoo).
-        rule([(_B, 'integer', True), (_E, 'integer', True), (_E, 'negative', True),
-              (_BM, 'zero', False), (_BP, 'zero', False)], (_N, 'integer', False))
+    # An integer b to a negative integer power is an integer only for
+    # b = +-1 (issue #149 T1 stage 2: these rows hold for every power; the
+    # direct form with the b - 1, b + 1 slots stays for a symbolic base and
+    # exponent).
+    ie = [(_B, 'integer', True), (_E, 'integer', True), (_E, 'negative', True)]
+    rule(ie + [(_N, 'integer', True)], (_B, 'odd', True))
+    rule(ie + [(_N, 'integer', True)], (_N, 'odd', True))
+    for pred in ('prime', 'composite'):
+        rule(ie + [(_N, 'integer', True)], (_B, pred, False))
+    for pred in ('prime', 'composite'):
+        rule(ie, (_N, pred, False))
+    if sym:
+        rule(ie + [(_BM, 'zero', False), (_BP, 'zero', False)], (_N, 'integer', False))
     if has_t:
         # Real base, rational exponent: imaginary iff the base is negative
         # and the exponent is half an odd integer.

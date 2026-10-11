@@ -70,6 +70,20 @@ def sign_owns(is_mul: bool, n: int) -> bool:
     return n >= SIGN_MIN_ARGS
 
 
+def sign_owns_pow(b, e) -> bool:
+    """Whether the SIGN theory decides the sign rows of the power ``b**e``
+    (``sign_adapter.over_cap``; the theory's ``POW`` map op): the powers
+    whose base and exponent are both symbolic.  A numeric base or exponent
+    folds the rows to a few short clauses, cheaper than engaging the
+    theory (docs/theories.md, "SIGN", Powers)."""
+    return not e.is_number and not b.is_number
+
+
+def _pow_sign_owned(x) -> bool:
+    """``sign_owns_pow`` on the pattern context of a Pow block."""
+    return x['sym']
+
+
 def closure_owns(is_mul: bool, n: int) -> bool:
     """Whether the closure rows (``integer``, ``rational``, ``algebraic``,
     ``complex``: a ring keeps the node, a group or field gives back the
@@ -645,13 +659,16 @@ def _b_not_qth_power(x):
 #: exponent or None, and the flags of ``pow_templates``).
 POW_GUARDS = MappingProxyType({
     'b is E': lambda x: x['b'] is S.Exp1,
+    # the sign rows, left to the SIGN theory for a symbolic base and a
+    # symbolic exponent (``sign_owns_pow``)
+    'sign rows': lambda x: not _pow_sign_owned(x),
     'b number': lambda x: not x['nc'],
     'ipi': lambda x: x['ipi'] is not None,
     'b is e': lambda x: x['same'],
     'e is 1': lambda x: x['e'] is S.One,
     'b unit angle': lambda x: x['angle'] is not None,
     'u slot': lambda x: x['has_u'],
-    'b-1, b+1 slots': lambda x: x['has_b1'],
+    'b-1, b+1 slots': lambda x: x['sym'],
     '2*e slot': lambda x: x['has_t'],
     'e rational non-integer': _e_ratio,
     'e.q==2': lambda x: x['e'].q == 2,
@@ -672,12 +689,26 @@ POW_GUARDS = MappingProxyType({
 _POW_SLOT_NAMES = MappingProxyType({_B: 'B', _E: 'E', _N: 'N'})
 
 
-def _pairs_rows(prefix, pairs, when=()):
-    """Rows from the ``((premises), conclusion)`` tuples of ``_POW_RULES``."""
+def _pairs_rows(prefix, pairs, when=(), sign=frozenset()):
+    """Rows from the ``((premises), conclusion)`` tuples of ``_POW_RULES``;
+    those at the indices ``sign`` are sign rows (guard ``'sign rows'``)."""
     def name(l):
         return (_POW_SLOT_NAMES[l[0]], *l[1:])
-    return tuple(Row(f'{prefix}.{i}', [name(p) for p in prem], name(concl), when=when)
+    def guard(i):
+        if i not in sign:
+            return when
+        return (*((when,) if isinstance(when, str) else when), 'sign rows')
+    return tuple(Row(f'{prefix}.{i}', [name(p) for p in prem], name(concl), when=guard(i))
                  for i, (prem, concl) in enumerate(pairs))
+
+
+#: The rows of ``_POW_RULES`` that the SIGN theory's ``POW`` map op derives
+#: (``sign_owns_pow``; ``tests/test_sign_pow.py`` checks that it derives
+#: each): the signs of a positive base, the zero base, the zero exponent,
+#: zero/nonzero and finite/infinite.  The rows that need the parity of the
+#: exponent (``even``/``odd``) or that a ``nan`` cell blocks (``1**oo``)
+#: stay.
+_POW_SIGN_ROWS = frozenset({0, 1, 2, 3, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24})
 
 
 #: Slot names of a Pow block (see ``pow_templates``).
@@ -689,7 +720,7 @@ POW_SLOTS = MappingProxyType({'B': _B, 'E': _E, 'N': _N, 'U': _U, 'S': _S, 'T': 
 def _pow_table_rows():
     """The rows of ``POW_TABLE`` (built on first use, :func:`_table`)."""
     return (
-        *_pairs_rows('pow', _POW_RULES),
+        *_pairs_rows('pow', _POW_RULES, sign=_POW_SIGN_ROWS),
         *_pairs_rows('pow.E', _POW_E_RULES, when='b is E'),
         Sub('ipi', _table('IPI_TABLE'), IPI_GUARDS,
             lambda x: {'c': x['ipi'][0], 'has_s': x['ipi'][1]},
@@ -724,10 +755,27 @@ def _pow_table_rows():
         # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
         Row('exp_base.imaginary', [('U', 'imaginary'), ('E', 'imaginary')], ('N', 'positive'),
             when='u slot'),
-        # An integer other than 0 and +-1 to a negative integer power is a
-        # fraction (0 gives zoo).
-        Row('int_base.negative_int_exp', [('B', 'integer'), ('E', 'integer'), ('E', 'negative'),
-                                          ('BM', 'zero', False), ('BP', 'zero', False)],
+        # An integer b to a negative integer power e is an integer only for
+        # b = +-1: |b**e| <= 1/2 for |b| >= 2, and 0**e is zoo.  So b is odd
+        # and neither prime nor composite, and b**e = +-1 is neither either,
+        # and odd.
+        Row('int_base.negative_int_exp',
+            [('B', 'integer'), ('E', 'integer'), ('E', 'negative'), ('N', 'integer')],
+            ('B', 'odd')),
+        Row('int_base.negative_int_exp.unit_base',
+            [('B', 'integer'), ('E', 'integer'), ('E', 'negative'), ('N', 'integer')],
+            ('B', '$p', False), preds=('prime', 'composite')),
+        Row('int_base.negative_int_exp.unit',
+            [('B', 'integer'), ('E', 'integer'), ('E', 'negative')], ('N', '$p', False),
+            preds=('prime', 'composite')),
+        Row('int_base.negative_int_exp.odd',
+            [('B', 'integer'), ('E', 'integer'), ('E', 'negative'), ('N', 'integer')],
+            ('N', 'odd')),
+        # The direct form, for facts about b - 1 and b + 1 themselves
+        # (``~zero(b - 1)``, ``positive(b - 1)``, a compound base).
+        Row('int_base.negative_int_exp.not_unit',
+            [('B', 'integer'), ('E', 'integer'), ('E', 'negative'),
+             ('BM', 'zero', False), ('BP', 'zero', False)],
             ('N', 'integer', False), when='b-1, b+1 slots'),
         # Real base, rational exponent: imaginary iff the base is negative
         # and the exponent is half an odd integer.
@@ -781,17 +829,18 @@ def _pow_table_rows():
     )
 
 
-def _pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1, nc):
+def _pow_rules(b, e, same, angle, has_u, ipi, has_t, sym, nc):
     """The specs of ``POW_TABLE``.  ``b``/``e`` are the constant
     base/exponent or ``None`` if symbolic; ``angle`` is
     ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the argument of an
     ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and exponent
-    ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``: slots
+    ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``sym``: the base and
+    the exponent are both symbolic (``sign_owns_pow``), and slots
     ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``; ``nc``: the base has a
     non-commutative subterm (``domain._noncommutative``: it may not be a
     number)."""
     return rules_of(_table('POW_TABLE'), POW_GUARDS,
-                    _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1, nc),
+                    _pow_ctx(b, e, same, angle, has_u, ipi, has_t, sym, nc),
                     POW_SLOTS)
 
 def _unit_power_units(angle, e, expr):
@@ -869,24 +918,24 @@ def _pow_pattern(expr):
     has_t = _E not in consts and not e.is_number
     if has_t:
         objs[_T] = Mul(S(2), e)
-    has_b1 = has_t and _B not in consts and not b.is_number
-    if has_b1:
+    sym = has_t and _B not in consts and not b.is_number
+    if sym:
         objs[_BM] = b - S.One
         objs[_BP] = b + S.One
     key = ('pow', const_key(b) if _B in consts else None,
            const_key(e) if _E in consts else None, same, angle,
            const_key(u) if _U in consts else u is not None, ipi,
-           const_key(objs[_S]) if _S in consts else None, has_t, has_b1)
+           const_key(objs[_S]) if _S in consts else None, has_t, sym)
     nc = _B not in consts and _noncommutative(b)
     if nc:
         key += ('nc',)
-    pargs = (consts.get(_B), consts.get(_E), same, angle, u is not None, ipi, has_t, has_b1, nc)
+    pargs = (consts.get(_B), consts.get(_E), same, angle, u is not None, ipi, has_t, sym, nc)
     return consts, objs, key, pargs
 
 
-def _pow_ctx(b, e, same, angle, has_u, ipi, has_t, has_b1, nc=False):
+def _pow_ctx(b, e, same, angle, has_u, ipi, has_t, sym, nc=False):
     return {'b': b, 'e': e, 'same': same, 'angle': angle, 'has_u': has_u, 'ipi': ipi,
-            'has_t': has_t, 'has_b1': has_b1, 'nc': nc}
+            'has_t': has_t, 'sym': sym, 'nc': nc}
 
 
 def table_provenance(expr):

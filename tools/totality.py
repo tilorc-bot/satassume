@@ -416,9 +416,10 @@ def run(exprs, depth=1, independent=False, models=None):
 
 @contextlib.contextmanager
 def _sign_rows():
-    """Check with the sign rows of every sum and product as template rows.
-    From three arguments the templates leave them to the SIGN theory
-    (``templates.core.sign_owns``, issue #149 T1), which every session
+    """Check with the sign rows of every sum, product and power as template
+    rows.  From three arguments, and for a symbolic base and exponent, the templates
+    leave them to the SIGN theory (``templates.core.sign_owns``,
+    ``sign_owns_pow``, issue #149 T1), which every session
     attaches to each such node and which derives every literal those rows
     give; the checker reads blocks alone, so it reads those rows in their
     place (the compiled-pattern caches are cleared on both sides)."""
@@ -427,13 +428,14 @@ def _sign_rows():
     def clear():
         _common._CACHE.clear()
         registry._clauses_cache.clear()
-    saved = core.sign_owns
+    saved, saved_pow = core.sign_owns, core._pow_sign_owned
     core.sign_owns = lambda is_mul, n: False
+    core._pow_sign_owned = lambda x: False
     clear()
     try:
         yield
     finally:
-        core.sign_owns = saved
+        core.sign_owns, core._pow_sign_owned = saved, saved_pow
         clear()
 
 
