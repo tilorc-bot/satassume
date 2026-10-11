@@ -243,12 +243,35 @@ def _one(lat, seed):
             if x in th.val:
                 continue
             th.assert_lit(x if rng.random() < 0.5 else -x)
+        lazy = []
+
+        def explain():
+            # the lazy reasons, explained after later literals were asserted
+            # (as conflict analysis does): from the literals asserted
+            # before the propagation only, all of them false
+            for lit, reason, k in lazy:
+                clause = reason()
+                assert clause[0] == lit
+                before = set(th.trail[:k])
+                for l in clause[1:]:
+                    assert abs(l) in before and th.val[abs(l)] == (l < 0), (lit, clause)
+                check(clause, "prop")
+
         for _ in range(4):
             got = th.propagate()
             if not got:
                 break
             conflict = False
+            k = len(th.trail)
             for lit, clause in got:
+                if callable(clause):
+                    if abs(lit) not in th.val:
+                        lazy.append((lit, clause, k))
+                        th.assert_lit(lit)
+                        continue
+                    # (the other literal came first in this round: the
+                    # solver explains this one now, as a conflict)
+                    clause = clause()
                 assert lit in clause
                 if abs(lit) not in th.val:
                     assert abs(lit) not in oneside, "a one-sided atom was propagated"
@@ -259,7 +282,9 @@ def _one(lat, seed):
                     check(clause, "conflict")
                     conflict = True
             if conflict:
+                explain()
                 return True
+        explain()
         r = th.check()
         if r is not None:
             check(r[1], "conflict")
@@ -338,10 +363,110 @@ def test_one_sided_atoms():
     th.push_level()
     th.assert_lit(2)
     assert th.cur[1] == 1 << T.ZI
-    got = dict(th.propagate())
+    # a propagated literal's reason may be lazy: explain it (as conflict
+    # analysis does) before reading it
+    got = {l: r() if callable(r) else r for l, r in th.propagate()}
     assert sorted(got[-5]) == sorted([-5, -1, -2, -3, 4]) or set(got[-5]) <= {-5, -2, -3, 4}
     assert all(abs(l) != 2 for l in got)
     th.pop_level()
     assert th.cur[1] == PM["algebraic"] and _restore_ok(th)
     th.pop_level()
     assert th.cur[1] == T.ALL and not th.val
+
+
+# ----------------------------------------------------------------------
+# ClassTheory._why against the plain deletion it implements
+# ----------------------------------------------------------------------
+
+def _why_reference(th, i, lits, j, test):
+    """``ClassTheory._why`` as the plain greedy deletion, each trial one
+    :meth:`ClassTheory._slot` of the whole node (what ``_why`` computes
+    with kept prefix folds).  Kept here as its specification: a change to
+    ``_slot``, ``Lattice.fold`` or ``_why`` that makes them disagree
+    changes reasons (and with them search and answers under the conflict
+    budget) without making any reason unsound."""
+    op, t, args = th.nodes[i]
+    slots = (t, *args)
+    ls = [lits[u] for u in slots]
+    masks = [th._mask(u, l) for u, l in zip(slots, ls)]
+    wide = [th.fixed[u] for u in slots]
+    for k in range(len(slots)):
+        if ls[k] and masks[k] != wide[k]:
+            old = masks[k]
+            masks[k] = wide[k]
+            if test(th._slot(i, masks, j)):
+                ls[k] = ()
+            else:
+                masks[k] = old
+        elif ls[k]:
+            ls[k] = ()
+    if len(args) <= th.WHY_FINE:
+        for k in range(len(slots)):
+            if len(ls[k]) < 2:
+                continue
+            kept = list(ls[k])
+            for l in sorted(kept, key=th._width):
+                kept.remove(l)
+                masks[k] = th._mask(slots[k], kept)
+                if not test(th._slot(i, masks, j)):
+                    kept.append(l)
+            masks[k] = th._mask(slots[k], kept)
+            ls[k] = kept
+    out = []
+    for l in ls:
+        for x in l:
+            if x not in out:
+                out.append(x)
+    return out
+
+
+@pytest.mark.parametrize("lat", LATTICES, ids=repr)
+def test_why_matches_the_plain_deletion(lat):
+    # Random nodes of every op of the lattice (folds of 1 to 20 arguments,
+    # across ``WHY_FINE``; TRANS's map ops), terms in several slots, random
+    # literals and tests of every slot: ``_why`` gives exactly the
+    # reference's reason.
+    rng = random.Random(149)
+    L = lat.L
+    kinds = {"fine": 0, "coarse": 0, "map": 0, "nonempty": 0, "several": 0}
+    for _ in range(800 if lat is not TRANS_L else 500):
+        th = lat.theory()
+        op, arity = rng.choice(lat.ops)
+        if arity is None:
+            n = rng.choice((1, 2, 2, 3, 3, 4, 5, 8, 15, 16, 17, 20))
+        else:
+            n = arity
+        nterms = rng.randint(1, n + 1)
+        for _ in range(nterms):
+            th.term(L.ALL if rng.random() < 0.8 else rng.choice(lat.consts))
+        node = th.term(L.ALL)
+        args = [rng.randrange(nterms) for _ in range(n)]
+        th.add_node(op, node, args)
+        v = 0
+        regs = []
+        for u in range(nterms + 1):
+            for _ in range(rng.randint(0, 4)):
+                v += 1
+                regs.append(v)
+                th.register_atom(v, (u, _rand_mask(lat, rng)))
+        th.push_level()
+        for x in regs:
+            if rng.random() < 0.7:
+                r = th.assert_lit(x if rng.random() < 0.5 else -x)
+                if r is not None and r[0] is False:
+                    break
+        lits = {u: th._lits(u) for u in range(nterms + 1)}
+        for _ in range(4):
+            j = rng.randint(0, n)
+            pm = _rand_mask(lat, rng)
+            test = rng.choice([lambda s: not s, lambda s: not s & ~pm,
+                               lambda s: not s & pm])
+            got = th._why(0, lits, j, test)
+            assert got == _why_reference(th, 0, lits, j, test), (lat, op, n, j)
+            kinds["map" if op >= L.nfold else "fine" if n <= th.WHY_FINE else "coarse"] += 1
+            kinds["nonempty"] += bool(got)
+            # a slot keeps several literals: the second deletion phase ran
+            kinds["several"] += any(len([x for x in got if x in lits[u]]) > 1 for u in lits)
+    # both deletion phases, both sides of WHY_FINE, the map ops of TRANS
+    want = ("map",) if lat is TRANS_L else ("fine", "coarse")
+    assert all(kinds[k] > 0 for k in want + ("nonempty", "several")), kinds

@@ -540,6 +540,13 @@ others)` holds `NAN` or meets the node's set. A literal is implied when a set li
 predicate's set; an empty set is a conflict. The reason is a subset of the node's and arguments' literals,
 minimised by deletion (whole argument slots first, then single literals of the kept slots, narrowest
 first, up to `WHY_FINE` = 16 arguments): one clause, the template row it stands for, generated on demand.
+A propagated literal's reason is lazy (`satassume.sat.theory`, "Lazy reasons"): the theory hands the
+solver a function over the literals asserted at that moment, and the minimisation runs only if conflict
+analysis reads the reason; a conflict is explained at once. On two corpora of 400 random queries about
+wide sums and products the solver read 2 of 1,205 and 4 of 2,603 such reasons.
+A lazy reason is not kept as a learnt clause, so after a backjump below its level the literal comes back
+only when a node of its term is dirtied again or at `check` (an eager reason was re-derived by unit
+propagation): this changes the search, not soundness.
 Term sets are incremental (`cur`, `mtrail`): a node is propagated only when a set narrowed, and the
 backward set `allowed(op, rest, node)` is memoised.
 
