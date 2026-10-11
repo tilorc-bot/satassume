@@ -219,9 +219,7 @@ def add_templates(expr):
 # are derived by the rule base (``extended_* & finite``).
 # ``extended_real`` is not: ``0*oo`` is nan (see _mul_rules).  Left to the
 # CLOSURE theory over its cap (``closure_owns``).
-# (``integer``: one even factor among integers makes the product even
-# (``one_even``), all odd make it odd (``all_odd``).)
-_MUL_CLOSED = ('complex', 'rational', 'algebraic')
+_MUL_CLOSED = ('complex', 'integer', 'rational', 'algebraic')
 # Fields: the node and every factor but one in the field, those nonzero,
 # put the last factor in it (it is the node divided by them).
 _MUL_FIELDS = ('rational', 'algebraic')

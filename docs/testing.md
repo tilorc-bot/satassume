@@ -286,7 +286,12 @@ next to the pass count; "0 unsound" means nothing without "N unchecked".
   by hand; `tests/test_template_minimal.py` keeps them as they were and
   re-proves over the same shapes that each clause they gave still follows,
   so the deletion keeps every pattern equivalent and a later edit that
-  removes what one relied on fails there.
+  removes what one relied on fails there.  The test guards only the rows
+  listed in its `deleted_add_rows` / `deleted_mul_rows`: a later
+  hand-deletion must be added there, or the test says nothing about it.
+  It proves semantic equivalence only (z3), which is what answers need
+  (the engine escalates and searches when propagation leaves a query
+  open).
 
 ## Benchmarks (asv)
 

@@ -489,19 +489,8 @@ def test_registry_mro_and_ordering():
     assert reg.facts_for(object()) == []
 
 
-def _derived(f):
-    """``f`` (an implication or a fact) follows from the templates and the
-    rule base: a row that ``tools/minimise.py`` proved redundant is gone
-    from the facts but its implication still holds."""
-    from satassume import Engine
-    if isinstance(f, Implies):
-        return Engine().ask(f.args[1], f.args[0]) is True
-    return Engine().ask(f) is True
-
-
 def test_specific_expectations():
-    """A few spot checks that the important rules are actually present
-    (as facts, or derived from the facts and the rule base)."""
+    """A few spot checks that the important rules are actually present."""
     from satassume.knowledge.compile import VarTable, compile_formula
 
     def clauses_of(expr):
@@ -524,76 +513,70 @@ def test_specific_expectations():
     # Constant arguments are resolved statically: premises about ``-1`` or
     # ``2`` do not appear in the clauses.
     facts = registry.facts_for(-x)
-    assert Implies(P('extended_positive', x), P('extended_negative', -x)) in facts or _derived(Implies(P('extended_positive', x), P('extended_negative', -x)))
-    assert Implies(P('negative', -x), P('positive', x)) in facts or _derived(Implies(P('negative', -x), P('positive', x)))
-    assert Implies(P('integer', -x), P('integer', x)) in facts or _derived(Implies(P('integer', -x), P('integer', x)))
+    assert Implies(P('extended_positive', x), P('extended_negative', -x)) in facts
+    # (negative(-x) -> positive(x): test_deleted_row_spot_checks)
+    assert Implies(P('integer', -x), P('integer', x)) in facts
     facts = registry.facts_for(x**2)
-    assert Implies(P('nonzero', x), P('positive', x**2)) in facts or _derived(Implies(P('nonzero', x), P('positive', x**2)))
-    assert Implies(P('integer', x), P('integer', x**2)) in facts or _derived(Implies(P('integer', x), P('integer', x**2)))
+    assert Implies(P('nonzero', x), P('positive', x**2)) in facts
+    assert Implies(P('integer', x), P('integer', x**2)) in facts
     facts = registry.facts_for(x + 1)
-    assert Implies(P('extended_nonnegative', x), P('extended_positive', x + 1)) in facts or _derived(Implies(P('extended_nonnegative', x), P('extended_positive', x + 1)))
-    assert Implies(P('odd', x), P('even', x + 1)) in facts or _derived(Implies(P('odd', x), P('even', x + 1)))
-    assert Implies(P('integer', x + 1), P('integer', x)) in facts or _derived(Implies(P('integer', x + 1), P('integer', x)))
+    assert Implies(P('extended_nonnegative', x), P('extended_positive', x + 1)) in facts
+    assert Implies(P('odd', x), P('even', x + 1)) in facts
+    assert Implies(P('integer', x + 1), P('integer', x)) in facts
     facts = registry.facts_for(x/2)
-    assert Implies(And(P('integer', x), P('integer', x/2)), P('even', x)) in facts or _derived(Implies(And(P('integer', x), P('integer', x/2)), P('even', x)))
+    assert Implies(And(P('integer', x), P('integer', x/2)), P('even', x)) in facts
     for f in registry.facts_for(x + 1) + registry.facts_for(2*x) + registry.facts_for(x**2):
         for a in atoms_of(f):
             # only atoms the old system cannot decide statically survive
             assert not a.expr.is_Number or oracle(a.expr, a.pred) is None, f
     facts = registry.facts_for(exp(x))
-    assert Implies(P('real', x), P('positive', exp(x))) in facts or _derived(Implies(P('real', x), P('positive', exp(x))))
+    assert Implies(P('real', x), P('positive', exp(x))) in facts
     facts = registry.facts_for(x + y)
     assert Implies(And(P('infinite', x), Not(P('negative_infinite', x)),
-                       Not(P('negative_infinite', y))), P('infinite', x + y)) in facts or _derived(Implies(And(P('infinite', x), Not(P('negative_infinite', x)),
-                       Not(P('negative_infinite', y))), P('infinite', x + y)))
+                       Not(P('negative_infinite', y))), P('infinite', x + y)) in facts
     assert Implies(And(P('extended_nonzero', x), P('imaginary', y)),
-                   Not(P('imaginary', x + y))) in facts or _derived(Implies(And(P('extended_nonzero', x), P('imaginary', y)),
-                   Not(P('imaginary', x + y))))
+                   Not(P('imaginary', x + y))) in facts
     assert Implies(And(P('extended_real', x + y), P('real', y)),
-                   P('extended_real', x)) in facts or _derived(Implies(And(P('extended_real', x + y), P('real', y)),
-                   P('extended_real', x)))
+                   P('extended_real', x)) in facts
     facts = registry.facts_for(x + oo)
-    assert Implies(P('real', x), P('extended_positive', x + oo)) in facts or _derived(Implies(P('real', x), P('extended_positive', x + oo)))
-    assert Implies(Not(P('negative_infinite', x)), P('infinite', x + oo)) in facts or _derived(Implies(Not(P('negative_infinite', x)), P('infinite', x + oo)))
+    # (real(x) -> extended_positive(x + oo): test_deleted_row_spot_checks)
+    assert Implies(Not(P('negative_infinite', x)), P('infinite', x + oo)) in facts
     facts = registry.facts_for(I*x)
     assert Implies(And(P('complex', x), P('extended_real', I*x)),
-                   Or(P('imaginary', x), P('zero', x))) in facts or _derived(Implies(And(P('complex', x), P('extended_real', I*x)),
-                   Or(P('imaginary', x), P('zero', x))))
-    assert Implies(And(P('complex', x), P('imaginary', I*x)), P('real', x)) in facts or _derived(Implies(And(P('complex', x), P('imaginary', I*x)), P('real', x)))
-    assert Implies(P('real', x), Or(P('imaginary', I*x), P('zero', I*x))) in facts or _derived(Implies(P('real', x), Or(P('imaginary', I*x), P('zero', I*x))))
+                   Or(P('imaginary', x), P('zero', x))) in facts
+    assert Implies(And(P('complex', x), P('imaginary', I*x)), P('real', x)) in facts
+    assert Implies(P('real', x), Or(P('imaginary', I*x), P('zero', I*x))) in facts
     facts = registry.facts_for(4*x)
-    assert Implies(P('integer', x), Not(P('prime', 4*x))) in facts or _derived(Implies(P('integer', x), Not(P('prime', 4*x))))
+    assert Implies(P('integer', x), Not(P('prime', 4*x))) in facts
     facts = registry.facts_for(sqrt(2)*x)
     # division in the field Q (its contrapositive: an irrational factor
     # times a nonzero rational is not rational; issue #149 T3)
     assert Implies(And(P('rational', sqrt(2)*x), P('rational', x), Not(P('zero', x))),
-                   P('rational', sqrt(2))) in facts or _derived(Implies(And(P('rational', sqrt(2)*x), P('rational', x), Not(P('zero', x))),
-                   P('rational', sqrt(2))))
+                   P('rational', sqrt(2))) in facts
     assert P('irrational', sqrt(2)) in registry.facts_for(sqrt(2))
     assert P('irrational', sqrt(2)) not in registry.facts_for(unevaluated(Pow, 4, S.Half))
     facts = registry.facts_for(x**y)
     assert Implies(And(P('extended_real', x), P('rational', y), Not(P('integer', 2*y))),
-                   Not(P('imaginary', x**y))) in facts or _derived(Implies(And(P('extended_real', x), P('rational', y), Not(P('integer', 2*y))),
-                   Not(P('imaginary', x**y))))
-    assert Implies(And(P('composite', x), P('integer', y)), Not(P('prime', x**y))) in facts or _derived(Implies(And(P('composite', x), P('integer', y)), Not(P('prime', x**y))))
+                   Not(P('imaginary', x**y))) in facts
+    assert Implies(And(P('composite', x), P('integer', y)), Not(P('prime', x**y))) in facts
     facts = registry.facts_for(I**x)
-    assert Implies(P('imaginary', x), P('positive', I**x)) in facts or _derived(Implies(P('imaginary', x), P('positive', I**x)))
+    assert Implies(P('imaginary', x), P('positive', I**x)) in facts
     facts = registry.facts_for(3**x)
     assert Implies(P('imaginary', x), Not(P('extended_real', 3**x))) not in facts  # needs algebraic x
-    assert Implies(And(P('imaginary', x), P('algebraic', x)), Not(P('extended_real', 3**x))) in facts or _derived(Implies(And(P('imaginary', x), P('algebraic', x)), Not(P('extended_real', 3**x))))
+    assert Implies(And(P('imaginary', x), P('algebraic', x)), Not(P('extended_real', 3**x))) in facts
     assert P('negative', unevaluated(Pow, I, 2 + I)) in registry.facts_for(unevaluated(Pow, I, 2 + I))
     assert P('imaginary', unevaluated(Pow, I, 3 + I)) in registry.facts_for(unevaluated(Pow, I, 3 + I))
     assert P('positive', unevaluated(Pow, I, I)) in registry.facts_for(unevaluated(Pow, I, I))
     facts = registry.facts_for(exp(I*pi*x))
-    assert Implies(P('even', x), P('positive', exp(I*pi*x))) in facts or _derived(Implies(P('even', x), P('positive', exp(I*pi*x))))
-    assert Implies(P('odd', x), P('negative', exp(I*pi*x))) in facts or _derived(Implies(P('odd', x), P('negative', exp(I*pi*x))))
+    assert Implies(P('even', x), P('positive', exp(I*pi*x))) in facts
+    assert Implies(P('odd', x), P('negative', exp(I*pi*x))) in facts
     facts = registry.facts_for(exp(I*pi*x/2))
-    assert Implies(P('odd', x), P('imaginary', exp(I*pi*x/2))) in facts or _derived(Implies(P('odd', x), P('imaginary', exp(I*pi*x/2))))
+    assert Implies(P('odd', x), P('imaginary', exp(I*pi*x/2))) in facts
     assert P('imaginary', unevaluated(exp, I*pi/2)) in registry.facts_for(unevaluated(exp, I*pi/2))
     assert P('negative', unevaluated(exp, I*pi)) in registry.facts_for(unevaluated(exp, I*pi))
     facts = registry.facts_for(log(x))
-    assert Implies(P('zero', x - 1), P('zero', log(x))) in facts or _derived(Implies(P('zero', x - 1), P('zero', log(x))))
-    assert Implies(P('extended_positive', x - 1), P('extended_positive', log(x))) in facts or _derived(Implies(P('extended_positive', x - 1), P('extended_positive', log(x))))
+    assert Implies(P('zero', x - 1), P('zero', log(x))) in facts
+    assert Implies(P('extended_positive', x - 1), P('extended_positive', log(x))) in facts
     assert P('extended_positive', log(7)) in registry.facts_for(log(7))
     assert P('zero', unevaluated(log, 1)) in registry.facts_for(unevaluated(log, 1))
     assert P('positive', acos(Rational(1, 7))) in registry.facts_for(acos(Rational(1, 7)))
@@ -602,7 +585,42 @@ def test_specific_expectations():
     # the transcendence rows are the trans theory's (issue #149 T6)
     assert Implies(And(P('algebraic', x), Not(P('zero', x))), P('transcendental', cot(x))) not in facts
     facts = registry.facts_for(Abs(x))
-    assert P('extended_nonnegative', Abs(x)) in facts or _derived(P('extended_nonnegative', Abs(x)))
+    assert P('extended_nonnegative', Abs(x)) in facts
+
+
+@pytest.mark.parametrize("expr, premise, conclusion", [
+    # coeff.minus_one, one_neg and the rule base (the deleted backward
+    # coefficient transfers of _COEFF_BACK)
+    (-x, ('negative', 'N'), ('positive', 'x')),
+    # the strict and signed-infinite rows of _add_rules (the deleted
+    # constant +oo row)
+    (x + oo, ('real', 'x'), ('extended_positive', 'N')),
+])
+def test_deleted_row_spot_checks(expr, premise, conclusion):
+    """Two implications whose rows issue #149 R1a deleted from the Add
+    and Mul templates still follow from the rows the template gives now
+    and the rule base (proved with ``tools/minimise.py``'s z3 checker),
+    and not from the rule base alone."""
+    pytest.importorskip("z3")
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+    import minimise
+    from satassume.knowledge.templates._common import Rules, consts_of
+
+    kind = 'mul' if expr.is_Mul else 'add'
+    args = expr.args
+    n = len(args)
+    consts = consts_of(args)
+    slot = {'N': n, 'x': args.index(x)}
+    R = Rules()
+    R.rule([(slot[premise[1]], premise[0], True)], (slot[conclusion[1]], conclusion[0], True))
+    goals = minimise.basis_clauses(R.rules, consts)
+    kept = minimise.basis_clauses([(p, c) for _, p, c in minimise.tagged_rules(kind, n, consts)],
+                                  consts)
+    check = minimise.checker(n + 1)
+    assert not check.unimplied(kept, goals)
+    assert check.unimplied([], goals)
 
 
 def test_add_extended_real_term_end_to_end():

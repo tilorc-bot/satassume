@@ -69,9 +69,6 @@ def deleted_mul_rows(n, consts):
     rule = R.rule
     N, A = n, range(n)
     sign = not core.sign_owns(True, n)
-    closure = not core.closure_owns(True, n)
-    if closure:     # closed: integer
-        rule(lits(A, 'integer'), (N, 'integer', True))
     if sign:
         rule(lits(A, 'nonnegative'), (N, 'nonnegative', True))       # closed.sign
         rule([*lits(A, 'extended_real'), *lits(A, 'finite')], (N, 'extended_real', True))
@@ -119,6 +116,15 @@ def test_shapes_cover_the_constant_kinds():
         'Zero', 'One', 'NegativeOne', 'Integer', 'Half', 'Rational', 'Float', 'Pi', 'Exp1',
         'ImaginaryUnit', 'Infinity', 'NegativeInfinity', 'ComplexInfinity', 'NaN'}
 
+
+
+def test_shapes_cover_every_arity_with_a_deleted_row():
+    """The deleted rows exist only below the SIGN and CLOSURE caps (the
+    one-out rows are sign rows, so ``MAX_ONEOUT`` adds nothing): over ``minimise.MAX_N`` both theories own every Add
+    and Mul, so raising a cap past it fails here, not silently."""
+    for n in range(minimise.MAX_N + 1, minimise.MAX_N + 8):
+        for is_mul in (False, True):
+            assert core.sign_owns(is_mul, n) and core.closure_owns(is_mul, n), (is_mul, n)
 
 @pytest.mark.parametrize("kind", ["add", "mul"])
 def test_deleted_rows_stay_implied(kind):
