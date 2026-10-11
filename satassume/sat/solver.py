@@ -538,6 +538,9 @@ class Solver:
         self._ring: list[tuple] = []
         self._n_ring_hits = 0
         self._n_tdecisions = 0               # decisions theories asked for
+        # lazy theory reasons explained, per site where they were read:
+        # resolution, minimisation, final conflict, at once (already false)
+        self._n_lazy = [0, 0, 0, 0]
         # register_atom calls so far (a variable registered with a second
         # theory changes the problem without changing len(_tmap))
         self._n_registered = 0
@@ -2044,6 +2047,7 @@ class Solver:
             if vl is True:
                 return None
             if vl is False:
+                self._n_lazy[3] += 1
                 return self._theory_conflict(lits())
             dl = len(self._trail_lim)
             v = l >> 1
@@ -2090,11 +2094,13 @@ class Solver:
         self._trail.append(l)
         return None
 
-    def _lazy_reason(self, v: int, r: _LazyReason) -> Clause:
+    def _lazy_reason(self, v: int, r: _LazyReason, site: int) -> Clause:
         """The clause of the lazy reason ``r`` of variable ``v``, with the
         literal of ``v`` first, checked as an eager reason is
         (:meth:`_theory_imply`) and kept as ``v``'s reason from then on.
-        It is not added to the learnt clauses: it is read, not watched."""
+        It is not added to the learnt clauses: it is read, not watched.
+        ``site`` counts where it was read (``stats()['lazy_reasons_*']``)."""
+        self._n_lazy[site] += 1
         raw = self._theory_clause(r.fn(), "reason")
         val = self._val
         l = 2 * v if val[2 * v] else 2 * v + 1
@@ -2239,7 +2245,7 @@ class Solver:
             if confl.__class__ is int:
                 confl = self._rb_reason(pv, confl)
             elif confl.__class__ is _LazyReason:
-                confl = self._lazy_reason(pv, confl)
+                confl = self._lazy_reason(pv, confl, 0)
         learnt[0] = p ^ 1
 
         # Basic clause minimization: drop literals whose reason clause is
@@ -2256,7 +2262,7 @@ class Solver:
                 if r.__class__ is int:
                     r = self._rb_reason(q >> 1, r)
                 elif r.__class__ is _LazyReason:
-                    r = self._lazy_reason(q >> 1, r)
+                    r = self._lazy_reason(q >> 1, r, 1)
                 keep = False
                 for m in range(1, len(r)):
                     u = r[m] >> 1
@@ -2309,7 +2315,7 @@ class Solver:
                     if r.__class__ is int:
                         r = self._rb_reason(v, r)
                     elif r.__class__ is _LazyReason:
-                        r = self._lazy_reason(v, r)
+                        r = self._lazy_reason(v, r, 2)
                     for k in range(1, len(r)):
                         u = r[k] >> 1
                         if level[u] > 0:
@@ -2896,4 +2902,9 @@ class Solver:
             "rule_blocks": self._rb_blocks,
             "witness_hits": self._n_ring_hits,
             "theory_decisions": self._n_tdecisions,
+            # lazy theory reasons explained, per site that read them
+            "lazy_reasons_resolution": self._n_lazy[0],
+            "lazy_reasons_minimisation": self._n_lazy[1],
+            "lazy_reasons_final": self._n_lazy[2],
+            "lazy_reasons_conflict": self._n_lazy[3],     # already false
         }

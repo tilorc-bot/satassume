@@ -366,7 +366,11 @@ class ClassTheory:
 
     def _reason(self, i: int, lits, j: int, test, lit: int):
         """The lazy reason of ``lit``, implied at slot ``j`` of node ``i``
-        under the literals ``lits``: a function returning the clause."""
+        under the literals ``lits``: a function returning the clause.  The
+        solver does not keep it as a learnt clause, so after a backjump
+        below its level the literal comes back only when a node of its
+        term is dirtied again or at ``check`` (``pop_level`` marks nothing:
+        sets only widen on backtrack)."""
         def reason():
             return [lit] + [-l for l in self._why(i, lits, j, test) if l != -lit]
         return reason

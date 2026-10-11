@@ -418,10 +418,11 @@ class ForbidTheory:
                 (last,) = rest
                 if -last not in true:
                     c = sorted(-l for l in f)
-                    out.append((-last, self._thunk(c) if self.lazy_reasons else c))
+                    out.append((-last, self._thunk(c, -last) if self.lazy_reasons else c))
         return out
 
-    def _thunk(self, c):
+    def _thunk(self, c, lit):
+        """The lazy reason ``c`` of ``lit`` (a function returning it)."""
         def reason():
             self.read += 1
             return list(c)

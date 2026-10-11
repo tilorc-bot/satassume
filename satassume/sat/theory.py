@@ -185,9 +185,13 @@ class PropagatingTheory(TheorySolver, Protocol):
     told more literals, so it must explain from the literals asserted when
     ``propagate`` returned it (all of them earlier on the trail), not from
     the theory's state when it is called.  At root no reason is kept, so it
-    is never called there.  A lazy reason is not added to the learnt
-    clauses (an eager one is, watched): after a backtrack the theory, not
-    unit propagation, derives the literal again.  The class propagators
+    is never called there.  A lazy reason is not kept as a learnt clause
+    (an eager one is, watched): after a backjump below the literal's level
+    the theory, not unit propagation, must derive the literal again.
+    ``ClassTheory`` does so only when a node of the literal's term is
+    dirtied again, or at ``check`` (which re-propagates every node on the
+    total assignment); this changes the search (and so where a conflict
+    budget runs out), not soundness.  The class propagators
     (``satassume.theories.sign.lattice``) use it: most literals they
     propagate never take part in a conflict, and explaining one is a
     minimisation over the node's literals.  LRA and EUF give eager reasons,

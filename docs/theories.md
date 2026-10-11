@@ -544,6 +544,9 @@ A propagated literal's reason is lazy (`satassume.sat.theory`, "Lazy reasons"): 
 solver a function over the literals asserted at that moment, and the minimisation runs only if conflict
 analysis reads the reason; a conflict is explained at once. On two corpora of 400 random queries about
 wide sums and products the solver read 2 of 1,205 and 4 of 2,603 such reasons.
+A lazy reason is not kept as a learnt clause, so after a backjump below its level the literal comes back
+only when a node of its term is dirtied again or at `check` (an eager reason was re-derived by unit
+propagation): this changes the search, not soundness.
 Term sets are incremental (`cur`, `mtrail`): a node is propagated only when a set narrowed, and the
 backward set `allowed(op, rest, node)` is memoised.
 
