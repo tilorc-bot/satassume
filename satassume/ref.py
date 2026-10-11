@@ -473,8 +473,9 @@ def _node_theories(s: _RefSession) -> None:
     theory, T6): each attached with the nodes of the cone its adapter's
     ``selects`` takes (sums and products over the templates' arity caps;
     elementary functions and powers), as the engine."""
+    from .theories.intlat import intlat_adapter as il
     from .theories.sign import closure_adapter as cl, sign_adapter as sg, trans_adapter as tr
-    classes = (sg.SignAdapter, cl.ClosureAdapter, tr.TransAdapter)
+    classes = (sg.SignAdapter, cl.ClosureAdapter, tr.TransAdapter, il.IntLatAdapter)
     adapters: dict = {}
     seen: set = set()
     while True:
