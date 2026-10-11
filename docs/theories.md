@@ -505,6 +505,16 @@ made the same claim before (the Add row "an infinite term that is not `-oo` make
 some other term is `-oo`" fires on `zoo + oo`). `oo - oo` and `0*oo` stay `NAN`: there SymPy's `ask` says True
 for `extended_real(x + y)` under `Q.positive_infinite(x) & Q.negative_infinite(y)` and for `zero(x*y)` under
 `Q.zero(x) & Q.infinite(y)`, and a False would contradict it (README, deliberate misses).
+The fold is not associative under this reading: `(oo - oo) + I` folds to `NAN`, but `oo + (-oo + I)` folds to
+`IN + oo = IN`, and the backward pass (which folds the other arguments for each `k`) uses such groupings. So
+`oo - oo + I`, and any real cancellation of infinities plus a finite non-real term, is read as `IN` too:
+`Q.finite(x + y + I)` is False under `Q.positive_infinite(x) & Q.negative_infinite(y)`, `Q.finite(a + b + oo + I)`
+is False with no assumptions, and `Q.extended_real(x)` under `Q.finite(x + y + I) & Q.positive_infinite(y)` is
+inconsistent (`x = -oo` would make the sum `nan`, which the convention counts as infinite). The two-term
+`x + y` stays `NAN`: `Q.extended_real(x)` under `Q.finite(x + y) & Q.positive_infinite(y)` is True, and
+`Q.finite(a + b + oo)` stays None. This is sound by the same argument (each step's set covers SymPy's value,
+with `nan` read as `NAN`, or as `IN` when an operand is an off-axis infinity), and `tests/test_sign_theory.py`
+pins these cases.
 This is where the new "inconsistent" verdicts of stage 3 come from: assumptions that pin a sum of three or
 more terms holding an off-axis infinity (`zoo`, `x + 2*I` with `x` infinite) to a real, zero or signed
 value, such as `Q.positive(d + d + f + zoo + d)` or `Q.extended_nonnegative(d + b + 2 + a)` under
@@ -518,7 +528,8 @@ arithmetic of `_mul_atoms` is never applied to matrices or operators.
 
 **Operations.** `_add_atoms`/`_mul_atoms` give the atoms of `a + b` and `a * b` for two atoms: interval
 arithmetic on the signs of the parts plus SymPy's conventions for infinities; a node folds them over its
-arguments (sound in any order: the set operations over-approximate each step and `NAN` absorbs). An
+arguments (sound in any order because each step's set covers SymPy's value under the `nan` reading above, not
+because the values associate; `NAN` absorbs). An
 infinity times a nonzero value is an infinity (`IN` times a real stays `IN`; `IN` times a non-real or `IN`
 may land on an axis, `oo*I*I = -oo`, so the result is "some infinity"). `tests/test_sign_theory.py` checks
 both tables against SymPy at sample points of every atom and the folds against n-ary `Add`/`Mul`.

@@ -290,6 +290,36 @@ def test_three_argument_inconsistent(assum):
         ask(Q.real(x), assum)
 
 
+def test_add_fold_is_not_associative_on_nan():
+    # (oo + -oo) + I is NAN, oo + (-oo + I) is IN: the fold relies on the
+    # nan convention (IN for a nan sum with an off-axis infinity), not on
+    # associativity (sign.py, "Soundness of a fold")
+    from satassume.theories.sign.sign import _add_atoms
+    i = F(0, 1)
+    assert _add_atoms(PI, NI) == 1 << NAN
+    assert _add_atoms(NI, i) == 1 << IN
+    assert _add_atoms(PI, IN) == 1 << IN
+
+
+@pytest.mark.parametrize("prop, assum, expected", [
+    # a real cancellation plus a finite non-real term is read as IN
+    (Q.finite(x + y + I), Q.positive_infinite(x) & Q.negative_infinite(y), False),
+    (Q.finite(a + b + oo + I), True, False),
+    # without the non-real term, or with two terms, no claim
+    (Q.finite(a + b + oo), True, None),
+    (Q.extended_real(x), Q.finite(x + y) & Q.positive_infinite(y), True),
+])
+def test_real_cancellation_plus_nonreal_term(prop, assum, expected):
+    assert ask(prop, assum) is expected
+
+
+def test_real_cancellation_plus_nonreal_term_inconsistent():
+    # x = -oo would make x + y + I nan, read as IN (infinite): no value
+    # satisfies the assumptions, unlike the two-term contrast above
+    with pytest.raises(ValueError):
+        ask(Q.extended_real(x), Q.finite(x + y + I) & Q.positive_infinite(y))
+
+
 def test_nodes_reached_through_a_registered_node_are_registered():
     # the 7-term sum is the only node over the caps the query visits; the
     # theory registering it visits its products of 5 and 6 factors, over the

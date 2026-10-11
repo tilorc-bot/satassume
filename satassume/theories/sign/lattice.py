@@ -17,8 +17,11 @@ minimised by deletion.
 Two lattices use it: :mod:`.sign` (signs of the real and imaginary parts,
 zero, finiteness: issue #149 T1) and :mod:`.closure` (membership in the
 integers, rationals, algebraic numbers, reals and complex numbers: T3).
-Both operations are commutative and associative on values and each table
-over-approximates its step, so any bracketing of a fold is sound.
+Each table covers its step (the set holds the value of ``a op b``), so
+every bracketing of a fold covers the node's value.  Where the values do
+not associate (SIGN's ``nan`` sums with an off-axis infinity, read as an
+infinity), this holds under the lattice's reading of ``nan``: see
+:mod:`.sign`, "Soundness of a fold".
 
 Besides the folds, a lattice may have *map* operations (:meth:`Lattice.add_map`):
 a function of a fixed arity (1 or 2, not commutative: ``Pow(b, e)``) given
