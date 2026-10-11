@@ -617,9 +617,10 @@ The fourth integer-base row, `int_base.negative_int_exp.odd` (`b**e` an integer 
 then `+-1`), decides `even(b**e)` and `odd(1/b)` under `integer(1/b)`.
 
 Measured against `theories` (fresh engine per query, generated corpora; the numbers are in the PR): no lost
-answers, no flips; clauses per query -3.9% on the power corpus and -4.2% on powers under relations (-4.1% on
-integer powers), about 0 (-0.3%) on mixed corpora; variables flat. The cost: warm time +5-6% per query on
-power-heavy queries, about +1% on the refine stream (`tools/ab.py`), +2% cold time on held-out query shapes.
+answers, no flips; clauses per query -3.5% on the power corpus and -3.8% on powers under relations (-3.7% on
+integer powers; the `odd` row costs +0.4% of these), about 0 (-0.2%) on mixed corpora; variables flat. The
+cost: warm time +5-6% per query on power-heavy queries (+4-5% with the lazy reasons of #158), about +1% on the
+refine stream (`tools/ab.py`), +2% cold time on held-out query shapes.
 The structural gain is the 15 rows moved into the decision procedure; the clause and variable gains of
 dropping the `b - 1`, `b + 1` nodes need the integer-magnitude atoms above.
 
