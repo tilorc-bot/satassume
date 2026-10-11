@@ -178,3 +178,24 @@ def test_shared_engine_matches_fresh(seed):
         ask(Q.real(x), Q.eq(x, I) & Q.real(x), eng)
     for p, a, expected in SESSION:
         assert ask(p, a, eng) is _fresh(p, a) is expected, (p, a)
+
+
+ZERO_ATOMS = [Eq(x + I * y, 0, evaluate=False), Eq(I * x + 2 * I * y, 0, evaluate=False),
+              Eq((1 + I) * x - (2 - I) * re(y) + 3, 0, evaluate=False),
+              Eq(x - I * x - Rational(1, 2) * I, 0, evaluate=False)]
+
+
+@pytest.mark.parametrize("atom", ZERO_ATOMS, ids=str)
+def test_zero_atom_clauses(atom):
+    """The extra clauses of ``eq(e, 0)`` (``Relations._interpret_complex``):
+    under the guard (every term finite) ``real(e) <-> ti`` and
+    ``imaginary(e) <-> tr & ~ti``, at every finite value."""
+    (rr, ri), _, _ = cinterpret(atom)
+    e = atom.lhs
+    syms = sorted(atom.free_symbols, key=str)
+    for vals in itertools.product(VALUES, repeat=len(syms)):
+        env = dict(zip(syms, vals))
+        v = e.subs(env).expand()
+        tr, ti = _holds(rr, env), _holds(ri, env)
+        assert (v.is_real is True) == ti, (atom, env)
+        assert (v.is_imaginary is True) == (tr and not ti), (atom, env)
