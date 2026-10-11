@@ -213,8 +213,8 @@ Property: every template rule is true at concrete values in Kleene logic (`tests
 over non-commutative values (`tests/test_noncommutative.py`, `tests/test_totality.py`,
 `tests/test_total_templates.py`, G7).
 
-Definition (SIGN, issue #149 T1; `docs/theories.md`, "SIGN"). For an `Add` of more than `MAX_ONEOUT` terms or a
-`Mul` of more than `MAX_PAIRS` factors (`templates.core.sign_owns`), the pattern leaves out its sign rows and
+Definition (SIGN, issue #149 T1; `docs/theories.md`, "SIGN"). For an `Add` or `Mul` of three or more
+arguments (`templates.core.sign_owns`, `SIGN_MIN_ARGS`), the pattern leaves out its sign rows and
 the session attaches `SignTheory` with the node (`Session.node_theories_sync`, `sign_adapter.over_cap`): the theory propagates the six basis predicates `extended_real`, `finite`, `zero`,
 `extended_positive`, `extended_negative`, `imaginary` (and the derived variables over them) of the node and
 its arguments, each with a clause of their literals as its reason. Its clauses are the dropped rows' and more

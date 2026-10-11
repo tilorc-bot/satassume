@@ -71,10 +71,11 @@ def mul_rules(n, consts):
     # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
     for k in A if sign else ():
         rule([(k, 'zero', True), *lits([j for j in A if j != k], 'finite')], (N, 'zero', True))
-    if n <= MAX_ONEOUT:
+    # (and the nonzero rows: the SIGN theory, issue #149 T1 stage 3)
+    if sign and n <= MAX_ONEOUT:
         for k in A:
             rule(lits([j for j in A if j != k], 'commutative'), [*lits(A, 'zero'), (N, 'zero', False)])
-    else:
+    elif sign:
         rule(lits(A, 'commutative'), [*lits(A, 'zero'), (N, 'zero', False)])
 
 
@@ -132,7 +133,7 @@ def mul_rules(n, consts):
                 rule([(k, 'imaginary', True), (l, 'complex', True), (N, 'imaginary', True)],
                      (l, 'real', True))
 
-    if 3 <= n <= MAX_PAIRS:
+    if sign and 3 <= n <= MAX_PAIRS:   # (none since stage 3: sign_owns)
         # Sign of a product with m negative factors, 2 <= m < n (one negative
         # factor is above, all negative is above).
         for m in range(2, n):

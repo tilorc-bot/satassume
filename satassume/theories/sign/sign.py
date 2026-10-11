@@ -124,7 +124,17 @@ def _add_atoms(a: int, b: int) -> int:
         return 1 << IN if bi == 0 else _b(PI, NI, IN)
     if a == b and a != IN:
         return 1 << a                       # oo + oo, -oo - oo
-    return NANB                             # oo - oo, zoo + zoo, oo + zoo, ...
+    if a != IN and b != IN:
+        return NANB                         # oo - oo
+    # an infinity off the real axis plus another infinity: an infinity
+    # (``oo*I + oo*I = oo*I``, ``(oo + I) + (oo - I) = oo``) or ``nan``
+    # (``zoo + oo``, ``zoo + zoo``), counted as an infinity off the real
+    # axis, as in the templates' infinite sums (an infinite term that is not
+    # ``-oo`` and a rest that is not ``-oo`` make the sum infinite).  The
+    # predicates of ``IN`` are those ``nan`` has (not extended real, zero
+    # or imaginary) and ``infinite``, which the convention leaves open for
+    # ``nan``.  Only ``IN`` plus ``IN`` can land on the real axis
+    return INF if a == b else 1 << IN
 
 
 def _mul_atoms(a: int, b: int) -> int:

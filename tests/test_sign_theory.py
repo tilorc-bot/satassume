@@ -55,6 +55,12 @@ SAMPLES = [r + s*I for sr, si in product((-1, 0, 1), repeat=2)
 SAMPLES += [oo, -oo, zoo, oo*I, -oo*I, oo*(1 + I), oo + I, -oo - 2*I, oo - I]
 
 
+def _nan_as_in(op, r, m):
+    """A sum of an infinity off the real axis and another infinity that is
+    ``nan`` (``zoo + oo``) is ``IN`` in the table (``sign._add_atoms``)."""
+    return op == ADD and r == 1 << NAN and m & (1 << IN)
+
+
 def test_samples_cover_every_atom():
     assert {atom_of(v) for v in SAMPLES} == set(range(12))
 
@@ -78,7 +84,7 @@ def test_pairwise_tables_against_sympy(op):
             unknown += 1
             continue
         m = mop(op, 1 << atom_of(a), 1 << atom_of(b))
-        assert m >> NAN & 1 or m & r, (a, b, f(a, b))
+        assert m >> NAN & 1 or m & r or _nan_as_in(op, r, m), (a, b, f(a, b))
     assert unknown < len(SAMPLES) ** 2 // 10    # parts SymPy cannot sign
 
 
@@ -93,7 +99,7 @@ def test_three_argument_folds_against_sympy(op):
             unknown += 1
             continue
         m = fold(op, [1 << atom_of(a) for a in args])
-        assert m >> NAN & 1 or m & r, (args, f(*args))
+        assert m >> NAN & 1 or m & r or _nan_as_in(op, r, m), (args, f(*args))
     assert unknown < len(pool) ** 3 // 5       # parts SymPy cannot sign
 
 
@@ -225,22 +231,63 @@ def test_conflict_and_budget():
     assert not th.gave_up and th.budget == th.MAX_CONFLICTS
 
 
-def test_rows_over_the_caps_are_left_to_the_theory():
-    """Over the arity caps the templates leave the sign rows out
-    (``templates.core.sign_owns``) and keep the others."""
+def test_rows_from_three_arguments_are_left_to_the_theory():
+    """From three arguments the templates leave the sign rows out
+    (``templates.core.sign_owns``, issue #149 T1 stage 3) and keep the
+    others; two-argument nodes keep their sign rows."""
     from satassume.knowledge.templates import core
 
     def preds(rules):
         return {lit[1] for _, concl in rules for lit in (concl if isinstance(concl, list)
                                                         else [concl])}
-    assert core.sign_owns(False, 7) and not core.sign_owns(False, 6)
-    assert core.sign_owns(True, 5) and not core.sign_owns(True, 4)
-    assert len(core._add_rules(7, {})) < len(core._add_rules(6, {})) // 4
-    assert len(core._mul_rules(5, {})) < len(core._mul_rules(4, {})) // 2
-    assert 'composite' in preds(core._add_rules(7, {}))
+    assert core.sign_owns(False, 3) and not core.sign_owns(False, 2)
+    assert core.sign_owns(True, 3) and not core.sign_owns(True, 2)
+    for n in (3, 4, 7):
+        assert 'composite' in preds(core._add_rules(n, {}))
+        for p in ('extended_positive', 'extended_negative', 'finite', 'infinite', 'zero'):
+            assert p not in preds(core._add_rules(n, {})), (n, p)
+            assert p not in preds(core._mul_rules(n, {})), (n, p)
     assert 'even' not in preds(core._add_rules(7, {}))        # INTLAT's (intlat_adapter.owns)
     assert 'integer' not in preds(core._add_rules(7, {}))     # CLOSURE's (closure_owns)
-    assert 'extended_positive' not in preds(core._add_rules(7, {}))
+    assert 'even' in preds(core._mul_rules(3, {}))
+    for p in ('extended_positive', 'zero', 'finite'):
+        assert p in preds(core._add_rules(2, {})) and p in preds(core._mul_rules(2, {}))
+
+
+@pytest.mark.parametrize("prop, assum, expected", [
+    # sign rows of three-argument nodes, now the theory's (were template rows)
+    (Q.negative(a*b*c), Q.negative(a) & Q.negative(b) & Q.negative(c), True),
+    (Q.positive(a*b*c), Q.negative(a) & Q.negative(b) & Q.positive(c), True),
+    (Q.nonzero(a*b*c), Q.imaginary(a) & Q.imaginary(b) & Q.positive(c), True),
+    (Q.zero(a*b*c), Q.nonzero(a) & Q.nonzero(b) & Q.nonzero(c), False),
+    (Q.zero(a*b*c), Q.zero(a) & Q.finite(b) & Q.finite(c), True),
+    (Q.zero(a*b*c), Q.zero(a) & Q.infinite(b), None),
+    (Q.extended_positive(a + b + c), Q.positive(a) & Q.positive(b) & Q.nonnegative(c), True),
+    (Q.positive(x), Q.positive(x + y + d) & Q.negative(y) & Q.negative(d), True),
+    (Q.infinite(a + b + c), Q.positive_infinite(a) & Q.real(b) & Q.real(c), True),
+    (Q.extended_real(a + b + c), Q.positive_infinite(a) & Q.negative_infinite(b), None),
+    (Q.positive(-2*a*b), Q.positive(a) & Q.negative(b), True),
+    # new answers: sums with an infinity off the real axis
+    (Q.zero(zoo + a + 2*b), True, False),
+    (Q.extended_nonzero(I*a + oo + a), Q.composite(a), False),
+    (Q.nonzero(I*d + 2 + d + d + a), Q.noninteger(a) & Q.extended_positive(d), False),
+    (Q.hermitian(3*a + zoo + a), Q.positive_infinite(a), False),
+    (Q.imaginary(b), Q.negative(b*2*I), True),
+])
+def test_three_argument_answers(prop, assum, expected):
+    assert ask(prop, assum) is expected
+
+
+@pytest.mark.parametrize("assum", [
+    # every value of the sum is an infinity off the axis or nan
+    Q.positive(d + d + w + zoo + d) & Q.lt(w, 0),
+    Q.extended_nonnegative(d + b + 2 + a) & Q.positive_infinite(d) & ~Q.extended_real(a)
+    & Q.nonnegative(b),
+    Q.nonzero(d*c*e*e*3 + e*e*d + pi + 1 + I) & Q.positive_infinite(d) & ~Q.even(e) & Q.lt(c, 1),
+])
+def test_three_argument_inconsistent(assum):
+    with pytest.raises(ValueError):
+        ask(Q.real(x), assum)
 
 
 def test_nodes_reached_through_a_registered_node_are_registered():
