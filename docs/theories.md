@@ -593,19 +593,21 @@ rows. A numeric base or exponent keeps the rows: they fold to a few short clause
 theory for `2**x` or `x**3` cost more than it saved (measured: owning every power with a symbolic exponent
 was +7% warm time on a power-heavy corpus, against +4% for this split, with the same answers).
 
-The same powers lost their derived nodes `b - 1` and `b + 1` (two `Add` blocks per power). Their only row
-was `int_base.negative_int_exp` ("an integer `b` other than `0`, `+-1` to a negative integer power is not an
-integer"). It is now stated from the other side, with no node: for integer `b` and negative integer `e`,
-`b**e` is an integer only if `b = +-1` (`|b**e| <= 1/2` for `|b| >= 2`, `0**e = zoo`), so then `b` is odd and
-neither prime nor composite, and `b**e` (`+-1`, a fraction or `zoo`) is never prime or composite. These rows
-hold for every power, so `integer(1/b)` under `prime(b)` and `integer(b**-2)` under `composite(b)` are now
-False (they were None). The nodes answered where `b - 1`, `b + 1` have facts of their own: assumptions about
-them (`positive(b - 1)`) or a compound base (`(x + 2)**e` with a positive integer `x`). Those answers are lost
-(see the PR for the counts). The integer-magnitude classes of the issue would recover them, at the cost of
-16 atoms in every SIGN node.
+For an integer `b` and a negative integer `e`, `b**e` is an integer only if `b = +-1` (`|b**e| <= 1/2` for
+`|b| >= 2`, and `0**e = zoo`). The rows `int_base.negative_int_exp*` state this for every power without a
+derived node: then `b` is odd and neither prime nor composite, and `b**e` (`+-1`, a fraction or `zoo`) is
+never prime or composite. So `integer(1/b)` under `prime(b)`, `integer(b**-2)` under `composite(b)` and
+`integer(b**e)` under `even(b)` are False (they were None). The direct form, with the derived nodes `b - 1`
+and `b + 1` of a power with a symbolic base and exponent, stays: only those nodes carry facts about `b - 1`,
+`b + 1` themselves (`~zero(x - 1)`, gate2 record 1605; `positive(b - 1)`; a compound base, `(x + 2)**e` with a
+positive integer `x`). Dropping the nodes was measured: clauses per query -20% and variables -14% on the
+power-heavy corpus and the theory's cost gone (+1% warm time instead of +7%), but those answers lost. The
+integer-magnitude classes of the issue (`(0, 1)`, `1`, `(1, oo)` and their negatives as atoms) would make the
+nodes unnecessary, at the cost of 16 atoms in every SIGN node.
 
-Measured on 14,000 generated power-heavy queries and 3,000 integer-power queries (fresh engine per query):
-see the PR (#TBD) for the tables.
+Measured against `theories` (fresh engine per query, generated corpora; the numbers are in the PR): no lost
+answers, no flips, clauses per query -6% on power-heavy queries; warm time +5-7% per query on that class
+(+3% with the lazy reasons of #158), the refine stream flat.
 
 ## CLOSURE: ring and field membership of sums and products
 
