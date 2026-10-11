@@ -554,6 +554,10 @@ they are gone. Template rules per node (`_add_rules`/`_mul_rules`, before -> aft
 67/50/60/70 -> 26/6/7/8; Mul of 3/4/5/6/7 factors 63/93/23/27/11 -> 22/27/18/21/10. The rows of other
 predicates (`even`, `polar`, ...) stay; those of `integer`, `rational`, `algebraic` and `complex` are
 CLOSURE's (below). `ref.py` attaches the theory to the same nodes, so the reference sees the same clause set.
+A Mul's templates also relate it to products over other factors of the same value (`I*pi*s` for
+`I*pi*x*y`, `templates.core._mul_factor_sets`); such a block of three or more factors has no sign rows either,
+so `SignAdapter.add` tells the theory that product as a second node of the same term. `tools/totality.py`
+checks blocks alone, so it reads the sign rows the theory decides as template rows (`_sign_rows`).
 
 **Why three arguments** (stage 3, issue #149). Measured on 12,000 generated queries (sums, products,
 functions, relations; fresh engine per query) against the templates of stage 1, owning every node of three
