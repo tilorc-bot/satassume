@@ -51,6 +51,8 @@ from fractions import Fraction
 from math import gcd
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
+from ...state.memos import PROCESS as _PROCESS
+
 #: the column of the constant (after every term column: echelon order puts
 #: the constant row last, so it is ``M``'s intersection with the constants)
 CONST = 1 << 40
@@ -276,7 +278,7 @@ def _product(ranges):
 
 #: (factors, residue facts, p, e) -> the kernel of :func:`_points` (a pure
 #: function of the key; bounded by clearing)
-_KERNELS: dict = {}
+_KERNELS = _PROCESS.table(f"{__name__}._KERNELS", "pure", 4096)
 
 
 def _relations(poly: Poly, fp, p: int, e: int):

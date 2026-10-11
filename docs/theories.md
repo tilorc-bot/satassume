@@ -811,6 +811,32 @@ unevaluated, over `x`, `y` and factors such as `0`, `1/x`, `x*y`, `oo`, `I`, `pi
 against the values of each atom's node, evaluated in SymPy, at all pairs of values of `x` and `y` from
 integers, fractions, `oo`, `-oo`, `zoo`, `I`, `1 + I` and `2.0`.
 
+**Stage B: products of integral forms (`intlat.Poly`).** A term that is a product or a positive Integer
+power, read through products and powers down to Rationals, linear nodes with an exact form with integer
+coefficients, and other terms (the *bases*, at most `MAX_BASES` = 3), is a polynomial with integer
+coefficients in its bases: `n*(n + 1)*(n + 2)`, `n**2`, `x*y`, `(2*n + 1)**3`. A Float, `pi`, `I`, a
+non-integer Rational, a negative or symbolic exponent, or a non-commutative factor stops the reading (the
+term stays opaque). When the lattice makes every base an integer, the term is an integer and its residue
+modulo `m` is a function of the bases' residues modulo `m`. For each prime power `m = p**e` dividing the
+lattice's scale `d` (`p <= 13`, `m <= 64`), `_poly_step` takes the residues that the lattice gives each
+base and the term alone (`(x - a)/p**j` in the lattice, found by reducing `x/p**j` to a constant), lists
+the base residue vectors they allow (at most 256), and inserts the relations `(c_u*u + c.x + c_0)/m` that
+hold at all of them: the kernel modulo `m` of the vectors `(P(r), r, 1)` (`_kernel`, Euclid on the values,
+cached per product and residues). No vector allowed gives the relation `1/m`, a conflict. The reason is the
+literals that made the bases integral and gave the residues. Sound because the allowed residue vectors
+contain the actual ones and `u`'s value is `P` of the bases' values once they are finite integers (a
+product's value is the product of its arguments' values, evaluated or not). This decides
+`integer(n*(n + 1)*(n + 2)/6)` and `integer((n**3 - n)/6)` under `integer(n)`, `integer((n**2 - 1)/8)` under
+`odd(n)`, `integer(n**2/4)` (True under `even(n)`, False under `odd(n)`), `integer(n*m/4)` under even `n`,
+`m`, and backward `even(n)` from `integer(n**2/4)`. The step runs once per batch of assertions
+(`Lattice.settle`, at `propagate`/`check`), not inside `refutes`: what it would find there, the search finds
+by asserting the atom. Engagement is unchanged (a product term only occurs in a form the theory already
+owns), so no template row is dropped: the parity rows of products (`all_odd`, `one_even`, the Pow
+integer/even/odd rows) cover every product in every session, and owning products would engage the theory
+in most sessions (the +22% row below). `tests/test_intlat_theory.py` checks every clause over random
+products of 1 and 2 bases (integer base values covering every residue modulo 72, fractions, a non-finite
+value), backtracking, the kernel and residue helpers, and end-to-end answers against values.
+
 **Engagement.** The theory is told only the nodes the templates no longer cover (`intlat_adapter.owns`):
 - a sum of more than `MAX_ADD_SMALL` (3) terms;
 - a sum with a term `c*t` whose Rational `c` is not an integer (`x/2 + y`, `k/2 - 1/2`);
