@@ -6,8 +6,9 @@ condition that may hold only by cases), the wrap ``principal`` and the
 helpers below.  A family module states rows only; which handlers serve which
 key, with which orderings, is :mod:`..wiring`.
 
-``ZERO`` is the generic row ``f(x) -> f(0)``, stated by the unary families
-that want it (in their ``RULES``, or in their wiring).
+``ZERO`` is the generic row ``f(x) -> f(0)`` for a zero ``x``, used by the
+unary families that want it: in their ``RULES`` (``trig``, ``hyperbolic``) or
+added in :mod:`..wiring` (``complex_parts``, ``inverse``, ``power_exp_log``).
 """
 from __future__ import annotations
 
