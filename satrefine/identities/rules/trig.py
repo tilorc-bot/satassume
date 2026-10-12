@@ -8,10 +8,6 @@ from ._tables import ZERO, Row, add_rules
 
 n, r, k, zero, u = symbols('n r k zero u')
 
-ASSUMED = {Q.integer(k), ~Q.zero(k),
-           Q.zero(zero),
-           Q.infinite(u), Q.extended_real(u)}
-
 RULES: list[Row] = (
     [ZERO]
     + add_rules({Q.even(n)}, [
@@ -30,10 +26,10 @@ RULES: list[Row] = (
         (tan(n*pi/2 + r), -cot(r)),
         (cot(n*pi/2 + r), -tan(r)),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.integer(k), ~Q.zero(k), Q.zero(zero)}, [
         (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.infinite(u), Q.extended_real(u)}, [
         (sin(u), AccumBounds(-1, 1)),
         (cos(u), AccumBounds(-1, 1)),
     ])
