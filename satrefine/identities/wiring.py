@@ -16,8 +16,8 @@ from __future__ import annotations
 import importlib
 from functools import cache
 
-from sympy import (Abs, Mod, Piecewise, acos, acoth, acsch, arg, asin, asinh, atan, atan2, atanh, floor, frac, im, re,
-                   sign)
+from sympy import (Abs, Heaviside, KroneckerDelta, Max, Min, Mod, Piecewise, acos, acoth, acsch, arg, asin, asinh,
+                   atan, atan2, atanh, count_ops, floor, frac, im, re, sign)
 from sympy.core import Mul
 from sympy.functions.elementary.miscellaneous import Rem
 
@@ -110,5 +110,25 @@ def inverse(m) -> Family:
                   facts=m.FACTS, rules=[ZERO] + m.RULES, ranges=m.RANGES, assumed=m.ASSUMED)
 
 
-WIRED: dict = {"complex_parts": complex_parts, "integer_funcs": integer_funcs, "inverse": inverse}
+# ---- minmax_deltas --------------------------------------------------------------
+
+def minmax_measure(e, assumptions):
+    """Arguments of the family's heads, then size: a definition fires when it drops one."""
+    return (sum(len(n.args) for n in e.atoms(Max, Min, KroneckerDelta, Heaviside)), count_ops(e))
+
+
+def minmax_deltas(m) -> Family:
+    def definitions(head):   # no case split (see the module docstring)
+        return Identities(_headed(m.FACTS, head), measure=minmax_measure, opaque=(), splits=False)
+
+    return Family({'Max': (Rules(_headed(m.INFINITE, Max)), definitions(Max)),
+                   'Min': (Rules(_headed(m.INFINITE, Min)), definitions(Min)),
+                   'KroneckerDelta': definitions(KroneckerDelta),
+                   'Heaviside': definitions(Heaviside),
+                   'DiracDelta': Rules(m.DIRAC)},
+                  facts=m.FACTS, rules=m.RULES, assumed=m.ASSUMED)
+
+
+WIRED: dict = {"complex_parts": complex_parts, "integer_funcs": integer_funcs, "inverse": inverse,
+               "minmax_deltas": minmax_deltas}
 """The families that mix rule and identity tables: ``family -> (module -> Family)``."""
