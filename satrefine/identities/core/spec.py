@@ -1,10 +1,14 @@
 """A family as data: which table handlers serve which keys, and the tables it states.
 
-A family module (``rules/*.py``, ``compat/matrices.py``) states its rows in
-module-level tables (the maths; the names label the rows in the generated
-modules' derivation comments and are what the tools read) and ends with
-``SPEC = Family(...)``, which registers nothing: :func:`satrefine.identities.load`
-registers :func:`build` of every family's spec.
+A family module (``rules/*.py``, ``compat/matrices.py``) states rows only: its
+symbols, its ``ASSUMED`` facts and module-level tables (the maths; the names
+label the rows in the generated modules' derivation comments and are what the
+tools read).  Which handlers serve which key is a :class:`Family`, made by
+:func:`satrefine.identities.wiring.family_spec`: :meth:`Family.from_rows` for
+a family of rule rows only (each key gets the rows of its head), a
+``Family`` wired by hand in :mod:`satrefine.identities.wiring` for a family
+that mixes rule and identity tables.  Making a family registers nothing:
+:func:`satrefine.identities.load` registers :func:`build` of every family's spec.
 
 ``Family.handlers`` maps a key of ``satrefine.identities.compat.upstream.handlers_dict`` to a
 part (:class:`Rules` or :class:`Identities`) or a tuple of parts, tried in
@@ -18,7 +22,9 @@ stated) and ``ranges`` (range rows ``(head(y), interval, condition)`` for the
 floor of a bounded quantity).  Every row a handler uses is one of the stated
 rows, derived from them (``derive(facts, exp_forms)``), or a stated row whose
 generic head (an undefined function such as ``G``) is replaced by the key's
-head (``tests/refine_identities/rules/test_family_specs.py``).
+head (``tests/refine_identities/rules/test_family_specs.py``).  A generic row
+is matched as a head wildcard: it serves whichever key's table holds it
+(:meth:`Family.from_rows` puts it in the table of every head of its arity).
 
 ``assumed`` is a set of facts about the pattern variables (``Q.integer(n)``).
 A fact belongs to every row whose left side holds all its variables, as a
@@ -38,6 +44,7 @@ from dataclasses import KW_ONLY, dataclass
 from typing import Any, Callable
 
 from sympy import And, Eq, Or, Symbol, true
+from sympy.core.function import AppliedUndef
 
 from .rewrite import identity_handler, rule_handler
 
@@ -81,6 +88,26 @@ class Family:
     ranges: list = ()
     assumed: set = ()
 
+    @classmethod
+    def from_rows(cls, rows: list, *, assumed: set = (), by_binding: bool = False) -> Family:
+        """The family of the rule rows ``rows`` (its ``rules``): each key, the name of a
+        left side's head, is served by one :class:`Rules` of the rows with that head, in
+        table order; a row over a generic head (``F(x)``) is in the table of every head
+        whose rows have its number of arguments, at its place in ``rows``."""
+        arities: dict = {}
+        for row in rows:
+            if not isinstance(row[0], AppliedUndef):
+                arities.setdefault(row[0].func.__name__, set()).add(len(row[0].args))
+        tables: dict = {key: [] for key in arities}
+        for row in rows:
+            lhs = row[0]
+            keys = ([key for key, n in arities.items() if len(lhs.args) in n] if isinstance(lhs, AppliedUndef)
+                    else [lhs.func.__name__])
+            for key in keys:
+                tables[key].append(row)
+        return cls({key: Rules(table, by_binding=by_binding) for key, table in tables.items()},
+                   rules=list(rows), assumed=assumed)
+
     def __post_init__(self):
         self.completed: dict = {}   # id(row as written) -> (row, completed rows); see complete_module
         if not self.assumed:
@@ -95,11 +122,11 @@ class Family:
                 id(row), (row, [assume(r, facts) for r in _define(row, definitions)]))[1]]
 
 
-def complete_module(module) -> None:
-    """Complete the module's own tables too: a table the family was given only as a slice
-    or inside a concatenation (``INFINITE[0:2]``, ``[ZERO] + RULES``) still holds the rows
-    as written, and the tools read the module's tables."""
-    completed = module.SPEC.completed
+def complete_module(module, family: Family) -> None:
+    """Complete the module's own tables too: a table the family was given only in part
+    or inside a concatenation (the rows of one head, ``[ZERO] + RULES``) still holds the
+    rows as written, and the tools read the module's tables."""
+    completed = family.completed
     for value in vars(module).values():
         if isinstance(value, list) and any(id(row) in completed for row in value):
             value[:] = [c for row in value for c in (completed[id(row)][1] if id(row) in completed else [row])]

@@ -83,8 +83,9 @@ def family_module(family: str) -> str:
 
 
 def family_keys(family: str) -> list[str]:
-    """The keys the module registers (the keys of its ``SPEC.handlers``)."""
-    return list(importlib.import_module(family_module(family)).SPEC.handlers)
+    """The keys the family registers (the keys of its spec's ``handlers``)."""
+    from satrefine.identities import family_spec
+    return list(family_spec(family).handlers)
 
 
 def _norm(row) -> tuple:

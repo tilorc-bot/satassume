@@ -518,12 +518,10 @@ class MatrixRowCoverage:
         self.saved = {}
 
     def __enter__(self):
-        import importlib
-
+        from satrefine.identities import family_spec
         from satrefine.identities.compat.upstream import handlers_dict
         from satrefine.identities.core.rewrite import rule_handler
-        mod = importlib.import_module("satrefine.identities.compat.matrices")
-        tables = {key: part.rows for key, part in mod.SPEC.handlers.items()}   # one rule table per key
+        tables = {key: part.rows for key, part in family_spec("matrices").handlers.items()}   # one rule table per key
         self.all_rows = [row for rows in tables.values() for row in rows]
         for key, rows in tables.items():
             original = handlers_dict[key]
