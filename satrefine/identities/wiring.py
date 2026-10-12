@@ -16,13 +16,13 @@ from __future__ import annotations
 import importlib
 from functools import cache
 
-from sympy import (Abs, Heaviside, KroneckerDelta, Max, Min, Mod, Piecewise, acos, acoth, acsch, arg, asin, asinh,
-                   atan, atan2, atanh, count_ops, floor, frac, im, re, sign)
+from sympy import (Abs, Heaviside, KroneckerDelta, Max, Min, Mod, Piecewise, Pow, acos, acoth, acsch, arg, asin, asinh,
+                   atan, atan2, atanh, count_ops, exp, floor, frac, im, log, re, sign)
 from sympy.core import Mul
 from sympy.functions.elementary.miscellaneous import Rem
 
 from . import family_module_name
-from .core.measure import node_measure
+from .core.measure import count_measure, node_measure, size
 from .core.spec import Family, Identities, Rules, complete_module
 from .rules._tables import ZERO
 
@@ -129,6 +129,29 @@ def minmax_deltas(m) -> Family:
                   facts=m.FACTS, rules=m.RULES, assumed=m.ASSUMED)
 
 
+# ---- power_exp_log --------------------------------------------------------------
+
+def negative_number_base_measure(e, assumptions):
+    """``(powers of a negative number, size)``: the ordering for ``c**n -> (-c)**n``
+    rows, which must not fire for a symbolic base (SymPy's ``Pow._eval_refine``
+    rewrites ``(-x)**n`` back to ``-x**n`` for odd ``n``, a cycle)."""
+    negative = sum(1 for node in e.atoms(Pow) if node.base.is_number and node.base.is_negative)
+    return (negative, size(e))
+
+
+def power_exp_log(m) -> Family:
+    rules, zero = Rules(m.RULES), Rules([ZERO])
+    return Family({'log': (zero, Identities(m.IDENTITIES), Rules(m.LOG_RULES)),   # LOG_RULES after the identities
+                   'Pow': (rules,
+                           Identities([row for row in m.FACTS if isinstance(row[0], Pow)],
+                                      measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
+                           Identities(m.NEGATIVE_BASE, measure=negative_number_base_measure)),
+                   'exp': (zero, rules, Identities([row for row in m.FACTS if isinstance(row[0], exp)],
+                                                   measure=count_measure((exp,))))},
+                  facts=m.FACTS + m.NEGATIVE_BASE, exp_forms=m.LOG_FORMS, rules=[ZERO] + m.RULES + m.LOG_RULES,
+                  assumed=m.ASSUMED)
+
+
 WIRED: dict = {"complex_parts": complex_parts, "integer_funcs": integer_funcs, "inverse": inverse,
-               "minmax_deltas": minmax_deltas}
+               "minmax_deltas": minmax_deltas, "power_exp_log": power_exp_log}
 """The families that mix rule and identity tables: ``family -> (module -> Family)``."""
