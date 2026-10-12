@@ -110,7 +110,7 @@ ASSUMED = {~Q.zero(d),        # d is nonzero
            Q.real(t),         # t is real
            Q.imaginary(v)}    # v is imaginary
 
-FACTS: list[Row] = add_rules([   # lhs == rhs wherever the family's facts hold
+FACTS: list[Row] = add_rules(set(), [   # lhs == rhs wherever the family's facts hold
     (log(exp(z)), principal(z)),               # log inverts exp up to the principal branch
     (log(d),      log(Abs(d)) + I*arg(d)),     # definition of the complex logarithm
     (d**e,        exp(e*log(d))),              # definition of the principal power
@@ -132,42 +132,42 @@ EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain hol
     (y*r,  log(-y) + log(-r),  true),                      # ... with both signs flipped: y*r == (-y)*(-r)
 ]
 
-RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypothesis of its rows
+RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypothesis of its rows
     # Pow
-    add_rules([
+    add_rules(set(), [
         (Pow(E, x, evaluate=False), exp(x)),     # E**x is exp(x)
         ((b**a)**m, b**(a*m)),                   # (b**a)**m = b**(a*m)
     ])
-    + add_rules([
+    + add_rules({Q.nonnegative(b) | Q.extended_nonnegative(b)}, [
         ((b**p)**e, b**(p*e)),                   # ... p*log(b) real, 0**p = 0, oo**p = oo
-    ], assuming={Q.nonnegative(b) | Q.extended_nonnegative(b)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         ((p**t)**e, p**(t*e)),                   # ... t*log(p) real (sqrt(1/x) = 1/sqrt(x))
     ])
-    + add_rules([
+    + add_rules({Q.positive(n) | ~Q.zero(t) | Q.real(e)}, [
         # t**n = |t|**n; 0**n = 0 for n > 0.  At t = 0 with n < 0 it needs a real e: SymPy's
         # zoo**oo is 0 while 0**(-oo) is zoo, and zoo**(1 + I) stays while 0**(-2 - 2*I) is nan
         ((t**n)**e, Abs(t)**(n*e)),
-    ], assuming={Q.positive(n) | ~Q.zero(t) | Q.real(e)})
-    + add_rules([
+    ])
+    + add_rules({Q.extended_real(b), Q.positive(n)}, [
         ((b**n)**e, Abs(b)**(n*e)),              # ... also at b = +-oo for n > 0 ((+-oo)**n = oo)
-    ], assuming={Q.extended_real(b), Q.positive(n)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (exp(a)**m, exp(a*m)),                   # exp(a)**m = exp(a*m)
     ])
-    + add_rules([
+    + add_rules({Q.even(a/2)}, [
         ((v**a)**e, Abs(v)**(a*e)),              # (I*t)**a = t**a for a = 0 mod 4
-    ], assuming={Q.even(a/2)})
-    + add_rules([
+    ])
+    + add_rules({Q.odd(a/2)}, [
         ((v**a)**e, (-1)**e*Abs(v)**(a*e)),      # (I*t)**a = -t**a for a = 2 mod 4
-    ], assuming={Q.odd(a/2)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (Pow(S.Zero, p, evaluate=False), S.Zero),   # 0**p = 0
     ])
-    + add_rules([
+    + add_rules({Q.zero(b)}, [
         (b**q, zoo),                             # 0**q = zoo (1/x at x = 0)
-    ], assuming={Q.zero(b)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (Abs(t)**n, t**n),                       # |t|**n = t**n
         (Abs(v)**n, (-1)**(n/2)*v**n),           # |I*t|**n = (-1)**(n/2)*(I*t)**n
         ((-1)**n, S.One),                        # (-1)**even = 1
@@ -175,13 +175,13 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
     ])
     # ... the parity stated one lower: (-1)**((n + 1)/2) under a parity of (n - 1)/2
     # (ask does not shift it)
-    + add_rules([
+    + add_rules({Q.even(x - 1)}, [
         ((-1)**x, S.NegativeOne),
-    ], assuming={Q.even(x - 1)})
-    + add_rules([
+    ])
+    + add_rules({Q.odd(x - 1)}, [
         ((-1)**x, S.One),
-    ], assuming={Q.odd(x - 1)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         ((-1)**((-1)**m/2 + r), (-1)**(m + r + S.Half)),   # (-1)**m/2 = +-1/2 and (-1)**z is 2-periodic
         ((-1)**(n + r), (-1)**r),                          # (-1)**z is 2-periodic: drop even terms
         ((-1)**(k + r), (-1)**(r + 1)),                    # ... an odd term becomes 1
@@ -189,21 +189,21 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
         # exp
         (exp(m*pi*I + r), (-1)**m*exp(r)),                 # exp splits over sums; exp(I*pi*m) = (-1)**m
     ])
-    + add_rules([
+    + add_rules({Q.integer(x - S.Half)}, [
         (exp(x*pi*I + r), I*(-1)**(x - S.Half)*exp(r)),    # exp(I*pi*(m + 1/2)) = I*(-1)**m
-    ], assuming={Q.integer(x - S.Half)})
-    + add_rules([
+    ])
+    + add_rules({by_cases(~Q.zero(b), Q.positive(e))}, [
         (exp(e*log(b)), b**e),                   # the definition of Pow, folded back (the form's domain)
-    ], assuming={by_cases(~Q.zero(b), Q.positive(e))})
+    ])
 )
 
-LOG_RULES: list[Row] = add_rules([   # tried after the log identities
+LOG_RULES: list[Row] = add_rules({by_cases(~Q.zero(n), ~Q.zero(t))}, [   # tried after the log identities
     # t**n = |t|**n, and log(r**e) = e*log(r) for r > 0 and a real e.  At t = 0 both sides are
     # zoo (log(0) = log(zoo) = zoo) unless n = 0, where 0*log(0) is nan: hence n != 0 or t != 0.
     (log(t**n), n*log(Abs(t))),
-], assuming={by_cases(~Q.zero(n), ~Q.zero(t))})
+])
 
-NEGATIVE_BASE: list[Row] = add_rules([   # exact for integer n; ordered so they fire for a negative number only
+NEGATIVE_BASE: list[Row] = add_rules(set(), [   # exact for integer n; ordered so they fire for a negative number only
     (q**n, (-q)**n),                                                            # q**n = (-q)**n
     (q**k, -(-q)**k),                                                           # q**k = -(-q)**k
 ])

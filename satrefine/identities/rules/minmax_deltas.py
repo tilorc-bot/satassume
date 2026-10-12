@@ -61,14 +61,14 @@ G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(u, w), 
 ASSUMED = {Q.extended_real(u)}   # u is an extended real (Heaviside's argument)
 
 FACTS = (
-    add_rules([
+    add_rules(set(), [
         (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)))),
         (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)))),
     ])
-    + add_rules([
+    + add_rules(set(), [
         (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True))),
     ])
-    + add_rules([
+    + add_rules(set(), [
         (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
         (G(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)), (nan, True))),
     ])
@@ -76,7 +76,7 @@ FACTS = (
 
 ASSUMED |= {Q.positive_infinite(inf), Q.negative_infinite(ninf)}   # inf is oo, ninf is -oo
 
-INFINITE = add_rules([
+INFINITE = add_rules(set(), [
     # Max(oo, b) = oo and Max(-oo, b) = b for every b Max is defined at (extended real b);
     # Min likewise.  The order vocabulary proves Q.ge(a, b) from an infinite a only for an
     # extended real b, which a plain symbol is not.  (Pairs of any arity: the other
@@ -89,7 +89,7 @@ INFINITE = add_rules([
 
 ASSUMED |= {Q.nonzero(d), Q.real(t)}      # d is off the origin (nonzero: real and not 0), t is real
 
-DIRAC = add_rules([
+DIRAC = add_rules(set(), [
     # DiracDelta and all its derivatives vanish off the origin (d real, nonzero).
     (DiracDelta(d), S.Zero),
     (G(d, r), S.Zero),

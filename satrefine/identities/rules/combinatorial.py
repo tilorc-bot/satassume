@@ -1,7 +1,7 @@
 """``factorial``, ``binomial``, ``RisingFactorial``, ``FallingFactorial`` and
 ``gamma`` as rule tables.
 
-Each row is ``(lhs, rhs)`` in an ``add_rules`` block whose ``assuming=`` is
+Each row is ``(lhs, rhs)`` in an ``add_rules`` block whose ``assume`` set is
 the hypothesis of its rows, compiled by :func:`..core.rewrite.rule_handler`:
 the row fires when its hypothesis, with the facts ``ASSUMED`` about the
 variables of its left side, is provable through the dispatcher's ``ask``.  The rules are those stated in
@@ -89,14 +89,14 @@ ASSUMED = {
     Q.positive(g) | (~Q.integer(g) & Q.finite(g)),
 }
 
-SMALL_K = add_rules([
+SMALL_K = add_rules(set(), [
     # binomial(y, 0) = rf(x, 0) = ff(x, 0) = 1, for every first argument.
     (G(x, zero), S.One),
     # binomial(y, 1) = y, rf(x, 1) = ff(x, 1) = x.
     (G(x, one), x),
 ])
 
-FACTORIAL = add_rules([
+FACTORIAL = add_rules(set(), [
     # 0! = 1! = 1.
     (factorial(bit), S.One),
     # q! is a pole at every negative integer (not rewritten to gamma elsewhere).
@@ -106,31 +106,31 @@ FACTORIAL = add_rules([
 ])
 
 GAMMA = (
-    add_rules([
+    add_rules(set(), [
         # gamma(p) = (p - 1)! at positive integers (so gamma(m + 1) = m! for m >= 0).
         (gamma(p), factorial(p - 1)),
     ])
     # here n is a nonpositive integer
-    + add_rules([
+    + add_rules({Q.le(n, 0)}, [
         # gamma has a pole at every nonpositive integer (half-integers are left alone).
         (gamma(n), S.ComplexInfinity),
-    ], assuming={Q.le(n, 0)})
+    ])
 )
 
 BINOMIAL = (
     SMALL_K
-    + add_rules([
+    + add_rules({_eq(f, z)}, [
         (binomial(f, z), S.One),             # binomial(f, f) = 1
-    ], assuming={_eq(f, z)})
-    + add_rules([
+    ])
+    + add_rules({_eq(z, f - 1)}, [
         (binomial(f, z), f),                 # binomial(f, f - 1) = f
-    ], assuming={_eq(z, f - 1)})
-    + add_rules([
+    ])
+    + add_rules({Q.lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & Q.lt(y, n))}, [
         # 0 for a negative integer n whatever y is (SymPy's convention), and for
         # integers 0 <= y < n (the product y (y-1) ... hits 0).
         (binomial(y, n), S.Zero),
-    ], assuming={Q.lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & Q.lt(y, n))})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         # A pole: q a negative integer and h not an integer.
         (binomial(q, h), S.ComplexInfinity),
     ])
@@ -138,17 +138,17 @@ BINOMIAL = (
 
 RISING = (
     SMALL_K
-    + add_rules([
+    + add_rules(set(), [
         # rf(1, z) = gamma(z + 1) = z!, for every z.
         (rf(one, z), factorial(z)),
     ])
-    + add_rules([
+    + add_rules({(Q.integer(x) & Q.integer(z) & Q.le(x, 0) & Q.lt(0, x + z))
+                 | (Q.integer(x) & Q.lt(x, 0) & ~Q.integer(z))}, [
         # 0 when the product x (x+1) ... (x+z-1) contains the factor 0 (x <= 0 < x + z,
         # integers), and SymPy's 0 for a negative integer x and non-integer z.
         (rf(x, z), S.Zero),
-    ], assuming={(Q.integer(x) & Q.integer(z) & Q.le(x, 0) & Q.lt(0, x + z))
-                 | (Q.integer(x) & Q.lt(x, 0) & ~Q.integer(z))})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         # rf(g, z) = gamma(g + z)/gamma(g) where gamma(g) is finite and nonzero.
         (rf(g, z), gamma(g + z)/gamma(g)),
     ])
@@ -156,17 +156,17 @@ RISING = (
 
 FALLING = (
     SMALL_K
-    + add_rules([
+    + add_rules({_eq(x, n)}, [
         (ff(x, n), factorial(n)),            # ff(n, n) = n! for integer n (both sides zoo at negative integers)
-    ], assuming={_eq(x, n)})
-    + add_rules([
+    ])
+    + add_rules({Q.lt(m, n)}, [
         (ff(m, n), S.Zero),                  # 0 for integers 0 <= m < n
-    ], assuming={Q.lt(m, n)})
-    + add_rules([
+    ])
+    + add_rules({Q.le(n, m)}, [
         # ff(m, n) = m!/(m - n)! for integers 0 <= m, n <= m (negative n included:
         # ff(3, -2) = 1/20 = 3!/5!).
         (ff(m, n), factorial(m)/factorial(m - n)),
-    ], assuming={Q.le(n, m)})
+    ])
 )
 
 RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + [

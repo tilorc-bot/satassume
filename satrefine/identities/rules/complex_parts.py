@@ -79,7 +79,7 @@ ASSUMED = {~Q.zero(d),                     # d is nonzero
            Q.imaginary(v),                 # v is imaginary
            Q.commutative(g)}               # g commutes (a factor of a product)
 
-DEFINITIONS: list[Row] = add_rules([   # stage 0 definitions through sign
+DEFINITIONS: list[Row] = add_rules(set(), [   # stage 0 definitions through sign
     (Abs(f), f/sign(f)),                   # sign f = f/|f| (Abs(zoo) is oo)
     (arg(d), -I*log(sign(d))),             # sign d = exp(I*arg d), arg in (-pi, pi]
 ])
@@ -90,13 +90,13 @@ DEFINITIONS: list[Row] = add_rules([   # stage 0 definitions through sign
 # imaginary or signed argument stay stated: a definition through conjugate would lose
 # them for products (SymPy distributes conjugate(x*y) before Q.real(x*y) can apply).
 
-FACTS: list[Row] = DEFINITIONS + add_rules([
+FACTS: list[Row] = DEFINITIONS + add_rules(set(), [
     (Abs(exp(z), evaluate=False), exp(re(z))),                         # |exp z| = exp(re z) (SymPy evaluates the lhs)
     (arg(exp(z)),       im(z) + 2*pi*floor(S.Half - im(z)/(2*pi))),    # arg(exp z) = im z wrapped onto (-pi, pi]
     (arg(conjugate(w)), -arg(w) + 2*pi*floor(S.Half + arg(w)/(2*pi))), # arg is odd off the negative axis (nan at 0 on both sides)
 ])
 
-SPLITS: list[Row] = add_rules([   # an exact multiplicative identity; the ordering demands progress
+SPLITS: list[Row] = add_rules(set(), [   # an exact multiplicative identity; the ordering demands progress
     (sign(y*r),        sign(y)*sign(r)),                 # sign is multiplicative
 ])
 # conjugate needs no split rows: SymPy distributes conjugate over sums and products on
@@ -105,20 +105,20 @@ SPLITS: list[Row] = add_rules([   # an exact multiplicative identity; the orderi
 _IM_POSITIVE = Q.positive(im(v)) | Q.positive(-I*v)   # the two spellings of "on the positive imaginary axis"
 _IM_NEGATIVE = Q.negative(im(v)) | Q.negative(-I*v)
 
-RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypothesis of its rows
+RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypothesis of its rows
     # Abs, re, im under sign facts
     # (the sign rows are stated over the extended reals: they hold at +-oo, where
     # Abs(+-oo) = oo, re(+-oo) = +-oo, im(+-oo) = 0, sign(+-oo) = +-1, conjugate(+-oo) = +-oo,
     # and a one-sided bound such as Q.gt(a, 1) proves only the extended signs: issue #10, B1-B7.
     # The finite predicate is kept first: SymPy's ask proves Q.real(sin(x)) for a real x but
     # not Q.extended_real(sin(x)), whose handler goes by signs)
-    add_rules([
+    add_rules({Q.nonnegative(a) | Q.extended_nonnegative(a)}, [
         (Abs(a), a),                             # |a| = a for a >= 0 (also a = oo)
-    ], assuming={Q.nonnegative(a) | Q.extended_nonnegative(a)})
-    + add_rules([
+    ])
+    + add_rules({Q.nonpositive(a) | Q.extended_nonpositive(a)}, [
         (Abs(a), -a),                            # |a| = -a for a <= 0 (also a = -oo)
-    ], assuming={Q.nonpositive(a) | Q.extended_nonpositive(a)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (re(u), u),                              # re u = u
         (im(u), S.Zero),                         # im u = 0
         (re(v), S.Zero),                         # re v = 0
@@ -130,46 +130,46 @@ RULES: list[Row] = (   # conditional rewrites: a block's assuming= is the hypoth
         (im(vs*w), -I*vs*im(I*w)),               # im(vs*w) = (-i*vs)*im(i*w), imaginary vs
     ])
     # sign
-    + add_rules([
+    + add_rules({Q.positive(a) | Q.extended_positive(a)}, [
         (sign(a), S.One),                        # sign a = 1 for a > 0 (also a = oo)
-    ], assuming={Q.positive(a) | Q.extended_positive(a)})
-    + add_rules([
+    ])
+    + add_rules({Q.negative(a) | Q.extended_negative(a)}, [
         (sign(a), S.NegativeOne),                # sign a = -1 for a < 0 (also a = -oo)
-    ], assuming={Q.negative(a) | Q.extended_negative(a)})
-    + add_rules([
+    ])
+    + add_rules({_IM_POSITIVE}, [
         (sign(v), I),                            # sign(i*t) = i for t > 0
-    ], assuming={_IM_POSITIVE})
-    + add_rules([
+    ])
+    + add_rules({_IM_NEGATIVE}, [
         (sign(v), -I),                           # sign(i*t) = -i for t < 0
-    ], assuming={_IM_NEGATIVE})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (sign(Abs(d)), S.One),                   # sign|d| = 1
     ])
-    + add_rules([
+    + add_rules({Q.real(z)}, [
         (sign(exp(z)), S.One),                   # sign(exp z) = 1 for real z
-    ], assuming={Q.real(z)})
+    ])
     # conjugate
-    + add_rules([
+    + add_rules(set(), [
         (conjugate(u), u),                                        # conjugate u = u
         (conjugate(v), -v),                                       # conjugate v = -v
         (conjugate(exp(z), evaluate=False), exp(conjugate(z))),   # conjugate(exp z) = exp(conjugate z) (SymPy evaluates the lhs)
         (conjugate(b**n), conjugate(b)**n),                       # conjugate(b**n) = conjugate(b)**n
     ])
-    + add_rules([
+    + add_rules({Q.positive(b)}, [
         (conjugate(b**e), b**conjugate(e)),      # conjugate(b**e) = b**conjugate(e), b > 0
-    ], assuming={Q.positive(b)})
+    ])
     # Mul
-    + add_rules([
+    + add_rules(set(), [
         (g*conjugate(g), Abs(g)**2),                  # g*conjugate(g) = |g|**2
         (g**n*conjugate(g)**n, Abs(g)**(2*n)),        # ... and for integer powers
     ])
-    + add_rules([
+    + add_rules({Q.positive(m), Q.positive(h - m)}, [
         (g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m)),             # ... unequal positive powers, the higher one g's
-    ], assuming={Q.positive(m), Q.positive(h - m)})
-    + add_rules([
+    ])
+    + add_rules({Q.positive(h), Q.positive(m - h)}, [
         (g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h)),  # ... or conjugate(g)'s
-    ], assuming={Q.positive(h), Q.positive(m - h)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (f*zoo, zoo),                                 # zoo absorbs a nonzero finite factor
         ((-1)**a*(-1)**e, (-1)**(a + e)),             # (-1)**a = exp(I*pi*a): the powers of -1 combine
     ])

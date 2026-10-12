@@ -17,7 +17,8 @@ from ..core.match import exponent, part
 from ..core.measure import count_measure, node_measure, size
 from ..core.prove import by_cases
 from ..core.rewrite import Row
-from ..core.spec import Family, Identities, Rules, assume
+from ..core.spec import Family, Identities, Rules
+from ..core.spec import assume as _assume_row
 from ._wraps import principal
 
 __all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "add_rules", "by_cases", "count_measure", "derive", "exponent",
@@ -45,10 +46,10 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
     return rows
 
 
-def add_rules(rows: list, assuming=()) -> list[Row]:
-    """``rows`` with the facts in ``assuming`` added to the condition of each row whose
+def add_rules(assume, rows: list) -> list[Row]:
+    """``rows`` with the facts in ``assume`` added to the condition of each row whose
     left side holds all their variables, on top of the family's ``ASSUMED``: the
     hypotheses of these rows ("here n is even", "for 0 <= a < d").  A row fires only
     where its hypotheses are proved.  The rows returned are ordinary rows, so a row
     keeps its facts in every table it is reused in."""
-    return [assume(row, assuming) for row in rows]
+    return [_assume_row(row, assume) for row in rows]

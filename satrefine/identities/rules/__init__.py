@@ -2,8 +2,8 @@
 
 Each family states its standing facts in an ``ASSUMED`` set (see
 :class:`..core.spec.Family`), so a letter carries its assumptions, and every
-table is built with ``add_rules(rows, assuming=...)``, whose facts are the
-hypotheses of those rows only.  Rows are ``(lhs, rhs)``.  A letter means the
+table is built with ``add_rules(assume, rows)``, whose facts (``set()`` for
+none) are the hypotheses of those rows only.  Rows are ``(lhs, rhs)``.  A letter means the
 same in every family; a family may add facts to a reserved letter (``n`` even,
 ``p`` a positive integer), said at its ``ASSUMED`` line, but never contradict
 it.  Arbitrary letters get no facts in ``ASSUMED``; an ``add_rules`` block may

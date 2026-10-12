@@ -59,7 +59,7 @@ ASSUMED |= {integer(h) | Q.infinite(h)}
 ASSUMED |= {Q.integer(m),
             Eq(g, floor(w)) | Eq(g, m*floor(w)) | Eq(g, ceiling(w)) | Eq(g, m*ceiling(w))}
 
-FLOOR = add_rules([
+FLOOR = add_rules(set(), [
     (floor(h), h),                       # floor(3) = 3, floor(oo) = oo
     (floor(n + x), floor(x) + n),        # floor(x + 3) = floor(x) + 3
     # g moves out as n does, for any w: floor(w) is an integer or, for an infinite w, w
@@ -69,13 +69,13 @@ FLOOR = add_rules([
     (floor(g + x), floor(x) + g),
 ])
 
-CEILING = add_rules([
+CEILING = add_rules(set(), [
     (ceiling(h), h),
     (ceiling(n + x), ceiling(x) + n),
     (ceiling(g + x), ceiling(x) + g),
 ])
 
-FRAC = add_rules([
+FRAC = add_rules(set(), [
     (frac(n + x), frac(x)),              # frac(x + 3) = frac(x)
 ])
 
@@ -83,7 +83,7 @@ FRAC = add_rules([
 # at +-oo, where frac is AccumBounds(0, 1).
 ASSUMED |= {by_cases(Q.finite(f), Q.real(f), integer(f))}
 
-FRAC_DEFINITION = add_rules([
+FRAC_DEFINITION = add_rules(set(), [
     (frac(f), f - floor(f)),             # gives frac(3) = 0 and frac(f) = f - n on [n, n + 1)
 ])
 
@@ -94,60 +94,60 @@ FRAC_DEFINITION = add_rules([
 ASSUMED |= {Q.zero(zero)}
 
 MOD = (
-    add_rules([
+    add_rules({Q.integer(a/d)}, [
         (Mod(a, d), S.Zero),                     # Mod(6, 3) = 0
-    ], assuming={Q.integer(a/d)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (Mod(zero, b), S.Zero),                  # Mod(0, b) = 0
     ])
-    + add_rules([
+    + add_rules({Q.integer(c/d)}, [
         (Mod(c + x, d), Mod(x, d)),              # Mod(x + 6, 3) = Mod(x, 3)
-    ], assuming={Q.integer(c/d)})
+    ])
     # for 0 <= a < b or b < a <= 0, b finite: a relation holds on the extended reals, so
     # Q.lt(a, b) allows b = oo, where Mod(a, oo) is nan (issue #10, B12)
-    + add_rules([
+    + add_rules({Q.finite(b) & ((Q.nonnegative(a) & Q.lt(a, b)) | (Q.nonpositive(a) & Q.lt(b, a)))}, [
         (Mod(a, b), a),
-    ], assuming={Q.finite(b) & ((Q.nonnegative(a) & Q.lt(a, b)) | (Q.nonpositive(a) & Q.lt(b, a)))})
+    ])
     # for a and b of the same sign; never the reverse rewrite, so Mod and Rem cannot loop
-    + add_rules([
+    + add_rules({(Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))}, [
         (Mod(a, b), Rem(a, b)),
-    ], assuming={(Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))})
+    ])
 )
 
 # Rem(a, b) = a for |a| < |b|, one row per way the signs can be known
 REM = (
-    add_rules([
+    add_rules({Q.integer(a/d)}, [
         (Rem(a, d), S.Zero),                     # Rem(6, 3) = 0
-    ], assuming={Q.integer(a/d)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (Rem(zero, b), S.Zero),                  # Rem(0, b) = 0
     ])
     # 0 <= a < |b|, b finite (Rem(a, +-oo) is nan, as for Mod)
-    + add_rules([
+    + add_rules({Q.finite(b) & Q.nonnegative(a) & (Q.lt(a, b) | Q.lt(a, -b))}, [
         (Rem(a, b), a),
-    ], assuming={Q.finite(b) & Q.nonnegative(a) & (Q.lt(a, b) | Q.lt(a, -b))})
+    ])
     # -|b| < a <= 0, b finite
-    + add_rules([
+    + add_rules({Q.finite(b) & Q.nonpositive(a) & (Q.lt(-b, a) | Q.lt(b, a))}, [
         (Rem(a, b), a),
-    ], assuming={Q.finite(b) & Q.nonpositive(a) & (Q.lt(-b, a) | Q.lt(b, a))})
+    ])
     # -b < a < b
-    + add_rules([
+    + add_rules({Q.positive(b) & Q.lt(-b, a) & Q.lt(a, b)}, [
         (Rem(a, b), a),
-    ], assuming={Q.positive(b) & Q.lt(-b, a) & Q.lt(a, b)})
+    ])
     # b < a < -b
-    + add_rules([
+    + add_rules({Q.negative(b) & Q.lt(b, a) & Q.lt(a, -b)}, [
         (Rem(a, b), a),
-    ], assuming={Q.negative(b) & Q.lt(b, a) & Q.lt(a, -b)})
+    ])
 )
 
 # At a half period (a/d = n + 1/2, 2*a/d odd): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2
 # by the sign of a/d.  Identity rows: they fire once the assumptions decide sign(a/d).
-MOD_HALF = add_rules([
+MOD_HALF = add_rules({Q.odd(2*a/d)}, [
     (Mod(a, d), d*Mod(sign(a/d), 2)/2),          # Mod(+-1, 2) = 1
-], assuming={Q.odd(2*a/d)})
-REM_HALF = add_rules([
+])
+REM_HALF = add_rules({Q.odd(2*a/d)}, [
     (Rem(a, d), sign(a/d)*d/2),
-], assuming={Q.odd(2*a/d)})
+])
 
 FACTS = FRAC_DEFINITION + MOD_HALF + REM_HALF
 RULES = FLOOR + CEILING + FRAC + MOD + REM

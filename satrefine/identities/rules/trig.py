@@ -48,28 +48,28 @@ ASSUMED = {Q.integer(k), ~Q.zero(k),              # k is a nonzero integer (sinc
            Q.infinite(u), Q.extended_real(u)}     # u is extended real, here infinite: +-oo
 
 RULES: list[Row] = (   # the argument is n*pi/2 + r
-    add_rules([        # n even: the function itself, sin(r + m*pi) = (-1)**m sin r
+    add_rules({Q.even(n)}, [  # n even: the function itself, sin(r + m*pi) = (-1)**m sin r
         (sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),
         (cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),
         (sec(n*pi/2 + r), (-1)**(n/2)*sec(r)),        # sec = 1/cos
         (csc(n*pi/2 + r), (-1)**(n/2)*csc(r)),        # csc = 1/sin
         (tan(n*pi/2 + r), tan(r)),                    # tan has period pi
         (cot(n*pi/2 + r), cot(r)),                    # cot has period pi
-    ], assuming={Q.even(n)})
-    + add_rules([      # n odd: the cofunction, sin(r + pi/2 + m*pi) = (-1)**m cos r
+    ])
+    + add_rules({Q.odd(n)}, [  # n odd: the cofunction, sin(r + pi/2 + m*pi) = (-1)**m cos r
         (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r)),
         (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r)),  # cos(r + pi/2 + m*pi) = -(-1)**m sin r
         (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r)),  # (one power of -1: SymPy's form)
         (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r)),
         (tan(n*pi/2 + r), -cot(r)),                   # tan(r + pi/2) = -cot r
         (cot(n*pi/2 + r), -tan(r)),                   # cot(r + pi/2) = -tan r
-    ], assuming={Q.odd(n)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),  # sinc x = sin x / x, x != 0
     ])
 )
 
-BOUNDED: list[Row] = add_rules([
+BOUNDED: list[Row] = add_rules(set(), [
     (F(u), AccumBounds(-1, 1)),   # sin, cos of a real infinity (SymPy's value)
 ])
 
