@@ -1,19 +1,4 @@
-"""``sin``, ``cos``, ``tan``, ``cot``, ``sec``, ``csc`` and ``sinc`` as tables.
-
-The family is its periodicity table.  An argument ``n*pi/2 + r`` (``n`` the
-whole coefficient of ``pi/2``) is ``n`` quarter turns from ``r``.  For ``n``
-even the function keeps its form with sign ``(-1)**(n/2)``; for ``n`` odd it
-becomes its cofunction.  The signs collapse through the ``Pow`` rules once
-``n`` mod 4 is known.  ``r = 0`` needs no row of its own: ``sin(0)``,
-``cos(0)``, ... evaluate.
-
-At a pole the result is ``(-1)**m*zoo``, which the complex-parts ``Mul`` row
-(``zoo`` absorbs a nonzero finite factor) turns into ``zoo``.
-
-Not covered: ``sinc`` shifted by a nonzero remainder (no simpler form),
-``AccumBounds`` for tan/cot/sec/csc at infinity, and imaginary shifts
-(hyperbolic family).
-"""
+"""``sin``, ``cos``, ``tan``, ``cot``, ``sec``, ``csc`` and ``sinc``: shifts by multiples of ``pi/2``."""
 from __future__ import annotations
 
 from sympy import Q, cos, cot, csc, pi, sec, sin, sinc, symbols, tan
@@ -21,39 +6,34 @@ from sympy.calculus.accumulationbounds import AccumBounds
 
 from ._tables import ZERO, Row, add_rules
 
-# n has no standing facts: each block's hypothesis gives its parity (and so integrality).
 n, r, k, zero, u = symbols('n r k zero u')
 
-ASSUMED = {Q.integer(k), ~Q.zero(k),              # k: a nonzero integer (sinc at a multiple)
+ASSUMED = {Q.integer(k), ~Q.zero(k),
            Q.zero(zero),
-           Q.infinite(u), Q.extended_real(u)}     # u: +-oo
+           Q.infinite(u), Q.extended_real(u)}
 
-# Signs are a single power of -1 (not -(-1)**...), so the output stays one power.
 RULES: list[Row] = (
-    [ZERO]   # f(x) = f(0) when x is zero
-    + add_rules({Q.even(n)}, [  # m = n/2:  sin(r + m*pi) = (-1)**m sin r
+    [ZERO]
+    + add_rules({Q.even(n)}, [
         (sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),
         (cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),
         (sec(n*pi/2 + r), (-1)**(n/2)*sec(r)),
         (csc(n*pi/2 + r), (-1)**(n/2)*csc(r)),
-        (tan(n*pi/2 + r), tan(r)),                    # tan, cot have period pi
+        (tan(n*pi/2 + r), tan(r)),
         (cot(n*pi/2 + r), cot(r)),
     ])
-    + add_rules({Q.odd(n)}, [  # m = (n - 1)/2:  sin(r + pi/2 + m*pi) = (-1)**m cos r
+    + add_rules({Q.odd(n)}, [
         (sin(n*pi/2 + r), (-1)**((n - 1)/2)*cos(r)),
-        (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r)),  # cos(r + pi/2 + m*pi) = -(-1)**m sin r
+        (cos(n*pi/2 + r), (-1)**((n + 1)/2)*sin(r)),
         (sec(n*pi/2 + r), (-1)**((n + 1)/2)*csc(r)),
         (csc(n*pi/2 + r), (-1)**((n - 1)/2)*sec(r)),
-        (tan(n*pi/2 + r), -cot(r)),                   # tan(r + pi/2) = -cot r
-        (cot(n*pi/2 + r), -tan(r)),                   # cot(r + pi/2) = -tan r
+        (tan(n*pi/2 + r), -cot(r)),
+        (cot(n*pi/2 + r), -tan(r)),
     ])
     + add_rules(set(), [
-        # `+ zero` gives the engine's n*pi/2 + r pattern form (so sinc(k*pi) and
-        # sinc(x + 3*pi/2) with x = 0 bind) with the remainder forced to 0 by ASSUMED: the row
-        # fires only at exact multiples of pi/2.  Bare sinc(k*pi/2) matches only that literal.
         (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),
     ])
-    + add_rules(set(), [   # of a real infinity (SymPy's value)
+    + add_rules(set(), [
         (sin(u), AccumBounds(-1, 1)),
         (cos(u), AccumBounds(-1, 1)),
     ])
