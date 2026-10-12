@@ -31,6 +31,9 @@ ROWS = [
     (cos(k*pi), EVEN, S.One, "same"), (cos(2*k*pi), INT, S.One, "same"),
     (tan(k*pi), INT, S.Zero, "same"), (cot(k*pi), INT, zoo, "same"),
     (cos(x + n*pi/2 + k*pi), Q.integer(n) & ODD, -cos(x + n*pi/2), "same"),
+    # The trig.py sinc row is written sinc(k*pi/2 + zero), with `zero` assumed to be 0. The
+    # extra term is needed: the engine matches arguments as "multiple of pi/2 plus a
+    # remainder", and plain sinc(k*pi/2) would not match these four cases.
     (sinc(k*pi), INT & Q.nonzero(k), S.Zero, "same"), (sinc(2*k*pi), INT & Q.nonzero(k), S.Zero, "same"),
     (sinc(x + pi/2), Q.zero(x), 2/pi, "same"), (sinc(x + 3*pi/2), Q.zero(x), -2/(3*pi), "same"),
     (sin(x), Q.zero(x), S.Zero, "same"), (cos(x), Q.zero(x), S.One, "same"), (cot(x), Q.zero(x), zoo, "same"),
@@ -57,6 +60,7 @@ def test_relation_to_team(expr, assumptions, team, relation):
 
 
 def test_odd_sec_shift_is_one_power_of_minus_one():
-    # The odd sec row is written (-1)**((n + 1)/2)*csc(r), not -(-1)**((n - 1)/2)*csc(r);
-    # "same" above compares up to simplify, so pin the exact form here.
+    """The odd cos and sec rows in trig.py could also be written with -(-1)**((n - 1)/2).
+    That is the same value, but refine returns the row's right side as written, and that
+    form would give users -(-1)**(k/2 + 3/2)*csc(x) instead of this simpler result."""
     assert refine(sec(x + k*pi/2), ODD) == (-1)**((k + 1)/2)*csc(x)
