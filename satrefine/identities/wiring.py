@@ -16,7 +16,8 @@ from __future__ import annotations
 import importlib
 from functools import cache
 
-from sympy import Abs, Mod, arg, floor, frac, im, re, sign
+from sympy import (Abs, Mod, Piecewise, acos, acoth, acsch, arg, asin, asinh, atan, atan2, atanh, floor, frac, im, re,
+                   sign)
 from sympy.core import Mul
 from sympy.functions.elementary.miscellaneous import Rem
 
@@ -94,5 +95,20 @@ def integer_funcs(m) -> Family:
                   facts=m.FACTS, rules=m.RULES, assumed=m.ASSUMED)
 
 
-WIRED: dict = {"complex_parts": complex_parts, "integer_funcs": integer_funcs}
+# ---- inverse --------------------------------------------------------------------
+
+def inverse(m) -> Family:
+    rules = Rules([ZERO] + m.RULES)
+
+    def identity(head, opaque=(floor, im)):
+        return Identities(_headed(m.FACTS, head), measure=node_measure((head,)), opaque=opaque)
+
+    return Family({**{head.__name__: (rules, identity(head))
+                      for head in (asin, acos, atan, asinh, atanh, acoth, acsch)},
+                   'acosh': rules, 'asech': rules,
+                   'atan2': identity(atan2, opaque=(floor, im, Piecewise))},
+                  facts=m.FACTS, rules=[ZERO] + m.RULES, ranges=m.RANGES, assumed=m.ASSUMED)
+
+
+WIRED: dict = {"complex_parts": complex_parts, "integer_funcs": integer_funcs, "inverse": inverse}
 """The families that mix rule and identity tables: ``family -> (module -> Family)``."""
