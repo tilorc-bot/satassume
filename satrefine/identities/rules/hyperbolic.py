@@ -19,9 +19,7 @@ from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
 from ._tables import ZERO, Row, add_rules
 
-# n has no standing facts: each block's hypothesis gives its parity (and so integrality).
-n, r = symbols('n r')
-ASSUMED: set = set()
+n, r = symbols('n r')   # each block's hypothesis gives n's parity (and so integrality)
 
 RULES: list[Row] = (
     [ZERO]   # f(x) = f(0) when x is zero
