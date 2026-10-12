@@ -82,17 +82,14 @@ z, b, e, y, r, x, a = symbols('z b e y r x a')
 d, k, m, n, p, q, t, v = symbols('d k m n p q t v')
 h = part('h', lambda t: S(bool(t.is_Rational)))   # the rational constant of a sum (never a symbol: Mod must evaluate)
 
-# Assumed throughout: a row takes each fact whose variables are all in its left side.
-ASSUMED = {~Q.zero(d),
-           Q.integer(m),
-           Q.even(n),
+# Assumed throughout (n, k and t are used all over the Pow and log tables): a row takes
+# each fact whose variables are all in its left side.  The other letters' facts are
+# stated in the blocks that use them.
+ASSUMED = {Q.even(n),
            Q.odd(k),          # (so nonzero)
-           Q.positive(p),
-           Q.negative(q),
-           Q.real(t),
-           Q.imaginary(v)}
+           Q.real(t)}
 
-FACTS: list[Row] = add_rules(set(), [   # lhs == rhs wherever the family's facts hold
+FACTS: list[Row] = add_rules({~Q.zero(d)}, [   # lhs == rhs wherever the family's facts hold
     (log(exp(z)), principal(z)),               # log inverts exp up to the principal branch
     (log(d),      log(Abs(d)) + I*arg(d)),     # definition of the complex logarithm
     (d**e,        exp(e*log(d))),              # definition of the principal power
@@ -116,14 +113,14 @@ EXP_FORMS: list[Row] = [   # (L, W, domain): L == exp(W) wherever the domain hol
 
 RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypothesis of its rows
     # Pow
-    add_rules(set(), [
+    add_rules({Q.integer(m)}, [
         (Pow(E, x, evaluate=False), exp(x)),
         ((b**a)**m, b**(a*m)),
     ])
-    + add_rules({Q.nonnegative(b) | Q.extended_nonnegative(b)}, [
+    + add_rules({Q.positive(p), Q.nonnegative(b) | Q.extended_nonnegative(b)}, [
         ((b**p)**e, b**(p*e)),                   # ... p*log(b) real, 0**p = 0, oo**p = oo
     ])
-    + add_rules(set(), [
+    + add_rules({Q.positive(p)}, [
         ((p**t)**e, p**(t*e)),                   # ... t*log(p) real (sqrt(1/x) = 1/sqrt(x))
     ])
     + add_rules({Q.positive(n) | ~Q.zero(t) | Q.real(e)}, [
@@ -134,22 +131,22 @@ RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypot
     + add_rules({Q.extended_real(b), Q.positive(n)}, [
         ((b**n)**e, Abs(b)**(n*e)),              # ... also at b = +-oo for n > 0 ((+-oo)**n = oo)
     ])
-    + add_rules(set(), [
+    + add_rules({Q.integer(m)}, [
         (exp(a)**m, exp(a*m)),
     ])
-    + add_rules({Q.even(a/2)}, [
+    + add_rules({Q.imaginary(v), Q.even(a/2)}, [
         ((v**a)**e, Abs(v)**(a*e)),              # (I*t)**a = t**a for a = 0 mod 4
     ])
-    + add_rules({Q.odd(a/2)}, [
+    + add_rules({Q.imaginary(v), Q.odd(a/2)}, [
         ((v**a)**e, (-1)**e*Abs(v)**(a*e)),      # (I*t)**a = -t**a for a = 2 mod 4
     ])
-    + add_rules(set(), [
+    + add_rules({Q.positive(p)}, [
         (Pow(S.Zero, p, evaluate=False), S.Zero),
     ])
-    + add_rules({Q.zero(b)}, [
+    + add_rules({Q.negative(q), Q.zero(b)}, [
         (b**q, zoo),                             # 0**q = zoo (1/x at x = 0)
     ])
-    + add_rules(set(), [
+    + add_rules({Q.imaginary(v)}, [
         (Abs(t)**n, t**n),
         (Abs(v)**n, (-1)**(n/2)*v**n),           # |I*t|**n = (-1)**(n/2)*(I*t)**n
         ((-1)**n, S.One),
@@ -163,7 +160,7 @@ RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypot
     + add_rules({Q.odd(x - 1)}, [
         ((-1)**x, S.One),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.integer(m)}, [
         ((-1)**((-1)**m/2 + r), (-1)**(m + r + S.Half)),   # (-1)**m/2 = +-1/2 and (-1)**z is 2-periodic
         ((-1)**(n + r), (-1)**r),                          # (-1)**z is 2-periodic: drop even terms
         ((-1)**(k + r), (-1)**(r + 1)),                    # ... an odd term becomes 1
@@ -185,7 +182,7 @@ LOG_RULES: list[Row] = add_rules({by_cases(~Q.zero(n), ~Q.zero(t))}, [   # tried
     (log(t**n), n*log(Abs(t))),
 ])
 
-NEGATIVE_BASE: list[Row] = add_rules(set(), [   # exact for integer n; ordered so they fire for a negative number only
+NEGATIVE_BASE: list[Row] = add_rules({Q.negative(q)}, [   # exact for integer n; ordered so they fire for a negative number only
     (q**n, (-q)**n),
     (q**k, -(-q)**k),
 ])
