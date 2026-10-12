@@ -99,7 +99,7 @@ Layout rules, checked by `tests/refine_identities/test_import_direction.py` and
 ## Families as data
 
 A family module (`rules/*.py`, `compat/matrices.py`) states rows only: its
-symbols, `ASSUMED` and named tables. Its `Family` (`core/spec.py`), which
+symbols, named tables and, if it needs one, `ASSUMED`. Its `Family` (`core/spec.py`), which
 handlers serve which `handlers_dict` key, is made in `identities/wiring.py`:
 for a family of rule rows only (trig, hyperbolic, combinatorial, matrices)
 `Family.from_rows` derives it from `RULES`, each key getting the rows of its
@@ -124,15 +124,20 @@ hyperbolic, combinatorial and matrices are plain rule tables.
 
 **Hypotheses** are stated as in a maths text:
 
-- `ASSUMED`, a set of facts per family, says once what a letter is: a fact
-  joins the condition of every row whose left side holds all its variables
+- A block's facts about its letters are in its `add_rules` set (below), so
+  each block reads on its own; a letter used by a few blocks has its facts
+  repeated in each. `ASSUMED`, an optional set of facts per family, is for
+  letters that run through many blocks of a family: a fact joins the
+  condition of every row whose left side holds all its variables
   (`spec.assume`). A fact `Eq(g, e1) | Eq(g, e2)` is a definition: each row
-  holding `g` becomes one row per `e`. The letter convention (`t` real, `u`
-  extended real, `n` integer, `d` nonzero, `v` imaginary, ...) is in
-  `rules/__init__.py`. SymPy's symbol assumptions cannot do this:
-  `floor(n + x)` with `Symbol('n', integer=True)` evaluates when written, and
-  SymPy's integers exclude the Gaussian integers `integer_funcs` needs.
-- `add_rules(rows, assuming=...)` gives a block of `(lhs, rhs)` rows their own
+  holding `g` becomes one row per `e`, so definitions (and facts about the
+  letters they introduce) are always in `ASSUMED`. The usual letter names
+  (`t` real, `u` extended real, `n` integer, `d` nonzero, `v` imaginary, ...)
+  are in `rules/__init__.py`, as a reading aid: every fact is stated. SymPy's
+  symbol assumptions cannot do this: `floor(n + x)` with
+  `Symbol('n', integer=True)` evaluates when written, and SymPy's integers
+  exclude the Gaussian integers `integer_funcs` needs.
+- `add_rules(assume, rows)` gives a block of `(lhs, rhs)` rows their own
   hypothesis ("for 0 <= a < b") and returns complete rows, so the engine, the
   generator and the tools see exactly the conditions that apply.
 - Order hypotheses are the relation alone (`Q.lt(u, v)`), which satassume

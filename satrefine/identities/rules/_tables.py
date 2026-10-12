@@ -46,7 +46,7 @@ def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
 
 def add_rules(assume, rows: list) -> list[Row]:
     """``rows`` with the facts in ``assume`` added to the condition of each row whose
-    left side holds all their variables, on top of the family's ``ASSUMED``: the
+    left side holds all their variables, on top of the family's ``ASSUMED`` (if any): the
     hypotheses of these rows ("here n is even", "for 0 <= a < d").  A row fires only
     where its hypotheses are proved.  The rows returned are ordinary rows, so a row
     keeps its facts in every table it is reused in."""

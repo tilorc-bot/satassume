@@ -38,7 +38,7 @@ scoreboard counts: ``FACTS`` (identity rows about the family's own
 functions), ``EXP_FORMS`` (exponential forms of other heads, reusable),
 ``RULES`` (plain conditional rows), ``RANGES`` (ranges of bounded heads) and
 further named tables (the names label the rows of the generated modules),
-and its standing facts in ``ASSUMED``; nothing else.  Which parts
+and any standing facts in ``ASSUMED``; nothing else.  Which parts
 (:class:`.core.spec.Rules`, :class:`.core.spec.Identities`) serve which
 ``handlers_dict`` key, and the tables classified into those kinds, is the
 family's spec (:mod:`.wiring`).  Importing a family registers nothing.

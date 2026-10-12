@@ -1,17 +1,24 @@
 """The rule families (one module per family) and the helpers their tables share.
 
-A family module holds rows only: its symbols, ``ASSUMED`` and its tables.
-Which handlers serve which key is :mod:`..wiring` (derived from the rows for a
-family of rule rows only).
+A family module holds rows only: its symbols, its tables and, when it needs
+one, ``ASSUMED``.  Which handlers serve which key is :mod:`..wiring` (derived
+from the rows for a family of rule rows only).
 
-Each family states its standing facts in an ``ASSUMED`` set (see
-:class:`..core.spec.Family`), so a letter carries its assumptions, and every
-table is built with ``add_rules(assume, rows)``, whose facts (``set()`` for
-none) are the hypotheses of those rows only.  Rows are ``(lhs, rhs)``.  A letter means the
-same in every family; a family may add facts to a reserved letter (``n`` even,
-``p`` a positive integer), said at its ``ASSUMED`` line, but never contradict
-it.  Arbitrary letters get no facts in ``ASSUMED``; an ``add_rules`` block may
-state any hypothesis about its rows ("for 0 <= a < d"):
+Every table is built with ``add_rules(assume, rows)``, and a block's facts
+(``set()`` for none) are stated where its rows are: ``assume`` holds the
+facts about the letters the block uses ("for k a nonzero integer", "for 0 <=
+a < d"), each added to the condition of every row of the block whose left
+side holds all its variables.  Rows are ``(lhs, rhs)``.  A letter used by a
+few blocks has its facts repeated in each, so every block reads on its own.
+``ASSUMED`` (see :class:`..core.spec.Family`) is for what a block cannot
+state or should not repeat: facts about a letter that runs through many of
+the family's blocks, and definitions ``Eq(g, e1) | Eq(g, e2)``, which expand
+a row into one row per form (the facts about the letters of those forms stay
+in ``ASSUMED`` too).  A module without ``ASSUMED`` has no standing facts.
+
+Letters are usually named as below (a block may narrow one: ``n`` even, ``p`` a
+positive integer), as a reading aid only: a letter's facts are always stated, in
+its block or in ``ASSUMED``, never implied by its name.
 
 ==============================  ================================================
 ``x``, ``y``, ``z``, ``w``      arbitrary values: no facts
@@ -28,7 +35,7 @@ state any hypothesis about its rows ("for 0 <= a < d"):
 ``v``                           imaginary
 ``zero``, ``one``, ``inf``,     a symbol standing for one value (0, 1, +oo, -oo)
 ``ninf``
-``f``, ``g``, ``h``, ``l``      one-off roles, said at their ``ASSUMED`` line (or
+``f``, ``g``, ``h``, ``l``      one-off roles, said where their facts are stated (or
                                 a short descriptive name when a family needs more)
 capitals                        matrices, named for their property (``S``
                                 symmetric, ``D`` diagonal, ``O`` orthogonal, ...)

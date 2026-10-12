@@ -1,7 +1,7 @@
 """A family as data: which table handlers serve which keys, and the tables it states.
 
 A family module (``rules/*.py``, ``compat/matrices.py``) states rows only: its
-symbols, its ``ASSUMED`` facts and module-level tables (the maths; the names
+symbols, any ``ASSUMED`` facts and module-level tables (the maths; the names
 label the rows in the generated modules' derivation comments and are what the
 tools read).  Which handlers serve which key is a :class:`Family`, made by
 :func:`satrefine.identities.wiring.family_spec`: :meth:`Family.from_rows` for
