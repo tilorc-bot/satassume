@@ -51,33 +51,16 @@ def _eq(u, v):
 
 bit, f, g, h, inf, m, n, one, p, q, zero = symbols('bit f g h inf m n one p q zero')
 
-# Assumed throughout: a row takes each fact whose variables are all in its left side.
-ASSUMED = {
-    _eq(zero, 0),
-    _eq(one, 1),
-    _eq(bit, 0) | _eq(bit, 1),
-    Q.integer(n),
-    ~Q.integer(h),
-    Q.integer(q) & Q.lt(q, 0),
-    Q.integer(m) & Q.nonnegative(m),
-    Q.integer(p) & Q.lt(0, p),
-    Q.positive_infinite(inf),
-    # f is nonnegative or a finite non-integer: not a negative integer (binomial(-1, -1) = 0)
-    # and not infinite (binomial(oo, oo) = nan, and oo is not an integer)
-    Q.nonnegative(f) | (~Q.integer(f) & Q.finite(f)),
-    # g is positive or a finite non-integer: gamma(g) is finite and nonzero (never a
-    # nonpositive integer: rf(-2, 2) = 2; never oo: rf(oo, 2) = oo, gamma(oo)/gamma(oo) is not)
-    Q.positive(g) | (~Q.integer(g) & Q.finite(g)),
-}
-
-SMALL_K = add_rules(set(), [
+SMALL_K = add_rules({_eq(zero, 0), _eq(one, 1)}, [
     # binomial(y, 0) = rf(x, 0) = ff(x, 0) = 1, for every first argument.
     (G(x, zero), S.One),
     # binomial(y, 1) = y, rf(x, 1) = ff(x, 1) = x.
     (G(x, one), x),
 ])
 
-FACTORIAL = add_rules(set(), [
+FACTORIAL = add_rules({_eq(bit, 0) | _eq(bit, 1),
+                       Q.integer(q) & Q.lt(q, 0),
+                       Q.positive_infinite(inf)}, [
     # 0! = 1! = 1.
     (factorial(bit), S.One),
     # q! is a pole at every negative integer (not rewritten to gamma elsewhere).
@@ -87,36 +70,38 @@ FACTORIAL = add_rules(set(), [
 ])
 
 GAMMA = (
-    add_rules(set(), [
+    add_rules({Q.integer(p) & Q.lt(0, p)}, [
         # gamma(p) = (p - 1)! at positive integers (so gamma(m + 1) = m! for m >= 0).
         (gamma(p), factorial(p - 1)),
     ])
-    + add_rules({Q.le(n, 0)}, [
+    + add_rules({Q.integer(n), Q.le(n, 0)}, [
         # gamma has a pole at every nonpositive integer (half-integers are left alone).
         (gamma(n), S.ComplexInfinity),
     ])
 )
 
 BINOMIAL = (
-    add_rules({_eq(f, z)}, [
+    # f is nonnegative or a finite non-integer: not a negative integer (binomial(-1, -1) = 0)
+    # and not infinite (binomial(oo, oo) = nan, and oo is not an integer)
+    add_rules({Q.nonnegative(f) | (~Q.integer(f) & Q.finite(f)), _eq(f, z)}, [
         (binomial(f, z), S.One),             # binomial(f, f) = 1
     ])
-    + add_rules({_eq(z, f - 1)}, [
+    + add_rules({Q.nonnegative(f) | (~Q.integer(f) & Q.finite(f)), _eq(z, f - 1)}, [
         (binomial(f, z), f),                 # binomial(f, f - 1) = f
     ])
-    + add_rules({Q.lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & Q.lt(y, n))}, [
+    + add_rules({Q.integer(n), Q.lt(n, 0) | (Q.integer(y) & Q.nonnegative(y) & Q.lt(y, n))}, [
         # 0 for a negative integer n whatever y is (SymPy's convention), and for
         # integers 0 <= y < n (the product y (y-1) ... hits 0).
         (binomial(y, n), S.Zero),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.integer(q) & Q.lt(q, 0), ~Q.integer(h)}, [
         # A pole: q a negative integer and h not an integer.
         (binomial(q, h), S.ComplexInfinity),
     ])
 )
 
 RISING = (
-    add_rules(set(), [
+    add_rules({_eq(one, 1)}, [
         # rf(1, z) = gamma(z + 1) = z!, for every z.
         (rf(one, z), factorial(z)),
     ])
@@ -126,20 +111,22 @@ RISING = (
         # integers), and SymPy's 0 for a negative integer x and non-integer z.
         (rf(x, z), S.Zero),
     ])
-    + add_rules(set(), [
+    # g is positive or a finite non-integer: gamma(g) is finite and nonzero (never a
+    # nonpositive integer: rf(-2, 2) = 2; never oo: rf(oo, 2) = oo, gamma(oo)/gamma(oo) is not)
+    + add_rules({Q.positive(g) | (~Q.integer(g) & Q.finite(g))}, [
         # rf(g, z) = gamma(g + z)/gamma(g) where gamma(g) is finite and nonzero.
         (rf(g, z), gamma(g + z)/gamma(g)),
     ])
 )
 
 FALLING = (
-    add_rules({_eq(x, n)}, [
+    add_rules({Q.integer(n), _eq(x, n)}, [
         (ff(x, n), factorial(n)),            # ff(n, n) = n! for integer n (both sides zoo at negative integers)
     ])
-    + add_rules({Q.lt(m, n)}, [
+    + add_rules({Q.integer(m) & Q.nonnegative(m), Q.integer(n), Q.lt(m, n)}, [
         (ff(m, n), S.Zero),                  # 0 for integers 0 <= m < n
     ])
-    + add_rules({Q.le(n, m)}, [
+    + add_rules({Q.integer(m) & Q.nonnegative(m), Q.integer(n), Q.le(n, m)}, [
         # ff(m, n) = m!/(m - n)! for integers 0 <= m, n <= m (negative n included:
         # ff(3, -2) = 1/20 = 3!/5!).
         (ff(m, n), factorial(m)/factorial(m - n)),
