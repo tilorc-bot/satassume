@@ -2,7 +2,7 @@
 ``Inverse``, ``MatAdd``, ``MatMul``, ``MatrixElement``, ``Trace``,
 ``Transpose``.
 
-A row is ``(lhs, rhs)``, in an ``add_rules`` block whose ``assuming`` facts are
+A row is ``(lhs, rhs)``, in an ``add_rules`` block whose ``assume`` facts are
 its hypothesis: it fires when the hypothesis, with the facts ``ASSUMED`` about
 the variables of its left side, is provable through the dispatcher's ``ask``.  The rules are those stated in
 ``handlers_v3/matrices.py`` (356 lines), in **30 rows**: Transpose 5,
@@ -142,7 +142,7 @@ class _SwappedOrder(BooleanFunction):
 
 ii, jj = _Index('i'), _Index('j')
 
-TRANSPOSE = add_rules([
+TRANSPOSE = add_rules(set(), [
     # The transpose of a zero matrix is the zero matrix of the transposed shape.
     (Transpose(Z), ZeroMatrix(n, m)),
     # S.T = S for a symmetric (e.g. diagonal) S.
@@ -155,7 +155,7 @@ TRANSPOSE = add_rules([
 ])
 
 INVERSE = (
-    add_rules([
+    add_rules(set(), [
         # An orthogonal matrix is inverted by its transpose (so (O.T)**-1 = O).
         (Inverse(O), O.T),
         (Inverse(O.T), O),
@@ -164,7 +164,7 @@ INVERSE = (
         # from orthogonal cannot reach it for an atom.
         (Inverse(U), Adjoint(U)),
     ])
-    + add_rules([
+    + add_rules(set(), [
         (Inverse(U*V), Adjoint(V)*Adjoint(U)),                    # (U*V)**-1 = V.H*U.H
     ])
 )
@@ -172,22 +172,22 @@ INVERSE = (
 DETERMINANT = (
     # det A = 0 for singular A, and for a zero matrix of positive size (a 0x0
     # matrix has determinant 1).
-    add_rules([
+    add_rules({Q.singular(A) | (Q.zero(A) & Q.positive(m))}, [
         (Determinant(A), S.Zero),
-    ], assuming={Q.singular(A) | (Q.zero(A) & Q.positive(m))})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         # A unit triangular matrix has determinant 1.  (det O = 1 for orthogonal O,
         # SymPy's rule, is wrong: the determinant is +-1.)
         (Determinant(T), S.One),
     ])
 )
 
-TRACE = add_rules([
+TRACE = add_rules(set(), [
     # The trace of a zero matrix is 0.
     (Trace(Zs), S.Zero),
 ])
 
-MATADD = add_rules([
+MATADD = add_rules(set(), [
     # A sum of zero matrices is the zero matrix of its shape.
     (Z + Y, ZeroMatrix(m, n)),
     # A zero term drops out of a sum.
@@ -199,31 +199,31 @@ MATADD = add_rules([
     (MatAdd(Z), ZeroMatrix(m, n)),
 ])
 
-HADAMARD = add_rules([
+HADAMARD = add_rules(set(), [
     # An elementwise product with a zero factor is the zero matrix of its shape.
     (HadamardProduct(Z, R), ZeroMatrix(m, n)),
 ])
 
 MATMUL = (
     # A product with a zero factor, scalar or matrix, is the zero matrix of its shape.
-    add_rules([
+    add_rules(set(), [
         (zero*X, ZeroMatrix(m, n)),
     ])
     # either factor is zero
-    + add_rules([
+    + add_rules({Q.zero(X) | Q.zero(W)}, [
         (X*W, ZeroMatrix(m, h)),
-    ], assuming={Q.zero(X) | Q.zero(W)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         # Adjacent O.T*O and O*O.T cancel for orthogonal O.
         (O.T*O, Identity(m)),
         (O*O.T, Identity(m)),
     ])
     # Adjacent U.H*U and U*U.H cancel for unitary U
-    + add_rules([
+    + add_rules(set(), [
         (Adjoint(U)*U, Identity(m)),
         (U*Adjoint(U), Identity(m)),
     ])
-    + add_rules([
+    + add_rules(set(), [
         # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):
         # the operator form cancels while the pattern is built).
         (MatMul(Inverse(G), G), Identity(m)),
@@ -238,23 +238,23 @@ MATMUL = (
 )
 
 MATRIXELEMENT = (
-    add_rules([
+    add_rules(set(), [
         # Every element of a zero matrix is 0.
         (MatrixElement(Z, i, j), S.Zero),
     ])
     # An off-diagonal element of a diagonal matrix is 0.  Negative indices wrap
     # (D[0, -1] of a 1x1 matrix is D[0, 0]), so i != j must hold after wrapping:
     # both indices of one sign, or i - j != +-m.
-    + add_rules([
-        (MatrixElement(D, i, j), S.Zero),
-    ], assuming={Q.ne(i, j) | Q.nonzero(i - j),
+    + add_rules({Q.ne(i, j) | Q.nonzero(i - j),
                  (Q.nonnegative(i) & Q.nonnegative(j)) | (Q.negative(i) & Q.negative(j))
-                 | (Q.nonzero(i - j - m) & Q.nonzero(i - j + m))})
+                 | (Q.nonzero(i - j - m) & Q.nonzero(i - j + m))}, [
+        (MatrixElement(D, i, j), S.Zero),
+    ])
     # A symmetric matrix's elements S[i, j] = S[j, i], oriented to SymPy's
     # canonical index order (a structural condition, see _SwappedOrder).
-    + add_rules([
+    + add_rules({_SwappedOrder(ii, jj)}, [
         (MatrixElement(S_, ii, jj), MatrixElement(S_, jj, ii)),
-    ], assuming={_SwappedOrder(ii, jj)})
+    ])
 )
 
 RULES: list[tuple] = (TRANSPOSE + INVERSE + DETERMINANT + TRACE + MATADD

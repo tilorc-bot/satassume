@@ -43,22 +43,22 @@ n, r = symbols('n r')
 ASSUMED: set = set()
 
 RULES: list[Row] = (   # the argument is n*pi*I/2 + r
-    add_rules([        # n even: the function itself, sinh(r + m*pi*I) = (-1)**m sinh r
+    add_rules({Q.even(n)}, [  # n even: the function itself, sinh(r + m*pi*I) = (-1)**m sinh r
         (sinh(n*pi*I/2 + r), (-1)**(n/2)*sinh(r)),
         (cosh(n*pi*I/2 + r), (-1)**(n/2)*cosh(r)),
         (sech(n*pi*I/2 + r), (-1)**(n/2)*sech(r)),           # sech = 1/cosh
         (csch(n*pi*I/2 + r), (-1)**(n/2)*csch(r)),           # csch = 1/sinh
         (tanh(n*pi*I/2 + r), tanh(r)),                       # tanh has period pi*I
         (coth(n*pi*I/2 + r), coth(r)),                       # coth has period pi*I
-    ], assuming={Q.even(n)})
-    + add_rules([      # n odd: the cofunction, sinh(r + pi*I/2) = I cosh r
+    ])
+    + add_rules({Q.odd(n)}, [  # n odd: the cofunction, sinh(r + pi*I/2) = I cosh r
         (sinh(n*pi*I/2 + r), I*(-1)**((n - 1)/2)*cosh(r)),
         (cosh(n*pi*I/2 + r), I*(-1)**((n - 1)/2)*sinh(r)),   # cosh(r + pi*I/2) = I sinh r
         (sech(n*pi*I/2 + r), -I*(-1)**((n - 1)/2)*csch(r)),
         (csch(n*pi*I/2 + r), -I*(-1)**((n - 1)/2)*sech(r)),
         (tanh(n*pi*I/2 + r), coth(r)),                       # tanh(r + pi*I/2) = coth r
         (coth(n*pi*I/2 + r), tanh(r)),                       # coth(r + pi*I/2) = tanh r
-    ], assuming={Q.odd(n)})
+    ])
 )
 
 _shift = Rules([ZERO] + RULES, by_binding=True)

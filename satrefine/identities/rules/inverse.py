@@ -99,37 +99,37 @@ def _off_cut_lines(z):
 # function lands on the inverse's branch cut and the result depends on the sign of
 # re z (asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2, atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2).
 FACTS: list[Row] = (
-    add_rules([
+    add_rules(set(), [
         (asin(sin(t)), reflect_half(t)),                      # asin undoes sin up to a reflection
         (asin(cos(t)), reflect_half(pi/2 - t)),               # cos t = sin(pi/2 - t)
         (acos(cos(t)), reflect_full(t)),                      # acos undoes cos up to a reflection
         (acos(sin(t)), reflect_full(pi/2 - t)),               # sin t = cos(pi/2 - t)
     ])
     # off the poles of tan
-    + add_rules([
+    + add_rules({~Q.integer(t/pi + S.Half)}, [
         (atan(tan(t)), sawtooth(t, pi)),                      # atan undoes tan up to a period
-    ], assuming={~Q.integer(t/pi + S.Half)})
+    ])
     # off the poles of cot
-    + add_rules([
+    + add_rules({~Q.integer(t/pi)}, [
         (atan(cot(t)), sawtooth(pi/2 - t, pi)),               # cot t = tan(pi/2 - t)
-    ], assuming={~Q.integer(t/pi)})
+    ])
     # for z off the lines
-    + add_rules([
+    + add_rules({_off_cut_lines(z)}, [
         (asinh(sinh(z)), _reflect_half_imag(z)),              # asinh undoes sinh up to an imaginary reflection
         (atanh(tanh(z)), _sawtooth_imag(z)),                  # atanh undoes tanh up to an imaginary period
-    ], assuming={_off_cut_lines(z)})
+    ])
     # for d off the lines
-    + add_rules([
+    + add_rules({_off_cut_lines(d)}, [
         (acoth(coth(d)), _sawtooth_imag(d)),                  # acoth undoes coth likewise (coth(0) is zoo)
-    ], assuming={_off_cut_lines(d)})
+    ])
     # acsch undoes csch likewise, for d finite off the lines.  (csch(+-oo) = 0 and acsch(0) = zoo:
     # finite d only, so Q.real and not the extended lines; the other three hold at +-oo.  A real
     # d is finite, but im(d) = 0 does not make d real: im(Abs(v)) is 0 for an infinite v, issue
     # #10 B10 and B6)
-    + add_rules([
+    + add_rules({Q.real(d) | Q.finite(d) & ~Q.integer(im(d)/pi + S.Half)}, [
         (acsch(csch(d)), _reflect_half_imag(d)),
-    ], assuming={Q.real(d) | Q.finite(d) & ~Q.integer(im(d)/pi + S.Half)})
-    + add_rules([
+    ])
+    + add_rules(set(), [
         (atan2(y, x), Piecewise((atan(y/x), Q.positive(x) & Q.real(y)),          # atan2 by the signs of x and y
                                 (atan(y/x) + pi, Q.negative(x) & Q.nonnegative(y)),
                                 (atan(y/x) - pi, Q.negative(x) & Q.negative(y)),
@@ -141,7 +141,7 @@ FACTS: list[Row] = (
 
 ASSUMED |= {Q.real(u) | Q.extended_real(u)}   # u is an extended real (+-oo included)
 
-RULES: list[Row] = add_rules([
+RULES: list[Row] = add_rules(set(), [
     (acosh(cosh(u)), Abs(u)),   # acosh undoes cosh up to sign (acosh(cosh(+-oo)) = oo)
     (asech(sech(u)), Abs(u)),   # asech undoes sech up to sign (asech(0) = oo)
 ])
