@@ -16,8 +16,9 @@ from __future__ import annotations
 import importlib
 from functools import cache
 
-from sympy import Abs, arg, floor, im, re, sign
+from sympy import Abs, Mod, arg, floor, frac, im, re, sign
 from sympy.core import Mul
+from sympy.functions.elementary.miscellaneous import Rem
 
 from . import family_module_name
 from .core.measure import node_measure
@@ -82,5 +83,16 @@ def complex_parts(m) -> Family:
                   assumed=m.ASSUMED)
 
 
-WIRED: dict = {"complex_parts": complex_parts}
+# ---- integer_funcs --------------------------------------------------------------
+
+def integer_funcs(m) -> Family:
+    return Family({'floor': Rules(m.FLOOR),
+                   'ceiling': Rules(m.CEILING),
+                   'frac': (Rules(m.FRAC), Identities(m.FRAC_DEFINITION, measure=node_measure((frac,)))),
+                   'Mod': (Rules(m.MOD), Identities(m.MOD_HALF, measure=node_measure((Mod,)), opaque=(floor, sign))),
+                   'Rem': (Rules(m.REM), Identities(m.REM_HALF, measure=node_measure((Rem,)), opaque=(floor, sign)))},
+                  facts=m.FACTS, rules=m.RULES, assumed=m.ASSUMED)
+
+
+WIRED: dict = {"complex_parts": complex_parts, "integer_funcs": integer_funcs}
 """The families that mix rule and identity tables: ``family -> (module -> Family)``."""

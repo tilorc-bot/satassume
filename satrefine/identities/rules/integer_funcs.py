@@ -32,7 +32,7 @@ from __future__ import annotations
 from sympy import Eq, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
-from ._tables import Family, Identities, Rules, add_rules, by_cases, node_measure
+from ._tables import add_rules, by_cases
 
 
 def integer(u):
@@ -151,10 +151,3 @@ REM_HALF = add_rules({Q.odd(2*a/d)}, [
 
 FACTS = FRAC_DEFINITION + MOD_HALF + REM_HALF
 RULES = FLOOR + CEILING + FRAC + MOD + REM
-
-SPEC = Family({'floor': Rules(FLOOR),
-               'ceiling': Rules(CEILING),
-               'frac': (Rules(FRAC), Identities(FRAC_DEFINITION, measure=node_measure((frac,)))),
-               'Mod': (Rules(MOD), Identities(MOD_HALF, measure=node_measure((Mod,)), opaque=(floor, sign))),
-               'Rem': (Rules(REM), Identities(REM_HALF, measure=node_measure((Rem,)), opaque=(floor, sign)))},
-              facts=FACTS, rules=RULES, assumed=ASSUMED)
