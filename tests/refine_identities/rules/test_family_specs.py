@@ -91,3 +91,19 @@ def test_registered_handlers_are_the_spec(module):
             obj = live.parts[i] if len(_parts(value)) > 1 else live
             assert parts.setdefault(part, obj) is obj, key
 
+
+def test_rules_only_families_route_rows_by_head():
+    """A rules-only family serves each key the rows of its head, in table order, and a
+    generic row (``ZERO``, ``G(x, zero)``) every head of its arity."""
+    trig = family_spec("trig")
+    assert set(trig.handlers) == {"sin", "cos", "tan", "cot", "sec", "csc", "sinc"}
+    for key, part in trig.handlers.items():
+        assert part.by_binding
+        heads = [row[0].func for row in part.rows]
+        assert all(h.__name__ == key or isinstance(h, UndefinedFunction) for h in heads), key
+        assert isinstance(heads[0], UndefinedFunction), key            # ZERO first
+    combinatorial = family_spec("combinatorial")
+    generic = [k for k, p in combinatorial.handlers.items() if any(isinstance(r[0].func, UndefinedFunction)
+                                                                   for r in p.rows)]
+    assert sorted(generic) == ["FallingFactorial", "RisingFactorial", "binomial"]
+    assert not combinatorial.handlers["factorial"].by_binding

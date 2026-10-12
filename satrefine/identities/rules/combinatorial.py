@@ -15,8 +15,8 @@ either sign of the difference and from the relation.
 Merged rows:
 
 * ``z == 0 -> 1`` and ``z == 1 -> x`` hold for ``binomial``, ``rf`` and
-  ``ff`` alike: two rows over a generic two-argument head ``G``, shared by
-  the three tables.
+  ``ff`` alike: two rows over a generic two-argument head ``G`` (``SMALL_K``),
+  which serve all three.
 * Rules of one function with the same right side are one row with a
   disjunctive hypothesis (``binomial``: ``n`` a negative integer and
   ``0 <= y < n`` are one ``-> 0`` row; ``rf``: its two ``-> 0`` rules).
@@ -39,7 +39,7 @@ from __future__ import annotations
 from sympy import (Function, Q, S, binomial, factorial, ff, gamma, rf,
                    symbols)
 
-from ._tables import Family, Rules, add_rules
+from ._tables import add_rules
 
 x, y, z = symbols('x y z')   # arbitrary: x and y are first arguments, z the second
 G = Function('G')        # generic head: binomial, rf and ff share these rows
@@ -98,8 +98,7 @@ GAMMA = (
 )
 
 BINOMIAL = (
-    SMALL_K
-    + add_rules({_eq(f, z)}, [
+    add_rules({_eq(f, z)}, [
         (binomial(f, z), S.One),             # binomial(f, f) = 1
     ])
     + add_rules({_eq(z, f - 1)}, [
@@ -117,8 +116,7 @@ BINOMIAL = (
 )
 
 RISING = (
-    SMALL_K
-    + add_rules(set(), [
+    add_rules(set(), [
         # rf(1, z) = gamma(z + 1) = z!, for every z.
         (rf(one, z), factorial(z)),
     ])
@@ -135,8 +133,7 @@ RISING = (
 )
 
 FALLING = (
-    SMALL_K
-    + add_rules({_eq(x, n)}, [
+    add_rules({_eq(x, n)}, [
         (ff(x, n), factorial(n)),            # ff(n, n) = n! for integer n (both sides zoo at negative integers)
     ])
     + add_rules({Q.lt(m, n)}, [
@@ -149,9 +146,4 @@ FALLING = (
     ])
 )
 
-RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + [
-    row for table in (BINOMIAL, RISING, FALLING) for row in table[len(SMALL_K):]]
-
-SPEC = Family({'factorial': Rules(FACTORIAL), 'binomial': Rules(BINOMIAL), 'RisingFactorial': Rules(RISING),
-               'FallingFactorial': Rules(FALLING), 'gamma': Rules(GAMMA)},
-              rules=RULES, assumed=ASSUMED)
+RULES: list[tuple] = SMALL_K + FACTORIAL + GAMMA + BINOMIAL + RISING + FALLING
