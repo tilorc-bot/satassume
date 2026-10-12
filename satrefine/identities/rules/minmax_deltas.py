@@ -1,8 +1,8 @@
 """``Min``, ``Max``, ``KroneckerDelta`` and ``Heaviside`` as ``Piecewise``
 definitions; ``DiracDelta`` as rule rows.
 
-**8 rows**: 5 definitions (``FACTS``) and 3 ``DiracDelta`` rules.  Each
-definition is an identity row whose right side states the case analysis::
+Each definition is an identity row whose right side states the case
+analysis::
 
     Max(a, b)                    = Piecewise((a, a >= b), (b, a < b))
     Min(a, b)                    = Piecewise((a, a <= b), (b, a > b))
@@ -19,8 +19,9 @@ infinite endpoints holds, or one from stated relations (``Q.le``, ``Q.lt``,
 ``Q.eq``, ``Q.ne``, the difference zero or nonzero), and the relation forms
 are not used for an argument known infinite, where SymPy's ``ask`` answers
 ``Q.eq(x, y)`` "True" for ``x = -oo`` and ``y <= 0`` (v3 refuses relation
-queries there).  No case split is tried (``splits=False``): on refusals it
-cost about 5x and derived nothing the battery or the differential run needs.
+queries there).  No case split is tried (``splits=False``): on refusals a
+split costs about 5x and derives nothing the battery or the differential
+run needs.
 
 ``Max`` and ``Min`` have no default branch.  A relation says its sides are
 extended reals (satassume's #26), so a decider that asks satassume refutes
@@ -58,7 +59,7 @@ G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(u, w), 
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 # The letters follow the tables' convention (t real; u extended real; d nonzero; a, b, r, w arbitrary).
-ASSUMED = {Q.extended_real(u)}   # u is an extended real (Heaviside's argument)
+ASSUMED = {Q.extended_real(u)}   # u: Heaviside's argument
 
 FACTS = (
     add_rules(set(), [
@@ -74,7 +75,7 @@ FACTS = (
     ])
 )
 
-ASSUMED |= {Q.positive_infinite(inf), Q.negative_infinite(ninf)}   # inf is oo, ninf is -oo
+ASSUMED |= {Q.positive_infinite(inf), Q.negative_infinite(ninf)}
 
 INFINITE = add_rules(set(), [
     # Max(oo, b) = oo and Max(-oo, b) = b for every b Max is defined at (extended real b);
@@ -87,7 +88,7 @@ INFINITE = add_rules(set(), [
     (Min(inf, b), b),
 ])
 
-ASSUMED |= {Q.nonzero(d), Q.real(t)}      # d is off the origin (nonzero: real and not 0), t is real
+ASSUMED |= {Q.nonzero(d), Q.real(t)}      # Q.nonzero also makes d real
 
 DIRAC = add_rules(set(), [
     # DiracDelta and all its derivatives vanish off the origin (d real, nonzero).
@@ -110,6 +111,7 @@ def _definitions(rows):
     return Identities(rows, measure=_measure, opaque=(), splits=False)
 
 
+# SPEC picks rows out of FACTS and INFINITE by position: keep their order in step.
 SPEC = Family({'Max': (Rules(INFINITE[0:2]), _definitions(FACTS[0:1])),
                'Min': (Rules(INFINITE[2:4]), _definitions(FACTS[1:2])),
                'KroneckerDelta': _definitions(FACTS[2:4]),
