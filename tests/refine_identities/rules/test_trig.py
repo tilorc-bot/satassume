@@ -7,6 +7,8 @@ from sympy.calculus.accumulationbounds import AccumBounds
 
 from _rows import check_relation, check_valid, ids
 
+from satrefine import refine
+
 x, k, n = symbols("x k n")
 ODD, EVEN, INT = Q.odd(k), Q.even(k), Q.integer(k)
 K0, K1 = Q.even(k) & Q.even(k/2), Q.odd(k) & Q.even((k - 1)/2)
@@ -52,3 +54,9 @@ def test_output_is_valid(expr, assumptions, team, relation):
 @pytest.mark.parametrize("expr, assumptions, team, relation", ROWS, ids=ids(ROWS))
 def test_relation_to_team(expr, assumptions, team, relation):
     check_relation(expr, assumptions, team, relation)
+
+
+def test_odd_sec_shift_is_one_power_of_minus_one():
+    # The odd sec row is written (-1)**((n + 1)/2)*csc(r), not -(-1)**((n - 1)/2)*csc(r);
+    # "same" above compares up to simplify, so pin the exact form here.
+    assert refine(sec(x + k*pi/2), ODD) == (-1)**((k + 1)/2)*csc(x)

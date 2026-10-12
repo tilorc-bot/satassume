@@ -1,15 +1,9 @@
 """``factorial``, ``binomial``, ``RisingFactorial``, ``FallingFactorial`` and
 ``gamma`` as rule tables.
 
-Each row is ``(lhs, rhs)`` in an ``add_rules`` block whose ``assume`` set is
-the hypothesis of its rows, compiled by :func:`..core.rewrite.rule_handler`:
-the row fires when its hypothesis, with the facts ``ASSUMED`` about the
-variables of its left side, is provable through the dispatcher's ``ask``.  The rules are those stated in
-``handlers_v3/combinatorial.py`` (236 lines), every one agreeing with
-SymPy's own evaluation at every point its hypothesis allows (0, negative
-integers and poles included, where both sides are ``zoo``).  **16 rows**
-replacing 236 lines: 2 shared by ``binomial``/``rf``/``ff``, then factorial 2,
-gamma 2, binomial 4, rf 3, ff 3.
+Every row agrees with SymPy's own evaluation at every point its hypothesis
+allows (0, negative integers and poles included, where both sides are
+``zoo``).
 
 Spellings.  v3 decides ``a == b`` as ``Q.zero(a - b)`` or the relation
 ``Q.eq(a, b)``; the hypotheses below spell both (``_eq``), since satassume
@@ -18,7 +12,7 @@ relates neither to the other when a side may be a finite non-real number
 ordered side here is an integer, where satassume proves the relation from
 either sign of the difference and from the relation.
 
-Minimizations against v3:
+Merged rows:
 
 * ``z == 0 -> 1`` and ``z == 1 -> x`` hold for ``binomial``, ``rf`` and
   ``ff`` alike: two rows over a generic two-argument head ``G``, shared by
@@ -29,29 +23,16 @@ Minimizations against v3:
 * ``rf(x, z) -> gamma(x + z)/gamma(x)`` for a positive integer ``x`` is
   turned into factorials by the ``gamma`` rows, not by a row of its own.
 
-Pattern forms used beyond the current engine (requested in
-``tests/refine_identities/needs/test_combinatorial_needs.py``): two-argument
-heads with both arguments bound, and literal ``0``/``1`` bindings; ``ask``
-raising ``ValueError`` on a relation read as "not provable".
+Pattern forms the rows rely on: two-argument heads with both arguments
+bound, and literal ``0``/``1`` bindings; ``ask`` raising ``ValueError`` on a
+relation read as "not provable".
 
-Not expressible as rows: none.  The refusals of v3 (no ``gamma`` form for
-a nonpositive integer ``x`` in ``rf``, no ``binomial(y, y) -> 1`` for a
-possibly negative integer ``y``, half-integer ``gamma`` left alone) are the
-hypotheses' missing cases.
-Checked (adversarial pass, 2026-09-24): every row at 0, +-1, negative
-integers, half-integers, non-real points and +-oo, with ``Q.eq`` against
-``-oo``, old-style symbols, plus ``python -m satrefine.tools.refine_differential`` seeds 2,
-3, 7 (1,500 cases each).  Found: ``~Q.integer`` admits ``oo``, where
-``binomial(y, y) -> 1`` and ``binomial(y, y - 1) -> y`` are wrong
-(``binomial(oo, oo) = nan``) and so is ``rf(x, z) -> gamma(x + z)/gamma(x)``
-(``rf(oo, 2) = oo``); those branches now need ``Q.finite``.  v3 shares the
-defect, so the battery's three ``~Q.integer``-only cases are misses.  Not
-defects: the ``binomial`` pole row for infinite ``z`` (``binomial(-3, oo) =
-zoo``), the ``rf`` zero row and ``rf(1, z)`` for infinite ``z``, the ``z ==
-0``/``z == 1`` rows for an infinite first argument.  Unverified: the gamma
-ratio where SymPy leaves ``rf`` of a non-integer ``z`` unevaluated
-(``rf(1/2, -1/2)``, ``rf(-I, I)``: no value to compare; the ratio is the
-definition).
+The refusals of v3 (no ``gamma`` form for a nonpositive integer ``x`` in
+``rf``, no ``binomial(y, y) -> 1`` for a possibly negative integer ``y``,
+half-integer ``gamma`` left alone) are the hypotheses' missing cases.
+Unverified: the gamma ratio where SymPy leaves ``rf`` of a non-integer ``z``
+unevaluated (``rf(1/2, -1/2)``, ``rf(-I, I)``: no value to compare; the ratio
+is the definition).
 """
 from __future__ import annotations
 
@@ -72,15 +53,15 @@ bit, f, g, h, inf, m, n, one, p, q, zero = symbols('bit f g h inf m n one p q ze
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 ASSUMED = {
-    _eq(zero, 0),                                  # zero is 0
-    _eq(one, 1),                                   # one is 1
-    _eq(bit, 0) | _eq(bit, 1),                     # bit is 0 or 1
-    Q.integer(n),                                  # n is an integer
-    ~Q.integer(h),                                 # h is not an integer
-    Q.integer(q) & Q.lt(q, 0),                     # q is negative, here a negative integer
-    Q.integer(m) & Q.nonnegative(m),               # m is an integer, here nonnegative
-    Q.integer(p) & Q.lt(0, p),                     # p is positive, here a positive integer
-    Q.positive_infinite(inf),                      # inf is oo
+    _eq(zero, 0),
+    _eq(one, 1),
+    _eq(bit, 0) | _eq(bit, 1),
+    Q.integer(n),
+    ~Q.integer(h),
+    Q.integer(q) & Q.lt(q, 0),
+    Q.integer(m) & Q.nonnegative(m),
+    Q.integer(p) & Q.lt(0, p),
+    Q.positive_infinite(inf),
     # f is nonnegative or a finite non-integer: not a negative integer (binomial(-1, -1) = 0)
     # and not infinite (binomial(oo, oo) = nan, and oo is not an integer)
     Q.nonnegative(f) | (~Q.integer(f) & Q.finite(f)),
@@ -110,7 +91,6 @@ GAMMA = (
         # gamma(p) = (p - 1)! at positive integers (so gamma(m + 1) = m! for m >= 0).
         (gamma(p), factorial(p - 1)),
     ])
-    # here n is a nonpositive integer
     + add_rules({Q.le(n, 0)}, [
         # gamma has a pole at every nonpositive integer (half-integers are left alone).
         (gamma(n), S.ComplexInfinity),

@@ -1,8 +1,5 @@
 """The inverse trigonometric and hyperbolic functions as tables.
 
-Rows: 11 facts, 2 rules, 1 shared zero row; ``handlers_v3/inverse.py`` is
-610 lines.
-
 Every fact undoes a forward function up to the branch bookkeeping of the
 inverse, written out with the wraps of :mod:`._wraps`: ``asin(sin t)`` is
 the reflection of ``t`` onto ``[-pi/2, pi/2]``, ``acos(cos t)`` onto
@@ -43,20 +40,6 @@ Q.ge(y, 0)``: SymPy's relation ``ask`` would have to be consulted for
 every candidate bound, which v3 does and this table does not), and
 ``acoth(coth(x))`` under ``Q.real(x)`` alone (``coth(0)`` is ``zoo``; v3
 also declines).
-Checked (adversarial pass, 2026-09-24): every fact at exact points on the
-lines ``im z = k*pi/2`` and at real points, every interval row on 11
-intervals x 4 open/closed combinations with the endpoints themselves as
-sample points (multiples of ``pi/4``), one-sided bounds, spans of two
-branches, shifted and scaled arguments, bounds on another symbol, and the
-live and generated tables through ``python -m satrefine.tools.refine_differential`` (seeds
-2, 3, 7).  Found: the four hyperbolic facts were stated with domain
-``true`` (``~Q.zero`` for acoth/acsch) but fail on the lines ``im z = (k +
-1/2)*pi`` for one sign of ``re z`` (SymPy's value on the branch cut:
-``atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2``), reached through bounds on
-``im z`` (``atanh(tanh(x + I*y))`` under ``Q.ge(y, -pi/2) & Q.lt(y, pi/2)``
-gave ``x + I*y``); their domains now exclude the lines
-(``_off_cut_lines``).  The real-argument facts, the endpoint split and
-the ``atan`` pole exclusions held everywhere tried.
 """
 from __future__ import annotations
 
@@ -71,7 +54,7 @@ d, t, u, x, y, z = symbols('d t u x y z')
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 # The letters follow the tables' convention (t real; u extended real; d nonzero; x, y, z arbitrary).
-ASSUMED = {Q.real(t), ~Q.zero(d)}   # t is real, d is nonzero
+ASSUMED = {Q.real(t), ~Q.zero(d)}
 
 
 def _reflect_half_imag(z):
@@ -100,29 +83,27 @@ def _off_cut_lines(z):
 # re z (asinh(sinh(1 - I*pi/2)) = -1 - I*pi/2, atanh(tanh(-1 - I*pi/2)) = -1 + I*pi/2).
 FACTS: list[Row] = (
     add_rules(set(), [
-        (asin(sin(t)), reflect_half(t)),                      # asin undoes sin up to a reflection
+        (asin(sin(t)), reflect_half(t)),
         (asin(cos(t)), reflect_half(pi/2 - t)),               # cos t = sin(pi/2 - t)
-        (acos(cos(t)), reflect_full(t)),                      # acos undoes cos up to a reflection
+        (acos(cos(t)), reflect_full(t)),
         (acos(sin(t)), reflect_full(pi/2 - t)),               # sin t = cos(pi/2 - t)
     ])
     # off the poles of tan
     + add_rules({~Q.integer(t/pi + S.Half)}, [
-        (atan(tan(t)), sawtooth(t, pi)),                      # atan undoes tan up to a period
+        (atan(tan(t)), sawtooth(t, pi)),
     ])
     # off the poles of cot
     + add_rules({~Q.integer(t/pi)}, [
         (atan(cot(t)), sawtooth(pi/2 - t, pi)),               # cot t = tan(pi/2 - t)
     ])
-    # for z off the lines
     + add_rules({_off_cut_lines(z)}, [
-        (asinh(sinh(z)), _reflect_half_imag(z)),              # asinh undoes sinh up to an imaginary reflection
-        (atanh(tanh(z)), _sawtooth_imag(z)),                  # atanh undoes tanh up to an imaginary period
+        (asinh(sinh(z)), _reflect_half_imag(z)),
+        (atanh(tanh(z)), _sawtooth_imag(z)),
     ])
-    # for d off the lines
     + add_rules({_off_cut_lines(d)}, [
-        (acoth(coth(d)), _sawtooth_imag(d)),                  # acoth undoes coth likewise (coth(0) is zoo)
+        (acoth(coth(d)), _sawtooth_imag(d)),                  # d nonzero: coth(0) is zoo
     ])
-    # acsch undoes csch likewise, for d finite off the lines.  (csch(+-oo) = 0 and acsch(0) = zoo:
+    # acsch: d finite off the lines.  (csch(+-oo) = 0 and acsch(0) = zoo:
     # finite d only, so Q.real and not the extended lines; the other three hold at +-oo.  A real
     # d is finite, but im(d) = 0 does not make d real: im(Abs(v)) is 0 for an infinite v, issue
     # #10 B10 and B6)
@@ -139,11 +120,11 @@ FACTS: list[Row] = (
     ])
 )
 
-ASSUMED |= {Q.real(u) | Q.extended_real(u)}   # u is an extended real (+-oo included)
+ASSUMED |= {Q.real(u) | Q.extended_real(u)}
 
 RULES: list[Row] = add_rules(set(), [
-    (acosh(cosh(u)), Abs(u)),   # acosh undoes cosh up to sign (acosh(cosh(+-oo)) = oo)
-    (asech(sech(u)), Abs(u)),   # asech undoes sech up to sign (asech(0) = oo)
+    (acosh(cosh(u)), Abs(u)),   # also at +-oo: acosh(cosh(+-oo)) = oo
+    (asech(sech(u)), Abs(u)),   # also at +-oo: asech(0) = oo
 ])
 
 RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded quantity (_simple)

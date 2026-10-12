@@ -2,15 +2,7 @@
 ``Inverse``, ``MatAdd``, ``MatMul``, ``MatrixElement``, ``Trace``,
 ``Transpose``.
 
-A row is ``(lhs, rhs)``, in an ``add_rules`` block whose ``assume`` facts are
-its hypothesis: it fires when the hypothesis, with the facts ``ASSUMED`` about
-the variables of its left side, is provable through the dispatcher's ``ask``.  The rules are those stated in
-``handlers_v3/matrices.py`` (356 lines), in **30 rows**: Transpose 5,
-Inverse 4, Determinant 2, Trace 1, MatAdd 4, HadamardProduct 1, MatMul 10,
-MatrixElement 3.
-
-Pattern forms (requested in
-``tests/refine_identities/needs/test_matrices_needs.py``):
+Pattern forms the rows rely on:
 
 * a ``MatrixSymbol`` pattern of symbolic shape binds a ``MatrixSymbol``
   (an atom) and its shape symbols bind that matrix's shape, so a right side
@@ -26,23 +18,18 @@ Pattern forms (requested in
 Atoms, not arbitrary matrix expressions, are what makes the rows sound:
 SymPy's ``ask`` calls every product of symmetric matrices symmetric, a
 diagonal block (``MatrixSlice``) of an orthogonal matrix orthogonal, and
-``-X`` or ``X*Y`` unitary for a (complex) orthogonal ``X``.  v3 defends
-against each by walking the expression; a row whose variable binds only
-atoms never sees those expressions, and the products v3 does accept get
-rows of their own.  The one ``ask`` answer wrong for atoms too is
-``Q.unitary(X)`` from ``Q.orthogonal(X)`` (a complex orthogonal matrix is
-not unitary): the unitary rows are the plain identities, so under
+``-X`` or ``X*Y`` unitary for a (complex) orthogonal ``X``.  A row whose
+variable binds only atoms never sees those expressions, and the products v3
+does accept get rows of their own.  The one ``ask`` answer wrong for atoms
+too is ``Q.unitary(X)`` from ``Q.orthogonal(X)`` (a complex orthogonal
+matrix is not unitary): the unitary rows are the plain identities, so under
 ``Q.orthogonal`` alone they rely on that wrong answer; the tests mark it as a
 known SymPy bug (``tests/refine_identities/needs/test_sympy_ask_bugs.py``).
 
-Minimizations against v3: ``det -> 0`` for singular and for a known zero
-matrix of positive size is one row (the size need not be a literal: a
-provably positive symbolic size is enough, and exactly true); the orthogonal
-``Inverse`` rows come first, so ``Inverse``'s unitary row needs no guard;
-a zero factor on either side of a product is one row (``X*W`` with
-``Q.zero(X) | Q.zero(W)``; merged 2026-09-24 after the row ablation in
-``docs/refine-testing.md``, "Oracle, ablation, table verification": no battery case, test
-or fuzz input moved).
+Merged rows: ``det -> 0`` for singular and for a known zero matrix of
+positive size is one row (a provably positive symbolic size is enough); a
+zero factor on either side of a product is one row.  The orthogonal
+``Inverse`` rows come first, so ``Inverse``'s unitary row needs no guard.
 
 Not expressible as rows:
 
@@ -63,22 +50,11 @@ Not expressible as rows:
 order (the vendored rule v3 delegates to).  The order is a property of the
 form, which ``ask`` cannot decide, so the row's hypothesis carries
 :class:`_SwappedOrder`, a condition that evaluates itself once the indices
-are bound (phase 3, 2026-09-25; before, the row oriented by ``Q.gt(i, j)``
-and left symbolic indices).
-Checked (adversarial pass, 2026-09-24): 0x0, 1x1, 2x2, 3x3 and symbolic
-shapes; ``det`` of a 0x0 zero matrix (refused); non-square, negated, scaled,
-summed and longer-palindrome ``Transpose`` arguments (refused); ``Inverse``
-of ``-X``, ``2*X``, ``X**2``, ``X.T``, ``Adjoint(X)`` and of products
-under orthogonal/unitary/real facts (the orthogonal rows first); runs inside longer ``MatMul`` with scalars;
-duplicate atoms in ``MatAdd``/``HadamardProduct`` (the rest keeps the
-other copies: the matcher removes the bound term by position, 2026-09-25,
-B11; before it dropped every copy, and ``HadamardProduct(X, X)`` crashed);
-``MatrixElement`` with negative indices that wrap onto the diagonal
-(``X1[0, -1]``, ``X3[0, -3]`` refused; the symmetric swap is valid under
-wrapping); plus ``python -m satrefine.tools.refine_differential`` seeds 2, 3, 7.  Found
-nothing wrong for matrices over C.  Outside that domain: an infinite scalar
-factor (``c*w*X`` under ``Q.zero(c) & Q.infinite(w)`` gives the zero
-matrix, as in v3, since ``ask`` proves ``Q.zero(c*w)``).
+are bound.
+
+Outside matrices over C: an infinite scalar factor (``c*w*X`` under
+``Q.zero(c) & Q.infinite(w)``) gives the zero matrix, as in v3, since
+``ask`` proves ``Q.zero(c*w)``.
 """
 from __future__ import annotations
 
@@ -115,7 +91,7 @@ W = MatrixSymbol('W', n, h)     # a right neighbour of X
 ASSUMED = {Q.symmetric(S_), Q.symmetric(M), Q.diagonal(D), Q.diagonal(E), Q.orthogonal(O),
            Q.unitary(U), Q.unitary(V), Q.invertible(G),
            Q.unit_triangular(T), Q.zero(Zs), Q.zero(Z), Q.zero(Y),
-           Q.zero(zero)}       # zero is a zero scalar
+           Q.zero(zero)}
 
 class _Index(Symbol):
     """An index variable of the symmetric-swap row: :class:`_SwappedOrder` of
@@ -143,9 +119,7 @@ class _SwappedOrder(BooleanFunction):
 ii, jj = _Index('i'), _Index('j')
 
 TRANSPOSE = add_rules(set(), [
-    # The transpose of a zero matrix is the zero matrix of the transposed shape.
     (Transpose(Z), ZeroMatrix(n, m)),
-    # S.T = S for a symmetric (e.g. diagonal) S.
     (Transpose(S_), S_),
     # Products v3 accepts as symmetric: palindromes S*M*S, N.T*M*N, and products
     # of diagonal matrices (which commute).
@@ -165,7 +139,7 @@ INVERSE = (
         (Inverse(U), Adjoint(U)),
     ])
     + add_rules(set(), [
-        (Inverse(U*V), Adjoint(V)*Adjoint(U)),                    # (U*V)**-1 = V.H*U.H
+        (Inverse(U*V), Adjoint(V)*Adjoint(U)),
     ])
 )
 
@@ -183,14 +157,11 @@ DETERMINANT = (
 )
 
 TRACE = add_rules(set(), [
-    # The trace of a zero matrix is 0.
     (Trace(Zs), S.Zero),
 ])
 
 MATADD = add_rules(set(), [
-    # A sum of zero matrices is the zero matrix of its shape.
     (Z + Y, ZeroMatrix(m, n)),
-    # A zero term drops out of a sum.
     (Z + R, R),
     # Canonical form: X - X = 0 (refining X - X.T under Q.symmetric(X) leaves -X + X).
     (MatAdd(X, -X), ZeroMatrix(m, n)),
@@ -200,7 +171,6 @@ MATADD = add_rules(set(), [
 ])
 
 HADAMARD = add_rules(set(), [
-    # An elementwise product with a zero factor is the zero matrix of its shape.
     (HadamardProduct(Z, R), ZeroMatrix(m, n)),
 ])
 
@@ -209,7 +179,6 @@ MATMUL = (
     add_rules(set(), [
         (zero*X, ZeroMatrix(m, n)),
     ])
-    # either factor is zero
     + add_rules({Q.zero(X) | Q.zero(W)}, [
         (X*W, ZeroMatrix(m, h)),
     ])
@@ -239,7 +208,6 @@ MATMUL = (
 
 MATRIXELEMENT = (
     add_rules(set(), [
-        # Every element of a zero matrix is 0.
         (MatrixElement(Z, i, j), S.Zero),
     ])
     # An off-diagonal element of a diagonal matrix is 0.  Negative indices wrap
