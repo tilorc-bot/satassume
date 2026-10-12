@@ -1,58 +1,37 @@
 """``re``, ``im``, ``arg``, ``sign``, ``Abs``, ``conjugate`` and the conjugate
 pair in ``Mul`` as tables.
 
-Rows: 3 facts, 1 split, 41 rules (26 of them the base layer: ``re``,
-``im``, ``arg``, ``Abs`` under sign facts and of exponentials, logarithms,
-sums, products and conjugates), 1 shared zero row;
-``handlers_v3/complex_parts.py`` is 567 lines.  The exponential forms are
-the ones in :mod:`.power_exp_log` (imported, not owned).
-
-This family is the base layer: the branch bookkeeping of every other
-family (``principal``, the wraps) reduces through ``re``/``im`` of
-exponentials, logarithms, sums and products and through ``arg`` and
-``Abs`` under sign facts, all of which are rules here (the ``BASE``
-rows).  What the bookkeeping needs beyond rows is the simple layer of
-:mod:`._simple`: ``floor`` of a bounded quantity and ``Piecewise``.
+This family is the base layer: the branch bookkeeping of every other family
+(``principal``, the wraps) reduces through ``re``/``im`` of exponentials,
+logarithms, sums and products and through ``arg`` and ``Abs`` under sign
+facts, all rules here.  What the bookkeeping needs beyond rows is the simple
+layer of :mod:`._simple`: ``floor`` of a bounded quantity and ``Piecewise``.
+The exponential forms are :mod:`.power_exp_log`'s (imported, not owned).
 
 The facts: ``Abs`` and ``arg`` of an exponential, composed with the
 exponential forms so that ``Abs(b**e) = Abs(b)**e``, ``Abs(y*r) =
-Abs(y)*Abs(r)`` and ``arg(y*r) = arg(y) + arg(r)`` up to the principal
-wrap derive (``arg`` only with the product forms: v3 leaves ``arg(w**e)``
-alone); and ``arg`` of a conjugate, exact through its own bookkeeping,
-which collapses whenever ``w`` is provably off the negative real axis.
-Products under ``sign`` split by an exact identity whose ordering
-requires a factor to resolve, which is v3's "fires only if at least one
-factor resolves"; the same ordering makes ``Abs(x*y)`` split only when a
-factor resolves, and it counts ``re`` nodes for ``Abs`` so that
+Abs(y)*Abs(r)`` and ``arg(y*r) = arg(y) + arg(r)`` up to the principal wrap
+derive (``arg`` only with the product forms: v3 leaves ``arg(w**e)``
+alone); and ``arg`` of a conjugate, exact through its own bookkeeping, which
+collapses whenever ``w`` is provably off the negative real axis.
+
+Ordering (``node_measure``): ``sign`` of a product splits only when a factor
+resolves, and so does ``Abs(x*y)``; ``Abs`` also counts ``re`` nodes, so
 ``Abs(b**e)`` for an imaginary ``b`` is not rewritten as
-``exp(re(e*log(b)))`` (v3 declines there too).  Sums and products under
-``conjugate`` are distributed by SymPy itself.
+``exp(re(e*log(b)))``.  Sums and products under ``conjugate`` are
+distributed by SymPy itself.
 
-Where the rows fire and v3 does not: ``arg(x*y)`` for a negative ``y`` is
-``arg(-x)`` (the product form with both signs flipped; v3 pulls positive
-factors only).  Other forms: ``Abs(x**-2)`` for a real ``x`` is ``x**-2``
-(v3: ``1/Abs(x**2)``), ``conjugate(x + y)`` for a real ``y`` is ``y +
-conjugate(x)`` (v3 conjugates every term first).
+Forms that differ from v3: ``arg(x*y)`` for a negative ``y`` is ``arg(-x)``
+(v3 pulls out positive factors only); ``Abs(x**-2)`` for a real ``x`` is
+``x**-2``; ``conjugate(x + y)`` for a real ``y`` is ``y + conjugate(x)``.
 
-Not covered (and why): ``conjugate(exp(w))`` for a ``w`` that does not
-resolve (v3 pushes the conjugate inside unconditionally; the ordering
-here wants a node to disappear); ``re``/``im`` of a power with a non-real
-base (no identity without ``expand(complex=True)``, as in v3).
-Checked (adversarial pass, 2026-09-24): every rule and generated row by
-hand; ``re``/``im``/``arg``/``Abs``/``sign``/``conjugate`` of products,
-powers, exponentials, logarithms and conjugates over 19 assumption
-profiles per symbol (about 700 random cases on real, imaginary, complex
-and infinite points), ``arg(x*y)`` for negative ``y`` and ``arg`` of a
-conjugate on the negative axis, and ``python -m satrefine.tools.refine_differential``.
-Found no wrong row.  Two wrong results traced below the tables: SymPy's
-``ask`` calls ``Abs(x)`` zero for an imaginary ``x`` and the combined
-backend passes that on (``arg(exp(I*Abs(x)))`` became ``0``;
-``needs/test_checker_abs_of_imaginary_is_zero.py``), and one ``ask`` can
-rewrite the old assumptions of every plain symbol in the process
-(``needs/test_checker_ask_poisons_plain_symbols.py``).  At infinity:
-``arg(exp(x)) -> 0`` under ``Q.extended_real(x)`` is ``nan`` at ``-oo``,
-and products with a zero and an infinite factor (``0*oo``) become ``0`` or
-``zoo``; the same class as ``power_exp_log``'s.
+Not covered: ``conjugate(exp(w))`` for a ``w`` that does not resolve (the
+ordering wants a node to disappear); ``re``/``im`` of a power with a
+non-real base (no identity without ``expand(complex=True)``).
+
+Wrong at infinity: ``arg(exp(x)) -> 0`` under ``Q.extended_real(x)`` is
+``nan`` at ``-oo``, and products with a zero and an infinite factor
+(``0*oo``) become ``0`` or ``zoo``; the same class as ``power_exp_log``'s.
 """
 from __future__ import annotations
 
@@ -71,13 +50,13 @@ s = part('s', Q.real)          # the real factors of a product
 h, m = exponent('h'), exponent('m')   # exponents that also bind 1 (conjugate(x) is conjugate(x)**1)
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
-ASSUMED = {~Q.zero(d),                     # d is nonzero
-           ~Q.zero(f) & Q.finite(f),       # f is nonzero and finite
-           Q.integer(n),                   # n is an integer
-           Q.integer(h), Q.integer(m),     # h and m are integers (h may be 0, so not k)
-           Q.real(u) | Q.extended_real(u),   # u is an extended real (+-oo included)
-           Q.imaginary(v),                 # v is imaginary
-           Q.commutative(g)}               # g commutes (a factor of a product)
+ASSUMED = {~Q.zero(d),
+           ~Q.zero(f) & Q.finite(f),
+           Q.integer(n),
+           Q.integer(h), Q.integer(m),     # h may be 0 (so not named k)
+           Q.real(u) | Q.extended_real(u),
+           Q.imaginary(v),
+           Q.commutative(g)}               # g: a factor of a product
 
 DEFINITIONS: list[Row] = add_rules(set(), [   # stage 0 definitions through sign
     (Abs(f), f/sign(f)),                   # sign f = f/|f| (Abs(zoo) is oo)
@@ -113,64 +92,64 @@ RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypot
     # The finite predicate is kept first: SymPy's ask proves Q.real(sin(x)) for a real x but
     # not Q.extended_real(sin(x)), whose handler goes by signs)
     add_rules({Q.nonnegative(a) | Q.extended_nonnegative(a)}, [
-        (Abs(a), a),                             # |a| = a for a >= 0 (also a = oo)
+        (Abs(a), a),                             # also a = oo
     ])
     + add_rules({Q.nonpositive(a) | Q.extended_nonpositive(a)}, [
-        (Abs(a), -a),                            # |a| = -a for a <= 0 (also a = -oo)
+        (Abs(a), -a),                            # also a = -oo
     ])
     + add_rules(set(), [
-        (re(u), u),                              # re u = u
-        (im(u), S.Zero),                         # im u = 0
-        (re(v), S.Zero),                         # re v = 0
+        (re(u), u),
+        (im(u), S.Zero),
+        (re(v), S.Zero),
         (im(v), -I*v),                           # im(i*t) = t
         # re / im are linear over the reals (these hold at infinity, where the definitions need a finite argument)
-        (re(s*w), s*re(w)),                      # a real factor comes out of re
-        (im(s*w), s*im(w)),                      # ... and of im
-        (re(vs*w), -I*vs*re(I*w)),               # re(vs*w) = (-i*vs)*re(i*w), imaginary vs
-        (im(vs*w), -I*vs*im(I*w)),               # im(vs*w) = (-i*vs)*im(i*w), imaginary vs
+        (re(s*w), s*re(w)),
+        (im(s*w), s*im(w)),
+        (re(vs*w), -I*vs*re(I*w)),
+        (im(vs*w), -I*vs*im(I*w)),
     ])
     # sign
     + add_rules({Q.positive(a) | Q.extended_positive(a)}, [
-        (sign(a), S.One),                        # sign a = 1 for a > 0 (also a = oo)
+        (sign(a), S.One),                        # also a = oo
     ])
     + add_rules({Q.negative(a) | Q.extended_negative(a)}, [
-        (sign(a), S.NegativeOne),                # sign a = -1 for a < 0 (also a = -oo)
+        (sign(a), S.NegativeOne),                # also a = -oo
     ])
     + add_rules({_IM_POSITIVE}, [
-        (sign(v), I),                            # sign(i*t) = i for t > 0
+        (sign(v), I),
     ])
     + add_rules({_IM_NEGATIVE}, [
-        (sign(v), -I),                           # sign(i*t) = -i for t < 0
+        (sign(v), -I),
     ])
     + add_rules(set(), [
-        (sign(Abs(d)), S.One),                   # sign|d| = 1
+        (sign(Abs(d)), S.One),
     ])
     + add_rules({Q.real(z)}, [
-        (sign(exp(z)), S.One),                   # sign(exp z) = 1 for real z
+        (sign(exp(z)), S.One),
     ])
     # conjugate
     + add_rules(set(), [
-        (conjugate(u), u),                                        # conjugate u = u
-        (conjugate(v), -v),                                       # conjugate v = -v
-        (conjugate(exp(z), evaluate=False), exp(conjugate(z))),   # conjugate(exp z) = exp(conjugate z) (SymPy evaluates the lhs)
-        (conjugate(b**n), conjugate(b)**n),                       # conjugate(b**n) = conjugate(b)**n
+        (conjugate(u), u),
+        (conjugate(v), -v),
+        (conjugate(exp(z), evaluate=False), exp(conjugate(z))),   # evaluate=False: SymPy would evaluate the lhs
+        (conjugate(b**n), conjugate(b)**n),
     ])
     + add_rules({Q.positive(b)}, [
-        (conjugate(b**e), b**conjugate(e)),      # conjugate(b**e) = b**conjugate(e), b > 0
+        (conjugate(b**e), b**conjugate(e)),
     ])
     # Mul
     + add_rules(set(), [
-        (g*conjugate(g), Abs(g)**2),                  # g*conjugate(g) = |g|**2
-        (g**n*conjugate(g)**n, Abs(g)**(2*n)),        # ... and for integer powers
+        (g*conjugate(g), Abs(g)**2),
+        (g**n*conjugate(g)**n, Abs(g)**(2*n)),
     ])
-    + add_rules({Q.positive(m), Q.positive(h - m)}, [
-        (g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m)),             # ... unequal positive powers, the higher one g's
+    + add_rules({Q.positive(m), Q.positive(h - m)}, [   # unequal positive powers, the higher one g's
+        (g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m)),
     ])
-    + add_rules({Q.positive(h), Q.positive(m - h)}, [
-        (g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h)),  # ... or conjugate(g)'s
+    + add_rules({Q.positive(h), Q.positive(m - h)}, [   # ... or conjugate(g)'s
+        (g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h)),
     ])
     + add_rules(set(), [
-        (f*zoo, zoo),                                 # zoo absorbs a nonzero finite factor
+        (f*zoo, zoo),                                 # zoo absorbs a nonzero finite factor (trig's poles rely on it)
         ((-1)**a*(-1)**e, (-1)**(a + e)),             # (-1)**a = exp(I*pi*a): the powers of -1 combine
     ])
 )

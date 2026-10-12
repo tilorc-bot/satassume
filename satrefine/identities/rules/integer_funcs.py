@@ -22,8 +22,8 @@ part by part, so ``floor(y)`` of a finite ``y`` is one; issue #19).  ``u < v``
 is asked as ``Q.lt(u, v)`` alone, which satassume proves from either spelling
 for the integer sides these rows bind (#40).
 
-Not stated as definitions, because they derive nothing the rows below do not
-(measured 2026-09-24): ``ceiling(x) = -floor(-x)``, ``Mod(a, b) = a -
+Not stated as definitions, because they derive nothing the rows below do
+not: ``ceiling(x) = -floor(-x)``, ``Mod(a, b) = a -
 b*floor(a/b)``, ``Rem`` by truncation.  Pattern forms these rows rely on are
 pinned in ``tests/refine_identities/core/test_engine_integer_funcs.py``.
 """
@@ -44,7 +44,7 @@ a, b, c, d, f, g, h, m, n, w, x, zero = symbols('a b c d f g h m n w x zero')
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 # The letters follow the tables' convention (n, m integers; d nonzero; a, b, c, w, x arbitrary).
-ASSUMED = {integer(n), Q.nonzero(d)}   # n is an integer (Gaussian included), d is nonzero
+ASSUMED = {integer(n), Q.nonzero(d)}
 
 
 # ---- floor, ceiling, frac ------------------------------------------------------
@@ -89,7 +89,7 @@ FRAC_DEFINITION = add_rules(set(), [
 
 
 # ---- Mod, Rem ------------------------------------------------------------------
-# d is nonzero; b is any divisor.
+# b is any divisor (no standing facts).
 
 ASSUMED |= {Q.zero(zero)}
 
@@ -98,7 +98,7 @@ MOD = (
         (Mod(a, d), S.Zero),                     # Mod(6, 3) = 0
     ])
     + add_rules(set(), [
-        (Mod(zero, b), S.Zero),                  # Mod(0, b) = 0
+        (Mod(zero, b), S.Zero),
     ])
     + add_rules({Q.integer(c/d)}, [
         (Mod(c + x, d), Mod(x, d)),              # Mod(x + 6, 3) = Mod(x, 3)
@@ -120,7 +120,7 @@ REM = (
         (Rem(a, d), S.Zero),                     # Rem(6, 3) = 0
     ])
     + add_rules(set(), [
-        (Rem(zero, b), S.Zero),                  # Rem(0, b) = 0
+        (Rem(zero, b), S.Zero),
     ])
     # 0 <= a < |b|, b finite (Rem(a, +-oo) is nan, as for Mod)
     + add_rules({Q.finite(b) & Q.nonnegative(a) & (Q.lt(a, b) | Q.lt(a, -b))}, [
