@@ -1,5 +1,9 @@
 """The rule families (one module per family) and the helpers their tables share.
 
+A family module holds rows only: its symbols, ``ASSUMED`` and its tables.
+Which handlers serve which key is :mod:`..wiring` (derived from the rows for a
+family of rule rows only).
+
 Each family states its standing facts in an ``ASSUMED`` set (see
 :class:`..core.spec.Family`), so a letter carries its assumptions, and every
 table is built with ``add_rules(assume, rows)``, whose facts (``set()`` for

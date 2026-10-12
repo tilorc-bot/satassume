@@ -62,7 +62,8 @@ By `905be5d` every remaining difference from v3 was reviewed and accepted
 satrefine/
   identities/      online: runs on every refine call
     core/            driver, guard, prove, match, rewrite, split, measure, spec, hooks
-    rules/           the families as specs; _tables (table API), _wraps, _simple
+    rules/           the families as rows; _tables (table API), _wraps, _simple
+    wiring.py        which handlers serve which key: each family's spec
     generated/       checked-in rule tables, written offline
     compat/          expected to change: backend routing, SymPy workarounds,
                      the matrix family and matcher hook, the vendored dispatcher
@@ -77,7 +78,8 @@ satrefine/
 all 14 of its handler keys are overridden. `load()` in
 `satrefine/identities/__init__.py` (called by `satrefine/handlers_identities/`)
 replaces `satrefine.refine` with the driver, installs the `_simple` fallbacks,
-imports the generated tables and registers every family's `SPEC` and ranges.
+imports the generated tables and registers every family's spec
+(`wiring.family_spec`) and ranges.
 Layout rules, checked by `tests/refine_identities/test_import_direction.py` and
 `tests/refine_identities/rules/test_family_specs.py`:
 
@@ -96,8 +98,14 @@ Layout rules, checked by `tests/refine_identities/test_import_direction.py` and
 
 ## Families as data
 
-A family module (`rules/*.py`, `compat/matrices.py`) states tables of rows and
-ends with `SPEC = Family(...)` (`core/spec.py`). Row kinds:
+A family module (`rules/*.py`, `compat/matrices.py`) states rows only: its
+symbols, `ASSUMED` and named tables. Its `Family` (`core/spec.py`), which
+handlers serve which `handlers_dict` key, is made in `identities/wiring.py`:
+for a family of rule rows only (trig, hyperbolic, combinatorial, matrices)
+`Family.from_rows` derives it from `RULES`, each key getting the rows of its
+head in table order (a generic-head row such as `ZERO` goes to every head of
+its arity); the families that mix rule and identity tables are wired by hand
+there (handler order, orderings, opaque heads). Row kinds:
 
 | Kind | Shape | Meaning |
 |---|---|---|

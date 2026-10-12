@@ -41,11 +41,8 @@ def family_spec(family: str) -> Family:
     family, :data:`WIRED` otherwise); making it completes the module's tables."""
     module = importlib.import_module(family_module_name(family))
     wire = WIRED.get(family)
-    if hasattr(module, "SPEC"):   # a module that still wires itself
-        spec = module.SPEC
-    else:
-        spec = wire(module) if wire else Family.from_rows(module.RULES, assumed=module.ASSUMED,
-                                                          by_binding=family in BY_BINDING)
+    spec = wire(module) if wire else Family.from_rows(module.RULES, assumed=module.ASSUMED,
+                                                      by_binding=family in BY_BINDING)
     complete_module(module, spec)
     return spec
 

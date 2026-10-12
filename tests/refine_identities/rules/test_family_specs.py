@@ -1,9 +1,10 @@
 """Families as specs (:mod:`satrefine.identities.core.spec`): importing a family
 registers nothing, :func:`satrefine.identities.load` registers every family's
-spec (:func:`satrefine.identities.family_spec`), and every row a family's
-handlers use is one of the rows its spec states (``facts``, ``rules``),
-derived from them (``derive(facts, exp_forms)``), or a stated row over a
-generic head (an undefined function such as ``G``) with the key's head put in."""
+spec (:func:`satrefine.identities.family_spec`), every row a family's handlers
+use is one of the rows its spec states (``facts``, ``rules``), derived from
+them (``derive(facts, exp_forms)``), or a stated row over a generic head (an
+undefined function such as ``G``) with the key's head put in, and a family
+module states rows only."""
 from __future__ import annotations
 
 import os
@@ -90,6 +91,14 @@ def test_registered_handlers_are_the_spec(module):
         for i, part in enumerate(_parts(value)):
             obj = live.parts[i] if len(_parts(value)) > 1 else live
             assert parts.setdefault(part, obj) is obj, key
+
+
+@pytest.mark.parametrize("module", family_modules(), ids=lambda m: m.__name__.rsplit(".", 1)[-1])
+def test_a_family_module_states_rows_only(module):
+    """No handler wiring in a family module: no spec, and none of the spec classes."""
+    assert not hasattr(module, "SPEC")
+    assert not [name for name, value in vars(module).items()
+                if isinstance(value, (Family, Rules, Identities)) or value in (Family, Rules, Identities)]
 
 
 def test_rules_only_families_route_rows_by_head():

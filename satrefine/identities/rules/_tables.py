@@ -1,28 +1,25 @@
 """Helpers the table modules share (the authors' side of the engine).
 
 The family modules import everything they use from here: the engine's
-table API (``Row``, ``part``, ``exponent``, the orderings ``node_measure`` and
-``count_measure`` with their tie-breaker ``size``, the marker ``by_cases`` for a
-condition that may hold only by cases, and the spec classes ``Family``, ``Rules``, ``Identities``,
-re-exported from :mod:`..core`), the wrap ``principal`` and the helpers below.
+table API (``Row``, ``part``, ``exponent``, the marker ``by_cases`` for a
+condition that may hold only by cases), the wrap ``principal`` and the
+helpers below.  A family module states rows only; which handlers serve which
+key, with which orderings, is :mod:`..wiring`.
 
-``ZERO`` is the one generic row every unary family registers; the orderings
-tables pass as ``measure=`` are in :mod:`..core.measure`.
+``ZERO`` is the generic row ``f(x) -> f(0)``, stated by the unary families
+that want it (in their ``RULES``, or in their wiring).
 """
 from __future__ import annotations
 
 from sympy import And, Function, Q, Symbol, exp, true
 
 from ..core.match import exponent, part
-from ..core.measure import count_measure, node_measure, size
 from ..core.prove import by_cases
 from ..core.rewrite import Row
-from ..core.spec import Family, Identities, Rules
 from ..core.spec import assume as _assume_row
 from ._wraps import principal
 
-__all__ = ["ZERO", "Family", "Identities", "Row", "Rules", "add_rules", "by_cases", "count_measure", "derive", "exponent",
-           "node_measure", "part", "principal", "size"]
+__all__ = ["ZERO", "Row", "add_rules", "by_cases", "derive", "exponent", "part", "principal"]
 
 
 _F = Function('F')
