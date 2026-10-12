@@ -17,14 +17,15 @@ from __future__ import annotations
 
 from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
-from ._tables import ZERO, Family, Row, Rules, add_rules
+from ._tables import ZERO, Row, add_rules
 
 # n has no standing facts: each block's hypothesis gives its parity (and so integrality).
 n, r = symbols('n r')
 ASSUMED: set = set()
 
 RULES: list[Row] = (
-    add_rules({Q.even(n)}, [  # m = n/2:  sinh(r + m*pi*I) = (-1)**m sinh r
+    [ZERO]   # f(x) = f(0) when x is zero
+    + add_rules({Q.even(n)}, [  # m = n/2:  sinh(r + m*pi*I) = (-1)**m sinh r
         (sinh(n*pi*I/2 + r), (-1)**(n/2)*sinh(r)),
         (cosh(n*pi*I/2 + r), (-1)**(n/2)*cosh(r)),
         (sech(n*pi*I/2 + r), (-1)**(n/2)*sech(r)),
@@ -41,10 +42,3 @@ RULES: list[Row] = (
         (coth(n*pi*I/2 + r), tanh(r)),                       # coth(r + pi*I/2) = tanh r
     ])
 )
-
-# by_binding: try n as the whole pi*I/2 coefficient, under both parities, before splitting it
-# (as in trig).
-_shift = Rules([ZERO] + RULES, by_binding=True)
-
-SPEC = Family({'sinh': _shift, 'cosh': _shift, 'tanh': _shift, 'coth': _shift, 'sech': _shift, 'csch': _shift},
-              rules=[ZERO] + RULES, assumed=ASSUMED)

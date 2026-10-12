@@ -38,7 +38,7 @@ from __future__ import annotations
 from sympy import Abs, I, Interval, Q, S, arg, conjugate, exp, floor, im, log, pi, re, sign, symbols, true, zoo
 from sympy.core import Mul
 
-from ._tables import ZERO, Family, Identities, Row, Rules, add_rules, derive, exponent, node_measure, part
+from ._tables import Row, add_rules, derive, exponent, part
 from .power_exp_log import EXP_FORMS as _EXP_FORMS   # not owned here (counted in power_exp_log)
 
 # z, b, e, y, r, w and a are arbitrary (b, e, y and r also appear in power_exp_log's
@@ -165,34 +165,3 @@ _PRODUCT_FORMS = [row for row in _EXP_FORMS if isinstance(row[0], Mul)]
 _OTHER_FACTS = FACTS[len(DEFINITIONS):]
 IDENTITIES: list[Row] = (derive([row for row in _OTHER_FACTS if isinstance(row[0], Abs)], _EXP_FORMS)
                          + derive([row for row in _OTHER_FACTS if isinstance(row[0], arg)], _PRODUCT_FORMS))
-
-_rules = Rules([ZERO] + RULES)   # also arg: arg(0) is nan, which is what arg(x) is at x = 0
-
-
-def _definition(head, **kw):
-    return Identities([row for row in DEFINITIONS if row[0].func is head], **kw)
-
-
-def _identity(head, **kw):
-    rows = [row for row in IDENTITIES if row[0].func is head]
-    return Identities(rows, measure=node_measure((head,)), **kw)
-
-
-def _splits(head):
-    rows = [row for row in SPLITS if row[0].func is head]
-    return Identities(rows, measure=node_measure((head,)))
-
-
-# the splits get a handler of their own so they can fire inside a derived row's candidate
-SPEC = Family({'Abs': (_rules, Identities([row for row in IDENTITIES if row[0].func is Abs],
-                                          measure=node_measure((Abs, re))),
-                       _definition(Abs, opaque=(sign,))),
-               're': _rules,
-               'im': _rules,
-               'arg': (_rules, _identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
-                       _definition(arg, opaque=(sign,))),
-               'sign': (_rules, _splits(sign)),
-               'conjugate': _rules,
-               'Mul': Rules([row for row in RULES if isinstance(row[0], Mul)])},
-              facts=FACTS + SPLITS, exp_forms=_EXP_FORMS, rules=[ZERO] + RULES, ranges=RANGES,
-              assumed=ASSUMED)
