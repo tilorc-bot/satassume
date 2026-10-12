@@ -16,8 +16,13 @@ from __future__ import annotations
 import importlib
 from functools import cache
 
+from sympy import Abs, arg, floor, im, re, sign
+from sympy.core import Mul
+
 from . import family_module_name
-from .core.spec import Family, complete_module
+from .core.measure import node_measure
+from .core.spec import Family, Identities, Rules, complete_module
+from .rules._tables import ZERO
 
 BY_BINDING = frozenset({"trig", "hyperbolic"})
 """Rules-only families whose rows with one left side are tried binding by binding
@@ -48,5 +53,34 @@ def _headed(rows: list, head) -> list:
     return [row for row in rows if row[0].func is head]
 
 
-WIRED: dict = {}
+# ---- complex_parts --------------------------------------------------------------
+
+def complex_parts(m) -> Family:
+    from .rules.power_exp_log import EXP_FORMS   # not owned by complex_parts (counted in power_exp_log)
+    rules = Rules([ZERO] + m.RULES)   # also arg: arg(0) is nan, which is what arg(x) is at x = 0
+
+    def definition(head, **kw):
+        return Identities(_headed(m.DEFINITIONS, head), **kw)
+
+    def identity(head, **kw):
+        return Identities(_headed(m.IDENTITIES, head), measure=node_measure((head,)), **kw)
+
+    def splits(head):
+        return Identities(_headed(m.SPLITS, head), measure=node_measure((head,)))
+
+    # the splits get a handler of their own so they can fire inside a derived row's candidate
+    return Family({'Abs': (rules, Identities(_headed(m.IDENTITIES, Abs), measure=node_measure((Abs, re))),
+                           definition(Abs, opaque=(sign,))),
+                   're': rules,
+                   'im': rules,
+                   'arg': (rules, identity(arg, opaque=(floor, im)),   # arg is the result, not bookkeeping
+                           definition(arg, opaque=(sign,))),
+                   'sign': (rules, splits(sign)),
+                   'conjugate': rules,
+                   'Mul': Rules([row for row in m.RULES if isinstance(row[0], Mul)])},
+                  facts=m.FACTS + m.SPLITS, exp_forms=EXP_FORMS, rules=[ZERO] + m.RULES, ranges=m.RANGES,
+                  assumed=m.ASSUMED)
+
+
+WIRED: dict = {"complex_parts": complex_parts}
 """The families that mix rule and identity tables: ``family -> (module -> Family)``."""
