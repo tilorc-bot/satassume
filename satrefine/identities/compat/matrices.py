@@ -65,7 +65,7 @@ from sympy import Symbol
 from sympy.logic.boolalg import BooleanFunction
 from sympy.matrices.expressions.matexpr import MatrixElement
 
-from ..rules._tables import Family, Rules, add_rules
+from ..rules._tables import add_rules
 
 # c is a scalar, zero a zero scalar, i and j are indices; m, n, l and h are sizes.
 c, zero, i, j, m, n, l, h = symbols('c zero i j m n l h')
@@ -227,8 +227,3 @@ MATRIXELEMENT = (
 
 RULES: list[tuple] = (TRANSPOSE + INVERSE + DETERMINANT + TRACE + MATADD
                       + HADAMARD + MATMUL + MATRIXELEMENT)
-
-SPEC = Family({'Determinant': Rules(DETERMINANT), 'HadamardProduct': Rules(HADAMARD), 'Inverse': Rules(INVERSE),
-               'MatAdd': Rules(MATADD), 'MatMul': Rules(MATMUL), 'MatrixElement': Rules(MATRIXELEMENT),
-               'Trace': Rules(TRACE), 'Transpose': Rules(TRANSPOSE)},
-              rules=RULES, assumed=ASSUMED)

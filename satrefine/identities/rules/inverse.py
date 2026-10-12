@@ -47,7 +47,7 @@ from sympy import (Abs, I, Interval, Piecewise, Q, S, acos, acosh, acot, acoth, 
                    atan2, atanh, cos, cosh, cot, coth, csch, floor, im, nan, pi, sech, sign, sin, sinh, symbols, tan,
                    tanh, true)
 
-from ._tables import ZERO, Family, Identities, Row, Rules, add_rules, node_measure
+from ._tables import Row, add_rules
 from ._wraps import reflect_full, reflect_half, sawtooth
 
 d, t, u, x, y, z = symbols('d t u x y z')
@@ -133,17 +133,3 @@ RANGES: list = [   # (head(y), range, condition): read by the floor of a bounded
     (asin(y), Interval(-pi/2, pi/2),       Q.real(asin(y))),
     (acos(y), Interval(0, pi),             Q.real(acos(y))),
 ]
-
-_rules = Rules([ZERO] + RULES)
-
-
-def _identity(head, opaque=(floor, im)):
-    rows = [row for row in FACTS if row[0].func is head]
-    return Identities(rows, measure=node_measure((head,)), opaque=opaque)
-
-
-SPEC = Family({**{head.__name__: (_rules, _identity(head))
-                  for head in (asin, acos, atan, asinh, atanh, acoth, acsch)},
-               'acosh': _rules, 'asech': _rules,
-               'atan2': _identity(atan2, opaque=(floor, im, Piecewise))},
-              facts=FACTS, rules=[ZERO] + RULES, ranges=RANGES, assumed=ASSUMED)

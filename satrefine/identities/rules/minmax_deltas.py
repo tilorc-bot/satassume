@@ -49,13 +49,12 @@ factors at once; the row scales out one and the dispatcher repeats it.
 """
 from __future__ import annotations
 
-from sympy import (Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Min, Piecewise, Q, S, Tuple,
-                   count_ops, nan, symbols)
+from sympy import Abs, DiracDelta, Function, Heaviside, KroneckerDelta, Max, Min, Piecewise, Q, S, Tuple, nan, symbols
 
-from ._tables import Family, Identities, Rules, add_rules
+from ._tables import add_rules
 
 a, b, d, i, j, lo, hi, inf, ninf, r, t, u, w = symbols('a b d i j lo hi inf ninf r t u w')
-G = Function('G')        # generic head: KroneckerDelta(i, j), Heaviside(u, w), derivatives of DiracDelta
+G = Function('G')        # generic head: the derivatives of DiracDelta (DiracDelta(d, r) needs an integer r)
 
 # Assumed throughout: a row takes each fact whose variables are all in its left side.
 # The letters follow the tables' convention (t real; u extended real; d nonzero; a, b, r, w arbitrary).
@@ -67,11 +66,12 @@ FACTS = (
         (Min(a, b), Piecewise((a, Q.le(a, b)), (b, Q.gt(a, b)))),
     ])
     + add_rules(set(), [
-        (G(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True))),
+        (KroneckerDelta(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True))),
     ])
     + add_rules(set(), [
         (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
-        (G(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)), (nan, True))),
+        (Heaviside(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)),
+                                    (nan, True))),
     ])
 )
 
@@ -100,21 +100,3 @@ DIRAC = add_rules(set(), [
 ])
 
 RULES = DIRAC + INFINITE
-
-
-def _measure(e, assumptions):
-    """Arguments of the family's heads, then size: a definition fires when it drops one."""
-    return (sum(len(n.args) for n in e.atoms(Max, Min, KroneckerDelta, Heaviside)), count_ops(e))
-
-
-def _definitions(rows):
-    return Identities(rows, measure=_measure, opaque=(), splits=False)
-
-
-# SPEC picks rows out of FACTS and INFINITE by position: keep their order in step.
-SPEC = Family({'Max': (Rules(INFINITE[0:2]), _definitions(FACTS[0:1])),
-               'Min': (Rules(INFINITE[2:4]), _definitions(FACTS[1:2])),
-               'KroneckerDelta': _definitions(FACTS[2:4]),
-               'Heaviside': _definitions(FACTS[4:5]),
-               'DiracDelta': Rules(DIRAC)},
-              facts=FACTS, rules=RULES, assumed=ASSUMED)

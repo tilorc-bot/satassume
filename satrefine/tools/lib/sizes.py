@@ -7,7 +7,7 @@ the families, the generated tables, the ``ask`` backend and the vendored
 SymPy dispatcher (``compat/upstream.py``, ``satrefine/_upstream.py`` before
 phase 3, never counted); offline,
 ``satrefine/build`` (specialisation, fixpoint).  Rows are counted from each
-family's ``SPEC`` (:class:`satrefine.identities.core.spec.Family`): its table
+family's spec (:func:`satrefine.identities.family_spec`): its table
 kinds ``facts``, ``exp_forms``, ``rules``, ``ranges``, counting only rows the
 module states in its own public tables (not the shared ``ZERO`` row, not another
 family's exponential forms); ``stage0`` is every stated row.
@@ -34,12 +34,15 @@ def _size(module, name: str) -> int:
 def family_rows() -> list[tuple[str, Counter]]:
     """(family, counts) for every family: ``COLUMNS``, ``STAGE0`` and ``GENERATED``
     (the size of ``generated/<family>.py``, 0 if there is none)."""
-    from satrefine.identities import families, family_module_name
+    from satrefine.identities import families, family_module_name, family_spec
+    from satrefine.identities.rules._tables import ZERO
     out = []
     for name in families():
         mod = importlib.import_module(family_module_name(name))
+        spec = family_spec(name)
         own = [v for k, v in vars(mod).items() if isinstance(v, list) and not k.startswith("_")]
-        counts = Counter({col: sum(any(row in rows for rows in own) for row in getattr(mod.SPEC, kind))
+        counts = Counter({col: sum(row[:2] != ZERO[:2] and any(row in rows for rows in own)
+                                   for row in getattr(spec, kind))
                           for col, kind in KINDS.items()})
         counts["SIMPLE_RULES"] = 0
         counts["STAGE0"] = sum(counts.values())

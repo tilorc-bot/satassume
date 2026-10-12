@@ -71,11 +71,10 @@ Still wrong at infinity (the same class as ``log(1/x)``, left as is):
 """
 from __future__ import annotations
 
-from sympy import Abs, E, I, Mod, Q, S, arg, exp, floor, im, log, pi, symbols, true, zoo
+from sympy import Abs, E, I, Mod, Q, S, arg, exp, log, pi, symbols, true, zoo
 from sympy.core import Pow
 
-from ._tables import (ZERO, Family, Identities, Row, Rules, add_rules, by_cases, count_measure, derive, node_measure, part,
-                      principal, size)
+from ._tables import Row, add_rules, by_cases, derive, part, principal
 
 # b is a base; a and e are exponents; y and r are factors of a product; z and x are arguments:
 # all arbitrary (b, e, y and r also appear in the exponential forms, which assume nothing).
@@ -203,25 +202,3 @@ LOG_FORMS: list[Row] = [(EXP_FORMS[0][0], EXP_FORMS[0][1], EXP_FORMS[0][2] & by_
                         ] + EXP_FORMS[1:]
 
 IDENTITIES: list[Row] = derive([row for row in FACTS if isinstance(row[0], log)], LOG_FORMS)
-POW_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], Pow)]
-EXP_IDENTITIES: list[Row] = [row for row in FACTS if isinstance(row[0], exp)]
-
-
-def negative_number_base_measure(e, assumptions):
-    """``(powers of a negative number, size)``: the ordering for ``c**n -> (-c)**n``
-    rows, which must not fire for a symbolic base (SymPy's ``Pow._eval_refine``
-    rewrites ``(-x)**n`` back to ``-x**n`` for odd ``n``, a cycle)."""
-    negative = sum(1 for node in e.atoms(Pow) if node.base.is_number and node.base.is_negative)
-    return (negative, size(e))
-
-
-_rules = Rules(RULES)
-_zero = Rules([ZERO])
-
-SPEC = Family({'log': (_zero, Identities(IDENTITIES), Rules(LOG_RULES)),
-               'Pow': (_rules,
-                       Identities(POW_IDENTITIES, measure=node_measure((Pow, exp)), opaque=(floor, im, arg, log)),
-                       Identities(NEGATIVE_BASE, measure=negative_number_base_measure)),
-               'exp': (_zero, _rules, Identities(EXP_IDENTITIES, measure=count_measure((exp,))))},
-              facts=FACTS + NEGATIVE_BASE, exp_forms=LOG_FORMS, rules=[ZERO] + RULES + LOG_RULES,
-              assumed=ASSUMED)

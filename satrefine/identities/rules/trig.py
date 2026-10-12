@@ -16,14 +16,13 @@ Not covered: ``sinc`` shifted by a nonzero remainder (no simpler form),
 """
 from __future__ import annotations
 
-from sympy import Function, Q, cos, cot, csc, pi, sec, sin, sinc, symbols, tan
+from sympy import Q, cos, cot, csc, pi, sec, sin, sinc, symbols, tan
 from sympy.calculus.accumulationbounds import AccumBounds
 
-from ._tables import ZERO, Family, Row, Rules, add_rules
+from ._tables import ZERO, Row, add_rules
 
 # n has no standing facts: each block's hypothesis gives its parity (and so integrality).
 n, r, k, zero, u = symbols('n r k zero u')
-F = Function('F')   # generic head standing for sin and cos in BOUNDED
 
 ASSUMED = {Q.integer(k), ~Q.zero(k),              # k: a nonzero integer (sinc at a multiple)
            Q.zero(zero),
@@ -31,7 +30,8 @@ ASSUMED = {Q.integer(k), ~Q.zero(k),              # k: a nonzero integer (sinc a
 
 # Signs are a single power of -1 (not -(-1)**...), so the output stays one power.
 RULES: list[Row] = (
-    add_rules({Q.even(n)}, [  # m = n/2:  sin(r + m*pi) = (-1)**m sin r
+    [ZERO]   # f(x) = f(0) when x is zero
+    + add_rules({Q.even(n)}, [  # m = n/2:  sin(r + m*pi) = (-1)**m sin r
         (sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),
         (cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),
         (sec(n*pi/2 + r), (-1)**(n/2)*sec(r)),
@@ -53,17 +53,8 @@ RULES: list[Row] = (
         # fires only at exact multiples of pi/2.  Bare sinc(k*pi/2) matches only that literal.
         (sinc(k*pi/2 + zero), sin(k*pi/2)/(k*pi/2)),
     ])
+    + add_rules(set(), [   # of a real infinity (SymPy's value)
+        (sin(u), AccumBounds(-1, 1)),
+        (cos(u), AccumBounds(-1, 1)),
+    ])
 )
-
-BOUNDED: list[Row] = add_rules(set(), [
-    (F(u), AccumBounds(-1, 1)),   # sin, cos of a real infinity (SymPy's value)
-])
-
-# by_binding: try n as the whole pi/2 coefficient, under both parities, before splitting it,
-# so sec(x + (2*j + 1)*pi/2) is one odd shift rather than an even shift plus a quarter turn.
-_shift = Rules([ZERO] + RULES, by_binding=True)
-_bounded = Rules(BOUNDED)
-
-SPEC = Family({'sin': (_shift, _bounded), 'cos': (_shift, _bounded),
-               'tan': _shift, 'cot': _shift, 'sec': _shift, 'csc': _shift, 'sinc': _shift},
-              rules=[ZERO] + RULES + BOUNDED, assumed=ASSUMED)

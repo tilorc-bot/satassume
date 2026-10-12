@@ -1,9 +1,10 @@
 """Families as specs (:mod:`satrefine.identities.core.spec`): importing a family
-registers nothing, :func:`satrefine.identities.load` registers every ``SPEC``,
-and every row a family's handlers use is one of the rows its ``SPEC`` states
-(``facts``, ``rules``), derived from them (``derive(facts, exp_forms)``), or a
-stated row over a generic head (an undefined function such as ``G``) with the
-key's head put in (``integer_funcs.MOD_FACTS``)."""
+registers nothing, :func:`satrefine.identities.load` registers every family's
+spec (:func:`satrefine.identities.family_spec`), every row a family's handlers
+use is one of the rows its spec states (``facts``, ``rules``), derived from
+them (``derive(facts, exp_forms)``), or a stated row over a generic head (an
+undefined function such as ``G``) with the key's head put in, and a family
+module states rows only."""
 from __future__ import annotations
 
 import os
@@ -16,7 +17,7 @@ from sympy import sympify
 from sympy.core.function import UndefinedFunction
 
 from satrefine.identities.compat.upstream import handlers_dict
-from satrefine.identities import families, family_module_name, family_modules
+from satrefine.identities import families, family_module_name, family_modules, family_spec
 from satrefine.identities.core.spec import Family, Identities, Rules, build
 from satrefine.identities.rules._tables import derive
 
@@ -56,7 +57,7 @@ def _parts(value) -> tuple:
 
 @pytest.mark.parametrize("module", family_modules(), ids=lambda m: m.__name__.rsplit(".", 1)[-1])
 def test_handler_rows_are_stated_or_derived(module):
-    spec = module.SPEC
+    spec = family_spec(module.__name__.rsplit(".", 1)[-1])
     assert isinstance(spec, Family)
     stated = [_norm(r) for r in [*spec.facts, *spec.rules]]
     allowed = set(stated) | {_norm(r) for r in derive([f for f in spec.facts if len(f) == 3], spec.exp_forms)}
@@ -69,23 +70,49 @@ def test_handler_rows_are_stated_or_derived(module):
                     continue
                 head = row[0].func
                 assert any(tuple(t.replace(g[0].func, head) for t in g) == row for g in generic), \
-                    f"{key}: {row} is neither stated nor derived in {module.__name__}.SPEC"
+                    f"{key}: {row} is neither stated nor derived in the spec of {module.__name__}"
 
 
 @pytest.mark.parametrize("module", family_modules(), ids=lambda m: m.__name__.rsplit(".", 1)[-1])
 def test_registered_handlers_are_the_spec(module):
     """``load`` registered each key of the spec with handlers of the spec's rows;
     a part named twice is one handler object; a one-part key is that part's handler."""
-    built = build(module.SPEC)
-    for key, value in module.SPEC.handlers.items():
+    spec = family_spec(module.__name__.rsplit(".", 1)[-1])
+    built = build(spec)
+    for key, value in spec.handlers.items():
         live, fresh = handlers_dict[key], built[key]
         if isinstance(value, tuple) and len(value) > 1:
             assert [p.rows for p in live.parts] == [p.rows for p in fresh.parts], key
         else:
             assert live.rows == fresh.rows and live.kind == fresh.kind, key
     parts = {}
-    for key, value in module.SPEC.handlers.items():
+    for key, value in spec.handlers.items():
         live = handlers_dict[key]
         for i, part in enumerate(_parts(value)):
             obj = live.parts[i] if len(_parts(value)) > 1 else live
             assert parts.setdefault(part, obj) is obj, key
+
+
+@pytest.mark.parametrize("module", family_modules(), ids=lambda m: m.__name__.rsplit(".", 1)[-1])
+def test_a_family_module_states_rows_only(module):
+    """No handler wiring in a family module: no spec, and none of the spec classes."""
+    assert not hasattr(module, "SPEC")
+    assert not [name for name, value in vars(module).items()
+                if isinstance(value, (Family, Rules, Identities)) or value in (Family, Rules, Identities)]
+
+
+def test_rules_only_families_route_rows_by_head():
+    """A rules-only family serves each key the rows of its head, in table order, and a
+    generic row (``ZERO``, ``G(x, zero)``) every head of its arity."""
+    trig = family_spec("trig")
+    assert set(trig.handlers) == {"sin", "cos", "tan", "cot", "sec", "csc", "sinc"}
+    for key, part in trig.handlers.items():
+        assert part.by_binding
+        heads = [row[0].func for row in part.rows]
+        assert all(h.__name__ == key or isinstance(h, UndefinedFunction) for h in heads), key
+        assert isinstance(heads[0], UndefinedFunction), key            # ZERO first
+    combinatorial = family_spec("combinatorial")
+    generic = [k for k, p in combinatorial.handlers.items() if any(isinstance(r[0].func, UndefinedFunction)
+                                                                   for r in p.rows)]
+    assert sorted(generic) == ["FallingFactorial", "RisingFactorial", "binomial"]
+    assert not combinatorial.handlers["factorial"].by_binding
