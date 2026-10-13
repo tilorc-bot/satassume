@@ -128,12 +128,15 @@ def inverse(m) -> Family:
 # ---- minmax_deltas --------------------------------------------------------------
 
 def minmax_measure(e, assumptions):
-    """Arguments of the family's heads, then size: a definition fires when it drops one."""
+    """Arguments of the family's heads, then size.  A ``Piecewise`` definition fires
+    when every condition of its right side is decided under the assumptions (no
+    ``Piecewise`` is left) and the result has fewer arguments of ``Max``, ``Min``,
+    ``KroneckerDelta`` and ``Heaviside``."""
     return (sum(len(n.args) for n in e.atoms(Max, Min, KroneckerDelta, Heaviside)), count_ops(e))
 
 
 def minmax_deltas(m) -> Family:
-    def definitions(head):   # no case split (see the module docstring)
+    def definitions(head):   # no case split: on refusals it costs about 5x and derives nothing more
         return Identities(_headed(m.FACTS, head), measure=minmax_measure, opaque=(), splits=False)
 
     return Family({'Max': (Rules(_headed(m.INFINITE, Max)), definitions(Max)),

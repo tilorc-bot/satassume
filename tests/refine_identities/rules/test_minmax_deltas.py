@@ -34,7 +34,9 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (Min(x, y), Q.negative_infinite(x) & Q.real(y), x, ON),
     (Max(x, y), Q.negative_infinite(x) & Q.positive_infinite(y), y, ON),
     # an infinite argument decides without y known real: Max is defined only at extended
-    # real arguments (Max(oo, I) raises), so the rows are exact wherever the input has a value
+    # real arguments (Max(oo, I) raises), so the rows are exact wherever the input has a value.
+    # The Max and Min definitions alone would not do this (they need y known to be real to
+    # prove x >= y); the INFINITE rows of minmax_deltas.py do.
     (Max(x, y), Q.positive_infinite(x), x, ON), (Max(x, y), Q.negative_infinite(y), x, ON),
     (Min(x, y), Q.negative_infinite(x), x, ON), (Min(x, y), Q.positive_infinite(y), x, ON),
     (Max(x, y, z), Q.negative_infinite(x), Max(y, z), ON),
