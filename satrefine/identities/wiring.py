@@ -121,7 +121,7 @@ def inverse(m) -> Family:
     return Family({**{head.__name__: (rules, identity(head))
                       for head in (asin, acos, atan, asinh, atanh, acoth, acsch)},
                    'acosh': rules, 'asech': rules,
-                   'atan2': identity(atan2, opaque=(floor, im, Piecewise))},
+                   'atan2': identity(atan2, opaque=(floor, im, Piecewise))},   # fires when one branch is selected
                   facts=m.FACTS, rules=[ZERO] + m.RULES, ranges=m.RANGES, assumed=_assumed(m))
 
 

@@ -50,7 +50,8 @@ ROWS = [
     (acosh(cosh(x)), Q.real(x), Abs(x), "same"), (acosh(cosh(x)), Q.imaginary(x), None, "neither"),
     (asech(sech(x)), Q.negative(x), -x, "same"), (asech(sech(x)), Q.rational(x), Abs(x), "same"),
     (acoth(coth(x)), Q.nonzero(x), x, "same"), (acsch(csch(x)), Q.positive(x), x, "same"),
-    (acoth(coth(x)), Q.real(x), None, "neither"), (acsch(csch(x)), Q.nonnegative(x), None, "neither"),
+    (acoth(coth(x)), Q.real(x), None, "neither"),             # coth(0) is zoo: the row needs x nonzero
+    (acsch(csch(x)), Q.nonnegative(x), None, "neither"),
     (acosh(cosh(x)) + asinh(sinh(x)), Q.positive(x), 2*x, "same"),
     (acosh(cosh(acosh(cosh(x)))), Q.real(x), Abs(x), "same"),
     # checker: on the lines im z = (k + 1/2)*pi the hyperbolic facts fail for one sign of re z
@@ -64,7 +65,7 @@ ROWS = [
 
 @pytest.mark.parametrize("z, value", [(-1 - I*pi/2, -1 + I*pi/2), (1 - I*pi/2, -1 - I*pi/2)])
 def test_hyperbolic_facts_fail_on_the_cut_lines(z, value):
-    """The counterexamples behind ``_OFF_CUT_LINES``: SymPy's value differs from ``z``."""
+    """The counterexamples behind ``off_cut_lines`` (in ``_wraps.py``): SymPy's value differs from ``z``."""
     head = atanh(tanh(z)) if value == -1 + I*pi/2 else asinh(sinh(z))
     assert (head - value).expand() == 0 or abs(complex(head.evalf()) - complex(value.evalf())) < 1e-12
 
