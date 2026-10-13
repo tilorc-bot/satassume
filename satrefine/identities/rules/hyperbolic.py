@@ -17,13 +17,12 @@ from __future__ import annotations
 
 from sympy import I, Q, cosh, coth, csch, pi, sech, sinh, symbols, tanh
 
-from ._tables import ZERO, Row, add_rules
+from ._tables import Row, add_rules
 
 n, r = symbols('n r')   # each block's hypothesis gives n's parity (and so integrality)
 
 RULES: list[Row] = (
-    [ZERO]   # f(x) = f(0) when x is zero
-    + add_rules({Q.even(n)}, [  # m = n/2:  sinh(r + m*pi*I) = (-1)**m sinh r
+    add_rules({Q.even(n)}, [  # m = n/2:  sinh(r + m*pi*I) = (-1)**m sinh r
         (sinh(n*pi*I/2 + r), (-1)**(n/2)*sinh(r)),
         (cosh(n*pi*I/2 + r), (-1)**(n/2)*cosh(r)),
         (sech(n*pi*I/2 + r), (-1)**(n/2)*sech(r)),

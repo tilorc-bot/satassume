@@ -11,6 +11,12 @@ key the rows of its ``RULES`` headed by that key, in table order.  The other
 families mix rule and identity tables, and their wiring below makes choices
 of its own: the order of the handlers of a key, the ordering (``measure``)
 and ``opaque`` heads of each identity table, and which tables get ``ZERO``.
+
+``ZERO`` is one row shared by several families: ``F(x) -> F(0)`` when ``x`` is
+provably zero, so ``sin(x)`` with ``x`` zero becomes ``sin(0)``, which SymPy
+evaluates to ``0`` (``cot(0)`` to ``zoo``).  It is put first in the tables of
+every one-argument function of ``trig``, ``hyperbolic`` (:data:`ZERO_FIRST`),
+``complex_parts``, ``inverse`` and ``power_exp_log`` (their wiring below).
 """
 from __future__ import annotations
 
@@ -35,6 +41,9 @@ single term of it is (``sec(x + (2*j + 1)*pi/2)`` is one odd shift, not an even
 shift and then a quarter turn).  Not the default: in ``complex_parts`` it would
 change which conjugate pair of a product is reduced first."""
 
+ZERO_FIRST = frozenset({"trig", "hyperbolic"})
+"""Rules-only families whose tables start with :data:`ZERO`."""
+
 
 @cache
 def family_spec(family: str) -> Family:
@@ -42,8 +51,11 @@ def family_spec(family: str) -> Family:
     family, :data:`WIRED` otherwise); making it completes the module's tables."""
     module = importlib.import_module(family_module_name(family))
     wire = WIRED.get(family)
-    spec = wire(module) if wire else Family.from_rows(module.RULES, assumed=_assumed(module),
-                                                      by_binding=family in BY_BINDING)
+    if wire:
+        spec = wire(module)
+    else:
+        rows = ([ZERO] if family in ZERO_FIRST else []) + module.RULES
+        spec = Family.from_rows(rows, assumed=_assumed(module), by_binding=family in BY_BINDING)
     complete_module(module, spec)
     return spec
 

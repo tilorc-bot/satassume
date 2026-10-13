@@ -4,13 +4,12 @@ from __future__ import annotations
 from sympy import Q, cos, cot, csc, pi, sec, sin, sinc, symbols, tan
 from sympy.calculus.accumulationbounds import AccumBounds
 
-from ._tables import ZERO, Row, add_rules
+from ._tables import Row, add_rules
 
 n, r, k, zero, u = symbols('n r k zero u')
 
 RULES: list[Row] = (
-    [ZERO]
-    + add_rules({Q.even(n)}, [
+    add_rules({Q.even(n)}, [
         (sin(n*pi/2 + r), (-1)**(n/2)*sin(r)),
         (cos(n*pi/2 + r), (-1)**(n/2)*cos(r)),
         (sec(n*pi/2 + r), (-1)**(n/2)*sec(r)),
