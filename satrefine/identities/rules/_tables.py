@@ -19,7 +19,7 @@ from ..core.rewrite import Row
 from ..core.spec import assume as _assume_row
 from ._wraps import principal
 
-__all__ = ["ZERO", "Row", "add_rules", "by_cases", "derive", "exponent", "part", "principal"]
+__all__ = ["ZERO", "Row", "add_rules", "by_cases", "derive", "equal", "exponent", "part", "principal"]
 
 
 _F = Function('F')
@@ -27,6 +27,13 @@ _x = Symbol('x')
 
 ZERO = (_F(_x), _F(0), Q.zero(_x))
 """``f(x) == f(0)`` when ``x`` is zero; ``f(0)`` evaluates in SymPy (``cot(0)`` is ``zoo``)."""
+
+
+def equal(a, b):
+    """``a == b`` in either form the assumptions may state it: ``Q.zero(a - b)`` or
+    ``Q.eq(a, b)``.  Neither is derived from the other when a side may be a non-real
+    number, so a hypothesis written with only one would miss the other."""
+    return Q.zero(a - b) | Q.eq(a, b)
 
 
 def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:

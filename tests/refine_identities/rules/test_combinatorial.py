@@ -66,6 +66,8 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (rf(x, k), Q.positive(x), gamma(x + k)/gamma(x), {x: MIXED, k: MIXED}),
     (rf(x, k), ~Q.integer(x) & Q.complex(x), gamma(x + k)/gamma(x), {x: MIXED, k: MIXED}),
     (rf(x, k), Q.imaginary(x), gamma(x + k)/gamma(x), {x: MIXED, k: MIXED}),
+    # combinatorial.py has no row for this case: the rf row gives gamma(x + k)/gamma(x),
+    # and the gamma row for positive integers turns both gammas into factorials.
     (rf(x, k), Q.integer(x) & Q.positive(x) & Q.integer(k) & Q.nonnegative(k),
      factorial(x + k - 1)/factorial(x - 1), {x: INTS, k: INTS}),
     # FallingFactorial
@@ -114,6 +116,17 @@ def test_infinite_counterexamples():
     assert binomial(oo, oo) is nan and binomial(n, n).subs(n, oo) is nan
     assert rf(oo, 2) == oo
     assert (gamma(x + k)/gamma(x)).subs({x: oo, k: 2}) != oo
+
+
+def test_equalities_accept_both_forms_for_non_real_sides():
+    """combinatorial.py writes each equality as ``equal(a, b)``, which accepts both
+    ``Q.eq(a, b)`` and ``Q.zero(a - b)``.  When ``n`` may be non-real, neither form is
+    derived from the other: a row written with only ``Q.eq(n, k)`` would leave
+    ``binomial(n, k)`` unrefined under ``Q.zero(n - k)``, and the other way round."""
+    for same in (Q.eq(n, k), Q.zero(n - k)):
+        assert refine(binomial(n, k), same & Q.imaginary(n)) == 1
+        assert refine(binomial(n, k), same & ~Q.integer(n) & Q.finite(n)) == 1
+    assert refine(binomial(n, k), Q.eq(k, n - 1) & Q.imaginary(n)) == n
 
 
 def _id(row):
