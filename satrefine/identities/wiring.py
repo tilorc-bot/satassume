@@ -73,6 +73,12 @@ def _headed(rows: list, head) -> list:
 # ---- complex_parts --------------------------------------------------------------
 
 def complex_parts(m) -> Family:
+    """The base layer: the branch bookkeeping of the other families (``principal``, the
+    wraps) reduces through ``re``/``im`` of exponentials, logarithms, sums and products and
+    through ``arg`` and ``Abs`` under sign facts, all rows of this family.  Its identities are
+    ordered by ``node_measure``: one fires only when it removes a node of its head, so
+    ``sign(x*y) -> sign(x)*sign(y)`` and ``Abs(x*y) -> Abs(x)*Abs(y)`` happen only when a
+    factor resolves."""
     from .rules.power_exp_log import EXP_FORMS   # not owned by complex_parts (counted in power_exp_log)
     rules = Rules([ZERO] + m.RULES)   # also arg: arg(0) is nan, which is what arg(x) is at x = 0
 

@@ -17,6 +17,9 @@ ROWS = [
     (Abs(x), Q.negative(x), -x, "same"), (Abs(x), Q.real(x) & ~Q.positive(x), -x, "same"),
     (Abs(x), Q.zero(x), S.Zero, "same"), (Abs(x), Q.imaginary(x) & Q.positive(im(x)), -I*x, "same"),
     (Abs(x), Q.real(x), None, "neither"), (Abs(x), Q.positive(re(x)), None, "neither"),
+    # These Abs rows of products and powers are derived from the row Abs(exp(z)) = exp(re(z)),
+    # which complex_parts.py writes as Abs(exp(z), evaluate=False): SymPy would otherwise turn
+    # the left side into exp(re(z)) while the row is built, and nothing would be derived.
     (Abs(x*y), Q.positive(y), y*Abs(x), "same"), (Abs(x*y), Q.negative(y), -y*Abs(x), "same"),
     (Abs(x*y*z), Q.positive(y) & Q.negative(z), -y*z*Abs(x), "same"),
     (Abs(x*y), Q.positive(re(y)), None, "neither"),
@@ -25,6 +28,11 @@ ROWS = [
     (Abs(x**2), Q.complex(x), Abs(x)**2, "same"), (Abs(x**3), Q.real(x), Abs(x)**3, "same"),
     (Abs(x**n), Q.real(x) & Q.integer(n) & Q.positive(n), Abs(x)**n, "same"),
     (Abs(x**y), Q.real(y) & ~Q.zero(x), Abs(x)**y, "same"), (Abs(x**y), Q.positive(x) & Q.real(y), x**y, "same"),
+    # power_exp_log.py writes x**y as exp(y*log(x)) only for x nonzero or y positive (the first
+    # row of EXP_FORMS), and folds exp(y*log(x)) back to x**y under the same condition.  At
+    # x = 0 with y negative the two sides differ (Abs(0**-1) is oo, Abs(0)**-1 is zoo), so the
+    # next two rows must stay; with x nonzero alone, the positive-n rows above and below
+    # would not fire.
     (Abs(x**y), Q.real(y), None, "neither"), (Abs(x**n), Q.real(x) & Q.even(n), None, "neither"),
     (Abs(exp(x)), Q.real(x), exp(x), "same"), (Abs(exp(I*t)), Q.real(t), S.One, "same"),
     (Abs(conjugate(x)), Q.negative(x), -x, "same"),
@@ -61,6 +69,7 @@ ROWS = [
     (arg(x*y), Q.nonnegative(y), None, "neither"),
     (arg(exp(I*t)), Q.real(t) & Q.positive(t + pi) & Q.nonpositive(t - pi), t, "same"),
     (arg(exp(x)), Q.real(x), S.Zero, "same"),
+    (arg(exp(u)), Q.extended_real(u), None, "wrong: gives 0, but arg(exp(-oo)) = arg(0) is nan"),
     (arg(exp(I*t)), Q.real(t), None, "neither"),
     (arg(exp(I*t)), Q.positive(t), None, "neither"),
     (arg(conjugate(x)), Q.positive(re(x)), -arg(x), ARG), (arg(conjugate(x)), ~Q.zero(im(x)), -arg(x), ARG),
@@ -79,6 +88,7 @@ ROWS = [
     (sign(x*y), Q.zero(y), S.Zero, "same"), (sign(x*y), Q.imaginary(y) & Q.positive(im(y)), I*sign(x), "same"),
     (sign(x*Abs(y)), Q.positive(x) & ~Q.zero(y), S.One, "same"),
     (sign(x*y*z), Q.negative(y) & Q.positive(z), -sign(x), "same"),
+    (sign(x*y), Q.zero(y) & Q.infinite(x), None, "wrong: gives 0, but 0*oo is nan"),
     (sign(x*y), Q.real(y), None, "neither"), (sign(x*y), Q.complex(x) & Q.complex(y), None, "neither"),
     # conjugate
     (conjugate(x), Q.real(x), x, "same"), (conjugate(x), Q.imaginary(x), -x, "same"),
@@ -100,6 +110,8 @@ ROWS = [
     (x*conjugate(x), True, Abs(x)**2, "same"), (-x*conjugate(x), True, -Abs(x)**2, AC),
     (2*x*y*conjugate(x), True, 2*y*Abs(x)**2, AC), (x**2*conjugate(x)**2, True, Abs(x)**4, "same"),
     (x**n*conjugate(x)**n, Q.integer(n), Abs(x)**(2*n), "same"),
+    # complex_parts.py writes these exponents with exponent('h'), which also matches a factor
+    # with no power (x as x**1); with plain symbols, x**3*conjugate(x) would stay as it is.
     (x**3*conjugate(x), True, x**2*Abs(x)**2, "same"), (x*conjugate(x)**2, True, conjugate(x)*Abs(x)**2, "same"),
     (x**2*conjugate(x)**5, True, conjugate(x)**3*Abs(x)**4, "same"), (x**n*conjugate(x), True, None, "neither"),
     (Abs(x**n), Q.real(x) & Q.integer(n) & Q.positive(n), Abs(x)**n, "same"),
