@@ -11,6 +11,12 @@ Pattern forms:
     run of adjacent factors, the right side replaces the run and the other
     factors stay in order, simplified with ``doit(deep=False)``;
 
+Binding only plain ``MatrixSymbol`` atoms is what keeps the matrix rows sound:
+SymPy's ``ask`` calls every product of symmetric matrices symmetric, a diagonal
+block (``MatrixSlice``) of an orthogonal matrix orthogonal, and ``-X`` or ``X*Y``
+unitary for a (complex) orthogonal ``X``, so a row variable that bound such an
+expression would fire on a wrong answer.
+
 Importing this module installs :func:`match_matrix` in :data:`..core.hooks.match`,
 ``MatrixExpr`` as a non-scalar head (:data:`..core.hooks.non_scalar`: ``MatAdd``
 and ``MatMul`` are ``Add`` and ``Mul`` subclasses) and ``MatAdd``,

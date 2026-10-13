@@ -88,6 +88,8 @@ POSITIVE = [  # (expr, assumptions, expected, witnesses satisfying the assumptio
     (x*Y*X.T*X, Q.orthogonal(X), x*Y, [{X: M, Y: G, x: 3} for M in ORTHOGONALS for G in GENERIC]),
     (X*X.T*X, Q.orthogonal(X), X, each(X, ORTHOGONALS)),
     (X.T*X*X.T*X, Q.orthogonal(X), Identity(2), each(X, ORTHOGONALS)),
+    # matrices.py writes the row A*A -> A**2 as MatMul(A, A): SymPy builds A*A as A**2
+    # already, so a row written A*A would read A**2 -> A**2 and this case would stay X*X.
     (X*X.I.T, Q.orthogonal(X), X**2, each(X, ORTHOGONALS)),
     (X.I*X.T.T, Q.orthogonal(X), Identity(2), each(X, ORTHOGONALS)),
     (Adjoint(X)*X, Q.unitary(X), Identity(2), each(X, UNITARIES)),
@@ -95,6 +97,8 @@ POSITIVE = [  # (expr, assumptions, expected, witnesses satisfying the assumptio
     (3*Y*Adjoint(X)*X, Q.unitary(X), 3*Y, [{X: M, Y: G} for M in UNITARIES for G in GENERIC]),
     (Adjoint(X)*X, Q.orthogonal(X) & Q.real_elements(X), Identity(2), each(X, ORTHOGONALS)),
     (X*Adjoint(X), Q.orthogonal(X) & Q.real_elements(X), Identity(2), each(X, ORTHOGONALS)),
+    # matrices.py writes these rows as MatMul(Inverse(G), G): SymPy cancels G.I*G to
+    # Identity(m) while the row is built, so a row written G.I*G would never match.
     (MatMul(Inverse(X), X), Q.invertible(X), Identity(2), each(X, INVERTIBLE)),
     (MatMul(X, Inverse(X)), Q.invertible(X), Identity(2), each(X, INVERTIBLE)),
     (X.T*X, Q.symmetric(X), X**2, each(X, SYMMETRIC)),
@@ -111,7 +115,7 @@ POSITIVE = [  # (expr, assumptions, expected, witnesses satisfying the assumptio
     (X[0, -1], Q.diagonal(X), S.Zero, each(X, DIAGONAL)),
     (X[k + 1, k], Q.diagonal(X), S.Zero, [{X: M, k: 0} for M in DIAGONAL]),
     (X[1, 0], Q.symmetric(X), X[0, 1], each(X, SYMMETRIC)),
-    # symbolic indices go to SymPy's canonical order (matrices._SwappedOrder)
+    # symbolic indices go to SymPy's canonical order (matrix_order._SwappedOrder)
     (X[i, j], Q.symmetric(X), X[j, i], [{X: M, i: 0, j: 1} for M in SYMMETRIC]),
     (X[i, j], Q.diagonal(X), X[j, i], [{X: M, i: 1, j: 0} for M in DIAGONAL]),
     (X[i, j], Q.diagonal(X) & Q.ne(i, j), X[j, i], [{X: M, i: 0, j: 1} for M in DIAGONAL]),
@@ -225,6 +229,15 @@ def test_refusals_are_needed():
     _wrong(Adjoint(X)*X, Identity(2), {X: COMPLEX_ORTH})
     _wrong(Transpose(X*Y), X*Y, {X: SYMMETRIC[0], Y: Matrix([[0, 5], [5, 1]])})
     _wrong(Inverse(X*Y), Adjoint(Y)*Adjoint(X), {X: COMPLEX_ORTH, Y: UNITARY2})
+
+
+@pytest.mark.xfail(strict=True, reason="known wrong result, kept from v3")
+def test_zero_times_infinite_scalar_is_not_the_zero_matrix():
+    """``0*oo`` has no value, so ``c*w*X`` with ``c`` zero and ``w`` infinite is not the
+    zero matrix.  The zero-factor row of matrices.py binds ``c`` alone and returns the zero
+    matrix anyway, as v3 did."""
+    c, w = symbols('c w')
+    assert refine(MatMul(c, w, X), Q.zero(c) & Q.infinite(w)) != ZeroMatrix(2, 2)
 
 
 def test_symmetric_element_symbolic_order():
