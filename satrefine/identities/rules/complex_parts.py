@@ -49,16 +49,7 @@ vs = part('vs', Q.imaginary)   # the imaginary factors of a product
 s = part('s', Q.real)          # the real factors of a product
 h, m = exponent('h'), exponent('m')   # exponents that also bind 1 (conjugate(x) is conjugate(x)**1)
 
-# Assumed throughout: a row takes each fact whose variables are all in its left side.
-ASSUMED = {~Q.zero(d),
-           ~Q.zero(f) & Q.finite(f),
-           Q.integer(n),
-           Q.integer(h), Q.integer(m),     # h may be 0 (so not named k)
-           Q.real(u) | Q.extended_real(u),
-           Q.imaginary(v),
-           Q.commutative(g)}               # g: a factor of a product
-
-DEFINITIONS: list[Row] = add_rules(set(), [   # stage 0 definitions through sign
+DEFINITIONS: list[Row] = add_rules({~Q.zero(f) & Q.finite(f), ~Q.zero(d)}, [   # stage 0 definitions through sign
     (Abs(f), f/sign(f)),                   # sign f = f/|f| (Abs(zoo) is oo)
     (arg(d), -I*log(sign(d))),             # sign d = exp(I*arg d), arg in (-pi, pi]
 ])
@@ -97,7 +88,7 @@ RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypot
     + add_rules({Q.nonpositive(a) | Q.extended_nonpositive(a)}, [
         (Abs(a), -a),                            # also a = -oo
     ])
-    + add_rules(set(), [
+    + add_rules({Q.real(u) | Q.extended_real(u), Q.imaginary(v)}, [
         (re(u), u),
         (im(u), S.Zero),
         (re(v), S.Zero),
@@ -115,20 +106,20 @@ RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypot
     + add_rules({Q.negative(a) | Q.extended_negative(a)}, [
         (sign(a), S.NegativeOne),                # also a = -oo
     ])
-    + add_rules({_IM_POSITIVE}, [
+    + add_rules({Q.imaginary(v), _IM_POSITIVE}, [
         (sign(v), I),
     ])
-    + add_rules({_IM_NEGATIVE}, [
+    + add_rules({Q.imaginary(v), _IM_NEGATIVE}, [
         (sign(v), -I),
     ])
-    + add_rules(set(), [
+    + add_rules({~Q.zero(d)}, [
         (sign(Abs(d)), S.One),
     ])
     + add_rules({Q.real(z)}, [
         (sign(exp(z)), S.One),
     ])
     # conjugate
-    + add_rules(set(), [
+    + add_rules({Q.real(u) | Q.extended_real(u), Q.imaginary(v), Q.integer(n)}, [
         (conjugate(u), u),
         (conjugate(v), -v),
         (conjugate(exp(z), evaluate=False), exp(conjugate(z))),   # evaluate=False: SymPy would evaluate the lhs
@@ -137,18 +128,20 @@ RULES: list[Row] = (   # conditional rewrites: a block's assume set is the hypot
     + add_rules({Q.positive(b)}, [
         (conjugate(b**e), b**conjugate(e)),
     ])
-    # Mul
-    + add_rules(set(), [
+    # Mul (g a factor of a product)
+    + add_rules({Q.commutative(g), Q.integer(n)}, [
         (g*conjugate(g), Abs(g)**2),
         (g**n*conjugate(g)**n, Abs(g)**(2*n)),
     ])
-    + add_rules({Q.positive(m), Q.positive(h - m)}, [   # unequal positive powers, the higher one g's
+    # unequal positive integer powers, the higher one g's ...
+    + add_rules({Q.commutative(g), Q.integer(h), Q.integer(m), Q.positive(m), Q.positive(h - m)}, [
         (g**h*conjugate(g)**m, Abs(g)**(2*m)*g**(h - m)),
     ])
-    + add_rules({Q.positive(h), Q.positive(m - h)}, [   # ... or conjugate(g)'s
+    # ... or conjugate(g)'s
+    + add_rules({Q.commutative(g), Q.integer(h), Q.integer(m), Q.positive(h), Q.positive(m - h)}, [
         (g**h*conjugate(g)**m, Abs(g)**(2*h)*conjugate(g)**(m - h)),
     ])
-    + add_rules(set(), [
+    + add_rules({~Q.zero(f) & Q.finite(f)}, [
         (f*zoo, zoo),                                 # zoo absorbs a nonzero finite factor (trig's poles rely on it)
         ((-1)**a*(-1)**e, (-1)**(a + e)),             # (-1)**a = exp(I*pi*a): the powers of -1 combine
     ])

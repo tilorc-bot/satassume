@@ -56,10 +56,6 @@ from ._tables import add_rules
 a, b, d, i, j, lo, hi, inf, ninf, r, t, u, w = symbols('a b d i j lo hi inf ninf r t u w')
 G = Function('G')        # generic head: the derivatives of DiracDelta (DiracDelta(d, r) needs an integer r)
 
-# Assumed throughout: a row takes each fact whose variables are all in its left side.
-# The letters follow the tables' convention (t real; u extended real; d nonzero; a, b, r, w arbitrary).
-ASSUMED = {Q.extended_real(u)}   # u: Heaviside's argument
-
 FACTS = (
     add_rules(set(), [
         (Max(a, b), Piecewise((a, Q.ge(a, b)), (b, Q.lt(a, b)))),
@@ -68,16 +64,14 @@ FACTS = (
     + add_rules(set(), [
         (KroneckerDelta(i, j), Piecewise((1, Q.eq(i, j)), (0, Q.ne(i, j)), (nan, True))),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.extended_real(u)}, [   # u: Heaviside's argument
         (KroneckerDelta(i, j, Tuple(lo, hi)), Piecewise((1, Q.eq(i, j) & Q.le(lo, i) & Q.le(i, hi)), (0, True))),
         (Heaviside(u, w), Piecewise((0, Q.extended_negative(u)), (w, Q.zero(u)), (1, Q.extended_positive(u)),
                                     (nan, True))),
     ])
 )
 
-ASSUMED |= {Q.positive_infinite(inf), Q.negative_infinite(ninf)}
-
-INFINITE = add_rules(set(), [
+INFINITE = add_rules({Q.positive_infinite(inf), Q.negative_infinite(ninf)}, [
     # Max(oo, b) = oo and Max(-oo, b) = b for every b Max is defined at (extended real b);
     # Min likewise.  The order vocabulary proves Q.ge(a, b) from an infinite a only for an
     # extended real b, which a plain symbol is not.  (Pairs of any arity: the other
@@ -88,9 +82,7 @@ INFINITE = add_rules(set(), [
     (Min(inf, b), b),
 ])
 
-ASSUMED |= {Q.nonzero(d), Q.real(t)}      # Q.nonzero also makes d real
-
-DIRAC = add_rules(set(), [
+DIRAC = add_rules({Q.nonzero(d), Q.real(t)}, [      # Q.nonzero also makes d real
     # DiracDelta and all its derivatives vanish off the origin (d real, nonzero).
     (DiracDelta(d), S.Zero),
     (G(d, r), S.Zero),

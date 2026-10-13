@@ -42,24 +42,19 @@ def integer(u):
 
 a, b, c, d, f, g, h, m, n, w, x, zero = symbols('a b c d f g h m n w x zero')
 
-# Assumed throughout: a row takes each fact whose variables are all in its left side.
-# The letters follow the tables' convention (n, m integers; d nonzero; a, b, c, w, x arbitrary).
-ASSUMED = {integer(n), Q.nonzero(d)}
-
-
 # ---- floor, ceiling, frac ------------------------------------------------------
 
-# h is an integer or an infinity.  Not marked by_cases: floor(t) satisfies it only by
-# cases (#18), but SymPy evaluates floor(floor(t)) itself, and a mark would ask every
-# floor binding whole (test_a_row_marked_by_cases_fires marks it).
-ASSUMED |= {integer(h) | Q.infinite(h)}
+# Assumed throughout: g is a floor or ceiling term, floor(w) or ceiling(w), times an
+# integer m.  A row holding g becomes one row per form, and m appears only in those rows,
+# so its fact stays here too.  (The m-less forms are listed because a pattern m*floor(w)
+# does not match floor(w) itself.)
+ASSUMED = {Q.integer(m),
+           Eq(g, floor(w)) | Eq(g, m*floor(w)) | Eq(g, ceiling(w)) | Eq(g, m*ceiling(w))}
 
-# g is a floor or ceiling term: floor(w) or ceiling(w), times an integer m.  (The m-less
-# forms are listed because a pattern m*floor(w) does not match floor(w) itself.)
-ASSUMED |= {Q.integer(m),
-            Eq(g, floor(w)) | Eq(g, m*floor(w)) | Eq(g, ceiling(w)) | Eq(g, m*ceiling(w))}
-
-FLOOR = add_rules(set(), [
+# n is an integer and h an integer or an infinity.  h is not marked by_cases: floor(t)
+# satisfies it only by cases (#18), but SymPy evaluates floor(floor(t)) itself, and a mark
+# would ask every floor binding whole (test_a_row_marked_by_cases_fires marks it).
+FLOOR = add_rules({integer(n), integer(h) | Q.infinite(h)}, [
     (floor(h), h),                       # floor(3) = 3, floor(oo) = oo
     (floor(n + x), floor(x) + n),        # floor(x + 3) = floor(x) + 3
     # g moves out as n does, for any w: floor(w) is an integer or, for an infinite w, w
@@ -69,38 +64,34 @@ FLOOR = add_rules(set(), [
     (floor(g + x), floor(x) + g),
 ])
 
-CEILING = add_rules(set(), [
+CEILING = add_rules({integer(n), integer(h) | Q.infinite(h)}, [
     (ceiling(h), h),
     (ceiling(n + x), ceiling(x) + n),
     (ceiling(g + x), ceiling(x) + g),
 ])
 
-FRAC = add_rules(set(), [
+FRAC = add_rules({integer(n)}, [
     (frac(n + x), frac(x)),              # frac(x + 3) = frac(x)
 ])
 
 # f is finite.  (A Gaussian integer f is too, but ask does not see it: issue #19.)  Not
 # at +-oo, where frac is AccumBounds(0, 1).
-ASSUMED |= {by_cases(Q.finite(f), Q.real(f), integer(f))}
-
-FRAC_DEFINITION = add_rules(set(), [
+FRAC_DEFINITION = add_rules({by_cases(Q.finite(f), Q.real(f), integer(f))}, [
     (frac(f), f - floor(f)),             # gives frac(3) = 0 and frac(f) = f - n on [n, n + 1)
 ])
 
 
 # ---- Mod, Rem ------------------------------------------------------------------
-# b is any divisor (no standing facts).
-
-ASSUMED |= {Q.zero(zero)}
+# d is a nonzero divisor, b any divisor.
 
 MOD = (
-    add_rules({Q.integer(a/d)}, [
+    add_rules({Q.nonzero(d), Q.integer(a/d)}, [
         (Mod(a, d), S.Zero),                     # Mod(6, 3) = 0
     ])
-    + add_rules(set(), [
+    + add_rules({Q.zero(zero)}, [
         (Mod(zero, b), S.Zero),
     ])
-    + add_rules({Q.integer(c/d)}, [
+    + add_rules({Q.nonzero(d), Q.integer(c/d)}, [
         (Mod(c + x, d), Mod(x, d)),              # Mod(x + 6, 3) = Mod(x, 3)
     ])
     # for 0 <= a < b or b < a <= 0, b finite: a relation holds on the extended reals, so
@@ -116,10 +107,10 @@ MOD = (
 
 # Rem(a, b) = a for |a| < |b|, one row per way the signs can be known
 REM = (
-    add_rules({Q.integer(a/d)}, [
+    add_rules({Q.nonzero(d), Q.integer(a/d)}, [
         (Rem(a, d), S.Zero),                     # Rem(6, 3) = 0
     ])
-    + add_rules(set(), [
+    + add_rules({Q.zero(zero)}, [
         (Rem(zero, b), S.Zero),
     ])
     # 0 <= a < |b|, b finite (Rem(a, +-oo) is nan, as for Mod)
@@ -142,10 +133,10 @@ REM = (
 
 # At a half period (a/d = n + 1/2, 2*a/d odd): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2
 # by the sign of a/d.  Identity rows: they fire once the assumptions decide sign(a/d).
-MOD_HALF = add_rules({Q.odd(2*a/d)}, [
+MOD_HALF = add_rules({Q.nonzero(d), Q.odd(2*a/d)}, [
     (Mod(a, d), d*Mod(sign(a/d), 2)/2),          # Mod(+-1, 2) = 1
 ])
-REM_HALF = add_rules({Q.odd(2*a/d)}, [
+REM_HALF = add_rules({Q.nonzero(d), Q.odd(2*a/d)}, [
     (Rem(a, d), sign(a/d)*d/2),
 ])
 

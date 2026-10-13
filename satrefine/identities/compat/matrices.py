@@ -87,12 +87,6 @@ Z = MatrixSymbol('Z', m, n)     # a zero matrix of general shape
 Y = MatrixSymbol('Y', m, n)     # a zero matrix of general shape
 W = MatrixSymbol('W', n, h)     # a right neighbour of X
 
-# Assumed throughout: a row takes each fact whose variables are all in its left side.
-ASSUMED = {Q.symmetric(S_), Q.symmetric(M), Q.diagonal(D), Q.diagonal(E), Q.orthogonal(O),
-           Q.unitary(U), Q.unitary(V), Q.invertible(G),
-           Q.unit_triangular(T), Q.zero(Zs), Q.zero(Z), Q.zero(Y),
-           Q.zero(zero)}
-
 class _Index(Symbol):
     """An index variable of the symmetric-swap row: :class:`_SwappedOrder` of
     two of these stays unevaluated, so the row's hypothesis is decided only
@@ -118,7 +112,7 @@ class _SwappedOrder(BooleanFunction):
 
 ii, jj = _Index('i'), _Index('j')
 
-TRANSPOSE = add_rules(set(), [
+TRANSPOSE = add_rules({Q.zero(Z), Q.symmetric(S_), Q.symmetric(M), Q.diagonal(D), Q.diagonal(E)}, [
     (Transpose(Z), ZeroMatrix(n, m)),
     (Transpose(S_), S_),
     # Products v3 accepts as symmetric: palindromes S*M*S, N.T*M*N, and products
@@ -129,7 +123,7 @@ TRANSPOSE = add_rules(set(), [
 ])
 
 INVERSE = (
-    add_rules(set(), [
+    add_rules({Q.orthogonal(O), Q.unitary(U)}, [
         # An orthogonal matrix is inverted by its transpose (so (O.T)**-1 = O).
         (Inverse(O), O.T),
         (Inverse(O.T), O),
@@ -138,7 +132,7 @@ INVERSE = (
         # from orthogonal cannot reach it for an atom.
         (Inverse(U), Adjoint(U)),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.unitary(U), Q.unitary(V)}, [
         (Inverse(U*V), Adjoint(V)*Adjoint(U)),
     ])
 )
@@ -149,18 +143,18 @@ DETERMINANT = (
     add_rules({Q.singular(A) | (Q.zero(A) & Q.positive(m))}, [
         (Determinant(A), S.Zero),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.unit_triangular(T)}, [
         # A unit triangular matrix has determinant 1.  (det O = 1 for orthogonal O,
         # SymPy's rule, is wrong: the determinant is +-1.)
         (Determinant(T), S.One),
     ])
 )
 
-TRACE = add_rules(set(), [
+TRACE = add_rules({Q.zero(Zs)}, [
     (Trace(Zs), S.Zero),
 ])
 
-MATADD = add_rules(set(), [
+MATADD = add_rules({Q.zero(Z), Q.zero(Y)}, [
     (Z + Y, ZeroMatrix(m, n)),
     (Z + R, R),
     # Canonical form: X - X = 0 (refining X - X.T under Q.symmetric(X) leaves -X + X).
@@ -170,29 +164,29 @@ MATADD = add_rules(set(), [
     (MatAdd(Z), ZeroMatrix(m, n)),
 ])
 
-HADAMARD = add_rules(set(), [
+HADAMARD = add_rules({Q.zero(Z)}, [
     (HadamardProduct(Z, R), ZeroMatrix(m, n)),
 ])
 
 MATMUL = (
     # A product with a zero factor, scalar or matrix, is the zero matrix of its shape.
-    add_rules(set(), [
+    add_rules({Q.zero(zero)}, [
         (zero*X, ZeroMatrix(m, n)),
     ])
     + add_rules({Q.zero(X) | Q.zero(W)}, [
         (X*W, ZeroMatrix(m, h)),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.orthogonal(O)}, [
         # Adjacent O.T*O and O*O.T cancel for orthogonal O.
         (O.T*O, Identity(m)),
         (O*O.T, Identity(m)),
     ])
     # Adjacent U.H*U and U*U.H cancel for unitary U
-    + add_rules(set(), [
+    + add_rules({Q.unitary(U)}, [
         (Adjoint(U)*U, Identity(m)),
         (U*Adjoint(U), Identity(m)),
     ])
-    + add_rules(set(), [
+    + add_rules({Q.invertible(G)}, [
         # Adjacent G**-1*G and G*G**-1 cancel for invertible G (spelled MatMul(...):
         # the operator form cancels while the pattern is built).
         (MatMul(Inverse(G), G), Identity(m)),
@@ -207,20 +201,21 @@ MATMUL = (
 )
 
 MATRIXELEMENT = (
-    add_rules(set(), [
+    add_rules({Q.zero(Z)}, [
         (MatrixElement(Z, i, j), S.Zero),
     ])
     # An off-diagonal element of a diagonal matrix is 0.  Negative indices wrap
     # (D[0, -1] of a 1x1 matrix is D[0, 0]), so i != j must hold after wrapping:
     # both indices of one sign, or i - j != +-m.
-    + add_rules({Q.ne(i, j) | Q.nonzero(i - j),
+    + add_rules({Q.diagonal(D),
+                 Q.ne(i, j) | Q.nonzero(i - j),
                  (Q.nonnegative(i) & Q.nonnegative(j)) | (Q.negative(i) & Q.negative(j))
                  | (Q.nonzero(i - j - m) & Q.nonzero(i - j + m))}, [
         (MatrixElement(D, i, j), S.Zero),
     ])
     # A symmetric matrix's elements S[i, j] = S[j, i], oriented to SymPy's
     # canonical index order (a structural condition, see _SwappedOrder).
-    + add_rules({_SwappedOrder(ii, jj)}, [
+    + add_rules({Q.symmetric(S_), _SwappedOrder(ii, jj)}, [
         (MatrixElement(S_, ii, jj), MatrixElement(S_, jj, ii)),
     ])
 )

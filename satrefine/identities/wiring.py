@@ -2,7 +2,8 @@
 
 The family modules state rows only (:mod:`.rules`, :mod:`.compat.matrices`);
 :func:`family_spec` makes each one's :class:`.core.spec.Family`, once, and
-completes the module's tables with its ``ASSUMED`` facts.
+completes the module's tables with its ``ASSUMED`` facts (a module without
+``ASSUMED`` has none: its facts are all in its ``add_rules`` blocks).
 
 A family of rule rows only (``trig``, ``hyperbolic``, ``combinatorial``,
 ``matrices``) needs no wiring: :meth:`.core.spec.Family.from_rows` serves each
@@ -41,10 +42,15 @@ def family_spec(family: str) -> Family:
     family, :data:`WIRED` otherwise); making it completes the module's tables."""
     module = importlib.import_module(family_module_name(family))
     wire = WIRED.get(family)
-    spec = wire(module) if wire else Family.from_rows(module.RULES, assumed=module.ASSUMED,
+    spec = wire(module) if wire else Family.from_rows(module.RULES, assumed=_assumed(module),
                                                       by_binding=family in BY_BINDING)
     complete_module(module, spec)
     return spec
+
+
+def _assumed(module) -> set:
+    """The module's ``ASSUMED`` facts; none when it has no ``ASSUMED``."""
+    return getattr(module, "ASSUMED", set())
 
 
 def _headed(rows: list, head) -> list:
@@ -78,7 +84,7 @@ def complex_parts(m) -> Family:
                    'conjugate': rules,
                    'Mul': Rules([row for row in m.RULES if isinstance(row[0], Mul)])},
                   facts=m.FACTS + m.SPLITS, exp_forms=EXP_FORMS, rules=[ZERO] + m.RULES, ranges=m.RANGES,
-                  assumed=m.ASSUMED)
+                  assumed=_assumed(m))
 
 
 # ---- integer_funcs --------------------------------------------------------------
@@ -89,7 +95,7 @@ def integer_funcs(m) -> Family:
                    'frac': (Rules(m.FRAC), Identities(m.FRAC_DEFINITION, measure=node_measure((frac,)))),
                    'Mod': (Rules(m.MOD), Identities(m.MOD_HALF, measure=node_measure((Mod,)), opaque=(floor, sign))),
                    'Rem': (Rules(m.REM), Identities(m.REM_HALF, measure=node_measure((Rem,)), opaque=(floor, sign)))},
-                  facts=m.FACTS, rules=m.RULES, assumed=m.ASSUMED)
+                  facts=m.FACTS, rules=m.RULES, assumed=_assumed(m))
 
 
 # ---- inverse --------------------------------------------------------------------
@@ -104,7 +110,7 @@ def inverse(m) -> Family:
                       for head in (asin, acos, atan, asinh, atanh, acoth, acsch)},
                    'acosh': rules, 'asech': rules,
                    'atan2': identity(atan2, opaque=(floor, im, Piecewise))},
-                  facts=m.FACTS, rules=[ZERO] + m.RULES, ranges=m.RANGES, assumed=m.ASSUMED)
+                  facts=m.FACTS, rules=[ZERO] + m.RULES, ranges=m.RANGES, assumed=_assumed(m))
 
 
 # ---- minmax_deltas --------------------------------------------------------------
@@ -123,7 +129,7 @@ def minmax_deltas(m) -> Family:
                    'KroneckerDelta': definitions(KroneckerDelta),
                    'Heaviside': definitions(Heaviside),
                    'DiracDelta': Rules(m.DIRAC)},
-                  facts=m.FACTS, rules=m.RULES, assumed=m.ASSUMED)
+                  facts=m.FACTS, rules=m.RULES, assumed=_assumed(m))
 
 
 # ---- power_exp_log --------------------------------------------------------------
@@ -146,7 +152,7 @@ def power_exp_log(m) -> Family:
                    'exp': (zero, rules, Identities([row for row in m.FACTS if isinstance(row[0], exp)],
                                                    measure=count_measure((exp,))))},
                   facts=m.FACTS + m.NEGATIVE_BASE, exp_forms=m.LOG_FORMS, rules=[ZERO] + m.RULES + m.LOG_RULES,
-                  assumed=m.ASSUMED)
+                  assumed=_assumed(m))
 
 
 WIRED: dict = {"complex_parts": complex_parts, "integer_funcs": integer_funcs, "inverse": inverse,
