@@ -9,7 +9,7 @@ engine lacks.  Every output is checked numerically.
 from __future__ import annotations
 
 import pytest
-from sympy import (Abs, E, I, Pow, Q, Rational, S, exp, log, pi, simplify, sqrt, symbols)
+from sympy import (Abs, E, I, Pow, Q, Rational, S, exp, log, oo, pi, simplify, sqrt, symbols)
 
 from satrefine import refine
 from satrefine.testing.harness import assert_refinement_valid
@@ -26,6 +26,8 @@ ROWS = [
     (log(x**2), Q.real(x), 2*log(Abs(x)), "same"),
     (log(x**2), Q.negative(x), 2*log(-x), "same"),
     (log(x**2), Q.imaginary(x), 2*log(Abs(x)) + I*pi, "same"),
+    # n may be 0 and x may be 0, where log(x**n) is log(1) = 0 but n*log(Abs(x)) is 0*zoo = nan:
+    # the even-power row of power_exp_log.py (LOG_RULES) needs n or x nonzero.
     (log(x**n), Q.real(x) & Q.even(n), None, "neither"),
     (log(x**y), Q.positive(x) & Q.real(y), y*log(x), "same"),
     (log(x**y), Q.positive(x) & Q.complex(y), None, "neither"),
@@ -46,6 +48,8 @@ ROWS = [
     (log(exp(I*t)), Q.real(t), None, "neither"),
     (log(exp(x + I*t)), Q.real(x) & Q.real(t), None, "neither"),
     (log(x**n), Q.positive(x) & Q.real(n), n*log(x), "same"),
+    # At x = 0 the result is n*log(0) = n*zoo, and refine checks that point before it accepts
+    # the rewrite; the row f*zoo -> zoo of complex_parts.py makes it zoo, as log(0**n) is.
     (log(x**n), Q.nonnegative(x) & Q.positive(n), n*log(x), "same"),
     (log(x**n), Q.negative(x) & Q.odd(n), n*log(-x) + I*pi, "same"),   # was log(-x**n) + I*pi: the bare log(x) row now comes last
     (log(x**(-2)), Q.real(x), -2*log(Abs(x)), "same"),   # the even-power rule (zoo on both sides at x = 0)
@@ -147,6 +151,28 @@ def test_relation_to_team(expr, assumptions, team, relation):
         assert refined != expr
     else:
         assert refined == expr
+
+
+WRONG_AT_INFINITY = [  # (input, assumptions, what refine gives, a point where that is wrong)
+    (log(exp(x)), Q.extended_negative(x), x, {x: -oo}),               # log(exp(-oo)) = log(0) = zoo
+    ((1/x)**y, Q.integer(y), x**(-y), {x: oo, y: -1}),                # (1/oo)**-1 = zoo, oo**1 = oo
+    (exp(y*log(x)), Q.negative_infinite(x), x**y, {x: -oo, y: 1}),    # exp(log(-oo)) = oo, (-oo)**1 = -oo
+]
+
+
+@pytest.mark.parametrize("expr, assumptions, given, point", WRONG_AT_INFINITY, ids=str)
+def test_wrong_at_infinity_counterexamples(expr, assumptions, given, point):
+    """The points behind :func:`test_wrong_at_infinity`: there the input and refine's answer differ."""
+    assert refine(expr, assumptions) == given
+    assert expr.subs(point) != given.subs(point)
+
+
+@pytest.mark.xfail(strict=True, reason="known wrong results at infinity, left as they are")
+@pytest.mark.parametrize("expr, assumptions, given, point", WRONG_AT_INFINITY, ids=str)
+def test_wrong_at_infinity(expr, assumptions, given, point):
+    """SymPy's arithmetic at +-oo breaks these identities, and refine still applies them;
+    a fix would leave the input unrefined."""
+    assert refine(expr, assumptions) == expr
 
 
 def test_row_counts():

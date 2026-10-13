@@ -20,6 +20,10 @@ ROWS = [
     (cos(x + k*pi), EVEN, cos(x), "same"), (cos(x + k*pi), ODD, -cos(x), "same"),
     (sin(x + k*pi/2), K0, sin(x), "same"), (sin(x + k*pi/2), K1, cos(x), "same"),
     (sin(x + k*pi/2), K2, -sin(x), "same"), (sin(x + k*pi/2), K3, -cos(x), "same"),
+    # The odd cos and sec rows of trig.py give (-1)**((k + 1)/2), while K1 and K3 state the
+    # parity of (k - 1)/2.  ask does not shift a parity by one, so power_exp_log.py has rows for
+    # (-1)**x under Q.even(x - 1) and Q.odd(x - 1); without them these four cases would keep
+    # their power of -1.
     (cos(x + k*pi/2), K1, -sin(x), "same"), (cos(x + k*pi/2), K3, sin(x), "same"),
     (sec(x + k*pi/2), K1, -csc(x), "same"), (csc(x + k*pi/2), K1, sec(x), "same"),
     (sec(x + k*pi/2), K3, csc(x), "same"), (csc(x + k*pi/2), K3, -sec(x), "same"),

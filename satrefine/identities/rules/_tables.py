@@ -11,7 +11,7 @@ puts it first in the tables of the families that use it.
 """
 from __future__ import annotations
 
-from sympy import And, Function, Q, Symbol, exp, im, re, true
+from sympy import And, Function, Q, S, Symbol, exp, im, re, true
 
 from ..core.match import exponent, part
 from ..core.prove import by_cases
@@ -20,7 +20,7 @@ from ..core.spec import assume as _assume_row
 from ._wraps import principal
 
 __all__ = ["ZERO", "Row", "add_rules", "by_cases", "derive", "equal", "exponent", "gaussian_integer", "part",
-           "principal"]
+           "principal", "rational_part"]
 
 
 _F = Function('F')
@@ -45,9 +45,24 @@ def gaussian_integer(u):
     return Q.integer(u) | (Q.integer(re(u)) & Q.integer(im(u)))
 
 
+def rational_part(name: str) -> Symbol:
+    """A pattern symbol binding the rational number term of a sum (``3/2`` in
+    ``x + 3/2``), never a symbol, so that ``Mod(h, 2)`` on the right side evaluates."""
+    return part(name, lambda t: S(bool(t.is_Rational)))
+
+
 def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:
     """Compose each ``g(exp(z))`` fact with each exponential form ``(L, W, domain)``
-    (``L == exp(W)``) into the row ``g(L) == rhs[z := W]`` under both domains."""
+    (``L == exp(W)`` wherever ``domain`` holds) into the row ``g(L) == rhs[z := W]``
+    under both domains.  The facts themselves are kept too.
+
+    For example ``log(exp(z)) == principal(z)`` with the form ``(b**e, e*log(b), ...)``
+    gives ``log(b**e) == principal(e*log(b))``, and with the product forms
+    ``(y*r, log(y) + log(r), true)`` and ``(y*r, log(-y) + log(-r), true)`` it gives the
+    two rows for ``log(y*r)``; the second is how a negative factor's sign moves to the
+    other factor (``log(x*y) = log(-x) + log(-y)`` for negative ``x`` and ``y``).  Under
+    assumptions the ``floor`` inside ``principal`` collapses and the familiar rule
+    appears (``log(x**a) = a*log(x)`` for positive ``x`` and real ``a``)."""
     rows: list[Row] = []
     for lhs, rhs, *rest in facts:        # a fact may leave its domain to the family's assumptions
         dom = rest[0] if rest else true

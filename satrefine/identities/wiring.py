@@ -164,6 +164,10 @@ def negative_number_base_measure(e, assumptions):
 
 
 def power_exp_log(m) -> Family:
+    """``Pow``'s identity ``b**e == exp(e*log(b))`` keeps ``log`` opaque: it fires when the
+    logarithm collapses and the exponential folds back to a power.  ``exp``'s identity
+    ``exp(a + b) == exp(a)*exp(b)`` is ordered by the number of ``exp`` nodes, so it fires
+    only when a factor evaluates away."""
     rules, zero = Rules(m.RULES), Rules([ZERO])
     return Family({'log': (zero, Identities(m.IDENTITIES), Rules(m.LOG_RULES)),   # LOG_RULES after the identities
                    'Pow': (rules,
