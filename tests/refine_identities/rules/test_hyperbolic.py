@@ -22,6 +22,8 @@ ROWS = [
     (sinh(x + (4*n + 1)*pi*I/2), Q.integer(n), I*cosh(x), "same"),
     (sinh(x + (4*n + 3)*pi*I/2), Q.integer(n), -I*cosh(x), "same"),
     (tanh(x + k*pi*I/2), Q.odd(k), coth(x), "same"), (coth(x + k*pi*I/2), Q.odd(k), tanh(x), "same"),
+    # hyperbolic.py has no rows for these exact points: SymPy rewrites them to trig functions
+    # before refine sees them (sinh(k*pi*I) is I*sin(pi*k)), so they are refined as trig functions.
     (sinh(k*pi*I), Q.integer(k), S.Zero, "same"), (cosh(k*pi*I), Q.even(k), S.One, "same"),
     (cosh(k*pi*I), Q.odd(k), S.NegativeOne, "same"), (cosh(k*pi*I), Q.integer(k), (-1)**k, "same"),
     (coth(k*pi*I), Q.integer(k), zoo, "same"), (tanh(k*pi*I/2), Q.odd(k), zoo, "same"),
