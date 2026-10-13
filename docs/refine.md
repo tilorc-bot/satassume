@@ -103,9 +103,17 @@ symbols, named tables and, if it needs one, `ASSUMED`. Its `Family` (`core/spec.
 handlers serve which `handlers_dict` key, is made in `identities/wiring.py`:
 for a family of rule rows only (trig, hyperbolic, combinatorial, matrices)
 `Family.from_rows` derives it from `RULES`, each key getting the rows of its
-head in table order (a generic-head row such as `ZERO` goes to every head of
-its arity); the families that mix rule and identity tables are wired by hand
-there (handler order, orderings, opaque heads). Row kinds:
+head in table order (a generic-head row goes to every head of its arity);
+the families that mix rule and identity tables are wired by hand there
+(handler order, orderings, opaque heads). The shared row `ZERO`
+(`F(x) -> F(0)` for a provably zero `x`) is not in any family module:
+`wiring.py` puts it first for trig, hyperbolic (`ZERO_FIRST`), complex_parts,
+inverse and power_exp_log. A family module reads like `rules/trig.py`: a
+one-line docstring, symbols and tables, no comments; the helpers its rows
+use (`equal`, `gaussian_integer`, `rational_part` in `rules/_tables.py`, the
+wraps and `off_cut_lines` in `rules/_wraps.py`, `compat/matrix_order.py`)
+and the notes on how the engine uses its tables live next to that code, and
+the reasons behind a row live in the tests that fail without it. Row kinds:
 
 | Kind | Shape | Meaning |
 |---|---|---|
@@ -141,7 +149,8 @@ hyperbolic, combinatorial and matrices are plain rule tables.
   hypothesis ("for 0 <= a < b") and returns complete rows, so the engine, the
   generator and the tools see exactly the conditions that apply.
 - Order hypotheses are the relation alone (`Q.lt(u, v)`), which satassume
-  proves from any spelling; only `_eq` (`rules/combinatorial.py`) spells both
+  proves from any spelling; only `equal` (`rules/_tables.py`, used by
+  combinatorial) spells both
   `Q.eq(u, v)` and `Q.zero(u - v)`, which satassume does not relate for a
   possibly non-real side. Extended conditions read `Q.nonnegative(a) |
   Q.extended_nonnegative(a)`: SymPy proves `Q.real(sin(x))`, not
