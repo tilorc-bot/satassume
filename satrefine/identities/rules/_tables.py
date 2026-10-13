@@ -11,7 +11,7 @@ puts it first in the tables of the families that use it.
 """
 from __future__ import annotations
 
-from sympy import And, Function, Q, Symbol, exp, true
+from sympy import And, Function, Q, Symbol, exp, im, re, true
 
 from ..core.match import exponent, part
 from ..core.prove import by_cases
@@ -19,7 +19,8 @@ from ..core.rewrite import Row
 from ..core.spec import assume as _assume_row
 from ._wraps import principal
 
-__all__ = ["ZERO", "Row", "add_rules", "by_cases", "derive", "equal", "exponent", "part", "principal"]
+__all__ = ["ZERO", "Row", "add_rules", "by_cases", "derive", "equal", "exponent", "gaussian_integer", "part",
+           "principal"]
 
 
 _F = Function('F')
@@ -34,6 +35,14 @@ def equal(a, b):
     ``Q.eq(a, b)``.  Neither is derived from the other when a side may be a non-real
     number, so a hypothesis written with only one would miss the other."""
     return Q.zero(a - b) | Q.eq(a, b)
+
+
+def gaussian_integer(u):
+    """``u`` is an integer or a Gaussian integer (integral real and imaginary parts).
+    Both are spelled out because ``ask`` does not derive one from the other, and SymPy
+    takes the floor of a complex number part by part, so ``floor(y)`` of a finite ``y``
+    is a Gaussian integer (issue #19)."""
+    return Q.integer(u) | (Q.integer(re(u)) & Q.integer(im(u)))
 
 
 def derive(facts: list[Row], exp_forms: list[Row]) -> list[Row]:

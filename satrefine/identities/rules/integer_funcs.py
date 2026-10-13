@@ -1,140 +1,77 @@
-"""``floor``, ``ceiling``, ``frac``, ``Mod`` and ``Rem``.
-
-Rounding: ``floor`` and ``ceiling`` leave an integer (and an infinity) as it is,
-and an integer term moves out of them.  ``frac`` is defined as ``x - floor(x)``,
-so it is 0 at an integer and drops an integer term.  Bounds (``floor(x) = 0`` for
-``0 <= x < 1``) are interval arithmetic, not rows: ``floor_of_bounded`` in
-:mod:`._simple`.
-
-Remainders: ``Mod(a, d)`` has the sign of ``d`` (Python's ``%``), ``Rem(a, d)``
-the sign of ``a`` (truncating division).  Both are 0 at a multiple of ``d`` and
-``a`` itself inside the period, and they agree when ``a`` and ``d`` have the same
-sign.  ``d`` is assumed nonzero, which also makes it real: SymPy's ``Mod``
-of non-real arguments is not ``a - d*floor(a/d)`` (``Mod(3*I, 2*I) = 3*I``).
-A divisor bounded only by a relation (``Q.lt(a, b)``) may be infinite, since
-relations hold on the extended reals, and ``Mod``/``Rem`` of a finite ``a`` by
-``+-oo`` are ``nan``; so the rows that read ``|a| < |b|`` from relations also
-need ``b`` finite (issue #10, B12).
-
-One thing the assumptions spell out because ``ask`` does not derive it:
-"integer" includes Gaussian integers (SymPy takes the floor of a complex number
-part by part, so ``floor(y)`` of a finite ``y`` is one; issue #19).  ``u < v``
-is asked as ``Q.lt(u, v)`` alone, which satassume proves from either spelling
-for the integer sides these rows bind (#40).
-
-Not stated as definitions, because they derive nothing the rows below do
-not: ``ceiling(x) = -floor(-x)``, ``Mod(a, b) = a -
-b*floor(a/b)``, ``Rem`` by truncation.  Pattern forms these rows rely on are
-pinned in ``tests/refine_identities/core/test_engine_integer_funcs.py``.
-"""
+"""``floor``, ``ceiling``, ``frac``, ``Mod`` and ``Rem``."""
 from __future__ import annotations
 
-from sympy import Eq, Mod, Q, S, ceiling, floor, frac, im, re, sign, symbols
+from sympy import Eq, Mod, Q, S, ceiling, floor, frac, sign, symbols
 from sympy.functions.elementary.miscellaneous import Rem
 
-from ._tables import add_rules, by_cases
-
-
-def integer(u):
-    """``u`` is an integer or a Gaussian integer (integral real and imaginary parts)."""
-    return Q.integer(u) | (Q.integer(re(u)) & Q.integer(im(u)))
-
+from ._tables import add_rules, by_cases, gaussian_integer
 
 a, b, c, d, f, g, h, m, n, w, x, zero = symbols('a b c d f g h m n w x zero')
 
-# ---- floor, ceiling, frac ------------------------------------------------------
-
-# Assumed throughout: g is a floor or ceiling term, floor(w) or ceiling(w), times an
-# integer m.  A row holding g becomes one row per form, and m appears only in those rows,
-# so its fact stays here too.  (The m-less forms are listed because a pattern m*floor(w)
-# does not match floor(w) itself.)
 ASSUMED = {Q.integer(m),
            Eq(g, floor(w)) | Eq(g, m*floor(w)) | Eq(g, ceiling(w)) | Eq(g, m*ceiling(w))}
 
-# n is an integer and h an integer or an infinity.  h is not marked by_cases: floor(t)
-# satisfies it only by cases (#18), but SymPy evaluates floor(floor(t)) itself, and a mark
-# would ask every floor binding whole (test_a_row_marked_by_cases_fires marks it).
-FLOOR = add_rules({integer(n), integer(h) | Q.infinite(h)}, [
-    (floor(h), h),                       # floor(3) = 3, floor(oo) = oo
-    (floor(n + x), floor(x) + n),        # floor(x + 3) = floor(x) + 3
-    # g moves out as n does, for any w: floor(w) is an integer or, for an infinite w, w
-    # itself, which absorbs the rest.  SymPy's floor returns an infinite argument unchanged
-    # (floor(1/2 + I*oo) = 1/2 + I*oo, where flooring each part gives I*oo), so its
-    # expressions can keep a finite part there that these rows drop: the same value.
+FLOOR = add_rules({gaussian_integer(n), gaussian_integer(h) | Q.infinite(h)}, [
+    (floor(h), h),
+    (floor(n + x), floor(x) + n),
     (floor(g + x), floor(x) + g),
 ])
 
-CEILING = add_rules({integer(n), integer(h) | Q.infinite(h)}, [
+CEILING = add_rules({gaussian_integer(n), gaussian_integer(h) | Q.infinite(h)}, [
     (ceiling(h), h),
     (ceiling(n + x), ceiling(x) + n),
     (ceiling(g + x), ceiling(x) + g),
 ])
 
-FRAC = add_rules({integer(n)}, [
-    (frac(n + x), frac(x)),              # frac(x + 3) = frac(x)
+FRAC = add_rules({gaussian_integer(n)}, [
+    (frac(n + x), frac(x)),
 ])
 
-# f is finite.  (A Gaussian integer f is too, but ask does not see it: issue #19.)  Not
-# at +-oo, where frac is AccumBounds(0, 1).
-FRAC_DEFINITION = add_rules({by_cases(Q.finite(f), Q.real(f), integer(f))}, [
-    (frac(f), f - floor(f)),             # gives frac(3) = 0 and frac(f) = f - n on [n, n + 1)
+FRAC_DEFINITION = add_rules({by_cases(Q.finite(f), Q.real(f), gaussian_integer(f))}, [
+    (frac(f), f - floor(f)),
 ])
-
-
-# ---- Mod, Rem ------------------------------------------------------------------
-# d is a nonzero divisor, b any divisor.
 
 MOD = (
     add_rules({Q.nonzero(d), Q.integer(a/d)}, [
-        (Mod(a, d), S.Zero),                     # Mod(6, 3) = 0
+        (Mod(a, d), S.Zero),
     ])
     + add_rules({Q.zero(zero)}, [
         (Mod(zero, b), S.Zero),
     ])
     + add_rules({Q.nonzero(d), Q.integer(c/d)}, [
-        (Mod(c + x, d), Mod(x, d)),              # Mod(x + 6, 3) = Mod(x, 3)
+        (Mod(c + x, d), Mod(x, d)),
     ])
-    # for 0 <= a < b or b < a <= 0, b finite: a relation holds on the extended reals, so
-    # Q.lt(a, b) allows b = oo, where Mod(a, oo) is nan (issue #10, B12)
     + add_rules({Q.finite(b) & ((Q.nonnegative(a) & Q.lt(a, b)) | (Q.nonpositive(a) & Q.lt(b, a)))}, [
         (Mod(a, b), a),
     ])
-    # for a and b of the same sign; never the reverse rewrite, so Mod and Rem cannot loop
     + add_rules({(Q.nonnegative(a) & Q.positive(b)) | (Q.nonpositive(a) & Q.negative(b))}, [
         (Mod(a, b), Rem(a, b)),
     ])
 )
 
-# Rem(a, b) = a for |a| < |b|, one row per way the signs can be known
 REM = (
     add_rules({Q.nonzero(d), Q.integer(a/d)}, [
-        (Rem(a, d), S.Zero),                     # Rem(6, 3) = 0
+        (Rem(a, d), S.Zero),
     ])
     + add_rules({Q.zero(zero)}, [
         (Rem(zero, b), S.Zero),
     ])
-    # 0 <= a < |b|, b finite (Rem(a, +-oo) is nan, as for Mod)
     + add_rules({Q.finite(b) & Q.nonnegative(a) & (Q.lt(a, b) | Q.lt(a, -b))}, [
         (Rem(a, b), a),
     ])
-    # -|b| < a <= 0, b finite
     + add_rules({Q.finite(b) & Q.nonpositive(a) & (Q.lt(-b, a) | Q.lt(b, a))}, [
         (Rem(a, b), a),
     ])
-    # -b < a < b
     + add_rules({Q.positive(b) & Q.lt(-b, a) & Q.lt(a, b)}, [
         (Rem(a, b), a),
     ])
-    # b < a < -b
     + add_rules({Q.negative(b) & Q.lt(b, a) & Q.lt(a, -b)}, [
         (Rem(a, b), a),
     ])
 )
 
-# At a half period (a/d = n + 1/2, 2*a/d odd): Mod(a, d) = d/2, and Rem(a, d) = d/2 or -d/2
-# by the sign of a/d.  Identity rows: they fire once the assumptions decide sign(a/d).
 MOD_HALF = add_rules({Q.nonzero(d), Q.odd(2*a/d)}, [
-    (Mod(a, d), d*Mod(sign(a/d), 2)/2),          # Mod(+-1, 2) = 1
+    (Mod(a, d), d*Mod(sign(a/d), 2)/2),
 ])
 REM_HALF = add_rules({Q.nonzero(d), Q.odd(2*a/d)}, [
     (Rem(a, d), sign(a/d)*d/2),

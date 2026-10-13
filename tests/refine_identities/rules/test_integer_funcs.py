@@ -36,6 +36,9 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (ceiling(x + n), Q.integer(n), n + ceiling(x), None),
     (floor(x + 2*n + m), Q.integer(n) & Q.integer(m), 2*n + m + floor(x), None),
     (floor(x + floor(y)), Q.finite(y), floor(x) + floor(y), None),
+    # integer_funcs.py lists floor(w) as well as m*floor(w) among the forms of a rounded
+    # term: the pattern m*floor(w) does not match floor(w) itself, so without it the next
+    # case would stay unrefined.
     (floor(x + floor(y)), True, floor(x) + floor(y), None),    # a rounded term shifts out (SymPy's test_floor_ceiling)
     (ceiling(x - 2*ceiling(y)), True, ceiling(x) - 2*ceiling(y), None),
     (floor(x), Q.infinite(x), x, {x: [oo, -oo, zoo, I*oo, -I*oo]}),
@@ -48,7 +51,8 @@ POSITIVE = [  # (expr, assumptions, expected, values)
     (floor(x + n), Q.integer(re(n)) & Q.integer(im(n)), n + floor(x), {n: [S(2), -S(3), 1 + 2*I, -I]}),
     (frac(x + n), Q.integer(re(n)) & Q.integer(im(n)), frac(x), {n: [S(2), -S(3), 1 + 2*I, -I]}),
     (floor(n), Q.integer(re(n)) & Q.integer(im(n)), n, {n: [S(2), -S(3), 1 + 2*I, -I]}),
-    # F4
+    # F4: integer_funcs.py has no rows for these.  Bounds are interval arithmetic, done
+    # by floor_of_bounded in _simple.py.
     (floor(x), Q.nonnegative(x) & Q.lt(x, 1), S.Zero, R),
     (floor(x), Q.nonnegative(x) & Q.positive(1 - x), S.Zero, R),
     (ceiling(x), Q.nonpositive(x) & Q.gt(x, -1), S.Zero, R),
