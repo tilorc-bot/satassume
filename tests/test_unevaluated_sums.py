@@ -30,6 +30,8 @@ def fresh():
     (Q.rational(Add(Mul(half, x, 1/x, evaluate=False), half, evaluate=False)), True, None),
     # the argument is nan at y = oo
     (Q.zero(log(Add(y, -y, 1, evaluate=False), evaluate=False)), Q.extended_real(y), None),
+    # (asin's one rule over the slot needs the argument nonnegative, which
+    # excludes nan already: this case passes on main too)
     (Q.zero(asin(Add(y, -y, 1, evaluate=False), evaluate=False)), Q.extended_real(y), None),
     (Q.zero(acos(Add(y, -y, 1, evaluate=False), evaluate=False)), Q.extended_real(y), None),
 ])
@@ -44,3 +46,7 @@ def test_evaluated_sums_keep_their_answers():
     assert ask(Q.zero(log(y + 1)), Q.zero(y), fresh()) is True
     assert ask(Q.zero(log(y + 1)), Q.positive(y), fresh()) is False
     assert ask(Q.zero(acos(y + 1)), Q.zero(y), fresh()) is True
+    # unevaluated, but its terms rebuild to the same terms
+    assert ask(Q.zero(log(Add(y, 1, evaluate=False))), Q.zero(y), fresh()) is True
+    assert ask(Q.zero(acos(Add(y, 1, evaluate=False))), Q.zero(y), fresh()) is True
+    assert ask(Q.positive(log(Add(y, 2, evaluate=False))), Q.positive(y), fresh()) is True
