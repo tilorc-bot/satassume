@@ -1607,6 +1607,17 @@ class Engine:
                 k.discard(o)
             r = kids[o] = (k, 0)
             return r
+        args = getattr(o, "args", ())
+        if len(args) > self._discovery_budget and (
+                getattr(o, "is_Add", False) or getattr(o, "is_Mul", False)):
+            # every non-constant term of a sum or product is a kid of
+            # weight >= 1: more of them than the budget put every cone
+            # holding ``o`` over it, so its (quadratic) templates are not
+            # built (#180 C-WIDEADD)
+            k = {a for a in args if not (a.is_Atom and a.is_number)}
+            if len(k) > self._discovery_budget:
+                r = kids[o] = (k, self._discovery_budget + 1)
+                return r
         constructing = self._constructing
         mine = o not in constructing
         if mine:

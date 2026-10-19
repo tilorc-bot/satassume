@@ -27,7 +27,7 @@ from sympy.core.intfunc import integer_nthroot
 from sympy.core.power import Pow
 from sympy.functions.elementary.exponential import exp
 
-from ...sat.formula import Not, P
+from ...sat.formula import And, Implies, Not, Or, P
 from ..rules import BASIS, expand_clause
 
 from ._common import (
@@ -45,6 +45,12 @@ from .table import Row, Section, Sub, expand, rules_of
 
 #: Largest arity for per-argument rules of Mul (O(n^2) literals).
 MAX_ONEOUT = 6
+#: Largest arity for the per-term rules of Add and Mul that every arity
+#: gets (one rule of n literals per term: O(n^2) literals).  Past it the
+#: strict-sign rule of Add is one formula (linear
+#: with Tseitin variables, :func:`_wide_one`), and so is the zero rule of
+#: Mul; the others are not emitted (#180 C-WIDEADD).
+MAX_ONEOUT_WIDE = 32
 #: Largest arity for rules enumerating pairs of arguments.
 MAX_PAIRS = 4
 #: Largest arity for subtraction rules and parity case enumeration of Add.
@@ -100,9 +106,10 @@ def _add_rules(n, consts):
             rule([(N, 'commutative', True), *lits(rest, 'commutative'), *lits(rest, 'finite')],
                  (k, 'commutative', True))
 
-    for k in A:
+    for k in A if n <= MAX_ONEOUT_WIDE else ():
         rest = [j for j in A if j != k]
-        # One strictly signed term among same-signed terms.
+        # One strictly signed term among same-signed terms (wider sums:
+        # _wide_one in add_templates).
         for strict, nonstrict in _STRICT:
             rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
         # Imaginary term plus finite reals is not real.
@@ -231,6 +238,30 @@ def _half_templates(expr, split):
     return facts(key, lambda: _half_rules(a0, odd, m), consts, objs, m)
 
 
+def _wide_one(expr, args, consts, every, some, concl):
+    """``every(t)`` for every term ``t`` and ``some(t)`` for one of them
+    give ``concl(expr)``, as one formula (None if it says nothing): the
+    per-term rule ``some(t_k) & every(rest) -> concl`` of a node wider
+    than :data:`MAX_ONEOUT_WIDE` when ``some`` implies ``every``.  Its
+    compilation is linear in the width (Tseitin variables), the per-term
+    rules' quadratic.  Constant terms are decided here: one that is not
+    ``every`` drops the formula."""
+    weak, strong, met = [], [], False
+    for k, a in enumerate(args):
+        c = consts.get(k)
+        if c is None:
+            weak.append(P(every, a))
+            strong.append(P(some, a))
+        elif not getattr(c, f'is_{every}'):  # sympy-boundary: c a constant
+            return None
+        elif getattr(c, f'is_{some}'):  # sympy-boundary: c a constant
+            met = True
+    if not (met or strong):
+        return None
+    prem = weak if met else weak + [Or(*strong)]
+    return Implies(And(*prem), P(concl, expr)) if prem else P(concl, expr)
+
+
 @registry.register(Add)
 def add_templates(expr):
     args = expr.args
@@ -238,12 +269,18 @@ def add_templates(expr):
     if n == 0:
         return ()
     consts = consts_of(args)
-    out = facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
-                consts, args + (expr,), n)
+    out = [facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
+                 consts, args + (expr,), n)]
+    if n > MAX_ONEOUT_WIDE:
+        # the strict-sign rule of _add_rules
+        for strict, nonstrict in _STRICT:
+            f = _wide_one(expr, args, consts, nonstrict, strict, strict)
+            if f is not None:
+                out.append(f)
     split = _half_split(args)
     if split is not None:
-        return [out, _half_templates(expr, split)]
-    return out
+        out.append(_half_templates(expr, split))
+    return out[0] if len(out) == 1 else out
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +319,7 @@ def _coeff(ctx):
 MUL_GUARDS = MappingProxyType({
     'n<=MAX_ONEOUT': lambda c: c['n'] <= MAX_ONEOUT,
     'n>MAX_ONEOUT': lambda c: c['n'] > MAX_ONEOUT,
+    'n<=MAX_ONEOUT_WIDE': lambda c: c['n'] <= MAX_ONEOUT_WIDE,
     'n>=2': lambda c: c['n'] >= 2,
     'n==2': lambda c: c['n'] == 2,
     'n even': lambda c: c['n'] % 2 == 0,
@@ -319,7 +357,7 @@ def _mul_table_rows():
         # Zero: some zero factor with the rest finite; nonzero: all nonzero and
         # at most one of them non-commutative (non-commutative values have zero
         # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
-        Section('each', rows=[
+        Section('each', when='n<=MAX_ONEOUT_WIDE', rows=[
             Row('zero', [('k', 'zero'), ('rest', 'finite')], ('N', 'zero')),
         ]),
         Section('each', when='n<=MAX_ONEOUT', rows=[
@@ -331,7 +369,7 @@ def _mul_table_rows():
         Row('hermitian', [('*', 'commutative'), ('*', 'hermitian')], ('N', 'hermitian')),
         # Polar: all polar, or one polar factor and the rest positive.
         Row('polar', [('*', 'polar')], ('N', 'polar')),
-        Section('each', rows=[
+        Section('each', when='n<=MAX_ONEOUT_WIDE', rows=[
             Row('polar.one', [('k', 'polar'), ('rest', 'positive')], ('N', 'polar')),
         ]),
         Row('primes', [('*', 'prime')], ('N', 'composite'), when='n>=2'),
@@ -426,6 +464,12 @@ def mul_templates(expr):
     if not expr.args:
         return ()
     out = [_product_block(f, expr) for f in _mul_factor_sets(expr)]
+    args = expr.args
+    if len(args) > MAX_ONEOUT_WIDE:
+        # the zero rule of MUL_TABLE
+        f = _wide_one(expr, args, consts_of(args), 'finite', 'zero', 'zero')
+        if f is not None:
+            out.append(f)
     return out if len(out) > 1 else out[0]
 
 
