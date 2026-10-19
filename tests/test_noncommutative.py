@@ -537,3 +537,12 @@ def test_scalar_valued_matrix_functions_stay_in_scope():
               exp(Trace(M)), Trace(M*N)):
         assert ask(Q.commutative(e), True, fresh()) is True
     assert ask(Q.real(exp(Trace(M))), Q.real(Trace(M)), fresh()) is True
+
+
+def test_scalar_with_a_matrix_in_a_container_stays_in_scope():
+    # #180 S2 review: N.x holds CoordSys3D N, whose args hold a rotation
+    # matrix; N.x is a commuting scalar
+    from sympy.vector import CoordSys3D
+    N = CoordSys3D('N')
+    assert ask(Q.commutative(N.x), True, fresh()) is True
+    assert ask(Q.real(N.x + 1), Q.real(N.x), fresh()) is True

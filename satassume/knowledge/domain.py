@@ -15,6 +15,7 @@ This module imports SymPy, so the engine imports it lazily.
 from __future__ import annotations
 
 from sympy.core.basic import Basic as _Basic
+from sympy.core.expr import Expr as _Expr
 
 from ..state.memos import PROCESS as _PROCESS
 
@@ -67,8 +68,8 @@ def _matrix_to_scalar() -> tuple:
 
 def _noncommutative(e) -> bool:
     """Whether ``e`` has a non-commutative subterm (fixed non-commutative
-    by construction anywhere, see :func:`_fixed_noncommutative`, ``e`` itself included), or a
-    matrix argument of anything but a scalar-valued matrix function
+    by construction anywhere, see :func:`_fixed_noncommutative`, ``e`` itself included), or an
+    expression with a matrix argument other than a scalar-valued matrix function
     (:func:`_matrix_to_scalar`): ``exp(M)``, ``sin(M)`` and ``f(M)`` claim
     to be scalars but stand for matrices.  Matrix expressions are not
     descended into.  The whole expression is not
@@ -89,7 +90,10 @@ def _noncommutative(e) -> bool:
             r = True
             break
         args = t.args
-        if not isinstance(t, _matrix_to_scalar()) and any(_is_matrix(a) for a in args):
+        if (isinstance(t, _Expr) and not isinstance(t, _matrix_to_scalar())
+                and any(_is_matrix(a) for a in args)):
+            # an expression of a matrix (exp(M)); not a container such as
+            # the CoordSys3D of a BaseScalar, whose args hold its rotation
             r = True
             break
         stack.extend(args)
