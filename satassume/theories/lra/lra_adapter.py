@@ -206,7 +206,7 @@ def _lin(e, scale: Fraction, out: dict, const: list) -> None:
             # unevaluated Mul(c, x, 1/x) or Mul(0, x) is nan at x = 0
             # or x = oo, not c or 0
             t = rest[0] if len(rest) == 1 else kept_product(rest)
-            if t is None or coeff.is_zero:
+            if t is None or coeff.is_zero:  # sympy-boundary: coeff Rational
                 raise _Unhandled(e)
             c = Fraction(int(coeff.p), int(coeff.q))
             if closed:

@@ -661,7 +661,7 @@ def ipi_split(arg):
         return None
     if not rest:
         return c, None
-    if c.is_zero:
+    if c.is_zero:  # sympy-boundary: c Rational
         return None                     # Mul(I, pi, 0, x): nan at x = oo
     if len(rest) == 1:
         return c, rest[0]
