@@ -387,6 +387,50 @@ def _missing(e: ModuleNotFoundError, module: str) -> bool:
     return e.name == f"{__package__}.{module}"
 
 
+#: closed node -> its sign facts (a Compiled unit pattern) or None; pure
+_CLOSED: dict = _PROCESS.table(f"{__name__}._CLOSED", "pure", 4096)
+
+
+def closed_units(node):
+    """The sign facts of a closed compound term (``E - 2``, ``log(3)/log(2)
+    - 1``, ``sqrt(5) - 3``: no free symbols, not an atom) as a unit pattern
+    over ``(node,)``, from the LRA adapter's exact field and rigorous
+    bounds (:func:`satassume.theories.lra.lra_adapter.closed_sign`): the
+    unary sign predicates then agree with the relation ``node > 0``, which
+    that adapter decides.  None when nothing is decided (#180 C-SIGN)."""
+    try:
+        return _CLOSED[node]
+    except KeyError:
+        pass
+    except TypeError:
+        return None
+    r = None
+    if getattr(node, "is_number", False) and not node.is_Atom:
+        from .theories.lra.lra_adapter import closed_sign
+        from .knowledge.templates._common import units
+        s, real = closed_sign(node)
+        if s is not None or real:
+            facts = {1: [("positive", True)], -1: [("negative", True)],
+                     0: [("zero", True)], None: [("real", True)]}[s]
+            r = units(("closed_sign", s), lambda: facts, node)
+    if len(_CLOSED) >= 4096:
+        _CLOSED.clear()
+    _CLOSED[node] = r
+    return r
+
+
+def with_closed_units(clause_templates):
+    """``clause_templates`` (``node -> (compiled, formulas)``) with
+    :func:`closed_units` added to the compiled patterns of a closed node."""
+    def clauses(node):
+        compiled, formulas = clause_templates(node)
+        c = closed_units(node)
+        if c is None:
+            return compiled, formulas
+        return [*compiled, c], formulas
+    return clauses
+
+
 def default_specs() -> List[AdapterSpec]:
     """The real adapters: an adapter module that does not exist is left
     out; one that exists but fails to import raises."""

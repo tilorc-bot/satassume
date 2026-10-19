@@ -9,6 +9,7 @@ own because only a query with such a constant needs it.
 from __future__ import annotations
 
 from fractions import Fraction
+from functools import lru_cache
 
 from sympy import S
 from sympy.core.add import Add
@@ -39,7 +40,7 @@ def constant_bounds(c):
 
     The value comes from interval arithmetic (:func:`_interval`: mpmath's
     interval context at 128 bits, outward rounded at every step, over
-    rationals, pi, E, ``+``, ``*``, ``**``, exp, log, sin, cos, tan, atan);
+    the constants and functions listed there);
     the interval is widened outward to rationals on a grid 72 bits below
     its magnitude.  A constant that SymPy cannot show to be zero still gets
     a narrow interval around 0.  Memoized per constant."""
@@ -136,14 +137,26 @@ def _sign(x) -> int:
     return mpf_sign(x)
 
 
+#: NumberSymbol -> attribute of mpmath's interval context
+_CONSTANTS = {S.GoldenRatio: "phi", S.EulerGamma: "euler", S.Catalan: "catalan"}
+
+
+@lru_cache(maxsize=None)
+def _heads():
+    from sympy import Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, Abs
+    return frozenset((Add, Mul, Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, Abs))
+
+
 def _interval(e, prec: int = _IV_PREC):
     """An interval (mpmath, outward rounded at every step) that holds the
     real value of the closed expression ``e``, or None.
 
-    Only rationals, pi, E, ``+``, ``*``, ``**``, exp, log, sin, cos, tan and
-    atan are evaluated; a step outside its real domain (log of an interval
-    that reaches 0, a fractional power of one that reaches below 0, tan
-    across a pole, 1/x across 0) gives None, so a result is also a proof
+    Only rationals, Floats, pi, E, GoldenRatio, EulerGamma, Catalan, ``+``,
+    ``*``, ``**``, exp, log, sin, cos, tan, atan, asin, acos, gamma (of a
+    positive argument) and Abs are evaluated; a step outside its real domain
+    (log of an interval that reaches 0, a fractional power of one that
+    reaches below 0, tan across a pole, 1/x across 0, asin beyond [-1, 1])
+    gives None, so a result is also a proof
     that the value is real.  Every intermediate value must stay within
     ``2**±_MAX_BITS`` (exp is checked before it is applied), so nothing huge
     is built: ``exp(exp(exp(5)))`` and ``sin(exp(exp(exp(5))))`` are None
@@ -151,7 +164,7 @@ def _interval(e, prec: int = _IV_PREC):
     accuracy for ``sign``, ``tanh``, ``tan`` next to a pole, ``log`` next to
     1)."""
     iv = _iv_context(prec)
-    from sympy import Pow, exp, log, sin, cos, tan, atan
+    from sympy import Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, Abs
     if e.is_Rational:
         if e.p and abs(e.p.bit_length() - e.q.bit_length()) > _MAX_BITS:
             return None
@@ -160,8 +173,18 @@ def _interval(e, prec: int = _IV_PREC):
         return iv.pi + 0
     if e is S.Exp1:
         return iv.e + 0
+    if e.is_Float:
+        m = e._mpf_                          # exact; later steps round outward
+        if m == (0, 0, 0, 0):
+            return iv.mpf(0)
+        if abs(_mag(m)) > _MAX_BITS:
+            return None                      # also inf and nan
+        return iv.make_mpf((m, m))
+    const = _CONSTANTS.get(e)
+    if const is not None:
+        return _loose(getattr(iv, const) + 0, prec)
     head = type(e)
-    if head not in (Add, Mul, Pow, exp, log, sin, cos, tan, atan):
+    if head not in _heads():
         return None
     args = []
     for a in e.args:
@@ -199,12 +222,24 @@ def _interval(e, prec: int = _IV_PREC):
                 return None
             r = _loose(iv.log(args[0]), prec)
         elif head is atan:
-            from mpmath.libmp import mpf_atan
-            x = args[0]
-            import mpmath
-            mk = mpmath.mp.make_mpf       # atan is increasing: round the ends outward
-            xa, xb = args[0]._mpi_
-            r = _loose(iv.mpf([mk(mpf_atan(xa, prec, "f")), mk(mpf_atan(xb, prec, "c"))]), prec)
+            r = _iv_atan(args[0], prec)
+        elif head in (asin, acos):
+            r = _iv_asin(args[0], prec)
+            if r is not None and head is acos:
+                r = (iv.pi + 0) / 2 - r
+        elif head is gamma:
+            if _sign(args[0]._mpi_[0]) <= 0:
+                return None                  # the poles and the sign changes
+            r = _loose(iv.gamma(args[0]), prec)
+        elif head is Abs:
+            a, b = args[0]._mpi_
+            if _sign(a) >= 0:
+                r = args[0]
+            elif _sign(b) <= 0:
+                r = -args[0]
+            else:
+                from mpmath.libmp import fzero, mpf_cmp, mpf_neg
+                r = iv.make_mpf((fzero, b if mpf_cmp(mpf_neg(a), b) < 0 else mpf_neg(a)))
         else:
             r = _loose({sin: iv.sin, cos: iv.cos, tan: iv.tan}[head](args[0]), prec)
     except Exception:                        # noqa: BLE001 - a step mpmath refuses decides nothing
@@ -224,6 +259,31 @@ def _interval(e, prec: int = _IV_PREC):
             b = fzero if b[0] else (0, 1, -_MAX_BITS, 1)
         r = iv.make_mpf((a, b))
     return r
+
+
+def _iv_atan(x, prec: int = _IV_PREC):
+    """atan of an interval, the ends rounded outward (atan is increasing)."""
+    import mpmath
+    from mpmath.libmp import mpf_atan
+    mk = mpmath.mp.make_mpf
+    xa, xb = x._mpi_
+    return _loose(_iv_context(prec).mpf([mk(mpf_atan(xa, prec, "f")), mk(mpf_atan(xb, prec, "c"))]), prec)
+
+
+def _iv_asin(x, prec: int = _IV_PREC):
+    """asin of an interval within [-1, 1] as ``2*atan(x/(1 + sqrt(1 - x**2)))``
+    (mpmath's interval context has no asin), else None."""
+    from mpmath.libmp import fone, fzero, mpf_abs, mpf_cmp
+    iv = _iv_context(prec)
+    xa, xb = x._mpi_
+    if mpf_cmp(mpf_abs(xa), fone) > 0 or mpf_cmp(mpf_abs(xb), fone) > 0:
+        return None
+    one = iv.mpf(1)
+    w = one - x * x
+    wa, wb = w._mpi_
+    if _sign(wa) < 0:                        # outward rounding below 0 near |x| = 1
+        w = iv.make_mpf((fzero, wb))
+    return 2 * _iv_atan(x / (one + iv.sqrt(w)), prec)
 
 
 def _loose(r, prec: int = _IV_PREC):

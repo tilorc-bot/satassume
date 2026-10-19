@@ -293,6 +293,13 @@ class _RefSession:
         # 5.2: the templates of the node's class, and the vocabulary
         # extensions registered for the class
         compiled, formulas = registry.clauses_for(node)
+        if any(r.name == "lra" for r in self.engine._relation_specs):
+            # the signs of closed terms the LRA adapter decides, as the
+            # engine adds them (relations.with_closed_units)
+            from .relations import closed_units
+            c = closed_units(node)
+            if c is not None:
+                compiled = [*compiled, c]
         ext = self.engine._extensions
         if ext is not None:
             nf = ext.node_facts(node)

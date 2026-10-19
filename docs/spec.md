@@ -199,6 +199,11 @@ the rule (False); a literal a constant cannot decide drops the rule; a rule whos
 falsifies becomes the negation of its premises. `Compiled.formulas()` gives the rules as `Implies`/`Or`
 formulas over `P` atoms (`_common.instantiate`).
 
+Definition. With the LRA adapter among the relation specs, a closed compound node `n` (`n.is_number`, not an
+atom) also gets the unit facts `relations.closed_units(n)`: `positive`, `negative` or `zero` when
+`lra_adapter.closed_sign(n)` decides the sign (exact field, else rigorous interval bounds), else `real` when
+`n` was read as a finite real at all (`Engine.__init__`, `relations.with_closed_units`; #180 C-SIGN).
+
 Definition. The clauses of `n` in the session are the clauses of its compiled patterns shifted by the base
 variables of `n`'s slot objects (`Session._compile_patterns`, `_emit_pattern`) and the Tseitin clauses of its
 plain formulas (`Session._compile`, `compile.compile_formula`), plus the node facts of registered vocabulary

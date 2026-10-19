@@ -121,7 +121,7 @@ from sympy.core.relational import (Equality, GreaterThan, LessThan,
                                    Unequality)
 from sympy.core.sorting import default_sort_key
 
-from .constfield import Undecided, from_sympy
+from .constfield import Undecided, from_sympy, sign
 from .lra import Integral, LRATheory, Negated
 from ...state.memos import adopt as _adopt_memo
 from ...knowledge.domain import kept_product
@@ -249,6 +249,27 @@ def _closed(e, scale, out: dict, const: list) -> None:
     if constant_bounds(e) is None:
         raise _Unhandled(e)
     out[e] = out.get(e, Fraction(0)) + scale
+
+
+def closed_sign(e):
+    """``(sign, real)`` of a closed constant ``e`` (no free symbols):
+    ``sign`` is -1, 0 or 1 when the exact field decides it
+    (:func:`satassume.theories.lra.constfield.from_sympy`) or the rigorous
+    bounds of :func:`constant_bounds` exclude 0, else None; ``real`` says
+    that ``e`` was read as a finite real number at all.  The unary
+    counterpart of the relation ``e > 0`` that the LRA adapter decides
+    (#180 C-SIGN)."""
+    v = from_sympy(e, generic=GENERIC_CONSTANTS)
+    if v is not None:
+        try:
+            return sign(v), True
+        except Undecided:
+            return None, True
+    b = constant_bounds(e)
+    if b is None:
+        return None, False
+    lo, hi = b
+    return (1 if lo >= 0 else -1 if hi <= 0 else None), True
 
 
 def constant_bounds(c):
