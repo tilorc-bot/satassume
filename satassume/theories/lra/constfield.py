@@ -579,7 +579,7 @@ def _sympy_inner_gcd(a, b):
     heuristic gcd, with a PRS fallback inside SymPy)."""
     da, db = _denominators(a, 1), _denominators(b, 1)   # TooLarge before importing SymPy
     from sympy.polys.domains import ZZ
-    from sympy.polys.euclidtools import dmp_inner_gcd
+    from sympy.polys.euclidtools import dmp_inner_gcd  # noqa: TID251 (exact gcd over ZZ, no assumptions)
     vs = sorted(_vars(b, _vars(a, set())), reverse=True)
     h, fa, fb = dmp_inner_gcd(_to_dmp(a, vs, 0, da, ZZ), _to_dmp(b, vs, 0, db, ZZ),
                               len(vs) - 1, ZZ)
@@ -1400,7 +1400,7 @@ def _from_sympy(e, generic=True):
         b, x = e.args
         if x.is_Integer and abs(int(x)) <= _MAX_POW:
             return _from_sympy(b, generic) ** int(x)
-        if b.is_Rational and b.is_positive and x.is_Rational:
+        if b.is_Rational and b.is_positive and x.is_Rational:  # sympy-boundary: b Rational
             p, q = int(x.p), int(x.q)
             if abs(p) <= _MAX_POW and q <= _MAX_POW:
                 t = radical(Fraction(int(b.p), int(b.q)), q)

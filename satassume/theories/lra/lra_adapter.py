@@ -112,7 +112,7 @@ from typing import Any
 
 from sympy import Float, S
 from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.ask import Q
+from sympy.assumptions import Q
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul

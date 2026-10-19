@@ -84,18 +84,19 @@ def const_value(c, pred: str):
     """Static truth value of ``pred`` for the constant ``c`` (None if the
     constant does not decide it).  Beyond the old-system property this
     derives the new-system predicates the old system does not store."""
-    v = getattr(c, 'is_' + pred, None)
+    v = getattr(c, 'is_' + pred, None)  # sympy-boundary: facts of a numeric constant
     if v is None:
         if pred in _SIGNED_INFINITE:
+            # sympy-boundary: facts of a numeric constant
             inf, sign = c.is_infinite, getattr(c, 'is_extended_' + _SIGNED_INFINITE[pred])
             if inf is False or sign is False:
                 v = False
             elif inf and sign:
                 v = True
         elif pred == 'hermitian':
-            v = c.is_real
+            v = c.is_real  # sympy-boundary: facts of a numeric constant
         elif pred == 'antihermitian':
-            z, im = c.is_zero, c.is_imaginary
+            z, im = c.is_zero, c.is_imaginary  # sympy-boundary: facts of a numeric constant
             v = True if (z or im) else (False if z is False and im is False else None)
     return v
 

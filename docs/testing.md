@@ -28,7 +28,9 @@ SymPy may be imported, and that no in-repo code uses the transitional
 old module names (docs/design.md, "Package layers").
 Tests that need SymPy call `pytest.importorskip("sympy")`.
 `tests/theory_harness.py` (`Recorder`, `check_protocol`, `ForbidTheory`)
-and `tests/real_theory_fuzz.py` are helpers, not test files.
+and `tests/real_theory_fuzz.py` are helpers, not test files; so are
+`tests/_sympy_trap.py` and `tests/_sympy_boundary_corpus.py`, which
+`tests/test_sympy_boundary.py` runs in a subprocess.
 
 `tests/test_known_gaps.py` pins the README's "Known gaps" as strict
 xfails; closing one fails with XPASS: move the case and update the README.
@@ -62,11 +64,19 @@ Known failures:
 ## CI
 
 `.github/workflows/test.yml` runs on every push and pull request: Python
-3.11 and 3.12, `pip install pytest hypothesis sympy mpmath z3-solver`
+3.10, 3.11 and 3.12, `pip install pytest hypothesis sympy mpmath z3-solver`
 (released SymPy), then `python -m pytest -q tests`. z3 is a second oracle
 in `test_constfield.py` and `test_lra_constant_coefficients.py` (skipped
 without it). CI runs none of the answer gates: their data is not in the
 repository.
+
+Its `boundary` job runs the two static SymPy boundary checks
+(docs/design.md, "The SymPy boundary"): `ruff check` (only `TID251`, the
+import bans in `pyproject.toml`; ruff pinned) and
+`python tools/check_sympy_boundary.py`. Run both before pushing a change
+to `satassume/`. A new legitimate site gets `# noqa: TID251 (reason)` or
+`# sympy-boundary: <reason>`; anything else is a boundary violation. The
+runtime trap is `tests/test_sympy_boundary.py`, part of the suite.
 
 ## Test data outside the repository
 

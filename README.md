@@ -99,6 +99,11 @@ from sympy import S, pi
 ask(Q.integer(y/pi + S.Half), Q.gt(y, -pi/2) & Q.lt(y, pi/2))  # False (exact pi coefficients, satassume/theories/lra/constfield.py)
 out_of_scope(Q.positive(y), Q.gt(y, 0))       # 'relation' (answered anyway when adapters are present)
 
+p = Symbol('p', positive=True)
+ask(Q.real(p))                                # True: the declaration is a fact (SymPy's closure of it)
+ask(Q.real(p), strict=True)                   # AssumptionSymbolError: state it as Q.positive(p)
+ask(Q.real(y), Q.positive(y), strict=True)    # True
+
 from sympy import Integer, Predicate, log
 from satassume import register, P, Implies
 @register('mersenne', Integer)                # the counterpart of Q.mersenne.register(Integer)
@@ -119,8 +124,9 @@ context-free facts it derives. It never reads or writes SymPy's per-object
 which can be wrong (`(0**n).is_finite` is True for a plain `n`), and a
 `Symbol`'s `_assumptions` is one fact base shared by every symbol with the
 same assumptions. SymPy's own facts about objects enter only through the templates: the
-assumptions a symbol was declared with, and the properties of fixed-value
-constants. Assumptions enter the solver as solver assumptions under
+assumptions a symbol was declared with (which `ask(..., strict=True)`
+rejects), and the properties of fixed-value
+constants (docs/design.md, "The SymPy boundary"). Assumptions enter the solver as solver assumptions under
 a selector literal and never touch the cache; the session is reused while
 the assumptions stay the same. Everything kept between queries (the fact
 caches, the reused sessions, the answer and split memos) records the registry
