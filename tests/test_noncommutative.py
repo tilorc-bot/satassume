@@ -511,3 +511,64 @@ def test_register_commutative_is_refused():
     from satassume.sat.formula import P
     with pytest.raises(ValueError, match="by definition"):
         Extensions().register("commutative", Symbol)(lambda s: P("commutative", s))
+
+
+# ---------------------------------------------------------------------------
+# #180 S2: a matrix argument of a scalar-typed function
+# ---------------------------------------------------------------------------
+
+def test_function_of_matrix_is_out_of_scope():
+    # exp(M), sin(M), f(M) are scalar-typed in SymPy but stand for matrices:
+    # exp(A)*exp(B) != exp(B)*exp(A), so commutative must not be True
+    from sympy import MatrixSymbol, exp, Matrix
+    from satassume.sympy_api import out_of_scope
+    M, N = MatrixSymbol('M', 2, 2), MatrixSymbol('N', 2, 2)
+    for e in (exp(M), sin(M), f(M), f(Matrix([[1, 2], [3, 4]])), exp(M) + 1):
+        assert ask(Q.commutative(e), True, fresh()) is None
+        assert fresh().is_(e, 'commutative') is None
+        assert fresh().is_(e, 'real') is None
+        assert out_of_scope(Q.commutative(e)) == 'matrix'
+
+
+def test_scalar_valued_matrix_functions_stay_in_scope():
+    from sympy import MatrixSymbol, Trace, Determinant, Permanent, exp
+    M, N = MatrixSymbol('M', 2, 2), MatrixSymbol('N', 2, 2)
+    for e in (Trace(M), Determinant(M), Permanent(M), M[0, 1], (M*N)[0, 1],
+              exp(Trace(M)), Trace(M*N)):
+        assert ask(Q.commutative(e), True, fresh()) is True
+    assert ask(Q.real(exp(Trace(M))), Q.real(Trace(M)), fresh()) is True
+
+
+def test_scalar_with_a_matrix_in_a_container_stays_in_scope():
+    # #180 S2 review: N.x holds CoordSys3D N, whose args hold a rotation
+    # matrix; N.x is a commuting scalar
+    from sympy.vector import CoordSys3D
+    N = CoordSys3D('N')
+    assert ask(Q.commutative(N.x), True, fresh()) is True
+    assert ask(Q.real(N.x + 1), Q.real(N.x), fresh()) is True
+
+
+def test_matrix_held_in_a_tuple_is_out_of_scope():
+    # #181 review: the matrix inside an ExprCondPair, Subs point,
+    # derivative variable or Tuple argument; matrices with non-numbers as
+    # entries; a matrix itself
+    from sympy import (Derivative, ImmutableMatrix, MatrixSymbol, Piecewise, Subs,
+                       Trace, Tuple, exp, re)
+    M, N = MatrixSymbol('M', 2, 2), MatrixSymbol('N', 2, 2)
+    p = Piecewise((M, x > 0), (N, True))
+    assert p.is_commutative is False            # SymPy
+    for e in (p, Subs(f(x), x, M), Derivative(Trace(M), M, evaluate=False), f(Tuple(M)),
+              Trace(ImmutableMatrix([[A, 0], [0, 1]])),
+              Trace(ImmutableMatrix([[exp(N), 0], [0, 1]])), re(M)):
+        assert ask(Q.commutative(e), True, fresh()) is None, e
+        assert fresh().is_(e, 'commutative') is None, e
+
+
+def test_scalars_of_matrices_stay_in_scope():
+    from sympy import ImmutableMatrix, MatrixSymbol, Sum, Trace, exp
+    from sympy.tensor.array.expressions import ArrayElement
+    M = MatrixSymbol('M', 2, 2)
+    i = Symbol('i', integer=True)
+    for e in (ArrayElement(M, (0, 0)), exp(Trace(M)) + M[0, 0], Sum(M[i, i], (i, 0, 1)),
+              Trace(ImmutableMatrix([[1, 2], [3, x]]))):
+        assert ask(Q.commutative(e), True, fresh()) is True, e
