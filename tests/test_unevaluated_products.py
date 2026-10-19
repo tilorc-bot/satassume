@@ -7,7 +7,7 @@ or ``x = oo``; building the rest of such a product with an evaluating
 derived ``c*t`` product of the Mul templates used to do that, and gave
 definite answers that the values contradict.  The rest of a product is
 now read only when the built product keeps exactly its factors
-(``templates.core.kept_product``)."""
+(``knowledge.domain.kept_product``)."""
 from __future__ import annotations
 
 import pytest
@@ -17,7 +17,8 @@ from sympy import (E, Eq, Ge, Gt, I, Lt, Mul, Ne, Pow, Q, Rational as R, S, exp,
                    oo, pi, sqrt, symbols, zoo)
 
 from satassume.engine import Engine
-from satassume.knowledge.templates.core import ipi_split, kept_product
+from satassume.knowledge.domain import kept_product
+from satassume.knowledge.templates.core import ipi_split
 from satassume.sympy_api import ask
 
 x, y = symbols("x y")

@@ -17,7 +17,6 @@ numeric coefficients, which is what the old assumption system relies on
 """
 from __future__ import annotations
 
-from collections import Counter
 from itertools import product
 from types import MappingProxyType
 
@@ -29,6 +28,7 @@ from sympy.core.power import Pow
 from sympy.functions.elementary.exponential import exp
 
 from ...sat.formula import And, Implies, Not, Or, P
+from ..domain import kept_product
 from ..rules import BASIS, expand_clause
 
 from ._common import (
@@ -500,20 +500,6 @@ def _mul_factor_sets(expr):
         c, s_ = split
         out.append(((c,) if c is not S.One else ()) + (S.ImaginaryUnit, S.Pi, s_))
     return out
-
-
-def kept_product(factors):
-    """``Mul(*factors)`` if the built product keeps exactly these factors
-    (its commutative ones in any order), else None.  Building evaluates:
-    the rest of an unevaluated ``Mul(c, x, 1/x)`` or ``Mul(c, x, 0)``
-    would build to ``1`` or ``0``, but the node is nan at ``x = 0`` or
-    ``x = oo``, so a block over the built rest would relate the node to a
-    different value (#161)."""
-    t = Mul(*factors)
-    if t.is_Mul and len(t.args) == len(factors) \
-            and Counter(t.args) == Counter(factors):
-        return t
-    return None
 
 
 def _product_block(factors, expr):

@@ -124,7 +124,7 @@ from sympy.core.sorting import default_sort_key
 from .constfield import Undecided, from_sympy
 from .lra import Integral, LRATheory, Negated
 from ...state.memos import adopt as _adopt_memo
-from ...knowledge.templates.core import kept_product
+from ...knowledge.domain import kept_product
 
 __all__ = ["LRAAdapter", "to_constraint", "terms", "interpret", "relation",
            "integer_form"]
