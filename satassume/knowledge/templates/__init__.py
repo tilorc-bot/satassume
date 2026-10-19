@@ -1,7 +1,7 @@
 """Structural rule templates for :mod:`satassume`.
 
 Importing this package registers every template module with
-:data:`registry` (:mod:`.core` and :mod:`.functions` on first use, see
+:data:`registry` (:mod:`.core`, :mod:`.functions` and :mod:`.rootof` on first use, see
 :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
 
@@ -17,6 +17,7 @@ from sympy.core.add import Add
 from sympy.core.function import Function
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
+from sympy.polys.rootoftools import ComplexRootOf
 
 from . import atoms  # noqa: F401  (registration side effects)
 from .registry import TemplateRegistry, registry
@@ -25,5 +26,6 @@ from .registry import TemplateRegistry, registry
 # imported when the first node of such a class is met (TemplateRegistry.lazy)
 registry.lazy(__name__ + ".core", Add, Mul, Pow)
 registry.lazy(__name__ + ".functions", Function)
+registry.lazy(__name__ + ".rootof", ComplexRootOf)
 
 __all__ = ['TemplateRegistry', 'registry']
