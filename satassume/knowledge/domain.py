@@ -37,6 +37,7 @@ def _fixed_noncommutative(t) -> bool:
     attribute; anything else is decided by its arguments."""
     from sympy.core.symbol import Symbol
     if isinstance(t, Symbol):
+        # sympy-boundary: the declared commutative flag only
         return dict(getattr(t, "_assumptions0", ())).get("commutative") is False
     for k in type(t).__mro__:
         v = k.__dict__.get("is_commutative", None)

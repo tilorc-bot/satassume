@@ -507,7 +507,7 @@ def sympy_atom(atom: P):
     (memoized: a pure function of the atom)."""
     r = _SYMPY_ATOMS.get(atom)
     if r is None:
-        from sympy.assumptions.ask import Q
+        from sympy.assumptions import Q
         r = {"eq": Q.eq, "lt": Q.lt}[atom.pred](*atom.expr)
         if len(_SYMPY_ATOMS) >= _SYMPY_ATOMS.size:
             _SYMPY_ATOMS.clear()
@@ -637,6 +637,7 @@ def _termwise(a, b, d) -> bool:
     from sympy import Add
 
     def terms(e):
+        # sympy-boundary: is_finite of a closed term (no symbols), a number fact
         return [t for t in Add.make_args(e)
                 if not (t.is_Number or _is_number(t) and t.is_finite)]
 

@@ -45,3 +45,90 @@ include = ["satassume*"]
 testpaths = ["tests"]
 # the root on sys.path: tests/test_history.py imports harness/ (not packaged)
 pythonpath = ["."]
+
+# The SymPy boundary (docs/design.md, "The SymPy boundary"): the shipped
+# package must not reach SymPy's reasoning or simplification.  ruff runs
+# only this rule (`ruff check`, CI); tools/check_sympy_boundary.py covers
+# the method calls and old-assumption reads an import ban cannot see.
+# A banned module bans its submodules; `from sympy import simplify` and
+# `sympy.simplify(...)` resolve to the same name.
+[tool.ruff.lint]
+select = ["TID251"]
+
+[tool.ruff.lint.per-file-ignores]
+# oracles and recorders that compare against SymPy; not packaged
+"tests/**" = ["TID251"]
+"tools/**" = ["TID251"]
+"harness/**" = ["TID251"]
+"benchmarks/**" = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"sympy.simplify".msg = "SymPy simplification (module and function)"
+"sympy.trigsimp".msg = "SymPy simplification"
+"sympy.powsimp".msg = "SymPy simplification"
+"sympy.powdenest".msg = "SymPy simplification"
+"sympy.radsimp".msg = "SymPy simplification"
+"sympy.ratsimp".msg = "SymPy simplification"
+"sympy.combsimp".msg = "SymPy simplification"
+"sympy.gammasimp".msg = "SymPy simplification"
+"sympy.nsimplify".msg = "SymPy simplification"
+"sympy.sqrtdenest".msg = "SymPy simplification"
+"sympy.logcombine".msg = "SymPy simplification"
+"sympy.signsimp".msg = "SymPy simplification"
+"sympy.cancel".msg = "SymPy rational simplification"
+"sympy.factor".msg = "SymPy rational simplification"
+"sympy.together".msg = "SymPy rational simplification"
+"sympy.gcd".msg = "SymPy polynomial algebra"
+"sympy.minimal_polynomial".msg = "SymPy number fields"
+"sympy.minpoly".msg = "SymPy number fields"
+"sympy.solve".msg = "SymPy solvers"
+"sympy.solveset".msg = "SymPy solvers"
+"sympy.ask".msg = "SymPy's own ask: satassume answers by itself"
+"sympy.refine".msg = "SymPy's refine reasons with SymPy's ask"
+"sympy.assumptions.ask".msg = "SymPy's own ask (import Q from sympy.assumptions)"
+"sympy.assumptions.refine".msg = "SymPy's refine reasons with SymPy's ask"
+"sympy.assumptions.satask".msg = "SymPy's SAT ask"
+"sympy.assumptions.lra_satask".msg = "SymPy's LRA ask"
+"sympy.assumptions.handlers".msg = "SymPy's ask handlers"
+"sympy.assumptions.sathandlers".msg = "SymPy's satask facts"
+"sympy.solvers".msg = "SymPy solvers"
+"sympy.polys.polytools".msg = "SymPy polynomial algebra (Poly, cancel, factor, gcd, ...)"
+"sympy.polys.rationaltools".msg = "SymPy rational simplification"
+"sympy.polys.partfrac".msg = "SymPy rational simplification"
+"sympy.polys.polyroots".msg = "SymPy polynomial roots"
+"sympy.polys.factortools".msg = "SymPy polynomial algebra"
+"sympy.polys.sqfreetools".msg = "SymPy polynomial algebra"
+"sympy.polys.groebnertools".msg = "SymPy polynomial algebra"
+"sympy.core.exprtools".msg = "SymPy simplification (factor_terms, gcd_terms)"
+"sympy.polys.cancel".msg = "SymPy rational simplification"
+"sympy.polys.factor".msg = "SymPy rational simplification"
+"sympy.polys.together".msg = "SymPy rational simplification"
+"sympy.polys.apart".msg = "SymPy rational simplification"
+"sympy.polys.gcd".msg = "SymPy polynomial algebra"
+"sympy.polys.factor_list".msg = "SymPy polynomial algebra"
+"sympy.polys.sqf".msg = "SymPy polynomial algebra"
+"sympy.polys.sqf_list".msg = "SymPy polynomial algebra"
+"sympy.polys.groebner".msg = "SymPy polynomial algebra"
+"sympy.polys.resultant".msg = "SymPy polynomial algebra"
+"sympy.polys.roots".msg = "SymPy polynomial roots"
+"sympy.polys.real_roots".msg = "SymPy polynomial roots"
+"sympy.polys.nroots".msg = "SymPy polynomial roots"
+"sympy.apart".msg = "SymPy rational simplification"
+"sympy.factor_list".msg = "SymPy polynomial algebra"
+"sympy.sqf".msg = "SymPy polynomial algebra"
+"sympy.sqf_list".msg = "SymPy polynomial algebra"
+"sympy.groebner".msg = "SymPy polynomial algebra"
+"sympy.resultant".msg = "SymPy polynomial algebra"
+"sympy.roots".msg = "SymPy polynomial roots"
+"sympy.real_roots".msg = "SymPy polynomial roots"
+"sympy.nroots".msg = "SymPy polynomial roots"
+"sympy.factor_terms".msg = "SymPy simplification"
+"sympy.gcd_terms".msg = "SymPy simplification"
+"sympy.linsolve".msg = "SymPy solvers"
+"sympy.nonlinsolve".msg = "SymPy solvers"
+"sympy.nsolve".msg = "SymPy solvers"
+"sympy.solve_linear".msg = "SymPy solvers"
+"sympy.limit".msg = "SymPy limits"
+"sympy.series".msg = "SymPy series"
+"sympy.polys.numberfields".msg = "SymPy number fields"
+"sympy.polys.euclidtools".msg = "SymPy polynomial gcd: allowlisted in constfield only"

@@ -45,7 +45,7 @@ from itertools import islice
 
 from sympy import Add, Mul, Pow, Rational, nan
 from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.ask import Q
+from sympy.assumptions import Q
 from sympy.core.basic import Basic
 from sympy.core.function import Application
 from sympy.core.relational import Equality, Unequality

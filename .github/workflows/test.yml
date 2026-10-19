@@ -13,3 +13,16 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: pip install pytest hypothesis sympy mpmath z3-solver
       - run: python -m pytest -q tests
+  boundary:
+    # the static SymPy boundary checks (docs/design.md, "The SymPy boundary")
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.16.7
+      - name: ruff (TID251, the import bans of pyproject.toml)
+        run: ruff check --output-format=github
+      - name: method calls and old-assumption reads
+        run: python tools/check_sympy_boundary.py

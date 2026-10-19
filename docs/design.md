@@ -102,6 +102,75 @@ procedure plus an adapter. `tests/test_layering.py` checks the imports
 and, in a fresh interpreter, that importing the package and every module
 outside the list above loads neither SymPy nor mpmath.
 
+### The SymPy boundary
+
+The package never calls SymPy's reasoning: no `ask`, `refine`, `satask`,
+`simplify` family, `cancel`, `factor`, `.equals` or `solve`. What it does
+take from SymPy, and why each is allowed:
+
+* the facts of objects with a fixed value (`is_<fact>` of numbers and
+  `pi`, `E`, `I`, ...: `const_value`, `constant_units`; `Integer.is_prime`
+  is SymPy's `isprime`), the real and imaginary part of a closed exponent
+  of `I` or `-1` (`as_real_imag`), `is_finite` of a closed term (no
+  symbols), and an exact polynomial gcd over `ZZ`
+  (`constfield._sympy_inner_gcd`): number facts and exact arithmetic,
+  not symbolic reasoning;
+* expression construction (`Mul(*rest)`, `b - 1`): SymPy's constructors
+  evaluate as they always do, and with plain symbols decide nothing about
+  the facts;
+* the assumptions a symbol was declared with (`atoms.symbol_units` reads
+  `assumptions0`). These are SymPy's old-system fact closure, not the
+  caller's Q facts, and the same declaration lets SymPy's constructors
+  evaluate the input before `ask` sees it (`x > 0` is `S.true` for a
+  positive `x`). `ask(..., strict=True)` rejects such symbols (and
+  `IndexedBase`s, undefined functions and non-SymPy `Function` subclasses
+  declared with assumptions) with `AssumptionSymbolError`, so a caller
+  that must use only Q facts can enforce it; the default keeps them, for
+  SymPy compatibility. Strict mode sees only what survives construction:
+  `p > 0` for a positive `p` is already `S.true`, and
+  `Piecewise((0, p > 0), (1, True))` is already `0`, before `ask` is
+  called, so nothing is left to reject. A front end must build the input
+  from plain symbols itself; strict mode catches a symbol that slipped
+  through, not one SymPy has already used up.
+
+Three checks keep it so:
+
+1. **ruff `TID251`** (`pyproject.toml`, the `boundary` job of CI) bans
+   imports of SymPy's simplification, `sympy.assumptions.ask`/`refine`/
+   `satask`/`lra_satask`/`handlers`, `sympy.solvers`, `sympy.polys`'
+   algebra (`polytools`, `rationaltools`, `partfrac`, `polyroots`,
+   `factortools`, `sqfreetools`, `groebnertools`, `numberfields`,
+   `euclidtools`), `sympy.core.exprtools`, `limit` and `series` in
+   `satassume/` (not in `tests/`, `tools/`, `harness/`, `benchmarks/`).
+   ruff matches the name as imported, so the names SymPy re-exports at the
+   top level and in `sympy.polys` (`from sympy import factor_list`) are
+   listed one by one. The one allowed
+   import carries `# noqa: TID251 (reason)`: `dmp_inner_gcd` in
+   `constfield.py`. Import `Q` from `sympy.assumptions`, not from
+   `sympy.assumptions.ask`.
+2. **`tools/check_sympy_boundary.py`** (same job; stdlib only) sees what
+   an import ban cannot: method calls (`.simplify()`, `.cancel()`,
+   `.equals()`, `.refine()`, `._eval_refine()`, `.evalf()`,
+   `.as_real_imag()`, `._eval_is_<fact>()`, ..., also uncalled or by
+   `getattr` name), `.is_<fact>` reads of old-assumption facts,
+   `getattr(x, 'is_' + ...)` and the fact KBs (`assumptions0`,
+   `x._assumptions`, ...).
+   Structural attributes (`is_Add`, `is_Rational`, `is_number`,
+   `is_commutative`, ...) pass. Every allowed site carries
+   `# sympy-boundary: <reason>` on its statement or on a comment line
+   above, so the allowlist is in the source and in review.
+3. **The runtime trap** (`tests/test_sympy_boundary.py`, in a subprocess)
+   runs a generic corpus through `ask(..., strict=True)` with SymPy's
+   reasoning and simplification wrapped to raise. It sees what neither
+   static check can: calls SymPy makes on the package's behalf. A call
+   whose entry (the SymPy function the package called) is construction
+   (any `__new__`, cached or not, the arithmetic operators,
+   `xreplace`: `_sympy_trap.CONSTRUCTION`; `cacheit`'s wrapper is skipped
+   when the entry is found, so a cached non-constructor such as
+   `as_leading_term` is checked itself) is allowed (`Mul.flatten` may call
+   `logcombine`); any other fails, and so does any read of a fact of an
+   assumption-carrying symbol.
+
 ### Old module names (transitional)
 
 The flat module names before the package move (`satassume.rules`,
@@ -300,7 +369,8 @@ template).
   an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
   coefficients (`_half_templates`).
 - SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
-  properties of atoms with a fixed value (`consts_of`, `constant_units`).
+  properties of atoms with a fixed value (`consts_of`, `constant_units`);
+  see "The SymPy boundary" (`ask(..., strict=True)` rejects the first).
   `commutative` has no template: it is true by definition (see
   "Non-commutative symbols").
 - `tests/test_templates.py` evaluates every rule at concrete values, in

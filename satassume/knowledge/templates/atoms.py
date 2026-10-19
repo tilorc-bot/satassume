@@ -32,7 +32,7 @@ _CONST_BASIS = (
 
 @registry.register(Symbol)
 def symbol_units(expr):
-    a0 = expr.assumptions0
+    a0 = expr.assumptions0  # sympy-boundary: declared symbol facts; strict ask rejects them
     key = ('symbol', frozenset(a0.items()))
     # not ``commutative``: true of every term in scope (rules.DEFINITIONS);
     # a non-commutative symbol is out of scope (sympy_api)

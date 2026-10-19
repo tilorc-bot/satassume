@@ -62,6 +62,38 @@ Q.invertible(M))`` is None), and ``"other"`` is out of scope on both sides.
 formula and raises :class:`Unsupported` (carrying the category) for
 out-of-scope input.
 
+Strict mode
+-----------
+By default the assumptions a symbol was declared with are facts too: the
+template of a ``Symbol`` (``Dummy``, ``Wild``) reads its ``assumptions0``,
+so ``ask(Q.real(x))`` is True for ``x = Symbol('x', positive=True)``.
+Those facts are not the caller's: ``assumptions0`` is the closure that
+SymPy's old assumption system computes from the declaration (19 facts for
+``positive=True``), and the same declaration lets SymPy's constructors
+evaluate the input before :func:`ask` sees it (``x > 0`` is already
+``S.true``, ``sqrt(x**2)`` is already ``x``).  An undefined function
+declared with assumptions (``Function('f', real=True)``) has no template,
+but SymPy's constructors read its assumptions the same way
+(``conjugate(f(y))`` is ``f(y)``).
+
+``ask(..., strict=True)`` takes facts only as Q facts: it raises
+:class:`AssumptionSymbolError` (a ``ValueError``) naming every symbol of
+the proposition or the assumptions (or ``IndexedBase``) that has an
+assumption other than ``commutative=True``, and every applied undefined
+function (or ``Function`` subclass defined outside SymPy) whose class has
+one, before the answer memo is consulted.  Plain symbols with the
+facts in the assumptions (``ask(Q.real(x), Q.positive(x), strict=True)``)
+answer as usual.  :func:`check_strict` is the same check on its own, for
+front ends that translate SymPy input themselves.  Off by default, so
+callers that rely on symbol assumptions keep working.
+
+Strict mode sees only what survives construction.  For a positive ``p``,
+``p > 0`` is already ``S.true`` and ``Piecewise((0, p > 0), (1, True))``
+is already ``0`` when :func:`ask` is called, so there is nothing left to
+reject.  A front end must build its input from plain symbols itself:
+strict mode catches a declared symbol that slipped through, not one
+SymPy has already used up.
+
 Not offered here
 ----------------
 Replacing the old ``expr.is_*`` system is the long-term goal, not this
@@ -111,6 +143,55 @@ class Unsupported(Exception):
         super().__init__(message)
         assert category in CATEGORIES
         self.category = category
+
+
+class AssumptionSymbolError(ValueError):
+    """Strict mode (see the module docstring): the input holds symbols or
+    undefined functions declared with old-style assumptions.  ``symbols``
+    are those objects (a ``Symbol``, ``Dummy``, ``Wild`` or ``IndexedBase``,
+    or the class of an undefined function or of a non-SymPy ``Function``
+    subclass), in a fixed order."""
+
+    def __init__(self, symbols):
+        self.symbols = tuple(symbols)
+        names = ", ".join(f"{s} ({_declared(s)})" for s in self.symbols)
+        super().__init__(f"strict mode: state assumptions as Q facts, not on {names}")
+
+
+def _declared(s) -> str:
+    """The non-default assumptions of ``s``, as ``k=v`` (the declared ones
+    where SymPy keeps them apart from their closure)."""
+    if isinstance(s, type):
+        a = s.default_assumptions  # sympy-boundary: strict check
+    else:
+        a = getattr(s, "_assumptions_orig", None) or s.assumptions0  # sympy-boundary: strict check
+    return ", ".join(f"{k}={v}" for k, v in sorted(a.items())
+                     if not (k == "commutative" and v))
+
+
+def check_strict(*exprs) -> None:
+    """Raise :class:`AssumptionSymbolError` if one of ``exprs`` holds a
+    symbol (``Symbol``, ``Dummy``, ``Wild``, bound ones included) or an
+    ``IndexedBase`` with an assumption other than ``commutative=True``, or
+    an applied undefined function, or an applied ``Function`` subclass
+    defined outside SymPy, whose class has one; anything not a SymPy object
+    is skipped.  The check of ``ask(..., strict=True)``."""
+    from sympy.core.function import AppliedUndef, Function
+    from sympy.core.symbol import Symbol
+    from sympy.tensor.indexed import IndexedBase
+    bad = set()
+    for e in exprs:
+        if not isinstance(e, _Basic):
+            continue
+        for a in e.atoms(Symbol, IndexedBase, Function):
+            if isinstance(a, (Symbol, IndexedBase)):
+                if a.assumptions0 != {"commutative": True}:  # sympy-boundary: strict check
+                    bad.add(a)
+            elif (isinstance(a, AppliedUndef)
+                  or not type(a).__module__.startswith("sympy.")) and _declared(type(a)):
+                bad.add(type(a))
+    if bad:
+        raise AssumptionSymbolError(sorted(bad, key=lambda s: (str(s), isinstance(s, type))))
 
 
 _engine: Optional[Engine] = None
@@ -321,7 +402,8 @@ def to_formula(expr, relations: bool = False, opaque: bool = False):
 # the public query
 # --------------------------------------------------------------------------
 
-def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optional[bool]:
+def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
+        strict: bool = False) -> Optional[bool]:
     """Truth value of ``proposition`` under ``assumptions``: True, False or
     None, computed by the SAT engine alone.
 
@@ -354,7 +436,16 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None) -> Optio
       Assumptions contradicting a fact declared on a symbol
       (``ask(Q.commutative(x), ~Q.commutative(x))``) count as inconsistent
       here, where SymPy trusts the assumption.
+    * ``strict``: facts only as Q facts.  A symbol with an assumption other
+      than ``commutative=True`` (or such an ``IndexedBase``), or an applied
+      undefined function (or non-SymPy ``Function`` subclass) whose class
+      has one, raises :class:`AssumptionSymbolError` (a
+      ``ValueError``) naming it; see the module docstring, "Strict mode".
     """
+    if strict:
+        # before the answer memo: a memo hit of a non-strict call must not
+        # answer a strict one
+        check_strict(proposition, assumptions)
     eng = engine or default_engine()
     # answer memo (see Engine.answers): keyed by the SymPy objects
     # themselves, valid while the registry epoch (satassume.state.epoch: the
@@ -594,7 +685,7 @@ def _const_base(c) -> bool:
         return True
     if c.is_Pow:
         b, r = c.args
-        return r.is_Rational and ((b.is_Rational and b.is_positive)
+        return r.is_Rational and ((b.is_Rational and b.is_positive)  # sympy-boundary: b Rational
                                   or b is _S.Pi or b is _S.Exp1)
     return False
 

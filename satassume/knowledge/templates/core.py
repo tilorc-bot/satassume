@@ -274,7 +274,7 @@ def _coeff(ctx):
     if not (ctx['n'] == 2 and 0 in consts and consts[0].is_Number):
         return False
     c = consts[0]
-    return bool(c.is_finite and c.is_extended_real and not c.is_zero)
+    return bool(c.is_finite and c.is_extended_real and not c.is_zero)  # sympy-boundary: c a Number
 
 
 #: Conditions on the pattern of a Mul (``n`` arguments, ``consts``; ``m``
@@ -290,8 +290,8 @@ MUL_GUARDS = MappingProxyType({
     'm even': lambda c: c['m'] % 2 == 0,
     'm odd': lambda c: c['m'] % 2 != 0,
     'coeff': _coeff,
-    'c negative': lambda c: bool(c['consts'][0].is_negative),
-    'c not negative': lambda c: not c['consts'][0].is_negative,
+    'c negative': lambda c: bool(c['consts'][0].is_negative),  # sympy-boundary: c a constant
+    'c not negative': lambda c: not c['consts'][0].is_negative,  # sympy-boundary: c a constant
     'c rational': lambda c: bool(c['consts'][0].is_Rational),
     'c.q==2': lambda c: c['consts'][0].q == 2,
     'c==-1': lambda c: c['consts'][0] is S.NegativeOne,
@@ -443,7 +443,7 @@ def _mul_factor_sets(expr):
     # is the Mul, not in the deriving block, which is local to its node).
     out = [args]
     c = args[0]
-    if n >= 3 and c.is_Rational and not c.is_zero:
+    if n >= 3 and c.is_Rational and not c.is_zero:  # sympy-boundary: c Rational
         # c*t: the coefficient-free t of the half-integer split of an Add
         # (x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
         rest = Mul(*args[1:])
@@ -607,11 +607,13 @@ def ipi_split(arg):
 IPI_GUARDS = MappingProxyType({
     'no s': lambda x: not x['has_s'],
     's': lambda x: x['has_s'],
-    'c integer': lambda x: bool(x['c'].is_integer),
+    'c integer': lambda x: bool(x['c'].is_integer),  # sympy-boundary: c Rational
+    # sympy-boundary: c Rational
     'c even integer': lambda x: bool(x['c'].is_integer) and x['c'].p % 2 == 0,
+    # sympy-boundary: c Rational
     'c odd integer': lambda x: bool(x['c'].is_integer) and x['c'].p % 2 != 0,
-    'c half-odd': lambda x: not x['c'].is_integer and x['c'].q == 2,
-    'c other': lambda x: not x['c'].is_integer and x['c'].q != 2,
+    'c half-odd': lambda x: not x['c'].is_integer and x['c'].q == 2,  # sympy-boundary: c Rational
+    'c other': lambda x: not x['c'].is_integer and x['c'].q != 2,  # sympy-boundary: c Rational
 })
 
 # Slots: 'N' the node exp(I*pi*c*s), 'S' the s (only with an s).
@@ -652,6 +654,7 @@ def ipi_rules(rule, c, iS, N):
         rule(prem, concl)
 
 def _num(x):
+    # sympy-boundary: b a Number
     return x['b'] is not None and x['b'].is_Number and x['b'].is_finite
 
 
@@ -665,7 +668,7 @@ def _b_not_qth_power(x):
     power (exact integer arithmetic): here b is a positive rational that
     is not one."""
     b, e = x['b'], x['e']
-    if not (b is not None and b.is_Rational and b.is_positive):
+    if not (b is not None and b.is_Rational and b.is_positive):  # sympy-boundary: b Rational
         return False
     return not (integer_nthroot(b.p, e.q)[1] and integer_nthroot(b.q, e.q)[1])
 
@@ -691,12 +694,15 @@ POW_GUARDS = MappingProxyType({
     'b is -1': lambda x: x['b'] is S.NegativeOne,
     'b integer, |b|>=2': lambda x: (x['b'] is not None and x['b'] is not S.NegativeOne
                                     and x['b'].is_Integer and (x['b'].p >= 2 or x['b'].p <= -2)),
+    # sympy-boundary: b a numeric constant
     'b algebraic, not 0 or 1': lambda x: (x['b'] is not None and x['b'].is_algebraic
                                           and x['b'].is_zero is False and x['b'] is not S.One),
     'b finite number, |b|>1': lambda x: _num(x) and abs(x['b']) > 1,
+    # sympy-boundary: b a numeric constant
     'b finite number, 0<|b|<1': lambda x: (_num(x) and not abs(x['b']) > 1
                                            and x['b'].is_zero is False and abs(x['b']) < 1),
     'e integer >= 2': lambda x: x['e'] is not None and x['e'].is_Integer and x['e'].p >= 2,
+    # sympy-boundary: e a numeric constant
     'e algebraic irrational': lambda x: (x['e'] is not None and x['e'].is_algebraic
                                          and x['e'].is_rational is False),
 })
@@ -827,7 +833,7 @@ def _unit_power_units(angle, e, expr):
     ``a*angle`` is an integer (positive for even, negative for odd) and
     imaginary iff ``a*angle`` is half an odd integer.  Only exact real
     parts (atomic numbers) are used."""
-    a, t = e.as_real_imag()
+    a, t = e.as_real_imag()  # sympy-boundary: real/imaginary part of a closed exponent
     if not (a.is_Atom and a.is_number and t.is_Atom and t.is_number):
         return []
     out = [Not(P('zero', expr)), P('finite', expr), P('complex', expr)]
@@ -840,7 +846,7 @@ def _unit_power_units(angle, e, expr):
         else:
             out.append(Not(P('extended_real', expr)))
             out.append(Not(P('imaginary', expr)))
-    elif a.is_irrational:
+    elif a.is_irrational:  # sympy-boundary: a an atomic number
         out.append(Not(P('extended_real', expr)))
         out.append(Not(P('imaginary', expr)))
     return out
