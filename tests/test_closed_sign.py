@@ -65,6 +65,37 @@ def test_undecided_signs(expr):
             assert got == getattr(expr, 'is_' + pred), (expr, pred)
 
 
+def test_log_with_a_base():
+    # log(8, 3, evaluate=False) is log(8)/log(3) ~ 1.893, not log(8) ~ 2.079 (#190 review)
+    e = log(8, 3, evaluate=False)
+    assert fresh().is_(e - 2, 'positive') is not True
+    assert ask(Q.gt(e, 2), True, fresh()) is not True
+
+
+@pytest.mark.parametrize("expr", [
+    Float('nan') - 1, Float('inf') - 1, Float('1e5000') - 1,
+])
+def test_float_without_bounds(expr):
+    eng = fresh()
+    for pred in ('positive', 'negative', 'zero', 'real'):
+        assert eng.is_(expr, pred) is not True or getattr(expr, 'is_' + pred) is True
+
+
+def test_real_without_a_sign():
+    # finite real, but the interval cannot exclude 0: real, no sign
+    e = asin(Rational(1, 3)) + acos(Rational(1, 3)) - pi/2
+    eng = fresh()
+    assert eng.is_(e, 'real') is True
+    assert eng.is_(e, 'zero') is None
+
+
+def test_abs_of_an_interval_around_zero():
+    # Abs of an interval that straddles 0 starts at 0
+    e = Abs(asin(Rational(1, 3)) + acos(Rational(1, 3)) - pi/2, evaluate=False)
+    assert fresh().is_(e, 'negative') is not True
+    assert fresh().is_(e - Rational(1, 10), 'negative') is True
+
+
 def test_reference_agrees():
     specs = default_specs()
     for e in (E - 2, sqrt(5) - 3, asin(Rational(1, 3)) - Rational(1, 3)):

@@ -186,6 +186,8 @@ def _interval(e, prec: int = _IV_PREC):
     head = type(e)
     if head not in _heads():
         return None
+    if head is log and len(e.args) != 1:
+        return None                          # log(x, b, evaluate=False) is log(x)/log(b)
     args = []
     for a in e.args:
         x = _interval(a, prec)
