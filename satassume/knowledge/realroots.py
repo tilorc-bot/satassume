@@ -16,7 +16,7 @@ Poly = List[Fraction]
 #: past them :func:`root_facts` gives None (no facts), so a huge
 #: polynomial costs nothing.
 MAX_DEGREE = 120
-MAX_BITS = 2000
+MAX_BITS = 512
 
 
 def _strip(p: Sequence) -> Poly:
@@ -42,11 +42,24 @@ def _monic(p: Poly) -> Poly:
     return [c / p[0] for c in p]
 
 
+def _primitive(p: Poly) -> Poly:
+    """``p`` times a positive rational: integer coefficients without a
+    common factor.  Signs and roots stay; the Euclidean and Sturm sequences
+    over ``Fraction`` otherwise grow to thousands of bits."""
+    from math import gcd as igcd, lcm
+    if not p:
+        return p
+    m = lcm(*(c.denominator for c in p))
+    q = [c.numerator * (m // c.denominator) for c in p]
+    g = igcd(*q)
+    return [Fraction(c // g) for c in q]
+
+
 def gcd(a: Sequence, b: Sequence) -> Poly:
     """The monic gcd of ``a`` and ``b`` (``[]`` if both are zero)."""
-    a, b = _strip(a), _strip(b)
+    a, b = _primitive(_strip(a)), _primitive(_strip(b))
     while b:
-        a, b = b, _rem(a, b)
+        a, b = b, _primitive(_rem(a, b))
     return _monic(a) if a else []
 
 
@@ -75,9 +88,9 @@ def squarefree(p: Sequence) -> bool:
 
 def _chain(p: Poly) -> List[Poly]:
     """The Sturm chain of the squarefree ``p``."""
-    out = [p, _derivative(p)]
+    out = [_primitive(p), _primitive(_derivative(p))]
     while len(out[-1]) > 1:
-        r = _rem(out[-2], out[-1])
+        r = _primitive(_rem(out[-2], out[-1]))
         if not r:
             break
         out.append([-c for c in r])
@@ -117,7 +130,8 @@ def _distinct_nonzero_real_roots(g: Poly) -> int:
         g = g[:-1]
     if len(g) <= 1:
         return 0
-    s = _div(g, gcd(g, _derivative(g))) if len(gcd(g, _derivative(g))) > 1 else g
+    h = gcd(g, _derivative(g))
+    s = _div(g, h) if len(h) > 1 else g
     n, _z, pos = real_root_counts(s)
     return n + pos
 

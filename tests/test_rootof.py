@@ -84,3 +84,15 @@ def test_constructed_from_a_reducible_polynomial():
         _sympy_vs_engine(x**3 - 3*x, i, [0, 0])
     for i in range(5):
         _sympy_vs_engine((x**2 + 1)*(x**3 + x + 3), i, [0, 0])
+
+
+def test_counts_stay_fast_up_to_the_caps():
+    # over plain Fractions the Sturm chain of degree 120 took minutes (review of #185)
+    import time
+    from satassume.knowledge.realroots import MAX_BITS
+    rng = random.Random(1)
+    for d, bits in ((MAX_DEGREE, 4), (15, MAX_BITS - 1)):
+        cs = [1] + [rng.randint(-2**bits, 2**bits) for _ in range(d)]
+        t = time.perf_counter()
+        root_facts(cs, d - 1)
+        assert time.perf_counter() - t < 10.0
