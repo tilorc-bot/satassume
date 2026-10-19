@@ -46,10 +46,32 @@ def _fixed_noncommutative(t) -> bool:
     return False
 
 
+def _is_matrix(t) -> bool:
+    return bool(getattr(t, "is_Matrix", False) or getattr(t, "is_MatrixExpr", False))
+
+
+_MATRIX_TO_SCALAR: tuple = ()
+
+
+def _matrix_to_scalar() -> tuple:
+    """The classes whose value is a number although an argument is a matrix
+    (``Trace(M)``, ``Determinant(M)``, ``Permanent(M)``, ``M[0, 0]``)."""
+    global _MATRIX_TO_SCALAR
+    if not _MATRIX_TO_SCALAR:
+        from sympy.matrices.expressions.determinant import Determinant, Permanent
+        from sympy.matrices.expressions.matexpr import MatrixElement
+        from sympy.matrices.expressions.trace import Trace
+        _MATRIX_TO_SCALAR = (Trace, Determinant, Permanent, MatrixElement)
+    return _MATRIX_TO_SCALAR
+
+
 def _noncommutative(e) -> bool:
     """Whether ``e`` has a non-commutative subterm (fixed non-commutative
-    by construction anywhere, see :func:`_fixed_noncommutative`, ``e`` itself included, matrix expressions not
-    descended into).  The whole expression is not
+    by construction anywhere, see :func:`_fixed_noncommutative`, ``e`` itself included), or a
+    matrix argument of anything but a scalar-valued matrix function
+    (:func:`_matrix_to_scalar`): ``exp(M)``, ``sin(M)`` and ``f(M)`` claim
+    to be scalars but stand for matrices.  Matrix expressions are not
+    descended into.  The whole expression is not
     enough (``re(A)`` claims to be commutative), so this walks the tree;
     memoized, since it runs for every applied vocabulary predicate."""
     r = _NONCOMM.get(e)
@@ -59,14 +81,18 @@ def _noncommutative(e) -> bool:
     stack = [e]
     while stack:
         t = stack.pop()
-        if not isinstance(t, _Basic) or getattr(t, "is_Matrix", False):
-            # a matrix expression reaches a scalar argument only through a
-            # scalar-valued function of it (Trace(M), M[0, 0]): a number
+        if not isinstance(t, _Basic) or _is_matrix(t):
+            # reached only as the argument of a scalar-valued function of
+            # it (Trace(M), M[0, 0]): a number
             continue
         if _fixed_noncommutative(t):
             r = True
             break
-        stack.extend(t.args)
+        args = t.args
+        if not isinstance(t, _matrix_to_scalar()) and any(_is_matrix(a) for a in args):
+            r = True
+            break
+        stack.extend(args)
     if len(_NONCOMM) >= NONCOMM_SIZE:
         _NONCOMM.clear()
     _NONCOMM[e] = r

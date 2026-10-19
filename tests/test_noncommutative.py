@@ -511,3 +511,29 @@ def test_register_commutative_is_refused():
     from satassume.sat.formula import P
     with pytest.raises(ValueError, match="by definition"):
         Extensions().register("commutative", Symbol)(lambda s: P("commutative", s))
+
+
+# ---------------------------------------------------------------------------
+# #180 S2: a matrix argument of a scalar-typed function
+# ---------------------------------------------------------------------------
+
+def test_function_of_matrix_is_out_of_scope():
+    # exp(M), sin(M), f(M) are scalar-typed in SymPy but stand for matrices:
+    # exp(A)*exp(B) != exp(B)*exp(A), so commutative must not be True
+    from sympy import MatrixSymbol, exp, Matrix
+    from satassume.sympy_api import out_of_scope
+    M, N = MatrixSymbol('M', 2, 2), MatrixSymbol('N', 2, 2)
+    for e in (exp(M), sin(M), f(M), f(Matrix([[1, 2], [3, 4]])), exp(M) + 1):
+        assert ask(Q.commutative(e), True, fresh()) is None
+        assert fresh().is_(e, 'commutative') is None
+        assert fresh().is_(e, 'real') is None
+        assert out_of_scope(Q.commutative(e)) == 'matrix'
+
+
+def test_scalar_valued_matrix_functions_stay_in_scope():
+    from sympy import MatrixSymbol, Trace, Determinant, Permanent, exp
+    M, N = MatrixSymbol('M', 2, 2), MatrixSymbol('N', 2, 2)
+    for e in (Trace(M), Determinant(M), Permanent(M), M[0, 1], (M*N)[0, 1],
+              exp(Trace(M)), Trace(M*N)):
+        assert ask(Q.commutative(e), True, fresh()) is True
+    assert ask(Q.real(exp(Trace(M))), Q.real(Trace(M)), fresh()) is True
