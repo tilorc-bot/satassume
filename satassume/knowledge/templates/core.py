@@ -199,11 +199,14 @@ def _half_split(args):
     a0, terms = 0, []
     for a in args:
         if a.is_Rational:
-            a0 = (2*a).p % 2
+            a0 = (a0 + (2*a).p) % 2          # an unevaluated sum has several
         elif a.is_Mul and a.args[0].is_Rational:
             c = a.args[0]
             rest = a.args[1:]
-            terms.append(((2*c).p % 2, rest[0] if len(rest) == 1 else Mul(*rest)))
+            t = rest[0] if len(rest) == 1 else kept_product(rest)
+            if t is None:
+                return None                  # Mul(1/2, x, 1/x): the rest is not x*(1/x) = 1 (#184)
+            terms.append(((2*c).p % 2, t))
         else:
             terms.append((0, a))
     return a0, terms

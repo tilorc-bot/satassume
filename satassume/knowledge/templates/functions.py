@@ -15,7 +15,10 @@ conclusion on the node.
 """
 from __future__ import annotations
 
+from collections import Counter
+
 from sympy import S
+from sympy.core.add import Add
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs, conjugate, im, re, sign
 from sympy.functions.elementary.exponential import exp, log
@@ -103,6 +106,13 @@ def _unary(tag, gen, slots=None, units=None):
 
 
 def _minus_one(x):
+    # ``x - 1`` rebuilds a sum from its terms: Add(y, -y, 1, evaluate=False)
+    # - 1 is 0, but the argument is nan at y = oo (#184); a sum whose terms
+    # rebuild to the same terms (in any order) is safe
+    if x.is_Add:
+        t = Add(*x.args)
+        if not (t.is_Add and Counter(t.args) == Counter(x.args)):
+            return (Add(x, S.NegativeOne, evaluate=False),)
     return (x - S.One,)
 
 
