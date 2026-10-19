@@ -78,13 +78,21 @@ but SymPy's constructors read its assumptions the same way
 
 ``ask(..., strict=True)`` takes facts only as Q facts: it raises
 :class:`AssumptionSymbolError` (a ``ValueError``) naming every symbol of
-the proposition or the assumptions that has an assumption other than
-``commutative=True``, and every applied undefined function whose class
-has one, before the answer memo is consulted.  Plain symbols with the
+the proposition or the assumptions (or ``IndexedBase``) that has an
+assumption other than ``commutative=True``, and every applied undefined
+function (or ``Function`` subclass defined outside SymPy) whose class has
+one, before the answer memo is consulted.  Plain symbols with the
 facts in the assumptions (``ask(Q.real(x), Q.positive(x), strict=True)``)
 answer as usual.  :func:`check_strict` is the same check on its own, for
 front ends that translate SymPy input themselves.  Off by default, so
 callers that rely on symbol assumptions keep working.
+
+Strict mode sees only what survives construction.  For a positive ``p``,
+``p > 0`` is already ``S.true`` and ``Piecewise((0, p > 0), (1, True))``
+is already ``0`` when :func:`ask` is called, so there is nothing left to
+reject.  A front end must build its input from plain symbols itself:
+strict mode catches a declared symbol that slipped through, not one
+SymPy has already used up.
 
 Not offered here
 ----------------
@@ -140,8 +148,9 @@ class Unsupported(Exception):
 class AssumptionSymbolError(ValueError):
     """Strict mode (see the module docstring): the input holds symbols or
     undefined functions declared with old-style assumptions.  ``symbols``
-    are those objects (a ``Symbol``, ``Dummy`` or ``Wild``, or the class of
-    an undefined function), in a fixed order."""
+    are those objects (a ``Symbol``, ``Dummy``, ``Wild`` or ``IndexedBase``,
+    or the class of an undefined function or of a non-SymPy ``Function``
+    subclass), in a fixed order."""
 
     def __init__(self, symbols):
         self.symbols = tuple(symbols)
@@ -162,21 +171,24 @@ def _declared(s) -> str:
 
 def check_strict(*exprs) -> None:
     """Raise :class:`AssumptionSymbolError` if one of ``exprs`` holds a
-    symbol (``Symbol``, ``Dummy``, ``Wild``, bound ones included) with an
-    assumption other than ``commutative=True``, or an applied undefined
-    function whose class has one; anything not a SymPy object is skipped.
-    The check of ``ask(..., strict=True)``."""
-    from sympy.core.function import AppliedUndef
+    symbol (``Symbol``, ``Dummy``, ``Wild``, bound ones included) or an
+    ``IndexedBase`` with an assumption other than ``commutative=True``, or
+    an applied undefined function, or an applied ``Function`` subclass
+    defined outside SymPy, whose class has one; anything not a SymPy object
+    is skipped.  The check of ``ask(..., strict=True)``."""
+    from sympy.core.function import AppliedUndef, Function
     from sympy.core.symbol import Symbol
+    from sympy.tensor.indexed import IndexedBase
     bad = set()
     for e in exprs:
         if not isinstance(e, _Basic):
             continue
-        for a in e.atoms(Symbol, AppliedUndef):
-            if isinstance(a, Symbol):
+        for a in e.atoms(Symbol, IndexedBase, Function):
+            if isinstance(a, (Symbol, IndexedBase)):
                 if a.assumptions0 != {"commutative": True}:  # sympy-boundary: strict check
                     bad.add(a)
-            elif _declared(type(a)):
+            elif (isinstance(a, AppliedUndef)
+                  or not type(a).__module__.startswith("sympy.")) and _declared(type(a)):
                 bad.add(type(a))
     if bad:
         raise AssumptionSymbolError(sorted(bad, key=lambda s: (str(s), isinstance(s, type))))
@@ -425,8 +437,9 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
       (``ask(Q.commutative(x), ~Q.commutative(x))``) count as inconsistent
       here, where SymPy trusts the assumption.
     * ``strict``: facts only as Q facts.  A symbol with an assumption other
-      than ``commutative=True``, or an applied undefined function whose
-      class has one, raises :class:`AssumptionSymbolError` (a
+      than ``commutative=True`` (or such an ``IndexedBase``), or an applied
+      undefined function (or non-SymPy ``Function`` subclass) whose class
+      has one, raises :class:`AssumptionSymbolError` (a
       ``ValueError``) naming it; see the module docstring, "Strict mode".
     """
     if strict:

@@ -24,6 +24,9 @@ from sympy import (Abs, E, Eq, I, Implies, Integer, Q, Rational, Symbol, cos,  #
 
 from satassume import sympy_api  # noqa: E402
 
+# the trap watches PKG: a satassume imported from elsewhere would record nothing
+assert os.path.abspath(sympy_api.__file__).startswith(_sympy_trap.PKG), sympy_api.__file__
+
 x, y, z = Symbol("x"), Symbol("y"), Symbol("z")
 
 # (proposition, assumptions, expected: True, False, None or "ValueError")
@@ -118,6 +121,10 @@ n = len(_sympy_trap.EVENTS)
 canary = {"forbidden": _probe("x.simplify()"),
           "symbol_assumption": _probe("Symbol('p', positive=True).is_real")}
 canary["events"] = sorted(e["kind"] for e in _sympy_trap.EVENTS[n:])
+del _sympy_trap.EVENTS[n:]
+# a cached method that is not a constructor is checked itself, not allowed
+# as cacheit's wrapper
+canary["cached"] = _probe("(x**2 + x).as_leading_term(x)")
 del _sympy_trap.EVENTS[n:]
 
 # strict is on: a symbol declared with an assumption is rejected

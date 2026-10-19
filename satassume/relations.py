@@ -637,7 +637,7 @@ def _termwise(a, b, d) -> bool:
     from sympy import Add
 
     def terms(e):
-        # sympy-boundary: is_finite of a closed term; only adds a sound clause
+        # sympy-boundary: is_finite of a closed term (no symbols), a number fact
         return [t for t in Add.make_args(e)
                 if not (t.is_Number or _is_number(t) and t.is_finite)]
 

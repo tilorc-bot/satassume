@@ -33,12 +33,14 @@ import sys
 import threading
 import types
 
-#: entries that are expression construction: the cached constructors
-#: (``Add``, ``Mul``, ``Pow`` and the functions go through ``cacheit``),
-#: any ``__new__``, the arithmetic operators (SymPy's decorators) and
-#: ``xreplace``
+#: entries that are expression construction, besides any ``__new__``
+#: (``Add``, ``Mul``, ``Pow`` and the functions, cached or not): the
+#: arithmetic operators (SymPy's decorators) and ``xreplace``.  ``cacheit``'s
+#: wrapper is never the entry (:func:`_site` skips it), so a cached
+#: non-constructor (``Expr.as_leading_term``, ``Basic._subs``) is checked
+#: itself
 CONSTRUCTION = frozenset({
-    "sympy.core.cache.wrapper", "sympy.core.decorators._func",
+    "sympy.core.decorators._func",
     "sympy.core.decorators.binary_op_wrapper", "sympy.core.decorators.__sympifyit_wrapper",
     "sympy.core.basic.xreplace"})
 
@@ -72,7 +74,9 @@ class TrapError(BaseException):
 
 
 def _site(start):
-    """``(site, entry)`` of the innermost package frame above ``start``."""
+    """``(site, entry)`` of the innermost package frame above ``start``;
+    the entry is the frame below it, not counting the trap's and
+    ``cacheit``'s wrappers."""
     f = sys._getframe(start)
     below = None
     while f is not None:
@@ -80,7 +84,8 @@ def _site(start):
         if fn.startswith(PKG):
             entry = below and f"{below.f_globals.get('__name__', '?')}.{below.f_code.co_name}"
             return f"{fn[len(PKG):]}:{f.f_lineno} {f.f_code.co_name}", entry
-        if fn != _HERE:
+        if fn != _HERE and not (f.f_globals.get("__name__") == "sympy.core.cache"
+                                and f.f_code.co_name == "wrapper"):
             below = f
         f = f.f_back
     return None, None

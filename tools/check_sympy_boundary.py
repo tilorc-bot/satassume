@@ -7,11 +7,14 @@ check walks the AST of ``satassume/`` and flags
 
 * calls of SymPy methods that rewrite or reason: ``x.simplify()``,
   ``x.cancel()``, ``x.equals(y)``, ``x.refine(a)``, ``x._eval_refine(a)``,
-  ``x.evalf()``, ``x.n()``, ...;
+  ``x.evalf()``, ``x.n()``, ``x.is_constant()``, ``x.as_leading_term(t)``,
+  ``x._eval_is_<fact>()``, ..., also uncalled (``m = x.cancel``, but not
+  ``.n``) and by name (``getattr(x, 'simplify')``);
 * reads of SymPy's old-assumption facts: ``x.is_<fact>`` for every fact of
   ``sympy.core.assumptions._assume_defined`` but ``commutative``, and
   ``is_comparable`` (it evaluates numerically); the fact KBs
-  (``assumptions0``, ``_assumptions0``, ``default_assumptions``, ...);
+  (``assumptions0``, ``x._assumptions``, ``default_assumptions``, ...;
+  ``self._assumptions`` is the SAT solver's own list);
   ``getattr(x, 'is_...')`` with a literal, ``'is_' + name`` or f-string name.
 
 A call ``x.is_integer()`` is not flagged: SymPy's facts are properties, so a
@@ -37,7 +40,8 @@ from pathlib import Path
 METHODS = frozenset({
     "simplify", "cancel", "equals", "refine", "_eval_refine", "trigsimp",
     "nsimplify", "factor", "ratsimp", "powsimp", "radsimp", "combsimp",
-    "gammasimp", "together", "evalf", "n", "as_real_imag"})
+    "gammasimp", "together", "evalf", "n", "as_real_imag", "is_constant",
+    "as_leading_term"})
 # sympy.core.assumptions._assume_defined (SymPy 1.14) without commutative
 FACTS = frozenset("""algebraic antihermitian complex composite even extended_negative
     extended_nonnegative extended_nonpositive extended_nonzero extended_positive
@@ -45,7 +49,7 @@ FACTS = frozenset("""algebraic antihermitian complex composite even extended_neg
     noninteger nonnegative nonpositive nonzero odd polar positive prime rational
     real transcendental zero""".split())
 FACT_ATTRS = frozenset({"is_" + f for f in FACTS} | {"is_comparable"})
-KB_ATTRS = frozenset({"assumptions0", "_assumptions0", "_assumptions_orig",
+KB_ATTRS = frozenset({"assumptions0", "_assumptions", "_assumptions0", "_assumptions_orig",
                       "default_assumptions"})
 MARK = "sympy-boundary:"
 
@@ -89,9 +93,14 @@ def check_source(source: str, filename: str = "<string>") -> list:
     found = []
     for n in ast.walk(tree):
         if isinstance(n, ast.Attribute):
-            if n.attr in METHODS and id(n) in called:
+            # an uncalled reference too (a bound-method alias), but ``.n``
+            # is a common attribute name
+            if n.attr in METHODS and (id(n) in called or n.attr != "n") \
+                    or n.attr.startswith("_eval_is_"):
                 found.append((n.lineno, f".{n.attr}() call"))
-            elif n.attr in FACT_ATTRS and id(n) not in called or n.attr in KB_ATTRS:
+            elif n.attr in FACT_ATTRS and id(n) not in called or n.attr in KB_ATTRS \
+                    and not (n.attr == "_assumptions" and isinstance(n.value, ast.Name)
+                             and n.value.id == "self"):
                 found.append((n.lineno, f".{n.attr} read"))
         elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name) \
                 and n.func.id in ("getattr", "hasattr") and len(n.args) >= 2:
@@ -101,6 +110,9 @@ def check_source(source: str, filename: str = "<string>") -> list:
                 found.append((n.lineno, f"{n.func.id}(x, 'is_...') read"))
             elif isinstance(a, ast.Constant) and a.value in KB_ATTRS:
                 found.append((n.lineno, f"{n.func.id}(x, {a.value!r}) read"))
+            elif isinstance(a, ast.Constant) and isinstance(a.value, str) \
+                    and (a.value in METHODS or a.value.startswith("_eval_is_")):
+                found.append((n.lineno, f"{n.func.id}(x, {a.value!r}) method"))
     marks, spans = _marks(source), _spans(tree)
 
     def covered(line):

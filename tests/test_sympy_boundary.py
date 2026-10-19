@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 sympy = pytest.importorskip("sympy")
-from sympy import Dummy, Function, Integral, Q, Symbol, Wild, exp, sin
+from sympy import Abs, Dummy, Function, IndexedBase, Integral, Q, Symbol, Wild, conjugate, exp, sin
 
 from satassume import DictCache, Engine
 from satassume.sympy_api import AssumptionSymbolError, ask, check_strict
@@ -79,6 +79,27 @@ def test_strict_undefined_function_assumptions(eng):
     assert ask(Q.real(g(x)), Q.real(g(x)), eng, strict=True) is True
 
 
+class _h(Function):
+    is_real = True
+
+
+def test_strict_indexed_and_function_subclass_assumptions(eng):
+    x = Symbol('x')
+    # the label is plain, the base carries the assumption (Abs(B[x]) - B[x]
+    # is 0 when it is built, so only a surviving B[x] can be rejected)
+    B = IndexedBase(Symbol('B'), positive=True)
+    assert Abs(B[x]) - B[x] == 0
+    with pytest.raises(AssumptionSymbolError) as e:
+        ask(Q.positive(B[x] + x), Q.positive(x), eng, strict=True)
+    assert e.value.symbols == (B,)
+    check_strict(Q.real(IndexedBase('C')[x]))
+    # a Function subclass outside SymPy with a class assumption: conjugate(_h(x)) is _h(x)
+    with pytest.raises(AssumptionSymbolError) as e:
+        ask(Q.real(conjugate(_h(x))), True, eng, strict=True)
+    assert e.value.symbols == (_h,)
+    check_strict(Q.real(sin(x)), Q.positive(exp(x)))      # SymPy's own functions pass
+
+
 def test_strict_is_checked_before_the_answer_memo(eng):
     p = Symbol('p', positive=True)
     assert ask(Q.real(p), Q.real(p), eng) is True
@@ -124,9 +145,16 @@ def test_static_check_flags_a_snippet():
         "    G = {'a': lambda x: (x.is_Rational\n"
         "                         and x.is_positive),  # sympy-boundary: x Rational\n"
         "         'b': lambda x: x.is_positive}\n"                # 18: its own item
+        "    m = e.cancel\n"                                      # 19: a bound-method alias
+        "    m = getattr(e, 'simplify')()\n"                      # 20
+        "    k = e._assumptions\n"                                # 21
+        "    k = self._assumptions\n"                             # the SAT solver's own
+        "    v = e._eval_is_positive()\n"                         # 23
+        "    v = e.is_constant() or e.as_leading_term(a)\n"       # 24
+        "    ok = self.n\n"
     )
-    lines = [line for line, _ in _checker().check_source(snippet)]
-    assert lines == [2, 3, 4, 5, 6, 7, 8, 15, 18]
+    lines = sorted({line for line, _ in _checker().check_source(snippet)})
+    assert lines == [2, 3, 4, 5, 6, 7, 8, 15, 18, 19, 20, 21, 23, 24]
 
 
 # -- runtime trap ----------------------------------------------------------
@@ -142,7 +170,8 @@ def test_runtime_trap_corpus():
     d = json.loads(out.stdout.splitlines()[-1])
     # the trap is armed: a probe from the package directory raises and records
     assert d["canary"] == {"forbidden": "TrapError", "symbol_assumption": None,
-                           "events": ["forbidden", "symbol_assumption"]}
+                           "events": ["forbidden", "symbol_assumption"],
+                           "cached": "TrapError"}
     assert d["rejected"] and d["strict_checks"] >= d["queries"] >= 40
     bad = [e for e in d["events"] if not e["allowed"]]
     assert not bad, bad
