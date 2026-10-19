@@ -28,6 +28,7 @@ from sympy.core.power import Pow
 from sympy.functions.elementary.exponential import exp
 
 from ...sat.formula import And, Implies, Not, Or, P
+from ..domain import kept_product
 from ..rules import BASIS, expand_clause
 
 from ._common import (
@@ -490,8 +491,8 @@ def _mul_factor_sets(expr):
     if n >= 3 and c.is_Rational and not c.is_zero:  # sympy-boundary: c Rational
         # c*t: the coefficient-free t of the half-integer split of an Add
         # (x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
-        rest = Mul(*args[1:])
-        if rest.is_Mul and len(rest.args) == n - 1:
+        rest = kept_product(args[1:])
+        if rest is not None:
             out.append((c, rest))
     split = ipi_split(expr)
     if split is not None and split[1] is not None and split[1].is_Mul:
@@ -644,7 +645,14 @@ def ipi_split(arg):
             rest.append(f)
     if not (seen_i and seen_pi):
         return None
-    return c, (None if not rest else rest[0] if len(rest) == 1 else Mul(*rest))
+    if not rest:
+        return c, None
+    if c.is_zero:  # sympy-boundary: c Rational
+        return None                     # Mul(I, pi, 0, x): nan at x = oo
+    if len(rest) == 1:
+        return c, rest[0]
+    s = kept_product(rest)              # Mul(I, pi, x, 1/x) is not I*pi
+    return None if s is None else (c, s)
 
 
 #: Conditions on ``exp(I*pi*c*s)`` (``c`` rational; ``has_s``: an ``s`` slot).

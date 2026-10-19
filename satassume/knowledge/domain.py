@@ -14,6 +14,8 @@ This module imports SymPy, so the engine imports it lazily.
 """
 from __future__ import annotations
 
+from collections import Counter
+
 from sympy.core.basic import Basic as _Basic
 from sympy.core.containers import Tuple as _Tuple
 from sympy.core.expr import Expr as _Expr
@@ -118,3 +120,18 @@ def _noncommutative(e) -> bool:
         _NONCOMM.clear()
     _NONCOMM[e] = r
     return r
+
+
+def kept_product(factors):
+    """``Mul(*factors)`` if the built product keeps exactly these factors
+    (its commutative ones in any order), else None.  Building evaluates:
+    the rest of an unevaluated ``Mul(c, x, 1/x)`` or ``Mul(c, x, 0)``
+    would build to ``1`` or ``0``, but the node is nan at ``x = 0`` or
+    ``x = oo``, so a block over the built rest would relate the node to a
+    different value (#161)."""
+    from sympy.core.mul import Mul
+    t = Mul(*factors)
+    if t.is_Mul and len(t.args) == len(factors) \
+            and Counter(t.args) == Counter(factors):
+        return t
+    return None
