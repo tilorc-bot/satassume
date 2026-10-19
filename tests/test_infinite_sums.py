@@ -51,6 +51,12 @@ def test_extended_real_sum_with_an_infinite_term():
     # an infinite term makes the sum infinite or nan; nan is no extended real
     assert ask(Q.finite(x + y), Q.infinite(x) & Q.extended_real(x + y), fresh()) is False
     assert ask(Q.nonzero(x + oo), True, fresh()) is False
+    # an infinity or nan is no complex number (#188 review)
+    assert ask(Q.complex(x*y + oo*I), True, fresh()) is False
+    assert ask(Q.imaginary(x + oo*(1 + I)), True, fresh()) is False
+    assert ask(Q.complex(Add(-oo, zoo, evaluate=False)), True, fresh()) is False
+    assert ask(Q.complex(x + y), Q.infinite(x), fresh()) is False
+    assert ask(Q.complex(x - oo), True, fresh()) is False
     with pytest.raises(ValueError):
         ask(Q.positive(x), Q.finite(x + oo) & Q.extended_real(x + oo), fresh())
 

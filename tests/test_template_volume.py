@@ -18,10 +18,10 @@ BUDGETS = [
     # nonzero-real-plus-imaginaries rule per term and the even-sum rule;
     # 48: plus the extended-real-term rule per term (#53, W2B1);
     # 52: plus the signed-infinite-summand rule per term and sign (family B);
-    # still 52 after #187 (the two signed infinite-sum rules per term became
-    # one with finite other terms, plus the extended-real sum with an
-    # infinite term).
-    ("x + y", x + y, 52),
+    # 54 after #187: the two signed infinite-sum rules per term became one
+    # with finite other terms, plus the extended-real sum with an infinite
+    # term and "an infinite term makes the sum no complex number".
+    ("x + y", x + y, 54),
     ("x*y", x * y, 50),
     ("2*x", 2 * x, 60),
     ("x**2", x**2, 40),

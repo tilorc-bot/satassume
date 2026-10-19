@@ -146,8 +146,10 @@ def _add_rules(n, consts):
             # A sum with an infinite term is infinite or nan, so it is
             # infinite when it is an extended real (nan is not): an infinite
             # term plus finite ones is infinite, and two or more infinite
-            # terms add to an infinity or nan.
+            # terms add to an infinity or nan.  For the same reason it is
+            # no (finite) complex number (``x*y + oo*I``, ``-oo + zoo``).
             rule([(k, 'infinite', True), (N, 'extended_real', True)], (N, 'infinite', True))
+            rule([(k, 'infinite', True)], (N, 'complex', False))
             for strict, nonstrict in _STRICT:
                 signed = strict.replace('extended_', '') + '_infinite'
                 other = _STRICT[1 if strict == _STRICT[0][0] else 0][0]
