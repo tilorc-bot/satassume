@@ -104,3 +104,47 @@ def test_wide_zero_product():
     # 0*oo is nan: a factor that may be infinite leaves it open
     a = And(Q.zero(xs[3]), *[Q.finite(x) for x in xs[1:]])
     assert ask(Q.zero(p), a, fresh()) is None
+
+
+@pytest.mark.parametrize("c", [-oo, S.ComplexInfinity, S.NaN, S.ImaginaryUnit])
+def test_wide_strict_sign_with_a_constant_that_is_not_nonnegative(c):
+    # -oo + (...) is -oo, zoo and nan are not real, I + (real) is not real:
+    # the sum is never positive, so the wide formula must not fire
+    xs = symbols(f"x0:{MAX_ONEOUT_WIDE + 3}")
+    s = Add(c, *xs, evaluate=False)
+    a = And(Q.positive(xs[0]), *[Q.nonnegative(x) for x in xs[1:]])
+    assert ask(Q.positive(s), a, fresh()) is not True
+    assert ask(Q.extended_positive(s), a, fresh()) is not True
+
+
+@pytest.mark.parametrize("n", [MAX_ONEOUT_WIDE, MAX_ONEOUT_WIDE + 1])
+def test_strict_sign_and_zero_rules_agree_at_the_threshold(n):
+    xs = symbols(f"x0:{n}")
+    s, p = Add(*xs), Mul(*xs)
+    a = And(Q.positive(xs[5]), *[Q.nonnegative(x) for x in xs])
+    assert ask(Q.positive(s), a, fresh()) is True
+    a = And(Q.negative(xs[5]), *[Q.nonpositive(x) for x in xs])
+    assert ask(Q.negative(s), a, fresh()) is True
+    a = And(Q.zero(xs[5]), *[Q.finite(x) for x in xs])
+    assert ask(Q.zero(p), a, fresh()) is True
+
+
+def test_wide_product_with_a_constant_factor():
+    xs = symbols(f"x0:{MAX_ONEOUT_WIDE + 3}")
+    a = And(*[Q.finite(x) for x in xs])
+    assert ask(Q.zero(Mul(S.Zero, *xs, evaluate=False)), a, fresh()) is True
+    # 0*oo, 0*zoo and 0*nan are nan
+    for c in (oo, S.ComplexInfinity, S.NaN):
+        p = Mul(S.Zero, c, *xs, evaluate=False)
+        assert ask(Q.zero(p), a, fresh()) is not True
+        p = Mul(c, *xs, evaluate=False)
+        assert ask(Q.zero(p), And(Q.zero(xs[0]), a), fresh()) is not True
+
+
+def test_wide_terms_around_the_budget():
+    # repeated terms count once and number atoms not at all
+    x = symbols("x")
+    ints = [Integer(i) for i in range(2, 16)]
+    eng = Engine(cache=DictCache(), discovery_budget=10)
+    assert ask(Q.finite(Add(*([x] * 12), evaluate=False)), Q.finite(x), eng) is True
+    assert ask(Q.finite(Add(x, *ints, evaluate=False)), Q.finite(x), eng) is True
