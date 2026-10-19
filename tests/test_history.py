@@ -361,10 +361,6 @@ SPEC_DIFFERENCES = {
         "budget", "ask(Q.lt(1, sqrt(2)) | Q.ne(E, w + (I*w)**(1/3)*Abs(j)**(2/3)), True): "
         "engine None, ask_ref True (and the next prefix query, None vs False); "
         "the repro's config has discovery_budget below the cone"),
-    "L1-learnt-unit-written-back": (
-        "relevance", "ask(Q.imaginary((ir + 2)*(inf - 1 + I)) | ~Q.nonzero(inf + acos(-1/he)), "
-        "Q.gt(-1/3, 1/(2*al)) & Q.infinite(acos(-1/he))): engine None, ask_ref True; "
-        "a fresh engine with relevance=False answers True"),
 }
 
 

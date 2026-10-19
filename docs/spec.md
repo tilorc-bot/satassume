@@ -423,6 +423,8 @@ only (`Engine._within_budget` docstring; `tests/test_budget_cone.py`,
    under `Q.infinite(acos(-1/x))`); a relation atom unlocks the glue and the relevance split
    (1.3, 7) discards it: `ask_ref` answers under the whole set, the engine does not (repro
    `fixed/L1-learnt-unit-written-back` row 0, tag `relevance`). Sound, an accepted loss under 1.3; P3 follow-up.
+   Since #187 that row is decided without the glue: the Add template says an extended-real sum with an
+   infinite term is infinite, so `nonzero` of it is False in the query's own cone.
 
 ## 12. Ten corpus records
 
