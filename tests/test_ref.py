@@ -17,7 +17,7 @@ import os
 import sys
 
 import pytest
-from sympy import I, Mul, Pow, Symbol, nan, oo, pi, zoo, S
+from sympy import I, Mul, Pow, Symbol, besselj, nan, oo, pi, zoo, S
 from sympy import ask as sympy_ask
 from sympy.assumptions import Q
 
@@ -151,7 +151,9 @@ def test_constant_route_ignores_assumptions():
     info = RefInfo()
     assert ask_ref(Q.prime(S(7)), Q.composite(S(7)), info=info) is True
     assert info.route == "constant"
-    e = S.Exp1 ** pi - pi ** S.Exp1
+    # decided by its interval bounds (#180 C-SIGN)
+    assert ask_ref(Q.positive(S.Exp1 ** pi - pi ** S.Exp1), True) is True
+    e = besselj(1, 1) - S.Half      # no template, no bounds
     info = RefInfo()
     assert ask_ref(Q.positive(e), True, info=info) is None
     assert info.route == "constant"

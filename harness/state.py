@@ -244,7 +244,7 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.relations", "RELATION_ATOMS"), ("satassume.relations", "_OPS"),
     ("satassume.theories.lra.lra", "_NEG"), ("satassume.theories.lra.lra", "_FLIP"),
     ("satassume.theories.lra.lra_adapter", "_PRED"), ("satassume.theories.lra.lra_adapter", "_REL"),
-    ("satassume.theories.lra.lra_adapter", "_BAD"),
+    ("satassume.theories.lra.lra_adapter", "_BAD"), ("satassume.theories.lra.lra_bounds", "_CONSTANTS"),
     ("satassume.theories.euf.euf_adapter", "_STRUCTURAL"),
     ("satassume.sympy_api", "CATEGORIES"), ("satassume.sympy_api", "RELATION_PREDICATES"),
     ("satassume.knowledge.templates._common", "VOCAB"), ("satassume.knowledge.templates._common", "SIGN_FLIP"),

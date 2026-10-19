@@ -1308,6 +1308,10 @@ class Engine:
         if relations is None:
             from .relations import default_specs
             relations = default_specs() if clause_templates is not None else []
+        if clause_templates is not None and any(r.name == "lra" for r in relations):
+            # the signs of closed terms the LRA adapter decides (E - 2 > 0)
+            from .relations import with_closed_units
+            clause_templates = with_closed_units(clause_templates)
         self._relation_specs: tuple = tuple(relations)
         self._templates = templates
         #: ``node -> (compiled patterns, formulas)``; the fast path the SymPy
