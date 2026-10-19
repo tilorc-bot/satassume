@@ -395,28 +395,14 @@ KNOWN = (
     ('Q.gt(x, 0) & Q.ge(-oo*r, -oo)',
      'Q.positive_infinite(-oo*r) & Q.le(-oo*r, -oo)',
      'False', 'None', 'relevance: relation chain over an infinite product'),
-    # odd(w + oo) / nonzero(w + oo) make the set inconsistent; the engine's
-    # set check misses it without the query's glue and answers the query,
-    # ask_ref raises.  (Minimal forms: ask(Q.gt(p, 0), Q.odd(w + oo)) and
-    # ask(Q.le(z, -oo), Q.zero(z) & Q.nonzero(w + oo)).)
-    ('Q.prime(2) & Q.gt(p, 0)',
-     'Q.complex(p) & Q.rational(p) & Q.odd(w + oo) & ~Q.nonnegative(sqrt(y))',
-     'True', 'ValueError', 'relevance: set verdict without the query relation glue'),
-    ('Q.extended_nonnegative(q) | Q.le(z, -oo)',
-     'Q.finite(r) & Q.zero(z) & Q.nonzero(w + oo)',
-     'False', 'ValueError', 'relevance: set verdict without the query relation glue'),
-    # Same kind, found by the long runs (session 21; general seed 1,
-    # inconsistent seeds 1 and 2 x 3000): a proposition about closed or
-    # unrelated terms under a set made inconsistent by a sum with oo.
+    # A proposition about closed or unrelated terms under a set made
+    # inconsistent by a sum with oo (found by the long runs, session 21): the
+    # engine's set check misses it without the query's glue and answers the
+    # query, ask_ref raises.  (Four more such entries are gone since #187: an
+    # extended-real sum with an infinite term is infinite, so the set check
+    # finds them.  This one needs y - oo to be -oo, see #187's PR.)
     ('Q.nonpositive(E) & Q.lt(sqrt(x), z)',
      'Q.extended_nonnegative(y - oo) & Q.extended_positive(y - oo)',
-     'False', 'ValueError', 'relevance: set verdict without the query relation glue'),
-    ('Q.imaginary(z) & Q.gt(0, E)',
-     'Q.extended_nonpositive(x) & Q.prime(z) & Q.zero(0) & Q.extended_real(x + z)'
-     ' & Q.irrational(y + im(w) + oo)',
-     'False', 'ValueError', 'relevance: set verdict without the query relation glue'),
-    ('Q.transcendental(-1) | Q.le(oo*n, 0)',
-     'Q.nonnegative(x - oo) & Q.nonzero(x - oo) & Q.positive(oo*n) & Q.rational(oo*n)',
      'False', 'ValueError', 'relevance: set verdict without the query relation glue'),
 )
 

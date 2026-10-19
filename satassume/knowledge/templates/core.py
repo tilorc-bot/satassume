@@ -136,16 +136,22 @@ def _add_rules(n, consts):
             rule([(k, 'extended_nonzero', True), *lits(rest, 'imaginary')],
                  (N, 'imaginary', False))
             # Infinite sums.  ``oo - oo``, ``oo + zoo``, ``oo*I - oo*I`` and
-            # the like are nan ("unknown"); every other infinite sum is
-            # infinite (``oo + I``, ``oo + oo*I``, ``zoo + 1``, ``-oo + I``).
-            # So an infinite term that is not ``-oo`` makes the sum infinite
-            # unless some other term is ``-oo``, and symmetrically.
+            # ``oo + nan`` are nan ("unknown"), so two infinite terms decide
+            # nothing without their directions, and a term that is not -oo
+            # may still be zoo, nan or an opposite infinity off the real
+            # axis (#187).  An infinite term plus finite terms is infinite
+            # (``oo + I``, ``zoo + 1``, ``oo*I + x`` with x finite); signed
+            # infinite sums follow from the rule below.
+            rule([(k, 'infinite', True), *lits(rest, 'finite')], (N, 'infinite', True))
+            # A sum with an infinite term is infinite or nan, so it is
+            # infinite when it is an extended real (nan is not): an infinite
+            # term plus finite ones is infinite, and two or more infinite
+            # terms add to an infinity or nan.
+            rule([(k, 'infinite', True), (N, 'extended_real', True)], (N, 'infinite', True))
             for strict, nonstrict in _STRICT:
                 signed = strict.replace('extended_', '') + '_infinite'
                 other = _STRICT[1 if strict == _STRICT[0][0] else 0][0]
                 other_signed = other.replace('extended_', '') + '_infinite'
-                rule([(k, 'infinite', True), (k, other_signed, False),
-                      *lits(rest, other_signed, False)], (N, 'infinite', True))
                 # A -oo term (any term, not only a constant: a symbol
                 # declared negative_infinite IS -oo) plus terms that are
                 # extended real and not +oo is -oo, and symmetrically for

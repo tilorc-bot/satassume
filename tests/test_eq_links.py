@@ -69,7 +69,9 @@ def _ask(prop, assum=True):
     (Q.ne(x + F, F), Q.nonzero(x), None),
     (Q.ne(x + INT, y + INT), Q.nonzero(x - y) & Q.positive_infinite(INT), None),
     (Q.ne(x + INT, INT), Q.nonzero(x), None),
-    (Q.ne(2*F + x, F + y), Q.nonzero(F + x - y) & Q.positive_infinite(F), None),  # merged
+    # merged (nonzero(F + x - y) would be inconsistent: a sum with a +oo term
+    # is no finite real; at x = y = 0 both sides are oo)
+    (Q.ne(2*F + x, F + y), Q.extended_nonzero(F + x - y) & Q.positive_infinite(F), None),
     (Q.eq(x + F - G, y + F - G),
      Q.zero(x - y) & Q.positive_infinite(F) & Q.positive_infinite(G), None),
     (Q.eq(x + F*G, y + F*G), Q.zero(x - y) & Q.zero(F) & Q.positive_infinite(G), None),

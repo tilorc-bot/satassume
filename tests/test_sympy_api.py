@@ -232,7 +232,10 @@ def test_add_mul_closures(eng):
     x, y, z = Symbol('x'), Symbol('y'), Symbol('z')
     assert ask(Q.finite(x + y), Q.positive_infinite(x) & Q.positive_infinite(y), eng) is False
     assert ask(Q.finite(x + y + z), Q.negative_infinite(y) & Q.negative_infinite(z) & Q.positive(x), eng) is False
-    assert ask(Q.finite(x + y), ~Q.extended_positive(x) & ~Q.extended_positive(y) & ~Q.finite(y), eng) is False
+    # x = y = zoo (or x = -oo, y = zoo) makes the sum nan (#187)
+    assert ask(Q.finite(x + y), ~Q.extended_positive(x) & ~Q.extended_positive(y) & ~Q.finite(y), eng) is None
+    assert ask(Q.finite(x + y), ~Q.finite(y) & Q.finite(x), eng) is False
+    assert ask(Q.finite(x + y), ~Q.finite(y) & Q.extended_real(x + y), eng) is False
     assert ask(Q.finite(x + y), Q.positive_infinite(x) & Q.negative_infinite(y), eng) is None
     assert ask(Q.real(I*(1 + I)), True, eng) is False
     assert ask(Q.prime(I*(1 + I)), True, eng) is False

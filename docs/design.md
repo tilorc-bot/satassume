@@ -562,8 +562,9 @@ leaves `finite`, `infinite` and `commutative` unknown, and skips points
 where a direct argument is `nan`. So:
 
 - `extended_real` is not closed under `Add` (`oo - oo`) or `Mul` (`0*oo`);
-  an infinite term that is not `-oo` makes a sum infinite only if no other
-  term is `-oo` (and symmetrically);
+  an infinite term makes a sum infinite when the other terms are finite
+  (`oo + zoo`, `oo*I - oo*I` and `oo + nan` are `nan`, #187), and `+oo`
+  plus extended reals that are not `-oo` is `+oo` (and symmetrically);
 - `1**e` rules need a finite exponent; a zero factor makes a product zero
   only if the other factors are finite (`Q.finite(x*y)` under `Q.zero(y) &
   Q.infinite(x)` is None);

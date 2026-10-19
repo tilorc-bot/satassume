@@ -524,15 +524,17 @@ def test_specific_expectations():
     facts = registry.facts_for(exp(x))
     assert Implies(P('real', x), P('positive', exp(x))) in facts
     facts = registry.facts_for(x + y)
-    assert Implies(And(P('infinite', x), Not(P('negative_infinite', x)),
-                       Not(P('negative_infinite', y))), P('infinite', x + y)) in facts
+    assert Implies(And(P('infinite', x), P('finite', y)), P('infinite', x + y)) in facts
+    assert Implies(And(P('infinite', x), P('extended_real', x + y)), P('infinite', x + y)) in facts
     assert Implies(And(P('extended_nonzero', x), P('imaginary', y)),
                    Not(P('imaginary', x + y))) in facts
     assert Implies(And(P('extended_real', x + y), P('real', y)),
                    P('extended_real', x)) in facts
     facts = registry.facts_for(x + oo)
     assert Implies(P('real', x), P('extended_positive', x + oo)) in facts
-    assert Implies(Not(P('negative_infinite', x)), P('infinite', x + oo)) in facts
+    # not "x is not -oo": x = zoo gives nan (#187)
+    assert Implies(P('finite', x), P('infinite', x + oo)) in facts
+    assert Implies(P('extended_real', x + oo), P('infinite', x + oo)) in facts
     facts = registry.facts_for(I*x)
     assert Implies(And(P('complex', x), P('extended_real', I*x)),
                    Or(P('imaginary', x), P('zero', x))) in facts
