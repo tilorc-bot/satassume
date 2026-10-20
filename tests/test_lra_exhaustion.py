@@ -123,6 +123,10 @@ def test_exhausted_set_check_is_unknown(monkeypatch):
     assert Engine().verdict(d) is UNKNOWN          # was CONSISTENT
     monkeypatch.setattr(lra, "BRANCH_BUDGET", 2)
     assert Engine().verdict(d) is INCONSISTENT
+    # A small budget still decides a satisfiable set (3: main decided A at
+    # 1; since the sign of y + 1/3 follows from the integer y >= 0, #180
+    # S7, the search takes two branchings more)
+    monkeypatch.setattr(lra, "BRANCH_BUDGET", 3)
     assert Engine().verdict(_formula(A, True)) is CONSISTENT
 
 
