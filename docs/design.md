@@ -618,11 +618,13 @@ numbers, so terms with a non-commutative subterm never reach the rule base:
 directly, answers None for `is_`/`is_many` on such a term and for `ask`
 when a vocabulary atom of the proposition or the assumptions has one
 (`engine._noncommutative`), and `verdict` is `UNKNOWN` for a set with one. One exception (#180 S5): `is_`/`is_many`
-answer False for `commutative`, and for every fact SymPy's fact rules make false with it (`complex`, `zero`, `real`,
-...: `domain.noncommutative_false`), when SymPy builds the term non-commutative (`domain._constructed_noncommutative`:
-a fixed non-commutative atom, the `is_commutative` slot of `Add`/`Mul`/`Pow`/integrals, or `Function`'s
-`_eval_is_commutative` with such an argument: `f(A)`, `adjoint(A)`, `exp(M)`), read without evaluating any
-assumption; `finite`, `hermitian` and the like stay None, as does `re(A)`. A function registered for `commutative`
+answer False for `commutative` when SymPy builds the term non-commutative, read without evaluating any assumption
+(`domain.constructed_noncommutative`: a non-commutative symbol or class, the `is_commutative` slot of
+`Add`/`Mul`/`Pow`/integrals, or `Function`'s `_eval_is_commutative` with such an argument: `f(A)`, `adjoint(A)`,
+`exp(M)`), and False for every fact SymPy's fact rules make false with it (`complex`, `zero`, `real`, ...:
+`domain.noncommutative_false`) unless the proof needs the slot of a power or an integral, whose own evaluators may
+make the term a number (`Integral(A, (x, 0, 0)).is_zero` and `Pow(1, A, evaluate=False).is_complex` are True in
+SymPy); `E**e` counts as `exp(e)`. `finite`, `hermitian` and the like stay None, as does `re(A)`. A function registered for `commutative`
 (`extensions.register`) is refused with a ValueError: there is no variable
 it could set. `structural_commutative` and `function_commutative` are gone.
 

@@ -584,17 +584,42 @@ def test_scalars_of_matrices_stay_in_scope():
 # #180 S5: a term SymPy builds non-commutative
 # ---------------------------------------------------------------------------
 
+class _fixes_true(Function):
+    # #224 review: a class's own property is not followed
+    @property
+    def is_commutative(self):
+        return True
+
+
+class _fixes_none(Function):
+    # #224 review: an explicit None shadows the base classes
+    is_commutative = None
+
+
+def _degenerate_terms():
+    # #224 review: built non-commutative, but SymPy's own evaluators make
+    # them numbers (Integral(A, (x, 0, 0)).is_zero is True)
+    from sympy import Integral, Product, Sum
+    z = Integral(A, (x, 0, 0))
+    return [z, Integral(A, (x, 1, 1)), Sum(A, (x, 1, 0)), Product(A, (x, 1, 0)),
+            Pow(A, 0, evaluate=False), A**2, z*Integral(B, (x, 0, 0)), f(z),
+            Pow(A, 0, evaluate=False) + Integral(B, (x, 0, 0)), Pow(1, A, evaluate=False),
+            Pow(0, A, evaluate=False), Pow(S.Exp1, z, evaluate=False)]
+
+
 def _s5_terms():
     from sympy import (Integral, MatrixSymbol, Piecewise, adjoint, conjugate, exp, log,
                        re, transpose)
-    from sympy.physics.quantum import Dagger, Operator
+    from sympy.physics.quantum import Commutator, Dagger, Operator
     M = MatrixSymbol('M', 2, 2)
     c = Operator('c')
     k = Symbol('k', integer=True)
     return [A, A*x, A + x, A**2, (A*B)**k, (A*B)**k + (A*B)**(k + 1), f(A), sin(A) + 1,
             exp(A), log(A), adjoint(A), conjugate(A), transpose(A), Dagger(A), Integral(A, x),
-            c, c - Dagger(c), exp(M), f(M), re(A), Abs(A), re(M), f(re(A)),
-            Piecewise((A, x > 0), (B, True))]
+            c, c - Dagger(c), Commutator(c, Dagger(c)), exp(M), f(M), re(A), Abs(A), re(M),
+            f(re(A)), Piecewise((A, x > 0), (B, True)), Mul(0, A, evaluate=False),
+            Add(A, -A, evaluate=False), Integral(A, (x, 0, 0))*A, _fixes_true(A),
+            _fixes_none(A)] + _degenerate_terms()
 
 
 def test_constructed_noncommutative_answers():
@@ -603,7 +628,7 @@ def test_constructed_noncommutative_answers():
     from sympy import adjoint, conjugate, exp, log, transpose
     from sympy.physics.quantum import Dagger
     for e in (f(A), sin(A), exp(A), log(A), adjoint(A), conjugate(A), transpose(A),
-              Dagger(A), A*x, A + x, A**2):
+              Dagger(A), A*x, A + x, B*A**2, Pow(S.Exp1, A, evaluate=False)):
         assert fresh().is_(e, 'commutative') is False, e
         assert fresh().is_(e, 'complex') is False, e
         assert fresh().is_many(e, ['real', 'zero', 'finite']) == [False, False, None], e
@@ -627,6 +652,16 @@ def test_constructed_noncommutative_unknown_stays_none():
         assert fresh().is_(e, 'zero') is None, e
     for p in ('finite', 'infinite', 'hermitian', 'antihermitian', 'polar'):
         assert fresh().is_(f(A), p) is None
+    for e in (_fixes_true(A), _fixes_none(A)):
+        assert fresh().is_(e, 'commutative') is None, e
+
+
+def test_constructed_noncommutative_degenerate_only_commutative():
+    # a Pow or integral slot proves commutative False, but not that the
+    # term is no number
+    for e in _degenerate_terms():
+        assert fresh().is_(e, 'commutative') is False, e
+        assert fresh().is_many(e, ['zero', 'complex', 'positive']) == [None, None, None], e
 
 
 def test_constructed_noncommutative_agrees_with_sympy():
@@ -637,6 +672,7 @@ def test_constructed_noncommutative_agrees_with_sympy():
         before = dict(e._assumptions)
         got = {p: fresh().is_(e, p) for p in PRED_INDEX}
         assert dict(e._assumptions) == before, e
+        assert got['commutative'] in (None, e.is_commutative), e
         for p, r in got.items():
             if r is not None:
                 native = getattr(e, 'is_' + p)

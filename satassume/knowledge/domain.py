@@ -51,40 +51,65 @@ def _fixed_noncommutative(t) -> bool:
     return False
 
 
-def _constructed_noncommutative(t) -> bool:
-    """Whether SymPy's ``t.is_commutative`` is False by construction, read
-    without evaluating any assumption (see :func:`_fixed_noncommutative`).
-    True only if it is: ``t`` is fixed non-commutative; or the
-    ``is_commutative`` slot that ``Add``, ``Mul``, ``Pow`` and integrals
-    fill when built is False; or ``t`` is an application of a function
-    whose ``_eval_is_commutative`` is ``Function``'s (the ``fuzzy_and`` of
-    its arguments: ``f(A)``, ``adjoint(A)``, ``exp(M)``) with an argument
-    non-commutative by construction.  False when unknown (``re(A)`` and
-    ``Abs(A)`` fix True, other evaluators are not followed)."""
+_MISSING = object()
+
+
+def constructed_noncommutative(t) -> int:
+    """How far SymPy builds ``t`` non-commutative, read without evaluating
+    any assumption (see :func:`_fixed_noncommutative`): 0 if not known to;
+    1 if ``t.is_commutative`` is False by construction; 2 if moreover none
+    of the facts :func:`noncommutative_false` holds, as SymPy's fact rules
+    derive from it.
+
+    2: a non-commutative symbol, or a class fixing ``is_commutative =
+    False`` (an ``Operator``, a ``MatrixExpr``: SymPy's fact rules apply to
+    it).  The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when
+    built: 1 if False, 2 if an argument is at 2.  ``Function``'s
+    ``_eval_is_commutative`` (the ``fuzzy_and`` of the arguments:
+    ``f(A)``, ``adjoint(A)``, ``exp(M)``): the highest level of an
+    argument; ``E**e`` (``exp(e)`` built as a power) likewise.  The slot of
+    other powers, integrals, sums and products: 1 if False, never 2, since
+    their own evaluators may make a non-commutative term a number
+    (``Integral(A, (x, 0, 0)).is_zero``, ``Pow(1, A, evaluate=False)
+    .is_complex``).  0 for anything else: a
+    class fixing True or None (``re(A)``, ``Abs(A)``), its own property or
+    evaluator."""
+    from sympy.core.basic import Basic
     from sympy.core.function import Function
-    if _fixed_noncommutative(t):
-        return True
+    from sympy.core.operations import AssocOp
+    from sympy.core.power import Pow
+    from sympy.core.singleton import S
+    from sympy.core.symbol import Symbol
+    if isinstance(t, Symbol):
+        return 2 if _fixed_noncommutative(t) else 0
     cls = type(t)
     for k in cls.__mro__:
-        v = k.__dict__.get("is_commutative", None)
-        if v is None:
+        v = k.__dict__.get("is_commutative", _MISSING)
+        if v is _MISSING:
             continue
-        if isinstance(v, bool):
-            return False
-        if isinstance(v, property):
+        if v is False:
+            return 2
+        if v is Basic.__dict__["is_commutative"]:
             break
         if not isinstance(v, MemberDescriptorType):
-            return False
+            return 0
         try:
-            # the construction-time slot (a member descriptor): a plain
-            # read, no assumption is evaluated or cached
-            return v.__get__(t, cls) is False
+            # the construction-time slot: a plain read, no assumption is
+            # evaluated or cached
+            if v.__get__(t, cls) is not False:
+                return 0
         except AttributeError:
-            return False
+            return 0
+        if k is AssocOp:
+            return max(1, *(constructed_noncommutative(a) for a in t.args))
+        if k is Pow and t.args[0] is S.Exp1:
+            # exp(e) built as a power: as Function's exp(e)
+            return max(1, constructed_noncommutative(t.args[1]))
+        return 1
     # sympy-boundary: compares the class's evaluator, does not call it
     if getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative:
-        return any(_constructed_noncommutative(a) for a in t.args)
-    return False
+        return max((constructed_noncommutative(a) for a in t.args), default=0)
+    return 0
 
 
 _NONCOMMUTATIVE_FALSE: frozenset = frozenset()

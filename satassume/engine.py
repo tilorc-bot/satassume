@@ -148,19 +148,23 @@ def _noncommutative(term) -> bool:
     return nc(term)
 
 
-def _noncommutative_answer(term, pred: str) -> Optional[bool]:
-    """The answer about a :func:`_noncommutative` term: if SymPy makes the
-    term non-commutative by construction (``f(A)``, ``adjoint(A)``,
-    ``A*x``: see
-    :func:`satassume.knowledge.domain._constructed_noncommutative`), False
-    for ``commutative`` and for the facts implying it (``complex``,
-    ``zero``, ...: :func:`satassume.knowledge.domain.noncommutative_false`);
+def _noncommutative_answer(level: int, pred: str) -> Optional[bool]:
+    """The answer about a :func:`_noncommutative` term built non-commutative
+    to ``level`` (:func:`satassume.knowledge.domain.constructed_noncommutative`,
+    ``_construction_level``): False for ``commutative`` from level 1, and
+    for the facts implying it (``complex``, ``zero``, ...:
+    :func:`satassume.knowledge.domain.noncommutative_false`) at level 2;
     else None (``re(A)``, which SymPy fixes commutative, ``finite``,
     ``hermitian``, ...)."""
-    from .knowledge.domain import _constructed_noncommutative, noncommutative_false
-    if pred in noncommutative_false() and _constructed_noncommutative(term):
-        return False
-    return None
+    if level == 2:
+        from .knowledge.domain import noncommutative_false
+        return False if pred in noncommutative_false() else None
+    return False if level and pred == "commutative" else None
+
+
+def _construction_level(term) -> int:
+    from .knowledge.domain import constructed_noncommutative
+    return constructed_noncommutative(term)
 
 
 def _noncommutative_atoms(*formulas) -> bool:
@@ -1990,7 +1994,7 @@ class Engine:
         if pred not in PRED_INDEX:
             return self._is_custom(node, pred)
         if _noncommutative(node):
-            return _noncommutative_answer(node, pred)
+            return _noncommutative_answer(_construction_level(node), pred)
         if node in self._constructing:
             # re-entrant query from a template evaluating this very node
             return None
@@ -2030,11 +2034,14 @@ class Engine:
         out: List[Optional[bool]] = [None] * len(preds)
         todo = []
         noncomm = _noncommutative(node)
+        level = None
         for k, pred in enumerate(preds):
             if pred not in PRED_INDEX:
                 out[k] = self._is_custom(node, pred)
             elif noncomm:
-                out[k] = _noncommutative_answer(node, pred)
+                if level is None:
+                    level = _construction_level(node)
+                out[k] = _noncommutative_answer(level, pred)
             else:
                 todo.append(k)
         if not todo or node in self._constructing:
