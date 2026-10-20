@@ -284,6 +284,8 @@ def _im(R, c):
     R.rule([(X, 'finite', True)], (N, 'real', True))
     R.rule([(X, 'extended_real', True)], (N, 'zero', True))
     R.rule([(X, 'imaginary', True)], (N, 'nonzero', True))
+    # a finite argument is read as a complex number x + I*y (above: im is real)
+    R.rule([(X, 'finite', True), (X, 'extended_real', False)], (N, 'zero', False))
     R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
 
 
@@ -442,6 +444,10 @@ def _cos(R, c):
 def _tan(R, c):
     _table(R, _TAN)
     R.rule([(X, 'real', True), (N, 'finite', True)], (N, 'real', True))
+    # tan(x + I*y) has imaginary part sinh(2*y)/(cos(2*x) + cosh(2*y)),
+    # nonzero for y != 0 (no poles off the real line); a finite argument
+    # is read as a complex number, as for im
+    R.rule([(X, 'finite', True), (X, 'extended_real', False)], (N, 'extended_real', False))
 
 
 _COT = (
@@ -461,6 +467,8 @@ _COT = (
 def _cot(R, c):
     _table(R, _COT)
     R.rule([(X, 'real', True), (N, 'finite', True)], (N, 'real', True))
+    # cot == 1/tan, and tan(z) is non-real and nonzero off the real line
+    R.rule([(X, 'finite', True), (X, 'extended_real', False)], (N, 'extended_real', False))
     R.rule([(X, 'complex', True), (N, 'finite', True)], (N, 'complex', True))
 
 

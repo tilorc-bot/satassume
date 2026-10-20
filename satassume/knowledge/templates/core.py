@@ -361,6 +361,80 @@ def _recip_templates(expr, split):
                  (u.args[0], expr), 1)
 
 
+def _imag_term(a):
+    """A term ``a`` of a sum as ``(c, x)`` with ``a = c*I*x`` (``c``
+    Rational, ``x`` one factor or None for ``c*I``), or None."""
+    if a is S.ImaginaryUnit:
+        return S.One, None
+    if not a.is_Mul:
+        return None
+    args = a.args
+    c = S.One
+    if args[0].is_Rational:
+        c, args = args[0], args[1:]
+    rest = [f for f in args if f is not S.ImaginaryUnit]
+    if len(rest) != len(args) - 1 or len(rest) > 1 or c == 0:
+        return None
+    return c, rest[0] if rest else None
+
+
+def _imag_split(args):
+    """The terms of a sum ``I*(c_1*x_1 + ... )`` as ``(c_k, x_k)``
+    (:func:`_imag_term`), or None if some term is no such product."""
+    terms = [_imag_term(a) for a in args]
+    return None if None in terms else terms
+
+
+def _imag_rules(signs, csign):
+    """Rules for ``N = I*(sum c_k*x_k + c)`` (slots ``x_k``, then ``N``;
+    ``signs[k]`` the sign of ``c_k``, ``csign`` the signs of the terms
+    without an ``x``): the real sum is nonzero, so ``N`` imaginary, when
+    every term has the same weak sign and one the strict one."""
+    R = Rules()
+    m = len(signs)
+    for d in (1, -1):
+        if -d in csign:
+            continue
+        weak = ['nonnegative' if s*d > 0 else 'nonpositive' for s in signs]
+        strict = ['positive' if s*d > 0 else 'negative' for s in signs]
+        if d in csign:
+            R.rule([(k, weak[k], True) for k in range(m)], (m, 'imaginary', True))
+            continue
+        for j in range(m):
+            R.rule([(k, strict[k] if k == j else weak[k], True) for k in range(m)],
+                   (m, 'imaginary', True))
+    return R.rules
+
+
+def _imag_number_rules():
+    """Rules for ``N == I*s`` with ``s`` a number (slot 0, slot 1 ``N``)."""
+    R = Rules()
+    R.rule([(0, 'real', True), (0, 'zero', False)], (1, 'imaginary', True))
+    R.rule([(0, 'zero', True)], (1, 'zero', True))
+    return R.rules
+
+
+def _imag_templates(expr, terms):
+    """``c_1*I*x_1 + ... + c*I`` is imaginary when the real sum
+    ``c_1*x_1 + ... + c`` is signed: by the signs of the terms
+    (:func:`_imag_rules`, at most ``MAX_ONEOUT`` with an ``x``), or, when
+    every ``x`` is a number, by the sum itself, a derived node whose
+    facts are closed (``-sqrt(3)*I/2 + 0.866025403784439*I``)."""
+    xs = [x for _, x in terms if x is not None]
+    if all(x.is_number for x in xs):
+        s = Add(*[c * x if x is not None else c for c, x in terms])
+        consts = {0: s} if s.is_Atom else {}
+        return facts(('add_imag_number', const_key(s) if consts else None),
+                     _imag_number_rules, consts, (s, expr), 1)
+    if len(xs) > MAX_ONEOUT:
+        return None
+    signs = tuple(1 if c.p > 0 else -1 for c, x in terms if x is not None)
+    csign = frozenset(1 if c.p > 0 else -1 for c, x in terms if x is None)
+    consts = {k: x for k, x in enumerate(xs) if x.is_Atom and x.is_number}
+    key = ('add_imag', signs, csign, tuple(sorted((k, const_key(x)) for k, x in consts.items())))
+    return facts(key, lambda: _imag_rules(signs, csign), consts, tuple(xs) + (expr,), len(xs))
+
+
 def _not_unit_premises(c0, c1):
     """The premises of :data:`_INT_BOUNDS` whose bound of an integer ``u``
     puts ``c0 + c1*u`` at 2 or more, or at -2 or less."""
@@ -420,6 +494,11 @@ def add_templates(expr):
         recip = _recip_templates(expr, split)
         if recip is not None:
             out.append(recip)
+    terms = _imag_split(args)
+    if terms is not None:
+        imag = _imag_templates(expr, terms)
+        if imag is not None:
+            out.append(imag)
     return out[0] if len(out) == 1 else out
 
 
@@ -553,6 +632,9 @@ def _mul_table_rows():
                 ('N', 'imaginary')),
             Row('one_imag.or_zero', [('k', 'imaginary'), ('rest', 'real')],
                 [('N', 'imaginary'), ('N', 'zero')]),
+            # and back: k is the product over the nonzero reals
+            Row('one_imag.back', [('rest', 'real'), ('rest', 'zero', False), ('N', 'imaginary')],
+                ('k', 'imaginary')),
             # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
             # the product is real iff the other factor is imaginary or
             # zero, and imaginary iff the other factor is a nonzero real.
@@ -576,6 +658,21 @@ def _mul_table_rows():
         Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
             Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
                              ('rest', 'zero', False)], ('N', 'nonzero')),
+            # imag_times with the rest nonzero reals (r*i is imaginary)
+            Row('imag_times_rest.real', [('k', 'imaginary'), ('l', 'complex'), ('rest', 'real'),
+                                         ('rest', 'zero', False), ('N', 'extended_real')],
+                [('l', 'imaginary'), ('l', 'zero')]),
+            Row('imag_times_rest.real.flip', [('l', 'imaginary'), ('k', 'complex'),
+                                              ('rest', 'real'), ('rest', 'zero', False),
+                                              ('N', 'extended_real')],
+                [('k', 'imaginary'), ('k', 'zero')]),
+            Row('imag_times_rest.imag', [('k', 'imaginary'), ('l', 'complex'), ('rest', 'real'),
+                                         ('rest', 'zero', False), ('N', 'imaginary')],
+                ('l', 'real')),
+            Row('imag_times_rest.imag.flip', [('l', 'imaginary'), ('k', 'complex'),
+                                              ('rest', 'real'), ('rest', 'zero', False),
+                                              ('N', 'imaginary')],
+                ('k', 'real')),
         ]),
         # Numeric coefficient c*x: transfer facts back from the product to x.
         Row('coeff.back', [('N', '$p')], (1, '$p'), when=('coeff', 'c not negative'),
@@ -918,6 +1015,8 @@ POW_GUARDS = MappingProxyType({
     'b finite number, 0<|b|<1': lambda x: (_num(x) and not abs(x['b']) > 1
                                            and x['b'].is_zero is False and abs(x['b']) < 1),
     'e integer >= 2': lambda x: x['e'] is not None and x['e'].is_Integer and x['e'].p >= 2,
+    'e integer, 2 mod 4': lambda x: x['e'] is not None and x['e'].is_Integer and x['e'].p % 4 == 2,
+    'e integer, 0 mod 4': lambda x: x['e'] is not None and x['e'].is_Integer and x['e'].p % 4 == 0,
     # sympy-boundary: e a numeric constant
     'e algebraic irrational': lambda x: (x['e'] is not None and x['e'].is_algebraic
                                          and x['e'].is_rational is False),
@@ -1016,6 +1115,13 @@ def _pow_table_rows():
         Row('e=-1.commutative', [('N', 'complex'), ('N', 'zero', False)], ('B', 'commutative'),
             when='e is -1'),
         Row('b=-1.odd', [('E', 'integer')], ('N', 'odd'), when='b is -1'),
+        # 1/b is imaginary iff b is (1/0 == zoo, 1/oo == 0).
+        Row('e=-1.imaginary', [('N', 'imaginary')], ('B', 'imaginary'), when='e is -1'),
+        # (I*t)**e == I**e * t**e for real t != 0: I**e is -1 or 1.
+        Row('imaginary_base.e=2mod4', [('B', 'imaginary')], ('N', 'negative'),
+            when='e integer, 2 mod 4'),
+        Row('imaginary_base.e=0mod4', [('B', 'imaginary')], ('N', 'positive'),
+            when='e integer, 0 mod 4'),
         # |b|**e < 1 for negative e.
         Row('b=int.negative_exp', [('E', 'negative')], ('N', 'integer', False),
             when='b integer, |b|>=2'),

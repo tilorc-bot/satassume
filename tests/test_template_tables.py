@@ -36,7 +36,7 @@ import totality  # noqa: E402
 from sympy import Mul, Pow  # noqa: E402
 
 from satassume.knowledge.templates import _common, core, functions, registry  # noqa: E402
-from satassume.knowledge.templates.table import count_rows, iter_rows, rules_of  # noqa: E402
+from satassume.knowledge.templates.table import Section, Sub, count_rows, iter_rows, rules_of  # noqa: E402
 
 CORPUS = os.path.join(ROOT, "queries.jsonl")
 N_RANDOM = 2000
@@ -132,26 +132,55 @@ def _run(nodes):
     return out
 
 
-#: Rows of ``POW_TABLE`` added after 876f37d (unconditional ones): the
-#: reference is the legacy function plus these rows.
+#: Rows of the tables added after 876f37d: the reference is the legacy
+#: function plus these rows (with their sections and guards).
 POW_ROWS_ADDED = (
     'int_base.negative_int_exp.unit',  # #180 S7
     'int_base.negative_int_exp.unit_not',
     'int_base.negative_int_exp.unit_base',
     'int_base.negative_int_exp.not_unit',
+    'e=-1.imaginary',
+    'imaginary_base.e=2mod4',
+    'imaginary_base.e=0mod4',
+)
+MUL_ROWS_ADDED = (
+    'one_imag.back',  # #180 S7
+    'imag_times_rest.real',
+    'imag_times_rest.real.flip',
+    'imag_times_rest.imag',
+    'imag_times_rest.imag.flip',
 )
 
 
+def _only(table, names):
+    """The rows of ``table`` named in ``names``, in their sections."""
+    out = []
+    for item in table:
+        if isinstance(item, Section):
+            rows = [r for r in item.rows if r.name in names]
+            if rows:
+                out.append(Section(item.over, rows, when=item.when))
+        elif not isinstance(item, Sub) and item.name in names:
+            out.append(item)
+    assert sum(1 for _ in iter_rows(out)) == len(names)
+    return tuple(out)
+
+
 def _legacy_pow_rules(*pargs):
-    rows = tuple(r for r in iter_rows(core.POW_TABLE) if r.name in POW_ROWS_ADDED)
-    assert len(rows) == len(POW_ROWS_ADDED) and all(not r.when for r in rows)
-    added = rules_of(rows, core.POW_GUARDS, core._pow_ctx(*pargs), core.POW_SLOTS)
+    added = rules_of(_only(core.POW_TABLE, POW_ROWS_ADDED), core.POW_GUARDS,
+                     core._pow_ctx(*pargs), core.POW_SLOTS)
     return legacy.pow_rules(*pargs) + added
+
+
+def _legacy_mul_rules(n, consts):
+    added = rules_of(_only(core.MUL_TABLE, MUL_ROWS_ADDED), core.MUL_GUARDS,
+                     {'n': n, 'consts': consts}, {'N': n, '*': range(n)})
+    return legacy.mul_rules(n, consts) + added
 
 
 def _with_legacy(monkeypatch, nodes):
     with monkeypatch.context() as m:
-        m.setattr(core, "_mul_rules", legacy.mul_rules)
+        m.setattr(core, "_mul_rules", _legacy_mul_rules)
         m.setattr(core, "_pow_rules", _legacy_pow_rules)
         m.setattr(core, "ipi_rules", legacy.ipi_rules)
         m.setattr(functions, "ipi_rules", legacy.ipi_rules)
