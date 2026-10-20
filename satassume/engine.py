@@ -1223,9 +1223,10 @@ def _check_uninterpreted(value: str) -> str:
     return value
 
 
-def _context_free(expr, pred):
-    """``registry.context_free``: the answer of a fresh default engine."""
-    return Engine(cache=DictCache()).is_(expr, pred)
+def _context_free(expr, preds):
+    """``registry.context_free``: the answers of a fresh default engine."""
+    eng = Engine(cache=DictCache())
+    return {p: eng.is_(expr, p) for p in preds}
 
 
 class Engine:

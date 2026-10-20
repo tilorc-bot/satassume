@@ -85,11 +85,35 @@ def test_reproducers(expr, pred, expected):
 
 def test_bound_variable_context():
     # an assumption on the free x is no fact about the bound x
-    assert ask(Q.zero(Sum(x, (x, 1, 2))), Q.zero(x)) is None
+    assert ask(Q.zero(Sum(x, (x, 1, 2))), Q.zero(x)) is False   # 3
     assert ask(Q.finite(Sum(1 / x, (x, -1, 1))), Q.nonzero(x)) is None
-    assert ask(Q.positive(Sum(x, (x, 1, y))), Q.positive(x) & Q.integer(y) & Q.positive(y)) is None
+    assert ask(Q.positive(Sum(x, (x, -1, y))), Q.positive(x) & Q.integer(y) & Q.positive(y)) is None  # 0 at y = 1
     assert ask(Q.zero(Integral(x, (x, 0, 1))), Q.zero(x)) is None
-    assert ask(Q.positive(Product(x, (x, 1, 3))), Q.positive(x)) is None
+    assert ask(Q.positive(Product(x, (x, -1, 3))), Q.positive(x)) is None  # 0
+
+
+def test_declared_assumptions_of_the_bound_symbol():
+    # the points of the range need not satisfy the declaration of the bound
+    # symbol: only what the range guarantees about them counts (review of #202)
+    xp = Symbol('x', positive=True)
+    i = Symbol('i', integer=True)
+    assert ask(Q.finite(Sum(1 / k, (k, 1, n)))) is None              # zoo at n = -1 (Karr)
+    assert ask(Q.finite(Sum(1 / k, (k, 1, n))), Q.positive(n)) is True
+    assert ask(Q.positive(Sum(k, (k, -2, n))), Q.positive(n)) is None  # -2 at n = 1
+    assert ask(Q.positive(Sum(xp, (xp, -1, 1)))) is None              # 0
+    assert ask(Q.positive(Product(xp, (xp, -1, 1)))) is None          # 0
+    half = Rational(1, 2)
+    assert ask(Q.positive(Sum(1 / (2 * i - 1)**2, (i, half, half)))) is None   # zoo
+    assert ask(Q.finite(Sum(1 / (2 * i - 1), (i, half, half)))) is None
+    assert ask(Q.finite(Product(1 / (2 * i - 1), (i, half, half)))) is None
+    # the sign of the points from the ends of a range that is not reversed
+    m = Symbol('m', integer=True)
+    assert ask(Q.positive(Sum(m, (m, 1, M)))) is True
+    assert ask(Q.negative(Sum(m, (m, -M, -1)))) is True
+    assert ask(Q.nonnegative(Product(m, (m, 0, M)))) is True
+    assert ask(Q.positive(Sum(m, (m, 0, M)))) is None
+    assert ask(Q.finite(Sum(1 / m, (m, 1, M)))) is True
+    assert ask(Q.finite(Sum(1 / m, (m, -M, M)))) is None              # 1/0
 
 
 def test_ends_in_context():
