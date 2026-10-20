@@ -60,13 +60,38 @@ class TemplateRegistry:
         first), and its pattern keys are its own (``_common._CACHE``).  A
         template registered by anyone else loads every declared module
         first, so the order of the templates of a class never depends on
-        when the modules were loaded."""
+        when the modules were loaded.
+
+        A class may also be given by name, ``"module:Class"``, for a class
+        of a module that SymPy does not import itself
+        (``sympy.codegen.cfunctions``): declaring it imports nothing, and
+        :meth:`load_all` imports ``module`` only once that module is
+        imported (before, no object of the class exists)."""
         self._lazy.append((classes, module))
 
+    @staticmethod
+    def _covers(cls, classes) -> bool:
+        """Is ``cls`` one of ``classes`` (classes or ``"module:Class"``
+        names, see :meth:`lazy`) or a subclass of one?"""
+        for c in classes:
+            if isinstance(c, str):
+                if any(f"{k.__module__}:{k.__qualname__}" == c for k in cls.__mro__):
+                    return True
+            elif issubclass(cls, c):
+                return True
+        return False
+
+    @staticmethod
+    def _imported(classes) -> bool:
+        """Can an object of one of ``classes`` exist yet?"""
+        return any(not isinstance(c, str) or c.partition(':')[0] in sys.modules
+                   for c in classes)
+
     def _load(self, cls) -> None:
-        """Import the declared modules covering ``cls`` (all of them for
-        None)."""
-        todo = [m for c, m in self._lazy if cls is None or issubclass(cls, c)]
+        """Import the declared modules covering ``cls`` (all of them whose
+        classes can have objects yet for None)."""
+        todo = [m for c, m in self._lazy
+                if (self._imported(c) if cls is None else self._covers(cls, c))]
         for m in todo:
             importlib.import_module(m)
             # the module (and any declared module it imports) registered
@@ -74,7 +99,8 @@ class TemplateRegistry:
             self._lazy = [(c, n) for c, n in self._lazy if n != m and n not in sys.modules]
 
     def load_all(self) -> None:
-        """Import every declared module (:meth:`lazy`)."""
+        """Import every declared module (:meth:`lazy`) whose classes can
+        have objects yet."""
         if self._lazy:
             self._load(None)
 
@@ -90,7 +116,7 @@ class TemplateRegistry:
                 # a declared built-in module registering itself (on first
                 # use, or imported directly): part of the templates in force
                 # from the start, see lazy()
-                if not all(issubclass(cls, covers[0]) for cls in classes):
+                if not all(self._covers(cls, covers[0]) for cls in classes):
                     raise TypeError(f"{mod} registers a template for a class "
                                     f"outside its declared classes {covers[0]}")
                 for cls in classes:

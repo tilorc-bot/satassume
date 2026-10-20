@@ -352,9 +352,16 @@ decision that should be visible in one place.
 
 `registry.py` maps SymPy classes to template functions along the MRO;
 `atoms.py` gives unit facts for symbols and fixed-value atoms, `core.py`
-covers `Add`, `Mul` and `Pow`, `functions.py` the elementary functions,
-rounding and `factorial` (an undefined function such as `f(x)` has no
-template).
+covers `Add`, `Mul` and `Pow`, `functions.py` the elementary functions
+(with the reciprocal and inverse trigonometric and hyperbolic ones, the
+polar functions and `Mod`), rounding and `factorial`, `selection.py` the
+nodes whose value is one of given expressions (`Max`, `Min`, `Piecewise`
+with a final `True`), `combinatorial.py` the other combinatorial
+functions, and `cfunctions.py` `expm1` and `log1p` (declared to
+`TemplateRegistry.lazy` by class name, since SymPy does not import
+`sympy.codegen`). A class without a template gets no facts: SymPy's own
+`_eval_is_*` is never read (#180 C-NOTMPL), and an undefined function such
+as `f(x)` has none.
 
 - A rule is an index-based spec `(premises, conclusion)` over literals
   `(k, pred, pos)` (`_common.py`). Specs depend only on the node's pattern

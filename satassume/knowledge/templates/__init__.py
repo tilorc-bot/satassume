@@ -1,8 +1,9 @@
 """Structural rule templates for :mod:`satassume`.
 
 Importing this package registers every template module with
-:data:`registry` (:mod:`.core`, :mod:`.functions` and :mod:`.rootof` on first use, see
-:meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
+:data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.selection`,
+:mod:`.combinatorial`, :mod:`.cfunctions` and :mod:`.rootof` on first use,
+see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
 
 This package is where the knowledge about SymPy expression classes lives,
@@ -17,6 +18,16 @@ from sympy.core.add import Add
 from sympy.core.function import Function
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
+from sympy.functions.combinatorial.factorials import (
+    FallingFactorial,
+    RisingFactorial,
+    binomial,
+    factorial2,
+    subfactorial,
+)
+from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
+from sympy.functions.elementary.miscellaneous import MinMaxBase
+from sympy.functions.elementary.piecewise import Piecewise
 from sympy.polys.rootoftools import ComplexRootOf
 
 from . import atoms  # noqa: F401  (registration side effects)
@@ -27,5 +38,11 @@ from .registry import TemplateRegistry, registry
 registry.lazy(__name__ + ".core", Add, Mul, Pow)
 registry.lazy(__name__ + ".functions", Function)
 registry.lazy(__name__ + ".rootof", ComplexRootOf)
+registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
+registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,
+              FallingFactorial, binomial, catalan, andre, genocchi, partition)
+# sympy.codegen is not imported by SymPy itself: declared by name
+registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
+              "sympy.codegen.cfunctions:log1p")
 
 __all__ = ['TemplateRegistry', 'registry']
