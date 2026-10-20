@@ -266,7 +266,8 @@ def _half_templates(expr, split):
 #: ``lower``).  Each premise makes ``u`` an integer (``prime``,
 #: ``composite`` and ``even`` imply it), so a strict sign bound rounds:
 #: ``u > 0`` is ``u >= 1``, a prime is at least 2, a composite at least 4,
-#: a positive even integer at least 2.
+#: an odd composite at least 9, a positive even integer at least 2.  Also
+#: read by :func:`_not_unit_premises` (``(c0 + c1*u)**-k`` no integer).
 _INT_BOUNDS = (
     (('integer', 'extended_positive'), True, 1),
     (('prime',), True, 2),
