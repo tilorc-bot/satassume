@@ -250,6 +250,69 @@ def _half_templates(expr, split):
     return facts(key, lambda: _half_rules(a0, odd, m), consts, objs, m)
 
 
+#: Bounds of an integer ``u`` (slot 0): premises (literals of ``u``), and
+#: ``(lower, b)`` for the bound they give, ``u >= b`` (``u <= b`` if not
+#: ``lower``).  Each premise makes ``u`` an integer (``prime``,
+#: ``composite`` and ``even`` imply it), so a strict sign bound rounds:
+#: ``u > 0`` is ``u >= 1``, a prime is at least 2, a composite at least 4,
+#: a positive even integer at least 2.
+_INT_BOUNDS = (
+    (('integer', 'extended_positive'), True, 1),
+    (('prime',), True, 2),
+    (('composite',), True, 4),
+    (('even', 'extended_positive'), True, 2),
+    (('integer', 'extended_nonnegative'), True, 0),
+    (('integer', 'extended_negative'), False, -1),
+    (('even', 'extended_negative'), False, -2),
+    (('integer', 'extended_nonpositive'), False, 0),
+)
+
+
+def _bound_split(args):
+    """A sum ``c0 + c1*u`` of a Rational ``c0`` and one other term (``c1``
+    its Rational coefficient, 1 if none), as ``(c0, c1, u)``, or None."""
+    if len(args) != 2:
+        return None
+    c0, t = args
+    if not c0.is_Rational:
+        c0, t = t, c0
+    if not c0.is_Rational or t.is_Rational:
+        return None
+    c1 = S.One
+    if t.is_Mul and t.args[0].is_Rational:
+        c1, rest = t.args[0], t.args[1:]
+        t = rest[0] if len(rest) == 1 else kept_product(rest)
+        if t is None:
+            return None                     # an unevaluated Mul(2, x, 1/x) (#184)
+    if c1 == 0 or t.is_number:
+        return None
+    return c0, c1, t
+
+
+def _bound_rules(c0, c1):
+    """Rules for ``N = c0 + c1*u`` (slot 0 ``u``, slot 1 ``N``): a bound of
+    ``u`` (:data:`_INT_BOUNDS`) bounds ``N``, which signs ``N`` when the
+    bound is on the right side of 0.  ``u`` is finite under every premise,
+    so ``N`` is a finite real and the extended signs are the signs."""
+    R = Rules()
+    for prem, lower, b in _INT_BOUNDS:
+        v = c0 + c1*b
+        if lower == (c1 > 0):               # N >= v
+            concl = 'extended_positive' if v > 0 else 'extended_nonnegative' if v == 0 else None
+        else:                               # N <= v
+            concl = 'extended_negative' if v < 0 else 'extended_nonpositive' if v == 0 else None
+        if concl is not None:
+            R.rule([(0, p, True) for p in prem], (1, concl, True))
+    return R.rules
+
+
+def _bound_templates(expr, split):
+    """The sign of ``c0 + c1*u`` from integer bounds of ``u``
+    (:func:`_bound_rules`)."""
+    c0, c1, u = split
+    return facts(('add_bound', c0, c1), lambda: _bound_rules(c0, c1), {}, (u, expr), 1)
+
+
 def _wide_one(expr, args, consts, every, some, concl):
     """``every(t)`` for every term ``t`` and ``some(t)`` for one of them
     give ``concl(expr)``, as one formula (None if it says nothing): the
@@ -292,6 +355,9 @@ def add_templates(expr):
     split = _half_split(args)
     if split is not None:
         out.append(_half_templates(expr, split))
+    split = _bound_split(args)
+    if split is not None:
+        out.append(_bound_templates(expr, split))
     return out[0] if len(out) == 1 else out
 
 

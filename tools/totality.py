@@ -430,6 +430,8 @@ def load_exprs(corpus=None, stream=None):
     syn += [Sum(x, (x, 1, n)), Sum(0, (x, 1, y)), Sum(k, (k, 1, n)) + x, Sum(1 / x, (x, y, z)),
             Product(k, (k, 1, n)), Product(0, (x, y, z)), Product(2, (x, 0, oo)),
             Integral(x, (x, 0, y)), Integral(0, (x, y)), Integral(n, (x, y)), Integral(x, (x, y, y))]
+    # the integer bounds of a sum c0 + c1*u (#180 S7)
+    syn += [n - 1, 1 - n, 2 * n - 3, n / 2 + 1, 1 - 1 / n, 1 / n - 2, x - 1, 1 - 1 / x]
     exprs.extend(syn)
     return exprs
 
