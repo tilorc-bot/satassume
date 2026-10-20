@@ -460,17 +460,20 @@ def test_ask_sound_for_noncommutative_factors():
 # ``commutative`` is true by definition (rules.DEFINITIONS): the rule base
 # and the templates assume numbers.  The Engine, used directly, answers
 # None about a term with a non-commutative subterm (sympy_api keeps such
-# terms out of scope before), and a function registered for
-# ``commutative`` is refused.
+# terms out of scope before), except that a term SymPy builds
+# non-commutative is not commutative, nor anything implying it (#180 S5),
+# and a function registered for ``commutative`` is refused.
 def test_engine_is_none_on_noncommutative_terms():
-    from sympy import Symbol
+    from sympy import Symbol, re
     from satassume.engine import Engine
     A = Symbol("A", commutative=False)
     x = Symbol("x")
     e = Engine()
-    assert e.is_(A, "commutative") is None
-    assert e.is_many(A, ["commutative", "zero"]) == [None, None]
+    assert e.is_(A, "commutative") is False
+    assert e.is_many(A, ["commutative", "zero", "finite", "hermitian"]) == [False, False, None, None]
     assert e.is_(x, "commutative") is True
+    # re(A) is commutative in SymPy, but may stand for a matrix
+    assert e.is_many(re(A), ["commutative", "zero", "real"]) == [None, None, None]
 
 
 def test_engine_ask_none_on_noncommutative_terms():
@@ -525,8 +528,10 @@ def test_function_of_matrix_is_out_of_scope():
     M, N = MatrixSymbol('M', 2, 2), MatrixSymbol('N', 2, 2)
     for e in (exp(M), sin(M), f(M), f(Matrix([[1, 2], [3, 4]])), exp(M) + 1):
         assert ask(Q.commutative(e), True, fresh()) is None
-        assert fresh().is_(e, 'commutative') is None
-        assert fresh().is_(e, 'real') is None
+        # SymPy builds them non-commutative (#180 S5)
+        assert fresh().is_(e, 'commutative') is False
+        assert fresh().is_(e, 'real') is False
+        assert fresh().is_(e, 'finite') is None
         assert out_of_scope(Q.commutative(e)) == 'matrix'
 
 
@@ -561,7 +566,8 @@ def test_matrix_held_in_a_tuple_is_out_of_scope():
               Trace(ImmutableMatrix([[A, 0], [0, 1]])),
               Trace(ImmutableMatrix([[exp(N), 0], [0, 1]])), re(M)):
         assert ask(Q.commutative(e), True, fresh()) is None, e
-        assert fresh().is_(e, 'commutative') is None, e
+        # re(M) is a MatAdd, built non-commutative (#180 S5)
+        assert fresh().is_(e, 'commutative') is (False if e == re(M) else None), e
 
 
 def test_scalars_of_matrices_stay_in_scope():
@@ -572,3 +578,105 @@ def test_scalars_of_matrices_stay_in_scope():
     for e in (ArrayElement(M, (0, 0)), exp(Trace(M)) + M[0, 0], Sum(M[i, i], (i, 0, 1)),
               Trace(ImmutableMatrix([[1, 2], [3, x]]))):
         assert ask(Q.commutative(e), True, fresh()) is True, e
+
+
+# ---------------------------------------------------------------------------
+# #180 S5: a term SymPy builds non-commutative
+# ---------------------------------------------------------------------------
+
+class _fixes_true(Function):
+    # #224 review: a class's own property is not followed
+    @property
+    def is_commutative(self):
+        return True
+
+
+class _fixes_none(Function):
+    # #224 review: an explicit None shadows the base classes
+    is_commutative = None
+
+
+def _degenerate_terms():
+    # #224 review: built non-commutative, but SymPy's own evaluators make
+    # them numbers (Integral(A, (x, 0, 0)).is_zero is True)
+    from sympy import Integral, Product, Sum
+    z = Integral(A, (x, 0, 0))
+    return [z, Integral(A, (x, 1, 1)), Sum(A, (x, 1, 0)), Product(A, (x, 1, 0)),
+            Pow(A, 0, evaluate=False), A**2, z*Integral(B, (x, 0, 0)), f(z),
+            Pow(A, 0, evaluate=False) + Integral(B, (x, 0, 0)), Pow(1, A, evaluate=False),
+            Pow(0, A, evaluate=False), Pow(S.Exp1, z, evaluate=False),
+            # #224 review: a factor that may be zero; exp(0*A).is_algebraic is True
+            Mul(0, A, evaluate=False), Pow(S.Exp1, Mul(0, A, evaluate=False), evaluate=False),
+            A*x, z*A]
+
+
+def _s5_terms():
+    from sympy import (Integral, MatrixSymbol, Piecewise, adjoint, conjugate, exp, log,
+                       re, transpose)
+    from sympy.physics.quantum import Commutator, Dagger, Operator
+    M = MatrixSymbol('M', 2, 2)
+    c = Operator('c')
+    k = Symbol('k', integer=True)
+    return [A, A*x, A + x, A**2, (A*B)**k, (A*B)**k + (A*B)**(k + 1), f(A), sin(A) + 1,
+            exp(A), log(A), adjoint(A), conjugate(A), transpose(A), Dagger(A), Integral(A, x),
+            c, c - Dagger(c), Commutator(c, Dagger(c)), exp(M), f(M), re(A), Abs(A), re(M),
+            f(re(A)), Piecewise((A, x > 0), (B, True)), Mul(0, A, evaluate=False),
+            Add(A, -A, evaluate=False), Integral(A, (x, 0, 0))*A, _fixes_true(A),
+            _fixes_none(A)] + _degenerate_terms()
+
+
+def test_constructed_noncommutative_answers():
+    # the fork's test_function_non_commutative, test_noncommutative::
+    # test_adjoint/_conjugate/_transpose, quantum test_dagger::test_scalars
+    from sympy import adjoint, conjugate, exp, log, transpose
+    from sympy.physics.quantum import Dagger
+    for e in (f(A), sin(A), exp(A), log(A), adjoint(A), conjugate(A), transpose(A),
+              Dagger(A), -A, A + x, A*B, Pow(S.Exp1, A, evaluate=False)):
+        assert fresh().is_(e, 'commutative') is False, e
+        assert fresh().is_(e, 'complex') is False, e
+        assert fresh().is_many(e, ['real', 'zero', 'finite']) == [False, False, None], e
+
+
+def test_constructed_noncommutative_hermitian_matrix():
+    # the fork's test_matrices::test_hermitian: (c - Dagger(c)).is_zero
+    from sympy.physics.quantum import Dagger, Operator
+    c = Operator('c')
+    assert fresh().is_(c - Dagger(c), 'zero') is False
+    assert fresh().is_(c - Dagger(c), 'hermitian') is None
+
+
+def test_constructed_noncommutative_unknown_stays_none():
+    # SymPy fixes re(A) and Abs(A) commutative; Piecewise's ExprCondPair
+    # arguments are not followed; finite, hermitian and polar do not
+    # imply commutative
+    from sympy import Piecewise, re
+    for e in (re(A), Abs(A), f(re(A)), Piecewise((A, x > 0), (B, True))):
+        assert fresh().is_(e, 'commutative') is None, e
+        assert fresh().is_(e, 'zero') is None, e
+    for p in ('finite', 'infinite', 'hermitian', 'antihermitian', 'polar'):
+        assert fresh().is_(f(A), p) is None
+    for e in (_fixes_true(A), _fixes_none(A)):
+        assert fresh().is_(e, 'commutative') is None, e
+
+
+def test_constructed_noncommutative_degenerate_only_commutative():
+    # a Pow or integral slot proves commutative False, but not that the
+    # term is no number
+    for e in _degenerate_terms():
+        assert fresh().is_(e, 'commutative') is False, e
+        assert fresh().is_many(e, ['zero', 'complex', 'positive']) == [None, None, None], e
+
+
+def test_constructed_noncommutative_agrees_with_sympy():
+    # every answer is SymPy's own wherever SymPy decides (soundness), and
+    # no assumption cache of the term is written
+    from satassume.engine import PRED_INDEX
+    for e in _s5_terms():
+        before = dict(e._assumptions)
+        got = {p: fresh().is_(e, p) for p in PRED_INDEX}
+        assert dict(e._assumptions) == before, e
+        assert got['commutative'] in (None, e.is_commutative), e
+        for p, r in got.items():
+            if r is not None:
+                native = getattr(e, 'is_' + p)
+                assert native is None or native is r, (e, p, r, native)

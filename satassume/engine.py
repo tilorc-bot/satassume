@@ -148,6 +148,25 @@ def _noncommutative(term) -> bool:
     return nc(term)
 
 
+def _noncommutative_answer(level: int, pred: str) -> Optional[bool]:
+    """The answer about a :func:`_noncommutative` term built non-commutative
+    to ``level`` (:func:`satassume.knowledge.domain.constructed_noncommutative`,
+    ``_construction_level``): False for ``commutative`` from level 1, and
+    for the facts implying it (``complex``, ``zero``, ...:
+    :func:`satassume.knowledge.domain.noncommutative_false`) at level 2;
+    else None (``re(A)``, which SymPy fixes commutative, ``finite``,
+    ``hermitian``, ...)."""
+    if level == 2:
+        from .knowledge.domain import noncommutative_false
+        return False if pred in noncommutative_false() else None
+    return False if level and pred == "commutative" else None
+
+
+def _construction_level(term) -> int:
+    from .knowledge.domain import constructed_noncommutative
+    return constructed_noncommutative(term)
+
+
 def _noncommutative_atoms(*formulas) -> bool:
     """Whether a vocabulary atom of ``formulas`` (None skipped) has a
     non-commutative term (:func:`_noncommutative`)."""
@@ -1974,10 +1993,10 @@ class Engine:
             self._check_version()
         if pred not in PRED_INDEX:
             return self._is_custom(node, pred)
+        if _noncommutative(node):
+            return _noncommutative_answer(_construction_level(node), pred)
         if node in self._constructing:
             # re-entrant query from a template evaluating this very node
-            return None
-        if _noncommutative(node):
             return None
         c = self._cones.get(node)
         if c is None:
@@ -2015,10 +2034,15 @@ class Engine:
         out: List[Optional[bool]] = [None] * len(preds)
         todo = []
         noncomm = _noncommutative(node)
+        level = None
         for k, pred in enumerate(preds):
             if pred not in PRED_INDEX:
                 out[k] = self._is_custom(node, pred)
-            elif not noncomm:
+            elif noncomm:
+                if level is None:
+                    level = _construction_level(node)
+                out[k] = _noncommutative_answer(level, pred)
+            else:
                 todo.append(k)
         if not todo or node in self._constructing:
             return out
