@@ -55,7 +55,7 @@ CORPUS = [
     # trigonometric
     (Q.real(sin(x)), Q.real(x), True),
     (Q.real(cos(x)), Q.real(x), True),
-    (Q.zero(sin(pi*x)), Q.integer(x), None),
+    (Q.zero(sin(pi*x)), Q.integer(x), True),        # sin(pi*k*s) is 0 for integer k, s (#180 S7)
     # Abs, floor, re, im
     (Q.nonnegative(Abs(x)), Q.complex(x), True),
     (Q.zero(Abs(x)), Q.nonzero(x), False),
