@@ -69,7 +69,7 @@ from ._common import (
     ge2_alternatives,
     pattern_key,
 )
-from .core import ipi_rules, ipi_split
+from .core import ipi_rules, ipi_split, pi_split
 from .registry import registry
 
 X, N = 0, 1
@@ -441,6 +441,77 @@ def _cos(R, c):
     _table(R, _COS)
 
 
+#: Slot of ``s`` in the templates of ``sin(pi*c*s)`` and ``cos(pi*c*s)``.
+PS = 2
+
+
+def _pi_trig_rules(R, cos_, c, has_s):
+    """Rules for ``N == sin(pi*c*s)`` (``cos_``: ``cos(pi*c*s)``), ``c``
+    rational, ``s`` in slot ``PS`` (``has_s`` False: ``s == 1``).  The
+    value is algebraic for a rational ``c*s``; for a number ``c`` its sign
+    is that of ``sin(pi*r)`` with ``r == c mod 2`` (``c + 1/2`` for cos)."""
+    if not has_s:
+        R.rule([], (N, 'algebraic', True))
+        r = (c + S.Half if cos_ else c) % 2  # sympy-boundary: c Rational
+        if r.is_integer:  # sympy-boundary: r Rational
+            R.rule([], (N, 'zero', True))
+        else:
+            if r.q == 2:
+                R.rule([], (N, 'odd', True))  # sin(pi/2) == 1
+            R.rule([], (N, 'positive' if r < 1 else 'negative', True))
+        return
+    R.rule([(PS, 'rational', True)], (N, 'algebraic', True))
+    integer = c.is_integer  # sympy-boundary: c Rational
+    half = not integer and c.q == 2
+    if not cos_:
+        if integer:
+            R.rule([(PS, 'integer', True)], (N, 'zero', True))
+        elif half:
+            R.rule([(PS, 'even', True)], (N, 'zero', True))
+            R.rule([(PS, 'odd', True)], (N, 'odd', True))
+        return
+    if integer:
+        R.rule([(PS, 'integer', True)], (N, 'odd', True))
+        if c.p % 2 == 0:
+            R.rule([(PS, 'integer', True)], (N, 'positive', True))
+        else:
+            R.rule([(PS, 'even', True)], (N, 'positive', True))
+            R.rule([(PS, 'odd', True)], (N, 'negative', True))
+    elif half:
+        R.rule([(PS, 'odd', True)], (N, 'zero', True))
+        R.rule([(PS, 'even', True)], (N, 'odd', True))
+
+
+def _pi_trig(tag, gen, cos_):
+    """Template for ``sin`` or ``cos``: :func:`_unary`, and for an argument
+    ``pi*c*s`` (:func:`~.core.pi_split`) also :func:`_pi_trig_rules`."""
+    plain = _unary(tag, gen)
+
+    def template(expr):
+        split = pi_split(expr.args[0]) if len(expr.args) == 1 else None
+        if split is None:
+            return plain(expr)
+        c, s_ = split
+        objs = [expr.args[0], expr]
+        consts = {}
+        if s_ is not None:
+            objs.append(s_)
+            if s_.is_Atom and s_.is_number:
+                consts[PS] = s_
+        key = (tag, None, 'pi', c, s_ is not None, const_key(s_) if consts else None)
+
+        def build():
+            R = Rules()
+            gen(R, None)
+            _pi_trig_rules(R, cos_, c, s_ is not None)
+            return R.rules
+
+        return facts(key, build, consts, tuple(objs), N)
+    template.__name__ = tag + '_templates'
+    template.__module__ = gen.__module__
+    return template
+
+
 def _tan(R, c):
     _table(R, _TAN)
     R.rule([(X, 'real', True), (N, 'finite', True)], (N, 'real', True))
@@ -548,8 +619,10 @@ def _acot(R, c):
     _table(R, _ACOT)
 
 
-for _cls, _tag, _gen in ((sin, 'sin', _sin), (cos, 'cos', _cos), (tan, 'tan', _tan),
-                         (cot, 'cot', _cot), (atan, 'atan', _atan), (acot, 'acot', _acot)):
+registry.register(sin)(_pi_trig('sin', _sin, False))
+registry.register(cos)(_pi_trig('cos', _cos, True))
+for _cls, _tag, _gen in ((tan, 'tan', _tan), (cot, 'cot', _cot), (atan, 'atan', _atan),
+                         (acot, 'acot', _acot)):
     registry.register(_cls)(_unary(_tag, _gen))
 registry.register(asin)(_unary('asin', _asin, slots=_minus_one,
                                units=_in_unit_interval_units('asin')))

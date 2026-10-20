@@ -890,11 +890,22 @@ def ipi_split(arg):
     ``pi`` factor, rational coefficients ``c`` and other factors ``s``):
     returns ``(c, s)`` with ``s`` None when there are no other factors, else
     None."""
+    return _pi_split(arg, True)
+
+
+def pi_split(arg):
+    """``arg == pi*c*s`` structurally (:func:`ipi_split` without the ``I``
+    factor; an ``I`` factor is one of the factors of ``s``)."""
+    return _pi_split(arg, False)
+
+
+def _pi_split(arg, imag):
     if not arg.is_Mul:
         return None
     c = S.One
     rest = []
-    seen_i = seen_pi = False
+    seen_i = not imag
+    seen_pi = False
     for f in arg.args:
         if f is S.ImaginaryUnit and not seen_i:
             seen_i = True
