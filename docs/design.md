@@ -622,7 +622,7 @@ answer False for `commutative` when SymPy builds the term non-commutative, read 
 (`domain.constructed_noncommutative`: a non-commutative symbol or class, the `is_commutative` slot of
 `Add`/`Mul`/`Pow`/integrals, or `Function`'s `_eval_is_commutative` with such an argument: `f(A)`, `adjoint(A)`,
 `exp(M)`), and False for every fact SymPy's fact rules make false with it (`complex`, `zero`, `real`, ...:
-`domain.noncommutative_false`) unless the proof needs the slot of a power or an integral, whose own evaluators may
+`domain.noncommutative_false`) unless the proof needs the slot of a power or an integral, or a product factor that may be zero (`x*A`, `0*A`), whose own evaluators may
 make the term a number (`Integral(A, (x, 0, 0)).is_zero` and `Pow(1, A, evaluate=False).is_complex` are True in
 SymPy); `E**e` counts as `exp(e)`. `finite`, `hermitian` and the like stay None, as does `re(A)`. A function registered for `commutative`
 (`extensions.register`) is refused with a ValueError: there is no variable

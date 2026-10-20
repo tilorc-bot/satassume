@@ -64,18 +64,20 @@ def constructed_noncommutative(t) -> int:
     2: a non-commutative symbol, or a class fixing ``is_commutative =
     False`` (an ``Operator``, a ``MatrixExpr``: SymPy's fact rules apply to
     it).  The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when
-    built: 1 if False, 2 if an argument is at 2.  ``Function``'s
-    ``_eval_is_commutative`` (the ``fuzzy_and`` of the arguments:
-    ``f(A)``, ``adjoint(A)``, ``exp(M)``): the highest level of an
-    argument; ``E**e`` (``exp(e)`` built as a power) likewise.  The slot of
-    other powers, integrals, sums and products: 1 if False, never 2, since
-    their own evaluators may make a non-commutative term a number
-    (``Integral(A, (x, 0, 0)).is_zero``, ``Pow(1, A, evaluate=False)
-    .is_complex``).  0 for anything else: a
+    built: 1 if False, 2 if an argument is at 2 (for ``Mul``, if every
+    factor is at 2 or a nonzero number: ``-c``, not ``x*A`` or ``0*A``,
+    which may be the number 0).  ``Function``'s ``_eval_is_commutative``
+    (the ``fuzzy_and`` of the arguments: ``f(A)``, ``adjoint(A)``,
+    ``exp(M)``): the highest level of an argument; ``E**e`` (``exp(e)``
+    built as a power) likewise.  The slot of other powers, integrals, sums
+    and products: 1 if False, never 2, since their own evaluators may make
+    a non-commutative term a number (``Integral(A, (x, 0, 0)).is_zero``,
+    ``Pow(1, A, evaluate=False).is_complex``).  0 for anything else: a
     class fixing True or None (``re(A)``, ``Abs(A)``), its own property or
     evaluator."""
     from sympy.core.basic import Basic
     from sympy.core.function import Function
+    from sympy.core.mul import Mul
     from sympy.core.operations import AssocOp
     from sympy.core.power import Pow
     from sympy.core.singleton import S
@@ -101,7 +103,14 @@ def constructed_noncommutative(t) -> int:
         except AttributeError:
             return 0
         if k is AssocOp:
-            return max(1, *(constructed_noncommutative(a) for a in t.args))
+            levels = [constructed_noncommutative(a) for a in t.args]
+            if isinstance(t, Mul) and any(
+                    lv < 2 and not (a.is_Number and a is not S.Zero and a is not S.NaN)
+                    for a, lv in zip(t.args, levels)):
+                # a factor that may be zero (0*A, x*A, a zero integral):
+                # the product may be the number 0 (exp(0*A).is_algebraic)
+                return 1
+            return max(1, *levels)
         if k is Pow and t.args[0] is S.Exp1:
             # exp(e) built as a power: as Function's exp(e)
             return max(1, constructed_noncommutative(t.args[1]))

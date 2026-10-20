@@ -604,7 +604,10 @@ def _degenerate_terms():
     return [z, Integral(A, (x, 1, 1)), Sum(A, (x, 1, 0)), Product(A, (x, 1, 0)),
             Pow(A, 0, evaluate=False), A**2, z*Integral(B, (x, 0, 0)), f(z),
             Pow(A, 0, evaluate=False) + Integral(B, (x, 0, 0)), Pow(1, A, evaluate=False),
-            Pow(0, A, evaluate=False), Pow(S.Exp1, z, evaluate=False)]
+            Pow(0, A, evaluate=False), Pow(S.Exp1, z, evaluate=False),
+            # #224 review: a factor that may be zero; exp(0*A).is_algebraic is True
+            Mul(0, A, evaluate=False), Pow(S.Exp1, Mul(0, A, evaluate=False), evaluate=False),
+            A*x, z*A]
 
 
 def _s5_terms():
@@ -628,7 +631,7 @@ def test_constructed_noncommutative_answers():
     from sympy import adjoint, conjugate, exp, log, transpose
     from sympy.physics.quantum import Dagger
     for e in (f(A), sin(A), exp(A), log(A), adjoint(A), conjugate(A), transpose(A),
-              Dagger(A), A*x, A + x, B*A**2, Pow(S.Exp1, A, evaluate=False)):
+              Dagger(A), -A, A + x, A*B, Pow(S.Exp1, A, evaluate=False)):
         assert fresh().is_(e, 'commutative') is False, e
         assert fresh().is_(e, 'complex') is False, e
         assert fresh().is_many(e, ['real', 'zero', 'finite']) == [False, False, None], e
