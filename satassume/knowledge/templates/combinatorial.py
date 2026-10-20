@@ -166,7 +166,7 @@ registry.register(genocchi)(_genocchi_unary)
 # rising and falling factorials, binomial coefficients
 # ---------------------------------------------------------------------------
 # rf(x, k) = x*(x + 1)*...*(x + k - 1), ff(x, k) = x*(x - 1)*...*(x - k + 1)
-# for integers k >= 0 (1 for k = 0, whatever x); binomial(n, k) is 0 for
+# for integers k >= 0 (1 for k = 0, whatever x but nan); binomial(n, k) is 0 for
 # integers k < 0, 1 for k = 0, ff(n, k)/k! for integers k > 0: an integer
 # for integer n, >= 0 for n >= 0 or even k.  Slots: 0 x (n), 1 k, 2 node.
 
@@ -181,8 +181,11 @@ def _rising_falling(R, n, positive):
     else:
         # ff(n, k) == n!/(n - k)! for k <= n, 0 for k > n
         R.rule([(0, 'integer', True), (0, 'nonnegative', True), *_K], (2, 'nonnegative', True))
-    R.rule([(1, 'zero', True)], (2, 'odd', True))
-    R.rule([(1, 'zero', True)], (2, 'positive', True))
+    # 1 at k = 0 for every x but nan, which SymPy propagates first
+    # (rf(x + y, 0) is nan at x = oo, y = -oo); zoo is left out
+    for x in ('complex', 'extended_real'):
+        R.rule([(0, x, True), (1, 'zero', True)], (2, 'odd', True))
+        R.rule([(0, x, True), (1, 'zero', True)], (2, 'positive', True))
 
 
 def _binomial(R, n):
