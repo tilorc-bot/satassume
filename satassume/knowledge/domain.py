@@ -64,19 +64,26 @@ def constructed_noncommutative(t) -> int:
     2: a non-commutative symbol, or a class fixing ``is_commutative =
     False`` (an ``Operator``, a ``MatrixExpr``: SymPy's fact rules apply to
     it).  The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when
-    built: 1 if False, 2 if an argument is at 2 (for ``Mul``, if every
-    factor is at 2 or a nonzero number: ``-c``, not ``x*A`` or ``0*A``,
-    which may be the number 0).  ``Function``'s ``_eval_is_commutative``
-    (the ``fuzzy_and`` of the arguments: ``f(A)``, ``adjoint(A)``,
-    ``exp(M)``): the highest level of an argument; ``E**e`` (``exp(e)``
-    built as a power) likewise.  The slot of other powers, integrals, sums
-    and products: 1 if False, never 2, since their own evaluators may make
-    a non-commutative term a number (``Integral(A, (x, 0, 0)).is_zero``,
-    ``Pow(1, A, evaluate=False).is_complex``).  0 for anything else: a
-    class fixing True or None (``re(A)``, ``Abs(A)``), its own property or
-    evaluator."""
+    built: 1 if False, 2 if evaluating it cannot cancel its
+    non-commutative part (:func:`_nc_sum_level`, :func:`_nc_product_level`:
+    ``A + x``, ``A - B``, ``-c``, ``A*B``, ``2*sin(A)``; not ``A - A``,
+    ``exp(A)*exp(-A)``, ``x*A`` or ``0*A``, which may be numbers).
+    ``Function``'s ``_eval_is_commutative`` (the ``fuzzy_and`` of the
+    arguments): an undefined function (``f(A)``, ``f(A, 0)``), which never
+    evaluates, the highest level of an argument; a function of one argument
+    (``sin(A)``, ``adjoint(A)``, ``exp(M)``), its argument's level, as no
+    such function but ``stieltjes`` evaluates a term at 2 to a number; any
+    other 1, since a special value of another argument may make it a number
+    (``rf(A, 0)`` is 1, ``binomial(A, -1)`` is 0, ``binomial(A, A)`` is 1).
+    ``E**e`` (``exp(e)`` built as a power) as ``exp(e)``.  The slot of
+    other powers, integrals, sums and products: 1 if False, never 2, since
+    their own evaluators may make a non-commutative term a number
+    (``Integral(A, (x, 0, 0)).is_zero``, ``Pow(1, A, evaluate=False)
+    .is_complex``).  0 for anything else: a class fixing True or None
+    (``re(A)``, ``Abs(A)``), its own property or evaluator."""
+    from sympy.core.add import Add
     from sympy.core.basic import Basic
-    from sympy.core.function import Function
+    from sympy.core.function import AppliedUndef, Function
     from sympy.core.mul import Mul
     from sympy.core.operations import AssocOp
     from sympy.core.power import Pow
@@ -103,22 +110,74 @@ def constructed_noncommutative(t) -> int:
         except AttributeError:
             return 0
         if k is AssocOp:
-            levels = [constructed_noncommutative(a) for a in t.args]
-            if isinstance(t, Mul) and any(
-                    lv < 2 and not (a.is_Number and a is not S.Zero and a is not S.NaN)
-                    for a, lv in zip(t.args, levels)):
-                # a factor that may be zero (0*A, x*A, a zero integral):
-                # the product may be the number 0 (exp(0*A).is_algebraic)
-                return 1
-            return max(1, *levels)
+            if isinstance(t, Mul):
+                return _nc_product_level(t)
+            if isinstance(t, Add):
+                return _nc_sum_level(t)
+            return 1
         if k is Pow and t.args[0] is S.Exp1:
             # exp(e) built as a power: as Function's exp(e)
             return max(1, constructed_noncommutative(t.args[1]))
         return 1
     # sympy-boundary: compares the class's evaluator, does not call it
     if getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative:
-        return max((constructed_noncommutative(a) for a in t.args), default=0)
+        levels = [constructed_noncommutative(a) for a in t.args]
+        top = max(levels, default=0)
+        if top < 2 or isinstance(t, AppliedUndef):
+            return top
+        if len(levels) == 1 and cls.__name__ != "stieltjes":
+            # stieltjes(A) is zoo (A.is_integer is False)
+            return 2
+        return 1
     return 0
+
+
+def _nonzero_number(a) -> bool:
+    from sympy.core.singleton import S
+    return a.is_Number and a is not S.Zero and a is not S.NaN
+
+
+def _nc_symbol(a) -> bool:
+    from sympy.core.symbol import Symbol
+    return isinstance(a, Symbol) and _fixed_noncommutative(a)
+
+
+def _nc_product_level(t) -> int:
+    """The level of a ``Mul`` built non-commutative: 2 if every factor is
+    a nonzero number or at 2, and at most one factor is not a number unless
+    they are all non-commutative symbols (``A*B*A`` evaluates to no power
+    that may cancel); else 1.  A factor that may be zero (``0*A``, ``x*A``,
+    a zero integral) may make the product the number 0
+    (``exp(0*A).is_algebraic``), and factors of a common base may cancel
+    (``exp(A)*exp(-A)``, ``A*exp(-log(A))`` evaluate to 1)."""
+    rest = [a for a in t.args if not _nonzero_number(a)]
+    if any(constructed_noncommutative(a) < 2 for a in rest):
+        return 1
+    if len(rest) > 1 and not all(_nc_symbol(a) for a in rest):
+        return 1
+    return 2
+
+
+def _nc_sum_level(t) -> int:
+    """The level of an ``Add`` built non-commutative: 2 if a single term is
+    non-commutative and at 2 (``A + x``, ``sin(A) + 1``), or every
+    non-commutative term is a non-commutative symbol or a nonzero number
+    times one, no symbol twice (``A - 2*B``); else 1, since evaluating it
+    may cancel the non-commutative terms (``A - A``, ``A - A*Integral(1,
+    (x, 0, 1))``, ``c - Dagger(c)`` for a Hermitian ``c``)."""
+    from sympy.core.mul import Mul
+    nc = [(a, constructed_noncommutative(a)) for a in t.args]
+    nc = [(a, lv) for a, lv in nc if lv]
+    if len(nc) == 1:
+        return nc[0][1]
+    seen = set()
+    for a, _ in nc:
+        if isinstance(a, Mul) and len(a.args) == 2 and _nonzero_number(a.args[0]):
+            a = a.args[1]
+        if not _nc_symbol(a) or a in seen:
+            return 1
+        seen.add(a)
+    return 2
 
 
 _NONCOMMUTATIVE_FALSE: frozenset = frozenset()

@@ -638,11 +638,57 @@ def test_constructed_noncommutative_answers():
 
 
 def test_constructed_noncommutative_hermitian_matrix():
-    # the fork's test_matrices::test_hermitian: (c - Dagger(c)).is_zero
+    # the fork's test_matrices::test_hermitian: (c - Dagger(c)).is_zero is
+    # left open (#180 final review F1): two non-commutative terms other
+    # than symbols may cancel (c - Dagger(c) is 0 for a Hermitian c)
     from sympy.physics.quantum import Dagger, Operator
     c = Operator('c')
-    assert fresh().is_(c - Dagger(c), 'zero') is False
+    assert fresh().is_(c - Dagger(c), 'commutative') is False
+    assert fresh().is_(c - Dagger(c), 'zero') is None
     assert fresh().is_(c - Dagger(c), 'hermitian') is None
+
+
+def _evaluates_to_number():
+    # #180 final review F1: built non-commutative from a term at level 2,
+    # but a special value of another argument, or cancellation, makes them
+    # numbers when evaluated (rf(A, 0).doit() is 1)
+    from sympy import Integral, binomial, exp, ff, log, polylog, rf, stieltjes
+    try:
+        from sympy import owens_t
+    except ImportError:  # SymPy < 1.15
+        owens_t = None
+    z = Add(A, -A, evaluate=False)
+    return [rf(A, 0, evaluate=False), ff(A, 0, evaluate=False),
+            binomial(A, -1, evaluate=False), binomial(A, A, evaluate=False),
+            polylog(A, 0, evaluate=False), stieltjes(A, evaluate=False),
+            *([owens_t(A, 0, evaluate=False)] if owens_t else []),
+            z, sin(z), f(z), exp(z),
+            Mul(exp(A), exp(-A), evaluate=False),
+            Mul(A, exp(-log(A), evaluate=False), evaluate=False),
+            Add(A, -A*Integral(1, (x, 0, 1)), evaluate=False),
+            Add(A, Mul(-1, Mul(A, 1, evaluate=False), evaluate=False), evaluate=False)]
+
+
+def test_constructed_noncommutative_number_when_evaluated():
+    from satassume.engine import PRED_INDEX
+    for e in _evaluates_to_number():
+        v = e.doit()
+        assert v.is_commutative, (e, v)
+        assert fresh().is_(e, 'commutative') is False, e
+        for p in PRED_INDEX:
+            r = fresh().is_(e, p)
+            assert r is None or p == 'commutative' or r is getattr(v, 'is_' + p), (e, p, r)
+        assert fresh().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None], e
+
+
+def test_constructed_noncommutative_levels_kept():
+    # no cancellation possible: the answers of test_constructed_noncommutative_answers
+    from sympy import binomial, exp
+    for e in (A - 2*B, A*B*A, 2*sin(A), sin(A) + 1, f(A, 0), f(A, Add(B, -B, evaluate=False)),
+              exp(A + 1), -exp(A)):
+        assert fresh().is_(e, 'complex') is False, e
+    # several arguments: no level 2 (binomial(A, B) may have a special value)
+    assert fresh().is_many(binomial(A, B, evaluate=False), ['commutative', 'complex']) == [False, None]
 
 
 def test_constructed_noncommutative_unknown_stays_none():
