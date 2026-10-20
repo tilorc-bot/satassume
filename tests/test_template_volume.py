@@ -22,7 +22,8 @@ BUDGETS = [
     # with finite other terms, plus the extended-real sum with an infinite
     # term and "an infinite term makes the sum no complex number".
     ("x + y", x + y, 54),
-    ("x*y", x * y, 50),
+    # 51 after #180 S7: nonzero reals times k imaginary only for imaginary k.
+    ("x*y", x * y, 51),
     ("2*x", 2 * x, 60),
     ("x**2", x**2, 40),
     # 63 after #180 S7: an integer power of an integer to a negative integer
