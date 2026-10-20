@@ -312,7 +312,7 @@ def _expressions_of(obj):
 
 
 def load_exprs(corpus=None, stream=None):
-    from sympy import Symbol, symbols, I, pi, oo, E, Rational, Float
+    from sympy import Symbol, symbols, I, pi, oo, E, Rational, Float, Pow
     from sympy import sin, cos, tan, cot, exp, log, sqrt, Abs, acos, asin, atan, acot, sinh, cosh, tanh
     from sympy import re, im, sign, conjugate, floor, ceiling, factorial, arg, Function
     from sympy import sec, csc, coth, sech, csch, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc
@@ -445,6 +445,8 @@ def load_exprs(corpus=None, stream=None):
     syn += [cosh(I * pi * x), cosh(I * pi / 4), cosh(x + 2 * I * pi * y), cosh(x + I * pi), cosh(x + y + 3 * I * pi * z)]
     # primality of sums, products and powers of integers (#180 S7)
     syn += [(x + 1) * (y + 1), (x + 1) * (y + 1) * z, x**(y + 1), (x + 1)**(y + 1), (-x - 1)**(2 * y), x + y + 1]
+    # 1**e and Gelfond-Schneider for symbolic b, e (#180 S7 Galg)
+    syn += [Pow(1, x, evaluate=False), Pow(x + 1, y, evaluate=False)]
     exprs.extend(syn)
     return exprs
 
