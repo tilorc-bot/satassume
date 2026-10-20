@@ -1223,6 +1223,11 @@ def _check_uninterpreted(value: str) -> str:
     return value
 
 
+def _context_free(expr, pred):
+    """``registry.context_free``: the answer of a fresh default engine."""
+    return Engine(cache=DictCache()).is_(expr, pred)
+
+
 class Engine:
     """See module docstring.
 
@@ -1303,6 +1308,8 @@ class Engine:
             else:
                 templates = registry.facts_for
                 clause_templates = registry.clauses_for
+                if registry.context_free is None:
+                    registry.context_free = _context_free
         if extensions is None:
             from .knowledge.extensions import extensions
         if relations is None:

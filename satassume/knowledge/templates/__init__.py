@@ -3,7 +3,7 @@
 Importing this package registers every template module with
 :data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.selection`,
 :mod:`.combinatorial`, :mod:`.special`, :mod:`.cfunctions`, :mod:`.rootof`,
-:mod:`.nodes`, :mod:`.physics` and :mod:`.stats` on first use,
+:mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
 
@@ -73,6 +73,9 @@ from sympy.functions.special.zeta_functions import dirichlet_eta, polylog, zeta
 from sympy.polys.rootoftools import ComplexRootOf
 from sympy.calculus.accumulationbounds import AccumulationBounds
 from sympy.tensor.indexed import Idx
+from sympy.concrete.products import Product
+from sympy.concrete.summations import Sum
+from sympy.integrals.integrals import Integral
 
 from . import atoms  # noqa: F401  (registration side effects)
 from .registry import TemplateRegistry, registry
@@ -99,5 +102,6 @@ registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
 registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")
 registry.lazy(__name__ + ".stats", "sympy.stats.rv:RandomSymbol")
 registry.lazy(__name__ + ".nodes", AccumulationBounds, Idx)
+registry.lazy(__name__ + ".limits", Sum, Product, Integral)
 
 __all__ = ['TemplateRegistry', 'registry']

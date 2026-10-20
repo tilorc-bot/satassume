@@ -48,6 +48,12 @@ class TemplateRegistry:
         #: module name)``: the module registers templates for ``classes``
         #: only (:meth:`lazy`)
         self._lazy: List[Tuple[tuple, str]] = []
+        #: ``(expr, pred) -> True | False | None``, the answer of a
+        #: context-free query, for templates that take facts of a part that
+        #: is no slot (the function of a ``Sum``, whose variable is bound);
+        #: set by :mod:`satassume.engine`, which this layer cannot import
+        #: (None: no such facts)
+        self.context_free: Callable[[Any, str], Any] | None = None
 
     def lazy(self, module: str, *classes: type) -> None:
         """Declare the built-in template module ``module`` (a module name),
