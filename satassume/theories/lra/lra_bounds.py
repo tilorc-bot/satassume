@@ -143,8 +143,8 @@ _CONSTANTS = {S.GoldenRatio: "phi", S.EulerGamma: "euler", S.Catalan: "catalan"}
 
 @lru_cache(maxsize=None)
 def _heads():
-    from sympy import Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, Abs
-    return frozenset((Add, Mul, Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, Abs))
+    from sympy import Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, zeta, Abs
+    return frozenset((Add, Mul, Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, zeta, Abs))
 
 
 def _interval(e, prec: int = _IV_PREC):
@@ -153,18 +153,18 @@ def _interval(e, prec: int = _IV_PREC):
 
     Only rationals, Floats, pi, E, GoldenRatio, EulerGamma, Catalan, ``+``,
     ``*``, ``**``, exp, log, sin, cos, tan, atan, asin, acos, gamma (of a
-    positive argument) and Abs are evaluated; a step outside its real domain
-    (log of an interval that reaches 0, a fractional power of one that
-    reaches below 0, tan across a pole, 1/x across 0, asin beyond [-1, 1])
-    gives None, so a result is also a proof
-    that the value is real.  Every intermediate value must stay within
+    positive argument), zeta (of an argument above 1) and Abs are evaluated;
+    a step outside its real domain (log of an interval that reaches 0, a
+    fractional power of one that reaches below 0, tan across a pole, 1/x
+    across 0, asin beyond [-1, 1], zeta at or below 1) gives None, so a
+    result is also a proof that the value is real.  Every intermediate value must stay within
     ``2**±_MAX_BITS`` (exp is checked before it is applied), so nothing huge
     is built: ``exp(exp(exp(5)))`` and ``sin(exp(exp(exp(5))))`` are None
     at once.  No error estimate of SymPy's evalf is trusted (it claims full
     accuracy for ``sign``, ``tanh``, ``tan`` next to a pole, ``log`` next to
     1)."""
     iv = _iv_context(prec)
-    from sympy import Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, Abs
+    from sympy import Pow, exp, log, sin, cos, tan, atan, asin, acos, gamma, zeta, Abs
     if e.is_Rational:
         if e.p and abs(e.p.bit_length() - e.q.bit_length()) > _MAX_BITS:
             return None
@@ -186,8 +186,8 @@ def _interval(e, prec: int = _IV_PREC):
     head = type(e)
     if head not in _heads():
         return None
-    if head is log and len(e.args) != 1:
-        return None                          # log(x, b, evaluate=False) is log(x)/log(b)
+    if head in (log, zeta) and len(e.args) != 1:
+        return None                          # log(x, b, evaluate=False) is log(x)/log(b); Hurwitz zeta
     args = []
     for a in e.args:
         x = _interval(a, prec)
@@ -233,6 +233,8 @@ def _interval(e, prec: int = _IV_PREC):
             if _sign(args[0]._mpi_[0]) <= 0:
                 return None                  # the poles and the sign changes
             r = _loose(iv.gamma(args[0]), prec)
+        elif head is zeta:
+            r = _iv_zeta(args[0], prec)
         elif head is Abs:
             a, b = args[0]._mpi_
             if _sign(a) >= 0:
@@ -270,6 +272,57 @@ def _iv_atan(x, prec: int = _IV_PREC):
     mk = mpmath.mp.make_mpf
     xa, xb = x._mpi_
     return _loose(_iv_context(prec).mpf([mk(mpf_atan(xa, prec, "f")), mk(mpf_atan(xb, prec, "c"))]), prec)
+
+
+#: terms summed exactly by :func:`_iv_zeta` before the tail bounds
+_ZETA_TERMS = 64
+
+
+def _iv_zeta(s, prec: int = _IV_PREC):
+    """zeta of an interval above 1, else None.  mpmath's interval zeta is
+    not used: it is not rigorous.
+
+    zeta is decreasing on ``(1, oo)``, so the ends come from the ends of
+    ``s``.  At a point ``s > 1``, ``zeta(s) = sum_{k<N} k**-s + T`` with the
+    tail ``T = sum_{k>=N} f(k)``, ``f(x) = x**-s`` positive, decreasing and
+    convex: the trapezoid rule overestimates each ``int_k^(k+1) f`` and the
+    midpoint rule underestimates each ``int_(k-1/2)^(k+1/2) f``, so
+    ``N**(1-s)/(s-1) + N**-s/2 <= T <= (N-1/2)**(1-s)/(s-1)``."""
+    iv = _iv_context(prec)
+    if _sign((s - 1)._mpi_[0]) <= 0:
+        return None
+    N = _ZETA_TERMS
+    h = iv.mpf(2 * N - 1) / 2
+
+    def at(x):                               # zeta at the exact point x: its (lower, upper) ends
+        p = iv.make_mpf((x, x))
+        man, shift = x[1], x[2]
+        if shift >= 0 and shift + man.bit_length() <= 16:
+            n = man << shift                  # an integer power is exact up to outward rounding
+            if n * N.bit_length() > _MAX_BITS:
+                return None                  # N**-n is below 2**-_MAX_BITS
+
+            def pw(k):
+                return iv.mpf(k) ** -n
+        else:
+            def pw(k):
+                return _iv_exp(-p * _loose(iv.log(k), prec), prec)
+        total = iv.mpf(0)
+        for k in range(1, N):
+            t = pw(iv.mpf(k))
+            if t is None:
+                return None
+            total = total + t
+        fN, fh = pw(iv.mpf(N)), pw(h)
+        if fN is None or fh is None:
+            return None
+        return (total + fN * N / (p - 1) + fN / 2)._mpi_[0], (total + fh * h / (p - 1))._mpi_[1]
+
+    sa, sb = s._mpi_
+    top, bottom = at(sa), at(sb)
+    if top is None or bottom is None:
+        return None
+    return iv.make_mpf((bottom[0], top[1]))
 
 
 def _iv_asin(x, prec: int = _IV_PREC):
