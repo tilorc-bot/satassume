@@ -418,6 +418,9 @@ def load_exprs(corpus=None, stream=None):
     syn += [polygamma(n, x), polygamma(2, x), LambertW(x, -1), LambertW(x, n), zeta(x, p),
             polylog(n, x + 1), multigamma(x, 1), multigamma(x, 3), multigamma(x + 1, 2),
             betainc(x, y, z, w), betainc_regularized(n, 2, z, w), beta(x), gamma(2 * n + 1)]
+    # the non-Function nodes of #180 C-NOTMPL part C
+    from sympy.physics.units import meter, speed_of_light
+    syn += [meter, speed_of_light, meter * x, meter + x, meter**x, sqrt(meter**2)]
     exprs.extend(syn)
     return exprs
 
