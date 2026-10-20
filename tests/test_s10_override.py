@@ -84,6 +84,15 @@ class Below(Overrides):
     pass
 
 
+class Shadowed(Base, Mixin):
+    pass
+
+
+class MySymbol(Symbol):
+    def _eval_is_extended_positive(self):
+        return None
+
+
 def test_registry_rule():
     reg = TemplateRegistry()
 
@@ -111,3 +120,14 @@ def test_registry_rule():
     assert reg.templates_for(Overrides) == [mine, own]
     assert reg.templates_for(MixedIn) == [own]
     assert reg.templates_for(Below) == [mine, own]
+    # a mixin after the base: its handler is shadowed, nothing redefined
+    assert reg.templates_for(Shadowed) == both
+
+
+def test_declared_symbol_facts_follow_the_override(eng):
+    # Symbol inherits Expr's sign handlers; the declared facts are read
+    # before any handler, so a subclass overriding one keeps them
+    s = MySymbol('s', positive=True)
+    assert registry.templates_for(MySymbol) == registry.templates_for(Symbol)
+    assert ask(Q.positive(s), True, eng) is True
+    assert ask(Q.real(s), True, eng) is True

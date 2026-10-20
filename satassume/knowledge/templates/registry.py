@@ -6,15 +6,21 @@ one or more classes; :meth:`TemplateRegistry.facts_for` walks the MRO of the
 expression's type, so a template registered for a base class also applies
 to every subclass.  Most-specific classes come first in the result.
 
-Except where a subclass redefines a fact on purpose (#180 S10): when a class
-between the expression's type and a base overrides an ``_eval_is_<fact>``
-handler that the base has, the base's templates do not apply to it.  The
+Except where a subclass redefines a fact on purpose (#180 S10): when the
+expression's type, or a class between it and a base, overrides an
+``_eval_is_<fact>`` handler that the base has, the base's templates do not
+apply to it.  The
 engine never calls the handler, so it cannot tell a refinement from a
 contradiction (``sympy.printing.rust.float_floor`` is a ``floor`` whose
 ``_eval_is_integer`` returns False).  Dropping templates is sound: only
 facts are lost.  A template that reads the object's own facts instead of
-deriving them (:func:`own_facts`, e.g. the facts of a numeric constant)
-follows the override and still applies.
+deriving them (:func:`own_facts`: the facts of a numeric constant, the
+declared facts of a symbol) follows the override and still applies.  Only
+handlers count: a subclass that changes a fact through a class attribute
+(``is_integer = False``) still gets the base's templates (in SymPy only
+``MatAdd``, ``MatMul`` and ``RandomMatrixSymbol`` do, and they are out of
+scope).  Handlers are read when a class is first used (memoized): one
+patched in later is not seen.
 
 The built-in template modules other than :mod:`satassume.knowledge.templates.atoms`
 are imported on first use (:meth:`TemplateRegistry.lazy`): a module is
