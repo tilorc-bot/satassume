@@ -15,7 +15,7 @@ from sympy.core.numbers import ComplexInfinity, ImaginaryUnit, Number, NumberSym
 from sympy.core.symbol import Symbol
 
 from ._common import VOCAB, const_key, const_value, units
-from .registry import registry
+from .registry import own_facts, registry
 
 _ORACLE_PREDS = tuple(sorted(VOCAB))
 # Properties read on a constant.  The rest (the extended sign predicates,
@@ -31,6 +31,7 @@ _CONST_BASIS = (
 
 
 @registry.register(Symbol)
+@own_facts
 def symbol_units(expr):
     a0 = expr.assumptions0  # sympy-boundary: declared symbol facts; strict ask rejects them
     key = ('symbol', frozenset(a0.items()))
@@ -42,6 +43,7 @@ def symbol_units(expr):
 
 
 @registry.register(Number, NumberSymbol, ImaginaryUnit, ComplexInfinity)
+@own_facts
 def constant_units(expr):
     return value_units(expr, expr)
 

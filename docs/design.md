@@ -364,7 +364,12 @@ and Bessel functions), and `cfunctions.py` `expm1` and `log1p` (declared to
 `TemplateRegistry.lazy` by class name, since SymPy does not import
 `sympy.codegen`). A class without a template gets no facts: SymPy's own
 `_eval_is_*` is never read (#180 C-NOTMPL), and an undefined function such
-as `f(x)` has none.
+as `f(x)` has none. For the same reason a subclass that overrides an
+`_eval_is_<fact>` handler of a class with templates does not inherit that
+class's templates (#180 S10): `sympy.printing.rust.float_floor` is a `floor`
+that is no integer on purpose. Templates that read the object's own facts
+(`own_facts`: the constants and the declared facts of symbols in
+`atoms.py`) still apply.
 
 - A rule is an index-based spec `(premises, conclusion)` over literals
   `(k, pred, pos)` (`_common.py`). Specs depend only on the node's pattern
