@@ -158,11 +158,8 @@ _genocchi_unary = _unary('genocchi', _genocchi, slots=lambda x: (shifted(x, S.Ne
                          units=_value_units)
 
 
-@registry.register(genocchi)
-def genocchi_templates(expr):
-    if len(expr.args) != 1:
-        return None
-    return _genocchi_unary(expr)
+# genocchi(n, x) (a polynomial in x) gets no facts (``_unary``)
+registry.register(genocchi)(_genocchi_unary)
 
 
 # ---------------------------------------------------------------------------
