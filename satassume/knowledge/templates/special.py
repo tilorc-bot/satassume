@@ -367,9 +367,12 @@ def _erfinv(R, c):
 def _erfcinv(R, c):
     R.equiv([], (N, 'zero', True), (M, 'zero', True))
     R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'positive', True))
-    R.rule([(M, 'positive', True), (Q, 'negative', True)], (N, 'negative', True))
+    # the sign premises on z and z - 1 are implied, but the slots are
+    # separate children: without them a block whose children are given
+    # contradictory facts is unsatisfiable (tools/totality.py)
+    R.rule([(X, 'positive', True), (M, 'positive', True), (Q, 'negative', True)], (N, 'negative', True))
     for concl in ((N, 'infinite', True), (N, 'extended_positive', True)):
-        R.rule([(X, 'zero', True)], concl)
+        R.rule([(X, 'zero', True), (M, 'negative', True)], concl)
     for concl in ((N, 'infinite', True), (N, 'extended_negative', True)):
         R.rule([(X, 'positive', True), (M, 'positive', True), (Q, 'zero', True)], concl)
 
