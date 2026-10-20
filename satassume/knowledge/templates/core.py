@@ -629,7 +629,8 @@ def _mul_table_rows():
                 [('k', 'transcendental'), ('rest', 'algebraic'), ('rest', 'zero', False)],
                 ('N', 'transcendental')),
             # Likewise one non-algebraic factor (possibly infinite or not a
-            # complex number): k is the product over the rest (#180 S7).
+            # complex number): else k = N/(product of the rest) would be
+            # algebraic (#180 S7).
             Row('one_non_algebraic',
                 [('k', 'algebraic', False), ('rest', 'algebraic'), ('rest', 'zero', False)],
                 ('N', 'algebraic', False)),

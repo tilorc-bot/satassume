@@ -446,7 +446,7 @@ def load_exprs(corpus=None, stream=None):
     # primality of sums, products and powers of integers (#180 S7)
     syn += [(x + 1) * (y + 1), (x + 1) * (y + 1) * z, x**(y + 1), (x + 1)**(y + 1), (-x - 1)**(2 * y), x + y + 1]
     # 1**e and Gelfond-Schneider for symbolic b, e (#180 S7 Galg)
-    syn += [Pow(1, x, evaluate=False), Pow(x + 1, y, evaluate=False)]
+    syn += [Pow(1, x, evaluate=False), (x + 1)**y]
     exprs.extend(syn)
     return exprs
 

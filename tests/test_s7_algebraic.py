@@ -10,7 +10,7 @@
   irrational ``e``; test_assumptions::test_Pow_is_algebraic (``ia**ib``).
 """
 import pytest
-from sympy import I, Pow, S, Symbol, oo, sqrt
+from sympy import I, Pow, S, Symbol, nan, oo, sqrt, zoo
 
 from satassume import DictCache, Engine
 
@@ -23,6 +23,7 @@ ib = Symbol('ib', algebraic=True, irrational=True)
 q = Symbol('q', rational=True, positive=True)
 xi = Symbol('xi', infinite=True)
 xr = Symbol('xr', real=True)
+ng = Symbol('ng', negative=True, algebraic=True)
 x = Symbol('x')
 
 
@@ -41,7 +42,10 @@ def fresh():
     (an * xi, 'algebraic', False),
     (Pow(1, xr, evaluate=False), 'odd', True),
     (Pow(1, xr, evaluate=False), 'prime', False),
+    (Pow(1, I * xr, evaluate=False), 'odd', True),   # non-real exponent
+    (Pow(1, e, evaluate=False), 'composite', False),
     (ia**ib, 'transcendental', True),
+    (ng**ib, 'algebraic', False),                     # any branch of log(b)
     ((q + 1)**ib, 'algebraic', False),                # q + 1 > 1
     (ia**(I * ib), 'algebraic', False),               # non-real exponent
     (sqrt(2)**ib, 'algebraic', False),                # constant base (b=algebraic.gs)
@@ -62,3 +66,5 @@ def test_one_to_infinity_not_one():
     eng = fresh()
     assert eng.is_(Pow(1, oo, evaluate=False), 'algebraic') is not True
     assert eng.is_(Pow(S.One, xi, evaluate=False), 'algebraic') is not True
+    assert eng.is_(Pow(1, zoo, evaluate=False), 'algebraic') is not True
+    assert eng.is_(Pow(1, nan, evaluate=False), 'algebraic') is not True
