@@ -483,7 +483,7 @@ def _pi_trig_rules(R, cos_, c, has_s):
 
 
 def _pi_trig(tag, gen, cos_, split_=pi_split, plain=None):
-    """Template for ``sin`` or ``cos``: :func:`_unary`, and for an argument
+    """Template for ``sin``, ``cos`` or ``cosh``: :func:`_unary`, and for an argument
     ``pi*c*s`` (:func:`~.core.pi_split`) also :func:`_pi_trig_rules`.
     ``cosh`` passes :func:`~.core.ipi_split` (``cosh(I*pi*c*s) ==
     cos(pi*c*s)``) and its own ``plain`` template."""
@@ -669,11 +669,11 @@ def _cosh_shift_rules(R, c, has_s):
     ``r`` and an even ``c*s``, negative for an odd one; real for an
     imaginary ``r`` (``cosh(I*t) == cos(t)``)."""
     if not has_s:
-        alts = [([], c.p % 2 == 0)]
-    elif c.p % 2 == 0:
-        alts = [([(CS, 'integer', True)], True)]
+        integer, alts = [], [([], c.p % 2 == 0)]
     else:
-        alts = [([(CS, 'even', True)], True), ([(CS, 'odd', True)], False)]
+        integer = [(CS, 'integer', True)]
+        alts = [(integer, True)] if c.p % 2 == 0 else \
+            [([(CS, 'even', True)], True), ([(CS, 'odd', True)], False)]
     for cond, even in alts:
         if even:
             R.rule([*cond, (CR, 'real', True)], (N, 'positive', True))
@@ -682,7 +682,7 @@ def _cosh_shift_rules(R, c, has_s):
             # total (the blocks below do not relate it to r)
             R.rule([*cond, (CR, 'real', True), (X, 'extended_real', False)],
                    (N, 'negative', True))
-        R.rule([*cond, (CR, 'imaginary', True)], (N, 'real', True))
+    R.rule([*integer, (CR, 'imaginary', True)], (N, 'real', True))
 
 
 def _cosh_shift_split(arg):
@@ -720,8 +720,8 @@ def _cosh_templates(expr):
     objs = [expr.args[0], expr, r]
     if s_ is not None:
         objs.append(s_)
-    consts = {i: objs[i] for i in (CR, CS)[:len(objs) - CR]
-              if objs[i].is_Atom and objs[i].is_number}
+    consts = {i: obj for i, obj in enumerate(objs)
+              if i >= CR and obj.is_Atom and obj.is_number}
     key = ('cosh', None, 'shift', c, s_ is not None,
            *(const_key(consts[i]) if i in consts else None for i in (CR, CS)))
 
