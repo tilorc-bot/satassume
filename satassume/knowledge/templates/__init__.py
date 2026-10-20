@@ -2,8 +2,8 @@
 
 Importing this package registers every template module with
 :data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.selection`,
-:mod:`.combinatorial`, :mod:`.special`, :mod:`.cfunctions` and :mod:`.rootof`
-on first use,
+:mod:`.combinatorial`, :mod:`.special`, :mod:`.cfunctions`, :mod:`.rootof`,
+:mod:`.nodes`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
 
@@ -71,6 +71,8 @@ from sympy.functions.special.gamma_functions import (
 )
 from sympy.functions.special.zeta_functions import dirichlet_eta, polylog, zeta
 from sympy.polys.rootoftools import ComplexRootOf
+from sympy.calculus.accumulationbounds import AccumulationBounds
+from sympy.tensor.indexed import Idx
 
 from . import atoms  # noqa: F401  (registration side effects)
 from .registry import TemplateRegistry, registry
@@ -93,7 +95,9 @@ registry.lazy(__name__ + ".special", gamma, loggamma, polygamma, digamma, trigam
 # sympy.codegen is not imported by SymPy itself: declared by name
 registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
               "sympy.codegen.cfunctions:log1p")
-# sympy.physics neither
+# sympy.physics and sympy.stats neither
 registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")
+registry.lazy(__name__ + ".stats", "sympy.stats.rv:RandomSymbol")
+registry.lazy(__name__ + ".nodes", AccumulationBounds, Idx)
 
 __all__ = ['TemplateRegistry', 'registry']
