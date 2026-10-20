@@ -438,6 +438,9 @@ def load_exprs(corpus=None, stream=None):
     # real/imaginary splits (#180 S7)
     syn += [I * x + I, I * p + 3 * I + I * pi, -sqrt(3) * I / 2 + I, I * pi - 3 * I, I * x - 2 * I * y, x * y * I * z, (x + I * x)**-1,
             x**-2, x**4, x * y * z, im(x), tan(x), cot(x)]
+    # sin(pi*c*s), cos(pi*c*s) (#180 S7)
+    syn += [sin(pi * x), cos(pi * x), sin(pi * x / 2), cos(3 * pi * x / 2), cos(2 * pi * x), sin(2 * pi / 7),
+            cos(2 * pi / 7), cos(3 * pi / 4)]
     exprs.extend(syn)
     return exprs
 
