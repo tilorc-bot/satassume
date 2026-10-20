@@ -153,7 +153,6 @@ MUL_ROWS_ADDED = (
     'imag_times_rest.imag',
     'imag_times_rest.imag.flip',
     'ge2s',  # #180 S7 G5
-    'ge2s.rest',
 )
 
 

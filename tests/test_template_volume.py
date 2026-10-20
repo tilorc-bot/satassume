@@ -30,10 +30,10 @@ BUDGETS = [
     ("x**2", x**2, 40),
     # 63 after #180 S7: an integer power of an integer to a negative integer
     # power is +-1 (odd, no prime or composite, odd base).
-    # 74 after #180 S7 G5: integer >= 2 to a power >= 2 is composite (3**2
-    # premise alternatives), an integer to such a power is no prime, b <= -2
-    # to an even power is composite.
-    ("x**y", x**y, 74),
+    # 68 after #180 S7 G5: an integer >= 2 to a positive integer power is
+    # >= 2, an integer to a power >= 2 is no prime, b <= -2 to an even power
+    # is composite.
+    ("x**y", x**y, 68),
     ("exp(x)", exp(x), 15),
 ]
 

@@ -595,7 +595,7 @@ def _mul_table_rows():
             Row('polar.one', [('k', 'polar'), ('rest', 'positive')], ('N', 'polar')),
         ]),
         Row('primes', [('*', 'prime')], ('N', 'composite'), when='n>=2'),
-        # A product of two integers >= 2 (and positive integers) is composite.
+        # A product of two integers >= 2 is composite.
         Row('ge2s', [('*', 'int>=2')], ('N', 'composite'), when='n==2'),
         # All factors negative / nonpositive / imaginary: parity of n.
         Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
@@ -661,8 +661,6 @@ def _mul_table_rows():
                 ('N', 'nonpositive'), when='m odd'),
         ]),
         Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
-            Row('ge2s.rest', [('k', 'int>=2'), ('l', 'int>=2'), ('rest', 'integer'),
-                              ('rest', 'positive')], ('N', 'composite')),
             Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
                              ('rest', 'zero', False)], ('N', 'nonzero')),
             # imag_times with the rest nonzero reals (r*i is imaginary)
@@ -1162,7 +1160,10 @@ def _pow_table_rows():
             when='b finite number, 0<|b|<1'),
         # b**e for integer b >= 2 is composite.
         Row('e>=2.composite', [('B', 'int>=2')], ('N', 'composite'), when='e integer >= 2'),
-        Row('ge2s.composite', [('B', 'int>=2'), ('E', 'int>=2')], ('N', 'composite')),
+        # b**e >= 2 for an integer b >= 2 and a positive integer e (composite
+        # with e>=2.not_prime: 3 formulas, not 3**2 for both premises >= 2).
+        Row('ge2s.composite', [('B', 'int>=2'), ('E', 'integer'), ('E', 'positive')],
+            [('N', 'prime'), ('N', 'composite')]),
         # b**e for an integer b and an integer e >= 2 is 0, +-1, a negative
         # number or composite.
         Row('e>=2.not_prime', [('B', 'integer'), ('E', 'int>=2')], ('N', 'prime', False)),

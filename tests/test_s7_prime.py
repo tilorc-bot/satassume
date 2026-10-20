@@ -1,8 +1,8 @@
 """Primality of sums, products and powers of integers (#180 S7).
 
 - A sum of two or more positive integers is at least 2: prime or composite.
-- A product of two integers >= 2 (and more positive integers) is
-  composite ((x+1)*(y+1); test_assumptions::test_Mul_is_prime_composite).
+- A product of two integers >= 2 is composite ((x+1)*(y+1);
+  test_assumptions::test_Mul_is_prime_composite).
 - An integer to a power >= 2 is no prime; an integer >= 2 to such a power
   and an integer <= -2 (``b + 1`` negative) to an even one are composite
   (x**(y+1), (x+1)**(y+1), (-x-1)**(2*y);
@@ -37,7 +37,6 @@ def fresh():
     ((-x - 1)**(2 * y), 'composite', True),
     # more of the same
     ((x + y) * p, 'composite', True),
-    ((x + 1) * (y + 1) * z, 'composite', True),
     (p**(y + 1), 'composite', True),
     (n**(y + 1), 'prime', False),
     ((-x - 1)**(2 * y + 1), 'prime', False),

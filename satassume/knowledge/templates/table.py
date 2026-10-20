@@ -18,7 +18,8 @@ a *group* name bound to several indices (``'*'``, ``'rest'``, ``'neg'``):
 a group literal stands for the literal on each of them (the builder
 :func:`._common.lits`), a conjunction in the premises and a disjunction in
 the conclusion.  The pseudo-predicate ``'int>=2'`` in a premise expands to
-the alternatives of :func:`._common.ge2_alternatives`, one rule each.  A row
+the alternatives of :func:`._common.ge2_alternatives`, one rule each (on a
+group, every slot's: the product of the alternatives).  A row
 with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules in the order
 of :meth:`._common.Rules.equiv`; a :class:`Sub` row runs another table.
 
