@@ -871,7 +871,9 @@ def nary(tag, gen, slots=None):
             gen(R, n)
             return R.rules
 
-        return facts(pattern_key(tag, len(objs), consts), build, consts, objs, n)
+        # keyed on the arity too: two arities can give as many objects
+        # (LambertW(x, k) and a three-argument node built around the check)
+        return facts(pattern_key((tag, n), len(objs), consts), build, consts, objs, n)
     template.__name__ = tag + '_templates'
     # the module of the rules registers it (TemplateRegistry.register
     # tells a declared module's templates by their module)

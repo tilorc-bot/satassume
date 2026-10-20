@@ -357,7 +357,10 @@ covers `Add`, `Mul` and `Pow`, `functions.py` the elementary functions
 polar functions and `Mod`), rounding and `factorial`, `selection.py` the
 nodes whose value is one of given expressions (`Max`, `Min`, `Piecewise`
 with a final `True`), `combinatorial.py` the other combinatorial
-functions, and `cfunctions.py` `expm1` and `log1p` (declared to
+functions, `special.py` the special functions (the gamma family, the error
+functions and integrals, `owens_t` (declared by class name: it is new in
+SymPy 1.15), the beta functions, `LambertW`, `zeta`, `polylog`, the Airy
+and Bessel functions), and `cfunctions.py` `expm1` and `log1p` (declared to
 `TemplateRegistry.lazy` by class name, since SymPy does not import
 `sympy.codegen`). A class without a template gets no facts: SymPy's own
 `_eval_is_*` is never read (#180 C-NOTMPL), and an undefined function such
