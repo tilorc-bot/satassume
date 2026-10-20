@@ -93,5 +93,7 @@ registry.lazy(__name__ + ".special", gamma, loggamma, polygamma, digamma, trigam
 # sympy.codegen is not imported by SymPy itself: declared by name
 registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
               "sympy.codegen.cfunctions:log1p")
+# sympy.physics neither
+registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")
 
 __all__ = ['TemplateRegistry', 'registry']
