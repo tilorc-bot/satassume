@@ -146,7 +146,9 @@ def _loggamma(R, c):
         (('negative', ('integer', False)), ('extended_real', False)),
         (('integer', 'nonpositive'), 'infinite'),
         (('complex', ('extended_real', False)), 'complex'),
-        (('complex', ('extended_real', False)), ('extended_real', False)),
+        # not "non-real x -> non-real value": gamma is real on a curve
+        # through its minimum x0 ~ 1.4616, so loggamma is real at
+        # 7/5 + 0.6388873...*I (#194 review)
         (('infinite',), 'infinite'),
         (('infinite', 'extended_positive'), 'extended_positive'),
     ))
@@ -562,6 +564,8 @@ registry.register(betainc_regularized)(nary('betainc_regularized', _betainc))
 # ---------------------------------------------------------------------------
 
 def _lambertw_slots(args):
+    if not args:
+        return ()                      # Basic.__new__(LambertW): no facts
     out = (shifted(args[0], exp(-1)),)
     if len(args) == 2:
         out += (shifted(args[1], S.One),)
@@ -650,7 +654,8 @@ def _dirichlet_eta(R, n):
     R.rule([(X, 'even', True), (X, 'negative', True)], (N, 'zero', True))
 
 
-registry.register(zeta)(nary('zeta', _zeta, slots=lambda args: (shifted(args[0], S.NegativeOne),)))
+registry.register(zeta)(nary('zeta', _zeta,
+                                     slots=lambda args: (shifted(args[0], S.NegativeOne),) if args else ()))
 registry.register(dirichlet_eta)(nary('dirichlet_eta', _dirichlet_eta))
 
 
@@ -728,6 +733,8 @@ def _bessel(kind):
             R.rule([nreal, *posinf], (node, 'infinite', True))
             R.rule([nreal, *posinf], (node, 'extended_positive', True))
         else:
+            # SymPy's value: bessely(nu, 0) = besselk(nu, 0) = zoo for real nu (the limit of
+            # Y_nu at 0 is 0 for a negative half-integer nu, but SymPy evaluates the node to zoo)
             R.rule([nreal, (z, 'zero', True)], (node, 'infinite', True))
             R.rule([nreal, *posinf], (node, 'zero', True))
             if kind == 'k':

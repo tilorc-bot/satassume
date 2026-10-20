@@ -224,3 +224,21 @@ def test_sound_at_constant_points():
                  gamma(-3, evaluate=False), loggamma(0, evaluate=False), Ci(0, evaluate=False),
                  polylog(S.Half, Rational(1, 3)), owens_t(I, 1) if owens_t else erf(1)):
         assert not check(expr), expr
+
+
+def test_loggamma_of_a_non_real_argument_can_be_real():
+    # gamma is real on a curve through its minimum x0 ~ 1.4616, so loggamma
+    # is real at a non-real point near 7/5 + 0.6389*I (#194 review)
+    from sympy import Basic, Float, I, LambertW, Q, Rational, Symbol, loggamma, zeta
+    from satassume import DictCache, Engine
+    from satassume.sympy_api import ask
+    c = Symbol('c', complex=True, extended_real=False)
+    assert Engine(cache=DictCache()).is_(loggamma(c), 'extended_real') is None
+    assert Engine(cache=DictCache()).is_(loggamma(c), 'complex') is True
+    x = Symbol('x')
+    assert ask(Q.real(loggamma(x)), Q.complex(x) & ~Q.real(x), Engine(cache=DictCache())) is None
+    e = loggamma(Rational(7, 5) + I*Float('0.638887307206388508355522789482', 30), evaluate=False)
+    assert Engine(cache=DictCache()).is_(e, 'extended_real') is None
+    # odd arities built with Basic.__new__ get no facts and do not crash
+    for cls in (zeta, LambertW):
+        assert Engine(cache=DictCache()).is_(Basic.__new__(cls), 'real') is None
