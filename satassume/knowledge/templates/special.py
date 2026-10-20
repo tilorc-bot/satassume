@@ -632,9 +632,9 @@ def _zeta(R, n):
     pole = [(m, 'zero', True)] + ([(s, 'positive', True), (s, 'even', False)] if n == 1 else [])
     # zeta(1, nan) is nan (and zeta(1, x + y) at x = oo, y = -oo)
     poles = [pole] if n == 1 else [pole + [(1, ap, True)] for ap in ('complex', 'extended_real')]
-    for pole in poles:
+    for premises in poles:
         for concl in ((node, 'infinite', True), (node, 'extended_real', False)):
-            R.rule(pole, concl)
+            R.rule(premises, concl)
     if n == 2:
         R.rule([(s, 'positive', True), (m, 'positive', True), (1, 'positive', True)],
                (node, 'positive', True))
