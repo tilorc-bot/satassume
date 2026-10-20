@@ -287,7 +287,9 @@ def _iv_zeta(s, prec: int = _IV_PREC):
     tail ``T = sum_{k>=N} f(k)``, ``f(x) = x**-s`` positive, decreasing and
     convex: the trapezoid rule overestimates each ``int_k^(k+1) f`` and the
     midpoint rule underestimates each ``int_(k-1/2)^(k+1/2) f``, so
-    ``N**(1-s)/(s-1) + N**-s/2 <= T <= (N-1/2)**(1-s)/(s-1)``."""
+    ``N**(1-s)/(s-1) + N**-s/2 <= T <= (N-1/2)**(1-s)/(s-1)``.  The width,
+    about ``s*N**(-s-1)/8``, does not shrink with ``prec`` (a wider
+    enclosure is allowed; #198)."""
     iv = _iv_context(prec)
     if _sign((s - 1)._mpi_[0]) <= 0:
         return None
