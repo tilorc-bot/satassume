@@ -100,8 +100,12 @@ def _unary(tag, gen, slots=None, units=None):
     """Template for a unary function: ``gen(R, c)`` fills ``R`` (``c`` is the
     constant argument or ``None``).  ``slots(x)`` may supply extra objects
     the rules refer to by index 2, 3, ... (``arg - 1`` for log); ``units(c,
-    expr)`` may supply unit facts for a constant argument ``c``."""
+    expr)`` may supply unit facts for a constant argument ``c``.  A node
+    with another number of arguments gets no facts: ``log(x, b,
+    evaluate=False)`` is ``log(x)/log(b)``, not ``log(x)`` (#191)."""
     def template(expr):
+        if len(expr.args) != 1:
+            return None
         x = expr.args[0]
         consts = {}
         key = [tag, None]
