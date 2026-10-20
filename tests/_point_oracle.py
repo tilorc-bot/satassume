@@ -56,7 +56,9 @@ def _value(v, pred):
         if real is False:
             return pred != 'noninteger' and False
         if real is True and abs(a - mpmath.nint(a)) > _EPS1:
-            return pred == 'noninteger'
+            # a real non-integer may still be rational (betainc(1, 2, -6, 3)
+            # is 45/2)
+            return None if pred == 'rational' else pred == 'noninteger'
     return None
 
 
