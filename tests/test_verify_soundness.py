@@ -45,7 +45,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 from sympy import (Eq, Ge, Gt, I, Le, Lt, Ne, Q, Rational, S, Symbol,
                    Function, nan, oo, symbols, zoo)
-from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or
+from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or, Xor
 
 from satassume.engine import Engine
 from satassume.sympy_api import ask
@@ -150,7 +150,7 @@ def _eq(a, b):
 
 
 # formula AST: ("u", pred, term) | ("r", op, a, b, style) | ("not", f)
-#              | (op, f, g) for op in and/or/imp/eqv
+#              | (op, f, g) for op in and/or/imp/eqv/xor
 
 def _atom_key(op, a, b):
     """(normalised atom, negated) for ``lt``/``gt``/``eq``/``ne``; for
@@ -196,7 +196,8 @@ def _eval(f, env):
     if tag == "not":
         return not _eval(f[1], env)
     a, b = _eval(f[1], env), _eval(f[2], env)
-    return {"and": a and b, "or": a or b, "imp": (not a) or b, "eqv": a == b}[tag]
+    return {"and": a and b, "or": a or b, "imp": (not a) or b, "eqv": a == b,
+            "xor": a != b}[tag]
 
 
 def _worlds(fs, point):
@@ -252,7 +253,8 @@ def to_sympy(f):
         # logical negation: SymPy's evaluating ``~`` flips a relational
         # (``~(a <= b)`` -> ``a > b``), which differs for non-real sides (#80)
         return Not(to_sympy(f[1]), evaluate=False)
-    cls = {"and": And, "or": Or, "imp": Implies, "eqv": Equivalent}[tag]
+    cls = {"and": And, "or": Or, "imp": Implies, "eqv": Equivalent,
+           "xor": Xor}[tag]
     return cls(to_sympy(f[1]), to_sympy(f[2]))
 
 
@@ -303,7 +305,7 @@ def formulas(syms, depth):
     return st.one_of(
         atom,
         st.tuples(st.just("not"), sub),
-        st.tuples(st.sampled_from(["and", "or", "imp", "eqv"]), sub, sub))
+        st.tuples(st.sampled_from(["and", "or", "imp", "eqv", "xor"]), sub, sub))
 
 
 @st.composite

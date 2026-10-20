@@ -4,8 +4,8 @@ Scope
 -----
 The engine answers ``ask`` for **unary scalar predicates on scalar
 expressions**: propositions and assumptions that are Boolean combinations
-(``And``, ``Or``, ``Not``, ``Implies``, ``Equivalent``) of applied
-predicates ``Q.<name>(expr)`` where ``name`` is in the vocabulary of
+(``And``, ``Or``, ``Not``, ``Implies``, ``Equivalent``, ``Xor``, ``ITE``)
+of applied predicates ``Q.<name>(expr)`` where ``name`` is in the vocabulary of
 :mod:`satassume.knowledge.rules` (``PREDICATES``) and ``expr`` is a scalar
 :class:`~sympy.core.expr.Expr`.  Everything is answered by the SAT engine
 alone: the rule base, the structural templates and search.  The engine
@@ -126,8 +126,13 @@ from sympy.core.numbers import Rational as _Rational
 from sympy.core.singleton import S as _S
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
                                  Implies as _SImplies, Equivalent as _SEquivalent,
+                                 Xor as _SXor, ITE as _SITE,
                                  BooleanTrue as _BTrue, BooleanFalse as _BFalse)
 from .knowledge.rules import PRED_INDEX
+
+# SymPy's Boolean connectives that to_formula translates (Nand, Nor and Xnor
+# evaluate to Not of And, Or and Xor on construction)
+_CONNECTIVES = (_SAnd, _SOr, _SNot, _SImplies, _SEquivalent, _SXor, _SITE)
 
 
 CATEGORIES = ("relation", "matrix", "custom", "other")
@@ -273,9 +278,7 @@ def _applied_category(expr) -> Optional[str]:
 def _categories(expr, acc: set) -> None:
     from sympy.assumptions.assume import AppliedPredicate
     from sympy.core.relational import Relational
-    from sympy.logic.boolalg import (And as SAnd, Or as SOr, Not as SNot,
-                                     Implies as SImplies, Equivalent as SEquivalent,
-                                     BooleanTrue, BooleanFalse)
+    from sympy.logic.boolalg import BooleanTrue, BooleanFalse
     if expr is True or expr is False or isinstance(expr, (BooleanTrue, BooleanFalse)):
         return
     if isinstance(expr, AppliedPredicate):
@@ -286,7 +289,7 @@ def _categories(expr, acc: set) -> None:
     if isinstance(expr, Relational):
         acc.add("relation")
         return
-    if isinstance(expr, (SAnd, SOr, SNot, SImplies, SEquivalent)):
+    if isinstance(expr, _CONNECTIVES):
         for a in expr.args:
             _categories(a, acc)
         return
@@ -393,6 +396,16 @@ def to_formula(expr, relations: bool = False, opaque: bool = False):
                        to_formula(expr.args[1], relations, opaque))
     if isinstance(expr, _SEquivalent):
         return Equivalent(*[to_formula(a, relations, opaque) for a in expr.args])
+    if isinstance(expr, _SXor):
+        # odd parity, folded pairwise: Xor(a, b, c) = Xor(Xor(a, b), c)
+        args = [to_formula(a, relations, opaque) for a in expr.args]
+        f = args[0]
+        for a in args[1:]:
+            f = Not(Equivalent(f, a))
+        return f
+    if isinstance(expr, _SITE):
+        c, a, b = [to_formula(x, relations, opaque) for x in expr.args]
+        return And(Implies(c, a), Implies(Not(c), b))
     if isinstance(expr, _Relational):
         return _relation_formula(expr, relation_parts(expr), relations)
     raise Unsupported(f"cannot translate {type(expr).__name__} (other)", "other")
@@ -562,8 +575,7 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
 
 def _ask_general(proposition, assumptions, eng: Engine) -> Optional[bool]:
     if isinstance(proposition, _Basic):
-        if eng.relevance and isinstance(assumptions, (_SAnd, _Applied, _Relational, _SOr,
-                                                      _SNot, _SImplies, _SEquivalent)):
+        if eng.relevance and isinstance(assumptions, (_Applied, _Relational) + _CONNECTIVES):
             f = _relevant(proposition, assumptions, eng)
             if f is not assumptions:
                 # answered under the conjuncts connected to the query; the
@@ -795,7 +807,7 @@ def _keys_rel(e):
 def _bool_keys(e, acc: set) -> bool:
     if e is True or e is False or isinstance(e, (_BTrue, _BFalse)):
         return True
-    if isinstance(e, (_SAnd, _SOr, _SNot, _SImplies, _SEquivalent)):
+    if isinstance(e, _CONNECTIVES):
         return all(_bool_keys(a, acc) for a in e.args)
     if isinstance(e, _Relational):
         return _sides_keys((e.lhs, e.rhs), acc, e.rel_op in ("==", "!="))
