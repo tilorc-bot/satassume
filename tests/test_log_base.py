@@ -39,3 +39,11 @@ def test_one_arg_log_keeps_its_facts():
 
 def test_genocchi_polynomial_gets_no_facts():
     assert fresh().is_(genocchi(2, x, evaluate=False), 'integer') is None
+
+
+def test_exp_polar_with_extra_args_gets_no_facts():
+    # exp_polar accepts any number of args with evaluate=False (#193 review)
+    from sympy import I, exp_polar
+    assert fresh().is_(exp_polar(0, 5, evaluate=False), 'rational') is None
+    assert fresh().is_(exp_polar(1, I, evaluate=False), 'positive') is None
+    assert fresh().is_(exp_polar(0), 'zero') is False
