@@ -67,12 +67,14 @@ def constructed_noncommutative(t) -> int:
     built: 1 if False, 2 if evaluating it cannot cancel its
     non-commutative part (:func:`_nc_sum_level`, :func:`_nc_product_level`:
     ``A + x``, ``A - B``, ``-c``, ``A*B``, ``2*sin(A)``; not ``A - A``,
-    ``exp(A)*exp(-A)``, ``x*A`` or ``0*A``, which may be numbers).
+    ``exp(A)*exp(-A)``, ``x*A``, ``0.0*A`` or ``A + nan``, which may be
+    numbers).
     ``Function``'s ``_eval_is_commutative`` (the ``fuzzy_and`` of the
     arguments): an undefined function (``f(A)``, ``f(A, 0)``), which never
     evaluates, the highest level of an argument; a function of one argument
-    (``sin(A)``, ``adjoint(A)``, ``exp(M)``), its argument's level, as no
-    such function but ``stieltjes`` evaluates a term at 2 to a number; any
+    (``sin(A)``, ``adjoint(A)``, ``exp(M)``), its argument's level if
+    SymPy defines it, as none but ``stieltjes`` evaluates a term at 2 to a
+    number (a sweep of SymPy's functions; a user's ``eval`` may); any
     other 1, since a special value of another argument may make it a number
     (``rf(A, 0)`` is 1, ``binomial(A, -1)`` is 0, ``binomial(A, A)`` is 1).
     ``E**e`` (``exp(e)`` built as a power) as ``exp(e)``.  The slot of
@@ -125,7 +127,8 @@ def constructed_noncommutative(t) -> int:
         top = max(levels, default=0)
         if top < 2 or isinstance(t, AppliedUndef):
             return top
-        if len(levels) == 1 and cls.__name__ != "stieltjes":
+        if (len(levels) == 1 and cls.__module__.startswith("sympy.")
+                and cls.__name__ != "stieltjes"):
             # stieltjes(A) is zoo (A.is_integer is False)
             return 2
         return 1
@@ -133,8 +136,9 @@ def constructed_noncommutative(t) -> int:
 
 
 def _nonzero_number(a) -> bool:
-    from sympy.core.singleton import S
-    return a.is_Number and a is not S.Zero and a is not S.NaN
+    """A nonzero rational: not ``0.0``, ``nan`` or an infinity
+    (``oo*A - oo*A`` is ``nan*A``)."""
+    return a.is_Rational and a.p != 0
 
 
 def _nc_symbol(a) -> bool:
@@ -159,14 +163,21 @@ def _nc_product_level(t) -> int:
 
 
 def _nc_sum_level(t) -> int:
-    """The level of an ``Add`` built non-commutative: 2 if a single term is
+    """The level of an ``Add`` built non-commutative: 2 if its commutative
+    terms are rationals and at most one symbol, and a single term is
     non-commutative and at 2 (``A + x``, ``sin(A) + 1``), or every
-    non-commutative term is a non-commutative symbol or a nonzero number
-    times one, no symbol twice (``A - 2*B``); else 1, since evaluating it
-    may cancel the non-commutative terms (``A - A``, ``A - A*Integral(1,
-    (x, 0, 1))``, ``c - Dagger(c)`` for a Hermitian ``c``)."""
+    non-commutative term is a non-commutative symbol or a nonzero rational
+    times one, no symbol twice (``A - 2*B``); else 1.  Evaluating it may
+    cancel the non-commutative terms (``A - A``, ``A - A*Integral(1,
+    (x, 0, 1))``, ``c - Dagger(c)`` for a Hermitian ``c``), and a nan term
+    absorbs them (``A + nan``, ``A + 0*oo``, ``A + x + y`` at ``x = oo, y =
+    -oo``)."""
     from sympy.core.mul import Mul
+    from sympy.core.symbol import Symbol
     nc = [(a, constructed_noncommutative(a)) for a in t.args]
+    rest = [a for a, lv in nc if not lv and not a.is_Rational]
+    if len(rest) > 1 or (rest and not isinstance(rest[0], Symbol)):
+        return 1
     nc = [(a, lv) for a, lv in nc if lv]
     if len(nc) == 1:
         return nc[0][1]

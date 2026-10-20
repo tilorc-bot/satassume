@@ -27,6 +27,7 @@ sympy = pytest.importorskip("sympy")
 from sympy import (
     Abs,
     Add,
+    Float,
     Function,
     I,
     Integer,
@@ -666,7 +667,13 @@ def _evaluates_to_number():
             Mul(exp(A), exp(-A), evaluate=False),
             Mul(A, exp(-log(A), evaluate=False), evaluate=False),
             Add(A, -A*Integral(1, (x, 0, 1)), evaluate=False),
-            Add(A, Mul(-1, Mul(A, 1, evaluate=False), evaluate=False), evaluate=False)]
+            Add(A, Mul(-1, Mul(A, 1, evaluate=False), evaluate=False), evaluate=False),
+            # #225 review: a zero float factor, a nan term
+            Mul(Float(0.0), A, evaluate=False), sin(Mul(0.0, A, evaluate=False), evaluate=False),
+            Pow(S.Exp1, Mul(0.0, A, evaluate=False), evaluate=False),
+            Mul(0.0, A, B, evaluate=False), Add(A, S.NaN, evaluate=False),
+            Add(A, B, S.NaN, evaluate=False), Add(sin(A), S.NaN, evaluate=False),
+            Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False)]
 
 
 def test_constructed_noncommutative_number_when_evaluated():
@@ -687,6 +694,14 @@ def test_constructed_noncommutative_levels_kept():
     for e in (A - 2*B, A*B*A, 2*sin(A), sin(A) + 1, f(A, 0), f(A, Add(B, -B, evaluate=False)),
               exp(A + 1), -exp(A)):
         assert fresh().is_(e, 'complex') is False, e
+    # nan at a point (x = oo, y = -oo); a user's function may evaluate to a
+    # number; an infinite coefficient (oo*A - oo*A is nan*A)
+    class g(Function):
+        @classmethod
+        def eval(cls, a):
+            return S.One if a == B else None
+    for e in (A + x + y, g(A), Mul(S.Infinity, A, evaluate=False)):
+        assert fresh().is_many(e, ['commutative', 'complex']) == [False, None], e
     # several arguments: no level 2 (binomial(A, B) may have a special value)
     assert fresh().is_many(binomial(A, B, evaluate=False), ['commutative', 'complex']) == [False, None]
 
