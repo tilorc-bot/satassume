@@ -426,6 +426,10 @@ def load_exprs(corpus=None, stream=None):
     i, X = Idx('i', n), Normal('X', 0, 1)
     syn += [AccumBounds(-1, 2), AccumBounds(-oo, oo), AccumBounds(1, oo) + x, i, i + x, 2**i,
             X, X + x, X**2, Die('D', 6), x * X]
+    from sympy import Integral, Product, Sum
+    syn += [Sum(x, (x, 1, n)), Sum(0, (x, 1, y)), Sum(k, (k, 1, n)) + x, Sum(1 / x, (x, y, z)),
+            Product(k, (k, 1, n)), Product(0, (x, y, z)), Product(2, (x, 0, oo)),
+            Integral(x, (x, 0, y)), Integral(0, (x, y)), Integral(n, (x, y)), Integral(x, (x, y, y))]
     exprs.extend(syn)
     return exprs
 
