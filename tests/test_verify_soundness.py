@@ -45,7 +45,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 from sympy import (Eq, Ge, Gt, I, Le, Lt, Ne, Q, Rational, S, Symbol,
                    Function, nan, oo, symbols, zoo)
-from sympy.logic.boolalg import And, Equivalent, Implies, Not, Or, Xor
+from sympy.logic.boolalg import ITE, And, Equivalent, Implies, Not, Or, Xor
 
 from satassume.engine import Engine
 from satassume.sympy_api import ask
@@ -150,7 +150,7 @@ def _eq(a, b):
 
 
 # formula AST: ("u", pred, term) | ("r", op, a, b, style) | ("not", f)
-#              | (op, f, g) for op in and/or/imp/eqv/xor
+#              | (op, f, g) for op in and/or/imp/eqv/xor | ("ite", c, f, g)
 
 def _atom_key(op, a, b):
     """(normalised atom, negated) for ``lt``/``gt``/``eq``/``ne``; for
@@ -195,6 +195,8 @@ def _eval(f, env):
         return env[key] != neg
     if tag == "not":
         return not _eval(f[1], env)
+    if tag == "ite":
+        return _eval(f[2] if _eval(f[1], env) else f[3], env)
     a, b = _eval(f[1], env), _eval(f[2], env)
     return {"and": a and b, "or": a or b, "imp": (not a) or b, "eqv": a == b,
             "xor": a != b}[tag]
@@ -253,6 +255,11 @@ def to_sympy(f):
         # logical negation: SymPy's evaluating ``~`` flips a relational
         # (``~(a <= b)`` -> ``a > b``), which differs for non-real sides (#80)
         return Not(to_sympy(f[1]), evaluate=False)
+    if tag == "ite":
+        return ITE(*[to_sympy(g) for g in f[1:]])
+    # Or and Xor of complementary relations (``x > 0``, ``x <= 0``) collapse
+    # to True even unevaluated, which is wrong for a non-real ``x``; check()
+    # skips a proposition that collapses, a nested one is a false alarm
     cls = {"and": And, "or": Or, "imp": Implies, "eqv": Equivalent,
            "xor": Xor}[tag]
     return cls(to_sympy(f[1]), to_sympy(f[2]))
@@ -305,7 +312,8 @@ def formulas(syms, depth):
     return st.one_of(
         atom,
         st.tuples(st.just("not"), sub),
-        st.tuples(st.sampled_from(["and", "or", "imp", "eqv", "xor"]), sub, sub))
+        st.tuples(st.sampled_from(["and", "or", "imp", "eqv", "xor"]), sub, sub),
+        st.tuples(st.just("ite"), sub, sub, sub))
 
 
 @st.composite
@@ -319,6 +327,8 @@ def queries(draw, syms):
         g = draw(st.one_of(relations(syms), relations(syms), unaries(syms)))
         if draw(st.integers(0, 6)) == 0:
             g = ("or", g, draw(relations(syms)))
+        elif draw(st.integers(0, 9)) == 0:
+            g = ("xor", g, draw(relations(syms)))
         if draw(st.integers(0, 9)) == 0:
             g = ("not", g)
         parts.append(g)

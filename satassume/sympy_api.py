@@ -131,7 +131,8 @@ from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
 from .knowledge.rules import PRED_INDEX
 
 # SymPy's Boolean connectives that to_formula translates (Nand, Nor and Xnor
-# evaluate to Not of And, Or and Xor on construction)
+# evaluate to Not of And, Or and Xor on construction, Exclusive to an And of
+# Nots)
 _CONNECTIVES = (_SAnd, _SOr, _SNot, _SImplies, _SEquivalent, _SXor, _SITE)
 
 
