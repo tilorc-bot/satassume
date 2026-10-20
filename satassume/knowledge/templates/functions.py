@@ -482,13 +482,16 @@ def _pi_trig_rules(R, cos_, c, has_s):
         R.rule([(PS, 'even', True)], (N, 'odd', True))
 
 
-def _pi_trig(tag, gen, cos_):
+def _pi_trig(tag, gen, cos_, split_=pi_split, plain=None):
     """Template for ``sin`` or ``cos``: :func:`_unary`, and for an argument
-    ``pi*c*s`` (:func:`~.core.pi_split`) also :func:`_pi_trig_rules`."""
-    plain = _unary(tag, gen)
+    ``pi*c*s`` (:func:`~.core.pi_split`) also :func:`_pi_trig_rules`.
+    ``cosh`` passes :func:`~.core.ipi_split` (``cosh(I*pi*c*s) ==
+    cos(pi*c*s)``) and its own ``plain`` template."""
+    if plain is None:
+        plain = _unary(tag, gen)
 
     def template(expr):
-        split = pi_split(expr.args[0]) if len(expr.args) == 1 else None
+        split = split_(expr.args[0]) if len(expr.args) == 1 else None
         if split is None:
             return plain(expr)
         c, s_ = split
@@ -656,6 +659,81 @@ def _cosh(R, c):
     _table(R, _COSH)
 
 
+#: Slots of the ``cosh(r + I*pi*c*s)`` template: ``r`` and ``s``.
+CR, CS = 2, 3
+
+
+def _cosh_shift_rules(R, c, has_s):
+    """``N == cosh(r + I*pi*c*s) == (-1)**(c*s)*cosh(r)`` (``c`` integer;
+    ``has_s`` False: ``s == 1``) for an integer ``c*s``: positive for a real
+    ``r`` and an even ``c*s``, negative for an odd one; real for an
+    imaginary ``r`` (``cosh(I*t) == cos(t)``)."""
+    if not has_s:
+        alts = [([], c.p % 2 == 0)]
+    elif c.p % 2 == 0:
+        alts = [([(CS, 'integer', True)], True)]
+    else:
+        alts = [([(CS, 'even', True)], True), ([(CS, 'odd', True)], False)]
+    for cond, even in alts:
+        if even:
+            R.rule([*cond, (CR, 'real', True)], (N, 'positive', True))
+        else:
+            # the argument is then not real; the premise keeps the block
+            # total (the blocks below do not relate it to r)
+            R.rule([*cond, (CR, 'real', True), (X, 'extended_real', False)],
+                   (N, 'negative', True))
+        R.rule([*cond, (CR, 'imaginary', True)], (N, 'real', True))
+
+
+def _cosh_shift_split(arg):
+    """``arg == r + I*pi*c*s`` with an integer ``c`` (the first such term of
+    an ``Add``): ``(r, c, s)``, ``s`` None when there are no other factors;
+    else None.  ``r`` must rebuild from the other terms (no cancellation:
+    ``Add(y, -y, 2*I*pi*n, evaluate=False)`` is nan at ``y = oo``, #184)."""
+    if not arg.is_Add:
+        return None
+    terms = list(arg.args)
+    for i, t in enumerate(terms):
+        split = ipi_split(t)
+        if split is None or not split[0].is_integer:  # sympy-boundary: c Rational
+            continue
+        others = terms[:i] + terms[i + 1:]
+        r = others[0] if len(others) == 1 else Add(*others)
+        if len(others) > 1 and not (r.is_Add and Counter(r.args) == Counter(others)):
+            return None
+        return r, split[0], split[1]
+    return None
+
+
+_cosh_plain = _unary('cosh', _cosh)
+
+
+def _cosh_templates(expr):
+    """``cosh``: :func:`_unary`, for ``cosh(r + I*pi*c*s)`` also
+    :func:`_cosh_shift_rules` (on ``r``: a ``cosh(r)`` slot with the facts
+    of the node would not be total, the blocks below do not relate it to
+    the argument)."""
+    split = _cosh_shift_split(expr.args[0]) if len(expr.args) == 1 else None
+    if split is None:
+        return _cosh_plain(expr)
+    r, c, s_ = split
+    objs = [expr.args[0], expr, r]
+    if s_ is not None:
+        objs.append(s_)
+    consts = {i: objs[i] for i in (CR, CS)[:len(objs) - CR]
+              if objs[i].is_Atom and objs[i].is_number}
+    key = ('cosh', None, 'shift', c, s_ is not None,
+           *(const_key(consts[i]) if i in consts else None for i in (CR, CS)))
+
+    def build():
+        R = Rules()
+        _cosh(R, None)
+        _cosh_shift_rules(R, c, s_ is not None)
+        return R.rules
+
+    return facts(key, build, consts, tuple(objs), N)
+
+
 def _tanh(R, c):
     _table(R, ((('extended_real',), 'real'), _TRANSCENDENTAL))
     for pred in ('positive', 'negative'):
@@ -663,8 +741,9 @@ def _tanh(R, c):
     R.equiv([(X, 'extended_real', True)], (N, 'zero', True), (X, 'zero', True))
 
 
-for _cls, _tag, _gen in ((sinh, 'sinh', _sinh), (cosh, 'cosh', _cosh), (tanh, 'tanh', _tanh)):
+for _cls, _tag, _gen in ((sinh, 'sinh', _sinh), (tanh, 'tanh', _tanh)):
     registry.register(_cls)(_unary(_tag, _gen))
+registry.register(cosh)(_pi_trig('cosh', _cosh, True, ipi_split, _cosh_templates))
 
 
 # ---------------------------------------------------------------------------
