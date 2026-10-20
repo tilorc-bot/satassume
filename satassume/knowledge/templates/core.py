@@ -178,6 +178,9 @@ def _add_rules(n, consts):
     # A sum of two or more positive even integers is at least 4, hence composite.
     if n >= 2:
         rule([*lits(A, 'even'), *lits(A, 'positive')], (N, 'composite', True))
+        # A sum of two or more positive integers is at least 2.
+        rule([*lits(A, 'integer'), *lits(A, 'positive')],
+             [(N, 'prime', True), (N, 'composite', True)])
     return R.rules
 
 
@@ -592,6 +595,8 @@ def _mul_table_rows():
             Row('polar.one', [('k', 'polar'), ('rest', 'positive')], ('N', 'polar')),
         ]),
         Row('primes', [('*', 'prime')], ('N', 'composite'), when='n>=2'),
+        # A product of two integers >= 2 (and positive integers) is composite.
+        Row('ge2s', [('*', 'int>=2')], ('N', 'composite'), when='n==2'),
         # All factors negative / nonpositive / imaginary: parity of n.
         Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
             when='n even'),
@@ -656,6 +661,8 @@ def _mul_table_rows():
                 ('N', 'nonpositive'), when='m odd'),
         ]),
         Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
+            Row('ge2s.rest', [('k', 'int>=2'), ('l', 'int>=2'), ('rest', 'integer'),
+                              ('rest', 'positive')], ('N', 'composite')),
             Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
                              ('rest', 'zero', False)], ('N', 'nonzero')),
             # imag_times with the rest nonzero reals (r*i is imaginary)
@@ -1155,6 +1162,14 @@ def _pow_table_rows():
             when='b finite number, 0<|b|<1'),
         # b**e for integer b >= 2 is composite.
         Row('e>=2.composite', [('B', 'int>=2')], ('N', 'composite'), when='e integer >= 2'),
+        Row('ge2s.composite', [('B', 'int>=2'), ('E', 'int>=2')], ('N', 'composite')),
+        # b**e for an integer b and an integer e >= 2 is 0, +-1, a negative
+        # number or composite.
+        Row('e>=2.not_prime', [('B', 'integer'), ('E', 'int>=2')], ('N', 'prime', False)),
+        # b <= -2 (b + 1 negative) to an even power e >= 2 is composite.
+        Row('b<=-2.even_e.composite', [('B', 'integer'), ('B', 'negative'), ('BP', 'negative'),
+                                       ('E', 'even'), ('E', 'positive')], ('N', 'composite'),
+            when='b-1, b+1 slots'),
         # Gelfond-Schneider: b not in {0, 1} algebraic, e algebraic irrational.
         Row('e=algebraic_irrational.gs', [('B', '$p'), ('B', 'algebraic')],
             ('N', 'algebraic', False),

@@ -149,7 +149,9 @@ def _premise_alternatives(row, slots, cur):
     for spec in row._prem:
         if spec[1] == GE2:
             k = spec[0] if type(spec[0]) is int else slots[spec[0]]
-            alts = [a + list(g) for a in alts for g in ge2_alternatives(k)]
+            # a slot list ('*', 'rest'): every slot is an integer >= 2
+            for j in ((k,) if type(k) is int else k):
+                alts = [a + list(g) for a in alts for g in ge2_alternatives(j)]
         else:
             ls = _lits(spec, slots, cur)
             alts = [a + ls for a in alts]
