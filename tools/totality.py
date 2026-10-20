@@ -432,6 +432,9 @@ def load_exprs(corpus=None, stream=None):
             Integral(x, (x, 0, y)), Integral(0, (x, y)), Integral(n, (x, y)), Integral(x, (x, y, y))]
     # the integer bounds of a sum c0 + c1*u (#180 S7)
     syn += [n - 1, 1 - n, 2 * n - 3, n / 2 + 1, 1 - 1 / n, 1 / n - 2, x - 1, 1 - 1 / x]
+    # integer reciprocals: bounds of 1/v, odd/even, (c0 + c1*u)**-k (#180 S7)
+    syn += [3 - 2 / n, 1 / x + 1, x / y, x / y**2, 3 / x, (n + 1)**-2, (1 - 2 * n)**-1, (n + 2)**x,
+            (x + 1)**-1]
     exprs.extend(syn)
     return exprs
 

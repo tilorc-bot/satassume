@@ -25,7 +25,9 @@ BUDGETS = [
     ("x*y", x * y, 50),
     ("2*x", 2 * x, 60),
     ("x**2", x**2, 40),
-    ("x**y", x**y, 60),
+    # 63 after #180 S7: an integer power of an integer to a negative integer
+    # power is +-1 (odd, no prime or composite, odd base).
+    ("x**y", x**y, 63),
     ("exp(x)", exp(x), 15),
 ]
 

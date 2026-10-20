@@ -36,7 +36,7 @@ import totality  # noqa: E402
 from sympy import Mul, Pow  # noqa: E402
 
 from satassume.knowledge.templates import _common, core, functions, registry  # noqa: E402
-from satassume.knowledge.templates.table import count_rows, iter_rows  # noqa: E402
+from satassume.knowledge.templates.table import count_rows, iter_rows, rules_of  # noqa: E402
 
 CORPUS = os.path.join(ROOT, "queries.jsonl")
 N_RANDOM = 2000
@@ -132,10 +132,27 @@ def _run(nodes):
     return out
 
 
+#: Rows of ``POW_TABLE`` added after 876f37d (unconditional ones): the
+#: reference is the legacy function plus these rows.
+POW_ROWS_ADDED = (
+    'int_base.negative_int_exp.unit',  # #180 S7
+    'int_base.negative_int_exp.unit_not',
+    'int_base.negative_int_exp.unit_base',
+    'int_base.negative_int_exp.not_unit',
+)
+
+
+def _legacy_pow_rules(*pargs):
+    rows = tuple(r for r in iter_rows(core.POW_TABLE) if r.name in POW_ROWS_ADDED)
+    assert len(rows) == len(POW_ROWS_ADDED) and all(not r.when for r in rows)
+    added = rules_of(rows, core.POW_GUARDS, core._pow_ctx(*pargs), core.POW_SLOTS)
+    return legacy.pow_rules(*pargs) + added
+
+
 def _with_legacy(monkeypatch, nodes):
     with monkeypatch.context() as m:
         m.setattr(core, "_mul_rules", legacy.mul_rules)
-        m.setattr(core, "_pow_rules", legacy.pow_rules)
+        m.setattr(core, "_pow_rules", _legacy_pow_rules)
         m.setattr(core, "ipi_rules", legacy.ipi_rules)
         m.setattr(functions, "ipi_rules", legacy.ipi_rules)
         try:
@@ -216,7 +233,13 @@ def test_provenance_covers_every_table_clause():
         for name, clause in core.table_provenance(e):
             prov.setdefault(clause, []).append(name)
         compiled, _ = registry.clauses_for(e)
+        if isinstance(e, Mul):
+            tables = {tuple(f) + (e,) for f in core._mul_factor_sets(e)}
+        else:
+            tables = {tuple(core._pow_pattern(e)[1])}
         for c in compiled:
+            if tuple(c.objs) not in tables:
+                continue    # a block outside the tables (core._quotient_templates)
             for lits, _, _ in c.pattern.clauses:
                 cl = frozenset((c.objs[k], BASIS[i], not neg) for k, i, neg in lits)
                 if cl not in prov:
