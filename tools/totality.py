@@ -315,6 +315,11 @@ def load_exprs(corpus=None, stream=None):
     from sympy import Symbol, symbols, I, pi, oo, E, Rational, Float
     from sympy import sin, cos, tan, cot, exp, log, sqrt, Abs, acos, asin, atan, acot, sinh, cosh, tanh
     from sympy import re, im, sign, conjugate, floor, ceiling, factorial, arg, Function
+    from sympy import sec, csc, coth, sech, csch, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc
+    from sympy import exp_polar, polar_lift, principal_branch, Mod, Max, Min, Piecewise, true
+    from sympy import factorial2, subfactorial, rf, ff, binomial, catalan, genocchi, partition
+    from sympy.functions.combinatorial.numbers import andre
+    from sympy.codegen.cfunctions import expm1, log1p
     exprs = []
     if corpus:
         # records of tools/compare.py: ``prop``/``assum`` (srepr of a
@@ -349,7 +354,10 @@ def load_exprs(corpus=None, stream=None):
     p = Symbol("p", positive=True)
     n = Symbol("n", integer=True)
     funcs = [exp, log, sin, cos, tan, cot, Abs, acos, asin, atan, acot, sinh, cosh, tanh, re, im,
-             sign, conjugate, floor, ceiling, factorial, arg, Function("f")]
+             sign, conjugate, floor, ceiling, factorial, arg, Function("f"),
+             sec, csc, coth, sech, csch, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc,
+             exp_polar, polar_lift, factorial2, subfactorial, catalan, andre, genocchi, partition,
+             expm1, log1p]
     syn = [x + y, x * y, x * A, A * x, x + A, x**y, x**2, x**-1, A**-1, 2 * x, -x, x - y, x * y * z,
            x + y + z, x**n, p**x, sqrt(x), x**Rational(1, 3), exp(I * pi * x), x * I, I * x + 1,
            2 * x + 1, x + 1, x - 1, x / 2, 3 * x, x**pi, pi**x, log(x, 2),
@@ -357,7 +365,11 @@ def load_exprs(corpus=None, stream=None):
            I**x, E**x, x**I, sqrt(2) * x, x + pi, Float(2.5) * x]
     syn += [f(x) for f in funcs]
     # a non-commutative argument: the Abs/re/im/sign family of issue #47
-    syn += [f(A) for f in funcs]
+    for f in funcs:
+        try:
+            syn.append(f(A))
+        except (TypeError, ValueError):     # partition(A): "n should be an integer"
+            pass
     syn += [x * y * A, A**2, 2 * A, A + 1, A**x, x**A, x * A + 1, Abs(x * A), re(x * A), Abs(A)**2,
             A * p, A + p, n * A]
     # the families of c26e5e1 at depth 1 (MEASUREMENTS.md section 2 and 8.3):
@@ -377,6 +389,15 @@ def load_exprs(corpus=None, stream=None):
             # half-integer sums of products
             x * y / 2 + Rational(1, 2), 2 * x * y + Rational(1, 2), x + 3 * y * z / 2, x * y * z / 2 + 1,
             Rational(1, 2) * x * y * z + w, x * y / 2 + n * z / 2]
+    # the templates of #180 C-NOTMPL with derived slots and several arguments
+    syn += [f(x + 1) for f in (acosh, atanh, acoth, asech, asec, acsc, factorial2, catalan,
+                               genocchi, log1p)]
+    syn += [f(n) for f in (atanh, acoth, factorial2, subfactorial, catalan, genocchi, partition)]
+    syn += [genocchi(2 * n), genocchi(2 * n + 1), factorial2(n - 4), catalan(n + 3),
+            principal_branch(x, 2 * pi), Mod(x, y), Mod(n, 3), Mod(x, -y), Max(x, y), Min(x, y),
+            Max(x, y, z), Min(x, y, z, w), Max(x, 2), Min(n, p), Max(x, y, z, w, a),
+            Piecewise((x, y > 1), (y, true)), Piecewise((x, y > 1), (2, z > 0), (z, true)),
+            rf(x, y), ff(x, y), binomial(x, y), rf(x, n), binomial(n, 2)]
     exprs.extend(syn)
     return exprs
 

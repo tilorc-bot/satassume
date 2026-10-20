@@ -94,7 +94,11 @@ def user_add(expr):
 def user_function(expr):
     return None
 
-assert CORE in sys.modules and FUNCS in sys.modules and not registry._lazy
+assert CORE in sys.modules and FUNCS in sys.modules
+# left: the modules declared by class name whose module is not imported
+# (sympy.codegen.cfunctions), which no node can need yet
+assert "sympy.codegen" not in sys.modules
+assert registry._lazy and all(not registry._imported(c) for c, m in registry._lazy)
 assert EPOCH[0] > epoch
 for cls, user, mod in ((Add, user_add, CORE), (exp, user_function, FUNCS)):
     ts = registry.templates_for(cls)
@@ -103,3 +107,49 @@ for cls, user, mod in ((Add, user_add, CORE), (exp, user_function, FUNCS)):
     assert all(t.__module__ == mod for t in own[:-1])
     assert ts[len(own) - 1] is user
 """)
+
+
+def test_named_classes_load_on_first_use():
+    # expm1 and log1p are declared by name: sympy.codegen is not imported
+    # by satassume, and the templates load with the first node of the class
+    _run("""
+import sys
+from sympy import Q, Symbol, exp
+from satassume.sympy_api import ask
+CF = "satassume.knowledge.templates.cfunctions"
+x = Symbol('x', real=True)
+assert ask(Q.positive(exp(x))) is True
+assert "sympy.codegen" not in sys.modules and CF not in sys.modules
+from sympy.codegen.cfunctions import expm1
+assert CF not in sys.modules
+assert ask(Q.real(expm1(x))) is True
+assert CF in sys.modules
+""")
+
+
+def test_user_registration_after_named_module_import_loads_it_first():
+    _run("""
+import sys
+from sympy.codegen.cfunctions import log1p
+from satassume.knowledge.templates.registry import registry
+CF = "satassume.knowledge.templates.cfunctions"
+assert CF not in sys.modules
+
+@registry.register(log1p)
+def user_log1p(expr):
+    return None
+
+assert CF in sys.modules and not registry._lazy
+own = registry._by_class[log1p]
+assert own[-1] is user_log1p and len(own) > 1 and own[0].__module__ == CF
+""")
+
+
+def test_named_declaration_covers():
+    r = TemplateRegistry()
+    from sympy import exp, log
+    assert r._covers(exp, ("sympy.functions.elementary.exponential:exp",))
+    assert not r._covers(log, ("sympy.functions.elementary.exponential:exp",))
+    assert r._covers(log, (Add, "sympy.functions.elementary.exponential:log"))
+    assert r._imported(("sympy.core.add:Add",))
+    assert not r._imported(("satassume_no_such_module:C",))

@@ -43,11 +43,18 @@ def symbol_units(expr):
 
 @registry.register(Number, NumberSymbol, ImaginaryUnit, ComplexInfinity)
 def constant_units(expr):
+    return value_units(expr, expr)
+
+
+def value_units(value, obj):
+    """The unit facts of the constant ``value`` (an atom with a fixed
+    value) as facts of ``obj``: for a node whose value is known to be
+    ``value`` (``genocchi(8, evaluate=False)`` is 17)."""
     def gen():
         out = []
         for pred in _CONST_BASIS:
-            value = const_value(expr, pred)
-            if value is not None:
-                out.append((pred, value))
+            v = const_value(value, pred)
+            if v is not None:
+                out.append((pred, v))
         return out
-    return units(('const', const_key(expr)), gen, expr)
+    return units(('const', const_key(value)), gen, obj)
