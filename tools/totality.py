@@ -441,6 +441,8 @@ def load_exprs(corpus=None, stream=None):
     # sin(pi*c*s), cos(pi*c*s) (#180 S7)
     syn += [sin(pi * x), cos(pi * x), sin(pi * x / 2), cos(3 * pi * x / 2), cos(2 * pi * x), sin(2 * pi / 7),
             cos(2 * pi / 7), cos(3 * pi / 4)]
+    # cosh(I*pi*c*s), cosh(r + I*pi*c*s) (#180 S7)
+    syn += [cosh(I * pi * x), cosh(I * pi / 4), cosh(x + 2 * I * pi * y), cosh(x + I * pi), cosh(x + y + 3 * I * pi * z)]
     exprs.extend(syn)
     return exprs
 
