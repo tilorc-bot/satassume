@@ -320,6 +320,15 @@ def load_exprs(corpus=None, stream=None):
     from sympy import factorial2, subfactorial, rf, ff, binomial, catalan, genocchi, partition
     from sympy.functions.combinatorial.numbers import andre
     from sympy.codegen.cfunctions import expm1, log1p
+    from sympy import (gamma, loggamma, polygamma, digamma, trigamma, multigamma, lowergamma,
+                       uppergamma, erf, erfc, erfi, erf2, erfinv, erfcinv, Ei, expint, li, Li, Si,
+                       Ci, Shi, Chi, fresnels, fresnelc, beta, betainc, betainc_regularized,
+                       LambertW, zeta, dirichlet_eta, polylog, airyai, airybi, airyaiprime,
+                       airybiprime, besselj, bessely, besseli, besselk)
+    try:
+        from sympy import owens_t
+    except ImportError:     # SymPy < 1.15
+        owens_t = None
     exprs = []
     if corpus:
         # records of tools/compare.py: ``prop``/``assum`` (srepr of a
@@ -398,6 +407,17 @@ def load_exprs(corpus=None, stream=None):
             Max(x, y, z), Min(x, y, z, w), Max(x, 2), Min(n, p), Max(x, y, z, w, a),
             Piecewise((x, y > 1), (y, true)), Piecewise((x, y > 1), (2, z > 0), (z, true)),
             rf(x, y), ff(x, y), binomial(x, y), rf(x, n), binomial(n, 2)]
+    # the special functions of #180 C-NOTMPL part B
+    special = [gamma, loggamma, digamma, trigamma, erf, erfc, erfi, erfinv, erfcinv, Ei, li, Li,
+               Si, Ci, Shi, Chi, fresnels, fresnelc, LambertW, zeta, dirichlet_eta, airyai,
+               airybi, airyaiprime, airybiprime]
+    syn += [f(a) for f in special for a in (x, x + 1, n, x - Rational(1, 2))]
+    syn += [f(x, y) for f in (polygamma, lowergamma, uppergamma, erf2, expint, beta, LambertW,
+                              zeta, polylog, besselj, bessely, besseli, besselk)
+            + ((owens_t,) if owens_t is not None else ())]
+    syn += [polygamma(n, x), polygamma(2, x), LambertW(x, -1), LambertW(x, n), zeta(x, p),
+            polylog(n, x + 1), multigamma(x, 1), multigamma(x, 3), multigamma(x + 1, 2),
+            betainc(x, y, z, w), betainc_regularized(n, 2, z, w), beta(x), gamma(2 * n + 1)]
     exprs.extend(syn)
     return exprs
 
