@@ -208,16 +208,24 @@ def _half_split(args):
     for a in args:
         if a.is_Rational:
             a0 = (a0 + (2*a).p) % 2          # an unevaluated sum has several
-        elif a.is_Mul and a.args[0].is_Rational:
-            c = a.args[0]
-            rest = a.args[1:]
-            t = rest[0] if len(rest) == 1 else kept_product(rest)
-            if t is None:
-                return None                  # Mul(1/2, x, 1/x): the rest is not x*(1/x) = 1 (#184)
-            terms.append(((2*c).p % 2, t))
         else:
-            terms.append((0, a))
+            ct = _coeff_term(a)
+            if ct is None:
+                return None
+            terms.append(((2*ct[0]).p % 2, ct[1]))
     return a0, terms
+
+
+def _coeff_term(a):
+    """A term ``a`` of a sum as ``(c, t)`` with ``a = c*t``: ``c`` the
+    Rational first factor of a ``Mul`` (1 if none), ``t`` the rest; None if
+    the rest is no product of its factors (``Mul(1/2, x, 1/x)`` is not
+    ``x*(1/x) = 1``, #184)."""
+    if not (a.is_Mul and a.args[0].is_Rational):
+        return S.One, a
+    rest = a.args[1:]
+    t = rest[0] if len(rest) == 1 else kept_product(rest)
+    return None if t is None else (a.args[0], t)
 
 
 def _half_rules(a0, odd, m):
@@ -278,15 +286,10 @@ def _bound_split(args):
         c0, t = t, c0
     if not c0.is_Rational or t.is_Rational:
         return None
-    c1 = S.One
-    if t.is_Mul and t.args[0].is_Rational:
-        c1, rest = t.args[0], t.args[1:]
-        t = rest[0] if len(rest) == 1 else kept_product(rest)
-        if t is None:
-            return None                     # an unevaluated Mul(2, x, 1/x) (#184)
-    if c1 == 0 or t.is_number:
+    ct = _coeff_term(t)
+    if ct is None or ct[0] == 0 or ct[1].is_number:
         return None
-    return c0, c1, t
+    return (c0,) + ct
 
 
 def _bound_rules(c0, c1):
@@ -297,7 +300,7 @@ def _bound_rules(c0, c1):
     R = Rules()
     for prem, lower, b in _INT_BOUNDS:
         v = c0 + c1*b
-        if lower == (c1 > 0):               # N >= v
+        if lower == (c1.p > 0):             # N >= v
             concl = 'extended_positive' if v > 0 else 'extended_nonnegative' if v == 0 else None
         else:                               # N <= v
             concl = 'extended_negative' if v < 0 else 'extended_nonpositive' if v == 0 else None

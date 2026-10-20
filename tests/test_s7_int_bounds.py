@@ -10,7 +10,7 @@ template had no rule that rounds a strict sign of an integer.
 from itertools import product
 
 import pytest
-from sympy import Rational, Symbol, atan, factorial, log
+from sympy import Add, Mul, Rational, Symbol, atan, factorial, log
 
 from satassume import DictCache, Engine
 
@@ -46,6 +46,13 @@ def fresh():
     (pr / 2 - 1, 'nonnegative', True),
     (Symbol('c', composite=True) - 4, 'nonnegative', True),
     (Symbol('e', even=True, negative=True) + 2, 'nonpositive', True),
+    # unevaluated sums and products: the Rational after the term, a Rational
+    # coefficient with a product rest, and rests that are no product (#184)
+    (Add(n, -1, evaluate=False), 'nonnegative', True),
+    (Add(Mul(n, -2, evaluate=False), 2, evaluate=False), 'nonpositive', True),
+    (Add(-1, Mul(2, n, pr, evaluate=False), evaluate=False), 'positive', True),
+    (Add(-1, Mul(1, n, 1 / n, evaluate=False), evaluate=False), 'nonnegative', None),
+    (Add(-1, Mul(0, n, evaluate=False), evaluate=False), 'nonnegative', False),
 ])
 def test_reproducers(expr, pred, expected):
     assert fresh().is_(expr, pred) is expected
@@ -68,8 +75,8 @@ REAL_SETS = {
     'negative': (dict(negative=True), [Rational(-1, 7), Rational(-1, 2), -1, -3]),
     'nonnegative': (dict(nonnegative=True), [0, Rational(1, 7), 1]),
 }
-C0 = [Rational(c) for c in (-4, -3, -2, -1, 0, 1, 2, 3, 4)] + [Rational(k, 2) for k in (-3, -1, 1, 3)] \
-    + [Rational(1, 3), Rational(-1, 3)]
+C0 = [Rational(c) for c in (-4, -3, -2, -1, 0, 1, 2, 3, 4)] \
+    + [Rational(k, 2) for k in (-3, -1, 1, 3)] + [Rational(1, 3), Rational(-1, 3)]
 C1 = [Rational(c) for c in (1, -1, 2, -2, 3)] + [Rational(1, 2), Rational(-1, 2)]
 
 
