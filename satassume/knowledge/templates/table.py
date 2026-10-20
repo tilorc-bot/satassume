@@ -18,7 +18,8 @@ a *group* name bound to several indices (``'*'``, ``'rest'``, ``'neg'``):
 a group literal stands for the literal on each of them (the builder
 :func:`._common.lits`), a conjunction in the premises and a disjunction in
 the conclusion.  The pseudo-predicate ``'int>=2'`` in a premise expands to
-the alternatives of :func:`._common.ge2_alternatives`, one rule each.  A row
+the alternatives of :func:`._common.ge2_alternatives`, one rule each (on a
+group, every slot's: the product of the alternatives).  A row
 with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules in the order
 of :meth:`._common.Rules.equiv`; a :class:`Sub` row runs another table.
 
@@ -149,7 +150,9 @@ def _premise_alternatives(row, slots, cur):
     for spec in row._prem:
         if spec[1] == GE2:
             k = spec[0] if type(spec[0]) is int else slots[spec[0]]
-            alts = [a + list(g) for a in alts for g in ge2_alternatives(k)]
+            # a slot list ('*', 'rest'): every slot is an integer >= 2
+            for j in ((k,) if type(k) is int else k):
+                alts = [a + list(g) for a in alts for g in ge2_alternatives(j)]
         else:
             ls = _lits(spec, slots, cur)
             alts = [a + ls for a in alts]

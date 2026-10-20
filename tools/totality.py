@@ -443,6 +443,8 @@ def load_exprs(corpus=None, stream=None):
             cos(2 * pi / 7), cos(3 * pi / 4)]
     # cosh(I*pi*c*s), cosh(r + I*pi*c*s) (#180 S7)
     syn += [cosh(I * pi * x), cosh(I * pi / 4), cosh(x + 2 * I * pi * y), cosh(x + I * pi), cosh(x + y + 3 * I * pi * z)]
+    # primality of sums, products and powers of integers (#180 S7)
+    syn += [(x + 1) * (y + 1), (x + 1) * (y + 1) * z, x**(y + 1), (x + 1)**(y + 1), (-x - 1)**(2 * y), x + y + 1]
     exprs.extend(syn)
     return exprs
 
