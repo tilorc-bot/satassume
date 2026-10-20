@@ -421,6 +421,11 @@ def load_exprs(corpus=None, stream=None):
     # the non-Function nodes of #180 C-NOTMPL part C
     from sympy.physics.units import meter, speed_of_light
     syn += [meter, speed_of_light, meter * x, meter + x, meter**x, sqrt(meter**2)]
+    from sympy import AccumBounds, Idx, oo
+    from sympy.stats import Die, Normal
+    i, X = Idx('i', n), Normal('X', 0, 1)
+    syn += [AccumBounds(-1, 2), AccumBounds(-oo, oo), AccumBounds(1, oo) + x, i, i + x, 2**i,
+            X, X + x, X**2, Die('D', 6), x * X]
     exprs.extend(syn)
     return exprs
 

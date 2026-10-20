@@ -96,8 +96,9 @@ def user_function(expr):
 
 assert CORE in sys.modules and FUNCS in sys.modules
 # left: the modules declared by class name whose module is not imported
-# (sympy.codegen.cfunctions, sympy.physics), which no node can need yet
+# (sympy.codegen.cfunctions, sympy.physics, sympy.stats), which no node can need yet
 assert "sympy.codegen" not in sys.modules and "sympy.physics" not in sys.modules
+assert "sympy.stats" not in sys.modules
 assert registry._lazy and all(not registry._imported(c) for c, m in registry._lazy)
 assert EPOCH[0] > epoch
 for cls, user, mod in ((Add, user_add, CORE), (exp, user_function, FUNCS)):
@@ -130,6 +131,12 @@ from sympy.physics.units import meter
 assert PH not in sys.modules
 assert ask(Q.positive(meter)) is True
 assert PH in sys.modules
+ST = "satassume.knowledge.templates.stats"
+assert "sympy.stats" not in sys.modules and ST not in sys.modules
+from sympy.stats import Normal
+assert ST not in sys.modules
+assert ask(Q.real(Normal('X', 0, 1))) is True
+assert ST in sys.modules
 """)
 
 
@@ -145,8 +152,9 @@ assert CF not in sys.modules
 def user_log1p(expr):
     return None
 
-# left: physics (declared by name, sympy.physics is not imported)
-assert CF in sys.modules and [m for c, m in registry._lazy] == ["satassume.knowledge.templates.physics"]
+# left: physics and stats (declared by name, sympy.physics and sympy.stats are not imported)
+assert CF in sys.modules and [m for c, m in registry._lazy] == ["satassume.knowledge.templates.physics",
+                                                                "satassume.knowledge.templates.stats"]
 own = registry._by_class[log1p]
 assert own[-1] is user_log1p and len(own) > 1 and own[0].__module__ == CF
 """)
