@@ -63,7 +63,8 @@ def constructed_noncommutative(t) -> int:
 
     2: a non-commutative symbol, or a class fixing ``is_commutative =
     False`` (an ``Operator``, a ``MatrixExpr``: SymPy's fact rules apply to
-    it).  The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when
+    it) unless it is an operation over non-commutative terms
+    (:func:`_fixed_level`: ``Commutator(a, b)``, 1).  The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when
     built: 1 if False, 2 if evaluating it cannot cancel its
     non-commutative part (:func:`_nc_sum_level`, :func:`_nc_product_level`:
     ``A + x``, ``A - B``, ``-c``, ``A*B``, ``2*sin(A)``; not ``A - A``,
@@ -99,7 +100,7 @@ def constructed_noncommutative(t) -> int:
         if v is _MISSING:
             continue
         if v is False:
-            return 2
+            return _fixed_level(t)
         if v is Basic.__dict__["is_commutative"]:
             break
         if not isinstance(v, MemberDescriptorType):
@@ -133,6 +134,29 @@ def constructed_noncommutative(t) -> int:
             return 2
         return 1
     return 0
+
+
+def _fixed_level(t) -> int:
+    """The level of a term whose class fixes ``is_commutative = False``: 2
+    for a matrix expression, which is never a number, and for a term with
+    nothing non-commutative below it (``Operator('a')``, ``JzKet(j, m)``,
+    ``CreateBoson(i)``), which is built from labels and does not evaluate;
+    else 1.  An operation over non-commutative terms may evaluate to a
+    number (#232): ``Commutator(a, b - b)`` and ``AntiCommutator(a, b - b)``
+    are 0, and ``Commutator(a, Dagger(a))`` is 1 for a boson operator
+    ``a``; so may an associative operation over commutative terms
+    (``TensMul(0, x)`` is 0, ``TensAdd(1, 1)`` is 2)."""
+    from sympy.core.operations import AssocOp
+    from sympy.core.traversal import preorder_traversal
+    if _is_matrix(t):
+        return 2
+    if isinstance(t, AssocOp):
+        return 1
+    for a in t.args:
+        if any(isinstance(s, _Basic) and _fixed_noncommutative(s)
+               for s in preorder_traversal(a)):
+            return 1
+    return 2
 
 
 def _nonzero_number(a) -> bool:
