@@ -16,9 +16,10 @@ this package only inside functions (docs/design.md, "Where SymPy is
 imported"; ``tests/test_layering.py``).
 """
 from sympy.core.add import Add
-from sympy.core.function import Function
+from sympy.core.function import Application, Function
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
+from sympy.core.singleton import S
 from sympy.functions.elementary.exponential import LambertW
 from sympy.functions.combinatorial.factorials import (
     FallingFactorial,
@@ -103,5 +104,16 @@ registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")
 registry.lazy(__name__ + ".stats", "sympy.stats.rv:RandomSymbol")
 registry.lazy(__name__ + ".nodes", AccumulationBounds, Idx)
 registry.lazy(__name__ + ".limits", Sum, Product, Integral)
+
+
+def _applied_to_nan(expr) -> bool:
+    """A function applied to ``nan``: SymPy's functions return nan before
+    any identity a template states (``rf(nan, 0)``, ``owens_t(nan, 0)``,
+    ``zeta(1, nan)``, ``Abs(nan)``, ``sign(nan)``), and no predicate holds
+    of nan, so no template fact is claimed (#180 final review F3)."""
+    return isinstance(expr, Application) and any(a is S.NaN for a in expr.args)
+
+
+registry.opaque = _applied_to_nan
 
 __all__ = ['TemplateRegistry', 'registry']

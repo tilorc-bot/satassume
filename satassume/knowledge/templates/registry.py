@@ -89,6 +89,10 @@ class TemplateRegistry:
         #: set by :mod:`satassume.engine`, which this layer cannot import
         #: (None: no such facts)
         self.context_free: Callable[[Any, Iterable[str]], Dict[str, Any]] | None = None
+        #: ``expr -> bool``: no template describes ``expr`` (a function
+        #: applied to ``nan``, see :mod:`satassume.knowledge.templates`);
+        #: set by the template package, as this layer does not import SymPy
+        self.opaque: Callable[[Any], bool] | None = None
 
     def lazy(self, module: str, *classes: type) -> None:
         """Declare the built-in template module ``module`` (a module name),
@@ -204,6 +208,8 @@ class TemplateRegistry:
         """Every formula emitted by every template matching ``type(expr)``
         (compiled patterns expanded to formulas)."""
         out: List[Any] = []
+        if self.opaque is not None and self.opaque(expr):
+            return out
         for f in self.templates_for(type(expr)):
             _collect(f(expr), out)
         return out
@@ -218,8 +224,9 @@ class TemplateRegistry:
             return r
         compiled: List[Compiled] = []
         formulas: List[Any] = []
-        for f in self.templates_for(type(expr)):
-            _split(f(expr), compiled, formulas)
+        if self.opaque is None or not self.opaque(expr):
+            for f in self.templates_for(type(expr)):
+                _split(f(expr), compiled, formulas)
         cache = self._clauses_cache
         if len(cache) >= CLAUSES_CACHE_SIZE:
             cache.clear()

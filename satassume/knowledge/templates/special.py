@@ -503,7 +503,7 @@ _register(fresnelc, 'fresnelc', _fresnel)
 # ---------------------------------------------------------------------------
 # owens_t(h, a) = integral of exp(-h**2*(1 + t**2)/2)/(1 + t**2)/(2*pi)
 # over (0, a): real with the sign of a for real h (also a = +-oo:
-# +-erfc(|h|/sqrt(2))/4), 0 for h = +-oo (SymPy) or a = 0; for h = I*s and
+# +-erfc(|h|/sqrt(2))/4), 0 for h = +-oo (SymPy) or a = 0 (h not nan); for h = I*s and
 # real a the integrand is positive as well.
 # ---------------------------------------------------------------------------
 
@@ -512,7 +512,9 @@ def _owens_t(R, n):
         return
     h, a, node = 0, 1, 2
     R.rule([(h, 'extended_real', True), (a, 'extended_real', True)], (node, 'real', True))
-    R.rule([(a, 'zero', True)], (node, 'zero', True))
+    # owens_t(nan, 0) is nan (and owens_t(x + y, 0) at x = oo, y = -oo)
+    for hp in ('complex', 'extended_real'):
+        R.rule([(h, hp, True), (a, 'zero', True)], (node, 'zero', True))
     R.rule([(h, 'infinite', True), (h, 'extended_real', True), (a, 'extended_real', True)],
            (node, 'zero', True))
     for hp in ('real', 'imaginary'):
@@ -628,8 +630,11 @@ def _zeta(R, n):
     # s == 1 (the sign and parity premises keep the rule apart from the
     # even s, which nothing at depth 1 relates to s - 1)
     pole = [(m, 'zero', True)] + ([(s, 'positive', True), (s, 'even', False)] if n == 1 else [])
-    for concl in ((node, 'infinite', True), (node, 'extended_real', False)):
-        R.rule(pole, concl)
+    # zeta(1, nan) is nan (and zeta(1, x + y) at x = oo, y = -oo)
+    poles = [pole] if n == 1 else [pole + [(1, ap, True)] for ap in ('complex', 'extended_real')]
+    for premises in poles:
+        for concl in ((node, 'infinite', True), (node, 'extended_real', False)):
+            R.rule(premises, concl)
     if n == 2:
         R.rule([(s, 'positive', True), (m, 'positive', True), (1, 'positive', True)],
                (node, 'positive', True))
