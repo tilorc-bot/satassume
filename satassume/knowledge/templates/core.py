@@ -628,6 +628,12 @@ def _mul_table_rows():
             Row('one_transcendental',
                 [('k', 'transcendental'), ('rest', 'algebraic'), ('rest', 'zero', False)],
                 ('N', 'transcendental')),
+            # Likewise one non-algebraic factor (possibly infinite or not a
+            # complex number): else k = N/(product of the rest) would be
+            # algebraic (#180 S7).
+            Row('one_non_algebraic',
+                [('k', 'algebraic', False), ('rest', 'algebraic'), ('rest', 'zero', False)],
+                ('N', 'algebraic', False)),
             # One non-real factor and the rest nonzero extended reals -> not real.
             Row('one_non_real', [('k', 'extended_real', False), ('rest', 'extended_nonzero')],
                 ('N', 'extended_real', False)),
@@ -1021,6 +1027,7 @@ POW_GUARDS = MappingProxyType({
     'b positive rational, not a q-th power': _b_not_qth_power,
     'e is -1': lambda x: x['e'] is S.NegativeOne,
     'b is -1': lambda x: x['b'] is S.NegativeOne,
+    'b is 1': lambda x: x['b'] is S.One,
     'b integer, |b|>=2': lambda x: (x['b'] is not None and x['b'] is not S.NegativeOne
                                     and x['b'].is_Integer and (x['b'].p >= 2 or x['b'].p <= -2)),
     # sympy-boundary: b a numeric constant
@@ -1131,6 +1138,10 @@ def _pow_table_rows():
         Row('e=-1.commutative', [('N', 'complex'), ('N', 'zero', False)], ('B', 'commutative'),
             when='e is -1'),
         Row('b=-1.odd', [('E', 'integer')], ('N', 'odd'), when='b is -1'),
+        # 1**e == exp(e*log(1)) == 1 for complex e (1**oo is nan).
+        Row('b=1', [('E', 'complex')], ('N', '$p'), preds=('positive', 'odd'), when='b is 1'),
+        Row('b=1.unit', [('E', 'complex')], ('N', '$p', False), preds=('prime', 'composite'),
+            when='b is 1'),
         # 1/b is imaginary iff b is (1/0 == zoo, 1/oo == 0).
         Row('e=-1.imaginary', [('N', 'imaginary')], ('B', 'imaginary'), when='e is -1'),
         # (I*t)**e == I**e * t**e for real t != 0: I**e is -1 or 1.
@@ -1175,6 +1186,10 @@ def _pow_table_rows():
         Row('e=algebraic_irrational.gs', [('B', '$p'), ('B', 'algebraic')],
             ('N', 'algebraic', False),
             preds=_NOT01, when='e algebraic irrational'),
+        # Likewise for symbolic b and e: b not in {0, 1} says b != 0, b - 1 != 0.
+        Row('gs.symbolic', [('B', 'algebraic'), ('B', 'zero', False), ('BM', 'zero', False),
+                            ('E', 'algebraic'), ('E', 'rational', False)],
+            ('N', 'algebraic', False), when='b-1, b+1 slots'),
     )
 
 

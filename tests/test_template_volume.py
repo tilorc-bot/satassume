@@ -25,7 +25,9 @@ BUDGETS = [
     ("x + y", x + y, 55),
     # 51 after #180 S7: nonzero reals times k imaginary only for imaginary k.
     # 59 after #180 S7 G5: two integers >= 2 (3**2 premise alternatives).
-    ("x*y", x * y, 59),
+    # 61 after #180 S7 Galg: one non-algebraic factor, the rest nonzero
+    # algebraics (one per factor).
+    ("x*y", x * y, 61),
     ("2*x", 2 * x, 60),
     ("x**2", x**2, 40),
     # 63 after #180 S7: an integer power of an integer to a negative integer
@@ -33,7 +35,8 @@ BUDGETS = [
     # 68 after #180 S7 G5: an integer >= 2 to a positive integer power is
     # >= 2, an integer to a power >= 2 is no prime, b <= -2 to an even power
     # is composite.
-    ("x**y", x**y, 68),
+    # 69 after #180 S7 Galg: Gelfond-Schneider for symbolic b, e.
+    ("x**y", x**y, 69),
     ("exp(x)", exp(x), 15),
 ]
 

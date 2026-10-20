@@ -145,6 +145,9 @@ POW_ROWS_ADDED = (
     'ge2s.composite',  # #180 S7 G5
     'e>=2.not_prime',
     'b<=-2.even_e.composite',
+    'b=1',  # #180 S7 Galg
+    'b=1.unit',
+    'gs.symbolic',
 )
 MUL_ROWS_ADDED = (
     'one_imag.back',  # #180 S7
@@ -153,6 +156,7 @@ MUL_ROWS_ADDED = (
     'imag_times_rest.imag',
     'imag_times_rest.imag.flip',
     'ge2s',  # #180 S7 G5
+    'one_non_algebraic',  # #180 S7 Galg
 )
 
 
