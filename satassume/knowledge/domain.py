@@ -15,6 +15,7 @@ This module imports SymPy, so the engine imports it lazily.
 from __future__ import annotations
 
 from collections import Counter
+from types import MemberDescriptorType
 
 from sympy.core.basic import Basic as _Basic
 from sympy.core.containers import Tuple as _Tuple
@@ -48,6 +49,59 @@ def _fixed_noncommutative(t) -> bool:
         if v is not None:
             return v is False
     return False
+
+
+def _constructed_noncommutative(t) -> bool:
+    """Whether SymPy's ``t.is_commutative`` is False by construction, read
+    without evaluating any assumption (see :func:`_fixed_noncommutative`).
+    True only if it is: ``t`` is fixed non-commutative; or the
+    ``is_commutative`` slot that ``Add``, ``Mul``, ``Pow`` and integrals
+    fill when built is False; or ``t`` is an application of a function
+    whose ``_eval_is_commutative`` is ``Function``'s (the ``fuzzy_and`` of
+    its arguments: ``f(A)``, ``adjoint(A)``, ``exp(M)``) with an argument
+    non-commutative by construction.  False when unknown (``re(A)`` and
+    ``Abs(A)`` fix True, other evaluators are not followed)."""
+    from sympy.core.function import Function
+    if _fixed_noncommutative(t):
+        return True
+    cls = type(t)
+    for k in cls.__mro__:
+        v = k.__dict__.get("is_commutative", None)
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            return False
+        if isinstance(v, property):
+            break
+        if not isinstance(v, MemberDescriptorType):
+            return False
+        try:
+            # the construction-time slot (a member descriptor): a plain
+            # read, no assumption is evaluated or cached
+            return v.__get__(t, cls) is False
+        except AttributeError:
+            return False
+    # sympy-boundary: compares the class's evaluator, does not call it
+    if getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative:
+        return any(_constructed_noncommutative(a) for a in t.args)
+    return False
+
+
+_NONCOMMUTATIVE_FALSE: frozenset = frozenset()
+
+
+def noncommutative_false() -> frozenset:
+    """The facts false of a term whose ``commutative`` is False: those SymPy's
+    fact rules derive false from it (``complex -> commutative``, and every
+    fact implying ``complex``: ``zero``, ``real``, ``integer``, ...),
+    ``commutative`` included.  ``finite``, ``infinite``, ``hermitian``,
+    ``antihermitian`` and ``polar`` are not among them."""
+    global _NONCOMMUTATIVE_FALSE
+    if not _NONCOMMUTATIVE_FALSE:
+        from sympy.core.assumptions import StdFactKB
+        _NONCOMMUTATIVE_FALSE = frozenset(
+            k for k, v in StdFactKB({"commutative": False}).items() if v is False)
+    return _NONCOMMUTATIVE_FALSE
 
 
 def _is_matrix(t) -> bool:

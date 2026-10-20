@@ -148,6 +148,21 @@ def _noncommutative(term) -> bool:
     return nc(term)
 
 
+def _noncommutative_answer(term, pred: str) -> Optional[bool]:
+    """The answer about a :func:`_noncommutative` term: if SymPy makes the
+    term non-commutative by construction (``f(A)``, ``adjoint(A)``,
+    ``A*x``: see
+    :func:`satassume.knowledge.domain._constructed_noncommutative`), False
+    for ``commutative`` and for the facts implying it (``complex``,
+    ``zero``, ...: :func:`satassume.knowledge.domain.noncommutative_false`);
+    else None (``re(A)``, which SymPy fixes commutative, ``finite``,
+    ``hermitian``, ...)."""
+    from .knowledge.domain import _constructed_noncommutative, noncommutative_false
+    if pred in noncommutative_false() and _constructed_noncommutative(term):
+        return False
+    return None
+
+
 def _noncommutative_atoms(*formulas) -> bool:
     """Whether a vocabulary atom of ``formulas`` (None skipped) has a
     non-commutative term (:func:`_noncommutative`)."""
@@ -1974,10 +1989,10 @@ class Engine:
             self._check_version()
         if pred not in PRED_INDEX:
             return self._is_custom(node, pred)
+        if _noncommutative(node):
+            return _noncommutative_answer(node, pred)
         if node in self._constructing:
             # re-entrant query from a template evaluating this very node
-            return None
-        if _noncommutative(node):
             return None
         c = self._cones.get(node)
         if c is None:
@@ -2018,7 +2033,9 @@ class Engine:
         for k, pred in enumerate(preds):
             if pred not in PRED_INDEX:
                 out[k] = self._is_custom(node, pred)
-            elif not noncomm:
+            elif noncomm:
+                out[k] = _noncommutative_answer(node, pred)
+            else:
                 todo.append(k)
         if not todo or node in self._constructing:
             return out
