@@ -8,7 +8,7 @@ import random
 
 import pytest
 from sympy import (Abs, Catalan, E, EulerGamma, Float, GoldenRatio, I, Integer, Q, Rational,
-                   S, acos, asin, atan, cos, exp, gamma, log, pi, sin, sqrt, symbols, tan)
+                   S, acos, asin, atan, cos, exp, gamma, log, pi, sin, sqrt, symbols, tan, zeta)
 
 from satassume import DictCache, Engine
 from satassume.ref import ask_ref
@@ -39,6 +39,14 @@ def fresh():
     (pi - 3, 'zero', False),
     (acos(Rational(1, 3)) - 1, 'positive', True),
     (Abs(sin(2) - 1) - Rational(1, 10), 'negative', True),
+    # #196: test_hypersum's Abs(243/8 - 27*zeta(3))
+    (Rational(243, 8) - 27*zeta(3), 'negative', True),
+    (Abs(Rational(243, 8) - 27*zeta(3)), 'positive', True),
+    (zeta(3) - Rational(6, 5), 'positive', True),
+    (zeta(5) - 1 - Rational(1, 32), 'positive', True),
+    (zeta(Rational(3, 2)) - Rational(13, 5), 'positive', True),
+    (zeta(1 + pi) - Rational(107, 100), 'positive', True),
+    (zeta(sqrt(2)) - 3, 'positive', True),
 ])
 def test_reproducers(expr, pred, expected):
     assert fresh().is_(expr, pred) is expected
@@ -56,6 +64,9 @@ def test_relation_and_unary_agree():
     log(-2) - 1,
     asin(Rational(3, 2)),            # outside [-1, 1]: complex
     gamma(Rational(-1, 2)) + 1,      # the argument is not positive
+    zeta(Rational(1, 2)) + 1,        # zeta below 1 is not evaluated
+    zeta(pi - 3) + 1,
+    zeta(10**6 + 1) - 1,             # the terms are below 2**-4096
 ])
 def test_undecided_signs(expr):
     eng = fresh()
@@ -109,7 +120,7 @@ def _random_closed(rng, depth):
         return rng.choice(atoms)
     a, b = _random_closed(rng, depth - 1), _random_closed(rng, depth - 1)
     f = rng.choice(['add', 'sub', 'mul', 'exp', 'log', 'atan', 'sin', 'cos', 'tan',
-                    'asin', 'acos', 'gamma', 'abs'])
+                    'asin', 'acos', 'gamma', 'abs', 'zeta'])
     if f == 'add':
         return a + b
     if f == 'sub':
@@ -118,6 +129,8 @@ def _random_closed(rng, depth):
         return a*b
     if f in ('asin', 'acos'):
         return {'asin': asin, 'acos': acos}[f](a/(Abs(a) + 1))
+    if f == 'zeta':
+        return zeta(Rational(rng.randint(1, 9), 10) + Abs(a))   # half of them above 1
     return {'exp': exp, 'log': log, 'atan': atan, 'sin': sin, 'cos': cos, 'tan': tan,
             'gamma': gamma, 'abs': Abs}[f](a)
 
