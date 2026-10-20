@@ -330,8 +330,8 @@ _RECIP_BOUNDS = (
 
 
 def _recip_rules(c0, c1):
-    """Rules for ``N = c0 + c1/v`` (slot 0 ``v``, slot 1 ``1/v``, slot 2
-    ``N``): the bounds of ``1/v`` (:data:`_RECIP_BOUNDS`) bound ``N``."""
+    """Rules for ``N = c0 + c1/v`` (slot 0 ``v``, slot 1 ``N``): the
+    bounds of ``1/v`` (:data:`_RECIP_BOUNDS`) bound ``N``."""
     R = Rules()
     for prem, (lo, lo_open, hi, hi_open) in _RECIP_BOUNDS:
         a, a_open, b, b_open = c0 + c1*lo, lo_open, c0 + c1*hi, hi_open
@@ -347,7 +347,7 @@ def _recip_rules(c0, c1):
             concl = 'extended_nonpositive'
         else:
             continue
-        R.rule([(0, p, True) for p in prem], (2, concl, True))
+        R.rule([(0, p, True) for p in prem], (1, concl, True))
     return R.rules
 
 
@@ -358,7 +358,7 @@ def _recip_templates(expr, split):
     if not (u.is_Pow and u.args[1] is S.NegativeOne) or u.args[0].is_number:
         return None
     return facts(('add_recip', c0, c1), lambda: _recip_rules(c0, c1), {},
-                 (u.args[0], u, expr), 2)
+                 (u.args[0], expr), 1)
 
 
 def _not_unit_premises(c0, c1):
@@ -1111,7 +1111,7 @@ def _pow_bound_templates(expr):
     base, which it is under each bound, so that they read the base's own
     facts and not only those two levels down."""
     b, e = expr.args
-    if not b.is_Add or e.is_number and not (e.is_Integer and e.p < 0):
+    if not b.is_Add or (e.is_number and not (e.is_Integer and e.p < 0)):
         return None
     split = _bound_split(b.args)
     if split is None:
