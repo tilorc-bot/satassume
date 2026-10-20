@@ -271,6 +271,7 @@ _INT_BOUNDS = (
     (('integer', 'extended_positive'), True, 1),
     (('prime',), True, 2),
     (('composite',), True, 4),
+    (('composite', 'odd'), True, 9),
     (('even', 'extended_positive'), True, 2),
     (('integer', 'extended_nonnegative'), True, 0),
     (('integer', 'extended_negative'), False, -1),
