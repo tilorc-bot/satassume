@@ -443,3 +443,38 @@ def test_n_ary_equivalent_in_the_proposition(eng):
     assert got == [None, None, False, True, True, False, True]
     for (p, a), r in zip(cases, got):
         assert ask(p.subs(three, chain), a, Engine(cache=DictCache())) is r
+
+
+def test_xor_and_ite(eng):
+    """``Xor`` (odd parity) and ``ITE`` translate to the supported
+    connectives, in the assumptions and in the proposition (#180 S4); they
+    used to raise ``Unsupported`` and answer None as ``'other'``."""
+    from sympy import ITE, Xor
+    x, y = Symbol('x'), Symbol('y')
+    pos, neg, zero, real = Q.positive(x), Q.negative(x), Q.zero(x), Q.real(x)
+    # #180 reproducer (test_query.py::test_functions_in_assumptions)
+    assert out_of_scope(neg, Xor(neg, real)) is None
+    assert ask(neg, Xor(neg, real), eng) is False
+    assert ask(neg, real & ~neg, eng) is False
+    assert ask(zero, Xor(neg, real) & ~pos, eng) is True
+    # three arguments: an odd number of them holds, not exactly one
+    assert ask(Xor(pos, neg, zero), real, eng) is True
+    assert ask(Xor(pos, neg), real, eng) is None
+    assert ask(Xor(pos, neg), real & ~zero, eng) is True
+    odd3 = Xor(pos, real, Q.integer(x))
+    assert ask(odd3, Q.even(x), eng) is None  # x = 0 is even, not positive
+    assert ask(odd3, Q.even(x) & pos, eng) is True
+    assert ask(odd3, Q.irrational(x) & pos, eng) is False
+    assert ask(~Xor(pos, neg, zero), real, eng) is False
+    # ITE(c, a, b): a where c holds, b elsewhere
+    assert ask(Q.real(y), ITE(pos, Q.real(y), Q.integer(y)), eng) is True
+    assert ask(Q.integer(y), ITE(pos, Q.integer(y), Q.even(y)), eng) is True
+    assert ask(Q.even(y), ITE(pos, Q.integer(y), Q.even(y)), eng) is None
+    assert ask(Q.even(y), ITE(pos, Q.integer(y), Q.even(y)) & neg,
+               eng) is True
+    assert ask(ITE(pos, Q.real(y), Q.zero(y)), Q.real(y), eng) is None
+    assert ask(ITE(pos, Q.real(y), Q.zero(y)), Q.real(y) & ~pos,
+               eng) is None
+    assert ask(ITE(pos, Q.real(y), Q.zero(y)), ~Q.zero(y) & ~pos,
+               eng) is False
+    assert ask(ITE(pos, Q.real(y), Q.zero(y)), Q.zero(y), eng) is True
