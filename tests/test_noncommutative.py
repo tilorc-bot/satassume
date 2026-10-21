@@ -27,6 +27,7 @@ sympy = pytest.importorskip("sympy")
 from sympy import (
     Abs,
     Add,
+    Expr,
     Float,
     Function,
     I,
@@ -673,7 +674,42 @@ def _evaluates_to_number():
             Pow(S.Exp1, Mul(0.0, A, evaluate=False), evaluate=False),
             Mul(0.0, A, B, evaluate=False), Add(A, S.NaN, evaluate=False),
             Add(A, B, S.NaN, evaluate=False), Add(sin(A), S.NaN, evaluate=False),
-            Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False)]
+            Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False)] + _operations_to_number()
+
+
+def _operations_to_number():
+    # #232: a class fixing is_commutative = False, but an operation that
+    # evaluates to a number
+    from sympy.physics.quantum import AntiCommutator, Commutator, Dagger, Operator, TensorProduct
+    from sympy.physics.quantum.boson import BosonOp
+    from sympy.physics.quantum.fermion import FermionOp
+    from sympy.tensor.tensor import TensAdd, TensMul
+    a, b = Operator('a'), Operator('b')
+    z = Add(b, -b, evaluate=False)
+    c, d = BosonOp('c'), FermionOp('d')
+    return [Commutator(a, z), AntiCommutator(a, z), AntiCommutator(z, a), TensorProduct(a, z),
+            Commutator(c, Dagger(c)), AntiCommutator(d, Dagger(d)),
+            TensMul(0, x), TensMul(x), TensAdd(1, 1)] + _operations_over_opaque()
+
+
+class _NCProperty(Expr):
+    # non-commutative through a property, not a class attribute
+    @property
+    def is_commutative(self):
+        return False
+
+
+class _NoCommutative(Expr):
+    pass
+
+
+def _operations_over_opaque():
+    # #233 review: below the operation a term whose commutativity a property
+    # or an evaluator decides
+    from sympy.physics.quantum import AntiCommutator, Commutator
+    v, u = _NCProperty(), _NoCommutative()
+    return [Commutator(v, Add(v, -v, evaluate=False)), AntiCommutator(v, Add(v, -v, evaluate=False)),
+            Commutator(u, Mul(u, 1, evaluate=False))]
 
 
 def test_constructed_noncommutative_number_when_evaluated():
@@ -704,6 +740,23 @@ def test_constructed_noncommutative_levels_kept():
         assert fresh().is_many(e, ['commutative', 'complex']) == [False, None], e
     # several arguments: no level 2 (binomial(A, B) may have a special value)
     assert fresh().is_many(binomial(A, B, evaluate=False), ['commutative', 'complex']) == [False, None]
+
+
+def test_constructed_noncommutative_atoms_kept():
+    # #232: operators and states built from labels stay at level 2; an
+    # operation over them does not
+    from sympy import Quaternion
+    from sympy.physics.quantum import Commutator, Operator
+    from sympy.physics.quantum.boson import BosonOp
+    from sympy.physics.quantum.spin import JzKet
+    from sympy.physics.secondquant import CreateBoson
+    from satassume.knowledge.domain import constructed_noncommutative
+    a, b = Operator('a'), Operator('b')
+    for e in (a, BosonOp('c'), JzKet(1, 0), CreateBoson(x), Quaternion(x, y, 0, 1)):
+        assert constructed_noncommutative(e) == 2, e
+        assert fresh().is_many(e, ['commutative', 'zero', 'complex']) == [False, False, False], e
+    assert constructed_noncommutative(Commutator(a, b)) == 1
+    assert fresh().is_many(Commutator(a, b), ['commutative', 'zero']) == [False, None]
 
 
 def test_constructed_noncommutative_unknown_stays_none():

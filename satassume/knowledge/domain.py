@@ -63,8 +63,10 @@ def constructed_noncommutative(t) -> int:
 
     2: a non-commutative symbol, or a class fixing ``is_commutative =
     False`` (an ``Operator``, a ``MatrixExpr``: SymPy's fact rules apply to
-    it).  The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when
-    built: 1 if False, 2 if evaluating it cannot cancel its
+    it) unless it may be an operation that evaluates to a number
+    (:func:`_fixed_level`: ``Commutator(a, b)``, ``TensMul(0, x)``, 1).
+    The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when built:
+    1 if False, 2 if evaluating it cannot cancel its
     non-commutative part (:func:`_nc_sum_level`, :func:`_nc_product_level`:
     ``A + x``, ``A - B``, ``-c``, ``A*B``, ``2*sin(A)``; not ``A - A``,
     ``exp(A)*exp(-A)``, ``x*A``, ``0.0*A`` or ``A + nan``, which may be
@@ -99,7 +101,7 @@ def constructed_noncommutative(t) -> int:
         if v is _MISSING:
             continue
         if v is False:
-            return 2
+            return _fixed_level(t)
         if v is Basic.__dict__["is_commutative"]:
             break
         if not isinstance(v, MemberDescriptorType):
@@ -133,6 +135,63 @@ def constructed_noncommutative(t) -> int:
             return 2
         return 1
     return 0
+
+
+def _fixed_level(t) -> int:
+    """The level of a term whose class fixes ``is_commutative = False``: 2
+    for a matrix expression, which is never a number, and for a term built
+    from labels, every subterm commutative by construction
+    (:func:`_constructed_commutative`: ``Operator('a')``, ``JzKet(j, m)``,
+    ``CreateBoson(i)``), which does not evaluate; else 1.  An operation over
+    non-commutative terms may evaluate to a number (#232):
+    ``Commutator(a, b - b)`` and ``AntiCommutator(a, b - b)`` are 0, and
+    ``Commutator(a, Dagger(a))`` is 1 for a boson operator ``a``; so may an
+    associative operation over commutative terms (``TensMul(0, x)`` is 0,
+    ``TensAdd(1, 1)`` is 2)."""
+    from sympy.core.operations import AssocOp
+    if _is_matrix(t):
+        return 2
+    if isinstance(t, AssocOp):
+        return 1
+    return 2 if all(_constructed_commutative(a) for a in t.args) else 1
+
+
+def _constructed_commutative(s) -> bool:
+    """Whether SymPy builds ``s`` commutative, read without evaluating any
+    assumption (see :func:`_fixed_noncommutative`): a symbol declared
+    commutative, a class fixing ``is_commutative = True`` (a number), the
+    slot of an ``Add``, ``Mul`` or ``Pow`` filled True, and a function
+    (``Function``'s ``_eval_is_commutative``) or a container (``Tuple``,
+    ``Str``: not an ``Expr``) of such terms.  False for anything else: a
+    class whose property or evaluator decides it (#233 review)."""
+    from sympy.core.basic import Basic
+    from sympy.core.function import Function
+    from sympy.core.symbol import Symbol
+    if isinstance(s, Symbol):
+        # sympy-boundary: the declared commutative flag only
+        return dict(getattr(s, "_assumptions0", ())).get("commutative") is True
+    if not isinstance(s, _Basic):
+        return False
+    cls = type(s)
+    for k in cls.__mro__:
+        v = k.__dict__.get("is_commutative", _MISSING)
+        if v is _MISSING:
+            continue
+        if v is True:
+            return True
+        if v is Basic.__dict__["is_commutative"]:
+            break
+        if not isinstance(v, MemberDescriptorType):
+            return False
+        try:
+            return v.__get__(s, cls) is True
+        except AttributeError:
+            return False
+    # sympy-boundary: compares the class's evaluator, does not call it
+    generic = getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative
+    if generic or not isinstance(s, _Expr):
+        return all(_constructed_commutative(a) for a in s.args)
+    return False
 
 
 def _nonzero_number(a) -> bool:
