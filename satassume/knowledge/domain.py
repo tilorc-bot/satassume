@@ -61,10 +61,11 @@ def constructed_noncommutative(t) -> int:
     of the facts :func:`noncommutative_false` holds, as SymPy's fact rules
     derive from it.
 
-    2: a non-commutative symbol, or a class fixing ``is_commutative =
-    False`` (an ``Operator``, a ``MatrixExpr``: SymPy's fact rules apply to
-    it) unless it may be an operation that evaluates to a number
-    (:func:`_fixed_level`: ``Commutator(a, b)``, ``TensMul(0, x)``, 1).
+    2: a non-commutative symbol, or a term whose class fixes
+    ``is_commutative = False`` (SymPy's fact rules apply to it) when the
+    type guarantees it is its own value (:func:`_fixed_level`: a
+    ``MatrixExpr``, an undefined function of labels; not ``Operator('a')``,
+    ``Commutator(a, b)`` or ``TensMul(0, x)``, which may evaluate).
     The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when built:
     1 if False, 2 if evaluating it cannot cancel its
     non-commutative part (:func:`_nc_sum_level`, :func:`_nc_product_level`:
@@ -73,7 +74,8 @@ def constructed_noncommutative(t) -> int:
     numbers).
     ``Function``'s ``_eval_is_commutative`` (the ``fuzzy_and`` of the
     arguments): an undefined function (``f(A)``, ``f(A, 0)``), which never
-    evaluates, the highest level of an argument; a function of one argument
+    evaluates (:func:`_plain_undefined`; else at most 1), the highest
+    level of an argument; a function of one argument
     (``sin(A)``, ``adjoint(A)``, ``exp(M)``), its argument's level if
     SymPy defines it, as none but ``stieltjes`` evaluates a term at 2 to a
     number (a sweep of SymPy's functions; a user's ``eval`` may); any
@@ -127,8 +129,11 @@ def constructed_noncommutative(t) -> int:
     if getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative:
         levels = [constructed_noncommutative(a) for a in t.args]
         top = max(levels, default=0)
-        if top < 2 or isinstance(t, AppliedUndef):
+        if top < 2:
             return top
+        if isinstance(t, AppliedUndef):
+            # Function('g', doit=...)(A) may evaluate (#238 review)
+            return 2 if _plain_undefined(cls) else 1
         if (len(levels) == 1 and cls.__module__.startswith("sympy.")
                 and cls.__name__ != "stieltjes"):
             # stieltjes(A) is zoo (A.is_integer is False)
@@ -139,59 +144,50 @@ def constructed_noncommutative(t) -> int:
 
 def _fixed_level(t) -> int:
     """The level of a term whose class fixes ``is_commutative = False``: 2
-    for a matrix expression, which is never a number, and for a term built
-    from labels, every subterm commutative by construction
-    (:func:`_constructed_commutative`: ``Operator('a')``, ``JzKet(j, m)``,
-    ``CreateBoson(i)``), which does not evaluate; else 1.  An operation over
-    non-commutative terms may evaluate to a number (#232):
-    ``Commutator(a, b - b)`` and ``AntiCommutator(a, b - b)`` are 0, and
-    ``Commutator(a, Dagger(a))`` is 1 for a boson operator ``a``; so may an
-    associative operation over commutative terms (``TensMul(0, x)`` is 0,
-    ``TensAdd(1, 1)`` is 2)."""
-    from sympy.core.operations import AssocOp
+    where the type guarantees that the term is its own value: a matrix
+    expression, which is never a number, and an undefined function
+    (:func:`_plain_undefined`) of labels (:func:`_label`:
+    ``Function('g', commutative=False)(x, 1)``), which never evaluates;
+    else 1.  Anything else may evaluate to a number
+    when ``doit`` rebuilds it, through its ``eval``, ``doit`` or
+    constructor, and nothing in the term tells (#232; re-review R2):
+    ``Commutator(a, b - b)`` and secondquant ``Commutator(x, y,
+    evaluate=False)`` are 0, ``Commutator(a, Dagger(a))`` is 1 for a boson
+    operator ``a``, ``TensMul(0, x)`` is 0, and the constructor of
+    ``FKet([p, p + 0])`` or ``FKet([p, Pow(p, 1, evaluate=False)])`` gives
+    0, a doubly occupied fermion state.  So an operator or a state built
+    from labels (``Operator('a')``, ``JzKet(j, m)``) is at level 1 too."""
     if _is_matrix(t):
         return 2
-    if isinstance(t, AssocOp):
-        return 1
-    return 2 if all(_constructed_commutative(a) for a in t.args) else 1
+    return 2 if _plain_undefined(type(t)) and all(_label(a) for a in t.args) else 1
 
 
-def _constructed_commutative(s) -> bool:
-    """Whether SymPy builds ``s`` commutative, read without evaluating any
-    assumption (see :func:`_fixed_noncommutative`): a symbol declared
-    commutative, a class fixing ``is_commutative = True`` (a number), the
-    slot of an ``Add``, ``Mul`` or ``Pow`` filled True, and a function
-    (``Function``'s ``_eval_is_commutative``) or a container (``Tuple``,
-    ``Str``: not an ``Expr``) of such terms.  False for anything else: a
-    class whose property or evaluator decides it (#233 review)."""
-    from sympy.core.basic import Basic
-    from sympy.core.function import Function
-    from sympy.core.symbol import Symbol
-    if isinstance(s, Symbol):
-        # sympy-boundary: the declared commutative flag only
-        return dict(getattr(s, "_assumptions0", ())).get("commutative") is True
-    if not isinstance(s, _Basic):
+def _plain_undefined(cls) -> bool:
+    """Whether ``cls`` is an undefined function as ``Function(name, ...)``
+    makes it, with nothing more in its class dictionary than such a class
+    has (its assumptions ``is_*`` and the bookkeeping of a reference
+    class): ``Function('g', commutative=False, eval=...)``, ``doit=`` or
+    ``_eval_evalf=``, and a subclass of ``AppliedUndef``, may evaluate
+    (#238 review)."""
+    from sympy.core.function import AppliedUndef, UndefinedFunction
+    if type(cls) is not UndefinedFunction or cls.__bases__ != (AppliedUndef,):
         return False
-    cls = type(s)
-    for k in cls.__mro__:
-        v = k.__dict__.get("is_commutative", _MISSING)
-        if v is _MISSING:
-            continue
-        if v is True:
-            return True
-        if v is Basic.__dict__["is_commutative"]:
-            break
-        if not isinstance(v, MemberDescriptorType):
-            return False
-        try:
-            return v.__get__(s, cls) is True
-        except AttributeError:
-            return False
-    # sympy-boundary: compares the class's evaluator, does not call it
-    generic = getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative
-    if generic or not isinstance(s, _Expr):
-        return all(_constructed_commutative(a) for a in s.args)
-    return False
+    global _UNDEFINED_KEYS
+    if _UNDEFINED_KEYS is None:
+        _UNDEFINED_KEYS = frozenset(UndefinedFunction('_satassume_reference', commutative=False).__dict__)
+    return all(k in _UNDEFINED_KEYS or k.startswith('is_') for k in cls.__dict__)
+
+
+_UNDEFINED_KEYS = None
+
+
+def _label(a) -> bool:
+    """An atom whose ``doit`` returns it (``x``, ``1/2``, ``Str('a')``), or a
+    ``Tuple`` of such: unchanged by evaluation."""
+    from sympy.core.basic import Atom
+    if isinstance(a, _Tuple):
+        return all(_label(b) for b in a.args)
+    return isinstance(a, Atom) and type(a).doit is Atom.doit
 
 
 def _nonzero_number(a) -> bool:

@@ -39,10 +39,12 @@ from sympy import (
     Rational,
     S,
     Symbol,
+    Tuple,
     eye,
     oo,
     sin,
     sqrt,
+    sympify,
 )
 from sympy.core.function import AppliedUndef
 from test_templates import evaluate
@@ -689,7 +691,84 @@ def _operations_to_number():
     c, d = BosonOp('c'), FermionOp('d')
     return [Commutator(a, z), AntiCommutator(a, z), AntiCommutator(z, a), TensorProduct(a, z),
             Commutator(c, Dagger(c)), AntiCommutator(d, Dagger(d)),
-            TensMul(0, x), TensMul(x), TensAdd(1, 1)] + _operations_over_opaque()
+            TensMul(0, x), TensMul(x), TensAdd(1, 1)] + _operations_over_opaque() + _evaluating_classes()
+
+
+class _Evaluates(Expr):
+    # a user's class fixing is_commutative = False with its own doit
+    is_commutative = False
+
+    def doit(self, **hints):
+        return S.Zero
+
+
+class _EvaluatesWhenBuilt(Expr):
+    # a user's constructor honouring evaluate= (#238 review)
+    is_commutative = False
+
+    def __new__(cls, a, evaluate=True):
+        a = sympify(a)
+        return S.Zero if evaluate and a == 1 else Expr.__new__(cls, a)
+
+
+class _UndefSub(AppliedUndef):
+    is_commutative = False
+
+    @classmethod
+    def eval(cls, *args):
+        return S.Zero
+
+
+def _evaluating_classes():
+    # re-review R2: over commutative arguments, a class that evaluates
+    # (secondquant Commutator is 0 for commuting arguments), or a
+    # constructor that gives a number for an evaluated argument (a doubly
+    # occupied fermion state) or when built again
+    from sympy import Eq
+    from sympy.physics.secondquant import Commutator, FKet, FockStateFermionBra
+    p = Symbol('p')
+    return [Commutator(x, y, evaluate=False), Commutator(x, 1, evaluate=False), _Evaluates(x),
+            FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
+            FKet([Eq(x, x, evaluate=False), S.true]), _EvaluatesWhenBuilt(1, evaluate=False),
+            # #234: fermi_level is not in args, the rebuilt state is 0
+            FKet([0], 1), FockStateFermionBra([0], 1),
+            # #238 review: an undefined function given an evaluator
+            Function('g0', commutative=False, eval=classmethod(lambda cls, *a: S.Zero))(x, evaluate=False),
+            Function('g1', commutative=False, doit=lambda self, **h: S.Zero)(x),
+            Function('g2', commutative=False, _eval_evalf=lambda self, prec: Float(0))(Float(1.0), evaluate=False),
+            _UndefSub(x, evaluate=False),
+            # #238 final review: commutative itself, non-commutative through
+            # an argument at level 2
+            Function('g3', doit=lambda self, **h: S.Zero)(A),
+            Function('g4', eval=classmethod(lambda cls, *a: S.Zero))(A, evaluate=False),
+            _UndefEval(A, evaluate=False)]
+
+
+class _UndefEval(AppliedUndef):
+    @classmethod
+    def eval(cls, *args):
+        return S.Zero
+
+
+def test_rereview_r2_reproducer():
+    from sympy.physics.secondquant import Commutator
+    from satassume.knowledge.domain import constructed_noncommutative
+    e = Commutator(x, y, evaluate=False)
+    assert e.doit() == 0
+    assert constructed_noncommutative(e) == 1
+    assert Engine().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None]
+
+
+def test_undefined_function_with_evaluator_of_noncommutative_argument():
+    # #238 final review: Function's level of an argument kept only for a
+    # plain undefined function; evalf is not doit but may give a number too
+    from satassume.knowledge.domain import constructed_noncommutative
+    e = Function('gd', doit=lambda self, **h: S.Zero)(A)
+    assert e.doit() == 0
+    assert constructed_noncommutative(e) == 1
+    assert Engine().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None]
+    assert constructed_noncommutative(Function('ge', _eval_evalf=lambda self, prec: Float(0))(A)) == 1
+    assert constructed_noncommutative(f(A)) == 2
 
 
 class _NCProperty(Expr):
@@ -742,21 +821,26 @@ def test_constructed_noncommutative_levels_kept():
     assert fresh().is_many(binomial(A, B, evaluate=False), ['commutative', 'complex']) == [False, None]
 
 
-def test_constructed_noncommutative_atoms_kept():
-    # #232: operators and states built from labels stay at level 2; an
-    # operation over them does not
-    from sympy import Quaternion
+def test_constructed_noncommutative_labels():
+    # re-review R2: level 2 only where the type guarantees the term is its
+    # own value; an operator or a state built from labels may still
+    # evaluate on rebuild (its constructor runs again: FKet([p, p**1]) is 0),
+    # and nothing in the term tells
+    from sympy import Function, MatrixSymbol, Quaternion
     from sympy.physics.quantum import Commutator, Operator
     from sympy.physics.quantum.boson import BosonOp
     from sympy.physics.quantum.spin import JzKet
     from sympy.physics.secondquant import CreateBoson
     from satassume.knowledge.domain import constructed_noncommutative
     a, b = Operator('a'), Operator('b')
-    for e in (a, BosonOp('c'), JzKet(1, 0), CreateBoson(x), Quaternion(x, y, 0, 1)):
+    g = Function('g', commutative=False)
+    for e in (MatrixSymbol('M', 2, 2), g(x, 1), g(Tuple(x, S.Half))):
         assert constructed_noncommutative(e) == 2, e
         assert fresh().is_many(e, ['commutative', 'zero', 'complex']) == [False, False, False], e
-    assert constructed_noncommutative(Commutator(a, b)) == 1
-    assert fresh().is_many(Commutator(a, b), ['commutative', 'zero']) == [False, None]
+    for e in (a, BosonOp('c'), JzKet(1, 0), CreateBoson(x), Quaternion(x, y, 0, 1), Commutator(a, b),
+              g(x + 1), g(Add(x, 0, evaluate=False))):
+        assert constructed_noncommutative(e) == 1, e
+        assert fresh().is_many(e, ['commutative', 'zero']) == [False, None], e
 
 
 def test_constructed_noncommutative_unknown_stays_none():
