@@ -74,14 +74,20 @@ def test_applied_to_nan_gets_no_facts(e):
 
 
 def _may_be_nan_arguments():
-    from sympy import Integral, Piecewise, Sum
+    from sympy import Integral, Limit, Piecewise, Subs, Sum, UnevaluatedExpr
     # #231: arithmetic holding an explicit nan or infinity may evaluate to
     # nan (oo - oo is not zero, which made Abs(oo - oo) extended_positive)
     z = Add(oo, -oo, evaluate=False)
     return [z, Add(nan, x, evaluate=False), Abs(nan, evaluate=False), Mul(0, oo, evaluate=False),
             Add(x, oo, -oo, evaluate=False), sin(z, evaluate=False), Pow(z, 2, evaluate=False),
             # #235 review: a Piecewise branch value, an integrand
-            Piecewise((z, x > 0), (1, True)), Sum(z, (y, 1, 2)), Integral(z, (y, 0, 1))]
+            Piecewise((z, x > 0), (1, True)), Sum(z, (y, 1, 2)), Integral(z, (y, 0, 1)),
+            # re-review R1: every part that carries a value -- the expression
+            # and the point of a Subs, the expression of a Limit, the content
+            # of an UnevaluatedExpr, the limits of an integral or a sum
+            Subs(nan, x, 1), Subs(x, x, nan), Subs(z, y, 1), Limit(nan, y, 0), Limit(z, y, 0),
+            UnevaluatedExpr(nan), UnevaluatedExpr(Subs(y, y, nan)), Integral(y, (y, -oo, oo)),
+            Sum(y, (y, -oo, oo)), Piecewise((Subs(nan, y, 1), x > 0), (1, True))]
 
 
 @pytest.mark.parametrize("v", _may_be_nan_arguments())
@@ -103,8 +109,28 @@ def test_issue_231_reproducers():
 
 
 def test_facts_kept_without_explicit_special_values():
-    # an integral's limits and a Piecewise's conditions are not values
-    from sympy import Integral, Piecewise, exp
-    for v in (x, x + 1, Integral(exp(-x), (x, 0, oo)), Piecewise((x, x < oo), (1, True)), oo):
+    # a Piecewise's conditions are truth values, the range of an Idx (an
+    # atom) is a label
+    from sympy import Idx, Indexed, IndexedBase, Integral, Piecewise, exp
+    i = Idx('i', (0, oo))
+    for v in (x, x + 1, Integral(exp(-x), (x, 0, 1)), Piecewise((x, x < oo), (1, True)), oo, i,
+              Indexed(IndexedBase('a'), i)):
         assert fresh().is_(Abs(v), 'extended_nonnegative') is True, v
     assert fresh().is_(sign(x), 'finite') is True
+
+
+def test_rereview_r1_reproducers():
+    from sympy import Integral, Limit, Subs, UnevaluatedExpr
+    z = Add(oo, -oo, evaluate=False)
+    for v in (Subs(nan, x, 1), Limit(nan, x, 0), UnevaluatedExpr(nan), Subs(z, x, 1), Limit(z, x, 0)):
+        a, s = Abs(v, evaluate=False), sign(v, evaluate=False)
+        assert a.doit() is S.NaN and s.doit() is S.NaN
+        assert ask(Q.extended_nonnegative(a)) is None, v
+        assert ask(Q.finite(s)) is None, v
+    # evaluated: Abs keeps an unevaluated integral, which is nan
+    a = Abs(Integral(r, (r, -oo, oo)))
+    assert isinstance(a, Abs) and a.doit() is S.NaN
+    assert fresh().is_many(a, ['extended_nonnegative', 'extended_real']) == [None, None]
+    # an integral over an infinite range may be nan: its limits are values
+    from sympy import exp
+    assert fresh().is_(Abs(Integral(exp(-x), (x, 0, oo))), 'extended_nonnegative') is None
