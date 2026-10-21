@@ -87,6 +87,15 @@ class Exclusive(Formula):
     """At most one of the arguments is true (pairwise exclusion)."""
 
 
+class ITE(Formula):
+    """If ``c`` then ``a`` else ``b``.  Its own class: written with And/Or,
+    ``c`` occurs twice, and ITEs nested in conditions double in size per
+    level (#241)."""
+
+    def __init__(self, c, a, b):
+        super().__init__(c, a, b)
+
+
 TRUE = True
 FALSE = False
 

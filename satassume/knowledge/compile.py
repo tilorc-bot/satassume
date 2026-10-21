@@ -10,7 +10,7 @@ from __future__ import annotations
 import heapq
 from typing import Any, Callable, Dict, List
 
-from ..sat.formula import And, Equivalent, Exclusive, Formula, Implies, Not, Or, P, TRUE, FALSE
+from ..sat.formula import And, Equivalent, Exclusive, Formula, ITE, Implies, Not, Or, P, TRUE, FALSE
 from .rules import BASIS, BASIS_INDEX, DEF_LITS as _DEF_LITS, basis_lits
 
 
@@ -220,13 +220,22 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
             compile_formula(Or(Not(a), b), table, emit, dv)
         return
     if isinstance(f, Equivalent):
-        args = f.args
+        # a nested parity (``Xor``) or ITE argument: one literal, not one
+        # encoding per implication it occurs in (#241)
+        args = [_Lit(_literal(a, table, emit, dv)) if _shared(a) else a for a in f.args]
         for i in range(len(args) - 1):
             compile_formula(Implies(args[i], args[i + 1]), table, emit, dv)
             compile_formula(Implies(args[i + 1], args[i]), table, emit, dv)
         return
+    if isinstance(f, ITE):
+        c, a, b = f.args
+        if not _plain(c):
+            c = _Lit(_literal(c, table, emit, dv))     # c occurs twice
+        compile_formula(Implies(c, a), table, emit, dv)
+        compile_formula(Or(c, b), table, emit, dv)
+        return
     if isinstance(f, Exclusive):
-        args = f.args
+        args = [_Lit(_literal(a, table, emit, dv)) if _shared(a) else a for a in f.args]
         for i in range(len(args)):
             for j in range(i + 1, len(args)):
                 compile_formula(Or(Not(args[i]), Not(args[j])), table, emit, dv)
@@ -243,6 +252,9 @@ def compile_formula(f, table: VarTable, emit: Callable[[List[int]], None], dv=No
         elif isinstance(inner, Implies):
             a, b = inner.args
             compile_formula(And(a, Not(b)), table, emit, dv)
+        elif isinstance(inner, ITE):
+            c, a, b = inner.args
+            compile_formula(ITE(c, Not(a), Not(b)), table, emit, dv)
         else:
             emit([-_literal(inner, table, emit, dv)])
         return
@@ -389,11 +401,9 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
     if isinstance(f, Implies):
         return _literal(Or(Not(f.args[0]), f.args[1]), table, emit, dv)
     if isinstance(f, Equivalent):
-        if len(f.args) == 2:
-            a, b = f.args
-            return _literal(And(Implies(a, b), Implies(b, a)), table, emit, dv)
-        # n-ary (``to_formula`` keeps SymPy's): all arguments equal, a
-        # cycle of implications over their literals
+        # all arguments equal, a cycle of implications over their literals;
+        # each argument is encoded once (encoding a compound one in each
+        # implication doubles the work per nesting level, #241)
         lits = [_Lit(_literal(a, table, emit, dv)) for a in f.args]
         if len(lits) < 2:
             return _true_lit(table, emit)
@@ -403,6 +413,17 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
         lits = [_literal(a, table, emit, dv) for a in f.args]
         pairs = [Or(Not(_Lit(x)), Not(_Lit(y))) for i, x in enumerate(lits) for y in lits[i + 1:]]
         return _literal(And(*pairs), table, emit, dv) if pairs else _true_lit(table, emit)
+    if isinstance(f, ITE):
+        c, a, b = [_literal(x, table, emit, dv) for x in f.args]
+        t = table.aux()
+        emit([-t, -c, a])
+        emit([-t, c, b])
+        emit([t, -c, -a])
+        emit([t, c, -b])
+        # redundant, for propagation: a and b agree -> t is their value
+        emit([-t, a, b])
+        emit([t, -a, -b])
+        return t
     if isinstance(f, _Lit):
         return f.lit
     if f is TRUE:
@@ -436,6 +457,22 @@ def _literal(f, table: VarTable, emit, dv=None) -> int:
         emit([-t] + lits)
         return t
     raise TypeError(f"cannot make a literal from {f!r}")
+
+
+def _plain(f) -> bool:
+    """``f`` is a constant, an atom, a negated atom or a literal."""
+    if isinstance(f, Not):
+        f = f.args[0]
+    return f is TRUE or f is FALSE or isinstance(f, (P, _Lit))
+
+
+def _shared(f) -> bool:
+    """``f`` (or its negation) is a parity, exclusion or ITE: an argument
+    that a connective compiling its arguments more than once gives one
+    literal instead (#241)."""
+    if isinstance(f, Not):
+        f = f.args[0]
+    return isinstance(f, (Equivalent, Exclusive, ITE))
 
 
 class _Lit(Formula):
