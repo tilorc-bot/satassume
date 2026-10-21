@@ -56,7 +56,10 @@ Definition. `to_formula(expr, relations, opaque)` maps a SymPy Boolean to a
 formula over `P` atoms (`sympy_api.to_formula`, memoized by
 `sympy_api._formula` in `_FORMULAS`): `Q.pred(e)` with `pred in V` becomes
 the vocabulary atom `P(pred, e)`; `And`, `Or`, `Not`, `Implies`,
-`Equivalent` become the formula connectives (`satassume/sat/formula.py`);
+`Equivalent`, `ITE` become the formula connectives
+(`satassume/sat/formula.py`), `Xor(a, b, c, ...)` the parity
+`~Equivalent(~Equivalent(a, b), c)...`; the compiler encodes each argument
+of a connective once (#241);
 a relation becomes `relation_atom` (theories, "What relations mean"):
 `Eq(a, b)` is `eq(a, b)` with sides in `default_sort_key` order, `a < b` is
 `lt(a, b)`, `a > b` is `lt(b, a)`, `a != b` is `~eq(a, b)`, `a <= b` is

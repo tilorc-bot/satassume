@@ -4,8 +4,6 @@ the encoding linear (#241: a binary ``Equivalent`` encoded each argument
 twice, so a 20-argument ``Xor`` took about 50 s)."""
 import itertools
 import random
-import time
-
 import pytest
 from sympy import ITE as SITE, Equivalent as SEquivalent, Q, Symbol, Xor
 
@@ -124,10 +122,10 @@ def _fold(op, xs):
 
 def test_issue_241_reproducers():
     """#241: an ``ask`` with a 20-argument ``Xor``, a nested ``Equivalent``
-    or ITEs nested in conditions took seconds to minutes."""
+    or ITEs nested in conditions took seconds to minutes (the size is
+    guarded by ``test_nested_parity_is_linear``)."""
     xs = [Symbol('x%d' % i) for i in range(20)]
     ps = [Q.positive(x) for x in xs]
-    t0 = time.perf_counter()
     a = Xor(*ps, evaluate=False)
     assert ask(Q.positive(xs[0]), a & ~Q.positive(xs[1])) is None
     e = ps[0]
@@ -142,4 +140,3 @@ def test_issue_241_reproducers():
     assert ask(Q.positive(xs[0]), Xor(ps[0], ps[1]) & ~ps[1]) is True
     assert ask(Q.positive(xs[0]), Xor(*ps[:3]) & ~ps[1] & ~ps[2]) is True
     assert ask(Q.positive(xs[0]), Xor(*ps[:3]) & ps[1] & ~ps[2]) is False
-    assert time.perf_counter() - t0 < 10     # was minutes
