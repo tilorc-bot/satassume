@@ -689,7 +689,35 @@ def _operations_to_number():
     c, d = BosonOp('c'), FermionOp('d')
     return [Commutator(a, z), AntiCommutator(a, z), AntiCommutator(z, a), TensorProduct(a, z),
             Commutator(c, Dagger(c)), AntiCommutator(d, Dagger(d)),
-            TensMul(0, x), TensMul(x), TensAdd(1, 1)] + _operations_over_opaque()
+            TensMul(0, x), TensMul(x), TensAdd(1, 1)] + _operations_over_opaque() + _evaluating_classes()
+
+
+class _Evaluates(Expr):
+    # a user's class fixing is_commutative = False with its own doit
+    is_commutative = False
+
+    def doit(self, **hints):
+        return S.Zero
+
+
+def _evaluating_classes():
+    # re-review R2: over commutative arguments, a class that evaluates
+    # (secondquant Commutator is 0 for commuting arguments), or a
+    # constructor that gives a number for an evaluated argument (a doubly
+    # occupied fermion state)
+    from sympy.physics.secondquant import Commutator, FKet
+    p = Symbol('p')
+    return [Commutator(x, y, evaluate=False), Commutator(x, 1, evaluate=False), _Evaluates(x),
+            FKet([p, Add(p, 0, evaluate=False)])]
+
+
+def test_rereview_r2_reproducer():
+    from sympy.physics.secondquant import Commutator
+    from satassume.knowledge.domain import constructed_noncommutative
+    e = Commutator(x, y, evaluate=False)
+    assert e.doit() == 0
+    assert constructed_noncommutative(e) == 1
+    assert Engine().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None]
 
 
 class _NCProperty(Expr):
@@ -757,6 +785,10 @@ def test_constructed_noncommutative_atoms_kept():
         assert fresh().is_many(e, ['commutative', 'zero', 'complex']) == [False, False, False], e
     assert constructed_noncommutative(Commutator(a, b)) == 1
     assert fresh().is_many(Commutator(a, b), ['commutative', 'zero']) == [False, None]
+    # re-review R2: a label that evaluation may change (an unevaluated
+    # p + 0, and so any sum) leaves level 2
+    for e in (JzKet(1, Add(0, 0, evaluate=False)), Operator(x + 1), CreateBoson(Add(x, 0, evaluate=False))):
+        assert constructed_noncommutative(e) == 1, e
 
 
 def test_constructed_noncommutative_unknown_stays_none():

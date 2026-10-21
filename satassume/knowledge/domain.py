@@ -140,20 +140,49 @@ def constructed_noncommutative(t) -> int:
 def _fixed_level(t) -> int:
     """The level of a term whose class fixes ``is_commutative = False``: 2
     for a matrix expression, which is never a number, and for a term built
-    from labels, every subterm commutative by construction
-    (:func:`_constructed_commutative`: ``Operator('a')``, ``JzKet(j, m)``,
-    ``CreateBoson(i)``), which does not evaluate; else 1.  An operation over
+    from labels, which is its own value: its class defines no evaluator
+    (:func:`_evaluates`), and every argument is commutative by construction
+    (:func:`_constructed_commutative`) and unchanged by evaluation
+    (:func:`_unchanged_by_doit`: ``Operator('a')``, ``JzKet(j, m)``,
+    ``CreateBoson(i)``); else 1.  An operation over
     non-commutative terms may evaluate to a number (#232):
     ``Commutator(a, b - b)`` and ``AntiCommutator(a, b - b)`` are 0, and
     ``Commutator(a, Dagger(a))`` is 1 for a boson operator ``a``; so may an
-    associative operation over commutative terms (``TensMul(0, x)`` is 0,
-    ``TensAdd(1, 1)`` is 2)."""
-    from sympy.core.operations import AssocOp
+    operation over commutative terms whose class evaluates
+    (:func:`_evaluates`: ``TensMul(0, x)`` is 0, ``TensAdd(1, 1)`` is 2,
+    secondquant ``Commutator(x, y, evaluate=False)`` is 0; re-review R2)."""
     if _is_matrix(t):
         return 2
-    if isinstance(t, AssocOp):
+    if _evaluates(type(t)):
         return 1
-    return 2 if all(_constructed_commutative(a) for a in t.args) else 1
+    return 2 if all(_constructed_commutative(a) and _unchanged_by_doit(a) for a in t.args) else 1
+
+
+def _evaluates(cls) -> bool:
+    """Whether ``cls`` or a base defines how its terms evaluate: an
+    ``eval`` (run when a ``Function`` or a quantum ``Commutator`` is built),
+    a ``doit`` or an ``_eval_doit``, other than SymPy's inert defaults:
+    ``Basic.doit`` rebuilds the term from its arguments, ``Atom.doit``
+    returns it, ``Application.eval`` returns None.  Read from the class
+    dictionaries; nothing is called."""
+    from sympy.core.basic import Atom
+    from sympy.core.function import Application
+    inert = {"doit": (_Basic, Atom), "_eval_doit": (), "eval": (Application,)}
+    return any(n in k.__dict__ and k not in ks for k in cls.__mro__ for n, ks in inert.items())
+
+
+def _unchanged_by_doit(a) -> bool:
+    """Whether evaluating ``a`` leaves it as it is: no class on the way
+    evaluates (:func:`_evaluates`) and every argument is unchanged, down to
+    atoms (``Symbol('a')``, ``1/2``, ``Tuple(0, 1)``).  Then ``Basic.doit``
+    rebuilds a term over such arguments from the same arguments.  An
+    unevaluated ``p + 0`` is changed, and the constructor of the term over
+    it may give a number: ``FKet([p, p + 0])`` is 0, a doubly occupied
+    fermion state (re-review R2).  So is an evaluated ``x + 1``, as nothing
+    in the term tells the two apart."""
+    if not isinstance(a, _Basic):
+        return True  # Basic.doit passes it on as it is
+    return not _evaluates(type(a)) and all(_unchanged_by_doit(b) for b in a.args)
 
 
 def _constructed_commutative(s) -> bool:
