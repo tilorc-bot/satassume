@@ -21,7 +21,6 @@ from sympy.core.function import Application, Function
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.logic.boolalg import Boolean
 from sympy.functions.elementary.exponential import LambertW
 from sympy.functions.combinatorial.factorials import (
     FallingFactorial,
@@ -119,13 +118,14 @@ def _may_be_nan(a) -> bool:
     its value -- ``Subs(nan, x, 1)``, ``Subs(x, x, nan)``,
     ``Limit(nan, x, 0)``, ``UnevaluatedExpr(nan)``, an integral or a sum
     over ``(-oo, oo)`` (``Integral(x, (x, -oo, oo))`` is nan), a
-    ``Piecewise`` branch value.  Not followed are the parts that carry no
-    number: a ``Boolean`` (a ``Piecewise`` condition) is a truth value,
-    and the arguments of an atom (the range of an ``Idx``) are labels
-    (#235 review; re-review R1)."""
+    ``Piecewise`` branch value, and a condition too: a ``Piecewise``
+    without a ``True`` branch is nan where no condition holds, so a
+    condition holding ``oo - oo`` may leave no value (#236 review).  Only
+    the arguments of an atom (the range of an ``Idx``) are labels, not
+    followed (#235 review; re-review R1)."""
     if a is S.NaN:
         return True
-    if not isinstance(a, Basic) or a.is_Atom or isinstance(a, Boolean):
+    if not isinstance(a, Basic) or a.is_Atom:
         return False
     return any(any(b is c for c in _SPECIAL) or _may_be_nan(b) for b in a.args)
 
