@@ -74,18 +74,21 @@ def test_applied_to_nan_gets_no_facts(e):
 
 
 def _may_be_nan_arguments():
+    from sympy import Integral, Piecewise, Sum
     # #231: arithmetic holding an explicit nan or infinity may evaluate to
     # nan (oo - oo is not zero, which made Abs(oo - oo) extended_positive)
     z = Add(oo, -oo, evaluate=False)
     return [z, Add(nan, x, evaluate=False), Abs(nan, evaluate=False), Mul(0, oo, evaluate=False),
-            Add(x, oo, -oo, evaluate=False), sin(z, evaluate=False), Pow(z, 2, evaluate=False)]
+            Add(x, oo, -oo, evaluate=False), sin(z, evaluate=False), Pow(z, 2, evaluate=False),
+            # #235 review: a Piecewise branch value, an integrand
+            Piecewise((z, x > 0), (1, True)), Sum(z, (y, 1, 2)), Integral(z, (y, 0, 1))]
 
 
 @pytest.mark.parametrize("v", _may_be_nan_arguments())
 @pytest.mark.parametrize("cls", [Abs, sign, sin])
 def test_applied_to_may_be_nan_gets_no_facts(cls, v):
     e = cls(v, evaluate=False)
-    assert e.doit() is S.NaN
+    assert e.doit().subs(x, 1) is S.NaN  # the Piecewise at x > 0
     preds = [p for p in PRED_INDEX if p != 'commutative']
     assert fresh().is_many(e, preds) == [None]*len(preds)
 

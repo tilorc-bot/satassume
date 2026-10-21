@@ -30,7 +30,7 @@ from sympy.functions.combinatorial.factorials import (
 )
 from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
 from sympy.functions.elementary.miscellaneous import MinMaxBase
-from sympy.functions.elementary.piecewise import Piecewise
+from sympy.functions.elementary.piecewise import ExprCondPair, Piecewise
 from sympy.functions.special.bessel import (
     airyai,
     airyaiprime,
@@ -77,6 +77,7 @@ from sympy.tensor.indexed import Idx
 from sympy.concrete.products import Product
 from sympy.concrete.summations import Sum
 from sympy.integrals.integrals import Integral
+from sympy.concrete.expr_with_limits import ExprWithLimits
 
 from . import atoms  # noqa: F401  (registration side effects)
 from .registry import TemplateRegistry, registry
@@ -113,10 +114,14 @@ def _may_be_nan(a) -> bool:
     """``a`` is ``nan``, or arithmetic or a function application holding an
     explicit ``nan`` or infinity (``oo - oo``, ``Add(nan, x)``,
     ``Abs(nan)``, ``0*oo``, ``x + oo`` at ``x = -oo``), which may evaluate
-    to nan.  Read structurally; the limits of an integral or a sum and the
-    conditions of a ``Piecewise`` are not values and are not followed."""
+    to nan.  Read structurally: of an integral or a sum only the integrand,
+    and of a ``Piecewise`` branch only its value, are followed; limits and
+    conditions are not values (#235 review)."""
     if a is S.NaN:
         return True
+    if isinstance(a, (ExprCondPair, ExprWithLimits)):
+        b = a.args[0]
+        return any(b is c for c in _SPECIAL) or _may_be_nan(b)
     if not isinstance(a, (Add, Mul, Pow, Application)):
         return False
     return any(any(b is c for c in _SPECIAL) or _may_be_nan(b) for b in a.args)
