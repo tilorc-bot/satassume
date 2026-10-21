@@ -27,6 +27,7 @@ sympy = pytest.importorskip("sympy")
 from sympy import (
     Abs,
     Add,
+    Expr,
     Float,
     Function,
     I,
@@ -688,7 +689,27 @@ def _operations_to_number():
     c, d = BosonOp('c'), FermionOp('d')
     return [Commutator(a, z), AntiCommutator(a, z), AntiCommutator(z, a), TensorProduct(a, z),
             Commutator(c, Dagger(c)), AntiCommutator(d, Dagger(d)),
-            TensMul(0, x), TensMul(x), TensAdd(1, 1)]
+            TensMul(0, x), TensMul(x), TensAdd(1, 1)] + _operations_over_opaque()
+
+
+class _NCProperty(Expr):
+    # non-commutative through a property, not a class attribute
+    @property
+    def is_commutative(self):
+        return False
+
+
+class _NoCommutative(Expr):
+    pass
+
+
+def _operations_over_opaque():
+    # #233 review: below the operation a term whose commutativity a property
+    # or an evaluator decides
+    from sympy.physics.quantum import AntiCommutator, Commutator
+    v, u = _NCProperty(), _NoCommutative()
+    return [Commutator(v, Add(v, -v, evaluate=False)), AntiCommutator(v, Add(v, -v, evaluate=False)),
+            Commutator(u, Mul(u, 1, evaluate=False))]
 
 
 def test_constructed_noncommutative_number_when_evaluated():
