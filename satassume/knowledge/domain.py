@@ -14,6 +14,7 @@ This module imports SymPy, so the engine imports it lazily.
 """
 from __future__ import annotations
 
+import sys
 from collections import Counter
 from types import MemberDescriptorType
 
@@ -77,8 +78,8 @@ def constructed_noncommutative(t) -> int:
     evaluates (:func:`_plain_undefined`; else at most 1), the highest
     level of an argument; a function of one argument
     (``sin(A)``, ``adjoint(A)``, ``exp(M)``), its argument's level if
-    SymPy defines it, as none but ``stieltjes`` evaluates a term at 2 to a
-    number (a sweep of SymPy's functions; a user's ``eval`` may); any
+    its class is one of :data:`SWEPT_UNARY`, which no rebuild of a term at
+    2 makes a number (a user's or a test module's ``eval`` may, #239); any
     other 1, since a special value of another argument may make it a number
     (``rf(A, 0)`` is 1, ``binomial(A, -1)`` is 0, ``binomial(A, A)`` is 1).
     ``E**e`` (``exp(e)`` built as a power) as ``exp(e)``.  The slot of
@@ -134,12 +135,150 @@ def constructed_noncommutative(t) -> int:
         if isinstance(t, AppliedUndef):
             # Function('g', doit=...)(A) may evaluate (#238 review)
             return 2 if _plain_undefined(cls) else 1
-        if (len(levels) == 1 and cls.__module__.startswith("sympy.")
-                and cls.__name__ != "stieltjes"):
-            # stieltjes(A) is zoo (A.is_integer is False)
+        if len(levels) == 1 and _swept_unary(cls):
             return 2
         return 1
     return 0
+
+
+#: SymPy's one-argument functions that keep the level 2 of their argument:
+#: ``tools/sweep_unary_functions.py`` found that none rebuilds such a term
+#: into a commutative one (``stieltjes(A)`` is ``zoo``, ``LeviCivita(A)
+#: .doit()`` is 1: not listed).  By name, since only these classes were
+#: swept: a user's or a test module's ``Function`` with an ``eval`` may
+#: return a number (#239).
+SWEPT_UNARY = frozenset("""
+sympy.codegen.cfunctions.Cbrt
+sympy.codegen.cfunctions.Sqrt
+sympy.codegen.cfunctions.exp2
+sympy.codegen.cfunctions.expm1
+sympy.codegen.cfunctions.log10
+sympy.codegen.cfunctions.log1p
+sympy.codegen.cfunctions.log2
+sympy.codegen.numpy_nodes.maximum
+sympy.codegen.numpy_nodes.minimum
+sympy.codegen.scipy_nodes.cosm1
+sympy.core.function.DefinedFunction
+sympy.core.function.WildFunction
+sympy.functions.combinatorial.factorials.CombinatorialFunction
+sympy.functions.combinatorial.factorials.MultiFactorial
+sympy.functions.combinatorial.factorials.factorial
+sympy.functions.combinatorial.factorials.factorial2
+sympy.functions.combinatorial.factorials.subfactorial
+sympy.functions.combinatorial.numbers.andre
+sympy.functions.combinatorial.numbers.bernoulli
+sympy.functions.combinatorial.numbers.carmichael
+sympy.functions.combinatorial.numbers.catalan
+sympy.functions.combinatorial.numbers.euler
+sympy.functions.combinatorial.numbers.fibonacci
+sympy.functions.combinatorial.numbers.genocchi
+sympy.functions.combinatorial.numbers.harmonic
+sympy.functions.combinatorial.numbers.lucas
+sympy.functions.combinatorial.numbers.tribonacci
+sympy.functions.elementary.complexes.adjoint
+sympy.functions.elementary.complexes.conjugate
+sympy.functions.elementary.complexes.polar_lift
+sympy.functions.elementary.complexes.transpose
+sympy.functions.elementary.exponential.ExpBase
+sympy.functions.elementary.exponential.LambertW
+sympy.functions.elementary.exponential.exp
+sympy.functions.elementary.exponential.exp_polar
+sympy.functions.elementary.exponential.log
+sympy.functions.elementary.hyperbolic.HyperbolicFunction
+sympy.functions.elementary.hyperbolic.InverseHyperbolicFunction
+sympy.functions.elementary.hyperbolic.acosh
+sympy.functions.elementary.hyperbolic.acoth
+sympy.functions.elementary.hyperbolic.acsch
+sympy.functions.elementary.hyperbolic.asech
+sympy.functions.elementary.hyperbolic.asinh
+sympy.functions.elementary.hyperbolic.atanh
+sympy.functions.elementary.hyperbolic.cosh
+sympy.functions.elementary.hyperbolic.coth
+sympy.functions.elementary.hyperbolic.csch
+sympy.functions.elementary.hyperbolic.sech
+sympy.functions.elementary.hyperbolic.sinh
+sympy.functions.elementary.hyperbolic.tanh
+sympy.functions.elementary.integers.ceiling
+sympy.functions.elementary.integers.floor
+sympy.functions.elementary.integers.frac
+sympy.functions.elementary.trigonometric.InverseTrigonometricFunction
+sympy.functions.elementary.trigonometric.TrigonometricFunction
+sympy.functions.elementary.trigonometric.acos
+sympy.functions.elementary.trigonometric.acot
+sympy.functions.elementary.trigonometric.acsc
+sympy.functions.elementary.trigonometric.asec
+sympy.functions.elementary.trigonometric.asin
+sympy.functions.elementary.trigonometric.atan
+sympy.functions.elementary.trigonometric.cos
+sympy.functions.elementary.trigonometric.cot
+sympy.functions.elementary.trigonometric.csc
+sympy.functions.elementary.trigonometric.sec
+sympy.functions.elementary.trigonometric.sin
+sympy.functions.elementary.trigonometric.sinc
+sympy.functions.elementary.trigonometric.tan
+sympy.functions.special.bessel.AiryBase
+sympy.functions.special.bessel._besseli
+sympy.functions.special.bessel._besselk
+sympy.functions.special.bessel.airyai
+sympy.functions.special.bessel.airyaiprime
+sympy.functions.special.bessel.airybi
+sympy.functions.special.bessel.airybiprime
+sympy.functions.special.beta_functions.beta
+sympy.functions.special.elliptic_integrals.elliptic_e
+sympy.functions.special.elliptic_integrals.elliptic_k
+sympy.functions.special.error_functions.Chi
+sympy.functions.special.error_functions.Ci
+sympy.functions.special.error_functions.Ei
+sympy.functions.special.error_functions.FresnelIntegral
+sympy.functions.special.error_functions.Li
+sympy.functions.special.error_functions.Shi
+sympy.functions.special.error_functions.Si
+sympy.functions.special.error_functions._eis
+sympy.functions.special.error_functions._erfs
+sympy.functions.special.error_functions.erf
+sympy.functions.special.error_functions.erfc
+sympy.functions.special.error_functions.erfcinv
+sympy.functions.special.error_functions.erfi
+sympy.functions.special.error_functions.erfinv
+sympy.functions.special.error_functions.fresnelc
+sympy.functions.special.error_functions.fresnels
+sympy.functions.special.error_functions.li
+sympy.functions.special.gamma_functions.digamma
+sympy.functions.special.gamma_functions.gamma
+sympy.functions.special.gamma_functions.loggamma
+sympy.functions.special.gamma_functions.trigamma
+sympy.functions.special.hyper.HyperRep
+sympy.functions.special.hyper.HyperRep_asin1
+sympy.functions.special.hyper.HyperRep_asin2
+sympy.functions.special.hyper.HyperRep_atanh
+sympy.functions.special.hyper.HyperRep_cosasin
+sympy.functions.special.hyper.HyperRep_log1
+sympy.functions.special.hyper.HyperRep_log2
+sympy.functions.special.hyper.HyperRep_power1
+sympy.functions.special.hyper.HyperRep_power2
+sympy.functions.special.hyper.HyperRep_sinasin
+sympy.functions.special.hyper.HyperRep_sqrts1
+sympy.functions.special.hyper.HyperRep_sqrts2
+sympy.functions.special.mathieu_functions.MathieuBase
+sympy.functions.special.polynomials.OrthogonalPolynomial
+sympy.functions.special.zeta_functions.dirichlet_eta
+sympy.functions.special.zeta_functions.lerchphi
+sympy.functions.special.zeta_functions.riemann_xi
+sympy.functions.special.zeta_functions.zeta
+sympy.physics.quantum.dagger.Dagger
+sympy.physics.quantum.state.Wavefunction
+sympy.physics.wigner.Wigner3j
+""".split())
+
+
+def _swept_unary(cls) -> bool:
+    """Whether ``cls`` is a class of :data:`SWEPT_UNARY`: its name is listed
+    and it is the class that its module defines under that name (a class
+    with a borrowed ``__module__`` or ``__qualname__`` is not)."""
+    name = cls.__qualname__
+    if f"{cls.__module__}.{name}" not in SWEPT_UNARY:
+        return False
+    return getattr(sys.modules.get(cls.__module__), name, None) is cls
 
 
 def _fixed_level(t) -> int:

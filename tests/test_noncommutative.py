@@ -821,6 +821,50 @@ def test_constructed_noncommutative_levels_kept():
     assert fresh().is_many(binomial(A, B, evaluate=False), ['commutative', 'complex']) == [False, None]
 
 
+def test_unary_function_level_by_swept_class():
+    # #239: a one-argument function keeps its argument's level 2 only if it
+    # is one of the swept SymPy classes, not because its __module__ starts
+    # with "sympy."
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from sympy import exp, stieltjes
+    from sympy.functions.elementary.trigonometric import sin as _sin
+    from satassume.knowledge.domain import SWEPT_UNARY, constructed_noncommutative as level
+
+    def zero_class(module, name='Z', base=Function):
+        cls = type(name, (base,), {'eval': classmethod(lambda cls, a: S.Zero)})
+        cls.__module__ = module
+        cls.__qualname__ = name
+        return cls
+
+    # the #239 reproducer: a borrowed module name
+    for module, name in [('sympy.functions.fake', 'Z'), ('sympy.core.tests.test_fake', 'Z'),
+                         ('sympy.functions.elementary.trigonometric', 'sin'), (__name__, 'Z')]:
+        Z = zero_class(module, name)
+        e = Z(A, evaluate=False)
+        assert e.doit() == 0
+        assert level(e) == 1, (module, name)
+        assert fresh().is_many(e, ['commutative', 'zero', 'complex', 'integer']) == [False, None, None, None]
+    # a subclass of a swept class with its own eval, under the same name
+    Zsin = zero_class('sympy.functions.elementary.trigonometric', 'sin', base=_sin)
+    assert level(Zsin(A, evaluate=False)) == 1
+    # the swept classes keep it; stieltjes(A) is zoo
+    for e in (sin(A), exp(A), sin(exp(A))):
+        assert level(e) == 2, e
+        assert fresh().is_(e, 'complex') is False, e
+    assert level(stieltjes(A, evaluate=False)) == 1
+    assert 'sympy.functions.elementary.trigonometric.sin' in SWEPT_UNARY
+    assert not any('.tests.' in n or not n.startswith('sympy.') for n in SWEPT_UNARY)
+    # the sweep still passes every listed class
+    root = Path(__file__).resolve().parents[1]
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(root), os.environ.get('PYTHONPATH', '')]))
+    r = subprocess.run([sys.executable, str(root / 'tools' / 'sweep_unary_functions.py'), '--check'],
+                       capture_output=True, text=True, timeout=300, cwd=root, env=env)
+    assert r.returncode == 0, r.stderr[-2000:]
+
+
 def test_constructed_noncommutative_labels():
     # re-review R2: level 2 only where the type guarantees the term is its
     # own value; an operator or a state built from labels may still
