@@ -16,6 +16,7 @@ this package only inside functions (docs/design.md, "Where SymPy is
 imported"; ``tests/test_layering.py``).
 """
 from sympy.core.add import Add
+from sympy.core.basic import Basic
 from sympy.core.function import Application, Function
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
@@ -30,7 +31,7 @@ from sympy.functions.combinatorial.factorials import (
 )
 from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
 from sympy.functions.elementary.miscellaneous import MinMaxBase
-from sympy.functions.elementary.piecewise import ExprCondPair, Piecewise
+from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.special.bessel import (
     airyai,
     airyaiprime,
@@ -77,7 +78,6 @@ from sympy.tensor.indexed import Idx
 from sympy.concrete.products import Product
 from sympy.concrete.summations import Sum
 from sympy.integrals.integrals import Integral
-from sympy.concrete.expr_with_limits import ExprWithLimits
 
 from . import atoms  # noqa: F401  (registration side effects)
 from .registry import TemplateRegistry, registry
@@ -111,18 +111,21 @@ _SPECIAL = (S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity)
 
 
 def _may_be_nan(a) -> bool:
-    """``a`` is ``nan``, or arithmetic or a function application holding an
-    explicit ``nan`` or infinity (``oo - oo``, ``Add(nan, x)``,
-    ``Abs(nan)``, ``0*oo``, ``x + oo`` at ``x = -oo``), which may evaluate
-    to nan.  Read structurally: of an integral or a sum only the integrand,
-    and of a ``Piecewise`` branch only its value, are followed; limits and
-    conditions are not values (#235 review)."""
+    """``a`` is ``nan``, or holds an explicit ``nan`` or infinity in a part
+    that carries a value, so that it may evaluate to nan: arithmetic
+    (``oo - oo``, ``0*oo``, ``x + oo`` at ``x = -oo``), a function
+    application (``Abs(nan)``), and every other node whose arguments feed
+    its value -- ``Subs(nan, x, 1)``, ``Subs(x, x, nan)``,
+    ``Limit(nan, x, 0)``, ``UnevaluatedExpr(nan)``, an integral or a sum
+    over ``(-oo, oo)`` (``Integral(x, (x, -oo, oo))`` is nan), a
+    ``Piecewise`` branch value, and a condition too: a ``Piecewise``
+    without a ``True`` branch is nan where no condition holds, so a
+    condition holding ``oo - oo`` may leave no value (#236 review).  Only
+    the arguments of an atom (the range of an ``Idx``) are labels, not
+    followed (#235 review; re-review R1)."""
     if a is S.NaN:
         return True
-    if isinstance(a, (ExprCondPair, ExprWithLimits)):
-        b = a.args[0]
-        return any(b is c for c in _SPECIAL) or _may_be_nan(b)
-    if not isinstance(a, (Add, Mul, Pow, Application)):
+    if not isinstance(a, Basic) or a.is_Atom:
         return False
     return any(any(b is c for c in _SPECIAL) or _may_be_nan(b) for b in a.args)
 
