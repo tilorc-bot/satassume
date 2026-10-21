@@ -141,9 +141,10 @@ def constructed_noncommutative(t) -> int:
 def _fixed_level(t) -> int:
     """The level of a term whose class fixes ``is_commutative = False``: 2
     where the type guarantees that the term is its own value: a matrix
-    expression, which is never a number, and an undefined function of
-    labels (:func:`_label`: ``Function('g', commutative=False)(x, 1)``),
-    which never evaluates; else 1.  Anything else may evaluate to a number
+    expression, which is never a number, and an undefined function
+    (:func:`_plain_undefined`) of labels (:func:`_label`:
+    ``Function('g', commutative=False)(x, 1)``), which never evaluates;
+    else 1.  Anything else may evaluate to a number
     when ``doit`` rebuilds it, through its ``eval``, ``doit`` or
     constructor, and nothing in the term tells (#232; re-review R2):
     ``Commutator(a, b - b)`` and secondquant ``Commutator(x, y,
@@ -152,10 +153,28 @@ def _fixed_level(t) -> int:
     ``FKet([p, p + 0])`` or ``FKet([p, Pow(p, 1, evaluate=False)])`` gives
     0, a doubly occupied fermion state.  So an operator or a state built
     from labels (``Operator('a')``, ``JzKet(j, m)``) is at level 1 too."""
-    from sympy.core.function import AppliedUndef
     if _is_matrix(t):
         return 2
-    return 2 if isinstance(t, AppliedUndef) and all(_label(a) for a in t.args) else 1
+    return 2 if _plain_undefined(type(t)) and all(_label(a) for a in t.args) else 1
+
+
+def _plain_undefined(cls) -> bool:
+    """Whether ``cls`` is an undefined function as ``Function(name, ...)``
+    makes it, with nothing more in its class dictionary than such a class
+    has (its assumptions ``is_*`` and the bookkeeping of a reference
+    class): ``Function('g', commutative=False, eval=...)``, ``doit=`` or
+    ``_eval_evalf=``, and a subclass of ``AppliedUndef``, may evaluate
+    (#238 review)."""
+    from sympy.core.function import AppliedUndef, UndefinedFunction
+    if type(cls) is not UndefinedFunction or cls.__bases__ != (AppliedUndef,):
+        return False
+    global _UNDEFINED_KEYS
+    if _UNDEFINED_KEYS is None:
+        _UNDEFINED_KEYS = frozenset(UndefinedFunction('_satassume_reference', commutative=False).__dict__)
+    return all(k in _UNDEFINED_KEYS or k.startswith('is_') for k in cls.__dict__)
+
+
+_UNDEFINED_KEYS = None
 
 
 def _label(a) -> bool:

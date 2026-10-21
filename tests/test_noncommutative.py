@@ -711,6 +711,14 @@ class _EvaluatesWhenBuilt(Expr):
         return S.Zero if evaluate and a == 1 else Expr.__new__(cls, a)
 
 
+class _UndefSub(AppliedUndef):
+    is_commutative = False
+
+    @classmethod
+    def eval(cls, *args):
+        return S.Zero
+
+
 def _evaluating_classes():
     # re-review R2: over commutative arguments, a class that evaluates
     # (secondquant Commutator is 0 for commuting arguments), or a
@@ -723,7 +731,12 @@ def _evaluating_classes():
             FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
             FKet([Eq(x, x, evaluate=False), S.true]), _EvaluatesWhenBuilt(1, evaluate=False),
             # #234: fermi_level is not in args, the rebuilt state is 0
-            FKet([0], 1), FockStateFermionBra([0], 1)]
+            FKet([0], 1), FockStateFermionBra([0], 1),
+            # #238 review: an undefined function given an evaluator
+            Function('g0', commutative=False, eval=classmethod(lambda cls, *a: S.Zero))(x, evaluate=False),
+            Function('g1', commutative=False, doit=lambda self, **h: S.Zero)(x),
+            Function('g2', commutative=False, _eval_evalf=lambda self, prec: Float(0))(Float(1.0), evaluate=False),
+            _UndefSub(x, evaluate=False)]
 
 
 def test_rereview_r2_reproducer():
