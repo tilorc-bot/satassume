@@ -74,7 +74,8 @@ def constructed_noncommutative(t) -> int:
     numbers).
     ``Function``'s ``_eval_is_commutative`` (the ``fuzzy_and`` of the
     arguments): an undefined function (``f(A)``, ``f(A, 0)``), which never
-    evaluates, the highest level of an argument; a function of one argument
+    evaluates (:func:`_plain_undefined`; else at most 1), the highest
+    level of an argument; a function of one argument
     (``sin(A)``, ``adjoint(A)``, ``exp(M)``), its argument's level if
     SymPy defines it, as none but ``stieltjes`` evaluates a term at 2 to a
     number (a sweep of SymPy's functions; a user's ``eval`` may); any
@@ -128,8 +129,11 @@ def constructed_noncommutative(t) -> int:
     if getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative:
         levels = [constructed_noncommutative(a) for a in t.args]
         top = max(levels, default=0)
-        if top < 2 or isinstance(t, AppliedUndef):
+        if top < 2:
             return top
+        if isinstance(t, AppliedUndef):
+            # Function('g', doit=...)(A) may evaluate (#238 review)
+            return 2 if _plain_undefined(cls) else 1
         if (len(levels) == 1 and cls.__module__.startswith("sympy.")
                 and cls.__name__ != "stieltjes"):
             # stieltjes(A) is zoo (A.is_integer is False)
@@ -344,4 +348,3 @@ def kept_product(factors):
             and Counter(t.args) == Counter(factors):
         return t
     return None
-

@@ -736,7 +736,18 @@ def _evaluating_classes():
             Function('g0', commutative=False, eval=classmethod(lambda cls, *a: S.Zero))(x, evaluate=False),
             Function('g1', commutative=False, doit=lambda self, **h: S.Zero)(x),
             Function('g2', commutative=False, _eval_evalf=lambda self, prec: Float(0))(Float(1.0), evaluate=False),
-            _UndefSub(x, evaluate=False)]
+            _UndefSub(x, evaluate=False),
+            # #238 final review: commutative itself, non-commutative through
+            # an argument at level 2
+            Function('g3', doit=lambda self, **h: S.Zero)(A),
+            Function('g4', eval=classmethod(lambda cls, *a: S.Zero))(A, evaluate=False),
+            _UndefEval(A, evaluate=False)]
+
+
+class _UndefEval(AppliedUndef):
+    @classmethod
+    def eval(cls, *args):
+        return S.Zero
 
 
 def test_rereview_r2_reproducer():
@@ -746,6 +757,18 @@ def test_rereview_r2_reproducer():
     assert e.doit() == 0
     assert constructed_noncommutative(e) == 1
     assert Engine().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None]
+
+
+def test_undefined_function_with_evaluator_of_noncommutative_argument():
+    # #238 final review: Function's level of an argument kept only for a
+    # plain undefined function; evalf is not doit but may give a number too
+    from satassume.knowledge.domain import constructed_noncommutative
+    e = Function('gd', doit=lambda self, **h: S.Zero)(A)
+    assert e.doit() == 0
+    assert constructed_noncommutative(e) == 1
+    assert Engine().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None]
+    assert constructed_noncommutative(Function('ge', _eval_evalf=lambda self, prec: Float(0))(A)) == 1
+    assert constructed_noncommutative(f(A)) == 2
 
 
 class _NCProperty(Expr):
