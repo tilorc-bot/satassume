@@ -39,10 +39,12 @@ from sympy import (
     Rational,
     S,
     Symbol,
+    Tuple,
     eye,
     oo,
     sin,
     sqrt,
+    sympify,
 )
 from sympy.core.function import AppliedUndef
 from test_templates import evaluate
@@ -700,15 +702,26 @@ class _Evaluates(Expr):
         return S.Zero
 
 
+class _EvaluatesWhenBuilt(Expr):
+    # a user's constructor honouring evaluate= (#238 review)
+    is_commutative = False
+
+    def __new__(cls, a, evaluate=True):
+        a = sympify(a)
+        return S.Zero if evaluate and a == 1 else Expr.__new__(cls, a)
+
+
 def _evaluating_classes():
     # re-review R2: over commutative arguments, a class that evaluates
     # (secondquant Commutator is 0 for commuting arguments), or a
     # constructor that gives a number for an evaluated argument (a doubly
-    # occupied fermion state)
+    # occupied fermion state) or when built again
+    from sympy import Eq
     from sympy.physics.secondquant import Commutator, FKet
     p = Symbol('p')
     return [Commutator(x, y, evaluate=False), Commutator(x, 1, evaluate=False), _Evaluates(x),
-            FKet([p, Add(p, 0, evaluate=False)])]
+            FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
+            FKet([Eq(x, x, evaluate=False), S.true]), _EvaluatesWhenBuilt(1, evaluate=False)]
 
 
 def test_rereview_r2_reproducer():
@@ -770,25 +783,26 @@ def test_constructed_noncommutative_levels_kept():
     assert fresh().is_many(binomial(A, B, evaluate=False), ['commutative', 'complex']) == [False, None]
 
 
-def test_constructed_noncommutative_atoms_kept():
-    # #232: operators and states built from labels stay at level 2; an
-    # operation over them does not
-    from sympy import Quaternion
+def test_constructed_noncommutative_labels():
+    # re-review R2: level 2 only where the type guarantees the term is its
+    # own value; an operator or a state built from labels may still
+    # evaluate on rebuild (its constructor runs again: FKet([p, p**1]) is 0),
+    # and nothing in the term tells
+    from sympy import Function, MatrixSymbol, Quaternion
     from sympy.physics.quantum import Commutator, Operator
     from sympy.physics.quantum.boson import BosonOp
     from sympy.physics.quantum.spin import JzKet
     from sympy.physics.secondquant import CreateBoson
     from satassume.knowledge.domain import constructed_noncommutative
     a, b = Operator('a'), Operator('b')
-    for e in (a, BosonOp('c'), JzKet(1, 0), CreateBoson(x), Quaternion(x, y, 0, 1)):
+    g = Function('g', commutative=False)
+    for e in (MatrixSymbol('M', 2, 2), g(x, 1), g(Tuple(x, S.Half))):
         assert constructed_noncommutative(e) == 2, e
         assert fresh().is_many(e, ['commutative', 'zero', 'complex']) == [False, False, False], e
-    assert constructed_noncommutative(Commutator(a, b)) == 1
-    assert fresh().is_many(Commutator(a, b), ['commutative', 'zero']) == [False, None]
-    # re-review R2: a label that evaluation may change (an unevaluated
-    # p + 0, and so any sum) leaves level 2
-    for e in (JzKet(1, Add(0, 0, evaluate=False)), Operator(x + 1), CreateBoson(Add(x, 0, evaluate=False))):
+    for e in (a, BosonOp('c'), JzKet(1, 0), CreateBoson(x), Quaternion(x, y, 0, 1), Commutator(a, b),
+              g(x + 1), g(Add(x, 0, evaluate=False))):
         assert constructed_noncommutative(e) == 1, e
+        assert fresh().is_many(e, ['commutative', 'zero']) == [False, None], e
 
 
 def test_constructed_noncommutative_unknown_stays_none():

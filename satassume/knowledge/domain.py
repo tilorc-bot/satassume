@@ -61,10 +61,11 @@ def constructed_noncommutative(t) -> int:
     of the facts :func:`noncommutative_false` holds, as SymPy's fact rules
     derive from it.
 
-    2: a non-commutative symbol, or a class fixing ``is_commutative =
-    False`` (an ``Operator``, a ``MatrixExpr``: SymPy's fact rules apply to
-    it) unless it may be an operation that evaluates to a number
-    (:func:`_fixed_level`: ``Commutator(a, b)``, ``TensMul(0, x)``, 1).
+    2: a non-commutative symbol, or a term whose class fixes
+    ``is_commutative = False`` (SymPy's fact rules apply to it) when the
+    type guarantees it is its own value (:func:`_fixed_level`: a
+    ``MatrixExpr``, an undefined function of labels; not ``Operator('a')``,
+    ``Commutator(a, b)`` or ``TensMul(0, x)``, which may evaluate).
     The ``is_commutative`` slot that ``Add`` and ``Mul`` fill when built:
     1 if False, 2 if evaluating it cannot cancel its
     non-commutative part (:func:`_nc_sum_level`, :func:`_nc_product_level`:
@@ -139,88 +140,31 @@ def constructed_noncommutative(t) -> int:
 
 def _fixed_level(t) -> int:
     """The level of a term whose class fixes ``is_commutative = False``: 2
-    for a matrix expression, which is never a number, and for a term built
-    from labels, which is its own value: its class defines no evaluator
-    (:func:`_evaluates`), and every argument is commutative by construction
-    (:func:`_constructed_commutative`) and unchanged by evaluation
-    (:func:`_unchanged_by_doit`: ``Operator('a')``, ``JzKet(j, m)``,
-    ``CreateBoson(i)``); else 1.  An operation over
-    non-commutative terms may evaluate to a number (#232):
-    ``Commutator(a, b - b)`` and ``AntiCommutator(a, b - b)`` are 0, and
-    ``Commutator(a, Dagger(a))`` is 1 for a boson operator ``a``; so may an
-    operation over commutative terms whose class evaluates
-    (:func:`_evaluates`: ``TensMul(0, x)`` is 0, ``TensAdd(1, 1)`` is 2,
-    secondquant ``Commutator(x, y, evaluate=False)`` is 0; re-review R2)."""
+    where the type guarantees that the term is its own value: a matrix
+    expression, which is never a number, and an undefined function of
+    labels (:func:`_label`: ``Function('g', commutative=False)(x, 1)``),
+    which never evaluates; else 1.  Anything else may evaluate to a number
+    when ``doit`` rebuilds it, through its ``eval``, ``doit`` or
+    constructor, and nothing in the term tells (#232; re-review R2):
+    ``Commutator(a, b - b)`` and secondquant ``Commutator(x, y,
+    evaluate=False)`` are 0, ``Commutator(a, Dagger(a))`` is 1 for a boson
+    operator ``a``, ``TensMul(0, x)`` is 0, and the constructor of
+    ``FKet([p, p + 0])`` or ``FKet([p, Pow(p, 1, evaluate=False)])`` gives
+    0, a doubly occupied fermion state.  So an operator or a state built
+    from labels (``Operator('a')``, ``JzKet(j, m)``) is at level 1 too."""
+    from sympy.core.function import AppliedUndef
     if _is_matrix(t):
         return 2
-    if _evaluates(type(t)):
-        return 1
-    return 2 if all(_constructed_commutative(a) and _unchanged_by_doit(a) for a in t.args) else 1
+    return 2 if isinstance(t, AppliedUndef) and all(_label(a) for a in t.args) else 1
 
 
-def _evaluates(cls) -> bool:
-    """Whether ``cls`` or a base defines how its terms evaluate: an
-    ``eval`` (run when a ``Function`` or a quantum ``Commutator`` is built),
-    a ``doit`` or an ``_eval_doit``, other than SymPy's inert defaults:
-    ``Basic.doit`` rebuilds the term from its arguments, ``Atom.doit``
-    returns it, ``Application.eval`` returns None.  Read from the class
-    dictionaries; nothing is called."""
+def _label(a) -> bool:
+    """An atom whose ``doit`` returns it (``x``, ``1/2``, ``Str('a')``), or a
+    ``Tuple`` of such: unchanged by evaluation."""
     from sympy.core.basic import Atom
-    from sympy.core.function import Application
-    inert = {"doit": (_Basic, Atom), "_eval_doit": (), "eval": (Application,)}
-    return any(n in k.__dict__ and k not in ks for k in cls.__mro__ for n, ks in inert.items())
-
-
-def _unchanged_by_doit(a) -> bool:
-    """Whether evaluating ``a`` leaves it as it is: no class on the way
-    evaluates (:func:`_evaluates`) and every argument is unchanged, down to
-    atoms (``Symbol('a')``, ``1/2``, ``Tuple(0, 1)``).  Then ``Basic.doit``
-    rebuilds a term over such arguments from the same arguments.  An
-    unevaluated ``p + 0`` is changed, and the constructor of the term over
-    it may give a number: ``FKet([p, p + 0])`` is 0, a doubly occupied
-    fermion state (re-review R2).  So is an evaluated ``x + 1``, as nothing
-    in the term tells the two apart."""
-    if not isinstance(a, _Basic):
-        return True  # Basic.doit passes it on as it is
-    return not _evaluates(type(a)) and all(_unchanged_by_doit(b) for b in a.args)
-
-
-def _constructed_commutative(s) -> bool:
-    """Whether SymPy builds ``s`` commutative, read without evaluating any
-    assumption (see :func:`_fixed_noncommutative`): a symbol declared
-    commutative, a class fixing ``is_commutative = True`` (a number), the
-    slot of an ``Add``, ``Mul`` or ``Pow`` filled True, and a function
-    (``Function``'s ``_eval_is_commutative``) or a container (``Tuple``,
-    ``Str``: not an ``Expr``) of such terms.  False for anything else: a
-    class whose property or evaluator decides it (#233 review)."""
-    from sympy.core.basic import Basic
-    from sympy.core.function import Function
-    from sympy.core.symbol import Symbol
-    if isinstance(s, Symbol):
-        # sympy-boundary: the declared commutative flag only
-        return dict(getattr(s, "_assumptions0", ())).get("commutative") is True
-    if not isinstance(s, _Basic):
-        return False
-    cls = type(s)
-    for k in cls.__mro__:
-        v = k.__dict__.get("is_commutative", _MISSING)
-        if v is _MISSING:
-            continue
-        if v is True:
-            return True
-        if v is Basic.__dict__["is_commutative"]:
-            break
-        if not isinstance(v, MemberDescriptorType):
-            return False
-        try:
-            return v.__get__(s, cls) is True
-        except AttributeError:
-            return False
-    # sympy-boundary: compares the class's evaluator, does not call it
-    generic = getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative
-    if generic or not isinstance(s, _Expr):
-        return all(_constructed_commutative(a) for a in s.args)
-    return False
+    if isinstance(a, _Tuple):
+        return all(_label(b) for b in a.args)
+    return isinstance(a, Atom) and type(a).doit is Atom.doit
 
 
 def _nonzero_number(a) -> bool:
@@ -381,3 +325,4 @@ def kept_product(factors):
             and Counter(t.args) == Counter(factors):
         return t
     return None
+
