@@ -717,11 +717,13 @@ def _evaluating_classes():
     # constructor that gives a number for an evaluated argument (a doubly
     # occupied fermion state) or when built again
     from sympy import Eq
-    from sympy.physics.secondquant import Commutator, FKet
+    from sympy.physics.secondquant import Commutator, FKet, FockStateFermionBra
     p = Symbol('p')
     return [Commutator(x, y, evaluate=False), Commutator(x, 1, evaluate=False), _Evaluates(x),
             FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
-            FKet([Eq(x, x, evaluate=False), S.true]), _EvaluatesWhenBuilt(1, evaluate=False)]
+            FKet([Eq(x, x, evaluate=False), S.true]), _EvaluatesWhenBuilt(1, evaluate=False),
+            # #234: fermi_level is not in args, the rebuilt state is 0
+            FKet([0], 1), FockStateFermionBra([0], 1)]
 
 
 def test_rereview_r2_reproducer():
