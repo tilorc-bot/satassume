@@ -111,7 +111,7 @@ from .scope import theory_scope as _theory_scope
 from .state.epoch import EPOCH as _EPOCH
 from .state.memos import PROCESS as _PROCESS
 from .knowledge.extensions import Args, extensions, register, unregister  # noqa: F401
-from .sat.formula import And, Equivalent, Formula, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
+from .sat.formula import And, Equivalent, Formula, ITE, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
 from .knowledge.domain import NONCOMM_SIZE, _NONCOMM, _fixed_noncommutative, _noncommutative  # noqa: F401
 
@@ -405,8 +405,7 @@ def to_formula(expr, relations: bool = False, opaque: bool = False):
             f = Not(Equivalent(f, a))
         return f
     if isinstance(expr, _SITE):
-        c, a, b = [to_formula(x, relations, opaque) for x in expr.args]
-        return And(Implies(c, a), Implies(Not(c), b))
+        return ITE(*[to_formula(x, relations, opaque) for x in expr.args])
     if isinstance(expr, _Relational):
         return _relation_formula(expr, relation_parts(expr), relations)
     raise Unsupported(f"cannot translate {type(expr).__name__} (other)", "other")
