@@ -9,7 +9,7 @@ to be complex or extended real, as ``x + y`` is nan at ``x = oo, y = -oo``.
 from __future__ import annotations
 
 import pytest
-from sympy import (Abs, Add, Q, RisingFactorial, FallingFactorial, S, Symbol, binomial, nan, oo,
+from sympy import (Abs, Add, Mul, Pow, Q, RisingFactorial, FallingFactorial, S, Symbol, binomial, nan, oo,
                    sign, sin, symbols, zeta)
 
 from satassume import Engine
@@ -71,3 +71,37 @@ def test_applied_to_nan_gets_no_facts(e):
     preds = [p for p in PRED_INDEX if p != 'commutative']
     assert fresh().is_many(e, preds) == [None]*len(preds)
 
+
+
+def _may_be_nan_arguments():
+    # #231: arithmetic holding an explicit nan or infinity may evaluate to
+    # nan (oo - oo is not zero, which made Abs(oo - oo) extended_positive)
+    z = Add(oo, -oo, evaluate=False)
+    return [z, Add(nan, x, evaluate=False), Abs(nan, evaluate=False), Mul(0, oo, evaluate=False),
+            Add(x, oo, -oo, evaluate=False), sin(z, evaluate=False), Pow(z, 2, evaluate=False)]
+
+
+@pytest.mark.parametrize("v", _may_be_nan_arguments())
+@pytest.mark.parametrize("cls", [Abs, sign, sin])
+def test_applied_to_may_be_nan_gets_no_facts(cls, v):
+    e = cls(v, evaluate=False)
+    assert e.doit() is S.NaN
+    preds = [p for p in PRED_INDEX if p != 'commutative']
+    assert fresh().is_many(e, preds) == [None]*len(preds)
+
+
+def test_issue_231_reproducers():
+    z = Add(oo, -oo, evaluate=False)
+    assert fresh().is_many(Abs(z, evaluate=False), ['extended_nonnegative', 'extended_positive',
+                                                    'zero']) == [None, None, None]
+    assert fresh().is_many(sign(z, evaluate=False), ['complex', 'finite']) == [None, None]
+    assert fresh().is_(Abs(Abs(nan, evaluate=False), evaluate=False), 'extended_real') is None
+    assert fresh().is_(Abs(Add(nan, x, evaluate=False), evaluate=False), 'extended_real') is None
+
+
+def test_facts_kept_without_explicit_special_values():
+    # an integral's limits and a Piecewise's conditions are not values
+    from sympy import Integral, Piecewise, exp
+    for v in (x, x + 1, Integral(exp(-x), (x, 0, oo)), Piecewise((x, x < oo), (1, True)), oo):
+        assert fresh().is_(Abs(v), 'extended_nonnegative') is True, v
+    assert fresh().is_(sign(x), 'finite') is True

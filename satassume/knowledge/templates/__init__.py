@@ -106,12 +106,32 @@ registry.lazy(__name__ + ".nodes", AccumulationBounds, Idx)
 registry.lazy(__name__ + ".limits", Sum, Product, Integral)
 
 
+_SPECIAL = (S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity)
+
+
+def _may_be_nan(a) -> bool:
+    """``a`` is ``nan``, or arithmetic or a function application holding an
+    explicit ``nan`` or infinity (``oo - oo``, ``Add(nan, x)``,
+    ``Abs(nan)``, ``0*oo``, ``x + oo`` at ``x = -oo``), which may evaluate
+    to nan.  Read structurally; the limits of an integral or a sum and the
+    conditions of a ``Piecewise`` are not values and are not followed."""
+    if a is S.NaN:
+        return True
+    if not isinstance(a, (Add, Mul, Pow, Application)):
+        return False
+    return any(any(b is c for c in _SPECIAL) or _may_be_nan(b) for b in a.args)
+
+
 def _applied_to_nan(expr) -> bool:
-    """A function applied to ``nan``: SymPy's functions return nan before
-    any identity a template states (``rf(nan, 0)``, ``owens_t(nan, 0)``,
+    """A function applied to ``nan``, or to an argument that may evaluate
+    to nan (:func:`_may_be_nan`): SymPy's functions return nan before any
+    identity a template states (``rf(nan, 0)``, ``owens_t(nan, 0)``,
     ``zeta(1, nan)``, ``Abs(nan)``, ``sign(nan)``), and no predicate holds
-    of nan, so no template fact is claimed (#180 final review F3)."""
-    return isinstance(expr, Application) and any(a is S.NaN for a in expr.args)
+    of nan, so no template fact is claimed (#180 final review F3; #231:
+    ``Abs(oo - oo)`` is not extended_positive, although ``oo - oo`` is not
+    zero).  An argument that is nan only at some values of its symbols
+    (``Abs(x + y)`` at ``x = oo, y = -oo``) is not detected."""
+    return isinstance(expr, Application) and any(_may_be_nan(a) for a in expr.args)
 
 
 registry.opaque = _applied_to_nan
