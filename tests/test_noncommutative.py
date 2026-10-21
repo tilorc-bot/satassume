@@ -855,11 +855,18 @@ def test_unary_function_level_by_swept_class():
         assert level(e) == 2, e
         assert fresh().is_(e, 'complex') is False, e
     assert level(stieltjes(A, evaluate=False)) == 1
+    # #245 review: acsch, acsc of an infinite non-commutative symbol are 0
+    from sympy import acsc, acsch, asec
+    inf = Symbol('I1', commutative=False, infinite=True)
+    for g in (acsch, acsc, asec):
+        e = g(inf, evaluate=False)
+        assert e.doit().is_commutative and level(e) == 1, g
+        assert fresh().is_many(e, ['zero', 'complex']) == [None, None], g
     assert 'sympy.functions.elementary.trigonometric.sin' in SWEPT_UNARY
     assert not any('.tests.' in n or not n.startswith('sympy.') for n in SWEPT_UNARY)
     # the sweep still passes every listed class
     root = Path(__file__).resolve().parents[1]
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(root), os.environ.get('PYTHONPATH', '')]))
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [str(root), os.environ.get('PYTHONPATH')])))
     r = subprocess.run([sys.executable, str(root / 'tools' / 'sweep_unary_functions.py'), '--check'],
                        capture_output=True, text=True, timeout=300, cwd=root, env=env)
     assert r.returncode == 0, r.stderr[-2000:]

@@ -144,7 +144,7 @@ def constructed_noncommutative(t) -> int:
 #: SymPy's one-argument functions that keep the level 2 of their argument:
 #: ``tools/sweep_unary_functions.py`` found that none rebuilds such a term
 #: into a commutative one (``stieltjes(A)`` is ``zoo``, ``LeviCivita(A)
-#: .doit()`` is 1: not listed).  By name, since only these classes were
+#: .doit()`` is 1, ``acsch(A)`` of an infinite ``A`` is 0: not listed).  By name, since only these classes were
 #: swept: a user's or a test module's ``Function`` with an ``eval`` may
 #: return a number (#239).
 SWEPT_UNARY = frozenset("""
@@ -188,7 +188,6 @@ sympy.functions.elementary.hyperbolic.HyperbolicFunction
 sympy.functions.elementary.hyperbolic.InverseHyperbolicFunction
 sympy.functions.elementary.hyperbolic.acosh
 sympy.functions.elementary.hyperbolic.acoth
-sympy.functions.elementary.hyperbolic.acsch
 sympy.functions.elementary.hyperbolic.asech
 sympy.functions.elementary.hyperbolic.asinh
 sympy.functions.elementary.hyperbolic.atanh
@@ -205,8 +204,6 @@ sympy.functions.elementary.trigonometric.InverseTrigonometricFunction
 sympy.functions.elementary.trigonometric.TrigonometricFunction
 sympy.functions.elementary.trigonometric.acos
 sympy.functions.elementary.trigonometric.acot
-sympy.functions.elementary.trigonometric.acsc
-sympy.functions.elementary.trigonometric.asec
 sympy.functions.elementary.trigonometric.asin
 sympy.functions.elementary.trigonometric.atan
 sympy.functions.elementary.trigonometric.cos

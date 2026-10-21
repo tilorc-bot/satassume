@@ -8,7 +8,8 @@ Imports ``sympy`` and the modules of ``MODULES`` and walks every
 ``_eval_is_commutative`` (not an undefined function, not a class in a
 ``.tests.`` module or outside ``sympy``).  Each class is
 applied, evaluated and unevaluated, to one argument of each non-commutative
-term at level 2 (``A``, ``-A``, ``A + 1``, ``A*B``, ``exp(A)``, ...).  The
+term at level 2 (``A``, ``-A``, ``A + 1``, ``A*B``, ``exp(A)``, an infinite
+non-commutative symbol, ...).  The
 term is then rebuilt by ``doit()``, ``doit(deep=False)``, ``func(*args)``,
 ``rewrite(exp)`` and ``expand()``.  A class is listed only if it builds
 such a term, and no rebuild is commutative (a number, ``zoo``) and none of
@@ -23,7 +24,7 @@ import sys
 from sympy import Symbol, adjoint, exp, sin
 from sympy.core.function import AppliedUndef, Function
 
-from satassume.knowledge.domain import SWEPT_UNARY, constructed_noncommutative
+from satassume.knowledge.domain import SWEPT_UNARY
 
 #: modules ``import sympy`` does not load that define functions of
 #: non-commutative terms (``Dagger(A)``, ``log1p(A)``)
@@ -37,7 +38,12 @@ for _m in MODULES:
         pass
 
 A, B = Symbol('A', commutative=False), Symbol('B', commutative=False)
-ARGS = [A, -A, A + 1, A*B, 2*A, exp(A), A + B, adjoint(A), sin(A), A*B*A, A**2, 1/A]
+#: a non-commutative symbol with more assumptions is at level 2 as well
+#: (``acsch`` of an infinite one is 0)
+EXTRA = [Symbol('I1', commutative=False, infinite=True), Symbol('F1', commutative=False, finite=True),
+         Symbol('P1', commutative=False, polar=True), Symbol('P2', commutative=False, polar=True, infinite=True)]
+ARGS = [A, -A, A + 1, A*B, 2*A, exp(A), A + B, adjoint(A), sin(A), A*B*A, A**2, 1/A] \
+    + EXTRA + [-e for e in EXTRA]
 
 
 class _Timeout(Exception):
@@ -99,7 +105,9 @@ def _flagged(c, args):
 
 def main():
     signal.signal(signal.SIGALRM, _alarm)
-    args = [a for a in ARGS if constructed_noncommutative(a) == 2]
+    # every argument, not only those at level 2 now (``sin(A)`` is at 2
+    # only while ``sin`` is listed)
+    args = ARGS
     ok, bad = [], []
     for name, c in sorted(_classes().items()):
         f = _flagged(c, args)
