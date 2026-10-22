@@ -1,13 +1,12 @@
 """Structural templates for special functions (#180, C-NOTMPL, part B).
 
 The gamma family (``gamma``, ``loggamma``, ``polygamma``, ``digamma``,
-``trigamma``, ``multigamma``, ``lowergamma``, ``uppergamma``), the beta
-functions (``beta``, ``betainc``, ``betainc_regularized``), the Airy
-functions and the Bessel functions ``besselj``, ``bessely``, ``besseli``,
-``besselk``.  The error functions, their inverses, the integrals and
-``owens_t`` are rows (:mod:`.error_functions`), and so are ``zeta``,
-``dirichlet_eta`` and ``polylog`` (:mod:`.zeta_functions`) and
-``LambertW`` (:mod:`.lambertw`).
+``trigamma``, ``multigamma``, ``lowergamma``, ``uppergamma``) and the beta
+functions (``beta``, ``betainc``, ``betainc_regularized``).  The error
+functions, their inverses, the integrals and ``owens_t`` are rows
+(:mod:`.error_functions`), and so are ``zeta``, ``dirichlet_eta`` and
+``polylog`` (:mod:`.zeta_functions`), ``LambertW`` (:mod:`.lambertw`) and
+the Airy and Bessel functions (:mod:`.bessel`).
 
 Each rule is a theorem about the value under SymPy's conventions
 (``gamma(-n) = zoo``, ``loggamma(-n) = oo``, principal branches).
@@ -17,9 +16,7 @@ SymPy's own handlers are not followed where they are not theorems:
   (``beta(5, -3) = oo``, ``betainc(1/2, 1, 0, -1)`` is not real);
 * ``multigamma(-1/2, 1) = -2*sqrt(pi)`` is real; ``polygamma(1, 0) =
   zoo`` is not positive and ``polygamma(n, 0)`` is not complex;
-* ``gamma(oo)`` is not real (``noninteger`` includes ``oo``);
-* the Airy functions have non-real points where the value is real
-  (their complex zeros), so a non-real argument gives no claim.
+* ``gamma(oo)`` is not real (``noninteger`` includes ``oo``).
 
 A node with another number of arguments than the rules are written for
 gets no facts.  Unary templates: the argument is index 0, the node index 1,
@@ -33,16 +30,6 @@ from collections import Counter
 from sympy import S
 from sympy.core.add import Add
 from sympy.core.mul import Mul
-from sympy.functions.special.bessel import (
-    airyai,
-    airyaiprime,
-    airybi,
-    airybiprime,
-    besseli,
-    besselj,
-    besselk,
-    bessely,
-)
 from sympy.functions.special.beta_functions import beta, betainc, betainc_regularized
 from sympy.functions.special.gamma_functions import (
     digamma,
@@ -61,8 +48,6 @@ from .functions import _table, _unary, nary, shifted
 from .registry import registry
 
 X, N, M, Q = 0, 1, 2, 3
-
-_ENTIRE = ((('finite',), 'finite'), (('complex',), 'complex'))
 
 
 def _register(cls, tag, gen, slots=None):
@@ -280,67 +265,3 @@ def _betainc(R, n):
 registry.register(beta)(nary('beta', _beta))
 registry.register(betainc)(nary('betainc', _betainc))
 registry.register(betainc_regularized)(nary('betainc_regularized', _betainc))
-
-
-# ---------------------------------------------------------------------------
-# Airy functions: entire, real on the real line; Ai(x) > 0, Ai'(x) < 0,
-# Bi(x) > 0 and Bi'(x) > 0 for x >= 0; Ai(+-oo) = 0, Bi(oo) = oo, Bi(-oo)
-# = 0, Ai'(oo) = 0, Bi'(oo) = oo (SymPy leaves Ai'(-oo) alone).  Bi has
-# non-real zeros, so a non-real argument gives no claim.
-# ---------------------------------------------------------------------------
-
-def _airy(kind):
-    def gen(R, c):
-        _table(R, _ENTIRE + ((('real',), 'real'),))
-        sign = 'negative' if kind == 'aiprime' else 'positive'
-        R.rule([(X, 'nonnegative', True)], (N, sign, True))
-        if kind in ('bi', 'biprime'):
-            _table(R, ((('infinite', 'extended_positive'), 'infinite'),
-                      (('infinite', 'extended_positive'), 'extended_positive')))
-        else:
-            _table(R, ((('infinite', 'extended_positive'), 'zero'),))
-        if kind in ('ai', 'bi'):
-            _table(R, ((('infinite', 'extended_negative'), 'zero'),))
-    return gen
-
-
-for _cls, _kind in ((airyai, 'ai'), (airybi, 'bi'), (airyaiprime, 'aiprime'),
-                    (airybiprime, 'biprime')):
-    _register(_cls, 'airy' + _kind, _airy(_kind))
-
-
-# ---------------------------------------------------------------------------
-# Bessel functions of order nu at z: J_n and I_n are entire for integer n
-# (real at real z), J_nu, Y_nu, I_nu, K_nu are real at real nu and z > 0,
-# I_n(x) > 0 and K_nu(x) > 0 there; J(nu, +-oo) = Y(nu, +-oo) = K(nu, oo)
-# = 0 and I(nu, oo) = oo (SymPy); Y and K are infinite at z = 0 for real nu.
-# ---------------------------------------------------------------------------
-
-def _bessel(kind):
-    def gen(R, n):
-        if n != 2:
-            return
-        nu, z, node = 0, 1, 2
-        nreal, nint = (nu, 'real', True), (nu, 'integer', True)
-        posinf = [(z, 'infinite', True), (z, 'extended_positive', True)]
-        R.rule([nreal, (z, 'positive', True)], (node, 'real', True))
-        if kind in ('j', 'i'):
-            R.rule([nint, (z, 'real', True)], (node, 'real', True))
-        if kind == 'j':
-            R.rule([nreal, (z, 'infinite', True), (z, 'extended_real', True)], (node, 'zero', True))
-        elif kind == 'i':
-            R.rule([nint, (z, 'positive', True)], (node, 'positive', True))
-            R.rule([nreal, *posinf], (node, 'infinite', True))
-            R.rule([nreal, *posinf], (node, 'extended_positive', True))
-        else:
-            # SymPy's value: bessely(nu, 0) = besselk(nu, 0) = zoo for real nu (the limit of
-            # Y_nu at 0 is 0 for a negative half-integer nu, but SymPy evaluates the node to zoo)
-            R.rule([nreal, (z, 'zero', True)], (node, 'infinite', True))
-            R.rule([nreal, *posinf], (node, 'zero', True))
-            if kind == 'k':
-                R.rule([nreal, (z, 'positive', True)], (node, 'positive', True))
-    return gen
-
-
-for _cls, _kind in ((besselj, 'j'), (bessely, 'y'), (besseli, 'i'), (besselk, 'k')):
-    registry.register(_cls)(nary('bessel' + _kind, _bessel(_kind)))
