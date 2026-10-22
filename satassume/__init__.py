@@ -9,7 +9,7 @@ from .sat.formula import P, And, Or, Not, Implies, Equivalent, Exclusive, ITE, a
 __all__ = ["Engine", "InconsistentAssumptions", "DictCache", "ObjectCache", "P", "And", "Or",
            "Not", "Implies", "Equivalent", "Exclusive", "ITE", "allargs", "anyarg", "exactlyonearg",
            "Extensions", "register", "unregister"]
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 
 def __getattr__(name):

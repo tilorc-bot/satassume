@@ -48,7 +48,7 @@ propositions.
 Against the definition of done:
 
 1. **Not fully met, and will not be by adding rules.** The 70 remaining
-   misses are listed in README.md: for 67 of them SymPy's answer is false
+   misses are listed in docs/overview.md: for 67 of them SymPy's answer is false
    for a value that satisfies the assumptions (a zero factor or term, an
    infinite argument, `acot(-1)`, `acos(1)`), and the other three need
    `Abs` of a non-atomic base or a trigonometric identity. Zero

@@ -2,7 +2,7 @@
 
 How `satassume.sympy_api.ask` gets from a SymPy proposition to an answer,
 and why the semantic choices along the way are what they are. Scope,
-routing rule and corpus results are in the [README](../README.md); the
+routing rule and corpus results are in the [overview](overview.md); the
 relation theories (DPLL(T), LRA, EUF, predicate transfer, constants in LRA)
 are in [theories.md](theories.md); measurements over time are in
 [performance.md](performance.md).
@@ -10,7 +10,7 @@ are in [theories.md](theories.md); measurements over time are in
 ## Scope and the non-fallback principle
 
 The engine answers unary scalar predicates from one rule base, one set of
-structural templates and one incremental CDCL solver (README, "Routing
+structural templates and one incremental CDCL solver (overview, "Routing
 rule"). Out-of-scope input returns None before the engine is touched; that
 is scoping, and the caller routes such input to SymPy's existing path.
 Inside the engine there is no fallback to SymPy's `_eval_is_*` handlers,
@@ -339,7 +339,7 @@ basis; see "Inconsistent assumptions raise `ValueError`").
   if it imports SymPy at module level. The layer rules need no change:
   every `theories/<name>/` package imports only itself.
 * Mention it in the `theories/__init__.py` docstring and in the tables of
-  this section and of README.md, "Layout".
+  this section and of overview.md, "Layout".
 
 `default_specs` names the adapters instead of discovering them (by
 scanning `theories/` or by entry points) on purpose: a discovered adapter
@@ -558,7 +558,7 @@ propagates without conflict (the Add-with-`oo` rules distribute their
 derived premises) and only a model shows it is inconsistent. Facts a symbol was declared with are facts of its node,
 so assumptions contradicting them are inconsistent:
 `ask(Q.commutative(x), ~Q.commutative(x))` raises, where SymPy's handler
-path trusts the assumption (the five "raises" of the README). Keeping this
+path trusts the assumption (the five "raises" of the overview). Keeping this
 or trusting the assumption is still the owner's call; no issue tracks it.
 
 Whether a query raises therefore depends on the clauses of its session
@@ -585,7 +585,7 @@ where a direct argument is `nan`. So:
   Q.infinite(x)` is None);
 - functions are not declared finite or complex for infinite arguments
   (`re(oo) = oo`, `exp(oo) = oo`, `sin(oo*I) = oo*I`, `log(oo) = oo`); 37
-  of the README's 70 deliberate misses come from this.
+  of the overview's 70 deliberate misses come from this.
 
 ### Non-commutative symbols
 
@@ -842,7 +842,7 @@ held writeback).
 ## Beyond the current scope
 
 The long-term goal is to replace SymPy's old `expr.is_*` system with the
-same engine (README; [PLAN.md](../PLAN.md)) through `Engine.is_`, which
+same engine ([overview](overview.md); [PLAN.md](../PLAN.md)) through `Engine.is_`, which
 nothing hooks into SymPy yet. After landing `ask` (route in-scope
 `sympy.ask` calls, `Predicate.register` as a shim over
 `satassume.register`), that needs:

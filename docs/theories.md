@@ -114,7 +114,7 @@ satisfiable search only ever means None or "consistent".
 Rational or infinite side; False for a `nan` side).
 
 **Order relations are over the extended reals and assert that their sides
-are extended reals** (#26, the owner's rule; examples in the README), so
+are extended reals** (#26, the owner's rule; examples in the overview), so
 `~(a < b)` is not `a >= b`, and `x < x + 1` under `Q.extended_real(x)` is
 None (SymPy's `lra_satask`, which assumes finite reals, says True).
 
@@ -473,8 +473,8 @@ unrelated query is answered without it. Out-of-scope applied predicates of the a
 unregistered custom) are likewise opaque free atoms (`sympy_api.to_formula`
 with `opaque`).
 
-**Floats are deliberately not read** ([README, Known
-gaps](../README.md#known-gaps)): SymPy compares `Float > Rational` exactly
+**Floats are deliberately not read** ([overview, Known
+gaps](overview.md#known-gaps)): SymPy compares `Float > Rational` exactly
 but decides `Eq` at the Float's precision, so any fixed reading
 contradicts it somewhere. A Float as a bounded unknown within its own
 precision would be sound under both readings; it was not built.
