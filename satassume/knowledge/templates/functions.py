@@ -28,6 +28,7 @@ from ._common import (
     facts,
     pattern_key,
 )
+from .atoms import value_units
 from .core import ipi_rules, ipi_split, pi_split
 
 X, N = 0, 1
@@ -399,3 +400,41 @@ def nary(tag, gen, slots=None, arity=None):
     # tells a declared module's templates by their module)
     template.__module__ = gen.__module__
     return template
+
+
+
+# ---------------------------------------------------------------------------
+# combinatorial: the value at a constant integer argument
+# (wiring.VALUE_AT_INTEGER), and genocchi(n) by the parity of n/2
+# (wiring.HALF_ARGUMENT); the rows are in .combinatorial
+# ---------------------------------------------------------------------------
+
+#: largest constant argument whose value is computed for its unit facts
+MAX_VALUE_ARG = 200
+
+
+def _value_units(c, expr):
+    """Unit facts of ``expr``, a node with the constant argument ``c``,
+    from its value (``expr.func(c)`` evaluates it)."""
+    if not (c.is_Integer and abs(c) <= MAX_VALUE_ARG):
+        return []
+    try:
+        v = expr.func(c)
+    except (ValueError, TypeError, ArithmeticError):
+        return []
+    if not (v.is_Atom and v.is_number) or v is S.NaN:
+        return []
+    return [value_units(v, expr)]
+
+
+def _genocchi_half(gen, h):
+    """``gen`` and the rules of ``genocchi(n)`` for an even ``n > 0`` by the
+    parity of ``n/2``, the object in slot ``h``: ``G_2k`` has the sign
+    ``(-1)**k`` (-1, 1, -3, 17, -155, ...)."""
+    def half(R, c):
+        gen(R, c)
+        R.rule([(X, 'even', True), (X, 'positive', True), (h, 'even', True)], (N, 'positive', True))
+        R.rule([(X, 'even', True), (X, 'positive', True), (h, 'odd', True)], (N, 'negative', True))
+    half.__module__ = gen.__module__
+    half.__name__ = half.__qualname__ = gen.__name__
+    return half

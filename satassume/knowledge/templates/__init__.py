@@ -2,7 +2,7 @@
 
 Importing this package registers every template module with
 :data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.wiring`, :mod:`.selection`,
-:mod:`.combinatorial`, :mod:`.special`, :mod:`.cfunctions`, :mod:`.rootof`,
+:mod:`.special`, :mod:`.cfunctions`, :mod:`.rootof`,
 :mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
@@ -118,13 +118,13 @@ ROW_FAMILIES = (
     ("bessel", (airyai, airybi, airyaiprime, airybiprime, besselj, bessely, besseli, besselk)),
     ("gamma_functions", (gamma, digamma, trigamma, polygamma, loggamma, lowergamma, uppergamma)),
     ("beta_functions", (beta, betainc, betainc_regularized)),
+    ("combinatorial", (catalan, andre, genocchi, partition, factorial2, subfactorial,
+                       RisingFactorial, FallingFactorial, binomial)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
 registry.lazy(__name__ + ".rootof", ComplexRootOf)
 registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
-registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,
-              FallingFactorial, binomial, catalan, andre, genocchi, partition)
 registry.lazy(__name__ + ".special", multigamma)
 # sympy.codegen is not imported by SymPy itself: declared by name
 registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",

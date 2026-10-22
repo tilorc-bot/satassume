@@ -5,7 +5,9 @@ The family modules (the names of ``ROW_FAMILIES`` in ``templates/__init__.py``:
 state rows only, as ``RULES`` (see :mod:`._rows`).  :func:`load` compiles
 a family's rows and registers one template per function (:func:`template`):
 the unary template of its rows (:func:`.functions._unary`), with the facts
-of a constant argument for a function of :data:`UNIT_INTERVAL`, or, for a
+of a constant argument for a function of :data:`UNIT_INTERVAL` or
+:data:`VALUE_AT_INTEGER`, and the rules about ``n/2`` for a function of
+:data:`HALF_ARGUMENT`, or, for a
 function of :data:`PI_MULTIPLE` or :data:`I_PI_MULTIPLE`,
 :func:`.functions._pi_trig`'s, which adds the rules of ``f(pi*c*s)`` for a
 rational ``c``, or, for a function of :data:`I_PI_ROOT`,
@@ -21,13 +23,16 @@ from __future__ import annotations
 
 import importlib
 
-from sympy import S, acos, asin, cos, cosh, exp, im, re, sin
+from sympy import (
+    S, acos, andre, asin, catalan, cos, cosh, exp, factorial2, genocchi, im, partition, re, sin,
+    subfactorial,
+)
 
 from ._rows import by_function, rules
 from .core import ipi_split
 from .functions import (
-    _cosh_shift, _exp_ipi, _in_unit_interval_units, _pi_trig, _unary, nary,
-    parts_of_round_templates, shifted,
+    _cosh_shift, _exp_ipi, _genocchi_half, _in_unit_interval_units, _pi_trig, _unary,
+    _value_units, nary, parts_of_round_templates, shifted,
 )
 from .registry import registry
 
@@ -46,6 +51,15 @@ I_PI_ROOT = (exp,)
 #: the functions with facts for a rational or float argument c: real on
 #: [-1, 1], and which side of the cut outside (functions._in_unit_interval_units)
 UNIT_INTERVAL = (asin, acos)
+
+#: the functions with the facts of their value at an integer argument c,
+#: |c| <= 200, which SymPy computes (functions._value_units)
+VALUE_AT_INTEGER = (factorial2, subfactorial, catalan, andre, partition, genocchi)
+
+#: the functions with rules about half the argument, n/2, in the slot after
+#: the terms x + c: genocchi(n) for an even n > 0 has the sign (-1)**(n/2)
+#: (functions._genocchi_half)
+HALF_ARGUMENT = (genocchi,)
 
 #: templates that are not rows, each with the functions it is for,
 #: registered after the rows of those functions: re and im of floor(y) or
@@ -82,7 +96,11 @@ def template(fn, gen):
                     slots=lambda args: tuple(shifted(args[i], S(c))
                                              for i, c in terms.get(len(args), ())))
     shifts = getattr(gen, 'shifts', ())
-    units = _in_unit_interval_units(fn.__name__) if fn in UNIT_INTERVAL else None
+    units = (_in_unit_interval_units(fn.__name__) if fn in UNIT_INTERVAL
+             else _value_units if fn in VALUE_AT_INTEGER else None)
+    if fn in HALF_ARGUMENT:
+        return _unary(fn.__name__, _genocchi_half(gen, 2 + len(shifts)),
+                      lambda a: (*(shifted(a, S(c)) for c in shifts), a/2), units)
     return _unary(fn.__name__, gen, lambda a: tuple(shifted(a, S(c)) for c in shifts), units)
 
 

@@ -164,7 +164,7 @@ def _shift_links(s, k, j=0):
 
 #: the ``c`` of the terms ``x + c`` the links of :func:`_shift_links` are
 #: added for
-_LINKED = (S(-2), S.NegativeOne, -S.Half, S.Half, S.One, S(2), exp(-1))
+_LINKED = (S(-3), S(-2), S.NegativeOne, -S.Half, S.Half, S.One, S(2), S(3), exp(-1))
 
 
 def _solver(c):

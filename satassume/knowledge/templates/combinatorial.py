@@ -1,204 +1,160 @@
-"""Structural templates for combinatorial functions (#180, C-NOTMPL):
-``factorial2``, ``subfactorial``, ``RisingFactorial``,
-``FallingFactorial``, ``binomial``, ``catalan``, ``andre``, ``genocchi``
-and ``partition`` (``factorial`` is in :mod:`.functions`).
+"""``factorial2``, ``subfactorial``, ``catalan``, ``andre``, ``partition``,
+``genocchi``, ``RisingFactorial``, ``FallingFactorial`` and ``binomial``
+(#180; ``factorial`` is in :mod:`.integer_funcs`).
 
 These functions are defined on (nonnegative) integers, and SymPy leaves
 them unevaluated or raises elsewhere (``factorial2(-4)``,
-``partition(1/2)``); the rules state facts for the integer points and
-for the real points where SymPy's extension is a theorem (``catalan(x) =
-4**x*gamma(x + 1/2)/(sqrt(pi)*gamma(x + 2)) > 0`` for ``x >= 0``).  A node
-with a constant integer argument (``genocchi(8, evaluate=False)``) gets
-the facts of its value.
-
-Unary templates: the argument is index 0, the node index 1, slots from 2.
+``partition(1/2)``); the rows state facts for the integer points and for
+the real points where SymPy's extension is a theorem (``catalan(x) =
+4**x*gamma(x + 1/2)/(sqrt(pi)*gamma(x + 2)) > 0`` for ``x >= 0``).
+SymPy's values kept as they are: ``rf(x, 0) == ff(x, 0) == 1`` for every
+``x`` but ``nan`` (``zoo`` gets no claim), ``binomial(x, 0) == 1``, and
+``binomial(x, k) == 0`` for an integer ``k < 0``.  A node with a constant
+integer argument (``genocchi(8, evaluate=False)``) also gets the facts of
+its value, and ``genocchi(n)`` for an even ``n > 0`` those of the sign of
+``G_n`` from the parity of ``n/2`` (``wiring.VALUE_AT_INTEGER`` and
+``wiring.HALF_ARGUMENT``).  The polynomials ``genocchi(n, x)`` get no
+facts.
 """
 from __future__ import annotations
 
-from sympy import S
-from sympy.functions.combinatorial.factorials import (
-    FallingFactorial,
-    RisingFactorial,
-    binomial,
-    factorial2,
-    subfactorial,
+from sympy import (
+    FallingFactorial, Q, RisingFactorial, andre, binomial, catalan, factorial2, genocchi,
+    partition, subfactorial,
 )
-from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
 
-from .atoms import value_units
-from .functions import _table, _unary, nary, shifted
-from .registry import registry
+from ._rows import f, for_all, x, y
 
-X, N = 0, 1
+RULES = (
+    # Integer at a natural number
+    #     C_n == binomial(2*n, n)/(n + 1), the number of alternating
+    #     permutations, G_n == 2*(1 - 2**n)*B_n
+    for_all((catalan, andre, genocchi),
+        (Q.integer(x) & Q.nonnegative(x)) >> Q.integer(f(x))),
 
-#: largest constant argument whose value is computed for its unit facts
-MAX_VALUE_ARG = 200
+    # Positive at a natural number
+    #     a number of permutations or of partitions: A_0 == p(0) == 1
+    for_all((andre, partition),
+        (Q.integer(x) & Q.nonnegative(x)) >> Q.positive(f(x))),
 
+    # A positive integer from -1 on
+    #     n!! == n*(n - 2)*...*1 or ...*2, and (-1)!! == 0!! == 1
+    for_all((factorial2,),
+        (Q.integer(x) & Q.ge(x, -1)) >> (Q.integer(f(x)) & Q.positive(f(x)))),
 
-def _value_units(c, expr):
-    """Unit facts of ``expr``, a node with the constant argument ``c``,
-    from its value (``expr.func(c)`` evaluates it)."""
-    if not (c.is_Integer and abs(c) <= MAX_VALUE_ARG):
-        return []
-    try:
-        v = expr.func(c)
-    except (ValueError, TypeError, ArithmeticError):
-        return []
-    if not (v.is_Atom and v.is_number) or v is S.NaN:
-        return []
-    return [value_units(v, expr)]
+    # Odd at an odd number from -3 on
+    #     a product of odd numbers, and (-3)!! == -1
+    for_all((factorial2,),
+        (Q.odd(x) & Q.ge(x, -3)) >> Q.odd(f(x))),
 
+    # Rational and not even at an odd number
+    #     n!! == (n + 2)!!/(n + 2) for odd n < -1: (-5)!! == 1/3
+    for_all((factorial2,),
+        Q.odd(x) >> (Q.rational(f(x)) & ~Q.even(f(x)))),
 
-def _register_unary(cls, tag, gen, slots=None):
-    registry.register(cls)(_unary(tag, gen, slots=slots, units=_value_units))
+    # One at 0
+    #     0!! == 1
+    for_all((factorial2,),
+        Q.zero(x) >> (Q.odd(f(x)) & Q.positive(f(x)))),
 
+    # Even and positive at an even positive number
+    #     (2*k)!! == 2**k*k!
+    for_all((factorial2,),
+        (Q.even(x) & Q.positive(x)) >> (Q.even(f(x)) & Q.positive(f(x)))),
 
-# ---------------------------------------------------------------------------
-# factorial2: n!! for integers n >= -1 and odd n < -1, n!! = (n + 2)!!/(n + 2)
-# ---------------------------------------------------------------------------
-# values: (-5)!! = 1/3, (-3)!! = -1, (-1)!! = 0!! = 1, 1, 2, 3, 8, 15, ...;
-# an even n < 0 raises.  Slots 2: n + 1, 3: n + 3.
+    # Nonnegative at a natural number
+    #     a number of permutations: !1 == 0
+    for_all((subfactorial,),
+        (Q.integer(x) & Q.nonnegative(x)) >> Q.nonnegative(f(x))),
 
-def _factorial2_slots(x):
-    return (shifted(x, S.One), shifted(x, S(3)))
+    # The other parity than the argument
+    #     !n == n*!(n - 1) + (-1)**n, !0 == 1
+    for_all((subfactorial,),
+        (Q.odd(x) & Q.nonnegative(x)) >> Q.even(f(x)),
+        (Q.even(x) & Q.nonnegative(x)) >> Q.odd(f(x))),
 
+    # Positive on the nonnegatives
+    #     4**x*gamma(x + 1/2)/(sqrt(pi)*gamma(x + 2)) > 0
+    for_all((catalan,),
+        Q.nonnegative(x) >> Q.positive(f(x))),
 
-def _factorial2(R, c):
-    R.rule([(X, 'integer', True), (2, 'nonnegative', True)], (N, 'positive', True))
-    R.rule([(X, 'integer', True), (2, 'nonnegative', True)], (N, 'integer', True))
-    # odd n >= -3: an odd integer; any odd n: a rational, never even
-    R.rule([(X, 'odd', True), (3, 'nonnegative', True)], (N, 'odd', True))
-    _table(R, (
-        (('odd',), 'rational'), (('odd',), ('zero', False)), (('odd',), ('even', False)),
-        (('zero',), 'odd'), (('zero',), 'positive'),
-        (('even', 'positive'), 'even'), (('even', 'positive'), 'positive'),
-    ))
+    # Composite from 4 on
+    #     C_n is prime only for n == 2, 3 (1, 1, 2, 5, 14, 42, ...)
+    for_all((catalan,),
+        (Q.integer(x) & Q.gt(x, 3)) >> Q.composite(f(x))),
 
+    # Integer at an integer
+    #     a number of partitions
+    for_all((partition,),
+        Q.integer(x) >> Q.integer(f(x))),
 
-_register_unary(factorial2, 'factorial2', _factorial2, _factorial2_slots)
+    # Zero at a negative integer
+    for_all((partition,),
+        (Q.integer(x) & Q.negative(x)) >> Q.zero(f(x))),
 
+    # Zero at 0
+    #     G_0 == 0
+    for_all((genocchi,),
+        Q.zero(x) >> Q.zero(f(x))),
 
-# ---------------------------------------------------------------------------
-# subfactorial: !0 = 1, !1 = 0, !n = n*!(n - 1) + (-1)**n, so !n is odd for
-# even n and even for odd n
-# ---------------------------------------------------------------------------
+    # Odd at an even positive number
+    #     G_2, G_4, ... == -1, 1, -3, 17, -155, ...
+    for_all((genocchi,),
+        (Q.even(x) & Q.positive(x)) >> Q.odd(f(x))),
 
-def _subfactorial(R, c):
-    _table(R, (
-        (('integer', 'nonnegative'), 'integer'), (('integer', 'nonnegative'), 'nonnegative'),
-        (('odd', 'nonnegative'), 'even'), (('even', 'nonnegative'), 'odd'),
-    ))
+    # Minus one at 1
+    #     G_1 == -1
+    for_all((genocchi,),
+        (Q.odd(x) & Q.eq(x, 1)) >> (Q.odd(f(x)) & Q.negative(f(x)))),
 
+    # Zero at an odd number from 3 on
+    #     B_n == 0 for odd n > 1
+    for_all((genocchi,),
+        (Q.odd(x) & Q.gt(x, 1)) >> Q.zero(f(x))),
 
-_register_unary(subfactorial, 'subfactorial', _subfactorial)
+    # Integer, rational and real at a natural number k
+    #     rf(x, k) == x*(x + 1)*...*(x + k - 1),
+    #     ff(x, k) == x*(x - 1)*...*(x - k + 1)
+    for_all((RisingFactorial, FallingFactorial),
+        (Q.integer(x) & Q.integer(y) & Q.nonnegative(y)) >> Q.integer(f(x, y)),
+        (Q.rational(x) & Q.integer(y) & Q.nonnegative(y)) >> Q.rational(f(x, y)),
+        (Q.real(x) & Q.integer(y) & Q.nonnegative(y)) >> Q.real(f(x, y))),
 
+    # Positive at a positive x
+    #     a product of positive factors
+    for_all((RisingFactorial,),
+        (Q.positive(x) & Q.integer(y) & Q.nonnegative(y)) >> Q.positive(f(x, y))),
 
-# ---------------------------------------------------------------------------
-# catalan: 4**n*gamma(n + 1/2)/(sqrt(pi)*gamma(n + 2)), an integer for
-# integers n >= 0, prime only for n = 2, 3 (C_n = 1, 1, 2, 5, 14, 42, ...)
-# ---------------------------------------------------------------------------
+    # Nonnegative at natural numbers
+    #     ff(n, k) == n!/(n - k)! for k <= n, 0 for k > n
+    for_all((FallingFactorial,),
+        (Q.integer(x) & Q.nonnegative(x) & Q.integer(y) & Q.nonnegative(y))
+        >> Q.nonnegative(f(x, y))),
 
-def _catalan(R, c):
-    _table(R, (
-        (('nonnegative',), 'positive'),
-        (('integer', 'nonnegative'), 'integer'),
-    ))
-    R.rule([(X, 'integer', True), (2, 'positive', True)], (N, 'composite', True))
+    # One at k = 0
+    #     the empty product, for every x but nan, which SymPy propagates
+    #     first (rf(x + y, 0) is nan at x = oo, y = -oo); zoo is left out
+    for_all((RisingFactorial, FallingFactorial),
+        (Q.complex(x) & Q.zero(y)) >> (Q.odd(f(x, y)) & Q.positive(f(x, y))),
+        (Q.extended_real(x) & Q.zero(y)) >> (Q.odd(f(x, y)) & Q.positive(f(x, y)))),
 
+    # Integer at integers
+    #     ff(n, k)/k! for an integer k > 0, a product of k consecutive
+    #     integers over k!; 1 for k == 0 and 0 for k < 0
+    for_all((binomial,),
+        (Q.integer(x) & Q.integer(y)) >> Q.integer(f(x, y))),
 
-_register_unary(catalan, 'catalan', _catalan, lambda x: (shifted(x, S(-3)),))
+    # Zero at a negative k
+    for_all((binomial,),
+        (Q.integer(y) & Q.negative(y)) >> Q.zero(f(x, y))),
 
+    # One at k = 0
+    for_all((binomial,),
+        Q.zero(y) >> (Q.odd(f(x, y)) & Q.positive(f(x, y)))),
 
-# ---------------------------------------------------------------------------
-# andre: the number of alternating permutations, a positive integer for
-# integers n >= 0
-# ---------------------------------------------------------------------------
-
-def _andre(R, c):
-    _table(R, ((('integer', 'nonnegative'), 'integer'), (('integer', 'nonnegative'), 'positive')))
-
-
-_register_unary(andre, 'andre', _andre)
-
-
-# ---------------------------------------------------------------------------
-# partition: p(n) is 0 for integers n < 0, positive for n >= 0
-# ---------------------------------------------------------------------------
-
-def _partition(R, c):
-    _table(R, (
-        (('integer',), 'integer'), (('integer',), 'nonnegative'),
-        (('integer', 'negative'), 'zero'), (('integer', 'nonnegative'), 'positive'),
-    ))
-
-
-_register_unary(partition, 'partition', _partition)
-
-
-# ---------------------------------------------------------------------------
-# genocchi(n) = 2*(1 - 2**n)*bernoulli(n): G_0 = 0, G_1 = -1, G_n = 0 for
-# odd n > 1, G_2k an odd integer of sign (-1)**k (-1, 1, -3, 17, -155, ...).
-# Slots 2: n - 1, 3: n/2.  The polynomials genocchi(n, x) get no rule.
-# ---------------------------------------------------------------------------
-
-def _genocchi(R, c):
-    _table(R, (
-        (('integer', 'nonnegative'), 'integer'),
-        (('zero',), 'zero'),
-        (('even', 'positive'), 'odd'),
-    ))
-    R.rule([(X, 'odd', True), (2, 'zero', True)], (N, 'odd', True))
-    R.rule([(X, 'odd', True), (2, 'zero', True)], (N, 'negative', True))
-    R.rule([(X, 'odd', True), (2, 'positive', True)], (N, 'zero', True))
-    R.rule([(X, 'even', True), (X, 'positive', True), (3, 'even', True)], (N, 'positive', True))
-    R.rule([(X, 'even', True), (X, 'positive', True), (3, 'odd', True)], (N, 'negative', True))
-
-
-_genocchi_unary = _unary('genocchi', _genocchi, slots=lambda x: (shifted(x, S.NegativeOne), x/2),
-                         units=_value_units)
-
-
-# genocchi(n, x) (a polynomial in x) gets no facts (``_unary``)
-registry.register(genocchi)(_genocchi_unary)
-
-
-# ---------------------------------------------------------------------------
-# rising and falling factorials, binomial coefficients
-# ---------------------------------------------------------------------------
-# rf(x, k) = x*(x + 1)*...*(x + k - 1), ff(x, k) = x*(x - 1)*...*(x - k + 1)
-# for integers k >= 0 (1 for k = 0, whatever x but nan; zoo gets no claim); binomial(n, k) is 0 for
-# integers k < 0, 1 for k = 0, ff(n, k)/k! for integers k > 0: an integer
-# for integer n, >= 0 for n >= 0 or even k.  Slots: 0 x (n), 1 k, 2 node.
-
-_K = ((1, 'integer', True), (1, 'nonnegative', True))
-
-
-def _rising_falling(R, n, positive):
-    for pred in ('integer', 'rational', 'real'):
-        R.rule([(0, pred, True), *_K], (2, pred, True))
-    if positive:
-        R.rule([(0, 'positive', True), *_K], (2, 'positive', True))
-    else:
-        # ff(n, k) == n!/(n - k)! for k <= n, 0 for k > n
-        R.rule([(0, 'integer', True), (0, 'nonnegative', True), *_K], (2, 'nonnegative', True))
-    # 1 at k = 0 for every x but nan, which SymPy propagates first
-    # (rf(x + y, 0) is nan at x = oo, y = -oo); zoo is left out
-    for xp in ('complex', 'extended_real'):
-        R.rule([(0, xp, True), (1, 'zero', True)], (2, 'odd', True))
-        R.rule([(0, xp, True), (1, 'zero', True)], (2, 'positive', True))
-
-
-def _binomial(R, n):
-    R.rule([(0, 'integer', True), (1, 'integer', True)], (2, 'integer', True))
-    R.rule([(1, 'integer', True), (1, 'negative', True)], (2, 'zero', True))
-    R.rule([(1, 'zero', True)], (2, 'odd', True))
-    R.rule([(1, 'zero', True)], (2, 'positive', True))
-    R.rule([(0, 'integer', True), (0, 'nonnegative', True), (1, 'integer', True)],
-           (2, 'nonnegative', True))
-    # binomial(n, k) == (-1)**k*binomial(k - n - 1, k) for n < 0
-    R.rule([(0, 'integer', True), (1, 'even', True)], (2, 'nonnegative', True))
-
-
-registry.register(RisingFactorial)(nary('rf', lambda R, n: _rising_falling(R, n, True)))
-registry.register(FallingFactorial)(nary('ff', lambda R, n: _rising_falling(R, n, False)))
-registry.register(binomial)(nary('binomial', _binomial))
+    # Nonnegative at a natural number n or an even k
+    #     binomial(n, k) == (-1)**k*binomial(k - n - 1, k) for n < 0
+    for_all((binomial,),
+        (Q.integer(x) & Q.nonnegative(x) & Q.integer(y)) >> Q.nonnegative(f(x, y)),
+        (Q.integer(x) & Q.even(y)) >> Q.nonnegative(f(x, y))),
+)
