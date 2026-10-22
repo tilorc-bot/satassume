@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import importlib
 
-from sympy import cos, cosh, sin
+from sympy import S, cos, cosh, sin
 
 from ._rows import by_function, rules
 from .core import ipi_split
-from .functions import _cosh_shift, _pi_trig, _unary
+from .functions import _cosh_shift, _pi_trig, _unary, shifted
 from .registry import registry
 
 #: the functions with rules for an argument pi*c*s, each with whether it
@@ -38,13 +38,16 @@ def functions(family: str):
 
 
 def template(fn, gen):
-    """The template of ``fn`` whose rules ``gen`` (the compiled rows) gives."""
+    """The template of ``fn`` whose rules ``gen`` (the compiled rows) gives.
+    The objects of the terms ``x + c`` its rules use (``gen.shifts``, see
+    :func:`._rows.rules`) are built by :func:`.functions.shifted` (#184)."""
     shift = dict(PI_MULTIPLE).get(fn)
     if shift is not None:
         return _pi_trig(fn.__name__, gen, shift)
     if fn in I_PI_MULTIPLE:
         return _pi_trig(fn.__name__, gen, True, ipi_split, _cosh_shift(gen))
-    return _unary(fn.__name__, gen)
+    shifts = getattr(gen, 'shifts', ())
+    return _unary(fn.__name__, gen, lambda a: tuple(shifted(a, S(c)) for c in shifts))
 
 
 def load(family: str) -> None:

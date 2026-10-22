@@ -25,12 +25,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _legacy_trig_rules as legacy  # noqa: E402
 import _rows_equivalence as eq  # noqa: E402
-from sympy import Equivalent, Q, Symbol, cos, cot, csc, pi, sec, sin, tan  # noqa: E402
+from sympy import (  # noqa: E402
+    Add, Equivalent, Float, Q, S, Symbol, acos, atanh, cos, cot, csc, pi, sec, sin, tan,
+)
 
 from satassume.knowledge.templates import ROW_FAMILIES, _common, wiring  # noqa: E402
 from satassume.knowledge.templates._rows import (  # noqa: E402
     by_function, closed, f, for_all, rows_of, rules, x,
 )
+from satassume.knowledge.templates.functions import shifted  # noqa: E402
 
 HEADS = (sin, cos, tan, cot, sec, csc)
 
@@ -139,6 +142,46 @@ def test_equivalent_is_a_rule_each_way():
     assert len(_specs(tan, Q.real(x) >> (zero & closed(tan, Q.complex)))) == 3
 
 
+def test_terms_x_plus_c_take_slots_2_3_and_on_by_c():
+    # SymPy builds x - 1 as Add(-1, x) and x + 1 as Add(1, x); the slots
+    # are by |c|, x - c first, whatever the order the rows mention them in
+    row = (Q.positive(x) & Q.negative(x - 1) & Q.positive(x + 1)) >> Q.real(atanh(x))
+    assert _each_way(_specs(atanh, row)) == [
+        ([(0, 'positive', True), (2, 'negative', True), (3, 'positive', True)],
+         [(1, 'real', True)])]
+    # the terms in the other order, and a derived term in the conclusion
+    row = (Q.real(atanh(x)) & Q.positive(Add(1, x, evaluate=False))) >> Q.zero(
+        Add(x, -1, evaluate=False))
+    assert _each_way(_specs(atanh, row)) == [
+        ([(1, 'real', True), (3, 'positive', True)], [(2, 'zero', True)])]
+    assert _specs(atanh, Equivalent(Q.zero(atanh(x)), Q.zero(x + 1))) == [
+        ([(1, 'zero', True)], [(2, 'zero', True)]), ([(2, 'zero', True)], [(1, 'zero', True)])]
+    rows = (Q.zero(x - 2) >> Q.zero(atanh(x)), Q.zero(x + 3) >> Q.zero(atanh(x)),
+            Q.zero(x - 1) >> Q.zero(atanh(x)))
+    gen = rules(atanh, rows, __name__)
+    assert gen.shifts == (-1, -2, 3)
+    assert sorted(_specs(atanh, rows)) == [([(k, 'zero', True)], [(1, 'zero', True)])
+                                           for k in (2, 3, 4)]
+
+
+def test_the_slots_of_derived_terms_are_built_as_shifted_builds_them():
+    # the template has the slots its rows use; the objects are shifted's:
+    # Add(y, -y, 1) - 1 is not 0, it is nan at y = oo (#184)
+    y_ = Symbol('y')
+    for a in (Symbol('t'), Add(y_, -y_, 1, evaluate=False), Float(0.5)):
+        e = atanh(a, evaluate=False)
+        for row, objs in (
+                (Q.zero(x) >> Q.zero(atanh(x)), (a, e)),
+                (Q.zero(x - 1) >> Q.infinite(atanh(x)), (a, e, shifted(a, -1))),
+                (Q.zero(x + 1) >> Q.infinite(atanh(x)), (a, e, shifted(a, 1))),
+                ((Q.zero(x + 1) & Q.zero(x - 2)) >> Q.infinite(atanh(x)),
+                 (a, e, shifted(a, 1), shifted(a, -2)))):
+            _common._CACHE.clear()
+            [c], _ = eq.compiled({atanh: wiring.template(atanh, rules(atanh, row, __name__))}, e)
+            assert c.objs == objs
+    _common._CACHE.clear()
+
+
 def test_a_condition_without_parentheses_is_refused():
     # cond >> a & b parses as (cond >> a) & b, which would drop the
     # condition from b: complex(x) -> complex(tan(x)) is false at a pole
@@ -192,6 +235,16 @@ yr = Symbol('y', real=True)
     (sin, Q.real(yr) >> Q.real(sin(yr)), "plain Symbol"),
     (sin, Q.real(y) >> Q.real(sin(x)), "more than one argument"),
     (sin, (Q.real(x) | Q.zero(x)) >> Q.real(sin(x)), "not a literal"),
+    # derived terms: x + c for an integer c only, of the argument
+    (acos, Q.zero(1 - x) >> Q.zero(acos(x)), "nor x \\+ c"),
+    (acos, Q.zero(2*x) >> Q.positive(acos(x)), "nor x \\+ c"),
+    (acos, Q.zero(x + y) >> Q.positive(acos(x)), "nor x \\+ c"),
+    (acos, Q.zero(x - Float(1)) >> Q.zero(acos(x)), "nor x \\+ c"),
+    (acos, Q.zero(x - pi) >> Q.zero(acos(x)), "nor x \\+ c"),
+    (acos, Q.zero(x - S.Half) >> Q.zero(acos(x)), "nor x \\+ c"),
+    (acos, Q.zero(Add(x, 1, -2, evaluate=False)) >> Q.zero(acos(x)), "nor x \\+ c"),
+    (acos, Q.zero(y - 1) >> Q.zero(acos(x)), "more than one argument"),
+    (acos, Q.zero(yr - 1) >> Q.zero(acos(yr)), "plain Symbol"),
 ])
 def test_rows_that_do_not_compile_as_written(head, row, match):
     with pytest.raises((TypeError, ValueError), match=match):

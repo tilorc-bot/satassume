@@ -8,11 +8,13 @@ the node ``f(x)``, with :data:`f` the generic function::
 The premises are a conjunction of literals; the conclusion is a literal, a
 disjunction of literals, ``Equivalent`` of two literals (a rule each way),
 or a conjunction of those (one rule each).  A literal is ``Q.p(t)`` or
-``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the argument or the node.  A
-row without premises is ``Equivalent`` alone::
+``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the argument, the node, or
+``x + c`` for an integer ``c`` (``x - 1``).  A row without premises is
+``Equivalent`` alone::
 
     Q.extended_real(x) >> Equivalent(Q.zero(f(x)), Q.zero(x))
     Equivalent(Q.zero(f(x)), Q.zero(x))
+    (Q.positive(x) & Q.negative(x - 1)) >> Q.positive(f(x))
 
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
@@ -20,8 +22,10 @@ of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
 ``P(x) >> P(f(x))``; ``a & b`` joins rows, ``cond >> (a & b)`` adds
 ``cond`` to the premises of each.  The module holds rows only:
 :mod:`.wiring` compiles them (:func:`rules`) into the index specs of
-:mod:`._common` (argument 0, node 1) and registers the templates, so the
-patterns, their cache and the engine are unchanged.
+:mod:`._common` (argument 0, node 1, then the terms ``x + c`` the rows
+use, by ``|c|`` and ``x - c`` first: ``x - 1``, ``x + 1``, ``x - 2``, ...)
+and registers the templates, so the patterns, their cache and the engine
+are unchanged.
 
 Layout: above each statement a comment line with the property's title
 (``tools/show_rows.py`` prints it as the label), and under it, indented,
@@ -44,7 +48,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from sympy import And, Equivalent, Function, Implies, Not, Or, Symbol
+from sympy import Add, And, Equivalent, Function, Implies, Integer, Not, Or, Symbol
 from sympy.assumptions.assume import AppliedPredicate
 
 from ._common import VOCAB, Rules
@@ -152,14 +156,22 @@ def by_function(statements):
 def rules(head, table, module: str):
     """The ``gen(R, c)`` of :func:`.functions._unary` for the rows of
     ``table`` about ``head``; ``module`` (the caller's ``__name__``) is the
-    module the registry attributes the template to (``TemplateRegistry.lazy``)."""
+    module the registry attributes the template to (``TemplateRegistry.lazy``).
+    ``gen.shifts`` are the ``c`` of the terms ``x + c`` the rules use, in the
+    order of their slots 2, 3, ...: by ``|c|``, ``x - c`` first."""
     specs = [spec for row in rows_of(table) for spec in _specs(head, row)]
+    shifts = sorted({k for p, c in specs for k, _, _ in p + c if isinstance(k, tuple)},
+                    key=lambda k: (abs(k[1]), k[1]))
+    slot = {k: 2 + i for i, k in enumerate(shifts)}
+    specs = [tuple([(slot.get(k, k), pred, pos) for k, pred, pos in lits] for lits in spec)
+             for spec in specs]
 
     def gen(R: Rules, c) -> None:
         for prem, concl in specs:
             R.rule(prem, list(concl))
     gen.__module__ = module
     gen.__name__ = gen.__qualname__ = f'{head.__name__}_rows'
+    gen.shifts = tuple(c for _, c in shifts)
     return gen
 
 
@@ -178,10 +190,9 @@ def _specs(head, row):
         else:
             out.append((premises, [_lit(head, row, t, slots)
                                    for t in (c.args if isinstance(c, Or) else (c,))]))
-    nodes = [t for t, k in slots.items() if k == N]
-    if not nodes:
+    if all(k != N for k, _ in slots.values()):
         raise ValueError(f"{head.__name__} row {row} does not mention the node")
-    if len(nodes) > 1 or any(k == X and t != nodes[0].args[0] for t, k in slots.items()):
+    if len({s for _, s in slots.values()}) > 1:
         raise ValueError(f"{head.__name__} row {row} mentions more than one argument")
     return out
 
@@ -201,19 +212,24 @@ def _lit(head, row, e, slots):
     t = a.arguments[0]
     if t not in slots:
         slots[t] = _slot(head, row, t)
-    return (slots[t], pred, pos)
+    return (slots[t][0], pred, pos)
 
 
 def _slot(head, row, t):
+    """The slot of the term ``t``, and the argument it is a term of."""
     if type(t) is head and len(t.args) == 1:
-        _plain(head, row, t.args[0])
-        return N
+        return N, _plain(head, row, t.args[0])
     if isinstance(t, Symbol):
-        _plain(head, row, t)
-        return X
+        return X, _plain(head, row, t)
+    # x - 1 is Add(-1, x); take its terms in either order.  The slot is
+    # ('shift', c) until rules() numbers the shifts
+    if isinstance(t, Add) and len(t.args) == 2:
+        c, s = sorted(t.args, key=lambda a: not a.is_Number)
+        if isinstance(c, Integer) and isinstance(s, Symbol):
+            return ('shift', int(c)), _plain(head, row, s)
     # a constructor that rewrote the written term: cos(x + pi/2) is -sin(x)
-    raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument "
-                     f"nor {head.__name__} of it")
+    raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument, "
+                     f"{head.__name__} of it, nor x + c for an integer c")
 
 
 def _plain(head, row, s):
@@ -222,3 +238,4 @@ def _plain(head, row, s):
     if not (isinstance(s, Symbol) and s == Symbol(s.name)):
         raise ValueError(f"{head.__name__} row {row}: the argument {s} "
                          "must be a plain Symbol")
+    return s
