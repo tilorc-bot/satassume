@@ -78,7 +78,9 @@ WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert TRIG not in sys.modules and WIRING not in sys.modules
 assert ask(Q.real(sin(x)), Q.real(x)) is True
-assert TRIG in sys.modules and all(m != WIRING + ":trig" for _, m in registry._lazy)
+assert all(m != WIRING + ":trig" for _, m in registry._lazy)
+# the rows are read compiled (_compiled_rows.py): trig.py is not imported
+assert TRIG not in sys.modules
 # each family is compiled on its own first use
 assert HYPERBOLIC not in sys.modules
 assert "satassume.knowledge.templates.special" not in sys.modules

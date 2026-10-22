@@ -163,7 +163,10 @@ COMPLEX = "satassume.knowledge.templates.complex_parts"
 WIRING = "satassume.knowledge.templates.wiring"
 x, p = Symbol('x'), Symbol('p')
 assert ask(Q.positive(exp_polar(x)), Q.real(x)) is True
-assert POLAR in sys.modules and COMPLEX not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":polar" not in pending and WIRING + ":complex_parts" in pending
+# the rows are read compiled: no family module is imported
+assert POLAR not in sys.modules and COMPLEX not in sys.modules
 for h in (exp_polar, polar_lift, principal_branch):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":polar"]
 """

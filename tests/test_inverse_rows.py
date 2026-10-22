@@ -81,7 +81,10 @@ INVERSE = "satassume.knowledge.templates.inverse"
 WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert ask(Q.real(atanh(x)), Q.negative(x - 1) & Q.positive(x + 1)) is True
-assert INVERSE in sys.modules and TRIG not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":inverse" not in pending and WIRING + ":trig" in pending
+# the rows are read compiled: no family module is imported
+assert INVERSE not in sys.modules and TRIG not in sys.modules
 for h in (asin, acos, atan, acot, asec, acsc, asinh, acosh, atanh, acoth, asech, acsch):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":inverse"]
 """

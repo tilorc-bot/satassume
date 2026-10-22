@@ -88,7 +88,10 @@ TRIG = "satassume.knowledge.templates.trig"
 WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert ask(Q.nonnegative(Abs(x)), Q.finite(x)) is True
-assert COMPLEX in sys.modules and TRIG not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":complex_parts" not in pending and WIRING + ":trig" in pending
+# the rows are read compiled: no family module is imported
+assert COMPLEX not in sys.modules and TRIG not in sys.modules
 for h in (Abs, sign, conjugate):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":complex_parts"]
 for h in (re, im):

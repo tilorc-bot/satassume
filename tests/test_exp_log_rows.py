@@ -92,7 +92,10 @@ EXP_LOG = "satassume.knowledge.templates.exp_log"
 WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert ask(Q.positive(log(x)), Q.positive(x - 1)) is True
-assert EXP_LOG in sys.modules and TRIG not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":exp_log" not in pending and WIRING + ":trig" in pending
+# the rows are read compiled: no family module is imported
+assert EXP_LOG not in sys.modules and TRIG not in sys.modules
 for h in (exp, log):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":exp_log"]
 """

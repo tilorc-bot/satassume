@@ -28,7 +28,7 @@ from sympy import (
     subfactorial,
 )
 
-from ._rows import by_function, rules
+from ._rows import by_function, generator
 from .core import ipi_split
 from .functions import (
     _cosh_shift, _exp_ipi, _genocchi_half, _in_unit_interval_units, _pi_trig, _unary,
@@ -106,15 +106,35 @@ def template(fn, gen):
 
 def load(family: str) -> None:
     """Register the templates of the family's rows (``TemplateRegistry.lazy``),
-    then those of :data:`AFTER_ROWS` for its functions."""
+    then those of :data:`AFTER_ROWS` for its functions.  The rows are read
+    compiled (``_compiled_rows.py``, written by ``tools/compile_rows.py``):
+    the family module, and the SymPy booleans it builds, are not imported."""
+    from . import ROW_FAMILIES
+    from ._compiled_rows import FAMILIES
     name = f"{__name__}:{family}"
+    by_name = {fn.__name__: fn for fn in map(_declared, dict(ROW_FAMILIES)[family])
+               if fn is not None}
     fns = set()
-    for fn, all_rows in by_function(importlib.import_module(f"{__package__}.{family}").RULES):
-        registry.register(fn)(template(fn, rules(fn, all_rows, name)))
+    for fn_name, arity, terms, specs in dict(FAMILIES)[family]:
+        fn = by_name.get(fn_name)
+        if fn is None:
+            # declared by name and new in a later SymPy (owens_t)
+            continue
+        registry.register(fn)(template(fn, generator(fn_name, arity, terms, specs, name)))
         fns.add(fn)
     for classes, t in AFTER_ROWS:
         if fns.issuperset(classes):
             registry.register(*classes)(_attributed(t, name))
+
+
+def _declared(fn):
+    """The function a family declares: a class, or ``"module:Class"`` for a
+    class of a module SymPy does not import itself, or one this SymPy may
+    lack (``None`` then)."""
+    if not isinstance(fn, str):
+        return fn
+    module, _, cls = fn.partition(":")
+    return getattr(importlib.import_module(module), cls, None)
 
 
 def _attributed(t, module):

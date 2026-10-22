@@ -77,7 +77,10 @@ x = Symbol('x')
 assert ask(Q.positive(erfc(x)), Q.real(x)) is True
 for other in ("trig", "hyperbolic", "special"):
     assert "satassume.knowledge.templates." + other not in sys.modules, other
-assert ROWS in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":error_functions" not in pending and WIRING + ":trig" in pending
+# the rows are read compiled: the family module is not imported
+assert ROWS not in sys.modules
 for h in (erf, erfc, erfi, Ei, Si, Shi, Ci, Chi, fresnels, fresnelc):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":error_functions"]
 """

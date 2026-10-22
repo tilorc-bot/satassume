@@ -91,7 +91,10 @@ BESSEL = "satassume.knowledge.templates.bessel"
 WIRING = "satassume.knowledge.templates.wiring"
 s = Symbol('s', positive=True)
 assert Engine(cache=DictCache()).is_(zeta(s + 1), 'positive') is True
-assert ZETA in sys.modules and BESSEL not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":zeta_functions" not in pending and WIRING + ":bessel" in pending
+# the rows are read compiled: no family module is imported
+assert ZETA not in sys.modules and BESSEL not in sys.modules
 for h in (zeta, dirichlet_eta, polylog):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":zeta_functions"]
 """

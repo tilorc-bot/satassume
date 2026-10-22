@@ -79,7 +79,10 @@ HYPERBOLIC = "satassume.knowledge.templates.hyperbolic"
 WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert ask(Q.positive(cosh(x)), Q.real(x)) is True
-assert HYPERBOLIC in sys.modules and TRIG not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":hyperbolic" not in pending and WIRING + ":trig" in pending
+# the rows are read compiled: no family module is imported
+assert HYPERBOLIC not in sys.modules and TRIG not in sys.modules
 for h in (sinh, cosh, tanh, coth, sech, csch):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":hyperbolic"]
 """

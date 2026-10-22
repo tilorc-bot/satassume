@@ -117,6 +117,7 @@ def test_named_classes_load_on_first_use():
     _run("""
 import sys
 from sympy import Q, Symbol, exp
+from satassume.knowledge.templates.registry import registry
 from satassume.sympy_api import ask
 CF = "satassume.knowledge.templates.cfunctions"
 x = Symbol('x', real=True)
@@ -125,7 +126,10 @@ assert "sympy.codegen" not in sys.modules and CF not in sys.modules
 from sympy.codegen.cfunctions import expm1
 assert CF not in sys.modules
 assert ask(Q.real(expm1(x))) is True
-assert CF in sys.modules
+# the family's entry is consumed; its rows are read compiled (cfunctions.py
+# is not imported)
+assert all(m != "satassume.knowledge.templates.wiring:cfunctions" for _, m in registry._lazy)
+assert CF not in sys.modules
 PH = "satassume.knowledge.templates.physics"
 assert "sympy.physics" not in sys.modules and PH not in sys.modules
 from sympy.physics.units import meter
@@ -153,8 +157,9 @@ assert CF not in sys.modules
 def user_log1p(expr):
     return None
 
-# left: physics and stats (declared by name, sympy.physics and sympy.stats are not imported)
-assert CF in sys.modules and [m for c, m in registry._lazy] == ["satassume.knowledge.templates.physics",
+# left: physics and stats (declared by name, sympy.physics and sympy.stats are not imported);
+# the cfunctions rows are read compiled: cfunctions.py is not imported
+assert CF not in sys.modules and [m for c, m in registry._lazy] == ["satassume.knowledge.templates.physics",
                                                                 "satassume.knowledge.templates.stats"]
 own = registry._by_class[log1p]
 assert own[-1] is user_log1p and len(own) > 1

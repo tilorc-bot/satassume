@@ -118,7 +118,10 @@ INTEGER = "satassume.knowledge.templates.integer_funcs"
 WIRING = "satassume.knowledge.templates.wiring"
 n, k = Symbol('n'), Symbol('k')
 assert ask(Q.integer(catalan(n)), Q.integer(n) & Q.nonnegative(n)) is True
-assert COMB in sys.modules and INTEGER not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":combinatorial" not in pending and WIRING + ":integer_funcs" in pending
+# the rows are read compiled: no family module is imported
+assert COMB not in sys.modules and INTEGER not in sys.modules
 for h in (factorial2, subfactorial, catalan, andre, partition, genocchi,
           RisingFactorial, FallingFactorial, binomial):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":combinatorial"]

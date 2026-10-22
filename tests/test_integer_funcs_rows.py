@@ -90,7 +90,10 @@ COMPLEX = "satassume.knowledge.templates.complex_parts"
 WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert ask(Q.integer(floor(x)), Q.real(x)) is True
-assert INTEGER in sys.modules and COMPLEX not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":integer_funcs" not in pending and WIRING + ":complex_parts" in pending
+# the rows are read compiled: no family module is imported
+assert INTEGER not in sys.modules and COMPLEX not in sys.modules
 for h in (RoundFunction, floor, ceiling, factorial, Mod):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":integer_funcs"]
 for h in (floor, ceiling):

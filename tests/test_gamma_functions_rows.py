@@ -189,7 +189,11 @@ x, s = Symbol('x'), Symbol('s', even=True, negative=True)
 assert ask(Q.positive(gamma(s + S.Half))) is True
 for other in ("special", "beta_functions", "trig"):
     assert "satassume.knowledge.templates." + other not in sys.modules, other
-assert ROWS in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":gamma_functions" not in pending
+assert WIRING + ":beta_functions" in pending
+# the rows are read compiled: the family module is not imported
+assert ROWS not in sys.modules
 for h in (gamma, loggamma, digamma, trigamma, polygamma, lowergamma, uppergamma):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":gamma_functions"]
 """

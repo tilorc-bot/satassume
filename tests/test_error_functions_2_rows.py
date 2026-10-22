@@ -96,7 +96,10 @@ assert ask(Q.negative(li(x)), Q.positive(x) & Q.negative(x - 1)) is True
 assert ask(Q.positive(expint(x, y)), Q.real(x) & Q.positive(y)) is True
 for other in ("trig", "inverse", "special"):
     assert "satassume.knowledge.templates." + other not in sys.modules, other
-assert ROWS in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":error_functions" not in pending and WIRING + ":trig" in pending
+# the rows are read compiled: the family module is not imported
+assert ROWS not in sys.modules
 for h in (erfinv, erfcinv, li, Li, erf2, expint):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":error_functions"]
 """

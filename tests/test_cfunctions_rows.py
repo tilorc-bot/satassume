@@ -73,10 +73,13 @@ WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert ask(Q.positive(exp(x)), Q.real(x)) is True
 assert "sympy.codegen" not in sys.modules and CF not in sys.modules
+assert WIRING + ":cfunctions" in {m for _, m in registry._lazy}
 from sympy.codegen.cfunctions import expm1, log1p
 assert CF not in sys.modules
 assert ask(Q.negative(log1p(x)), Q.negative(x) & Q.positive(x + 1)) is True
-assert CF in sys.modules
+assert WIRING + ":cfunctions" not in {m for _, m in registry._lazy}
+# the rows are read compiled: the family module is not imported
+assert CF not in sys.modules
 for h in (expm1, log1p):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":cfunctions"]
 assert ask(Q.positive(expm1(x)), Q.positive(x)) is True

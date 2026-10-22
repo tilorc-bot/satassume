@@ -143,7 +143,11 @@ assert ask(Q.positive(beta(x, y)), Q.positive(x) & Q.positive(y)) is True
 assert ask(Q.positive(beta(x, evaluate=False)), Q.positive(x)) is True
 for other in ("special", "gamma_functions", "trig"):
     assert "satassume.knowledge.templates." + other not in sys.modules, other
-assert ROWS in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":beta_functions" not in pending
+assert WIRING + ":gamma_functions" in pending
+# the rows are read compiled: the family module is not imported
+assert ROWS not in sys.modules
 for h in (beta, betainc, betainc_regularized):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":beta_functions"]
 """

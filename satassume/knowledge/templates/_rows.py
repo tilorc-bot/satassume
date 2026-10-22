@@ -68,7 +68,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from sympy import (
-    Add, And, Equivalent, Expr, Float, Function, I, Implies, Not, Or, Symbol, nan, oo, zoo,
+    Add, And, Equivalent, Expr, Float, Function, I, Implies, Not, Or, S, Symbol, nan, oo, zoo,
 )
 from sympy.assumptions.assume import AppliedPredicate
 
@@ -202,38 +202,70 @@ def _node(fn, args):
 
 def rules(head, table, module: str):
     """The ``gen(R, c)`` of :func:`.functions._unary` for the rows of
-    ``table`` about ``head``; ``module`` (the caller's ``__name__``) is the
-    module the registry attributes the template to (``TemplateRegistry.lazy``).
-    ``gen.arity`` is the number of arguments of the nodes the rows mention,
-    or the tuple of the numbers for rows of several: then ``gen(R, n)`` is
-    :func:`.functions.nary`'s, and gives the rules of the rows of ``n``
-    arguments.  ``gen.terms`` maps each number ``n`` to the terms ``args[i]
-    + c`` the rules of its rows use, as ``(i, c)`` in the order of their
-    slots ``n + 1``, ``n + 2``, ...: by ``i``, then by ``|c|``, ``x - c``
-    first; ``gen.shifts`` are the ``c`` of the rows of one argument."""
+    ``table`` about ``head``: :func:`generator` of :func:`compile_rows`;
+    ``module`` (the caller's ``__name__``) is the module the registry
+    attributes the template to (``TemplateRegistry.lazy``)."""
+    return generator(head.__name__, *compile_rows(head, table), module)
+
+
+def compile_rows(head, table):
+    """``(arity, terms, specs)``, plain data (``tools/compile_rows.py``
+    writes it to ``_compiled_rows.py``): the number of arguments of the
+    nodes the rows mention, or the tuple of the numbers for rows of
+    several; for each number ``n``, ``(n, ((i, c), ...))``, the terms
+    ``args[i] + c`` the rules of its rows use in the order of their slots
+    ``n + 1``, ``n + 2``, ... (by ``i``, then by ``|c|``, ``x - c`` first),
+    ``c`` an int or the text of an exact real number (:func:`_number_data`); and
+    ``(n, rules)``, the rules ``(premises, conclusion)`` of its rows, tuples
+    of literals ``(slot, pred, sign)``."""
     by_n = {}
     for row in rows_of(table):
         n, s = _specs(head, row)
         by_n.setdefault(n, []).extend(s)
-    specs, terms = {}, {}
+    specs, terms = [], []
     for n, sp in sorted(by_n.items()):
         shifts = sorted({k for p, c in sp for k, _, _ in p + c if isinstance(k, tuple)},
                         key=lambda k: (k[1], abs(k[2]), k[2]))
         slot = {k: n + 1 + i for i, k in enumerate(shifts)}
-        specs[n] = [tuple([(slot.get(k, k), pred, pos) for k, pred, pos in lits]
-                          for lits in spec) for spec in sp]
-        terms[n] = tuple((i, c) for _, i, c in shifts)
-    arities = tuple(terms) or (1,)
-    one = sum(specs.values(), [])
+        specs.append((n, tuple(tuple(tuple((slot.get(k, k), pred, pos) for k, pred, pos in lits)
+                                     for lits in spec) for spec in sp)))
+        terms.append((n, tuple((i, _number_data(c)) for _, i, c in shifts)))
+    arities = tuple(n for n, _ in terms) or (1,)
+    return (arities if len(arities) > 1 else arities[0]), tuple(terms), tuple(specs)
+
+
+def _number_data(c):
+    """The exact real number ``c`` as plain data: an int, or its text,
+    which :func:`generator` turns back into ``c`` (``1/2``, ``exp(-1)``)."""
+    if c.is_Integer:
+        return int(c)
+    text = str(c)
+    if S(text) != c:
+        raise ValueError(f"{c} is not rebuilt from its text {text!r}")
+    return text
+
+
+def generator(name: str, arity, terms: tuple, specs: tuple, module: str):
+    """The ``gen(R, c)`` that adds the rules ``specs`` (:func:`compile_rows`);
+    ``module`` is the module the registry attributes the template to
+    (``TemplateRegistry.lazy``).  ``gen.arity``, ``gen.terms`` (``{n: ((i,
+    c), ...)}``, ``c`` a SymPy number again) and ``gen.shifts`` (the ``c``
+    of the rows of one argument) tell :func:`.wiring.template` the slots:
+    for several numbers of arguments, ``gen(R, n)`` is
+    :func:`.functions.nary`'s, and gives the rules of the rows of ``n``
+    arguments."""
+    terms = {n: tuple((i, S(c)) for i, c in ts) for n, ts in terms}
+    specs = dict(specs)
+    one = tuple(spec for sp in specs.values() for spec in sp)
 
     def gen(R: Rules, c) -> None:
         # c: the constant argument (functions._unary) or the number of
         # arguments (functions.nary), which picks the rows for several
         for prem, concl in specs.get(c, ()) if len(specs) > 1 else one:
-            R.rule(prem, list(concl))
+            R.rule(list(prem), list(concl))
     gen.__module__ = module
-    gen.__name__ = gen.__qualname__ = f'{head.__name__}_rows'
-    gen.arity = arities if len(arities) > 1 else arities[0]
+    gen.__name__ = gen.__qualname__ = f'{name}_rows'
+    gen.arity = arity
     gen.terms = terms
     gen.shifts = tuple(c for _, c in terms.get(1, ()))
     return gen

@@ -87,7 +87,10 @@ WIRING = "satassume.knowledge.templates.wiring"
 p = Symbol('p', positive=True)
 assert Engine(cache=DictCache()).is_(LambertW(p), 'positive') is True
 # (exp_log is loaded: the slot p + 1/E is p + exp(-1))
-assert LAMBERTW in sys.modules and ZETA not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":lambertw" not in pending and WIRING + ":zeta_functions" in pending
+# the rows are read compiled: no family module is imported
+assert LAMBERTW not in sys.modules and ZETA not in sys.modules
 assert [t.__module__ for t in registry._by_class[LambertW]] == [WIRING + ":lambertw"]
 """
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)

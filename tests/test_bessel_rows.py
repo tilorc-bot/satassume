@@ -81,7 +81,10 @@ ZETA = "satassume.knowledge.templates.zeta_functions"
 WIRING = "satassume.knowledge.templates.wiring"
 nn = Symbol('nn', nonnegative=True)
 assert Engine(cache=DictCache()).is_(airyai(nn), 'positive') is True
-assert BESSEL in sys.modules and ZETA not in sys.modules
+pending = {m for _, m in registry._lazy}
+assert WIRING + ":bessel" not in pending and WIRING + ":zeta_functions" in pending
+# the rows are read compiled: no family module is imported
+assert BESSEL not in sys.modules and ZETA not in sys.modules
 for h in (airyai, airybi, airyaiprime, airybiprime, besselj, bessely, besseli, besselk):
     assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":bessel"]
 """
