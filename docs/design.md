@@ -592,7 +592,7 @@ where a direct argument is `nan`. So:
 `commutative` is a property of the value: every number, `oo` and `zoo`
 included, is commutative, and a non-commutative symbol stands for a value
 that is not a number (think of a 2x2 matrix). A product, sum, power or
-function of such values can still be a number (`0*A`, `A*A**-1`, `A**2 == 1`
+function of such values can still be a number for the template model (`0*A`, `A*A**-1`, `A**2 == 1`
 for a reflection, `A - B` at `B = A`, `det(A)`), and a product can be zero
 without a zero factor (`A*B`, `A**2` for nilpotent `A`). The downward rules
 `commutative(node) -> commutative(arg)` ignored this; with `zero ->
@@ -617,14 +617,18 @@ numbers, so terms with a non-commutative subterm never reach the rule base:
 (category `"matrix"`; an opaque atom in the assumptions), and `Engine`, used
 directly, answers None for `is_`/`is_many` on such a term and for `ask`
 when a vocabulary atom of the proposition or the assumptions has one
-(`engine._noncommutative`), and `verdict` is `UNKNOWN` for a set with one. One exception (#180 S5): `is_`/`is_many`
+(`engine._noncommutative`), and `verdict` is `UNKNOWN` for a set with one. One exception (#180 S5; #247): `is_`/`is_many`
 answer False for `commutative` when SymPy builds the term non-commutative, read without evaluating any assumption
 (`domain.constructed_noncommutative`: a non-commutative symbol or class, the `is_commutative` slot of
 `Add`/`Mul`/`Pow`/integrals, or `Function`'s `_eval_is_commutative` with such an argument: `f(A)`, `adjoint(A)`,
 `exp(M)`), and False for every fact SymPy's fact rules make false with it (`complex`, `zero`, `real`, ...:
-`domain.noncommutative_false`) unless the proof needs the slot of a power or an integral, or a product factor that may be zero (`x*A`, `0*A`), whose own evaluators may
-make the term a number (`Integral(A, (x, 0, 0)).is_zero` and `Pow(1, A, evaluate=False).is_complex` are True in
-SymPy); `E**e` counts as `exp(e)`. `finite`, `hermitian` and the like stay None, as does `re(A)`. A function registered for `commutative`
+`domain.noncommutative_false`): by spec.md's truth standard such a term is never a number, and its zero and identity
+(`A - A`, `0*A`, `A**0`, `Integral(A, (x, 0, 0))`) are not the scalars 0 and 1, although SymPy's evaluation writes
+them so. Only `commutative` is False for a term that may be nan (`A + nan`, `oo*A`) and, while Tilo decides
+(#247), for a class with the user's own evaluators (#239) and for relations standing for the identity (`[c, c†]`).
+`finite`, `hermitian` and the like stay None, as does `re(A)`. The template model below (2x2 matrices) is more
+permissive than this standard: it lets a scalar matrix (`0*A`, `A*A**-1`) be a number, which only makes the
+templates' rules more conservative. A function registered for `commutative`
 (`extensions.register`) is refused with a ValueError: there is no variable
 it could set. `structural_commutative` and `function_commutative` are gone.
 

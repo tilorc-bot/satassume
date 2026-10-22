@@ -17,6 +17,51 @@ with `pred in PRED_INDEX`; a *relation atom* is `P("eq"|"lt", (a, b))`
 (`RELATION_ATOMS`, `relations.py`); a *custom atom* is any other `P`
 (`formula.py`; `atoms_of(f)` lists a formula's atoms).
 
+## Truth standard
+
+What decides that an answer is right or wrong (#247).
+
+- SymPy's evaluation is a candidate generator, never the truth. `doit()`,
+  automatic evaluation, and values obtained through `subs`/`xreplace`
+  carry SymPy's conventions and bugs, some kept for backwards
+  compatibility. A disagreement with them points at a candidate mistake.
+  Calling an answer wrong needs a mathematical argument: a definition, a
+  limit, a theorem, or a convention written in this spec or in design.md.
+  The same holds for bug reports, review findings and test oracles: a test
+  comparing with SymPy's answers is a candidate generator
+  (`tests/test_noncommutative.py::test_constructed_noncommutative_sympy_candidates`),
+  not a requirement.
+- A term built non-commutative is never a number. SymPy builds `t`
+  non-commutative when `t.is_commutative` is False by construction, read
+  without evaluating an assumption (`domain._built_noncommutative`): a
+  non-commutative symbol; a class declaring `is_commutative = False`
+  (an operator, a state, a matrix expression, secondquant `Commutator`
+  over any arguments, `TensMul`); the `is_commutative` slot `Add`, `Mul`,
+  `Pow` and integrals, sums and products fill when built; `Function`'s
+  `_eval_is_commutative` with such an argument. The term stands for an
+  element of a non-commutative algebra (an operator, a matrix). Its zero
+  and its identity are not the scalars 0 and 1: `Add(A, -A,
+  evaluate=False)`, `0*A`, `Pow(A, 0, evaluate=False)`, `rf(A, 0,
+  evaluate=False)`, `Integral(A, (x, 0, 0))` and an empty sum or product
+  are False for `zero`, `complex` and every fact implying `commutative`
+  (`domain.noncommutative_false`), whatever SymPy evaluates them to.
+  `Engine.is_`/`is_many` answer so (level 2,
+  `domain.constructed_noncommutative`; `engine._noncommutative_answer`).
+- nan is no number, so a function of nan has no facts (design.md,
+  "Extended reals and `nan` in templates"; #189). A term holding an
+  explicit `nan` or infinity in a part that carries a value
+  (`domain.may_be_nan`: `A + nan`, `oo*A`, `rf(nan, 0)`) gets no fact from
+  the rule above or from a template, so `rf(nan, 0, evaluate=False)` is
+  not positive although `rf(x, 0) = 1` for every number `x`.
+
+Held at level 1 (only `commutative` is False) while Tilo decides (#247,
+open questions 3 and 4), each behind one flag in `domain.py`:
+`USER_EVALUATORS_HELD`, a term with a class that is not SymPy's own (the
+user's `eval`, `doit` or property: a `Function` subclass whose `eval`
+returns `S.Zero`, #239); `IDENTITY_RELATIONS_HELD`, a relation between
+operators with commutation rules (`[c, c†]`, `{d, d†}`, which stand for the
+identity operator and SymPy writes as 1) and `IdentityOperator()`.
+
 ## 1. Routing: what reaches the engine
 
 Definition. `ask(p, A)` returns one of `True`, `False`, `None`, or raises
