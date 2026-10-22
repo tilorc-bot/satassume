@@ -103,8 +103,11 @@ ROW_FAMILIES = (
     ("trig", (sin, cos, tan, cot, sec, csc)),
     ("hyperbolic", (sinh, cosh, tanh, coth, sech, csch)),
     ("inverse", (asin, acos, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc, atan, acot)),
-    ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, Ei, Ci, Chi, li, Li,
-                         erfinv, erfcinv)),
+    ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, erf2, Ei, Ci, Chi, li, Li,
+                         erfinv, erfcinv,
+                         # new in SymPy 1.15: declared by name
+                         "sympy.functions.special.error_functions:owens_t",
+                         expint)),
     ("exp_log", (exp, log)),
     ("complex_parts", (Abs, re, im, sign, conjugate)),
     ("integer_funcs", (RoundFunction, floor, ceiling, factorial)),
@@ -117,12 +120,10 @@ registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,
               FallingFactorial, binomial, catalan, andre, genocchi, partition)
 registry.lazy(__name__ + ".special", gamma, loggamma, polygamma, digamma, trigamma, multigamma,
-              lowergamma, uppergamma, erf2, expint,
+              lowergamma, uppergamma,
               beta, betainc, betainc_regularized, LambertW,
               zeta, dirichlet_eta, polylog, airyai, airybi, airyaiprime, airybiprime, besselj,
-              bessely, besseli, besselk,
-              # new in SymPy 1.15: declared by name
-              "sympy.functions.special.error_functions:owens_t")
+              bessely, besseli, besselk)
 # sympy.codegen is not imported by SymPy itself: declared by name
 registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
               "sympy.codegen.cfunctions:log1p")

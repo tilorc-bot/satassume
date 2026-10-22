@@ -1,7 +1,8 @@
-"""``erf``, ``erfc``, ``erfi``, their inverses ``erfinv`` and ``erfcinv``,
-the exponential integral ``Ei``, the logarithmic integrals ``li`` and
-``Li``, the sine and cosine integrals ``Si``, ``Ci``, ``Shi``, ``Chi``,
-and the Fresnel integrals ``fresnels`` and ``fresnelc``.
+"""``erf``, ``erfc``, ``erfi``, ``erf2(x, y) == erf(y) - erf(x)``, the
+inverses ``erfinv`` and ``erfcinv``, the exponential integrals ``Ei`` and
+``expint``, the logarithmic integrals ``li`` and ``Li``, the sine and
+cosine integrals ``Si``, ``Ci``, ``Shi``, ``Chi``, the Fresnel integrals
+``fresnels`` and ``fresnelc``, and Owen's T function ``owens_t``.
 
 Values follow SymPy's conventions: principal values (``Ei``, ``Ci`` and
 ``Chi`` off the positive reals), the limit at a real infinity
@@ -11,7 +12,8 @@ Values follow SymPy's conventions: principal values (``Ei``, ``Ci`` and
 Li(oo) == oo``, ``Ei(-oo) == 0``, ``Ci(oo) == 0``, ``Ci(-oo) == I*pi``),
 the limit at the ends of an interval (``erfinv(+-1) == +-oo``,
 ``erfcinv(0) == oo``, ``erfcinv(2) == -oo``, ``li(1) == -oo``), and
-``Chi(+-oo) == oo``, ``Ei(0) == -oo``, ``Ci(0) == Chi(0) == zoo``.
+``Chi(+-oo) == oo``, ``Ei(0) == -oo``, ``Ci(0) == Chi(0) == zoo``,
+``owens_t(+-oo, a) == 0``.
 ``erf``, ``erfc``, ``erfi`` and the Fresnel integrals are real at some
 non-real points (the complex zeros of ``erf``), so a non-real argument off
 the imaginary axis gives no claim.
@@ -20,21 +22,35 @@ A row comparing ``x`` with an integer keeps the sign of ``x`` the legacy
 rule had (``Q.positive(x) & Q.lt(x, 1)``): to the engine ``x`` and ``x -
 1`` are separate terms, and a template's block must be satisfiable
 whatever facts its terms are given (``tests/test_totality.py``).
+
+``owens_t`` is new in SymPy 1.15; with an older SymPy it is ``None``, and
+its statements hold for no function.
 """
 from __future__ import annotations
 
 from sympy import (
-    Chi, Ci, Ei, Equivalent, Li, Q, Shi, Si, erf, erfc, erfcinv, erfi, erfinv, fresnelc,
-    fresnels, li,
+    Chi, Ci, Ei, Equivalent, Li, Q, Shi, Si, erf, erf2, erfc, erfcinv, erfi, erfinv, expint,
+    fresnelc, fresnels, li,
 )
 
-from ._rows import closed, f, for_all, x
+from ._rows import closed, f, for_all, x, y
+
+try:  # new in SymPy 1.15
+    from sympy.functions.special.error_functions import owens_t
+except ImportError:  # pragma: no cover - depends on the SymPy version
+    owens_t = None
 
 RULES = (
     # Entire
     #     no poles: finite at every finite point
     for_all((erf, erfc, erfi, Si, Shi, fresnels, fresnelc),
         closed(f, Q.finite) & closed(f, Q.complex)),
+
+    # Entire in both arguments
+    #     erf2(x, y) == erf(y) - erf(x)
+    for_all((erf2,),
+        (Q.finite(x) & Q.finite(y)) >> Q.finite(f(x, y)),
+        (Q.complex(x) & Q.complex(y)) >> Q.complex(f(x, y))),
 
     # Complex off 0
     #     a logarithmic singularity at 0 only (principal value)
@@ -61,6 +77,11 @@ RULES = (
     for_all((Si,),
         Q.extended_real(x) >> Q.real(f(x))),
 
+    # Real on the extended reals, in both arguments
+    #     erf(+-oo) == +-1
+    for_all((erf2,),
+        (Q.extended_real(x) & Q.extended_real(y)) >> Q.real(f(x, y))),
+
     # Real on the positive reals
     for_all((Ei, Ci, Chi),
         Q.positive(x) >> Q.real(f(x))),
@@ -85,6 +106,38 @@ RULES = (
     #     1.4513...)
     for_all((li,),
         Q.zero(x) >> Q.zero(f(x))),
+
+    # Zero at (0, 0)
+    #     erf2(0, 0) == erf(0) - erf(0)
+    for_all((erf2,),
+        (Q.zero(x) & Q.zero(y)) >> Q.zero(f(x, y))),
+
+    # Zero at a == 0
+    #     owens_t(h, 0) == 0 for a number h (owens_t(nan, 0) is nan)
+    for_all((owens_t,),
+        (Q.complex(x) & Q.zero(y)) >> Q.zero(f(x, y))),
+
+    # Zero at a real infinite h
+    #     owens_t(+-oo, a) == 0: the integrand vanishes
+    for_all((owens_t,),
+        (Q.infinite(x) & Q.extended_real(x) & Q.extended_real(y)) >> Q.zero(f(x, y))),
+
+    # Of the sign of a
+    #     owens_t(h, a) is the integral over (0, a) of
+    #     exp(-h**2*(1 + t**2)/2)/(1 + t**2)/(2*pi), positive for real h
+    #     (owens_t(h, +-oo) == +-erfc(|h|/sqrt(2))/4), and for h == I*s,
+    #     where it is exp(s**2*(1 + t**2)/2)/..., with a finite integral
+    #     for a finite a only
+    for_all((owens_t,),
+        (Q.real(x) & Q.extended_positive(y)) >> Q.positive(f(x, y)),
+        (Q.real(x) & Q.extended_negative(y)) >> Q.negative(f(x, y)),
+        (Q.imaginary(x) & Q.positive(y)) >> Q.positive(f(x, y)),
+        (Q.imaginary(x) & Q.negative(y)) >> Q.negative(f(x, y))),
+
+    # Positive for a real order and a positive argument
+    #     expint(nu, z) is the integral over (1, oo) of exp(-z*t)/t**nu
+    for_all((expint,),
+        (Q.real(x) & Q.positive(y)) >> Q.positive(f(x, y))),
 
     # Positive on (0, 1)
     #     erf is increasing and of the sign of its argument;

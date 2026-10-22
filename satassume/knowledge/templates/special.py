@@ -1,12 +1,11 @@
 """Structural templates for special functions (#180, C-NOTMPL, part B).
 
 The gamma family (``gamma``, ``loggamma``, ``polygamma``, ``digamma``,
-``trigamma``, ``multigamma``, ``lowergamma``, ``uppergamma``),
-``erf2``, ``expint``, ``owens_t``, the beta functions
-(``beta``, ``betainc``, ``betainc_regularized``), ``LambertW``, ``zeta``,
-``dirichlet_eta``, ``polylog``, the Airy functions and the Bessel
-functions ``besselj``, ``bessely``, ``besseli``, ``besselk``.  The unary
-error functions, their inverses and the integrals are rows
+``trigamma``, ``multigamma``, ``lowergamma``, ``uppergamma``), the beta
+functions (``beta``, ``betainc``, ``betainc_regularized``), ``LambertW``,
+``zeta``, ``dirichlet_eta``, ``polylog``, the Airy functions and the
+Bessel functions ``besselj``, ``bessely``, ``besseli``, ``besselk``.  The
+error functions, their inverses, the integrals and ``owens_t`` are rows
 (:mod:`.error_functions`).
 
 Each rule is a theorem about the value under SymPy's conventions
@@ -48,7 +47,6 @@ from sympy.functions.special.bessel import (
     bessely,
 )
 from sympy.functions.special.beta_functions import beta, betainc, betainc_regularized
-from sympy.functions.special.error_functions import erf2, expint
 from sympy.functions.special.gamma_functions import (
     digamma,
     gamma,
@@ -65,11 +63,6 @@ from ._common import Rules, const_key, facts
 from .atoms import value_units
 from .functions import _table, _unary, nary, shifted
 from .registry import registry
-
-try:  # new in SymPy 1.15
-    from sympy.functions.special.error_functions import owens_t
-except ImportError:  # pragma: no cover - depends on the SymPy version
-    owens_t = None
 
 X, N, M, Q = 0, 1, 2, 3
 
@@ -264,65 +257,6 @@ def _uppergamma(R, n):
 
 registry.register(lowergamma)(nary('lowergamma', _lowergamma))
 registry.register(uppergamma)(nary('uppergamma', _uppergamma))
-
-
-# ---------------------------------------------------------------------------
-# erf2 (erf, erfc, erfi, erfinv and erfcinv are rows: .error_functions)
-# ---------------------------------------------------------------------------
-
-def _erf2(R, n):
-    """erf2(x, y) = erf(y) - erf(x)."""
-    if n == 2:
-        for pred, concl in (('extended_real', 'real'), ('finite', 'finite'),
-                            ('complex', 'complex')):
-            R.rule([(0, pred, True), (1, pred, True)], (2, concl, True))
-        R.rule([(0, 'zero', True), (1, 'zero', True)], (2, 'zero', True))
-
-
-registry.register(erf2)(nary('erf2', _erf2))
-
-
-# ---------------------------------------------------------------------------
-# expint (Ei, li, Li, Si, Ci, Shi, Chi and the Fresnel integrals are rows:
-# .error_functions)
-# ---------------------------------------------------------------------------
-# expint(nu, z) = integral of exp(-z*t)/t**nu over (1, oo), positive for
-# real nu and z > 0 (E1(z) is expint(1, z)).
-
-def _expint(R, n):
-    if n == 2:
-        R.rule([(0, 'real', True), (1, 'positive', True)], (2, 'positive', True))
-
-
-registry.register(expint)(nary('expint', _expint))
-
-
-# ---------------------------------------------------------------------------
-# owens_t(h, a) = integral of exp(-h**2*(1 + t**2)/2)/(1 + t**2)/(2*pi)
-# over (0, a): real with the sign of a for real h (also a = +-oo:
-# +-erfc(|h|/sqrt(2))/4), 0 for h = +-oo (SymPy) or a = 0 (h not nan); for h = I*s and
-# real a the integrand is positive as well.
-# ---------------------------------------------------------------------------
-
-def _owens_t(R, n):
-    if n != 2:
-        return
-    h, a, node = 0, 1, 2
-    R.rule([(h, 'extended_real', True), (a, 'extended_real', True)], (node, 'real', True))
-    # owens_t(nan, 0) is nan (and owens_t(x + y, 0) at x = oo, y = -oo)
-    for hp in ('complex', 'extended_real'):
-        R.rule([(h, hp, True), (a, 'zero', True)], (node, 'zero', True))
-    R.rule([(h, 'infinite', True), (h, 'extended_real', True), (a, 'extended_real', True)],
-           (node, 'zero', True))
-    for hp in ('real', 'imaginary'):
-        sign = 'extended_' if hp == 'real' else ''
-        R.rule([(h, hp, True), (a, sign + 'positive', True)], (node, 'positive', True))
-        R.rule([(h, hp, True), (a, sign + 'negative', True)], (node, 'negative', True))
-    R.rule([(h, 'imaginary', True), (a, 'real', True)], (node, 'real', True))
-
-
-if owens_t is not None:
-    registry.register(owens_t)(nary('owens_t', _owens_t))
 
 
 # ---------------------------------------------------------------------------

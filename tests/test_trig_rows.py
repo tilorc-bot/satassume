@@ -13,6 +13,7 @@ its corpus, though the clauses differ (an implied row is not written:
 are the facts the rows give that the legacy rules did not, each with its
 argument; a test checks that each is new.
 """
+import importlib
 import os
 import subprocess
 import sys
@@ -88,11 +89,22 @@ for h in (sin, cos, tan, cot, sec, csc):
     assert out.returncode == 0, out.stderr
 
 
+def _resolved(declared):
+    """The declared functions, one declared by name (``"module:Class"``,
+    new in a later SymPy) where this SymPy has it."""
+    for fn in declared:
+        if isinstance(fn, str):
+            module, _, name = fn.partition(":")
+            fn = getattr(importlib.import_module(module), name, None)
+        if fn is not None:
+            yield fn
+
+
 def test_the_declared_functions_are_those_the_rows_name():
     # templates/__init__.py declares each family for its functions without
     # importing the rows; the two lists must not drift apart
     for family, declared in ROW_FAMILIES:
-        assert wiring.functions(family) == declared, family
+        assert wiring.functions(family) == tuple(_resolved(declared)), family
     assert dict(ROW_FAMILIES)["trig"] == HEADS
 
 

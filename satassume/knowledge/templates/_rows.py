@@ -150,11 +150,13 @@ class ForAll(NamedTuple):
 
 def for_all(functions, *rows) -> ForAll:
     """The ``rows`` hold for each of ``functions``, with :data:`f` standing
-    for the function.  Each row must mention ``f``."""
+    for the function.  Each row must mention ``f``.  A function this SymPy
+    lacks is given as ``None`` (``owens_t`` before SymPy 1.15) and left out."""
     functions = tuple(functions)
     flat = tuple(_flat(rows))
     if not functions:
         raise ValueError("for_all of no function")
+    functions = tuple(fn for fn in functions if fn is not None)
     for r in flat:
         if not r.has(f):
             raise ValueError(f"row {r} of for_all{functions} does not mention f")
