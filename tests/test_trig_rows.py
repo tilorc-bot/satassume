@@ -102,7 +102,8 @@ def _resolved(declared):
 
 def test_the_declared_functions_are_those_the_rows_name():
     # templates/__init__.py declares each family for its functions without
-    # importing the rows; the two lists must not drift apart
+    # importing the rows (a class of a module SymPy does not import by its
+    # name, "module:Class"); the two lists must not drift apart
     for family, declared in ROW_FAMILIES:
         assert wiring.functions(family) == tuple(_resolved(declared)), family
     assert dict(ROW_FAMILIES)["trig"] == HEADS

@@ -2,7 +2,7 @@
 
 Importing this package registers every template module with
 :data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.wiring`, :mod:`.selection`,
-:mod:`.special`, :mod:`.cfunctions`, :mod:`.rootof`,
+:mod:`.special`, :mod:`.rootof`,
 :mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
@@ -120,16 +120,15 @@ ROW_FAMILIES = (
     ("beta_functions", (beta, betainc, betainc_regularized)),
     ("combinatorial", (catalan, andre, genocchi, partition, factorial2, subfactorial,
                        RisingFactorial, FallingFactorial, binomial)),
+    # sympy.codegen is not imported by SymPy itself: declared by name
+    ("cfunctions", ("sympy.codegen.cfunctions:expm1", "sympy.codegen.cfunctions:log1p")),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
 registry.lazy(__name__ + ".rootof", ComplexRootOf)
 registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".special", multigamma)
-# sympy.codegen is not imported by SymPy itself: declared by name
-registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
-              "sympy.codegen.cfunctions:log1p")
-# sympy.physics and sympy.stats neither
+# sympy.physics and sympy.stats are not imported by SymPy itself either
 registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")
 registry.lazy(__name__ + ".stats", "sympy.stats.rv:RandomSymbol")
 registry.lazy(__name__ + ".nodes", AccumulationBounds, Idx)

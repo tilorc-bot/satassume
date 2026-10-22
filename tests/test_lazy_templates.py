@@ -157,7 +157,8 @@ def user_log1p(expr):
 assert CF in sys.modules and [m for c, m in registry._lazy] == ["satassume.knowledge.templates.physics",
                                                                 "satassume.knowledge.templates.stats"]
 own = registry._by_class[log1p]
-assert own[-1] is user_log1p and len(own) > 1 and own[0].__module__ == CF
+assert own[-1] is user_log1p and len(own) > 1
+assert own[0].__module__ == "satassume.knowledge.templates.wiring:cfunctions"
 """)
 
 
