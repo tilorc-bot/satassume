@@ -1,17 +1,19 @@
-"""Structural templates for elementary functions.
+"""Template machinery the families of rows compile to (#249), and the
+templates that are not rows.
 
-Only statements that are theorems about the function's *value* under
-SymPy's conventions are emitted (``log(0) = zoo``, ``acot(0) = pi/2``,
-``atan(oo) = pi/2``, ``factorial(-1) = zoo``, principal branches, ...).
-Transcendence facts follow from the Lindemann-Weierstrass theorem.
-Predicates the rule base derives from the emitted ones (``positive`` from
-``extended_positive & finite``, ``irrational`` from ``real & !rational``,
-...) are not repeated.
-
-Rules are index-based specs (see :mod:`._common`): the argument is index
-0 and the node index 1.  A row ``(x_premises, conclusion)`` uses ``pred`` or
-``(pred, False)`` for a premise on the argument and likewise for a
-conclusion on the node.
+The rules of the elementary functions are rows in the family modules
+(:mod:`.trig`, :mod:`.hyperbolic`, :mod:`.inverse`, :mod:`.exp_log`,
+:mod:`.complex_parts`, :mod:`.integer_funcs`, :mod:`.polar`, ...), which
+:mod:`.wiring` registers.  This module holds what they compile to:
+:func:`_unary` and :func:`nary` (a template from a generator of index
+specs, see :mod:`._common`: the arguments, then the node, then derived
+terms), :func:`shifted` (the term ``x + c``), and the templates
+:mod:`.wiring` adds that are not rows (``sin``/``cos`` of ``pi*c*s``,
+``cosh`` of ``r + I*pi*c*s``, ``exp`` of ``I*pi*c*s``, the parts of a
+rounded argument, ``asin``/``acos`` of a constant, the values of the
+integer sequences at an integer, ``genocchi``'s rules on ``n/2``).  Values follow
+SymPy's conventions (``log(0) = zoo``, ``acot(0) = pi/2``, principal
+branches, ...), stated in each family module.
 """
 from __future__ import annotations
 
@@ -34,25 +36,6 @@ from .core import ipi_rules, ipi_split, pi_split
 X, N = 0, 1
 #: Slot of ``s`` in the template of ``exp(I*pi*c*s)``.
 M = 2
-
-
-def _x(spec):
-    return (X, spec, True) if isinstance(spec, str) else (X, spec[0], spec[1])
-
-
-def _n(spec):
-    return (N, spec, True) if isinstance(spec, str) else (N, spec[0], spec[1])
-
-
-def _table(R, rows):
-    for prem, concl in rows:
-        R.rule([_x(p) for p in prem], _n(concl))
-
-
-def _equiv(R, cond, preds):
-    """``cond -> (pred(node) <-> pred(arg))`` for each pred."""
-    for pred in preds:
-        R.equiv(cond, (N, pred, True), (X, pred, True))
 
 
 def _unary(tag, gen, slots=None, units=None):
@@ -186,7 +169,6 @@ def parts_of_round_templates(expr):
 # csc are in .trig, those of the inverse functions in .inverse
 # ---------------------------------------------------------------------------
 
-_TRANSCENDENTAL = (('algebraic', ('zero', False)), 'transcendental')
 
 #: Slot of ``s`` in the templates of ``sin(pi*c*s)`` and ``cos(pi*c*s)``.
 PS = 2

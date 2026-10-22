@@ -6,7 +6,9 @@ clauses these functions emit.  The ``registry.register`` lines are left
 out (a test module's template would count as a user's); the test gives the slots ``s - 1`` (``zeta``) and ``z - 1`` (``polylog``) of those lines.  Do not edit
 them to follow a later rule change; change the test's reference instead
 (``git show d149951:satassume/knowledge/templates/special.py``)."""
-from satassume.knowledge.templates.functions import N, X, _table
+from satassume.knowledge.templates.functions import N, X
+
+from _legacy_helpers import _table
 
 
 # ---------------------------------------------------------------------------

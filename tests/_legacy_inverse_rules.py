@@ -6,16 +6,9 @@ before they became rows in ``templates/inverse.py`` (#249).  Test-only:
 clauses these functions emit.  Do not edit them to follow a later rule
 change; change the test's reference instead (``git show
 d149951:satassume/knowledge/templates/functions.py``)."""
-from satassume.knowledge.templates.functions import (
-    M,
-    N,
-    X,
-    _TRANSCENDENTAL,
-    _equiv,
-    _table,
-)
+from satassume.knowledge.templates.functions import M, N, X
 
-from _legacy_helpers import P1
+from _legacy_helpers import P1, _TRANSCENDENTAL, _equiv, _table
 
 
 def _asin(R, c):

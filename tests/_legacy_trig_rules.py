@@ -5,14 +5,9 @@ Test-only: ``tests/test_trig_rows.py`` compares the clauses the rows emit
 with the clauses these functions emit.  Do not edit them to follow a later
 rule change; change the test's reference instead (``git show
 f9291ab:satassume/knowledge/templates/functions.py``)."""
-from satassume.knowledge.templates.functions import (
-    N,
-    X,
-    _TRANSCENDENTAL,
-    _table,
-)
+from satassume.knowledge.templates.functions import N, X
 
-from _legacy_helpers import _finite_value
+from _legacy_helpers import _TRANSCENDENTAL, _finite_value, _table
 
 # sin(oo*I) == oo*I, so finiteness of the value needs a finite argument.
 _SIN = (

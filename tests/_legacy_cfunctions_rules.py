@@ -5,7 +5,7 @@ became rows in ``templates/cfunctions.py`` (#249).  Test-only:
 the clauses these functions emit.  Do not edit them to follow a later
 rule change; change the test's reference instead (``git show
 d149951:satassume/knowledge/templates/cfunctions.py``)."""
-from satassume.knowledge.templates.functions import _TRANSCENDENTAL, _equiv, _table
+from _legacy_helpers import _TRANSCENDENTAL, _equiv, _table
 
 X, N, P1 = 0, 1, 2
 

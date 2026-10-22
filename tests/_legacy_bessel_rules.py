@@ -6,9 +6,9 @@ clauses these functions emit.  The ``registry.register`` lines are left
 out (a test module's template would count as a user's); the Airy templates were ``_unary``'s, the Bessel ones ``nary``'s.  Do not edit
 them to follow a later rule change; change the test's reference instead
 (``git show d149951:satassume/knowledge/templates/special.py``)."""
-from _legacy_helpers import _ENTIRE
+from _legacy_helpers import _ENTIRE, _table
 
-from satassume.knowledge.templates.functions import N, X, _table
+from satassume.knowledge.templates.functions import N, X
 
 
 # ---------------------------------------------------------------------------
