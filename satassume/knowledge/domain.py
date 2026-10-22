@@ -223,7 +223,7 @@ def _scalar_by_definition(s, whole) -> bool:
         if isinstance(s, _loaded("sympy.physics.quantum.state", "BraBase")
                       + _loaded("sympy.physics.secondquant", "FockStateBra")):
             return True
-        if isinstance(s, _ADJOINTS) and _holds_ket(s):
+        if isinstance(s, _ADJOINTS + _loaded("sympy.physics.secondquant", "Dagger")) and _holds_ket(s):
             return True
     tensor = _loaded("sympy.tensor.tensor", "TensExpr")
     return bool(tensor) and isinstance(s, tensor) and not s.get_free_indices()

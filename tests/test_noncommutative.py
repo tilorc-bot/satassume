@@ -709,11 +709,16 @@ def _scalar_terms():
     from sympy.tensor.tensor import TensAdd, TensMul
     p_, q_, i_ = _tensors()
     O = Operator('O')
-    from sympy import adjoint
+    from sympy import Basic, adjoint, conjugate, transpose
+    from sympy.physics.secondquant import BKet, Dagger as SqDagger
     return [Bra('a')*O*Ket('b'), Dagger(Ket('b'))*O*Ket('b'), OuterProduct(Ket('a'), Bra('b')),
-            # the adjoint of a ket is a bra (#250 re-review)
+            # the adjoint, conjugate or transpose of a ket counts as a bra
+            # (#250 re-reviews; secondquant's Dagger evaluates in __new__)
+            Mul(Basic.__new__(SqDagger, BKet([1])), BKet([1]), evaluate=False),
             Mul(Dagger(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
             Mul(adjoint(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(conjugate(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(transpose(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
             Mul(Dagger(Mul(O, Ket('a')), evaluate=False), Ket('b'), evaluate=False),
             p_(i_)*q_(-i_), TensMul(0, x), TensMul(x), TensAdd(1, 1)]
 

@@ -61,7 +61,11 @@ What decides that an answer is right or wrong (#247).
 Numbers by definition, held at level 1 (only `commutative` is False): a
 term with a bra below it, a linear functional, so that a bra applied to a
 ket is a number (`Bra('a')*Operator('O')*Ket('b')`; a bra alone is not
-held), and a tensor expression without free indices, a rank-0 tensor
+held); the adjoint, conjugate or transpose of a proper subterm holding a
+ket counts as a bra (`Dagger(Ket('a'), evaluate=False)*Ket('b')`), a
+conservative hold that may also hold a term that is not a number
+(`conjugate(Ket('a'))*Ket('b')`, `Dagger(Dagger(Ket('a')))*Ket('b')`),
+which only costs answers; and a tensor expression without free indices, a rank-0 tensor
 (`p(i)*q(-i)`, `TensMul(x)`, `TensAdd(1, 1)`).
 
 Held at level 1 (only `commutative` is False) while Tilo decides (#247,
