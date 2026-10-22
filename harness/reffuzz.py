@@ -400,7 +400,10 @@ KNOWN = (
     # engine's set check misses it without the query's glue and answers the
     # query, ask_ref raises.  (Four more such entries are gone since #187: an
     # extended-real sum with an infinite term is infinite, so the set check
-    # finds them.  This one needs y - oo to be -oo, see #187's PR.)
+    # finds them.  This one needs y - oo to be -oo, see #187's PR.)  Any
+    # relation in the set, even over fresh symbols, makes the engine raise
+    # too: the set is then certified as a whole, with the glue (#261,
+    # tests/test_unrelated_relation.py).
     ('Q.nonpositive(E) & Q.lt(sqrt(x), z)',
      'Q.extended_nonnegative(y - oo) & Q.extended_positive(y - oo)',
      'False', 'ValueError', 'relevance: set verdict without the query relation glue'),
