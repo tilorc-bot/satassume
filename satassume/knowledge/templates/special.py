@@ -1,19 +1,16 @@
 """Structural templates for special functions (#180, C-NOTMPL, part B).
 
-``multigamma`` and the beta functions (``beta``, ``betainc``,
-``betainc_regularized``).  The other gamma functions are rows
-(:mod:`.gamma_functions`), and so are the error functions, their
-inverses, the integrals and ``owens_t`` (:mod:`.error_functions`),
-``zeta``, ``dirichlet_eta`` and ``polylog`` (:mod:`.zeta_functions`),
-``LambertW`` (:mod:`.lambertw`) and the Airy and Bessel functions
-(:mod:`.bessel`).
+``multigamma``.  The other gamma functions and the beta functions are
+rows (:mod:`.gamma_functions`, :mod:`.beta_functions`), and so are the
+error functions, their inverses, the integrals and ``owens_t``
+(:mod:`.error_functions`), ``zeta``, ``dirichlet_eta`` and ``polylog``
+(:mod:`.zeta_functions`), ``LambertW`` (:mod:`.lambertw`) and the Airy
+and Bessel functions (:mod:`.bessel`).
 
 Each rule is a theorem about the value under SymPy's conventions
 (``gamma(-n) = zoo``, principal branches).
 SymPy's own handlers are not followed where they are not theorems:
 
-* ``beta(x, y)`` and ``betainc`` of real arguments are not always real
-  (``beta(5, -3) = oo``, ``betainc(1/2, 1, 0, -1)`` is not real);
 * ``multigamma(-1/2, 1) = -2*sqrt(pi)`` is real.
 
 A node with another number of arguments than the rules are written for
@@ -28,7 +25,6 @@ from collections import Counter
 from sympy import S
 from sympy.core.add import Add
 from sympy.core.mul import Mul
-from sympy.functions.special.beta_functions import beta, betainc, betainc_regularized
 from sympy.functions.special.gamma_functions import multigamma
 
 from ._common import Rules, const_key, facts
@@ -115,27 +111,3 @@ def multigamma_templates(expr):
 
 
 # ---------------------------------------------------------------------------
-# beta(x, y) = gamma(x)*gamma(y)/gamma(x + y): positive for x, y > 0 (one
-# argument: beta(x, x)).  betainc(a, b, x1, x2) is the integral of
-# t**(a - 1)*(1 - t)**(b - 1) over (x1, x2): for positive integers a, b a
-# polynomial with rational coefficients, so real (rational) at real
-# (rational) bounds; betainc_regularized divides it by beta(a, b), a
-# positive rational.
-# ---------------------------------------------------------------------------
-
-def _beta(R, n):
-    if n in (1, 2):
-        R.rule([(k, 'positive', True) for k in range(n)], (n, 'positive', True))
-
-
-def _betainc(R, n):
-    if n != 4:
-        return
-    ab = [(0, 'integer', True), (0, 'positive', True), (1, 'integer', True), (1, 'positive', True)]
-    for pred in ('real', 'rational'):
-        R.rule([*ab, (2, pred, True), (3, pred, True)], (4, pred, True))
-
-
-registry.register(beta)(nary('beta', _beta))
-registry.register(betainc)(nary('betainc', _betainc))
-registry.register(betainc_regularized)(nary('betainc_regularized', _betainc))

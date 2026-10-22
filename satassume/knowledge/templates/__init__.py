@@ -116,6 +116,7 @@ ROW_FAMILIES = (
     ("lambertw", (LambertW,)),
     ("bessel", (airyai, airybi, airyaiprime, airybiprime, besselj, bessely, besseli, besselk)),
     ("gamma_functions", (gamma, digamma, trigamma, polygamma, loggamma, lowergamma, uppergamma)),
+    ("beta_functions", (beta, betainc, betainc_regularized)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
@@ -123,7 +124,7 @@ registry.lazy(__name__ + ".rootof", ComplexRootOf)
 registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,
               FallingFactorial, binomial, catalan, andre, genocchi, partition)
-registry.lazy(__name__ + ".special", multigamma, beta, betainc, betainc_regularized)
+registry.lazy(__name__ + ".special", multigamma)
 # sympy.codegen is not imported by SymPy itself: declared by name
 registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
               "sympy.codegen.cfunctions:log1p")

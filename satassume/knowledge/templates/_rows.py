@@ -187,8 +187,17 @@ def bind(row, fn):
     """``row`` with :data:`f` standing for ``fn``: ``f(x)`` is ``fn(x)``,
     unevaluated (a base class has no value: ``RoundFunction(x)`` raises).
     ``f`` of anything but symbols is left, and refused by :func:`rules`."""
-    return row.xreplace({a: fn(*a.args, evaluate=False) for a in row.atoms(f)
+    return row.xreplace({a: _node(fn, a.args) for a in row.atoms(f)
                          if all(isinstance(s, Symbol) for s in a.args)})
+
+
+def _node(fn, args):
+    try:
+        return fn(*args, evaluate=False)
+    except TypeError:
+        # betainc_regularized.__new__ takes no keyword: of plain symbols it
+        # is not evaluated (and :func:`_term` refuses a rewritten node)
+        return fn(*args)
 
 
 def rules(head, table, module: str):

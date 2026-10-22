@@ -14,8 +14,8 @@ is new.
 from itertools import product
 
 from sympy import (
-    Add, And, E, EulerGamma, Float, GoldenRatio, I, Mul, Rational, S, Symbol, exp, oo, pi, sqrt,
-    symbols,
+    Add, And, E, EulerGamma, Float, Function, GoldenRatio, I, Mul, Rational, S, Symbol, exp, oo,
+    pi, sqrt, symbols,
 )
 from sympy.core.function import AppliedUndef
 
@@ -52,15 +52,34 @@ def arguments():
     return consts + pis + shifts + syms
 
 
+def few_arguments():
+    """The arguments of a head of more than two arguments, each to every
+    combination of them (``betainc``)."""
+    k, r = Symbol('k', positive=True, integer=True), Symbol('r', real=True)
+    return [S.Zero, S.One, S.NegativeOne, Rational(1, 2), pi, I, S.Infinity, k, r, Symbol('x')]
+
+
+def node(h, args):
+    """``h(*args)``, unevaluated."""
+    try:
+        return h(*args, evaluate=False)
+    except TypeError:
+        # betainc_regularized.__new__ takes no keyword
+        return Function.__new__(h, *args, evaluate=False)
+
+
 def nodes(heads, arities=None):
     """Each head applied to the corpus: a head of one argument to each
-    argument, a head of two (``principal_branch``) to each pair; for each
-    number of arguments ``arities`` gives (by head: ``{zeta: (1, 2)}``; by
-    default one if the head takes one, else the numbers it takes)."""
+    argument, a head of two (``principal_branch``) to each pair, a head of
+    more to each combination of :func:`few_arguments`; for each number of
+    arguments ``arities`` gives (by head: ``{zeta: (1, 2)}``; by default
+    one if the head takes one, else the numbers it takes)."""
     out = []
     for h in heads:
-        for n in (arities or {}).get(h) or ((1,) if 1 in h.nargs else sorted(h.nargs)):
-            out += [h(*a, evaluate=False) for a in product(arguments(), repeat=n)]
+        ns = (arities or {}).get(h) or ((1,) if 1 in h.nargs else sorted(h.nargs))
+        for n in ns:
+            corpus = arguments() if n <= 2 else few_arguments()
+            out += [node(h, a) for a in product(corpus, repeat=n)]
     return out
 
 
