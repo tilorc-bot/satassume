@@ -104,6 +104,37 @@ run to check a change is in [testing.md](testing.md).
 3. `gh pr edit` fails with the installed `gh` 2.46; edit a PR with
    `gh api -X PATCH repos/tilorc-bot/satassume/pulls/N -F body=@file`.
 
+## The `needs-human` label
+
+A PR with the `needs-human` label waits for a human decision. Agents
+never merge a labelled PR and never remove the label; only a human does.
+Apply it when any of these holds:
+
+1. It changes what counts as a correct answer: a convention for `nan`,
+   `oo`/`zoo`, non-commutative terms or special values, or what answers
+   are checked against (#245 judged non-commutative levels by `doit()`).
+2. It gives up definite answers (True/False to None) that SymPy's tests
+   or users rely on (#225 sent `test_hermitian` back to the xfail list).
+3. It weakens a check: a soundness oracle, gate or fuzzer, a new xfail
+   entry or an xfail pin (sympy-satassume#5 added three entries).
+4. It changes a semantic section of [spec.md](spec.md) or
+   [design.md](design.md) (#250 adds a truth standard to both).
+5. It trips the satperf flag: any case over 2x or any view over 10%
+   (#192, 2.59x on one query in #212).
+6. It is a release, a public API change or a dependency pin in another
+   repository (#123, release v0.0.2).
+
+No label is needed for mechanical changes against the stated spec: crash
+fixes, a missing rule that follows from the spec, refactors with
+identical answers, speedups with no changed answers, new tests, and docs
+that only describe. When unsure, apply it.
+
+The PR description says why, one visible "**Needs your decision:**" line
+per decision, near the top (the description style is #255). The label is
+a convention: nothing enforces it. A required status check that fails
+while the label is present would block the merge, but the owner has to
+add that workflow (see "GitHub", item 2).
+
 ## Reporting a PR
 
 The house style of the merged PRs (#51, #54, #61) as a checklist:
