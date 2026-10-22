@@ -1,19 +1,18 @@
 """Structural templates for special functions (#180, C-NOTMPL, part B).
 
 The gamma family (``gamma``, ``loggamma``, ``polygamma``, ``digamma``,
-``trigamma``, ``multigamma``, ``lowergamma``, ``uppergamma``), the error
-functions (``erf``, ``erfc``, ``erfi``, ``erf2``, ``erfinv``,
-``erfcinv``), the exponential, logarithmic, trigonometric and Fresnel
-integrals (``Ei``, ``expint``, ``li``, ``Li``, ``Si``, ``Ci``, ``Shi``,
-``Chi``, ``fresnels``, ``fresnelc``), ``owens_t``, the beta functions
+``trigamma``, ``multigamma``, ``lowergamma``, ``uppergamma``),
+``erf2``, ``erfinv``, ``erfcinv``, ``expint``, ``li``, ``Li``,
+``owens_t``, the beta functions
 (``beta``, ``betainc``, ``betainc_regularized``), ``LambertW``, ``zeta``,
 ``dirichlet_eta``, ``polylog``, the Airy functions and the Bessel
-functions ``besselj``, ``bessely``, ``besseli``, ``besselk``.
+functions ``besselj``, ``bessely``, ``besseli``, ``besselk``.  The unary
+error functions and integrals are rows (:mod:`.error_functions`).
 
 Each rule is a theorem about the value under SymPy's conventions
-(``gamma(-n) = zoo``, ``loggamma(-n) = oo``, ``erf(oo) = 1``, ``erfc(-oo)
-= 2``, ``Ei(0) = -oo``, ``Ci(0) = zoo``, ``Ci(-oo) = I*pi``, ``zeta(1) =
-zoo``, ``LambertW(0, k) = -oo`` for ``k != 0``, principal branches).
+(``gamma(-n) = zoo``, ``loggamma(-n) = oo``, ``erfcinv(0) = oo``,
+``li(1) = -oo``, ``zeta(1) = zoo``, ``LambertW(0, k) = -oo`` for ``k !=
+0``, principal branches).
 SymPy's own handlers are not followed where they are not theorems:
 
 * ``beta(x, y)`` and ``betainc`` of real arguments are not always real
@@ -23,9 +22,8 @@ SymPy's own handlers are not followed where they are not theorems:
   ``polygamma(n, 0)`` is not complex;
 * ``gamma(oo)`` is not real (``noninteger`` includes ``oo``), ``zeta(s)``
   is not finite at ``s = -oo``;
-* ``erf``, ``erfi``, ``fresnels``, ``fresnelc`` and the Airy functions
-  have non-real points where the value is real (their complex zeros), so
-  a non-real argument gives no claim, and ``fresnels(I)`` is finite.
+* the Airy functions have non-real points where the value is real
+  (their complex zeros), so a non-real argument gives no claim.
 
 A node with another number of arguments than the rules are written for
 gets no facts.  Unary templates: the argument is index 0, the node index 1,
@@ -51,24 +49,7 @@ from sympy.functions.special.bessel import (
     bessely,
 )
 from sympy.functions.special.beta_functions import beta, betainc, betainc_regularized
-from sympy.functions.special.error_functions import (
-    Chi,
-    Ci,
-    Ei,
-    Li,
-    Shi,
-    Si,
-    erf,
-    erf2,
-    erfc,
-    erfcinv,
-    erfi,
-    erfinv,
-    expint,
-    fresnelc,
-    fresnels,
-    li,
-)
+from sympy.functions.special.error_functions import Li, erf2, erfcinv, erfinv, expint, li
 from sympy.functions.special.gamma_functions import (
     digamma,
     gamma,
@@ -83,7 +64,7 @@ from sympy.functions.special.zeta_functions import dirichlet_eta, polylog, zeta
 
 from ._common import Rules, const_key, facts
 from .atoms import value_units
-from .functions import _equiv, _table, _unary, nary, shifted
+from .functions import _table, _unary, nary, shifted
 from .registry import registry
 
 try:  # new in SymPy 1.15
@@ -93,8 +74,7 @@ except ImportError:  # pragma: no cover - depends on the SymPy version
 
 X, N, M, Q = 0, 1, 2, 3
 
-#: an extended real argument: the node's sign is the argument's
-_SIGNS = ('extended_positive', 'extended_negative', 'zero')
+_ENTIRE = ((('finite',), 'finite'), (('complex',), 'complex'))
 
 
 def _register(cls, tag, gen, slots=None):
@@ -293,53 +273,8 @@ registry.register(uppergamma)(nary('uppergamma', _uppergamma))
 
 
 # ---------------------------------------------------------------------------
-# error functions: entire, odd, real on the real line; erf(+-oo) = +-1,
-# erfc(oo) = 0, erfc(-oo) = 2, erfi(+-oo) = +-oo; erf(I*t) = I*erfi(t),
-# erfi(I*t) = I*erf(t), erfc(I*t) = 1 - I*erfi(t).  -1 < erf(x) < 1 and
-# 0 < erfc(x) < 2 for real x.  The complex zeros of erf make erf, erfc and
-# erfi real at some non-real points.
+# erf2, erfinv, erfcinv (erf, erfc and erfi are rows: .error_functions)
 # ---------------------------------------------------------------------------
-
-_ENTIRE = ((('finite',), 'finite'), (('complex',), 'complex'))
-
-
-def _erf(R, c):
-    _table(R, _ENTIRE + (
-        (('extended_real',), 'real'),
-        (('zero',), 'zero'),
-        (('imaginary',), 'imaginary'),
-        (('real', ('zero', False)), ('integer', False)),
-        (('infinite', 'extended_positive'), 'odd'),
-        (('infinite', 'extended_negative'), 'odd'),
-    ))
-    _equiv(R, [(X, 'extended_real', True)], _SIGNS)
-
-
-def _erfc(R, c):
-    _table(R, _ENTIRE + (
-        (('extended_real',), 'real'),
-        (('extended_real',), 'nonnegative'),
-        (('real',), 'positive'),
-        (('real', ('zero', False)), ('integer', False)),
-        (('zero',), 'odd'),
-        (('infinite', 'extended_positive'), 'zero'),
-        (('infinite', 'extended_negative'), 'even'),
-        (('infinite', 'extended_negative'), 'positive'),
-        (('imaginary',), ('extended_real', False)),
-        (('imaginary',), ('imaginary', False)),
-    ))
-
-
-def _erfi(R, c):
-    _table(R, _ENTIRE + (
-        (('real',), 'real'),
-        (('extended_real',), 'extended_real'),
-        (('infinite', 'extended_real'), 'infinite'),
-        (('zero',), 'zero'),
-        (('imaginary',), 'imaginary'),
-    ))
-    _equiv(R, [(X, 'extended_real', True)], _SIGNS)
-
 
 def _erf2(R, n):
     """erf2(x, y) = erf(y) - erf(x)."""
@@ -377,35 +312,20 @@ def _erfcinv(R, c):
         R.rule([(X, 'positive', True), (M, 'positive', True), (Q, 'zero', True)], concl)
 
 
-_register(erf, 'erf', _erf)
-_register(erfc, 'erfc', _erfc)
-_register(erfi, 'erfi', _erfi)
 registry.register(erf2)(nary('erf2', _erf2))
 _register(erfinv, 'erfinv', _erfinv, slots=lambda x: (shifted(x, S.NegativeOne), shifted(x, S.One)))
 _register(erfcinv, 'erfcinv', _erfcinv, slots=_minus(1, 2))
 
 
 # ---------------------------------------------------------------------------
-# exponential and logarithmic integrals
+# expint, li, Li (Ei, Si, Ci, Shi, Chi and the Fresnel integrals are rows:
+# .error_functions)
 # ---------------------------------------------------------------------------
-# Ei(x): Ei(0) = -oo, Ei(oo) = oo, Ei(-oo) = 0, Ei(x) = -E1(-x) < 0 for x < 0
-# (principal value, a non-polar argument); finite off 0.
 # expint(nu, z) = integral of exp(-z*t)/t**nu over (1, oo), positive for
 # real nu and z > 0 (E1(z) is expint(1, z)).
 # li(x) = integral of 1/log(t) over (0, x): li(0) = 0, li(1) = -oo,
 # li(oo) = oo, negative on (0, 1), real for x > 0.  Li(x) = li(x) - li(2):
 # Li(2) = 0, increasing on (1, oo).  Slots 2: x - 1, 3: x - 2.
-
-def _ei(R, c):
-    _table(R, (
-        (('zero',), 'infinite'), (('zero',), 'extended_negative'),
-        (('negative',), 'negative'), (('positive',), 'real'),
-        (('infinite', 'extended_positive'), 'infinite'),
-        (('infinite', 'extended_positive'), 'extended_positive'),
-        (('infinite', 'extended_negative'), 'zero'),
-        (('complex', ('zero', False)), 'complex'),
-    ))
-
 
 def _expint(R, n):
     if n == 2:
@@ -434,70 +354,9 @@ def _Li(R, c):
     R.rule([(X, 'complex', True), (M, 'zero', False)], (N, 'complex', True))
 
 
-_register(Ei, 'Ei', _ei)
 registry.register(expint)(nary('expint', _expint))
 _register(li, 'li', _li, slots=_minus(1))
 _register(Li, 'Li', _Li, slots=_minus(1, 2))
-
-
-# Si and Shi are entire and odd: Si(x) > 0 for x > 0, Si(+-oo) = +-pi/2;
-# Shi is increasing, Shi(+-oo) = +-oo; Si(I*t) = I*Shi(t), Shi(I*t) =
-# I*Si(t).  Ci and Chi: Ci(0) = Chi(0) = zoo, real for x > 0, Ci(-x) =
-# Ci(x) + I*pi and Chi(-x) = Chi(x) + I*pi; Ci(oo) = 0, Ci(-oo) = I*pi,
-# Chi(+-oo) = oo; finite off 0.
-
-def _si(R, c):
-    _table(R, _ENTIRE + ((('extended_real',), 'real'), (('zero',), 'zero'),
-                        (('imaginary',), 'imaginary')))
-    _equiv(R, [(X, 'extended_real', True)], _SIGNS)
-
-
-def _shi(R, c):
-    _table(R, _ENTIRE + ((('real',), 'real'), (('extended_real',), 'extended_real'),
-                        (('infinite', 'extended_real'), 'infinite'),
-                        (('zero',), 'zero'), (('imaginary',), 'imaginary')))
-    _equiv(R, [(X, 'extended_real', True)], _SIGNS)
-
-
-def _ci_chi(R, ci):
-    _table(R, (
-        (('positive',), 'real'),
-        (('zero',), 'infinite'),
-        (('negative',), ('extended_real', False)),
-        (('complex', ('zero', False)), 'complex'),
-    ))
-    if ci:
-        _table(R, ((('infinite', 'extended_positive'), 'zero'),
-                  (('infinite', 'extended_negative'), 'imaginary')))
-    else:
-        _table(R, ((('infinite', 'extended_real'), 'infinite'),
-                  (('infinite', 'extended_real'), 'extended_positive')))
-
-
-_register(Si, 'Si', _si)
-_register(Shi, 'Shi', _shi)
-_register(Ci, 'Ci', lambda R, c: _ci_chi(R, True))
-_register(Chi, 'Chi', lambda R, c: _ci_chi(R, False))
-
-
-# fresnels and fresnelc: entire and odd, real on the real line with the
-# sign of x (the lobes of the integrand shrink), fresnels(+-oo) =
-# fresnelc(+-oo) = +-1/2, |value| < 1 at real x; fresnels(I*t) =
-# -I*fresnels(t), fresnelc(I*t) = I*fresnelc(t).
-
-def _fresnel(R, c):
-    _table(R, _ENTIRE + (
-        (('extended_real',), 'real'),
-        (('zero',), 'zero'),
-        (('imaginary',), 'imaginary'),
-        (('infinite', 'extended_real'), 'rational'),
-        (('extended_real', ('zero', False)), ('integer', False)),
-    ))
-    _equiv(R, [(X, 'extended_real', True)], _SIGNS)
-
-
-_register(fresnels, 'fresnels', _fresnel)
-_register(fresnelc, 'fresnelc', _fresnel)
 
 
 # ---------------------------------------------------------------------------

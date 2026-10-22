@@ -98,6 +98,7 @@ ROW_FAMILIES = (
     ("trig", (sin, cos, tan, cot, sec, csc)),
     ("hyperbolic", (sinh, cosh, tanh, coth, sech, csch)),
     ("inverse", (asin, acos, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc, atan, acot)),
+    ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, Ei, Ci, Chi)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
@@ -106,8 +107,8 @@ registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,
               FallingFactorial, binomial, catalan, andre, genocchi, partition)
 registry.lazy(__name__ + ".special", gamma, loggamma, polygamma, digamma, trigamma, multigamma,
-              lowergamma, uppergamma, erf, erfc, erfi, erf2, erfinv, erfcinv, Ei, expint, li, Li,
-              Si, Ci, Shi, Chi, fresnels, fresnelc, beta, betainc, betainc_regularized, LambertW,
+              lowergamma, uppergamma, erf2, erfinv, erfcinv, expint, li, Li,
+              beta, betainc, betainc_regularized, LambertW,
               zeta, dirichlet_eta, polylog, airyai, airybi, airyaiprime, airybiprime, besselj,
               bessely, besseli, besselk,
               # new in SymPy 1.15: declared by name

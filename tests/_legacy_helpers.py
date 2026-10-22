@@ -12,3 +12,11 @@ def _finite_value(R, pred):
 
 #: Slot of ``x + 1`` in the inverse functions' generators (``slots=_minus_plus_one``).
 P1 = 3
+
+# verbatim from satassume/knowledge/templates/special.py at d149951 (the
+# Airy templates still use _ENTIRE there)
+
+#: an extended real argument: the node's sign is the argument's
+_SIGNS = ('extended_positive', 'extended_negative', 'zero')
+
+_ENTIRE = ((('finite',), 'finite'), (('complex',), 'complex'))
