@@ -18,6 +18,7 @@ imported"; ``tests/test_layering.py``).
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.function import Application, Function
+from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.singleton import S
@@ -110,7 +111,7 @@ ROW_FAMILIES = (
                          expint)),
     ("exp_log", (exp, log)),
     ("complex_parts", (Abs, re, im, sign, conjugate)),
-    ("integer_funcs", (RoundFunction, floor, ceiling, factorial)),
+    ("integer_funcs", (RoundFunction, floor, ceiling, factorial, Mod)),
     ("polar", (exp_polar, polar_lift, principal_branch)),
     ("zeta_functions", (zeta, dirichlet_eta, polylog)),
     ("lambertw", (LambertW,)),

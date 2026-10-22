@@ -1,4 +1,4 @@
-"""``floor`` and ``ceiling``, and ``factorial``.
+"""``floor`` and ``ceiling``, ``factorial``, and ``Mod``.
 
 The rows of ``RoundFunction``, the base class of ``floor`` and
 ``ceiling``, hold for both (the registry walks the MRO).  Values follow
@@ -6,14 +6,16 @@ SymPy's conventions: ``floor(+-oo) == +-oo``, ``floor(zoo) == zoo``, and
 ``floor`` and ``ceiling`` of a non-real argument round each part
 (``floor(1 + I/2) == 1``); ``factorial(n) == zoo`` for a negative integer
 ``n``, ``factorial(oo) == oo``, and ``factorial(x) == gamma(x + 1)`` off
-the integers.
+the integers.  ``Mod(p, q) == p - q*floor(p/q)`` for real ``p`` and real
+``q != 0``; ``Mod(p, 0)`` raises, an infinite argument gives nan, and
+non-real arguments get no claim.
 """
 from __future__ import annotations
 
-from sympy import Equivalent, Q, ceiling, factorial, floor
+from sympy import Equivalent, Mod, Q, ceiling, factorial, floor
 from sympy.functions.elementary.integers import RoundFunction
 
-from ._rows import closed, f, for_all, x
+from ._rows import closed, f, for_all, x, y
 
 RULES = (
     # Finite only at a finite argument
@@ -88,4 +90,16 @@ RULES = (
     #     the value is zoo
     for_all((factorial,),
         (Q.integer(x) & Q.negative(x)) >> (Q.infinite(f(x)) & ~Q.extended_real(f(x)))),
+
+    # Integer and rational at a nonzero divisor
+    #     Mod(p, q) == p - q*floor(p/q), and floor(p/q) is an integer
+    for_all((Mod,),
+        (Q.integer(x) & Q.integer(y) & ~Q.zero(y)) >> Q.integer(f(x, y)),
+        (Q.rational(x) & Q.rational(y) & ~Q.zero(y)) >> Q.rational(f(x, y))),
+
+    # The sign of the divisor
+    #     Mod(p, q) is in [0, q) for q > 0 and in (q, 0] for q < 0
+    for_all((Mod,),
+        (Q.real(x) & Q.positive(y)) >> Q.nonnegative(f(x, y)),
+        (Q.real(x) & Q.negative(y)) >> Q.nonpositive(f(x, y))),
 )

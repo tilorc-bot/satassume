@@ -19,7 +19,6 @@ from collections import Counter
 
 from sympy import S
 from sympy.core.add import Add
-from sympy.core.mod import Mod
 from sympy.functions.elementary.integers import ceiling, floor
 
 from ...sat.formula import Not, P
@@ -30,7 +29,6 @@ from ._common import (
     pattern_key,
 )
 from .core import ipi_rules, ipi_split, pi_split
-from .registry import registry
 
 X, N = 0, 1
 #: Slot of ``s`` in the template of ``exp(I*pi*c*s)``.
@@ -401,22 +399,3 @@ def nary(tag, gen, slots=None, arity=None):
     # tells a declared module's templates by their module)
     template.__module__ = gen.__module__
     return template
-
-
-# ---------------------------------------------------------------------------
-# Mod (#180)
-# ---------------------------------------------------------------------------
-#
-# ``Mod(p, q) == p - q*floor(p/q)`` for real ``p`` and real ``q != 0``: in
-# ``[0, q)`` for ``q > 0``, in ``(q, 0]`` for ``q < 0``.  ``Mod(p, 0)``
-# raises, an infinite argument gives nan, non-real arguments get no claim.
-
-def _mod(R, n):
-    p, q = 0, 1
-    for pred in ('integer', 'rational', 'real'):
-        R.rule([(p, pred, True), (q, pred, True), (q, 'zero', False)], (n, pred, True))
-    R.rule([(p, 'real', True), (q, 'positive', True)], (n, 'nonnegative', True))
-    R.rule([(p, 'real', True), (q, 'negative', True)], (n, 'nonpositive', True))
-
-
-registry.register(Mod)(nary('Mod', _mod))
