@@ -3,7 +3,7 @@
 How to check a change to satassume: the unit tests, the answer gates that
 compare a candidate with a baseline, the fuzzers, and the asv benchmarks.
 How to run the suite and record the corpus is in the
-[README](../README.md#running); refine testing is documented on the
+[overview](overview.md#running); refine testing is documented on the
 `refine-identities` branch.
 
 Which checks a change needs:
@@ -32,8 +32,8 @@ and `tests/real_theory_fuzz.py` are helpers, not test files; so are
 `tests/_sympy_trap.py` and `tests/_sympy_boundary_corpus.py`, which
 `tests/test_sympy_boundary.py` runs in a subprocess.
 
-`tests/test_known_gaps.py` pins the README's "Known gaps" as strict
-xfails; closing one fails with XPASS: move the case and update the README.
+`tests/test_known_gaps.py` pins the overview's "Known gaps" as strict
+xfails; closing one fails with XPASS: move the case and update the overview.
 
 Environment variables that size the fuzz tests (`slow` tests are skipped
 unless one enables them):
@@ -92,7 +92,7 @@ The tools default to `~/.cache/satassume/` for both; point them at the
 copies with `SATASSUME_GATE2` and `SATASSUME_STREAM` (or `--frozen`,
 `--stream`). SymPy is `$SATASSUME_SYMPY` or `/home/tilo/sympy`; the pin
 the gates use is `/home/tilo/orion/sympy` (`6379c4da69`). The corpus
-`queries.jsonl` is gitignored and recorded as the README describes.
+`queries.jsonl` is gitignored and recorded as the overview describes.
 
 ## The answer gates
 
@@ -109,7 +109,7 @@ answer or a new error must be explained in the PR.
 recorded answers (categories as in its docstring) and exits 1 only on a
 `wrong` in-scope record.
 
-* `--in-scope-only`: the headline numbers of the README. Any `wrong` is a
+* `--in-scope-only`: the headline numbers of the overview. Any `wrong` is a
   bug; a change in `extra` or `none` needs a line in the PR.
 * `--relations-only`: the relation records, answered by the theories.
 * `--time-sympy` times `sympy.ask` on the same records; see `--help` for

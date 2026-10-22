@@ -113,7 +113,7 @@ def test_uninterpreted_assumption_is_none_and_not_cached():
 
 
 def test_readme_usage_example():
-    # README: "ask(Q.positive(y), Q.gt(y, 0))  # None"; still None, but now
+    # docs/overview.md: "ask(Q.positive(y), Q.gt(y, 0))  # None"; still None, but now
     # because y may be non-real (the LRA guard), not because relations are
     # out of scope.  out_of_scope keeps reporting the category.
     assert ask(Q.positive(y), Q.gt(y, 0)) is None

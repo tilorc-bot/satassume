@@ -2,7 +2,7 @@
 
 Every case is a strict xfail, so a change that closes a gap fails here with
 XPASS: move the case to the tests of the feature that closed it, and update
-the "Known gaps" section of README.md (or the issue named in the reason).
+the "Known gaps" section of docs/overview.md (or the issue named in the reason).
 None of these is a wrong answer; each expected answer holds for every value
 the assumptions allow.  Each query runs in a fresh engine, so the answers
 do not depend on earlier queries.
@@ -31,7 +31,7 @@ CASES = [
     _gap("eq-finite-sides", "#42: equal finite sides", Q.zero(a - b), Q.eq(a, b) & Q.finite(a) & Q.finite(b), True),
     # Gaussian integers.
     _gap("gaussian-integer", "#19: integral parts are finite", Q.finite(x), Q.integer(re(x)) & Q.integer(im(x)), True),
-    # README "Known gaps": no issue, neither SymPy system answers these either,
+    # docs/overview.md "Known gaps": no issue, neither SymPy system answers these either,
     # except the first (SymPy's ask substitutes the zero symbol).
     _gap("substitute-zero", "no 'equals 1' fact; pinned symbols are not substituted",
          Q.integer(1/(m + 1)), Q.zero(m), True),
