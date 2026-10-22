@@ -207,11 +207,12 @@ def _conjuncts(e):
 
 
 #: an inequality between the argument and an integer ``c``: the fact about
-#: ``x - c`` it is (order relations are over the extended reals)
-_RELATIONS = {'gt': ('extended_positive', True), 'lt': ('extended_negative', True),
-              'ge': ('extended_nonnegative', True), 'le': ('extended_nonpositive', True),
-              'eq': ('zero', True), 'ne': ('zero', False)}
-_FLIPPED = {'gt': 'lt', 'lt': 'gt', 'ge': 'le', 'le': 'ge', 'eq': 'eq', 'ne': 'ne'}
+#: ``x - c`` it is (order relations are over the extended reals), and the
+#: relation with its sides swapped
+_RELATIONS = (('gt', 'extended_positive', True, 'lt'), ('lt', 'extended_negative', True, 'gt'),
+              ('ge', 'extended_nonnegative', True, 'le'),
+              ('le', 'extended_nonpositive', True, 'ge'),
+              ('eq', 'zero', True, 'eq'), ('ne', 'zero', False, 'ne'))
 
 
 def _lit(head, row, e, slots):
@@ -220,7 +221,7 @@ def _lit(head, row, e, slots):
     if not isinstance(a, AppliedPredicate):
         raise ValueError(f"{head.__name__} row {row}: {e} is not a literal")
     pred = str(a.function.name)
-    if pred in _RELATIONS and len(a.arguments) == 2:
+    if any(pred == r[0] for r in _RELATIONS) and len(a.arguments) == 2:
         return _relation(head, row, pred, a.arguments, pos, slots)
     if len(a.arguments) != 1:
         raise ValueError(f"{head.__name__} row {row}: {e} is not a literal")
@@ -236,13 +237,14 @@ def _relation(head, row, rel, args, pos, slots):
     """``Q.gt(x, c)`` and the like, for an integer ``c``: a fact about the
     term ``x - c`` (slot ``('shift', -c)`` until :func:`rules` numbers the
     shifts; the argument itself for ``c == 0``)."""
+    of = {r[0]: r[1:] for r in _RELATIONS}
     s, c = args
     if isinstance(s, Integer):
-        rel, s, c = _FLIPPED[rel], c, s
+        rel, s, c = of[rel][2], c, s
     if not (isinstance(s, Symbol) and isinstance(c, Integer)):
         raise ValueError(f"{head.__name__} row {row}: Q.{rel}{args} does not compare "
                          "the argument with an integer")
-    pred, sign = _RELATIONS[rel]
+    pred, sign, _ = of[rel]
     key = ('shift', -int(c)) if c else X
     slots[(key, s)] = key, _plain(head, row, s)
     return (key, pred, pos is sign)
