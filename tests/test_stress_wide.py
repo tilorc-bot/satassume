@@ -30,6 +30,9 @@ from satassume.sympy_api import ask
 
 FACTOR = float(os.environ.get("SATASSUME_STRESS_FACTOR", "1"))
 
+#: unrelated conjuncts break the bound on search conflicts (issue #260)
+pytestmark = pytest.mark.no_pad("counts search conflicts")
+
 
 def ceiling(t: float) -> float:
     """The time ceiling of a case whose i5-13600T time is about ``t / 10``."""

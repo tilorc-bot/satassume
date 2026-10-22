@@ -238,6 +238,7 @@ def test_engine_entries_are_guarded_on_their_own():
     assert s2 is not s1 and eng.stats["version_clears"] == 2
 
 
+@pytest.mark.no_pad("reads the answer memo's keys")
 def test_answer_memo_and_splits_are_keyed_on_the_registry():
     extensions.register('real', AppliedUndef)(undef_real)
     eng = fresh()
@@ -277,6 +278,7 @@ def test_adapter_change_answers_as_fresh():
     assert _session_after(eng, q, a).relations is None       # built without it
 
 
+@pytest.mark.no_pad("counts the verdict memo's entries")
 def test_assigning_equal_specs_or_a_tuple_clears_nothing():
     """The adapters are compared as tuples: assigning the same adapters, as
     a tuple or a list, is no change, and no query pays a clear."""
@@ -382,6 +384,7 @@ def test_swapping_the_registry_clears():
     assert eng.stats["version_clears"] == 2
 
 
+@pytest.mark.no_pad("counts the verdict memo's entries")
 def test_no_clear_without_a_change():
     extensions.register('real', AppliedUndef)(undef_real)       # before the first query
     eng = fresh()
@@ -471,6 +474,7 @@ def test_queries_after_an_uninterpreted_exit_answer_as_fresh():
     assert not eng._context_sessions
 
 
+@pytest.mark.no_pad("counts the verdict memo's entries")
 def test_inconsistent_assumptions_still_raise_every_time():
     """An inconsistent set raises for every query, as before and as a fresh
     engine does: the set's complete check (``Engine._complete_check``) finds
