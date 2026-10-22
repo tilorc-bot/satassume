@@ -1,11 +1,13 @@
 """Which template each function of a family of rows gets (#249).
 
-The family modules (:mod:`.trig`, :mod:`.hyperbolic`) state rows only, as
-``RULES`` (see :mod:`._rows`).  :func:`load` compiles a family's rows and
-registers one template per function (:func:`template`): the unary template
-of its rows (:func:`.functions._unary`), or, for a function of
-:data:`PI_MULTIPLE` or :data:`I_PI_MULTIPLE`, :func:`.functions._pi_trig`'s,
-which adds the rules of ``f(pi*c*s)`` for a rational ``c``.
+The family modules (:mod:`.trig`, :mod:`.hyperbolic`, :mod:`.inverse`)
+state rows only, as ``RULES`` (see :mod:`._rows`).  :func:`load` compiles a
+family's rows and registers one template per function (:func:`template`):
+the unary template of its rows (:func:`.functions._unary`), with the facts
+of a constant argument for a function of :data:`UNIT_INTERVAL`, or, for a
+function of :data:`PI_MULTIPLE` or :data:`I_PI_MULTIPLE`,
+:func:`.functions._pi_trig`'s, which adds the rules of ``f(pi*c*s)`` for a
+rational ``c``.
 ``templates/__init__.py`` declares each family as ``"<this
 module>:<family>"`` for its functions (``TemplateRegistry.lazy``), so a
 family is compiled on the first use of one of its functions, and its
@@ -15,11 +17,11 @@ from __future__ import annotations
 
 import importlib
 
-from sympy import S, cos, cosh, sin
+from sympy import S, acos, asin, cos, cosh, sin
 
 from ._rows import by_function, rules
 from .core import ipi_split
-from .functions import _cosh_shift, _pi_trig, _unary, shifted
+from .functions import _cosh_shift, _in_unit_interval_units, _pi_trig, _unary, shifted
 from .registry import registry
 
 #: the functions with rules for an argument pi*c*s, each with whether it
@@ -29,6 +31,10 @@ PI_MULTIPLE = ((sin, False), (cos, True))
 #: the functions with rules for an argument I*pi*c*s (cosh(I*pi*c*s) ==
 #: cos(pi*c*s)) and r + I*pi*c*s for an integer c (functions._cosh_shift)
 I_PI_MULTIPLE = (cosh,)
+
+#: the functions with facts for a rational or float argument c: real on
+#: [-1, 1], and which side of the cut outside (functions._in_unit_interval_units)
+UNIT_INTERVAL = (asin, acos)
 
 
 def functions(family: str):
@@ -47,7 +53,8 @@ def template(fn, gen):
     if fn in I_PI_MULTIPLE:
         return _pi_trig(fn.__name__, gen, True, ipi_split, _cosh_shift(gen))
     shifts = getattr(gen, 'shifts', ())
-    return _unary(fn.__name__, gen, lambda a: tuple(shifted(a, S(c)) for c in shifts))
+    units = _in_unit_interval_units(fn.__name__) if fn in UNIT_INTERVAL else None
+    return _unary(fn.__name__, gen, lambda a: tuple(shifted(a, S(c)) for c in shifts), units)
 
 
 def load(family: str) -> None:

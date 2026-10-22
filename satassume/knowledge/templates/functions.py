@@ -31,23 +31,7 @@ from sympy.functions.elementary.complexes import (
     sign,
 )
 from sympy.functions.elementary.exponential import exp, exp_polar, log
-from sympy.functions.elementary.hyperbolic import (
-    acosh,
-    acoth,
-    acsch,
-    asech,
-    asinh,
-    atanh,
-)
 from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
-from sympy.functions.elementary.trigonometric import (
-    acos,
-    acot,
-    acsc,
-    asec,
-    asin,
-    atan,
-)
 
 from ...sat.formula import Not, P
 from ._common import (
@@ -61,7 +45,7 @@ from .core import ipi_rules, ipi_split, pi_split
 from .registry import registry
 
 X, N = 0, 1
-#: Slot of ``arg - 1`` in the templates that use it (log, acos, asin).
+#: Slot of ``arg - 1`` in the templates that use it (log).
 M = 2
 
 
@@ -141,11 +125,6 @@ def shifted(x, c):
 
 def _minus_one(x):
     return (shifted(x, S.NegativeOne),)
-
-
-def _minus_plus_one(x):
-    """Slots 2 and 3: ``x - 1`` and ``x + 1``."""
-    return (shifted(x, S.NegativeOne), shifted(x, S.One))
 
 
 # ---------------------------------------------------------------------------
@@ -399,8 +378,9 @@ registry.register(factorial)(_unary('factorial', _factorial))
 
 
 # ---------------------------------------------------------------------------
-# trigonometric: sin(pi*c*s), cos(pi*c*s) and the inverse functions; the
-# rows of sin, cos, tan, cot, sec and csc are in .trig
+# trigonometric: sin(pi*c*s), cos(pi*c*s), and asin(c), acos(c) for a
+# number c (wiring.UNIT_INTERVAL); the rows of sin, cos, tan, cot, sec and
+# csc are in .trig, those of the inverse functions in .inverse
 # ---------------------------------------------------------------------------
 
 _TRANSCENDENTAL = (('algebraic', ('zero', False)), 'transcendental')
@@ -479,26 +459,6 @@ def _pi_trig(tag, gen, cos_, split_=pi_split, plain=None):
     return template
 
 
-def _asin(R, c):
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.rule([(N, 'real', True)], (X, 'real', True))
-    R.equiv([(N, 'real', True)], (N, 'positive', True), (X, 'positive', True))
-    R.equiv([(N, 'real', True)], (N, 'negative', True), (X, 'negative', True))
-    # asin is real on [-1, 1].
-    R.rule([(X, 'nonnegative', True), (M, 'nonpositive', True)], (N, 'real', True))
-    _table(R, ((('finite',), 'finite'), (('complex',), 'complex'),
-               (('imaginary',), 'imaginary'), _TRANSCENDENTAL))
-
-
-def _acos(R, c):
-    R.rule([(N, 'real', True)], (N, 'nonnegative', True))
-    R.rule([(N, 'real', True)], (X, 'real', True))
-    # acos(x) == 0 iff x == 1.
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    _table(R, ((('zero',), 'positive'), (('finite',), 'finite'), (('complex',), 'complex')))
-    R.rule([(X, 'algebraic', True), (N, 'zero', False)], (N, 'transcendental', True))
-
-
 def _in_unit_interval_units(kind):
     """Unit facts for ``asin(c)``/``acos(c)`` with a rational or float ``c``
     (exact comparisons): real on [-1, 1], else ``+-pi/2 -+ I*acosh|c|``
@@ -521,46 +481,6 @@ def _in_unit_interval_units(kind):
                 out.append(Not(P('imaginary', expr)))
         return out
     return units
-
-
-def _atan(R, c):
-    R.rule([(X, 'extended_real', True)], (N, 'real', True))
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.equiv([(X, 'extended_real', True)], (N, 'positive', True), (X, 'extended_positive', True))
-    R.equiv([(X, 'extended_real', True)], (N, 'negative', True), (X, 'extended_negative', True))
-    # atan(I) == oo*I, so restrict to real arguments.
-    R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
-           (N, 'transcendental', True))
-    # atan(x) is real iff x is real (atan(I*t) is imaginary, infinite or
-    # non-real complex).
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-
-
-_ACOT = (
-    (('extended_real',), 'real'),
-    (('nonnegative',), 'positive'),           # acot(0) == pi/2
-    (('negative',), 'negative'),
-    (('extended_nonnegative',), 'nonnegative'),
-    (('extended_negative',), 'nonpositive'),  # acot(-oo) == 0
-    (('real',), ('zero', False)),
-    (('infinite', 'extended_real'), 'zero'),
-    (('real', 'algebraic'), 'transcendental'),
-    (('imaginary',), ('extended_real', False)),
-    # acot(0) == pi/2, acot(+-I) is infinite, acot(x) == atan(1/x) otherwise.
-    (('algebraic',), ('algebraic', False)),
-)
-
-
-def _acot(R, c):
-    _table(R, _ACOT)
-
-
-for _cls, _tag, _gen in ((atan, 'atan', _atan), (acot, 'acot', _acot)):
-    registry.register(_cls)(_unary(_tag, _gen))
-registry.register(asin)(_unary('asin', _asin, slots=_minus_one,
-                               units=_in_unit_interval_units('asin')))
-registry.register(acos)(_unary('acos', _acos, slots=_minus_one,
-                               units=_in_unit_interval_units('acos')))
 
 
 # ---------------------------------------------------------------------------
@@ -644,186 +564,6 @@ def _cosh_shift(gen):
     template.__name__ = 'cosh_templates'
     template.__module__ = gen.__module__
     return template
-
-
-# ---------------------------------------------------------------------------
-# inverse trigonometric and hyperbolic functions (#180); the rows of sec,
-# csc, coth, sech and csch are in .trig and .hyperbolic
-# ---------------------------------------------------------------------------
-#
-# Values at the special points follow SymPy's evaluation: ``csc(0) =
-# csch(0) = coth(0) = acsch(0) = asec(0) = acsc(0) = zoo``, ``sech(+-oo) =
-# csch(+-oo) = 0``, ``coth(+-oo) = +-1``, ``acosh(+-oo) = oo``,
-# ``atanh(+-1) = +-oo``, ``atanh(+-oo) = -+I*pi/2``, ``acoth(+-1) = +-oo``,
-# ``acoth(0) = I*pi/2``, ``asech(0) = oo``, ``asech(+-oo) = I*pi/2``, and
-# ``acoth``, ``acsch``, ``acsc`` are 0 and ``asec`` is ``pi/2`` at every
-# infinity.  ``sec``, ``csc`` and ``cot`` of an infinite argument are
-# ``AccumBounds`` or ``nan``, and ``sech``/``csch``/``coth`` of an infinite
-# non-real one too: no claim is made there.  Branch cuts follow the
-# principal branches (``acosh(x) = log(x + sqrt(x + 1)*sqrt(x - 1))``,
-# ``atanh(x) = (log(1 + x) - log(1 - x))/2``, ``acoth(x) = atanh(1/x)``,
-# ``asech(x) = acosh(1/x)``, ``acsch(x) = asinh(1/x)``, ``asec(x) =
-# acos(1/x)``, ``acsc(x) = asin(1/x)``); the claims only use on which side
-# of a cut a value lies, never the sign of its imaginary part on the cut.
-#
-# Transcendence: for algebraic ``a != 0``, ``sin(a)``, ``cos(a)``,
-# ``sinh(a)``, ``cosh(a)``, ``tanh(a)`` and ``coth(a)`` are transcendental
-# and nonzero (Lindemann-Weierstrass: ``exp(a)`` and ``exp(I*a)`` are), so
-# their reciprocals are; an inverse function's value ``b != 0`` at an
-# algebraic point is transcendental, else the function of ``b`` would be
-# algebraic.
-#
-# Slots: 0 the argument, 1 the node, 2 ``x - 1``, 3 ``x + 1``.
-P1 = 3
-
-
-_ASINH = (
-    (('real',), 'real'), (('extended_real',), 'extended_real'),
-    (('finite',), 'finite'), (('complex',), 'complex'),
-    (('infinite',), 'infinite'),                    # asinh(oo*I) == oo, asinh(zoo) == zoo
-    # asinh(I*t) == I*asin(t): imaginary for |t| <= 1, else a real part
-    (('imaginary',), ('extended_real', False)),
-    _TRANSCENDENTAL,
-)
-
-
-def _asinh(R, c):
-    _table(R, _ASINH)
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative'))
-
-
-def _acosh(R, c):
-    # acosh(x) == 0 iff x == 1; real (and >= 0) iff x >= 1
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(X, 'real', True), (M, 'nonnegative', True)], (N, 'nonnegative', True))
-    R.rule([(X, 'real', True), (M, 'positive', True)], (N, 'positive', True))
-    # x < 1: I*acos(x) for x in [-1, 1), log(-x + sqrt(x**2 - 1)) + I*pi below
-    R.rule([(X, 'real', True), (M, 'negative', True)], (N, 'extended_real', False))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'extended_positive', True))
-    _table(R, (
-        (('finite',), 'finite'), (('complex',), 'complex'), (('infinite',), 'infinite'),
-        # acosh(I*t) == asinh(|t|) +- I*pi/2
-        (('imaginary',), ('extended_real', False)), (('imaginary',), ('imaginary', False)),
-    ))
-    R.rule([(X, 'algebraic', True), (N, 'zero', False)], (N, 'transcendental', True))
-
-
-def _atanh(R, c):
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    # real on (-1, 1) with the sign of x; +-oo at +-1; not real beyond
-    R.rule([(M, 'negative', True), (P1, 'positive', True)], (N, 'real', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True), (P1, 'positive', True)], (N, 'negative', True))
-    R.rule([(X, 'positive', True), (M, 'positive', True)], (N, 'extended_real', False))
-    R.rule([(X, 'negative', True), (P1, 'negative', True)], (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'extended_positive', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'extended_negative', True))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'imaginary', True))
-    R.rule([(X, 'complex', True), (M, 'zero', False), (P1, 'zero', False)], (N, 'complex', True))
-    # atanh(I*t) == I*atan(t), atan(t) in (-pi/2, pi/2) \ {0}
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', True))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (M, 'zero', False), (P1, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _acoth(R, c):
-    # acoth(x) == atanh(1/x): 0 only at the infinities, acoth(0) == I*pi/2;
-    # SymPy evaluates acoth(+-oo), acoth(zoo) and acoth(+-oo*I) to 0 but
-    # leaves acoth(1 + oo*I) alone (its evalf is nan): no claim there
-    R.rule([(N, 'zero', True)], (X, 'infinite', True))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'zero', True))
-    R.rule([(X, 'positive', True), (M, 'positive', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True), (P1, 'negative', True)], (N, 'negative', True))
-    R.rule([(X, 'real', True), (M, 'negative', True), (P1, 'positive', True)],
-           (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'extended_positive', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'extended_negative', True))
-    R.rule([(X, 'complex', True), (M, 'zero', False), (P1, 'zero', False)], (N, 'complex', True))
-    # acoth(I*t) == -I*atan(1/t)
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', True))
-    R.rule([(X, 'algebraic', True), (M, 'zero', False), (P1, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _asech(R, c):
-    # asech(x) == acosh(1/x): real (and >= 0) on (0, 1], 0 iff x == 1
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(X, 'positive', True), (M, 'nonpositive', True)], (N, 'nonnegative', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'positive', True))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_positive', True))
-    # x > 1: I*acos(1/x); x < 0: acosh of a number below 0
-    R.rule([(X, 'positive', True), (M, 'positive', True)], (N, 'imaginary', True))
-    R.rule([(X, 'negative', True)], (N, 'extended_real', False))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'imaginary', True))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', False))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _acsch(R, c):
-    # acsch(x) == asinh(1/x): 0 exactly at the infinities, acsch(0) == zoo
-    R.equiv([], (N, 'zero', True), (X, 'infinite', True))
-    R.rule([(X, 'extended_real', True), (X, 'zero', False)], (N, 'real', True))
-    R.rule([(X, 'positive', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True)], (N, 'negative', True))
-    R.rule([(X, 'extended_real', True)], (N, 'imaginary', False))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_real', False))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False)], (N, 'transcendental', True))
-
-
-def _asec(R, c):
-    # asec(x) == acos(1/x): real for |x| >= 1, 0 iff x == 1, pi/2 at every
-    # infinity
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(X, 'infinite', True)], (N, 'positive', True))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'nonnegative', True)], (N, 'nonnegative', True))
-    R.rule([(X, 'negative', True), (P1, 'nonpositive', True)], (N, 'positive', True))
-    R.rule([(X, 'real', True), (M, 'negative', True), (P1, 'positive', True)],
-           (N, 'extended_real', False))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    # asec(I*t) == pi/2 + I*asinh(1/t)
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', False))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _acsc(R, c):
-    # acsc(x) == asin(1/x): real for |x| >= 1 with the sign of x, 0 exactly
-    # at the infinities
-    R.equiv([], (N, 'zero', True), (X, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'nonnegative', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True), (P1, 'nonpositive', True)], (N, 'negative', True))
-    R.rule([(X, 'real', True), (M, 'negative', True), (P1, 'positive', True)],
-           (N, 'extended_real', False))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    # acsc(I*t) == -I*asinh(1/t)
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', True))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False)], (N, 'transcendental', True))
-
-
-for _cls, _tag, _gen in ((asinh, 'asinh', _asinh), (acsch, 'acsch', _acsch)):
-    registry.register(_cls)(_unary(_tag, _gen))
-registry.register(acosh)(_unary('acosh', _acosh, slots=_minus_one))
-registry.register(asech)(_unary('asech', _asech, slots=_minus_one))
-for _cls, _tag, _gen in ((atanh, 'atanh', _atanh), (acoth, 'acoth', _acoth),
-                         (asec, 'asec', _asec), (acsc, 'acsc', _acsc)):
-    registry.register(_cls)(_unary(_tag, _gen, slots=_minus_plus_one))
 
 
 def nary(tag, gen, slots=None):

@@ -8,3 +8,7 @@ def _finite_value(R, pred):
     """``pred(x) & finite(node) -> pred(node)``: the value is a number of
     the kind or ``zoo`` (at a pole)."""
     R.rule([(X, pred, True), (N, 'finite', True)], (N, pred, True))
+
+
+#: Slot of ``x + 1`` in the inverse functions' generators (``slots=_minus_plus_one``).
+P1 = 3

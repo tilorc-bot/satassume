@@ -37,6 +37,10 @@ def arguments():
     shifts = [x_ + I*pi, r + I*pi, r + 2*I*pi, r + I*pi*n, r + 2*I*pi*n, im + I*pi*n,
               x_ + y_ + I*pi, Add(y_, -y_, 2*I*pi*n, evaluate=False)]
     syms = [x_, n, r, p, im, x_ + 1, x_ - pi, Add(x_, -x_, evaluate=False), 1/x_, x_**2]
+    # x - 1 and x + 1 of these are constants (the inverse functions); #184:
+    # Add(y, -y, 1) - 1 is not 0
+    syms += [x_ - 1, p + 1, S(-2), Add(y_, -y_, 1, evaluate=False),
+             Add(y_, -y_, -1, evaluate=False), Add(1, y_, evaluate=False)]
     return consts + pis + shifts + syms
 
 
@@ -48,6 +52,10 @@ def both(gen, extra):
     def both(R, c):
         gen(R, c)
         extra(R, c)
+    # the slots x + c: the added rows must number them as the generator does
+    a, b = sorted((getattr(gen, 'shifts', ()), extra.shifts), key=len)
+    assert b[:len(a)] == a, (gen, a, b)
+    both.shifts = b
     return both
 
 
