@@ -81,6 +81,9 @@ from sympy.integrals.integrals import Integral
 
 from . import atoms  # noqa: F401  (registration side effects)
 from .registry import TemplateRegistry, registry
+# the nan convention, shared with the level of a term built non-commutative
+# (domain.constructed_noncommutative)
+from ..domain import may_be_nan as _may_be_nan
 
 # the templates of sums, products and powers, and of functions, are
 # imported when the first node of such a class is met (TemplateRegistry.lazy)
@@ -105,29 +108,6 @@ registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")
 registry.lazy(__name__ + ".stats", "sympy.stats.rv:RandomSymbol")
 registry.lazy(__name__ + ".nodes", AccumulationBounds, Idx)
 registry.lazy(__name__ + ".limits", Sum, Product, Integral)
-
-
-_SPECIAL = (S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity)
-
-
-def _may_be_nan(a) -> bool:
-    """``a`` is ``nan``, or holds an explicit ``nan`` or infinity in a part
-    that carries a value, so that it may evaluate to nan: arithmetic
-    (``oo - oo``, ``0*oo``, ``x + oo`` at ``x = -oo``), a function
-    application (``Abs(nan)``), and every other node whose arguments feed
-    its value -- ``Subs(nan, x, 1)``, ``Subs(x, x, nan)``,
-    ``Limit(nan, x, 0)``, ``UnevaluatedExpr(nan)``, an integral or a sum
-    over ``(-oo, oo)`` (``Integral(x, (x, -oo, oo))`` is nan), a
-    ``Piecewise`` branch value, and a condition too: a ``Piecewise``
-    without a ``True`` branch is nan where no condition holds, so a
-    condition holding ``oo - oo`` may leave no value (#236 review).  Only
-    the arguments of an atom (the range of an ``Idx``) are labels, not
-    followed (#235 review; re-review R1)."""
-    if a is S.NaN:
-        return True
-    if not isinstance(a, Basic) or a.is_Atom:
-        return False
-    return any(any(b is c for c in _SPECIAL) or _may_be_nan(b) for b in a.args)
 
 
 def _applied_to_nan(expr) -> bool:
