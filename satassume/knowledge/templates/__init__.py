@@ -112,10 +112,11 @@ registry.lazy(__name__ + ".limits", Sum, Product, Integral)
 
 def _applied_to_nan(expr) -> bool:
     """A function applied to ``nan``, or to an argument that may evaluate
-    to nan (:func:`_may_be_nan`): SymPy's functions return nan before any
-    identity a template states (``rf(nan, 0)``, ``owens_t(nan, 0)``,
-    ``zeta(1, nan)``, ``Abs(nan)``, ``sign(nan)``), and no predicate holds
-    of nan, so no template fact is claimed (#180 final review F3; #231:
+    to nan (:func:`_may_be_nan`): by the nan convention (spec.md, "Truth
+    standard"), nan is no number and a function of nan has no facts; the
+    identities a template states hold for numbers (``rf(x, 0) = 1``,
+    ``owens_t(h, 0) = 0``, the pole of ``zeta(1, a)``), so none is claimed
+    of ``rf(nan, 0)``, ``Abs(nan)`` or ``sign(nan)`` (#180 final review F3; #231:
     ``Abs(oo - oo)`` is not extended_positive, although ``oo - oo`` is not
     zero).  An argument that is nan only at some values of its symbols
     (``Abs(x + y)`` at ``x = oo, y = -oo``) is not detected."""

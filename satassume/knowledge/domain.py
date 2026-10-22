@@ -69,14 +69,14 @@ def constructed_noncommutative(t) -> int:
     identity (``A - A``, ``0*A``, ``A**0``, ``rf(A, 0)``, an empty sum,
     ``Integral(A, (x, 0, 0))``) are the algebra's, not the scalars 0 and
     1, whatever ``doit()`` or automatic evaluation writes for them.  So a
-    term built non-commutative is at 2 (a matrix always), unless it is
-    held at 1 (:func:`_held_at_one`): a function of nan, a class whose
+    term built non-commutative is at 2, unless it is held at 1
+    (:func:`_held_at_one`): a function of nan, a scalar by definition (a
+    bra applied to a ket, a tensor without free indices), a class whose
     evaluators are the user's own, or a relation between operators that
-    may stand for the identity (both pending Tilo's decision, #247)."""
+    may stand for the identity (the last two pending Tilo's decision,
+    #247)."""
     if not _built_noncommutative(t):
         return 0
-    if _is_matrix(t):
-        return 2
     return 1 if _held_at_one(t) else 2
 
 
@@ -85,7 +85,9 @@ def _built_noncommutative(t) -> bool:
     symbol; a class fixing ``is_commutative = False`` (an ``Operator``, a
     ``MatrixExpr``, ``Function('g', commutative=False)``); the
     ``is_commutative`` slot that ``Add``, ``Mul``, ``Pow`` and integrals,
-    sums and products fill when built, if False; ``Function``'s
+    sums and products fill when built, if False and an argument is built
+    non-commutative (not ``Tr(A) + 1``: the slot is False there because
+    ``Tr(A).is_commutative`` is unknown); ``Function``'s
     ``_eval_is_commutative`` (the ``fuzzy_and`` of the arguments: ``f(A)``,
     ``adjoint(A)``, ``exp(M)``) with an argument built non-commutative.
     Not a class fixing True or None (``re(A)``, ``Abs(A)``), nor its own
@@ -109,9 +111,10 @@ def _built_noncommutative(t) -> bool:
         try:
             # the construction-time slot: a plain read, no assumption is
             # evaluated or cached
-            return v.__get__(t, cls) is False
+            slot = v.__get__(t, cls)
         except AttributeError:
             return False
+        return slot is False and any(_built_noncommutative(a) for a in t.args)
     # sympy-boundary: compares the class's evaluator, does not call it
     if getattr(cls, "_eval_is_commutative", None) is Function._eval_is_commutative:
         return any(_built_noncommutative(a) for a in t.args)
@@ -136,6 +139,9 @@ def _held_at_one(t) -> bool:
     - it may be nan (:func:`may_be_nan`: ``A + nan``, ``oo*A``, ``A + 0*oo``,
       ``Integral(A, (x, -oo, oo))``): nan is no number, and a function of
       nan has no facts (design.md, "Extended reals and nan"; #189);
+    - a subterm is a scalar by definition (:func:`_scalar_by_definition`):
+      a bra in it, which applied to a ket is a number (``<a|O|b>``), or a tensor
+      expression without free indices (``p(i)*q(-i)``, ``TensMul(x)``);
     - with :data:`USER_EVALUATORS_HELD`, a subterm's class is not SymPy's
       own (:func:`_sympy_class`) nor a plain undefined function
       (:func:`_plain_undefined`): the user's ``eval``, ``doit`` or property
@@ -144,8 +150,9 @@ def _held_at_one(t) -> bool:
     - with :data:`IDENTITY_RELATIONS_HELD`, a proper subterm is an operator
       with a commutation rule (:func:`_has_relations`: ``Commutator(c,
       Dagger(c))`` for a boson operator ``c``, ``c*Dagger(c) -
-      Dagger(c)*c``); the operator itself (``BosonOp('c')``) is not held;
-      and ``IdentityOperator()``, which SymPy 1.14 deprecates for ``S.One``.
+      Dagger(c)*c``, ``U*Dagger(U)`` for a unitary ``U``, ``Pauli(1)**2``);
+      the operator itself (``BosonOp('c')``) is not held; and
+      ``IdentityOperator()``, which SymPy 1.14 deprecates for ``S.One``.
 
     An argument nan only at some values of its symbols (``A + x + y`` at
     ``x = oo, y = -oo``) is not held: the facts of level 2 are numeric
@@ -160,6 +167,8 @@ def _held_at_one(t) -> bool:
             continue
         cls = type(s)
         if USER_EVALUATORS_HELD and not (_sympy_class(cls) or _plain_undefined(cls)):
+            return True
+        if _scalar_by_definition(s, s is t):
             return True
         if IDENTITY_RELATIONS_HELD and (_identity_operator(s) or s is not t and _has_relations(s)):
             return True
@@ -177,32 +186,45 @@ def _sympy_class(cls) -> bool:
     return getattr(sys.modules.get(mod), cls.__qualname__, None) is cls
 
 
-_RELATIONS = _PROCESS.table(f"{__name__}._RELATIONS", "pure", 1024)
-
-
 def _has_relations(s) -> bool:
-    """Whether ``s`` is an operator whose class states commutation rules
-    (quantum operators with ``_eval_commutator_*`` or
-    ``_eval_anticommutator_*`` methods: ``BosonOp``, ``FermionOp``,
-    ``SigmaX``, ``XOp``, ``JzOp``) or a creation or annihilation operator of
-    ``secondquant``: a relation between them may be a multiple of the
-    identity, which SymPy writes as a number (``[c, c†] = 1``)."""
+    """Whether ``s`` is an operator whose class states relations that may
+    give a multiple of the identity, which SymPy writes as a number:
+    quantum operators with ``_eval_commutator_*`` or
+    ``_eval_anticommutator_*`` methods (``BosonOp``, ``FermionOp``,
+    ``SigmaX``, ``XOp``, ``JzOp``: ``[c, c†] = 1``), a unitary operator
+    (``U*Dagger(U) = 1``), ``paulialgebra.Pauli`` (``Pauli(1)**2 = 1``) and
+    a creation or annihilation operator of ``secondquant``."""
     cls = type(s)
-    r = _RELATIONS.get(cls)
-    if r is None:
-        r = any(n.startswith(("_eval_commutator_", "_eval_anticommutator_")) for n in dir(cls))
-        sq = sys.modules.get("sympy.physics.secondquant")
-        if sq is not None and issubclass(cls, sq.SqOperator):
-            r = True
-        if len(_RELATIONS) >= 1024:
-            _RELATIONS.clear()
-        _RELATIONS[cls] = r
-    return r
+    if any(n.startswith(("_eval_commutator_", "_eval_anticommutator_")) for n in dir(cls)):
+        return True
+    return isinstance(s, _loaded("sympy.physics.quantum.operator", "UnitaryOperator")
+                      + _loaded("sympy.physics.paulialgebra", "Pauli")
+                      + _loaded("sympy.physics.secondquant", "SqOperator"))
+
+
+def _loaded(module, name) -> tuple:
+    """``(module.name,)`` if ``module`` is imported, else ``()``: no
+    instance of a class of a module never imported exists."""
+    m = sys.modules.get(module)
+    return (getattr(m, name),) if m is not None else ()
+
+
+def _scalar_by_definition(s, whole) -> bool:
+    """A subterm making a term built non-commutative a number by
+    definition: a bra below the ``whole`` term (quantum ``BraBase``,
+    secondquant ``FockStateBra``), a linear functional, so that a bra
+    applied to a ket is a number (``Bra('a')*Operator('O')*Ket('b')``; a bra
+    alone is no number); a tensor expression without free indices, a
+    rank-0 tensor (``p(i)*q(-i)``, ``TensAdd(1, 1)``)."""
+    if not whole and isinstance(s, _loaded("sympy.physics.quantum.state", "BraBase")
+                  + _loaded("sympy.physics.secondquant", "FockStateBra")):
+        return True
+    tensor = _loaded("sympy.tensor.tensor", "TensExpr")
+    return bool(tensor) and isinstance(s, tensor) and not s.get_free_indices()
 
 
 def _identity_operator(s) -> bool:
-    q = sys.modules.get("sympy.physics.quantum.operator")
-    return q is not None and isinstance(s, q.IdentityOperator)
+    return isinstance(s, _loaded("sympy.physics.quantum.operator", "IdentityOperator"))
 
 
 def _plain_undefined(cls) -> bool:

@@ -47,6 +47,7 @@ from sympy import (
     sympify,
 )
 from sympy.core.function import AppliedUndef
+from sympy.matrices.expressions import MatrixExpr
 from test_templates import evaluate
 
 from satassume import DictCache, Engine
@@ -657,13 +658,14 @@ def _algebra_terms():
     # standard"); the zero or the identity of the algebra where SymPy's
     # evaluation writes the scalars 0 and 1 (rf(A, 0), A - A, [a, b - b]),
     # a class declaring is_commutative False over scalar arguments
-    # (secondquant [x, y], TensMul(x)), and operators and states
+    # (secondquant [x, y]), and operators, kets and tensors with free
+    # indices
     from sympy import Eq, Integral, MatrixSymbol, Quaternion, binomial, exp, ff, log, polylog, rf, stieltjes
-    from sympy.physics.quantum import AntiCommutator, Commutator, Dagger, Operator, TensorProduct
+    from sympy.physics.quantum import AntiCommutator, Bra, Commutator, Dagger, Operator, TensorProduct
     from sympy.physics.quantum.boson import BosonOp
     from sympy.physics.quantum.spin import JzKet
     from sympy.physics.secondquant import Commutator as SqCommutator, CreateBoson, FKet, FockStateFermionBra
-    from sympy.tensor.tensor import TensAdd, TensMul
+    p_, q_, i_ = _tensors()
     try:
         from sympy import owens_t
     except ImportError:  # SymPy < 1.15
@@ -684,12 +686,43 @@ def _algebra_terms():
             Pow(S.Exp1, Mul(0.0, A, evaluate=False), evaluate=False), Mul(0.0, A, B, evaluate=False),
             A - 2*B, A*B*A, 2*sin(A), sin(A) + 1, exp(A + 1), -exp(A), A + x + y,
             a, b - Dagger(b), Commutator(a, b), Commutator(a, zb), AntiCommutator(a, zb), AntiCommutator(zb, a),
-            TensorProduct(a, zb), BosonOp('c'), JzKet(1, 0), CreateBoson(x), Quaternion(x, y, 0, 1),
-            TensMul(0, x), TensMul(x), TensAdd(1, 1),
+            TensorProduct(a, zb), BosonOp('c'), JzKet(1, 0), Bra('a'), CreateBoson(x), Quaternion(x, y, 0, 1),
+            p_(i_), p_(i_) + q_(i_), 2*p_(i_),
             SqCommutator(x, y, evaluate=False), SqCommutator(x, 1, evaluate=False),
             FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
             FKet([Eq(x, x, evaluate=False), S.true]), FKet([0], 1), FockStateFermionBra([0], 1),
             MatrixSymbol('M', 2, 2), g(x, 1), g(Tuple(x, S.Half)), g(x + 1), g(Add(x, 0, evaluate=False))]
+
+
+def _tensors():
+    from sympy.tensor.tensor import TensorHead, TensorIndexType, tensor_indices
+    L = TensorIndexType('L')
+    i = tensor_indices('i', L)
+    return TensorHead('p', [L]), TensorHead('q', [L]), i
+
+
+def _scalar_terms():
+    # built non-commutative, but numbers by definition (#250 review): a bra
+    # is a linear functional, applied to a ket it gives a number; a tensor
+    # without free indices has rank 0
+    from sympy.physics.quantum import Bra, Dagger, Ket, Operator, OuterProduct
+    from sympy.tensor.tensor import TensAdd, TensMul
+    p_, q_, i_ = _tensors()
+    O = Operator('O')
+    return [Bra('a')*O*Ket('b'), Dagger(Ket('b'))*O*Ket('b'), OuterProduct(Ket('a'), Bra('b')),
+            p_(i_)*q_(-i_), TensMul(0, x), TensMul(x), TensAdd(1, 1)]
+
+
+def test_not_built_noncommutative_by_an_unknown_argument():
+    # #250 review: Add and Mul fill a False slot when an argument's
+    # commutativity is unknown; the trace of an operator is a number
+    from sympy import UnevaluatedExpr
+    from sympy.physics.quantum import Operator
+    from sympy.physics.quantum.trace import Tr
+    from satassume.knowledge.domain import constructed_noncommutative
+    for e in (Add(Tr(Operator('O')), 1), Mul(2, Tr(A)), Add(UnevaluatedExpr(A), 1)):
+        assert constructed_noncommutative(e) == 0, e
+        assert fresh().is_many(e, ['zero', 'complex']) == [None, None], e
 
 
 def test_constructed_noncommutative_never_a_number():
@@ -750,12 +783,21 @@ class _EvalOnB(Function):
         return S.One if a == B else None
 
 
+class _ZeroMatrix(MatrixExpr):
+    shape = (1, 1)
+
+    def doit(self, **hints):
+        return S.Zero
+
+
 def _nan_terms():
-    from sympy import Integral, Sum
+    from sympy import Integral, MatMul, MatrixSymbol, Sum
     # nan is no number, and a function of nan has no facts (design.md,
     # "Extended reals and nan"): an explicit nan or infinity
     return [Add(A, S.NaN, evaluate=False), Add(A, B, S.NaN, evaluate=False), Add(sin(A), S.NaN, evaluate=False),
             Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False), Mul(S.Infinity, A, evaluate=False),
+            MatMul(S.NaN, MatrixSymbol('M', 2, 2), evaluate=False),
+            MatMul(S.Infinity, MatrixSymbol('M', 2, 2), evaluate=False),
             # a limit carries a value
             Sum(A, (x, 1, S.Infinity)), Integral(A, (x, 0, S.Infinity))]
 
@@ -767,7 +809,7 @@ def _user_evaluator_terms():
     from sympy.physics.quantum import AntiCommutator, Commutator
     v, u = _NCProperty(), _NoCommutative()
     # SymPy 1.15 builds [u, u*1] as 0
-    return [e for e in [_Evaluates(x), _EvaluatesWhenBuilt(1, evaluate=False), _UndefSub(x, evaluate=False),
+    return [e for e in [_Evaluates(x), _ZeroMatrix(), _EvaluatesWhenBuilt(1, evaluate=False), _UndefSub(x, evaluate=False),
             Function('g0', commutative=False, eval=classmethod(lambda cls, *a: S.Zero))(x, evaluate=False),
             Function('g1', commutative=False, doit=lambda self, **h: S.Zero)(x),
             Function('g2', commutative=False, _eval_evalf=lambda self, prec: Float(0))(Float(1.0), evaluate=False),
@@ -783,24 +825,27 @@ def _identity_terms():
     # identity, which SymPy writes as 1 (and IdentityOperator, deprecated
     # for S.One)
     import warnings
-    from sympy.physics.quantum import AntiCommutator, Commutator, Dagger
+    from sympy.physics.paulialgebra import Pauli
+    from sympy.physics.quantum import AntiCommutator, Commutator, Dagger, UnitaryOperator
     from sympy.physics.quantum.boson import BosonOp
     from sympy.physics.quantum.fermion import FermionOp
     from sympy.physics.quantum.pauli import SigmaX
     from sympy.physics.secondquant import B as Bq, Bd, Commutator as SqCommutator
     c, d, p = BosonOp('c'), FermionOp('d'), Symbol('p')
     out = [Commutator(c, Dagger(c)), AntiCommutator(d, Dagger(d)), c*Dagger(c) - Dagger(c)*c, 2*c,
-           Pow(SigmaX(), 2, evaluate=False), SqCommutator(Bq(p), Bd(p), evaluate=False)]
+           Pow(SigmaX(), 2, evaluate=False), SqCommutator(Bq(p), Bd(p), evaluate=False),
+           Mul(UnitaryOperator('U'), Dagger(UnitaryOperator('U')), evaluate=False),
+           Mul(Pauli(1), Pauli(1), evaluate=False)]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         from sympy.physics.quantum import IdentityOperator
-        out.append(IdentityOperator())
+        out.append(IdentityOperator(2))
     return out
 
 
 def test_constructed_noncommutative_held_at_level_one():
     from satassume.knowledge.domain import constructed_noncommutative
-    for e in _nan_terms() + _user_evaluator_terms() + _identity_terms():
+    for e in _nan_terms() + _scalar_terms() + _user_evaluator_terms() + _identity_terms():
         assert constructed_noncommutative(e) == 1, e
         assert fresh().is_many(e, ['commutative', 'zero', 'complex', 'integer']) == [False, None, None, None], e
 
@@ -812,10 +857,7 @@ def test_pending_decisions_flip_with_one_flag(monkeypatch, flag, terms):
     # Tilo's decision; each is one flag
     from satassume.knowledge import domain
     monkeypatch.setattr(domain, flag, False)
-    at_two = [e for e in terms() if domain.constructed_noncommutative(e) == 2]
-    assert at_two, flag
-    if flag == "IDENTITY_RELATIONS_HELD":
-        assert len(at_two) == len(terms()) - 1  # IdentityOperator() holds oo: a nan term
+    assert all(domain.constructed_noncommutative(e) == 2 for e in terms()), flag
 
 
 def test_function_level_by_sympy_class():
@@ -868,7 +910,7 @@ def test_constructed_noncommutative_sympy_candidates():
     # written.
     from satassume.engine import PRED_INDEX
     from satassume.knowledge.domain import constructed_noncommutative, noncommutative_false
-    for e in _s5_terms() + _algebra_terms() + _nan_terms() + _user_evaluator_terms():
+    for e in _s5_terms() + _algebra_terms() + _nan_terms() + _scalar_terms() + _user_evaluator_terms():
         before = dict(e._assumptions)
         got = {p: fresh().is_(e, p) for p in PRED_INDEX}
         assert dict(e._assumptions) == before, e
