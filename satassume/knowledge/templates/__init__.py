@@ -141,9 +141,21 @@ def _applied_to_nan(expr) -> bool:
     ``zeta(1, nan)``, ``Abs(nan)``, ``sign(nan)``), and no predicate holds
     of nan, so no template fact is claimed (#180 final review F3; #231:
     ``Abs(oo - oo)`` is not extended_positive, although ``oo - oo`` is not
-    zero).  An argument that is nan only at some values of its symbols
-    (``Abs(x + y)`` at ``x = oo, y = -oo``) is not detected."""
-    return isinstance(expr, Application) and any(_may_be_nan(a) for a in expr.args)
+    zero).  A power counts as a function of its base and exponent:
+    ``b**0 = 1`` is an identity over numbers, like ``rf(x, 0) = 1``, and
+    says nothing about ``nan**0`` (#251).  ``oo**0``, ``-oo**0`` and
+    ``zoo**0`` (an explicit zero exponent) get no fact either: SymPy
+    evaluates them and ``nan**0`` to 1, but whether it should is open
+    upstream (https://github.com/sympy/sympy/issues/18470 for ``nan**0``,
+    https://github.com/sympy/sympy/issues/17901 for ``oo**0``), so no
+    answer is claimed until SymPy decides.  An argument that is nan only at
+    some values of its symbols (``Abs(x + y)`` at ``x = oo, y = -oo``), and
+    a base or exponent that is infinite or zero only by assumption
+    (``x**z`` at ``x = oo``, ``z = 0``), are not detected."""
+    if isinstance(expr, Pow) and any(expr.base is c for c in _SPECIAL) \
+            and expr.exp.is_Number and float(expr.exp) == 0:
+        return True
+    return isinstance(expr, (Application, Pow)) and any(_may_be_nan(a) for a in expr.args)
 
 
 registry.opaque = _applied_to_nan

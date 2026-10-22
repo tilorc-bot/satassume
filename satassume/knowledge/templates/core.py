@@ -808,7 +808,8 @@ _POW_RULES = (
     (((_B, 'extended_nonpositive'), (_E, 'odd')), (_N, 'extended_positive', False)),
     (((_N, 'positive'), (_B, 'real'), (_E, 'odd')), (_B, 'positive')),
     (((_N, 'negative'), (_B, 'real'), (_E, 'odd')), (_B, 'negative')),
-    # --- zero base, zero exponent (b**0 == 1, also for zoo and nan) ---
+    # --- zero base, zero exponent (b**0 == 1; nan**0, oo**0 and zoo**0 are
+    # opaque, #251: SymPy gives 1, but sympy/sympy#18470 and #17901 dispute it) ---
     (((_B, 'zero'), (_E, 'extended_positive')), (_N, 'zero')),
     (((_B, 'zero'), (_E, 'extended_nonpositive')), (_N, 'zero', False)),
     (((_B, 'zero'), (_E, 'extended_negative')), (_N, 'infinite')),
