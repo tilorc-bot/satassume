@@ -252,7 +252,9 @@ if a discrepancy was reported; with `--fail-on unknown` only if one has a
 family tag that `checker.is_known_family` does not accept (`R:...`, `C+...`
 and the documented letters are known; `?` and `new:...` are not), with
 `--fail-on never` never.  `hashseed` counts only cross-seed disagreements
-under `--fail-on unknown`.
+under `--fail-on unknown`.  `invariants` also takes `--fail-on unsound`
+(only an undocumented contradiction or crash; a lost answer, definite
+against None, is reported only: `harness/INVARIANTS.md`).
 
 ## CI
 

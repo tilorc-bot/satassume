@@ -21,6 +21,10 @@ Severity classes (``SEVERITY``, most important first):
 ``lost``      lost definiteness where the invariant demands a definite value
 ``crash``     an engine error (not ``ValueError``) on one side only
 
+``UNSOUND`` (``wrong``, ``crash``) are the classes ``--fail-on unsound``
+fails on; ``depends`` and ``lost`` are lost answers (definite against
+None), reported only.
+
 Each violation is shrunk (``ddmin`` over the conjuncts of the set, and
 over the added conjuncts) to a replayable case, written as ``NAME.json``
 and ``NAME.py`` like ``harness/repros``.
@@ -29,6 +33,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import glob
 import json
 import os
 import random
@@ -56,6 +61,10 @@ from .sympy_io import custom_predicate, from_srepr, to_srepr
 
 INVARIANTS = ("I1", "I2", "I3", "I4", "I5", "I6", "I7")
 SEVERITY = ("wrong", "depends", "lost", "crash")
+#: the classes that fail the nightly (``--fail-on unsound``): two definite
+#: answers that differ (I1: None turned definite) or an engine error; the
+#: others are a definite answer against None
+UNSOUND = ("wrong", "crash")
 
 DEFINITE = ("True", "False")
 
@@ -1612,6 +1621,68 @@ def write_case(v: Violation, directory: str, stem: str) -> Tuple[str, str]:
     with open(pp, "w") as fh:
         fh.write(_SCRIPT.format(json=stem + ".json", inv=v.inv))
     return jp, pp
+
+
+def _short(srepr: str, limit: int = 160) -> str:
+    try:
+        s = str(from_srepr(srepr))
+    except Exception:  # noqa: BLE001
+        s = srepr
+    return s if len(s) <= limit else s[:limit - 3] + "..."
+
+
+def summarize_cases(directory: str, examples: int = 5) -> str:
+    """Markdown summary of the cases ``write_case`` wrote to ``directory``
+    (the nightly's step summary and tracking-issue comment): counts per
+    invariant, class and family (the ``known:`` tag, else the base and
+    variant answers and the variant kind, I2's kinds of material), the
+    ``unsound`` ones (``UNSOUND``, undocumented: what fails the nightly)
+    first, then up to ``examples`` report-only ones, one per family."""
+    cases = []
+    for jp in sorted(glob.glob(os.path.join(directory, "*.json"))):
+        try:
+            with open(jp) as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(d, dict) or "inv" not in d or "severity" not in d:
+            continue
+        var = d.get("variant") or {}
+        if d.get("known"):
+            fam = f"known:{d['known']}"
+        else:
+            kinds = [k for k in var.get("kinds", ()) if not k.startswith("const:")] if d["inv"] == "I2" else ()
+            fam = f"{d.get('base')} -> {d.get('other')}, {'+'.join(kinds) or var.get('kind', '?')}"
+        failing = not d.get("known") and d["severity"] in UNSOUND
+        cases.append((d, fam, failing, os.path.basename(jp)[:-5]))
+    if not cases:
+        return "No violations.\n"
+    nfail = sum(c[2] for c in cases)
+    counts: Dict[tuple, int] = {}
+    for d, fam, failing, _ in cases:
+        k = (d["inv"], d["severity"], fam, "**fails**" if failing else "report")
+        counts[k] = counts.get(k, 0) + 1
+    out = [f"{len(cases)} violation(s): {nfail} fail the job (undocumented `wrong`/`crash`), "
+           f"{len(cases) - nfail} report-only.", "",
+           "| invariant | class | family | gate | cases |", "|---|---|---|---|---|"]
+    out += [f"| {i} | {s} | {f} | {g} | {n} |" for (i, s, f, g), n in sorted(counts.items())]
+
+    def line(d, fam, stem):
+        cfg = (d.get("config") or {}).get("name", "?")
+        return (f"- `{d['inv']} {d['severity']}` [{cfg}] `ask({_short(d['prop'])}, {_short(d['assum'])})` "
+                f"= {d.get('base')}; variant {(d.get('variant') or {}).get('kind')} = {d.get('other')} "
+                f"({fam}; case `{stem}.py`)")
+    fails = [c for c in cases if c[2]]
+    if fails:
+        out += ["", "Failing:"] + [line(d, fam, stem) for d, fam, _, stem in fails]
+    seen, ex = set(), []
+    for d, fam, failing, stem in cases:
+        if not failing and (d["inv"], fam) not in seen and len(ex) < examples:
+            seen.add((d["inv"], fam))
+            ex.append(line(d, fam, stem))
+    if ex:
+        out += ["", "Report-only examples (one per family; the cases are in the `invariants` artifact):"] + ex
+    return "\n".join(out) + "\n"
 
 
 # --------------------------------------------------------------------------

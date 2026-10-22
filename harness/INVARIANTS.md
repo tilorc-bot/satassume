@@ -57,6 +57,12 @@ A pair of answers is reported only when
 
 Severity classes: `wrong` > `depends` (definite vs None across a "same
 answer" invariant) > `lost` (definiteness demanded by I3/I4) > `crash`.
+`wrong` and `crash` are `UNSOUND`: two definite answers that differ (I1:
+None turned definite by dropping clauses) or an engine error.  `depends`
+and `lost` are *lost answers*, a definite answer against None: a real
+violation of the invariant (an answer that depends on how the question is
+put), but None is always an allowed answer of `ask`, so no false answer
+was given.
 
 ### What a SymPy constructor may change
 
@@ -105,8 +111,13 @@ python -m pytest -q tests/test_invariants.py
 # I1 (three drops) and I2 (three variants, one of them with blocks on
 # average) run first on every query, I5 twice (the second on the
 # proposition), I4 under every config; the last line printed is
-# {"cpu_seconds", "rounds", "queries"}
+# {"cpu_seconds", "rounds", "queries", "violations", "unknown", "unsound"};
+# the CI job adds `--fail-on unsound` (see "Exit status" below)
 python -m harness invariants --nightly --seeds 0-2 --out harness-results/invariants
+
+# markdown summary of the cases in a directory (counts per invariant,
+# class and family, the failing ones, up to 5 report-only examples)
+python -m harness invariants-summary harness-results/invariants
 
 # a subset, unbounded
 python -m harness invariants --inv I1,I2 --profile transfer,links --config default,budget --seeds 0-4 --queries 120
@@ -131,8 +142,18 @@ and for I2 one per shape *and kind of unrelated material*
 (`extra_kinds`, recorded in the case as `kinds`: `closed`, `inf`,
 `commutative`, `relation`, `declared`, `pred`, `compound`,
 `ext:<class>:<shape>`), so that the same shape reached by different
-material is reported, and the kinds tell families apart.  Exit status 1 on an unknown violation
-(`--fail-on unknown`) or any.
+material is reported, and the kinds tell families apart.
+
+**Exit status** (`--fail-on`): 1 on any violation (`any`, the default),
+on one not tagged `known:` (`unknown`), on one not tagged `known:` whose
+class is `UNSOUND` (`unsound`), or never (`never`).  The nightly CI job
+uses `unsound` (since 22 Oct 2026; `unknown` before): lost answers
+(`depends`, `lost`) are new variants of broad families every night (#114),
+kept the job red for weeks and would have hidden a contradiction, so they
+are reported only: every case is in the `invariants` artifact, the job's
+step summary has `invariants-summary`, and each night's summary is a
+comment on one tracking issue (`TRACKING_ISSUE` in
+`.github/workflows/invariants.yml`).
 
 ## Generators
 

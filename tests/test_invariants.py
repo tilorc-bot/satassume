@@ -305,3 +305,39 @@ def test_model_guard_and_scope_tag():
     sev, other, var = check_I2(Q.positive(x), Q.positive(x), cfg, "True", random.Random(0), variant)
     assert var["scope"] == "custom"
     assert sev == ("depends" if other == "None" else None), (sev, other)
+
+
+def test_fail_on_unsound(monkeypatch, tmp_path):
+    """``--fail-on unsound`` (the nightly's gate): a planted contradiction
+    fails the run, a planted lost answer (definite against None) is
+    written and summarized but does not; ``--fail-on unknown`` fails on
+    both."""
+    import satassume.engine as eng_mod
+    from harness.__main__ import main
+    from harness.invariants import summarize_cases
+    real_ask = eng_mod.Engine.ask
+
+    def run(gate, out, inv="I4"):
+        return main(["invariants", "--inv", inv, "--seeds", "0", "--queries", "12", "--sets", "2",
+                     "--no-shrink", "--quiet", "--fail-on", gate, "--out", str(tmp_path / out)])
+
+    # a contradiction: True for a proposition and for its negation
+    monkeypatch.setattr(eng_mod.Engine, "ask", lambda self, p, a=None: True)
+    assert run("unsound", "wrong") == 1
+    assert "fail the job" in summarize_cases(str(tmp_path / "wrong"))
+
+    # a lost answer: None as soon as unrelated material (fresh ``iu``
+    # symbols) is in the set (the API layer: the engine never sees it)
+    import satassume.sympy_api as api
+    monkeypatch.setattr(eng_mod.Engine, "ask", real_ask)
+    real_api_ask = api.ask
+
+    def ask_lost(proposition, assumptions=True, *args, **kw):
+        if any(s.name.startswith("iu") for s in getattr(assumptions, "free_symbols", ())):
+            return None
+        return real_api_ask(proposition, assumptions, *args, **kw)
+    monkeypatch.setattr(api, "ask", ask_lost)
+    assert run("unsound", "lost", "I2") == 0
+    summary = summarize_cases(str(tmp_path / "lost"))
+    assert "0 fail the job" in summary and "| I2 | depends |" in summary, summary
+    assert run("unknown", "lost-unknown", "I2") == 1
