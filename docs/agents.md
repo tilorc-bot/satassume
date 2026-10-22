@@ -130,10 +130,19 @@ identical answers, speedups with no changed answers, new tests, and docs
 that only describe. When unsure, apply it.
 
 The PR description says why, one visible "**Needs your decision:**" line
-per decision, near the top (the description style is #255). The label is
-a convention: nothing enforces it. A required status check that fails
-while the label is present would block the merge, but the owner has to
-add that workflow (see "GitHub", item 2).
+per decision, near the top (the description style is #255). Next to it, a
+labelled PR must carry a short "**Why a human:**" justification: (a) which
+of the criteria above it meets, by number, and (b) why it is worth a
+human's time, that is, what goes wrong or is lost if it is not reviewed
+or not merged. For example:
+
+> **Why a human:** criterion 2: three queries go from True to None.
+> Unreviewed, SymPy code that relies on those answers could break
+> silently; unmerged, the three wrong True answers stay.
+
+The label is a convention: nothing enforces it. A required status check
+that fails while the label is present would block the merge, but the
+owner has to add that workflow (see "GitHub", item 2).
 
 ## Reporting a PR
 
