@@ -18,25 +18,25 @@ from .registry import registry
 
 x = symbols('x')
 
-SIN = [
+SIN = (
     Q.real(x) >> Q.real(sin(x)),
     Q.complex(x) >> Q.complex(sin(x)),
     Q.finite(x) >> Q.finite(sin(x)),                # sin(oo*I) == oo*I
     Q.zero(x) >> Q.zero(sin(x)),
     Q.imaginary(x) >> Q.imaginary(sin(x)),
     (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(sin(x)),
-]
+)
 
-COS = [
+COS = (
     Q.real(x) >> Q.real(cos(x)),
     Q.complex(x) >> Q.complex(cos(x)),
     Q.finite(x) >> Q.finite(cos(x)),
     Q.zero(x) >> (Q.odd(cos(x)) & Q.positive(cos(x))),
     Q.imaginary(x) >> Q.positive(cos(x)),           # cos(I*t) == cosh(t)
     (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(cos(x)),
-]
+)
 
-TAN = [
+TAN = (
     Q.real(x) >> ~Q.imaginary(tan(x)),
     Q.zero(x) >> Q.zero(tan(x)),
     Q.imaginary(x) >> Q.imaginary(tan(x)),
@@ -44,9 +44,9 @@ TAN = [
     (Q.real(x) & Q.finite(tan(x))) >> Q.real(tan(x)),
     # Im tan(x + I*y) == sinh(2*y)/(cos(2*x) + cosh(2*y)) != 0 for y != 0
     (Q.finite(x) & ~Q.extended_real(x)) >> ~Q.extended_real(tan(x)),
-]
+)
 
-COT = [
+COT = (
     Q.real(x) >> ~Q.imaginary(cot(x)),
     Q.imaginary(x) >> Q.imaginary(cot(x)),          # cot(I*t) == -I*coth(t)
     Q.zero(x) >> (Q.infinite(cot(x)) & ~Q.extended_real(cot(x))),
@@ -56,9 +56,9 @@ COT = [
     (Q.real(x) & Q.finite(cot(x))) >> Q.real(cot(x)),
     (Q.finite(x) & ~Q.extended_real(x)) >> ~Q.extended_real(cot(x)),    # cot == 1/tan
     (Q.complex(x) & Q.finite(cot(x))) >> Q.complex(cot(x)),
-]
+)
 
-SEC = [
+SEC = (
     Q.real(x) >> ~Q.imaginary(sec(x)),
     Q.complex(x) >> ~Q.zero(sec(x)),                # cos is finite at a finite point
     Q.zero(x) >> (Q.odd(sec(x)) & Q.positive(sec(x))),
@@ -66,9 +66,9 @@ SEC = [
     (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(sec(x)),
     (Q.real(x) & Q.finite(sec(x))) >> Q.real(sec(x)),
     (Q.complex(x) & Q.finite(sec(x))) >> Q.complex(sec(x)),
-]
+)
 
-CSC = [
+CSC = (
     Q.real(x) >> ~Q.imaginary(csc(x)),
     Q.complex(x) >> ~Q.zero(csc(x)),
     Q.zero(x) >> (Q.infinite(csc(x)) & ~Q.extended_real(csc(x))),
@@ -76,7 +76,7 @@ CSC = [
     (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(csc(x)),
     (Q.real(x) & Q.finite(csc(x))) >> Q.real(csc(x)),
     (Q.complex(x) & Q.finite(csc(x))) >> Q.complex(csc(x)),
-]
+)
 
 
 registry.register(sin)(_pi_trig('sin', rules(sin, SIN, __name__), False))
