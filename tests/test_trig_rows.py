@@ -1,5 +1,6 @@
 """The rules of ``sin``, ``cos``, ``tan``, ``cot``, ``sec`` and ``csc``,
-written as ``for_all`` statements (``templates/trig.py``) in the row language (``templates/_rows.py``, #249),
+written as ``for_all`` statements (``templates/trig.py``, compiled by
+``templates/wiring.py``) in the row language (``templates/_rows.py``, #249),
 against the generators they replace (``tests/_legacy_trig_rules.py``,
 verbatim from f9291ab).
 
@@ -32,9 +33,9 @@ from sympy import (  # noqa: E402
 )
 
 from satassume.knowledge.rules import BASIS, RULE_CLAUSES  # noqa: E402
-from satassume.knowledge.templates import _common, registry, trig  # noqa: E402
+from satassume.knowledge.templates import ROW_FUNCTIONS, _common, registry, wiring  # noqa: E402
 from satassume.knowledge.templates._rows import (  # noqa: E402
-    Icc, Ico, Ioo, by_function, closed, f, facts_of, for_all, rows_of, rules, signature, x,
+    by_function, closed, f, for_all, rows_of, rules, x,
 )
 from satassume.knowledge.templates.functions import _pi_trig, _unary  # noqa: E402
 from satassume.knowledge.templates.registry import _split  # noqa: E402
@@ -147,7 +148,7 @@ def _differences(new, old):
 def _rows_templates():
     out = {}
     for h in HEADS:
-        ts = [t for t in registry.templates_for(h) if t.__module__ == trig.__name__]
+        ts = [t for t in registry.templates_for(h) if t.__module__ == wiring.__name__]
         assert len(ts) == 1, (h, ts)
         out[h] = ts[0]
     return out
@@ -189,20 +190,24 @@ from sympy import Q, Symbol, cos, cot, csc, sec, sin, tan
 from satassume.knowledge.templates.registry import registry
 from satassume.sympy_api import ask
 TRIG = "satassume.knowledge.templates.trig"
+WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
-assert TRIG not in sys.modules
+assert TRIG not in sys.modules and WIRING not in sys.modules
 assert ask(Q.real(sin(x)), Q.real(x)) is True
-assert TRIG in sys.modules and all(m != TRIG for _, m in registry._lazy)
+assert TRIG in sys.modules and all(m != WIRING for _, m in registry._lazy)
 assert "satassume.knowledge.templates.special" not in sys.modules
 for h in (sin, cos, tan, cot, sec, csc):
-    assert [t.__module__ for t in registry._by_class[h]] == [TRIG]
+    assert [t.__module__ for t in registry._by_class[h]] == [WIRING]
 """
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
 
 
-def test_every_table_is_registered():
-    assert tuple(h for h, _ in trig.ROWS) == HEADS
+def test_the_declared_functions_are_those_the_rows_name():
+    # templates/__init__.py declares .wiring for ROW_FUNCTIONS without
+    # importing the rows; the two lists must not drift apart
+    named = [fn for family in wiring.FAMILIES for fn in wiring.functions(family)]
+    assert tuple(named) == ROW_FUNCTIONS == HEADS
 
 
 # -- the row language -------------------------------------------------------
@@ -273,40 +278,6 @@ def test_a_table_is_its_rows_in_order():
         Q.real(x) >> Q.real(sec(x)), Q.zero(x) >> Q.zero(sec(x))]
 
 
-@pytest.mark.parametrize("image, facts", [
-    (0, [('zero', True)]),
-    (1, [('positive', True), ('odd', True), ('prime', False), ('composite', False)]),
-    (2, [('even', True), ('prime', True)]),
-    (-1, [('negative', True), ('odd', True)]),
-    (Rational(1, 2), [('positive', True), ('noninteger', True), ('rational', True)]),
-    (zoo, [('infinite', True), ('extended_real', False)]),
-    (Icc(-1, 1), [('real', True)]),
-    (Ioo(0, 1), [('positive', True), ('noninteger', True)]),
-    (Ioo(1, oo), [('positive', True)]),
-    (Ico(0, oo), [('nonnegative', True)]),
-    (Q.imaginary, [('imaginary', True)]),
-])
-def test_an_image_stands_for_its_facts(image, facts):
-    assert facts_of(image) == facts
-
-
-@pytest.mark.parametrize("make", [
-    lambda: Icc(0, oo),                 # oo is no real number
-    lambda: Ioo(1, 1),
-    lambda: Ioo(0, pi),                 # endpoints are Rationals
-    lambda: facts_of(pi),               # values are Rationals or zoo
-    lambda: facts_of(Rational(10**7 + 19)),     # no primality claim that large
-])
-def test_images_that_are_not_stated(make):
-    with pytest.raises(ValueError):
-        make()
-
-
-def test_signature_rows():
-    [row] = rows_of(signature(sec, (Q.imaginary, Ioo(0, 1))))
-    assert row == (Q.imaginary(x) >> (Q.positive(sec(x)) & Q.noninteger(sec(x))))
-
-
 y = Symbol('y')
 yr = Symbol('y', real=True)
 
@@ -336,8 +307,8 @@ def test_show_rows_lists_each_row_with_its_source():
     assert out.returncode == 0, out.stderr
     lines = out.stdout.splitlines()
     assert lines[0] == "sec"
-    # labelled with the comment above each for_all, up to a colon
-    assert any(l.strip().startswith("nonvanishing ") and l.endswith("~Q.zero(sec(x))")
+    # labelled with the title above each for_all
+    assert any(l.strip().startswith("Nonvanishing ") and l.endswith("~Q.zero(sec(x))")
                for l in lines[1:])
-    assert any(l.strip().startswith("sec(I*t) == 1/cosh(t) ") and l.endswith(
+    assert any(l.strip().startswith("sec on the imaginary axis ") and l.endswith(
         "Q.imaginary(x) >> (Q.noninteger(sec(x)) & Q.positive(sec(x)))") for l in lines[1:])

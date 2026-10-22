@@ -3,12 +3,10 @@
     python tools/show_rows.py [NAME ...]
 
 A family module (``templates/trig.py``) states its rules as ``for_all``
-statements, each under a comment naming the property.  This prints each
-function's rows as the compiler reads them, ``f`` replaced by the function
-and a signature's images by the facts they stand for (``(Q.zero, 1)`` is
-``odd & positive & ~prime & ~composite``), labelled with the first words
-of that comment (up to a colon).  Without names, every function written in
-rows is printed.
+statements, each under a comment whose first line is the property's title.
+This prints each function's rows, ``f`` replaced by the function, labelled
+with that title.  Without names, every function written in rows is
+printed.
 """
 import ast
 import inspect
@@ -22,8 +20,8 @@ def _side(e):
 
 
 def labels(module):
-    """The label of each ``for_all`` statement of ``module``, in order: the
-    first line of the comment above it, up to a colon."""
+    """The title of each ``for_all`` statement of ``module``, in order: the
+    first line of the comment above it."""
     src = inspect.getsource(module).splitlines()
     calls = sorted((n for n in ast.walk(ast.parse("\n".join(src)))
                     if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "for_all"),
@@ -34,15 +32,17 @@ def labels(module):
         while i >= 0 and src[i].strip().startswith("#"):
             i -= 1
         first = src[i + 1].strip().lstrip("#").strip() if i + 1 < c.lineno - 1 else ""
-        out.append(first.split(":")[0])
+        out.append(first)
     return out
 
 
 def main(names):
-    from satassume.knowledge.templates import trig
+    import importlib
+    from satassume.knowledge.templates import wiring
     from satassume.knowledge.templates._rows import f, x
     rows = {}
-    for family in (trig,):
+    for name in wiring.FAMILIES:
+        family = importlib.import_module(f"satassume.knowledge.templates.{name}")
         names_of = labels(family)
         assert len(names_of) == len(family.RULES), (family.__name__, len(names_of))
         for label, st in zip(names_of, family.RULES):

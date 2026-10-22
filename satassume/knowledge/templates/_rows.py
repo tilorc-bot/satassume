@@ -10,30 +10,26 @@ disjunction of literals, or a conjunction of those (one rule each).  A
 literal is ``Q.p(t)`` or ``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the
 argument or the node.
 
-A family module states its rules as one tuple of :func:`for_all`
-statements, each a tuple of functions and the rows that hold for each of
-them, with ``f`` standing for the function; :func:`by_function` groups
-them by function.  A row may be a :class:`Rows`, the sets of rows
-:func:`closed` and :func:`signature` give: ``a & b`` joins two sets,
-``cond >> rows`` adds ``cond`` to the premises of every row of a set.
+A family module states its rules as one tuple, ``RULES``, of
+:func:`for_all` statements: the functions, and the rows that hold for each
+of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
+``P(x) >> P(f(x))``; ``a & b`` joins rows, ``cond >> (a & b)`` adds
+``cond`` to the premises of each.  The module holds rows only:
+:mod:`.wiring` compiles them (:func:`rules`) into the index specs of
+:mod:`._common` (argument 0, node 1) and registers the templates, so the
+patterns, their cache and the engine are unchanged.
 
-Layout: a comment line above each statement names the property it states
-(``tools/show_rows.py`` prints it as the label), then ``for_all((sin,
-cos),`` on one line and the rows indented on the next, a longer row
-continued on more lines::
+Layout: above each statement a comment line with the property's title
+(``tools/show_rows.py`` prints it as the label), and under it, indented,
+any explanation; then ``for_all((sin, cos),`` on one line and the rows
+indented on the next, a longer row continued on more lines::
 
     RULES = (
-        # entire
+        # Entire
+        #     no poles: finite at every finite point
         for_all((sin, cos),
             closed(f, Q.finite) & closed(f, Q.complex)),
     )
-
-:func:`signature` states the sets a function maps into sets: the image may
-be a predicate, a number or an interval (:func:`Icc`, :func:`Ioo`, ...),
-and stands for the facts it implies (:func:`facts_of`).  :func:`rules`
-compiles a function's rules, at import, into the index specs of
-:mod:`._common` (argument 0, node 1), so the patterns, their cache and the
-engine are unchanged.
 
 Python binds ``>>`` tighter than ``&``: ``a & b >> c`` is ``And(a,
 Implies(b, c))``, and ``c >> s & t`` is ``(c >> s) & t``.  A row whose top
@@ -44,10 +40,9 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from sympy import And, Function, Implies, Not, Or, Q, Rational, S, Symbol
-from sympy.assumptions.assume import AppliedPredicate, Predicate
+from sympy import And, Function, Implies, Not, Or, Symbol
+from sympy.assumptions.assume import AppliedPredicate
 
-from ..rules import BASIS, BASIS_INDEX, DEF_LITS, RULE_INSTANTIATED, unit_propagate
 from ._common import VOCAB, Rules
 
 X, N = 0, 1
@@ -86,7 +81,7 @@ class _Conditioned(Rows):
 
     def __and__(self, other):
         raise TypeError("cond >> a & b is (cond >> a) & b: write cond >> (a & b), "
-                        "or join a set with a condition in the function's tuple")
+                        "or give the rows with a condition as their own row of the for_all")
 
     __rand__ = __and__
 
@@ -111,148 +106,6 @@ def closed(f, pred) -> Rows:
     """``f`` maps the set ``pred`` into itself: ``pred(x) -> pred(f(x))``."""
     return Rows([pred(x) >> pred(f(x))])
 
-
-# --------------------------------------------------------------------------
-# images: what a value in a set is
-# --------------------------------------------------------------------------
-
-class Interval(NamedTuple):
-    """A real interval with Rational (or infinite, open) endpoints."""
-    lo: object
-    hi: object
-    lo_open: bool
-    hi_open: bool
-
-
-def _end(v):
-    v = S(v)
-    if not (v.is_Rational or v in (S.Infinity, S.NegativeInfinity)):  # sympy-boundary: an author's endpoint
-        raise ValueError(f"interval endpoint {v} is not a Rational or +-oo")
-    return v
-
-
-def _interval(lo, hi, lo_open, hi_open) -> Interval:
-    lo, hi = _end(lo), _end(hi)
-    if lo.is_infinite and not lo_open or hi.is_infinite and not hi_open or not lo < hi:  # sympy-boundary: endpoints
-        raise ValueError(f"not an interval of reals with distinct endpoints: {lo}, {hi}")
-    return Interval(lo, hi, lo_open, hi_open)
-
-
-def Icc(lo, hi):
-    return _interval(lo, hi, False, False)
-
-
-def Ioo(lo, hi):
-    return _interval(lo, hi, True, True)
-
-
-def Ico(lo, hi):
-    return _interval(lo, hi, False, True)
-
-
-def Ioc(lo, hi):
-    return _interval(lo, hi, True, False)
-
-
-def _is_prime(n: int) -> bool:
-    if n > 10**6:
-        raise ValueError(f"no primality claim for {n} in a rule")
-    return n > 1 and all(n % d for d in range(2, int(n**0.5) + 1))
-
-
-def _number_facts(v):
-    """Basis facts of the number ``v``, from its definition (#247: not
-    SymPy's ``is_*``): a Rational from ``p`` and ``q``; ``zoo`` is the
-    complex infinity, neither finite nor extended real."""
-    if v is S.ComplexInfinity:
-        return [('finite', False), ('extended_real', False)]
-    if not isinstance(v, Rational):
-        raise ValueError(f"no facts for the value {v}: only Rationals and zoo")
-    p, q = int(v.p), int(v.q)
-    out = [('finite', True), ('extended_real', True), ('rational', True),
-           ('zero', p == 0), ('extended_positive', p > 0), ('extended_negative', p < 0),
-           ('integer', q == 1)]
-    if q == 1:
-        out += [('even', p % 2 == 0), ('prime', _is_prime(p)),
-                ('composite', p > 1 and not _is_prime(p))]
-    return out
-
-
-def _interval_facts(iv: Interval):
-    """Basis facts every point of ``iv`` has."""
-    lo, hi = iv.lo, iv.hi
-    out = [('extended_real', True), ('finite', True)]
-    if lo > 0 or lo == 0 and iv.lo_open:  # sympy-boundary: Rational endpoints
-        out.append(('extended_positive', True))
-    elif lo >= 0:
-        out.append(('extended_negative', False))
-    if hi < 0 or hi == 0 and iv.hi_open:  # sympy-boundary: Rational endpoints
-        out.append(('extended_negative', True))
-    elif hi <= 0:
-        out.append(('extended_positive', False))
-    if lo.is_finite and hi.is_finite:  # sympy-boundary: Rational endpoints
-        n = int(lo.floor())
-        # inside (n, n + 1): no integer
-        if (lo > n or iv.lo_open) and (hi < n + 1 or hi == n + 1 and iv.hi_open):
-            out.append(('integer', False))
-    return out
-
-
-#: the names an image's facts are written in, most preferred first: a fact
-#: is dropped when the ones before it (and the rule base) give it
-_NAMES = ('zero', 'positive', 'negative', 'nonnegative', 'nonpositive', 'nonzero',
-          'odd', 'even', 'noninteger', 'integer', 'real', 'infinite', 'extended_real',
-          'finite', 'extended_positive', 'extended_negative', 'rational', 'prime',
-          'composite')
-
-
-def facts_of(image):
-    """The literals ``(pred, value)`` an image stands for: a predicate is
-    itself; a number or an interval gives its facts, in the fewest of the
-    names of :data:`_NAMES` that give all of them under the rule base."""
-    if isinstance(image, Predicate):
-        return [(str(image.name), True)]
-    facts = _interval_facts(image) if isinstance(image, Interval) else _number_facts(S(image))
-    units = {(BASIS_INDEX[p] + 1) * (1 if v else -1) for p, v in facts}
-    closure = unit_propagate(RULE_INSTANTIATED, sorted(units)) or set()
-    cands = []          # (name, value, basis units)
-    for name in _NAMES:
-        if name in BASIS_INDEX:
-            i = BASIS_INDEX[name] + 1
-            cands += [(name, l > 0, {l}) for l in (i, -i) if l in units]
-        elif DEF_LITS[name][0] == '&' and set(DEF_LITS[name][1]) <= closure:
-            cands.append((name, True, set(DEF_LITS[name][1])))
-    named = set().union(*(c[2] for c in cands))
-    cands += [(BASIS[abs(l) - 1], l > 0, {l}) for l in sorted(units - named, key=abs)]
-    kept = list(cands)
-    for c in reversed(cands):
-        rest = [d for d in kept if d is not c]
-        given = unit_propagate(RULE_INSTANTIATED, sorted(set().union(*(d[2] for d in rest))))
-        if c[2] <= (given or set()):
-            kept = rest
-    return [(name, value) for name, value, _ in kept]
-
-
-class Signature(Rows):
-    """The rows of :func:`signature`."""
-    __slots__ = ()
-
-
-def signature(f, *pairs) -> Rows:
-    """``f`` maps each set into an image: ``(domain, image)`` pairs,
-    the domain a predicate (or a boolean over :data:`x`), the image as in
-    :func:`facts_of`.  ``(Q.zero, 1)`` is ``f(0) == 1``."""
-    out = []
-    for domain, image in pairs:
-        prem = domain(x) if isinstance(domain, Predicate) else domain
-        lits = [getattr(Q, p)(f(x)) if v else ~getattr(Q, p)(f(x)) for p, v in facts_of(image)]
-        out.append(Implies(prem, And(*lits)))
-    return Signature(out)
-
-
-# --------------------------------------------------------------------------
-# the compiler
-# --------------------------------------------------------------------------
 
 def rows_of(table):
     """The rows of ``table``: a row, a :class:`Rows` or a tuple of those."""
