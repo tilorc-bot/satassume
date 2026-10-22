@@ -1,6 +1,5 @@
 """The rules of ``sin``, ``cos``, ``tan``, ``cot``, ``sec`` and ``csc``,
-written as rows (shared constants, signatures and rows in
-``templates/trig.py``) in the row language (``templates/_rows.py``, #249),
+written as ``for_all`` statements (``templates/trig.py``) in the row language (``templates/_rows.py``, #249),
 against the generators they replace (``tests/_legacy_trig_rules.py``,
 verbatim from f9291ab).
 
@@ -35,7 +34,7 @@ from sympy import (  # noqa: E402
 from satassume.knowledge.rules import BASIS, RULE_CLAUSES  # noqa: E402
 from satassume.knowledge.templates import _common, registry, trig  # noqa: E402
 from satassume.knowledge.templates._rows import (  # noqa: E402
-    Icc, Ico, Ioo, closed, f, facts_of, rows_for, rules, signature, x,
+    Icc, Ico, Ioo, by_function, closed, f, facts_of, for_all, rows_of, rules, signature, x,
 )
 from satassume.knowledge.templates.functions import _pi_trig, _unary  # noqa: E402
 from satassume.knowledge.templates.registry import _split  # noqa: E402
@@ -224,31 +223,54 @@ def test_conclusions_split_on_and_not_on_or():
 
 
 def test_closed_sets_join_with_and_and_take_a_condition():
-    assert _specs(tan, closed(f, Q.real) & closed(f, Q.complex)) == [
+    assert _specs(tan, closed(tan, Q.real) & closed(tan, Q.complex)) == [
         ([(0, 'complex', True)], [(1, 'complex', True)]),
         ([(0, 'real', True)], [(1, 'real', True)])]
-    rs = Q.finite(f(x)) >> (closed(f, Q.real) & closed(f, Q.complex))
+    rs = Q.finite(tan(x)) >> (closed(tan, Q.real) & closed(tan, Q.complex))
     assert _specs(tan, rs) == sorted([
         (sorted([(0, 'real', True), (1, 'finite', True)]), [(1, 'real', True)]),
         (sorted([(0, 'complex', True), (1, 'finite', True)]), [(1, 'complex', True)])])
     # a row joins a set too, on either side
-    assert len(_specs(tan, (Q.zero(x) >> Q.zero(f(x))) & closed(f, Q.real))) == 2
-    assert len(_specs(tan, closed(f, Q.real) & (Q.zero(x) >> Q.zero(f(x))))) == 2
+    assert len(_specs(tan, (Q.zero(x) >> Q.zero(tan(x))) & closed(tan, Q.real))) == 2
+    assert len(_specs(tan, closed(tan, Q.real) & (Q.zero(x) >> Q.zero(tan(x))))) == 2
 
 
 def test_a_condition_without_parentheses_is_refused():
     # cond >> a & b parses as (cond >> a) & b, which would drop the
     # condition from b: complex(x) -> complex(tan(x)) is false at a pole
     with pytest.raises(TypeError, match=r"write cond >> \(a & b\)"):
-        Q.finite(f(x)) >> closed(f, Q.real) & closed(f, Q.complex)
+        Q.finite(tan(x)) >> closed(tan, Q.real) & closed(tan, Q.complex)
 
 
-def test_the_generic_f_is_the_head():
-    assert rows_for(sec, (closed(f, Q.real), Q.zero(x) >> Q.zero(sec(x)))) == [
+def test_for_all_states_rows_for_each_function():
+    st = (for_all((sec, csc),
+              Q.complex(x) >> ~Q.zero(f(x)),
+              closed(f, Q.real)),
+          for_all((sec,),
+              Q.zero(x) >> Q.positive(f(x))))
+    assert by_function(st) == (
+        (sec, (Q.complex(x) >> ~Q.zero(sec(x)), Q.real(x) >> Q.real(sec(x)),
+               Q.zero(x) >> Q.positive(sec(x)))),
+        (csc, (Q.complex(x) >> ~Q.zero(csc(x)), Q.real(x) >> Q.real(csc(x)))))
+
+
+@pytest.mark.parametrize("make, match", [
+    # a row of for_all is about f, not about one of the functions
+    (lambda: for_all((sec,), Q.complex(x) >> ~Q.zero(sec(x))), "does not mention f"),
+    (lambda: for_all((), Q.complex(x) >> ~Q.zero(f(x))), "no function"),
+    (lambda: by_function((Q.complex(x) >> ~Q.zero(f(x)),)), "not a for_all statement"),
+    # f of anything but x is no node
+    (lambda: rules(sec, dict(by_function((for_all((sec,), Q.zero(x) >> Q.zero(f(x + 1))),)))[sec],
+                   __name__), "neither the argument"),
+])
+def test_for_all_statements_that_are_refused(make, match):
+    with pytest.raises((TypeError, ValueError), match=match):
+        make()
+
+
+def test_a_table_is_its_rows_in_order():
+    assert rows_of((closed(sec, Q.real), (Q.zero(x) >> Q.zero(sec(x)),))) == [
         Q.real(x) >> Q.real(sec(x)), Q.zero(x) >> Q.zero(sec(x))]
-    g = sympy.Function('g')
-    with pytest.raises(ValueError, match="neither the argument"):
-        rules(sec, Q.zero(x) >> Q.zero(g(x)), __name__)
 
 
 @pytest.mark.parametrize("image, facts", [
@@ -281,7 +303,7 @@ def test_images_that_are_not_stated(make):
 
 
 def test_signature_rows():
-    [row] = rows_for(sec, signature((Q.imaginary, Ioo(0, 1))))
+    [row] = rows_of(signature(sec, (Q.imaginary, Ioo(0, 1))))
     assert row == (Q.imaginary(x) >> (Q.positive(sec(x)) & Q.noninteger(sec(x))))
 
 
@@ -314,6 +336,8 @@ def test_show_rows_lists_each_row_with_its_source():
     assert out.returncode == 0, out.stderr
     lines = out.stdout.splitlines()
     assert lines[0] == "sec"
-    assert any(l.split()[0] == "REAL_WHERE_FINITE" and "Q.finite(sec(x))" in l for l in lines[1:])
-    assert any(l.split()[0] == "SEC" and l.endswith(
+    # labelled with the comment above each for_all, up to a colon
+    assert any(l.strip().startswith("nonvanishing ") and l.endswith("~Q.zero(sec(x))")
+               for l in lines[1:])
+    assert any(l.strip().startswith("sec(I*t) == 1/cosh(t) ") and l.endswith(
         "Q.imaginary(x) >> (Q.noninteger(sec(x)) & Q.positive(sec(x)))") for l in lines[1:])

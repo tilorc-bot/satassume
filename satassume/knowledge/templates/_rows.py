@@ -1,8 +1,7 @@
 """Template rules written as SymPy booleans (#249).
 
 A *row* is ``premises >> conclusion`` over the plain symbol :data:`x` and
-the node, written ``f(x)`` with the generic :data:`f` or with the head
-itself::
+the node ``f(x)``, with :data:`f` the generic function::
 
     (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))
 
@@ -11,9 +10,24 @@ disjunction of literals, or a conjunction of those (one rule each).  A
 literal is ``Q.p(t)`` or ``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the
 argument or the node.
 
-A function's rules are a tuple of rows and of :class:`Rows`, the sets of
-rows :func:`closed` and :func:`signature` give.  ``a & b`` joins two sets;
+A family module states its rules as one tuple of :func:`for_all`
+statements, each a tuple of functions and the rows that hold for each of
+them, with ``f`` standing for the function; :func:`by_function` groups
+them by function.  A row may be a :class:`Rows`, the sets of rows
+:func:`closed` and :func:`signature` give: ``a & b`` joins two sets,
 ``cond >> rows`` adds ``cond`` to the premises of every row of a set.
+
+Layout: a comment line above each statement names the property it states
+(``tools/show_rows.py`` prints it as the label), then ``for_all((sin,
+cos),`` on one line and the rows indented on the next, a longer row
+continued on more lines::
+
+    RULES = (
+        # entire
+        for_all((sin, cos),
+            closed(f, Q.finite) & closed(f, Q.complex)),
+    )
+
 :func:`signature` states the sets a function maps into sets: the image may
 be a predicate, a number or an interval (:func:`Icc`, :func:`Ioo`, ...),
 and stands for the facts it implies (:func:`facts_of`).  :func:`rules`
@@ -40,8 +54,7 @@ X, N = 0, 1
 
 #: the argument of every row
 x = Symbol('x')
-#: the generic function: ``f(x)`` is the node of whichever function the
-#: rows are compiled for
+#: the generic function: in a :func:`for_all` statement, each of its functions
 f = Function('f')
 
 
@@ -220,8 +233,13 @@ def facts_of(image):
     return [(name, value) for name, value, _ in kept]
 
 
-def signature(*pairs) -> Rows:
-    """The function maps each set into an image: ``(domain, image)`` pairs,
+class Signature(Rows):
+    """The rows of :func:`signature`."""
+    __slots__ = ()
+
+
+def signature(f, *pairs) -> Rows:
+    """``f`` maps each set into an image: ``(domain, image)`` pairs,
     the domain a predicate (or a boolean over :data:`x`), the image as in
     :func:`facts_of`.  ``(Q.zero, 1)`` is ``f(0) == 1``."""
     out = []
@@ -229,24 +247,55 @@ def signature(*pairs) -> Rows:
         prem = domain(x) if isinstance(domain, Predicate) else domain
         lits = [getattr(Q, p)(f(x)) if v else ~getattr(Q, p)(f(x)) for p, v in facts_of(image)]
         out.append(Implies(prem, And(*lits)))
-    return Rows(out)
+    return Signature(out)
 
 
 # --------------------------------------------------------------------------
 # the compiler
 # --------------------------------------------------------------------------
 
-def rows_for(head, table):
-    """The rows of ``table`` (a row, a :class:`Rows` or a tuple of those)
-    about ``head``: the generic ``f(x)`` is ``head(x)``."""
-    return [r.xreplace({f(x): head(x)}) for r in _flat(table)]
+def rows_of(table):
+    """The rows of ``table``: a row, a :class:`Rows` or a tuple of those."""
+    return list(_flat(table))
+
+
+class ForAll(NamedTuple):
+    """A :func:`for_all` statement."""
+    functions: tuple
+    rows: tuple
+
+
+def for_all(functions, *rows) -> ForAll:
+    """The ``rows`` hold for each of ``functions``, with :data:`f` standing
+    for the function.  Each row must mention ``f``."""
+    functions = tuple(functions)
+    flat = tuple(_flat(rows))
+    if not functions:
+        raise ValueError("for_all of no function")
+    for r in flat:
+        if not r.has(f):
+            raise ValueError(f"row {r} of for_all{functions} does not mention f")
+    return ForAll(functions, flat)
+
+
+def by_function(statements):
+    """``((function, rows), ...)`` from :func:`for_all` statements, in the
+    order the functions first appear; in each row ``f(x)`` is the function's
+    node."""
+    out = {}
+    for st in statements:
+        if not isinstance(st, ForAll):
+            raise TypeError(f"{st} is not a for_all statement")
+        for fn in st.functions:
+            out.setdefault(fn, []).extend(r.xreplace({f(x): fn(x)}) for r in st.rows)
+    return tuple((fn, tuple(rs)) for fn, rs in out.items())
 
 
 def rules(head, table, module: str):
     """The ``gen(R, c)`` of :func:`.functions._unary` for the rows of
     ``table`` about ``head``; ``module`` (the caller's ``__name__``) is the
     module the registry attributes the template to (``TemplateRegistry.lazy``)."""
-    specs = [spec for row in rows_for(head, table) for spec in _specs(head, row)]
+    specs = [spec for row in rows_of(table) for spec in _specs(head, row)]
 
     def gen(R: Rules, c) -> None:
         for prem, concl in specs:

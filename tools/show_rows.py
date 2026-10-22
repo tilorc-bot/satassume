@@ -1,13 +1,17 @@
-"""Print the rows of a function's template, each with the constant it comes from (#249).
+"""Print the rows of a function's template, each with the property it states (#249).
 
     python tools/show_rows.py [NAME ...]
 
-A function's rules are a tuple in its family module (``SIN`` in
-``templates/trig.py``): shared constants (``ENTIRE``, ``LINDEMANN``, ...)
-and its own rows.  Each row is printed for the function itself, labelled
-with the shared constant it comes from, or with the function's tuple.
-Without names, every function written in rows is printed.
+A family module (``templates/trig.py``) states its rules as ``for_all``
+statements, each under a comment naming the property.  This prints each
+function's rows as the compiler reads them, ``f`` replaced by the function
+and a signature's images by the facts they stand for (``(Q.zero, 1)`` is
+``odd & positive & ~prime & ~composite``), labelled with the first words
+of that comment (up to a colon).  Without names, every function written in
+rows is printed.
 """
+import ast
+import inspect
 import sys
 
 from sympy import And, Or
@@ -17,21 +21,40 @@ def _side(e):
     return f"({e})" if isinstance(e, (And, Or)) else str(e)
 
 
+def labels(module):
+    """The label of each ``for_all`` statement of ``module``, in order: the
+    first line of the comment above it, up to a colon."""
+    src = inspect.getsource(module).splitlines()
+    calls = sorted((n for n in ast.walk(ast.parse("\n".join(src)))
+                    if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "for_all"),
+                   key=lambda n: n.lineno)
+    out = []
+    for c in calls:
+        i = c.lineno - 2
+        while i >= 0 and src[i].strip().startswith("#"):
+            i -= 1
+        first = src[i + 1].strip().lstrip("#").strip() if i + 1 < c.lineno - 1 else ""
+        out.append(first.split(":")[0])
+    return out
+
+
 def main(names):
     from satassume.knowledge.templates import trig
-    from satassume.knowledge.templates._rows import rows_for
-    families = (trig,)
-    declared = {f.__name__: (fam, f, table) for fam in families for f, table in fam.ROWS}
-    for name in names or declared:
-        fam, f, table = declared[name]
-        shared = {id(v): k for k, v in vars(fam).items() if k.isupper()}
-        own = next(k for k, v in vars(fam).items() if v is table)
+    from satassume.knowledge.templates._rows import f, x
+    rows = {}
+    for family in (trig,):
+        names_of = labels(family)
+        assert len(names_of) == len(family.RULES), (family.__name__, len(names_of))
+        for label, st in zip(names_of, family.RULES):
+            for fn in st.functions:
+                rows.setdefault(fn.__name__, []).extend(
+                    (label, r.xreplace({f(x): fn(x)})) for r in st.rows)
+    width = max(len(label) for rs in rows.values() for label, _ in rs)
+    for name in names or rows:
         print(name)
-        for item in table:
-            label = shared.get(id(item), own)
-            for row in rows_for(f, item):
-                prem, concl = row.args
-                print(f"  {label:20} {_side(prem)} >> {_side(concl)}")
+        for label, row in rows[name]:
+            prem, concl = row.args
+            print(f"  {label:{width}}  {_side(prem)} >> {_side(concl)}")
 
 
 if __name__ == "__main__":

@@ -8,67 +8,71 @@ from __future__ import annotations
 
 from sympy import Q, cos, cot, csc, oo, sec, sin, tan, zoo
 
-from ._rows import Icc, Ioo, closed, f, rules, signature, x
+from ._rows import Icc, Ioo, by_function, closed, f, for_all, rules, signature, x
 from .functions import _pi_trig, _unary
 from .registry import registry
 
-#: no poles: finite at every finite point
-ENTIRE = closed(f, Q.finite) & closed(f, Q.complex)
+RULES = (
+    # entire: no poles, finite at every finite point
+    for_all((sin, cos),
+        closed(f, Q.finite) & closed(f, Q.complex)),
 
-#: f(conj z) == conj f(z), and a number wherever it is finite
-REAL_WHERE_FINITE = Q.finite(f(x)) >> (closed(f, Q.real) & closed(f, Q.complex))
+    # real where finite: f(conj z) == conj f(z), a number wherever it is
+    # finite (zoo at a pole)
+    for_all((tan, cot, sec, csc),
+        Q.finite(f(x)) >> (closed(f, Q.real) & closed(f, Q.complex))),
 
-#: f(I*t) is I times a real function of t, finite and nonzero for t != 0
-#: (sin(I*t) == I*sinh(t), tan(I*t) == I*tanh(t), cot(I*t) == -I*coth(t),
-#: csc(I*t) == -I*csch(t))
-IMAGINARY_AXIS = closed(f, Q.imaginary)
+    # imaginary axis: sin(I*t) == I*sinh(t), tan(I*t) == I*tanh(t),
+    # cot(I*t) == -I*coth(t), csc(I*t) == -I*csch(t), nonzero for t != 0
+    for_all((sin, tan, cot, csc),
+        closed(f, Q.imaginary)),
 
-#: 1/f is entire
-NONVANISHING = Q.complex(x) >> ~Q.zero(f(x))
+    # nonvanishing: 1/f is entire
+    for_all((sec, csc),
+        Q.complex(x) >> ~Q.zero(f(x))),
 
-#: f(a) == R(exp(I*a)), R rational with algebraic coefficients and not
-#: constant, with no pole at an algebraic a != 0: an algebraic value b
-#: would make exp(I*a) a root of R - b, against Lindemann-Weierstrass
-LINDEMANN = (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))
+    # Lindemann: f(a) == R(exp(I*a)), R rational with algebraic coefficients
+    # and not constant, no pole at an algebraic a != 0; an algebraic value b
+    # would make exp(I*a) a root of R - b, against Lindemann-Weierstrass
+    for_all((sin, cos, tan, cot, sec, csc),
+        (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))),
 
-#: Im f(x + I*y) != 0 for y != 0: Im tan(x + I*y) == sinh(2*y)/(cos(2*x)
-#: + cosh(2*y)), and cot == 1/tan
-REAL_ONLY_ON_REALS = (Q.finite(x) & ~Q.extended_real(x)) >> ~Q.extended_real(f(x))
+    # real only on the reals: Im tan(x + I*y) == sinh(2*y)/(cos(2*x) +
+    # cosh(2*y)) != 0 for y != 0, and cot == 1/tan
+    for_all((tan, cot),
+        (Q.finite(x) & ~Q.extended_real(x)) >> ~Q.extended_real(f(x))),
 
-SIN = (ENTIRE, IMAGINARY_AXIS, LINDEMANN, signature(
-    (Q.real, Icc(-1, 1)),
-    (Q.zero, 0),
-))
+    # bounded on the reals
+    for_all((sin, cos),
+        signature(f, (Q.real, Icc(-1, 1)))),
 
-COS = (ENTIRE, LINDEMANN, signature(
-    (Q.real, Icc(-1, 1)),
-    (Q.zero, 1),
-    (Q.imaginary, Ioo(1, oo)),          # cos(I*t) == cosh(t)
-))
+    # odd, finite at 0
+    for_all((sin, tan),
+        signature(f, (Q.zero, 0))),
 
-TAN = (REAL_WHERE_FINITE, IMAGINARY_AXIS, LINDEMANN, REAL_ONLY_ON_REALS, signature(
-    (Q.zero, 0),
-))
+    # even, f(0) == 1
+    for_all((cos, sec),
+        signature(f, (Q.zero, 1))),
 
-COT = (REAL_WHERE_FINITE, IMAGINARY_AXIS, LINDEMANN, REAL_ONLY_ON_REALS, signature(
-    (Q.zero, zoo),
-))
+    # pole at 0
+    for_all((cot, csc),
+        signature(f, (Q.zero, zoo))),
 
-SEC = (REAL_WHERE_FINITE, NONVANISHING, LINDEMANN, signature(
-    (Q.zero, 1),
-    (Q.imaginary, Ioo(0, 1)),           # sec(I*t) == 1/cosh(t)
-))
+    # cos(I*t) == cosh(t)
+    for_all((cos,),
+        signature(f, (Q.imaginary, Ioo(1, oo)))),
 
-CSC = (REAL_WHERE_FINITE, NONVANISHING, IMAGINARY_AXIS, LINDEMANN, signature(
-    (Q.zero, zoo),
-))
+    # sec(I*t) == 1/cosh(t)
+    for_all((sec,),
+        signature(f, (Q.imaginary, Ioo(0, 1)))),
+)
 
-#: each function and its rules
-ROWS = ((sin, SIN), (cos, COS), (tan, TAN), (cot, COT), (sec, SEC), (csc, CSC))
+#: each function and its rows
+ROWS = by_function(RULES)
 
 
-for _f, _table in ROWS:
-    _gen = rules(_f, _table, __name__)
+for _f, _all in ROWS:
+    _gen = rules(_f, _all, __name__)
     if _f in (sin, cos):
         registry.register(_f)(_pi_trig(_f.__name__, _gen, _f is cos))
     else:
