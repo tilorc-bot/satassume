@@ -587,6 +587,13 @@ where a direct argument is `nan`. So:
   (`nan`, or an explicit infinity in a part carrying a value) gets no
   template fact: `rf(nan, 0)`, `nan**0` (#251); the identities `rf(x, 0) =
   1` and `b**0 = 1` hold over numbers;
+- `oo**0`, `-oo**0` and `zoo**0` get no template fact either (#251). SymPy
+  evaluates them, and `nan**0`, to 1, but whether it should is an open
+  question there ([sympy#18470](https://github.com/sympy/sympy/issues/18470)
+  for `nan**0`, [sympy#17901](https://github.com/sympy/sympy/issues/17901)
+  for `oo**0`), so satassume claims no answer until SymPy decides. Only an
+  explicit infinite base and zero exponent are detected; `x**z` at `x = oo`,
+  `z = 0` is not;
 - functions are not declared finite or complex for infinite arguments
   (`re(oo) = oo`, `exp(oo) = oo`, `sin(oo*I) = oo*I`, `log(oo) = oo`); 37
   of the README's 70 deliberate misses come from this.

@@ -9,8 +9,8 @@ to be complex or extended real, as ``x + y`` is nan at ``x = oo, y = -oo``.
 from __future__ import annotations
 
 import pytest
-from sympy import (Abs, Add, Mul, Pow, Q, RisingFactorial, FallingFactorial, S, Symbol, binomial, nan, oo,
-                   sign, sin, symbols, zeta)
+from sympy import (Abs, Add, Float, Mul, Pow, Q, RisingFactorial, FallingFactorial, S, Symbol, binomial, nan,
+                   oo, sign, sin, symbols, zeta, zoo)
 
 from satassume import Engine
 from satassume.engine import PRED_INDEX
@@ -147,12 +147,19 @@ def test_rereview_r1_reproducers():
 def test_power_of_nan_gets_no_facts():
     # #251: b**0 = 1 is an identity over numbers, like rf(x, 0) = 1; nan is
     # no number (design.md, "Extended reals and nan in templates"), so it
-    # says nothing about nan**0, and a power of nan gets no template fact
+    # says nothing about nan**0, and a power of nan gets no template fact.
+    # oo**0 and zoo**0 get none either: SymPy gives 1 for all three, but
+    # https://github.com/sympy/sympy/issues/18470 (nan**0) and
+    # https://github.com/sympy/sympy/issues/17901 (oo**0) are open
     preds = [p for p in PRED_INDEX if p != 'commutative']
     for e in (Pow(nan, 0, evaluate=False), Pow(Add(oo, -oo, evaluate=False), 0, evaluate=False),
-              Pow(x + oo, 0, evaluate=False), Pow(nan, 2, evaluate=False), Pow(2, nan, evaluate=False)):
+              Pow(x + oo, 0, evaluate=False), Pow(nan, 2, evaluate=False), Pow(2, nan, evaluate=False),
+              Pow(oo, 0, evaluate=False), Pow(-oo, 0, evaluate=False), Pow(zoo, 0, evaluate=False),
+              Pow(oo, Float(0), evaluate=False)):
         assert fresh().is_many(e, preds) == [None]*len(preds), e
-    # kept for a finite base, and 0**0 = 1 (design.md); oo**0 and zoo**0 are
-    # not decided here (#251)
+    # kept for a finite base, and 0**0 = 1 (design.md)
     for b in (Symbol('y', finite=True), S.Zero):
         assert fresh().is_(Pow(b, 0, evaluate=False), 'positive') is True, b
+    # other powers of an infinity keep their facts
+    assert fresh().is_(Pow(oo, 2, evaluate=False), 'infinite') is True
+    assert fresh().is_(Pow(oo, -1, evaluate=False), 'zero') is True
