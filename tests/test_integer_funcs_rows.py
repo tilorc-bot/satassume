@@ -1,28 +1,10 @@
-"""The rules of ``floor`` and ``ceiling`` (those of their base class
-``RoundFunction``, and their own), of ``factorial`` and of ``Mod``, written as
-``for_all`` statements (``templates/integer_funcs.py``, compiled by
-``templates/wiring.py``, #249), against the generators they replace
-(``tests/_legacy_integer_funcs_rules.py``, verbatim from d149951).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus (``Mod`` on every pair of arguments), though the clauses
-differ.  ``RoundFunction``'s template is compared on nodes
-``RoundFunction(a, evaluate=False)``, those of ``floor`` and ``ceiling``
-on their own nodes, so each class's template matches the legacy one.  Rows of the legacy generators the rows leave out because the
-rule base and the other rows imply them: ``RoundFunction``'s ``real ->
-integer`` (finite and extended real there, and a real value is an
-integer) and, at an integer, ``odd <-> odd`` and ``zero <-> zero`` (the
-value is an integer of the same parity and sign); ``factorial``'s
-``integer & nonnegative -> positive`` (positive on the nonnegatives) and
-the third alternative of ``ge2_alternatives``, ``even & positive ->
-even`` (the rule base makes an even positive number a prime or a
-composite).  The other two alternatives are a row each.  ``Mod``'s
-``real & real & ~zero -> real`` (a real ``q != 0`` is positive or
-negative, and the sign of the divisor makes the value nonnegative or
-nonpositive).  :data:`ADDED`
-are the facts the rows give that the legacy rules did not, each with its
-argument; a test checks that each is new.
+"""The rows of ``RoundFunction``, ``floor``, ``ceiling``, ``factorial``
+and ``Mod`` (``templates/integer_funcs.py``, compiled by
+``templates/wiring.py``, #249): a base class bound unevaluated, ``Mod``'s
+node, and the family compiled on its own first use (``RoundFunction``'s
+rules apply to ``floor`` and ``ceiling`` through the MRO).  Whether each
+compiled rule is true is checked at concrete points in
+``tests/test_rows_numeric.py``.
 """
 import os
 import subprocess
@@ -34,40 +16,20 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_integer_funcs_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
-from sympy import Mod, Q, ceiling, factorial, floor  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
+from sympy import Mod, Q, Symbol, ceiling, factorial, floor  # noqa: E402
 from sympy.functions.elementary.integers import RoundFunction  # noqa: E402
 
 from satassume.knowledge.templates._rows import bind, f, x  # noqa: E402
 
 HEADS = (RoundFunction, floor, ceiling, factorial, Mod)
 
-#: facts the rows give and the legacy rules did not
-ADDED = {}
 
-
-def _nary(gen, arity):
-    """``gen`` as ``functions.nary`` called it, with the number of
-    arguments, which ``wiring.template`` takes from ``gen.arity``."""
-    def nary_gen(R, c):
-        gen(R, arity)
-    nary_gen.arity = arity
-    return nary_gen
-
-
-LEGACY_GEN = {RoundFunction: legacy._round, floor: legacy._floor, ceiling: legacy._ceiling,
-              factorial: legacy._factorial, Mod: _nary(legacy._mod, 2)}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(HEADS, "integer_funcs", LEGACY_GEN, ADDED)
-    # Mod's node is slot 2, after its two arguments
-    assert {c.pattern.node for e, (cs, _) in new.items() if type(e) is Mod for c in cs} == {2}
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
+def test_the_node_of_mod_is_slot_2():
+    t = rows_templates(HEADS, "integer_funcs")
+    a, b = Symbol('a'), Symbol('b')
+    e = Mod(a, b, evaluate=False)
+    assert [(c.objs, c.pattern.node) for c in compiled(t, e)[0]] == [((a, b, e), 2)]
 
 
 def test_a_base_class_is_bound_unevaluated():

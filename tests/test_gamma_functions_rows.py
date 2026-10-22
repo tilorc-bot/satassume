@@ -1,17 +1,10 @@
-"""The rules of ``gamma``, ``loggamma``, ``digamma``, ``trigamma``,
-``polygamma``, ``lowergamma`` and ``uppergamma``, written as ``for_all``
-statements (``templates/gamma_functions.py``, compiled by
-``templates/wiring.py``, #249), against the generators they replace
-(``tests/_legacy_gamma_functions_rules.py``, verbatim from d149951).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus (the heads of two arguments on every pair of arguments), though
-the clauses differ.  Rows of the legacy generators the rows leave out
-because the rule base and the other rows imply them: ``trigamma``'s
-``real & ~integer -> real`` (positive there).  :data:`ADDED`
-are the facts the rows give that the legacy rules did not, each with its
-argument; a test checks that each is new.
+"""The rows of ``gamma``, ``loggamma``, ``digamma``, ``trigamma``,
+``polygamma``, ``lowergamma`` and ``uppergamma``
+(``templates/gamma_functions.py``, compiled by ``templates/wiring.py``,
+#249): rows comparing with a rational and stating facts about ``x - c``,
+the slots of the templates, and the family compiled on its own first use.
+Whether each compiled rule is true is checked at concrete points in
+``tests/test_rows_numeric.py``.
 """
 import os
 import subprocess
@@ -23,8 +16,7 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_gamma_functions_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
 from sympy import (  # noqa: E402
     Add, Float, I, Q, S, Symbol, digamma, gamma, loggamma, lowergamma, pi, polygamma, trigamma,
     uppergamma,
@@ -32,72 +24,25 @@ from sympy import (  # noqa: E402
 
 from satassume.knowledge.templates import _common, wiring  # noqa: E402
 from satassume.knowledge.templates._rows import rules, x  # noqa: E402
-from satassume.knowledge.templates.functions import N, X, _unary, nary, shifted  # noqa: E402
+from satassume.knowledge.templates.functions import shifted  # noqa: E402
 
 HEADS = (gamma, loggamma, digamma, trigamma, polygamma, lowergamma, uppergamma)
 
-#: facts the rows give and the legacy rules did not
-ADDED = {}
 
-
-def _nary(gen):
-    """``gen`` as ``functions.nary`` called it, with the number of arguments,
-    which ``wiring.template`` takes from ``gen.arity``."""
-    def nary_gen(R, n):
-        gen(R, n)
-    nary_gen.arity = 2
-    return nary_gen
-
-
-LEGACY_GEN = {
-    gamma: legacy._gamma, loggamma: legacy._loggamma,
-    digamma: lambda R, c: legacy._polygamma_rules(R, None, X, N, 0),
-    trigamma: lambda R, c: legacy._polygamma_rules(R, None, X, N, 1),
-    polygamma: _nary(legacy._polygamma), lowergamma: _nary(legacy._lowergamma),
-    uppergamma: _nary(legacy._uppergamma),
-}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(HEADS, "gamma_functions", LEGACY_GEN, ADDED)
-    # the corpus reaches gamma's slot x - 1/2 (3 objects) and the node of
-    # polygamma(n, x), slot 2
-    assert any(len(c.objs) == 3 for e, (cs, _) in new.items() if type(e) is gamma for c in cs)
-    assert {c.pattern.node for e, (cs, _) in new.items() if type(e) is polygamma
-            for c in cs} == {2}
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
-
-
-def test_the_templates_keep_their_pattern_keys_and_slot_objects():
-    """The template of each head from its rows caches its patterns under the
-    keys of the legacy template (``special.py`` at d149951), over the same
-    objects: ``gamma``'s slot ``x - 1/2`` is ``shifted(x, -1/2)`` (#184:
-    ``Add(y, -y, 1/2) - 1/2`` is not 0)."""
-    old = {gamma: _unary('gamma', legacy._gamma, slots=lambda a: (shifted(a, -S.Half),)),
-           loggamma: _unary('loggamma', legacy._loggamma),
-           digamma: _unary('digamma', LEGACY_GEN[digamma]),
-           trigamma: _unary('trigamma', LEGACY_GEN[trigamma]),
-           polygamma: nary('polygamma', legacy._polygamma),
-           lowergamma: nary('lowergamma', legacy._lowergamma),
-           uppergamma: nary('uppergamma', legacy._uppergamma)}
-    rows = eq.rows_templates(HEADS, "gamma_functions")
-    y = Symbol('y')
-    extra = [gamma(Add(y, -y, S.Half, evaluate=False), evaluate=False)]
-    try:
-        for e in eq.nodes(HEADS) + extra:
-            seen = []
-            for t in (old[type(e)], rows[type(e)]):
-                _common._CACHE.clear()
-                c = t(e)
-                seen.append(None if c is None else (tuple(_common._CACHE), c.objs))
-            assert seen[0] == seen[1], e
-    finally:
-        _common._CACHE.clear()
-    assert rows[gamma](extra[0]).objs[2] == Add(extra[0].args[0], -S.Half, evaluate=False)
-    _common._CACHE.clear()
+def test_the_slots_of_the_templates():
+    """``gamma``'s slot ``x - 1/2`` is ``shifted(x, -1/2)`` (#184:
+    ``Add(y, -y, 1/2) - 1/2`` is not 0); the node of ``polygamma(n, x)``
+    is slot 2."""
+    rows = rows_templates(HEADS, "gamma_functions")
+    x_, y_, n = Symbol('x'), Symbol('y'), Symbol('n')
+    assert [c.objs for c in compiled(rows, gamma(x_, evaluate=False))[0]] == [
+        (x_, gamma(x_), x_ - S.Half)]
+    a = Add(y_, -y_, S.Half, evaluate=False)
+    [c], _ = compiled(rows, gamma(a, evaluate=False))
+    assert c.objs[2] == Add(a, -S.Half, evaluate=False)
+    for h in (polygamma, lowergamma, uppergamma):
+        e = h(n, x_, evaluate=False)
+        assert [(c.objs, c.pattern.node) for c in compiled(rows, e)[0]] == [((n, x_, e), 2)]
 
 
 # -- rational numbers in rows ------------------------------------------------
@@ -139,11 +84,7 @@ def test_the_slots_of_rationals_are_by_abs_c_x_minus_c_first():
     assert gen.shifts == (-S.Half, S.Half, -1, 1, -2)
     y = Symbol('y')
     a = Add(y, -y, 1, evaluate=False)
-    _common._CACHE.clear()
-    try:
-        [c], _ = eq.compiled({gamma: wiring.template(gamma, gen)}, gamma(a, evaluate=False))
-    finally:
-        _common._CACHE.clear()
+    [c], _ = compiled({gamma: wiring.template(gamma, gen)}, gamma(a, evaluate=False))
     assert c.objs[2:] == tuple(shifted(a, d) for d in (-S.Half, S.Half, -1, 1, -2))
 
 

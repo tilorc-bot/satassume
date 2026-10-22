@@ -1,20 +1,8 @@
-"""The rules of ``expm1`` and ``log1p`` (``sympy.codegen.cfunctions``),
-written as ``for_all`` statements (``templates/cfunctions.py``, compiled by
-``templates/wiring.py``, #249), against the generators they replace
-(``tests/_legacy_cfunctions_rules.py``, verbatim from d149951).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus, though the clauses differ.  Rows of the legacy generators the
-rows leave out because the rule base and the other rows imply them:
-``expm1``'s ``real -> real``, ``extended_real -> extended_real`` and
-``zero -> zero`` (finite where finite, and the sign of the argument on the
-extended reals) and its ``infinite & extended_negative -> negative`` (odd
-there, so finite, and extended negative by the sign of the argument);
-``log1p``'s ``real & positive(x + 1) -> real`` (positive at a positive
-argument, negative at a negative one beyond -1, and 0 at 0).
-:data:`ADDED` are the facts the rows give that the legacy rules
-did not, each with its argument; a test checks that each is new.
+"""The rows of ``expm1`` and ``log1p`` (``sympy.codegen.cfunctions``;
+``templates/cfunctions.py``, compiled by ``templates/wiring.py``, #249):
+``log1p``'s slot ``x + 1``, and the family, declared by name, compiled on
+its own first use.  Whether each compiled rule is true is checked at
+concrete points in ``tests/test_rows_numeric.py``.
 """
 import os
 import subprocess
@@ -26,38 +14,18 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_cfunctions_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
 from sympy import Symbol  # noqa: E402
 from sympy.codegen.cfunctions import expm1, log1p  # noqa: E402
 
 HEADS = (expm1, log1p)
 
-#: facts the rows give and the legacy rules did not
-ADDED = {}
 
-
-def _shifts(gen, *shifts):
-    """``gen`` with the terms ``x + c`` its slots 2, 3, ... are (the legacy
-    ``slots=``), which ``wiring.template`` takes from ``gen.shifts``."""
-    def shifted_gen(R, c):
-        gen(R, c)
-    shifted_gen.shifts = shifts
-    return shifted_gen
-
-
-LEGACY_GEN = {expm1: legacy._expm1, log1p: _shifts(legacy._log1p, 1)}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(HEADS, "cfunctions", LEGACY_GEN, ADDED)
-    # log1p's slot x + 1
+def test_log1p_has_the_slot_x_plus_1():
+    t = rows_templates(HEADS, "cfunctions")
     x = Symbol('x')
-    assert [c.objs for c in new[log1p(x, evaluate=False)][0]] == [(x, log1p(x), x + 1)]
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
+    assert [c.objs for c in compiled(t, log1p(x, evaluate=False))[0]] == [(x, log1p(x), x + 1)]
+    assert [c.objs for c in compiled(t, expm1(x, evaluate=False))[0]] == [(x, expm1(x))]
 
 
 def test_cfunctions_is_compiled_on_its_own_first_use():

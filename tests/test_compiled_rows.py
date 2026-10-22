@@ -1,8 +1,8 @@
 """The templates are registered from the compiled rows
 (``templates/_compiled_rows.py``, #249), which must be those of the family
 modules: ``tools/compile_rows.py`` writes the file, and this fails when a
-row was edited without running it.  The families' own tests then compare
-the registered (compiled) templates with the legacy generators.
+row was edited without running it.  ``tests/test_rows_numeric.py`` checks
+that every compiled rule is true at concrete points.
 """
 import os
 import subprocess

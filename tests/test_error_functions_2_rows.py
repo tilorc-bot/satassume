@@ -1,27 +1,9 @@
-"""The rules of ``erfinv``, ``erfcinv``, ``li``, ``Li`` and of the
-functions of two arguments ``erf2``, ``expint`` and ``owens_t`` (SymPy
-1.15), written as ``for_all`` statements in
-``templates/error_functions.py`` (compiled by ``templates/wiring.py``,
-#249), against the generators they replace
-(``tests/_legacy_error_functions_2_rules.py``, verbatim from d149951).
-``tests/test_error_functions_rows.py`` tests the family's other functions.
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus, though the clauses differ.  Rows the rows state in another
-form: ``li``'s ``positive & positive(x - 1) -> real`` is ``Q.positive(x)
-& Q.ne(x, 1) -> real``, ``Li``'s row (``li`` is negative on (0, 1)).
-Rows of the legacy generators the rows leave out because the rule base and
-the other rows imply them: ``owens_t``'s ``extended_real(h) &
-extended_real(a) -> real`` (its sign for real ``h``, 0 at ``a == 0`` and
-at a real infinite ``h``), ``extended_real(h) & zero(a) -> zero`` (0 at
-``a == 0`` for a complex ``h`` and at a real infinite ``h``) and
-``imaginary(h) & real(a) -> real`` (its sign for imaginary ``h``, 0 at ``a
-== 0``).  ``Li``'s ``Q.positive(x) & Q.ne(x, 1) -> real`` follows from its
-signs on (0, 1) and beyond 1 only through the links of ``x`` and ``x -
-1`` (``_rows_equivalence._shift_links``), so it is kept.
-:data:`ADDED` are the facts the rows give that the legacy rules did not,
-each with its argument; a test checks that each is new.
+"""The rows of ``erfinv``, ``erfcinv``, ``li``, ``Li``, ``erf2``,
+``expint`` and ``owens_t`` (``templates/error_functions.py``, compiled by
+``templates/wiring.py``, #249): the slots of their templates, ``owens_t``
+declared by name, and the functions compiled with the family.  Whether
+each compiled rule is true is checked at concrete points in
+``tests/test_rows_numeric.py``.
 """
 import os
 import subprocess
@@ -33,9 +15,8 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_error_functions_2_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
-from sympy import Li, erf2, erfcinv, erfinv, expint, li  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
+from sympy import Li, Symbol, erf2, erfcinv, erfinv, expint, li  # noqa: E402
 
 try:  # new in SymPy 1.15
     from sympy.functions.special.error_functions import owens_t
@@ -48,26 +29,19 @@ UNARY = (erfinv, erfcinv, li, Li)
 BINARY = (erf2, expint) + ((owens_t,) if owens_t is not None else ())
 HEADS = UNARY + BINARY
 
-#: facts the rows give and the legacy rules did not
-ADDED = {}
 
-LEGACY_GEN = {erfinv: legacy._erfinv, erfcinv: legacy._erfcinv, li: legacy._li, Li: legacy._Li,
-              erf2: legacy._erf2, expint: legacy._expint}
-if owens_t is not None:
-    LEGACY_GEN[owens_t] = legacy._owens_t
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(UNARY, "error_functions", LEGACY_GEN, ADDED)
-    # the corpus reaches the slots x - 1 and x + 1 or x - 2 (4 objects)
-    assert any(len(c.objs) == 4 for cs, _ in new.values() for c in cs)
-
-
-@pytest.mark.parametrize("head", BINARY, ids=lambda h: h.__name__)
-def test_rows_of_two_arguments_entail_exactly_the_legacy_rules(head):
-    new = eq.check_rows_entail_exactly((head,), "error_functions", LEGACY_GEN, ADDED)
-    # the node is slot 2, after the two arguments
-    assert {c.pattern.node for cs, _ in new.values() for c in cs} == {2}
+def test_the_slots_of_the_templates():
+    t = rows_templates(HEADS, "error_functions")
+    a, b = Symbol('a'), Symbol('b')
+    # the terms x - 1 and x + 1 or x - 2 of the functions of one argument
+    for h, terms in ((erfinv, (a - 1, a + 1)), (erfcinv, (a - 1, a - 2)), (li, (a - 1,)),
+                     (Li, (a - 1, a - 2))):
+        e = h(a, evaluate=False)
+        assert [c.objs for c in compiled(t, e)[0]] == [(a, e, *terms)], h
+    # the node of a function of two arguments is slot 2
+    for h in BINARY:
+        e = h(a, b, evaluate=False)
+        assert [(c.objs, c.pattern.node) for c in compiled(t, e)[0]] == [((a, b, e), 2)], h
 
 
 def test_owens_t_is_declared_by_name():
@@ -77,10 +51,6 @@ def test_owens_t_is_declared_by_name():
     name = "sympy.functions.special.error_functions:owens_t"
     assert name in dict(ROW_FAMILIES)["error_functions"]
     assert (owens_t in wiring.functions("error_functions")) is (owens_t is not None)
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
 
 
 def test_these_functions_are_compiled_with_the_family():

@@ -1,17 +1,10 @@
-"""The rules of ``zeta``, ``dirichlet_eta`` and ``polylog``, written as
-``for_all`` statements (``templates/zeta_functions.py``, compiled by
-``templates/wiring.py``, #249), against the generators they replace
-(``tests/_legacy_zeta_functions_rules.py``, verbatim from d149951).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus (``zeta`` and ``polylog`` on every pair of arguments too),
-though the clauses differ.  ``Q.gt(x, 1)`` is ``extended_positive(x -
-1)`` where the legacy rules said ``positive(x - 1)`` next to a premise
-making ``x`` finite; the comparison links ``x`` and ``x - 1`` for that.
-No row of the legacy generators is left out as implied.  :data:`ADDED`
-are the facts the rows give that the legacy rules did not, each with its
-argument; a test checks that each is new.
+"""The rows of ``zeta``, ``dirichlet_eta`` and ``polylog``
+(``templates/zeta_functions.py``, compiled by ``templates/wiring.py``,
+#249): the slots of their templates (``s - 1`` of ``zeta(s)`` and
+``zeta(s, a)``, ``z - 1`` of ``polylog(s, z)``), a node of another number
+of arguments, and the family compiled on its own first use.  Whether each
+compiled rule is true is checked at concrete points in
+``tests/test_rows_numeric.py``.
 """
 import os
 import subprocess
@@ -23,59 +16,26 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_zeta_functions_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
-from sympy import Q, dirichlet_eta, polylog, zeta  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
+from sympy import dirichlet_eta, polylog, zeta  # noqa: E402
 
 from satassume.knowledge.templates._rows import x, y  # noqa: E402
 
 HEADS = (zeta, dirichlet_eta, polylog)
 
-#: facts the rows give and the legacy rules did not
-ADDED = {
-    # dirichlet_eta is entire: (1 - 2**(1 - s))*zeta(s), whose only pole,
-    # at s = 1, the zero of the factor cancels; finite at every finite s
-    dirichlet_eta: (Q.finite(x) >> Q.finite(dirichlet_eta(x)),),
-}
 
-
-def _legacy(gen, terms):
-    """``gen`` as ``functions.nary`` called it, with the slots it was
-    registered with (``zeta``: ``s - 1``; ``polylog``: ``z - 1``), as
-    ``wiring.template`` takes them from ``gen.arity`` and ``gen.terms``."""
-    def legacy_gen(R, n):
-        gen(R, n)
-    legacy_gen.arity = tuple(terms) if len(terms) > 1 else next(iter(terms))
-    legacy_gen.terms = terms
-    return legacy_gen
-
-
-LEGACY_GEN = {
-    zeta: _legacy(legacy._zeta, {1: ((0, -1),), 2: ((0, -1),)}),
-    # nary's, of one argument: functions._unary's has the same objects
-    dirichlet_eta: lambda R, c: legacy._dirichlet_eta(R, 1),
-    polylog: _legacy(legacy._polylog, {2: ((1, -1),)}),
-}
-
-#: zeta(s) and zeta(s, a)
-ARITIES = {zeta: (1, 2)}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(HEADS, "zeta_functions", LEGACY_GEN, ADDED, ARITIES)
-    # the corpus reaches the slot s - 1 of zeta(s) (3 objects) and of
-    # zeta(s, a) and polylog(s, z) (4 objects)
-    for h, n in ((zeta, 3), (zeta, 4), (polylog, 4)):
-        assert any(len(c.objs) == n for e, (cs, _) in new.items() if type(e) is h for c in cs)
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
+def test_the_slots_of_the_templates():
+    t = rows_templates(HEADS, "zeta_functions")
+    for e, objs in ((zeta(x, evaluate=False), (x, zeta(x), x - 1)),
+                    (zeta(x, y, evaluate=False), (x, y, zeta(x, y), x - 1)),
+                    (polylog(x, y, evaluate=False), (x, y, polylog(x, y), y - 1)),
+                    (dirichlet_eta(x, evaluate=False), (x, dirichlet_eta(x)))):
+        assert [c.objs for c in compiled(t, e)[0]] == [objs], e
 
 
 def test_a_node_of_another_number_of_arguments_gets_no_facts():
     from sympy import Basic
-    t = eq.rows_templates(HEADS, "zeta_functions")
+    t = rows_templates(HEADS, "zeta_functions")
     for h, args in ((zeta, (x, y, x)), (dirichlet_eta, (x, y)), (polylog, (x,))):
         assert t[h](Basic.__new__(h, *args)) is None
 

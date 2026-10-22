@@ -1,16 +1,9 @@
-"""The rules of ``beta``, ``betainc`` and ``betainc_regularized``, written
-as ``for_all`` statements (``templates/beta_functions.py``, compiled by
-``templates/wiring.py``, #249), against the generators they replace
-(``tests/_legacy_beta_functions_rules.py``, verbatim from d149951).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus (``beta`` of one argument and of every pair, ``betainc`` and
-``betainc_regularized`` of every four of its smaller corpus), though the
-clauses differ.  Rows of the legacy generators the rows leave out because
-the rule base and the other rows imply them: none.  :data:`ADDED` are the
-facts the rows give that the legacy rules did not, each with its argument;
-a test checks that each is new.
+"""The rows of ``beta``, ``betainc`` and ``betainc_regularized``
+(``templates/beta_functions.py``, compiled by ``templates/wiring.py``,
+#249): rows of several numbers of arguments, a constructor without
+``evaluate``, the slots of the templates, and the family compiled on its
+own first use.  Whether each compiled rule is true is checked at concrete
+points in ``tests/test_rows_numeric.py``.
 """
 import os
 import subprocess
@@ -22,65 +15,24 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_beta_functions_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
 from sympy import Basic, Q, Symbol, beta, betainc, betainc_regularized  # noqa: E402
 
 from satassume.knowledge.templates import _common  # noqa: E402
 from satassume.knowledge.templates._rows import by_function, f, for_all, rules, x, y  # noqa: E402
-from satassume.knowledge.templates.functions import nary  # noqa: E402
 
 HEADS = (beta, betainc, betainc_regularized)
 
-#: the numbers of arguments the corpus gives beta: beta(x) is beta(x, x)
-ARITIES = {beta: (1, 2)}
 
-#: facts the rows give and the legacy rules did not
-ADDED = {}
-
-
-def _nary(gen, arity):
-    """``gen`` as ``functions.nary`` called it, with the number of arguments,
-    which ``wiring.template`` takes from ``gen.arity``."""
-    def nary_gen(R, n):
-        gen(R, n)
-    nary_gen.arity = arity
-    return nary_gen
-
-
-LEGACY_GEN = {beta: _nary(legacy._beta, (1, 2)), betainc: _nary(legacy._betainc, 4),
-              betainc_regularized: _nary(legacy._betainc, 4)}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(HEADS, "beta_functions", LEGACY_GEN, ADDED, ARITIES)
-    # the node is slot n, after the n arguments
-    assert {(len(e.args), c.pattern.node) for e, (cs, _) in new.items() for c in cs} == {
-        (1, 1), (2, 2), (4, 4)}
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
-
-
-def test_the_templates_keep_their_pattern_keys_and_slot_objects():
-    """The template of each head from its rows caches its patterns under the
-    keys of the legacy template (``special.py`` at d149951), over the same
-    objects; a node of another number of arguments gets no facts."""
-    old = {beta: nary('beta', legacy._beta), betainc: nary('betainc', legacy._betainc),
-           betainc_regularized: nary('betainc_regularized', legacy._betainc)}
-    rows = eq.rows_templates(HEADS, "beta_functions")
-    try:
-        for e in eq.nodes(HEADS, ARITIES):
-            seen = []
-            for t in (old[type(e)], rows[type(e)]):
-                _common._CACHE.clear()
-                c = t(e)
-                seen.append((tuple(_common._CACHE), c.objs))
-            assert seen[0] == seen[1], e
-    finally:
-        _common._CACHE.clear()
-    a = Symbol('a')
+def test_the_node_is_slot_n_after_the_n_arguments():
+    # a node of another number of arguments gets no facts
+    rows = rows_templates(HEADS, "beta_functions")
+    a, b, c, d = Symbol('a'), Symbol('b'), Symbol('c'), Symbol('d')
+    for h, args in ((beta, (a,)), (beta, (a, b)), (betainc, (a, b, c, d)),
+                    (betainc_regularized, (a, b, c, d))):
+        e = Basic.__new__(h, *args)
+        assert [(cs.objs, cs.pattern.node) for cs in compiled(rows, e)[0]] == [
+            ((*args, e), len(args))]
     assert rows[beta](Basic.__new__(beta, a, a, a)) is None
     assert rows[betainc](Basic.__new__(betainc, a, a, a)) is None
 
