@@ -6,7 +6,7 @@ session links every vocabulary argument (``sympy_api._relevant``,
 ``satassume.relations``, "Links to the unary vocabulary").  A set without
 one is certified per component, with no glue.  The glue knows more than
 the rule base: clause 2 of an ``lt`` atom (an ``oo`` summand pushes its
-side) refutes the link atom ``0 < y - oo``, which the templates
+side) refutes the link atoms ``0 < y - oo`` and ``y + oo < 0``, which the templates
 deliberately leave open (``test_infinite_sums.py``,
 ``test_extended_real_sum_keeps_its_sign_undecided``), and LRA bounds
 ``k - x + 1``, which the sum templates do not.
@@ -15,7 +15,10 @@ So a fresh-symbol relation such as ``a > b`` can make an *inconsistent* set
 raise where it answered before, in the engine and in ``ask_ref`` alike.
 That is allowed: I2's oracle (harness/INVARIANTS.md) compares answers
 only under a consistent set and never counts an inconsistency report.
-Under a consistent set the relation changes nothing.
+Under a consistent set the relation changes nothing with relevance on
+(the default: the query is answered under the part without it); with
+``relevance=False``, and in ``ask_ref``, the glue it starts can decide a
+query there too (#263).
 """
 import pytest
 from sympy import Dummy, E, Q, oo, sqrt, symbols
