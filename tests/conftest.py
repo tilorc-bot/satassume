@@ -11,7 +11,7 @@ workers), printed in the header and in the summary.
   with the order depends on what was asked before.
 * ``--satassume-pad=RATE`` (opt-in): with probability RATE, a call of
   ``satassume.sympy_api.ask`` gets one to three conjuncts added to its
-  assumptions (:data:`PAD_TEMPLATES`).  Each conjunct has symbols of its
+  assumptions (:data:`PAD_TEMPLATES`, :data:`PAD_RELATIONS`).  Each conjunct has symbols of its
   own, shared with neither the query nor the other conjuncts, and is
   satisfiable by itself, so the padded set is consistent exactly when the
   original is.  The answer, or the exception, must not change (I2 of
@@ -60,9 +60,15 @@ PAD_TEMPLATES = (
     lambda Q, a, b: Q.finite(1 / a),                     # a = 1
     lambda Q, a, b: Q.even(a) >> Q.negative(b),          # a = 1
     lambda Q, a, b: Q.real(a) | Q.zero(b),               # a = 0
+    lambda Q, a, b: Q.positive(a) & Q.rational(b),       # a = b = 1
+)
+
+#: the same for relations, used only on an engine with the LRA adapter: a
+#: relation no adapter reads makes the answer None by design
+#: (``sympy_api.ask``, "Opaque conjuncts")
+PAD_RELATIONS = (
     lambda Q, a, b: a > b,                               # a = 1, b = 0
     lambda Q, a, b: (a <= 3) & Q.integer(a),             # a = 0
-    lambda Q, a, b: Q.positive(a) & Q.rational(b),       # a = b = 1
 )
 
 #: the fresh symbols are ``Symbol(PAD_PREFIX + str(i))``; a query naming
@@ -110,13 +116,25 @@ def pytest_configure(config):
     if worker is not None:
         seed = worker["satassume_seed"]
     elif os.environ.get("SATASSUME_SEED"):
-        seed = int(os.environ["SATASSUME_SEED"])
+        try:
+            seed = int(os.environ["SATASSUME_SEED"])
+        except ValueError:
+            raise pytest.UsageError(f"SATASSUME_SEED is an integer, not {os.environ['SATASSUME_SEED']!r}")
     else:
         seed = random.SystemRandom().randrange(1, 10**6)
     _Random.seed = seed
     _Random.pad = config.getoption("satassume_pad")
     _Random.evict = config.getoption("satassume_evict")
     _Random.start("<collect>")
+    try:
+        from hypothesis import core
+    except ImportError:
+        pass
+    else:
+        # the examples of the @given tests, and so the asks they make, follow
+        # the seed too (unless --hypothesis-seed says otherwise)
+        if config.getoption("hypothesis_seed", None) is None:
+            core.global_force_seed = seed
     if _Random.pad or _Random.evict:
         _install()
 
@@ -129,7 +147,8 @@ def pytest_configure_node(node):
 def _settings(config) -> str:
     order = "file order" if config.getoption("satassume_no_shuffle") else "shuffled"
     return (f"SATASSUME_SEED={_Random.seed} (order: {order}, "
-            f"pad: {_Random.pad:g}, evict: {_Random.evict:g})")
+            f"pad: {_Random.pad:g}, evict: {_Random.evict:g}; "
+            f"PYTHONHASHSEED={os.environ.get('PYTHONHASHSEED', 'random')})")
 
 
 def pytest_report_header(config):
@@ -188,15 +207,17 @@ def _install() -> None:
     def names(e):
         return {s.name for s in getattr(e, "free_symbols", ())}
 
-    def paddable(proposition, assumptions, engine):
+    def templates(proposition, assumptions, engine):
+        """The templates to pad this call with; None: not padded."""
         if _Random.unpadded or not (assumptions is True or isinstance(assumptions, Boolean)):
-            return False
-        if engine is not None and (
-                not engine.relevance or engine.discovery_budget < budget
-                or any(getattr(s.factory, "__module__", None) == "theory_harness"
-                       for s in engine.relation_specs)):
-            return False
-        return not any(s.startswith(PAD_PREFIX) for s in names(proposition) | names(assumptions))
+            return None
+        eng = engine if engine is not None else api.default_engine()
+        specs = eng.relation_specs
+        if (not eng.relevance or eng.discovery_budget < budget
+                or any(getattr(s.factory, "__module__", None) == "theory_harness" for s in specs)
+                or any(s.startswith(PAD_PREFIX) for s in names(proposition) | names(assumptions))):
+            return None
+        return PAD_TEMPLATES + PAD_RELATIONS if any(s.name == "lra" for s in specs) else PAD_TEMPLATES
 
     @functools.wraps(original)
     def ask(proposition, assumptions=True, engine=None, **kwargs):
@@ -204,9 +225,12 @@ def _install() -> None:
             api.default_engine().memos.clear()
         if _Random.pad and _Random.pad_rng.random() < _Random.pad:
             rng = _Random.pad_rng
-            pad = [rng.choice(PAD_TEMPLATES)(Q, syms[2 * k], syms[2 * k + 1])
-                   for k in range(rng.randint(1, 3))]
-            if paddable(proposition, assumptions, engine):
+            # the same draws whether or not the call is padded
+            picks = [rng.random() for _ in range(rng.randint(1, 3))]
+            pool = templates(proposition, assumptions, engine)
+            if pool is not None:
+                pad = [pool[int(r * len(pool))](Q, syms[2 * k], syms[2 * k + 1])
+                       for k, r in enumerate(picks)]
                 assumptions = And(*pad) if assumptions is True else And(assumptions, *pad)
         return original(proposition, assumptions, engine, **kwargs)
 

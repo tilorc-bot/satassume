@@ -296,6 +296,7 @@ def test_assigning_equal_specs_or_a_tuple_clears_nothing():
     assert not eng._context_sessions and len(eng._verdict) == 1   # the memo survived
 
 
+@pytest.mark.no_pad("reads the split memo by its key")
 def test_splits_are_keyed_on_the_registry(template_class):
     """The split memo holds whether a set is consistent, computed by the
     templates: a template registered later can make the set inconsistent,
