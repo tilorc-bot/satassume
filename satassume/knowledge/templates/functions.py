@@ -19,55 +19,20 @@ from collections import Counter
 
 from sympy import S
 from sympy.core.add import Add
-from sympy.core.mod import Mod
-from sympy.functions.combinatorial.factorials import factorial
-from sympy.functions.elementary.complexes import (
-    Abs,
-    conjugate,
-    im,
-    polar_lift,
-    principal_branch,
-    re,
-    sign,
-)
-from sympy.functions.elementary.exponential import exp, exp_polar, log
-from sympy.functions.elementary.hyperbolic import (
-    acosh,
-    acoth,
-    acsch,
-    asech,
-    asinh,
-    atanh,
-    cosh,
-    coth,
-    csch,
-    sech,
-    sinh,
-    tanh,
-)
-from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
-from sympy.functions.elementary.trigonometric import (
-    acos,
-    acot,
-    acsc,
-    asec,
-    asin,
-    atan,
-)
+from sympy.functions.elementary.integers import ceiling, floor
 
 from ...sat.formula import Not, P
 from ._common import (
     Rules,
     const_key,
     facts,
-    ge2_alternatives,
     pattern_key,
 )
+from .atoms import value_units
 from .core import ipi_rules, ipi_split, pi_split
-from .registry import registry
 
 X, N = 0, 1
-#: Slot of ``arg - 1`` in the templates that use it (log, acos, asin).
+#: Slot of ``s`` in the template of ``exp(I*pi*c*s)``.
 M = 2
 
 
@@ -145,215 +110,52 @@ def shifted(x, c):
     return x + c
 
 
-def _minus_one(x):
-    return (shifted(x, S.NegativeOne),)
+# ---------------------------------------------------------------------------
+# exp: exp(I*pi*c*s); the rows of exp and log are in .exp_log
+# ---------------------------------------------------------------------------
 
+def _exp_ipi(gen):
+    """Template for ``exp`` given the generator of its rows (``.wiring``);
+    for ``x == I*pi*c*s`` (``c`` rational) the value is also a root of
+    unity or on the unit circle, described in terms of ``s``
+    (:func:`~.core.ipi_rules`)."""
+    def template(expr):
+        x = expr.args[0]
+        consts = {}
+        objs = [x, expr]
+        ipi = None
+        if x.is_Atom and x.is_number:
+            consts[X] = x
+            key = ('exp', const_key(x))
+        else:
+            split = ipi_split(x)
+            if split is not None:
+                c, s_ = split
+                ipi = (c, s_ is not None)
+                if s_ is not None:
+                    objs.append(s_)
+                    if s_.is_Atom and s_.is_number:
+                        consts[M] = s_
+            key = ('exp', None, ipi, const_key(objs[M]) if M in consts else None)
 
-def _minus_plus_one(x):
-    """Slots 2 and 3: ``x - 1`` and ``x + 1``."""
-    return (shifted(x, S.NegativeOne), shifted(x, S.One))
+        def build():
+            R = Rules()
+            gen(R, consts.get(X))
+            if ipi is not None:
+                c, has_s = ipi
+                ipi_rules(R.rule, c, M if has_s else None, N)
+            return R.rules
+
+        return facts(key, build, consts, tuple(objs), N)
+    template.__name__ = 'exp_templates'
+    template.__module__ = gen.__module__
+    return template
 
 
 # ---------------------------------------------------------------------------
-# exp / log
+# re and im of floor / ceiling; the rows of floor, ceiling and factorial are
+# in .integer_funcs, those of re and im in .complex_parts
 # ---------------------------------------------------------------------------
-
-_EXP = (
-    (('extended_real',), 'extended_real'),
-    (('extended_real',), 'extended_nonnegative'),
-    (('real',), 'positive'),
-    (('finite',), 'finite'),
-    (('finite',), ('zero', False)),
-    (('complex',), 'complex'),
-    (('extended_negative',), 'complex'),
-    (('algebraic', ('zero', False)), 'transcendental'),
-    (('infinite', 'extended_negative'), 'zero'),
-    (('infinite', 'extended_positive'), 'infinite'),
-    (('infinite', 'extended_positive'), 'extended_positive'),
-)
-
-_LOG = (
-    (('extended_positive',), 'extended_real'),
-    (('positive',), 'real'),
-    (('zero',), 'infinite'),
-    (('zero',), ('extended_real', False)),
-    (('complex', ('zero', False)), 'complex'),
-    (('finite', ('zero', False)), 'finite'),
-    (('infinite',), 'infinite'),
-    (('infinite', 'extended_real'), 'extended_positive'),
-    (('negative',), ('extended_real', False)),
-    (('complex', ('extended_real', False)), ('extended_real', False)),
-)
-
-
-def _exp(R, c, ipi=None):
-    _table(R, _EXP)
-    # exp(0) == 1
-    R.rule([(X, 'zero', True)], (N, 'odd', True))
-    R.rule([(X, 'zero', True)], (N, 'positive', True))
-    if ipi is not None:
-        c, has_s = ipi
-        ipi_rules(R.rule, c, M if has_s else None, N)
-
-
-@registry.register(exp)
-def exp_templates(expr):
-    """``exp(x)``; for ``x == I*pi*c*s`` (``c`` rational) the value is a
-    root of unity or on the unit circle, described in terms of ``s``."""
-    x = expr.args[0]
-    consts = {}
-    objs = [x, expr]
-    ipi = None
-    if x.is_Atom and x.is_number:
-        consts[X] = x
-        key = ('exp', const_key(x))
-    else:
-        split = ipi_split(x)
-        if split is not None:
-            c, s_ = split
-            ipi = (c, s_ is not None)
-            if s_ is not None:
-                objs.append(s_)
-                if s_.is_Atom and s_.is_number:
-                    consts[M] = s_
-        key = ('exp', None, ipi, const_key(objs[M]) if M in consts else None)
-
-    def build():
-        R = Rules()
-        _exp(R, consts.get(X), ipi)
-        return R.rules
-
-    return facts(key, build, consts, tuple(objs), N)
-
-
-def _log(R, c):
-    _table(R, _LOG)
-    # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(M, 'extended_positive', True)], (N, 'extended_positive', True))
-    R.rule([(M, 'negative', True), (X, 'positive', True)], (N, 'negative', True))
-    R.rule([(X, 'positive', True), (N, 'positive', True)], (M, 'positive', True))
-    R.rule([(X, 'positive', True), (N, 'negative', True)], (M, 'negative', True))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-registry.register(log)(_unary('log', _log, slots=_minus_one))
-
-
-# ---------------------------------------------------------------------------
-# Abs / re / im / sign / conjugate
-# ---------------------------------------------------------------------------
-
-def _abs(R, c):
-    R.rule([], (N, 'extended_real', True))
-    R.rule([], (N, 'extended_nonnegative', True))
-    R.rule([(X, 'finite', True)], (N, 'real', True))
-    R.rule([(N, 'finite', True)], (X, 'finite', True))
-    R.rule([(X, 'infinite', True)], (N, 'extended_positive', True))
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
-    _equiv(R, [(X, 'extended_real', True)], ('integer', 'rational', 'even', 'odd', 'algebraic'))
-    # Abs(x) == x for x >= 0.
-    _equiv(R, [(X, 'extended_nonnegative', True)], ('prime', 'composite'))
-
-
-# ``re`` and ``im`` are not extended real for every argument:
-# ``re(zoo) = im(zoo) = nan``.  The vocabulary cannot tell ``zoo`` from
-# ``oo*I`` (``re(oo*I) = 0``) or ``oo + oo*I``, so an infinite non-real
-# argument gets no claim; a finite argument gives a real part, an extended
-# real one gives itself (``re``) or zero (``im``).
-def _re(R, c):
-    R.rule([(X, 'finite', True)], (N, 'real', True))
-    R.rule([(X, 'extended_real', True)], (N, 'extended_real', True))
-    R.rule([(X, 'imaginary', True)], (N, 'zero', True))
-    R.rule([(X, 'zero', True)], (N, 'zero', True))
-    R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
-    _equiv(R, [(X, 'extended_real', True)], (
-        'zero', 'extended_positive', 'extended_negative', 'integer', 'rational',
-        'even', 'odd', 'algebraic', 'finite', 'prime', 'composite'))
-
-
-def _im(R, c):
-    R.rule([(X, 'finite', True)], (N, 'real', True))
-    R.rule([(X, 'extended_real', True)], (N, 'zero', True))
-    R.rule([(X, 'imaginary', True)], (N, 'nonzero', True))
-    # a finite argument is read as a complex number x + I*y (above: im is real)
-    R.rule([(X, 'finite', True), (X, 'extended_real', False)], (N, 'zero', False))
-    R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
-
-
-_SIGN = (
-    (('extended_real',), 'integer'),
-    (('imaginary',), 'imaginary'),
-    (('extended_positive',), 'positive'),
-    (('extended_positive',), 'odd'),
-    (('extended_negative',), 'negative'),
-    (('extended_negative',), 'odd'),
-    (('extended_nonnegative',), 'nonnegative'),
-    (('extended_nonpositive',), 'nonpositive'),
-    (('algebraic',), 'algebraic'),
-)
-
-
-def _sign(R, c):
-    R.rule([], (N, 'complex', True))
-    _table(R, _SIGN)
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.rule([(X, 'extended_real', True), (N, 'positive', True)], (X, 'extended_positive', True))
-    R.rule([(X, 'extended_real', True), (N, 'negative', True)], (X, 'extended_negative', True))
-
-
-# Invariant under conjugation; the rule base derives the rest (real, the
-# finite sign predicates, nonzero, infinite, irrational, transcendental...).
-_CONJUGATE_INVARIANT = (
-    'extended_real', 'finite', 'zero', 'extended_positive', 'extended_negative',
-    'integer', 'rational', 'even', 'odd', 'algebraic', 'complex', 'imaginary',
-    'prime', 'composite', 'commutative', 'hermitian', 'antihermitian',
-)
-
-
-def _conjugate(R, c):
-    _equiv(R, [], _CONJUGATE_INVARIANT)
-
-
-registry.register(Abs)(_unary('Abs', _abs))
-registry.register(re)(_unary('re', _re))
-registry.register(im)(_unary('im', _im))
-registry.register(sign)(_unary('sign', _sign))
-registry.register(conjugate)(_unary('conjugate', _conjugate))
-
-
-# ---------------------------------------------------------------------------
-# floor / ceiling
-# ---------------------------------------------------------------------------
-
-def _round(R, c):
-    R.equiv([], (N, 'finite', True), (X, 'finite', True))
-    # NOTE: floor(1 + I/2) == 1, so "non-real -> non-integer" is unsound.
-    R.rule([(X, 'real', True)], (N, 'integer', True))
-    R.rule([(X, 'extended_real', True)], (N, 'extended_real', True))
-    R.rule([(X, 'complex', True)], (N, 'complex', True))
-    # a real value of floor/ceiling is an integer (floor(1 + I/2) == 1 is
-    # real; floor(oo) == oo is not)
-    R.rule([(N, 'real', True)], (N, 'integer', True))
-    _equiv(R, [(X, 'integer', True)], ('even', 'odd', 'zero', 'positive', 'negative'))
-
-
-def _floor(R, c):
-    for pred in ('negative', 'extended_negative', 'nonnegative', 'extended_nonnegative'):
-        R.rule([(X, pred, True)], (N, pred, True))
-
-
-def _ceiling(R, c):
-    for pred in ('positive', 'extended_positive', 'nonpositive', 'extended_nonpositive'):
-        R.rule([(X, pred, True)], (N, pred, True))
-
-
-registry.register(RoundFunction)(_unary('round', _round))
-registry.register(floor)(_unary('floor', _floor))
-registry.register(ceiling)(_unary('ceiling', _ceiling))
-
 
 def _parts_of_round_rules():
     # slots: 0 the argument y of floor/ceiling, 1 floor(y), 2 re(...) or im(...)
@@ -362,13 +164,13 @@ def _parts_of_round_rules():
     return R.rules
 
 
-@registry.register(re, im)
 def parts_of_round_templates(expr):
     """``re`` and ``im`` of ``floor(y)`` or ``ceiling(y)`` for finite ``y``
     are integers: SymPy rounds each part (``floor(y) = floor(re(y)) +
     I*floor(im(y))``), so the value is a Gaussian integer.  The vocabulary
     has no Gaussian-integer predicate, hence the rule looks through one
-    level of structure."""
+    level of structure.  Registered for ``re`` and ``im`` after their rows
+    (``wiring.AFTER_ROWS``)."""
     r = expr.args[0]
     if not isinstance(r, (floor, ceiling)):
         return None
@@ -379,34 +181,9 @@ def parts_of_round_templates(expr):
 
 
 # ---------------------------------------------------------------------------
-# factorial
-# ---------------------------------------------------------------------------
-
-_FACTORIAL = (
-    (('integer', 'nonnegative'), 'positive'),
-    (('integer', 'nonnegative'), 'integer'),
-    (('composite',), 'composite'),
-    (('zero',), 'odd'),
-    (('nonnegative',), 'positive'),
-    (('noninteger', 'finite'), 'real'),
-    (('noninteger', 'finite'), ('zero', False)),
-    (('integer', 'negative'), 'infinite'),
-    (('integer', 'negative'), ('extended_real', False)),
-)
-
-
-def _factorial(R, c):
-    _table(R, _FACTORIAL)
-    for prem in ge2_alternatives(X):
-        R.rule(prem, (N, 'even', True))
-
-
-registry.register(factorial)(_unary('factorial', _factorial))
-
-
-# ---------------------------------------------------------------------------
-# trigonometric: sin(pi*c*s), cos(pi*c*s) and the inverse functions; the
-# rows of sin, cos, tan, cot, sec and csc are in .trig
+# trigonometric: sin(pi*c*s), cos(pi*c*s), and asin(c), acos(c) for a
+# number c (wiring.UNIT_INTERVAL); the rows of sin, cos, tan, cot, sec and
+# csc are in .trig, those of the inverse functions in .inverse
 # ---------------------------------------------------------------------------
 
 _TRANSCENDENTAL = (('algebraic', ('zero', False)), 'transcendental')
@@ -485,26 +262,6 @@ def _pi_trig(tag, gen, cos_, split_=pi_split, plain=None):
     return template
 
 
-def _asin(R, c):
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.rule([(N, 'real', True)], (X, 'real', True))
-    R.equiv([(N, 'real', True)], (N, 'positive', True), (X, 'positive', True))
-    R.equiv([(N, 'real', True)], (N, 'negative', True), (X, 'negative', True))
-    # asin is real on [-1, 1].
-    R.rule([(X, 'nonnegative', True), (M, 'nonpositive', True)], (N, 'real', True))
-    _table(R, ((('finite',), 'finite'), (('complex',), 'complex'),
-               (('imaginary',), 'imaginary'), _TRANSCENDENTAL))
-
-
-def _acos(R, c):
-    R.rule([(N, 'real', True)], (N, 'nonnegative', True))
-    R.rule([(N, 'real', True)], (X, 'real', True))
-    # acos(x) == 0 iff x == 1.
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    _table(R, ((('zero',), 'positive'), (('finite',), 'finite'), (('complex',), 'complex')))
-    R.rule([(X, 'algebraic', True), (N, 'zero', False)], (N, 'transcendental', True))
-
-
 def _in_unit_interval_units(kind):
     """Unit facts for ``asin(c)``/``acos(c)`` with a rational or float ``c``
     (exact comparisons): real on [-1, 1], else ``+-pi/2 -+ I*acosh|c|``
@@ -529,71 +286,10 @@ def _in_unit_interval_units(kind):
     return units
 
 
-def _atan(R, c):
-    R.rule([(X, 'extended_real', True)], (N, 'real', True))
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.equiv([(X, 'extended_real', True)], (N, 'positive', True), (X, 'extended_positive', True))
-    R.equiv([(X, 'extended_real', True)], (N, 'negative', True), (X, 'extended_negative', True))
-    # atan(I) == oo*I, so restrict to real arguments.
-    R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
-           (N, 'transcendental', True))
-    # atan(x) is real iff x is real (atan(I*t) is imaginary, infinite or
-    # non-real complex).
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-
-
-_ACOT = (
-    (('extended_real',), 'real'),
-    (('nonnegative',), 'positive'),           # acot(0) == pi/2
-    (('negative',), 'negative'),
-    (('extended_nonnegative',), 'nonnegative'),
-    (('extended_negative',), 'nonpositive'),  # acot(-oo) == 0
-    (('real',), ('zero', False)),
-    (('infinite', 'extended_real'), 'zero'),
-    (('real', 'algebraic'), 'transcendental'),
-    (('imaginary',), ('extended_real', False)),
-    # acot(0) == pi/2, acot(+-I) is infinite, acot(x) == atan(1/x) otherwise.
-    (('algebraic',), ('algebraic', False)),
-)
-
-
-def _acot(R, c):
-    _table(R, _ACOT)
-
-
-for _cls, _tag, _gen in ((atan, 'atan', _atan), (acot, 'acot', _acot)):
-    registry.register(_cls)(_unary(_tag, _gen))
-registry.register(asin)(_unary('asin', _asin, slots=_minus_one,
-                               units=_in_unit_interval_units('asin')))
-registry.register(acos)(_unary('acos', _acos, slots=_minus_one,
-                               units=_in_unit_interval_units('acos')))
-
-
 # ---------------------------------------------------------------------------
-# hyperbolic
+# hyperbolic: cosh(I*pi*c*s) and cosh(r + I*pi*c*s); the rows of sinh,
+# cosh, tanh, coth, sech and csch are in .hyperbolic
 # ---------------------------------------------------------------------------
-
-_SINH = (
-    (('real',), 'real'), (('extended_real',), 'extended_real'),
-    (('finite',), 'finite'), (('complex',), 'complex'),
-    (('infinite', 'extended_real'), 'infinite'), _TRANSCENDENTAL,
-)
-_COSH = (
-    (('real',), 'positive'), (('extended_real',), 'extended_positive'),
-    (('finite',), 'finite'), (('complex',), 'complex'), (('zero',), 'odd'),
-    (('imaginary',), 'real'), _TRANSCENDENTAL,
-)
-
-
-def _sinh(R, c):
-    _table(R, _SINH)
-    _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative', 'zero'))
-    R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
-
-
-def _cosh(R, c):
-    _table(R, _COSH)
-
 
 #: Slots of the ``cosh(r + I*pi*c*s)`` template: ``r`` and ``s``.
 CR, CS = 2, 3
@@ -641,294 +337,51 @@ def _cosh_shift_split(arg):
     return None
 
 
-_cosh_plain = _unary('cosh', _cosh)
+def _cosh_shift(gen):
+    """Template for ``cosh`` given the generator of its rows (``.wiring``):
+    :func:`_unary`, for ``cosh(r + I*pi*c*s)`` also :func:`_cosh_shift_rules`
+    (on ``r``: a ``cosh(r)`` slot with the facts of the node would not be
+    total, the blocks below do not relate it to the argument)."""
+    plain = _unary('cosh', gen)
+
+    def template(expr):
+        split = _cosh_shift_split(expr.args[0]) if len(expr.args) == 1 else None
+        if split is None:
+            return plain(expr)
+        r, c, s_ = split
+        objs = [expr.args[0], expr, r]
+        if s_ is not None:
+            objs.append(s_)
+        consts = {i: obj for i, obj in enumerate(objs)
+                  if i >= CR and obj.is_Atom and obj.is_number}
+        key = ('cosh', None, 'shift', c, s_ is not None,
+               *(const_key(consts[i]) if i in consts else None for i in (CR, CS)))
+
+        def build():
+            R = Rules()
+            gen(R, None)
+            _cosh_shift_rules(R, c, s_ is not None)
+            return R.rules
+
+        return facts(key, build, consts, tuple(objs), N)
+    template.__name__ = 'cosh_templates'
+    template.__module__ = gen.__module__
+    return template
 
 
-def _cosh_templates(expr):
-    """``cosh``: :func:`_unary`, for ``cosh(r + I*pi*c*s)`` also
-    :func:`_cosh_shift_rules` (on ``r``: a ``cosh(r)`` slot with the facts
-    of the node would not be total, the blocks below do not relate it to
-    the argument)."""
-    split = _cosh_shift_split(expr.args[0]) if len(expr.args) == 1 else None
-    if split is None:
-        return _cosh_plain(expr)
-    r, c, s_ = split
-    objs = [expr.args[0], expr, r]
-    if s_ is not None:
-        objs.append(s_)
-    consts = {i: obj for i, obj in enumerate(objs)
-              if i >= CR and obj.is_Atom and obj.is_number}
-    key = ('cosh', None, 'shift', c, s_ is not None,
-           *(const_key(consts[i]) if i in consts else None for i in (CR, CS)))
-
-    def build():
-        R = Rules()
-        _cosh(R, None)
-        _cosh_shift_rules(R, c, s_ is not None)
-        return R.rules
-
-    return facts(key, build, consts, tuple(objs), N)
-
-
-def _tanh(R, c):
-    _table(R, ((('extended_real',), 'real'), _TRANSCENDENTAL))
-    for pred in ('positive', 'negative'):
-        R.equiv([(X, 'extended_real', True)], (N, pred, True), (X, 'extended_' + pred, True))
-    R.equiv([(X, 'extended_real', True)], (N, 'zero', True), (X, 'zero', True))
-
-
-for _cls, _tag, _gen in ((sinh, 'sinh', _sinh), (tanh, 'tanh', _tanh)):
-    registry.register(_cls)(_unary(_tag, _gen))
-registry.register(cosh)(_pi_trig('cosh', _cosh, True, ipi_split, _cosh_templates))
-
-
-# ---------------------------------------------------------------------------
-# reciprocal and inverse trigonometric and hyperbolic functions (#180); the
-# rows of sec and csc are in .trig
-# ---------------------------------------------------------------------------
-#
-# Values at the special points follow SymPy's evaluation: ``csc(0) =
-# csch(0) = coth(0) = acsch(0) = asec(0) = acsc(0) = zoo``, ``sech(+-oo) =
-# csch(+-oo) = 0``, ``coth(+-oo) = +-1``, ``acosh(+-oo) = oo``,
-# ``atanh(+-1) = +-oo``, ``atanh(+-oo) = -+I*pi/2``, ``acoth(+-1) = +-oo``,
-# ``acoth(0) = I*pi/2``, ``asech(0) = oo``, ``asech(+-oo) = I*pi/2``, and
-# ``acoth``, ``acsch``, ``acsc`` are 0 and ``asec`` is ``pi/2`` at every
-# infinity.  ``sec``, ``csc`` and ``cot`` of an infinite argument are
-# ``AccumBounds`` or ``nan``, and ``sech``/``csch``/``coth`` of an infinite
-# non-real one too: no claim is made there.  Branch cuts follow the
-# principal branches (``acosh(x) = log(x + sqrt(x + 1)*sqrt(x - 1))``,
-# ``atanh(x) = (log(1 + x) - log(1 - x))/2``, ``acoth(x) = atanh(1/x)``,
-# ``asech(x) = acosh(1/x)``, ``acsch(x) = asinh(1/x)``, ``asec(x) =
-# acos(1/x)``, ``acsc(x) = asin(1/x)``); the claims only use on which side
-# of a cut a value lies, never the sign of its imaginary part on the cut.
-#
-# Transcendence: for algebraic ``a != 0``, ``sin(a)``, ``cos(a)``,
-# ``sinh(a)``, ``cosh(a)``, ``tanh(a)`` and ``coth(a)`` are transcendental
-# and nonzero (Lindemann-Weierstrass: ``exp(a)`` and ``exp(I*a)`` are), so
-# their reciprocals are; an inverse function's value ``b != 0`` at an
-# algebraic point is transcendental, else the function of ``b`` would be
-# algebraic.
-#
-# Slots: 0 the argument, 1 the node, 2 ``x - 1``, 3 ``x + 1``.
-P1 = 3
-
-
-def _finite_value(R, pred):
-    """``pred(x) & finite(node) -> pred(node)``: the value is a number of
-    the kind or ``zoo`` (at a pole)."""
-    R.rule([(X, pred, True), (N, 'finite', True)], (N, pred, True))
-
-
-_COTH = (
-    (('extended_real', ('zero', False)), 'real'),   # coth(+-oo) == +-1
-    (('extended_positive',), 'positive'),           # coth(x) > 1 for x > 0
-    (('extended_negative',), 'negative'),
-    (('extended_real',), ('imaginary', False)),     # coth(0) == zoo
-    (('zero',), 'infinite'), (('zero',), ('extended_real', False)),
-    # coth(a) == (exp(2*a) + 1)/(exp(2*a) - 1), exp(2*a) != 1
-    (('algebraic', ('zero', False)), 'transcendental'),
-)
-
-
-def _coth(R, c):
-    _table(R, _COTH)
-    _finite_value(R, 'complex')
-    # coth(I*t) == -I*cot(t): imaginary, 0 (t == pi/2) or zoo (t == pi)
-    R.rule([(X, 'imaginary', True)], [(N, 'extended_real', False), (N, 'zero', True)])
-    R.rule([(X, 'imaginary', True), (N, 'finite', True)], [(N, 'imaginary', True), (N, 'zero', True)])
-
-
-_SECH = (
-    (('extended_real',), 'real'),                   # sech(+-oo) == 0
-    (('extended_real',), 'nonnegative'),
-    (('real',), 'positive'),
-    (('infinite', 'extended_real'), 'zero'),
-    (('zero',), 'odd'),
-    (('imaginary',), ('imaginary', False)),         # sech(I*t) == sec(t)
-    (('complex',), ('zero', False)),
-    _TRANSCENDENTAL,
-)
-_CSCH = (
-    (('extended_real', ('zero', False)), 'real'),   # csch(+-oo) == 0
-    (('positive',), 'positive'), (('negative',), 'negative'),
-    (('extended_positive',), 'nonnegative'), (('extended_negative',), 'nonpositive'),
-    (('infinite', 'extended_real'), 'zero'),
-    (('extended_real',), ('imaginary', False)),     # csch(0) == zoo
-    (('zero',), 'infinite'), (('zero',), ('extended_real', False)),
-    (('imaginary',), ('extended_real', False)),     # csch(I*t) == -I/sin(t)
-    (('complex',), ('zero', False)),
-    _TRANSCENDENTAL,
-)
-
-
-def _sech(R, c):
-    _table(R, _SECH)
-    _finite_value(R, 'complex')
-    R.rule([(X, 'imaginary', True), (N, 'finite', True)], (N, 'real', True))
-
-
-def _csch(R, c):
-    _table(R, _CSCH)
-    _finite_value(R, 'complex')
-    R.rule([(X, 'imaginary', True), (N, 'finite', True)], (N, 'imaginary', True))
-
-
-_ASINH = (
-    (('real',), 'real'), (('extended_real',), 'extended_real'),
-    (('finite',), 'finite'), (('complex',), 'complex'),
-    (('infinite',), 'infinite'),                    # asinh(oo*I) == oo, asinh(zoo) == zoo
-    # asinh(I*t) == I*asin(t): imaginary for |t| <= 1, else a real part
-    (('imaginary',), ('extended_real', False)),
-    _TRANSCENDENTAL,
-)
-
-
-def _asinh(R, c):
-    _table(R, _ASINH)
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative'))
-
-
-def _acosh(R, c):
-    # acosh(x) == 0 iff x == 1; real (and >= 0) iff x >= 1
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(X, 'real', True), (M, 'nonnegative', True)], (N, 'nonnegative', True))
-    R.rule([(X, 'real', True), (M, 'positive', True)], (N, 'positive', True))
-    # x < 1: I*acos(x) for x in [-1, 1), log(-x + sqrt(x**2 - 1)) + I*pi below
-    R.rule([(X, 'real', True), (M, 'negative', True)], (N, 'extended_real', False))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'extended_positive', True))
-    _table(R, (
-        (('finite',), 'finite'), (('complex',), 'complex'), (('infinite',), 'infinite'),
-        # acosh(I*t) == asinh(|t|) +- I*pi/2
-        (('imaginary',), ('extended_real', False)), (('imaginary',), ('imaginary', False)),
-    ))
-    R.rule([(X, 'algebraic', True), (N, 'zero', False)], (N, 'transcendental', True))
-
-
-def _atanh(R, c):
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    # real on (-1, 1) with the sign of x; +-oo at +-1; not real beyond
-    R.rule([(M, 'negative', True), (P1, 'positive', True)], (N, 'real', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True), (P1, 'positive', True)], (N, 'negative', True))
-    R.rule([(X, 'positive', True), (M, 'positive', True)], (N, 'extended_real', False))
-    R.rule([(X, 'negative', True), (P1, 'negative', True)], (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'extended_positive', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'extended_negative', True))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'imaginary', True))
-    R.rule([(X, 'complex', True), (M, 'zero', False), (P1, 'zero', False)], (N, 'complex', True))
-    # atanh(I*t) == I*atan(t), atan(t) in (-pi/2, pi/2) \ {0}
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', True))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (M, 'zero', False), (P1, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _acoth(R, c):
-    # acoth(x) == atanh(1/x): 0 only at the infinities, acoth(0) == I*pi/2;
-    # SymPy evaluates acoth(+-oo), acoth(zoo) and acoth(+-oo*I) to 0 but
-    # leaves acoth(1 + oo*I) alone (its evalf is nan): no claim there
-    R.rule([(N, 'zero', True)], (X, 'infinite', True))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'zero', True))
-    R.rule([(X, 'positive', True), (M, 'positive', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True), (P1, 'negative', True)], (N, 'negative', True))
-    R.rule([(X, 'real', True), (M, 'negative', True), (P1, 'positive', True)],
-           (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'positive', True), (M, 'zero', True)], (N, 'extended_positive', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'negative', True), (P1, 'zero', True)], (N, 'extended_negative', True))
-    R.rule([(X, 'complex', True), (M, 'zero', False), (P1, 'zero', False)], (N, 'complex', True))
-    # acoth(I*t) == -I*atan(1/t)
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', True))
-    R.rule([(X, 'algebraic', True), (M, 'zero', False), (P1, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _asech(R, c):
-    # asech(x) == acosh(1/x): real (and >= 0) on (0, 1], 0 iff x == 1
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(X, 'positive', True), (M, 'nonpositive', True)], (N, 'nonnegative', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'positive', True))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_positive', True))
-    # x > 1: I*acos(1/x); x < 0: acosh of a number below 0
-    R.rule([(X, 'positive', True), (M, 'positive', True)], (N, 'imaginary', True))
-    R.rule([(X, 'negative', True)], (N, 'extended_real', False))
-    R.rule([(X, 'infinite', True), (X, 'extended_real', True)], (N, 'imaginary', True))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', False))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _acsch(R, c):
-    # acsch(x) == asinh(1/x): 0 exactly at the infinities, acsch(0) == zoo
-    R.equiv([], (N, 'zero', True), (X, 'infinite', True))
-    R.rule([(X, 'extended_real', True), (X, 'zero', False)], (N, 'real', True))
-    R.rule([(X, 'positive', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True)], (N, 'negative', True))
-    R.rule([(X, 'extended_real', True)], (N, 'imaginary', False))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_real', False))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False)], (N, 'transcendental', True))
-
-
-def _asec(R, c):
-    # asec(x) == acos(1/x): real for |x| >= 1, 0 iff x == 1, pi/2 at every
-    # infinity
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(X, 'infinite', True)], (N, 'positive', True))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'nonnegative', True)], (N, 'nonnegative', True))
-    R.rule([(X, 'negative', True), (P1, 'nonpositive', True)], (N, 'positive', True))
-    R.rule([(X, 'real', True), (M, 'negative', True), (P1, 'positive', True)],
-           (N, 'extended_real', False))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    # asec(I*t) == pi/2 + I*asinh(1/t)
-    R.rule([(X, 'imaginary', True)], (N, 'extended_real', False))
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', False))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-def _acsc(R, c):
-    # acsc(x) == asin(1/x): real for |x| >= 1 with the sign of x, 0 exactly
-    # at the infinities
-    R.equiv([], (N, 'zero', True), (X, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'infinite', True))
-    R.rule([(X, 'zero', True)], (N, 'extended_real', False))
-    R.rule([(X, 'positive', True), (M, 'nonnegative', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True), (P1, 'nonpositive', True)], (N, 'negative', True))
-    R.rule([(X, 'real', True), (M, 'negative', True), (P1, 'positive', True)],
-           (N, 'extended_real', False))
-    R.rule([(X, 'complex', True), (X, 'zero', False)], (N, 'complex', True))
-    # acsc(I*t) == -I*asinh(1/t)
-    R.rule([(X, 'imaginary', True)], (N, 'imaginary', True))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False)], (N, 'transcendental', True))
-
-
-for _cls, _tag, _gen in ((coth, 'coth', _coth), (sech, 'sech', _sech), (csch, 'csch', _csch),
-                         (asinh, 'asinh', _asinh), (acsch, 'acsch', _acsch)):
-    registry.register(_cls)(_unary(_tag, _gen))
-registry.register(acosh)(_unary('acosh', _acosh, slots=_minus_one))
-registry.register(asech)(_unary('asech', _asech, slots=_minus_one))
-for _cls, _tag, _gen in ((atanh, 'atanh', _atanh), (acoth, 'acoth', _acoth),
-                         (asec, 'asec', _asec), (acsc, 'acsc', _acsc)):
-    registry.register(_cls)(_unary(_tag, _gen, slots=_minus_plus_one))
-
-
-def nary(tag, gen, slots=None):
+def nary(tag, gen, slots=None, arity=None):
     """Template for a function of fixed arity: ``gen(R, n)`` fills ``R``
     with rules over the arguments ``0 .. n-1``, the node ``n`` and the
-    objects ``slots(args)`` from ``n + 1`` on."""
+    objects ``slots(args)`` from ``n + 1`` on.  With ``arity`` (a number,
+    or a tuple of them), a node with another number of arguments gets no
+    facts (``gen`` holds for those numbers only: the rows of
+    :func:`._rows.rules`)."""
+    arities = arity if isinstance(arity, tuple) else (arity,)
+
     def template(expr):
         args = expr.args
+        if arity is not None and len(args) not in arities:
+            return None
         objs = (*args, expr) + (tuple(slots(args)) if slots is not None else ())
         consts = {k: o for k, o in enumerate(objs)
                   if k != len(args) and o.is_Atom and o.is_number}
@@ -949,51 +402,39 @@ def nary(tag, gen, slots=None):
     return template
 
 
-# ---------------------------------------------------------------------------
-# polar numbers: exp_polar, polar_lift, principal_branch (#180)
-# ---------------------------------------------------------------------------
-#
-# The value at a finite argument is a point of the Riemann surface of the
-# logarithm, so it is polar (``polar_lift(-2) == 2*exp_polar(I*pi)``); at
-# an infinite one it is not (``polar_lift(oo*I) == oo*exp_polar(I*pi/2)``,
-# not polar for SymPy), and ``principal_branch(x, oo) == x`` (unevaluated
-# with ``evaluate=False``), so a period must be finite and positive.
-# ``exp_polar(x)`` of a real ``x`` lies on the sheet of the positive reals
-# (``exp_polar(0)`` is 1, SymPy: rational, issue 8008), its value there is
-# ``exp(x)``.  Nothing else is claimed: ``exp_polar(2*I*pi)`` is not 1.
-
-def _polar(R, n):
-    """Arguments 0 (and 1, the period, for ``n == 2``), node ``n``."""
-    R.rule([(0, 'finite', True)] + ([(1, 'positive', True)] if n == 2 else []), (n, 'polar', True))
-
-
-def _exp_polar(R, c):
-    _polar(R, N)
-    R.rule([(X, 'real', True)], (N, 'positive', True))
-    R.rule([(X, 'zero', True)], (N, 'rational', True))
-    R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-registry.register(exp_polar)(_unary('exp_polar', _exp_polar))
-registry.register(polar_lift)(nary('polar_lift', _polar))
-registry.register(principal_branch)(nary('principal_branch', _polar))
-
 
 # ---------------------------------------------------------------------------
-# Mod (#180)
+# combinatorial: the value at a constant integer argument
+# (wiring.VALUE_AT_INTEGER), and genocchi(n) by the parity of n/2
+# (wiring.HALF_ARGUMENT); the rows are in .combinatorial
 # ---------------------------------------------------------------------------
-#
-# ``Mod(p, q) == p - q*floor(p/q)`` for real ``p`` and real ``q != 0``: in
-# ``[0, q)`` for ``q > 0``, in ``(q, 0]`` for ``q < 0``.  ``Mod(p, 0)``
-# raises, an infinite argument gives nan, non-real arguments get no claim.
 
-def _mod(R, n):
-    p, q = 0, 1
-    for pred in ('integer', 'rational', 'real'):
-        R.rule([(p, pred, True), (q, pred, True), (q, 'zero', False)], (n, pred, True))
-    R.rule([(p, 'real', True), (q, 'positive', True)], (n, 'nonnegative', True))
-    R.rule([(p, 'real', True), (q, 'negative', True)], (n, 'nonpositive', True))
+#: largest constant argument whose value is computed for its unit facts
+MAX_VALUE_ARG = 200
 
 
-registry.register(Mod)(nary('Mod', _mod))
+def _value_units(c, expr):
+    """Unit facts of ``expr``, a node with the constant argument ``c``,
+    from its value (``expr.func(c)`` evaluates it)."""
+    if not (c.is_Integer and abs(c) <= MAX_VALUE_ARG):
+        return []
+    try:
+        v = expr.func(c)
+    except (ValueError, TypeError, ArithmeticError):
+        return []
+    if not (v.is_Atom and v.is_number) or v is S.NaN:
+        return []
+    return [value_units(v, expr)]
+
+
+def _genocchi_half(gen, h):
+    """``gen`` and the rules of ``genocchi(n)`` for an even ``n > 0`` by the
+    parity of ``n/2``, the object in slot ``h``: ``G_2k`` has the sign
+    ``(-1)**k`` (-1, 1, -3, 17, -155, ...)."""
+    def half(R, c):
+        gen(R, c)
+        R.rule([(X, 'even', True), (X, 'positive', True), (h, 'even', True)], (N, 'positive', True))
+        R.rule([(X, 'even', True), (X, 'positive', True), (h, 'odd', True)], (N, 'negative', True))
+    half.__module__ = gen.__module__
+    half.__name__ = half.__qualname__ = gen.__name__
+    return half

@@ -2,7 +2,7 @@
 
 Importing this package registers every template module with
 :data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.wiring`, :mod:`.selection`,
-:mod:`.combinatorial`, :mod:`.special`, :mod:`.cfunctions`, :mod:`.rootof`,
+:mod:`.special`, :mod:`.rootof`,
 :mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
@@ -18,21 +18,32 @@ imported"; ``tests/test_layering.py``).
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.function import Application, Function
+from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.functions.elementary.exponential import LambertW
+from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
 from sympy.functions.combinatorial.factorials import (
     FallingFactorial,
     RisingFactorial,
     binomial,
+    factorial,
     factorial2,
     subfactorial,
 )
 from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
+from sympy.functions.elementary.complexes import (
+    Abs, conjugate, im, polar_lift, principal_branch, re, sign,
+)
+from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
 from sympy.functions.elementary.miscellaneous import MinMaxBase
 from sympy.functions.elementary.piecewise import Piecewise
-from sympy.functions.elementary.trigonometric import cos, cot, csc, sec, sin, tan
+from sympy.functions.elementary.hyperbolic import (
+    acosh, acoth, acsch, asech, asinh, atanh, cosh, coth, csch, sech, sinh, tanh,
+)
+from sympy.functions.elementary.trigonometric import (
+    acos, acot, acsc, asec, asin, atan, cos, cot, csc, sec, sin, tan,
+)
 from sympy.functions.special.bessel import (
     airyai,
     airyaiprime,
@@ -87,24 +98,37 @@ from .registry import TemplateRegistry, registry
 # imported when the first node of such a class is met (TemplateRegistry.lazy)
 registry.lazy(__name__ + ".core", Add, Mul, Pow)
 registry.lazy(__name__ + ".functions", Function)
-#: the functions whose templates are compiled from rows (.wiring)
-ROW_FUNCTIONS = (sin, cos, tan, cot, sec, csc)
-registry.lazy(__name__ + ".wiring", *ROW_FUNCTIONS)
+#: the families of rows (.wiring), each with the functions it states rows
+#: for: a family is compiled on the first use of one of its functions
+ROW_FAMILIES = (
+    ("trig", (sin, cos, tan, cot, sec, csc)),
+    ("hyperbolic", (sinh, cosh, tanh, coth, sech, csch)),
+    ("inverse", (asin, acos, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc, atan, acot)),
+    ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, erf2, Ei, Ci, Chi, li, Li,
+                         erfinv, erfcinv,
+                         # new in SymPy 1.15: declared by name
+                         "sympy.functions.special.error_functions:owens_t",
+                         expint)),
+    ("exp_log", (exp, log)),
+    ("complex_parts", (Abs, re, im, sign, conjugate)),
+    ("integer_funcs", (RoundFunction, floor, ceiling, factorial, Mod)),
+    ("polar", (exp_polar, polar_lift, principal_branch)),
+    ("zeta_functions", (zeta, dirichlet_eta, polylog)),
+    ("lambertw", (LambertW,)),
+    ("bessel", (airyai, airybi, airyaiprime, airybiprime, besselj, bessely, besseli, besselk)),
+    ("gamma_functions", (gamma, digamma, trigamma, polygamma, loggamma, lowergamma, uppergamma)),
+    ("beta_functions", (beta, betainc, betainc_regularized)),
+    ("combinatorial", (catalan, andre, genocchi, partition, factorial2, subfactorial,
+                       RisingFactorial, FallingFactorial, binomial)),
+    # sympy.codegen is not imported by SymPy itself: declared by name
+    ("cfunctions", ("sympy.codegen.cfunctions:expm1", "sympy.codegen.cfunctions:log1p")),
+)
+for _family, _functions in ROW_FAMILIES:
+    registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
 registry.lazy(__name__ + ".rootof", ComplexRootOf)
 registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
-registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,
-              FallingFactorial, binomial, catalan, andre, genocchi, partition)
-registry.lazy(__name__ + ".special", gamma, loggamma, polygamma, digamma, trigamma, multigamma,
-              lowergamma, uppergamma, erf, erfc, erfi, erf2, erfinv, erfcinv, Ei, expint, li, Li,
-              Si, Ci, Shi, Chi, fresnels, fresnelc, beta, betainc, betainc_regularized, LambertW,
-              zeta, dirichlet_eta, polylog, airyai, airybi, airyaiprime, airybiprime, besselj,
-              bessely, besseli, besselk,
-              # new in SymPy 1.15: declared by name
-              "sympy.functions.special.error_functions:owens_t")
-# sympy.codegen is not imported by SymPy itself: declared by name
-registry.lazy(__name__ + ".cfunctions", "sympy.codegen.cfunctions:expm1",
-              "sympy.codegen.cfunctions:log1p")
-# sympy.physics and sympy.stats neither
+registry.lazy(__name__ + ".special", multigamma)
+# sympy.physics and sympy.stats are not imported by SymPy itself either
 registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")
 registry.lazy(__name__ + ".stats", "sympy.stats.rv:RandomSymbol")
 registry.lazy(__name__ + ".nodes", AccumulationBounds, Idx)

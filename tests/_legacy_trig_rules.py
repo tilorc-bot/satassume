@@ -9,9 +9,10 @@ from satassume.knowledge.templates.functions import (
     N,
     X,
     _TRANSCENDENTAL,
-    _finite_value,
     _table,
 )
+
+from _legacy_helpers import _finite_value
 
 # sin(oo*I) == oo*I, so finiteness of the value needs a finite argument.
 _SIN = (
