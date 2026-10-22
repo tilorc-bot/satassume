@@ -21,15 +21,7 @@ from sympy import S
 from sympy.core.add import Add
 from sympy.core.mod import Mod
 from sympy.functions.combinatorial.factorials import factorial
-from sympy.functions.elementary.complexes import (
-    Abs,
-    conjugate,
-    im,
-    polar_lift,
-    principal_branch,
-    re,
-    sign,
-)
+from sympy.functions.elementary.complexes import polar_lift, principal_branch
 from sympy.functions.elementary.exponential import exp_polar
 from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
 
@@ -166,89 +158,6 @@ def _exp_ipi(gen):
 
 
 # ---------------------------------------------------------------------------
-# Abs / re / im / sign / conjugate
-# ---------------------------------------------------------------------------
-
-def _abs(R, c):
-    R.rule([], (N, 'extended_real', True))
-    R.rule([], (N, 'extended_nonnegative', True))
-    R.rule([(X, 'finite', True)], (N, 'real', True))
-    R.rule([(N, 'finite', True)], (X, 'finite', True))
-    R.rule([(X, 'infinite', True)], (N, 'extended_positive', True))
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
-    _equiv(R, [(X, 'extended_real', True)], ('integer', 'rational', 'even', 'odd', 'algebraic'))
-    # Abs(x) == x for x >= 0.
-    _equiv(R, [(X, 'extended_nonnegative', True)], ('prime', 'composite'))
-
-
-# ``re`` and ``im`` are not extended real for every argument:
-# ``re(zoo) = im(zoo) = nan``.  The vocabulary cannot tell ``zoo`` from
-# ``oo*I`` (``re(oo*I) = 0``) or ``oo + oo*I``, so an infinite non-real
-# argument gets no claim; a finite argument gives a real part, an extended
-# real one gives itself (``re``) or zero (``im``).
-def _re(R, c):
-    R.rule([(X, 'finite', True)], (N, 'real', True))
-    R.rule([(X, 'extended_real', True)], (N, 'extended_real', True))
-    R.rule([(X, 'imaginary', True)], (N, 'zero', True))
-    R.rule([(X, 'zero', True)], (N, 'zero', True))
-    R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
-    _equiv(R, [(X, 'extended_real', True)], (
-        'zero', 'extended_positive', 'extended_negative', 'integer', 'rational',
-        'even', 'odd', 'algebraic', 'finite', 'prime', 'composite'))
-
-
-def _im(R, c):
-    R.rule([(X, 'finite', True)], (N, 'real', True))
-    R.rule([(X, 'extended_real', True)], (N, 'zero', True))
-    R.rule([(X, 'imaginary', True)], (N, 'nonzero', True))
-    # a finite argument is read as a complex number x + I*y (above: im is real)
-    R.rule([(X, 'finite', True), (X, 'extended_real', False)], (N, 'zero', False))
-    R.rule([(X, 'algebraic', True)], (N, 'algebraic', True))
-
-
-_SIGN = (
-    (('extended_real',), 'integer'),
-    (('imaginary',), 'imaginary'),
-    (('extended_positive',), 'positive'),
-    (('extended_positive',), 'odd'),
-    (('extended_negative',), 'negative'),
-    (('extended_negative',), 'odd'),
-    (('extended_nonnegative',), 'nonnegative'),
-    (('extended_nonpositive',), 'nonpositive'),
-    (('algebraic',), 'algebraic'),
-)
-
-
-def _sign(R, c):
-    R.rule([], (N, 'complex', True))
-    _table(R, _SIGN)
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.rule([(X, 'extended_real', True), (N, 'positive', True)], (X, 'extended_positive', True))
-    R.rule([(X, 'extended_real', True), (N, 'negative', True)], (X, 'extended_negative', True))
-
-
-# Invariant under conjugation; the rule base derives the rest (real, the
-# finite sign predicates, nonzero, infinite, irrational, transcendental...).
-_CONJUGATE_INVARIANT = (
-    'extended_real', 'finite', 'zero', 'extended_positive', 'extended_negative',
-    'integer', 'rational', 'even', 'odd', 'algebraic', 'complex', 'imaginary',
-    'prime', 'composite', 'commutative', 'hermitian', 'antihermitian',
-)
-
-
-def _conjugate(R, c):
-    _equiv(R, [], _CONJUGATE_INVARIANT)
-
-
-registry.register(Abs)(_unary('Abs', _abs))
-registry.register(re)(_unary('re', _re))
-registry.register(im)(_unary('im', _im))
-registry.register(sign)(_unary('sign', _sign))
-registry.register(conjugate)(_unary('conjugate', _conjugate))
-
-
-# ---------------------------------------------------------------------------
 # floor / ceiling
 # ---------------------------------------------------------------------------
 
@@ -286,13 +195,13 @@ def _parts_of_round_rules():
     return R.rules
 
 
-@registry.register(re, im)
 def parts_of_round_templates(expr):
     """``re`` and ``im`` of ``floor(y)`` or ``ceiling(y)`` for finite ``y``
     are integers: SymPy rounds each part (``floor(y) = floor(re(y)) +
     I*floor(im(y))``), so the value is a Gaussian integer.  The vocabulary
     has no Gaussian-integer predicate, hence the rule looks through one
-    level of structure."""
+    level of structure.  Registered for ``re`` and ``im`` after their rows
+    (``wiring.AFTER_ROWS``)."""
     r = expr.args[0]
     if not isinstance(r, (floor, ceiling)):
         return None

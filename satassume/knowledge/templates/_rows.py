@@ -13,11 +13,12 @@ an inequality between the argument and an integer, ``Q.gt(x, 1)``,
 ``Q.le(x, -1)``, ``Q.eq(x, 1)``, ``Q.ne(x, 1)`` and the like, or its
 negation.  Inequalities are over the extended reals (``Q.gt(x, 1)`` holds
 at ``x = oo``, ``~Q.gt(x, 1)`` at ``x = I``).  A row without premises is
-``Equivalent`` alone::
+its conclusion alone::
 
     Q.extended_real(x) >> Equivalent(Q.zero(f(x)), Q.zero(x))
-    Equivalent(Q.zero(f(x)), Q.zero(x))
     (Q.positive(x) & Q.lt(x, 1)) >> Q.positive(f(x))
+    Equivalent(Q.zero(f(x)), Q.zero(x))
+    Q.extended_nonnegative(f(x))
 
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
@@ -46,8 +47,8 @@ indented on the next, a longer row continued on more lines::
 
 Python binds ``>>`` tighter than ``&``: ``a & b >> c`` is ``And(a,
 Implies(b, c))``, and ``c >> s & t`` is ``(c >> s) & t``.  A row whose top
-is not an implication is rejected, and a set with a condition refuses
-``&``, so both missing pairs of parentheses fail at import.
+is a conjunction is rejected, and a set with a condition refuses ``&``, so
+both missing pairs of parentheses fail at import.
 """
 from __future__ import annotations
 
@@ -81,8 +82,8 @@ class Rows:
         return Rows(tuple(_flat(other)) + self.rows)
 
     def __rrshift__(self, cond) -> 'Rows':
-        return _Conditioned(Implies(cond, r) if isinstance(r, Equivalent)
-                            else Implies(cond & r.args[0], r.args[1]) for r in self.rows)
+        return _Conditioned(Implies(cond & r.args[0], r.args[1]) if isinstance(r, Implies)
+                            else Implies(cond, r) for r in self.rows)
 
     def __iter__(self):
         return iter(self.rows)
@@ -101,10 +102,17 @@ class _Conditioned(Rows):
 
 
 def _row(r):
-    if not isinstance(r, (Implies, Equivalent)):
+    # a row without premises is a literal, a disjunction of literals or
+    # Equivalent; a conjunction is what a & b >> c parses to
+    if not (isinstance(r, (Implies, Equivalent))
+            or all(_literal(a) for a in (r.args if isinstance(r, Or) else (r,)))):
         raise TypeError(f"row {r} is not an implication "
                         "(parenthesize both sides: >> binds tighter than &)")
     return r
+
+
+def _literal(e):
+    return isinstance(e.args[0] if isinstance(e, Not) else e, AppliedPredicate)
 
 
 def _flat(item):

@@ -70,12 +70,14 @@ def legacy_templates(legacy_gen, added):
 
 
 def rows_templates(heads, family):
-    """The registered template of each head, attributed to the family."""
+    """The template of each head's rows, registered for the head and
+    attributed to the family (before any of ``wiring.AFTER_ROWS``)."""
     name = f"{wiring.__name__}:{family}"
     out = {}
     for h in heads:
-        ts = [t for t in registry.templates_for(h) if t.__module__ == name]
-        assert len(ts) == 1, (h, ts)
+        registry.templates_for(h)
+        ts = [t for t in registry._by_class[h] if t.__module__ == name]
+        assert len(ts) == 1 + sum(h in c for c, _ in wiring.AFTER_ROWS), (h, ts)
         out[h] = ts[0]
     return out
 

@@ -1,15 +1,16 @@
 """Which template each function of a family of rows gets (#249).
 
 The family modules (:mod:`.trig`, :mod:`.hyperbolic`, :mod:`.inverse`,
-:mod:`.exp_log`) state rows only, as ``RULES`` (see :mod:`._rows`).
-:func:`load` compiles a family's rows and registers one template per
-function (:func:`template`): the unary template of its rows
+:mod:`.exp_log`, :mod:`.complex_parts`) state rows only, as ``RULES`` (see
+:mod:`._rows`).  :func:`load` compiles a family's rows and registers one
+template per function (:func:`template`): the unary template of its rows
 (:func:`.functions._unary`), with the facts of a constant argument for a
 function of :data:`UNIT_INTERVAL`, or, for a function of
 :data:`PI_MULTIPLE` or :data:`I_PI_MULTIPLE`, :func:`.functions._pi_trig`'s,
 which adds the rules of ``f(pi*c*s)`` for a rational ``c``, or, for a
 function of :data:`I_PI_ROOT`, :func:`.functions._exp_ipi`'s, which adds
-those of ``f(I*pi*c*s)``.
+those of ``f(I*pi*c*s)``; then the templates that are not rows of
+:data:`AFTER_ROWS`.
 ``templates/__init__.py`` declares each family as ``"<this
 module>:<family>"`` for its functions (``TemplateRegistry.lazy``), so a
 family is compiled on the first use of one of its functions, and its
@@ -19,12 +20,13 @@ from __future__ import annotations
 
 import importlib
 
-from sympy import S, acos, asin, cos, cosh, exp, sin
+from sympy import S, acos, asin, cos, cosh, exp, im, re, sin
 
 from ._rows import by_function, rules
 from .core import ipi_split
 from .functions import (
-    _cosh_shift, _exp_ipi, _in_unit_interval_units, _pi_trig, _unary, shifted,
+    _cosh_shift, _exp_ipi, _in_unit_interval_units, _pi_trig, _unary,
+    parts_of_round_templates, shifted,
 )
 from .registry import registry
 
@@ -43,6 +45,11 @@ I_PI_ROOT = (exp,)
 #: the functions with facts for a rational or float argument c: real on
 #: [-1, 1], and which side of the cut outside (functions._in_unit_interval_units)
 UNIT_INTERVAL = (asin, acos)
+
+#: templates that are not rows, each with the functions it is for,
+#: registered after the rows of those functions: re and im of floor(y) or
+#: ceiling(y) are integers (functions.parts_of_round_templates)
+AFTER_ROWS = (((re, im), parts_of_round_templates),)
 
 
 def functions(family: str):
@@ -68,7 +75,23 @@ def template(fn, gen):
 
 
 def load(family: str) -> None:
-    """Register the templates of the family's rows (``TemplateRegistry.lazy``)."""
+    """Register the templates of the family's rows (``TemplateRegistry.lazy``),
+    then those of :data:`AFTER_ROWS` for its functions."""
     name = f"{__name__}:{family}"
+    fns = set()
     for fn, all_rows in by_function(importlib.import_module(f"{__package__}.{family}").RULES):
         registry.register(fn)(template(fn, rules(fn, all_rows, name)))
+        fns.add(fn)
+    for classes, t in AFTER_ROWS:
+        if fns.issuperset(classes):
+            registry.register(*classes)(_attributed(t, name))
+
+
+def _attributed(t, module):
+    """``t``, attributed to ``module`` (the registry tells a declared
+    module's templates by their module)."""
+    def template(expr):
+        return t(expr)
+    template.__name__ = template.__qualname__ = t.__name__
+    template.__module__ = module
+    return template
