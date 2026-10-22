@@ -15,7 +15,10 @@ workers), printed in the header and in the summary.
   own, shared with neither the query nor the other conjuncts, and is
   satisfiable by itself, so the padded set is consistent exactly when the
   original is.  The answer, or the exception, must not change (I2 of
-  ``harness/INVARIANTS.md``).  Not padded: the asks of a test marked
+  ``harness/INVARIANTS.md``), except that a ``ValueError`` on the padded
+  set is no finding (I2's oracle: an inconsistency report is allowed, and
+  an unrelated relation can expose an inconsistent set, issue #261); the
+  call then answers the set without the padding.  Not padded: the asks of a test marked
   ``no_pad`` (it asserts on what the engine did, such as counters, memo
   sizes or search conflicts, which unrelated conjuncts change), and asks
   on an engine with a stand-in theory of ``tests/theory_harness.py``
@@ -26,9 +29,7 @@ workers), printed in the header and in the summary.
   (``tests/test_budget_cone.py``, H2's residual, issue #72).  A test marked
   ``no_pad_relations(reason)`` gets only :data:`PAD_TEMPLATES`: one
   unrelated relation makes a wide shape search (issue #260; same answer,
-  but a sum of 160 terms takes minutes).  A test marked ``pad_xfail(issue)``
-  fails under padding for that open issue and is expected to
-  (``xfail``, not strict) when this option is on.
+  but a sum of 160 terms takes minutes).
 * ``--satassume-evict=RATE`` (opt-in): with probability RATE, the default
   engine drops every memo (``Engine.memos.clear()``) before a call of
   ``ask``.  The answer must not change.
@@ -117,7 +118,6 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: long-running test, skipped unless enabled by an environment variable")
     config.addinivalue_line("markers", "no_pad(reason): --satassume-pad leaves the asks of this test alone")
     config.addinivalue_line("markers", "no_pad_relations(reason): --satassume-pad adds no relations to the asks of this test")
-    config.addinivalue_line("markers", "pad_xfail(issue): expected to fail under --satassume-pad, for that issue")
     worker = getattr(config, "workerinput", None)
     if worker is not None:
         seed = worker["satassume_seed"]
@@ -166,12 +166,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 
 
 def pytest_collection_modifyitems(session, config, items):
-    if _Random.pad:
-        for item in items:
-            m = item.get_closest_marker("pad_xfail")
-            if m is not None:
-                item.add_marker(pytest.mark.xfail(
-                    reason=f"padded assumptions change the answer: issue #{m.args[0]}", strict=False))
     if config.getoption("satassume_no_shuffle"):
         return
     rng = random.Random(f"{_Random.seed}:order")
@@ -240,7 +234,11 @@ def _install() -> None:
             if pool is not None:
                 pad = [pool[int(r * len(pool))](Q, syms[2 * k], syms[2 * k + 1])
                        for k, r in enumerate(picks)]
-                assumptions = And(*pad) if assumptions is True else And(assumptions, *pad)
+                padded = And(*pad) if assumptions is True else And(assumptions, *pad)
+                try:
+                    return original(proposition, padded, engine, **kwargs)
+                except ValueError:
+                    pass        # an inconsistency report, allowed by I2's oracle
         return original(proposition, assumptions, engine, **kwargs)
 
     api.ask = ask
