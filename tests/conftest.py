@@ -23,7 +23,10 @@ workers), printed in the header and in the summary.
   exponentially with unrelated atoms), and asks on an engine with
   ``relevance=False`` or a discovery budget below the default: there the
   budget weighs the whole set, unrelated conjuncts included, by design
-  (``tests/test_budget_cone.py``, H2's residual, issue #72).  A test marked ``pad_xfail(issue)``
+  (``tests/test_budget_cone.py``, H2's residual, issue #72).  A test marked
+  ``no_pad_relations(reason)`` gets only :data:`PAD_TEMPLATES`: one
+  unrelated relation makes a wide shape search (issue #260; same answer,
+  but a sum of 160 terms takes minutes).  A test marked ``pad_xfail(issue)``
   fails under padding for that open issue and is expected to
   (``xfail``, not strict) when this option is on.
 * ``--satassume-evict=RATE`` (opt-in): with probability RATE, the default
@@ -82,6 +85,8 @@ class _Random:
     evict = 0.0
     #: the running test is marked ``no_pad``
     unpadded = False
+    #: the running test is marked ``no_pad_relations``
+    no_relations = False
     pad_rng = random.Random(0)
     evict_rng = random.Random(0)
 
@@ -111,6 +116,7 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     config.addinivalue_line("markers", "slow: long-running test, skipped unless enabled by an environment variable")
     config.addinivalue_line("markers", "no_pad(reason): --satassume-pad leaves the asks of this test alone")
+    config.addinivalue_line("markers", "no_pad_relations(reason): --satassume-pad adds no relations to the asks of this test")
     config.addinivalue_line("markers", "pad_xfail(issue): expected to fail under --satassume-pad, for that issue")
     worker = getattr(config, "workerinput", None)
     if worker is not None:
@@ -189,6 +195,7 @@ def pytest_collection_modifyitems(session, config, items):
 def pytest_runtest_setup(item):
     _Random.start(item.nodeid)
     _Random.unpadded = item.get_closest_marker("no_pad") is not None
+    _Random.no_relations = item.get_closest_marker("no_pad_relations") is not None
 
 
 def _install() -> None:
@@ -217,7 +224,9 @@ def _install() -> None:
                 or any(getattr(s.factory, "__module__", None) == "theory_harness" for s in specs)
                 or any(s.startswith(PAD_PREFIX) for s in names(proposition) | names(assumptions))):
             return None
-        return PAD_TEMPLATES + PAD_RELATIONS if any(s.name == "lra" for s in specs) else PAD_TEMPLATES
+        if _Random.no_relations or not any(s.name == "lra" for s in specs):
+            return PAD_TEMPLATES
+        return PAD_TEMPLATES + PAD_RELATIONS
 
     @functools.wraps(original)
     def ask(proposition, assumptions=True, engine=None, **kwargs):
