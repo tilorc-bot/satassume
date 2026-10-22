@@ -1,21 +1,32 @@
-"""``erf``, ``erfc``, ``erfi``, the exponential integral ``Ei``, the sine
-and cosine integrals ``Si``, ``Ci``, ``Shi``, ``Chi``, and the Fresnel
-integrals ``fresnels`` and ``fresnelc``.
+"""``erf``, ``erfc``, ``erfi``, their inverses ``erfinv`` and ``erfcinv``,
+the exponential integral ``Ei``, the logarithmic integrals ``li`` and
+``Li``, the sine and cosine integrals ``Si``, ``Ci``, ``Shi``, ``Chi``,
+and the Fresnel integrals ``fresnels`` and ``fresnelc``.
 
 Values follow SymPy's conventions: principal values (``Ei``, ``Ci`` and
 ``Chi`` off the positive reals), the limit at a real infinity
 (``erf(+-oo) == +-1``, ``erfc(oo) == 0``, ``erfc(-oo) == 2``,
 ``erfi(+-oo) == Shi(+-oo) == +-oo``, ``Si(+-oo) == +-pi/2``,
-``fresnels(+-oo) == fresnelc(+-oo) == +-1/2``, ``Ei(oo) == oo``,
-``Ei(-oo) == 0``, ``Ci(oo) == 0``, ``Ci(-oo) == I*pi``), and
+``fresnels(+-oo) == fresnelc(+-oo) == +-1/2``, ``Ei(oo) == li(oo) ==
+Li(oo) == oo``, ``Ei(-oo) == 0``, ``Ci(oo) == 0``, ``Ci(-oo) == I*pi``),
+the limit at the ends of an interval (``erfinv(+-1) == +-oo``,
+``erfcinv(0) == oo``, ``erfcinv(2) == -oo``, ``li(1) == -oo``), and
 ``Chi(+-oo) == oo``, ``Ei(0) == -oo``, ``Ci(0) == Chi(0) == zoo``.
 ``erf``, ``erfc``, ``erfi`` and the Fresnel integrals are real at some
 non-real points (the complex zeros of ``erf``), so a non-real argument off
 the imaginary axis gives no claim.
+
+A row comparing ``x`` with an integer keeps the sign of ``x`` the legacy
+rule had (``Q.positive(x) & Q.lt(x, 1)``): to the engine ``x`` and ``x -
+1`` are separate terms, and a template's block must be satisfiable
+whatever facts its terms are given (``tests/test_totality.py``).
 """
 from __future__ import annotations
 
-from sympy import Chi, Ci, Ei, Equivalent, Q, Shi, Si, erf, erfc, erfi, fresnelc, fresnels
+from sympy import (
+    Chi, Ci, Ei, Equivalent, Li, Q, Shi, Si, erf, erfc, erfcinv, erfi, erfinv, fresnelc,
+    fresnels, li,
+)
 
 from ._rows import closed, f, for_all, x
 
@@ -29,6 +40,11 @@ RULES = (
     #     a logarithmic singularity at 0 only (principal value)
     for_all((Ei, Ci, Chi),
         (Q.complex(x) & ~Q.zero(x)) >> Q.complex(f(x))),
+
+    # Complex off 1
+    #     a logarithmic singularity at 1 only (principal value), li(0) == 0
+    for_all((li, Li),
+        (Q.complex(x) & Q.ne(x, 1)) >> Q.complex(f(x))),
 
     # Sign of the argument
     #     odd, and of the sign of the argument on the extended reals:
@@ -48,6 +64,54 @@ RULES = (
     # Real on the positive reals
     for_all((Ei, Ci, Chi),
         Q.positive(x) >> Q.real(f(x))),
+
+    # Real on the positive reals but at 1
+    #     li(1) == -oo, Li(x) == li(x) - li(2)
+    for_all((li, Li),
+        (Q.positive(x) & Q.ne(x, 1)) >> Q.real(f(x))),
+
+    # Zero only at 0
+    #     erfinv is the inverse of erf on (-1, 1), and erf(0) == 0
+    for_all((erfinv,),
+        Equivalent(Q.zero(f(x)), Q.zero(x))),
+
+    # Zero only at 1
+    #     erfcinv(z) == erfinv(1 - z)
+    for_all((erfcinv,),
+        Equivalent(Q.zero(f(x)), Q.eq(x, 1))),
+
+    # Zero at 0
+    #     li(0) == 0 (its other zero is the Ramanujan-Soldner constant
+    #     1.4513...)
+    for_all((li,),
+        Q.zero(x) >> Q.zero(f(x))),
+
+    # Positive on (0, 1)
+    #     erf is increasing and of the sign of its argument;
+    #     erfcinv(z) == erfinv(1 - z)
+    for_all((erfinv, erfcinv),
+        (Q.positive(x) & Q.lt(x, 1)) >> Q.positive(f(x))),
+
+    # Negative on (-1, 0)
+    for_all((erfinv,),
+        (Q.negative(x) & Q.gt(x, -1)) >> Q.negative(f(x))),
+
+    # Negative on (1, 2)
+    #     erfcinv(z) == erfinv(1 - z)
+    for_all((erfcinv,),
+        (Q.positive(x) & Q.gt(x, 1) & Q.lt(x, 2)) >> Q.negative(f(x))),
+
+    # Negative on (0, 1)
+    #     1/log(t) < 0 on (0, 1); Li(x) == li(x) - li(2), and li(2) > 0
+    for_all((li, Li),
+        (Q.positive(x) & Q.lt(x, 1)) >> Q.negative(f(x))),
+
+    # Of the sign of x - 2 beyond 1
+    #     Li(x) == li(x) - li(2) increases on (1, oo), Li(2) == 0
+    for_all((Li,),
+        (Q.real(x) & Q.gt(x, 1) & Q.lt(x, 2)) >> Q.negative(f(x)),
+        (Q.real(x) & Q.gt(x, 1) & Q.eq(x, 2)) >> Q.zero(f(x)),
+        (Q.real(x) & Q.gt(x, 1) & Q.gt(x, 2)) >> Q.positive(f(x))),
 
     # Positive on the reals
     #     erfc(t) == 1 - erf(t) is in (0, 2)
@@ -81,13 +145,31 @@ RULES = (
     for_all((Ei, Ci, Chi),
         Q.zero(x) >> Q.infinite(f(x))),
 
+    # Infinite at 1 and -1
+    #     erfinv(+-1) == +-oo
+    for_all((erfinv,),
+        (Q.positive(x) & Q.eq(x, 1)) >> (Q.infinite(f(x)) & Q.extended_positive(f(x))),
+        (Q.negative(x) & Q.eq(x, -1)) >> (Q.infinite(f(x)) & Q.extended_negative(f(x)))),
+
+    # Infinite at 0 and 2
+    #     erfcinv(0) == oo, erfcinv(2) == -oo
+    for_all((erfcinv,),
+        (Q.zero(x) & Q.lt(x, 1)) >> (Q.infinite(f(x)) & Q.extended_positive(f(x))),
+        (Q.positive(x) & Q.gt(x, 1) & Q.eq(x, 2)) >> (
+            Q.infinite(f(x)) & Q.extended_negative(f(x)))),
+
+    # -oo at 1
+    #     li(1) == -oo, a logarithmic singularity
+    for_all((li,),
+        (Q.positive(x) & Q.eq(x, 1)) >> (Q.infinite(f(x)) & Q.extended_negative(f(x)))),
+
     # Infinite at a real infinity
     #     erfi(+-oo) == Shi(+-oo) == +-oo
     for_all((erfi, Shi),
         (Q.infinite(x) & Q.extended_real(x)) >> Q.infinite(f(x))),
 
     # oo at oo
-    for_all((Ei, Chi),
+    for_all((Ei, Chi, li, Li),
         (Q.infinite(x) & Q.extended_positive(x)) >> (
             Q.infinite(f(x)) & Q.extended_positive(f(x)))),
 

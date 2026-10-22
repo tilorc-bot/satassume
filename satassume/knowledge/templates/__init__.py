@@ -103,7 +103,8 @@ ROW_FAMILIES = (
     ("trig", (sin, cos, tan, cot, sec, csc)),
     ("hyperbolic", (sinh, cosh, tanh, coth, sech, csch)),
     ("inverse", (asin, acos, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc, atan, acot)),
-    ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, Ei, Ci, Chi)),
+    ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, Ei, Ci, Chi, li, Li,
+                         erfinv, erfcinv)),
     ("exp_log", (exp, log)),
     ("complex_parts", (Abs, re, im, sign, conjugate)),
     ("integer_funcs", (RoundFunction, floor, ceiling, factorial)),
@@ -116,7 +117,7 @@ registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,
               FallingFactorial, binomial, catalan, andre, genocchi, partition)
 registry.lazy(__name__ + ".special", gamma, loggamma, polygamma, digamma, trigamma, multigamma,
-              lowergamma, uppergamma, erf2, erfinv, erfcinv, expint, li, Li,
+              lowergamma, uppergamma, erf2, expint,
               beta, betainc, betainc_regularized, LambertW,
               zeta, dirichlet_eta, polylog, airyai, airybi, airyaiprime, airybiprime, besselj,
               bessely, besseli, besselk,

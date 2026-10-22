@@ -2,17 +2,16 @@
 
 The gamma family (``gamma``, ``loggamma``, ``polygamma``, ``digamma``,
 ``trigamma``, ``multigamma``, ``lowergamma``, ``uppergamma``),
-``erf2``, ``erfinv``, ``erfcinv``, ``expint``, ``li``, ``Li``,
-``owens_t``, the beta functions
+``erf2``, ``expint``, ``owens_t``, the beta functions
 (``beta``, ``betainc``, ``betainc_regularized``), ``LambertW``, ``zeta``,
 ``dirichlet_eta``, ``polylog``, the Airy functions and the Bessel
 functions ``besselj``, ``bessely``, ``besseli``, ``besselk``.  The unary
-error functions and integrals are rows (:mod:`.error_functions`).
+error functions, their inverses and the integrals are rows
+(:mod:`.error_functions`).
 
 Each rule is a theorem about the value under SymPy's conventions
-(``gamma(-n) = zoo``, ``loggamma(-n) = oo``, ``erfcinv(0) = oo``,
-``li(1) = -oo``, ``zeta(1) = zoo``, ``LambertW(0, k) = -oo`` for ``k !=
-0``, principal branches).
+(``gamma(-n) = zoo``, ``loggamma(-n) = oo``, ``zeta(1) = zoo``,
+``LambertW(0, k) = -oo`` for ``k != 0``, principal branches).
 SymPy's own handlers are not followed where they are not theorems:
 
 * ``beta(x, y)`` and ``betainc`` of real arguments are not always real
@@ -49,7 +48,7 @@ from sympy.functions.special.bessel import (
     bessely,
 )
 from sympy.functions.special.beta_functions import beta, betainc, betainc_regularized
-from sympy.functions.special.error_functions import Li, erf2, erfcinv, erfinv, expint, li
+from sympy.functions.special.error_functions import erf2, expint
 from sympy.functions.special.gamma_functions import (
     digamma,
     gamma,
@@ -79,11 +78,6 @@ _ENTIRE = ((('finite',), 'finite'), (('complex',), 'complex'))
 
 def _register(cls, tag, gen, slots=None):
     registry.register(cls)(_unary(tag, gen, slots=slots))
-
-
-def _minus(*cs):
-    """Slots ``x - c`` for the numbers ``cs``."""
-    return lambda x: tuple(shifted(x, S(-c)) for c in cs)
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +267,7 @@ registry.register(uppergamma)(nary('uppergamma', _uppergamma))
 
 
 # ---------------------------------------------------------------------------
-# erf2, erfinv, erfcinv (erf, erfc and erfi are rows: .error_functions)
+# erf2 (erf, erfc, erfi, erfinv and erfcinv are rows: .error_functions)
 # ---------------------------------------------------------------------------
 
 def _erf2(R, n):
@@ -285,78 +279,22 @@ def _erf2(R, n):
         R.rule([(0, 'zero', True), (1, 'zero', True)], (2, 'zero', True))
 
 
-# erfinv: the inverse of erf on (-1, 1), erfinv(+-1) = +-oo; erfcinv(z) =
-# erfinv(1 - z): real on (0, 2), erfcinv(0) = oo, erfcinv(2) = -oo.
-# Slots: erfinv 2: x - 1, 3: x + 1; erfcinv 2: z - 1, 3: z - 2.
-
-def _erfinv(R, c):
-    R.equiv([], (N, 'zero', True), (X, 'zero', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'positive', True))
-    R.rule([(X, 'negative', True), (Q, 'positive', True)], (N, 'negative', True))
-    for concl in ((N, 'infinite', True), (N, 'extended_positive', True)):
-        R.rule([(X, 'positive', True), (M, 'zero', True)], concl)
-    for concl in ((N, 'infinite', True), (N, 'extended_negative', True)):
-        R.rule([(X, 'negative', True), (Q, 'zero', True)], concl)
-
-
-def _erfcinv(R, c):
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'positive', True))
-    # the sign premises on z and z - 1 are implied, but the slots are
-    # separate children: without them a block whose children are given
-    # contradictory facts is unsatisfiable (tools/totality.py)
-    R.rule([(X, 'positive', True), (M, 'positive', True), (Q, 'negative', True)], (N, 'negative', True))
-    for concl in ((N, 'infinite', True), (N, 'extended_positive', True)):
-        R.rule([(X, 'zero', True), (M, 'negative', True)], concl)
-    for concl in ((N, 'infinite', True), (N, 'extended_negative', True)):
-        R.rule([(X, 'positive', True), (M, 'positive', True), (Q, 'zero', True)], concl)
-
-
 registry.register(erf2)(nary('erf2', _erf2))
-_register(erfinv, 'erfinv', _erfinv, slots=lambda x: (shifted(x, S.NegativeOne), shifted(x, S.One)))
-_register(erfcinv, 'erfcinv', _erfcinv, slots=_minus(1, 2))
 
 
 # ---------------------------------------------------------------------------
-# expint, li, Li (Ei, Si, Ci, Shi, Chi and the Fresnel integrals are rows:
+# expint (Ei, li, Li, Si, Ci, Shi, Chi and the Fresnel integrals are rows:
 # .error_functions)
 # ---------------------------------------------------------------------------
 # expint(nu, z) = integral of exp(-z*t)/t**nu over (1, oo), positive for
 # real nu and z > 0 (E1(z) is expint(1, z)).
-# li(x) = integral of 1/log(t) over (0, x): li(0) = 0, li(1) = -oo,
-# li(oo) = oo, negative on (0, 1), real for x > 0.  Li(x) = li(x) - li(2):
-# Li(2) = 0, increasing on (1, oo).  Slots 2: x - 1, 3: x - 2.
 
 def _expint(R, n):
     if n == 2:
         R.rule([(0, 'real', True), (1, 'positive', True)], (2, 'positive', True))
 
 
-def _li(R, c):
-    R.rule([(X, 'zero', True)], (N, 'zero', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'negative', True))
-    R.rule([(X, 'positive', True), (M, 'positive', True)], (N, 'real', True))
-    for concl in ((N, 'infinite', True), (N, 'extended_negative', True)):
-        R.rule([(X, 'positive', True), (M, 'zero', True)], concl)
-    _table(R, ((('infinite', 'extended_positive'), 'infinite'),
-              (('infinite', 'extended_positive'), 'extended_positive')))
-    R.rule([(X, 'complex', True), (M, 'zero', False)], (N, 'complex', True))
-
-
-def _Li(R, c):
-    R.rule([(X, 'positive', True), (M, 'zero', False)], (N, 'real', True))
-    R.rule([(X, 'positive', True), (M, 'negative', True)], (N, 'negative', True))
-    R.rule([(M, 'positive', True), (Q, 'negative', True)], (N, 'negative', True))
-    R.rule([(M, 'positive', True), (Q, 'zero', True)], (N, 'zero', True))
-    R.rule([(M, 'positive', True), (Q, 'positive', True)], (N, 'positive', True))
-    _table(R, ((('infinite', 'extended_positive'), 'infinite'),
-              (('infinite', 'extended_positive'), 'extended_positive')))
-    R.rule([(X, 'complex', True), (M, 'zero', False)], (N, 'complex', True))
-
-
 registry.register(expint)(nary('expint', _expint))
-_register(li, 'li', _li, slots=_minus(1))
-_register(Li, 'Li', _Li, slots=_minus(1, 2))
 
 
 # ---------------------------------------------------------------------------
