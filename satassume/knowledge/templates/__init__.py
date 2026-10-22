@@ -137,9 +137,12 @@ def _applied_to_nan(expr) -> bool:
     ``zeta(1, nan)``, ``Abs(nan)``, ``sign(nan)``), and no predicate holds
     of nan, so no template fact is claimed (#180 final review F3; #231:
     ``Abs(oo - oo)`` is not extended_positive, although ``oo - oo`` is not
-    zero).  An argument that is nan only at some values of its symbols
-    (``Abs(x + y)`` at ``x = oo, y = -oo``) is not detected."""
-    return isinstance(expr, Application) and any(_may_be_nan(a) for a in expr.args)
+    zero).  A power counts as a function of its base and exponent:
+    ``b**0 = 1`` is an identity over numbers, like ``rf(x, 0) = 1``, and
+    says nothing about ``nan**0`` (#251).  An argument that is nan only at
+    some values of its symbols (``Abs(x + y)`` at ``x = oo, y = -oo``) is
+    not detected."""
+    return isinstance(expr, (Application, Pow)) and any(_may_be_nan(a) for a in expr.args)
 
 
 registry.opaque = _applied_to_nan

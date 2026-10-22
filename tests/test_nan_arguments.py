@@ -142,3 +142,17 @@ def test_rereview_r1_reproducers():
     assert Abs(pw, evaluate=False).doit() is S.NaN
     assert fresh().is_(Abs(pw, evaluate=False), 'extended_nonnegative') is None
     assert ask(Q.finite(sign(pw, evaluate=False))) is None
+
+
+def test_power_of_nan_gets_no_facts():
+    # #251: b**0 = 1 is an identity over numbers, like rf(x, 0) = 1; nan is
+    # no number (design.md, "Extended reals and nan in templates"), so it
+    # says nothing about nan**0, and a power of nan gets no template fact
+    preds = [p for p in PRED_INDEX if p != 'commutative']
+    for e in (Pow(nan, 0, evaluate=False), Pow(Add(oo, -oo, evaluate=False), 0, evaluate=False),
+              Pow(x + oo, 0, evaluate=False), Pow(nan, 2, evaluate=False), Pow(2, nan, evaluate=False)):
+        assert fresh().is_many(e, preds) == [None]*len(preds), e
+    # kept for a finite base, and 0**0 = 1 (design.md); oo**0 and zoo**0 are
+    # not decided here (#251)
+    for b in (Symbol('y', finite=True), S.Zero):
+        assert fresh().is_(Pow(b, 0, evaluate=False), 'positive') is True, b
