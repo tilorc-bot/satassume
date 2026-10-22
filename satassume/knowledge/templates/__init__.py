@@ -26,11 +26,13 @@ from sympy.functions.combinatorial.factorials import (
     FallingFactorial,
     RisingFactorial,
     binomial,
+    factorial,
     factorial2,
     subfactorial,
 )
 from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
 from sympy.functions.elementary.complexes import Abs, conjugate, im, re, sign
+from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
 from sympy.functions.elementary.miscellaneous import MinMaxBase
 from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.hyperbolic import (
@@ -102,6 +104,7 @@ ROW_FAMILIES = (
     ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, Ei, Ci, Chi)),
     ("exp_log", (exp, log)),
     ("complex_parts", (Abs, re, im, sign, conjugate)),
+    ("integer_funcs", (RoundFunction, floor, ceiling, factorial)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)

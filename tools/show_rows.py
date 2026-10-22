@@ -39,7 +39,7 @@ def labels(module):
 def main(names):
     import importlib
     from satassume.knowledge.templates import ROW_FAMILIES
-    from satassume.knowledge.templates._rows import f, x
+    from satassume.knowledge.templates._rows import bind
     rows = {}
     for name, _ in ROW_FAMILIES:
         family = importlib.import_module(f"satassume.knowledge.templates.{name}")
@@ -47,8 +47,7 @@ def main(names):
         assert len(names_of) == len(family.RULES), (family.__name__, len(names_of))
         for label, st in zip(names_of, family.RULES):
             for fn in st.functions:
-                rows.setdefault(fn.__name__, []).extend(
-                    (label, r.xreplace({f(x): fn(x)})) for r in st.rows)
+                rows.setdefault(fn.__name__, []).extend((label, bind(r, fn)) for r in st.rows)
     width = max(len(label) for rs in rows.values() for label, _ in rs)
     for name in names or rows:
         print(name)

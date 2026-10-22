@@ -20,17 +20,15 @@ from collections import Counter
 from sympy import S
 from sympy.core.add import Add
 from sympy.core.mod import Mod
-from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import polar_lift, principal_branch
 from sympy.functions.elementary.exponential import exp_polar
-from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
+from sympy.functions.elementary.integers import ceiling, floor
 
 from ...sat.formula import Not, P
 from ._common import (
     Rules,
     const_key,
     facts,
-    ge2_alternatives,
     pattern_key,
 )
 from .core import ipi_rules, ipi_split, pi_split
@@ -158,35 +156,9 @@ def _exp_ipi(gen):
 
 
 # ---------------------------------------------------------------------------
-# floor / ceiling
+# re and im of floor / ceiling; the rows of floor, ceiling and factorial are
+# in .integer_funcs, those of re and im in .complex_parts
 # ---------------------------------------------------------------------------
-
-def _round(R, c):
-    R.equiv([], (N, 'finite', True), (X, 'finite', True))
-    # NOTE: floor(1 + I/2) == 1, so "non-real -> non-integer" is unsound.
-    R.rule([(X, 'real', True)], (N, 'integer', True))
-    R.rule([(X, 'extended_real', True)], (N, 'extended_real', True))
-    R.rule([(X, 'complex', True)], (N, 'complex', True))
-    # a real value of floor/ceiling is an integer (floor(1 + I/2) == 1 is
-    # real; floor(oo) == oo is not)
-    R.rule([(N, 'real', True)], (N, 'integer', True))
-    _equiv(R, [(X, 'integer', True)], ('even', 'odd', 'zero', 'positive', 'negative'))
-
-
-def _floor(R, c):
-    for pred in ('negative', 'extended_negative', 'nonnegative', 'extended_nonnegative'):
-        R.rule([(X, pred, True)], (N, pred, True))
-
-
-def _ceiling(R, c):
-    for pred in ('positive', 'extended_positive', 'nonpositive', 'extended_nonpositive'):
-        R.rule([(X, pred, True)], (N, pred, True))
-
-
-registry.register(RoundFunction)(_unary('round', _round))
-registry.register(floor)(_unary('floor', _floor))
-registry.register(ceiling)(_unary('ceiling', _ceiling))
-
 
 def _parts_of_round_rules():
     # slots: 0 the argument y of floor/ceiling, 1 floor(y), 2 re(...) or im(...)
@@ -209,32 +181,6 @@ def parts_of_round_templates(expr):
     consts = {0: y} if y.is_Atom and y.is_number else {}
     key = ('parts_of_round', const_key(y) if consts else None)
     return facts(key, _parts_of_round_rules, consts, (y, r, expr), 2)
-
-
-# ---------------------------------------------------------------------------
-# factorial
-# ---------------------------------------------------------------------------
-
-_FACTORIAL = (
-    (('integer', 'nonnegative'), 'positive'),
-    (('integer', 'nonnegative'), 'integer'),
-    (('composite',), 'composite'),
-    (('zero',), 'odd'),
-    (('nonnegative',), 'positive'),
-    (('noninteger', 'finite'), 'real'),
-    (('noninteger', 'finite'), ('zero', False)),
-    (('integer', 'negative'), 'infinite'),
-    (('integer', 'negative'), ('extended_real', False)),
-)
-
-
-def _factorial(R, c):
-    _table(R, _FACTORIAL)
-    for prem in ge2_alternatives(X):
-        R.rule(prem, (N, 'even', True))
-
-
-registry.register(factorial)(_unary('factorial', _factorial))
 
 
 # ---------------------------------------------------------------------------

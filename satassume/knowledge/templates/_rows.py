@@ -156,14 +156,22 @@ def for_all(functions, *rows) -> ForAll:
 def by_function(statements):
     """``((function, rows), ...)`` from :func:`for_all` statements, in the
     order the functions first appear; in each row ``f(x)`` is the function's
-    node."""
+    node (:func:`bind`)."""
     out = {}
     for st in statements:
         if not isinstance(st, ForAll):
             raise TypeError(f"{st} is not a for_all statement")
         for fn in st.functions:
-            out.setdefault(fn, []).extend(r.xreplace({f(x): fn(x)}) for r in st.rows)
+            out.setdefault(fn, []).extend(bind(r, fn) for r in st.rows)
     return tuple((fn, tuple(rs)) for fn, rs in out.items())
+
+
+def bind(row, fn):
+    """``row`` with :data:`f` standing for ``fn``: ``f(x)`` is ``fn(x)``,
+    unevaluated (a base class has no value: ``RoundFunction(x)`` raises).
+    ``f`` of anything but symbols is left, and refused by :func:`rules`."""
+    return row.xreplace({a: fn(*a.args, evaluate=False) for a in row.atoms(f)
+                         if all(isinstance(s, Symbol) for s in a.args)})
 
 
 def rules(head, table, module: str):

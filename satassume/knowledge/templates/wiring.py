@@ -1,9 +1,10 @@
 """Which template each function of a family of rows gets (#249).
 
 The family modules (:mod:`.trig`, :mod:`.hyperbolic`, :mod:`.inverse`,
-:mod:`.exp_log`, :mod:`.complex_parts`) state rows only, as ``RULES`` (see
-:mod:`._rows`).  :func:`load` compiles a family's rows and registers one
-template per function (:func:`template`): the unary template of its rows
+:mod:`.exp_log`, :mod:`.complex_parts`, :mod:`.integer_funcs`) state rows
+only, as ``RULES`` (see :mod:`._rows`).  :func:`load` compiles a family's
+rows and registers one template per function (:func:`template`): the
+unary template of its rows
 (:func:`.functions._unary`), with the facts of a constant argument for a
 function of :data:`UNIT_INTERVAL`, or, for a function of
 :data:`PI_MULTIPLE` or :data:`I_PI_MULTIPLE`, :func:`.functions._pi_trig`'s,
