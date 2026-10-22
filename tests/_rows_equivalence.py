@@ -18,6 +18,7 @@ from sympy import (
 from satassume.knowledge.rules import BASIS, RULE_CLAUSES
 from satassume.knowledge.templates import _common, registry, wiring
 from satassume.knowledge.templates._rows import rules
+from satassume.knowledge.templates.functions import shifted
 from satassume.knowledge.templates.registry import _split
 from satassume.sat.solver import Solver
 
@@ -97,14 +98,49 @@ def _var(k, i):
     return k * len(BASIS) + i + 1
 
 
+_B = {p: i for i, p in enumerate(BASIS)}
+
+
+def _shift_links(s, k):
+    """What holds of ``x`` and ``x + c`` for an integer ``c != 0`` at every
+    value (``oo``, ``zoo`` and ``nan`` too), slot 0 being ``x`` and slot
+    ``k`` ``x + c``: the same finiteness, complex and extended real, and the
+    same infinity.  The engine knows it from the template of the sum; the
+    comparison needs it because ``Q.gt(x, 1)`` is ``extended_positive(x - 1)``
+    where a legacy rule may have said ``positive(x - 1)`` next to a fact
+    making ``x`` finite."""
+    for p in ('finite', 'complex', 'extended_real'):
+        a, b = _var(0, _B[p]), _var(k, _B[p])
+        s.add_clause([-a, b])
+        s.add_clause([a, -b])
+    fin0, fink = _var(0, _B['finite']), _var(k, _B['finite'])
+    for p in ('extended_positive', 'extended_negative'):
+        a, b = _var(0, _B[p]), _var(k, _B[p])
+        s.add_clause([fin0, -a, b])
+        s.add_clause([fink, a, -b])
+
+
 def _solver(c):
-    """A solver holding the pattern's clauses and the rule base on each slot."""
+    """A solver holding the pattern's clauses and the rule base on each
+    slot, and the links of the argument and its shifts (:func:`_shift_links`)."""
     s = Solver()
     for k in range(c.pattern.nobjs):
         for cl in RULE_CLAUSES:
             s.add_clause([(1 if l > 0 else -1) * _var(k, abs(l) - 1) for l in cl])
     for lits, _, _ in c.pattern.clauses:
         s.add_clause([-_var(k, i) if neg else _var(k, i) for k, i, neg in lits])
+    for k in range(c.pattern.node + 1, c.pattern.nobjs):
+        if any(c.objs[k] == shifted(c.objs[0], S(d)) for d in (-2, -1, 1, 2)):
+            _shift_links(s, k)
+            # a constant argument or shift: its facts, which the pattern
+            # resolved away, for the links
+            for j in (0, k):
+                o = c.objs[j]
+                if o.is_Atom and o.is_number:
+                    for p, i in _B.items():
+                        v = _common.const_value(o, p)
+                        if v is not None:
+                            s.add_clause([_var(j, i) if v else -_var(j, i)])
     return s
 
 

@@ -142,29 +142,36 @@ def test_equivalent_is_a_rule_each_way():
     assert len(_specs(tan, Q.real(x) >> (zero & closed(tan, Q.complex)))) == 3
 
 
-def test_terms_x_plus_c_take_slots_2_3_and_on_by_c():
-    # SymPy builds x - 1 as Add(-1, x) and x + 1 as Add(1, x); the slots
-    # are by |c|, x - c first, whatever the order the rows mention them in
-    row = (Q.positive(x) & Q.negative(x - 1) & Q.positive(x + 1)) >> Q.real(atanh(x))
+def test_an_inequality_with_an_integer_is_a_fact_about_x_minus_c():
+    # Q.gt(x, 1) is extended_positive(x - 1), and so on; the slots of the
+    # terms x - c are by |c|, x - c first, whatever order the rows use
+    row = (Q.positive(x) & Q.lt(x, 1) & Q.gt(x, -1)) >> Q.real(atanh(x))
     assert _each_way(_specs(atanh, row)) == [
-        ([(0, 'positive', True), (2, 'negative', True), (3, 'positive', True)],
+        ([(0, 'positive', True), (2, 'extended_negative', True), (3, 'extended_positive', True)],
          [(1, 'real', True)])]
-    # the terms in the other order, and a derived term in the conclusion
-    row = (Q.real(atanh(x)) & Q.positive(Add(1, x, evaluate=False))) >> Q.zero(
-        Add(x, -1, evaluate=False))
-    assert _each_way(_specs(atanh, row)) == [
-        ([(1, 'real', True), (3, 'positive', True)], [(2, 'zero', True)])]
-    assert _specs(atanh, Equivalent(Q.zero(atanh(x)), Q.zero(x + 1))) == [
+    for rel, lit in ((Q.gt(x, 1), ('extended_positive', True)),
+                     (Q.lt(x, 1), ('extended_negative', True)),
+                     (Q.ge(x, 1), ('extended_nonnegative', True)),
+                     (Q.le(x, 1), ('extended_nonpositive', True)),
+                     (Q.eq(x, 1), ('zero', True)), (Q.ne(x, 1), ('zero', False)),
+                     # the integer on the left, and a negation
+                     (Q.lt(1, x), ('extended_positive', True)),
+                     (~Q.ge(x, 1), ('extended_nonnegative', False))):
+        assert _specs(atanh, rel >> Q.real(atanh(x))) == [([(2, *lit)], [(1, 'real', True)])]
+    # comparing with 0 is a fact about x; an inequality in a conclusion
+    assert _specs(atanh, Q.gt(x, 0) >> Q.real(atanh(x))) == [
+        ([(0, 'extended_positive', True)], [(1, 'real', True)])]
+    assert _specs(atanh, Equivalent(Q.zero(atanh(x)), Q.eq(x, -1))) == [
         ([(1, 'zero', True)], [(2, 'zero', True)]), ([(2, 'zero', True)], [(1, 'zero', True)])]
-    rows = (Q.zero(x - 2) >> Q.zero(atanh(x)), Q.zero(x + 3) >> Q.zero(atanh(x)),
-            Q.zero(x - 1) >> Q.zero(atanh(x)))
+    rows = (Q.eq(x, 2) >> Q.zero(atanh(x)), Q.eq(x, -3) >> Q.zero(atanh(x)),
+            Q.eq(x, 1) >> Q.zero(atanh(x)))
     gen = rules(atanh, rows, __name__)
     assert gen.shifts == (-1, -2, 3)
     assert sorted(_specs(atanh, rows)) == [([(k, 'zero', True)], [(1, 'zero', True)])
                                            for k in (2, 3, 4)]
 
 
-def test_the_slots_of_derived_terms_are_built_as_shifted_builds_them():
+def test_the_slots_of_inequalities_are_built_as_shifted_builds_them():
     # the template has the slots its rows use; the objects are shifted's:
     # Add(y, -y, 1) - 1 is not 0, it is nan at y = oo (#184)
     y_ = Symbol('y')
@@ -172,9 +179,9 @@ def test_the_slots_of_derived_terms_are_built_as_shifted_builds_them():
         e = atanh(a, evaluate=False)
         for row, objs in (
                 (Q.zero(x) >> Q.zero(atanh(x)), (a, e)),
-                (Q.zero(x - 1) >> Q.infinite(atanh(x)), (a, e, shifted(a, -1))),
-                (Q.zero(x + 1) >> Q.infinite(atanh(x)), (a, e, shifted(a, 1))),
-                ((Q.zero(x + 1) & Q.zero(x - 2)) >> Q.infinite(atanh(x)),
+                (Q.eq(x, 1) >> Q.infinite(atanh(x)), (a, e, shifted(a, -1))),
+                (Q.eq(x, -1) >> Q.infinite(atanh(x)), (a, e, shifted(a, 1))),
+                ((Q.eq(x, -1) & Q.eq(x, 2)) >> Q.infinite(atanh(x)),
                  (a, e, shifted(a, 1), shifted(a, -2)))):
             _common._CACHE.clear()
             [c], _ = eq.compiled({atanh: wiring.template(atanh, rules(atanh, row, __name__))}, e)
@@ -235,16 +242,17 @@ yr = Symbol('y', real=True)
     (sin, Q.real(yr) >> Q.real(sin(yr)), "plain Symbol"),
     (sin, Q.real(y) >> Q.real(sin(x)), "more than one argument"),
     (sin, (Q.real(x) | Q.zero(x)) >> Q.real(sin(x)), "not a literal"),
-    # derived terms: x + c for an integer c only, of the argument
-    (acos, Q.zero(1 - x) >> Q.zero(acos(x)), "nor x \\+ c"),
-    (acos, Q.zero(2*x) >> Q.positive(acos(x)), "nor x \\+ c"),
-    (acos, Q.zero(x + y) >> Q.positive(acos(x)), "nor x \\+ c"),
-    (acos, Q.zero(x - Float(1)) >> Q.zero(acos(x)), "nor x \\+ c"),
-    (acos, Q.zero(x - pi) >> Q.zero(acos(x)), "nor x \\+ c"),
-    (acos, Q.zero(x - S.Half) >> Q.zero(acos(x)), "nor x \\+ c"),
-    (acos, Q.zero(Add(x, 1, -2, evaluate=False)) >> Q.zero(acos(x)), "nor x \\+ c"),
-    (acos, Q.zero(y - 1) >> Q.zero(acos(x)), "more than one argument"),
-    (acos, Q.zero(yr - 1) >> Q.zero(acos(yr)), "plain Symbol"),
+    # a term of the argument is written as an inequality: Q.gt(x, 1)
+    (acos, Q.zero(x - 1) >> Q.zero(acos(x)), "Q.gt\\(x, 1\\) and the like"),
+    (acos, Q.zero(2*x) >> Q.positive(acos(x)), "neither the argument"),
+    # an inequality compares the argument with an integer
+    (acos, Q.gt(x, y) >> Q.positive(acos(x)), "with an integer"),
+    (acos, Q.gt(2*x, 1) >> Q.positive(acos(x)), "with an integer"),
+    (acos, Q.gt(x, S.Half) >> Q.positive(acos(x)), "with an integer"),
+    (acos, Q.gt(x, Float(1)) >> Q.positive(acos(x)), "with an integer"),
+    (acos, Q.gt(x, pi) >> Q.positive(acos(x)), "with an integer"),
+    (acos, Q.gt(y, 1) >> Q.positive(acos(x)), "more than one argument"),
+    (acos, Q.gt(yr, 1) >> Q.positive(acos(yr)), "plain Symbol"),
 ])
 def test_rows_that_do_not_compile_as_written(head, row, match):
     with pytest.raises((TypeError, ValueError), match=match):

@@ -8,13 +8,16 @@ the node ``f(x)``, with :data:`f` the generic function::
 The premises are a conjunction of literals; the conclusion is a literal, a
 disjunction of literals, ``Equivalent`` of two literals (a rule each way),
 or a conjunction of those (one rule each).  A literal is ``Q.p(t)`` or
-``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the argument, the node, or
-``x + c`` for an integer ``c`` (``x - 1``).  A row without premises is
+``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the argument or the node, or
+an inequality between the argument and an integer, ``Q.gt(x, 1)``,
+``Q.le(x, -1)``, ``Q.eq(x, 1)``, ``Q.ne(x, 1)`` and the like, or its
+negation.  Inequalities are over the extended reals (``Q.gt(x, 1)`` holds
+at ``x = oo``, ``~Q.gt(x, 1)`` at ``x = I``).  A row without premises is
 ``Equivalent`` alone::
 
     Q.extended_real(x) >> Equivalent(Q.zero(f(x)), Q.zero(x))
     Equivalent(Q.zero(f(x)), Q.zero(x))
-    (Q.positive(x) & Q.negative(x - 1)) >> Q.positive(f(x))
+    (Q.positive(x) & Q.lt(x, 1)) >> Q.positive(f(x))
 
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
@@ -22,10 +25,12 @@ of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
 ``P(x) >> P(f(x))``; ``a & b`` joins rows, ``cond >> (a & b)`` adds
 ``cond`` to the premises of each.  The module holds rows only:
 :mod:`.wiring` compiles them (:func:`rules`) into the index specs of
-:mod:`._common` (argument 0, node 1, then the terms ``x + c`` the rows
-use, by ``|c|`` and ``x - c`` first: ``x - 1``, ``x + 1``, ``x - 2``, ...)
-and registers the templates, so the patterns, their cache and the engine
-are unchanged.
+:mod:`._common` (argument 0, node 1, then the terms ``x - c`` for the ``c``
+the inequalities compare the argument with, as facts about ``x - c``:
+``Q.gt(x, c)`` is ``extended_positive(x - c)``, ``Q.eq(x, c)`` is
+``zero(x - c)``; by ``|c|`` and ``x - c`` first: ``x - 1``, ``x + 1``,
+``x - 2``, ...) and registers the templates, so the patterns, their cache
+and the engine are unchanged.
 
 Layout: above each statement a comment line with the property's title
 (``tools/show_rows.py`` prints it as the label), and under it, indented,
@@ -48,7 +53,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from sympy import Add, And, Equivalent, Function, Implies, Integer, Not, Or, Symbol
+from sympy import And, Equivalent, Function, Implies, Integer, Not, Or, Symbol
 from sympy.assumptions.assume import AppliedPredicate
 
 from ._common import VOCAB, Rules
@@ -201,12 +206,24 @@ def _conjuncts(e):
     return e.args if isinstance(e, And) else (e,)
 
 
+#: an inequality between the argument and an integer ``c``: the fact about
+#: ``x - c`` it is (order relations are over the extended reals)
+_RELATIONS = {'gt': ('extended_positive', True), 'lt': ('extended_negative', True),
+              'ge': ('extended_nonnegative', True), 'le': ('extended_nonpositive', True),
+              'eq': ('zero', True), 'ne': ('zero', False)}
+_FLIPPED = {'gt': 'lt', 'lt': 'gt', 'ge': 'le', 'le': 'ge', 'eq': 'eq', 'ne': 'ne'}
+
+
 def _lit(head, row, e, slots):
     pos = not isinstance(e, Not)
     a = e if pos else e.args[0]
-    if not (isinstance(a, AppliedPredicate) and len(a.arguments) == 1):
+    if not isinstance(a, AppliedPredicate):
         raise ValueError(f"{head.__name__} row {row}: {e} is not a literal")
     pred = str(a.function.name)
+    if pred in _RELATIONS and len(a.arguments) == 2:
+        return _relation(head, row, pred, a.arguments, pos, slots)
+    if len(a.arguments) != 1:
+        raise ValueError(f"{head.__name__} row {row}: {e} is not a literal")
     if pred not in VOCAB:
         raise ValueError(f"{head.__name__} row {row}: {pred} is not a template predicate")
     t = a.arguments[0]
@@ -215,21 +232,32 @@ def _lit(head, row, e, slots):
     return (slots[t][0], pred, pos)
 
 
+def _relation(head, row, rel, args, pos, slots):
+    """``Q.gt(x, c)`` and the like, for an integer ``c``: a fact about the
+    term ``x - c`` (slot ``('shift', -c)`` until :func:`rules` numbers the
+    shifts; the argument itself for ``c == 0``)."""
+    s, c = args
+    if isinstance(s, Integer):
+        rel, s, c = _FLIPPED[rel], c, s
+    if not (isinstance(s, Symbol) and isinstance(c, Integer)):
+        raise ValueError(f"{head.__name__} row {row}: Q.{rel}{args} does not compare "
+                         "the argument with an integer")
+    pred, sign = _RELATIONS[rel]
+    key = ('shift', -int(c)) if c else X
+    slots[(key, s)] = key, _plain(head, row, s)
+    return (key, pred, pos is sign)
+
+
 def _slot(head, row, t):
     """The slot of the term ``t``, and the argument it is a term of."""
     if type(t) is head and len(t.args) == 1:
         return N, _plain(head, row, t.args[0])
     if isinstance(t, Symbol):
         return X, _plain(head, row, t)
-    # x - 1 is Add(-1, x); take its terms in either order.  The slot is
-    # ('shift', c) until rules() numbers the shifts
-    if isinstance(t, Add) and len(t.args) == 2:
-        c, s = sorted(t.args, key=lambda a: not a.is_Number)
-        if isinstance(c, Integer) and isinstance(s, Symbol):
-            return ('shift', int(c)), _plain(head, row, s)
-    # a constructor that rewrote the written term: cos(x + pi/2) is -sin(x)
-    raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument, "
-                     f"{head.__name__} of it, nor x + c for an integer c")
+    # a constructor that rewrote the written term (cos(x + pi/2) is -sin(x)),
+    # or a term of the argument: x > 1 is written Q.gt(x, 1), not Q.positive(x - 1)
+    raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument nor "
+                     f"{head.__name__} of it (compare the argument with Q.gt(x, 1) and the like)")
 
 
 def _plain(head, row, s):
