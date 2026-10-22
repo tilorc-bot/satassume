@@ -30,7 +30,7 @@ from sympy.functions.elementary.complexes import (
     re,
     sign,
 )
-from sympy.functions.elementary.exponential import exp, exp_polar, log
+from sympy.functions.elementary.exponential import exp_polar
 from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
 
 from ...sat.formula import Not, P
@@ -45,7 +45,7 @@ from .core import ipi_rules, ipi_split, pi_split
 from .registry import registry
 
 X, N = 0, 1
-#: Slot of ``arg - 1`` in the templates that use it (log).
+#: Slot of ``s`` in the template of ``exp(I*pi*c*s)``.
 M = 2
 
 
@@ -123,95 +123,46 @@ def shifted(x, c):
     return x + c
 
 
-def _minus_one(x):
-    return (shifted(x, S.NegativeOne),)
-
-
 # ---------------------------------------------------------------------------
-# exp / log
+# exp: exp(I*pi*c*s); the rows of exp and log are in .exp_log
 # ---------------------------------------------------------------------------
 
-_EXP = (
-    (('extended_real',), 'extended_real'),
-    (('extended_real',), 'extended_nonnegative'),
-    (('real',), 'positive'),
-    (('finite',), 'finite'),
-    (('finite',), ('zero', False)),
-    (('complex',), 'complex'),
-    (('extended_negative',), 'complex'),
-    (('algebraic', ('zero', False)), 'transcendental'),
-    (('infinite', 'extended_negative'), 'zero'),
-    (('infinite', 'extended_positive'), 'infinite'),
-    (('infinite', 'extended_positive'), 'extended_positive'),
-)
+def _exp_ipi(gen):
+    """Template for ``exp`` given the generator of its rows (``.wiring``);
+    for ``x == I*pi*c*s`` (``c`` rational) the value is also a root of
+    unity or on the unit circle, described in terms of ``s``
+    (:func:`~.core.ipi_rules`)."""
+    def template(expr):
+        x = expr.args[0]
+        consts = {}
+        objs = [x, expr]
+        ipi = None
+        if x.is_Atom and x.is_number:
+            consts[X] = x
+            key = ('exp', const_key(x))
+        else:
+            split = ipi_split(x)
+            if split is not None:
+                c, s_ = split
+                ipi = (c, s_ is not None)
+                if s_ is not None:
+                    objs.append(s_)
+                    if s_.is_Atom and s_.is_number:
+                        consts[M] = s_
+            key = ('exp', None, ipi, const_key(objs[M]) if M in consts else None)
 
-_LOG = (
-    (('extended_positive',), 'extended_real'),
-    (('positive',), 'real'),
-    (('zero',), 'infinite'),
-    (('zero',), ('extended_real', False)),
-    (('complex', ('zero', False)), 'complex'),
-    (('finite', ('zero', False)), 'finite'),
-    (('infinite',), 'infinite'),
-    (('infinite', 'extended_real'), 'extended_positive'),
-    (('negative',), ('extended_real', False)),
-    (('complex', ('extended_real', False)), ('extended_real', False)),
-)
+        def build():
+            R = Rules()
+            gen(R, consts.get(X))
+            if ipi is not None:
+                c, has_s = ipi
+                ipi_rules(R.rule, c, M if has_s else None, N)
+            return R.rules
 
-
-def _exp(R, c, ipi=None):
-    _table(R, _EXP)
-    # exp(0) == 1
-    R.rule([(X, 'zero', True)], (N, 'odd', True))
-    R.rule([(X, 'zero', True)], (N, 'positive', True))
-    if ipi is not None:
-        c, has_s = ipi
-        ipi_rules(R.rule, c, M if has_s else None, N)
-
-
-@registry.register(exp)
-def exp_templates(expr):
-    """``exp(x)``; for ``x == I*pi*c*s`` (``c`` rational) the value is a
-    root of unity or on the unit circle, described in terms of ``s``."""
-    x = expr.args[0]
-    consts = {}
-    objs = [x, expr]
-    ipi = None
-    if x.is_Atom and x.is_number:
-        consts[X] = x
-        key = ('exp', const_key(x))
-    else:
-        split = ipi_split(x)
-        if split is not None:
-            c, s_ = split
-            ipi = (c, s_ is not None)
-            if s_ is not None:
-                objs.append(s_)
-                if s_.is_Atom and s_.is_number:
-                    consts[M] = s_
-        key = ('exp', None, ipi, const_key(objs[M]) if M in consts else None)
-
-    def build():
-        R = Rules()
-        _exp(R, consts.get(X), ipi)
-        return R.rules
-
-    return facts(key, build, consts, tuple(objs), N)
-
-
-def _log(R, c):
-    _table(R, _LOG)
-    # log(x) == 0 iff x == 1; log(x) > 0 iff x > 1 for positive x.
-    R.equiv([], (N, 'zero', True), (M, 'zero', True))
-    R.rule([(M, 'extended_positive', True)], (N, 'extended_positive', True))
-    R.rule([(M, 'negative', True), (X, 'positive', True)], (N, 'negative', True))
-    R.rule([(X, 'positive', True), (N, 'positive', True)], (M, 'positive', True))
-    R.rule([(X, 'positive', True), (N, 'negative', True)], (M, 'negative', True))
-    R.rule([(X, 'algebraic', True), (X, 'zero', False), (N, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-registry.register(log)(_unary('log', _log, slots=_minus_one))
+        return facts(key, build, consts, tuple(objs), N)
+    template.__name__ = 'exp_templates'
+    template.__module__ = gen.__module__
+    return template
 
 
 # ---------------------------------------------------------------------------

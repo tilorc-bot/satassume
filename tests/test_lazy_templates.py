@@ -83,6 +83,7 @@ from sympy import Add, exp
 from satassume.state.epoch import EPOCH
 from satassume.knowledge.templates.registry import registry
 CORE, FUNCS = "satassume.knowledge.templates.core", "satassume.knowledge.templates.functions"
+WIRING = "satassume.knowledge.templates.wiring"
 assert CORE not in sys.modules and FUNCS not in sys.modules
 epoch = EPOCH[0]
 
@@ -101,7 +102,7 @@ assert "sympy.codegen" not in sys.modules and "sympy.physics" not in sys.modules
 assert "sympy.stats" not in sys.modules
 assert registry._lazy and all(not registry._imported(c) for c, m in registry._lazy)
 assert EPOCH[0] > epoch
-for cls, user, mod in ((Add, user_add, CORE), (exp, user_function, FUNCS)):
+for cls, user, mod in ((Add, user_add, CORE), (exp, user_function, WIRING + ":exp_log")):
     ts = registry.templates_for(cls)
     own = registry._by_class[cls]
     assert own[-1] is user and len(own) > 1

@@ -21,7 +21,7 @@ from sympy.core.function import Application, Function
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.functions.elementary.exponential import LambertW
+from sympy.functions.elementary.exponential import LambertW, exp, log
 from sympy.functions.combinatorial.factorials import (
     FallingFactorial,
     RisingFactorial,
@@ -99,6 +99,7 @@ ROW_FAMILIES = (
     ("hyperbolic", (sinh, cosh, tanh, coth, sech, csch)),
     ("inverse", (asin, acos, asinh, acosh, atanh, acoth, asech, acsch, asec, acsc, atan, acot)),
     ("error_functions", (erf, erfc, erfi, Si, Shi, fresnels, fresnelc, Ei, Ci, Chi)),
+    ("exp_log", (exp, log)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
