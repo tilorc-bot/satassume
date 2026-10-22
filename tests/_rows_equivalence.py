@@ -11,6 +11,8 @@ written).  ``ADDED`` are the facts the rows give that the legacy rules did
 not, each with its argument; :func:`check_added_are_new` checks that each
 is new.
 """
+from itertools import product
+
 from sympy import (
     Add, And, E, EulerGamma, Float, GoldenRatio, I, Mul, Rational, S, Symbol, oo, pi, sqrt,
 )
@@ -46,7 +48,16 @@ def arguments():
 
 
 def nodes(heads):
-    return [h(a, evaluate=False) for h in heads for a in arguments()]
+    """Each head applied to the corpus; a head of two arguments (no unary
+    form: ``principal_branch``) to each pair of arguments of the corpus."""
+    out = []
+    for h in heads:
+        if 1 in h.nargs:
+            out += [h(a, evaluate=False) for a in arguments()]
+        else:
+            n, = h.nargs
+            out += [h(*a, evaluate=False) for a in product(arguments(), repeat=n)]
+    return out
 
 
 def both(gen, extra):

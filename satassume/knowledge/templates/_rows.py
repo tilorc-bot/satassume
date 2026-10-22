@@ -20,14 +20,22 @@ its conclusion alone::
     Equivalent(Q.zero(f(x)), Q.zero(x))
     Q.extended_nonnegative(f(x))
 
+A row about a function of several arguments has the node ``f(x, y)`` (or
+more plain symbols, in the order of the arguments), and literals about the
+node and its arguments; an inequality is about the argument of a function
+of one argument only::
+
+    (Q.finite(x) & Q.positive(y)) >> Q.complex(f(x, y))
+
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
 of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
 ``P(x) >> P(f(x))``; ``a & b`` joins rows, ``cond >> (a & b)`` adds
 ``cond`` to the premises of each.  The module holds rows only:
 :mod:`.wiring` compiles them (:func:`rules`) into the index specs of
-:mod:`._common` (argument 0, node 1, then the terms ``x - c`` for the ``c``
-the inequalities compare the argument with, as facts about ``x - c``:
+:mod:`._common` (the arguments from 0, then the node: argument 0 and
+node 1 for one argument, then the terms ``x - c`` for the ``c`` the
+inequalities compare the argument with, as facts about ``x - c``:
 ``Q.gt(x, c)`` is ``extended_positive(x - c)``, ``Q.eq(x, c)`` is
 ``zero(x - c)``; by ``|c|`` and ``x - c`` first: ``x - 1``, ``x + 1``,
 ``x - 2``, ...) and registers the templates, so the patterns, their cache
@@ -59,10 +67,10 @@ from sympy.assumptions.assume import AppliedPredicate
 
 from ._common import VOCAB, Rules
 
-X, N = 0, 1
-
 #: the argument of every row
 x = Symbol('x')
+#: the second argument of a row about a function of two arguments
+y = Symbol('y')
 #: the generic function: in a :func:`for_all` statement, each of its functions
 f = Function('f')
 
@@ -179,8 +187,16 @@ def rules(head, table, module: str):
     ``table`` about ``head``; ``module`` (the caller's ``__name__``) is the
     module the registry attributes the template to (``TemplateRegistry.lazy``).
     ``gen.shifts`` are the ``c`` of the terms ``x + c`` the rules use, in the
-    order of their slots 2, 3, ...: by ``|c|``, ``x - c`` first."""
-    specs = [spec for row in rows_of(table) for spec in _specs(head, row)]
+    order of their slots 2, 3, ...: by ``|c|``, ``x - c`` first.
+    ``gen.arity`` is the number of arguments of the node the rows mention:
+    for more than one, ``gen(R, n)`` is :func:`.functions.nary`'s."""
+    arities, specs = set(), []
+    for row in rows_of(table):
+        n, s = _specs(head, row)
+        arities.add(n)
+        specs += s
+    if len(arities) > 1:
+        raise ValueError(f"{head.__name__} rows of {sorted(arities)} arguments")
     shifts = sorted({k for p, c in specs for k, _, _ in p + c if isinstance(k, tuple)},
                     key=lambda k: (abs(k[1]), k[1]))
     slot = {k: 2 + i for i, k in enumerate(shifts)}
@@ -193,29 +209,29 @@ def rules(head, table, module: str):
     gen.__module__ = module
     gen.__name__ = gen.__qualname__ = f'{head.__name__}_rows'
     gen.shifts = tuple(c for _, c in shifts)
+    gen.arity = arities.pop() if arities else 1
     return gen
 
 
 def _specs(head, row):
+    """``(n, specs)``: the number of arguments of the node, and the rules of
+    ``row`` over the slots of :func:`_slots`."""
     _row(row)
     prem, concl = row.args if isinstance(row, Implies) else (True, row)
-    slots = {}
-    premises = [_lit(head, row, t, slots) for t in _conjuncts(prem) if t is not True]
+    premises = [_lit(head, row, t) for t in _conjuncts(prem) if t is not True]
     out = []
     for c in _conjuncts(concl):
         if isinstance(c, Equivalent):
             if len(c.args) != 2:
                 raise ValueError(f"{head.__name__} row {row}: {c} is not of two literals")
-            a, b = (_lit(head, row, t, slots) for t in c.args)
+            a, b = (_lit(head, row, t) for t in c.args)
             out += [(premises + [a], [b]), (premises + [b], [a])]
         else:
-            out.append((premises, [_lit(head, row, t, slots)
+            out.append((premises, [_lit(head, row, t)
                                    for t in (c.args if isinstance(c, Or) else (c,))]))
-    if all(k != N for k, _ in slots.values()):
-        raise ValueError(f"{head.__name__} row {row} does not mention the node")
-    if len({s for _, s in slots.values()}) > 1:
-        raise ValueError(f"{head.__name__} row {row} mentions more than one argument")
-    return out
+    n, slot = _slots(head, row, {t for p, c in out for t, _, _ in p + c})
+    return n, [tuple([(slot[t], pred, pos) for t, pred, pos in lits] for lits in spec)
+               for spec in out]
 
 
 def _conjuncts(e):
@@ -231,25 +247,24 @@ _RELATIONS = (('gt', 'extended_positive', True, 'lt'), ('lt', 'extended_negative
               ('eq', 'zero', True, 'eq'), ('ne', 'zero', False, 'ne'))
 
 
-def _lit(head, row, e, slots):
+def _lit(head, row, e):
+    """``(term, pred, positive)`` of the literal ``e``; the term of an
+    inequality is ``(('shift', -c), x)`` for ``x - c`` (:func:`_relation`)."""
     pos = not isinstance(e, Not)
     a = e if pos else e.args[0]
     if not isinstance(a, AppliedPredicate):
         raise ValueError(f"{head.__name__} row {row}: {e} is not a literal")
     pred = str(a.function.name)
     if any(pred == r[0] for r in _RELATIONS) and len(a.arguments) == 2:
-        return _relation(head, row, pred, a.arguments, pos, slots)
+        return _relation(head, row, pred, a.arguments, pos)
     if len(a.arguments) != 1:
         raise ValueError(f"{head.__name__} row {row}: {e} is not a literal")
     if pred not in VOCAB:
         raise ValueError(f"{head.__name__} row {row}: {pred} is not a template predicate")
-    t = a.arguments[0]
-    if t not in slots:
-        slots[t] = _slot(head, row, t)
-    return (slots[t][0], pred, pos)
+    return (a.arguments[0], pred, pos)
 
 
-def _relation(head, row, rel, args, pos, slots):
+def _relation(head, row, rel, args, pos):
     """``Q.gt(x, c)`` and the like, for an integer ``c``: a fact about the
     term ``x - c`` (slot ``('shift', -c)`` until :func:`rules` numbers the
     shifts; the argument itself for ``c == 0``)."""
@@ -261,17 +276,54 @@ def _relation(head, row, rel, args, pos, slots):
         raise ValueError(f"{head.__name__} row {row}: Q.{rel}{args} does not compare "
                          "the argument with an integer")
     pred, sign, _ = of[rel]
-    key = ('shift', -int(c)) if c else X
-    slots[(key, s)] = key, _plain(head, row, s)
-    return (key, pred, pos is sign)
+    _plain(head, row, s)
+    return ((('shift', -int(c)), s) if c else s, pred, pos is sign)
 
 
-def _slot(head, row, t):
-    """The slot of the term ``t``, and the argument it is a term of."""
-    if type(t) is head and len(t.args) == 1:
-        return N, _plain(head, row, t.args[0])
+def _slots(head, row, terms):
+    """``(n, slot)``: the slot of each term of a row about the node ``head(x0,
+    ..., x_{n-1})``: argument ``i`` is slot ``i``, the node ``n``, and a
+    term ``x - c`` of the argument of a node of one argument is ``('shift',
+    -c)`` until :func:`rules` numbers it."""
+    kinds = {t: _term(head, row, t) for t in terms}
+    nodes = [t for t, k in kinds.items() if k == 'node']
+    if not nodes:
+        raise ValueError(f"{head.__name__} row {row} does not mention the node")
+    if len(nodes) > 1:
+        raise ValueError(f"{head.__name__} row {row} mentions more than one node")
+    [node] = nodes
+    args = node.args
+    if len(set(args)) != len(args):
+        raise ValueError(f"{head.__name__} row {row}: the arguments of {node} are not distinct")
+    slot = {a: i for i, a in enumerate(args)}
+    slot[node] = len(args)
+    for t, k in kinds.items():
+        if k == 'node':
+            continue
+        s = t if k == 'argument' else t[1]
+        if s not in args:
+            raise ValueError(f"{head.__name__} row {row} mentions more than one argument: "
+                             f"{s} is not an argument of {node}")
+        if k == 'shift':
+            if len(args) > 1:
+                raise ValueError(f"{head.__name__} row {row} compares {s} with an integer: "
+                                 "only the argument of a function of one argument")
+            slot[t] = t[0]
+    return len(args), slot
+
+
+def _term(head, row, t):
+    """``'node'``, ``'argument'`` or ``'shift'`` (``x - c``, from an
+    inequality)."""
+    if isinstance(t, tuple):
+        return 'shift'
+    if type(t) is head:
+        for a in t.args:
+            _plain(head, row, a)
+        return 'node'
     if isinstance(t, Symbol):
-        return X, _plain(head, row, t)
+        _plain(head, row, t)
+        return 'argument'
     # a constructor that rewrote the written term (cos(x + pi/2) is -sin(x)),
     # or a term of the argument: x > 1 is written Q.gt(x, 1), not Q.positive(x - 1)
     raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument nor "

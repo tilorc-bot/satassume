@@ -20,8 +20,6 @@ from collections import Counter
 from sympy import S
 from sympy.core.add import Add
 from sympy.core.mod import Mod
-from sympy.functions.elementary.complexes import polar_lift, principal_branch
-from sympy.functions.elementary.exponential import exp_polar
 from sympy.functions.elementary.integers import ceiling, floor
 
 from ...sat.formula import Not, P
@@ -372,12 +370,16 @@ def _cosh_shift(gen):
     return template
 
 
-def nary(tag, gen, slots=None):
+def nary(tag, gen, slots=None, arity=None):
     """Template for a function of fixed arity: ``gen(R, n)`` fills ``R``
     with rules over the arguments ``0 .. n-1``, the node ``n`` and the
-    objects ``slots(args)`` from ``n + 1`` on."""
+    objects ``slots(args)`` from ``n + 1`` on.  With ``arity``, a node with
+    another number of arguments gets no facts (``gen`` holds for that
+    number only: the rows of :func:`._rows.rules`)."""
     def template(expr):
         args = expr.args
+        if arity is not None and len(args) != arity:
+            return None
         objs = (*args, expr) + (tuple(slots(args)) if slots is not None else ())
         consts = {k: o for k, o in enumerate(objs)
                   if k != len(args) and o.is_Atom and o.is_number}
@@ -396,37 +398,6 @@ def nary(tag, gen, slots=None):
     # tells a declared module's templates by their module)
     template.__module__ = gen.__module__
     return template
-
-
-# ---------------------------------------------------------------------------
-# polar numbers: exp_polar, polar_lift, principal_branch (#180)
-# ---------------------------------------------------------------------------
-#
-# The value at a finite argument is a point of the Riemann surface of the
-# logarithm, so it is polar (``polar_lift(-2) == 2*exp_polar(I*pi)``); at
-# an infinite one it is not (``polar_lift(oo*I) == oo*exp_polar(I*pi/2)``,
-# not polar for SymPy), and ``principal_branch(x, oo) == x`` (unevaluated
-# with ``evaluate=False``), so a period must be finite and positive.
-# ``exp_polar(x)`` of a real ``x`` lies on the sheet of the positive reals
-# (``exp_polar(0)`` is 1, SymPy: rational, issue 8008), its value there is
-# ``exp(x)``.  Nothing else is claimed: ``exp_polar(2*I*pi)`` is not 1.
-
-def _polar(R, n):
-    """Arguments 0 (and 1, the period, for ``n == 2``), node ``n``."""
-    R.rule([(0, 'finite', True)] + ([(1, 'positive', True)] if n == 2 else []), (n, 'polar', True))
-
-
-def _exp_polar(R, c):
-    _polar(R, N)
-    R.rule([(X, 'real', True)], (N, 'positive', True))
-    R.rule([(X, 'zero', True)], (N, 'rational', True))
-    R.rule([(X, 'real', True), (X, 'algebraic', True), (X, 'zero', False)],
-           (N, 'transcendental', True))
-
-
-registry.register(exp_polar)(_unary('exp_polar', _exp_polar))
-registry.register(polar_lift)(nary('polar_lift', _polar))
-registry.register(principal_branch)(nary('principal_branch', _polar))
 
 
 # ---------------------------------------------------------------------------

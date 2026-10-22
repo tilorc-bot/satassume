@@ -21,7 +21,7 @@ from sympy.core.function import Application, Function
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.functions.elementary.exponential import LambertW, exp, log
+from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
 from sympy.functions.combinatorial.factorials import (
     FallingFactorial,
     RisingFactorial,
@@ -31,7 +31,9 @@ from sympy.functions.combinatorial.factorials import (
     subfactorial,
 )
 from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
-from sympy.functions.elementary.complexes import Abs, conjugate, im, re, sign
+from sympy.functions.elementary.complexes import (
+    Abs, conjugate, im, polar_lift, principal_branch, re, sign,
+)
 from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
 from sympy.functions.elementary.miscellaneous import MinMaxBase
 from sympy.functions.elementary.piecewise import Piecewise
@@ -105,6 +107,7 @@ ROW_FAMILIES = (
     ("exp_log", (exp, log)),
     ("complex_parts", (Abs, re, im, sign, conjugate)),
     ("integer_funcs", (RoundFunction, floor, ceiling, factorial)),
+    ("polar", (exp_polar, polar_lift, principal_branch)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
