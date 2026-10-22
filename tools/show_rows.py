@@ -12,7 +12,7 @@ import ast
 import inspect
 import sys
 
-from sympy import And, Or
+from sympy import And, Implies, Or
 
 
 def _side(e):
@@ -38,10 +38,10 @@ def labels(module):
 
 def main(names):
     import importlib
-    from satassume.knowledge.templates import wiring
+    from satassume.knowledge.templates import ROW_FAMILIES
     from satassume.knowledge.templates._rows import f, x
     rows = {}
-    for name in wiring.FAMILIES:
+    for name, _ in ROW_FAMILIES:
         family = importlib.import_module(f"satassume.knowledge.templates.{name}")
         names_of = labels(family)
         assert len(names_of) == len(family.RULES), (family.__name__, len(names_of))
@@ -53,8 +53,10 @@ def main(names):
     for name in names or rows:
         print(name)
         for label, row in rows[name]:
-            prem, concl = row.args
-            print(f"  {label:{width}}  {_side(prem)} >> {_side(concl)}")
+            if isinstance(row, Implies):
+                prem, concl = row.args
+                row = f"{_side(prem)} >> {_side(concl)}"
+            print(f"  {label:{width}}  {row}")
 
 
 if __name__ == "__main__":

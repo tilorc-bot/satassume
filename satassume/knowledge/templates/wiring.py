@@ -1,12 +1,15 @@
 """Which template each function of a family of rows gets (#249).
 
-The family modules (:mod:`.trig`) state rows only, as ``RULES`` (see
-:mod:`._rows`).  This module compiles them and registers one template per
-function: the unary template of its rows (:func:`.functions._unary`), or,
-for a function of :data:`PI_MULTIPLE`, :func:`.functions._pi_trig`'s, which
-adds the rules of ``f(pi*c*s)`` for a rational ``c``.  The templates are
-attributed to this module, which ``templates/__init__.py`` declares for the
-functions of :data:`FAMILIES` (``TemplateRegistry.lazy``).
+The family modules (:mod:`.trig`) state rows only, as
+``RULES`` (see :mod:`._rows`).  :func:`load` compiles a family's rows and
+registers one template per function (:func:`template`): the unary template
+of its rows (:func:`.functions._unary`), or, for a function of
+:data:`PI_MULTIPLE`, :func:`.functions._pi_trig`'s, which adds the rules of
+``f(pi*c*s)`` for a rational ``c``.
+``templates/__init__.py`` declares each family as ``"<this
+module>:<family>"`` for its functions (``TemplateRegistry.lazy``), so a
+family is compiled on the first use of one of its functions, and its
+templates are attributed to that name.
 """
 from __future__ import annotations
 
@@ -18,13 +21,9 @@ from ._rows import by_function, rules
 from .functions import _pi_trig, _unary
 from .registry import registry
 
-#: the family modules of rows
-FAMILIES = ("trig",)
-
 #: the functions with rules for an argument pi*c*s, each with whether it
 #: shifts like cos (cos(pi*c*s) == sin(pi*(c + 1/2)*s))
 PI_MULTIPLE = ((sin, False), (cos, True))
-
 
 def functions(family: str):
     """The functions the family's ``RULES`` state rows for, in order."""
@@ -32,11 +31,16 @@ def functions(family: str):
     return tuple(fn for fn, _ in by_function(module.RULES))
 
 
-for _family in FAMILIES:
-    for _fn, _all in by_function(importlib.import_module(f"{__package__}.{_family}").RULES):
-        _gen = rules(_fn, _all, __name__)
-        _shift = dict(PI_MULTIPLE).get(_fn)
-        if _shift is None:
-            registry.register(_fn)(_unary(_fn.__name__, _gen))
-        else:
-            registry.register(_fn)(_pi_trig(_fn.__name__, _gen, _shift))
+def template(fn, gen):
+    """The template of ``fn`` whose rules ``gen`` (the compiled rows) gives."""
+    shift = dict(PI_MULTIPLE).get(fn)
+    if shift is not None:
+        return _pi_trig(fn.__name__, gen, shift)
+    return _unary(fn.__name__, gen)
+
+
+def load(family: str) -> None:
+    """Register the templates of the family's rows (``TemplateRegistry.lazy``)."""
+    name = f"{__name__}:{family}"
+    for fn, all_rows in by_function(importlib.import_module(f"{__package__}.{family}").RULES):
+        registry.register(fn)(template(fn, rules(fn, all_rows, name)))

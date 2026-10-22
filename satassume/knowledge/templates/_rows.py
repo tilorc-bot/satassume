@@ -6,9 +6,13 @@ the node ``f(x)``, with :data:`f` the generic function::
     (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))
 
 The premises are a conjunction of literals; the conclusion is a literal, a
-disjunction of literals, or a conjunction of those (one rule each).  A
-literal is ``Q.p(t)`` or ``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the
-argument or the node.
+disjunction of literals, ``Equivalent`` of two literals (a rule each way),
+or a conjunction of those (one rule each).  A literal is ``Q.p(t)`` or
+``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the argument or the node.  A
+row without premises is ``Equivalent`` alone::
+
+    Q.extended_real(x) >> Equivalent(Q.zero(f(x)), Q.zero(x))
+    Equivalent(Q.zero(f(x)), Q.zero(x))
 
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
@@ -40,7 +44,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from sympy import And, Function, Implies, Not, Or, Symbol
+from sympy import And, Equivalent, Function, Implies, Not, Or, Symbol
 from sympy.assumptions.assume import AppliedPredicate
 
 from ._common import VOCAB, Rules
@@ -68,7 +72,8 @@ class Rows:
         return Rows(tuple(_flat(other)) + self.rows)
 
     def __rrshift__(self, cond) -> 'Rows':
-        return _Conditioned(Implies(cond & r.args[0], r.args[1]) for r in self.rows)
+        return _Conditioned(Implies(cond, r) if isinstance(r, Equivalent)
+                            else Implies(cond & r.args[0], r.args[1]) for r in self.rows)
 
     def __iter__(self):
         return iter(self.rows)
@@ -87,7 +92,7 @@ class _Conditioned(Rows):
 
 
 def _row(r):
-    if not isinstance(r, Implies):
+    if not isinstance(r, (Implies, Equivalent)):
         raise TypeError(f"row {r} is not an implication "
                         "(parenthesize both sides: >> binds tighter than &)")
     return r
@@ -159,16 +164,20 @@ def rules(head, table, module: str):
 
 
 def _specs(head, row):
-    if not isinstance(row, Implies):
-        raise TypeError(f"{head.__name__} row {row} is not an implication "
-                        "(parenthesize both sides: >> binds tighter than &)")
-    prem, concl = row.args
+    _row(row)
+    prem, concl = row.args if isinstance(row, Implies) else (True, row)
     slots = {}
-    premises = [_lit(head, row, t, slots) for t in _conjuncts(prem)]
+    premises = [_lit(head, row, t, slots) for t in _conjuncts(prem) if t is not True]
     out = []
     for c in _conjuncts(concl):
-        out.append((premises, [_lit(head, row, t, slots)
-                               for t in (c.args if isinstance(c, Or) else (c,))]))
+        if isinstance(c, Equivalent):
+            if len(c.args) != 2:
+                raise ValueError(f"{head.__name__} row {row}: {c} is not of two literals")
+            a, b = (_lit(head, row, t, slots) for t in c.args)
+            out += [(premises + [a], [b]), (premises + [b], [a])]
+        else:
+            out.append((premises, [_lit(head, row, t, slots)
+                                   for t in (c.args if isinstance(c, Or) else (c,))]))
     nodes = [t for t, k in slots.items() if k == N]
     if not nodes:
         raise ValueError(f"{head.__name__} row {row} does not mention the node")

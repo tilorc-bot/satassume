@@ -87,9 +87,13 @@ from .registry import TemplateRegistry, registry
 # imported when the first node of such a class is met (TemplateRegistry.lazy)
 registry.lazy(__name__ + ".core", Add, Mul, Pow)
 registry.lazy(__name__ + ".functions", Function)
-#: the functions whose templates are compiled from rows (.wiring)
-ROW_FUNCTIONS = (sin, cos, tan, cot, sec, csc)
-registry.lazy(__name__ + ".wiring", *ROW_FUNCTIONS)
+#: the families of rows (.wiring), each with the functions it states rows
+#: for: a family is compiled on the first use of one of its functions
+ROW_FAMILIES = (
+    ("trig", (sin, cos, tan, cot, sec, csc)),
+)
+for _family, _functions in ROW_FAMILIES:
+    registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
 registry.lazy(__name__ + ".rootof", ComplexRootOf)
 registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,

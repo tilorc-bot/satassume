@@ -4,17 +4,14 @@ written as ``for_all`` statements (``templates/trig.py``, compiled by
 against the generators they replace (``tests/_legacy_trig_rules.py``,
 verbatim from f9291ab).
 
-For every node of the corpus (each head applied, unevaluated, to constants,
-special values, multiples of ``pi`` and ``I*pi`` and symbols) the compiled
-clauses of the head's template are computed with the rows and with the
-legacy generator plus :data:`ADDED`, each from empty caches.  The two must
-entail each other under the rule base: the same facts follow, though the
-clauses differ (an implied row is not written: ``cot``'s ``algebraic ->
-~algebraic`` follows from its ``zero`` and ``transcendental`` rows, and
-``real -> ~imaginary`` of ``tan``, ``cot``, ``sec`` and ``csc`` from
-``real & finite(f) -> real(f)``).  :data:`ADDED` are the facts the rows
-give that the legacy rules did not, each with its argument; a test checks
-that each is new.
+The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
+legacy generators plus :data:`ADDED` entail each other on every node of
+its corpus, though the clauses differ (an implied row is not written:
+``cot``'s ``algebraic -> ~algebraic`` follows from its ``zero`` and
+``transcendental`` rows, and ``real -> ~imaginary`` of ``tan``, ``cot``,
+``sec`` and ``csc`` from ``real & finite(f) -> real(f)``).  :data:`ADDED`
+are the facts the rows give that the legacy rules did not, each with its
+argument; a test checks that each is new.
 """
 import os
 import subprocess
@@ -22,24 +19,18 @@ import sys
 
 import pytest
 
-sympy = pytest.importorskip("sympy")
+pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _legacy_trig_rules as legacy  # noqa: E402
-from sympy import (  # noqa: E402
-    Add, E, EulerGamma, Float, GoldenRatio, I, Mul, Q, Rational, S, Symbol, cos, cot, csc,
-    oo, pi, sec, sin, sqrt, tan, zoo,
-)
+import _rows_equivalence as eq  # noqa: E402
+from sympy import Equivalent, Q, Symbol, cos, cot, csc, pi, sec, sin, tan  # noqa: E402
 
-from satassume.knowledge.rules import BASIS, RULE_CLAUSES  # noqa: E402
-from satassume.knowledge.templates import ROW_FUNCTIONS, _common, registry, wiring  # noqa: E402
+from satassume.knowledge.templates import ROW_FAMILIES, _common, wiring  # noqa: E402
 from satassume.knowledge.templates._rows import (  # noqa: E402
     by_function, closed, f, for_all, rows_of, rules, x,
 )
-from satassume.knowledge.templates.functions import _pi_trig, _unary  # noqa: E402
-from satassume.knowledge.templates.registry import _split  # noqa: E402
-from satassume.sat.solver import Solver  # noqa: E402
 
 HEADS = (sin, cos, tan, cot, sec, csc)
 
@@ -58,126 +49,14 @@ LEGACY_GEN = {sin: legacy._sin, cos: legacy._cos, tan: legacy._tan, cot: legacy.
               sec: legacy._sec, csc: legacy._csc}
 
 
-def _template(h, gen):
-    if h in (sin, cos):
-        return _pi_trig(h.__name__, gen, h is cos)
-    return _unary(h.__name__, gen)
-
-
-def _both(gen, extra):
-    def both(R, c):
-        gen(R, c)
-        extra(R, c)
-    return both
-
-
-LEGACY = {h: _template(h, g) for h, g in LEGACY_GEN.items()}
-LEGACY_PLUS = {h: _template(h, _both(g, rules(h, ADDED[h], __name__)) if h in ADDED else g)
-               for h, g in LEGACY_GEN.items()}
-
-
-def _arguments():
-    x_, n = Symbol('x'), Symbol('n', integer=True)
-    r, p, im = Symbol('r', real=True), Symbol('p', positive=True), Symbol('i', imaginary=True)
-    consts = [S.Zero, S.One, S.NegativeOne, Rational(2), Rational(1, 2), Rational(-3, 2),
-              pi, E, I, -I, S.Infinity, S.NegativeInfinity, S.ComplexInfinity, S.NaN,
-              Float(0.5), Float(2.0), GoldenRatio, EulerGamma, sqrt(2), 2 + I]
-    pis = [Mul(c, pi, evaluate=False) for c in (Rational(1, 2), Rational(3, 2), Rational(-1, 4),
-                                                  Rational(7, 6), Rational(1, 3), 2, 3, -1)]
-    pis += [pi*c*s for c in (1, 2, 3, Rational(1, 2), Rational(3, 2), Rational(1, 3))
-            for s in (x_, n, r)]
-    pis += [I*pi, I*pi*n, I*pi*n/2, I*x_, I*r]
-    syms = [x_, n, r, p, im, x_ + 1, x_ - pi, Add(x_, -x_, evaluate=False), 1/x_, x_**2]
-    return consts + pis + syms
-
-
-NODES = [h(a, evaluate=False) for h in HEADS for a in _arguments()]
-
-
-def _compiled(templates, e):
-    compiled, formulas = [], []
-    _split(templates[type(e)](e), compiled, formulas)
-    return compiled, sorted(map(str, formulas))
-
-
-def _run(templates):
-    _common._CACHE.clear()
-    try:
-        return {e: _compiled(templates, e) for e in NODES}
-    finally:
-        _common._CACHE.clear()
-
-
-def _var(k, i):
-    return k * len(BASIS) + i + 1
-
-
-def _solver(c):
-    """A solver holding the pattern's clauses and the rule base on each slot."""
-    s = Solver()
-    for k in range(c.pattern.nobjs):
-        for cl in RULE_CLAUSES:
-            s.add_clause([(1 if l > 0 else -1) * _var(k, abs(l) - 1) for l in cl])
-    for lits, _, _ in c.pattern.clauses:
-        s.add_clause([-_var(k, i) if neg else _var(k, i) for k, i, neg in lits])
-    return s
-
-
-def _not_entailed(a, b):
-    """The clauses of ``b`` that ``a`` (with the rule base) does not entail."""
-    s = _solver(a)
-    return [lits for lits, _, _ in b.pattern.clauses
-            if s.solve([_var(k, i) if neg else -_var(k, i) for k, i, neg in lits])]
-
-
-def _differences(new, old):
-    """Per node: clauses of ``new`` that ``old`` lacks, and the reverse."""
-    out = {}
-    for e in NODES:
-        (cn, fn), (co, fo) = new[e], old[e]
-        assert fn == fo, e
-        assert [(tuple(map(str, c.objs)), c.pattern.node) for c in cn] == \
-               [(tuple(map(str, c.objs)), c.pattern.node) for c in co], e
-        gained = [l for a, b in zip(co, cn) for l in _not_entailed(a, b)]
-        lost = [l for a, b in zip(cn, co) for l in _not_entailed(a, b)]
-        if gained or lost:
-            out[e] = (gained, lost)
-    return out
-
-
-def _rows_templates():
-    out = {}
-    for h in HEADS:
-        ts = [t for t in registry.templates_for(h) if t.__module__ == wiring.__name__]
-        assert len(ts) == 1, (h, ts)
-        out[h] = ts[0]
-    return out
-
-
 def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new, old = _run(_rows_templates()), _run(LEGACY_PLUS)
-    diff = _differences(new, old)
-    assert not diff, list(diff.items())[:3]
-    # the corpus reaches the pi*c*s rules and nodes with clauses
+    new = eq.check_rows_entail_exactly(HEADS, "trig", LEGACY_GEN, ADDED)
+    # the corpus reaches the pi*c*s rules
     assert any(len(c.objs) == 3 for cs, _ in new.values() for c in cs)
-    assert sum(1 for cs, _ in new.values() if cs) > len(NODES) // 2
 
 
 def test_each_added_fact_is_new():
-    # every conjunct of every added row, alone on top of the legacy rules,
-    # gives a clause the legacy rules do not entail
-    for h, extra in ADDED.items():
-        e = h(Symbol('x'), evaluate=False)
-        _common._CACHE.clear()
-        [old], _ = _compiled(LEGACY, e)
-        for row in extra:
-            prem, concl = row.args
-            for c in (concl.args if isinstance(concl, sympy.And) else (concl,)):
-                _common._CACHE.clear()
-                plus = _template(h, _both(LEGACY_GEN[h], rules(h, prem >> c, __name__)))
-                [new], _ = _compiled({h: plus}, e)
-                assert _not_entailed(old, new), (h, prem, c)
-    _common._CACHE.clear()
+    eq.check_added_are_new(LEGACY_GEN, ADDED)
 
 
 def test_trig_is_a_builtin_module():
@@ -190,24 +69,28 @@ from sympy import Q, Symbol, cos, cot, csc, sec, sin, tan
 from satassume.knowledge.templates.registry import registry
 from satassume.sympy_api import ask
 TRIG = "satassume.knowledge.templates.trig"
+HYPERBOLIC = "satassume.knowledge.templates.hyperbolic"
 WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert TRIG not in sys.modules and WIRING not in sys.modules
 assert ask(Q.real(sin(x)), Q.real(x)) is True
-assert TRIG in sys.modules and all(m != WIRING for _, m in registry._lazy)
+assert TRIG in sys.modules and all(m != WIRING + ":trig" for _, m in registry._lazy)
+# each family is compiled on its own first use
+assert HYPERBOLIC not in sys.modules
 assert "satassume.knowledge.templates.special" not in sys.modules
 for h in (sin, cos, tan, cot, sec, csc):
-    assert [t.__module__ for t in registry._by_class[h]] == [WIRING]
+    assert [t.__module__ for t in registry._by_class[h]] == [WIRING + ":trig"]
 """
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
 
 
 def test_the_declared_functions_are_those_the_rows_name():
-    # templates/__init__.py declares .wiring for ROW_FUNCTIONS without
+    # templates/__init__.py declares each family for its functions without
     # importing the rows; the two lists must not drift apart
-    named = [fn for family in wiring.FAMILIES for fn in wiring.functions(family)]
-    assert tuple(named) == ROW_FUNCTIONS == HEADS
+    for family, declared in ROW_FAMILIES:
+        assert wiring.functions(family) == declared, family
+    assert dict(ROW_FAMILIES)["trig"] == HEADS
 
 
 # -- the row language -------------------------------------------------------
@@ -238,6 +121,22 @@ def test_closed_sets_join_with_and_and_take_a_condition():
     # a row joins a set too, on either side
     assert len(_specs(tan, (Q.zero(x) >> Q.zero(tan(x))) & closed(tan, Q.real))) == 2
     assert len(_specs(tan, closed(tan, Q.real) & (Q.zero(x) >> Q.zero(tan(x))))) == 2
+
+
+def _each_way(specs):
+    return sorted((sorted(p), c) for p, c in specs)
+
+
+def test_equivalent_is_a_rule_each_way():
+    zero = Equivalent(Q.zero(tan(x)), Q.zero(x))
+    assert _each_way(_specs(tan, Q.extended_real(x) >> zero)) == [
+        ([(0, 'extended_real', True), (0, 'zero', True)], [(1, 'zero', True)]),
+        ([(0, 'extended_real', True), (1, 'zero', True)], [(0, 'zero', True)])]
+    # a row without premises, and one joined with other rows under a condition
+    assert _each_way(_specs(tan, zero)) == [
+        ([(0, 'zero', True)], [(1, 'zero', True)]), ([(1, 'zero', True)], [(0, 'zero', True)])]
+    assert len(_specs(tan, Q.real(x) >> (closed(tan, Q.complex) & zero))) == 3
+    assert len(_specs(tan, Q.real(x) >> (zero & closed(tan, Q.complex)))) == 3
 
 
 def test_a_condition_without_parentheses_is_refused():

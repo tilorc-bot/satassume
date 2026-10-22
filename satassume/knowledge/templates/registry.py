@@ -111,7 +111,13 @@ class TemplateRegistry:
         of a module that SymPy does not import itself
         (``sympy.codegen.cfunctions``): declaring it imports nothing, and
         :meth:`load_all` imports ``module`` only once that module is
-        imported (before, no object of the class exists)."""
+        imported (before, no object of the class exists).
+
+        ``module`` may name a part of a module, ``"module:part"``: loading
+        it imports ``module`` and calls ``module.load("part")``, which
+        registers templates attributed to ``"module:part"`` (their
+        ``__module__``).  The families of rows of :mod:`.wiring` are such
+        parts, each loaded on the first use of one of its functions."""
         self._lazy.append((classes, module))
 
     @staticmethod
@@ -138,7 +144,10 @@ class TemplateRegistry:
         todo = [m for c, m in self._lazy
                 if (self._imported(c) if cls is None else self._covers(cls, c))]
         for m in todo:
-            importlib.import_module(m)
+            name, _, part = m.partition(':')
+            loaded = importlib.import_module(name)
+            if part:
+                loaded.load(part)
             # the module (and any declared module it imports) registered
             # itself: drop what is loaded now
             self._lazy = [(c, n) for c, n in self._lazy if n != m and n not in sys.modules]
