@@ -18,6 +18,9 @@ from satassume.sat.formula import And as FAnd, Implies as FImplies, Not as FNot,
 from satassume.sympy_api import ask
 from satassume.knowledge.templates.registry import registry
 
+#: unrelated conjuncts break the bounds on search conflicts and time (issue #260)
+pytestmark = pytest.mark.no_pad("counts search conflicts and times builds")
+
 xs = symbols("x0:12")
 DERIVED = ['nonnegative', 'nonpositive', 'positive', 'negative', 'real', 'nonzero',
            'extended_nonnegative', 'positive_infinite', 'negative_infinite',
