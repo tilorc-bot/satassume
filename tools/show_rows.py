@@ -2,11 +2,11 @@
 
     python tools/show_rows.py [NAME ...]
 
-A family module (``templates/trig.py``) states its rules as ``for_all``
-statements, each under a comment whose first line is the property's title.
-This prints each function's rows, ``f`` replaced by the function, labelled
-with that title.  Without names, every function written in rows is
-printed.
+A family module (``templates/trig.py``, ``templates/hyperbolic.py``)
+states its rules as ``for_all`` statements, each under a comment whose
+first line is the property's title.  This prints each function's rows,
+``f`` replaced by the function, labelled with that title.  Without names,
+every function written in rows is printed.
 """
 import ast
 import inspect

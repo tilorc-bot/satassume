@@ -32,6 +32,7 @@ from sympy.functions.combinatorial.factorials import (
 from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
 from sympy.functions.elementary.miscellaneous import MinMaxBase
 from sympy.functions.elementary.piecewise import Piecewise
+from sympy.functions.elementary.hyperbolic import cosh, coth, csch, sech, sinh, tanh
 from sympy.functions.elementary.trigonometric import cos, cot, csc, sec, sin, tan
 from sympy.functions.special.bessel import (
     airyai,
@@ -91,6 +92,7 @@ registry.lazy(__name__ + ".functions", Function)
 #: for: a family is compiled on the first use of one of its functions
 ROW_FAMILIES = (
     ("trig", (sin, cos, tan, cot, sec, csc)),
+    ("hyperbolic", (sinh, cosh, tanh, coth, sech, csch)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)

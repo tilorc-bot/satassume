@@ -38,12 +38,6 @@ from sympy.functions.elementary.hyperbolic import (
     asech,
     asinh,
     atanh,
-    cosh,
-    coth,
-    csch,
-    sech,
-    sinh,
-    tanh,
 )
 from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
 from sympy.functions.elementary.trigonometric import (
@@ -570,30 +564,9 @@ registry.register(acos)(_unary('acos', _acos, slots=_minus_one,
 
 
 # ---------------------------------------------------------------------------
-# hyperbolic
+# hyperbolic: cosh(I*pi*c*s) and cosh(r + I*pi*c*s); the rows of sinh,
+# cosh, tanh, coth, sech and csch are in .hyperbolic
 # ---------------------------------------------------------------------------
-
-_SINH = (
-    (('real',), 'real'), (('extended_real',), 'extended_real'),
-    (('finite',), 'finite'), (('complex',), 'complex'),
-    (('infinite', 'extended_real'), 'infinite'), _TRANSCENDENTAL,
-)
-_COSH = (
-    (('real',), 'positive'), (('extended_real',), 'extended_positive'),
-    (('finite',), 'finite'), (('complex',), 'complex'), (('zero',), 'odd'),
-    (('imaginary',), 'real'), _TRANSCENDENTAL,
-)
-
-
-def _sinh(R, c):
-    _table(R, _SINH)
-    _equiv(R, [(X, 'extended_real', True)], ('extended_positive', 'extended_negative', 'zero'))
-    R.rule([(X, 'imaginary', True)], [(N, 'imaginary', True), (N, 'zero', True)])
-
-
-def _cosh(R, c):
-    _table(R, _COSH)
-
 
 #: Slots of the ``cosh(r + I*pi*c*s)`` template: ``r`` and ``s``.
 CR, CS = 2, 3
@@ -641,50 +614,41 @@ def _cosh_shift_split(arg):
     return None
 
 
-_cosh_plain = _unary('cosh', _cosh)
+def _cosh_shift(gen):
+    """Template for ``cosh`` given the generator of its rows (``.wiring``):
+    :func:`_unary`, for ``cosh(r + I*pi*c*s)`` also :func:`_cosh_shift_rules`
+    (on ``r``: a ``cosh(r)`` slot with the facts of the node would not be
+    total, the blocks below do not relate it to the argument)."""
+    plain = _unary('cosh', gen)
 
+    def template(expr):
+        split = _cosh_shift_split(expr.args[0]) if len(expr.args) == 1 else None
+        if split is None:
+            return plain(expr)
+        r, c, s_ = split
+        objs = [expr.args[0], expr, r]
+        if s_ is not None:
+            objs.append(s_)
+        consts = {i: obj for i, obj in enumerate(objs)
+                  if i >= CR and obj.is_Atom and obj.is_number}
+        key = ('cosh', None, 'shift', c, s_ is not None,
+               *(const_key(consts[i]) if i in consts else None for i in (CR, CS)))
 
-def _cosh_templates(expr):
-    """``cosh``: :func:`_unary`, for ``cosh(r + I*pi*c*s)`` also
-    :func:`_cosh_shift_rules` (on ``r``: a ``cosh(r)`` slot with the facts
-    of the node would not be total, the blocks below do not relate it to
-    the argument)."""
-    split = _cosh_shift_split(expr.args[0]) if len(expr.args) == 1 else None
-    if split is None:
-        return _cosh_plain(expr)
-    r, c, s_ = split
-    objs = [expr.args[0], expr, r]
-    if s_ is not None:
-        objs.append(s_)
-    consts = {i: obj for i, obj in enumerate(objs)
-              if i >= CR and obj.is_Atom and obj.is_number}
-    key = ('cosh', None, 'shift', c, s_ is not None,
-           *(const_key(consts[i]) if i in consts else None for i in (CR, CS)))
+        def build():
+            R = Rules()
+            gen(R, None)
+            _cosh_shift_rules(R, c, s_ is not None)
+            return R.rules
 
-    def build():
-        R = Rules()
-        _cosh(R, None)
-        _cosh_shift_rules(R, c, s_ is not None)
-        return R.rules
-
-    return facts(key, build, consts, tuple(objs), N)
-
-
-def _tanh(R, c):
-    _table(R, ((('extended_real',), 'real'), _TRANSCENDENTAL))
-    for pred in ('positive', 'negative'):
-        R.equiv([(X, 'extended_real', True)], (N, pred, True), (X, 'extended_' + pred, True))
-    R.equiv([(X, 'extended_real', True)], (N, 'zero', True), (X, 'zero', True))
-
-
-for _cls, _tag, _gen in ((sinh, 'sinh', _sinh), (tanh, 'tanh', _tanh)):
-    registry.register(_cls)(_unary(_tag, _gen))
-registry.register(cosh)(_pi_trig('cosh', _cosh, True, ipi_split, _cosh_templates))
+        return facts(key, build, consts, tuple(objs), N)
+    template.__name__ = 'cosh_templates'
+    template.__module__ = gen.__module__
+    return template
 
 
 # ---------------------------------------------------------------------------
-# reciprocal and inverse trigonometric and hyperbolic functions (#180); the
-# rows of sec and csc are in .trig
+# inverse trigonometric and hyperbolic functions (#180); the rows of sec,
+# csc, coth, sech and csch are in .trig and .hyperbolic
 # ---------------------------------------------------------------------------
 #
 # Values at the special points follow SymPy's evaluation: ``csc(0) =
@@ -711,66 +675,6 @@ registry.register(cosh)(_pi_trig('cosh', _cosh, True, ipi_split, _cosh_templates
 #
 # Slots: 0 the argument, 1 the node, 2 ``x - 1``, 3 ``x + 1``.
 P1 = 3
-
-
-def _finite_value(R, pred):
-    """``pred(x) & finite(node) -> pred(node)``: the value is a number of
-    the kind or ``zoo`` (at a pole)."""
-    R.rule([(X, pred, True), (N, 'finite', True)], (N, pred, True))
-
-
-_COTH = (
-    (('extended_real', ('zero', False)), 'real'),   # coth(+-oo) == +-1
-    (('extended_positive',), 'positive'),           # coth(x) > 1 for x > 0
-    (('extended_negative',), 'negative'),
-    (('extended_real',), ('imaginary', False)),     # coth(0) == zoo
-    (('zero',), 'infinite'), (('zero',), ('extended_real', False)),
-    # coth(a) == (exp(2*a) + 1)/(exp(2*a) - 1), exp(2*a) != 1
-    (('algebraic', ('zero', False)), 'transcendental'),
-)
-
-
-def _coth(R, c):
-    _table(R, _COTH)
-    _finite_value(R, 'complex')
-    # coth(I*t) == -I*cot(t): imaginary, 0 (t == pi/2) or zoo (t == pi)
-    R.rule([(X, 'imaginary', True)], [(N, 'extended_real', False), (N, 'zero', True)])
-    R.rule([(X, 'imaginary', True), (N, 'finite', True)], [(N, 'imaginary', True), (N, 'zero', True)])
-
-
-_SECH = (
-    (('extended_real',), 'real'),                   # sech(+-oo) == 0
-    (('extended_real',), 'nonnegative'),
-    (('real',), 'positive'),
-    (('infinite', 'extended_real'), 'zero'),
-    (('zero',), 'odd'),
-    (('imaginary',), ('imaginary', False)),         # sech(I*t) == sec(t)
-    (('complex',), ('zero', False)),
-    _TRANSCENDENTAL,
-)
-_CSCH = (
-    (('extended_real', ('zero', False)), 'real'),   # csch(+-oo) == 0
-    (('positive',), 'positive'), (('negative',), 'negative'),
-    (('extended_positive',), 'nonnegative'), (('extended_negative',), 'nonpositive'),
-    (('infinite', 'extended_real'), 'zero'),
-    (('extended_real',), ('imaginary', False)),     # csch(0) == zoo
-    (('zero',), 'infinite'), (('zero',), ('extended_real', False)),
-    (('imaginary',), ('extended_real', False)),     # csch(I*t) == -I/sin(t)
-    (('complex',), ('zero', False)),
-    _TRANSCENDENTAL,
-)
-
-
-def _sech(R, c):
-    _table(R, _SECH)
-    _finite_value(R, 'complex')
-    R.rule([(X, 'imaginary', True), (N, 'finite', True)], (N, 'real', True))
-
-
-def _csch(R, c):
-    _table(R, _CSCH)
-    _finite_value(R, 'complex')
-    R.rule([(X, 'imaginary', True), (N, 'finite', True)], (N, 'imaginary', True))
 
 
 _ASINH = (
@@ -913,8 +817,7 @@ def _acsc(R, c):
     R.rule([(X, 'algebraic', True), (X, 'zero', False)], (N, 'transcendental', True))
 
 
-for _cls, _tag, _gen in ((coth, 'coth', _coth), (sech, 'sech', _sech), (csch, 'csch', _csch),
-                         (asinh, 'asinh', _asinh), (acsch, 'acsch', _acsch)):
+for _cls, _tag, _gen in ((asinh, 'asinh', _asinh), (acsch, 'acsch', _acsch)):
     registry.register(_cls)(_unary(_tag, _gen))
 registry.register(acosh)(_unary('acosh', _acosh, slots=_minus_one))
 registry.register(asech)(_unary('asech', _asech, slots=_minus_one))
