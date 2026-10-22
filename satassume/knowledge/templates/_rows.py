@@ -1,33 +1,36 @@
 """Template rules written as SymPy booleans (#249).
 
 A *row* is ``premises >> conclusion`` over the plain symbol :data:`x` and
-the node ``f(x)``::
+the node, written ``f(x)`` with the generic :data:`f` or with the head
+itself::
 
-    (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(sin(x))
+    (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))
 
 The premises are a conjunction of literals; the conclusion is a literal, a
 disjunction of literals, or a conjunction of those (one rule each).  A
 literal is ``Q.p(t)`` or ``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the
 argument or the node.
 
-:class:`Rows` holds rows, each labelled with where it comes from (a
-property, a signature, a module); ``cond >> rows`` adds ``cond`` to the
-premises of every row.  :func:`signature` states the sets a function maps
-into sets: the image may be a predicate, a number or an interval
-(:func:`Icc`, :func:`Ioo`, ...), and stands for the facts it implies
-(:func:`facts_of`).  :func:`rules` compiles rows, at import, into the
-index specs of :mod:`._common` (argument 0, node 1), so the patterns,
-their cache and the engine are unchanged.
+A function's rules are a tuple of rows and of :class:`Rows`, the sets of
+rows :func:`closed` and :func:`signature` give.  ``a & b`` joins two sets;
+``cond >> rows`` adds ``cond`` to the premises of every row of a set.
+:func:`signature` states the sets a function maps into sets: the image may
+be a predicate, a number or an interval (:func:`Icc`, :func:`Ioo`, ...),
+and stands for the facts it implies (:func:`facts_of`).  :func:`rules`
+compiles a function's rules, at import, into the index specs of
+:mod:`._common` (argument 0, node 1), so the patterns, their cache and the
+engine are unchanged.
 
 Python binds ``>>`` tighter than ``&``: ``a & b >> c`` is ``And(a,
-Implies(b, c))``.  A row whose top is not an implication is rejected, which
-catches the missing parentheses and a row SymPy collapsed to ``True``.
+Implies(b, c))``, and ``c >> s & t`` is ``(c >> s) & t``.  A row whose top
+is not an implication is rejected, and a set with a condition refuses
+``&``, so both missing pairs of parentheses fail at import.
 """
 from __future__ import annotations
 
 from typing import NamedTuple
 
-from sympy import And, Implies, Not, Or, Q, Rational, S, Symbol
+from sympy import And, Function, Implies, Not, Or, Q, Rational, S, Symbol
 from sympy.assumptions.assume import AppliedPredicate, Predicate
 
 from ..rules import BASIS, BASIS_INDEX, DEF_LITS, RULE_INSTANTIATED, unit_propagate
@@ -37,45 +40,63 @@ X, N = 0, 1
 
 #: the argument of every row
 x = Symbol('x')
+#: the generic function: ``f(x)`` is the node of whichever function the
+#: rows are compiled for
+f = Function('f')
 
 
 class Rows:
-    """Rows with their labels; ``a + b`` joins, ``cond >> rows`` adds a
-    premise to each row."""
-    __slots__ = ('items',)
+    """A set of rows: ``a & b`` joins, ``cond >> rows`` adds a premise to
+    each row."""
+    __slots__ = ('rows',)
 
-    def __init__(self, items=()):
-        self.items = tuple(items)
+    def __init__(self, rows=()):
+        self.rows = tuple(_row(r) for r in rows)
 
-    def __add__(self, other: 'Rows') -> 'Rows':
-        return Rows(self.items + other.items)
+    def __and__(self, other) -> 'Rows':
+        return Rows(self.rows + tuple(_flat(other)))
+
+    def __rand__(self, other) -> 'Rows':
+        return Rows(tuple(_flat(other)) + self.rows)
 
     def __rrshift__(self, cond) -> 'Rows':
-        return Rows((label, Implies(cond & row.args[0], row.args[1]))
-                    for label, row in self.items)
-
-    def labelled(self, label: str) -> 'Rows':
-        return Rows((label, row) for _, row in self.items)
+        return _Conditioned(Implies(cond & r.args[0], r.args[1]) for r in self.rows)
 
     def __iter__(self):
-        return iter(self.items)
-
-    def __len__(self):
-        return len(self.items)
+        return iter(self.rows)
 
 
-def rows(*items, label: str = '') -> Rows:
-    """``Rows`` of the given rows (and ``Rows``)."""
-    out = []
-    for r in items:
-        if isinstance(r, Rows):
-            out.extend(r.items)
-        elif isinstance(r, Implies):
-            out.append((label, r))
-        else:
-            raise TypeError(f"row {r} is not an implication "
-                            "(parenthesize both sides: >> binds tighter than &)")
-    return Rows(out)
+class _Conditioned(Rows):
+    """``cond >> rows``: joining it with ``&`` is what ``cond >> a & b``
+    parses to, so it is refused."""
+    __slots__ = ()
+
+    def __and__(self, other):
+        raise TypeError("cond >> a & b is (cond >> a) & b: write cond >> (a & b), "
+                        "or join a set with a condition in the function's tuple")
+
+    __rand__ = __and__
+
+
+def _row(r):
+    if not isinstance(r, Implies):
+        raise TypeError(f"row {r} is not an implication "
+                        "(parenthesize both sides: >> binds tighter than &)")
+    return r
+
+
+def _flat(item):
+    """The rows of a row, a :class:`Rows` or a tuple of those."""
+    if isinstance(item, (Rows, tuple, list)):
+        for i in item:
+            yield from _flat(i)
+    else:
+        yield _row(item)
+
+
+def closed(f, pred) -> Rows:
+    """``f`` maps the set ``pred`` into itself: ``pred(x) -> pred(f(x))``."""
+    return Rows([pred(x) >> pred(f(x))])
 
 
 # --------------------------------------------------------------------------
@@ -199,15 +220,15 @@ def facts_of(image):
     return [(name, value) for name, value, _ in kept]
 
 
-def signature(f, *pairs, label: str = 'signature') -> Rows:
-    """``f`` maps each set into an image: ``(domain, image)`` pairs, the
-    domain a predicate (or a boolean over :data:`x`), the image as in
+def signature(*pairs) -> Rows:
+    """The function maps each set into an image: ``(domain, image)`` pairs,
+    the domain a predicate (or a boolean over :data:`x`), the image as in
     :func:`facts_of`.  ``(Q.zero, 1)`` is ``f(0) == 1``."""
     out = []
     for domain, image in pairs:
         prem = domain(x) if isinstance(domain, Predicate) else domain
         lits = [getattr(Q, p)(f(x)) if v else ~getattr(Q, p)(f(x)) for p, v in facts_of(image)]
-        out.append((label, Implies(prem, And(*lits))))
+        out.append(Implies(prem, And(*lits)))
     return Rows(out)
 
 
@@ -215,11 +236,17 @@ def signature(f, *pairs, label: str = 'signature') -> Rows:
 # the compiler
 # --------------------------------------------------------------------------
 
-def rules(head, rows: Rows, module: str):
-    """The ``gen(R, c)`` of :func:`.functions._unary` for ``rows`` about
-    ``head``; ``module`` (the caller's ``__name__``) is the module the
-    registry attributes the template to (``TemplateRegistry.lazy``)."""
-    specs = [spec for _, row in rows for spec in _specs(head, row)]
+def rows_for(head, table):
+    """The rows of ``table`` (a row, a :class:`Rows` or a tuple of those)
+    about ``head``: the generic ``f(x)`` is ``head(x)``."""
+    return [r.xreplace({f(x): head(x)}) for r in _flat(table)]
+
+
+def rules(head, table, module: str):
+    """The ``gen(R, c)`` of :func:`.functions._unary` for the rows of
+    ``table`` about ``head``; ``module`` (the caller's ``__name__``) is the
+    module the registry attributes the template to (``TemplateRegistry.lazy``)."""
+    specs = [spec for row in rows_for(head, table) for spec in _specs(head, row)]
 
     def gen(R: Rules, c) -> None:
         for prem, concl in specs:
