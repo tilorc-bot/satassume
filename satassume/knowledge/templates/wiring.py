@@ -1,7 +1,7 @@
 """Which template each function of a family of rows gets (#249).
 
-The family modules (:mod:`.trig`, :mod:`.hyperbolic`, :mod:`.inverse`,
-:mod:`.exp_log`, :mod:`.complex_parts`, :mod:`.integer_funcs`, :mod:`.polar`)
+The family modules (the names of ``ROW_FAMILIES`` in ``templates/__init__.py``:
+:mod:`.trig`, :mod:`.hyperbolic`, :mod:`.inverse`, ...)
 state rows only, as ``RULES`` (see :mod:`._rows`).  :func:`load` compiles
 a family's rows and registers one template per function (:func:`template`):
 the unary template of its rows (:func:`.functions._unary`), with the facts
