@@ -661,7 +661,7 @@ def _algebra_terms():
     # (secondquant [x, y]), and operators, kets and tensors with free
     # indices
     from sympy import Eq, Integral, MatrixSymbol, Quaternion, binomial, exp, ff, log, polylog, rf, stieltjes
-    from sympy.physics.quantum import AntiCommutator, Bra, Commutator, Dagger, Operator, TensorProduct
+    from sympy.physics.quantum import AntiCommutator, Bra, Commutator, Dagger, Ket, Operator, TensorProduct
     from sympy.physics.quantum.boson import BosonOp
     from sympy.physics.quantum.spin import JzKet
     from sympy.physics.secondquant import Commutator as SqCommutator, CreateBoson, FKet, FockStateFermionBra
@@ -686,7 +686,7 @@ def _algebra_terms():
             Pow(S.Exp1, Mul(0.0, A, evaluate=False), evaluate=False), Mul(0.0, A, B, evaluate=False),
             A - 2*B, A*B*A, 2*sin(A), sin(A) + 1, exp(A + 1), -exp(A), A + x + y,
             a, b - Dagger(b), Commutator(a, b), Commutator(a, zb), AntiCommutator(a, zb), AntiCommutator(zb, a),
-            TensorProduct(a, zb), BosonOp('c'), JzKet(1, 0), Bra('a'), CreateBoson(x), Quaternion(x, y, 0, 1),
+            TensorProduct(a, zb), BosonOp('c'), JzKet(1, 0), Bra('a'), Dagger(Ket('a'), evaluate=False), CreateBoson(x), Quaternion(x, y, 0, 1),
             p_(i_), p_(i_) + q_(i_), 2*p_(i_),
             SqCommutator(x, y, evaluate=False), SqCommutator(x, 1, evaluate=False),
             FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
@@ -709,7 +709,12 @@ def _scalar_terms():
     from sympy.tensor.tensor import TensAdd, TensMul
     p_, q_, i_ = _tensors()
     O = Operator('O')
+    from sympy import adjoint
     return [Bra('a')*O*Ket('b'), Dagger(Ket('b'))*O*Ket('b'), OuterProduct(Ket('a'), Bra('b')),
+            # the adjoint of a ket is a bra (#250 re-review)
+            Mul(Dagger(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(adjoint(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(Dagger(Mul(O, Ket('a')), evaluate=False), Ket('b'), evaluate=False),
             p_(i_)*q_(-i_), TensMul(0, x), TensMul(x), TensAdd(1, 1)]
 
 

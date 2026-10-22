@@ -22,6 +22,7 @@ from sympy.core.basic import Basic as _Basic
 from sympy.core.containers import Tuple as _Tuple
 from sympy.core.expr import Expr as _Expr
 from sympy.core.singleton import S as _S
+from sympy.functions.elementary.complexes import adjoint as _adjoint, conjugate as _conjugate, transpose as _transpose
 
 from ..state.memos import PROCESS as _PROCESS
 
@@ -212,15 +213,33 @@ def _loaded(module, name) -> tuple:
 def _scalar_by_definition(s, whole) -> bool:
     """A subterm making a term built non-commutative a number by
     definition: a bra below the ``whole`` term (quantum ``BraBase``,
-    secondquant ``FockStateBra``), a linear functional, so that a bra
-    applied to a ket is a number (``Bra('a')*Operator('O')*Ket('b')``; a bra
-    alone is no number); a tensor expression without free indices, a
-    rank-0 tensor (``p(i)*q(-i)``, ``TensAdd(1, 1)``)."""
-    if not whole and isinstance(s, _loaded("sympy.physics.quantum.state", "BraBase")
-                  + _loaded("sympy.physics.secondquant", "FockStateBra")):
-        return True
+    secondquant ``FockStateBra``, or the adjoint, conjugate or transpose
+    of a term holding a ket: ``Dagger(Ket('a'), evaluate=False)``), a
+    linear functional, so that a bra applied to a ket is a number
+    (``Bra('a')*Operator('O')*Ket('b')``; a bra alone is no number); a
+    tensor expression without free indices, a rank-0 tensor
+    (``p(i)*q(-i)``, ``TensAdd(1, 1)``)."""
+    if not whole:
+        if isinstance(s, _loaded("sympy.physics.quantum.state", "BraBase")
+                      + _loaded("sympy.physics.secondquant", "FockStateBra")):
+            return True
+        if isinstance(s, _ADJOINTS) and _holds_ket(s):
+            return True
     tensor = _loaded("sympy.tensor.tensor", "TensExpr")
     return bool(tensor) and isinstance(s, tensor) and not s.get_free_indices()
+
+
+def _holds_ket(s) -> bool:
+    kets = (_loaded("sympy.physics.quantum.state", "KetBase")
+            + _loaded("sympy.physics.secondquant", "FockStateKet"))
+    stack = [s]
+    while kets and stack:
+        b = stack.pop()
+        if isinstance(b, kets):
+            return True
+        if isinstance(b, _Basic):
+            stack.extend(b.args)
+    return False
 
 
 def _identity_operator(s) -> bool:
@@ -246,6 +265,7 @@ def _plain_undefined(cls) -> bool:
 _UNDEFINED_KEYS = None
 
 
+_ADJOINTS = (_adjoint, _conjugate, _transpose)
 _SPECIAL = (_S.NaN, _S.Infinity, _S.NegativeInfinity, _S.ComplexInfinity)
 
 
