@@ -1,0 +1,318 @@
+"""The rules of ``sin``, ``cos``, ``tan``, ``cot``, ``sec`` and ``csc``,
+written as properties (``templates/properties.py``), signatures and rows
+(``templates/trig.py``) in the row language (``templates/_rows.py``, #249),
+against the generators they replace (``tests/_legacy_trig_rules.py``,
+verbatim from f9291ab).
+
+For every node of the corpus (each head applied, unevaluated, to constants,
+special values, multiples of ``pi`` and ``I*pi`` and symbols) the compiled
+clauses of the head's template are computed with the rows and with the
+legacy generator plus :data:`ADDED`, each from empty caches.  The two must
+entail each other under the rule base: the same facts follow, though the
+clauses differ (an implied row is not written; ``cot``'s ``algebraic ->
+~algebraic`` follows from its ``zero`` and ``transcendental`` rows).
+:data:`ADDED` are the facts the rows give that the legacy rules did not,
+each with its argument; a test checks that each is new.
+"""
+import os
+import subprocess
+import sys
+
+import pytest
+
+sympy = pytest.importorskip("sympy")
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import _legacy_trig_rules as legacy  # noqa: E402
+from sympy import (  # noqa: E402
+    Add, E, EulerGamma, Float, GoldenRatio, I, Mul, Q, Rational, S, Symbol, cos, cot, csc,
+    oo, pi, sec, sin, sqrt, tan, zoo,
+)
+
+from satassume.knowledge.rules import BASIS, RULE_CLAUSES  # noqa: E402
+from satassume.knowledge.templates import _common, properties, registry, trig  # noqa: E402
+from satassume.knowledge.templates._rows import (  # noqa: E402
+    Icc, Ico, Ioo, facts_of, rows, rules, signature, x,
+)
+from satassume.knowledge.templates.functions import _pi_trig, _unary  # noqa: E402
+from satassume.knowledge.templates.registry import _split  # noqa: E402
+from satassume.sat.solver import Solver  # noqa: E402
+
+HEADS = (sin, cos, tan, cot, sec, csc)
+
+#: facts the rows give and the legacy rules did not
+ADDED = {
+    # tan is meromorphic: where it is finite its value is a number
+    tan: rows((Q.complex(x) & Q.finite(tan(x))) >> Q.complex(tan(x))),
+    # cos(0) == sec(0) == 1, neither prime nor composite
+    cos: rows(Q.zero(x) >> (~Q.prime(cos(x)) & ~Q.composite(cos(x)))),
+    sec: rows(Q.zero(x) >> (~Q.prime(sec(x)) & ~Q.composite(sec(x))),
+              # sec(I*t) == 1/cosh(t) is in (0, 1) for real t != 0
+              Q.imaginary(x) >> Q.noninteger(sec(x))),
+}
+
+LEGACY_GEN = {sin: legacy._sin, cos: legacy._cos, tan: legacy._tan, cot: legacy._cot,
+              sec: legacy._sec, csc: legacy._csc}
+
+
+def _template(h, gen):
+    if h in (sin, cos):
+        return _pi_trig(h.__name__, gen, h is cos)
+    return _unary(h.__name__, gen)
+
+
+def _plus(h, gen):
+    if h not in ADDED:
+        return gen
+    extra = rules(h, ADDED[h], __name__)
+
+    def both(R, c):
+        gen(R, c)
+        extra(R, c)
+    return both
+
+
+LEGACY = {h: _template(h, g) for h, g in LEGACY_GEN.items()}
+LEGACY_PLUS = {h: _template(h, _plus(h, g)) for h, g in LEGACY_GEN.items()}
+
+
+def _arguments():
+    x_, n = Symbol('x'), Symbol('n', integer=True)
+    r, p, im = Symbol('r', real=True), Symbol('p', positive=True), Symbol('i', imaginary=True)
+    consts = [S.Zero, S.One, S.NegativeOne, Rational(2), Rational(1, 2), Rational(-3, 2),
+              pi, E, I, -I, S.Infinity, S.NegativeInfinity, S.ComplexInfinity, S.NaN,
+              Float(0.5), Float(2.0), GoldenRatio, EulerGamma, sqrt(2), 2 + I]
+    pis = [Mul(c, pi, evaluate=False) for c in (Rational(1, 2), Rational(3, 2), Rational(-1, 4),
+                                                  Rational(7, 6), Rational(1, 3), 2, 3, -1)]
+    pis += [pi*c*s for c in (1, 2, 3, Rational(1, 2), Rational(3, 2), Rational(1, 3))
+            for s in (x_, n, r)]
+    pis += [I*pi, I*pi*n, I*pi*n/2, I*x_, I*r]
+    syms = [x_, n, r, p, im, x_ + 1, x_ - pi, Add(x_, -x_, evaluate=False), 1/x_, x_**2]
+    return consts + pis + syms
+
+
+NODES = [h(a, evaluate=False) for h in HEADS for a in _arguments()]
+
+
+def _compiled(templates, e):
+    compiled, formulas = [], []
+    _split(templates[type(e)](e), compiled, formulas)
+    return compiled, sorted(map(str, formulas))
+
+
+def _run(templates):
+    _common._CACHE.clear()
+    try:
+        return {e: _compiled(templates, e) for e in NODES}
+    finally:
+        _common._CACHE.clear()
+
+
+def _var(k, i):
+    return k * len(BASIS) + i + 1
+
+
+def _solver(c):
+    """A solver holding the pattern's clauses and the rule base on each slot."""
+    s = Solver()
+    for k in range(c.pattern.nobjs):
+        for cl in RULE_CLAUSES:
+            s.add_clause([(1 if l > 0 else -1) * _var(k, abs(l) - 1) for l in cl])
+    for lits, _, _ in c.pattern.clauses:
+        s.add_clause([-_var(k, i) if neg else _var(k, i) for k, i, neg in lits])
+    return s
+
+
+def _not_entailed(a, b):
+    """The clauses of ``b`` that ``a`` (with the rule base) does not entail."""
+    s = _solver(a)
+    out = []
+    for lits, _, _ in b.pattern.clauses:
+        if s.solve([_var(k, i) if neg else -_var(k, i) for k, i, neg in lits]):
+            out.append(lits)
+    return out
+
+
+def _differences(new, old):
+    """Per node: clauses of ``new`` that ``old`` lacks, and the reverse."""
+    out = {}
+    for e in NODES:
+        (cn, fn), (co, fo) = new[e], old[e]
+        assert fn == fo, e
+        assert [(tuple(map(str, c.objs)), c.pattern.node) for c in cn] == \
+               [(tuple(map(str, c.objs)), c.pattern.node) for c in co], e
+        gained = [l for a, b in zip(co, cn) for l in _not_entailed(a, b)]
+        lost = [l for a, b in zip(cn, co) for l in _not_entailed(a, b)]
+        if gained or lost:
+            out[e] = (gained, lost)
+    return out
+
+
+def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
+    new, old = _run(_rows_templates()), _run(LEGACY_PLUS)
+    diff = _differences(new, old)
+    assert not diff, list(diff.items())[:3]
+    # the corpus reaches the pi*c*s rules and nodes with clauses
+    assert any(len(c.objs) == 3 for cs, _ in new.values() for c in cs)
+    assert sum(1 for cs, _ in new.values() if cs) > len(NODES) // 2
+
+
+def test_each_added_fact_is_new():
+    # every conjunct of every added row, alone on top of the legacy rules,
+    # gives a clause the legacy rules do not entail
+    for h, extra in ADDED.items():
+        e = h(Symbol('x'), evaluate=False)
+        _common._CACHE.clear()
+        [old], _ = _compiled(LEGACY, e)
+        for _, row in extra:
+            prem, concl = row.args
+            for c in (concl.args if concl.func.__name__ == 'And' else (concl,)):
+                one = rules(h, rows(prem >> c), __name__)
+                gen = LEGACY_GEN[h]
+
+                def both(R, c_, gen=gen, one=one):
+                    gen(R, c_)
+                    one(R, c_)
+                _common._CACHE.clear()
+                [plus], _ = _compiled({h: _template(h, both)}, e)
+                assert _not_entailed(old, plus), (h, prem, c)
+    _common._CACHE.clear()
+
+
+def _rows_templates():
+    out = {}
+    for h in HEADS:
+        ts = [t for t in registry.templates_for(h) if t.__module__ == trig.__name__]
+        assert len(ts) == 1, (h, ts)
+        out[h] = ts[0]
+    return out
+
+
+def test_trig_is_a_builtin_module():
+    # loaded on first use, and its templates are attributed to it, so the
+    # registry takes them as built-in (a template attributed to another
+    # module would be a user's: every module loaded, every memo emptied)
+    code = """
+import sys
+from sympy import Q, Symbol, cos, cot, csc, sec, sin, tan
+from satassume.knowledge.templates.registry import registry
+from satassume.sympy_api import ask
+TRIG = "satassume.knowledge.templates.trig"
+x = Symbol('x')
+assert TRIG not in sys.modules
+assert ask(Q.real(sin(x)), Q.real(x)) is True
+assert TRIG in sys.modules and all(m != TRIG for _, m in registry._lazy)
+assert "satassume.knowledge.templates.special" not in sys.modules
+for h in (sin, cos, tan, cot, sec, csc):
+    assert [t.__module__ for t in registry._by_class[h]] == [TRIG]
+"""
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+
+
+def test_every_member_of_a_property_gets_its_rows():
+    declared = dict(trig.ROWS)
+    for prop, members in properties.PROPERTIES:
+        for f in members:
+            assert f in declared, (prop.__name__, f)
+            assert {r for _, r in prop(f)} <= {r for _, r in declared[f]}, (prop.__name__, f)
+            assert {label for label, _ in prop(f)} == {prop.__name__}
+
+
+# -- the row language -------------------------------------------------------
+
+def _specs(head, rs):
+    R = _common.Rules()
+    rules(head, rs, __name__)(R, None)
+    return sorted(R.rules)
+
+
+def test_conclusions_split_on_and_not_on_or():
+    assert _specs(cos, rows(Q.zero(x) >> (Q.odd(cos(x)) & Q.positive(cos(x))))) == [
+        ([(0, 'zero', True)], [(1, 'odd', True)]),
+        ([(0, 'zero', True)], [(1, 'positive', True)])]
+    [(prem, concl)] = _specs(sin, rows(Q.real(x) >> (Q.positive(sin(x)) | Q.nonpositive(sin(x)))))
+    assert prem == [(0, 'real', True)] and sorted(concl) == [(1, 'nonpositive', True),
+                                                              (1, 'positive', True)]
+
+
+def test_a_condition_on_rows_is_a_premise_of_each():
+    rs = Q.finite(tan(x)) >> properties.closed(tan, Q.real, Q.complex)
+    assert _specs(tan, rs) == sorted([
+        (sorted([(0, 'real', True), (1, 'finite', True)]), [(1, 'real', True)]),
+        (sorted([(0, 'complex', True), (1, 'finite', True)]), [(1, 'complex', True)])])
+    assert [sorted(p) for p, _ in _specs(tan, Q.real(x) >> rs)] == [
+        [(0, 'complex', True), (0, 'real', True), (1, 'finite', True)],
+        [(0, 'real', True), (1, 'finite', True)]]
+
+
+@pytest.mark.parametrize("image, facts", [
+    (0, [('zero', True)]),
+    (1, [('positive', True), ('odd', True), ('prime', False), ('composite', False)]),
+    (2, [('even', True), ('prime', True)]),
+    (-1, [('negative', True), ('odd', True)]),
+    (Rational(1, 2), [('positive', True), ('noninteger', True), ('rational', True)]),
+    (zoo, [('infinite', True), ('extended_real', False)]),
+    (Icc(-1, 1), [('real', True)]),
+    (Ioo(0, 1), [('positive', True), ('noninteger', True)]),
+    (Ioo(1, oo), [('positive', True)]),
+    (Ico(0, oo), [('nonnegative', True)]),
+    (Q.imaginary, [('imaginary', True)]),
+])
+def test_an_image_stands_for_its_facts(image, facts):
+    assert facts_of(image) == facts
+
+
+@pytest.mark.parametrize("make", [
+    lambda: Icc(0, oo),                 # oo is no real number
+    lambda: Ioo(1, 1),
+    lambda: Ioo(0, pi),                 # endpoints are Rationals
+    lambda: facts_of(pi),               # values are Rationals or zoo
+    lambda: facts_of(Rational(10**7 + 19)),     # no primality claim that large
+])
+def test_images_that_are_not_stated(make):
+    with pytest.raises(ValueError):
+        make()
+
+
+def test_signature_rows():
+    [(label, row)] = signature(sec, (Q.imaginary, Ioo(0, 1)))
+    assert label == 'signature'
+    assert row == (Q.imaginary(x) >> (Q.positive(sec(x)) & Q.noninteger(sec(x))))
+
+
+y = Symbol('y')
+yr = Symbol('y', real=True)
+
+
+@pytest.mark.parametrize("head, row, match", [
+    # >> binds tighter than &: And(real(x), Implies(finite(x), real(sin(x))))
+    (sin, Q.real(x) & Q.finite(x) >> Q.real(sin(x)), "not an implication"),
+    (sin, Q.real(sin(x)) >> Q.real(sin(x)), "not an implication"),    # SymPy: True
+    (sin, Q.real(x) >> Q.finite(x), "does not mention the node"),
+    (sin, Q.real(x) >> Q.positive_definite(sin(x)), "not a template predicate"),
+    # SymPy builds cos(x + pi/2) as -sin(x)
+    (cos, Q.zero(x) >> Q.zero(cos(x + pi/2)), "neither the argument"),
+    (sin, Q.real(yr) >> Q.real(sin(yr)), "plain Symbol"),
+    (sin, Q.real(y) >> Q.real(sin(x)), "more than one argument"),
+    (sin, (Q.real(x) | Q.zero(x)) >> Q.real(sin(x)), "not a literal"),
+])
+def test_rows_that_do_not_compile_as_written(head, row, match):
+    with pytest.raises((TypeError, ValueError), match=match):
+        rules(head, [('', row)], __name__)
+
+
+def test_rows_must_be_implications():
+    with pytest.raises(TypeError, match="not an implication"):
+        rows(Q.real(x) & Q.finite(x) >> Q.real(sin(x)))
+
+
+def test_show_rows_lists_each_row_with_its_source():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out = subprocess.run([sys.executable, os.path.join(root, "tools", "show_rows.py"), "sec"],
+                         capture_output=True, text=True, timeout=120,
+                         env={**os.environ, "PYTHONPATH": root})
+    assert out.returncode == 0, out.stderr
+    assert "real_meromorphic" in out.stdout and "signature" in out.stdout
+    assert "Q.imaginary(x) >> (Q.noninteger(sec(x)) & Q.positive(sec(x)))" in out.stdout
