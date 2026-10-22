@@ -6,8 +6,12 @@ name: invariants
 # about as long as the longest history-fuzz shard.  The job fails only on
 # a violation outside the documented families (`--fail-on unknown`):
 # known families are tagged `known:` and pinned in
-# tests/test_invariant_repros.py.  Every violation found (known families
-# included) is uploaded as an artifact with a standalone repro.
+# tests/test_invariant_repros.py.  I5 restates by notation only (the
+# rewrites that need reasoning about values are off unless
+# `--i5-value-rewrites`: harness/INVARIANTS.md, I5).  Every violation found
+# (known families included) is uploaded as an artifact with a standalone
+# repro, and summarized in the step summary
+# (`python -m harness invariants-summary`).
 #
 # The seeds move every night (run number x 100) so successive runs cover
 # new streams; `seed_offset` pins them to rerun a night's campaign.
@@ -26,6 +30,9 @@ on:
         description: "first seed (empty: run number x 100)"
         default: ""
 
+permissions:
+  contents: read
+
 env:
   MINUTES: ${{ inputs.minutes || '20' }}
   NSEEDS: ${{ inputs.seeds || '3' }}
@@ -42,14 +49,33 @@ jobs:
           python-version: "3.12"
       - run: pip install pytest hypothesis sympy mpmath z3-solver
       - name: invariants (nightly work list)
+        id: inv
         env:
           SEED_OFFSET: ${{ inputs.seed_offset }}
         run: |
           SEED_OFFSET=${SEED_OFFSET:-$(( (GITHUB_RUN_NUMBER % 10000) * 100 ))}
           LAST=$(( SEED_OFFSET + NSEEDS - 1 ))
+          echo "SEEDS=$SEED_OFFSET-$LAST" >> "$GITHUB_ENV"
           python -m harness invariants --nightly --minutes "$MINUTES" \
             --seeds "$SEED_OFFSET-$LAST" --fail-on unknown --quiet \
             --out harness-results/invariants
+      - name: summary
+        if: always()
+        env:
+          OUTCOME: ${{ steps.inv.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p harness-results/invariants
+          python -m harness invariants-summary harness-results/invariants > body.md
+          {
+            echo "### invariants run #$GITHUB_RUN_NUMBER: $OUTCOME (seeds $SEEDS, $MINUTES min, \`${GITHUB_SHA::7}\`)"
+            echo
+            echo "$RUN_URL"
+            echo
+            cat body.md
+          } > harness-results/invariants/SUMMARY.md
+          cat harness-results/invariants/SUMMARY.md
+          cat harness-results/invariants/SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v4
         with:

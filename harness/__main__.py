@@ -12,7 +12,9 @@
     python -m harness exec     STREAM.json [--ref-level L]      (used by subprocesses)
     python -m harness inventory
     python -m harness invariants --inv I1,I2 --seeds 0-2 --profile base,related --config default
-                               [--queries N] [--sets K] [--minutes M] [--nightly]   (harness/INVARIANTS.md)
+                               [--queries N] [--sets K] [--minutes M] [--nightly]
+                               [--i5-value-rewrites]   (harness/INVARIANTS.md)
+    python -m harness invariants-summary DIR [--examples N]   (markdown summary of the cases in DIR)
 
 Every mode prints one JSON line per (source, config) with the counts, and
 writes each discrepancy (shrunk to a minimal prefix) to ``--out DIR``
@@ -388,8 +390,10 @@ def cmd_invariants(args) -> int:
     the budget is spent; ``--nightly`` selects the documented nightly work
     list (profiles, configs and 20 minutes)."""
     from .generators import random_stream
+    from . import invariants
     from .invariants import INVARIANTS, run_stream, write_case
     invs = INVARIANTS if args.inv == "all" else tuple(args.inv.split(","))
+    invariants.I5_VALUE_REWRITES = args.i5_value_rewrites
     if args.nightly:
         profiles = ["base", "related", "declared", "deep", "relational", "focus", "links", "transfer"]
         # ``reuse`` and ``whole`` reported only what the other configs did
@@ -445,6 +449,14 @@ def cmd_invariants(args) -> int:
     if args.fail_on == "never":
         return 0
     return 1 if (unknown if args.fail_on == "unknown" else bad) else 0
+
+
+def cmd_invariants_summary(args) -> int:
+    """Markdown summary of the cases ``invariants`` wrote to ``DIR``
+    (``harness.invariants.summarize_cases``), on stdout."""
+    from .invariants import summarize_cases
+    sys.stdout.write(summarize_cases(args.dir, examples=args.examples))
+    return 0
 
 
 def main(argv=None) -> int:
@@ -523,9 +535,17 @@ def main(argv=None) -> int:
     p.add_argument("--minutes", type=float, default=0.0, help="time budget for the whole run")
     p.add_argument("--nightly", action="store_true", help="the documented nightly work list")
     p.add_argument("--max-violations", type=int, default=5)
+    p.add_argument("--i5-value-rewrites", action="store_true",
+                   help="I5 also restates by reasoning about values (shifted relations, split "
+                        "predicates, ...): a completeness campaign, not the nightly")
     _common(p)
     _gen_opts(p)
     p.set_defaults(fn=cmd_invariants)
+
+    p = sub.add_parser("invariants-summary")
+    p.add_argument("dir")
+    p.add_argument("--examples", type=int, default=5, help="examples, one per family")
+    p.set_defaults(fn=cmd_invariants_summary)
 
     args = ap.parse_args(argv)
     return args.fn(args)
