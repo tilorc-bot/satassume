@@ -46,6 +46,9 @@ def arguments():
     # Add(y, -y, 1) - 1 is not 0
     syms += [x_ - 1, p + 1, S(-2), Add(y_, -y_, 1, evaluate=False),
              Add(y_, -y_, -1, evaluate=False), Add(1, y_, evaluate=False)]
+    # x - 1/2 of these is even or odd, or a constant (gamma)
+    e, o = Symbol('e', even=True), Symbol('o', odd=True)
+    syms += [e + S.Half, o + S.Half, Rational(-1, 2), Add(y_, -y_, S.Half, evaluate=False)]
     return consts + pis + shifts + syms
 
 
@@ -140,6 +143,11 @@ def _shift_links(s, k, j=0):
         s.add_clause([fink, a, -b])
 
 
+#: the ``c`` of the terms ``x + c`` the links of :func:`_shift_links` are
+#: added for
+_LINKED = (S(-2), S.NegativeOne, -S.Half, S.Half, S.One, S(2), exp(-1))
+
+
 def _solver(c):
     """A solver holding the pattern's clauses and the rule base on each
     slot, and the links of the argument and its shifts (:func:`_shift_links`)."""
@@ -150,7 +158,7 @@ def _solver(c):
     for lits, _, _ in c.pattern.clauses:
         s.add_clause([-_var(k, i) if neg else _var(k, i) for k, i, neg in lits])
     for k, j in product(range(c.pattern.node + 1, c.pattern.nobjs), range(c.pattern.node)):
-        if any(c.objs[k] == shifted(c.objs[j], S(d)) for d in (-2, -1, 1, 2, exp(-1))):
+        if any(c.objs[k] == shifted(c.objs[j], d) for d in _LINKED):
             _shift_links(s, k, j)
             # a constant argument or shift: its facts, which the pattern
             # resolved away, for the links

@@ -12,11 +12,14 @@ or a conjunction of those (one rule each).  A literal is ``Q.p(t)`` or
 an inequality between the argument and a real number, ``Q.gt(x, 1)``,
 ``Q.le(x, -1)``, ``Q.eq(x, 1)``, ``Q.ne(x, 1)``, ``Q.ge(x, -1/E)`` and the
 like, or its negation.  Inequalities are over the extended reals
-(``Q.gt(x, 1)`` holds at ``x = oo``, ``~Q.gt(x, 1)`` at ``x = I``).  A row
-without premises is its conclusion alone::
+(``Q.gt(x, 1)`` holds at ``x = oo``, ``~Q.gt(x, 1)`` at ``x = I``).  A
+fact about the term ``x - c`` that is not about its sign is written on
+the term: ``Q.even(x - S.Half)``; one about its sign is the inequality.
+A row without premises is its conclusion alone::
 
     Q.extended_real(x) >> Equivalent(Q.zero(f(x)), Q.zero(x))
     (Q.positive(x) & Q.lt(x, 1)) >> Q.positive(f(x))
+    (Q.even(x - S.Half) & Q.negative(x) & ~Q.integer(x)) >> Q.positive(f(x))
     Equivalent(Q.zero(f(x)), Q.zero(x))
     Q.extended_nonnegative(f(x))
 
@@ -36,10 +39,11 @@ of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
 :mod:`.wiring` compiles them (:func:`rules`) into the index specs of
 :mod:`._common` (the arguments from 0, then the node: argument 0 and
 node 1 for one argument, then the terms ``x - c`` for the ``c`` the
-inequalities compare an argument with, as facts about ``x - c``:
-``Q.gt(x, c)`` is ``extended_positive(x - c)``, ``Q.eq(x, c)`` is
-``zero(x - c)``; by argument, then by ``|c|`` and ``x - c`` first:
-``x - 1``, ``x + 1``, ``x - 2``, ...) and registers the templates, so the patterns, their cache
+inequalities compare an argument with, as facts about ``x - c``
+(``Q.gt(x, c)`` is ``extended_positive(x - c)``, ``Q.eq(x, c)`` is
+``zero(x - c)``), and the terms the rows write; by argument, then by
+``|c|`` and ``x - c`` first: ``x - 1/2``, ``x + 1/2``, ``x - 1``,
+``x + 1``, ``x - 2``, ...) and registers the templates, so the patterns, their cache
 and the engine are unchanged.
 
 Layout: above each statement a comment line with the property's title
@@ -64,7 +68,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from sympy import (
-    And, Equivalent, Expr, Float, Function, I, Implies, Not, Or, Symbol, nan, oo, zoo,
+    Add, And, Equivalent, Expr, Float, Function, I, Implies, Not, Or, Symbol, nan, oo, zoo,
 )
 from sympy.assumptions.assume import AppliedPredicate
 
@@ -259,10 +263,15 @@ _RELATIONS = (('gt', 'extended_positive', True, 'lt'), ('lt', 'extended_negative
               ('le', 'extended_nonpositive', True, 'ge'),
               ('eq', 'zero', True, 'eq'), ('ne', 'zero', False, 'ne'))
 
+#: the facts about a term ``x - c`` that an inequality states: written on
+#: the term they are refused (``extended_`` of them too)
+_SIGN = ('positive', 'negative', 'nonnegative', 'nonpositive', 'nonzero', 'zero')
+
 
 def _lit(head, row, e):
     """``(term, pred, positive)`` of the literal ``e``; the term of an
-    inequality is ``(('shift', -c), x)`` for ``x - c`` (:func:`_relation`)."""
+    inequality is ``(('shift', -c), x)`` for ``x - c`` (:func:`_relation`),
+    and so is a written term ``x - c`` (:func:`_shift`)."""
     pos = not isinstance(e, Not)
     a = e if pos else e.args[0]
     if not isinstance(a, AppliedPredicate):
@@ -274,7 +283,30 @@ def _lit(head, row, e):
         raise ValueError(f"{head.__name__} row {row}: {e} is not a literal")
     if pred not in VOCAB:
         raise ValueError(f"{head.__name__} row {row}: {pred} is not a template predicate")
-    return (a.arguments[0], pred, pos)
+    t = a.arguments[0]
+    if isinstance(t, Add):
+        return (_shift(head, row, t, pred), pred, pos)
+    return (t, pred, pos)
+
+
+def _shift(head, row, t, pred):
+    """The slot ``(('shift', k), x)`` of a written term ``t == x + k`` for an
+    exact real ``k``, about which ``pred`` is not a fact an inequality states."""
+    k, s = t.as_independent(*t.free_symbols, as_Add=True)
+    if not (isinstance(s, Symbol) and k != 0 and _number(k)):
+        raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument nor "
+                         f"{head.__name__} of it, nor the argument plus a number")
+    if pred.removeprefix('extended_') in _SIGN:
+        raise ValueError(f"{head.__name__} row {row}: {pred}({t}) is an inequality: "
+                         "compare the argument with Q.gt(x, 1) and the like")
+    _plain(head, row, s)
+    return (('shift', k), s)
+
+
+def _number(c):
+    """Whether ``c`` is an exact real number: no float, I or infinity."""
+    return (isinstance(c, Expr) and c.is_number
+            and not c.has(Float, I, oo, -oo, zoo, nan))
 
 
 def _relation(head, row, rel, args, pos):
@@ -286,9 +318,7 @@ def _relation(head, row, rel, args, pos):
     s, c = args
     if not isinstance(s, Symbol):
         rel, s, c = of[rel][2], c, s
-    # an exact real number: no float, I or infinity
-    if not (isinstance(s, Symbol) and isinstance(c, Expr) and c.is_number
-            and not c.has(Float, I, oo, -oo, zoo, nan)):
+    if not (isinstance(s, Symbol) and _number(c)):
         raise ValueError(f"{head.__name__} row {row}: Q.{rel}{args} does not compare "
                          "an argument with a number")
     pred, sign, _ = of[rel]
@@ -327,7 +357,7 @@ def _slots(head, row, terms):
 
 def _term(head, row, t):
     """``'node'``, ``'argument'`` or ``'shift'`` (``x - c``, from an
-    inequality)."""
+    inequality or written)."""
     if isinstance(t, tuple):
         return 'shift'
     if type(t) is head:
@@ -338,9 +368,9 @@ def _term(head, row, t):
         _plain(head, row, t)
         return 'argument'
     # a constructor that rewrote the written term (cos(x + pi/2) is -sin(x)),
-    # or a term of the argument: x > 1 is written Q.gt(x, 1), not Q.positive(x - 1)
+    # or a term of the argument other than x + c
     raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument nor "
-                     f"{head.__name__} of it (compare the argument with Q.gt(x, 1) and the like)")
+                     f"{head.__name__} of it")
 
 
 def _plain(head, row, s):
