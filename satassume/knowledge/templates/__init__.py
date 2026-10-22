@@ -1,7 +1,7 @@
 """Structural rule templates for :mod:`satassume`.
 
 Importing this package registers every template module with
-:data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.selection`,
+:data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.wiring`, :mod:`.selection`,
 :mod:`.combinatorial`, :mod:`.special`, :mod:`.cfunctions`, :mod:`.rootof`,
 :mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
@@ -32,6 +32,7 @@ from sympy.functions.combinatorial.factorials import (
 from sympy.functions.combinatorial.numbers import andre, catalan, genocchi, partition
 from sympy.functions.elementary.miscellaneous import MinMaxBase
 from sympy.functions.elementary.piecewise import Piecewise
+from sympy.functions.elementary.trigonometric import cos, cot, csc, sec, sin, tan
 from sympy.functions.special.bessel import (
     airyai,
     airyaiprime,
@@ -86,6 +87,9 @@ from .registry import TemplateRegistry, registry
 # imported when the first node of such a class is met (TemplateRegistry.lazy)
 registry.lazy(__name__ + ".core", Add, Mul, Pow)
 registry.lazy(__name__ + ".functions", Function)
+#: the functions whose templates are compiled from rows (.wiring)
+ROW_FUNCTIONS = (sin, cos, tan, cot, sec, csc)
+registry.lazy(__name__ + ".wiring", *ROW_FUNCTIONS)
 registry.lazy(__name__ + ".rootof", ComplexRootOf)
 registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".combinatorial", factorial2, subfactorial, RisingFactorial,

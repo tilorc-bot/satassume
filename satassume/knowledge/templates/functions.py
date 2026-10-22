@@ -53,12 +53,6 @@ from sympy.functions.elementary.trigonometric import (
     asec,
     asin,
     atan,
-    cos,
-    cot,
-    csc,
-    sec,
-    sin,
-    tan,
 )
 
 from ...sat.formula import Not, P
@@ -411,35 +405,11 @@ registry.register(factorial)(_unary('factorial', _factorial))
 
 
 # ---------------------------------------------------------------------------
-# trigonometric
+# trigonometric: sin(pi*c*s), cos(pi*c*s) and the inverse functions; the
+# rows of sin, cos, tan, cot, sec and csc are in .trig
 # ---------------------------------------------------------------------------
 
 _TRANSCENDENTAL = (('algebraic', ('zero', False)), 'transcendental')
-
-# sin(oo*I) == oo*I, so finiteness of the value needs a finite argument.
-_SIN = (
-    (('real',), 'real'), (('complex',), 'complex'), (('finite',), 'finite'),
-    (('zero',), 'zero'), (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
-)
-_COS = (
-    (('real',), 'real'), (('complex',), 'complex'), (('finite',), 'finite'),
-    (('zero',), 'odd'), (('zero',), 'positive'), (('imaginary',), 'positive'),
-    _TRANSCENDENTAL,
-)
-_TAN = (
-    # tan(pi/2) == zoo, so realness needs finiteness of the value.
-    (('real',), ('imaginary', False)), (('zero',), 'zero'),
-    (('imaginary',), 'imaginary'), _TRANSCENDENTAL,
-)
-
-
-def _sin(R, c):
-    _table(R, _SIN)
-
-
-def _cos(R, c):
-    _table(R, _COS)
-
 
 #: Slot of ``s`` in the templates of ``sin(pi*c*s)`` and ``cos(pi*c*s)``.
 PS = 2
@@ -513,37 +483,6 @@ def _pi_trig(tag, gen, cos_, split_=pi_split, plain=None):
     template.__name__ = tag + '_templates'
     template.__module__ = gen.__module__
     return template
-
-
-def _tan(R, c):
-    _table(R, _TAN)
-    R.rule([(X, 'real', True), (N, 'finite', True)], (N, 'real', True))
-    # tan(x + I*y) has imaginary part sinh(2*y)/(cos(2*x) + cosh(2*y)),
-    # nonzero for y != 0 (no poles off the real line); a finite argument
-    # is read as a complex number, as for im
-    R.rule([(X, 'finite', True), (X, 'extended_real', False)], (N, 'extended_real', False))
-
-
-_COT = (
-    # cot(k*pi) == zoo, so realness needs finiteness of the value.
-    (('real',), ('imaginary', False)),
-    (('imaginary',), 'imaginary'),          # cot(I*t) == -I*coth(t)
-    (('zero',), 'infinite'),
-    (('zero',), ('extended_real', False)),
-    # cot(x) == cos(x)/sin(x) is finite for algebraic x != 0 (sin(x) == 0
-    # only at multiples of pi) and transcendental by Lindemann-Weierstrass:
-    # cot(x) == a algebraic would make exp(2*I*x) algebraic.
-    (('algebraic', ('zero', False)), 'transcendental'),
-    (('algebraic',), ('algebraic', False)),
-)
-
-
-def _cot(R, c):
-    _table(R, _COT)
-    R.rule([(X, 'real', True), (N, 'finite', True)], (N, 'real', True))
-    # cot == 1/tan, and tan(z) is non-real and nonzero off the real line
-    R.rule([(X, 'finite', True), (X, 'extended_real', False)], (N, 'extended_real', False))
-    R.rule([(X, 'complex', True), (N, 'finite', True)], (N, 'complex', True))
 
 
 def _asin(R, c):
@@ -622,10 +561,7 @@ def _acot(R, c):
     _table(R, _ACOT)
 
 
-registry.register(sin)(_pi_trig('sin', _sin, False))
-registry.register(cos)(_pi_trig('cos', _cos, True))
-for _cls, _tag, _gen in ((tan, 'tan', _tan), (cot, 'cot', _cot), (atan, 'atan', _atan),
-                         (acot, 'acot', _acot)):
+for _cls, _tag, _gen in ((atan, 'atan', _atan), (acot, 'acot', _acot)):
     registry.register(_cls)(_unary(_tag, _gen))
 registry.register(asin)(_unary('asin', _asin, slots=_minus_one,
                                units=_in_unit_interval_units('asin')))
@@ -747,7 +683,8 @@ registry.register(cosh)(_pi_trig('cosh', _cosh, True, ipi_split, _cosh_templates
 
 
 # ---------------------------------------------------------------------------
-# reciprocal and inverse trigonometric and hyperbolic functions (#180)
+# reciprocal and inverse trigonometric and hyperbolic functions (#180); the
+# rows of sec and csc are in .trig
 # ---------------------------------------------------------------------------
 #
 # Values at the special points follow SymPy's evaluation: ``csc(0) =
@@ -780,34 +717,6 @@ def _finite_value(R, pred):
     """``pred(x) & finite(node) -> pred(node)``: the value is a number of
     the kind or ``zoo`` (at a pole)."""
     R.rule([(X, pred, True), (N, 'finite', True)], (N, pred, True))
-
-
-_SEC = (
-    (('real',), ('imaginary', False)),     # sec(pi/2) == zoo
-    (('complex',), ('zero', False)),       # cos is finite at a finite point
-    (('zero',), 'odd'), (('zero',), 'positive'),
-    (('imaginary',), 'positive'),          # sec(I*t) == 1/cosh(t) in (0, 1)
-    _TRANSCENDENTAL,
-)
-_CSC = (
-    (('real',), ('imaginary', False)),     # csc(k*pi) == zoo
-    (('complex',), ('zero', False)),
-    (('zero',), 'infinite'), (('zero',), ('extended_real', False)),
-    (('imaginary',), 'imaginary'),         # csc(I*t) == -I/sinh(t)
-    _TRANSCENDENTAL,
-)
-
-
-def _sec(R, c):
-    _table(R, _SEC)
-    _finite_value(R, 'real')
-    _finite_value(R, 'complex')
-
-
-def _csc(R, c):
-    _table(R, _CSC)
-    _finite_value(R, 'real')
-    _finite_value(R, 'complex')
 
 
 _COTH = (
@@ -1004,9 +913,8 @@ def _acsc(R, c):
     R.rule([(X, 'algebraic', True), (X, 'zero', False)], (N, 'transcendental', True))
 
 
-for _cls, _tag, _gen in ((sec, 'sec', _sec), (csc, 'csc', _csc), (coth, 'coth', _coth),
-                         (sech, 'sech', _sech), (csch, 'csch', _csch), (asinh, 'asinh', _asinh),
-                         (acsch, 'acsch', _acsch)):
+for _cls, _tag, _gen in ((coth, 'coth', _coth), (sech, 'sech', _sech), (csch, 'csch', _csch),
+                         (asinh, 'asinh', _asinh), (acsch, 'acsch', _acsch)):
     registry.register(_cls)(_unary(_tag, _gen))
 registry.register(acosh)(_unary('acosh', _acosh, slots=_minus_one))
 registry.register(asech)(_unary('asech', _asech, slots=_minus_one))
