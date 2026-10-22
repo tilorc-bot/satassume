@@ -348,6 +348,12 @@ def test_i5_restates_by_notation_only(monkeypatch):
             changed += other != conj
             assert heads(other) <= allowed and terms(other) <= terms(conj), (conj, other)
     assert changed > 100
+    # a relation SymPy decides is never restated as its value (#247)
+    from sympy import Float
+    i, r = Symbol("i", complex=True, real=False), Symbol("r", real=True)
+    for conj in (Q.ge(Float(0.5), 2), Q.gt(Float(0.5), 2), Q.eq(2 * r, i + 1), Q.ne(r, i)):
+        for k in range(60):
+            assert inv.restate_prop(conj, random.Random(k)) not in (S.true, S.false), conj
     monkeypatch.setattr(inv, "I5_VALUE_REWRITES", True)
     assert any(inv.restate(Q.zero(x), random.Random(k), p=0.9).has(Q.eq) or
                len(heads(inv.restate(Q.zero(x), random.Random(k), p=0.9))) > 1 for k in range(40))
