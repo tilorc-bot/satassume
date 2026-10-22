@@ -14,8 +14,10 @@ is new.
 from itertools import product
 
 from sympy import (
-    Add, And, E, EulerGamma, Float, GoldenRatio, I, Mul, Rational, S, Symbol, oo, pi, sqrt,
+    Add, And, E, EulerGamma, Float, GoldenRatio, I, Mul, Rational, S, Symbol, exp, oo, pi, sqrt,
+    symbols,
 )
+from sympy.core.function import AppliedUndef
 
 from satassume.knowledge.rules import BASIS, RULE_CLAUSES
 from satassume.knowledge.templates import _common, registry, wiring
@@ -47,15 +49,14 @@ def arguments():
     return consts + pis + shifts + syms
 
 
-def nodes(heads):
-    """Each head applied to the corpus; a head of two arguments (no unary
-    form: ``principal_branch``) to each pair of arguments of the corpus."""
+def nodes(heads, arities=None):
+    """Each head applied to the corpus: a head of one argument to each
+    argument, a head of two (``principal_branch``) to each pair; for each
+    number of arguments ``arities`` gives (by head: ``{zeta: (1, 2)}``; by
+    default one if the head takes one, else the numbers it takes)."""
     out = []
     for h in heads:
-        if 1 in h.nargs:
-            out += [h(a, evaluate=False) for a in arguments()]
-        else:
-            n, = h.nargs
+        for n in (arities or {}).get(h) or ((1,) if 1 in h.nargs else sorted(h.nargs)):
             out += [h(*a, evaluate=False) for a in product(arguments(), repeat=n)]
     return out
 
@@ -68,6 +69,12 @@ def both(gen, extra):
     a, b = sorted((getattr(gen, 'shifts', ()), extra.shifts), key=len)
     assert b[:len(a)] == a, (gen, a, b)
     both.shifts = b
+    both.arity = getattr(gen, 'arity', 1)
+    both.terms = dict(getattr(gen, 'terms', {}))
+    for n, b in extra.terms.items():
+        a, b = sorted((both.terms.get(n, ()), b), key=len)
+        assert b[:len(a)] == a, (gen, a, b)
+        both.terms[n] = b
     return both
 
 
@@ -114,21 +121,21 @@ def _var(k, i):
 _B = {p: i for i, p in enumerate(BASIS)}
 
 
-def _shift_links(s, k):
-    """What holds of ``x`` and ``x + c`` for an integer ``c != 0`` at every
-    value (``oo``, ``zoo`` and ``nan`` too), slot 0 being ``x`` and slot
-    ``k`` ``x + c``: the same finiteness, complex and extended real, and the
+def _shift_links(s, k, j=0):
+    """What holds of ``x`` and ``x + c`` for a real number ``c != 0`` at
+    every value (``oo``, ``zoo`` and ``nan`` too), slot ``j`` being ``x``
+    and slot ``k`` ``x + c``: the same finiteness, complex and extended real, and the
     same infinity.  The engine knows it from the template of the sum; the
     comparison needs it because ``Q.gt(x, 1)`` is ``extended_positive(x - 1)``
     where a legacy rule may have said ``positive(x - 1)`` next to a fact
     making ``x`` finite."""
     for p in ('finite', 'complex', 'extended_real'):
-        a, b = _var(0, _B[p]), _var(k, _B[p])
+        a, b = _var(j, _B[p]), _var(k, _B[p])
         s.add_clause([-a, b])
         s.add_clause([a, -b])
-    fin0, fink = _var(0, _B['finite']), _var(k, _B['finite'])
+    fin0, fink = _var(j, _B['finite']), _var(k, _B['finite'])
     for p in ('extended_positive', 'extended_negative'):
-        a, b = _var(0, _B[p]), _var(k, _B[p])
+        a, b = _var(j, _B[p]), _var(k, _B[p])
         s.add_clause([fin0, -a, b])
         s.add_clause([fink, a, -b])
 
@@ -142,18 +149,18 @@ def _solver(c):
             s.add_clause([(1 if l > 0 else -1) * _var(k, abs(l) - 1) for l in cl])
     for lits, _, _ in c.pattern.clauses:
         s.add_clause([-_var(k, i) if neg else _var(k, i) for k, i, neg in lits])
-    for k in range(c.pattern.node + 1, c.pattern.nobjs):
-        if any(c.objs[k] == shifted(c.objs[0], S(d)) for d in (-2, -1, 1, 2)):
-            _shift_links(s, k)
+    for k, j in product(range(c.pattern.node + 1, c.pattern.nobjs), range(c.pattern.node)):
+        if any(c.objs[k] == shifted(c.objs[j], S(d)) for d in (-2, -1, 1, 2, exp(-1))):
+            _shift_links(s, k, j)
             # a constant argument or shift: its facts, which the pattern
             # resolved away, for the links
-            for j in (0, k):
-                o = c.objs[j]
+            for i in (j, k):
+                o = c.objs[i]
                 if o.is_Atom and o.is_number:
-                    for p, i in _B.items():
+                    for p, b in _B.items():
                         v = _common.const_value(o, p)
                         if v is not None:
-                            s.add_clause([_var(j, i) if v else -_var(j, i)])
+                            s.add_clause([_var(i, b) if v else -_var(i, b)])
     return s
 
 
@@ -170,8 +177,8 @@ def differences(new, old):
     for e in new:
         (cn, fn), (co, fo) = new[e], old[e]
         assert fn == fo, e
-        assert [(tuple(map(str, c.objs)), c.pattern.node) for c in cn] == \
-               [(tuple(map(str, c.objs)), c.pattern.node) for c in co], e
+        # the same slot objects (structurally: printing them is slow)
+        assert [(c.objs, c.pattern.node) for c in cn] == [(c.objs, c.pattern.node) for c in co], e
         gained = [l for a, b in zip(co, cn) for l in not_entailed(a, b)]
         lost = [l for a, b in zip(cn, co) for l in not_entailed(a, b)]
         if gained or lost:
@@ -179,11 +186,12 @@ def differences(new, old):
     return out
 
 
-def check_rows_entail_exactly(heads, family, legacy_gen, added):
+def check_rows_entail_exactly(heads, family, legacy_gen, added, arities=None):
     """The rows and the legacy generators plus ``added`` entail each other on
-    every node of the corpus; returns the rows' compiled clauses."""
+    every node of the corpus (:func:`nodes`); returns the rows' compiled
+    clauses."""
     _, plus = legacy_templates(legacy_gen, added)
-    corpus = nodes(heads)
+    corpus = nodes(heads, arities)
     new, old = run(rows_templates(heads, family), corpus), run(plus, corpus)
     diff = differences(new, old)
     assert not diff, list(diff.items())[:3]
@@ -196,10 +204,11 @@ def check_added_are_new(legacy_gen, added):
     gives a clause the legacy rules do not entail."""
     legacy, _ = legacy_templates(legacy_gen, added)
     for h, extra in added.items():
-        e = h(Symbol('x'), evaluate=False)
-        _common._CACHE.clear()
-        [old], _ = compiled(legacy, e)
         for row in extra:
+            # the node of the row's number of arguments, over x, y, ...
+            e = h(*symbols(f'x:{_arity(h, row)}'), evaluate=False)
+            _common._CACHE.clear()
+            [old], _ = compiled(legacy, e)
             prem, concl = row.args
             for c in (concl.args if isinstance(concl, And) else (concl,)):
                 _common._CACHE.clear()
@@ -207,3 +216,8 @@ def check_added_are_new(legacy_gen, added):
                 [new], _ = compiled({h: plus}, e)
                 assert not_entailed(old, new), (h, prem, c)
     _common._CACHE.clear()
+
+
+def _arity(h, row):
+    n, = {len(a.args) for a in row.atoms(AppliedUndef, h)}
+    return n

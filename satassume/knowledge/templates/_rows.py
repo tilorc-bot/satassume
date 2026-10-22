@@ -9,11 +9,11 @@ The premises are a conjunction of literals; the conclusion is a literal, a
 disjunction of literals, ``Equivalent`` of two literals (a rule each way),
 or a conjunction of those (one rule each).  A literal is ``Q.p(t)`` or
 ``~Q.p(t)`` with ``p`` in ``VOCAB`` and ``t`` the argument or the node, or
-an inequality between the argument and an integer, ``Q.gt(x, 1)``,
-``Q.le(x, -1)``, ``Q.eq(x, 1)``, ``Q.ne(x, 1)`` and the like, or its
-negation.  Inequalities are over the extended reals (``Q.gt(x, 1)`` holds
-at ``x = oo``, ``~Q.gt(x, 1)`` at ``x = I``).  A row without premises is
-its conclusion alone::
+an inequality between the argument and a real number, ``Q.gt(x, 1)``,
+``Q.le(x, -1)``, ``Q.eq(x, 1)``, ``Q.ne(x, 1)``, ``Q.ge(x, -1/E)`` and the
+like, or its negation.  Inequalities are over the extended reals
+(``Q.gt(x, 1)`` holds at ``x = oo``, ``~Q.gt(x, 1)`` at ``x = I``).  A row
+without premises is its conclusion alone::
 
     Q.extended_real(x) >> Equivalent(Q.zero(f(x)), Q.zero(x))
     (Q.positive(x) & Q.lt(x, 1)) >> Q.positive(f(x))
@@ -22,10 +22,11 @@ its conclusion alone::
 
 A row about a function of several arguments has the node ``f(x, y)`` (or
 more plain symbols, in the order of the arguments), and literals about the
-node and its arguments; an inequality is about the argument of a function
-of one argument only::
+node and its arguments, inequalities included.  A function can have rows
+of several numbers of arguments: a node gets the rows of its number::
 
     (Q.finite(x) & Q.positive(y)) >> Q.complex(f(x, y))
+    (Q.real(x) & Q.positive(y) & Q.lt(y, 1)) >> Q.positive(f(x, y))
 
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
@@ -35,10 +36,10 @@ of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
 :mod:`.wiring` compiles them (:func:`rules`) into the index specs of
 :mod:`._common` (the arguments from 0, then the node: argument 0 and
 node 1 for one argument, then the terms ``x - c`` for the ``c`` the
-inequalities compare the argument with, as facts about ``x - c``:
+inequalities compare an argument with, as facts about ``x - c``:
 ``Q.gt(x, c)`` is ``extended_positive(x - c)``, ``Q.eq(x, c)`` is
-``zero(x - c)``; by ``|c|`` and ``x - c`` first: ``x - 1``, ``x + 1``,
-``x - 2``, ...) and registers the templates, so the patterns, their cache
+``zero(x - c)``; by argument, then by ``|c|`` and ``x - c`` first:
+``x - 1``, ``x + 1``, ``x - 2``, ...) and registers the templates, so the patterns, their cache
 and the engine are unchanged.
 
 Layout: above each statement a comment line with the property's title
@@ -62,7 +63,9 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from sympy import And, Equivalent, Function, Implies, Integer, Not, Or, Symbol
+from sympy import (
+    And, Equivalent, Expr, Float, Function, I, Implies, Not, Or, Symbol, nan, oo, zoo,
+)
 from sympy.assumptions.assume import AppliedPredicate
 
 from ._common import VOCAB, Rules
@@ -188,30 +191,38 @@ def rules(head, table, module: str):
     """The ``gen(R, c)`` of :func:`.functions._unary` for the rows of
     ``table`` about ``head``; ``module`` (the caller's ``__name__``) is the
     module the registry attributes the template to (``TemplateRegistry.lazy``).
-    ``gen.shifts`` are the ``c`` of the terms ``x + c`` the rules use, in the
-    order of their slots 2, 3, ...: by ``|c|``, ``x - c`` first.
-    ``gen.arity`` is the number of arguments of the node the rows mention:
-    for more than one, ``gen(R, n)`` is :func:`.functions.nary`'s."""
-    arities, specs = set(), []
+    ``gen.arity`` is the number of arguments of the nodes the rows mention,
+    or the tuple of the numbers for rows of several: then ``gen(R, n)`` is
+    :func:`.functions.nary`'s, and gives the rules of the rows of ``n``
+    arguments.  ``gen.terms`` maps each number ``n`` to the terms ``args[i]
+    + c`` the rules of its rows use, as ``(i, c)`` in the order of their
+    slots ``n + 1``, ``n + 2``, ...: by ``i``, then by ``|c|``, ``x - c``
+    first; ``gen.shifts`` are the ``c`` of the rows of one argument."""
+    by_n = {}
     for row in rows_of(table):
         n, s = _specs(head, row)
-        arities.add(n)
-        specs += s
-    if len(arities) > 1:
-        raise ValueError(f"{head.__name__} rows of {sorted(arities)} arguments")
-    shifts = sorted({k for p, c in specs for k, _, _ in p + c if isinstance(k, tuple)},
-                    key=lambda k: (abs(k[1]), k[1]))
-    slot = {k: 2 + i for i, k in enumerate(shifts)}
-    specs = [tuple([(slot.get(k, k), pred, pos) for k, pred, pos in lits] for lits in spec)
-             for spec in specs]
+        by_n.setdefault(n, []).extend(s)
+    specs, terms = {}, {}
+    for n, sp in sorted(by_n.items()):
+        shifts = sorted({k for p, c in sp for k, _, _ in p + c if isinstance(k, tuple)},
+                        key=lambda k: (k[1], abs(k[2]), k[2]))
+        slot = {k: n + 1 + i for i, k in enumerate(shifts)}
+        specs[n] = [tuple([(slot.get(k, k), pred, pos) for k, pred, pos in lits]
+                          for lits in spec) for spec in sp]
+        terms[n] = tuple((i, c) for _, i, c in shifts)
+    arities = tuple(terms) or (1,)
+    one = sum(specs.values(), [])
 
     def gen(R: Rules, c) -> None:
-        for prem, concl in specs:
+        # c: the constant argument (functions._unary) or the number of
+        # arguments (functions.nary), which picks the rows for several
+        for prem, concl in specs.get(c, ()) if len(specs) > 1 else one:
             R.rule(prem, list(concl))
     gen.__module__ = module
     gen.__name__ = gen.__qualname__ = f'{head.__name__}_rows'
-    gen.shifts = tuple(c for _, c in shifts)
-    gen.arity = arities.pop() if arities else 1
+    gen.arity = arities if len(arities) > 1 else arities[0]
+    gen.terms = terms
+    gen.shifts = tuple(c for _, c in terms.get(1, ()))
     return gen
 
 
@@ -240,8 +251,8 @@ def _conjuncts(e):
     return e.args if isinstance(e, And) else (e,)
 
 
-#: an inequality between the argument and an integer ``c``: the fact about
-#: ``x - c`` it is (order relations are over the extended reals), and the
+#: an inequality between the argument and a real number ``c``: the fact
+#: about ``x - c`` it is (order relations are over the extended reals), and the
 #: relation with its sides swapped
 _RELATIONS = (('gt', 'extended_positive', True, 'lt'), ('lt', 'extended_negative', True, 'gt'),
               ('ge', 'extended_nonnegative', True, 'le'),
@@ -267,26 +278,29 @@ def _lit(head, row, e):
 
 
 def _relation(head, row, rel, args, pos):
-    """``Q.gt(x, c)`` and the like, for an integer ``c``: a fact about the
-    term ``x - c`` (slot ``('shift', -c)`` until :func:`rules` numbers the
-    shifts; the argument itself for ``c == 0``)."""
+    """``Q.gt(x, c)`` and the like, for an exact real number ``c`` (an
+    integer, or a constant like ``1/2`` or ``-1/E``): a fact about the term ``x - c`` (slot
+    ``('shift', -c)`` until :func:`rules` numbers the shifts; the argument
+    itself for ``c == 0``)."""
     of = {r[0]: r[1:] for r in _RELATIONS}
     s, c = args
-    if isinstance(s, Integer):
+    if not isinstance(s, Symbol):
         rel, s, c = of[rel][2], c, s
-    if not (isinstance(s, Symbol) and isinstance(c, Integer)):
+    # an exact real number: no float, I or infinity
+    if not (isinstance(s, Symbol) and isinstance(c, Expr) and c.is_number
+            and not c.has(Float, I, oo, -oo, zoo, nan)):
         raise ValueError(f"{head.__name__} row {row}: Q.{rel}{args} does not compare "
-                         "the argument with an integer")
+                         "an argument with a number")
     pred, sign, _ = of[rel]
     _plain(head, row, s)
-    return ((('shift', -int(c)), s) if c else s, pred, pos is sign)
+    return ((('shift', -c), s) if c else s, pred, pos is sign)
 
 
 def _slots(head, row, terms):
     """``(n, slot)``: the slot of each term of a row about the node ``head(x0,
     ..., x_{n-1})``: argument ``i`` is slot ``i``, the node ``n``, and a
-    term ``x - c`` of the argument of a node of one argument is ``('shift',
-    -c)`` until :func:`rules` numbers it."""
+    term ``x_i - c`` is ``('shift', i, -c)`` until :func:`rules` numbers
+    it."""
     kinds = {t: _term(head, row, t) for t in terms}
     nodes = [t for t, k in kinds.items() if k == 'node']
     if not nodes:
@@ -307,10 +321,7 @@ def _slots(head, row, terms):
             raise ValueError(f"{head.__name__} row {row} mentions more than one argument: "
                              f"{s} is not an argument of {node}")
         if k == 'shift':
-            if len(args) > 1:
-                raise ValueError(f"{head.__name__} row {row} compares {s} with an integer: "
-                                 "only the argument of a function of one argument")
-            slot[t] = t[0]
+            slot[t] = ('shift', args.index(s), t[0][1])
     return len(args), slot
 
 

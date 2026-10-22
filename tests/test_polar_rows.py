@@ -21,7 +21,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _legacy_polar_rules as legacy  # noqa: E402
 import _rows_equivalence as eq  # noqa: E402
-from sympy import Q, Symbol, exp_polar, polar_lift, principal_branch  # noqa: E402
+from sympy import (  # noqa: E402
+    Basic, E, Q, Symbol, exp, exp_polar, polar_lift, principal_branch,
+)
 from sympy.assumptions.assume import Predicate  # noqa: E402
 
 from satassume.knowledge.templates import _common, wiring  # noqa: E402
@@ -97,7 +99,7 @@ def test_the_template_of_rows_of_two_arguments_has_their_objects():
     (Q.positive(y) >> polar(principal_branch(x, x)), "not distinct"),
     ((Q.positive(y) & Q.zero(principal_branch(y, x))) >> polar(principal_branch(x, y)),
      "more than one node"),
-    (Q.gt(x, 1) >> polar(principal_branch(x, y)), "compares x with an integer"),
+    (Q.gt(z, 1) >> polar(principal_branch(x, y)), "more than one argument"),
     ((Q.zero(principal_branch(x, y)), Q.zero(principal_branch(x, y)) >> Q.zero(x)), None),
 ])
 def test_rows_of_two_arguments_that_do_not_compile(row, match):
@@ -108,10 +110,46 @@ def test_rows_of_two_arguments_that_do_not_compile(row, match):
         rules(principal_branch, row, __name__)
 
 
-def test_rows_of_two_arities_are_refused():
-    with pytest.raises(ValueError, match="rows of"):
-        rules(exp_polar, (Q.real(x) >> Q.positive(exp_polar(x)),
-                          Q.real(x) >> Q.positive(exp_polar(x, y))), __name__)
+def _rules_of(gen, n):
+    R = _common.Rules()
+    gen(R, n)
+    return sorted((sorted(p), c) for p, c in R.rules)
+
+
+def test_rows_of_two_arities_give_each_node_the_rows_of_its_number_of_arguments():
+    gen = rules(exp_polar, (Q.real(x) >> Q.positive(exp_polar(x)),
+                            Q.real(y) >> Q.positive(exp_polar(x, y))), __name__)
+    assert gen.arity == (1, 2) and gen.terms == {1: (), 2: ()}
+    assert _rules_of(gen, 1) == [([(0, 'real', True)], [(1, 'positive', True)])]
+    assert _rules_of(gen, 2) == [([(1, 'real', True)], [(2, 'positive', True)])]
+    assert _rules_of(gen, 3) == []
+    # functions.nary's template, for those numbers of arguments only
+    t = wiring.template(exp_polar, gen)
+    a, b = Symbol('a'), Symbol('b')
+    for args, node in (((a,), 1), ((a, b), 2)):
+        _common._CACHE.clear()
+        [c], _ = eq.compiled({exp_polar: t}, exp_polar(*args, evaluate=False))
+        assert c.pattern.node == node
+    assert t(Basic.__new__(exp_polar, a, b, a)) is None
+    _common._CACHE.clear()
+
+
+def test_an_inequality_about_an_argument_of_several_is_a_slot_after_the_node():
+    """``Q.gt(y, 1)`` in a row about ``f(x, y)`` is ``extended_positive(y -
+    1)``, slot 3; the terms are by argument, then by ``|c|``, ``x - c``
+    first, and ``c`` is an exact real number (``-1/E``)."""
+    pb = principal_branch
+    gen = rules(pb, ((Q.gt(y, 1) & Q.ge(x, -1/E) & Q.eq(y, -1) & Q.lt(x, 2))
+                     >> polar(pb(x, y))), __name__)
+    assert gen.terms == {2: ((0, exp(-1)), (0, -2), (1, -1), (1, 1))}
+    assert _rules_of(gen, 2) == [([(3, 'extended_nonnegative', True), (4, 'extended_negative', True),
+                                   (5, 'extended_positive', True), (6, 'zero', True)],
+                                  [(2, 'polar', True)])]
+    a, p = Symbol('a'), Symbol('p')
+    _common._CACHE.clear()
+    [c], _ = eq.compiled({pb: wiring.template(pb, gen)}, pb(a, p, evaluate=False))
+    assert c.objs[3:] == (a + exp(-1), a - 2, p - 1, p + 1)
+    _common._CACHE.clear()
 
 
 def test_polar_is_compiled_on_its_own_first_use():

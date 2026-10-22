@@ -61,11 +61,13 @@ def functions(family: str):
 
 def template(fn, gen):
     """The template of ``fn`` whose rules ``gen`` (the compiled rows) gives.
-    The objects of the terms ``x + c`` its rules use (``gen.shifts``, see
-    :func:`._rows.rules`) are built by :func:`.functions.shifted` (#184).
-    Rows about a node of several arguments (``gen.arity``) get
-    :func:`.functions.nary`'s template: the arguments are slots ``0 .. n-1``
-    and the node ``n``."""
+    The objects of the terms ``x + c`` its rules use (``gen.shifts``,
+    ``gen.terms``, see :func:`._rows.rules`) are built by
+    :func:`.functions.shifted` (#184).  Rows about a node of several
+    arguments, or about nodes of several numbers of arguments
+    (``gen.arity``), get :func:`.functions.nary`'s template: the arguments
+    are slots ``0 .. n-1``, the node ``n``, the terms from ``n + 1``; a
+    node of another number of arguments gets no facts."""
     shift = dict(PI_MULTIPLE).get(fn)
     if shift is not None:
         return _pi_trig(fn.__name__, gen, shift)
@@ -74,8 +76,11 @@ def template(fn, gen):
     if fn in I_PI_ROOT:
         return _exp_ipi(gen)
     arity = getattr(gen, 'arity', 1)
-    if arity > 1:
-        return nary(fn.__name__, gen, arity=arity)
+    if arity != 1:
+        terms = getattr(gen, 'terms', {})
+        return nary(fn.__name__, gen, arity=arity,
+                    slots=lambda args: tuple(shifted(args[i], S(c))
+                                             for i, c in terms.get(len(args), ())))
     shifts = getattr(gen, 'shifts', ())
     units = _in_unit_interval_units(fn.__name__) if fn in UNIT_INTERVAL else None
     return _unary(fn.__name__, gen, lambda a: tuple(shifted(a, S(c)) for c in shifts), units)

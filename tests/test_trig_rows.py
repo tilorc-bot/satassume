@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _legacy_trig_rules as legacy  # noqa: E402
 import _rows_equivalence as eq  # noqa: E402
 from sympy import (  # noqa: E402
-    Add, Equivalent, Float, Q, S, Symbol, acos, atanh, cos, cot, csc, pi, sec, sin, tan,
+    Add, Equivalent, Float, I, Q, Symbol, acos, atanh, cos, cot, csc, oo, pi, sec, sin, tan,
 )
 
 from satassume.knowledge.templates import ROW_FAMILIES, _common, wiring  # noqa: E402
@@ -257,12 +257,12 @@ yr = Symbol('y', real=True)
     # a term of the argument is written as an inequality: Q.gt(x, 1)
     (acos, Q.zero(x - 1) >> Q.zero(acos(x)), "Q.gt\\(x, 1\\) and the like"),
     (acos, Q.zero(2*x) >> Q.positive(acos(x)), "neither the argument"),
-    # an inequality compares the argument with an integer
-    (acos, Q.gt(x, y) >> Q.positive(acos(x)), "with an integer"),
-    (acos, Q.gt(2*x, 1) >> Q.positive(acos(x)), "with an integer"),
-    (acos, Q.gt(x, S.Half) >> Q.positive(acos(x)), "with an integer"),
-    (acos, Q.gt(x, Float(1)) >> Q.positive(acos(x)), "with an integer"),
-    (acos, Q.gt(x, pi) >> Q.positive(acos(x)), "with an integer"),
+    # an inequality compares the argument with an exact real number
+    (acos, Q.gt(x, y) >> Q.positive(acos(x)), "with a number"),
+    (acos, Q.gt(2*x, 1) >> Q.positive(acos(x)), "with a number"),
+    (acos, Q.gt(x, Float(1)) >> Q.positive(acos(x)), "with a number"),
+    (acos, Q.gt(x, I) >> Q.positive(acos(x)), "with a number"),
+    (acos, Q.gt(x, oo) >> Q.positive(acos(x)), "with a number"),
     (acos, Q.gt(y, 1) >> Q.positive(acos(x)), "more than one argument"),
     (acos, Q.gt(yr, 1) >> Q.positive(acos(yr)), "plain Symbol"),
 ])

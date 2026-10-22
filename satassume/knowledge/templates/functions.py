@@ -373,12 +373,15 @@ def _cosh_shift(gen):
 def nary(tag, gen, slots=None, arity=None):
     """Template for a function of fixed arity: ``gen(R, n)`` fills ``R``
     with rules over the arguments ``0 .. n-1``, the node ``n`` and the
-    objects ``slots(args)`` from ``n + 1`` on.  With ``arity``, a node with
-    another number of arguments gets no facts (``gen`` holds for that
-    number only: the rows of :func:`._rows.rules`)."""
+    objects ``slots(args)`` from ``n + 1`` on.  With ``arity`` (a number,
+    or a tuple of them), a node with another number of arguments gets no
+    facts (``gen`` holds for those numbers only: the rows of
+    :func:`._rows.rules`)."""
+    arities = arity if isinstance(arity, tuple) else (arity,)
+
     def template(expr):
         args = expr.args
-        if arity is not None and len(args) != arity:
+        if arity is not None and len(args) not in arities:
             return None
         objs = (*args, expr) + (tuple(slots(args)) if slots is not None else ())
         consts = {k: o for k, o in enumerate(objs)
