@@ -12,17 +12,15 @@
     python -m harness exec     STREAM.json [--ref-level L]      (used by subprocesses)
     python -m harness inventory
     python -m harness invariants --inv I1,I2 --seeds 0-2 --profile base,related --config default
-                               [--queries N] [--sets K] [--minutes M] [--nightly]   (harness/INVARIANTS.md)
+                               [--queries N] [--sets K] [--minutes M] [--nightly]
+                               [--i5-value-rewrites]   (harness/INVARIANTS.md)
     python -m harness invariants-summary DIR [--examples N]   (markdown summary of the cases in DIR)
 
 Every mode prints one JSON line per (source, config) with the counts, and
 writes each discrepancy (shrunk to a minimal prefix) to ``--out DIR``
 (default ``harness-results/``) as ``.json`` and a standalone ``.py`` repro.
 Exit status 1 if any discrepancy was found (``--fail-on unknown``: only
-one whose family tag is not a documented one; ``invariants --fail-on
-unsound``: only an undocumented one of class ``wrong`` or ``crash``, a
-lost answer (definite against None) is reported only; ``--fail-on
-never``).
+one whose family tag is not a documented one; ``--fail-on never``).
 
 Run with ``PYTHONHASHSEED=0`` unless testing hash-seed variation.
 """
@@ -109,7 +107,7 @@ def _level(s) -> int:
         raise argparse.ArgumentTypeError(f"unknown reference level {s!r}")
 
 
-def _common(ap, fail_on=("any", "unknown", "never")):
+def _common(ap):
     ap.add_argument("--config", default="default", help="comma-separated presets, or 'all'")
     ap.add_argument("--orders", default=",".join(DEFAULT_ORDERS))
     ap.add_argument("--ref-level", type=_level, default=1, choices=(1, 2, 4),
@@ -125,12 +123,9 @@ def _common(ap, fail_on=("any", "unknown", "never")):
     ap.add_argument("--hashseeds", default="0,1,2")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--ignore", default="", help="comma-separated kinds not reported, e.g. raise-vs-definite")
-    ap.add_argument("--fail-on", default="any", choices=fail_on,
+    ap.add_argument("--fail-on", default="any", choices=("any", "unknown", "never"),
                     help="exit status 1 on any discrepancy (default), only on one of an "
-                         "undocumented family (needs shrinking, which attributes), "
-                         + ("only on an undocumented one of class wrong or crash (unsound; "
-                            "a definite answer against None is reported only), "
-                            if "unsound" in fail_on else "") + "or never")
+                         "undocumented family (needs shrinking, which attributes), or never")
 
 
 def _gen_opts(ap):
@@ -395,8 +390,10 @@ def cmd_invariants(args) -> int:
     the budget is spent; ``--nightly`` selects the documented nightly work
     list (profiles, configs and 20 minutes)."""
     from .generators import random_stream
-    from .invariants import INVARIANTS, UNSOUND, run_stream, write_case
+    from . import invariants
+    from .invariants import INVARIANTS, run_stream, write_case
     invs = INVARIANTS if args.inv == "all" else tuple(args.inv.split(","))
+    invariants.I5_VALUE_REWRITES = args.i5_value_rewrites
     if args.nightly:
         profiles = ["base", "related", "declared", "deep", "relational", "focus", "links", "transfer"]
         # ``reuse`` and ``whole`` reported only what the other configs did
@@ -415,7 +412,7 @@ def cmd_invariants(args) -> int:
     KNOWN_SEEN.clear()                 # a pinned family is reported once per run
     FAMILY_SEEN.clear()                # any family at most FAMILY_RUN_CAP times per run
     combos = [(pr, cfg, sd) for sd in seeds for pr in profiles for cfg in configs]
-    bad = unknown = unsound = exempt = 0
+    bad = unknown = exempt = 0
     slice_n = args.queries if not minutes else max(10, args.queries // 4)
     offsets = {i: 0 for i in range(len(combos))}
     rounds = 0
@@ -443,17 +440,15 @@ def cmd_invariants(args) -> int:
                 print(f"  violation: {v.summary()}\n    case: {pp}", file=sys.stderr, flush=True)
                 bad += 1
                 unknown += not v.known
-                unsound += not v.known and v.severity in UNSOUND
         rounds += 1
         if not progressed or deadline is None or _cpu() > deadline:
             break
     print(json.dumps({"cpu_seconds": round(_cpu(), 1), "rounds": rounds,
                       "queries": sum(min(o, args.queries) for o in offsets.values()),
-                      "budget_exempt": exempt, "violations": bad, "unknown": unknown,
-                      "unsound": unsound}), flush=True)
+                      "budget_exempt": exempt}), flush=True)
     if args.fail_on == "never":
         return 0
-    return 1 if {"unknown": unknown, "unsound": unsound}.get(args.fail_on, bad) else 0
+    return 1 if (unknown if args.fail_on == "unknown" else bad) else 0
 
 
 def cmd_invariants_summary(args) -> int:
@@ -540,13 +535,16 @@ def main(argv=None) -> int:
     p.add_argument("--minutes", type=float, default=0.0, help="time budget for the whole run")
     p.add_argument("--nightly", action="store_true", help="the documented nightly work list")
     p.add_argument("--max-violations", type=int, default=5)
-    _common(p, fail_on=("any", "unknown", "unsound", "never"))
+    p.add_argument("--i5-value-rewrites", action="store_true",
+                   help="I5 also restates by reasoning about values (shifted relations, split "
+                        "predicates, ...): a completeness campaign, not the nightly")
+    _common(p)
     _gen_opts(p)
     p.set_defaults(fn=cmd_invariants)
 
     p = sub.add_parser("invariants-summary")
     p.add_argument("dir")
-    p.add_argument("--examples", type=int, default=5, help="report-only examples (one per family)")
+    p.add_argument("--examples", type=int, default=5, help="examples, one per family")
     p.set_defaults(fn=cmd_invariants_summary)
 
     args = ap.parse_args(argv)

@@ -21,10 +21,6 @@ Severity classes (``SEVERITY``, most important first):
 ``lost``      lost definiteness where the invariant demands a definite value
 ``crash``     an engine error (not ``ValueError``) on one side only
 
-``UNSOUND`` (``wrong``, ``crash``) are the classes ``--fail-on unsound``
-fails on; ``depends`` and ``lost`` are lost answers (definite against
-None), reported only.
-
 Each violation is shrunk (``ddmin`` over the conjuncts of the set, and
 over the added conjuncts) to a replayable case, written as ``NAME.json``
 and ``NAME.py`` like ``harness/repros``.
@@ -61,10 +57,6 @@ from .sympy_io import custom_predicate, from_srepr, to_srepr
 
 INVARIANTS = ("I1", "I2", "I3", "I4", "I5", "I6", "I7")
 SEVERITY = ("wrong", "depends", "lost", "crash")
-#: the classes that fail the nightly (``--fail-on unsound``): two definite
-#: answers that differ (I1: None turned definite) or an engine error; the
-#: others are a definite answer against None
-UNSOUND = ("wrong", "crash")
 
 DEFINITE = ("True", "False")
 
@@ -882,14 +874,20 @@ def restate(b, rng: random.Random, p: float = 0.5):
     sides (``lt(a, b)`` -> ``gt(b, a)``), the three spellings of a
     relation, ``Implies`` as ``Or``, ``Equivalent`` as two ``Implies``,
     ``Q.is_true`` around an atom, reordered ``And``/``Or`` arguments (SymPy
-    re-sorts them, so this checks the engine's own ordering)."""
-    if rng.random() < p * 0.5:
+    re-sorts them, so this checks the engine's own ordering).
+
+    The rewrites that need reasoning about values (an equivalence under a
+    declared fact, shifted / scaled relations, ``zero(x)`` as ``eq(x, 0)``,
+    a split or implied predicate, a transformed term) only with
+    ``I5_VALUE_REWRITES``."""
+    values = I5_VALUE_REWRITES
+    if values and rng.random() < p * 0.5:
         g = restate_given(b, rng)                 # an equivalence under a declared fact
         if g is not None:
             return g
     if isinstance(b, AppliedPredicate):
         f = b.function
-        if f in _SWAP and rng.random() < p * 0.8:
+        if values and f in _SWAP and rng.random() < p * 0.8:
             r = _shift_relation(b, rng)         # first: shifted, scaled, one-sided (the rewrites)
             if r is not None:
                 return r
@@ -901,19 +899,19 @@ def restate(b, rng: random.Random, p: float = 0.5):
                 return {v: k for k, v in _QREL.items()}[f](*b.arguments)
             except Exception:  # noqa: BLE001
                 return b
-        if f == Q.zero and _scalar(b.arguments[0]) and rng.random() < p:
+        if values and f == Q.zero and _scalar(b.arguments[0]) and rng.random() < p:
             return Q.eq(b.arguments[0], S.Zero)             # zero(x) is x = 0 for every scalar value
-        if f == Q.eq and b.arguments[1] == S.Zero and _scalar(b.arguments[0]) and rng.random() < p:
+        if values and f == Q.eq and b.arguments[1] == S.Zero and _scalar(b.arguments[0]) and rng.random() < p:
             return Q.zero(b.arguments[0])
-        if f in _SWAP and rng.random() < p * 1.6:
+        if values and f in _SWAP and rng.random() < p * 1.6:
             r = _shift_relation(b, rng)
             if r is not None:
                 return r
-        if f in _SPLIT and _scalar(b.arguments[0]) and rng.random() < p * 0.6:
+        if values and f in _SPLIT and _scalar(b.arguments[0]) and rng.random() < p * 0.6:
             return _SPLIT[f](*b.arguments)              # the predicate as a union / intersection of others
-        if f in _IMPLIED and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
+        if values and f in _IMPLIED and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
             return And(b, getattr(Q, rng.choice(_IMPLIED[f]))(*b.arguments))   # a conjunct it implies
-        if f in _TERM_FORMS and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
+        if values and f in _TERM_FORMS and _scalar(b.arguments[0]) and rng.random() < p * 0.5:
             if f in _SIGN_FLIP and rng.random() < 0.4:
                 return _SIGN_FLIP[f](-b.arguments[0])
             return f(rng.choice(_TERM_FORMS[f])(b.arguments[0]))
@@ -1298,6 +1296,13 @@ I5_PROP_RATE = 0.3
 #: share of I5 checks that respell the conjunction (order, duplicate, nesting)
 #: instead of restating conjuncts
 I5_SYNTAX_RATE = 0.35
+#: I5 restatements that need reasoning about values (``restate``: an
+#: equivalence under a declared fact, shifted / scaled relations,
+#: ``zero(x)`` as ``eq(x, 0)``, a split or implied predicate, a transformed
+#: term).  Off: a definite answer lost to one of them is missing inference,
+#: not a bug, and the nightly checks notation only; ``--i5-value-rewrites``
+#: turns them on for a completeness campaign.
+I5_VALUE_REWRITES = False
 #: share of I6 checks whose renamed query also runs in a fresh interpreter
 #: under another PYTHONHASHSEED (a subprocess: about a second each)
 I6_PROCESS_RATE = 0.04
@@ -1633,11 +1638,11 @@ def _short(srepr: str, limit: int = 160) -> str:
 
 def summarize_cases(directory: str, examples: int = 5) -> str:
     """Markdown summary of the cases ``write_case`` wrote to ``directory``
-    (the nightly's step summary and tracking-issue comment): counts per
-    invariant, class and family (the ``known:`` tag, else the base and
-    variant answers and the variant kind, I2's kinds of material), the
-    ``unsound`` ones (``UNSOUND``, undocumented: what fails the nightly)
-    first, then up to ``examples`` report-only ones, one per family."""
+    (the nightly's step summary): counts per invariant, class and family
+    (the ``known:`` tag, else the base and variant answers and the variant
+    kind, I2's kinds of material), whether each fails ``--fail-on unknown``
+    (no ``known:`` tag), and up to ``examples`` cases, one per family, the
+    failing ones first."""
     cases = []
     for jp in sorted(glob.glob(os.path.join(directory, "*.json"))):
         try:
@@ -1653,17 +1658,17 @@ def summarize_cases(directory: str, examples: int = 5) -> str:
         else:
             kinds = [k for k in var.get("kinds", ()) if not k.startswith("const:")] if d["inv"] == "I2" else ()
             fam = f"{d.get('base')} -> {d.get('other')}, {'+'.join(kinds) or var.get('kind', '?')}"
-        failing = not d.get("known") and d["severity"] in UNSOUND
+        failing = not d.get("known")
         cases.append((d, fam, failing, os.path.basename(jp)[:-5]))
     if not cases:
         return "No violations.\n"
     nfail = sum(c[2] for c in cases)
     counts: Dict[tuple, int] = {}
     for d, fam, failing, _ in cases:
-        k = (d["inv"], d["severity"], fam, "**fails**" if failing else "report")
+        k = (d["inv"], d["severity"], fam, "**fails**" if failing else "known")
         counts[k] = counts.get(k, 0) + 1
-    out = [f"{len(cases)} violation(s): {nfail} fail the job (undocumented `wrong`/`crash`), "
-           f"{len(cases) - nfail} report-only.", "",
+    out = [f"{len(cases)} violation(s): {nfail} fail the job (no `known:` tag), "
+           f"{len(cases) - nfail} of a known family.", "",
            "| invariant | class | family | gate | cases |", "|---|---|---|---|---|"]
     out += [f"| {i} | {s} | {f} | {g} | {n} |" for (i, s, f, g), n in sorted(counts.items())]
 
@@ -1672,16 +1677,12 @@ def summarize_cases(directory: str, examples: int = 5) -> str:
         return (f"- `{d['inv']} {d['severity']}` [{cfg}] `ask({_short(d['prop'])}, {_short(d['assum'])})` "
                 f"= {d.get('base')}; variant {(d.get('variant') or {}).get('kind')} = {d.get('other')} "
                 f"({fam}; case `{stem}.py`)")
-    fails = [c for c in cases if c[2]]
-    if fails:
-        out += ["", "Failing:"] + [line(d, fam, stem) for d, fam, _, stem in fails]
     seen, ex = set(), []
-    for d, fam, failing, stem in cases:
-        if not failing and (d["inv"], fam) not in seen and len(ex) < examples:
+    for d, fam, failing, stem in sorted(cases, key=lambda c: not c[2]):
+        if (d["inv"], fam) not in seen and len(ex) < examples:
             seen.add((d["inv"], fam))
             ex.append(line(d, fam, stem))
-    if ex:
-        out += ["", "Report-only examples (one per family; the cases are in the `invariants` artifact):"] + ex
+    out += ["", "Examples (one per family; the cases are in the `invariants` artifact):"] + ex
     return "\n".join(out) + "\n"
 
 

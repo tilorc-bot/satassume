@@ -192,10 +192,13 @@ def test_syntax_form_keeps_the_models():
         assert from_srepr(to_srepr(f)) == f                 # the spelling survives srepr
 
 
-def test_restatements_agree_on_values():
+def test_restatements_agree_on_values(monkeypatch):
     """Every restatement of a predicate or relation conjunct has the truth
     of the original at sample values (SymPy's own ``ask`` on closed terms:
-    integers, rationals, floats, irrationals, imaginary, infinities)."""
+    integers, rationals, floats, irrationals, imaginary, infinities); the
+    value rewrites included (``I5_VALUE_REWRITES``)."""
+    import harness.invariants as inv
+    monkeypatch.setattr(inv, "I5_VALUE_REWRITES", True)
     from sympy import I as _I, Rational, Float, S, pi as _pi, sqrt as _sqrt, oo, zoo, ask as sask
     from sympy.logic.boolalg import BooleanAtom
     from harness.invariants import restate, VALUE_PREDS
@@ -307,37 +310,44 @@ def test_model_guard_and_scope_tag():
     assert sev == ("depends" if other == "None" else None), (sev, other)
 
 
-def test_fail_on_unsound(monkeypatch, tmp_path):
-    """``--fail-on unsound`` (the nightly's gate): a planted contradiction
-    fails the run, a planted lost answer (definite against None) is
-    written and summarized but does not; ``--fail-on unknown`` fails on
-    both."""
-    import satassume.engine as eng_mod
-    from harness.__main__ import main
-    from harness.invariants import summarize_cases
-    real_ask = eng_mod.Engine.ask
 
-    def run(gate, out, inv="I4"):
-        return main(["invariants", "--inv", inv, "--seeds", "0", "--queries", "12", "--sets", "2",
-                     "--no-shrink", "--quiet", "--fail-on", gate, "--out", str(tmp_path / out)])
+def test_i5_restates_by_notation_only(monkeypatch):
+    """Without ``I5_VALUE_REWRITES`` (the nightly) a restatement keeps every
+    atom's predicate and terms: only the spelling changes (sides swapped,
+    ``Q.is_true``, ``Relational`` forms, ``~eq`` as ``ne``, connectives);
+    with it the value rewrites (``zero(x)`` as ``eq(x, 0)``, split and
+    implied predicates, shifted relations) appear."""
+    import harness.invariants as inv
+    from sympy import Eq, Ne, Lt, Le, Gt, Ge, Implies
+    from sympy.assumptions.assume import AppliedPredicate
+    from sympy.core.relational import Relational
+    x, y = Symbol("x"), Symbol("y")
+    spell = {Q.lt: {Q.lt, Q.gt, Lt, Gt}, Q.gt: {Q.lt, Q.gt, Lt, Gt}, Q.le: {Q.le, Q.ge, Le, Ge},
+             Q.ge: {Q.le, Q.ge, Le, Ge}, Q.eq: {Q.eq, Eq, Q.ne, Ne}, Q.ne: {Q.ne, Ne, Q.eq, Eq}}
+    conjs = ([Q.zero(x), Q.positive(x), Q.even(x + 1), Q.nonzero(2 * x), Q.lt(x, y), Q.ge(x, 2),
+              Q.eq(x, 0), Not(Q.eq(x, y)), Implies(Q.positive(x), Q.lt(x, 1))])
 
-    # a contradiction: True for a proposition and for its negation
-    monkeypatch.setattr(eng_mod.Engine, "ask", lambda self, p, a=None: True)
-    assert run("unsound", "wrong") == 1
-    assert "fail the job" in summarize_cases(str(tmp_path / "wrong"))
+    def atoms(b):
+        if isinstance(b, AppliedPredicate) and b.function == Q.is_true:
+            return atoms(b.arguments[0])
+        if isinstance(b, (AppliedPredicate, Relational)):
+            return [b]
+        return [a for c in b.args for a in atoms(c)]
 
-    # a lost answer: None as soon as unrelated material (fresh ``iu``
-    # symbols) is in the set (the API layer: the engine never sees it)
-    import satassume.sympy_api as api
-    monkeypatch.setattr(eng_mod.Engine, "ask", real_ask)
-    real_api_ask = api.ask
+    def heads(b):
+        return {(a.function if isinstance(a, AppliedPredicate) else type(a)) for a in atoms(b)}
 
-    def ask_lost(proposition, assumptions=True, *args, **kw):
-        if any(s.name.startswith("iu") for s in getattr(assumptions, "free_symbols", ())):
-            return None
-        return real_api_ask(proposition, assumptions, *args, **kw)
-    monkeypatch.setattr(api, "ask", ask_lost)
-    assert run("unsound", "lost", "I2") == 0
-    summary = summarize_cases(str(tmp_path / "lost"))
-    assert "0 fail the job" in summary and "| I2 | depends |" in summary, summary
-    assert run("unknown", "lost-unknown", "I2") == 1
+    def terms(b):
+        return {frozenset(a.arguments if isinstance(a, AppliedPredicate) else a.args) for a in atoms(b)}
+
+    changed = 0
+    for conj in conjs:
+        allowed = set().union(*(spell.get(h, {h}) for h in heads(conj)))
+        for k in range(40):
+            other = inv.restate(conj, random.Random(k), p=0.9)
+            changed += other != conj
+            assert heads(other) <= allowed and terms(other) <= terms(conj), (conj, other)
+    assert changed > 100
+    monkeypatch.setattr(inv, "I5_VALUE_REWRITES", True)
+    assert any(inv.restate(Q.zero(x), random.Random(k), p=0.9).has(Q.eq) or
+               len(heads(inv.restate(Q.zero(x), random.Random(k), p=0.9))) > 1 for k in range(40))

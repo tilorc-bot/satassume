@@ -4,16 +4,14 @@ name: invariants
 # robin in slices until the budget is spent).  The budget is CPU time of
 # the process and its children (20 minutes by default), so the job takes
 # about as long as the longest history-fuzz shard.  The job fails only on
-# a contradiction or a crash outside the documented families
-# (`--fail-on unsound`: class `wrong` or `crash`, not tagged `known:`;
-# known families are pinned in tests/test_invariant_repros.py).  A lost
-# answer (`depends`/`lost`: a definite answer against None) is reported
-# only: it kept the job red every night from 8 Oct 2026 (new variants of
-# the #114 families) and would have hidden a contradiction.  Every
-# violation found is uploaded as an artifact with a standalone repro; the
-# step summary has `python -m harness invariants-summary`, and the
-# scheduled run appends it to the tracking issue (TRACKING_ISSUE) when
-# anything was found.  harness/INVARIANTS.md, "Exit status".
+# a violation outside the documented families (`--fail-on unknown`):
+# known families are tagged `known:` and pinned in
+# tests/test_invariant_repros.py.  I5 restates by notation only (the
+# rewrites that need reasoning about values are off unless
+# `--i5-value-rewrites`: harness/INVARIANTS.md, I5).  Every violation found
+# (known families included) is uploaded as an artifact with a standalone
+# repro, and summarized in the step summary
+# (`python -m harness invariants-summary`).
 #
 # The seeds move every night (run number x 100) so successive runs cover
 # new streams; `seed_offset` pins them to rerun a night's campaign.
@@ -31,20 +29,14 @@ on:
       seed_offset:
         description: "first seed (empty: run number x 100)"
         default: ""
-      comment:
-        description: "append the summary to the tracking issue (scheduled runs always do)"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
-  issues: write
 
 env:
   MINUTES: ${{ inputs.minutes || '20' }}
   NSEEDS: ${{ inputs.seeds || '3' }}
   PYTHONHASHSEED: "0"
-  TRACKING_ISSUE: "275"
 
 jobs:
   invariants:
@@ -65,10 +57,9 @@ jobs:
           LAST=$(( SEED_OFFSET + NSEEDS - 1 ))
           echo "SEEDS=$SEED_OFFSET-$LAST" >> "$GITHUB_ENV"
           python -m harness invariants --nightly --minutes "$MINUTES" \
-            --seeds "$SEED_OFFSET-$LAST" --fail-on unsound --quiet \
+            --seeds "$SEED_OFFSET-$LAST" --fail-on unknown --quiet \
             --out harness-results/invariants
       - name: summary
-        id: summary
         if: always()
         env:
           OUTCOME: ${{ steps.inv.outcome }}
@@ -85,14 +76,6 @@ jobs:
           } > harness-results/invariants/SUMMARY.md
           cat harness-results/invariants/SUMMARY.md
           cat harness-results/invariants/SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
-          if grep -q "^No violations" body.md; then echo "found=0" >> "$GITHUB_OUTPUT"; else echo "found=1" >> "$GITHUB_OUTPUT"; fi
-      - name: append to the tracking issue
-        if: always() && steps.summary.outputs.found == '1' && (github.event_name == 'schedule' || inputs.comment)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          head -c 60000 harness-results/invariants/SUMMARY.md > comment.md
-          gh issue comment "$TRACKING_ISSUE" -R "$GITHUB_REPOSITORY" --body-file comment.md
       - if: always()
         uses: actions/upload-artifact@v4
         with:
