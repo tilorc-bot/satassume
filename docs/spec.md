@@ -55,12 +55,20 @@ What decides that an answer is right or wrong (#247).
   not positive although `rf(x, 0) = 1` for every number `x`.
 
 Held at level 1 (only `commutative` is False) while Tilo decides (#247,
-open questions 3 and 4), each behind one flag in `domain.py`:
+open questions 3 and 4), each behind one flag in `domain.py`; a held
+subterm holds the whole term (`sin(Z(A))`, `Z(A) + B`):
 `USER_EVALUATORS_HELD`, a term with a class that is not SymPy's own (the
 user's `eval`, `doit` or property: a `Function` subclass whose `eval`
-returns `S.Zero`, #239); `IDENTITY_RELATIONS_HELD`, a relation between
-operators with commutation rules (`[c, c†]`, `{d, d†}`, which stand for the
-identity operator and SymPy writes as 1) and `IdentityOperator()`.
+returns `S.Zero`, #239; `Function('g', eval=...)`), while a plain
+undefined function `Function('f')` has no evaluator and is not held;
+`IDENTITY_RELATIONS_HELD`, a compound term over operators with
+commutation rules (`[c, c†]`, `{d, d†}`, `c*Dagger(c)`, `2*c`, secondquant
+`Commutator(B(p), Bd(p))`: relations among them may stand for the
+identity operator, which SymPy writes as 1), and `IdentityOperator()`; the
+operator alone (`BosonOp('c')`) is not held. A held term, and a term
+holding an explicit `nan` or infinity (including the limits of an
+integral, sum or product, `Sum(A, (x, 1, oo))`), gets no fact but
+`commutative` False.
 
 ## 1. Routing: what reaches the engine
 

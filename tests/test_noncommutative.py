@@ -751,10 +751,13 @@ class _EvalOnB(Function):
 
 
 def _nan_terms():
+    from sympy import Integral, Sum
     # nan is no number, and a function of nan has no facts (design.md,
     # "Extended reals and nan"): an explicit nan or infinity
     return [Add(A, S.NaN, evaluate=False), Add(A, B, S.NaN, evaluate=False), Add(sin(A), S.NaN, evaluate=False),
-            Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False), Mul(S.Infinity, A, evaluate=False)]
+            Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False), Mul(S.Infinity, A, evaluate=False),
+            # a limit carries a value
+            Sum(A, (x, 1, S.Infinity)), Integral(A, (x, 0, S.Infinity))]
 
 
 def _user_evaluator_terms():
