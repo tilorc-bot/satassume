@@ -583,6 +583,10 @@ where a direct argument is `nan`. So:
 - `1**e` rules need a finite exponent; a zero factor makes a product zero
   only if the other factors are finite (`Q.finite(x*y)` under `Q.zero(y) &
   Q.infinite(x)` is None);
+- a function application or a power with an argument that may be `nan`
+  (`nan`, or an explicit infinity in a part carrying a value) gets no
+  template fact: `rf(nan, 0)`, `nan**0` (#251); the identities `rf(x, 0) =
+  1` and `b**0 = 1` hold over numbers;
 - functions are not declared finite or complex for infinite arguments
   (`re(oo) = oo`, `exp(oo) = oo`, `sin(oo*I) = oo*I`, `log(oo) = oo`); 37
   of the README's 70 deliberate misses come from this.
