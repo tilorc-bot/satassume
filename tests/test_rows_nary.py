@@ -16,6 +16,7 @@ from sympy import (
 )
 
 from satassume.knowledge.rules import DEFINITIONS
+from satassume.sat.formula import And, Implies, Or, P
 from satassume.knowledge.templates import core, wiring
 from satassume.knowledge.templates._common import _CACHE, MAX_EXPAND, Pattern, lits, resolve
 from satassume.knowledge.templates._rows import (
@@ -337,7 +338,7 @@ def test_the_template_of_any_arity():
     xs = symbols('x:40')
     out = t(Mul(*xs, evaluate=False))
     assert isinstance(out, list) and len(out) == 2
-    assert out[1] == core._wide_one(out[0].objs[40], xs, {}, 'finite', 'zero', 'zero')
+    assert out[1] == _wide_one(out[0].objs[40], xs, {}, 'finite', 'zero', 'zero')
 
 
 # --- the shapes of the legacy rules ----------------------------------------------
@@ -357,8 +358,37 @@ def patterns(n):
             yield {0: c, n - 1: d}
 
 
-# verbatim from core.MUL_TABLE at e068e49, before the rows of Mul
+# verbatim from core.MUL_TABLE at e068e49, before the rows of Mul, and from
+# core at ae78e6f, before the rows of Add
 MAX_ONEOUT, MAX_PAIRS = 6, 4
+MAX_ONEOUT_WIDE = 32
+MAX_ADD_SMALL = 3
+_STRICT = (('extended_positive', 'extended_nonnegative'),
+           ('extended_negative', 'extended_nonpositive'))
+
+
+def _wide_one(expr, args, consts, every, some, concl):
+    """``every(t)`` for every term ``t`` and ``some(t)`` for one of them
+    give ``concl(expr)``, as one formula (None if it says nothing): the
+    per-term rule ``some(t_k) & every(rest) -> concl`` of a node wider
+    than :data:`MAX_ONEOUT_WIDE` when ``some`` implies ``every``.  Its
+    compilation is linear in the width (Tseitin variables), the per-term
+    rules' quadratic.  Constant terms are decided here: one that is not
+    ``every`` drops the formula."""
+    weak, strong, met = [], [], False
+    for k, a in enumerate(args):
+        c = consts.get(k)
+        if c is None:
+            weak.append(P(every, a))
+            strong.append(P(some, a))
+        elif not getattr(c, f'is_{every}'):  # sympy-boundary: c a constant
+            return None
+        elif getattr(c, f'is_{some}'):  # sympy-boundary: c a constant
+            met = True
+    if not (met or strong):
+        return None
+    prem = weak if met else weak + [Or(*strong)]
+    return Implies(And(*prem), P(concl, expr)) if prem else P(concl, expr)
 
 
 def mul_one_neg(n, consts):
@@ -387,29 +417,29 @@ def mul_all_neg(n, consts):
 
 
 def add_strict(n, consts):
-    # verbatim from core._add_rules
+    # verbatim from core._add_rules at ae78e6f
     R = []
     A = range(n)
-    for k in A if n <= core.MAX_ONEOUT_WIDE else ():
+    for k in A if n <= MAX_ONEOUT_WIDE else ():
         rest = [j for j in A if j != k]
-        for strict, nonstrict in core._STRICT:
+        for strict, nonstrict in _STRICT:
             R.append(([(k, strict, True), *lits(rest, nonstrict)], [(n, strict, True)]))
     return R
 
 
 def add_parity(n, consts):
-    # verbatim from core._add_rules
+    # verbatim from core._add_rules at ae78e6f
     R = []
     A = range(n)
-    if n > core.MAX_ADD_SMALL:
+    if n > MAX_ADD_SMALL:
         R.append((lits(A, 'even'), [(n, 'even', True)]))
-    for k in A if n <= core.MAX_ONEOUT_WIDE else ():
+    for k in A if n <= MAX_ONEOUT_WIDE else ():
         rest = [j for j in A if j != k]
-        if n <= core.MAX_ADD_SMALL:
+        if n <= MAX_ADD_SMALL:
             pass
-        elif n <= core.MAX_ONEOUT:
+        elif n <= MAX_ONEOUT:
             R.append(([(k, 'odd', True), *lits(rest, 'even')], [(n, 'odd', True)]))
-    if n <= core.MAX_ADD_SMALL:
+    if n <= MAX_ADD_SMALL:
         for parities in product(('even', 'odd'), repeat=n):
             result = 'odd' if parities.count('odd') % 2 else 'even'
             R.append(([(k, p, True) for k, p in enumerate(parities)], [(n, result, True)]))
@@ -417,12 +447,12 @@ def add_parity(n, consts):
 
 
 def add_infinite_constant(n, consts):
-    # verbatim from core._add_rules
+    # verbatim from core._add_rules at ae78e6f
     R = []
     A = range(n)
-    for k in A if n <= core.MAX_ONEOUT else ():
+    for k in A if n <= MAX_ONEOUT else ():
         rest = [j for j in A if j != k]
-        for strict, nonstrict in core._STRICT:
+        for strict, nonstrict in _STRICT:
             signed = strict.replace('extended_', '') + '_infinite'
             if k in consts:
                 for cond in (nonstrict, 'real'):
@@ -554,7 +584,7 @@ def test_the_selection_cap_is_legacys():
 
 @pytest.mark.parametrize("n", (33, 40))
 def test_past_32_the_some_rows_are_legacys_formula(n):
-    # Add's strict sign (add_templates) and Mul's zero (core._wide_one, as
+    # Add's strict sign (add_templates) and Mul's zero (_wide_one, as
     # mul_templates called it before the rows of Mul)
     xs = symbols(f'x:{n}')
     add = gen_of(Add, *GROUPS['Add strict sign (some and every)'][2])
@@ -563,11 +593,11 @@ def test_past_32_the_some_rows_are_legacys_formula(n):
     for consts in patterns(n):
         args = tuple(consts.get(k, x) for k, x in enumerate(xs))
         node = Symbol('node')
-        legacy = [core._wide_one(node, args, consts, nonstrict, strict, strict)
-                  for strict, nonstrict in core._STRICT]
+        legacy = [_wide_one(node, args, consts, nonstrict, strict, strict)
+                  for strict, nonstrict in _STRICT]
         assert wiring.wide_formulas(add.schemas, node, args, consts) == [
             g for g in legacy if g is not None], consts
-        legacy = core._wide_one(node, args, consts, 'finite', 'zero', 'zero')
+        legacy = _wide_one(node, args, consts, 'finite', 'zero', 'zero')
         assert wiring.wide_formulas(zero.schemas, node, args, consts) == (
             [legacy] if legacy is not None else []), consts
     assert wiring.wide_formulas(add.schemas, Symbol('node'), xs[:32], {}) == []

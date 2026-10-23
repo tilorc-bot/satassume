@@ -660,7 +660,6 @@ def test_template_key_error_is_not_read_as_inconsistent():
     from sympy import Function, Q
     from satassume import Engine
     from satassume.knowledge.templates import _common as C
-    from satassume.knowledge.templates.core import _add_rules
     from satassume.knowledge.templates.registry import registry
     from satassume.sympy_api import ask
 
@@ -673,7 +672,9 @@ def test_template_key_error_is_not_read_as_inconsistent():
     @registry.register(G)
     def g_templates(expr):
         a, b = expr.args
-        return C.facts(C.pattern_key('add', 2, {}), lambda: _add_rules(2, {}), {}, (expr, a, b), 0)
+        return C.facts(C.pattern_key('add', 2, {}), lambda: [([(1, 'positive', True)],
+                                                                [(0, 'positive', True)])],
+                       {}, (expr, a, b), 0)
 
     e = Engine()
     assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y), engine=e) is True
