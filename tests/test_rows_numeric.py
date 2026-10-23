@@ -360,12 +360,16 @@ def basis(v):
 #: their own section below (the rows of Pow, :func:`check_power`)
 SHAPED = ('power',)
 
+#: families not checked here yet: the rows of Max, Min and Piecewise have a
+#: star (``f(*values)``), which the next step of #299 (U3) checks
+NOT_YET = ('selection',)
+
 
 def _heads():
     """``(family, name, heads, arity, terms, rules)`` for every function of
-    the compiled rows (but those of :data:`SHAPED`); ``heads`` the SymPy
-    classes whose nodes get the rules (empty for a function this SymPy
-    lacks)."""
+    the compiled rows (but those of :data:`SHAPED` and :data:`NOT_YET`);
+    ``heads`` the SymPy classes whose nodes get the rules (empty for a
+    function this SymPy lacks)."""
     declared = {}
     for family, fns in ROW_FAMILIES:
         for fn in fns:
@@ -373,7 +377,7 @@ def _heads():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
-        if family in SHAPED:
+        if family in SHAPED or family in NOT_YET:
             continue
         for name, arity, terms, specs in fns:
             fn = declared[family, name]
@@ -748,11 +752,11 @@ def test_every_entry_of_never_checked_is_a_rule():
 
 def test_every_function_of_the_families_is_checked():
     names = {(family, fn.rpartition(':')[2] if isinstance(fn, str) else fn.__name__)
-             for family, fns in ROW_FAMILIES if family not in SHAPED for fn in fns}
+             for family, fns in ROW_FAMILIES if family not in SHAPED + NOT_YET for fn in fns}
     assert {(h[0], h[1]) for h in HEADS} == names
     assert sum(len(h[5]) for h in HEADS) == sum(
-        len(r) for family, fns in FAMILIES if family not in SHAPED
-        for _, _, _, specs in fns for _, r in specs)
+        len(r) for family, fns in FAMILIES if family not in SHAPED + NOT_YET
+        for _, _, _, specs, *_ in fns for _, r in specs)
     # the shaped families: Pow
     assert SHAPED == ('power',) and dict(ROW_FAMILIES)['power'] == (Pow,)
     [(name, _, _, specs)] = dict(FAMILIES)['power']

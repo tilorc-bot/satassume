@@ -6,10 +6,13 @@ A family module (``templates/trig.py``, ``templates/hyperbolic.py``)
 states its rules as ``for_all`` statements, each under a comment whose
 first line is the property's title.  This prints each function's rows,
 ``f`` replaced by the function, labelled with that title.  Without names,
-every function written in rows is printed.
+every function written in rows is printed.  A row with a star is printed
+as written, ``f`` replaced: ``every(Q.integer, values) >>
+Q.integer(Max(*values))``, with the limit of ``at_most`` after it.
 """
 import ast
 import inspect
+import re
 import sys
 
 from sympy import And, Implies, Or
@@ -17,6 +20,22 @@ from sympy import And, Implies, Or
 
 def _side(e):
     return f"({e})" if isinstance(e, (And, Or)) else str(e)
+
+
+def _text(row, name):
+    """``row`` as text; a node with a star (``f(value, values)``, which
+    :func:`bind` leaves) as ``name(value, *values)``, and ``Q.p(every(values))``
+    as ``every(Q.p, values)``."""
+    from satassume.knowledge.templates._rows import Arguments
+    if isinstance(row, Implies):
+        prem, concl = row.args
+        text = f"{_side(prem)} >> {_side(concl)}"
+    else:
+        text = str(row)
+    for xs in sorted(map(str, row.atoms(Arguments))):
+        text = re.sub(rf"\bf\(((?:\w+, )*){xs}\)", rf"{name}(\1*{xs})", text)
+        text = re.sub(rf"(~?)(Q\.\w+)\((every|some)\({xs}\)\)", rf"\3(\1\2, {xs})", text)
+    return text
 
 
 def labels(module):
@@ -39,7 +58,7 @@ def labels(module):
 def main(names):
     import importlib
     from satassume.knowledge.templates import ROW_FAMILIES
-    from satassume.knowledge.templates._rows import bind
+    from satassume.knowledge.templates._rows import AtMost, bind
     rows = {}
     for name, _ in ROW_FAMILIES:
         family = importlib.import_module(f"satassume.knowledge.templates.{name}")
@@ -52,10 +71,11 @@ def main(names):
     for name in names or rows:
         print(name)
         for label, row in rows[name]:
-            if isinstance(row, Implies):
-                prem, concl = row.args
-                row = f"{_side(prem)} >> {_side(concl)}"
-            print(f"  {label:{width}}  {row}")
+            if isinstance(row, AtMost):
+                text = f"{_text(row.row, name)}  (at most {row.n} arguments)"
+            else:
+                text = _text(row, name)
+            print(f"  {label:{width}}  {text}")
 
 
 if __name__ == "__main__":
