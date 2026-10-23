@@ -137,7 +137,8 @@ MUL = "satassume.knowledge.templates.mul"
 WIRING = "satassume.knowledge.templates.wiring"
 x, y = Symbol('x'), Symbol('y')
 assert ask(Q.positive(x + 1), Q.positive(x)) is True
-assert WIRING not in sys.modules
+# the rows of Add are loaded, not those of Mul
+assert WIRING in sys.modules and Mul not in registry._by_class
 assert ask(Q.integer(x*y), Q.integer(x) & Q.integer(y)) is True
 assert ask(Q.positive(x), Q.negative(-2*x)) is True
 # the compiled rows, not the module of the rows

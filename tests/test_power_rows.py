@@ -75,18 +75,18 @@ def test_the_rules_that_are_not_rows():
 def test_power_is_compiled_on_its_own_first_use():
     code = """
 import sys
-from sympy import Q, Symbol
+from sympy import Pow, Q, Symbol
 from satassume.knowledge.templates.registry import registry
 from satassume.sympy_api import ask
 POWER = "satassume.knowledge.templates.power"
 WIRING = "satassume.knowledge.templates.wiring"
 x = Symbol('x')
 assert ask(Q.positive(x + 1), Q.positive(x)) is True
-assert WIRING not in sys.modules
+# the rows of Add are loaded, not those of Pow
+assert WIRING in sys.modules and Pow not in registry._by_class
 assert ask(Q.real(x**2), Q.real(x)) is True
 # the compiled rows, not the module of the rows
 assert WIRING in sys.modules and POWER not in sys.modules
-from sympy import Pow
 [t] = registry._by_class[Pow]
 assert t.__module__ == WIRING + ":power", t.__module__
 """

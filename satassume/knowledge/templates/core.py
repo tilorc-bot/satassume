@@ -1,7 +1,10 @@
-"""Structural templates for ``Add``, and the rules of ``Mul`` and ``Pow``
-that are not rows (their rows are ``templates/mul.py`` and
-``templates/power.py``; ``wiring.product`` and ``wiring.power`` call the
-functions of the Mul and Pow sections here).
+"""The rules of ``Add``, ``Mul`` and ``Pow`` that are not rows (their rows
+are ``templates/add.py``, ``templates/mul.py`` and ``templates/power.py``;
+``wiring.addition``, ``wiring.product`` and ``wiring.power`` call the
+functions of the Add, Mul and Pow sections here): the sums of a special
+shape, the factor sets and ``a/v**k``, and ``exp(I*pi*c*s)``.  The legacy
+rules of ``Add`` (``_add_rules``) are no longer registered and go with the
+next step of #299 (U1).
 
 Every formula relates predicates of the node to predicates of its direct
 arguments and is a theorem about the *value* of the node under SymPy's
@@ -37,9 +40,7 @@ from ._common import (
     consts_of,
     facts,
     lits,
-    pattern_key,
 )
-from .registry import registry
 from .table import Row, expand
 
 #: Largest arity for per-term rules of Add (O(n^2) literals).
@@ -55,7 +56,9 @@ MAX_ADD_SMALL = 3
 
 
 # ---------------------------------------------------------------------------
-# Add
+# Add: the rules below up to the sums of a special shape are no longer
+# registered (Add's rows are templates/add.py, #299) and go with the next
+# step of #299 (U1); wiring.addition calls the sums of a special shape
 # ---------------------------------------------------------------------------
 
 # Closed under addition (all args -> node).  ``real``, ``zero`` and the
@@ -106,7 +109,7 @@ def _add_rules(n, consts):
     for k in A if n <= MAX_ONEOUT_WIDE else ():
         rest = [j for j in A if j != k]
         # One strictly signed term among same-signed terms (wider sums:
-        # _wide_one in add_templates).
+        # _wide_one).
         for strict, nonstrict in _STRICT:
             rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
         # Imaginary term plus finite reals is not real.
@@ -469,38 +472,6 @@ def _wide_one(expr, args, consts, every, some, concl):
         return None
     prem = weak if met else weak + [Or(*strong)]
     return Implies(And(*prem), P(concl, expr)) if prem else P(concl, expr)
-
-
-@registry.register(Add)
-def add_templates(expr):
-    args = expr.args
-    n = len(args)
-    if n == 0:
-        return ()
-    consts = consts_of(args)
-    out = [facts(pattern_key('add', n, consts), lambda: _add_rules(n, consts),
-                 consts, args + (expr,), n)]
-    if n > MAX_ONEOUT_WIDE:
-        # the strict-sign rule of _add_rules
-        for strict, nonstrict in _STRICT:
-            f = _wide_one(expr, args, consts, nonstrict, strict, strict)
-            if f is not None:
-                out.append(f)
-    split = _half_split(args)
-    if split is not None:
-        out.append(_half_templates(expr, split))
-    split = _bound_split(args)
-    if split is not None:
-        out.append(_bound_templates(expr, split))
-        recip = _recip_templates(expr, split)
-        if recip is not None:
-            out.append(recip)
-    terms = _imag_split(args)
-    if terms is not None:
-        imag = _imag_templates(expr, terms)
-        if imag is not None:
-            out.append(imag)
-    return out[0] if len(out) == 1 else out
 
 
 # ---------------------------------------------------------------------------

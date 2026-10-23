@@ -81,7 +81,8 @@ SELECTION = "satassume.knowledge.templates.selection"
 WIRING = "satassume.knowledge.templates.wiring"
 x, y = Symbol('x'), Symbol('y')
 assert ask(Q.positive(x + 1), Q.positive(x)) is True
-assert WIRING not in sys.modules
+# the rows of Add are loaded, not those of Max
+assert WIRING in sys.modules and Max not in registry._by_class
 assert ask(Q.integer(Max(x, y)), Q.integer(x) & Q.integer(y)) is True
 # the compiled rows, not the module of the rows
 assert WIRING in sys.modules and SELECTION not in sys.modules
