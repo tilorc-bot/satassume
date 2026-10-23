@@ -13,7 +13,7 @@ from __future__ import annotations
 from sympy import Equivalent, Q
 from sympy.codegen.cfunctions import expm1, log1p
 
-from ._rows import closed, f, for_all, x
+from ._rows import argument, closed, f, for_all
 
 RULES = (
     # Entire
@@ -25,61 +25,64 @@ RULES = (
     #     exp is increasing on the extended reals and exp(0) == 1; off the
     #     reals expm1(2*I*pi) == 0
     for_all((expm1,),
-        Q.extended_real(x) >> (
-            Equivalent(Q.extended_positive(f(x)), Q.extended_positive(x))
-            & Equivalent(Q.extended_negative(f(x)), Q.extended_negative(x))
-            & Equivalent(Q.zero(f(x)), Q.zero(x)))),
+        Q.extended_real(argument) >> (
+            Equivalent(Q.extended_positive(f(argument)), Q.extended_positive(argument))
+            & Equivalent(Q.extended_negative(f(argument)), Q.extended_negative(argument))
+            & Equivalent(Q.zero(f(argument)), Q.zero(argument)))),
 
     # Minus one at -oo
     #     odd; negative by the sign of the argument
     for_all((expm1,),
-        (Q.infinite(x) & Q.extended_negative(x)) >> Q.odd(f(x))),
+        (Q.infinite(argument) & Q.extended_negative(argument)) >> Q.odd(f(argument))),
 
     # Infinite at oo
     for_all((expm1,),
-        (Q.infinite(x) & Q.extended_positive(x)) >> Q.infinite(f(x))),
+        (Q.infinite(argument) & Q.extended_positive(argument)) >> Q.infinite(f(argument))),
 
     # Lindemann
     #     exp(a) is transcendental for an algebraic a != 0
     #     (Lindemann-Weierstrass), and so is exp(a) - 1
     for_all((expm1,),
-        (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))),
+        (Q.algebraic(argument) & ~Q.zero(argument)) >> Q.transcendental(f(argument))),
 
     # Zero only at 0
     #     log(y) == 0 iff y == 1
     for_all((log1p,),
-        Equivalent(Q.zero(f(x)), Q.zero(x))),
+        Equivalent(Q.zero(f(argument)), Q.zero(argument))),
 
     # The sign of the argument beyond -1
     #     log is increasing on the positive reals and log(1) == 0
     for_all((log1p,),
         closed(f, Q.positive),
-        (Q.negative(x) & Q.gt(x, -1)) >> Q.negative(f(x))),
+        (Q.negative(argument) & Q.gt(argument, -1)) >> Q.negative(f(argument))),
 
     # Pole at -1
-    #     log1p(-1) == zoo; the sign premise on x keeps the block total
-    #     (nothing relates the slot x + 1 to x)
+    #     log1p(-1) == zoo; the sign premise on argument keeps the block
+    #     total (nothing relates the slot argument + 1 to argument)
     for_all((log1p,),
-        (Q.negative(x) & Q.eq(x, -1)) >> (Q.infinite(f(x)) & ~Q.extended_real(f(x)))),
+        (Q.negative(argument) & Q.eq(argument, -1)) >> (
+            Q.infinite(f(argument)) & ~Q.extended_real(f(argument)))),
 
     # Not real below -1
     #     the logarithm of a negative number has the imaginary part pi
     for_all((log1p,),
-        (Q.negative(x) & Q.lt(x, -1)) >> ~Q.extended_real(f(x))),
+        (Q.negative(argument) & Q.lt(argument, -1)) >> ~Q.extended_real(f(argument))),
 
     # Complex except at -1
     for_all((log1p,),
-        (Q.complex(x) & Q.ne(x, -1)) >> Q.complex(f(x))),
+        (Q.complex(argument) & Q.ne(argument, -1)) >> Q.complex(f(argument))),
 
     # Infinite at an infinity
     #     log1p(+-oo) == oo
     for_all((log1p,),
         closed(f, Q.infinite),
-        (Q.infinite(x) & Q.extended_positive(x)) >> Q.extended_positive(f(x))),
+        (Q.infinite(argument) & Q.extended_positive(argument))
+        >> Q.extended_positive(f(argument))),
 
     # Lindemann
     #     log(y) for an algebraic y != 0, 1 is transcendental: exp(b) == y
     #     with an algebraic b != 0 contradicts Lindemann-Weierstrass
     for_all((log1p,),
-        (Q.algebraic(x) & ~Q.zero(x) & Q.ne(x, -1)) >> Q.transcendental(f(x))),
+        (Q.algebraic(argument) & ~Q.zero(argument) & Q.ne(argument, -1))
+        >> Q.transcendental(f(argument))),
 )
