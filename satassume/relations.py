@@ -499,16 +499,26 @@ BOUNDS = True
 PARITY = True
 
 #: the predicates whose atoms on a half sum ask for parity (each implies
-#: ``integer``): the kind ``parity`` (:func:`bound_kinds`) and the twins of
-#: :func:`bound_twins`
+#: ``integer``): the kind ``parity`` (:func:`bound_kinds`)
 PARITY_PREDS = frozenset({"integer", "even", "odd", "prime", "composite"})
+
+#: those whose atoms on a half sum switch the glue on (the twins of
+#: :func:`bound_twins`): ``integer`` alone.  The theory decides
+#: ``integer(h)``; ``even(h)`` and ``odd(h)`` are integrality atoms of
+#: ``h/2`` and ``(h - 1)/2``, with a denominator 4 (no parity row), so it
+#: refutes them only through ``integer(h)``: on the refine stream, 65 of
+#: the 74 sessions the five predicates glued answered nothing new
+PARITY_TWIN_PREDS = frozenset({"integer"})
 
 
 def half_terms(e) -> Optional[list]:
     """The terms ``u`` of a sum ``c0 + sum(c*u)`` whose Rational
-    coefficients (``c0`` and the ``c``) have least common denominator 2, a
-    "half sum" (``k/2 + 1/2``, ``(-1)**x/2 - 1/2``); None for any other
-    ``e``.  The syntactic test of the half-integer hook it replaces."""
+    coefficients (``c0`` and the ``c``) have least common denominator 2,
+    some ``c`` among them, a "half sum" (``k/2 + 1/2``, ``(-1)**x/2 -
+    1/2``, ``x/2 + y/2``); None for any other ``e``.  The syntactic test of
+    the half-integer hook it replaces, less the sums whose only half is
+    ``c0`` (``n + 1/2``: an integer plus a number that is none, which the
+    rows of Add decide)."""
     if not getattr(e, "is_Add", False):
         return None
     half = False
@@ -520,7 +530,8 @@ def half_terms(e) -> Optional[list]:
         if c.q != 1:
             if c.q != 2:
                 return None
-            half = True
+            if u is not None:
+                half = True
         if u is not None:
             if _is_number(u):
                 return None
@@ -917,6 +928,27 @@ def _declared_integer(x) -> bool:
     return bool(a0) and a0.get("integer") is True
 
 
+def _parity_terms(h, premised) -> bool:
+    """Whether every term ``u`` of the half sum ``h`` (:func:`half_terms`)
+    may be an integer of known parity: no number factor (``x/pi`` has
+    none: its form in LRA has the coefficient ``1/pi``, no parity row), and
+    every free symbol of ``u`` declared an integer or a free symbol of a
+    premised term (``premised``: arguments of :data:`BOUND_PREMISES`
+    atoms) that does not hold ``h`` (the atom on ``h`` itself, or on
+    ``floor(h)``, premises nothing about ``u``)."""
+    syms = set()
+    for t in premised:
+        if t != h and not t.has(h):
+            syms.update(t.free_symbols)
+    for u in half_terms(h):
+        if u.is_Mul and any(f.is_number for f in u.args):
+            return False
+        for x in u.free_symbols:
+            if x not in syms and not _declared_integer(x):
+                return False
+    return True
+
+
 def _bound_terms(e, bounded) -> list:
     """The ``u`` of the terms ``c*u`` (``c`` Rational, possibly 1; ``u`` no
     number) of ``e`` for which ``bounded(u)`` holds, if ``e`` is a sum
@@ -1002,22 +1034,15 @@ def _bound_twins(atoms, context=()) -> list:
                 # terms stay unlinked, as before (see "Integrality")
                 continue
             sums, shifts, halves = _bound_nodes(a.expr)
-            if PARITY and halves and a.pred in PARITY_PREDS:
+            if PARITY and halves and a.pred in PARITY_TWIN_PREDS:
                 # a half sum: parity decides its integrality, given its
                 # terms' parities; it and its terms are linked, which
                 # links even/odd to integrality atoms (see "Parity").  Its
                 # terms need a premise other than the atom on the sum
                 for h in halves:
-                    us = half_terms(h)
-                    other = set()
-                    for t in premised:
-                        if t != h:
-                            other.update(t.free_symbols)
-                    if all(other & u.free_symbols
-                           or any(_declared_integer(x) for x in u.free_symbols)
-                           for u in us):
+                    if _parity_terms(h, premised):
                         add(h)
-                        for u in us:
+                        for u in half_terms(h):
                             add(u)
             if a.pred in SIGN_PREDS:
                 # a bound of a sum decides order facts: a sign atom reads

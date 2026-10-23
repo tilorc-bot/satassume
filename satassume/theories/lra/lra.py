@@ -393,9 +393,14 @@ class LRATheory:
         self._ints_on: dict[int, list[int]] = {}
         self._int_lits: list[tuple[int, Fraction, Fraction, int]] = []
         # parity (satassume.theories.lra.parity): integrality atom -> its
-        # GF(2) row (vars, mask, kappa), and -> v for an atom "v in Z"
+        # GF(2) row (vars, mask, kappa), and -> v for an atom "v in Z";
+        # the number of asserted literals whose row has a half (a nonzero
+        # mask or kappa: only those can make a parity conflict, beyond a
+        # false atom of an integral form, which the bounds and the rows
+        # of the templates already see)
         self._par: dict[int, tuple] = {}
         self._unit: dict[int, int] = {}
+        self._halves = 0
         # _int_verdict's cache for Element bounds, keyed by the integrality
         # atom and the literals of the two bounds (a literal always sets the
         # same bound value), so its entries stay valid across levels and it
@@ -733,7 +738,7 @@ class LRATheory:
         var_of = self._term_var
         row = _parity.row_of(lin, var_of, k)
         if row is not None:
-            self._par[literal] = row
+            self._par[literal] = row if row[1] or row[2] else row + (False,)
             u = _parity.unit_of(lin, var_of, k)
             if u is not None:
                 self._unit[literal] = u
@@ -785,6 +790,8 @@ class LRATheory:
                 self._diseqs.pop()
             else:
                 self._int_lits.pop()
+                if len(e) > 1:
+                    self._halves -= 1
 
     # ------------------------------------------------------------------
     # asserting
@@ -872,7 +879,12 @@ class LRATheory:
         self._trail.append((_ASG, abs(literal)))
         v, m, k = it
         self._int_lits.append((v, m, k, literal))
-        self._trail.append((_INT,))
+        r = self._par.get(abs(literal))
+        if r is not None and len(r) == 3:
+            self._halves += 1
+            self._trail.append((_INT, 1))
+        else:
+            self._trail.append((_INT,))
         r = self._int_verdict(v, m, k)
         if r is not None and r[0] != (literal > 0):
             self.stats["conflicts"] += 1
@@ -944,7 +956,7 @@ class LRATheory:
                 if u is not None:
                     units.setdefault(u, lit)
                     continue            # its row is 0 = 0
-            rows.append((*r, lit))
+            rows.append((r[0], r[1], r[2], lit))
         if not rows:
             return None
         c = _parity.conflict(units, rows)
@@ -1215,7 +1227,7 @@ class LRATheory:
         self.stats["checks"] += 1
         conflict = self._simplex()
         if conflict is None and self._int_lits:
-            if self._par:
+            if self._halves:
                 conflict = self._parity()
             if conflict is None:
                 conflict = self._branch([BRANCH_BUDGET])

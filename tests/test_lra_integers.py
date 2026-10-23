@@ -175,9 +175,28 @@ def test_ground_integral_atoms():
     assert t.assert_lit(2) == (False, [-2])
 
 
+def test_parity_without_bounds():
+    """x in Z and x + 1/2 in Z: no bound ends branch and bound, the parity
+    check (theories/lra/parity.py, #315) finds the conflict at once."""
+    t = _theory({1: Integral({"x": 1}), 2: Integral({"x": 1}, F(1, 2))})
+    assert _assert(t, [1, 2]) is None
+    assert t.check() == (False, [-2, -1])
+    assert t.stats["branches"] == 0 and t.stats["parity"] == 1
+    # x odd, (x + 1)/2 not in Z, y = x/2 + 1/2 - 1: as above, no bounds
+    t = _theory({1: Integral({"x": 1}), 2: Integral({"x": F(1, 2)}, F(-1, 2)),
+                 3: Integral({"x": F(1, 2)}, F(1, 2))})
+    assert _assert(t, [1, 2, -3]) is None
+    assert t.check() == (False, [-2, -1, 3])
+    t = _theory({1: Integral({"x": 1}), 2: Integral({"x": F(1, 2)}, F(-1, 2)),
+                 3: Integral({"x": F(1, 2)}, F(1, 2))})
+    assert _assert(t, [1, 2, 3]) is None
+    assert t.check()[0] is True
+
+
 def test_budget_gives_up_without_a_conflict(monkeypatch):
-    """x in Z and x + 1/2 in Z is infeasible, but no bound ends the search."""
-    atoms = {1: Integral({"x": 1}), 2: Integral({"x": 1}, F(1, 2))}
+    """x in Z and x + 1/3 in Z is infeasible, but no bound ends the search
+    (a denominator 3 has no parity row)."""
+    atoms = {1: Integral({"x": 1}), 2: Integral({"x": 1}, F(1, 3))}
     t = _theory(atoms)
     assert _assert(t, [1, 2]) is None
     assert t.check()[0] is True

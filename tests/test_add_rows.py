@@ -117,8 +117,10 @@ def test_the_pattern_keys_are_legacys():
     # (their integer bounds are the relation glue's, relations.BOUND_LINKS)
     for e in (3 + 2*n, 1 + 2/x):
         assert run(rows_template(), e)[1] == {add(e)}
+    # nor has n/2 + 1/2 since #315 step 3 (its integrality is the parity
+    # check's, relations.PARITY and theories/lra/parity.py)
     e = n/2 + S.Half
-    assert run(rows_template(), e)[1] == {add(e), ('add_half', 1, (1,), ())}
+    assert run(rows_template(), e)[1] == {add(e)}
     e = I*x + I
     assert run(rows_template(), e)[1] == {add(e), ('add_imag', (1,), frozenset({1}), ())}
 
