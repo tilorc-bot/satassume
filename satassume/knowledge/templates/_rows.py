@@ -165,6 +165,8 @@ dividend = Symbol('dividend')
 divisor = Symbol('divisor')
 #: the period of ``principal_branch(argument, period)`` (SymPy's name)
 period = Symbol('period')
+#: the branch of ``LambertW(argument, branch)``
+branch = Symbol('branch')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')
