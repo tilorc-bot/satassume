@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sympy import Q, cos, cot, csc, sec, sin, tan
 
-from ._rows import closed, f, for_all, x
+from ._rows import argument, closed, f, for_all, x
 
 RULES = (
     # Entire
@@ -23,7 +23,7 @@ RULES = (
     # Real where finite
     #     f(conj z) == conj f(z), and a number wherever it is finite (zoo at a pole)
     for_all((tan, cot, sec, csc),
-        Q.finite(f(x)) >> (closed(f, Q.real) & closed(f, Q.complex))),
+        Q.finite(f(argument)) >> (closed(f, Q.real) & closed(f, Q.complex))),
 
     # Imaginary axis
     #     sin(I*t) == I*sinh(t), tan(I*t) == I*tanh(t), cot(I*t) == -I*coth(t),

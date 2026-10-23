@@ -23,7 +23,7 @@ from sympy import (  # noqa: E402
 
 from satassume.knowledge.templates import ROW_FAMILIES, _common, wiring  # noqa: E402
 from satassume.knowledge.templates._rows import (  # noqa: E402
-    by_function, closed, f, for_all, rows_of, rules, x,
+    argument, by_function, closed, f, for_all, rows_of, rules, x,
 )
 from satassume.knowledge.templates.functions import shifted  # noqa: E402
 
@@ -109,7 +109,7 @@ def test_closed_sets_join_with_and_and_take_a_condition():
     assert _specs(tan, closed(tan, Q.real) & closed(tan, Q.complex)) == [
         ([(0, 'complex', True)], [(1, 'complex', True)]),
         ([(0, 'real', True)], [(1, 'real', True)])]
-    rs = Q.finite(tan(x)) >> (closed(tan, Q.real) & closed(tan, Q.complex))
+    rs = Q.finite(tan(argument)) >> (closed(tan, Q.real) & closed(tan, Q.complex))
     assert _specs(tan, rs) == sorted([
         (sorted([(0, 'real', True), (1, 'finite', True)]), [(1, 'real', True)]),
         (sorted([(0, 'complex', True), (1, 'finite', True)]), [(1, 'complex', True)])])
@@ -123,15 +123,15 @@ def _each_way(specs):
 
 
 def test_equivalent_is_a_rule_each_way():
-    zero = Equivalent(Q.zero(tan(x)), Q.zero(x))
-    assert _each_way(_specs(tan, Q.extended_real(x) >> zero)) == [
+    zero = Equivalent(Q.zero(tan(argument)), Q.zero(argument))
+    assert _each_way(_specs(tan, Q.extended_real(argument) >> zero)) == [
         ([(0, 'extended_real', True), (0, 'zero', True)], [(1, 'zero', True)]),
         ([(0, 'extended_real', True), (1, 'zero', True)], [(0, 'zero', True)])]
     # a row without premises, and one joined with other rows under a condition
     assert _each_way(_specs(tan, zero)) == [
         ([(0, 'zero', True)], [(1, 'zero', True)]), ([(1, 'zero', True)], [(0, 'zero', True)])]
-    assert len(_specs(tan, Q.real(x) >> (closed(tan, Q.complex) & zero))) == 3
-    assert len(_specs(tan, Q.real(x) >> (zero & closed(tan, Q.complex)))) == 3
+    assert len(_specs(tan, Q.real(argument) >> (closed(tan, Q.complex) & zero))) == 3
+    assert len(_specs(tan, Q.real(argument) >> (zero & closed(tan, Q.complex)))) == 3
 
 
 def test_an_inequality_with_an_integer_is_a_fact_about_x_minus_c():
@@ -188,14 +188,16 @@ def test_a_condition_without_parentheses_is_refused():
 
 def test_for_all_states_rows_for_each_function():
     st = (for_all((sec, csc),
-              Q.complex(x) >> ~Q.zero(f(x)),
+              Q.complex(argument) >> ~Q.zero(f(argument)),
               closed(f, Q.real)),
           for_all((sec,),
-              Q.zero(x) >> Q.positive(f(x))))
+              Q.zero(argument) >> Q.positive(f(argument))))
     assert by_function(st) == (
-        (sec, (Q.complex(x) >> ~Q.zero(sec(x)), Q.real(x) >> Q.real(sec(x)),
-               Q.zero(x) >> Q.positive(sec(x)))),
-        (csc, (Q.complex(x) >> ~Q.zero(csc(x)), Q.real(x) >> Q.real(csc(x)))))
+        (sec, (Q.complex(argument) >> ~Q.zero(sec(argument)),
+               Q.real(argument) >> Q.real(sec(argument)),
+               Q.zero(argument) >> Q.positive(sec(argument)))),
+        (csc, (Q.complex(argument) >> ~Q.zero(csc(argument)),
+               Q.real(argument) >> Q.real(csc(argument)))))
 
 
 @pytest.mark.parametrize("make, match", [
@@ -213,8 +215,8 @@ def test_for_all_statements_that_are_refused(make, match):
 
 
 def test_a_table_is_its_rows_in_order():
-    assert rows_of((closed(sec, Q.real), (Q.zero(x) >> Q.zero(sec(x)),))) == [
-        Q.real(x) >> Q.real(sec(x)), Q.zero(x) >> Q.zero(sec(x))]
+    assert rows_of((closed(sec, Q.real), (Q.zero(argument) >> Q.zero(sec(argument)),))) == [
+        Q.real(argument) >> Q.real(sec(argument)), Q.zero(argument) >> Q.zero(sec(argument))]
 
 
 y = Symbol('y')

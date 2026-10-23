@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from sympy import Equivalent, Q, cosh, coth, csch, sech, sinh, tanh
 
-from ._rows import closed, f, for_all, x
+from ._rows import argument, closed, f, for_all, x
 
 RULES = (
     # Entire
@@ -20,7 +20,7 @@ RULES = (
     # Complex where finite
     #     meromorphic: a number wherever it is finite (zoo at a pole)
     for_all((tanh, coth, sech, csch),
-        Q.finite(f(x)) >> closed(f, Q.complex)),
+        Q.finite(f(argument)) >> closed(f, Q.complex)),
 
     # Sign of the argument
     #     odd and increasing on the extended reals: sinh(+-oo) == +-oo,

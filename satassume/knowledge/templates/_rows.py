@@ -67,8 +67,8 @@ expression and not of its value).
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
 of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
-``P(x) >> P(f(x))``; ``a & b`` joins rows, ``cond >> (a & b)`` adds
-``cond`` to the premises of each.  The module holds rows only:
+``P(argument) >> P(f(argument))``; ``a & b`` joins rows, ``cond >> (a & b)``
+adds ``cond`` to the premises of each.  The module holds rows only:
 :mod:`.wiring` compiles them (:func:`rules`) into the index specs of
 :mod:`._common` (the arguments from 0, then the node: argument 0 and
 node 1 for one argument, then the terms ``x - c`` for the ``c`` the
@@ -152,10 +152,14 @@ class Constant(Symbol):
     __slots__ = ()
 
 
-#: the argument of every row
+#: plain symbols for rows written outside the family modules (the tests):
+#: ``x``, and ``y`` for a second argument
 x = Symbol('x')
-#: the second argument of a row about a function of two arguments
 y = Symbol('y')
+#: the arguments of the families' rows, named by their role (#299): the
+#: argument of a function of one argument, and the one a function of several
+#: is a function of (:func:`closed` states its rows on it)
+argument = Symbol('argument')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')
@@ -290,8 +294,9 @@ def _flat(item):
 
 
 def closed(f, pred) -> Rows:
-    """``f`` maps the set ``pred`` into itself: ``pred(x) -> pred(f(x))``."""
-    return Rows([pred(x) >> pred(f(x))])
+    """``f`` maps the set ``pred`` into itself: ``pred(argument) ->
+    pred(f(argument))``."""
+    return Rows([pred(argument) >> pred(f(argument))])
 
 
 def rows_of(table):
