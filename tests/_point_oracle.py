@@ -2,13 +2,20 @@
 C-NOTMPL): the three-valued truth of a predicate for a concrete value
 (SymPy's facts of an atom, else ``evalf`` at 50 digits) and Kleene
 evaluation of the emitted formulas.  Shared by ``test_notmpl_elementary``
-and ``test_notmpl_special``."""
+and ``test_notmpl_special``.
+
+Where an infinity, ``nan`` or a pole is involved, values and their facts
+come from the table of docs/special-values.md (``_special_values``; #247),
+not from SymPy's evaluation; SymPy's value at a special point without a
+row is a candidate, reported apart by :func:`check`."""
 from itertools import product
 
 import mpmath
 from sympy import AccumBounds, E, I, Rational, S, oo, pi, sqrt, zoo
 
 from satassume.knowledge.templates import registry
+
+from _special_values import evaluate as value_at, facts as special_facts, kind as special_kind
 from satassume.sat.formula import And, Implies, Not, Or, P
 
 _EPS0 = mpmath.mpf(10) ** -40
@@ -21,8 +28,8 @@ def _value(v, pred):
     digits cannot tell: exact zeros, integrality, algebraicity)."""
     if pred in ('polar', 'commutative'):
         return None
-    if v is S.NaN:
-        return None if pred in ('finite', 'infinite') else False
+    if special_kind(v) not in (None, 'num'):
+        return special_facts(v, pred)
     if not getattr(v, 'is_number', False) or v.has(AccumBounds, S.NaN):
         return None
     if v.is_Atom or v.has(oo, -oo, zoo):
@@ -83,25 +90,34 @@ POOL = [S(0), S(1), S(-1), S(2), S(-2), S.Half, -S.Half, Rational(3, 2), Rationa
 POOL2 = [S(0), S(1), S(-1), S(2), S(-3), S.Half, pi, I, 1 + I, oo, -oo, zoo]
 
 
-def check(expr, pool=None, pool2=None):
+def check(expr, pool=None, pool2=None, candidates=False):
+    """The (assignment, formula) pairs of ``expr``'s template formulas
+    that are false at a point.  With ``candidates``, ``(wrong,
+    candidates)``: a formula false only with SymPy's value at a special
+    point without a row in the table is a candidate (#247)."""
     facts = registry.facts_for(expr)
     assert facts, expr
     syms = sorted(expr.free_symbols, key=str)
-    wrong = []
+    wrong, cands = [], []
     for values in product((pool or POOL) if len(syms) == 1 else (pool2 or POOL2),
                           repeat=len(syms)):
         asg = dict(zip(syms, values))
         cache = {}
 
-        def val(atom):
+        def val(atom, loose=False):
             if atom not in cache:
                 # SymPy and mpmath raise more than these at some special
                 # points (KeyError, UnboundLocalError): no value, uncheckable
                 try:
-                    v = atom.expr.xreplace(asg).doit()
-                    cache[atom] = _value(v, atom.pred)
+                    v, source = value_at(atom.expr, asg, doit=True)
+                    cache[atom] = (_value(v, atom.pred), source)
                 except Exception:
-                    cache[atom] = None
-            return cache[atom]
-        wrong += [(asg, f) for f in facts if _kleene(f, val) is False]
-    return wrong
+                    cache[atom] = (None, None)
+            truth, source = cache[atom]
+            return None if source == 'candidate' and not loose else truth
+        for f in facts:
+            if _kleene(f, val) is False:
+                wrong.append((asg, f))
+            elif _kleene(f, lambda a: val(a, True)) is False:
+                cands.append((asg, f))
+    return (wrong, cands) if candidates else wrong + cands

@@ -21,6 +21,8 @@ from satassume.knowledge.domain import kept_product
 from satassume.knowledge.templates.core import ipi_split
 from satassume.sympy_api import ask
 
+from _special_values import point_value
+
 x, y = symbols("x y")
 A, B = symbols("A B", commutative=False)
 
@@ -95,9 +97,8 @@ VALS = [S(0), S(1), S(-1), S(2), R(1, 2), R(-2, 3), oo, -oo, zoo, I, 1 + I, sqrt
 
 
 def _value(e, g):
-    def build(t):
-        return t if not t.args else t.func(*[build(a) for a in t.args])
-    return build(e.xreplace(g))
+    # built bottom-up; values at infinities from docs/special-values.md (#247)
+    return point_value(e, g)
 
 
 def _holds(asm, g):

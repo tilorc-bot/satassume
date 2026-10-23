@@ -423,6 +423,8 @@ from sympy.logic.boolalg import And                                     # noqa: 
 from satassume import DictCache, Engine                                 # noqa: E402
 from satassume.sympy_api import ask                                     # noqa: E402
 
+from _special_values import point_value                                 # noqa: E402
+
 x, y = symbols("x y")
 h = Rational(1, 2)
 
@@ -493,8 +495,9 @@ def _holds(t, env):
     if t[0] == "not":
         return not _holds(t[1], env)
     if t[0] == "u":
-        return _unary(t[1], t[2].subs(env))
-    return _rel(t[1], S(t[2]).subs(env), S(t[3]).subs(env))
+        return _unary(t[1], point_value(t[2], env))
+    # values at infinities from docs/special-values.md (#247)
+    return _rel(t[1], point_value(S(t[2]), env), point_value(S(t[3]), env))
 
 
 def _to_sympy(t):

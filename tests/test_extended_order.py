@@ -28,6 +28,8 @@ from satassume.theories.lra import constfield as cf
 from satassume.theories.lra import lra_adapter as ad
 from satassume.sympy_api import ask
 
+from _special_values import point_value
+
 x, y = symbols("x y")
 xr = symbols("xr", real=True)
 
@@ -245,7 +247,8 @@ def _holds(t, env):
     if tag == "u":
         return _unary(t[1], env[t[2]])
     _, op, a, b = t
-    a, b = S(a).subs(env), S(b).subs(env)
+    # values at infinities from docs/special-values.md (#247)
+    a, b = point_value(S(a), env), point_value(S(b), env)
     if op in ("eq", "ne"):
         return (a == b) == (op == "eq")         # value equality, any domain
     return _order(op, a, b)
