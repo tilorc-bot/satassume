@@ -18,7 +18,7 @@ from satassume.sympy_api import ask  # noqa: E402
 
 from _special_values import directed, evaluate, facts, kind, same_value  # noqa: E402
 
-x, y = symbols("x y")
+x, y, z = symbols("x y z")
 h = S.Half
 
 # (row, expression, point, the table's value)
@@ -30,6 +30,8 @@ ROWS = [
     ("A1", x + I, {x: -oo}, -oo),
     ("A2", x + y, {x: oo, y: oo}, oo),
     ("A2", x + y, {x: oo, y: -oo}, nan),
+    ("A2", I*x + I*y + z, {x: oo, y: -oo, z: oo}, nan),
+    ("A2", I*x + y + z, {x: oo, y: oo, z: -oo}, nan),
     ("A3", x + 1, {x: zoo}, zoo),
     ("A3", x + y, {x: zoo, y: oo}, nan),
     ("A3", x + y, {x: zoo, y: zoo}, nan),
@@ -65,6 +67,8 @@ ROWS = [
     ("P5", Pow(1, y, evaluate=False), {y: oo}, nan),
     ("P5", (-1)**y, {y: oo}, nan),
     ("P5", I**y, {y: oo}, nan),
+    ("P5", x**y, {x: Float(1), y: oo}, nan),
+    ("P5", x**y, {x: Float(-1), y: -oo}, nan),
     ("P6", x**y, {x: oo, y: oo}, oo),
     ("P6", x**y, {x: oo, y: -oo}, 0),
     ("P6", x**y, {x: -oo, y: oo}, zoo),
@@ -148,7 +152,7 @@ VOCAB = ['algebraic', 'antihermitian', 'complex', 'composite', 'even',
          'prime', 'rational', 'real', 'transcendental', 'zero']
 
 
-@pytest.mark.parametrize("v", [oo, -oo, zoo, directed(I), directed(1 - I)], ids=str)
+@pytest.mark.parametrize("v", [oo, -oo, zoo, directed(I), directed(1 - I), -oo*I], ids=str)
 def test_facts_agree_with_sympy_where_it_decides(v):
     """V1-V3: the oracles that read ``is_*`` of a table value
     (``point_value``) get the table's facts."""

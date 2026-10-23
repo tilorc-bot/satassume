@@ -41,7 +41,8 @@ examples of every row against SymPy.
 
 `commutative` is True of every infinity (design.md, "Non-commutative
 symbols"). `polar` is not stated. Two directed infinities are equal when
-their directions are; `zoo` and a directed infinity are not compared.
+their directions are; `zoo` is unequal to `oo` and `-oo`, and is not
+compared with a directed infinity off the real line.
 
 ## Rows
 
@@ -51,7 +52,7 @@ Every row holds for any order of the arguments of `Add` and `Mul`.
 |---|---|---|---|
 | N1 | any function, `Add`, `Mul`, `Pow` with a `nan` argument | `nan` | nan is no number, so a function of it has no value (design.md; #189) |
 | A1 | an infinity of direction `d` plus finite numbers | the same infinity | `t*d + c` has direction `d` as `t -> oo`: a finite summand does not move an infinity (`oo + I` is `oo`) |
-| A2 | infinities of directions `d1`, `d2`, ... | the same infinity if the directions are equal; `nan` if two are opposite (`oo - oo`); no row otherwise | the limit of `t*d + s*d`; `t - s` has no limit as `t, s -> oo` independently |
+| A2 | infinities of directions `d1`, `d2`, ... | `nan` if two of them are opposite (`oo - oo`); else the same infinity if all directions are equal; no row otherwise | the limit of `t*d + s*d`; `t - s` has no limit as `t, s -> oo` independently |
 | A3 | `zoo` plus finite numbers; `zoo` plus another infinity | `zoo`; `nan` | on the Riemann sphere `oo + c = oo` for finite `c`, `oo + oo` is undefined |
 | M1 | `0` times an infinity | `nan` | the indeterminate form `0*oo` |
 | M2 | nonzero finite numbers (product `c`) times directed infinities `oo*d1`, ... | the directed infinity of direction `c*d1*...` (`-2*oo = -oo`, `I*oo = oo*I`) | `|t*s*c*d1*d2|` grows without bound with a fixed direction |
@@ -60,10 +61,10 @@ Every row holds for any order of the arguments of `Add` and `Mul`.
 | P2 | `b**0`, `b` any value but `nan` (`oo**0`, `zoo**0`, `zoo**0.0`) | `1` | the empty product; `0**0 = 1` (design.md); `0.0` is the number 0 |
 | P3 | an infinity `b` to a real finite nonzero `e` | `0` for `e < 0`; for `e > 0`: `zoo` for `b = zoo`, else the directed infinity of direction `d**e` (`(-oo)**2 = oo`, `(-oo)**3 = -oo`, `sqrt(-oo) = oo*I`) | `(t*d)**e = t**e * d**e` for real `t > 0` and real `e`, principal branch |
 | P4 | a finite `b` to `oo` or `-oo`, `|b| != 1` | the limit of `b**t` as real `t -> +oo` (or `-oo`): `0` where `|b**t| -> 0`; where it grows, `oo` for `b > 0` and `zoo` otherwise (`(-2)**oo = zoo`, `(-3/2)**(-oo) = 0`, `(-1/2)**(-oo) = zoo`); `0**oo = 0`, `0**(-oo) = zoo` | `|b**t| = |b|**t`; for `b` not positive the argument `t*arg(b)` turns, so the only limit of a growing modulus is `zoo`; `0**t = zoo` for every `t < 0` (P1) |
-| P5 | `b**oo`, `b**(-oo)` with `|b| = 1` | `nan` | `b != 1`: `b**t` turns on the unit circle, no limit. `b = 1`: `1**oo` has no value by satassume's convention (design.md: "`1**e` rules need a finite exponent"), though `1**t = 1` for every `t` |
+| P5 | `b**oo`, `b**(-oo)` with `|b| = 1` (also `1.0`) | `nan` | `b != 1`: `b**t` turns on the unit circle, no limit. `b = 1`: a convention, not a limit (`1**t = 1` for every `t`): the indeterminate form `1**oo`, as SymPy and the templates' comments write it (`templates/core.py`: "`1**oo` is nan"); see "Choices" |
 | P6 | an infinity `b` to `oo` or `-oo` | `0` for `-oo`; for `oo`: `oo` if `b = oo`, else `zoo` | `|b**t| = |b|**t`; the argument of `(-s)**t` turns |
 | F1 | `exp` of an infinity | `oo -> oo`, `-oo -> 0`; `oo*d -> zoo` for `re(d) > 0`, `0` for `re(d) < 0`, `nan` for `re(d) = 0`; `zoo -> nan` | `|exp(t*d)| = exp(t*re(d))`, its argument `t*im(d)` turns; `exp` has an essential singularity at infinity |
-| F2 | `log(0)`; `log` of an infinity | `zoo`; `oo` for a directed infinity (`log(-oo) = oo`), `zoo` for `zoo` | `log|z|` grows without bound, `arg(z)` stays bounded: the direction is 1 (A1); `log(0) = zoo` as `1/0 = zoo` |
+| F2 | `log` of a directed infinity; `log(0)`, `log(zoo)` | `oo` (`log(-oo) = oo`); `zoo`, `zoo` | directed: `log|z|` grows without bound and `arg(z)` stays bounded, so the direction is 1 (A1). `log(0)` and `log(zoo)`: satassume's documented convention (`templates/exp_log.py`: "`log(0) == zoo`", "`log(zoo) == zoo`"), not a limit; see "Choices" |
 | F3 | `Abs` of an infinity | `oo` | `|z|` grows without bound |
 
 A node at a special point that no row covers has no table value: its SymPy
@@ -94,5 +95,11 @@ positive" (`templates/exp_log.py`, which writes `log(-oo) == oo` after
 SymPy) would be unsound at `-oo`. SymPy itself mixes the two (`oo + I` no
 extended real, `log(-oo) = oo`).
 
-P5 at `b = 1` follows satassume's documented convention (`1**oo` has no
-value) rather than the limit `1`.
+Two rows follow satassume's documented conventions rather than a limit:
+
+- P5 at `b = 1`: `1**oo` has no value, although `1**t = 1` for every `t`.
+- F2 at 0 and at `zoo`: `log(0) = log(zoo) = zoo`. By the limit with the
+  directions of A1, `log(0)` would be `-oo` (`log|z| -> -oo`, `arg(z)`
+  bounded) and `log(zoo)` would be `oo`. With `log(0) = -oo` the `log` rule
+  `zero(x) -> ~extended_real(log(x))` (`templates/exp_log.py`) fails at
+  `x = 0` (3 failures in `test_templates.py`).

@@ -48,10 +48,12 @@ def direction(v):
         return S.One
     if v is S.NegativeInfinity:
         return S.NegativeOne
-    if isinstance(v, Mul) and len(v.args) == 2 and S.Infinity in v.args:
-        d = v.args[0] if v.args[1] is S.Infinity else v.args[1]
-        if not is_special(d) and d.is_number and d.is_extended_real is False:
-            return d
+    if isinstance(v, Mul) and len(v.args) == 2:
+        for i, s in ((0, 1), (0, -1), (1, 1), (1, -1)):
+            if v.args[i] is (S.Infinity if s > 0 else S.NegativeInfinity):
+                d = v.args[1 - i]
+                if not is_special(d) and d.is_number and d.is_extended_real is False:
+                    return s*d
     return None
 
 
@@ -136,12 +138,11 @@ def _add(vals):
         raise _NoRow
     if S.ComplexInfinity in inf:
         return S.ComplexInfinity if len(inf) == 1 else S.NaN   # A3
-    d = direction(inf[0])
-    same = [_same_direction(direction(v), d) for v in inf[1:]]
-    if all(same):
-        return inf[0]                                      # A1, A2
-    if any(_sign((direction(v)/d).expand()) == -1 for v in inf[1:]):
+    ds = [direction(v) for v in inf]
+    if any(_sign((d1/d2).expand()) == -1 for d1 in ds for d2 in ds):
         return S.NaN                                       # A2: oo - oo
+    if all(_same_direction(d, ds[0]) for d in ds[1:]):
+        return inf[0]                                      # A1, A2
     raise _NoRow
 
 
@@ -194,7 +195,7 @@ def _pow(b, e):
             if b.is_zero:
                 return S.Zero if up else S.ComplexInfinity  # P4
             m = Abs(b)
-            if m == 1:
+            if (m - 1).is_zero:                            # also 1.0
                 return S.NaN                               # P5
             gt = m > 1
             if gt not in (S.true, S.false):
@@ -343,4 +344,6 @@ def same_value(a, b):
     da, db = direction(a), direction(b)
     if da is not None and db is not None:
         return _same_direction(da, db)
+    if S.ComplexInfinity in (a, b) and (da is not None or db is not None):
+        return None if kind(a) == "dir" or kind(b) == "dir" else False
     return a == b
