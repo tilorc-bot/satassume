@@ -87,7 +87,7 @@ def test_every_compiled_rule_is_used():
     gen = generator(name, arity, terms, specs, FAMILY, schemas)
     rules = [_single(gen, schema=s) for s in gen.schemas]
     rules += [_single(gen, spec=sp) for sp in gen.specs[2]]
-    assert len(gen.schemas) == 50 and len(gen.specs[2]) == 29
+    assert len(gen.schemas) == 51 and len(gen.specs[2]) == 29
     nodes = [e for n in ARITIES for e in pattern_nodes(n)]
     no_rule, no_clause = set(range(len(rules))), set(range(len(rules)))
     try:
@@ -125,6 +125,16 @@ def test_the_blocks_of_a_node():
     out, _ = run(rows_template(), Mul(*xs))
     assert len(out) == 2 and isinstance(out[0], Compiled) and not isinstance(out[1], Compiled)
     assert len(run(rows_template(), Mul(*xs[:32]))[0]) == 1
+
+
+def test_a_node_of_one_factor_is_that_factor():
+    # SymPy builds no product of one factor, but a node built by hand is
+    # its factor: a prime, not composite (the rows of two primes or more)
+    from satassume.sympy_api import ask
+    from sympy import Q, Symbol
+    z = Symbol('z')
+    assert ask(Q.composite(Basic.__new__(Mul, z)), Q.prime(z)) is None
+    assert ask(Q.composite(Basic.__new__(Mul, z, z)), Q.prime(z)) is True
 
 
 def test_mul_is_compiled_on_its_own_first_use():

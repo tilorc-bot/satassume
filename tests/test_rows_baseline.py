@@ -128,12 +128,17 @@ def mul_nodes(head=Mul):
     ``-1``, an infinity, and ``pi``, which is no coefficient), each with
     every factor kept (``evaluate=False``), and SymPy's ``3*x0*x1`` (with the
     block of its factor set ``(3, x0*x1)``) and ``x0/x1**2`` (with
-    ``a/v**k``)."""
-    xs = [Symbol(f'x{i}') for i in range(7)]
+    ``a/v**k``), ``I*pi*x0/3`` (with the factor set of ``I*pi*c*s``); and of
+    12 and 32 factors (up to the ``at_most=32`` of the rows that past it are
+    one formula, which is not frozen here), so that a narrower row is seen
+    (a node of one factor, which SymPy does not build or print, is in
+    ``tests/test_mul_rows.py``)."""
+    xs = [Symbol(f'x{i}') for i in range(32)]
     coefficients = (S(2), S(-3), S.Half, Rational(-3, 2), Float(2.5), S.NegativeOne, oo, pi)
     return (*(head(*xs[:n], evaluate=False) for n in range(2, 8)),
             *(head(c, xs[0], evaluate=False) for c in coefficients),
-            3*xs[0]*xs[1], xs[0]/xs[1]**2)
+            3*xs[0]*xs[1], xs[0]/xs[1]**2, I*pi*xs[0]/3,
+            *(head(*xs[:n], evaluate=False) for n in (12, 32)))
 
 
 def add_nodes(head=Add):
@@ -142,12 +147,19 @@ def add_nodes(head=Add):
     integer, a rational, a float, ``pi``, ``I``, ``oo``, ``-oo``, ``zoo``),
     each with every term kept (``evaluate=False``), and SymPy's sums of a
     special shape (half-integer coefficients, ``c0 + c1*u``, ``c0 +
-    c1/v``, ``I*(c_1*x_1 + ...)``)."""
-    xs = [Symbol(f'x{i}') for i in range(7)]
+    c1/v``, ``I*(c_1*x_1 + ...)``); and of 12 and 32 terms (up to the
+    ``at_most=32`` of the rows that past it are one formula, which is not
+    frozen here), and ``oo`` and 5 or 6 terms (around the ``at_most=6`` of
+    the rows of a constant), so that a narrower row is seen (a node of one
+    term, which SymPy does not build or print, is in
+    ``tests/test_add_rows.py``)."""
+    xs = [Symbol(f'x{i}') for i in range(32)]
     constants = (S(2), S(-3), S.Half, Float(2.5), pi, I, oo, -oo, zoo)
     return (*(head(*xs[:n], evaluate=False) for n in range(2, 8)),
             *(head(c, xs[0], evaluate=False) for c in constants),
-            xs[0]/2 + xs[1]/2 + S.Half, 2*xs[0] + 3, 1 + 2/xs[0], I*xs[0] - 2*I*xs[1] + I)
+            xs[0]/2 + xs[1]/2 + S.Half, 2*xs[0] + 3, 1 + 2/xs[0], I*xs[0] - 2*I*xs[1] + I,
+            *(head(*xs[:n], evaluate=False) for n in (12, 32)),
+            *(head(oo, *xs[:n], evaluate=False) for n in (5, 6)))
 
 
 #: the families whose rows have shapes or a star, each with the nodes of
