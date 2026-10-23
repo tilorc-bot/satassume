@@ -160,6 +160,9 @@ y = Symbol('y')
 #: argument of a function of one argument, and the one a function of several
 #: is a function of (:func:`closed` states its rows on it)
 argument = Symbol('argument')
+#: the arguments of ``Mod(dividend, divisor)``
+dividend = Symbol('dividend')
+divisor = Symbol('divisor')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')

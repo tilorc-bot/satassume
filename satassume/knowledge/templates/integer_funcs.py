@@ -15,12 +15,12 @@ from __future__ import annotations
 from sympy import Equivalent, Mod, Q, ceiling, factorial, floor
 from sympy.functions.elementary.integers import RoundFunction
 
-from ._rows import closed, f, for_all, x, y
+from ._rows import argument, closed, dividend, divisor, f, for_all
 
 RULES = (
     # Finite only at a finite argument
     for_all((RoundFunction,),
-        Equivalent(Q.finite(f(x)), Q.finite(x))),
+        Equivalent(Q.finite(f(argument)), Q.finite(argument))),
 
     # Extended real and complex
     #     each part is rounded: floor(1 + I/2) == 1
@@ -31,15 +31,15 @@ RULES = (
     #     a real value is an integer (floor(1 + I/2) == 1 is real; floor(oo)
     #     == oo is not); a non-real argument may give an integer
     for_all((RoundFunction,),
-        Q.real(f(x)) >> Q.integer(f(x))),
+        Q.real(f(argument)) >> Q.integer(f(argument))),
 
     # The argument at an integer
     #     floor(n) == ceiling(n) == n: the same parity and sign
     for_all((RoundFunction,),
-        Q.integer(x) >> (
-            Equivalent(Q.even(f(x)), Q.even(x))
-            & Equivalent(Q.positive(f(x)), Q.positive(x))
-            & Equivalent(Q.negative(f(x)), Q.negative(x)))),
+        Q.integer(argument) >> (
+            Equivalent(Q.even(f(argument)), Q.even(argument))
+            & Equivalent(Q.positive(f(argument)), Q.positive(argument))
+            & Equivalent(Q.negative(f(argument)), Q.negative(argument)))),
 
     # Rounds down
     #     floor(x) <= x, and floor(x) >= 0 for x >= 0
@@ -56,17 +56,17 @@ RULES = (
     # Integer at a natural number
     #     n! == 1*2*...*n, and 0! == 1
     for_all((factorial,),
-        (Q.integer(x) & Q.nonnegative(x)) >> Q.integer(f(x))),
+        (Q.integer(argument) & Q.nonnegative(argument)) >> Q.integer(f(argument))),
 
     # Positive on the nonnegatives
     #     factorial(x) == gamma(x + 1) > 0 for x >= 0
     for_all((factorial,),
-        Q.nonnegative(x) >> Q.positive(f(x))),
+        Q.nonnegative(argument) >> Q.positive(f(argument))),
 
     # Odd at 0
     #     0! == 1
     for_all((factorial,),
-        Q.zero(x) >> Q.odd(f(x))),
+        Q.zero(argument) >> Q.odd(f(argument))),
 
     # Composite at a composite
     #     n! for a composite n >= 4 has the factor 2 and is larger than 2
@@ -77,29 +77,33 @@ RULES = (
     #     n! has the factor 2 for an integer n >= 2, that is a prime or a
     #     composite (the rule base: an even positive number is one of them)
     for_all((factorial,),
-        Q.prime(x) >> Q.even(f(x)),
-        Q.composite(x) >> Q.even(f(x))),
+        Q.prime(argument) >> Q.even(f(argument)),
+        Q.composite(argument) >> Q.even(f(argument))),
 
     # Real and nonzero off the integers
     #     factorial(x) == gamma(x + 1), which has no zero and poles only at
     #     the integers x < 0
     for_all((factorial,),
-        (Q.noninteger(x) & Q.finite(x)) >> (Q.real(f(x)) & ~Q.zero(f(x)))),
+        (Q.noninteger(argument) & Q.finite(argument)) >> (
+            Q.real(f(argument)) & ~Q.zero(f(argument)))),
 
     # Pole at a negative integer
     #     the value is zoo
     for_all((factorial,),
-        (Q.integer(x) & Q.negative(x)) >> (Q.infinite(f(x)) & ~Q.extended_real(f(x)))),
+        (Q.integer(argument) & Q.negative(argument)) >> (
+            Q.infinite(f(argument)) & ~Q.extended_real(f(argument)))),
 
     # Integer and rational at a nonzero divisor
     #     Mod(p, q) == p - q*floor(p/q), and floor(p/q) is an integer
     for_all((Mod,),
-        (Q.integer(x) & Q.integer(y) & ~Q.zero(y)) >> Q.integer(f(x, y)),
-        (Q.rational(x) & Q.rational(y) & ~Q.zero(y)) >> Q.rational(f(x, y))),
+        (Q.integer(dividend) & Q.integer(divisor) & ~Q.zero(divisor))
+        >> Q.integer(f(dividend, divisor)),
+        (Q.rational(dividend) & Q.rational(divisor) & ~Q.zero(divisor))
+        >> Q.rational(f(dividend, divisor))),
 
     # The sign of the divisor
     #     Mod(p, q) is in [0, q) for q > 0 and in (q, 0] for q < 0
     for_all((Mod,),
-        (Q.real(x) & Q.positive(y)) >> Q.nonnegative(f(x, y)),
-        (Q.real(x) & Q.negative(y)) >> Q.nonpositive(f(x, y))),
+        (Q.real(dividend) & Q.positive(divisor)) >> Q.nonnegative(f(dividend, divisor)),
+        (Q.real(dividend) & Q.negative(divisor)) >> Q.nonpositive(f(dividend, divisor))),
 )
