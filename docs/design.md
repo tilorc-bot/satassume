@@ -352,8 +352,8 @@ decision that should be visible in one place.
 
 `registry.py` maps SymPy classes to template functions along the MRO;
 `atoms.py` gives unit facts for symbols and fixed-value atoms, `core.py`
-covers `Add` and `Mul` (and the rules of `Pow` that are not rows: its rows
-are `power.py`, #294), `functions.py` the elementary functions
+covers `Add` (and the rules of `Mul` and `Pow` that are not rows: their
+rows are `mul.py`, with a star, #299, and `power.py`, #294), `functions.py` the elementary functions
 (with the reciprocal and inverse trigonometric and hyperbolic ones, the
 polar functions and `Mod`), rounding and `factorial`, `selection.py` the
 nodes whose value is one of given expressions (`Max`, `Min`, `Piecewise`

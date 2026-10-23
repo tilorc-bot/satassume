@@ -55,10 +55,13 @@ def labels(module):
     return out
 
 
-def main(names):
+def family_rows():
+    """``{function name: [(title, row), ...]}``: the rows of every family,
+    ``f`` bound to the function (``_rows.bind``), each with the title of
+    its statement."""
     import importlib
     from satassume.knowledge.templates import ROW_FAMILIES
-    from satassume.knowledge.templates._rows import AtMost, bind
+    from satassume.knowledge.templates._rows import bind
     rows = {}
     for name, _ in ROW_FAMILIES:
         family = importlib.import_module(f"satassume.knowledge.templates.{name}")
@@ -67,15 +70,25 @@ def main(names):
         for label, st in zip(names_of, family.RULES):
             for fn in st.functions:
                 rows.setdefault(fn.__name__, []).extend((label, bind(r, fn)) for r in st.rows)
+    return rows
+
+
+def text(row, name):
+    """``row`` of the function ``name`` as printed, with the limit of
+    ``at_most``."""
+    from satassume.knowledge.templates._rows import AtMost
+    if isinstance(row, AtMost):
+        return f"{_text(row.row, name)}  (at most {row.n} arguments)"
+    return _text(row, name)
+
+
+def main(names):
+    rows = family_rows()
     width = max(len(label) for rs in rows.values() for label, _ in rs)
     for name in names or rows:
         print(name)
         for label, row in rows[name]:
-            if isinstance(row, AtMost):
-                text = f"{_text(row.row, name)}  (at most {row.n} arguments)"
-            else:
-                text = _text(row, name)
-            print(f"  {label:{width}}  {text}")
+            print(f"  {label:{width}}  {text(row, name)}")
 
 
 if __name__ == "__main__":
