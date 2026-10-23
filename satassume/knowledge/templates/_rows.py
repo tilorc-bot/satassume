@@ -180,6 +180,11 @@ upper = Symbol('upper')
 #: lower, upper)``
 first = Symbol('first')
 second = Symbol('second')
+#: ``RisingFactorial(start, size)`` and ``FallingFactorial(start, size)``,
+#: products of ``size`` factors from start, and ``binomial(total, size)``
+start = Symbol('start')
+size = Symbol('size')
+total = Symbol('total')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')
