@@ -570,8 +570,10 @@ answer a query about an unrelated part (as before #137).
 
 ### Extended reals and `nan` in templates
 
-Templates are theorems about the value of the node under SymPy's
-conventions (`1/0 = zoo`, `0**0 = 1`), and `nan` counts as no value: the
+Templates are theorems about the value of the node under the conventions
+of [special-values.md](special-values.md) (`1/0 = zoo`, `0**0 = 1`), which
+the soundness oracles take values from where an infinity, `nan` or a pole
+is involved, not from SymPy's evaluation (#247); `nan` counts as no value: the
 soundness oracle makes every predicate implying a number False for `nan`,
 leaves `finite`, `infinite` and `commutative` unknown, and skips points
 where a direct argument is `nan`. So:

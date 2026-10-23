@@ -272,6 +272,14 @@ next to the pass count; "0 unsound" means nothing without "N unchecked".
 * Hypothesis: `test_verify_soundness.py` (`ask` against concrete points
   including `I`, `oo`, `zoo`, `nan`), `test_lra_fuzz.py` (Fourier-Motzkin
   oracle), `test_euf_fuzz.py` (naive congruence closure) and others.
+* The point oracles (`test_templates.py`, `_point_oracle.py`,
+  `test_verify_soundness.py`, `test_eq_links.py`, `test_extended_order.py`,
+  `test_lra_integers.py`, `test_eq_canonical.py`,
+  `test_unevaluated_products.py`) take values at infinities, `nan` and
+  poles from [special-values.md](special-values.md)
+  (`tests/_special_values.py`). A failure found only with SymPy's value at
+  a special point without a row is reported as a candidate; triage it with
+  an argument (a row), not by SymPy's value (#247).
 * `tools/ask_fuzz.py` (on `refine-identities`) checks numerically the
   `ask` answers satrefine takes from SymPy; it is a refine tool.
 

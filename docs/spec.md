@@ -217,7 +217,8 @@ predicate in `want_of(demanded)` (`engine.want_of`: the demanded basis predicate
 derived nodes in `deferred`; `Session.escalate` compiles all of it. Section 8 says when; the clause set of the
 *answer* is always the full cone's (escalation is uncapped within the budget, `_UNCAPPED`).
 
-Property: every template rule is true at concrete values in Kleene logic (`tests/test_templates.py`), total
+Property: every template rule is true at concrete values in Kleene logic (`tests/test_templates.py`; values at
+infinities, nan and poles from [special-values.md](special-values.md), not from SymPy's evaluation), total
 over non-commutative values (`tests/test_noncommutative.py`, `tests/test_totality.py`,
 `tests/test_total_templates.py`, G7).
 
