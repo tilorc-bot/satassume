@@ -12,63 +12,68 @@ from __future__ import annotations
 
 from sympy import Q, dirichlet_eta, polylog, zeta
 
-from ._rows import closed, f, for_all, x, y
+from ._rows import argument, closed, f, for_all, order, parameter
 
 RULES = (
     # Pole at 1
     #     zeta(1) == zeta(1, a) == zoo; the sign and parity premises keep
-    #     the row apart from the even s, which the engine does not relate
-    #     to s - 1
+    #     the row apart from the even argument, which the engine does not
+    #     relate to argument - 1
     for_all((zeta,),
-        (Q.positive(x) & ~Q.even(x) & Q.eq(x, 1)) >> (
-            Q.infinite(f(x)) & ~Q.extended_real(f(x))),
-        (Q.eq(x, 1) & Q.complex(y)) >> (Q.infinite(f(x, y)) & ~Q.extended_real(f(x, y))),
-        (Q.eq(x, 1) & Q.extended_real(y)) >> (
-            Q.infinite(f(x, y)) & ~Q.extended_real(f(x, y)))),
+        (Q.positive(argument) & ~Q.even(argument) & Q.eq(argument, 1)) >> (
+            Q.infinite(f(argument)) & ~Q.extended_real(f(argument))),
+        (Q.eq(argument, 1) & Q.complex(parameter)) >> (
+            Q.infinite(f(argument, parameter)) & ~Q.extended_real(f(argument, parameter))),
+        (Q.eq(argument, 1) & Q.extended_real(parameter)) >> (
+            Q.infinite(f(argument, parameter)) & ~Q.extended_real(f(argument, parameter)))),
 
     # Finite but at 1
     #     the analytic continuation has its only pole at 1
     for_all((zeta,),
-        (Q.complex(x) & Q.ne(x, 1)) >> Q.complex(f(x))),
+        (Q.complex(argument) & Q.ne(argument, 1)) >> Q.complex(f(argument))),
 
     # Positive beyond 1
     #     zeta(s) == sum(1/n**s) and zeta(s, a) == sum(1/(n + a)**s) for
     #     a > 0, converging for s > 1
     for_all((zeta,),
-        (Q.positive(x) & Q.gt(x, 1)) >> Q.positive(f(x)),
-        (Q.positive(x) & Q.gt(x, 1) & Q.positive(y)) >> Q.positive(f(x, y))),
+        (Q.positive(argument) & Q.gt(argument, 1)) >> Q.positive(f(argument)),
+        (Q.positive(argument) & Q.gt(argument, 1) & Q.positive(parameter))
+        >> Q.positive(f(argument, parameter))),
 
     # Real below 1
     #     real on the real line but at the pole
     for_all((zeta,),
-        (Q.real(x) & Q.lt(x, 1)) >> Q.real(f(x))),
+        (Q.real(argument) & Q.lt(argument, 1)) >> Q.real(f(argument))),
 
     # Negative on [0, 1)
     #     zeta(0) == -1/2; the premises keep the row apart from the even
-    #     s > 0, which the engine does not relate to s - 1
+    #     argument > 0, which the engine does not relate to argument - 1
     for_all((zeta,),
-        Q.zero(x) >> Q.negative(f(x)),
-        (Q.positive(x) & ~Q.integer(x) & Q.lt(x, 1)) >> Q.negative(f(x))),
+        Q.zero(argument) >> Q.negative(f(argument)),
+        (Q.positive(argument) & ~Q.integer(argument) & Q.lt(argument, 1))
+        >> Q.negative(f(argument))),
 
     # One at oo
     #     zeta(oo) == 1
     for_all((zeta,),
-        (Q.infinite(x) & Q.extended_positive(x)) >> (Q.odd(f(x)) & Q.positive(f(x)))),
+        (Q.infinite(argument) & Q.extended_positive(argument)) >> (
+            Q.odd(f(argument)) & Q.positive(f(argument)))),
 
     # Zero at the negative even integers
     #     the trivial zeros of zeta; dirichlet_eta(s) == (1 - 2**(1 - s))*zeta(s)
     for_all((zeta, dirichlet_eta),
-        (Q.even(x) & Q.negative(x)) >> Q.zero(f(x))),
+        (Q.even(argument) & Q.negative(argument)) >> Q.zero(f(argument))),
 
     # Rational at the nonpositive integers
     #     zeta(-n) == (-1)**n*bernoulli(n + 1)/(n + 1), zeta(0) == -1/2
     for_all((zeta,),
-        (Q.integer(x) & Q.nonpositive(x)) >> Q.rational(f(x))),
+        (Q.integer(argument) & Q.nonpositive(argument)) >> Q.rational(f(argument))),
 
     # Transcendental at the positive even integers
     #     zeta(2*n) is a positive rational times pi**(2*n) (Euler)
     for_all((zeta,),
-        (Q.even(x) & Q.positive(x)) >> (Q.positive(f(x)) & Q.transcendental(f(x)))),
+        (Q.even(argument) & Q.positive(argument)) >> (
+            Q.positive(f(argument)) & Q.transcendental(f(argument)))),
 
     # Entire
     #     dirichlet_eta(s) == (1 - 2**(1 - s))*zeta(s): the zero of the
@@ -89,24 +94,26 @@ RULES = (
     #     polylog(s, z) == sum(z**k/k**s), and its continuation to z < -1
     #     is real
     for_all((polylog,),
-        (Q.real(x) & Q.real(y) & Q.lt(y, 1)) >> Q.real(f(x, y))),
+        (Q.real(order) & Q.real(argument) & Q.lt(argument, 1)) >> Q.real(f(order, argument))),
 
     # Positive on (0, 1)
     #     a series of positive terms
     for_all((polylog,),
-        (Q.real(x) & Q.positive(y) & Q.lt(y, 1)) >> Q.positive(f(x, y))),
+        (Q.real(order) & Q.positive(argument) & Q.lt(argument, 1))
+        >> Q.positive(f(order, argument))),
 
-    # Negative on the negative reals, for s >= 0
+    # Negative on the negative reals, for an order >= 0
     #     z/gamma(s) times a positive integral, z/(1 - z) for s == 0
     for_all((polylog,),
-        (Q.nonnegative(x) & Q.negative(y)) >> Q.negative(f(x, y))),
+        (Q.nonnegative(order) & Q.negative(argument)) >> Q.negative(f(order, argument))),
 
     # Zero at 0
     for_all((polylog,),
-        Q.zero(y) >> Q.zero(f(x, y))),
+        Q.zero(argument) >> Q.zero(f(order, argument))),
 
     # Finite but at 1
     #     polylog(s, 1) == zeta(s); the branch cut is on (1, oo)
     for_all((polylog,),
-        (Q.complex(x) & Q.complex(y) & Q.ne(y, 1)) >> Q.complex(f(x, y))),
+        (Q.complex(order) & Q.complex(argument) & Q.ne(argument, 1))
+        >> Q.complex(f(order, argument))),
 )

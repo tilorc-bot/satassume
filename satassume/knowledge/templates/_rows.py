@@ -167,6 +167,12 @@ divisor = Symbol('divisor')
 period = Symbol('period')
 #: the branch of ``LambertW(argument, branch)``
 branch = Symbol('branch')
+#: the order of ``besselj(order, argument)``, ``polygamma``, ``polylog``
+#: and ``expint``
+order = Symbol('order')
+#: the parameter of Hurwitz's ``zeta(argument, parameter)`` and of
+#: ``lowergamma(parameter, argument)``
+parameter = Symbol('parameter')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')
