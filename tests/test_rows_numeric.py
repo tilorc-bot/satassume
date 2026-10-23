@@ -70,6 +70,15 @@ The factor sets (``core._mul_factor_sets``), ``a/v**k``
 (``core._quotient_templates``) and the formula of the zero row past 32
 factors (``wiring.wide_formulas``) are not checked here.
 
+The rows of ``Add`` (``templates/add.py``, #299) have a star, and a
+constant term (``f(number, *terms)``); :func:`check_add` expands each row
+for sums of 2 to 4 terms, the constants of the point at their positions,
+and takes every choice of the terms from :data:`ADD_POOLS`, the node being
+SymPy's ``Add(*terms)``.  The sums of a special shape
+(``core._half_templates``, ``core._bound_templates``,
+``core._recip_templates``, ``core._imag_templates``) and the formulas of
+the strict-sign rows past 32 terms are not checked here.
+
 Every rule must be checked at least once, except those in
 :data:`NEVER_CHECKED`, each with the reason; an entry that becomes
 checkable fails, so the list cannot go stale.  A rule found false at a
@@ -390,18 +399,13 @@ SHAPED = ('power',)
 
 #: families whose rows have a star, checked by their own sections below (the
 #: rows of Max, Min and Piecewise, :func:`check_selection`; of Mul,
-#: :func:`check_mul`)
-STARRED = ('selection', 'mul')
-
-#: families not checked here yet: the rows of Add, which the next step of
-#: #299 (U1) checks
-NOT_YET = ('add',)
+#: :func:`check_mul`; of Add, :func:`check_add`)
+STARRED = ('selection', 'mul', 'add')
 
 
 def _heads():
     """``(family, name, heads, arity, terms, rules)`` for every function of
-    the compiled rows (but those of :data:`SHAPED`, :data:`STARRED` and
-    :data:`NOT_YET`);
+    the compiled rows (but those of :data:`SHAPED` and :data:`STARRED`);
     ``heads`` the SymPy classes whose nodes get the rules (empty for a
     function this SymPy lacks)."""
     declared = {}
@@ -411,7 +415,7 @@ def _heads():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
-        if family in SHAPED + STARRED + NOT_YET:
+        if family in SHAPED + STARRED:
             continue
         for name, arity, terms, specs in fns:
             fn = declared[family, name]
@@ -882,6 +886,71 @@ def show_mul_rule(i):
     return show_mul(fixed[i - len(schemas)], terms)
 
 
+# ---------------------------------------------------------------------------
+# Add: rows with a star, and a constant term (#299, U1)
+# ---------------------------------------------------------------------------
+
+#: the terms of a sum of 2, 3 and 4 terms
+ADD_POOLS = {
+    2: (S(0), S(1), S(-1), S(2), S(3), S(4), S(-2), S(-3), S.Half, -S.Half, Rational(3, 2),
+        sqrt(2), -sqrt(2), pi, -pi, E, I, -I, 2*I, 1 + I, I*pi, oo, -oo, oo*I, zoo, S.NaN,
+        Float(2.5), Float(-2.0)),
+    3: (S(0), S(1), S(-1), S(2), S(3), S(-2), S.Half, sqrt(2), pi, I, -I, oo, -oo, zoo),
+    4: (S(0), S(1), S(-1), S(2), S(-2), I, oo, -oo),
+}
+
+
+def _add():
+    """The schemas of the compiled rows of Add, as :func:`.wiring.addition`
+    reads them (``gen.schemas``)."""
+    [(name, arity, terms, specs, schemas)] = dict(FAMILIES)['add']
+    return generator(name, arity, terms, specs, 'add', schemas).schemas
+
+
+ADD = _add()
+
+
+def check_add(schemas):
+    """The :class:`Counts` of the rows of Add, by row (``per_rule``), over
+    the points of :data:`ADD_POOLS`: the node is SymPy's ``Add(*terms)``.
+    Each row is expanded for ``n`` terms with the constants of the point
+    (``wiring.expand``: a constant term, ``number``, is at the position of
+    a constant, an atomic number)."""
+    out = Counts()
+    out.per_rule = dict.fromkeys(range(len(schemas)), 0)
+    for n in sorted(ADD_POOLS):
+        by_positions = {}
+        for args in itertools.product(ADD_POOLS[n], repeat=n):
+            out.points += 1
+            node, failure = _node_basis(Add, args)
+            if failure:
+                setattr(out, failure, getattr(out, failure) + 1)
+                continue
+            consts = {i: a for i, a in enumerate(args) if a.is_Atom and a.is_number}
+            # a constant term is placed by the positions of the constants only
+            rules = by_positions.get(tuple(consts))
+            if rules is None:
+                rules = by_positions[tuple(consts)] = [
+                    (i, r) for i, s in enumerate(schemas) for r in expand((s,), n, consts)]
+            slots = [basis(a) for a in args] + [node]
+            for i, (prem, concl) in rules:
+                p = _kand(_lit(slots, t) for t in prem)
+                if p is False:
+                    out.vacuous += 1
+                    continue
+                c = _kor(_lit(slots, t) for t in concl)
+                if p is True and c is False:
+                    out.false.append((f"Add{args}", show_schema('Add', schemas[i])))
+                elif p is True and c is True:
+                    out.checked += 1
+                    out.per_rule[i] += 1
+                elif c is True:
+                    out.vacuous += 1
+                else:
+                    out.skipped += 1
+    return out
+
+
 def _id(h):
     family, name, heads, n, terms, rules = h
     return f"{family}-{name}-{n}"
@@ -963,6 +1032,18 @@ def test_every_rule_of_mul_holds_at_the_points_of_the_pools():
                               f"in NEVER_CHECKED but checked: {sorted(allowed - never)}")
 
 
+def test_every_rule_of_add_holds_at_the_points_of_the_pools():
+    c = check_add(ADD)
+    never = {show_schema('Add', s) for k, s in enumerate(ADD) if not c.per_rule[k]}
+    print(_line("add-Add", len(ADD), c, len(never)))
+    false, known = set(c.false), set(KNOWN_FALSE)
+    assert false <= known and not {r for r in known if r[0].startswith('Add(')} - false, (
+        f"false (point, rule), not in KNOWN_FALSE: {sorted(false - known)}")
+    allowed = {r for (fn, r) in NEVER_CHECKED if fn == 'Add'}
+    assert never == allowed, (f"never checked, not in NEVER_CHECKED: {sorted(never - allowed)}; "
+                              f"in NEVER_CHECKED but checked: {sorted(allowed - never)}")
+
+
 def test_the_points_of_mul_have_its_shapes():
     # a coefficient (a Number first: 2, -3/2, 2.5, -2.0, oo) and -1 first,
     # and a 2*coefficient that is an integer and one that is not
@@ -1023,6 +1104,7 @@ def test_every_entry_of_never_checked_is_a_rule():
     shown |= {(name, show_power(r, terms)) for r in rules}
     shown |= {(n, show_schema(n, s)) for n, schemas in SELECTION for s in schemas}
     shown |= {('Mul', show_mul_rule(k)) for k in range(len(MUL[0]) + len(MUL[2]))}
+    shown |= {('Add', show_schema('Add', s)) for s in ADD}
     assert set(NEVER_CHECKED) <= shown
     assert {r for _, r in KNOWN_FALSE} <= ({show_power(r, terms) for r in rules}
                                            | {r for _, r in shown})
@@ -1030,22 +1112,24 @@ def test_every_entry_of_never_checked_is_a_rule():
 
 def test_every_function_of_the_families_is_checked():
     names = {(family, fn.rpartition(':')[2] if isinstance(fn, str) else fn.__name__)
-             for family, fns in ROW_FAMILIES if family not in SHAPED + STARRED + NOT_YET
-             for fn in fns}
+             for family, fns in ROW_FAMILIES if family not in SHAPED + STARRED for fn in fns}
     assert {(h[0], h[1]) for h in HEADS} == names
     assert sum(len(h[5]) for h in HEADS) == sum(
-        len(r) for family, fns in FAMILIES if family not in SHAPED + STARRED + NOT_YET
+        len(r) for family, fns in FAMILIES if family not in SHAPED + STARRED
         for _, _, _, specs in fns for _, r in specs)
     # the shaped families: Pow
     assert SHAPED == ('power',) and dict(ROW_FAMILIES)['power'] == (Pow,)
     [(name, _, _, specs)] = dict(FAMILIES)['power']
     assert POWER[0] == name and len(POWER[2]) == len(dict(specs)[2]) and len(specs) == 1
     # the families with a star: Max, Min, Piecewise
-    assert STARRED == ('selection', 'mul')
+    assert STARRED == ('selection', 'mul', 'add')
     assert [name for name, _ in SELECTION] == [fn.__name__ for fn in dict(ROW_FAMILIES)['selection']]
     assert dict(ROW_FAMILIES)['mul'] == (Mul,)
     [(_, _, terms, specs, schemas)] = dict(FAMILIES)['mul']
     assert len(MUL[0]) == len(schemas) and len(MUL[2]) == len(dict(specs)[2])
+    assert dict(ROW_FAMILIES)['add'] == (Add,)
+    [(_, _, terms, specs, schemas)] = dict(FAMILIES)['add']
+    assert len(ADD) == len(schemas) and not specs and not terms
 
 
 def main():
@@ -1090,6 +1174,14 @@ def main():
     never += nv
     n_rules += len(c.per_rule)
     print(_line("mul-Mul", len(c.per_rule), c, len(nv)), f"{c.absent} absent", flush=True)
+    c = check_add(ADD)
+    for k in _COUNTED:
+        setattr(total, k, getattr(total, k) + getattr(c, k))
+    total.false += c.false
+    nv = [show_schema('Add', ADD[k]) for k in c.per_rule if not c.per_rule[k]]
+    never += nv
+    n_rules += len(c.per_rule)
+    print(_line("add-Add", len(c.per_rule), c, len(nv)), flush=True)
     print("\n" + _line("total", n_rules, total, len(never)),
           f"({time.perf_counter() - t0:.0f} s)")
     for r in never:
