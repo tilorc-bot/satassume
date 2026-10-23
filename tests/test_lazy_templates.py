@@ -1,5 +1,6 @@
-"""The templates of sums, products, powers (``satassume.knowledge.templates.core``)
-and functions (``satassume.knowledge.templates.functions``) are imported on first use
+"""The templates of sums, products, powers (rows, with the rules of
+``satassume.knowledge.templates.core`` that are not rows) and functions
+(``satassume.knowledge.templates.functions``) are imported on first use
 (``TemplateRegistry.lazy``).  What is loaded depends on what the process has
 already done, so the checks that look at ``sys.modules`` run in a fresh
 interpreter."""
@@ -33,7 +34,8 @@ x, y, z = (Symbol(n, real=True) for n in "xyz")
 assert ask(Q.positive(x), Q.gt(x, y) & Q.positive(y)) is True
 assert ask(Q.gt(x, z), Q.gt(x, y) & Q.gt(y, z)) is True
 assert CORE not in sys.modules and FUNCS not in sys.modules
-# the first Add node loads the templates of sums, not those of functions
+# the first Add node loads the rows of sums (wiring, which imports core for
+# the sums of a special shape), not the templates of functions
 assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y)) is True
 assert CORE in sys.modules and FUNCS not in sys.modules
 # nor does the first power, whose template is rows (#297)
@@ -105,7 +107,7 @@ assert "sympy.codegen" not in sys.modules and "sympy.physics" not in sys.modules
 assert "sympy.stats" not in sys.modules
 assert registry._lazy and all(not registry._imported(c) for c, m in registry._lazy)
 assert EPOCH[0] > epoch
-for cls, user, mod in ((Add, user_add, CORE), (exp, user_function, WIRING + ":exp_log")):
+for cls, user, mod in ((Add, user_add, WIRING + ":add"), (exp, user_function, WIRING + ":exp_log")):
     ts = registry.templates_for(cls)
     own = registry._by_class[cls]
     assert own[-1] is user and len(own) > 1
