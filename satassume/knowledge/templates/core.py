@@ -2,9 +2,7 @@
 are ``templates/add.py``, ``templates/mul.py`` and ``templates/power.py``;
 ``wiring.addition``, ``wiring.product`` and ``wiring.power`` call the
 functions of the Add, Mul and Pow sections here): the sums of a special
-shape, the factor sets and ``a/v**k``, and ``exp(I*pi*c*s)``.  The legacy
-rules of ``Add`` (``_add_rules``) are no longer registered and go with the
-next step of #299 (U1).
+shape, the factor sets and ``a/v**k``, and ``exp(I*pi*c*s)``.
 
 Every formula relates predicates of the node to predicates of its direct
 arguments and is a theorem about the *value* of the node under SymPy's
@@ -13,13 +11,11 @@ The rules mirror SymPy's ``_eval_is_*`` methods in
 ``sympy/core/{add,mul,power}.py`` except where those are unsound under
 value semantics (noted inline).
 
-Rules are index-based specs (see :mod:`._common`): argument ``k`` is index
-``k`` and the node is index ``n``.  The rule base is relied on for
-everything it can derive (``positive == extended_positive & finite``,
-``zero == extended_nonnegative & extended_nonpositive``, ...), and
-"transfer" facts from the node back to an argument are emitted only for
-numeric coefficients, which is what the old assumption system relies on
-(``-x``, ``2*x``, ``x/2``).
+Rules are index-based specs (see :mod:`._common`): the slots of a block
+are its objects in order, the node's slot is passed to ``facts``.  The rule
+base is relied on for everything it can derive (``positive ==
+extended_positive & finite``, ``zero == extended_nonnegative &
+extended_nonpositive``, ...).
 """
 from __future__ import annotations
 
@@ -31,7 +27,7 @@ from sympy.core.add import Add
 from sympy.core.intfunc import integer_nthroot
 from sympy.functions.elementary.exponential import exp
 
-from ...sat.formula import And, Implies, Not, Or, P
+from ...sat.formula import Not, P
 from ..domain import kept_product
 
 from ._common import (
@@ -43,145 +39,16 @@ from ._common import (
 )
 from .table import Row, expand
 
-#: Largest arity for per-term rules of Add (O(n^2) literals).
+#: Largest number of terms with an ``x`` of a sum ``I*(c_1*x_1 + ...)``
+#: whose rules are emitted (:func:`_imag_templates`; one rule of m
+#: literals per term: O(m^2) literals).
 MAX_ONEOUT = 6
-#: Largest arity for the per-term rules of Add that every arity gets (one
-#: rule of n literals per term: O(n^2) literals).  Past it the strict-sign
-#: rule of Add is one formula (linear with Tseitin variables,
-#: :func:`_wide_one`); the others are not emitted (#180 C-WIDEADD).  The
-#: rows of Mul past 32 factors: ``wiring.SOME_PER_ARGUMENT``.
-MAX_ONEOUT_WIDE = 32
-#: Largest arity for subtraction rules and parity case enumeration of Add.
-MAX_ADD_SMALL = 3
 
 
 # ---------------------------------------------------------------------------
-# Add: the rules below up to the sums of a special shape are no longer
-# registered (Add's rows are templates/add.py, #299) and go with the next
-# step of #299 (U1); wiring.addition calls the sums of a special shape
+# Add: the sums of a special shape, which are not rows of templates/add.py
+# (wiring.addition calls them)
 # ---------------------------------------------------------------------------
-
-# Closed under addition (all args -> node).  ``real``, ``zero`` and the
-# finite sign predicates are derived by the rule base from these.
-# ``extended_real`` is not: ``oo - oo`` is nan (see _add_rules).
-_ADD_CLOSED = (
-    'complex', 'integer', 'rational', 'algebraic', 'finite',
-    'hermitian', 'antihermitian', 'commutative',
-    'extended_positive', 'extended_negative',
-    'extended_nonnegative', 'extended_nonpositive',
-)
-
-# Closed under subtraction of finite values: pred(node) & pred(rest) -> pred(a).
-# (The contrapositives give "one non-integer term -> non-integer sum" etc.,
-# and with the closure rules also irrational/transcendental/noninteger sums.)
-_ADD_SUBTRACT = ('real', 'complex', 'integer', 'rational', 'algebraic', 'finite')
-
-_STRICT = (('extended_positive', 'extended_nonnegative'),
-           ('extended_negative', 'extended_nonpositive'))
-
-
-def _add_rules(n, consts):
-    R = Rules()
-    rule = R.rule
-    N = n
-    A = range(n)
-
-    for pred in _ADD_CLOSED:
-        rule(lits(A, pred), (N, pred, True))
-    # Extended reals without both +oo and -oo among the terms.
-    for inf in ('positive_infinite', 'negative_infinite'):
-        rule([*lits(A, 'extended_real'), *lits(A, inf, False)], (N, 'extended_real', True))
-    if n > MAX_ADD_SMALL:
-        rule(lits(A, 'even'), (N, 'even', True))
-
-    # Sum of imaginaries is imaginary or zero (I + (-I) == 0).
-    rule(lits(A, 'imaginary'), [(N, 'imaginary', True), (N, 'zero', True)])
-
-    # A commutative sum has a commutative term k when every other term is a
-    # finite number: k is the sum minus them.  Not in general: ``A - B`` is
-    # 0 for ``B = A``, and ``A + B`` is 1 for ``B = 1 - A``.
-    if n <= MAX_ONEOUT:
-        for k in A:
-            rest = [j for j in A if j != k]
-            rule([(N, 'commutative', True), *lits(rest, 'commutative'), *lits(rest, 'finite')],
-                 (k, 'commutative', True))
-
-    for k in A if n <= MAX_ONEOUT_WIDE else ():
-        rest = [j for j in A if j != k]
-        # One strictly signed term among same-signed terms (wider sums:
-        # _wide_one).
-        for strict, nonstrict in _STRICT:
-            rule([(k, strict, True), *lits(rest, nonstrict)], (N, strict, True))
-        # Imaginary term plus finite reals is not real.
-        rule([(k, 'imaginary', True), *lits(rest, 'real')], (N, 'extended_real', False))
-        # An extended-real sum whose other terms are finite reals has an
-        # extended-real term k: with r = rest real, k = oo or -oo gives
-        # N = k, a finite real k gives N real, and a k that is not extended
-        # real (finite non-real, zoo, or an infinity off the real axis such
-        # as oo*I) gives N = k + r not extended real (nan + r = nan, the
-        # same value as k).  Contrapositive: a
-        # non-extended-real term plus finite reals is not extended real.
-        # This is what lets ``x - z > 0`` (which says ``extended_real(x -
-        # z)``) give ``extended_real(x)``, as ``x > z`` does (#53, W2B1).
-        rule([(N, 'extended_real', True), *lits(rest, 'real')], (k, 'extended_real', True))
-        if n <= MAX_ADD_SMALL:
-            for pred in _ADD_SUBTRACT:
-                rule([(N, pred, True), *lits(rest, pred)], (k, pred, True))
-        elif n <= MAX_ONEOUT:
-            rule([(k, 'odd', True), *lits(rest, 'even')], (N, 'odd', True))
-        if n <= MAX_ONEOUT:
-            # A nonzero real part (finite or infinite) cannot be cancelled by
-            # imaginary terms.
-            rule([(k, 'extended_nonzero', True), *lits(rest, 'imaginary')],
-                 (N, 'imaginary', False))
-            # Infinite sums.  ``oo - oo``, ``oo + zoo``, ``oo*I - oo*I`` and
-            # ``oo + nan`` are nan ("unknown"), so two infinite terms decide
-            # nothing without their directions, and a term that is not -oo
-            # may still be zoo, nan or an opposite infinity off the real
-            # axis (#187).  An infinite term plus finite terms is infinite
-            # (``oo + I``, ``zoo + 1``, ``oo*I + x`` with x finite); signed
-            # infinite sums follow from the rule below.
-            rule([(k, 'infinite', True), *lits(rest, 'finite')], (N, 'infinite', True))
-            # A sum with an infinite term is infinite or nan, so it is
-            # infinite when it is an extended real (nan is not): an infinite
-            # term plus finite ones is infinite, and two or more infinite
-            # terms add to an infinity or nan.  For the same reason it is
-            # no (finite) complex number (``x*y + oo*I``, ``-oo + zoo``).
-            rule([(k, 'infinite', True), (N, 'extended_real', True)], (N, 'infinite', True))
-            rule([(k, 'infinite', True)], (N, 'complex', False))
-            for strict, nonstrict in _STRICT:
-                signed = strict.replace('extended_', '') + '_infinite'
-                other = _STRICT[1 if strict == _STRICT[0][0] else 0][0]
-                other_signed = other.replace('extended_', '') + '_infinite'
-                # A -oo term (any term, not only a constant: a symbol
-                # declared negative_infinite IS -oo) plus terms that are
-                # extended real and not +oo is -oo, and symmetrically for
-                # +oo.  Pointwise: each other term is a finite real r or
-                # -oo, and -oo + r = -oo, -oo + (-oo) = -oo.  The rest
-                # cannot be weakened: -oo + oo and -oo + zoo are nan, and
-                # -oo + I (finite non-real) is an infinity off the real
-                # axis, not -oo.  Contrapositive (keeps node blocks
-                # total): N not -oo with such a rest means k is not -oo.
-                rule([(k, signed, True), *lits(rest, 'extended_real'),
-                      *lits(rest, other_signed, False)], (N, signed, True))
-                # A constant +oo plus terms that are >= 0 or finite real is +oo.
-                if k in consts:
-                    for cond in (nonstrict, 'real'):
-                        rule([(k, signed, True), *lits(rest, cond)], (N, strict, True))
-
-    # Parity of a sum of integers.
-    if n <= MAX_ADD_SMALL:
-        for parities in product(('even', 'odd'), repeat=n):
-            result = 'odd' if parities.count('odd') % 2 else 'even'
-            rule([(k, p, True) for k, p in enumerate(parities)], (N, result, True))
-    # A sum of two or more positive even integers is at least 4, hence composite.
-    if n >= 2:
-        rule([*lits(A, 'even'), *lits(A, 'positive')], (N, 'composite', True))
-        # A sum of two or more positive integers is at least 2.
-        rule([*lits(A, 'integer'), *lits(A, 'positive')],
-             [(N, 'prime', True), (N, 'composite', True)])
-    return R.rules
-
 
 #: Largest number of odd-coefficient terms whose parity cases are enumerated
 #: for a sum with half-integer coefficients (2**k rules).
@@ -448,30 +315,6 @@ def _not_unit_premises(c0, c1):
         if lower == (c1.p > 0) and v >= 2 or lower != (c1.p > 0) and v <= -2:
             out.append(prem)
     return out
-
-
-def _wide_one(expr, args, consts, every, some, concl):
-    """``every(t)`` for every term ``t`` and ``some(t)`` for one of them
-    give ``concl(expr)``, as one formula (None if it says nothing): the
-    per-term rule ``some(t_k) & every(rest) -> concl`` of a node wider
-    than :data:`MAX_ONEOUT_WIDE` when ``some`` implies ``every``.  Its
-    compilation is linear in the width (Tseitin variables), the per-term
-    rules' quadratic.  Constant terms are decided here: one that is not
-    ``every`` drops the formula."""
-    weak, strong, met = [], [], False
-    for k, a in enumerate(args):
-        c = consts.get(k)
-        if c is None:
-            weak.append(P(every, a))
-            strong.append(P(some, a))
-        elif not getattr(c, f'is_{every}'):  # sympy-boundary: c a constant
-            return None
-        elif getattr(c, f'is_{some}'):  # sympy-boundary: c a constant
-            met = True
-    if not (met or strong):
-        return None
-    prem = weak if met else weak + [Or(*strong)]
-    return Implies(And(*prem), P(concl, expr)) if prem else P(concl, expr)
 
 
 # ---------------------------------------------------------------------------
