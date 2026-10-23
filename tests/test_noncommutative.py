@@ -47,6 +47,7 @@ from sympy import (
     sympify,
 )
 from sympy.core.function import AppliedUndef
+from sympy.matrices.expressions import MatrixExpr
 from test_templates import evaluate
 
 from satassume import DictCache, Engine
@@ -601,15 +602,16 @@ class _fixes_none(Function):
 
 
 def _degenerate_terms():
-    # #224 review: built non-commutative, but SymPy's own evaluators make
-    # them numbers (Integral(A, (x, 0, 0)).is_zero is True)
+    # #224's level-1 cases, at 2 since #247: built non-commutative, so the
+    # zero and the identity of their algebra (an empty integral, sum or
+    # product, A**0, 0*A), not the scalars 0 and 1 that SymPy's own
+    # evaluators make of them (Integral(A, (x, 0, 0)).is_zero is True)
     from sympy import Integral, Product, Sum
     z = Integral(A, (x, 0, 0))
     return [z, Integral(A, (x, 1, 1)), Sum(A, (x, 1, 0)), Product(A, (x, 1, 0)),
             Pow(A, 0, evaluate=False), A**2, z*Integral(B, (x, 0, 0)), f(z),
             Pow(A, 0, evaluate=False) + Integral(B, (x, 0, 0)), Pow(1, A, evaluate=False),
             Pow(0, A, evaluate=False), Pow(S.Exp1, z, evaluate=False),
-            # #224 review: a factor that may be zero; exp(0*A).is_algebraic is True
             Mul(0, A, evaluate=False), Pow(S.Exp1, Mul(0, A, evaluate=False), evaluate=False),
             A*x, z*A]
 
@@ -642,56 +644,105 @@ def test_constructed_noncommutative_answers():
 
 
 def test_constructed_noncommutative_hermitian_matrix():
-    # the fork's test_matrices::test_hermitian: (c - Dagger(c)).is_zero is
-    # left open (#180 final review F1): two non-commutative terms other
-    # than symbols may cancel (c - Dagger(c) is 0 for a Hermitian c)
+    # the fork's test_matrices::test_hermitian: c - Dagger(c) is an
+    # operator, its zero is not the number 0 (#247)
     from sympy.physics.quantum import Dagger, Operator
     c = Operator('c')
     assert fresh().is_(c - Dagger(c), 'commutative') is False
-    assert fresh().is_(c - Dagger(c), 'zero') is None
+    assert fresh().is_(c - Dagger(c), 'zero') is False
     assert fresh().is_(c - Dagger(c), 'hermitian') is None
 
 
-def _evaluates_to_number():
-    # #180 final review F1: built non-commutative from a term at level 2,
-    # but a special value of another argument, or cancellation, makes them
-    # numbers when evaluated (rf(A, 0).doit() is 1)
-    from sympy import Integral, binomial, exp, ff, log, polylog, rf, stieltjes
+def _algebra_terms():
+    # #247: built non-commutative, so never a number (docs/spec.md, "Truth
+    # standard"); the zero or the identity of the algebra where SymPy's
+    # evaluation writes the scalars 0 and 1 (rf(A, 0), A - A, [a, b - b]),
+    # a class declaring is_commutative False over scalar arguments
+    # (secondquant [x, y]), and operators, kets and tensors with free
+    # indices
+    from sympy import Eq, Integral, MatrixSymbol, Quaternion, binomial, exp, ff, log, polylog, rf, stieltjes
+    from sympy.physics.quantum import AntiCommutator, Bra, Commutator, Dagger, Ket, Operator, TensorProduct
+    from sympy.physics.quantum.boson import BosonOp
+    from sympy.physics.quantum.spin import JzKet
+    from sympy.physics.secondquant import Commutator as SqCommutator, CreateBoson, FKet, FockStateFermionBra
+    p_, q_, i_ = _tensors()
     try:
         from sympy import owens_t
     except ImportError:  # SymPy < 1.15
         owens_t = None
     z = Add(A, -A, evaluate=False)
+    a, b, p = Operator('a'), Operator('b'), Symbol('p')
+    zb = Add(b, -b, evaluate=False)
+    g = Function('g', commutative=False)
     return [rf(A, 0, evaluate=False), ff(A, 0, evaluate=False),
-            binomial(A, -1, evaluate=False), binomial(A, A, evaluate=False),
+            binomial(A, -1, evaluate=False), binomial(A, A, evaluate=False), binomial(A, B, evaluate=False),
             polylog(A, 0, evaluate=False), stieltjes(A, evaluate=False),
             *([owens_t(A, 0, evaluate=False)] if owens_t else []),
-            z, sin(z), f(z), exp(z),
-            Mul(exp(A), exp(-A), evaluate=False),
-            Mul(A, exp(-log(A), evaluate=False), evaluate=False),
+            z, sin(z), f(z), exp(z), f(A, 0), f(A, Add(B, -B, evaluate=False)),
+            Mul(exp(A), exp(-A), evaluate=False), Mul(A, exp(-log(A), evaluate=False), evaluate=False),
             Add(A, -A*Integral(1, (x, 0, 1)), evaluate=False),
             Add(A, Mul(-1, Mul(A, 1, evaluate=False), evaluate=False), evaluate=False),
-            # #225 review: a zero float factor, a nan term
             Mul(Float(0.0), A, evaluate=False), sin(Mul(0.0, A, evaluate=False), evaluate=False),
-            Pow(S.Exp1, Mul(0.0, A, evaluate=False), evaluate=False),
-            Mul(0.0, A, B, evaluate=False), Add(A, S.NaN, evaluate=False),
-            Add(A, B, S.NaN, evaluate=False), Add(sin(A), S.NaN, evaluate=False),
-            Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False)] + _operations_to_number()
+            Pow(S.Exp1, Mul(0.0, A, evaluate=False), evaluate=False), Mul(0.0, A, B, evaluate=False),
+            A - 2*B, A*B*A, 2*sin(A), sin(A) + 1, exp(A + 1), -exp(A), A + x + y,
+            a, b - Dagger(b), Commutator(a, b), Commutator(a, zb), AntiCommutator(a, zb), AntiCommutator(zb, a),
+            TensorProduct(a, zb), BosonOp('c'), JzKet(1, 0), Bra('a'), Dagger(Ket('a'), evaluate=False), CreateBoson(x), Quaternion(x, y, 0, 1),
+            p_(i_), p_(i_) + q_(i_), 2*p_(i_),
+            SqCommutator(x, y, evaluate=False), SqCommutator(x, 1, evaluate=False),
+            FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
+            FKet([Eq(x, x, evaluate=False), S.true]), FKet([0], 1), FockStateFermionBra([0], 1),
+            MatrixSymbol('M', 2, 2), g(x, 1), g(Tuple(x, S.Half)), g(x + 1), g(Add(x, 0, evaluate=False))]
 
 
-def _operations_to_number():
-    # #232: a class fixing is_commutative = False, but an operation that
-    # evaluates to a number
-    from sympy.physics.quantum import AntiCommutator, Commutator, Dagger, Operator, TensorProduct
-    from sympy.physics.quantum.boson import BosonOp
-    from sympy.physics.quantum.fermion import FermionOp
+def _tensors():
+    from sympy.tensor.tensor import TensorHead, TensorIndexType, tensor_indices
+    L = TensorIndexType('L')
+    i = tensor_indices('i', L)
+    return TensorHead('p', [L]), TensorHead('q', [L]), i
+
+
+def _scalar_terms():
+    # built non-commutative, but numbers by definition (#250 review): a bra
+    # is a linear functional, applied to a ket it gives a number; a tensor
+    # without free indices has rank 0
+    from sympy.physics.quantum import Bra, Dagger, Ket, Operator, OuterProduct
     from sympy.tensor.tensor import TensAdd, TensMul
-    a, b = Operator('a'), Operator('b')
-    z = Add(b, -b, evaluate=False)
-    c, d = BosonOp('c'), FermionOp('d')
-    return [Commutator(a, z), AntiCommutator(a, z), AntiCommutator(z, a), TensorProduct(a, z),
-            Commutator(c, Dagger(c)), AntiCommutator(d, Dagger(d)),
-            TensMul(0, x), TensMul(x), TensAdd(1, 1)] + _operations_over_opaque() + _evaluating_classes()
+    p_, q_, i_ = _tensors()
+    O = Operator('O')
+    from sympy import Basic, adjoint, conjugate, transpose
+    from sympy.physics.secondquant import BKet, Dagger as SqDagger
+    return [Bra('a')*O*Ket('b'), Dagger(Ket('b'))*O*Ket('b'), OuterProduct(Ket('a'), Bra('b')),
+            # the adjoint, conjugate or transpose of a ket counts as a bra
+            # (#250 re-reviews; secondquant's Dagger evaluates in __new__)
+            Mul(Basic.__new__(SqDagger, BKet([1])), BKet([1]), evaluate=False),
+            Mul(Dagger(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(adjoint(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(conjugate(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(transpose(Ket('a'), evaluate=False), Ket('b'), evaluate=False),
+            Mul(Dagger(Mul(O, Ket('a')), evaluate=False), Ket('b'), evaluate=False),
+            p_(i_)*q_(-i_), TensMul(0, x), TensMul(x), TensAdd(1, 1)]
+
+
+def test_not_built_noncommutative_by_an_unknown_argument():
+    # #250 review: Add and Mul fill a False slot when an argument's
+    # commutativity is unknown; the trace of an operator is a number
+    from sympy import UnevaluatedExpr
+    from sympy.physics.quantum import Operator
+    from sympy.physics.quantum.trace import Tr
+    from satassume.knowledge.domain import constructed_noncommutative
+    for e in (Add(Tr(Operator('O')), 1), Mul(2, Tr(A)), Add(UnevaluatedExpr(A), 1)):
+        assert constructed_noncommutative(e) == 0, e
+        assert fresh().is_many(e, ['zero', 'complex']) == [None, None], e
+
+
+def test_constructed_noncommutative_never_a_number():
+    from satassume.knowledge.domain import constructed_noncommutative
+    for e in _algebra_terms():
+        assert constructed_noncommutative(e) == 2, e
+        assert fresh().is_many(e, ['commutative', 'zero', 'complex', 'integer']) == [False]*4, e
+    for e in _degenerate_terms():
+        assert constructed_noncommutative(e) == 2, e
+        assert fresh().is_many(e, ['commutative', 'zero', 'complex', 'positive']) == [False]*4, e
 
 
 class _Evaluates(Expr):
@@ -719,56 +770,10 @@ class _UndefSub(AppliedUndef):
         return S.Zero
 
 
-def _evaluating_classes():
-    # re-review R2: over commutative arguments, a class that evaluates
-    # (secondquant Commutator is 0 for commuting arguments), or a
-    # constructor that gives a number for an evaluated argument (a doubly
-    # occupied fermion state) or when built again
-    from sympy import Eq
-    from sympy.physics.secondquant import Commutator, FKet, FockStateFermionBra
-    p = Symbol('p')
-    return [Commutator(x, y, evaluate=False), Commutator(x, 1, evaluate=False), _Evaluates(x),
-            FKet([p, Add(p, 0, evaluate=False)]), FKet([p, Pow(p, 1, evaluate=False)]),
-            FKet([Eq(x, x, evaluate=False), S.true]), _EvaluatesWhenBuilt(1, evaluate=False),
-            # #234: fermi_level is not in args, the rebuilt state is 0
-            FKet([0], 1), FockStateFermionBra([0], 1),
-            # #238 review: an undefined function given an evaluator
-            Function('g0', commutative=False, eval=classmethod(lambda cls, *a: S.Zero))(x, evaluate=False),
-            Function('g1', commutative=False, doit=lambda self, **h: S.Zero)(x),
-            Function('g2', commutative=False, _eval_evalf=lambda self, prec: Float(0))(Float(1.0), evaluate=False),
-            _UndefSub(x, evaluate=False),
-            # #238 final review: commutative itself, non-commutative through
-            # an argument at level 2
-            Function('g3', doit=lambda self, **h: S.Zero)(A),
-            Function('g4', eval=classmethod(lambda cls, *a: S.Zero))(A, evaluate=False),
-            _UndefEval(A, evaluate=False)]
-
-
 class _UndefEval(AppliedUndef):
     @classmethod
     def eval(cls, *args):
         return S.Zero
-
-
-def test_rereview_r2_reproducer():
-    from sympy.physics.secondquant import Commutator
-    from satassume.knowledge.domain import constructed_noncommutative
-    e = Commutator(x, y, evaluate=False)
-    assert e.doit() == 0
-    assert constructed_noncommutative(e) == 1
-    assert Engine().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None]
-
-
-def test_undefined_function_with_evaluator_of_noncommutative_argument():
-    # #238 final review: Function's level of an argument kept only for a
-    # plain undefined function; evalf is not doit but may give a number too
-    from satassume.knowledge.domain import constructed_noncommutative
-    e = Function('gd', doit=lambda self, **h: S.Zero)(A)
-    assert e.doit() == 0
-    assert constructed_noncommutative(e) == 1
-    assert Engine().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None]
-    assert constructed_noncommutative(Function('ge', _eval_evalf=lambda self, prec: Float(0))(A)) == 1
-    assert constructed_noncommutative(f(A)) == 2
 
 
 class _NCProperty(Expr):
@@ -782,56 +787,95 @@ class _NoCommutative(Expr):
     pass
 
 
-def _operations_over_opaque():
-    # #233 review: below the operation a term whose commutativity a property
-    # or an evaluator decides
+class _EvalOnB(Function):
+    @classmethod
+    def eval(cls, a):
+        return S.One if a == B else None
+
+
+class _ZeroMatrix(MatrixExpr):
+    shape = (1, 1)
+
+    def doit(self, **hints):
+        return S.Zero
+
+
+def _nan_terms():
+    from sympy import Integral, MatMul, MatrixSymbol, Sum
+    # nan is no number, and a function of nan has no facts (design.md,
+    # "Extended reals and nan"): an explicit nan or infinity
+    return [Add(A, S.NaN, evaluate=False), Add(A, B, S.NaN, evaluate=False), Add(sin(A), S.NaN, evaluate=False),
+            Add(A, Mul(0, S.Infinity, evaluate=False), evaluate=False), Mul(S.Infinity, A, evaluate=False),
+            MatMul(S.NaN, MatrixSymbol('M', 2, 2), evaluate=False),
+            MatMul(S.Infinity, MatrixSymbol('M', 2, 2), evaluate=False),
+            # a limit carries a value
+            Sum(A, (x, 1, S.Infinity)), Integral(A, (x, 0, S.Infinity))]
+
+
+def _user_evaluator_terms():
+    # #239, held while Tilo decides (#247): the user's own eval, doit,
+    # constructor or property, which may make the term a number by the
+    # user's definition
     from sympy.physics.quantum import AntiCommutator, Commutator
     v, u = _NCProperty(), _NoCommutative()
-    return [Commutator(v, Add(v, -v, evaluate=False)), AntiCommutator(v, Add(v, -v, evaluate=False)),
-            Commutator(u, Mul(u, 1, evaluate=False))]
+    # SymPy 1.15 builds [u, u*1] as 0
+    return [e for e in [_Evaluates(x), _ZeroMatrix(), _EvaluatesWhenBuilt(1, evaluate=False), _UndefSub(x, evaluate=False),
+            Function('g0', commutative=False, eval=classmethod(lambda cls, *a: S.Zero))(x, evaluate=False),
+            Function('g1', commutative=False, doit=lambda self, **h: S.Zero)(x),
+            Function('g2', commutative=False, _eval_evalf=lambda self, prec: Float(0))(Float(1.0), evaluate=False),
+            Function('g3', doit=lambda self, **h: S.Zero)(A),
+            Function('g4', eval=classmethod(lambda cls, *a: S.Zero))(A, evaluate=False),
+            _UndefEval(A, evaluate=False), _EvalOnB(A), sin(_Evaluates(x)) + A,
+            Commutator(v, Add(v, -v, evaluate=False)), AntiCommutator(v, Add(v, -v, evaluate=False)),
+            Commutator(u, Mul(u, 1, evaluate=False))] if not e.is_Number]
 
 
-def test_constructed_noncommutative_number_when_evaluated():
-    from satassume.engine import PRED_INDEX
-    for e in _evaluates_to_number():
-        v = e.doit()
-        assert v.is_commutative, (e, v)
-        assert fresh().is_(e, 'commutative') is False, e
-        for p in PRED_INDEX:
-            r = fresh().is_(e, p)
-            assert r is None or p == 'commutative' or r is getattr(v, 'is_' + p), (e, p, r)
-        assert fresh().is_many(e, ['zero', 'complex', 'integer']) == [None, None, None], e
+def _identity_terms():
+    # held while Tilo decides (#247): [c, c†] and {d, d†} stand for the
+    # identity, which SymPy writes as 1 (and IdentityOperator, deprecated
+    # for S.One)
+    import warnings
+    from sympy.physics.paulialgebra import Pauli
+    from sympy.physics.quantum import AntiCommutator, Commutator, Dagger, UnitaryOperator
+    from sympy.physics.quantum.boson import BosonOp
+    from sympy.physics.quantum.fermion import FermionOp
+    from sympy.physics.quantum.pauli import SigmaX
+    from sympy.physics.secondquant import B as Bq, Bd, Commutator as SqCommutator
+    c, d, p = BosonOp('c'), FermionOp('d'), Symbol('p')
+    out = [Commutator(c, Dagger(c)), AntiCommutator(d, Dagger(d)), c*Dagger(c) - Dagger(c)*c, 2*c,
+           Pow(SigmaX(), 2, evaluate=False), SqCommutator(Bq(p), Bd(p), evaluate=False),
+           Mul(UnitaryOperator('U'), Dagger(UnitaryOperator('U')), evaluate=False),
+           Mul(Pauli(1), Pauli(1), evaluate=False)]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from sympy.physics.quantum import IdentityOperator
+        out.append(IdentityOperator(2))
+    return out
 
 
-def test_constructed_noncommutative_levels_kept():
-    # no cancellation possible: the answers of test_constructed_noncommutative_answers
-    from sympy import binomial, exp
-    for e in (A - 2*B, A*B*A, 2*sin(A), sin(A) + 1, f(A, 0), f(A, Add(B, -B, evaluate=False)),
-              exp(A + 1), -exp(A)):
-        assert fresh().is_(e, 'complex') is False, e
-    # nan at a point (x = oo, y = -oo); a user's function may evaluate to a
-    # number; an infinite coefficient (oo*A - oo*A is nan*A)
-    class g(Function):
-        @classmethod
-        def eval(cls, a):
-            return S.One if a == B else None
-    for e in (A + x + y, g(A), Mul(S.Infinity, A, evaluate=False)):
-        assert fresh().is_many(e, ['commutative', 'complex']) == [False, None], e
-    # several arguments: no level 2 (binomial(A, B) may have a special value)
-    assert fresh().is_many(binomial(A, B, evaluate=False), ['commutative', 'complex']) == [False, None]
+def test_constructed_noncommutative_held_at_level_one():
+    from satassume.knowledge.domain import constructed_noncommutative
+    for e in _nan_terms() + _scalar_terms() + _user_evaluator_terms() + _identity_terms():
+        assert constructed_noncommutative(e) == 1, e
+        assert fresh().is_many(e, ['commutative', 'zero', 'complex', 'integer']) == [False, None, None, None], e
 
 
-def test_unary_function_level_by_swept_class():
-    # #239: a one-argument function keeps its argument's level 2 only if it
-    # is one of the swept SymPy classes, not because its __module__ starts
-    # with "sympy."
-    import os
-    import subprocess
-    import sys
-    from pathlib import Path
-    from sympy import exp, stieltjes
+@pytest.mark.parametrize("flag, terms", [("USER_EVALUATORS_HELD", _user_evaluator_terms),
+                                         ("IDENTITY_RELATIONS_HELD", _identity_terms)])
+def test_pending_decisions_flip_with_one_flag(monkeypatch, flag, terms):
+    # #247: the user's evaluators and the identity relations wait for
+    # Tilo's decision; each is one flag
+    from satassume.knowledge import domain
+    monkeypatch.setattr(domain, flag, False)
+    assert all(domain.constructed_noncommutative(e) == 2 for e in terms()), flag
+
+
+def test_function_level_by_sympy_class():
+    # #239: SymPy's own function classes keep the level of their argument;
+    # a class with a borrowed module name or of a test module is the user's
+    from sympy import acsc, acsch, asec, exp, stieltjes
     from sympy.functions.elementary.trigonometric import sin as _sin
-    from satassume.knowledge.domain import SWEPT_UNARY, constructed_noncommutative as level
+    from satassume.knowledge.domain import constructed_noncommutative as level
 
     def zero_class(module, name='Z', base=Function):
         cls = type(name, (base,), {'eval': classmethod(lambda cls, a: S.Zero)})
@@ -839,59 +883,17 @@ def test_unary_function_level_by_swept_class():
         cls.__qualname__ = name
         return cls
 
-    # the #239 reproducer: a borrowed module name
     for module, name in [('sympy.functions.fake', 'Z'), ('sympy.core.tests.test_fake', 'Z'),
                          ('sympy.functions.elementary.trigonometric', 'sin'), (__name__, 'Z')]:
-        Z = zero_class(module, name)
-        e = Z(A, evaluate=False)
-        assert e.doit() == 0
+        e = zero_class(module, name)(A, evaluate=False)
         assert level(e) == 1, (module, name)
         assert fresh().is_many(e, ['commutative', 'zero', 'complex', 'integer']) == [False, None, None, None]
-    # a subclass of a swept class with its own eval, under the same name
-    Zsin = zero_class('sympy.functions.elementary.trigonometric', 'sin', base=_sin)
-    assert level(Zsin(A, evaluate=False)) == 1
-    # the swept classes keep it; stieltjes(A) is zoo
-    for e in (sin(A), exp(A), sin(exp(A))):
-        assert level(e) == 2, e
-        assert fresh().is_(e, 'complex') is False, e
-    assert level(stieltjes(A, evaluate=False)) == 1
-    # #245 review: acsch, acsc of an infinite non-commutative symbol are 0
-    from sympy import acsc, acsch, asec
+    assert level(zero_class('sympy.functions.elementary.trigonometric', 'sin', base=_sin)(A, evaluate=False)) == 1
     inf = Symbol('I1', commutative=False, infinite=True)
-    for g in (acsch, acsc, asec):
-        e = g(inf, evaluate=False)
-        assert e.doit().is_commutative and level(e) == 1, g
-        assert fresh().is_many(e, ['zero', 'complex']) == [None, None], g
-    assert 'sympy.functions.elementary.trigonometric.sin' in SWEPT_UNARY
-    assert not any('.tests.' in n or not n.startswith('sympy.') for n in SWEPT_UNARY)
-    # the sweep still passes every listed class
-    root = Path(__file__).resolve().parents[1]
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [str(root), os.environ.get('PYTHONPATH')])))
-    r = subprocess.run([sys.executable, str(root / 'tools' / 'sweep_unary_functions.py'), '--check'],
-                       capture_output=True, text=True, timeout=300, cwd=root, env=env)
-    assert r.returncode == 0, r.stderr[-2000:]
-
-
-def test_constructed_noncommutative_labels():
-    # re-review R2: level 2 only where the type guarantees the term is its
-    # own value; an operator or a state built from labels may still
-    # evaluate on rebuild (its constructor runs again: FKet([p, p**1]) is 0),
-    # and nothing in the term tells
-    from sympy import Function, MatrixSymbol, Quaternion
-    from sympy.physics.quantum import Commutator, Operator
-    from sympy.physics.quantum.boson import BosonOp
-    from sympy.physics.quantum.spin import JzKet
-    from sympy.physics.secondquant import CreateBoson
-    from satassume.knowledge.domain import constructed_noncommutative
-    a, b = Operator('a'), Operator('b')
-    g = Function('g', commutative=False)
-    for e in (MatrixSymbol('M', 2, 2), g(x, 1), g(Tuple(x, S.Half))):
-        assert constructed_noncommutative(e) == 2, e
-        assert fresh().is_many(e, ['commutative', 'zero', 'complex']) == [False, False, False], e
-    for e in (a, BosonOp('c'), JzKet(1, 0), CreateBoson(x), Quaternion(x, y, 0, 1), Commutator(a, b),
-              g(x + 1), g(Add(x, 0, evaluate=False))):
-        assert constructed_noncommutative(e) == 1, e
-        assert fresh().is_many(e, ['commutative', 'zero']) == [False, None], e
+    for e in (sin(A), exp(A), sin(exp(A)), stieltjes(A, evaluate=False), acsch(inf, evaluate=False),
+              acsc(inf, evaluate=False), asec(inf, evaluate=False)):
+        assert level(e) == 2, e
+        assert fresh().is_many(e, ['zero', 'complex']) == [False, False], e
 
 
 def test_constructed_noncommutative_unknown_stays_none():
@@ -908,24 +910,23 @@ def test_constructed_noncommutative_unknown_stays_none():
         assert fresh().is_(e, 'commutative') is None, e
 
 
-def test_constructed_noncommutative_degenerate_only_commutative():
-    # a Pow or integral slot proves commutative False, but not that the
-    # term is no number
-    for e in _degenerate_terms():
-        assert fresh().is_(e, 'commutative') is False, e
-        assert fresh().is_many(e, ['zero', 'complex', 'positive']) == [None, None, None], e
-
-
-def test_constructed_noncommutative_agrees_with_sympy():
-    # every answer is SymPy's own wherever SymPy decides (soundness), and
-    # no assumption cache of the term is written
+def test_constructed_noncommutative_sympy_candidates():
+    # A candidate generator, not a requirement (#247): SymPy's answers may
+    # point at a mistake but never decide one.  The disagreements the spec
+    # decides are SymPy's own evaluators calling a term built
+    # non-commutative a number (Integral(A, (x, 0, 0)).is_zero, A**0
+    # .is_complex); any other disagreement fails here until it is triaged
+    # with a mathematical argument.  No assumption cache of the term is
+    # written.
     from satassume.engine import PRED_INDEX
-    for e in _s5_terms():
+    from satassume.knowledge.domain import constructed_noncommutative, noncommutative_false
+    for e in _s5_terms() + _algebra_terms() + _nan_terms() + _scalar_terms() + _user_evaluator_terms():
         before = dict(e._assumptions)
         got = {p: fresh().is_(e, p) for p in PRED_INDEX}
         assert dict(e._assumptions) == before, e
-        assert got['commutative'] in (None, e.is_commutative), e
         for p, r in got.items():
-            if r is not None:
-                native = getattr(e, 'is_' + p)
-                assert native is None or native is r, (e, p, r, native)
+            native = getattr(e, 'is_' + p) if r is not None else None
+            if native is None or native is r:
+                continue
+            assert r is False and native is True and p in noncommutative_false() \
+                and constructed_noncommutative(e) == 2, (e, p, r, native)

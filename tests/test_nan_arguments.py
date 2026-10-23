@@ -1,10 +1,15 @@
 """Function rules at an argument that may be nan (#180 final review F3).
 
-SymPy's functions return nan for a nan argument before any identity holds
-(``rf(nan, 0)``, ``owens_t(nan, 0)`` and ``zeta(1, nan)`` are nan, not 1, 0
-and zoo), and no predicate holds of nan.  An explicit nan argument gets no
-template fact (``registry.opaque``); a rule ignoring an argument requires it
-to be complex or extended real, as ``x + y`` is nan at ``x = oo, y = -oo``.
+The nan convention (design.md, "Extended reals and nan in templates";
+#189; spec.md, "Truth standard"): nan is no number, so a function of nan
+has no facts.  The identities ``rf(x, 0) = 1``, ``owens_t(h, 0) = 0`` and
+the pole of ``zeta(1, a)`` are stated for numbers, so they say nothing of
+``rf(nan, 0)``, ``owens_t(nan, 0)`` and ``zeta(1, nan)``.  An argument that
+holds an explicit nan or infinity in a part carrying a value
+(``domain.may_be_nan``) gets no template fact (``registry.opaque``); a
+rule ignoring an argument requires it to be complex or extended real, as
+``x + y`` has no value at ``x = oo, y = -oo``.  What SymPy evaluates these
+terms to is not the oracle (#247).
 """
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ from sympy import (Abs, Add, Mul, Pow, Q, RisingFactorial, FallingFactorial, S, 
 
 from satassume import Engine
 from satassume.engine import PRED_INDEX
+from satassume.knowledge.domain import may_be_nan
 from satassume.sympy_api import ask
 
 try:
@@ -51,17 +57,18 @@ def test_rule_needs_a_number(rule, v):
     e = make(v)
     assert ask(pred(e)) is None
     if v in NAN_VALUED:
-        assert e.doit() is S.NaN
+        assert may_be_nan(v)
 
 
 @pytest.mark.parametrize("v", [r, er, c, S(2), oo])
 @pytest.mark.parametrize("rule", _rules(), ids=lambda t: t[0].__name__)
 def test_rule_kept_for_numbers(rule, v):
+    # by definition: rf(v, 0) and ff(v, 0) are empty products, 1;
+    # owens_t(v, 0) is an integral over [0, 0], 0; zeta(1, v) is the pole
+    # of the Hurwitz zeta function at s = 1
     _, make, pred = rule
     e = make(v)
     assert ask(pred(e)) is True
-    if v.is_number:
-        assert e.doit() is {'positive': S.One, 'zero': S.Zero, 'infinite': S.ComplexInfinity}[pred.name]
 
 
 @pytest.mark.parametrize("e", [Abs(nan, evaluate=False), sign(nan, evaluate=False),
@@ -76,8 +83,9 @@ def test_applied_to_nan_gets_no_facts(e):
 def _may_be_nan_arguments():
     from sympy import (Contains, Eq, ImmutableMatrix, Integral, Interval, Limit, Piecewise, Subs, Sum,
                        Trace, UnevaluatedExpr)
-    # #231: arithmetic holding an explicit nan or infinity may evaluate to
-    # nan (oo - oo is not zero, which made Abs(oo - oo) extended_positive)
+    # #231: arithmetic holding an explicit nan or infinity may have no
+    # value (oo - oo is undefined, not zero, which made Abs(oo - oo)
+    # extended_positive)
     z = Add(oo, -oo, evaluate=False)
     return [z, Add(nan, x, evaluate=False), Abs(nan, evaluate=False), Mul(0, oo, evaluate=False),
             Add(x, oo, -oo, evaluate=False), sin(z, evaluate=False), Pow(z, 2, evaluate=False),
@@ -98,7 +106,7 @@ def _may_be_nan_arguments():
 @pytest.mark.parametrize("cls", [Abs, sign, sin])
 def test_applied_to_may_be_nan_gets_no_facts(cls, v):
     e = cls(v, evaluate=False)
-    assert e.doit().subs(x, 1) is S.NaN  # the Piecewise at x > 0
+    assert may_be_nan(v)
     preds = [p for p in PRED_INDEX if p != 'commutative']
     assert fresh().is_many(e, preds) == [None]*len(preds)
 
@@ -127,18 +135,21 @@ def test_rereview_r1_reproducers():
     z = Add(oo, -oo, evaluate=False)
     for v in (Subs(nan, x, 1), Limit(nan, x, 0), UnevaluatedExpr(nan), Subs(z, x, 1), Limit(z, x, 0)):
         a, s = Abs(v, evaluate=False), sign(v, evaluate=False)
-        assert a.doit() is S.NaN and s.doit() is S.NaN
+        assert may_be_nan(v)
         assert ask(Q.extended_nonnegative(a)) is None, v
         assert ask(Q.finite(s)) is None, v
-    # evaluated: Abs keeps an unevaluated integral, which is nan
+    # evaluated: Abs keeps an unevaluated integral, which diverges (the
+    # integral of r over the real line has no value)
     a = Abs(Integral(r, (r, -oo, oo)))
-    assert isinstance(a, Abs) and a.doit() is S.NaN
+    assert isinstance(a, Abs)
     assert fresh().is_many(a, ['extended_nonnegative', 'extended_real']) == [None, None]
     # an integral over an infinite range may be nan: its limits are values
     from sympy import Piecewise, exp
     assert fresh().is_(Abs(Integral(exp(-x), (x, 0, oo))), 'extended_nonnegative') is None
-    # #236 review: a Piecewise without a True branch, no condition holds
+    # #236 review: a Piecewise without a True branch has no value where no
+    # condition holds, and a condition on oo - oo, which has no value, may
+    # hold nowhere
     pw = Piecewise((1, Eq(z, 0, evaluate=False)))
-    assert Abs(pw, evaluate=False).doit() is S.NaN
+    assert may_be_nan(pw)
     assert fresh().is_(Abs(pw, evaluate=False), 'extended_nonnegative') is None
     assert ask(Q.finite(sign(pw, evaluate=False))) is None
