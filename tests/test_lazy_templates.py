@@ -41,6 +41,8 @@ assert CORE in sys.modules and FUNCS not in sys.modules
 # nor does the first power, whose template is rows (#297)
 assert ask(Q.positive(x**y), Q.positive(x)) is True
 assert "satassume.knowledge.templates.wiring" in sys.modules and FUNCS not in sys.modules
+# the compiled rows are read without the language they are written in (#309)
+assert "satassume.knowledge.templates._rows" not in sys.modules
 """)
 
 
