@@ -173,6 +173,9 @@ order = Symbol('order')
 #: the parameter of Hurwitz's ``zeta(argument, parameter)`` and of
 #: ``lowergamma(parameter, argument)``
 parameter = Symbol('parameter')
+#: the limits of an integral: ``erf2(lower, upper)``, ``owens_t(argument, upper)``
+lower = Symbol('lower')
+upper = Symbol('upper')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')
