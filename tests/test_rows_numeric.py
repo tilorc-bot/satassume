@@ -34,10 +34,27 @@ of arguments from a fixed pool of numbers:
   evaluation raises or exceeds :data:`TIMEOUT` decides nothing about its
   node at that point; those are counted too.
 
+The rows of ``Pow`` (``templates/power.py``, #294) have shapes and terms
+other than ``x + c`` (:data:`SHAPED`); :func:`check_power` takes every point
+``(b, e)`` of :data:`POW_BASES` x :data:`POW_EXPONENTS`, the node being
+SymPy's ``Pow(b, e)``.  A rule with a shape (``f(base, -1)``, ``f(E,
+exponent)``, ``f(exp(log_base), exponent)``, ``f(base, base)``, a constant
+``number``) is checked only at the points of its shape, matched by
+:func:`.wiring.matches` as the template matches a node; ``b**b`` is a
+point whose base and exponent are the same object.  The terms are built as
+the template builds them (:func:`power_objects`), and a rule about a term
+that does not exist at a point (the ``u`` of a base that is no ``exp(u)``,
+a term of a constant that is no SymPy ``Number``) is not checked there.
+The rules ``wiring.power`` adds that are not rows (``core.ipi_rules``,
+``core.irrational_root``, ``core._unit_power_units``,
+``core._pow_bound_templates``) are not checked here.
+
 Every rule must be checked at least once, except those in
 :data:`NEVER_CHECKED`, each with the reason; an entry that becomes
-checkable fails, so the list cannot go stale.  Run the module as a script
-to print the counts of every function.
+checkable fails, so the list cannot go stale.  A rule found false at a
+point is a soundness bug; the known ones are in :data:`KNOWN_FALSE`, each
+with the issue, and an entry that is no longer false fails.  Run the module
+as a script to print the counts of every function.
 """
 from __future__ import annotations
 
@@ -56,15 +73,17 @@ pytest.importorskip("sympy")
 import mpmath  # noqa: E402
 from sympy import (  # noqa: E402
     AccumBounds, Add, E, Float, I, Integer, Mul, Poly, Pow, Rational, S, erfcinv, erfinv, oo, pi,
-    sqrt, unpolarify, zoo,
+    exp, exp_polar, sqrt, unpolarify, zoo,
 )
 from sympy.ntheory import isprime  # noqa: E402
 
 from satassume.knowledge.rules import BASIS, DEFINITIONS  # noqa: E402
 from satassume.knowledge.templates import ROW_FAMILIES  # noqa: E402
 from satassume.knowledge.templates._compiled_rows import FAMILIES  # noqa: E402
+from satassume.knowledge.templates._rows import constant_value, from_text, generator  # noqa: E402
+from satassume.knowledge.templates.core import _exp_arg  # noqa: E402
 from satassume.knowledge.templates.functions import shifted  # noqa: E402
-from satassume.knowledge.templates.wiring import _declared  # noqa: E402
+from satassume.knowledge.templates.wiring import _declared, matches  # noqa: E402
 
 #: seconds for one evaluation of a node (construction and evalf)
 TIMEOUT = 10
@@ -91,6 +110,12 @@ _LINDEMANN = ("the value at an algebraic a != 0 stays unevaluated (sin(1), I*sin
               "LambertW(1)), and its transcendence, the rule's theorem (Lindemann-Weierstrass), "
               "is not decided numerically")
 
+_IRRATIONAL = ("irrational is never decided numerically: rational is decided only for an exact "
+               "(Gaussian) rational, so no value of the pool is irrational (sqrt(2) is not)")
+_GELFOND_SCHNEIDER = ("the conclusion, that an algebraic irrational power of an algebraic number "
+                      "other than 0 and 1 is transcendental, is the Gelfond-Schneider theorem: "
+                      "not decided numerically (2**GoldenRatio, sqrt(2)**sqrt(2))")
+
 #: rules no point of the pools checks: ``(function, the rule as :func:`show`
 #: prints it)`` and the reason
 NEVER_CHECKED = {
@@ -99,6 +124,37 @@ NEVER_CHECKED = {
                   'sinh', 'cosh', 'tanh', 'coth', 'sech', 'csch', 'LambertW')},
     ('LambertW', "LambertW: algebraic(x0) & integer(x1) & ~zero(x0) -> transcendental(f)"):
         _LINDEMANN,
+    **{('Pow', rule): _IRRATIONAL for rule in (
+        "Pow(b, 1): irrational(f) -> irrational(b)",
+        "Pow(b, 1): irrational(b) -> irrational(f)",
+        "Pow(b, -1): irrational(b) -> irrational(f)",
+        "Pow(b, e): algebraic(b) & algebraic(e) & imaginary(e) & irrational(b) "
+        "-> ~extended_real(f)",
+    )},
+    **{('Pow', rule): _GELFOND_SCHNEIDER for rule in (
+        "Pow(b, c): algebraic(c) & algebraic(b) & irrational(b) & ~rational(c) -> ~algebraic(f)",
+        "Pow(b, c): algebraic(c) & algebraic(b) & noninteger(b) & ~rational(c) -> ~algebraic(f)",
+        "Pow(b, c): algebraic(c) & algebraic(b) & negative(b) & ~rational(c) -> ~algebraic(f)",
+        "Pow(b, c): algebraic(c) & algebraic(b) & prime(b) & ~rational(c) -> ~algebraic(f)",
+        "Pow(b, c): algebraic(c) & algebraic(b) & composite(b) & ~rational(c) -> ~algebraic(f)",
+        "Pow(b, e): algebraic(b) & algebraic(e) & ~zero((b - 1)) & ~rational(e) & ~zero(b) "
+        "-> ~algebraic(f)",
+    )},
+}
+
+#: rules of the rows found false at a point of the pools, each a known
+#: soundness bug of the rules the rows were written from (#294 kept the
+#: answers): ``(the point, the rule as :func:`show_power` prints it)`` and
+#: the reason.  The test fails when an entry is no longer false there.
+#: ``(-1/2)**(-oo)`` (``tests/test_p6_review.py``, #97 P6) is not here:
+#: SymPy's value is ``nan``, whose finiteness this oracle leaves undecided,
+#: so the row "infinite" is skipped at that point, not false.
+KNOWN_FALSE = {
+    **{(f"Pow({b}, -oo)", "Pow(c, e): finite(c) & negative_infinite(e) "
+        "& extended_positive((Abs(c) - 1)) -> zero(f)"):
+       "#240: SymPy gives nan for a negative non-integer base of absolute value above 1 to "
+       "the power -oo ((-2)**(-oo) == 0, (-3/2)**(-oo) == nan); the row says zero"
+       for b in ('-3/2', '-7/3')},
 }
 
 
@@ -300,14 +356,14 @@ def basis(v):
 # the rules and their points
 # ---------------------------------------------------------------------------
 
-#: families not checked here yet: the rows of Pow have shapes and terms
-#: other than x + c, which the next step of #294 checks
-NOT_YET = ('power',)
+#: families whose rows have shapes and terms other than x + c, checked by
+#: their own section below (the rows of Pow, :func:`check_power`)
+SHAPED = ('power',)
 
 
 def _heads():
     """``(family, name, heads, arity, terms, rules)`` for every function of
-    the compiled rows (but those of :data:`NOT_YET`); ``heads`` the SymPy
+    the compiled rows (but those of :data:`SHAPED`); ``heads`` the SymPy
     classes whose nodes get the rules (empty for a function this SymPy
     lacks)."""
     declared = {}
@@ -317,7 +373,7 @@ def _heads():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
-        if family in NOT_YET:
+        if family in SHAPED:
             continue
         for name, arity, terms, specs in fns:
             fn = declared[family, name]
@@ -439,6 +495,156 @@ def _lit(slots, t):
     return v if pos else _knot(v)
 
 
+# ---------------------------------------------------------------------------
+# Pow: rules with shapes, and terms other than x + c (#294)
+# ---------------------------------------------------------------------------
+
+def _shared(values, others):
+    """``values``, each value equal to one of ``others`` replaced by that
+    object: the point ``(v, v)`` is then ``v**v`` (a ``('same', 0)`` shape
+    matches by identity, as for the symbols of ``b**b``)."""
+    return tuple(next((o for o in others if type(o) is type(v) and o == v), v) for v in values)
+
+
+#: the bases of the points of Pow: the numbers of the shapes (``E``, ``-1``,
+#: ``1``, ``I``, ``-I``), constants (atomic numbers: integers, ``|b|`` above
+#: and below 1, ``GoldenRatio``, ``pi``, the infinities), values that are no
+#: constant (``sqrt(2)``, ``2*I``, ``1 + I``, ``oo*I``), ``exp(u)`` for real,
+#: imaginary and complex ``u`` and a polar number
+POW_BASES = (
+    S(0), S(1), S(-1), S(2), S(-2), S(3), S(4), S(6), S.Half, -S.Half, Rational(3, 2),
+    Rational(-3, 2), Rational(1, 3), Rational(2, 3), Rational(-7, 3),
+    sqrt(2), S.GoldenRatio, pi, E, I, -I, 2*I, I/2, 1 + I,
+    oo, -oo, zoo, oo*I,
+    exp(2), exp(-1), exp(S.Half), exp(I), exp(-I*pi/3), exp(1 + I), exp_polar(I),
+)
+#: the exponents: those of the shapes (``-1``, ``1``), ``k/2``, ``1/q`` and
+#: ``-1/q``, ``2 mod 4`` and ``0 mod 4``, ``|e| >= 2``, algebraic irrational
+#: (``GoldenRatio``, ``sqrt(2)``), transcendental, imaginary, the infinities
+POW_EXPONENTS = _shared((
+    S(0), S(1), S(-1), S(2), S(-2), S(3), S(4), S(-4), S(6), S.Half, -S.Half, Rational(3, 2),
+    Rational(-3, 2), Rational(1, 3), Rational(-1, 3), Rational(2, 3), Rational(-7, 3),
+    sqrt(2), S.GoldenRatio, pi, E, I, -I, 2*I, 1 + I, I*pi,
+    oo, -oo, zoo,
+), POW_BASES)
+
+
+def _power():
+    """``(name, terms, rules)`` of the compiled rows of Pow: ``terms`` as
+    compiled (texts), ``rules`` as :func:`.wiring.power` reads them
+    (``gen.specs``, the numbers of the shapes as SymPy numbers)."""
+    [(name, arity, terms, specs)] = dict(FAMILIES)['power']
+    gen = generator(name, arity, terms, specs, 'power')
+    return name, dict(terms)[2], gen.specs[2]
+
+
+POWER = _power()
+
+
+def power_objects(b, e, terms):
+    """``(args, consts, objects)`` of the point ``(b, e)``: the objects of the
+    slots but the node's (None there), each term as :func:`.wiring.power`
+    builds it, ``Mul(k, e)``, ``b + c``, the ``u`` of ``exp(u)``
+    (:func:`.core._exp_arg`), a term of a constant from the SymPy ``Number``
+    (:func:`._rows.constant_value`); None for a term that does not exist at
+    the point: ``u`` for a base that is no ``exp(u)``, the term of a
+    constant that is no ``Number``.  ``k*e`` and ``b + c`` exist at every
+    point: the template has them only for arguments that are no numbers, but
+    the rules about them hold for every value, so they are checked at numbers
+    too."""
+    args = (b, e)
+    consts = {i: a for i, a in enumerate(args) if a.is_Atom and a.is_number}
+    objs = [b, e, None]
+    for t in terms:
+        if t[0] == 'inner':
+            v = _exp_arg(args[t[1]])
+        elif t[0] == 'times':
+            v = Mul(from_text(t[2]), args[t[1]])
+        elif t[0] == 'of_constant':
+            c = consts.get(t[1])
+            v = constant_value(t[2], c) if c is not None and c.is_Number else None
+        else:
+            v = args[t[0]] + S(t[1])
+        objs.append(v)
+    return args, consts, objs
+
+
+def show_power(rule, terms):
+    """``Pow(b, e): prem & ... -> concl | ...`` with the arguments named by
+    the rule's shape (``c`` a constant, ``exp(u)``, a number) and the node
+    ``f``."""
+    shape = rule[2] if len(rule) > 2 else (None, None)
+    args = []
+    for i, s in enumerate(shape):
+        if s is None:
+            args.append('be'[i])
+        elif s[0] == 'value':
+            args.append(str(s[1]))
+        elif s[0] == 'same':
+            args.append(args[s[1]])
+        elif s[0] == 'head':
+            args.append(f'{s[1]}(u)')
+        else:
+            args.append('c')
+    names = [*args, 'f']
+    for t in terms:
+        if t[0] == 'inner':
+            names.append('u')
+        elif t[0] == 'times':
+            names.append(f"{t[2]}*{args[t[1]]}")
+        elif t[0] == 'of_constant':
+            names.append(f"({t[2].replace('number', args[t[1]])})")
+        else:
+            names.append(f"({args[t[0]]} {'+' if t[1] > 0 else '-'} {abs(t[1])})")
+
+    def lit(t):
+        s, p, pos = t
+        return f"{'' if pos else '~'}{p}({names[s]})"
+    prem, concl = rule[:2]
+    return (f"Pow({', '.join(args)}): {' & '.join(map(lit, prem)) or 'True'} -> "
+            f"{' | '.join(map(lit, concl))}")
+
+
+def check_power(rules, terms):
+    """The :class:`Counts` of the rules of Pow over the points ``POW_BASES x
+    POW_EXPONENTS``: the node is SymPy's ``Pow(b, e)``; a rule with a shape
+    only at the points of its shape (:func:`.wiring.matches`), a rule about
+    a term only where it exists (:func:`power_objects`), else ``absent``."""
+    out = Counts()
+    out.per_rule = dict.fromkeys(range(len(rules)), 0)
+    out.absent = 0
+    for b, e in itertools.product(POW_BASES, POW_EXPONENTS):
+        out.points += 1
+        node, failure = _node_basis(Pow, (b, e))
+        if failure:
+            setattr(out, failure, getattr(out, failure) + 1)
+        args, consts, objs = power_objects(b, e, terms)
+        slots = [None if o is None else basis(o) for o in objs]
+        slots[2] = node
+        for k, rule in enumerate(rules):
+            prem, concl = rule[:2]
+            if len(rule) > 2 and not matches(rule[2], args, consts):
+                continue
+            if any(slots[t[0]] is None for t in (*prem, *concl)):
+                out.absent += 1
+                continue
+            p = _kand(_lit(slots, t) for t in prem)
+            if p is False:
+                out.vacuous += 1
+                continue
+            c = _kor(_lit(slots, t) for t in concl)
+            if p is True and c is False:
+                out.false.append((f"Pow({b}, {e})", show_power(rule, terms)))
+            elif p is True and c is True:
+                out.checked += 1
+                out.per_rule[k] += 1
+            elif c is True:
+                out.vacuous += 1
+            else:
+                out.skipped += 1
+    return out
+
+
 def _id(h):
     family, name, heads, n, terms, rules = h
     return f"{family}-{name}-{n}"
@@ -467,6 +673,30 @@ def test_every_rule_holds_at_the_points_of_the_pool(h):
     allowed = {r for (fn, r) in NEVER_CHECKED if fn == name and r in shown}
     assert never == allowed, (f"never checked, not in NEVER_CHECKED: {sorted(never - allowed)}; "
                               f"in NEVER_CHECKED but checked: {sorted(allowed - never)}")
+
+
+def test_every_rule_of_pow_holds_at_the_points_of_the_pools():
+    name, terms, rules = POWER
+    c = check_power(rules, terms)
+    never = {show_power(r, terms) for k, r in enumerate(rules) if not c.per_rule[k]}
+    print(_line(f"power-{name}-2", len(rules), c, len(never)), f"{c.absent} absent")
+    false, known = set(c.false), set(KNOWN_FALSE)
+    assert false == known, (f"false (point, rule), not in KNOWN_FALSE: {sorted(false - known)}; "
+                            f"in KNOWN_FALSE but not false: {sorted(known - false)}")
+    allowed = {r for (fn, r) in NEVER_CHECKED if fn == name}
+    assert never == allowed, (f"never checked, not in NEVER_CHECKED: {sorted(never - allowed)}; "
+                              f"in NEVER_CHECKED but checked: {sorted(allowed - never)}")
+
+
+def test_the_points_of_pow_have_its_shapes():
+    # b**b: the same object as base and exponent; exp(u), E, I, -I, -1, 1
+    # and constants (atomic numbers) among the bases
+    name, terms, rules = POWER
+    shapes = {r[2] for r in rules if len(r) > 2}
+    for shape in shapes:
+        assert any(matches(shape, *power_objects(b, e, terms)[:2])
+                   for b in POW_BASES for e in POW_EXPONENTS), shape
+    assert sum(b is e for b in POW_BASES for e in POW_EXPONENTS) >= 20
 
 
 def test_the_oracle_follows_satassumes_meanings():
@@ -509,17 +739,24 @@ def test_the_oracle_follows_satassumes_meanings():
 
 
 def test_every_entry_of_never_checked_is_a_rule():
+    name, terms, rules = POWER
     shown = {(h[1], show(h[1], h[3], r, h[4])) for h in HEADS for r in h[5]}
+    shown |= {(name, show_power(r, terms)) for r in rules}
     assert set(NEVER_CHECKED) <= shown
+    assert {r for _, r in KNOWN_FALSE} <= {show_power(r, terms) for r in rules}
 
 
 def test_every_function_of_the_families_is_checked():
     names = {(family, fn.rpartition(':')[2] if isinstance(fn, str) else fn.__name__)
-             for family, fns in ROW_FAMILIES if family not in NOT_YET for fn in fns}
+             for family, fns in ROW_FAMILIES if family not in SHAPED for fn in fns}
     assert {(h[0], h[1]) for h in HEADS} == names
     assert sum(len(h[5]) for h in HEADS) == sum(
-        len(r) for family, fns in FAMILIES if family not in NOT_YET
+        len(r) for family, fns in FAMILIES if family not in SHAPED
         for _, _, _, specs in fns for _, r in specs)
+    # the shaped families: Pow
+    assert SHAPED == ('power',) and dict(ROW_FAMILIES)['power'] == (Pow,)
+    [(name, _, _, specs)] = dict(FAMILIES)['power']
+    assert POWER[0] == name and len(POWER[2]) == len(dict(specs)[2]) and len(specs) == 1
 
 
 def main():
@@ -538,13 +775,21 @@ def main():
         nv = [show(name, n, r, terms) for k, r in enumerate(rules) if not c.per_rule[k]]
         never += nv
         print(_line(_id(h), len(rules), c, len(nv)), flush=True)
-    n_rules = sum(len(h[5]) for h in HEADS if h[2])
+    name, terms, rules = POWER
+    c = check_power(rules, terms)
+    for k in _COUNTED:
+        setattr(total, k, getattr(total, k) + getattr(c, k))
+    total.false += c.false
+    nv = [show_power(r, terms) for k, r in enumerate(rules) if not c.per_rule[k]]
+    never += nv
+    print(_line("power-Pow-2", len(rules), c, len(nv)), f"{c.absent} absent", flush=True)
+    n_rules = sum(len(h[5]) for h in HEADS if h[2]) + len(rules)
     print("\n" + _line("total", n_rules, total, len(never)),
           f"({time.perf_counter() - t0:.0f} s)")
     for r in never:
         print("never checked:", r)
     for r in total.false:
-        print("FALSE:", r)
+        print("FALSE (known):" if r in KNOWN_FALSE else "FALSE:", r)
 
 
 if __name__ == '__main__':
