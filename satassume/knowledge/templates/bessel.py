@@ -1,7 +1,7 @@
 """The Airy functions ``airyai``, ``airybi``, ``airyaiprime`` and
 ``airybiprime``, and the Bessel functions ``besselj``, ``bessely``,
-``besseli`` and ``besselk`` of order ``nu`` at ``z`` (``f(x, y)`` is
-``f(nu, z)``).
+``besseli`` and ``besselk`` of order ``nu`` at ``z`` (``f(order,
+argument)`` is ``f(nu, z)``).
 
 Values follow SymPy's conventions: the limits at the real infinities
 (``airyai(+-oo) == 0``, ``airybi(oo) == oo``, ``airybi(-oo) == 0``,
@@ -19,7 +19,7 @@ from sympy import (
     Q, airyai, airyaiprime, airybi, airybiprime, besseli, besselj, besselk, bessely,
 )
 
-from ._rows import closed, f, for_all, x, y
+from ._rows import argument, closed, f, for_all, order
 
 RULES = (
     # Entire
@@ -36,61 +36,63 @@ RULES = (
     #     Ai and its zeros are on the negative reals; Bi and Bi' increase
     #     from positive values at 0
     for_all((airyai, airybi, airybiprime),
-        Q.nonnegative(x) >> Q.positive(f(x))),
+        Q.nonnegative(argument) >> Q.positive(f(argument))),
 
     # Negative on the nonnegative reals
     #     Ai decreases on the nonnegative reals
     for_all((airyaiprime,),
-        Q.nonnegative(x) >> Q.negative(f(x))),
+        Q.nonnegative(argument) >> Q.negative(f(argument))),
 
     # oo at oo
     for_all((airybi, airybiprime),
-        (Q.infinite(x) & Q.extended_positive(x)) >> (
-            Q.infinite(f(x)) & Q.extended_positive(f(x)))),
+        (Q.infinite(argument) & Q.extended_positive(argument)) >> (
+            Q.infinite(f(argument)) & Q.extended_positive(f(argument)))),
 
     # Zero at oo
     for_all((airyai, airyaiprime),
-        (Q.infinite(x) & Q.extended_positive(x)) >> Q.zero(f(x))),
+        (Q.infinite(argument) & Q.extended_positive(argument)) >> Q.zero(f(argument))),
 
     # Zero at -oo
     for_all((airyai, airybi),
-        (Q.infinite(x) & Q.extended_negative(x)) >> Q.zero(f(x))),
+        (Q.infinite(argument) & Q.extended_negative(argument)) >> Q.zero(f(argument))),
 
     # Real on the positive reals, for a real order
     for_all((besselj, bessely, besseli),
-        (Q.real(x) & Q.positive(y)) >> Q.real(f(x, y))),
+        (Q.real(order) & Q.positive(argument)) >> Q.real(f(order, argument))),
 
     # Real on the reals, for an integer order
     #     J_n and I_n are entire, with real Taylor coefficients
     for_all((besselj, besseli),
-        (Q.integer(x) & Q.real(y)) >> Q.real(f(x, y))),
+        (Q.integer(order) & Q.real(argument)) >> Q.real(f(order, argument))),
 
     # Positive on the positive reals, for a real order
     #     K_nu is an integral of exp(-z*cosh(t))*cosh(nu*t) over t > 0
     for_all((besselk,),
-        (Q.real(x) & Q.positive(y)) >> Q.positive(f(x, y))),
+        (Q.real(order) & Q.positive(argument)) >> Q.positive(f(order, argument))),
 
     # Positive on the positive reals, for an integer order
     #     I_n == I_-n is a series of positive terms there
     for_all((besseli,),
-        (Q.integer(x) & Q.positive(y)) >> Q.positive(f(x, y))),
+        (Q.integer(order) & Q.positive(argument)) >> Q.positive(f(order, argument))),
 
     # oo at oo, for an order
     for_all((besseli,),
-        (Q.real(x) & Q.infinite(y) & Q.extended_positive(y)) >> (
-            Q.infinite(f(x, y)) & Q.extended_positive(f(x, y)))),
+        (Q.real(order) & Q.infinite(argument) & Q.extended_positive(argument)) >> (
+            Q.infinite(f(order, argument)) & Q.extended_positive(f(order, argument)))),
 
     # Zero at oo, for an order
     for_all((bessely, besselk),
-        (Q.real(x) & Q.infinite(y) & Q.extended_positive(y)) >> Q.zero(f(x, y))),
+        (Q.real(order) & Q.infinite(argument) & Q.extended_positive(argument))
+        >> Q.zero(f(order, argument))),
 
     # Zero at a real infinity, for an order
     for_all((besselj,),
-        (Q.real(x) & Q.infinite(y) & Q.extended_real(y)) >> Q.zero(f(x, y))),
+        (Q.real(order) & Q.infinite(argument) & Q.extended_real(argument))
+        >> Q.zero(f(order, argument))),
 
     # Infinite at 0, for a real order
     #     SymPy's value: bessely(nu, 0) == besselk(nu, 0) == zoo, though the
     #     limit of bessely(nu, z) at 0 is 0 for a negative half-integer nu
     for_all((bessely, besselk),
-        (Q.real(x) & Q.zero(y)) >> Q.infinite(f(x, y))),
+        (Q.real(order) & Q.zero(argument)) >> Q.infinite(f(order, argument))),
 )
