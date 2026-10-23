@@ -24,6 +24,7 @@ from sympy.core.add import Add
 from sympy.functions.elementary.integers import ceiling, floor
 
 from ...sat.formula import Not, P
+from ._common import shifted  # noqa: F401 (special.py, wiring.py)
 from ._common import (
     Rules,
     const_key,
@@ -79,18 +80,6 @@ def _unary(tag, gen, slots=None, units=None):
     # tells a declared module's templates by their module)
     template.__module__ = gen.__module__
     return template
-
-
-def shifted(x, c):
-    """``x + c`` for a number ``c``, as a slot object."""
-    # ``x + c`` rebuilds a sum from its terms: Add(y, -y, 1, evaluate=False)
-    # - 1 is 0, but the argument is nan at y = oo (#184); a sum whose terms
-    # rebuild to the same terms (in any order) is safe
-    if x.is_Add:
-        t = Add(*x.args)
-        if not (t.is_Add and Counter(t.args) == Counter(x.args)):
-            return Add(x, c, evaluate=False)
-    return x + c
 
 
 # ---------------------------------------------------------------------------

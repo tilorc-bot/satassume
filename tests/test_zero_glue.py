@@ -156,10 +156,11 @@ def test_outside_the_condition_in_the_proposition(p, s, cfg):
     assert _ask(p, s, cfg) == _ask(e, s, cfg)
 
 
-@pytest.mark.xfail(strict=True, reason="known: zero(s) on a sum bounded only by its "
-                   "terms' facts does not switch LRA on (relations, 'Zero is an equality')")
 @pytest.mark.parametrize("cfg", list(CONFIGS))
 def test_outside_the_condition_a_bounded_sum(cfg):
+    # a strict xfail until #315 step 2: the sign atom zero(k - x + 1) on a
+    # sum with a Rational term, whose terms carry integer premises, has the
+    # twins of integer bounds (relations.bound_twins), which switch LRA on
     k = Symbol("k")
     s = Q.integer(k) & Q.integer(x) & Q.negative(k) & Q.positive(x)
     assert _ask(Q.zero(k - x + 1), s, cfg) == _ask(Q.eq(k - x + 1, 0), s, cfg) is False

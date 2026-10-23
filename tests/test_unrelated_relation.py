@@ -66,9 +66,12 @@ A3 = Q.integer(k) & Q.integer(x) & Q.negative(k) & Q.positive(x) & Q.zero(k - x 
     (Q.finite(w) & ~Q.negative(y + oo), A1, None),
     (Q.nonpositive(E) & Q.lt(sqrt(x), z), A2, False),
     (Q.positive(y), A2, False),
-    # the same channel without an infinity: LRA bounds the sum
-    (Q.positive(x), A3, True),
-    (Q.finite(w) & Q.positive(x), A3, None),
+    # the same channel without an infinity: LRA bounds the sum; since #315
+    # step 2 the set's own check has the glue (relations.bound_twins: a
+    # sign atom on a sum with a Rational term over integer premises) and
+    # finds the inconsistency without a relation
+    (Q.positive(x), A3, "ValueError"),
+    (Q.finite(w) & Q.positive(x), A3, "ValueError"),
 ])
 def test_inconsistent_sets_raise_with_a_relation(p, A, before):
     # without a relation the set's check misses the inconsistency; with one

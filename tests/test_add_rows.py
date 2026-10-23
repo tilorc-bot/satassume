@@ -113,13 +113,12 @@ def test_the_pattern_keys_are_legacys():
         return pattern_key('add', len(e.args), consts_of(e.args))
     for e in (Basic.__new__(Add, x, Integer(2), y), Basic.__new__(Add, pi, x), x + y):
         assert run(rows_template(), e)[1] == {add(e)}
-    e = 3 + 2*n
-    assert run(rows_template(), e)[1] == {add(e), ('add_bound', 3, 2)}
-    e = 1 + 2/x
-    assert run(rows_template(), e)[1] == {add(e), ('add_bound', 1, 2), ('add_recip', 1, 2)}
+    # c0 + c1*u and c0 + c1/v have no keys of their own since #315 step 2
+    # (their integer bounds are the relation glue's, relations.BOUND_LINKS)
+    for e in (3 + 2*n, 1 + 2/x):
+        assert run(rows_template(), e)[1] == {add(e)}
     e = n/2 + S.Half
-    assert run(rows_template(), e)[1] == {add(e), ('add_bound', S.Half, S.Half),
-                                          ('add_half', 1, (1,), ())}
+    assert run(rows_template(), e)[1] == {add(e), ('add_half', 1, (1,), ())}
     e = I*x + I
     assert run(rows_template(), e)[1] == {add(e), ('add_imag', (1,), frozenset({1}), ())}
 
@@ -128,7 +127,7 @@ def test_the_blocks_of_a_node():
     # the rows over the terms, then past 32 terms the strict-sign rows as
     # one formula each, then the sums of a special shape
     out, _ = run(rows_template(), 1 + 2/x)
-    assert [c.objs for c in out] == [(1, 2/x, 1 + 2/x), (1/x, 1 + 2/x), (x, 1 + 2/x)]
+    assert [c.objs for c in out] == [(1, 2/x, 1 + 2/x)]
     xs = symbols('a:40')
     out, _ = run(rows_template(), Add(*xs))
     assert len(out) == 3 and isinstance(out[0], Compiled)

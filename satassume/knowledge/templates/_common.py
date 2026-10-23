@@ -406,3 +406,20 @@ def consts_of(args) -> Dict[int, Any]:
 
 def pattern_key(tag, n: int, consts: Dict[int, Any]):
     return (tag, n, tuple((k, type(c), c) for k, c in sorted(consts.items())))
+
+
+def shifted(x, c):
+    """``x + c`` for a number ``c``, as a slot object (the term ``x + c``
+    of the rows, ``wiring.template``; read by ``relations._shift_nodes``,
+    which must build the same node, hence here and not in
+    :mod:`.functions`, which a query without functions does not load)."""
+    from collections import Counter
+    from sympy.core.add import Add
+    # ``x + c`` rebuilds a sum from its terms: Add(y, -y, 1, evaluate=False)
+    # - 1 is 0, but the argument is nan at y = oo (#184); a sum whose terms
+    # rebuild to the same terms (in any order) is safe
+    if x.is_Add:
+        t = Add(*x.args)
+        if not (t.is_Add and Counter(t.args) == Counter(x.args)):
+            return Add(x, c, evaluate=False)
+    return x + c

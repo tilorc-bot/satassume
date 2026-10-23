@@ -67,9 +67,11 @@ def test_the_rules_that_are_not_rows():
     # I**(1/3) (core._unit_power_units): the facts of its value
     _, formulas = _blocks(Pow(I, Rational(1, 3), evaluate=False))
     assert 'Not(extended_real(I**(1/3)),)' in formulas
-    # (2*n + 3)**-1 (core._pow_bound_templates): a block about n
+    # (2*n + 3)**-1: no block about n since #315 step 2 deleted
+    # core._pow_bound_templates (it answered nothing on the stream, gate2 or
+    # SymPy's assumption tests)
     cs, _ = _blocks(Pow(2*n + 3, -1, evaluate=False))
-    assert len(cs) == 2 and cs[1].objs[0] == n
+    assert len(cs) == 1 and n not in cs[0].objs
 
 
 def test_power_is_compiled_on_its_own_first_use():
