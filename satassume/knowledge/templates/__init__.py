@@ -2,8 +2,8 @@
 
 Importing this package registers every template module with
 :data:`registry` (:mod:`.core`, the families of rows through :mod:`.wiring`
-(``Pow`` among them),
-:mod:`.selection`, :mod:`.special`, :mod:`.rootof`,
+(``Pow``, ``Max``, ``Min`` and ``Piecewise`` among them),
+:mod:`.special`, :mod:`.rootof`,
 :mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
@@ -37,7 +37,7 @@ from sympy.functions.elementary.complexes import (
     Abs, conjugate, im, polar_lift, principal_branch, re, sign,
 )
 from sympy.functions.elementary.integers import RoundFunction, ceiling, floor
-from sympy.functions.elementary.miscellaneous import MinMaxBase
+from sympy.functions.elementary.miscellaneous import Max, Min
 from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.hyperbolic import (
     acosh, acoth, acsch, asech, asinh, atanh, cosh, coth, csch, sech, sinh, tanh,
@@ -123,11 +123,11 @@ ROW_FAMILIES = (
     # sympy.codegen is not imported by SymPy itself: declared by name
     ("cfunctions", ("sympy.codegen.cfunctions:expm1", "sympy.codegen.cfunctions:log1p")),
     ("power", (Pow,)),
+    ("selection", (Max, Min, Piecewise)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)
 registry.lazy(__name__ + ".rootof", ComplexRootOf)
-registry.lazy(__name__ + ".selection", MinMaxBase, Piecewise)
 registry.lazy(__name__ + ".special", multigamma)
 # sympy.physics and sympy.stats are not imported by SymPy itself either
 registry.lazy(__name__ + ".physics", "sympy.physics.units.quantities:Quantity")

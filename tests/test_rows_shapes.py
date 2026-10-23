@@ -162,8 +162,8 @@ def test_every_family_but_power_compiles_to_plain_rows():
     # the shapes and the new terms are used by the rows of Pow only, which
     # wiring.power matches nodes against
     for family, fns in FAMILIES:
-        for name, arity, terms, specs in fns:
-            plain = generator(name, arity, terms, specs, __name__).plain
+        for name, arity, terms, specs, *schemas in fns:
+            plain = generator(name, arity, terms, specs, __name__, *schemas).plain
             assert plain is (family != 'power'), (family, name)
     assert {fam for fam, _ in FAMILIES} == {fam for fam, _ in ROW_FAMILIES}
 

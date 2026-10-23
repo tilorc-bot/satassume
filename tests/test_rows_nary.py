@@ -2,9 +2,10 @@
 language of ``_rows`` (a star, ``every``, ``some``, ``count``,
 ``coefficient``, ``at_most``), the schemas it compiles to, and
 ``wiring.expand``, which turns a schema into rules for a node of ``n``
-arguments.  No family has such rows yet; the rows here are test rows,
-and the last tests check that rows written for some of the rules of
-``core`` (Add, Mul) and ``selection`` expand to the same clauses."""
+arguments.  The rows here are test rows, and the last tests check that
+rows written for some of the rules of ``core`` (Add, Mul) and of
+``selection.py`` before its rows (Max, Min, Piecewise) expand to the same
+clauses."""
 from itertools import combinations, product
 from math import comb
 
@@ -15,8 +16,8 @@ from sympy import (
 )
 
 from satassume.knowledge.rules import DEFINITIONS
-from satassume.knowledge.templates import core, selection, wiring
-from satassume.knowledge.templates._common import Pattern, lits, resolve
+from satassume.knowledge.templates import core, wiring
+from satassume.knowledge.templates._common import _CACHE, MAX_EXPAND, Pattern, lits, resolve
 from satassume.knowledge.templates._rows import (
     ANY_ARITY, Arguments, base, by_function, coefficient, compile_rows, count, every, exponent,
     f, factor, factors, for_all, generator, number, other, some, term, terms, third, value,
@@ -191,10 +192,17 @@ def test_rows_that_do_not_compile(head, statement, match):
         compiled(head, statement())
 
 
-def test_a_family_with_a_star_is_not_wired_yet():
-    gen = gen_of(Mul, for_all((Mul,), every(Q.odd, factors) >> Q.odd(f(*factors))))
-    with pytest.raises(ValueError, match="no function is wired"):
-        wiring.template(Mul, gen)
+def test_a_family_with_a_star_gets_the_template_of_any_arity():
+    gen = gen_of(Max, for_all((Max,), every(Q.odd, values) >> Q.odd(f(*values))))
+    t = wiring.template(Max, gen)
+    assert t.__name__ == 'Max_rows_templates'
+    x, y = symbols('x y')
+    _CACHE.clear()          # the key ('Max', 2, ()) is that of the registered template
+    try:
+        assert t(Max(x, y)).pattern.rules == [(((0, 'odd', True), (1, 'odd', True)),
+                                               ((2, 'odd', True),))]
+    finally:
+        _CACHE.clear()
 
 
 # --- expansion per arity -------------------------------------------------------
@@ -404,19 +412,52 @@ def add_infinite_constant(n, consts):
     return R
 
 
+# verbatim from templates/selection.py at eaaa6d2, before its rows
+_BASIS = (
+    'algebraic', 'complex', 'composite', 'even', 'extended_negative', 'extended_positive',
+    'extended_real', 'finite', 'imaginary', 'integer', 'prime', 'rational', 'zero',
+)
+_DERIVED = (
+    'odd', 'real', 'positive', 'negative', 'nonnegative', 'nonpositive', 'nonzero',
+    'irrational', 'noninteger', 'transcendental',
+)
+
+
+def _selection(R, n):
+    """Values 0 .. n-1, node n."""
+    for pred in _BASIS:
+        for pos in (True, False):
+            R.rule([(i, pred, pos) for i in range(n)], (n, pred, pos))
+    for pred in _DERIVED:
+        width = DEFINITIONS[pred].count('&') + 1      # conjuncts over the basis
+        if width ** n <= MAX_EXPAND:
+            R.rule([(i, pred, False) for i in range(n)], (n, pred, False))
+
+
+def _bound(R, n, preds):
+    """One argument with ``pred`` gives the node ``pred`` (an upper bound
+    of ``Max``, a lower bound of ``Min``)."""
+    for pred in preds:
+        for i in range(n):
+            R.rule([(i, pred, True)], (n, pred, True))
+
+
+_MAX_BOUND = ('extended_positive', 'extended_nonnegative')
+
+
 def max_bound(n, consts):
     R = core.Rules()
-    selection._bound(R, n, selection._MAX_BOUND)
+    _bound(R, n, _MAX_BOUND)
     return R.rules
 
 
 def selection_all(n, consts):
     R = core.Rules()
-    selection._selection(R, n)
+    _selection(R, n)
     return R.rules
 
 
-PREDS = {p: getattr(Q, p) for p in selection._BASIS + selection._DERIVED}
+PREDS = {p: getattr(Q, p) for p in _BASIS + _DERIVED}
 
 GROUPS = {
     'Mul one negative factor (each, at_most=6)': (
@@ -470,9 +511,9 @@ GROUPS = {
     'selection (both polarities, derived negatives left out when wide)': (
         Min, selection_all,
         [for_all((Min,), every(PREDS[p], values) >> PREDS[p](f(*values)))
-         for p in selection._BASIS]
+         for p in _BASIS]
         + [for_all((Min,), every(~PREDS[p], values) >> ~PREDS[p](f(*values)))
-           for p in selection._BASIS + selection._DERIVED], True),
+           for p in _BASIS + _DERIVED], True),
 }
 
 
@@ -487,8 +528,8 @@ def test_rows_expand_to_the_legacy_clauses(group, n):
 
 
 def test_the_selection_cap_is_legacys():
-    # width**n <= MAX_EXPAND of selection._selection
-    for p in selection._DERIVED:
+    # width**n <= MAX_EXPAND of _selection
+    for p in _DERIVED:
         width = DEFINITIONS[p].count('&') + 1
         st = for_all((Min,), every(~PREDS[p], values) >> ~PREDS[p](f(*values)))
         for n in range(1, 9):

@@ -357,7 +357,7 @@ are `power.py`, #294), `functions.py` the elementary functions
 (with the reciprocal and inverse trigonometric and hyperbolic ones, the
 polar functions and `Mod`), rounding and `factorial`, `selection.py` the
 nodes whose value is one of given expressions (`Max`, `Min`, `Piecewise`
-with a final `True`), `combinatorial.py` the other combinatorial
+with a final `True`; rows with a star, #299), `combinatorial.py` the other combinatorial
 functions, `special.py` the special functions (the gamma family, the error
 functions and integrals, `owens_t` (declared by class name: it is new in
 SymPy 1.15), the beta functions, `LambertW`, `zeta`, `polylog`, the Airy

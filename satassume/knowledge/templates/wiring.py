@@ -16,7 +16,8 @@ rational ``c``, or, for a function of :data:`I_PI_ROOT`,
 then the templates of :data:`AFTER_ROWS`, which are not rows.  Rows with a
 star, about a function of any number of arguments (``f(factor,
 *factors)``), are expanded for each node by :func:`expand`
-(:func:`any_arity`'s template); no function is wired to it yet.
+(:func:`any_arity`'s template: ``Max``, ``Min`` and ``Piecewise``, with
+:data:`ARGUMENTS` and :data:`LEAVE_OUT_WIDE`).
 ``templates/__init__.py`` declares each family as ``"<this
 module>:<family>"`` for its functions (``TemplateRegistry.lazy``), so a
 family is compiled on the first use of one of its functions, and its
@@ -28,8 +29,8 @@ import importlib
 from itertools import combinations
 
 from sympy import (
-    Integer, Mul, Pow, S, acos, andre, asin, catalan, cos, cosh, exp, factorial2, genocchi, im,
-    partition, re, sin, subfactorial,
+    Expr, Integer, Max, Min, Mul, Piecewise, Pow, S, acos, andre, asin, catalan, cos, cosh, exp,
+    factorial2, genocchi, im, partition, re, sin, subfactorial,
 )
 
 from ...sat.formula import And, Implies, Not, Or, P
@@ -95,13 +96,17 @@ def template(fn, gen):
     node of another number of arguments gets no facts.  Rows with shapes
     or terms other than ``x + c`` (``gen.plain`` false) get :func:`power`'s
     template for a function of :data:`POWER`, and are refused for another:
-    no other template here matches a node against shapes.  :mod:`.functions`
-    is imported for those templates only, not for :func:`power`'s (#297)."""
+    no other template here matches a node against shapes.  Rows with a star
+    (``gen.schemas``) get :func:`any_arity`'s template, keyed by the name of
+    the function, with the arguments :data:`ARGUMENTS` gives and the rules
+    over too many clauses left out for a function of
+    :data:`LEAVE_OUT_WIDE`.  :mod:`.functions` is imported for the templates
+    of :func:`.functions` only, not for :func:`power`'s or
+    :func:`any_arity`'s (#297)."""
     if fn in POWER:
         return power(gen)
     if getattr(gen, 'schemas', ()):
-        raise ValueError(f"{fn.__name__}: its rows have a star; no function is wired to "
-                         "any_arity yet")
+        return any_arity(fn.__name__, gen, dict(ARGUMENTS).get(fn), fn in LEAVE_OUT_WIDE)
     if not getattr(gen, 'plain', True):
         raise ValueError(f"{fn.__name__}: its rows have shapes or terms other than x + c, "
                          "which none of these templates builds")
@@ -328,6 +333,31 @@ def power(gen):
 # Rows about a function of any number of arguments: the rows with a star
 # (``f(factor, *factors)``, ``every``, ``some``, ``count``; ``_rows._schema``)
 # ---------------------------------------------------------------------------
+
+def piecewise_values(expr):
+    """The values of a ``Piecewise`` (its expressions) when its last
+    condition is ``True``: the node is one of them.  None without a final
+    ``True`` (the node is ``nan`` where no condition holds) and for a
+    ``Piecewise`` of Booleans: no facts."""
+    args = expr.args
+    if not args or args[-1].cond is not S.true:
+        return None
+    values = tuple(a.expr for a in args)
+    if not all(isinstance(v, Expr) for v in values):
+        return None
+    return values
+
+
+#: the functions whose rows with a star are about other arguments than the
+#: node's ``args``, each with the function that gives them for a node (None:
+#: no facts): the values of a ``Piecewise``
+ARGUMENTS = ((Piecewise, piecewise_values),)
+
+#: the functions whose rules with a star are left out of a node when their
+#: clauses over the basis would be more than ``MAX_EXPAND``, a limit on the
+#: cost (``expand``'s ``leave_out_wide``); for the other functions such a
+#: rule is encoded as a formula (``Pattern.wide``)
+LEAVE_OUT_WIDE = (Max, Min, Piecewise)
 
 #: past this many arguments, a rule with ``some`` in its premises is one
 #: formula (:func:`wide_formulas`, linear in the width with Tseitin
