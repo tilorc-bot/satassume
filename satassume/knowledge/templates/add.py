@@ -113,8 +113,19 @@ RULES = (
 
     # --- integers ---
 
-    # (#315 step 3 experiment: the parity rows of Add are deleted; the
-    # parity theory, relations.PARITY_SUMS, decides even/odd of sums)
+    # Even: even terms
+    for_all((Add,),
+        every(Q.even, terms) >> Q.even(f(*terms))),
+
+    # Odd: one odd term, the others even
+    for_all((Add,),
+        (Q.odd(term) & every(Q.even, terms)) >> Q.odd(f(term, *terms)), at_most=6),
+
+    # Two or three odd terms, the others even: the parity by their number
+    for_all((Add,),
+        (Q.odd(term) & Q.odd(other) & every(Q.even, terms)) >> Q.even(f(term, other, *terms)),
+        (Q.odd(term) & Q.odd(other) & Q.odd(third) & every(Q.even, terms))
+        >> Q.odd(f(term, other, third, *terms)), at_most=3),
 
     # Composite: two positive even terms or more
     #     at least 4; two or more: a number of terms that is a prime or

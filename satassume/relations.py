@@ -543,11 +543,6 @@ PARITY = True
 #: the 74 sessions the five predicates glued answered nothing new
 PARITY_TWIN_PREDS = frozenset({"integer"})
 
-#: experiment (#315 step 3, item 5, with the parity rows of Add deleted):
-#: every sum with coefficients in ``Z/2`` is a parity sum (:func:`half_terms`),
-#: and an atom of any predicate on one switches the glue on
-PARITY_SUMS = True
-
 
 def half_terms(e) -> Optional[list]:
     """The terms ``u`` of a sum ``c0 + sum(c*u)`` whose Rational
@@ -575,8 +570,6 @@ def half_terms(e) -> Optional[list]:
         out.append(u)
     if len(consts) > 1 and any(c.q == 2 for c in consts):
         half = True                 # unevaluated: Add(x, 1/2, 1/2) is x + 1
-    if PARITY_SUMS:
-        half = True
     return out if half and out else None
 
 
@@ -1081,8 +1074,7 @@ def _bound_twins(atoms, context=()) -> list:
                 # links even/odd to integrality atoms (see "Parity").  Its
                 # terms need a premise other than the atom on the sum
                 for h in halves:
-                    if a.pred not in PARITY_TWIN_PREDS and h == a.expr \
-                            and not PARITY_SUMS:
+                    if a.pred not in PARITY_TWIN_PREDS and h == a.expr:
                         continue
                     if _parity_terms(h, premised):
                         add(h)
