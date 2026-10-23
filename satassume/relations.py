@@ -750,17 +750,25 @@ def _shift_nodes(e) -> tuple:
     return r
 
 
-def _bound_terms(e, syms) -> list:
+def _declared_integer(x) -> bool:
+    """Whether the symbol ``x`` is declared an integer (``Symbol('n',
+    even=True)``: ``assumptions0`` holds the closure of its declared
+    facts, the facts ``templates.atoms.symbol_units`` gives its node)."""
+    a0 = getattr(x, "assumptions0", None)  # sympy-boundary: declared symbol facts, as symbol_units
+    return bool(a0) and a0.get("integer") is True
+
+
+def _bound_terms(e, bounded) -> list:
     """The ``u`` of the terms ``c*u`` (``c`` Rational, possibly 1; ``u`` no
-    number) of ``e`` that share a free symbol with ``syms``, if ``e`` is a
-    sum with a Rational term; else ``[]``."""
+    number) of ``e`` for which ``bounded(u)`` holds, if ``e`` is a sum
+    with a Rational term; else ``[]``."""
     if not getattr(e, "is_Add", False) or not any(t.is_Rational for t in e.args):
         return []
     out = []
     for t in e.args:
         if not t.is_Rational:
             u = t.as_coeff_Mul()[1]
-            if not _is_number(u) and syms & u.free_symbols:
+            if not _is_number(u) and bounded(u):
                 out.append(u)
     return out
 
@@ -769,16 +777,15 @@ def bound_twins(atoms, context=()) -> list:
     """The twins ``lt(0, t)`` (the link atom ``0 < t`` of :meth:`Relations._link`)
     that switch on the glue for the integer bounds a formula with the
     atoms ``atoms``, asked under ``context``, needs (see "Integer bounds"):
-    with an atom of :data:`BOUND_PREMISES` on a term ``u`` among ``atoms``
-    and ``context``,
+    with an atom of :data:`BOUND_PREMISES` on a term among ``atoms`` and
+    ``context``, or a symbol declared an integer (a "premised" symbol),
 
     * a sign atom (:data:`SIGN_PREDS`) on a sum ``c0 + ... + c1*u`` with
-      a Rational term ``c0``, ``u`` sharing a free symbol with a premised
-      term: the twins of the sum and of ``u`` (``Abs(e) - 1`` with
+      a Rational term ``c0``, ``u`` with a premised symbol: the twins of the sum and of ``u`` (``Abs(e) - 1`` with
       ``even(e)``: the bound is one of ``Abs(e)``, which no atom names);
     * an application ``f(..., v, ...)`` of a function whose rows use the
       term ``v + c`` (:func:`_shift_nodes`; ``log(v)`` reads ``v - 1``),
-      ``v`` sharing a free symbol with a premised term: the twins of
+      ``v`` with a premised symbol: the twins of
       ``v`` and ``v + c``, so that both are linked (``v + c`` is a node
       the template derives, which no atom names).
 
@@ -790,13 +797,18 @@ def bound_twins(atoms, context=()) -> list:
     for a in context:
         if a.pred in BOUND_PREMISES and not _is_number(a.expr):
             premised.add(a.expr)
-    if not premised:
-        return []
     from sympy import S
     syms = set()
     for u in premised:
         syms.update(getattr(u, "free_symbols", ()))
     out = []
+
+    def bounded(u) -> bool:
+        # u shares a free symbol with a premised term, or has a symbol
+        # declared an integer (Symbol('n', integer=True): its premise is
+        # a fact of its node, which no atom names)
+        fs = u.free_symbols
+        return bool(syms & fs) or any(_declared_integer(x) for x in fs)
 
     def add(t):
         tw = relation_atom("lt", S.Zero, t)
@@ -806,14 +818,14 @@ def bound_twins(atoms, context=()) -> list:
         for a in seq:
             e = a.expr
             if a.pred in SIGN_PREDS:
-                us = _bound_terms(e, syms)
+                us = _bound_terms(e, bounded)
                 if us:
                     add(e)
                     for u in us:
                         add(u)
             if a.pred in PRED_INDEX or a.pred in RELATION_ATOMS:
                 for u, d in _shift_nodes(e):
-                    if syms & u.free_symbols:
+                    if bounded(u):
                         add(u)
                         if not _is_number(d):
                             add(d)

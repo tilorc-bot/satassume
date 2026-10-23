@@ -2031,11 +2031,34 @@ class Engine:
                 self.cache.put(node, pred, r)
             return r
         self.stats["queries"] += 1
-        s = self._fresh_session()
-        s.ensure(node, {pred})
-        r = self._decide(s, s.query_lit(pred, node))
+        scope = self._free_scope(node, pred)
+        s = self._fresh_session(scope)
+        if scope.glue:
+            r = self._decide_glued(s, P(pred, node))
+        else:
+            s.ensure(node, {pred})
+            r = self._decide(s, s.query_lit(pred, node))
         self._put_result(s, self.cache, node, pred, r)
         return r
+
+    def _free_scope(self, node: Node, pred: str) -> Scope:
+        """The theory scope of the context-free query ``pred(node)``, as
+        :meth:`ask` builds it for ``P(pred, node)`` without assumptions
+        (``scope.theory_scope``): for a vocabulary atom it has the glue
+        only through the twins of integer bounds (``relations.bound_twins``;
+        no zero twin, since ``node`` is under no application of its own
+        atom, and no extension atom).  A function of ``(node, pred)``."""
+        if not self._relation_specs:
+            return _EMPTY_SCOPE
+        return theory_scope(None, P(pred, node), self._extensions)
+
+    def _decide_glued(self, s: Session, atom: P) -> Optional[bool]:
+        """:meth:`_decide` of the vocabulary atom ``atom`` in a fresh session
+        whose scope has the glue: the twins are allocated and the glue
+        reads the atom (``Session.prepare_query``), under the selectors it
+        activates (``Session.assumption_lits``), as :meth:`ask` decides it."""
+        lit = s.prepare_query(atom)
+        return self._decide(s, lit, s.assumption_lits(atom))
 
     def is_many(self, node: Node, preds: Sequence[str]) -> List[Optional[bool]]:
         """``[self.is_(node, p) for p in preds]``, with the built-in
@@ -2093,13 +2116,30 @@ class Engine:
         if not todo:
             return out
         self.stats["queries"] += len(todo)
-        s = self._fresh_session()
-        s.ensure(node, {preds[k] for k in todo})
         cache = self.cache
+        # the predicates whose context-free scope has the glue (_free_scope)
+        # are decided as is_ decides them, one session per scope, so that
+        # each answer is the one is_ gives (the cache is a memo of is_)
+        plain = []
+        glued: dict = {}
         for k in todo:
-            pred = preds[k]
-            r = out[k] = self._decide(s, s.query_lit(pred, node))
-            self._put_result(s, cache, node, pred, r)
+            scope = self._free_scope(node, preds[k])
+            if scope.glue:
+                glued.setdefault(scope, []).append(k)
+            else:
+                plain.append(k)
+        if plain:
+            s = self._fresh_session()
+            s.ensure(node, {preds[k] for k in plain})
+            for k in plain:
+                pred = preds[k]
+                r = out[k] = self._decide(s, s.query_lit(pred, node))
+                self._put_result(s, cache, node, pred, r)
+        for scope, ks in glued.items():
+            for k in ks:
+                s = self._fresh_session(scope)
+                r = out[k] = self._decide_glued(s, P(preds[k], node))
+                self._put_result(s, cache, node, preds[k], r)
         return out
 
     def _decide(self, s: Session, lit: int, lits=()) -> Optional[bool]:
