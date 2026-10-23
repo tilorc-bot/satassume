@@ -213,8 +213,11 @@ POOL_XY = POOL2 + [S(3), S(-2), Rational(-1, 2), Rational(7, 3), 2*I, -exp(-1)]
 
 @pytest.mark.parametrize("expr", SAMPLES, ids=str)
 def test_sound_at_points(expr):
-    wrong = check(expr, POOL_X, POOL_XY)
+    wrong, candidates = check(expr, POOL_X, POOL_XY, candidates=True)
     assert not wrong, wrong[:5]
+    # SymPy's value at a special point without a row in
+    # docs/special-values.md (#247)
+    assert not candidates, ("candidates", candidates[:5])
 
 
 def test_sound_at_constant_points():

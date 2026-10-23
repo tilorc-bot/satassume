@@ -167,8 +167,11 @@ SAMPLES = ([f(a) for f in UNARY for a in (x, x + 1, x - 1, 2*x)]
 
 @pytest.mark.parametrize("expr", SAMPLES, ids=str)
 def test_sound_at_points(expr):
-    wrong = check(expr)
+    wrong, candidates = check(expr, candidates=True)
     assert not wrong, wrong[:5]
+    # SymPy's value at a special point without a row in
+    # docs/special-values.md (#247)
+    assert not candidates, ("candidates", candidates[:5])
 
 
 def test_oracle_catches_sympys_acsch_rule():

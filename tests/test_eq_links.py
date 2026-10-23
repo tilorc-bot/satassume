@@ -27,6 +27,8 @@ from sympy.logic.boolalg import And
 from satassume import DictCache, Engine
 from satassume.sympy_api import ask
 
+from _special_values import point_value, same_value
+
 x, y, t = symbols("x y t")
 f, g = Function("f"), Function("g")
 F, G = f(1), g(1)                     # shared subterms without free symbols
@@ -125,9 +127,10 @@ def _holds(t, env):
     if tag == "not":
         return not _holds(t[1], env)
     if tag == "u":
-        return _unary(t[1], S(t[2]).xreplace(env))
-    a, b = S(t[1]).xreplace(env), S(t[2]).xreplace(env)
-    equal = a is not nan and b is not nan and a == b     # value equality; Eq(nan, nan) is False
+        return _unary(t[1], point_value(S(t[2]), env))
+    # values at infinities from docs/special-values.md (#247)
+    a, b = point_value(S(t[1]), env), point_value(S(t[2]), env)
+    equal = same_value(a, b)     # value equality; Eq(nan, nan) is False
     return equal == (tag == "eq")
 
 

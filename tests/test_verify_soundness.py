@@ -50,6 +50,8 @@ from sympy.logic.boolalg import ITE, And, Equivalent, Implies, Not, Or, Xor
 from satassume.engine import Engine
 from satassume.sympy_api import ask
 
+from _special_values import evaluate as value_at, kind as special_kind, same_value
+
 N_EXAMPLES = int(os.environ.get("VERIFY_FUZZ_EXAMPLES", "60"))
 SLOW = os.environ.get("VERIFY_SLOW") == "1"
 FUZZ = settings(max_examples=N_EXAMPLES, deadline=None,
@@ -87,9 +89,20 @@ OLD_SYMBOLS = [
 # concrete oracle
 # --------------------------------------------------------------------------
 
+def _value(term, point):
+    """``(value, candidate)`` of ``term`` at ``point``: the table of
+    docs/special-values.md where an infinity or nan is involved, else
+    SymPy's value; ``candidate`` when SymPy's value at a special point
+    has no row (#247)."""
+    v, source = value_at(S(term), point)
+    return v, source == "candidate"
+
+
 def _kind(v):
     if v is S.NaN:
         return "nan"
+    if special_kind(v) == "dir":
+        return "dinf"   # an infinity off the real line (oo*I), not zoo
     if v.is_Rational:
         return "rat"
     if v in (S.Infinity, S.NegativeInfinity):
@@ -124,12 +137,14 @@ def _ext(v):
     k = _kind(v)
     if k in ("rat", "realnum", "inf"):
         return True
-    if k in ("nan", "zoo", "cplx"):
+    if k in ("nan", "zoo", "cplx", "dinf"):
         return False
     return v.is_extended_real
 
 
 def _lt(a, b):
+    if a == b:
+        return False    # irreflexive, also where a side is no extended real (#209)
     ea, eb = _ext(a), _ext(b)
     if ea is False or eb is False:
         return False
@@ -139,11 +154,16 @@ def _lt(a, b):
 
 
 def _eq(a, b):
+    ka, kb = _kind(a), _kind(b)
     if a == b:
         return True
-    ka, kb = _kind(a), _kind(b)
     if ka == "nan" or kb == "nan":
         return None if ka == kb else False
+    if ka == kb == "dinf":
+        return same_value(a, b)     # the same direction
+    if "dinf" in (ka, kb):
+        # off the real line: no extended real, no finite number
+        return None if {ka, kb} & {"zoo", "other"} else False
     if ka == "other" or kb == "other":
         return None
     return bool(a == b)
@@ -203,17 +223,23 @@ def _eval(f, env):
 
 
 def _worlds(fs, point):
+    """The atom values at ``point``: an atom the oracle cannot decide, or
+    decides only from SymPy's value at a special point without a row in
+    the table (a candidate), is free and takes both values."""
     atoms = sorted(set().union(*(_atoms(f, set()) for f in fs)), key=str)
     fixed, free = {}, []
     for at in atoms:
         if at[0] == "u":
-            v = _unary(at[1], S(at[2]).xreplace(point))
+            t, cand = _value(at[2], point)
+            v = _unary(at[1], t)
         elif at[0] == "ext":
-            v = _ext(S(at[1]).subs(point))
+            t, cand = _value(at[1], point)
+            v = _ext(t)
         else:
-            a, b = S(at[1]).subs(point), S(at[2]).subs(point)
+            (a, ca), (b, cb) = _value(at[1], point), _value(at[2], point)
+            cand = ca or cb
             v = _lt(a, b) if at[0] == "lt" else _eq(a, b)
-        if v is None:
+        if v is None or cand:
             free.append(at)
         else:
             fixed[at] = v
@@ -230,15 +256,21 @@ def _points(domains):
 
 
 def refute(prop, assum, answer, domains):
-    """A point (and atom values) where ``assum`` holds and ``prop`` differs
-    from ``answer`` (``"inconsistent"``: where ``assum`` holds), or None."""
+    """A point, atom values where ``assum`` holds and ``prop`` differs
+    from ``answer`` (``"inconsistent"``: where ``assum`` holds), and
+    whether that is a verdict: every value of the free atoms refutes at
+    that point.  Otherwise it is a candidate: the refutation needs a value
+    the oracle could not decide (#247).  None: no refutation."""
+    found = None
     for point in _points(domains):
-        for env in _worlds([prop, assum], point):
-            if not _eval(assum, env):
-                continue
-            if answer == "inconsistent" or _eval(prop, env) != answer:
-                return point, env
-    return None
+        envs = list(_worlds([prop, assum], point))
+        bad = [env for env in envs if _eval(assum, env)
+               and (answer == "inconsistent" or _eval(prop, env) != answer)]
+        if bad and len(bad) == len(envs):
+            return point, bad[0], True
+        if bad and found is None:
+            found = point, bad[0], False
+    return found
 
 
 def to_sympy(f):
@@ -363,7 +395,10 @@ def check(prop, assum, domains, engine=None):
     cx = refute(prop, assum, r, domains)
     assert cx is None, (
         f"ask({sp}, {sa}) = {r} but the point {cx[0]} satisfies the "
-        f"assumptions and refutes it (atom values {cx[1]})")
+        f"assumptions and refutes it (atom values {cx[1]})" if cx[2] else
+        f"candidate: ask({sp}, {sa}) = {r} is refuted at the point {cx[0]} only "
+        f"with atom values the oracle leaves free ({cx[1]}); triage it with "
+        f"an argument (#247)")
     return r
 
 

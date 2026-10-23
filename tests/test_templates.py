@@ -75,6 +75,8 @@ from satassume.sat.formula import (
 from satassume.knowledge.templates import registry
 from satassume.knowledge.templates._common import VOCAB
 
+from _special_values import evaluate as value_at, facts as special_facts, kind as special_kind
+
 x, y, z, w = (Symbol(n) for n in "xyzw")
 
 # ---------------------------------------------------------------------------
@@ -154,19 +156,20 @@ def test_evaluator_basics():
 
 
 def oracle(value, pred):
-    """Old-system truth value of ``pred`` for the concrete ``value``.
+    """Truth value of ``pred`` for the concrete ``value``.
 
-    ``nan`` (``oo - oo``, ``0*oo``, ``re(zoo)``, ``1**oo``) is no number:
-    every predicate that implies one (``extended_real``, ``complex``, ...)
-    is False for it, where SymPy leaves it None; ``finite``/``infinite``
-    (complements in the rule base) and ``commutative`` stay None.  Inputs
-    are numbers, never nan: :func:`check_sound` skips an assignment under
-    which a direct argument of the node is nan (``Abs(x*y)`` at ``x = 0``,
-    ``y = oo``)."""
+    At a finite number, SymPy's facts of it.  At an infinity or ``nan``,
+    the table of docs/special-values.md (``_special_values.facts``; #247):
+    ``nan`` (``oo - oo``, ``0*oo``, ``re(zoo)``, ``1**oo``) is no number,
+    so every predicate that implies one (``extended_real``, ``complex``,
+    ...) is False for it and ``finite``/``infinite`` (complements in the
+    rule base) and ``commutative`` stay None.  Inputs are numbers, never
+    nan: :func:`check_sound` skips an assignment under which a direct
+    argument of the node is nan (``Abs(x*y)`` at ``x = 0``, ``y = oo``)."""
     if isinstance(value, AccumBounds):
         return None
-    if value is S.NaN:
-        return None if pred in ('finite', 'infinite', 'commutative') else False
+    if special_kind(value) not in (None, 'num'):
+        return special_facts(value, pred)
     return getattr(value, 'is_' + pred, None)
 
 
@@ -188,24 +191,35 @@ def pool_for(nsyms):
     return {1: POOL, 2: POOL_MEDIUM, 3: POOL_SMALL}.get(nsyms, POOL_TINY)
 
 
-def make_valuation(assignment):
-    """Atom valuation under ``assignment`` (symbol -> concrete value)."""
+def make_valuation(assignment, candidates=False):
+    """Atom valuation under ``assignment`` (symbol -> concrete value).
+
+    The value of a node is SymPy's at an ordinary point and the table's
+    where an infinity, ``nan`` or a pole is involved
+    (``_special_values.evaluate``).  SymPy's value at a special point the
+    table has no row for is a candidate: unknown unless ``candidates``."""
     cache = {}
 
     def valuation(atom):
         if atom not in cache:
             try:
-                v = atom.expr.xreplace(assignment)
+                v, source = value_at(atom.expr, assignment)
             except Exception:  # an evaluation SymPy cannot do
-                v = None
-            cache[atom] = None if v is None else oracle(v, atom.pred)
-        return cache[atom]
+                v, source = None, None
+            cache[atom] = (None if v is None else oracle(v, atom.pred), source)
+        truth, source = cache[atom]
+        return None if source == 'candidate' and not candidates else truth
 
     return valuation
 
 
 def check_sound(expr):
-    """Check every template formula of ``expr`` against concrete values."""
+    """Check every template formula of ``expr`` against concrete values.
+
+    A formula false under the values of the table is unsound; one false
+    only with SymPy's value at a special point without a row is a
+    candidate, reported apart: triage it with a mathematical argument (a
+    row of docs/special-values.md), not by SymPy's value (#247)."""
     facts = registry.facts_for(expr)
     # (``-oo + oo`` is nan: no fact; ``commutative``, the one fact it had,
     # is true of every term in scope and has no clauses)
@@ -213,25 +227,29 @@ def check_sound(expr):
         f"no templates fired for {expr!r}"
     syms = sorted(expr.free_symbols, key=lambda s: s.name)
     pool = pool_for(len(syms))
-    failures = []
+    failures, candidates = [], []
     for values in product(pool, repeat=len(syms)):
         assignment = dict(zip(syms, values))
         try:
-            inputs = [a.xreplace(assignment) for a in expr.args]
+            inputs = [value_at(a, assignment)[0] for a in expr.args]
         except Exception:  # an evaluation SymPy cannot do
             inputs = []
         if any(a is S.NaN for a in inputs):
             continue                      # a nan input: not a number
-        if isinstance(expr, Pow) and inputs and inputs[0] is zoo \
-                and inputs[1].is_Float and inputs[1].is_zero:
-            continue                      # SymPy: zoo**0 = 1 but zoo**0.0 = nan
         valuation = make_valuation(assignment)
+        loose = make_valuation(assignment, candidates=True)
         for f in facts:
             if evaluate(f, valuation) is False:
                 detail = {a: valuation(a) for a in atoms_of(f)}
                 failures.append((assignment, f, detail))
+            elif evaluate(f, loose) is False:
+                detail = {a: loose(a) for a in atoms_of(f)}
+                candidates.append((assignment, f, detail))
     assert not failures, "\n".join(
         f"{expr!r} with {a}: {f!r}\n    atoms: {d}" for a, f, d in failures[:20])
+    assert not candidates, "candidates, SymPy's value at a special point " \
+        "(no row in docs/special-values.md):\n" + "\n".join(
+            f"{expr!r} with {a}: {f!r}\n    atoms: {d}" for a, f, d in candidates[:20])
 
 
 # ---------------------------------------------------------------------------

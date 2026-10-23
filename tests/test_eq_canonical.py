@@ -12,6 +12,8 @@ from satassume.sat.formula import Not, P
 from satassume.relations import relation_atom
 from satassume.sympy_api import ask
 
+from _special_values import point_value, same_value
+
 x, y, z = symbols('x y z')
 
 RESTATED = [(-x, -y), (x + 1, y + 1), (2*x, 2*y), (-3*x + Rational(1, 2),
@@ -75,10 +77,8 @@ def test_idempotent():
 
 
 def _eq_value(a, b, pt):
-    va, vb = a.subs(pt), b.subs(pt)
-    if va is S.NaN or vb is S.NaN:
-        return False                  # nan equals nothing
-    return bool(va == vb)
+    # values at infinities from docs/special-values.md (#247)
+    return bool(same_value(point_value(a, pt), point_value(b, pt)))  # nan equals nothing
 
 
 def test_soundness_sweep():
