@@ -12,7 +12,10 @@ whose rows have shapes (``templates/power.py``, #294), those of one node of
 each shape and of constants that decide the rows of a constant
 (:func:`pow_nodes`); for ``Max``, ``Min`` and ``Piecewise``, whose rows have
 a star (``templates/selection.py``, #299), those of nodes of 1 to 5 values
-and of a constant value (:func:`selection_nodes`).  This test
+and of a constant value (:func:`selection_nodes`); for ``Mul`` (rows with a
+star and of a coefficient, ``templates/mul.py``), those of products of 2 to
+7 factors, of a coefficient and a factor, and of two of SymPy's products
+(:func:`mul_nodes`).  This test
 checks that the current templates, with the rule base on each slot, entail
 every frozen clause, so a row dropped or weakened by mistake fails here;
 ``tests/test_rows_numeric.py`` checks that each rule is true, which this
@@ -38,7 +41,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from sympy import (  # noqa: E402
-    Basic, E, Function, GoldenRatio, I, Piecewise, Pow, Rational, S, Symbol, exp, oo, pi,
+    Basic, E, Float, Function, GoldenRatio, I, Mul, Piecewise, Pow, Rational, S, Symbol, exp, oo,
+    pi,
 )
 from sympy.functions.elementary.piecewise import ExprCondPair  # noqa: E402
 
@@ -58,7 +62,7 @@ entail them.  Do not edit by hand.
 
 ``BASELINE``: ``((family, function name, n, slots, clauses), ...)``: the
 slots named by their objects for the node ``head(x0, ..., x(n-1))`` (for
-``Pow``, ``Max``, ``Min`` and ``Piecewise``, ``n`` is the text of the
+``Pow``, ``Max``, ``Min``, ``Piecewise`` and ``Mul``, ``n`` is the text of the
 node), and each clause a tuple of literals ``(slot, basis predicate,
 negated)``.
 """
@@ -115,18 +119,29 @@ def selection_nodes(head):
             *(node([xs[0], c]) for c in (S(2), S.NegativeOne, S.Half, pi, oo, -oo)))
 
 
+def mul_nodes(head=Mul):
+    """The nodes of ``Mul`` whose clauses are frozen: of 2 to 7 factors
+    (around the limits ``at_most`` 2, 4 and 6), a coefficient and a factor
+    (a positive, a negative, a rational, half an odd integer, a float,
+    ``-1``, an infinity, and ``pi``, which is no coefficient), each with
+    every factor kept (``evaluate=False``), and SymPy's ``3*x0*x1`` (with the
+    block of its factor set ``(3, x0*x1)``) and ``x0/x1**2`` (with
+    ``a/v**k``)."""
+    xs = [Symbol(f'x{i}') for i in range(7)]
+    coefficients = (S(2), S(-3), S.Half, Rational(-3, 2), Float(2.5), S.NegativeOne, oo, pi)
+    return (*(head(*xs[:n], evaluate=False) for n in range(2, 8)),
+            *(head(c, xs[0], evaluate=False) for c in coefficients),
+            3*xs[0]*xs[1], xs[0]/xs[1]**2)
+
+
 #: the families whose rows have shapes or a star, each with the nodes of
 #: its baseline
-SHAPED = {'power': pow_nodes, 'selection': selection_nodes}
-
-#: families without a baseline yet: the rows of Mul, whose baseline the
-#: next step of #299 (U2) writes
-NOT_YET = ('mul',)
+SHAPED = {'power': pow_nodes, 'selection': selection_nodes, 'mul': mul_nodes}
 
 
 def functions():
     """``(family, name, head, n, node)`` for each function of the compiled
-    rows (but those of :data:`NOT_YET`) and each number ``n`` of its arguments, ``node`` the node of
+    rows and each number ``n`` of its arguments, ``node`` the node of
     plain symbols; for a family of :data:`SHAPED`, for each of its nodes,
     ``n`` the text of the node.  ``head`` and ``node`` are None where this
     SymPy lacks the function (``owens_t`` before SymPy 1.15)."""
@@ -137,8 +152,6 @@ def functions():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
-        if family in NOT_YET:
-            continue
         for name, _, _, specs, *_ in fns:
             head = declared[family, name]
             if family in SHAPED:

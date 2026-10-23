@@ -25,13 +25,11 @@ from types import MappingProxyType
 
 from sympy import S
 from sympy.core.add import Add
-from sympy.core.mul import Mul
 from sympy.core.intfunc import integer_nthroot
 from sympy.functions.elementary.exponential import exp
 
 from ...sat.formula import And, Implies, Not, Or, P
 from ..domain import kept_product
-from ..rules import BASIS, expand_clause
 
 from ._common import (
     Rules,
@@ -40,21 +38,18 @@ from ._common import (
     facts,
     lits,
     pattern_key,
-    resolve,
 )
 from .registry import registry
-from .table import Row, Section, expand, rules_of
+from .table import Row, expand
 
-#: Largest arity for per-argument rules of Mul (O(n^2) literals).
+#: Largest arity for per-term rules of Add (O(n^2) literals).
 MAX_ONEOUT = 6
-#: Largest arity for the per-term rules of Add and Mul that every arity
-#: gets (one rule of n literals per term: O(n^2) literals).  Past it the
-#: strict-sign rule of Add is one formula (linear
-#: with Tseitin variables, :func:`_wide_one`), and so is the zero rule of
-#: Mul; the others are not emitted (#180 C-WIDEADD).
+#: Largest arity for the per-term rules of Add that every arity gets (one
+#: rule of n literals per term: O(n^2) literals).  Past it the strict-sign
+#: rule of Add is one formula (linear with Tseitin variables,
+#: :func:`_wide_one`); the others are not emitted (#180 C-WIDEADD).  The
+#: rows of Mul past 32 factors: ``wiring.SOME_PER_ARGUMENT``.
 MAX_ONEOUT_WIDE = 32
-#: Largest arity for rules enumerating pairs of arguments.
-MAX_PAIRS = 4
 #: Largest arity for subtraction rules and parity case enumeration of Add.
 MAX_ADD_SMALL = 3
 
@@ -509,208 +504,9 @@ def add_templates(expr):
 
 
 # ---------------------------------------------------------------------------
-# Mul: the factor sets and a/v**k (wiring.product calls them); the table
-# below is no longer registered (Mul's rows are templates/mul.py, #299) and
-# goes with the next step of #299 (U2)
+# Mul: the rules that are not rows of templates/mul.py (wiring.product calls
+# them): the factor sets and a/v**k
 # ---------------------------------------------------------------------------
-
-# Closed under multiplication.  ``real`` and ``positive`` are derived by the
-# rule base (``extended_* & finite``).  ``extended_real`` is not: ``0*oo``
-# is nan (see _mul_rules).
-_MUL_CLOSED = (
-    'complex', 'integer', 'rational', 'algebraic', 'finite',
-    'commutative', 'extended_positive', 'nonnegative',
-)
-
-# Backward transfer for a nonzero real numeric coefficient c: pred(c*x) -> pred(x)
-# (sign predicates flipped for negative c).  The forward directions follow
-# from the closure and per-argument rules.
-_COEFF_BACK = (
-    'positive', 'negative', 'nonnegative', 'nonpositive',
-    'extended_positive', 'extended_negative', 'real', 'extended_real',
-    'finite', 'complex', 'imaginary',
-)
-
-
-def _coeff(ctx):
-    """``c*x`` with ``c`` a finite nonzero real number (slot 0) and n == 2."""
-    consts = ctx['consts']
-    if not (ctx['n'] == 2 and 0 in consts and consts[0].is_Number):
-        return False
-    c = consts[0]
-    return bool(c.is_finite and c.is_extended_real and not c.is_zero)  # sympy-boundary: c a Number
-
-
-#: Conditions on the pattern of a Mul (``n`` arguments, ``consts``; ``m``
-#: the size of the negative set in a ``negsets`` section).
-MUL_GUARDS = MappingProxyType({
-    'n<=MAX_ONEOUT': lambda c: c['n'] <= MAX_ONEOUT,
-    'n>MAX_ONEOUT': lambda c: c['n'] > MAX_ONEOUT,
-    'n<=MAX_ONEOUT_WIDE': lambda c: c['n'] <= MAX_ONEOUT_WIDE,
-    'n>=2': lambda c: c['n'] >= 2,
-    'n==2': lambda c: c['n'] == 2,
-    'n even': lambda c: c['n'] % 2 == 0,
-    'n odd': lambda c: c['n'] % 2 != 0,
-    '3<=n<=MAX_PAIRS': lambda c: 3 <= c['n'] <= MAX_PAIRS,
-    'm even': lambda c: c['m'] % 2 == 0,
-    'm odd': lambda c: c['m'] % 2 != 0,
-    'coeff': _coeff,
-    'c negative': lambda c: bool(c['consts'][0].is_negative),  # sympy-boundary: c a constant
-    'c not negative': lambda c: not c['consts'][0].is_negative,  # sympy-boundary: c a constant
-    'c rational': lambda c: bool(c['consts'][0].is_Rational),
-    'c.q==2': lambda c: c['consts'][0].q == 2,
-    'c==-1': lambda c: c['consts'][0] is S.NegativeOne,
-})
-
-# Slots: 'N' the node, '*' all arguments; in a section 'k' the argument of
-# the iteration, 'rest' the others ('l' the other one when there is one),
-# 'neg' the negative set; 0 and 1 the coefficient and the other factor.
-def _mul_table_rows():
-    """The rows of ``MUL_TABLE`` (built on first use, :func:`_table`)."""
-    return (
-        Row('closed', [('*', '$p')], ('N', '$p'), preds=_MUL_CLOSED),
-        # Extended reals, all finite or all nonzero (no 0*oo).
-        Row('ext_real.finite', [('*', 'extended_real'), ('*', 'finite')], ('N', 'extended_real')),
-        Row('ext_real.nonzero', [('*', 'extended_real'), ('*', 'zero', False)],
-            ('N', 'extended_real')),
-        # A commutative product has a commutative factor k when every other
-        # factor is a nonzero number: k is the product divided by them.  Not
-        # in general: ``0*A == 0`` (#47), and ``A*B`` is 1 for ``B = A**-1``.
-        Section('each', when='n<=MAX_ONEOUT', rows=[
-            Row('commutative.back',
-                [('N', 'commutative'), ('rest', 'complex'), ('rest', 'zero', False)],
-                ('k', 'commutative')),
-        ]),
-        # Zero: some zero factor with the rest finite; nonzero: all nonzero and
-        # at most one of them non-commutative (non-commutative values have zero
-        # divisors: ``A*B == 0`` and ``A**2 == 0`` for nilpotent ``A = B``).
-        Section('each', when='n<=MAX_ONEOUT_WIDE', rows=[
-            Row('zero', [('k', 'zero'), ('rest', 'finite')], ('N', 'zero')),
-        ]),
-        Section('each', when='n<=MAX_ONEOUT', rows=[
-            Row('nonzero', [('rest', 'commutative')], [('*', 'zero'), ('N', 'zero', False)]),
-        ]),
-        Row('nonzero.commutative', [('*', 'commutative')], [('*', 'zero'), ('N', 'zero', False)],
-            when='n>MAX_ONEOUT'),
-        # Hermitian product of commuting hermitian factors.
-        Row('hermitian', [('*', 'commutative'), ('*', 'hermitian')], ('N', 'hermitian')),
-        # Polar: all polar, or one polar factor and the rest positive.
-        Row('polar', [('*', 'polar')], ('N', 'polar')),
-        Section('each', when='n<=MAX_ONEOUT_WIDE', rows=[
-            Row('polar.one', [('k', 'polar'), ('rest', 'positive')], ('N', 'polar')),
-        ]),
-        Row('primes', [('*', 'prime')], ('N', 'composite'), when='n>=2'),
-        # A product of two integers >= 2 is composite.
-        Row('ge2s', [('*', 'int>=2')], ('N', 'composite'), when='n==2'),
-        # All factors negative / nonpositive / imaginary: parity of n.
-        Row('all_neg.even', [('*', 'extended_negative')], ('N', 'extended_positive'),
-            when='n even'),
-        Row('all_neg.odd', [('*', 'extended_negative')], ('N', 'extended_negative'), when='n odd'),
-        Row('all_nonpos.even', [('*', 'nonpositive')], ('N', 'nonnegative'), when='n even'),
-        Row('all_nonpos.odd', [('*', 'nonpositive')], ('N', 'nonpositive'), when='n odd'),
-        Row('all_imag.even', [('*', 'imaginary')], ('N', 'nonzero'), when='n even'),
-        Row('all_imag.odd', [('*', 'imaginary')], ('N', 'imaginary'), when='n odd'),
-        Row('all_odd', [('*', 'odd')], ('N', 'odd')),
-        Section('each', when='n<=MAX_ONEOUT', rows=[
-            # One infinite factor and the rest nonzero -> infinite.
-            Row('one_infinite', [('k', 'infinite'), ('rest', 'zero', False)], ('N', 'infinite')),
-            # Exactly one negative factor (rest positive) -> negative.
-            Row('one_neg', [('k', 'extended_negative'), ('rest', 'extended_positive')],
-                ('N', 'extended_negative')),
-            Row('one_nonpos', [('k', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonpositive')),
-            # One even factor and the rest integers -> even.
-            Row('one_even', [('k', 'even'), ('rest', 'integer')], ('N', 'even')),
-            # One composite factor and the rest integers -> not prime (the
-            # product is 0, negative, or a multiple of a composite).
-            Row('one_composite', [('k', 'composite'), ('rest', 'integer')], ('N', 'prime', False)),
-            # One irrational factor and the rest nonzero rationals -> irrational.
-            Row('one_irrational',
-                [('k', 'irrational'), ('rest', 'rational'), ('rest', 'zero', False)],
-                ('N', 'irrational')),
-            # One transcendental factor and the rest nonzero algebraics ->
-            # transcendental (the algebraic numbers are a field).
-            Row('one_transcendental',
-                [('k', 'transcendental'), ('rest', 'algebraic'), ('rest', 'zero', False)],
-                ('N', 'transcendental')),
-            # Likewise one non-algebraic factor (possibly infinite or not a
-            # complex number): else k = N/(product of the rest) would be
-            # algebraic (#180 S7).
-            Row('one_non_algebraic',
-                [('k', 'algebraic', False), ('rest', 'algebraic'), ('rest', 'zero', False)],
-                ('N', 'algebraic', False)),
-            # One non-real factor and the rest nonzero extended reals -> not real.
-            Row('one_non_real', [('k', 'extended_real', False), ('rest', 'extended_nonzero')],
-                ('N', 'extended_real', False)),
-            # One imaginary factor and the rest nonzero finite reals -> imaginary;
-            # with the rest merely real the product may also be zero.
-            Row('one_imag', [('k', 'imaginary'), ('rest', 'real'), ('rest', 'zero', False)],
-                ('N', 'imaginary')),
-            Row('one_imag.or_zero', [('k', 'imaginary'), ('rest', 'real')],
-                [('N', 'imaginary'), ('N', 'zero')]),
-            # and back: k is the product over the nonzero reals
-            Row('one_imag.back', [('rest', 'real'), ('rest', 'zero', False), ('N', 'imaginary')],
-                ('k', 'imaginary')),
-            # i*a*(c + i*d) has real part -a*d and imaginary part a*c:
-            # the product is real iff the other factor is imaginary or
-            # zero, and imaginary iff the other factor is a nonzero real.
-            Row('imag_times.real', [('k', 'imaginary'), ('l', 'complex'), ('N', 'extended_real')],
-                [('l', 'imaginary'), ('l', 'zero')], when='n==2'),
-            Row('imag_times.imag', [('k', 'imaginary'), ('l', 'complex'), ('N', 'imaginary')],
-                ('l', 'real'), when='n==2'),
-        ]),
-        # Sign of a product with m negative factors, 2 <= m < n (one negative
-        # factor is above, all negative is above).
-        Section('negsets', when='3<=n<=MAX_PAIRS', rows=[
-            Row('m_neg.even', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
-                ('N', 'extended_positive'), when='m even'),
-            Row('m_neg.odd', [('neg', 'extended_negative'), ('rest', 'extended_positive')],
-                ('N', 'extended_negative'), when='m odd'),
-            Row('m_nonpos.even', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonnegative'), when='m even'),
-            Row('m_nonpos.odd', [('neg', 'nonpositive'), ('rest', 'nonnegative')],
-                ('N', 'nonpositive'), when='m odd'),
-        ]),
-        Section('pairs', when='3<=n<=MAX_PAIRS', rows=[
-            Row('two_imag', [('k', 'imaginary'), ('l', 'imaginary'), ('rest', 'real'),
-                             ('rest', 'zero', False)], ('N', 'nonzero')),
-            # imag_times with the rest nonzero reals (r*i is imaginary)
-            Row('imag_times_rest.real', [('k', 'imaginary'), ('l', 'complex'), ('rest', 'real'),
-                                         ('rest', 'zero', False), ('N', 'extended_real')],
-                [('l', 'imaginary'), ('l', 'zero')]),
-            Row('imag_times_rest.real.flip', [('l', 'imaginary'), ('k', 'complex'),
-                                              ('rest', 'real'), ('rest', 'zero', False),
-                                              ('N', 'extended_real')],
-                [('k', 'imaginary'), ('k', 'zero')]),
-            Row('imag_times_rest.imag', [('k', 'imaginary'), ('l', 'complex'), ('rest', 'real'),
-                                         ('rest', 'zero', False), ('N', 'imaginary')],
-                ('l', 'real')),
-            Row('imag_times_rest.imag.flip', [('l', 'imaginary'), ('k', 'complex'),
-                                              ('rest', 'real'), ('rest', 'zero', False),
-                                              ('N', 'imaginary')],
-                ('k', 'real')),
-        ]),
-        # Numeric coefficient c*x: transfer facts back from the product to x.
-        Row('coeff.back', [('N', '$p')], (1, '$p'), when=('coeff', 'c not negative'),
-            preds=_COEFF_BACK),
-        Row('coeff.back.flip', [('N', '$p')], (1, 'flip:$p'), when=('coeff', 'c negative'),
-            preds=_COEFF_BACK),
-        Row('coeff.rational', [('N', 'rational')], (1, 'rational'), when=('coeff', 'c rational')),
-        Row('coeff.algebraic', [('N', 'algebraic')], (1, 'algebraic'),
-            when=('coeff', 'c rational')),
-        # (p/2)*x for integer x is an integer iff x is even.
-        Row('coeff.half', [(1, 'integer')], [('N', 'integer'), (1, 'even')], kind='equiv',
-            when=('coeff', 'c rational', 'c.q==2')),
-        Row('coeff.minus_one', [('N', '$p')], (1, '$p'), when=('coeff', 'c rational', 'c==-1'),
-            preds=('integer', 'even', 'odd')),
-    )
-
-
-def _mul_rules(n, consts):
-    """The specs of ``MUL_TABLE`` for a Mul of ``n`` arguments."""
-    return rules_of(_table('MUL_TABLE'), MUL_GUARDS, {'n': n, 'consts': consts},
-                    {'N': n, '*': range(n)})
-
 
 def _mul_factor_sets(expr):
     """The factor tuples whose Mul blocks ``wiring.product`` emits for
@@ -760,14 +556,6 @@ def _quotient_templates(expr):
     consts = {0: a} if a.is_Atom and a.is_number else {}
     return facts(('mul_quot', const_key(a) if consts else None), _quotient_rules, consts,
                  (a, t.args[0], t, expr), 3)
-
-
-def _product_block(factors, expr):
-    """The Mul block of ``expr == Mul(*factors)`` over these objects."""
-    n = len(factors)
-    consts = consts_of(factors)
-    return facts(pattern_key('mul', n, consts), lambda: _mul_rules(n, consts),
-                 consts, tuple(factors) + (expr,), n)
 
 
 # ---------------------------------------------------------------------------
@@ -957,54 +745,22 @@ def _pow_bound_templates(expr):
                  (u, e, b, expr), 3)
 
 
-def table_provenance(expr):
-    """For a Mul node: ``(row name, clause)`` for every rule of the node's
-    table blocks, resolved against the constants like the compiled block,
-    with ``clause`` a frozenset of ``(object, pred, positive)`` literals
-    (``tools/totality.py`` names the rows of a fired clause with it).
-    Empty for other nodes (the rows of Pow are in ``templates/power.py``,
-    ``tools/show_rows.py Pow`` prints them)."""
-    if not (isinstance(expr, Mul) and expr.args):
-        return []
-    blocks = []
-    for f in _mul_factor_sets(expr):
-        n = len(f)
-        blocks.append((consts_of(f), tuple(f) + (expr,),
-                       expand(_table('MUL_TABLE'), MUL_GUARDS, {'n': n, 'consts': consts_of(f)},
-                              {'N': n, '*': range(n)})))
-    out = []
-    for consts, objs, specs in blocks:
-        for row, prem, concl in specs:
-            try:
-                resolved = resolve([(prem, concl)], consts)
-            except ValueError:
-                continue
-            for ps, cs in resolved:
-                # over the basis, as the compiled block (rules.expand_clause)
-                lits = [(k, p, not pos) for k, p, pos in ps] + [(k, p, pos) for k, p, pos in cs]
-                for c in expand_clause(lits):
-                    out.append((row.name, frozenset((objs[k], BASIS[i], pos) for k, i, pos in c)))
-    return out
-
-
 # ---------------------------------------------------------------------------
 # The tables, built on first use
 # ---------------------------------------------------------------------------
 
 #: builders of the rule tables, by module attribute name.  A table is a
 #: constant (a tuple of rows), built the first time it is read: through
-#: :func:`_table` here, as ``core.MUL_TABLE`` (the module ``__getattr__``)
-#: elsewhere.  A query without a product then never builds the Mul table
-#: (most of this module's import time and allocations).
+#: :func:`_table` here, as ``core.IPI_TABLE`` (the module ``__getattr__``)
+#: elsewhere.  A query without ``exp(I*pi*c*s)`` then never builds it.
 _TABLE_BUILDERS = MappingProxyType({
-    'MUL_TABLE': _mul_table_rows,
     'IPI_TABLE': _ipi_table_rows,
 })
 
 
 def _table(name: str) -> tuple:
-    """The rule table ``name`` (``MUL_TABLE``, ``IPI_TABLE``),
-    built once and then a module attribute."""
+    """The rule table ``name`` (``IPI_TABLE``), built once and then a
+    module attribute."""
     t = globals().get(name)
     if t is None:
         t = globals()[name] = _TABLE_BUILDERS[name]()

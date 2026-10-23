@@ -59,6 +59,17 @@ value its conditions select, each value in turn (``Piecewise((v0, False),
 ..., (vk, True), ...)``).  Which arguments a ``Piecewise`` has for its rows
 (``wiring.piecewise_values``) is not checked here.
 
+The rows of ``Mul`` (``templates/mul.py``, #299) have a star too, and rows
+of two factors with a shape (``f(coefficient, factor)``, ``f(-1,
+factor)``) and the term ``2*coefficient``; :func:`check_mul` expands each
+row with a star for products of 2 to 4 factors and takes every choice of
+the factors from :data:`MUL_POOLS`, the node being SymPy's
+``Mul(*factors)``; a row of two factors is checked at the points of its
+shape, its term computed from the coefficient, as ``wiring.product`` does.
+The factor sets (``core._mul_factor_sets``), ``a/v**k``
+(``core._quotient_templates``) and the formula of the zero row past 32
+factors (``wiring.wide_formulas``) are not checked here.
+
 Every rule must be checked at least once, except those in
 :data:`NEVER_CHECKED`, each with the reason; an entry that becomes
 checkable fails, so the list cannot go stale.  A rule found false at a
@@ -155,6 +166,8 @@ NEVER_CHECKED = {
     )},
     **{(fn, f"{fn}: every({p}) -> {p}(f)"): _INCOMPARABLE
        for fn in ('Max', 'Min') for p in ('imaginary', '~extended_real')},
+    ('Mul', "Mul: irrational(v0) & every(rational) & every(~zero) -> irrational(f) (at most 6)"):
+        _IRRATIONAL,
 }
 
 #: rules of the rows found false at a point of the pools, each a known
@@ -375,19 +388,15 @@ def basis(v):
 #: their own section below (the rows of Pow, :func:`check_power`)
 SHAPED = ('power',)
 
-#: families whose rows have a star, checked by their own section below (the
-#: rows of Max, Min and Piecewise, :func:`check_selection`)
-STARRED = ('selection',)
-
-#: families not checked here yet: the rows of Mul, which the next step of
-#: #299 (U2) checks
-NOT_YET = ('mul',)
+#: families whose rows have a star, checked by their own sections below (the
+#: rows of Max, Min and Piecewise, :func:`check_selection`; of Mul,
+#: :func:`check_mul`)
+STARRED = ('selection', 'mul')
 
 
 def _heads():
     """``(family, name, heads, arity, terms, rules)`` for every function of
-    the compiled rows (but those of :data:`SHAPED`, :data:`STARRED` and
-    :data:`NOT_YET`);
+    the compiled rows (but those of :data:`SHAPED` and :data:`STARRED`);
     ``heads`` the SymPy classes whose nodes get the rules (empty for a
     function this SymPy lacks)."""
     declared = {}
@@ -397,7 +406,7 @@ def _heads():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
-        if family in SHAPED + STARRED + NOT_YET:
+        if family in SHAPED + STARRED:
             continue
         for name, arity, terms, specs in fns:
             fn = declared[family, name]
@@ -763,6 +772,111 @@ def check_selection(name, schemas):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Mul: rows with a star, and rows of a coefficient (#299, U2)
+# ---------------------------------------------------------------------------
+
+#: the factors of a product of 2, 3 and 4 factors
+MUL_POOLS = {
+    2: (S(0), S(1), S(-1), S(2), S(3), S(4), S(-2), S(-3), S.Half, -S.Half, Rational(3, 2),
+        Rational(-3, 2), sqrt(2), pi, -pi, E, I, -I, 2*I, 1 + I, oo, -oo, zoo, S.NaN,
+        Float(2.5), Float(-2.0), exp_polar(I*pi), exp_polar(0)),
+    3: (S(0), S(1), S(-1), S(2), S(3), S(-2), S.Half, sqrt(2), pi, I, -I, oo, -oo,
+        exp_polar(I*pi)),
+    4: (S(0), S(1), S(-1), S(2), S(-2), pi, I, oo),
+}
+
+
+def _mul():
+    """The compiled rows of Mul as :func:`.wiring.product` reads them:
+    ``(schemas, terms, fixed)``, the schemas of the rows with a star, the
+    terms of the rows of two factors (``2*coefficient``) and their rules."""
+    [(name, arity, terms, specs, schemas)] = dict(FAMILIES)['mul']
+    gen = generator(name, arity, terms, specs, 'mul', schemas)
+    return gen.schemas, gen.terms[2], gen.specs[2]
+
+
+MUL = _mul()
+
+
+def show_mul(rule, terms):
+    """``Mul(c, x1): prem & ... -> concl | ...``: a row of two factors, the
+    coefficient ``c`` or a number by the rule's shape, the node ``f``, the
+    terms of the coefficient (``2*c``)."""
+    args = ['c' if s is not None and s[0] == 'coefficient' else str(s[1]) if s is not None
+            else f'x{i}' for i, s in enumerate(rule[2])]
+    names = [*args, 'f', *(t[2].replace('coefficient', 'c') for t in terms)]
+
+    def lit(t):
+        k, p, pos = t
+        return f"{'' if pos else '~'}{p}({names[k]})"
+    prem, concl = rule[:2]
+    return (f"Mul({', '.join(args)}): {' & '.join(map(lit, prem)) or 'True'} -> "
+            f"{' | '.join(map(lit, concl))}")
+
+
+def check_mul(schemas, terms, fixed):
+    """The :class:`Counts` of the rows of Mul, by rule (``per_rule``: the
+    schemas, then the rules of two factors), over the points of
+    :data:`MUL_POOLS`: the node is SymPy's ``Mul(*factors)``.  A row with a
+    star is expanded for ``n`` factors (``wiring.expand``); a row of two
+    factors is checked at the points of its shape (:func:`.wiring.matches`:
+    a coefficient is a SymPy ``Number`` first), and its terms are computed
+    from the coefficient (:func:`._rows.constant_value`), as the template
+    does; a rule about a term that does not exist there is ``absent``."""
+    out = Counts()
+    out.per_rule = dict.fromkeys(range(len(schemas) + len(fixed)), 0)
+    out.absent = 0
+    for n in sorted(MUL_POOLS):
+        starred = [(i, r) for i, s in enumerate(schemas) for r in expand((s,), n, {})]
+        for args in itertools.product(MUL_POOLS[n], repeat=n):
+            out.points += 1
+            node, failure = _node_basis(Mul, args)
+            if failure:
+                setattr(out, failure, getattr(out, failure) + 1)
+                continue
+            slots = [basis(a) for a in args] + [node]
+            rules = list(starred)
+            if n == 2:
+                consts = {i: a for i, a in enumerate(args) if a.is_Atom and a.is_number}
+                for _, i, t in terms:
+                    c = consts.get(i)
+                    slots.append(basis(constant_value(t, c)) if c is not None and c.is_Number
+                                 else None)
+                for j, r in enumerate(fixed):
+                    if not matches(r[2], args, consts):
+                        continue
+                    if any(slots[t[0]] is None for t in (*r[0], *r[1])):
+                        out.absent += 1
+                        continue
+                    rules.append((len(schemas) + j, r[:2]))
+            for i, (prem, concl) in rules:
+                p = _kand(_lit(slots, t) for t in prem)
+                if p is False:
+                    out.vacuous += 1
+                    continue
+                c = _kor(_lit(slots, t) for t in concl)
+                if p is True and c is False:
+                    out.false.append((f"Mul{args}", show_mul_rule(i)))
+                elif p is True and c is True:
+                    out.checked += 1
+                    out.per_rule[i] += 1
+                elif c is True:
+                    out.vacuous += 1
+                else:
+                    out.skipped += 1
+    return out
+
+
+def show_mul_rule(i):
+    """Rule ``i`` of :func:`check_mul` as :func:`show_schema` or
+    :func:`show_mul` prints it."""
+    schemas, terms, fixed = MUL
+    if i < len(schemas):
+        return show_schema('Mul', schemas[i])
+    return show_mul(fixed[i - len(schemas)], terms)
+
+
 def _id(h):
     family, name, heads, n, terms, rules = h
     return f"{family}-{name}-{n}"
@@ -831,6 +945,29 @@ def test_every_rule_of_max_min_and_piecewise_holds_at_the_points_of_the_pools(na
                               f"in NEVER_CHECKED but checked: {sorted(allowed - never)}")
 
 
+def test_every_rule_of_mul_holds_at_the_points_of_the_pools():
+    c = check_mul(*MUL)
+    rules = len(MUL[0]) + len(MUL[2])
+    never = {show_mul_rule(k) for k in range(rules) if not c.per_rule[k]}
+    print(_line("mul-Mul", rules, c, len(never)), f"{c.absent} absent")
+    false, known = set(c.false), set(KNOWN_FALSE)
+    assert false <= known and not {r for r in known if r[0].startswith('Mul(')} - false, (
+        f"false (point, rule), not in KNOWN_FALSE: {sorted(false - known)}")
+    allowed = {r for (fn, r) in NEVER_CHECKED if fn == 'Mul'}
+    assert never == allowed, (f"never checked, not in NEVER_CHECKED: {sorted(never - allowed)}; "
+                              f"in NEVER_CHECKED but checked: {sorted(allowed - never)}")
+
+
+def test_the_points_of_mul_have_its_shapes():
+    # a coefficient (a Number first: 2, -3/2, 2.5, -2.0, oo) and -1 first,
+    # and a 2*coefficient that is an integer and one that is not
+    _, terms, fixed = MUL
+    for shape in {r[2] for r in fixed}:
+        assert any(matches(shape, (a, b), {0: a} if a.is_Atom and a.is_number else {})
+                   for a in MUL_POOLS[2] for b in MUL_POOLS[2]), shape
+    assert [t[2] for t in terms] == ['2*coefficient']
+
+
 def test_the_points_of_piecewise_select_each_value():
     assert _select(1)(S(1), S(2), S(3)) == 2 and _select(0)(S(1)) == 1
     assert _node_basis(Max, (I, S(1)))[1] == 'raised'
@@ -880,6 +1017,7 @@ def test_every_entry_of_never_checked_is_a_rule():
     shown = {(h[1], show(h[1], h[3], r, h[4])) for h in HEADS for r in h[5]}
     shown |= {(name, show_power(r, terms)) for r in rules}
     shown |= {(n, show_schema(n, s)) for n, schemas in SELECTION for s in schemas}
+    shown |= {('Mul', show_mul_rule(k)) for k in range(len(MUL[0]) + len(MUL[2]))}
     assert set(NEVER_CHECKED) <= shown
     assert {r for _, r in KNOWN_FALSE} <= ({show_power(r, terms) for r in rules}
                                            | {r for _, r in shown})
@@ -887,19 +1025,21 @@ def test_every_entry_of_never_checked_is_a_rule():
 
 def test_every_function_of_the_families_is_checked():
     names = {(family, fn.rpartition(':')[2] if isinstance(fn, str) else fn.__name__)
-             for family, fns in ROW_FAMILIES if family not in SHAPED + STARRED + NOT_YET
-             for fn in fns}
+             for family, fns in ROW_FAMILIES if family not in SHAPED + STARRED for fn in fns}
     assert {(h[0], h[1]) for h in HEADS} == names
     assert sum(len(h[5]) for h in HEADS) == sum(
-        len(r) for family, fns in FAMILIES if family not in SHAPED + STARRED + NOT_YET
+        len(r) for family, fns in FAMILIES if family not in SHAPED + STARRED
         for _, _, _, specs in fns for _, r in specs)
     # the shaped families: Pow
     assert SHAPED == ('power',) and dict(ROW_FAMILIES)['power'] == (Pow,)
     [(name, _, _, specs)] = dict(FAMILIES)['power']
     assert POWER[0] == name and len(POWER[2]) == len(dict(specs)[2]) and len(specs) == 1
     # the families with a star: Max, Min, Piecewise
-    assert STARRED == ('selection',)
+    assert STARRED == ('selection', 'mul')
     assert [name for name, _ in SELECTION] == [fn.__name__ for fn in dict(ROW_FAMILIES)['selection']]
+    assert dict(ROW_FAMILIES)['mul'] == (Mul,)
+    [(_, _, terms, specs, schemas)] = dict(FAMILIES)['mul']
+    assert len(MUL[0]) == len(schemas) and len(MUL[2]) == len(dict(specs)[2])
 
 
 def main():
@@ -936,6 +1076,14 @@ def main():
         never += nv
         n_rules += len(schemas)
         print(_line(f"selection-{name}", len(schemas), c, len(nv)), flush=True)
+    c = check_mul(*MUL)
+    for k in _COUNTED:
+        setattr(total, k, getattr(total, k) + getattr(c, k))
+    total.false += c.false
+    nv = [show_mul_rule(k) for k in c.per_rule if not c.per_rule[k]]
+    never += nv
+    n_rules += len(c.per_rule)
+    print(_line("mul-Mul", len(c.per_rule), c, len(nv)), f"{c.absent} absent", flush=True)
     print("\n" + _line("total", n_rules, total, len(never)),
           f"({time.perf_counter() - t0:.0f} s)")
     for r in never:
