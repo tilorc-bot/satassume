@@ -64,17 +64,24 @@ def _node(h, n):
         return Function.__new__(h, *args, evaluate=False)
 
 
+#: families without a baseline yet: the rows of Pow, whose baseline the next
+#: step of #294 writes
+NOT_YET = ('power',)
+
+
 def functions():
     """``(family, name, head, n)`` for each function of the compiled rows
-    and each number of its arguments; ``head`` is None where this SymPy
-    lacks the function (``owens_t`` before SymPy 1.15)."""
+    (but those of :data:`NOT_YET`) and each number of its arguments;
+    ``head`` is None where this SymPy lacks the function (``owens_t``
+    before SymPy 1.15)."""
     declared = {}
     for family, fns in ROW_FAMILIES:
         for fn in fns:
             name = fn.rpartition(':')[2] if isinstance(fn, str) else fn.__name__
             declared[family, name] = _declared(fn)
     return [(family, name, declared[family, name], n)
-            for family, fns in FAMILIES for name, _, _, specs in fns for n, _ in specs]
+            for family, fns in FAMILIES if family not in NOT_YET
+            for name, _, _, specs in fns for n, _ in specs]
 
 
 def clauses(family, head, n):

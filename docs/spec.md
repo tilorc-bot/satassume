@@ -166,8 +166,9 @@ every vocabulary argument `e` (`Engine._query_cone`, `_union`).
 Definition. The derived nodes templates name: `2*e` of a power with
 exponent `e`; `b - 1`, `b + 1` of a power's base; `x - 1` of `log(x)`,
 `asin(x)`, `acos(x)`; `x*y` of a term `c*x*y` of a sum with half-integer
-coefficients (`templates/core.py` `pow_templates`, `_half_templates`;
-`templates/functions.py` `_minus_one`). They are kids whatever holds of
+coefficients (the rows of `templates/power.py` through `templates/wiring.py`
+`power`; `templates/core.py` `_half_templates`; `templates/functions.py`
+`_minus_one`). They are kids whatever holds of
 the base (record 1326: `x**y` has kids `2*y`, `x - 1`, `x + 1`).
 
 Property: `cone` is a function of `o`, the registry and the settings, never

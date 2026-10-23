@@ -40,7 +40,7 @@ def test_the_compiled_rows_hold_plain_data_only():
     def plain(v):
         if isinstance(v, tuple):
             return all(plain(i) for i in v)
-        return type(v) in (str, int, bool)
+        return v is None or type(v) in (str, int, bool)
     assert plain(_compiled_rows.FAMILIES)
     assert [f for f, _ in _compiled_rows.FAMILIES] == [f for f, _ in ROW_FAMILIES]
 

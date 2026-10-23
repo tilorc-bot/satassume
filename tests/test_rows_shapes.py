@@ -158,12 +158,13 @@ def test_rows_without_a_shape_compile_as_before():
     assert rules == ((((0, 'positive', True), (1, 'real', True)), ((2, 'positive', True),)),)
 
 
-def test_every_family_compiles_to_plain_rows():
-    # the shapes and the new terms are not used by any family yet: the
-    # templates of wiring.template build them all
+def test_every_family_but_power_compiles_to_plain_rows():
+    # the shapes and the new terms are used by the rows of Pow only, which
+    # wiring.power matches nodes against
     for family, fns in FAMILIES:
         for name, arity, terms, specs in fns:
-            assert generator(name, arity, terms, specs, __name__).plain, (family, name)
+            plain = generator(name, arity, terms, specs, __name__).plain
+            assert plain is (family != 'power'), (family, name)
     assert {fam for fam, _ in FAMILIES} == {fam for fam, _ in ROW_FAMILIES}
 
 

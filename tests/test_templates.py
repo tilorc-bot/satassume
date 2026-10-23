@@ -555,7 +555,9 @@ def test_specific_expectations():
     assert Implies(P('imaginary', x), P('positive', I**x)) in facts
     facts = registry.facts_for(3**x)
     assert Implies(P('imaginary', x), Not(P('extended_real', 3**x))) not in facts  # needs algebraic x
-    assert Implies(And(P('imaginary', x), P('algebraic', x)), Not(P('extended_real', 3**x))) in facts
+    # (the premises in either order: the rows of Pow write them as SymPy's And sorts them)
+    imag, alg, not_real = P('imaginary', x), P('algebraic', x), Not(P('extended_real', 3**x))
+    assert (Implies(And(imag, alg), not_real) in facts or Implies(And(alg, imag), not_real) in facts)
     assert P('negative', unevaluated(Pow, I, 2 + I)) in registry.facts_for(unevaluated(Pow, I, 2 + I))
     assert P('imaginary', unevaluated(Pow, I, 3 + I)) in registry.facts_for(unevaluated(Pow, I, 3 + I))
     assert P('positive', unevaluated(Pow, I, I)) in registry.facts_for(unevaluated(Pow, I, I))

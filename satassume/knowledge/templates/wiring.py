@@ -24,12 +24,16 @@ from __future__ import annotations
 import importlib
 
 from sympy import (
-    S, acos, andre, asin, catalan, cos, cosh, exp, factorial2, genocchi, im, partition, re, sin,
-    subfactorial,
+    Mul, Pow, S, acos, andre, asin, catalan, cos, cosh, exp, factorial2, genocchi, im, partition,
+    re, sin, subfactorial,
 )
 
-from ._rows import by_function, generator
-from .core import ipi_split
+from ._common import Rules, const_key, facts
+from ._rows import by_function, constant_value, generator
+from .core import (
+    _exp_arg, _pow_bound_templates, _unit_angle, _unit_power_units, ipi_rules, ipi_split,
+    irrational_root,
+)
 from .functions import (
     _cosh_shift, _exp_ipi, _genocchi_half, _in_unit_interval_units, _pi_trig, _unary,
     _value_units, nary, parts_of_round_templates, shifted,
@@ -61,6 +65,10 @@ VALUE_AT_INTEGER = (factorial2, subfactorial, catalan, andre, partition, genocch
 #: (functions._genocchi_half)
 HALF_ARGUMENT = (genocchi,)
 
+#: the functions whose rows have shapes and terms other than x + c, which
+#: :func:`power` matches a node against: the power (``templates/power.py``)
+POWER = (Pow,)
+
 #: templates that are not rows, each with the functions it is for,
 #: registered after the rows of those functions: re and im of floor(y) or
 #: ceiling(y) are integers (functions.parts_of_round_templates)
@@ -82,8 +90,11 @@ def template(fn, gen):
     (``gen.arity``), get :func:`.functions.nary`'s template: the arguments
     are slots ``0 .. n-1``, the node ``n``, the terms from ``n + 1``; a
     node of another number of arguments gets no facts.  Rows with shapes
-    or terms other than ``x + c`` (``gen.plain`` false) are refused: no
-    template here matches a node against shapes."""
+    or terms other than ``x + c`` (``gen.plain`` false) get :func:`power`'s
+    template for a function of :data:`POWER`, and are refused for another:
+    no other template here matches a node against shapes."""
+    if fn in POWER:
+        return power(gen)
     if not getattr(gen, 'plain', True):
         raise ValueError(f"{fn.__name__}: its rows have shapes or terms other than x + c, "
                          "which none of these templates builds")
@@ -149,4 +160,144 @@ def _attributed(t, module):
         return t(expr)
     template.__name__ = template.__qualname__ = t.__name__
     template.__module__ = module
+    return template
+
+
+def power(gen):
+    """The template of ``Pow`` from its rows (``templates/power.py``):
+    ``gen.specs[2]`` are the rules, a rule with a shape for the nodes of
+    that shape only, and ``gen.terms[2]`` the terms, in slots ``3, 4, ...``
+    after the base 0, the exponent 1 and the node 2; the ``s`` of
+    ``E**(I*pi*c*s)`` comes last.
+
+    A node has a shape when each argument matches it: a number when it is
+    of its type and equal (``-I`` is ``Mul(-1, I)``), ``('head', 'exp')``
+    when it is ``exp(u)`` or an unevaluated ``E**u`` (:func:`.core._exp_arg`),
+    ``('same', j)`` when it is argument ``j``, ``('constant',)`` when it is a
+    constant (an atomic number).  The terms exist as in the template that
+    was before the rows: ``u`` for such a base, ``k*e`` (``Mul(k, e)``) when
+    the exponent ``e`` is not a number, ``b + c`` when neither argument is
+    a number, a term of the constant (``Abs(number) - 1``) when the
+    argument is a SymPy ``Number``, computed there; a rule about a term that
+    does not exist is left out.  The pattern is keyed as that template's
+    was, by the constants, ``b is e``, the angle of a base ``I``, ``-1``,
+    ``-I`` (:func:`.core._unit_angle`), the ``u``, ``E**(I*pi*c*s)``
+    (:func:`.core.ipi_split`) and which terms exist: the key decides every
+    shape and every term.
+
+    The rules that are not rows are added from :mod:`.core`: those of
+    ``E**(I*pi*c*s)`` (:func:`.core.ipi_rules`), the irrational ``b**(p/q)``
+    (:func:`.core.irrational_root`), and next to the block the facts of
+    ``b**e`` for ``b`` in ``I``, ``-1``, ``-I`` and a numeric ``e``
+    (:func:`.core._unit_power_units`) or the rules of a base ``c0 + c1*u``
+    (:func:`.core._pow_bound_templates`)."""
+    terms = gen.terms[2]
+    first = 3
+    s_slot = first + len(terms)
+    nobjs = s_slot + 1
+    shifts, inner, times, of_constant = [], [], [], []
+    for k, t in enumerate(terms, first):
+        if t[0] == 'inner':
+            inner.append((k, t[1]))
+        elif t[0] == 'times':
+            times.append((k, t[1], t[2]))
+        elif t[0] == 'of_constant':
+            of_constant.append((k, t[1], t[2]))
+        else:
+            shifts.append((k, t[0], t[1]))
+    rules = []
+    for r in gen.specs[2]:
+        prem, concl = list(r[0]), list(r[1])
+        shape = r[2] if len(r) > 2 else None
+        for s in shape or ():
+            if s is not None and s[0] == 'head' and s[1] != 'exp':
+                raise ValueError(f"Pow: no template matches a base {s[1]}(u)")
+        terms_of = frozenset(k for k, _, _ in (*prem, *concl) if k >= first)
+        rules.append((prem, concl, shape, terms_of))
+
+    def matches(shape, args, consts):
+        for i, s in enumerate(shape):
+            if s is None:
+                continue
+            a = args[i]
+            kind = s[0]
+            if kind == 'value':
+                if not (type(a) is type(s[1]) and a == s[1]):
+                    return False
+            elif kind == 'same':
+                if a is not args[s[1]]:
+                    return False
+            elif kind == 'head':
+                if _exp_arg(a) is None:
+                    return False
+            elif i not in consts:           # 'constant'
+                return False
+        return True
+
+    def template(expr):
+        args = b, e = expr.args
+        consts = {}
+        if b.is_Atom and b.is_number:
+            consts[0] = b
+        if e.is_Atom and e.is_number:
+            consts[1] = e
+        objs = [b, e, expr] + [None] * (nobjs - first)
+        u = None
+        for k, i in inner:
+            u = _exp_arg(args[i])
+            if u is not None:
+                objs[k] = u
+                if u.is_Atom and u.is_number:
+                    consts[k] = u
+        ipi = None
+        if b is S.Exp1 and 1 not in consts:
+            split = ipi_split(e)
+            if split is not None:
+                c, s_ = split
+                ipi = (c, s_ is not None)
+                if s_ is not None:
+                    objs[s_slot] = s_
+                    if s_.is_Atom and s_.is_number:
+                        consts[s_slot] = s_
+        has_t = 1 not in consts and not e.is_number
+        for k, i, c in times:
+            if not args[i].is_number:
+                objs[k] = Mul(c, args[i])
+        has_b1 = has_t and 0 not in consts and not b.is_number
+        if has_b1:
+            for k, i, c in shifts:
+                objs[k] = args[i] + c
+        angle = _unit_angle(b)
+        key = ('pow', const_key(b) if 0 in consts else None,
+               const_key(e) if 1 in consts else None, b is e, angle,
+               (const_key(u) if u.is_Atom and u.is_number else True) if u is not None else False,
+               ipi, const_key(objs[s_slot]) if s_slot in consts else None, has_t, has_b1)
+
+        def build():
+            # the terms of the constants, computed only for a new pattern:
+            # facts() resolves the rules against consts after calling this
+            for k, i, t in of_constant:
+                c = consts.get(i)
+                if c is not None and c.is_Number:
+                    consts[k] = constant_value(t, c)
+            exist = {k for k in range(first, nobjs) if objs[k] is not None or k in consts}
+            R = Rules()
+            for prem, concl, shape, terms_of in rules:
+                if terms_of <= exist and (shape is None or matches(shape, args, consts)):
+                    R.rule(prem, concl)
+            if ipi is not None:
+                ipi_rules(R.rule, ipi[0], s_slot if ipi[1] else None, 2)
+            if irrational_root(consts.get(0), consts.get(1)):
+                R.rule([], (2, 'irrational', True))
+            return R.rules
+
+        out = facts(key, build, consts, tuple(objs), 2)
+        if angle is not None and e.is_number:
+            return [out, *_unit_power_units(angle, e, expr)]
+        bound = _pow_bound_templates(expr)
+        if bound is not None:
+            return [out, bound]
+        return out
+    template.__name__ = template.__qualname__ = 'pow_templates'
+    template.__module__ = gen.__module__
     return template
