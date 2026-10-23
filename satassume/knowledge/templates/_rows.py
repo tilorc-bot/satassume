@@ -190,7 +190,9 @@ total = Symbol('total')
 base = Symbol('base')
 exponent = Symbol('exponent')
 log_base = Symbol('log_base')
-#: the constant variable: ``f(number, exponent)`` is a power of a constant
+#: the constant variable: a constant (an atomic number) argument;
+#: ``f(number, exponent)`` is a power of a constant, ``f(number, *terms)`` a
+#: sum with a constant term
 number = Constant('number')
 #: the generic function: in a :func:`for_all` statement, each of its functions
 f = Function('f')
