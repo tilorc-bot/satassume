@@ -49,6 +49,16 @@ The rules ``wiring.power`` adds that are not rows (``core.ipi_rules``,
 ``core.irrational_root``, ``core._unit_power_units``,
 ``core._pow_bound_templates``) are not checked here.
 
+The rows of ``Max``, ``Min`` and ``Piecewise`` (``templates/selection.py``,
+#299) have a star (``f(*values)``, ``f(value, *values)``); :func:`check_selection`
+expands each row for nodes of 1 to 4 values (``wiring.expand``, the rules
+over too many clauses left out as the template leaves them out) and takes
+every choice of the values from :data:`SELECTION_POOLS`, the node being
+SymPy's ``Max(*values)`` or ``Min(*values)``, or, for a ``Piecewise``, the
+value its conditions select, each value in turn (``Piecewise((v0, False),
+..., (vk, True), ...)``).  Which arguments a ``Piecewise`` has for its rows
+(``wiring.piecewise_values``) is not checked here.
+
 Every rule must be checked at least once, except those in
 :data:`NEVER_CHECKED`, each with the reason; an entry that becomes
 checkable fails, so the list cannot go stale.  A rule found false at a
@@ -72,8 +82,8 @@ pytest.importorskip("sympy")
 
 import mpmath  # noqa: E402
 from sympy import (  # noqa: E402
-    AccumBounds, Add, E, Float, I, Integer, Mul, Poly, Pow, Rational, S, erfcinv, erfinv, oo, pi,
-    exp, exp_polar, sqrt, unpolarify, zoo,
+    AccumBounds, Add, E, Float, I, Integer, Max, Min, Mul, Piecewise, Poly, Pow, Rational, S,
+    erfcinv, erfinv, oo, pi, exp, exp_polar, sqrt, unpolarify, zoo,
 )
 from sympy.ntheory import isprime  # noqa: E402
 
@@ -83,7 +93,7 @@ from satassume.knowledge.templates._compiled_rows import FAMILIES  # noqa: E402
 from satassume.knowledge.templates._rows import constant_value, from_text, generator  # noqa: E402
 from satassume.knowledge.templates.core import _exp_arg  # noqa: E402
 from satassume.knowledge.templates.functions import shifted  # noqa: E402
-from satassume.knowledge.templates.wiring import _declared, matches  # noqa: E402
+from satassume.knowledge.templates.wiring import _declared, expand, matches  # noqa: E402
 
 #: seconds for one evaluation of a node (construction and evalf)
 TIMEOUT = 10
@@ -116,6 +126,9 @@ _GELFOND_SCHNEIDER = ("the conclusion, that an algebraic irrational power of an 
                       "other than 0 and 1 is transcendental, is the Gelfond-Schneider theorem: "
                       "not decided numerically (2**GoldenRatio, sqrt(2)**sqrt(2))")
 
+_INCOMPARABLE = ("SymPy's Max and Min raise for an argument that is not extended real (Max(I, 1), "
+                 "Max(zoo)): no point has values that are all imaginary or not extended real")
+
 #: rules no point of the pools checks: ``(function, the rule as :func:`show`
 #: prints it)`` and the reason
 NEVER_CHECKED = {
@@ -140,6 +153,8 @@ NEVER_CHECKED = {
         "Pow(b, e): algebraic(b) & algebraic(e) & ~zero((b - 1)) & ~rational(e) & ~zero(b) "
         "-> ~algebraic(f)",
     )},
+    **{(fn, f"{fn}: every({p}) -> {p}(f)"): _INCOMPARABLE
+       for fn in ('Max', 'Min') for p in ('imaginary', '~extended_real')},
 }
 
 #: rules of the rows found false at a point of the pools, each a known
@@ -360,14 +375,14 @@ def basis(v):
 #: their own section below (the rows of Pow, :func:`check_power`)
 SHAPED = ('power',)
 
-#: families not checked here yet: the rows of Max, Min and Piecewise have a
-#: star (``f(*values)``), which the next step of #299 (U3) checks
-NOT_YET = ('selection',)
+#: families whose rows have a star, checked by their own section below (the
+#: rows of Max, Min and Piecewise, :func:`check_selection`)
+STARRED = ('selection',)
 
 
 def _heads():
     """``(family, name, heads, arity, terms, rules)`` for every function of
-    the compiled rows (but those of :data:`SHAPED` and :data:`NOT_YET`);
+    the compiled rows (but those of :data:`SHAPED` and :data:`STARRED`);
     ``heads`` the SymPy classes whose nodes get the rules (empty for a
     function this SymPy lacks)."""
     declared = {}
@@ -377,7 +392,7 @@ def _heads():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
-        if family in SHAPED or family in NOT_YET:
+        if family in SHAPED or family in STARRED:
             continue
         for name, arity, terms, specs in fns:
             fn = declared[family, name]
@@ -649,6 +664,100 @@ def check_power(rules, terms):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Max, Min, Piecewise: rows with a star (#299)
+# ---------------------------------------------------------------------------
+
+#: the values of the points of Max, Min and Piecewise, by their number:
+#: integers (0, 1, prime, composite, even, negative), halves, algebraic and
+#: transcendental irrationals, imaginary and complex numbers (Max and Min
+#: raise there: no node), the infinities, nan and a float; fewer for 3 and
+#: 4 values
+SELECTION_POOLS = {
+    1: (S(0), S(1), S(-1), S(2), S(3), S(4), S(-2), S.Half, -S.Half, sqrt(2), pi, -pi, E,
+        I, -I, 1 + I, oo, -oo, zoo, S.NaN, Float(2.5)),
+    3: (S(0), S(1), S(-1), S(2), S(4), S.Half, sqrt(2), pi, I, oo, -oo),
+    4: (S(0), S(1), S(-1), S(2), pi, I),
+}
+SELECTION_POOLS[2] = SELECTION_POOLS[1]
+
+#: the heads of the rows with a star
+SELECTION_HEADS = {'Max': Max, 'Min': Min, 'Piecewise': Piecewise}
+
+
+def _selection():
+    """``((name, schemas), ...)`` of the compiled rows of Max, Min and
+    Piecewise, as :func:`.wiring.any_arity` reads them (``gen.schemas``)."""
+    return tuple((name, generator(name, arity, terms, specs, 'selection', schemas).schemas)
+                 for name, arity, terms, specs, schemas in dict(FAMILIES)['selection'])
+
+
+SELECTION = _selection()
+
+
+def show_schema(name, schema):
+    """``Max: every(integer) -> integer(f)``: a row with a star, its picked
+    arguments ``v0``, ``v1``, ...; ``every``, ``some`` and ``count`` of
+    the others; ``at most n`` for a row with ``at_most``."""
+    at_most, picks, rules = schema
+
+    def lit(t):
+        w, p, pos = t
+        p = f"{'' if pos else '~'}{p}"
+        if w in ('every', 'some', 'others'):
+            return f"{w}({p})"
+        return f"{p}({f'v{w}' if type(w) is int else 'f' if w == 'node' else w})"
+    return "; ".join(
+        f"{name}: {' & '.join(map(lit, prem)) or 'True'} -> {' | '.join(map(lit, concl))}"
+        + (f" (at most {at_most})" if at_most is not None else '') for prem, concl in rules)
+
+
+def _select(k):
+    """The ``Piecewise`` whose conditions select value ``k``."""
+    def head(*values):
+        return Piecewise(*((v, S.true if i == k else S.false) for i, v in enumerate(values)))
+    head.__name__ = 'Piecewise'
+    return head
+
+
+def check_selection(name, schemas):
+    """The :class:`Counts` of the rows of ``name`` (``Max``, ``Min``,
+    ``Piecewise``), by row (``per_rule``), over the points of
+    :data:`SELECTION_POOLS`: each row is expanded for a node of ``n``
+    values (``wiring.expand``, the rules of too many clauses left out)."""
+    out = Counts()
+    out.per_rule = dict.fromkeys(range(len(schemas)), 0)
+    for n in sorted(SELECTION_POOLS):
+        rules = [(i, r) for i, s in enumerate(schemas)
+                 for r in expand((s,), n, {}, leave_out_wide=True)]
+        heads = ([_select(k) for k in range(n)] if name == 'Piecewise'
+                 else [SELECTION_HEADS[name]])
+        for args in itertools.product(SELECTION_POOLS[n], repeat=n):
+            for head in heads:
+                out.points += 1
+                node, failure = _node_basis(head, args)
+                if failure:
+                    setattr(out, failure, getattr(out, failure) + 1)
+                    continue
+                slots = [basis(a) for a in args] + [node]
+                for i, (prem, concl) in rules:
+                    p = _kand(_lit(slots, t) for t in prem)
+                    if p is False:
+                        out.vacuous += 1
+                        continue
+                    c = _kor(_lit(slots, t) for t in concl)
+                    if p is True and c is False:
+                        out.false.append((f"{name}{args}", show_schema(name, schemas[i])))
+                    elif p is True and c is True:
+                        out.checked += 1
+                        out.per_rule[i] += 1
+                    elif c is True:
+                        out.vacuous += 1
+                    else:
+                        out.skipped += 1
+    return out
+
+
 def _id(h):
     family, name, heads, n, terms, rules = h
     return f"{family}-{name}-{n}"
@@ -703,6 +812,25 @@ def test_the_points_of_pow_have_its_shapes():
     assert sum(b is e for b in POW_BASES for e in POW_EXPONENTS) >= 20
 
 
+@pytest.mark.parametrize("name", [name for name, _ in SELECTION])
+def test_every_rule_of_max_min_and_piecewise_holds_at_the_points_of_the_pools(name):
+    schemas = dict(SELECTION)[name]
+    c = check_selection(name, schemas)
+    never = {show_schema(name, s) for k, s in enumerate(schemas) if not c.per_rule[k]}
+    print(_line(f"selection-{name}", len(schemas), c, len(never)))
+    false, known = set(c.false), set(KNOWN_FALSE)
+    assert false <= known and not {r for r in known if r[0].startswith(name + '(')} - false, (
+        f"false (point, rule), not in KNOWN_FALSE: {sorted(false - known)}")
+    allowed = {r for (fn, r) in NEVER_CHECKED if fn == name}
+    assert never == allowed, (f"never checked, not in NEVER_CHECKED: {sorted(never - allowed)}; "
+                              f"in NEVER_CHECKED but checked: {sorted(allowed - never)}")
+
+
+def test_the_points_of_piecewise_select_each_value():
+    assert _select(1)(S(1), S(2), S(3)) == 2 and _select(0)(S(1)) == 1
+    assert _node_basis(Max, (I, S(1)))[1] == 'raised'
+
+
 def test_the_oracle_follows_satassumes_meanings():
     def t(v, p):
         return truth(basis(v), p)
@@ -746,21 +874,26 @@ def test_every_entry_of_never_checked_is_a_rule():
     name, terms, rules = POWER
     shown = {(h[1], show(h[1], h[3], r, h[4])) for h in HEADS for r in h[5]}
     shown |= {(name, show_power(r, terms)) for r in rules}
+    shown |= {(n, show_schema(n, s)) for n, schemas in SELECTION for s in schemas}
     assert set(NEVER_CHECKED) <= shown
-    assert {r for _, r in KNOWN_FALSE} <= {show_power(r, terms) for r in rules}
+    assert {r for _, r in KNOWN_FALSE} <= ({show_power(r, terms) for r in rules}
+                                           | {r for _, r in shown})
 
 
 def test_every_function_of_the_families_is_checked():
     names = {(family, fn.rpartition(':')[2] if isinstance(fn, str) else fn.__name__)
-             for family, fns in ROW_FAMILIES if family not in SHAPED + NOT_YET for fn in fns}
+             for family, fns in ROW_FAMILIES if family not in SHAPED + STARRED for fn in fns}
     assert {(h[0], h[1]) for h in HEADS} == names
     assert sum(len(h[5]) for h in HEADS) == sum(
-        len(r) for family, fns in FAMILIES if family not in SHAPED + NOT_YET
-        for _, _, _, specs, *_ in fns for _, r in specs)
+        len(r) for family, fns in FAMILIES if family not in SHAPED + STARRED
+        for _, _, _, specs in fns for _, r in specs)
     # the shaped families: Pow
     assert SHAPED == ('power',) and dict(ROW_FAMILIES)['power'] == (Pow,)
     [(name, _, _, specs)] = dict(FAMILIES)['power']
     assert POWER[0] == name and len(POWER[2]) == len(dict(specs)[2]) and len(specs) == 1
+    # the families with a star: Max, Min, Piecewise
+    assert STARRED == ('selection',)
+    assert [name for name, _ in SELECTION] == [fn.__name__ for fn in dict(ROW_FAMILIES)['selection']]
 
 
 def main():
@@ -788,6 +921,15 @@ def main():
     never += nv
     print(_line("power-Pow-2", len(rules), c, len(nv)), f"{c.absent} absent", flush=True)
     n_rules = sum(len(h[5]) for h in HEADS if h[2]) + len(rules)
+    for name, schemas in SELECTION:
+        c = check_selection(name, schemas)
+        for k in _COUNTED:
+            setattr(total, k, getattr(total, k) + getattr(c, k))
+        total.false += c.false
+        nv = [show_schema(name, s) for k, s in enumerate(schemas) if not c.per_rule[k]]
+        never += nv
+        n_rules += len(schemas)
+        print(_line(f"selection-{name}", len(schemas), c, len(nv)), flush=True)
     print("\n" + _line("total", n_rules, total, len(never)),
           f"({time.perf_counter() - t0:.0f} s)")
     for r in never:
