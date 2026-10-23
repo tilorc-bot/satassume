@@ -130,7 +130,7 @@ identical answers, speedups with no changed answers, new tests, and docs
 that only describe. When unsure, apply it.
 
 The PR description says why, one visible "**Needs your decision:**" line
-per decision, near the top (the description style is #255). Next to it, a
+per decision, near the top (see "PR descriptions"). Next to it, a
 labelled PR must carry a short "**Why a human:**" justification: (a) which
 of the criteria above it meets, by number, and (b) why it is worth a
 human's time, that is, what goes wrong or is lost if it is not reviewed
@@ -160,6 +160,28 @@ to know that it was tried, not to read the attempts. For example:
 The label is a convention: nothing enforces it. A required status check
 that fails while the label is present would block the merge, but the
 owner has to add that workflow (see "GitHub", item 2).
+
+## PR descriptions
+
+A PR description is written for a reader who knows SymPy and the
+mathematics and knows at a high level what satassume does, but does not
+know this codebase. #254 is the example.
+
+1. Start with one concise, plain sentence on what changes, in SymPy terms.
+2. When answers change, follow it with a small code example of queries
+   with the answer before and after.
+3. Do not assume knowledge of the codebase: in the visible part, name
+   SymPy functions and the mathematics, not satassume's modules or
+   functions.
+4. Put implementation details, how the change was built, lists of tests
+   and gates, and reviews in collapsed `<details>` blocks, one per topic.
+   The checklist in "Reporting a PR" lists what goes in them. GitHub
+   renders Markdown inside a block only when a blank line follows the
+   `<summary>` line.
+5. Add a visible "**Needs your decision:**" line, one per decision, only
+   when something needs deciding.
+6. A PR with the `needs-human` label also carries the "**Why a human:**"
+   line described in "The `needs-human` label".
 
 ## Reporting a PR
 
