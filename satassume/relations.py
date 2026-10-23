@@ -261,8 +261,9 @@ linked, ``prime(x)`` gives ``x - 1 >= 1``.
 A link whose premise holds ``prime``, ``composite`` or ``even``
 (:data:`BOUND_KINDS`) is made only in a session whose formulas mention
 that kind (:func:`bound_kinds`: an atom of the predicate, a symbol
-declared with it, or for ``even`` an atom over a sum or shifted argument
-the bounds read, where the templates may derive evenness no atom names),
+declared with it, or for ``even`` a positive order atom ``lt(0, t)``,
+such as a twin below, where the templates may derive evenness no atom
+names),
 so that a session over relations of integers alone gets no atom
 ``lt(e, 2)`` it cannot use: such atoms are decisions of the search and
 changed the paths of LRA's branch budget (``tests/test_lra_exhaustion.py``).
@@ -468,19 +469,15 @@ def bound_kinds(atoms) -> frozenset:
     """The :data:`BOUND_KINDS` a formula with the atoms ``atoms`` mentions:
     the predicates of its atoms, the declared
     facts of the free symbols of their arguments (``Symbol('p',
-    prime=True)``), and ``even`` for an atom whose argument holds a sum
-    with a Rational term or a shifted argument (:func:`_bound_nodes`):
-    the templates derive evenness (``factorial(n + 2)``, ``-2*n``) that no
-    atom names."""
+    prime=True)``).  ``even`` also comes with a positive order atom
+    ``lt(0, t)`` (:meth:`Relations.process`), such as a twin of
+    :func:`bound_twins`: the templates derive evenness
+    (``factorial(n + 2)``, ``-2*n``) that no atom names."""
     out = set()
     syms = set()
     for a in atoms:
         if a.pred in BOUND_KINDS:
             out.add(a.pred)
-        elif "even" not in out and a.pred in PRED_INDEX and any(_bound_nodes(a.expr)):
-            # a term the templates make even (factorial(n + 2), -2*n)
-            # under a sum or shift the bounds read
-            out.add("even")
         for e in (a.expr if a.pred in RELATION_ATOMS else (a.expr,)):
             syms.update(getattr(e, "free_symbols", ()))
     for x in syms:
@@ -895,7 +892,22 @@ def _bound_terms(e, bounded) -> list:
     return out
 
 
+_BOUND_TWINS = _PROCESS.table(f"{__name__}._BOUND_TWINS", "pure", 100_000)
+
+
 def bound_twins(atoms, context=()) -> list:
+    """:func:`_bound_twins`, memoized per pair of atom sequences."""
+    key = (tuple(atoms), tuple(context))
+    r = _BOUND_TWINS.get(key)
+    if r is None:
+        r = tuple(_bound_twins(*key))
+        if len(_BOUND_TWINS) >= 100_000:
+            _BOUND_TWINS.clear()
+        _BOUND_TWINS[key] = r
+    return list(r)
+
+
+def _bound_twins(atoms, context=()) -> list:
     """The twins ``lt(0, t)`` (the link atom ``0 < t`` of :meth:`Relations._link`)
     that switch on the glue for the integer bounds a formula with the
     atoms ``atoms``, asked under ``context``, needs (see "Integer bounds"):
@@ -1199,11 +1211,17 @@ class Relations:
             if a.pred in PRED_INDEX and a.expr not in self.linked:
                 self.top[a.expr] = None
         if BOUNDS:
-            new = bound_kinds(atoms) - self.kinds
-            if new:
-                self.kinds = self.kinds | new
-                for e, g in list(self._bound_terms.items()):
-                    self._link_bounds(e, g, new)
+            self._add_kinds(bound_kinds(atoms))
+
+    def _add_kinds(self, kinds) -> None:
+        """Add the kinds of bound ``kinds`` to the session's: the terms
+        linked before get the links of the new ones now, under their link
+        selectors."""
+        new = kinds - self.kinds
+        if new:
+            self.kinds = self.kinds | new
+            for e, g in list(self._bound_terms.items()):
+                self._link_bounds(e, g, new)
 
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
@@ -1212,6 +1230,12 @@ class Relations:
         (by default such atoms stay free Booleans)."""
         s = self.session
         user = [a for a in user_atoms if a.pred in RELATION_ATOMS]
+        if BOUNDS and "even" not in self.kinds and any(
+                a.pred == "lt" and a.expr[0] == 0 for a in user):
+            # a positive order atom lt(0, t) (a twin of bound_twins, or the
+            # user's t > 0): the even kind (bound_kinds), a function of the
+            # formula's glue atoms
+            self._add_kinds(frozenset({"even"}))
         # the sides of a user relation are linked once a theory interprets
         # it: an opaque relation (a free atom, uninterpreted="free")
         # activates no theory and links nothing
