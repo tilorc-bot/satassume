@@ -36,13 +36,13 @@ Without ``--corpus``/``--stream`` only the synthetic list of ``load_exprs``
 is checked (about 2 s); with both, every subexpression of the corpus and
 the refine stream (about 380 blocks, about 6 s).
 
-For a Mul node the clauses come from the rule tables of
-``satassume/knowledge/templates/core.py`` (``MUL_TABLE``, ``IPI_TABLE``;
-issue #97): each fired clause of a non-total block is printed with the
-names of the table rows that emit it (``core.table_provenance``), and
-``--tables`` prints the tables.  A Pow node's clauses come from rows
-(``templates/power.py``, #294), as a function's do: ``tools/show_rows.py
-Pow`` prints them, with their titles.
+For a Mul node the clauses come from rows (``templates/mul.py``, #299):
+each fired clause of a non-total block is printed with the rows that emit
+it, as ``tools/show_rows.py Mul`` prints them (:func:`row_provenance`).  A
+Pow node's clauses come from rows too (``templates/power.py``, #294), as a
+function's do: ``tools/show_rows.py Pow`` prints them, with their titles.
+``--tables`` prints the rule table of ``exp(I*pi*c*s)``
+(``templates/core.py``, ``IPI_TABLE``; issue #97).
 
 Only compiled patterns are checked.  The plain formulas some templates
 emit alongside them (the unit facts of a constant-argument node such as
@@ -485,11 +485,10 @@ def run(exprs, depth=1, independent=False, models=None):
 
 
 def fired_rows(e, pat, fired):
-    """For each fired clause, the names of the table rows that emit it
-    (Mul nodes; ``[]`` for a clause of another template)."""
-    from satassume.knowledge.templates.core import table_provenance
+    """For each fired clause, the rows that emit it (Mul nodes; ``[]`` for
+    a clause of another template)."""
     prov = {}
-    for name, clause in table_provenance(e):
+    for name, clause in row_provenance(e):
         prov.setdefault(clause, []).append(name)
     out = []
     for lits, _, _ in fired:
@@ -498,13 +497,60 @@ def fired_rows(e, pat, fired):
     return out
 
 
+_MUL_ROWS = []
+
+
+def _mul_rows():
+    """``(text, gen)`` for each row of ``templates/mul.py``: the row as
+    ``tools/show_rows.py`` prints it (title and row), and the compiled
+    rules of that row alone."""
+    if not _MUL_ROWS:
+        from sympy import Mul
+        from satassume.knowledge.templates._rows import compile_rows, generator
+        from show_rows import family_rows, text
+        for title, row in family_rows()["Mul"]:
+            c = compile_rows(Mul, [row])
+            _MUL_ROWS.append((f"{title}: {text(row, 'Mul')}",
+                              generator("Mul", *c[:3], __name__, *c[3:])))
+    return _MUL_ROWS
+
+
+def row_provenance(expr):
+    """For a Mul node: ``(row, clause)`` for every rule of the node's
+    blocks of rows (one per factor set, ``core._mul_factor_sets``),
+    resolved against the constants like the compiled block, with ``row``
+    the text of :func:`_mul_rows` and ``clause`` a frozenset of ``(object,
+    pred, positive)`` literals over the basis.  Empty for other nodes."""
+    from sympy import Mul
+    from satassume.knowledge.rules import expand_clause
+    from satassume.knowledge.templates._common import consts_of, resolve
+    from satassume.knowledge.templates.core import _mul_factor_sets
+    from satassume.knowledge.templates.wiring import rules_for
+    if not (isinstance(expr, Mul) and expr.args):
+        return []
+    out = []
+    for f in _mul_factor_sets(expr):
+        objs = tuple(f) + (expr,)
+        for name, gen in _mul_rows():
+            consts = consts_of(f)
+            try:
+                resolved = resolve(rules_for(gen, f, consts), consts)
+            except ValueError:
+                continue
+            for ps, cs in resolved:
+                # over the basis, as the compiled block (rules.expand_clause)
+                lits = [(k, p, not pos) for k, p, pos in ps] + [(k, p, pos) for k, p, pos in cs]
+                for c in expand_clause(lits):
+                    out.append((name, frozenset((objs[k], BASIS[i], pos) for k, i, pos in c)))
+    return out
+
+
 def table_text():
-    """The rule tables of the Mul template and of ``exp(I*pi*c*s)``, one row
-    per line."""
+    """The rule table of ``exp(I*pi*c*s)``, one row per line."""
     from satassume.knowledge.templates import core
     from satassume.knowledge.templates.table import Section, count_rows
     lines = []
-    for name in ("MUL_TABLE", "IPI_TABLE"):
+    for name in ("IPI_TABLE",):
         table = getattr(core, name)
         lines.append(f"{name}: {count_rows(table)} rows")
         for item in table:
@@ -535,7 +581,7 @@ def main():
     ap.add_argument("--independent", action="store_true",
                     help="treat derived slots as independent of the arguments (the naive check)")
     ap.add_argument("--tables", action="store_true",
-                    help="print the Mul and exp(I*pi*c*s) rule tables and exit")
+                    help="print the exp(I*pi*c*s) rule table and exit")
     args = ap.parse_args()
     if args.tables:
         print(table_text())

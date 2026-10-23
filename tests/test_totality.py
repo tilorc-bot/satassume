@@ -105,3 +105,35 @@ def test_a_template_that_raises_fails_the_gate(monkeypatch):
     monkeypatch.setattr(registry, "clauses_for", boom)
     with pytest.raises(RuntimeError, match="canary"):
         totality.run([Symbol('x') + 1], depth=1, models=totality.rule_models())
+
+
+def test_provenance_covers_every_clause_of_the_mul_rows():
+    """Every clause of a Mul block of rows is named by some row
+    (``totality.row_provenance``, printed with a non-total block), as
+    ``tools/show_rows.py Mul`` prints it."""
+    from sympy import Mul
+
+    from satassume.knowledge.rules import BASIS
+    from satassume.knowledge.templates import registry
+    from satassume.knowledge.templates.core import _mul_factor_sets
+
+    missing, named = [], set()
+    for e in totality.load_exprs():
+        for m in sympy.preorder_traversal(e):
+            if not isinstance(m, Mul):
+                continue
+            prov = {}
+            for name, clause in totality.row_provenance(m):
+                prov.setdefault(clause, []).append(name)
+            compiled, _ = registry.clauses_for(m)
+            sets = {tuple(f) + (m,) for f in _mul_factor_sets(m)}
+            for c in compiled:
+                if tuple(o for o in c.objs if o is not None) not in sets:
+                    continue    # a block of no rows (core._quotient_templates)
+                for lits, _, _ in c.pattern.clauses:
+                    cl = frozenset((c.objs[k], BASIS[i], not neg) for k, i, neg in lits)
+                    if cl not in prov:
+                        missing.append((m, cl))
+                    named.update(prov.get(cl, ()))
+    assert not missing, missing[:5]
+    assert len(named) > 40 and all(": " in n for n in named)
