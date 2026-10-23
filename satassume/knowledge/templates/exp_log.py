@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from sympy import Equivalent, Q, exp, log
 
-from ._rows import closed, f, for_all, x
+from ._rows import argument, closed, f, for_all
 
 RULES = (
     # Entire
@@ -24,65 +24,67 @@ RULES = (
     # Nonvanishing
     #     exp(a)*exp(-a) == 1
     for_all((exp,),
-        Q.finite(x) >> ~Q.zero(f(x))),
+        Q.finite(argument) >> ~Q.zero(f(argument))),
 
     # Positive on the reals
     for_all((exp,),
-        Q.real(x) >> Q.positive(f(x))),
+        Q.real(argument) >> Q.positive(f(argument))),
 
     # Limits at the real infinities
     #     exp(-oo) == 0, exp(oo) == oo
     for_all((exp,),
-        (Q.infinite(x) & Q.extended_negative(x)) >> Q.zero(f(x)),
-        (Q.infinite(x) & Q.extended_positive(x)) >> (
-            Q.infinite(f(x)) & Q.extended_positive(f(x)))),
+        (Q.infinite(argument) & Q.extended_negative(argument)) >> Q.zero(f(argument)),
+        (Q.infinite(argument) & Q.extended_positive(argument)) >> (
+            Q.infinite(f(argument)) & Q.extended_positive(f(argument)))),
 
     # One at 0
     #     1 is odd, and neither prime nor composite
     for_all((exp,),
-        Q.zero(x) >> (Q.odd(f(x)) & ~Q.prime(f(x)) & ~Q.composite(f(x)))),
+        Q.zero(argument) >> (
+            Q.odd(f(argument)) & ~Q.prime(f(argument)) & ~Q.composite(f(argument)))),
 
     # Lindemann
     #     exp(a) is transcendental at an algebraic a != 0 (Lindemann-Weierstrass;
     #     exp(a) != 0); exp(log(a)) == a: a value b != 0 of log at an
     #     algebraic a != 0, if algebraic, would make exp(b) == a transcendental
     for_all((exp, log),
-        (Q.algebraic(x) & ~Q.zero(x) & ~Q.zero(f(x))) >> Q.transcendental(f(x))),
+        (Q.algebraic(argument) & ~Q.zero(argument) & ~Q.zero(f(argument)))
+        >> Q.transcendental(f(argument))),
 
     # Finite but at 0
     #     a branch cut on the negative reals, and no pole but 0
     for_all((log,),
-        (Q.complex(x) & ~Q.zero(x)) >> Q.complex(f(x)),
-        (Q.finite(x) & ~Q.zero(x)) >> Q.finite(f(x))),
+        (Q.complex(argument) & ~Q.zero(argument)) >> Q.complex(f(argument)),
+        (Q.finite(argument) & ~Q.zero(argument)) >> Q.finite(f(argument))),
 
     # Pole at 0
     #     the value is zoo
     for_all((log,),
-        Q.zero(x) >> (Q.infinite(f(x)) & ~Q.extended_real(f(x)))),
+        Q.zero(argument) >> (Q.infinite(f(argument)) & ~Q.extended_real(f(argument)))),
 
     # Infinite at infinity
     #     log(+-oo) == oo, log(zoo) == zoo
     for_all((log,),
         closed(f, Q.infinite),
-        (Q.infinite(x) & Q.extended_real(x)) >> Q.extended_positive(f(x))),
+        (Q.infinite(argument) & Q.extended_real(argument)) >> Q.extended_positive(f(argument))),
 
     # Real on the positive reals
     for_all((log,),
-        Q.positive(x) >> Q.real(f(x))),
+        Q.positive(argument) >> Q.real(f(argument))),
 
     # Not real off the positive reals
     #     the imaginary part of log(z) is arg(z), which is 0 only on the
     #     positive reals: pi on the negative reals
     for_all((log,),
-        Q.negative(x) >> ~Q.extended_real(f(x)),
-        (Q.complex(x) & ~Q.extended_real(x)) >> ~Q.extended_real(f(x))),
+        Q.negative(argument) >> ~Q.extended_real(f(argument)),
+        (Q.complex(argument) & ~Q.extended_real(argument)) >> ~Q.extended_real(f(argument))),
 
     # Zero at 1, positive beyond, negative below
     #     log(1) == 0, log is increasing on the positive reals, log(oo) == oo
     for_all((log,),
-        Equivalent(Q.zero(f(x)), Q.eq(x, 1)),
-        Q.gt(x, 1) >> Q.extended_positive(f(x)),
-        Q.positive(x) >> (
-            Equivalent(Q.positive(f(x)), Q.gt(x, 1))
-            & Equivalent(Q.negative(f(x)), Q.lt(x, 1)))),
+        Equivalent(Q.zero(f(argument)), Q.eq(argument, 1)),
+        Q.gt(argument, 1) >> Q.extended_positive(f(argument)),
+        Q.positive(argument) >> (
+            Equivalent(Q.positive(f(argument)), Q.gt(argument, 1))
+            & Equivalent(Q.negative(f(argument)), Q.lt(argument, 1)))),
 )
