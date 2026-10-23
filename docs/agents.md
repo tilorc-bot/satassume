@@ -140,6 +140,23 @@ or not merged. For example:
 > Unreviewed, SymPy code that relies on those answers could break
 > silently; unmerged, the three wrong True answers stay.
 
+Before applying the label, try to remove its reason: a change that does
+the PR's job and keeps the check, the answers or the convention the
+criterion protects. The label is for a decision no such change avoids, or
+one where avoiding it costs more than the decision is worth (#290: #287
+deleted the legacy generators together with the equivalence tests that
+compared against them, weakening a check; freezing the rows' clauses as
+data kept the check, and no human was needed). A labelled PR lists what
+it tried in a collapsed block below "**Why a human:**": the owner needs
+to know that it was tried, not to read the attempts. For example:
+
+> <details><summary>Tried first</summary>
+>
+> - Kept the three True answers with a rule for positive bases: two of
+>   the three queries do not know the sign of the base.
+>
+> </details>
+
 The label is a convention: nothing enforces it. A required status check
 that fails while the label is present would block the merge, but the
 owner has to add that workflow (see "GitHub", item 2).
