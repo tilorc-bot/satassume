@@ -34,10 +34,6 @@ from .core import (
     _exp_arg, _pow_bound_templates, _unit_angle, _unit_power_units, ipi_rules, ipi_split,
     irrational_root,
 )
-from .functions import (
-    _cosh_shift, _exp_ipi, _genocchi_half, _in_unit_interval_units, _pi_trig, _unary,
-    _value_units, nary, parts_of_round_templates, shifted,
-)
 from .registry import registry
 
 #: the functions with rules for an argument pi*c*s, each with whether it
@@ -71,8 +67,9 @@ POWER = (Pow,)
 
 #: templates that are not rows, each with the functions it is for,
 #: registered after the rows of those functions: re and im of floor(y) or
-#: ceiling(y) are integers (functions.parts_of_round_templates)
-AFTER_ROWS = (((re, im), parts_of_round_templates),)
+#: ceiling(y) are integers (functions.parts_of_round_templates); by name, as
+#: :mod:`.functions` is imported only for a family that needs it (#297)
+AFTER_ROWS = (((re, im), 'parts_of_round_templates'),)
 
 
 def functions(family: str):
@@ -92,12 +89,17 @@ def template(fn, gen):
     node of another number of arguments gets no facts.  Rows with shapes
     or terms other than ``x + c`` (``gen.plain`` false) get :func:`power`'s
     template for a function of :data:`POWER`, and are refused for another:
-    no other template here matches a node against shapes."""
+    no other template here matches a node against shapes.  :mod:`.functions`
+    is imported for those templates only, not for :func:`power`'s (#297)."""
     if fn in POWER:
         return power(gen)
     if not getattr(gen, 'plain', True):
         raise ValueError(f"{fn.__name__}: its rows have shapes or terms other than x + c, "
                          "which none of these templates builds")
+    from .functions import (
+        _cosh_shift, _exp_ipi, _genocchi_half, _in_unit_interval_units, _pi_trig, _unary,
+        _value_units, nary, shifted,
+    )
     shift = dict(PI_MULTIPLE).get(fn)
     if shift is not None:
         return _pi_trig(fn.__name__, gen, shift)
@@ -140,6 +142,7 @@ def load(family: str) -> None:
         fns.add(fn)
     for classes, t in AFTER_ROWS:
         if fns.issuperset(classes):
+            t = getattr(importlib.import_module(f"{__package__}.functions"), t)
             registry.register(*classes)(_attributed(t, name))
 
 

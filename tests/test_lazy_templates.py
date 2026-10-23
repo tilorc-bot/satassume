@@ -36,6 +36,9 @@ assert CORE not in sys.modules and FUNCS not in sys.modules
 # the first Add node loads the templates of sums, not those of functions
 assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y)) is True
 assert CORE in sys.modules and FUNCS not in sys.modules
+# nor does the first power, whose template is rows (#297)
+assert ask(Q.positive(x**y), Q.positive(x)) is True
+assert "satassume.knowledge.templates.wiring" in sys.modules and FUNCS not in sys.modules
 """)
 
 
