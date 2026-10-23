@@ -18,9 +18,9 @@ the template adds itself (``wiring.POWER``): ``E**(I*pi*c*s)`` is a root of
 unity or on the unit circle (``core.ipi_rules``), ``b**(p/q)`` for a
 positive rational ``b`` that is not a ``q``-th power is irrational,
 ``b**e`` for ``b`` in ``I, -1, -I`` and a numeric ``e`` has the facts of
-its value (``core._unit_power_units``), and ``(c0 + c1*u)**e`` for a
-negative integer ``e`` is no integer where bounds on ``u`` put the base
-outside ``[-1, 1]`` (``core._pow_bound_templates``).
+its value (``core._unit_power_units``).  ``(c0 + c1*u)**e`` for a
+negative integer ``e`` has no rule of its own since #315 step 2 (it
+answered nothing on the stream, gate2 or SymPy's assumption tests).
 """
 from __future__ import annotations
 

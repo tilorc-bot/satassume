@@ -83,7 +83,7 @@ from .state.epoch import EPOCH as _EPOCH, bump as _bump
 from .state.memos import Memos, adopt as _adopt_memo, owner_memos
 from .sat.formula import FALSE, Not, P, TRUE, atoms_of
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
-                        glue_atoms, glue_objects, link_objects, under_of,
+                        bound_twins, glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin)
 from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX, RULE_CLAUSES, RULE_INTERNAL,
                     basis_lits, def_implications)
@@ -1189,11 +1189,13 @@ class Session:
         set), so a formula's twins are the same in every query."""
         a_zs = self._a_zs
         if not a_zs and not any(x.pred == "zero" for x in atoms):
-            return atoms
+            # no zero twin: only the twins of integer bounds
+            # (relations.bound_twins), over the set's atoms as context
+            return glue_atoms(atoms, self._a_raw or (), cinfo=((), frozenset()))
         u = self._a_under
         if u is None:
             u = self._a_under = under_of(self._a_raw)
-        return glue_atoms(atoms, cinfo=(a_zs, u))
+        return glue_atoms(atoms, self._a_raw or (), cinfo=(a_zs, u))
 
     def _ensure_atoms(self, f) -> None:
         """Visit the nodes of the vocabulary atoms of ``f``.  Custom atoms
@@ -1807,6 +1809,18 @@ class Engine:
                          if not (e in zp and e in up) and not (e in za and e in ua)
                          and (e in up or e in ua)]
                 rel = rel or bool(cross)
+            if self._relation_specs:
+                # the twins of integer bounds only p and a together call
+                # for (relations.bound_twins: a sign atom or application of
+                # one, a premise of the other), which neither cone counts
+                pa, aa = atoms_of(proposition), atoms_of(assumptions)
+                both = bound_twins(pa, aa)
+                if both:
+                    alone = set(bound_twins(pa)) | set(bound_twins(aa))
+                    bx = [t for t in both if t not in alone and t not in cross]
+                    if bx:
+                        cross = list(cross) + bx
+                        rel = True
         link = bool(self._relation_specs) and (rel or len(sums) >= 2)
         cp, wp, _r, _s, _z = self._query_cone(proposition, link)
         if cp is None:

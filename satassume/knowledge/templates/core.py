@@ -127,111 +127,6 @@ def _half_templates(expr, split):
     return facts(key, lambda: _half_rules(a0, odd, m), consts, objs, m)
 
 
-#: Bounds of an integer ``u`` (slot 0): premises (literals of ``u``), and
-#: ``(lower, b)`` for the bound they give, ``u >= b`` (``u <= b`` if not
-#: ``lower``).  Each premise makes ``u`` an integer (``prime``,
-#: ``composite`` and ``even`` imply it), so a strict sign bound rounds:
-#: ``u > 0`` is ``u >= 1``, a prime is at least 2, a composite at least 4,
-#: an odd composite at least 9, a positive even integer at least 2.  Also
-#: read by :func:`_not_unit_premises` (``(c0 + c1*u)**-k`` no integer).
-_INT_BOUNDS = (
-    (('integer', 'extended_positive'), True, 1),
-    (('prime',), True, 2),
-    (('composite',), True, 4),
-    (('composite', 'odd'), True, 9),
-    (('even', 'extended_positive'), True, 2),
-    (('integer', 'extended_nonnegative'), True, 0),
-    (('integer', 'extended_negative'), False, -1),
-    (('even', 'extended_negative'), False, -2),
-    (('integer', 'extended_nonpositive'), False, 0),
-)
-
-
-def _bound_split(args):
-    """A sum ``c0 + c1*u`` of a Rational ``c0`` and one other term (``c1``
-    its Rational coefficient, 1 if none), as ``(c0, c1, u)``, or None."""
-    if len(args) != 2:
-        return None
-    c0, t = args
-    if not c0.is_Rational:
-        c0, t = t, c0
-    if not c0.is_Rational or t.is_Rational:
-        return None
-    ct = _coeff_term(t)
-    if ct is None or ct[0] == 0 or ct[1].is_number:
-        return None
-    return (c0,) + ct
-
-
-def _bound_rules(c0, c1):
-    """Rules for ``N = c0 + c1*u`` (slot 0 ``u``, slot 1 ``N``): a bound of
-    ``u`` (:data:`_INT_BOUNDS`) bounds ``N``, which signs ``N`` when the
-    bound is on the right side of 0.  ``u`` is finite under every premise,
-    so ``N`` is a finite real and the extended signs are the signs."""
-    R = Rules()
-    for prem, lower, b in _INT_BOUNDS:
-        v = c0 + c1*b
-        if lower == (c1.p > 0):             # N >= v
-            concl = 'extended_positive' if v > 0 else 'extended_nonnegative' if v == 0 else None
-        else:                               # N <= v
-            concl = 'extended_negative' if v < 0 else 'extended_nonpositive' if v == 0 else None
-        if concl is not None:
-            R.rule([(0, p, True) for p in prem], (1, concl, True))
-    return R.rules
-
-
-def _bound_templates(expr, split):
-    """The sign of ``c0 + c1*u`` from integer bounds of ``u``
-    (:func:`_bound_rules`)."""
-    c0, c1, u = split
-    return facts(('add_bound', c0, c1), lambda: _bound_rules(c0, c1), {}, (u, expr), 1)
-
-
-#: Bounds of ``1/v`` from those of an integer ``v`` (slot 0): premises,
-#: then ``(lo, lo_open, hi, hi_open)``.  ``v`` is nonzero under each
-#: premise, so ``1/v`` is a finite real.
-_RECIP_BOUNDS = (
-    (('integer', 'extended_positive'), (S.Zero, True, S.One, False)),
-    (('prime',), (S.Zero, True, S.Half, False)),
-    (('composite',), (S.Zero, True, S.One/4, False)),
-    (('even', 'extended_positive'), (S.Zero, True, S.Half, False)),
-    (('integer', 'extended_negative'), (-S.One, False, S.Zero, True)),
-    (('even', 'extended_negative'), (-S.Half, False, S.Zero, True)),
-)
-
-
-def _recip_rules(c0, c1):
-    """Rules for ``N = c0 + c1/v`` (slot 0 ``v``, slot 1 ``N``): the
-    bounds of ``1/v`` (:data:`_RECIP_BOUNDS`) bound ``N``."""
-    R = Rules()
-    for prem, (lo, lo_open, hi, hi_open) in _RECIP_BOUNDS:
-        a, a_open, b, b_open = c0 + c1*lo, lo_open, c0 + c1*hi, hi_open
-        if c1.p < 0:
-            a, a_open, b, b_open = b, b_open, a, a_open
-        if a > 0 or a == 0 and a_open:
-            concl = 'extended_positive'
-        elif a == 0:
-            concl = 'extended_nonnegative'
-        elif b < 0 or b == 0 and b_open:
-            concl = 'extended_negative'
-        elif b == 0:
-            concl = 'extended_nonpositive'
-        else:
-            continue
-        R.rule([(0, p, True) for p in prem], (1, concl, True))
-    return R.rules
-
-
-def _recip_templates(expr, split):
-    """The sign of ``c0 + c1/v`` from integer bounds of ``v``
-    (:func:`_recip_rules`), or None if the term is no ``1/v``."""
-    c0, c1, u = split
-    if not (u.is_Pow and u.args[1] is S.NegativeOne) or u.args[0].is_number:
-        return None
-    return facts(('add_recip', c0, c1), lambda: _recip_rules(c0, c1), {},
-                 (u.args[0], expr), 1)
-
-
 def _imag_term(a):
     """A term ``a`` of a sum as ``(c, x)`` with ``a = c*I*x`` (``c``
     Rational, ``x`` one factor or None for ``c*I``), or None."""
@@ -304,17 +199,6 @@ def _imag_templates(expr, terms):
     consts = {k: x for k, x in enumerate(xs) if x.is_Atom and x.is_number}
     key = ('add_imag', signs, csign, tuple(sorted((k, const_key(x)) for k, x in consts.items())))
     return facts(key, lambda: _imag_rules(signs, csign), consts, tuple(xs) + (expr,), len(xs))
-
-
-def _not_unit_premises(c0, c1):
-    """The premises of :data:`_INT_BOUNDS` whose bound of an integer ``u``
-    puts ``c0 + c1*u`` at 2 or more, or at -2 or less."""
-    out = []
-    for prem, lower, b in _INT_BOUNDS:
-        v = c0 + c1*b
-        if lower == (c1.p > 0) and v >= 2 or lower != (c1.p > 0) and v <= -2:
-            out.append(prem)
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -528,35 +412,6 @@ def _exp_arg(b):
     if isinstance(b, exp):
         return b.args[0]
     return None
-
-
-def _pow_bound_templates(expr):
-    """``(c0 + c1*u)**e`` for a negative integer ``e`` is no integer when
-    integer bounds of ``u`` put the base at 2 or more, or at -2 or less
-    (slots ``u``, ``e``, base, node), or None.  The rules ask for a finite
-    base, which it is under each bound, so that they read the base's own
-    facts and not only those two levels down."""
-    b, e = expr.args
-    if not b.is_Add or (e.is_number and not (e.is_Integer and e.p < 0)):
-        return None
-    split = _bound_split(b.args)
-    if split is None:
-        return None
-    c0, c1, u = split
-    prems = _not_unit_premises(c0, c1)
-    if not prems:
-        return None
-
-    def gen():
-        R = Rules()
-        for prem in prems:
-            R.rule([(0, p, True) for p in prem] + [(1, 'integer', True), (1, 'negative', True),
-                                                   (2, 'finite', True)],
-                   (3, 'integer', False))
-        return R.rules
-    consts = {1: e} if e.is_number else {}
-    return facts(('pow_bound', c0, c1, const_key(e) if consts else None), gen, consts,
-                 (u, e, b, expr), 3)
 
 
 # ---------------------------------------------------------------------------

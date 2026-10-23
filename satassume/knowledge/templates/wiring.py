@@ -42,9 +42,9 @@ from ._common import MAX_EXPAND, Rules, const_key, const_value, consts_of, facts
 # not ._rows, the language of the rows, which a query does not need (#309)
 from ._rows_runtime import constant_value, generator
 from .core import (
-    _bound_split, _bound_templates, _exp_arg, _half_split, _half_templates, _imag_split,
-    _imag_templates, _mul_factor_sets, _pow_bound_templates, _quotient_templates,
-    _recip_templates, _unit_angle, _unit_power_units, ipi_rules, ipi_split, irrational_root,
+    _exp_arg, _half_split, _half_templates, _imag_split, _imag_templates,
+    _mul_factor_sets, _quotient_templates, _unit_angle, _unit_power_units, ipi_rules,
+    ipi_split, irrational_root,
 )
 from .registry import registry
 
@@ -246,8 +246,8 @@ def power(gen):
     ``E**(I*pi*c*s)`` (:func:`.core.ipi_rules`), the irrational ``b**(p/q)``
     (:func:`.core.irrational_root`), and next to the block the facts of
     ``b**e`` for ``b`` in ``I``, ``-1``, ``-I`` and a numeric ``e``
-    (:func:`.core._unit_power_units`) or the rules of a base ``c0 + c1*u``
-    (:func:`.core._pow_bound_templates`)."""
+    (:func:`.core._unit_power_units`).  The bounds of a base ``c0 + c1*u``
+    are the relation glue's (``relations.BOUND_LINKS``, #315)."""
     terms = gen.terms[2]
     first = 3
     s_slot = first + len(terms)
@@ -332,9 +332,6 @@ def power(gen):
         out = facts(key, build, consts, tuple(objs), 2)
         if angle is not None and e.is_number:
             return [out, *_unit_power_units(angle, e, expr)]
-        bound = _pow_bound_templates(expr)
-        if bound is not None:
-            return [out, bound]
         return out
     template.__name__ = template.__qualname__ = 'pow_templates'
     template.__module__ = gen.__module__
@@ -653,9 +650,10 @@ def addition(gen):
     then the wide formulas (:func:`wide_formulas`: the strict-sign rows
     past :data:`SOME_PER_ARGUMENT` terms), then the rules of the sums of a
     special shape, which are not rows (:mod:`.core`): with half-integer
-    coefficients (``core._half_templates``), ``c0 + c1*u`` and ``c0 +
-    c1/v`` (``core._bound_templates``, ``core._recip_templates``) and
-    ``I*(c_1*x_1 + ...)`` (``core._imag_templates``)."""
+    coefficients (``core._half_templates``) and ``I*(c_1*x_1 + ...)``
+    (``core._imag_templates``).  The sign of ``c0 + c1*u`` from integer
+    bounds of ``u`` is the relation glue's (``relations.BOUND_LINKS``,
+    ``relations.bound_twins``, #315)."""
     block = rows_block('add', gen)
 
     def template(expr):
@@ -666,12 +664,6 @@ def addition(gen):
         split = _half_split(args)
         if split is not None:
             out.append(_half_templates(expr, split))
-        split = _bound_split(args)
-        if split is not None:
-            out.append(_bound_templates(expr, split))
-            recip = _recip_templates(expr, split)
-            if recip is not None:
-                out.append(recip)
         terms = _imag_split(args)
         if terms is not None:
             imag = _imag_templates(expr, terms)

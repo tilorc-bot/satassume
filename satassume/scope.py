@@ -106,17 +106,14 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, NamedTuple
 
 from .sat.formula import P, atoms_of
-from .relations import RELATION_ATOMS, _is_number, glue_atoms
+from .relations import RELATION_ATOMS, SIGN_PREDS as _SIGN_PREDS, _is_number, glue_atoms
 from .knowledge.rules import PRED_INDEX
 from .theories.transfer import transfer_wanted
 
 #: the predicates whose atoms the relation glue links to order atoms
 #: (``extended_positive``, ``extended_negative``, ``zero``) and those that
-#: imply or refute them for a finite argument
-SIGN_PREDS = frozenset({
-    "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero",
-    "extended_positive", "extended_negative", "extended_nonnegative",
-    "extended_nonpositive", "extended_nonzero"})
+#: imply or refute them for a finite argument (``relations.SIGN_PREDS``)
+SIGN_PREDS = _SIGN_PREDS
 
 
 class Scope(NamedTuple):

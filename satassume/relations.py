@@ -369,6 +369,20 @@ RELATION_ATOMS = frozenset({"eq", "lt"})
 #: "Integrality")
 INTEGERS = True
 
+#: the integer bounds of a linked term ``e`` (see "Integer bounds"):
+#: ``(b, premises)``, each premise a conjunction of unary predicates of
+#: ``e`` that implies ``e >= b``.  ``integer(e) & extended_positive(e) ->
+#: e >= 1`` needs no entry: the integrality atom rounds ``0 < e``.
+BOUND_LINKS = (
+    (2, (("prime",), ("even", "extended_positive"))),
+    (4, (("composite",),)),
+)
+
+#: turn the bound links off (as ``INTEGERS`` does the integrality link)
+BOUNDS = True
+
+_BOUND_DEMAND = frozenset(p for _b, prems in BOUND_LINKS for prem in prems for p in prem)
+
 _OPS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 
 #: kinds of the per-term variables of a session's glue (Relations._tvar)
@@ -655,14 +669,169 @@ def zero_twins(atoms, context=(), cinfo=None) -> list:
     return out
 
 
+#: the predicates whose atoms start the glue on a sum (``scope.affine_pair``)
+#: or with a bound premise (:func:`bound_twins`): ``extended_positive``,
+#: ``extended_negative``, ``zero`` and those that imply or refute them for
+#: a finite argument
+SIGN_PREDS = frozenset({
+    "positive", "negative", "nonnegative", "nonpositive", "nonzero", "zero",
+    "extended_positive", "extended_negative", "extended_nonnegative",
+    "extended_nonpositive", "extended_nonzero"})
+
+#: the predicates whose atoms make their argument an integer, the premises
+#: of the integrality link and of :data:`BOUND_LINKS` (:func:`bound_twins`)
+BOUND_PREMISES = frozenset({"integer", "even", "odd", "prime", "composite"})
+
+_SHIFT_NODES = _PROCESS.table(f"{__name__}._SHIFT_NODES", "pure", 100_000)
+_SHIFTS: dict = {}
+
+
+def _shift_table() -> dict:
+    """``{function name: {number of arguments: ((i, c), ...)}}``: the
+    terms ``args[i] + c`` (rational ``c``) the rows of a function other
+    than ``Pow`` use (``wiring.template``, built by
+    ``functions.shifted``).  ``Pow`` builds its ``b - 1``, ``b + 1``
+    otherwise (``wiring.power``) and is left out."""
+    if not _SHIFTS:
+        from fractions import Fraction as F
+        from .knowledge.templates._compiled_rows import FAMILIES
+        for _fam, fns in FAMILIES:
+            for f in fns:
+                name, _arity, terms = f[:3]
+                if name == "Pow":
+                    continue
+                for n, ts in terms:
+                    sh = []
+                    for t in ts:
+                        if not isinstance(t[0], int):
+                            continue
+                        try:
+                            c = F(t[1]) if isinstance(t[1], (int, str)) else None
+                        except ValueError:      # exp(-1): not rational
+                            c = None
+                        if c is not None:
+                            sh.append((t[0], c))
+                    if sh:
+                        _SHIFTS.setdefault(name, {})[n] = tuple(sh)
+        _SHIFTS.setdefault("", {})
+    return _SHIFTS
+
+
+def _shift_nodes(e) -> tuple:
+    """``((u, u + c), ...)``: for each application in ``e`` (an atom's
+    argument, or the tuple of a relation's sides) of a function whose rows
+    use a term ``u + c`` of an argument ``u`` (:func:`_shift_table`), no
+    number, that argument and the term as the template builds it
+    (``functions.shifted``).  Memoized per ``e``."""
+    r = _SHIFT_NODES.get(e)
+    if r is not None:
+        return r
+    from sympy import Basic, Rational, preorder_traversal
+    from .knowledge.templates.functions import shifted
+    table = _shift_table()
+    out = []
+    for side in (e if isinstance(e, tuple) else (e,)):
+        if not isinstance(side, Basic):
+            continue
+        for x in preorder_traversal(side):
+            by_n = table.get(type(x).__name__)
+            if not by_n or not x.args:
+                continue
+            for i, c in by_n.get(len(x.args), ()):
+                u = x.args[i]
+                if not _is_number(u):
+                    d = shifted(u, Rational(c.numerator, c.denominator))
+                    if (u, d) not in out:
+                        out.append((u, d))
+    r = tuple(out)
+    if len(_SHIFT_NODES) >= 100_000:
+        _SHIFT_NODES.clear()
+    _SHIFT_NODES[e] = r
+    return r
+
+
+def _bound_terms(e, syms) -> list:
+    """The ``u`` of the terms ``c*u`` (``c`` Rational, possibly 1; ``u`` no
+    number) of ``e`` that share a free symbol with ``syms``, if ``e`` is a
+    sum with a Rational term; else ``[]``."""
+    if not getattr(e, "is_Add", False) or not any(t.is_Rational for t in e.args):
+        return []
+    out = []
+    for t in e.args:
+        if not t.is_Rational:
+            u = t.as_coeff_Mul()[1]
+            if not _is_number(u) and syms & u.free_symbols:
+                out.append(u)
+    return out
+
+
+def bound_twins(atoms, context=()) -> list:
+    """The twins ``lt(0, t)`` (the link atom ``0 < t`` of :meth:`Relations._link`)
+    that switch on the glue for the integer bounds a formula with the
+    atoms ``atoms``, asked under ``context``, needs (see "Integer bounds"):
+    with an atom of :data:`BOUND_PREMISES` on a term ``u`` among ``atoms``
+    and ``context``,
+
+    * a sign atom (:data:`SIGN_PREDS`) on a sum ``c0 + ... + c1*u`` with
+      a Rational term ``c0``, ``u`` sharing a free symbol with a premised
+      term: the twins of the sum and of ``u`` (``Abs(e) - 1`` with
+      ``even(e)``: the bound is one of ``Abs(e)``, which no atom names);
+    * an application ``f(..., v, ...)`` of a function whose rows use the
+      term ``v + c`` (:func:`_shift_nodes`; ``log(v)`` reads ``v - 1``),
+      ``v`` sharing a free symbol with a premised term: the twins of
+      ``v`` and ``v + c``, so that both are linked (``v + c`` is a node
+      the template derives, which no atom names).
+
+    In first-seen order; a pure function of the two atom sequences."""
+    premised = set()
+    for a in atoms:
+        if a.pred in BOUND_PREMISES and not _is_number(a.expr):
+            premised.add(a.expr)
+    for a in context:
+        if a.pred in BOUND_PREMISES and not _is_number(a.expr):
+            premised.add(a.expr)
+    if not premised:
+        return []
+    from sympy import S
+    syms = set()
+    for u in premised:
+        syms.update(getattr(u, "free_symbols", ()))
+    out = []
+
+    def add(t):
+        tw = relation_atom("lt", S.Zero, t)
+        if tw not in out:
+            out.append(tw)
+    for seq in (atoms, context):
+        for a in seq:
+            e = a.expr
+            if a.pred in SIGN_PREDS:
+                us = _bound_terms(e, syms)
+                if us:
+                    add(e)
+                    for u in us:
+                        add(u)
+            if a.pred in PRED_INDEX or a.pred in RELATION_ATOMS:
+                for u, d in _shift_nodes(e):
+                    if syms & u.free_symbols:
+                        add(u)
+                        if not _is_number(d):
+                            add(d)
+    return out
+
+
 def glue_atoms(atoms, context=(), cinfo=None) -> tuple:
     """``atoms`` (of a user formula) and, after them, the twins
     (:func:`zero_twins`) of the ``zero`` atoms of it and of ``context``
     (the atoms of the assumption formula a query is asked under; ``()``
-    for the assumption formula itself) that it lacks: the atoms the
-    relation glue reads the formula by.  ``atoms`` itself if there is
-    none."""
+    for the assumption formula itself) and the twins of its integer
+    bounds (:func:`bound_twins`) that it lacks: the atoms the relation
+    glue reads the formula by.  ``atoms`` itself if there is none."""
     twins = zero_twins(atoms, context, cinfo)
+    if BOUNDS:
+        bt = bound_twins(atoms, context)
+        if bt:
+            twins = twins + [t for t in bt if t not in twins]
     if not twins:
         return atoms
     have = set(atoms)
@@ -1510,6 +1679,22 @@ class Relations:
                     ad = self._adapter(spec)
                     if hasattr(ad, "integer_form"):
                         self._link_integer(ad, e, g)
+        if BOUNDS:
+            self._link_bounds(e, g)
+
+    def _link_bounds(self, e, g: int) -> None:
+        """The integer bounds of ``e`` (see "Integer bounds"): for each
+        ``(b, premises)`` of :data:`BOUND_LINKS`, ``premise -> ~lt(e, b)``
+        under the link selector of ``e`` (``g`` its negation).  The atom
+        ``lt(e, b)`` is an ordinary order atom (its clauses constrain it
+        given its sides, and LRA reads it under the guard ``real(e)``)."""
+        from sympy import Integer
+        s = self.session
+        s.ensure(e, _BOUND_DEMAND)
+        for b, prems in BOUND_LINKS:
+            lt = self._atom_var(relation_atom("lt", e, Integer(b)))
+            for prem in prems:
+                s.emit([-s.var(p, e) for p in prem] + [-lt, g])
 
     # -- switched glue: what a query activates ----------------------------
     def wants_transfer(self, atoms) -> bool:
