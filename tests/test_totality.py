@@ -137,3 +137,34 @@ def test_provenance_covers_every_clause_of_the_mul_rows():
                     named.update(prov.get(cl, ()))
     assert not missing, missing[:5]
     assert len(named) > 40 and all(": " in n for n in named)
+
+
+def test_provenance_covers_every_clause_of_the_add_rows():
+    """Every clause of the Add block of rows is named by some row
+    (``totality.row_provenance``), as ``tools/show_rows.py Add`` prints
+    it; the blocks of the sums of a special shape are not rows."""
+    from sympy import Add
+
+    from satassume.knowledge.rules import BASIS
+    from satassume.knowledge.templates import registry
+
+    missing, named, blocks = [], set(), 0
+    for e in totality.load_exprs():
+        for a in sympy.preorder_traversal(e):
+            if not isinstance(a, Add):
+                continue
+            prov = {}
+            for name, clause in totality.row_provenance(a):
+                prov.setdefault(clause, []).append(name)
+            compiled, _ = registry.clauses_for(a)
+            for c in compiled:
+                if tuple(c.objs) != a.args + (a,):
+                    continue    # a sum of a special shape (core._half_templates, ...)
+                blocks += 1
+                for lits, _, _ in c.pattern.clauses:
+                    cl = frozenset((c.objs[k], BASIS[i], not neg) for k, i, neg in lits)
+                    if cl not in prov:
+                        missing.append((a, cl))
+                    named.update(prov.get(cl, ()))
+    assert not missing, missing[:5]
+    assert blocks > 20 and len(named) > 25 and all(": " in n for n in named)
