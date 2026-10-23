@@ -39,7 +39,8 @@ from sympy import (
 from ...sat.formula import And, Implies, Not, Or, P
 from ..rules import cnf_of
 from ._common import MAX_EXPAND, Rules, const_key, const_value, consts_of, facts, pattern_key
-from ._rows import by_function, constant_value, generator
+# not ._rows, the language of the rows, which a query does not need (#309)
+from ._rows_runtime import constant_value, generator
 from .core import (
     _bound_split, _bound_templates, _exp_arg, _half_split, _half_templates, _imag_split,
     _imag_templates, _mul_factor_sets, _pow_bound_templates, _quotient_templates,
@@ -85,6 +86,7 @@ AFTER_ROWS = (((re, im), 'parts_of_round_templates'),)
 
 def functions(family: str):
     """The functions the family's ``RULES`` state rows for, in order."""
+    from ._rows import by_function
     module = importlib.import_module(f"{__package__}.{family}")
     return tuple(fn for fn, _ in by_function(module.RULES))
 
