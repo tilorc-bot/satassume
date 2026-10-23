@@ -39,7 +39,7 @@ import totality  # noqa: E402
 from sympy import Mul, Pow  # noqa: E402
 
 from satassume.knowledge.templates import _common, core, functions, registry, wiring  # noqa: E402
-from satassume.knowledge.templates.table import Section, Sub, count_rows, iter_rows, rules_of  # noqa: E402
+from satassume.knowledge.templates.table import Section, count_rows, iter_rows, rules_of  # noqa: E402
 
 CORPUS = os.path.join(ROOT, "queries.jsonl")
 N_RANDOM = 2000
@@ -156,7 +156,7 @@ def _only(table, names):
             rows = [r for r in item.rows if r.name in names]
             if rows:
                 out.append(Section(item.over, rows, when=item.when))
-        elif not isinstance(item, Sub) and item.name in names:
+        elif item.name in names:
             out.append(item)
     assert sum(1 for _ in iter_rows(out)) == len(names)
     return tuple(out)
