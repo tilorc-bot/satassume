@@ -173,11 +173,12 @@ order = Symbol('order')
 #: the parameter of Hurwitz's ``zeta(argument, parameter)`` and of
 #: ``lowergamma(parameter, argument)``
 parameter = Symbol('parameter')
-#: the limits of an integral: ``erf2(lower, upper)``, ``owens_t(argument, upper)``
+#: the limits of an integral: ``erf2(lower, upper)``, ``betainc(first,
+#: second, lower, upper)``, and the upper one of ``owens_t(argument, upper)``
 lower = Symbol('lower')
 upper = Symbol('upper')
-#: the two arguments of ``beta(first, second)``, and of ``betainc(first, second,
-#: lower, upper)``
+#: the two arguments of ``beta(first, second)``, and the first two of
+#: ``betainc(first, second, lower, upper)``
 first = Symbol('first')
 second = Symbol('second')
 #: ``RisingFactorial(start, size)`` and ``FallingFactorial(start, size)``,
