@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sympy import Q, cos, cot, csc, sec, sin, tan
 
-from ._rows import argument, closed, f, for_all, x
+from ._rows import argument, closed, f, for_all
 
 RULES = (
     # Entire
@@ -34,43 +34,44 @@ RULES = (
     # Nonvanishing
     #     1/f is entire
     for_all((sec, csc),
-        Q.complex(x) >> ~Q.zero(f(x))),
+        Q.complex(argument) >> ~Q.zero(f(argument))),
 
     # Lindemann
     #     f(a) == R(exp(I*a)), R rational with algebraic coefficients and not
     #     constant, no pole at an algebraic a != 0: an algebraic value b would
     #     make exp(I*a) a root of R - b, against Lindemann-Weierstrass
     for_all((sin, cos, tan, cot, sec, csc),
-        (Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))),
+        (Q.algebraic(argument) & ~Q.zero(argument)) >> Q.transcendental(f(argument))),
 
     # Real only on the reals
     #     Im tan(x + I*y) == sinh(2*y)/(cos(2*x) + cosh(2*y)) != 0 for y != 0,
     #     and cot == 1/tan
     for_all((tan, cot),
-        (Q.finite(x) & ~Q.extended_real(x)) >> ~Q.extended_real(f(x))),
+        (Q.finite(argument) & ~Q.extended_real(argument)) >> ~Q.extended_real(f(argument))),
 
     # Zero at 0
     for_all((sin, tan),
-        Q.zero(x) >> Q.zero(f(x))),
+        Q.zero(argument) >> Q.zero(f(argument))),
 
     # One at 0
     #     1 is odd and positive, and neither prime nor composite
     for_all((cos, sec),
-        Q.zero(x) >> (
-            Q.odd(f(x)) & Q.positive(f(x)) & ~Q.prime(f(x)) & ~Q.composite(f(x)))),
+        Q.zero(argument) >> (
+            Q.odd(f(argument)) & Q.positive(f(argument))
+            & ~Q.prime(f(argument)) & ~Q.composite(f(argument)))),
 
     # Pole at 0
     #     the value is zoo
     for_all((cot, csc),
-        Q.zero(x) >> (Q.infinite(f(x)) & ~Q.extended_real(f(x)))),
+        Q.zero(argument) >> (Q.infinite(f(argument)) & ~Q.extended_real(f(argument)))),
 
     # cos on the imaginary axis
     #     cos(I*t) == cosh(t) > 1
     for_all((cos,),
-        Q.imaginary(x) >> Q.positive(f(x))),
+        Q.imaginary(argument) >> Q.positive(f(argument))),
 
     # sec on the imaginary axis
     #     sec(I*t) == 1/cosh(t) is in (0, 1) for real t != 0
     for_all((sec,),
-        Q.imaginary(x) >> (Q.positive(f(x)) & Q.noninteger(f(x)))),
+        Q.imaginary(argument) >> (Q.positive(f(argument)) & Q.noninteger(f(argument)))),
 )

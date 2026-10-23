@@ -261,7 +261,8 @@ def test_show_rows_lists_each_row_with_its_source():
     lines = out.stdout.splitlines()
     assert lines[0] == "sec"
     # labelled with the title above each for_all
-    assert any(l.strip().startswith("Nonvanishing ") and l.endswith("~Q.zero(sec(x))")
+    assert any(l.strip().startswith("Nonvanishing ") and l.endswith("~Q.zero(sec(argument))")
                for l in lines[1:])
     assert any(l.strip().startswith("sec on the imaginary axis ") and l.endswith(
-        "Q.imaginary(x) >> (Q.noninteger(sec(x)) & Q.positive(sec(x)))") for l in lines[1:])
+        "Q.imaginary(argument) >> (Q.noninteger(sec(argument)) & Q.positive(sec(argument)))")
+        for l in lines[1:])
