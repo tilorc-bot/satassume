@@ -30,7 +30,12 @@ text of an exact real number; also ``('inner', i)``, ``('times', i, k)``
 and ``('of_constant', i, text)``) and its rules ``(n, ((premises,
 conclusion), ...))`` of literals ``(slot, predicate, sign)``, a rule of a
 row whose node has a shape with the shape as a third element
-(``_rows.compile_rows``).
+(``_rows.compile_rows``).  A function of any number of arguments with
+rows with a star has a fifth element, their schemas ``(at_most, picks,
+rules)``: the kind and group of each picked argument, and rules of
+literals ``(where, predicate, sign)`` with ``where`` a picked argument,
+``'node'``, ``'every'``, ``'others'``, ``'some'`` or ``'count'``
+(``_rows._schema``), which ``wiring.expand`` expands for each node.
 """
 '''
 
