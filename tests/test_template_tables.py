@@ -1,15 +1,16 @@
-"""The Mul template as a table (issue #97, P6) emits exactly the clauses of
-the hand-written function it replaces.
+"""The rules of ``exp(I*pi*c*s)`` as a table (issue #97, P6) are exactly
+the clauses of the hand-written function they replace.
 
-``satassume/knowledge/templates/core.py`` writes ``_mul_rules`` and
-``ipi_rules`` as the tables ``MUL_TABLE`` and ``IPI_TABLE`` (rows of
-premises over argument facts and conclusion facts, interpreted by
-``satassume/knowledge/templates/table.py`` through the spec builders of
-``_common``).  The functions as they were at 876f37d are kept verbatim in
-``tests/_legacy_core_rules.py``.  (``POW_TABLE`` is now rows,
-``templates/power.py``, #294, checked by ``tests/test_rows_numeric.py`` and
-``tests/test_rows_baseline.py``; Pow nodes stay in the corpus here for ``E**(I*pi*c*s)``,
-whose rules are ``IPI_TABLE``'s.)  For every node, the compiled clauses of
+``satassume/knowledge/templates/core.py`` writes ``ipi_rules`` as the
+table ``IPI_TABLE`` (rows of premises over argument facts and conclusion
+facts, interpreted by ``satassume/knowledge/templates/table.py`` through
+the spec builders of ``_common``).  The function as it was at 876f37d is
+kept verbatim in ``tests/_legacy_core_rules.py``.  (``POW_TABLE`` and
+``MUL_TABLE`` are now rows, ``templates/power.py``, #294, and
+``templates/mul.py``, #299, checked by ``tests/test_rows_numeric.py`` and
+``tests/test_rows_baseline.py``; Mul and Pow nodes stay in the corpus here
+for ``exp(I*pi*c*s)`` and ``E**(I*pi*c*s)``, whose rules are
+``IPI_TABLE``'s.)  For every node, the compiled clauses of
 every template block (and the plain formulas) are computed once with the
 tables and once with the legacy functions patched in, each from empty
 caches, and compared after canonicalization (literals of a clause sorted,
@@ -39,7 +40,7 @@ import totality  # noqa: E402
 from sympy import Mul, Pow  # noqa: E402
 
 from satassume.knowledge.templates import _common, core, functions, registry, wiring  # noqa: E402
-from satassume.knowledge.templates.table import Section, count_rows, iter_rows, rules_of  # noqa: E402
+from satassume.knowledge.templates.table import count_rows, iter_rows  # noqa: E402
 
 CORPUS = os.path.join(ROOT, "queries.jsonl")
 N_RANDOM = 2000
@@ -135,42 +136,8 @@ def _run(nodes):
     return out
 
 
-#: Rows of the table added after 876f37d: the reference is the legacy
-#: function plus these rows (with their sections and guards).
-MUL_ROWS_ADDED = (
-    'one_imag.back',  # #180 S7
-    'imag_times_rest.real',
-    'imag_times_rest.real.flip',
-    'imag_times_rest.imag',
-    'imag_times_rest.imag.flip',
-    'ge2s',  # #180 S7 G5
-    'one_non_algebraic',  # #180 S7 Galg
-)
-
-
-def _only(table, names):
-    """The rows of ``table`` named in ``names``, in their sections."""
-    out = []
-    for item in table:
-        if isinstance(item, Section):
-            rows = [r for r in item.rows if r.name in names]
-            if rows:
-                out.append(Section(item.over, rows, when=item.when))
-        elif item.name in names:
-            out.append(item)
-    assert sum(1 for _ in iter_rows(out)) == len(names)
-    return tuple(out)
-
-
-def _legacy_mul_rules(n, consts):
-    added = rules_of(_only(core.MUL_TABLE, MUL_ROWS_ADDED), core.MUL_GUARDS,
-                     {'n': n, 'consts': consts}, {'N': n, '*': range(n)})
-    return legacy.mul_rules(n, consts) + added
-
-
 def _with_legacy(monkeypatch, nodes):
     with monkeypatch.context() as m:
-        m.setattr(core, "_mul_rules", _legacy_mul_rules)
         m.setattr(core, "ipi_rules", legacy.ipi_rules)
         m.setattr(functions, "ipi_rules", legacy.ipi_rules)
         m.setattr(wiring, "ipi_rules", legacy.ipi_rules)
@@ -212,9 +179,7 @@ def test_synthetic_clauses_identical(monkeypatch):
 
 
 def test_comparison_detects_a_wrong_row(monkeypatch):
-    """Mutation check of the comparison itself: one changed row is seen
-    (a row of ``IPI_TABLE``: the Mul template is rows, ``templates/mul.py``,
-    checked by ``tests/test_mul_rows.py``)."""
+    """Mutation check of the comparison itself: one changed row is seen."""
     from sympy import I, exp, pi, symbols
     x = symbols("x")
     e = exp(2*I*pi*x)
@@ -233,33 +198,9 @@ def test_comparison_detects_a_wrong_row(monkeypatch):
 
 
 def test_table_sizes_and_names():
-    for table in (core.MUL_TABLE, core.IPI_TABLE):
-        names = [r.name for r in iter_rows(table)]
-        assert len(names) == len(set(names)), "row names are unique per table"
-        for r in iter_rows(table):
-            for lit in (*r.prem, *r.concl):
-                assert lit[1] in _common.VOCAB or lit[1] in ('$p', 'flip:$p', 'int>=2'), r.text()
-    print("rows:", {"mul": count_rows(core.MUL_TABLE), "ipi": count_rows(core.IPI_TABLE)})
-
-
-def test_provenance_covers_every_table_clause():
-    """Every clause of a Mul table block is named by some row
-    (``core.table_provenance``, used by ``tools/totality.py``)."""
-    from satassume.knowledge.rules import BASIS
-    missing = []
-    for e in _subexprs(totality.load_exprs()):
-        if not isinstance(e, Mul):
-            continue
-        prov = {}
-        for name, clause in core.table_provenance(e):
-            prov.setdefault(clause, []).append(name)
-        compiled, _ = registry.clauses_for(e)
-        tables = {tuple(f) + (e,) for f in core._mul_factor_sets(e)}
-        for c in compiled:
-            if tuple(c.objs) not in tables:
-                continue    # a block outside the tables (core._quotient_templates)
-            for lits, _, _ in c.pattern.clauses:
-                cl = frozenset((c.objs[k], BASIS[i], not neg) for k, i, neg in lits)
-                if cl not in prov:
-                    missing.append((e, cl))
-    assert not missing, missing[:5]
+    names = [r.name for r in iter_rows(core.IPI_TABLE)]
+    assert len(names) == len(set(names)), "row names are unique"
+    for r in iter_rows(core.IPI_TABLE):
+        for lit in (*r.prem, *r.concl):
+            assert lit[1] in _common.VOCAB or lit[1] in ('$p', 'flip:$p', 'int>=2'), r.text()
+    print("rows:", {"ipi": count_rows(core.IPI_TABLE)})

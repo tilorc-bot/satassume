@@ -251,15 +251,14 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.knowledge.templates._common", "_SIGNED_INFINITE"),
     ("satassume.knowledge.templates.atoms", "_ORACLE_PREDS"), ("satassume.knowledge.templates.atoms", "_CONST_BASIS"),
     ("satassume.knowledge.templates.core", "_ADD_CLOSED"), ("satassume.knowledge.templates.core", "_ADD_SUBTRACT"),
-    ("satassume.knowledge.templates.core", "_STRICT"), ("satassume.knowledge.templates.core", "_MUL_CLOSED"),
-    ("satassume.knowledge.templates.core", "_COEFF_BACK"),
-    # The Mul/exp tables and their guard maps (#97, P6; Pow's are rows since
-    # #294, compiled in templates/_compiled_rows.py).  They
+    ("satassume.knowledge.templates.core", "_STRICT"),
+    # The exp table and its guard map (#97, P6; Pow's and Mul's are rows
+    # since #294 and #299, compiled in templates/_compiled_rows.py).  They
     # are tuples of Rows and MappingProxyType, so ``inventory`` (which only
     # looks at dict/list/set) does not see them; named here so that the
     # classification is explicit, as the P6 review asked.
-    ("satassume.knowledge.templates.core", "MUL_GUARDS"), ("satassume.knowledge.templates.core", "IPI_GUARDS"),
-    ("satassume.knowledge.templates.core", "MUL_TABLE"), ("satassume.knowledge.templates.core", "IPI_TABLE"),
+    ("satassume.knowledge.templates.core", "IPI_GUARDS"),
+    ("satassume.knowledge.templates.core", "IPI_TABLE"),
 })
 
 #: intern tables: they grow with use and are never emptied, because live
