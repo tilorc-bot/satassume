@@ -2,7 +2,8 @@
 (``templates/_compiled_rows.py``, #249), which must be those of the family
 modules: ``tools/compile_rows.py`` writes the file, and this fails when a
 row was edited without running it.  ``tests/test_rows_numeric.py`` checks
-that every compiled rule is true at concrete points.
+that every compiled rule is true at concrete points, and
+``tests/test_rows_baseline.py`` that no fact is lost.
 """
 import os
 import subprocess
