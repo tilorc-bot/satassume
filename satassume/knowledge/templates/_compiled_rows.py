@@ -5,8 +5,10 @@ edit; edit the family module and run ``python tools/compile_rows.py``.
 ``FAMILIES``: ``(family, ((function name, arity, terms, rules), ...))``:
 the number of arguments (or the tuple of the numbers), and for each
 number ``n`` its terms ``(n, ((argument, c), ...))`` (``c`` an int or the
-text of an exact real number) and its rules ``(n, ((premises,
-conclusion), ...))`` of literals ``(slot, predicate, sign)``
+text of an exact real number; also ``('inner', i)``, ``('times', i, k)``
+and ``('of_constant', i, text)``) and its rules ``(n, ((premises,
+conclusion), ...))`` of literals ``(slot, predicate, sign)``, a rule of a
+row whose node has a shape with the shape as a third element
 (``_rows.compile_rows``).
 """
 

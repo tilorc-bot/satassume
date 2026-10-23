@@ -305,6 +305,11 @@ def import_all() -> None:
             pass
 
 
+#: the tables SymPy builds for each subclass of ``Basic`` at its definition
+#: (the assumptions of ``_rows.Constant``), constants
+_SYMPY_CLASS_TABLES = frozenset({"_explicit_class_assumptions", "_prop_handler"})
+
+
 def inventory(kinds=(dict, list, set)) -> List[Tuple[str, str, str]]:
     """Every module-level container of the loaded ``satassume`` modules, as
     ``(module, attribute, type name)``, and the mutable class attributes of
@@ -325,7 +330,8 @@ def inventory(kinds=(dict, list, set)) -> List[Tuple[str, str, str]]:
                     by_id[id(val)] = key
             elif isinstance(val, type) and val.__module__ == m.__name__:
                 for cattr, cval in vars(val).items():
-                    if type(cval) in kinds and not cattr.startswith(("_field", "__")):
+                    if (type(cval) in kinds and not cattr.startswith(("_field", "__"))
+                            and cattr not in _SYMPY_CLASS_TABLES):
                         by_id[id(cval)] = (m.__name__, f"{val.__name__}.{cattr}", type(cval).__name__)
     return sorted(set(by_id.values()))
 

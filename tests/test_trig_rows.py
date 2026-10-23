@@ -234,7 +234,8 @@ yr = Symbol('y', real=True)
     (sin, (Q.real(x) | Q.zero(x)) >> Q.real(sin(x)), "not a literal"),
     # a term of the argument is written as an inequality: Q.gt(x, 1)
     (acos, Q.zero(x - 1) >> Q.zero(acos(x)), "Q.gt\\(x, 1\\) and the like"),
-    (acos, Q.zero(2*x) >> Q.positive(acos(x)), "neither the argument"),
+    (acos, Q.zero(2*x) >> Q.positive(acos(x)), "sign of x"),
+    (acos, Q.zero(x**2) >> Q.positive(acos(x)), "neither the argument"),
     # an inequality compares the argument with an exact real number
     (acos, Q.gt(x, y) >> Q.positive(acos(x)), "with a number"),
     (acos, Q.gt(2*x, 1) >> Q.positive(acos(x)), "with a number"),
