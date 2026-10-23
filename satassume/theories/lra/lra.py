@@ -880,7 +880,7 @@ class LRATheory:
         v, m, k = it
         self._int_lits.append((v, m, k, literal))
         r = self._par.get(abs(literal))
-        if r is not None and len(r) == 3:
+        if r is not None and (len(r) == 3 or literal < 0):
             self._halves += 1
             self._trail.append((_INT, 1))
         else:

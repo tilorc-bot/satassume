@@ -478,7 +478,7 @@ def bound_kinds(atoms) -> frozenset:
     for a in atoms:
         if a.pred in BOUND_KINDS:
             out.add(a.pred)
-        if PARITY and a.pred in PARITY_PREDS and not _is_number(a.expr) \
+        if PARITY and a.pred in PRED_INDEX and not _is_number(a.expr) \
                 and _bound_nodes(a.expr)[2]:
             out.add("parity")
         for e in (a.expr if a.pred in RELATION_ATOMS else (a.expr,)):
@@ -495,15 +495,13 @@ BOUNDS = True
 
 #: link ``even(e)`` and ``odd(e)`` to integrality atoms of ``e/2`` and
 #: ``(e - 1)/2`` (see "Parity"), in the sessions whose formulas hold a half
-#: sum (:func:`half_terms`) in an atom of :data:`PARITY_PREDS`
+#: sum (:func:`half_terms`) in the argument of a vocabulary atom
 PARITY = True
 
-#: the predicates whose atoms on a half sum ask for parity (each implies
-#: ``integer``): the kind ``parity`` (:func:`bound_kinds`)
-PARITY_PREDS = frozenset({"integer", "even", "odd", "prime", "composite"})
-
 #: those whose atoms on a half sum switch the glue on (the twins of
-#: :func:`bound_twins`): ``integer`` alone.  The theory decides
+#: :func:`bound_twins`): ``integer`` alone; an atom of any predicate with a
+#: half sum strictly inside its argument does too (``exp(I*pi*h)``: the
+#: rows ask ``integer(h)``; one more session on the refine stream).  The theory decides
 #: ``integer(h)``; ``even(h)`` and ``odd(h)`` are integrality atoms of
 #: ``h/2`` and ``(h - 1)/2``, with a denominator 4 (no parity row), so it
 #: refutes them only through ``integer(h)``: on the refine stream, 65 of
@@ -523,19 +521,20 @@ def half_terms(e) -> Optional[list]:
         return None
     half = False
     out = []
+    consts = []
     for t in e.args:
-        c, u = (t, None) if t.is_Rational else t.as_coeff_Mul()
-        if not c.is_Rational:
+        if t.is_Rational:
+            if t.q > 2:
+                return None
+            consts.append(t)
+            continue
+        c, u = t.as_coeff_Mul()
+        if not c.is_Rational or c.q > 2 or _is_number(u):
             return None
-        if c.q != 1:
-            if c.q != 2:
-                return None
-            if u is not None:
-                half = True
-        if u is not None:
-            if _is_number(u):
-                return None
-            out.append(u)
+        half = half or c.q == 2
+        out.append(u)
+    if len(consts) > 1 and any(c.q == 2 for c in consts):
+        half = True                 # unevaluated: Add(x, 1/2, 1/2) is x + 1
     return out if half and out else None
 
 
@@ -1034,12 +1033,14 @@ def _bound_twins(atoms, context=()) -> list:
                 # terms stay unlinked, as before (see "Integrality")
                 continue
             sums, shifts, halves = _bound_nodes(a.expr)
-            if PARITY and halves and a.pred in PARITY_TWIN_PREDS:
+            if PARITY and halves:
                 # a half sum: parity decides its integrality, given its
                 # terms' parities; it and its terms are linked, which
                 # links even/odd to integrality atoms (see "Parity").  Its
                 # terms need a premise other than the atom on the sum
                 for h in halves:
+                    if a.pred not in PARITY_TWIN_PREDS and h == a.expr:
+                        continue
                     if _parity_terms(h, premised):
                         add(h)
                         for u in half_terms(h):
