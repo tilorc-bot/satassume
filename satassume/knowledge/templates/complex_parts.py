@@ -16,13 +16,13 @@ from __future__ import annotations
 
 from sympy import Abs, Equivalent, Q, conjugate, im, re, sign
 
-from ._rows import closed, f, for_all, x
+from ._rows import argument, closed, f, for_all
 
 RULES = (
     # Real at a finite argument
     #     a finite argument is a complex number: its modulus and its parts are real
     for_all((Abs, re, im),
-        Q.finite(x) >> Q.real(f(x))),
+        Q.finite(argument) >> Q.real(f(argument))),
 
     # Algebraic at an algebraic argument
     #     the algebraic numbers are a field closed under conjugation:
@@ -33,12 +33,12 @@ RULES = (
 
     # Zero only at 0
     for_all((Abs, sign),
-        Equivalent(Q.zero(f(x)), Q.zero(x))),
+        Equivalent(Q.zero(f(argument)), Q.zero(argument))),
 
     # Nonnegative
     #     Abs(zoo) == Abs(oo*I) == oo
     for_all((Abs,),
-        Q.extended_nonnegative(f(x))),
+        Q.extended_nonnegative(f(argument))),
 
     # Infinite at infinity
     #     Abs(+-oo) == Abs(zoo) == oo
@@ -49,59 +49,60 @@ RULES = (
     #     Abs(x) is x or -x: both or neither are rational, even, odd or
     #     algebraic
     for_all((Abs,),
-        Q.extended_real(x) >> (
-            Equivalent(Q.rational(f(x)), Q.rational(x))
-            & Equivalent(Q.even(f(x)), Q.even(x))
-            & Equivalent(Q.odd(f(x)), Q.odd(x))
-            & Equivalent(Q.algebraic(f(x)), Q.algebraic(x)))),
+        Q.extended_real(argument) >> (
+            Equivalent(Q.rational(f(argument)), Q.rational(argument))
+            & Equivalent(Q.even(f(argument)), Q.even(argument))
+            & Equivalent(Q.odd(f(argument)), Q.odd(argument))
+            & Equivalent(Q.algebraic(f(argument)), Q.algebraic(argument)))),
 
     # The argument on the nonnegatives
     #     Abs(x) == x for x >= 0
     for_all((Abs,),
-        Q.extended_nonnegative(x) >> (
-            Equivalent(Q.prime(f(x)), Q.prime(x))
-            & Equivalent(Q.composite(f(x)), Q.composite(x)))),
+        Q.extended_nonnegative(argument) >> (
+            Equivalent(Q.prime(f(argument)), Q.prime(argument))
+            & Equivalent(Q.composite(f(argument)), Q.composite(argument)))),
 
     # The argument on the extended reals
     #     re(x) == x; zero and integer follow from the sign and the parity
     for_all((re,),
-        Q.extended_real(x) >> (
-            Equivalent(Q.extended_positive(f(x)), Q.extended_positive(x))
-            & Equivalent(Q.extended_negative(f(x)), Q.extended_negative(x))
-            & Equivalent(Q.rational(f(x)), Q.rational(x))
-            & Equivalent(Q.even(f(x)), Q.even(x))
-            & Equivalent(Q.odd(f(x)), Q.odd(x))
-            & Equivalent(Q.algebraic(f(x)), Q.algebraic(x))
-            & Equivalent(Q.finite(f(x)), Q.finite(x))
-            & Equivalent(Q.prime(f(x)), Q.prime(x))
-            & Equivalent(Q.composite(f(x)), Q.composite(x)))),
+        Q.extended_real(argument) >> (
+            Equivalent(Q.extended_positive(f(argument)), Q.extended_positive(argument))
+            & Equivalent(Q.extended_negative(f(argument)), Q.extended_negative(argument))
+            & Equivalent(Q.rational(f(argument)), Q.rational(argument))
+            & Equivalent(Q.even(f(argument)), Q.even(argument))
+            & Equivalent(Q.odd(f(argument)), Q.odd(argument))
+            & Equivalent(Q.algebraic(f(argument)), Q.algebraic(argument))
+            & Equivalent(Q.finite(f(argument)), Q.finite(argument))
+            & Equivalent(Q.prime(f(argument)), Q.prime(argument))
+            & Equivalent(Q.composite(f(argument)), Q.composite(argument)))),
 
     # Zero on the imaginary axis
     #     re(I*t) == 0
     for_all((re,),
-        Q.imaginary(x) >> Q.zero(f(x))),
+        Q.imaginary(argument) >> Q.zero(f(argument))),
 
     # Zero on the extended reals
     #     im(oo) == 0
     for_all((im,),
-        Q.extended_real(x) >> Q.zero(f(x))),
+        Q.extended_real(argument) >> Q.zero(f(argument))),
 
     # Nonzero off the real line
     #     a finite non-real argument has a nonzero imaginary part
     for_all((im,),
-        (Q.finite(x) & ~Q.extended_real(x)) >> ~Q.zero(f(x))),
+        (Q.finite(argument) & ~Q.extended_real(argument)) >> ~Q.zero(f(argument))),
 
     # A number
     #     0 or a point of the unit circle; sign(zoo) is left unevaluated
     for_all((sign,),
-        Q.complex(f(x))),
+        Q.complex(f(argument))),
 
     # Sign of the argument
     #     sign(x) is 1 for x > 0 (oo too), -1 for x < 0, and 0 at 0;
     #     negative follows from odd and positive
     for_all((sign,),
-        (Q.extended_real(x) & ~Q.zero(x)) >> Q.odd(f(x)),
-        Q.extended_real(x) >> Equivalent(Q.positive(f(x)), Q.extended_positive(x))),
+        (Q.extended_real(argument) & ~Q.zero(argument)) >> Q.odd(f(argument)),
+        Q.extended_real(argument) >> Equivalent(
+            Q.positive(f(argument)), Q.extended_positive(argument))),
 
     # Imaginary on the imaginary axis
     #     sign(I*t) == I*sign(t)
@@ -113,15 +114,15 @@ RULES = (
     #     real, the sign predicates, nonzero, infinite, irrational,
     #     transcendental, hermitian, antihermitian...; commutative always holds)
     for_all((conjugate,),
-        Equivalent(Q.finite(f(x)), Q.finite(x)),
-        Equivalent(Q.extended_positive(f(x)), Q.extended_positive(x)),
-        Equivalent(Q.extended_negative(f(x)), Q.extended_negative(x)),
-        Equivalent(Q.rational(f(x)), Q.rational(x)),
-        Equivalent(Q.even(f(x)), Q.even(x)),
-        Equivalent(Q.odd(f(x)), Q.odd(x)),
-        Equivalent(Q.algebraic(f(x)), Q.algebraic(x)),
-        Equivalent(Q.complex(f(x)), Q.complex(x)),
-        Equivalent(Q.imaginary(f(x)), Q.imaginary(x)),
-        Equivalent(Q.prime(f(x)), Q.prime(x)),
-        Equivalent(Q.composite(f(x)), Q.composite(x))),
+        Equivalent(Q.finite(f(argument)), Q.finite(argument)),
+        Equivalent(Q.extended_positive(f(argument)), Q.extended_positive(argument)),
+        Equivalent(Q.extended_negative(f(argument)), Q.extended_negative(argument)),
+        Equivalent(Q.rational(f(argument)), Q.rational(argument)),
+        Equivalent(Q.even(f(argument)), Q.even(argument)),
+        Equivalent(Q.odd(f(argument)), Q.odd(argument)),
+        Equivalent(Q.algebraic(f(argument)), Q.algebraic(argument)),
+        Equivalent(Q.complex(f(argument)), Q.complex(argument)),
+        Equivalent(Q.imaginary(f(argument)), Q.imaginary(argument)),
+        Equivalent(Q.prime(f(argument)), Q.prime(argument)),
+        Equivalent(Q.composite(f(argument)), Q.composite(argument))),
 )
