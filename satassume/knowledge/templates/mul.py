@@ -234,6 +234,16 @@ RULES = (
     # Positive coefficient: the factor has the facts of the product
     #     the forward directions follow from the rows above
     for_all((Mul,),
+        (Q.positive(coefficient) & Q.positive(f(coefficient, factor))) >> Q.positive(factor),
+        (Q.positive(coefficient) & Q.negative(f(coefficient, factor))) >> Q.negative(factor),
+        (Q.positive(coefficient) & Q.nonnegative(f(coefficient, factor)))
+        >> Q.nonnegative(factor),
+        (Q.positive(coefficient) & Q.nonpositive(f(coefficient, factor)))
+        >> Q.nonpositive(factor),
+        (Q.positive(coefficient) & Q.extended_positive(f(coefficient, factor)))
+        >> Q.extended_positive(factor),
+        (Q.positive(coefficient) & Q.extended_negative(f(coefficient, factor)))
+        >> Q.extended_negative(factor),
         (Q.positive(coefficient) & Q.real(f(coefficient, factor))) >> Q.real(factor),
         (Q.positive(coefficient) & Q.extended_real(f(coefficient, factor)))
         >> Q.extended_real(factor),
@@ -244,6 +254,16 @@ RULES = (
 
     # Negative coefficient: the factor has the opposite sign of the product
     for_all((Mul,),
+        (Q.negative(coefficient) & Q.positive(f(coefficient, factor))) >> Q.negative(factor),
+        (Q.negative(coefficient) & Q.negative(f(coefficient, factor))) >> Q.positive(factor),
+        (Q.negative(coefficient) & Q.nonnegative(f(coefficient, factor)))
+        >> Q.nonpositive(factor),
+        (Q.negative(coefficient) & Q.nonpositive(f(coefficient, factor)))
+        >> Q.nonnegative(factor),
+        (Q.negative(coefficient) & Q.extended_positive(f(coefficient, factor)))
+        >> Q.extended_negative(factor),
+        (Q.negative(coefficient) & Q.extended_negative(f(coefficient, factor)))
+        >> Q.extended_positive(factor),
         (Q.negative(coefficient) & Q.real(f(coefficient, factor))) >> Q.real(factor),
         (Q.negative(coefficient) & Q.extended_real(f(coefficient, factor)))
         >> Q.extended_real(factor),

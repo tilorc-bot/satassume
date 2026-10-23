@@ -642,8 +642,6 @@ def _product_term(t):
     if not getattr(t, "is_Mul", False):
         return None
     rest = [f for f in t.args if f.free_symbols]
-    if len(rest) == 1 and len(t.args) > 1:
-        return rest[0]          # step 4 experiment: c*u, the coefficient rows' sign facts
     if len(rest) < 2:
         return None
     if len(rest) == len(t.args):
@@ -657,11 +655,8 @@ def product_terms(e) -> tuple:
     of ``e``, or of the terms of a sum ``e``): ``(x*y,)`` for ``-x*y``,
     ``3*x*y`` and ``x*y - 1``; ``()`` when there is none."""
     if getattr(e, "is_Add", False):
-        return tuple(m if m is not None else t for t, m in ((t, _product_term(t)) for t in e.args)
-                     if m is not None or not _is_number(t))
+        return tuple(m for m in map(_product_term, e.args) if m is not None)
     m = _product_term(e)
-    if m is None and not getattr(e, "is_Mul", False) and not _is_number(e):
-        return (e,)             # step 4 experiment: x against 2*x
     return () if m is None else (m,)
 
 
@@ -1206,7 +1201,7 @@ def _bound_twins(atoms, context=()) -> list:
             e = a.expr
             ms = signed.get(e) if a.pred in SIGN_PREDS else None
             if ms and any(ms & o for f, o in signed.items() if f != e
-                          and (e.is_Mul or f.is_Mul)):
+                          and not (e.is_Add and f.is_Add)):
                 add(e)
     return out
 
@@ -2101,8 +2096,7 @@ class Relations:
                     ad = self._adapter(spec)
                     if hasattr(ad, "integer_form"):
                         self._link_integer(ad, e, g)
-                        if PRODUCTS and (getattr(e, "is_Mul", False) or any(
-                                getattr(m, "is_Mul", False) for m in product_terms(e))):
+                        if PRODUCTS and product_terms(e):
                             self._link_real(ad, e, g)
         if BOUNDS:
             self._link_bounds(e, g)
@@ -2119,7 +2113,7 @@ class Relations:
         if form is None or len(form[0].terms) != 1:
             return
         m, c = form[0].terms[0]
-        if m == e or type(c) is not Fraction or _is_number(m):
+        if m == e or type(c) is not Fraction or _product_term(m) is not m:
             return
         s = self.session
         for pred in ("real", "extended_real"):
