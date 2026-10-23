@@ -126,6 +126,9 @@ def theory_scope(a_atoms, p_atoms) -> Tuple[bool, bool, frozenset]:
     * ``linked_terms``: the arguments of the vocabulary atoms and the
       sides of the relation atoms, numbers excluded.
 
+    The twins of integer bounds (``relations.bound_twins``, #315) come in
+    through ``_glue_atoms_of`` as relation atoms, so they need no test here.
+
     SPEC-DIFF (open point 1): the engine's ``Relations.wants_transfer``
     also counts an order atom whose reverse ``_trichotomy`` paired; the
     budget's link test counts two sign-atom sums over disjoint symbols.

@@ -14,6 +14,11 @@ atom of a kind that the session meets:
   the pair may be one atom of each formula) are on different ``Add`` nodes
   sharing a free symbol: only the links connect a sign fact to its linear
   form, so without them LRA never compares ``x - 1`` with ``1 - x``;
+  The twins of integer bounds (``relations.bound_twins``, #315) are
+  relation atoms ``lt(0, t)`` folded in by :func:`scope_of_atoms` like the
+  zero twins below: a sign atom on a sum ``c0 + c1*u`` (at any depth) or
+  on an application reading ``v + c`` (``log(v)``), over a symbol with an
+  integer premise, has the glue, which links the sum and ``u``;
 * ``transfer``: predicate transfer (:mod:`satassume.theories.transfer`: the terms
   of one EUF class share their unary facts).  On iff the relation atoms of
   ``a`` and ``p`` make an equality: an ``eq`` atom (``ne`` is its

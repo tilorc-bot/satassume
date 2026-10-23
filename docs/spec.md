@@ -102,6 +102,20 @@ atoms (`scope.extension_atoms`: `Extensions.facts_for`, transitively):
   transfer at it (`Relations.process`), the counted fallback; at the rebase
   onto #107 every family-A shape took it (`scope_misses` 2 per query) until
   the scope counted the twin (`tests/test_scope.py::test_zero_twins_are_in_the_scope`);
+- the twins of integer bounds (#315 step 2, prototype; `relations.bound_twins`,
+  folded in by `relations.glue_atoms` like the zero twins): with a premised
+  symbol (a free symbol of the argument of an `integer`, `even`, `odd`,
+  `prime` or `composite` atom of `A` or `p`, or a symbol declared an
+  integer), a sign atom whose argument holds, at any depth, a sum with a
+  Rational term and a term `c*u` with `u` over a premised symbol, gets the
+  twins `lt(0, s)` and `lt(0, u)`; an application in it of a function whose
+  rows read `v + c` (`log(v)`: `v - 1`; not `Pow`) with `v` over a premised
+  symbol, the twins `lt(0, v)` and `lt(0, v + c)`. A twin is the link atom
+  `0 < t`, so it gives `glue` (not `transfer`) and puts `t` in
+  `linked_terms`; `t` then has the bound links of `relations.BOUND_LINKS`
+  (`RECIP_LINKS` for `t = 1/v`). `Engine.is_(node, pred)` has the scope of
+  `P(pred, node)` alone (`Engine._free_scope`): the glue exactly when that
+  atom has such twins;
 - `transfer` iff `glue` and the relation atoms make an equality: an `eq`
   atom, or an order atom and its reverse (`transfer.transfer_wanted`; the pair
   is what `Relations._trichotomy` relates, so `Q.le(x, y) & Q.ge(x, y)`
@@ -230,7 +244,8 @@ context-free): key `(node, pred)` under the registry epoch and the settings fing
 uninterpreted)` (`DictCache._epoch`, `_settings`; `Engine._check_version` drops a cache on a mismatch, so a
 cache shared between engines starts empty for an engine of other settings); value True or False, never None
 (`_put_result`). Property: an entry is the answer a fresh engine of the same settings gives, since the session
-of `is_` builds the set of 5.1, 5.2, 5.5 for `node` alone (harness `audit`, G6;
+of `is_` builds the set of 5.1, 5.2, 5.5 for `node` alone, with the glue of the scope of `P(pred, node)` alone
+(section 3, the twins of integer bounds; `is_many` decides each such predicate in a session of its own) (harness `audit`, G6;
 `tests/test_writeback_provenance.py`).
 
 ### 5.4 The assumption selector

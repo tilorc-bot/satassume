@@ -223,8 +223,8 @@ the linked sides only).  ``INTEGERS = False`` turns the link off.
 Integer bounds
 --------------
 Each linked ``e`` also gets the bounds of :data:`BOUND_LINKS` (#315,
-replacing the hand-written ``core._bound_*`` and ``_recip_*`` templates),
-under the link selector of ``e``:
+replacing the hand-written ``core._bound_*``, ``_recip_*`` and
+``_pow_bound_templates`` templates), under the link selector of ``e``:
 
 =========================================  ===============================
 clause                                     why it is sound
@@ -234,27 +234,45 @@ clause                                     why it is sound
 ``-> ~lt(e, 2)``
 ``composite(e) -> ~lt(e, 4)``              a composite is an integer >= 4
 ``composite(e) & odd(e) -> ~lt(e, 9)``     the least odd composite is 9
+``even(e) & extended_negative(e)``         an even integer < 0 is <= -2
+``-> ~lt(-2, e)``
 =========================================  ===============================
 
-Each premise implies ``integer(e)``, which is false for ``oo``, ``-oo``,
-``zoo``, ``nan`` and every non-real value, so a premise that holds makes
-``e`` a finite real integer: ``lt(e, b)`` is then the comparison of two
-reals (its LRA twin is exact under the guard ``real(e)``), and ``~lt(e,
-b)`` is ``e >= b``.  Where a premise is false the clause is satisfied.
-``integer(e) & extended_positive(e) -> e >= 1`` needs no clause: the
-integrality atom of ``e`` (above) and the link ``extended_positive(e) <->
-lt(0, e)`` give it, since the theory rounds ``0 < e`` to ``1 <= e`` for an
-integral form (the integrality cut is LRA's).  LRA then does the
-arithmetic of a sum: ``x - 1`` and ``x`` linked, ``prime(x)`` gives
-``x - 1 >= 1``.
+and a linked reciprocal ``e = 1/v`` those of :data:`RECIP_LINKS`, from
+premises on ``v``: ``integer(v) & extended_positive(v) -> ~lt(1, e)``
+(``0 < v`` integer gives ``1/v <= 1``), ``prime(v)`` and ``even(v) &
+extended_positive(v)`` give ``1/v <= 1/2``, ``composite(v)`` ``1/v <=
+1/4``, ``integer(v) & extended_negative(v) -> ~lt(e, -1)``, ``even(v) &
+extended_negative(v)`` ``1/v >= -1/2``.
 
-The glue is on only where these can matter (:func:`bound_twins`): a
-query whose atoms hold a sign atom on a sum ``c0 + c1*u + ...`` with a
-Rational ``c0``, or an application whose rows read a shifted argument
-``v + c`` (``log(v)``: ``v - 1``), with a term ``u`` or ``v`` over a
-"premised" symbol (one under an atom of :data:`BOUND_PREMISES`, or a
-symbol declared an integer) gets the twins ``lt(0, t)`` of the sum and
-of ``u`` (of ``v`` and ``v + c``): relation atoms of its formula, read like
+Each premise implies ``integer`` of its term, which is false for ``oo``,
+``-oo``, ``zoo``, ``nan`` and every non-real value, so a premise that
+holds makes the term a finite real integer (nonzero where a sign is
+part of it, so ``1/v`` is a finite real too): ``lt(e, b)`` is then the
+comparison of two reals (its LRA twin is exact under the guard
+``real(e)``), and ``~lt(e, b)`` is ``e >= b``.  Where a premise is false
+the clause is satisfied.  ``integer(e) & extended_positive(e) -> e >= 1``
+needs no clause: the integrality atom of ``e`` (above) and the link
+``extended_positive(e) <-> lt(0, e)`` give it, since the theory rounds
+``0 < e`` to ``1 <= e`` for an integral form (the integrality cut is
+LRA's).  LRA then does the arithmetic of a sum: ``x - 1`` and ``x``
+linked, ``prime(x)`` gives ``x - 1 >= 1``.
+
+A link whose premise holds ``prime``, ``composite`` or ``even``
+(:data:`BOUND_KINDS`) is made only in a session whose formulas mention
+that kind (:func:`bound_kinds`: an atom of the predicate, a symbol
+declared with it, or for ``even`` a product with an even Integer factor
+in a sign atom), so that a session over integers alone gets no atom
+``lt(e, 2)`` it cannot use: such atoms are decisions of the search and
+changed the paths of LRA's branch budget (``tests/test_lra_exhaustion.py``).
+
+The glue is on only where these can matter (:func:`bound_twins`): a sign
+atom whose argument holds, at any depth, a sum ``c0 + c1*u + ...`` with
+a Rational ``c0``, or an application whose rows read a shifted argument
+``v + c`` (``log(v)``: ``v - 1``), with ``u`` or ``v`` over a "premised"
+symbol (one under an atom of :data:`BOUND_PREMISES`, or a symbol
+declared an integer), gives the twins ``lt(0, t)`` of the sum and of
+``u`` (of ``v`` and ``v + c``): relation atoms of its formula, read like
 the zero twins above, so that the scope, the selectors, the budget and
 the reference all see them.  A twin is the link atom ``0 < t`` itself,
 so it adds no clause the link of ``t`` does not have.
