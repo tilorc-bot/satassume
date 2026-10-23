@@ -15,7 +15,9 @@ a star (``templates/selection.py``, #299), those of nodes of 1 to 5 values
 and of a constant value (:func:`selection_nodes`); for ``Mul`` (rows with a
 star and of a coefficient, ``templates/mul.py``), those of products of 2 to
 7 factors, of a coefficient and a factor, and of two of SymPy's products
-(:func:`mul_nodes`).  This test
+(:func:`mul_nodes`); for ``Add`` (rows with a star, ``templates/add.py``),
+those of sums of 2 to 7 terms, of a constant and a term, and of the sums
+of a special shape (:func:`add_nodes`).  This test
 checks that the current templates, with the rule base on each slot, entail
 every frozen clause, so a row dropped or weakened by mistake fails here;
 ``tests/test_rows_numeric.py`` checks that each rule is true, which this
@@ -41,8 +43,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from sympy import (  # noqa: E402
-    Basic, E, Float, Function, GoldenRatio, I, Mul, Piecewise, Pow, Rational, S, Symbol, exp, oo,
-    pi,
+    Add, Basic, E, Float, Function, GoldenRatio, I, Mul, Piecewise, Pow, Rational, S, Symbol, exp,
+    oo, pi, zoo,
 )
 from sympy.functions.elementary.piecewise import ExprCondPair  # noqa: E402
 
@@ -62,8 +64,8 @@ entail them.  Do not edit by hand.
 
 ``BASELINE``: ``((family, function name, n, slots, clauses), ...)``: the
 slots named by their objects for the node ``head(x0, ..., x(n-1))`` (for
-``Pow``, ``Max``, ``Min``, ``Piecewise`` and ``Mul``, ``n`` is the text of the
-node), and each clause a tuple of literals ``(slot, basis predicate,
+``Pow``, ``Max``, ``Min``, ``Piecewise``, ``Mul`` and ``Add``, ``n`` is the text
+of the node), and each clause a tuple of literals ``(slot, basis predicate,
 negated)``.
 """
 '''
@@ -134,9 +136,23 @@ def mul_nodes(head=Mul):
             3*xs[0]*xs[1], xs[0]/xs[1]**2)
 
 
+def add_nodes(head=Add):
+    """The nodes of ``Add`` whose clauses are frozen: of 2 to 7 terms
+    (around the limits ``at_most`` 3 and 6), a constant and a term (an
+    integer, a rational, a float, ``pi``, ``I``, ``oo``, ``-oo``, ``zoo``),
+    each with every term kept (``evaluate=False``), and SymPy's sums of a
+    special shape (half-integer coefficients, ``c0 + c1*u``, ``c0 +
+    c1/v``, ``I*(c_1*x_1 + ...)``)."""
+    xs = [Symbol(f'x{i}') for i in range(7)]
+    constants = (S(2), S(-3), S.Half, Float(2.5), pi, I, oo, -oo, zoo)
+    return (*(head(*xs[:n], evaluate=False) for n in range(2, 8)),
+            *(head(c, xs[0], evaluate=False) for c in constants),
+            xs[0]/2 + xs[1]/2 + S.Half, 2*xs[0] + 3, 1 + 2/xs[0], I*xs[0] - 2*I*xs[1] + I)
+
+
 #: the families whose rows have shapes or a star, each with the nodes of
 #: its baseline
-SHAPED = {'power': pow_nodes, 'selection': selection_nodes, 'mul': mul_nodes}
+SHAPED = {'power': pow_nodes, 'selection': selection_nodes, 'mul': mul_nodes, 'add': add_nodes}
 
 
 def functions():
