@@ -212,21 +212,24 @@ def test_synthetic_clauses_identical(monkeypatch):
 
 
 def test_comparison_detects_a_wrong_row(monkeypatch):
-    """Mutation check of the comparison itself: one changed row is seen."""
-    from sympy import symbols
-    x, y = symbols("x y")
-    nodes = _subexprs([x * y, x**y, x**2])
-    row = next(r for r in iter_rows(core.MUL_TABLE) if r.name == 'one_neg')
+    """Mutation check of the comparison itself: one changed row is seen
+    (a row of ``IPI_TABLE``: the Mul template is rows, ``templates/mul.py``,
+    checked by ``tests/test_mul_rows.py``)."""
+    from sympy import I, exp, pi, symbols
+    x = symbols("x")
+    e = exp(2*I*pi*x)
+    nodes = _subexprs([e])
+    row = next(r for r in iter_rows(core.IPI_TABLE) if r.name == 'ipi.s.int.even')
     new = _run(nodes)
     try:
         with monkeypatch.context() as m:
-            m.setattr(row, "concl", (('N', 'extended_positive'),))
+            m.setattr(row, "concl", (('N', 'negative'),))
             row._compile()
             mutated = _run(nodes)
     finally:
         row._compile()
         _clear()
-    assert new[x * y] != mutated[x * y]
+    assert new[e] != mutated[e]
 
 
 def test_table_sizes_and_names():

@@ -1,6 +1,7 @@
-"""Structural templates for ``Add`` and ``Mul``, and the rules of ``Pow``
-that are not rows (its rows are ``templates/power.py``; ``wiring.power``
-calls the functions of the Pow section here).
+"""Structural templates for ``Add``, and the rules of ``Mul`` and ``Pow``
+that are not rows (their rows are ``templates/mul.py`` and
+``templates/power.py``; ``wiring.product`` and ``wiring.power`` call the
+functions of the Mul and Pow sections here).
 
 Every formula relates predicates of the node to predicates of its direct
 arguments and is a theorem about the *value* of the node under SymPy's
@@ -508,7 +509,9 @@ def add_templates(expr):
 
 
 # ---------------------------------------------------------------------------
-# Mul
+# Mul: the factor sets and a/v**k (wiring.product calls them); the table
+# below is no longer registered (Mul's rows are templates/mul.py, #299) and
+# goes with the next step of #299 (U2)
 # ---------------------------------------------------------------------------
 
 # Closed under multiplication.  ``real`` and ``positive`` are derived by the
@@ -709,25 +712,8 @@ def _mul_rules(n, consts):
                     {'N': n, '*': range(n)})
 
 
-@registry.register(Mul)
-def mul_templates(expr):
-    if not expr.args:
-        return ()
-    out = [_product_block(f, expr) for f in _mul_factor_sets(expr)]
-    args = expr.args
-    quot = _quotient_templates(expr)
-    if quot is not None:
-        out.append(quot)
-    if len(args) > MAX_ONEOUT_WIDE:
-        # the zero rule of MUL_TABLE
-        f = _wide_one(expr, args, consts_of(args), 'finite', 'zero', 'zero')
-        if f is not None:
-            out.append(f)
-    return out if len(out) > 1 else out[0]
-
-
 def _mul_factor_sets(expr):
-    """The factor tuples whose Mul blocks ``mul_templates`` emits for
+    """The factor tuples whose Mul blocks ``wiring.product`` emits for
     ``expr``: its arguments, then the derived products."""
     args = expr.args
     n = len(args)
