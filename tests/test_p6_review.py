@@ -1,9 +1,11 @@
 """Pinned repros from the P6 review (issue #97, branch issue-97/p6-template-tables).
 
-The Pow row ``|b|<1.infinite`` (``POW_TABLE`` in ``satassume/knowledge/templates/core.py``:
-``[b finite number, 0<|b|<1] negative_infinite(E) -> infinite(N)``) was
-transcribed unchanged from ``_pow_rules`` at 876f37d, so the clause set is
-identical on ``main``; the issue is pre-existing, not introduced by P6.
+The Pow row ``|b|<1.infinite`` (then ``POW_TABLE`` in ``satassume/knowledge/templates/core.py``:
+``[b finite number, 0<|b|<1] negative_infinite(E) -> infinite(N)``; since #294 the
+row "A power of a number of absolute value below 1 to the power -oo is
+infinite" of ``templates/power.py``) was transcribed unchanged from
+``_pow_rules`` at 876f37d, so the clause set is identical on ``main``; the
+issue is pre-existing, not introduced by P6.
 """
 import pytest
 
@@ -15,7 +17,8 @@ from satassume.sympy_api import ask  # noqa: E402
 
 @pytest.mark.xfail(strict=True, reason=(
     "Pinned repro, pre-existing on main (876f37d), not a P6 regression: row "
-    "|b|<1.infinite of POW_TABLE says b**e is infinite for 0<|b|<1 and e == -oo, "
+    "|b|<1.infinite of POW_TABLE (a row of templates/power.py since #294) says b**e is "
+    "infinite for 0<|b|<1 and e == -oo, "
     "but SymPy at the pin gives (-1/2)**(-oo) == nan (not infinite); only 0<b<1 "
     "gives oo.  satassume answers True where a value of the node is nan.  "
     "Owner decision, issue #97 P6 review: restrict the row to positive b, or "

@@ -1,39 +1,22 @@
-"""Verbatim copies of ``_mul_rules``, ``ipi_rules`` and ``_pow_rules`` from
+"""Verbatim copies of ``_mul_rules`` and ``ipi_rules`` from
 ``satassume/templates/core.py`` at 876f37d, before they became tables
 (issue #97, P6).  Test-only: ``tests/test_template_tables.py`` compares the
-clauses the tables emit with the clauses these functions emit.  Do not edit
+clauses the tables emit with the clauses these functions emit.  The copy of
+``_pow_rules`` went with ``POW_TABLE`` (#294: Pow's rows are compared with
+``tests/_legacy_pow_rules.py``).  Do not edit
 them to follow a later rule change; change the test's reference instead
 (``git show 876f37d:satassume/templates/core.py``)."""
 from itertools import combinations
 
 from sympy import S
-from sympy.core.intfunc import integer_nthroot
 
-from satassume.knowledge.templates._common import SIGN_FLIP, Rules, ge2_alternatives, lits
+from satassume.knowledge.templates._common import SIGN_FLIP, Rules, lits
 from satassume.knowledge.templates.core import (
-    _B,
-    _BM,
-    _BP,
     _COEFF_BACK,
-    _E,
     _MUL_CLOSED,
-    _N,
-    _NOT01,
-    _NOTUNIT,
-    _POW_E_RULES,
-    _POW_ONE_EQUIV,
-    _POW_RULES,
-    _S,
-    _T,
-    _U,
     MAX_ONEOUT,
     MAX_PAIRS,
 )
-
-
-def _lit(spec):
-    """A ``(slot, pred[, pos])`` row literal as ``(slot, pred, pos)``."""
-    return (spec[0], spec[1], spec[2] if len(spec) > 2 else True)
 
 
 def mul_rules(n, consts):
@@ -193,109 +176,3 @@ def ipi_rules(rule, c, iS, N):
     elif c.q == 2:
         rule([(iS, 'even', True)], (N, 'odd', True))
         rule([(iS, 'odd', True)], (N, 'imaginary', True))
-
-
-
-def pow_rules(b, e, same, angle, has_u, ipi, has_t, has_b1):
-    """``b``/``e`` are the constant base/exponent or ``None`` if symbolic;
-    ``angle`` is ``_unit_angle(base)``; ``has_u``: slot ``_U`` holds the
-    argument of an ``exp`` base; ``ipi``: ``(c, has_s)`` for base ``E`` and
-    exponent ``I*pi*c*s``; ``has_t``: slot ``_T`` holds ``2*e``; ``has_b1``:
-    slots ``_BM``/``_BP`` hold ``b - 1`` and ``b + 1``."""
-    R = Rules()
-    rule = R.rule
-    for prem, concl in _POW_RULES:
-        rule([_lit(p) for p in prem], _lit(concl))
-    if b is S.Exp1:
-        for prem, concl in _POW_E_RULES:
-            rule([_lit(p) for p in prem], _lit(concl))
-        if ipi is not None:
-            c, has_s = ipi
-            ipi_rules(rule, c, _S if has_s else None, _N)
-    if same:
-        rule([(_B, 'extended_nonnegative', True)], (_N, 'extended_positive', True))
-    if e is S.One:
-        for pred in _POW_ONE_EQUIV:
-            R.equiv([], (_N, pred, True), (_B, pred, True))
-    # A power of a composite is 1, a fraction or composite.
-    rule([(_B, 'composite', True), (_E, 'integer', True)], (_N, 'prime', False))
-    # For algebraic b = r*exp(I*phi) != 0 and algebraic e = I*t, b**e is
-    # exp(-t*phi)*exp(I*t*log(r)) with r algebraic; t*log(r) in pi*Q with
-    # t algebraic nonzero forces log(r)/(I*pi) algebraic, hence rational
-    # (Gelfond-Schneider), hence r == 1.  So b**e is never imaginary, and
-    # it is real iff |b| == 1 (then it is positive).
-    rule([(_B, 'algebraic', True), (_B, 'zero', False), (_E, 'imaginary', True),
-          (_E, 'algebraic', True)], (_N, 'imaginary', False))
-    for pred in _NOTUNIT:
-        rule([(_B, pred, True), (_B, 'algebraic', True), (_E, 'imaginary', True),
-              (_E, 'algebraic', True)], (_N, 'extended_real', False))
-    if angle is not None:
-        rule([(_E, 'imaginary', True)], (_N, 'positive', True))
-    if has_u:
-        # (exp(u))**e == exp(e*(u - 2*pi*I*k)) is positive for imaginary u, e.
-        rule([(_U, 'imaginary', True), (_E, 'imaginary', True)], (_N, 'positive', True))
-    if has_b1:
-        # An integer other than 0 and +-1 to a negative integer power is a
-        # fraction (0 gives zoo).
-        rule([(_B, 'integer', True), (_E, 'integer', True), (_E, 'negative', True),
-              (_BM, 'zero', False), (_BP, 'zero', False)], (_N, 'integer', False))
-    if has_t:
-        # Real base, rational exponent: imaginary iff the base is negative
-        # and the exponent is half an odd integer.
-        rule([(_B, 'extended_real', True), (_E, 'rational', True), (_T, 'integer', False)],
-             (_N, 'imaginary', False))
-        rule([(_B, 'negative', True), (_E, 'rational', True), (_T, 'integer', True),
-              (_E, 'integer', False)], (_N, 'imaginary', True))
-
-    if e is not None and e.is_Rational and not e.is_Integer:
-        if e.q == 2:
-            # b**(k/2) for real b is imaginary iff b is a negative real.
-            R.equiv([(_B, 'extended_real', True)], (_N, 'imaginary', True), (_B, 'negative', True))
-            rule([(_B, 'extended_real', True)], (_N, 'extended_negative', False))
-        else:
-            rule([(_B, 'extended_real', True)], (_N, 'imaginary', False))
-        if e.p == 1:
-            # (b**(1/q))**q == b: a non-real base gives a non-real root.
-            rule([(_B, 'extended_real', False)], (_N, 'extended_real', False))
-        elif e.p == -1:
-            # Likewise for 1/b**(1/q), but zoo**(-1/2) == 0 is real.
-            rule([(_B, 'extended_real', False), (_B, 'finite', True)],
-                 (_N, 'extended_real', False))
-        if b is not None and b.is_Rational and b.is_positive:
-            # b**(p/q) with gcd(p, q) == 1 is rational iff b is a perfect
-            # q-th power (exact integer arithmetic).
-            if not (integer_nthroot(b.p, e.q)[1] and integer_nthroot(b.q, e.q)[1]):
-                rule([], (_N, 'irrational', True))
-    if e is S.NegativeOne:
-        # 1/b is rational iff b is (nonzero) rational.
-        rule([(_B, 'irrational', True)], (_N, 'irrational', True))
-        # b is the inverse of a nonzero number 1/b.
-        rule([(_N, 'complex', True), (_N, 'zero', False)], (_B, 'commutative', True))
-    if b is not None:
-        if b is S.NegativeOne:
-            rule([(_E, 'integer', True)], (_N, 'odd', True))
-        elif b.is_Integer and (b.p >= 2 or b.p <= -2):
-            # |b|**e < 1 for negative e.
-            rule([(_E, 'negative', True)], (_N, 'integer', False))
-        if b.is_algebraic and b.is_zero is False and b is not S.One:
-            R.equiv([(_E, 'algebraic', True)], (_N, 'algebraic', True), (_E, 'rational', True))
-        if b.is_Number and b.is_finite:
-            # Exact comparisons of a number with 1 (no assumptions involved).
-            if abs(b) > 1:
-                rule([(_E, 'extended_negative', True)], (_N, 'finite', True))
-                rule([(_E, 'negative_infinite', True)], (_N, 'zero', True))
-                rule([(_E, 'positive_infinite', True)], (_N, 'infinite', True))
-            elif b.is_zero is False and abs(b) < 1:
-                rule([(_E, 'extended_positive', True)], (_N, 'finite', True))
-                rule([(_E, 'positive_infinite', True)], (_N, 'zero', True))
-                rule([(_E, 'negative_infinite', True)], (_N, 'infinite', True))
-    if e is not None:
-        if e.is_Integer and e.p >= 2:
-            # b**e for integer b >= 2 is composite.
-            for prem in ge2_alternatives(_B):
-                rule(prem, (_N, 'composite', True))
-        if e.is_algebraic and e.is_rational is False:
-            for pred in _NOT01:
-                rule([(_B, pred, True), (_B, 'algebraic', True)], (_N, 'algebraic', False))
-    return R.rules
-

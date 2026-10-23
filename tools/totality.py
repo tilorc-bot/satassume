@@ -36,11 +36,13 @@ Without ``--corpus``/``--stream`` only the synthetic list of ``load_exprs``
 is checked (about 2 s); with both, every subexpression of the corpus and
 the refine stream (about 380 blocks, about 6 s).
 
-For a Mul or Pow node the clauses come from the rule tables of
-``satassume/knowledge/templates/core.py`` (``MUL_TABLE``, ``POW_TABLE``,
-``IPI_TABLE``; issue #97): each fired clause of a non-total block is
-printed with the names of the table rows that emit it
-(``core.table_provenance``), and ``--tables`` prints the tables.
+For a Mul node the clauses come from the rule tables of
+``satassume/knowledge/templates/core.py`` (``MUL_TABLE``, ``IPI_TABLE``;
+issue #97): each fired clause of a non-total block is printed with the
+names of the table rows that emit it (``core.table_provenance``), and
+``--tables`` prints the tables.  A Pow node's clauses come from rows
+(``templates/power.py``, #294), as a function's do: ``tools/show_rows.py
+Pow`` prints them, with their titles.
 
 Only compiled patterns are checked.  The plain formulas some templates
 emit alongside them (the unit facts of a constant-argument node such as
@@ -484,7 +486,7 @@ def run(exprs, depth=1, independent=False, models=None):
 
 def fired_rows(e, pat, fired):
     """For each fired clause, the names of the table rows that emit it
-    (Mul and Pow nodes; ``[]`` for a clause of another template)."""
+    (Mul nodes; ``[]`` for a clause of another template)."""
     from satassume.knowledge.templates.core import table_provenance
     prov = {}
     for name, clause in table_provenance(e):
@@ -497,11 +499,12 @@ def fired_rows(e, pat, fired):
 
 
 def table_text():
-    """The rule tables of the Mul and Pow templates, one row per line."""
+    """The rule tables of the Mul template and of ``exp(I*pi*c*s)``, one row
+    per line."""
     from satassume.knowledge.templates import core
-    from satassume.knowledge.templates.table import Section, Sub, count_rows
+    from satassume.knowledge.templates.table import Section, count_rows
     lines = []
-    for name in ("MUL_TABLE", "POW_TABLE", "IPI_TABLE"):
+    for name in ("MUL_TABLE", "IPI_TABLE"):
         table = getattr(core, name)
         lines.append(f"{name}: {count_rows(table)} rows")
         for item in table:
@@ -509,8 +512,6 @@ def table_text():
                 when = f" [{', '.join(item.when)}]" if item.when else ""
                 lines.append(f"  section {item.over}{when}:")
                 lines.extend("    " + r.text() for r in item.rows)
-            elif isinstance(item, Sub):
-                lines.append(f"  {item.name}: [{', '.join(item.when)}] the rows of IPI_TABLE")
             else:
                 lines.append("  " + item.text())
     return "\n".join(lines)
@@ -534,7 +535,7 @@ def main():
     ap.add_argument("--independent", action="store_true",
                     help="treat derived slots as independent of the arguments (the naive check)")
     ap.add_argument("--tables", action="store_true",
-                    help="print the Mul/Pow rule tables and exit")
+                    help="print the Mul and exp(I*pi*c*s) rule tables and exit")
     args = ap.parse_args()
     if args.tables:
         print(table_text())

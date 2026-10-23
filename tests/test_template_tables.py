@@ -1,12 +1,15 @@
-"""The Mul and Pow templates as tables (issue #97, P6) emit exactly the
-clauses of the hand-written functions they replace.
+"""The Mul template as a table (issue #97, P6) emits exactly the clauses of
+the hand-written function it replaces.
 
-``satassume/knowledge/templates/core.py`` writes ``_mul_rules``, ``_pow_rules`` and
-``ipi_rules`` as the tables ``MUL_TABLE``, ``POW_TABLE`` and ``IPI_TABLE``
-(rows of premises over argument facts and conclusion facts, interpreted by
+``satassume/knowledge/templates/core.py`` writes ``_mul_rules`` and
+``ipi_rules`` as the tables ``MUL_TABLE`` and ``IPI_TABLE`` (rows of
+premises over argument facts and conclusion facts, interpreted by
 ``satassume/knowledge/templates/table.py`` through the spec builders of
 ``_common``).  The functions as they were at 876f37d are kept verbatim in
-``tests/_legacy_core_rules.py``.  For every node, the compiled clauses of
+``tests/_legacy_core_rules.py``.  (``POW_TABLE`` is now rows,
+``templates/power.py``, #294: ``tests/test_power_rows.py`` compares them
+with the table; Pow nodes stay in the corpus here for ``E**(I*pi*c*s)``,
+whose rules are ``IPI_TABLE``'s.)  For every node, the compiled clauses of
 every template block (and the plain formulas) are computed once with the
 tables and once with the legacy functions patched in, each from empty
 caches, and compared after canonicalization (literals of a clause sorted,
@@ -35,7 +38,7 @@ import _legacy_core_rules as legacy  # noqa: E402
 import totality  # noqa: E402
 from sympy import Mul, Pow  # noqa: E402
 
-from satassume.knowledge.templates import _common, core, functions, registry  # noqa: E402
+from satassume.knowledge.templates import _common, core, functions, registry, wiring  # noqa: E402
 from satassume.knowledge.templates.table import Section, Sub, count_rows, iter_rows, rules_of  # noqa: E402
 
 CORPUS = os.path.join(ROOT, "queries.jsonl")
@@ -98,7 +101,7 @@ def synthetic_nodes():
     """The node shapes of the totality checker, plus unevaluated nodes that
     SymPy would otherwise rewrite before any template sees them (issue #97,
     P6 review nit 2): ``Pow(E, x)`` becomes ``exp(x)`` and ``Pow(x, 1)``
-    becomes ``x``, so the ``pow.E.*`` and ``one`` rows of ``POW_TABLE`` are
+    becomes ``x``, so the rows of ``f(E, exponent)`` and ``f(base, 1)`` are
     reached only through these."""
     from sympy import E, symbols
     x = symbols("x")
@@ -132,23 +135,8 @@ def _run(nodes):
     return out
 
 
-#: Rows of the tables added after 876f37d: the reference is the legacy
+#: Rows of the table added after 876f37d: the reference is the legacy
 #: function plus these rows (with their sections and guards).
-POW_ROWS_ADDED = (
-    'int_base.negative_int_exp.unit',  # #180 S7
-    'int_base.negative_int_exp.unit_not',
-    'int_base.negative_int_exp.unit_base',
-    'int_base.negative_int_exp.not_unit',
-    'e=-1.imaginary',
-    'imaginary_base.e=2mod4',
-    'imaginary_base.e=0mod4',
-    'ge2s.composite',  # #180 S7 G5
-    'e>=2.not_prime',
-    'b<=-2.even_e.composite',
-    'b=1',  # #180 S7 Galg
-    'b=1.unit',
-    'gs.symbolic',
-)
 MUL_ROWS_ADDED = (
     'one_imag.back',  # #180 S7
     'imag_times_rest.real',
@@ -174,12 +162,6 @@ def _only(table, names):
     return tuple(out)
 
 
-def _legacy_pow_rules(*pargs):
-    added = rules_of(_only(core.POW_TABLE, POW_ROWS_ADDED), core.POW_GUARDS,
-                     core._pow_ctx(*pargs), core.POW_SLOTS)
-    return legacy.pow_rules(*pargs) + added
-
-
 def _legacy_mul_rules(n, consts):
     added = rules_of(_only(core.MUL_TABLE, MUL_ROWS_ADDED), core.MUL_GUARDS,
                      {'n': n, 'consts': consts}, {'N': n, '*': range(n)})
@@ -189,9 +171,9 @@ def _legacy_mul_rules(n, consts):
 def _with_legacy(monkeypatch, nodes):
     with monkeypatch.context() as m:
         m.setattr(core, "_mul_rules", _legacy_mul_rules)
-        m.setattr(core, "_pow_rules", _legacy_pow_rules)
         m.setattr(core, "ipi_rules", legacy.ipi_rules)
         m.setattr(functions, "ipi_rules", legacy.ipi_rules)
+        m.setattr(wiring, "ipi_rules", legacy.ipi_rules)
         try:
             return _run(nodes)
         finally:
@@ -248,32 +230,28 @@ def test_comparison_detects_a_wrong_row(monkeypatch):
 
 
 def test_table_sizes_and_names():
-    for table in (core.MUL_TABLE, core.POW_TABLE, core.IPI_TABLE):
+    for table in (core.MUL_TABLE, core.IPI_TABLE):
         names = [r.name for r in iter_rows(table)]
         assert len(names) == len(set(names)), "row names are unique per table"
         for r in iter_rows(table):
             for lit in (*r.prem, *r.concl):
                 assert lit[1] in _common.VOCAB or lit[1] in ('$p', 'flip:$p', 'int>=2'), r.text()
-    print("rows:", {"mul": count_rows(core.MUL_TABLE), "pow": count_rows(core.POW_TABLE),
-                    "ipi": count_rows(core.IPI_TABLE)})
+    print("rows:", {"mul": count_rows(core.MUL_TABLE), "ipi": count_rows(core.IPI_TABLE)})
 
 
 def test_provenance_covers_every_table_clause():
-    """Every clause of a Mul/Pow table block is named by some row
+    """Every clause of a Mul table block is named by some row
     (``core.table_provenance``, used by ``tools/totality.py``)."""
     from satassume.knowledge.rules import BASIS
     missing = []
     for e in _subexprs(totality.load_exprs()):
-        if not isinstance(e, (Mul, Pow)):
+        if not isinstance(e, Mul):
             continue
         prov = {}
         for name, clause in core.table_provenance(e):
             prov.setdefault(clause, []).append(name)
         compiled, _ = registry.clauses_for(e)
-        if isinstance(e, Mul):
-            tables = {tuple(f) + (e,) for f in core._mul_factor_sets(e)}
-        else:
-            tables = {tuple(core._pow_pattern(e)[1])}
+        tables = {tuple(f) + (e,) for f in core._mul_factor_sets(e)}
         for c in compiled:
             if tuple(c.objs) not in tables:
                 continue    # a block outside the tables (core._quotient_templates)
