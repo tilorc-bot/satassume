@@ -17,7 +17,8 @@ then the templates of :data:`AFTER_ROWS`, which are not rows.  Rows with a
 star, about a function of any number of arguments (``f(factor,
 *factors)``), are expanded for each node by :func:`expand`
 (:func:`any_arity`'s template: ``Max``, ``Min`` and ``Piecewise``, with
-:data:`ARGUMENTS` and :data:`LEAVE_OUT_WIDE`).
+:data:`ARGUMENTS` and :data:`LEAVE_OUT_WIDE`; :func:`product`'s for
+``Mul``, with the factor sets and ``a/v**k`` of :mod:`.core`).
 ``templates/__init__.py`` declares each family as ``"<this
 module>:<family>"`` for its functions (``TemplateRegistry.lazy``), so a
 family is compiled on the first use of one of its functions, and its
@@ -38,8 +39,8 @@ from ..rules import cnf_of
 from ._common import MAX_EXPAND, Rules, const_key, const_value, consts_of, facts, pattern_key
 from ._rows import by_function, constant_value, generator
 from .core import (
-    _exp_arg, _pow_bound_templates, _unit_angle, _unit_power_units, ipi_rules, ipi_split,
-    irrational_root,
+    _exp_arg, _mul_factor_sets, _pow_bound_templates, _quotient_templates, _unit_angle,
+    _unit_power_units, ipi_rules, ipi_split, irrational_root,
 )
 from .registry import registry
 
@@ -97,14 +98,17 @@ def template(fn, gen):
     or terms other than ``x + c`` (``gen.plain`` false) get :func:`power`'s
     template for a function of :data:`POWER`, and are refused for another:
     no other template here matches a node against shapes.  Rows with a star
-    (``gen.schemas``) get :func:`any_arity`'s template, keyed by the name of
-    the function, with the arguments :data:`ARGUMENTS` gives and the rules
-    over too many clauses left out for a function of
+    (``gen.schemas``) get :func:`product`'s template for a function of
+    :data:`PRODUCT`, and :func:`any_arity`'s for another, keyed by the name
+    of the function, with the arguments :data:`ARGUMENTS` gives and the
+    rules over too many clauses left out for a function of
     :data:`LEAVE_OUT_WIDE`.  :mod:`.functions` is imported for the templates
-    of :func:`.functions` only, not for :func:`power`'s or
-    :func:`any_arity`'s (#297)."""
+    of :func:`.functions` only, not for :func:`power`'s, :func:`product`'s
+    or :func:`any_arity`'s (#297)."""
     if fn in POWER:
         return power(gen)
+    if fn in PRODUCT:
+        return product(gen)
     if getattr(gen, 'schemas', ()):
         return any_arity(fn.__name__, gen, dict(ARGUMENTS).get(fn), fn in LEAVE_OUT_WIDE)
     if not getattr(gen, 'plain', True):
@@ -526,23 +530,45 @@ def _atom(pred, sign, obj):
 
 def any_arity(tag, gen, arguments=None, leave_out_wide=False):
     """The template of a function of any number of arguments from its rows
-    (``gen``): the rows without a star for a node of their number of
+    (``gen``): the block of :func:`rows_block` over the node's arguments,
+    then the wide formulas (:func:`wide_formulas`).  ``arguments`` gives
+    the arguments of a node (Piecewise's values), None for no facts;
+    ``leave_out_wide`` is :func:`expand`'s."""
+    block = rows_block(tag, gen, leave_out_wide)
+
+    def template(expr):
+        args = expr.args if arguments is None else arguments(expr)
+        if args is None:
+            return None
+        wide = _wide_of(gen, expr, args)
+        return [block(args, expr), *wide] if wide else block(args, expr)
+    template.__name__ = template.__qualname__ = f'{tag}_rows_templates'
+    template.__module__ = gen.__module__
+    return template
+
+
+def _wide_of(gen, expr, args):
+    """The wide formulas of a node of the arguments ``args``."""
+    if len(args) <= SOME_PER_ARGUMENT:
+        return []
+    return wide_formulas(gen.schemas, expr, args, consts_of(args))
+
+
+def rows_block(tag, gen, leave_out_wide=False):
+    """``block(args, expr)``: the block of the rows (``gen``) of a function
+    of any number of arguments over the arguments ``args`` and the node
+    ``expr``: the rows without a star for a node of their number of
     arguments, with a shape for the nodes that match it (a constant, a
     ``coefficient``, a number) and the terms of the constant
     (``2*coefficient``) after the node, computed when the constant is a
     SymPy ``Number``; then the rows with a star (:func:`expand`).  The
     pattern is keyed ``pattern_key(tag, n, consts)``, as the templates
-    before the rows were (``'add'``, ``'mul'``, ``'Max'``), and the wide
-    formulas (:func:`wide_formulas`) come after the block.  ``arguments``
-    gives the arguments of a node (Piecewise's values), None for no facts;
-    ``leave_out_wide`` is :func:`expand`'s."""
-    of_constant = {}
+    before the rows were (``'mul'``, ``'Max'``)."""
     for n, ts in gen.terms.items():
-        for k, t in enumerate(ts, n + 1):
+        for t in ts:
             if t[0] != 'of_constant':
                 raise ValueError(f"{tag}: a row of {n} arguments has the term {t}: only terms "
                                  "of the constant are built for a function of any arity")
-            of_constant.setdefault(n, []).append((k, t[1], t[2]))
     for rs in gen.specs.values():
         for r in rs:
             if len(r) > 2 and any(s is not None and s[0] in ('same', 'head') for s in r[2]):
@@ -550,31 +576,59 @@ def any_arity(tag, gen, arguments=None, leave_out_wide=False):
                                  "a function of any arity does not key")
     nterms = {n: len(ts) for n, ts in gen.terms.items()}
 
-    def template(expr):
-        args = expr.args if arguments is None else arguments(expr)
-        if args is None:
-            return None
+    def block(args, expr):
         n = len(args)
         consts = consts_of(args)
         objs = (*args, expr) + (None,) * nterms.get(n, 0)
+        return facts(pattern_key(tag, n, consts),
+                     lambda: rules_for(gen, args, consts, leave_out_wide), consts, objs, n)
+    return block
 
-        def build():
-            for k, i, t in of_constant.get(n, ()):
-                c = consts.get(i)
-                if c is not None and c.is_Number:
-                    consts[k] = constant_value(t, c)
-            out = []
-            for r in gen.specs.get(n, ()):
-                if len(r) > 2 and not matches(r[2], args, consts):
-                    continue
-                if any(k > n and k not in consts for k, _, _ in (*r[0], *r[1])):
-                    continue            # a term of a constant that is no Number
-                out.append((list(r[0]), list(r[1])))
-            return out + expand(gen.schemas, n, consts, leave_out_wide)
 
-        block = facts(pattern_key(tag, n, consts), build, consts, objs, n)
-        wide = wide_formulas(gen.schemas, expr, args, consts)
-        return [block, *wide] if wide else block
-    template.__name__ = template.__qualname__ = f'{tag}_rows_templates'
+def rules_for(gen, args, consts, leave_out_wide=False):
+    """The rules of :func:`rows_block` for a node of the arguments
+    ``args`` with the constants ``consts``, to which the values of the
+    terms of the constant are added (by slot)."""
+    n = len(args)
+    for k, (_, i, t) in enumerate(gen.terms.get(n, ()), n + 1):
+        c = consts.get(i)
+        if c is not None and c.is_Number:
+            consts[k] = constant_value(t, c)
+    out = []
+    for r in gen.specs.get(n, ()):
+        if len(r) > 2 and not matches(r[2], args, consts):
+            continue
+        if any(k > n and k not in consts for k, _, _ in (*r[0], *r[1])):
+            continue            # a term of a constant that is no Number
+        out.append((list(r[0]), list(r[1])))
+    return out + expand(gen.schemas, n, consts, leave_out_wide)
+
+
+#: the functions whose template is :func:`product`'s: the rows over each
+#: tuple of factors of the node, then ``a/v**k``
+PRODUCT = (Mul,)
+
+
+def product(gen):
+    """The template of ``Mul`` from its rows (``templates/mul.py``): the
+    block of the rows (:func:`rows_block`, keyed ``'mul'``) over each tuple
+    of factors ``core._mul_factor_sets`` gives (the arguments, then the
+    products another template derives from them, related to the node by
+    the same rows), then ``a/v**k`` (``core._quotient_templates``), then
+    the wide formulas of the arguments (:func:`wide_formulas`: the zero
+    row past :data:`SOME_PER_ARGUMENT` factors)."""
+    block = rows_block('mul', gen)
+
+    def template(expr):
+        args = expr.args
+        if not args:
+            return ()
+        out = [block(fs, expr) for fs in _mul_factor_sets(expr)]
+        quot = _quotient_templates(expr)
+        if quot is not None:
+            out.append(quot)
+        out += _wide_of(gen, expr, args)
+        return out if len(out) > 1 else out[0]
+    template.__name__ = template.__qualname__ = 'mul_rows_templates'
     template.__module__ = gen.__module__
     return template

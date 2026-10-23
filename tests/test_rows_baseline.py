@@ -119,10 +119,14 @@ def selection_nodes(head):
 #: its baseline
 SHAPED = {'power': pow_nodes, 'selection': selection_nodes}
 
+#: families without a baseline yet: the rows of Mul, whose baseline the
+#: next step of #299 (U2) writes
+NOT_YET = ('mul',)
+
 
 def functions():
     """``(family, name, head, n, node)`` for each function of the compiled
-    rows and each number ``n`` of its arguments, ``node`` the node of
+    rows (but those of :data:`NOT_YET`) and each number ``n`` of its arguments, ``node`` the node of
     plain symbols; for a family of :data:`SHAPED`, for each of its nodes,
     ``n`` the text of the node.  ``head`` and ``node`` are None where this
     SymPy lacks the function (``owens_t`` before SymPy 1.15)."""
@@ -133,6 +137,8 @@ def functions():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
+        if family in NOT_YET:
+            continue
         for name, _, _, specs, *_ in fns:
             head = declared[family, name]
             if family in SHAPED:
