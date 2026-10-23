@@ -7,8 +7,8 @@ premises over argument facts and conclusion facts, interpreted by
 ``satassume/knowledge/templates/table.py`` through the spec builders of
 ``_common``).  The functions as they were at 876f37d are kept verbatim in
 ``tests/_legacy_core_rules.py``.  (``POW_TABLE`` is now rows,
-``templates/power.py``, #294: ``tests/test_power_rows.py`` compares them
-with the table; Pow nodes stay in the corpus here for ``E**(I*pi*c*s)``,
+``templates/power.py``, #294, checked by ``tests/test_rows_numeric.py`` and
+``tests/test_rows_baseline.py``; Pow nodes stay in the corpus here for ``E**(I*pi*c*s)``,
 whose rules are ``IPI_TABLE``'s.)  For every node, the compiled clauses of
 every template block (and the plain formulas) are computed once with the
 tables and once with the legacy functions patched in, each from empty
