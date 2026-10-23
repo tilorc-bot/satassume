@@ -126,9 +126,8 @@ def mul_nodes(head=Mul):
     (around the limits ``at_most`` 2, 4 and 6), a coefficient and a factor
     (a positive, a negative, a rational, half an odd integer, a float,
     ``-1``, an infinity, and ``pi``, which is no coefficient), each with
-    every factor kept (``evaluate=False``), and SymPy's ``3*x0*x1`` (with the
-    block of its factor set ``(3, x0*x1)``) and ``x0/x1**2`` (with
-    ``a/v**k``), ``I*pi*x0/3`` (with the factor set of ``I*pi*c*s``); and of
+    every factor kept (``evaluate=False``), and SymPy's ``3*x0*x1`` and
+    ``x0/x1**2`` (with ``a/v**k``), ``I*pi*x0/3``; and of
     12 and 32 factors (up to the ``at_most=32`` of the rows that past it are
     one formula, which is not frozen here), so that a narrower row is seen
     (a node of one factor, which SymPy does not build or print, is in

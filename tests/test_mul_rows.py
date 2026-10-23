@@ -87,7 +87,7 @@ def test_every_compiled_rule_is_used():
     gen = generator(name, arity, terms, specs, FAMILY, schemas)
     rules = [_single(gen, schema=s) for s in gen.schemas]
     rules += [_single(gen, spec=sp) for sp in gen.specs[2]]
-    assert len(gen.schemas) == 51 and len(gen.specs[2]) == 29
+    assert len(gen.schemas) == 52 and len(gen.specs[2]) == 29
     nodes = [e for n in ARITIES for e in pattern_nodes(n)]
     no_rule, no_clause = set(range(len(rules))), set(range(len(rules)))
     try:
@@ -116,9 +116,13 @@ def test_the_pattern_keys_are_legacys():
 
 def test_the_blocks_of_a_node():
     # one block per factor set, then a/v**k, then past 32 factors the zero
-    # row as one formula; a block of two factors has a slot for 2*coefficient
+    # row as one formula; a block of two factors has a slot for 2*coefficient.
+    # 3*x*y has no block over (3, x*y): its sign against x*y is the relation
+    # glue's (relations "Products", #315)
     out, _ = run(rows_template(), 3*x*y)
-    assert [c.objs for c in out] == [(3, x, y, 3*x*y), (3, x*y, 3*x*y, None)]
+    assert [c.objs for c in out] == [(3, x, y, 3*x*y)]
+    out, _ = run(rows_template(), 3*x)
+    assert [c.objs for c in out] == [(3, x, 3*x, None)]
     out, _ = run(rows_template(), x/y**2)
     assert len(out) == 2 and out[1].objs == (x, y, y**-2, x/y**2)
     xs = symbols('a:40')

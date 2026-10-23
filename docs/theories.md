@@ -344,6 +344,19 @@ replaced the half-integer hook of the Add template. Not done: other
 moduli (`u/4 in Z`; a Hermite normal form would decide them), and
 propagation (the check is lazy: `implied` does not see it).
 
+**Products** (#315 step 4). A product of two symbolic factors or more is
+one opaque term, so `-x*y` is `-1*m` and `3*x*y - 3` is `3*m - 3` for
+`m = x*y`, and the order links of two such arguments already compare
+them. The glue is on for two sign atoms on different arguments whose
+forms hold the same product (twins, `relations.py` "Products"), and a
+linked `e` with the form `c*m + k` (Rational `c`) gets `real(e) <->
+real(m)`, the finiteness `positive` needs: `Q.positive(-x*y)` under
+`Q.negative(x*y)` is True through it. This replaced the factor set
+`(c, rest)` of the Mul template. A half product (`3*k*e/2`) is a half sum
+of one term for the parity check. No sign-of-product lemmas: linking
+the factors as well added no answer on the refine stream or gate2, since
+the links already carry the Mul rows' sign facts into the theory.
+
 **Constants.** `pi`, `E`, `exp(n)`, rational powers of rationals
 (`sqrt(2)`) with `+ - * /` and integer powers, and every other closed real
 constant with rigorous bounds (`log(2)`, `sin(1)`, `2**pi`;

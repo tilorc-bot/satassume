@@ -116,6 +116,14 @@ atoms (`scope.extension_atoms`: `Extensions.facts_for`, transitively):
   (`RECIP_LINKS` for `t = 1/v`). `Engine.is_(node, pred)` has the scope of
   `P(pred, node)` alone (`Engine._free_scope`): the glue exactly when that
   atom has such twins;
+- the twins of products (#315 step 4, prototype; `relations.bound_twins`):
+  a sign atom on `e` whose linear form holds a product `m` of two symbolic
+  factors or more (`relations.product_terms`: `x*y` of `-x*y`, `3*x*y`,
+  `x*y - 1`), with a sign atom of `A` or `p` on a different argument
+  holding the same `m` (not both sums: those are an affine pair), gets the
+  twin `lt(0, e)`; an `integer` atom on a half product `c*m` (`c` with
+  denominator 2, `3*k*e/2`) gets the parity twins of a half sum of one
+  term;
 - `transfer` iff `glue` and the relation atoms make an equality: an `eq`
   atom, or an order atom and its reverse (`transfer.transfer_wanted`; the pair
   is what `Relations._trichotomy` relates, so `Q.le(x, y) & Q.ge(x, y)`

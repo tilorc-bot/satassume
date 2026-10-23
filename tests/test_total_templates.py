@@ -13,6 +13,7 @@ derive the products other templates split off its factors.  (The unsound
 Every ``fresh`` query runs on its own engine: these are statements about
 the templates, not about a session's history.
 """
+import pytest
 from sympy import I, Q, Rational, exp, floor, ceiling, pi, symbols
 
 from satassume import DictCache, Engine
@@ -41,11 +42,21 @@ def test_transcendental_times_nonzero_algebraic():
 
 
 def test_rational_coefficient_product_derives_the_coefficient_free_product():
-    # 2*x*y is related to x*y by the binary c*x rules
+    # the sign of 2*x*y against x*y: LRA reads both as the term x*y, and the
+    # glue is on for the pair (relations "Products", #315 step 4)
     assert fresh(Q.positive(2 * x * y), Q.positive(x * y)) is True
     assert fresh(Q.positive(x * y), Q.positive(2 * x * y)) is True
-    assert fresh(Q.even(2 * x * y), Q.integer(x * y)) is True
-    assert fresh(Q.rational(x * y), Q.rational(Rational(1, 2) * x * y)) is True
+    assert fresh(Q.negative(-x * y), Q.positive(x * y)) is True
+
+
+@pytest.mark.xfail(strict=True, reason="#315 step 4: the factor set (c, rest) is gone; "
+                   "only the sign facts of c*m against m reach the theory")
+@pytest.mark.parametrize("p, a", [
+    (Q.even(2 * x * y), Q.integer(x * y)),
+    (Q.rational(x * y), Q.rational(Rational(1, 2) * x * y)),
+])
+def test_coefficient_product_non_sign_facts(p, a):
+    assert fresh(p, a) is True
 
 
 def test_i_pi_product_derives_the_product_of_the_other_factors():

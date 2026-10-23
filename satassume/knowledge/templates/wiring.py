@@ -617,11 +617,13 @@ PRODUCT = (Mul,)
 def product(gen):
     """The template of ``Mul`` from its rows (``templates/mul.py``): the
     block of the rows (:func:`rows_block`, keyed ``'mul'``) over each tuple
-    of factors ``core._mul_factor_sets`` gives (the arguments, then the
-    products another template derives from them, related to the node by
-    the same rows), then ``a/v**k`` (``core._quotient_templates``), then
+    of factors ``core._mul_factor_sets`` gives (the arguments, then
+    ``I*pi*c*s`` with the product ``s`` as one factor, which the
+    ``exp(I*pi*c*s)`` rules derive), then ``a/v**k`` (``core._quotient_templates``), then
     the wide formulas of the arguments (:func:`wide_formulas`: the zero
-    row past :data:`SOME_PER_ARGUMENT` factors)."""
+    row past :data:`SOME_PER_ARGUMENT` factors).  The sign of ``c*m``
+    against ``m`` for a product ``m`` (``-x*y`` and ``x*y``) is the relation
+    glue's (``relations.PRODUCTS``, #315)."""
     block = rows_block('mul', gen)
 
     def template(expr):

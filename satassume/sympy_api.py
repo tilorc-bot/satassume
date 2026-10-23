@@ -639,8 +639,8 @@ def _ask_general(proposition, assumptions, eng: Engine) -> Optional[bool]:
 # context-free clauses of a ``K`` term fix every predicate of its block but
 # ``polar`` (``tests/test_relevance.py::test_unkeyed_constants_are_decided``),
 # and templates derive closed nodes only from closed nodes (``b - 1``,
-# ``2*e`` need a non-number base or exponent; a Mul's coefficient-free
-# rest and the ``s`` of ``I*pi*c*s`` keep the Mul's symbols), while a ``K``
+# ``2*e`` need a non-number base or exponent; the ``s`` of ``I*pi*c*s``
+# keeps the Mul's symbols), while a ``K``
 # term derives none; so the solver variables two components can share
 # through ``K`` terms are fixed, and an assumption about such a term is
 # either already implied (nothing to carry) or contradicts its own

@@ -18,7 +18,12 @@ atom of a kind that the session meets:
   relation atoms ``lt(0, t)`` folded in by :func:`scope_of_atoms` like the
   zero twins below: a sign atom on a sum ``c0 + c1*u`` (at any depth) or
   on an application reading ``v + c`` (``log(v)``), over a symbol with an
-  integer premise, has the glue, which links the sum and ``u``;
+  integer premise, has the glue, which links the sum and ``u``; so do two
+  sign atoms on different arguments whose linear forms hold the same
+  product ``m`` (``-x*y`` and ``x*y``, ``3*x*y`` and ``x*y - 1``: the twin
+  of each formula's own argument, relations "Products"), and an
+  ``integer`` atom on a half sum or a half product (``3*k*e/2``,
+  relations "Parity");
 * ``transfer``: predicate transfer (:mod:`satassume.theories.transfer`: the terms
   of one EUF class share their unary facts).  On iff the relation atoms of
   ``a`` and ``p`` make an equality: an ``eq`` atom (``ne`` is its

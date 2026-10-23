@@ -315,6 +315,46 @@ the twins are those of the sum and of each ``u``, so that each ``u`` gets
 its integrality and parity links (``(-1)**x``, odd by the rows of Pow,
 reaches the theory only through its own links).
 
+Products
+--------
+LRA reads a product of two factors over symbols or more as one opaque
+term: ``-x*y`` is ``-1*m`` and ``3*x*y - 3`` is ``3*m - 3`` for ``m =
+x*y`` (:func:`product_terms`).  So the order links of ``-x*y`` and ``x*y``
+already relate their signs; what was missing is the glue in the sessions
+that need it, and the finiteness that ``positive`` adds to
+``extended_positive`` (#315 step 4, replacing the factor set ``(c, rest)``
+of the Mul template, ``core._mul_factor_sets``, which related ``c*m`` to
+``m`` by the Mul rows):
+
+* the glue is on (twins of :func:`bound_twins`) for a sign atom on an
+  argument whose linear form holds a product ``m``, when another sign atom
+  of the formula or its context is on a different argument that holds the
+  same ``m`` (``Q.positive(-x*y)`` under ``Q.negative(x*y)``; two sums are
+  :func:`scope.affine_pair`'s): the twin is ``lt(0, e)`` of the formula's
+  own argument ``e``;
+* a linked ``e`` whose form is ``c*m + k``, one opaque product ``m``
+  with a Rational ``c``, gets ``real(e) <-> real(m)`` under its link
+  selector (``Relations._link_real``).  Sound: ``c != 0`` (a form keeps no
+  zero coefficient) and ``k`` is a finite real; a finite real ``m`` gives
+  a finite real ``c*m + k``, and an infinite, ``nan`` or non-real ``m``
+  gives an infinite, ``nan`` or non-real value.  ``e`` is that value: the
+  form reads ``m`` as the kept product of the symbolic factors of ``e``
+  (#161), and a product of SymPy values is associative (``0*oo`` is
+  ``nan`` in any grouping);
+* a half product ``c*m`` (``c`` with denominator 2, ``m`` a product of
+  factors over symbols, ``3*k*e/2``) is a half sum of one term
+  (:func:`half_terms`): its integrality is the parity theory's.
+
+What the factor set gave beyond these (``imaginary(2*x*y)`` from
+``imaginary(x*y)``, likewise ``rational``, ``irrational``, ``finite``,
+``even`` of ``2*x*y``; and every fact of ``c*m`` from ``m`` outside the
+pairs above) is not carried: no measured workload asked for it.  The
+polar fact of ``2*exp_polar(I*pi)*p`` is a row of ``templates/mul.py``
+("one positive factor, the others polar").  No product lemmas: with the
+factors linked as well, the Mul rows over the factors' sign atoms gave
+no further answer on the refine stream and gate2 (the links translate
+each row into the theory's terms already).
+
 Constant terms
 --------------
 ``pi``, ``E`` and rational powers of rationals (``sqrt(2)``), with
@@ -559,7 +599,9 @@ def half_terms(e) -> Optional[list]:
     1/2``, ``x/2 + y/2``); None for any other ``e``.  The syntactic test of
     the half-integer hook it replaces, less the sums whose only half is
     ``c0`` (``n + 1/2``: an integer plus a number that is none, which the
-    rows of Add decide)."""
+    rows of Add decide).  A half product ``c*m`` (``c`` with denominator
+    2, ``m`` a product of factors over symbols: ``3*k*e/2``) is the half
+    sum of one term, ``[m]`` (see "Products")."""
     if PRODUCTS and getattr(e, "is_Mul", False):
         # c*m, c with denominator 2 and m a product: the Mul rows read
         # c*u for one factor u only (templates/mul.py, "Half an odd
@@ -951,7 +993,7 @@ def _bound_nodes(e) -> tuple:
     """``(sums, shifts, halves)`` of ``e`` (an atom's argument, or the tuple of a
     relation's sides): ``sums`` the sums with a Rational term among ``e``
     and its subterms, no number; ``halves`` the half sums among them
-    (:func:`half_terms`, with or without a Rational term); ``shifts`` the pairs ``(u, u + c)`` of the
+    (:func:`half_terms`, with or without a Rational term, and the half products); ``shifts`` the pairs ``(u, u + c)`` of the
     applications in ``e`` of a function whose rows use a term ``u + c`` of
     an argument ``u`` (:func:`_shift_table`), ``u`` no number, with the
     term as the template builds it (``_common.shifted``).  Memoized per
@@ -1078,7 +1120,11 @@ def _bound_twins(atoms, context=()) -> list:
       ``v`` with a premised symbol: the twins of
       ``v`` and ``v + c``, so that both are linked (``v + c`` is a node
       the template derives, which no atom names), and of the terms ``u``
-      as above where ``v`` or ``v + c`` is such a sum.
+      as above where ``v`` or ``v + c`` is such a sum;
+    * a sign atom on ``e`` whose linear form holds a product ``m``
+      (:func:`product_terms`), with another sign atom among ``atoms`` and
+      ``context`` on a different argument holding ``m``, not both sums:
+      the twin of ``e`` (see "Products").
 
     In first-seen order; a pure function of the two atom sequences."""
     premised = {}
