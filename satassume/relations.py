@@ -533,6 +533,14 @@ BOUNDS = True
 #: sum (:func:`half_terms`) in the argument of a vocabulary atom
 PARITY = True
 
+#: the sign of a product in the theory (see "Products"): a sign atom on a
+#: product ``c*m`` (``m`` a product of factors over symbols) whose ``m``
+#: is an opaque term of another sign atom's linear form switches the glue
+#: on (the twins of :func:`bound_twins`), and a linked ``c*m`` gets the link
+#: ``real(c*m) <-> real(m)``; the half products ``c*m`` (``c`` with
+#: denominator 2) are half sums (:func:`half_terms`)
+PRODUCTS = True
+
 #: those whose atoms on a half sum switch the glue on (the twins of
 #: :func:`bound_twins`): ``integer`` alone; an atom of any predicate with a
 #: half sum strictly inside its argument does too (``exp(I*pi*h)``: the
@@ -552,6 +560,14 @@ def half_terms(e) -> Optional[list]:
     the half-integer hook it replaces, less the sums whose only half is
     ``c0`` (``n + 1/2``: an integer plus a number that is none, which the
     rows of Add decide)."""
+    if PRODUCTS and getattr(e, "is_Mul", False):
+        # c*m, c with denominator 2 and m a product: the Mul rows read
+        # c*u for one factor u only (templates/mul.py, "Half an odd
+        # integer times an integer"), and LRA reads m as one term
+        c, u = e.as_coeff_Mul()
+        if c.is_Rational and c.q == 2 and _product_term(u) is u:
+            return [u]
+        return None
     if not getattr(e, "is_Add", False):
         return None
     half = False
@@ -571,6 +587,32 @@ def half_terms(e) -> Optional[list]:
     if len(consts) > 1 and any(c.q == 2 for c in consts):
         half = True                 # unevaluated: Add(x, 1/2, 1/2) is x + 1
     return out if half and out else None
+
+
+def _product_term(t):
+    """The opaque term LRA reads ``t`` by when ``t`` is a product of two
+    factors over symbols or more (``lra_adapter._lin``): ``t`` itself
+    without number factors (``x*y``), else the kept product of its
+    symbolic factors (``x*y`` of ``-3*x*y`` and ``pi*x*y``); else None."""
+    if not getattr(t, "is_Mul", False):
+        return None
+    rest = [f for f in t.args if f.free_symbols]
+    if len(rest) < 2:
+        return None
+    if len(rest) == len(t.args):
+        return t
+    from .knowledge.domain import kept_product
+    return kept_product(rest)
+
+
+def product_terms(e) -> tuple:
+    """The opaque products of the linear form of ``e`` (:func:`_product_term`
+    of ``e``, or of the terms of a sum ``e``): ``(x*y,)`` for ``-x*y``,
+    ``3*x*y`` and ``x*y - 1``; ``()`` when there is none."""
+    if getattr(e, "is_Add", False):
+        return tuple(m for m in map(_product_term, e.args) if m is not None)
+    m = _product_term(e)
+    return () if m is None else (m,)
 
 
 _OPS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
@@ -924,6 +966,10 @@ def _bound_nodes(e) -> tuple:
         if not isinstance(side, Basic):
             continue
         for x in preorder_traversal(side):
+            if PRODUCTS and x.is_Mul:
+                if half_terms(x) is not None and x not in halves:
+                    halves.append(x)
+                continue
             if x.is_Add:
                 if (not _is_number(x) and any(t.is_Rational for t in x.args)
                         and x not in sums):
@@ -1092,6 +1138,22 @@ def _bound_twins(atoms, context=()) -> list:
                     add(u)
                     if not _is_number(d):
                         add(d)
+    if PRODUCTS:
+        # a sign atom on c*m (or a sum with the term c*m) and another on a
+        # different argument whose linear form holds the same product m:
+        # only the links relate the two (``-x*y`` and ``x*y``); two sums
+        # are scope.affine_pair's already
+        signed: dict = {}
+        for seq in (atoms, context):
+            for a in seq:
+                if a.pred in SIGN_PREDS and a.expr not in signed:
+                    signed[a.expr] = frozenset(product_terms(a.expr))
+        for a in atoms:
+            e = a.expr
+            ms = signed.get(e) if a.pred in SIGN_PREDS else None
+            if ms and any(ms & o for f, o in signed.items() if f != e
+                          and not (e.is_Add and f.is_Add)):
+                add(e)
     return out
 
 
@@ -1985,10 +2047,30 @@ class Relations:
                     ad = self._adapter(spec)
                     if hasattr(ad, "integer_form"):
                         self._link_integer(ad, e, g)
+                        if PRODUCTS and product_terms(e):
+                            self._link_real(ad, e, g)
         if BOUNDS:
             self._link_bounds(e, g)
         if "parity" in self.kinds:
             self._link_parity(e, g)
+
+    def _link_real(self, ad, e, g: int) -> None:
+        """``real(e) <-> real(m)`` for an ``e`` whose linear form in ``ad``
+        is ``c*m + k``, one opaque product ``m`` with a Rational ``c``
+        (``-x*y``, ``3*x*y - 3``; see "Products"), under the link selector
+        of ``e`` (``g`` its negation)."""
+        form = ad.integer_form(e)
+        if form is None or len(form[0].terms) != 1:
+            return
+        m, c = form[0].terms[0]
+        if m == e or type(c) is not Fraction or _product_term(m) is not m:
+            return
+        s = self.session
+        s.ensure(e, {"real"})
+        s.ensure(m, {"real"})
+        r, rm = s.var("real", e), s.var("real", m)
+        s.emit([-r, rm, g])
+        s.emit([-rm, r, g])
 
     def _link_parity(self, e, g: int) -> None:
         """``guard -> (even(e) <-> i0)`` and ``guard -> (odd(e) <-> i1)``

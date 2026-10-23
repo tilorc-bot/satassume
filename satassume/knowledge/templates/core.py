@@ -128,27 +128,16 @@ def _imag_templates(expr, terms):
 
 def _mul_factor_sets(expr):
     """The factor tuples whose Mul blocks ``wiring.product`` emits for
-    ``expr``: its arguments, then the derived products."""
-    args = expr.args
-    n = len(args)
-    # A product that another template derives from this Mul's factors is
-    # a derived node here too, related to the Mul by the Mul rules over
-    # (constants, product): the Mul's own block knows its factors, not the
-    # product of a subset of them, so without this the deriving block
-    # relates a node to a term nothing constrains (a non-total block,
-    # tools/totality.py; the relation must sit in the block whose node
-    # is the Mul, not in the deriving block, which is local to its node).
-    out = [args]
-    c = args[0]
-    if n >= 3 and c.is_Rational and not c.is_zero:  # sympy-boundary: c Rational
-        # c*t: the coefficient-free t of the half-integer split of an Add
-        # (x + I*pi*(4*n + 1)/2 derives I*pi*(4*n + 1))
-        rest = kept_product(args[1:])
-        if rest is not None:
-            out.append((c, rest))
+    ``expr``: its arguments, then ``I*pi*c*s`` with ``s`` a product as a
+    factor (the ``s`` of ``exp(I*pi*c*s)`` and ``E**(I*pi*c*s)``, which
+    ``ipi_split`` derives: the Mul's own block knows its factors, not the
+    product of a subset of them, so without this the deriving block
+    relates a node to a term nothing constrains, a non-total block,
+    ``tools/totality.py``).  The sign of ``c*m`` against ``m`` (``-x*y``
+    and ``x*y``) is the relation glue's (``relations.PRODUCTS``, #315)."""
+    out = [expr.args]
     split = ipi_split(expr)
     if split is not None and split[1] is not None and split[1].is_Mul:
-        # I*pi*c*s: the s of exp(I*pi*c*s) and E**(I*pi*c*s)
         c, s_ = split
         out.append(((c,) if c is not S.One else ()) + (S.ImaginaryUnit, S.Pi, s_))
     return out

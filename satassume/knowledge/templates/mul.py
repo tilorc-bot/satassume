@@ -13,7 +13,7 @@ are the others; ``f(coefficient, factor)`` is a product of two factors
 whose first is a SymPy ``Number`` (the numeric coefficient of ``2*x``,
 ``-x``, ``x/2``), and ``f(-1, factor)`` is ``-x``.  The template applies
 the rows to each tuple of factors ``core._mul_factor_sets`` gives (the
-arguments, then products derived from them), adds ``a/v**k``
+arguments, then ``I*pi*c*s`` with the product ``s`` as one factor), adds ``a/v**k``
 (``core._quotient_templates``), and past 32 factors states the zero row
 as one formula (``wiring.product``).  A row with ``at_most`` is left out
 of wider products, a limit on the cost.
@@ -62,6 +62,13 @@ RULES = (
     # Polar: one polar factor, the others positive
     for_all((Mul,),
         (Predicate('polar')(factor) & every(Q.positive, factors))
+        >> Predicate('polar')(f(factor, *factors)), at_most=32),
+
+    # Polar: one positive factor, the others polar
+    #     the product of the others is polar (above), and so is a positive
+    #     number times it (2*exp_polar(I*pi)*p)
+    for_all((Mul,),
+        (Q.positive(factor) & every(Predicate('polar'), factors))
         >> Predicate('polar')(f(factor, *factors)), at_most=32),
 
     # --- zero ---
