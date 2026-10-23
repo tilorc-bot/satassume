@@ -129,16 +129,15 @@ fixes, a missing rule that follows from the spec, refactors with
 identical answers, speedups with no changed answers, new tests, and docs
 that only describe. When unsure, apply it.
 
-The PR description says why, one visible "**Needs your decision:**" line
-per decision, near the top (the description style is #255). Next to it, a
-labelled PR must carry a short "**Why a human:**" justification: (a) which
-of the criteria above it meets, by number, and (b) why it is worth a
-human's time, that is, what goes wrong or is lost if it is not reviewed
-or not merged. For example:
+A labelled PR, and only a labelled PR, has a visible "**Needs your
+decision:**" line near the top of its description, one per decision. Each
+line says (a) what is to be decided, (b) which of the criteria above it
+meets, by number, and (c) why it is worth a human's time, that is, what
+goes wrong or is lost if it is not reviewed or not merged. For example:
 
-> **Why a human:** criterion 2: three queries go from True to None.
-> Unreviewed, SymPy code that relies on those answers could break
-> silently; unmerged, the three wrong True answers stay.
+> **Needs your decision:** whether three queries may go from True to None
+> (criterion 2). Unreviewed, SymPy code that relies on those answers could
+> break silently; unmerged, the three wrong True answers stay.
 
 Before applying the label, try to remove its reason: a change that does
 the PR's job and keeps the check, the answers or the convention the
@@ -147,7 +146,7 @@ one where avoiding it costs more than the decision is worth (#290: #287
 deleted the legacy generators together with the equivalence tests that
 compared against them, weakening a check; freezing the rows' clauses as
 data kept the check, and no human was needed). A labelled PR lists what
-it tried in a collapsed block below "**Why a human:**": the owner needs
+it tried in a collapsed block below those lines: the owner needs
 to know that it was tried, not to read the attempts. For example:
 
 > <details><summary>Tried first</summary>
@@ -160,6 +159,27 @@ to know that it was tried, not to read the attempts. For example:
 The label is a convention: nothing enforces it. A required status check
 that fails while the label is present would block the merge, but the
 owner has to add that workflow (see "GitHub", item 2).
+
+## PR descriptions
+
+A PR description is written for a reader who knows SymPy and the
+mathematics and knows at a high level what satassume does, but does not
+know this codebase.
+
+1. Start with one concise, plain sentence on what changes, in SymPy terms.
+2. When answers change, follow it with a small code example of queries
+   with the answer before and after.
+3. Do not assume knowledge of the codebase: in the visible part, name
+   SymPy functions and the mathematics, not satassume's modules or
+   functions.
+4. Put implementation details, how the change was built, lists of tests
+   and gates, and reviews in collapsed `<details>` blocks, one per topic.
+   The checklist in "Reporting a PR" lists what goes in them. GitHub
+   renders Markdown inside a block only when a blank line follows the
+   `<summary>` line.
+5. A PR with the `needs-human` label has visible "**Needs your
+   decision:**" lines, written as "The `needs-human` label" describes. A
+   PR without the label has none.
 
 ## Reporting a PR
 
