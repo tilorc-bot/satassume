@@ -36,9 +36,11 @@ Without ``--corpus``/``--stream`` only the synthetic list of ``load_exprs``
 is checked (about 2 s); with both, every subexpression of the corpus and
 the refine stream (about 380 blocks, about 6 s).
 
-For a Mul node the clauses come from rows (``templates/mul.py``, #299):
-each fired clause of a non-total block is printed with the rows that emit
-it, as ``tools/show_rows.py Mul`` prints them (:func:`row_provenance`).  A
+For a Mul or an Add node the clauses come from rows (``templates/mul.py``,
+``templates/add.py``, #299): each fired clause of a non-total block is
+printed with the rows that emit it, as ``tools/show_rows.py Mul`` prints
+them (:func:`row_provenance`; not those of Add's sums of a special shape,
+which are not rows).  A
 Pow node's clauses come from rows too (``templates/power.py``, #294), as a
 function's do: ``tools/show_rows.py Pow`` prints them, with their titles.
 ``--tables`` prints the rule table of ``exp(I*pi*c*s)``
@@ -485,8 +487,8 @@ def run(exprs, depth=1, independent=False, models=None):
 
 
 def fired_rows(e, pat, fired):
-    """For each fired clause, the rows that emit it (Mul nodes; ``[]`` for
-    a clause of another template)."""
+    """For each fired clause, the rows that emit it (Mul and Add nodes;
+    ``[]`` for a clause of another template)."""
     prov = {}
     for name, clause in row_provenance(e):
         prov.setdefault(clause, []).append(name)
@@ -497,41 +499,44 @@ def fired_rows(e, pat, fired):
     return out
 
 
-_MUL_ROWS = []
+_ROWS = {}
 
 
-def _mul_rows():
-    """``(text, gen)`` for each row of ``templates/mul.py``: the row as
-    ``tools/show_rows.py`` prints it (title and row), and the compiled
-    rules of that row alone."""
-    if not _MUL_ROWS:
-        from sympy import Mul
+def _rows_of(head):
+    """``(text, gen)`` for each row of the function ``head`` (``Mul``,
+    ``Add``): the row as ``tools/show_rows.py`` prints it (title and row),
+    and the compiled rules of that row alone."""
+    name = head.__name__
+    if name not in _ROWS:
         from satassume.knowledge.templates._rows import compile_rows, generator
         from show_rows import family_rows, text
-        for title, row in family_rows()["Mul"]:
-            c = compile_rows(Mul, [row])
-            _MUL_ROWS.append((f"{title}: {text(row, 'Mul')}",
-                              generator("Mul", *c[:3], __name__, *c[3:])))
-    return _MUL_ROWS
+        _ROWS[name] = []
+        for title, row in family_rows()[name]:
+            c = compile_rows(head, [row])
+            _ROWS[name].append((f"{title}: {text(row, name)}",
+                                generator(name, *c[:3], __name__, *c[3:])))
+    return _ROWS[name]
 
 
 def row_provenance(expr):
-    """For a Mul node: ``(row, clause)`` for every rule of the node's
-    blocks of rows (one per factor set, ``core._mul_factor_sets``),
-    resolved against the constants like the compiled block, with ``row``
-    the text of :func:`_mul_rows` and ``clause`` a frozenset of ``(object,
-    pred, positive)`` literals over the basis.  Empty for other nodes."""
-    from sympy import Mul
+    """For a Mul or an Add node: ``(row, clause)`` for every rule of the
+    node's blocks of rows (for a Mul one per factor set,
+    ``core._mul_factor_sets``; for an Add the one over its terms), resolved
+    against the constants like the compiled block, with ``row`` the text
+    of :func:`_rows_of` and ``clause`` a frozenset of ``(object, pred,
+    positive)`` literals over the basis.  Empty for other nodes."""
+    from sympy import Add, Mul
     from satassume.knowledge.rules import expand_clause
     from satassume.knowledge.templates._common import consts_of, resolve
     from satassume.knowledge.templates.core import _mul_factor_sets
     from satassume.knowledge.templates.wiring import rules_for
-    if not (isinstance(expr, Mul) and expr.args):
+    if not (isinstance(expr, (Mul, Add)) and expr.args):
         return []
+    head = Mul if isinstance(expr, Mul) else Add
     out = []
-    for f in _mul_factor_sets(expr):
+    for f in _mul_factor_sets(expr) if head is Mul else (expr.args,):
         objs = tuple(f) + (expr,)
-        for name, gen in _mul_rows():
+        for name, gen in _rows_of(head):
             consts = consts_of(f)
             try:
                 resolved = resolve(rules_for(gen, f, consts), consts)
