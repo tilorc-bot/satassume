@@ -159,7 +159,7 @@ def test_provenance_covers_every_clause_of_the_add_rows():
             compiled, _ = registry.clauses_for(a)
             for c in compiled:
                 if tuple(c.objs) != a.args + (a,):
-                    continue    # a sum of a special shape (core._half_templates, ...)
+                    continue    # a sum of a special shape (core._imag_templates)
                 blocks += 1
                 for lits, _, _ in c.pattern.clauses:
                     cl = frozenset((c.objs[k], BASIS[i], not neg) for k, i, neg in lits)

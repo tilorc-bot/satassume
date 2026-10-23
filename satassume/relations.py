@@ -280,6 +280,41 @@ the zero twins above, so that the scope, the selectors, the budget and
 the reference all see them.  A twin is the link atom ``0 < t`` itself,
 so it adds no clause the link of ``t`` does not have.
 
+Parity
+------
+For each linked ``e`` whose linear form LRA reads with rational
+coefficients and offset (``LRAAdapter.parity_form``), two more
+integrality atoms ``i0``, ``i1`` of the forms of ``e/2`` and ``(e - 1)/2``,
+under the guard and the link selector of the integrality link
+(``Relations._link_parity``, #315)::
+
+    real(u1) & ... & real(uk) -> (even(e) <-> i0)
+    real(u1) & ... & real(uk) -> (odd(e)  <-> i1)
+
+Under the guard ``e`` is the real value of its form; SymPy's ``even(e)``
+is "``e`` is an integer divisible by 2", which for a real ``e`` is ``e/2
+in Z``, and ``odd(e)`` is ``(e - 1)/2 in Z``.  Both are false for ``oo``,
+``zoo``, ``nan`` and non-real values, where the guard fails and the
+clauses say nothing.  LRA decides the integrality atoms of forms whose
+coefficients have denominators dividing 2 over integral variables as
+equations over GF(2) (:mod:`satassume.theories.lra.parity`): ``integer(k/2
++ 1/2)`` is the atom of ``k/2 + 1/2``, ``odd(k)`` the atom of ``k/2 -
+1/2``, and the two are one equation ``p_k = 1``.  This replaces the
+half-integer hook of the Add template (``core._half_rules``) with no
+limit on the number of odd terms (the hook enumerated ``2**k`` cases, at
+most 4).
+
+The links are made in sessions of the kind ``parity`` (:func:`bound_kinds`:
+a vocabulary atom whose argument holds a half sum, :func:`half_terms`).
+The glue is on for them (twins of :func:`bound_twins`) for an ``integer``
+atom on a half sum, or an atom of any predicate with a half sum strictly
+inside its argument (``exp(I*pi*(n/2 + 1/2))``), when every term ``u`` of
+the sum has no number factor and only free symbols that are declared
+integers or are premised by an atom not on the sum (:func:`_parity_terms`):
+the twins are those of the sum and of each ``u``, so that each ``u`` gets
+its integrality and parity links (``(-1)**x``, odd by the rows of Pow,
+reaches the theory only through its own links).
+
 Constant terms
 --------------
 ``pi``, ``E`` and rational powers of rationals (``sqrt(2)``), with

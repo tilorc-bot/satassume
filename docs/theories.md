@@ -325,8 +325,24 @@ simplex (Dutertre and de Moura, SRI-CSL-06-01, ch. 4), each branch a
 `push_level` with a literal-free bound, the conflict of two failed
 branches being the union of their explanations plus the integrality
 literal. At most `BRANCH_BUDGET = 16` branchings per `check`, then no
-conflict; no cuts or GCD test (`x in Z & x + 1/2 in Z` without bounds
+conflict; no cuts or GCD test (`x in Z & x + 1/3 in Z` without bounds
 stays undecided). `Q.ge(k, 1)` for an integer `k > 0` is True.
+
+**Parity** (#315 step 3). Before branching, `check` reads the asserted
+integrality literals whose forms have coefficients and offset in `Z/2`
+over variables asserted integral as equations over GF(2)
+(`satassume/theories/lra/parity.py`): with `p_i = u_i mod 2`, `f in Z`
+iff `sum((2*c_i mod 2)*p_i) = 2*k mod 2`, and `f not in Z` iff it is `1`
+more. Gaussian elimination, each row carrying its literals; `0 = 1` is a
+conflict of those literals and the integrality literals of the variables
+used. It runs only while a literal with a half (or a false one) is
+asserted. The glue links `even(e)` and `odd(e)` to the integrality atoms
+of `e/2` and `(e - 1)/2` (`relations.py`, "Parity") in sessions with a
+half sum, so `Q.integer(k/2 + 1/2)` under `Q.odd(k)` and
+`Q.integer((-1)**x/2 - 1/2)` under `Q.integer(x)` are True through it; it
+replaced the half-integer hook of the Add template. Not done: other
+moduli (`u/4 in Z`; a Hermite normal form would decide them), and
+propagation (the check is lazy: `implied` does not see it).
 
 **Constants.** `pi`, `E`, `exp(n)`, rational powers of rationals
 (`sqrt(2)`) with `+ - * /` and integer powers, and every other closed real

@@ -1,6 +1,6 @@
 """Unevaluated sums whose rebuilt parts differ from the node (#184).
 
-``_half_split`` read the parity of a sum ``c0 + sum(c_k*t_k)`` from its
+``_half_split`` (deleted in #315 step 3; ``relations.half_terms`` now) read the parity of a sum ``c0 + sum(c_k*t_k)`` from its
 last Rational term only, and built ``t_k`` with an evaluating ``Mul``
 (``Mul(1/2, x, 1/x)`` read as ``1/2``); the ``x - 1`` slot of log, asin
 and acos rebuilt an unevaluated sum (``Add(y, -y, 1) - 1`` is ``0``).

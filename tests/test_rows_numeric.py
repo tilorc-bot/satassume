@@ -75,8 +75,8 @@ constant term (``f(number, *terms)``); :func:`check_add` expands each row
 for sums of 2 to 4 terms, the constants of the point at their positions,
 and takes every choice of the terms from :data:`ADD_POOLS`, the node being
 SymPy's ``Add(*terms)``.  The sums of a special shape
-(``core._half_templates``, ``core._bound_templates``,
-``core._recip_templates``, ``core._imag_templates``) and the formulas of
+(``core._imag_templates``; before #315 also ``_half_templates``,
+``_bound_templates``, ``_recip_templates``) and the formulas of
 the strict-sign rows past 32 terms are not checked here.
 
 Every rule must be checked at least once, except those in

@@ -83,6 +83,12 @@ places, cheapest first:
   hyperplane) ignores integrality, so ``1 <= n < 2``, ``n != 1`` would
   look satisfiable for an integer ``n``.  These splits only happen when
   integrality literals are asserted; real-only problems never branch.
+  Before branching, the asserted literals whose forms have coefficients
+  and offset in ``Z/2`` over variables asserted integral are read as
+  linear equations over GF(2) (:mod:`satassume.theories.lra.parity`,
+  :meth:`LRATheory._parity`), which decides them also where no bound
+  helps (``x in Z``, ``x/2 + 1/2 in Z``, ``x/2 in Z``); only while such a
+  literal with a half, or a false one, is asserted (``_halves``).
   At most :data:`BRANCH_BUDGET` branch nodes (of both kinds) per
   ``check``; when the budget runs out, the check reports no conflict and
   sets :attr:`LRATheory.exhausted` (only the caller clears it).  With

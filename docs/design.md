@@ -383,8 +383,10 @@ that is no integer on purpose. Templates that read the object's own facts
 - A template mentions the node, its direct arguments and a few derived
   nodes built from them where the vocabulary cannot say a fact otherwise:
   `2*e` of a power, `x - 1` of `log`/`acos`/`asin`, `b - 1` and `b + 1` of
-  an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
-  coefficients (`core._half_templates`).
+  an integer base. (`x*y` of a term `c*x*y` in a sum with half-integer
+  coefficients was one until #315 step 3; the parity of such sums is now
+  the relation glue's, `relations.py` "Parity", which links `x*y` as a
+  term of the sum.)
 - SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
   properties of atoms with a fixed value (`consts_of`, `constant_units`);
   see "The SymPy boundary" (`ask(..., strict=True)` rejects the first).
