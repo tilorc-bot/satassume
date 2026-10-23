@@ -24,9 +24,9 @@ with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules in the order
 of :meth:`._common.Rules.equiv`.
 
 The interpreter :func:`expand` yields ``(row, premises, conclusion)``; the
-template functions hand the specs to :class:`._common.Rules`, and
-``tools/totality.py`` uses the row names to say which rows produced the
-clauses of a non-total block.
+template functions hand the specs to :class:`._common.Rules`.  The one
+table left is ``core.IPI_TABLE`` (``exp(I*pi*c*s)``); the tables of Pow and
+Mul are rows (#294, #299).
 """
 from __future__ import annotations
 

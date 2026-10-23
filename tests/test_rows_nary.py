@@ -23,7 +23,6 @@ from satassume.knowledge.templates._rows import (
     f, factor, factors, for_all, generator, number, other, some, term, terms, third, value,
     values,
 )
-from satassume.knowledge.templates.table import Section, iter_rows, rules_of
 
 
 def compiled(head, *statements):
@@ -358,14 +357,33 @@ def patterns(n):
             yield {0: c, n - 1: d}
 
 
-_MUL = {r.name: r for r in iter_rows(core._table('MUL_TABLE'))}
+# verbatim from core.MUL_TABLE at e068e49, before the rows of Mul
+MAX_ONEOUT, MAX_PAIRS = 6, 4
 
 
-def mul_legacy(*items):
-    def legacy(n, consts):
-        return rules_of(items, core.MUL_GUARDS, {'n': n, 'consts': consts},
-                        {'N': n, '*': range(n)})
-    return legacy
+def mul_one_neg(n, consts):
+    # each (n <= MAX_ONEOUT): one_neg
+    R = []
+    A = range(n)
+    for k in A if n <= MAX_ONEOUT else ():
+        rest = [j for j in A if j != k]
+        R.append(([(k, 'extended_negative', True), *lits(rest, 'extended_positive')],
+                  [(n, 'extended_negative', True)]))
+    return R
+
+
+def mul_all_neg(n, consts):
+    # all_neg.even, all_neg.odd; negsets (3 <= n <= MAX_PAIRS): m_neg.even, m_neg.odd
+    A = range(n)
+    R = [(lits(A, 'extended_negative'),
+          [(n, 'extended_positive' if n % 2 == 0 else 'extended_negative', True)])]
+    if 3 <= n <= MAX_PAIRS:
+        for m in range(2, n):
+            for neg in combinations(A, m):
+                rest = [j for j in A if j not in neg]
+                R.append(([*lits(neg, 'extended_negative'), *lits(rest, 'extended_positive')],
+                          [(n, 'extended_positive' if m % 2 == 0 else 'extended_negative', True)]))
+    return R
 
 
 def add_strict(n, consts):
@@ -461,7 +479,7 @@ PREDS = {p: getattr(Q, p) for p in _BASIS + _DERIVED}
 
 GROUPS = {
     'Mul one negative factor (each, at_most=6)': (
-        Mul, mul_legacy(Section('each', when='n<=MAX_ONEOUT', rows=[_MUL['one_neg']])),
+        Mul, mul_one_neg,
         [for_all((Mul,), (Q.extended_negative(factor) & every(Q.extended_positive, factors))
                  >> Q.extended_negative(f(factor, *factors)), at_most=6)], False),
     'Add strict sign (some and every)': (
@@ -471,9 +489,7 @@ GROUPS = {
          for_all((Add,), (some(Q.extended_negative, terms) & every(Q.extended_nonpositive, terms))
                  >> Q.extended_negative(f(*terms)))], False),
     'Mul all negative and negsets (count, two and three picks)': (
-        Mul, mul_legacy(_MUL['all_neg.even'], _MUL['all_neg.odd'],
-                        Section('negsets', when='3<=n<=MAX_PAIRS',
-                                rows=[_MUL['m_neg.even'], _MUL['m_neg.odd']])),
+        Mul, mul_all_neg,
         [for_all((Mul,), (every(Q.extended_negative, factors) & Q.even(count(factors)))
                  >> Q.extended_positive(f(*factors))),
          for_all((Mul,), (every(Q.extended_negative, factors) & Q.odd(count(factors)))
@@ -538,7 +554,8 @@ def test_the_selection_cap_is_legacys():
 
 @pytest.mark.parametrize("n", (33, 40))
 def test_past_32_the_some_rows_are_legacys_formula(n):
-    # Add's strict sign (add_templates) and Mul's zero (mul_templates)
+    # Add's strict sign (add_templates) and Mul's zero (core._wide_one, as
+    # mul_templates called it before the rows of Mul)
     xs = symbols(f'x:{n}')
     add = gen_of(Add, *GROUPS['Add strict sign (some and every)'][2])
     zero = gen_of(Mul, for_all((Mul,), (some(Q.zero, factors) & every(Q.finite, factors))
