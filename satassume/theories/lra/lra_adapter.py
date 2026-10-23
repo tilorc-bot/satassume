@@ -509,6 +509,19 @@ class LRAAdapter:
         """:func:`integer_form`, memoized like :meth:`interpret`."""
         return _memoized(("integer", e), integer_form, e)
 
+    def parity_form(self, e, r: int):
+        """The form of ``Q.integer((e - r)/2)`` (``r`` 0 or 1: ``e`` even
+        or odd), from :meth:`integer_form` of ``e`` with its coefficients
+        and offset halved; None if that is None or not rational (a constant
+        of the field: no parity, :mod:`satassume.theories.lra.parity`)."""
+        form = self.integer_form(e)
+        if form is None:
+            return None
+        pl, keys = form
+        if type(pl.offset) is not Fraction or any(type(c) is not Fraction for _t, c in pl.terms):
+            return None
+        return Integral(tuple((t, c / 2) for t, c in pl.terms), (pl.offset - r) / 2), keys
+
     def register_integer(self, solver, var, form) -> None:
         """Register ``var`` for the ``Integral`` payload of ``form`` (a
         result of :meth:`integer_form`), attaching the theory to ``solver``

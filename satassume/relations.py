@@ -478,6 +478,9 @@ def bound_kinds(atoms) -> frozenset:
     for a in atoms:
         if a.pred in BOUND_KINDS:
             out.add(a.pred)
+        if PARITY and a.pred in PARITY_PREDS and not _is_number(a.expr) \
+                and _bound_nodes(a.expr)[2]:
+            out.add("parity")
         for e in (a.expr if a.pred in RELATION_ATOMS else (a.expr,)):
             syms.update(getattr(e, "free_symbols", ()))
     for x in syms:
@@ -489,6 +492,40 @@ def bound_kinds(atoms) -> frozenset:
 
 #: turn the bound links off (as ``INTEGERS`` does the integrality link)
 BOUNDS = True
+
+#: link ``even(e)`` and ``odd(e)`` to integrality atoms of ``e/2`` and
+#: ``(e - 1)/2`` (see "Parity"), in the sessions whose formulas hold a half
+#: sum (:func:`half_terms`) in an atom of :data:`PARITY_PREDS`
+PARITY = True
+
+#: the predicates whose atoms on a half sum ask for parity (each implies
+#: ``integer``): the kind ``parity`` (:func:`bound_kinds`) and the twins of
+#: :func:`bound_twins`
+PARITY_PREDS = frozenset({"integer", "even", "odd", "prime", "composite"})
+
+
+def half_terms(e) -> Optional[list]:
+    """The terms ``u`` of a sum ``c0 + sum(c*u)`` whose Rational
+    coefficients (``c0`` and the ``c``) have least common denominator 2, a
+    "half sum" (``k/2 + 1/2``, ``(-1)**x/2 - 1/2``); None for any other
+    ``e``.  The syntactic test of the half-integer hook it replaces."""
+    if not getattr(e, "is_Add", False):
+        return None
+    half = False
+    out = []
+    for t in e.args:
+        c, u = (t, None) if t.is_Rational else t.as_coeff_Mul()
+        if not c.is_Rational:
+            return None
+        if c.q != 1:
+            if c.q != 2:
+                return None
+            half = True
+        if u is not None:
+            if _is_number(u):
+                return None
+            out.append(u)
+    return out if half and out else None
 
 
 _OPS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
@@ -824,9 +861,10 @@ def _shift_table() -> dict:
 
 
 def _bound_nodes(e) -> tuple:
-    """``(sums, shifts)`` of ``e`` (an atom's argument, or the tuple of a
+    """``(sums, shifts, halves)`` of ``e`` (an atom's argument, or the tuple of a
     relation's sides): ``sums`` the sums with a Rational term among ``e``
-    and its subterms, no number; ``shifts`` the pairs ``(u, u + c)`` of the
+    and its subterms, no number; ``halves`` the half sums among them
+    (:func:`half_terms`, with or without a Rational term); ``shifts`` the pairs ``(u, u + c)`` of the
     applications in ``e`` of a function whose rows use a term ``u + c`` of
     an argument ``u`` (:func:`_shift_table`), ``u`` no number, with the
     term as the template builds it (``_common.shifted``).  Memoized per
@@ -836,7 +874,7 @@ def _bound_nodes(e) -> tuple:
         return r
     from sympy import Basic, Rational, preorder_traversal
     table = None
-    sums, shifts = [], []
+    sums, shifts, halves = [], [], []
     for side in (e if isinstance(e, tuple) else (e,)):
         if not isinstance(side, Basic):
             continue
@@ -845,6 +883,8 @@ def _bound_nodes(e) -> tuple:
                 if (not _is_number(x) and any(t.is_Rational for t in x.args)
                         and x not in sums):
                     sums.append(x)
+                if half_terms(x) is not None and x not in halves:
+                    halves.append(x)
                 continue
             if not getattr(x, "is_Function", False):
                 continue
@@ -862,7 +902,7 @@ def _bound_nodes(e) -> tuple:
                     d = shifted(u, Rational(c.numerator, c.denominator))
                     if (u, d) not in shifts:
                         shifts.append((u, d))
-    r = (tuple(sums), tuple(shifts))
+    r = (tuple(sums), tuple(shifts), tuple(halves))
     if len(_BOUND_NODES) >= 100_000:
         _BOUND_NODES.clear()
     _BOUND_NODES[e] = r
@@ -929,13 +969,11 @@ def _bound_twins(atoms, context=()) -> list:
       as above where ``v`` or ``v + c`` is such a sum.
 
     In first-seen order; a pure function of the two atom sequences."""
-    premised = set()
-    for a in atoms:
-        if a.pred in BOUND_PREMISES and not _is_number(a.expr):
-            premised.add(a.expr)
-    for a in context:
-        if a.pred in BOUND_PREMISES and not _is_number(a.expr):
-            premised.add(a.expr)
+    premised = {}
+    for seq in (atoms, context):
+        for a in seq:
+            if a.pred in BOUND_PREMISES and not _is_number(a.expr):
+                premised[a.expr] = None
     from sympy import S
     syms = set()
     for u in premised:
@@ -963,7 +1001,24 @@ def _bound_twins(atoms, context=()) -> list:
                 # a relation atom has the glue anyway; its sides' opaque
                 # terms stay unlinked, as before (see "Integrality")
                 continue
-            sums, shifts = _bound_nodes(a.expr)
+            sums, shifts, halves = _bound_nodes(a.expr)
+            if PARITY and halves and a.pred in PARITY_PREDS:
+                # a half sum: parity decides its integrality, given its
+                # terms' parities; it and its terms are linked, which
+                # links even/odd to integrality atoms (see "Parity").  Its
+                # terms need a premise other than the atom on the sum
+                for h in halves:
+                    us = half_terms(h)
+                    other = set()
+                    for t in premised:
+                        if t != h:
+                            other.update(t.free_symbols)
+                    if all(other & u.free_symbols
+                           or any(_declared_integer(x) for x in u.free_symbols)
+                           for u in us):
+                        add(h)
+                        for u in us:
+                            add(u)
             if a.pred in SIGN_PREDS:
                 # a bound of a sum decides order facts: a sign atom reads
                 # it, an atom of another predicate (the integer facts of
@@ -1120,6 +1175,7 @@ class Relations:
         #: selector (_link_bounds)
         self.kinds: frozenset = frozenset()
         self._bound_terms: dict = {}
+        self._parity_done: set = set()    # terms with their parity links
         self._bounded: set = set()        # constant terms whose bounds are asserted
         self._guards: dict = {}           # terms -> guard literals (_guard)
         self._link_lt: dict = {}          # link atoms 0 < e, e < 0 -> e
@@ -1222,6 +1278,9 @@ class Relations:
             self.kinds = self.kinds | new
             for e, g in list(self._bound_terms.items()):
                 self._link_bounds(e, g, new)
+            if "parity" in new:
+                for e, sel in list(self.link_sel.items()):
+                    self._link_parity(e, -sel)
 
     def process(self, user_atoms=()) -> None:
         """Interpret queued atoms, add guards, links and shared equalities;
@@ -1867,6 +1926,36 @@ class Relations:
                         self._link_integer(ad, e, g)
         if BOUNDS:
             self._link_bounds(e, g)
+        if "parity" in self.kinds:
+            self._link_parity(e, g)
+
+    def _link_parity(self, e, g: int) -> None:
+        """``guard -> (even(e) <-> i0)`` and ``guard -> (odd(e) <-> i1)``
+        for the integrality atoms ``i0`` of ``e/2`` and ``i1`` of ``(e -
+        1)/2`` (``LRAAdapter.parity_form``; see "Parity"), under the link
+        selector of ``e`` (``g`` its negation) and the guard of
+        :meth:`_link_integer`; once per term."""
+        if e in self._parity_done:
+            return
+        self._parity_done.add(e)
+        s = self.session
+        for spec in self.specs:
+            if not spec.guarded:
+                continue
+            ad = self._adapter(spec)
+            if not hasattr(ad, "parity_form"):
+                continue
+            for pred, r in (("even", 0), ("odd", 1)):
+                form = ad.parity_form(e, r)
+                if form is None:
+                    break
+                i = self._fresh()
+                ad.register_integer(s.solver, i, form)
+                guard = self._guard(ad, form[1])
+                s.ensure(e, {pred})
+                z = s.var(pred, e)
+                s.emit(guard + [-z, i, g])
+                s.emit(guard + [z, -i, g])
 
     def _link_bounds(self, e, g: int, kinds=None) -> None:
         """The integer bounds of ``e`` (see "Integer bounds"): for each

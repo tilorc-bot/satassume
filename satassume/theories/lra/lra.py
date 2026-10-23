@@ -202,6 +202,7 @@ from operator import itemgetter
 from typing import Any, Hashable, Iterable
 
 from .constfield import Undecided, formally_zero, num
+from . import parity as _parity
 
 __all__ = ["LRATheory", "Negated", "Integral", "constraint", "BRANCH_BUDGET"]
 
@@ -391,6 +392,10 @@ class LRATheory:
         self._ints: dict[int, tuple[int, Fraction, Fraction]] = {}
         self._ints_on: dict[int, list[int]] = {}
         self._int_lits: list[tuple[int, Fraction, Fraction, int]] = []
+        # parity (satassume.theories.lra.parity): integrality atom -> its
+        # GF(2) row (vars, mask, kappa), and -> v for an atom "v in Z"
+        self._par: dict[int, tuple] = {}
+        self._unit: dict[int, int] = {}
         # _int_verdict's cache for Element bounds, keyed by the integrality
         # atom and the literals of the two bounds (a literal always sets the
         # same bound value), so its entries stay valid across levels and it
@@ -405,7 +410,7 @@ class LRATheory:
         self._pending_ground: list[int] = []
         self.stats = {"pivots": 0, "checks": 0, "conflicts": 0,
                       "propagations": 0, "branches": 0, "gave_up": 0,
-                      "exhausted": 0}
+                      "exhausted": 0, "parity": 0}
 
     @property
     def undecidable(self) -> bool:
@@ -725,6 +730,13 @@ class LRATheory:
             self._ground[literal] = _is_int(k)
             self._pending_ground.append(literal)
             return
+        var_of = self._term_var
+        row = _parity.row_of(lin, var_of, k)
+        if row is not None:
+            self._par[literal] = row
+            u = _parity.unit_of(lin, var_of, k)
+            if u is not None:
+                self._unit[literal] = u
         v, m = self._var_of_form(lin)
         # reduce the offset to [0, 1) (fewer distinct atoms, and "v in Z"
         # recognised below); only an optimisation, so an offset whose floor
@@ -913,6 +925,32 @@ class LRATheory:
                 if r is not None and r[0] != (lit > 0):
                     return _dedupe([-lit] + [-l for l in r[1]])
         return None
+
+    def _parity(self):
+        """A conflict of the asserted integrality literals as linear
+        equations over GF(2) (:mod:`satassume.theories.lra.parity`), or
+        None.  Exact for the parities alone, also where the variables are
+        unbounded and branch and bound finds nothing."""
+        par, unit = self._par, self._unit
+        units = {}
+        rows = []
+        for _v, _m, _k, lit in self._int_lits:
+            a = lit if lit > 0 else -lit
+            r = par.get(a)
+            if r is None:
+                continue
+            if lit > 0:
+                u = unit.get(a)
+                if u is not None:
+                    units.setdefault(u, lit)
+                    continue            # its row is 0 = 0
+            rows.append((*r, lit))
+        if not rows:
+            return None
+        c = _parity.conflict(units, rows)
+        if c is not None:
+            self.stats["parity"] += 1
+        return c
 
     def _branch(self, budget: list[int]):
         """Branch and bound from a feasible simplex point: a conflict
@@ -1177,7 +1215,10 @@ class LRATheory:
         self.stats["checks"] += 1
         conflict = self._simplex()
         if conflict is None and self._int_lits:
-            conflict = self._branch([BRANCH_BUDGET])
+            if self._par:
+                conflict = self._parity()
+            if conflict is None:
+                conflict = self._branch([BRANCH_BUDGET])
         if conflict is not None:
             self.stats["conflicts"] += 1
             return (False, conflict)

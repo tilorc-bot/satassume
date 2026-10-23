@@ -42,7 +42,7 @@ from ._common import MAX_EXPAND, Rules, const_key, const_value, consts_of, facts
 # not ._rows, the language of the rows, which a query does not need (#309)
 from ._rows_runtime import constant_value, generator
 from .core import (
-    _exp_arg, _half_split, _half_templates, _imag_split, _imag_templates,
+    _exp_arg, _imag_split, _imag_templates,
     _mul_factor_sets, _quotient_templates, _unit_angle, _unit_power_units, ipi_rules,
     ipi_split, irrational_root,
 )
@@ -649,11 +649,12 @@ def addition(gen):
     block of the rows (:func:`rows_block`, keyed ``'add'``) over the terms,
     then the wide formulas (:func:`wide_formulas`: the strict-sign rows
     past :data:`SOME_PER_ARGUMENT` terms), then the rules of the sums of a
-    special shape, which are not rows (:mod:`.core`): with half-integer
-    coefficients (``core._half_templates``) and ``I*(c_1*x_1 + ...)``
+    special shape, which are not rows (:mod:`.core`): ``I*(c_1*x_1 + ...)``
     (``core._imag_templates``).  The sign of ``c0 + c1*u`` from integer
     bounds of ``u`` is the relation glue's (``relations.BOUND_LINKS``,
-    ``relations.bound_twins``, #315)."""
+    ``relations.bound_twins``, #315), and so is the integrality of a sum
+    with half-integer coefficients from the parities of its terms
+    (``relations.PARITY``, the GF(2) check of LRA, #315)."""
     block = rows_block('add', gen)
 
     def template(expr):
@@ -661,9 +662,6 @@ def addition(gen):
         if not args:
             return ()
         out = [block(args, expr), *_wide_of(gen, expr, args)]
-        split = _half_split(args)
-        if split is not None:
-            out.append(_half_templates(expr, split))
         terms = _imag_split(args)
         if terms is not None:
             imag = _imag_templates(expr, terms)
