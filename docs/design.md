@@ -352,8 +352,9 @@ decision that should be visible in one place.
 
 `registry.py` maps SymPy classes to template functions along the MRO;
 `atoms.py` gives unit facts for symbols and fixed-value atoms, `core.py`
-covers `Add` (and the rules of `Mul` and `Pow` that are not rows: their
-rows are `mul.py`, with a star, #299, and `power.py`, #294), `functions.py` the elementary functions
+the rules of `Add`, `Mul` and `Pow` that are not rows (their rows are
+`add.py` and `mul.py`, with a star, #299, and `power.py`, #294; for `Add`
+the sums of a special shape), `functions.py` the elementary functions
 (with the reciprocal and inverse trigonometric and hyperbolic ones, the
 polar functions and `Mod`), rounding and `factorial`, `selection.py` the
 nodes whose value is one of given expressions (`Max`, `Min`, `Piecewise`
@@ -383,7 +384,7 @@ that is no integer on purpose. Templates that read the object's own facts
   nodes built from them where the vocabulary cannot say a fact otherwise:
   `2*e` of a power, `x - 1` of `log`/`acos`/`asin`, `b - 1` and `b + 1` of
   an integer base, `x*y` of a term `c*x*y` in a sum with half-integer
-  coefficients (`_half_templates`).
+  coefficients (`core._half_templates`).
 - SymPy's own facts about objects enter only here: a `Symbol`'s `assumptions0`, the `is_*`
   properties of atoms with a fixed value (`consts_of`, `constant_units`);
   see "The SymPy boundary" (`ask(..., strict=True)` rejects the first).

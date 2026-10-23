@@ -1,8 +1,9 @@
 """Structural rule templates for :mod:`satassume`.
 
 Importing this package registers every template module with
-:data:`registry` (:mod:`.core`, the families of rows through :mod:`.wiring`
-(``Mul``, ``Pow``, ``Max``, ``Min`` and ``Piecewise`` among them),
+:data:`registry` (the families of rows through :mod:`.wiring`
+(``Add``, ``Mul``, ``Pow``, ``Max``, ``Min`` and ``Piecewise`` among them,
+with the rules of :mod:`.core` that are not rows),
 :mod:`.special`, :mod:`.rootof`,
 :mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
@@ -95,9 +96,6 @@ from sympy.integrals.integrals import Integral
 from . import atoms  # noqa: F401  (registration side effects)
 from .registry import TemplateRegistry, registry
 
-# the templates of sums, and of functions, are imported when the first node
-# of such a class is met (TemplateRegistry.lazy)
-registry.lazy(__name__ + ".core", Add)
 #: the families of rows (.wiring), each with the functions it states rows
 #: for: a family is compiled on the first use of one of its functions
 ROW_FAMILIES = (
@@ -125,6 +123,7 @@ ROW_FAMILIES = (
     ("power", (Pow,)),
     ("selection", (Max, Min, Piecewise)),
     ("mul", (Mul,)),
+    ("add", (Add,)),
 )
 for _family, _functions in ROW_FAMILIES:
     registry.lazy(f"{__name__}.wiring:{_family}", *_functions)

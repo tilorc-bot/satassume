@@ -528,7 +528,8 @@ def test_specific_expectations():
     assert Implies(And(P('infinite', x), P('extended_real', x + y)), P('infinite', x + y)) in facts
     assert Implies(And(P('extended_nonzero', x), P('imaginary', y)),
                    Not(P('imaginary', x + y))) in facts
-    assert Implies(And(P('extended_real', x + y), P('real', y)),
+    # the premises in the order of the row (templates/add.py)
+    assert Implies(And(P('real', y), P('extended_real', x + y)),
                    P('extended_real', x)) in facts
     facts = registry.facts_for(x + oo)
     assert Implies(P('real', x), P('extended_positive', x + oo)) in facts
