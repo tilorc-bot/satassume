@@ -176,6 +176,10 @@ parameter = Symbol('parameter')
 #: the limits of an integral: ``erf2(lower, upper)``, ``owens_t(argument, upper)``
 lower = Symbol('lower')
 upper = Symbol('upper')
+#: the two arguments of ``beta(first, second)``, and of ``betainc(first, second,
+#: lower, upper)``
+first = Symbol('first')
+second = Symbol('second')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')
