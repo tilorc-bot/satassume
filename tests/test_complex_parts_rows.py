@@ -1,32 +1,9 @@
-"""The rules of ``Abs``, ``re``, ``im``, ``sign`` and ``conjugate``, written
-as ``for_all`` statements (``templates/complex_parts.py``, compiled by
-``templates/wiring.py``, #249), against the generators they replace
-(``tests/_legacy_complex_parts_rules.py``, verbatim from d149951).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus, though the clauses differ.  Rows of the legacy generators the
-rows leave out because the rule base and the other rows imply them:
-``Abs``'s ``-> extended_real`` (it is extended nonnegative), ``infinite ->
-extended_positive`` (nonnegative and not zero) and, on the extended reals,
-``integer <-> integer`` (even or odd); ``re``'s ``extended_real ->
-extended_real``, ``zero -> zero`` and, on the extended reals, ``zero <->
-zero`` and ``integer <-> integer`` (its sign and parity); ``im``'s
-``imaginary -> nonzero`` (real where finite, nonzero off the real line);
-``sign``'s ``extended_real -> integer`` (odd or 0), ``extended_negative ->
-negative`` and ``extended_real & negative -> extended_negative`` (odd, and
-positive only for a positive argument), ``extended_nonnegative ->
-nonnegative`` and ``extended_nonpositive -> nonpositive``;
-``conjugate``'s ``<->`` of ``zero``, ``extended_real`` and ``integer`` (the
-sign and the parity), of ``hermitian`` and ``antihermitian`` (the rule
-base defines them as ``real`` and ``zero | imaginary``) and of
-``commutative`` (always true).  ``Abs``'s ``finite(f) -> finite(x)`` is
-written as ``infinite -> infinite``, and ``sign``'s ``extended_positive ->
-odd`` and ``extended_negative -> odd`` as one row.  :data:`ADDED` are the
-facts the rows give that the legacy rules did not, each with its argument;
-a test checks that each is new.
+"""The rows of ``Abs``, ``re``, ``im``, ``sign`` and ``conjugate``
+(``templates/complex_parts.py``, compiled by ``templates/wiring.py``,
+#249): a row without premises, and the family compiled on its own first
+use, with ``wiring.AFTER_ROWS``.  Whether each compiled rule is true is
+checked at concrete points in ``tests/test_rows_numeric.py``.
 """
-import os
 import subprocess
 import sys
 
@@ -34,30 +11,10 @@ import pytest
 
 pytest.importorskip("sympy")
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import _legacy_complex_parts_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
-from sympy import Abs, Q, conjugate, im, re, sign  # noqa: E402
+from sympy import Q, sign  # noqa: E402
 
 from satassume.knowledge.templates import _common  # noqa: E402
 from satassume.knowledge.templates._rows import rules, x  # noqa: E402
-
-HEADS = (Abs, re, im, sign, conjugate)
-
-#: facts the rows give and the legacy rules did not
-ADDED = {}
-
-LEGACY_GEN = {Abs: legacy._abs, re: legacy._re, im: legacy._im, sign: legacy._sign,
-              conjugate: legacy._conjugate}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    eq.check_rows_entail_exactly(HEADS, "complex_parts", LEGACY_GEN, ADDED)
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
 
 
 def test_a_row_without_premises_is_its_conclusion():

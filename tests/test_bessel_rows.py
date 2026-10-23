@@ -1,16 +1,9 @@
-"""The rules of the Airy functions and of ``besselj``, ``bessely``,
-``besseli`` and ``besselk``, written as ``for_all`` statements
-(``templates/bessel.py``, compiled by ``templates/wiring.py``, #249),
-against the generators they replace (``tests/_legacy_bessel_rules.py``,
-verbatim from d149951: the factories ``_airy(kind)`` and
-``_bessel(kind)``).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators entail each other on every node of its corpus (the
-Bessel functions on every pair of arguments), though the clauses differ.
-The rows add no fact.  A fact of the legacy generators the rows leave out
-because the other rows imply it: ``besselk``'s ``real(nu) & positive(z) ->
-real`` (it is positive there).
+"""The rows of the Airy functions and of ``besselj``, ``bessely``,
+``besseli`` and ``besselk`` (``templates/bessel.py``, compiled by
+``templates/wiring.py``, #249): the slots of their templates (the order
+and the argument, then the node), and the family compiled on its own first
+use.  Whether each compiled rule is true is checked at concrete points in
+``tests/test_rows_numeric.py``.
 """
 import os
 import subprocess
@@ -22,48 +15,24 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_bessel_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
 from sympy import (  # noqa: E402
     Basic, Symbol, airyai, airyaiprime, airybi, airybiprime, besseli, besselj, besselk, bessely,
 )
 
 HEADS = (airyai, airybi, airyaiprime, airybiprime, besselj, bessely, besseli, besselk)
 
-#: facts the rows give and the legacy rules did not
-ADDED = {}
 
-
-def _bessel(kind):
-    """``legacy._bessel(kind)``, registered with ``functions.nary`` for two
-    arguments (a node of another number gets no facts either way)."""
-    gen = legacy._bessel(kind)
-
-    def bessel(R, n):
-        gen(R, n)
-    bessel.arity = 2
-    return bessel
-
-
-LEGACY_GEN = {
-    airyai: legacy._airy('ai'), airybi: legacy._airy('bi'),
-    airyaiprime: legacy._airy('aiprime'), airybiprime: legacy._airy('biprime'),
-    besselj: _bessel('j'), bessely: _bessel('y'), besseli: _bessel('i'), besselk: _bessel('k'),
-}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(HEADS, "bessel", LEGACY_GEN, ADDED)
-    # the Bessel functions' node is slot 2, after the order and the argument
-    assert {c.pattern.node for e, (cs, _) in new.items() if len(e.args) == 2 for c in cs} == {2}
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
+def test_the_node_of_a_bessel_function_is_slot_2():
+    t = rows_templates(HEADS, "bessel")
+    nu, z = Symbol('nu'), Symbol('z')
+    for h in (besselj, bessely, besseli, besselk):
+        e = h(nu, z, evaluate=False)
+        assert [(c.objs, c.pattern.node) for c in compiled(t, e)[0]] == [((nu, z, e), 2)]
 
 
 def test_a_node_of_another_number_of_arguments_gets_no_facts():
-    t = eq.rows_templates(HEADS, "bessel")
+    t = rows_templates(HEADS, "bessel")
     a = Symbol('a')
     for h in HEADS:
         args = (a,) if h in (besselj, bessely, besseli, besselk) else (a, a)

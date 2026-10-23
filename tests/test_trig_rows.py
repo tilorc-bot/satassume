@@ -1,17 +1,9 @@
-"""The rules of ``sin``, ``cos``, ``tan``, ``cot``, ``sec`` and ``csc``,
-written as ``for_all`` statements (``templates/trig.py``, compiled by
-``templates/wiring.py``) in the row language (``templates/_rows.py``, #249),
-against the generators they replace (``tests/_legacy_trig_rules.py``,
-verbatim from f9291ab).
-
-The comparison is ``tests/_rows_equivalence.py``'s: the rows and the
-legacy generators plus :data:`ADDED` entail each other on every node of
-its corpus, though the clauses differ (an implied row is not written:
-``cot``'s ``algebraic -> ~algebraic`` follows from its ``zero`` and
-``transcendental`` rows, and ``real -> ~imaginary`` of ``tan``, ``cot``,
-``sec`` and ``csc`` from ``real & finite(f) -> real(f)``).  :data:`ADDED`
-are the facts the rows give that the legacy rules did not, each with its
-argument; a test checks that each is new.
+"""The rows of ``sin``, ``cos``, ``tan``, ``cot``, ``sec`` and ``csc``
+(``templates/trig.py``, compiled by ``templates/wiring.py``, #249), and the
+row language (``templates/_rows.py``): what a row compiles to, the rows
+refused, the declared functions, and the family's templates (their slots,
+compiled on first use).  Whether each compiled rule is true is checked at
+concrete points in ``tests/test_rows_numeric.py``.
 """
 import importlib
 import os
@@ -24,8 +16,7 @@ pytest.importorskip("sympy")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import _legacy_trig_rules as legacy  # noqa: E402
-import _rows_equivalence as eq  # noqa: E402
+from _rows_templates import compiled, rows_templates  # noqa: E402
 from sympy import (  # noqa: E402
     Add, Equivalent, Float, I, Q, Symbol, acos, atanh, cos, cot, csc, oo, pi, sec, sin, tan,
 )
@@ -38,29 +29,15 @@ from satassume.knowledge.templates.functions import shifted  # noqa: E402
 
 HEADS = (sin, cos, tan, cot, sec, csc)
 
-#: facts the rows give and the legacy rules did not
-ADDED = {
-    # tan is meromorphic: where it is finite its value is a number
-    tan: ((Q.complex(x) & Q.finite(tan(x))) >> Q.complex(tan(x)),),
-    # cos(0) == sec(0) == 1, neither prime nor composite
-    cos: (Q.zero(x) >> (~Q.prime(cos(x)) & ~Q.composite(cos(x))),),
-    sec: (Q.zero(x) >> (~Q.prime(sec(x)) & ~Q.composite(sec(x))),
-          # sec(I*t) == 1/cosh(t) is in (0, 1) for real t != 0
-          Q.imaginary(x) >> Q.noninteger(sec(x))),
-}
 
-LEGACY_GEN = {sin: legacy._sin, cos: legacy._cos, tan: legacy._tan, cot: legacy._cot,
-              sec: legacy._sec, csc: legacy._csc}
-
-
-def test_rows_entail_exactly_the_legacy_rules_and_the_added_facts():
-    new = eq.check_rows_entail_exactly(HEADS, "trig", LEGACY_GEN, ADDED)
-    # the corpus reaches the pi*c*s rules
-    assert any(len(c.objs) == 3 for cs, _ in new.values() for c in cs)
-
-
-def test_each_added_fact_is_new():
-    eq.check_added_are_new(LEGACY_GEN, ADDED)
+def test_sin_and_cos_have_the_rules_of_pi_c_s():
+    # wiring.PI_MULTIPLE: the node of pi*c*s has the slot s
+    t = rows_templates(HEADS, "trig")
+    s_ = Symbol('s')
+    for h in (sin, cos):
+        e = h(pi*s_/2, evaluate=False)
+        assert [c.objs for c in compiled(t, e)[0]] == [(pi*s_/2, e, s_)]
+        assert [c.objs for c in compiled(t, h(s_))[0]] == [(s_, h(s_))]
 
 
 def test_trig_is_a_builtin_module():
@@ -198,10 +175,8 @@ def test_the_slots_of_inequalities_are_built_as_shifted_builds_them():
                 (Q.eq(x, -1) >> Q.infinite(atanh(x)), (a, e, shifted(a, 1))),
                 ((Q.eq(x, -1) & Q.eq(x, 2)) >> Q.infinite(atanh(x)),
                  (a, e, shifted(a, 1), shifted(a, -2)))):
-            _common._CACHE.clear()
-            [c], _ = eq.compiled({atanh: wiring.template(atanh, rules(atanh, row, __name__))}, e)
+            [c], _ = compiled({atanh: wiring.template(atanh, rules(atanh, row, __name__))}, e)
             assert c.objs == objs
-    _common._CACHE.clear()
 
 
 def test_a_condition_without_parentheses_is_refused():
