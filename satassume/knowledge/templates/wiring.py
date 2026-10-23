@@ -13,7 +13,10 @@ function of :data:`PI_MULTIPLE` or :data:`I_PI_MULTIPLE`,
 rational ``c``, or, for a function of :data:`I_PI_ROOT`,
 :func:`.functions._exp_ipi`'s, which adds those of ``f(I*pi*c*s)``, or
 :func:`.functions.nary`'s for rows about a function of several arguments;
-then the templates of :data:`AFTER_ROWS`, which are not rows.
+then the templates of :data:`AFTER_ROWS`, which are not rows.  Rows with a
+star, about a function of any number of arguments (``f(factor,
+*factors)``), are expanded for each node by :func:`expand`
+(:func:`any_arity`'s template); no function is wired to it yet.
 ``templates/__init__.py`` declares each family as ``"<this
 module>:<family>"`` for its functions (``TemplateRegistry.lazy``), so a
 family is compiled on the first use of one of its functions, and its
@@ -22,13 +25,16 @@ templates are attributed to that name.
 from __future__ import annotations
 
 import importlib
+from itertools import combinations
 
 from sympy import (
-    Mul, Pow, S, acos, andre, asin, catalan, cos, cosh, exp, factorial2, genocchi, im, partition,
-    re, sin, subfactorial,
+    Integer, Mul, Pow, S, acos, andre, asin, catalan, cos, cosh, exp, factorial2, genocchi, im,
+    partition, re, sin, subfactorial,
 )
 
-from ._common import Rules, const_key, facts
+from ...sat.formula import And, Implies, Not, Or, P
+from ..rules import cnf_of
+from ._common import MAX_EXPAND, Rules, const_key, const_value, consts_of, facts, pattern_key
 from ._rows import by_function, constant_value, generator
 from .core import (
     _exp_arg, _pow_bound_templates, _unit_angle, _unit_power_units, ipi_rules, ipi_split,
@@ -172,7 +178,7 @@ def _attributed(t, module):
 
 def matches(shape, args, consts):
     """Whether the arguments ``args`` of a node have the shape ``shape`` of a
-    rule (:func:`power`); ``consts`` holds the indices of
+    rule (:func:`power`, :func:`any_arity`); ``consts`` holds the indices of
     the arguments that are constants (atomic numbers).  A ``coefficient``
     is argument 0, a SymPy ``Number``."""
     for i, s in enumerate(shape):
@@ -317,3 +323,228 @@ def power(gen):
     template.__module__ = gen.__module__
     return template
 
+
+# ---------------------------------------------------------------------------
+# Rows about a function of any number of arguments: the rows with a star
+# (``f(factor, *factors)``, ``every``, ``some``, ``count``; ``_rows._schema``)
+# ---------------------------------------------------------------------------
+
+#: past this many arguments, a rule with ``some`` in its premises is one
+#: formula (:func:`wide_formulas`, linear in the width with Tseitin
+#: variables) instead of a rule per argument (quadratic); an encoding, not
+#: an answer (``core.MAX_ONEOUT_WIDE``)
+SOME_PER_ARGUMENT = 32
+
+
+def expand(schemas, n, consts, leave_out_wide=False):
+    """The rules ``(premises, conclusion)`` of the rows with a star
+    (``gen.schemas``) for a node of ``n`` arguments, the slots ``0 .. n-1``,
+    and the node ``n``, with the constants ``consts`` (by slot), called
+    when a pattern is built.
+
+    A row holds for ``len(picks) <= n <= at_most``.  Its picked arguments
+    are placed at every set of distinct positions their kinds allow (any,
+    a constant, 0 when it is a ``Number`` for ``coefficient``, a constant
+    equal to the value), interchangeable ones (a group) once per set of
+    positions, in order; the others are the rest.  ``every`` is the
+    conjunction over the rest; ``some`` a rule per argument of the rest
+    (with ``others`` on the rest but it) in the premises, a disjunction in a
+    conclusion; ``count`` is decided by the number of the rest, as a
+    constant's literal is (``const_value``).  Past
+    :data:`SOME_PER_ARGUMENT` arguments a rule with ``some`` in its
+    premises is left to :func:`wide_formulas`.  With ``leave_out_wide``
+    (Max, Min, Piecewise), a rule whose clauses over the basis would be
+    more than ``MAX_EXPAND`` is left out, not encoded as a formula
+    (``Pattern.wide``): the product ``Pattern`` computes, before the
+    constants are resolved."""
+    out = []
+    for at_most, picks, rules in schemas:
+        if n < len(picks) or (at_most is not None and n > at_most):
+            continue
+        if n > SOME_PER_ARGUMENT:
+            rules = [r for r in rules if not any(w == 'some' for w, _, _ in r[0])]
+        for placed in _placements(picks, n, consts):
+            rest = [i for i in range(n) if i not in placed]
+            for prem, concl in rules:
+                out += _instances(prem, concl, placed, rest, n)
+    if leave_out_wide:
+        out = [r for r in out if _clauses(r) <= MAX_EXPAND]
+    return out
+
+
+def _placements(picks, n, consts):
+    """The positions of the picked arguments, one tuple per way to place
+    them: each group (``(kind, group)``) at the combinations of the
+    positions its kind allows and the earlier groups left."""
+    groups = {}
+    for i, (_, g) in enumerate(picks):
+        groups.setdefault(g, []).append(i)
+    groups = tuple(groups.values())
+    allowed = tuple(_allowed(kind, n, consts) for kind, _ in picks)
+    placed = [None] * len(picks)
+
+    def place(gi, used):
+        if gi == len(groups):
+            yield tuple(placed)
+            return
+        members = groups[gi]
+        for at in combinations([p for p in allowed[members[0]] if p not in used], len(members)):
+            for i, p in zip(members, at):
+                placed[i] = p
+            yield from place(gi + 1, used.union(at))
+    return place(0, frozenset())
+
+
+def _allowed(kind, n, consts):
+    """The positions a picked argument of ``kind`` can have."""
+    if kind is None:
+        return range(n)
+    if kind[0] == 'coefficient':
+        return (0,) if 0 < n and 0 in consts and consts[0].is_Number else ()
+    at = sorted(k for k in consts if k < n)
+    if kind[0] == 'value':
+        v = kind[1]
+        return [k for k in at if type(consts[k]) is type(v) and consts[k] == v]
+    return at                       # 'constant'
+
+
+def _instances(prem, concl, placed, rest, n):
+    """The rules of one rule of a schema with its picks at ``placed``."""
+    def lits(w, p, s):
+        if w == 'node':
+            return [(n, p, s)]
+        if type(w) is int:
+            return [(placed[w], p, s)]
+        return [(j, p, s) for j in rest]       # every, some (a conclusion)
+    ps, others, some_ = [], [], None
+    for w, p, s in prem:
+        if w == 'count':
+            if const_value(Integer(len(rest)), p) is not s:
+                return []
+        elif w == 'some':
+            some_ = (p, s)
+        elif w == 'others':
+            others.append((p, s))
+        else:
+            ps += lits(w, p, s)
+    cs = [lit for w, p, s in concl for lit in lits(w, p, s)]
+    if some_ is None:
+        return [(ps, cs)]
+    return [(ps + [(j, p, s) for j in rest if j != k for p, s in others] + [(k, *some_)], cs)
+            for k in rest]
+
+
+def _clauses(rule):
+    """The number of clauses of ``rule`` over the basis (``Pattern``)."""
+    k = 1
+    for _, p, s in rule[0]:
+        k *= len(cnf_of(p, not s))
+    for _, p, s in rule[1]:
+        k *= len(cnf_of(p, s))
+    return k
+
+
+def wide_formulas(schemas, expr, args, consts):
+    """For a node of more than :data:`SOME_PER_ARGUMENT` arguments, each
+    rule with ``some`` in its premises as one formula over ``args`` and the
+    node ``expr``: ``every`` of each argument and ``some`` of one give the
+    conclusion (the rule base gives ``others`` from ``some``).  A constant
+    argument is decided here: one that is not ``every`` (or undecided)
+    drops the formula, one that is ``some`` meets it."""
+    n = len(args)
+    if n <= SOME_PER_ARGUMENT:
+        return []
+    out = []
+    for at_most, _, rules in schemas:
+        if at_most is not None and n > at_most:
+            continue
+        for prem, concl in rules:
+            if any(w == 'some' for w, _, _ in prem):
+                f = _wide(expr, args, consts, prem, concl)
+                if f is not None:
+                    out.append(f)
+    return out
+
+
+def _wide(expr, args, consts, prem, concl):
+    every = [(p, s) for w, p, s in prem if w in ('every', 'others')]
+    [(sp, ss)] = [(p, s) for w, p, s in prem if w == 'some']
+    if any(const_value(Integer(len(args)), p) is not s for w, p, s in prem if w == 'count'):
+        return None
+    weak, strong, met = [], [], False
+    for k, a in enumerate(args):
+        c = consts.get(k)
+        if c is None:
+            weak += [_atom(p, s, a) for p, s in every]
+            strong.append(_atom(sp, ss, a))
+        elif any(const_value(c, p) is not s for p, s in every):
+            return None
+        elif const_value(c, sp) is ss:
+            met = True
+    if not (met or strong):
+        return None
+    node = [_atom(p, s, expr) for w, p, s in prem if w == 'node']
+    ps = node + weak + ([] if met else [Or(*strong)])
+    cs = [_atom(p, s, expr) for _, p, s in concl]
+    c = cs[0] if len(cs) == 1 else Or(*cs)
+    return Implies(And(*ps), c) if ps else c
+
+
+def _atom(pred, sign, obj):
+    return P(pred, obj) if sign else Not(P(pred, obj))
+
+
+def any_arity(tag, gen, arguments=None, leave_out_wide=False):
+    """The template of a function of any number of arguments from its rows
+    (``gen``): the rows without a star for a node of their number of
+    arguments, with a shape for the nodes that match it (a constant, a
+    ``coefficient``, a number) and the terms of the constant
+    (``2*coefficient``) after the node, computed when the constant is a
+    SymPy ``Number``; then the rows with a star (:func:`expand`).  The
+    pattern is keyed ``pattern_key(tag, n, consts)``, as the templates
+    before the rows were (``'add'``, ``'mul'``, ``'Max'``), and the wide
+    formulas (:func:`wide_formulas`) come after the block.  ``arguments``
+    gives the arguments of a node (Piecewise's values), None for no facts;
+    ``leave_out_wide`` is :func:`expand`'s."""
+    of_constant = {}
+    for n, ts in gen.terms.items():
+        for k, t in enumerate(ts, n + 1):
+            if t[0] != 'of_constant':
+                raise ValueError(f"{tag}: a row of {n} arguments has the term {t}: only terms "
+                                 "of the constant are built for a function of any arity")
+            of_constant.setdefault(n, []).append((k, t[1], t[2]))
+    for rs in gen.specs.values():
+        for r in rs:
+            if len(r) > 2 and any(s is not None and s[0] in ('same', 'head') for s in r[2]):
+                raise ValueError(f"{tag}: a row has the shape {r[2]}, which the pattern of "
+                                 "a function of any arity does not key")
+    nterms = {n: len(ts) for n, ts in gen.terms.items()}
+
+    def template(expr):
+        args = expr.args if arguments is None else arguments(expr)
+        if args is None:
+            return None
+        n = len(args)
+        consts = consts_of(args)
+        objs = (*args, expr) + (None,) * nterms.get(n, 0)
+
+        def build():
+            for k, i, t in of_constant.get(n, ()):
+                c = consts.get(i)
+                if c is not None and c.is_Number:
+                    consts[k] = constant_value(t, c)
+            out = []
+            for r in gen.specs.get(n, ()):
+                if len(r) > 2 and not matches(r[2], args, consts):
+                    continue
+                if any(k > n and k not in consts for k, _, _ in (*r[0], *r[1])):
+                    continue            # a term of a constant that is no Number
+                out.append((list(r[0]), list(r[1])))
+            return out + expand(gen.schemas, n, consts, leave_out_wide)
+
+        block = facts(pattern_key(tag, n, consts), build, consts, objs, n)
+        wide = wide_formulas(gen.schemas, expr, args, consts)
+        return [block, *wide] if wide else block
+    template.__name__ = template.__qualname__ = f'{tag}_rows_templates'
+    template.__module__ = gen.__module__
+    return template
