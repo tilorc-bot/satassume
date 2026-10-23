@@ -10,7 +10,9 @@ template gives for the node ``head(x0, ..., x(n-1))`` of plain symbols,
 each slot named by its object (``x0``, ``x0 - 1``, the node); for ``Pow``,
 whose rows have shapes (``templates/power.py``, #294), those of one node of
 each shape and of constants that decide the rows of a constant
-(:func:`pow_nodes`).  This test
+(:func:`pow_nodes`); for ``Max``, ``Min`` and ``Piecewise``, whose rows have
+a star (``templates/selection.py``, #299), those of nodes of 1 to 5 values
+and of a constant value (:func:`selection_nodes`).  This test
 checks that the current templates, with the rule base on each slot, entail
 every frozen clause, so a row dropped or weakened by mistake fails here;
 ``tests/test_rows_numeric.py`` checks that each rule is true, which this
@@ -35,7 +37,10 @@ pytest.importorskip("sympy")
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from sympy import E, Function, GoldenRatio, I, Pow, Rational, S, Symbol, exp, oo, pi  # noqa: E402
+from sympy import (  # noqa: E402
+    Basic, E, Function, GoldenRatio, I, Piecewise, Pow, Rational, S, Symbol, exp, oo, pi,
+)
+from sympy.functions.elementary.piecewise import ExprCondPair  # noqa: E402
 
 from _rows_templates import compiled, rows_templates  # noqa: E402
 from satassume.knowledge.rules import BASIS, BASIS_INDEX, RULE_CLAUSES  # noqa: E402
@@ -53,8 +58,9 @@ entail them.  Do not edit by hand.
 
 ``BASELINE``: ``((family, function name, n, slots, clauses), ...)``: the
 slots named by their objects for the node ``head(x0, ..., x(n-1))`` (for
-``Pow``, ``n`` is the text of the node), and each clause a tuple of
-literals ``(slot, basis predicate, negated)``.
+``Pow``, ``Max``, ``Min`` and ``Piecewise``, ``n`` is the text of the
+node), and each clause a tuple of literals ``(slot, basis predicate,
+negated)``.
 """
 '''
 
@@ -68,7 +74,7 @@ def _node(h, n):
         return Function.__new__(h, *args, evaluate=False)
 
 
-def pow_nodes():
+def pow_nodes(head=Pow):
     """The nodes of ``Pow`` whose clauses are frozen: a rule of its rows
     with a shape is about the nodes of that shape only, and a rule about a
     constant (``number``) gets its terms (``Abs(number) - 1``, ``number/2``)
@@ -89,17 +95,34 @@ def pow_nodes():
             *(Pow(x0, e, evaluate=False) for e in exps))
 
 
-#: the families whose rows have shapes, each with the nodes of its baseline
-SHAPED = {'power': pow_nodes}
+def selection_nodes(head):
+    """The nodes of ``Max``, ``Min`` or ``Piecewise`` whose clauses are
+    frozen: of 1 to 5 values (wiring leaves out the negations of the
+    derived conjunctions from 3 or 5 values), and of two values one of
+    which is a constant (``2``, ``-1``, ``1/2``, ``pi``, ``oo``, ``-oo``), each
+    with every value kept (a node of one value built with ``Basic.__new__``;
+    a ``Piecewise`` has the conditions ``y0 > 0``, ... and a final
+    ``True``)."""
+    xs = [Symbol(f'x{i}') for i in range(5)]
 
-#: families without a baseline yet: the rows of Max, Min and Piecewise,
-#: whose baseline the next step of #299 (U3) writes
-NOT_YET = ('selection',)
+    def node(values):
+        if head is Piecewise:
+            return Basic.__new__(Piecewise, *(ExprCondPair(v, Symbol(f'y{i}') > 0)
+                                              for i, v in enumerate(values[:-1])),
+                                 ExprCondPair(values[-1], S.true))
+        return Basic.__new__(head, *values)
+    return (*(node(xs[:n]) for n in range(1, 6)),
+            *(node([xs[0], c]) for c in (S(2), S.NegativeOne, S.Half, pi, oo, -oo)))
+
+
+#: the families whose rows have shapes or a star, each with the nodes of
+#: its baseline
+SHAPED = {'power': pow_nodes, 'selection': selection_nodes}
 
 
 def functions():
     """``(family, name, head, n, node)`` for each function of the compiled
-    rows (but those of :data:`NOT_YET`) and each number ``n`` of its arguments, ``node`` the node of
+    rows and each number ``n`` of its arguments, ``node`` the node of
     plain symbols; for a family of :data:`SHAPED`, for each of its nodes,
     ``n`` the text of the node.  ``head`` and ``node`` are None where this
     SymPy lacks the function (``owens_t`` before SymPy 1.15)."""
@@ -110,12 +133,10 @@ def functions():
             declared[family, name] = _declared(fn)
     out = []
     for family, fns in FAMILIES:
-        if family in NOT_YET:
-            continue
-        for name, _, _, specs in fns:
+        for name, _, _, specs, *_ in fns:
             head = declared[family, name]
             if family in SHAPED:
-                out += [(family, name, head, str(e), e) for e in SHAPED[family]()]
+                out += [(family, name, head, str(e), e) for e in SHAPED[family](head)]
             else:
                 out += [(family, name, head, n, head and _node(head, n)) for n, _ in specs]
     return out
