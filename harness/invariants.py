@@ -896,9 +896,13 @@ def restate(b, rng: random.Random, p: float = 0.5):
             return _SWAP[f](c, a)
         if f in _SWAP and rng.random() < p:
             try:
-                return {v: k for k, v in _QREL.items()}[f](*b.arguments)
+                r = {v: k for k, v in _QREL.items()}[f](*b.arguments)
             except Exception:  # noqa: BLE001
                 return b
+            # SymPy evaluates a relational it decides (``Ge(0.5, 2)``,
+            # ``Eq(2*y, i + 1)`` for real ``y`` and non-real ``i``): that
+            # value is SymPy's evaluation, not a spelling (#247)
+            return b if isinstance(r, BooleanAtom) else r
         if values and f == Q.zero and _scalar(b.arguments[0]) and rng.random() < p:
             return Q.eq(b.arguments[0], S.Zero)             # zero(x) is x = 0 for every scalar value
         if values and f == Q.eq and b.arguments[1] == S.Zero and _scalar(b.arguments[0]) and rng.random() < p:
