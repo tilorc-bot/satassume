@@ -7,8 +7,8 @@ premises over argument facts and conclusion facts, interpreted by
 ``satassume/knowledge/templates/table.py`` through the spec builders of
 ``_common``).  The functions as they were at 876f37d are kept verbatim in
 ``tests/_legacy_core_rules.py``.  (``POW_TABLE`` is now rows,
-``templates/power.py``, #294: ``tests/test_power_rows.py`` compares them
-with the table; Pow nodes stay in the corpus here for ``E**(I*pi*c*s)``,
+``templates/power.py``, #294, checked by ``tests/test_rows_numeric.py`` and
+``tests/test_rows_baseline.py``; Pow nodes stay in the corpus here for ``E**(I*pi*c*s)``,
 whose rules are ``IPI_TABLE``'s.)  For every node, the compiled clauses of
 every template block (and the plain formulas) are computed once with the
 tables and once with the legacy functions patched in, each from empty
@@ -39,7 +39,7 @@ import totality  # noqa: E402
 from sympy import Mul, Pow  # noqa: E402
 
 from satassume.knowledge.templates import _common, core, functions, registry, wiring  # noqa: E402
-from satassume.knowledge.templates.table import Section, Sub, count_rows, iter_rows, rules_of  # noqa: E402
+from satassume.knowledge.templates.table import Section, count_rows, iter_rows, rules_of  # noqa: E402
 
 CORPUS = os.path.join(ROOT, "queries.jsonl")
 N_RANDOM = 2000
@@ -156,7 +156,7 @@ def _only(table, names):
             rows = [r for r in item.rows if r.name in names]
             if rows:
                 out.append(Section(item.over, rows, when=item.when))
-        elif not isinstance(item, Sub) and item.name in names:
+        elif item.name in names:
             out.append(item)
     assert sum(1 for _ in iter_rows(out)) == len(names)
     return tuple(out)

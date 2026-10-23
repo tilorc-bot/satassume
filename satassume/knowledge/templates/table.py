@@ -21,7 +21,7 @@ the conclusion.  The pseudo-predicate ``'int>=2'`` in a premise expands to
 the alternatives of :func:`._common.ge2_alternatives`, one rule each (on a
 group, every slot's: the product of the alternatives).  A row
 with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules in the order
-of :meth:`._common.Rules.equiv`; a :class:`Sub` row runs another table.
+of :meth:`._common.Rules.equiv`.
 
 The interpreter :func:`expand` yields ``(row, premises, conclusion)``; the
 template functions hand the specs to :class:`._common.Rules`, and
@@ -36,7 +36,7 @@ from typing import Any
 
 from ._common import SIGN_FLIP, Rules, ge2_alternatives, lits
 
-__all__ = ['Row', 'Section', 'Sub', 'count_rows', 'expand', 'iter_rows', 'rules_of']
+__all__ = ['Row', 'Section', 'count_rows', 'expand', 'iter_rows', 'rules_of']
 
 GE2 = 'int>=2'
 
@@ -97,20 +97,6 @@ class Section:
         self.over = over
         self.when = (when,) if isinstance(when, str) else tuple(when)
         self.rows = tuple(rows)
-
-
-class Sub:
-    """Run ``table`` with its own guards, the context ``ctx(parent_ctx)``
-    and the slots ``slots(parent_ctx, parent_slots)``."""
-    __slots__ = ('ctx', 'guards', 'name', 'slots', 'table', 'when')
-
-    def __init__(self, name, table, guards, ctx: Callable, slots: Callable, when=()):
-        self.name = name
-        self.table = table
-        self.guards = guards
-        self.ctx = ctx
-        self.slots = slots
-        self.when = (when,) if isinstance(when, str) else tuple(when)
 
 
 def _holds(when, guards, ctx) -> bool:
@@ -177,11 +163,6 @@ def _row_specs(row: Row, slots, cur):
 
 def _rows(rows, guards, ctx, slots) -> Iterator[tuple[Any, list, list]]:
     for row in rows:
-        if isinstance(row, Sub):
-            if _holds(row.when, guards, ctx):
-                sctx = row.ctx(ctx)
-                yield from expand(row.table, row.guards, sctx, row.slots(ctx, slots))
-            continue
         if row.when and not _holds(row.when, guards, ctx):
             continue
         if row._prem is None:
@@ -235,12 +216,10 @@ def rules_of(table, guards, ctx, slots, R: Rules | None = None):
 
 
 def iter_rows(table):
-    """Every :class:`Row` of a table (sections and sub-tables flattened)."""
+    """Every :class:`Row` of a table (sections flattened)."""
     for item in table:
         if isinstance(item, Section):
             yield from item.rows
-        elif isinstance(item, Sub):
-            yield from iter_rows(item.table)
         else:
             yield item
 

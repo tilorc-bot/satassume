@@ -163,6 +163,29 @@ def _attributed(t, module):
     return template
 
 
+def matches(shape, args, consts):
+    """Whether the arguments ``args`` of a node have the shape ``shape`` of a
+    rule (:func:`power`); ``consts`` holds the indices of the arguments that
+    are constants (atomic numbers)."""
+    for i, s in enumerate(shape):
+        if s is None:
+            continue
+        a = args[i]
+        kind = s[0]
+        if kind == 'value':
+            if not (type(a) is type(s[1]) and a == s[1]):
+                return False
+        elif kind == 'same':
+            if a is not args[s[1]]:
+                return False
+        elif kind == 'head':
+            if _exp_arg(a) is None:
+                return False
+        elif i not in consts:           # 'constant'
+            return False
+    return True
+
+
 def power(gen):
     """The template of ``Pow`` from its rows (``templates/power.py``):
     ``gen.specs[2]`` are the rules, a rule with a shape for the nodes of
@@ -214,25 +237,6 @@ def power(gen):
                 raise ValueError(f"Pow: no template matches a base {s[1]}(u)")
         terms_of = frozenset(k for k, _, _ in (*prem, *concl) if k >= first)
         rules.append((prem, concl, shape, terms_of))
-
-    def matches(shape, args, consts):
-        for i, s in enumerate(shape):
-            if s is None:
-                continue
-            a = args[i]
-            kind = s[0]
-            if kind == 'value':
-                if not (type(a) is type(s[1]) and a == s[1]):
-                    return False
-            elif kind == 'same':
-                if a is not args[s[1]]:
-                    return False
-            elif kind == 'head':
-                if _exp_arg(a) is None:
-                    return False
-            elif i not in consts:           # 'constant'
-                return False
-        return True
 
     def template(expr):
         args = b, e = expr.args

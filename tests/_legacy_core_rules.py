@@ -2,8 +2,8 @@
 ``satassume/templates/core.py`` at 876f37d, before they became tables
 (issue #97, P6).  Test-only: ``tests/test_template_tables.py`` compares the
 clauses the tables emit with the clauses these functions emit.  The copy of
-``_pow_rules`` went with ``POW_TABLE`` (#294: Pow's rows are compared with
-``tests/_legacy_pow_rules.py``).  Do not edit
+``_pow_rules`` went with ``POW_TABLE`` (#294: Pow's rows are checked by
+``tests/test_rows_numeric.py`` and ``tests/test_rows_baseline.py``).  Do not edit
 them to follow a later rule change; change the test's reference instead
 (``git show 876f37d:satassume/templates/core.py``)."""
 from itertools import combinations
