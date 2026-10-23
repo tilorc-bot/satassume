@@ -261,15 +261,17 @@ linked, ``prime(x)`` gives ``x - 1 >= 1``.
 A link whose premise holds ``prime``, ``composite`` or ``even``
 (:data:`BOUND_KINDS`) is made only in a session whose formulas mention
 that kind (:func:`bound_kinds`: an atom of the predicate, a symbol
-declared with it, or for ``even`` a product with an even Integer factor
-in a sign atom), so that a session over integers alone gets no atom
+declared with it, or for ``even`` an atom over a sum or shifted argument
+the bounds read, where the templates may derive evenness no atom names),
+so that a session over relations of integers alone gets no atom
 ``lt(e, 2)`` it cannot use: such atoms are decisions of the search and
 changed the paths of LRA's branch budget (``tests/test_lra_exhaustion.py``).
 
 The glue is on only where these can matter (:func:`bound_twins`): a sign
 atom whose argument holds, at any depth, a sum ``c0 + c1*u + ...`` with
-a Rational ``c0``, or an application whose rows read a shifted argument
-``v + c`` (``log(v)``: ``v - 1``), with ``u`` or ``v`` over a "premised"
+a Rational ``c0``, or any vocabulary atom whose argument holds an
+application whose rows read a shifted argument ``v + c`` (``log(v)``:
+``v - 1``; not ``Pow``), with ``u`` or ``v`` over a "premised"
 symbol (one under an atom of :data:`BOUND_PREMISES`, or a symbol
 declared an integer), gives the twins ``lt(0, t)`` of the sum and of
 ``u`` (of ``v`` and ``v + c``): relation atoms of its formula, read like
@@ -466,14 +468,18 @@ def bound_kinds(atoms) -> frozenset:
     """The :data:`BOUND_KINDS` a formula with the atoms ``atoms`` mentions:
     the predicates of its atoms, the declared
     facts of the free symbols of their arguments (``Symbol('p',
-    prime=True)``), and ``even`` for a product with an even Integer factor
-    in a sign atom's argument (:func:`_bound_nodes`)."""
+    prime=True)``), and ``even`` for an atom whose argument holds a sum
+    with a Rational term or a shifted argument (:func:`_bound_nodes`):
+    the templates derive evenness (``factorial(n + 2)``, ``-2*n``) that no
+    atom names."""
     out = set()
     syms = set()
     for a in atoms:
         if a.pred in BOUND_KINDS:
             out.add(a.pred)
-        elif a.pred in SIGN_PREDS and "even" not in out and _bound_nodes(a.expr)[2]:
+        elif "even" not in out and a.pred in PRED_INDEX and any(_bound_nodes(a.expr)):
+            # a term the templates make even (factorial(n + 2), -2*n)
+            # under a sum or shift the bounds read
             out.add("even")
         for e in (a.expr if a.pred in RELATION_ATOMS else (a.expr,)):
             syms.update(getattr(e, "free_symbols", ()))
@@ -821,27 +827,23 @@ def _shift_table() -> dict:
 
 
 def _bound_nodes(e) -> tuple:
-    """``(sums, shifts, even)`` of ``e`` (an atom's argument, or the tuple
-    of a relation's sides): ``sums`` the sums with a Rational term among
-    ``e`` and its subterms, no number; ``shifts`` the pairs ``(u, u + c)``
-    of the applications in ``e`` of a function whose rows use a term ``u +
-    c`` of an argument ``u`` (:func:`_shift_table`), ``u`` no number, with
-    the term as the template builds it (``_common.shifted``); ``even``
-    whether a product in ``e`` has an even Integer factor (``-2*n``: the
-    templates make it even).  Memoized per ``e``."""
+    """``(sums, shifts)`` of ``e`` (an atom's argument, or the tuple of a
+    relation's sides): ``sums`` the sums with a Rational term among ``e``
+    and its subterms, no number; ``shifts`` the pairs ``(u, u + c)`` of the
+    applications in ``e`` of a function whose rows use a term ``u + c`` of
+    an argument ``u`` (:func:`_shift_table`), ``u`` no number, with the
+    term as the template builds it (``_common.shifted``).  Memoized per
+    ``e``."""
     r = _BOUND_NODES.get(e)
     if r is not None:
         return r
     from sympy import Basic, Rational, preorder_traversal
     table = None
-    sums, shifts, even = [], [], False
+    sums, shifts = [], []
     for side in (e if isinstance(e, tuple) else (e,)):
         if not isinstance(side, Basic):
             continue
         for x in preorder_traversal(side):
-            if x.is_Mul:
-                even = even or any(f.is_Integer and f.p % 2 == 0 and f.p for f in x.args)
-                continue
             if x.is_Add:
                 if (not _is_number(x) and any(t.is_Rational for t in x.args)
                         and x not in sums):
@@ -863,7 +865,7 @@ def _bound_nodes(e) -> tuple:
                     d = shifted(u, Rational(c.numerator, c.denominator))
                     if (u, d) not in shifts:
                         shifts.append((u, d))
-    r = (tuple(sums), tuple(shifts), even)
+    r = (tuple(sums), tuple(shifts))
     if len(_BOUND_NODES) >= 100_000:
         _BOUND_NODES.clear()
     _BOUND_NODES[e] = r
@@ -905,12 +907,14 @@ def bound_twins(atoms, context=()) -> list:
       ``u`` with a premised
       symbol: the twins of the sum and of ``u`` (``Abs(e) - 1`` with
       ``even(e)``: the bound is one of ``Abs(e)``, which no atom names);
-    * an application ``f(..., v, ...)``, in such an argument, of a function
-      whose rows use the
+    * an application ``f(..., v, ...)`` in the argument of any vocabulary
+      atom (``factorial2(t - 4)`` reads ``t - 1``) of a function whose
+      rows use the
       term ``v + c`` (:func:`_bound_nodes`; ``log(v)`` reads ``v - 1``),
       ``v`` with a premised symbol: the twins of
       ``v`` and ``v + c``, so that both are linked (``v + c`` is a node
-      the template derives, which no atom names).
+      the template derives, which no atom names), and of the terms ``u``
+      as above where ``v`` or ``v + c`` is such a sum.
 
     In first-seen order; a pure function of the two atom sequences."""
     premised = set()
@@ -937,22 +941,24 @@ def bound_twins(atoms, context=()) -> list:
         tw = relation_atom("lt", S.Zero, t)
         if tw not in out:
             out.append(tw)
+            # a sum among them: its bounded terms too (their integrality
+            # and bounds reach LRA only through their own links)
+            for u in _bound_terms(t, bounded):
+                add(u)
     for seq in (atoms, context):
         for a in seq:
-            if a.pred not in SIGN_PREDS:
-                # a bound decides order facts: the sign atoms read it, an
-                # atom of another predicate (the integer facts of
-                # (c0 + c1*u)**-1) does not call for it.  A relation atom
-                # has the glue anyway; its sides' opaque terms stay
-                # unlinked, as before (see "Integrality")
+            if a.pred not in PRED_INDEX:
+                # a relation atom has the glue anyway; its sides' opaque
+                # terms stay unlinked, as before (see "Integrality")
                 continue
-            sums, shifts, _even = _bound_nodes(a.expr)
-            for e in sums:
-                us = _bound_terms(e, bounded)
-                if us:
-                    add(e)
-                    for u in us:
-                        add(u)
+            sums, shifts = _bound_nodes(a.expr)
+            if a.pred in SIGN_PREDS:
+                # a bound of a sum decides order facts: a sign atom reads
+                # it, an atom of another predicate (the integer facts of
+                # (c0 + c1*u)**-1) does not call for it
+                for e in sums:
+                    if _bound_terms(e, bounded):
+                        add(e)
             for u, d in shifts:
                 if bounded(u):
                     add(u)
