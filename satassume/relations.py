@@ -333,11 +333,14 @@ of the Mul template, ``core._mul_factor_sets``, which related ``c*m`` to
   :func:`scope.affine_pair`'s): the twin is ``lt(0, e)`` of the formula's
   own argument ``e``;
 * a linked ``e`` whose form is ``c*m + k``, one opaque product ``m``
-  with a Rational ``c``, gets ``real(e) <-> real(m)`` under its link
-  selector (``Relations._link_real``).  Sound: ``c != 0`` (a form keeps no
-  zero coefficient) and ``k`` is a finite real; a finite real ``m`` gives
-  a finite real ``c*m + k``, and an infinite, ``nan`` or non-real ``m``
-  gives an infinite, ``nan`` or non-real value.  ``e`` is that value: the
+  with a Rational ``c``, gets ``real(e) <-> real(m)`` and
+  ``extended_real(e) <-> extended_real(m)`` under its link selector
+  (``Relations._link_real``; the second carries an order atom on
+  ``2*x*y`` to the infinities of ``x*y``, which ``_order_infinite``
+  reads).  Sound: ``c != 0`` (a form keeps no zero coefficient) and ``k``
+  is a finite real; a finite real ``m`` gives a finite real ``c*m + k``,
+  ``m = +-oo`` gives ``+-oo`` or ``-+oo``, and ``zoo``, ``nan`` or a
+  non-real ``m`` gives ``zoo``, ``nan`` or a non-real value.  ``e`` is that value: the
   form reads ``m`` as the kept product of the symbolic factors of ``e``
   (#161), and a product of SymPy values is associative (``0*oo`` is
   ``nan`` in any grouping);
@@ -2101,8 +2104,9 @@ class Relations:
             self._link_parity(e, g)
 
     def _link_real(self, ad, e, g: int) -> None:
-        """``real(e) <-> real(m)`` for an ``e`` whose linear form in ``ad``
-        is ``c*m + k``, one opaque product ``m`` with a Rational ``c``
+        """``real(e) <-> real(m)`` and ``extended_real(e) <->
+        extended_real(m)`` for an ``e`` whose linear form in ``ad`` is
+        ``c*m + k``, one opaque product ``m`` with a Rational ``c``
         (``-x*y``, ``3*x*y - 3``; see "Products"), under the link selector
         of ``e`` (``g`` its negation)."""
         form = ad.integer_form(e)
@@ -2112,11 +2116,12 @@ class Relations:
         if m == e or type(c) is not Fraction or _product_term(m) is not m:
             return
         s = self.session
-        s.ensure(e, {"real"})
-        s.ensure(m, {"real"})
-        r, rm = s.var("real", e), s.var("real", m)
-        s.emit([-r, rm, g])
-        s.emit([-rm, r, g])
+        for pred in ("real", "extended_real"):
+            s.ensure(e, {pred})
+            s.ensure(m, {pred})
+            r, rm = s.var(pred, e), s.var(pred, m)
+            s.emit([-r, rm, g])
+            s.emit([-rm, r, g])
 
     def _link_parity(self, e, g: int) -> None:
         """``guard -> (even(e) <-> i0)`` and ``guard -> (odd(e) <-> i1)``

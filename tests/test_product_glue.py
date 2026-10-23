@@ -60,6 +60,28 @@ def test_signs_of_c_times_m(p, a, expected):
     assert fresh(p, a) is expected
 
 
+@pytest.mark.parametrize("p, a, expected", [
+    # an order atom on 2*x*y is read on the term x*y; its infinities are
+    # those of x*y (_order_infinite), so extended_real(2*x*y) must reach
+    # x*y: the extended_real link (the factor set gave it by the rows)
+    (Q.gt(2*x*y, 0), Q.gt(2*x*y, 1), True),
+    (Q.real(x*y), Q.gt(2*x*y, 1) & Q.lt(2*x*y, 3), True),
+    (Q.real(2*x*y), Q.gt(2*x*y, 1) & Q.lt(2*x*y, 3), True),
+    (Q.lt(-x*y, 0), Q.gt(3*x*y, 1), True),
+])
+def test_relations_on_c_times_m(p, a, expected):
+    assert fresh(p, a) is expected
+
+
+@pytest.mark.parametrize("a", [
+    Q.le(2*x*y, 0) & Q.gt(2*x*y, 1),
+    Q.negative_infinite(2*x*y) & Q.gt(2*x*y, z),
+])
+def test_inconsistent_relations_on_c_times_m(a):
+    with pytest.raises(ValueError):
+        fresh(Q.positive(z), a)
+
+
 def test_the_pair_switches_the_glue_on():
     s = theory_scope(F(Q.negative(x*y)), F(Q.positive(-x*y)))
     assert s.glue and not s.transfer
@@ -105,8 +127,21 @@ def test_polar_of_a_positive_times_polars():
 @pytest.mark.parametrize("c", [S(-1), S(3), Rational(1, 2), Rational(-7, 3)])
 @pytest.mark.parametrize("m", [S(0), S(2), S(-5), Rational(1, 3), oo, -oo, zoo, nan, I, 1 + I])
 def test_real_link_on_values(c, m):
-    # real(c*m + k) <-> real(m) for a Rational c != 0 and a Rational k: an
-    # infinite, nan or non-real m stays one through c*m + k
+    # real(c*m + k) <-> real(m) and extended_real(c*m + k) <->
+    # extended_real(m) for a Rational c != 0 and a Rational k: an infinite,
+    # nan or non-real m stays one through c*m + k, +-oo stays +-oo
     for k in (S(0), S(1), Rational(-5, 2)):
         v = c*m + k
         assert bool(v.is_real) == bool(m.is_real), (c, m, k)
+        assert bool(v.is_extended_real) == bool(m.is_extended_real), (c, m, k)
+
+
+@pytest.mark.xfail(strict=True, reason="#315 step 4: the factor set (c, rest) is gone, and "
+                   "no theory relates the non-sign facts of -m and m without a sign pair")
+@pytest.mark.parametrize("p, a", [
+    (Q.integer(x*y), Q.integer(-x*y)),
+    (Q.infinite(x*y), Q.infinite(2*x*y)),
+    (Q.real(x*y), Q.real(2*x*y)),
+])
+def test_non_sign_facts_of_c_times_m(p, a):
+    assert fresh(p, a) is True
