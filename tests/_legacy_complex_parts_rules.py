@@ -5,12 +5,9 @@ at d149951, before they became rows in ``templates/complex_parts.py``
 clauses the rows emit with the clauses these functions emit.  Do not edit
 them to follow a later rule change; change the test's reference instead
 (``git show d149951:satassume/knowledge/templates/functions.py``)."""
-from satassume.knowledge.templates.functions import (
-    N,
-    X,
-    _equiv,
-    _table,
-)
+from satassume.knowledge.templates.functions import N, X
+
+from _legacy_helpers import _equiv, _table
 
 
 def _abs(R, c):

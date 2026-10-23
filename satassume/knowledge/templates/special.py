@@ -29,7 +29,7 @@ from sympy.functions.special.gamma_functions import multigamma
 
 from ._common import Rules, const_key, facts
 from .atoms import value_units
-from .functions import _table, _unary, nary, shifted
+from .functions import _unary, nary, shifted
 from .registry import registry
 
 X, N, M, Q = 0, 1, 2, 3

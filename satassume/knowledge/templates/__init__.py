@@ -1,8 +1,8 @@
 """Structural rule templates for :mod:`satassume`.
 
 Importing this package registers every template module with
-:data:`registry` (:mod:`.core`, :mod:`.functions`, :mod:`.wiring`, :mod:`.selection`,
-:mod:`.special`, :mod:`.rootof`,
+:data:`registry` (:mod:`.core`, the families of rows through :mod:`.wiring`,
+:mod:`.selection`, :mod:`.special`, :mod:`.rootof`,
 :mod:`.nodes`, :mod:`.limits`, :mod:`.physics` and :mod:`.stats` on first use,
 see :meth:`TemplateRegistry.lazy`); the engine then calls ``registry.facts_for(expr)`` for each
 expression node it visits.
@@ -17,7 +17,7 @@ imported"; ``tests/test_layering.py``).
 """
 from sympy.core.add import Add
 from sympy.core.basic import Basic
-from sympy.core.function import Application, Function
+from sympy.core.function import Application
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
@@ -97,7 +97,6 @@ from .registry import TemplateRegistry, registry
 # the templates of sums, products and powers, and of functions, are
 # imported when the first node of such a class is met (TemplateRegistry.lazy)
 registry.lazy(__name__ + ".core", Add, Mul, Pow)
-registry.lazy(__name__ + ".functions", Function)
 #: the families of rows (.wiring), each with the functions it states rows
 #: for: a family is compiled on the first use of one of its functions
 ROW_FAMILIES = (

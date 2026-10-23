@@ -10,12 +10,9 @@ them to follow a later rule change; change the test's reference instead
 (``git show d149951:satassume/knowledge/templates/functions.py``)."""
 from satassume.knowledge.templates._common import Rules, const_key, facts
 from satassume.knowledge.templates.core import ipi_rules, ipi_split
-from satassume.knowledge.templates.functions import (
-    M,
-    N,
-    X,
-    _table,
-)
+from satassume.knowledge.templates.functions import M, N, X
+
+from _legacy_helpers import _table
 
 
 _EXP = (

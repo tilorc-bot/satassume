@@ -8,7 +8,9 @@ rule change; change the test's reference instead (``git show
 d149951:satassume/knowledge/templates/special.py``)."""
 from sympy import S
 
-from satassume.knowledge.templates.functions import N, X, _table
+from satassume.knowledge.templates.functions import N, X
+
+from _legacy_helpers import _table
 
 #: the slot of x - 1/2 (``slots=lambda x: (shifted(x, -S.Half),)``)
 M = 2
