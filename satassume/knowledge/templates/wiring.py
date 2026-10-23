@@ -93,6 +93,9 @@ def template(fn, gen):
     is imported for those templates only, not for :func:`power`'s (#297)."""
     if fn in POWER:
         return power(gen)
+    if getattr(gen, 'schemas', ()):
+        raise ValueError(f"{fn.__name__}: its rows have a star; no function is wired to "
+                         "any_arity yet")
     if not getattr(gen, 'plain', True):
         raise ValueError(f"{fn.__name__}: its rows have shapes or terms other than x + c, "
                          "which none of these templates builds")
@@ -133,12 +136,13 @@ def load(family: str) -> None:
     by_name = {fn.__name__: fn for fn in map(_declared, dict(ROW_FAMILIES)[family])
                if fn is not None}
     fns = set()
-    for fn_name, arity, terms, specs in dict(FAMILIES)[family]:
+    for fn_name, arity, terms, specs, *schemas in dict(FAMILIES)[family]:
         fn = by_name.get(fn_name)
         if fn is None:
             # declared by name and new in a later SymPy (owens_t)
             continue
-        registry.register(fn)(template(fn, generator(fn_name, arity, terms, specs, name)))
+        registry.register(fn)(template(fn, generator(fn_name, arity, terms, specs, name,
+                                                     *schemas)))
         fns.add(fn)
     for classes, t in AFTER_ROWS:
         if fns.issuperset(classes):
@@ -168,8 +172,9 @@ def _attributed(t, module):
 
 def matches(shape, args, consts):
     """Whether the arguments ``args`` of a node have the shape ``shape`` of a
-    rule (:func:`power`); ``consts`` holds the indices of the arguments that
-    are constants (atomic numbers)."""
+    rule (:func:`power`); ``consts`` holds the indices of
+    the arguments that are constants (atomic numbers).  A ``coefficient``
+    is argument 0, a SymPy ``Number``."""
     for i, s in enumerate(shape):
         if s is None:
             continue
@@ -183,6 +188,9 @@ def matches(shape, args, consts):
                 return False
         elif kind == 'head':
             if _exp_arg(a) is None:
+                return False
+        elif kind == 'coefficient':
+            if not (i == 0 and 0 in consts and consts[0].is_Number):
                 return False
         elif i not in consts:           # 'constant'
             return False
@@ -308,3 +316,4 @@ def power(gen):
     template.__name__ = template.__qualname__ = 'pow_templates'
     template.__module__ = gen.__module__
     return template
+

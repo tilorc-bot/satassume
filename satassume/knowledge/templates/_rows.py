@@ -92,6 +92,35 @@ indented on the next, a longer row continued on more lines::
             closed(f, Q.finite) & closed(f, Q.complex)),
     )
 
+A function of any number of arguments (:data:`ANY_ARITY`: a sum, a
+product, ``Max``, ``Min`` and the values of a ``Piecewise``) has rows with
+a *star*.  :data:`terms`, :data:`factors` and :data:`values` are the
+arguments: ``f(*factors)`` is a node of any number of arguments, all of
+them ``factors``; ``f(factor, *factors)`` picks one argument, at any
+position, and ``factors`` are the others; ``f(factor, other, *factors)``
+picks two.  ``every(P, factors)`` is ``P`` of each of them (true of none),
+``some(P, factors)`` ``P`` of one of them (false of none), and
+``count(factors)`` their number::
+
+    (Q.extended_negative(factor) & every(Q.extended_positive, factors))
+        >> Q.extended_negative(f(factor, *factors))
+    (some(Q.zero, factors) & every(Q.finite, factors)) >> Q.zero(f(*factors))
+    (every(Q.extended_negative, factors) & Q.even(count(factors)))
+        >> Q.extended_positive(f(*factors))
+
+A picked :data:`number` is a constant argument at any position, and
+:data:`coefficient` is argument 0 when it is a SymPy ``Number`` (a
+product's numeric coefficient: rational, float, infinite; not ``pi``).
+A row without a star is about nodes of exactly its number of arguments,
+in that order: ``Q.positive(coefficient) >> Q.positive(f(coefficient,
+factor))``.  ``for_all((Mul,), row, at_most=6)`` leaves the row out for a
+node of more than 6 arguments, a limit on the cost.  ``every`` is a
+premise; ``some`` in a premise, in a row without a picked argument, is one
+rule per argument (where its literal implies an ``every`` literal, that
+literal is left out on the argument), and in a conclusion a disjunction.
+Picked arguments of the same kind with the same literals are
+interchangeable: one rule per set of positions, not per order.
+
 Python binds ``>>`` tighter than ``&``: ``a & b >> c`` is ``And(a,
 Implies(b, c))``, and ``c >> s & t`` is ``(c >> s) & t``.  A row whose top
 is a conjunction is rejected, and a set with a condition refuses ``&``, so
@@ -100,6 +129,7 @@ both missing pairs of parentheses fail at import.
 from __future__ import annotations
 
 import ast
+import functools
 import operator
 from types import MappingProxyType
 from typing import NamedTuple
@@ -133,6 +163,70 @@ log_base = Symbol('log_base')
 number = Constant('number')
 #: the generic function: in a :func:`for_all` statement, each of its functions
 f = Function('f')
+
+
+class Arguments(Symbol):
+    """The arguments of a node of any number of arguments, or the others
+    than the picked ones: ``f(factor, *factors)``.  Unpacking it gives
+    itself, so that node is ``f(factor, factors)``."""
+    __slots__ = ()
+
+    def __iter__(self):
+        yield self
+
+
+#: the functions of any number of arguments, whose rows may have a star
+ANY_ARITY = frozenset({'Add', 'Mul', 'Max', 'Min', 'Piecewise'})
+#: the terms of a sum, the factors of a product, the values of Max, Min
+#: and Piecewise
+terms = Arguments('terms')
+factors = Arguments('factors')
+values = Arguments('values')
+#: picked arguments of a row with a star
+term = Symbol('term')
+factor = Symbol('factor')
+value = Symbol('value')
+other = Symbol('other')
+third = Symbol('third')
+#: the second constant variable: argument 0 when it is a SymPy ``Number``,
+#: the coefficient of a product
+coefficient = Constant('coefficient')
+
+@functools.cache
+def _over():
+    """What ``every``, ``some`` and ``count`` write, ``every(factors)``, by
+    the name of its function: made when a row is first written (a family
+    module, ``tools/compile_rows.py``), not when a query loads the compiled
+    rows (a SymPy function costs a fraction of a millisecond to make)."""
+    return MappingProxyType({Function(name): name for name in ('every', 'some', 'count')})
+
+
+def _function(name):
+    [fn] = [fn for fn, n in _over().items() if n == name]
+    return fn
+
+
+def every(pred, xs):
+    """``pred`` (or ``~pred``) of each argument of ``xs``, a premise:
+    ``every(Q.even, terms)``, ``every(~Q.zero, factors)``; true of none."""
+    return _applied(pred, _function('every')(xs))
+
+
+def some(pred, xs):
+    """``pred`` (or ``~pred``) of one argument of ``xs``: ``some(Q.zero,
+    factors)``; false of none."""
+    return _applied(pred, _function('some')(xs))
+
+
+def count(xs):
+    """The number of arguments of ``xs``: ``Q.even(count(factors))``."""
+    return _function('count')(xs)
+
+
+def _applied(pred, t):
+    if isinstance(pred, Not):
+        return Not(pred.args[0](t))
+    return pred(t)
 
 
 class Rows:
@@ -185,7 +279,9 @@ def _literal(e):
 
 def _flat(item):
     """The rows of a row, a :class:`Rows` or a tuple of those."""
-    if isinstance(item, (Rows, tuple, list)):
+    if isinstance(item, AtMost):
+        yield item
+    elif isinstance(item, (Rows, tuple, list)):
         for i in item:
             yield from _flat(i)
     else:
@@ -208,18 +304,35 @@ class ForAll(NamedTuple):
     rows: tuple
 
 
-def for_all(functions, *rows) -> ForAll:
+class AtMost(NamedTuple):
+    """A row with a star for nodes of at most ``n`` arguments
+    (``for_all(..., at_most=n)``)."""
+    row: object
+    n: int
+
+
+def for_all(functions, *rows, at_most=None) -> ForAll:
     """The ``rows`` hold for each of ``functions``, with :data:`f` standing
     for the function.  Each row must mention ``f``.  A function this SymPy
-    lacks is given as ``None`` (``owens_t`` before SymPy 1.15) and left out."""
+    lacks is given as ``None`` (``owens_t`` before SymPy 1.15) and left out.
+    With ``at_most``, rows with a star hold for nodes of at most that many
+    arguments (:class:`AtMost`)."""
     functions = tuple(functions)
     flat = tuple(_flat(rows))
     if not functions:
         raise ValueError("for_all of no function")
     functions = tuple(fn for fn in functions if fn is not None)
     for r in flat:
-        if not r.has(f):
+        if not (r.row if isinstance(r, AtMost) else r).has(f):
             raise ValueError(f"row {r} of for_all{functions} does not mention f")
+    if at_most is not None:
+        if not (type(at_most) is int and at_most >= 1):
+            raise ValueError(f"for_all{functions}: at_most={at_most!r} is not a positive int")
+        for r in flat:
+            if isinstance(r, AtMost) or not r.atoms(Arguments):
+                raise ValueError(f"row {r} of for_all{functions}: at_most is for a row "
+                                 "with a star, f(factor, *factors)")
+        flat = tuple(AtMost(r, at_most) for r in flat)
     return ForAll(functions, flat)
 
 
@@ -240,10 +353,15 @@ def bind(row, fn):
     """``row`` with :data:`f` standing for ``fn``: ``f(x)`` is ``fn(x)``,
     unevaluated (a base class has no value: ``RoundFunction(x)`` raises).
     ``f`` of symbols, numbers and functions (the shapes, :func:`_shape`)
-    is bound; ``f`` of anything else is left, and refused by :func:`rules`."""
+    is bound; ``f`` of anything else is left, and refused by :func:`rules`.
+    A node with a star stays ``f(...)`` (``Add(terms, evaluate=False)`` is
+    ``terms``): :func:`compile_rows` reads it as the node."""
+    if isinstance(row, AtMost):
+        return AtMost(bind(row.row, fn), row.n)
     return row.xreplace({a: _node(fn, a.args) for a in row.atoms(f)
-                         if all(isinstance(s, (Symbol, Function)) or s.is_number
-                                for s in a.args)})
+                         if not any(isinstance(s, Arguments) for s in a.args)
+                         and all(isinstance(s, (Symbol, Function)) or s.is_number
+                                 for s in a.args)})
 
 
 def _node(fn, args):
@@ -281,9 +399,19 @@ def compile_rows(head, table):
     ``k`` (an int or its text); ``('of_constant', i, text)``, a term of the
     constant variable, argument ``i``, as text (``'Abs(number) - 1'``,
     ``'2*number'``): the template computes it from the constant, when that
-    is a SymPy ``Number``, and leaves out the rules about it otherwise."""
-    by_n = {}
+    is a SymPy ``Number``, and leaves out the rules about it otherwise.
+
+    Rows with a star add a fourth element, their *schemas* (:func:`_schema`),
+    in the order of the rows; the arity is then that of the rows without a
+    star, ``()`` for none."""
+    by_n, schemas = {}, []
     for row in rows_of(table):
+        if isinstance(row, AtMost):
+            schemas.append(_schema(head, row.row, row.n))
+            continue
+        if row.atoms(Arguments):
+            schemas.append(_schema(head, row, None))
+            continue
         n, s = _specs(head, row)
         by_n.setdefault(n, []).extend(s)
     specs, terms = [], []
@@ -294,8 +422,9 @@ def compile_rows(head, table):
         specs.append((n, tuple(tuple(tuple((slot.get(k, k), pred, pos) for k, pred, pos in lits)
                                      for lits in spec[:2]) + tuple(spec[2:]) for spec in sp)))
         terms.append((n, tuple(_term_data(k) for k in order)))
-    arities = tuple(n for n, _ in terms) or (1,)
-    return (arities if len(arities) > 1 else arities[0]), tuple(terms), tuple(specs)
+    arities = tuple(n for n, _ in terms) or (() if schemas else (1,))
+    return ((arities if len(arities) != 1 else arities[0]), tuple(terms), tuple(specs)
+            ) + ((tuple(schemas),) if schemas else ())
 
 
 #: the order of the kinds of terms in their slots
@@ -355,7 +484,8 @@ def constant_term(text):
 #: what the texts of :func:`compile_rows` name: the numbers and functions
 #: of exact real numbers (``'1/2'``, ``'-1/E'``, ``'exp(-1)'``, ``'-I'``)
 #: and of the terms of the constant variable (``'Abs(number) - 1'``)
-_TEXT_NAMES = MappingProxyType({'E': S.Exp1, 'I': S.ImaginaryUnit, 'pi': S.Pi, 'number': number})
+_TEXT_NAMES = MappingProxyType({'E': S.Exp1, 'I': S.ImaginaryUnit, 'pi': S.Pi, 'number': number,
+                                'coefficient': coefficient})
 _TEXT_CALLS = MappingProxyType({'Abs': Abs, 'exp': exp, 'sqrt': sqrt})
 _TEXT_OPS = MappingProxyType({ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
                               ast.Div: operator.truediv, ast.Pow: operator.pow})
@@ -382,9 +512,10 @@ def constant_value(text, c):
     is built (the first sum SymPy builds in a process imports
     ``sympy.tensor``)."""
     try:
-        return _read(ast.parse(text, mode='eval').body, {**_TEXT_NAMES, 'number': c})
+        return _read(ast.parse(text, mode='eval').body,
+                     {**_TEXT_NAMES, 'number': c, 'coefficient': c})
     except (KeyError, TypeError, SyntaxError):
-        return constant_term(text).xreplace({number: c})
+        return constant_term(text).xreplace({number: c, coefficient: c})
 
 
 def _read(e, names):
@@ -418,7 +549,7 @@ def _term_object(t):
     return (t[0], from_text(t[1]))
 
 
-def generator(name: str, arity, terms: tuple, specs: tuple, module: str):
+def generator(name: str, arity, terms: tuple, specs: tuple, module: str, schemas=()):
     """The ``gen(R, c)`` that adds the rules ``specs`` (:func:`compile_rows`);
     ``module`` is the module the registry attributes the template to
     (``TemplateRegistry.lazy``).  ``gen.arity``, ``gen.terms`` (``{n: ((i,
@@ -433,7 +564,11 @@ def generator(name: str, arity, terms: tuple, specs: tuple, module: str):
     :func:`compile_rows` with the numbers of the shapes as SymPy numbers)
     and ``gen.terms`` (the other terms too, :func:`_term_object`) are then
     for the template that matches the node against the shapes and builds
-    the terms; ``gen(R, c)`` would add every rule, shaped or not."""
+    the terms; ``gen(R, c)`` would add every rule, shaped or not.
+
+    ``gen.schemas`` are the schemas of the rows with a star
+    (:func:`_schema`), with their numbers as SymPy numbers again, which
+    :func:`.wiring.expand` expands for a node."""
     terms = {n: tuple(_term_object(t) for t in ts) for n, ts in terms}
     specs = dict(specs)
     one = tuple(spec for sp in specs.values() for spec in sp)
@@ -452,6 +587,8 @@ def generator(name: str, arity, terms: tuple, specs: tuple, module: str):
                  for n, rs in specs.items()}
     gen.plain = (all(isinstance(t[0], int) for ts in terms.values() for t in ts)
                  and all(len(r) == 2 for r in one))
+    gen.schemas = tuple((at_most, tuple(zip(_shape_object(k for k, _ in picks), (g for _, g in picks))), rs)
+                        for at_most, picks, rs in schemas)
     return gen
 
 
@@ -547,6 +684,9 @@ def _lit(head, row, e):
     t = a.arguments[0]
     if _of_constant_only(t) and not isinstance(t, Constant):
         return (_of_constant(head, row, t, pred), pred, pos)
+    if type(t) is head:
+        # the node of a sum or a product: not a term x + c or k*x
+        return (t, pred, pos)
     if isinstance(t, Add):
         return (_shift(head, row, t, pred), pred, pos)
     if isinstance(t, Mul):
@@ -567,8 +707,9 @@ def _of_constant(head, row, t, pred):
     ``Pow(number, -1)``, the node of a row has an argument that is a plain
     symbol or a function of one."""
     [c] = t.free_symbols
-    if type(t) is head and t != 1/c:
-        # 1/number is a term of the constant also for a head Pow
+    if type(t) is head and t != 1/c and head.__name__ not in ANY_ARITY:
+        # 1/number is a term of the constant also for a head Pow, and
+        # 2*coefficient for a head Mul (f(2, coefficient) is the same Mul)
         raise ValueError(f"{head.__name__} row {row}: the node {t} has no argument but the "
                          "constant variable and numbers")
     k, rest = t.as_coeff_Mul()
@@ -710,7 +851,8 @@ def _shape(head, row, node):
             if s in seen:
                 _not_distinct(head, row, node)
             seen[s] = None
-            out.append(('constant',) if s is a else ('head', type(a).__name__))
+            out.append(_constant_shape(head, row, node, i, a) if s is a
+                       else ('head', type(a).__name__))
         elif isinstance(a, Symbol):
             _plain(head, row, a)
             if a in seen and seen[a] is None:
@@ -724,6 +866,18 @@ def _shape(head, row, node):
                              "a plain Symbol, an exact number, a function of a plain Symbol "
                              "or the constant variable")
     return tuple(out) if any(s is not None for s in out) else None
+
+
+def _constant_shape(head, row, node, i, a):
+    """The shape of the constant variable ``a``, argument ``i`` of ``node``:
+    ``('constant',)``, or ``('coefficient',)`` for :data:`coefficient`,
+    which is argument 0 of a function of any number of arguments."""
+    if a != coefficient:
+        return ('constant',)
+    if head.__name__ not in ANY_ARITY or i != 0:
+        raise ValueError(f"{head.__name__} row {row}: coefficient is argument 0 of a function "
+                         f"of any number of arguments, not argument {i} of {node}")
+    return ('coefficient',)
 
 
 def _not_distinct(head, row, node):
@@ -784,3 +938,150 @@ def _plain(head, row, s):
         raise ValueError(f"{head.__name__} row {row}: the argument {s} "
                          "must be a plain Symbol")
     return s
+
+
+# ---------------------------------------------------------------------------
+# rows with a star: f(factor, *factors), every, some, count
+# ---------------------------------------------------------------------------
+
+def _schema(head, row, at_most):
+    """The schema of a row with a star, plain data: ``(at_most, picks,
+    rules)``.  ``picks`` has, for each picked argument in the order of the
+    node, ``(kind, group)``: the kind is ``None`` (any argument),
+    ``('constant',)`` (a constant one, :data:`number`), ``('coefficient',)``
+    (argument 0 when it is a SymPy ``Number``) or ``('value', v)`` (the
+    atomic number ``v``, an int or its text); picks of one group (the index
+    of its first) are interchangeable: the row is the same for any order of
+    them.  ``rules`` are ``(premises, conclusion)`` of literals ``(where,
+    pred, sign)``, ``where`` the index of a picked argument, ``'node'``,
+    ``'every'`` (each argument of the others), ``'some'`` (one of them),
+    ``'count'`` (their number), or ``'others'``: an ``every`` literal that
+    the ``some`` literal of the rule implies by the rule base, which the
+    argument of ``some`` leaves out.  A rule with ``some`` in its premises
+    has no picked argument; ``every`` and ``count`` are premises."""
+    name = head.__name__
+    _row(row)
+    if name not in ANY_ARITY:
+        raise ValueError(f"{name} row {row}: a row with a star is about a function of any "
+                         f"number of arguments ({', '.join(sorted(ANY_ARITY))})")
+    if len(row.atoms(Constant)) > 1:
+        raise ValueError(f"{name} row {row}: more than one constant variable")
+    nodes = row.atoms(f)
+    starred = [a for a in nodes if any(isinstance(s, Arguments) for s in a.args)]
+    if not starred:
+        raise ValueError(f"{name} row {row}: every, some and count are about the arguments of "
+                         "a node with a star, f(*factors)")
+    if len(nodes) > 1:
+        raise ValueError(f"{name} row {row} mentions more than one node")
+    [node] = starred
+    *picked, xs = node.args
+    if not isinstance(xs, Arguments) or any(isinstance(a, Arguments) for a in picked):
+        raise ValueError(f"{name} row {row}: the star is the last argument of {node}, "
+                         "and the only one")
+    if len(set(picked)) != len(picked):
+        raise ValueError(f"{name} row {row}: the picked arguments of {node} are not distinct")
+    kinds = tuple(_pick(head, row, node, a) for a in picked)
+    where = {a: i for i, a in enumerate(picked)}
+    where[node] = 'node'
+    prem, concl = row.args if isinstance(row, Implies) else (True, row)
+    premises = [_star_lit(head, row, t, where, xs) for t in _conjuncts(prem) if t is not True]
+    out = []
+    for c in _conjuncts(concl):
+        if isinstance(c, Equivalent):
+            if len(c.args) != 2:
+                raise ValueError(f"{name} row {row}: {c} is not of two literals")
+            a, b = (_star_lit(head, row, t, where, xs) for t in c.args)
+            out += [(premises + [a], [b]), (premises + [b], [a])]
+        else:
+            out.append((premises, [_star_lit(head, row, t, where, xs)
+                                   for t in (c.args if isinstance(c, Or) else (c,))]))
+    out = [_star_rule(head, row, p, c, bool(picked)) for p, c in out]
+    return (at_most, tuple(zip(kinds, _groups(kinds, out))), tuple(out))
+
+
+def _pick(head, row, node, a):
+    """The kind of the picked argument ``a`` of ``node`` (:func:`_schema`)."""
+    if isinstance(a, Constant):
+        return ('coefficient',) if a == coefficient else ('constant',)
+    if isinstance(a, Symbol):
+        _plain(head, row, a)
+        return None
+    if isinstance(a, Expr) and a.is_number:
+        if not a.is_Atom:
+            raise ValueError(f"{head.__name__} row {row}: the argument {a} of {node} is no "
+                             "atomic number, which a picked argument of a row with a star is")
+        return ('value', _value_data(head, row, node, a))
+    raise ValueError(f"{head.__name__} row {row}: the picked argument {a} of {node} is not a "
+                     "plain Symbol, an atomic number or a constant variable")
+
+
+def _star_lit(head, row, e, where, xs):
+    """``(where, pred, sign)`` of the literal ``e`` of a row with a star."""
+    pos = not isinstance(e, Not)
+    a = e if pos else e.args[0]
+    if not (isinstance(a, AppliedPredicate) and len(a.arguments) == 1):
+        raise ValueError(f"{head.__name__} row {row}: {e} is not a literal of one argument "
+                         "(a row with a star has no inequalities)")
+    pred = str(a.function.name)
+    if pred not in VOCAB:
+        raise ValueError(f"{head.__name__} row {row}: {pred} is not a template predicate")
+    t = a.arguments[0]
+    if t in where:
+        return (where[t], pred, pos)
+    over = _over().get(type(t))
+    if over is not None:
+        if t.args != (xs,):
+            raise ValueError(f"{head.__name__} row {row}: {t} is not about {xs}, the arguments "
+                             "of the node")
+        return (over, pred, pos)
+    if isinstance(t, Arguments):
+        raise ValueError(f"{head.__name__} row {row}: {e} is about {t}: write "
+                         f"every(Q.{pred}, {t}) or some(Q.{pred}, {t})")
+    raise ValueError(f"{head.__name__} row {row}: {t} is neither the node nor one of its "
+                     "picked arguments, nor every, some or count of the others")
+
+
+def _star_rule(head, row, prem, concl, picked):
+    """The rule ``(premises, conclusion)`` of a row with a star, checked;
+    an ``every`` premise that the ``some`` premise implies is
+    ``'others'``."""
+    if any(w in ('every', 'count') for w, _, _ in concl):
+        raise ValueError(f"{head.__name__} row {row}: every and count are premises; for a "
+                         "conclusion about each argument, pick it: f(factor, *factors)")
+    some_ = [(p, s) for w, p, s in prem if w == 'some']
+    if some_:
+        if len(some_) > 1 or picked or any(w == 'some' for w, _, _ in concl):
+            raise ValueError(f"{head.__name__} row {row}: a row with some in its premises has "
+                             "one some, no picked argument and no some in its conclusion")
+        [s] = some_
+        prem = [('others', p, sign) if w == 'every' and _implies(s, (p, sign)) else (w, p, sign)
+                for w, p, sign in prem]
+    return (tuple(prem), tuple(concl))
+
+
+def _implies(a, b):
+    """Whether the literal ``a`` (``(pred, sign)``) implies ``b`` by the
+    rule base (in each of its models over the basis)."""
+    from ..rules import _basis_models, cnf_of
+
+    def holds(m, pred, sign):
+        return all(any(m[abs(l) - 1] is (l > 0) for l in c) for c in cnf_of(pred, sign))
+    return all(holds(m, *b) for m in _basis_models() if holds(m, *a))
+
+
+def _groups(kinds, rules):
+    """For each picked argument, the first of those it is interchangeable
+    with: of the same kind, and the rules are the same after swapping
+    them."""
+    def swapped(i, j):
+        sw = {i: j, j: i}
+        return frozenset((frozenset((sw.get(w, w), p, s) for w, p, s in ps),
+                          frozenset((sw.get(w, w), p, s) for w, p, s in cs)) for ps, cs in rules)
+    same = swapped(0, 0)
+    group = list(range(len(kinds)))
+    for j in range(len(kinds)):
+        for i in range(j):
+            if group[i] == i and kinds[i] == kinds[j] and swapped(i, j) == same:
+                group[j] = i
+                break
+    return group
