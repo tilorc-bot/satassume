@@ -15,32 +15,33 @@ from __future__ import annotations
 from sympy import Q, exp_polar, polar_lift, principal_branch
 from sympy.assumptions.assume import Predicate
 
-from ._rows import f, for_all, x, y
+from ._rows import argument, f, for_all, period
 
 RULES = (
     # Polar where finite
     #     a point of the Riemann surface of the logarithm
     for_all((exp_polar, polar_lift),
-        Q.finite(x) >> Predicate('polar')(f(x))),
+        Q.finite(argument) >> Predicate('polar')(f(argument))),
 
     # Polar where finite, for a positive period
     #     principal_branch(x, p) of the period p; principal_branch(x, oo) == x
     for_all((principal_branch,),
-        (Q.finite(x) & Q.positive(y)) >> Predicate('polar')(f(x, y))),
+        (Q.finite(argument) & Q.positive(period)) >> Predicate('polar')(f(argument, period))),
 
     # Positive on the reals
     #     exp_polar(t) == exp(t) for real t
     for_all((exp_polar,),
-        Q.real(x) >> Q.positive(f(x))),
+        Q.real(argument) >> Q.positive(f(argument))),
 
     # Rational at 0
     #     exp_polar(0) == 1
     for_all((exp_polar,),
-        Q.zero(x) >> Q.rational(f(x))),
+        Q.zero(argument) >> Q.rational(f(argument))),
 
     # Lindemann
     #     exp(a) is transcendental for an algebraic a != 0
     #     (Lindemann-Weierstrass), here for a real a only
     for_all((exp_polar,),
-        (Q.real(x) & Q.algebraic(x) & ~Q.zero(x)) >> Q.transcendental(f(x))),
+        (Q.real(argument) & Q.algebraic(argument) & ~Q.zero(argument))
+        >> Q.transcendental(f(argument))),
 )

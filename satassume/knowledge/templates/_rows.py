@@ -163,6 +163,8 @@ argument = Symbol('argument')
 #: the arguments of ``Mod(dividend, divisor)``
 dividend = Symbol('dividend')
 divisor = Symbol('divisor')
+#: the period of ``principal_branch(argument, period)`` (SymPy's name)
+period = Symbol('period')
 #: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
 base = Symbol('base')
 exponent = Symbol('exponent')
