@@ -7,8 +7,8 @@ from sympy import Abs, E, Float, Function, I, Integer, Pow, Q, Rational, S, Symb
 from satassume.knowledge.templates import ROW_FAMILIES, wiring
 from satassume.knowledge.templates._compiled_rows import FAMILIES
 from satassume.knowledge.templates._rows import (
-    VALUE_PREDICATES, Constant, base, by_function, compile_rows, constant_term, exponent, f,
-    for_all, generator, log_base, number,
+    VALUE_PREDICATES, Constant, base, by_function, compile_rows, constant_term, constant_value,
+    exponent, f, for_all, generator, log_base, number,
 )
 
 
@@ -105,6 +105,15 @@ def test_the_template_computes_a_term_of_the_constant_from_its_text():
         t = constant_term(text)
         assert str(t) == text and t.free_symbols == {number}
         assert t.xreplace({number: c}) == value
+        # computed from the text, without building the term
+        assert constant_value(text, c) == value
+    for text in ('Abs(number) - 1', 'Abs(number) - 2', '2*number', 'number/2', '1/number',
+                 'number - 2'):
+        for c in (Integer(-3), S.Zero, S.Half, Float(2.5), S.Infinity, S.NegativeInfinity,
+                  S.ComplexInfinity, S.NaN):
+            v = constant_value(text, c)
+            assert type(v) is type(constant_term(text).xreplace({number: c})), (text, c)
+            assert v == constant_term(text).xreplace({number: c}) or v is S.NaN, (text, c)
 
 
 def test_the_terms_of_a_row_are_in_their_order():
@@ -117,8 +126,8 @@ def test_the_terms_of_a_row_are_in_their_order():
                      ('of_constant', 1, '1/number'), ('of_constant', 1, 'Abs(number) - 1'))
     gen = generator('g', 2, ((2, terms),), ((2, rules),), __name__)
     assert gen.terms[2] == ((0, -1), (0, 1), ('inner', 0), ('times', 1, S.Half),
-                            ('times', 1, 2), ('of_constant', 1, 1/number),
-                            ('of_constant', 1, Abs(number) - 1))
+                            ('times', 1, 2), ('of_constant', 1, '1/number'),
+                            ('of_constant', 1, 'Abs(number) - 1'))
     assert gen.shifts == () and not gen.plain
 
 

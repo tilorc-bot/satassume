@@ -99,11 +99,14 @@ both missing pairs of parentheses fail at import.
 """
 from __future__ import annotations
 
+import ast
+import operator
+from types import MappingProxyType
 from typing import NamedTuple
 
 from sympy import (
-    Abs, Add, And, Equivalent, Expr, Float, Function, I, Implies, Mul, Not, Or, S, Symbol, nan, oo,
-    zoo,
+    Abs, Add, And, Equivalent, Expr, Float, Function, I, Implies, Integer, Mul, Not, Or, S, Symbol,
+    exp, nan, oo, sqrt, zoo,
 )
 from sympy.assumptions.assume import AppliedPredicate
 
@@ -326,7 +329,7 @@ def _number_data(c):
     if c.is_Integer:
         return int(c)
     text = str(c)
-    if S(text) != c:
+    if from_text(text) != c:
         raise ValueError(f"{c} is not rebuilt from its text {text!r}")
     return text
 
@@ -345,26 +348,74 @@ def constant_term(text):
     (``'Abs(number) - 1'``): the template evaluates it at the constant
     ``c`` of a node as ``t.xreplace({number: c})``, for a ``c`` that is a
     SymPy ``Number`` only."""
-    t = S(text)
+    t = from_text(text)
     return t.xreplace({s: Constant(s.name) for s in t.free_symbols})
+
+
+#: what the texts of :func:`compile_rows` name: the numbers and functions
+#: of exact real numbers (``'1/2'``, ``'-1/E'``, ``'exp(-1)'``, ``'-I'``)
+#: and of the terms of the constant variable (``'Abs(number) - 1'``)
+_TEXT_NAMES = MappingProxyType({'E': S.Exp1, 'I': S.ImaginaryUnit, 'pi': S.Pi, 'number': number})
+_TEXT_CALLS = MappingProxyType({'Abs': Abs, 'exp': exp, 'sqrt': sqrt})
+_TEXT_OPS = MappingProxyType({ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+                              ast.Div: operator.truediv, ast.Pow: operator.pow})
+
+
+def from_text(text):
+    """The SymPy expression of a text of :func:`compile_rows` (an int is an
+    ``Integer``), read with :mod:`ast` and built with SymPy's arithmetic
+    as SymPy's parser would build it, but without the parser, whose first
+    use costs tens of milliseconds (the generator reads the texts when a
+    function is first used); a text it does not read goes to ``S``."""
+    if not isinstance(text, str):
+        return S(text)
+    try:
+        return _read(ast.parse(text, mode='eval').body, _TEXT_NAMES)
+    except (KeyError, TypeError, SyntaxError):
+        return S(text)
+
+
+def constant_value(text, c):
+    """The term of the constant variable whose text is ``text`` at the
+    constant ``c``, a SymPy ``Number``: ``constant_term(text).xreplace({number:
+    c})``, computed from the text with ``c`` for ``number``, so that no term
+    is built (the first sum SymPy builds in a process imports
+    ``sympy.tensor``)."""
+    try:
+        return _read(ast.parse(text, mode='eval').body, {**_TEXT_NAMES, 'number': c})
+    except (KeyError, TypeError, SyntaxError):
+        return constant_term(text).xreplace({number: c})
+
+
+def _read(e, names):
+    if isinstance(e, ast.Constant) and type(e.value) is int:
+        return Integer(e.value)
+    if isinstance(e, ast.Name):
+        return names[e.id]
+    if isinstance(e, ast.UnaryOp) and isinstance(e.op, ast.USub):
+        return -_read(e.operand, names)
+    if isinstance(e, ast.BinOp):
+        return _TEXT_OPS[type(e.op)](_read(e.left, names), _read(e.right, names))
+    if isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and not e.keywords:
+        return _TEXT_CALLS[e.func.id](*(_read(a, names) for a in e.args))
+    raise TypeError(ast.dump(e))
 
 
 def _shape_object(shape):
     """A shape of :func:`_shape` with its numbers as SymPy numbers again."""
-    return tuple(('value', S(s[1])) if s is not None and s[0] == 'value' else s
+    return tuple(('value', from_text(s[1])) if s is not None and s[0] == 'value' else s
                  for s in shape)
 
 
 def _term_object(t):
     """A term of :func:`compile_rows` with its numbers as SymPy numbers
-    again (and the term of the constant as a SymPy expression)."""
+    again; a term of the constant stays text (:func:`constant_term`,
+    :func:`constant_value`)."""
     if t[0] == 'times':
-        return ('times', t[1], S(t[2]))
-    if t[0] == 'of_constant':
-        return ('of_constant', t[1], constant_term(t[2]))
-    if t[0] == 'inner':
+        return ('times', t[1], from_text(t[2]))
+    if t[0] in ('of_constant', 'inner'):
         return t
-    return (t[0], S(t[1]))
+    return (t[0], from_text(t[1]))
 
 
 def generator(name: str, arity, terms: tuple, specs: tuple, module: str):
@@ -699,7 +750,7 @@ def _value_data(head, row, node, v):
     if v.is_Integer:
         return int(v)
     text = str(v)
-    if S(text) != v:
+    if from_text(text) != v:
         raise ValueError(f"{head.__name__} row {row}: the argument {v} of {node} is not "
                          f"rebuilt from its text {text!r}")
     return text
