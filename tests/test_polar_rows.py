@@ -70,7 +70,8 @@ def test_the_template_of_rows_of_two_arguments_has_their_objects():
 
 @pytest.mark.parametrize("row, match", [
     (Q.positive(z) >> polar(principal_branch(x, y)), "more than one argument"),
-    (Q.positive(y) >> polar(principal_branch(x, x)), "not distinct"),
+    # a repeated argument is a shape (_rows._shape); y is not an argument
+    (Q.positive(y) >> polar(principal_branch(x, x)), "more than one argument"),
     ((Q.positive(y) & Q.zero(principal_branch(y, x))) >> polar(principal_branch(x, y)),
      "more than one node"),
     (Q.gt(z, 1) >> polar(principal_branch(x, y)), "more than one argument"),

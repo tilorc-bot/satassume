@@ -31,6 +31,39 @@ of several numbers of arguments: a node gets the rows of its number::
     (Q.finite(x) & Q.positive(y)) >> Q.complex(f(x, y))
     (Q.real(x) & Q.positive(y) & Q.lt(y, 1)) >> Q.positive(f(x, y))
 
+An argument of the node can have a *shape*, and the row is then about the
+nodes of that shape: an exact number, a function of a plain symbol (whose
+argument is a term of its own), a repeated symbol, or the constant
+variable :data:`number`, which stands for an argument that is a constant
+(an atomic number)::
+
+    Q.positive(base) >> Q.positive(f(base, -1))
+    Q.real(exponent) >> Q.positive(f(E, exponent))
+    (Q.imaginary(log_base) & Q.imaginary(exponent)) >> Q.positive(f(exp(log_base), exponent))
+    Q.extended_nonnegative(base) >> Q.extended_positive(f(base, base))
+    (Q.integer(number) & Q.ge(Abs(number), 2) & Q.negative(exponent)) >> ~Q.integer(
+        f(number, exponent))
+
+A literal about the constant variable is one about its argument; one
+about a term of it (``k*number`` for a rational ``k``, ``1/number``,
+``Abs(number)``, or the inequalities ``Q.gt(Abs(number), 1)``,
+``Q.ge(number, 2)`` and the like) is decided where the row is used, from
+the term computed at the constant, when the constant is a SymPy
+``Number``; at another constant (``pi``, ``I``) the row is left out.  A
+row has one constant variable at most.  The term ``k*x`` of an argument,
+for a rational ``k``, is written like ``x - c``, for facts not about its
+sign::
+
+    (Q.extended_real(base) & Q.rational(number) & Q.integer(2*number)
+     & ~Q.integer(number)) >> ~Q.extended_negative(f(base, number))
+    (Q.extended_real(base) & Q.rational(exponent) & ~Q.integer(2*exponent)) >> ~Q.imaginary(
+        f(base, exponent))
+
+``Q.eq(f(base, 1), base)`` says the node has the value of the argument:
+it is ``Equivalent(P(f(base, 1)), P(base))`` for each predicate ``P`` of
+:data:`VALUE_PREDICATES` (all but ``commutative``, a property of the
+expression and not of its value).
+
 A family module states its rules as one tuple, ``RULES``, of
 :func:`for_all` statements: the functions, and the rows that hold for each
 of them, ``f`` standing for the function.  ``closed(f, P)`` is the row
@@ -43,8 +76,9 @@ inequalities compare an argument with, as facts about ``x - c``
 (``Q.gt(x, c)`` is ``extended_positive(x - c)``, ``Q.eq(x, c)`` is
 ``zero(x - c)``), and the terms the rows write; by argument, then by
 ``|c|`` and ``x - c`` first: ``x - 1/2``, ``x + 1/2``, ``x - 1``,
-``x + 1``, ``x - 2``, ...) and registers the templates, so the patterns, their cache
-and the engine are unchanged.
+``x + 1``, ``x - 2``, ...; then the other terms, :func:`compile_rows`)
+and registers the templates, so the patterns, their cache and the engine
+are unchanged.
 
 Layout: above each statement a comment line with the property's title
 (``tools/show_rows.py`` prints it as the label), and under it, indented,
@@ -68,16 +102,32 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from sympy import (
-    Add, And, Equivalent, Expr, Float, Function, I, Implies, Not, Or, S, Symbol, nan, oo, zoo,
+    Abs, Add, And, Equivalent, Expr, Float, Function, I, Implies, Mul, Not, Or, S, Symbol, nan, oo,
+    zoo,
 )
 from sympy.assumptions.assume import AppliedPredicate
 
 from ._common import VOCAB, Rules
 
+
+class Constant(Symbol):
+    """A constant variable: in a row, an argument that is a constant (an
+    atomic number) where the row is used.  A :class:`~sympy.Symbol`, so its
+    terms (``2*number``, ``Abs(number)``) stay unevaluated, and told apart
+    from a plain symbol by its class."""
+    __slots__ = ()
+
+
 #: the argument of every row
 x = Symbol('x')
 #: the second argument of a row about a function of two arguments
 y = Symbol('y')
+#: the base and the exponent of a power, and the ``u`` of a base ``exp(u)``
+base = Symbol('base')
+exponent = Symbol('exponent')
+log_base = Symbol('log_base')
+#: the constant variable: ``f(number, exponent)`` is a power of a constant
+number = Constant('number')
 #: the generic function: in a :func:`for_all` statement, each of its functions
 f = Function('f')
 
@@ -186,9 +236,11 @@ def by_function(statements):
 def bind(row, fn):
     """``row`` with :data:`f` standing for ``fn``: ``f(x)`` is ``fn(x)``,
     unevaluated (a base class has no value: ``RoundFunction(x)`` raises).
-    ``f`` of anything but symbols is left, and refused by :func:`rules`."""
+    ``f`` of symbols, numbers and functions (the shapes, :func:`_shape`)
+    is bound; ``f`` of anything else is left, and refused by :func:`rules`."""
     return row.xreplace({a: _node(fn, a.args) for a in row.atoms(f)
-                         if all(isinstance(s, Symbol) for s in a.args)})
+                         if all(isinstance(s, (Symbol, Function)) or s.is_number
+                                for s in a.args)})
 
 
 def _node(fn, args):
@@ -212,26 +264,60 @@ def compile_rows(head, table):
     """``(arity, terms, specs)``, plain data (``tools/compile_rows.py``
     writes it to ``_compiled_rows.py``): the number of arguments of the
     nodes the rows mention, or the tuple of the numbers for rows of
-    several; for each number ``n``, ``(n, ((i, c), ...))``, the terms
-    ``args[i] + c`` the rules of its rows use in the order of their slots
-    ``n + 1``, ``n + 2``, ... (by ``i``, then by ``|c|``, ``x - c`` first),
-    ``c`` an int or the text of an exact real number (:func:`_number_data`); and
+    several; for each number ``n``, ``(n, terms)``, the terms the rules of
+    its rows use in the order of their slots ``n + 1``, ``n + 2``, ...; and
     ``(n, rules)``, the rules ``(premises, conclusion)`` of its rows, tuples
-    of literals ``(slot, pred, sign)``."""
+    of literals ``(slot, pred, sign)``, and ``(premises, conclusion,
+    shape)`` for a row whose node has a shape (:func:`_shape`).
+
+    A term is, in this order: ``(i, c)``, the term ``args[i] + c`` (by
+    ``i``, then by ``|c|``, ``x - c`` first), ``c`` an int or the text of
+    an exact real number (:func:`_number_data`); ``('inner', i)``, the
+    argument ``u`` of the argument ``i == exp(u)`` of a shape ``('head',
+    'exp')``; ``('times', i, k)``, the term ``k*args[i]`` for a rational
+    ``k`` (an int or its text); ``('of_constant', i, text)``, a term of the
+    constant variable, argument ``i``, as text (``'Abs(number) - 1'``,
+    ``'2*number'``): the template computes it from the constant, when that
+    is a SymPy ``Number``, and leaves out the rules about it otherwise."""
     by_n = {}
     for row in rows_of(table):
         n, s = _specs(head, row)
         by_n.setdefault(n, []).extend(s)
     specs, terms = [], []
     for n, sp in sorted(by_n.items()):
-        shifts = sorted({k for p, c in sp for k, _, _ in p + c if isinstance(k, tuple)},
-                        key=lambda k: (k[1], abs(k[2]), k[2]))
-        slot = {k: n + 1 + i for i, k in enumerate(shifts)}
+        order = sorted({k for spec in sp for k, _, _ in spec[0] + spec[1]
+                        if isinstance(k, tuple)}, key=_term_order)
+        slot = {k: n + 1 + i for i, k in enumerate(order)}
         specs.append((n, tuple(tuple(tuple((slot.get(k, k), pred, pos) for k, pred, pos in lits)
-                                     for lits in spec) for spec in sp)))
-        terms.append((n, tuple((i, _number_data(c)) for _, i, c in shifts)))
+                                     for lits in spec[:2]) + tuple(spec[2:]) for spec in sp)))
+        terms.append((n, tuple(_term_data(k) for k in order)))
     arities = tuple(n for n, _ in terms) or (1,)
     return (arities if len(arities) > 1 else arities[0]), tuple(terms), tuple(specs)
+
+
+#: the order of the kinds of terms in their slots
+_KINDS = ('shift', 'inner', 'times', 'of_constant')
+
+
+def _term_order(k):
+    kind, i, *data = k
+    if kind == 'shift':
+        return (0, i, abs(data[0]), data[0])
+    if kind == 'of_constant':
+        return (3, i, str(data[0]))
+    return (_KINDS.index(kind), i, *data)
+
+
+def _term_data(k):
+    """The slot ``k`` of :func:`_slots` as the plain data of :func:`compile_rows`."""
+    kind, i, *data = k
+    if kind == 'shift':
+        return (i, _number_data(data[0]))
+    if kind == 'inner':
+        return ('inner', i)
+    if kind == 'times':
+        return ('times', i, _number_data(data[0]))
+    return ('of_constant', i, _constant_text(data[0]))
 
 
 def _number_data(c):
@@ -245,6 +331,42 @@ def _number_data(c):
     return text
 
 
+def _constant_text(t):
+    """A term of the constant variable as text, which :func:`constant_term`
+    turns back into ``t``."""
+    text = str(t)
+    if constant_term(text) != t:
+        raise ValueError(f"{t} is not rebuilt from its text {text!r}")
+    return text
+
+
+def constant_term(text):
+    """The term of the constant variable whose text is ``text``
+    (``'Abs(number) - 1'``): the template evaluates it at the constant
+    ``c`` of a node as ``t.xreplace({number: c})``, for a ``c`` that is a
+    SymPy ``Number`` only."""
+    t = S(text)
+    return t.xreplace({s: Constant(s.name) for s in t.free_symbols})
+
+
+def _shape_object(shape):
+    """A shape of :func:`_shape` with its numbers as SymPy numbers again."""
+    return tuple(('value', S(s[1])) if s is not None and s[0] == 'value' else s
+                 for s in shape)
+
+
+def _term_object(t):
+    """A term of :func:`compile_rows` with its numbers as SymPy numbers
+    again (and the term of the constant as a SymPy expression)."""
+    if t[0] == 'times':
+        return ('times', t[1], S(t[2]))
+    if t[0] == 'of_constant':
+        return ('of_constant', t[1], constant_term(t[2]))
+    if t[0] == 'inner':
+        return t
+    return (t[0], S(t[1]))
+
+
 def generator(name: str, arity, terms: tuple, specs: tuple, module: str):
     """The ``gen(R, c)`` that adds the rules ``specs`` (:func:`compile_rows`);
     ``module`` is the module the registry attributes the template to
@@ -253,33 +375,53 @@ def generator(name: str, arity, terms: tuple, specs: tuple, module: str):
     of the rows of one argument) tell :func:`.wiring.template` the slots:
     for several numbers of arguments, ``gen(R, n)`` is
     :func:`.functions.nary`'s, and gives the rules of the rows of ``n``
-    arguments."""
-    terms = {n: tuple((i, S(c)) for i, c in ts) for n, ts in terms}
+    arguments.
+
+    ``gen.plain`` is false for rows with a shape or a term other than
+    ``x + c``: ``gen.specs`` (``{n: rules}``, the rules of
+    :func:`compile_rows` with the numbers of the shapes as SymPy numbers)
+    and ``gen.terms`` (the other terms too, :func:`_term_object`) are then
+    for the template that matches the node against the shapes and builds
+    the terms; ``gen(R, c)`` would add every rule, shaped or not."""
+    terms = {n: tuple(_term_object(t) for t in ts) for n, ts in terms}
     specs = dict(specs)
     one = tuple(spec for sp in specs.values() for spec in sp)
 
     def gen(R: Rules, c) -> None:
         # c: the constant argument (functions._unary) or the number of
         # arguments (functions.nary), which picks the rows for several
-        for prem, concl in specs.get(c, ()) if len(specs) > 1 else one:
+        for prem, concl, *_ in specs.get(c, ()) if len(specs) > 1 else one:
             R.rule(list(prem), list(concl))
     gen.__module__ = module
     gen.__name__ = gen.__qualname__ = f'{name}_rows'
     gen.arity = arity
     gen.terms = terms
-    gen.shifts = tuple(c for _, c in terms.get(1, ()))
+    gen.shifts = tuple(t[1] for t in terms.get(1, ()) if isinstance(t[0], int))
+    gen.specs = {n: tuple((*r[:2], _shape_object(r[2])) if len(r) > 2 else r for r in rs)
+                 for n, rs in specs.items()}
+    gen.plain = (all(isinstance(t[0], int) for ts in terms.values() for t in ts)
+                 and all(len(r) == 2 for r in one))
     return gen
 
 
 def _specs(head, row):
     """``(n, specs)``: the number of arguments of the node, and the rules of
-    ``row`` over the slots of :func:`_slots`."""
+    ``row`` over the slots of :func:`_slots`, each with the shape of the
+    node when it has one."""
     _row(row)
+    constants = row.atoms(Constant)
+    if len(constants) > 1:
+        raise ValueError(f"{head.__name__} row {row}: more than one constant variable "
+                         f"({', '.join(sorted(map(str, constants)))})")
     prem, concl = row.args if isinstance(row, Implies) else (True, row)
     premises = [_lit(head, row, t) for t in _conjuncts(prem) if t is not True]
     out = []
     for c in _conjuncts(concl):
-        if isinstance(c, Equivalent):
+        pairs = _value_equality(head, row, c)
+        if pairs:
+            for a, b in pairs:
+                out += [(premises + [a], [b]), (premises + [b], [a])]
+        elif isinstance(c, Equivalent):
             if len(c.args) != 2:
                 raise ValueError(f"{head.__name__} row {row}: {c} is not of two literals")
             a, b = (_lit(head, row, t) for t in c.args)
@@ -287,13 +429,37 @@ def _specs(head, row):
         else:
             out.append((premises, [_lit(head, row, t)
                                    for t in (c.args if isinstance(c, Or) else (c,))]))
-    n, slot = _slots(head, row, {t for p, c in out for t, _, _ in p + c})
+    n, slot, shape = _slots(head, row, {t for p, c in out for t, _, _ in p + c})
     return n, [tuple([(slot[t], pred, pos) for t, pred, pos in lits] for lits in spec)
-               for spec in out]
+               + ((shape,) if shape else ()) for spec in out]
 
 
 def _conjuncts(e):
     return e.args if isinstance(e, And) else (e,)
+
+
+#: the predicates of a value: ``Q.eq(f(base, 1), base)`` is the
+#: equivalence of each of them about the node and the argument
+#: (``commutative`` is a property of the expression, not of its value)
+VALUE_PREDICATES = tuple(sorted(VOCAB - {'commutative'}))
+
+
+def _value_equality(head, row, c):
+    """For ``Q.eq(node, a)`` (or ``Q.eq(a, node)``) with ``a`` an argument:
+    the pairs of literals ``P(node)``, ``P(a)`` of :data:`VALUE_PREDICATES`;
+    else ``()``."""
+    if not (isinstance(c, AppliedPredicate) and str(c.function.name) == 'eq'
+            and len(c.arguments) == 2):
+        return ()
+    nodes = [s for s in c.arguments if type(s) is head]
+    if len(nodes) != 1:
+        return ()
+    [node] = nodes
+    [a] = [s for s in c.arguments if s is not node]
+    if not isinstance(a, Symbol):
+        raise ValueError(f"{head.__name__} row {row}: {c} does not equate the node "
+                         "with an argument")
+    return [((node, p, True), (a, p, True)) for p in VALUE_PREDICATES]
 
 
 #: an inequality between the argument and a real number ``c``: the fact
@@ -312,7 +478,10 @@ _SIGN = ('positive', 'negative', 'nonnegative', 'nonpositive', 'nonzero', 'zero'
 def _lit(head, row, e):
     """``(term, pred, positive)`` of the literal ``e``; the term of an
     inequality is ``(('shift', -c), x)`` for ``x - c`` (:func:`_relation`),
-    and so is a written term ``x - c`` (:func:`_shift`)."""
+    and so is a written term ``x - c`` (:func:`_shift`); a written term
+    ``k*x`` is ``(('times', k), x)`` (:func:`_times`), and a term ``t`` of
+    the constant variable ``number`` is ``(('of_constant', t), number)``
+    (:func:`_of_constant`)."""
     pos = not isinstance(e, Not)
     a = e if pos else e.args[0]
     if not isinstance(a, AppliedPredicate):
@@ -325,9 +494,40 @@ def _lit(head, row, e):
     if pred not in VOCAB:
         raise ValueError(f"{head.__name__} row {row}: {pred} is not a template predicate")
     t = a.arguments[0]
+    if _of_constant_only(t) and not isinstance(t, Constant):
+        return (_of_constant(head, row, t, pred), pred, pos)
     if isinstance(t, Add):
         return (_shift(head, row, t, pred), pred, pos)
+    if isinstance(t, Mul):
+        return (_times(head, row, t, pred), pred, pos)
     return (t, pred, pos)
+
+
+def _of_constant_only(t):
+    fs = t.free_symbols
+    return bool(fs) and all(isinstance(s, Constant) for s in fs)
+
+
+def _of_constant(head, row, t, pred):
+    """The slot ``(('of_constant', t), number)`` of a written term ``t`` of
+    the constant variable: ``k*number`` for a rational ``k``, ``1/number`` or
+    ``Abs(number)``, about which ``pred`` is not a fact about a sign.  A
+    term of the constant alone is never the node: ``1/number`` is not
+    ``Pow(number, -1)``, the node of a row has an argument that is a plain
+    symbol or a function of one."""
+    [c] = t.free_symbols
+    if type(t) is head and t != 1/c:
+        # 1/number is a term of the constant also for a head Pow
+        raise ValueError(f"{head.__name__} row {row}: the node {t} has no argument but the "
+                         "constant variable and numbers")
+    k, rest = t.as_coeff_Mul()
+    if not (t == 1/c or t == Abs(c) or (rest == c and k.is_Rational and k != 1)):
+        raise ValueError(f"{head.__name__} row {row}: {t} is not a term of the constant "
+                         f"variable: k*{c} for a rational k, 1/{c} or Abs({c})")
+    if pred.removeprefix('extended_') in _SIGN:
+        raise ValueError(f"{head.__name__} row {row}: {pred}({t}) is a fact about a sign: "
+                         f"compare {c} or Abs({c}) with a number, Q.gt(Abs({c}), 1)")
+    return (('of_constant', t), c)
 
 
 def _shift(head, row, t, pred):
@@ -344,34 +544,63 @@ def _shift(head, row, t, pred):
     return (('shift', k), s)
 
 
+def _times(head, row, t, pred):
+    """The slot ``(('times', k), x)`` of a written term ``t == k*x`` for a
+    rational ``k``, about which ``pred`` is not a fact about a sign."""
+    k, s = t.as_coeff_Mul()
+    if not (isinstance(s, Symbol) and k.is_Rational and k != 1):
+        raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument nor "
+                         f"{head.__name__} of it, nor the argument times a rational")
+    if pred.removeprefix('extended_') in _SIGN:
+        raise ValueError(f"{head.__name__} row {row}: {pred}({t}) is a fact about the sign "
+                         f"of {s}: state it on the argument")
+    _plain(head, row, s)
+    return (('times', k), s)
+
+
 def _number(c):
     """Whether ``c`` is an exact real number: no float, I or infinity."""
     return (isinstance(c, Expr) and c.is_number
             and not c.has(Float, I, oo, -oo, zoo, nan))
 
 
+def _compared(s):
+    """Whether an inequality can compare ``s`` with a number: an argument,
+    or ``Abs`` of the constant variable."""
+    return isinstance(s, Symbol) or (isinstance(s, Abs) and isinstance(s.args[0], Constant))
+
+
 def _relation(head, row, rel, args, pos):
     """``Q.gt(x, c)`` and the like, for an exact real number ``c`` (an
     integer, or a constant like ``1/2`` or ``-1/E``): a fact about the term ``x - c`` (slot
     ``('shift', -c)`` until :func:`rules` numbers the shifts; the argument
-    itself for ``c == 0``)."""
+    itself for ``c == 0``).  For the constant variable, or ``Abs`` of it,
+    the term is a term of the constant, ``Abs(number) - 1``."""
     of = {r[0]: r[1:] for r in _RELATIONS}
     s, c = args
-    if not isinstance(s, Symbol):
+    if not _compared(s):
         rel, s, c = of[rel][2], c, s
-    if not (isinstance(s, Symbol) and _number(c)):
+    if not (_compared(s) and _number(c)):
         raise ValueError(f"{head.__name__} row {row}: Q.{rel}{args} does not compare "
                          "an argument with a number")
     pred, sign, _ = of[rel]
+    if isinstance(s, Constant) and not c:
+        return (s, pred, pos is sign)
+    if _of_constant_only(s):
+        [k] = s.free_symbols
+        return ((('of_constant', s - c), k), pred, pos is sign)
     _plain(head, row, s)
     return ((('shift', -c), s) if c else s, pred, pos is sign)
 
 
 def _slots(head, row, terms):
-    """``(n, slot)``: the slot of each term of a row about the node ``head(x0,
-    ..., x_{n-1})``: argument ``i`` is slot ``i``, the node ``n``, and a
-    term ``x_i - c`` is ``('shift', i, -c)`` until :func:`rules` numbers
-    it."""
+    """``(n, slot, shape)``: the slot of each term of a row about the node
+    ``head(a_0, ..., a_{n-1})``, and the shape of the node (:func:`_shape`):
+    argument ``i`` is slot ``i`` (a repeated symbol its first), the node
+    ``n``, and a term ``a_i - c`` is ``('shift', i, -c)``, ``k*a_i``
+    ``('times', i, k)``, the ``u`` of an argument ``exp(u)`` ``('inner',
+    i)`` and a term ``t`` of the constant variable ``('of_constant', i,
+    t)`` until :func:`compile_rows` numbers them."""
     kinds = {t: _term(head, row, t) for t in terms}
     nodes = [t for t, k in kinds.items() if k == 'node']
     if not nodes:
@@ -380,33 +609,116 @@ def _slots(head, row, terms):
         raise ValueError(f"{head.__name__} row {row} mentions more than one node")
     [node] = nodes
     args = node.args
-    if len(set(args)) != len(args):
-        raise ValueError(f"{head.__name__} row {row}: the arguments of {node} are not distinct")
-    slot = {a: i for i, a in enumerate(args)}
+    shape = _shape(head, row, node)
+    slot = {}
+    for i, a in enumerate(args):
+        slot.setdefault(a, i)
     slot[node] = len(args)
+    inner = {a.args[0]: i for i, (a, s) in enumerate(zip(args, shape or ()))
+             if s is not None and s[0] == 'head'}
     for t, k in kinds.items():
-        if k == 'node':
+        if k == 'node' or t in slot:
             continue
-        s = t if k == 'argument' else t[1]
+        if k == 'argument':
+            if t in inner:
+                slot[t] = ('inner', inner[t])
+                continue
+            if isinstance(t, Symbol):
+                _not_an_argument(head, row, node, t)
+            raise ValueError(f"{head.__name__} row {row}: {t} is neither the argument nor "
+                             f"{head.__name__} of it")
+        (kind, data), s = t
         if s not in args:
-            raise ValueError(f"{head.__name__} row {row} mentions more than one argument: "
-                             f"{s} is not an argument of {node}")
-        if k == 'shift':
-            slot[t] = ('shift', args.index(s), t[0][1])
-    return len(args), slot
+            _not_an_argument(head, row, node, s)
+        slot[t] = (kind, args.index(s), data)
+    return len(args), slot, shape
+
+
+def _not_an_argument(head, row, node, s):
+    if isinstance(s, Constant):
+        raise ValueError(f"{head.__name__} row {row}: the constant variable {s} is not an "
+                         f"argument of {node}")
+    raise ValueError(f"{head.__name__} row {row} mentions more than one argument: "
+                     f"{s} is not an argument of {node}")
+
+
+def _shape(head, row, node):
+    """The shape of ``node``: for each argument ``None`` (a plain symbol),
+    ``('same', j)`` (the plain symbol of argument ``j``), ``('value', v)``
+    (the exact number ``v``, an int or its text: ``-1``, ``'E'``,
+    ``'-I'``), ``('head', name)`` (the function ``name`` of a plain
+    symbol, ``exp(log_base)``) or ``('constant',)`` (the constant variable,
+    for a constant argument); ``None`` when every argument is a distinct
+    plain symbol."""
+    # seen: the argument of each plain symbol, None for the constant
+    # variable and the symbol of a function, which are not repeated
+    out, seen = [], {}
+    for i, a in enumerate(node.args):
+        if isinstance(a, Constant) or isinstance(a, Function):
+            s = a if isinstance(a, Constant) else _inner(head, row, node, a)
+            if s in seen:
+                _not_distinct(head, row, node)
+            seen[s] = None
+            out.append(('constant',) if s is a else ('head', type(a).__name__))
+        elif isinstance(a, Symbol):
+            _plain(head, row, a)
+            if a in seen and seen[a] is None:
+                _not_distinct(head, row, node)
+            out.append(('same', seen[a]) if a in seen else None)
+            seen.setdefault(a, i)
+        elif a.is_number:
+            out.append(('value', _value_data(head, row, node, a)))
+        else:
+            raise ValueError(f"{head.__name__} row {row}: the argument {a} of {node} is not "
+                             "a plain Symbol, an exact number, a function of a plain Symbol "
+                             "or the constant variable")
+    return tuple(out) if any(s is not None for s in out) else None
+
+
+def _not_distinct(head, row, node):
+    raise ValueError(f"{head.__name__} row {row}: the arguments of {node} are not distinct "
+                     "(only a plain symbol can be repeated)")
+
+
+def _inner(head, row, node, a):
+    """The plain symbol ``u`` of an argument ``a == g(u)`` of ``node``."""
+    if not (len(a.args) == 1 and isinstance(a.args[0], Symbol)
+            and not isinstance(a.args[0], Constant)):
+        raise ValueError(f"{head.__name__} row {row}: the argument {a} of {node} is not "
+                         "a function of a plain Symbol")
+    return _plain(head, row, a.args[0])
+
+
+def _value_data(head, row, node, v):
+    """The exact number ``v``, an argument of ``node``, as plain data: an
+    int, or its text (``'E'``, ``'-I'``, ``'1/2'``), which :func:`generator`
+    turns back into ``v``."""
+    if v.has(Float, zoo, nan):
+        raise ValueError(f"{head.__name__} row {row}: the argument {v} of {node} is not "
+                         "an exact number")
+    if v.is_Integer:
+        return int(v)
+    text = str(v)
+    if S(text) != v:
+        raise ValueError(f"{head.__name__} row {row}: the argument {v} of {node} is not "
+                         f"rebuilt from its text {text!r}")
+    return text
 
 
 def _term(head, row, t):
-    """``'node'``, ``'argument'`` or ``'shift'`` (``x - c``, from an
-    inequality or written)."""
+    """``'node'``, ``'argument'`` (a symbol, or a function of one: an
+    argument ``exp(u)`` of the node), or the kind of a term from
+    :func:`_lit` (``'shift'``, ``'times'``, ``'of_constant'``)."""
     if isinstance(t, tuple):
-        return 'shift'
+        return t[0][0]
     if type(t) is head:
-        for a in t.args:
-            _plain(head, row, a)
         return 'node'
+    if isinstance(t, Constant):
+        return 'argument'
     if isinstance(t, Symbol):
         _plain(head, row, t)
+        return 'argument'
+    if isinstance(t, Function) and len(t.args) == 1 and isinstance(t.args[0], Symbol):
         return 'argument'
     # a constructor that rewrote the written term (cos(x + pi/2) is -sin(x)),
     # or a term of the argument other than x + c

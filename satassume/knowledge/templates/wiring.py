@@ -81,7 +81,12 @@ def template(fn, gen):
     arguments, or about nodes of several numbers of arguments
     (``gen.arity``), get :func:`.functions.nary`'s template: the arguments
     are slots ``0 .. n-1``, the node ``n``, the terms from ``n + 1``; a
-    node of another number of arguments gets no facts."""
+    node of another number of arguments gets no facts.  Rows with shapes
+    or terms other than ``x + c`` (``gen.plain`` false) are refused: no
+    template here matches a node against shapes."""
+    if not getattr(gen, 'plain', True):
+        raise ValueError(f"{fn.__name__}: its rows have shapes or terms other than x + c, "
+                         "which none of these templates builds")
     shift = dict(PI_MULTIPLE).get(fn)
     if shift is not None:
         return _pi_trig(fn.__name__, gen, shift)
