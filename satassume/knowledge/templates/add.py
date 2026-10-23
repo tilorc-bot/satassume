@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from sympy import Add, Q
 
-from ._rows import every, f, for_all, number, other, some, term, terms, third
+from ._rows import count, every, f, for_all, number, other, some, term, terms, third
 
 RULES = (
     # --- closed under addition ---
@@ -127,15 +127,22 @@ RULES = (
         (Q.odd(term) & Q.odd(other) & Q.odd(third) & every(Q.even, terms))
         >> Q.odd(f(term, other, third, *terms)), at_most=3),
 
-    # Composite: positive even terms
-    #     a sum has two terms or more: it is at least 4
+    # Composite: two positive even terms or more
+    #     at least 4; two or more: a number of terms that is a prime or
+    #     composite (a node of one term, which SymPy does not build, is that
+    #     term)
     for_all((Add,),
-        (every(Q.even, terms) & every(Q.positive, terms)) >> Q.composite(f(*terms))),
+        (every(Q.even, terms) & every(Q.positive, terms) & Q.prime(count(terms)))
+        >> Q.composite(f(*terms)),
+        (every(Q.even, terms) & every(Q.positive, terms) & Q.composite(count(terms)))
+        >> Q.composite(f(*terms))),
 
-    # Prime or composite: positive integer terms
-    #     a sum has two terms or more: it is at least 2
+    # Prime or composite: two positive integer terms or more
+    #     at least 2; two or more as above
     for_all((Add,),
-        (every(Q.integer, terms) & every(Q.positive, terms))
+        (every(Q.integer, terms) & every(Q.positive, terms) & Q.prime(count(terms)))
+        >> (Q.prime(f(*terms)) | Q.composite(f(*terms))),
+        (every(Q.integer, terms) & every(Q.positive, terms) & Q.composite(count(terms)))
         >> (Q.prime(f(*terms)) | Q.composite(f(*terms)))),
 
     # --- infinite ---

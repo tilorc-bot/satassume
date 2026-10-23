@@ -92,10 +92,12 @@ RULES = (
 
     # --- integers ---
 
-    # Composite: a product of primes
-    #     a product has two factors or more
+    # Composite: a product of two primes or more
+    #     two or more: a number of factors that is a prime or composite; a
+    #     node of one factor, which SymPy does not build, is that factor
     for_all((Mul,),
-        every(Q.prime, factors) >> Q.composite(f(*factors))),
+        (every(Q.prime, factors) & Q.prime(count(factors))) >> Q.composite(f(*factors)),
+        (every(Q.prime, factors) & Q.composite(count(factors))) >> Q.composite(f(*factors))),
 
     # Composite: two integers of at least 2
     #     an integer of at least 2 is a prime, a composite or a positive

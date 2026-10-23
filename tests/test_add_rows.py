@@ -86,7 +86,7 @@ def test_every_compiled_rule_is_used():
     # of a commutative sum
     [(name, arity, terms, specs, schemas)] = dict(FAMILIES)['add']
     gen = generator(name, arity, terms, specs, FAMILY, schemas)
-    assert not gen.specs and len(gen.schemas) == 42
+    assert not gen.specs and len(gen.schemas) == 44
     rules = [_single(gen, s) for s in gen.schemas]
     nodes = [e for k in ARITIES for e in pattern_nodes(k)]
     no_rule, no_clause = set(range(len(rules))), set(range(len(rules)))
@@ -137,6 +137,20 @@ def test_the_blocks_of_a_node():
     # a constant term 1 is not nonpositive: no formula of a negative sum
     out, _ = run(rows_template(), Add(*xs[:33]) + 1)
     assert len(out) == 2 and 'extended_positive' in str(out[1])
+
+
+def test_a_node_of_one_term_is_that_term():
+    # SymPy builds no sum of one term, but a node built by hand is its
+    # term: 2 is neither composite, nor 1 prime or composite (the rows of
+    # two terms or more)
+    from satassume.sympy_api import ask
+    from sympy import Q, Symbol
+    z = Symbol('z')
+    one = Basic.__new__(Add, z)
+    assert ask(Q.composite(one), Q.even(z) & Q.positive(z)) is None
+    assert ask(Q.prime(one) | Q.composite(one), Q.integer(z) & Q.positive(z)) is None
+    two = Basic.__new__(Add, z, z)
+    assert ask(Q.composite(two), Q.even(z) & Q.positive(z)) is True
 
 
 def test_add_is_compiled_on_its_own_first_use():
