@@ -2,9 +2,10 @@
 
 The per-term rules of the Add template (one rule of n literals per term)
 made its pattern O(n^2): an Add of 4368 terms (heurisch's ansatz) took
-more than 4 GB, 600 symbols 720 MB and 7 s.  Past ``MAX_ONEOUT_WIDE``
-terms the strict-sign rule of Add and the zero rule of Mul are one formula
-each (linear), the other per-term rules are not emitted, and a node with
+more than 4 GB, 600 symbols 720 MB and 7 s.  Past ``SOME_PER_ARGUMENT``
+(``wiring``) terms the strict-sign rows of Add and the zero row of Mul are
+one formula each (linear), the other per-term rows are not emitted
+(``at_most=32`` or less), and a node with
 more non-constant terms than the discovery budget is over the budget
 before any of its templates is built.
 """
@@ -15,7 +16,7 @@ from sympy import Add, And, Integer, Mul, Q, S, oo, prime, sqrt, symbols
 
 from satassume import DictCache, Engine
 from satassume.knowledge.templates import registry
-from satassume.knowledge.templates.core import MAX_ONEOUT_WIDE
+from satassume.knowledge.templates.wiring import SOME_PER_ARGUMENT
 from satassume.sympy_api import ask
 
 
@@ -33,7 +34,7 @@ def literals(expr):
     return n + sum(len(list(atoms_of(f))) for f in formulas)
 
 
-@pytest.mark.parametrize("n", [MAX_ONEOUT_WIDE + 1, 100, 300])
+@pytest.mark.parametrize("n", [SOME_PER_ARGUMENT + 1, 100, 300])
 def test_wide_add_templates_are_linear_in_literals(n):
     xs = symbols(f"x0:{n}")
     assert literals(Add(*xs)) <= 40 * n
@@ -65,7 +66,7 @@ def test_sum_wider_than_the_budget_builds_no_template(monkeypatch):
     assert fresh().is_(s, "finite") is True
 
 
-@pytest.mark.parametrize("n", [MAX_ONEOUT_WIDE + 1, 160])
+@pytest.mark.parametrize("n", [SOME_PER_ARGUMENT + 1, 160])
 def test_wide_strict_sign(n):
     xs = symbols(f"x0:{n}")
     s = Add(*xs)
@@ -88,7 +89,7 @@ def test_wide_strict_sign_with_a_constant_term(c, nonneg, one_positive):
     # extended_positive of c + (nonnegative terms), and positive with x0
     # positive; c = oo makes the sum +oo, which is not positive (False; the
     # infinite-sum rules stop at MAX_ONEOUT terms, so None)
-    xs = symbols(f"x0:{MAX_ONEOUT_WIDE + 3}")
+    xs = symbols(f"x0:{SOME_PER_ARGUMENT + 3}")
     s = Add(c, *xs, evaluate=False)
     a = And(*[Q.nonnegative(x) for x in xs])
     assert ask(Q.extended_positive(s), a, fresh()) is nonneg
@@ -97,7 +98,7 @@ def test_wide_strict_sign_with_a_constant_term(c, nonneg, one_positive):
 
 
 def test_wide_zero_product():
-    xs = symbols(f"x0:{MAX_ONEOUT_WIDE + 8}")
+    xs = symbols(f"x0:{SOME_PER_ARGUMENT + 8}")
     p = Mul(*xs)
     a = And(Q.zero(xs[3]), *[Q.finite(x) for x in xs])
     assert ask(Q.zero(p), a, fresh()) is True
@@ -110,14 +111,14 @@ def test_wide_zero_product():
 def test_wide_strict_sign_with_a_constant_that_is_not_nonnegative(c):
     # -oo + (...) is -oo, zoo and nan are not real, I + (real) is not real:
     # the sum is never positive, so the wide formula must not fire
-    xs = symbols(f"x0:{MAX_ONEOUT_WIDE + 3}")
+    xs = symbols(f"x0:{SOME_PER_ARGUMENT + 3}")
     s = Add(c, *xs, evaluate=False)
     a = And(Q.positive(xs[0]), *[Q.nonnegative(x) for x in xs[1:]])
     assert ask(Q.positive(s), a, fresh()) is not True
     assert ask(Q.extended_positive(s), a, fresh()) is not True
 
 
-@pytest.mark.parametrize("n", [MAX_ONEOUT_WIDE, MAX_ONEOUT_WIDE + 1])
+@pytest.mark.parametrize("n", [SOME_PER_ARGUMENT, SOME_PER_ARGUMENT + 1])
 def test_strict_sign_and_zero_rules_agree_at_the_threshold(n):
     xs = symbols(f"x0:{n}")
     s, p = Add(*xs), Mul(*xs)
@@ -130,7 +131,7 @@ def test_strict_sign_and_zero_rules_agree_at_the_threshold(n):
 
 
 def test_wide_product_with_a_constant_factor():
-    xs = symbols(f"x0:{MAX_ONEOUT_WIDE + 3}")
+    xs = symbols(f"x0:{SOME_PER_ARGUMENT + 3}")
     a = And(*[Q.finite(x) for x in xs])
     assert ask(Q.zero(Mul(S.Zero, *xs, evaluate=False)), a, fresh()) is True
     # 0*oo, 0*zoo and 0*nan are nan

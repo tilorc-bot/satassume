@@ -250,8 +250,6 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.knowledge.templates._common", "VOCAB"), ("satassume.knowledge.templates._common", "SIGN_FLIP"),
     ("satassume.knowledge.templates._common", "_SIGNED_INFINITE"),
     ("satassume.knowledge.templates.atoms", "_ORACLE_PREDS"), ("satassume.knowledge.templates.atoms", "_CONST_BASIS"),
-    ("satassume.knowledge.templates.core", "_ADD_CLOSED"), ("satassume.knowledge.templates.core", "_ADD_SUBTRACT"),
-    ("satassume.knowledge.templates.core", "_STRICT"),
     # The exp table and its guard map (#97, P6; Pow's and Mul's are rows
     # since #294 and #299, compiled in templates/_compiled_rows.py).  They
     # are tuples of Rows and MappingProxyType, so ``inventory`` (which only
