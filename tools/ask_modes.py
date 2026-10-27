@@ -4,7 +4,7 @@ check a mode's answers against the full ones.
     PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python tools/ask_modes.py run STREAM OUT.json MODE
     PYTHONHASHSEED=0 PYTHONPATH=.:/path/to/sympy python tools/ask_modes.py check FULL.json OTHER.json
 
-MODE: ``full`` (the defaults), ``true_only``, ``unchecked``
+MODE: ``full`` (the defaults), ``true_only``, ``once``, ``once_true_only``, ``unchecked``
 (``check_consistency=False``) or ``unchecked_true_only``.  ``run`` replays
 every query of the stream (``stream.pkl`` or a ``gate2_stream.py`` file) in
 order on one ``Engine()``, as ``tools/stream_answers.py`` does, and writes
