@@ -104,6 +104,14 @@ ask(Q.real(p))                                # True: the declaration is a fact 
 ask(Q.real(p), strict=True)                   # AssumptionSymbolError: state it as Q.positive(p)
 ask(Q.real(y), Q.positive(y), strict=True)    # True
 
+# for callers that act only on a True (#317): False comes back as None, and
+# the search for it is not made; "once" checks each assumption set once
+ask(Q.negative(y), Q.positive(y), true_only=True)                # None (the full answer is False)
+ask(Q.real(y), Q.positive(y), true_only=True, check_consistency="once")  # True
+ask(Q.real(y), Q.positive(y) & Q.negative(y), check_consistency="once")  # ValueError, as by default
+x = Symbol('x')
+ask(Q.real(y), Q.real(y) & Q.positive(x) & Q.negative(x), check_consistency=False)  # True: unchecked (vacuous here)
+
 from sympy import Integer, Predicate, log
 from satassume import register, P, Implies
 @register('mersenne', Integer)                # the counterpart of Q.mersenne.register(Integer)

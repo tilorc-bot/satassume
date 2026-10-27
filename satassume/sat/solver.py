@@ -2675,7 +2675,8 @@ class Solver:
         return self._witness_satisfies(assumptions) or self._solve(lits, k)
 
     def entails(self, lit: int, assumptions: Iterable[int] = (),
-                hold: int | None = None) -> bool | None:
+                hold: int | None = None, *, check: bool = True,
+                want: bool | None = None) -> bool | None:
         """True if ``lit`` is forced under ``assumptions``, False if ``-lit``
         is, None if neither.  Raises ValueError if the assumptions are
         themselves inconsistent with the formula.
@@ -2687,6 +2688,14 @@ class Solver:
         model is then cached for the next queries).  ``hold``: as for
         :meth:`implied`, the number of leading assumptions whose levels
         are kept afterwards (default: all).
+
+        ``check`` False: no search is made only to show the assumptions
+        consistent; an answer is then entailed by them (vacuously if they
+        are inconsistent), and ValueError is raised only for an
+        inconsistency found on the way.  ``want`` True (False): only that
+        answer is needed, and the search for the other one is skipped (it
+        comes back as None).  Neither changes a True or False this
+        returns: each is an entailment proved by the searches made.
         """
         assumptions = [int(x) for x in assumptions]    # as _assume reads them
         if lit == 0:
@@ -2704,27 +2713,39 @@ class Solver:
         lits = self._internal_lits(assumptions)
         k = len(lits) if hold is None else max(0, min(hold, len(lits)))
         if vl is not None:
-            if self._witness_satisfies(assumptions) or self._solve(lits, k):
+            if not check or self._witness_satisfies(assumptions) or self._solve(lits, k):
                 return vl
             raise ValueError("inconsistent assumptions")
-        # Full search.
-        if not self._solve(lits + [l ^ 1], k):
+        # Full search: a model with -l refutes True and shows the
+        # assumptions consistent; without one, True (once consistency is
+        # shown by a model with l, unless check is off).  Likewise for False.
+        if want is False:
             if not self._solve(lits + [l], k):
+                if check and not self._solve(lits + [l ^ 1], k):
+                    raise ValueError("inconsistent assumptions")
+                return False
+            return None
+        if not self._solve(lits + [l ^ 1], k):
+            if check and not self._solve(lits + [l], k):
                 raise ValueError("inconsistent assumptions")
             return True
+        if want is True:
+            return None
         if not self._solve(lits + [l], k):
             return False
         return None
 
     def entails_all(self, lits: Sequence[int], assumptions: Iterable[int] = (),
-                    hold: int | None = None) -> bool | None:
+                    hold: int | None = None, *, check: bool = True,
+                    want: bool | None = None) -> bool | None:
         """:meth:`entails` of the conjunction of ``lits`` without a variable
         for it: True if every literal is forced under ``assumptions``,
         False if their conjunction is refuted, None if neither.  Raises
-        ValueError if the assumptions are inconsistent with the formula."""
+        ValueError if the assumptions are inconsistent with the formula.
+        ``check`` and ``want`` as for :meth:`entails`."""
         lits = [int(x) for x in lits]
         if len(lits) == 1:
-            return self.entails(lits[0], assumptions, hold)
+            return self.entails(lits[0], assumptions, hold, check=check, want=want)
         assumptions = [int(x) for x in assumptions]
         self.mention(lits)
         trail = self._assume(assumptions, hold)
@@ -2735,16 +2756,24 @@ class Solver:
         k = len(alits) if hold is None else max(0, min(hold, len(alits)))
         vals = [True if l in trail else False if l ^ 1 in trail else None for l in ins]
         if False in vals or all(vals):
-            if self._witness_satisfies(assumptions) or self._solve(alits, k):
+            if not check or self._witness_satisfies(assumptions) or self._solve(alits, k):
                 return all(vals)
             raise ValueError("inconsistent assumptions")
-        if not self._solve(alits + ins, k):
-            if not self._solve(alits, k):
-                raise ValueError("inconsistent assumptions")
-            return False
+        if want is not True:
+            if not self._solve(alits + ins, k):
+                if check and not self._solve(alits, k):
+                    raise ValueError("inconsistent assumptions")
+                return False
+            if want is False:
+                return None
         for l, v in zip(ins, vals):
             if v is None and self._solve(alits + [l ^ 1], k):
                 return None
+        if want is True and check and not (self._witness_satisfies(assumptions)
+                                           or self._solve(alits, k)):
+            # no model of the conjunction was found first: the literals
+            # were forced, but the assumptions are not yet shown consistent
+            raise ValueError("inconsistent assumptions")
         return True
 
     # ------------------------------------------------------------------

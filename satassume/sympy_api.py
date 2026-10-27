@@ -105,7 +105,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
+from .engine import Engine, InconsistentAssumptions, DictCache, check_mode  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
 from .scope import theory_scope as _theory_scope
 from .state.epoch import EPOCH as _EPOCH
@@ -416,7 +416,8 @@ def to_formula(expr, relations: bool = False, opaque: bool = False):
 # --------------------------------------------------------------------------
 
 def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
-        strict: bool = False) -> Optional[bool]:
+        strict: bool = False, check_consistency=True,
+        true_only: bool = False) -> Optional[bool]:
     """Truth value of ``proposition`` under ``assumptions``: True, False or
     None, computed by the SAT engine alone.
 
@@ -454,7 +455,26 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
       undefined function (or non-SymPy ``Function`` subclass) whose class
       has one, raises :class:`AssumptionSymbolError` (a
       ``ValueError``) naming it; see the module docstring, "Strict mode".
+    * ``check_consistency`` False: the assumptions are not checked for
+      consistency (neither the set's complete check nor the check that
+      decides whether a set may answer under its connected part is run).
+      A True or False is still entailed by the assumptions, vacuously if
+      they are inconsistent, so then any answer may come back; an
+      inconsistency found on the way still raises ``ValueError``.
+      ``"once"``: raises for an inconsistent set as the default does (the
+      set's verdict, memoized per set), and otherwise answers as with
+      False: the check runs once per set, not in every query.
+    * ``true_only``: only whether the proposition is True is decided:
+      the answer is True or None, never False, and no search is made for
+      a False.  A True is the same True as without it.
+
+    Both are for callers that act only on a True (a simplification whose
+    condition must be proved); they save the searches whose answers such a
+    caller throws away.  ``"once"`` is for those that still want the raise
+    on an inconsistent set, False for those that do not use it.  Each
+    combination has its own entries in the answer memo.
     """
+    check_mode(check_consistency)
     if strict:
         # before the answer memo: a memo hit of a non-strict call must not
         # answer a strict one
@@ -468,8 +488,9 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
     # and ``last_budget_limited`` (cleared here) is the same warm or fresh
     eng.last_budget_limited = False
     key = None
+    mode = (check_consistency, true_only)
     if isinstance(proposition, _Basic) and (assumptions is True or isinstance(assumptions, _Basic)):
-        key = (proposition, assumptions)
+        key = (proposition, assumptions) if mode == _FULL else (proposition, assumptions, mode)
         memo = eng.answers
         if eng._epoch != _EPOCH[0]:
             eng._check_version()
@@ -477,13 +498,15 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
         if r is not _MISS:
             eng.stats["cache_hits"] += 1
             return r
-    r = _ask(proposition, assumptions, eng)
+    r = _ask(proposition, assumptions, eng, mode)
     if key is not None and not eng.last_budget_limited:
         memo.put(key, r)
     return r
 
 
 _MISS = object()
+#: ``(check_consistency, true_only)`` of a full answer (``ask``'s defaults)
+_FULL = (True, False)
 
 
 #: ``(expr, relations) -> formula``, or the ``Unsupported`` category, of
@@ -557,42 +580,44 @@ def is_constant_proposition(prop) -> bool:
     return False
 
 
-def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
+def _ask(proposition, assumptions, eng: Engine, mode=_FULL) -> Optional[bool]:
     if isinstance(proposition, _Basic):
         if is_constant_proposition(proposition):
+            # the full context-free answer: a False hidden as None would be
+            # asked again under the assumptions below
             r = _engine_ask(proposition, True, eng)
             if r is not None or assumptions is True:
-                return r
+                return None if mode[1] and r is False else r
             # not decided context-free: the assumptions about the constant
             # count, as for the same proposition padded with a tautology (I5).
             # The answer also rests on that None: keep its budget flag.
             limited = eng.last_budget_limited
-            r = _ask_general(proposition, assumptions, eng)
+            r = _ask_general(proposition, assumptions, eng, mode)
             eng.last_budget_limited = eng.last_budget_limited or limited
             return r
-    return _ask_general(proposition, assumptions, eng)
+    return _ask_general(proposition, assumptions, eng, mode)
 
 
-def _ask_general(proposition, assumptions, eng: Engine) -> Optional[bool]:
+def _ask_general(proposition, assumptions, eng: Engine, mode=_FULL) -> Optional[bool]:
     if isinstance(proposition, _Basic):
         if eng.relevance and isinstance(assumptions, (_Applied, _Relational) + _CONNECTIVES):
-            f = _relevant(proposition, assumptions, eng)
+            f = _relevant(proposition, assumptions, eng, mode[0] is not False)
             if f is not assumptions:
                 # answered under the conjuncts connected to the query; the
                 # answer memo is shared by every set with the same part
                 eng.stats["relevant"] += 1
-                key = (proposition, f)
+                key = (proposition, f) if mode == _FULL else (proposition, f, mode)
                 memo = eng.answers
                 r = memo.get(key, _MISS)
                 if r is not _MISS:
                     eng.stats["cache_hits"] += 1
                     eng.last_budget_limited = False     # never memoized
                     return r
-                r = _engine_ask(proposition, f, eng)
+                r = _engine_ask(proposition, f, eng, mode)
                 if not eng.last_budget_limited:
                     memo.put(key, r)
                 return r
-    return _engine_ask(proposition, assumptions, eng)
+    return _engine_ask(proposition, assumptions, eng, mode)
 
 
 # --------------------------------------------------------------------------
@@ -926,7 +951,7 @@ class _Split:
         return f
 
 
-def _relevant(p, a, eng: Engine):
+def _relevant(p, a, eng: Engine, check: bool = True):
     """The assumptions ``p`` is asked under: ``a`` itself, or the part of
     ``a`` (a SymPy Boolean, or True) connected to ``p`` if that is smaller
     and ``a`` is not found inconsistent.  Three-valued: a set whose verdict
@@ -938,7 +963,9 @@ def _relevant(p, a, eng: Engine):
     ``eq(t, 0)``: the set's own ``scope.theory_scope``); otherwise the
     conjunction of the components'
     verdicts, which equals it there (docs/design.md, "Why components are
-    independent")."""
+    independent").  ``check`` False (``ask(check_consistency=False)``):
+    the part, with no verdict (an answer under the part is entailed by
+    it, so by ``a``)."""
     splits = eng.splits
     sp = splits.get(a)
     if sp is None:
@@ -963,8 +990,8 @@ def _relevant(p, a, eng: Engine):
         return a
     mine = tuple(j for j, (k, _) in enumerate(sp.comps) if not k.isdisjoint(pk))
     f = sp.part(mine)
-    if f is a:
-        return a
+    if f is a or not check:
+        return f
     ok = sp.consistent
     if ok is None:
         if sp.relational or sp.keyless:
@@ -1108,7 +1135,7 @@ def _consistent(a, eng: Engine) -> bool:
         return False
 
 
-def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
+def _engine_ask(proposition, assumptions, eng: Engine, mode=_FULL) -> Optional[bool]:
     # the flag is the answer's: not left over from a query the relevance
     # layer made (Engine.is_ of a closed term), set by the engine call below
     eng.last_budget_limited = False
@@ -1118,18 +1145,23 @@ def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
         assum = None if assumptions is True else _formula(assumptions, rel, True)
     except Unsupported:
         return None
+    check, true_only = mode
     if prop is TRUE:
         return True
     if prop is FALSE:
-        return False
+        return None if true_only else False
     if assum is TRUE:
         assum = None
     if assum is FALSE:
         raise ValueError("inconsistent assumptions")
     try:
         if assum is None and isinstance(prop, P):
-            return eng.is_(prop.expr, prop.pred)
-        return eng.ask(prop, assum)
+            # memoized per node and shared by every mode: True or False
+            r = eng.is_(prop.expr, prop.pred)
+            return None if true_only and r is False else r
+        if mode == _FULL:
+            return eng.ask(prop, assum)
+        return eng.ask(prop, assum, check_consistency=check, true_only=true_only)
     except InconsistentAssumptions as e:
         raise ValueError(f"inconsistent assumptions {assumptions}") from e
     except Uninterpreted:
