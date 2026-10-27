@@ -120,10 +120,14 @@ def test_ask_modes(p, a):
     assert _ask(p, a, true_only=True) == (True if full is True else
                                          "raise" if full == "raise" else None)
     for kw in ({"check_consistency": False},
-               {"check_consistency": False, "true_only": True}):
+               {"check_consistency": False, "true_only": True},
+               {"check_consistency": "once"},
+               {"check_consistency": "once", "true_only": True}):
         got = _ask(p, a, **kw)
         if full == "raise":
-            assert got in ("raise", True, False, None)
+            # "once" raises by the set's verdict, as the default does
+            assert got in (("raise",) if kw["check_consistency"] else
+                           ("raise", True, False, None)), (kw, got)
             continue
         expect = None if kw.get("true_only") and full is not True else full
         assert got is expect, (kw, got, full)
@@ -162,6 +166,40 @@ def test_unchecked_skips_set_check():
     assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y), engine=eng,
                check_consistency=False) is True
     assert eng.stats["set_checks"] == 0 and eng.stats["plain_sets"] == 1
+
+
+def test_once_checks_each_set_once():
+    """"once" runs the complete check of a set once (its memoized verdict)
+    however many queries ask under it, and raises on an inconsistent set
+    for every query, as the default does."""
+    a = Q.positive(x) & Q.positive(y)
+    qs = (Q.positive(x + y), Q.positive(x * y), Q.negative(x + y), Q.real(x - y))
+    eng = Engine()
+    for p in qs:
+        ask(p, a, engine=eng)
+    assert eng.stats["set_checks"] == 4     # the default: in each query's session
+    eng = Engine()
+    for p in qs:
+        ask(p, a, engine=eng, check_consistency="once")
+    assert eng.stats["set_checks"] == 1 and eng.stats["plain_sets"] == 4
+    ask(Q.real(x - y), Q.negative(x) & Q.positive(y), engine=eng, check_consistency="once")
+    assert eng.stats["set_checks"] == 2
+    bad = Q.positive(x) & Q.negative(x) & Q.real(y)
+    for p in (Q.real(x + y), Q.positive(x * y), Q.real(x - y)):
+        for kw in ({}, {"true_only": True}):
+            with pytest.raises(ValueError):
+                ask(p, bad, engine=eng, check_consistency="once", **kw)
+    assert eng.stats["set_checks"] == 3
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "always", "never"])
+def test_check_consistency_values(value):
+    """Only True, False and "once" are accepted (0 and 1 are not: the
+    value is compared, not taken as a truth value)."""
+    with pytest.raises(ValueError, match="check_consistency"):
+        Engine().ask(Q.real(x), Q.positive(x), check_consistency=value)
+    with pytest.raises(ValueError, match="check_consistency"):
+        ask(Q.real(x), Q.positive(x), engine=Engine(), check_consistency=value)
 
 
 def _counting(s):

@@ -1257,6 +1257,15 @@ def _context_free(expr, preds):
     return {p: eng.is_(expr, p) for p in preds}
 
 
+def check_mode(check_consistency) -> None:
+    """Raise ValueError unless ``check_consistency`` is True, False or
+    ``"once"`` (by identity: 0 and 1 are not accepted)."""
+    if not (check_consistency is True or check_consistency is False
+            or check_consistency == "once"):
+        raise ValueError("check_consistency must be True, False or 'once', "
+                         f"not {check_consistency!r}")
+
+
 class Engine:
     """See module docstring.
 
@@ -2206,8 +2215,7 @@ class Engine:
         """
         if self._epoch != _EPOCH[0]:
             self._check_version()
-        if check_consistency not in (True, False, "once"):
-            raise ValueError(f"check_consistency must be True, False or 'once', not {check_consistency!r}")
+        check_mode(check_consistency)
         self.stats["queries"] += 1
         # never the previous query's flag, even if this one raises
         self.last_budget_limited = False

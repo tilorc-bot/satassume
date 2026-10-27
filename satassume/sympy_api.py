@@ -105,7 +105,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .engine import Engine, InconsistentAssumptions, DictCache  # noqa: F401
+from .engine import Engine, InconsistentAssumptions, DictCache, check_mode  # noqa: F401
 from .engine import INCONSISTENT as _INCONSISTENT
 from .scope import theory_scope as _theory_scope
 from .state.epoch import EPOCH as _EPOCH
@@ -469,10 +469,12 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
       a False.  A True is the same True as without it.
 
     Both are for callers that act only on a True (a simplification whose
-    condition must be proved) and do not use the raise; they save the
-    searches whose answers such a caller throws away.  Each combination
-    has its own entries in the answer memo.
+    condition must be proved); they save the searches whose answers such a
+    caller throws away.  ``"once"`` is for those that still want the raise
+    on an inconsistent set, False for those that do not use it.  Each
+    combination has its own entries in the answer memo.
     """
+    check_mode(check_consistency)
     if strict:
         # before the answer memo: a memo hit of a non-strict call must not
         # answer a strict one
