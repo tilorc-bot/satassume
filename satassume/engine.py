@@ -2178,7 +2178,7 @@ class Engine:
         return r
 
     # -- contextual -----------------------------------------------------------
-    def ask(self, proposition, assumptions=None, *, check_consistency: bool = True,
+    def ask(self, proposition, assumptions=None, *, check_consistency=True,
             true_only: bool = False) -> Optional[bool]:
         """Truth value of ``proposition`` (a formula over ``P`` atoms) given
         ``assumptions`` (a formula or None).  Raises
@@ -2188,7 +2188,11 @@ class Engine:
         and no search is made only to show the assumptions consistent.
         A True or False is still entailed by the assumptions (vacuously, if
         they are inconsistent: then any answer may come back); an
-        inconsistency found on the way still raises.  ``true_only``: only
+        inconsistency found on the way still raises.  ``"once"``: raises
+        when the set's verdict (:meth:`verdict`, memoized per set) is
+        inconsistent, as the default does, and otherwise answers as with
+        False, so the check runs once per set instead of in every query's
+        session.  ``true_only``: only
         whether the proposition is True is decided, and False is never
         returned (it comes back as None) and never searched for; a True is
         the same True as without it.  Both default to the full answer.
@@ -2202,6 +2206,8 @@ class Engine:
         """
         if self._epoch != _EPOCH[0]:
             self._check_version()
+        if check_consistency not in (True, False, "once"):
+            raise ValueError(f"check_consistency must be True, False or 'once', not {check_consistency!r}")
         self.stats["queries"] += 1
         # never the previous query's flag, even if this one raises
         self.last_budget_limited = False
@@ -2233,19 +2239,23 @@ class Engine:
                 return None if true_only and not r else r
         if not contextual:
             s = self._fresh_session(theory_scope(None, proposition, self._extensions))
-        elif check_consistency:
+        elif check_consistency is True:
             s, lits = self._context_session(assumptions, proposition)
         else:
+            if check_consistency == "once" and self.verdict(assumptions) is INCONSISTENT:
+                raise InconsistentAssumptions("inconsistent assumptions")
             s, lits = self._plain_context(assumptions, proposition)
-        return self._ask(s, lits, proposition, contextual, check_consistency,
+        return self._ask(s, lits, proposition, contextual, check_consistency is True,
                          True if true_only else None)
 
     def _plain_context(self, assumptions, proposition) -> Tuple[Session, List[int]]:
         """The contextual session of a query asked without the consistency
-        check: :meth:`_build_context` without the set's complete check
-        (the session it falls back to when a theory gives up), its verdict
-        ``UNKNOWN``.  No verdict memo is read or written, so whether the
-        query raises does not depend on the queries before it."""
+        check (``check_consistency`` False or ``"once"``):
+        :meth:`_build_context` without the set's complete check (the
+        session it falls back to when a theory gives up), its verdict
+        ``UNKNOWN``.  It is built the same whether the set's verdict is
+        memoized or not, so the answer does not depend on the queries
+        before it."""
         self.stats["plain_sets"] += 1
         s = self._fresh_session(theory_scope(assumptions, proposition, self._extensions))
         lits = s.assume_formula(assumptions)

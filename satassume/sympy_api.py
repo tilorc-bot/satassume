@@ -416,7 +416,7 @@ def to_formula(expr, relations: bool = False, opaque: bool = False):
 # --------------------------------------------------------------------------
 
 def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
-        strict: bool = False, check_consistency: bool = True,
+        strict: bool = False, check_consistency=True,
         true_only: bool = False) -> Optional[bool]:
     """Truth value of ``proposition`` under ``assumptions``: True, False or
     None, computed by the SAT engine alone.
@@ -461,6 +461,9 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
       A True or False is still entailed by the assumptions, vacuously if
       they are inconsistent, so then any answer may come back; an
       inconsistency found on the way still raises ``ValueError``.
+      ``"once"``: raises for an inconsistent set as the default does (the
+      set's verdict, memoized per set), and otherwise answers as with
+      False: the check runs once per set, not in every query.
     * ``true_only``: only whether the proposition is True is decided:
       the answer is True or None, never False, and no search is made for
       a False.  A True is the same True as without it.
@@ -596,7 +599,7 @@ def _ask(proposition, assumptions, eng: Engine, mode=_FULL) -> Optional[bool]:
 def _ask_general(proposition, assumptions, eng: Engine, mode=_FULL) -> Optional[bool]:
     if isinstance(proposition, _Basic):
         if eng.relevance and isinstance(assumptions, (_Applied, _Relational) + _CONNECTIVES):
-            f = _relevant(proposition, assumptions, eng, mode[0])
+            f = _relevant(proposition, assumptions, eng, mode[0] is not False)
             if f is not assumptions:
                 # answered under the conjuncts connected to the query; the
                 # answer memo is shared by every set with the same part

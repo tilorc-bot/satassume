@@ -31,6 +31,8 @@ MODES = {
     "true_only": {"true_only": True},
     "unchecked": {"check_consistency": False},
     "unchecked_true_only": {"check_consistency": False, "true_only": True},
+    "once": {"check_consistency": "once"},
+    "once_true_only": {"check_consistency": "once", "true_only": True},
 }
 
 
@@ -57,7 +59,9 @@ def check(full_path, other_path):
     other = json.load(open(other_path))
     mode = other["mode"]
     true_only = MODES[mode].get("true_only", False)
-    checked = MODES[mode].get("check_consistency", True)
+    # "once" may answer where only a query's own search found the set
+    # inconsistent: counted as "error -> X", not a violation
+    checked = MODES[mode].get("check_consistency", True) is True
     counts, bad = {}, []
     for i, (f, g) in enumerate(zip(full["answers"], other["answers"])):
         if f == "error":
