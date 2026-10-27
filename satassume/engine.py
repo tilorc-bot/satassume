@@ -850,15 +850,23 @@ class Session:
 
     # -- queries -------------------------------------------------------------
     def query_literal(self, lit, assumptions: Iterable[int] = (),
-                      search: bool = True) -> Optional[bool]:
+                      search: bool = True, check: bool = True,
+                      want: Optional[bool] = None) -> Optional[bool]:
+        """Decide ``lit`` under ``assumptions``.  ``check`` and ``want`` as
+        for :meth:`Solver.entails`: ``check`` False skips the searches
+        made only to show the assumptions consistent, ``want`` True
+        (False) the search for a False (True) answer.  An answer settled
+        by propagation is returned whatever ``want`` is (it cost nothing);
+        the caller maps it (``Engine._ask``)."""
         if type(lit) is tuple:
             # a derived predicate (query_lit): a disjunction is decided as
             # the negation of the conjunction of the negated literals
             op, ls = lit
             if op == '|':
-                r = self._query_all([-l for l in ls], assumptions, search)
+                r = self._query_all([-l for l in ls], assumptions, search, check,
+                                    None if want is None else not want)
                 return None if r is None else not r
-            return self._query_all(list(ls), assumptions, search)
+            return self._query_all(list(ls), assumptions, search, check, want)
         solver = self.solver
         if self.xfer is not None:
             self.xfer.sync_transfer()
@@ -888,7 +896,7 @@ class Session:
                 # settled by propagation: returned only once the assumptions
                 # are known consistent with the clauses (as Solver.entails
                 # does), since propagation need not find a conflict
-                if not solver.consistent(assumptions):
+                if check and not solver.consistent(assumptions):
                     raise InconsistentAssumptions("inconsistent assumptions")
                 return r
         else:
@@ -898,12 +906,13 @@ class Session:
         if not search:
             return None
         try:
-            r = solver.entails(lit, assumptions)
+            r = solver.entails(lit, assumptions, check=check, want=want)
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
         return r
 
-    def _query_all(self, ls: List[int], assumptions, search: bool) -> Optional[bool]:
+    def _query_all(self, ls: List[int], assumptions, search: bool, check: bool = True,
+                   want: Optional[bool] = None) -> Optional[bool]:
         """:meth:`query_literal` of the conjunction of ``ls``."""
         solver = self.solver
         if self.xfer is not None:
@@ -918,7 +927,7 @@ class Session:
                 raise InconsistentAssumptions("inconsistent assumptions")
             s = set(implied)
             vals = [True if l in s else False if -l in s else None for l in ls]
-            if (False in vals or all(vals)) and not solver.consistent(assumptions):
+            if check and (False in vals or all(vals)) and not solver.consistent(assumptions):
                 raise InconsistentAssumptions("inconsistent assumptions")
         else:
             vals = [solver.value(l) for l in ls]
@@ -929,7 +938,7 @@ class Session:
         if not search:
             return None
         try:
-            return solver.entails_all(ls, assumptions)
+            return solver.entails_all(ls, assumptions, check=check, want=want)
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
 
@@ -1402,7 +1411,7 @@ class Engine:
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
-                      "version_clears": 0, "set_checks": 0,
+                      "version_clears": 0, "set_checks": 0, "plain_sets": 0,
                       "budget_limited": 0, "scope_misses": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
@@ -2169,10 +2178,20 @@ class Engine:
         return r
 
     # -- contextual -----------------------------------------------------------
-    def ask(self, proposition, assumptions=None) -> Optional[bool]:
+    def ask(self, proposition, assumptions=None, *, check_consistency: bool = True,
+            true_only: bool = False) -> Optional[bool]:
         """Truth value of ``proposition`` (a formula over ``P`` atoms) given
         ``assumptions`` (a formula or None).  Raises
         ``InconsistentAssumptions`` if the assumptions contradict the facts.
+
+        ``check_consistency`` False: the set's complete check is not run
+        and no search is made only to show the assumptions consistent.
+        A True or False is still entailed by the assumptions (vacuously, if
+        they are inconsistent: then any answer may come back); an
+        inconsistency found on the way still raises.  ``true_only``: only
+        whether the proposition is True is decided, and False is never
+        returned (it comes back as None) and never searched for; a True is
+        the same True as without it.  Both default to the full answer.
 
         Build, answer, discard: a contextual query is answered in the
         session of its set built for it (:meth:`_context_session`,
@@ -2198,7 +2217,7 @@ class Engine:
             # UNKNOWN: never raises).  verdict() is memoized; it raises
             # Uninterpreted as the session construction of a query within
             # the budget would.
-            if (contextual and self._within_budget(assumptions)
+            if (contextual and check_consistency and self._within_budget(assumptions)
                     and self.verdict(assumptions) is INCONSISTENT):
                 raise InconsistentAssumptions("inconsistent assumptions")
             return self._over_budget()
@@ -2210,17 +2229,37 @@ class Engine:
             a = proposition.args[0] if isinstance(proposition, Not) else proposition
             c = basis_formula(a) if isinstance(a, P) else None
             if c is TRUE or c is FALSE:
-                return (c is TRUE) != isinstance(proposition, Not)
-        if contextual:
+                r = (c is TRUE) != isinstance(proposition, Not)
+                return None if true_only and not r else r
+        if not contextual:
+            s = self._fresh_session(theory_scope(None, proposition, self._extensions))
+        elif check_consistency:
             s, lits = self._context_session(assumptions, proposition)
         else:
-            s = self._fresh_session(theory_scope(None, proposition, self._extensions))
-        return self._ask(s, lits, proposition, contextual)
+            s, lits = self._plain_context(assumptions, proposition)
+        return self._ask(s, lits, proposition, contextual, check_consistency,
+                         True if true_only else None)
 
-    def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:
+    def _plain_context(self, assumptions, proposition) -> Tuple[Session, List[int]]:
+        """The contextual session of a query asked without the consistency
+        check: :meth:`_build_context` without the set's complete check
+        (the session it falls back to when a theory gives up), its verdict
+        ``UNKNOWN``.  No verdict memo is read or written, so whether the
+        query raises does not depend on the queries before it."""
+        self.stats["plain_sets"] += 1
+        s = self._fresh_session(theory_scope(assumptions, proposition, self._extensions))
+        lits = s.assume_formula(assumptions)
+        s.verdict = UNKNOWN
+        s.link_set()
+        return s, lits
+
+    def _ask(self, s: Session, lits: List[int], proposition, contextual: bool,
+             check: bool = True, want: Optional[bool] = None) -> Optional[bool]:
         """Answer ``proposition`` in the session ``s`` just built for it:
         propagation, escalation of the query's cone if that was not
-        enough, then search."""
+        enough, then search.  ``check`` and ``want`` as for
+        :meth:`Session.query_literal`; an answer other than ``want`` is
+        None."""
         # the solver holds the levels of the set's check (the stable
         # prefix of the assumptions); release the others before this query
         # adds clauses
@@ -2229,15 +2268,17 @@ class Engine:
         # the set's selector and the selectors the query activates (also
         # for a context-free query)
         lits = s.assumption_lits(proposition)
-        r = s.query_literal(q, lits, search=False)
+        r = s.query_literal(q, lits, search=False, check=check)
         if r is None and s.incomplete:
             self.stats["escalations"] += 1
             s.solver.release(s.n_hold)
             s.escalate()
-            r = s.query_literal(q, lits, search=False)
+            r = s.query_literal(q, lits, search=False, check=check)
         if r is None:
             self.stats["searches"] += 1
-            r = s.query_literal(q, lits, search=True)
+            r = s.query_literal(q, lits, search=True, check=check, want=want)
+        if want is not None and r is not want:
+            r = None
         if contextual and _gave_up(s):
             self.stats["theory_gave_up"] += 1
         self._note_budget(s)
