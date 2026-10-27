@@ -1154,6 +1154,8 @@ def _engine_ask(proposition, assumptions, eng: Engine, mode=_FULL) -> Optional[b
             # memoized per node and shared by every mode: True or False
             r = eng.is_(prop.expr, prop.pred)
             return None if true_only and r is False else r
+        if mode == _FULL:
+            return eng.ask(prop, assum)
         return eng.ask(prop, assum, check_consistency=check, true_only=true_only)
     except InconsistentAssumptions as e:
         raise ValueError(f"inconsistent assumptions {assumptions}") from e
