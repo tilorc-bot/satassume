@@ -164,26 +164,48 @@ def test_unchecked_skips_set_check():
     assert eng.stats["set_checks"] == 0 and eng.stats["plain_sets"] == 1
 
 
-def test_true_only_skips_false_search():
-    """No search for a False: the query that needs one under the full
-    answer makes fewer solver calls."""
-    p, a = Q.positive(x * y), Q.real(x) & Q.real(y)
+def _counting(s):
+    """Count the searches of the solver ``s``."""
+    n = [0]
+    orig = s._solve
 
-    def solves(**kw):
-        from satassume.sat import solver as mod
-        n = [0]
-        orig = mod.Solver._solve
+    def counted(*args):
+        n[0] += 1
+        return orig(*args)
+    s._solve = counted
+    return n
 
-        def counted(self, *args):
-            n[0] += 1
-            return orig(self, *args)
-        mod.Solver._solve = counted
-        try:
-            r = ask(p, a, engine=Engine(), **kw)
-        finally:
-            mod.Solver._solve = orig
-        return r, n[0]
-    full, n_full = solves()
-    only, n_only = solves(true_only=True)
-    assert full is None and only is None
-    assert n_only < n_full
+
+#: p (1) contradicts the formula, but propagation from p alone finds no
+#: conflict; 5 is free
+_HIDDEN = [[-1, 2, 3], [-1, 2, -3], [-1, -2, 4], [-1, -2, -4]]
+
+
+@pytest.mark.parametrize("all_", [False, True])
+def test_unchecked_is_vacuous(all_):
+    """Without the check, the one search under the inconsistent p answers
+    (vacuously entailed: True for 5; False for the conjunction, whose
+    refutation is searched first); with it, the second search raises."""
+    def q(s, **kw):
+        return s.entails_all([5, 5], [1], **kw) if all_ else s.entails(5, [1], **kw)
+    s, _ = _load(_HIDDEN)
+    with pytest.raises(ValueError):
+        q(s)
+    s, _ = _load(_HIDDEN)
+    n = _counting(s)
+    assert q(s, check=False) is (not all_)
+    assert n[0] == 1
+
+
+def test_want_skips_the_other_search():
+    s, _ = _load([[1, 2], [3, 4]])
+    for want, expect in ((None, 2), (True, 1), (False, 1)):
+        n = _counting(s)
+        assert s.entails(3, [1], want=want) is None
+        assert n[0] == expect, want
+        del s._solve
+    for want, expect in ((None, 2), (True, 1), (False, 1)):
+        n = _counting(s)
+        assert s.entails_all([3, 4], [1], want=want) is None
+        assert n[0] == expect, want
+        del s._solve
