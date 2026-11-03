@@ -134,19 +134,31 @@ pub struct PySet {
     table: Vec<i64>, // -1 empty
     mask: usize,
     fill: usize,
+    #[cfg(feature = "mutants")]
+    first_added: Vec<u32>,
 }
 
 const LINEAR_PROBES: usize = 9;
 
 impl PySet {
     pub fn new() -> PySet {
-        PySet { table: vec![-1; 8], mask: 7, fill: 0 }
+        PySet {
+            table: vec![-1; 8],
+            mask: 7,
+            fill: 0,
+            #[cfg(feature = "mutants")]
+            first_added: Vec::new(),
+        }
     }
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.fill == 0
     }
     pub fn add(&mut self, key: u32) {
+        #[cfg(feature = "mutants")]
+        if !self.first_added.contains(&key) {
+            self.first_added.push(key);
+        }
         let hash = key as usize;
         let key = key as i64;
         let mask = self.mask;
@@ -927,7 +939,10 @@ impl Theory {
             newrow[1..].reverse(); // new row in reverse order
         }
         self.col_discard(j, b);
-        let cj = std::mem::take(&mut self.cols[ji]);
+        let mut cj = std::mem::take(&mut self.cols[ji]);
+        if mutant(8) {
+            cj.reverse(); // column order: expected to change nothing
+        }
         for r in cj {
             let ri = r as usize;
             let mut rr = self.rows[ri].take().unwrap();
@@ -1087,7 +1102,19 @@ impl Theory {
             return out;
         }
         let dirty = std::mem::replace(&mut self.dirty, PySet::new());
-        for v in dirty.iter() {
+        #[cfg(feature = "mutants")]
+        let order: Vec<u32> = {
+            let mut xs: Vec<u32> = dirty.iter().collect();
+            if mutant(6) {
+                xs.sort(); // ascending variable, instead of CPython's table
+            } else if mutant(7) {
+                xs = dirty.first_added.clone(); // the order they were first added, instead of CPython's table
+            }
+            xs
+        };
+        #[cfg(not(feature = "mutants"))]
+        let order = dirty.iter();
+        for v in order {
             let vi = v as usize;
             if self.lo[vi].is_none() && self.up[vi].is_none() {
                 continue;

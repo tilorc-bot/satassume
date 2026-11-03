@@ -126,8 +126,8 @@ if mode == "check":
                 first = k
     tot = {}
     for th in all_ths:
-        for n, x in th.stats.items():
-            tot[n] = tot.get(n, 0) + x
+        for name, x in th.stats.items():
+            tot[name] = tot.get(name, 0) + x
     print(json.dumps(dict(run="py", mode="check", wl=wl, ops=n, mismatches=bad, first=first, totals=tot)), flush=True)
     sys.exit(0)
 

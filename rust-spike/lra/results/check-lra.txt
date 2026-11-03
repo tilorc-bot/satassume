@@ -1,0 +1,37 @@
+pareto1: running under shared lease b43d3090 (sa-rust-7)
+Benchmark CPU slot: 2
+Benchmark results: /home/tilo/sa-rust-bench/bench-results/1793749835904676783-cpu2-3001934
+Benchmark reservation: domain, CPUs [2], policy policy2, max 4800000 kHz
+BENCHMARK: slot wait=0.000 seconds
+{"run": "py", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "gave_up": 0, "exhausted": 16}}
+{"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16}}
+{"run": "rsfx", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16}}
+{"run": "rslto", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16}}
+{"run": "rsmut", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16}}
+{"run": "rsprof", "wl": "dev", "w32": 6954, "w64": 0, "wbig": 0, "bigop": 0, "maxbits": 0, "max_row": 2, "max_col": 2, "max_vars": 4, "simplex": 1533}
+mutant 1: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16
+mutant 2: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 369, "first": 4225, "totals": {"pivots": 293, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 313, "exhausted": 
+mutant 3: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 1, "first": 3445, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16
+mutant 4: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16
+mutant 5: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16
+mutant 6: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16
+mutant 7: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 1, "first": 7035, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16
+mutant 8: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 0, "first": null, "totals": {"pivots": 307, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 329, "exhausted": 16
+mutant 9: {"run": "rs", "mode": "check", "wl": "dev", "ops": 6680, "mismatches": 478, "first": 1811, "totals": {"pivots": 167, "checks": 170, "conflicts": 91, "propagations": 139, "branches": 184, "exhausted": 
+{"run": "py", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "gave_up": 0, "exhausted": 231}}
+{"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "exhausted": 231}}
+{"run": "rsfx", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "exhausted": 231}}
+{"run": "rslto", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "exhausted": 231}}
+{"run": "rsmut", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "exhausted": 231}}
+{"run": "rsprof", "wl": "fuzz", "w32": 353167, "w64": 0, "wbig": 0, "bigop": 0, "maxbits": 0, "max_row": 2, "max_col": 6, "max_vars": 8, "simplex": 67214}
+mutant 1: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 5420, "first": 2550, "totals": {"pivots": 6550, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "e
+mutant 2: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 11766, "first": 887, "totals": {"pivots": 6354, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5510, "e
+mutant 3: {"wl": "fuzz", "exit": 124}  (124 = no answer in 60 s)
+mutant 4: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "exha
+mutant 5: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 8418, "first": 4498, "totals": {"pivots": 5957, "checks": 6730, "conflicts": 4351, "propagations": 14850, "branches": 7622, "e
+mutant 6: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "exha
+mutant 7: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 8, "first": 123962, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "ex
+mutant 8: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 0, "first": null, "totals": {"pivots": 6556, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5741, "exha
+mutant 9: {"run": "rs", "mode": "check", "wl": "fuzz", "ops": 441346, "mismatches": 48689, "first": 2324, "totals": {"pivots": 6217, "checks": 6730, "conflicts": 4389, "propagations": 14861, "branches": 5590, "
+BENCHMARK: container elapsed=64.425 seconds
+pareto1: released shared lease b43d3090 after 1m (exit 0)

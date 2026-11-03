@@ -264,6 +264,7 @@ impl Rat {
     /// The largest integer <= self (Python's Fraction.__floor__).
     pub fn floor(&self) -> Rat {
         match self {
+            Rat::S(n, d) if crate::lra::mutant(5) => Rat::S(n / *d, 1), // truncates toward zero
             Rat::S(n, d) => Rat::S(n.div_euclid(*d), 1),
             Rat::B(b) => Rat::norm_big(b.0.div_floor(&b.1), BigInt::one()),
         }
