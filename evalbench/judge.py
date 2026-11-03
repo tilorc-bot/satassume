@@ -54,11 +54,45 @@ def main():
         subprocess.run([os.path.join(HERE, "pareto.sh"), "ab", f"ab-{tag}", "base", tag], env=env,
                        check=True, capture_output=True, text=True)
         ab_rows = table(load(os.path.join(ROOT, "bench-results", f"ab-{tag}", f"ab-{tag}.jsonl")))
-    write(args, tag, co, log, stat, g, base_c, cand_c, ab_rows)
+    v = verdict(g, ab_rows)
+    write(args, tag, co, log, stat, g, base_c, cand_c, ab_rows, v)
+    print("VERDICT", v)
 
 
-def write(args, tag, co, log, stat, g, base_c, cand_c, ab_rows):
-    L = [f"# {tag}", "", f"Candidate: `{args.clone}` at `{tag.rsplit('-', 1)[1]}` ({args.note})", "",
+def speed(ab_rows, w, m):
+    for r in ab_rows or []:
+        if r["workload"] == w and r["metric"] == m:
+            return r
+    return None
+
+
+def verdict(g, ab_rows):
+    """One line.  Faster on a workload = median speedup >= 1.02x and every
+    round's ratio < 1 (the A/A noise floor, BASELINE.md)."""
+    if not g.get("pass"):
+        bad = [f"{c['name']} ({c.get('n_diff', len(c.get('newly_failing', [])))})" for c in g["checks"] if not c["ok"]]
+        return "FAIL (gates: " + ", ".join(bad) + ")"
+    if not ab_rows:
+        return "gates PASS (no timing)"
+    parts, faster, slower = [], 0, 0
+    for w, m, lab in [("dev", "seconds", "dev"), ("dev", "none_s", "dev None"), ("ho-stream", "seconds", "held-out stream"),
+                      ("ho-stream", "none_s", "held-out None"), ("ho-battery", "seconds", "ho-battery"),
+                      ("ho-fuzz", "seconds", "fuzz"), ("corpus", "seconds", "corpus"), ("fork-battery", "ask_s", "fork ask")]:
+        r = speed(ab_rows, w, m)
+        if r is None:
+            continue
+        sp = 1 / r["ratio_med"]
+        sig = "*" if (sp >= 1.02 and r["ratio_max"] < 1) or (sp <= 1 / 1.02 and r["ratio_min"] > 1) else ""
+        faster += sp >= 1.02 and r["ratio_max"] < 1
+        slower += sp <= 1 / 1.02 and r["ratio_min"] > 1
+        parts.append(f"{lab} {sp:.2f}x{sig}")
+    head = "PASS, faster" if faster and not slower else "PASS, mixed" if faster else \
+        "PASS, slower" if slower else "PASS, no measurable change"
+    return head + " (" + ", ".join(parts) + "; * = beyond A/A noise)"
+
+
+def write(args, tag, co, log, stat, g, base_c, cand_c, ab_rows, v):
+    L = [f"# {tag}", "", f"**Verdict: {v}**", "", f"Candidate: `{args.clone}` at `{tag.rsplit('-', 1)[1]}` ({args.note})", "",
          "Commits over 9bafaa5:", "```", log, "```", "", "```", stat, "```", ""]
     ok = g.get("pass")
     L += ["## Gates: " + ("PASS" if ok else "FAIL"), "", "| check | result | detail |", "|---|---|---|"]
