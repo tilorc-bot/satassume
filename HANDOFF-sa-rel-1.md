@@ -45,3 +45,16 @@ PR 133 (per-expression linear-form memo) has nothing left to win here.
   history-independence hazard, and solver.py is sa-wit-1's file.
 
 Status: question to forward-chain-3b (see agent report).
+
+## Decision (forward-chain-3b): clone PARKED (numbers above are the fallback)
+
+## Bound 2: check once per set (`checkonce.py base|once`) -- ~0%, dropped
+
+Query session = set assumed, no `_complete_check`; inconsistency from the
+verdict memo, computed on a miss by the unchanged build (proposition None).
+Answers: 0 differences on 8,393 queries. Time (two interleaved pairs):
+base 5.195 / 5.354 s, once 5.320 / 5.171 s: no gain. Builds 2.19 s ->
+1.57 s query builds + 0.22 s verdict builds (463, 354 memo misses), but
+`Engine._ask` 2.16 s -> 2.60 s: escalations 2,077 -> 2,436, searches 2,975
+-> 3,012; the query's own consistency search (`query_literal` checks the
+assumptions before any answer) redoes what the check did.
