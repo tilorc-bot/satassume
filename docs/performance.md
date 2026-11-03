@@ -204,7 +204,7 @@ replay.
 
 - A theory-free contextual session is reused by the next query about the
   same expression under the same set and theory scope (`Engine._shared`,
-  at most `SHARED_MAX` = 4, dropped with the cones on an epoch or settings
+  at most `SHARED_MAX` = 1, dropped with the cones on an epoch or settings
   change). Its answers are a fresh session's only because it has no
   budget: `_ask_shared` must escalate before answering, a session with a
   theory, glue or transfer must never be stored (LRA branch and bound has
