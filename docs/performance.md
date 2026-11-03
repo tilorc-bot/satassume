@@ -149,6 +149,20 @@ cost is relation reasoning, not the constants.
 | LRA bound precision for constants | no change | two bound atoms asserted once at root |
 | PR #45 extras | none measurable | nudging off integers before branching (28 of 792 branchings), skipping clause 2 for root-real terms (13 of 1,430), deduplicating clauses (161 of 30,832) |
 | GC tuning (`gc.freeze()` after import, thresholds) | -4% (freeze, at `6577484`) | a process-wide setting for the embedding application, not for a library |
+| pure memo of relation interpretation (SymPy side of a context build) | at most 2% | SymPy code is 5.5% of a repeat relation build, mostly satassume's own dict lookups; LRA linear forms and `sympy_atom` are already memoized across sessions (`a36d19f`) |
+| hand-written clone of the post-build context session per (set, scope) | ceiling 20.5% (free clone, relation sets); estimated net 8-10% | parked, not refuted: a clone protocol over 11 classes (about 55 attributes), 150-300 lines, and every future mutable attribute is a history-independence hazard (#97) |
+| generic clone of that session (Python copier or pickle) | copy 54-59% of a relation build (0.75 or 0.69 ms against 1.27 ms; orion, load about 10); 0.854x (slower) on the evaluation dev set (1,985 queries) | answers identical; solver watch lists are 28% of the copy, and 8% would need a copy under 0.3 ms; a per-class copy that rebuilds watch lists from clauses was not tried |
+| check once per set (query session without `_complete_check`, set verdict memoized) | no gain (5.195 and 5.354 s against 5.320 and 5.171 s) | builds 0.4 s faster, but `query_literal` re-checks the assumptions without the held levels, witness and cone: `Engine._ask` 0.44 s slower, escalations 2,077 to 2,436 |
+| cross-session witness reuse (a model from an earlier session of the same (set, scope)) | 12% gross, 6.6% exact-safe, net at most 3% | LRA branch-and-bound is path dependent, so in a theory session only the last search may be replaced; checking a model (145 µs) costs more than the plain search it replaces (48 µs) |
+| second model of a `None` by flipping the query literal | about 0 (0.019 s gross, check 0.021 s) | 532 of 1,272 plain second searches covered, 57 of about 1,030 theory ones |
+| integers instead of `Fraction` for integral LRA bounds and values | ceiling 5.9% (the `Fraction` share), realistic 3-4% (16,232-query stream) | invasive: `type(c) is not Fraction` is the constants test throughout `lra.py` and every `/` must stay exact; half the checks are in Element sessions with mixed arithmetic; a compiled core is where this cost would move |
+| scoping LRA off idle solves | oracle 3.9% (52% of LRA solves are idle, 4.9% of the pass; 16,232-query stream) | a solve is known to be idle only afterwards; no predictor |
+| per-build micro cuts (batched `_grow`, cached `P.__hash__`, dead provenance branch in `_add_lits`) | `_grow` 1.7% (microbenchmark), the others about 1-2% each (cProfile, not A/B) | each under 3%; removing the dead branch could come as a line-removing cleanup |
+| unconstrained-term `None` rule (port of reteassume's `free.py`) | 3.7% | under 5% |
+
+The rows from the relation memo on were measured at `9bafaa5` (November
+2026) on orion, unpinned, on the unique refine stream (8,393 distinct
+queries, about 5.3 s) unless marked.
 
 Two items dropped by these rules later landed in another form: the theory
 hold (2.7% in round 2) became `e2aa724` once the theory tax was measured,
