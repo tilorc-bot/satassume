@@ -45,3 +45,11 @@ to worker and forward-chain-3b.
   scratchpad node2.sh (task b7veqywke): gates after sa-cy C judge; 3-tree A/B ab-sa-node-2-fbb484f after cy-ab.
   Render: judge sa-node-2 ~/dev/sa-node <sha> --skip-gates --reuse-ab --approved-test tests.test_engine::test_contextual_queries_build_and_discard
   (for a1b0285 symlink bench-results/ab-sa-node-2-a1b0285 -> ab-sa-node-2-fbb484f and rename jsonl link). Verdict to sa-node-2 + fc-3b (+architect-62).
+
+## QUEUE (09:00Z)
+1. sa-cy-2 0b157b9 (fc-3b's "c131ce7" was a report id; 0b157b9 confirmed). P = pure tag sa-cy-2-0b157b9, C = Cython tag sa-cy-2C-0b157b9.
+   Orion gates chain bsbuutwib (P then C build+gates; logs scratchpad judge-sa-cy-2P.log / judge-sa-cy-2C.log).
+   pareto1 cy-ab.sh (task b6pdll2wc, log cy-ab.log): sync, build C x86, .so load check, A/B base,C,P -> bench-results/ab-sa-cy-2C-0b157b9.
+   TODO: render both mds, commit, verdict to sa-cy-2 + fc-3b (+architect-62).
+2. sa-node-2 fbb484f + a1b0285: node2.sh (task b7veqywke) queued behind 1. TODO: render, verdict.
+Hand off after a verdict, not mid-run. Scratchpad = /tmp/claude-1000/-home-tilo-dev-satassume/7db5e51f-3758-47ff-b0d4-bd9a8ff3de15/scratchpad
