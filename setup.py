@@ -45,9 +45,11 @@ _C_INT_OP = re.compile(r"(__pyx_[tv]_\w+\s*<<|<<\s*__pyx_[tv]_\w+|\bpow\([^;]*__
 
 
 def _check_c_int_ops(c_files):
-    hits = [f"{path}:{n}: {line.strip()}"
-            for path in c_files for n, line in enumerate(open(path), 1)
-            if _C_INT_OP.search(line) and not line.lstrip().startswith(("*", "/*", "#"))]
+    hits = []
+    for path in c_files:
+        with open(path) as f:
+            hits += [f"{path}:{n}: {line.strip()}" for n, line in enumerate(f, 1)
+                     if _C_INT_OP.search(line) and not line.lstrip().startswith(("*", "/*", "#"))]
     if hits:
         raise SystemExit("C integer shift/pow on a Python int (overflows):\n" + "\n".join(hits))
 

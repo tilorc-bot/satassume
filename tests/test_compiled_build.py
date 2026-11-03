@@ -9,7 +9,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _compiled():
-    tree = ast.parse(open(os.path.join(ROOT, "setup.py")).read())
+    with open(os.path.join(ROOT, "setup.py")) as f:
+        tree = ast.parse(f.read())
     for node in tree.body:
         if isinstance(node, ast.Assign) and node.targets[0].id == "COMPILED":
             return ast.literal_eval(node.value)
