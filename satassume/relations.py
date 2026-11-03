@@ -1585,7 +1585,7 @@ class Relations:
                 return active
         lval = dict(lval) if lval else {}
         self._int_bad = INTEGERS and lra is not None and not self._int_point(lra, M, lval)
-        self._vctx = None
+        self._vctx = self._vsh = None
         out = []
         cv = s.table.custom
         self._lcons = []
@@ -1677,7 +1677,46 @@ class Relations:
                 return True
         return False
 
-    _vctx = None
+    _vctx = _vsh = None
+
+    def _tvar_disagree(self, e, M, atoms) -> bool:
+        """Building ``e``'s link sources (:meth:`_apply_role`) ``IL`` of the
+        LRA terms of its ``atoms``, ``IE`` of the terms EUF interns for
+        ``eq(e, 0)`` (``interned`` reads, it does not intern) and ``SD`` of
+        ``e`` and 0.  Is one of those variables unallocated or false in
+        ``M``, or would the build make a term newly shared (new interface
+        pairs, :meth:`_share`)?  The terms are over-approximated (an atom
+        a theory does not register counts too): a yes only builds."""
+        from sympy import S
+        src, new = [], {}
+        for spec in self.specs:
+            ad = self.adapters.get(spec.name)
+            if ad is None:
+                return True                   # the build would make it
+            if spec.guarded:
+                ts = [u for a in atoms for u in (ad.terms(sympy_atom(a)) or ())]
+                src += [(u, _IL) for u in ts]
+            elif hasattr(ad, "node_term"):
+                ts = ad.interned(atoms[2].expr)
+                src += [(u, _IE) for u in ts] + [(e, _SD), (S.Zero, _SD)]
+            else:
+                continue
+            new[spec.name] = ts
+        tv = self._tv
+        for u, k in src:
+            t = tv.get(u)
+            if t is None or not t[k] or not M.get(t[k]):
+                return True
+        if len(self.adapters) < 2:
+            return False
+        if self._vsh is None:
+            self._vsh = {n: set(ad.shared_terms()) for n, ad in self.adapters.items()}
+        seen = self.sharing._seen
+        for u in {u for ts in new.values() for u in ts}:
+            if u not in seen and sum(u in sh or u in new.get(n, ())
+                                     for n, sh in self._vsh.items()) >= 2:
+                return True
+        return False
 
     @staticmethod
     def _virtual(euf, rep):
@@ -1849,6 +1888,8 @@ class Relations:
                 pv = bv("polar", e)
                 if pv != s.engine.is_(S.Zero, "polar"):
                     return "polar"
+        if self._tvar_disagree(e, M, [a for a, _ in want]):
+            return "tvar"                     # what the build sources (C3/C7)
         return soft
 
     # -- switched glue: what a query activates ----------------------------

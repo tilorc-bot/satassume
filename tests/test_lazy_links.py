@@ -15,13 +15,20 @@ the check (it now builds every link); an order adapter with no
 ``integer_form`` crashed the check (test_relations' dummy theory); an atom
 LRA does not interpret (an ``oo`` summand) skipped clauses 2; and LRA's
 point need not satisfy the integrality literals (lra.py, "Integrality").
+
+Cause "tvar" (C3/C7, REPORT-lzr-exact3.md): a build sources the share
+variables of the link atoms' terms and transfer's side variables, and may
+make new interface pairs; the check now builds when one of those variables
+is unallocated or false in the model, or a term would become shared.  The
+cases are the 11 suite failures of a2ca3b7 under SA_LAZY=1 (test_relevance,
+test_scope, test_switched_glue, test_transfer_numbers), whole-set.
 """
 from __future__ import annotations
 
 import pytest
 
 sympy = pytest.importorskip("sympy")
-from sympy import Dummy, Q, Rational, oo, pi, symbols
+from sympy import Dummy, Function, Q, Rational, besselj, oo, pi, sin, symbols
 
 from satassume import DictCache, Engine
 from satassume import relations as R
@@ -94,3 +101,33 @@ def test_uninterpreted_atom_keeps_clauses_2(lazy, monkeypatch):
     with pytest.raises(ValueError):
         _ask(Q.positive(y), A, lazy, monkeypatch)
     assert not lazy or R.LSTATS.get("why lra_inf")
+
+
+f = Function("f")
+z = symbols("z")
+xr, yr, zr = symbols("xr yr zr", real=True)
+BESSEL = (Q.zero(x) & Q.zero(y) & Q.zero(besselj(1, y)) & Q.nonzero(besselj(1, x))
+          & Q.positive(z - 1) & Q.negative(z - 3))
+FLOAT = Q.eq(h, f(h)) & Q.eq(0.5, f(h))
+TVAR = [
+    (Q.positive(z), BESSEL, "error"),
+    (Q.positive(sin(x)), Q.eq(x, 2) & Q.positive(sin(2)), True),
+    (Q.positive(sin(x)), Q.eq(x + 1, 3) & Q.eq(y, 2) & Q.positive(sin(y)), True),
+    (Q.positive(sin(xr)), Q.eq(xr, yr + 2) & Q.eq(yr, 0) & Q.eq(zr, 2) & Q.positive(sin(zr)), True),
+    (Q.finite(f(0.5)), FLOAT, True),
+    (~Q.negative(f(0.5)), FLOAT, True),
+]
+
+
+def _whole(prop, assum, lazy, monkeypatch):
+    monkeypatch.setattr(R, "LAZY", lazy)
+    try:
+        return ask(prop, assum, Engine(cache=DictCache(), relevance=False))
+    except ValueError:
+        return "error"
+
+
+@pytest.mark.parametrize("prop,assum,r", TVAR, ids=range(len(TVAR)))
+def test_build_sources_are_checked(prop, assum, r, monkeypatch):
+    assert _whole(prop, assum, False, monkeypatch) == r
+    assert _whole(prop, assum, True, monkeypatch) == r

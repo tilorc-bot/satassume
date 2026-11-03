@@ -277,6 +277,8 @@ MODULE_CONFIG: frozenset = frozenset({
     ("satassume.sympy_api", "_engine"),           # the default engine itself
     ("satassume.state.memos", "_ADOPTED"),              # the adopted memos, registered by
                                                   # their modules at import
+    ("satassume.relations", "LSTATS"),            # the lazy-links prototype's counters:
+                                                  # written, never read by an answer
 })
 
 
