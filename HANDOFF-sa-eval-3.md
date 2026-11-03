@@ -8,3 +8,11 @@ Layout and the judge command: see HANDOFF-sa-eval-2.md (Layout, Judge a submissi
   Waiting for them (task by8qlrv7e). Then render a1b0285 (and fbb484f) with --reuse-ab per HANDOFF-sa-eval-2 QUEUE;
   verdict on a1b0285 -> architect-62 + forward-chain-3b (fc-3b picked a1b0285, SHARED_MAX 1).
 * LATER: morning readout needs a NEW fuzz seed made at readout time (report both seeds).
+* 09:40Z architect-63 queue (from fc-3b round 3), AFTER a1b0285 verdict:
+  1. COMBINED measurement A/B (pareto1 quiet lease; keep pareto0 free): base vs combo-node-cy (a1b0285+0b157b9, C built)
+     vs combo-lra-cy (4f9d931+0b157b9, C built). Merged trees DONE, clean `git merge --no-ff 0b157b9`, no edits:
+     cands/combo-node-cy-1d6712b, cands/combo-lra-cy-4c9cf02. NOTE both branches change satassume/engine.py, which is in
+     0b157b9's COMPILED list, so the merged engine gets compiled. Plan: gates --skip-ab on both (C built, like sa-cy-2C),
+     then build on pareto1 + 3-tree A/B like sa-eval-2 scratchpad cy-ab.sh.
+  2. Morning: final readout on a NEW unannounced fuzz seed (don't tell workers).
+  Expect sa-bb-1 (LRA B&B budget, maybe a build) and sa-cy-3 (measurement cy-pxd vs 0b157b9(C) vs 9bafaa5).
