@@ -19,6 +19,10 @@ from satassume.knowledge.templates import registry
 from satassume.knowledge.templates.wiring import SOME_PER_ARGUMENT
 from satassume.sympy_api import ask
 
+#: one unrelated relation makes these shapes search, cubically in the width
+#: (issue #260; the answer stays, test_wide_strict_sign[160] took over 300 s)
+pytestmark = pytest.mark.no_pad_relations("wide shapes, issue #260")
+
 
 def fresh():
     return Engine(cache=DictCache())

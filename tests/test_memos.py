@@ -60,6 +60,7 @@ def test_formula_memo_follows_registrations():
         del Q.memo_key
 
 
+@pytest.mark.no_pad("counts the Uninterpreted memo's entries")
 def test_uninterpreted_assumptions_are_remembered():
     """With ``uninterpreted="none"`` (opt-in), assumptions holding a
     relation no theory interprets make every query None (``Uninterpreted``

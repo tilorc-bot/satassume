@@ -13,6 +13,27 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: pip install pytest hypothesis sympy mpmath z3-solver
       - run: python -m pytest -q tests
+  randomized:
+    # issue #96 (tests/conftest.py): the suite in a shuffled order, with
+    # unrelated consistent conjuncts added to the assumptions of one ask in
+    # five and the default engine's memos dropped before one ask in twenty;
+    # no answer may change.  Two fixed seeds and one drawn per run (printed
+    # in the header and the summary).  Without -n, so the seed reproduces
+    # the whole run, order included.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: ["1", "2", "random"]
+    env:
+      SATASSUME_SEED: ${{ matrix.seed != 'random' && matrix.seed || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest hypothesis sympy mpmath z3-solver
+      - run: python -m pytest tests --satassume-pad=0.2 --satassume-evict=0.05 -rfE
   boundary:
     # the static SymPy boundary checks (docs/design.md, "The SymPy boundary")
     runs-on: ubuntu-latest

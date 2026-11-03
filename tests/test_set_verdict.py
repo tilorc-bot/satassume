@@ -74,6 +74,7 @@ def test_verdicts():
     assert eng.verdict(_formula(_k5()[1], True)) is UNKNOWN
 
 
+@pytest.mark.no_pad("counts the set checks")
 def test_one_set_check_per_query():
     # was test_one_set_check_for_many_queries: the set's session, and its
     # complete check, are built for every contextual query (#97 P1); the
