@@ -2356,7 +2356,7 @@ _UNSHARED = object()
 #: glue or transfer, as long as no theory ever exhausted its branch budget or
 #: gave up; such a session is dropped and the query answered fresh.  The
 #: LRA branch and bound is path dependent, so this is empirical, not proven.
-SHARE_THEORY = False
+SHARE_THEORY = True
 
 
 def _share_key(assumptions, proposition):
