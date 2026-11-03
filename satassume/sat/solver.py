@@ -223,7 +223,8 @@ class _BlockClosure:
         rows = [format(x, "0%db" % (2 * n)) for x in reversed(models)]
         self.msets = tuple(int("".join(col), 2) for col in zip(*rows))[::-1] if rows \
             else (0,) * (2 * n)
-        self.all = (1 << len(models)) - 1
+        count = len(models)        # a Python int: compiled, `1 << len(...)` is C arithmetic
+        self.all = (1 << count) - 1
         self.cls: dict[int, int] = {}
         self.memo: dict[int, int] = {}
         self.expl: dict = {}
