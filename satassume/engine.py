@@ -1367,8 +1367,9 @@ class Engine:
         #: SymPy assumptions -> their split into components
         #: (``sympy_api._Split``), cleared together with ``answers``
         self.splits = AnswerMemo(20_000)
-        #: always empty since issue #97 (no contextual session is kept
-        #: between queries); the tests assert that it stays empty
+        #: always empty since issue #97 (no session is kept per set; only
+        #: ``_shared`` keeps one per (set, expression)); the tests assert
+        #: that it stays empty
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: the structural cones of the discovery budget (``_struct``,
@@ -1893,7 +1894,10 @@ class Engine:
         ``s.verdict``.  Every construction of a set's session (one per
         contextual query, and one per :meth:`verdict` without a memo)
         takes exactly these steps, whether a verdict is memoized or not,
-        so the session a query uses never depends on what ran before.
+        so the session a query builds never depends on what ran before
+        (a theory-free one may answer the next query about the same
+        expression: :meth:`_ask_shared` argues why its answers do not
+        depend on history either).
         What the check leaves in the session (the escalated cone, learnt
         clauses, the branch and bound's lemmas) is a function of the set
         alone.
@@ -2231,10 +2235,12 @@ class Engine:
             return self._ask(s, lits, proposition, False)
         key = _share_key(assumptions, proposition)
         shared = self._shared
-        s = shared.pop(key, None) if key is not None else None
+        s = shared.get(key) if key is not None else None
         # the scope (a function of the predicate too) only when a session
-        # is there: most queries find none
+        # is there: most queries find none; a session of another scope
+        # stays unless this query's session replaces it
         if s is not None and s.scope == theory_scope(assumptions, proposition, self._extensions):
+            del shared[key]
             try:
                 r = self._ask_shared(s, proposition)
             except Exception:
@@ -2243,9 +2249,12 @@ class Engine:
             if r is not _UNSHARED:
                 shared[key] = s
                 return r
+            # the fresh session would fail the same way next time: not kept
+            key = None
         s, lits = self._context_session(assumptions, proposition)
         r = self._ask(s, lits, proposition, True)
         if key is not None and _theory_free(s):
+            shared.pop(key, None)
             if len(shared) >= SHARED_MAX:
                 del shared[next(iter(shared))]
             shared[key] = s
@@ -2308,6 +2317,7 @@ class Engine:
         q = s.prepare_query(proposition)
         lits = s.assumption_lits(proposition)
         if s.incomplete:
+            self.stats["escalations"] += 1
             s.escalate()
         if not _theory_free(s):
             return _UNSHARED

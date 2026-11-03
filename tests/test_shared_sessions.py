@@ -122,6 +122,12 @@ def test_a_session_that_raises_falls_back_to_a_fresh_one(monkeypatch, ref):
     eng = Engine()
     assert {q: _ask(eng, *q) for q in QS} == ref
     assert calls
+    # the fresh session of a failed reuse is not kept: it would fail again
+    eng = Engine()
+    _ask(eng, x + 1, "positive", Q.positive(x))
+    assert eng._shared
+    _ask(eng, x + 1, "negative", Q.positive(x))
+    assert not eng._shared
 
 
 def test_a_cone_inconsistent_with_the_set():
@@ -178,10 +184,13 @@ def test_a_setting_change_drops_the_shared_sessions():
 def test_a_query_of_another_scope_builds_its_own_session():
     """``positive(x + y)`` links ``x + y`` with ``x - 1`` (two sign atoms
     on sums sharing ``x``: LRA glue), ``real(x + y)`` does not: the
-    theory-free session of the second is not the first's."""
+    theory-free session of the second is not the first's, and stays for
+    the next query of its scope."""
     a = Q.positive(x - 1) & Q.positive(y)
     eng = Engine()
     assert _ask(eng, x + y, "real", a) is True
     assert eng._shared
     assert _ask(eng, x + y, "positive", a) is True
+    assert eng.stats["set_checks"] == 2
+    assert _ask(eng, x + y, "integer", a) is None
     assert eng.stats["set_checks"] == 2
