@@ -799,6 +799,8 @@ class Relations:
         self._pending_links: list = []
         #: linked terms whose link is not built yet (LAZY): e -> None
         self.unbuilt: dict = {}
+        #: defer links (LAZY); the reference (ref.py) builds every link
+        self.lazy = True
         #: linked term -> the selector guarding its link clauses (see
         #: "Switched glue"); assumed by the queries whose terms include it
         self.link_sel: dict = {}
@@ -943,7 +945,7 @@ class Relations:
                         self._link_later(e)
             if self._pending_links:
                 e = self._pending_links.pop()
-                if LAZY:
+                if LAZY and self.lazy:
                     self._defer(e)
                 else:
                     self._link(e)
@@ -1582,6 +1584,7 @@ class Relations:
                 LSTATS["no_euf_model"] = LSTATS.get("no_euf_model", 0) + 1
                 return active
         lval = dict(lval) if lval else {}
+        self._int_bad = INTEGERS and lra is not None and not self._int_point(lra, M, lval)
         self._vctx = None
         out = []
         cv = s.table.custom
@@ -1603,6 +1606,24 @@ class Relations:
                     LSTATS["why " + why] = LSTATS.get("why " + why, 0) + 1
                     out.append(e)
         return out
+
+    _int_bad = False
+
+    @staticmethod
+    def _int_point(lra, M, lval) -> bool:
+        """Does LRA's point ``lval`` satisfy the integrality literals of
+        ``M``?  ``LRATheory.check``'s model need not (lra.py,
+        "Integrality"); if not (or a value is no rational, say ``pi + 1``),
+        a point verdict must go to the scratch."""
+        from .theories.lra.lra import Integral
+        for var, pl in lra.registered:
+            v = M.get(var)
+            if v is not None and isinstance(pl, Integral):
+                x = pl[1] + sum(c * lval.get(t, 0) for t, c in pl[0])
+                d = getattr(x, "denominator", None)
+                if type(d) is not int or (d == 1) != v:
+                    return False
+        return True
 
     def _lra_scratch(self, M, cons) -> bool:
         """Is there an LRA model of M's LRA literals and the unbuilt
@@ -1740,7 +1761,9 @@ class Relations:
             v = cv.get(a)
             if v is not None and M.get(v) != w:
                 return "atom"
-        # LRA
+        # LRA; a point verdict (lra_sign, lra_int) is soft: the scratch
+        # replay may overturn it, so the EUF checks below still run
+        soft = None
         lra = None
         for spec in self.specs:
             if spec.guarded:
@@ -1748,8 +1771,10 @@ class Relations:
         if lra is not None:
             gta = sympy_atom(want[0][0])
             terms = lra.terms(gta)
+            if terms is None and self._inf_disagree(lra, e, want, M):
+                return "lra_inf"              # clauses 2 do not need terms
             if terms is not None:
-                form = lra.integer_form(e)
+                form = lra.integer_form(e) if hasattr(lra, "integer_form") else None
                 if form is None:
                     return "lra_unread"
                 items, k = form[0]
@@ -1792,14 +1817,17 @@ class Relations:
                         elif N:
                             tgt = Fraction(-1) if (I or not INTEGERS) else Fraction(-1, 2)
                         else:
-                            return "lra_sign"
-                        u, c = free
-                        lval[u] = (tgt - v) / c
-                        v = tgt
+                            tgt = None
+                        if tgt is not None:
+                            u, c = free
+                            lval[u] = (tgt - v) / c
+                            v = tgt
                     if P != (v > 0) or N != (v < 0) or Z != (v == 0):
-                        return "lra_sign"
-                    if INTEGERS and I != (v.denominator == 1):
-                        return "lra_int"
+                        soft = "lra_sign"
+                    elif INTEGERS and I != (v.denominator == 1):
+                        soft = "lra_int"
+                    elif self._int_bad:
+                        soft = "lra_int"      # the point is no model (C4)
         # EUF: eq(e, 0) read by EUF with value Z; interning e and its
         # subterms must merge no new term into an existing class
         # (congruence), virtually, over EUF's model
@@ -1821,7 +1849,7 @@ class Relations:
                 pv = bv("polar", e)
                 if pv != s.engine.is_(S.Zero, "polar"):
                     return "polar"
-        return None
+        return soft
 
     # -- switched glue: what a query activates ----------------------------
     def wants_transfer(self, atoms) -> bool:

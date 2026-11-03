@@ -403,6 +403,7 @@ class _RefSession:
         if rel is None:
             rel = self.relations = Relations(self, self.engine._relation_specs)
             rel.active = True
+            rel.lazy = False
             # relation atoms allocated before the glue existed
             for atom in list(self.table.custom):
                 if atom.pred in RELATION_ATOMS and atom not in rel.status:
@@ -491,6 +492,7 @@ def _answer(prop, assum, engine: _RefEngine, info: RefInfo) -> Optional[bool]:
         # allocated (Session._custom does the same)
         s.relations = Relations(s, engine._relation_specs)
         s.relations.active = True
+        s.relations.lazy = False
         # the twins are atoms of no compiled formula: allocated here, as
         # Session._ensure_twins does, so that 5.5 processes them as user
         # equalities of their formula (the link clause zero(t) <-> eq(t, 0)

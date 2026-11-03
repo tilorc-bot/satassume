@@ -8,16 +8,24 @@ term of ``e`` infinite in the model, the LRA check was skipped, and clauses 2
 of the link atoms (``Relations._order_infinite``) went unchecked.  In #2210
 the model took ``x = oo``, ``y = -oo`` and ``x + y - 3/2`` extended negative,
 which ``e < 0`` with an up push from ``x`` excludes.
+
+The suite under SA_LAZY=1 (REPORT-lzr-exact2.md) found four more causes,
+each tested below: the reference (``ask_ref``) deferred links but never ran
+the check (it now builds every link); an order adapter with no
+``integer_form`` crashed the check (test_relations' dummy theory); an atom
+LRA does not interpret (an ``oo`` summand) skipped clauses 2; and LRA's
+point need not satisfy the integrality literals (lra.py, "Integrality").
 """
 from __future__ import annotations
 
 import pytest
 
 sympy = pytest.importorskip("sympy")
-from sympy import Q, Rational, pi, symbols
+from sympy import Dummy, Q, Rational, oo, pi, symbols
 
 from satassume import DictCache, Engine
 from satassume import relations as R
+from satassume.ref import ask_ref
 from satassume.sympy_api import ask
 
 x, y = symbols("x y")
@@ -59,3 +67,30 @@ def test_2210_by_hand(monkeypatch):
     assert _ask(Q.nonzero(x + h), Q.gt(x, 1) & Q.lt(y, 1) & Q.le(x + y - 3*h, h - y),
                 True, monkeypatch) is True
     assert R.LSTATS.get("why lra_inf")
+
+
+def test_reference_builds_every_link(monkeypatch):
+    # ask_ref is the spec: it runs no lazy check, so it defers nothing
+    monkeypatch.setattr(R, "LAZY", True)
+    assert ask_ref(Q.negative(1 - x), Q.positive(x - 1)) is True
+
+
+def test_integrality_point_is_no_model(monkeypatch):
+    # LRA's point x = 1 ignores ~integer(x); with it, 2*x = 2 looked
+    # integral.  3/4 < x < 5/4 and 2*x integral give x = 1.
+    R.LSTATS.clear()
+    p, a = Q.integer(x), Q.gt(x, Rational(3, 4)) & Q.lt(x, Rational(5, 4)) & Q.integer(2*x)
+    assert _ask(p, a, False, monkeypatch) is True
+    assert _ask(p, a, True, monkeypatch) is True
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_uninterpreted_atom_keeps_clauses_2(lazy, monkeypatch):
+    # 0 < y - oo is refuted by clause 2 (-oo pushes the side down) though
+    # LRA does not interpret it; a > b only starts the glue
+    a, b = Dummy("a"), Dummy("b")
+    A = Q.extended_nonnegative(y - oo) & Q.extended_positive(y - oo) & (a > b)
+    R.LSTATS.clear()
+    with pytest.raises(ValueError):
+        _ask(Q.positive(y), A, lazy, monkeypatch)
+    assert not lazy or R.LSTATS.get("why lra_inf")
