@@ -155,7 +155,7 @@ def test_shared_sessions_are_bounded():
         _ask(eng, e, "positive", Q.positive(x))
         assert len(eng._shared) <= E.SHARED_MAX
     assert len(eng._shared) == E.SHARED_MAX
-    assert [k[2] for k in eng._shared] == EXPRS[-E.SHARED_MAX:]
+    assert [k[1] for k in eng._shared] == EXPRS[-E.SHARED_MAX:]
 
 
 def test_a_new_epoch_drops_the_shared_sessions():
@@ -173,3 +173,15 @@ def test_a_setting_change_drops_the_shared_sessions():
     assert eng._shared
     eng.transfer = not eng.transfer
     assert not eng._shared
+
+
+def test_a_query_of_another_scope_builds_its_own_session():
+    """``positive(x + y)`` links ``x + y`` with ``x - 1`` (two sign atoms
+    on sums sharing ``x``: LRA glue), ``real(x + y)`` does not: the
+    theory-free session of the second is not the first's."""
+    a = Q.positive(x - 1) & Q.positive(y)
+    eng = Engine()
+    assert _ask(eng, x + y, "real", a) is True
+    assert eng._shared
+    assert _ask(eng, x + y, "positive", a) is True
+    assert eng.stats["set_checks"] == 2

@@ -167,7 +167,7 @@ def test_contextual_queries_build_and_discard():
     assert eng.stats['sessions'] == n + 2 and eng.stats['set_checks'] == 3
     assert not eng._context_sessions
     assert len(eng._verdict) == 2
-    assert [k[2] for k in eng._shared] == ['x', ('add', 'x', 'x'), 'x']
+    assert [k[1] for k in eng._shared] == ['x', ('add', 'x', 'x'), 'x']
     # the settings of the earlier reuse design were removed (#97 P7): the
     # constructor refuses them
     for name in ('keep_sessions', 'session_limit', 'cone_search', 'cone_threshold'):

@@ -1389,10 +1389,10 @@ class Engine:
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
-        #: (set, scope, expression) -> the theory-free session of the last
+        #: (set, expression) -> the theory-free session of the last
         #: contextual query about that expression under that set, reused by
-        #: the next one (:meth:`_ask_shared`); at most :data:`SHARED_MAX`,
-        #: oldest first out, dropped with the cones
+        #: the next one of the same theory scope (:meth:`_ask_shared`); at
+        #: most :data:`SHARED_MAX`, oldest first out, dropped with the cones
         self._shared: Dict[Any, Session] = {}
         #: number -> its basis of facts for predicate transfer
         #: (``relations._number_basis``): read from this engine's own
@@ -2229,10 +2229,12 @@ class Engine:
         if not contextual:
             s = self._fresh_session(theory_scope(None, proposition, self._extensions))
             return self._ask(s, lits, proposition, False)
-        key = _share_key(assumptions, proposition, self._extensions)
+        key = _share_key(assumptions, proposition)
         shared = self._shared
         s = shared.pop(key, None) if key is not None else None
-        if s is not None:
+        # the scope (a function of the predicate too) only when a session
+        # is there: most queries find none
+        if s is not None and s.scope == theory_scope(assumptions, proposition, self._extensions):
             try:
                 r = self._ask_shared(s, proposition)
             except Exception:
@@ -2348,14 +2350,15 @@ SHARED_MAX = 4
 _UNSHARED = object()
 
 
-def _share_key(assumptions, proposition, extensions):
-    """The key of ``Engine._shared`` for a contextual query: ``(set, scope,
+def _share_key(assumptions, proposition):
+    """The key of ``Engine._shared`` for a contextual query: ``(set,
     expression)`` if ``proposition`` is a vocabulary atom or its
-    negation, else None."""
+    negation, else None.  A session found under it answers only a query
+    of its own theory scope (``Session.scope``)."""
     a = proposition.args[0] if isinstance(proposition, Not) else proposition
     if not isinstance(a, P) or a.pred not in PRED_INDEX:
         return None
-    return assumptions, theory_scope(assumptions, proposition, extensions), a.expr
+    return assumptions, a.expr
 
 
 def _theory_free(s: Session) -> bool:
