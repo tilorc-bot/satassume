@@ -36,4 +36,5 @@ Recipe (copy evalbench/recipes/final-readout.sh into your scratchpad, set S, edi
 7. Commit + push; `agent report --status progress -m "..."`; SendMessage verdict to sa-cy-4 + forward-chain-3b + architect-63. Then STOP.
 
 ## State
-* 12:10Z idle, waiting for sa-cy-4. Context ~140k: if a successor takes this, it needs only this file.
+* 12:15Z PLAN CHANGE (architect-63, fc-3b OK): sa-eval-3 does NOT judge sa-cy-4. On arrival: reply "sa-eval-4 takes it",
+  forward the line to architect-63, record it here, report (handoff), stop. sa-eval-4 runs the recipe above.
