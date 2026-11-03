@@ -35,3 +35,4 @@ Layout and the judge command: see HANDOFF-sa-eval-2.md (Layout, Judge a submissi
   (uncommitted harness change; commit it with the readout). Then write evalbench/FINAL-READOUT.md (one table; note the stream is
   satassume's home ground; report both fuzz seeds; answer digests vs base), push, send path to fc-3b + architect-63;
   sa-cy-3 verdict to sa-cy-3 + fc-3b.
+* readout tool: .venv/bin/python -m evalbench.readout bench-results/ab-final/ab-final.jsonl --arm TREE=LABEL ... (wide table + digest check). combo-r3 table: all digests same; node-cy 1.27x HO / lra-cy 1.64x HO.
