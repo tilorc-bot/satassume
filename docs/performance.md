@@ -263,12 +263,44 @@ fresh engine before calling it a regression. Tracked in #53 and #42.
 | idea | bound | state |
 |---|---|---|
 | one persistent solver per engine: every assumption conjunct under a selector literal, search that stops when every active clause is satisfied | ceiling 45.7% of the logged pass (every query that built a session), 23% certain; active clauses at the median search 0.004 of the union | stage 0 at `6b935d7` did not meet its stop condition. Without scoped termination search costs 0.37 ms plus 1.8 µs per variable (about 18 ms per search at mid-pass against 0.6 ms). Next step would be a solver-only experiment: stop if scoped search is not free when unused or costs over 10% more than today's |
-| compiled solver core (C, Cython or Rust, same API) | a 3.0 s pass to 1.4 to 1.6 s (estimate at `747fb0e`, solver about 60% of the pass) | the engine calls the solver about 100,000 times per pass and `implied` returns whole trails, so the boundary limits it; theories stay in Python |
+| compiled solver core (C, Cython or Rust, same API) | a 3.0 s pass to 1.4 to 1.6 s (estimate at `747fb0e`, solver about 60% of the pass) | the engine calls the solver about 100,000 times per pass and `implied` returns whole trails, so the boundary limits it; theories stay in Python. Compiling the unchanged source gives -18%: see [Optional compiled build](#optional-compiled-build) |
 | integrality link only for expressions asked `Q.integer` | part of #48's +13% on queries with constants | #62 |
 | combined terms-by-bits budget in `constfield` | an 11x11 system sharing a 4000-bit denominator squared takes 3.1 s | #62; not seen on the workloads |
 | fact-cache fast path; answer-memo subsumption without checks | 5%; 7.2% | semantic changes (skip the consistency check), for the owner |
 | watch lists allocated on first use | about 2% (-0.9% alone) | reverted for readability in item C |
 | a predictor for "propagation in the polluted session will fail" | ceiling 6.0% | none found that costs less than the node visits it saves |
+
+## Optional compiled build
+
+Pure Python is the default and the only thing tests and CI require.
+`SATASSUME_CYTHON=1 python setup.py build_ext --inplace` (Cython 3
+installed by hand) compiles the unchanged modules listed in `setup.py` in
+place; deleting the `.so` files returns to pure Python. Rebuild after
+editing a listed module: a stale `.so` shadows the `.py`
+(`tests/test_compiled_build.py` fails when one is older than its source).
+A `.so` built on another platform is ignored silently, so build on the
+machine that runs it.
+
+At `4d8eee4` + setup.py (pareto1, Python 3.12, pinned A/B of 5 rounds,
+medians, every answer identical): the dev set 0.526 s to 0.438 s (-16.6%;
+None queries -17.4%, definite -15.6%), the unique stream 3.37 s to
+2.76 s (-18.2%), a fork-per-case battery slice -10.4% of the time in
+`ask`. Most of it is the solver: compiled alone it gave -12.6% on the dev
+set in an earlier run. Cold `import satassume.sympy_api` after SymPy:
+10.6 ms to 10.9 ms.
+
+Two Cython semantics differ from Python on this code, both handled in the
+build configuration or caught by it:
+
+* Annotations become C types by default (`x: float` a C double, `c: list`
+  rejects a tuple); `setup.py` turns that off (`annotation_typing=False`).
+* `1 << len(x)` and `2 ** len(x)` are C arithmetic (`len()` is a
+  `Py_ssize_t`): the first overflows, the second is a float. `setup.py`
+  refuses to build when the generated C has a shift or `pow` on a C value.
+  `_BlockClosure` keeps the count in a local name, which stays a Python
+  int.
+
+mypyc rejects the unchanged code (mypy errors in every hot module).
 
 ## Current cost profile
 

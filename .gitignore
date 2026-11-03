@@ -10,3 +10,5 @@ queries*.jsonl
 harness-results/
 .harness-tmp/
 .hypothesis/
+# the optional compiled build (setup.py)
+satassume/**/*.so
