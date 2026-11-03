@@ -58,3 +58,34 @@ base 5.195 / 5.354 s, once 5.320 / 5.171 s: no gain. Builds 2.19 s ->
 `Engine._ask` 2.16 s -> 2.60 s: escalations 2,077 -> 2,436, searches 2,975
 -> 3,012; the query's own consistency search (`query_literal` checks the
 assumptions before any answer) redoes what the check did.
+
+## Bound 3: per-build session work (started; ownership split below)
+
+forward-chain-3b's split: sa-rel owns engine.py's build path, relations.py, and
+the solver's clause insertion and allocation (add_clause, _add_lits,
+add_internal, _grow, register_block). sa-wit-1 owns theories/lra/* and the
+solver's theory interface (_tpropagate, _theory_sync, _theory_check,
+register_atom's theory path). Message the other before editing outside your part.
+
+Measured so far:
+- `_grow` one variable at a time: 1.6 us per call (microbench, a fresh
+  solver with the rule block, 299 single-variable grows), 54,871 calls per
+  unique pass -> ~0.09 s of ~5.3 s = ~1.7%. Under 3%: not worth batching.
+- Whole-pass cProfile tottime (base.prof, profiler-inflated): _propagate
+  0.95 s, _add_lits 0.82, list.append 0.70, len 0.70, dict.get 0.66,
+  add_internal 0.41, _grow 0.36, _internal_lits 0.31, P dataclass __hash__
+  0.59 cum (407k calls, est. 1-2% real), _emit_pattern 0.19 (1.84 cum).
+  No single cut stands out. Each looks like 1-2%, and performance.md
+  already dropped the larger related items: precompiled template emission
+  2.2%, lazy watch lists, the hot-loop bundle.
+
+Next steps for a successor (if forward-chain-3b wants one):
+1. Bound the P.__hash__ cache (hash stored at construction in
+   sat/formula.py, a shared file: tell forward-chain-3b) by a real A/B,
+   not cProfile. It is probably 1-2%.
+2. Bound `_add_lits`'s dead provenance branch (`owner is not BOTTOM`
+   with track_owners False) and add_clause -> _internal_lits -> list()
+   copies for engine emits. Probably <1% each.
+3. If nothing reaches 3-5%, report Status: question recommending that
+   the relation stream's remaining time be attacked through the theory
+   interface (sa-wit-1's part) or the parked clone (numbers above).
