@@ -1384,6 +1384,11 @@ class Engine:
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
+        #: (set, scope, expression) -> the theory-free session of the last
+        #: contextual query about that expression under that set, reused by
+        #: the next one (:meth:`_ask_shared`); at most :data:`SHARED_MAX`,
+        #: oldest first out, dropped with the cones
+        self._shared: Dict[Any, Session] = {}
         #: number -> its basis of facts for predicate transfer
         #: (``relations._number_basis``): read from this engine's own
         #: ``is_many``, so it depends on the settings and the registry epoch
@@ -1601,6 +1606,7 @@ class Engine:
 
     # -- the discovery budget: a test on the query's structural cone ----------
     def _drop_cones(self) -> None:
+        self._shared.clear()
         self._kids.clear()
         self._cones.clear()
         self._qcones.clear()
@@ -2211,11 +2217,28 @@ class Engine:
             c = basis_formula(a) if isinstance(a, P) else None
             if c is TRUE or c is FALSE:
                 return (c is TRUE) != isinstance(proposition, Not)
-        if contextual:
-            s, lits = self._context_session(assumptions, proposition)
-        else:
+        if not contextual:
             s = self._fresh_session(theory_scope(None, proposition, self._extensions))
-        return self._ask(s, lits, proposition, contextual)
+            return self._ask(s, lits, proposition, False)
+        key = _share_key(assumptions, proposition, self._extensions)
+        shared = self._shared
+        s = shared.pop(key, None) if key is not None else None
+        if s is not None:
+            try:
+                r = self._ask_shared(s, proposition)
+            except Exception:
+                # answered by the fresh path below, which raises if it does
+                r = _UNSHARED
+            if r is not _UNSHARED:
+                shared[key] = s
+                return r
+        s, lits = self._context_session(assumptions, proposition)
+        r = self._ask(s, lits, proposition, True)
+        if key is not None and _theory_free(s):
+            if len(shared) >= SHARED_MAX:
+                del shared[next(iter(shared))]
+            shared[key] = s
+        return r
 
     def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:
         """Answer ``proposition`` in the session ``s`` just built for it:
@@ -2243,6 +2266,47 @@ class Engine:
         self._note_budget(s)
         return r
 
+    def _ask_shared(self, s: Session, proposition) -> Optional[bool]:
+        """Answer ``proposition``, a vocabulary atom or its negation, in
+        the session ``s`` that answered the previous query about the same
+        expression under the same set and scope (``_shared``), or return
+        ``_UNSHARED`` if ``s`` has a theory once escalated.  Raises what
+        the session raises; the caller then answers in a fresh session.
+
+        Why the answer is the fresh session's (issue #116's argument for
+        cone sessions, extended to a set): let F be the clauses of the
+        set's escalated session plus the whole escalated cone of the
+        expression, a function of the key (escalation compiles everything
+        parked and visits every node, whatever was demanded first: see
+        :meth:`_decide`).  ``s`` is escalated before it answers, and holds
+        F plus learnt clauses and root units entailed by F: the earlier
+        queries only demanded predicates of the same expression, and a
+        theory-free session has no glue.  Without a theory, propagation,
+        ``Solver.consistent`` and the search have no budget, so ``s``
+        raises iff the set is inconsistent with F, and otherwise answers
+        True iff F and the set entail the query, False iff they entail its
+        negation, None otherwise.  A fresh session computes the same
+        function when the set is consistent with F: its clauses are a
+        subset of F (propagation on them is sound and its consistency
+        check passes), and a query they leave open escalates to all of F
+        and is searched completely.  When the set is inconsistent with F,
+        ``s`` raises and the fresh session answers.  The session's state
+        (learnt clauses, held levels, stored models) depends on history;
+        its answers do not."""
+        s.solver.release(s.n_hold)
+        q = s.prepare_query(proposition)
+        lits = s.assumption_lits(proposition)
+        if s.incomplete:
+            s.escalate()
+        if not _theory_free(s):
+            return _UNSHARED
+        r = s.query_literal(q, lits, search=False)
+        if r is None:
+            self.stats["searches"] += 1
+            r = s.query_literal(q, lits, search=True)
+        self._note_budget(s)
+        return r
+
     def _note_budget(self, s: Session) -> None:
         # the query passed _within_budget, so its session ran uncapped
         assert not s.truncated, "a session of a query within the budget was truncated"
@@ -2265,6 +2329,30 @@ _NO_BASIS: frozenset = frozenset()
 _WANT: Dict[frozenset, frozenset] = {}
 _adopt_memo(__name__, "_NEIGH")
 _adopt_memo(__name__, "_WANT")
+
+
+#: most sessions kept for reuse by the next query about the same expression
+#: under the same set (``Engine._shared``); refine asks its predicates of an
+#: expression back to back, so few are needed
+SHARED_MAX = 4
+#: what ``Engine._ask_shared`` returns for a session it does not answer in
+_UNSHARED = object()
+
+
+def _share_key(assumptions, proposition, extensions):
+    """The key of ``Engine._shared`` for a contextual query: ``(set, scope,
+    expression)`` if ``proposition`` is a vocabulary atom or its
+    negation, else None."""
+    a = proposition.args[0] if isinstance(proposition, Not) else proposition
+    if not isinstance(a, P) or a.pred not in PRED_INDEX:
+        return None
+    return assumptions, theory_scope(assumptions, proposition, extensions), a.expr
+
+
+def _theory_free(s: Session) -> bool:
+    """``s`` has no relation glue, no transfer and no theory: its search has
+    no budget (``Engine._ask_shared``)."""
+    return s.relations is None and s.xfer is None and not s.solver.theories()
 
 
 def _gave_up(s: Session) -> bool:
