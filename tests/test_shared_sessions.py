@@ -139,9 +139,10 @@ def test_a_cone_inconsistent_with_the_set():
         assert {q: _ask(eng, *q) for q in order} == want
 
 
-def test_theory_sessions_are_not_kept():
+def test_theory_sessions_are_not_kept(monkeypatch):
     """An LRA session's branch and bound has a path-dependent budget
     (satassume.sat.lra): such a session answers its query only."""
+    monkeypatch.setattr(E, "SHARE_THEORY", False)
     eng = Engine()
     _ask(eng, x - y, "positive", Q.gt(x, y) & Q.integer(x))
     assert not eng._shared
