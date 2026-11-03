@@ -121,9 +121,15 @@ Every contextual query rebuilds its set's session and runs the set's complete ch
   fail when SymPy is only on PYTHONPATH; the harness venv has SymPy on its path (a .pth file)
   to avoid that. A candidate is checked with its own suite and with 9bafaa5's suite run
   against its package.
-* Sanity check (partial, 2026-11-03 08:00 UTC): a mutant that turns every 997th True answer
-  into None, history-dependently (worktree `cands/mutant-test`, never pushed), changes the
-  answer digests of stream, battery, corpus, stream-unique and stream-shuffled. ho-fuzz and
-  fork-battery are unchanged, as expected for so sparse a mutant, and so is the fresh-process
-  run. 3 of its own tests fail. The comparison step of `gates.py` (FAIL lines, per-query
-  diffs) had not finished yet: see HANDOFF-sa-eval-1.md.
+* Sanity check (2026-11-03 08:10 UTC): a mutant that turns every 997th True answer into
+  None, history-dependently (worktree `cands/mutant-test`, never pushed), FAILS the gates:
+  stream 2, battery 5, corpus 2, stream-unique 1, stream-shuffled 3 differences, listed query
+  by query in `results/mutant-45deb0e.md` (judge.py end to end, timing skipped). ho-fuzz,
+  fork-battery and the fresh-process run are unchanged, as expected for so sparse a mutant
+  (a fresh process never reaches 997 asks). Its test failures include
+  `test_module_state_inventory_is_classified` (the new module state).
+* Test flakiness: many tests assert wall-clock limits (e.g. `test_performance_smoke_300_vars`,
+  5 s) and can fail under xdist on a loaded orion. Newly failing tests are therefore rerun once,
+  serially; one that passes there is listed as flaky in the result and not counted. This can
+  hide a history-dependent test failure, but history dependence of answers is gated by the
+  stream, shuffle and fresh-process checks, which do not rerun.

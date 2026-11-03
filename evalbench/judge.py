@@ -30,7 +30,7 @@ def main():
     ap.add_argument("--skip-ab", action="store_true")
     ap.add_argument("--skip-gates", action="store_true")
     args = ap.parse_args()
-    co = sh(os.path.join(HERE, "fetch.sh"), args.clone, args.sha, args.worker)
+    co = sh(os.path.join(HERE, "fetch.sh"), os.path.abspath(args.clone), args.sha, args.worker)
     sha = os.path.basename(co).rsplit("-", 1)[1]
     tag = f"{args.worker}-{sha}"
     gdir = os.path.join(ROOT, "gate-results", tag)
@@ -108,6 +108,10 @@ def write(args, tag, co, log, stat, g, base_c, cand_c, ab_rows, v):
                 L.append(f"* ... {len(c['diffs']) - 200} more (gate-results/{tag}/gates.json)")
             for n in c.get("newly_failing", []) + c.get("missing", []):
                 L.append(f"* {n}")
+    for c in g["checks"]:
+        if c.get("flaky"):
+            L += ["", f"{c['name']}: failed under xdist on loaded orion but passed on a serial rerun "
+                  "(wall-clock-limit tests; not counted): " + ", ".join(f"`{n}`" for n in c["flaky"])]
     L += ["", "## Time (pareto1, pinned, alternating cold processes; speedup = base/cand, paired by round)", ""]
     if ab_rows:
         L += ["| workload | metric | base median s | cand median s | speedup | per-round ratio cand/base |",

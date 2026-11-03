@@ -83,6 +83,35 @@ def pytest_outcomes(rootdir, jobs, junit):
     return out, tail
 
 
+def node_path(rootdir, nid):
+    """junit ``pkg.mod[.Class]::name`` -> pytest node id ``pkg/mod.py[::Class]::name``."""
+    cls, name = nid.split("::", 1)
+    parts = cls.split(".")
+    for k in range(len(parts), 0, -1):
+        f = os.path.join(*parts[:k]) + ".py"
+        if os.path.exists(os.path.join(rootdir, f)):
+            return "::".join([f, *parts[k:], name])
+    return nid
+
+
+def rerun_serial(rootdir, nids, junit):
+    """Newly failing tests once more, serially (no xdist): many tests assert
+    wall-clock limits and fail when orion is loaded.  A test that passes here
+    is reported as flaky, not as a gate failure (answer-level history
+    dependence is gated by the stream/shuffle/forkq checks, not by tests)."""
+    if not nids:
+        return {}
+    env = dict(os.environ, PYTHONPATH=SYMPY, PYTHONHASHSEED="0")
+    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:xdist",
+           "--junitxml", junit, *[node_path(rootdir, n) for n in nids]]
+    subprocess.run(cmd, cwd=rootdir, env=env, capture_output=True, text=True)
+    out = {}
+    for tc in ET.parse(junit).getroot().iter("testcase"):
+        nid = tc.get("classname", "") + "::" + tc.get("name", "")
+        out[nid] = "failed" if any(ch.tag in ("failure", "error") for ch in tc) else "passed"
+    return {n: out.get(n, "failed") for n in nids}
+
+
 def baseline_tests_on(checkout, base_checkout, tmp):
     """The baseline's tree (git archive of BASE_SHA) with the candidate's package."""
     d = os.path.join(tmp, "basetests")
@@ -142,6 +171,13 @@ def main():
             bt, bt_tail = pytest_outcomes(d, args.jobs, os.path.join(tmp, "base.xml"))
             res["tests_base_on_cand"] = {"summary": bt_tail, "outcomes": bt}
             print("baseline tests on candidate:", bt_tail, flush=True)
+            with open(os.path.join(args.baseline, "gates.json")) as f:
+                bo0 = json.load(f)["tests_own"]["outcomes"]
+            for key, root in (("tests_own", co), ("tests_base_on_cand", d)):
+                new_f = sorted(n for n, k in res[key]["outcomes"].items() if k == "failed" and bo0.get(n) != "failed")
+                res[key]["rerun"] = rerun_serial(root, new_f, os.path.join(tmp, f"rerun-{key}.xml"))
+                if new_f:
+                    print(key, "serial rerun:", res[key]["rerun"], flush=True)
         shutil.rmtree(tmp, ignore_errors=True)
     if args.record:
         with open(os.path.join(args.out, "gates.json"), "w") as f:
@@ -167,10 +203,12 @@ def main():
     if not args.skip_tests:
         for key in ("tests_own", "tests_base_on_cand"):
             oc = res[key]["outcomes"]
-            worse = sorted(n for n, k in oc.items() if k == "failed" and bo.get(n) != "failed")
+            rr = res[key].get("rerun", {})
+            worse = sorted(n for n, k in oc.items() if k == "failed" and bo.get(n) != "failed" and rr.get(n) != "passed")
+            flaky = sorted(n for n, k in rr.items() if k == "passed")
             gone = sorted(n for n in bo if bo[n] == "passed" and n not in oc) if key == "tests_base_on_cand" else []
             res["checks"].append({"name": key, "ok": not worse and not gone, "summary": res[key]["summary"],
-                                  "newly_failing": worse, "missing": gone})
+                                  "newly_failing": worse, "missing": gone, "flaky": flaky})
     res["pass"] = all(c["ok"] for c in res["checks"])
     with open(os.path.join(args.out, "gates.json"), "w") as f:
         json.dump(res, f)

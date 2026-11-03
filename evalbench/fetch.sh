@@ -4,8 +4,8 @@
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 clone=$1 sha=$2 name=$3
-git -C "$here" fetch -q "$clone" "$sha"
-full=$(git -C "$here" rev-parse "$sha^{commit}")
+full=$(git -C "$clone" rev-parse --verify "$sha^{commit}")   # workers send short shas; fetch needs the full one
+git -C "$here" fetch -q "$clone" "$full"
 short=$(git -C "$here" rev-parse --short=7 "$full")
 dest="$here/cands/$name-$short"
 [ -d "$dest" ] || git -C "$here" worktree add -q --detach "$dest" "$full"
