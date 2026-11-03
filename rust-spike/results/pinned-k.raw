@@ -1,0 +1,159 @@
+Benchmark CPU slot: 2
+Benchmark results: /home/tilo/sa-rust-bench/bench-results/1793746626599692685-cpu2-2995298
+Benchmark reservation: domain, CPUs [2], policy policy2, max 4800000 kHz
+BENCHMARK: slot wait=0.000 seconds
+{"round": "0", "run": "base", "mode": "base", "wl": "dev", "s": 0.5228, "n": 1985, "n_none": 892, "none_s": 0.3101, "def_s": 0.2124, "digest": "31cd0945c07f02a6"}
+{"round": "0", "run": "py", "impl": "py", "mode": "timed", "wl": "dev", "T": 0.1805810290388763, "T_none": 0.11501857126131654, "T_def": 0.06556107383221388}
+{"round": "0", "run": "rs", "impl": "rs", "mode": "timed", "wl": "dev", "T": 0.013554087, "T_none": 0.008842965999999989, "T_def": 0.004710992000000014}
+{"round": "0", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "dev", "T": 0.013143588, "T_none": 0.008540572000000005, "T_def": 0.004602918000000013}
+{"round": "0", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "dev", "T": 0.012631224, "T_none": 0.00822881500000001, "T_def": 0.004402330000000017}
+{"round": "0", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "dev", "T": 0.18735627131536603, "T_none": 0.11874810419976711, "T_def": 0.06860674684867263}
+{"round": "0", "run": "timers", "mode": "timers", "wl": "dev", "T": 0.5847747600637376, "t_solver": 0.30216011917218566, "t_theory": 0.07353495666757226, "calls": 46214, "digest": "31cd0945c07f02a6"}
+{"round": "0", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "dev", "T": 0.005506923887878656}
+{"round": "0", "run": "pytape", "impl": "py", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.001294370274990797, "T_plain": 0.0007581887766718864}
+{"round": "0", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "dev", "T": 0.000010513}
+{"round": "0", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.000062909, "T_plain": 0.0}
+{"round": "0", "run": "base", "mode": "base", "wl": "fuzz", "s": 8.0737, "n": 3000, "n_none": 2387, "none_s": 6.737, "def_s": 1.3357, "digest": "173502b6ef285ad6"}
+{"round": "0", "run": "py", "impl": "py", "mode": "timed", "wl": "fuzz", "T": 2.7085694591514766, "T_none": 2.296144323889166, "T_def": 0.4124233443289995}
+{"round": "0", "run": "rs", "impl": "rs", "mode": "timed", "wl": "fuzz", "T": 0.176312225, "T_none": 0.14826268400000017, "T_def": 0.028049407000000016}
+{"round": "0", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "fuzz", "T": 0.173550564, "T_none": 0.14578348099999955, "T_def": 0.027766866000000015}
+{"round": "0", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "fuzz", "T": 0.166735726, "T_none": 0.14009442099999994, "T_def": 0.026641110000000003}
+{"round": "0", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "fuzz", "T": 2.686616651248187, "T_none": 2.278374008834362, "T_def": 0.40824114345014095}
+{"round": "0", "run": "timers", "mode": "timers", "wl": "fuzz", "T": 9.21878505917266, "t_solver": 5.570031165610999, "t_theory": 1.8988981507718563, "calls": 687993, "digest": "173502b6ef285ad6"}
+{"round": "0", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "fuzz", "T": 0.08391965413466096}
+{"round": "0", "run": "pytape", "impl": "py", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.04624054115265608, "T_plain": 0.02412318717688322}
+{"round": "0", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "fuzz", "T": 0.000145668}
+{"round": "0", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.002018576, "T_plain": 0.0}
+{"round": "1", "run": "py", "impl": "py", "mode": "timed", "wl": "dev", "T": 0.18490688363090158, "T_none": 0.11817883839830756, "T_def": 0.06672618119046092}
+{"round": "1", "run": "rs", "impl": "rs", "mode": "timed", "wl": "dev", "T": 0.013620454, "T_none": 0.008871778000000006, "T_def": 0.004748178000000019}
+{"round": "1", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "dev", "T": 0.013203046, "T_none": 0.008607192000000003, "T_def": 0.0045957860000000236}
+{"round": "1", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "dev", "T": 0.012575059, "T_none": 0.008157555000000007, "T_def": 0.004417400000000017}
+{"round": "1", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "dev", "T": 0.1793614039197564, "T_none": 0.11395043320953846, "T_def": 0.06540916487574577}
+{"round": "1", "run": "timers", "mode": "timers", "wl": "dev", "T": 0.5854978770948946, "t_solver": 0.3023598827421665, "t_theory": 0.07363862870261073, "calls": 46214, "digest": "31cd0945c07f02a6"}
+{"round": "1", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "dev", "T": 0.005499097052961588}
+{"round": "1", "run": "pytape", "impl": "py", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.001282127108424902, "T_plain": 0.0007638018578290939}
+{"round": "1", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "dev", "T": 0.000010524}
+{"round": "1", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.00006533, "T_plain": 0.0}
+{"round": "1", "run": "base", "mode": "base", "wl": "dev", "s": 0.528, "n": 1985, "n_none": 892, "none_s": 0.3136, "def_s": 0.214, "digest": "31cd0945c07f02a6"}
+{"round": "1", "run": "py", "impl": "py", "mode": "timed", "wl": "fuzz", "T": 2.6962476829066873, "T_none": 2.285824923310429, "T_def": 0.4104208927601576}
+{"round": "1", "run": "rs", "impl": "rs", "mode": "timed", "wl": "fuzz", "T": 0.176321795, "T_none": 0.14829359500000006, "T_def": 0.028027733999999978}
+{"round": "1", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "fuzz", "T": 0.17301397, "T_none": 0.14540306700000005, "T_def": 0.027610570000000015}
+{"round": "1", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "fuzz", "T": 0.166779494, "T_none": 0.14013062200000023, "T_def": 0.026648636000000007}
+{"round": "1", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "fuzz", "T": 2.672808750998229, "T_none": 2.266710670199245, "T_def": 0.40609610779210925}
+{"round": "1", "run": "timers", "mode": "timers", "wl": "fuzz", "T": 9.226896182168275, "t_solver": 5.579240166116506, "t_theory": 1.9012175220996141, "calls": 687993, "digest": "173502b6ef285ad6"}
+{"round": "1", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "fuzz", "T": 0.08419832168146968}
+{"round": "1", "run": "pytape", "impl": "py", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.045193460304290056, "T_plain": 0.023761237040162086}
+{"round": "1", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "fuzz", "T": 0.000145635}
+{"round": "1", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.002026849, "T_plain": 0.0}
+{"round": "1", "run": "base", "mode": "base", "wl": "fuzz", "s": 7.992, "n": 3000, "n_none": 2387, "none_s": 6.6749, "def_s": 1.316, "digest": "173502b6ef285ad6"}
+{"round": "2", "run": "rs", "impl": "rs", "mode": "timed", "wl": "dev", "T": 0.013519569, "T_none": 0.008806801999999999, "T_def": 0.004712691000000014}
+{"round": "2", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "dev", "T": 0.013259191, "T_none": 0.008636996000000008, "T_def": 0.004622100000000015}
+{"round": "2", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "dev", "T": 0.012583214, "T_none": 0.008104026000000002, "T_def": 0.004479103000000023}
+{"round": "2", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "dev", "T": 0.18001771485432982, "T_none": 0.1142842061817646, "T_def": 0.06573226675391197}
+{"round": "2", "run": "timers", "mode": "timers", "wl": "dev", "T": 0.5842174259014428, "t_solver": 0.3021618826314807, "t_theory": 0.07348687388002872, "calls": 46214, "digest": "31cd0945c07f02a6"}
+{"round": "2", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "dev", "T": 0.00551173510029912}
+{"round": "2", "run": "pytape", "impl": "py", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.0012664678506553173, "T_plain": 0.0007672389037907124}
+{"round": "2", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "dev", "T": 0.00001053}
+{"round": "2", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.000061596, "T_plain": 0.0}
+{"round": "2", "run": "base", "mode": "base", "wl": "dev", "s": 0.5249, "n": 1985, "n_none": 892, "none_s": 0.3116, "def_s": 0.2129, "digest": "31cd0945c07f02a6"}
+{"round": "2", "run": "py", "impl": "py", "mode": "timed", "wl": "dev", "T": 0.17996588302776217, "T_none": 0.11444426188245416, "T_def": 0.06552015896886587}
+{"round": "2", "run": "rs", "impl": "rs", "mode": "timed", "wl": "fuzz", "T": 0.175902202, "T_none": 0.14795532100000044, "T_def": 0.02794653200000002}
+{"round": "2", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "fuzz", "T": 0.173070441, "T_none": 0.14543884099999987, "T_def": 0.027631330000000016}
+{"round": "2", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "fuzz", "T": 0.166566958, "T_none": 0.13992855799999973, "T_def": 0.026638100000000033}
+{"round": "2", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "fuzz", "T": 2.6653819270431995, "T_none": 2.260705703869462, "T_def": 0.4046740713529289}
+{"round": "2", "run": "timers", "mode": "timers", "wl": "fuzz", "T": 9.267551778815687, "t_solver": 5.5908218692056835, "t_theory": 1.9025539914146066, "calls": 687993, "digest": "173502b6ef285ad6"}
+{"round": "2", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "fuzz", "T": 0.08408997999504209}
+{"round": "2", "run": "pytape", "impl": "py", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.045588078908622265, "T_plain": 0.023619089275598526}
+{"round": "2", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "fuzz", "T": 0.000145641}
+{"round": "2", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.002068068, "T_plain": 0.0}
+{"round": "2", "run": "base", "mode": "base", "wl": "fuzz", "s": 8.1115, "n": 3000, "n_none": 2387, "none_s": 6.7773, "def_s": 1.3331, "digest": "173502b6ef285ad6"}
+{"round": "2", "run": "py", "impl": "py", "mode": "timed", "wl": "fuzz", "T": 2.768482412211597, "T_none": 2.3424278018064797, "T_def": 0.42605256428942084}
+{"round": "3", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "dev", "T": 0.013456393, "T_none": 0.008751425000000018, "T_def": 0.004704892000000018}
+{"round": "3", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "dev", "T": 0.012818488, "T_none": 0.008338534000000002, "T_def": 0.004479892000000021}
+{"round": "3", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "dev", "T": 0.18419700535014272, "T_none": 0.11696128873154521, "T_def": 0.06723396852612495}
+{"round": "3", "run": "timers", "mode": "timers", "wl": "dev", "T": 0.5910344086587429, "t_solver": 0.3062819200567901, "t_theory": 0.07438559783622622, "calls": 46214, "digest": "31cd0945c07f02a6"}
+{"round": "3", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "dev", "T": 0.005725922994315624}
+{"round": "3", "run": "pytape", "impl": "py", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.0013053291477262974, "T_plain": 0.0007856590673327446}
+{"round": "3", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "dev", "T": 0.000010748}
+{"round": "3", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.000065939, "T_plain": 0.0}
+{"round": "3", "run": "base", "mode": "base", "wl": "dev", "s": 0.5326, "n": 1985, "n_none": 892, "none_s": 0.3159, "def_s": 0.2163, "digest": "31cd0945c07f02a6"}
+{"round": "3", "run": "py", "impl": "py", "mode": "timed", "wl": "dev", "T": 0.18318898603320122, "T_none": 0.11632024589926004, "T_def": 0.06686772173270583}
+{"round": "3", "run": "rs", "impl": "rs", "mode": "timed", "wl": "dev", "T": 0.013819264, "T_none": 0.009011342000000004, "T_def": 0.004807803000000019}
+{"round": "3", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "fuzz", "T": 0.1751664, "T_none": 0.14722017899999995, "T_def": 0.027946059000000013}
+{"round": "3", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "fuzz", "T": 0.166919997, "T_none": 0.1402259130000001, "T_def": 0.026693742000000024}
+{"round": "3", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "fuzz", "T": 2.72419644985348, "T_none": 2.310487468726933, "T_def": 0.41370714735239744}
+{"round": "3", "run": "timers", "mode": "timers", "wl": "fuzz", "T": 9.31090395199135, "t_solver": 5.616451489273459, "t_theory": 1.9114512563683093, "calls": 687993, "digest": "173502b6ef285ad6"}
+{"round": "3", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "fuzz", "T": 0.08368399925529957}
+{"round": "3", "run": "pytape", "impl": "py", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.0450038630515337, "T_plain": 0.023800061084330082}
+{"round": "3", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "fuzz", "T": 0.00014564}
+{"round": "3", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.002087216, "T_plain": 0.0}
+{"round": "3", "run": "base", "mode": "base", "wl": "fuzz", "s": 8.0904, "n": 3000, "n_none": 2387, "none_s": 6.7567, "def_s": 1.3326, "digest": "173502b6ef285ad6"}
+{"round": "3", "run": "py", "impl": "py", "mode": "timed", "wl": "fuzz", "T": 2.729764153715223, "T_none": 2.31447383062914, "T_def": 0.41528867511078715}
+{"round": "3", "run": "rs", "impl": "rs", "mode": "timed", "wl": "fuzz", "T": 0.175986792, "T_none": 0.14804241400000023, "T_def": 0.027943761999999994}
+{"round": "4", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "dev", "T": 0.01258378, "T_none": 0.008167933000000011, "T_def": 0.004415769000000016}
+{"round": "4", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "dev", "T": 0.18305549817159772, "T_none": 0.11638370621949434, "T_def": 0.06667039776220918}
+{"round": "4", "run": "timers", "mode": "timers", "wl": "dev", "T": 0.5894045792520046, "t_solver": 0.3052738611586392, "t_theory": 0.07431815890595317, "calls": 46214, "digest": "31cd0945c07f02a6"}
+{"round": "4", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "dev", "T": 0.005631539039313793}
+{"round": "4", "run": "pytape", "impl": "py", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.0013130363076925278, "T_plain": 0.0007640598341822624}
+{"round": "4", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "dev", "T": 0.000010747}
+{"round": "4", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.000062698, "T_plain": 0.0}
+{"round": "4", "run": "base", "mode": "base", "wl": "dev", "s": 0.5329, "n": 1985, "n_none": 892, "none_s": 0.3165, "def_s": 0.216, "digest": "31cd0945c07f02a6"}
+{"round": "4", "run": "py", "impl": "py", "mode": "timed", "wl": "dev", "T": 0.1840519462712109, "T_none": 0.11712050251662731, "T_def": 0.06692943768575788}
+{"round": "4", "run": "rs", "impl": "rs", "mode": "timed", "wl": "dev", "T": 0.013848807, "T_none": 0.009051992, "T_def": 0.004796706000000018}
+{"round": "4", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "dev", "T": 0.013569167, "T_none": 0.008776813000000008, "T_def": 0.004791939000000017}
+{"round": "4", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "fuzz", "T": 0.167191888, "T_none": 0.14052426900000003, "T_def": 0.02666746200000004}
+{"round": "4", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "fuzz", "T": 2.7142876107245684, "T_none": 2.3018504451029003, "T_def": 0.4124355027452111}
+{"round": "4", "run": "timers", "mode": "timers", "wl": "fuzz", "T": 9.287754945922643, "t_solver": 5.618829511106014, "t_theory": 1.919115129392594, "calls": 687993, "digest": "173502b6ef285ad6"}
+{"round": "4", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "fuzz", "T": 0.08375289617106318}
+{"round": "4", "run": "pytape", "impl": "py", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.045304395724087954, "T_plain": 0.023721951059997082}
+{"round": "4", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "fuzz", "T": 0.000145656}
+{"round": "4", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.00205619, "T_plain": 0.0}
+{"round": "4", "run": "base", "mode": "base", "wl": "fuzz", "s": 8.1622, "n": 3000, "n_none": 2387, "none_s": 6.8154, "def_s": 1.3457, "digest": "173502b6ef285ad6"}
+{"round": "4", "run": "py", "impl": "py", "mode": "timed", "wl": "fuzz", "T": 2.7530688759870827, "T_none": 2.334498076234013, "T_def": 0.4185690749436617}
+{"round": "4", "run": "rs", "impl": "rs", "mode": "timed", "wl": "fuzz", "T": 0.176311321, "T_none": 0.14834137399999986, "T_def": 0.027969747000000034}
+{"round": "4", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "fuzz", "T": 0.173371663, "T_none": 0.14566136700000024, "T_def": 0.027710079000000026}
+{"round": "5", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "dev", "T": 0.21315072663128376, "T_none": 0.13561910297721624, "T_def": 0.07752997800707817}
+{"round": "5", "run": "timers", "mode": "timers", "wl": "dev", "T": 0.5933566438034177, "t_solver": 0.3067957665771246, "t_theory": 0.07469740882515907, "calls": 46214, "digest": "31cd0945c07f02a6"}
+{"round": "5", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "dev", "T": 0.005492506083101034}
+{"round": "5", "run": "pytape", "impl": "py", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.0013000830076634884, "T_plain": 0.0007699588313698769}
+{"round": "5", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "dev", "T": 0.000010588}
+{"round": "5", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.000062242, "T_plain": 0.0}
+{"round": "5", "run": "base", "mode": "base", "wl": "dev", "s": 0.5364, "n": 1985, "n_none": 892, "none_s": 0.3179, "def_s": 0.2182, "digest": "31cd0945c07f02a6"}
+{"round": "5", "run": "py", "impl": "py", "mode": "timed", "wl": "dev", "T": 0.1832625432871282, "T_none": 0.11656194180250168, "T_def": 0.06669921427965164}
+{"round": "5", "run": "rs", "impl": "rs", "mode": "timed", "wl": "dev", "T": 0.013694727, "T_none": 0.00896258100000001, "T_def": 0.004731981000000018}
+{"round": "5", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "dev", "T": 0.013201336, "T_none": 0.008595167999999999, "T_def": 0.004605996000000016}
+{"round": "5", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "dev", "T": 0.012523221, "T_none": 0.008143781999999997, "T_def": 0.004379357000000016}
+{"round": "5", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "fuzz", "T": 2.726333483122289, "T_none": 2.3120339079760015, "T_def": 0.4142978051677346}
+{"round": "5", "run": "timers", "mode": "timers", "wl": "fuzz", "T": 9.315744454972446, "t_solver": 5.635738854762167, "t_theory": 1.913750504143536, "calls": 687993, "digest": "173502b6ef285ad6"}
+{"round": "5", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "fuzz", "T": 0.0836186851374805}
+{"round": "5", "run": "pytape", "impl": "py", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.04516135482117534, "T_plain": 0.02367539517581463}
+{"round": "5", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "fuzz", "T": 0.00014566}
+{"round": "5", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.002085745, "T_plain": 0.0}
+{"round": "5", "run": "base", "mode": "base", "wl": "fuzz", "s": 8.0974, "n": 3000, "n_none": 2387, "none_s": 6.7639, "def_s": 1.3324, "digest": "173502b6ef285ad6"}
+{"round": "5", "run": "py", "impl": "py", "mode": "timed", "wl": "fuzz", "T": 2.7655109870247543, "T_none": 2.3442030111327767, "T_def": 0.42130625480785966}
+{"round": "5", "run": "rs", "impl": "rs", "mode": "timed", "wl": "fuzz", "T": 0.178694138, "T_none": 0.1503113210000001, "T_def": 0.028382649999999995}
+{"round": "5", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "fuzz", "T": 0.173546304, "T_none": 0.14588816799999993, "T_def": 0.027657970000000014}
+{"round": "5", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "fuzz", "T": 0.166697073, "T_none": 0.14004619399999976, "T_def": 0.026650522000000003}
+{"round": "6", "run": "timers", "mode": "timers", "wl": "dev", "T": 0.5918177887797356, "t_solver": 0.3060289639979601, "t_theory": 0.07453660946339369, "calls": 46214, "digest": "31cd0945c07f02a6"}
+{"round": "6", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "dev", "T": 0.005653540138155222}
+{"round": "6", "run": "pytape", "impl": "py", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.0012789610773324966, "T_plain": 0.000771951861679554}
+{"round": "6", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "dev", "T": 0.000010531}
+{"round": "6", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "dev", "calls": 16088, "T_tape": 0.000063764, "T_plain": 0.0}
+{"round": "6", "run": "base", "mode": "base", "wl": "dev", "s": 0.5333, "n": 1985, "n_none": 892, "none_s": 0.3166, "def_s": 0.2164, "digest": "31cd0945c07f02a6"}
+{"round": "6", "run": "py", "impl": "py", "mode": "timed", "wl": "dev", "T": 0.1825044839642942, "T_none": 0.11587759293615818, "T_def": 0.06662538507953286}
+{"round": "6", "run": "rs", "impl": "rs", "mode": "timed", "wl": "dev", "T": 0.013804478, "T_none": 0.009025910000000005, "T_def": 0.004778491000000012}
+{"round": "6", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "dev", "T": 0.013516548, "T_none": 0.00879315300000001, "T_def": 0.0047232930000000155}
+{"round": "6", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "dev", "T": 0.012838011, "T_none": 0.008352653000000002, "T_def": 0.004485192000000013}
+{"round": "6", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "dev", "T": 0.18445423198863864, "T_none": 0.11726147262379527, "T_def": 0.06719120545312762}
+{"round": "6", "run": "timers", "mode": "timers", "wl": "fuzz", "T": 9.302469633053988, "t_solver": 5.609481893014163, "t_theory": 1.9099344578571618, "calls": 687993, "digest": "173502b6ef285ad6"}
+{"round": "6", "run": "pyempty", "impl": "py", "mode": "empty", "wl": "fuzz", "T": 0.08369961520656943}
+{"round": "6", "run": "pytape", "impl": "py", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.04524328885599971, "T_plain": 0.02381933806464076}
+{"round": "6", "run": "rsempty", "impl": "rs", "mode": "empty", "wl": "fuzz", "T": 0.000145655}
+{"round": "6", "run": "rstape", "impl": "rs", "mode": "tape", "wl": "fuzz", "calls": 584495, "T_tape": 0.002021131, "T_plain": 0.0}
+{"round": "6", "run": "base", "mode": "base", "wl": "fuzz", "s": 8.0788, "n": 3000, "n_none": 2387, "none_s": 6.7471, "def_s": 1.3305, "digest": "173502b6ef285ad6"}
+{"round": "6", "run": "py", "impl": "py", "mode": "timed", "wl": "fuzz", "T": 2.7524085673503578, "T_none": 2.3332856255583465, "T_def": 0.4191211564466357}
+{"round": "6", "run": "rs", "impl": "rs", "mode": "timed", "wl": "fuzz", "T": 0.176406315, "T_none": 0.14835576099999978, "T_def": 0.02805037500000001}
+{"round": "6", "run": "rsfx", "impl": "rsfx", "mode": "timed", "wl": "fuzz", "T": 0.173217045, "T_none": 0.14555135100000013, "T_def": 0.027665416000000016}
+{"round": "6", "run": "rslto", "impl": "rslto", "mode": "timed", "wl": "fuzz", "T": 0.167910483, "T_none": 0.14108604500000013, "T_def": 0.026824124000000005}
+{"round": "6", "run": "pynogc", "impl": "py", "mode": "nogc", "wl": "fuzz", "T": 2.7369222240522504, "T_none": 2.320755203720182, "T_def": 0.41616511112079024}
+BENCHMARK: container elapsed=234.572 seconds

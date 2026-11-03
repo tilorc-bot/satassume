@@ -1,0 +1,15 @@
+pareto1: running under shared lease 66dbef69 (sa-rust-4)
+abebc14aa75af191  rs
+844e05d77ea18873  rsfx
+21f2ce3b257e50d8  rslto
+{"impl": "py", "mode": "check", "wl": "dev", "ok": true, "_n_decisions": 7738, "_n_conflicts": 257, "_n_props": 53418, "
+{"impl": "rs", "mode": "check", "wl": "dev", "ok": true, "counters": [7738, 257, 53418, 257, 0, 0, 135, 1, 7514, 6643], 
+{"impl": "rsfx", "mode": "check", "wl": "dev", "ok": true, "counters": [7738, 257, 53418, 257, 0, 0, 135, 1, 7514, 6643]
+{"impl": "rslto", "mode": "check", "wl": "dev", "ok": true, "counters": [7738, 257, 53418, 257, 0, 0, 135, 1, 7514, 6643
+/work/spike/traces/dev queries 1985 py==rs True py==recorded True
+{"impl": "py", "mode": "check", "wl": "fuzz", "ok": true, "_n_decisions": 105266, "_n_conflicts": 7797, "_n_props": 8005
+{"impl": "rs", "mode": "check", "wl": "fuzz", "ok": true, "counters": [105266, 7797, 800527, 7797, 0, 0, 26, 34, 281262,
+{"impl": "rsfx", "mode": "check", "wl": "fuzz", "ok": true, "counters": [105266, 7797, 800527, 7797, 0, 0, 26, 34, 28126
+{"impl": "rslto", "mode": "check", "wl": "fuzz", "ok": true, "counters": [105266, 7797, 800527, 7797, 0, 0, 26, 34, 2812
+/work/spike/traces/fuzz queries 3000 py==rs True py==recorded True
+pareto1: released shared lease 66dbef69 after 0m (exit 0)

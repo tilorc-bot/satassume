@@ -1,0 +1,19 @@
+[package]
+name = "replay"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[features]
+# Tuning, off in the first honest port; see RESULT-k.md.
+fxhash = []
+# Timers per public method and around prop(): rough shares only, never the timed runs.
+prof = []
+
+[profile.tuned]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
