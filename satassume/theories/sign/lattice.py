@@ -12,7 +12,8 @@ fold(S(Aj), j != k))`` may be ``NAN`` or meets ``S(N)``.  A literal of a
 term is an atom set (its predicate); it is implied when the term's set lies
 inside or outside it, and an empty set is a conflict.  The reason of each
 is a subset of the node's and the arguments' literals that suffices,
-minimised by deletion.
+minimised by deletion; for a propagated literal it is computed only when
+the solver reads it (a lazy reason, :mod:`satassume.sat.theory`).
 
 Two lattices use it: :mod:`.sign` (signs of the real and imaginary parts,
 zero, finiteness: issue #149 T1) and :mod:`.closure` (membership in the
@@ -324,37 +325,98 @@ class ClassTheory:
         (0 the node, ``k + 1`` argument ``k``): greedy deletion, first of
         the whole literal set of each slot, then of single literals of the
         slots kept.  Any subset is a sound reason (the sets only widen as
-        literals go); the deletion only makes it shorter."""
+        literals go); the deletion only makes it shorter.
+
+        Each test is :meth:`_slot` of the trial sets.  The deletion goes
+        through the slots in order, so the folds over the arguments before
+        the one on trial are those of the sets already decided: they are
+        kept (``pre``, and ``rpre`` for the fold without argument ``j -
+        1``), and a test folds only from the argument on trial on, in the
+        same left-to-right order as :meth:`Lattice.fold` (the set
+        operations are not associative: the order is kept, so the sets,
+        and the reason, are the same as :meth:`_slot` gives)."""
         op, t, args = self.nodes[i]
         slots = (t, *args)
         ls = [lits[u] for u in slots]
         masks = [self._mask(u, l) for u, l in zip(slots, ls)]
         wide = [self.fixed[u] for u in slots]
+        L = self.L
+        mop, nanb, full, allowed = L.mop, L.NANB, L.ALL, L.allowed
+        n = len(args)
+        r = j - 1                   # the argument whose set is tested (j > 0)
+        # pre[a + 1], rpre[a + 1]: the fold of masks[1 .. a + 1] (arguments
+        # 0 .. a), without argument r for rpre; None for no argument yet
+        pre = [None] * (n + 1)
+        rpre = [None] * (n + 1)
+
+        def advance(a: int) -> None:
+            # argument a is decided: extend the prefixes over it
+            m = masks[a + 1]
+            p = pre[a]
+            pre[a + 1] = m if p is None else mop(op, p, m)
+            p = rpre[a]
+            rpre[a + 1] = p if a == r else (m if p is None else mop(op, p, m))
+
+        def slot(a: int) -> int:
+            # _slot(i, masks, j), the prefixes valid for the arguments
+            # before a (a = 0 for a trial of the node's own set)
+            acc = pre[a]
+            for x in range(a, n):
+                m = masks[x + 1]
+                acc = m if acc is None else mop(op, acc, m)
+            newn = masks[0] if acc & nanb else masks[0] & acc
+            if j == 0:
+                return newn
+            m = masks[j]
+            if newn & full == full or n < 2:
+                return m
+            acc = rpre[a]
+            for x in range(a, n):
+                if x != r:
+                    q = masks[x + 1]
+                    acc = q if acc is None else mop(op, acc, q)
+            if acc & nanb:
+                return m
+            return m & allowed(op, acc, newn)
+
+        if op >= L.nfold:
+            # a map op (no fold, no prefixes): each test is _slot itself
+            def advance(a: int) -> None:
+                pass
+
+            def slot(a: int) -> int:
+                return self._slot(i, masks, j)
+
         for k in range(len(slots)):
             if ls[k] and masks[k] != wide[k]:
                 old = masks[k]
                 masks[k] = wide[k]
-                if test(self._slot(i, masks, j)):
+                if test(slot(k - 1 if k else 0)):
                     ls[k] = ()
                 else:
                     masks[k] = old
             elif ls[k]:
                 ls[k] = ()          # the literals say no more than the value
-        if len(args) <= self.WHY_FINE:
+            if k:
+                advance(k - 1)
+        if n <= self.WHY_FINE:
             for k in range(len(slots)):
-                if len(ls[k]) < 2:
-                    continue
-                kept = list(ls[k])
-                # the narrowest literals first: a reason that keeps the wide
-                # ones (``~negative_infinite(x)`` over ``finite(x)``) holds
-                # in more branches, and so does the clause learnt from it
-                for l in sorted(kept, key=self._width):
-                    kept.remove(l)
+                if len(ls[k]) >= 2:
+                    kept = list(ls[k])
+                    a = k - 1 if k else 0
+                    # the narrowest literals first: a reason that keeps the
+                    # wide ones (``~negative_infinite(x)`` over ``finite(x)``)
+                    # holds in more branches, and so does the clause learnt
+                    # from it
+                    for l in sorted(kept, key=self._width):
+                        kept.remove(l)
+                        masks[k] = self._mask(slots[k], kept)
+                        if not test(slot(a)):
+                            kept.append(l)
                     masks[k] = self._mask(slots[k], kept)
-                    if not test(self._slot(i, masks, j)):
-                        kept.append(l)
-                masks[k] = self._mask(slots[k], kept)
-                ls[k] = kept
+                    ls[k] = kept
+                if k:
+                    advance(k - 1)
         # a term may fill several slots (``x*x``): its literals once
         out = []
         for l in ls:
@@ -362,6 +424,17 @@ class ClassTheory:
                 if x not in out:
                     out.append(x)
         return out
+
+    def _reason(self, i: int, lits, j: int, test, lit: int):
+        """The lazy reason of ``lit``, implied at slot ``j`` of node ``i``
+        under the literals ``lits``: a function returning the clause.  The
+        solver does not keep it as a learnt clause, so after a backjump
+        below its level the literal comes back only when a node of its
+        term is dirtied again or at ``check`` (``pop_level`` marks nothing:
+        sets only widen on backtrack)."""
+        def reason():
+            return [lit] + [-l for l in self._why(i, lits, j, test) if l != -lit]
+        return reason
 
     def _node(self, i: int, out: list, seen: set) -> bool:
         """Propagate node ``i`` into ``out``; False after a conflict."""
@@ -410,14 +483,19 @@ class ClassTheory:
                 cur = val.get(v)
                 if (cur is not None and cur == (lit > 0)) or lit in seen:
                     continue
-                why = self._why(i, lits, j, test)
                 seen.add(lit)
                 self.stats["props"] += 1
+                if cur is None:
+                    # a lazy reason (satassume.sat.theory): explained only
+                    # if conflict analysis reads it, from the literals
+                    # asserted now (``lits`` is not changed afterwards)
+                    out.append((lit, self._reason(i, lits, j, test, lit)))
+                    continue
+                why = self._why(i, lits, j, test)
                 out.append((lit, [lit] + [-l for l in why if l != -lit]))
-                if cur is not None:
-                    self.stats["conflicts"] += 1
-                    self.budget -= 1
-                    return False            # the literal is false: a conflict
+                self.stats["conflicts"] += 1
+                self.budget -= 1
+                return False                # the literal is false: a conflict
         return True
 
     def propagate(self):
