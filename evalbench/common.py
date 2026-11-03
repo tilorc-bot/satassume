@@ -76,6 +76,10 @@ def workload(name):
     if name == "ho-fuzz":
         from evalbench.fuzz import queries
         return queries(secret_seed())
+    if name == "final-fuzz":
+        # morning readout: a second secret seed made at readout time (never shown to workers)
+        from evalbench.fuzz import queries
+        return queries(secret_seed("final_fuzz_seed.txt"))
     raise KeyError(name)
 
 
@@ -84,8 +88,8 @@ def _dev_sets():
     return {st[i][1] for i in split()["dev_indices"]}
 
 
-def secret_seed():
-    with open(os.path.join(SECRET, "fuzz_seed.txt")) as f:
+def secret_seed(fname="fuzz_seed.txt"):
+    with open(os.path.join(SECRET, fname)) as f:
         return int(f.read().split()[0])
 
 

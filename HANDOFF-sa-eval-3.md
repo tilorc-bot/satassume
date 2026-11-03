@@ -26,3 +26,12 @@ Layout and the judge command: see HANDOFF-sa-eval-2.md (Layout, Judge a submissi
   combo.sh, then C gates (tag sa-cy-3C) + A/B ab-sa-cy-3C-e61e024 (base, sa-cy-2C-0b157b9, sa-cy-3C-e61e024), then P gates (tag sa-cy-3).
   Render: judge sa-cy-3C ~/dev/sa-cy e61e024 --skip-gates --reuse-ab --check-modules ...; P md timing = n/a (pure = 0b157b9 pure + .pxd).
   Verdict to sa-cy-3 + forward-chain-3b. Worker's own numbers: dev 1.34x vs base, 1.10x vs C.
+* 10:55Z cypxd.sh CANCELLED (e61e024 = arm 6 of the final A/B; P gates skipped: pure diff = .pxd only). combo A/B done (combo-pareto.log).
+* FINAL READOUT (fc-3b request 10:45Z): scratchpad final.sh (task bn2bd1s3m). Arms: base | final-321-3a7b03a (#321 head) |
+  final-320C-276dab1 (#320 head, C) | final-merge321-320C-a300007 (C) | final-lra-320C-03ddfb0 (C, measurement) | sa-cy-3C-e61e024 (C+TYPE_SPECS).
+  A/B -> bench-results/ab-final (7 rounds; workloads incl. NEW final-fuzz). Logs final-pareto.log / final-ab.log.
+  Gates (orion, after combo.sh): judge-{final-merge321-320C,final-320C,final-lra-320C,sa-cy-3C}.log.
+  NEW SEED: secret/final_fuzz_seed.txt (made 10:50Z), sha256 ecf151eaa1d8e91bc2d64415b5e9f733b04bdea26426003d64e99ae6527174b6; workload "final-fuzz" in common.py
+  (uncommitted harness change; commit it with the readout). Then write evalbench/FINAL-READOUT.md (one table; note the stream is
+  satassume's home ground; report both fuzz seeds; answer digests vs base), push, send path to fc-3b + architect-63;
+  sa-cy-3 verdict to sa-cy-3 + fc-3b.
