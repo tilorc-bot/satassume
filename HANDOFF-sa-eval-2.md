@@ -51,5 +51,13 @@ to worker and forward-chain-3b.
    Orion gates chain bsbuutwib (P then C build+gates; logs scratchpad judge-sa-cy-2P.log / judge-sa-cy-2C.log).
    pareto1 cy-ab.sh (task b6pdll2wc, log cy-ab.log): sync, build C x86, .so load check, A/B base,C,P -> bench-results/ab-sa-cy-2C-0b157b9.
    TODO: render both mds, commit, verdict to sa-cy-2 + fc-3b (+architect-62).
-2. sa-node-2 fbb484f + a1b0285: node2.sh (task b7veqywke) queued behind 1. TODO: render, verdict.
+2. sa-node-2 fbb484f + a1b0285: node2.sh (task b7veqywke) queued behind 1. TODO: render, verdict to architect-62 + fc-3b (sa-node-2 stopped).
 Hand off after a verdict, not mid-run. Scratchpad = /tmp/claude-1000/-home-tilo-dev-satassume/7db5e51f-3758-47ff-b0d4-bd9a8ff3de15/scratchpad
+3. sa-lrashare-1 4f9d931 (SHARE_THEORY on; MEASUREMENT ONLY, no verdict) vs 7205480 (off, same tree) vs base: scratchpad lrashare.sh
+   (task bk3vn4yr3) waits for node2 A/B, then A/B ab-sa-lrashare-1-4f9d931 + counters-*.json -> send timing+counters table to
+   sa-lrashare-1 + fc-3b. (It said it runs gates.py itself and reports ho-fuzz: it can read ~/dev/sa-eval/secret; mention to fc-3b.)
+* 09:21Z item 3 (lrashare) DONE, sent (0399462). node2 A/B DONE (bench-results/ab-sa-node-2-fbb484f, has both trees):
+  fbb484f corpus still 0.977x (1.017..1.088), a1b0285 corpus 0.988x (1.006..1.023); dev 1.09x, held-out 1.05x both. Awaiting gates.
+* fc-3b 09:22Z: current ho-fuzz counts as SEEN. For the final morning readout, generate a NEW fuzz seed at readout time (not before),
+  don't announce the seed or its path, and report old + new fuzz.
+* sa-cy-2 (P) DONE: gates PASS, no measurable change; results/sa-cy-2-0b157b9.md (uncommitted until C is done). C gates running.
