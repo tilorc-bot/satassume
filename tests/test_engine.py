@@ -167,14 +167,14 @@ def test_contextual_queries_build_and_discard():
     assert eng.stats['sessions'] == n + 2 and eng.stats['set_checks'] == 3
     assert not eng._context_sessions
     assert len(eng._verdict) == 2
-    assert [k[1] for k in eng._shared] == ['x', ('add', 'x', 'x'), 'x']
+    assert [k[1] for k in eng._shared] == ['x']                                # the last key only
     # the settings of the earlier reuse design were removed (#97 P7): the
     # constructor refuses them
     for name in ('keep_sessions', 'session_limit', 'cone_search', 'cone_threshold'):
         with pytest.raises(TypeError):
             Engine(**{name: 0})
-    assert eng.ask(P('nonzero', 'x'), a) is True                               # same key again
-    assert eng.stats['sessions'] == n + 2 and eng.stats['set_checks'] == 3
+    assert eng.ask(P('nonzero', 'x'), a) is True                               # evicted: built again
+    assert eng.stats['sessions'] == n + 3 and eng.stats['set_checks'] == 4
     assert not eng._context_sessions
 
 

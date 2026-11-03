@@ -2345,7 +2345,7 @@ _adopt_memo(__name__, "_WANT")
 #: most sessions kept for reuse by the next query about the same expression
 #: under the same set (``Engine._shared``); refine asks its predicates of an
 #: expression back to back, so few are needed
-SHARED_MAX = 4
+SHARED_MAX = 1
 #: what ``Engine._ask_shared`` returns for a session it does not answer in
 _UNSHARED = object()
 
