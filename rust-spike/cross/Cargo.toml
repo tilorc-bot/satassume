@@ -1,0 +1,18 @@
+[package]
+name = "xbench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "xbench"
+crate-type = ["cdylib"]
+
+[features]
+# A single wheel per platform for all CPython versions; the limited API has no vectorcall before 3.12.
+abi3 = ["pyo3/abi3-py39"]
+
+[dependencies]
+pyo3 = { version = "0.30", features = ["extension-module"] }
+
+[workspace]
