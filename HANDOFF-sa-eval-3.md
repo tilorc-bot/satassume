@@ -21,3 +21,8 @@ Layout and the judge command: see HANDOFF-sa-eval-2.md (Layout, Judge a submissi
   summary combo-pareto.log. Orion gates (C built) -> scratchpad judge-combo-{node,lra}-cy.log. Then write
   evalbench/results/combo-r3.md (measurement, compare with sa-cy-2C 1.20-1.22x, a1b0285 1.05-1.09x, lrashare 1.37x HO) and report.
   If the shell died: rerun the missing half by hand from combo.sh.
+* 10:20Z sa-cy-3 e61e024 (clone ~/dev/sa-cy; measurement: cy-pxd vs 0b157b9(C) vs 9bafaa5; pure diff = solver.pxd only).
+  Build NEEDS CPPFLAGS=-DCYTHON_USE_TYPE_SPECS=1 (NOT CFLAGS: replaces -O3). Chain scratchpad cypxd.sh (task bzb3q8lbg) waits for
+  combo.sh, then C gates (tag sa-cy-3C) + A/B ab-sa-cy-3C-e61e024 (base, sa-cy-2C-0b157b9, sa-cy-3C-e61e024), then P gates (tag sa-cy-3).
+  Render: judge sa-cy-3C ~/dev/sa-cy e61e024 --skip-gates --reuse-ab --check-modules ...; P md timing = n/a (pure = 0b157b9 pure + .pxd).
+  Verdict to sa-cy-3 + forward-chain-3b. Worker's own numbers: dev 1.34x vs base, 1.10x vs C.
