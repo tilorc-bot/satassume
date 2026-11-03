@@ -368,6 +368,9 @@ RELATION_ATOMS = frozenset({"eq", "lt"})
 #: link ``integer(e)`` to an integrality atom of the guarded theories (see
 #: "Integrality")
 INTEGERS = True
+import os as _os
+LAZY = _os.environ.get("SA_LAZY", "1") == "1"
+LSTATS: dict = {}
 
 _OPS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 
@@ -794,6 +797,8 @@ class Relations:
         self.active = False               # some relation atom exists
         self.sharing = EqualitySharing()
         self._pending_links: list = []
+        #: linked terms whose link is not built yet (LAZY): e -> None
+        self.unbuilt: dict = {}
         #: linked term -> the selector guarding its link clauses (see
         #: "Switched glue"); assumed by the queries whose terms include it
         self.link_sel: dict = {}
@@ -937,7 +942,11 @@ class Relations:
                     else:
                         self._link_later(e)
             if self._pending_links:
-                self._link(self._pending_links.pop())
+                e = self._pending_links.pop()
+                if LAZY:
+                    self._defer(e)
+                else:
+                    self._link(e)
                 continue
             if self._share():
                 continue
@@ -1491,7 +1500,9 @@ class Relations:
             self._aux_eq.add(eqa)
             self._link_eq.add(eqa)
         eq = self._atom_var(eqa)
-        sel = self.link_sel[e] = self._fresh(inert=True)
+        sel = self.link_sel.get(e)
+        if sel is None:
+            sel = self.link_sel[e] = self._fresh(inert=True)
         g = -sel
         gl = [g]            # one guard object: _tsource drops repeats of it
         for f in (gta, lta, eqa):
@@ -1510,6 +1521,271 @@ class Relations:
                     ad = self._adapter(spec)
                     if hasattr(ad, "integer_form"):
                         self._link_integer(ad, e, g)
+
+    # -- lazy links (prototype) ------------------------------------------
+    def _defer(self, e) -> None:
+        s = self.session
+        s.ensure(e, {"extended_positive", "extended_negative", "zero"})
+        self.link_sel[e] = self._fresh(inert=True)
+        self.unbuilt[e] = None
+        LSTATS["deferred"] = LSTATS.get("deferred", 0) + 1
+        if INTEGERS:
+            for spec in self.specs:
+                if spec.guarded and hasattr(self._adapter(spec), "integer_form"):
+                    pass
+
+    def build(self, es) -> None:
+        for e in es:
+            del self.unbuilt[e]
+            self._link(e)
+        LSTATS["built"] = LSTATS.get("built", 0) + len(es)
+        self.process()
+
+    def unbuilt_disagree(self) -> list:
+        """The unbuilt links active in the solver's current model whose
+        clauses (with their atoms interpreted) the model, extended by the
+        theories' models, would violate."""
+        from sympy import S
+        s = self.session
+        solver = s.solver
+        M = solver._model
+        if M is None:
+            return [e for e in self.unbuilt]
+        sel = self.link_sel
+        active = [e for e in self.unbuilt if M.get(sel[e])]
+        if not active:
+            return []
+        tm = solver.theory_models()
+        ths = solver.theories()
+        lra = self.adapters.get("lra")
+        euf = self.adapters.get("euf")
+        lval = eval_ = None
+        if lra is not None and lra.theory in ths:
+            i = ths.index(lra.theory)
+            lval = tm[i] if tm is not None else None
+            if lval is None:
+                LSTATS["no_lra_model"] = LSTATS.get("no_lra_model", 0) + 1
+                return active
+        rep = None
+        if euf is not None and euf.theory in ths:
+            i = ths.index(euf.theory)
+            rep = tm[i] if tm is not None else None
+            if rep is None:
+                LSTATS["no_euf_model"] = LSTATS.get("no_euf_model", 0) + 1
+                return active
+        lval = dict(lval) if lval else {}
+        self._vctx = None
+        out = []
+        cv = s.table.custom
+        self._lcons = []
+        cands = []
+        for e in active:
+            why = self._disagree(e, M, lval, rep, euf, cv)
+            if why in ("lra_sign", "lra_int"):
+                cands.append((e, why))
+            elif why:
+                LSTATS["why " + why] = LSTATS.get("why " + why, 0) + 1
+                out.append(e)
+        if cands:
+            LSTATS["scratch"] = LSTATS.get("scratch", 0) + 1
+            if self._lra_scratch(M, self._lcons):
+                LSTATS["scratch_ok"] = LSTATS.get("scratch_ok", 0) + 1
+            else:
+                for e, why in cands:
+                    LSTATS["why " + why] = LSTATS.get("why " + why, 0) + 1
+                    out.append(e)
+        return out
+
+    def _lra_scratch(self, M, cons) -> bool:
+        """Is there an LRA model of M's LRA literals and the unbuilt
+        links' sign/integrality constraints ``cons``?  A fresh theory."""
+        from .theories.lra.lra import LRATheory
+        lra = self.adapters.get("lra")
+        th = LRATheory()
+        reg = lra.registered if lra is not None else []
+        for var, pl in reg:
+            th.register_atom(var, pl)
+        base = 1 << 40
+        tmp = []
+        for k, (pl, val) in enumerate(cons):
+            th.register_atom(base + k, pl)
+            tmp.append(base + k if val else -(base + k))
+        for var, _ in reg:
+            v = M.get(var)
+            if v is None:
+                continue
+            if th.assert_lit(var if v else -var) is not None:
+                return False
+        for l in tmp:
+            if th.assert_lit(l) is not None:
+                return False
+        r = th.check()
+        return r is not None and r[0] is True and not th.gave_up and not th.exhausted
+
+    _vctx = None
+
+    @staticmethod
+    def _virtual(euf, rep):
+        th = euf.theory
+        sig = {}
+        for t, fa in enumerate(th._app):
+            if fa is not None:
+                sig[(rep[fa[0]], rep[fa[1]])] = rep[t]
+        # sig, virtual classes of new expressions, owner of new classes, value classes
+        vals = {rep[t] for k, t in th._keys.items() if k[0] == "v"}
+        return [sig, {}, {}, vals, 0]
+
+    def _vclass(self, x, euf, rep, ctx):
+        """Class of ``x`` once interned: an int (an existing class), a
+        tuple (a new class), or False (a new term would join an existing
+        class or another new term's class: congruence)."""
+        from sympy import Rational
+        from .theories.euf.euf_adapter import structural
+        t = euf.term_of(x)
+        if t is None:
+            t = euf._node_terms.get(x)
+        if t is not None:
+            return rep[t]
+        sig, vcls, owner, vals, _ = ctx
+        c = vcls.get(x)
+        if c is not None:
+            return c
+        th = euf.theory
+        if isinstance(x, Rational):
+            k = th._keys.get(("v", x))
+            if k is not None:
+                return rep[k]
+            ctx[4] += 1
+            c = vcls[x] = ("n", ctx[4])
+            return c
+        if not structural(x):
+            ctx[4] += 1
+            c = vcls[x] = ("n", ctx[4])
+            return c
+        hkey = ("h", x.func, len(x.args))
+        h = th._keys.get(hkey)
+        if h is not None:
+            cur = rep[h]
+        else:
+            cur = vcls.get(hkey)
+            if cur is None:
+                ctx[4] += 1
+                cur = vcls[hkey] = ("n", ctx[4])
+        for a in x.args:
+            ca = self._vclass(a, euf, rep, ctx)
+            if ca is False:
+                return False
+            key = (cur, ca)
+            nxt = sig.get(key)
+            if nxt is None:
+                ctx[4] += 1
+                nxt = sig[key] = ("n", ctx[4])
+            cur = nxt
+        if type(cur) is int:
+            return False                    # congruent to an existing term
+        o = owner.get(cur)
+        if o is not None and o != x:
+            return False                    # congruent to another new term
+        owner[cur] = x
+        vcls[x] = cur
+        return cur
+
+    def _disagree(self, e, M, lval, rep, euf, cv):
+        from sympy import S
+        s = self.session
+        base = s.base
+        def bv(pred, x):
+            b = base.get(x)
+            return None if b is None else M.get(b + BASIS_INDEX[pred])
+        P = bv("extended_positive", e)
+        N = bv("extended_negative", e)
+        Z = bv("zero", e)
+        want = ((relation_atom("lt", S.Zero, e), P), (relation_atom("lt", e, S.Zero), N),
+                (relation_atom("eq", e, S.Zero), Z))
+        for a, w in want:
+            v = cv.get(a)
+            if v is not None and M.get(v) != w:
+                return "atom"
+        # LRA
+        lra = None
+        for spec in self.specs:
+            if spec.guarded:
+                lra = self._adapter(spec)
+        if lra is not None:
+            gta = sympy_atom(want[0][0])
+            terms = lra.terms(gta)
+            if terms is not None:
+                form = lra.integer_form(e)
+                if form is None:
+                    return "lra_unread"
+                items, k = form[0]
+                real = True
+                for u in form[1]:
+                    if _is_number(u) and s.engine.is_(u, "real") is True:
+                        continue
+                    er, fi = bv("extended_real", u), bv("finite", u)
+                    if er is None:
+                        return "lra_nonode"
+                    if not (er and fi):
+                        real = False
+                        break
+                if real:
+                    for atom, val in want:
+                        pl = lra.payload(sympy_atom(atom))
+                        if pl is not None:
+                            self._lcons.append((pl, bool(val)))
+                    if INTEGERS:
+                        self._lcons.append((form[0], bool(bv("integer", e))))
+                    v = k
+                    free = None
+                    for u, c in items:
+                        x = lval.get(u)
+                        if x is None:
+                            if free is None:
+                                free = (u, c)
+                            x = 0
+                            lval[u] = Fraction(0)
+                        v += c * x
+                    I = bv("integer", e) if INTEGERS else None
+                    if free is not None:
+                        # choose the free term's value: v' = target
+                        if Z:
+                            tgt = Fraction(0)
+                        elif P:
+                            tgt = Fraction(1) if (I or not INTEGERS) else Fraction(1, 2)
+                        elif N:
+                            tgt = Fraction(-1) if (I or not INTEGERS) else Fraction(-1, 2)
+                        else:
+                            return "lra_sign"
+                        u, c = free
+                        lval[u] = (tgt - v) / c
+                        v = tgt
+                    if P != (v > 0) or N != (v < 0) or Z != (v == 0):
+                        return "lra_sign"
+                    if INTEGERS and I != (v.denominator == 1):
+                        return "lra_int"
+        # EUF: eq(e, 0) read by EUF with value Z; interning e and its
+        # subterms must merge no new term into an existing class
+        # (congruence), virtually, over EUF's model
+        if euf is not None and rep is not None:
+            ctx = self._vctx
+            if ctx is None:
+                ctx = self._vctx = self._virtual(euf, rep)
+            ce = self._vclass(e, euf, rep, ctx)
+            if ce is False:
+                return "euf_cong"
+            c0 = self._vclass(S.Zero, euf, rep, ctx)
+            if type(ce) is int:
+                if (ce == c0) != bool(Z):
+                    return "euf"
+            elif Z and type(c0) is int and (c0 in ctx[3]):
+                # e fresh merged into a class holding an interpreted value
+                pass
+            if Z and self.xfer is not None:
+                pv = bv("polar", e)
+                if pv != s.engine.is_(S.Zero, "polar"):
+                    return "polar"
+        return None
 
     # -- switched glue: what a query activates ----------------------------
     def wants_transfer(self, atoms) -> bool:

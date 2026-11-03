@@ -467,6 +467,19 @@ class LRAAdapter:
         self.theory = theory if theory is not None else LRATheory()
         self._solver = None
         self._shared: set = set()
+        #: (var, payload) of every registration, in order (lazy-link check)
+        self.registered: list = []
+
+    def payload(self, atom):
+        """The payload ``register`` would give ``atom``, or None."""
+        it = self.interpret(atom)
+        if it is None:
+            return None
+        r = it[0]
+        if r is True or r is False:
+            return ((), Fraction(0) if r else Fraction(-1), False, False)
+        payload, positive = r
+        return payload if positive else Negated(payload)
 
     def register(self, solver, var: int, atom) -> bool:
         """An adapter owns one theory and so serves a single solver: a
@@ -484,6 +497,7 @@ class LRAAdapter:
                 payload = Negated(payload)
         self._attach(solver)
         solver.register_atom(self.theory, var, payload)
+        self.registered.append((var, payload))
         self._shared.update(atom_terms)
         return True
 
@@ -516,6 +530,7 @@ class LRAAdapter:
         integrality atom alone connects nothing."""
         self._attach(solver)
         solver.register_atom(self.theory, var, form[0])
+        self.registered.append((var, form[0]))
 
     def terms(self, atom) -> list | None:
         """:func:`terms` through the cache; None: not interpreted."""
@@ -541,6 +556,7 @@ class LRAAdapter:
                         (((term, Fraction(1)),), hi, True, False)):     # c < hi
             v = new_var()
             solver.register_atom(self.theory, v, payload)
+            self.registered.append((v, payload))
             out.append(v)
         return out
 

@@ -819,6 +819,7 @@ class Session:
         way."""
         if budget is None:
             budget = _UNCAPPED
+        self._escalated = True
         added = 0
         while (self.pending or self.pending_c or self.deferred or self.frontier) \
                 and added < budget:
@@ -888,7 +889,7 @@ class Session:
                 # settled by propagation: returned only once the assumptions
                 # are known consistent with the clauses (as Solver.entails
                 # does), since propagation need not find a conflict
-                if not solver.consistent(assumptions):
+                if not self._consistent(assumptions):
                     raise InconsistentAssumptions("inconsistent assumptions")
                 return r
         else:
@@ -898,7 +899,7 @@ class Session:
         if not search:
             return None
         try:
-            r = solver.entails(lit, assumptions)
+            r = self._entails(lit, assumptions)
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
         return r
@@ -918,7 +919,7 @@ class Session:
                 raise InconsistentAssumptions("inconsistent assumptions")
             s = set(implied)
             vals = [True if l in s else False if -l in s else None for l in ls]
-            if (False in vals or all(vals)) and not solver.consistent(assumptions):
+            if (False in vals or all(vals)) and not self._consistent(assumptions):
                 raise InconsistentAssumptions("inconsistent assumptions")
         else:
             vals = [solver.value(l) for l in ls]
@@ -929,9 +930,113 @@ class Session:
         if not search:
             return None
         try:
-            return solver.entails_all(ls, assumptions)
+            return self._entails_all(ls, assumptions)
         except ValueError as e:
             raise InconsistentAssumptions(str(e)) from e
+
+    # -- lazy links (prototype) ----------------------------------------------
+    def _lazy_on(self) -> bool:
+        rel = self.relations
+        return rel is not None and bool(rel.unbuilt)
+
+    def _lazy(self, lits, k, a=None) -> bool:
+        """Solve under the internal literals ``lits`` (holding ``k``),
+        building the unbuilt links a model disagrees with, until UNSAT or
+        a model with no disagreement."""
+        from .relations import LSTATS
+        solver, rel = self.solver, self.relations
+        first = True
+        while True:
+            if first and a is not None and solver._witness_satisfies(a) \
+                    and solver._mvals is solver._witness:
+                ok = True
+            else:
+                LSTATS["solves"] = LSTATS.get("solves", 0) + 1
+                if not first:
+                    LSTATS["resolves"] = LSTATS.get("resolves", 0) + 1
+                ok = solver._solve(lits, k)
+            first = False
+            if not ok:
+                return False
+            if not rel.unbuilt:
+                return True
+            D = rel.unbuilt_disagree()
+            if not D:
+                return True
+            solver.release(0)
+            rel.build(D)
+            if self.incomplete and getattr(self, "_escalated", False):
+                self.escalate()
+            if self.xfer is not None:
+                self.xfer.sync_transfer()
+            if not solver.propagate():
+                return False
+
+    def _consistent(self, assumptions) -> bool:
+        solver = self.solver
+        if not self._lazy_on():
+            return solver.consistent(assumptions)
+        a = [int(x) for x in assumptions]
+        lits = solver._internal_lits(a)
+        solver._mention(lits)
+        return self._lazy(lits, len(lits), a)
+
+    def solve_lazy(self, assumptions) -> bool:
+        solver = self.solver
+        if not self._lazy_on():
+            return solver.solve(assumptions)
+        lits = solver._internal_lits(list(assumptions))
+        solver._mention(lits)
+        held = solver._held
+        keep = len(held) if held is not None and lits[:len(held)] == held else 0
+        return self._lazy(lits, keep)
+
+    def _entails(self, lit, assumptions):
+        solver = self.solver
+        if not self._lazy_on():
+            return solver.entails(lit, assumptions)
+        a = [int(x) for x in assumptions]
+        solver.mention((lit,))
+        if solver._assume(a, None) is None:
+            raise ValueError("inconsistent assumptions")
+        lits = solver._internal_lits(a)
+        k = len(lits)
+        l = solver._internal_lits([lit])[0]
+        if not self._lazy(lits + [l ^ 1], k):
+            if not self._lazy(lits + [l], k):
+                raise ValueError("inconsistent assumptions")
+            return True
+        if not self._lazy(lits + [l], k):
+            return False
+        return None
+
+    def _entails_all(self, ls, assumptions):
+        solver = self.solver
+        if len(ls) == 1:
+            return self._entails(ls[0], assumptions)
+        if not self._lazy_on():
+            return solver.entails_all(ls, assumptions)
+        a = [int(x) for x in assumptions]
+        solver.mention(ls)
+        trail = solver._assume(a, None)
+        if trail is None:
+            raise ValueError("inconsistent assumptions")
+        ins = solver._internal_lits(ls)
+        alits = solver._internal_lits(a)
+        k = len(alits)
+        vals = [True if l in trail else False if l ^ 1 in trail else None for l in ins]
+        if False in vals or all(vals):
+            if self._lazy(alits, k, a):
+                return all(vals)
+            raise ValueError("inconsistent assumptions")
+        if not self._lazy(alits + ins, k):
+            if not self._lazy(alits, k):
+                raise ValueError("inconsistent assumptions")
+            return False
+        for l, v in zip(ins, vals):
+            if v is None and self._lazy(alits + [l ^ 1], k):
+                return None
+        return True
 
     def assume_formula(self, f) -> List[int]:
         """Turn a formula into solver assumption literals: its clauses are
@@ -1976,7 +2081,7 @@ class Engine:
         # Solver.solve returns a bool: it raises only on a malformed
         # literal or a theory protocol error (RuntimeError), neither of
         # which is a conflict; the caller maps them to UNKNOWN
-        if not solver.solve(lits):
+        if not s.solve_lazy(lits):
             return INCONSISTENT
         if _gave_up(s) or _exhausted(s) or s.incomplete or s.truncated:
             return UNKNOWN
