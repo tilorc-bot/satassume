@@ -48,7 +48,7 @@ to worker and forward-chain-3b.
 
 ## QUEUE / NEXT for sa-eval-3 (09:35Z)
 DONE: sa-node-1 e80400e (a728af5), sa-lrashare-1 4f9d931 measurement (0399462), sa-cy-2 0b157b9 P+C (99349cc). All verdicts sent.
-OPEN: sa-node-2 fbb484f + a1b0285 -> verdict to architect-62 + forward-chain-3b (sa-node-2 stopped; architect launches sa-node-3).
+OPEN: sa-node-2 fbb484f + a1b0285 -> verdict to architect-63 + forward-chain-3b (sa-node-2 stopped; architect launches sa-node-3).
  * A/B DONE: bench-results/ab-sa-node-2-fbb484f/ab-sa-node-2-fbb484f.jsonl (trees base, sa-node-2-fbb484f, sa-node-2-a1b0285).
    Both dev 1.09x, held-out 1.05x; corpus fbb484f 0.977x (1.017..1.088), a1b0285 0.988x (1.006..1.023), both slower in every round.
  * Gates: node2.sh background job (in sa-eval-2's shell) ran them one after the other; logs in the sa-eval-2 scratchpad
@@ -62,4 +62,4 @@ OPEN: sa-node-2 fbb484f + a1b0285 -> verdict to architect-62 + forward-chain-3b 
 LATER: morning readout needs a NEW fuzz seed made at readout time (fc-3b 09:22Z; current ho-fuzz counts as seen; report both).
 Notes: judge.py has --build/--remote-build/--check-modules/--ab-extra/--approved-test/--reuse-ab (see docstring).
 For a compiled candidate, copy what scratchpad cy-ab.sh did (the pareto1 build needs setup.py/pyproject.toml/README.md in the tree).
-Reports go to architect-62.
+Reports go to architect-63 (since 09:3xZ; was architect-62).
