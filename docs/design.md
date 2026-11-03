@@ -841,6 +841,22 @@ no longer exists, and with it went the mechanisms that argued each
 case (`_path_dependent`, the re-answer, the cone search, dead sessions,
 held writeback).
 
+One exception keeps a session (PR #119's argument for cone sessions,
+extended to a set): a theory-free session, with no relation glue,
+transfer or theory, answers the next query about the same expression
+under the same set and theory scope (`Engine._shared`, `_ask_shared`).
+Let F be the set's escalated session plus the expression's whole
+escalated cone, a function of that key. The reused session escalates
+before it answers and holds F plus clauses entailed by F; propagation,
+the consistency check and the search have no budget without a theory.
+So it answers True iff F and the set entail the query, False iff they
+entail its negation, None otherwise, which is the fresh session's
+answer (sound partial propagation, then escalation to F and a complete
+search); if the set is inconsistent with F it raises and the fresh path
+answers. Its state (learnt clauses, held levels, stored models) depends
+on history, its answers do not. Theory sessions are never kept: integer
+branch and bound has a path-dependent budget.
+
 ## Beyond the current scope
 
 The long-term goal is to replace SymPy's old `expr.is_*` system with the

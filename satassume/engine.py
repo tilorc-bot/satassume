@@ -28,16 +28,21 @@ only visits the cone of the queried expression, so search cost is bounded
 by the size of that expression and never by what was asked before.  A
 contextual query builds the session of its assumption set
 (``Engine._build_context``: the set's clauses and one complete
-consistency check of the set), answers in it, and discards it.  What the
-engine keeps of a set between queries is a function of the set alone:
-its verdict (``CONSISTENT``, ``INCONSISTENT`` or ``UNKNOWN``, from the
-check) and, for a set whose construction raised ``Uninterpreted``, the
-message.  So the solver state a query runs in, the search path it takes
-and the budget it has (integer branch and bound, :mod:`satassume.theories.lra.lra`,
-"Integrality"; giving up on a constant, :mod:`satassume.sat.theory`) are
-those a fresh engine's same query has, whatever was asked before under
-the same or any other set: history independence by construction (see
-``docs/design.md``, "History independence").  The settings
+consistency check of the set), answers in it, and discards it, unless
+the session has no theory, glue or transfer: then the next query about
+the same expression under the same set and scope answers in it
+(``Engine._shared``; refine asks several predicates of one expression in
+a row).  What the engine keeps of a set between queries is a function of
+the set alone: its verdict (``CONSISTENT``, ``INCONSISTENT`` or
+``UNKNOWN``, from the check) and, for a set whose construction raised
+``Uninterpreted``, the message.  So the solver state a query with a
+theory runs in, the search path it takes and the budget it has (integer
+branch and bound, :mod:`satassume.theories.lra.lra`, "Integrality";
+giving up on a constant, :mod:`satassume.sat.theory`) are those a fresh
+engine's same query has, whatever was asked before under the same or any
+other set: history independence by construction.  A reused theory-free
+session has another state but, having no budget, the same answers
+(``Engine._ask_shared``; ``docs/design.md``, "History independence").  The settings
 ``keep_sessions``, ``session_limit``, ``cone_search`` and
 ``cone_threshold`` of the earlier design (one reused session per set,
 replaced by a cone search when polluted) selected no code path after
@@ -1362,8 +1367,9 @@ class Engine:
         #: SymPy assumptions -> their split into components
         #: (``sympy_api._Split``), cleared together with ``answers``
         self.splits = AnswerMemo(20_000)
-        #: always empty since issue #97 (no contextual session is kept
-        #: between queries); the tests assert that it stays empty
+        #: always empty since issue #97 (no session is kept per set; only
+        #: ``_shared`` keeps one per (set, expression)); the tests assert
+        #: that it stays empty
         self._context_sessions: "OrderedDict[Any, Tuple[Session, List[int]]]" = OrderedDict()
         self._constructing: set = set()
         #: the structural cones of the discovery budget (``_struct``,
@@ -1384,6 +1390,11 @@ class Engine:
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
+        #: (set, expression) -> the theory-free session of the last
+        #: contextual query about that expression under that set, reused by
+        #: the next one of the same theory scope (:meth:`_ask_shared`); at
+        #: most :data:`SHARED_MAX`, oldest first out, dropped with the cones
+        self._shared: Dict[Any, Session] = {}
         #: number -> its basis of facts for predicate transfer
         #: (``relations._number_basis``): read from this engine's own
         #: ``is_many``, so it depends on the settings and the registry epoch
@@ -1601,6 +1612,7 @@ class Engine:
 
     # -- the discovery budget: a test on the query's structural cone ----------
     def _drop_cones(self) -> None:
+        self._shared.clear()
         self._kids.clear()
         self._cones.clear()
         self._qcones.clear()
@@ -1835,8 +1847,9 @@ class Engine:
     def _context_session(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
         """The session a contextual query within the budget is answered
         in, with its assumption literals: built for this query by
-        :meth:`_build_context` and discarded by the caller (nothing is
-        stored in ``_context_sessions``).  Raises ``Uninterpreted`` or
+        :meth:`_build_context` and discarded by the caller, or kept in
+        ``_shared`` if theory-free (nothing is stored in
+        ``_context_sessions``).  Raises ``Uninterpreted`` or
         ``InconsistentAssumptions`` as the construction does; both are
         functions of the set and the registry epoch, so they are memoized
         (``_failed``, ``_verdict``) and raised again without a build."""
@@ -1881,7 +1894,10 @@ class Engine:
         ``s.verdict``.  Every construction of a set's session (one per
         contextual query, and one per :meth:`verdict` without a memo)
         takes exactly these steps, whether a verdict is memoized or not,
-        so the session a query uses never depends on what ran before.
+        so the session a query builds never depends on what ran before
+        (a theory-free one may answer the next query about the same
+        expression: :meth:`_ask_shared` argues why its answers do not
+        depend on history either).
         What the check leaves in the session (the escalated cone, learnt
         clauses, the branch and bound's lemmas) is a function of the set
         alone.
@@ -2179,7 +2195,10 @@ class Engine:
         :meth:`_build_context`), a context-free one in a fresh session; the
         session is dropped when the query ends, so a query's answer and
         cost depend on the query, the set and the registry, never on the
-        queries before it (the module docstring).
+        queries before it (the module docstring).  The exception: a
+        theory-free session is kept for the next query about the same
+        expression under the same set and scope (``_shared``), whose answer
+        is then the fresh session's (:meth:`_ask_shared`).
         """
         if self._epoch != _EPOCH[0]:
             self._check_version()
@@ -2211,11 +2230,35 @@ class Engine:
             c = basis_formula(a) if isinstance(a, P) else None
             if c is TRUE or c is FALSE:
                 return (c is TRUE) != isinstance(proposition, Not)
-        if contextual:
-            s, lits = self._context_session(assumptions, proposition)
-        else:
+        if not contextual:
             s = self._fresh_session(theory_scope(None, proposition, self._extensions))
-        return self._ask(s, lits, proposition, contextual)
+            return self._ask(s, lits, proposition, False)
+        key = _share_key(assumptions, proposition)
+        shared = self._shared
+        s = shared.get(key) if key is not None else None
+        # the scope (a function of the predicate too) only when a session
+        # is there: most queries find none; a session of another scope
+        # stays unless this query's session replaces it
+        if s is not None and s.scope == theory_scope(assumptions, proposition, self._extensions):
+            del shared[key]
+            try:
+                r = self._ask_shared(s, proposition)
+            except Exception:
+                # answered by the fresh path below, which raises if it does
+                r = _UNSHARED
+            if r is not _UNSHARED:
+                shared[key] = s
+                return r
+            # the fresh session would fail the same way next time: not kept
+            key = None
+        s, lits = self._context_session(assumptions, proposition)
+        r = self._ask(s, lits, proposition, True)
+        if key is not None and _theory_free(s):
+            shared.pop(key, None)
+            if len(shared) >= SHARED_MAX:
+                del shared[next(iter(shared))]
+            shared[key] = s
+        return r
 
     def _ask(self, s: Session, lits: List[int], proposition, contextual: bool) -> Optional[bool]:
         """Answer ``proposition`` in the session ``s`` just built for it:
@@ -2243,6 +2286,48 @@ class Engine:
         self._note_budget(s)
         return r
 
+    def _ask_shared(self, s: Session, proposition) -> Optional[bool]:
+        """Answer ``proposition``, a vocabulary atom or its negation, in
+        the session ``s`` that answered the previous query about the same
+        expression under the same set and scope (``_shared``), or return
+        ``_UNSHARED`` if ``s`` has a theory once escalated.  Raises what
+        the session raises; the caller then answers in a fresh session.
+
+        Why the answer is the fresh session's (PR #119's argument for the
+        cone sessions of issue #116, extended to a set): let F be the clauses of the
+        set's escalated session plus the whole escalated cone of the
+        expression, a function of the key (escalation compiles everything
+        parked and visits every node, whatever was demanded first: see
+        :meth:`_decide`).  ``s`` is escalated before it answers, and holds
+        F plus learnt clauses and root units entailed by F: the earlier
+        queries only demanded predicates of the same expression, and a
+        theory-free session has no glue.  Without a theory, propagation,
+        ``Solver.consistent`` and the search have no budget, so ``s``
+        raises iff the set is inconsistent with F, and otherwise answers
+        True iff F and the set entail the query, False iff they entail its
+        negation, None otherwise.  A fresh session computes the same
+        function when the set is consistent with F: its clauses are a
+        subset of F (propagation on them is sound and its consistency
+        check passes), and a query they leave open escalates to all of F
+        and is searched completely.  When the set is inconsistent with F,
+        ``s`` raises and the fresh session answers.  The session's state
+        (learnt clauses, held levels, stored models) depends on history;
+        its answers do not."""
+        s.solver.release(s.n_hold)
+        q = s.prepare_query(proposition)
+        lits = s.assumption_lits(proposition)
+        if s.incomplete:
+            self.stats["escalations"] += 1
+            s.escalate()
+        if not _theory_free(s):
+            return _UNSHARED
+        r = s.query_literal(q, lits, search=False)
+        if r is None:
+            self.stats["searches"] += 1
+            r = s.query_literal(q, lits, search=True)
+        self._note_budget(s)
+        return r
+
     def _note_budget(self, s: Session) -> None:
         # the query passed _within_budget, so its session ran uncapped
         assert not s.truncated, "a session of a query within the budget was truncated"
@@ -2265,6 +2350,31 @@ _NO_BASIS: frozenset = frozenset()
 _WANT: Dict[frozenset, frozenset] = {}
 _adopt_memo(__name__, "_NEIGH")
 _adopt_memo(__name__, "_WANT")
+
+
+#: most sessions kept for reuse by the next query about the same expression
+#: under the same set (``Engine._shared``); refine asks its predicates of an
+#: expression back to back, so the last one is enough
+SHARED_MAX = 1
+#: what ``Engine._ask_shared`` returns for a session it does not answer in
+_UNSHARED = object()
+
+
+def _share_key(assumptions, proposition):
+    """The key of ``Engine._shared`` for a contextual query: ``(set,
+    expression)`` if ``proposition`` is a vocabulary atom or its
+    negation, else None.  A session found under it answers only a query
+    of its own theory scope (``Session.scope``)."""
+    a = proposition.args[0] if isinstance(proposition, Not) else proposition
+    if not isinstance(a, P) or a.pred not in PRED_INDEX:
+        return None
+    return assumptions, a.expr
+
+
+def _theory_free(s: Session) -> bool:
+    """``s`` has no relation glue, no transfer and no theory: its search has
+    no budget (``Engine._ask_shared``)."""
+    return s.relations is None and s.xfer is None and not s.solver.theories()
 
 
 def _gave_up(s: Session) -> bool:
