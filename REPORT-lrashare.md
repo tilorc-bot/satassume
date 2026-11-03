@@ -36,8 +36,16 @@ reference (the gates already check that 9bafaa5 is history independent).
 | grouped shuffle, seeds 1, 2, 3 (see below) | 3 x 8,393 | 0 | 0 | 0 | 0 |
 | ho-fuzz (sa-eval's held-out seed) | 3,000 | 0 | 0 | 0 | 0 |
 | fuzz, seed 424242 | 3,000 | 0 | 0 | 0 | 0 |
-| forkq, fresh process per query (gates.py) | 8,393 | GATES_FORKQ | | | |
-| gates.py (all) | | GATES_ALL | | | |
+| forkq, fresh process per query (gates.py) | 8,393 | 0 | 0 | 0 | 0 |
+| gates.py answers: stream, battery, corpus, ho-fuzz, fork-battery (refine), stream-unique, stream-shuffled, forkq | | all PASS | | | |
+
+gates.py on 4f9d931 (orion, its own runs) fails only on 2 counting tests. With the
+switch ON these fail by design and no answer is wrong:
+`tests/test_set_verdict.py::test_one_set_check_per_query` (6 set checks where 8 are
+expected) and 9bafaa5's `tests/test_engine.py::test_contextual_queries_build_and_discard`
+(sessions and set checks per query). Both assert that every query builds its own
+session, which is exactly what the switch stops doing for theory sessions. With the
+switch off, the suite passes (6,096 passed).
 
 **No query differs, so there is no differing-query list to give.** With the switch
 off, every workload above also matches 9bafaa5 exactly.

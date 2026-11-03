@@ -22,7 +22,7 @@ Push only to remote gh = https://github.com/tilorc-bot/satassume (never origin).
 - Switch DONE (e5ca30d, 7205480; ON tree 4f9d931). Suite with the switch off: 6096 passed.
 - Answer runs DONE: 0 differences vs 9bafaa5 on every workload (table in REPORT).
 - sa-eval-2 timing DONE and in REPORT (ON: ho-stream 1.37x, None 1.42x; OFF 1.05x).
-- LEFT: gates.py on 4f9d931 (in-proc answers + forkq done, test phase running) ->
+- DONE: gates on 4f9d931: all answer gates PASS; 2 counting tests fail by design (in REPORT).
   /tmp/claude-1000/-home-tilo-dev-satassume/df81d064-7290-4016-accd-c7852b8fee8e/scratchpad/gates-on.log
   and gates-on/gates.json. Fill GATES_FORKQ / GATES_ALL in REPORT (lines 39-40), commit,
   push gh lra-share, agent report (Status: done), message architect-62 + forward-chain-3b.
