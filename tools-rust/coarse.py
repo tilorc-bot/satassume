@@ -47,6 +47,7 @@ class St:
     prepare = 0.0
     prepare_depth = 0
     custom = 0
+    facts_for = 0
     node_facts = 0
 
 
@@ -131,7 +132,9 @@ def install(B, snaps, n):
             St.prepare += pc() - t
     Session.prepare_query = prepare
 
-    # callbacks into user code: counts only
+    # Session._custom takes custom-predicate atoms AND relation atoms, so its count is not
+    # a callback count. The calls into registered user code are Extensions.facts_for and
+    # Extensions.node_facts; count those, and how many handlers each actually ran.
     cu = Session._custom
 
     def custom(self, atom):
@@ -139,10 +142,24 @@ def install(B, snaps, n):
         return cu(self, atom)
     Session._custom = custom
 
+    from satassume.knowledge.extensions import Extensions
+    ff, nf = Extensions.facts_for, Extensions.node_facts
+
+    def facts_for(self, atom):
+        St.facts_for += 1
+        return ff(self, atom)
+
+    def node_facts(self, node):
+        St.node_facts += 1
+        return nf(self, node)
+    Extensions.facts_for = facts_for
+    Extensions.node_facts = node_facts
+
 
 def report(ans):
     out = {"calls": dict(zip(NAMES, St.calls)), "prepare_query_all_in_s": round(St.prepare, 5),
-           "session_custom_calls": St.custom}
+           "session_custom_atoms": St.custom,   # custom and relation atoms: NOT callbacks
+           "ext_facts_for": St.facts_for, "ext_node_facts": St.node_facts}
     for g, name in enumerate(NAMES):
         none = sum(q[g] for q, r in zip(St.perq, ans) if r is None)
         defi = sum(q[g] for q, r in zip(St.perq, ans) if r is not None)

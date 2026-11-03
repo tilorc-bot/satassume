@@ -12,6 +12,13 @@ Modes
   samp   bdry + an in-process SIGALRM sampler that classifies the stack.
   fn     bdry + outermost timers on the satassume functions that read or build SymPy
          objects behind the boundary (coarse.py lists them).
+  monfn  mon + fn: only to split SymPy entries inside the boundary into those under an fn
+         group (side 2) and those not (side 1), so the fn row does not double count them.
+  dbl    base + one extra Python layer on Basic.__hash__ and Integer.__hash__, and a hot
+         loop timing of a plain hash(e) at the end: the real cost of a thin SymPy call,
+         with no monitoring. T(dbl) - T(base) over the count is the cost of one layer.
+  out    bdry + exclusive timers on the items outside the boundary (outside.py).
+  dblc   dbl with a counter in the layer: the count (not timed).
   enc    bdry + the encoder of encode.py run and timed at each boundary call.
 """
 import gc
@@ -85,14 +92,17 @@ class M:
     t0 = 0.0
     entry = None
     side = 0
-    t = [0.0, 0.0]        # interval seconds, [outside, inside] the boundary
-    n_outer = [0, 0]
-    n_nested = [0, 0]
+    t = [0.0, 0.0, 0.0]   # interval seconds, [outside, inside, inside under an fn group]
+    n_outer = [0, 0, 0]
+    n_nested = [0, 0, 0]
+    fn_state = None       # coarse.St in monfn
+    wfn = None            # the function behind an outermost cacheit wrapper
+    wt = {}               # (side, wrapped function) -> [calls, seconds]
     by = {}               # (side, code) -> [outer calls, seconds, nested calls]
     nested_now = 0
     callers = {}          # (side, caller code, entry code) -> calls
+    any_depth = {}        # (side, qualname) -> calls of __new__, _eval_*, doit* at any depth
     want_callers = False
-    wrapped = {}          # function behind an outermost cacheit wrapper -> calls
     unbalanced = 0
 
 
@@ -115,21 +125,25 @@ def mon_start():
             return DISABLE
         if M.depth == 0:
             M.side = 1 if B.depth else 0
+            if M.side and M.fn_state is not None and M.fn_state.cur is not None:
+                M.side = 2
             M.entry = code
             M.nested_now = 0
+            M.wfn = None
+            if code.co_name == "wrapper" and "cache.py" in code.co_filename:
+                M.wfn = getattr(getframe(1).f_locals.get("func"), "__qualname__", "?")
             if M.want_callers:
                 f = getframe(1).f_back
                 k = (M.side, f.f_code if f else None, code)
                 M.callers[k] = M.callers.get(k, 0) + 1
-                if code.co_name == "wrapper" and "cache.py" in code.co_filename:
-                    fn = getframe(1).f_locals.get("func")
-                    n = (M.side, getattr(fn, "__qualname__", str(fn)))
-                    M.wrapped[n] = M.wrapped.get(n, 0) + 1
             M.depth = 1
             M.t0 = pc()
         else:
             M.depth += 1
             M.nested_now += 1
+        if M.want_callers and (code.co_name == "__new__" or code.co_name.startswith(("_eval_", "doit"))):
+            k = (M.side, code.co_qualname)
+            M.any_depth[k] = M.any_depth.get(k, 0) + 1
 
     def leave(code, offset, ret):
         if not sympy_code(code):
@@ -150,6 +164,13 @@ def mon_start():
                 r[0] += 1
                 r[1] += dt
                 r[2] += M.nested_now
+            if M.wfn is not None:
+                w = M.wt.get((s, M.wfn))
+                if w is None:
+                    M.wt[(s, M.wfn)] = [1, dt]
+                else:
+                    w[0] += 1
+                    w[1] += dt
         elif d > 0:
             M.depth = d
         else:
@@ -208,8 +229,8 @@ def mon_calibrate():
     plain_call = (med(loop, N) - med(empty, N)) / N
     plain_nest = med(nest, N, pc) / N
     tid = mon_start()
-    M.t = [0.0, 0.0]
-    M.n_outer = [0, 0]
+    M.t = [0.0, 0.0, 0.0]
+    M.n_outer = [0, 0, 0]
     t_loop = med(loop, N)
     sum_iv = M.t[0] / (7 * N)
     t_nest = med(nest, N, pc)
@@ -292,22 +313,43 @@ def clock_s():
 extra = {}
 clock = pc
 mon_tid = None
-if mode != "base":
+if mode not in ("base", "dbl", "dblc"):
     wrap_boundary()
     clock = clock_b
-if mode == "fn":
+if mode in ("fn", "monfn"):
     import coarse
     coarse.install(B, snaps, len(pairs))
+    if mode == "monfn":
+        M.fn_state = coarse.St
 if mode == "enc":
     import encode
     encode.install(B, snaps, len(pairs))
+if mode == "out":
+    import outside
+    outside.install(B, snaps, len(pairs))
 if mode == "samp":
     S.period = float(os.environ.get("RC_PERIOD", S.period))
     clock = clock_s
 
 gc.collect()
 gc.freeze()
-if mode in ("mon", "moncall"):
+if mode in ("dbl", "dblc"):
+    from sympy import Basic, Integer
+    H = {"n": 0}
+    orig_hash = (Basic.__hash__, Integer.__hash__)
+
+    def layer(orig):
+        if mode == "dbl":
+            def h(self):
+                return orig(self)
+        else:
+            def h(self):
+                H["n"] += 1
+                return orig(self)
+        return h
+    Basic.__hash__ = layer(orig_hash[0])
+    Integer.__hash__ = layer(orig_hash[1])
+if mode in ("mon", "moncall", "monfn"):
     M.want_callers = mode == "moncall"
     mon_tid = mon_start()
 if mode == "samp":
@@ -320,6 +362,31 @@ if mode == "samp":
     samp_stop()
 if mon_tid is not None:
     mon_stop(mon_tid)
+
+
+def hot_hash():
+    """ns per hash(e) with _mhash already set, net of hash(int): the floor of a thin call
+    (hot code, no cache misses). Restores the original methods first."""
+    from sympy import Symbol, sqrt
+    Basic.__hash__, Integer.__hash__ = orig_hash
+    x = Symbol("x")
+    basics = [x + i for i in range(1000)] + [sqrt(x + i) for i in range(1000)]
+    ints = [Integer(i + 10**6) for i in range(2000)]
+    plain = list(range(10**7, 10**7 + 2000))
+    keep = [hash(e) for e in basics + ints]
+
+    def loop(xs):
+        t = pc()
+        for _ in range(200):
+            for e in xs:
+                hash(e)
+        return (pc() - t) / (200 * len(xs))
+
+    def med(xs):
+        return sorted(loop(xs) for _ in range(7))[3] * 1e9
+    p = med(plain)
+    return dict(basic_ns=round(med(basics) - p, 1), integer_ns=round(med(ints) - p, 1), plain_ns=round(p, 1),
+                _keep=len(keep))
 
 
 def entry_name(c):
@@ -336,34 +403,42 @@ out = dict(mode=mode, wl=wl, s=round(T, 4), n=len(ans), n_none=sum(r is None for
            none_s=round(sum(d for d, r in zip(per, ans) if r is None), 4),
            def_s=round(sum(d for d, r in zip(per, ans) if r is not None), 4),
            digest=hashlib.sha256(json.dumps(ans).encode()).hexdigest()[:16])
-if mode != "base":
+if mode not in ("base", "dbl", "dblc"):
     out["calls"] = B.calls
-if mode not in ("base", "samp"):
+if mode == "dbl":
+    out["hot"] = hot_hash()
+if mode == "dblc":
+    out["n_layer"] = H["n"]
+if mode not in ("base", "samp", "dbl", "dblc"):
     d = [[b[i] - a[i] for a, b in zip(snaps[0::2], snaps[1::2])] for i in range(6)]
     out["inside"] = split(d[0])
     out["inside_s"] = round(B.inside, 5)
-    if mode in ("mon", "moncall"):
+    if mode in ("mon", "moncall", "monfn"):
+        out["t_side"] = [round(v, 5) for v in M.t]
         out["sym_in"] = split(d[1])
         out["sym_out"] = split(d[2])
         out["n_outer_in"] = split(d[3])
         out["n_nested_in"] = split(d[4])
-        out["n_outer"] = M.n_outer
-        out["n_nested"] = M.n_nested
+        out["n_outer"] = list(M.n_outer)
+        out["n_nested"] = list(M.n_nested)   # copied: mon_calibrate adds to this list
         out["unbalanced"] = M.unbalanced
         out["calib"] = mon_calibrate()
+        out["wt"] = sorted(([s, n, r[0], round(r[1], 5)] for (s, n), r in M.wt.items()), key=lambda r: -r[3])
         out["by"] = sorted(
             ([s, f"{c.co_filename.split('/sympy/')[-1]}:{c.co_qualname}", r[0], round(r[1], 5), r[2]]
              for (s, c), r in M.by.items() if "/fake/" not in c.co_filename), key=lambda r: -r[3])
     if mode == "moncall":
+        out["any_depth"] = sorted(([s, n, c] for (s, n), c in M.any_depth.items() if "noop" not in n), key=lambda r: -r[2])
         out["callers"] = sorted(
             ([s, (f"{f.co_filename.split('/satassume/')[-1]}:{f.co_qualname}" if f else "?"),
               f"{c.co_filename.split('/sympy/')[-1]}:{c.co_qualname}", n]
              for (s, f, c), n in M.callers.items() if "/fake/" not in c.co_filename), key=lambda r: -r[3])
-        out["wrapped"] = sorted(([k, n] for k, n in M.wrapped.items()), key=lambda r: -r[1])
-if mode == "fn":
+if mode in ("fn", "monfn"):
     out["fn"] = coarse.report(ans)
 if mode == "enc":
     out["enc"] = encode.report(ans)
+if mode == "out":
+    out["out"] = outside.report(ans)
 if mode == "samp":
     tally = {}
     for q, side, raw, corr in S.log:
