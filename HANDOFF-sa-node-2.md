@@ -38,3 +38,26 @@ forward-chain-3b: one iteration to remove the corpus regression, then PR anyway.
 - PR draft: scratchpad pr.md of session 0d2b8ba0 (update key text, results).
 Next: on the verdict, pick the better variant (if MAX1, merge node-sessions-max1
 into node-sessions), open PR needs-human HELD, review-clean.
+
+## State at hand-off (sa-node-2, ~140k)
+
+- node-sessions @ HEAD (fbb484f + this handoff), node-sessions-max1 @ a1b0285. Pushed.
+- sa-eval-2 queued ONE 3-tree A/B (base, fbb484f, a1b0285) on pareto1 plus gates
+  on orion; it said to expect the verdict ~60-75 min after ~09:45Z. It messages
+  sa-node-N and forward-chain-3b.
+- Tests: the full suite (pre-fbb484f) had only the expected failure, since
+  rewritten. After fbb484f: test_shared_sessions (11), test_engine, history,
+  layering, memos, p4_review, relations and lra: 894 passed. A full-suite run on
+  the final branch is still TODO (`$PY -m pytest -n 6 tests`, ~4-10 min on orion).
+- PR body draft: ~/dev/sa-node/PR-DRAFT-sa-node.md (untracked; do not commit).
+  Fill in "test suite: SUITE" and "sa-eval-2 verdict: VERDICT"; state the corpus
+  and held-out numbers plainly, even if the corpus is still slower
+  (forward-chain-3b: open the PR anyway; Tilo weighs it).
+  If MAX1 wins, fast-forward/merge node-sessions-max1 into node-sessions (its
+  test_engine expects SHARED_MAX 1) and update the "at most 4" text in
+  the PR draft, docs/performance.md and the tests/test_engine.py docstring.
+- Before opening: `git rm HANDOFF-sa-node-*.md` on the branch (or keep them
+  if forward-chain-3b prefers); title e.g. "engine: reuse a theory-free contextual
+  session for the next query about the same expression"; label needs-human;
+  review-clean (/code-review), HELD for Tilo, never merge.
+- Rules: write "SymPy PR N" for upstream refs; satassume #N is fine.
