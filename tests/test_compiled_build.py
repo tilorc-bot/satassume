@@ -31,6 +31,8 @@ def test_no_compiled_module_older_than_its_source():
         module = importlib.import_module(path[:-3].replace("/", "."))
         if module.__file__.endswith(".py"):
             continue                        # pure Python: nothing to check
-        source = os.path.join(ROOT, path)
-        assert os.path.getmtime(module.__file__) >= os.path.getmtime(source), \
-            f"{module.__file__} is older than {path}: rebuild (setup.py)"
+        for source in (path, path[:-3] + ".pxd"):     # .pxd: types for Cython
+            full = os.path.join(ROOT, source)
+            if os.path.isfile(full):
+                assert os.path.getmtime(module.__file__) >= os.path.getmtime(full), \
+                    f"{module.__file__} is older than {source}: rebuild (setup.py)"
