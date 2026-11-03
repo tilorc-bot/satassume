@@ -89,7 +89,7 @@ def main():
             tree = f"sa-eval-bench/src/{tag}"
             subprocess.run(["rsync", "-a", *[os.path.join(co, f) for f in ("setup.py", "pyproject.toml", "README.md")
                                               if os.path.exists(os.path.join(co, f))], f"pareto1:{tree}/"], check=True)
-            sh("machine", "run", "pareto1", "-r", f"sa-eval build {tag}", "--", f"cd {tree} && {args.remote_build}")
+            sh("machine", "run", "pareto1", "--shared", "-r", f"sa-eval build {tag}", "--", f"cd {tree} && {args.remote_build}")
         if args.check_modules:
             code = f"import importlib; print([importlib.import_module(m).__file__ for m in {args.check_modules.split(',')!r}])"
             loaded["pareto1"] = sh("ssh", "pareto1", f"cd sa-eval-bench && docker run --rm -v $HOME/sa-eval-bench:/work:ro "

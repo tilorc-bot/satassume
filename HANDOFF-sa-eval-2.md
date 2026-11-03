@@ -32,3 +32,16 @@ to worker and forward-chain-3b.
    --build "SATASSUME_CYTHON=1 /home/tilo/dev/sa-cy/.bvenv/bin/python setup.py build_ext --inplace -j 8"
    --remote-build 'docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -e SATASSUME_CYTHON=1 -v $PWD:/w -w /w sa-cy-build:1 python setup.py build_ext --inplace -j 8'
   Then write P's md timing from the same A/B (P rows are tree sa-cy-2-0b157b9). Verdicts to sa-cy-2 + forward-chain-3b.
+* sa-node e80400e: forward-chain-3b APPROVED the failure of tests/test_engine.py::test_contextual_queries_build_and_discard
+  (expected design change). The running judge (old code) will say FAIL; re-render with
+  judge sa-node-1 /home/tilo/dev/sa-node e80400e --skip-gates --reuse-ab --approved-test tests.test_engine::test_contextual_queries_build_and_discard --note "..."
+  (junit node id form). Any other failure still FAILS.
+* 08:52Z sa-node e80400e DONE: PASS, mixed (dev 1.10x, held-out 1.04x, corpus 0.97x slower); a728af5; sent to sa-node-2, fc-3b, architect-62.
+* 08:53Z sa-cy-2 A/B running from scratchpad cy-ab.sh (task b6pvl5pu3): fetch C worktree, sync P+C, build C on pareto1, load check, 3-way A/B
+  -> bench-results/ab-sa-cy-2C-0b157b9. When BOTH it and the orion gate chain (bsbuutwib) are done: render
+  judge sa-cy-2C ... --skip-gates --reuse-ab (+--check-modules) and judge sa-cy-2 ... --skip-gates (P rows: tree sa-cy-2-0b157b9 in the C A/B);
+  add the pareto1 load-check lines from cy-ab.log to the C md.
+* 08:58Z sa-node-2 resubmitted fbb484f (SHARED_MAX=4, key (set,expr)) and a1b0285 (SHARED_MAX=1). Worktrees cands/sa-node-2-{fbb484f,a1b0285}.
+  scratchpad node2.sh (task b7veqywke): gates after sa-cy C judge; 3-tree A/B ab-sa-node-2-fbb484f after cy-ab.
+  Render: judge sa-node-2 ~/dev/sa-node <sha> --skip-gates --reuse-ab --approved-test tests.test_engine::test_contextual_queries_build_and_discard
+  (for a1b0285 symlink bench-results/ab-sa-node-2-a1b0285 -> ab-sa-node-2-fbb484f and rename jsonl link). Verdict to sa-node-2 + fc-3b (+architect-62).
