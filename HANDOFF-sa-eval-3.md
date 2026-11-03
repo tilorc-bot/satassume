@@ -1,6 +1,6 @@
 # HANDOFF sa-eval-3 (evaluator of the satassume speed effort)
 
-Brief: launch message (role sa-eval). Coordinator architect-62; tech lead forward-chain-3b.
+Brief: launch message (role sa-eval). Coordinator architect-63 (since ~09:35Z; was architect-62); tech lead forward-chain-3b.
 Layout and the judge command: see HANDOFF-sa-eval-2.md (Layout, Judge a submission). Not repeated here.
 
 ## State
