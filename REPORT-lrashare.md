@@ -85,11 +85,41 @@ How much each order actually tests the switch:
 
 ## Timing (sa-eval-2, pinned A/B on pareto1)
 
-SA_EVAL_TIMING
+pareto1, one pinned bench-container invocation, 3 trees alternating, cold processes,
+5 rounds + warm-up, 09:11-09:16Z. Speedup = 9bafaa5 / tree (median of paired rounds;
+range = per-round tree/base ratio). sa-eval-2's report:
+~/dev/sa-eval/evalbench/results/sa-lrashare-1-4f9d931.md (sa-eval 0399462). The A/A
+noise floor (BASELINE.md): medians within about 1%.
+
+| workload | switch OFF (7205480 = fbb484f + switch) | switch ON (4f9d931) | ON over OFF |
+|---|---:|---:|---:|
+| dev, total | 1.10x (0.900..0.917) | **1.28x** (0.778..0.833) | 1.17x |
+| dev, None queries | 1.13x | **1.34x** (0.741..0.767) | 1.19x |
+| held-out stream, total | 1.05x (0.946..0.955) | **1.37x** (0.729..0.735) | 1.30x |
+| held-out stream, None | 1.06x | **1.42x** (0.706..0.711) | 1.34x |
+| held-out battery | 1.03x | 1.12x (0.884..0.895) | 1.10x |
+| fork-battery (time in ask) | 1.05x | 1.15x (0.833..0.940) | 1.10x |
+| ho-fuzz | 0.99x (1.005..1.013) | 0.97x (1.027..1.035) | 0.98x |
+| corpus | 0.97x | 0.97x | 1.00x |
+
+Counters on the held-out stream (9bafaa5 / off / on): context builds 3,885 / 2,704 /
+2,161, solver decisions 43,668 / 34,588 / 26,501, conflicts 1,695 / 1,686 / 944.
+With the switch on, the conflicts nearly halve: the shared LRA sessions reuse clauses
+learnt by earlier queries. That is where the time goes, and it is also the path
+dependence (the fresh session re-derives those conflicts).
+
+Fuzz and corpus are about 3% slower in every round, with the switch on or off. Sharing
+almost never triggers there (fuzz: 1 shared call in 3,000 queries), so this is the
+cost of keeping the sessions and computing the key, plus whatever fbb484f
+itself costs on these workloads. The switch on its own adds about 2% on fuzz
+(0.99x to 0.97x).
 
 ## What Tilo is deciding
 
-Switching it on would buy SA_EVAL_GAIN. The cost on these workloads is zero changed
+Switching it on would buy, on top of sa-node's theory-free sharing: held-out stream
+1.05x to 1.37x over 9bafaa5 (None queries 1.06x to 1.42x), dev 1.10x to 1.28x, held-out
+battery 1.03x to 1.12x, fork-battery 1.05x to 1.15x. Fuzz gets about 2% slower and the
+corpus is unchanged. The cost on these workloads is zero changed
 answers out of about 95,000 asked, across 12 orders and processes (about 1,900 shared
 LRA/EUF answers), but that is evidence, not a proof. On the stream, the switch moves
 0 to 3 B&B exhaustions per pass in or out of a shared session, so an answer could
