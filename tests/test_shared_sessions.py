@@ -185,3 +185,33 @@ def test_a_query_of_another_scope_builds_its_own_session():
     assert eng._shared
     assert _ask(eng, x + y, "positive", a) is True
     assert eng.stats["set_checks"] == 2
+
+
+def test_share_theory_keeps_an_lra_session(monkeypatch):
+    """With the measurement switch ``SHARE_THEORY`` an LRA session is kept
+    and answers the next query about its expression as a fresh one did."""
+    monkeypatch.setattr(E, "SHARE_THEORY", True)
+    s = Q.gt(x, y) & Q.integer(x)
+    qs = [(x - y, p, s) for p in PREDS]
+    want = _reference(qs)
+    eng = Engine()
+    hits = []
+    shared = E.Engine._ask_shared
+    monkeypatch.setattr(E.Engine, "_ask_shared",
+                        lambda self, ss, p: hits.append(p) or shared(self, ss, p))
+    assert {q: _ask(eng, *q) for q in qs} == want
+    assert eng._shared and hits
+
+
+def test_share_theory_drops_an_exhausted_session(monkeypatch):
+    """A kept theory session whose theory ran out of its branch budget is
+    dropped, and the query is answered in a fresh session."""
+    monkeypatch.setattr(E, "SHARE_THEORY", True)
+    s = Q.gt(x, y) & Q.integer(x)
+    eng = Engine()
+    _ask(eng, x - y, "positive", s)
+    (sess,) = eng._shared.values()
+    for t in sess.solver.theories():
+        t.exhausted = True
+    assert _ask(eng, x - y, "nonnegative", s) == _reference([(x - y, "nonnegative", s)])[(x - y, "nonnegative", s)]
+    assert all(v is not sess for v in eng._shared.values())

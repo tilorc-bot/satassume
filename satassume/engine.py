@@ -2245,7 +2245,7 @@ class Engine:
                 return r
         s, lits = self._context_session(assumptions, proposition)
         r = self._ask(s, lits, proposition, True)
-        if key is not None and _theory_free(s):
+        if key is not None and _shareable(s):
             if len(shared) >= SHARED_MAX:
                 del shared[next(iter(shared))]
             shared[key] = s
@@ -2309,12 +2309,16 @@ class Engine:
         lits = s.assumption_lits(proposition)
         if s.incomplete:
             s.escalate()
-        if not _theory_free(s):
+        if not _shareable(s):
             return _UNSHARED
         r = s.query_literal(q, lits, search=False)
         if r is None:
             self.stats["searches"] += 1
             r = s.query_literal(q, lits, search=True)
+        if not _shareable(s):
+            # SHARE_THEORY: this query exhausted the branch budget or gave
+            # up; the fresh session answers it and this one is dropped
+            return _UNSHARED
         self._note_budget(s)
         return r
 
@@ -2348,6 +2352,11 @@ _adopt_memo(__name__, "_WANT")
 SHARED_MAX = 4
 #: what ``Engine._ask_shared`` returns for a session it does not answer in
 _UNSHARED = object()
+#: MEASUREMENT ONLY (not exact): also share sessions with a theory, relation
+#: glue or transfer, as long as no theory ever exhausted its branch budget or
+#: gave up; such a session is dropped and the query answered fresh.  The
+#: LRA branch and bound is path dependent, so this is empirical, not proven.
+SHARE_THEORY = False
 
 
 def _share_key(assumptions, proposition):
@@ -2365,6 +2374,14 @@ def _theory_free(s: Session) -> bool:
     """``s`` has no relation glue, no transfer and no theory: its search has
     no budget (``Engine._ask_shared``)."""
     return s.relations is None and s.xfer is None and not s.solver.theories()
+
+
+def _shareable(s: Session) -> bool:
+    """``s`` may be kept in ``Engine._shared``: theory-free, or (with
+    :data:`SHARE_THEORY`) no theory of it ever exhausted or gave up."""
+    if _theory_free(s):
+        return True
+    return SHARE_THEORY and not _gave_up(s) and not _exhausted(s)
 
 
 def _gave_up(s: Session) -> bool:
