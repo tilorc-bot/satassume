@@ -1,6 +1,6 @@
 # satassume speed work: how to measure and how to submit
 
-The evaluator is the session **sa-eval-1** (harness: `~/dev/sa-eval`, branch
+The evaluator is the session **sa-eval-2** (successor of sa-eval-1; send to whichever sa-eval-N is current) (harness: `~/dev/sa-eval`, branch
 `evalbench`). Its numbers decide what is kept. The baseline is satassume `main` at
 `9bafaa5`.
 
@@ -67,7 +67,7 @@ Don't tune to the dev set. The held-out sets are there to catch that.
 Commit in your clone, then:
 
 ```
-SendMessage sa-eval-1 "candidate <clone path> <sha>: <one line: what it does>"
+SendMessage sa-eval-2 "candidate <clone path> <sha>: <one line: what it does>"
 ```
 
 The evaluator snapshots that commit into its own worktree, so you can keep working

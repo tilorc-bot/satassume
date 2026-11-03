@@ -40,3 +40,8 @@ Not done / next steps:
 Gotchas: child processes run with cwd=.shim (sa-eval is itself a satassume checkout, so `-m` would
 otherwise import the wrong package). The container mounts read-only, so trees are byte-compiled first.
 The pareto1 governor is powersave.
+
+Update 08:10 UTC: the mutant gate run finished (gate-results/mutant-test/gates.json): GATES FAIL as intended.
+stream 2, battery 5, corpus 2, stream-unique 1 and stream-shuffled 3 differ. ho-fuzz, fork-battery and forkq pass
+(expected for this mutant). tests_own and tests_base_on_cand each have 3 newly failing. The gates' compare path works;
+step 1 above is done, and step 2 (judge.py end to end) remains.
