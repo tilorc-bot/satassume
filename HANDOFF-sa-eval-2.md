@@ -22,3 +22,13 @@ to worker and forward-chain-3b.
 * Released sa-eval-1's stale idle pareto1 lease. pareto1 base tree is at ~/sa-eval-bench/src/base.
 * Reported (3db1d2c) to architect-62 + forward-chain-3b; told sa-cy-1 to submit here. sa-lra-1 was not reachable (not in ListAgents).
 * Next: idle until a submission arrives; then judge (A/B path not yet exercised through judge.py, only via A/A).
+* 08:29Z judging sa-node e80400e (clone ~/dev/sa-node; tag sa-node-1-e80400e), log in sa-eval-2 scratchpad judge-sa-node-1.log.
+  Verdict to sa-node-2, forward-chain-3b, architect-62.
+* 08:35Z sa-cy-2 0b157b9 (clone ~/dev/sa-cy): judge as TWO tags. sa-cy-2 = (P) pure; sa-cy-2C = (C) Cython-built
+  (judge.py new opts --build/--remote-build/--check-modules/--ab-extra). Background chain (task bsbuutwib) waits for sa-node gates,
+  then P gates (--skip-ab), then C build+gates (--skip-ab). AFTER sa-node's judge finishes, run the A/B:
+  pareto.sh sync sa-cy-2-0b157b9=cands/sa-cy-2-0b157b9, then
+  judge sa-cy-2C /home/tilo/dev/sa-cy 0b157b9 --skip-gates --ab-extra sa-cy-2-0b157b9 --check-modules satassume.sat.solver,satassume.engine
+   --build "SATASSUME_CYTHON=1 /home/tilo/dev/sa-cy/.bvenv/bin/python setup.py build_ext --inplace -j 8"
+   --remote-build 'docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -e SATASSUME_CYTHON=1 -v $PWD:/w -w /w sa-cy-build:1 python setup.py build_ext --inplace -j 8'
+  Then write P's md timing from the same A/B (P rows are tree sa-cy-2-0b157b9). Verdicts to sa-cy-2 + forward-chain-3b.
