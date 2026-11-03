@@ -39,5 +39,35 @@ backtracking; theory atoms not validated)?
   `_tpropagate` 14.0%, LRA `check` 3.9%, LRA `assert_lit` 4.1%. LRA-session searches cost ~6x
   plain ones per search with about the same decisions (~8) and conflicts (<1).
 
-## State
-Bound reported (Status: question). Waiting for forward-chain-3b's decision.
+- LRA branch and bound (`lrab.py`, pass 5.51 s): LRA `_check` in total ~0.19 s (3.4%);
+  checks that branched 0.136 s (2.4%, 2,219 branches over 1,267 checks), of which own-term
+  integrality atoms decided False at an integral point (neg-only) 0.019 s. Not a target.
+- cProfile of the pass (`prof.py`, 14.8 s profiled): `_search` 3.07 s, of it `_tpropagate`
+  1.61 s (`_theory_sync` 1.41 s: LRA `assert_lit` 0.67 s, LRA `propagate` 0.20 s, transfer
+  `propagate` 0.15 s, sync overhead 0.18 s tottime) and `_theory_check` 0.61 s (LRA check 0.57).
+  `relations.process` 5.0 s (34%) is in the build (sa-rel-1's area).
+
+## Decisions
+- forward-chain-3b (after report 61e0709): drop cross-session reuse; add a row to
+  performance.md's "What was measured and dropped" table with the numbers above (in the eventual
+  PR or a docs-only commit on this branch; NOT done yet). Suggested row:
+  `| witness reuse across sessions of one (set, scope) | 12% gross, 6.6% exact-safe, under 3% net | integrality makes branch and bound path dependent in every LRA session: only a session's last search may be replaced; the check costs about 3x the plain searches it replaces |`
+- GO on LRA per-decision and final-check cost. New scope: satassume/theories/lra/* and the
+  solver's theory interface (_tpropagate, _theory_sync, _theory_check, register_atom's theory
+  path). sa-rel-1 may touch other parts of solver.py (_grow, clause insertion, add_clause):
+  message it with the functions you will edit BEFORE editing.
+
+## State (wound down on architect-61's context limit)
+Nothing built. Next steps for a successor:
+1. forward-chain-3b's ask: per session with LRA, count sessions where LRA engages (its tax:
+   atom registration, assert/propagate/check, push/pop) but never propagates, conflicts or
+   refutes anything (e.g. integrality atoms that never matter); time that LRA work in those
+   sessions. Wrap per LRATheory instance: assert_lit returning a conflict, propagate returning
+   non-empty, check returning (False, ...), plus inclusive times of assert_lit/propagate/check/
+   push_level/pop_level and the solver's _theory_sync overhead. If large, scoping the theory
+   more tightly may beat making it faster.
+2. Bound per-decision LRA cost: assert_lit (_assert_kind + incremental _simplex) is ~4% of the
+   pass, theory sync overhead ~1-3%; look for work repeated per level (e.g. assert at a level
+   that the held levels already had).
+3. Bound >= 5% then build, A/B, submit to sa-eval-1; report each bound (agent report,
+   SendMessage architect-61 + forward-chain-3b).
