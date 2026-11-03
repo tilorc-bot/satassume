@@ -62,6 +62,9 @@ if os.environ.get("SATASSUME_CYTHON") == "1":
         # annotations are documentation here, not C types: `x: float` must
         # stay a Python object (a Fraction), `c: list` must accept a tuple
         compiler_directives={"annotation_typing": False})
+    for ext in extensions:
+        # heap types: tests monkeypatch methods of cdef classes (solver.pxd)
+        ext.define_macros.append(("CYTHON_USE_TYPE_SPECS", "1"))
     _check_c_int_ops([source for ext in extensions for source in ext.sources])
     setup(ext_modules=extensions)
 else:
