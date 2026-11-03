@@ -38,3 +38,11 @@ Recipe (copy evalbench/recipes/final-readout.sh into your scratchpad, set S, edi
 ## State
 * 12:15Z PLAN CHANGE (architect-63, fc-3b OK): sa-eval-3 does NOT judge sa-cy-4. On arrival: reply "sa-eval-4 takes it",
   forward the line to architect-63, record it here, report (handoff), stop. sa-eval-4 runs the recipe above.
+* 12:2xZ SUBMISSION ARRIVED (for sa-eval-4; not started by sa-eval-3): candidate /home/tilo/dev/sa-cy 227be56: MEASUREMENT
+  against e61e024 (no PR unless >=5%): augmenting lra.pxd (LRATheory cdef class, 32 lines) + engine.pxd (Session cdef class, 17 lines)
+  on top of PR 322's solver.pxd; no .py edits. Chain 227be56 -> ed4b02f (PR 322 = 276dab1 + solver.pxd + setup.py TYPE_SPECS macro)
+  -> 276dab1. BUILD DIFFERS from the recipe: `SATASSUME_CYTHON=1 python setup.py build_ext --inplace --force` (setup.py adds
+  CYTHON_USE_TYPE_SPECS itself; NO CPPFLAGS). Verify engine AND lra (satassume.theories.lra.lra) load as .so.
+  Worker's numbers vs e61e024: dev 1.024x, stream-unique 1.028x; lra.pxd alone 1.015x/1.019x. Compiled suite: 1 failure,
+  Hypothesis unseeded test_fuzz_symbols_may_be_nan (worker says pure 9bafaa5 answers it identically; check vs baseline gates.json).
+  Worker asks: quick verdict (stream + new fuzz + corpus) to sa-cy-4 + forward-chain-3b. Consider adding ed4b02f (PR 322) as an arm.
