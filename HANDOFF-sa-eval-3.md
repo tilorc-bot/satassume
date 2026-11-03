@@ -37,4 +37,4 @@ Layout and the judge command: see HANDOFF-sa-eval-2.md (Layout, Judge a submissi
   sa-cy-3 verdict to sa-cy-3 + fc-3b.
 * readout tool: .venv/bin/python -m evalbench.readout bench-results/ab-final/ab-final.jsonl --arm TREE=LABEL ... (wide table + digest check). combo-r3 table: all digests same; node-cy 1.27x HO / lra-cy 1.64x HO.
 * 11:55Z FINAL-READOUT.md DONE (6940722), sent to fc-3b + architect-63. sa-cy-3 e61e024 verdict PASS faster (results/sa-cy-3C-e61e024.md), sent.
-  combo-r3 done (results/combo-r3.md). QUEUE EMPTY. Expect sa-bb-1 (LRA B&B budget; maybe a build). Idle until a submission.
+  combo-r3 done (results/combo-r3.md). QUEUE EMPTY. sa-bb-1 and sa-lat-1 stopped without submitting (architect-63, ~12:00Z); nothing else unless fc-3b queues it. Idle; architect-63 will stop me.
