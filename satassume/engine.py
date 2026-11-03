@@ -90,6 +90,7 @@ from .knowledge.rules import (BASIS_INDEX, BASIS_OF, DEF_LITS, NPRED, PRED_INDEX
 from .scope import (EMPTY as _EMPTY_SCOPE, SIGN_PREDS as _SIGN_PREDS, Scope,
                     affine_pair as _affine_pair, scope_of_atoms, theory_scope)
 from .sat.solver import Solver
+from .state.clone import clone
 
 Node = Any
 
@@ -1384,6 +1385,7 @@ class Engine:
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
+        self._pristine: Dict[Any, Any] = {}
         #: number -> its basis of facts for predicate transfer
         #: (``relations._number_basis``): read from this engine's own
         #: ``is_many``, so it depends on the settings and the registry epoch
@@ -1597,6 +1599,7 @@ class Engine:
         self.splits.clear()
         self._failed.clear()
         self._verdict.clear()
+        self._pristine.clear()
         self._xbasis.clear()
 
     # -- the discovery budget: a test on the query's structural cone ----------
@@ -1897,6 +1900,18 @@ class Engine:
         # own glue, so its verdict is a function of the set whatever the
         # query's scope
         scope = theory_scope(assumptions, proposition, self._extensions)
+        key = (assumptions, scope)
+        hit = self._pristine.get(key)
+        if hit is not None:
+            return clone(hit, {id(self): self})
+        s, lits = self._build_context_fresh(assumptions, scope)
+        if s.relations is not None:
+            if len(self._pristine) >= 2_000:
+                self._pristine.clear()
+            self._pristine[key] = clone((s, lits), {id(self): self})
+        return s, lits
+
+    def _build_context_fresh(self, assumptions, scope):
         s = self._fresh_session(scope)
         lits = s.assume_formula(assumptions)
         try:
