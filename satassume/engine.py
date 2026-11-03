@@ -28,16 +28,21 @@ only visits the cone of the queried expression, so search cost is bounded
 by the size of that expression and never by what was asked before.  A
 contextual query builds the session of its assumption set
 (``Engine._build_context``: the set's clauses and one complete
-consistency check of the set), answers in it, and discards it.  What the
-engine keeps of a set between queries is a function of the set alone:
-its verdict (``CONSISTENT``, ``INCONSISTENT`` or ``UNKNOWN``, from the
-check) and, for a set whose construction raised ``Uninterpreted``, the
-message.  So the solver state a query runs in, the search path it takes
-and the budget it has (integer branch and bound, :mod:`satassume.theories.lra.lra`,
-"Integrality"; giving up on a constant, :mod:`satassume.sat.theory`) are
-those a fresh engine's same query has, whatever was asked before under
-the same or any other set: history independence by construction (see
-``docs/design.md``, "History independence").  The settings
+consistency check of the set), answers in it, and discards it, unless
+the session has no theory, glue or transfer: then the next query about
+the same expression under the same set and scope answers in it
+(``Engine._shared``; refine asks several predicates of one expression in
+a row).  What the engine keeps of a set between queries is a function of
+the set alone: its verdict (``CONSISTENT``, ``INCONSISTENT`` or
+``UNKNOWN``, from the check) and, for a set whose construction raised
+``Uninterpreted``, the message.  So the solver state a query with a
+theory runs in, the search path it takes and the budget it has (integer
+branch and bound, :mod:`satassume.theories.lra.lra`, "Integrality";
+giving up on a constant, :mod:`satassume.sat.theory`) are those a fresh
+engine's same query has, whatever was asked before under the same or any
+other set: history independence by construction.  A reused theory-free
+session has another state but, having no budget, the same answers
+(``Engine._ask_shared``; ``docs/design.md``, "History independence").  The settings
 ``keep_sessions``, ``session_limit``, ``cone_search`` and
 ``cone_threshold`` of the earlier design (one reused session per set,
 replaced by a cone search when polluted) selected no code path after
@@ -1841,8 +1846,9 @@ class Engine:
     def _context_session(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
         """The session a contextual query within the budget is answered
         in, with its assumption literals: built for this query by
-        :meth:`_build_context` and discarded by the caller (nothing is
-        stored in ``_context_sessions``).  Raises ``Uninterpreted`` or
+        :meth:`_build_context` and discarded by the caller, or kept in
+        ``_shared`` if theory-free (nothing is stored in
+        ``_context_sessions``).  Raises ``Uninterpreted`` or
         ``InconsistentAssumptions`` as the construction does; both are
         functions of the set and the registry epoch, so they are memoized
         (``_failed``, ``_verdict``) and raised again without a build."""
@@ -2185,7 +2191,10 @@ class Engine:
         :meth:`_build_context`), a context-free one in a fresh session; the
         session is dropped when the query ends, so a query's answer and
         cost depend on the query, the set and the registry, never on the
-        queries before it (the module docstring).
+        queries before it (the module docstring).  The exception: a
+        theory-free session is kept for the next query about the same
+        expression under the same set and scope (``_shared``), whose answer
+        is then the fresh session's (:meth:`_ask_shared`).
         """
         if self._epoch != _EPOCH[0]:
             self._check_version()
@@ -2273,8 +2282,8 @@ class Engine:
         ``_UNSHARED`` if ``s`` has a theory once escalated.  Raises what
         the session raises; the caller then answers in a fresh session.
 
-        Why the answer is the fresh session's (issue #116's argument for
-        cone sessions, extended to a set): let F be the clauses of the
+        Why the answer is the fresh session's (PR #119's argument for the
+        cone sessions of issue #116, extended to a set): let F be the clauses of the
         set's escalated session plus the whole escalated cone of the
         expression, a function of the key (escalation compiles everything
         parked and visits every node, whatever was demanded first: see

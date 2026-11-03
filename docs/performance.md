@@ -202,6 +202,14 @@ replay.
 
 **Engine and API memos.**
 
+- A theory-free contextual session is reused by the next query about the
+  same expression under the same set and theory scope (`Engine._shared`,
+  at most `SHARED_MAX` = 4, dropped with the cones on an epoch or settings
+  change). Its answers are a fresh session's only because it has no
+  budget: `_ask_shared` must escalate before answering, a session with a
+  theory, glue or transfer must never be stored (LRA branch and bound has
+  a path-dependent budget), and a shared session that raises must fall
+  back to the fresh path. `tests/test_shared_sessions.py` plants each.
 - The answer memo (`Engine.answers`) is keyed on the SymPy objects
   `(proposition, assumptions)` and valid within one registry epoch
   (`satassume/state/epoch.py`; `Engine._check_version` drops it): every

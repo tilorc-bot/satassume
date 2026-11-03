@@ -148,28 +148,34 @@ def test_sessions_are_per_query_and_facts_persist():
 
 
 def test_contextual_queries_build_and_discard():
-    """Every contextual query builds the session of its set (one set check
-    each) and discards it: no session is kept, whatever the assumptions;
-    the set's verdict is memoized (one memo per distinct formula)."""
+    """Every contextual query about a new (set, theory scope, expression)
+    key builds the session of its set (one set check each); the next query
+    with the same key reuses that session if it is theory-free
+    (``Engine._shared``, at most ``SHARED_MAX``), and no session is kept
+    per set; the set's verdict is memoized (one memo per distinct
+    formula)."""
     eng, cache = make()
     a = P('positive', 'x')
     assert eng.ask(P('real', 'x'), a) is True
     n = eng.stats['sessions']
     assert n == 1 and eng.stats['set_checks'] == 1
-    assert eng.ask(P('nonzero', 'x'), a) is True
+    assert eng.ask(P('nonzero', 'x'), a) is True                               # same key
+    assert eng.stats['sessions'] == n and eng.stats['set_checks'] == 1
     assert eng.ask(P('real', ('add', 'x', 'x')), P('positive', 'x')) is True   # equal formula
-    assert eng.stats['sessions'] == n + 2 and eng.stats['set_checks'] == 3
+    assert eng.stats['sessions'] == n + 1 and eng.stats['set_checks'] == 2
     assert eng.ask(P('real', 'x'), P('negative', 'x')) is True                 # different assumptions
-    assert eng.stats['sessions'] == n + 3
+    assert eng.stats['sessions'] == n + 2 and eng.stats['set_checks'] == 3
     assert not eng._context_sessions
     assert len(eng._verdict) == 2
+    assert [k[2] for k in eng._shared] == ['x', ('add', 'x', 'x'), 'x']
     # the settings of the earlier reuse design were removed (#97 P7): the
-    # constructor refuses them, and the next query builds its own session
+    # constructor refuses them
     for name in ('keep_sessions', 'session_limit', 'cone_search', 'cone_threshold'):
         with pytest.raises(TypeError):
             Engine(**{name: 0})
-    assert eng.ask(P('nonzero', 'x'), a) is True
-    assert eng.stats['sessions'] == n + 4 and not eng._context_sessions
+    assert eng.ask(P('nonzero', 'x'), a) is True                               # same key again
+    assert eng.stats['sessions'] == n + 2 and eng.stats['set_checks'] == 3
+    assert not eng._context_sessions
 
 
 def test_stream_under_one_set_answers_as_a_fresh_engine():
