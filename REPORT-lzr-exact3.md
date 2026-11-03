@@ -9,9 +9,9 @@ A save almost nothing. Unallocated tvars cause about 88% of the "tvar" verdicts 
 
 ## The change
 
-`Relations._tvar_disagree` (satassume/relations.py) runs at the end of `_disagree`,
-after every other
-check. It overrides a soft LRA verdict, and the other reasons keep their counts. An active unbuilt link of `e` disagrees ("tvar") if one of the following holds:
+`Relations._tvar_disagree` (satassume/relations.py) runs at the end of `_disagree`, after
+every other check. It overrides a soft LRA verdict, and the other reasons keep their counts.
+An active unbuilt link of `e` disagrees ("tvar") if one of the following holds:
 
 * a tvar its build would source (`_apply_role`) is unallocated or false in M:
   * `IL(u)` for the LRA terms of `0 < e`, `e < 0` and `eq(e, 0)`;
