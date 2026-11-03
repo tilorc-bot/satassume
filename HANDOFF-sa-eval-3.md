@@ -16,3 +16,8 @@ Layout and the judge command: see HANDOFF-sa-eval-2.md (Layout, Judge a submissi
      then build on pareto1 + 3-tree A/B like sa-eval-2 scratchpad cy-ab.sh.
   2. Morning: final readout on a NEW unannounced fuzz seed (don't tell workers).
   Expect sa-bb-1 (LRA B&B budget, maybe a build) and sa-cy-3 (measurement cy-pxd vs 0b157b9(C) vs 9bafaa5).
+* 10:12Z combo chain running: sa-eval-3 scratchpad combo.sh (task bju5jv8em). pareto1 builds OK (18 .so each, load-checked);
+  A/B -> bench-results/ab-combo-r3 (trees base, combo-node-cy-1d6712b, combo-lra-cy-4c9cf02), log scratchpad combo-ab.log,
+  summary combo-pareto.log. Orion gates (C built) -> scratchpad judge-combo-{node,lra}-cy.log. Then write
+  evalbench/results/combo-r3.md (measurement, compare with sa-cy-2C 1.20-1.22x, a1b0285 1.05-1.09x, lrashare 1.37x HO) and report.
+  If the shell died: rerun the missing half by hand from combo.sh.
