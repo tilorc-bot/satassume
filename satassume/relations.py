@@ -1410,12 +1410,15 @@ class Relations:
             s.emit([-var, s.var("extended_real", e)])
         return False
 
-    def _order_infinite(self, var: int, sides) -> None:
+    def _order_infinite(self, var: int, sides, emit=None, lits=None) -> None:
         """Clauses 2 for the ``lt`` atom ``var`` with side forms
         ``((form_a, inf_a), (form_b, inf_b))`` (``form``: term ->
-        coefficient; ``inf``: +1/-1 for an ``oo``/``-oo`` summand, else 0)."""
-        s = self.session
-        emit = s.emit
+        coefficient; ``inf``: +1/-1 for an ``oo``/``-oo`` summand, else 0).
+        ``emit`` and ``lits`` (a term's positive_infinite, negative_infinite
+        and extended_real variables) default to the session's; the lazy
+        check passes its own to evaluate the clauses (:meth:`_inf_disagree`)."""
+        emit = emit or self.session.emit
+        lits = lits or self._inf_lits
         push = []                             # per side: (up lits, down lits, const up, const down)
         ext = []                              # -extended_real(u) for every term
         exact = True
@@ -1435,13 +1438,12 @@ class Relations:
                 if not sg:
                     exact = False             # cancels: oo - oo if infinite
                     continue
-                s.ensure(u, {"extended_real", "positive_infinite", "negative_infinite"})
-                p, n = s.var("positive_infinite", u), s.var("negative_infinite", u)
+                p, n, er = lits(u)
                 (up if sg > 0 else down).append(p)
                 (down if sg > 0 else up).append(n)
                 if u not in seen:
                     seen.add(u)
-                    ext.append(-s.var("extended_real", u))
+                    ext.append(-er)
             push.append((up, down, inf > 0, inf < 0))
         (up_a, down_a, cup_a, cdown_a), (up_b, down_b, cup_b, cdown_b) = push
         if cup_a or cdown_b:                  # a = +oo or b = -oo: nothing is below/above
@@ -1467,6 +1469,12 @@ class Relations:
         else:
             for l in up_b:
                 emit([-l] + rest)
+
+    def _inf_lits(self, u) -> tuple:
+        s = self.session
+        s.ensure(u, {"extended_real", "positive_infinite", "negative_infinite"})
+        return (s.var("positive_infinite", u), s.var("negative_infinite", u),
+                s.var("extended_real", u))
 
     def _bound(self, ad, c) -> None:
         """Assert the rational bounds of the constant term ``c`` (``pi``,
@@ -1622,6 +1630,32 @@ class Relations:
         r = th.check()
         return r is not None and r[0] is True and not th.gave_up and not th.exhausted
 
+    def _inf_disagree(self, ad, e, want, M) -> bool:
+        """Would ``M`` violate clauses 2 (:meth:`_order_infinite`) of the
+        link atoms ``0 < e`` and ``e < 0``, valued as the link makes them
+        (``want``)?  Without a node for a term, M cannot say: assume so."""
+        base, val = self.session.base, {}
+        def lits(u):
+            b = base[u]
+            P, N, F, R = (M.get(b + BASIS_INDEX[p]) for p in (
+                "extended_positive", "extended_negative", "finite", "extended_real"))
+            k = 2 + len(val)
+            val.update({k: P and not F, k + 1: N and not F, k + 2: R})
+            return k, k + 1, k + 2
+        for atom, v in want[:2]:
+            sides = ad.order_sides(sympy_atom(atom))
+            if sides is None or _own_term(sides, e):
+                continue                      # no clauses 2 (see _interpret)
+            if any(u not in base for f, _ in sides for u in f if not _is_number(u)):
+                return True
+            val.clear()
+            val[1] = bool(v)
+            out = []
+            self._order_infinite(1, sides, out.append, lits)
+            if not all(any(val[abs(l)] == (l > 0) for l in c) for c in out):
+                return True
+        return False
+
     _vctx = None
 
     @staticmethod
@@ -1729,6 +1763,8 @@ class Relations:
                     if not (er and fi):
                         real = False
                         break
+                if not real and self._inf_disagree(lra, e, want, M):
+                    return "lra_inf"
                 if real:
                     for atom, val in want:
                         pl = lra.payload(sympy_atom(atom))

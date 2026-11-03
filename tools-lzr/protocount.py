@@ -42,4 +42,5 @@ else:
 ans = ask_all(sympy_api.ask, pairs)
 print(json.dumps(dict(digest=hashlib.sha256(json.dumps(ans).encode()).hexdigest()[:16],
                       total=L, rows=ROWS), default=dict))
-json.dump(ans, open("/tmp/claude-1000/-home-tilo-dev-satassume/609d1f5c-0bec-4d50-ab36-e4366bfeb14d/scratchpad/ans-%s-%s.json" % (sys.argv[1], R.LAZY), "w"))
+import os
+json.dump(ans, open(os.path.join(os.environ.get("ANS_DIR", "."), "ans-%s-%s.json" % (sys.argv[1], R.LAZY)), "w"))
