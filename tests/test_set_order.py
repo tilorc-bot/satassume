@@ -90,6 +90,21 @@ def _rows(answer="True", clauses="c", ran_out=1, path="p"):
     return [[answer, clauses, ran_out, path], ["None", clauses, ran_out, path]]
 
 
+_NO_QUERIES = {"rows": [], "generator": "TypeError()"}      # issue #326
+_LEGS = ("off", "s2", "s3", "s2.h2")
+_ALL_LEGS = {f"strips-1.bb2.{leg}": _NO_QUERIES for leg in _LEGS}
+
+
+def _nightly(tmp_path, fault, profiles=""):
+    def leg(out, name, hashseed, args):
+        if name in fault:
+            return fault[name]
+        answer = "False" if name == "control.s2" else "True"
+        return {"rows": _rows(answer), "reordered": 0 if name.endswith(".off") else 1}
+    args = argparse.Namespace(seeds="1-1", queries=2, profiles=profiles, out=str(tmp_path), jobs=1, plant_bug=False)
+    return set_order.nightly(args, leg=leg)
+
+
 @pytest.mark.parametrize("fault, status", [
     ({}, 0),
     ({"strips-1.bb2.s2": {"rows": _rows("False"), "reordered": 1}}, 1),     # a moved answer
@@ -101,13 +116,16 @@ def _rows(answer="True", clauses="c", ran_out=1, path="p"):
     ({"control.s2": {"rows": _rows(), "reordered": 1}}, 1),                 # the control moved nothing
     ({"control.off": None}, 1),
     ({"strips-1.bb2.s2": {"rows": _rows(clauses="d", path="q"), "reordered": 1}}, 0),   # the search only
-    ({"strips-1.bb2.off": {"rows": [], "generator": "TypeError()"}}, 0),    # issue #326
+    (_ALL_LEGS, 0),                                                         # issue #326 in every leg
+    ({"strips-1.bb2.off": _NO_QUERIES}, 1),                                 # in the base only
+    ({"strips-1.bb2.s3": _NO_QUERIES}, 1),                                  # in another leg only
+    ({**_ALL_LEGS, "strips-1.bb2.s3": None}, 1),                            # and another crash beside it
 ])
 def test_what_fails_the_nightly(tmp_path, fault, status):
-    def leg(out, name, hashseed, args):
-        if name in fault:
-            return fault[name]
-        answer = "False" if name == "control.s2" else "True"
-        return {"rows": _rows(answer), "reordered": 0 if name.endswith(".off") else 1}
-    args = argparse.Namespace(seeds="1-1", queries=2, profiles="", out=str(tmp_path), jobs=1, plant_bug=False)
-    assert set_order.nightly(args, leg=leg) == status
+    assert _nightly(tmp_path, fault) == status
+
+
+def test_the_summary_counts_skipped_streams(tmp_path, capsys):
+    fault = {f"declared-1.{budget}.{leg}": _NO_QUERIES for budget in set_order.BUDGETS for leg in _LEGS}
+    assert _nightly(tmp_path, fault, profiles="declared") == 0
+    assert "; 1 stream skipped for a generator crash; ok" in capsys.readouterr().err

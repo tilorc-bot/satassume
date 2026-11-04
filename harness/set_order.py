@@ -389,8 +389,11 @@ def nightly(args, leg=_leg):
     hash seed 0.  Fails on a moved answer, and on anything that means the
     comparison showed nothing: a crashed leg, a seed that reordered no set,
     strips that no longer reach the budget, or a control that moved no answer.
-    Clause and LRA path moves are only reported.  The property is about answers
-    (docs/spec.md), and the search may move for reasons that are not bugs."""
+    A stream is skipped only where every leg stopped on the known generator
+    TypeError (issue #326); in some legs only, the legs did not ask the same
+    queries, and that fails.  Clause and LRA path moves are only reported.  The
+    property is about answers (docs/spec.md), and the search may move for
+    reasons that are not bugs."""
     os.makedirs(args.out, exist_ok=True)
     first, last = map(int, args.seeds.split("-"))
     plan = list(_plan(first, last, args.queries, args.profiles.split(",") if args.profiles else [], args.plant_bug))
@@ -404,7 +407,8 @@ def nightly(args, leg=_leg):
 
     bad = []
     totals = {"queries": 0, "answers": 0, "clauses": 0, "paths": 0}
-    planted = skipped = 0
+    planted = 0
+    skipped = set()
     for (base, _, _), others in groups:
         b = done[base]
         is_control = base.startswith("control.")
@@ -413,7 +417,11 @@ def nightly(args, leg=_leg):
             continue
         if "generator" in b:
             print(f"{base}: no queries, the generator crashed: {b['generator']}", file=sys.stderr)
-            skipped += 1
+            ran = [other for other, *_ in others if done[other] is None or "generator" not in done[other]]
+            if ran:
+                bad.append(f"{base}: {b['generator']}, but not in {ran}")
+            else:
+                skipped.add(base.split(".")[0])
             continue
         if ".normal.off" in base and base.startswith("strips-"):
             if not any(r[2] for r in b["rows"]) or not {"True", "None"} <= {r[0] for r in b["rows"]}:
@@ -444,7 +452,8 @@ def nightly(args, leg=_leg):
         print(b, file=sys.stderr)
     print(f"set order: {totals['queries']} queries compared, {totals['answers']} answers moved "
           f"(fails the job); {totals['clauses']} clause sequences and {totals['paths']} LRA paths moved "
-          f"(reported only); the planted bug moved {planted}; {skipped} skipped for a generator crash; {'FAILED' if bad else 'ok'}", file=sys.stderr)
+          f"(reported only); the planted bug moved {planted}; {len(skipped)} stream{'' if len(skipped) == 1 else 's'} skipped for a generator crash; "
+          f"{'FAILED' if bad else 'ok'}", file=sys.stderr)
     return 1 if bad else 0
 
 
