@@ -611,7 +611,7 @@ class LRATheory:
             if not self._dirty:
                 return out
             ints_on = self._ints_on
-            for v in self._dirty:
+            for v in sorted(self._dirty):
                 if self._lo[v] is None and self._up[v] is None:
                     continue
                 for a in self._atoms_on[v]:

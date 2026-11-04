@@ -186,11 +186,11 @@ def test_real_euf_with_order_stand_in():
 
 def test_sharing_bookkeeping():
     sh = EqualitySharing()
-    assert sh.update([{1, 2}, {3}]) == []
-    assert sh.update([{1, 2}, {2, 3}]) == []          # one shared term, no pair
-    assert sh.update([{1, 2, 3}, {2, 3, 1}]) == [(2, 1), (2, 3), (1, 3)]
-    assert set(sh.shared) == {1, 2, 3}
-    assert sh.update([{1, 2, 3}, {1, 2, 3}]) == []
+    assert sh.update([[1, 2], [3]]) == []
+    assert sh.update([[1, 2], [2, 3]]) == []          # one shared term, no pair
+    assert sh.update([[1, 2, 3], [2, 3, 1]]) == [(2, 1), (2, 3), (1, 3)]
+    assert sh.shared == [2, 1, 3]
+    assert sh.update([[1, 2, 3], [1, 2, 3]]) == []
 
 
 def test_theories_are_per_session(eng):
