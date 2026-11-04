@@ -1,0 +1,4 @@
+# the three functions where a dict goes into SymPy (xreplace) or a set from SymPy is asked `in`
+_rows.py:bind  # row.xreplace({a: ... for a in row.atoms(f)})
+_rows.py:constant_term  # t.xreplace({s: Constant(s.name) ...})
+limits.py:_inner  # v not in inner.free_symbols; inner.xreplace({v: Dummy})

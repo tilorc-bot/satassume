@@ -1,0 +1,13 @@
+base 12 failed, 6071 passed, 23 skipped, 18 xfailed, 4 warnings in 599.45s (0:09
+live 118 failed, 5965 passed, 23 skipped, 18 xfailed, 4 warnings in 652.33s (0:1
+liveser 114 failed, 5969 passed, 23 skipped, 18 xfailed, 1 warning in 1740.24s (0:2
+eqonly 11 failed, 6072 passed, 23 skipped, 18 xfailed, 4 warnings in 456.40s (0:07
+hashonly 105 failed, 5978 passed, 23 skipped, 18 xfailed, 4 warnings in 782.28s (0:1
+repo 76 failed, 6007 passed, 23 skipped, 18 xfailed, 4 warnings in 560.33s (0:09
+all 12 failed, 6071 passed, 23 skipped, 18 xfailed, 4 warnings in 555.94s (0:09
+allser 13 failed, 6070 passed, 23 skipped, 18 xfailed, 1 warning in 1021.11s (0:17
+allrand 12 failed, 6071 passed, 23 skipped, 18 xfailed, 4 warnings in 639.10s (0:10
+saex 873 failed, 5217 passed, 23 skipped, 11 xfailed, 4 warnings in 573.62s (0:0
+sax3 65 failed, 6018 passed, 23 skipped, 18 xfailed, 4 warnings in 394.18s (0:06
+repox3 28 failed, 6055 passed, 23 skipped, 18 xfailed, 4 warnings in 385.19s (0:06
+shadow 11 failed, 6072 passed, 23 skipped, 18 xfailed, 4 warnings in 531.47s (0:08

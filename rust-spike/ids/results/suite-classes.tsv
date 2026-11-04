@@ -1,0 +1,117 @@
+class	live failed in	test
+real: int vs Integer key	both	tests.test_add_rows::test_the_pattern_keys_are_legacys
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_beta_functions_rows::test_a_function_whose_constructor_takes_no_evaluate_is_bound
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_beta_functions_rows::test_rows_of_several_numbers_of_arguments_compile_for_each
+artifact: container crosses test/satassume	both	tests.test_euf_adapter::test_term_interning_and_shared_terms
+artifact: container crosses test/satassume	both	tests.test_extended_order::test_order_sides[Q.lt(-oo, x)-(({}, -1), ({x: Fraction(1, 1)}, 0))]
+artifact: container crosses test/satassume	both	tests.test_extended_order::test_order_sides[Q.lt(-x, pi)-(({x: Fraction(-1, 1)}, 0), ({}, 0))]
+artifact: container crosses test/satassume	both	tests.test_extended_order::test_order_sides[Q.lt(2*x + 2*y, y - oo)-(({x: Fraction(2, 1), y: Fraction(2, 1)}, 0), ({y: Fraction(1, 1)}, -1))]
+artifact: container crosses test/satassume	both	tests.test_extended_order::test_order_sides[Q.lt(pi*x, 1)-(({x: Element(pi)}, 0), ({}, 0))]
+artifact: container crosses test/satassume	both	tests.test_extended_order::test_order_sides[Q.lt(x + oo, 2*y - 1)-(({x: Fraction(1, 1)}, 1), ({y: Fraction(2, 1)}, 0))]
+artifact: container crosses test/satassume	both	tests.test_extended_order::test_order_sides[Q.lt(x, oo)-(({x: Fraction(1, 1)}, 0), ({}, 1))]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_integer_funcs_rows::test_a_base_class_is_bound_unevaluated
+artifact: container crosses test/satassume	both	tests.test_lazy_atoms::test_memo_caches_the_answer_only
+artifact: container crosses test/satassume	both	tests.test_memos::test_number_basis_memo_follows_settings_and_epoch
+artifact: container crosses test/satassume	both	tests.test_memos::test_process_memos_registered_and_cleared
+artifact: container crosses test/satassume	both	tests.test_mul_rows::test_the_pattern_keys_are_legacys
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_notmpl_limits::test_bound_variable_context
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_notmpl_limits::test_declared_assumptions_of_the_bound_symbol
+artifact: container crosses test/satassume	serial only	tests.test_notmpl_limits::test_reproducers[expr8-finite-True]
+artifact: container crosses test/satassume	both	tests.test_ref::test_theory_scope_by_syntax
+artifact: container crosses test/satassume	both	tests.test_ref::test_zero_under_an_application_is_an_equality[T1-transfer-congruent-application]
+artifact: container crosses test/satassume	both	tests.test_ref::test_zero_under_an_application_is_an_equality[T2-transfer-raise]
+artifact: container crosses test/satassume	both	tests.test_ref::test_zero_under_an_application_is_an_equality[T4-transfer-two-zero-terms]
+artifact: container crosses test/satassume	both	tests.test_ref::test_zero_under_an_application_is_an_equality[T5-transfer-add-congruence]
+artifact: container crosses test/satassume	both	tests.test_ref::test_zero_under_an_application_is_an_equality[query-twin]
+artifact: container crosses test/satassume	both	tests.test_ref::test_zero_under_an_application_is_an_equality[set-twin-nested]
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_answer_memo_and_splits_are_keyed_on_the_registry
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_assigning_the_same_setting_clears_nothing[discovery_budget]
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_assigning_the_same_setting_clears_nothing[relevance]
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_assigning_the_same_setting_clears_nothing[templates]
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_assigning_the_same_setting_clears_nothing[transfer]
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_assigning_the_same_setting_clears_nothing[uninterpreted]
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_assigning_the_same_setting_clears_nothing[writeback]
+artifact: container crosses test/satassume	both	tests.test_registry_versioning::test_shared_cache_created_before_a_registration
+artifact: container crosses test/satassume	xdist only	tests.test_registry_versioning::test_splits_are_keyed_on_the_registry
+artifact: container crosses test/satassume	both	tests.test_relevance::test_closed_term_keys
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c0]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c10]
+artifact: container crosses test/satassume	xdist only	tests.test_relevance::test_unkeyed_constants_are_decided[c11]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c12]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c13]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c14]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c16]
+artifact: container crosses test/satassume	serial only	tests.test_relevance::test_unkeyed_constants_are_decided[c17]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c18]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c19]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c1]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c20]
+artifact: container crosses test/satassume	xdist only	tests.test_relevance::test_unkeyed_constants_are_decided[c2]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c3]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c4]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c5]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c6]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c7]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c8]
+artifact: container crosses test/satassume	both	tests.test_relevance::test_unkeyed_constants_are_decided[c9]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c0-True]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c1-True]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c2-True]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c3-True]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c4-True]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c5-False]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c6-False]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c7-False]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_coefficient_is_argument_0_when_it_is_a_number[c8-False]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_rows_that_do_not_compile[Mul-<lambda>-coefficient is argument 0]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_rows_that_do_not_compile[Pow-<lambda>-coefficient is argument 0]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_rows_without_a_star_stay_positional
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_nary::test_the_template_of_any_arity
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_function_of_a_symbol_gives_its_argument_a_slot
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_node_of_another_function_is_left_unbound
+artifact: container crosses test/satassume	serial only	tests.test_rows_shapes::test_a_number_first
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_number_in_the_node_is_a_shape[-1--1]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_number_in_the_node_is_a_shape[1-1]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_number_in_the_node_is_a_shape[arg2-E]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_number_in_the_node_is_a_shape[arg3-I]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_number_in_the_node_is_a_shape[arg4--I]
+artifact: container crosses test/satassume	both	tests.test_rows_shapes::test_a_number_in_the_node_is_a_shape[arg5-1/2]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_repeated_symbol_is_the_slot_of_its_first_argument
+artifact: container crosses satassume/SymPy (3 named functions)	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit0-2*number-pred0]
+artifact: container crosses satassume/SymPy (3 named functions)	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit1-number/2-pred1]
+artifact: container crosses test/satassume	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit2-1/number-pred2]
+artifact: container crosses test/satassume	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit3-Abs(number)-pred3]
+artifact: container crosses test/satassume	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit4-Abs(number) - 1-pred4]
+artifact: container crosses test/satassume	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit5-Abs(number) - 1-pred5]
+artifact: container crosses test/satassume	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit6-Abs(number) - 2-pred6]
+artifact: container crosses test/satassume	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit7-number - 2-pred7]
+artifact: container crosses test/satassume	xdist only	tests.test_rows_shapes::test_a_term_of_the_constant_is_a_slot_of_its_own[lit8-Abs(number) - 1-pred8]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_a_value_equality_is_an_equivalence_for_each_value_predicate
+artifact: container crosses satassume/SymPy (3 named functions)	serial only	tests.test_rows_shapes::test_k_times_an_argument_is_a_term
+artifact: container crosses satassume/SymPy (3 named functions)	serial only	tests.test_rows_shapes::test_rows_without_a_shape_compile_as_before
+artifact: container crosses satassume/SymPy (3 named functions)	serial only	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row13-more than one argument]
+artifact: container crosses satassume/SymPy (3 named functions)	serial only	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row14-not a function of a plain Symbol]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row15-not a function of a plain Symbol]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row16-plain Symbol]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row17-not distinct]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row18-not distinct]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row19-not an exact number]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row22-does not equate the node with an argument]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row23-more than one argument]
+artifact: container crosses satassume/SymPy (3 named functions)	serial only	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row6-constant variable number is not an argument]
+artifact: container crosses satassume/SymPy (3 named functions)	serial only	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row7-constant variable number is not an argument]
+artifact: container crosses test/satassume	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row8-no argument but the constant]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_shapes_and_terms_that_do_not_compile[row9-no argument but the constant]
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_the_constant_variable_and_literals_about_it
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_the_terms_of_a_row_are_in_their_order
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_rows_shapes::test_wiring_refuses_a_generator_with_shapes
+artifact: container crosses test/satassume	both	tests.test_scope::test_glue_and_transfer_exist_from_construction
+artifact: container crosses test/satassume	both	tests.test_scope::test_glue_from_a_relation_atom_on_either_side
+artifact: container crosses test/satassume	both	tests.test_scope::test_glue_from_a_sign_on_sum_pair_across_both_formulas
+artifact: container crosses test/satassume	both	tests.test_scope::test_linked_terms_are_arguments_and_sides_without_numbers
+artifact: container crosses test/satassume	both	tests.test_scope::test_transfer_from_an_equality_or_a_trichotomy_pair
+artifact: container crosses test/satassume	both	tests.test_selection_rows::test_the_pattern_keys_are_those_before_the_rows
+artifact: container crosses test/satassume	both	tests.test_switched_glue::test_set_glue_at_the_root
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_totality::test_provenance_covers_every_clause_of_the_mul_rows
+artifact: container crosses satassume/SymPy (3 named functions)	both	tests.test_trig_rows::test_for_all_states_rows_for_each_function
+artifact: wall-clock limit, wrappers	xdist only	tests.test_wide_derived::test_wide_derived_or_against_or_is_fast[or-or]
