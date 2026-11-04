@@ -7,7 +7,7 @@ no backend recommendation. Above 100k context, hand off before a wait likely ove
 ## Item 1 done: every failure classed (rust-spike/ids/results/suite-classes.tsv, per test; suite-rungs.txt, one line per run)
 New tools: ids_core install(mode, scope, exempt), IDS_RANDOM=seed (random 61-bit hash per id), suite.sh NAME ENV=..., classify.py, classes.py. XML/logs in ~/sa-rust-ids-work/suite-*.
 Base: 12 failed under load (11 plus test_performance_smoke_300_vars, a timing test), same 11 otherwise. Live failure beyond base: serial 103, xdist 107, both 94, union 116.
-gen-8's 112 were one more run of that; check below whether all are in the union.
+gen-8's 112 were one more run of that: its list gives 111 distinct names once cut at ' - ' (a parameter holds that string, so one pair may collapse), and all 111 are in the union.
 eqonly: 0 beyond base. So == by ids breaks nothing in the suite; all failures are hash.
 hashonly: 93 of the union, no new ones.
 Classes of the union 116, 0 unexplained:
