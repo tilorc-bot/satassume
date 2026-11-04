@@ -14,7 +14,8 @@ that (an unchanged set keeps its order, and two equal sets may agree), so a
 query's order does not depend on earlier queries and one query reproduces
 alone.  Ties in ``hash`` keep the table's order (-1 and -2 have one hash).
 
-Sets inside SymPy are out of reach; vary ``PYTHONHASHSEED`` for those.
+Sets inside SymPy are out of reach; vary ``PYTHONHASHSEED`` for those.  A
+loop reads a snapshot, so it hides a set changed during its own iteration.
 
     PYTHONHASHSEED=0 python -m harness.set_order run OUT.json --seed 1 \\
         --stream 0:200:5 [--branch-budget 2] [--discovery-budget 50] \\
@@ -48,6 +49,8 @@ SEED = None     # None: leave the order alone
 ONLY = None     # None: every site
 #: site -> [iterations of a set, of a set with two or more elements, largest size]
 CENSUS = {}
+#: how many times a seed really changed an order
+REORDERED = 0
 
 
 def _order(x, site):
@@ -60,14 +63,20 @@ def _order(x, site):
     c[2] = max(c[2], n)
     if SEED is None or n < 2 or (ONLY is not None and site not in ONLY):
         return x
+    global REORDERED
     salt = hash((SEED, frozenset(x)))
-    return sorted(x, key=lambda e: hash((salt, e)))
+    out = sorted(x, key=lambda e: hash((salt, e)))
+    REORDERED += out != list(x)
+    return out
 
 
 def _pop(x, site):
     if not isinstance(x, set) or not x:
         return x.pop()
-    e = next(iter(_order(x, site)))
+    o = _order(x, site)
+    if o is x:
+        return x.pop()
+    e = o[0]
     x.remove(e)
     return e
 
@@ -120,9 +129,12 @@ class _Rewrite(ast.NodeTransformer):
         name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
         if name == "pop" and isinstance(f, ast.Attribute) and not node.args and not node.keywords:
             return self._call("__set_pop__", f.value)
-        if name in READERS:
-            node.args = [a if isinstance(a, ast.Starred) else self._call("__set_order__", a)
-                         for a in node.args]
+        if name in READERS and not (name in ("min", "max") and len(node.args) > 1):
+            # fromkeys's value and reduce's function and initial value are not read in order
+            first, last = {"fromkeys": (0, 1), "reduce": (1, 2)}.get(name, (0, len(node.args)))
+            node.args = [a if isinstance(a, ast.Starred) or not first <= i < last
+                         else self._call("__set_order__", a)
+                         for i, a in enumerate(node.args)]
         return node
 
 
@@ -135,7 +147,7 @@ def rewrite(source, path, label):
 class _Loader(importlib.machinery.SourceFileLoader):
     def get_code(self, fullname):       # no .pyc is read or written
         path = self.get_filename(fullname)
-        label = path.split(os.sep + "satassume" + os.sep)[-1].replace(os.sep, "/")
+        label = path.rsplit(os.sep + "satassume" + os.sep, 1)[-1].replace(os.sep, "/")
         return rewrite(self.get_data(path), path, label)
 
 
@@ -262,14 +274,17 @@ def run(args):
         execute(random_stream(int(seed), int(queries), int(sets), **opts), cfg, ReferenceLevel.NONE,
                 engine=eng, on_row=lambda r: rows.append(trace.row(r.warm)))
     with open(args.out, "w") as f:
-        json.dump({"rows": rows, "census": CENSUS}, f)
+        json.dump({"rows": rows, "census": CENSUS, "reordered": REORDERED}, f)
+    unseen = (ONLY or set()) - CENSUS.keys()
+    if unseen:
+        raise SystemExit(f"--only sites that never iterated a set: {sorted(unseen)}")
     return 0
 
 
 def moved(base, other):
     """Indices whose answer differs, and how many clause sequences and LRA paths do."""
     a, b = base["rows"], other["rows"]
-    if len(a) != len(b):
+    if not a or len(a) != len(b):
         raise ValueError(f"{len(a)} queries against {len(b)}")
     return ([i for i, (x, y) in enumerate(zip(a, b)) if x[0] != y[0]],
             sum(x[1] != y[1] for x, y in zip(a, b)),

@@ -69,7 +69,9 @@ def test_answers_do_not_move(tmp_path, what):
     for seed in ("1", "2"):
         other = _run(tmp_path, seed, "--seed", seed, *what)
         assert set_order.moved(base, other)[0] == []
-    assert base["census"]                   # the hook saw sets
+        assert other["reordered"] > 0
+    assert any(not r[0].startswith("Error") for r in base["rows"])
+    assert base["reordered"] == 0           # no seed, no change
     if what[1].startswith("harness"):       # and the comparison was not vacuous
         assert any(r[2] for r in base["rows"])
         assert {r[0] for r in base["rows"]} >= {"True", "None"}
