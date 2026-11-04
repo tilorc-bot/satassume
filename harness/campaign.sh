@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The nightly history-independence campaign, one shard per call
-# (the workflow .github/workflows/history-fuzz.yml runs the four shards
+# (the workflow .github/workflows/history-fuzz.yml runs the five shards
 # in parallel).
 #
-#   harness/campaign.sh tests|base|profiles|audit|all
+#   harness/campaign.sh tests|base|profiles|audit|order|all
 #
 # Run from the repository root.  Size and seeds come from the environment:
 #
@@ -18,7 +18,9 @@
 # At SEEDS=8 a shard takes 3-20 minutes (base is the longest); the cost
 # is linear in SEEDS.  Exit status 1 if a discrepancy of an undocumented
 # family was found (--fail-on unknown); discrepancies of the known
-# families are written as repros but do not fail.
+# families are written as repros but do not fail.  The order shard takes
+# two corpus seeds whatever SEEDS is, and has its own exit status (issue
+# #325, `nightly` in harness/set_order.py): any moved answer fails it.
 set -u
 SHARD=${1:-all}
 SEEDS=${SEEDS:-8}
@@ -78,6 +80,19 @@ if [ "$SHARD" = audit ] || [ "$SHARD" = all ]; then
                             --hashseeds 0,1,2,42 --queries "$HALF" --sets 4 --config default
 fi
 
+if [ "$SHARD" = order ] || [ "$SHARD" = all ]; then
+    echo "::group::set order"
+    t0=$SECONDS
+    "$PYTHON" -m harness.set_order nightly --seeds "$SEED_OFFSET-$((SEED_OFFSET + 1))" \
+        --queries 200 --out "$OUT/set-order" \
+        > "$OUT/logs/set-order.jsonl" 2> "$OUT/logs/set-order.err"
+    rc=$?
+    cat "$OUT/logs/set-order.err"
+    echo "::endgroup::"
+    echo "set-order: exit $rc, $((SECONDS - t0)) s"
+    [ $rc -ne 0 ] && status=1
+fi
+
 # a summary: families per run (markdown, for $GITHUB_STEP_SUMMARY)
 "$PYTHON" - "$OUT/logs" > "$OUT/summary.md" <<'EOF'
 import glob, json, os, sys
@@ -102,6 +117,7 @@ for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.jsonl"))):
                      for f, c in sorted(fams.items()))
     print(f"| {os.path.basename(path)[:-6]} | {n} | {q} | {sum(fams.values())} | {cell or '-'} |")
 EOF
+[ -s "$OUT/logs/set-order.err" ] && { echo; tail -n 1 "$OUT/logs/set-order.err"; } >> "$OUT/summary.md"
 cat "$OUT/summary.md"
 [ -n "${GITHUB_STEP_SUMMARY:-}" ] && { echo "### History campaign: $SHARD (seeds $R)"; cat "$OUT/summary.md"; } >> "$GITHUB_STEP_SUMMARY"
 exit $status

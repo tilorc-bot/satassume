@@ -1,6 +1,8 @@
 """Answers don't depend on the order satassume iterates sets in (issue #325):
 the seeded order of harness/set_order.py, at the normal budget and a low one,
-on a stream and on queries built to sit near the budget."""
+on a stream and on queries built to sit near the budget.  This is the small
+version; the order shard of harness/campaign.sh runs the large one."""
+import argparse
 import builtins
 import json
 import os
@@ -66,13 +68,46 @@ def _run(tmp_path, name, *args):
 ])
 def test_answers_do_not_move(tmp_path, what):
     base = _run(tmp_path, "off", *what)
-    for seed in ("1", "2"):
-        other = _run(tmp_path, seed, "--seed", seed, *what)
-        assert set_order.moved(base, other)[0] == []
-        assert other["reordered"] > 0
+    other = _run(tmp_path, "1", "--seed", "1", *what)
+    assert set_order.moved(base, other)[0] == []
+    assert other["reordered"] > 0
     assert any(not r[0].startswith("Error") for r in base["rows"])
     assert base["reordered"] == 0           # no seed, no change
     if what[1].startswith("harness"):       # and the comparison was not vacuous
         assert any(r[2] for r in base["rows"])
         assert {r[0] for r in base["rows"]} >= {"True", "None"}
         assert any(k.startswith("theories/lra/lra.py:") and c[1] for k, c in base["census"].items())
+
+
+def test_the_comparison_can_fail(tmp_path):
+    what = ("--pairs", "harness.set_order:strips:0:100", "--plant-bug")
+    base, other = _run(tmp_path, "off", *what), _run(tmp_path, "1", "--seed", "1", *what)
+    assert set_order.moved(base, other)[0]
+    assert "plant:4" in base["census"]
+
+
+def _rows(answer="True", clauses="c", ran_out=1, path="p"):
+    return [[answer, clauses, ran_out, path], ["None", clauses, ran_out, path]]
+
+
+@pytest.mark.parametrize("fault, status", [
+    ({}, 0),
+    ({"strips-1.bb2.s2": {"rows": _rows("False"), "reordered": 1}}, 1),     # a moved answer
+    ({"strips-1.normal.s2.h2": {"rows": _rows("None"), "reordered": 1}}, 1),
+    ({"strips-1.db25.s2": None}, 1),                                        # a crashed leg
+    ({"strips-1.bb2.off": None}, 1),
+    ({"strips-1.normal.s2": {"rows": _rows(), "reordered": 0}}, 1),         # no reordering
+    ({"strips-1.normal.off": {"rows": _rows(ran_out=0), "reordered": 0}}, 1),   # no budget hit
+    ({"control.s2": {"rows": _rows(), "reordered": 1}}, 1),                 # the control moved nothing
+    ({"control.off": None}, 1),
+    ({"strips-1.bb2.s2": {"rows": _rows(clauses="d", path="q"), "reordered": 1}}, 0),   # the search only
+    ({"strips-1.bb2.off": {"rows": [], "generator": "TypeError()"}}, 0),    # issue #326
+])
+def test_what_fails_the_nightly(tmp_path, fault, status):
+    def leg(out, name, hashseed, args):
+        if name in fault:
+            return fault[name]
+        answer = "False" if name == "control.s2" else "True"
+        return {"rows": _rows(answer), "reordered": 0 if name.endswith(".off") else 1}
+    args = argparse.Namespace(seeds="1-1", queries=2, profiles="", out=str(tmp_path), jobs=1, plant_bug=False)
+    assert set_order.nightly(args, leg=leg) == status

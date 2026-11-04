@@ -12,30 +12,37 @@ search can see, and it counts them per source line.
 The order is a function of the seed and the set's contents.  Python allows
 that (an unchanged set keeps its order, and two equal sets may agree), so a
 query's order does not depend on earlier queries and one query reproduces
-alone.  Ties in ``hash`` keep the table's order (-1 and -2 have one hash).
+alone, under one ``PYTHONHASHSEED`` and with no ``Dummy`` in the set (SymPy
+gives a ``Dummy`` a hash that differs from run to run).  Ties in ``hash`` keep
+the table's order (-1 and -2 have one hash).
 
 Sets inside SymPy are out of reach; vary ``PYTHONHASHSEED`` for those.  A
 loop reads a snapshot, so it hides a set changed during its own iteration.
 
     PYTHONHASHSEED=0 python -m harness.set_order run OUT.json --seed 1 \\
         --stream 0:200:5 [--branch-budget 2] [--discovery-budget 50] \\
-        [--only engine.py:1713,theories/lra/lra.py:614]
+        [--only FILE:LINE,FILE:LINE] [--plant-bug]
     python -m harness.set_order compare BASE.json OTHER.json ...
+    python -m harness.set_order nightly --seeds 0-1 --queries 200 --out DIR
 
 ``run`` without ``--seed`` installs the hook with the order untouched.
 ``--pairs MODULE:FUNCTION[:ARG...]`` replaces ``--stream`` by a function
 returning ``(proposition, assumptions)`` pairs; :func:`strips` is one built to
-sit near ``BRANCH_BUDGET``.
+sit near ``BRANCH_BUDGET``.  ``--plant-bug`` adds the bug :func:`_plant`
+describes, the control of ``nightly``, which is what the nightly campaign runs
+(harness/campaign.sh).
 """
 import argparse
 import ast
 import builtins
+import concurrent.futures
 import hashlib
 import importlib
 import importlib.machinery
 import json
 import os
 import random
+import subprocess
 import sys
 
 #: callables that read an argument in iteration order, by last name
@@ -242,10 +249,39 @@ def strips(seed, n=400):
     return out
 
 
+_PLANT = """
+def plant(theory, budget):
+    literals = {lit for *_, lit in theory._int_lits}
+    for literal in literals:
+        if literal != min(literals):
+            budget[0] = 0
+        break
+"""
+
+
+def _plant():
+    """A bug of the kind this module looks for, so that ``nightly`` can show it
+    is able to fail: whether branch and bound gets its budget depends on which
+    element of a set iterates first.  That is the path of issue #325, where a
+    definite answer becomes None.  It goes through :func:`rewrite` and uses no
+    site of satassume, so no fix to one can remove it."""
+    from satassume.theories.lra import lra
+    env = {}
+    exec(rewrite(_PLANT, "<plant>", "plant"), env)
+    branch = lra.LRATheory._branch
+
+    def _branch(t, budget):
+        env["plant"](t, budget)
+        return branch(t, budget)
+    lra.LRATheory._branch = _branch
+
+
 def run(args):
     install(args.seed, set(args.only.split(",")) if args.only else None)
     from satassume import sympy_api
     from satassume.theories.lra import lra
+    if args.plant_bug:
+        _plant()
     trace = _Trace()
     if args.branch_budget is not None:
         lra.BRANCH_BUDGET = args.branch_budget
@@ -271,7 +307,13 @@ def run(args):
         if args.discovery_budget is not None:
             eng.discovery_budget = args.discovery_budget
         rows = []
-        execute(random_stream(int(seed), int(queries), int(sets), **opts), cfg, ReferenceLevel.NONE,
+        try:
+            stream = random_stream(int(seed), int(queries), int(sets), **opts)
+        except Exception as e:      # before any query (issue #326)
+            with open(args.out, "w") as f:
+                json.dump({"rows": [], "generator": repr(e)}, f)
+            return 0
+        execute(stream, cfg, ReferenceLevel.NONE,
                 engine=eng, on_row=lambda r: rows.append(trace.row(r.warm)))
     with open(args.out, "w") as f:
         json.dump({"rows": rows, "census": CENSUS, "reordered": REORDERED}, f)
@@ -306,6 +348,103 @@ def compare(args):
     return 1 if bad else 0
 
 
+#: the budgets of a nightly comparison, as arguments of ``run``
+BUDGETS = {"normal": [], "bb2": ["--branch-budget", "2"], "db25": ["--discovery-budget", "25"]}
+
+
+def _plan(first, last, queries, profiles, plant):
+    """``(base leg, other legs)`` per corpus and budget; a leg is ``(name, hash
+    seed, arguments of run)``.  Shuffle and hash seeds move with the corpus."""
+    extra = ["--plant-bug"] if plant else []
+    for s in range(first, last + 1):
+        corpora = {f"strips-{s}": ["--pairs", f"harness.set_order:strips:{s}:{queries}"]}
+        corpora.update({f"{p}-{s}": ["--stream", f"{s}:{queries}:5:{p}"] for p in profiles})
+        for corpus, what in corpora.items():
+            for budget, limit in BUDGETS.items():
+                name, args = f"{corpus}.{budget}", what + limit + extra
+                h = (1, 2, 42)[s % 3]
+                yield ((f"{name}.off", 0, args),
+                       [(f"{name}.s{s + 1}", 0, ["--seed", str(s + 1), *args]),
+                        (f"{name}.s{s + 2}", 0, ["--seed", str(s + 2), *args]),
+                        (f"{name}.s{s + 1}.h{h}", h, ["--seed", str(s + 1), *args])])
+
+
+def _leg(out, name, hashseed, args):
+    """One leg in a fresh interpreter: what ``run`` wrote, or None if it crashed."""
+    path = os.path.join(out, name + ".json")
+    cmd = [sys.executable, "-m", "harness.set_order", "run", path, *args]
+    r = subprocess.run(cmd, env=dict(os.environ, PYTHONHASHSEED=str(hashseed)),
+                       capture_output=True, text=True)
+    if r.returncode:
+        print(f"{name}: exit {r.returncode}\n{r.stderr[-2000:]}", file=sys.stderr)
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def nightly(args, leg=_leg):
+    """Every corpus and budget, against the same one with the shuffle off and
+    hash seed 0.  Fails on a moved answer, and on anything that means the
+    comparison showed nothing: a crashed leg, a seed that reordered no set,
+    strips that no longer reach the budget, or a control that moved no answer.
+    Clause and LRA path moves are only reported.  The property is about answers
+    (docs/spec.md), and the search may move for reasons that are not bugs."""
+    os.makedirs(args.out, exist_ok=True)
+    first, last = map(int, args.seeds.split("-"))
+    plan = list(_plan(first, last, args.queries, args.profiles.split(",") if args.profiles else [], args.plant_bug))
+    strips = f"harness.set_order:strips:{first}:{args.queries}"
+    control = (("control.off", 0, ["--pairs", strips, "--plant-bug"]),
+               [(f"control.s{first + 1}", 0, ["--seed", str(first + 1), "--pairs", strips, "--plant-bug"])])
+    groups = plan + [control]
+    legs = [lg for base, others in groups for lg in (base, *others)]
+    with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
+        done = dict(zip((lg[0] for lg in legs), pool.map(lambda lg: leg(args.out, *lg), legs)))
+
+    bad = []
+    totals = {"queries": 0, "answers": 0, "clauses": 0, "paths": 0}
+    planted = 0
+    for (base, _, _), others in groups:
+        b = done[base]
+        is_control = base.startswith("control.")
+        if b is None:
+            bad.append(f"{base} crashed")
+            continue
+        if "generator" in b:
+            print(f"{base}: no queries, the generator crashed: {b['generator']}", file=sys.stderr)
+            continue
+        if ".normal.off" in base and base.startswith("strips-"):
+            if not any(r[2] for r in b["rows"]) or not {"True", "None"} <= {r[0] for r in b["rows"]}:
+                bad.append(f"{base}: strips no longer reach the budget")
+        for other, *_ in others:
+            o = done[other]
+            if o is None or "generator" in o:
+                bad.append(f"{other} {'crashed' if o is None else o['generator']}")
+                continue
+            m, clauses, paths = moved(b, o)
+            if is_control:
+                planted = len(m)
+            else:
+                totals["queries"] += len(o["rows"])
+                totals["answers"] += len(m)
+                totals["clauses"] += clauses
+                totals["paths"] += paths
+                if m:
+                    bad.append(f"{other} moved answers of {base}: {m[:20]}")
+                if not o["reordered"]:
+                    bad.append(f"{other}: the seed reordered no set")
+            print(json.dumps({"source": other, "control": is_control, "queries": len(o["rows"]),
+                              "moved": m, "clause_moves": clauses, "lra_path_moves": paths,
+                              "families": [] if is_control else ["set-order-answer"] * len(m)}))
+    if not planted:
+        bad.append("the planted bug moved no answer: this comparison cannot fail")
+    for b in bad:
+        print(b, file=sys.stderr)
+    print(f"set order: {totals['queries']} queries compared, {totals['answers']} answers moved "
+          f"(fails the job); {totals['clauses']} clause sequences and {totals['paths']} LRA paths moved "
+          f"(reported only); the planted bug moved {planted}; {'FAILED' if bad else 'ok'}", file=sys.stderr)
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser(prog="harness.set_order")
     sub = ap.add_subparsers(required=True)
@@ -315,6 +454,7 @@ def main():
     p.add_argument("--only")
     p.add_argument("--branch-budget", type=int)
     p.add_argument("--discovery-budget", type=int)
+    p.add_argument("--plant-bug", action="store_true")
     what = p.add_mutually_exclusive_group(required=True)
     what.add_argument("--pairs")
     what.add_argument("--stream")
@@ -323,6 +463,14 @@ def main():
     p.add_argument("base")
     p.add_argument("others", nargs="+")
     p.set_defaults(fn=compare)
+    p = sub.add_parser("nightly")
+    p.add_argument("--seeds", required=True, help="first-last corpus seed")
+    p.add_argument("--queries", type=int, default=200)
+    p.add_argument("--profiles", default="base,related,declared,deep,links")
+    p.add_argument("--out", required=True)
+    p.add_argument("--jobs", type=int, default=os.cpu_count())
+    p.add_argument("--plant-bug", action="store_true", help="in every leg, to see the job fail")
+    p.set_defaults(fn=nightly)
     args = ap.parse_args()
     return args.fn(args)
 
