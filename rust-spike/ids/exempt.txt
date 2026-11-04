@@ -1,0 +1,19 @@
+_rows.py:_of_constant  # free_symbols:613
+_rows.py:_of_constant_only  # free_symbols:602
+_rows.py:_relation  # free_symbols:686
+_rows.py:_schema  # atoms:871 atoms:873
+_rows.py:_shift  # as_independent:632 free_symbols:632
+_rows.py:_specs  # atoms:504
+_rows.py:bind  # atoms:362 xreplace:362
+_rows.py:compile_rows  # atoms:413
+_rows.py:constant_term  # free_symbols:482 xreplace:482
+_rows.py:for_all  # atoms:333
+constfield.py:_from_sympy  # free_symbols:1386
+limits.py:_inner  # free_symbols:88 xreplace:92
+lra_adapter.py:LRAAdapter.register_bounds  # free_symbols:535
+lra_adapter.py:_lin  # free_symbols:185 free_symbols:197
+relations.py:_under_apps  # atoms:584
+scope.py:affine_pair  # free_symbols:141
+sympy_api.py:_closed_keys  # atoms:742
+sympy_api.py:check_strict  # atoms:192
+sympy_api.py:is_constant_proposition  # free_symbols:553

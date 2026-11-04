@@ -72,6 +72,13 @@ def wrap(cls):
             note("eq", type(self).__name__, type(other).__name__)
             return oe(self, other)
         cls.__eq__ = __eq__
+    if "__ne__" in d:
+        one = d["__ne__"]
+
+        def __ne__(self, other, one=one):
+            note("ne", type(self).__name__, type(other).__name__)
+            return one(self, other)
+        cls.__ne__ = __ne__
 
 
 seen = set()

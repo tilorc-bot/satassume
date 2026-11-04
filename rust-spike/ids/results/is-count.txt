@@ -1,0 +1,42 @@
+{'None': 627, 'type/constant': 169, 'object identity': 74, 'bool': 68, 'sympy singleton': 30} total 968
+sympy singleton [('knowledge/templates/core.py', 9), ('relations.py', 8), ('theories/lra/lra_adapter.py', 3), ('knowledge/templates/wiring.py', 2), ('theories/lra/lra_bounds.py', 2), ('theories/lra/constfield.py', 2), ('knowledge/domain.py', 1), ('knowledge/templates/functions.py', 1), ('knowledge/templates/__init__.py', 1), ('knowledge/templates/special.py', 1)]
+sympy_api.py:966: f is a
+sympy_api.py:477: r is _MISS
+sympy_api.py:1106: eng.verdict(g) is _INCONSISTENT
+sympy_api.py:580: f is assumptions
+sympy_api.py:885: k is _OPAQUE
+sympy_api.py:587: r is _MISS
+sympy_api.py:701: b is _S.Pi
+sympy_api.py:701: b is _S.Exp1
+relations.py:1134: b is inf
+relations.py:1174: lk.get(atom) is lk.get(rev)
+relations.py:1270: lst[-1] is g
+relations.py:1136: a is inf
+relations.py:1639: o is node
+_compat.py:224: module.__dict__.get('__loader__') is self
+_compat.py:222: spec.loader is self
+_compat.py:249: finder is self
+engine.py:1217: g is atoms
+engine.py:1426: ext is self._extensions
+engine.py:1523: value is self._templates
+engine.py:2320: r[0] is clauses
+engine.py:1700: o is d
+knowledge/rules.py:336: hit[0] is clauses
+knowledge/domain.py:278: getattr(sys.modules.get(cls.__module__), name, None) is cls
+knowledge/domain.py:104: v is _MISSING
+knowledge/templates/wiring.py:310: b is e
+knowledge/templates/wiring.py:464: const_value(Integer(len(rest)), p) is s
+knowledge/templates/wiring.py:514: const_value(Integer(len(args)), p) is s
+knowledge/templates/wiring.py:210: a is args[s[1]]
+knowledge/templates/wiring.py:524: const_value(c, sp) is ss
+knowledge/templates/wiring.py:522: const_value(c, p) is s
+knowledge/templates/__init__.py:159: b is c
+knowledge/templates/_rows.py:689: pos is sign
+knowledge/templates/_rows.py:550: s is node
+knowledge/templates/_rows.py:684: pos is sign
+knowledge/templates/_rows.py:687: pos is sign
+knowledge/templates/_rows.py:758: s is a
+knowledge/templates/_rows.py:972: m[abs(l) - 1] is l > 0
+knowledge/templates/_common.py:109: v is lit[2]
+sat/solver.py:369: hit[0] is block
+sat/solver.py:2185: confl.__class__ is int

@@ -4,12 +4,19 @@ install(mode):
   shadow  sites get the original result; the id result is computed too and every disagreement is logged.
   eqonly  == from satassume frames answered by ids; hash stays the real SymPy hash (so set order is unchanged).
   live    hash and == from satassume frames answered by ids; SymPy's own frames keep the real hash and ==.
+  hashonly hash from satassume frames answered by ids; == stays the real SymPy == (the complement of eqonly).
+install(mode, scope) says which frames count as sites:
+  sa       satassume/ and generated dataclass code (<string>): what every mode above means by "satassume frames".
+  repo     also tests/, tools/, harness/: a dict built by a test uses the same hash satassume reads it with.
+  all      every frame, SymPy's and hypothesis's too: the ids applied consistently, so no dict can cross a frame boundary.
+exempt (a set of "file.py:qualname") is scope sa with those code objects left on the real hash: see exempt.txt.
 The file must stay outside satassume/, because a frame in this module counts as "not a site".
 
 Table: by_addr maps the address of a pinned object to its id, with no SymPy call. by_obj is a dict keyed on the object
 (real hash, real ==), asked only when an address is seen for the first time, so its partition is the dict partition.
 """
 import os
+import random
 import sys
 from collections import Counter
 
@@ -18,6 +25,8 @@ from sympy import Basic
 from sympy.core.sympify import SympifyError, _sympify
 
 SA = os.path.dirname(os.path.realpath(satassume.__file__))
+ROOT = os.path.dirname(SA)
+REPO = tuple(os.path.join(ROOT, d) + os.sep for d in ("tests", "tools", "harness"))
 _sites = {}
 
 
@@ -25,12 +34,24 @@ def in_sa(code):
     r = _sites.get(code)
     if r is None:
         fn = code.co_filename
-        r = _sites[code] = fn.startswith(SA) or fn == "<string>"
+        r = fn.startswith(SA) or fn == "<string>"
+        if T.scope == "repo":
+            r = r or fn.startswith(REPO)
+        elif T.scope == "all":
+            r = True
+        if r and T.exempt and f"{os.path.basename(fn)}:{code.co_qualname}" in T.exempt:
+            r = False
+        _sites[code] = r
     return r
 
 
 class T:
     mode = "off"
+    scope = "sa"
+    exempt = frozenset()
+    hv = None      # IDS_RANDOM=SEED: id -> random hash instead of the id, as if interned in a random order
+    rng = None
+    busy = False   # inside the table: every wrapper gives the real answer (scope all would recurse otherwise)
     by_addr = {}
     by_obj = {}
     objs = []      # one pinned reference per address
@@ -45,11 +66,17 @@ def ID(o):
     i = T.by_addr.get(id(o))
     if i is None:
         T.n["first_sight"] += 1
-        i = T.by_obj.get(o)
-        if i is None:
-            i = T.by_obj[o] = len(T.reps)
-            T.reps.append(o)
-            T.hashes.append(hash(o))
+        was, T.busy = T.busy, True
+        try:
+            i = T.by_obj.get(o)
+            if i is None:
+                i = T.by_obj[o] = len(T.reps)
+                T.reps.append(o)
+                T.hashes.append(hash(o))
+                if T.hv is not None:
+                    T.hv.append(T.rng.getrandbits(61) + 1)
+        finally:
+            T.busy = was
         T.by_addr[id(o)] = i
         T.objs.append(o)
     return i
@@ -68,10 +95,14 @@ def _idb(other):
     if isinstance(other, Basic):
         return ID(other)
     T.n["eq_nonbasic"] += 1
+    was, T.busy = T.busy, True
     try:
-        return ID(_sympify(other))
+        other = _sympify(other)
     except SympifyError:
         return None
+    finally:
+        T.busy = was
+    return ID(other)
 
 
 def _wrap(cls):
@@ -80,11 +111,11 @@ def _wrap(cls):
         oh = d["__hash__"]
 
         def __hash__(self, oh=oh):
-            if T.mode != "eqonly" and in_sa(sys._getframe(1).f_code):
+            if not T.busy and T.mode != "eqonly" and in_sa(sys._getframe(1).f_code):
                 T.n["hash"] += 1
                 i = ID(self)
-                if T.mode == "live":
-                    return i
+                if T.mode in ("live", "hashonly"):
+                    return T.hv[i] if T.hv is not None else i
                 r = oh(self)
                 if r != T.hashes[i]:
                     _log("hash_changed", sys._getframe(1), self, self, r, T.hashes[i])
@@ -98,7 +129,7 @@ def _wrap(cls):
 
         def op(self, other, oe=oe, want=want, name=name):
             f = sys._getframe(1)
-            if not in_sa(f.f_code):
+            if T.busy or T.mode == "hashonly" or not in_sa(f.f_code):
                 return oe(self, other)
             T.n[name] += 1
             j = _idb(other)
@@ -121,8 +152,10 @@ def _wrap(cls):
         setattr(cls, name, op)
 
 
-def install(mode):
-    T.mode = mode
+def install(mode, scope="sa", exempt=()):
+    T.mode, T.scope, T.exempt = mode, scope, frozenset(exempt)
+    if os.environ.get("IDS_RANDOM"):
+        T.rng, T.hv = random.Random(int(os.environ["IDS_RANDOM"])), []
     seen, todo = set(), [Basic]
     while todo:
         c = todo.pop()
