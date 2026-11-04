@@ -33,3 +33,14 @@ Modules
 
 See ``harness/README.md``.
 """
+
+from importlib import import_module
+
+# What a stream builds or a repro rebuilds must not vary from process to process.
+# SymPy asks an expression's facts in a random order per process, and its
+# handlers can disagree: for an infinite ``inf``, ``(1/inf).is_rational`` is
+# True or False by that order, and ``cos(1/(2*inf*(2*inf + x)*log(2)))`` comes
+# out as 1 or stays (#329).  Seeding SymPy's random is not enough: what it
+# shuffles is a list made from a set, which moves with ``PYTHONHASHSEED``.
+# Within a process the facts asked earlier still count, as for any cached term.
+import_module("sympy.core.assumptions").shuffle = list.sort

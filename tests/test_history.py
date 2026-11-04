@@ -778,3 +778,53 @@ else:
                          cwd=ROOT, env=dict(os.environ, PYTHONHASHSEED="0"), timeout=300)
     assert out.returncode == 0, out.stderr[-3000:]
     assert "caught:" in out.stdout
+
+
+def test_harness_defines_sympy_fact_order():
+    """#329: SymPy's handlers disagree on this fact, so the order decides it."""
+    import subprocess
+    import sys
+    code = ("import harness, sympy.core.random as r\n"
+            "from sympy import Symbol\n"
+            "from sympy.core.cache import clear_cache\n"
+            "seen = set()\n"
+            "for k in range(16):\n"
+            "    r.seed(k)\n"
+            "    clear_cache()\n"
+            "    seen.add((1/Symbol('inf', infinite=True)).is_rational)\n"
+            "print(len(seen))\n")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         check=True, cwd=ROOT)
+    assert out.stdout.strip() == "1"
+
+
+def test_stream_does_not_depend_on_sympy_fact_order():
+    """#329: query 90 of this stream is built from a term whose SymPy facts
+    depend on the order they are asked in.  Without the order the harness
+    defines, SymPy 1.14 at hash seed 0 builds it as
+    ``Q.lt(-1/3, cos(1/(2*inf*(2*inf + x)*log(2))))`` under the random seeds 12
+    and 18 and as ``Q.lt(-1/3, 1)`` under seed 0."""
+    import subprocess
+    import sys
+    code = ("import sys, sympy.core.random as r; r.seed(int(sys.argv[1]))\n"
+            "from harness.generators import random_stream\n"
+            "items = random_stream(3401, 200, 5, relations=True, max_depth=3,"
+            " profile='declared')\n"
+            "print([str(i) for i in items])\n")
+    seen = {subprocess.run([sys.executable, "-c", code, seed], capture_output=True, text=True,
+                           check=True, cwd=ROOT, env={**os.environ, "PYTHONHASHSEED": hashseed}).stdout
+            for seed, hashseed in (("0", "0"), ("12", "0"), ("18", "0"), ("0", "1"))}
+    assert len(seen) == 1
+
+
+def test_the_two_objects_of_329_each_have_their_own_answer():
+    """A constant proposition its facts decide is answered without the
+    assumptions (spec, section 1.2); the term over symbols goes under them."""
+    from sympy import Rational, cos, log
+
+    from satassume.sympy_api import ask
+    inf, x = Symbol('inf', infinite=True), Symbol('x', finite=True)
+    term = cos(1/(2*inf*(2*inf + x)*log(2)), evaluate=False)
+    assert ask(Q.lt(Rational(-1, 3), 1), False) is True
+    with pytest.raises(ValueError):
+        ask(Q.lt(Rational(-1, 3), term), False)
