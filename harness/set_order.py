@@ -309,7 +309,9 @@ def run(args):
         rows = []
         try:
             stream = random_stream(int(seed), int(queries), int(sets), **opts)
-        except Exception as e:      # before any query (issue #326)
+        except TypeError as e:      # before any query (issue #326)
+            if "Invalid NaN comparison" not in str(e):
+                raise
             with open(args.out, "w") as f:
                 json.dump({"rows": [], "generator": repr(e)}, f)
             return 0
@@ -349,7 +351,7 @@ def compare(args):
 
 
 #: the budgets of a nightly comparison, as arguments of ``run``
-BUDGETS = {"normal": [], "bb2": ["--branch-budget", "2"], "db25": ["--discovery-budget", "25"]}
+BUDGETS = {"normal": [], "bb2": ["--branch-budget", "2"], "db5": ["--discovery-budget", "5"]}
 
 
 def _plan(first, last, queries, profiles, plant):
@@ -402,7 +404,7 @@ def nightly(args, leg=_leg):
 
     bad = []
     totals = {"queries": 0, "answers": 0, "clauses": 0, "paths": 0}
-    planted = 0
+    planted = skipped = 0
     for (base, _, _), others in groups:
         b = done[base]
         is_control = base.startswith("control.")
@@ -411,6 +413,7 @@ def nightly(args, leg=_leg):
             continue
         if "generator" in b:
             print(f"{base}: no queries, the generator crashed: {b['generator']}", file=sys.stderr)
+            skipped += 1
             continue
         if ".normal.off" in base and base.startswith("strips-"):
             if not any(r[2] for r in b["rows"]) or not {"True", "None"} <= {r[0] for r in b["rows"]}:
@@ -441,7 +444,7 @@ def nightly(args, leg=_leg):
         print(b, file=sys.stderr)
     print(f"set order: {totals['queries']} queries compared, {totals['answers']} answers moved "
           f"(fails the job); {totals['clauses']} clause sequences and {totals['paths']} LRA paths moved "
-          f"(reported only); the planted bug moved {planted}; {'FAILED' if bad else 'ok'}", file=sys.stderr)
+          f"(reported only); the planted bug moved {planted}; {skipped} skipped for a generator crash; {'FAILED' if bad else 'ok'}", file=sys.stderr)
     return 1 if bad else 0
 
 

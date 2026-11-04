@@ -94,7 +94,7 @@ def _rows(answer="True", clauses="c", ran_out=1, path="p"):
     ({}, 0),
     ({"strips-1.bb2.s2": {"rows": _rows("False"), "reordered": 1}}, 1),     # a moved answer
     ({"strips-1.normal.s2.h2": {"rows": _rows("None"), "reordered": 1}}, 1),
-    ({"strips-1.db25.s2": None}, 1),                                        # a crashed leg
+    ({"strips-1.db5.s2": None}, 1),                                        # a crashed leg
     ({"strips-1.bb2.off": None}, 1),
     ({"strips-1.normal.s2": {"rows": _rows(), "reordered": 0}}, 1),         # no reordering
     ({"strips-1.normal.off": {"rows": _rows(ran_out=0), "reordered": 0}}, 1),   # no budget hit
