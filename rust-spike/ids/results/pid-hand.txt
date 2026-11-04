@@ -1,0 +1,28 @@
+True first S.true: False True
+True first Integer(1): True False
+1.0 first Integer(1): False True
+1.0 first Float(1.0): False True
+clear then new value: p==q after clear, x!=y: True True
+clear then same value: p==q after clear, same value: False
+1 and 1.0, Integer(1) and Float(1.0) seen: P(a,1)==P(a,1.0): False
+1 and 1.0, nothing else seen: P(a,1)==P(a,1.0): True
+hash {'True': 1, '1': 1, '1.0': 1, 'Fraction(1)': 1, 'S.true': 1, 'Integer(1)': 1, 'Float(1.0)': 1, 'Rational(1,1)': 1}
+== table (row == col)
+True           T T T T T T . T
+1              T T T T . T . T
+1.0            T T T T . . T .
+Fraction(1)    T T T T . T X T
+S.true         T . . . T . . .
+Integer(1)     T T . T . T . T
+Float(1.0)     . . T X . . T .
+Rational(1,1)  T T . T . T . T
+hash {'0.5': 1152921504606846976, 'Fraction(1,2)': 1152921504606846976, 'Rational(1,2)': 4462041910711374140, 'Float(0.5)': 1152921504606846976}
+0.5            T T . T
+Fraction(1,2)  T T T X
+Rational(1,2)  . T T .
+Float(0.5)     T X . T
+weakref no Symbol cannot create weak reference to 'Symbol' object
+weakref no Integer cannot create weak reference to 'Integer' object
+weakref no Add cannot create weak reference to 'Add' object
+weakref no Dummy cannot create weak reference to 'Dummy' object
+weakref ok S.true

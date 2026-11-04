@@ -1,0 +1,39 @@
+--- /home/tilo/dev/sa-rust/satassume/sat/formula.py	2026-11-03 21:26:54.316371504 +0000
++++ satassume/sat/formula.py	2026-11-04 02:03:10.578179151 +0000
+@@ -10,12 +10,35 @@
+ from typing import Any, Iterable, Tuple
+ 
+ 
+-@dataclass(frozen=True)
++# Experiment (issue 323): one id per distinct (pred, expr), by the real hash and ==.
++# The table pins every key for the life of the process.
++_P_IDS: dict = {}
++
++
++@dataclass(frozen=True, eq=False)
+ class P:
+     """Atomic proposition ``pred(expr)``."""
+     pred: str
+     expr: Any
+ 
++    def __getattr__(self, name):
++        # Only runs on a miss, so a P asks SymPy at most once however often it is hashed.
++        if name != "_pid":
++            raise AttributeError(name)
++        i = _P_IDS.setdefault((self.pred, self.expr), len(_P_IDS))
++        object.__setattr__(self, "_pid", i)
++        return i
++
++    def __hash__(self):
++        return self._pid
++
++    def __eq__(self, other):
++        if self is other:
++            return True
++        if other.__class__ is not P:
++            return NotImplemented
++        return self._pid == other._pid
++
+     def __repr__(self) -> str:
+         return f"{self.pred}({self.expr})"
+ 

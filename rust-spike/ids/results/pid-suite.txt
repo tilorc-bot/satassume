@@ -1,0 +1,6 @@
+pid-x: 12 failed, 6071 passed, 23 skipped, 18 xfailed, 4 warnings in 294.79s (0:04:54)
+  beyond base: ['tests.test_history::test_module_state_inventory_is_classified']
+  base failures not here: ['tests.test_solver::test_performance_smoke_300_vars']
+pid-ser: 12 failed, 6071 passed, 23 skipped, 18 xfailed, 1 warning in 712.16s (0:11:52)
+  beyond base: ['tests.test_history::test_module_state_inventory_is_classified']
+  base failures not here: ['tests.test_solver::test_performance_smoke_300_vars']

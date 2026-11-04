@@ -1,0 +1,20 @@
+sympy_api.py:192: e.atoms(Symbol, IndexedBase, Function)
+sympy_api.py:742: c.atoms(_Rational)
+relations.py:584: side.atoms(AppliedUndef)
+engine.py:1777: new
+engine.py:1767: objs
+engine.py:647: new
+engine.py:1713: k
+knowledge/rules.py:264: vals
+knowledge/rules.py:265: vals
+knowledge/rules.py:285: out
+knowledge/rules.py:237: out
+knowledge/rules.py:280: out
+knowledge/rules.py:282: out
+knowledge/templates/_rows.py:362: row.atoms(f)
+knowledge/templates/_rows.py:482: t.free_symbols
+knowledge/templates/_rows.py:603: fs
+knowledge/templates/_rows.py:874: nodes
+theories/transfer.py:103: lts
+theories/lra/lra.py:614: self._dirty
+total 19

@@ -1,0 +1,11 @@
+runs 66 digests [('dev', '31cd0945c07f02a6'), ('fuzz', '173502b6ef285ad6')]
+dev base/pid: median 0.9189 range 0.9141 to 0.9281 rounds 10
+dev A/A base/baseb: median 0.9998 range 0.9941 to 1.0120 rounds 10
+dev base: median 0.527s range 0.523 to 0.531
+dev baseb: median 0.526s range 0.523 to 0.531
+dev pid: median 0.571s range 0.570 to 0.580
+fuzz base/pid: median 1.0055 range 0.9781 to 1.0188 rounds 10
+fuzz A/A base/baseb: median 1.0002 range 0.9842 to 1.0124 rounds 10
+fuzz base: median 8.046s range 7.911 to 8.135
+fuzz baseb: median 8.041s range 7.994 to 8.107
+fuzz pid: median 8.005s range 7.958 to 8.088
