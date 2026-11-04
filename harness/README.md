@@ -231,6 +231,8 @@ python -m harness audit --profile base,related,declared --seeds 0-11 --queries 2
 # the same stream under several PYTHONHASHSEED values, one interpreter each
 python -m harness hashseed --seeds 0-3 --hashseeds 0,1,2,3,42 --config default --queries 300
 python -m harness hashseed --profile related --seeds 0-2 --hashseeds 0,1,2,42 --queries 250
+python -m harness.set_order run OUT.json --seed 1 --stream 0:200:5 --branch-budget 2   # seeded order of the sets satassume iterates, then `compare`; issue #325
+python -m harness.set_order nightly --seeds 0-1 --queries 200 --out DIR   # the campaign's order shard
 
 # re-run a saved discrepancy, optionally in a fresh interpreter under a seed
 python -m harness repro harness/repros/G7-links-zero-scaled-term-order-after-relation.json [--hashseed 7]
@@ -240,7 +242,7 @@ python -m harness repro harness-results/fuzz-links-default-s0-0.json     # one a
 # the inventory of module-level state (fails if an unclassified container appears)
 python -m harness inventory
 
-# the nightly campaign, one shard (tests, base, profiles, audit) or all
+# the nightly campaign, one shard (tests, base, profiles, audit, order) or all
 SEEDS=2 harness/campaign.sh profiles
 ```
 
@@ -259,7 +261,7 @@ under `--fail-on unknown`.
 * `.github/workflows/test.yml` (every push) runs the whole suite, which
   includes the fast part of `tests/test_history.py`.
 * `.github/workflows/history-fuzz.yml` (nightly and on manual dispatch)
-  runs `harness/campaign.sh` in four parallel jobs: `tests` (the slow
+  runs `harness/campaign.sh` in five parallel jobs: `tests` (the slow
   pytest part with 6 seeds and 200 Hypothesis examples), `base` (random
   streams in four configurations, with registrations, with trigger/observer
   pairs), `profiles` (every profile, and the lazy ones in two more
