@@ -1,0 +1,122 @@
+FAILED tests/test_add_rows.py::test_the_pattern_keys_are_legacys
+FAILED tests/test_beta_functions_rows.py::test_a_function_whose_constructor_takes_no_evaluate_is_bound
+FAILED tests/test_beta_functions_rows.py::test_rows_of_several_numbers_of_arguments_compile_for_each
+FAILED tests/test_compiled_rows.py::test_the_compiled_rows_are_up_to_date
+FAILED tests/test_compiled_rows.py::test_the_compiled_rows_do_not_depend_on_the_hash_seed
+FAILED tests/test_euf_adapter.py::test_term_interning_and_shared_terms
+FAILED tests/test_extended_order.py::test_order_sides[Q.lt(2*x + 2*y, y
+FAILED tests/test_extended_order.py::test_order_sides[Q.lt(-oo, x)-(({}, -1), ({x: Fraction(1, 1)}, 0))]
+FAILED tests/test_extended_order.py::test_order_sides[Q.lt(pi*x, 1)-(({x: Element(pi)}, 0), ({}, 0))]
+FAILED tests/test_extended_order.py::test_order_sides[Q.lt(x + oo, 2*y
+FAILED tests/test_extended_order.py::test_order_sides[Q.lt(x, oo)-(({x: Fraction(1, 1)}, 0), ({}, 1))]
+FAILED tests/test_extended_order.py::test_order_sides[Q.lt(-x, pi)-(({x: Fraction(-1, 1)}, 0), ({}, 0))]
+FAILED tests/test_integer_funcs_rows.py::test_a_base_class_is_bound_unevaluated
+FAILED tests/test_layering.py::test_new_name_import_enters_the_old_name
+FAILED tests/test_layering.py::test_old_name_first_loads_no_second_module
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[euf_adapter]
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[lra_adapter]
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[lra_bounds]
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[templates]
+FAILED tests/test_lazy_atoms.py::test_memo_caches_the_answer_only
+FAILED tests/test_memos.py::test_memo_registry_lists_every_owner
+FAILED tests/test_memos.py::test_number_basis_memo_follows_settings_and_epoch
+FAILED tests/test_memos.py::test_process_memos_registered_and_cleared
+FAILED tests/test_mul_rows.py::test_the_pattern_keys_are_legacys
+FAILED tests/test_notmpl_limits.py::test_bound_variable_context
+FAILED tests/test_notmpl_limits.py::test_declared_assumptions_of_the_bound_symbol
+FAILED tests/test_ref.py::test_theory_scope_by_syntax
+FAILED tests/test_ref.py::test_zero_under_an_application_is_an_equality[query-twin]
+FAILED tests/test_ref.py::test_zero_under_an_application_is_an_equality[set-twin-nested]
+FAILED tests/test_ref.py::test_zero_under_an_application_is_an_equality[T1-transfer-congruent-application]
+FAILED tests/test_ref.py::test_zero_under_an_application_is_an_equality[T2-transfer-raise]
+FAILED tests/test_ref.py::test_zero_under_an_application_is_an_equality[T4-transfer-two-zero-terms]
+FAILED tests/test_ref.py::test_zero_under_an_application_is_an_equality[T5-transfer-add-congruence]
+FAILED tests/test_registry_versioning.py::test_answer_memo_and_splits_are_keyed_on_the_registry
+FAILED tests/test_registry_versioning.py::test_assigning_the_same_setting_clears_nothing[discovery_budget]
+FAILED tests/test_registry_versioning.py::test_assigning_the_same_setting_clears_nothing[relevance]
+FAILED tests/test_registry_versioning.py::test_assigning_the_same_setting_clears_nothing[templates]
+FAILED tests/test_registry_versioning.py::test_assigning_the_same_setting_clears_nothing[transfer]
+FAILED tests/test_registry_versioning.py::test_assigning_the_same_setting_clears_nothing[uninterpreted]
+FAILED tests/test_registry_versioning.py::test_assigning_the_same_setting_clears_nothing[writeback]
+FAILED tests/test_registry_versioning.py::test_shared_cache_created_before_a_registration
+FAILED tests/test_registry_versioning.py::test_splits_are_keyed_on_the_registry
+FAILED tests/test_relevance.py::test_closed_term_keys
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c0]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c1]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c10]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c11]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c12]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c13]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c14]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c16]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c17]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c18]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c19]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c2]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c20]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c3]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c4]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c5]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c6]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c7]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c8]
+FAILED tests/test_relevance.py::test_unkeyed_constants_are_decided[c9]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c0-True]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c1-True]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c2-True]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c3-True]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c4-True]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c5-False]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c6-False]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c7-False]
+FAILED tests/test_rows_nary.py::test_coefficient_is_argument_0_when_it_is_a_number[c8-False]
+FAILED tests/test_rows_nary.py::test_rows_that_do_not_compile[Mul-<lambda>-coefficient is argument 0]
+FAILED tests/test_rows_nary.py::test_rows_that_do_not_compile[Pow-<lambda>-coefficient is argument 0]
+FAILED tests/test_rows_nary.py::test_rows_without_a_star_stay_positional
+FAILED tests/test_rows_nary.py::test_the_template_of_any_arity
+FAILED tests/test_rows_shapes.py::test_a_function_of_a_symbol_gives_its_argument_a_slot
+FAILED tests/test_rows_shapes.py::test_a_node_of_another_function_is_left_unbound
+FAILED tests/test_rows_shapes.py::test_a_number_in_the_node_is_a_shape[1-1]
+FAILED tests/test_rows_shapes.py::test_a_number_in_the_node_is_a_shape[arg2-E]
+FAILED tests/test_rows_shapes.py::test_a_number_in_the_node_is_a_shape[arg3-I]
+FAILED tests/test_rows_shapes.py::test_a_number_in_the_node_is_a_shape[arg4--I]
+FAILED tests/test_rows_shapes.py::test_a_number_in_the_node_is_a_shape[arg5-1/2]
+FAILED tests/test_rows_shapes.py::test_a_repeated_symbol_is_the_slot_of_its_first_argument
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit0-2*number-pred0]
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit1-number/2-pred1]
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit2-1/number-pred2]
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit3-Abs(number)-pred3]
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit4-Abs(number)
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit5-Abs(number)
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit6-Abs(number)
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit7-number
+FAILED tests/test_rows_shapes.py::test_a_term_of_the_constant_is_a_slot_of_its_own[lit8-Abs(number)
+FAILED tests/test_rows_shapes.py::test_a_value_equality_is_an_equivalence_for_each_value_predicate
+FAILED tests/test_rows_shapes.py::test_k_times_an_argument_is_a_term
+FAILED tests/test_rows_shapes.py::test_rows_without_a_shape_compile_as_before
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row13-more than one argument]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row14-not a function of a plain Symbol]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row16-plain Symbol]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row17-not distinct]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row18-not distinct]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row19-not an exact number]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row22-does not equate the node with an argument]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row23-more than one argument]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row6-constant variable number is not an argument]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row7-constant variable number is not an argument]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row8-no argument but the constant]
+FAILED tests/test_rows_shapes.py::test_shapes_and_terms_that_do_not_compile[row9-no argument but the constant]
+FAILED tests/test_rows_shapes.py::test_the_constant_variable_and_literals_about_it
+FAILED tests/test_rows_shapes.py::test_the_terms_of_a_row_are_in_their_order
+FAILED tests/test_rows_shapes.py::test_wiring_refuses_a_generator_with_shapes
+FAILED tests/test_scope.py::test_glue_and_transfer_exist_from_construction
+FAILED tests/test_scope.py::test_glue_from_a_relation_atom_on_either_side
+FAILED tests/test_scope.py::test_glue_from_a_sign_on_sum_pair_across_both_formulas
+FAILED tests/test_scope.py::test_linked_terms_are_arguments_and_sides_without_numbers
+FAILED tests/test_scope.py::test_transfer_from_an_equality_or_a_trichotomy_pair
+FAILED tests/test_selection_rows.py::test_the_pattern_keys_are_those_before_the_rows
+FAILED tests/test_switched_glue.py::test_set_glue_at_the_root
+FAILED tests/test_sympy_boundary.py::test_runtime_trap_corpus
+FAILED tests/test_totality.py::test_provenance_covers_every_clause_of_the_mul_rows
+FAILED tests/test_trig_rows.py::test_show_rows_lists_each_row_with_its_source
+FAILED tests/test_wide_derived.py::test_wide_derived_or_against_or_is_fast[or-or]

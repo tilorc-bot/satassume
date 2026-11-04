@@ -1,0 +1,16 @@
+base-dev-fork.json 31cd0945c07f02a6 None None None
+base-dev.json 31cd0945c07f02a6 None None None
+base-fuzz-fork.json 173502b6ef285ad6 None None None
+base-fuzz.json 173502b6ef285ad6 None None None
+eqonly-dev-rec.json 31cd0945c07f02a6 171 862 {'__eq__': 5714, 'eq_nonbasic': 424, 'first_sight': 862, '__ne__': 368}
+eqonly-dev-shuf.json 31cd0945c07f02a6 171 862 {'__eq__': 5439, 'first_sight': 862, 'eq_nonbasic': 424, '__ne__': 368}
+eqonly-fuzz-rec.json 173502b6ef285ad6 1002 6050 {'__eq__': 163836, 'eq_nonbasic': 16022, 'first_sight': 6050, '__ne__': 15931}
+eqonly-fuzz-shuf.json 173502b6ef285ad6 1002 6048 {'__ne__': 15937, 'eq_nonbasic': 16028, 'first_sight': 6048, '__eq__': 167244}
+live-dev-fork.json 31cd0945c07f02a6 0 0 {}
+live-dev-rec.json 31cd0945c07f02a6 1019 1729 {'hash': 264387, 'first_sight': 1729, '__eq__': 5426, 'eq_nonbasic': 424, '__ne__': 368}
+live-dev-shuf.json 31cd0945c07f02a6 1019 1729 {'hash': 264196, 'first_sight': 1729, '__eq__': 5144, 'eq_nonbasic': 424, '__ne__': 368}
+live-fuzz-fork.json 173502b6ef285ad6 0 0 {}
+live-fuzz-rec.json 173502b6ef285ad6 7681 13404 {'hash': 5074953, 'first_sight': 13404, '__eq__': 99510, 'eq_nonbasic': 16024, '__ne__': 15933}
+live-fuzz-shuf.json 173502b6ef285ad6 7681 13402 {'hash': 5078574, 'first_sight': 13402, '__eq__': 102207, '__ne__': 15939, 'eq_nonbasic': 16030}
+shadow-dev.json 31cd0945c07f02a6 1019 1729 {'hash': 264244, 'first_sight': 1729, '__eq__': 5714, 'eq_nonbasic': 424, 'eq_true_crosstype': 322, '__ne__': 368}
+shadow-fuzz.json 173502b6ef285ad6 7681 13405 {'hash': 5078682, 'first_sight': 13405, '__eq__': 163834, 'eq_nonbasic': 16022, 'eq_true_crosstype': 5950, '__ne__': 15931}

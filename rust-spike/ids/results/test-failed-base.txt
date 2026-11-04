@@ -1,0 +1,11 @@
+FAILED tests/test_compiled_rows.py::test_the_compiled_rows_are_up_to_date
+FAILED tests/test_compiled_rows.py::test_the_compiled_rows_do_not_depend_on_the_hash_seed
+FAILED tests/test_layering.py::test_new_name_import_enters_the_old_name
+FAILED tests/test_layering.py::test_old_name_first_loads_no_second_module
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[euf_adapter]
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[lra_adapter]
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[lra_bounds]
+FAILED tests/test_layering.py::test_old_name_is_a_package_attribute[templates]
+FAILED tests/test_memos.py::test_memo_registry_lists_every_owner
+FAILED tests/test_sympy_boundary.py::test_runtime_trap_corpus
+FAILED tests/test_trig_rows.py::test_show_rows_lists_each_row_with_its_source

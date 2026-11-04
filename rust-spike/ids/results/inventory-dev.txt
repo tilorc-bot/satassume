@@ -1,0 +1,220 @@
+dev 31cd0945c07f02a6 {'hash': 249497, 'Fhash': 4066, 'eq': 3376, 'Feq': 2} sites 219
+87624 hash <string> 3 __create_fn__.<locals>.__hash__ CALL Symbol:41184 Zero:22688 Mul:8739 Add:4656
+12434 hash engine.py 783 Session.ensure CONTAINS_OP: Symbol:9319 Add:707 Mul:643 Pow:494
+7950 hash engine.py 555 Session.node CALL Symbol:4369 Mul:975 Add:947 Pow:613
+5662 hash knowledge/compile.py 99 VarTable.node_base CALL Symbol:3034 Mul:1001 Add:480 Pow:390
+5508 hash theories/lra/lra_adapter.py 444 _memoized BINARY_SUBSCR AppliedBinaryRelation:4950 Symbol:355 Add:100 Mul:43
+5222 hash engine.py 780 Session.ensure CALL Symbol:3697 Add:371 Mul:367 Pow:202
+4189 hash engine.py 631 Session._compile_patterns CALL Mul:1261 Symbol:1047 Add:826 Pow:542
+4174 hash engine.py 803 Session._discover CONTAINS_OP: Symbol:1045 Mul:930 Add:733 Pow:591
+3466 hash relations.py 1267 Relations._tsource CALL Symbol:1711 Zero:759 Mul:231 Pow:158
+3232 hash theories/lra/lra.py 495 LRATheory._term_var CALL Symbol:2584 Pow:146 floor:144 Mul:92
+2980 hash engine.py 805 Session._discover CALL Symbol:1041 Mul:660 Add:419 Pow:335
+2901 hash relations.py 575 _under_apps CALL Symbol:1601 Dummy:430 Mul:256 Add:200
+2895 hash sat/theory.py 211 EqualitySharing.update CONTAINS_OP: Symbol:1350 Zero:506 Mul:174 Pow:173
+2895 hash sat/theory.py 214 EqualitySharing.update BINARY_SUBSCR Symbol:1350 Zero:506 Mul:174 Pow:173
+2895 hash sat/theory.py 214 EqualitySharing.update STORE_SUBSCR Symbol:1350 Zero:506 Mul:174 Pow:173
+2704 hash knowledge/templates/registry.py 231 TemplateRegistry.clauses_for CALL Symbol:1053 Mul:641 Add:396 Pow:215
+2704 hash relations.py 402 closed_units BINARY_SUBSCR Symbol:1053 Mul:641 Add:396 Pow:215
+2662 hash relations.py 1274 Relations._tsource CALL Symbol:1061 Zero:759 Mul:213 Add:150
+2499 hash knowledge/domain.py 442 _noncommutative CALL Symbol:1381 Mul:351 Add:159 NegativeOne:126
+2497 hash knowledge/compile.py 102 VarTable.node_base STORE_SUBSCR Symbol:1039 Mul:562 Add:339 Pow:207
+2482 hash engine.py 562 Session.node STORE_SUBSCR Symbol:1039 Mul:557 Add:329 Pow:207
+2482 hash engine.py 565 Session.node CALL Symbol:1039 Mul:557 Add:329 Pow:207
+2482 hash engine.py 569 Session.node CALL Symbol:1039 Mul:557 Add:329 Pow:207
+2299 hash engine.py 493 Session._link CALL Symbol:1842 Dummy:165 Mul:111 re:109
+2146 hash theories/lra/lra.py 692 LRATheory._lin CALL Symbol:1737 Pow:100 floor:90 Mul:55
+2146 hash theories/lra/lra.py 693 LRATheory._lin STORE_SUBSCR Symbol:1737 Pow:100 floor:90 Mul:55
+2146 hash theories/lra/lra.py 699 LRATheory._lin MAP_ADD Symbol:1737 Pow:100 floor:90 Mul:55
+2146 hash theories/lra/lra.py 706 LRATheory._var_of_form CALL Symbol:1737 Pow:100 floor:90 Mul:55
+2146 hash relations.py 1087 Relations._guard CALL Symbol:1737 Pow:100 floor:90 Mul:55
+2114 hash engine.py 642 Session._compile_patterns CALL Symbol:1040 Mul:498 Pow:216 Add:181
+2106 hash theories/transfer.py 102 transfer_wanted SET_ADD Symbol:957 Mul:508 Zero:187 Integer:161
+2106 hash theories/transfer.py 104 transfer_wanted CONTAINS_OP: Symbol:957 Mul:508 Zero:187 Integer:161
+2073 hash sat/theory.py 212 EqualitySharing.update STORE_SUBSCR Symbol:693 Zero:506 Mul:147 Pow:133
+2073 hash sat/theory.py 215 EqualitySharing.update BINARY_SUBSCR Symbol:693 Zero:506 Mul:147 Pow:133
+2005 hash relations.py 1269 Relations._tsource STORE_SUBSCR Symbol:796 Zero:396 Mul:213 Add:144
+1894 hash theories/euf/euf_adapter.py 223 EUFAdapter.interned CONTAINS_OP: Symbol:715 Zero:375 Mul:124 Pow:117
+1854 Fhash sat/formula.py 48 Formula.__hash__ CALL Not:1040 And:814
+1783 hash theories/euf/euf_adapter.py 225 EUFAdapter.interned CALL Symbol:643 Zero:375 Mul:124 Pow:111
+1744 hash theories/lra/lra_adapter.py 487 LRAAdapter.register CALL Symbol:1412 Pow:81 floor:72 Mul:46
+1694 hash engine.py 451 Session._dvar CALL Symbol:1321 Pow:100 floor:76 im:51
+1501 eq theories/euf/euf_adapter.py 120 EUFAdapter.parse COMPARE_OP:== StrictLessThanPredicate/EqualityPredicate:975 EqualityPredicate/EqualityPredicate:526
+1422 hash engine.py 638 Session._compile_patterns CALL Mul:635 Add:456 Pow:66 re:55
+1297 hash theories/euf/euf_adapter.py 200 EUFAdapter._intern CONTAINS_OP: Symbol:260 Zero:198 Mul:172 Add:156
+1194 hash engine.py 557 Session.node CONTAINS_OP: Add:314 Mul:270 Pow:256 floor:132
+1052 hash theories/euf/euf_adapter.py 171 EUFAdapter.term CALL Symbol:448 Zero:375 Add:64 Mul:50
+975 eq theories/euf/euf_adapter.py 122 EUFAdapter.parse COMPARE_OP:== StrictLessThanPredicate/UnequalityPredicate:975
+914 hash relations.py 975 Relations._link_later CONTAINS_OP: Symbol:482 Mul:158 Zero:61 Add:60
+886 hash engine.py 457 Session._dvar STORE_SUBSCR Symbol:690 Pow:48 floor:42 Add:34
+881 hash engine.py 644 Session._compile_patterns STORE_SUBSCR Mul:333 Symbol:153 Pow:151 Add:136
+872 hash relations.py 1658 Relations._note_sides CALL Zero:384 Symbol:327 Add:70 Mul:31
+848 hash engine.py 1622 Engine._struct CALL Symbol:256 Mul:235 Add:135 Pow:70
+846 Fhash engine.py 1737 Engine._query_cone CALL And:826 Not:20
+822 hash sat/theory.py 215 EqualitySharing.update CONTAINS_OP: Symbol:657 Pow:40 floor:36 Mul:27
+783 hash engine.py 1684 Engine._cone_info CALL Symbol:261 Add:155 Mul:154 Pow:88
+732 hash relations.py 1295 Relations._tvar CALL Symbol:540 Mul:38 floor:36 im:22
+677 hash theories/euf/euf.py 148 EUFTheory._new STORE_SUBSCR Symbol:260 Zero:198 NegativeOne:75 Pi:62
+676 hash engine.py 1744 Engine._query_cone SET_ADD Symbol:294 Add:135 Mul:109 Pow:41
+664 hash /home/tilo/.local/share/uv/python/cpython-3.12.14-linux-aarch64-gnu/lib/python3.12/collections/__init__.py 791 Counter.__eq__.<locals>.<genexpr> BINARY_SUBSCR Symbol:208 Mul:168 Pow:104 re:52
+660 hash relations.py 1944 _terms_of CALL Symbol:520 floor:54 Pow:32 im:12
+659 hash relations.py 769 _own_term CALL Symbol:472 Add:65 Mul:62 Pow:16
+657 hash scope.py 160 linked_terms CALL Symbol:563 Pow:64 Add:30
+644 hash relations.py 1544 Relations.selectors_of.<locals>.<genexpr> CONTAINS_OP: Symbol:315 Mul:127 Zero:64 Integer:41
+610 hash theories/lra/lra.py 1174 LRATheory._model MAP_ADD Symbol:465 Pow:39 floor:33 Mul:20
+606 hash relations.py 1659 Relations._note_sides STORE_SUBSCR Symbol:268 Zero:198 Add:60 Mul:31
+597 hash engine.py 738 Session._compile_pending CALL Add:157 Mul:135 Pow:128 floor:66
+597 hash engine.py 753 Session._compile_pending CALL Add:157 Mul:135 Pow:128 floor:66
+593 hash engine.py 750 Session._compile_pending STORE_SUBSCR Add:157 Mul:135 Pow:128 floor:66
+592 hash relations.py 1310 Relations._tvar CALL Symbol:440 floor:36 Add:22 im:16
+588 hash relations.py 1091 Relations._guard STORE_SUBSCR Symbol:437 floor:28 Mul:28 Pow:24
+579 hash scope.py 158 linked_terms CALL Symbol:441 Add:41 Mul:39 Pow:36
+567 hash theories/euf/euf_adapter.py 211 EUFAdapter._intern.<locals>.<genexpr> CONTAINS_OP: Symbol:155 NegativeOne:79 Pi:70 Pow:69
+567 hash theories/euf/euf_adapter.py 206 EUFAdapter._intern BINARY_SUBSCR Symbol:155 NegativeOne:79 Pi:70 Pow:69
+565 hash theories/euf/euf_adapter.py 214 EUFAdapter._intern BINARY_SUBSCR Symbol:228 Zero:198 Add:60 Mul:31
+556 hash engine.py 1112 Session._set_glue.<locals>.<genexpr> CONTAINS_OP: Symbol:264 Mul:127 Zero:49 Integer:40
+549 hash engine.py 1714 Engine._cone_info CONTAINS_OP: Symbol:237 Mul:118 Pow:57 Add:52
+537 hash relations.py 1536 Relations.selectors_of CONTAINS_OP: Symbol:311 Mul:118 Add:41 Pi:25
+520 hash relations.py 874 Relations.note_formula CONTAINS_OP: Symbol:294 Mul:118 Add:41 Pi:25
+508 hash relations.py 1433 Relations._order_infinite CONTAINS_OP: Symbol:414 Pow:38 floor:24 im:16
+508 hash relations.py 1434 Relations._order_infinite CALL Symbol:414 Pow:38 floor:24 im:16
+475 hash theories/lra/lra_adapter.py 222 _lin CALL Symbol:284 floor:33 im:29 Pow:23
+475 hash theories/lra/lra_adapter.py 222 _lin STORE_SUBSCR Symbol:284 floor:33 im:29 Pow:23
+468 hash engine.py 1715 Engine._cone_info CALL Symbol:195 Mul:107 Add:48 Pow:44
+468 hash engine.py 1700 Engine._cone_info CALL Symbol:195 Mul:107 Add:48 Pow:44
+455 hash engine.py 1709 Engine._cone_info CONTAINS_OP: Symbol:263 Mul:66 Pow:45 Add:30
+448 hash relations.py 875 Relations.note_formula STORE_SUBSCR Symbol:227 Mul:118 Add:40 Pi:25
+444 hash engine.py 1808 Engine._within_budget CONTAINS_OP: Symbol:172 Dummy:62 Add:54 Mul:54
+437 hash engine.py 263 DictCache.facts CALL Mul:131 NegativeOne:126 Pi:67 Symbol:33
+431 hash engine.py 1998 Engine.is_ CONTAINS_OP: Mul:131 NegativeOne:126 Pi:67 Symbol:31
+431 hash engine.py 2001 Engine.is_ CALL Mul:131 NegativeOne:126 Pi:67 Symbol:31
+425 hash relations.py 1537 Relations.selectors_of BINARY_SUBSCR Symbol:311 Add:41 Mul:31 Pow:20
+417 Fhash engine.py 1862 Engine._build_context_memoized CALL And:408 Not:9
+417 Fhash engine.py 1875 Engine._build_context_memoized STORE_SUBSCR And:408 Not:9
+412 hash engine.py 1106 Session._set_glue CONTAINS_OP: Mul:182 Symbol:164 Pi:50 Pow:16
+399 hash relations.py 1961 _structural_subterms CONTAINS_OP: Symbol:94 NegativeOne:56 Pi:48 Pow:47
+387 Fhash engine.py 1845 Engine._context_session CALL And:378 Not:9
+386 hash theories/lra/lra_adapter.py 448 _memoized STORE_SUBSCR AppliedBinaryRelation:335 Add:18 Mul:12 Symbol:9
+375 hash relations.py 976 Relations._link_later CALL Symbol:246 Add:60 Mul:31 Pow:16
+375 hash relations.py 1494 Relations._link STORE_SUBSCR Symbol:246 Add:60 Mul:31 Pow:16
+372 hash engine.py 1669 Engine._struct CALL Symbol:158 Mul:104 Pow:36 Add:26
+370 hash relations.py 1544 Relations.selectors_of.<locals>.<genexpr> BINARY_SUBSCR Symbol:315 Pow:32 Add:23
+364 hash relations.py 1819 Relations.sync_transfer CALL Symbol:148 Add:114 Mul:102
+355 hash theories/euf/euf.py 185 EUFTheory.value CALL Zero:198 NegativeOne:75 Half:43 Integer:27
+355 hash theories/euf/euf_adapter.py 203 EUFAdapter._intern STORE_SUBSCR Zero:198 NegativeOne:75 Half:43 Integer:27
+335 hash theories/lra/lra_adapter.py 160 relation CALL StrictLessThanPredicate:242 EqualityPredicate:93
+332 hash /home/tilo/.local/share/uv/python/cpython-3.12.14-linux-aarch64-gnu/lib/python3.12/collections/__init__.py 699 Counter.update CALL Symbol:104 Mul:84 Pow:52 re:26
+322 hash theories/euf/euf.py 167 EUFTheory.term CALL Symbol:260 Pi:62
+322 hash theories/euf/euf_adapter.py 213 EUFAdapter._intern STORE_SUBSCR Symbol:260 Pi:62
+320 hash theories/lra/lra.py 491 LRATheory._new_var STORE_SUBSCR Symbol:246 floor:18 Pow:16 Mul:9
+319 hash sat/theory.py 221 EqualitySharing.update CALL Symbol:246 floor:18 Pow:16 im:8
+298 hash theories/euf/euf_adapter.py 206 EUFAdapter._intern STORE_SUBSCR Mul:86 Add:78 Pow:76 floor:18
+252 hash relations.py 1297 Relations._tvar STORE_SUBSCR Symbol:176 floor:18 Add:11 im:8
+227 hash engine.py 1806 Engine._within_budget CALL Symbol:89 Dummy:33 Add:27 Mul:27
+227 hash engine.py 1807 Engine._within_budget CONTAINS_OP: Symbol:89 Dummy:33 Add:27 Mul:27
+222 hash engine.py 1653 Engine._struct CONTAINS_OP: Mul:84 Add:67 Symbol:14 Pow:8
+222 hash engine.py 1655 Engine._struct CALL Mul:84 Add:67 Symbol:14 Pow:8
+222 hash knowledge/templates/registry.py 242 TemplateRegistry.clauses_for STORE_SUBSCR Mul:84 Add:67 Symbol:14 Pow:8
+222 hash relations.py 418 closed_units STORE_SUBSCR Mul:84 Add:67 Symbol:14 Pow:8
+222 hash engine.py 1665 Engine._struct CALL Mul:84 Add:67 Symbol:14 Pow:8
+222 hash engine.py 1672 Engine._struct CALL Mul:84 Add:67 Symbol:14 Pow:8
+222 hash engine.py 1673 Engine._struct STORE_SUBSCR Mul:84 Add:67 Symbol:14 Pow:8
+201 hash relations.py 1985 link_objects CALL Symbol:155 floor:18 Pow:10 im:4
+200 hash knowledge/templates/_common.py 328 facts CALL Half:59 NegativeOne:41 One:25 Pi:23
+191 eq engine.py 631 Session._compile_patterns CALL Add/Add:189 Mul/Mul:2
+191 hash relations.py 1975 link_objects BUILD_SET Symbol:109 Add:40 Mul:19 Pow:7
+173 hash engine.py 1689 Engine._cone_info BUILD_SET Mul:59 Add:56 Symbol:12 Pow:7
+173 hash engine.py 1723 Engine._cone_info STORE_SUBSCR Mul:59 Add:56 Symbol:12 Pow:7
+144 hash relations.py 590 _under_apps STORE_SUBSCR Symbol:35 Mul:34 Add:31 Pow:8
+132 hash relations.py 1964 _structural_subterms CALL Pow:47 Mul:45 Add:18 floor:12
+132 hash relations.py 1978 link_objects CALL Pow:47 Mul:45 Add:18 floor:12
+126 hash relations.py 1731 Relations._transfer_terms CONTAINS_OP: Symbol:57 Zero:35 One:11 Add:11
+116 hash theories/lra/lra_adapter.py 413 integer_form.<locals>.<genexpr> BINARY_SUBSCR Symbol:64 floor:10 im:8 re:6
+112 hash relations.py 965 Relations._mention_number CONTAINS_OP: Mul:87 Pi:25
+112 hash relations.py 1538 Relations.selectors_of CONTAINS_OP: Mul:87 Pi:25
+104 Fhash engine.py 1756 Engine._query_cone STORE_SUBSCR And:102 Not:2
+99 hash relations.py 1839 Relations.sync_transfer CONTAINS_OP: Symbol:83 Add:16
+99 hash engine.py 841 Session.escalate CONTAINS_OP: Add:67 Mul:32
+93 hash engine.py 1710 Engine._cone_info CALL Symbol:37 Mul:24 Pow:15 Add:10
+90 hash theories/euf/euf_adapter.py 183 EUFAdapter.node_term CALL Symbol:79 Add:11
+88 eq knowledge/templates/registry.py 231 TemplateRegistry.clauses_for CALL Add/Add:79 NegativeOne/Integer:5 Mul/Mul:4
+88 eq relations.py 402 closed_units BINARY_SUBSCR Add/Add:79 NegativeOne/Integer:5 Mul/Mul:4
+87 hash relations.py 970 Relations._mention_number STORE_SUBSCR Mul:87
+87 hash relations.py 1539 Relations.selectors_of BINARY_SUBSCR Mul:87
+86 hash relations.py 2000 glue_objects CALL Symbol:41 Zero:13 Add:10 Mul:9
+84 eq /home/tilo/.local/share/uv/python/cpython-3.12.14-linux-aarch64-gnu/lib/python3.12/collections/__init__.py 791 Counter.__eq__.<locals>.<genexpr> BINARY_SUBSCR Mul/Mul:84
+75 hash knowledge/templates/_common.py 332 facts STORE_SUBSCR Half:14 Pi:14 NegativeOne:13 Integer:11
+68 hash relations.py 1718 Relations._transfer_terms CONTAINS_OP: Symbol:57 Add:11
+65 hash engine.py 270 DictCache.put CALL One:15 Zero:13 Integer:13 Half:7
+58 hash engine.py 1750 Engine._query_cone CALL Add:58
+50 hash relations.py 1821 Relations.sync_transfer CALL Symbol:44 Add:6
+50 hash relations.py 1833 Relations.sync_transfer CONTAINS_OP: Symbol:44 Add:6
+46 hash theories/euf/euf_adapter.py 233 EUFAdapter.term_of CALL Zero:35 One:11
+46 hash relations.py 711 _number_basis CALL Zero:35 One:11
+40 hash relations.py 1840 Relations.sync_transfer CALL Symbol:35 Add:5
+39 hash scope.py 139 affine_pair CONTAINS_OP: Add:39
+39 hash scope.py 146 affine_pair STORE_SUBSCR Add:39
+38 eq engine.py 1775 Engine._union BINARY_OP Add/Add:38
+31 Fhash engine.py 1946 Engine.verdict CALL And:31
+31 eq knowledge/templates/core.py 161 _bound_split COMPARE_OP:== One/int:19 Half/int:6 Rational/int:4 NegativeOne/int:2
+30 eq engine.py 1622 Engine._struct CALL Add/Add:23 Mul/Mul:5 NegativeOne/Integer:2
+26 eq engine.py 1807 Engine._within_budget CONTAINS_OP: Symbol/Add:6 Add/Symbol:6 Symbol/Mul:2 Mul/Symbol:2
+22 eq engine.py 1684 Engine._cone_info CALL Add/Add:19 Mul/Mul:2 NegativeOne/Integer:1
+16 eq theories/euf/euf_adapter.py 254 EUFAdapter.shared_terms CALL NegativeOne/Integer:16
+16 eq sat/theory.py 211 EqualitySharing.update CONTAINS_OP: NegativeOne/Integer:16
+16 eq sat/theory.py 212 EqualitySharing.update STORE_SUBSCR NegativeOne/Integer:16
+16 eq sat/theory.py 214 EqualitySharing.update BINARY_SUBSCR NegativeOne/Integer:16
+16 eq sat/theory.py 214 EqualitySharing.update STORE_SUBSCR NegativeOne/Integer:16
+16 eq sat/theory.py 215 EqualitySharing.update BINARY_SUBSCR NegativeOne/Integer:16
+16 hash engine.py 274 DictCache.put STORE_SUBSCR Mul:4 Integer:3 NegativeOne:1 Zero:1
+15 eq knowledge/templates/_common.py 328 facts CALL Rational/Rational:14 NegativeOne/Integer:1
+15 hash relations.py 1732 Relations._transfer_terms CALL Add:11 Mul:4
+15 eq knowledge/templates/core.py 175 _bound_rules COMPARE_OP:== Zero/int:7 NegativeOne/int:4 Rational/int:3 Integer/int:1
+13 eq knowledge/templates/wiring.py 207 matches COMPARE_OP:== NegativeOne/NegativeOne:12 Mul/Mul:1
+13 eq relations.py 601 zero_args CONTAINS_OP: Symbol/Add:6 Symbol/Mul:2 Dummy/Mul:2 Dummy/exp:1
+12 hash relations.py 2010 glue_objects CALL Add:12
+12 hash knowledge/templates/_common.py 345 units CALL Integer:5 NegativeOne:1 Zero:1 Pi:1
+12 hash knowledge/templates/_common.py 390 units STORE_SUBSCR Integer:5 NegativeOne:1 Zero:1 Pi:1
+11 eq engine.py 1700 Engine._cone_info CALL Add/Add:9 Mul/Mul:1 NegativeOne/Integer:1
+9 eq engine.py 1709 Engine._cone_info CONTAINS_OP: Add/Add:9
+9 eq knowledge/templates/core.py 177 _bound_rules COMPARE_OP:== Zero/int:4 Half/int:3 One/int:2
+8 eq theories/euf/euf_adapter.py 200 EUFAdapter._intern CONTAINS_OP: NegativeOne/Integer:8
+8 eq theories/euf/euf.py 185 EUFTheory.value CALL NegativeOne/Integer:8
+8 eq theories/euf/euf.py 148 EUFTheory._new STORE_SUBSCR NegativeOne/Integer:8
+8 eq theories/euf/euf_adapter.py 203 EUFAdapter._intern STORE_SUBSCR NegativeOne/Integer:8
+8 eq theories/euf/euf_adapter.py 206 EUFAdapter._intern BINARY_SUBSCR NegativeOne/Integer:8
+8 eq theories/euf/euf_adapter.py 223 EUFAdapter.interned CONTAINS_OP: NegativeOne/Integer:8
+8 eq theories/euf/euf_adapter.py 225 EUFAdapter.interned CALL NegativeOne/Integer:8
+8 eq relations.py 1267 Relations._tsource CALL NegativeOne/Integer:8
+8 eq relations.py 1269 Relations._tsource STORE_SUBSCR NegativeOne/Integer:8
+8 hash knowledge/compile.py 58 _def CALL Symbol:8
+6 hash knowledge/domain.py 470 _noncommutative STORE_SUBSCR Mul:4 Infinity:1 Pow:1
+5 eq knowledge/domain.py 442 _noncommutative CALL NegativeOne/Integer:4 Add/Add:1
+5 Fhash engine.py 1156 Session.literal_of CALL And:4 Not:1
+5 Fhash engine.py 1164 Session.literal_of STORE_SUBSCR And:4 Not:1
+4 eq relations.py 523 relation_atom CALL One/Integer:4
+4 eq engine.py 2001 Engine.is_ CALL NegativeOne/Integer:4
+4 eq engine.py 263 DictCache.facts CALL NegativeOne/Integer:4
+4 eq engine.py 270 DictCache.put CALL NegativeOne/Integer:4
+4 eq relations.py 575 _under_apps CALL Add/Add:4
+4 hash engine.py 752 Session._compile_pending DELETE_SUBSCR re:2 Symbol:2
+3 eq <string> 4 __create_fn__.<locals>.__eq__ COMPARE_OP:== Add/Add:3
+3 hash theories/lra/lra_bounds.py 183 _interval CALL ImaginaryUnit:2 Mul:1
+3 eq knowledge/templates/registry.py 242 TemplateRegistry.clauses_for STORE_SUBSCR Mul/Mul:1 NegativeOne/Integer:1 Add/Add:1
+3 eq relations.py 418 closed_units STORE_SUBSCR Mul/Mul:1 NegativeOne/Integer:1 Add/Add:1
+3 eq engine.py 1673 Engine._struct STORE_SUBSCR Mul/Mul:1 NegativeOne/Integer:1 Add/Add:1
+3 eq engine.py 1723 Engine._cone_info STORE_SUBSCR Mul/Mul:1 NegativeOne/Integer:1 Add/Add:1
+3 hash theories/lra/lra_bounds.py 141 <module> BUILD_MAP GoldenRatio:1 EulerGamma:1 Catalan:1
+2 eq theories/lra/lra_adapter.py 323 _constraint CALL One/Integer:2
+2 eq theories/lra/lra_adapter.py 348 interpret CALL One/Integer:2
+2 Feq engine.py 1737 Engine._query_cone CALL Not/Not:2
+2 hash theories/lra/lra_bounds.py 48 constant_bounds BINARY_SUBSCR ImaginaryUnit:1 Mul:1
+2 hash theories/lra/lra_bounds.py 55 constant_bounds STORE_SUBSCR ImaginaryUnit:1 Mul:1
+2 hash engine.py 2047 Engine.is_many CONTAINS_OP: Zero:1 One:1
+2 hash engine.py 2049 Engine.is_many CALL Zero:1 One:1
+2 hash relations.py 747 _number_basis STORE_SUBSCR Zero:1 One:1
+1 eq engine.py 274 DictCache.put STORE_SUBSCR NegativeOne/Integer:1
+1 eq knowledge/templates/core.py 247 _imag_term COMPARE_OP:== One/int:1
+1 eq knowledge/templates/core.py 387 _unit_angle COMPARE_OP:== sign/NegativeOne:1
+1 eq relations.py 590 _under_apps STORE_SUBSCR Add/Add:1
+1 eq knowledge/templates/_common.py 332 facts STORE_SUBSCR NegativeOne/Integer:1
