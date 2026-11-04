@@ -22,8 +22,9 @@ Sets inside SymPy are out of reach; vary ``PYTHONHASHSEED`` for those.
     python -m harness.set_order compare BASE.json OTHER.json ...
 
 ``run`` without ``--seed`` installs the hook with the order untouched.
-``--pairs MODULE:FUNCTION[:ARG]`` replaces ``--stream`` by a function
-returning ``(proposition, assumptions)`` pairs.
+``--pairs MODULE:FUNCTION[:ARG...]`` replaces ``--stream`` by a function
+returning ``(proposition, assumptions)`` pairs; :func:`strips` is one built to
+sit near ``BRANCH_BUDGET``.
 """
 import argparse
 import ast
@@ -33,6 +34,7 @@ import importlib
 import importlib.machinery
 import json
 import os
+import random
 import sys
 
 #: callables that read an argument in iteration order, by last name
@@ -159,36 +161,73 @@ def install(seed=None, only=None):
 
 
 class _Trace:
-    """Per query: which clauses reached the solvers, and how many LRA
-    theories ran out of branches.  A clean comparison means little if the
-    shuffle moved no search or no budget ever ran out."""
+    """Per query: which clauses reached the solvers, the LRA path (literals
+    asserted, conflicts of branch and bound), and how many LRA theories ran
+    out of branches.  A clean comparison means little if the shuffle moved no
+    search or no budget ever ran out."""
 
     def __init__(self):
         from satassume.sat import solver
         from satassume.theories.lra import lra
-        self.clauses, self.spent = hashlib.sha1(), set()
-        add, branch = solver.Solver.add_clause, lra.LRATheory._branch
+        self.clauses, self.path, self.spent = hashlib.sha1(), hashlib.sha1(), set()
+        add, branch, assert_lit = solver.Solver.add_clause, lra.LRATheory._branch, lra.LRATheory.assert_lit
 
         def add_clause(s, *a, **k):
             self.clauses.update(repr(a).encode())
             return add(s, *a, **k)
 
+        def _assert_lit(t, literal):
+            self.path.update(b"%d," % literal)
+            return assert_lit(t, literal)
+
         def _branch(t, *a, **k):
             r = branch(t, *a, **k)
+            self.path.update(repr(r).encode())
             if t.exhausted:
                 self.spent.add(id(t))
             return r
-        solver.Solver.add_clause, lra.LRATheory._branch = add_clause, _branch
+        solver.Solver.add_clause = add_clause
+        lra.LRATheory._branch, lra.LRATheory.assert_lit = _branch, _assert_lit
 
     def row(self, answer):
-        r = (str(answer), self.clauses.hexdigest()[:12], len(self.spent))
-        self.clauses, self.spent = hashlib.sha1(), set()
+        r = (str(answer), self.clauses.hexdigest()[:12], len(self.spent), self.path.hexdigest()[:12])
+        self.clauses, self.path, self.spent = hashlib.sha1(), hashlib.sha1(), set()
         return r
 
 
 def _pairs(spec):
     mod, fn, *arg = spec.split(":")
     return getattr(importlib.import_module(mod), fn)(*(int(a) if a.isdigit() else a for a in arg))
+
+
+def strips(seed, n=400):
+    """Queries about integers in thin strips: bounded variables, with the
+    query's negation leaving a band that holds rationals but maybe no
+    integer.  So many are definite only through branch and bound, with a
+    number of branches near the budget.  About 1 in 8 answers changes between
+    budgets 4 and 1000."""
+    from sympy import And, Q, Rational as R, symbols
+    names = symbols("a b c d", integer=True)
+    rng = random.Random(seed)
+
+    def form(vs):
+        while True:
+            cs = [rng.randint(-9, 9) for _ in vs]
+            if sum(c != 0 for c in cs) >= 2:
+                return sum(c * v for c, v in zip(cs, vs))
+
+    out = []
+    for _ in range(n):
+        vs = rng.sample(names, rng.choice([2, 3, 3, 4]))
+        k = rng.choice([5, 10, 20, 50, 100])
+        s = [f(v, b) for v in vs for f, b in ((Q.ge, -k), (Q.le, k))]
+        band, query = form(vs), form(vs)
+        t, u = rng.randint(-9, 9), rng.randint(-9, 9)
+        s += [Q.ge(band, t + R(1, 3)), Q.le(band, t + rng.randint(1, 3) + R(2, 3)), Q.ge(query, u + R(1, 2))]
+        if rng.random() < .4:
+            s.append(Q.ne(rng.choice(vs), rng.randint(-3, 3)))
+        out.append((Q.gt(query, u + rng.randint(1, 3) + R(1, 2)), And(*s)))
+    return out
 
 
 def run(args):
@@ -228,12 +267,13 @@ def run(args):
 
 
 def moved(base, other):
-    """Indices whose answer differs, and how many clause sequences do."""
+    """Indices whose answer differs, and how many clause sequences and LRA paths do."""
     a, b = base["rows"], other["rows"]
     if len(a) != len(b):
         raise ValueError(f"{len(a)} queries against {len(b)}")
     return ([i for i, (x, y) in enumerate(zip(a, b)) if x[0] != y[0]],
-            sum(x[1] != y[1] for x, y in zip(a, b)))
+            sum(x[1] != y[1] for x, y in zip(a, b)),
+            sum(x[3] != y[3] for x, y in zip(a, b)))
 
 
 def compare(args):
@@ -243,10 +283,10 @@ def compare(args):
     for path in args.others:
         with open(path) as f:
             other = json.load(f)
-        m, paths = moved(base, other)
+        m, clauses, paths = moved(base, other)
         bad += len(m)
         print(f"{path}: {len(other['rows'])} compared, {len(m)} answers moved {m[:20]}, "
-              f"{paths} clause sequences moved, "
+              f"{clauses} clause sequences and {paths} LRA paths moved, "
               f"{sum(r[2] > 0 for r in other['rows'])} queries ran out of branches")
     return 1 if bad else 0
 

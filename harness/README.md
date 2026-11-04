@@ -231,6 +231,7 @@ python -m harness audit --profile base,related,declared --seeds 0-11 --queries 2
 # the same stream under several PYTHONHASHSEED values, one interpreter each
 python -m harness hashseed --seeds 0-3 --hashseeds 0,1,2,3,42 --config default --queries 300
 python -m harness hashseed --profile related --seeds 0-2 --hashseeds 0,1,2,42 --queries 250
+python -m harness.set_order run OUT.json --seed 1 --stream 0:200:5 --branch-budget 2   # seeded order of the sets satassume iterates, then `compare`; issue #325
 
 # re-run a saved discrepancy, optionally in a fresh interpreter under a seed
 python -m harness repro harness/repros/G7-links-zero-scaled-term-order-after-relation.json [--hashseed 7]
