@@ -552,7 +552,7 @@ class _DummyAdapter:
     def __init__(self):
         self.theory = self.theory_class()
         self.attached = False
-        self.known: set = set()
+        self.known: dict = {}
 
     def register(self, solver, var, atom) -> bool:
         payload = self.interpret(atom)
@@ -562,11 +562,11 @@ class _DummyAdapter:
             solver.attach_theory(self.theory)
             self.attached = True
         solver.register_atom(self.theory, var, payload)
-        self.known.update(self.terms(atom) or ())
+        self.known.update(dict.fromkeys(self.terms(atom) or ()))
         return True
 
-    def shared_terms(self) -> set:
-        return set(self.known)
+    def shared_terms(self) -> list:
+        return list(self.known)
 
 
 class OrderAdapter(_DummyAdapter):

@@ -300,6 +300,41 @@ print(h.hexdigest())
     assert len(digests) == 1, digests
 
 
+def test_clause_sequence_does_not_depend_on_the_hash_seed():
+    """The interface equalities (EqualitySharing) follow the theories' first
+    sight of each term, not a set's order: the terms' hashes change with
+    ``PYTHONHASHSEED``, and a ``Dummy``'s from run to run under one seed."""
+    import subprocess
+    import sys
+    code = """
+import hashlib
+from sympy import Dummy, Function, Q, symbols
+from satassume import sympy_api
+from satassume.sat.solver import Solver
+h = hashlib.md5()
+add = Solver.add_clause
+def logged(self, *a, **k):
+    h.update(repr(a).encode())
+    return add(self, *a, **k)
+Solver.add_clause = logged
+f = Function("f")
+ts = [*symbols("a b c e u v"), Dummy("w"), Dummy("t")]
+for x, y in zip(ts, ts[1:]):
+    sympy_api.ask(Q.eq(f(x), f(y)), Q.le(x, y) & Q.le(y, x))
+sympy_api.ask(Q.eq(f(ts[0]), f(ts[-1])),
+              Q.eq(sum(ts), 0) & Q.eq(f(sum(ts[:4])), f(sum(ts[4:]))) & Q.le(ts[0] + ts[1], ts[2]))
+print(h.hexdigest())
+"""
+    digests = set()
+    for hs in ("0", "0", "1", "42"):
+        env = dict(os.environ, PYTHONHASHSEED=hs)
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                             cwd=ROOT, env=env, timeout=300)
+        assert out.returncode == 0, out.stderr[-3000:]
+        digests.add(out.stdout.strip())
+    assert len(digests) == 1, digests
+
+
 # -- CI-sized profile runs that find a known family (strict xfails) -----------
 
 def _assert_no_discrepancy(rep):

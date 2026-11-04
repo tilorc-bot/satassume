@@ -342,7 +342,8 @@ object with
 * optionally ``order_sides(atom)`` (guarded adapters): the linear forms of
   the two sides of ``Q.lt(a, b)`` with their ``oo`` summands, for
   clauses 2 (see :func:`satassume.theories.lra.lra_adapter.order_sides`);
-* ``shared_terms() -> set``: every term the adapter's theory knows.
+* ``shared_terms() -> list``: every term the adapter's theory knows, in the
+  order it first saw them, so that the interface atoms have a defined order.
 
 The default specs are the LRA and EUF adapters when their modules exist
 (:func:`default_specs`).  With no spec at all the engine behaves exactly
@@ -1583,8 +1584,7 @@ class Relations:
     def _share(self) -> bool:
         if len(self.adapters) < 2:
             return False
-        sets = [set(ad.shared_terms()) for ad in self.adapters.values()]
-        pairs = self.sharing.update(sets)
+        pairs = self.sharing.update(ad.shared_terms() for ad in self.adapters.values())
         for a, b in pairs:
             if _is_number(a) and _is_number(b):
                 continue
