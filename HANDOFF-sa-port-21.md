@@ -10,13 +10,20 @@ Read first: my brief `~/.local/state/agent/briefs/sa-port-21-20261107T092600Z.tx
 
 | Job | Done when | State at 09:59 UTC | Read |
 |---|---|---|---|
-| Suite rerun with sympy on the subprocess path | `$O/suite2/done` | Running | Same script as below: expect 5,961 / 77 / 46 on Rust and Python with 0 failed, **not yet seen** |
+| Suite rerun with sympy on the subprocess path | `$O/suite2/done` | Finished, read above | Not needed |
 | Fresh, `LRA_MUT` 6 and 7, history and seeds, `mutate_live` 15 mutants, boundary with suite column | `$O/checks/done`; parts: `checks/{fresh,lramut,hist,mutlive,mutbound}/done` | Fresh dev MATCH, fuzz running | `p1_checks.sh` says what each part writes. `mutbound` may take hours (25 mutants, up to 15 min each, 6 at a time) |
 | Planted bugs in payload, term ids, model (18) | `$O/portmut/done`; waits up to 60 min for `checks/fresh/done` | Waiting | `portmut/{dev,ground,fuzz}/score.txt`. **Check `portmut/so/*/sa_solver.so` exist**: never run yet at this size; only two Python mutants tried on one query |
 
 **Don't rsync the tree to pareto1 while these run.** They start new processes from `~/sp19/dev/sa-port-19`, and `live.py` and `rust_plugin.py` are newer on orion than there on purpose. If a job fails, its log is the lease log above.
 
-**Latest reading, `suite2`, at 10:00 UTC:** suite2 Rust rows 6125, failed 123, off the base lists 0, on the lists but not failing 0; caught 49: {('verdict<consistent_by', 'Uninterpreted'): 3, ('verdict<_consistent', 'Uninterpreted'): 7, ('verdict<_consistent', 'AttributeError'): 38, ('complete_check', 'RuntimeError'): 1}. Python: still running. Rust's exit line: `123 failed, 5961 passed, 23 skipped, 18 xfailed`. This is on df393bb's source, so it isn't the rebased result.
+**Latest reading, `suite2`, at 10:00 UTC:** suite2 Rust rows 6125, failed 123, off the base lists 0, on the lists but not failing 0; caught 49: {('verdict<consistent_by', 'Uninterpreted'): 3, ('verdict<_consistent', 'Uninterpreted'): 7, ('verdict<_consistent', 'AttributeError'): 38, ('complete_check', 'RuntimeError'): 1}. Rust's exit line: `123 failed, 5961 passed, 23 skipped, 18 xfailed`. This is on df393bb's source, so it isn't the rebased result.
+
+**Suite2's Python side finished: 0 failed, 6,084 passed, 23 skipped, 18 xfailed.** So all 11 first-run failures, the memo test included, were pareto1's setup. 6,084 is 5,961 + 123. On df393bb's source only.
+
+**`catch_count` checked, at the architect's request (sa-port-22 found sa-port-17's counter could never fire). It fires, but it had a hole, so earlier zeros are narrower than they were stated.** `slice/test_catch_count.py` plants a raise on each route; 3 of 3 pass as a script and under pytest on both backends, and each shows in the row's `caught`. Evidence from `live.py` itself is natural, not planted: the `quiet` kinds in the drop rows above.
+- **The hole, now fixed on orion:** `sympy_api.py:1107`'s `try` also covers `_formula`, and the counter only wrapped `verdict`. It now counts `formula<_consistent`. Everything already run used the old counter, **including sa-port-19's 0s, the suite rows here, and the running `checks` jobs,** because pareto1's tree isn't updated yet. So those zeros and the sum of 49 say nothing about `_formula` raising at 1107: they're floors for that route. The rebased run carries the fix.
+- **Still uncounted, not fixed:** `s.assumption_lits()` is an argument inside 1906's `try`, so a raise there reaches the handler without passing the wrapper. Found by reading, not run.
+- The counter also counts raises from `_complete_check` and `verdict` at any caller, so it can count more than the handlers catch. `verdict`'s caller is named in the site; `_complete_check`'s isn't.
 
 ## What ran, and what it shows
 
@@ -28,8 +35,7 @@ Read first: my brief `~/.local/state/agent/briefs/sa-port-21-20261107T092600Z.tx
 | Python | 6,073 | 11 | 23 | 18 |
 
 - **Rust only: 123, exactly the base's lists by id** against `port-census/pr328-check/suite-lists.md`: 77 internals, 46 re-entry, none missing and none extra. Includes every `test_lra*` id on those lists.
-- **Both backends, same failure text: 11, pareto1's setup.** 10 are `No module named sympy` in a subprocess: orion's venv has `sa_rust_sympy.pth`, pareto1's didn't. I added it. The 11th, `test_memos.py::test_memo_registry_lists_every_owner`, also runs in a subprocess, but I only read the end of its text, so **it isn't shown to be the same cause.** Ids: `test_compiled_rows.py` 2, `test_layering.py` 6, `test_memos.py` 1, `test_sympy_boundary.py::test_runtime_trap_corpus`, `test_trig_rows.py::test_show_rows_lists_each_row_with_its_source`.
-- 5,950 + 11 = 5,961 and 123 = 77 + 46, but **that's arithmetic until `suite2` shows it.**
+- **Both backends, same failure text: 11, pareto1's setup.** 10 are `No module named sympy` in a subprocess: orion's venv has `sa_rust_sympy.pth`, pareto1's didn't. I added it. The 11th, `test_memos.py::test_memo_registry_lists_every_owner`, also passes on the rerun. Ids: `test_compiled_rows.py` 2, `test_layering.py` 6, `test_memos.py` 1, `test_sympy_boundary.py::test_runtime_trap_corpus`, `test_trig_rows.py::test_show_rows_lists_each_row_with_its_source`.
 - Test-level LRA counts summed over Rust's rows: 45,105 sessions, 235,671 views, 2,683 moved. **Reasons weren't in the rows;** see "Order".
 
 ### Quiet catches, suite: summed over the rows, first run
@@ -68,8 +74,9 @@ So it would read 68 / 13 / 2 / 0. **Not quotable yet:**
 
 D and 0 landed on `rust-slice` at cc3055c with source changes (architect, 7 Nov). **So the suite counted for the report is the one after the rebase.**
 
-1. Read `suite2`: the clean numbers on df393bb's source, and the 11th failure's cause. Send a `Status: progress` report.
+1. `suite2` is read, above.
 2. Read `checks`' parts and `portmut` as they end, each with a progress report: `fresh/*.cmp` (rows now carry branch counts: fill in condition 2), `lramut/m{0,6,7}/*.cmp` (m0 must MATCH), `hist/cmp.txt`, `mutlive/table.md`, `mutbound/work/table.md`, `portmut/*/score.txt`.
+2a. After the rebase, sum `caught` again, now with `formula<_consistent`, and report it against the floors above.
 3. Rerun the drop mutants with `p1_drop.sh` **alone in its tree**, `live.py` now prints a dead child's wait status. Then state the final split, naming what's left at the state read.
 4. Rebase on `origin/rust-slice` when those jobs have ended, build, rsync, then the suite (`p1_suite.sh`, `OUT=` new dir), fresh dev and fuzz, move on fuzz, compared by id. Others' source came in, so this isn't optional. The rows then carry `moves` (reason, call, level). **That field has run on 34 tests with no move, so its output hasn't been seen.**
 5. **Planner's question:** from those `moves`, group the suite's reasons. **So far only dev and fuzz have reasons, all in the constants family at level 0.** The suite's 2,683 moved have no reasons yet, so it's unanswered. Send it to forward-chain-3b in three lines as well as the report.
@@ -85,6 +92,7 @@ D and 0 landed on `rust-slice` at cc3055c with source changes (architect, 7 Nov)
 | Rows surviving the state read | `slice/dump_mutants.py`, `go()`; `score()`'s `unreadable`, `quiet` |
 | Planted bugs in the port | `slice/port_mutants.py`, tables `PY`, `RS` |
 | Move reasons in suite rows | `slice/rust_plugin.py`, `moves_before`, `moves=` |
+| Planted raises for the counter | `slice/test_catch_count.py`; `slice/catch_count.py` `counted_formula` |
 | A dead child's status | `slice/live.py`, after `os.waitpid(child, 0)` |
 | Job scripts | `slice/p1/p1_{suite,drop,checks,portmut}.sh`; copies in `~/sp19/` on pareto1. `p1_suite2.sh` and `p1_portwait.sh` are only on pareto1 |
 | The swallowed harness reads | `harness/invariants.py:115`, `:121` |

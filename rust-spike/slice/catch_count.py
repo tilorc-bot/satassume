@@ -30,6 +30,18 @@ def install():
             raise
     Engine._complete_check = staticmethod(complete_check)
     Engine.verdict = counted_verdict
+    # `_consistent`'s handler at sympy_api.py:1107 also covers `_formula`, which `verdict` doesn't see.
+    from satassume import sympy_api
+    formula = sympy_api._formula
+
+    def counted_formula(*a, **k):
+        try:
+            return formula(*a, **k)
+        except Exception as e:
+            if sys._getframe(1).f_code.co_name == "_consistent":
+                sink.append(("formula<_consistent", type(e).__name__, str(e)[:200]))
+            raise
+    sympy_api._formula = counted_formula
 
 
 def take():
