@@ -23,15 +23,19 @@ def a(*t):
 
 #: (moved function's counter, plant it stands for, query builder, assumptions builder). Built per test, so no test reuses
 #: another's objects.
+#: Equivalent mutants (scored void, not caught by design): core-mul-sets-ct-two (a 2-arg Mul's rest is one factor, and
+#: `kept_product` of one factor is None on both sides) and core-mul-sets-ipi-any (the Python shell's own `s_.is_Mul` test in
+#: knowledge_core_live.mul_factor_sets drops a one-factor rest, as Python does). Their cases still check answers and the shadow.
 CASES = [
     ('core:bound_split', 'core-bound-zero-kept', lambda: Q.positive(a(S(1), m(S.Zero, x))), lambda: Q.real(x)),
-    ('core:recip_templates', 'core-recip-any-exp', lambda: Q.positive(Pow(a(S(1), x), 2, evaluate=False)), lambda: Q.positive(x)),
+    ('core:recip_templates', 'core-recip-any-exp', lambda: Q.positive(a(S(1), Pow(x, 2, evaluate=False))), lambda: Q.real(x)),
     ('core:imag_split', 'core-imag-two-rest', lambda: Q.imaginary(a(m(I, x, y), m(S(2), I))), lambda: Q.positive(x) & Q.positive(y)),
     ('core:_pi_split', 'core-pi-split-second-i', lambda: Q.real(exp(m(I, I, pi, x), evaluate=False)), lambda: Q.integer(x)),
     ('core:_mul_factor_sets', 'core-mul-sets-ipi-any', lambda: Q.real(m(I, pi, x)), lambda: Q.integer(x)),
     ('core:_mul_factor_sets', 'core-mul-sets-ct-two', lambda: Q.positive(m(S(2), x)), lambda: Q.positive(x)),
     ('core:_unit_angle', 'core-unit-angle-neg', lambda: Q.real(Pow(m(S.NegativeOne, I), Rational_(1, 2), evaluate=False)), lambda: True),
-    ('core:_exp_arg', 'core-exp-arg-any', lambda: Q.real(Pow(S(2), m(I, pi, x), evaluate=False)), lambda: Q.integer(x)),
+    ('core:_exp_arg', 'core-exp-arg-any', lambda: Q.positive(Pow(Pow(S(2), y, evaluate=False), m(I, x), evaluate=False)),
+     lambda: Q.real(x) & Q.real(y)),
     ('core:_pow_bound_templates', 'core-pow-bound-any-exp', lambda: Q.positive(Pow(a(S(1), x), 3, evaluate=False)), lambda: Q.positive(x)),
 ]
 
