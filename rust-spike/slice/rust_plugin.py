@@ -74,6 +74,19 @@ if BACKEND == "rust":
 
         _euf.EUFTheory = _euf_adapter.EUFTheory = EUFTheory
 
+# Rust EUF on Python's solver: the tests whose harness reads Solver internals fail on the crate's solver before any EUF
+# answer is read (the 77 and 46), so this is the only way they check the Rust EUF. SLICE_EUF=rust asks for it.
+if BACKEND != "rust" and os.environ.get("SLICE_EUF") == "rust":
+    sys.path.insert(0, os.environ.get("SLICE_SO") or os.path.dirname(os.path.abspath(__file__)))
+    import sa_solver
+    import satassume.theories.euf.euf as _euf
+    import satassume.theories.euf.euf_adapter as _euf_adapter
+
+    class EUFTheory(sa_solver.EUFTheory):
+        pass
+
+    _euf.EUFTheory = _euf_adapter.EUFTheory = EUFTheory
+
 _init = PySolver.__init__
 
 
