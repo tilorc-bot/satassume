@@ -348,11 +348,6 @@ impl PyTermTable {
         self.0.eq_links_plan(TermId(a), TermId(b)).map(|p| plan_rows(&p)).map_err(refuse)
     }
 
-    /// `_eq_infinity`: None, or (other side, pred, that side is a number, plan).
-    fn eq_infinity_plan(&self, a: u32, b: u32) -> Option<(u32, &'static str, bool, Vec<PlanRow>)> {
-        self.0.eq_infinity_plan(TermId(a), TermId(b)).map(|(e, pred, closed, p)| (e.0, pred, closed, plan_rows(&p)))
-    }
-
     /// `scope.affine_pair`, given each sign atom's argument.
     fn affine_pair(&self, signs: Vec<u32>) -> bool {
         self.0.affine_pair(&ids_of(signs))

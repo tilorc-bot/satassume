@@ -57,6 +57,17 @@ def _queries():
         'mention-eq': (Q.positive(f(sin(2))), Q.eq(x, sin(2)) & Q.positive(f(x))),
         'integer-link': (Q.integer(x + 1), Q.integer(x)),
         'integer-bound': (Q.lt(2 * n, 2) & Q.gt(2 * n, 0), True),
+        # C2b. `_eq_infinity`: fresh dev never reaches it, so these and the fuzz are its evidence.
+        'eq-oo-symbol': (Q.eq(x, oo), Q.positive_infinite(x)),
+        'eq-oo-left': (Q.eq(oo, x), Q.positive_infinite(x)),
+        'eq-minus-oo': (Q.eq(x, -oo), Q.negative_infinite(x)),
+        'eq-oo-number': (Q.eq(f(x), oo), Q.eq(f(x), 2)),
+        'eq-oo-pi': (Q.eq(pi, oo), True),
+        'eq-minus-oo-sqrt': (Q.eq(sqrt(2), -oo), True),
+        # `_guard` and `_bound`: a closed term in a guarded atom, twice, so the memo and `_bounded` both answer.
+        'guard-twice': (Q.lt(x + pi, y) & Q.lt(x + pi, z), Q.gt(x, 1)),
+        'bound-sqrt': (Q.lt(sqrt(2), x) & Q.lt(x, sqrt(3)), Q.gt(x, 5)),
+        'link-unlinked-eq': (Q.eq(x + y, 0), Q.positive(x + y)),
     }
 
 
@@ -79,14 +90,24 @@ def _run():
             return add(c)
         self.solver.add_clause = rec
     engine.Session.__init__ = rec_init
+    # `selectors_of` reaches no clause: what it returned is compared on its own.
+    from satassume import relations as _rel
+    sels, py_sel = [], _rel.Relations.selectors_of
+
+    def rec_sel(self, atoms):
+        got = py_sel(self, atoms)
+        sels.append(list(got))
+        return got
+    _rel.Relations.selectors_of = rec_sel
     out = {}
     for name, (p, a) in _queries().items():
         streams[0] = []
+        sels.clear()
         try:
             got = repr(ask(p, a, engine=engine.Engine()))
         except BaseException as e:
             got = f'{type(e).__name__}: {e}'
-        out[name] = dict(answer=got, streams=streams[0])
+        out[name] = dict(answer=got, streams=streams[0], selectors=list(sels))
     # `_order_infinite` returns on an unknown sign, past the `ensure` and `var` of the terms before it: those effects stay.
     from sympy import Symbol as Sy, pi as _pi
     from satassume import relations
@@ -208,8 +229,10 @@ def test_undecided_return_was_reached(rust):
 
 def test_each_method_ran(rust):
     c = rust['counts']
-    for k in ('closed_extended_real', 'order_sides', 'order_infinite', 'trichotomy', 'mention_number', 'link_integer'):
+    for k in ('closed_extended_real', 'order_sides', 'order_infinite', 'trichotomy', 'mention_number', 'link_integer',
+              'fresh', 'interpret', 'guard', 'link', 'selectors_of', 'eq_infinity'):
         assert c['rel:' + k] > 0, k
+    # Not `bound`: no query here reaches it, on Python's own `_bound` either. Its reach is measured by the `drop-bound` plant's count.
     assert c['rel:var'] > 0 and c['link:resolved'] > 0 and c['link:hit'] > 0 and c['link:no_node'] > 0
 
 
@@ -220,11 +243,25 @@ def test_link_none_moves_nothing(py):
     assert _differ(py, got) == []
 
 
-@pytest.mark.parametrize('plant', ['drop-order-sides', 'drop-order-infinite', 'drop-trichotomy'])
+@pytest.mark.parametrize('plant', ['drop-order-sides', 'drop-order-infinite', 'drop-trichotomy', 'drop-interpret', 'drop-guard',
+                                   'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-skew'])
 def test_dropped_clause_is_seen(py, plant):
     got = _call('run', SLICE_SESSION_PLANT=plant)
     assert got['counts']['rel:plant_fired'] > 0
     assert _differ(py, got) != []
+
+
+def test_fresh_not_inert_fires():
+    """The clause stream can't see `set_inert`, so this plant only shows it fires here. Its comparison is the fresh digests."""
+    assert _call('run', SLICE_SESSION_PLANT='fresh-not-inert')['counts']['rel:plant_fired'] > 0
+
+
+def test_link_crossings_add_up(rust):
+    """Each kind of crossing the report quotes, against the calls that make it."""
+    c = rust['counts']
+    assert c['link:calls'] == c['link:cross_current'] > 0
+    assert c['link:cross_hash'] == c['link:calls'] - c['link:no_table']
+    assert c['link:cross_term_id'] == c['link:cross_hash'] - c['link:hit']
 
 
 def test_join_second_object_resolves_on_its_own():

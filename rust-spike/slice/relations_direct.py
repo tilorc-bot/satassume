@@ -2,8 +2,9 @@
 
     relations_direct.py N SEED [--plant NAME] [--out FILE]
 
-`_eq_links` and `_eq_infinity` run on a recording session, so the trace compared is every ensure, var allocation, selector and
-emit, in order: that is what var numbering rests on. Fresh dev makes 0 `_eq_infinity` plans, which is why this exists. Also
+`_eq_links` runs on a recording session, so the trace compared is every ensure, var allocation, selector and emit, in order: that
+is what var numbering rests on. `_eq_infinity`'s plan is gone (C2b): it runs in `relations_core.rs`, compared in
+`test_relations_core.py`. Also
 `relation_atom` for all six names, `_ext_atoms`, `_is_number`, `affine_pair`, `_under_apps`, `zero_twin`, `structural`, `interned`
 and `_structural_subterms`. Fresh dev and fuzz make 0 nonempty `_under_apps`, so this is that function's evidence too. A refusal is counted by reason and is no evidence. `differs:*` is a finding. Exit 0 with none.
 """
@@ -132,7 +133,7 @@ def main():
             atoms = [P('positive', e) for e in (p, q0, third)]
             step('affine_pair', lambda: same('affine_pair', scope.affine_pair.__wrapped__(atoms), scope.affine_pair(atoms), p, q0, third))
             atom = P('eq', Args((p, q0)))
-            for name, m in (('_eq_links', R.Relations._eq_links), ('_eq_infinity', R.Relations._eq_infinity)):
+            for name, m in (('_eq_links', R.Relations._eq_links),):
                 step(name, lambda: same(name, trace(m.__wrapped__, atom), trace(m, atom), p, q0))
         except Exception as e:
             differs('raised', p, q0, type(e).__name__, e)

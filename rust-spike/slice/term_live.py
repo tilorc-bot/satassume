@@ -743,8 +743,7 @@ def _plant_plan(plan):
 
 
 def _run_plan(self, q, plan, var, g, given, site):
-    """A plan from Rust, left to right on the session, so var numbering holds. `g` runs after each clause's literals, for the
-    atom selector `_eq_infinity` allocates there. `s.var` holds SymPy objects until component 5: `given` are the objects the
+    """A plan from Rust, left to right on the session, so var numbering holds. `g` runs after each clause's literals. `s.var` holds SymPy objects until component 5: `given` are the objects the
     atom holds, and a derived id is rebuilt."""
     s = self.session
 
@@ -794,42 +793,6 @@ def _eq_links(py):
         _run_plan(self, q, plan, var, lambda: g, {i: a, j: b}, '_eq_links')
     eq_links.__wrapped__ = py
     return eq_links
-
-
-def _eq_infinity(py):
-    """`Relations._eq_infinity`: Rust finds the side and the plan, and `engine.is_` on a number stays a callback."""
-    term = _guarded('_eq_infinity', lambda q, a, b: _ids(q, '_eq_infinity', a, b))
-    plan_of = _guarded('_eq_infinity', lambda q, i, j: q.table.eq_infinity_plan(i, j))
-
-    def eq_infinity(self, var, atom):
-        a, b = atom.expr
-        q = current()
-        ids = term(q, a, b)
-        if ids is None:
-            return py(self, var, atom)
-        i, j = ids
-        got = plan_of(q, i, j)
-        if got is None:
-            return
-        e_id, pred, closed, plan = got
-        COUNTS['plan:_eq_infinity'] += 1
-        s = self.session
-        given = {j: b, i: a}
-        if closed:
-            COUNTS['is_:_eq_infinity'] += 1
-            v = s.engine.is_(given[e_id], pred)
-            if v is not None:
-                s.emit([var] if v else [-var])
-                return
-        made = []
-
-        def g():
-            if not made:
-                made.append(-self._atom_selector(atom))
-            return made[0]
-        _run_plan(self, q, _plant_plan(plan), var, g, given, '_eq_infinity')
-    eq_infinity.__wrapped__ = py
-    return eq_infinity
 
 
 def _tagged(got):
@@ -970,7 +933,7 @@ def _install(keys, terms):
         lra_adapter.default_sort_key = _key_consumer('lra_adapter', py_sort)
     py_atom, py_wise, py_links = relations.relation_atom, relations._termwise, relations.Relations._eq_links
     py_glue = relations.glue_objects
-    py_inf, py_ext, py_num, py_affine = relations.Relations._eq_infinity, relations._ext_atoms, relations._is_number, scope.affine_pair
+    py_ext, py_num, py_affine = relations._ext_atoms, relations._is_number, scope.affine_pair
     py_linked, py_under, py_twin = scope.linked_terms, relations._under_apps, relations.zero_twin
     py_struct, py_interned, py_subterms = euf_adapter.structural, euf_adapter.EUFAdapter.interned, relations._structural_subterms
     if terms:
@@ -980,7 +943,6 @@ def _install(keys, terms):
         relations._termwise = _termwise(py_wise)
         relations.Relations._eq_links = _eq_links(py_links)
         relations.glue_objects = engine.glue_objects = _glue_objects(py_glue)
-        relations.Relations._eq_infinity = _eq_infinity(py_inf)
         relations._ext_atoms = _ext_atoms(py_ext)
         relations._is_number = engine._is_number = scope._is_number = _is_number(py_num)
         scope.affine_pair = engine._affine_pair = _affine_pair(py_affine)
@@ -999,7 +961,6 @@ def _install(keys, terms):
         relations._termwise = py_wise
         relations.Relations._eq_links = py_links
         relations.glue_objects = engine.glue_objects = py_glue
-        relations.Relations._eq_infinity = py_inf
         relations._ext_atoms = py_ext
         relations._is_number = engine._is_number = scope._is_number = py_num
         scope.affine_pair = engine._affine_pair = py_affine

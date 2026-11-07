@@ -298,31 +298,6 @@ def _plan_trace(method, atom, answer=None):
     return s.log
 
 
-@pytest.mark.parametrize('side,inf,answer,path', [
-    (x, oo, None, 'symbolic'),
-    (S(2), oo, False, 'closed, decided'),
-    (oo, oo, True, 'closed, decided'),
-    (pi, -oo, None, 'closed, undecided'),
-])
-def test_eq_infinity_paths_match_python(live, side, inf, answer, path):
-    from satassume.knowledge.extensions import Args
-    from satassume.sat.formula import P
-    q = table_for(side, inf)
-    term_live.stack().append(q)
-    try:
-        atom = P('eq', Args((side, inf)))
-        m = R.Relations._eq_infinity
-        got = _plan_trace(m, atom, answer)
-        assert got == _plan_trace(m.__wrapped__, atom, answer), path
-    finally:
-        term_live.stack().pop()
-    c = live.counts()
-    assert c['plan:_eq_infinity'] == 1
-    assert c.get('is_:_eq_infinity', 0) == (0 if path == 'symbolic' else 1)
-    assert any(step[0] == 'is_' for step in got) == (path != 'symbolic')
-    assert any(step[0] == 'selector' for step in got) == (path != 'closed, decided')
-
-
 def _in_query(*terms):
     q = table_for(*terms)
     term_live.stack().append(q)
@@ -376,10 +351,10 @@ def test_a_plan_plant_changes_the_trace(live):
     from satassume.sat.formula import P
     _in_query(x, y)
     try:
-        atom = P('eq', Args((x, oo)))
-        q = table_for(x, oo)
+        atom = P('eq', Args((x, y)))
+        q = table_for(x, y)
         term_live.stack().append(q)
-        m = R.Relations._eq_infinity
+        m = R.Relations._eq_links
         want = _plan_trace(m.__wrapped__, atom)
         assert _plan_trace(m, atom) == want
         live.PLANT[0] = 'plan-drop'

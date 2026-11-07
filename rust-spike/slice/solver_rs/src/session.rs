@@ -14,12 +14,14 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 32] = [
+const NAMES: [&str; 43] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
     "rel:closed_extended_real", "rel:order_sides", "rel:order_infinite", "rel:trichotomy", "rel:mention_number", "rel:link_integer",
     "rel:var", "rel:plant_fired",
+    "rel:fresh", "rel:interpret", "rel:guard", "rel:bound", "rel:link", "rel:selectors_of", "rel:eq_infinity",
+    "link:calls", "link:cross_current", "link:cross_hash", "link:cross_term_id",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -53,6 +55,17 @@ pub(crate) const REL_MENTION: usize = 28;
 pub(crate) const REL_LINK_INTEGER: usize = 29;
 const REL_VAR: usize = 30;
 pub(crate) const REL_PLANT: usize = 31;
+pub(crate) const REL_FRESH: usize = 32;
+pub(crate) const REL_INTERPRET: usize = 33;
+pub(crate) const REL_GUARD: usize = 34;
+pub(crate) const REL_BOUND: usize = 35;
+pub(crate) const REL_LINK: usize = 36;
+pub(crate) const REL_SELECTORS: usize = 37;
+pub(crate) const REL_EQ_INFINITY: usize = 38;
+pub(crate) const LINK_CALLS: usize = 39;
+pub(crate) const LINK_CROSS_CURRENT: usize = 40;
+pub(crate) const LINK_CROSS_HASH: usize = 41;
+pub(crate) const LINK_CROSS_TERM_ID: usize = 42;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -60,7 +73,7 @@ pub(crate) const REL_PLANT: usize = 31;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 32] = const { [const { Cell::new(0) }; 32] };
+    static COUNTS: [Cell<u64>; 43] = const { [const { Cell::new(0) }; 43] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -424,6 +437,15 @@ impl SessionCore {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// `s.table.aux()` and `s.solver.ensure_vars(v)`, for `_fresh`. A plain call, so no `py:table` tick.
+    pub(crate) fn aux_direct(&self) -> i32 {
+        self.st.borrow_mut().aux()
+    }
+
+    pub(crate) fn ensure_vars_direct(&self, p: Python<'_>, v: i32) -> PyResult<()> {
+        self.ensure_vars(p, v)
     }
 
     fn emit(&self, p: Python<'_>, clause: &[i32]) -> PyResult<()> {

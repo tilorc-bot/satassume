@@ -195,27 +195,6 @@ impl TermTable {
         Ok(plan)
     }
 
-    /// `Relations._eq_infinity`: the other side, the pred, whether that side is a number (Python then asks `engine.is_`,
-    /// and only an unknown goes on to the plan), and the plan. None when neither side is infinite.
-    pub fn eq_infinity_plan(&self, a: TermId, b: TermId) -> Option<(TermId, &'static str, bool, Vec<PlanOp>)> {
-        for (kind, pred) in [(Kind::Infinity, "positive_infinite"), (Kind::NegativeInfinity, "negative_infinite")] {
-            let e = if self.class_of(b).kind == kind {
-                a
-            } else if self.class_of(a).kind == kind {
-                b
-            } else {
-                continue;
-            };
-            let plan = vec![
-                PlanOp::Ensure(e, vec![pred]),
-                PlanOp::Clause(vec![(true, None), (false, Some((pred, e)))]),
-                PlanOp::Clause(vec![(false, None), (true, Some((pred, e)))]),
-            ];
-            return Some((e, pred, self.is_number_term(e), plan));
-        }
-        None
-    }
-
     /// `scope.affine_pair`, given the argument of each sign atom in order.
     pub fn affine_pair(&self, signs: &[TermId]) -> bool {
         let mut sums: Vec<TermId> = vec![];

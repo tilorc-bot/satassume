@@ -291,17 +291,64 @@ def _rel_link_integer(self, ad, e, g):
     return sa_solver.rel_link_integer(self, ad, e, g)
 
 
+def _rel_fresh(self, inert=False):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_fresh'](self, inert)
+    return sa_solver.rel_fresh(self, inert)
+
+
+def _rel_interpret(self, atom):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_interpret'](self, atom)
+    return sa_solver.rel_interpret(self, atom)
+
+
+def _rel_guard(self, ad, terms):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_guard'](self, ad, terms)
+    return sa_solver.rel_guard(self, ad, terms)
+
+
+def _rel_bound(self, ad, c):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_bound'](self, ad, c)
+    return sa_solver.rel_bound(self, ad, c)
+
+
+def _rel_link(self, e):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_link'](self, e)
+    return sa_solver.rel_link(self, e)
+
+
+def _rel_selectors_of(self, atoms):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['selectors_of'](self, atoms)
+    return sa_solver.rel_selectors_of(self, atoms)
+
+
+def _rel_eq_infinity(self, var, atom):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_eq_infinity'](self, var, atom)
+    return sa_solver.rel_eq_infinity(self, var, atom)
+
+
 #: Python's own methods, for a session with no core: `satassume/ref.py`, the reference, keeps Python's `VarTable` under `Relations`,
 #: as `_rust_call` already allows for the compiler.
 PY_REL = {}
-#: Step 5b's C2a: these `Relations` methods run in `relations_core.rs`. SLICE_REL=py keeps them here over the same core.
+#: Step 5b's C2a and C2b: these `Relations` methods run in `relations_core.rs`. SLICE_REL=py keeps them here over the same core.
+#: Among themselves they call each other directly in Rust; these are for what's still Python. `_guard`, `_bound` and `_eq_infinity` have
+#: no Python caller left under Rust, and stay here so nothing can reach Python's copy by accident.
 _REL_METHODS = {
     '_closed_extended_real': _rel_closed_extended_real, '_order_sides': _rel_order_sides,
     '_order_infinite': _rel_order_infinite, '_trichotomy': _rel_trichotomy,
     '_mention_number': _rel_mention_number, '_link_integer': _rel_link_integer,
+    '_fresh': _rel_fresh, '_interpret': _rel_interpret, '_guard': _rel_guard, '_bound': _rel_bound, '_link': _rel_link,
+    'selectors_of': _rel_selectors_of, '_eq_infinity': _rel_eq_infinity,
 }
 #: Plants that live in `relations_core.rs`.
-_REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-trichotomy')
+_REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-trichotomy', 'drop-interpret', 'drop-guard',
+               'drop-bound', 'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-not-inert', 'fresh-skew')
 
 
 def _install_relations():
