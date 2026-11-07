@@ -17,6 +17,8 @@
 #   live         run_live.sh: dev and fuzz, Python twice and Rust, traced and untraced              (bar 2)
 #   plants       each of PLANTS on dev and fuzz against this run's Python                           (bar 3)
 #   seed1        dev and fuzz at PYTHONHASHSEED=1, Python against Rust (only if SEED1=1)
+#   extra        each of WLS (live.py workloads, e.g. a hidden-gap one) like live and plants: Python twice, Rust, each of
+#                PLANTS; rows in $B/extra                                                          (bar 2, 3; gaps ruling)
 #   suiteplants  SUITE_PLANTS on the suite; the word `zero` stands for every PLANTS entry that fired 0 on both workloads
 #   sum          bar_sum.py: the numbers, against BASE's suite rows
 # Environment:
@@ -26,6 +28,7 @@
 #   TESTS         test files in rust-spike/slice, one pytest run (default test_session_limits.py)
 #   DIRECT        scripts with arguments, ';'-separated, each run in rust-spike/slice (e.g. "relations_direct.py 300 0")
 #   N             pytest -n for the suite (default 8)
+#   WLS           live.py workloads for the extra phase (default none: the phase is listed as not run)
 #   OUT           output directory (default ~/sp19/sa-rust-ids-work/NAME)
 set -u
 if [ "${1:-}" = land ]; then
@@ -47,11 +50,11 @@ if [ "${1:-}" = land ]; then
 fi
 
 NAME=${1:?NAME}; BR=${2:?BRANCH}; shift 2
-PHASES=${*:-build tests suite live plants seed1 suiteplants sum}
+PHASES=${*:-build tests suite live plants seed1 extra suiteplants sum}
 export REAL=/home/tilo CARGO_HOME=/home/tilo/.cargo RUSTUP_HOME=/home/tilo/.rustup PATH=/home/tilo/.cargo/bin:$PATH HOME=/home/tilo/sp19
 export T=$HOME/dev/$NAME S=$HOME/dev/$NAME/rust-spike/slice B=${OUT:-$HOME/sa-rust-ids-work/$NAME}
 BASE=${BASE:-$HOME/sa-rust-ids-work/sa-port-91/suite}
-PLANTS=${PLANTS:-}; SUITE_PLANTS=${SUITE_PLANTS:-}; TESTS=${TESTS:-test_session_limits.py}; DIRECT=${DIRECT:-}; N=${N:-8}
+PLANTS=${PLANTS:-}; WLS=${WLS:-}; SUITE_PLANTS=${SUITE_PLANTS:-}; TESTS=${TESTS:-test_session_limits.py}; DIRECT=${DIRECT:-}; N=${N:-8}
 mkdir -p $B; CMDS=$B/commands.txt
 . $HOME/sa-rust-ids-work/env.sh
 export PY W SA_EVAL_DATA PYTHONHASHSEED PYTHONPATH=$T:$W/sympy:$W/shim
@@ -62,7 +65,7 @@ echo "== bar.sh $NAME $BR phases: $PHASES; script sha256 $(sha256sum "$0" | cut 
 [ -d $T/.git ] || run "git clone -q https://github.com/tilorc-bot/satassume $T"
 run "cd $T && git fetch -q origin && git checkout -q -f -B $BR origin/$BR && git rev-parse --short HEAD > $B/source.txt"
 echo "tested source $(cat $B/source.txt), rows under $B, base rows $BASE" | tee -a $CMDS
-printf 'BASE=%s\nPLANTS=%s\nSUITE_PLANTS=%s\nTESTS=%s\nDIRECT=%s\nN=%s\n' "$BASE" "$PLANTS" "$SUITE_PLANTS" "$TESTS" "$DIRECT" "$N" > $B/config.txt
+printf 'BASE=%s\nPLANTS=%s\nWLS=%s\nSUITE_PLANTS=%s\nTESTS=%s\nDIRECT=%s\nN=%s\n' "$BASE" "$PLANTS" "$WLS" "$SUITE_PLANTS" "$TESTS" "$DIRECT" "$N" > $B/config.txt
 cd $S
 
 suite() { # suite DIR [PLANT]
@@ -98,6 +101,16 @@ seed1)
     run "\$PY livecmp.py $B/live/seedx-$wl-py.jsonl $B/live/seedx-$wl-rust.jsonl > $B/live/seedx-$wl.cmp 2>&1"
   done
   phase seed1;;
+extra)
+  [ -n "$WLS" ] || continue
+  X=$B/extra; run "rm -rf $X; mkdir -p $X"
+  for wl in $WLS; do
+    run "( \$PY live.py $wl py $X/$wl-py.jsonl --check entry > $X/$wl-py.tot 2> $X/$wl-py.err ) & ( \$PY live.py $wl py $X/$wl-py2.jsonl --check entry > $X/$wl-py2.tot 2> $X/$wl-py2.err ) & ( SESSION_REPORT=$X/$wl-rust.session.json \$PY live.py $wl rust $X/$wl-rust.jsonl --handlers $X/$wl-rust.handlers --check entry > $X/$wl-rust.tot 2> $X/$wl-rust.err ) & wait"
+    run "{ echo '== $wl py vs py (control)'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-py2.jsonl; echo '== $wl py vs rust'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-rust.jsonl; } >> $X/summary.txt 2>&1"
+    for pl in $PLANTS; do echo "$wl $pl"; done > $X/plants.todo
+    run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; SLICE_SESSION_PLANT=\$pl SESSION_REPORT=$X/plant-\$wl-\$pl.session.json \$PY live.py \$wl rust $X/plant-\$wl-\$pl.jsonl --check entry > $X/plant-\$wl-\$pl.tot 2> $X/plant-\$wl-\$pl.err; \$PY livecmp.py $X/\$wl-py.jsonl $X/plant-\$wl-\$pl.jsonl > $X/plant-\$wl-\$pl.cmp 2>&1' < $X/plants.todo"
+  done
+  phase extra;;
 suiteplants)
   : > $B/suite-plants.txt
   for pl in $SUITE_PLANTS; do
