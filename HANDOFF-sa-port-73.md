@@ -61,7 +61,7 @@ Fuzz per-site reach is in `run1/fuzz.rust.json`, with `glue:termwise` 1,576 (100
 
 ## Item 6: the slice proposal
 
-`relations.py:777-1921` is about 1,100 lines in 37 methods. Tilo asked why so little has been ported, so the report should say this plainly: **slice C moves term work; it doesn't make a module whole, and item 6 alone can't either while `Session` is Python.** `P`, `And`, `Args`, the session and every `s.var` key hold SymPy objects until component 5, so a "clause over ids" here is a plan Python runs. I'd put this question to the planner: does C2 go before component 5, as plans that component 5 then replaces, or with it? I didn't size that, so it's a question and not a finding.
+`relations.py:777-1921` is about 1,100 lines in 36 methods. Tilo asked why so little has been ported, so the report should say this plainly: **slice C moves term work; it doesn't make a module whole, and item 6 alone can't either while `Session` is Python.** `P`, `And`, `Args`, the session and every `s.var` key hold SymPy objects until component 5, so a "clause over ids" here is a plan Python runs. I'd put this question to the planner: does C2 go before component 5, as plans that component 5 then replaces, or with it? I didn't size that, so it's a question and not a finding.
 
 If C2 goes first, in this order, smallest term work first. Lengths are from the source, the split is my judgment and none of it is tried:
 - **C2a, order:** `_closed_extended_real:1375` (12), `_order_sides:1387` (18), `_order_infinite:1405` (58), `_trichotomy:1154` (43), `_mention_number:958` (17), `_link_integer:1106` (21). Same shape as `_eq_links`' plan.
