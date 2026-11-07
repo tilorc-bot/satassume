@@ -85,6 +85,13 @@ def _run():
         except BaseException as e:
             got = f'{type(e).__name__}: {e}'
         out[name] = dict(answer=got, streams=streams[0])
+    # The reference keeps Python's `VarTable` under `Relations`, so these stay Python's and never reach Rust's.
+    from satassume.ref import ref_outcome
+    from sympy import Q, Symbol
+    x, y = Symbol('x'), Symbol('y')
+    before = mod.counts()['rel:order_sides'] if mod else 0
+    out['ref'] = dict(answer=repr(ref_outcome(Q.lt(x, y), Q.gt(x, 1))), streams=[])
+    out['ref-stayed-python'] = dict(answer=repr((mod.counts()['rel:order_sides'] if mod else 0) == before), streams=[])
     return dict(cases=out, counts=mod.counts() if mod else {})
 
 

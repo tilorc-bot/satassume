@@ -256,29 +256,44 @@ def _fault(site, text):
 
 
 def _rel_closed_extended_real(self, e):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_closed_extended_real'](self, e)
     return sa_solver.rel_closed_extended_real(self, e)
 
 
 def _rel_order_sides(self, var, atom):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_order_sides'](self, var, atom)
     return sa_solver.rel_order_sides(self, var, atom)
 
 
 def _rel_order_infinite(self, var, sides):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_order_infinite'](self, var, sides)
     return sa_solver.rel_order_infinite(self, var, sides)
 
 
 def _rel_trichotomy(self, var, atom):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_trichotomy'](self, var, atom)
     return sa_solver.rel_trichotomy(self, var, atom)
 
 
 def _rel_mention_number(self, e):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_mention_number'](self, e)
     return sa_solver.rel_mention_number(self, e)
 
 
 def _rel_link_integer(self, ad, e, g):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_link_integer'](self, ad, e, g)
     return sa_solver.rel_link_integer(self, ad, e, g)
 
 
+#: Python's own methods, for a session with no core: `satassume/ref.py`, the reference, keeps Python's `VarTable` under `Relations`,
+#: as `_rust_call` already allows for the compiler.
+PY_REL = {}
 #: Step 5b's C2a: these `Relations` methods run in `relations_core.rs`. SLICE_REL=py keeps them here over the same core.
 _REL_METHODS = {
     '_closed_extended_real': _rel_closed_extended_real, '_order_sides': _rel_order_sides,
@@ -296,6 +311,7 @@ def _install_relations():
     from satassume.theories.euf import euf_adapter
     R = relations.Relations
     saved = {n: R.__dict__[n] for n in _REL_METHODS}
+    PY_REL.update(saved)
     sa_solver.rel_install(term_live, relations, euf_adapter, _fault)
     for n, f in _REL_METHODS.items():
         setattr(R, n, f)
