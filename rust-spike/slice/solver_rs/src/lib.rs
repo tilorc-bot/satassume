@@ -7,16 +7,20 @@
 mod block;
 mod euf;
 mod euf_py;
+mod handle;
 // One source for the rational core: the replay binary in lra/port builds the same files.
 #[path = "../../../lra/port/src/lra.rs"]
 mod lra;
 mod lra_py;
 mod map;
+mod pyset;
 #[path = "../../../lra/port/src/rat.rs"]
 mod rat;
 mod solver;
 mod term;
 mod theory;
+mod transfer;
+mod transfer_py;
 
 use block::Closure;
 use pyo3::exceptions::{PyNotImplementedError, PyOverflowError, PyRuntimeError, PyValueError};
@@ -552,5 +556,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     term::py::register(m)?;
     m.add_class::<PySolver>()?;
     m.add_class::<lra_py::LraCore>()?;
-    euf_py::add_to(m)
+    euf_py::add_to(m)?;
+    transfer_py::register(m)
 }
