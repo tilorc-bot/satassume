@@ -15,10 +15,9 @@ pub type Term = u32;
 /// Nothing in the proof forest, `-1` in Python.
 const NIL: Term = u32::MAX;
 
-/// An opaque head or value key: equal objects, equal handle. Minimal on purpose, until component 0's handle lands
-/// (sa-port-5, port/D0): this type and `euf_py::Handles` are all that swap.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
-pub struct Handle(pub u32);
+/// An opaque head or value key: equal objects, equal handle. Component 0's handle. EUF has no table yet, so the numbers
+/// come from `euf_py::Handles`, per theory, not from a query's `TermTable`: until then they mean only "the same object".
+pub use crate::term::TermId as Handle;
 
 /// `_keys`: Python's `("c", head)`, `("h", head, n)`, `("v", key)`, `("a", f, a)`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
