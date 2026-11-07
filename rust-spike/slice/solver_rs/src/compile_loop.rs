@@ -1,5 +1,5 @@
 //! Step 5c2: `Session`'s compile loop (`engine.py:539-770`), first part: module `want_of` and `_split`, and
-//! `_emit_pattern`, `_flush`, `_compile`, `_compile_pending`. As in 5c1 (`discovery.rs`), the session's containers
+//! `_emit_pattern`, `_flush`, `_compile`, `_compile_pending`, `_compile_patterns`. As in 5c1 (`discovery.rs`), the session's containers
 //! (`pending`, `pending_c`, `demand`, `frontier`, `deferred`) and the memos `_WANT` and `_SPLIT` stay Python objects that
 //! Python reads later, so state is Python's by construction; every read Python makes, Rust makes in the same order.
 //! Still Python, called back by name: `_custom`, `compile_formula` (the module global, `session_live`'s under the core) and
@@ -10,9 +10,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PySet, PyTuple};
 
 use crate::relations_core::{
-    planted, DROP_COMPILE_DEMAND, DROP_EMIT_MENT, DROP_FLUSH_CUSTOM, DROP_PEND_COMPILE, DROP_SPLIT_LATER, WANT_EMPTY,
+    planted, DROP_COMPILE_DEMAND, DROP_EMIT_MENT, DROP_FLUSH_CUSTOM, DROP_PEND_COMPILE, DROP_PAT_DEMAND, DROP_SPLIT_LATER, WANT_EMPTY,
 };
-use crate::session::{tick, SessionCore, SES_COMPILE, SES_COMPILE_PENDING, SES_EMIT_PATTERN, SES_FLUSH, SES_SPLIT, SES_WANT_OF};
+use crate::session::{tick, SessionCore, SES_COMPILE, SES_COMPILE_PATTERNS, SES_COMPILE_PENDING, SES_EMIT_PATTERN, SES_FLUSH, SES_SPLIT, SES_WANT_OF};
 
 fn engine_mod(p: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
     p.import(intern!(p, "satassume.engine"))
@@ -255,6 +255,70 @@ pub(crate) fn compile_pending(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, dem
     Ok(())
 }
 
+/// `Session._compile_patterns`.
+pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, compiled: &Bound<'_, PyAny>, demanded: &Bound<'_, PyAny>) -> PyResult<()> {
+    tick(SES_COMPILE_PATTERNS);
+    let p = s.py();
+    let table = s.getattr(intern!(p, "table"))?;
+    let base_of = table.getattr(intern!(p, "base_of"))?;
+    let demand = s.getattr(intern!(p, "demand"))?;
+    let want = if demanded.is_none() { p.None().into_bound(p) } else { want_of(demanded)? };
+    for comp in compiled.try_iter()? {
+        let comp = comp?;
+        let (objs, pat) = (comp.getattr(intern!(p, "objs"))?, comp.getattr(intern!(p, "pattern"))?);
+        let bases = PyList::new(p, vec![0i64; objs.len()?])?;
+        let mut new = Vec::new();
+        for k in pat.getattr(intern!(p, "used"))?.try_iter()? {
+            let k = k?;
+            let o = objs.get_item(&k)?;
+            let mut bb = base_of.call_method1(intern!(p, "get"), (&o,))?;
+            if bb.is_none() {
+                bb = table.call_method1(intern!(p, "node_base"), (&o,))?;
+                new.push(k.clone());
+            }
+            bases.set_item(k.extract::<usize>()?, 2i64.into_pyobject(p)?.mul(&bb)?)?;
+        }
+        let r = split(&pat.getattr(intern!(p, "clauses"))?, &want)?;
+        let (now, later, ment) = (r.get_item(1)?, r.get_item(2)?, r.get_item(3)?);
+        if !later.is_none() {
+            s.getattr(intern!(p, "pending_c"))?
+                .call_method1(intern!(p, "setdefault"), (node, PyList::empty(p)))?
+                .call_method1(intern!(p, "append"), (PyTuple::new(p, [later, bases.clone().into_any()])?,))?;
+        }
+        if now.is_truthy()? {
+            emit_pattern(s, &now, bases.as_any(), &ment)?;
+        }
+        for kv in pat.getattr(intern!(p, "child_preds"))?.call_method0(intern!(p, "items"))?.try_iter()? {
+            let kv = kv?;
+            let (k, preds) = (kv.get_item(0)?, kv.get_item(1)?);
+            if planted(DROP_PAT_DEMAND) {
+                continue;
+            }
+            let o = objs.get_item(&k)?;
+            let d = demand.call_method1(intern!(p, "get"), (&o,))?;
+            if d.is_none() {
+                demand.set_item(objs.get_item(&k)?, PySet::new(p, preds.try_iter()?.collect::<PyResult<Vec<_>>>()?)?)?;
+            } else {
+                d.call_method1(intern!(p, "update"), (preds,))?;
+            }
+        }
+        let pn = pat.getattr(intern!(p, "node"))?;
+        for k in new {
+            if k.lt(&pn)? {
+                s.getattr(intern!(p, "frontier"))?.call_method1(intern!(p, "append"), (objs.get_item(&k)?,))?;
+            } else if k.gt(&pn)? {
+                s.getattr(intern!(p, "deferred"))?.call_method1(intern!(p, "append"), (objs.get_item(&k)?,))?;
+            }
+        }
+    }
+    table.setattr(intern!(p, "new_nodes"), PyList::empty(p))
+}
+
+#[pyfunction]
+fn ses_compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, compiled: &Bound<'_, PyAny>, demanded: &Bound<'_, PyAny>) -> PyResult<()> {
+    compile_patterns(s, node, compiled, demanded)
+}
+
 #[pyfunction]
 fn ses_want_of<'py>(demanded: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     want_of(demanded)
@@ -295,5 +359,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ses_emit_pattern, m)?)?;
     m.add_function(wrap_pyfunction!(ses_flush, m)?)?;
     m.add_function(wrap_pyfunction!(ses_compile, m)?)?;
-    m.add_function(wrap_pyfunction!(ses_compile_pending, m)?)
+    m.add_function(wrap_pyfunction!(ses_compile_pending, m)?)?;
+    m.add_function(wrap_pyfunction!(ses_compile_patterns, m)?)
 }

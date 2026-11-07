@@ -17,7 +17,8 @@ import sys
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty')
+PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty',
+          'drop-pat-demand')
 
 
 def _cases():
@@ -112,6 +113,9 @@ def _cases():
         finally:
             yield 'unregister', lambda: unregister('even')
 
+    # `_compile_patterns` through the visit (`_visit` is still Python): nodes with patterns, plain and under a demand
+    for t, d in ((x * y + sin(z), None), (x * y + sin(z), ['positive']), (sin(x * z) - w, ['integer']), ((z * w)**2, ['zero'])):
+        out[f'patterns:{t}:{d}'] = lambda s, t=t, d=d: [('ensure', lambda: s.ensure(t, d)), ('ensure', lambda: s.ensure(t * w, d))]
     for preds in (['positive'], ['integer', 'real'], ['zero'], ['even'], ['odd'], []):
         k = "+".join(preds) or "none"
         out[f'pending:{k}'] = lambda s, p=preds: list(D._cases()['escalate:0'](s))[:6] + [pend(s, p)]
@@ -160,7 +164,7 @@ def test_cases_run_and_reach_what_they_say(both):
     # some parked formula was compiled: `pending` shrank across the step
     assert any(sum(len(v) for _, v in s[-2][3]['pending']) < sum(len(v) for _, v in s[-3][3]['pending']) for k, s in st.items() if k.startswith('pending-own:'))
     c = rust['counts']
-    assert all(c[f'ses:{m}'] > 0 for m in ('want_of', 'split', 'emit_pattern', 'flush', 'compile', 'compile_pending'))
+    assert all(c[f'ses:{m}'] > 0 for m in ('want_of', 'split', 'emit_pattern', 'flush', 'compile', 'compile_pending', 'compile_patterns'))
 
 
 @pytest.mark.parametrize('plant', PLANTS)

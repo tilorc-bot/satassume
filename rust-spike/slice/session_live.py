@@ -486,8 +486,8 @@ def _install_discovery():
     return undo
 
 
-#: Step 5c2: `Session`'s compile loop runs in `compile_loop.rs`, so far `_emit_pattern`, `_flush`, `_compile`, `_compile_pending`
-#: and module `_split` and `want_of`. SLICE_LOOP=py keeps Python's over the same core. Python's own copies, for a session with
+#: Step 5c2: `Session`'s compile loop runs in `compile_loop.rs`, so far `_emit_pattern`, `_flush`, `_compile`, `_compile_pending`,
+#: `_compile_patterns`#: and module `_split` and `want_of`. SLICE_LOOP=py keeps Python's over the same core. Python's own copies, for a session with
 #: no core (`_split` and `want_of` read no session, so they're switched for every caller).
 PY_LOOP = {}
 
@@ -510,6 +510,12 @@ def _ses_compile(self, node, items):
     return sa_solver.ses_compile(self, node, items)
 
 
+def _ses_compile_patterns(self, node, compiled, demanded):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_compile_patterns'](self, node, compiled, demanded)
+    return sa_solver.ses_compile_patterns(self, node, compiled, demanded)
+
+
 def _ses_compile_pending(self, node, demanded):
     if not isinstance(self.table, TableView):
         return PY_LOOP['_compile_pending'](self, node, demanded)
@@ -517,9 +523,10 @@ def _ses_compile_pending(self, node, demanded):
 
 
 _LOOP_METHODS = {'_emit_pattern': _ses_emit_pattern, '_flush': _ses_flush, '_compile': _ses_compile,
-                 '_compile_pending': _ses_compile_pending}
+                 '_compile_pending': _ses_compile_pending, '_compile_patterns': _ses_compile_patterns}
 _LOOP_FUNCS = {'_split': 'ses_split', 'want_of': 'ses_want_of'}
-_LOOP_PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty')
+_LOOP_PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty',
+                'drop-pat-demand')
 
 
 def _install_compile_loop():
