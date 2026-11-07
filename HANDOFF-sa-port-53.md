@@ -15,6 +15,8 @@ Branch `port/4a`, tested source `f1e474b` (this file's commit adds only this fil
 | `shadow-{dev,fuzz}.json` | shadow on the tested source | `bad` must be empty |
 | `suite/` | `run_suite.sh`, `-n 8`, rows, `handlers.*.jsonl`, `exit.txt` | `suite_report.py` against the base rows, `~/sa-rust-ids-work/port-census/pr328-check/suite-rust` on orion; scp one way |
 
+**`$B/units.txt` ends rc=1, and that's my job script, not the code:** 2 failed, 98 passed, 5 skipped. `test_handler_count.py::test_each_route_is_seen` and `::test_uninterpreted_is_not_counted` raise AttributeError on `handler_count._out`, None, because `job53.sh` runs that file without `-p handler_count` and `SLICE_SUITE_OUT`. Both results of running it each way on orion are in the sa-port-53 session's last step; rerun it with the plugin on x86-64 and quote that, not this row.
+
 ## Done and run here (orion, aarch64, seed 0, under `~/sa-rust-ids-work/sa-port-53/a/`)
 - **The 3 stamps are settled.** The handoff's guess was right: `reset_module_state` unsets the stamp and the run restamps. `_Mark` now restores it (`term_live.py`, `rollback:restamped` 5,091 on dev).
 - **A real hole, found while settling that:** a table the run emptied (restamp, or cleared when full) and regrew past the mark kept the run's first n entries, since `popitem` stopped at n and `rollback:cleared` only looked for `len < n`. `_Mark` now notes each table's last key and empties the table if it moved. Tested by `test_a_table_emptied_and_regrown_past_the_mark_keeps_nothing_of_the_run`. The tie case, a run that re-adds the same key object at the same position, isn't detected; the state check would still see it.
