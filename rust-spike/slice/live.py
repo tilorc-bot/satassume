@@ -234,6 +234,10 @@ def load(wl):
     if wl == "fuzz":
         from evalbench.fuzz import queries
         return queries(424242)
+    if wl.startswith("transfer2:"):    # transfer_workload.py's second generator
+        import transfer_workload
+        _, seed, n = wl.split(":")
+        return transfer_workload.queries2(int(seed), int(n))
     if wl.startswith("transfer:"):    # transfer_workload.py, by seed and count
         import transfer_workload
         seed, n = wl.split(":")[1:]
