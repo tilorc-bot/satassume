@@ -14,7 +14,7 @@ Both are complete by test id: 6,125 of 6,125. Memos stay on, as the tests own th
 |---|---:|---:|---:|---|
 | `relations._key` | 506,810 | 126,193 | 21,407 | `0`; two-term sums such as `x/2 + 2*z`, in 7 queries |
 | LRA `default_sort_key` | 117,873 | 311 | 39 | Products of input terms: 2 args (`r**2*w`, 28), 3 (`r*w*y**2`, 9), 4 or more (`n*w**2*x*y`, 6) |
-| `Session.node` | 3,212,314 | 138,105 | 13,489 | 50 shapes, below |
+| `Session.node` | 3,212,314 | 138,105 | 13,489 | 49 shapes, below |
 
 Shape counts are one per term per query, so they don't add up to queries. Callers: all derived calls at `relations._key` are `relation_atom:524`; LRA's are `<lambda>:324` 134, `interpret:348` 134 and `integer_form:412` 43. None of the sort-key shapes carries a float, an infinity or a non-rational number factor.
 
@@ -61,7 +61,7 @@ Two parts, each id in exactly one.
 
 Excluding `<module>`, so counts compare with `suite2-summary.txt`. **No module's reach changed,** so what `gw0` lost in `suite2` added no function in these eight. `special.py` shows one call fewer, so the two runs aren't supersets of each other.
 
-**SymPy areas reached directly:** `special` 1 site, 7 calls (`_rows.py:374` to `betainc_regularized.__new__`); `stats` 3 sites, 27 calls; `rootof` 5 sites, 392 calls; `physics` 0 direct sites, though terms it defines are built 8,057 times below satassume's lines, by the tool's `^physics/` match. Enclosures (R9): `lra_bounds.constant_enclosure` 248 calls, `_interval` 3,951; those are calls, and this census doesn't give them per query.
+**SymPy areas reached directly:** `special` 1 site, 7 calls (`_rows.py:374` to `betainc_regularized.__new__`); `stats` 3 sites, 27 calls; `rootof` 5 sites, 392 calls; `physics` 0 direct sites, with 8,057 constructor calls in SymPy's `physics/` code somewhere below a satassume line (the tool's `^physics/` match; not read further). Enclosures (R9): `lra_bounds.constant_enclosure` 248 calls, `_interval` 3,951; those are calls, and this census doesn't give them per query.
 
 **Not seen: 50 of 927 functions** (module-level functions and methods, `$C/suite4-ids/not-seen.json`; nested functions aren't in the 927). None of the 50 ran on dev or fuzz either. Mostly `__repr__`, `sat/formula.py`'s operators and `sat/theory.py`'s abstract base. The ones worth a look when their step comes: `Relations._bound`, `LRAAdapter.register_bounds`, `LRAAdapter.to_constraint`, `lra_adapter.constant_enclosure`, `realroots._div`, `Element.__init__`, `Element.__abs__`, `special._register`, `sympy_api.set_default_engine`. This is "not seen in the suite with memos on", and it's a reading of these runs only. Nothing was read to see whether any is dead.
 
