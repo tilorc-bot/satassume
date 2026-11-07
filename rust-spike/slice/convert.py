@@ -12,12 +12,13 @@ import numbers
 import struct
 
 from sympy import Add, Function, Integral, Mul, Pow, Product, S, Sum
+from sympy.polys.rootoftools import ComplexRootOf
 from sympy.assumptions.assume import AppliedPredicate, Predicate
 from sympy.core.basic import Basic, ordering_of_classes
 from sympy.core.expr import Expr
 from sympy.core.exprtools import decompose_power
 from sympy.core.function import AppliedUndef
-from sympy.core.numbers import Float, Integer, Rational
+from sympy.core.numbers import ComplexInfinity, Float, ImaginaryUnit, Integer, Number, NumberSymbol, Rational
 from sympy.core.sorting import default_sort_key
 from sympy.core.symbol import Dummy, Symbol, Wild
 from sympy.logic.boolalg import BooleanAtom, BooleanFunction
@@ -25,6 +26,8 @@ from sympy.logic.boolalg import BooleanAtom, BooleanFunction
 from satassume import sympy_api as A
 from satassume.knowledge.domain import constructed_noncommutative
 from satassume.knowledge.templates import _may_be_nan, registry
+from satassume.knowledge.templates._common import const_value
+from satassume.knowledge.templates.atoms import _CONST_BASIS
 from satassume.theories.euf.euf_adapter import _STRUCTURAL, _inherits_from_basic
 from satassume.theories.lra.lra_adapter import _BAD
 from sympy.integrals.transforms import IntegralTransform
@@ -37,6 +40,7 @@ REASONS = (
     'args-eq-not-is',       # R12
     'out-of-scope',
     'too-deep',
+    'complex-unbounded',    # a ComplexRootOf: complex(t) has no bound (CRootOf(x**50 - x + 1, 3): over 120 s). Planner's ruling pending
 )
 
 # Tokens of a value: Rust's `V`, solver_rs/src/term/table.rs. Keep the two in step.
@@ -67,6 +71,7 @@ _OPS = ('__neg__', '__add__', '__radd__', '__sub__', '__rsub__', '__mul__', '__r
 # Rust can build these with none in the input, so their rows are always sent, first.
 _PREFIX = (Add, Mul, Pow, Integer, Rational, type(S.Zero), type(S.One), type(S.NegativeOne), type(S.Half))
 _KEPT_CLASSES = (Sum, Product, Integral)
+_CONSTANT = (Number, NumberSymbol, ImaginaryUnit, ComplexInfinity)  # as `atoms.py` registers constant_units
 # The formula's skeleton carries no term facts: section 9 has them in the formula table, not the term rows.
 _SKELETON = (AppliedPredicate, Predicate, BooleanFunction, BooleanAtom)
 
@@ -112,7 +117,7 @@ class _Walk:
         self.classes = {}
         self.class_rows = []
         self.opaque = []
-        self.counts = {'keys': 0, 'decompose_power': 0, 'pow_base_not_input': 0, 'opaque': 0, 'closed': 0}
+        self.counts = {'atom_symbol_reads': 0, 'atom_constant_reads': 0, 'keys': 0, 'decompose_power': 0, 'pow_base_not_input': 0, 'opaque': 0, 'closed': 0}
 
     def s(self, text):
         i = self.string_ids.get(text)
@@ -282,8 +287,27 @@ class _Walk:
         else:
             out.append(T_NONE)
 
+    def atom_rows(self):
+        """Section 9's Symbols and Atomic numbers rows, one per input atom: what `atoms.py`'s templates read. Rust's
+        `_CONST_BASIS` comes from the offline file and has to be this one, in this order; it refuses another length."""
+        out = []
+        n = 0
+        for i, t in enumerate(self.objects):
+            if isinstance(t, Symbol):
+                self.counts['atom_symbol_reads'] += 1
+                self.enc((i, 0, tuple(t.assumptions0.items())), out)
+            elif isinstance(t, _CONSTANT):
+                self.counts['atom_constant_reads'] += 1
+                self.enc((i, 1, tuple(const_value(t, p) for p in _CONST_BASIS)), out)
+            else:
+                continue
+            n += 1
+        return out, n
+
     def closed(self, t, out):
         """Closed term: is_finite and complex() as bit patterns (R17, section 3). Either read can write SymPy's caches."""
+        if isinstance(t, ComplexRootOf):    # a term only a key reached; the rest are refused before any row
+            raise _Keep('complex-unbounded', type(t).__name__)
         self.counts['closed'] += 1
         out += (T_TUPLE, 3)
         self.enc(t.is_finite, out)
@@ -394,6 +418,9 @@ def convert(proposition, assumptions, eng):
             if x is True or x is False:
                 continue
             w.walk(x)
+        for t in w.objects:                 # before any row, so no complex(t) has run on a query that stays on Python
+            if isinstance(t, ComplexRootOf):
+                raise _Keep('complex-unbounded', type(t).__name__)
         form = []
         w.enc((fp, fa), form)
         rows = []
@@ -402,6 +429,7 @@ def convert(proposition, assumptions, eng):
             w.term_row(w.objects[i], rows)
             i += 1
         powers = w.power_rows(len(w.objects))
+        atoms, n_atoms = w.atom_rows()
     except _Keep as e:
         return Kept(e.reason, e.detail)
     except RecursionError:
@@ -409,7 +437,8 @@ def convert(proposition, assumptions, eng):
     sets = []
     w.enc(settings, sets)
     tables = dict(strings=w.strings, classes=w.class_rows, terms=rows, powers=powers, settings=sets, formula=form,
-                  n_classes=len(w.classes), n_terms=len(w.objects), n_powers=_count(powers), n_opaque=len(w.opaque))
+                  n_classes=len(w.classes), n_terms=len(w.objects), n_powers=_count(powers), n_opaque=len(w.opaque),
+                  atoms=atoms, n_atoms=n_atoms)
     return Converted(tables, w.ids, w.objects, w.counts, w.classes)
 
 

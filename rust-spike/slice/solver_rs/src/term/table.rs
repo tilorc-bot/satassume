@@ -123,6 +123,17 @@ pub struct TermTable {
     /// Rows from conversion; the ones after these are derived.
     pub n_input: usize,
     index: HashMap<(ClassId, Arc<[V]>), TermId>,
+    /// Section 9's Symbols and Atomic numbers rows, by term: input terms only. Empty if conversion sent none.
+    pub atoms: HashMap<TermId, AtomRow>,
+}
+
+/// What an atom template reads, from conversion.
+#[derive(Clone, Debug)]
+pub enum AtomRow {
+    /// `assumptions0`, in dict order: name (a string id) and True, False or None.
+    Symbol(Vec<(u32, Option<bool>)>),
+    /// `const_value` over `_CONST_BASIS`, in that order.
+    Constant(Vec<Option<bool>>),
 }
 
 struct Reader<'a> {
@@ -201,7 +212,51 @@ fn bits_f64(v: &V) -> Result<f64, String> {
     Ok(f64::from_bits(int(v)? as u64))
 }
 
+fn tri(v: &V) -> Result<Option<bool>, String> {
+    match v {
+        V::None => Ok(None),
+        V::Bool(b) => Ok(Some(*b)),
+        _ => Err("wanted True, False or None".into()),
+    }
+}
+
 impl TermTable {
+    /// Reads the `atoms` tokens: `(term, 0, ((name, value), ...))` for a symbol, `(term, 1, (value, ...))` for a number.
+    pub fn read_atoms(&mut self, tokens: &[i64], n: usize) -> Result<(), String> {
+        let mut r = Reader { t: tokens, i: 0 };
+        for _ in 0..n {
+            let f = r.tuple(&self.strings, 3)?;
+            let t = TermId(int(&f[0])? as u32);
+            if t.index() >= self.n_input {
+                return Err(format!("atom row: bad term {}", t.0));
+            }
+            let items = match &f[2] {
+                V::Tuple(x) => x.clone(),
+                _ => return Err("atom row: items".into()),
+            };
+            let row = match int(&f[1])? {
+                0 => AtomRow::Symbol(
+                    items
+                        .iter()
+                        .map(|kv| match kv {
+                            V::Tuple(p) if p.len() == 2 => match p[0] {
+                                V::Str(s) => Ok((s, tri(&p[1])?)),
+                                _ => Err("atom row: fact name".to_string()),
+                            },
+                            _ => Err("atom row: fact".to_string()),
+                        })
+                        .collect::<Result<_, _>>()?,
+                ),
+                1 => AtomRow::Constant(items.iter().map(tri).collect::<Result<_, _>>()?),
+                k => return Err(format!("atom row: tag {k}")),
+            };
+            if self.atoms.insert(t, row).is_some() {
+                return Err(format!("atom row: two rows for term {}", t.0));
+            }
+        }
+        Ok(())
+    }
+
     pub fn from_tokens(
         strings: Vec<String>,
         classes: &[i64],
@@ -299,7 +354,7 @@ impl TermTable {
         }
         let settings = Reader { t: settings, i: 0 }.value(&strings)?;
         let formula = Reader { t: formula, i: 0 }.value(&strings)?;
-        Ok(TermTable { strings, classes: class_rows, terms: rows, settings, formula, n_input: n_terms, index })
+        Ok(TermTable { strings, classes: class_rows, terms: rows, settings, formula, n_input: n_terms, index, atoms: HashMap::new() })
     }
 
     pub fn len(&self) -> usize {
