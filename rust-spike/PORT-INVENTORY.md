@@ -1,11 +1,12 @@
 # Port inventory: what moves to Rust, what is converted, what stays offline (issue 323)
 
-**Status: partial, handed off by sa-port-1. Not done.** Sections 2 to 7 hold what was read and measured. Section 8 lists what's still open, and `HANDOFF-sa-port-1.md` has the map. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5) was read, not applied.
+**Status: partial, handed off by sa-port-2 at its context note. Not done.** Sections 9 and 10 are still drafts. Sections 2 to 7 hold what was read and measured. Section 8 lists what's still open; `HANDOFF-sa-port-2.md` says how to continue and `HANDOFF-sa-port-1.md` has the map. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5) was read, not applied.
 
 **Where it stands:**
 
 - **History independence:** per-query ids hold up on reading, and they're stronger than Python's own position (section 5). No answer run tested this, because nothing is built yet.
-- **Hardest part: derived terms.** No SymPy construction at query time means Rust must build the terms the templates and the glue derive (`p - q`, `x + c`, `Mul(c, a)`, the rest of `as_coeff_Add`) and get SymPy's canonical form and sort key for them. 30 source lines construct on dev and fuzz; section 3 groups them. I found no fatal obstacle, but I didn't measure how many derived terms reach a sort key.
+- **Hardest part: derived terms, now sized.** Only small shapes reach a sort key: `0`, sums of input terms with rational coefficients, and one product shape (section 3). A Python check computed form, arg order and sort key without building the term, with 0 mismatches. It's a Python check over synthetic combinations of input terms, not Rust. Not yet measured on the suite.
+- **New: real-hash order reaches solver state today,** in 39 of 1,985 dev and 131 of 3,000 fuzz queries, with no answer changing (section 5). Whether PR 328 removes all of it wasn't run. Until it is, a Rust first-seen order can't be held to matching Python's state on those queries.
 - **Hard blockers:** none found so far. Section 7 has the 3 items closest to one. The review isn't complete, so this isn't a clearance.
 
 ## 1. Target and method
@@ -93,6 +94,27 @@ Options, in the order I'd try them:
 2. Port `sort_key` for the derived shapes, with number factors' `complex` values supplied by conversion.
 3. Propose a PR 328-style change to Python's key for atom orientation, to a structural order Rust can compute. That changes the reference, so it would be for Tilo.
 
+**Measured: which derived terms reach a sort key [run, sa-port-2].** Hooks on `Session.node`, `relations._key` and `lra_adapter.default_sort_key`, memos cleared and a fresh engine per query. Derived means not in the preorder set of the query's proposition and assumptions. Tool: `derived.py`.
+
+| Workload (queries) | `relations._key` calls, derived of all | LRA sort calls, derived of all | Derived shapes at a sort key |
+|---|---|---|---|
+| dev (1,985) | 891 of 2,906 | 7 of 4,271 | `0`; `re(x)*im(x)` (LRA) |
+| fuzz 424242 (3,000) | 18,627 of 55,252 | 0 of 117,684 | `0`; two-term sums such as `-2*x + y` |
+| corpus (2,863) | 190 of 862 | 0 of 1,303 | `0` |
+| stream-unique (8,393) | 8,918 of 25,446 | 14 of 36,257 | `0`; `re(x)*im(x)` (LRA) |
+| battery (16,386) | 11,390 of 33,016 | 14 of 45,285 | `0`; `re(x)*im(x)` (LRA) |
+
+All derived calls at `relations._key` come from `relation_atom:523`. At `Session.node` the shapes are `0`, `c*input`, sums of input or `c*input` terms (2 or 3 args), and products of input terms, some with a closed factor (`pi*k`, `I*pi*k`, `sqrt(2)*x`). No derived `Pow`, function application or deeper nesting appeared on any of the five. **So option 1 holds on these workloads: a small Rust key.** The suite wasn't measured (`derived_plugin.py` is written and has never run).
+
+**Measured: the algebra and key without building the term [run, Python only].** `algebra_check.py` predicts `-t`, `c*t`, `t + c` and `p - q` from input terms' args, classes, supplied sort keys and rationals, and checks against SymPy's real result, arg order included. Over the first 9 commutative input terms per query, on dev, fuzz and corpus, 445,688 attempts:
+
+- **0 form mismatches and 0 key mismatches** among those it didn't refuse. One bug was found and fixed on the way: `Expr.sort_key` nests a `Dummy`'s own key, which a flat rule misses (507 key mismatches on dev before the fix).
+- **Refused:** 1,280 where the coefficient merges with a numeric-base power (`2*sqrt(2)`, `2*2**x`), 82 where a key needs a power base that isn't an input term (`decompose_power` builds it), all on corpus; and 162 input terms holding an infinity, `nan` or a `Float`. These are the shapes that would stay on Python.
+
+**What Rust needs for this, from the same code:** the `Basic.compare` order over class rank (`_cmp_name`, `ordering_of_classes`) and hashable content, including the number singletons' classes (`Zero`, `One`, `Half`, `NegativeOne`); a rational type; per closed factor, its `complex()` value; for each `Pow` factor, the `decompose_power` split; `str` and `class_key` per input term, through the supplied key.
+
+**What this doesn't show:** it ran in Python with SymPy's `Rational`, `complex` and `compare` on input terms, so it says nothing about a Rust implementation's rounding (`complex(Rational)` goes through `evalf`). The combinations are synthetic, not the glue's own terms. `Mul(*factors)` of separate terms (`kept_product`, `product:input` above) wasn't predicted. Infinities are refused, not handled.
+
 ## 4. SymPy reads at query time
 
 Appendix B lists every direct call site [census], collapsed per function. By kind:
@@ -110,7 +132,7 @@ Appendix B lists every direct call site [census], collapsed per function. By kin
 | R9 | Interval evaluation of closed constants, during search | `constfield.py:1415-1436` `_generic`, `lra_bounds.py` `_interval` :150 on, `lra_adapter.py:279`, `:285` | **Needs a callback.** The 128-bit bound can come up front (`_IV_PREC`, `lra_bounds.py:26`), but a higher-precision enclosure is asked for during a sign test (`enclose`, `constfield.py:1431`). **Call:** a long-lived, read-only callback on the original term rather than a port of mpmath's interval functions. I read the head of `_interval` and saw no construction; that isn't the whole function |
 | R10 | Predicate heads `atom.function`, `.arguments` | `sympy_api.py:260-266`, `:326`, `:370`, `:387`, `:549`, `:815`, `euf_adapter.py:120-126`, `lra_adapter.py:159-172` | Up front: atoms arrive as predicate id plus term ids |
 | R11 | `exp` metaclass `isinstance` | `core.py:528`, `constfield.py:1408` | Up front: class kind |
-| R12 | `is` on compound terms | `wiring.py:210` (`same` shape), `:310` (`b is e` in the Pow key) | **Up front, with a catch.** `(x + 1) is Add(x, 1)` is False while `==` is True [run], so ids merge what `is` separates. **Call:** conversion supplies the `is` bit for these reads on input terms. What holds for derived terms is open item 3 |
+| R12 | `is` on compound terms | `wiring.py:210` (`same` shape), `:310` (`b is e` in the Pow key) | **Up front, with a catch.** `(x + 1) is Add(x, 1)` is False while `==` is True [run], so ids merge what `is` separates. **Call:** conversion supplies the `is` bit for these reads on input terms. **Measured [run]:** on dev, fuzz and corpus, no scalar class holds args that are == but distinct objects (only `MatMul` 3 and `MatrixSlice` 5, corpus). No derived `Pow` or function application reaches `Session.node` on the five workloads above, so derived terms never meet these two reads. **Call:** replace the bit with a refusal: args that are == but not `is` keep the query on Python. Note `Pow(b, e)` can return an earlier cached object, so this `is` already depends on SymPy's cache history in Python (seen in one run, not traced) |
 | R13 | `__hash__`, `__eq__` of SymPy objects | Most `[census]` sites | Gone: integer id comparison. Conversion's own table uses them once per term |
 | R14 | `poly`, `index`, `poly.domain` of `ComplexRootOf` | `rootof.py:25-26`, `:47` | Up front: coefficients and index, in the term payload |
 | R15 | `_redefines` and handler lookups on classes | `registry.py:67` | Up front: resolved per class, in the class row |
@@ -151,7 +173,17 @@ Appendix B lists every direct call site [census], collapsed per function. By kin
 
 **Consequence for "state matching Python":** with no term memos, Rust builds sessions that Python's memos skip. So position-based comparison breaks. The reference has to be Python with memos cleared per query (or a fresh process), compared per session by outermost `Engine` call and arguments, the keying PR 328's write-up used (0 sessions with more than one clause digest in 836 dev and 3,062 fuzz keyed sessions, from that PR's text).
 
-**A purity doubt, unresolved.** `_cone_info` (`engine.py:1676`) on going over budget returns `(None, w, rel)` where `w` and `rel` depend on traversal order and on known sub-cones. The docstring says `rel` is meaningful only when the cone fits. PR 328's text reports its `(None, weight, rel)` digest moving at `discovery_budget` 5. I didn't read the consumer, `_within_budget` (:1783). It's open item 2.
+**The purity doubt: settled for the budget's answer [read, run].** `_within_budget` does read `rel` from a cone that may be None (`engine.py:1795`, `:1798`), so `set-iter-audit.md`'s "unread fields only" is wrong as written. It doesn't change the boolean: if the unlinked cone is over budget, the linked one is too, because its objects are a superset and `_union`'s weight is the exact sum over the union. So the call returns False whichever way `link` went. `w` is read only after the None checks. On a long-lived engine against a fresh one, same call: at budget 5, 0 differences in 8,094 calls on dev and fuzz, 2,256 of them with a None unlinked cone; at budget 400, 0 in 3,967, none with a None cone. PYTHONHASHSEED 0 against 1 gave 0 differing verdicts at both budgets. **Call:** Rust may drop these memos, and store a constant for an over-budget cone. Still not traced: whether a re-entrant query (`engine.py:1998`) can make `_struct`'s kids depend on visit order, which this run covers only partly.
+
+**Real-hash order reaches solver state today [run, sa-port-2].** `seed_state.py`: fresh engine and cleared memos per query, a digest of each session's `solver` at query end, on this branch without PR 328.
+
+| Compared | Queries with different state | Answers different | Session counts different |
+|---|---|---|---|
+| dev, seed 0 and 1 | 39 of 1,985 | 0 | 0 |
+| dev, seed 0 and 2 | 31 of 1,985 | 0 | 0 |
+| fuzz, seed 0 and 1 | 131 of 3,000 | 0 | 0 |
+
+This contradicts any reading of `set-iter-audit.md` (16 SAFE, 0 UNSAFE) as "set order doesn't reach state". **Cause not established:** PR 328's sites are the likely source, since it changes `_share` and `shared_terms`, but neither the differing field nor a run on its tree was checked. Open item 4. If some of it survives PR 328, the state gate can't compare against Python on those queries until each site has an order.
 
 **What this doesn't show:** nothing here ran. The tests in SLICE-PLAN section 3's list still have to pass for each component.
 
@@ -191,13 +223,17 @@ The PR leaves `engine.py:1713` and `:1767` alone, and its text says 31 sites sti
 
 ## 8. Still open
 
-1. Derived-term census: which derived terms reach `Session.node`, a relation side and a sort key, by shape.
-2. Read `_within_budget` and settle the `_cone_info` over-budget doubt.
-3. Audit `is` on compound terms: what's true for derived terms. `RESULT-ids.md` counts 968 `is` checks, 74 of them object identity.
-4. Classify the remaining real-hash set iterations (`rust-spike/slice/set-iter-audit.md`, `ids/results/set-iter.txt`).
-5. Read the suite census for sites dev and fuzz don't reach; read `limits.py`, `functions.py`, `domain.py`, `extensions.py`, and `relations.py` beyond the sites above.
-6. **The converted format, in full.** Section 9 is a draft from what's read so far.
-7. **Port order: what each needs, what can run in parallel, callbacks per component.** Section 10 is a draft.
+Done by sa-port-2, with results above: the derived-term census on five workloads (section 3); `_within_budget` (section 5); `is` on compound terms (R12). The `is` scan classed all 968 compares by AST: 906 are constants, `type()`, sentinels, classes or `S.x`. Of the other 62, `wiring.py:210` and `:310` are the only term reads that matter. About 12 were read in context and the rest by their line alone. `relations.py:1134`, `:1136` are by line only.
+
+Left, in order:
+
+1. **Real-hash order (section 5).** Run `seed_state.py` on PR 328's tree, then find the differing field for any query that still moves. Each survivor needs an order or "doesn't reach state".
+2. **Unread modules:** `knowledge/domain.py`, `knowledge/extensions.py`, `templates/functions.py`, `templates/limits.py`, the rest of `relations.py`, `engine.py:813`, `lra_bounds._interval`, `constfield.py:1284-1297`. A research subagent was still reading these at handoff; check for its notes before repeating it.
+3. **Suite census,** and the derived census over the suite (never run).
+4. **The converted format, in full.** Section 9 is a draft. It should drop the `is` bits (R12), and add the class rank, `complex()` per closed factor and `decompose_power` split from section 3.
+5. **Port order.** Section 10 is a draft.
+
+Then remove the partial status.
 
 ## 9. The converted format (draft)
 
