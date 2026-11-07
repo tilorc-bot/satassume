@@ -87,6 +87,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("rust")
     p.add_argument("python")
+    p.add_argument("--list", help="write every needs-internals and re-entry test here by name, with the line that raised")
     a = p.parse_args()
     from satassume.sat.solver import Solver as PySolver
     py_attrs = set(dir(PySolver)) | set(vars(PySolver()))
@@ -98,6 +99,13 @@ def main():
     for i in groups["failed"] + groups["collect-error"]:
         c, d = classify(rs[i], py_attrs)
         classes[c].append((i, d, ps.get(i, {}).get("outcome", "absent")))
+    if a.list:
+        with open(a.list, "w") as f:
+            for c in ("internals", "reentry"):
+                f.write(f"## {c}\n\n| test | raised at | reason | on Python |\n|---|---|---|---|\n")
+                for i, d, po in classes[c]:
+                    f.write(f"| `{i}` | `{raised_at(rs[i])}` | {d if c == 'internals' else 'borrow RuntimeError'} | {po} |\n")
+                f.write("\n")
     both = [x for x in classes["gate"] if x[2] == "failed" and same_failure(rs[x[0]], ps[x[0]])]
     only = [x for x in classes["gate"] if x not in both]
     json.dump(classes, open(os.path.join(a.rust, "classes.json"), "w"), indent=1)

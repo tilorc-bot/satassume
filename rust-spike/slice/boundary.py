@@ -6,12 +6,15 @@ session (`fuzz.Stub`), and compares every hook call, its arguments (payloads inc
 the conflict, the theory models and the state digest. Then it drops everything and checks the solvers and theories are
 gone, each theory holding a reference to its solver so that only the GC can free them.
 
-Kinds, by seed mod 5:
+Kinds, by seed mod 6:
   between    a nested session runs to its end and drops between two solves of the outer one
   in-check   the same, from inside the outer theory's `check`
   in-assert  the same, from inside the outer theory's `assert_lit`
   alternate  two sessions stay alive and take turns
   after      the outer session drops, then a new one with the same variables and other payloads
+  odd        one session whose theories answer with other values Python's `is False` tests let through: `check` returns
+             (0, model) for (True, model), and `assert_lit` returns (None, [x]) for None. Only a wrapper that reads the
+             first item by truth, not identity, tells these apart (mutant 27)
 
 Exit status 1 if the two differ. The last line of output is JSON: caught, what, session, reach, so, so_sha.
 """
@@ -25,7 +28,7 @@ import sys
 import weakref
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-KINDS = ("between", "in-check", "in-assert", "alternate", "after")
+KINDS = ("between", "in-check", "in-assert", "alternate", "after", "odd")
 REACH = dict(nested_in_hook=0, solves=0, sessions=0, hook_calls=0)
 
 
@@ -59,6 +62,14 @@ class Run:
                     run.trigger = None
                     REACH["nested_in_hook"] += 1
                     t[3]()
+
+            def assert_lit(self, x):
+                got = super().assert_lit(x)
+                return (None, [x]) if got is None and run.kind == "odd" else got
+
+            def check(self):
+                got = super().check()
+                return (0, got[1]) if got is not None and got[0] is True and run.kind == "odd" else got
         return T(spec_of(r, atoms), self.log, label)
 
     def session(self, label, seed):
@@ -122,7 +133,7 @@ class Run:
             label = "later"
             for _ in range(3):
                 self.solve(label, s, r, n)
-        if self.kind != "after":
+        if self.kind != "after":    # "odd" has only these
             for _ in range(3):
                 self.solve("outer", s, r, n)
         del s
