@@ -66,6 +66,15 @@ const DROP_XSWITCH: u8 = 26;
 const DROP_CONGRUENCE: u8 = 27;
 const CONGRUENT_NEVER: u8 = 28;
 const SHARE_GUARD_ONE: u8 = 29;
+/// From here, 5c1's (`discovery.rs`): one effect dropped in each moved `Session` method.
+pub(crate) const DROP_ENSURE_DEMAND: u8 = 30;
+pub(crate) const DROP_DISCOVER_FLUSH: u8 = 31;
+pub(crate) const DROP_DISCOVER_VISIT: u8 = 32;
+pub(crate) const DROP_ESC_PATTERN: u8 = 33;
+pub(crate) const DROP_ESC_COMPILE: u8 = 34;
+pub(crate) const DROP_ESC_DEFERRED: u8 = 35;
+pub(crate) const TRUNCATED_NEVER: u8 = 36;
+pub(crate) const INCOMPLETE_NEVER: u8 = 37;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -105,6 +114,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("drop-congruence") => DROP_CONGRUENCE,
         Some("congruent-never") => CONGRUENT_NEVER,
         Some("share-guard-one") => SHARE_GUARD_ONE,
+        Some("drop-ensure-demand") => DROP_ENSURE_DEMAND,
+        Some("drop-discover-flush") => DROP_DISCOVER_FLUSH,
+        Some("drop-discover-visit") => DROP_DISCOVER_VISIT,
+        Some("drop-esc-pattern") => DROP_ESC_PATTERN,
+        Some("drop-esc-compile") => DROP_ESC_COMPILE,
+        Some("drop-esc-deferred") => DROP_ESC_DEFERRED,
+        Some("truncated-never") => TRUNCATED_NEVER,
+        Some("incomplete-never") => INCOMPLETE_NEVER,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -839,7 +856,7 @@ const MC: usize = 2;
 const IE: usize = 3;
 const IL: usize = 4;
 
-fn planted(x: u8) -> bool {
+pub(crate) fn planted(x: u8) -> bool {
     let on = PLANT.load(Relaxed) == x;
     if on {
         tick(session::REL_PLANT);

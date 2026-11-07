@@ -431,6 +431,61 @@ _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-tri
                'share-guard-one')
 
 
+#: Step 5c1: `Session`'s discovery runs in `discovery.rs`. SLICE_DISC=py keeps Python's over the same core. Python's own copies, for a
+#: session with no core.
+PY_DISC = {}
+
+
+def _ses_ensure(self, node, demanded=None):
+    if not isinstance(self.table, TableView):
+        return PY_DISC['ensure'](self, node, demanded)
+    return sa_solver.ses_ensure(self, node, demanded)
+
+
+def _ses_discover(self):
+    if not isinstance(self.table, TableView):
+        return PY_DISC['discover'](self)
+    return sa_solver.ses_discover(self)
+
+
+def _ses_discover_raw(self, demanded=None):
+    if not isinstance(self.table, TableView):
+        return PY_DISC['_discover'](self, demanded)
+    return sa_solver.ses_discover_raw(self, demanded)
+
+
+def _ses_incomplete(self):
+    if not isinstance(self.table, TableView):
+        return PY_DISC['incomplete'].fget(self)
+    return sa_solver.ses_incomplete(self)
+
+
+def _ses_escalate(self, budget=None):
+    if not isinstance(self.table, TableView):
+        return PY_DISC['escalate'](self, budget)
+    return sa_solver.ses_escalate(self, budget)
+
+
+_DISC_METHODS = {'ensure': _ses_ensure, 'discover': _ses_discover, '_discover': _ses_discover_raw,
+                 'incomplete': property(_ses_incomplete), 'escalate': _ses_escalate}
+_DISC_PLANTS = ('drop-ensure-demand', 'drop-discover-flush', 'drop-discover-visit', 'drop-esc-pattern', 'drop-esc-compile',
+                'drop-esc-deferred', 'truncated-never', 'incomplete-never')
+
+
+def _install_discovery():
+    """Returns the undo."""
+    S = engine.Session
+    saved = {n: S.__dict__[n] for n in _DISC_METHODS}
+    PY_DISC.update(saved)
+    for n, f in _DISC_METHODS.items():
+        setattr(S, n, f)
+
+    def undo():
+        for n, f in saved.items():
+            setattr(S, n, f)
+    return undo
+
+
 def _install_relations():
     """Returns the undo."""
     import term_live
@@ -488,8 +543,11 @@ def install():
     S.node, S.var, S.dvar, S._dvar, S._core_visit = _node, _var, _dvar_public, _dvar_raw, _core_visit
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None
+    undo_disc = _install_discovery() if os.environ.get('SLICE_DISC', 'rust') == 'rust' else None
 
     def undo():
+        if undo_disc is not None:
+            undo_disc()
         if undo_rel is not None:
             undo_rel()
         for n, v in saved.items():
@@ -515,7 +573,7 @@ def from_env():
             atexit.register(_write_report, os.environ['SESSION_REPORT'])
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
-            if PLANT[0] in _REL_PLANTS:
+            if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

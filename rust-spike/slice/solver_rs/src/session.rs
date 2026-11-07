@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 54] = [
+const NAMES: [&str; 58] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -24,6 +24,7 @@ const NAMES: [&str; 54] = [
     "link:calls", "link:cross_current", "link:cross_hash", "link:cross_term_id",
     "rel:add_role", "rel:apply_role", "rel:tsource", "rel:tvar", "rel:share_guard", "rel:congruent", "rel:engage_transfer",
     "rel:transfer_terms", "rel:sync_transfer", "rel:xswitch", "rel:congruence_pairs",
+    "ses:ensure", "ses:discover", "ses:escalate", "ses:incomplete",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -79,6 +80,10 @@ pub(crate) const REL_TRANSFER_TERMS: usize = 50;
 pub(crate) const REL_SYNC_TRANSFER: usize = 51;
 pub(crate) const REL_XSWITCH: usize = 52;
 pub(crate) const REL_CONGRUENCE_PAIRS: usize = 53;
+pub(crate) const SES_ENSURE: usize = 54;
+pub(crate) const SES_DISCOVER: usize = 55;
+pub(crate) const SES_ESCALATE: usize = 56;
+pub(crate) const SES_INCOMPLETE: usize = 57;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -86,7 +91,7 @@ pub(crate) const REL_CONGRUENCE_PAIRS: usize = 53;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 54] = const { [const { Cell::new(0) }; 54] };
+    static COUNTS: [Cell<u64>; 58] = const { [const { Cell::new(0) }; 58] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -870,13 +875,13 @@ impl SessionCore {
         self.dvar_raw(d.py(), &Rc::new((op == "&", ls)), self.nid_of(node)?, Some(node), need, link)
     }
 
-    fn base_get(&self, node: &Bound<'_, PyAny>) -> PyResult<Option<i32>> {
+    pub(crate) fn base_get(&self, node: &Bound<'_, PyAny>) -> PyResult<Option<i32>> {
         tick(NODE);
         Ok(self.known(node)?.map(|n| self.st.borrow().visited(n)).filter(|&b| b != 0))
     }
 
     /// `Session.node`'s path for a node not visited yet.
-    fn visit(&self, node: &Bound<'_, PyAny>, demanded: &Bound<'_, PyAny>) -> PyResult<i32> {
+    pub(crate) fn visit(&self, node: &Bound<'_, PyAny>, demanded: &Bound<'_, PyAny>) -> PyResult<i32> {
         tick(NODE);
         let n = self.nid_of(node)?;
         self.visit_id(node, n, demanded)
