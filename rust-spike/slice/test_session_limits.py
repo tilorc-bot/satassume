@@ -57,6 +57,79 @@ def _case(fn):
     return dict(out=out, clauses=clauses, n=len(t), naux=t.naux, true_var=t.true_var, atoms=[repr(a) for a in t.atom_of])
 
 
+_TAGGED = []
+
+
+def _tagged():
+    """`==` objects of different classes, as SymPy's cache gives after an eviction, tagged to read which one a slot holds. Built
+    on first use, so collecting the tests doesn't clear the cache."""
+    if not _TAGGED:
+        from sympy import Function, Symbol
+        from sympy.core.cache import clear_cache
+        x = Symbol('x')
+        for tag in 'AB':
+            clear_cache()
+            f, g = Function('f'), Function('g')
+            f.tag = g.tag = tag
+            _TAGGED.extend([f(x), g(f(x))])
+    return _TAGGED
+
+
+def _kept(s):
+    t, out = s.table, {}
+    for v in range(1, len(t.slots)):
+        e = t.slots[v]
+        if isinstance(e, tuple):
+            out[e[1]] = (str(e[0]), e[0].func.tag)
+    return out
+
+
+def _random_formula(r, d):
+    from satassume.sat.formula import And, Implies, Not, Or, P
+    k = r.random()
+    if d == 0 or k < .35:
+        return P(r.choice(('real', 'positive', 'negative', 'zero', 'integer', 'even', 'odd', 'nonzero', 'mine')), r.choice(_tagged()))
+    if k < .55:
+        return Not(_random_formula(r, d - 1))
+    if k < .75:
+        return And(*[_random_formula(r, d - 1) for _ in range(r.randint(2, 3))])
+    if k < .92:
+        return Or(*[_random_formula(r, d - 1) for _ in range(r.randint(2, 5))])
+    return Implies(_random_formula(r, d - 1), _random_formula(r, d - 1))
+
+
+def _kept_formula(seed):
+    def run(s):
+        import random
+        import satassume.engine as E
+        E.compile_formula(_random_formula(random.Random(seed), 3), s.table, s.emit, s.dvar)
+        return _kept(s)
+    return run
+
+
+def _kept_two_steps(first, second):
+    """A node with no slot after a custom atom on one object, then a slot taken through another."""
+    def run(s):
+        import satassume.engine as E
+        from satassume.sat.formula import P
+        o = _tagged()
+        E.compile_formula(P('mine', o[first]), s.table, s.emit, s.dvar)
+        E.compile_formula(P('real', o[second]), s.table, s.emit, s.dvar)
+        return _kept(s)
+    return run
+
+
+def _kept_then_node_base(first, second):
+    def run(s):
+        import satassume.engine as E
+        from satassume.sat.formula import P
+        o = _tagged()
+        E.compile_formula(P('mine', o[first]), s.table, s.emit, s.dvar)
+        s.table.node_base(o[second])
+        return _kept(s)
+    return run
+
+
 def _compile_direct(f):
     import satassume.engine as E
     return lambda s: E.compile_formula(f, s.table, s.emit, s.dvar)
@@ -111,7 +184,11 @@ def _cases():
         'not-a-formula': lambda s: s.assume_formula(And(a, 7)),
         'not-a-formula:compile': _compile_direct(And(a, Or(b, c), 7)),
         'stop-from-args': _compile_direct(BadArgs()),
+        'kept:two-steps': _kept_two_steps(0, 2),
+        'kept:then-node-base': _kept_then_node_base(0, 2),
     })
+    # Which object a slot keeps, when compiling reaches atoms in another order than the formula has them.
+    out.update({f'kept:formula:{i}': _kept_formula(i) for i in range(120)})
     return out
 
 
@@ -139,7 +216,8 @@ def _ids():
     names = [f'{e}:{s}:{d}' for s in SHAPES for d in (1, 10, 63, 64, 65, 66, 100, 300, 3500) for e in ('assume', 'literal_of')]
     return names + ['unhashable:compile', 'unhashable:literal', 'unhashable:assume', 'unhashable:literal_of', 'pred-int:assume',
                     'pred-int:literal_of', 'pred-int:compile', 'pred-joined', 'node-joined', 'node-joined:or', 'node-joined:custom', 'pred-none', 'pred-list:assume',
-                    'pred-list:compile', 'pred-custom-str', 'not-a-formula', 'not-a-formula:compile', 'stop-from-args']
+                    'pred-list:compile', 'pred-custom-str', 'not-a-formula', 'not-a-formula:compile', 'stop-from-args',
+                    'kept:two-steps', 'kept:then-node-base'] + [f'kept:formula:{i}' for i in range(120)]
 
 
 @pytest.mark.parametrize('name', _ids())
@@ -180,6 +258,7 @@ def test_cases_exercise_what_they_name(both):
 def test_counters_fired(both):
     c = both[1]['counts']
     assert c['refuse:depth'] > 0 and c['refuse:convert'] > 0 and c['rs:emit_callback'] > 0
+    assert c['refuse:object'] > 0 and c['join'] > 0
 
 
 def _depth_ok(shape, d, entry):

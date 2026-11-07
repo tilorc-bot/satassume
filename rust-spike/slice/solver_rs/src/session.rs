@@ -14,9 +14,9 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 15] = [
+const NAMES: [&str; 16] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
-    "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert",
+    "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -33,6 +33,7 @@ const JOIN: usize = 11;
 const EMIT_CB: usize = 12;
 const REFUSE_DEPTH: usize = 13;
 const REFUSE_CONVERT: usize = 14;
+const REFUSE_OBJECT: usize = 15;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -40,7 +41,7 @@ const REFUSE_CONVERT: usize = 14;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 15] = const { [const { Cell::new(0) }; 15] };
+    static COUNTS: [Cell<u64>; 16] = const { [const { Cell::new(0) }; 16] };
 }
 
 fn tick(i: usize) {
@@ -160,7 +161,10 @@ pub struct SessionCore {
     /// and a strong one here is an edge the collector can't see.
     shell: Py<PyAny>,
     nids: Py<PyDict>,
+    /// The object per node id, as Python's slots keep it: the one passed to `node_base`, so it can still change until then.
     objs: RefCell<Vec<Py<PyAny>>>,
+    /// Set when a conversion refuses for `second_object`, which `convert` counts.
+    refused_object: Cell<bool>,
     bad: RefCell<Vec<Py<PyAny>>>,
     /// Custom predicates: a dict, because Python's table takes any hashable there, joined as a dict joins them.
     custom_ids: Py<PyDict>,
@@ -173,8 +177,13 @@ impl SessionCore {
         self.shell.bind(p).call0()
     }
 
+    /// The id of an object about to reach `node_base`, or passed where Python's table would take it: with no slot yet, this
+    /// is the object the slot will hold.
     fn nid_of(&self, x: &Bound<'_, PyAny>) -> PyResult<u32> {
         if let Some(n) = self.known(x)? {
+            if self.second_object(x, n) {
+                self.objs.borrow_mut()[n as usize] = x.clone().unbind();
+            }
             return Ok(n);
         }
         let mut objs = self.objs.borrow_mut();
@@ -182,6 +191,35 @@ impl SessionCore {
         objs.push(x.clone().unbind());
         self.nids.bind(x.py()).set_item(x, n)?;
         Ok(n)
+    }
+
+    /// `nid_of` for an atom's expr. A custom atom takes no slot on Python, so it doesn't choose the object one will hold.
+    fn nid_of_atom(&self, p: Python<'_>, pred: u32, x: &Bound<'_, PyAny>) -> PyResult<u32> {
+        match (self.kind_of(p, pred), self.known(x)?) {
+            (Kind::Custom, Some(n)) => Ok(n),
+            _ => self.nid_of(x),
+        }
+    }
+
+    /// `x` is `==` to the object held for node `n`, isn't that object, and `n` has no slot yet, so which one the slot holds
+    /// depends on the order `node_base` is reached. Python keeps the first passed there, and `Pow`'s `same` row reads identity.
+    fn second_object(&self, x: &Bound<'_, PyAny>, n: u32) -> bool {
+        !self.objs.borrow()[n as usize].bind(x.py()).is(x)
+            && self.st.borrow().base_of.get(n as usize).copied().unwrap_or(0) == 0
+    }
+
+    /// `nid_of` for an atom in a formula being converted. Conversion walks the formula and compiling may reach its atoms in
+    /// another order, so a second object there refuses, before anything is emitted, and Python's compiler passes them in its
+    /// own order over this same table.
+    fn nid_in_formula(&self, x: &Bound<'_, PyAny>) -> PyResult<u32> {
+        if let Some(n) = self.known(x)? {
+            if self.second_object(x, n) {
+                self.refused_object.set(true);
+                return Err(PyValueError::new_err("a second object for a node with no slot"));
+            }
+            return Ok(n);
+        }
+        self.nid_of(x)
     }
 
     fn known(&self, x: &Bound<'_, PyAny>) -> PyResult<Option<u32>> {
@@ -245,7 +283,7 @@ impl SessionCore {
         let c = &self.rules.classes;
         if f.is_instance_of::<PyP>() || f.is_instance(c[0].bind(p))? {
             let (pred, expr) = self.atom_fields(f)?;
-            return Ok(Rc::new(F::Atom(pred, self.nid_of(&expr)?)));
+            return Ok(Rc::new(F::Atom(pred, self.nid_in_formula(&expr)?)));
         }
         let args = |f: &Bound<'_, PyAny>| -> PyResult<Vec<R>> {
             let a = f.getattr(intern!(p, "args"))?;
@@ -288,7 +326,13 @@ impl SessionCore {
         match self.to_f(f, 0) {
             Ok(r) => Ok(Some(r)),
             Err(e) if e.is_instance_of::<PyException>(p) => {
-                tick(if e.is_instance_of::<PyRecursionError>(p) { REFUSE_DEPTH } else { REFUSE_CONVERT });
+                tick(if self.refused_object.take() {
+                    REFUSE_OBJECT
+                } else if e.is_instance_of::<PyRecursionError>(p) {
+                    REFUSE_DEPTH
+                } else {
+                    REFUSE_CONVERT
+                });
                 Ok(None)
             }
             Err(e) => Err(e),
@@ -607,6 +651,7 @@ impl SessionCore {
             shell,
             nids: PyDict::new(p).unbind(),
             objs: RefCell::new(vec![]),
+            refused_object: Cell::new(false),
             bad: RefCell::new(vec![]),
             custom_ids: PyDict::new(p).unbind(),
             custom_preds: RefCell::new(vec![]),
@@ -639,7 +684,7 @@ impl SessionCore {
         let p = dn.py();
         if need == "basis" {
             let (i, e) = self.atom_fields(dn)?;
-            let n = self.nid_of(&e)?;
+            let n = self.nid_of_atom(p, i, &e)?;
             let mut cx = PyCx { core: self, p, via: None, use_dv: true };
             return cx.dv_basis(i, n).map(Some);
         }
@@ -697,7 +742,7 @@ impl SessionCore {
     fn table_var_py(&self, a: &Bound<'_, PyAny>) -> PyResult<i32> {
         tick(TABLE);
         let (i, e) = self.atom_fields(a)?;
-        self.table_var(a.py(), i, self.nid_of(&e)?)
+        self.table_var(a.py(), i, self.nid_of_atom(a.py(), i, &e)?)
     }
 
     fn aux(&self) -> i32 {
