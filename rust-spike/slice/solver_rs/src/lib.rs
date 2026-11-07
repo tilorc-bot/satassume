@@ -7,6 +7,7 @@
 mod block;
 mod compile;
 mod constfield;
+mod compile_loop;
 mod discovery;
 mod euf;
 mod euf_py;
@@ -572,5 +573,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     session::register(m)?;
     relations_core::register(m)?;
     discovery::register(m)?;
+    compile_loop::register(m)?;
     transfer_py::register(m)
 }
