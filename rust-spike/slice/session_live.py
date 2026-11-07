@@ -218,17 +218,6 @@ def _census(node):
     CENSUS[k] = CENSUS.get(k, 0) + 1
 
 
-def _core_visit(self, node, b, demanded):
-    if CENSUS is not None:
-        _census(node)
-    constructing = self.engine._constructing
-    constructing.add(node)
-    try:
-        self._visit(node, b, demanded)
-    finally:
-        constructing.discard(node)
-
-
 def _var(self, pred, node):
     v = self.table.core.var(pred, node)
     if PLANT[0] is not None and v > 1:
@@ -486,8 +475,10 @@ def _install_discovery():
     return undo
 
 
-#: Step 5c2: `Session`'s compile loop runs in `compile_loop.rs`, so far `_emit_pattern`, `_flush`, `_compile`, `_compile_pending`,
-#: `_compile_patterns`#: and module `_split` and `want_of`. SLICE_LOOP=py keeps Python's over the same core. Python's own copies, for a session with
+#: Step 5c2: `Session`'s compile loop runs in `compile_loop.rs`: `_custom`, `_visit`, `_emit_pattern`, `_flush`, `_compile`,
+#: `_compile_pending`, `_compile_patterns` and module `_split` and `want_of`; `_link` is the core's (`session.rs` `link`). The core
+#: visits a node through Rust's `core_visit` (census and `engine._constructing`, which `session_live._core_visit` did until 5c2), and
+#: `_flush` calls Rust's `_custom`. SLICE_LOOP=py puts Python's methods back on the class for direct callers only. Python's own copies, for a session with
 #: no core (`_split` and `want_of` read no session, so they're switched for every caller).
 PY_LOOP = {}
 
@@ -522,11 +513,29 @@ def _ses_compile_pending(self, node, demanded):
     return sa_solver.ses_compile_pending(self, node, demanded)
 
 
-_LOOP_METHODS = {'_emit_pattern': _ses_emit_pattern, '_flush': _ses_flush, '_compile': _ses_compile,
+def _ses_custom(self, atom):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_custom'](self, atom)
+    return sa_solver.ses_custom(self, atom)
+
+
+def _ses_visit(self, node, b, demanded):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_visit'](self, node, b, demanded)
+    return sa_solver.ses_visit(self, node, b, demanded)
+
+
+def _ses_link(self, d, node, v):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_link'](self, d, node, v)
+    return self.table.core.link_py(d, node, v)
+
+
+_LOOP_METHODS = {'_custom': _ses_custom, '_visit': _ses_visit, '_link': _ses_link, '_emit_pattern': _ses_emit_pattern, '_flush': _ses_flush, '_compile': _ses_compile,
                  '_compile_pending': _ses_compile_pending, '_compile_patterns': _ses_compile_patterns}
 _LOOP_FUNCS = {'_split': 'ses_split', 'want_of': 'ses_want_of'}
 _LOOP_PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty',
-                'drop-pat-demand')
+                'drop-pat-demand', 'drop-custom-rel', 'drop-custom-facts', 'drop-visit-items', 'drop-dv-link')
 
 
 def _install_compile_loop():
@@ -598,12 +607,12 @@ def _formula_literal(f, table, emit, dv=None):
 def install():
     """Returns the undo."""
     S = engine.Session
-    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'node', 'var', 'dvar', '_dvar', '_core_visit')}
+    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'node', 'var', 'dvar', '_dvar')}
     g = (engine.VarTable, engine.compile_formula, engine.formula_literal)
     PY_COMPILE[:] = g[1:]
     S.table = property(_table_get, _table_set)
     S.base = property(_base_get, _base_set)
-    S.node, S.var, S.dvar, S._dvar, S._core_visit = _node, _var, _dvar_public, _dvar_raw, _core_visit
+    S.node, S.var, S.dvar, S._dvar = _node, _var, _dvar_public, _dvar_raw
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None
     undo_disc = _install_discovery() if os.environ.get('SLICE_DISC', 'rust') == 'rust' else None

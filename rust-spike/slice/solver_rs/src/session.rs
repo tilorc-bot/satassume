@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 65] = [
+const NAMES: [&str; 69] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -26,7 +26,7 @@ const NAMES: [&str; 65] = [
     "rel:transfer_terms", "rel:sync_transfer", "rel:xswitch", "rel:congruence_pairs",
     "ses:ensure", "ses:discover", "ses:escalate", "ses:incomplete",
     "ses:want_of", "ses:split", "ses:emit_pattern", "ses:flush", "ses:compile", "ses:compile_pending",
-    "ses:compile_patterns",
+    "ses:compile_patterns", "ses:custom", "ses:visit", "ses:core_visit", "ses:link",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -93,6 +93,10 @@ pub(crate) const SES_FLUSH: usize = 61;
 pub(crate) const SES_COMPILE: usize = 62;
 pub(crate) const SES_COMPILE_PENDING: usize = 63;
 pub(crate) const SES_COMPILE_PATTERNS: usize = 64;
+pub(crate) const SES_CUSTOM: usize = 65;
+pub(crate) const SES_VISIT: usize = 66;
+pub(crate) const SES_CORE_VISIT: usize = 67;
+pub(crate) const SES_LINK: usize = 68;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -100,7 +104,7 @@ pub(crate) const SES_COMPILE_PATTERNS: usize = 64;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 65] = const { [const { Cell::new(0) }; 65] };
+    static COUNTS: [Cell<u64>; 69] = const { [const { Cell::new(0) }; 69] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -537,7 +541,7 @@ impl SessionCore {
             b
         };
         tick(VISIT);
-        self.shell(p)?.call_method1(intern!(p, "_core_visit"), (node, b, demanded))?;
+        crate::compile_loop::core_visit(&self.shell(p)?, node, b, demanded)?;
         Ok(b)
     }
 
@@ -651,6 +655,7 @@ impl SessionCore {
 
     /// `Session._link`.
     fn link(&self, p: Python<'_>, d: &Def, nid: u32, v: i32) -> PyResult<()> {
+        tick(SES_LINK);
         let others: Vec<(Def, i32)> = {
             let mut st = self.st.borrow_mut();
             let o = st.dv_node.entry(nid).or_default();
@@ -665,6 +670,9 @@ impl SessionCore {
                 continue;
             }
             if d2.1.len() == 1 && own(d2.1[0]) {
+                continue;
+            }
+            if crate::relations_core::planted(crate::relations_core::DROP_DV_LINK) {
                 continue;
             }
             for &(s1, s2) in self.implications(p, d, d2)?.iter() {
@@ -874,6 +882,12 @@ impl SessionCore {
             _ => Need::Both,
         };
         self.dvar_def(p, &Rc::new((op == "&", ls)), self.nid_of(&node)?, Some(&node), need)
+    }
+
+    /// `Session._link` as a Python caller calls it. The engine's own calls (from `var`, `dvar` and `_dvar`) are Rust's already.
+    fn link_py(&self, d: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, v: i32) -> PyResult<()> {
+        let (op, ls): (String, Vec<i32>) = d.extract()?;
+        self.link(d.py(), &Rc::new((op == "&", ls)), self.nid_of(node)?, v)
     }
 
     /// `_dvar` as Python's `var` and tests call it.
