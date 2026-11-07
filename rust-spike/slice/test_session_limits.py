@@ -161,7 +161,7 @@ def test_node_joined_first_object_is_the_first_seen(both):
     pass through it. Rust has one object per node id, the first seen at the boundary. It takes a custom atom and a block atom on
     objects `==` across classes; `join` counts objects joined that way, and the report says how often it fires."""
     py, rust = (b['cases']['node-joined:custom-then-block'] for b in both)
-    assert 'real(True)' in py['atoms'] and 'real(1.0)' in rust['atoms']
+    assert 'complex(True)' in py['atoms'] and 'complex(1.0)' in rust['atoms']
     assert {k: v for k, v in py.items() if k != 'atoms'} == {k: v for k, v in rust.items() if k != 'atoms'}
 
 
