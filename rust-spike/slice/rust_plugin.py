@@ -92,6 +92,9 @@ if BACKEND != "rust" and os.environ.get("SLICE_EUF") == "rust":
 
     _euf.EUFTheory = _euf_adapter.EUFTheory = EUFTheory
 
+import catch_count   # noqa: E402 (on both backends: the row's `caught`, what the two `except Exception` sites got)
+catch_count.install()
+
 _init = PySolver.__init__
 
 
@@ -154,7 +157,8 @@ def pytest_runtest_protocol(item, nextitem):
     _record(id=item.nodeid, backend=BACKEND, outcome=outcome, failure=fail,
             rust_made=counts["rust_made"] - before["rust_made"], py_made=counts["py_made"] - before["py_made"],
             private_writes=sorted(private_writes),
-            lra={k: v - lra_before[k] for k, v in lb.counts.items()} if lb else None)
+            lra={k: v - lra_before[k] for k, v in lb.counts.items()} if lb else None,
+            caught=catch_count.take())
 
 
 @pytest.hookimpl(hookwrapper=True)

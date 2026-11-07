@@ -315,6 +315,7 @@ class LRATheory(PyLRA):
         self.__dict__.update(st)
         self.__dict__["_core"] = None
         self.__dict__["_moved"] = (reason, core.calls, core.level)
+        self.__dict__["_moved_branches"] = st["_py_stats"]["branches"]
         moves.append((reason, core.calls, core.level))
         counts["moved"] += 1
 

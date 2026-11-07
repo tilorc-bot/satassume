@@ -248,6 +248,16 @@ def lra_text(t):
     return repr(parts)
 
 
+def lra_branching(solver):
+    """(branches at the end, exhausted, branches when it moved or None) of each LRATheory of a solver. For the group
+    counts: the budget is path dependent, so a move only tests it if the session had branched by then."""
+    out = []
+    for t in solver.theories():
+        if any(k.__name__ == "LRATheory" for k in type(t).__mro__):
+            out.append((t.stats["branches"], bool(t.exhausted), t.__dict__.get("_moved_branches")))
+    return out
+
+
 def lra_of(solver):
     """(digest of the state of each LRATheory of a solver, group), or (None, None) without one. Group: "python" from
     the start, "rust" throughout, or "moved:REASON:CALL:LEVEL"."""

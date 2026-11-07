@@ -269,7 +269,9 @@ def main():
 
     from satassume import engine, ref, sympy_api
     from satassume.sat import solver as SV
+    import catch_count
     import state
+    catch_count.install()
     lra_groups = {}
     T.digest = state.digest
     pairs = load(args.wl)
@@ -370,6 +372,9 @@ def main():
                 r, msg = "raise " + type(e).__name__, str(e)
             answers[key] = r
             rec = dict(q=key, ans=r, msg=ADDR.sub("0xX", msg))
+            caught = catch_count.take()
+            if caught:
+                rec["caught"] = caught
             if args.check != "plain":
                 sess = []
                 for st in T.solvers:
@@ -387,7 +392,7 @@ def main():
                     if group:
                         lra_groups[group] = lra_groups.get(group, 0) + 1
                     sess.append(dict(end=e, stream=st.h.hexdigest(), entries=st.entries, hooks=st.hooks,
-                                     searches=st.searches, lra=lra_d, group=group))
+                                     searches=st.searches, lra=lra_d, group=group, branching=state.lra_branching(st.solver)))
                     tot["entries"] += st.entries
                     tot["hooks"] += st.hooks
                     tot["searches"] += st.searches
@@ -396,6 +401,10 @@ def main():
                 tot["queries_with_solver"] += bool(sess)
                 tot["queries_with_search"] += any(s["searches"] for s in sess)
             hist[str(r)] = hist.get(str(r), 0) + 1
+            if args.fork:
+                # The totals live in the parent, so a child's would read 0 on either backend: they go in the row.
+                rec["child"] = dict(py_made=py_made[0], made=T.created, dropped=T.dropped, reentry=T.reentry,
+                                    outside=T.outside, raises=T.raises, addr=T.addr)
             out.write(json.dumps(rec) + "\n")
             out.flush()
             if args.fork:
@@ -413,6 +422,15 @@ def main():
             for x in rows:
                 hist[str(x["ans"])] = hist.get(str(x["ans"]), 0) + 1
                 tot["solvers"] += len(x.get("sessions", []))
+                c = x["child"]
+                py_made[0] += c["py_made"]
+                T.created += c["made"]
+                T.dropped += c["dropped"]
+                T.addr += c["addr"]
+                T.outside += c["outside"]
+                for mine, theirs in ((T.reentry, c["reentry"]), (T.raises, c["raises"])):
+                    for k, v in theirs.items():
+                        mine[k] = mine.get(k, 0) + v
         tot.update(wl=args.wl, mode=args.mode, check=args.check, shuffle=args.shuffle,
                    answers_sha=hashlib.sha256(json.dumps([answers[i] for i in sorted(answers)]).encode())
                    .hexdigest()[:16],
