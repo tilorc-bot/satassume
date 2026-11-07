@@ -7,6 +7,8 @@ from sympy import Function, Q, Rational, S, Symbol, symbols, pi
 from satassume.engine import DictCache, Engine
 from satassume.relations import Relations
 from satassume.knowledge.rules import PRED_INDEX
+from satassume.theories.euf.euf import EqAtom, EUFTheory
+from satassume.theories.transfer import TransferTheory
 from theory_harness import Recorder, ask_with, check_protocol
 
 x, y, z = symbols("x y z")
@@ -246,3 +248,30 @@ def test_models_respect_transfer(monkeypatch):
     for seed in range(60):
         fz.run_seed(seed, "euf" if seed % 2 else "lra")
     assert counts["models"] and counts["pairs"] and counts["fixed"]
+
+
+def _decide_pick(order):
+    """What ``decide`` returns for two equal terms with atoms of predicates
+    ``order``, both unassigned, registered in that order on each term.  The
+    variable of a predicate does not depend on ``order``."""
+    euf = EUFTheory()
+    a, b = euf.term("a"), euf.term("b")
+    theory = TransferTheory(euf)
+    euf.register_atom(1, EqAtom(a, b))
+    assert euf.assert_lit(1) is None
+    var = {(a, 0): 2, (b, 0): 3, (a, 8): 4, (b, 8): 5}
+    for term in (a, b):
+        for pred in order:
+            theory.register_atom(var[term, pred], (term, pred, True))
+    return theory.decide()
+
+
+def test_decide_does_not_follow_set_order():
+    """Two predicates qualify, so the first one ``decide`` looks at picks the
+    variable.  8 and 0 share a slot in a set's table of 8, so CPython iterates
+    them in the order they were added: on the set alone the pick would differ
+    (#325).  Called directly: no engine run has been seen to get here with two
+    predicates qualifying."""
+    pick = _decide_pick((8, 0))
+    assert pick == _decide_pick((0, 8))
+    assert pick in (2, 3)       # an atom of predicate 0, the lower one
