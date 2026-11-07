@@ -64,6 +64,16 @@ if BACKEND == "rust":
 
     SV.Solver = _engine.Solver = _ref.Solver = Solver
 
+    # EUF on Rust too, before collection, so a test's own `from ...euf import EUFTheory` gets it. SLICE_EUF=py keeps Python's.
+    if os.environ.get("SLICE_EUF") != "py":
+        import satassume.theories.euf.euf as _euf
+        import satassume.theories.euf.euf_adapter as _euf_adapter
+
+        class EUFTheory(sa_solver.EUFTheory):
+            pass
+
+        _euf.EUFTheory = _euf_adapter.EUFTheory = EUFTheory
+
 _init = PySolver.__init__
 
 

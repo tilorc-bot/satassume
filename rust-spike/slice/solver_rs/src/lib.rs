@@ -5,6 +5,8 @@
 //! Not ported: provenance (`owner`, `provenance`, `root_step`). The engine sets `track_owners = False`, so it never
 //! asks; those raise NotImplementedError rather than answer wrongly.
 mod block;
+mod euf;
+mod euf_py;
 mod map;
 mod solver;
 mod term;
@@ -542,5 +544,6 @@ fn lits_opt(a: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<u32>> {
 #[pymodule]
 fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     term::py::register(m)?;
-    m.add_class::<PySolver>()
+    m.add_class::<PySolver>()?;
+    euf_py::add_to(m)
 }
