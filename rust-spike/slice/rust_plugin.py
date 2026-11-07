@@ -28,6 +28,12 @@ import weakref
 
 import pytest
 
+# Component 3's `P` on Rust: before the first import of satassume. SLICE_TRANSFER=py or SLICE_P=py keeps Python's.
+if os.environ.get("SLICE_SUITE_BACKEND", "rust") == "rust" and os.environ.get("SLICE_TRANSFER") != "py":
+    sys.path.insert(0, os.environ.get("SLICE_SO") or os.path.dirname(os.path.abspath(__file__)))
+    import p_install
+    p_install.install()
+
 import satassume.engine as _engine
 import satassume.ref as _ref
 import satassume.sat.solver as SV
@@ -73,6 +79,11 @@ if BACKEND == "rust":
             pass
 
         _euf.EUFTheory = _euf_adapter.EUFTheory = EUFTheory
+    # Component 3 on Rust too, before collection, so a test's own `from ...transfer import TransferTheory` gets it.
+    # SLICE_TRANSFER=py keeps Python's.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import backend as _backend
+    _backend.install_transfer()
 
     # Before collection, so that a test module's `from ... import LRATheory` gets it. SLICE_LRA=python: solver only.
     if os.environ.get("SLICE_LRA", "rust") == "rust":

@@ -24,9 +24,15 @@ ap.add_argument("out")
 ap.add_argument("--limit", type=int, default=0)
 ap.add_argument("--only")
 ap.add_argument("--so", help="load sa_solver from this directory (a mutant)")
+ap.add_argument("--sympy", action="store_true", help="count Basic.__new__ calls per query")
+ap.add_argument("--cover", action="store_true", help="py mode: count lines run in Python's transfer.py")
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
+    import sa_solver  # noqa: F401  before backend, whose own path entry holds the unmutated build
+if a.mode in ("rust", "shadow"):    # before anything can import satassume
+    import p_install
+    p_install.install()
 
 from evalbench.common import workload  # noqa: E402
 from harness.state import reset_module_state  # noqa: E402
@@ -45,14 +51,45 @@ else:
         sys.exit(f"--so {a.so}: loaded {backend.sa_solver.__file__}")
     backend.install()
     dump = backend.RustSolver.dump
+    if a.mode in ("rust", "shadow") and os.environ.get("SLICE_P") != "py":
+        from satassume.sat import formula as _f
+        if _f.P is not backend.sa_solver.P:
+            sys.exit("P was not swapped")
 
 X.count_quiet_catches()
+lines = collections.Counter()
+built = collections.Counter()
+if a.sympy:
+    from sympy.core.basic import Basic
+    _new = Basic.__new__
+
+    def counted_new(cls, *args):
+        built["all"] += 1
+        return _new(cls, *args)
+    Basic.__new__ = staticmethod(counted_new)
+if a.cover:
+    from satassume.theories import transfer as _tr
+    mon = sys.monitoring
+    mon.use_tool_id(3, "sa-port-cover")
+    target = _tr.__file__
+
+    def on_line(code, line):
+        if code.co_filename == target:
+            lines[line] += 1
+        else:
+            return mon.DISABLE
+    mon.register_callback(3, mon.events.LINE, on_line)
+    mon.set_events(3, mon.events.LINE)
 if a.mode == "shadow":
     X.log = open(a.out + ".diffs", "w")
 
 if a.wl == "fuzz":
     from evalbench.fuzz import queries
     pairs = queries(424242)
+elif a.wl.startswith("transfer:"):    # transfer_workload.py, by seed and count
+    import transfer_workload
+    seed, n = a.wl.split(":")[1:]
+    pairs = transfer_workload.queries(int(seed), int(n))
 else:
     pairs = workload(a.wl)
 only = set(map(int, a.only.split(","))) if a.only else None
@@ -96,6 +133,7 @@ with open(a.out, "w") as fh:
         sympy_api.set_default_engine(E.Engine())
         sessions.clear()
         X.where["query"] = i
+        before = built["all"]
         try:
             r = repr(sympy_api.ask(p, q))
         except Exception as e:  # the type and text are the answer
@@ -103,10 +141,13 @@ with open(a.out, "w") as fh:
             r = f"{type(e).__name__}: {e}"
         fh.write(f"{i}\t{r}\t{','.join(digest(s) for s in sessions)}\n")
         counts["queries"] += 1
-out = dict(counts, quiet_catches=dict(X.catches), hash_seed=os.environ.get("PYTHONHASHSEED"))
+        counts["sympy built"] += built["all"] - before
+out = dict(counts, quiet_catches=dict(X.catches), handled=dict(X.handled_all), hash_seed=os.environ.get("PYTHONHASHSEED"))
+if a.cover:
+    out["lines"] = {str(k): v for k, v in sorted(lines.items())}
 if a.mode == "shadow":
     out["shadow"] = dict(X.stats)
 json.dump(out, open(a.out + ".json", "w"), indent=1, sort_keys=True)
-print(json.dumps({k: out[k] for k in out if k != "shadow"}, sort_keys=True))
+print(json.dumps({k: out[k] for k in out if k not in ("shadow", "handled", "lines")}, sort_keys=True))
 if a.mode == "shadow":
     print("shadow calls", X.stats["calls"], "theories", X.stats["theories"], "differences", X.stats["differences"])
