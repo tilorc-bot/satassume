@@ -342,3 +342,272 @@ pub fn not_unit_premises(c0: &Rat, c1: &Rat) -> Vec<usize> {
         .map(|(i, _)| i)
         .collect()
 }
+
+// ---- The Mul family: `_mul_factor_sets`, `_quotient_rules`, `_quotient_templates`.
+
+/// `_mul_factor_sets`' derived sets before `kept_product`: the `c*t` set (`c`'s id and the rest's factors) and the
+/// `I*pi*c*s` set (`c`, and `s` as one id that is a Mul, or factors for Python's `kept_product`).
+pub type MulSets = (Option<(TermId, Vec<TermId>)>, Option<(Rat, Rest)>);
+
+/// `_pi_split(arg, imag)` before `kept_product`: `(c, s)`, `s` None when there are no other factors.
+pub type PiSplit = Option<(Rat, Option<Rest>)>;
+
+impl TermTable {
+    fn core_is_pow(&self, t: TermId) -> bool {
+        self.class_of(t).flags & IS_POW != 0
+    }
+
+    fn core_two_args(&self, t: TermId) -> Result<(TermId, TermId), Refuse> {
+        match *self.row(t).args {
+            [a, b] => Ok((a, b)),
+            _ => Err(Refuse("core: a binary node without two args")),
+        }
+    }
+
+    /// `t.is_Integer and t.p < 0`.
+    fn core_negative_integer(&self, t: TermId) -> Result<bool, Refuse> {
+        Ok(matches!(self.core_rational(t)?, Some(r) if r.is_int() && r.n.is_negative()))
+    }
+
+    /// `_pi_split(arg, imag)`; a rest of more than one factor goes to Python's `kept_product`.
+    pub fn core_pi_split(&self, arg: TermId, imag: bool) -> Result<PiSplit, Refuse> {
+        if !self.core_is_mul(arg) {
+            return Ok(None);
+        }
+        let mut c = Rat::int(1);
+        let mut rest = Vec::new();
+        let (mut seen_i, mut seen_pi) = (!imag, false);
+        for &f in self.row(arg).args.iter() {
+            let kind = self.class_of(f).kind;
+            if kind == Kind::ImaginaryUnit && !seen_i {
+                seen_i = true;
+            } else if kind == Kind::Pi && !seen_pi {
+                seen_pi = true;
+            } else if let Some(r) = self.core_rational(f)? {
+                c = c.mul(&r);
+            } else {
+                rest.push(f);
+            }
+        }
+        if !(seen_i && seen_pi) {
+            return Ok(None);
+        }
+        if rest.is_empty() {
+            return Ok(Some((c, None)));
+        }
+        if c.is_zero() {
+            return Ok(None); // Mul(I, pi, 0, x): nan at x = oo
+        }
+        Ok(Some((c, Some(if rest.len() == 1 { Rest::One(rest[0]) } else { Rest::Product(rest) }))))
+    }
+
+    /// `_mul_factor_sets(expr)` past its first set (the args): the derived sets, before `kept_product`.
+    pub fn core_mul_factor_sets(&self, expr: TermId) -> Result<MulSets, Refuse> {
+        let args = &self.row(expr).args;
+        let mut ct = None;
+        if args.len() >= 3 {
+            if let Some(c) = self.core_rational(args[0])? {
+                if !c.is_zero() {
+                    ct = Some((args[0], args[1..].to_vec()));
+                }
+            }
+        }
+        let ipi = match self.core_pi_split(expr, true)? {
+            Some((c, Some(Rest::One(s)))) if self.core_is_mul(s) => Some((c, Rest::One(s))),
+            Some((c, Some(Rest::Product(fs)))) => Some((c, Rest::Product(fs))),
+            _ => None,
+        };
+        Ok((ct, ipi))
+    }
+
+    /// `_quotient_templates`' shape test: `(a, v, v**k)` for `a*v**k`, `k` a negative integer and `v` no number.
+    pub fn core_quotient_shape(&self, expr: TermId) -> Result<Option<(TermId, TermId, TermId)>, Refuse> {
+        let args = &self.row(expr).args;
+        if args.len() != 2 {
+            return Ok(None);
+        }
+        let (mut a, mut t) = (args[0], args[1]);
+        if !self.core_is_pow(t) {
+            std::mem::swap(&mut a, &mut t);
+        }
+        if !self.core_is_pow(t) {
+            return Ok(None);
+        }
+        let (v, k) = self.core_two_args(t)?;
+        if self.core_is_number(v)? || !self.core_negative_integer(k)? {
+            return Ok(None);
+        }
+        Ok(Some((a, v, t)))
+    }
+
+    // ---- The Pow family.
+
+    /// `_unit_angle(b)`: `theta/pi` for `I`, `-1`, `-I`.
+    pub fn core_unit_angle(&self, b: TermId) -> Result<Option<Rat>, Refuse> {
+        Ok(match self.class_of(b).kind {
+            Kind::ImaginaryUnit => Some(Rat::new(BigInt::from(1), BigInt::from(2))),
+            Kind::NegativeOne => Some(Rat::int(1)),
+            _ if self.core_is_mul(b) => match *self.row(b).args {
+                [m, i] if self.class_of(m).kind == Kind::NegativeOne && self.class_of(i).kind == Kind::ImaginaryUnit => {
+                    Some(Rat::new(BigInt::from(-1), BigInt::from(2)))
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+    }
+
+    /// `_exp_arg(b)`: `u` of `E**u` or `exp(u)`.
+    pub fn core_exp_arg(&self, b: TermId) -> Result<Option<TermId>, Refuse> {
+        if self.core_is_pow(b) {
+            let (base, u) = self.core_two_args(b)?;
+            return Ok(if self.class_of(base).kind == Kind::Exp1 { Some(u) } else { None });
+        }
+        let c = self.class_of(b);
+        if c.kind == Kind::Function && self.class_name(c) == "exp" {
+            return self.core_first(b).map(Some);
+        }
+        Ok(None)
+    }
+
+    /// `irrational_root(b, e)` over the constants' ids.
+    pub fn core_irrational_root(&self, b: TermId, e: TermId) -> Result<bool, Refuse> {
+        let Some(e) = self.core_rational(e)? else { return Ok(false) };
+        if e.is_int() {
+            return Ok(false);
+        }
+        let Some(b) = self.core_rational(b)? else { return Ok(false) };
+        if !b.n.is_positive() {
+            return Ok(false);
+        }
+        Ok(!(exact_root(&b.n, &e.d) && exact_root(&b.d, &e.d)))
+    }
+
+    /// `_pow_bound_templates`' shape test: `(b, e)` for an Add `b` and an exponent that isn't a number other than a
+    /// negative integer.
+    pub fn core_pow_bound_shape(&self, expr: TermId) -> Result<Option<(TermId, TermId)>, Refuse> {
+        let (b, e) = self.core_two_args(expr)?;
+        if self.class_of(b).flags & flag::IS_ADD == 0 || self.core_is_number(e)? && !self.core_negative_integer(e)? {
+            return Ok(None);
+        }
+        Ok(Some((b, e)))
+    }
+
+    /// `_unit_power_units(angle, e, expr)` for a Rational `e` (`as_real_imag` is `(e, 0)`): `(predicate, value)` facts
+    /// of the node, or None for another exponent.
+    pub fn core_unit_power_units(&self, angle: &Rat, e: TermId) -> Result<Option<Vec<(&'static str, bool)>>, Refuse> {
+        let Some(a) = self.core_rational(e)? else { return Ok(None) };
+        Ok(Some(unit_power_units(angle, &a)))
+    }
+}
+
+/// `integer_nthroot(y, n)[1]` for `y >= 0`, `n >= 1`.
+fn exact_root(y: &BigInt, n: &BigInt) -> bool {
+    if y <= &BigInt::from(1) {
+        return true;
+    }
+    match u32::try_from(n) {
+        Ok(k) => num_traits::Pow::pow(y.nth_root(k), k) == *y,
+        Err(_) => false, // y >= 2 has no exact root of degree past 2**32
+    }
+}
+
+/// `_unit_power_units`' facts for a rational real part `a` (imaginary part 0).
+pub fn unit_power_units(angle: &Rat, a: &Rat) -> Vec<(&'static str, bool)> {
+    let mut out = vec![("zero", false), ("finite", true), ("complex", true)];
+    let phi = a.mul(angle);
+    if phi.is_int() {
+        out.push((if phi.n.is_even() { "positive" } else { "negative" }, true));
+    } else if phi.d == BigInt::from(2) {
+        out.push(("imaginary", true));
+    } else {
+        out.push(("extended_real", false));
+        out.push(("imaginary", false));
+    }
+    out
+}
+
+/// `_quotient_rules()`.
+pub fn quotient_rules() -> Vec<Rule> {
+    vec![(vec![(0, "odd", true), (1, "even", true)], vec![(3, "integer", false)])]
+}
+
+/// `_pow_bound_templates`' `gen()` over the premises' indices into `INT_BOUNDS`.
+pub fn pow_bound_rules(prems: &[usize]) -> Vec<Rule> {
+    prems
+        .iter()
+        .map(|&i| {
+            let mut p = prem(0, INT_BOUNDS[i].0);
+            p.extend([(1, "integer", true), (1, "negative", true), (2, "finite", true)]);
+            (p, vec![(3, "integer", false)])
+        })
+        .collect()
+}
+
+/// `IPI_GUARDS`' conditions on `c`.
+#[derive(Clone, Copy, PartialEq)]
+enum CWhen {
+    Any,
+    Integer,
+    Even,
+    Odd,
+    HalfOdd,
+    Other,
+}
+
+/// A slot of `IPI_TABLE`: `'S'` the `s`, `'N'` the node.
+#[derive(Clone, Copy, PartialEq)]
+enum IpiSlot {
+    S,
+    N,
+}
+
+type IpiLit = (IpiSlot, &'static str, bool);
+
+/// `_ipi_table_rows()`, same order: name, premises, conclusion, `has_s` (`'s'`, else `'no s'`) and the condition on `c`.
+#[allow(clippy::type_complexity)]
+const IPI_TABLE: [(&str, &[IpiLit], IpiLit, bool, CWhen); 20] = {
+    use CWhen::*;
+    use IpiSlot::{N, S};
+    [
+        ("ipi.int", &[], (N, "odd", true), false, Integer),
+        ("ipi.int.even", &[], (N, "positive", true), false, Even),
+        ("ipi.int.odd", &[], (N, "negative", true), false, Odd),
+        ("ipi.half.imaginary", &[], (N, "imaginary", true), false, HalfOdd),
+        ("ipi.half.algebraic", &[], (N, "algebraic", true), false, HalfOdd),
+        ("ipi.other.algebraic", &[], (N, "algebraic", true), false, Other),
+        ("ipi.other.not_real", &[], (N, "extended_real", false), false, Other),
+        ("ipi.other.not_imaginary", &[], (N, "imaginary", false), false, Other),
+        ("ipi.other.nonzero", &[], (N, "zero", false), false, Other),
+        ("ipi.s.algebraic", &[(S, "integer", true)], (N, "algebraic", true), true, Any),
+        ("ipi.s.complex", &[(S, "real", true)], (N, "complex", true), true, Any),
+        ("ipi.s.nonzero", &[(S, "real", true)], (N, "zero", false), true, Any),
+        ("ipi.s.int", &[(S, "integer", true)], (N, "odd", true), true, Integer),
+        ("ipi.s.int.even", &[(S, "integer", true)], (N, "positive", true), true, Even),
+        ("ipi.s.int.odd.even", &[(S, "even", true)], (N, "positive", true), true, Odd),
+        ("ipi.s.int.odd.odd", &[(S, "odd", true)], (N, "negative", true), true, Odd),
+        ("ipi.s.int.odd.back_even", &[(S, "integer", true), (N, "positive", true)], (S, "even", true), true, Odd),
+        ("ipi.s.int.odd.back_odd", &[(S, "integer", true), (N, "negative", true)], (S, "odd", true), true, Odd),
+        ("ipi.s.half.even", &[(S, "even", true)], (N, "odd", true), true, HalfOdd),
+        ("ipi.s.half.odd", &[(S, "odd", true)], (N, "imaginary", true), true, HalfOdd),
+    ]
+};
+
+/// `ipi_rules(rule, c, iS, N)`: the rules it feeds `rule`, in order. `s` is `iS`.
+pub fn ipi_rules(c: &Rat, s: Option<usize>, n: usize) -> Vec<Rule> {
+    let int = c.is_int();
+    let holds = |w: CWhen| match w {
+        CWhen::Any => true,
+        CWhen::Integer => int,
+        CWhen::Even => int && c.n.is_even(),
+        CWhen::Odd => int && !c.n.is_even(),
+        CWhen::HalfOdd => !int && c.d == BigInt::from(2),
+        CWhen::Other => !int && c.d != BigInt::from(2),
+    };
+    let lit = |(k, p, v): IpiLit| -> Lit { (if k == IpiSlot::S { s.unwrap_or(0) } else { n }, p, v) };
+    IPI_TABLE
+        .iter()
+        .filter(|(_, _, _, has_s, w)| *has_s == s.is_some() && holds(*w))
+        .map(|(_, ps, c, _, _)| (ps.iter().map(|&l| lit(l)).collect(), vec![lit(*c)]))
+        .collect()
+}

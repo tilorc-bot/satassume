@@ -51,3 +51,22 @@ def test_types_match():
     """`_mismatch` compares types too: lists of (list, list) tuples of (int, str, bool) tuples."""
     r, p = sa_solver.core_bound_rules(1, 2, 1, 1), core._bound_rules(Rational(1, 2), Rational(1))
     assert [(type(a), type(b), [type(x) for x in a]) for a, b in r] == [(type(a), type(b), [type(x) for x in a]) for a, b in p]
+
+
+def test_mulpow_rule_builders():
+    """`_quotient_rules`, `ipi_rules` over every `IPI_GUARDS` case with and without an `s`, and `_pow_bound_templates`' rules."""
+    assert sa_solver.core_quotient_rules() == core._quotient_rules()
+    for c in RATS:
+        for iS in (None, 0, 5):
+            ours = sa_solver.core_ipi_rules(*pq(c), iS, 2)
+            theirs = []
+            core.ipi_rules(lambda p, k: theirs.append((p, k)), c, iS, 2)
+            assert ours == theirs, (c, iS)
+    for c0 in RATS:
+        for c1 in RATS:
+            if c1 != 0:
+                idx = sa_solver.core_not_unit_premises(*pq(c0), *pq(c1))
+                want = [(([(0, p, True) for p in core._INT_BOUNDS[i][0]]
+                          + [(1, 'integer', True), (1, 'negative', True), (2, 'finite', True)]), [(3, 'integer', False)])
+                        for i in idx]
+                assert sa_solver.core_pow_bound_rules(idx) == want, (c0, c1)

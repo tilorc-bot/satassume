@@ -87,6 +87,21 @@ M = [
     ('core', 'core-imag-rules-strict', 'solver_rs/src/term/tcore.rs', 'if k == j { strict[k] } else { weak[k] }', 'if k == j { weak[k] } else { weak[k] }'),
     ('core', 'core-imag-number-rules', 'solver_rs/src/term/tcore.rs', '(vec![(0, "real", true), (0, "zero", false)], vec![(1, "imaginary", true)]),', '(vec![(0, "real", true)], vec![(1, "imaginary", true)]),'),
     ('core', 'core-not-unit-two', 'solver_rs/src/term/tcore.rs', '*lower == pos && v >= two || *lower != pos && v <= minus_two', '*lower == pos && v >= Rat::int(1) || *lower != pos && v <= minus_two'),
+    ('core', 'core-pi-split-second-i', 'solver_rs/src/term/tcore.rs', 'if kind == Kind::ImaginaryUnit && !seen_i {', 'if kind == Kind::ImaginaryUnit {'),
+    ('core', 'core-pi-split-zero', 'solver_rs/src/term/tcore.rs', 'if c.is_zero() {\n            return Ok(None); // Mul(I, pi, 0, x)', 'if false {\n            return Ok(None); // Mul(I, pi, 0, x)'),
+    ('core', 'core-mul-sets-ct-two', 'solver_rs/src/term/tcore.rs', 'if args.len() >= 3 {', 'if args.len() >= 2 {'),
+    ('core', 'core-mul-sets-ipi-any', 'solver_rs/src/term/tcore.rs', 'Some((c, Some(Rest::One(s)))) if self.core_is_mul(s) =>', 'Some((c, Some(Rest::One(s)))) =>'),
+    ('core', 'core-quotient-any-k', 'solver_rs/src/term/tcore.rs', 'if self.core_is_number(v)? || !self.core_negative_integer(k)? {', 'if self.core_is_number(v)? {'),
+    ('core', 'core-quotient-rules', 'solver_rs/src/term/tcore.rs', 'vec![(vec![(0, "odd", true), (1, "even", true)], vec![(3, "integer", false)])]', 'vec![(vec![(0, "odd", true), (1, "integer", true)], vec![(3, "integer", false)])]'),
+    ('core', 'core-unit-angle-neg', 'solver_rs/src/term/tcore.rs', 'Some(Rat::new(BigInt::from(-1), BigInt::from(2)))', 'Some(Rat::new(BigInt::from(1), BigInt::from(2)))'),
+    ('core', 'core-exp-arg-any', 'solver_rs/src/term/tcore.rs', 'Some(u) } else { None }', 'Some(u) } else { Some(u) }'),
+    ('core', 'core-irrational-den', 'solver_rs/src/term/tcore.rs', 'Ok(!(exact_root(&b.n, &e.d) && exact_root(&b.d, &e.d)))', 'Ok(!exact_root(&b.n, &e.d))'),
+    ('core', 'core-pow-bound-any-exp', 'solver_rs/src/term/tcore.rs', 'if self.class_of(b).flags & flag::IS_ADD == 0 || self.core_is_number(e)? && !self.core_negative_integer(e)? {', 'if self.class_of(b).flags & flag::IS_ADD == 0 {'),
+    ('core', 'core-pow-bound-no-finite', 'solver_rs/src/term/tcore.rs', 'p.extend([(1, "integer", true), (1, "negative", true), (2, "finite", true)]);', 'p.extend([(1, "integer", true), (1, "negative", true)]);'),
+    ('core', 'core-unit-power-half', 'solver_rs/src/term/tcore.rs', '} else if phi.d == BigInt::from(2) {', '} else if phi.d == BigInt::from(3) {'),
+    ('core', 'core-ipi-odd', 'solver_rs/src/term/tcore.rs', 'CWhen::Odd => int && !c.n.is_even(),', 'CWhen::Odd => int,'),
+    ('core', 'core-ipi-back-odd', 'solver_rs/src/term/tcore.rs', '("ipi.s.int.odd.back_odd", &[(S, "integer", true), (N, "negative", true)], (S, "odd", true), true, Odd),', '("ipi.s.int.odd.back_odd", &[(S, "integer", true), (N, "negative", true)], (S, "even", true), true, Odd),'),
+    ('core', 'core-ipi-other', 'solver_rs/src/term/tcore.rs', 'CWhen::Other => !int && c.d != BigInt::from(2),', 'CWhen::Other => !int,'),
     ('rows', 'rows-neg-dropped', RW, 'Ast::Neg(x) => eval(py, x, number)?.neg(),', 'Ast::Neg(x) => eval(py, x, number)?,'),
     ('rows', 'rows-sub-is-add', RW, 'Op::Sub => x.sub(&y).ok()?,', 'Op::Sub => x.add(&y).ok()?,'),
     ('rows', 'rows-div-is-mul', RW, 'Op::Div => x.div(&y).ok()?,', 'Op::Div => x.mul(&y).ok()?,'),
@@ -177,7 +192,7 @@ def score(name, kind, path, old, new, a):
     # off
     row['off'], by_wl = 'no', {}
     # `rootof` is scored only when its plain rows are there, so older runs keep their columns.
-    wls = ('dev', 'fuzz', 'value') + tuple(w for w in ('rootof', 'rows') if os.path.exists(os.path.join(a.plain, f'{w}-plain.tsv')))
+    wls = ('dev', 'fuzz', 'value') + tuple(w for w in ('rootof', 'rows', 'core') if os.path.exists(os.path.join(a.plain, f'{w}-plain.tsv')))
     for wl in wls:
         rc, out = fresh(d, env, log, wl, 'atoms')
         if rc:

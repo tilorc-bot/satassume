@@ -784,6 +784,105 @@ fn core_not_unit_premises(p0: BigInt, q0: BigInt, p1: BigInt, q1: BigInt) -> PyR
     Ok(tcore::not_unit_premises(&core_rat(p0, q0)?, &core_rat(p1, q1)?))
 }
 
+fn core_rest<'py>(py: Python<'py>, r: &tcore::Rest) -> PyResult<Bound<'py, PyAny>> {
+    core_ct(py, &(None, r.clone())).map(|x| x.1)
+}
+
+fn core_pq(r: &Rat) -> (BigInt, BigInt) {
+    (r.n.clone(), r.d.clone())
+}
+
+/// `_pi_split(arg, imag)`: `((p, q), s)`, `s` None, an id, or a list of factor ids for Python's `kept_product`.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn core_pi_split<'py>(
+    py: Python<'py>,
+    table: &PyTermTable,
+    arg: u32,
+    imag: bool,
+) -> PyResult<Option<((BigInt, BigInt), Option<Bound<'py, PyAny>>)>> {
+    let Some((c, s)) = table.0.core_pi_split(TermId(arg), imag).map_err(refuse)? else { return Ok(None) };
+    let s = match &s {
+        Some(r) => Some(core_rest(py, r)?),
+        None => None,
+    };
+    Ok(Some((core_pq(&c), s)))
+}
+
+/// `_mul_factor_sets`' derived sets: `((c, rest factor ids) or None, ((p, q), s) or None)`, `s` as `core_pi_split` gives it.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn core_mul_factor_sets<'py>(
+    py: Python<'py>,
+    table: &PyTermTable,
+    expr: u32,
+) -> PyResult<(Option<(u32, Vec<u32>)>, Option<((BigInt, BigInt), Bound<'py, PyAny>)>)> {
+    let (ct, ipi) = table.0.core_mul_factor_sets(TermId(expr)).map_err(refuse)?;
+    let ct = ct.map(|(c, fs)| (c.0, fs.iter().map(|f| f.0).collect()));
+    let ipi = match &ipi {
+        Some((c, r)) => Some((core_pq(c), core_rest(py, r)?)),
+        None => None,
+    };
+    Ok((ct, ipi))
+}
+
+#[pyfunction]
+fn core_quotient_shape(table: &PyTermTable, expr: u32) -> PyResult<Option<(u32, u32, u32)>> {
+    let r = table.0.core_quotient_shape(TermId(expr)).map_err(refuse)?;
+    Ok(r.map(|(a, v, t)| (a.0, v.0, t.0)))
+}
+
+#[pyfunction]
+fn core_quotient_rules() -> Vec<tcore::Rule> {
+    tcore::quotient_rules()
+}
+
+#[pyfunction]
+fn core_unit_angle(table: &PyTermTable, b: u32) -> PyResult<Option<(BigInt, BigInt)>> {
+    Ok(table.0.core_unit_angle(TermId(b)).map_err(refuse)?.map(|r| core_pq(&r)))
+}
+
+#[pyfunction]
+fn core_exp_arg(table: &PyTermTable, b: u32) -> PyResult<Option<u32>> {
+    Ok(table.0.core_exp_arg(TermId(b)).map_err(refuse)?.map(|u| u.0))
+}
+
+#[pyfunction]
+fn core_irrational_root(table: &PyTermTable, b: u32, e: u32) -> PyResult<bool> {
+    table.0.core_irrational_root(TermId(b), TermId(e)).map_err(refuse)
+}
+
+#[pyfunction]
+fn core_pow_bound_shape(table: &PyTermTable, expr: u32) -> PyResult<Option<(u32, u32)>> {
+    Ok(table.0.core_pow_bound_shape(TermId(expr)).map_err(refuse)?.map(|(b, e)| (b.0, e.0)))
+}
+
+/// `_pow_bound_templates`' rules over indices into `_INT_BOUNDS`.
+#[pyfunction]
+fn core_pow_bound_rules(prems: Vec<usize>) -> PyResult<Vec<tcore::Rule>> {
+    if prems.iter().any(|&i| i >= tcore::INT_BOUNDS.len()) {
+        return Err(PyValueError::new_err("core: premise index out of range"));
+    }
+    Ok(tcore::pow_bound_rules(&prems))
+}
+
+/// `_unit_power_units` for a Rational exponent: `(predicate, value)` facts, or None for another exponent.
+#[pyfunction]
+fn core_unit_power_units(
+    table: &PyTermTable,
+    p: BigInt,
+    q: BigInt,
+    e: u32,
+) -> PyResult<Option<Vec<(&'static str, bool)>>> {
+    table.0.core_unit_power_units(&core_rat(p, q)?, TermId(e)).map_err(refuse)
+}
+
+#[pyfunction]
+#[pyo3(signature = (p, q, s, n))]
+fn core_ipi_rules(p: BigInt, q: BigInt, s: Option<usize>, n: usize) -> PyResult<Vec<tcore::Rule>> {
+    Ok(tcore::ipi_rules(&core_rat(p, q)?, s, n))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOfflineData>()?;
     m.add_class::<PyTermTable>()?;
@@ -804,5 +903,16 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(core_imag_rules, m)?)?;
     m.add_function(wrap_pyfunction!(core_imag_number_rules, m)?)?;
     m.add_function(wrap_pyfunction!(core_not_unit_premises, m)?)?;
+    m.add_function(wrap_pyfunction!(core_pi_split, m)?)?;
+    m.add_function(wrap_pyfunction!(core_mul_factor_sets, m)?)?;
+    m.add_function(wrap_pyfunction!(core_quotient_shape, m)?)?;
+    m.add_function(wrap_pyfunction!(core_quotient_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(core_unit_angle, m)?)?;
+    m.add_function(wrap_pyfunction!(core_exp_arg, m)?)?;
+    m.add_function(wrap_pyfunction!(core_irrational_root, m)?)?;
+    m.add_function(wrap_pyfunction!(core_pow_bound_shape, m)?)?;
+    m.add_function(wrap_pyfunction!(core_pow_bound_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(core_unit_power_units, m)?)?;
+    m.add_function(wrap_pyfunction!(core_ipi_rules, m)?)?;
     Ok(())
 }

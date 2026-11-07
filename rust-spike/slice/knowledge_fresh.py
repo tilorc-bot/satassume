@@ -29,6 +29,9 @@ elif args.wl == 'value':
 elif args.wl == 'rootof':
     import knowledge_rootof_wl
     pairs = knowledge_rootof_wl.queries()
+elif args.wl == 'core':
+    import knowledge_core_wl
+    pairs = knowledge_core_wl.queries()
 elif args.wl == 'rows':
     import knowledge_rows_wl
     pairs = knowledge_rows_wl.queries()
