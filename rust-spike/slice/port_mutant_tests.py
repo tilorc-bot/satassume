@@ -7,6 +7,9 @@ import types
 import port_mutants as P
 
 name = sys.argv[1]
+# xdist's workers import a fresh, unmutated lra_backend, so every test passes and looks like "not caught".
+if any(a == "-n" or a.startswith(("-n", "--numprocesses", "--dist")) for a in sys.argv[2:]):
+    sys.exit("port_mutant_tests.py: the mutant only exists in this process, so no -n")
 old, new = P.PY[name]
 path = os.path.join(P.HERE, "lra_backend.py")
 text = open(path).read()
