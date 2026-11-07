@@ -3,6 +3,7 @@
 paths it is there to look at. `diff` names the first field that differs. Used by `fuzz.py`; step 3 hashes `digest`.
 """
 import hashlib
+import os
 import re
 import struct
 import sys
@@ -220,8 +221,8 @@ def digest(d):
 
 def lra_text(t):
     """The whole of an LRATheory's state, as canonical text. Insertion order is kept where Python's order can be read
-    later (row entries, atoms, assigned literals, slack forms); it's sorted where only membership counts (`_rows`'
-    outer order, `_cols`, `_forms`, `_dirty`). The `_ONE`/`_ZERO` identity shows as `I` on an integrality atom."""
+    later (`_rows`' outer order and row entries, atoms, assigned literals, slack forms); it's sorted where only membership
+    counts (`_cols`, `_forms`, `_dirty`). The `_ONE`/`_ZERO` identity shows as `I` on an integrality atom."""
     from satassume.theories.lra.lra import _ONE, _ZERO
 
     def fast(m, k):
@@ -234,7 +235,7 @@ def lra_text(t):
         slack_of=list(get("_slack_of").items()),
         forms=sorted((sorted((str(a), repr(b)) for a, b in k), repr(v)) for k, v in get("_forms").items()),
         lo=get("_lo"), up=get("_up"), lo_r=get("_lo_r"), up_r=get("_up_r"), vq=get("_vq"), vd=get("_vd"),
-        rows=sorted((b, list(r.items())) for b, r in get("_rows").items()),
+        rows=[(b, list(r.items())) for b, r in get("_rows").items()],
         cols=[sorted(c) for c in get("_cols")],
         atoms=list(get("_atoms").items()), ground=list(get("_ground").items()), atoms_on=get("_atoms_on"),
         assigned=list(get("_assigned").items()), diseqs=get("_diseqs"),
@@ -249,18 +250,17 @@ def lra_text(t):
 
 
 def lra_branching(solver):
-    """(branches at the end, exhausted, branches when it moved or None) of each LRATheory of a solver. For the group
-    counts: the budget is path dependent, so a move only tests it if the session had branched by then."""
+    """(branches at the end, exhausted, None) of each LRATheory of a solver. The third field was the branches at a move,
+    while the transfer existed; it stays None so that rows keep their shape."""
     out = []
     for t in solver.theories():
         if any(k.__name__ == "LRATheory" for k in type(t).__mro__):
-            out.append((t.stats["branches"], bool(t.exhausted), t.__dict__.get("_moved_branches")))
+            out.append((t.stats["branches"], bool(t.exhausted), None))
     return out
 
 
 def lra_of(solver):
-    """(digest of the state of each LRATheory of a solver, group), or (None, None) without one. Group: "python" from
-    the start, "rust" throughout, or "moved:REASON:CALL:LEVEL"."""
+    """(digest of the state of each LRATheory of a solver, group), or (None, None) without one. Group: "python" or "rust"."""
     out, group = [], None
     for t in solver.theories():
         if not any(k.__name__ == "LRATheory" for k in type(t).__mro__):
@@ -269,14 +269,13 @@ def lra_of(solver):
         if core == 0:
             group = "python"
             v = t
-        elif core is None:
-            r, c, lev = t.__dict__["_moved"]
-            group = f"moved:{r}:{c}:{lev}"
-            v = t
         else:
             group = "rust"
             v = t._view()
         out.append(lra_text(v))
+        if os.environ.get("SLICE_LRA_TEXT"):        # a query's text, to find what differs: lra_textdiff.py
+            with open(os.environ["SLICE_LRA_TEXT"], "a") as f:
+                f.write(out[-1] + "\n")
     if not out:
         return None, None
     return hashlib.blake2b("".join(out).encode(), digest_size=16).hexdigest(), group

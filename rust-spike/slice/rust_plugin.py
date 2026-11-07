@@ -133,7 +133,6 @@ def pytest_runtest_protocol(item, nextitem):
     before = dict(counts)
     lb = sys.modules.get("lra_backend")
     lra_before = dict(lb.counts) if lb else None
-    moves_before = len(lb.moves) if lb else 0
     private_writes.clear()
     os.environ["PROBE_TEST"] = item.nodeid      # probe_build.py's counters read it; nothing else does
     h = sys.modules.get("theory_harness") if os.environ.get("SLICE_AUDIT_OFF") else None
@@ -159,7 +158,6 @@ def pytest_runtest_protocol(item, nextitem):
             rust_made=counts["rust_made"] - before["rust_made"], py_made=counts["py_made"] - before["py_made"],
             private_writes=sorted(private_writes),
             lra={k: v - lra_before[k] for k, v in lb.counts.items()} if lb else None,
-            moves=[list(m) for m in lb.moves[moves_before:]] if lb else None,     # (reason, call, level)
             caught=catch_count.take())
 
 

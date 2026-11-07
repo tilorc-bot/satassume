@@ -30,6 +30,10 @@ def _fired(code, offset, exc):
 def install(path):
     global _out
     from satassume import engine, sympy_api
+    if _out is not None:        # live.py always installs; `--handlers` only says where to write
+        _out.close()
+        _out = open(path, "a")
+        return
     _out = open(path, "a")
     mon = sys.monitoring
     mon.use_tool_id(TOOL, "handler_count")

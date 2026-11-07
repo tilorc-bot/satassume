@@ -8,8 +8,7 @@ mod block;
 mod constfield;
 mod euf;
 mod euf_py;
-// One source for the rational core: the replay binary in lra/port builds the same files.
-#[path = "../../../lra/port/src/lra.rs"]
+// The rational helper is shared with the replay binary in lra/port, which keeps its frozen rational core.
 mod lra;
 mod lra_cert;
 mod lra_py;

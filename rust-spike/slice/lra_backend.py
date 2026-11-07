@@ -1,17 +1,14 @@
-"""LRATheory on the rational Rust core, for rational sessions (issue 323, component 1a). `lra_adapter` stays Python and
-calls this. Pure Python stays the default and the reference: nothing here runs unless `backend.install()` or
-`rust_plugin.py` patches it in.
+"""LRATheory on the Rust core (issue 323, components 1a and 1b). `lra_adapter` stays Python and calls this. Pure Python
+stays the default and the reference: nothing here runs unless `backend.install()` or `rust_plugin.py` patches it in.
 
-It is a subclass, for three reasons: `live.py` wraps hooks on the class, the call streams carry `cls.__name__`, and a
-session that has to leave the core becomes the real Python theory by filling in `__dict__`.
+It is a subclass, for two reasons: `live.py` wraps hooks on the class, and the call streams carry `cls.__name__`.
 
-A payload with constants moves its session to Python by state transfer (`_move`). That is temporary scaffolding, ruled
-on by the planner with conditions: it's triggered by the payload's shape alone, a transfer that fails raises, and it's
-deleted no later than component 1b (see ~/dev/architect/briefs/addenda/sa-port-1a-transfer-ruling.txt). Every other bad
-input raises Python's exception here, with the same state left behind.
+Every number runs in the core, constants included: there's no Python theory behind a session. `num` stays here, because
+it reads input objects: an Element it makes crosses as `constfield.rs`'s `Num`. Every bad input raises Python's exception
+with the same state left behind, and `Undecided` gives up at the same hook.
 
-Test shims, not port: `__getattr__` and `_certificate` answer private reads and `certified` from a Python copy of the
-state (`_view`). The engine reads neither.
+Test shim, not port: `__getattr__` serves private reads read-only from the core's state dump, with no theory behind them.
+The engine reads none of them. `_certificate`, `certified`, `certified_with` and `rational_values` are the core's.
 """
 import os
 import sys
@@ -21,48 +18,25 @@ sys.path.insert(0, os.environ.get("SLICE_SO") or os.path.dirname(os.path.abspath
 import sa_solver  # noqa: E402
 
 from satassume.theories.lra import lra as _lra  # noqa: E402
-from satassume.theories.lra.constfield import num  # noqa: E402
+from satassume.theories.lra.constfield import Undecided, num  # noqa: E402
 from satassume.theories.lra.lra import Integral, LRATheory as PyLRA, Negated, _ONE, _ZERO  # noqa: E402
 
-#: The fields a Python copy of the state supplies; anything else missing is a plain AttributeError.
+#: What the state dump supplies to a private read; anything else missing is a plain AttributeError.
 _STATE = frozenset(("_key", "_var_of", "_slack_of", "_forms", "_lo", "_up", "_lo_r", "_up_r", "_vq", "_vd", "_rows",
                     "_cols", "_atoms", "_ground", "_atoms_on", "_assigned", "_diseqs", "_ints", "_ints_on", "_int_lits",
-                    "_trail", "_lims", "_dirty", "_pending_ground"))
+                    "_trail", "_lims", "_dirty", "_pending_ground", "_fields", "_int_memo"))
+
+counts = {"sessions": 0, "views": 0}
 
 
-class TransferFailed(BaseException):
-    """A move to Python that failed. Not an `Exception`: `Engine._build_context` catches those from a complete check and
-    answers unknown from a fresh session (engine.py:1906), which here would be the quiet fallback the ruling forbids."""
+class _View:
+    """The state dump as attributes: what `state.lra_text` and the test shim read. No theory behind it."""
 
-
-counts = {"sessions": 0, "views": 0, "moved": 0}
-#: One entry per moved session: (reason, call index, decision level).
-moves = []
-
-
-class _Move(Exception):
-    """The payload has constants: this session leaves the core before the payload is handled."""
-
-
-def _once(items):
-    """A one-shot iterable, replayable: the payload may still have to go to Python. An exception from it comes back at
-    the same place, after the same items."""
-    seen = []
-    try:
-        for x in items:
-            seen.append(x)
-    except Exception as e:
-        return _Replay(seen, e)
-    return seen
-
-
-class _Replay:
-    def __init__(self, seen, exc):
-        self.seen, self.exc = seen, exc
-
-    def __iter__(self):
-        yield from self.seen
-        raise self.exc
+    def __init__(self, fields):
+        self.__dict__.update(fields)
+        self.exhausted = fields["_py_exhausted"]
+        self.branched_rational = fields["_py_branched"]
+        self.stats = fields["_py_stats"]
 
 
 class LRATheory(PyLRA):
@@ -71,28 +45,21 @@ class LRATheory(PyLRA):
     def __init__(self, eager: bool = True) -> None:
         d = self.__dict__
         d["eager"] = eager
-        d["gave_up"] = False                    # the core never gives up: it has no constants
-        d["_fields"] = False
-        d["_cert"] = {}
-        d["_cagg"] = None
-        d["_int_memo"] = {}
         d["_tid"] = {}
         d["_terms"] = []
         d["_core"] = sa_solver.LraCore(eager)
         counts["sessions"] += 1
 
     def __setattr__(self, name, value):
-        core = self.__dict__.get("_core")
-        if core is not None:
-            if name == "eager":
-                core.eager = value
-            elif name == "gave_up" or name in _STATE or name in ("_fields", "_cert", "_cagg", "_int_memo"):
-                raise AttributeError(f"{name} can't be written on a session in the Rust core")
+        if name == "eager":
+            self._core.eager = value
+        elif name == "gave_up" or name == "branched_rational" or name in _STATE or name in ("_cert", "_cagg"):
+            raise AttributeError(f"{name} can't be written on a session in the Rust core")
         object.__setattr__(self, name, value)
 
     def __getattr__(self, name):
-        if name in _STATE and self.__dict__.get("_core") is not None:
-            return getattr(self._view(), name)
+        if name in _STATE:
+            return self._view().__dict__[name]
         raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
     # ------------------------------------------------------------------
@@ -101,37 +68,29 @@ class LRATheory(PyLRA):
 
     @property
     def exhausted(self):
-        core = self._core
-        return self._py_exhausted if core is None else core.exhausted
+        return self._core.exhausted
 
     @exhausted.setter
     def exhausted(self, v):
-        core = self._core
-        if core is None:
-            self.__dict__["_py_exhausted"] = v
-        else:
-            core.exhausted = v
+        self._core.exhausted = v
+
+    @property
+    def gave_up(self):
+        return self._core.gave_up
 
     @property
     def branched_rational(self):
-        core = self._core
-        return self._py_branched if core is None else core.branched_rational
-
-    @branched_rational.setter
-    def branched_rational(self, v):
-        if self._core is not None:
-            raise AttributeError("branched_rational can't be written on a session in the Rust core")
-        self.__dict__["_py_branched"] = v
+        return self._core.branched_rational
 
     @property
     def stats(self):
-        core = self._core
-        return self._py_stats if core is None else core.stats
+        return self._core.stats
 
     def _certificate(self, values=None):
-        if self._core is None:
-            return PyLRA._certificate(self, values)
-        return self._view()._certificate(values)
+        return self._core.certificate(values)
+
+    def rational_values(self):
+        return self._core.rational_values()
 
     # ------------------------------------------------------------------
     # hooks
@@ -139,40 +98,38 @@ class LRATheory(PyLRA):
 
     def register_atom(self, literal, payload):
         core = self._core
-        if core is None:
-            return PyLRA.register_atom(self, literal, payload)
-        if literal <= 0:
-            raise ValueError("register_atom takes a positive literal")
-        if core.registered(literal):
-            raise ValueError(f"literal {literal} registered twice")
+        if core.gave_up:
+            return None
         n0 = len(self._terms)
         try:
+            if literal <= 0:
+                raise ValueError("register_atom takes a positive literal")
+            if core.registered(literal):
+                raise ValueError(f"literal {literal} registered twice")
             self._register(core, literal, payload)
-        except _Move as m:
-            self._forget(n0)
-            self._move(m.args[0])
-            return PyLRA.register_atom(self, literal, m.args[1])
+        except Undecided:
+            core.give_up()
+        except BaseException:
+            # `_lin` raised before `_term_var`: no variable, so no first-seen object either
+            if len(self._terms) > n0 and not core.has_term(n0):
+                self._forget(n0)
+            raise
         return None
 
     def assert_lit(self, literal):
-        core = self._core
-        return PyLRA.assert_lit(self, literal) if core is None else core.assert_lit(literal)
+        return self._core.assert_lit(literal)
 
     def check(self):
-        core = self._core
-        return PyLRA.check(self) if core is None else core.check(_lra.BRANCH_BUDGET, self._terms)
+        return self._core.check(_lra.BRANCH_BUDGET, self._terms)
 
     def propagate(self):
-        core = self._core
-        return PyLRA.propagate(self) if core is None else core.propagate()
+        return self._core.propagate()
 
     def push_level(self):
-        core = self._core
-        return PyLRA.push_level(self) if core is None else core.push_level()
+        return self._core.push_level()
 
     def pop_level(self):
-        core = self._core
-        return PyLRA.pop_level(self) if core is None else core.pop_level()
+        return self._core.pop_level()
 
     # ------------------------------------------------------------------
     # payloads: `_register_atom`, in the same order, so that an exception comes from the same place
@@ -181,14 +138,13 @@ class LRATheory(PyLRA):
     def _register(self, core, literal, payload):
         if isinstance(payload, Integral):
             terms, offset = payload
-            ids, terms = self._pairs(terms, lambda t: Integral(t, offset))
+            ids = self._pairs(core, terms)
             try:
                 k = num(offset)
             except Exception:
-                self._touch(core, ids)
+                if not core.touch(ids):
+                    return
                 raise
-            if type(k) is not Fraction:
-                raise _Move("constant offset", Integral(terms, offset))
             core.register_integral(literal, k, ids)
             return
         negated = False
@@ -196,37 +152,27 @@ class LRATheory(PyLRA):
             negated = not negated
             payload = payload.payload
         terms, constant, strict, equality = payload
-
-        def rebuilt(t):
-            p = (t, constant, strict, equality)
-            return Negated(p) if negated else p
-        ids, terms = self._pairs(terms, rebuilt)
+        ids = self._pairs(core, terms)
         try:
             k = num(constant)
-            if type(k) is not Fraction:
-                raise _Move("constant", rebuilt(terms))
+        except Exception:
+            if not core.touch(ids):
+                return
+            raise
+        try:
             eq = True if equality else False
             lt = False if eq else (True if strict else False)
-        except _Move:
-            raise
         except Exception:
-            self._touch(core, ids)
+            if not core.touch(ids):
+                return
+            if type(k) is not Fraction:
+                core.set_fields()
             raise
         core.register_plain(literal, negated, lt, eq, k, ids)
 
-    @staticmethod
-    def _touch(core, ids):
-        """`_lin` has run in Python when its number raises: its variables stay."""
-        seen = {}
-        for i, _ in ids:
-            seen[i] = None
-        core.touch(list(seen))
-
-    def _pairs(self, terms, rebuilt):
-        """`_lin`'s loop over the payload: `[(id, Fraction)]`, in payload order. New terms get an id here and are taken
-        back if the payload doesn't reach the core, so that a term's first-seen object is the one Python keeps."""
-        if not isinstance(terms, dict) and iter(terms) is terms:
-            terms = _once(terms)
+    def _pairs(self, core, terms):
+        """`_lin`'s loop over the payload: `[(id, number)]`, in payload order. New terms get an id here and are taken
+        back if the loop raises, so that a term's first-seen object is the one Python keeps."""
         items = terms.items() if isinstance(terms, dict) else terms
         tid, objs, out = self._tid, self._terms, []
         n0 = len(objs)
@@ -235,7 +181,7 @@ class LRATheory(PyLRA):
                 if type(c) is not Fraction:
                     c = num(c)
                     if type(c) is not Fraction:
-                        raise _Move("constant coefficient", rebuilt(terms))
+                        core.set_fields()
                 i = tid.get(t)
                 if i is None:
                     i = tid[t] = len(objs)
@@ -244,7 +190,7 @@ class LRATheory(PyLRA):
         except BaseException:
             self._forget(n0)
             raise
-        return out, terms
+        return out
 
     def _forget(self, n0):
         tid, objs = self._tid, self._terms
@@ -264,7 +210,9 @@ class LRATheory(PyLRA):
             return objs[i]
 
         def fast(m, k):                         # `m is _ONE and k is _ZERO`: `_register_integral`'s fast path
-            return (_ONE, _ZERO) if m == 1 and not k else (m, k)
+            if type(m) is Fraction and type(k) is Fraction and m == 1 and not k:
+                return _ONE, _ZERO
+            return m, k
         key = [None if i < 0 else term(i) for i in s["key"]]
         ints = {}
         for lit, v, m, k in s["ints"]:
@@ -291,33 +239,19 @@ class LRATheory(PyLRA):
             "_lims": s["lims"],
             "_dirty": set(s["dirty"]),
             "_pending_ground": s["pending_ground"],
+            "_fields": s["fields"],
+            "_int_memo": {(v, *fast(m, k), lr, ur): (r if r is None else (r[0], r[1])) for (v, m, k, lr, ur), r in s["int_memo"]},
+            "gave_up": s["gave_up"],
+            "eager": self.eager,
             "_py_exhausted": s["exhausted"],
             "_py_branched": s["branched_rational"],
             "_py_stats": s["stats"],
         }
 
     def _view(self):
-        """A Python copy of the state: a test shim, for reads the engine doesn't make."""
+        """The state as attributes, read-only: a test shim, for reads the engine doesn't make."""
         counts["views"] += 1
-        v = object.__new__(type(self))
-        v.__dict__.update(self._state(), _core=None, eager=self.eager, gave_up=False, _fields=False, _cert={},
-                          _cagg=None, _int_memo={})
-        return v
-
-    def _move(self, reason):
-        """This session becomes the real Python theory. If building the state fails nothing has changed and the
-        exception goes up: there is no other state to carry on in."""
-        core = self._core
-        try:
-            st = self._state()
-        except Exception as e:
-            raise TransferFailed(f"{reason}: {e}") from e
-        self.__dict__.update(st)
-        self.__dict__["_core"] = None
-        self.__dict__["_moved"] = (reason, core.calls, core.level)
-        self.__dict__["_moved_branches"] = st["_py_stats"]["branches"]
-        moves.append((reason, core.calls, core.level))
-        counts["moved"] += 1
+        return _View(self._state())
 
 
 def install():

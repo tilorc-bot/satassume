@@ -9,7 +9,11 @@
 //! - `_dirty`: `LRATheory.propagate` walks it in ascending order (`sorted`), so a `BTreeSet`. No hash order anywhere:
 //!   the `Map`s below are only looked up, and the dump uses `reg_order`, `row_order` and `forms_order`.
 //! - `_cols`: sets. A raise during `_update` or `_pivot` comes before any write, so their order changes no state.
-use crate::constfield::{CfErr, Num};
+use crate::constfield::{refresh_limits, CfErr, Num};
+use crate::lra_cert::{certify, limits, rational_values, within, CertAtoms};
+use num_bigint::BigInt;
+use pyo3::exceptions::PyException;
+use pyo3::prelude::*;
 use crate::rat::Rat;
 use std::collections::HashMap;
 
@@ -262,6 +266,14 @@ fn is_one_zero(m: &Num, k: &Num) -> bool {
     matches!((m, k), (Num::Q(a), Num::Q(b)) if *a == Rat::ONE && b.is_zero())
 }
 
+/// `_cagg` and `_cert`: the aggregates the certificate keeps between calls, and its memo per `values`. The memo's
+/// `except Exception` is the caller's, `Theory::certificate`.
+pub struct CertMemo {
+    agg: CertAtoms,
+    memo: Vec<(Option<(Rat, BigInt)>, CertKey, (bool, Option<Rat>))>,
+}
+type CertKey = (usize, usize, usize, usize, [i64; 6]);
+
 /// `_int_verdict`: (truth, the literals of the bounds), or None.
 pub type Verdict = Option<(bool, [i32; 2])>;
 
@@ -282,6 +294,8 @@ pub struct Theory {
     pub(crate) key: Vec<i64>, // term id, -1 for a slack
     pub(crate) var_of: Map<u32, u32>,
     pub(crate) slack_of: Map<Vec<(u32, Num)>, u32>,
+    /// `_slack_of`'s keys in insertion order: the certificate walks them.
+    pub(crate) slack_forms: Vec<Vec<(u32, Num)>>,
     pub(crate) forms: Map<Vec<(u32, Num)>, (u32, Num)>,
     /// `_forms`' keys in insertion order, for the dump.
     pub(crate) forms_order: Vec<Vec<(u32, Num)>>,
@@ -310,7 +324,7 @@ pub struct Theory {
     pub(crate) lims: Vec<usize>,
     pub(crate) dirty: Dirty,
     pub(crate) pending_ground: Vec<u32>,
-    pub(crate) cert: crate::lra_cert::CertMemo,
+    pub(crate) cert: CertMemo,
 }
 
 impl Theory {
@@ -326,6 +340,7 @@ impl Theory {
             key: vec![],
             var_of: Map::default(),
             slack_of: Map::default(),
+            slack_forms: vec![],
             forms: Map::default(),
             forms_order: vec![],
             lo: vec![],
@@ -350,7 +365,7 @@ impl Theory {
             lims: vec![],
             dirty: Dirty::default(),
             pending_ground: vec![],
-            cert: Default::default(),
+            cert: CertMemo { agg: CertAtoms::new(), memo: vec![] },
         }
     }
 
@@ -432,6 +447,7 @@ impl Theory {
             vd = vd.add(&a.mul(&self.vd[*k as usize])?)?;
         }
         let s = self.new_var(-1); // arithmetic done: commit
+        self.slack_forms.push(form.clone());
         self.slack_of.insert(form, s);
         for (k, _) in &row {
             self.cols[*k as usize].push(s);
@@ -500,6 +516,9 @@ impl Theory {
             Payload::Plain { neg, strict, eq, constant, terms } => {
                 let lin = self.lin(terms)?;
                 let k = constant;
+                if matches!(k, Num::E(_)) {
+                    self.fields = true; // lra.py:662, before anything below can raise
+                }
                 let mut kind = if *eq {
                     Eq
                 } else if *strict {
@@ -546,6 +565,9 @@ impl Theory {
 
     fn register_integral(&mut self, literal: u32, offset: &Num, terms: &[(u32, Num)]) -> R<()> {
         let lin = self.lin(terms)?;
+        if matches!(offset, Num::E(_)) {
+            self.fields = true; // lra.py:722
+        }
         if lin.is_empty() {
             let truth = offset.is_integer()?;
             self.ground.insert(literal, truth);
@@ -810,7 +832,7 @@ impl Theory {
         // cases: (kind, n) twice; (v, m, k, lit) of the split
         let mut split: Option<(u32, Num, Num, i32, [(Kind, Num); 2])> = None;
         let fields = self.fields;
-        let mut y: Option<Option<crate::lra_cert::Y>> = None; // the certificate's, once needed
+        let mut y: Option<Option<Rat>> = None; // the certificate's, once needed
         let mut skipped = false;
         for i in 0..self.int_lits.len() {
             let (v, m, k, lit) = self.int_lits[i].clone();
@@ -897,14 +919,75 @@ impl Theory {
         Ok(Some(dedupe(expl)))
     }
 
+    /// `_certificate` (lra.py:448): `(certified, Y)`, memoized per registered atom count and per `values`. Any failure
+    /// of the certificate is `(False, None)`, as Python's `except Exception` makes it.
+    pub fn certificate(&mut self, values: Option<&(Rat, BigInt)>) -> R<(bool, Option<Rat>)> {
+        refresh_limits()?;
+        let key: CertKey = (self.atoms.len(), self.ints.len(), self.slack_of.len(), self.key.len(), limits());
+        if let Some((_, k, r)) = self.cert.memo.iter().find(|(v, _, _)| v.as_ref() == values) {
+            if *k == key {
+                return Ok(r.clone());
+            }
+        }
+        // `except Exception`: a BaseException still goes up.
+        let r = match self.certify(values) {
+            Ok(r) => r,
+            Err(CfErr::Py(e)) if !Python::attach(|py| e.is_instance_of::<PyException>(py)) => return Err(CfErr::Py(e)),
+            Err(_) => (false, None),
+        };
+        match self.cert.memo.iter_mut().find(|(v, _, _)| v.as_ref() == values) {
+            Some(e) => {
+                e.1 = key;
+                e.2 = r.clone();
+            }
+            None => self.cert.memo.push((values.cloned(), key, r.clone())),
+        }
+        Ok(r)
+    }
+
+    /// `_certify`: registration order for atoms and ints, slack order for the forms, as Python's dicts give them.
+    fn certify(&mut self, values: Option<&(Rat, BigInt)>) -> R<(bool, Option<Rat>)> {
+        let atoms: Vec<(bool, &Num)> = self
+            .reg_order
+            .iter()
+            .filter_map(|l| self.atoms.get(l))
+            .map(|(_, kind, b)| (matches!(kind, Eq | Ne), b))
+            .collect();
+        let ints: Vec<(&Num, &Num)> =
+            self.reg_order.iter().filter_map(|l| self.ints.get(l)).map(|(_, m, k)| (m, k)).collect();
+        let forms: Vec<&[(u32, Num)]> = self.slack_forms.iter().map(|f| f.as_slice()).collect();
+        let nt = self.key.len() - self.row_order.len();
+        certify(&mut self.cert.agg, atoms.into_iter(), ints.into_iter(), forms.into_iter(), nt, values)
+    }
+
+    /// `_int_memo`'s entries, for the dump. The state text sorts them by repr, so their order is not read here.
+    pub(crate) fn int_memo_order(&self) -> Vec<((u32, Num, Num, i32, i32), Verdict)> {
+        self.int_memo.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
+
+    /// `certified`.
+    pub fn certified(&mut self) -> R<bool> {
+        Ok(self.certificate(None)?.0)
+    }
+
+    /// `certified_with`.
+    pub fn certified_with(&mut self, values: &(Rat, BigInt)) -> R<bool> {
+        Ok(self.certificate(Some(values))?.0)
+    }
+
+    /// `rational_values`: `(top, den)` of the nonbasic variables, if all are rational.
+    pub fn rational_values(&self) -> Option<(Rat, BigInt)> {
+        rational_values((0..self.vq.len()).filter(|&v| self.rows[v].is_none()).map(|v| &self.vq[v]))
+    }
+
     /// `Y is not None and not _within_cert(vq[v], Y)`, reading the certificate once per `_branch`.
-    fn cert_skips(&mut self, y: &mut Option<Option<crate::lra_cert::Y>>, vi: usize) -> R<bool> {
+    fn cert_skips(&mut self, y: &mut Option<Option<Rat>>, vi: usize) -> R<bool> {
         if y.is_none() {
             *y = Some(self.certificate(None)?.1);
         }
         match y.as_ref().unwrap() {
             None => Ok(false),
-            Some(b) => Ok(!crate::lra_cert::within(&self.vq[vi], b)?),
+            Some(b) => Ok(!within(&self.vq[vi], b)?),
         }
     }
 

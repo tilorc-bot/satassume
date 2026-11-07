@@ -1,31 +1,28 @@
 //! The rational LRA core as a Python class, for `slice/lra_backend.py`. Terms are ids here: the Python side holds the
 //! dict from term to id, so equality and hash are exactly what `_var_of` uses, and hands `check` the list of objects.
 //! Numbers cross as `fractions.Fraction`. Rust owns no decision about what is rational: anything else never gets here.
-use crate::lra::{CheckResult, Kind, Payload, Theory, Trail};
+use crate::constfield::{refresh_limits, CfErr, Num};
+use crate::lra::{Bound as LraBound, CheckResult, Kind, Payload, Theory, Trail};
 use crate::rat::Rat;
 use num_bigint::BigInt;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
-fn rat_of(x: &Bound<'_, PyAny>) -> PyResult<Rat> {
-    let n = x.getattr("numerator")?;
-    let d = x.getattr("denominator")?;
-    if let (Ok(a), Ok(b)) = (n.extract::<i64>(), d.extract::<i64>()) {
-        if a != i64::MIN {
-            return Ok(Rat::S(a, b));
-        }
-    }
-    Ok(Rat::norm_big(n.extract::<BigInt>()?, d.extract::<BigInt>()?))
-}
-
-fn pairs_of(terms: &Bound<'_, PyList>) -> PyResult<Vec<(u32, Rat)>> {
+fn pairs_of(terms: &Bound<'_, PyList>) -> PyResult<Vec<(u32, Num)>> {
     let mut out = Vec::with_capacity(terms.len());
     for e in terms.iter() {
         let (i, c): (u32, Bound<'_, PyAny>) = e.extract()?;
-        out.push((i, rat_of(&c)?));
+        out.push((i, Num::from_py(&c)?));
     }
     Ok(out)
+}
+
+fn rat_of(x: &Bound<'_, PyAny>) -> PyResult<Rat> {
+    match Num::from_py(x)? {
+        Num::Q(r) => Ok(r),
+        Num::E(_) => Err(pyo3::exceptions::PyTypeError::new_err("expected a Fraction")),
+    }
 }
 
 fn kind_text(k: Kind) -> &'static str {
@@ -42,40 +39,35 @@ fn kind_text(k: Kind) -> &'static str {
 #[pyclass(name = "LraCore", module = "sa_solver", unsendable)]
 pub struct LraCore {
     t: Theory,
-    /// Builds a Fraction from coprime parts, or normalises them on a Python without that constructor.
-    frac: Py<PyAny>,
-    /// Hook calls made so far: "moved at call N" in the report.
-    #[pyo3(get)]
-    calls: u64,
 }
 
 impl LraCore {
-    fn frac<'py>(&self, p: Python<'py>, r: &Rat) -> PyResult<Bound<'py, PyAny>> {
-        let f = self.frac.bind(p);
-        match r {
-            Rat::S(n, d) => f.call1((*n, *d)),
-            Rat::B(b) => f.call1((b.0.clone(), b.1.clone())),
-        }
-    }
-    fn bound<'py>(&self, p: Python<'py>, b: &Option<(Rat, Rat)>) -> PyResult<Bound<'py, PyAny>> {
+    fn bound<'py>(&self, p: Python<'py>, b: &Option<LraBound>) -> PyResult<Bound<'py, PyAny>> {
         match b {
             None => Ok(p.None().into_bound(p)),
-            Some((q, d)) => Ok(PyTuple::new(p, [self.frac(p, q)?, self.frac(p, d)?])?.into_any()),
+            Some((q, d)) => Ok(PyTuple::new(p, [q.to_py(p)?, d.to_py(p)?])?.into_any()),
         }
     }
-    fn rats<'py>(&self, p: Python<'py>, xs: &[Rat]) -> PyResult<Bound<'py, PyList>> {
+    fn nums<'py>(&self, p: Python<'py>, xs: &[Num]) -> PyResult<Bound<'py, PyList>> {
         let l = PyList::empty(p);
         for x in xs {
-            l.append(self.frac(p, x)?)?;
+            l.append(x.to_py(p)?)?;
         }
         Ok(l)
     }
-    fn pairs<'py>(&self, p: Python<'py>, xs: &[(u32, Rat)]) -> PyResult<Bound<'py, PyList>> {
+    fn pairs<'py>(&self, p: Python<'py>, xs: &[(u32, Num)]) -> PyResult<Bound<'py, PyList>> {
         let l = PyList::empty(p);
         for (k, c) in xs {
-            l.append((*k, self.frac(p, c)?))?;
+            l.append((*k, c.to_py(p)?))?;
         }
         Ok(l)
+    }
+    /// Python reads the limits live. `Theory` holds no Python, so a hook on a theory with constants reads them first.
+    fn limits(&self) -> PyResult<()> {
+        if self.t.fields {
+            refresh_limits()?;
+        }
+        Ok(())
     }
 }
 
@@ -83,24 +75,46 @@ fn conflict<'py>(p: Python<'py>, c: Vec<i32>) -> PyResult<Bound<'py, PyAny>> {
     Ok((false, PyList::new(p, c)?).into_pyobject(p)?.into_any())
 }
 
+fn py_err(e: CfErr) -> PyErr {
+    e.into()
+}
+
 #[pymethods]
 impl LraCore {
     #[new]
-    fn new(p: Python<'_>, eager: bool) -> PyResult<LraCore> {
-        let fr = p.import("fractions")?.getattr("Fraction")?;
-        let frac = fr.getattr_opt("_from_coprime_ints")?.unwrap_or(fr).unbind();
+    fn new(eager: bool) -> LraCore {
         let mut t = Theory::new();
         t.eager = eager;
-        Ok(LraCore { t, frac, calls: 0 })
+        LraCore { t }
     }
 
     fn registered(&self, literal: u32) -> bool {
         self.t.atoms.contains_key(&literal) || self.t.ground.contains_key(&literal) || self.t.ints.contains_key(&literal)
     }
 
-    /// `_lin`'s variables and nothing else: what a payload leaves behind when its constant then raises.
-    fn touch(&mut self, ids: Vec<u32>) {
-        self.t.touch(&ids);
+    /// A term that holds a variable: `_lin` got as far as `_term_var`.
+    fn has_term(&self, id: u32) -> bool {
+        self.t.var_of.contains_key(&id)
+    }
+
+    /// `_lin` when the payload's own number then raises: what it leaves behind. False if `_lin` itself gave up.
+    fn touch(&mut self, terms: &Bound<'_, PyList>) -> PyResult<bool> {
+        let pairs = pairs_of(terms)?;
+        refresh_limits()?;
+        self.t.touch(&pairs).map_err(py_err)
+    }
+
+    fn set_fields(&mut self) {
+        self.t.fields = true;
+    }
+
+    fn give_up(&mut self) {
+        self.t.give_up();
+    }
+
+    #[getter]
+    fn gave_up(&self) -> bool {
+        self.t.gave_up
     }
 
     fn register_plain(
@@ -112,32 +126,35 @@ impl LraCore {
         constant: &Bound<'_, PyAny>,
         terms: &Bound<'_, PyList>,
     ) -> PyResult<()> {
-        self.calls += 1;
-        let payload = Payload::Plain { neg: negated as u32, strict, eq, constant: rat_of(constant)?, terms: pairs_of(terms)? };
-        self.t.register_atom(literal, &payload);
-        Ok(())
+        let payload =
+            Payload::Plain { neg: negated as u32, strict, eq, constant: Num::from_py(constant)?, terms: pairs_of(terms)? };
+        refresh_limits()?;
+        self.t.register_atom(literal, &payload).map_err(py_err)
     }
 
     fn register_integral(&mut self, literal: u32, offset: &Bound<'_, PyAny>, terms: &Bound<'_, PyList>) -> PyResult<()> {
-        self.calls += 1;
-        let payload = Payload::Integral { offset: rat_of(offset)?, terms: pairs_of(terms)? };
-        self.t.register_atom(literal, &payload);
-        Ok(())
+        let payload = Payload::Integral { offset: Num::from_py(offset)?, terms: pairs_of(terms)? };
+        refresh_limits()?;
+        self.t.register_atom(literal, &payload).map_err(py_err)
     }
 
     fn assert_lit<'py>(&mut self, p: Python<'py>, literal: i32) -> PyResult<Option<Bound<'py, PyAny>>> {
-        self.calls += 1;
-        self.t.assert_lit(literal).map(|c| conflict(p, c)).transpose()
+        self.limits()?;
+        match self.t.assert_lit(literal).map_err(py_err)? {
+            None => Ok(None),
+            Some(c) => conflict(p, c).map(Some),
+        }
     }
 
     fn check<'py>(&mut self, p: Python<'py>, budget: i64, terms: &Bound<'py, PyList>) -> PyResult<Bound<'py, PyAny>> {
-        self.calls += 1;
-        match self.t.check(budget) {
-            CheckResult::Conflict(c) => conflict(p, c),
-            CheckResult::Sat(m) => {
+        self.limits()?;
+        match self.t.check(budget).map_err(py_err)? {
+            None => Ok(p.None().into_bound(p)),
+            Some(CheckResult::Conflict(c)) => conflict(p, c),
+            Some(CheckResult::Sat(m)) => {
                 let d = PyDict::new(p);
                 for (id, q) in &m {
-                    d.set_item(terms.get_item(*id as usize)?, self.frac(p, q)?)?;
+                    d.set_item(terms.get_item(*id as usize)?, q.to_py(p)?)?;
                 }
                 Ok((true, d).into_pyobject(p)?.into_any())
             }
@@ -145,26 +162,55 @@ impl LraCore {
     }
 
     fn propagate<'py>(&mut self, p: Python<'py>) -> PyResult<Bound<'py, PyList>> {
-        self.calls += 1;
+        self.limits()?;
         let out = PyList::empty(p);
-        for (lit, why) in self.t.propagate() {
+        for (lit, why) in self.t.propagate().map_err(py_err)? {
             out.append((lit, PyList::new(p, why)?))?;
         }
         Ok(out)
     }
 
     fn push_level(&mut self) {
-        self.calls += 1;
-        self.t.push_level();
+        if !self.t.gave_up {
+            self.t.push_level();
+        }
     }
 
     fn pop_level(&mut self) -> PyResult<()> {
-        self.calls += 1;
+        if self.t.gave_up {
+            return Ok(());
+        }
         if self.t.lims.is_empty() {
             return Err(PyIndexError::new_err("pop from empty list"));
         }
         self.t.pop_level();
         Ok(())
+    }
+
+    /// `_certificate`: `(certified, Y)`. `certified` and `certified_with` answer from this too.
+    #[pyo3(signature = (values=None))]
+    fn certificate<'py>(&mut self, p: Python<'py>, values: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+        let v = match values {
+            None => None,
+            Some(x) => {
+                let (top, den): (Bound<'_, PyAny>, BigInt) = x.extract()?;
+                Some((rat_of(&top)?, den))
+            }
+        };
+        let (ok, y) = self.t.certificate(v.as_ref()).map_err(py_err)?;
+        let y = match y {
+            None => p.None().into_bound(p),
+            Some(y) => Num::Q(y).to_py(p)?,
+        };
+        Ok((ok, y).into_pyobject(p)?.into_any())
+    }
+
+    /// `rational_values`: `(top, den)`, or None.
+    fn rational_values<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match self.t.rational_values() {
+            None => Ok(p.None().into_bound(p)),
+            Some((top, den)) => Ok((Num::Q(top).to_py(p)?, den).into_pyobject(p)?.into_any()),
+        }
     }
 
     #[getter]
@@ -198,7 +244,7 @@ impl LraCore {
         d.set_item("conflicts", s.conflicts)?;
         d.set_item("propagations", s.propagations)?;
         d.set_item("branches", s.branches)?;
-        d.set_item("gave_up", 0)?;
+        d.set_item("gave_up", s.gave_up)?;
         d.set_item("exhausted", s.exhausted)?;
         Ok(d)
     }
@@ -209,7 +255,7 @@ impl LraCore {
         let t = &self.t;
         let d = PyDict::new(p);
         d.set_item("key", PyList::new(p, &t.key)?)?;
-        let bounds = |xs: &[Option<(Rat, Rat)>]| -> PyResult<Bound<'py, PyList>> {
+        let bounds = |xs: &[Option<LraBound>]| -> PyResult<Bound<'py, PyList>> {
             let l = PyList::empty(p);
             for b in xs {
                 l.append(self.bound(p, b)?)?;
@@ -220,13 +266,12 @@ impl LraCore {
         d.set_item("up", bounds(&t.up)?)?;
         d.set_item("lo_r", PyList::new(p, &t.lo_r)?)?;
         d.set_item("up_r", PyList::new(p, &t.up_r)?)?;
-        d.set_item("vq", self.rats(p, &t.vq)?)?;
-        d.set_item("vd", self.rats(p, &t.vd)?)?;
+        d.set_item("vq", self.nums(p, &t.vq)?)?;
+        d.set_item("vd", self.nums(p, &t.vd)?)?;
         let rows = PyList::empty(p);
-        for (b, r) in t.rows.iter().enumerate() {
-            if let Some(r) = r {
-                rows.append((b, self.pairs(p, &r.0)?))?;
-            }
+        for b in &t.row_order {
+            let r = t.rows[*b as usize].as_ref().expect("row_order holds the rows");
+            rows.append((*b, self.pairs(p, &r.0)?))?;
         }
         d.set_item("rows", rows)?;
         let cols = PyList::empty(p);
@@ -240,9 +285,9 @@ impl LraCore {
         let mut seen: Vec<u32> = vec![];
         for lit in &t.reg_order {
             if let Some((v, kind, c)) = t.atoms.get(lit) {
-                atoms.append((*lit, *v, kind_text(*kind), self.frac(p, c)?))?;
+                atoms.append((*lit, *v, kind_text(*kind), c.to_py(p)?))?;
             } else if let Some((v, m, k)) = t.ints.get(lit) {
-                ints.append((*lit, *v, self.frac(p, m)?, self.frac(p, k)?))?;
+                ints.append((*lit, *v, m.to_py(p)?, k.to_py(p)?))?;
                 if !seen.contains(v) {
                     seen.push(*v);
                     ints_on.append((*v, PyList::new(p, &t.ints_on[v])?))?;
@@ -277,31 +322,39 @@ impl LraCore {
         d.set_item("assigned", assigned)?;
         let diseqs = PyList::empty(p);
         for (v, c, l) in &t.diseqs {
-            diseqs.append((*v, self.frac(p, c)?, *l))?;
+            diseqs.append((*v, c.to_py(p)?, *l))?;
         }
         d.set_item("diseqs", diseqs)?;
         let int_lits = PyList::empty(p);
         for (v, m, k, l) in &t.int_lits {
-            int_lits.append((*v, self.frac(p, m)?, self.frac(p, k)?, *l))?;
+            int_lits.append((*v, m.to_py(p)?, k.to_py(p)?, *l))?;
         }
         d.set_item("int_lits", int_lits)?;
         d.set_item("lims", PyList::new(p, &t.lims)?)?;
         d.set_item("dirty", PyList::new(p, t.dirty.set.iter().copied())?)?;
         d.set_item("pending_ground", PyList::new(p, &t.pending_ground)?)?;
-        let mut slacks: Vec<_> = t.slack_of.iter().collect();
-        slacks.sort_by_key(|e| *e.1); // a new slack is the newest variable: this is insertion order
         let sl = PyList::empty(p);
-        for (form, v) in slacks {
-            sl.append((self.pairs(p, form)?, *v))?;
+        for form in &t.slack_forms {
+            sl.append((self.pairs(p, form)?, t.slack_of[form]))?;
         }
         d.set_item("slack_of", sl)?;
-        let mut forms: Vec<_> = t.forms.iter().collect();
-        forms.sort_by(|a, b| a.0.cmp(b.0)); // only ever looked up: any defined order will do
         let fl = PyList::empty(p);
-        for (key, (v, c)) in forms {
-            fl.append((self.pairs(p, key)?, *v, self.frac(p, c)?))?;
+        for key in &t.forms_order {
+            let (v, c) = &t.forms[key];
+            fl.append((self.pairs(p, key)?, *v, c.to_py(p)?))?;
         }
         d.set_item("forms", fl)?;
+        let memo = PyList::empty(p);
+        for ((v, m, k, lr, ur), r) in &t.int_memo_order() {
+            let r = match r {
+                None => p.None().into_bound(p),
+                Some((truth, why)) => (*truth, PyList::new(p, why)?).into_pyobject(p)?.into_any(),
+            };
+            memo.append(((*v, m.to_py(p)?, k.to_py(p)?, *lr, *ur), r))?;
+        }
+        d.set_item("int_memo", memo)?;
+        d.set_item("fields", t.fields)?;
+        d.set_item("gave_up", t.gave_up)?;
         d.set_item("exhausted", t.exhausted)?;
         d.set_item("branched_rational", t.branched_rational)?;
         d.set_item("stats", self.stats(p)?)?;

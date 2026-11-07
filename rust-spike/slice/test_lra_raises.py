@@ -92,7 +92,7 @@ def payload_of(name, table):
 
 
 def view(t):
-    return state.lra_text(t._view() if t.__dict__.get("_core") not in (None, 0) else t)
+    return state.lra_text(t._view() if "_core" in t.__dict__ else t)
 
 
 def attempt(f, *a):
@@ -116,7 +116,7 @@ def scenario(cls, name, table):
     out.append(attempt(t.propagate))
     out.append(attempt(t.pop_level))
     out.append(view(t))
-    return out, t.__dict__.get("_core", 0) is None
+    return out, False
 
 
 def calls(cls):
@@ -158,48 +158,6 @@ def test_bad_input_raises_what_python_raises_and_stays_in_rust():
     bad, moved = compare()
     assert not bad, bad
     assert not moved, moved
-
-
-def failing_transfer(p, a, force_at=None):
-    """`ask(p, a)` with a transfer whose dump fails. Returns (exception or None, moves attempted, level of the first)."""
-    import backend
-    import move_every_call as M
-    from satassume import sympy_api
-    tried = []
-
-    class Fail(Rs):
-        def _state(self):
-            tried.append(self._core.level)
-            raise RuntimeError("planted: the transfer failed")
-    cls = M.forced_class(Fail)
-    saved = lra_backend.LRATheory
-    lra_backend.LRATheory = cls
-    undo = backend.install()
-    M.S.q, M.S.g, M.S.n, M.S.fired = None, -1 if force_at is None else force_at, 0, False
-    try:
-        try:
-            r = sympy_api.ask(p, a)
-        except lra_backend.TransferFailed as e:
-            return str(e.__cause__), tried, "raised"
-        return None, tried, r
-    finally:
-        undo()
-        lra_backend.LRATheory = saved
-
-
-def test_failed_transfer_raises_through_ask():
-    from sympy import Q, pi, symbols
-    x, y = symbols("x y")
-    # A natural move, on a constant.
-    e, tried, _ = failing_transfer(Q.zero(x), Q.ge(x, -pi / 2))
-    assert tried, "this query no longer moves"
-    assert e == "planted: the transfer failed"
-    # Forced, at every call of a session, level 0 and during search. Before TransferFailed, G=10 here was swallowed by
-    # engine.py:1906 and came back as an answer.
-    p, a = Q.nonzero(x - y), Q.ne(y, x)
-    for g in range(0, 40):
-        e, tried, _ = failing_transfer(p, a, g)
-        assert tried and e == "planted: the transfer failed", (g, e, tried)
 
 
 if __name__ == "__main__":
