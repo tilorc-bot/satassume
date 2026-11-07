@@ -1,4 +1,4 @@
-"""Planted bugs for component 6's atoms family, each built in a scratch copy, scored by three columns that run separately.
+"""Planted bugs for component 6's atoms family, each built in a scratch copy, scored by columns that run separately.
 
     mutate_knowledge.py WORK PLAIN_DIR [--only NAME,NAME] [--jobs J]
 
@@ -7,6 +7,8 @@ only died, which includes KnowledgeFault), or `no`:
   direct  knowledge_units_cmp over generated fact lists; sees only Rules::units, so row and table bugs can't show here.
   shadow  knowledge_fresh dev --mode shadow; a field mismatch, or an answer or digest off plain.
   off     knowledge_fresh dev, fuzz and value --mode atoms against plain, byte for byte: answers and session digests only, the real mode.
+          `off_by_wl` scores each workload; `off` and `off_wl` are the first that caught it.
+  unit    test_knowledge_common.py, the random and hand cases against Python's `resolve` and `Pattern`.
 `off` is what a user's run would see; a bug only `shadow` catches changed a field and no answer. Each row records which build
 loaded: a column from another build is void. The base row must read `no` in all three. WORK/results.jsonl as each ends.
 """
@@ -23,6 +25,7 @@ import threading
 HERE = os.path.dirname(os.path.abspath(__file__))
 KN, PY, TAB, CONV, LIVE = ('solver_rs/src/term/knowledge.rs', 'solver_rs/src/term/py.rs', 'solver_rs/src/term/table.rs',
                            'convert.py', 'knowledge_live.py')
+RR = 'solver_rs/src/realroots.rs'
 M = [
     ('rules', 'closure-sign-swap', KN, 'sw |= if free & EVEN != 0 { free << 1 } else { free >> 1 };', 'sw |= if free & EVEN != 0 { free >> 1 } else { free << 1 };'),
     ('rules', 'closure-conflict-ignored', KN, 'if free == 0 {\n                    return None;', 'if free == 0 {\n                    continue;'),
@@ -35,7 +38,7 @@ M = [
     ('rules', 'complete-no-rule-free', KN, 'let mut decided = self.rule_free;', 'let mut decided = 0u64;'),
     ('rules', 'complete-always', KN, 'decided.count_ones() as usize == self.basis.len()', 'decided.count_ones() as usize != usize::MAX'),
     ('rules', 'complete-never', KN, 'decided.count_ones() as usize == self.basis.len()', 'decided.count_ones() as usize == usize::MAX'),
-    ('rules', 'unsubsumed-not-stable', KN, 'distinct.sort_by_key(Vec::len);', 'distinct.reverse(); distinct.sort_by_key(Vec::len);'),
+    ('rules', 'unsubsumed-not-stable', KN, 'if !distinct.contains(&c) {\n            distinct.push(c);\n        }\n    }\n    distinct.sort_by_key(Vec::len);', 'if !distinct.contains(&c) {\n            distinct.push(c);\n        }\n    }\n    distinct.reverse(); distinct.sort_by_key(Vec::len);'),
     ('rules', 'unsubsumed-keeps-subsumed', KN, 'if !out.iter().any(|d| d.iter().all(|l| c.contains(l))) {', 'if true {'),
     ('rules', 'unsubsumed-keeps-duplicates', KN, 'if !distinct.contains(&c) {', 'if true {'),
     ('rules', 'rest-no-false-filter', KN, '.filter(|&(i, p)| units & 1u64 << lit_bit(signed(i, !p)) == 0)', '.filter(|_| true)'),
@@ -55,6 +58,18 @@ M = [
     ('boundary', 'conv-no-constant-rows', CONV, 'return tuple(const_value(t, p) for p in _CONST_BASIS)', 'return ()'),
     ('boundary', 'conv-no-symbol-rows', CONV, 'return tuple(t.assumptions0.items())', 'return ()'),
     ('boundary', 'conv-symbol-facts-sorted', CONV, 'tuple(t.assumptions0.items())', 'tuple(sorted(t.assumptions0.items()))'),
+    ('realroots', 'realroots-chain-no-negate', RR, 'out.push(r.iter().map(Rat::neg).collect());', 'out.push(r);'),
+    ('realroots', 'realroots-imaginary-sign', RR, 'if k % 4 < 2 {', 'if k % 4 < 1 {'),
+    ('realroots', 'realroots-sign-boundary', RR, 'let sign = if *index < BigInt::from(neg) {', 'let sign = if *index <= BigInt::from(neg) {'),
+    ('realroots', 'realroots-bits-off-by-one', RR, '.unwrap_or(0) > MAX_BITS', '.unwrap_or(0) >= MAX_BITS'),
+    ('realroots', 'realroots-squarefree-skipped', RR, '        || !squarefree(&p)\n', ''),
+    ('common', 'common-unsubsumed-keeps-subsumed', KN, 'let hit = c.iter().any(|l| index.get(l).is_some_and(|ds| ds.iter().any(|&d| is_subset(&out[d], &c))));', 'let hit = false;'),
+    ('common', 'common-resolve-keeps-subsumed', KN, 'if kept.iter().any(|k| is_subset(k, &key)) {', 'if false {'),
+    ('common', 'common-contrapositive-sign', KN, '(*k, p.clone(), !*pos)', '(*k, p.clone(), *pos)'),
+    ('common', 'common-wide-off-by-one', KN, 'if n > max_expand {', 'if n >= max_expand {'),
+    ('common', 'common-clause-sort-reversed', KN, 'c.sort_unstable();\n        c.dedup();\n        if seen.insert(c.clone())', 'c.sort_unstable_by(|a, b| b.cmp(a));\n        c.dedup();\n        if seen.insert(c.clone())'),
+    ('common', 'common-undecidable-premise-kept', KN, "R::Decided(false) | R::Undecidable => continue 'rule,", "R::Decided(false) => continue 'rule,\n                R::Undecidable => {}"),
+    ('common', 'common-internal-sign', PY, '(k, 2 * i + n as usize)', '(k, 2 * i + !n as usize)'),
     ('wiring', 'live-any-class-row', LIVE, 'if i is not None and type(q.objects[i]) is type(value):', 'if i is not None:'),
     ('wiring', 'live-all-derived', LIVE, 'if i is not None and type(q.objects[i]) is type(value):', 'if False:'),
     ('wiring', 'live-value-on-value', LIVE, 'return Compiled((obj,), pat)', 'return Compiled((value,), pat)'),
@@ -135,20 +150,34 @@ def score(name, kind, path, old, new, a):
         row['shadow_mismatch'] = c.get('shadow:mismatch', 0)
         row['shadow'] = 'cmp' if c.get('shadow:mismatch') or not filecmp.cmp(out, os.path.join(a.plain, 'dev-plain.tsv'), False) else 'no'
     # off
-    row['off'] = 'no'
-    for wl in ('dev', 'fuzz', 'value'):
+    row['off'], by_wl = 'no', {}
+    # `rootof` is scored only when its plain rows are there, so older runs keep their columns.
+    wls = ('dev', 'fuzz', 'value') + (('rootof',) if os.path.exists(os.path.join(a.plain, 'rootof-plain.tsv')) else ())
+    for wl in wls:
         rc, out = fresh(d, env, log, wl, 'atoms')
         if rc:
-            row['off'] = 'crash'
-            break
+            by_wl[wl] = 'crash'
+            if row['off'] == 'no':
+                row['off'], row['off_wl'] = 'crash', wl
+            continue
+        by_wl[wl] = 'no'
         if not filecmp.cmp(out, os.path.join(a.plain, f'{wl}-plain.tsv'), False):
             ls = open(out).read().splitlines()
             ps = open(os.path.join(a.plain, f'{wl}-plain.tsv')).read().splitlines()
-            row['off'] = 'cmp'
-            row['off_lines'] = sum(x != y for x, y in zip(ls, ps)) + abs(len(ls) - len(ps))
-            row['off_answers'] = sum(x.split('\t')[1:2] != y.split('\t')[1:2] for x, y in zip(ls, ps))
-            row['off_wl'] = wl
-            break
+            lines = sum(x != y for x, y in zip(ls, ps)) + abs(len(ls) - len(ps))
+            answers = sum(x.split('\t')[1:2] != y.split('\t')[1:2] for x, y in zip(ls, ps))
+            by_wl[wl] = dict(lines=lines, answers=answers)
+            if row['off'] == 'no':
+                row.update(off='cmp', off_lines=lines, off_answers=answers, off_wl=wl)
+    row['off_by_wl'] = by_wl
+    # realroots, directly
+    with open(os.path.join(d, 'realroots.txt'), 'w') as f:
+        rc = subprocess.run([PYTHON, os.path.join(d, 'realroots_cmp.py'), '--random', '1500'], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
+    row['realroots'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
+    # unit
+    with open(os.path.join(d, 'unit.txt'), 'w') as f:
+        rc = subprocess.run([PYTHON, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', os.path.join(d, 'test_knowledge_common.py'), os.path.join(d, 'test_knowledge_realroots.py')], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
+    row['unit'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
     row['outcome'] = 'scored'
     for f in os.listdir(d):
         if f.endswith('.tsv'):

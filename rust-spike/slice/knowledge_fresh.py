@@ -26,6 +26,9 @@ if args.wl == 'fuzz':
 elif args.wl == 'value':
     import knowledge_value_wl
     pairs = knowledge_value_wl.queries()
+elif args.wl == 'rootof':
+    import knowledge_rootof_wl
+    pairs = knowledge_rootof_wl.queries()
 else:
     pairs = workload(args.wl)
 pairs = pairs[:args.limit] if args.limit else pairs
@@ -84,5 +87,5 @@ if H:
 if args.mode == 'discard':
     print(dict(done))
 if K:
-    json.dump(dict(counts=K.COUNTS, mismatches=K.MISMATCHES), open(args.out + '.counts.json', 'w'), indent=1)
+    json.dump(dict(counts=K.COUNTS, mismatches=K.MISMATCHES, order_diffs=K.ORDER_DIFFS), open(args.out + '.counts.json', 'w'), indent=1)
     print(dict(K.COUNTS)); print(K.MISMATCHES[:3])
