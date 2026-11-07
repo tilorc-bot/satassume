@@ -9,6 +9,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('wl'); ap.add_argument('out')
 ap.add_argument('--mode', default='shadow', choices=['plain', 'atoms', 'shadow'])
 ap.add_argument('--limit', type=int)
+ap.add_argument('--handlers', help='handler_count rows here, `where` the query index; after the run, one planted raise at each call in the two tries, so a zero is about a counter shown to fire in this process')
 args = ap.parse_args()
 from harness.state import reset_module_state
 from satassume import sympy_api, engine as E
@@ -24,6 +25,10 @@ K = None
 if args.mode != 'plain':
     import knowledge_live as K
     K.install(shadow=args.mode == 'shadow')
+H = None
+if args.handlers:
+    import handler_count as H
+    H.install(args.handlers)
 sessions = []
 _init = E.Session.__init__
 def init(self, *a, **k):
@@ -35,6 +40,8 @@ def dg(s):
 with open(args.out, 'w') as fh:
     for i, (p, a) in enumerate(pairs):
         reset_module_state(sympy_cache=False)
+        if H:
+            H.where = i
         sympy_api.set_default_engine(E.Engine())
         sessions.clear()
         try:
@@ -44,6 +51,9 @@ with open(args.out, 'w') as fh:
         ds = [dg(s) for s in sessions]
         fh.write(f"{i}\t{r}\t{len(ds)}\t{','.join(ds)}\n")
     fh.write('END\n')
+if H:
+    import knowledge_quiet
+    print('plant check', knowledge_quiet.plant_check(H))
 if K:
     json.dump(dict(counts=K.COUNTS, mismatches=K.MISMATCHES), open(args.out + '.counts.json', 'w'), indent=1)
     print(dict(K.COUNTS)); print(K.MISMATCHES[:3])
