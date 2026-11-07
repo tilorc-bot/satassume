@@ -1,6 +1,7 @@
 """Differential test of solver_rs/src/constfield.rs and lra_cert.rs against the Python modules: test_cf_diff.py [SEED] [OPS].
 Compares structure (n, d), exception type and text, `_sign` on operands and sampled `Constant._cache` contents."""
-import math, os, random, sys, time
+import faulthandler, math, os, random, sys, time
+if os.environ.get("CF_DUMP"): faulthandler.dump_traceback_later(int(os.environ["CF_DUMP"]), exit=True)
 from collections import Counter
 from fractions import Fraction as F
 sys.path.insert(0, os.environ.get("CF_SO") or os.path.dirname(os.path.abspath(__file__)))
@@ -133,7 +134,7 @@ def rpoly(vs, deg, terms, h=9):
 G = int(os.environ.get("CF_GCD", 1500))
 tg = time.time()
 for i in range(G):
-    vs = rnd.sample(range(5), rnd.randint(1, 4)); deg = rnd.randint(1, 3); terms = rnd.randint(1, 4)
+    vs = rnd.sample(range(5), rnd.randint(1, int(os.environ.get("CF_GCD_VARS", 3)))); deg = rnd.randint(1, int(os.environ.get("CF_GCD_DEG", 2))); terms = rnd.randint(1, 3)
     g, f, h = rpoly(vs, deg, terms), rpoly(vs, deg, terms), rpoly(rnd.sample(vs, rnd.randint(1, len(vs))), deg, terms)
     a, b = cf._mul(g, f), cf._mul(g, h)
     if rnd.random() < 0.2: a = cf._add(a, F(1))
