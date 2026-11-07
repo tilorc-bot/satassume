@@ -1,7 +1,9 @@
-"""knowledge_leak.py run WL OUT.jsonl --mode plain|atoms [--limit N]; knowledge_leak.py cmp PLAIN ATOMS: what does conversion leave in Python?
+"""knowledge_leak.py run WL OUT.jsonl --mode plain|atoms [--limit N]; knowledge_leak.py cmp PLAIN ATOMS; knowledge_leak.py fire: what does conversion leave in Python?
 
-Same order and no SymPy cache clear, as knowledge_fresh. Per query: satassume's module memos by name, SymPy `cacheit` sizes by
-function, and the `_assumptions` entries of the query's terms. atoms also snapshots around `convert.convert` alone, which is the
+Same order and no SymPy cache clear, as knowledge_fresh. Per query: satassume's module memos by name, SymPy `cacheit` writes by
+function, and the `_assumptions` entries of the query's terms. A `cacheit` write is a miss. `currsize` can't be the count: cacheit
+is an LRU of 1000, so once a function's cache is full a write evicts and its size doesn't move. `fire` plants a write on a full
+cache and shows `misses` sees it where `currsize` doesn't. Hits are counted apart: they write nothing but reorder the LRU. atoms also snapshots around `convert.convert` alone, which is the
 direct answer: whatever it wrote stays there while Python runs the query, kept or not. cmp prints conversion's writes by table,
 kept queries apart, and where plain and atoms end differently, each with its first query.
 """
@@ -56,7 +58,7 @@ def run(a):
         memos = {n: len(o[k]) for n, o, k in tables if hasattr(o.get(k), '__len__') and len(o[k])}
         sym = {}
         for f in CACHE:
-            n = f.cache_info().currsize
+            n = f.cache_info().misses
             if n:
                 name = getattr(f, '__qualname__', repr(f))
                 sym[name] = sym.get(name, 0) + n
@@ -66,6 +68,9 @@ def run(a):
             if d:
                 facts[str(t)[:80] + ':' + type(t).__name__] = sorted(map(repr, d.items()))
         return memos, sym, facts
+
+    def hits():
+        return sum(f.cache_info().hits for f in CACHE)
 
     def delta(a, b):
         return {k: b.get(k, 0) - a.get(k, 0) for k in set(a) | set(b) if b.get(k, 0) != a.get(k, 0)}
@@ -79,9 +84,10 @@ def run(a):
         def c(p, q, eng):
             terms = walk(p, q)
             m0, s0, f0 = snap(terms)
+            h0 = hits()
             r = py_convert(p, q, eng)
             m1, s1, f1 = snap(terms)
-            conv.update(kept=getattr(r, 'reason', None), memo=delta(m0, m1), sympy=delta(s0, s1),
+            conv.update(hits=hits() - h0, kept=getattr(r, 'reason', None), memo=delta(m0, m1), sympy=delta(s0, s1),
                         facts=sum(len(v) for v in f1.values()) - sum(len(v) for v in f0.values()),
                         fact_ex=next((k for k in f1 if f1[k] != f0.get(k)), None))
             return r
@@ -92,11 +98,13 @@ def run(a):
             reset_module_state(sympy_cache=False)
             sympy_api.set_default_engine(E.Engine())
             conv.clear()
+            _, s0, _ = snap(())
             try:
                 r = sympy_api.ask(p, q)
             except Exception as e:
                 r = 'raise:' + type(e).__name__
-            m, s, f = snap(walk(p, q))
+            m, s1, f = snap(walk(p, q))
+            s = delta(s0, s1)
             fd = hashlib.blake2b(repr(sorted(f.items())).encode(), digest_size=8).hexdigest()
             fh.write(json.dumps(dict(i=i, r=str(r), memo=m, sympy=s, facts=fd, n_facts=sum(map(len, f.values())), conv=dict(conv))) + '\n')
         fh.write('{"end": true}\n')
@@ -147,7 +155,30 @@ def cmp(a):
         print(f'end state differs, {field}: {sum(names.values())} rows')
         for k, v in names.most_common(15):
             print('  ', v, k, 'first query', first[k])
+    tot = lambda rows: collections.Counter(k for r in rows for k, v in r['sympy'].items() for _ in range(v))
+    tp, tq = tot(P), tot(Q)
+    print('cacheit writes over the query, plain', sum(tp.values()), 'atoms', sum(tq.values()), 'hits in conversion', sum(r['conv'].get('hits', 0) for r in Q))
+    for k in sorted(set(tp) | set(tq), key=lambda k: -abs(tq[k] - tp[k]))[:12]:
+        print('  ', k, 'plain', tp[k], 'atoms', tq[k])
     print('end n_facts sum, plain', sum(x['n_facts'] for x in P), 'atoms', sum(y['n_facts'] for y in Q))
+
+
+def fire(a):
+    """A planted write on a full LRU: the size reading says nothing and the miss reading says 1. Both are shown because a zero from `misses` is only worth something if this row is 1."""
+    from sympy.core.cache import cacheit, CACHE
+
+    @cacheit
+    def planted(x):
+        return x
+    f = next(w for w in CACHE if getattr(w, '__wrapped__', None) is planted.__wrapped__)
+    n = f.cache_info().maxsize
+    for i in range(n):
+        planted(i)
+    i0 = f.cache_info()
+    planted(n + 1)
+    i1 = f.cache_info()
+    print('maxsize', n, 'currsize moved', i1.currsize - i0.currsize, 'misses moved', i1.misses - i0.misses)
+    assert i1.currsize == i0.currsize and i1.misses == i0.misses + 1
 
 
 if __name__ == '__main__':
@@ -155,5 +186,6 @@ if __name__ == '__main__':
     sp = ap.add_subparsers(dest='cmd', required=True)
     r = sp.add_parser('run'); r.add_argument('wl'); r.add_argument('out'); r.add_argument('--mode', default='atoms'); r.add_argument('--limit', type=int)
     c = sp.add_parser('cmp'); c.add_argument('plain'); c.add_argument('atoms')
+    sp.add_parser('fire')
     a = ap.parse_args()
-    (run if a.cmd == 'run' else cmp)(a)
+    dict(run=run, cmp=cmp, fire=fire)[a.cmd](a)
