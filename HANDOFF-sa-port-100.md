@@ -8,7 +8,7 @@ port/5c at 3246bb4 (pushed); rust-slice at 653d932 (5c1). Clone /home/tilo/dev/s
 - test_compile_loop_core.py: direct Python-against-Rust test on forged state (forged clauses for `_split`; vocabulary function for a custom predicate so `_flush`'s `_custom` matters; one mentioning the node itself so `_compile_pending` compiles parked formulas). 9 tests; all 7 plants fire and are seen. With test_discovery_core.py: 19 passed on orion (46 s, -n 4).
 - Formula objects: read as Python reads them (`atom.expr`, `atom.pred`, `!=`), counted callbacks until the formula step (no boundary conversion here).
 
-## Bar (running, started 22:30 UTC)
+## Bar (finished by 22:51Z: lease released after 16m, exit 0; summary is the tail of the orion launch log and pareto1 sum.txt, not read by sa-port-100)
 Detached on pareto1: `machine run` PID 517784 on orion, lease "sa-port-100 5c2 bar". Launch log ~/sa-rust-ids-work/sa-port-100/bar-launch.log (orion). Rows: pareto1 ~/sp19/sa-rust-ids-work/sa-port-100/ (sum.txt at the end). Tested source 3246bb4. Command as in the log's header: BASE=/home/tilo/sp19/sa-rust-ids-work/sa-port-96/suite, PLANTS = the 7 above, SUITE_PLANTS=zero, TESTS adds test_discovery_core.py test_compile_loop_core.py, DIRECT="relations_direct.py 300 0". Not read yet: read sum.txt, state the five items, and the void plants (dev/fuzz fired 0) and what catches them (test_compile_loop_core.py's plant tests). Count quiet catches at engine.py:1906.
 
 ## Next
