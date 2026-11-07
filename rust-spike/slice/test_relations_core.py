@@ -63,6 +63,8 @@ def _queries():
 def _run():
     from satassume import engine
     from satassume.sympy_api import ask
+    from sympy import Q
+    Q_lt = Q.lt
     mod = _rust() if os.environ.get('MODE', 'rust') == 'rust' else None
     streams = [None]
     init = engine.Session.__init__
@@ -85,6 +87,23 @@ def _run():
         except BaseException as e:
             got = f'{type(e).__name__}: {e}'
         out[name] = dict(answer=got, streams=streams[0])
+    # `_order_infinite` returns on an unknown sign, past the `ensure` and `var` of the terms before it: those effects stay.
+    from sympy import Symbol as Sy, pi as _pi
+    from satassume import relations
+    from satassume.theories.lra.constfield import Undecided
+    real_sign, asked = relations.sign, [0]
+
+    def undecided(c):
+        asked[0] += 1
+        raise Undecided(c)
+    relations.sign = undecided
+    streams[0] = []
+    a_, b_, c_ = Sy('a_'), Sy('b_'), Sy('c_')
+    try:
+        got = repr(ask(Q_lt(a_ + _pi * b_, c_), True, engine=engine.Engine()))
+    finally:
+        relations.sign = real_sign
+    out['infinite-undecided'] = dict(answer=got, streams=streams[0], asked=asked[0] > 0)
     # The reference keeps Python's `VarTable` under `Relations`, so these stay Python's and never reach Rust's.
     from satassume.ref import ref_outcome
     from sympy import Q, Symbol
@@ -181,6 +200,10 @@ def test_methods_match_python(py, rust):
 
 def test_same_core_python_methods_match(py):
     assert _differ(py, _call('run', SLICE_REL='py')) == []
+
+
+def test_undecided_return_was_reached(rust):
+    assert rust['cases']['infinite-undecided']['asked'] is True
 
 
 def test_each_method_ran(rust):
