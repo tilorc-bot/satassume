@@ -415,9 +415,11 @@ These reads run during the run, so handlers on the engine's path can see them ra
 
 Generated from an AST walk plus the dev and fuzz census. The class column follows section 2's calls by rule, not by reading each function. Suffix on a name: `~i` ran only at import; `~u` didn't run on dev or fuzz, so it's unreached there, not necessarily offline. `port?` means a split module's function that was unreached, so the call is open. No suffix means it ran at query time, or it's a class.
 
+**Reclassified, 7 Nov (port-wire, doc only):** 70 items marked "(planner's ownership ruling, 7 Nov; was port)" below left `port` by the planner's ownership ruling on `slice/results/port-ownership.md`: 32 conversion (the `Formula` classes are input; `_ask`, `_ask_general`, `_engine_ask`; the registry's class walk; `_may_be_nan`), 12 offline or import-time, 9 python (`limits.py`, user `register`), 17 none (the `sat/theory.py` Protocols, provenance, `lra.py`'s tests-only `constraint`, `__init__`'s alias shim). `_inherits_from_basic` stays port: `euf_adapter.py:93` reads it at run time too. Port items: 812 to 742. The "Questionable" rows are unchanged.
+
 **`__init__.py`**
 
-- port: `__getattr__:15`~i
+- none (planner's ownership ruling, 7 Nov; was port): `__getattr__:15`~i
 
 **`_compat.py`**
 
@@ -452,7 +454,8 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 
 **`knowledge/templates/__init__.py`**
 
-- port: `_may_be_nan:142`, `_applied_to_nan:162`
+- port: `_applied_to_nan:162`
+- conversion (planner's ownership ruling, 7 Nov; was port): `_may_be_nan:142`
 
 **`knowledge/templates/_common.py`**
 
@@ -472,15 +475,17 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 
 **`knowledge/templates/core.py`**
 
-- port: `_half_split:58`, `_coeff_term:88`, `_half_rules:100`, `_half_templates:120`, `_bound_split:150`, `_bound_rules:166`, `_bound_templates:183`, `_recip_rules:203`~u, `_recip_templates:225`, `_imag_term:235`, `_imag_split:252`, `_imag_rules:259`~u, `_imag_number_rules:280`~u, `_imag_templates:288`~u, `_not_unit_premises:309`~u, `_mul_factor_sets:325`, `_quotient_rules:353`, `_quotient_templates:360`, `_unit_angle:380`, `ipi_split:392`, `pi_split:400`, `_pi_split:406`, `_ipi_table_rows:448`~u, `ipi_rules:476`~u, `irrational_root:485`, `_unit_power_units:498`~u, `_exp_arg:524`, `_pow_bound_templates:533`, `_table:575`~u, `__getattr__:584`
+- port: `_half_split:58`, `_coeff_term:88`, `_half_rules:100`, `_half_templates:120`, `_bound_split:150`, `_bound_rules:166`, `_bound_templates:183`, `_recip_rules:203`~u, `_recip_templates:225`, `_imag_term:235`, `_imag_split:252`, `_imag_rules:259`~u, `_imag_number_rules:280`~u, `_imag_templates:288`~u, `_not_unit_premises:309`~u, `_mul_factor_sets:325`, `_quotient_rules:353`, `_quotient_templates:360`, `_unit_angle:380`, `ipi_split:392`, `pi_split:400`, `_pi_split:406`, `ipi_rules:476`~u, `irrational_root:485`, `_unit_power_units:498`~u, `_exp_arg:524`, `_pow_bound_templates:533`
+- offline (planner's ownership ruling, 7 Nov; was port): `_ipi_table_rows:448`~u, `_table:575`~u, `__getattr__:584`
 
 **`knowledge/templates/functions.py`**
 
-- port: `_unary:41`, `shifted:84`, `_exp_ipi:100`, `_parts_of_round_rules:143`~u, `parts_of_round_templates:150`, `_pi_trig_rules:177`~u, `_pi_trig:214`, `_in_unit_interval_units:247`~u, `_cosh_shift_rules:280`~u, `_cosh_shift_split:302`, `_cosh_shift:322`, `nary:354`, `_value_units:398`~u, `_genocchi_half:412`~u
+- port: `_unary:41`, `shifted:84`, `_exp_ipi:100`, `_parts_of_round_rules:143`~u, `parts_of_round_templates:150`, `_pi_trig_rules:177`~u, `_pi_trig:214`, `_in_unit_interval_units:247`~u, `_cosh_shift_rules:280`~u, `_cosh_shift_split:302`, `_cosh_shift:322`, `nary:354`, `_genocchi_half:412`~u
+- offline (planner's ownership ruling, 7 Nov; was port): `_value_units:398`~u
 
 **`knowledge/templates/limits.py`**
 
-- port: `_inner:75`~u, `_scalar:102`~u, `_plain:110`~u, `_compiled:120`~u, `_sum_or_product:127`~u, `sum_templates:176`~u, `product_templates:181`~u, `integral_templates:186`~u
+- python (planner's ownership ruling, 7 Nov; was port): `_inner:75`~u, `_scalar:102`~u, `_plain:110`~u, `_compiled:120`~u, `_sum_or_product:127`~u, `sum_templates:176`~u, `product_templates:181`~u, `integral_templates:186`~u
 
 **`knowledge/templates/nodes.py`**
 
@@ -492,8 +497,11 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 
 **`knowledge/templates/registry.py`**
 
-- port: `own_facts:54`, `_redefines:62`, `TemplateRegistry.__init__:75`, `TemplateRegistry.lazy:97`, `TemplateRegistry._covers:124`, `TemplateRegistry._load:141`, `TemplateRegistry.load_all:155`, `TemplateRegistry.register:161`, `TemplateRegistry.templates_for:194`, `TemplateRegistry.clauses_for:226`, `_split:265`
-- port?: `TemplateRegistry:74`, `TemplateRegistry._imported:136`~u, `TemplateRegistry.facts_for:216`~u, `TemplateRegistry.classes:245`~u, `_collect:250`~u
+- port: `TemplateRegistry.__init__:75`, `TemplateRegistry.templates_for:194`, `TemplateRegistry.clauses_for:226`, `_split:265`
+- port?: `TemplateRegistry:74`, `TemplateRegistry.facts_for:216`~u
+- offline (planner's ownership ruling, 7 Nov; was port): `own_facts:54`, `TemplateRegistry.lazy:97`, `TemplateRegistry._load:141`, `TemplateRegistry.load_all:155`, `TemplateRegistry._imported:136`~u
+- conversion (planner's ownership ruling, 7 Nov; was port): `_redefines:62`, `TemplateRegistry._covers:124`, `TemplateRegistry.classes:245`~u, `_collect:250`~u
+- python (planner's ownership ruling, 7 Nov; was port): `TemplateRegistry.register:161`
 
 **`knowledge/templates/rootof.py`**
 
@@ -513,8 +521,9 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 
 **`knowledge/templates/wiring.py`**
 
-- port: `template:94`, `load:151`, `_declared:176`, `_attributed:186`, `matches:196`, `power:223`, `expand:381`, `_placements:417`, `_allowed:440`, `_instances:453`, `_wide_of:558`, `rows_block:565`, `rules_for:596`, `product:620`, `addition:650`
-- port?: `functions:87`~u, `piecewise_values:349`~u, `_clauses:479`~u, `wide_formulas:489`~u, `_wide:511`~u, `_atom:535`~u, `any_arity:539`~u
+- port: `_declared:176`, `_attributed:186`, `matches:196`, `power:223`, `expand:381`, `_placements:417`, `_allowed:440`, `_instances:453`, `_wide_of:558`, `rows_block:565`, `rules_for:596`, `product:620`, `addition:650`
+- port?: `piecewise_values:349`~u, `_clauses:479`~u, `wide_formulas:489`~u, `_wide:511`~u, `_atom:535`~u, `any_arity:539`~u
+- offline (planner's ownership ruling, 7 Nov; was port): `template:94`, `load:151`, `functions:87`~u
 
 **`ref.py`**
 
@@ -526,15 +535,18 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 
 **`sat/formula.py`**
 
-- port: `P:14`, `P.__repr__:19`~u, `P.__invert__:22`~u, `P.__and__:25`~u, `P.__or__:28`~u, `P.__rshift__:31`~u, `Formula:35`, `Formula.__init__:38`, `Formula.__repr__:41`~u, `Formula.__eq__:44`, `Formula.__hash__:47`, `Formula.__invert__:50`~u, `Formula.__and__:53`~u, `Formula.__or__:56`~u, `Formula.__rshift__:59`~u, `And:63`, `Or:67`, `Not:71`, `Not.__init__:72`, `Implies:76`, `Implies.__init__:77`~u, `Equivalent:81`, `Equivalent.__init__:82`~u, `Exclusive:86`, `ITE:90`, `ITE.__init__:95`~u, `allargs:105`~u, `anyarg:111`~u, `exactlyonearg:117`~u, `atoms_of:126`
+- port: `P:14`, `P.__repr__:19`~u, `P.__invert__:22`~u, `P.__and__:25`~u, `P.__or__:28`~u, `P.__rshift__:31`~u
+- conversion (planner's ownership ruling, 7 Nov; was port): `Formula:35`, `Formula.__init__:38`, `Formula.__repr__:41`~u, `Formula.__eq__:44`, `Formula.__hash__:47`, `Formula.__invert__:50`~u, `Formula.__and__:53`~u, `Formula.__or__:56`~u, `Formula.__rshift__:59`~u, `And:63`, `Or:67`, `Not:71`, `Not.__init__:72`, `Implies:76`, `Implies.__init__:77`~u, `Equivalent:81`, `Equivalent.__init__:82`~u, `Exclusive:86`, `ITE:90`, `ITE.__init__:95`~u, `allargs:105`~u, `anyarg:111`~u, `exactlyonearg:117`~u, `atoms_of:126`
 
 **`sat/solver.py`**
 
-- port: `Clause:43`, `BlockOwner:68`, `BlockOwner.__init__:74`~u, `BlockOwner.__eq__:77`~u, `BlockOwner.__hash__:80`~u, `BlockOwner.__repr__:83`~u, `_common:87`, `_is_learnt:98`, `_luby:102`, `_block_models:122`, `_BlockClosure:200`, `_BlockClosure.__init__:213`, `_BlockClosure.flags:237`, `_BlockClosure.lits_of:250`, `_BlockClosure.values_of:265`, `_BlockClosure.closure:279`, `_BlockClosure.model_of:307`, `_BlockClosure.explain:314`, `_rule_tables:362`, `Solver:390`, `Solver.__init__:402`, `Solver.new_var:538`~u, `Solver.nvars:544`~u, `Solver._grow:547`, `Solver._to_int:572`~u, `Solver._to_ext:576`~u, `Solver._internal_lits:579`, `Solver._heap_insert:597`, `Solver._heap_up:606`, `Solver._heap_down:623`, `Solver._heap_pop:646`, `Solver._bump_var:658`, `Solver._bump_clause:669`, `Solver.add_clause:680`, `Solver._add_lits:694`, `Solver._attach_held:758`, `Solver.add_clauses:823`~u, `Solver.ensure_vars:912`, `Solver.add_internal:917`, `Solver.add_pattern:974`~u, `Solver.set_rule_block:1032`, `Solver.register_block:1080`, `Solver._rb_settle:1176`, `Solver._rb_reason:1225`, `Solver._mention:1243`, `Solver._rb_room:1270`, `Solver.mention_blocks:1280`, `Solver._rb_mentioned:1321`, `Solver._rb_late:1350`, `Solver.mention:1388`, `Solver.propagate:1395`, `Solver.value:1412`, `Solver.root_trail:1422`~u, `Solver.implied:1429`, `Solver.release:1445`, `Solver._assume:1457`, `Solver._assume_propagate:1548`, `Solver._propagate:1600`, `Solver._propagate_clauses:1734`~u, `Solver._backtrack:1805`, `Solver.attach_theory:1851`, `Solver.theories:1872`, `Solver.register_atom:1876`, `Solver.theory_models:1932`~u, `Solver._tpropagate:1938`, `Solver._theory_sync:1953`, `Solver._theory_clause:1982`, `Solver._theory_conflict:1994`, `Solver._theory_imply:2025`, `Solver._theory_decide:2063`, `Solver._theory_check:2091`, `Solver._learn:2105`, `Solver._analyze:2144`, `Solver._analyze_final:2227`, `Solver._pick_branch:2265`, `Solver.set_inert:2296`, `Solver._reduce_db:2321`~u, `Solver._search:2348`, `Solver.solve:2419`, `Solver._solve:2432`, `Solver._fill:2516`, `Solver._model:2540`~u, `Solver._ring_hit:2553`, `Solver._ring_blocks:2613`~u, `Solver.model:2634`~u, `Solver.conflict:2639`~u, `Solver._witness_satisfies:2649`, `Solver.consistent:2665`, `Solver.entails:2677`, `Solver.entails_all:2719`, `Solver.root_step:2754`~u, `Solver.provenance:2793`~u, `Solver.stats:2826`~u
+- port: `Clause:43`, `_common:87`, `_is_learnt:98`, `_luby:102`, `_block_models:122`, `_BlockClosure:200`, `_BlockClosure.__init__:213`, `_BlockClosure.flags:237`, `_BlockClosure.lits_of:250`, `_BlockClosure.values_of:265`, `_BlockClosure.closure:279`, `_BlockClosure.model_of:307`, `_BlockClosure.explain:314`, `_rule_tables:362`, `Solver:390`, `Solver.__init__:402`, `Solver.new_var:538`~u, `Solver.nvars:544`~u, `Solver._grow:547`, `Solver._to_int:572`~u, `Solver._to_ext:576`~u, `Solver._internal_lits:579`, `Solver._heap_insert:597`, `Solver._heap_up:606`, `Solver._heap_down:623`, `Solver._heap_pop:646`, `Solver._bump_var:658`, `Solver._bump_clause:669`, `Solver.add_clause:680`, `Solver._add_lits:694`, `Solver._attach_held:758`, `Solver.add_clauses:823`~u, `Solver.ensure_vars:912`, `Solver.add_internal:917`, `Solver.add_pattern:974`~u, `Solver.set_rule_block:1032`, `Solver.register_block:1080`, `Solver._rb_settle:1176`, `Solver._rb_reason:1225`, `Solver._mention:1243`, `Solver._rb_room:1270`, `Solver.mention_blocks:1280`, `Solver._rb_mentioned:1321`, `Solver._rb_late:1350`, `Solver.mention:1388`, `Solver.propagate:1395`, `Solver.value:1412`, `Solver.root_trail:1422`~u, `Solver.implied:1429`, `Solver.release:1445`, `Solver._assume:1457`, `Solver._assume_propagate:1548`, `Solver._propagate:1600`, `Solver._propagate_clauses:1734`~u, `Solver._backtrack:1805`, `Solver.attach_theory:1851`, `Solver.theories:1872`, `Solver.register_atom:1876`, `Solver.theory_models:1932`~u, `Solver._tpropagate:1938`, `Solver._theory_sync:1953`, `Solver._theory_clause:1982`, `Solver._theory_conflict:1994`, `Solver._theory_imply:2025`, `Solver._theory_decide:2063`, `Solver._theory_check:2091`, `Solver._learn:2105`, `Solver._analyze:2144`, `Solver._analyze_final:2227`, `Solver._pick_branch:2265`, `Solver.set_inert:2296`, `Solver._reduce_db:2321`~u, `Solver._search:2348`, `Solver.solve:2419`, `Solver._solve:2432`, `Solver._fill:2516`, `Solver._model:2540`~u, `Solver._ring_hit:2553`, `Solver._ring_blocks:2613`~u, `Solver.model:2634`~u, `Solver.conflict:2639`~u, `Solver._witness_satisfies:2649`, `Solver.consistent:2665`, `Solver.entails:2677`, `Solver.entails_all:2719`, `Solver.stats:2826`~u
+- none (planner's ownership ruling, 7 Nov; was port): `BlockOwner:68`, `BlockOwner.__init__:74`~u, `BlockOwner.__eq__:77`~u, `BlockOwner.__hash__:80`~u, `BlockOwner.__repr__:83`~u, `Solver.root_step:2754`~u, `Solver.provenance:2793`~u
 
 **`sat/theory.py`**
 
-- port: `TheorySolver:108`, `TheorySolver.register_atom:112`~u, `TheorySolver.assert_lit:125`~u, `TheorySolver.check:136`~u, `TheorySolver.push_level:152`~u, `TheorySolver.pop_level:156`~u, `PropagatingTheory:163`, `PropagatingTheory.propagate:181`~u, `EqualitySharing:185`, `EqualitySharing.__init__:202`, `EqualitySharing.update:206`
+- port: `EqualitySharing:185`, `EqualitySharing.__init__:202`, `EqualitySharing.update:206`
+- none (planner's ownership ruling, 7 Nov; was port): `TheorySolver:108`, `TheorySolver.register_atom:112`~u, `TheorySolver.assert_lit:125`~u, `TheorySolver.check:136`~u, `TheorySolver.push_level:152`~u, `TheorySolver.pop_level:156`~u, `PropagatingTheory:163`, `PropagatingTheory.propagate:181`~u
 
 **`scope.py`**
 
@@ -551,7 +563,8 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 **`sympy_api.py`**
 
 - conversion: `Unsupported:144`, `Unsupported.__init__:148`, `AssumptionSymbolError:154`, `AssumptionSymbolError.__init__:161`~u, `_declared:167`~u, `check_strict:178`~u, `default_engine:206`, `set_default_engine:213`~u, `matrix_predicates:225`, `_is_matrix_predicate:241`, `_is_scalar:253`, `_applied_category:257`, `_categories:279`~u, `out_of_scope:300`~u, `relation_parts:316`, `_relation_formula:339`, `to_formula:354`, `ask:418`, `_formula:496`, `_Failed:519`, `_Failed.__init__:522`, `is_constant_proposition:530`
-- port: `_ask:560`, `_ask_general:576`, `_const_base:693`, `_const_free:705`, `_closed_keys:724`, `_expr_keys:745`, `_arg_keys:768`, `_keys:779`~u, `_keys_rel:784`, `_bool_keys:807`, `_sides_keys:844`, `_Split:864`, `_Split.__init__:869`, `_Split.part:912`, `_relevant:929`, `_vocab_blocks:1009`~u, `_part_consistent:1076`, `_consistent:1088`, `_engine_ask:1111`
+- port: `_const_base:693`, `_const_free:705`, `_closed_keys:724`, `_expr_keys:745`, `_arg_keys:768`, `_keys:779`~u, `_keys_rel:784`, `_bool_keys:807`, `_sides_keys:844`, `_Split:864`, `_Split.__init__:869`, `_Split.part:912`, `_relevant:929`, `_vocab_blocks:1009`~u, `_part_consistent:1076`, `_consistent:1088`
+- conversion (planner's ownership ruling, 7 Nov; was port): `_ask:560`, `_ask_general:576`, `_engine_ask:1111`
 
 **`theories/euf/euf.py`**
 
@@ -568,7 +581,8 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 
 **`theories/lra/lra.py`**
 
-- port: `Negated:230`, `Negated.__new__:235`~u, `Negated.__getnewargs__:238`~u, `Negated.__repr__:241`~u, `Integral:247`, `Integral.__new__:252`, `Integral.__getnewargs__:255`~u, `Integral.__repr__:258`~u, `constraint:265`~u, `_is_int:287`~u, `_floor:298`, `_ceil:312`, `_within_cert:323`, `_dedupe:329`, `LRATheory:339`, `LRATheory.__init__:348`, `LRATheory.undecidable:411`~u, `LRATheory.certified:417`~u, `LRATheory.certified_with:427`~u, `LRATheory.rational_values:434`~u, `LRATheory._certificate:448`, `LRATheory._certify:466`, `LRATheory._new_var:479`, `LRATheory._term_var:494`, `LRATheory._slack:498`, `LRATheory._give_up:541`~u, `LRATheory.register_atom:545`, `LRATheory.assert_lit:553`, `LRATheory.check:590`, `LRATheory.propagate:599`, `LRATheory._register_atom:646`, `LRATheory._lin:681`, `LRATheory._var_of_form:701`, `LRATheory._register_integral:719`, `LRATheory.push_level:749`, `LRATheory.pop_level:753`, `LRATheory._undo_to:759`, `LRATheory._assert_kind:781`, `LRATheory._set_upper:801`, `LRATheory._set_lower:816`, `LRATheory._update:831`, `LRATheory._assert_integral:857`, `LRATheory._int_verdict:870`, `LRATheory._int_verdict_bounds:891`, `LRATheory._int_bounds:907`, `LRATheory._branch:917`, `LRATheory._simplex:1010`, `LRATheory._pivot_and_update:1055`, `LRATheory._pivot_rational:1080`, `LRATheory._pivot:1110`, `LRATheory._concrete:1158`, `LRATheory._model:1173`, `LRATheory._check:1176`, `LRATheory._implied:1234`, `LRATheory.__repr__:1268`~u
+- port: `Negated:230`, `Negated.__new__:235`~u, `Negated.__getnewargs__:238`~u, `Negated.__repr__:241`~u, `Integral:247`, `Integral.__new__:252`, `Integral.__getnewargs__:255`~u, `Integral.__repr__:258`~u, `_is_int:287`~u, `_floor:298`, `_ceil:312`, `_within_cert:323`, `_dedupe:329`, `LRATheory:339`, `LRATheory.__init__:348`, `LRATheory.undecidable:411`~u, `LRATheory.certified:417`~u, `LRATheory.certified_with:427`~u, `LRATheory.rational_values:434`~u, `LRATheory._certificate:448`, `LRATheory._certify:466`, `LRATheory._new_var:479`, `LRATheory._term_var:494`, `LRATheory._slack:498`, `LRATheory._give_up:541`~u, `LRATheory.register_atom:545`, `LRATheory.assert_lit:553`, `LRATheory.check:590`, `LRATheory.propagate:599`, `LRATheory._register_atom:646`, `LRATheory._lin:681`, `LRATheory._var_of_form:701`, `LRATheory._register_integral:719`, `LRATheory.push_level:749`, `LRATheory.pop_level:753`, `LRATheory._undo_to:759`, `LRATheory._assert_kind:781`, `LRATheory._set_upper:801`, `LRATheory._set_lower:816`, `LRATheory._update:831`, `LRATheory._assert_integral:857`, `LRATheory._int_verdict:870`, `LRATheory._int_verdict_bounds:891`, `LRATheory._int_bounds:907`, `LRATheory._branch:917`, `LRATheory._simplex:1010`, `LRATheory._pivot_and_update:1055`, `LRATheory._pivot_rational:1080`, `LRATheory._pivot:1110`, `LRATheory._concrete:1158`, `LRATheory._model:1173`, `LRATheory._check:1176`, `LRATheory._implied:1234`, `LRATheory.__repr__:1268`~u
+- none (planner's ownership ruling, 7 Nov; was port): `constraint:265`~u
 
 **`theories/lra/lra_adapter.py`**
 

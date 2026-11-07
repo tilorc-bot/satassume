@@ -1,0 +1,813 @@
+module	name	line	suffix	inv_class	inv_component	owner	today
+__init__.py	__getattr__	15	~i	none	none	not port (none, ownership ruling)	Python
+engine.py	engine_memos	107		port	5	5c9	Python
+engine.py	InconsistentAssumptions	123		port	5	5c10	Python
+engine.py	_noncommutative	140		port	5	5c10	Python
+engine.py	_noncommutative_answer	151	~u	port	5	5c10	Python
+engine.py	_construction_level	165	~u	port	5	5c10	Python
+engine.py	_noncommutative_atoms	170		port	5	5c10	Python
+engine.py	_kid	177		port	5	5c10	Python
+engine.py	DictCache	188		port	5	5c9	Python
+engine.py	DictCache.__init__	241		port	5	5c9	Python
+engine.py	DictCache.sync	250		port	5	5c9	Python
+engine.py	DictCache.facts	262		port	5	5c9	Python
+engine.py	DictCache.get	265	~u	port	5	5c9	Python
+engine.py	DictCache.put	269		port	5	5c9	Python
+engine.py	AnswerMemo	278		port	5	5c9	Python
+engine.py	AnswerMemo.__init__	283		port	5	5c9	Python
+engine.py	AnswerMemo.put	287		port	5	5c9	Python
+engine.py	Session	304		port	5	5c6	Python
+engine.py	Session.__init__	305		port	5	5c6	Python
+engine.py	Session.var	385		port	5	landed 5a 8bab767	Rust
+engine.py	Session.dvar	414		port	5	landed 5a 8bab767	Rust
+engine.py	Session._dvar	449		port	5	landed 5a 8bab767	Rust
+engine.py	Session._link	481		port	5	landed 5a 8bab767	Rust
+engine.py	Session.query_lit	506		port	5	5c3	Python
+engine.py	Session.prepare_query	521		port	5	5c3	Python
+engine.py	Session.emit	539		port	5	5c3 (partial: landed 5a 8bab767)	Python
+engine.py	Session.node	545		port	5	landed 5a 8bab767	Rust
+engine.py	Session._visit	572		port	5	5c2 (partial: landed 5a 8bab767)	called back
+engine.py	Session._compile_patterns	614		port	5	5c2	Python
+engine.py	Session._emit_pattern	654		port	5	5c2	Python
+engine.py	Session._compile	664	~u	port	5	5c2	Python
+engine.py	Session._flush	687		port	5	5c2	Python
+engine.py	Session._custom	707		port	5	5c2	Python
+engine.py	Session._compile_pending	734		port	5	5c2	Python
+engine.py	Session.ensure	772		port	5	landed 5c1 653d932	Rust
+engine.py	Session.discover	790		port	5	landed 5c1 653d932	Rust
+engine.py	Session._discover	799		port	5	landed 5c1 653d932	Rust
+engine.py	Session.incomplete	809		port	5	landed 5c1 653d932	Rust
+engine.py	Session.escalate	813		port	5	landed 5c1 653d932	Rust
+engine.py	Session.query_literal	852		port	5	5c3	Python
+engine.py	Session._query_all	906		port	5	5c3	Python
+engine.py	Session.assume_formula	936		port	5	5c6	Python
+engine.py	Session.link_set	972		port	5	5c6	Python
+engine.py	Session.assumption_lits	982		port	5	5c6	Python
+engine.py	Session._set_glue	1072		port	5	5c6	Python
+engine.py	Session._group_sel	1119		port	5	5c6	Python
+engine.py	Session.literal_of	1155		port	5	5c3	Python
+engine.py	Session._relations	1168		port	5	5c3	Python
+engine.py	Session._glue_of	1182		port	5	5c6	Python
+engine.py	Session._ensure_atoms	1198		port	5	5c3	Python
+engine.py	Session._ensure_twins	1210		port	5	5c3	Python
+engine.py	_check_writeback	1230		port	5	5c10	Python
+engine.py	_check_uninterpreted	1239		port	5	5c10	Python
+engine.py	_context_free	1245	~u	port	5	5c10	Python
+engine.py	Engine	1251		port	5	5c10	Python
+engine.py	Engine.__init__	1313		port	5	5c9	Python
+engine.py	Engine._fresh_session	1412		port	5	5c9	Python
+engine.py	Engine.extensions	1418		port	5	5c9	Python
+engine.py	Engine.extensions	1425		port	5	5c9	Python
+engine.py	Engine.relation_specs	1431		port	5	5c9	Python
+engine.py	Engine.relation_specs	1440		port	5	5c9	Python
+engine.py	Engine.discovery_budget	1447	~u	port	5	5c9	Python
+engine.py	Engine.discovery_budget	1455	~u	port	5	5c9	Python
+engine.py	Engine.transfer	1461		port	5	5c9	Python
+engine.py	Engine.transfer	1467		port	5	5c9	Python
+engine.py	Engine.uninterpreted	1473		port	5	5c9	Python
+engine.py	Engine.uninterpreted	1480		port	5	5c9	Python
+engine.py	Engine.writeback	1487	~u	port	5	5c9	Python
+engine.py	Engine.writeback	1495	~u	port	5	5c9	Python
+engine.py	Engine.relevance	1502		port	5	5c9	Python
+engine.py	Engine.relevance	1508		port	5	5c9	Python
+engine.py	Engine.templates	1514	~u	port	5	5c9	Python
+engine.py	Engine.templates	1522	~u	port	5	5c9	Python
+engine.py	Engine._settings_changed	1528	~u	port	5	5c9	Python
+engine.py	Engine._check_version	1556		port	5	5c9	Python
+engine.py	Engine._settings_fingerprint	1582		port	5	5c9	Python
+engine.py	Engine._drop_set_memos	1589	~u	port	5	5c9	Python
+engine.py	Engine._drop_cones	1603		port	5	5c7	Python
+engine.py	Engine._struct	1609		port	5	5c7	Python
+engine.py	Engine._cone_info	1676		port	5	5c7	Python
+engine.py	Engine._query_cone	1726		port	5	5c7	Python
+engine.py	Engine._union	1759		port	5	5c7	Python
+engine.py	Engine._within_budget	1783		port	5	5c7	Python
+engine.py	Engine._over_budget	1829	~u	port	5	5c7	Python
+engine.py	Engine._context_session	1835		port	5	5c10	Python
+engine.py	Engine._build_context_memoized	1854		port	5	5c10	Python
+engine.py	Engine._build_context	1878		port	5	5c10	Python
+engine.py	Engine.verdict	1922		port	5	5c10	Python
+engine.py	Engine._complete_check	1952		port	5	5c10	Python
+engine.py	Engine.is_	1986		port	5	5c10	called back
+engine.py	Engine.is_many	2026		port	5	5c10	Python
+engine.py	Engine._decide	2091		port	5	5c10	Python
+engine.py	Engine._put_result	2119		port	5	5c10	Python
+engine.py	Engine._is_custom	2152		port	5	5c10	Python
+engine.py	Engine.ask	2172		port	5	5c10	Python
+engine.py	Engine._ask	2220		port	5	5c10	Python
+engine.py	Engine._note_budget	2246		port	5	5c7	Python
+engine.py	_gave_up	2270		port	5	5c10	Python
+engine.py	_exhausted	2278		port	5	5c10	Python
+engine.py	neighbourhood	2287	~u	port	5	5c7	Python
+engine.py	_split	2311		port	5	5c2	Python
+engine.py	want_of	2340		port	5	5c2	Python
+knowledge/compile.py	basis_formula	17		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	_def	31		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable	64		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.__init__	85		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.node_base	98		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.var	107		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.aux	122		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.atom	128	~u	port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.atom_of	137	~u	port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.__len__	142		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	VarTable.lit_name	145	~u	port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	compile_formula	151		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	_or_cnf	271	~u	port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	formula_literal	378		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	_literal	384		port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	_plain	462	~u	port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	_shared	469	~u	port	5	landed 5a 8bab767	Rust
+knowledge/compile.py	_Lit	478		port	5	5c2	Python
+knowledge/compile.py	_Lit.__init__	481	~u	port	5	5c2	Python
+knowledge/compile.py	_true_lit	486	~u	port	5	landed 5a 8bab767	Rust
+knowledge/domain.py	kept_product	474		port	0 (sec. 3)	landed D db697fc	Rust
+knowledge/realroots.py	_strip	22	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_rem	29	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_monic	41	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_primitive	45	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	gcd	58	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_derivative	66	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_div	71	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	squarefree	84	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_chain	89	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_changes	100	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_at_inf	105	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_at_zero	109	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	real_root_counts	113	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	_distinct_nonzero_real_roots	128	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	imaginary_root_count	139	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/realroots.py	root_facts	154	~u	port	6	landed realroots e4c7a55 (partial)	Rust
+knowledge/rules.py	basis_lits	183		port	6	landed 5a 8bab767	Rust
+knowledge/rules.py	cnf_of	207		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/rules.py	expand_clause	270		port	6	landed 6c 4b2f12b (partial)	Python
+knowledge/rules.py	lit_bit	303		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/rules.py	lits_mask	309		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/rules.py	mask_lits	317		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/rules.py	_masks	328		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/rules.py	closure_mask	355		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/rules.py	unit_propagate	383		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/rules.py	_basis_models	219	~u	port?	6	UNOWNED	Python
+knowledge/rules.py	def_implications	243	~u	port?	6	landed 5a 8bab767 (partial)	called back
+knowledge/templates/__init__.py	_may_be_nan	142		conversion	6	not port (conversion, ownership ruling)	Python
+knowledge/templates/__init__.py	_applied_to_nan	162		port	6	UNOWNED	Python
+knowledge/templates/_common.py	const_key	50		port	6	6d	Python
+knowledge/templates/_common.py	lits	55		port	6	6d	Python
+knowledge/templates/_common.py	Rules	59		port	6	6d	Python
+knowledge/templates/_common.py	Rules.__init__	63		port	6	6d	Python
+knowledge/templates/_common.py	Rules.rule	66		port	6	6d	Python
+knowledge/templates/_common.py	Rules.equiv	71	~u	port	6	6d	Python
+knowledge/templates/_common.py	ge2_alternatives	77	~u	port	6	6d	Python
+knowledge/templates/_common.py	const_value	83		port	6	landed 6c 4b2f12b (partial)	called back
+knowledge/templates/_common.py	_resolve_lit	104		port	6	landed 6c 4b2f12b (partial)	Rust
+knowledge/templates/_common.py	resolve	121		port	6	landed 6c 4b2f12b (partial)	Rust
+knowledge/templates/_common.py	instantiate	162	~u	port	6	6d	Python
+knowledge/templates/_common.py	_unsubsumed	185		port	6	landed 6c 4b2f12b (partial)	Rust
+knowledge/templates/_common.py	Pattern	224		port	6	landed 6c 4b2f12b (partial)	Rust
+knowledge/templates/_common.py	Pattern.__init__	236		port	6	landed 6c 4b2f12b (partial)	Rust
+knowledge/templates/_common.py	TemplateKeyError	280		port	6	6d	Python
+knowledge/templates/_common.py	Compiled	287		port	6	6d	Python
+knowledge/templates/_common.py	Compiled.__init__	292		port	6	6d	Python
+knowledge/templates/_common.py	Compiled.formulas	296	~u	port	6	6d	Python
+knowledge/templates/_common.py	Compiled.wide_formulas	299	~u	port	6	6d	Python
+knowledge/templates/_common.py	facts	325		port	6	6d	Python
+knowledge/templates/_common.py	units	340		port	6	landed 6 dc3f15d (partial)	Python
+knowledge/templates/_common.py	_signed	394		port	6	6d	Python
+knowledge/templates/_common.py	consts_of	399		port	6	6d	Python
+knowledge/templates/_common.py	pattern_key	407		port	6	6d	Python
+knowledge/templates/_rows_runtime.py	from_text	32		port	6	landed rows-runtime 3236be4 (partial)	Rust
+knowledge/templates/_rows_runtime.py	constant_value	47		port	6	landed rows-runtime 3236be4 (partial)	Rust
+knowledge/templates/_rows_runtime.py	_read	60		port	6	landed rows-runtime 3236be4 (partial)	Rust
+knowledge/templates/_rows_runtime.py	_shape_object	74		port	6	landed rows-runtime 3236be4 (partial)	Rust
+knowledge/templates/_rows_runtime.py	_term_object	80		port	6	landed rows-runtime 3236be4 (partial)	Rust
+knowledge/templates/_rows_runtime.py	generator	91		port	6	landed rows-runtime 3236be4 (partial)	Rust
+knowledge/templates/atoms.py	symbol_units	35		port	6	landed 6 dc3f15d (partial)	Rust
+knowledge/templates/atoms.py	constant_units	47		port	6	landed 6 dc3f15d (partial)	Rust
+knowledge/templates/atoms.py	value_units	51		port	6	landed 6b dfa7b45 (partial)	Rust
+knowledge/templates/core.py	_half_split	58		port	6	6e	Python
+knowledge/templates/core.py	_coeff_term	88		port	6	6e	Python
+knowledge/templates/core.py	_half_rules	100		port	6	6e	Python
+knowledge/templates/core.py	_half_templates	120		port	6	6e	Python
+knowledge/templates/core.py	_bound_split	150		port	6	6e	Python
+knowledge/templates/core.py	_bound_rules	166		port	6	6e	Python
+knowledge/templates/core.py	_bound_templates	183		port	6	6e	Python
+knowledge/templates/core.py	_recip_rules	203	~u	port	6	6e	Python
+knowledge/templates/core.py	_recip_templates	225		port	6	6e	Python
+knowledge/templates/core.py	_imag_term	235		port	6	6e	Python
+knowledge/templates/core.py	_imag_split	252		port	6	6e	Python
+knowledge/templates/core.py	_imag_rules	259	~u	port	6	6e	Python
+knowledge/templates/core.py	_imag_number_rules	280	~u	port	6	6e	Python
+knowledge/templates/core.py	_imag_templates	288	~u	port	6	6e	Python
+knowledge/templates/core.py	_not_unit_premises	309	~u	port	6	6e	Python
+knowledge/templates/core.py	_mul_factor_sets	325		port	6	6e	Python
+knowledge/templates/core.py	_quotient_rules	353		port	6	6e	Python
+knowledge/templates/core.py	_quotient_templates	360		port	6	6e	Python
+knowledge/templates/core.py	_unit_angle	380		port	6	6e	Python
+knowledge/templates/core.py	ipi_split	392		port	6	6e	Python
+knowledge/templates/core.py	pi_split	400		port	6	6e	Python
+knowledge/templates/core.py	_pi_split	406		port	6	6e	Python
+knowledge/templates/core.py	_ipi_table_rows	448	~u	offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/core.py	ipi_rules	476	~u	port	6	6e	Python
+knowledge/templates/core.py	irrational_root	485		port	6	6e	Python
+knowledge/templates/core.py	_unit_power_units	498	~u	port	6	6e	Python
+knowledge/templates/core.py	_exp_arg	524		port	6	6e	Python
+knowledge/templates/core.py	_pow_bound_templates	533		port	6	6e	Python
+knowledge/templates/core.py	_table	575	~u	offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/core.py	__getattr__	584		offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/functions.py	_unary	41		port	6	6f	Python
+knowledge/templates/functions.py	shifted	84		port	6	6f	Python
+knowledge/templates/functions.py	_exp_ipi	100		port	6	6f	Python
+knowledge/templates/functions.py	_parts_of_round_rules	143	~u	port	6	6f	Python
+knowledge/templates/functions.py	parts_of_round_templates	150		port	6	6f	Python
+knowledge/templates/functions.py	_pi_trig_rules	177	~u	port	6	6f	Python
+knowledge/templates/functions.py	_pi_trig	214		port	6	6f	Python
+knowledge/templates/functions.py	_in_unit_interval_units	247	~u	port	6	6f	Python
+knowledge/templates/functions.py	_cosh_shift_rules	280	~u	port	6	6f	Python
+knowledge/templates/functions.py	_cosh_shift_split	302		port	6	6f	Python
+knowledge/templates/functions.py	_cosh_shift	322		port	6	6f	Python
+knowledge/templates/functions.py	nary	354		port	6	6f	Python
+knowledge/templates/functions.py	_value_units	398	~u	offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/functions.py	_genocchi_half	412	~u	port	6	6f	Python
+knowledge/templates/limits.py	_inner	75	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/limits.py	_scalar	102	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/limits.py	_plain	110	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/limits.py	_compiled	120	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/limits.py	_sum_or_product	127	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/limits.py	sum_templates	176	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/limits.py	product_templates	181	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/limits.py	integral_templates	186	~u	python	6	not port (python, ownership ruling)	Python
+knowledge/templates/nodes.py	_accum	22	~u	port	6	6f	Python
+knowledge/templates/nodes.py	accumbounds_templates	30	~u	port	6	6f	Python
+knowledge/templates/nodes.py	idx_units	37	~u	port	6	6f	Python
+knowledge/templates/physics.py	quantity_units	22	~u	port	6	6f	Python
+knowledge/templates/registry.py	own_facts	54		offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/registry.py	_redefines	62		conversion	6	not port (conversion, ownership ruling)	Python
+knowledge/templates/registry.py	TemplateRegistry.__init__	75		port	6	6g	Python
+knowledge/templates/registry.py	TemplateRegistry.lazy	97		offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/registry.py	TemplateRegistry._covers	124		conversion	6	not port (conversion, ownership ruling)	Python
+knowledge/templates/registry.py	TemplateRegistry._load	141		offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/registry.py	TemplateRegistry.load_all	155		offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/registry.py	TemplateRegistry.register	161		python	6	not port (python, ownership ruling)	Python
+knowledge/templates/registry.py	TemplateRegistry.templates_for	194		port	6	6g	Python
+knowledge/templates/registry.py	TemplateRegistry.clauses_for	226		port	6	6g	Python
+knowledge/templates/registry.py	_split	265		port	6	6g	Python
+knowledge/templates/registry.py	TemplateRegistry	74		port?	6	6g	Python
+knowledge/templates/registry.py	TemplateRegistry._imported	136	~u	offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/registry.py	TemplateRegistry.facts_for	216	~u	port?	6	6g	Python
+knowledge/templates/registry.py	TemplateRegistry.classes	245	~u	conversion	6	not port (conversion, ownership ruling)	Python
+knowledge/templates/registry.py	_collect	250	~u	conversion	6	not port (conversion, ownership ruling)	Python
+knowledge/templates/rootof.py	_coefficients	22	~u	port	6	6f	Python
+knowledge/templates/rootof.py	_facts	31	~u	port	6	6f	Python
+knowledge/templates/rootof.py	crootof_units	45	~u	port	6	6f	Python
+knowledge/templates/special.py	_register	38	~u	port	6	6f	Python
+knowledge/templates/special.py	_doubled	56	~u	port	6	6f	Python
+knowledge/templates/special.py	_multigamma_rules	66	~u	port	6	6f	Python
+knowledge/templates/special.py	multigamma_templates	88	~u	port	6	6f	Python
+knowledge/templates/stats.py	randomsymbol_units	22	~u	port	6	6f	Python
+knowledge/templates/table.py	Row	44		port	6	6d	Python
+knowledge/templates/table.py	Row.__init__	49	~u	port	6	6d	Python
+knowledge/templates/table.py	Row._compile	64	~u	port	6	6d	Python
+knowledge/templates/table.py	Row.__repr__	72	~u	port	6	6d	Python
+knowledge/templates/table.py	Row.text	75	~u	port	6	6d	Python
+knowledge/templates/table.py	Section	90		port	6	6d	Python
+knowledge/templates/table.py	Section.__init__	94	~u	port	6	6d	Python
+knowledge/templates/table.py	_holds	102	~u	port	6	6d	Python
+knowledge/templates/table.py	_norm	109	~u	port	6	6d	Python
+knowledge/templates/table.py	_lits	116	~u	port	6	6d	Python
+knowledge/templates/table.py	_premise_alternatives	128	~u	port	6	6d	Python
+knowledge/templates/table.py	_row_specs	148	~u	port	6	6d	Python
+knowledge/templates/table.py	_rows	164	~u	port	6	6d	Python
+knowledge/templates/table.py	_bindings	175	~u	port	6	6d	Python
+knowledge/templates/table.py	expand	193	~u	port	6	6d	Python
+knowledge/templates/table.py	rules_of	209	~u	port	6	6d	Python
+knowledge/templates/table.py	iter_rows	218	~u	port	6	6d	Python
+knowledge/templates/table.py	count_rows	227	~u	port	6	6d	Python
+knowledge/templates/wiring.py	template	94		offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/wiring.py	load	151		offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/wiring.py	_declared	176		port	6	6g	Python
+knowledge/templates/wiring.py	_attributed	186		port	6	6g	Python
+knowledge/templates/wiring.py	matches	196		port	6	6g	Python
+knowledge/templates/wiring.py	power	223		port	6	6g	Python
+knowledge/templates/wiring.py	expand	381		port	6	6g	Python
+knowledge/templates/wiring.py	_placements	417		port	6	6g	Python
+knowledge/templates/wiring.py	_allowed	440		port	6	6g	Python
+knowledge/templates/wiring.py	_instances	453		port	6	6g	Python
+knowledge/templates/wiring.py	_wide_of	558		port	6	6g	Python
+knowledge/templates/wiring.py	rows_block	565		port	6	6g	Python
+knowledge/templates/wiring.py	rules_for	596		port	6	6g	Python
+knowledge/templates/wiring.py	product	620		port	6	6g	Python
+knowledge/templates/wiring.py	addition	650		port	6	6g	Python
+knowledge/templates/wiring.py	functions	87	~u	offline	6	not port (offline, ownership ruling)	Python
+knowledge/templates/wiring.py	piecewise_values	349	~u	port?	6	6g	Python
+knowledge/templates/wiring.py	_clauses	479	~u	port?	6	6g	Python
+knowledge/templates/wiring.py	wide_formulas	489	~u	port?	6	6g	Python
+knowledge/templates/wiring.py	_wide	511	~u	port?	6	6g	Python
+knowledge/templates/wiring.py	_atom	535	~u	port?	6	6g	Python
+knowledge/templates/wiring.py	any_arity	539	~u	port?	6	6g	Python
+relations.py	AdapterSpec	378		port	4	5c5	Python
+relations.py	_missing	384	~u	port	4	5c5	Python
+relations.py	closed_units	394		port	4	5c5	Python
+relations.py	with_closed_units	422		port	4	5c5	Python
+relations.py	default_specs	434		port	4	5c5	Python
+relations.py	Uninterpreted	455		port	4	5c5	Python
+relations.py	_key	464		port	4	landed B b45b72f	Rust
+relations.py	_ext_atoms	469		port	4	landed C1 63e085d	Rust
+relations.py	_affine_strip	478		port	4	landed B b45b72f	Rust
+relations.py	relation_atom	510		port	4	landed B b45b72f + C1 63e085d	Rust
+relations.py	relational_name	541	~u	port	4	5c5	Python
+relations.py	sympy_atom	549		port	4	5c5	called back
+relations.py	_is_number	562		port	4	landed C1 63e085d	Rust
+relations.py	_under_apps	570		port	4	landed C1 63e085d	Rust
+relations.py	zero_args	594		port	4	5c5	Python
+relations.py	under_of	606		port	4	5c5	Python
+relations.py	zero_twin	617	~u	port	4	landed C1 63e085d	Rust
+relations.py	zero_twins	629		port	4	5c5	Python
+relations.py	glue_atoms	658		port	4	5c5	Python
+relations.py	_termwise	672		port	4	landed B b45b72f	Rust
+relations.py	_constant_term	691		port	4	5c5	Python
+relations.py	_number_basis	697		port	4	5c5	called back
+relations.py	_number_facts	751		port	4	5c5	called back
+relations.py	_own_term	760		port	4	5c5	called back
+relations.py	Relations	776		port	4	5c4	Python
+relations.py	Relations.__init__	780		port	4	5c4	Python
+relations.py	Relations.enqueue	868		port	4	5c4	Python
+relations.py	Relations.note_formula	871		port	4	5c4	Python
+relations.py	Relations.process	877		port	4	5c4	Python
+relations.py	Relations._mention_number	957		port	4	landed 5b/C2a 3f9ae3a	Rust
+relations.py	Relations._link_later	974		port	4	5c4	Python
+relations.py	Relations._fresh	979		port	4	landed C2b 8d6cff7	Rust
+relations.py	Relations._adapter	991		port	4	5c4	called back
+relations.py	Relations._interpret	997		port	4	landed C2b 8d6cff7	Rust
+relations.py	Relations._guard	1081		port	4	landed C2b 8d6cff7	Rust
+relations.py	Relations._link_integer	1105		port	4	landed 5b/C2a 3f9ae3a	Rust
+relations.py	Relations._eq_infinity	1126		port	4	landed C2b 8d6cff7	Rust
+relations.py	Relations._trichotomy	1153		port	4	landed 5b/C2a 3f9ae3a	Rust
+relations.py	Relations._add_role	1196		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._apply_role	1218		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._tsource	1263		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._tvar	1281		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._atom_selector	1316		port	4	5c4	called back
+relations.py	Relations._eq_links	1324		port	4	5c4 (partial: landed C1 63e085d)	called back
+relations.py	Relations._closed_extended_real	1374		port	4	landed 5b/C2a 3f9ae3a	Rust
+relations.py	Relations._order_sides	1386		port	4	landed 5b/C2a 3f9ae3a	Rust
+relations.py	Relations._order_infinite	1404		port	4	landed 5b/C2a 3f9ae3a	Rust
+relations.py	Relations._bound	1462	~u	port	4	landed C2b 8d6cff7	Rust
+relations.py	Relations._atom_var	1474		port	4	5c4	called back
+relations.py	Relations._link	1479		port	4	landed C2b 8d6cff7	Rust
+relations.py	Relations.wants_transfer	1515		port	4	5c4	Python
+relations.py	Relations.selectors_of	1526		port	4	landed C2b 8d6cff7	Rust
+relations.py	Relations._share	1583		port	4	5c4	Python
+relations.py	Relations._share_guard	1600		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._congruent	1624		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._note_sides	1654		port	4	5c4	called back
+relations.py	Relations._engage_transfer	1662		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._transfer_terms	1691		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations.sync_transfer	1750		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._xswitch	1848		port	4	landed C2c de8bd3a	Rust
+relations.py	Relations._congruence_pairs	1855		port	4	landed C2c de8bd3a	Rust
+relations.py	_guarded_adapters	1922		port	4	5c5	Python
+relations.py	_terms_of	1935		port	4	5c5	Python
+relations.py	_structural_subterms	1948		port	4	landed C1 63e085d	Rust
+relations.py	link_objects	1970		port	4	5c5	Python
+relations.py	glue_objects	1994		port	4	landed C1 63e085d	Rust
+sat/formula.py	P	14		port	S/3	landed 3 0d3f392	Rust
+sat/formula.py	P.__repr__	19	~u	port	S/3	landed 3 0d3f392	Rust
+sat/formula.py	P.__invert__	22	~u	port	S/3	landed 3 0d3f392	Rust
+sat/formula.py	P.__and__	25	~u	port	S/3	landed 3 0d3f392	Rust
+sat/formula.py	P.__or__	28	~u	port	S/3	landed 3 0d3f392	Rust
+sat/formula.py	P.__rshift__	31	~u	port	S/3	landed 3 0d3f392	Rust
+sat/formula.py	Formula	35		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__init__	38		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__repr__	41	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__eq__	44		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__hash__	47		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__invert__	50	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__and__	53	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__or__	56	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Formula.__rshift__	59	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	And	63		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Or	67		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Not	71		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Not.__init__	72		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Implies	76		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Implies.__init__	77	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Equivalent	81		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Equivalent.__init__	82	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	Exclusive	86		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	ITE	90		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	ITE.__init__	95	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	allargs	105	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	anyarg	111	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	exactlyonearg	117	~u	conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/formula.py	atoms_of	126		conversion	S/3	not port (conversion, ownership ruling)	Python
+sat/solver.py	Clause	43		port	S	landed S 35debd6	Rust
+sat/solver.py	BlockOwner	68		none	S	not port (none, ownership ruling)	Python
+sat/solver.py	BlockOwner.__init__	74	~u	none	S	not port (none, ownership ruling)	Python
+sat/solver.py	BlockOwner.__eq__	77	~u	none	S	not port (none, ownership ruling)	Python
+sat/solver.py	BlockOwner.__hash__	80	~u	none	S	not port (none, ownership ruling)	Python
+sat/solver.py	BlockOwner.__repr__	83	~u	none	S	not port (none, ownership ruling)	Python
+sat/solver.py	_common	87		port	S	landed S 35debd6	Rust
+sat/solver.py	_is_learnt	98		port	S	landed S 35debd6	Rust
+sat/solver.py	_luby	102		port	S	landed S 35debd6	Rust
+sat/solver.py	_block_models	122		port	S	landed S 35debd6 (partial)	called back
+sat/solver.py	_BlockClosure	200		port	S	landed S 35debd6 (partial)	called back
+sat/solver.py	_BlockClosure.__init__	213		port	S	landed S 35debd6 (partial)	called back
+sat/solver.py	_BlockClosure.flags	237		port	S	landed S 35debd6	Rust
+sat/solver.py	_BlockClosure.lits_of	250		port	S	landed S 35debd6	Rust
+sat/solver.py	_BlockClosure.values_of	265		port	S	landed S 35debd6	Rust
+sat/solver.py	_BlockClosure.closure	279		port	S	landed S 35debd6	Rust
+sat/solver.py	_BlockClosure.model_of	307		port	S	landed S 35debd6	Rust
+sat/solver.py	_BlockClosure.explain	314		port	S	landed S 35debd6	Rust
+sat/solver.py	_rule_tables	362		port	S	landed S 35debd6 (partial)	called back
+sat/solver.py	Solver	390		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.__init__	402		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.new_var	538	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.nvars	544	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._grow	547		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._to_int	572	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._to_ext	576	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._internal_lits	579		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._heap_insert	597		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._heap_up	606		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._heap_down	623		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._heap_pop	646		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._bump_var	658		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._bump_clause	669		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.add_clause	680		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._add_lits	694		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._attach_held	758		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.add_clauses	823	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.ensure_vars	912		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.add_internal	917		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.add_pattern	974	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.set_rule_block	1032		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.register_block	1080		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._rb_settle	1176		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._rb_reason	1225		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._mention	1243		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._rb_room	1270		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.mention_blocks	1280		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._rb_mentioned	1321		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._rb_late	1350		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.mention	1388		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.propagate	1395		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.value	1412		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.root_trail	1422	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.implied	1429		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.release	1445		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._assume	1457		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._assume_propagate	1548		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._propagate	1600		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._propagate_clauses	1734	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._backtrack	1805		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.attach_theory	1851		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.theories	1872		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.register_atom	1876		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.theory_models	1932	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._tpropagate	1938		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._theory_sync	1953		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._theory_clause	1982		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._theory_conflict	1994		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._theory_imply	2025		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._theory_decide	2063		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._theory_check	2091		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._learn	2105		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._analyze	2144		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._analyze_final	2227		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._pick_branch	2265		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.set_inert	2296		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._reduce_db	2321	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._search	2348		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.solve	2419		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._solve	2432		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._fill	2516		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._model	2540	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._ring_hit	2553		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._ring_blocks	2613	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.model	2634	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.conflict	2639	~u	port	S	landed S 35debd6	Rust
+sat/solver.py	Solver._witness_satisfies	2649		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.consistent	2665		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.entails	2677		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.entails_all	2719		port	S	landed S 35debd6	Rust
+sat/solver.py	Solver.root_step	2754	~u	none	S	not port (none, ownership ruling)	Python
+sat/solver.py	Solver.provenance	2793	~u	none	S	not port (none, ownership ruling)	Python
+sat/solver.py	Solver.stats	2826	~u	port	S	landed S 35debd6	Rust
+sat/theory.py	TheorySolver	108		none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	TheorySolver.register_atom	112	~u	none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	TheorySolver.assert_lit	125	~u	none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	TheorySolver.check	136	~u	none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	TheorySolver.push_level	152	~u	none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	TheorySolver.pop_level	156	~u	none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	PropagatingTheory	163		none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	PropagatingTheory.propagate	181	~u	none	S/3	not port (none, ownership ruling)	Rust
+sat/theory.py	EqualitySharing	185		port	S/3	landed 3 0d3f392	Rust
+sat/theory.py	EqualitySharing.__init__	202		port	S/3	landed 3 0d3f392	Rust
+sat/theory.py	EqualitySharing.update	206		port	S/3	landed 3 0d3f392	Rust
+scope.py	Scope	122		port	4	scope (after 5c5, before 5c10)	Python
+scope.py	affine_pair	133		port	4	landed C1 63e085d	Rust
+scope.py	linked_terms	150		port	4	scope (after 5c5, before 5c10)	Python
+scope.py	scope_of_atoms	164		port	4	scope (after 5c5, before 5c10)	Python
+scope.py	theory_scope	177		port	4	scope (after 5c5, before 5c10)	Python
+scope.py	_custom_pred	192		port	4	scope (after 5c5, before 5c10)	Python
+scope.py	extension_atoms	196		port	4	scope (after 5c5, before 5c10)	Python
+state/epoch.py	bump	42		port	5	5c9	Python
+state/memos.py	Table	49		port	5	5c9	Python
+state/memos.py	Table.__init__	57	~i	port	5	5c9	Python
+state/memos.py	Table.put	63	~u	port	5	5c9	Python
+state/memos.py	Table.restamp	72		port	5	5c9	Python
+state/memos.py	Table.reset	77	~u	port	5	5c9	Python
+state/memos.py	Table.__repr__	84	~u	port	5	5c9	Python
+state/memos.py	Memos	89		port	5	5c9	Python
+state/memos.py	Memos.__init__	92		port	5	5c9	Python
+state/memos.py	Memos.table	99	~i	port	5	5c9	Python
+state/memos.py	Memos.adopt	109		port	5	5c9	Python
+state/memos.py	Memos.items	117	~u	port	5	5c9	Python
+state/memos.py	Memos.names	128	~u	port	5	5c9	Python
+state/memos.py	Memos.sizes	131	~u	port	5	5c9	Python
+state/memos.py	Memos.clear	134	~u	port	5	5c9	Python
+state/memos.py	Memos.__repr__	143	~u	port	5	5c9	Python
+state/memos.py	_path	151	~u	port	5	5c9	Python
+state/memos.py	_module_attr	168		port	5	5c9	Python
+state/memos.py	load_owners	187	~u	port	5	5c9	Python
+state/memos.py	__getattr__	206		port	5	5c9	Python
+state/memos.py	adopt	213		port	5	5c9	Python
+state/memos.py	module_locations	222	~u	port	5	5c9	Python
+state/memos.py	owner_memos	234		port	5	5c9	Python
+sympy_api.py	_ask	560		conversion	5	not port (conversion, ownership ruling)	Python
+sympy_api.py	_ask_general	576		conversion	5	not port (conversion, ownership ruling)	Python
+sympy_api.py	_const_base	693		port	5	5c8	Python
+sympy_api.py	_const_free	705		port	5	5c8	Python
+sympy_api.py	_closed_keys	724		port	5	5c8	Python
+sympy_api.py	_expr_keys	745		port	5	5c8	Python
+sympy_api.py	_arg_keys	768		port	5	5c8	Python
+sympy_api.py	_keys	779	~u	port	5	5c8	Python
+sympy_api.py	_keys_rel	784		port	5	5c8	Python
+sympy_api.py	_bool_keys	807		port	5	5c8	Python
+sympy_api.py	_sides_keys	844		port	5	5c8	Python
+sympy_api.py	_Split	864		port	5	5c8	Python
+sympy_api.py	_Split.__init__	869		port	5	5c8	Python
+sympy_api.py	_Split.part	912		port	5	5c8	Python
+sympy_api.py	_relevant	929		port	5	5c8	Python
+sympy_api.py	_vocab_blocks	1009	~u	port	5	5c8	Python
+sympy_api.py	_part_consistent	1076		port	5	5c8	Python
+sympy_api.py	_consistent	1088		port	5	5c8	Python
+sympy_api.py	_engine_ask	1111		conversion	5	not port (conversion, ownership ruling)	Python
+theories/euf/euf.py	EqAtom	75		port	2	adapters (after 5c4)	Python
+theories/euf/euf.py	EqAtom.__new__	84		port	2	adapters (after 5c4)	Python
+theories/euf/euf.py	EqAtom.__getnewargs__	87	~u	port	2	adapters (after 5c4)	Python
+theories/euf/euf.py	EqAtom.__repr__	90	~u	port	2	adapters (after 5c4)	Python
+theories/euf/euf.py	EUFTheory	101		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.__init__	118		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._new	146		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.term	160		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.value	181		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._apply	188		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._index_app	197		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.find	225	~u	port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.equal	229	~u	port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.explain	232		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._reroot	243		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._union	254		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._undo_union	319		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._process	335		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._explain_edge	344		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._explain	363		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.register_atom	408		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory._index_atom	422		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.assert_lit	434		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.check	463		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.propagate	468		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.push_level	487		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.pop_level	490		port	2	landed 2 e5dd23f	Rust
+theories/euf/euf.py	EUFTheory.__repr__	530	~u	port	2	landed 2 e5dd23f	Rust
+theories/euf/euf_adapter.py	_inherits_from_basic	66		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	structural	73		port	4	landed C1 63e085d	Rust
+theories/euf/euf_adapter.py	EUFAdapter	98		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.__init__	105		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.interprets	139	~u	port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.register	142		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.attach	156		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.term	169		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.node_term	176		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter._intern	191		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.interned	216		port	4	landed C1 63e085d	Rust
+theories/euf/euf_adapter.py	EUFAdapter.term_of	231		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.terms_since	235		port	4	adapters (after 5c4)	Python
+theories/euf/euf_adapter.py	EUFAdapter.shared_terms	243		port	4	adapters (after 5c4)	Python
+theories/lra/constfield.py	Undecided	180		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	TooLarge	188		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_zero	198		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_mk	202		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_add	213		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_neg	237		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_sub	243	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_scale	247		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_mul	254		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_too_many_bits	278	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_add_bounded	282	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_mul_bounded	310	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_mul_fast	338	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_mul_checked	348		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_pow_checked	363		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_deg	377	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_lc	381	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_lcrec	385		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_shift	392	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_divexact	399		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_monomial	435		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_order	446		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_udiv	454	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_monic	473	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_ugcd	483	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_inner_gcd	510		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_denominators	537	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_to_dmp	555	~u	port	1b	landed 1b 60493d6 (partial)	called back
+theories/lra/constfield.py	_from_dmp	568	~u	port	1b	landed 1b 60493d6 (partial)	called back
+theories/lra/constfield.py	_sympy_inner_gcd	577	~u	port	1b	landed 1b 60493d6 (partial)	called back
+theories/lra/constfield.py	_gcd	595	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_psize	605		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_short	637	~u	port	1b	landed 1b 60493d6 (partial)	called back
+theories/lra/constfield.py	_checked	642		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_vars	652		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_qenc	664		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_ieval	671		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Constant	694		port	1b	adapters (after 5c4)	Python
+theories/lra/constfield.py	Constant.__init__	709	~i	port	1b	landed D db697fc (partial)	called back
+theories/lra/constfield.py	Constant.enclose	718		port	1b	landed 1b 60493d6 (partial)	called back
+theories/lra/constfield.py	Constant.__repr__	727	~u	port	1b	adapters (after 5c4)	Python
+theories/lra/constfield.py	constant	735	~i	port	1b	landed D db697fc (partial)	called back
+theories/lra/constfield.py	_scaled_down	749		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_atan_inv	754		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_pi_enclose	768		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_e_enclose	776	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_iroot	789	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	radical	801	~u	port	1b	landed D db697fc (partial)	called back
+theories/lra/constfield.py	num	827		port	1b	landed D db697fc	Rust
+theories/lra/constfield.py	formally_zero	840		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	sign	847		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_make	854		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_coerce	872		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	_coerce_foreign	885	~u	port	1b	adapters (after 5c4)	Python
+theories/lra/constfield.py	Element	906		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._new	914		port	1b	landed 1b 60493d6 (partial)	called back
+theories/lra/constfield.py	Element.__init__	925	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.numerator	931	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.denominator	935	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.constants	938	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._varset	942		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._size	948		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._budget_scale	957		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._budget_product	964		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._single_transcendental	978		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__hash__	987		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__neg__	995		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__pos__	998	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__abs__	1001	~u	port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__add__	1004		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__sub__	1033		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__rsub__	1039		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__mul__	1045		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._inverse	1073		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__truediv__	1085		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__rtruediv__	1098		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__pow__	1104		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._env	1120		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._precisions	1123		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._nonzero	1134		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.sign	1150		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.enclosure	1170		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element._cmp	1191		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__eq__	1209		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__ne__	1226		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__lt__	1230		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__le__	1234		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__gt__	1238		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__ge__	1242		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__bool__	1246		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__floor__	1249		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.__ceil__	1258		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.is_integer	1261		port	1b	landed 1b 60493d6	Rust
+theories/lra/constfield.py	Element.to_sympy	1281	~u	port	1b	adapters (after 5c4)	Python
+theories/lra/constfield.py	Element.__repr__	1293	~u	port	1b	adapters (after 5c4)	Python
+theories/lra/constfield.py	pi_laurent	1325		port	1b	landed 1b 60493d6 (partial)	called back
+theories/lra/constfield.py	from_sympy	1353		port	1b	landed D db697fc	Rust
+theories/lra/constfield.py	_Unread	1367		port	1b	landed D db697fc	Rust
+theories/lra/constfield.py	_from_sympy	1375		port	1b	landed D db697fc	Rust
+theories/lra/constfield.py	_generic	1415		port	1b	landed D db697fc (partial)	called back
+theories/lra/constfield.py	_sympy_constant	1439	~u	port	1b	adapters (after 5c4)	Python
+theories/lra/lra.py	Negated	230		port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	Negated.__new__	235	~u	port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	Negated.__getnewargs__	238	~u	port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	Negated.__repr__	241	~u	port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	Integral	247		port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	Integral.__new__	252		port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	Integral.__getnewargs__	255	~u	port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	Integral.__repr__	258	~u	port	1a	adapters (after 5c4)	Python
+theories/lra/lra.py	constraint	265	~u	none	1a	not port (none, ownership ruling)	Python
+theories/lra/lra.py	_is_int	287	~u	port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	_floor	298		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	_ceil	312		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	_within_cert	323		port	1a	landed 1b 60493d6	Rust
+theories/lra/lra.py	_dedupe	329		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory	339		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.__init__	348		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.undecidable	411	~u	port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.certified	417	~u	port	1a	landed 1b 60493d6	Rust
+theories/lra/lra.py	LRATheory.certified_with	427	~u	port	1a	landed 1b 60493d6	Rust
+theories/lra/lra.py	LRATheory.rational_values	434	~u	port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._certificate	448		port	1a	landed 1b 60493d6	Rust
+theories/lra/lra.py	LRATheory._certify	466		port	1a	landed 1b 60493d6	Rust
+theories/lra/lra.py	LRATheory._new_var	479		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._term_var	494		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._slack	498		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._give_up	541	~u	port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.register_atom	545		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.assert_lit	553		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.check	590		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.propagate	599		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._register_atom	646		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._lin	681		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._var_of_form	701		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._register_integral	719		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.push_level	749		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.pop_level	753		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._undo_to	759		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._assert_kind	781		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._set_upper	801		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._set_lower	816		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._update	831		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._assert_integral	857		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._int_verdict	870		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._int_verdict_bounds	891		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._int_bounds	907		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._branch	917		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._simplex	1010		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._pivot_and_update	1055		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._pivot_rational	1080		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._pivot	1110		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._concrete	1158		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._model	1173		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._check	1176		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory._implied	1234		port	1a	landed 1a 69639da	Rust
+theories/lra/lra.py	LRATheory.__repr__	1268	~u	port	1a	landed 1a 69639da	Rust
+theories/lra/lra_adapter.py	_Unhandled	139		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	_lin	179		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	_closed	225		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	closed_sign	254		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	constant_bounds	275		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	constant_enclosure	283	~u	port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	_linear	289		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	to_constraint	302	~u	port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	_constraint	318		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	interpret	337		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	terms	351	~u	port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	_side	359		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	order_sides	382		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	integer_form	400		port	4	landed D db697fc	Rust
+theories/lra/lra_adapter.py	_memoized	439		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter	454		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.__init__	466		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.register	471		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter._attach	490		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.interpret	498		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.order_sides	504		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.integer_form	508		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.register_integer	512		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.terms	520		port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.to_constraint	525	~u	port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.register_bounds	530	~u	port	4	adapters (after 5c4)	Python
+theories/lra/lra_adapter.py	LRAAdapter.shared_terms	547		port	4	adapters (after 5c4)	Python
+theories/lra/lra_cert.py	_ceil_abs	31		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	_magnitude	35		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	within	41		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	_window	53		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	_decided	60		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	limits	83		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	_limits_suffice	90		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	CertAtoms	102		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	CertAtoms.__init__	109		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	CertAtoms.update	125		port	1a/1b	landed 1b 60493d6	Rust
+theories/lra/lra_cert.py	certify	188		port	1a/1b	landed 1b 60493d6	Rust
+theories/transfer.py	transfer_wanted	94		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory	109		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.__init__	113		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.guard	146		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.switch	158		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._kind	174		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._why	187		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._merged	196		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.register_atom	200		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.assert_lit	223		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.set_fixed	253		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._explain	264		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._members_on	272		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._scan	296		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._spread	357		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory._classes	403		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.propagate	423		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.check	456		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.decide	471		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.push_level	526		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.pop_level	530		port	3	landed 3 0d3f392	Rust
+theories/transfer.py	TransferTheory.__repr__	545	~u	port	3	landed 3 0d3f392	Rust
