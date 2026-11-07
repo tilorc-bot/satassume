@@ -310,7 +310,7 @@ Nothing is open that stops sections 9 and 10. Done by sa-port-2: the derived-ter
 
 ## 9. The converted format
 
-**Final as a specification. Nothing has built it, and no Rust has read it.** The Python algebra check is the only part that ran against real terms (section 3).
+**Built by component 0 (`slice/convert.py`, `solver_rs/src/term/`), and nothing consumes it yet: the shadow decides nothing.** Keys, closed values, `decompose_power` and `is_commutative` moved from the tables to read-only callbacks on 7 Nov.
 
 One call per top-level query, Python to Rust: flat arrays of the tables below. Rust owns the layout. Python keeps no handles except a list of the original objects by term id, used for R9 and for error text. Nothing here crosses queries, so history independence follows from the query alone (section 5).
 
@@ -327,9 +327,9 @@ One call per top-level query, Python to Rust: flat arrays of the tables below. R
 | Predicates | Predicate in the formula | Name or vocabulary index, arity | R10 |
 | Classes | Distinct class under `==`, not `is`, since undefined functions compare by SymPy's rule | Name; kind enum (`Add`, `Mul`, `Pow`, `Symbol`, `Dummy`, `Wild`, `Integer`, `Rational`, `Float`, each number singleton including `Zero`, `One`, `Half`, `NegativeOne`, each number symbol, `AppliedUndef`, named function, other); class flags; resolved template kinds; `structural`; `class_key`; rank for `Basic.compare` (`_cmp_name`, `ordering_of_classes`) | R1, R2, R11, R15; `euf_adapter.py:85-92`; section 3 |
 | Terms | Distinct term | Class; arg ids; payload: rational `p`, `q` as bytes; `Float` mantissa and precision; symbol name; `Dummy` index; `ComplexRootOf` coefficients and index | R1, R14, R16 |
-| Term facts | Term | `is_number`; free-symbol ids; `has_nan`, `has_bad`, `has_float`, `has_applied_undef`; non-commutative level 0, 1 or 2; `may_be_nan`; `sort_key` in a form that compares the same | R3, R4, R8, R18; `_may_be_nan` |
-| Closed terms | Closed term | `is_finite`; `complex()` value as two exact `f64` bit patterns, for a factor in a sort key | R17; section 3 |
-| Power factors | `Pow` factor of a term | `decompose_power` split: base id, exponent rational. If the base isn't an input term, the row holds no base and a key that needs it refuses ("Refused during a run") | Section 3 |
+| Term facts | Term | `is_number`; free-symbol ids; `has_nan`, `has_bad`, `has_float`, `has_applied_undef`; non-commutative level 0, 1 or 2; `may_be_nan`. `sort_key` in a form that compares the same isn't in the row: it's a read ("Read-only callbacks") | R3, R4, R8, R18; `_may_be_nan` |
+| Closed terms | Closed term | No row: `is_finite`, and the `complex()` value as two exact `f64` bit patterns for a factor in a sort key, are reads ("Read-only callbacks") | R17; section 3 |
+| Power factors | `Pow` factor of a term | No row: the `decompose_power` split, base id and exponent rational, is a read ("Read-only callbacks"). If the base isn't an input term, the value holds no base and a key that needs it refuses ("Refused during a run") | Section 3 |
 | Atomic numbers | Atomic number | Truth values for the whole vocabulary, from `const_value` | R5 |
 | Symbols | Symbol | `assumptions0` | R6 |
 | Generic constants | Closed generic constant | The 128-bit bound (`_IV_PREC`) | R9 |
@@ -364,7 +364,15 @@ Generated offline, in one versioned file with a hash of its sources. Rust refuse
 
 Answer as true, false, none or a status (inconsistent, uninterpreted, budget-limited, gave up), so Python raises what it raises today, writing the text from its original objects, and sets `last_budget_limited`. Also: refused with a reason, the theory-gave-up count for `Engine.stats`, and the count of each callback.
 
-### The one permanent callback
+### Read-only callbacks on input terms
+
+Rust asks Python for a value when a key needs it, and only then, by term id, on the original object: `sort_key`, `is_finite`, `complex()`, `decompose_power`, `is_commutative`. Each can evaluate (`CRootOf(x**30 - x + 1, 3)`: `complex()` took over 170 s, and `default_sort_key(y + r)` reaches it through `as_terms`), so conversion computes none of them. There's one path, with no refusal rule, class list or time limit (planner's ruling on lazy reads, 7 Nov, reversing "no lazy keys"). A read happens where Python's own run would need that key, so the port is slow where Python is slow.
+
+Each is memoized in the per-query table and dies with it. A read that raises an `Exception` is a counted refusal (`read_raised`), and a `BaseException` goes on up as itself. A key holding a term with no row can't add one, since the table's ids are fixed by then: that's a counted refusal too (`read_term_missing`). `term_row` adds one such row, `-oo` when it reaches `nan`, since `nan`'s key holds it (`numbers.py:3456`): one fact from SymPy's source, guessing nothing, and if it were wrong the term would refuse. Rust's key still refuses when `complex()` raises or isn't finite.
+
+These reads run during the run, so the handlers at `engine.py:1906` and `sympy_api.py:1107` can see them raise. Both catch `Exception`, so they'd catch `TermRefuse` from a read (`lazy_fire.py` shows it): the first consumer has to get a refusal past them to the top of the run.
+
+`enclose` is the other read-only callback, and the only one a sign test makes:
 
 `enclose(term_id, precision) -> (lo, hi)`, read-only, on the original object, during a sign test (R9). It builds no term. By reading, only input terms should reach it: with `lra_adapter.py:213` multiplying field elements directly (section 3), a derived closed value is an element over input constants. No run confirms that, so a derived term reaching it refuses.
 
@@ -392,7 +400,7 @@ Answer as true, false, none or a status (inconsistent, uninterpreted, budget-lim
 
 **The scaffolding has one cost to name.** Until 6 lands, a template callback on a *derived* term needs that term in SymPy, and it isn't there. In that window, Python builds it from Rust's class-and-args recipe. That's SymPy construction at query time, and it's allowed only as temporary scaffolding: Rust's own algebra has still decided the form, and the callback's rebuilt term is checked against it. It goes away with 6, and its count is reported per step. If the planner won't accept even that, 6 has to land before 4, and 4 and 5 then wait for it.
 
-**At the end,** the only callback left is R9's `enclose`, and Python holds conversion, the answer memo, error text and the queries kept on Python. Those are section 9's list, and `lra_bounds.py` and `extensions.py`.
+**At the end,** the only callbacks left are the read-only ones on input terms, section 9's lazy reads and R9's `enclose`, and Python holds conversion, the answer memo, error text and the queries kept on Python. Those are section 9's list, and `lra_bounds.py` and `extensions.py`.
 
 ### What each step is held to
 

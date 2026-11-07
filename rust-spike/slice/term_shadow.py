@@ -14,7 +14,7 @@ from collections import Counter
 from sympy.core.basic import Basic, ordering_of_classes
 from sympy.core.exprtools import decompose_power
 from sympy.core.function import AppliedUndef
-from sympy.core.numbers import Float, Rational
+from sympy.core.numbers import Float, Integer, Rational
 from sympy.core.sorting import default_sort_key
 from sympy import S, Add, Mul, Expr, sympify
 
@@ -41,17 +41,36 @@ CUR = [None]                # (Converted, TermTable) of the running top-level qu
 DEPTH = [0]
 CHECK_ON = [True]
 SYNTHETIC = [False]
+# Rust's lazy reads driven only by what the query itself asks: the algebra follows the run, and each key the run uses is
+# asked of Rust. No checks and no printing, since those force reads and evaluate (`str` of an Add calls complex()).
+DRIVE = [False]
+# Called for each key a run uses: (site, term, id or None, outcome). Outcomes: matched, mismatch, refused, unknown (a term
+# Rust wasn't told about), no-table (in a query with no table: Kept, or the table failed), outside-ask. Only the first
+# three compared or tried anything, so a count of "0 mismatches" says nothing about the others.
+KEY_HOOK = [None]
+IN_TOP = [False]            # conversion and the shadow's own checks, whose keys aren't the query's
+SHAPES = Counter()          # 'I:' input or 'D:' derived, class and arg classes: which shapes the shadow saw
+SHAPE_EXAMPLE = {}
 SITES = Counter()           # (op, caller file:line, outcome): which sites reach the algebra
 KEY_REFUSED = []            # every key pair Python orders and Rust refuses, both keys kept
 EXAMPLES = {}               # refusal reason: first few (op, operands)
 SAMPLE_DERIVED = 9          # a new derived term is compared against this many of the query's first terms
 
 
+def _text(d):
+    """A mismatch's text. Printing can raise (a hand-built `Basic.__new__(Mul, z)` has no `is_commutative`), and a check
+    must not change what the test sees."""
+    try:
+        return str(d)[:200]
+    except Exception as e:
+        return f'<{type(d).__name__}: str raised {type(e).__name__}>'
+
+
 def bad(kind, *detail):
     COUNTS['mismatch'] += 1
     COUNTS['mismatch:' + kind] += 1
     if len(BAD) < 200:
-        BAD.append((kind,) + tuple(str(d)[:200] for d in detail))
+        BAD.append((kind,) + tuple(_text(d) for d in detail))
 
 
 def same_value(rv, real, c, key):
@@ -102,7 +121,7 @@ def check_table(c, table):
             bad('class-key', t, ckey)
         if (struct_bit and bool(t.args)) != structural(t):
             bad('structural', t, struct_bit)
-        args, content, key, free, bits, level, closed, power = table.row(i)
+        args, content, _key, free, bits, level, _closed, _power = table.row(i)
         if args != [ids[a] for a in t.args]:
             bad('args', t, args)
         real_content = t._hashable_content()
@@ -113,6 +132,13 @@ def check_table(c, table):
         if not bits & C.F_READ:
             COUNTS['skeleton'] += 1
             continue
+        # Every read below is forced here. This checks the values Rust reads, not that it reads them only when needed.
+        try:
+            key = table.sort_key(i)
+        except sa_solver.TermRefuse as e:
+            key = None
+            if 'not supplied' not in str(e):
+                COUNTS[f'key-read-refused:{e}'] += 1
         try:
             real_key = default_sort_key(t)
         except Exception as e:
@@ -127,16 +153,18 @@ def check_table(c, table):
         want = C.F_READ
         number = getattr(t, 'is_number', False) is True
         for bit, v in ((C.F_NUMBER, number), (C.F_NAN, t.has(S.NaN)), (C.F_BAD, t.has(*L._BAD)), (C.F_FLOAT, t.has(Float)),
-                       (C.F_UNDEF, t.atoms(AppliedUndef)), (C.F_MAYBE_NAN, _may_be_nan(t)),
-                       (C.F_COMMUTATIVE, t.is_commutative is True)):
+                       (C.F_UNDEF, t.atoms(AppliedUndef)), (C.F_MAYBE_NAN, _may_be_nan(t))):
             if v:
                 want |= bit
         if bits != want:
             bad('facts', t, bits, want)
+        if table.commutative(i) != (t.is_commutative is True):
+            bad('commutative', t)
         if level != constructed_noncommutative(t):
             bad('level', t, level)
-        if closed is not None:
-            finite, z = closed
+        if number and isinstance(t, Expr):
+            COUNTS['closed'] += 1
+            finite, z = table.finite(i), table.complex(i)
             if finite is not t.is_finite:
                 bad('is_finite', t, finite)
             try:
@@ -148,6 +176,7 @@ def check_table(c, table):
                     bad('complex', t, z)
             elif z is None or _bits(z[0]) != _bits(real_z.real) or _bits(z[1]) != _bits(real_z.imag):
                 bad('complex', t, z, real_z)
+        power = table.power(i)
         if power is not None:
             COUNTS['powers'] += 1
             base, e = decompose_power(t)
@@ -156,6 +185,14 @@ def check_table(c, table):
                 bad('power', t, power, (base, e))
             if power[0] is None:
                 COUNTS['power-base-not-input'] += 1
+
+
+def _has_key(table, i):
+    try:
+        table.sort_key(i)
+    except sa_solver.TermRefuse:
+        return False
+    return True
 
 
 def _bits(x):
@@ -179,11 +216,11 @@ def check_order(c, table):
             except sa_solver.TermRefuse as e:
                 REFUSED[f'compare: {e} / python: {real if isinstance(real, str) else "ordered"}'] += 1
                 if not isinstance(real, str) and len(BAD) < 200:
-                    BAD.append(('refused-compare', str(a)[:100], str(b)[:100]))
+                    BAD.append(('refused-compare', _text(a)[:100], _text(b)[:100]))
             else:
                 if got != real:
                     bad('compare', a, b, got, real)
-            if table.row(i)[2] is None or table.row(j)[2] is None:
+            if not (_has_key(table, i) and _has_key(table, j)):
                 COUNTS['key-compare-no-key'] += 1
                 continue
             ka = kb = None
@@ -198,7 +235,7 @@ def check_order(c, table):
             except sa_solver.TermRefuse as e:
                 REFUSED[f'key: {e} / python: {real}'] += 1
                 if len(KEY_REFUSED) < 200:
-                    KEY_REFUSED.append((str(a), str(b), type(a).__name__, type(b).__name__, str(e), real,
+                    KEY_REFUSED.append((_text(a), _text(b), type(a).__name__, type(b).__name__, str(e), real,
                                         repr(table.row(i)[2]), repr(table.row(j)[2]), str(ka), str(kb)))
             else:
                 if got != real:
@@ -309,6 +346,8 @@ def settle(site, real, i, c, table):
 
 def check_derived(site, real, i, c, table):
     """The new row's key, facts and order against SymPy's."""
+    if DRIVE[0]:
+        return
     try:
         real_key = default_sort_key(real)
     except Exception as e:
@@ -342,9 +381,11 @@ def check_derived(site, real, i, c, table):
 
 
 def _example(reason, op, *operands):
+    if DRIVE[0]:
+        return
     ex = EXAMPLES.setdefault(reason, [])
     if len(ex) < 5:
-        ex.append((op,) + tuple(str(o)[:120] for o in operands))
+        ex.append((op,) + tuple(_text(o)[:120] for o in operands))
 
 
 def check_op(op, site, operands, real, ask_rust):
@@ -464,7 +505,7 @@ def install_algebra():
 
     def node(self, n, demanded=None):
         cur = CUR[0]
-        if cur is not None and CHECK_ON[0] and n not in self.base:
+        if cur is not None and CHECK_ON[0] and not DRIVE[0] and n not in self.base:
             c, table = cur
             if isinstance(n, Basic):
                 COUNTS['node:new'] += 1
@@ -501,7 +542,7 @@ def install_algebra():
     def struct_(self, o):
         r = real_struct(self, o)
         cur = CUR[0]
-        if cur is not None and CHECK_ON[0]:
+        if cur is not None and CHECK_ON[0] and not DRIVE[0]:
             c, table = cur
             COUNTS['struct:calls'] += 1
             ci = cone_id(o, c, table, 'struct')
@@ -518,7 +559,7 @@ def install_algebra():
     def cone(self, d):
         r = real_cone(self, d)
         cur = CUR[0]
-        if cur is not None and CHECK_ON[0]:
+        if cur is not None and CHECK_ON[0] and not DRIVE[0]:
             c, table = cur
             cn, w, _rel = r
             COUNTS['cone:calls'] += 1
@@ -583,6 +624,35 @@ def check_formula(c, table, proposition, assumptions, eng):
         bad('formula-assumptions', assumptions)
 
 
+def _class_name(t):
+    if isinstance(t, AppliedUndef):
+        return 'AppliedUndef'
+    if isinstance(t, Integer):
+        return 'Integer'
+    if isinstance(t, Rational):
+        return 'Rational'
+    return type(t).__name__
+
+
+def shape(t):
+    """Class and arg classes, one level down. Four or more args are lumped, since that's the census's bucket."""
+    a = sorted(_class_name(x) for x in t.args)
+    if len(a) >= 4:
+        a = sorted(set(a)) + ['4+']
+    return f"{_class_name(t)}({','.join(a)})"
+
+
+def note_shapes(c, table):
+    for t, i in c.ids.items():
+        s = ('D:' if i >= table.n_input else 'I:') + shape(t)
+        SHAPES[s] += 1
+        if s not in SHAPE_EXAMPLE and not DRIVE[0]:
+            try:
+                SHAPE_EXAMPLE[s] = str(t)[:120]
+            except Exception as e:
+                SHAPE_EXAMPLE[s] = 'str raised ' + type(e).__name__
+
+
 def top_level(proposition, assumptions, eng):
     """One query: convert, build Rust's table, check it. Anything it raises is counted and goes no further."""
     COUNTS['queries'] += 1
@@ -596,14 +666,12 @@ def top_level(proposition, assumptions, eng):
         KEPT[c.reason] += 1
         return None
     COUNTS['converted'] += 1
-    for k, v in c.counts.items():
-        COUNTS['convert:' + k] += v
     try:
         table = sa_solver.TermTable(c.tables)
     except Exception as e:
         bad('table-raised', type(e).__name__, e, proposition)
         return None
-    if CHECK_ON[0]:
+    if CHECK_ON[0] and not DRIVE[0]:
         try:
             check_table(c, table)
             check_order(c, table)
@@ -626,11 +694,28 @@ def install():
         DEPTH[0] += 1
         try:
             if DEPTH[0] == 1:
-                CUR[0] = top_level(proposition, assumptions, eng)
+                IN_TOP[0] = True
+                try:
+                    CUR[0] = top_level(proposition, assumptions, eng)
+                finally:
+                    IN_TOP[0] = False
             return real_ask(proposition, assumptions, eng)
         finally:
             DEPTH[0] -= 1
             if DEPTH[0] == 0:
+                if CUR[0] is not None:      # at the query's end, since reads now happen during it
+                    c = CUR[0][0]
+                    note_shapes(c, CUR[0][1])
+                    for k, v in c.counts.items():
+                        COUNTS['convert:' + k] += v
+                    # Per query, for the nan ruling: which queries missed, and which read raised on which query.
+                    if c.counts['read_term_missing']:
+                        COUNTS['queries-with-read-term-missing'] += 1
+                        _example('read_term_missing', 'query', proposition, assumptions)
+                    for name, i, ex in c.tables['reads'].__self__.raised:
+                        COUNTS[f'read-raised:{name}:{ex}'] += 1
+                        _example(f'read raised {name} {ex}', f"query {COUNTS['queries'] - 1}", c.objects[i], proposition)
+                # check_table reads every split, so this holds with checks on. With them off it's the splits a key asked for.
                 if CUR[0] is not None and CUR[0][0].counts['pow_base_not_input']:
                     # Ruling's point 3: such a Pow costs a refusal only if a used key needs it.
                     COUNTS['pow:queries-holding'] += 1
@@ -644,11 +729,16 @@ def install():
         def key(e, *a, **k):
             r = real(e, *a, **k)
             cur = CUR[0]
-            if cur is not None:
+            hook = KEY_HOOK[0]
+            if cur is None:
+                if hook is not None and not IN_TOP[0]:
+                    hook(site, e, None, 'no-table' if DEPTH[0] else 'outside-ask')
+            else:
                 COUNTS['keys-used'] += 1
                 COUNTS['keys-used:' + site] += 1
                 c, table = cur
                 i = known_id(e, c, table, 'key')
+                outcome = 'unknown'
                 if i is None:
                     COUNTS['keys-used-unknown'] += 1
                 else:
@@ -662,9 +752,14 @@ def install():
                             if 'power base' in str(x):
                                 c.__dict__['pow_refused'] = True
                             _example(f'key used: {x}', site, e)
+                            outcome = f'refused: {x}'
                         else:
+                            outcome = 'matched'
                             if not same_value(got, r, c, True):
                                 bad('key-used', e, site)
+                                outcome = 'mismatch'
+                if hook is not None:
+                    hook(site, e, i, outcome)
             return r
         return key
 
@@ -674,4 +769,5 @@ def install():
 
 def report(path):
     with open(path, 'w') as f:
-        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD, sites=SITES, examples=EXAMPLES, key_refused=KEY_REFUSED), f, indent=0, sort_keys=True)
+        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD, sites=SITES, examples=EXAMPLES, key_refused=KEY_REFUSED,
+                       shapes=SHAPES, shape_example=SHAPE_EXAMPLE), f, indent=0, sort_keys=True)

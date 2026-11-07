@@ -8,8 +8,10 @@ a construction. Run once per mode, each in its own process, since a first pass w
     term_counts.py WL py|conv OUT.jsonl [--limit N] [--no-count]
 
 `Basic.__new__` is what's counted (constructions, by every route that reaches it). --no-count leaves it unwrapped, for
-times. A row: py_new, conv_new, table_new, rest_new (the ask after conversion), keys (computed by conversion), decompose
-(`decompose_power` calls), keys_used (calls in the query's own ask), and process-time seconds py_s, conv_s, table_s, rest_s.
+times. A row: py_new, conv_new, table_new, rest_new (the ask after conversion), keys_used (calls in the query's own ask),
+complex calls py_complex, conv_complex, table_complex, rest_complex (`Expr.__complex__`, its own counter, on with
+--no-count too), reads (conversion's `read:*` counts when the query ended; nothing reads the table here, so all zero is
+what lazy reads claim), and process-time seconds py_s, conv_s, table_s, rest_s.
 """
 from collections import Counter
 import argparse
@@ -32,6 +34,7 @@ ap.add_argument('--by-site', help='conv mode: write constructions during convers
 args = ap.parse_args()
 
 from sympy.core.basic import Basic
+from sympy.core.expr import Expr
 import sa_solver
 from harness.state import reset_module_state
 from satassume import sympy_api
@@ -67,6 +70,17 @@ if not args.no_count:
         return real_new(cls, *a, **k)
     Basic.__new__ = staticmethod(new)
 
+COMPLEX = [0]
+real_complex = Expr.__complex__
+
+
+def counted_complex(self):
+    COMPLEX[0] += 1
+    return real_complex(self)
+
+
+Expr.__complex__ = counted_complex
+
 USED = [0]
 
 
@@ -91,23 +105,23 @@ def _ask(proposition, assumptions, eng):
     try:
         if DEPTH[0] == 1 and MODE[0] == 'conv':
             row = ROW[0]
-            n, t = NEW[0], time.process_time()
+            n, t, z = NEW[0], time.process_time(), COMPLEX[0]
             IN_CONV[0] = True
             c = C.convert(proposition, assumptions, eng)
             IN_CONV[0] = False
             row['conv_s'] = time.process_time() - t
             row['conv_new'] = NEW[0] - n
+            row['conv_complex'] = COMPLEX[0] - z
             if isinstance(c, C.Kept):
                 row['kept'] = c.reason
             else:
-                row['keys'] = c.counts['keys']
-                row['decompose'] = c.counts['decompose_power']
-                row['pow_base_not_input'] = c.counts['pow_base_not_input']
+                row['reads'] = c.counts     # the live dict: read when the row is written, at the query's end
                 row['terms'] = len(c.objects)
-                n, t = NEW[0], time.process_time()
+                n, t, z = NEW[0], time.process_time(), COMPLEX[0]
                 sa_solver.TermTable(c.tables)
                 row['table_s'] = time.process_time() - t
                 row['table_new'] = NEW[0] - n
+                row['table_complex'] = COMPLEX[0] - z
         return real_ask(proposition, assumptions, eng)
     finally:
         DEPTH[0] -= 1
@@ -121,11 +135,12 @@ def run(p, a, mode, row):
     sympy_api.set_default_engine(E.Engine())
     MODE[0] = mode
     USED[0] = 0
-    n, t = NEW[0], time.process_time()
+    n, t, z = NEW[0], time.process_time(), COMPLEX[0]
     try:
         r = repr(sympy_api.ask(p, a))
     except Exception as e:
         r = 'raised ' + type(e).__name__
+    row['_complex'] = COMPLEX[0] - z
     return NEW[0] - n, time.process_time() - t, r
 
 
@@ -136,10 +151,12 @@ with open(args.out, 'w') as out:
         if args.mode == 'py':
             row['py_new'], row['py_s'], ans = run(p, a, 'py', row)
             row['keys_used'] = USED[0]
+            row['py_complex'] = row.pop('_complex')
         else:
             total_new, total_s, ans = run(p, a, 'conv', row)
             row['rest_new'] = total_new - row['conv_new'] - row.get('table_new', 0)
             row['rest_s'] = total_s - row['conv_s'] - row.get('table_s', 0)
+            row['rest_complex'] = row.pop('_complex') - row['conv_complex'] - row.get('table_complex', 0)
         row['ans'] = hashlib.sha256(ans.encode()).hexdigest()[:12]
         out.write(json.dumps(row) + '\n')
 print(args.wl, args.mode, len(pairs), 'done')
