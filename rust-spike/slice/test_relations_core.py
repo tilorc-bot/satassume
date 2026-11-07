@@ -135,6 +135,116 @@ def _run():
     return dict(cases=out, counts=mod.counts() if mod else {})
 
 
+def _direct():
+    """`_guard`/`_bound` and `_eq_infinity`'s three paths called directly, `is_` forced where a real query can't choose the path.
+
+    No query reaches `_bound`, on Python's own either, so this is its evidence. `_eq_infinity`'s plan and its trace test went with
+    C2b; this replaces them. Each case records clauses, `ensure` and `is_`, in order, and what the method returned."""
+    from sympy import Q, S, Symbol, oo, pi, sqrt
+    from satassume.engine import Engine, Session
+    from satassume.knowledge.extensions import Args
+    from satassume.relations import Relations
+    from satassume.sat.formula import P
+    mod = _rust() if os.environ.get('MODE', 'rust') == 'rust' else None
+    if mod:
+        import term_live
+    x = Symbol('x')
+
+    def fresh(prop, answer=...):
+        eng = Engine()
+        log = []
+        if answer is not ...:
+            def is_(e, pred):
+                log.append(['is_', str(e), pred])
+                return answer
+            eng.is_ = is_
+        s = Session(eng)
+        rel = Relations(s, eng._relation_specs)
+        s.relations = rel
+        add, ens = s.solver.add_clause, s.ensure
+
+        def rec_add(c):
+            log.append(['clause', list(c)])
+            return add(c)
+
+        def rec_ensure(e, preds):
+            log.append(['ensure', str(e), sorted(preds)])
+            return ens(e, preds)
+        s.solver.add_clause, s.ensure = rec_add, rec_ensure
+        if mod:
+            term_live.stack().append(term_live._convert(prop, True, eng))
+        return s, rel, log
+
+    def done():
+        if mod:
+            term_live.stack().pop()
+
+    def lra(rel):
+        ad = next(a for a in map(rel._adapter, rel.session.engine._relation_specs) if hasattr(a, 'register_bounds'))
+        rel.session.solver.attach_theory(ad.theory)
+        return ad
+
+    class NoBounds:
+        pass
+
+    class NoneBounds:
+        register_bounds = None
+
+    out = {}
+    for name, side, inf, answer, path in (
+            ('symbolic', x, oo, ..., 'symbolic'), ('symbolic-left', x, -oo, ..., 'symbolic'),
+            ('decided-false', S(2), oo, False, 'decided'), ('decided-true', oo, oo, True, 'decided'),
+            ('decided-left', S(2), -oo, False, 'decided'), ('undecided', pi, -oo, None, 'undecided')):
+        for flip in (False, True):
+            s, rel, log = fresh(Q.eq(side, inf), answer)
+            try:
+                atom = P('eq', Args((inf, side) if flip else (side, inf)))
+                var = s.table.var(atom)
+                rel._eq_infinity(var, atom)
+            finally:
+                done()
+            out[f'eq-{name}-{"flip" if flip else "plain"}'] = dict(log=log, path=path, var=var)
+    # Neither side infinite: no clause, no read.
+    s, rel, log = fresh(Q.eq(x, S(2)), True)
+    try:
+        atom = P('eq', Args((x, S(2))))
+        rel._eq_infinity(s.table.var(atom), atom)
+    finally:
+        done()
+    out['eq-no-infinity'] = dict(log=log, path='none')
+
+    y = Symbol('y')
+    for name, terms, answer in (('real-at-root', [pi], ...), ('forced-unknown', [pi], None), ('forced-false', [sqrt(2)], False),
+                                ('forced-true', [sqrt(2)], True), ('symbol', [x], ...), ('mixed', [pi, x, sqrt(2), y], ...)):
+        s, rel, log = fresh(Q.positive(sum(terms) + x), answer)
+        try:
+            ad = lra(rel)
+            g = rel._guard(ad, terms)
+            again = rel._guard(ad, terms)
+            # A new term list: new memo entry, the constant already bounded.
+            other = rel._guard(ad, list(terms) + [x])
+        finally:
+            done()
+        out['guard-' + name] = dict(log=log, guard=list(g), same=g is again, other=list(other))
+    for name, ad_of in (('no-attr', lambda rel: NoBounds()), ('none-attr', lambda rel: NoneBounds())):
+        s, rel, log = fresh(Q.positive(pi))
+        try:
+            ad = ad_of(rel)
+            got = rel._guard(ad, [pi])
+        finally:
+            done()
+        out['guard-' + name] = dict(log=log, guard=list(got))
+    # `_bound` called on its own; a term with symbols registers nothing.
+    for name, term in (('pi', pi), ('sqrt', sqrt(2)), ('symbol', x)):
+        s, rel, log = fresh(Q.positive(term))
+        try:
+            got = rel._bound(lra(rel), term)
+        finally:
+            done()
+        out['bound-' + name] = dict(log=log, returned=repr(got))
+    return dict(cases=out, counts=mod.counts() if mod else {})
+
+
 def _join():
     """A query's input term and the same text under another `Function('f')`, each visited first in turn."""
     from sympy import Function, Q, Symbol
@@ -211,6 +321,16 @@ def rust():
     return _call('run')
 
 
+@pytest.fixture(scope='module')
+def py_direct():
+    return _call('direct', MODE='py')
+
+
+@pytest.fixture(scope='module')
+def rust_direct():
+    return _call('direct')
+
+
 def _differ(a, b):
     return sorted(k for k in a['cases'] if a['cases'][k] != b['cases'][k])
 
@@ -227,12 +347,50 @@ def test_undecided_return_was_reached(rust):
     assert rust['cases']['infinite-undecided']['asked'] is True
 
 
+def test_direct_matches_python(py_direct, rust_direct):
+    assert _differ(py_direct, rust_direct) == []
+
+
+def test_direct_reaches_bound_and_every_infinity_path(py_direct, rust_direct):
+    """So the MATCH above covers what it's for, on Python's side and Rust's."""
+    for run in (py_direct, rust_direct):
+        cases = run['cases']
+        for name, case in cases.items():
+            kinds = {step[0] for step in case['log']}
+            if case.get('path') == 'symbolic':
+                assert 'is_' not in kinds and 'ensure' in kinds and 'clause' in kinds, name
+            elif case.get('path') == 'decided':
+                assert 'is_' in kinds and 'ensure' not in kinds and [s for s in case['log'] if s[0] == 'clause'] == [
+                    ['clause', [case['var'] if 'true' in name else -case['var']]]], name
+            elif case.get('path') == 'undecided':
+                assert 'is_' in kinds and 'ensure' in kinds and 'clause' in kinds, name
+            elif case.get('path') == 'none':
+                assert case['log'] == [], name
+        # `_bound`'s root facts, once per constant, the memo's list kept.
+        for name in ('guard-real-at-root', 'guard-forced-unknown', 'guard-forced-true', 'bound-pi', 'bound-sqrt'):
+            facts = [s for s in cases[name]['log'] if s[0] == 'clause']
+            assert len(facts) >= 2 and all(len(s[1]) == 1 for s in facts[:2]), name
+        # Three `_guard` calls, one `_bound`: two root facts, and the rest is `ensure(x, real)`'s, none of them a unit.
+        assert sum(s[0] == 'clause' and len(s[1]) == 1 for s in cases['guard-real-at-root']['log']) == 2
+        assert cases['guard-real-at-root']['guard'] == [] and cases['guard-real-at-root']['same'] is True
+        assert cases['guard-forced-unknown']['guard'] != []
+        assert cases['bound-symbol']['log'] == [] and cases['guard-no-attr']['log'] == cases['guard-none-attr']['log']
+    assert rust_direct['counts']['rel:bound'] > 0 and rust_direct['counts']['rel:eq_infinity'] > 0
+
+
+@pytest.mark.parametrize('plant', ['drop-bound', 'drop-guard', 'drop-eq-infinity'])
+def test_direct_sees_its_plants(py_direct, plant):
+    got = _call('direct', SLICE_SESSION_PLANT=plant)
+    assert got['counts']['rel:plant_fired'] > 0
+    assert _differ(py_direct, got) != []
+
+
 def test_each_method_ran(rust):
     c = rust['counts']
     for k in ('closed_extended_real', 'order_sides', 'order_infinite', 'trichotomy', 'mention_number', 'link_integer',
               'fresh', 'interpret', 'guard', 'link', 'selectors_of', 'eq_infinity'):
         assert c['rel:' + k] > 0, k
-    # Not `bound`: no query here reaches it, on Python's own `_bound` either. Its reach is measured by the `drop-bound` plant's count.
+    # Not `bound`: no query here reaches it, on Python's own `_bound` either. `_direct` calls it.
     assert c['rel:var'] > 0 and c['link:resolved'] > 0 and c['link:hit'] > 0 and c['link:no_node'] > 0
 
 
@@ -282,4 +440,4 @@ def test_link_outside_a_query_is_none():
 
 
 if __name__ == '__main__':
-    print(json.dumps({'run': _run, 'join': _join}[sys.argv[1]]()))
+    print(json.dumps({'run': _run, 'join': _join, 'direct': _direct}[sys.argv[1]]()))
