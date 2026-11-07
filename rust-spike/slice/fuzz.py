@@ -36,10 +36,12 @@ _a.add_argument("--one", type=int)
 _a.add_argument("--no-shrink", action="store_true")
 _a.add_argument("--json", action="store_true")
 ARGS = _a.parse_args() if __name__ == "__main__" else _a.parse_args([])
-if ARGS.so:
-    sys.path.insert(0, ARGS.so)
 sys.path.insert(0, HERE)
+if ARGS.so:
+    sys.path.insert(0, ARGS.so)       # ahead of HERE, which holds the unmutated build
 import sa_solver  # noqa: E402
+if ARGS.so and os.path.dirname(os.path.abspath(sa_solver.__file__)) != os.path.abspath(ARGS.so):
+    sys.exit(f"--so {ARGS.so}: loaded {sa_solver.__file__} instead")
 import state  # noqa: E402
 from satassume.sat import solver as pysolver  # noqa: E402
 
@@ -176,8 +178,8 @@ class Stub:
         return (True, sorted(self.true)) if self.spec.get("model") else None
 
     def push_level(self):
+        self.levels.append([])     # first: if this call raises, the solver has counted the level too
         self._hit("push")
-        self.levels.append([])
 
     def pop_level(self):
         self._hit("pop")
@@ -231,12 +233,30 @@ class Side:
 THEORY_OPS = ("attach_theory", "register_atom")
 
 
+def known_difference(ra, rb):
+    """Differences found, reported and not fixed here (HANDOFF-sa-rust-14.md). Counted, never silent. Smallest script:
+    a theory whose `pop_level` raises inside `_backtrack`, then any call that backtracks. Both stop at the same list
+    index (`_rb_ulim` was cut, `_trail_lim` not); Python raises IndexError, Rust panics, a BaseException."""
+    if (ra[:2] == ("raise", "IndexError") and rb[:2] == ("PANIC", "PanicException")
+            and rb[2].startswith("index out of bounds")):
+        return "IndexError vs panic after a hook raised in a backtrack"
+    return None
+
+
 def run_session(script, specs, level, reach=False):
     """None, or the first difference: a dict with op, what, py, rs."""
     a, b = Side(Probe, specs), Side(RustSolver, specs)
     deep = level == "state"
     for i, op in enumerate(script):
         ra, rb = a.apply(op), b.apply(op)
+        known = known_difference(ra, rb)
+        if known:
+            REACH["known difference: " + known] += 1
+            if deep:                 # same state, or it isn't this difference
+                d = state.diff(state.dump_py(a.s), b.s.dump())
+                if d:
+                    return dict(op=i, what="state " + d[0], py=d[2], rs=d[3])
+            return None              # both are broken from here on
         if ra != rb:
             return dict(op=i, what="result", py=repr(ra), rs=repr(rb))
         ca, cb = a.s.conflict(), b.s.conflict()
@@ -382,6 +402,12 @@ def gen_session(seed):
         add("attach_theory", f"T{i}")
         for v in atoms_of[i]:
             add("register_atom", f"T{i}", v, f"a{v}", r.random() > .25)
+    # `decide` is only asked once nothing else is left to decide: make some of its variables inert, so it has work.
+    for sp in specs:
+        if r.random() < .6:
+            for v in sp.get("decide", ()):
+                if not any(b <= v < b + bsize for b in blocks):
+                    add("set_inert", v)
     early = [i for i in range(nth) if r.random() < .7]
     for i in early:
         attach(i)
@@ -405,7 +431,7 @@ def gen_session(seed):
             attach(i)
             if r.random() < .5:
                 add("solve", lits(0, 2))
-    recipes = [rc_ring_none, rc_final, rc_fill_past_end, rc_two_pending, rc_after_raise]
+    recipes = [rc_ring_none, rc_final, rc_fill_past_end, rc_two_pending, rc_after_raise, rc_settle]
     for rc in r.sample(recipes, r.randint(0, 3)):
         n = rc(r, ops, n, blocks, bsize, lits, held, nth)
     add("solve")
@@ -426,7 +452,7 @@ def fuzz_ops(r, ops, formula, nf, blit, lits, held):
         add("add_clause", c)
         if r.random() > rate:
             continue
-        k = r.randrange(17)
+        k = r.randrange(20)
         if k <= 2:
             add("solve", lits(0, 3))
         elif k == 3:
@@ -457,6 +483,13 @@ def fuzz_ops(r, ops, formula, nf, blit, lits, held):
             add("model")
         elif k == 16:
             add("new_var")
+        elif k == 17:
+            add("add_pattern", r.choice(([[0, 2], [1, 3]], [[0, 3], [1, 2]], [[1, 3], [0, 2]])), r.randint(1, nf()), 2)
+        elif k == 18:
+            add("ensure_vars", nf())
+            add("add_internal", [[2 * abs(x) + (x < 0) for x in lits(1, 3)] for _ in range(r.randint(1, 3))])
+        elif k == 19:
+            add("mention_blocks", [(abs(blit()), r.choice((3, 12, 15, 0xff))) for _ in range(r.randint(1, 3))])
 
 
 def rc_ring_none(r, ops, n, blocks, bsize, lits, held, nth):
@@ -538,6 +571,23 @@ def rc_after_raise(r, ops, n, blocks, bsize, lits, held, nth):
     return n
 
 
+def rc_settle(r, ops, n, blocks, bsize, lits, held, nth):
+    """A block registered over variables that already have values, at root or at held levels: `_rb_settle`."""
+    if not blocks or bsize < 2:
+        return n
+    add = lambda name, *args: ops.append((name, args))
+    top = n + r.randint(1, 3)
+    x = r.choice((1, -1)) * (top + r.randrange(bsize))
+    if r.random() < .5:
+        add("add_clause", [x])
+    else:
+        add("implied", [x], 1)
+    add("register_block", top, r.choice((0, 3)))
+    add("implied", [r.choice((1, -1)) * (top + r.randrange(bsize))], r.choice((None, 1)))
+    add("solve", lits(0, 2))
+    return top + bsize - 1
+
+
 def fixed_sessions():
     """Scripts for the paths that random mixes reach too rarely, at the real tunables where the path needs them."""
     out = []
@@ -557,6 +607,15 @@ def fixed_sessions():
     final = [("set_rule_block", (CHAIN4, 4)), ("register_block", (1,)), ("solve", ([1, -4],)), ("solve", ([1, 9, -4],)),
              ("conflict", ()), ("add_clause", ([9, 10],)), ("solve", ([-9, 1, -3],))]
     out.append((final, []))
+    # A None that `_fill` can't complete. `push_level` raises right after `_pick_branch` popped variable 7, so 7 is off
+    # the heap for good. The next solve has a conflict before the index scan reaches 7, so VSIDS never offers it, and
+    # the model holds None for a variable that is neither lazy nor in a block. The clause [7, 6] is then "satisfied" in
+    # the ring only by that None: the ring-None mutant's one path. Only a caller who keeps a solver after a hook raised.
+    none = [("attach_theory", ("T0",)), ("register_atom", ("T0", 8, "a8")), ("add_clause", ([3, 4],)),
+            ("add_clause", ([3, -4],)), ("ensure_vars", (8,)), ("solve", ()), ("add_clause", ([1, 2],)),
+            ("add_clause", ([1, -2],)), ("solve", ()), ("add_clause", ([7, 6],)), ("solve", ()), ("model", ()),
+            ("stats", ())]
+    out.append((none, [{"model": True, "raise_at": {"push": 5}}]))
     return out
 
 
