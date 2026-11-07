@@ -234,6 +234,10 @@ def load(wl):
     if wl == "fuzz":
         from evalbench.fuzz import queries
         return queries(424242)
+    if wl.startswith("transfer:"):    # transfer_workload.py, by seed and count
+        import transfer_workload
+        seed, n = wl.split(":")[1:]
+        return transfer_workload.queries(int(seed), int(n))
     return workload(wl)
 
 
@@ -253,6 +257,12 @@ def main():
     ap.add_argument("--twice", action="store_true", help=f"each query twice in a row; the repeat is numbered q + {TWICE}")
     args = ap.parse_args()
     T.check = args.check
+
+    if args.mode == "rust" and os.environ.get("SLICE_TRANSFER") != "py":    # before the first import of satassume
+        if args.so:
+            sys.path.insert(0, args.so)
+        import p_install
+        p_install.install()
 
     from satassume import engine, ref, sympy_api
     from satassume.sat import solver as SV
@@ -281,6 +291,8 @@ def main():
         so_sha = hashlib.sha256(open(sa_solver.__file__, "rb").read()).hexdigest()
         import backend
         backend.install_euf()
+    if backend and args.check != "plain":    # plain's install() does this too
+        backend.install_transfer()
     if args.check == "plain":
         if backend:
             backend.install()

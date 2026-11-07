@@ -7,6 +7,7 @@
 mod block;
 mod euf;
 mod euf_py;
+mod formula_py;
 mod handle;
 mod map;
 mod pyset;
@@ -550,5 +551,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     term::py::register(m)?;
     m.add_class::<PySolver>()?;
     euf_py::add_to(m)?;
+    formula_py::register(m)?;
     transfer_py::register(m)
 }
