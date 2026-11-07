@@ -2,17 +2,15 @@
 
 Read the brief first: `~/.local/state/agent/briefs/sa-port-18-20261107T083750Z.txt`; its terms, rulings and slice order still apply. Branch `port/D0`, clone `~/dev/sa-port-5`. Nothing is on `rust-slice`. Modules of the 32 running in the real engine because of this: **0**; the shadow decides nothing. `HANDOFF-sa-port-14.md` still holds for the file:line map and what its results were; the results below replace its table where they overlap. No source changed this session: the crate is still 446d68d.
 
-## Read this first: jobs left running at handoff (09:02 UTC)
+## Read this first: the suite finished; the other jobs may still be running
 
-| Job | Output, under `~/sa-rust-ids-work/sa-port-18/` | If it died |
-|---|---|---|
-| **The suite**, `.so` sha 5e6231ab, started 08:41:56 | `suite/rust/` (rows, `pytest.log`, `exit.txt` last) | Rerun, below |
-| `union.sh`, at fuzz budget 400 | `union.log`, `union/` | Rerun `bash union.sh` |
-| `handler.sh`, detached, corrected | `handler.log` | Rerun `bash handler.sh` |
+**Suite on `.so` sha 5e6231ab, 446d68d, orion, `-n 3`, shuffled, 08:41:56 to 09:16:19 UTC, `suite/rust/`: 5,960 / 77 / 46, plus 1 other failure, against the base's 5,961 / 77 / 46.** pytest: 124 failed, 5,960 passed, 23 skipped, 18 xfailed. By id against `pr328-check/suite-rust`: 6,125 ids on both sides, none added or lost, **one changed:** `tests/test_wide_derived.py::test_wide_derived_or_against_or_is_fast[nor-nor]`, passed to failed. `suite_report.py` puts it under "Failed on Rust: other, passing on Python: 1", and it stays there.
 
-- **The suite runs under my session's shell, so stopping my session may kill it, and then `exit.txt` is never written. Don't wait on that file alone.** Alive means a process whose environment holds `SLICE_SUITE_OUT=$HOME/sa-rust-ids-work/sa-port-18/suite/rust`: read `/proc/PID/environ` for `pgrep -f "[r]ust_plugin"`, since siblings run suites too. Dead with no `exit.txt`: rerun with `SLICE_SUITE_SHUFFLE=1 PYTEST_N="-n 3" bash rust-spike/slice/run_suite.sh ~/sa-rust-ids-work/sa-port-18/suite/rust2 rust`. About 40 minutes at this load.
-- **At 09:02 it had 3,578 rows: 3,481 passed, 75 failed, 12 skipped, 10 xfailed. That's partial and not a result; nothing has been compared by id.** Don't rebuild `sa_solver.so` while it runs.
-- `union.sh`'s `.py` paths were rewritten to `tools/`, but the copy already running read the scratchpad's; both hold the same code.
+- **That failure:** `test_wide_derived.py:203`, `assert time.perf_counter() - t < 2.0`, measured 2.27s, orion's load about 54. Alone, through `run_suite.sh`, `-n 0`, at load 41: all 4 parameters passed in 6 of 6 runs (`suite/one-*`, 1.46s to 6.58s per run of 4). Not run on the base tree at comparable load, so "load" is a likely reading, not a shown one. No answer is involved in that assert.
+- **What the suite exercises:** the shadow isn't installed in it, and conversion has no consumers. So it shows the crate's other parts still behave with the term code built in, not that component 0 is right. The shadow runs below are 0's evidence.
+- **It holds only for this `.so`.** Rerun if the crate changes or a rebase brings in others' source.
+
+`union.sh` and `handler.sh` may still be running: `union.log`, `handler.log`. If dead, rerun `bash union.sh` or `bash handler.sh`. `union.sh`'s `.py` paths now point at `tools/`; the copy that started read the scratchpad's, with the same code.
 
 ## Results, on `.so` sha 5e6231ab (first build with the `oo` rule), orion, seed 0
 
@@ -57,7 +55,7 @@ They asked whether my runs would show `except Exception` at the complete check f
 
 ## Next, in order
 
-1. The suite: `suite_report.py` and by id against `~/sa-rust-ids-work/port-census/pr328-check/suite-rust` (`exit.txt`: 123 failed, 5,961 passed, so 5,961 / 77 / 46). `test_performance_smoke_300_vars` is known to fail under load; orion is at 54.
+1. The suite is done (above). Optional: `test_wide_derived_or_against_or_is_fast` on the base tree at comparable load.
 2. Read `handler.log` and `union.log`; answer the architect; run `sites-fuzz.sh`. Then the planner's items 2 and 3 above, on pareto1.
 3. `bash runs.sh corpus,1 corpus,2 dev,0,--synthetic fuzz,0,--synthetic corpus,0,--synthetic`: each goes in its own directory. `--synthetic` has never run.
 4. `mutate_term.py WORK --jobs 2`. It builds in scratch copies and only reads the live `.so`. **`no-merge-with-known`'s text is still unchecked;** a plant that fails reports itself. Boundary re-score both ways.
