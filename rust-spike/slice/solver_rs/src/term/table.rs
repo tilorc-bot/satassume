@@ -387,6 +387,10 @@ impl TermTable {
         Ok(Ordering::Equal)
     }
 
+    fn kind_of(&self, t: TermId) -> Kind {
+        self.class_of(t).kind
+    }
+
     /// Python's `<` on two values of a content or a key. Types Python would raise on, and anything opaque, refuse.
     pub fn value_cmp(&self, a: &V, b: &V) -> Result<Ordering, Refuse> {
         Ok(match (a, b) {
@@ -407,6 +411,13 @@ impl TermTable {
                 x.len().cmp(&y.len())
             }
             (V::Term(x), V::Term(y)) if x == y => Ordering::Equal,
+            // SymPy's `<` on a number slot: every finite rational lies between -oo and oo. Float and nan still refuse.
+            (V::Rat(_), V::Term(t)) if self.kind_of(*t) == Kind::Infinity => Ordering::Less,
+            (V::Rat(_), V::Term(t)) if self.kind_of(*t) == Kind::NegativeInfinity => Ordering::Greater,
+            (V::Term(t), V::Rat(_)) if self.kind_of(*t) == Kind::Infinity => Ordering::Greater,
+            (V::Term(t), V::Rat(_)) if self.kind_of(*t) == Kind::NegativeInfinity => Ordering::Less,
+            (V::Term(x), V::Term(y)) if self.kind_of(*x) == Kind::NegativeInfinity && self.kind_of(*y) == Kind::Infinity => Ordering::Less,
+            (V::Term(x), V::Term(y)) if self.kind_of(*x) == Kind::Infinity && self.kind_of(*y) == Kind::NegativeInfinity => Ordering::Greater,
             (V::None, V::None) => return Err(Refuse("compare: None against None")),
             _ => return Err(Refuse("compare: types Python's < doesn't order")),
         })

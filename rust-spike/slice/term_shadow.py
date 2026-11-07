@@ -40,6 +40,7 @@ SAMPLE = 40                 # pairs among the first SAMPLE terms of each query
 CUR = [None]                # (Converted, TermTable) of the running top-level query
 DEPTH = [0]
 CHECK_ON = [True]
+SYNTHETIC = [False]
 SITES = Counter()           # (op, caller file:line, outcome): which sites reach the algebra
 KEY_REFUSED = []            # every key pair Python orders and Rust refuses, both keys kept
 EXAMPLES = {}               # refusal reason: first few (op, operands)
@@ -540,6 +541,30 @@ def install_algebra():
     E.Engine._cone_info = cone
 
 
+def synthetic(c, table):
+    """The algebra on the query's first input terms, whatever the engine would ask: wider than the engine reaches, and it
+    constructs in SymPy, so it runs only under a flag and its counts stay out of any engine run."""
+    terms = [t for t in c.objects[:SAMPLE_DERIVED] if isinstance(t, Expr)]
+
+    def one(op, operands, build):
+        try:
+            real = build()
+        except Exception:
+            COUNTS['syn:python-raised'] += 1
+            return
+        COUNTS['syn:ops'] += 1
+        check_op(op, 'synthetic', operands, real, _OPS[op])
+    for a in terms:
+        one('__neg__', [a], lambda: -a)
+        for k in (S(2), S(-1), S.Half, Rational(-3, 2)):
+            one('__mul__', [k, a], lambda: k * a)
+            one('__add__', [a, k], lambda: a + k)
+        for b in terms:
+            one('__sub__', [a, b], lambda: a - b)
+            one('__add__', [a, b], lambda: a + b)
+            one('__mul__', [a, b], lambda: a * b)
+
+
 def _outcome(f, *a):
     try:
         return f(*a)
@@ -585,6 +610,12 @@ def top_level(proposition, assumptions, eng):
             check_formula(c, table, proposition, assumptions, eng)
         except Exception as e:
             bad('check-raised', type(e).__name__, e, proposition)
+        if SYNTHETIC[0]:
+            CUR[0] = (c, table)
+            try:
+                synthetic(c, table)
+            except Exception as e:
+                bad('synthetic-raised', type(e).__name__, e, proposition)
     return c, table
 
 
@@ -600,6 +631,10 @@ def install():
         finally:
             DEPTH[0] -= 1
             if DEPTH[0] == 0:
+                if CUR[0] is not None and CUR[0][0].counts['pow_base_not_input']:
+                    # Ruling's point 3: such a Pow costs a refusal only if a used key needs it.
+                    COUNTS['pow:queries-holding'] += 1
+                    COUNTS['pow:refused-at-key' if CUR[0][0].__dict__.get('pow_refused') else 'pow:finished-no-refusal'] += 1
                 CUR[0] = None
 
     sympy_api._ask = _ask
@@ -624,6 +659,8 @@ def install():
                             got = table.sort_key(i)
                         except sa_solver.TermRefuse as x:
                             REFUSED[f'key used: {x}'] += 1
+                            if 'power base' in str(x):
+                                c.__dict__['pow_refused'] = True
                             _example(f'key used: {x}', site, e)
                         else:
                             if not same_value(got, r, c, True):
