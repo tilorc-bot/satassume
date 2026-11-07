@@ -11,11 +11,11 @@ Read first: my brief `~/.local/state/agent/briefs/sa-port-19-20261107T085132Z.tx
 | Job | Where | Done when | State at handoff | If it's missing |
 |---|---|---|---|---|
 | sa-port-12's suite, Rust then Python | orion, `$B12/suite1-*` | `$B12/suite1.done` | Rust side still running 09:08 UTC, no `exit.txt` | Don't touch it. It's a reading anyway: use the pareto1 suite below |
-| sa-port-12's dump mutants, dev | orion, `$B12/dm/dev` | `done`, `score.txt` | 77 of 83 at 09:08 UTC | Don't restart while it runs |
+| sa-port-12's dump mutants, dev | orion, `$B12/dm/dev` | `done`, `score.txt` | **Finished 09:09 UTC**, read below | Not needed |
 | Move at every 16th call, fuzz | pareto1, `$P/mv` | `$P/mv/done` | In its count phase | Restart command below |
-| Ground workload | pareto1, `$P/ground` | `$P/ground/done` | Fresh compare done, rest running | Restart command below |
+| Ground workload | pareto1, `$P/ground` | `$P/ground/done` | **Finished 09:19 UTC**, read below | Not needed |
 
-Mine were started from this session and may die with it. **Check the marker and `machine ls` first.** Restart: `machine run pareto1 --shared -r WHY -- bash /home/tilo/sp19/p1_job.sh /home/tilo/sp19/p1_move.sh` (or `p1_ground.sh`). Run it in the background, and move `$P/mv` aside first.
+Mine were started from this session and may die with it. **Check the marker and `machine ls` first.** Restart: `machine run pareto1 --shared -r WHY -- bash /home/tilo/sp19/p1_job.sh /home/tilo/sp19/p1_move.sh` Run it in the background, and move `$P/mv` aside first.
 
 ## What ran, and what it shows
 
@@ -28,6 +28,31 @@ Mine were started from this session and may die with it. **Check the marker and 
 | Faults planted in LRA hooks, dev | Table under "1107" | `$P/exc/` |
 
 `fresh2` ran one edit before 628a82c: that edit only adds `branching` to rows and `_moved_branches` at a move, so its rows have no branch counts. The final fresh rerun will have them.
+
+### Dump mutants, condition 3: 83 in all, from dev plus the ground workload
+
+**Don't quote `score.txt`'s "caught" count.** It counts a child dying at the state read as a catch.
+
+| Result | Count | Which |
+|---|---|---|
+| Caught by a comparison | **54** | 49 on dev (`HANDOFF-sa-port-12.md` step 2 has the breakdown) and the 5 that dev left idle, below |
+| Caught only by the state read | **27** | All the `drop:` mutants. The child dies with `KeyError` or `AttributeError` after the session and the row is lost, so **these say nothing about whether the answer or stream changed** |
+| Not caught | **2** | `order:_forms` (effective 25 of 25) and `order:_rows` (5 of 25): `lra_text` sorts both, and end state and stream didn't change on those runs |
+| Never effective | **0** | After the ground workload; 5 on dev alone |
+
+The 5 dev left idle, on the ground workload, 200 runs each. Effective is how many runs the mutant changed anything:
+
+| Mutant | Effective | Caught by |
+|---|---|---|
+| `order:_ground` | 36 | LRA state digest only, 36 |
+| `order:_pending_ground` | 46 | End, stream and digest, 46 each |
+| `lose:_ground` | 200 | Digest 200; end, stream and a raise 24 each |
+| `lose:_pending_ground` | 200 | End, stream and digest, 200 each |
+| `value:_ground` | 200 | Digest 200; end and stream 28; **answer 22** |
+
+`drop:_ground` and `drop:_pending_ground` also died at the state read on all 200 runs here, so they stay in the 27. **The open hole in condition 3 is those 27:** to learn what a dropped field does, the row's answer and stream would have to be written before the state read. Not done. Whether each counts as "caught by the real-engine path" is for the report to state plainly, not to assume.
+
+Move at every call on the ground workload: 2,316 moves over 18 queries, 1,938 at level > 0, levels up to 22, **0 differences** (`$P/ground/mv.cmp`). `_ground` was non-empty at 2,156 of those moves and `_pending_ground` at 211.
 
 ### The group counts, sessions with an LRA theory, fresh
 
@@ -79,8 +104,8 @@ Setup was short. From early row counts, each process ran about 4 to 7 times fast
 `HANDOFF-sa-port-12.md`'s items, with what's left:
 
 1. **Suite:** run it on the final source, both backends, on pareto1 (`bash run_suite.sh WORK rust|python` under `p1_job.sh`, `SLICE_SUITE_SHUFFLE=1`, `PYTEST_N="-n 8"`). sa-port-12's ran before 496f250, so it's a reading only. Then `suite_report.py`, by id against 5,961 / 77 / 46, `test_lra*` id by id against `port-census/pr328-check/suite-lists.md`. Sum `lra` and `caught`.
-2. **Dump mutants:** read `$B12/dm/dev/score.txt` and `$P/ground/dm/score.txt`. Name each one missed and each one never effective. `_rows`' outer order, `_cols` and `_forms` are compared sorted, so an order mutant there may need naming.
-3. **Move on fuzz:** read `$P/mv/fuzz.cmp`, `count.txt`, `branch.txt`, `stride`. State it's sampled, and at what stride. Confirm branched and exhausted sessions are included; if `branch.txt` shows none, choose queries that branch. Fresh fuzz itself is done.
+2. **Dump mutants:** read, and tabled above. Report them split that way. What's left is the `drop:` hole, if you decide to close it.
+3. **Move on fuzz:** 446,601 calls over 2,947 queries, so stride 16 is about 27,900 moves. Read `$P/mv/fuzz.cmp`, `count.txt`, `branch.txt`, `stride`. State it's sampled, and at what stride. Confirm branched and exhausted sessions are included; if `branch.txt` shows none, choose queries that branch. Fresh fuzz itself is done.
 4. `LRA_MUT` 6, 7 on full dev and fuzz with `--so` and a mutant build (`--features mutants`). The pytest half is done.
 5. `real_theory_fuzz`, `test_solver_real_theories`, `run_history.sh`, `historycmp.py`, hash seeds. All of these suit pareto1.
 6. Solver mutants 2, 5, 6, 7, 9; boundary mutants including `--suite` and the 10 with no real-engine catch; new mutants in payload conversion, term ids, model rendering.
