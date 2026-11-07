@@ -8,17 +8,23 @@ two solvers must agree on, by level:
 call, which hid the ring's None and `_fill` paths).
 
   fuzz.py [--sessions N] [--seed S] [--corpus fuzz|step1] [--level answers|state] [--so DIR] [--reach] [--one SEED]
-          [--no-shrink] [--json]
+          [--label L] [--progress FILE] [--shrink-seconds T] [--no-shrink] [--json] [--known]
 
 --corpus step1 runs step 1's hand and random scripts instead of fuzz sessions. --so loads sa_solver from DIR (a mutant).
 --reach adds the reentry table and the lines of solver.py never run. A mismatch prints the first differing field, then
-the smallest script that still shows it, and exits 1.
+the smallest script that still shows it, and exits 1. Shrinking stops at --shrink-seconds and says so: it re-runs the
+script for every candidate, with a state dump per call, so a long script can take far longer than the fuzzing did.
+--label runs one session by its label ("fixed 2", a seed, or a step 1 index). --progress names a file holding the label
+of the session now running, so a run that gets killed says where. --known runs each listed known difference and the
+self-test of its exemption, and prints what each solver does.
 """
 import argparse
 import collections
 import gc
+import hashlib
 import itertools
 import json
+import linecache
 import os
 import random
 import sys
@@ -35,6 +41,10 @@ _a.add_argument("--reach", action="store_true")
 _a.add_argument("--one", type=int)
 _a.add_argument("--no-shrink", action="store_true")
 _a.add_argument("--json", action="store_true")
+_a.add_argument("--label")
+_a.add_argument("--progress")
+_a.add_argument("--shrink-seconds", type=float, default=60)
+_a.add_argument("--known", action="store_true")
 ARGS = _a.parse_args() if __name__ == "__main__" else _a.parse_args([])
 sys.path.insert(0, HERE)
 if ARGS.so:
@@ -140,6 +150,7 @@ class Stub:
         self.spec, self.log, self.name = spec, log, name
         self.true, self.levels, self.calls = set(), [], collections.Counter()
         self.nasserts = 0
+        self.pop_raised = False
 
     def _hit(self, hook, *args):
         self.log.append((self.name, hook) + args)
@@ -182,8 +193,12 @@ class Stub:
         self._hit("push")
 
     def pop_level(self):
-        self._hit("pop")
-        self.true.difference_update(self.levels.pop())
+        try:
+            self._hit("pop")
+            self.true.difference_update(self.levels.pop())   # an empty list if an earlier `push_level` raised
+        except Exception:
+            self.pop_raised = True
+            raise
 
 
 class StubProp(Stub):
@@ -213,11 +228,12 @@ def new_stub(spec, log, name):
 
 class Side:
     def __init__(self, cls, specs):
-        self.s, self.log = cls(), []
+        self.s, self.log, self.exc = cls(), [], None
         self.ths = [new_stub(sp, self.log, f"T{i}") for i, sp in enumerate(specs)]
 
     def apply(self, op):
         name, args = op
+        self.exc = None
         try:
             if name == "_set":
                 setattr(self.s, args[0], args[1])
@@ -225,6 +241,7 @@ class Side:
             args = [self.ths[int(a[1:])] if a in ("T0", "T1") else a for a in args] if name in THEORY_OPS else args
             return ("ok", getattr(self.s, name)(*args))
         except Exception as e:
+            self.exc = e
             return ("raise", type(e).__name__, str(e))
         except BaseException as e:           # a Rust panic: nothing Python does corresponds to this
             return ("PANIC", type(e).__name__, str(e))
@@ -233,14 +250,45 @@ class Side:
 THEORY_OPS = ("attach_theory", "register_atom")
 
 
-def known_difference(ra, rb):
-    """Differences found, reported and not fixed here (HANDOFF-sa-rust-14.md). Counted, never silent. Smallest script:
-    a theory whose `pop_level` raises inside `_backtrack`, then any call that backtracks. Both stop at the same list
-    index (`_rb_ulim` was cut, `_trail_lim` not); Python raises IndexError, Rust panics, a BaseException."""
-    if (ra[:2] == ("raise", "IndexError") and rb[:2] == ("PANIC", "PanicException")
-            and rb[2].startswith("index out of bounds")):
-        return "IndexError vs panic after a hook raised in a backtrack"
-    return None
+def after_pop_raised(a, b, f):
+    """`pop_level` raised inside a backtrack, on both solvers, after `_rb_ulim` was cut and before `_trail_lim` was."""
+    return (any(t.pop_raised for t in a.ths) and any(t.pop_raised for t in b.ths)
+            and len(a.s._trail_lim) > len(a.s._rb_ulim))
+
+
+def no_such_var(name):
+    """The docstrings say variables must exist. This call gave one that doesn't."""
+    return lambda a, b, f: f.f_locals[name] > a.s.nvars()
+
+
+# The exempted differences: Python raises IndexError, Rust panics (a BaseException) at the matching index. Keyed by
+# (function, source line) in solver.py; then the list Python indexed, the local holding the index, and the cause.
+KNOWN_SITES = {
+    ("_backtrack", "k = self._rb_ulim[lvl]"): ("_rb_ulim", "lvl", after_pop_raised, "backtrack after pop_level raised"),
+    ("mention_blocks", "b0 = rb_base[base]"): ("_rb_base", "base", no_such_var("base"), "mention_blocks past the last variable"),
+    ("_mention", "if not ment[v]:"): ("_ment", "v", no_such_var("v"), "a mention_blocks range past the last variable"),
+}
+
+
+def known_difference(a, b, ra, rb):
+    """Which exempted difference this is, or None. All must hold, so nothing else can pass as one: the exact line in
+    Python, the same list length and index in Rust's message, and that site's cause. The caller goes on to compare the
+    conflict, the theory calls, the state and the rest of the session. Counted, never silent. See --known."""
+    if not (ra[:2] == ("raise", "IndexError") and rb[:2] == ("PANIC", "PanicException") and a.exc is not None):
+        return None
+    tb = a.exc.__traceback__
+    while tb.tb_next:
+        tb = tb.tb_next
+    f = tb.tb_frame
+    if f.f_code.co_filename != pysolver.__file__:
+        return None
+    site = KNOWN_SITES.get((f.f_code.co_name, linecache.getline(f.f_code.co_filename, tb.tb_lineno).strip()))
+    if site is None:
+        return None
+    lst, idx, cause, name = site
+    if rb[2] != f"index out of bounds: the len is {len(getattr(a.s, lst))} but the index is {f.f_locals[idx]}":
+        return None
+    return name if cause(a, b, f) else None
 
 
 def run_session(script, specs, level, reach=False):
@@ -249,15 +297,10 @@ def run_session(script, specs, level, reach=False):
     deep = level == "state"
     for i, op in enumerate(script):
         ra, rb = a.apply(op), b.apply(op)
-        known = known_difference(ra, rb)
+        known = known_difference(a, b, ra, rb)
         if known:
             REACH["known difference: " + known] += 1
-            if deep:                 # same state, or it isn't this difference
-                d = state.diff(state.dump_py(a.s), b.s.dump())
-                if d:
-                    return dict(op=i, what="state " + d[0], py=d[2], rs=d[3])
-            return None              # both are broken from here on
-        if ra != rb:
+        elif ra != rb:
             return dict(op=i, what="result", py=repr(ra), rs=repr(rb))
         ca, cb = a.s.conflict(), b.s.conflict()
         if ca != cb:
@@ -288,18 +331,22 @@ def same_kind(d, e):
 
 
 def shrink(script, specs, level, d):
+    """(script, finished): the smallest found by --shrink-seconds."""
     keep = list(script[:d["op"] + 1])
     chunk = max(1, len(keep) // 2)
+    end = time.time() + ARGS.shrink_seconds
     while True:
         i = 0
         while i < len(keep):
+            if time.time() > end:
+                return keep, False
             cand = keep[:i] + keep[i + chunk:]
             if cand and same_kind(d, run_session(cand, specs, level)):
                 keep = cand
             else:
                 i += chunk
         if chunk == 1:
-            return keep
+            return keep, True
         chunk //= 2
 
 
@@ -721,7 +768,105 @@ def ranges(xs):
     return ", ".join(f"{a}-{b}" if a != b else str(a) for a, b in out)
 
 
+# ---- Known differences: each listed one, run on both solvers.
+
+def known_scripts():
+    """name, script, theory specs: each smallest found. The first three are exempted in `known_difference`. The fourth
+    isn't, so it stays a mismatch: the generator makes no unit patterns, which breaks `add_pattern`'s contract."""
+    pop = {"raise_at": {"pop": 29}, "decide": [31], "conflicts": [(-31,), (-31, 31)], "finals": [(-31, 31)], "model": True}
+    return [
+        ("pop_level raised in a backtrack, then a backtrack to that level",
+         [("attach_theory", ("T0",)), ("register_atom", ("T0", 31, "a31", False)), ("entails", (24, [], 0)),
+          ("add_clause", ([-13, -18],))], [pop]),
+        ("mention_blocks with a base past the last variable",
+         [("set_rule_block", (WIDE, 10)), ("mention_blocks", ([(44, 3)],))], []),
+        ("mention_blocks with a range past the last variable",
+         [("ensure_vars", (12,)), ("set_rule_block", (BLOCK, 4)), ("mention_blocks", ([(11, 255)],))], []),
+        ("add_pattern with a one-literal clause",
+         [("add_pattern", ([[1], [0, 2]], 29, 2))], []),
+    ]
+
+
+def selftest_known():
+    """The exemption refuses each near miss: another line, another list length, a cause that doesn't hold."""
+    class T:
+        pop_raised = True
+
+    class Fresh:
+        pop_raised = False
+
+    class S:
+        _rb_ulim, _trail_lim = [], [0]
+
+        @staticmethod
+        def nvars():
+            return 5
+
+    class Fake:
+        s, ths = S, [T]
+
+        def __init__(self, exc=None):
+            self.exc = exc
+
+    class NoPop(Fake):
+        ths = [Fresh]
+
+    def at_line(fn, arg, line):
+        """An IndexError whose innermost frame looks like `fn` at the given line of solver.py."""
+        src = "\n" * (line - 2) + f"def {fn}({arg}):\n    [][{arg}]\n"
+        ns = {}
+        exec(compile(src, pysolver.__file__, "exec"), ns)
+        try:
+            ns[fn](0)
+        except IndexError as e:
+            return e
+    lines = open(pysolver.__file__).read().splitlines()
+    site = lines.index("        k = self._rb_ulim[lvl]") + 1
+    ra = ("raise", "IndexError", "list index out of range")
+    panic = ("PANIC", "PanicException", "index out of bounds: the len is 0 but the index is 0")
+    good = lambda: Fake(at_line("_backtrack", "lvl", site))
+    return {
+        "the site itself is exempted": known_difference(good(), Fake(), ra, panic) is not None,
+        "another line of solver.py": known_difference(Fake(at_line("_backtrack", "lvl", site + 1)), Fake(), ra, panic) is None,
+        "another list length": known_difference(good(), Fake(), ra, ("PANIC", "PanicException", "index out of bounds: the len is 3 but the index is 0")) is None,
+        "another index": known_difference(good(), Fake(), ra, ("PANIC", "PanicException", "index out of bounds: the len is 0 but the index is 1")) is None,
+        "no pop_level raise on Rust's stub": known_difference(good(), NoPop(), ra, panic) is None,
+        "no pop_level raise on Python's stub": known_difference(NoPop(good().exc), Fake(), ra, panic) is None,
+    }
+
+
+def known():
+    """Prints each known difference as it stands, and exits 1 if a self-test fails."""
+    bad = 0
+    for name, ok in selftest_known().items():
+        print(f"exemption self-test: {name}: {'ok' if ok else 'FAILED'}")
+        bad += not ok
+    for name, script, specs in known_scripts():
+        a, b = Side(Probe, specs), Side(RustSolver, specs)
+        print(f"{name}\n  theories {specs}\n  script {script}")
+        for op in script:
+            ra, rb = a.apply(op), b.apply(op)
+            k = known_difference(a, b, ra, rb)
+            mark = f"exempted ({k})" if k else ("same" if ra == rb else "DIFFERS")
+            print(f"  {op[0]}: {mark}: py {ra}, rs {rb}")
+        d = state.diff(state.dump_py(a.s), b.s.dump())
+        print(f"  state after: {'same' if not d else 'differs at ' + d[0]}")
+    same, differ = reentry()
+    print(f"solver call inside a hook (hook x method): {same} same, {len(differ)} differ. Smallest: a theory whose "
+          "assert_lit calls solver.nvars(), then solve([1]) on a registered atom")
+    for x in differ[:2]:
+        print("  ", x)
+    return 1 if bad else 0
+
+
+def loaded():
+    """The solver actually in this process: `mutate_slice.py` checks it, as the first table was void without this."""
+    return dict(so=sa_solver.__file__, so_sha=hashlib.sha256(open(sa_solver.__file__, "rb").read()).hexdigest())
+
+
 def main():
+    if ARGS.known:
+        return known()
     seen = coverage_start() if ARGS.reach else None
     t0 = time.time()
     if ARGS.one is not None:
@@ -731,15 +876,23 @@ def main():
     else:
         sessions = [(f"fixed {i}", x) for i, x in enumerate(fixed_sessions())]
         sessions = itertools.chain(sessions, ((ARGS.seed + i, gen_session(ARGS.seed + i)) for i in range(ARGS.sessions)))
+    if ARGS.label is not None:
+        sessions = itertools.islice((x for x in sessions if str(x[0]) == ARGS.label), 1)
     for label, (script, specs) in sessions:
+        if ARGS.progress:
+            with open(ARGS.progress, "w") as f:
+                f.write(str(label))
         d = run_session(script, specs, ARGS.level)
         if d:
-            small = script[:d["op"] + 1]
+            small, finished = script[:d["op"] + 1], False
+            if ARGS.json:            # first, so a run killed while shrinking still counts as found
+                print(json.dumps(dict(caught=True, session=str(label), script_len=len(small), shrunk=False, **loaded(), **d)),
+                      flush=True)
             if not ARGS.no_shrink:
-                small = shrink(script, specs, ARGS.level, d)
+                small, finished = shrink(script, specs, ARGS.level, d)
             if ARGS.json:
                 print(json.dumps(dict(caught=True, session=str(label), specs=repr(specs), script_len=len(small),
-                                      script=repr(small), **d)))
+                                      shrunk=finished, script=repr(small), **loaded(), **d)), flush=True)
             else:
                 print(f"MISMATCH session {label} op {d['op']}: {d['what']}\n  py {d['py']}\n  rs {d['rs']}")
                 print(f"smallest script ({len(small)} calls), theories {specs}:\n  {small}")
@@ -749,7 +902,7 @@ def main():
     dt = time.time() - t0
     reach = dict(sorted(REACH.items()))
     if ARGS.json:
-        print(json.dumps(dict(caught=False, seconds=round(dt, 1), reach=reach)))
+        print(json.dumps(dict(caught=False, seconds=round(dt, 1), reach=reach, **loaded())), flush=True)
     else:
         print(f"clean: {ARGS.corpus} {ARGS.level}, {REACH['sessions']} sessions, {REACH['calls']} calls, {dt:.0f} s")
         for k, v in reach.items():
