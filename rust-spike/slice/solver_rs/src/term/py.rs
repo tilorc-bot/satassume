@@ -6,7 +6,7 @@ use super::table::{Kind, Read, Reads, Refuse, TermTable, READ_RAISED, V};
 use super::TermId;
 use num_bigint::BigInt;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyBaseException, PyException, PyKeyError, PyValueError};
+use pyo3::exceptions::{PyBaseException, PyException, PyKeyError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PyTuple};
 use pyo3::IntoPyObjectExt;
@@ -357,7 +357,7 @@ impl PyKnowledge {
             &rules,
             |k| const_slots.contains(&k),
             |k, pred| -> PyResult<Option<bool>> {
-                read.call1((k, pred))?.extract().map_err(|e: PyErr| TermRefuse::new_err(format!("const_value of {pred}: {e}")))
+                read.call1((k, pred))?.extract().map_err(|e: PyErr| PyTypeError::new_err(format!("const_value of {pred}: {e}")))
             },
         )?;
         match r {

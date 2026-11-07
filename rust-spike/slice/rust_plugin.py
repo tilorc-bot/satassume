@@ -134,6 +134,15 @@ def _record(**row):
     _out.write(json.dumps(row) + "\n")
 
 
+def pytest_unconfigure(config):
+    """Component 4 slice A: `term_live`'s counts for this worker, so the suite reports refusals by reason and reads."""
+    d, tl = os.environ.get("SLICE_SUITE_OUT"), sys.modules.get("term_live")
+    if d and tl is not None:
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"term.{os.getpid()}.json"), "w") as f:
+            json.dump({"counts": tl.counts(), "refusals": tl.REFUSALS}, f)
+
+
 def _failure(rep):
     """What the report says of a failure, split so suite_report.py doesn't have to parse a traceback."""
     if not rep.failed:
