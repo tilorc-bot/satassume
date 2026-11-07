@@ -129,7 +129,7 @@ Hand-built terms, `Q.positive`, 120 s limit:
 | `stieltjes(30)` | 0.5 ms | 37.7 ms |
 | `besselk(100, pi)` | 0.5 ms | 8.8 ms |
 
-`Q.integer` gives the same `CRootOf` result. **Limits:** 30 of the 32 terms ran. `E**(pi*sqrt(163))` failed because my script's `E` was the engine module, which also put that module in `Piecewise`'s row, and `meijerg` didn't construct. `hyper`, both `Limit`s and `Derivative` aren't `is_number`, so `closed` doesn't reach them.
+`Q.integer` gives the same `CRootOf` result. **Limits:** 30 of the 32 terms ran. `E**(pi*sqrt(163))` failed because my script's `E` was the engine module, and `meijerg` didn't construct. `Piecewise` was built with that same wrong `E` and a condition that's already true, so read nothing into its row. `hyper`, both `Limit`s and `Derivative` aren't `is_number`, so `closed` doesn't reach them.
 
 **Question for the planner, raised with this report: `convert.py:291` has no bound on `complex(t)`,** so one such term stalls a query pure Python answers in milliseconds. No lazy path added. It can't happen by default today, since nothing consumes conversion. It would once something does.
 
