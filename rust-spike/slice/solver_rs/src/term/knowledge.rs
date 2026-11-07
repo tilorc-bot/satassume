@@ -5,7 +5,7 @@
 //! `Rules` is offline data, read once and never written. A pattern is a function of its facts alone: nothing here is
 //! kept between calls, and no hash order is read (`HashMap`s are looked up by name, never iterated).
 use super::offline::{Json, OfflineData};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A signed 1-based literal over the basis, as in `rules.py`.
 type Lit = i32;
@@ -288,4 +288,216 @@ pub struct UnitPattern {
     /// `(i, neg)` literals, all in slot 0.
     pub clauses: Vec<Vec<(usize, bool)>>,
     pub complete: bool,
+}
+
+/// A literal of a template's rule: `(slot, predicate, pos)`.
+pub type RuleLit = (i64, String, bool);
+/// `(premises, conclusions)`, as `Rules.rules` holds them.
+pub type Rule = (Vec<RuleLit>, Vec<RuleLit>);
+/// `(slot, basis index, neg)`, a literal of a pattern's clause.
+pub type SlotLit = (i64, usize, bool);
+
+/// `_common.resolve`: constants resolved through `read`, then duplicate and subsumed rules dropped. `read` runs exactly where
+/// Python's `_resolve_lit` calls `const_value`, in the same order, with its error passed on. `Ok(None)` is Python's
+/// "template asserts a contradiction".
+pub fn resolve<E>(
+    rules: &[Rule],
+    is_const: impl Fn(i64) -> bool,
+    mut read: impl FnMut(i64, &str) -> Result<Option<bool>, E>,
+) -> Result<Option<Vec<Rule>>, E> {
+    enum R {
+        Decided(bool),
+        Undecidable,
+        Open,
+    }
+    let mut one = |lit: &RuleLit| -> Result<R, E> {
+        if !is_const(lit.0) {
+            return Ok(R::Open);
+        }
+        Ok(match read(lit.0, &lit.1)? {
+            Some(v) => R::Decided(v == lit.2),
+            None => R::Undecidable,
+        })
+    };
+    let mut keyed: Vec<Rule> = Vec::with_capacity(rules.len());
+    'rule: for (prem, concl) in rules {
+        let mut ps: Vec<RuleLit> = Vec::with_capacity(prem.len());
+        for lit in prem {
+            match one(lit)? {
+                R::Decided(true) => {}
+                R::Decided(false) | R::Undecidable => continue 'rule,
+                R::Open => ps.push(lit.clone()),
+            }
+        }
+        let mut cs: Vec<RuleLit> = Vec::with_capacity(concl.len());
+        for lit in concl {
+            match one(lit)? {
+                R::Decided(true) | R::Undecidable => continue 'rule,
+                R::Decided(false) => {}
+                R::Open => cs.push(lit.clone()),
+            }
+        }
+        if cs.is_empty() {
+            // A constant violates the conclusion: the premises cannot all hold.
+            if ps.is_empty() {
+                return Ok(None);
+            }
+            cs = ps.iter().map(|(k, p, pos)| (*k, p.clone(), !*pos)).collect();
+            ps.clear();
+        }
+        keyed.push((ps, cs));
+    }
+    keyed.sort_by_key(|(ps, _)| ps.len()); // stable, as Python's. Its length counts a repeated premise.
+    let mut seen: HashMap<Vec<RuleLit>, Vec<Vec<RuleLit>>> = HashMap::new();
+    let mut out = Vec::with_capacity(keyed.len());
+    for (ps, cs) in keyed {
+        let mut key = ps.clone();
+        key.sort_unstable();
+        key.dedup();
+        let kept = seen.entry(cs.clone()).or_default();
+        if kept.iter().any(|k| is_subset(k, &key)) {
+            continue;
+        }
+        kept.push(key);
+        out.push((ps, cs));
+    }
+    Ok(Some(out))
+}
+
+/// Both sorted and without duplicates.
+fn is_subset<T: Ord>(small: &[T], big: &[T]) -> bool {
+    let mut it = big.iter();
+    small.iter().all(|x| it.by_ref().any(|y| y == x))
+}
+
+/// `_unsubsumed`: without duplicates and without those a shorter one subsumes, shortest first, each sorted. Each kept clause is
+/// indexed under its rarest literal, as Python's: a clause's choice among equally rare ones changes no result.
+pub fn unsubsumed_clauses(clauses: Vec<Vec<SlotLit>>) -> Vec<Vec<SlotLit>> {
+    let mut distinct: Vec<Vec<SlotLit>> = Vec::with_capacity(clauses.len());
+    let mut seen: HashSet<Vec<SlotLit>> = HashSet::with_capacity(clauses.len());
+    for mut c in clauses {
+        c.sort_unstable();
+        c.dedup();
+        if seen.insert(c.clone()) {
+            distinct.push(c);
+        }
+    }
+    distinct.sort_by_key(Vec::len); // stable, as Python's `sorted(..., key=len)`
+    let mut count: HashMap<SlotLit, usize> = HashMap::new();
+    for c in &distinct {
+        for &l in c {
+            *count.entry(l).or_insert(0) += 1;
+        }
+    }
+    let mut index: HashMap<SlotLit, Vec<usize>> = HashMap::new();
+    let mut out: Vec<Vec<SlotLit>> = Vec::with_capacity(distinct.len());
+    for c in distinct {
+        let hit = c.iter().any(|l| index.get(l).is_some_and(|ds| ds.iter().any(|&d| is_subset(&out[d], &c))));
+        if hit {
+            continue;
+        }
+        let Some(&rarest) = c.iter().min_by_key(|l| count[*l]) else {
+            // The empty clause is first and subsumes every other.
+            out.push(c);
+            break;
+        };
+        index.entry(rarest).or_default().push(out.len());
+        out.push(c);
+    }
+    out
+}
+
+/// What `Pattern.__init__` computes from its rules. A rule in `wide` is named by its index.
+pub struct BuiltPattern {
+    pub clauses: Vec<Vec<SlotLit>>,
+    pub used: Vec<i64>,
+    /// Slot and basis indices, in the order Python's dict first sees each slot.
+    pub child_preds: Vec<(i64, Vec<usize>)>,
+    pub wide: Vec<usize>,
+}
+
+impl Rules {
+    fn cnf(&self, pred: &str, pos: bool) -> Result<&Vec<Vec<Lit>>, String> {
+        (if pos { &self.cnf_pos } else { &self.cnf_neg }).get(pred).ok_or_else(|| pred.to_string())
+    }
+
+    /// `rules.expand_clause`, each result as `(slot, basis index, pos)`. Err names an unknown predicate.
+    fn expand_clause(&self, lits: &[(i64, &str, bool)]) -> Result<Vec<Vec<SlotLit>>, String> {
+        let mut out: Vec<Vec<SlotLit>> = vec![Vec::new()];
+        for &(k, pred, pos) in lits {
+            let cnf = self.cnf(pred, pos)?;
+            let mut next = Vec::with_capacity(out.len() * cnf.len());
+            for c in &out {
+                for cl in cnf {
+                    let mut d = c.clone();
+                    d.extend(cl.iter().map(|&l| (k, (l.unsigned_abs() - 1) as usize, l > 0)));
+                    next.push(d);
+                }
+            }
+            out = next;
+        }
+        let mut res = Vec::with_capacity(out.len());
+        let mut seen: HashSet<Vec<SlotLit>> = HashSet::with_capacity(out.len());
+        for c in out {
+            let mut d: Vec<SlotLit> = Vec::with_capacity(c.len());
+            for l in c {
+                if !d.contains(&l) {
+                    d.push(l);
+                }
+            }
+            if d.iter().any(|&(k, i, p)| d.contains(&(k, i, !p))) {
+                continue;
+            }
+            let mut key = d.clone();
+            key.sort_unstable();
+            if seen.insert(key) {
+                res.push(d);
+            }
+        }
+        Ok(res)
+    }
+
+    /// `Pattern.__init__`. `max_expand` is `_common.MAX_EXPAND`. Err names an unknown predicate.
+    pub fn build_pattern(&self, rules: &[Rule], node: i64, max_expand: u128) -> Result<BuiltPattern, String> {
+        let mut wide = Vec::new();
+        let mut expanded: Vec<Vec<SlotLit>> = Vec::new();
+        for (r, (ps, cs)) in rules.iter().enumerate() {
+            let mut n: u128 = 1;
+            for (_, p, pos) in ps {
+                n = n.saturating_mul(self.cnf(p, !*pos)?.len() as u128);
+            }
+            for (_, p, pos) in cs {
+                n = n.saturating_mul(self.cnf(p, *pos)?.len() as u128);
+            }
+            if n > max_expand {
+                wide.push(r);
+                continue;
+            }
+            let lits: Vec<(i64, &str, bool)> = ps
+                .iter()
+                .map(|(k, p, pos)| (*k, p.as_str(), !*pos))
+                .chain(cs.iter().map(|(k, p, pos)| (*k, p.as_str(), *pos)))
+                .collect();
+            for c in self.expand_clause(&lits)? {
+                expanded.push(c.into_iter().map(|(k, i, pos)| (k, i, !pos)).collect());
+            }
+        }
+        let clauses = unsubsumed_clauses(expanded);
+        let mut used: Vec<i64> = Vec::new();
+        let mut child_preds: Vec<(i64, Vec<usize>)> = Vec::new();
+        for c in &clauses {
+            for &(k, i, _) in c {
+                used.push(k);
+                if k != node {
+                    match child_preds.iter_mut().find(|(s, _)| *s == k) {
+                        Some((_, v)) => v.push(i),
+                        None => child_preds.push((k, vec![i])),
+                    }
+                }
+            }
+        }
+        used.sort_unstable();
+        used.dedup();
+        Ok(BuiltPattern { clauses, used, child_preds, wide })
+    }
 }

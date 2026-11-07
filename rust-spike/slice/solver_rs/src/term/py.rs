@@ -1,12 +1,12 @@
 //! The Python face of the term module. Python holds ints; nothing here keeps state across queries.
-use super::knowledge::{Rules, UnitPattern};
+use super::knowledge::{self, Rules, UnitPattern};
 use super::offline;
 use super::rat::Rat;
 use super::table::{Kind, Read, Reads, Refuse, TermTable, READ_RAISED, V};
 use super::TermId;
 use num_bigint::BigInt;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyValueError};
+use pyo3::exceptions::{PyException, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PyTuple};
 use pyo3::IntoPyObjectExt;
@@ -293,6 +293,11 @@ fn pattern<'py>(py: Python<'py>, k: &Rules, p: &UnitPattern) -> PyResult<Bound<'
     (rules, clauses, used, p.complete).into_bound_py_any(py)
 }
 
+/// A template's rules, from any iterable of `(premises, conclusions)`.
+fn extract_rules(rules: &Bound<'_, PyAny>) -> PyResult<Vec<knowledge::Rule>> {
+    rules.try_iter()?.map(|r| r?.extract()).collect()
+}
+
 #[pymethods]
 impl PyKnowledge {
     #[new]
@@ -333,6 +338,59 @@ impl PyKnowledge {
         let f: Vec<(&str, bool)> = facts.iter().map(|(p, v)| (p.as_str(), *v)).collect();
         let p = self.0.units(&f).map_err(PyValueError::new_err)?;
         pattern(py, &self.0, &p)
+    }
+
+    /// `_common.resolve`: `read(slot, pred)` is called where Python calls `const_value`, and what it raises comes through as
+    /// itself. None is "template asserts a contradiction", for the caller to raise. Raises TermRefuse on a read that isn't a
+    /// bool or None.
+    fn resolve<'py>(
+        &self,
+        py: Python<'py>,
+        rules: &Bound<'py, PyAny>,
+        const_slots: Vec<i64>,
+        read: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let rules = extract_rules(rules)?;
+        let r = knowledge::resolve(
+            &rules,
+            |k| const_slots.contains(&k),
+            |k, pred| -> PyResult<Option<bool>> {
+                read.call1((k, pred))?.extract().map_err(|e: PyErr| TermRefuse::new_err(format!("const_value of {pred}: {e}")))
+            },
+        )?;
+        match r {
+            None => Ok(py.None().into_bound(py)),
+            Some(rs) => {
+                let out = PyList::empty(py);
+                for (ps, cs) in &rs {
+                    out.append((PyTuple::new(py, ps)?, PyTuple::new(py, cs)?))?;
+                }
+                Ok(out.into_any())
+            }
+        }
+    }
+
+    /// `Pattern.__init__`: (clauses, used, child_preds, indices of the wide rules). An unknown predicate is a KeyError, as `cnf_of`'s.
+    fn build_pattern<'py>(
+        &self,
+        py: Python<'py>,
+        rules: &Bound<'py, PyAny>,
+        node: i64,
+        max_expand: u64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let rules = extract_rules(rules)?;
+        let p = self.0.build_pattern(&rules, node, max_expand as u128).map_err(PyKeyError::new_err)?;
+        let clauses = PyList::empty(py);
+        for c in &p.clauses {
+            let preds: Vec<usize> = c.iter().filter(|l| l.0 == node).map(|l| l.1).collect();
+            let internal: Vec<(i64, usize)> = c.iter().map(|&(k, i, n)| (k, 2 * i + n as usize)).collect();
+            clauses.append((PyTuple::new(py, c)?, PyFrozenSet::new(py, preds)?, PyTuple::new(py, internal)?))?;
+        }
+        let child_preds = PyDict::new(py);
+        for (k, v) in &p.child_preds {
+            child_preds.set_item(k, PyFrozenSet::new(py, v)?)?;
+        }
+        (clauses, PyTuple::new(py, &p.used)?, child_preds, p.wide).into_bound_py_any(py)
     }
 
     fn const_basis(&self) -> Vec<String> {
