@@ -7,10 +7,14 @@
 mod block;
 mod euf;
 mod euf_py;
+mod handle;
 mod map;
+mod pyset;
 mod solver;
 mod term;
 mod theory;
+mod transfer;
+mod transfer_py;
 
 use block::Closure;
 use pyo3::exceptions::{PyNotImplementedError, PyOverflowError, PyRuntimeError, PyValueError};
@@ -545,5 +549,6 @@ fn lits_opt(a: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<u32>> {
 fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     term::py::register(m)?;
     m.add_class::<PySolver>()?;
-    euf_py::add_to(m)
+    euf_py::add_to(m)?;
+    transfer_py::register(m)
 }
