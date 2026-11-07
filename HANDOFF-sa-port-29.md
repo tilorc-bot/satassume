@@ -48,7 +48,7 @@ Limits of that survey, some of which e780e4f doesn't state, so **put them in the
 - `check_table` (`term_shadow.py:105-150`) unpacks key, closed and power from `row`, and needs the explicit reads. It reads everything, so it's the test of the values and not of laziness.
 - `check_order` `:186` tests `row(i)[2] is None` and would count every unread key as `key-compare-no-key`.
 - `:634` uses `counts['pow_base_not_input']`: ruling 3's "queries holding such a Pow" can't come from conversion now. Compute it in the shadow as its own check.
-- `:61`-ish `F_COMMUTATIVE` joins `want` at `:133`; take it out for the explicit read.
+- `F_COMMUTATIVE` is part of `want` at `:131`; take it out for the explicit read.
 - Laziness numbers come from `term_counts.py`, with checks off. `term_history.py:72` hashes `row(i)[:5]`, which now holds read-so-far: check that against a read-everything run.
 
 **Other bodies:** `Kept('too-deep')` can shift, since a `RecursionError` in a read becomes a refusal, not a Kept. Report it. sa-port-27's `knowledge.rs` didn't match `COMMUTATIVE` or `.bits` by rg on `~/dev/sa-port-24`; it reads `.key`/`.closed`/`.power` only in `py.rs`, and has `complex-unbounded` at `convert.py:43,310,423` on its branch, which it drops when it rebases. Don't commit to its branch.
