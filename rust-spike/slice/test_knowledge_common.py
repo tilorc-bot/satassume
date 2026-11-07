@@ -10,7 +10,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import pytest
-from sympy import E as EE, I, Integer, Q, Rational, S, Symbol, pi
+from sympy import E as EE, I, Integer, Q, Rational, S, Sum, Symbol, pi
 
 from harness.state import reset_module_state
 from satassume import engine as E
@@ -285,6 +285,19 @@ def test_every_template_goes_through_rust_and_the_answers_stand():
     finally:
         undo()
         reset_module_state(sympy_cache=False)
+
+
+def test_a_kept_query_stays_wholly_on_python(live):
+    x = Symbol('x')
+    reset_module_state(sympy_cache=False)
+    sympy_api.set_default_engine(E.Engine())
+    sympy_api.ask(Q.positive(Sum(x, (x, 1, Symbol('n', integer=True)))))
+    assert live['kept:sum-product-integral'] == 1 and live['common:kept'] > 0
+    assert not live['common:resolve'] and not live['common:pattern']
+    reset_module_state(sympy_cache=False)
+    sympy_api.set_default_engine(E.Engine())
+    sympy_api.ask(Q.positive(x + 1))
+    assert live['common:resolve'] + live['common:pattern'] > 0
 
 
 def test_undo_restores_both_globals():

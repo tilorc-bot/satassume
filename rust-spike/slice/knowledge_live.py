@@ -10,8 +10,9 @@ default: nothing here runs unless a caller installs it.
 3. `value_units`, as `functions._value_units` and `special.py` call it, gets its pattern the same way. Those callers stay
    Python, so the value they pass was built there: it usually isn't an input term, and takes the derived path below.
 4. `_common.resolve` and `_common.Pattern`, the module globals `facts` and `units` call, are Rust's, so every template in the
-   engine goes through them. They take no term table, so this holds with or without a query on the stack, and on a kept query.
-   `facts`, `units` and `_CACHE` stay Python, and a constant's facts are read by `const_value`, in Python, in Python's order.
+   engine goes through them, except on a kept query, which stays wholly on Python (`common:kept`). They take no term table, so
+   no query on the stack still runs Rust. A kept query can be served a pattern `_CACHE` got from Rust earlier: plain Python data,
+   and no Rust runs for it. `facts`, `units` and `_CACHE` stay Python, and a constant's facts are read by `const_value`, in Python, in Python's order.
 
 Stays on Python, counted by reason in `COUNTS`: a query conversion keeps (`kept:<reason>`), and a template reached with no
 query on the stack, by a caller using `Engine` directly (`py:no-query`). A node that isn't an input term (`derived`, such
@@ -185,7 +186,16 @@ def install(shadow=False, data=None):
         return rust_compiled(lambda: py_value(value, obj), 'value', False, value, obj)
     rust_value_units.__wrapped__ = py_value
 
+    def kept():
+        stack = _stack()
+        if stack and stack[-1].kept is not None:
+            COUNTS['common:kept'] += 1
+            return True
+        return False
+
     def rust_resolve(rules, consts):
+        if kept():
+            return py_resolve(rules, consts)
         COUNTS['common:resolve'] += 1
         if shadow:      # `gen()` may return a non-list, and Python's run below reads it again
             rules = list(rules)
@@ -220,6 +230,8 @@ def install(shadow=False, data=None):
         return r
 
     def rust_pattern(rules, node, nobjs=1):
+        if kept():
+            return py_pattern(rules, node, nobjs)
         COUNTS['common:pattern'] += 1
         try:
             clauses, used, child_preds, wide = kn.build_pattern(rules, node, _common.MAX_EXPAND)
