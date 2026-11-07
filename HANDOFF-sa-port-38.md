@@ -1,28 +1,15 @@
 # Handoff: sa-port-38, component 3 (transfer core), issue 323
 
-**Not landed. Nothing of component 3 is on `rust-slice`.** No jobs are running. The architect asked me to hold at dfa7b45 and asked the planner whether component 3 must rerun for it.
+**Landed on `rust-slice`; nothing is left to do for component 3.** This file stays for its traps and map. No jobs are running.
 
 ## Source
 
 | What | SHA |
 |---|---|
 | Tested, all runs | `port/3-landing-5` f9eb6de, on `rust-slice` dc3f15d, module sha256 bf4cf6d6ce78 |
-| Rebased, nothing but smoke on it | `port/3-landing-6`, this commit, on dfa7b45 |
+| Landed, short check only | on dfa7b45, per the planner's rule; see `port-3.md` |
 
 **The bar on f9eb6de is met, and the full results are in `rust-spike/slice/results/port-3.md`.** Suite 5,961 / 77 / 46, 0 changed. Fresh 10 of 10 byte-identical. Controls 6 of 8. History 14 runs, 0 differ. Firings 0 findings.
-
-## Evidence for the planner's question: f9eb6de against dfa7b45
-
-- 7 files differ, knowledge tools and docs only; 0 diff lines in `solver_rs`, `lra`, `satassume`, `tests`.
-- `backend.install()` doesn't load `knowledge_live`; `transfer:1:300` on orion byte-identical for py, rust, shadow on the rebased tree.
-- **Not traced:** `convert.py` names `knowledge_live`. `convert.py` itself didn't change in this move.
-
-## Not run, in order
-
-1. Get the planner's answer through the architect. Don't restart for dfa7b45 before it.
-2. **No rerun needed:** `git fetch`; if `rust-slice` is still dfa7b45, `git push origin HEAD:rust-slice`, no force. If it moved, rebase, say what moved, and apply the same rule.
-3. **Rerun needed:** `cd ~/sa-rust-ids-work/sa-port-38/jobs; setsid nohup bash land38.sh SHA BRANCH > land.log 2>&1 < /dev/null &`. About 17 minutes when the paretos are free. Read `s1` as below, then update the report's numbers.
-4. Report, per the brief's DONE WHEN.
 
 ## Reading a run
 

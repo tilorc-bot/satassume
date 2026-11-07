@@ -8,7 +8,11 @@
 
 **Atoms (dc3f15d): the crate did change, 415 lines in `term/knowledge.rs`, `mod.rs`, `py.rs` and `table.rs`, and the runs below include them.** One tool conflicted: both sides added `suite_split.py`. `rust-slice`'s stays unchanged, and this branch's is `suite_split_named.py`.
 
-**Not landed as of this report. Tested source: `port/3-landing-5` at f9eb6de, on `rust-slice` dc3f15d.** `rust-slice` then moved to dfa7b45 (atoms whole, `port-6b.md`), and the runs weren't repeated on it, pending the planner's answer. From f9eb6de's tree to the tree rebased on dfa7b45, 7 files differ: `HANDOFF-sa-port-45.md`, `knowledge_fresh.py`, `knowledge_live.py`, `knowledge_value_wl.py`, `mutate_knowledge.py`, `results/port-6b.md`, `test_knowledge_value_units.py`. There are 0 diff lines in `solver_rs`, `lra`, `satassume` and `tests`. On the rebased tree, `backend.install()` doesn't load `knowledge_live`, and `transfer:1:300` on orion is byte-identical for py, rust and shadow. `knowledge_live` isn't named in `backend.py`, `rust_plugin.py`, `live.py`, `transfer_fresh.py` or `state.py`. `convert.py` does name it, and that use wasn't traced.
+**Tested source: `port/3-landing-5` at f9eb6de, on `rust-slice` dc3f15d. Landed on dfa7b45 (atoms whole, `port-6b.md`) without a full rerun, under the planner's rule:** a rebase needs one only if the incoming diff changes code the run executes.
+
+- **Incoming diff, f9eb6de's tree to dfa7b45's:** 7 files, `HANDOFF-sa-port-45.md`, `knowledge_fresh.py`, `knowledge_live.py`, `knowledge_value_wl.py`, `mutate_knowledge.py`, `results/port-6b.md`, `test_knowledge_value_units.py`. 0 diff lines in `solver_rs`, `convert.py`, `lra`, `satassume` and `tests`.
+- **What `rust` mode reaches:** after `backend.install()`, `convert`, `knowledge_live`, `term_shadow` and `lazy_reads` aren't loaded. **The crate's `term/` is reached:** `lib.rs` calls `term::py::register` at import, and `TermId` and `term::offline` come from `term/`. So rust mode does run some of `term/`, including `py.rs`, which changed from 6827bf7 to dc3f15d. Those changes are in f9eb6de, so the runs below include them, and none comes after it.
+- **Short check on the landing tree, orion, seed 0:** build; `transfer:1:300` byte-identical for py, rust and shadow; fresh dev byte-identical for py and rust, 1,985 queries, 3,332 sessions, 0 quiet catches.
 
 Build on pareto1 (x86_64), sha256 starts bf4cf6d6ce78, the same file on both hosts. Fresh and suite ran on pareto0, controls and history on pareto1. Output: `~/sp19/out38/` on each host; suite rows and `split.jsonl` in `~/sa-rust-ids-work/sa-port-38/s1/` on orion.
 
@@ -78,7 +82,7 @@ Against Python, on this source. `@` is the first query that differs; `q` is that
 
 ### Known differences
 
-**`P`'s 9 differences, causes shown by running them** on older source (`sa-port-28/smoke/p_cause.py`), not rerun here:
+**`P`'s 9 differences, causes shown by running them** (`sa-port-28/smoke/p_cause.py`, rerun on the landing tree's build, same results):
 - `is_dataclass` False, `__dict__` AttributeError: fixed slots, no instance dict, no `__dataclass_fields__`.
 - 6 pickle rows: Python's bytes rebuild with no arguments and then BUILD a dict. Protocols 0, 1: `object.__new__(P) is not safe`. 2 to 5: `P.__new__() missing 2 required positional arguments`. Rust's bytes load on both classes. Saved streams hold no `P`: the copy of `stream.pkl` matching 94db857d9d5d has 0 occurrences of "satassume" in its bytes, read without loading, and likewise `battery-stream` and `gate2-stream`.
 - A subclass with a `pred` property: Python's frozen init writes through the property and raises; Rust's `__new__` writes its slot, so it builds and the property wins on read.
