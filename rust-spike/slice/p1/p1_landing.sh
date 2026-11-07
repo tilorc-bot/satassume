@@ -24,18 +24,6 @@ for wl in dev fuzz ground port; do
   $PY livecmp.py $F/$wl-py.jsonl $F/$wl-rust.jsonl >$F/$wl.cmp 2>&1
 done
 date -u >$F/done
-# 3. Forced moves, with the counter: every call on dev and ground, every 16th on fuzz
-M=$OUT/mv; mkdir -p $M
-for spec in dev:1 ground:1 fuzz:16; do
-  wl=${spec%:*}; st=${spec#*:}; echo "$wl stride $st" >>$M/stride.txt
-  $PY move_every_call.py count $wl $M/$wl-count.jsonl >$M/$wl-count.tot 2>$M/$wl-count.err
-  for i in $(seq 0 $((J-1))); do
-    $PY move_every_call.py run $wl $M/$wl-count.jsonl.counts $M/$wl.s$i.jsonl --shard $i/$J --stride $st >$M/$wl.s$i.tot 2>$M/$wl.s$i.err &
-  done
-  wait
-  $PY move_every_call.py cmp $F/$wl-py.jsonl $M/$wl.s?.jsonl >$M/$wl.cmp 2>&1
-done
-date -u >$M/done
 # 4. Planted bugs in the port, on all four
 OUT=$OUT/portmut REF=$F WLS="dev ground fuzz port" bash $S/p1/p1_portmut.sh
 # 5. History and hash seeds

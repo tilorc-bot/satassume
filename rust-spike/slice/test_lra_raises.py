@@ -116,7 +116,7 @@ def scenario(cls, name, table):
     out.append(attempt(t.propagate))
     out.append(attempt(t.pop_level))
     out.append(view(t))
-    return out, False
+    return out
 
 
 def calls(cls):
@@ -137,13 +137,11 @@ def calls(cls):
 
 
 def compare():
-    bad, moved = [], []
+    bad = []
     for table in (BAD, ODD):
         for name in table:
-            a, _ = scenario(Py, name, table)
-            b, m = scenario(Rs, name, table)
-            if m:
-                moved.append(name)
+            a = scenario(Py, name, table)
+            b = scenario(Rs, name, table)
             if a != b:
                 i = next(i for i, (x, y) in enumerate(zip(a, b)) if x != y)
                 bad.append((name, i, str(a[i])[:300], str(b[i])[:300]))
@@ -151,19 +149,16 @@ def compare():
     for k in a:
         if a[k] != b[k]:
             bad.append((k, "call", str(a[k][0])[:200], str(b[k][0])[:200]))
-    return bad, moved
+    return bad
 
 
-def test_bad_input_raises_what_python_raises_and_stays_in_rust():
-    bad, moved = compare()
+def test_bad_input_raises_what_python_raises():
+    bad = compare()
     assert not bad, bad
-    assert not moved, moved
 
 
 if __name__ == "__main__":
-    test_failed_transfer_raises_through_ask()
-    print("failed transfer raises through ask: ok")
-    bad, moved = compare()
-    print(len(BAD), "bad", len(ODD), "odd; differences:", len(bad), "moved:", moved)
+    bad = compare()
+    print(len(BAD), "bad", len(ODD), "odd; differences:", len(bad))
     for x in bad:
         print(x)

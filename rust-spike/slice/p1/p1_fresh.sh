@@ -15,7 +15,6 @@ for wl in dev fuzz; do
 done
 date -u >$O/done
 X=$B/exc; mkdir -p $X
-$PY move_every_call.py count dev $X/count.jsonl >$X/count.tot 2>$X/count.err
 $PY except_probe.py dev $O/dev-py.jsonl $X/count.jsonl.counts $X/rust-once.jsonl --stride 5 >$X/rust-once.tally 2>$X/rust-once.err &
 $PY except_probe.py dev $O/dev-py.jsonl $X/count.jsonl.counts $X/rust-persist.jsonl --stride 5 --persist >$X/rust-persist.tally 2>$X/rust-persist.err &
 $PY except_probe.py dev $O/dev-py.jsonl $X/count.jsonl.counts $X/py-persist.jsonl --stride 5 --persist --py >$X/py-persist.tally 2>$X/py-persist.err &

@@ -758,7 +758,11 @@ fn denominators(p: &Poly, acc: BigInt) -> R<BigInt> {
 pub fn sympy_inner_gcd(a: &Poly, b: &Poly) -> R<(Poly, Poly, Poly)> {
     denominators(a, BigInt::one())?;
     denominators(b, BigInt::one())?;
-    let g = rgcd(a, b)?;
+    let g = match heu_gcd(&integer_primitive(a), &integer_primitive(b)) {
+        Some(g) => g,
+        None => rgcd(a, b)?,
+    };
+    let g = if crate::lra::mutant(108) { primitive(&g)? } else { g }; // loses the content's gcd
     if matches!(g, PQ(_)) {
         return Ok((pone(), a.clone(), b.clone()));
     }
@@ -871,10 +875,96 @@ fn rgcd(a: &Poly, b: &Poly) -> R<Poly> {
         p = q;
         q = primitive(&r)?;
     };
-    if crate::lra::mutant(108) {
-        return Ok(g); // loses the content's gcd
-    }
     Ok(mul(&k, &g))
+}
+
+/// Largest absolute value among the coefficients of an integer polynomial.
+fn max_norm(p: &Poly) -> BigInt {
+    match p {
+        PQ(r) => rat_parts(r).0.abs(),
+        PT(_, cs) => cs.iter().map(max_norm).max().unwrap_or_else(BigInt::zero),
+    }
+}
+
+/// The gcd of an integer polynomial's coefficients, added to `acc`.
+fn int_content(p: &Poly, acc: BigInt) -> BigInt {
+    match p {
+        PQ(r) => acc.gcd(&rat_parts(r).0),
+        PT(_, cs) => cs.iter().fold(acc, |a, c| int_content(c, a)),
+    }
+}
+
+fn int_rat(n: &BigInt) -> Rat {
+    Rat::norm_big(n.clone(), BigInt::one())
+}
+
+/// `p` with `v`, its largest variable or above, set to `x`.
+fn eval_top(p: &Poly, v: u32, x: &Rat) -> Poly {
+    match p {
+        PT(w, cs) if *w == v => {
+            let mut r = pzero();
+            for c in cs.iter().rev() {
+                r = add(&scale(&r, x), c);
+            }
+            r
+        }
+        _ => p.clone(),
+    }
+}
+
+/// `p` coefficient by coefficient into `(-x/2, x/2]`.
+fn symmetric_mod(p: &Poly, x: &BigInt) -> Poly {
+    match p {
+        PQ(r) => {
+            let m = rat_parts(r).0.mod_floor(x);
+            PQ(int_rat(&if &m + &m > *x { m - x } else { m }))
+        }
+        PT(v, cs) => mk(*v, cs.iter().map(|c| symmetric_mod(c, x)).collect()),
+    }
+}
+
+/// The polynomial in `v` whose value at `x` is `h`, read off in base `x` with symmetric digits.
+fn interpolate(h: &Poly, x: &BigInt, v: u32) -> Poly {
+    let inv = int_rat(x).inv();
+    let (mut h, mut digits) = (h.clone(), Vec::new());
+    while !is_zero(&h) {
+        let d = symmetric_mod(&h, x);
+        h = scale(&sub(&h, &d), &inv);
+        digits.push(d);
+    }
+    mk(v, digits)
+}
+
+/// `dmp_zz_heu_gcd`'s method on integer polynomials: evaluate the main variable at a large integer, take the gcd of the
+/// images, read the gcd back from its image and keep it only if it divides both. The bound on `x` is `B = 2*min(norm)+29`,
+/// SymPy's own (SymPy may start lower, at `99*sqrt(B)`); a divisor that passes is then the gcd, because the rest of the gcd
+/// would have to take the value +-1 at `x`, and `x` lies beyond its roots. `None` when six points fail: the PRS answers.
+fn heu_gcd(f: &Poly, g: &Poly) -> Option<Poly> {
+    let (cf, cg) = (int_content(f, BigInt::zero()), int_content(g, BigInt::zero()));
+    let k = cf.gcd(&cg);
+    let v = match (f, g) {
+        (PT(a, _), PT(b, _)) => *a.max(b),
+        (PT(a, _), _) | (_, PT(a, _)) => *a,
+        _ => return Some(PQ(int_rat(&k))),
+    };
+    let kr = int_rat(&k);
+    let kinv = kr.inv();
+    let (f, g) = (scale(f, &kinv), scale(g, &kinv));
+    let mut x = (max_norm(&f).min(max_norm(&g)) * 2u32) + 29u32;
+    for _ in 0..6 {
+        let xr = int_rat(&x);
+        let (ff, gg) = (eval_top(&f, v, &xr), eval_top(&g, v, &xr));
+        if !is_zero(&ff) && !is_zero(&gg) {
+            let image = heu_gcd(&ff, &gg)?;
+            let h = integer_primitive(&interpolate(&image, &x, v));
+            if !is_zero(&h) && divexact(&f, &h).is_ok() && divexact(&g, &h).is_ok() {
+                return Some(scale(&h, &kr));
+            }
+        }
+        // SymPy's step, `73794*x*isqrt(isqrt(x))//27011`.
+        x = &x * 73794u32 * x.sqrt().sqrt() / 27011u32;
+    }
+    None
 }
 
 /// `_gcd` (:595): monic; 0 for two zeros.

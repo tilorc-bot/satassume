@@ -2,8 +2,9 @@
 
 Every ordered pair and triple from a pool of payloads over equal, distinct objects. For each: register on real Python and on
 Rust, then compare, by tag, every place a term object sits: `walk` searches all of Python's fields, so a container nobody
-named shows up too. Then the model keys from check(). Then the session moves to Python right after the registrations
-and both go on with the same calls, comparing answers and state to the end. Test-only."""
+named shows up too. Then the model keys from check(). Then both go on with the same calls, comparing answers and state to the
+end. The state transfer is gone; while it existed this ran with a move right after the registrations: 14,424 sequences,
+344,304 answers, 0 differ (hook level, plain Fractions, moves at level 0). Test-only."""
 import collections
 import itertools
 import json
@@ -117,7 +118,7 @@ def main(out=None):
     diffs = collections.Counter()
     first = {}
     extra = collections.Counter()
-    nseq = moved = move_diff = refused = answers = 0
+    nseq = session_diff = refused = answers = 0
     rows = []
     for size in (1, 2, 3):
         for names in itertools.product(POOL, repeat=size):
@@ -148,10 +149,8 @@ def main(out=None):
             if ca != cb:
                 diffs["model"] += 1
                 first.setdefault("model", (names, ca, cb))
-            # the move right after the registrations, then the same calls on both
+            # the same calls on both, to the end of the session
             m = run(lra_backend.LRATheory, names)
-            m._move("forced")
-            moved += 1
             pe = run(Py, names)
             c1, c2 = calls(pe, size), calls(m, size)
             for k, v in vars(pe).items():       # any container that only fills during the session
@@ -162,20 +161,20 @@ def main(out=None):
                 if isinstance(u, dict):
                     hit |= {k for k in u if u[k] != w.get(k)}
                     if u.get("_forms") != w.get("_forms"):
-                        first.setdefault("move:_forms", (names, j, u.get("_forms"), w.get("_forms")))
+                        first.setdefault("session:_forms", (names, j, u.get("_forms"), w.get("_forms")))
                     for k in u:
                         if k != "_forms" and u[k] != w.get(k):
-                            first.setdefault("move:" + k, (names, j, u[k], w.get(k)))
+                            first.setdefault("session:" + k, (names, j, u[k], w.get(k)))
                 elif u != w:
                     hit.add("answer")
-                    first.setdefault("move:answer", (names, j, u, w))
+                    first.setdefault("session:answer", (names, j, u, w))
             if len(c1) != len(c2):
                 hit.add("answer")
-            move_diff += bool(hit)
+            session_diff += bool(hit)
             for k in hit:
-                diffs["move:" + k] += 1
+                diffs["session:" + k] += 1
             answers += sum(not isinstance(u, dict) for u in c1)
-    res = dict(pool=len(POOL), sequences=nseq, refused_both_or_diff=refused, moved=moved, answers_compared=answers, move_differs=move_diff,
+    res = dict(pool=len(POOL), sequences=nseq, refused_both_or_diff=refused, answers_compared=answers, session_differs=session_diff,
                differs=dict(diffs), python_fields_holding_terms=dict(extra), first={k: repr(v) for k, v in first.items()})
     print(json.dumps(res, indent=0))
     if out:

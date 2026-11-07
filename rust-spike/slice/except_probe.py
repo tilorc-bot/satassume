@@ -12,12 +12,13 @@ import sys
 
 import catch_count
 import live
-from move_every_call import HOOKS
+
+HOOKS = ("register_atom", "assert_lit", "check", "propagate", "push_level", "pop_level")
 
 ap = argparse.ArgumentParser()
 ap.add_argument("wl")
 ap.add_argument("ref")
-ap.add_argument("counts")
+ap.add_argument("counts", help="hook calls per query, one JSON [q, n] per line; written here first if missing")
 ap.add_argument("out")
 ap.add_argument("--stride", type=int, default=5)
 ap.add_argument("--py", action="store_true")
@@ -65,6 +66,20 @@ catch_count.install()
 
 ref = {r["q"]: r["ans"] for r in map(json.loads, open(a.ref)) if "q" in r}
 pairs = live.load(a.wl)
+if not os.path.exists(a.counts):
+    with open(a.counts, "a") as cf:
+        for q, (p, assum) in enumerate(pairs):
+            cf.flush()
+            if os.fork():
+                os.wait()
+                continue
+            try:
+                sympy_api.ask(p, assum)
+            except BaseException:
+                pass
+            cf.write(json.dumps([q, S.n]) + "\n")
+            cf.flush()
+            os._exit(0)
 items = []
 for q, c in sorted(json.loads(x) for x in open(a.counts)):
     items += [(q, g) for g in range(0, c, a.stride)]
