@@ -1,6 +1,6 @@
 # Component 4, slice B: term work through ids (issue 323)
 
-**Tested source `cd79c64`, on `rust-slice` 9009865 (pyset-order), on pareto1 (x86-64). Landed as the commit that adds this report, whose only change from the tested source is this file.** Output: `/home/tilo/sa-rust-ids-work/sa-port-66/l2` on pareto1. Base rows: `pareto1:~/sa-rust-ids-work/sa-port-64/l1/suite`.
+**Tested source `cd79c64`, on `rust-slice` 9009865 (pyset-order), on pareto1 (x86-64). Landed as the commits that add and correct this report, whose only change from the tested source is this file.** Output: `/home/tilo/sa-rust-ids-work/sa-port-66/l2` on pareto1. Base rows: `pareto1:~/sa-rust-ids-work/sa-port-64/l1/suite`.
 
 **Modules that now run whole because of this: 0 of 32**, as the planner expected. `relations.py` keeps its processing for slice C, and every moved function keeps its Python path for a term with no id.
 
@@ -8,7 +8,7 @@
 
 Rust's algebra and key now answer these, in rust mode:
 
-- `relation_atom`'s eq and ne branch, with `_is_number`, `_affine_strip` and the sort by Rust's key. **lt, le, gt and ge stay Python's**, so this isn't the whole function. They do no term work beyond identity tests against nan and the infinities.
+- `relation_atom`'s eq and ne branch, with `_is_number`, `_affine_strip` and the sort by Rust's key. **lt, le, gt and ge stay Python's**, so this isn't the whole function. They do no term work beyond identity tests against nan and the infinities, and an `is_Rational` read in `_ext_atoms`.
 - `_termwise`, and `_eq_links`'s difference.
 - `_key`: its only caller is `relation_atom`, which no longer calls it on this path.
 
@@ -18,7 +18,7 @@ Rust's algebra and key now answer these, in rust mode:
 - The glue's `d = p - q` (`relations.py:2008`) is still built by Python, and Rust's difference must equal it or the run refuses.
 - At the LRA sort sites Python still computes the key and uses it. Rust's key must match or the run refuses, so Rust's key decides order only at `eq_sides`.
 
-**Shared files touched:** `rust_plugin.py` (the default mode), `fresh.py` (`--term terms`, `--term-plant`), `term_discard.py` (two more sites). Crate: `term/relations.rs` is new, plus `term/py.rs` and `term/mod.rs`. `lra_backend.py` and `constfield` are untouched.
+**Shared files touched:** `rust_plugin.py` (one line: it dumps `term_live.report()`, not only the counts; the default mode is `term_live.from_env`), `fresh.py` (`--term terms`, `--term-plant`), `term_discard.py` (two more sites). Crate: `term/relations.rs` is new, plus `term/py.rs` and `term/mod.rs`. `lra_backend.py` and `constfield` are untouched.
 
 ## The bar
 
@@ -52,9 +52,9 @@ Rust's algebra and key now answer these, in rust mode:
 | Plant | Dev | Fuzz | Direct |
 |---|---|---|---|
 | `termwise-false` | **Caught:** 1 answer, 15 digests | Not run | - |
-| `swap` | **Caught:** 210 digests, 0 answers | Not run | **Caught**, 483 of 500 |
+| `swap` | **Caught:** 210 digests, 0 answers | Not run | **Caught**, 483 differ on 500 generated pairs |
 | `no-strip` | **Not caught**, 0 digests | **Caught:** 84 digests, 0 answers | - |
-| `termwise-true` | **Not caught** | **Not caught** | **Caught as `wise`**, 339 of 500 |
+| `termwise-true` | **Not caught** | **Not caught** | **Caught as `wise`**, 339 differ on 500 generated pairs |
 | No rollback, discard | **Caught:** 489 digests, 1,985 of 1,985 left state, 0 answers | Not run | - |
 
 **`termwise-true` is a real limit:** a wrong True at `_termwise`, the glue's site, moves nothing on dev or fuzz. The evidence for that arm is the direct comparison and check mode, not the fresh comparison. I didn't look into why. Note `_eq_links` reads `eq_diff`, not this plant.
@@ -66,16 +66,18 @@ Direct's `key` plant is caught at 440 product keys and 337 difference keys, and 
 | Calls on Rust | `relation_atom` | `_eq_links` | `_termwise` | LRA key asked | of those derived | Refused | Rebuilt |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Fresh dev | 1,381 | 40 | 30 | 4,055 | 7 | 0 | 0 |
-| Fresh fuzz | 27,626 | 888 | 1,576 | 117,684 | not read | 0 | 100 |
+| Fresh fuzz | 27,626 | 888 | 1,576 | 117,684 | 0 | 0 | 100 |
 | Suite | 161,654 | 21,028 | 2,614 | 101,724 | 302 | 38 | 18,969 |
 
 **Check mode on the suite**, Python's own function beside each answer from Rust, read after the run: `relation_atom` 160,939 same, `_eq_links` 32,152 same, `_termwise` 2,559 same, **0 differ**. Check mode builds in SymPy, so these are evidence and not numbers to quote for speed.
 
-**Direct comparison, `term_ids_direct.py`, new, 20,000 random pairs, 19,352 converted: 0 differ.** `eq_sides` answered 19,351. `sub` with its form, `_termwise` and `eq_diff` answered 13,341. Product keys answered 18,717. 648 pairs were kept out of scope, and it refuses on the rest as counted in its output.
+**Direct comparison, `term_ids_direct.py`, new, 20,000 random pairs, 19,352 converted: 0 differ.** `eq_sides` compared 19,351. `sub` with its form, `_termwise`, `eq_diff` and the difference's key compared 13,341. Product keys compared 17,745, 972 products had no id so nothing was compared, and 635 refused. 648 pairs were kept out of scope.
+
+**Fresh fuzz reaches 0 derived keys at the LRA sites,** and fresh dev 7. Derived products there are reached mainly by the suite's 302 and by the direct comparison.
 
 **The handoff's dev question:** slice A's `converted` of 1,935 and sa-port-65's 1,197 are both right. 1,935 comes from `fresh.py`, which clears memos per query. 1,197 comes from `live.py`, which keeps them, and `keys` mode gives 1,197 there too, so slice B didn't cause it. Fresh dev on this source reads 1,935 and 50 kept.
 
-**Still on Python, by call:** `term:no-table` on the suite is `relation_atom` 80,011, `_eq_links` 12,089, `_termwise` 15,026. These run where no table is live, in a Kept query or outside a run. I didn't split them by caller, so about a third of `relation_atom`'s suite calls aren't this port's reach. `term:py:relation_atom`, a term with no id inside a run, is 21. `term:unknown` is 0 on all three suite runs, because that count is only written by a class with no row; these 21 are Add or Mul with an arg with no id.
+**Still on Python, by call:** `term:no-table` on the suite is `relation_atom` 80,011, `_eq_links` 12,089, `_termwise` 15,026. These run where no table is live: in a Kept query, in a discarded query's second run, or outside a run. I didn't split them by caller, so about a third of `relation_atom`'s suite calls aren't this port's reach. `term:py:relation_atom`, a term with no id inside a run, is 21. `term:unknown` is 0 on all three suite runs, so by reading `term_id` those 21 are its other route: a row exists under `==` but for another class, as with Float against Integer. I didn't check them case by case.
 
 ## Refusals, now on real terms
 
@@ -88,10 +90,10 @@ Direct's `key` plant is caught at 440 product keys and 337 difference keys, and 
 | `compare: types Python's < doesn't order` | 8 | 7 | `Q.eq(0.1, 1/10)` |
 | `mul: a coefficient beside a numeric-base power` | 2 | 1 | a long disjunction with `sqrt(2)` |
 
-- **Exp factors, the planner's follow-up:** 19 suite refusals on 6 distinct queries, half of all refusals. It isn't the key: it's `mul` in `sub`, negating a factor whose class has its own `as_base_exp`, so `Q.eq(exp(t), y)` discards its run. No `key:` reason appears on the suite. By count on the suite this isn't worth porting yet. The direct comparison refuses this reason on 854 of 19,352 random pairs, which says what shape it is and not how often real use reaches it.
-- **Derived products at the LRA sort sites:** 302 asked on the suite, 0 mismatches, 0 refusals. Direct: 18,717 product keys matched, 633 refused, 612 of them `a Mul with a Number head that isn't rational`.
+- **Exp factors, the planner's follow-up:** 19 suite refusals on 6 distinct queries, half of all refusals. It isn't the key: no `key:` reason appears on the suite. In the direct comparison this reason appears only under `sub`, which negates a term, so I read it as `mul` refusing `-exp(t)`. Run by hand: `Q.eq(exp(x), y)`, `Q.eq(y, exp(x))` and `Q.eq(exp(f(x)), y)` each refuse with this reason and answer as Python does; `Q.eq(x*exp(y), y)` and `Q.gt(exp(x), y)` don't refuse. I didn't read all 6 suite queries, so "exp" is confirmed on the example and these, not on each. **So a plain equality with a bare `exp` side always discards its run:** rare on the suite, but a common thing for a user to write, so the suite's count may understate it. My view: worth a look before any speed claim, not needed to land. The direct comparison refuses this reason on 854 of 19,352 random pairs, which says what shape it is and not how often real use reaches it.
+- **Derived products at the LRA sort sites:** 302 asked on the suite, 0 mismatches, 0 refusals. Direct: 17,745 product keys matched, 635 refused, 612 of them `a Mul with a Number head that isn't rational`.
 - **Handoff items 4 and 5, measured on the suite:** `rational_head`'s `strip:` refusal 0. `sub`'s refusals are the 9 and the 2 above at most, since those reasons aren't only reached through `sub`.
-- **`read_raised` on real reads, first consumer's count:** 0 on the suite, and `read_term_missing` 0.
+- **`read_raised` on real reads, first consumer's count:** 0 on the suite, and `read_term_missing` 0. `test_term_live.py` shows each firing on a plant, and passes on this source.
 - **`Kept('too-deep')`:** 0.
 
 **A discarded run leaves nothing in Python, shown on planted refusals at real sites, now including slice B's:**
@@ -135,7 +137,7 @@ A query taking the Kept route answers wholly on Python, so these move between Ru
 ## What I changed from the first version
 
 - `_same_key` now follows the shadow's `_tagged` rule. The first version's clause was an approximation that could have hidden a wrong key.
-- `test_term_ids.py`: 48 of 56 failed, on three test bugs. `table_for` passed `None` as assumptions, which conversion keeps as out of scope. The fixture kept an answer memo. Two spies sat outside the run, where no table is live. The test that asserted `>= 0` now compares with Python's answer and its reason.
+- `test_term_ids.py`: 48 of 56 failed, all on the tests rather than Rust. `table_for` passed `None` as assumptions, which conversion keeps as out of scope. The fixture kept an answer memo. Two spies sat outside the run, where no table is live. One pair expected an answer where Rust refuses, which now has its own test. The nan test relied on a table that didn't hold nan. The test that asserted `>= 0` now compares with Python's answer and its reason.
 - No change to Rust's term code came out of this.
 
 ## Tests
