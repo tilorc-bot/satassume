@@ -101,13 +101,19 @@ def multigamma_templates(expr):
     if x.is_Atom and x.is_number and p <= MAX_MULTIGAMMA_P:
         # multigamma(-1.0, 3): the value of a constant node (gamma(-1.0) is
         # zoo, Float(-2.0).is_integer is None)
-        try:
-            v = expr.func(x, p)
-        except (ValueError, TypeError, ArithmeticError):
-            v = None
+        v = _multigamma_value(expr, x, p)
         if v is not None and v.is_Atom and v.is_number and v is not S.NaN:
             return [out, value_units(v, expr)]
     return out
 
 
 # ---------------------------------------------------------------------------
+
+
+def _multigamma_value(expr, x, p):
+    """``multigamma(x, p)`` evaluated by SymPy for constant ``x`` and ``p``,
+    or None if it raises."""
+    try:
+        return expr.func(x, p)
+    except (ValueError, TypeError, ArithmeticError):
+        return None

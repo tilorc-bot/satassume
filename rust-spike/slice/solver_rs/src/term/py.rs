@@ -2,6 +2,7 @@
 use super::lra_read::{self, items_py, Constraint, Lra, E as LraErr};
 use std::collections::HashMap;
 use super::tcore;
+use super::tf6;
 use super::knowledge::{self, Rules, UnitPattern};
 use super::offline;
 use super::rat::Rat;
@@ -883,6 +884,94 @@ fn core_ipi_rules(p: BigInt, q: BigInt, s: Option<usize>, n: usize) -> PyResult<
     Ok(tcore::ipi_rules(&core_rat(p, q)?, s, n))
 }
 
+// ---- Step 6f: functions, special, rootof, nodes, physics, stats (`tf6.rs`). `knowledge_f6_live.py` builds keys and literals.
+
+fn f6_rest<'py>(py: Python<'py>, s: &Option<tcore::Rest>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    match s {
+        Some(r) => Some(core_rest(py, r)).transpose(),
+        None => Ok(None),
+    }
+}
+
+#[pyfunction]
+fn f6_pi_trig_rules(cos_: bool, p: BigInt, q: BigInt, has_s: bool) -> PyResult<Vec<tcore::Rule>> {
+    Ok(tf6::pi_trig_rules(cos_, &core_rat(p, q)?, has_s))
+}
+
+#[pyfunction]
+fn f6_cosh_shift_rules(p: BigInt, q: BigInt, has_s: bool) -> PyResult<Vec<tcore::Rule>> {
+    let c = core_rat(p, q)?;
+    if !c.is_int() {
+        return Err(PyValueError::new_err("f6: _cosh_shift_rules of a non-integer c"));
+    }
+    Ok(tf6::cosh_shift_rules(&c, has_s))
+}
+
+#[pyfunction]
+fn f6_parts_of_round_rules() -> Vec<tcore::Rule> {
+    tf6::parts_of_round_rules()
+}
+
+#[pyfunction]
+fn f6_genocchi_half_rules(h: usize) -> Vec<tcore::Rule> {
+    tf6::genocchi_half_rules(h)
+}
+
+#[pyfunction]
+fn f6_accum_rules() -> Vec<tcore::Rule> {
+    tf6::accum_rules()
+}
+
+#[pyfunction]
+fn f6_multigamma_rules(p: BigInt) -> Vec<tcore::Rule> {
+    tf6::multigamma_rules(&p)
+}
+
+#[pyfunction]
+fn f6_unit_interval_units(acos: bool, p: BigInt, q: BigInt) -> PyResult<Vec<(&'static str, bool)>> {
+    Ok(tf6::unit_interval_units(acos, &core_rat(p, q)?))
+}
+
+#[pyfunction]
+#[pyo3(signature = (coeffs, index))]
+fn f6_rootof_facts(coeffs: Option<Vec<BigInt>>, index: BigInt) -> Vec<(&'static str, bool)> {
+    tf6::rootof_facts(coeffs.as_deref(), &index)
+}
+
+#[pyfunction]
+#[pyo3(signature = (positive, integer, real))]
+fn f6_randomsymbol_units(positive: Option<bool>, integer: Option<bool>, real: bool) -> Vec<(&'static str, bool)> {
+    tf6::randomsymbol_units(positive, integer, real)
+}
+
+#[pyfunction]
+fn f6_const_units(tag: &str) -> PyResult<Vec<(&'static str, bool)>> {
+    tf6::const_units(tag).ok_or_else(|| PyValueError::new_err("f6: unknown constant units tag"))
+}
+
+/// `_cosh_shift_split(arg)`: `(r, (p, q), s)`, `s` None, an id, or a list of factor ids for Python's `kept_product`.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn f6_cosh_shift_split<'py>(
+    py: Python<'py>,
+    mut table: PyRefMut<'_, PyTermTable>,
+    arg: u32,
+) -> PyResult<Option<(u32, (BigInt, BigInt), Option<Bound<'py, PyAny>>)>> {
+    let Some((r, c, s)) = table.0.f6_cosh_shift_split(TermId(arg)).map_err(refuse)? else { return Ok(None) };
+    Ok(Some((r.0, core_pq(&c), f6_rest(py, &s)?)))
+}
+
+#[pyfunction]
+fn f6_shifted(mut table: PyRefMut<'_, PyTermTable>, x: u32, p: BigInt, q: BigInt) -> PyResult<u32> {
+    let c = core_rat(p, q)?;
+    Ok(table.0.f6_shifted(TermId(x), &c).map_err(refuse)?.0)
+}
+
+#[pyfunction]
+fn f6_doubled(mut table: PyRefMut<'_, PyTermTable>, x: u32) -> PyResult<u32> {
+    Ok(table.0.f6_doubled(TermId(x)).map_err(refuse)?.0)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOfflineData>()?;
     m.add_class::<PyTermTable>()?;
@@ -914,5 +1003,18 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(core_pow_bound_rules, m)?)?;
     m.add_function(wrap_pyfunction!(core_unit_power_units, m)?)?;
     m.add_function(wrap_pyfunction!(core_ipi_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_pi_trig_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_cosh_shift_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_parts_of_round_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_genocchi_half_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_accum_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_multigamma_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_unit_interval_units, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_rootof_facts, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_randomsymbol_units, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_const_units, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_cosh_shift_split, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_shifted, m)?)?;
+    m.add_function(wrap_pyfunction!(f6_doubled, m)?)?;
     Ok(())
 }

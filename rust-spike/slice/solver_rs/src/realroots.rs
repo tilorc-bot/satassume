@@ -182,7 +182,7 @@ fn imaginary_root_count(p: &[Rat]) -> i64 {
 }
 
 /// `(real, sign, imaginary)`, or None as `root_facts` says.
-fn root_facts(coeffs: &[Rat], index: &BigInt) -> Option<(bool, Option<i64>, Option<bool>)> {
+pub(crate) fn root_facts(coeffs: &[Rat], index: &BigInt) -> Option<(bool, Option<i64>, Option<bool>)> {
     let p = strip(coeffs);
     let n = p.len();
     if n < 2 {

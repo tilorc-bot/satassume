@@ -21,12 +21,19 @@ from .registry import registry
 @registry.register(RandomSymbol)
 def randomsymbol_units(expr):
     sym = expr.symbol
+    positive = sym.is_positive  # sympy-boundary: declared symbol facts, as RandomSymbol reads them
+    integer = sym.is_integer  # sympy-boundary: declared symbol facts
+    real = bool(sym.is_real or expr.pspace.is_real)  # sympy-boundary: RandomSymbol._eval_is_real
+    out = tuple(_random_units(positive, integer, real))
+    return units(('random', out), lambda: list(out), expr)
+
+
+def _random_units(positive, integer, real):
+    """Unit facts of a random symbol from its declared facts."""
     out = [('finite', True)]
-    for pred in ('positive', 'integer'):
-        v = getattr(sym, 'is_' + pred)  # sympy-boundary: declared symbol facts, as RandomSymbol reads them
+    for pred, v in (('positive', positive), ('integer', integer)):
         if v is not None:
             out.append((pred, v))
-    if sym.is_real or expr.pspace.is_real:  # sympy-boundary: RandomSymbol._eval_is_real
+    if real:
         out.append(('real', True))
-    out = tuple(out)
-    return units(('random', out), lambda: list(out), expr)
+    return out

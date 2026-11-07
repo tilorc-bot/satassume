@@ -20,4 +20,8 @@ from .registry import registry
 
 @registry.register(Quantity)
 def quantity_units(expr):
-    return units(('quantity',), lambda: [('positive', True)], expr)
+    return units(('quantity',), _quantity_facts, expr)
+
+
+def _quantity_facts():
+    return [('positive', True)]

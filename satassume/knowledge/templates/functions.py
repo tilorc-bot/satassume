@@ -249,23 +249,29 @@ def _in_unit_interval_units(kind):
     (exact comparisons): real on [-1, 1], else ``+-pi/2 -+ I*acosh|c|``
     or ``I*acosh(c)`` / ``pi - I*acosh|c|``."""
     def units(c, expr):
-        if not (c.is_Rational or c.is_Float):
-            return []
-        out = [P('finite', expr), P('complex', expr)]
-        if -1 <= c <= 1:
-            out.append(P('real', expr))
-            if kind == 'acos':
-                out.append(P('positive' if c < 1 else 'zero', expr))
-            else:
-                out.append(P('positive' if c > 0 else 'negative' if c < 0 else 'zero', expr))
-        else:
-            out.append(Not(P('extended_real', expr)))
-            if kind == 'acos' and c > 1:
-                out.append(P('imaginary', expr))
-            else:
-                out.append(Not(P('imaginary', expr)))
-        return out
+        return _unit_interval_units(kind, c, expr)
     return units
+
+
+def _unit_interval_units(kind, c, expr):
+    """The facts of :func:`_in_unit_interval_units` (``kind``: ``'asin'`` or
+    ``'acos'``) for ``expr`` with the constant argument ``c``."""
+    if not (c.is_Rational or c.is_Float):
+        return []
+    out = [P('finite', expr), P('complex', expr)]
+    if -1 <= c <= 1:
+        out.append(P('real', expr))
+        if kind == 'acos':
+            out.append(P('positive' if c < 1 else 'zero', expr))
+        else:
+            out.append(P('positive' if c > 0 else 'negative' if c < 0 else 'zero', expr))
+    else:
+        out.append(Not(P('extended_real', expr)))
+        if kind == 'acos' and c > 1:
+            out.append(P('imaginary', expr))
+        else:
+            out.append(Not(P('imaginary', expr)))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -415,8 +421,13 @@ def _genocchi_half(gen, h):
     ``(-1)**k`` (-1, 1, -3, 17, -155, ...)."""
     def half(R, c):
         gen(R, c)
-        R.rule([(X, 'even', True), (X, 'positive', True), (h, 'even', True)], (N, 'positive', True))
-        R.rule([(X, 'even', True), (X, 'positive', True), (h, 'odd', True)], (N, 'negative', True))
+        _genocchi_half_rules(R, h)
     half.__module__ = gen.__module__
     half.__name__ = half.__qualname__ = gen.__name__
     return half
+
+
+def _genocchi_half_rules(R, h):
+    """The two rules :func:`_genocchi_half` adds to ``gen``'s."""
+    R.rule([(X, 'even', True), (X, 'positive', True), (h, 'even', True)], (N, 'positive', True))
+    R.rule([(X, 'even', True), (X, 'positive', True), (h, 'odd', True)], (N, 'negative', True))

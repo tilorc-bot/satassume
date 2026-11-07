@@ -35,4 +35,8 @@ def accumbounds_templates(expr):
 
 @registry.register(Idx)
 def idx_units(expr):
-    return units(('idx',), lambda: [('integer', True)], expr)
+    return units(('idx',), _idx_facts, expr)
+
+
+def _idx_facts():
+    return [('integer', True)]
