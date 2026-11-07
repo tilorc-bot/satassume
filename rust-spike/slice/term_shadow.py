@@ -57,6 +57,11 @@ EXAMPLES = {}               # refusal reason: first few (op, operands)
 SAMPLE_DERIVED = 9          # a new derived term is compared against this many of the query's first terms
 
 
+# What a check may raise and have counted, going no further. TermRefuse is a BaseException since component 4 slice A, so it's
+# named: the shadow must not end a query the check is only watching.
+CHECK_FAILS = (Exception, sa_solver.TermRefuse)
+
+
 def _text(d):
     """A mismatch's text. Printing can raise (a hand-built `Basic.__new__(Mul, z)` has no `is_commutative`), and a check
     must not change what the test sees."""
@@ -454,7 +459,7 @@ def _wrap_op(cls, name, f, static):
             operands = (self,) + a[:nargs - 1]
             try:
                 check_op(name, _here(fr), operands, real, rust)
-            except Exception as e:
+            except CHECK_FAILS as e:
                 bad('check-raised', name, type(e).__name__, e)
         return real
     wrapper.__wrapped__ = f
@@ -475,7 +480,7 @@ def _wrap_new(cls, name):
             try:
                 check_op(f'{name}.__new__' + ('' if evaluate is None else f'(evaluate={evaluate})'), _here(fr), args, real,
                          raw if evaluate is False else ev)
-            except Exception as e:
+            except CHECK_FAILS as e:
                 bad('check-raised', name, type(e).__name__, e)
         return real
     cls.__new__ = staticmethod(new)
@@ -609,7 +614,7 @@ def synthetic(c, table):
 def _outcome(f, *a):
     try:
         return f(*a)
-    except Exception as e:
+    except CHECK_FAILS as e:
         return type(e).__name__
 
 
@@ -658,7 +663,7 @@ def top_level(proposition, assumptions, eng):
     COUNTS['queries'] += 1
     try:
         c = C.convert(proposition, assumptions, eng)
-    except Exception as e:
+    except CHECK_FAILS as e:
         COUNTS['convert-raised'] += 1
         bad('convert-raised', type(e).__name__, e, proposition, assumptions)
         return None
@@ -668,7 +673,7 @@ def top_level(proposition, assumptions, eng):
     COUNTS['converted'] += 1
     try:
         table = sa_solver.TermTable(c.tables)
-    except Exception as e:
+    except CHECK_FAILS as e:
         bad('table-raised', type(e).__name__, e, proposition)
         return None
     if CHECK_ON[0] and not DRIVE[0]:
@@ -676,13 +681,13 @@ def top_level(proposition, assumptions, eng):
             check_table(c, table)
             check_order(c, table)
             check_formula(c, table, proposition, assumptions, eng)
-        except Exception as e:
+        except CHECK_FAILS as e:
             bad('check-raised', type(e).__name__, e, proposition)
         if SYNTHETIC[0]:
             CUR[0] = (c, table)
             try:
                 synthetic(c, table)
-            except Exception as e:
+            except CHECK_FAILS as e:
                 bad('synthetic-raised', type(e).__name__, e, proposition)
     return c, table
 

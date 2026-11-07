@@ -98,6 +98,7 @@ def rust(wl, limit):
         return py_convert(p, a, eng)
     convert.convert = conv
     import knowledge_live as K
+    import term_live as T
     K.install()
     check = E.Engine._build_context.__code__
     cons = A._consistent.__code__
@@ -141,6 +142,8 @@ def rust(wl, limit):
             return "raise:" + type(e).__name__
         except K.KnowledgeFault as e:
             return "KnowledgeFault: " + str(e)[:120]
+        except T.TermFault as e:
+            return "TermFault: " + str(e)[:120]
 
     for i[0], (p, a) in enumerate(pairs):
         ask(p, a)

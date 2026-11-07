@@ -98,39 +98,56 @@ def _journal():
     return getattr(_local, 'journal', None)
 
 
+_NO_STAMP = object()
+
+
 class _Mark:
-    """What the run wrote, undone by size. A memo only grows during a run, and a dict keeps insertion order, so the entries
-    past the mark are the run's. One `len` a table per query. What growth doesn't show: `DictCache.put` adding a predicate
-    to a node already in the store, which `_put` journals, and a counter or flag, which are copied here."""
+    """What the run wrote, undone by size. A memo only grows during a run unless it's emptied, and a dict keeps insertion
+    order, so the entries past the mark are the run's. One `len` and one last key a table per query. A table emptied during
+    the run (restamped, or cleared when full) can regrow past the mark, and then what sits below the mark is the run's too:
+    its last key shows that, its stamp shows a restamp, and the table is emptied, which is safe for a memo. What growth
+    doesn't show: `DictCache.put` adding a predicate to a node already in the store, which `_put` journals, and a counter or
+    flag, which are copied here."""
 
     def __init__(self, eng):
         self.tables = {}
         self.engines = {}
         self.cache = []
         for _, _, t in memos.PROCESS.items():
-            self.tables[id(t)] = (t, len(t))
+            self._note(t)
         for t in (constfield._CONSTANTS, constfield._BY_KEY):
-            self.tables[id(t)] = (t, len(t))
+            self._note(t)
         self.add(eng)
+
+    def _note(self, t):
+        self.tables[id(t)] = (t, len(t), getattr(t, 'stamp', _NO_STAMP), next(reversed(t), None) if len(t) else None)
 
     def add(self, eng):
         if id(eng) in self.engines:
             return
         self.engines[id(eng)] = (eng, dict(eng.stats), eng.last_budget_limited, set(eng._constructing))
         for _, _, t in eng.memos.items():
-            self.tables[id(t)] = (t, len(t))
+            self._note(t)
 
     def rollback(self):
         for facts, pred in reversed(self.cache):
             facts.pop(pred, None)
-        for t, n in self.tables.values():
-            if len(t) < n:      # cleared when full, or restamped, during the run. It's a memo, so an empty one is safe.
-                COUNTS['rollback:cleared'] += 1
-            elif isinstance(t, list):
+        for t, n, stamp, last in self.tables.values():
+            if isinstance(t, list):
+                if len(t) < n:
+                    COUNTS['rollback:cleared'] += 1
                 del t[n:]
-            else:
-                while len(t) > n:
-                    t.popitem()
+                continue
+            moved = stamp is not _NO_STAMP and t.stamp != stamp
+            while len(t) > n:
+                t.popitem()
+            if moved or len(t) < n or (n and next(reversed(t)) is not last):
+                if n:
+                    COUNTS['rollback:cleared'] += 1
+                dict.clear(t) if isinstance(t, dict) else t.clear()
+            if moved:
+                COUNTS['rollback:restamped'] += 1
+                t.stamp = stamp
         for eng, st, budget, constructing in self.engines.values():
             eng.stats.clear()
             eng.stats.update(st)

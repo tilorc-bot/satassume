@@ -95,7 +95,9 @@ print(json.dumps(dict(plant="unplanted", run=r, counter_saw=len(n))))
 fail += r != "ok" or len(n) != 0
 for name, owner, attr in PLANTS:
     real = getattr(owner, attr)
-    for cls, must_see in ((Raises, True), (Holds, True), (RaisesBase, False)):
+    # TermRefuse is a BaseException since component 4 slice A, so a read that raises or holds a term goes past both handlers.
+    # quiet_fire.py is the control: an Exception planted at the same four places must show on this counter.
+    for cls, want in ((Raises, "came through TermRefuse"), (Holds, "came through TermRefuse"), (RaisesBase, "came through Stops")):
         fired = [0]
 
         def plant(*args, _real=real, _cls=cls, **kw):
@@ -109,7 +111,7 @@ for name, owner, attr in PLANTS:
         n = seen()
         row = dict(plant=name, read=cls.__name__, reached=fired[0] > 0, run=r, counter_saw=len(n),
                    types=sorted({x["type"] for x in n}), site=sorted({x["site"] for x in n}), text=sorted({x["text"][:70] for x in n}))
-        ok = fired[0] > 0 and (len(n) > 0 if must_see else (len(n) == 0 and r == "came through Stops"))
+        ok = fired[0] > 0 and len(n) == 0 and r == want
         row["as_it_must_be"] = ok
         fail += not ok
         print(json.dumps(row))

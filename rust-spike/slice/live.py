@@ -333,6 +333,9 @@ def main():
         backend.install_euf()
     if backend and args.check != "plain":    # plain's install() does this too
         backend.install_transfer()
+    if backend:     # Component 4 slice A: rust mode only, so Python's column stays the control. SLICE_TERM=py keeps it off.
+        import term_live
+        term_live.from_env()
     if args.check == "plain":
         if backend:
             backend.install()

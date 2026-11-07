@@ -90,6 +90,10 @@ if BACKEND == "rust":
         import lra_backend
         lra_backend.install()
 
+    # Component 4 slice A: the per-query table, the Kept route and a refusal reaching the top. SLICE_TERM=py keeps it off.
+    import term_live
+    term_live.from_env()
+
 # Rust EUF on Python's solver: the tests whose harness reads Solver internals fail on the crate's solver before any EUF
 # answer is read (the 77 and 46), so this is the only way they check the Rust EUF. SLICE_EUF=rust asks for it.
 if BACKEND != "rust" and os.environ.get("SLICE_EUF") == "rust":
