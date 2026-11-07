@@ -121,6 +121,7 @@ class _Walk:
         self.opaque = []
         self.reading = False        # True once the tables are built: only `read` runs after that
         self.counts = {'pow_base_not_input': 0, 'opaque': 0, 'read_term_missing': 0, 'read_raised': 0}
+        self.raised = []            # (kind, id, exception type) of each read that raised, for the reports
         for name in READS:
             self.counts['read:' + name] = 0
 
@@ -311,8 +312,9 @@ class _Walk:
         self.strings, self.string_ids = [], {}
         try:
             v = getattr(self, '_read_' + name)(t)
-        except Exception:
+        except Exception as e:
             self.counts['read_raised'] += 1
+            self.raised.append((name, i, type(e).__name__))
             return None
         out = []
         try:
@@ -320,8 +322,9 @@ class _Walk:
         except _NotInTable:
             self.counts['read_term_missing'] += 1
             return [T_MISS], []
-        except RecursionError:
+        except RecursionError as e:
             self.counts['read_raised'] += 1
+            self.raised.append((name, i, type(e).__name__))
             return None
         return out, self.strings
 
