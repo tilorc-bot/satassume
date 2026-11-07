@@ -36,6 +36,8 @@ SITES = (
     ('relations._key', R, '_key'),
     ('lra_adapter.default_sort_key', L, 'default_sort_key'),
     ('relations.relation_atom', R, 'relation_atom'),
+    ('relations._termwise', R, '_termwise'),
+    ('Relations._eq_links', R.Relations, '_eq_links'),
 )
 COUNTS = collections.Counter()
 LEFT = collections.Counter()

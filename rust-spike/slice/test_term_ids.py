@@ -9,7 +9,7 @@ import convert
 import sa_solver
 import term_live
 from harness.state import reset_module_state
-from satassume import relations as R, sympy_api as A
+from satassume import engine as E, relations as R, sympy_api as A
 
 x, y, z = Symbol('x'), Symbol('y'), Symbol('z')
 f, g = Function('f'), Function('g')
@@ -19,21 +19,31 @@ py_wise = R._termwise
 ENGINE = A.default_engine
 
 
-@pytest.fixture
-def live():
-    reset_module_state()
-    undo = term_live.install(terms=True)
+def fresh():
+    """As `test_term_live.fresh`: no answer memo or session carries over, so a second `ask` runs again."""
+    reset_module_state(sympy_cache=False)
+    A.set_default_engine(E.Engine())
+
+
+def clear():
     term_live.COUNTS.clear()
     del term_live.REFUSALS[:], term_live.SCAFFOLD_BAD[:], term_live.KEY_BAD[:], term_live.CHECK_BAD[:]
+
+
+@pytest.fixture
+def live():
+    undo = term_live.install(terms=True)
+    clear()
+    fresh()
     yield term_live
     term_live.PLANT[0] = None
     term_live.CHECK[0] = False
     undo()
-    reset_module_state()
+    fresh()
 
 
 def table_for(*terms):
-    c = convert.convert(And(*[Q.positive(t) for t in terms]), None, ENGINE())
+    c = convert.convert(And(*[Q.positive(t) for t in terms]), True, ENGINE())
     assert not isinstance(c, convert.Kept), c.reason
     return term_live._Query(c)
 
@@ -58,7 +68,7 @@ def test_eq_sides_against_python(a, b):
 
 DIFF_PAIRS = [
     (x, x + y), (x + f(1), y + f(1)), (2*f(1) + x, f(1) + y), (x, y), (x, 2*y), (x + y, z), (x + pi, y), (x + 1, y + 1),
-    (x + sqrt(2), y - sqrt(2)), (2*x, x), (x*y, x), (f(x), g(x)), (x + 2*pi, y + pi), (x, -x), (x + y, x - y),
+    (2*x, x), (x*y, x), (f(x), g(x)), (x + 2*pi, y + pi), (x, -x), (x + y, x - y),
 ]
 
 
@@ -67,7 +77,7 @@ def test_termwise_and_diff_against_python(a, b):
     q = table_for(a, b)
     i, j = term_live.term_id(q, a, 't'), term_live.term_id(q, b, 't')
     real = a - b
-    k = q.table.sub(i, j)
+    k = q.table.sub(i, j)       # `REFUSED_DIFFS` are the shapes this doesn't answer
     assert term_live.scaffold(q, k, 't') == real
     assert q.table.termwise(i, j, k) is py_wise(a, b, real)
     got = q.table.eq_diff(i, j)
@@ -75,21 +85,35 @@ def test_termwise_and_diff_against_python(a, b):
     assert (None if got is None else term_live.scaffold(q, got, 't')) == want
 
 
-@pytest.mark.parametrize('name', ['eq', 'ne', 'lt', 'le', 'gt', 'ge'])
-def test_every_relation_on_the_live_path(live, name):
-    seen = {}
-    real = A._ask
+def test_negating_a_numeric_power_refuses():
+    # `-(-sqrt(2))`: the crate's `mul` refuses a coefficient beside a numeric-base power, here at `sub`.
+    a, b = x + sqrt(2), y - sqrt(2)
+    q = table_for(a, b)
+    with pytest.raises(sa_solver.TermRefuse, match='numeric-base power'):
+        q.table.sub(term_live.term_id(q, a, 't'), term_live.term_id(q, b, 't'))
+
+
+def inside_the_run(monkeypatch, f):
+    """`f` runs inside a query, where `current()` is its table. `sympy_api._ask` is `term_live`'s wrapper, so a spy on it
+    would sit outside the run: this goes one call further in."""
+    seen = []
+    real = A._engine_ask
 
     def spy(p, a, e):
-        seen['in'] = term_live.current()
-        seen['atom'] = R.relation_atom(name, x + 1, y + 1)
+        seen.append(f())
         return real(p, a, e)
-    A._ask = spy
-    try:
-        A.ask(Q.eq(x + 1, y + 1), Q.positive(x))
-    finally:
-        A._ask = real
-    assert seen['atom'] == py_atom(name, x + 1, y + 1)
+    monkeypatch.setattr(A, '_engine_ask', spy)
+    return seen
+
+
+@pytest.mark.parametrize('name', ['eq', 'ne', 'lt', 'le', 'gt', 'ge'])
+def test_every_relation_on_the_live_path(live, monkeypatch, name):
+    seen = inside_the_run(monkeypatch, lambda: (term_live.current(), R.relation_atom(name, x + 1, y + 1)))
+    A.ask(Q.eq(x + 1, y + 1), Q.positive(x))
+    q, atom = seen[0]
+    assert q is not None and q.kept is None
+    assert atom == py_atom(name, x + 1, y + 1)
+    assert (live.counts().get('term:rust:relation_atom', 0) > 0) is True
 
 
 def counted(live, *queries):
@@ -111,7 +135,7 @@ def test_the_consumer_runs_and_decides(live):
 
 def test_a_termwise_plant_moves_an_answer(live):
     assert A.ask(Q.eq(x, y), Q.zero(x - y)) is True
-    reset_module_state()
+    fresh()
     live.PLANT[0] = 'termwise-false'
     assert A.ask(Q.eq(x, y), Q.zero(x - y)) is not True
 
@@ -124,46 +148,56 @@ def test_a_swap_plant_shows_in_the_check(live):
     assert c['check:differs:relation_atom'] > 0 and live.CHECK_BAD
 
 
-@pytest.mark.parametrize('plant,reason', [('scaffold-form', 'scaffold: rebuilt form differs from Rust'),
-                                          ('key-reverse', "key: differs from Python's")])
-def test_a_refusal_plant_answers_on_python(live, plant, reason):
-    want = None
-    undo_answer = A.ask(Q.eq(x, y), Q.zero(x - y))
-    reset_module_state()
-    live.COUNTS.clear()
-    live.PLANT[0] = plant
-    assert A.ask(Q.eq(x, y), Q.zero(x - y)) is undo_answer is True, want
+def test_a_key_plant_answers_on_python(live):
+    # The sort sites that remain are in `lra_adapter`: this query reaches one.
+    p, a = Q.gt(x + y, 1), Q.gt(x, 1) & Q.gt(y, 0)
+    want = A.ask(p, a)
+    fresh()
+    clear()
+    live.PLANT[0] = 'key-reverse'
+    assert A.ask(p, a) is want is True
     c = live.counts()
-    assert c['refused:' + reason] == 1 and c['refused'] == 1
+    assert c["refused:key: differs from Python's"] == 1 and c['refused'] == 1
 
 
-@pytest.mark.parametrize('p,a', [(Q.eq(x + 1.5, y), None), (Q.eq(x + oo, y), None), (Q.eq(x*n, y*n), None)])
-def test_a_shape_the_algebra_refuses_answers_on_python(live, p, a):
-    undo = term_live.install(terms=False)
-    got = A.ask(p)
-    undo()
+def test_a_scaffold_plant_answers_on_python(live):
+    # On a fresh engine the glue has already built each difference. `scaffold` builds one only where a memo from an earlier
+    # query saved the glue's work, so the first query is the point here.
+    assert A.ask(Q.eq(x, y), Q.zero(x - y)) is True
+    clear()
+    live.PLANT[0] = 'scaffold-form'
+    assert A.ask(Q.ne(x, y), Q.nonzero(x - y)) is True
     c = live.counts()
-    reset_module_state()
-    live.COUNTS.clear()
-    assert got in (True, False, None)
-    assert c.get('refused', 0) >= 0     # the count differs by shape: the workloads say which
+    assert c['refused:scaffold: rebuilt form differs from Rust'] == 1 and c['refused'] == 1
 
 
-def test_an_unknown_term_stays_on_python_for_that_call(live):
-    seen = {}
-    real = A._ask
-
-    def spy(p, a, e):
-        w = Symbol('w')       # no row, and a class with one: a Symbol no one told Rust about
-        seen['atom'] = R.relation_atom('eq', w + 1, x + 1)
-        return real(p, a, e)
-    A._ask = spy
+@pytest.mark.parametrize('p,reason', [
+    (Q.eq(x + 1.5, y), 'algebra: holds an infinity, nan or Float'),
+    (Q.eq(x + oo, y), 'algebra: holds an infinity, nan or Float'),
+    (Q.eq(x*n, y*n), 'algebra: non-commutative'),
+])
+def test_a_shape_the_algebra_refuses_answers_on_python(p, reason):
+    fresh()
+    want = A.ask(p)     # no wrapper here: Python's own answer
+    undo = term_live.install(terms=True)
     try:
-        A.ask(Q.positive(x))
+        clear()
+        fresh()
+        got = A.ask(p)
+        c = term_live.counts()
     finally:
-        A._ask = real
-    c = term_live.counts()
-    assert seen['atom'] == py_atom('eq', Symbol('w') + 1, x + 1)
+        undo()
+        fresh()
+    assert got is want
+    assert c['refused'] == 1 and c['refused:' + reason] == 1, c
+
+
+def test_an_unknown_term_stays_on_python_for_that_call(live, monkeypatch):
+    w = Symbol('w')     # no row, in a class that has one
+    seen = inside_the_run(monkeypatch, lambda: R.relation_atom('eq', w + 1, x + 1))
+    A.ask(Q.positive(x))
+    c = live.counts()
+    assert seen[0] == py_atom('eq', w + 1, x + 1)
     assert c['term:py:relation_atom'] == 1 and c['term:unknown:relation_atom:Symbol'] == 1
 
 
@@ -183,10 +217,10 @@ def test_undo_restores_python():
 
 
 def test_nan_goes_last_without_a_key():
-    q = table_for(x)
-    i = q.ids[x]
-    assert R.relation_atom('eq', nan, x).expr == py_atom('eq', nan, x).expr == (x, nan)
-    assert i is not None
+    q = table_for(nan, x)
+    i, j = q.ids[nan], q.ids[x]
+    assert q.table.eq_sides(i, j) == (j, i) and q.table.eq_sides(j, i) == (j, i)
+    assert py_atom('eq', nan, x).expr == (x, nan)
 
 
 def test_scaffold_rejects_what_sympy_would_not_build():

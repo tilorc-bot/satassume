@@ -23,7 +23,8 @@ ap.add_argument("out")
 ap.add_argument("--counts")
 ap.add_argument("--so")
 ap.add_argument("--handlers", help="count the quiet Exception handlers here: handler_count.py")
-ap.add_argument("--term", choices=["py", "table", "keys"], default="py", help="conversion on the real path: term_live.py")
+ap.add_argument("--term", choices=["py", "table", "keys", "terms"], default="py", help="conversion on the real path: term_live.py")
+ap.add_argument("--term-plant", help="term_live.PLANT, one of its test plants")
 ap.add_argument("--term-out", help="term_live's counts, as JSON")
 ap.add_argument("--discard", action="store_true", help="a planted refusal in each query's run: term_discard.py. Needs --term")
 ap.add_argument("--no-rollback", action="store_true", help="plant: with --discard, skip the rollback")
@@ -103,7 +104,8 @@ if a.handlers:
 TD = None
 if a.term != "py":
     import term_live
-    term_live.install(keys=a.term == "keys")
+    term_live.install(keys=a.term == "keys", terms=a.term == "terms")
+    term_live.PLANT[0] = a.term_plant
     term_live.PLANT_NO_ROLLBACK[0] = a.no_rollback
     if a.discard:
         import term_discard as TD

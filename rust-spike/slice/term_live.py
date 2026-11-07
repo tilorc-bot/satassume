@@ -310,6 +310,8 @@ def scaffold(q, i, site):
         if not (isinstance(row[1], tuple) and len(row[1]) == 2):
             _scaffold_bad(i, row[1], 'a derived term with no args that is not a number')
         o = Rational(row[1][0], row[1][1])
+        COUNTS['scaffold:rebuilt'] += 1
+        COUNTS['scaffold:rebuilt:' + site] += 1
         if (o.p, o.q) != row[1] or type(o).__name__ != name:
             _scaffold_bad(i, o, 'number')
     else:
@@ -469,17 +471,21 @@ def _eq_links(py):
     return eq_links
 
 
+def _tagged(got):
+    """`term_shadow._tagged`: a value of Rust's that is a term, a Rational or an opaque one, not a tuple of the key's."""
+    return (got[0] == 'T' and len(got) == 2) or (got[0] == 'Q' and len(got) == 3) or (got[0] == 'O' and len(got) == 2)
+
+
 def _same_key(got, real, q):
-    """Rust's key against Python's, as `term_shadow.same_value`."""
+    """Rust's key against Python's, by `term_shadow.same_value`'s rule (`key=True`), with `term_id` for its id lookup, so a
+    term inside a key can be derived."""
     if isinstance(real, tuple):
-        return (isinstance(got, tuple) and len(got) == len(real)
-                and not (got and got[0] in ('T', 'Q', 'O') and len(got) in (2, 3) and type(got[0]) is str
-                         and len(real) == len(got) and not isinstance(real[0], str))
+        return (isinstance(got, tuple) and len(got) == len(real) and not (got and got[0] in ('T', 'Q', 'O') and _tagged(got))
                 and all(_same_key(a, b, q) for a, b in zip(got, real)))
     if isinstance(real, Rational):
-        return got == ('Q', real.p, real.q)
+        return isinstance(got, tuple) and got == ('Q', real.p, real.q)
     if isinstance(real, Basic):
-        return isinstance(got, tuple) and len(got) == 2 and got[0] == 'T' and got[1] == term_id(q, real, 'key')
+        return isinstance(got, tuple) and got == ('T', term_id(q, real, 'key'))
     if real is None or real is True or real is False:
         return got is real
     if isinstance(real, str):
