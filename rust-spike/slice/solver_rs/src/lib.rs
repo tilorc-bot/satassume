@@ -8,16 +8,21 @@ mod block;
 mod constfield;
 mod euf;
 mod euf_py;
+mod formula_py;
+mod handle;
 // The rational helper is shared with the replay binary in lra/port, which keeps its frozen rational core.
 mod lra;
 mod lra_cert;
 mod lra_py;
 mod map;
+mod pyset;
 #[path = "../../../lra/port/src/rat.rs"]
 mod rat;
 mod solver;
 mod term;
 mod theory;
+mod transfer;
+mod transfer_py;
 
 use block::Closure;
 use pyo3::exceptions::{PyNotImplementedError, PyOverflowError, PyRuntimeError, PyValueError};
@@ -555,5 +560,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<lra_py::LraCore>()?;
     constfield::register(m)?;
     lra_cert::register(m)?;
-    euf_py::add_to(m)
+    euf_py::add_to(m)?;
+    formula_py::register(m)?;
+    transfer_py::register(m)
 }

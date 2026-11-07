@@ -12,6 +12,16 @@ import weakref
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sa_solver  # noqa: E402
 
+# Section 9's offline data, read once at load. Refused if the sources or SymPy aren't the ones it was written from.
+import satassume  # noqa: E402
+import sympy  # noqa: E402
+
+sa_solver.read_offline(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "offline_data.json"),
+    os.path.dirname(os.path.dirname(os.path.abspath(satassume.__file__))),
+    sympy.__version__,
+)
+
 RustSolver = sa_solver.Solver
 created = 0
 dropped = 0
@@ -20,6 +30,46 @@ dropped = 0
 def _gone():
     global dropped
     dropped += 1
+
+
+class TransferTheory(sa_solver.TransferTheory):
+    """The crate's transfer theory. A Python subclass so a class-level wrapper (`live.py`) can be set on it, and so
+    `on_merge` is set to a bound method, as in Python's `__init__`."""
+
+    def __init__(self, euf):
+        self._attach()
+
+
+def install_transfer():
+    """Component 3 on Rust: `TransferTheory`, `EqualitySharing`, `transfer_wanted`. SLICE_TRANSFER=py keeps Python's, and
+    =shadow runs both, comparing per hook (`transfer_shadow.py`). `relations.py` imports the theory at its call, so
+    patching the module is enough; the other two are held by name in the modules below. Returns a function that undoes it."""
+    import satassume.relations as relations
+    import satassume.scope as scope
+    import satassume.sat.theory as theory
+    import satassume.theories.transfer as transfer
+    saved = transfer.TransferTheory, transfer.transfer_wanted, relations.transfer_wanted, scope.transfer_wanted, \
+        relations.EqualitySharing, theory.EqualitySharing
+    mode = os.environ.get("SLICE_TRANSFER", "rust")
+    if mode == "shadow":
+        import transfer_shadow
+        transfer_shadow.ShadowTransfer.rust_class = TransferTheory
+        transfer.TransferTheory = transfer_shadow.ShadowTransfer
+        transfer_shadow.ShadowSharing.rust_class = sa_solver.EqualitySharing
+        transfer_shadow.rust_wanted[0] = sa_solver.transfer_wanted
+        transfer.transfer_wanted = relations.transfer_wanted = scope.transfer_wanted = transfer_shadow.shadow_wanted
+        relations.EqualitySharing = theory.EqualitySharing = transfer_shadow.ShadowSharing
+    elif mode == "rust":
+        transfer.TransferTheory = TransferTheory
+    if mode == "rust":
+        transfer.transfer_wanted = relations.transfer_wanted = scope.transfer_wanted = sa_solver.transfer_wanted
+    if mode == "rust":
+        relations.EqualitySharing = theory.EqualitySharing = sa_solver.EqualitySharing
+
+    def undo():
+        transfer.TransferTheory, transfer.transfer_wanted, relations.transfer_wanted, scope.transfer_wanted, \
+            relations.EqualitySharing, theory.EqualitySharing = saved
+    return undo
 
 
 def make():
@@ -49,14 +99,15 @@ def install_euf():
 
 
 def install():
-    """Make the engine's sessions and `ref.py` use the Rust solver and `EUFAdapter` the Rust EUF, with the other theories
-    as live callbacks into the unchanged Python. Returns a function that undoes it. `live.py --check plain` runs exactly
-    this. Tests that build `satassume.sat.solver.Solver` themselves are left on Python."""
+    """Make the engine's sessions and `ref.py` use the Rust solver, `EUFAdapter` the Rust EUF, and component 3, with the
+    other theories as live callbacks into the unchanged Python. Returns a function that undoes it. `live.py --check plain`
+    runs exactly this. Tests that build `satassume.sat.solver.Solver` themselves are left on Python."""
     import satassume.engine as engine
     import satassume.ref as ref
     saved = engine.Solver, ref.Solver
     engine.Solver = ref.Solver = make
     undo_euf = install_euf()
+    undo_transfer = install_transfer()
     # SLICE_LRA=python keeps LRA on Python with the solver on Rust: step 4's arrangement, for comparison.
     undo_lra = None
     if os.environ.get("SLICE_LRA", "rust") == "rust":
@@ -65,6 +116,7 @@ def install():
 
     def undo():
         engine.Solver, ref.Solver = saved
+        undo_transfer()
         undo_euf()
         if undo_lra is not None:
             undo_lra()

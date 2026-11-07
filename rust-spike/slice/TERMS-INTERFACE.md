@@ -41,8 +41,8 @@ those values. If you read them from a row's stream, use the methods below. Addit
 `convert.py` are unaffected.
 
 `read` returns `(tokens, strings)`, or `None` if the read raised an `Exception`; a `BaseException` goes up through Rust as
-itself. `c.counts` holds `read:key`, `read:finite`, `read:complex`, `read:power`, `read:commutative`, `read_raised` and
-`read_term_missing`.
+itself. `c.counts` holds `read:key`, `read:finite`, `read:complex`, `read:power`, `read:commutative`, `read:symbol`, `read:constant`, `read_raised` and
+`read_term_missing`. `symbol` and `constant` are what `atoms.py`'s two templates read, asked for when the template visits the term.
 
 ## Rust
 

@@ -104,6 +104,8 @@ pub enum Read {
     Complex,
     Power,
     Commutative,
+    Symbol,
+    Constant,
 }
 
 /// The way back to Python. `Ok(None)`: the read raised an `Exception`, which each caller refuses on as it did when these
@@ -231,6 +233,14 @@ fn decode_complex(v: &V) -> Result<(f64, f64), String> {
     match v {
         V::Tuple(x) if x.len() == 2 => Ok((bits_f64(&x[0])?, bits_f64(&x[1])?)),
         _ => Err("complex: wanted two bit patterns".into()),
+    }
+}
+
+fn tri(v: &V) -> Result<Option<bool>, Refuse> {
+    match v {
+        V::None => Ok(None),
+        V::Bool(b) => Ok(Some(*b)),
+        _ => Err(Refuse("read: tokens Rust can't read")),
     }
 }
 
@@ -372,6 +382,40 @@ impl TermTable {
     /// The `decompose_power` split as read so far, forcing nothing.
     pub fn peek_power(&self, t: TermId) -> Option<(Option<TermId>, BigInt)> {
         self.peek(Read::Power, t).flatten().and_then(|v| decode_power(&v))
+    }
+
+    /// What `symbol_units` reads of input term `t`: `assumptions0`, in dict order. Read when the template visits the term.
+    /// A read that raised refuses.
+    pub fn symbol_facts(&self, t: TermId) -> Result<Vec<(Arc<str>, Option<bool>)>, Refuse> {
+        const BAD: Refuse = Refuse("read: tokens Rust can't read");
+        match self.input_read(Read::Symbol, t)? {
+            V::Tuple(items) => items
+                .iter()
+                .map(|kv| match kv {
+                    V::Tuple(p) if p.len() == 2 => match &p[0] {
+                        V::Text(name) => Ok((name.clone(), tri(&p[1])?)),
+                        _ => Err(BAD),
+                    },
+                    _ => Err(BAD),
+                })
+                .collect(),
+            _ => Err(BAD),
+        }
+    }
+
+    /// What `constant_units` reads of input term `t`: `const_value` over `_CONST_BASIS`, in that order. As `symbol_facts`.
+    pub fn constant_facts(&self, t: TermId) -> Result<Vec<Option<bool>>, Refuse> {
+        match self.input_read(Read::Constant, t)? {
+            V::Tuple(items) => items.iter().map(tri).collect(),
+            _ => Err(Refuse("read: tokens Rust can't read")),
+        }
+    }
+
+    fn input_read(&self, kind: Read, t: TermId) -> Result<V, Refuse> {
+        if t.index() >= self.n_input {
+            return Err(Refuse("atom: not an input term"));
+        }
+        self.read(kind, t)?.ok_or(Refuse("atom: read raised"))
     }
 
     /// How many reads the memo holds.
