@@ -1,6 +1,6 @@
 # Port inventory: what moves to Rust, what is converted, what stays offline (issue 323)
 
-**Status: complete, by sa-port-3, 7 Nov. Sections 9 and 10 are final. No code was ported, and no Rust ran for anything here.** Two censuses didn't complete; section 8 says which, and what rests on them. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5, open, needs-human) was run as a separate tree, not applied.
+**Status: complete, by sa-port-3, 7 Nov. Sections 9 and 10 are final. No code was ported, and no Rust ran for anything here.** One census wasn't run and one is partial; section 8 says which, and what rests on them. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5, open, needs-human) was run as a separate tree, not applied.
 
 **Where it stands:**
 
@@ -22,7 +22,7 @@
 - **[doc]:** taken from a docstring or comment only, not checked against the code.
 - **[run]:** a direct check in this SymPy (1.15.0.dev).
 
-**Not reached:** the suite-wide census didn't finish in time to be read (section 8), so sites only the suite reaches (`special`, `stats`, `rootof`, `physics`) are [static] at best. `limits` was measured directly (section 7).
+**Suite reach:** the suite-wide census is partial (section 8). It shows that `special`, `stats`, `rootof`, `physics` and `limits` all run, but the sites in them are otherwise [static] or [read]. `limits` was measured directly (section 7).
 
 ## 2. Classification
 
@@ -83,7 +83,7 @@ Appendix A lists every function. These are the module-level calls; a function's 
 | `relations.py:1176` `_trichotomy` | A second route into `_affine_strip`, through `relation_atom("eq", a, b)` | Same as `_affine_strip` | Medium |
 | `limits.py:83`, `:92`, `:172`, `:208` | Inner limit, the `xreplace`, `b - a + 1`, `a - b` | None: these stay on Python, section 7 item 4 | - |
 
-Static only, so reach unknown: `special.py:60,62` (`Add(*x.args)`, `Mul(S(2), x, evaluate=False)`), and `a/2` at `wiring.py:147`. `constfield.py:1281` `to_sympy` builds terms, but only tests call it, by search; `:1293-1297` is `__repr__`. Neither is at query time.
+Reached in the suite, by the partial census (section 8), so no longer static only: `a/2` at `wiring.py:147`, `functions.py:90`, `:92`, and construction at `special.py:63` and `:101`. `special.py:60,62` (`Add(*x.args)`, `Mul(S(2), x, evaluate=False)`) showed no build row under those line numbers, which on a partial run isn't evidence they're unreached. `constfield.py:1281` `to_sympy` builds terms, but only tests call it, by search; `:1293-1297` is `__repr__`. Neither is at query time.
 
 **Why canonical form must be exact, not just stable.** A derived term can equal an input term (`Q.zero(x - y)` and `Q.eq(x, y)` in one query), and then Python has one node. Cones count nodes, and the discovery budget reads that count (`Engine._struct` :1609, `_cone_info` :1676), so a missed merge can change an answer as well as state.
 
@@ -301,7 +301,7 @@ Nothing is open that stops sections 9 and 10. Done by sa-port-2: the derived-ter
 
 **Not completed:**
 
-1. **Suite census.** sa-port-2's run was still going at about 85% when this was written, and its result isn't read here. Output `suite2/`, under `~/sa-rust-ids-work/port-census/`. **Rests on it:** the reach of `special`, `stats`, `rootof` and `physics`, and appendix A's marks for functions only the suite runs.
+1. **Suite census: partial.** sa-port-2's run stopped at about 98% with no summary line, at the end of its 3,000 s limit, so the timeout is the likely cause. Worker `gw0` left no output, so its tests are missing and all counts are floors. Output `suite2/`, summary `suite2-summary.txt`, under `~/sa-rust-ids-work/port-census/`. In the query phase, functions run: `special` 5, `stats` 2, `rootof` 5, `physics` 2, `limits` 18, `functions` 27, `realroots` 18, `extensions` 26. So all of them are live code and the port can't skip them. **Rests on the missing part:** a "not reached" in the suite isn't evidence for any site, and appendix A wasn't regenerated from this run, so its marks still come from dev and fuzz.
 2. **Derived census over the suite: not run.** `derived_plugin.py` works on one test file (`tests/test_history.py`) after a fix, and nothing more. **Rests on it:** "only small shapes reach a sort key", section 3's option 1, and therefore the size of the term algebra in component 0. The one file's output shows `Pow`, `f(0)` and deeper sums and products as "derived", but it isn't evidence either way: plain `Symbol`s appear too, so input capture misses some of those tests' terms. **If the suite shows more shapes, the plan doesn't change:** an unhandled shape refuses and stays on Python, so only the count kept on Python moves.
 
 **Read, not run:** sections 2, 4, 9 and 10; the `relations.py` lines around `:1570-1830` and `constfield.py:1123`, `:1400-1450` were read only in part. The unread-modules findings come from two subagent readings, and only the sites named as confirmed in section 3 and section 6 were checked by me. Option B of section 7 wasn't run.
