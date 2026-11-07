@@ -7,6 +7,8 @@ default: nothing here runs unless a caller installs it.
    table for the query's length. Nothing outlives the query: ids mean nothing outside it.
 2. `symbol_units` and `constant_units` in the real registry read Rust's closed pattern for an input atom. The registry's
    dispatch, the engine and everything else stay Python and take the pattern as they take Python's.
+3. `value_units`, as `functions._value_units` and `special.py` call it, gets its pattern the same way. Those callers stay
+   Python, so the value they pass was built there: it usually isn't an input term, and takes the derived path below.
 
 Stays on Python, counted by reason in `COUNTS`: a query conversion keeps (`kept:<reason>`), and a template reached with no
 query on the stack, by a caller using `Engine` directly (`py:no-query`). A node that isn't an input term (`derived`, such
@@ -19,6 +21,7 @@ never refuses mid-run.
 """
 import collections
 import os
+import sys
 import threading
 
 import sa_solver
@@ -32,6 +35,8 @@ from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, cons
 import convert
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+#: Modules that take `atoms.value_units` by name at import. Both load lazily, so naming them here must not import them.
+VALUE_UNITS_CALLERS = ('satassume.knowledge.templates.functions', 'satassume.knowledge.templates.special')
 COUNTS = collections.Counter()
 #: With `shadow=True`: (kind, repr of the term, field, Rust's, Python's), the first few of each run's differences.
 MISMATCHES = []
@@ -104,41 +109,56 @@ def _derived_facts(kn, expr, is_symbol):
     return [(p, v) for p, v in ((p, const_value(expr, p)) for p in atoms._CONST_BASIS) if v is not None]
 
 
+def _bind_value_units(f):
+    """`atoms` for a caller that imports later, and each caller that has already taken the name."""
+    atoms.value_units = f
+    for name in VALUE_UNITS_CALLERS:
+        m = sys.modules.get(name)
+        if m is not None:
+            m.value_units = f
+
+
 def install(shadow=False, data=None):
     """`shadow`: also run Python's template on each call and compare every field. Rust's result is still the one used."""
-    py_symbol, py_constant = atoms.symbol_units, atoms.constant_units
+    py_symbol, py_constant, py_value = atoms.symbol_units, atoms.constant_units, atoms.value_units
     offline = sa_solver.OfflineData(data or os.path.join(HERE, 'offline_data.json'),
                                     os.path.dirname(os.path.dirname(os.path.abspath(satassume.__file__))), sympy.__version__)
     kn = sa_solver.Knowledge(offline)
     if kn.const_basis() != list(atoms._CONST_BASIS):
         raise ValueError('offline _CONST_BASIS differs from atoms.py')
 
-    def template(py, kind, is_symbol):
+    def rust_compiled(py, kind, is_symbol, value, obj):
+        """`py()`'s `Compiled`, with Rust's pattern for the facts of `value`, as facts of `obj`."""
+        stack = _stack()
+        q = stack[-1] if stack else None
+        if q is None:
+            COUNTS['py:no-query'] += 1
+            return py()
+        if q.kept is not None:
+            COUNTS['py:kept'] += 1
+            return py()
+        i = q.ids.get(value)
+        try:
+            # `==` can join classes (const_key's Float against Integer), so a row counts only for its own class.
+            if i is not None and type(q.objects[i]) is type(value):
+                COUNTS[kind + ':input'] += 1
+                r = kn.symbol_units(q.table, i) if is_symbol else kn.constant_units(q.table, i)
+            else:
+                COUNTS[kind + ':derived'] += 1
+                r = kn.units(_derived_facts(kn, value, is_symbol))
+        except Exception as e:
+            COUNTS['fault'] += 1
+            raise KnowledgeFault(f'{kind} {value!r}: {e}') from e
+        pat = _wrap(r)
+        if shadow:
+            _compare(kind, value, pat, py().pattern)
+        return Compiled((obj,), pat)
+
+    def template(py, kind, is_symbol, python=None):
+        python = python or py
+
         def rust_units(expr):
-            stack = _stack()
-            q = stack[-1] if stack else None
-            if q is None:
-                COUNTS['py:no-query'] += 1
-                return py(expr)
-            if q.kept is not None:
-                COUNTS['py:kept'] += 1
-                return py(expr)
-            i = q.ids.get(expr)
-            try:
-                # `==` can join classes (const_key's Float against Integer), so a row counts only for its own class.
-                if i is not None and type(q.objects[i]) is type(expr):
-                    COUNTS[kind + ':input'] += 1
-                    r = kn.symbol_units(q.table, i) if is_symbol else kn.constant_units(q.table, i)
-                else:
-                    COUNTS[kind + ':derived'] += 1
-                    r = kn.units(_derived_facts(kn, expr, is_symbol))
-            except Exception as e:
-                COUNTS['fault'] += 1
-                raise KnowledgeFault(f'{kind} {expr!r}: {e}') from e
-            pat = _wrap(r)
-            if shadow:
-                _compare(kind, expr, pat, py(expr).pattern)
-            return Compiled((expr,), pat)
+            return rust_compiled(lambda: python(expr), kind, is_symbol, expr, expr)
         rust_units.__name__ = py.__name__
         rust_units.__qualname__ = py.__qualname__
         rust_units.__module__ = py.__module__
@@ -146,7 +166,13 @@ def install(shadow=False, data=None):
         rust_units.__dict__.update(py.__dict__)     # `_satassume_own_facts`
         return rust_units
 
-    swap = {py_symbol: template(py_symbol, 'symbol', True), py_constant: template(py_constant, 'constant', False)}
+    def rust_value_units(value, obj):
+        return rust_compiled(lambda: py_value(value, obj), 'value', False, value, obj)
+    rust_value_units.__wrapped__ = py_value
+
+    # `py_constant` calls `atoms.value_units`, which is about to be Rust's: its Python path goes straight to Python's.
+    swap = {py_symbol: template(py_symbol, 'symbol', True),
+            py_constant: template(py_constant, 'constant', False, lambda e: py_value(e, e))}
     saved_lists = {}
     for cls, ts in registry._by_class.items():
         if any(t in swap for t in ts):
@@ -154,6 +180,7 @@ def install(shadow=False, data=None):
             ts[:] = [swap.get(t, t) for t in ts]
     registry._mro_cache.clear()
     registry._clauses_cache.clear()
+    _bind_value_units(rust_value_units)
 
     py_ask = sympy_api._ask
 
@@ -188,4 +215,5 @@ def install(shadow=False, data=None):
             registry._by_class[cls][:] = ts
         registry._mro_cache.clear()
         registry._clauses_cache.clear()
+        _bind_value_units(py_value)
     return undo
