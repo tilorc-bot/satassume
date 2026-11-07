@@ -8,16 +8,23 @@
 
 Conflicts in `backend.py`, `live.py`, `rust_plugin.py`, `lib.rs`, all resolved by keeping both installs. More important: `rust` mode now means **Rust EUF and Rust transfer together**, and `PyClasses` reads Rust's `RepView` and `MembersView`. That pair has had only a smoke check: `transfer:1:300` byte-identical to Python with the same crossing counts, and `transfer_fuzz --only basis,wanted`. **Nothing from 1e36724 counts toward landing.** `shadow` mode on Rust EUF hasn't run by hand.
 
-## Running now (detached, started at this handoff)
+## Running now (detached): `land.sh`, started at this handoff
+
+`~/sa-rust-ids-work/sa-port-28/jobs/land.sh`, PID in `land.pid`, log `land.log`, ends with `land.DONE` (`land.FAILED` if a gate stopped it). It builds on pareto1, which **may wait behind sa-port-37's queued quiet lease**, checks both hosts hold the same `.so`, and only then starts:
 
 | Job | Where | Ends with | What |
 |---|---|---|---|
 | fresh | pareto0 `~/sp19/out28b/fresh` | `DONE`, `progress` | dev, fuzz, transfer:1:300, transfer2:7:1500, corpus; seeds 0, 1; py, rust, shadow. Took 14 min on 1e36724 |
 | suite | pareto0 `~/sp19/out28b/suite` | `DONE`, `rust/exit.txt`, `python/exit.txt`, `plant-*.out` | Both backends with `-p handler_count`; plant control first |
 | ctl | pareto1 `~/sp19/out28b/mut/ctl` | `../ctl.DONE`, `../ctl.exit`, `table.md` | Controls w01 w02 t05 t42 t43 p03 p06 p07, for bar item 3 |
-| surv (old) | pareto1 `~/sp19/out28/mut/surv` | `../DONE`, `table.md` | **On 1e36724**, tree `~/sp19/dev/sa-port-28`: m2's survivors on transfer2:7:1500 and fuzz. Informational, not on the bar. Don't touch that tree until it ends |
 
-Logs on orion: `~/sa-rust-ids-work/sa-port-28/jobs/*.machine.log`. Read a job's `tree.txt` for the SHA, and rerun if `rust-slice` moves source again. `machine run` runs on the host; pareto0 has no rsync or cargo, so its `.so` is pareto1's copied by `scp` (same sha256 was checked for 1e36724; check again).
+Older, **on 1e36724**: pareto1 `~/sp19/out28/mut/surv`, m2's survivors on transfer2:7:1500 and fuzz, ending with `../DONE`. Informational, not on the bar. Don't touch `~/sp19/dev/sa-port-28` until it ends.
+
+Read each job's `tree.txt` for the SHA, and rerun if `rust-slice` moves source again. `machine run` runs on the host. pareto0 has no rsync or cargo.
+
+## Incident: I killed another session's lease wrapper
+
+At 11:47:14 UTC a kill loop of mine matched `machine run pareto[01] .*on e5dd23f`. That also hit **sa-port-36's** wrapper (orion PID 4181960), whose lease reason says "on e5dd23f". Its job on pareto1 kept running, last seen 11:50 UTC, without a lease. sa-port-36, sa-port-37 (queued quiet, its timing could be affected) and the architect were told at once. I didn't re-lease it. Results from sa-port-36's run are its own to judge; my three misfired jobs ran a few seconds before I stopped them, and `land.sh` clears their partial `out28b`.
 
 ## Results on 1e36724 (Rust `P`, Python's EUF): not landing evidence
 
@@ -53,6 +60,8 @@ Logs on orion: `~/sa-rust-ids-work/sa-port-28/jobs/*.machine.log`. Read a job's 
 
 ## Traps
 
+- **Never select processes to kill by a pattern over `machine run`'s text: reasons are free text and other sessions use the same words.** Kill by a PID your own job recorded (`land.pid`).
+- A filter on `machine run`'s output hid "shared lease NOT granted", and the jobs started with no `.so`. `land.sh` gates on it now.
 - `tail --pid=$!` after `setsid` waits on nothing, since setsid forks: it returned at once. Find the `machine run` PID with `ps` and `rg '[m]achine run'`.
 - `suite_split.py` refuses a directory with no handlers files, so the base's rows can't be its Python side.
 - `read_offline` hashes `satassume/knowledge/*` against `offline_data.json`: editing those sources refuses at import. By design.
