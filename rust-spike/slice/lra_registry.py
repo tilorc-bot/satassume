@@ -1,15 +1,17 @@
 """The registry item, on slice D's bar: Python with history and Rust have to agree. One process, no reset between queries, an
 engine kept across them, so `_CONSTANTS`, `_INTERPRETED` and SymPy's cache carry over. Each sequence registers constants in its own
-order, both orders of each pair in one process. Writes answers and the registry after each query, so two runs compare by `cmp`.
+order. `reset_module_state` doesn't clear `_CONSTANTS`, so a constant's index is fixed by its first registration in the process: a
+reversed order needs its own process (the ORDER argument) or constants not yet seen (`FRESH`). Writes answers and the registry after
+each query, so two runs compare by `cmp`. The two ORDERs have to differ from each other, or this says nothing about order.
 
-    lra_registry.py py|rust OUT
+    lra_registry.py py|rust OUT 01|10
 """
 import hashlib
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-mode, out = sys.argv[1:3]
+mode, out, order = sys.argv[1:4]
 if mode == 'rust':
     import backend
     backend.install()
@@ -39,6 +41,10 @@ def block(a, b):
 PAIRS = ((log(2), log(3)), (sin(1), cos(2)), (sqrt(2), sqrt(3)), (pi, E), (EulerGamma, log(5)), (exp(3), sqrt(5)), (log(7), sqrt(7)))
 
 
+# In one process: ascending, then reversed, each on constants nothing has registered yet.
+FRESH = ((log(11), log(13)), (log(19), log(17)), (sqrt(11), sqrt(13)), (sqrt(19), sqrt(17)))
+
+
 def registry():
     return [(c.index, str(c.key)[:80], c.name, c.transcendental) for c in CF._CONSTANTS]
 
@@ -58,14 +64,16 @@ def run(fh, name, seq, engine):
 with open(out, 'w') as fh:
     # Each scenario starts clean, then keeps its history.
     for keep in (True, False):                  # one engine throughout, or a new engine per query with the memos left alone
-        for first, second in ((0, 1), (1, 0)):
-            reset_module_state(sympy_cache=False)
-            eng = En.Engine()
-            A.set_default_engine(eng)
-            for k, pair in enumerate(PAIRS):
-                seq = block(pair[first], pair[second]) + block(pair[second], pair[first])
-                run(fh, f'keep={keep}:order={first}{second}:pair={k}', seq, eng if keep else None)
-            fh.write('registry\t' + repr(registry()) + '\n')
+        first, second = int(order[0]), int(order[1])
+        reset_module_state(sympy_cache=False)
+        eng = En.Engine()
+        A.set_default_engine(eng)
+        for k, pair in enumerate(PAIRS):
+            seq = block(pair[first], pair[second]) + block(pair[second], pair[first])
+            run(fh, f'keep={keep}:pair={k}', seq, eng if keep else None)
+        for k, (a, b) in enumerate(FRESH):
+            run(fh, f'keep={keep}:fresh={k}', block(a, b) + block(b, a), eng if keep else None)
+        fh.write('registry\t' + repr(registry()) + '\n')
     # The same query twice and a re-register after other work: a memo's hit must read as its first read did.
     reset_module_state(sympy_cache=False)
     A.set_default_engine(En.Engine())
