@@ -276,14 +276,15 @@ def main():
             sys.exit(f"--so {args.so}: loaded {sa_solver.__file__} instead")
         so_sha = hashlib.sha256(open(sa_solver.__file__, "rb").read()).hexdigest()
         import backend
+        backend.install_euf()
     if args.check == "plain":
         if backend:
             backend.install()
     elif args.check == "raw":
         if backend:
-            make, T.dump = backend.make, backend.RustSolver.dump
+            make, T.dump = backend.make, state.with_euf(backend.RustSolver.dump, backend.RustSolver.theories)
         else:
-            make, T.dump = SV.Solver, state.dump_py
+            make, T.dump = SV.Solver, state.with_euf(state.dump_py, SV.Solver.theories)
 
         def factory():
             s = make()
@@ -293,9 +294,9 @@ def main():
         engine.Solver = ref.Solver = factory
     else:
         if args.mode == "rust":
-            base, T.dump = backend.RustSolver, backend.RustSolver.dump
+            base, T.dump = backend.RustSolver, state.with_euf(backend.RustSolver.dump, backend.RustSolver.theories)
         else:
-            base, T.dump = SV.Solver, state.dump_py
+            base, T.dump = SV.Solver, state.with_euf(state.dump_py, SV.Solver.theories)
         install_hooks_on_attach(base)
         cls = traced_class(base, T.dump)
         engine.Solver = ref.Solver = cls

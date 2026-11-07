@@ -31,15 +31,34 @@ def make():
     return s
 
 
+class EUFTheory(sa_solver.EUFTheory):
+    """The crate's EUF. A Python subclass only so a class-level wrapper (`live.py`) can be set on it."""
+
+
+def install_euf():
+    """Make `EUFAdapter` build the Rust EUF. SLICE_EUF=py keeps Python's, to compare. Returns a function that undoes it."""
+    import satassume.theories.euf.euf as euf
+    import satassume.theories.euf.euf_adapter as adapter
+    saved = euf.EUFTheory, adapter.EUFTheory
+    if os.environ.get("SLICE_EUF") != "py":
+        euf.EUFTheory = adapter.EUFTheory = EUFTheory
+
+    def undo():
+        euf.EUFTheory, adapter.EUFTheory = saved
+    return undo
+
+
 def install():
-    """Make the engine's sessions and `ref.py` use the Rust solver, with the theories as live callbacks into the
-    unchanged Python. Returns a function that undoes it. `live.py --check plain` runs exactly this. Tests that build
-    `satassume.sat.solver.Solver` themselves are left on Python."""
+    """Make the engine's sessions and `ref.py` use the Rust solver and `EUFAdapter` the Rust EUF, with the other theories
+    as live callbacks into the unchanged Python. Returns a function that undoes it. `live.py --check plain` runs exactly
+    this. Tests that build `satassume.sat.solver.Solver` themselves are left on Python."""
     import satassume.engine as engine
     import satassume.ref as ref
     saved = engine.Solver, ref.Solver
     engine.Solver = ref.Solver = make
+    undo_euf = install_euf()
 
     def undo():
         engine.Solver, ref.Solver = saved
+        undo_euf()
     return undo

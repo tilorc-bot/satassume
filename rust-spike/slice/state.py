@@ -3,7 +3,9 @@
 paths it is there to look at. `diff` names the first field that differs. Used by `fuzz.py`; step 3 hashes `digest`.
 """
 import hashlib
+import re
 import struct
+import sys
 
 from satassume.sat.solver import Clause, _is_learnt
 
@@ -117,6 +119,82 @@ def dump_py(s):
         "ring_tm": " // ".join(_models(r[6]) for r in s._ring),
     }
     return d
+
+
+_shown = {}
+
+
+def show_head(o):
+    """A head as text, for both EUF dumps. Addresses masked; memoised because a dump can run after every solver call."""
+    k = (type(o), o)
+    r = _shown.get(k)
+    if r is None:
+        r = _shown[k] = re.sub(r"0x[0-9a-f]+", "0xX", repr(o))
+    return r
+
+
+def dump_euf_py(th):
+    """The same field -> string dict as the crate's `EUFTheory.dump(show_head)` (`euf_py.rs`), on Python's class."""
+    def key(k, t):
+        if k[0] == "a":
+            return f"{t}=a:{k[1]}:{k[2]}"
+        if k[0] == "h":
+            return f"{t}=h:{show_head(k[1])}:{k[2]}"
+        return f"{t}={k[0]}:{show_head(k[1])}"
+
+    def lab(x):
+        if x is None:
+            return "N"
+        return str(x) if isinstance(x, int) else f"{x[0]},{x[1]}"
+
+    def op(e):
+        o = e[0]
+        if o == 0:
+            return "U" + ",".join(str(int(x)) for x in e[1:])
+        if o == 1:
+            return f"L{e[1][0]},{e[1][1]}"
+        return "..ADPTS"[o] + ",".join(map(str, e[1:]))
+
+    # opcodes: _UNION, _LOOKUP, _ASSIGN, _DISEQ, _REG_APP, _REG_ATOM, _USE = range(7)
+    return {f"euf.{k}": v for k, v in {
+        "keys": ";".join(key(k, t) for k, t in th._keys.items()),
+        "app": _join("N" if a is None else f"{a[0]},{a[1]}" for a in th._app),
+        "rep": _join(th.rep),
+        "members": ";".join(_join(m) for m in th.members),
+        "use": ";".join(_join(m) for m in th._use),
+        "lookup": _join(f"{a},{b}:{t}" for (a, b), t in sorted(th._lookup.items())),
+        "pfp": _join(th._pfp),
+        "pfl": _join(lab(x) for x in th._pfl),
+        "val": _join(th._val),
+        "diseq": ";".join(_join(f"{d[0]},{d[1]},{d[2]}" for d in l) for l in th._diseq),
+        "atoms_of": ";".join(_join(m) for m in th._atoms_of),
+        "atoms": _join(f"{v}:{a[0]},{a[1]},{int(a[2])}" for v, a in sorted(th._atoms.items())),
+        "assigned": _join(f"{v}:{l}" for v, l in sorted(th._assigned.items())),
+        "pending": _join(f"{a},{b},{lab(l)}" for a, b, l in th._pending),
+        "propq": _join(th._propq),
+        "conflict": "N" if th._conflict is None else _join(th._conflict[1]),
+        "trail": _join(op(e) for e in th._trail),
+        "lims": _join(th._lims),
+    }.items()}
+
+
+def with_euf(dump, theories):
+    """`dump` plus, per attached EUF theory, its own fields under the theory's index. `theories` is the solver class's
+    unwrapped method, so a traced solver doesn't see this read as a call."""
+    rust = sys.modules.get("sa_solver")
+
+    def f(s):
+        d = dict(dump(s))
+        for i, th in enumerate(theories(s)):
+            if rust is not None and isinstance(th, rust.EUFTheory):
+                e = th.dump(show_head)
+            elif hasattr(th, "_pfp"):
+                e = dump_euf_py(th)
+            else:
+                continue
+            d.update((f"{i}.{k}", v) for k, v in e.items())
+        return d
+    return f
 
 
 def diff(a, b):
