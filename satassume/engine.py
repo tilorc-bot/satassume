@@ -136,6 +136,9 @@ _REMOVED_WRITEBACK = ("provenance", "all")
 #: any session work: Engine._within_budget)
 _UNCAPPED = float("inf")
 
+#: ``(cone, weight, rel)`` of a cone past the discovery budget
+_OVER_BUDGET = (None, None, None)
+
 
 def _noncommutative(term) -> bool:
     """Whether ``term`` has a non-commutative subterm (``Symbol('A',
@@ -1677,9 +1680,11 @@ class Engine:
         """``(cone, weight, rel)`` for the cone object ``d``: its structural
         cone (``d`` and every object reachable through :meth:`_struct`'s
         kids) as a frozenset and its weight (the sum of the objects'
-        weights) if that is at most ``discovery_budget``, else ``(None, w,
-        rel)`` with ``w`` past the budget; ``rel``: the cone holds a relation
-        atom (meaningful when it fits).  Memoized per engine."""
+        weights) if that is at most ``discovery_budget``, else
+        ``_OVER_BUDGET``; ``rel``: the cone holds a relation atom.  Where a
+        walk past the budget stops depends on its order and on the sub-cones
+        already known, so it reports nothing but that it stopped.  Memoized
+        per engine."""
         cones = self._cones
         r = cones.get(d)
         if r is not None:
@@ -1717,7 +1722,7 @@ class Engine:
             if total > budget:
                 over = True
                 break
-        r = (None, max(total, budget + 1), rel) if over else (frozenset(seen), total, rel)
+        r = _OVER_BUDGET if over else (frozenset(seen), total, rel)
         if len(cones) >= 100_000:
             cones.clear()
         cones[d] = r
@@ -1728,7 +1733,8 @@ class Engine:
         assumption set): the union of the cones of its atoms' objects
         (:func:`_kid`) and, with ``link`` (the session's relation glue
         runs), of the objects of the link of every vocabulary argument
-        (``relations.link_objects``); cone None if it outweighs the budget.
+        (``relations.link_objects``); cone, weight and rel None if it
+        outweighs the budget.
         ``sums``: the sums under its sign atoms (``scope.affine_pair``);
         ``zs``: the arguments of its zero atoms (``relations.zero_args``).
         Memoized per engine."""
@@ -1757,8 +1763,8 @@ class Engine:
         return r
 
     def _union(self, objs):
-        """``(cone, weight, rel)`` of the union of the cones of ``objs``
-        (cone None if it outweighs the budget)."""
+        """``(cone, weight, rel)`` of the union of the cones of ``objs``, or
+        ``_OVER_BUDGET`` if it outweighs the budget."""
         budget = self._discovery_budget
         struct = self._struct
         cone = frozenset()
@@ -1767,7 +1773,7 @@ class Engine:
         for o in objs:
             c, w, r = self._cone_info(o)
             if c is None:
-                return None, w, r
+                return _OVER_BUDGET
             rel = rel or r
             if not cone:
                 cone, weight = c, w
@@ -1776,7 +1782,7 @@ class Engine:
             if new:
                 weight += w if len(new) == len(c) else sum(struct(x)[1] for x in new)
                 if weight > budget:
-                    return None, weight, rel
+                    return _OVER_BUDGET
                 cone = cone | new
         return cone, weight, rel
 
@@ -1791,11 +1797,17 @@ class Engine:
         function of the query, the registry and the settings: never of the
         sessions, the caches or earlier queries.  A query that passes runs
         discovery and escalation uncapped (never truncated): its session
-        visits at most its cone."""
+        visits at most its cone.  Linking only adds objects, so a cone over
+        the budget unlinked is over it linked too: False, without walking the
+        query's links."""
         _c, _w, rel, sums, zp = self._query_cone(proposition, False)
+        if _c is None:
+            return False
         cross = ()
         if assumptions is not None:
             _c, _w, rel_a, sums_a, za = self._query_cone(assumptions, False)
+            if _c is None:
+                return False
             rel = rel or rel_a
             sums = sums | sums_a
             if (zp or za) and self._relation_specs:

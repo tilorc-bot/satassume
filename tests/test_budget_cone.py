@@ -8,7 +8,10 @@ that set does), every other one runs uncapped and is never truncated.  So the an
 functions of ``(p, a, config, registry)``, never of earlier queries, the
 caches or a reused session.
 """
+import os
 import pickle
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -218,3 +221,59 @@ def test_inconsistent_set_within_budget_raises_for_every_query():
         e = Engine(discovery_budget=3)
         with pytest.raises(ValueError):
             ask(p, Q.positive(x) & Q.negative(x), e)
+
+
+def test_over_budget_query_cone_never_calls_link_objects():
+    """A cone over the budget unlinked is over it linked too, so _within_budget
+    answers False without choosing a link.  It used to read the rel of the walk
+    that stopped, which follows the hash seed, so the first query's link was
+    built on some seeds only (a set of relation atoms just over the budget).
+    The other two choose a link by their sums alone, on every seed: one with
+    the proposition over the budget, one with the assumptions.
+    ``engine.link_objects`` is _query_cone's name for it; the glue of a relation
+    atom the walk visits (``relations.glue_objects``) has its own."""
+    code = """
+from sympy import Q, pi, symbols
+from satassume import engine as E, sympy_api
+x, y, z, u, v = symbols("x y z u v")
+calls, verdicts, real_link, real_within = [], [], E.link_objects, E.Engine._within_budget
+def link(*args):
+    calls.append(args[0])
+    return real_link(*args)
+def within(*args):
+    verdicts.append(real_within(*args))
+    return verdicts[-1]
+E.link_objects, E.Engine._within_budget = link, within
+for p, a in ((Q.real(1 - 2*x), Q.ge(x, pi/2) & Q.le(x - y - 1, 1 - y)),
+             (Q.positive(x*y + z*u + v), Q.negative(x*y + z)),
+             (Q.positive(x + y), Q.negative(x*y + z*u + v))):
+    calls.clear(), verdicts.clear()
+    eng = E.Engine(discovery_budget=5)
+    sympy_api.set_default_engine(eng)
+    print(sympy_api.ask(p, a), eng.last_budget_limited, verdicts[0], len(calls))
+"""
+    root = Path(__file__).resolve().parent.parent
+    for seed in range(8):
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=root,
+                             env=dict(os.environ, PYTHONHASHSEED=str(seed)), timeout=300)
+        assert out.returncode == 0, out.stderr[-3000:]
+        assert out.stdout.split("\n")[:3] == ["None True False 0"] * 3, f"seed {seed}: {out.stdout}"
+
+
+def test_over_budget_results_carry_nothing():
+    """Past the budget, where a walk stops depends on its order and on the
+    sub-cones already known, so no weight or rel comes out of it: the same
+    results whether or not an earlier query left a sub-cone over the budget."""
+    x, y, z, u = symbols('x y z u')
+    sub = x*y + z
+    whole = P('positive', sub*u + 1)
+    over = (None, None, None)
+    fresh = Engine(discovery_budget=1)
+    primed = Engine(discovery_budget=1)
+    assert primed._cone_info(sub) == over
+    for eng in fresh, primed:
+        assert eng._cone_info(sub) == over
+        assert eng._cone_info(sub*u + 1) == over
+        assert eng._union([sub, u]) == over
+        assert eng._query_cone(whole, False)[:3] == over
+        assert not eng._within_budget(whole)
