@@ -61,3 +61,7 @@ handoff (test and docs only). Nothing landed. Handed off at the 142k context not
   Rust's constfield do it exactly? Revisit after 5c. Also counted: derived Adds with no row (`core:derived:*`), and
   `kept_product` scaffolding (`core:kept_product`). `_common` helpers ported for core: none (facts, const_key, consts_of stay
   for 6d). Module count: proposed 8 of 32 (core with its named callbacks); 7 of 32 if the planner counts it as partial.
+
+## Update 23:17 UTC (after handoff)
+The pareto1 job finished: every phase exited 0, `all-done.txt` exists, and lease 672038d6 was released. sum.txt is ready to read.
+The orion shapes run has written 9 of its 10 lines (base-none isn't an entry in M, so 9 is all of them). Read both.
