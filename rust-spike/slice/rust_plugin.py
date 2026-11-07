@@ -18,6 +18,8 @@ SLICE_SUITE_SHUFFLE=N: run the tests in a random order from seed N, the same on 
 SLICE_SO=DIR: take sa_solver from DIR (a mutant).
 SLICE_AUDIT_OFF=1: `tests/theory_harness.py`'s Recorder doesn't see the solver, so its audit of solver internals from
 inside a hook is off and the rest of the test runs. Not part of the planner's numbers: see the results file.
+SLICE_AUDIT_OFF=2: also no `check_protocol`, whose level checks need the hidden solver, so a test that stopped there goes
+on to its answer comparisons. Both backends take the same patch.
 """
 import json
 import os
@@ -103,6 +105,10 @@ def pytest_runtest_protocol(item, nextitem):
     h = sys.modules.get("theory_harness") if os.environ.get("SLICE_AUDIT_OFF") else None
     if h and not isinstance(vars(h.Recorder).get("solver"), property):
         h.Recorder.solver = property(lambda self: None, lambda self, v: None)
+    if h and os.environ["SLICE_AUDIT_OFF"] == "2":
+        for m in (h, sys.modules.get("real_theory_fuzz"), getattr(item, "module", None)):
+            if m is not None and hasattr(m, "check_protocol"):
+                m.check_protocol = lambda rec, *a, **k: {}
     reports = []
     item._slice_reports = reports
     yield
