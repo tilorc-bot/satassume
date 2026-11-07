@@ -1798,7 +1798,8 @@ class Engine:
         sessions, the caches or earlier queries.  A query that passes runs
         discovery and escalation uncapped (never truncated): its session
         visits at most its cone.  Linking only adds objects, so a cone over
-        the budget unlinked is over it linked too: False, with no link built."""
+        the budget unlinked is over it linked too: False, without walking the
+        query's links."""
         _c, _w, rel, sums, zp = self._query_cone(proposition, False)
         if _c is None:
             return False

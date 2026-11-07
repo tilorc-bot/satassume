@@ -223,7 +223,7 @@ def test_inconsistent_set_within_budget_raises_for_every_query():
             ask(p, Q.positive(x) & Q.negative(x), e)
 
 
-def test_over_budget_query_builds_no_link():
+def test_over_budget_query_cone_never_calls_link_objects():
     """A cone over the budget unlinked is over it linked too, so _within_budget
     answers False without choosing a link.  It used to read the rel of the walk
     that stopped, which follows the hash seed, so the first query's link was
