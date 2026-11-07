@@ -1,7 +1,11 @@
 """Slice B of component 4: `relation_atom`, `_termwise`, `_eq_links` and the sort sites answered by Rust through ids.
 
 Each test compares Rust's answer with Python's own function on the same terms, or shows a plant being caught.
+
+Run from this directory, with `backend.install()` off (Python's solver) and on (`SLICE_TERM_TEST_RUST=1`), as `test_term_live.py`.
 """
+import os
+
 import pytest
 from sympy import And, Function, Q, S, Symbol, exp, nan, oo, pi, sqrt
 
@@ -10,6 +14,10 @@ import sa_solver
 import term_live
 from harness.state import reset_module_state
 from satassume import engine as E, relations as R, sympy_api as A
+
+if os.environ.get('SLICE_TERM_TEST_RUST'):
+    import backend
+    backend.install()
 
 x, y, z = Symbol('x'), Symbol('y'), Symbol('z')
 f, g = Function('f'), Function('g')
