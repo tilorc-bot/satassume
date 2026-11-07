@@ -1,0 +1,34 @@
+# HANDOFF sa-port-93: step 5c, first session (issue 323)
+
+Branch `port/5c` from rust-slice de8bd3a, pushed. Head 7375cb8. Clone /home/tilo/dev/sa-port-7 (orion, bot identity).
+
+## Done
+- **1b97a5a, the bar script:** `rust-spike/slice/p1/bar.sh NAME BRANCH [PHASE...]` and `bar_sum.py OUT BASE`. Phases: build tests suite live plants seed1 suiteplants sum. Settings come from env: BASE, PLANTS, SUITE_PLANTS (`zero` = plants that fired 0 on both workloads), TESTS, DIRECT, N, OUT. It prints every command with a UTC time to `$B/commands.txt`, records source.txt, the .so sha256, tree.txt and config.txt, and lists the phases not run. `bar.sh land TESTED` (on orion, in the clone) rebases and prints the incoming diff; `PUSH=1` pushes to rust-slice. It never says pass or fail. **Checked:** `bar_sum.py` on sa-port-91's rows against sa-port-89's reproduces C2c's numbers (5,959/125/23/18, 0 new/gone/changed, 39 handler rows, same multiset, 1 passed with firing, all 8 MATCH, shas 31cd0945…/173502b6…). Output: pareto1 `~/sp19/sa-rust-ids-work/sa-port-93/sumtest.txt`. **The full bar.sh run is untested.**
+- **7375cb8, 5c1's first version:** `solver_rs/src/discovery.rs` holds `ses_ensure`, `ses_discover`, `ses_discover_raw`, `ses_incomplete` and `ses_escalate`, ported from `engine.py:772-850` over the session's own Python containers. Callbacks: `_flush`, `_compile`, `_emit_pattern`, `_compile_pending`, and the visit through `core.visit`. `node` is `session_live._node`'s body. Python wrappers: `session_live.py` `_DISC_METHODS` / `_install_discovery` (search `PY_DISC`); `SLICE_DISC=py` keeps Python. Plants (relations_core.rs consts 30-37, `rel_plant` names): drop-ensure-demand, drop-discover-flush, drop-discover-visit, drop-esc-pattern, drop-esc-compile, drop-esc-deferred, truncated-never, incomplete-never. Counters: `ses:ensure/discover/escalate/incomplete` (session.rs NAMES, 58). `base_get`/`visit` in session.rs became pub(crate).
+- **Quick check on orion** (dev `--limit 200`, `~/sa-rust-ids-work/sa-port-93/quick`): Python against Rust MATCH, sha 281af6b1d83b5b41, 0 Python solvers on Rust; ses:ensure 63, discover 19, escalate 19, incomplete 47. Plants on that slice: **drop-discover-flush fired 19 and MATCHed** (not caught there); drop-esc-compile fired 0 (void). Neither the full workloads nor the suite has run yet.
+
+## Next, in order
+1. Run the bar for 5c1 on pareto1: `scp rust-spike/slice/p1/bar.sh pareto1:sp19/bar-NAME.sh`, then `machine run pareto1 --shared --wait 4h -r "5c1 bar" -- setsid env PLANTS="drop-ensure-demand drop-discover-flush drop-discover-visit drop-esc-pattern drop-esc-compile drop-esc-deferred truncated-never incomplete-never" SUITE_PLANTS=zero TESTS="test_session_limits.py test_relations_core.py test_term_ids.py" DIRECT="relations_direct.py 300 0" bash ~/sp19/bar-NAME.sh NAME port/5c`, detached. BASE defaults to sa-port-91's suite, which is rust-slice's last landing. Fix bar.sh where it breaks.
+2. If drop-discover-flush stays MATCH on dev, fuzz and suite: read why. `_flush` may be redundant after `Relations.process`, or `_custom`'s generators may run later anyway. Then either make a plant that reaches the effect, or add a direct Python-against-Rust test of discovery on forged state, as C2c's `test_relations_core.py` `_direct_c2c` does. truncated-never and drop-esc-* should only fire under an explicit budget, i.e. `test_session_limits.py` or a direct test. The engine passes no budget.
+3. Land 5c1 at the bar (`bar.sh land`), write `results/port-5c1.md`, then go on to 5c2.
+
+## 5c split (lengths from source, by `ast`; smallest first)
+| step | what | lines |
+|---|---|--:|
+| 5c1 | discovery: `ensure` 17, `discover` 8, `_discover` 8, `incomplete` 3, `escalate` 37 (engine.py:772-850) | 73 |
+| 5c2 | compile loop: `_visit` 40, `_compile_patterns` 39, `_emit_pattern` 9, `_compile` 22, `_flush` 19, `_custom` 26, `_compile_pending` 37, `Session._link` 24, module `_split` 27, `want_of` 10 | 253 |
+| 5c3 | queries: `query_lit` 14, `prepare_query` 17, `emit` 5, `query_literal` 53, `_query_all` 29, `literal_of` 11, `_ensure_atoms` 11, `_ensure_twins` 13, `_relations` 13 | 166 |
+| 5c4 | Relations' 12 methods: `__init__` 86, `process` 79, `_eq_links` 48, `_share` 15, `wants_transfer` 10, `_note_sides` 7, `_atom_selector` 7, `_adapter` 5, `note_formula` 5, `_link_later` 4, `_atom_var` 4, `enqueue` 2 | 272 |
+| 5c5 | relations.py's 27 module functions (list: port-c2c.md:98). **relations.py counts whole here.** | 413 |
+| 5c6 | assumption set and `Session.__init__`: `assume_formula` 35, `link_set` 9, `assumption_lits` 89, `_set_glue` 46, `_group_sel` 35, `_glue_of` 15, `__init__` 77. **Session counts whole here.** | 306 |
+| 5c7 | structure and budget: `_struct` 66, `_cone_info` 49, `_query_cone` 32, `_union` 23, `_within_budget` 45, `_over_budget` 5, `_note_budget` 6, `_drop_cones` 5, `neighbourhood` 18. Exactness line: weights match exactly, with the budget at boundary values. | 249 |
+| 5c8 | relevance, sympy_api.py:779-1110: `_keys`, `_keys_rel`, `_bool_keys`, `_sides_keys`, `_Split`, `_relevant`, `_vocab_blocks`, `_part_consistent`, `_consistent` | ~330 |
+| 5c9 | memos under per-query ids and settings: `DictCache` 88, `AnswerMemo` 13, `engine_memos`, `Engine.__init__` 98, the properties (1418-1527), `_settings_changed`, `_check_version`, `_settings_fingerprint`, `_drop_set_memos`, `_fresh_session`. **The public-API `test_incremental_matches_fresh` family is due here at the latest.** Recommended: add it as a test-only change before 5c7, so it guards every Engine step. | ~370 |
+| 5c10 | query path: `_context_session`, `_build_context_memoized`, `_build_context`, `verdict`, `_complete_check` (the `engine.py:1906` quiet handler moves here), `is_`, `is_many`, `_decide`, `_put_result`, `_is_custom`, `ask`, `_ask`, and the module helpers (`_noncommutative*`, `_kid`, `_check_*`, `_context_free`, `_gave_up`, `_exhausted`). **engine.py counts whole here.** | ~470 |
+
+**`test_equality_sharing_is_needed_and_works`** (tests/test_relations.py:161) patches `Relations._share` and `_trichotomy`. 5c1 doesn't touch either. In 5c4, once `_share` moves, re-point it as C2b did for `_trichotomy`: a Rust plant (`skip-share`, alongside the existing `skip-trichotomy`) plus a test in `test_relations_core.py` that sets both and asserts None. The Python test stays unedited and keeps failing on Rust, as ruled.
+
+## Map
+- Session: engine.py:304-1222. Engine: :1251-2251. Discovery: :772-850. `_node` shim: session_live.py:195. Relations wrapper pattern: session_live.py:330-450.
+- Rust core: session.rs `base_get` :873, `visit` :879, `emit_direct` :359. Relations' `with_cx`/`session_of`: relations_core.rs :1397 / :191. Plants: relations_core.rs :37-75 and `rel_plant`.
+- Old scripts this replaces: pareto1 ~/sp19/job91.sh, land91.sh, plant91.sh.
