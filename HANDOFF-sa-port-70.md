@@ -24,7 +24,8 @@ Branch `port/4c`, based on `rust-slice` 089c70d. **Nothing is on `rust-slice`.**
 | `term_ids_direct.py 3000 1` | 2,951 pairs, no `differs:*` line in the 30 lines I read. Refused `sub` on the new reason: 30. The output was cut at 30 lines, so **the old reason's count wasn't read**. File: `~/sa-rust-ids-work/sa-port-70/c1/direct.json` (plain text despite the name) |
 | Fresh dev, default budget | Python and Rust rows byte-identical. `glue:termwise` 30, `scaffold:rebuilt:glue_objects` 69, 0 refusals |
 | Dev, budgets 5 and 2 | Below |
-| Fuzz, budgets 5 and 2 | **Not finished when I last read it** |
+| Fuzz, budget 5 | 3,000 rows, Rust against Python: 0 answers, 0 digests, 0 faults, 0 refusals, `glue:termwise` 1,576 |
+| Fuzz, budget 2 | **Still running when I stopped**, expected in `plantb/` within minutes. Read it |
 
 ### The `termwise-true` plant
 
@@ -32,14 +33,16 @@ Branch `port/4c`, based on `rust-slice` 089c70d. **Nothing is on `rust-slice`.**
 |---|---|---|---|
 | Dev, budget 5 | 0 answers, 0 digests | **0 answers, 0 digests: not caught** | 8 answers, 15 digests |
 | Dev, budget 2 | 0 answers, 0 digests | **0 answers, 0 digests: not caught** | 7 answers, 13 digests |
+| Fuzz, budget 5 | 0 answers, 0 digests | **Caught: 7 answers, 74 digests** (first: q352, q632, q912, q2211, q2648) | 0 answers, 15 digests |
+| Fuzz, budget 2 | Not read | Not read | Not read |
 
-**So on dev the planner's expectation fails.** The plant reaches the site, with `glue:termwise` 30, but it isn't caught at either budget.
+**So the planner's reading holds on fuzz at budget 5, and the plant is caught there through answers. On dev it isn't caught at either budget,** though the plant reaches the site, with `glue:termwise` 30. These runs are on this first version, so rerun them on the landing source for the bar.
 
-**Possible cause, untested:** the plant can only move anything where the real `_termwise` says False. I never counted those. If dev has none of the 30, this plant is void on dev, and that's the explanation to report. **First step: count real False at the glue, per workload.** `termwise-false` moving answers shows the site does reach verdicts.
+**Why dev doesn't catch it, untested:** the plant can only move anything where the real `_termwise` says False, and I never counted those. If dev has none of the 30, the plant is void on dev, and that's the explanation to report. **Count real False at the glue, per workload.**
 
-Fuzz has 1,576 `_termwise` calls per slice B, so it's the likelier catch. If neither catches it, add a direct comparison with a real False, as the brief asks, and say why.
+**Not compared on this tree:** fuzz at the default budget.
 
-Output: `~/sa-rust-ids-work/sa-port-70/c1/plantb/` on orion. Read it with `python3 ~/sa-rust-ids-work/sa-port-70/cmpb.py DIR`. Runner: `~/sa-rust-ids-work/sa-port-70/plantb.sh OUT`. It sets `timeout 900` per job, and fuzz at 522 rows after about 3 minutes under load may hit that, so check `rc.txt` for 124 before trusting anything short. **Don't rebuild or edit the slice while it runs:** later job groups import the current `.so` and `term_live.py`. Its source is this commit. Rerun it on the landing source anyway.
+Output: `~/sa-rust-ids-work/sa-port-70/c1/plantb/` on orion. Read it with `python3 ~/sa-rust-ids-work/sa-port-70/cmpb.py DIR`. Runner: `~/sa-rust-ids-work/sa-port-70/plantb.sh OUT`. It sets `timeout 900` per job. A fuzz job took a few minutes here, so that should be enough, but check `rc.txt` for 124 before trusting anything short. **Don't rebuild or edit the slice while it runs:** later job groups import the current `.so` and `term_live.py`. Its source is this commit. Rerun it on the landing source anyway.
 
 ## Not run on this tree
 
