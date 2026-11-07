@@ -277,6 +277,7 @@ def main():
     catch_count.install()
     # The whole of both `try`s, by code object. SLICE_PLANT_HANDLER=NAME plants a raise so a run can show this install fires.
     import handler_count
+    open(args.out + ".handlers", "w").close()      # append mode below, for forked children: a rerun starts empty
     handler_count.install(args.out + ".handlers")
     plant = {"assumption_lits": (engine.Session, "assumption_lits"), "complete_check": (engine.Engine, "_complete_check"),
              "formula": (sympy_api, "_formula"), "verdict": (engine.Engine, "verdict")}.get(os.environ.get("SLICE_PLANT_HANDLER"))
