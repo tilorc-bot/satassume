@@ -310,8 +310,8 @@ def install(shadow=False, data=None):
     def rows_kept():
         if not active[0]:
             return True
-        stack = _stack()
-        if stack and stack[-1].kept is not None:
+        q = term_live.current()
+        if q is not None and q.kept is not None:
             COUNTS['rows:kept'] += 1
             return True
         return False

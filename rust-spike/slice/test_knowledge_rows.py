@@ -1,6 +1,7 @@
 """`_rows_runtime.py` on Rust: by hand, for what a SymPy-side comparison can't say. `rows_cmp.py` is the comparison against Python."""
 import pytest
 import sa_solver
+import term_live
 from fractions import Fraction
 from sympy import E, Float, I, Integer, Rational, S, exp, pi
 
@@ -85,7 +86,7 @@ class _Log:
 
 
 def kept_query(K):
-    K._stack().append(_Kept())
+    term_live.stack().append(_Kept())
 
 
 def raises(*a, **k):
@@ -146,7 +147,7 @@ def test_constant_value_kept(live, monkeypatch):
     try:
         assert wiring.constant_value('number/2', Integer(4)) == 2
     finally:
-        live._stack().pop()
+        term_live.stack().pop()
     assert live.COUNTS['rows:kept'] == 1 and live.COUNTS['fault'] == 0
 
 
@@ -166,7 +167,7 @@ def test_family_first_used_by_kept_query(live, monkeypatch):
             assert live._same_objects(getattr(gen, f), getattr(python, f)), f
         assert live.COUNTS['rows:generator:kept'] == 1 and not built
     finally:
-        live._stack().pop()
+        term_live.stack().pop()
     assert gen.__name__ == 'Pow_rows' and gen.__module__ == 'somewhere'
     assert not built
     key = next(iter(python.specs))
@@ -179,6 +180,6 @@ def test_family_first_used_by_kept_query(live, monkeypatch):
     try:
         assert rules(gen) == rules(python) and not built      # still Python's inside a kept query
     finally:
-        live._stack().pop()
+        term_live.stack().pop()
     assert rules(gen) == rules(python) and len(built) == 1     # Rust's after it
     assert live.COUNTS['rows:gen'] == 1
