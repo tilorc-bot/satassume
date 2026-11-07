@@ -1,14 +1,17 @@
-"""suite_report.py RUST PYTHON [--kept KEPT]: the planner's three numbers from run_suite.sh's rows.
+"""suite_report.py RUST PYTHON: the planner's three numbers from run_suite.sh's rows.
 
 A failure on Rust is "needs internals" only if the text of the failure itself names one of:
   - NotImplementedError from the crate's provenance stubs ("the Rust solver has no provenance")
   - AttributeError on the Rust solver class, for an attribute that real `Solver` has and the crate doesn't
-Anything else is a gate failure, including the borrow RuntimeError. A test the planner would class under "subclassing
-Solver" still has to fail with one of those two: subclassing works on the crate's class, so it isn't a reason by itself.
+  - a subclass's override of a private method that Rust never calls: only the node ids in SUBCLASS, each read by hand,
+    and only if the failing line reads its counter
+Anything else is a gate failure, including the borrow RuntimeError. Subclassing works on the crate's class, so it isn't a
+reason by itself.
 
-A file outside HANDOFF_FILES with a "needs internals" failure is flagged, not accepted: that list is the check that a
-real bug can't hide as a missing attribute. RUST and PYTHON are WORK directories; KEPT is the Python re-run of the kept
-tests, whose rows have to pass. Prints markdown; writes classes.json to RUST.
+A "needs internals" failure raised in a file outside HANDOFF_FILES is flagged, not accepted: that list is the check that
+a real bug can't hide as a missing attribute. The file is the one that raised, not the test's own: a test in test_euf
+that fails inside theory_harness is theory_harness's. RUST and PYTHON are WORK directories. Prints markdown; writes
+classes.json to RUST. A gate failure that fails the same way on Python is counted apart.
 """
 import argparse
 import collections
@@ -18,9 +21,16 @@ import os
 import re
 
 HANDOFF_FILES = {"test_lra_integers", "test_solver_incremental", "test_solver", "theory_harness", "test_transfer"}
-ATTR = re.compile(r"AttributeError: (?:type object )?'?(\w+)'? (?:object )?has no attribute '(\w+)'")
+ATTR = re.compile(r"AttributeError: (?:type object )?[<']*(?:class ')?([\w.]+)'?>? (?:object )?has no attribute '(\w+)'")
+FRAME = re.compile(r"^((?:tests|harness)/[\w./]+\.py):(\d+): in ", re.M)
+SUBCLASS = {
+    # _CountingSolver overrides _rb_reason to count; the crate calls its own, so the count stays 0.
+    "tests/test_solver.py::test_rule_block_conflict_analysis_reads_propagator_reasons",
+    "tests/test_solver.py::test_rule_block_final_conflict_reads_propagator_reasons",
+    "tests/test_solver.py::test_rule_block_random_search_like_clauses",
+}
 BORROW = "Already mutably borrowed", "Already borrowed"
-SOLVER_TYPES = {"Solver", "_CountingSolver", "BlockSolver", "MentionSolver"}
+SOLVER_TYPES = {"Solver", "rust_plugin.Solver", "_CountingSolver", "BlockSolver", "MentionSolver"}
 
 
 def rows(work):
@@ -36,10 +46,30 @@ def file_of(nodeid):
     return os.path.basename(nodeid.split("::")[0]).removesuffix(".py")
 
 
+def raised_at(r):
+    f = r["failure"]
+    frames = FRAME.findall(f.get("text") or "")
+    if frames:
+        return f"{frames[-1][0]}:{frames[-1][1]}"
+    return (f.get("where") or "?").replace(os.getcwd() + "/", "")
+
+
+def raised_in(r):
+    return os.path.basename(raised_at(r).split(":")[0]).removesuffix(".py")
+
+
+def same_failure(a, b):
+    """The last line of the failure, with addresses out."""
+    last = lambda r: re.sub(r"0x[0-9a-f]+", "0x", (r["failure"]["crash"] or "").strip().splitlines()[-1])[:200]
+    return last(a) == last(b)
+
+
 def classify(r, py_attrs):
     """(class, detail) of a failed row."""
     f = r["failure"] or {}
     text = (f.get("crash") or "") + "\n" + (f.get("text") or "")
+    if r["id"] in SUBCLASS and "assert" in (f.get("crash") or "") and ("n_rb_reasons" in text or "assert read > 0" in text):
+        return "internals", "subclass override of _rb_reason"
     if "the Rust solver has no provenance" in text:
         return "internals", "provenance"
     if any(b in text for b in BORROW):
@@ -57,7 +87,6 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("rust")
     p.add_argument("python")
-    p.add_argument("--kept")
     a = p.parse_args()
     from satassume.sat.solver import Solver as PySolver
     py_attrs = set(dir(PySolver)) | set(vars(PySolver()))
@@ -69,6 +98,8 @@ def main():
     for i in groups["failed"] + groups["collect-error"]:
         c, d = classify(rs[i], py_attrs)
         classes[c].append((i, d, ps.get(i, {}).get("outcome", "absent")))
+    both = [x for x in classes["gate"] if x[2] == "failed" and same_failure(rs[x[0]], ps[x[0]])]
+    only = [x for x in classes["gate"] if x not in both]
     json.dump(classes, open(os.path.join(a.rust, "classes.json"), "w"), indent=1)
 
     passed = groups["passed"]
@@ -80,7 +111,9 @@ def main():
     print(f"| of those, none made inside the test (no solver, or a fixture shared across tests) | {len(passed) - len(touching)} |")
     print(f"| Kept on Python, needs internals | {len(classes['internals'])} |")
     print(f"| Failed on Rust: re-entry | {len(classes['reentry'])} |")
-    print(f"| Failed on Rust: other | {len(classes['gate'])} |")
+    print(f"| Failed on Rust: other, failing the same way on pure Python | {len(both)} |")
+    print(f"| Failed on Rust: other, passing on Python | {len(only)} |")
+    print(f"| Python solvers made in the Rust run | {sum(r['py_made'] for r in rs.values())} |")
     for k in ("skipped", "xfailed", "xpassed"):
         print(f"| Rust {k} | {len(groups[k])} |")
     print()
@@ -94,18 +127,24 @@ def main():
     print("Only in one run:", sorted(set(rs) ^ set(ps))[:20], "\n")
 
     print("### Needs internals, by file and reason")
-    by = collections.Counter((file_of(i), d) for i, d, _ in classes["internals"])
+    by = collections.Counter((raised_in(rs[i]), d) for i, d, _ in classes["internals"])
     for (f, d), n in sorted(by.items()):
         flag = "" if f in HANDOFF_FILES else "  **NOT in the handoff's list**"
         print(f"- `{f}`: `{d}`: {n}{flag}")
     print(f"\nHandoff files with none: {sorted(HANDOFF_FILES - {f for f, _ in by})}\n")
 
-    print("### Re-entry, by where it raised")
-    for w, n in collections.Counter(d for _, d, _ in classes["reentry"]).most_common():
+    bad = [i for i, _, po in classes["internals"] if po != "passed"]
+    print(f"Kept tests not passing on Python in the baseline run: {bad}\n")
+
+    print("### Re-entry, by the last test frame before the raise")
+    for w, n in collections.Counter(raised_at(rs[i]) for i, _, _ in classes["reentry"]).most_common():
         print(f"- `{w}`: {n}")
-    print("\n### Other failures")
-    for i, d, po in classes["gate"]:
+    print("\n### Other failures, passing on Python")
+    for i, d, po in only:
         print(f"- `{i}` (Python: {po}): {d}")
+    print("\n### Other failures, failing the same way on Python")
+    for i, _, _ in both:
+        print(f"- `{i}`")
 
     print("\n### Passed after writing a private attribute the crate doesn't have (the write did nothing)")
     w = collections.defaultdict(list)
@@ -114,14 +153,6 @@ def main():
             w[n].append(i)
     for n, ids in sorted(w.items()):
         print(f"- `{n}`: {len(ids)}, e.g. `{ids[0]}`")
-    if a.kept:
-        ks = rows(a.kept)
-        want = {i for i, _, _ in classes["internals"]}
-        res = collections.Counter(ks[i]["outcome"] if i in ks else "absent" for i in want)
-        print(f"\n### Kept tests re-run on Python: {dict(res)}")
-        for i in sorted(want):
-            if i not in ks or ks[i]["outcome"] not in ("passed", "skipped", "xfailed"):
-                print(f"- `{i}`: {ks.get(i, {}).get('outcome', 'absent')}")
 
 
 if __name__ == "__main__":

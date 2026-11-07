@@ -4,9 +4,11 @@ ruling for step 4 (issue 323). Needs rust-spike/slice on PYTHONPATH and `sa_solv
 `SV.Solver`, `engine.Solver` and `ref.Solver` become `Solver` below, before collection, so a test's own
 `from satassume.sat.solver import Solver` gets it too, and `class X(Solver)` subclasses Rust.
 
-`Solver` adds two things to the crate's class and nothing else:
+`Solver` adds three things to the crate's class and nothing else:
 - `_to_int` and `_to_ext`, Python's own static functions. They hold no state: `tests/` calls them on the class to write
   literals. They are not ported private attributes.
+- `_n_conflicts`, read-only, from the crate's public `stats()`, whose "conflicts" is that same counter in Python. Two
+  files read it after the search, to bound the search. A view of a public number, not a ported attribute.
 - counts, and a log of writes to attributes the crate doesn't have. The class has a `__dict__`, so such a write
   succeeds and does nothing; a test that passes after one may have tested less than it says, so it is reported.
 
@@ -14,6 +16,8 @@ SLICE_SUITE_OUT=DIR: one JSON line per test per worker, written as each test end
 SLICE_SUITE_BACKEND=python: load the same recording with no patch, for the baseline and the kept tests.
 SLICE_SUITE_SHUFFLE=N: run the tests in a random order from seed N, the same on every xdist worker.
 SLICE_SO=DIR: take sa_solver from DIR (a mutant).
+SLICE_AUDIT_OFF=1: `tests/theory_harness.py`'s Recorder doesn't see the solver, so its audit of solver internals from
+inside a hook is off and the rest of the test runs. Not part of the planner's numbers: see the results file.
 """
 import json
 import os
@@ -43,6 +47,7 @@ if BACKEND == "rust":
     class Solver(sa_solver.Solver):
         _to_int = staticmethod(PySolver._to_int)
         _to_ext = staticmethod(PySolver._to_ext)
+        _n_conflicts = property(lambda self: self.stats()["conflicts"])
 
         def __new__(cls, *args, **kwargs):
             s = super().__new__(cls)
@@ -56,14 +61,16 @@ if BACKEND == "rust":
             super().__setattr__(name, value)
 
     SV.Solver = _engine.Solver = _ref.Solver = Solver
-else:
-    _init = PySolver.__init__
 
-    def _counted(self, *args, **kwargs):
-        counts["py_made"] += 1
-        _init(self, *args, **kwargs)
+_init = PySolver.__init__
 
-    PySolver.__init__ = _counted
+
+def _counted(self, *args, **kwargs):
+    counts["py_made"] += 1
+    _init(self, *args, **kwargs)
+
+
+PySolver.__init__ = _counted
 
 _out = None
 
@@ -92,6 +99,10 @@ def _failure(rep):
 def pytest_runtest_protocol(item, nextitem):
     before = dict(counts)
     private_writes.clear()
+    os.environ["PROBE_TEST"] = item.nodeid      # probe_build.py's counters read it; nothing else does
+    h = sys.modules.get("theory_harness") if os.environ.get("SLICE_AUDIT_OFF") else None
+    if h and not isinstance(vars(h.Recorder).get("solver"), property):
+        h.Recorder.solver = property(lambda self: None, lambda self, v: None)
     reports = []
     item._slice_reports = reports
     yield
