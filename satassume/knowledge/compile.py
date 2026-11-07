@@ -58,7 +58,7 @@ def _def(f):
         nodes.add(a.expr)
     if not derived or len(nodes) != 1:
         return None
-    return ('&', tuple(sorted(lits, key=abs))), nodes.pop()
+    return ('&', tuple(sorted(lits, key=lambda l: (abs(l), l)))), nodes.pop()
 
 
 class VarTable:

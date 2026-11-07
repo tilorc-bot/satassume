@@ -300,3 +300,20 @@ def test_wide_basis_against_derived_propagates(preds, solvers):
             conflicts = sum(s._n_conflicts for s in solvers)
             assert conflicts <= 2, (pk, ak, conflicts)
             assert r is ask(_SHAPES[pk](pp, narrow), _SHAPES[ak](ap, narrow)), (pk, ak)
+
+
+# A contradictory conjunction holds a basis literal and its negation, which
+# tie under abs: their order must not follow the set's, or the two build
+# orders of one conjunction are two derived atoms, two auxiliary variables.
+def test_contradictory_conjunction_ignores_build_order():
+    from satassume.engine import Engine, Session
+    from satassume.knowledge.compile import _def
+    x = xs[0]
+    even, odd = P("even", x), P("odd", x)
+    d, e = _def(FAnd(even, odd))[0], _def(FAnd(odd, even))[0]
+    assert d == e
+    tied = [l for l in d[1] if -l in d[1]]
+    assert len(tied) == 2 and tied[0] < 0 < tied[1]
+    s = Session(Engine())
+    assert s._dvar(d, x, 3) == s._dvar(e, x, 3)
+    assert len(s._dv) == 1
