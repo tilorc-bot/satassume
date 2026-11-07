@@ -15,7 +15,7 @@ class Raises(Expr):
     def free_symbols(self): raise ValueError('planted')
 def table(p):
     c = C.convert(p, True, E.Engine())
-    return c, sa_solver.TermTable(**c.tables)
+    return c, sa_solver.TermTable(c.tables)
 c, t = table(Q.positive(x + 1))
 i = c.ids[x + 1]
 t.shape(i); print('shape', c.counts['read:facts'], c.counts['read:rest'])
@@ -26,3 +26,8 @@ try:
     print(t.is_number_term(c.ids[Raises(x)]))
 except sa_solver.TermRefuse as e:
     print('refused:', e, 'read_raised', c.counts['read_raised'], c.raised)
+# The check mode's counter fires on a row made wrong by hand.
+from sympy import Symbol
+e = C._record_row(Symbol)
+C._check_row(Symbol, ([*e[0][:7], e[0][7] + 1, *e[0][8:]], e[1]))
+print('check_differ', C.CACHE_COUNTS['check_differ'], C.CACHE_DIFFERS[0][0])
