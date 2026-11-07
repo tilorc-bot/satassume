@@ -33,6 +33,7 @@ import sympy
 
 import satassume
 from satassume.knowledge import realroots
+from satassume.knowledge.templates import _rows_runtime, wiring
 from satassume.knowledge.templates import _common, atoms, registry
 from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, const_value
 
@@ -110,6 +111,25 @@ def _bind_value_units(f):
         m = sys.modules.get(name)
         if m is not None:
             m.value_units = f
+
+
+def _same_objects(a, b):
+    """`a` and `b` are the same data: the same classes all the way down, and equal SymPy objects with the same print."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, (tuple, list)):
+        return len(a) == len(b) and all(map(_same_objects, a, b))
+    if isinstance(a, dict):
+        return list(a) == list(b) and all(_same_objects(a[k], b[k]) for k in a)
+    return a == b and repr(a) == repr(b)
+
+
+def _rows_compare(kind, expr, ours, theirs):
+    COUNTS['shadow:rows'] += 1
+    if not _same_objects(ours, theirs):
+        COUNTS['shadow:mismatch'] += 1
+        if len(MISMATCHES) < MAX_MISMATCHES:
+            MISMATCHES.append((kind, repr(expr), 'rows', repr(ours)[:300], repr(theirs)[:300]))
 
 
 def _python_realroots():
@@ -283,6 +303,76 @@ def install(shadow=False, data=None):
 
     _bind_realroots({name: rust_root(name) for name in REALROOTS})
 
+    # `_rows_runtime.py`. `_rows.py` and the offline tools keep Python's: only a query's path goes through `wiring`.
+    py_generator, py_constant_value = wiring.generator, wiring.constant_value
+    active = [True]
+
+    def rows_kept():
+        if not active[0]:
+            return True
+        stack = _stack()
+        if stack and stack[-1].kept is not None:
+            COUNTS['rows:kept'] += 1
+            return True
+        return False
+
+    def rust_constant_value(text, c):
+        if rows_kept():
+            return py_constant_value(text, c)
+        COUNTS['rows:constant_value'] += 1
+        try:
+            r = sa_solver.rows_constant_value(text, c)
+        except Exception as e:
+            COUNTS['fault'] += 1
+            raise KnowledgeFault(f'constant_value({text!r}, {c!r}): {e}') from e
+        if r is None:       # not a Rust number: `c` a Float, oo or nan, or the value zoo. Python's, by text and class of `c`.
+            COUNTS[f'rows:constant_value:python:{type(c).__name__}:{text}'] += 1
+            return py_constant_value(text, c)
+        if shadow:
+            _rows_compare('constant_value', (text, c), r, py_constant_value(text, c))
+        return r
+    rust_constant_value.__wrapped__ = py_constant_value
+
+    def rust_generator(name, arity, terms, specs, module, schemas=()):
+        if rows_kept():
+            return py_generator(name, arity, terms, specs, module, schemas)
+        COUNTS['rows:generator'] += 1
+        try:
+            rows = sa_solver.RowsGen(terms, specs, _rows_runtime.from_text, schemas)
+        except Exception as e:
+            COUNTS['fault'] += 1
+            raise KnowledgeFault(f'generator({name!r}): {e}') from e
+        for v in rows.python_values:        # not a Rust number: `I` and `-I`, in Pow's shapes
+            COUNTS[f'rows:value:python:{v}'] += 1
+        python = []
+
+        def py_gen():
+            if not python:
+                python.append(py_generator(name, arity, terms, specs, module, schemas))
+            return python[0]
+
+        def gen(R, c):
+            if rows_kept():
+                return py_gen()(R, c)
+            COUNTS['rows:gen'] += 1
+            try:
+                rows(R, c)
+            except Exception as e:
+                COUNTS['fault'] += 1
+                raise KnowledgeFault(f'{name}_rows({c!r}): {e}') from e
+        gen.__module__ = module
+        gen.__name__ = gen.__qualname__ = f'{name}_rows'
+        gen.arity, gen.terms, gen.shifts = arity, rows.terms, rows.shifts
+        gen.specs, gen.plain, gen.schemas = rows.specs, rows.plain, rows.schemas
+        gen.rust_rows = rows
+        if shadow:
+            theirs = py_gen()
+            for f in ('terms', 'shifts', 'specs', 'plain', 'schemas'):
+                _rows_compare('generator:' + f, name, getattr(gen, f), getattr(theirs, f))
+        return gen
+    rust_generator.__wrapped__ = py_generator
+    wiring.generator, wiring.constant_value = rust_generator, rust_constant_value
+
     rust_resolve.__wrapped__ = py_resolve
     rust_pattern.__wrapped__ = py_pattern
     _common.resolve, _common.Pattern = rust_resolve, rust_pattern
@@ -302,6 +392,8 @@ def install(shadow=False, data=None):
     undo_term = term_live.install()
 
     def undo():
+        active[0] = False
+        wiring.generator, wiring.constant_value = py_generator, py_constant_value
         undo_term()
         _common.resolve, _common.Pattern = py_resolve, py_pattern
         for cls, ts in saved_lists.items():
