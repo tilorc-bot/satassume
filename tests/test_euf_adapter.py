@@ -487,7 +487,7 @@ def test_term_interning_and_shared_terms():
     assert ad.term(f(x)) != ad.term(g(x))
     assert ad.term(S(2)) == ad.term(Rational(4, 2))
     shared = ad.shared_terms()
-    assert {f(x), y + 1, x, y} <= shared
+    assert {f(x), y + 1, x, y} <= set(shared)
 
 
 def test_deep_expression():

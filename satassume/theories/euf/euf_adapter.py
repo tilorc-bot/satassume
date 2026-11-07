@@ -240,7 +240,7 @@ class EUFAdapter:
             return []
         return list(islice(terms, start, None))
 
-    def shared_terms(self) -> set:
+    def shared_terms(self) -> list:
         """Candidate interface terms for combination with another theory.
 
         This is every SymPy expression interned so far: the sides of every
@@ -251,4 +251,4 @@ class EUFAdapter:
         An interface equality ``a = b`` is registered with
         ``register(solver, v, Q.eq(a, b))``.
         """
-        return set(self._terms)
+        return list(self._terms)

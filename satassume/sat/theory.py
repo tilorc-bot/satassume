@@ -195,8 +195,10 @@ class EqualitySharing:
     atoms, combined reasoning such as ``x <= y, y <= x |- f(x) = f(y)`` is
     lost (but nothing unsound is derived).
 
-    :meth:`update` takes the current term sets of the theories and returns
-    the pairs not returned before, in a deterministic order.
+    :meth:`update` takes the current terms of the theories, each theory's in
+    a defined order (a set would order them by hash, and the hash of a SymPy
+    ``Dummy`` differs from run to run), and returns the pairs not returned
+    before, in an order that follows from them.
     """
 
     def __init__(self):

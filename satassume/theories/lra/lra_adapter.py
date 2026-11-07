@@ -466,7 +466,7 @@ class LRAAdapter:
     def __init__(self, theory: LRATheory | None = None) -> None:
         self.theory = theory if theory is not None else LRATheory()
         self._solver = None
-        self._shared: set = set()
+        self._shared: dict = {}     # used as a set in first-seen order
 
     def register(self, solver, var: int, atom) -> bool:
         """An adapter owns one theory and so serves a single solver: a
@@ -484,7 +484,7 @@ class LRAAdapter:
                 payload = Negated(payload)
         self._attach(solver)
         solver.register_atom(self.theory, var, payload)
-        self._shared.update(atom_terms)
+        self._shared.update(dict.fromkeys(atom_terms))
         return True
 
     def _attach(self, solver) -> None:
@@ -544,6 +544,6 @@ class LRAAdapter:
             out.append(v)
         return out
 
-    def shared_terms(self) -> set:
+    def shared_terms(self) -> list:
         """Every opaque term of every atom registered through this adapter."""
-        return set(self._shared)
+        return list(self._shared)
