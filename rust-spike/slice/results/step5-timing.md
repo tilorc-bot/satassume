@@ -83,7 +83,7 @@ It doesn't measure:
 - **Other inputs or conditions.** Only these two workloads, on one CPU, Python 3.12.15 and hash seeds 0 to 2. Not memory, load time of the module (imports come before the timer), other Python versions, or shuffled query order.
 - **A real install path.** The backend is `backend.install()`'s monkeypatch, including its `weakref.finalize` per solver.
 
-**Step 4's gate stays unmet.** Its 46 failures come from one test stub re-entering the solver (`tests/theory_harness.py:242`). These workloads don't run that stub, and the check runs counted 0 re-entries, so the timing doesn't exercise that path or say anything about it.
+**Step 4's gate stays unmet.** Its 46 failures come from one test stub re-entering the solver (`tests/theory_harness.py:242`). These workloads don't run that stub, and step 3's traced runs counted 0 solver calls from inside a hook on both (aarch64; `--check raw` has no hook wrappers, so `check-s5.sh` can't count this). So the timing doesn't exercise that path or say anything about it.
 
 ## Method
 
