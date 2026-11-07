@@ -2,19 +2,22 @@
 
 `theories/transfer.py`, `EqualitySharing` and `P` run in Rust in the real engine. **This adds 1 of the 32 runtime modules: `transfer.py`.** `EqualitySharing` and `P` run on Rust, but their modules aren't counted: `sat/formula.py` still holds `Formula` and its subclasses on Python, and `sat/theory.py` is mostly protocols. Python stays the default and the reference; the backend stays optional. No heuristics added.
 
-**`rust` mode now means Rust EUF, Rust LRA and Rust transfer together.** The rebases onto component 2 (e5dd23f) and 1a (69639da) both conflicted and both changed what runs. Results from earlier source don't count here. `SLICE_EUF=py` wasn't needed to separate the components, because nothing differed.
+**`rust` mode now means Rust EUF, Rust LRA and Rust transfer together.** The rebases onto component 2 (e5dd23f) and 1a (69639da) both conflicted and both changed what runs. Results from earlier source don't count here, and no run below is from 69639da or earlier.
 
-Landing source: `port/3-landing-3` at 3173eca, on `rust-slice` 69639da; only this report and the inventory row come after it. Build on pareto1 (x86_64), sha256 starts d5aeb11c0bd9, the same file on both hosts. Fresh and suite ran on pareto0, controls on pareto1. Output: `~/sp19/out38/` on each host; suite rows and `split.jsonl` in `~/sa-rust-ids-work/sa-port-38/s1/` on orion.
+**Lazy reads (6827bf7): the rebase had no conflict.** Both sides touch only `quiet_fire.py`, the same file on both, and the inventory. This crate uses `term::TermId` and `term::offline`, not the `term/table.rs` and `term/algebra.rs` code lazy reads changed, and by that report nothing consumes conversion yet. That's by reading; the runs below are on the combined source. `SLICE_EUF=py` wasn't needed to separate the components, because nothing differed.
+
+Landing source: `port/3-landing-4` at 8313292, on `rust-slice` 6827bf7; only edits to this report come after it. Build on pareto1 (x86_64), sha256 starts f413ffa2fc0f, the same file on both hosts. Fresh and suite ran on pareto0, controls and history on pareto1. Output: `~/sp19/out38/` on each host; suite rows and `split.jsonl` in `~/sa-rust-ids-work/sa-port-38/s1/` on orion.
 
 ## The bar
 
 | # | Item | Result |
 |---|---|---|
 | 1 | Suite by id, Rust solver, EUF, LRA and transfer, shuffled, `-n 6` | **5,961 / 77 / 46** (123 failed), base 5,961 / 77 / 46. 6,125 ids, none added or gone, **0 outcomes changed** against `port-census/pr328-check/suite-rust`. 23 skipped, 18 xfailed. The base rows are from orion |
-| 2 | Fresh engine, memos cleared, dev 1,985 and fuzz 3,000 | Answers and state **byte-identical**, py against rust and py against shadow, seeds 0 and 1. Also on `transfer:1:300`, `transfer2:7:1500` and `corpus`: 10 of 10 pairs, all exits 0. Rust is identical across seeds on the four workloads compared (dev, fuzz, `transfer2:7:1500`, `corpus`) |
+| 2 | Fresh engine, memos cleared, dev 1,985 and fuzz 3,000 | Answers and state **byte-identical**, py against rust and py against shadow, seeds 0 and 1. Also on `transfer:1:300`, `transfer2:7:1500` and `corpus`: 10 of 10 pairs, all exits 0. Rust is identical across the two seeds on all five |
 | 3 | Planted bugs through that comparison | **6 of 8 caught, including 4 ordinary bugs**, table below. The unmutated rebuild reads clean on every column |
 | 4 | Quiet firings on Rust, that suite run | **39 rows, 2 tests**, both already named. **0 findings** |
 | 5 | Known differences | Below, each with its cause |
+| + | History and seeds, because the rebase brought other components into the crate | Rust against Python: **0 answers, 0 messages, 0 end states, 0 streams, 0 session counts differ** in all 14 runs. Below |
 
 **The 5,961 by firing, on Rust:** 5,960 with no Rust-only firing, 1 with one (`test_ci_stream_reports_only_what_replays`). 0 fire the same on Python, and 0 fire only on Python.
 
@@ -22,11 +25,11 @@ S's standing: S's gate is met except for the 46 named stub failures, one cause. 
 
 ### Changed outcomes and open items
 
-- **`tests/test_constfield.py::test_powers_are_refused_quickly`** passed on this run. It failed on 1e36724's run, at 0.641 s against a 0.5 s limit. Alone on orion at load 11 it passed 3 of 3 on each backend, on e7207af: the call took about 0.06 s on Rust and 0.33 s on Python. That doesn't show what caused the old failure; load stays a candidate. It isn't a changed outcome on this source.
+- **`tests/test_constfield.py::test_powers_are_refused_quickly`** passed on this run, and on 3173eca's. It failed on 1e36724's run, at 0.641 s against a 0.5 s limit. Alone on orion at load 11 it passed 3 of 3 on each backend, on e7207af: the call took about 0.06 s on Rust and 0.33 s on Python. That doesn't show what caused the old failure; load stays a candidate. It isn't a changed outcome on this source.
 - **`tests/test_solver.py::test_performance_smoke_300_vars`** on Python: failed in the base's rows, passed here. It asserts wall clock, and the base's rows are from orion, this run from pareto0. On Rust it's unchanged.
 - **Python's suite:** 6,084 passed, 0 failed, 23 skipped, 18 xfailed. Only that one id moved.
-- **Failure text of the 123:** the 59 kinds are the same, normalised for numbers. One id's text moved: a Hypothesis `ExceptionGroup`, in the first 150 characters. That compares the failures' start, not their full text.
-- **LRA sessions against 1a's run:** 45,109 sessions and 2,675 moved here, 45,358 and 2,697 there, in 239 tests on both. 14 ids differ, and those listed are fuzz tests, plus `test_inconsistent_set_raises`. Hypothesis's draws between runs are a candidate, not a shown cause. These are session counts, not answers; no outcome moved.
+- **Failure text of the 123:** 58 kinds here against the base's 59, normalised for numbers. One id's text moved, in the first 150 characters: `test_fuzz_entails_and_implied`. That compares the failures' start, not their full text.
+- **LRA sessions against 1a's run:** 45,517 sessions and 2,706 moved here, 45,358 and 2,697 there, in 239 tests on both. 14 ids differ: fuzz tests, plus `test_random_ask_matches_oracle`, `test_inconsistent_set_raises[p2-a2]`. Hypothesis's draws and shuffled order are candidates, not shown causes. These are session counts, not answers; no outcome moved.
 
 ### Planted bugs through fresh
 
@@ -45,7 +48,16 @@ Against Python, on this source. `@` is the first query that differs; `q` is that
 | t43 | `check`: no selector in the conflict | **no** | **no** |
 
 - **t42 and t43 aren't caught through the engine.** The API fuzz catches both. They sit on the conflict path below.
-- **The first controls run was void:** it stopped at build because the copied crate couldn't find `lra.rs`, and it has no rows. The rerun has the rows above, with the same module source. `mutate_transfer.py` needs `lra/port/src` beside its work directory until that's fixed; the job script does it.
+- **Workaround, tool not fixed:** `mutate_transfer.py`'s copied crate can't find `lra.rs` through `lib.rs`'s relative `#[path]`. `mut38.sh` copies `lra/port/src` beside the work directory. One run on 69639da stopped at build with no rows because of this. `mutate_slice` has the same gap, reported by sa-port-39; neither it nor `mutate_live.py` was used here.
+
+### History and seeds
+
+`run_history.sh` and `historycmp.py`, `~/sp19/out38/hist/cmp.txt`, dev and fuzz, both backends: recorded, shuffle twice, fork, twice in a row, seeds 1 and 2.
+
+- Answer digests across all 12 runs that keep the recorded query list: dev `31cd0945c07f02a6`, fuzz `173502b6ef285ad6`, the same as in `port-1a.md`. Runs that differ or didn't finish: 0.
+- Rust totals: 0 re-entry, 0 entry raises, 0 Python solvers made.
+- Answers move in no run. State against recorded moves the same on both backends: on dev 335 and 358 under shuffle, on fuzz 86 under the first shuffle.
+- `done.txt` holds 2 `rc=143` rows, `seed1-fuzz-rust` and `seed2-fuzz-rust` at 12:24:36. They are my own stop of the earlier history run on 69639da. Its stopped `xargs` respawned two processes, and they wrote those rows when I killed them. The real runs finished at 12:40 with rc=0 and empty stderr, and their files are the ones read.
 
 ### Counters, shown firing
 
@@ -84,9 +96,9 @@ Against Python, on this source. `@` is the first query that differs; `q` is that
 
 ## Not run
 
-**Before any backend PR, not run on this source:** the mutant 2, 5, 6, 7, 9 rerun and mutlive's control; the boundary rescore and suite column (10 of the 25 boundary mutants have no real-engine catch as last stated); the final drop score and its lost rows; `order:_rows`' evidence (not caught meanwhile); the `_forms` guard test; history and seed reruns beyond the two fresh seeds; forced moves; the native path; timing.
+**Before any backend PR, not run on this source:** the mutant 2, 5, 6, 7, 9 rerun and mutlive's control; the boundary rescore and suite column (10 of the 25 boundary mutants have no real-engine catch as last stated); the final drop score and its lost rows; `order:_rows`' evidence (not caught meanwhile); the `_forms` guard test; forced moves; the native path; timing.
 
-**Also not run:** `run_live.sh` and `run_history.sh` on this source; the mutants beyond the 8 controls; counts with `--sympy`; speed; a public-API version of `test_incremental_matches_fresh`, which the rulings place during the engine port at the latest. The `shadow` column ran only in fresh, not the suite.
+**Also not run:** `run_live.sh` on this source; the mutants beyond the 8 controls; counts with `--sympy`; speed; a public-API version of `test_incremental_matches_fresh`, which the rulings place during the engine port at the latest. The `shadow` column ran only in fresh and the controls, not the suite.
 
 The suite split used a Python run from the same source, though the bar no longer requires it.
 
