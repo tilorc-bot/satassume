@@ -82,6 +82,11 @@ def fresh(d, env, log, wl, mode):
 
 
 def score(name, kind, path, old, new, a):
+    # lib.rs reaches lra.rs by a relative #[path], which from a copied crate lands beside the scratch dirs.
+    lra = os.path.join(a.work, 'lra')
+    with LOCK:
+        if not os.path.lexists(lra):
+            os.symlink(os.path.abspath(os.path.join(HERE, '..', 'lra')), lra)
     d = os.path.join(a.work, name)
     shutil.rmtree(d, ignore_errors=True)
     os.makedirs(d)
