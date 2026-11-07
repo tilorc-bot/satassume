@@ -1,8 +1,8 @@
 //! Step 5c1: `Session`'s discovery, `ensure`, `discover`, `_discover`, `incomplete` and `escalate` (`engine.py:772-850`),
 //! over the session's own Python containers: `frontier` (a deque, replaced by a new one where Python replaces it),
 //! `pending`, `pending_c`, `demand` and `deferred` stay Python objects that Python reads later, so state is Python's by
-//! construction. `node` is `session_live._node`'s body, against the core directly. Still Python, called back:
-//! `_flush`, `_compile`, `_emit_pattern`, `_compile_pending`, and the visit itself (`_core_visit`, through the core).
+//! construction. `node` is `session_live._node`'s body, against the core directly.
+//! `_flush`, `_compile`, `_emit_pattern` and `_compile_pending` moved to Rust in 5c2 (`compile_loop.rs`); still Python: the visit itself (`_core_visit`, through the core).
 //! Every read Python makes, Rust makes in the same order, including the `node in self.base` reads that tick `py:node`.
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -44,7 +44,7 @@ fn node(s: &Bound<'_, PyAny>, c: &SessionCore, n: &Bound<'_, PyAny>, demanded: &
         if !demanded.is_none()
             && (attr(s, intern!(p, "pending"))?.contains(n)? || attr(s, intern!(p, "pending_c"))?.contains(n)?)
         {
-            s.call_method1(intern!(p, "_compile_pending"), (n, demanded))?;
+            crate::compile_loop::compile_pending(s, n, demanded)?;
         }
         return Ok(b);
     }
@@ -116,7 +116,7 @@ fn ses_discover(s: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(SES_DISCOVER);
     let p = s.py();
     if !planted(DROP_DISCOVER_FLUSH) {
-        s.call_method0(intern!(p, "_flush"))?;
+        crate::compile_loop::flush(s, &p.None().into_bound(p))?;
     }
     let core = core_of(s)?;
     let c = core.borrow();
@@ -165,7 +165,7 @@ fn ses_escalate(s: &Bound<'_, PyAny>, budget: Option<Bound<'_, PyAny>>) -> PyRes
                 for x in pend.try_iter()? {
                     let mut it = x?.try_iter()?;
                     let (cl, bs) = (it.next().unwrap()?, it.next().unwrap()?);
-                    s.call_method1(intern!(p, "_emit_pattern"), (cl, bs))?;
+                    crate::compile_loop::emit_pattern(s, &cl, &bs, &none)?;
                 }
             }
             added += 1;
@@ -175,7 +175,7 @@ fn ses_escalate(s: &Bound<'_, PyAny>, budget: Option<Bound<'_, PyAny>>) -> PyRes
         if pending.is_truthy()? {
             let item = pending.call_method0(intern!(p, "popitem"))?;
             if !planted(DROP_ESC_COMPILE) {
-                s.call_method1(intern!(p, "_compile"), (item.get_item(0)?, item.get_item(1)?))?;
+                crate::compile_loop::compile(s, &item.get_item(0)?, &item.get_item(1)?)?;
             }
             added += 1;
             continue;

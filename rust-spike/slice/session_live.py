@@ -486,6 +486,62 @@ def _install_discovery():
     return undo
 
 
+#: Step 5c2: `Session`'s compile loop runs in `compile_loop.rs`, so far `_emit_pattern`, `_flush`, `_compile`, `_compile_pending`
+#: and module `_split` and `want_of`. SLICE_LOOP=py keeps Python's over the same core. Python's own copies, for a session with
+#: no core (`_split` and `want_of` read no session, so they're switched for every caller).
+PY_LOOP = {}
+
+
+def _ses_emit_pattern(self, clauses, bases, ment=None):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_emit_pattern'](self, clauses, bases, ment)
+    return sa_solver.ses_emit_pattern(self, clauses, bases, ment)
+
+
+def _ses_flush(self, node=None):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_flush'](self, node)
+    return sa_solver.ses_flush(self, node)
+
+
+def _ses_compile(self, node, items):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_compile'](self, node, items)
+    return sa_solver.ses_compile(self, node, items)
+
+
+def _ses_compile_pending(self, node, demanded):
+    if not isinstance(self.table, TableView):
+        return PY_LOOP['_compile_pending'](self, node, demanded)
+    return sa_solver.ses_compile_pending(self, node, demanded)
+
+
+_LOOP_METHODS = {'_emit_pattern': _ses_emit_pattern, '_flush': _ses_flush, '_compile': _ses_compile,
+                 '_compile_pending': _ses_compile_pending}
+_LOOP_FUNCS = {'_split': 'ses_split', 'want_of': 'ses_want_of'}
+_LOOP_PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty')
+
+
+def _install_compile_loop():
+    """Returns the undo."""
+    S = engine.Session
+    saved = {n: S.__dict__[n] for n in _LOOP_METHODS}
+    saved_f = {n: getattr(engine, n) for n in _LOOP_FUNCS}
+    PY_LOOP.update(saved)
+    PY_LOOP.update(saved_f)
+    for n, f in _LOOP_METHODS.items():
+        setattr(S, n, f)
+    for n, r in _LOOP_FUNCS.items():
+        setattr(engine, n, getattr(sa_solver, r))
+
+    def undo():
+        for n, f in saved.items():
+            setattr(S, n, f)
+        for n, f in saved_f.items():
+            setattr(engine, n, f)
+    return undo
+
+
 def _install_relations():
     """Returns the undo."""
     import term_live
@@ -544,8 +600,11 @@ def install():
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None
     undo_disc = _install_discovery() if os.environ.get('SLICE_DISC', 'rust') == 'rust' else None
+    undo_loop = _install_compile_loop() if os.environ.get('SLICE_LOOP', 'rust') == 'rust' else None
 
     def undo():
+        if undo_loop is not None:
+            undo_loop()
         if undo_disc is not None:
             undo_disc()
         if undo_rel is not None:
@@ -573,7 +632,7 @@ def from_env():
             atexit.register(_write_report, os.environ['SESSION_REPORT'])
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
-            if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS:
+            if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

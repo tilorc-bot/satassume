@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 58] = [
+const NAMES: [&str; 64] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -25,6 +25,7 @@ const NAMES: [&str; 58] = [
     "rel:add_role", "rel:apply_role", "rel:tsource", "rel:tvar", "rel:share_guard", "rel:congruent", "rel:engage_transfer",
     "rel:transfer_terms", "rel:sync_transfer", "rel:xswitch", "rel:congruence_pairs",
     "ses:ensure", "ses:discover", "ses:escalate", "ses:incomplete",
+    "ses:want_of", "ses:split", "ses:emit_pattern", "ses:flush", "ses:compile", "ses:compile_pending",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -84,6 +85,12 @@ pub(crate) const SES_ENSURE: usize = 54;
 pub(crate) const SES_DISCOVER: usize = 55;
 pub(crate) const SES_ESCALATE: usize = 56;
 pub(crate) const SES_INCOMPLETE: usize = 57;
+pub(crate) const SES_WANT_OF: usize = 58;
+pub(crate) const SES_SPLIT: usize = 59;
+pub(crate) const SES_EMIT_PATTERN: usize = 60;
+pub(crate) const SES_FLUSH: usize = 61;
+pub(crate) const SES_COMPILE: usize = 62;
+pub(crate) const SES_COMPILE_PENDING: usize = 63;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -91,7 +98,7 @@ pub(crate) const SES_INCOMPLETE: usize = 57;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 58] = const { [const { Cell::new(0) }; 58] };
+    static COUNTS: [Cell<u64>; 64] = const { [const { Cell::new(0) }; 64] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

@@ -75,6 +75,13 @@ pub(crate) const DROP_ESC_COMPILE: u8 = 34;
 pub(crate) const DROP_ESC_DEFERRED: u8 = 35;
 pub(crate) const TRUNCATED_NEVER: u8 = 36;
 pub(crate) const INCOMPLETE_NEVER: u8 = 37;
+/// From here, 5c2's (`compile_loop.rs`).
+pub(crate) const DROP_SPLIT_LATER: u8 = 38;
+pub(crate) const DROP_EMIT_MENT: u8 = 39;
+pub(crate) const DROP_FLUSH_CUSTOM: u8 = 40;
+pub(crate) const DROP_COMPILE_DEMAND: u8 = 41;
+pub(crate) const DROP_PEND_COMPILE: u8 = 42;
+pub(crate) const WANT_EMPTY: u8 = 43;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -122,6 +129,12 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("drop-esc-deferred") => DROP_ESC_DEFERRED,
         Some("truncated-never") => TRUNCATED_NEVER,
         Some("incomplete-never") => INCOMPLETE_NEVER,
+        Some("drop-split-later") => DROP_SPLIT_LATER,
+        Some("drop-emit-ment") => DROP_EMIT_MENT,
+        Some("drop-flush-custom") => DROP_FLUSH_CUSTOM,
+        Some("drop-compile-demand") => DROP_COMPILE_DEMAND,
+        Some("drop-pend-compile") => DROP_PEND_COMPILE,
+        Some("want-empty") => WANT_EMPTY,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
