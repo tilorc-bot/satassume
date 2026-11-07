@@ -1,0 +1,118 @@
+"""fresh.py WORKLOAD py|rust OUT [--counts FILE]: per query, a fresh engine with memos cleared; the answer and a digest of
+every session's solver and EUF state at query end, in creation order. One line per query, so two runs compare by `cmp`,
+and a difference has its query index. Run under two PYTHONHASHSEEDs, this is the no-hash-order check; py against rust is
+the held-to comparison. `seed_state.py` is the same idea on Python's solver alone, and has no EUF fields.
+
+--counts wraps the EUF class's public methods, `on_merge` and the `rep` and `members` attributes, and writes how often
+each crossed. Only the crossing is counted: a wrapper calls straight on, and the digest is the same with or without it.
+The wrappers go on a Python subclass, so the solver's hooks into EUF are counted too; they reach it by attribute.
+"""
+import argparse
+import collections
+import hashlib
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+ap = argparse.ArgumentParser()
+ap.add_argument("wl")
+ap.add_argument("mode", choices=["py", "rust"])
+ap.add_argument("out")
+ap.add_argument("--counts")
+ap.add_argument("--so")
+a = ap.parse_args()
+if a.so:
+    sys.path.insert(0, a.so)
+
+from evalbench.common import workload  # noqa: E402
+from harness.state import reset_module_state  # noqa: E402
+from satassume import engine as E, sympy_api  # noqa: E402
+from satassume.sat.solver import Solver as PySolver  # noqa: E402
+import satassume.theories.euf.euf as euf_mod  # noqa: E402
+import satassume.theories.euf.euf_adapter as adapter_mod  # noqa: E402
+
+import state as T  # noqa: E402
+
+if a.mode == "rust":
+    import backend
+    backend.install()
+    dump = T.with_euf(backend.RustSolver.dump, backend.RustSolver.theories)
+    Base = backend.EUFTheory
+else:
+    dump = T.with_euf(T.dump_py, PySolver.theories)
+    Base = euf_mod.EUFTheory
+
+counts = collections.Counter()
+if a.counts:
+    if a.mode != "rust":
+        sys.exit("--counts counts crossings into the crate: rust only")
+    METHODS = ["term", "value", "find", "equal", "explain", "register_atom", "assert_lit", "check", "propagate",
+               "push_level", "pop_level"]
+
+    def wrap(name):
+        inner = getattr(Base, name)
+
+        def f(self, *args, **kw):
+            counts[name] += 1
+            return inner(self, *args, **kw)
+        f.__name__ = name
+        return f
+
+    class Counting(Base):
+        def __init__(self, *args, **kw):
+            counts["theories made"] += 1
+            super().__init__(*args, **kw)
+
+        rep = property(lambda self: (counts.update(["rep read"]), Base.rep.__get__(self))[1])
+        members = property(lambda self: (counts.update(["members read"]), Base.members.__get__(self))[1])
+
+        @property
+        def on_merge(self):
+            return Base.on_merge.__get__(self)
+
+        @on_merge.setter
+        def on_merge(self, f):
+            def g(ra, rb):
+                counts["on_merge"] += 1
+                return f(ra, rb)
+            Base.on_merge.__set__(self, None if f is None else g)
+
+    for m in METHODS:
+        setattr(Counting, m, wrap(m))
+    euf_mod.EUFTheory = adapter_mod.EUFTheory = Counting
+
+if a.wl == "fuzz":
+    from evalbench.fuzz import queries
+    pairs = queries(424242)
+else:
+    pairs = workload(a.wl)
+sessions = []
+_init = E.Session.__init__
+
+
+def init(self, *args, **kw):
+    _init(self, *args, **kw)
+    sessions.append(self)
+
+
+E.Session.__init__ = init
+
+
+def digest(s):
+    return hashlib.blake2b(repr(sorted(dump(s.solver).items())).encode(), digest_size=8).hexdigest()
+
+
+with open(a.out, "w") as fh:
+    for i, (p, q) in enumerate(pairs):
+        reset_module_state(sympy_cache=False)
+        sympy_api.set_default_engine(E.Engine())
+        sessions.clear()
+        try:
+            r = repr(sympy_api.ask(p, q))
+        except Exception as e:  # the type and text are the answer
+            r = f"{type(e).__name__}: {e}"
+        fh.write(f"{i}\t{r}\t{','.join(digest(s) for s in sessions)}\n")
+if a.counts:
+    json.dump(dict(counts, queries=len(pairs)), open(a.counts, "w"), indent=1, sort_keys=True)
