@@ -9,8 +9,8 @@ The original: By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Bas
 | | Rust | called back | Python | total |
 |---|--:|--:|--:|--:|
 | landed step | 385 | 17 | 9 | 411 |
-| named step | 0 | 11 | 318 | 329 |
-| UNOWNED | 0 | 0 | 2 | 2 |
+| named step | 0 | 11 | 320 | 331 |
+| UNOWNED | 0 | 0 | 0 | 0 |
 
 **Columns.** *Owner*: a landed step with the commit that added its report, or a step of sa-port-93's split, or UNOWNED. An item already moved stays with its landed step. An item a landed step touched but didn't move goes to the 5c step that finishes it, marked "partial". *Today*, on the Rust backend in the real engine (`rust_plugin.py`): **Rust**; **called back** (Rust calls this Python function); **Python** (untouched on that path).
 
@@ -103,7 +103,34 @@ The original: By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Bas
 | `theories/lra/lra_cert.py` | 1a/1b | 11 | `_ceil_abs`, `_magnitude`, `within`, `_window`, `_decided`, `limits`, `_limits_suffice`, `CertAtoms`, `CertAtoms.__init__`, `CertAtoms.update`, `certify` | landed 1b 60493d6 | Rust |
 | `theories/transfer.py` | 3 | 22 | `transfer_wanted`, `TransferTheory`, `TransferTheory.__init__`, `TransferTheory.guard`, `TransferTheory.switch`, `TransferTheory._kind`, `TransferTheory._why`, `TransferTheory._merged`, `TransferTheory.register_atom`, `TransferTheory.assert_lit`, `TransferTheory.set_fixed`, `TransferTheory._explain`, `TransferTheory._members_on`, `TransferTheory._scan`, `TransferTheory._spread`, `TransferTheory._classes`, `TransferTheory.propagate`, `TransferTheory.check`, `TransferTheory.decide`, `TransferTheory.push_level`, `TransferTheory.pop_level`, `TransferTheory.__repr__~u` | landed 3 0d3f392 | Rust |
 
+## Partials: what's left and who finishes it
+
+sa-port-105, doc only, on 67106e8. The TSV gains `left`, `runs` and `finisher` for the 59 partial rows and the 2 formerly UNOWNED ones. Counts are read from existing rows, not rerun: dev, fuzz and suite knowledge counters from sa-port-99's wiring bar (pareto1 `~/sp19/sa-rust-ids-work/sa-port-99/`, `live/*-rust.knowledge.json`, suite `term.*.json` summed); `rs:*` counters from port-5a.md, whose third column is `test_session_limits.py` alone, so it isn't a suite count. No sa-port-102 rows were on pareto1.
+
+**Owners set (planner, 7 Nov):** `_applied_to_nan` 6g; `_basis_models` 6h. Each module's partials go to the step that owns the rest of that module.
+
+| rows | left | finisher |
+|---|---|---|
+| `Session.emit`, `Session._visit` | called back (emit callback; `core.visit`) | 5c3, 5c2 |
+| realroots, 16 | kept-query copy; `rootof.py:22-28` reads `expr.poly.rep` in Python | 6f (kept path stays by ruling) |
+| rules.py, 8 + `def_implications` + `_basis_models` | Python bodies still called from `relations._number_basis`, `wiring._clauses`, `_common`'s kept path; `def_implications` called back | 6h |
+| `_common.py`, 7 | `const_value` called back; `units`' cache and closing; kept path | 6d |
+| `_rows_runtime.py`, 6 | `I`/`-I` values, Float-class `constant_value`, shim attrs, SymPy hand-back to `wiring.py` | 6g (I/-I/Float need a ruling) |
+| atoms.py, 3 | derived facts by callback, no-query and kept paths; `value_units` unexercised | no-query path fits none, proposed 6g; 6f for `value_units` |
+| `Relations._eq_links` | clauses via `session.var` on SymPy, scaffolding | 5c4 |
+| solver.py, 4 | `set_rule_block` calls `_rule_tables` (check, model enumeration) | **fits none: proposed S2 (rule block) after 6h**, or models generated offline with rules.py's output |
+| constfield.py, 11 | gcd callback trio; `_short`, `Element._new`, `pi_laurent`, `radical`, `_generic`, `constant`, `Constant.__init__` called back; `enclose` (R9) | adapters (after 5c4); `enclose` permanent by ruling |
+
+**`_rows._implies`: offline, stays out.** Its only chain is `_implies` (`_rows.py:966`) ← `_star_rule` (:961) ← `_schema` (:902) ← `compile_rows` (:411, :414) ← `tools/compile_rows.py:68`, `tools/totality.py:515` and `_rows.rules` (:382, called only by tests). No runtime module imports `_rows` except `wiring.functions` (:89), which section 2 calls offline and nothing in `satassume/` calls; `wiring.py:41` states a query doesn't need it, and `test_error_functions_rows.py:30` asserts a family module isn't imported after a query. Appendix A already lists `_implies:966~u` as offline. One caveat: `state/memos.load_owners` (:187) imports every module, `_rows` included, but importing calls nothing in `compile_rows`.
+
+**Hidden gaps (not counted as done):**
+- `atoms.value_units`: `value:*` is 0 on dev, fuzz and the suite; only `test_knowledge_value_units.py` reaches it.
+- Remainders unreached on dev and fuzz with no suite count: `def_implications`/`_basis_models` (dev 0, fuzz 0; 825 calls in `test_session_limits.py` only), realroots' Rust side (0 on dev and fuzz, 143 in the suite; its kept-path remainder not measured).
+- Not measured anywhere, so not shown to run: the 4 solver.py rows, all 11 constfield rows, `const_value` and `units`' closing path, the rules.py bodies, `_applied_to_nan`, and `constant_value` by class. The `~u` rows among them (constfield's gcd trio, `_short`, `radical`) didn't run on dev or fuzz in the census.
+
 ## UNOWNED, by module, with a proposed owner
+
+(Since sa-port-105: `_basis_models` is 6h and `_applied_to_nan` 6g, so no row is UNOWNED.)
 
 - **`scope.py`** (6: `Scope`, `linked_terms`, `scope_of_atoms`, `theory_scope`, `_custom_pred`, `extension_atoms`; only `affine_pair` moved, in C1. C1 wraps `linked_terms` to count it, but its body stays Python.) **Proposed:** its own 5c session after 5c5 and before 5c10, since both relations' and the engine's callers reach it. Until then the engine's calls into it are called back and counted.
 - **`sympy_api.py`** (8). **Proposed:** `_const_base`, `_const_free`, `_closed_keys`, `_expr_keys` and `_arg_keys` (:693-778, the helpers `_keys` calls) join 5c8, whose stated range starts at :779. The relevance gate in `_ask_general` (:576) also goes to 5c8. `_ask` (:560) and `_engine_ask` (:1111) go to 5c10 if they stay port (see below).
