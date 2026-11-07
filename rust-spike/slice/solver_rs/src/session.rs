@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pyo3::exceptions::{PyKeyError, PyRecursionError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyException, PyKeyError, PyRecursionError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
@@ -14,9 +14,9 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 12] = [
+const NAMES: [&str; 15] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
-    "rs:def_implications", "rs:neg_shared", "join",
+    "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -30,9 +30,17 @@ const ENSURE: usize = 8;
 const IMPL: usize = 9;
 const NEG: usize = 10;
 const JOIN: usize = 11;
+const EMIT_CB: usize = 12;
+const REFUSE_DEPTH: usize = 13;
+const REFUSE_CONVERT: usize = 14;
+
+/// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
+/// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
+/// 64 is below what Python reaches with up to about 800 frames already on the stack.
+const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 12] = const { [const { Cell::new(0) }; 12] };
+    static COUNTS: [Cell<u64>; 15] = const { [const { Cell::new(0) }; 15] };
 }
 
 fn tick(i: usize) {
@@ -154,7 +162,9 @@ pub struct SessionCore {
     nids: Py<PyDict>,
     objs: RefCell<Vec<Py<PyAny>>>,
     bad: RefCell<Vec<Py<PyAny>>>,
-    custom_preds: RefCell<(HashMap<String, u32>, Vec<Py<PyAny>>)>,
+    /// Custom predicates: a dict, because Python's table takes any hashable there, joined as a dict joins them.
+    custom_ids: Py<PyDict>,
+    custom_preds: RefCell<Vec<Py<PyAny>>>,
     st: RefCell<St>,
 }
 
@@ -183,19 +193,21 @@ impl SessionCore {
         Ok(Some(n))
     }
 
-    fn pred_id(&self, _p: Python<'_>, pred: &Bound<'_, PyAny>) -> PyResult<u32> {
-        let s: String = pred.extract()?;
+    fn pred_id(&self, p: Python<'_>, pred: &Bound<'_, PyAny>) -> PyResult<u32> {
         let r = &self.rules;
-        if let Some(&i) = r.index.get(&s) {
-            return Ok(i);
+        if let Ok(s) = pred.extract::<String>() {
+            if let Some(&i) = r.index.get(&s) {
+                return Ok(i);
+            }
+        }
+        let ids = self.custom_ids.bind(p);
+        if let Some(v) = ids.get_item(pred)? {
+            return v.extract();
         }
         let mut c = self.custom_preds.borrow_mut();
-        if let Some(&i) = c.0.get(&s) {
-            return Ok(i);
-        }
-        let i = (r.kinds.len() + c.1.len()) as u32;
-        c.0.insert(s, i);
-        c.1.push(pred.clone().unbind());
+        let i = (r.kinds.len() + c.len()) as u32;
+        ids.set_item(pred, i)?;
+        c.push(pred.clone().unbind());
         Ok(i)
     }
 
@@ -205,7 +217,7 @@ impl SessionCore {
         if i < r.names.len() {
             r.names[i].bind(p).clone()
         } else {
-            self.custom_preds.borrow().1[i - r.names.len()].bind(p).clone()
+            self.custom_preds.borrow()[i - r.names.len()].bind(p).clone()
         }
     }
 
@@ -224,8 +236,8 @@ impl SessionCore {
 
     fn to_f(&self, f: &Bound<'_, PyAny>, depth: u32) -> PyResult<R> {
         let p = f.py();
-        if depth > 3000 {
-            return Err(PyRecursionError::new_err("maximum recursion depth exceeded in formula conversion"));
+        if depth > FORMULA_DEPTH {
+            return Err(PyRecursionError::new_err("formula deeper than Rust compiles"));
         }
         if f.is_instance_of::<PyBool>() {
             return Ok(Rc::new(if f.is_truthy()? { F::True } else { F::False }));
@@ -267,6 +279,20 @@ impl SessionCore {
         let mut b = self.bad.borrow_mut();
         b.push(f.clone().unbind());
         Ok(Rc::new(F::Bad(b.len() as u32 - 1)))
+    }
+
+    /// The formula over ids, or `None` for Python to compile it: too deep, or any error reading it. Nothing has been emitted
+    /// yet, so Python's compiler raises what it raises, where it raises it. A BaseException isn't an answer and goes up.
+    fn convert(&self, f: &Bound<'_, PyAny>) -> PyResult<Option<R>> {
+        let p = f.py();
+        match self.to_f(f, 0) {
+            Ok(r) => Ok(Some(r)),
+            Err(e) if e.is_instance_of::<PyException>(p) => {
+                tick(if e.is_instance_of::<PyRecursionError>(p) { REFUSE_DEPTH } else { REFUSE_CONVERT });
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn emit(&self, p: Python<'_>, clause: &[i32]) -> PyResult<()> {
@@ -504,7 +530,8 @@ impl SessionCore {
 struct PyCx<'a, 'py> {
     core: &'a SessionCore,
     p: Python<'py>,
-    guard: i32,
+    /// The caller's own `emit`, when it isn't `Session.emit`.
+    via: Option<Bound<'py, PyAny>>,
     use_dv: bool,
 }
 
@@ -527,14 +554,19 @@ impl Cx for PyCx<'_, '_> {
         self.core.st.borrow_mut().aux()
     }
 
-    fn true_var(&mut self) -> &mut Option<i32> {
-        // SAFETY of the borrow rule: the caller reads or writes at once, and no callback runs meanwhile.
-        unsafe { &mut (*self.core.st.as_ptr()).true_var }
+    fn true_var(&self) -> Option<i32> {
+        self.core.st.borrow().true_var
     }
 
-    fn emit(&mut self, mut clause: Vec<i32>) -> PyResult<()> {
-        if self.guard != 0 {
-            clause.push(-self.guard);
+    fn set_true_var(&mut self, v: i32) {
+        self.core.st.borrow_mut().true_var = Some(v);
+    }
+
+    fn emit(&mut self, clause: Vec<i32>) -> PyResult<()> {
+        if let Some(via) = &self.via {
+            tick(EMIT_CB);
+            via.call1((PyList::new(self.p, &clause)?,))?;
+            return Ok(());
         }
         self.core.emit(self.p, &clause)
     }
@@ -553,14 +585,6 @@ impl Cx for PyCx<'_, '_> {
             self.core.link(self.p, &Rc::new((true, vec![i as i32 + 1])), nid, v)?;
         }
         Ok(v)
-    }
-
-    fn set_order(&mut self, lits: &[i32]) -> PyResult<Vec<i32>> {
-        let s = PySet::empty(self.p)?;
-        for l in lits {
-            s.add(*l)?;
-        }
-        s.iter().map(|x| x.extract::<i32>()).collect()
     }
 
     fn bad(&mut self, i: u32, literal: bool) -> PyErr {
@@ -584,7 +608,8 @@ impl SessionCore {
             nids: PyDict::new(p).unbind(),
             objs: RefCell::new(vec![]),
             bad: RefCell::new(vec![]),
-            custom_preds: RefCell::new((HashMap::new(), vec![])),
+            custom_ids: PyDict::new(p).unbind(),
+            custom_preds: RefCell::new(vec![]),
             st: RefCell::new(St {
                 base_of: vec![],
                 base: vec![],
@@ -615,7 +640,7 @@ impl SessionCore {
         if need == "basis" {
             let (i, e) = self.atom_fields(dn)?;
             let n = self.nid_of(&e)?;
-            let mut cx = PyCx { core: self, p, guard: 0, use_dv: true };
+            let mut cx = PyCx { core: self, p, via: None, use_dv: true };
             return cx.dv_basis(i, n).map(Some);
         }
         let (d, node): (Bound<'_, PyAny>, Bound<'_, PyAny>) = dn.extract()?;
@@ -650,18 +675,21 @@ impl SessionCore {
         self.visit_id(node, n, demanded)
     }
 
-    /// `compile_formula`. `guard`: the selector `assume_formula`'s `emit` appends the negation of.
-    fn compile(&self, f: &Bound<'_, PyAny>, guard: i32, use_dv: bool) -> PyResult<()> {
+    /// `compile_formula`; false if Python has to compile it. `via`: the caller's `emit`, when it isn't `Session.emit`.
+    #[pyo3(signature = (f, via, use_dv))]
+    fn compile(&self, f: &Bound<'_, PyAny>, via: Option<Bound<'_, PyAny>>, use_dv: bool) -> PyResult<bool> {
         tick(COMPILE);
-        let r = self.to_f(f, 0)?;
-        compile::compile(&r, &mut PyCx { core: self, p: f.py(), guard, use_dv })
+        let Some(r) = self.convert(f)? else { return Ok(false) };
+        compile::compile(&r, &mut PyCx { core: self, p: f.py(), via, use_dv })?;
+        Ok(true)
     }
 
-    /// `formula_literal`.
-    fn literal(&self, f: &Bound<'_, PyAny>, use_dv: bool) -> PyResult<i32> {
+    /// `formula_literal`; `None` if Python has to compile it.
+    #[pyo3(signature = (f, via, use_dv))]
+    fn literal(&self, f: &Bound<'_, PyAny>, via: Option<Bound<'_, PyAny>>, use_dv: bool) -> PyResult<Option<i32>> {
         tick(LITERAL);
-        let r = self.to_f(f, 0)?;
-        compile::literal(&r, &mut PyCx { core: self, p: f.py(), guard: 0, use_dv })
+        let Some(r) = self.convert(f)? else { return Ok(None) };
+        compile::literal(&r, &mut PyCx { core: self, p: f.py(), via, use_dv }).map(Some)
     }
 
     // ---- `VarTable`'s surface, for the shell's view
@@ -707,6 +735,11 @@ impl SessionCore {
 
     fn naux(&self) -> u32 {
         self.st.borrow().naux
+    }
+
+    fn set_true_var(&self, v: i32) {
+        tick(TABLE);
+        self.st.borrow_mut().true_var = Some(v);
     }
 
     fn true_var(&self) -> Option<i32> {

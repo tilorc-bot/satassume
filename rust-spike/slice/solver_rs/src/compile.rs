@@ -50,7 +50,8 @@ pub trait Cx {
     /// `table.var`: the variable of a basis or custom atom.
     fn var(&mut self, pred: u32, nid: u32) -> Result<i32, Self::E>;
     fn aux(&mut self) -> i32;
-    fn true_var(&mut self) -> &mut Option<i32>;
+    fn true_var(&self) -> Option<i32>;
+    fn set_true_var(&mut self, v: i32);
     fn emit(&mut self, clause: Vec<i32>) -> Result<(), Self::E>;
     /// Whether the Python call passed `dv`.
     fn has_dv(&self) -> bool;
@@ -58,9 +59,6 @@ pub trait Cx {
     fn dv(&mut self, d: &Def, nid: u32, need: Need) -> Result<Option<i32>, Self::E>;
     /// `dv(atom, 'basis')`.
     fn dv_basis(&mut self, pred: u32, nid: u32) -> Result<i32, Self::E>;
-    /// `lits`, in the order given, put in a set and read back: `_def` sorts that by `abs`, so a tie (`l` and `-l`) keeps the
-    /// set's order. Only called on a tie.
-    fn set_order(&mut self, lits: &[i32]) -> Result<Vec<i32>, Self::E>;
     /// The `TypeError` of `cannot compile` (`literal` false) or `cannot make a literal from`.
     fn bad(&mut self, i: u32, literal: bool) -> Self::E;
 }
@@ -165,10 +163,7 @@ pub fn def_of<C: Cx>(cx: &mut C, f: &F) -> Result<Option<(Def, u32)>, C::E> {
         return Ok(None);
     }
     let Some(node) = node else { return Ok(None) };
-    if lits.iter().any(|l| lits.contains(&-l)) {
-        lits = cx.set_order(&lits)?; // issue 325, held PR 334: this tie is what that PR changes
-    }
-    lits.sort_by_key(|l| l.abs());
+    lits.sort_by_key(|&l| (l.abs(), l)); // issue 325: the key of held PR 334, so no set order to reproduce
     Ok(Some((Rc::new((true, lits)), node)))
 }
 
@@ -447,11 +442,11 @@ fn or_cnf<C: Cx>(args: &[R], cx: &mut C) -> Result<Vec<Vec<i32>>, C::E> {
 }
 
 fn true_lit<C: Cx>(cx: &mut C) -> Result<i32, C::E> {
-    if let Some(v) = *cx.true_var() {
+    if let Some(v) = cx.true_var() {
         return Ok(v);
     }
     let v = cx.aux();
-    *cx.true_var() = Some(v);
+    cx.set_true_var(v);
     cx.emit(vec![v])?;
     Ok(v)
 }

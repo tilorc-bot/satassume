@@ -19,6 +19,8 @@ from satassume.sat import formula as Fm
 #: formula with no selector, through `compile.rs`.
 PLANT = [None]
 PLANT_FIRED = [0]
+#: Python's `compile_formula` and `formula_literal`, for what Rust won't compile.
+PY_COMPILE = [None, None]
 
 #: SESSION_REPORT=FILE: for each visited node, whether the per-query table has a row for it, read with no learning. Written
 #: at exit, with the build that loaded and the crossings by kind.
@@ -148,7 +150,7 @@ class TableView:
 
     @property
     def atom_of(self):
-        return [None] + [self.atom(v) for v in range(1, len(self))]
+        return [None] + [self.atom(v) for v in range(1, len(self) + 1)]
 
     @property
     def naux(self):
@@ -157,6 +159,10 @@ class TableView:
     @property
     def true_var(self):
         return self.core.true_var()
+
+    @true_var.setter
+    def true_var(self, v):
+        self.core.set_true_var(v)
 
     def __len__(self):
         return self.core.n_vars()
@@ -237,19 +243,32 @@ def _dvar_raw(self, d, node, need, link=False):
     return self.table.core.dvar_raw_py(d, node, need, link)
 
 
+def _rust_call(table, emit, dv):
+    """Whether Rust can make this call, and the `emit` it has to call back: `None` means `Session.emit` itself, which Rust does
+    directly. `assume_formula` passes its own `emit`, which adds the selector; Rust calls that one, so it never has to know."""
+    if not isinstance(table, TableView):
+        return False, None
+    if dv is not None and not (getattr(dv, '__func__', None) is _dvar_public and dv.__self__.table is table):
+        return False, None
+    if getattr(emit, '__func__', None) is engine.Session.emit and emit.__self__.table is table:
+        return True, None
+    return True, emit
+
+
 def _compile_formula(f, table, emit, dv=None):
-    """`assume_formula` passes its own `emit`, which appends `-self.sel`; every other call site passes `Session.emit`."""
-    session = getattr(emit, '__self__', None)
-    guard = 0
-    if session is None:
-        guard = emit.__closure__[0].cell_contents
+    ok, via = _rust_call(table, emit, dv)
     if PLANT[0] == 'guard-drop':
-        guard = 0
-    table.core.compile(f, guard, dv is not None)
+        PLANT_FIRED[0] += via is not None
+        via = None
+    # False, also when `ok`: too deep or unreadable, before anything is emitted. Python's compiler over this same table.
+    if not (ok and table.core.compile(f, via, dv is not None)):
+        PY_COMPILE[0](f, table, emit, dv)
 
 
 def _formula_literal(f, table, emit, dv=None):
-    return table.core.literal(f, dv is not None)
+    ok, via = _rust_call(table, emit, dv)
+    lit = table.core.literal(f, via, dv is not None) if ok else None
+    return PY_COMPILE[1](f, table, emit, dv) if lit is None else lit
 
 
 def install():
@@ -257,6 +276,7 @@ def install():
     S = engine.Session
     saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'node', 'var', 'dvar', '_dvar', '_core_visit')}
     g = (engine.VarTable, engine.compile_formula, engine.formula_literal)
+    PY_COMPILE[:] = g[1:]
     S.table = property(_table_get, _table_set)
     S.base = property(_base_get, _base_set)
     S.node, S.var, S.dvar, S._dvar, S._core_visit = _node, _var, _dvar_public, _dvar_raw, _core_visit
