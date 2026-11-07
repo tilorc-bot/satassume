@@ -86,6 +86,10 @@ if a.mode == "shadow":
 if a.wl == "fuzz":
     from evalbench.fuzz import queries
     pairs = queries(424242)
+elif a.wl.startswith("transfer2:"):    # transfer_workload.py's second generator
+    import transfer_workload
+    _, seed, n = a.wl.split(":")
+    pairs = transfer_workload.queries2(int(seed), int(n))
 elif a.wl.startswith("transfer:"):    # transfer_workload.py, by seed and count
     import transfer_workload
     seed, n = a.wl.split(":")[1:]
