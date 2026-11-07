@@ -288,7 +288,9 @@ fn pattern<'py>(py: Python<'py>, k: &Rules, p: &UnitPattern) -> PyResult<Bound<'
         let internal: Vec<(i32, usize)> = c.iter().map(|&(i, n)| (0, 2 * i + n as usize)).collect();
         clauses.append((PyTuple::new(py, lits)?, PyFrozenSet::new(py, preds)?, PyTuple::new(py, internal)?))?;
     }
-    (rules, clauses, !p.clauses.is_empty(), p.complete).into_bound_py_any(py)
+    // `used` holds a slot with a literal: an empty clause (units contradicting a kept clause) gives none, as in Python.
+    let used = p.clauses.iter().any(|c| !c.is_empty());
+    (rules, clauses, used, p.complete).into_bound_py_any(py)
 }
 
 #[pymethods]
