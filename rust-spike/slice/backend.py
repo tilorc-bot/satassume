@@ -32,8 +32,9 @@ def make():
 
 
 def install():
-    """Make the engine's sessions and `ref.py` use the Rust solver. Returns a function that undoes it. Step 3 turns
-    this on; tests that build `satassume.sat.solver.Solver` themselves are left on Python."""
+    """Make the engine's sessions and `ref.py` use the Rust solver, with the theories as live callbacks into the
+    unchanged Python. Returns a function that undoes it. `live.py --check plain` runs exactly this. Tests that build
+    `satassume.sat.solver.Solver` themselves are left on Python."""
     import satassume.engine as engine
     import satassume.ref as ref
     saved = engine.Solver, ref.Solver
