@@ -1,7 +1,8 @@
 """The atoms family of runtime knowledge (component 6, issue 323), wired into the real engine.
 
-`install()` makes two changes, from outside satassume, and returns a function that undoes them. Pure Python stays the
-default: nothing here runs unless a caller installs it.
+`install()` makes these changes, from outside satassume, and returns a function that undoes them. Pure Python stays the
+default. The Rust backend installs it by default (`from_env()`, called by `rust_plugin.py` and `live.py` in rust mode,
+after `term_live`'s); SLICE_KNOWLEDGE=py keeps it off there.
 
 1. `term_live`'s wrapper on `sympy_api._ask` holds the query's table, and this reads it. Nothing outlives the query: ids
    mean nothing outside it.
@@ -55,6 +56,11 @@ ORDER_DIFFS = []
 CONTRADICTION = 'template asserts a contradiction'
 #: (kind, id, exception type) of the first few reads that raised, across queries.
 RAISED = term_live.RAISED
+#: Test plants, by SLICE_SESSION_PLANT (the bar's channel): 'knowledge-rows-kept-raise' raises NameError inside `rows_kept`, the
+#: fault sa-port-63's first rebase hit; 'knowledge-pattern-drop' drops the last clause of each non-empty pattern Rust builds.
+PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop')
+PLANT = [None]
+_UNDO = [None]
 
 
 class KnowledgeFault(BaseException):
@@ -150,8 +156,44 @@ def _bind_realroots(fs):
         m.root_facts = fs['root_facts']
 
 
+def installed():
+    return _UNDO[0] is not None
+
+
+def _fired():
+    """Counted where the bar's `fired` reads it: `session_live`'s report."""
+    COUNTS['knowledge:plant_fired'] += 1
+    m = sys.modules.get('session_live')
+    if m is not None:
+        m.PLANT_FIRED[0] += 1
+
+
+def from_env():
+    """SLICE_KNOWLEDGE: `rust` (the default) or `atoms` installs, `shadow` installs with the field comparison, `py` doesn't.
+    Needs `term_live`'s table: with SLICE_TERM=py it stays off. With SESSION_REPORT set, writes COUNTS beside it."""
+    mode = os.environ.get('SLICE_KNOWLEDGE', 'rust')
+    if mode == 'py' or not term_live.installed():
+        return None
+    if mode not in ('rust', 'atoms', 'shadow'):
+        print(f'SLICE_KNOWLEDGE={mode}: not a mode', file=sys.stderr)
+        raise SystemExit(2)
+    if os.environ.get('SLICE_SESSION_PLANT') in PLANTS:
+        PLANT[0] = os.environ['SLICE_SESSION_PLANT']
+    rep = os.environ.get('SESSION_REPORT')
+    if rep:
+        import atexit
+        import json
+        out = rep[:-len('.session.json')] if rep.endswith('.session.json') else rep
+        atexit.register(lambda: json.dump(dict(mode=mode, plant=PLANT[0], counts=dict(COUNTS)),
+                                          open(out + '.knowledge.json', 'w'), sort_keys=True))
+    return install(shadow=mode == 'shadow')
+
+
 def install(shadow=False, data=None):
-    """`shadow`: also run Python's template on each call and compare every field. Rust's result is still the one used."""
+    """`shadow`: also run Python's template on each call and compare every field. Rust's result is still the one used.
+    A second install before the first's undo raises: wrapping Rust's functions in Rust's would compare Rust with Rust."""
+    if _UNDO[0] is not None:
+        raise RuntimeError('knowledge_live is already installed')
     py_symbol, py_constant, py_value = atoms.symbol_units, atoms.constant_units, atoms.value_units
     py_resolve, py_pattern = _common.resolve, _common.Pattern
     offline = sa_solver.OfflineData(data or os.path.join(HERE, 'offline_data.json'),
@@ -265,6 +307,9 @@ def install(shadow=False, data=None):
         p.used = used
         p.child_preds = child_preds
         p.wide = [tuple(rules[i]) for i in wide]
+        if PLANT[0] == 'knowledge-pattern-drop' and p.clauses:
+            _fired()
+            p.clauses = p.clauses[:-1]
         if p.wide:
             COUNTS['common:wide'] += len(p.wide)
         if shadow:
@@ -308,13 +353,21 @@ def install(shadow=False, data=None):
     active = [True]
 
     def rows_kept():
-        if not active[0]:
-            return True
-        q = term_live.current()
-        if q is not None and q.kept is not None:
-            COUNTS['rows:kept'] += 1
-            return True
-        return False
+        """Outside the callers' `try`, so an ordinary exception here is made loud, as `term_live._guarded` does."""
+        try:
+            if not active[0]:
+                return True
+            if PLANT[0] == 'knowledge-rows-kept-raise':
+                _fired()
+                raise NameError('planted: rows_kept')
+            q = term_live.current()
+            if q is not None and q.kept is not None:
+                COUNTS['rows:kept'] += 1
+                return True
+            return False
+        except Exception as e:
+            COUNTS['fault'] += 1
+            raise KnowledgeFault(f'rows_kept: {type(e).__name__}: {e}') from e
 
     def rust_constant_value(text, c):
         if rows_kept():
@@ -402,6 +455,7 @@ def install(shadow=False, data=None):
     undo_term = term_live.install()
 
     def undo():
+        _UNDO[0] = None
         active[0] = False
         wiring.generator, wiring.constant_value = py_generator, py_constant_value
         undo_term()
@@ -412,4 +466,5 @@ def install(shadow=False, data=None):
         registry._clauses_cache.clear()
         _bind_value_units(py_value)
         _bind_realroots(saved_roots)
+    _UNDO[0] = undo
     return undo

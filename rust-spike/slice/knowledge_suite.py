@@ -17,7 +17,8 @@ def pytest_configure(config):
     global K
     if os.environ.get("SLICE_KNOWLEDGE") in ("atoms", "shadow"):
         import knowledge_live as K
-        K.install(shadow=os.environ["SLICE_KNOWLEDGE"] == "shadow")
+        if not K.installed():   # `rust_plugin.py` installs it by default now (port-wire.md)
+            K.install(shadow=os.environ["SLICE_KNOWLEDGE"] == "shadow")
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -25,7 +26,9 @@ def pytest_sessionfinish(session, exitstatus):
     import knowledge_quiet
     from satassume.engine import Engine
     from satassume import sympy_api
-    out = dict(pid=os.getpid(), mode=os.environ.get("SLICE_KNOWLEDGE") or "off")
+    kl = sys.modules.get("knowledge_live")
+    out = dict(pid=os.getpid(), mode=os.environ.get("SLICE_KNOWLEDGE") or "off",
+               installed=bool(kl and kl.installed()))
     H.where = "sessionfinish"
     if H._out is None:
         out["plants"] = "handler_count not installed"

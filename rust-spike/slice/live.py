@@ -343,6 +343,8 @@ def main():
         lra_live.from_env()
         import session_live     # Component 5, step 5a. SLICE_SESSION=py keeps it off.
         session_live.from_env()
+        import knowledge_live   # Component 6's ported parts (port-wire.md). SLICE_KNOWLEDGE=py keeps them off.
+        knowledge_live.from_env()
     if args.check == "plain":
         if backend:
             backend.install()

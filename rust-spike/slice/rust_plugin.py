@@ -98,6 +98,8 @@ if BACKEND == "rust":
     lra_live.from_env()
     import session_live     # Component 5, step 5a. SLICE_SESSION=py keeps it off.
     session_live.from_env()
+    import knowledge_live   # Component 6's ported parts (port-wire.md). SLICE_KNOWLEDGE=py keeps them off.
+    knowledge_live.from_env()
 
 # Rust EUF on Python's solver: the tests whose harness reads Solver internals fail on the crate's solver before any EUF
 # answer is read (the 77 and 46), so this is the only way they check the Rust EUF. SLICE_EUF=rust asks for it.
