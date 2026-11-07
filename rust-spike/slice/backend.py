@@ -12,6 +12,16 @@ import weakref
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sa_solver  # noqa: E402
 
+# Section 9's offline data, read once at load. Refused if the sources or SymPy aren't the ones it was written from.
+import satassume  # noqa: E402
+import sympy  # noqa: E402
+
+sa_solver.read_offline(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "offline_data.json"),
+    os.path.dirname(os.path.dirname(os.path.abspath(satassume.__file__))),
+    sympy.__version__,
+)
+
 RustSolver = sa_solver.Solver
 created = 0
 dropped = 0
