@@ -220,6 +220,8 @@ def main():
     src = os.path.join(HERE, "solver_rs")
     crate = os.path.join(w, "crate")
     shutil.copytree(src, crate, dirs_exist_ok=True, ignore=shutil.ignore_patterns("target"))
+    for name in os.listdir(os.path.join(crate, "src")):    # copytree keeps mtimes: a reused target would look fresh
+        os.utime(os.path.join(crate, "src", name))
     for k, f, d, old, new in M:
         n = open(os.path.join(src, "src", f)).read().count(old)
         if n != 1:
