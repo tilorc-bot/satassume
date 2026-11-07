@@ -83,11 +83,11 @@ def test_pythons_copy_runs_no_rust():
 
 
 def test_a_kept_query_stays_on_python(live):
-    K._stack().append(types.SimpleNamespace(kept='kept'))
+    K.term_live.stack().append(types.SimpleNamespace(kept='kept'))
     try:
         assert R.root_facts([1, 0, -1], 0) == {'real': True, 'sign': -1, 'imaginary': False}
     finally:
-        K._stack().pop()
+        K.term_live.stack().pop()
     assert live['realroots:kept'] == 1 and live['realroots:root_facts'] == 0
 
 

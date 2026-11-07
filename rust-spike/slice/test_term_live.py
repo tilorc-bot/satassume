@@ -6,22 +6,25 @@ whether it was reached: a plant that never ran fails here, it doesn't pass.
 import os
 
 import pytest
-from sympy import Q, Symbol, pi, sin
+from sympy import Q, Symbol, log, pi, sin
 
 import sa_solver
 import term_live
 from harness.state import reset_module_state
 from satassume import engine as E, relations as R, sympy_api as A
 from satassume.state import memos
-from satassume.theories.lra import lra as LR, lra_bounds as B
+from satassume.theories.lra import constfield as CF, lra as LR, lra_bounds as B
 
-if os.environ.get('SLICE_TERM_TEST_RUST'):
+RUST = bool(os.environ.get('SLICE_TERM_TEST_RUST'))
+if RUST:
     import backend
     backend.install()
 
 x, y = Symbol('x', real=True), Symbol('y', real=True)
 n, k = Symbol('n'), Symbol('k')
 SUM = (Q.gt(x + y, 1), Q.gt(x, 2) & Q.gt(y, 0))
+
+CERT = (Q.zero(x), Q.ge(x, -pi / 2))
 
 # Each of the seven handlers on the engine's path that catch `Exception`, a call inside its `try`, and a query reaching it.
 HANDLERS = [
@@ -30,7 +33,9 @@ HANDLERS = [
     ('relations.py:1989', R, '_guarded_adapters', SUM),
     ('relations.py:2011', R, '_termwise', (Q.eq(n, k), Q.integer(n) & Q.nonnegative(n) & Q.gt(k, n))),
     ('relations.py:2018', R, '_terms_of', SUM),
-    ('lra.py:461', LR.LRATheory, '_certify', (Q.zero(x), Q.ge(x, -pi / 2))),
+    # On Rust's solver the core runs the certificate and `LRATheory._certify` is never called: the handler is `lra.rs:935`,
+    # and the call inside it that reaches Python is `pi_laurent` (`lra_cert.rs:87`).
+    ('lra.rs:935', CF, 'pi_laurent', CERT) if RUST else ('lra.py:461', LR.LRATheory, '_certify', CERT),
     ('lra_bounds.py:249', B, '_loose', (Q.positive(sin(1)), True)),
 ]
 
@@ -76,6 +81,41 @@ def test_a_refusal_goes_past_the_handler(live, monkeypatch, site, owner, attr, q
     assert A.ask(*query) is want
     assert calls[0] > 0, f'{site}: the query never reached it'
     assert term_live.COUNTS['refused'] == 1
+
+
+@pytest.mark.skipif(not RUST, reason="the core's handler")
+def test_the_core_certificate_handler_is_quiet_on_an_exception(live, monkeypatch):
+    """The plant above is inside `lra.rs:935`'s handler: an `Exception` from the same call doesn't come out. `handler_count`
+    doesn't see this one."""
+    real, calls = CF.pi_laurent, [0]
+
+    def raising(*a, **kw):
+        calls[0] += 1
+        raise ValueError('planted')
+    monkeypatch.setattr(CF, 'pi_laurent', raising)
+    A.ask(*CERT)
+    assert calls[0] > 0
+    assert term_live.COUNTS['refused'] == 0
+    assert real is not raising
+
+
+def test_a_constant_index_a_discard_frees_can_go_to_another(live):
+    """A rollback truncates `_CONSTANTS`, so the next registration reuses the index. Nothing may answer for the new constant
+    from the old one: `constfield.rs`'s `ENCLOSURES` is keyed by that index, and the old answer here differs from the new."""
+    gone = (Q.gt(x, log(37)), Q.lt(x, 1))        # log(37) > 1: False, and so is half of it, the stale reading of `kept`
+    kept = (Q.gt(x, log(5) / 2), Q.lt(x, 1))     # log(5)/2 < 1: open
+    eng = E.Engine()
+    A.set_default_engine(eng)
+    i = len(CF._CONSTANTS)
+    mark = term_live._Mark(eng)
+    assert A.ask(*gone) is False
+    assert len(CF._CONSTANTS) > i
+    first = CF._CONSTANTS[i]
+    assert any(first._cache.values())           # the enclosure was read, so a stale one could exist
+    mark.rollback()
+    assert len(CF._CONSTANTS) == i
+    assert A.ask(*kept) is None
+    assert CF._CONSTANTS[i] is not first and CF._CONSTANTS[i].key != first.key
 
 
 def _nest(eng):

@@ -8,7 +8,8 @@ that reaches the top of the run. Installed from outside satassume. Pure Python s
 2. A query conversion keeps runs on Python, counted as `kept:<reason>`.
 3. `sa_solver.TermRefuse` is a BaseException, so no `except Exception` on the way can turn it into a quiet answer. That is
    seven handlers on the engine's path, not the two section 9 names: `engine.py:1906`, `sympy_api.py:1107`,
-   `relations.py:1989`, `:2011`, `:2018`, `lra.py:461` and `lra_bounds.py:249`. Only the outermost `_ask` catches it. It
+   `relations.py:1989`, `:2011`, `:2018`, `lra.py:461` (on Rust's solver `lra.rs:935`, which lets a BaseException up) and
+   `lra_bounds.py:249`. Only the outermost `_ask` catches it. It
    discards the run, rolls back what the run wrote in Python (`_Mark`) and answers on Python, counted as `refused` and by
    reason. Everything nested in that second run stays on Python too: it can't refuse again.
 
