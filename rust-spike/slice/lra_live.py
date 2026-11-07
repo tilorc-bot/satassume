@@ -19,10 +19,7 @@ import sys
 
 import sa_solver
 
-from sympy.core.add import Add
 from sympy.core.basic import Basic
-from sympy.core.mul import Mul
-from sympy.core.numbers import Rational
 
 from satassume.theories.lra import constfield, lra, lra_adapter
 
@@ -32,87 +29,10 @@ COUNTS = term_live.COUNTS
 #: SLICE_LRA_CHECK: also run Python's function and compare. It builds in SymPy, so it's for evidence, never for a quoted number.
 CHECK = [False]
 CHECK_BAD = []
-SCAFFOLD_BAD = []
+SCAFFOLD_BAD = term_live.SCAFFOLD_BAD
 PLANTS = {'coeff': 1, 'sort': 2, 'pi': 3, 'eq': 4}
-
-
-def _refuse(reason):
-    raise sa_solver.TermRefuse(reason)
-
-
-def _term_id(q, e, site):
-    i = q.ids.get(e) if isinstance(e, Basic) else None
-    if i is not None:
-        # `==` can join classes (Float against Integer), so a row counts only for its own class.
-        return i if type(q.objects[i]) is type(e) else None
-    if not isinstance(e, Basic):
-        COUNTS[f'lra:unknown:{site}:{type(e).__name__}'] += 1
-        return None
-    i = q.derived.get(e)
-    if i is not None:
-        return i if type(q.rev[i]) is type(e) else None
-    cls = type(e)
-    if isinstance(e, Rational):
-        i = q.table.number(e.p, e.q)
-    elif (cls is Add or cls is Mul) and e.is_commutative is True:
-        args = [_term_id(q, a, site) for a in e.args]
-        if None in args:
-            return None
-        i = q.table.raw_add(args) if cls is Add else q.table.raw_mul(args)
-        COUNTS['lra:learned'] += 1
-    else:
-        COUNTS[f'lra:unknown:{site}:{cls.__name__}'] += 1
-        return None
-    if i >= q.table.n_input:
-        q.derived[e] = i
-        q.rev.setdefault(i, e)
-    return i
-
-
-def _bad(o, why):
-    COUNTS['scaffold:mismatch'] += 1
-    if len(SCAFFOLD_BAD) < 20:
-        SCAFFOLD_BAD.append((why, repr(o)[:200]))
-    _refuse('scaffold: ' + why)
-
-
-def _scaffold(q, i, site):
-    """The SymPy object of id `i`. Scaffolding: temporary, counted, and checked against Rust's form."""
-    t = q.table
-    if i < t.n_input:
-        return q.objects[i]
-    o = q.rev.get(i)
-    if o is not None:
-        return o
-    row = t.row(i)
-    args = row[0]
-    name = t.class_row(i)[0]
-    if not args:
-        if not (isinstance(row[1], tuple) and len(row[1]) == 2):
-            _bad(row[1], 'a derived term with no args that is not a number')
-        o = Rational(row[1][0], row[1][1])
-        if (o.p, o.q) != row[1] or type(o).__name__ != name:
-            _bad(o, 'number')
-    else:
-        f = {'Add': Add, 'Mul': Mul}.get(name)
-        if f is None:
-            _bad(name, 'a derived class other than Add and Mul')
-        kids = [_scaffold(q, a, site) for a in args]
-        o = f(*kids)
-        # Rust's form: the same class, and the same args in the same order, each of its own class.
-        if (type(o).__name__ != name or len(o.args) != len(kids)
-                or any(x != y or type(x) is not type(y) for x, y in zip(o.args, kids))):
-            _bad(o, 'rebuilt form differs from Rust')
-    COUNTS['scaffold:rebuilt'] += 1
-    COUNTS['scaffold:rebuilt:' + site] += 1
-    k = q.ids.get(o)
-    if k is None:
-        k = q.derived.get(o)
-    if k is not None and k != i:
-        _bad(o, 'rebuilt term has another id')
-    q.derived[o] = i
-    q.rev[i] = o
-    return o
+#: Python's `num`, for the direct comparison.
+_PY_NUM = [constfield.num]
 
 
 def _query():
@@ -159,17 +79,17 @@ def _check(site, ours, theirs, arg):
 
 
 def _objs(q, ids, site):
-    return [_scaffold(q, i, site) for i in ids]
+    return [term_live.scaffold(q, i, site) for i in ids]
 
 
 def _pairs(q, items, site):
-    return tuple((_scaffold(q, i, site), c) for i, c in items)
+    return tuple((term_live.scaffold(q, i, site), c) for i, c in items)
 
 
 def _ids(q, site, *terms):
     out = []
     for e in terms:
-        i = _term_id(q, e, site)
+        i = term_live.term_id(q, e, site)
         if i is None:
             return None
         out.append(i)
@@ -319,6 +239,7 @@ def from_env():
 
 
 def counts():
-    out = {k: v for k, v in COUNTS.items() if k.startswith(('lra:', 'scaffold:'))}
+    sites = tuple(f'term:unknown:{s}:' for s in ('interpret', 'order_sides', 'integer_form', 'closed_sign'))
+    out = {k: v for k, v in COUNTS.items() if k.startswith(('lra:', 'scaffold:') + sites)}
     out.update({'rust:' + k: v for k, v in sa_solver.lra_counts().items()})
     return out

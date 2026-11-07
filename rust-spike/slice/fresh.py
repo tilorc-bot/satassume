@@ -97,6 +97,9 @@ if a.counts:
 if a.wl == "fuzz":
     from evalbench.fuzz import queries
     pairs = queries(424242)
+elif a.wl == "lra":
+    import lra_wl
+    pairs = lra_wl.queries()
 else:
     pairs = workload(a.wl)
 if a.handlers:

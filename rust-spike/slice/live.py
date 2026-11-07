@@ -261,6 +261,9 @@ def load(wl):
         import transfer_workload
         seed, n = wl.split(":")[1:]
         return transfer_workload.queries(int(seed), int(n))
+    if wl == "lra":
+        import lra_wl
+        return lra_wl.queries()
     return workload(wl)
 
 
