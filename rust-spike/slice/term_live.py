@@ -128,7 +128,8 @@ class _Mark:
     the run (restamped, or cleared when full) can regrow past the mark, and then what sits below the mark is the run's too:
     its last key shows that, its stamp shows a restamp, and the table is emptied, which is safe for a memo. What growth
     doesn't show: `DictCache.put` adding a predicate to a node already in the store, which `_put` journals, and a counter or
-    flag, which are copied here."""
+    flag, which are copied here. A `defaultdict(dict)` table (`lra_adapter._INTERPRETED`) grows inside its values once its key
+    exists, so each value is a table too: an entry left there can hold a `_CONSTANTS` index this rollback frees."""
 
     def __init__(self, eng):
         self.tables = {}
@@ -142,6 +143,9 @@ class _Mark:
 
     def _note(self, t):
         self.tables[id(t)] = (t, len(t), getattr(t, 'stamp', _NO_STAMP), next(reversed(t), None) if len(t) else None)
+        if isinstance(t, collections.defaultdict) and t.default_factory is dict:
+            for inner in t.values():
+                self._note(inner)
 
     def add(self, eng):
         if id(eng) in self.engines:
@@ -718,8 +722,8 @@ def _glue_objects(py):
                 sat = relations.sympy_atom(atom)
                 for ad in relations._guarded_adapters(specs, memo):
                     k.update(relations._terms_of(ad, sat, False))
-            except Exception:   # noqa: BLE001 (sides the adapters cannot read): as `glue_objects`
-                pass
+            except Exception as x:   # noqa: BLE001 (sides the adapters cannot read): as `glue_objects`. A refusal and a fault pass
+                COUNTS['caught:glue_objects:' + type(x).__name__] += 1
         k.discard(atom)
         return k
     glue_objects.__wrapped__ = py

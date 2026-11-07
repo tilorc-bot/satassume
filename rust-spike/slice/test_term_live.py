@@ -13,7 +13,7 @@ import term_live
 from harness.state import reset_module_state
 from satassume import engine as E, relations as R, sympy_api as A
 from satassume.state import memos
-from satassume.theories.lra import constfield as CF, lra as LR, lra_bounds as B
+from satassume.theories.lra import constfield as CF, lra as LR, lra_adapter as L, lra_bounds as B
 
 RUST = bool(os.environ.get('SLICE_TERM_TEST_RUST'))
 if RUST:
@@ -116,6 +116,55 @@ def test_a_constant_index_a_discard_frees_can_go_to_another(live):
     assert len(CF._CONSTANTS) == i
     assert A.ask(*kept) is None
     assert CF._CONSTANTS[i] is not first and CF._CONSTANTS[i].key != first.key
+
+
+def test_a_discard_leaves_nothing_inside_a_nested_memo(live):
+    """`_INTERPRETED` is a `defaultdict(dict)`. Once its key exists the run's entries sit inside the value, where the outer
+    length doesn't move, and one left there reads the index the rollback freed as whichever constant gets it next.
+    Without `_note`'s inner tables: 10 entries stay and the last answer is False, the stale reading x > log(41), x < 1."""
+    victim = (Q.gt(x, log(3) / 2), Q.lt(x, 1))   # log(3)/2 < 1: open. Constants of its own: `_CONSTANTS` outlives a reset
+    other = (Q.gt(x, log(41)), Q.lt(x, 1))       # log(41) > 1: False
+    eng = E.Engine()
+    A.set_default_engine(eng)
+    assert A.ask(Q.gt(Symbol('warm', real=True), 2), Q.lt(Symbol('warm', real=True), 1)) is False   # the key exists now
+    inner = L._INTERPRETED[L.GENERIC_CONSTANTS]
+    n, i = len(inner), len(CF._CONSTANTS)
+    mark = term_live._Mark(eng)
+    assert A.ask(*victim) is None
+    assert len(inner) > n and len(CF._CONSTANTS) > i
+    mark.rollback()
+    assert len(inner) == n and len(CF._CONSTANTS) == i
+    assert A.ask(*other) is False
+    assert A.ask(*victim) is None
+
+
+def test_the_glue_handler_counts_what_it_catches(monkeypatch):
+    """Slice C's one new handler site, Python's `relations.py:2018` over ids. Its count has to fire before its zero means
+    anything, and a refusal has to pass it."""
+    undo = term_live.install(terms=True)
+    try:
+        term_live.COUNTS.clear()
+        def raises(*a, **k):
+            raise ValueError('planted')
+        monkeypatch.setattr(R, '_terms_of', raises)
+        fresh()
+        A.ask(Q.eq(x + Symbol('y', real=True), 2), Q.positive(x))
+        assert term_live.COUNTS['caught:glue_objects:ValueError'] > 0
+        # The second run reads no table, so the refusal fires once.
+        armed = [True]
+        def refuses(*a, **k):
+            if armed[0]:
+                armed[0] = False
+                raise sa_solver.TermRefuse('planted')
+            return set()
+        monkeypatch.setattr(R, '_terms_of', refuses)
+        term_live.COUNTS.clear()
+        fresh()
+        A.ask(Q.eq(x + Symbol('y', real=True), 2), Q.positive(x))
+        assert term_live.COUNTS['refused'] == 1 and not term_live.COUNTS['caught:glue_objects:TermRefuse']
+    finally:
+        undo()
+        fresh()
 
 
 def _nest(eng):

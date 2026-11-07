@@ -125,7 +125,11 @@ def check():
             same = False
             COUNTS['uncomparable'] += 1
             EXAMPLES.setdefault('uncomparable:' + k, repr(e)[:200])
-        if not same:
+        if not same and isinstance(a, dict) and b == {}:
+            # `_Mark`'s documented path: a table restamped or cleared during the run is emptied, which holds nothing of the run's.
+            COUNTS['emptied'] += 1
+            LEFT[k + ':emptied'] += 1
+        elif not same:
             clean = False
             LEFT[k] += 1
             if k not in EXAMPLES and isinstance(a, dict) and isinstance(b, dict):
