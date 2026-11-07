@@ -27,9 +27,9 @@ What's known about it:
 
 **Large differential: running, detached, not read.** `~/sa-rust-ids-work/sa-port-46/gcd/run-large.txt`, `run-large.done` marks the end. Started about 12:55 UTC: seed 20261107, 20,000 ops, `CF_GCD_VARS=4 CF_GCD_DEG=3`, loading the copy in `gcd/so`, with **no callback**. `CF_DUMP=1500` makes it dump a traceback and exit at about 13:20: a traceback there means a stall, not a completion. The wider generator means it probably doesn't draw the same inputs as sa-port-42's stalled run; I didn't check.
 
-## Also running, detached
+## identity_rule.py, rewritten, read
 
-`identity_rule.py`, rewritten, on the `gcd/so` build: `~/sa-rust-ids-work/sa-port-46/identity/{out.txt,result.json,done}`. Duration unknown, first run since the rewrite. It compares Python and fresh Rust to the end of the session, and its `calls` part reads through the state view. Read `session_differs` and `differs`. It's no longer the move result, so don't quote it as 14,424 moved sequences.
+No moves now: Python against a fresh Rust session, to the end of the session, on the `gcd/so` build. `~/sa-rust-ids-work/sa-port-46/identity/result.json`. 14,424 sequences, 344,304 answers, 0 refused. **`differs` names only `_forms`:** 7,334 after registration, 13,254 sequences during the session (`session_differs` is that same 13,254). No answer and no other field differs. The two first cases show Rust's `_forms` key holding `x1` where Python's holds `x2`, equal objects, so this reads as the object form the planner's `_forms` ruling names as equivalent. I looked at those two first cases only. It's hook level and plain Fractions, so it says nothing about constants. Don't quote it as the old moved result.
 
 ## Transfer's users: done, mostly not run
 
