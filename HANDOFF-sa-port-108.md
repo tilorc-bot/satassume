@@ -49,3 +49,11 @@ _visit, core visit, Session._link (5c2b). Plants: want-empty, drop-split-later, 
 drop-compile-demand, drop-pend-compile, drop-pat-demand; drop-custom-rel, drop-custom-facts, drop-visit-items, drop-dv-link.
 Still owed in every report: see the brief's MUST STAY list (S's standing, _n_conflicts shim 64 tests, test_incremental_matches_fresh
 at the test-only step before 5c7, test_equality_sharing re-pointed at 5c4 via skip-share; no module newly counts whole).
+
+## 5c2 bar, finished (sa-port-106/sum.txt, tested 7adb61e; grep only, read sum.txt yourself)
+tests 438 passed, direct exit 0. Suite 5,959/125/23/18, new/gone/changed 0, passed 5,958 + 1 firing, handler multiset same as
+base (39). dev and fuzz: 8 MATCH. Plants DIFFER on dev and fuzz: drop-custom-rel, drop-emit-ment, drop-flush-custom,
+drop-pat-demand, drop-split-later, want-empty. **Void on both (fired 0):** drop-compile-demand, drop-custom-facts, drop-dv-link,
+drop-pend-compile, drop-visit-items. In the suite, each fired: drop-custom-facts 316 (11 changed), drop-dv-link 1,528,434
+(25 changed), drop-pend-compile 474 (57), drop-visit-items 459 (58), drop-compile-demand 26,753 (**0 changed**: only the
+direct test and the loop workload). Not run: seed1. Still to grep: quiet catches at engine.py:1906 in this run.
