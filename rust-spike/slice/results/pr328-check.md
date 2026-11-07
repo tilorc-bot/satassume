@@ -29,7 +29,7 @@ Same as section 5's result, which was from outside the source. Still a sample of
 
 **Dev: finished.** Recorded, two shuffles, fork, twice, seeds 1 and 2: 7 of 7 pairs, 0 differences in answers, end state, stream or session count. Against recorded, seeds move no state on either backend, and shuffles and fork move the same counts on both (335, 358, 1,549).
 
-**Fuzz: still running when this was written, so not a result.** See the report for its final state.
+**Fuzz: finished at 10:00 UTC, all 28 runs rc=0.** Recorded, two shuffles, fork, twice, seeds 1 and 2, 3,000 queries each (twice: 6,000), every row `total rows: yes`: 7 of 7 pairs, 0 differences in answers, messages, end state, stream or session count, and 0 dropped or created. Against recorded, seeds move no state on either backend, and shuffles and fork move the same counts on both (86, 91, 2,981). No history moved an answer on either backend, the repeat in `twice` never differs, and all 12 answer digests agree (173502b6ef285ad6). Rust: 0 reentries, 0 entry raises, 0 Python solvers made. Output: `historycmp.py` on `pr328-check/hist`.
 
 ## The suite's three numbers
 
