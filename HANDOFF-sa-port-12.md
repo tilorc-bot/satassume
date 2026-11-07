@@ -4,14 +4,14 @@
 
 Read first: my brief `~/.local/state/agent/briefs/sa-port-12-20261107T075738Z.txt`, whose terms and planner's rulings still apply, including the state-transfer ruling at its end. **Carry that ruling into any later handoff.** Then `HANDOFF-sa-port-8.md` for what's built. Output is under `~/sa-rust-ids-work/sa-port-12/` (`$B` below).
 
-## Two jobs still running when I stopped
+## Jobs started by this session
 
-Both were started by this session and may die with it. **Check for the end marker, and restart if it's missing and nothing is running.**
+The suite was still running when I last looked, and may die with this session. **Check for its end marker, and restart if it's missing and nothing is running.**
 
 | Job | Output | Done when | Restart |
 |---|---|---|---|
 | Full suite, Rust then Python, shuffled, `-n 3` | `$B/suite1-rust`, `$B/suite1-python` | `$B/suite1.done`, `exit.txt` in each | `bash $B/suite1.sh` |
-| Dump-field mutants on dev, 83 mutants, 25 runs each | `$B/dm/dev` | `$B/dm/dev/done`, `score.txt` | `bash $B/dm/run.sh` |
+| Dump-field mutants on dev: **finished 09:09 UTC**, read under "Order from here" | `$B/dm/dev` | `$B/dm/dev/done`, `score.txt` | not needed |
 
 **Which source these ran on:** the suite's Rust workers imported the tree at about 08:42 UTC, at abc8170's source, before `TransferFailed` went in at 496f250 (08:49). That change only touches the path where a dump fails, so I expect it not to matter, but that's a reading. The suite counted for the report has to be on the final source, so rerun it if source changes again. The first few dump mutants also started before 496f250. No dump mutant makes `_state` raise, so they aren't affected, for the same reason.
 
@@ -61,7 +61,11 @@ All on this tree. "Fresh" means `live.py --fork`: each query in its own child, f
 ## Order from here
 
 1. Read the suite: `suite_report.py $B/suite1-rust $B/suite1-python`, compared by id with 5,961 / 77 / 46. Check the `test_lra*` failures **id by id** against `port-census/pr328-check/suite-lists.md`, not by family. Sum `lra` over the rows for the groups.
-2. Read `$B/dm/dev/score.txt`. Each mutant missed gets named as not caught. **`_ground` and `_pending_ground` were never non-empty at a move on dev,** so their mutants will show as never effective and need a query or a direct session that has them. `_rows`' outer order, `_cols` and `_forms` are compared sorted, so an order mutant there may need naming.
+2. Dump mutants on dev finished (`$B/dm/dev/score.json`), 83 in all. Close the five idle ones below; the rest are ready to report as written there:
+   - **49 caught by a comparison:** 43 by the LRA state digest alone, 6 by end state and stream as well (4 of those also raised, one changed the session count). `identity:_ints` and `identity:_int_lits` are among the 43. `order:_ints_on_inner` was effective in only 4 of its 25 runs.
+   - **27 caught only by the state read (all the `drop:` mutants):** the child dies with `KeyError` at `state.py`'s `get = lambda n: d[n]`, or `AttributeError` at `lra_backend.py`'s `__getattr__` for the `_py_` fields, after the session. The row is lost, so **these say nothing about whether the answer or stream changed.** Say so; don't list them with the 49.
+   - **2 not caught, name them:** `order:_forms` (effective in 25 of 25 runs) and `order:_rows` (5 of 25). `lra_text` sorts both, and neither changed end state or stream in those runs. That supports the claim at `lra.rs:4-8` that order there has no effect, on these runs only.
+   - **5 never effective:** `order:`, `lose:` for `_ground` and `_pending_ground`, and `value:_ground`. Neither field was non-empty at a move on dev, so these need a query or a direct session that has them. `drop:_ground` and `drop:_pending_ground` had 1 run each and are in the 27.
 3. Fresh fuzz: `live.py fuzz py|rust --fork`. Then move at every call on fuzz, with `--stride`, **stating that it's sampled** (dev is every index). The branch budget is the point of condition 2, so confirm the moved sessions include some with branches, and with `exhausted`.
 4. `LRA_MUT` 6, 7 on full dev and fuzz with `--so` (only q1887 so far). Run `test_lra_dirty.py` and `test_lra_raises.py` under pytest.
 5. `real_theory_fuzz`, `test_solver_real_theories`, `run_history.sh`, `historycmp.py`, hash seeds.
