@@ -22,6 +22,8 @@ def pytest_configure(config):
     term_shadow.install()
     term_shadow.install_algebra()
     term_shadow.KEY_HOOK[0] = _key
+    # SLICE_SHADOW_DRIVE=1: reads are only what the run asks for, so read_term_missing and read_raised count the lazy path.
+    term_shadow.DRIVE[0] = os.environ.get('SLICE_SHADOW_DRIVE') == '1'
 
 
 _keys = [None]
@@ -40,7 +42,7 @@ def _key(site, e, i, outcome):
         _keys[0] = open(os.path.join(os.environ['SLICE_SUITE_OUT'], f'shadow-keys.{os.getpid()}.jsonl'), 'a')
     pows = sum(isinstance(a, Pow) for a in e.args) if isinstance(e, Mul) else 0
     _keys[0].write(json.dumps(dict(id=_test[0], q=TS.COUNTS['queries'], pid=os.getpid(), site=site, cls=type(e).__name__,
-                                   n=len(e.args), pows=pows, derived=derived, outcome=outcome, term=str(e)[:100])) + '\n')
+                                   n=len(e.args), pows=pows, derived=derived, outcome=outcome, term=TS._text(e)[:100])) + '\n')
     _keys[0].flush()
 
 

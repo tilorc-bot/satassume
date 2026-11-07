@@ -57,11 +57,20 @@ EXAMPLES = {}               # refusal reason: first few (op, operands)
 SAMPLE_DERIVED = 9          # a new derived term is compared against this many of the query's first terms
 
 
+def _text(d):
+    """A mismatch's text. Printing can raise (a hand-built `Basic.__new__(Mul, z)` has no `is_commutative`), and a check
+    must not change what the test sees."""
+    try:
+        return str(d)[:200]
+    except Exception as e:
+        return f'<{type(d).__name__}: str raised {type(e).__name__}>'
+
+
 def bad(kind, *detail):
     COUNTS['mismatch'] += 1
     COUNTS['mismatch:' + kind] += 1
     if len(BAD) < 200:
-        BAD.append((kind,) + tuple(str(d)[:200] for d in detail))
+        BAD.append((kind,) + tuple(_text(d) for d in detail))
 
 
 def same_value(rv, real, c, key):
@@ -207,7 +216,7 @@ def check_order(c, table):
             except sa_solver.TermRefuse as e:
                 REFUSED[f'compare: {e} / python: {real if isinstance(real, str) else "ordered"}'] += 1
                 if not isinstance(real, str) and len(BAD) < 200:
-                    BAD.append(('refused-compare', str(a)[:100], str(b)[:100]))
+                    BAD.append(('refused-compare', _text(a)[:100], _text(b)[:100]))
             else:
                 if got != real:
                     bad('compare', a, b, got, real)
@@ -226,7 +235,7 @@ def check_order(c, table):
             except sa_solver.TermRefuse as e:
                 REFUSED[f'key: {e} / python: {real}'] += 1
                 if len(KEY_REFUSED) < 200:
-                    KEY_REFUSED.append((str(a), str(b), type(a).__name__, type(b).__name__, str(e), real,
+                    KEY_REFUSED.append((_text(a), _text(b), type(a).__name__, type(b).__name__, str(e), real,
                                         repr(table.row(i)[2]), repr(table.row(j)[2]), str(ka), str(kb)))
             else:
                 if got != real:
@@ -376,7 +385,7 @@ def _example(reason, op, *operands):
         return
     ex = EXAMPLES.setdefault(reason, [])
     if len(ex) < 5:
-        ex.append((op,) + tuple(str(o)[:120] for o in operands))
+        ex.append((op,) + tuple(_text(o)[:120] for o in operands))
 
 
 def check_op(op, site, operands, real, ask_rust):
