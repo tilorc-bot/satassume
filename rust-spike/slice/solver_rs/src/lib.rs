@@ -448,6 +448,76 @@ impl PySolver {
         run(|| self.s.entails_all(&l, &a, opt_hold(hold)))
     }
 
+    /// The compare tool's dump: field name to canonical string, as `state.py` builds it from the Python solver.
+    fn dump<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new(p);
+        for (k, v) in self.s.dump() {
+            d.set_item(k, v)?;
+        }
+        let list = |ms: Option<&Vec<Option<PyObj>>>| -> PyResult<String> {
+            match ms {
+                None => Ok("N".to_string()),
+                Some(ms) => {
+                    let mut o = Vec::new();
+                    for m in ms {
+                        o.push(match m {
+                            None => "None".to_string(),
+                            Some(x) => x.0.bind(p).repr()?.to_string(),
+                        });
+                    }
+                    Ok(o.join(" ; "))
+                }
+            }
+        };
+        d.set_item("tmodels", list(self.s.theory_models())?)?;
+        let mut r = Vec::new();
+        for ms in self.s.ring_models() {
+            r.push(list(ms)?);
+        }
+        d.set_item("ring_tm", r.join(" // "))?;
+        Ok(d)
+    }
+
+    #[getter(_restart_first)]
+    fn get_restart_first(&self) -> f64 {
+        self.s.restart_first
+    }
+
+    #[setter(_restart_first)]
+    fn set_restart_first(&mut self, x: f64) {
+        self.s.restart_first = x;
+    }
+
+    #[getter(_learnt_size_min)]
+    fn get_learnt_size_min(&self) -> f64 {
+        self.s.learnt_size_min
+    }
+
+    #[setter(_learnt_size_min)]
+    fn set_learnt_size_min(&mut self, x: f64) {
+        self.s.learnt_size_min = x;
+    }
+
+    #[getter(_var_inc)]
+    fn get_var_inc(&self) -> f64 {
+        self.s.var_inc
+    }
+
+    #[setter(_var_inc)]
+    fn set_var_inc(&mut self, x: f64) {
+        self.s.var_inc = x;
+    }
+
+    #[getter(_cla_inc)]
+    fn get_cla_inc(&self) -> f64 {
+        self.s.cla_inc
+    }
+
+    #[setter(_cla_inc)]
+    fn set_cla_inc(&mut self, x: f64) {
+        self.s.cla_inc = x;
+    }
+
     fn stats<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         const KEYS: [&str; 11] = [
             "propagations", "conflicts", "decisions", "learned", "restarts", "vars", "clauses", "learnts",

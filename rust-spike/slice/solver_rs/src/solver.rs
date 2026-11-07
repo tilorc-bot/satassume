@@ -14,10 +14,10 @@ pub const U: u8 = 2;
 
 const VAR_DECAY: f64 = 0.95;
 const CLA_DECAY: f64 = 0.999;
-const RESTART_FIRST: f64 = 100.0;
+const RESTART_FIRST: f64 = 100.0; // the default of `restart_first`
 const RESTART_INC: f64 = 2.0;
 const LEARNT_SIZE_INC: f64 = 1.1;
-const LEARNT_SIZE_MIN: f64 = 1000.0;
+const LEARNT_SIZE_MIN: f64 = 1000.0; // the default of `learnt_size_min`
 const RING: usize = 2;
 
 /// Python's `ValueError`, returned by public methods that raise it, with the same message.
@@ -100,9 +100,11 @@ pub struct Solver<Th: Theory> {
     learnts: Vec<u32>,
     ok: bool,
     nvars: usize,
-    var_inc: f64,
-    cla_inc: f64,
+    pub var_inc: f64,
+    pub cla_inc: f64,
     max_learnts: f64,
+    pub restart_first: f64, // Python's class attributes `_restart_first` and `_learnt_size_min`
+    pub learnt_size_min: f64,
     assumptions: Vec<u32>,
     mvals: Option<Model>, // _mvals, the same list as witness and the ring entry
     mdict: Option<Vec<u8>>, // _mdict: what model() first built, kept, since a later _fill changes mvals but not it
@@ -204,6 +206,8 @@ impl<Th: Theory> Solver<Th> {
             var_inc: 1.0,
             cla_inc: 1.0,
             max_learnts: 0.0,
+            restart_first: RESTART_FIRST,
+            learnt_size_min: LEARNT_SIZE_MIN,
             assumptions: Vec::new(),
             mvals: None,
             mdict: None,
@@ -1973,10 +1977,10 @@ impl<Th: Theory> Solver<Th> {
         self.max_learnts = self
             .max_learnts
             .max((self.clauses.len() + self.rb_nclauses) as f64 / 3.0)
-            .max(LEARNT_SIZE_MIN);
+            .max(self.learnt_size_min);
         let mut restarts = 0u64;
         let status = loop {
-            let budget = (luby(RESTART_INC, restarts) * RESTART_FIRST) as i64;
+            let budget = (luby(RESTART_INC, restarts) * self.restart_first) as i64;
             let st = self.search(budget);
             restarts += 1;
             if let Some(s) = st {
@@ -2281,5 +2285,128 @@ impl<Th: Theory> Solver<Th> {
         };
         self.vals_buf = vals;
         res
+    }
+}
+
+// ---- The state dump of the compare tool (`rust-spike/slice/state.py` builds the same strings from the Python solver).
+
+fn join<X: std::fmt::Display>(xs: impl IntoIterator<Item = X>) -> String {
+    let v: Vec<String> = xs.into_iter().map(|x| x.to_string()).collect();
+    v.join(" ")
+}
+
+fn bits(x: f64) -> String {
+    format!("{:x}", x.to_bits())
+}
+
+impl<Th: Theory> Solver<Th> {
+    fn clause_str(&self, c: u32) -> String {
+        let k = &self.db[c as usize];
+        format!("{}|{}|{}", join(k.lits.iter()), bits(k.act), k.learnt as u8)
+    }
+
+    fn reason_str(&self, r: &Reason) -> String {
+        match r {
+            Reason::None => "-".to_string(),
+            Reason::Clause(c) => self.clause_str(*c),
+            Reason::Block(m, b) => format!("b{m:x}:{b:x}"),
+        }
+    }
+
+    /// Every field that can change what the solver does next, as (name, canonical string). Reads only: unlike
+    /// `model()` it doesn't complete a stored model, so taking a dump can't hide what it is looking for.
+    pub fn dump(&self) -> Vec<(&'static str, String)> {
+        let opt = |x: &Option<Vec<u32>>| x.as_ref().map_or("N".to_string(), |v| join(v.iter()));
+        let cls = |xs: &[u32]| xs.iter().map(|&c| self.clause_str(c)).collect::<Vec<_>>().join(";");
+        let model = |m: &Option<Model>| m.as_ref().map_or("N".to_string(), |x| join(x.borrow().iter()));
+        let same = |a: &Option<Model>, b: &Option<Model>| match (a, b) {
+            (Some(x), Some(y)) => Rc::ptr_eq(x, y) as u8,
+            _ => 0,
+        };
+        let n = &self.n;
+        let mut w = String::new();
+        for (l, ws) in self.watches.iter().enumerate() {
+            if !ws.is_empty() {
+                let cs: Vec<String> = ws.iter().map(|&c| join(self.db[c as usize].lits.iter())).collect();
+                w.push_str(&format!("{l}:{}\n", cs.join(";")));
+            }
+        }
+        let mut tmap = String::new();
+        for (v, ts) in self.tmap.iter().enumerate() {
+            if !ts.is_empty() {
+                tmap.push_str(&format!("{v}:{} ", join(ts.iter())));
+            }
+        }
+        let ring: Vec<String> = self
+            .ring
+            .iter()
+            .map(|r| {
+                let alias = (self.mvals.as_ref().is_some_and(|m| Rc::ptr_eq(m, &r.mv)) as u8, self.witness.as_ref().is_some_and(|m| Rc::ptr_eq(m, &r.mv)) as u8);
+                format!("{}|{} {} {} {} {}|{} {}", join(r.mv.borrow().iter()), r.ncl, r.rlen, r.nb, r.nt, r.na, alias.0, alias.1)
+            })
+            .collect();
+        let acache = match &self.acache {
+            None => "N".to_string(),
+            Some((k, st, kl, t)) => format!("{}|{}|{}|{}", join(k.iter()), st, kl, t.as_ref().map_or("N".to_string(), |x| join(x.iter()))),
+        };
+        vec![
+            ("trail", join(self.trail.iter())),
+            ("trail_lim", join(self.trail_lim.iter())),
+            ("qhead", self.qhead.to_string()),
+            ("val", join(self.val.iter())),
+            ("level", join(self.level.iter())),
+            ("reason", self.reason.iter().map(|r| self.reason_str(r)).collect::<Vec<_>>().join("\n")),
+            ("clauses", cls(&self.clauses)),
+            ("learnts", cls(&self.learnts)),
+            ("watches", w),
+            ("act", join(self.act.iter().map(|&x| bits(x)))),
+            ("var_inc", bits(self.var_inc)),
+            ("cla_inc", bits(self.cla_inc)),
+            ("max_learnts", bits(self.max_learnts)),
+            ("polarity", join(self.polarity.iter())),
+            ("heap", join(self.heap.iter())),
+            ("hpos", join(self.hpos.iter())),
+            ("seen", join(self.seen.iter())),
+            ("ok", (self.ok as u8).to_string()),
+            ("nvars", self.nvars.to_string()),
+            ("assumptions", join(self.assumptions.iter())),
+            ("mvals", model(&self.mvals)),
+            ("mdict", self.mdict.as_ref().map_or("N".to_string(), |x| join(x.iter()))),
+            ("witness", model(&self.witness)),
+            ("mvals_is_witness", same(&self.mvals, &self.witness).to_string()),
+            ("ring", ring.join(";")),
+            ("stamp", self.stamp.to_string()),
+            ("acache", acache),
+            ("held", opt(&self.held)),
+            ("conflict", join(self.conflict.iter())),
+            ("counters", join([n.props, n.conflicts, n.decisions, n.learned, n.restarts, n.reductions, n.ring_hits, n.tdecisions, self.n_late, self.n_late_written])),
+            ("scan", self.scan.to_string()),
+            ("tmap", tmap),
+            ("thead", self.thead.to_string()),
+            ("tprops", join(self.tprops.iter())),
+            ("tdecides", join(self.tdecides.iter())),
+            ("tpending", (self.tpending as u8).to_string()),
+            ("n_registered", self.n_registered.to_string()),
+            ("rb_base", join(self.rb_base.iter())),
+            ("rb_mask", self.rb_mask.iter().map(|m| format!("{m:x}")).collect::<Vec<_>>().join(" ")),
+            ("rb_ment", self.rb_ment.iter().map(|m| format!("{m:x}")).collect::<Vec<_>>().join(" ")),
+            ("rb_saved", join(self.rb_saved.iter())),
+            ("rb_cl", self.rb_cl.iter().map(|m| format!("{m:x}")).collect::<Vec<_>>().join(" ")),
+            ("rb_undo", self.rb_undo.iter().map(|(b, m, c)| format!("{b:x} {m:x} {c:x}")).collect::<Vec<_>>().join(" ")),
+            ("rb_ulim", join(self.rb_ulim.iter().map(|&x| 3 * x))), // Python's `_rb_undo` is flat: three ints per entry
+            ("uid", self.uid.to_string()),
+            ("ment", join(self.ment.iter())),
+            ("lazy", join(self.lazy.iter())),
+            ("rb_n", self.rb_n.to_string()),
+            ("rb_blocks", self.rb_blocks.to_string()),
+            ("rb_nclauses", self.rb_nclauses.to_string()),
+            ("rb_bases", join(self.rb_bases.iter())),
+            ("rb_set", (self.rbc.is_some() as u8).to_string()),
+        ]
+    }
+
+    /// The theory models of each ring entry, for the wrapper to `repr`.
+    pub fn ring_models(&self) -> impl Iterator<Item = Option<&Vec<Option<Th::Model>>>> {
+        self.ring.iter().map(|r| r.tm.as_ref())
     }
 }

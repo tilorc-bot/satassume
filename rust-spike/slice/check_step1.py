@@ -276,4 +276,5 @@ def main():
     print("same results:", counts)
 
 
-main()
+if __name__ == "__main__":
+    main()
