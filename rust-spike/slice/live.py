@@ -244,6 +244,9 @@ TWICE = 1000000
 
 def load(wl):
     from evalbench.common import workload
+    if wl == "ground":      # not from the eval sets: atoms that cancel, for `_ground` and `_pending_ground`
+        from ground_queries import queries
+        return queries()
     if wl == "fuzz":
         from evalbench.fuzz import queries
         return queries(424242)
