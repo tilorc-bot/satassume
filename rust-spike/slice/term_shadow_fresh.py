@@ -1,9 +1,11 @@
 """One workload on a fresh engine with memos cleared per query, as the port brief requires, optionally under the shadow.
 
-    term_shadow_fresh.py WL OUT.json [--plain] [--limit N]
+    term_shadow_fresh.py WL OUT.json [--plain] [--drive] [--handlers FILE] [--limit N]
 
 WL: dev, fuzz, corpus (or any evalbench workload). --plain: no shadow, for the answers sha. OUT.json gets the shadow's
 report; OUT.json.answers the per-query answers. Equal answers with and without the shadow show its reads don't move a query.
+--drive: the shadow's DRIVE mode, so reads are only what the run asks for, inside the run. --handlers: handler_count's rows,
+`where` being the query's index.
 """
 import argparse
 import hashlib
@@ -19,6 +21,8 @@ ap.add_argument('out')
 ap.add_argument('--plain', action='store_true')
 ap.add_argument('--limit', type=int)
 ap.add_argument('--synthetic', action='store_true')
+ap.add_argument('--drive', action='store_true')
+ap.add_argument('--handlers')
 args = ap.parse_args()
 
 from harness.state import reset_module_state
@@ -39,10 +43,16 @@ if not args.plain:
     term_shadow.install()
     term_shadow.install_algebra()
     term_shadow.SYNTHETIC[0] = args.synthetic
+    term_shadow.DRIVE[0] = args.drive
+if args.handlers:
+    import handler_count
+    handler_count.install(args.handlers)
 
 sha = hashlib.sha256()
 with open(args.out + '.answers', 'w') as ans:
-    for p, a in pairs:
+    for q, (p, a) in enumerate(pairs):
+        if args.handlers:
+            handler_count.where = q
         reset_module_state(sympy_cache=False)
         sympy_api.set_default_engine(E.Engine())
         try:

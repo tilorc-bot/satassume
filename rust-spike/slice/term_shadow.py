@@ -14,7 +14,7 @@ from collections import Counter
 from sympy.core.basic import Basic, ordering_of_classes
 from sympy.core.exprtools import decompose_power
 from sympy.core.function import AppliedUndef
-from sympy.core.numbers import Float, Rational
+from sympy.core.numbers import Float, Integer, Rational
 from sympy.core.sorting import default_sort_key
 from sympy import S, Add, Mul, Expr, sympify
 
@@ -44,6 +44,13 @@ SYNTHETIC = [False]
 # Rust's lazy reads driven only by what the query itself asks: the algebra follows the run, and each key the run uses is
 # asked of Rust. No checks and no printing, since those force reads and evaluate (`str` of an Add calls complex()).
 DRIVE = [False]
+# Called for each key a run uses: (site, term, id or None, outcome). Outcomes: matched, mismatch, refused, unknown (a term
+# Rust wasn't told about), no-table (in a query with no table: Kept, or the table failed), outside-ask. Only the first
+# three compared or tried anything, so a count of "0 mismatches" says nothing about the others.
+KEY_HOOK = [None]
+IN_TOP = [False]            # conversion and the shadow's own checks, whose keys aren't the query's
+SHAPES = Counter()          # 'I:' input or 'D:' derived, class and arg classes: which shapes the shadow saw
+SHAPE_EXAMPLE = {}
 SITES = Counter()           # (op, caller file:line, outcome): which sites reach the algebra
 KEY_REFUSED = []            # every key pair Python orders and Rust refuses, both keys kept
 EXAMPLES = {}               # refusal reason: first few (op, operands)
@@ -608,6 +615,35 @@ def check_formula(c, table, proposition, assumptions, eng):
         bad('formula-assumptions', assumptions)
 
 
+def _class_name(t):
+    if isinstance(t, AppliedUndef):
+        return 'AppliedUndef'
+    if isinstance(t, Integer):
+        return 'Integer'
+    if isinstance(t, Rational):
+        return 'Rational'
+    return type(t).__name__
+
+
+def shape(t):
+    """Class and arg classes, one level down. Four or more args are lumped, since that's the census's bucket."""
+    a = sorted(_class_name(x) for x in t.args)
+    if len(a) >= 4:
+        a = sorted(set(a)) + ['4+']
+    return f"{_class_name(t)}({','.join(a)})"
+
+
+def note_shapes(c, table):
+    for t, i in c.ids.items():
+        s = ('D:' if i >= table.n_input else 'I:') + shape(t)
+        SHAPES[s] += 1
+        if s not in SHAPE_EXAMPLE and not DRIVE[0]:
+            try:
+                SHAPE_EXAMPLE[s] = str(t)[:120]
+            except Exception as e:
+                SHAPE_EXAMPLE[s] = 'str raised ' + type(e).__name__
+
+
 def top_level(proposition, assumptions, eng):
     """One query: convert, build Rust's table, check it. Anything it raises is counted and goes no further."""
     COUNTS['queries'] += 1
@@ -649,14 +685,27 @@ def install():
         DEPTH[0] += 1
         try:
             if DEPTH[0] == 1:
-                CUR[0] = top_level(proposition, assumptions, eng)
+                IN_TOP[0] = True
+                try:
+                    CUR[0] = top_level(proposition, assumptions, eng)
+                finally:
+                    IN_TOP[0] = False
             return real_ask(proposition, assumptions, eng)
         finally:
             DEPTH[0] -= 1
             if DEPTH[0] == 0:
                 if CUR[0] is not None:      # at the query's end, since reads now happen during it
-                    for k, v in CUR[0][0].counts.items():
+                    c = CUR[0][0]
+                    note_shapes(c, CUR[0][1])
+                    for k, v in c.counts.items():
                         COUNTS['convert:' + k] += v
+                    # Per query, for the nan ruling: which queries missed, and which read raised on which query.
+                    if c.counts['read_term_missing']:
+                        COUNTS['queries-with-read-term-missing'] += 1
+                        _example('read_term_missing', 'query', proposition, assumptions)
+                    for name, i, ex in c.tables['reads'].__self__.raised:
+                        COUNTS[f'read-raised:{name}:{ex}'] += 1
+                        _example(f'read raised {name} {ex}', f"query {COUNTS['queries'] - 1}", c.objects[i], proposition)
                 # check_table reads every split, so this holds with checks on. With them off it's the splits a key asked for.
                 if CUR[0] is not None and CUR[0][0].counts['pow_base_not_input']:
                     # Ruling's point 3: such a Pow costs a refusal only if a used key needs it.
@@ -671,11 +720,16 @@ def install():
         def key(e, *a, **k):
             r = real(e, *a, **k)
             cur = CUR[0]
-            if cur is not None:
+            hook = KEY_HOOK[0]
+            if cur is None:
+                if hook is not None and not IN_TOP[0]:
+                    hook(site, e, None, 'no-table' if DEPTH[0] else 'outside-ask')
+            else:
                 COUNTS['keys-used'] += 1
                 COUNTS['keys-used:' + site] += 1
                 c, table = cur
                 i = known_id(e, c, table, 'key')
+                outcome = 'unknown'
                 if i is None:
                     COUNTS['keys-used-unknown'] += 1
                 else:
@@ -689,9 +743,14 @@ def install():
                             if 'power base' in str(x):
                                 c.__dict__['pow_refused'] = True
                             _example(f'key used: {x}', site, e)
+                            outcome = f'refused: {x}'
                         else:
+                            outcome = 'matched'
                             if not same_value(got, r, c, True):
                                 bad('key-used', e, site)
+                                outcome = 'mismatch'
+                if hook is not None:
+                    hook(site, e, i, outcome)
             return r
         return key
 
@@ -701,4 +760,5 @@ def install():
 
 def report(path):
     with open(path, 'w') as f:
-        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD, sites=SITES, examples=EXAMPLES, key_refused=KEY_REFUSED), f, indent=0, sort_keys=True)
+        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD, sites=SITES, examples=EXAMPLES, key_refused=KEY_REFUSED,
+                       shapes=SHAPES, shape_example=SHAPE_EXAMPLE), f, indent=0, sort_keys=True)
