@@ -1,6 +1,6 @@
 """Planted bugs for components D and 0, each built in a scratch copy and scored by the shadow on real queries.
 
-    mutate_term.py WORK [--only NAME,NAME] [--jobs J] [--wl dev] [--limit N]
+    mutate_term.py WORK [--only NAME,NAME] [--jobs J] [--wl dev] [--limit N] [--synthetic]
 
 `alg` and `order` are the algebra and key work; `boundary` is the crossing from conversion into Rust's table, both sides.
 Caught: the shadow reports a mismatch, the table raises, or the process dies. `refused` means no mismatch but a refusal
@@ -90,6 +90,8 @@ def score(name, kind, path, old, new, a):
     cmd = [py, os.path.join(d, 'term_shadow_fresh.py'), a.wl, out]
     if a.limit:
         cmd += ['--limit', str(a.limit)]
+    if a.synthetic:
+        cmd += ['--synthetic']
     rc = run(cmd, env, d, log)
     if rc or not os.path.exists(out):
         row['outcome'] = f'caught: process exit {rc}'
@@ -110,6 +112,7 @@ def main():
     ap.add_argument('--jobs', type=int, default=2)
     ap.add_argument('--wl', default='dev')
     ap.add_argument('--limit', type=int)
+    ap.add_argument('--synthetic', action='store_true', help='also run the shadow\'s synthetic algebra loop, wider than the engine reaches')
     a = ap.parse_args()
     a.work = os.path.abspath(a.work)
     os.makedirs(a.work, exist_ok=True)
