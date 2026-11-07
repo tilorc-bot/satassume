@@ -26,6 +26,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const MODULE: &str = "satassume.theories.lra.constfield";
 
@@ -754,15 +755,49 @@ fn denominators(p: &Poly, acc: BigInt) -> R<BigInt> {
     }
 }
 
+/// Top-level gcds answered by `heu_gcd`, and by the callback to Python. Written only, never read to choose a route.
+static GCD_HEURISTIC: AtomicU64 = AtomicU64::new(0);
+static GCD_CALLBACK: AtomicU64 = AtomicU64::new(0);
+
+/// Python's `_sympy_inner_gcd` itself, for what `heu_gcd` gives up on: read-only on its inputs, and Python's behaviour
+/// on hard inputs comes with it, including any stall of its own. Scaffolding: on the backend PR list with porting
+/// SymPy's gcd.
+fn python_inner_gcd(a: &Poly, b: &Poly) -> R<(Poly, Poly, Poly)> {
+    GCD_CALLBACK.fetch_add(1, Ordering::Relaxed);
+    Ok(Python::attach(|py| -> PyResult<(Poly, Poly, Poly)> {
+        let r = module(py)?.getattr("_sympy_inner_gcd")?.call1((poly_to_py(py, a)?, poly_to_py(py, b)?))?;
+        let t = r.cast::<PyTuple>().map_err(PyErr::from)?;
+        Ok((poly_from_py(&t.get_item(0)?)?, poly_from_py(&t.get_item(1)?)?, poly_from_py(&t.get_item(2)?)?))
+    })?)
+}
+
+/// Plant 108: a common divisor that isn't the greatest, `g` less the gcd of its coefficients in its main variable.
+fn plant_drop_content(g: &Poly) -> Poly {
+    let PT(_, cs) = g else { return g.clone() };
+    let content = cs.iter().filter(|c| !is_zero(c)).try_fold(pzero(), |acc, c| {
+        if is_zero(&acc) {
+            Some(integer_primitive(c))
+        } else {
+            heu_gcd(&acc, &integer_primitive(c))
+        }
+    });
+    match content {
+        Some(c) if !matches!(c, PQ(_)) => divexact(g, &c).unwrap_or_else(|_| g.clone()),
+        _ => g.clone(),
+    }
+}
+
 /// What Python's `_sympy_inner_gcd` (:577) answers, with the same TooLarge first; the gcd itself is exact here.
 pub fn sympy_inner_gcd(a: &Poly, b: &Poly) -> R<(Poly, Poly, Poly)> {
     denominators(a, BigInt::one())?;
     denominators(b, BigInt::one())?;
-    let g = match heu_gcd(&integer_primitive(a), &integer_primitive(b)) {
-        Some(g) => g,
-        None => rgcd(a, b)?,
+    let heuristic =
+        if crate::lra::mutant(112) { None } else { heu_gcd(&integer_primitive(a), &integer_primitive(b)) };
+    let Some(g) = heuristic else {
+        return python_inner_gcd(a, b);
     };
-    let g = if crate::lra::mutant(108) { primitive(&g)? } else { g }; // loses the content's gcd
+    GCD_HEURISTIC.fetch_add(1, Ordering::Relaxed);
+    let g = if crate::lra::mutant(108) { plant_drop_content(&g) } else { g };
     if matches!(g, PQ(_)) {
         return Ok((pone(), a.clone(), b.clone()));
     }
@@ -776,7 +811,7 @@ pub fn sympy_inner_gcd(a: &Poly, b: &Poly) -> R<(Poly, Poly, Poly)> {
     Ok((g, fa, fb))
 }
 
-/// The same polynomial times a rational: integer coefficients, coprime. Keeps a PRS's coefficients small.
+/// The same polynomial times a rational: integer coefficients, coprime.
 fn integer_primitive(p: &Poly) -> Poly {
     fn walk(p: &Poly, den: &mut BigInt, num: &mut BigInt) {
         match p {
@@ -804,86 +839,24 @@ fn integer_primitive(p: &Poly) -> Poly {
     }
 }
 
-/// The gcd of the coefficients of a polynomial in its main variable, up to a rational.
-fn content(cs: &[Poly]) -> R<Poly> {
-    let mut g = pzero();
-    for c in cs {
-        g = rgcd(&g, c)?;
-        if matches!(g, PQ(ref r) if !r.is_zero()) {
-            return Ok(pone());
+/// `2**(sum of p's degree in each variable) * (sum of the absolute values of its coefficients)`, an integer polynomial's
+/// bound on the coefficients of any factor (see `heu_gcd`).
+fn factor_bound(p: &Poly) -> BigInt {
+    fn walk(p: &Poly, degs: &mut Vec<(u32, usize)>, norm: &mut BigInt) {
+        match p {
+            PQ(r) => *norm += rat_parts(r).0.abs(),
+            PT(v, cs) => {
+                match degs.iter_mut().find(|d| d.0 == *v) {
+                    Some(d) => d.1 = d.1.max(cs.len() - 1),
+                    None => degs.push((*v, cs.len() - 1)),
+                }
+                cs.iter().for_each(|c| walk(c, degs, norm));
+            }
         }
     }
-    Ok(g)
-}
-
-/// `p` free of its content in the main variable, integer primitive.
-fn primitive(p: &Poly) -> R<Poly> {
-    let PT(_, cs) = p else { return Ok(integer_primitive(p)) };
-    let c = content(cs)?;
-    Ok(integer_primitive(&if matches!(c, PQ(_)) { p.clone() } else { divexact(p, &c)? }))
-}
-
-/// `lc(q)**e * p mod q` in the variable `v`, `deg(p) >= deg(q) >= 1`.
-fn pseudo_rem(p: &Poly, q: &Poly, v: u32) -> Poly {
-    let dq = deg(q, v);
-    let lq = lc(q, v).clone();
-    let mut r = p.clone();
-    while !is_zero(&r) && deg(&r, v) >= dq {
-        let (dr, lr) = (deg(&r, v), lc(&r, v).clone());
-        let reduced = sub(&mul(&lq, &r), &mul(&shift(&lr, v, dr - dq), q));
-        r = integer_primitive(&reduced);
-    }
-    r
-}
-
-/// The gcd over Q, up to a nonzero rational: recursive primitive PRS (Gauss's lemma in the main variable).
-fn rgcd(a: &Poly, b: &Poly) -> R<Poly> {
-    if is_zero(a) {
-        return Ok(b.clone());
-    }
-    if is_zero(b) {
-        return Ok(a.clone());
-    }
-    let (PT(va, ca), PT(vb, cb)) = (a, b) else {
-        return Ok(pone());
-    };
-    if a == b {
-        return Ok(a.clone());
-    }
-    if va > vb {
-        return rgcd(&content(ca)?, b);
-    }
-    if vb > va {
-        return rgcd(a, &content(cb)?);
-    }
-    let v = *va;
-    let (ka, kb) = (content(ca)?, content(cb)?);
-    let k = rgcd(&ka, &kb)?;
-    let mut p = integer_primitive(&if matches!(ka, PQ(_)) { a.clone() } else { divexact(a, &ka)? });
-    let mut q = integer_primitive(&if matches!(kb, PQ(_)) { b.clone() } else { divexact(b, &kb)? });
-    if deg(&p, v) < deg(&q, v) {
-        std::mem::swap(&mut p, &mut q);
-    }
-    let g = loop {
-        let r = pseudo_rem(&p, &q, v);
-        if is_zero(&r) {
-            break q;
-        }
-        if deg(&r, v) == 0 {
-            break pone();
-        }
-        p = q;
-        q = primitive(&r)?;
-    };
-    Ok(mul(&k, &g))
-}
-
-/// Largest absolute value among the coefficients of an integer polynomial.
-fn max_norm(p: &Poly) -> BigInt {
-    match p {
-        PQ(r) => rat_parts(r).0.abs(),
-        PT(_, cs) => cs.iter().map(max_norm).max().unwrap_or_else(BigInt::zero),
-    }
+    let (mut degs, mut norm) = (Vec::new(), BigInt::zero());
+    walk(p, &mut degs, &mut norm);
+    norm << degs.iter().map(|d| d.1).sum::<usize>()
 }
 
 /// The gcd of an integer polynomial's coefficients, added to `acc`.
@@ -935,10 +908,25 @@ fn interpolate(h: &Poly, x: &BigInt, v: u32) -> Poly {
     mk(v, digits)
 }
 
-/// `dmp_zz_heu_gcd`'s method on integer polynomials: evaluate the main variable at a large integer, take the gcd of the
-/// images, read the gcd back from its image and keep it only if it divides both. The bound on `x` is `B = 2*min(norm)+29`,
-/// SymPy's own (SymPy may start lower, at `99*sqrt(B)`); a divisor that passes is then the gcd, because the rest of the gcd
-/// would have to take the value +-1 at `x`, and `x` lies beyond its roots. `None` when six points fail: the PRS answers.
+/// `dmp_zz_heu_gcd`'s method on integer polynomials: evaluate the top variable `v` at a large integer `x`, take the gcd of
+/// the images, read the gcd back from its image in base `x` and keep it only if it divides both. `None` when six points
+/// fail, and the caller asks Python. Pure: nothing here reads a clock, a process counter or an earlier query.
+///
+/// It isn't SymPy's: it has no cofactor retries, and `x` starts above a bound on factors, not at SymPy's `2*min(norm)+29`
+/// or lower, so SymPy's correctness doesn't transfer. An accepted candidate is the greatest divisor, by this argument.
+/// Let `f, g` have coprime contents (the common `k` is taken out first) and `B = min(factor_bound(f), factor_bound(g))`,
+/// `x > 2*B + 2`. The recursion gives `y = gcd(f(x), g(x))`, nonzero, in the lower variables, by induction on them. `h`,
+/// the digits of `y`, has `h(x) = y` and coefficients in `(-x/2, x/2]`; write `h = n*p` with `p` primitive and `n` an
+/// integer, so `|n| <= x/2`. Suppose `p` divides `f` and `g`, so the true gcd is `G = p*c` over the integers. `G(x)`
+/// divides `y = n*p(x)`, so `c(x)` divides `n`: it's a nonzero integer `m` with `|m| <= x/2`, not a polynomial.
+/// - If `v` isn't in `c`, then `c = m`, and `G` is primitive because the contents are coprime, so `m = +-1`: `p` is `G`.
+/// - If `v` is in `c`, then `c - m = (v - x)*q` for a nonzero integer polynomial `q`. On the unit torus `|v - x| >= x - 1`,
+///   so by Parseval the 2-norm of `(v - x)*q` is at least `(x - 1)*|q|_2 >= x - 1`, and `|c|_2 >= x - 1 - |m| >= x/2 - 1`.
+///   But `c` divides `f`, and Mahler's measure is multiplicative and at least 1 on nonzero integer polynomials, so
+///   `|c|_1 <= 2**(sum of c's degrees) * M(c) <= 2**(sum of f's degrees) * M(f) <= factor_bound(f)`, using `M(f) <= |f|_2`,
+///   and the same for `g`. So `x/2 - 1 <= B`, a contradiction.
+/// SymPy's sup-norm start doesn't support the second case with several variables, since `|f|_2` isn't bounded by the
+/// largest coefficient alone. Larger points cost larger integers, not correctness.
 fn heu_gcd(f: &Poly, g: &Poly) -> Option<Poly> {
     let (cf, cg) = (int_content(f, BigInt::zero()), int_content(g, BigInt::zero()));
     let k = cf.gcd(&cg);
@@ -950,14 +938,15 @@ fn heu_gcd(f: &Poly, g: &Poly) -> Option<Poly> {
     let kr = int_rat(&k);
     let kinv = kr.inv();
     let (f, g) = (scale(f, &kinv), scale(g, &kinv));
-    let mut x = (max_norm(&f).min(max_norm(&g)) * 2u32) + 29u32;
+    let mut x = (factor_bound(&f).min(factor_bound(&g)) * 2u32) + 29u32;
     for _ in 0..6 {
         let xr = int_rat(&x);
         let (ff, gg) = (eval_top(&f, v, &xr), eval_top(&g, v, &xr));
         if !is_zero(&ff) && !is_zero(&gg) {
             let image = heu_gcd(&ff, &gg)?;
             let h = integer_primitive(&interpolate(&image, &x, v));
-            if !is_zero(&h) && divexact(&f, &h).is_ok() && divexact(&g, &h).is_ok() {
+            // Plant 111 accepts without the division.
+            if !is_zero(&h) && (crate::lra::mutant(111) || (divexact(&f, &h).is_ok() && divexact(&g, &h).is_ok())) {
                 return Some(scale(&h, &kr));
             }
         }
@@ -2057,6 +2046,12 @@ pub fn cf_inner_gcd<'py>(a: &Bound<'py, PyAny>, b: &Bound<'py, PyAny>) -> PyResu
     Ok(PyTuple::new(py, [poly_to_py(py, &g)?, poly_to_py(py, &fa)?, poly_to_py(py, &fb)?])?.into_any())
 }
 
+/// `(answered by heu_gcd, answered by the Python callback)`, top-level gcds since the process began.
+#[pyfunction]
+pub fn cf_gcd_counts() -> (u64, u64) {
+    (GCD_HEURISTIC.load(Ordering::Relaxed), GCD_CALLBACK.load(Ordering::Relaxed))
+}
+
 #[pyfunction]
 pub fn cf_refresh_limits() -> PyResult<()> {
     refresh_limits()
@@ -2176,6 +2171,7 @@ pub fn cf_native_enclose<'py>(which: &Bound<'py, PyAny>, prec: i64) -> PyResult<
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(cf_inner_gcd, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(cf_gcd_counts, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_refresh_limits, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_op, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_poly_op, m)?)?;

@@ -133,6 +133,7 @@ def rpoly(vs, deg, terms, h=9):
     return p
 G = int(os.environ.get("CF_GCD", 1500))
 tg = time.time()
+slowest = [0.0, 0.0]  # the largest single Rust gcd, and Python's on the same input
 for i in range(G):
     vs = rnd.sample(range(5), rnd.randint(1, int(os.environ.get("CF_GCD_VARS", 3)))); deg = rnd.randint(1, int(os.environ.get("CF_GCD_DEG", 2))); terms = rnd.randint(1, 3)
     g, f, h = rpoly(vs, deg, terms), rpoly(vs, deg, terms), rpoly(rnd.sample(vs, rnd.randint(1, len(vs))), deg, terms)
@@ -140,7 +141,9 @@ for i in range(G):
     if rnd.random() < 0.2: a = cf._add(a, F(1))
     if rnd.random() < 0.15: k = rnd.choice([100, 5000, 9000]); a = cf._scale(a, F(1, 2**k + 1)) if not cf._zero(a) else a
     if cf._zero(a) or cf._zero(b) or type(a) is F or type(b) is F: continue
-    cmp("sympy_gcd", (a, b), run(lambda: cf._sympy_inner_gcd(a, b)), run(lambda: S.cf_inner_gcd(a, b)))
+    t0 = time.perf_counter(); pg = run(lambda: cf._sympy_inner_gcd(a, b)); t1 = time.perf_counter(); rg = run(lambda: S.cf_inner_gcd(a, b)); t2 = time.perf_counter()
+    if t2 - t1 > slowest[0]: slowest[:] = [t2 - t1, t1 - t0]
+    cmp("sympy_gcd", (a, b), pg, rg)
     cmp("inner_gcd", (a, b), run(lambda: cf._inner_gcd(a, b)), run(lambda: S.cf_poly_op("inner_gcd", a, b)))
     for n, pf in (("mul_checked", cf._mul_checked), ("mul_bounded", cf._mul_bounded), ("add_bounded", cf._add_bounded), ("gcd", cf._gcd)):
         cmp(n, (a, b), run(lambda: pf(a, b)), run(lambda: S.cf_poly_op(n, a, b)))
@@ -153,6 +156,7 @@ for i in range(G):
     if i % 100 == 0: patch(**{**DEF, **rnd.choice(MODES)})
 patch(**DEF)
 print("gcd done", round(time.time() - tg, 1), "s")
+print("gcd counts (heuristic, callback)", S.cf_gcd_counts(), "slowest rust gcd s", round(slowest[0], 4), "python on it", round(slowest[1], 4))
 # native enclosures: the integers
 for prec in [64, 96, 128, 256, 512, 1024, 2048, 4096] + [rnd.randint(1, 3000) for _ in range(20)]:
     cmp("native", (prec,), run(lambda: cf._pi_enclose(prec)), run(lambda: S.cf_native_enclose("pi", prec)))
@@ -217,5 +221,6 @@ print("by op", {n: sum(c for (m, _), c in stats.items() if m == n) for n in sort
 for need in ("Undecided", "TooLarge", "ZeroDivisionError", "RuntimeError", "ValueError"):
     if not outs[need]: print("WEAK: never saw", need); bad.append("weak:" + need)
 if not certified: print("WEAK: nothing certified"); bad.append("weak:cert")
+print("gcd counts at end (heuristic, callback)", S.cf_gcd_counts())
 print("MISMATCHES", len(bad), Counter(b.split(":")[0] + ":" + b.split(":")[-1] for b in bad).most_common(12))
 sys.exit(1 if bad else 0)
