@@ -24,6 +24,7 @@ import threading
 import sa_solver
 import sympy
 
+import satassume
 from satassume import sympy_api
 from satassume.knowledge.templates import atoms, registry
 from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, const_value
@@ -104,7 +105,7 @@ def install(shadow=False, data=None):
     """`shadow`: also run Python's template on each call and compare every field. Rust's result is still the one used."""
     py_symbol, py_constant = atoms.symbol_units, atoms.constant_units
     offline = sa_solver.OfflineData(data or os.path.join(HERE, 'offline_data.json'),
-                                    os.path.abspath(os.path.join(HERE, '..', '..')), sympy.__version__)
+                                    os.path.dirname(os.path.dirname(os.path.abspath(satassume.__file__))), sympy.__version__)
     kn = sa_solver.Knowledge(offline)
     if kn.const_basis() != list(atoms._CONST_BASIS):
         raise ValueError('offline _CONST_BASIS differs from atoms.py')

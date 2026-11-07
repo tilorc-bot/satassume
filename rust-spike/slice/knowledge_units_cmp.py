@@ -14,7 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ap = argparse.ArgumentParser()
 ap.add_argument('--random', type=int, default=200000)
 ap.add_argument('--seed', type=int, default=0)
-ap.add_argument('--so-check', action='store_true')
 args = ap.parse_args()
 
 import sa_solver
@@ -24,7 +23,7 @@ import knowledge_live as K
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 kn = sa_solver.Knowledge(sa_solver.OfflineData(os.path.join(HERE, 'offline_data.json'),
-                                               os.path.abspath(os.path.join(HERE, '..', '..')), sympy.__version__))
+                                               C.__file__.rsplit('/satassume/', 1)[0], sympy.__version__))
 print('so', sa_solver.__file__)
 VOCAB = sorted(p for p in C.VOCAB if p != 'commutative')
 print('vocab', len(VOCAB))
