@@ -4,6 +4,8 @@
 
 **No step of the brief has a finished result yet.** Two jobs are running detached on orion and need reading.
 
+**From the architect, 09:58 or so:** D and 0 landed on `rust-slice` at cc3055c: term handle, conversion interface, `BASIS_INDEX`'s offline file (`TERMS-INTERFACE.md`, `rust-spike/slice/results/port-D0.md`). Rebase onto it when landing and swap `handle.rs`'s `pub use`. Not looked at or done. This changes the brief's "don't wait for D, 0": the rebase brings in others' source, so the checks on final source come after it.
+
 ## Running now: don't rebase or edit `satassume/` until both end
 
 Both import `satassume` from this clone. Their tools are frozen copies, so editing `rust-spike/slice/` is safe.
@@ -19,8 +21,9 @@ Both import `satassume` from this clone. Their tools are frozen copies, so editi
 
 1. **sa-port-17's quiet counter could never fire.** It required the catching function to start inside a line window, and the functions holding `engine.py:1906` and `sympy_api.py:1107` start at 1878 and 1088, before it. **So sa-port-17's "0 catches" says nothing.** It now keys on function name (`transfer_shadow.py`, `count_quiet_catches`) and also tallies every exception handled in a satassume frame (`handled` in the run's `.json`). **Not yet shown to fire:** mutants p06 and p07 in m2 are there to force it. Check they show `q=N`.
 2. **`--so` never worked in `transfer_fresh.py`'s rust and shadow modes.** `backend` puts its own directory first on `sys.path`, so the driver loaded the unmutated build and refused to go on. Fixed, and tried on 10 queries in both modes.
-3. **The first mutant run, m1, is void for every engine column.** Its base row is CRASH, and so is every other row's `rust:` and `shadow:` cell, from the harness and not from a mutant. **Never count those as catches.** Kept in `m1/results.jsonl`. Its `api` column was valid but is superseded by m2. The harness now stops if base isn't clean.
-4. **The new workload reaches the lemma paths.** `transfer_workload.py`, `transfer:SEED:N`. On `transfer:1:300`, against dev's 52 of 3,332 sessions and 13 `explain` crossings:
+3. **The second run also stopped, by its base guard, as it should.** It reused m1's `target`, and since `copytree` keeps mtimes, the "base" `.so` it copied had no `P` and gave 42 API-fuzz differences. My reading is a stale m1 mutant build; a clean target gave a base `.so` with `P`. Kept in `m2-void/`. The harness now touches the sources, and m2 restarted from an empty target.
+4. **The first mutant run, m1, is void for every engine column.** Its base row is CRASH, and so is every other row's `rust:` and `shadow:` cell, from the harness and not from a mutant. **Never count those as catches.** Kept in `m1/results.jsonl`. Its `api` column was valid but is superseded by m2. The harness now stops if base isn't clean.
+5. **The new workload reaches the lemma paths.** `transfer_workload.py`, `transfer:SEED:N`. On `transfer:1:300`, against dev's 52 of 3,332 sessions and 13 `explain` crossings:
    - Shadow, Python `P`: 310 of 650 sessions have a transfer theory; 58,168 calls, 0 differences; 4,571 lemmas; `decide` returned a variable 17 times. Not shown to catch anything until m2 is read.
    - `py` against `rust`, **with Rust `P`**: `cmp` identical. Crossings: rep 46,179, members 24,911, explain 2,564.
    - 71 of the 300 queries raise (`ValueError: inconsistent assumptions`), the same text on both backends.
