@@ -127,3 +127,11 @@ print('\n== suite plants, against this run\'s plain suite')
 for d in sorted(glob.glob(os.path.join(B, 'suite-*/'))):
     print(os.path.basename(d.rstrip('/')))
     suite_numbers(d, plain, handlers(os.path.join(B, 'suite')), '  ' + os.path.basename(d.rstrip('/')))
+    fired, errs, nfiles = 0, [], 0
+    for f in glob.glob(os.path.join(d, 'counts.*.json')):
+        nfiles += 1
+        c = json.load(open(f))
+        fired += c.get('rel:plant_fired', 0)
+        if 'error' in c:
+            errs.append(c['error'])
+    print(f'  plant fired in the suite: {fired if nfiles else "not recorded (no counts files)"} ({nfiles} files){" errors: " + str(errs[:2]) if errs else ""}')

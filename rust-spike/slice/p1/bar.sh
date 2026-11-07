@@ -68,7 +68,7 @@ cd $S
 suite() { # suite DIR [PLANT]
   local O=$1
   run "rm -rf $O; mkdir -p $O"
-  run "( ${2:+export SLICE_SESSION_PLANT=$2; }export SLICE_SUITE_OUT=$O SLICE_SUITE_BACKEND=rust PYTHONPATH=\$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp; cd $T; \$PY -c 'import satassume; print(satassume.__file__)' > $O/tree.txt; \$PY -m pytest -p rust_plugin -p handler_count -n $N -q --tb=short -p no:cacheprovider tests > $O/pytest.log 2>&1; echo \"\$? \$(tail -1 $O/pytest.log)\" > $O/exit.txt )"
+  run "( ${2:+export SLICE_SESSION_PLANT=$2; }export SLICE_SUITE_OUT=$O SLICE_SUITE_BACKEND=rust PYTHONPATH=\$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp; cd $T; \$PY -c 'import satassume; print(satassume.__file__)' > $O/tree.txt; \$PY -m pytest -p rust_plugin -p handler_count -p plant_count -n $N -q --tb=short -p no:cacheprovider tests > $O/pytest.log 2>&1; echo \"\$? \$(tail -1 $O/pytest.log)\" > $O/exit.txt )"
 }
 fired() { # fired WL PLANT: the larger of the Python-side and Rust-side counts in the plant run's session report
   $PY -c "import json,sys; d=json.load(open(sys.argv[1])); print(max(d.get('plant_fired',0), d.get('counts',{}).get('rel:plant_fired',0)))" $B/live/plant-$1-$2.session.json 2>/dev/null || echo 0
