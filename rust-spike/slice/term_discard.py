@@ -61,7 +61,9 @@ class Planted:
 
 def install():
     for name, owner, attr in SITES:
-        setattr(owner, attr, Planted.wrap(name, getattr(owner, attr)))
+        f = Planted.wrap(name, getattr(owner, attr))
+        # `_complete_check` is a staticmethod. Bound as a method, every call raised a TypeError, which `engine.py:1906` hid.
+        setattr(owner, attr, staticmethod(f) if isinstance(vars(owner).get(attr), staticmethod) else f)
     term_live.BEFORE_RUN[0] = _before
     term_live.AFTER_ROLLBACK[0] = check
 
