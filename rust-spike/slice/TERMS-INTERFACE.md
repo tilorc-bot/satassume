@@ -3,6 +3,8 @@
 For ports that hold terms before component 0 lands everywhere. Section 9 of `PORT-INVENTORY.md` is the format; this is
 the part another component codes against. Stable from this commit: additions only, and any change gets a note here.
 
+**Built so far:** the handle types only. `convert.py` and `TermTable` below are the agreed interface, not code yet.
+
 ## The handle
 
 - **Rust:** `crate::term::TermId`, a `#[repr(transparent)]` newtype over `u32`, `Copy + Eq + Ord + Hash`. `ClassId` is

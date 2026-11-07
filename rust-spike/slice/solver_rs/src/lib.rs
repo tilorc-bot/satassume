@@ -541,5 +541,6 @@ fn lits_opt(a: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<u32>> {
 
 #[pymodule]
 fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    term::py::register(m)?;
     m.add_class::<PySolver>()
 }

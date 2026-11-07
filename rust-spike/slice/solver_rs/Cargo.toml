@@ -16,6 +16,9 @@ abi3 = ["pyo3/abi3-py39"]
 
 [dependencies]
 pyo3 = { version = "0.30", features = ["extension-module"] }
+num-bigint = "0.4.6"
+num-integer = "0.1.46"
+num-traits = "0.2.19"
 
 # Never panic = "abort": a Python exception from a theory hook unwinds through the solver.
 [profile.release]
