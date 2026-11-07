@@ -157,11 +157,11 @@ def test_pred_joined_across_nodes_differs_only_in_shown_pred(both):
 
 
 def test_node_joined_first_object_is_the_first_seen(both):
-    """Named difference, limit 3. Python's block slots hold the first object passed to `node_base`, and a custom atom doesn't
-    pass through it. Rust has one object per node id, the first seen at the boundary. It takes a custom atom and a block atom on
-    objects `==` across classes; `join` counts objects joined that way, and the report says how often it fires."""
+    """Named difference, limit 3. A custom atom keeps its own `expr` on Python. Rust has one object per node id, the first seen at
+    the boundary, so `mine(1.0)` shows as `mine(True)` when a block atom on `True` got there first. Only objects `==` across
+    classes can do this; `join` counts objects joined that way, and the report says how often it fires."""
     py, rust = (b['cases']['node-joined:custom-then-block'] for b in both)
-    assert 'complex(True)' in py['atoms'] and 'complex(1.0)' in rust['atoms']
+    assert 'mine(1.0)' in py['atoms'] and 'mine(True)' in rust['atoms']
     assert {k: v for k, v in py.items() if k != 'atoms'} == {k: v for k, v in rust.items() if k != 'atoms'}
 
 
