@@ -51,12 +51,12 @@ pareto1, quiet lease, `bench-container`, `BENCH_CPU=2`, x86-64 sha 4bdc9b63, 3 r
 
 ## Owed to the architect: `engine.py:1906` (sibling sa-port-12, report 2a5386d)
 
-They asked whether my runs would show `except Exception` at the complete check firing, or for a count. **Partly answered: dev plain, 2,631 complete checks, 0 raised, answers a5349612416b55ef. The other five rows weren't in when this was written: read `handler.log`,** which gives complete checks and raises by type and site, plain and under the shadow, with an answers sha to compare with the digests above. What I can already say: equal answers against plain would show only a raise that happens under the shadow alone, so a raise in both modes is invisible to that comparison. Every check-side exception becomes `unknown` quietly: my own first `handler.py` had a wrapper bug, all 2,631 dev checks raised `TypeError`, and nothing crashed. **That run is invalid, kept as `handler.invalid-wrapper-bug.log`; don't read it as a count.**
+They asked whether my runs would show `except Exception` at the complete check firing, or for a count. **Answered, `handler.log`: 0 raises on all six rows.** Complete checks: dev 2,631, fuzz 3,126, corpus 1,843, the same plain and under the shadow, with answers a5349612416b55ef, d4006a14c365ecdf, 544a8c885fcd4911, equal to the known digests. Seed 0 only; `Uninterpreted`, which the handler re-raises, is counted too and was also 0. It says nothing about Rust conversion raising there once something consumes it, since nothing does yet. Why it was worth counting: equal answers against plain would show only a raise that happens under the shadow alone, so a raise in both modes is invisible to that comparison. Every check-side exception becomes `unknown` quietly: my own first `handler.py` had a wrapper bug, all 2,631 dev checks raised `TypeError`, and nothing crashed. **That run is invalid, kept as `handler.invalid-wrapper-bug.log`; don't read it as a count.**
 
 ## Next, in order
 
 1. The suite is done (above). Optional: `test_wide_derived_or_against_or_is_fast` on the base tree at comparable load.
-2. Read `handler.log` and `union.log`; answer the architect; run `sites-fuzz.sh`. Then the planner's items 2 and 3 above, on pareto1.
+2. Read `union.log`; run `sites-fuzz.sh`. Then the planner's items 2 and 3 above, on pareto1.
 3. `bash runs.sh corpus,1 corpus,2 dev,0,--synthetic fuzz,0,--synthetic corpus,0,--synthetic`: each goes in its own directory. `--synthetic` has never run.
 4. `mutate_term.py WORK --jobs 2`. It builds in scratch copies and only reads the live `.so`. **`no-merge-with-known`'s text is still unchecked;** a plant that fails reports itself. Boundary re-score both ways.
 5. History: `term_history.py` on dev and fuzz at seeds 0, 1, 2, reverse and shuffle with `--dirty`, compared with `--cmp`. Pow counts across seeds come from item 3.
