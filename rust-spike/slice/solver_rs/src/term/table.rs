@@ -61,7 +61,9 @@ pub mod fact {
 
 /// Bits of `ClassRow::flags`: `FLAGS` in `convert.py`, same order.
 pub mod flag {
+    pub const IS_ADD: u32 = 1 << 0;
     pub const IS_NUMBER: u32 = 1 << 4;
+    pub const IS_RATIONAL: u32 = 1 << 5;
     pub const IS_NUMBER_SYMBOL: u32 = 1 << 12;
     /// The operators and coefficient splits are `Expr`'s own, at `Expr`'s priority.
     pub const PLAIN_OPS: u32 = 1 << 14;
@@ -74,6 +76,8 @@ pub mod flag {
     /// A subclass of `exp`. `ExpMeta` also says yes to a `Pow` of `E`, but `_from_sympy` tests `Pow` first and the rest of its
     /// `exp` branch can't pass on one: its first arg is `E`, not an Integer.
     pub const IS_EXP: u32 = 1 << 18;
+    /// `atoms` is `Basic`'s own.
+    pub const PLAIN_ATOMS: u32 = 1 << 19;
 }
 
 /// `_PREFIX` in `convert.py`: rows always sent first, since Rust can build these with none in the input.

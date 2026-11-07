@@ -131,3 +131,178 @@ impl TermTable {
         Ok(Some(d))
     }
 }
+
+/// One step of a clause plan (slice C): Python runs these left to right on its `Session`, so var numbering holds.
+#[derive(Clone, Debug)]
+pub enum PlanOp {
+    /// `s.ensure(term, {preds})`.
+    Ensure(TermId, Vec<&'static str>),
+    /// `s.emit([lits] + [g])`. A literal is (negated, pred and term), or (negated, None) for the atom's own var.
+    Clause(Vec<(bool, Option<(&'static str, TermId)>)>),
+}
+
+/// What `relation_atom` does for an order relation, by position in `(lhs, rhs)`, so Python keeps the objects it was given.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrderAtom {
+    pub first: usize,
+    pub second: usize,
+    pub negated: bool,
+    pub ext: Vec<usize>,
+}
+
+impl TermTable {
+    /// `_ext_atoms`' test: not a Rational, `oo` or `-oo`.
+    pub fn needs_ext(&self, t: TermId) -> bool {
+        let c = self.class_of(t);
+        !(c.flags & flag::IS_RATIONAL != 0 || c.kind == Kind::Infinity || c.kind == Kind::NegativeInfinity)
+    }
+
+    /// `relation_atom`'s lt, gt, le and ge. None is le or ge with a nan side, which Python answers False.
+    pub fn order_relation(&self, name: &str, l: TermId, r: TermId) -> Result<Option<OrderAtom>, Refuse> {
+        let sides = [l, r];
+        Ok(Some(match name {
+            "lt" => OrderAtom { first: 0, second: 1, negated: false, ext: vec![] },
+            "gt" => OrderAtom { first: 1, second: 0, negated: false, ext: vec![] },
+            "le" | "ge" => {
+                let (a, b) = if name == "le" { (0, 1) } else { (1, 0) };
+                if self.class_of(sides[a]).kind == Kind::NaN || self.class_of(sides[b]).kind == Kind::NaN {
+                    return Ok(None);
+                }
+                let ext = [a, b].into_iter().filter(|&p| self.needs_ext(sides[p])).collect();
+                OrderAtom { first: b, second: a, negated: true, ext }
+            }
+            _ => return Err(Refuse("relation_atom: an unknown relation")),
+        }))
+    }
+
+    /// `Relations._eq_links`' clauses, in its order. Empty for a side that is a number.
+    pub fn eq_links_plan(&mut self, a: TermId, b: TermId) -> Result<Vec<PlanOp>, Refuse> {
+        if self.is_number_term(a) || self.is_number_term(b) {
+            return Ok(vec![]);
+        }
+        const INF: [&str; 2] = ["positive_infinite", "negative_infinite"];
+        let mut plan = vec![PlanOp::Ensure(a, INF.to_vec()), PlanOp::Ensure(b, INF.to_vec())];
+        for pred in INF {
+            plan.push(PlanOp::Clause(vec![(true, Some((pred, a))), (true, Some((pred, b))), (false, None)]));
+        }
+        for (p, q) in [(a, b), (b, a)] {
+            if let Some(d) = self.eq_diff(p, q)? {
+                plan.push(PlanOp::Ensure(d, vec!["zero", "nonzero"]));
+                plan.push(PlanOp::Clause(vec![(true, Some(("zero", d))), (false, None)]));
+                plan.push(PlanOp::Clause(vec![(true, Some(("nonzero", d))), (true, None)]));
+            }
+        }
+        Ok(plan)
+    }
+
+    /// `Relations._eq_infinity`: the other side, the pred, whether that side is a number (Python then asks `engine.is_`,
+    /// and only an unknown goes on to the plan), and the plan. None when neither side is infinite.
+    pub fn eq_infinity_plan(&self, a: TermId, b: TermId) -> Option<(TermId, &'static str, bool, Vec<PlanOp>)> {
+        for (kind, pred) in [(Kind::Infinity, "positive_infinite"), (Kind::NegativeInfinity, "negative_infinite")] {
+            let e = if self.class_of(b).kind == kind {
+                a
+            } else if self.class_of(a).kind == kind {
+                b
+            } else {
+                continue;
+            };
+            let plan = vec![
+                PlanOp::Ensure(e, vec![pred]),
+                PlanOp::Clause(vec![(true, None), (false, Some((pred, e)))]),
+                PlanOp::Clause(vec![(false, None), (true, Some((pred, e)))]),
+            ];
+            return Some((e, pred, self.is_number_term(e), plan));
+        }
+        None
+    }
+
+    /// `scope.affine_pair`, given the argument of each sign atom in order.
+    pub fn affine_pair(&self, signs: &[TermId]) -> bool {
+        let mut sums: Vec<TermId> = vec![];
+        for &e in signs {
+            if self.class_of(e).flags & flag::IS_ADD == 0 || sums.contains(&e) {
+                continue;
+            }
+            let free = &self.row(e).free;
+            if free.is_empty() {
+                continue;
+            }
+            if sums.iter().any(|&o| self.row(o).free.iter().any(|x| free.contains(x))) {
+                return true;
+            }
+            sums.push(e);
+        }
+        false
+    }
+
+    /// `_under_apps` of the sides: every term at or under an argument of an `AppliedUndef`. None when a side's class has its
+    /// own `atoms`, which Python keeps. A set on Python's side, whose consumers only test membership.
+    pub fn under_apps(&self, sides: &[TermId]) -> Option<Vec<TermId>> {
+        let mut out = vec![];
+        let mut seen = std::collections::HashSet::new();
+        for &side in sides {
+            if self.class_of(side).flags & flag::PLAIN_ATOMS == 0 {
+                return None;
+            }
+            let mut stack = vec![side];
+            let mut visited = std::collections::HashSet::new();
+            while let Some(t) = stack.pop() {
+                if !visited.insert(t) {
+                    continue;
+                }
+                let args = &self.row(t).args;
+                if self.class_of(t).kind == Kind::AppliedUndef {
+                    for &arg in args.iter() {
+                        let mut under = vec![arg];
+                        while let Some(u) = under.pop() {
+                            if seen.insert(u) {
+                                out.push(u);
+                                under.extend(self.row(u).args.iter().copied());
+                            }
+                        }
+                    }
+                }
+                stack.extend(args.iter().copied());
+            }
+        }
+        Some(out)
+    }
+
+    /// `euf_adapter.structural`: the class's bit, and it has args.
+    pub fn structural(&self, t: TermId) -> bool {
+        !self.row(t).args.is_empty() && self.class_of(t).structural
+    }
+
+    /// `EUFAdapter.interned`, with its stack order.
+    pub fn interned(&self, exprs: &[TermId]) -> Vec<TermId> {
+        let mut out = vec![];
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = exprs.to_vec();
+        while let Some(e) = stack.pop() {
+            if !seen.insert(e) {
+                continue;
+            }
+            out.push(e);
+            if self.class_of(e).flags & flag::IS_RATIONAL == 0 && self.structural(e) {
+                stack.extend(self.row(e).args.iter().copied());
+            }
+        }
+        out
+    }
+
+    /// `relations._structural_subterms`, with its stack order.
+    pub fn structural_subterms(&self, e: TermId) -> Vec<TermId> {
+        let mut out = vec![];
+        let mut seen = std::collections::HashSet::new();
+        let mut stack: Vec<TermId> = if self.structural(e) { self.row(e).args.to_vec() } else { vec![] };
+        while let Some(x) = stack.pop() {
+            if seen.contains(&x) || self.class_of(x).flags & flag::IS_RATIONAL != 0 || !self.structural(x) {
+                continue;
+            }
+            seen.insert(x);
+            out.push(x);
+            stack.extend(self.row(x).args.iter().copied());
+        }
+        out
+    }
+}

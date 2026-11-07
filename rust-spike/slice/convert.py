@@ -66,7 +66,7 @@ FLAGS = ('is_Add', 'is_Mul', 'is_Pow', 'is_Atom', 'is_Number', 'is_Rational', 'i
 # Term fact bits, in order: Rust's `fact` constants.
 F_NUMBER, F_NAN, F_BAD, F_FLOAT, F_UNDEF, F_MAYBE_NAN, F_READ, F_COMMUTATIVE = 1, 2, 4, 8, 16, 32, 64, 128
 # Class flags past FLAGS: `flag::PLAIN_OPS`, `flag::PLAIN_BASE`. The algebra refuses a class that overrides any of these.
-_PLAIN_OPS, _PLAIN_BASE = 1 << 14, 1 << 15
+_PLAIN_OPS, _PLAIN_BASE, _PLAIN_ATOMS = 1 << 14, 1 << 15, 1 << 19
 # `flag::IS_EXPR`, `flag::IS_MATRIX`, `flag::IS_EXP`: what `lra_adapter.py` and `_from_sympy` read of a class.
 _IS_EXPR, _IS_MATRIX, _IS_EXP = 1 << 16, 1 << 17, 1 << 18
 _OPS = ('__neg__', '__add__', '__radd__', '__sub__', '__rsub__', '__mul__', '__rmul__', '__truediv__', 'as_coeff_Add',
@@ -240,6 +240,8 @@ class _Walk:
             flags |= _IS_MATRIX
         if issubclass(cls, exp):
             flags |= _IS_EXP
+        if issubclass(cls, Basic) and cls.atoms is Basic.atoms:
+            flags |= _PLAIN_ATOMS
         try:
             ckey = cls.class_key()
             found = registry.templates_for(cls)

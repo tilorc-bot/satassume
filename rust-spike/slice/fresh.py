@@ -26,6 +26,7 @@ ap.add_argument("--handlers", help="count the quiet Exception handlers here: han
 ap.add_argument("--term", choices=["py", "table", "keys", "terms"], default="py", help="conversion on the real path: term_live.py")
 ap.add_argument("--term-plant", help="term_live.PLANT, one of its test plants")
 ap.add_argument("--lra", action="store_true", help="lra_adapter's term work from Rust: lra_live.py. Needs --term")
+ap.add_argument("--term-check", action="store_true", help="term_live.CHECK: run Python's own function at each answer from Rust and compare")
 ap.add_argument("--term-out", help="term_live's counts, as JSON")
 ap.add_argument("--discard", action="store_true", help="a planted refusal in each query's run: term_discard.py. Needs --term")
 ap.add_argument("--budget", type=int, help="the engine's discovery budget for every query, as the matrix's low budgets")
@@ -111,6 +112,7 @@ if a.term != "py":
     import term_live
     term_live.install(keys=a.term == "keys", terms=a.term == "terms")
     term_live.PLANT[0] = a.term_plant
+    term_live.CHECK[0] = a.term_check
     term_live.PLANT_NO_ROLLBACK[0] = a.no_rollback
     if a.lra:
         import lra_live

@@ -36,14 +36,15 @@ import sys
 import threading
 
 import sa_solver
-from sympy import Add, Mul
+from sympy import Add, Mul, S
 from sympy.core.basic import Basic
 from sympy.core.numbers import Rational
 
-from satassume import engine, relations, sympy_api
+from satassume import engine, relations, scope, sympy_api
 from satassume.knowledge.extensions import Args
-from satassume.sat.formula import Not, P
+from satassume.sat.formula import And, Not, P
 from satassume.state import memos
+from satassume.theories.euf import euf_adapter
 from satassume.theories.lra import constfield, lra_adapter
 
 import convert
@@ -70,12 +71,14 @@ class TermFault(BaseException):
 
 class _Query:
     """One `_ask`'s table. `kept` is a reason, or None when the table is there."""
-    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev')
+    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev', 'memo')
 
     def __init__(self, c):
         # Derived terms this query has met: {SymPy term: id} and {id: SymPy term}. Apart from `ids`, which other consumers
         # index `objects` by.
         self.derived, self.rev = {}, {}
+        # The per-query form of a cross-query memo (ruling on memos): `_under_apps`, `zero_twin`. Dies with the query.
+        self.memo = {}
         if isinstance(c, convert.Kept):
             self.kept, self.table, self.ids, self.objects, self.counts, self.raised = c.reason, None, None, None, {}, ()
         else:
@@ -362,15 +365,9 @@ def _ids(q, site, *terms):
 
 
 def _relation_atom(py):
-    """`relation_atom`'s eq branch on ids. The other relations do no term work and stay as they are until slice C."""
-    def run(name, lhs, rhs):
-        if name != 'eq' and name != 'ne':
-            return None
-        q = current()
-        ids = _ids(q, 'relation_atom', lhs, rhs)
-        if ids is None:
-            return None
-        l, r = ids
+    """`relation_atom` on ids. Rust says which side goes where, by position, so Python keeps the objects it was given and only
+    a stripped side is rebuilt. A formula over P atoms stays Python's until component 5."""
+    def eq(q, name, lhs, rhs, l, r):
         a, b = q.table.eq_sides(l, r)
         if PLANT[0] == 'swap':
             a, b = b, a
@@ -380,20 +377,267 @@ def _relation_atom(py):
         x = lhs if a == l else rhs if a == r else scaffold(q, a, 'relation_atom')
         y = lhs if b == l else rhs if b == r else scaffold(q, b, 'relation_atom')
         atom = P("eq", Args((x, y)))
+        return atom if name == 'eq' else Not(atom)
+
+    def order(q, name, lhs, rhs, l, r):
+        plan = q.table.order_relation(name, l, r)
+        if plan is None:
+            return False
+        first, second, negated, ext = plan
+        if PLANT[0] == 'le-swap' and negated:
+            first, second = second, first
+        if PLANT[0] == 'no-ext':
+            ext = []
+        sides = (lhs, rhs)
+        f = P("lt", Args((sides[first], sides[second])))
+        if not negated:
+            return f
+        f = Not(f)
+        return And(*[P("extended_real", sides[p]) for p in ext], f) if ext else f
+
+    def run(name, lhs, rhs):
+        if name not in _RELATIONS:
+            return None
+        q = current()
+        ids = _ids(q, 'relation_atom', lhs, rhs)
+        if ids is None:
+            return None
+        f = eq if name in ('eq', 'ne') else order
+        COUNTS['relation_atom:' + name] += 1
+        got = f(q, name, lhs, rhs, *ids)
         if CHECK[0]:
-            want = py('eq', lhs, rhs)
-            _check('relation_atom', want == atom and all(type(u) is type(v) for u, v in zip(want.expr, atom.expr)),
-                   lhs, rhs, want, atom)
-        return atom
+            want = py(name, lhs, rhs)
+            _check('relation_atom', want == got and _same_sides(want, got), name, lhs, rhs, want, got)
+        return (got,)
     run = _guarded('relation_atom', run)
 
     def relation_atom(name, lhs, rhs):
-        atom = run(name, lhs, rhs)
-        if atom is None:
-            return py(name, lhs, rhs)
-        return atom if name == 'eq' else Not(atom)
+        got = run(name, lhs, rhs)
+        return py(name, lhs, rhs) if got is None else got[0]
     relation_atom.__wrapped__ = py
     return relation_atom
+
+
+_RELATIONS = frozenset(('eq', 'ne', 'lt', 'gt', 'le', 'ge'))
+
+
+def _same_sides(want, got):
+    """The same classes in the sides of the atoms of two equal formulas, since `==` can join classes."""
+    def atoms(f):
+        if isinstance(f, P):
+            yield f
+        else:
+            for x in getattr(f, 'args', ()) or ():
+                yield from atoms(x)
+    return all(type(u) is type(v) for x, y in zip(atoms(want), atoms(got)) if isinstance(x.expr, tuple) and isinstance(y.expr, tuple)
+               for u, v in zip(x.expr, y.expr))
+
+
+def _obj(q, i, site):
+    return q.objects[i] if i < q.table.n_input else scaffold(q, i, site)
+
+
+def _ext_atoms(py):
+    """`_ext_atoms` on ids: Rust's test on each side, the sides Python's objects."""
+    run = _guarded('_ext_atoms', lambda q, sides: _ids(q, '_ext_atoms', *sides))
+
+    def ext_atoms(*sides):
+        q = current()
+        ids = run(q, sides)
+        if ids is None:
+            return py(*sides)
+        got = [P("extended_real", e) for e, i in zip(sides, ids) if q.table.needs_ext(i)]
+        if PLANT[0] == 'no-ext':
+            got = []
+        if CHECK[0]:
+            want = py(*sides)
+            _check('_ext_atoms', want == got, sides, want, got)
+        return got
+    ext_atoms.__wrapped__ = py
+    return ext_atoms
+
+
+def _is_number(py):
+    """`_is_number` on ids, which is the term work of `zero_args` and `scope.linked_terms` and every other caller."""
+    def run(e):
+        q = current()
+        ids = _ids(q, '_is_number', e)
+        if ids is None:
+            return None
+        got = q.table.is_number_term(ids[0])
+        if PLANT[0] == 'is-number-false':
+            got = False
+        if CHECK[0]:
+            want = py(e)
+            _check('_is_number', want == got, e, want, got)
+        return got
+    run = _guarded('_is_number', run)
+
+    def is_number(e):
+        if not isinstance(e, Basic):
+            return py(e)
+        got = run(e)
+        return py(e) if got is None else got
+    is_number.__wrapped__ = py
+    return is_number
+
+
+def _affine_pair(py):
+    """`scope.affine_pair` on ids: the atoms stay Python's, their sign-atom arguments go to Rust in order."""
+    def run(atoms):
+        q = current()
+        signs = [a.expr for a in atoms if a.pred in scope.SIGN_PREDS]
+        ids = _ids(q, 'affine_pair', *signs)
+        if ids is None:
+            return None
+        got = q.table.affine_pair(ids)
+        if got:
+            COUNTS['affine_pair:True'] += 1
+        if PLANT[0] == 'affine-false':
+            got = False
+        if CHECK[0]:
+            want = py(atoms)
+            _check('affine_pair', want == got, signs, want, got)
+        return got
+    run = _guarded('affine_pair', run)
+
+    def affine_pair(atoms):
+        atoms = list(atoms)
+        got = run(atoms)
+        return py(atoms) if got is None else got
+    affine_pair.__wrapped__ = py
+    return affine_pair
+
+
+def _linked_terms(py):
+    """`scope.linked_terms` is Python's over `_is_number`'s ids. This only counts it, and holds the plant."""
+    def linked_terms(atoms):
+        got = py(atoms)
+        COUNTS['linked_terms'] += 1
+        if got:
+            COUNTS['linked_terms:nonempty'] += 1
+        if PLANT[0] == 'linked-drop' and got:
+            return frozenset(sorted(got, key=str)[1:])
+        return got
+    linked_terms.__wrapped__ = py
+    return linked_terms
+
+
+def _under_apps(py):
+    """`_under_apps` on ids, memoized per query and not across queries. Its consumers only test membership."""
+    def run(e):
+        q = current()
+        sides = e if isinstance(e, tuple) else (e,)
+        if not all(isinstance(x, Basic) for x in sides):
+            return None
+        ids = _ids(q, '_under_apps', *sides)
+        if ids is None:
+            return None
+        key = ('under', tuple(ids))
+        got = q.memo.get(key)
+        if got is None:
+            found = q.table.under_apps(ids)
+            if found is None:
+                COUNTS['term:py:_under_apps:own-atoms'] += 1
+                return None
+            got = q.memo[key] = frozenset(_obj(q, i, '_under_apps') for i in found)
+            if got:
+                COUNTS['under_apps:nonempty'] += 1
+        if PLANT[0] == 'under-empty':
+            got = frozenset()
+        if CHECK[0]:
+            want = py(e)
+            _check('_under_apps', want == got, e, want, got)
+        return got
+    run = _guarded('_under_apps', run)
+
+    def under_apps(e):
+        got = run(e)
+        return py(e) if got is None else got
+    under_apps.__wrapped__ = py
+    return under_apps
+
+
+def _zero_twin(py):
+    """`zero_twin` under the per-query memo: `relation_atom`'s eq on ids."""
+    def zero_twin(e):
+        q = current()
+        if q is None or q.kept is not None:
+            return py(e)
+        tw = q.memo.get(('twin', e))
+        if tw is None:
+            tw = q.memo[('twin', e)] = relations.relation_atom('eq', e, S.Zero)
+        return tw
+    zero_twin.__wrapped__ = py
+    return zero_twin
+
+
+def _structural(py):
+    """`euf_adapter.structural`: conversion's class bit, and args. A term with no id is Python's."""
+    def run(e):
+        q = current()
+        ids = _ids(q, 'structural', e)
+        if ids is None:
+            return None
+        got = q.table.structural(ids[0])
+        if CHECK[0]:
+            want = py(e)
+            _check('structural', want == got, e, want, got)
+        return got
+    run = _guarded('structural', run)
+
+    def structural(e):
+        got = run(e)
+        return py(e) if got is None else got
+    structural.__wrapped__ = py
+    return structural
+
+
+def _interned(py):
+    """`EUFAdapter.interned` on ids, in its order. `_intern` stays Python's: its dicts outlive the query, until component 5."""
+    def run(exprs):
+        q = current()
+        ids = _ids(q, 'interned', *exprs)
+        if ids is None:
+            return None
+        return [_obj(q, i, 'interned') for i in q.table.interned(ids)]
+    run = _guarded('interned', run)
+
+    def interned(self, exprs):
+        exprs = list(exprs)
+        got = run(exprs)
+        if got is None:
+            return py(self, exprs)
+        if PLANT[0] == 'interned-reversed':
+            got.reverse()
+        if CHECK[0]:
+            want = py(self, exprs)
+            _check('interned', want == got, exprs, want, got)
+        return got
+    interned.__wrapped__ = py
+    return interned
+
+
+def _structural_subterms(py):
+    """`relations._structural_subterms` on ids, in its order."""
+    def run(e):
+        q = current()
+        ids = _ids(q, '_structural_subterms', e)
+        if ids is None:
+            return None
+        return [_obj(q, i, '_structural_subterms') for i in q.table.structural_subterms(ids[0])]
+    run = _guarded('_structural_subterms', run)
+
+    def subterms(e):
+        got = run(e) if isinstance(e, Basic) else None
+        if got is None:
+            return py(e)
+        if CHECK[0]:
+            want = py(e)
+            _check('_structural_subterms', want == got, e, want, got)
+        return got
+    subterms.__wrapped__ = py
+    return subterms
 
 
 def _termwise(py):
@@ -434,11 +678,13 @@ def _glue_objects(py):
         if t.is_number_term(d):
             return None
         COUNTS['glue:termwise'] += 1
-        wise = True if PLANT[0] == 'termwise-true' else False if PLANT[0] == 'termwise-false' else t.termwise(u, v, d)
+        real_wise = t.termwise(u, v, d)
+        COUNTS['glue:termwise:' + str(real_wise)] += 1
+        wise = True if PLANT[0] == 'termwise-true' else False if PLANT[0] == 'termwise-false' else real_wise
         o = scaffold(q, d, 'glue_objects') if wise else None
         if CHECK[0]:
             real = p - m
-            want = None if relations._is_number(real) or not relations._termwise.__wrapped__(p, m, real) else real
+            want = None if relations._is_number.__wrapped__(real) or not relations._termwise.__wrapped__(p, m, real) else real
             _check('glue_objects', want == o and type(want) is type(o), p, m, want, o)
         return o
     diff = _guarded('glue_objects', diff)
@@ -477,23 +723,54 @@ def _glue_objects(py):
     return glue_objects
 
 
-def _eq_links(py):
-    """`Relations._eq_links`, with its number tests and difference answered by Rust. The clauses are Python's, line for line,
-    until slice C: they go through `session.var`, which holds SymPy objects, so a difference used here is scaffolding."""
-    term = _guarded('_eq_links', lambda q, a, b: _ids(q, '_eq_links', a, b))
-    numbers = _guarded('_eq_links', lambda q, i, j: q.table.is_number_term(i) or q.table.is_number_term(j))
+def _plant_plan(plan, zero_only=False):
+    """The plan plants: a dropped clause and a swapped pred, each on the plan's last clause."""
+    if PLANT[0] == 'plan-drop' and plan:
+        return plan[:-1]
+    if PLANT[0] == 'plan-pred' and plan:
+        swap = {'zero': 'nonzero', 'nonzero': 'zero', 'positive_infinite': 'negative_infinite',
+                'negative_infinite': 'positive_infinite'}
+        ens, lits = plan[-1]
+        return plan[:-1] + [(ens, [(n, swap.get(p, p), t) for n, p, t in lits])]
+    return plan
 
-    def diff(q, i, j, p, m):
-        d = q.table.eq_diff(i, j)
+
+def _run_plan(self, q, plan, var, g, given, site):
+    """A plan from Rust, left to right on the session, so var numbering holds. `g` runs after each clause's literals, for the
+    atom selector `_eq_infinity` allocates there. `s.var` holds SymPy objects until component 5: `given` are the objects the
+    atom holds, and a derived id is rebuilt."""
+    s = self.session
+
+    def obj(i):
+        return given[i] if i in given else _obj(q, i, site)
+    for ens, lits in plan:
+        if ens is not None:
+            s.ensure(obj(ens[0]), set(ens[1]))
+            continue
+        clause = [(-var if n else var) if p is None else (-s.var(p, obj(t)) if n else s.var(p, obj(t))) for n, p, t in lits]
+        clause.append(g())
+        s.emit(clause)
+
+
+def _eq_links(py):
+    """`Relations._eq_links`: Rust returns the clauses as a plan over ids. A difference used here is scaffolding."""
+    def plan_of(q, i, j, a, b):
+        plan = q.table.eq_links_plan(i, j)
         if PLANT[0] == 'termwise-false':
-            return None
-        o = None if d is None else scaffold(q, d, '_eq_links')
+            plan = [op for op in plan if (op[0] is None or op[0][0] in (i, j))
+                    and (op[0] is not None or all(t in (i, j) or p is None for _, p, t in op[1]))]
         if CHECK[0]:
-            real = p - m
-            want = None if relations._is_number(real) or not relations._termwise.__wrapped__(p, m, real) else real
-            _check('_eq_links', want == o and type(want) is type(o), p, m, want, o)
-        return o
-    diff = _guarded('_eq_links', diff)
+            got = [_obj(q, op[0][0], '_eq_links') for op in plan if op[0] is not None and 'zero' in op[0][1]]
+            want = []
+            if plan:
+                for p, m in ((a, b), (b, a)):
+                    real = p - m
+                    if not (relations._is_number.__wrapped__(real) or not relations._termwise.__wrapped__(p, m, real)):
+                        want.append(real)
+            _check('_eq_links', want == got and all(type(x) is type(y) for x, y in zip(want, got)), a, b, want, got)
+        return _plant_plan(plan)
+    plan_of = _guarded('_eq_links', plan_of)
+    term = _guarded('_eq_links', lambda q, a, b: _ids(q, '_eq_links', a, b))
 
     def eq_links(self, var, atom):
         a, b = atom.expr
@@ -502,26 +779,50 @@ def _eq_links(py):
         if ids is None:
             return py(self, var, atom)
         i, j = ids
-        if numbers(q, i, j):
+        plan = plan_of(q, i, j, a, b)
+        if not plan:
             return
-        s = self.session
         g = -self._atom_selector(atom)
-
-        def emit(clause):
-            s.emit(clause + [g])
-        s.ensure(a, {"positive_infinite", "negative_infinite"})
-        s.ensure(b, {"positive_infinite", "negative_infinite"})
-        for pred in ("positive_infinite", "negative_infinite"):
-            emit([-s.var(pred, a), -s.var(pred, b), var])
-        for u, v, p, m in ((i, j, a, b), (j, i, b, a)):
-            d = diff(q, u, v, p, m)
-            if d is None:
-                continue
-            s.ensure(d, {"zero", "nonzero"})
-            emit([-s.var("zero", d), var])
-            emit([-s.var("nonzero", d), -var])
+        COUNTS['plan:_eq_links'] += 1
+        _run_plan(self, q, plan, var, lambda: g, {i: a, j: b}, '_eq_links')
     eq_links.__wrapped__ = py
     return eq_links
+
+
+def _eq_infinity(py):
+    """`Relations._eq_infinity`: Rust finds the side and the plan, and `engine.is_` on a number stays a callback."""
+    term = _guarded('_eq_infinity', lambda q, a, b: _ids(q, '_eq_infinity', a, b))
+    plan_of = _guarded('_eq_infinity', lambda q, i, j: q.table.eq_infinity_plan(i, j))
+
+    def eq_infinity(self, var, atom):
+        a, b = atom.expr
+        q = current()
+        ids = term(q, a, b)
+        if ids is None:
+            return py(self, var, atom)
+        i, j = ids
+        got = plan_of(q, i, j)
+        if got is None:
+            return
+        e_id, pred, closed, plan = got
+        COUNTS['plan:_eq_infinity'] += 1
+        s = self.session
+        given = {j: b, i: a}
+        if closed:
+            COUNTS['is_:_eq_infinity'] += 1
+            v = s.engine.is_(given[e_id], pred)
+            if v is not None:
+                s.emit([var] if v else [-var])
+                return
+        made = []
+
+        def g():
+            if not made:
+                made.append(-self._atom_selector(atom))
+            return made[0]
+        _run_plan(self, q, _plant_plan(plan), var, g, given, '_eq_infinity')
+    eq_infinity.__wrapped__ = py
+    return eq_infinity
 
 
 def _tagged(got):
@@ -662,6 +963,9 @@ def _install(keys, terms):
         lra_adapter.default_sort_key = _key_consumer('lra_adapter', py_sort)
     py_atom, py_wise, py_links = relations.relation_atom, relations._termwise, relations.Relations._eq_links
     py_glue = relations.glue_objects
+    py_inf, py_ext, py_num, py_affine = relations.Relations._eq_infinity, relations._ext_atoms, relations._is_number, scope.affine_pair
+    py_linked, py_under, py_twin = scope.linked_terms, relations._under_apps, relations.zero_twin
+    py_struct, py_interned, py_subterms = euf_adapter.structural, euf_adapter.EUFAdapter.interned, relations._structural_subterms
     if terms:
         relations._key = _key_match('relations._key', py_key)
         lra_adapter.default_sort_key = _key_match('lra_adapter', py_sort)
@@ -669,6 +973,16 @@ def _install(keys, terms):
         relations._termwise = _termwise(py_wise)
         relations.Relations._eq_links = _eq_links(py_links)
         relations.glue_objects = engine.glue_objects = _glue_objects(py_glue)
+        relations.Relations._eq_infinity = _eq_infinity(py_inf)
+        relations._ext_atoms = _ext_atoms(py_ext)
+        relations._is_number = engine._is_number = scope._is_number = _is_number(py_num)
+        scope.affine_pair = engine._affine_pair = _affine_pair(py_affine)
+        scope.linked_terms = _linked_terms(py_linked)
+        relations._under_apps = _under_apps(py_under)
+        relations.zero_twin = engine.zero_twin = _zero_twin(py_twin)
+        euf_adapter.structural = _structural(py_struct)
+        euf_adapter.EUFAdapter.interned = _interned(py_interned)
+        relations._structural_subterms = _structural_subterms(py_subterms)
 
     def undo():
         sympy_api._ask = py_ask
@@ -678,6 +992,16 @@ def _install(keys, terms):
         relations._termwise = py_wise
         relations.Relations._eq_links = py_links
         relations.glue_objects = engine.glue_objects = py_glue
+        relations.Relations._eq_infinity = py_inf
+        relations._ext_atoms = py_ext
+        relations._is_number = engine._is_number = scope._is_number = py_num
+        scope.affine_pair = engine._affine_pair = py_affine
+        scope.linked_terms = py_linked
+        relations._under_apps = py_under
+        relations.zero_twin = engine.zero_twin = py_twin
+        euf_adapter.structural = py_struct
+        euf_adapter.EUFAdapter.interned = py_interned
+        relations._structural_subterms = py_subterms
     return undo
 
 

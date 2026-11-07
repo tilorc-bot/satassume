@@ -116,6 +116,36 @@ fn value<'py>(py: Python<'py>, t: &TermTable, v: &V) -> PyResult<Bound<'py, PyAn
     })
 }
 
+/// A plan step for Python: `(ensure, clause)`, one of them set. A literal is `(negated, pred or None, term)`; None is the
+/// atom's own var.
+type PlanRow = (Option<(u32, Vec<&'static str>)>, Vec<(bool, Option<&'static str>, u32)>);
+
+fn plan_rows(plan: &[super::relations::PlanOp]) -> Vec<PlanRow> {
+    use super::relations::PlanOp;
+    plan.iter()
+        .map(|op| match op {
+            PlanOp::Ensure(t, preds) => (Some((t.0, preds.clone())), vec![]),
+            PlanOp::Clause(lits) => (
+                None,
+                lits.iter()
+                    .map(|(neg, l)| match l {
+                        Some((p, t)) => (*neg, Some(*p), t.0),
+                        None => (*neg, None, 0),
+                    })
+                    .collect(),
+            ),
+        })
+        .collect()
+}
+
+fn ids_of(v: Vec<u32>) -> Vec<TermId> {
+    v.into_iter().map(TermId).collect()
+}
+
+fn raw_ids(v: Vec<TermId>) -> Vec<u32> {
+    v.into_iter().map(|t| t.0).collect()
+}
+
 impl PyTermTable {
     /// The per-query memo that takes `_INTERPRETED`'s place on this path: it dies with the table.
     fn lra_memo<'py>(
@@ -265,6 +295,55 @@ impl PyTermTable {
     /// `_eq_links`'s difference `p - q`, or None when it isn't used. Raises TermRefuse.
     fn eq_diff(&mut self, p: u32, q: u32) -> PyResult<Option<u32>> {
         self.0.eq_diff(TermId(p), TermId(q)).map(|d| d.map(|t| t.0)).map_err(refuse)
+    }
+
+    /// `relation_atom`'s lt, gt, le, ge: None for a nan side under le or ge, else (first, second, negated, ext), positions
+    /// in `(lhs, rhs)`. Raises TermRefuse.
+    fn order_relation(&self, name: &str, l: u32, r: u32) -> PyResult<Option<(usize, usize, bool, Vec<usize>)>> {
+        self.0
+            .order_relation(name, TermId(l), TermId(r))
+            .map(|o| o.map(|o| (o.first, o.second, o.negated, o.ext)))
+            .map_err(refuse)
+    }
+
+    /// `_ext_atoms`' test on one side.
+    fn needs_ext(&self, t: u32) -> bool {
+        self.0.needs_ext(TermId(t))
+    }
+
+    /// `_eq_links`' plan: see `plan_rows`. Raises TermRefuse.
+    fn eq_links_plan(&mut self, a: u32, b: u32) -> PyResult<Vec<PlanRow>> {
+        self.0.eq_links_plan(TermId(a), TermId(b)).map(|p| plan_rows(&p)).map_err(refuse)
+    }
+
+    /// `_eq_infinity`: None, or (other side, pred, that side is a number, plan).
+    fn eq_infinity_plan(&self, a: u32, b: u32) -> Option<(u32, &'static str, bool, Vec<PlanRow>)> {
+        self.0.eq_infinity_plan(TermId(a), TermId(b)).map(|(e, pred, closed, p)| (e.0, pred, closed, plan_rows(&p)))
+    }
+
+    /// `scope.affine_pair`, given each sign atom's argument.
+    fn affine_pair(&self, signs: Vec<u32>) -> bool {
+        self.0.affine_pair(&ids_of(signs))
+    }
+
+    /// `_under_apps` of the sides, or None when a side's class has its own `atoms`.
+    fn under_apps(&self, sides: Vec<u32>) -> Option<Vec<u32>> {
+        self.0.under_apps(&ids_of(sides)).map(raw_ids)
+    }
+
+    /// `euf_adapter.structural`.
+    fn structural(&self, t: u32) -> bool {
+        self.0.structural(TermId(t))
+    }
+
+    /// `EUFAdapter.interned`, in its order.
+    fn interned(&self, exprs: Vec<u32>) -> Vec<u32> {
+        raw_ids(self.0.interned(&ids_of(exprs)))
+    }
+
+    /// `relations._structural_subterms`, in its order.
+    fn structural_subterms(&self, e: u32) -> Vec<u32> {
+        raw_ids(self.0.structural_subterms(TermId(e)))
     }
 
     /// `n_input`: rows from conversion; later ids are derived.
