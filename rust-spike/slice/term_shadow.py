@@ -41,6 +41,9 @@ CUR = [None]                # (Converted, TermTable) of the running top-level qu
 DEPTH = [0]
 CHECK_ON = [True]
 SYNTHETIC = [False]
+# Rust's lazy reads driven only by what the query itself asks: the algebra follows the run, and each key the run uses is
+# asked of Rust. No checks and no printing, since those force reads and evaluate (`str` of an Add calls complex()).
+DRIVE = [False]
 SITES = Counter()           # (op, caller file:line, outcome): which sites reach the algebra
 KEY_REFUSED = []            # every key pair Python orders and Rust refuses, both keys kept
 EXAMPLES = {}               # refusal reason: first few (op, operands)
@@ -102,7 +105,7 @@ def check_table(c, table):
             bad('class-key', t, ckey)
         if (struct_bit and bool(t.args)) != structural(t):
             bad('structural', t, struct_bit)
-        args, content, key, free, bits, level, closed, power = table.row(i)
+        args, content, _key, free, bits, level, _closed, _power = table.row(i)
         if args != [ids[a] for a in t.args]:
             bad('args', t, args)
         real_content = t._hashable_content()
@@ -113,6 +116,13 @@ def check_table(c, table):
         if not bits & C.F_READ:
             COUNTS['skeleton'] += 1
             continue
+        # Every read below is forced here. This checks the values Rust reads, not that it reads them only when needed.
+        try:
+            key = table.sort_key(i)
+        except sa_solver.TermRefuse as e:
+            key = None
+            if 'not supplied' not in str(e):
+                COUNTS[f'key-read-refused:{e}'] += 1
         try:
             real_key = default_sort_key(t)
         except Exception as e:
@@ -127,16 +137,18 @@ def check_table(c, table):
         want = C.F_READ
         number = getattr(t, 'is_number', False) is True
         for bit, v in ((C.F_NUMBER, number), (C.F_NAN, t.has(S.NaN)), (C.F_BAD, t.has(*L._BAD)), (C.F_FLOAT, t.has(Float)),
-                       (C.F_UNDEF, t.atoms(AppliedUndef)), (C.F_MAYBE_NAN, _may_be_nan(t)),
-                       (C.F_COMMUTATIVE, t.is_commutative is True)):
+                       (C.F_UNDEF, t.atoms(AppliedUndef)), (C.F_MAYBE_NAN, _may_be_nan(t))):
             if v:
                 want |= bit
         if bits != want:
             bad('facts', t, bits, want)
+        if table.commutative(i) != (t.is_commutative is True):
+            bad('commutative', t)
         if level != constructed_noncommutative(t):
             bad('level', t, level)
-        if closed is not None:
-            finite, z = closed
+        if number and isinstance(t, Expr):
+            COUNTS['closed'] += 1
+            finite, z = table.finite(i), table.complex(i)
             if finite is not t.is_finite:
                 bad('is_finite', t, finite)
             try:
@@ -148,6 +160,7 @@ def check_table(c, table):
                     bad('complex', t, z)
             elif z is None or _bits(z[0]) != _bits(real_z.real) or _bits(z[1]) != _bits(real_z.imag):
                 bad('complex', t, z, real_z)
+        power = table.power(i)
         if power is not None:
             COUNTS['powers'] += 1
             base, e = decompose_power(t)
@@ -156,6 +169,14 @@ def check_table(c, table):
                 bad('power', t, power, (base, e))
             if power[0] is None:
                 COUNTS['power-base-not-input'] += 1
+
+
+def _has_key(table, i):
+    try:
+        table.sort_key(i)
+    except sa_solver.TermRefuse:
+        return False
+    return True
 
 
 def _bits(x):
@@ -183,7 +204,7 @@ def check_order(c, table):
             else:
                 if got != real:
                     bad('compare', a, b, got, real)
-            if table.row(i)[2] is None or table.row(j)[2] is None:
+            if not (_has_key(table, i) and _has_key(table, j)):
                 COUNTS['key-compare-no-key'] += 1
                 continue
             ka = kb = None
@@ -309,6 +330,8 @@ def settle(site, real, i, c, table):
 
 def check_derived(site, real, i, c, table):
     """The new row's key, facts and order against SymPy's."""
+    if DRIVE[0]:
+        return
     try:
         real_key = default_sort_key(real)
     except Exception as e:
@@ -342,6 +365,8 @@ def check_derived(site, real, i, c, table):
 
 
 def _example(reason, op, *operands):
+    if DRIVE[0]:
+        return
     ex = EXAMPLES.setdefault(reason, [])
     if len(ex) < 5:
         ex.append((op,) + tuple(str(o)[:120] for o in operands))
@@ -464,7 +489,7 @@ def install_algebra():
 
     def node(self, n, demanded=None):
         cur = CUR[0]
-        if cur is not None and CHECK_ON[0] and n not in self.base:
+        if cur is not None and CHECK_ON[0] and not DRIVE[0] and n not in self.base:
             c, table = cur
             if isinstance(n, Basic):
                 COUNTS['node:new'] += 1
@@ -501,7 +526,7 @@ def install_algebra():
     def struct_(self, o):
         r = real_struct(self, o)
         cur = CUR[0]
-        if cur is not None and CHECK_ON[0]:
+        if cur is not None and CHECK_ON[0] and not DRIVE[0]:
             c, table = cur
             COUNTS['struct:calls'] += 1
             ci = cone_id(o, c, table, 'struct')
@@ -518,7 +543,7 @@ def install_algebra():
     def cone(self, d):
         r = real_cone(self, d)
         cur = CUR[0]
-        if cur is not None and CHECK_ON[0]:
+        if cur is not None and CHECK_ON[0] and not DRIVE[0]:
             c, table = cur
             cn, w, _rel = r
             COUNTS['cone:calls'] += 1
@@ -596,14 +621,12 @@ def top_level(proposition, assumptions, eng):
         KEPT[c.reason] += 1
         return None
     COUNTS['converted'] += 1
-    for k, v in c.counts.items():
-        COUNTS['convert:' + k] += v
     try:
         table = sa_solver.TermTable(c.tables)
     except Exception as e:
         bad('table-raised', type(e).__name__, e, proposition)
         return None
-    if CHECK_ON[0]:
+    if CHECK_ON[0] and not DRIVE[0]:
         try:
             check_table(c, table)
             check_order(c, table)
@@ -631,6 +654,10 @@ def install():
         finally:
             DEPTH[0] -= 1
             if DEPTH[0] == 0:
+                if CUR[0] is not None:      # at the query's end, since reads now happen during it
+                    for k, v in CUR[0][0].counts.items():
+                        COUNTS['convert:' + k] += v
+                # check_table reads every split, so this holds with checks on. With them off it's the splits a key asked for.
                 if CUR[0] is not None and CUR[0][0].counts['pow_base_not_input']:
                     # Ruling's point 3: such a Pow costs a refusal only if a used key needs it.
                     COUNTS['pow:queries-holding'] += 1

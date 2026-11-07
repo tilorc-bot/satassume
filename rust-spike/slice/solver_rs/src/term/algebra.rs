@@ -64,7 +64,7 @@ impl TermTable {
         if bits & (fact::BAD | fact::NAN | fact::FLOAT) != 0 {
             return Err(Refuse("algebra: holds an infinity, nan or Float"));
         }
-        if bits & fact::COMMUTATIVE == 0 {
+        if !self.commutative_of(t)? {
             return Err(Refuse("algebra: non-commutative"));
         }
         Ok(())
@@ -97,12 +97,10 @@ impl TermTable {
             class,
             args,
             content,
-            key: None,
             free: free.into(),
             bits,
             level: 0,
-            closed: None,
-            power: None,
+            has_power: false,
         });
         id
     }
@@ -120,12 +118,10 @@ impl TermTable {
             class,
             args: Box::default(),
             content,
-            key: None,
             free: Box::default(),
             bits: fact::READ | fact::COMMUTATIVE | fact::NUMBER,
             level: 0,
-            closed: None,
-            power: None,
+            has_power: false,
         });
         id
     }
@@ -519,15 +515,11 @@ impl TermTable {
         Ok(tuple(vec![c.class_key.clone(), tuple(vec![int(0), tuple(vec![])]), tuple(vec![]), V::Rat(Rat::int(1))]))
     }
 
-    /// `default_sort_key(t)`: supplied by conversion for an input term, computed from its parts for a derived one.
+    /// `default_sort_key(t)`: read from Python for an input term, computed from its parts for a derived one.
     /// `Expr.sort_key` (`expr.py:168`), `as_ordered_terms` and `as_terms` (`:1179`, `:1226`).
     pub fn sort_key(&self, t: TermId) -> Result<V, Refuse> {
-        let r = self.row(t);
-        if let Some(k) = &r.key {
-            return Ok(k.clone());
-        }
         if t.index() < self.n_input {
-            return Err(Refuse("key: not supplied"));
+            return self.input_key(t);
         }
         let c = self.class_of(t);
         if let Some(v) = self.rat(t) {
@@ -634,23 +626,19 @@ impl TermTable {
                 if row.bits & fact::READ == 0 {
                     return Err(Refuse("key: not an expression"));
                 }
-                if row.bits & fact::COMMUTATIVE == 0 {
+                if !self.commutative_of(f)? {
                     return Err(Refuse("key: non-commutative"));
                 }
                 if row.bits & fact::NUMBER != 0 {
-                    let w = row
-                        .closed
-                        .as_ref()
-                        .and_then(|c| c.complex)
-                        .ok_or(Refuse("key: a closed factor with no complex value"))?;
+                    let w = self.complex_of(f)?.ok_or(Refuse("key: a closed factor with no complex value"))?;
                     z = (z.0 * w.0 - z.1 * w.1, z.0 * w.1 + z.1 * w.0);
                     continue;
                 }
                 if self.kind(f) == Kind::Mul {
                     return Err(Refuse("key: a Mul as a factor"));
                 }
-                let (b, e) = match &row.power {
-                    Some((Some(b), e)) => (*b, e.clone()),
+                let (b, e) = match self.power_of(f)? {
+                    Some((Some(b), e)) => (b, e),
                     Some((None, _)) => return Err(Refuse("key: power base not an input term")),
                     None => (f, BigInt::one()),
                 };
