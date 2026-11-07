@@ -7,6 +7,7 @@
 mod block;
 mod map;
 mod solver;
+mod term;
 mod theory;
 
 use block::Closure;
