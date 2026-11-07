@@ -143,7 +143,8 @@ def pytest_unconfigure(config):
     if d and tl is not None:
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f"term.{os.getpid()}.json"), "w") as f:
-            json.dump(tl.report(), f)
+            lra = sys.modules.get("lra_live")
+            json.dump(dict(tl.report(), lra=lra.counts() if lra is not None else None), f)
 
 
 def _failure(rep):

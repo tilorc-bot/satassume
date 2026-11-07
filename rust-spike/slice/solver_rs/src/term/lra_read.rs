@@ -23,8 +23,9 @@ use num_traits::{Signed, ToPrimitive};
 use pyo3::exceptions::{PyTypeError, PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering::Relaxed};
+use std::sync::Mutex;
 
 const IS_ADD: u32 = 1 << 0;
 const IS_MUL: u32 = 1 << 1;
@@ -57,6 +58,9 @@ pub static COUNTS: Counts = Counts {
     product_terms: AtomicU64::new(0),
     keys: AtomicU64::new(0),
 };
+
+/// `closed_mul_scaffold` by the reason Rust's `mul` refused: the shapes that have to go before a backend PR.
+pub static SCAFFOLD_WHY: Mutex<BTreeMap<&'static str, u64>> = Mutex::new(BTreeMap::new());
 
 /// Planted bugs, for showing the comparison catches a wrong answer here. 0 is none.
 pub static PLANT: AtomicU8 = AtomicU8::new(0);
@@ -264,8 +268,9 @@ impl<'py> Lra<'_, 'py> {
                 COUNTS.closed_mul_rust.fetch_add(1, Relaxed);
                 self.from_sympy(m)
             }
-            Err(_) => {
+            Err(Refuse(why)) => {
                 COUNTS.closed_mul_scaffold.fetch_add(1, Relaxed);
+                *SCAFFOLD_WHY.lock().unwrap().entry(why).or_insert(0) += 1;
                 let objs = closed.iter().map(|f| self.object(*f)).collect::<Res<Vec<_>>>()?;
                 let py = self.py;
                 let mul = py.import("sympy.core.mul")?.getattr("Mul")?;

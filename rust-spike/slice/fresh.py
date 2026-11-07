@@ -118,6 +118,16 @@ if a.term != "py":
         import term_discard as TD
         TD.install()
 sessions = []
+#: Sessions of refused runs, dropped at the rollback: the digests are of the run that answered. Discarded + Python's was checked
+#: on all 298 refused `lra` queries before this went in (port-4d.md).
+discarded = [0]
+
+
+def _drop_discarded():
+    discarded[0] += len(sessions)
+    sessions.clear()
+
+
 _init = E.Session.__init__
 
 
@@ -151,6 +161,8 @@ with open(a.out, "w") as fh:
                 TD.constfield._BY_KEY.popitem()
             TD.arm(i)
             term_live.AFTER_ROLLBACK[0] = lambda: (TD.check(), sessions.clear())
+        if a.term != "py" and not TD:
+            term_live.AFTER_ROLLBACK[0] = _drop_discarded
         reset_module_state(sympy_cache=False)
         sympy_api.set_default_engine(E.Engine())
         sessions.clear()
@@ -162,7 +174,7 @@ with open(a.out, "w") as fh:
 if a.term_out:
     import term_live
     with open(a.term_out, "w") as fh:
-        out = dict(term=term_live.counts(), refusals=term_live.REFUSALS)
+        out = dict(term=term_live.counts(), refusals=term_live.REFUSALS, discarded_sessions=discarded[0])
         if a.lra:
             out.update(lra=lra_live.counts(), check_bad=lra_live.CHECK_BAD[:50], scaffold_bad=lra_live.SCAFFOLD_BAD[:20])
         fh.write(TD.report() if TD else json.dumps(out, indent=0, sort_keys=True, default=repr))
