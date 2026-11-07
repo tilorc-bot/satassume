@@ -1,0 +1,145 @@
+# Port ownership: inventory "port" items against the step that owns them (issue 323)
+
+By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Base `rust-slice` de8bd3a. 5c split: `origin/port/5c` 7fc958d, `HANDOFF-sa-port-93.md`, read with `git show`.
+
+**Items:** every Appendix A entry of `rust-spike/PORT-INVENTORY.md` marked `port` or `port?`: 812 over 36 modules (8 are `Engine` property getter/setter pairs sharing a name). One row per item is in `port-ownership.tsv` next to this file (module, name, line, suffix, class, component, owner, today). The table below groups items whose module, owner and status agree, and names every item.
+
+| | Rust | called back | Python | total |
+|---|--:|--:|--:|--:|
+| landed step | 358 | 16 | 40 (31 of them Rust opt-in only) | 414 |
+| named 5c step | 0 | 12 | 123 | 135 |
+| UNOWNED | 0 | 0 | 263 | 263 |
+
+**Columns.** *Owner*: a landed step with the commit that added its report, or a step of sa-port-93's split, or UNOWNED. An item already moved stays with its landed step. An item a landed step touched but didn't move goes to the 5c step that finishes it, marked "partial". *Today*, on the Rust backend in the real engine (`rust_plugin.py`): **Rust**; **called back** (Rust calls this Python function); **Python** (untouched on that path).
+
+**Caveats.**
+- Rows owned by B, C1 and D run in Rust only on queries that have a per-query table. Kept queries, a refused run's second try and direct `Engine` calls still run Python. On the suite that was 9,882 Python `interpret` calls against 630,140 in Rust.
+- **Component 6 is opt-in only.** `knowledge_live.install()` is never called by `rust_plugin.py` or `backend.py` (port-1b.md:11). It runs only under `SLICE_KNOWLEDGE=atoms` (`knowledge_suite.py:18`). So realroots, `_rows_runtime`, atoms and `_common` (6c) are owned but are Python on the Rust backend. No step owns wiring it into the default backend.
+- **Slice S has no landing report.** Its owner commit is 35debd6, the solver's first commit. `step4-gate.md` (c230ee0) says its gate isn't met, because of the 46 named stub failures.
+
+**Assumptions about the split.**
+- 5c5 is "relations.py's 27 module functions" (port-c2c.md:98). I read it as every module-level function still Python. Already-moved ones stay with their landed step.
+- `Session._link` is listed in 5c2, but 5a replaced both its callers (Rust `session.rs:639`), so it's counted as 5a.
+- 5c10's `_ask` is `Engine._ask`. Its `_check_*` is `_check_writeback` and `_check_uninterpreted`.
+- 5c9's "properties (1418-1527)" are the `Engine` items in that line range.
+- The class rows `Session`, `Relations` and `Engine` go to 5c6, 5c4 and 5c10, the steps where each counts whole.
+
+| Module | Inv. comp. | n | Items | Owner | Today |
+|---|---|--:|---|---|---|
+| `__init__.py` | none | 1 | `__getattr__~i` | UNOWNED | Python |
+| `engine.py` | 5 | 2 | `InconsistentAssumptions`, `_construction_level~u` | UNOWNED | Python |
+| `engine.py` | 5 | 5 | `Session.var`, `Session.dvar`, `Session._dvar`, `Session._link`, `Session.node` | landed 5a 8bab767 | Rust |
+| `engine.py` | 5 | 1 | `Session.ensure` | 5c1 | called back |
+| `engine.py` | 5 | 4 | `Session.discover`, `Session._discover`, `Session.incomplete`, `Session.escalate` | 5c1 | Python |
+| `engine.py` | 5 | 21 | `_noncommutative`, `_noncommutative_answer~u`, `_noncommutative_atoms`, `_kid`, `_check_writeback`, `_check_uninterpreted`, `_context_free~u`, `Engine`, `Engine._context_session`, `Engine._build_context_memoized`, `Engine._build_context`, `Engine.verdict`, `Engine._complete_check`, `Engine.is_many`, `Engine._decide`, `Engine._put_result`, `Engine._is_custom`, `Engine.ask`, `Engine._ask`, `_gave_up`, `_exhausted` | 5c10 | Python |
+| `engine.py` | 5 | 1 | `Engine.is_` | 5c10 | called back |
+| `engine.py` | 5 | 8 | `Session._compile_patterns`, `Session._emit_pattern`, `Session._compile~u`, `Session._flush`, `Session._custom`, `Session._compile_pending`, `_split`, `want_of` | 5c2 | Python |
+| `engine.py` | 5 | 1 | `Session._visit` | 5c2 (partial: landed 5a 8bab767) | called back |
+| `engine.py` | 5 | 8 | `Session.query_lit`, `Session.prepare_query`, `Session.query_literal`, `Session._query_all`, `Session.literal_of`, `Session._relations`, `Session._ensure_atoms`, `Session._ensure_twins` | 5c3 | Python |
+| `engine.py` | 5 | 1 | `Session.emit` | 5c3 (partial: landed 5a 8bab767) | Python |
+| `engine.py` | 5 | 8 | `Session`, `Session.__init__`, `Session.assume_formula`, `Session.link_set`, `Session.assumption_lits`, `Session._set_glue`, `Session._group_sel`, `Session._glue_of` | 5c6 | Python |
+| `engine.py` | 5 | 9 | `Engine._drop_cones`, `Engine._struct`, `Engine._cone_info`, `Engine._query_cone`, `Engine._union`, `Engine._within_budget`, `Engine._over_budget~u`, `Engine._note_budget`, `neighbourhood~u` | 5c7 | Python |
+| `engine.py` | 5 | 32 | `engine_memos`, `DictCache`, `DictCache.__init__`, `DictCache.sync`, `DictCache.facts`, `DictCache.get~u`, `DictCache.put`, `AnswerMemo`, `AnswerMemo.__init__`, `AnswerMemo.put`, `Engine.__init__`, `Engine._fresh_session`, `Engine.extensions`, `Engine.extensions`, `Engine.relation_specs`, `Engine.relation_specs`, `Engine.discovery_budget~u`, `Engine.discovery_budget~u`, `Engine.transfer`, `Engine.transfer`, `Engine.uninterpreted`, `Engine.uninterpreted`, `Engine.writeback~u`, `Engine.writeback~u`, `Engine.relevance`, `Engine.relevance`, `Engine.templates~u`, `Engine.templates~u`, `Engine._settings_changed~u`, `Engine._check_version`, `Engine._settings_fingerprint`, `Engine._drop_set_memos~u` | 5c9 | Python |
+| `knowledge/compile.py` | 5 | 2 | `_Lit`, `_Lit.__init__~u` | UNOWNED | Python |
+| `knowledge/compile.py` | 5 | 18 | `basis_formula`, `_def`, `VarTable`, `VarTable.__init__`, `VarTable.node_base`, `VarTable.var`, `VarTable.aux`, `VarTable.atom~u`, `VarTable.atom_of~u`, `VarTable.__len__`, `VarTable.lit_name~u`, `compile_formula`, `_or_cnf~u`, `formula_literal`, `_literal`, `_plain~u`, `_shared~u`, `_true_lit~u` | landed 5a 8bab767 | Rust |
+| `knowledge/domain.py` | 0 (sec. 3) | 1 | `kept_product` | landed D db697fc | Rust |
+| `knowledge/realroots.py` | 6 | 16 | `_strip~u`, `_rem~u`, `_monic~u`, `_primitive~u`, `gcd~u`, `_derivative~u`, `_div~u`, `squarefree~u`, `_chain~u`, `_changes~u`, `_at_inf~u`, `_at_zero~u`, `real_root_counts~u`, `_distinct_nonzero_real_roots~u`, `imaginary_root_count~u`, `root_facts~u` | landed realroots e4c7a55 (partial) | Python (Rust opt-in only) |
+| `knowledge/rules.py` | 6 | 1 | `_basis_models~u` | UNOWNED | Python |
+| `knowledge/rules.py` | 6 | 1 | `basis_lits` | landed 5a 8bab767 | Rust |
+| `knowledge/rules.py` | 6 | 1 | `def_implications~u` | landed 5a 8bab767 (partial) | called back |
+| `knowledge/rules.py` | 6 | 7 | `cnf_of`, `lit_bit`, `lits_mask`, `mask_lits`, `_masks`, `closure_mask`, `unit_propagate` | landed 6 dc3f15d (partial) | Python |
+| `knowledge/rules.py` | 6 | 1 | `expand_clause` | landed 6c 4b2f12b (partial) | Python |
+| `knowledge/templates/__init__.py` | 6 | 2 | `_may_be_nan`, `_applied_to_nan` | UNOWNED | Python |
+| `knowledge/templates/_common.py` | 6 | 17 | `const_key`, `lits`, `Rules`, `Rules.__init__`, `Rules.rule`, `Rules.equiv~u`, `ge2_alternatives~u`, `instantiate~u`, `TemplateKeyError`, `Compiled`, `Compiled.__init__`, `Compiled.formulas~u`, `Compiled.wide_formulas~u`, `facts`, `_signed`, `consts_of`, `pattern_key` | UNOWNED | Python |
+| `knowledge/templates/_common.py` | 6 | 1 | `units` | landed 6 dc3f15d (partial) | Python |
+| `knowledge/templates/_common.py` | 6 | 1 | `const_value` | landed 6c 4b2f12b (partial) | Python (callback opt-in only) |
+| `knowledge/templates/_common.py` | 6 | 5 | `_resolve_lit`, `resolve`, `_unsubsumed`, `Pattern`, `Pattern.__init__` | landed 6c 4b2f12b (partial) | Python (Rust opt-in only) |
+| `knowledge/templates/_rows_runtime.py` | 6 | 6 | `from_text`, `constant_value`, `_read`, `_shape_object`, `_term_object`, `generator` | landed rows-runtime 3236be4 (partial) | Python (Rust opt-in only) |
+| `knowledge/templates/atoms.py` | 6 | 2 | `symbol_units`, `constant_units` | landed 6 dc3f15d (partial) | Python (Rust opt-in only) |
+| `knowledge/templates/atoms.py` | 6 | 1 | `value_units` | landed 6b dfa7b45 (partial) | Python (Rust opt-in only) |
+| `knowledge/templates/core.py` | 6 | 30 | `_half_split`, `_coeff_term`, `_half_rules`, `_half_templates`, `_bound_split`, `_bound_rules`, `_bound_templates`, `_recip_rules~u`, `_recip_templates`, `_imag_term`, `_imag_split`, `_imag_rules~u`, `_imag_number_rules~u`, `_imag_templates~u`, `_not_unit_premises~u`, `_mul_factor_sets`, `_quotient_rules`, `_quotient_templates`, `_unit_angle`, `ipi_split`, `pi_split`, `_pi_split`, `_ipi_table_rows~u`, `ipi_rules~u`, `irrational_root`, `_unit_power_units~u`, `_exp_arg`, `_pow_bound_templates`, `_table~u`, `__getattr__` | UNOWNED | Python |
+| `knowledge/templates/functions.py` | 6 | 14 | `_unary`, `shifted`, `_exp_ipi`, `_parts_of_round_rules~u`, `parts_of_round_templates`, `_pi_trig_rules~u`, `_pi_trig`, `_in_unit_interval_units~u`, `_cosh_shift_rules~u`, `_cosh_shift_split`, `_cosh_shift`, `nary`, `_value_units~u`, `_genocchi_half~u` | UNOWNED | Python |
+| `knowledge/templates/limits.py` | 6 | 8 | `_inner~u`, `_scalar~u`, `_plain~u`, `_compiled~u`, `_sum_or_product~u`, `sum_templates~u`, `product_templates~u`, `integral_templates~u` | UNOWNED | Python |
+| `knowledge/templates/nodes.py` | 6 | 3 | `_accum~u`, `accumbounds_templates~u`, `idx_units~u` | UNOWNED | Python |
+| `knowledge/templates/physics.py` | 6 | 1 | `quantity_units~u` | UNOWNED | Python |
+| `knowledge/templates/registry.py` | 6 | 16 | `own_facts`, `_redefines`, `TemplateRegistry.__init__`, `TemplateRegistry.lazy`, `TemplateRegistry._covers`, `TemplateRegistry._load`, `TemplateRegistry.load_all`, `TemplateRegistry.register`, `TemplateRegistry.templates_for`, `TemplateRegistry.clauses_for`, `_split`, `TemplateRegistry`, `TemplateRegistry._imported~u`, `TemplateRegistry.facts_for~u`, `TemplateRegistry.classes~u`, `_collect~u` | UNOWNED | Python |
+| `knowledge/templates/rootof.py` | 6 | 3 | `_coefficients~u`, `_facts~u`, `crootof_units~u` | UNOWNED | Python |
+| `knowledge/templates/special.py` | 6 | 4 | `_register~u`, `_doubled~u`, `_multigamma_rules~u`, `multigamma_templates~u` | UNOWNED | Python |
+| `knowledge/templates/stats.py` | 6 | 1 | `randomsymbol_units~u` | UNOWNED | Python |
+| `knowledge/templates/table.py` | 6 | 18 | `Row`, `Row.__init__~u`, `Row._compile~u`, `Row.__repr__~u`, `Row.text~u`, `Section`, `Section.__init__~u`, `_holds~u`, `_norm~u`, `_lits~u`, `_premise_alternatives~u`, `_row_specs~u`, `_rows~u`, `_bindings~u`, `expand~u`, `rules_of~u`, `iter_rows~u`, `count_rows~u` | UNOWNED | Python |
+| `knowledge/templates/wiring.py` | 6 | 22 | `template`, `load`, `_declared`, `_attributed`, `matches`, `power`, `expand`, `_placements`, `_allowed`, `_instances`, `_wide_of`, `rows_block`, `rules_for`, `product`, `addition`, `functions~u`, `piecewise_values~u`, `_clauses~u`, `wide_formulas~u`, `_wide~u`, `_atom~u`, `any_arity~u` | UNOWNED | Python |
+| `relations.py` | 4 | 2 | `AdapterSpec`, `Uninterpreted` | UNOWNED | Python |
+| `relations.py` | 4 | 6 | `Relations._mention_number`, `Relations._link_integer`, `Relations._trichotomy`, `Relations._closed_extended_real`, `Relations._order_sides`, `Relations._order_infinite` | landed 5b/C2a 3f9ae3a | Rust |
+| `relations.py` | 4 | 3 | `_key`, `_affine_strip`, `_termwise` | landed B b45b72f | Rust |
+| `relations.py` | 4 | 1 | `relation_atom` | landed B b45b72f + C1 63e085d | Rust |
+| `relations.py` | 4 | 6 | `_ext_atoms`, `_is_number`, `_under_apps`, `zero_twin~u`, `_structural_subterms`, `glue_objects` | landed C1 63e085d | Rust |
+| `relations.py` | 4 | 7 | `Relations._fresh`, `Relations._interpret`, `Relations._guard`, `Relations._eq_infinity`, `Relations._bound~u`, `Relations._link`, `Relations.selectors_of` | landed C2b 8d6cff7 | Rust |
+| `relations.py` | 4 | 11 | `Relations._add_role`, `Relations._apply_role`, `Relations._tsource`, `Relations._tvar`, `Relations._share_guard`, `Relations._congruent`, `Relations._engage_transfer`, `Relations._transfer_terms`, `Relations.sync_transfer`, `Relations._xswitch`, `Relations._congruence_pairs` | landed C2c de8bd3a | Rust |
+| `relations.py` | 4 | 8 | `Relations`, `Relations.__init__`, `Relations.enqueue`, `Relations.note_formula`, `Relations.process`, `Relations._link_later`, `Relations.wants_transfer`, `Relations._share` | 5c4 | Python |
+| `relations.py` | 4 | 4 | `Relations._adapter`, `Relations._atom_selector`, `Relations._atom_var`, `Relations._note_sides` | 5c4 | called back |
+| `relations.py` | 4 | 1 | `Relations._eq_links` | 5c4 (partial: landed C1 63e085d) | called back |
+| `relations.py` | 4 | 13 | `_missing~u`, `closed_units`, `with_closed_units`, `default_specs`, `relational_name~u`, `zero_args`, `under_of`, `zero_twins`, `glue_atoms`, `_constant_term`, `_guarded_adapters`, `_terms_of`, `link_objects` | 5c5 | Python |
+| `relations.py` | 4 | 4 | `sympy_atom`, `_number_basis`, `_number_facts`, `_own_term` | 5c5 | called back |
+| `sat/formula.py` | S/3 | 24 | `Formula`, `Formula.__init__`, `Formula.__repr__~u`, `Formula.__eq__`, `Formula.__hash__`, `Formula.__invert__~u`, `Formula.__and__~u`, `Formula.__or__~u`, `Formula.__rshift__~u`, `And`, `Or`, `Not`, `Not.__init__`, `Implies`, `Implies.__init__~u`, `Equivalent`, `Equivalent.__init__~u`, `Exclusive`, `ITE`, `ITE.__init__~u`, `allargs~u`, `anyarg~u`, `exactlyonearg~u`, `atoms_of` | UNOWNED | Python |
+| `sat/formula.py` | S/3 | 6 | `P`, `P.__repr__~u`, `P.__invert__~u`, `P.__and__~u`, `P.__or__~u`, `P.__rshift__~u` | landed 3 0d3f392 | Rust |
+| `sat/solver.py` | S | 7 | `BlockOwner`, `BlockOwner.__init__~u`, `BlockOwner.__eq__~u`, `BlockOwner.__hash__~u`, `BlockOwner.__repr__~u`, `Solver.root_step~u`, `Solver.provenance~u` | UNOWNED | Python |
+| `sat/solver.py` | S | 82 | `Clause`, `_common`, `_is_learnt`, `_luby`, `_BlockClosure.flags`, `_BlockClosure.lits_of`, `_BlockClosure.values_of`, `_BlockClosure.closure`, `_BlockClosure.model_of`, `_BlockClosure.explain`, `Solver`, `Solver.__init__`, `Solver.new_var~u`, `Solver.nvars~u`, `Solver._grow`, `Solver._to_int~u`, `Solver._to_ext~u`, `Solver._internal_lits`, `Solver._heap_insert`, `Solver._heap_up`, `Solver._heap_down`, `Solver._heap_pop`, `Solver._bump_var`, `Solver._bump_clause`, `Solver.add_clause`, `Solver._add_lits`, `Solver._attach_held`, `Solver.add_clauses~u`, `Solver.ensure_vars`, `Solver.add_internal`, `Solver.add_pattern~u`, `Solver.set_rule_block`, `Solver.register_block`, `Solver._rb_settle`, `Solver._rb_reason`, `Solver._mention`, `Solver._rb_room`, `Solver.mention_blocks`, `Solver._rb_mentioned`, `Solver._rb_late`, `Solver.mention`, `Solver.propagate`, `Solver.value`, `Solver.root_trail~u`, `Solver.implied`, `Solver.release`, `Solver._assume`, `Solver._assume_propagate`, `Solver._propagate`, `Solver._propagate_clauses~u`, `Solver._backtrack`, `Solver.attach_theory`, `Solver.theories`, `Solver.register_atom`, `Solver.theory_models~u`, `Solver._tpropagate`, `Solver._theory_sync`, `Solver._theory_clause`, `Solver._theory_conflict`, `Solver._theory_imply`, `Solver._theory_decide`, `Solver._theory_check`, `Solver._learn`, `Solver._analyze`, `Solver._analyze_final`, `Solver._pick_branch`, `Solver.set_inert`, `Solver._reduce_db~u`, `Solver._search`, `Solver.solve`, `Solver._solve`, `Solver._fill`, `Solver._model~u`, `Solver._ring_hit`, `Solver._ring_blocks~u`, `Solver.model~u`, `Solver.conflict~u`, `Solver._witness_satisfies`, `Solver.consistent`, `Solver.entails`, `Solver.entails_all`, `Solver.stats~u` | landed S 35debd6 | Rust |
+| `sat/solver.py` | S | 4 | `_block_models`, `_BlockClosure`, `_BlockClosure.__init__`, `_rule_tables` | landed S 35debd6 (partial) | called back |
+| `sat/theory.py` | S/3 | 3 | `EqualitySharing`, `EqualitySharing.__init__`, `EqualitySharing.update` | landed 3 0d3f392 | Rust |
+| `sat/theory.py` | S/3 | 8 | `TheorySolver`, `TheorySolver.register_atom~u`, `TheorySolver.assert_lit~u`, `TheorySolver.check~u`, `TheorySolver.push_level~u`, `TheorySolver.pop_level~u`, `PropagatingTheory`, `PropagatingTheory.propagate~u` | landed S 35debd6 | Rust |
+| `scope.py` | 4 | 6 | `Scope`, `linked_terms`, `scope_of_atoms`, `theory_scope`, `_custom_pred`, `extension_atoms` | UNOWNED | Python |
+| `scope.py` | 4 | 1 | `affine_pair` | landed C1 63e085d | Rust |
+| `state/epoch.py` | 5 | 1 | `bump` | UNOWNED | Python |
+| `state/memos.py` | 5 | 22 | `Table`, `Table.__init__~i`, `Table.put~u`, `Table.restamp`, `Table.reset~u`, `Table.__repr__~u`, `Memos`, `Memos.__init__`, `Memos.table~i`, `Memos.adopt`, `Memos.items~u`, `Memos.names~u`, `Memos.sizes~u`, `Memos.clear~u`, `Memos.__repr__~u`, `_path~u`, `_module_attr`, `load_owners~u`, `__getattr__`, `adopt`, `module_locations~u`, `owner_memos` | UNOWNED | Python |
+| `sympy_api.py` | 5 | 8 | `_ask`, `_ask_general`, `_const_base`, `_const_free`, `_closed_keys`, `_expr_keys`, `_arg_keys`, `_engine_ask` | UNOWNED | Python |
+| `sympy_api.py` | 5 | 11 | `_keys~u`, `_keys_rel`, `_bool_keys`, `_sides_keys`, `_Split`, `_Split.__init__`, `_Split.part`, `_relevant`, `_vocab_blocks~u`, `_part_consistent`, `_consistent` | 5c8 | Python |
+| `theories/euf/euf.py` | 2 | 4 | `EqAtom`, `EqAtom.__new__`, `EqAtom.__getnewargs__~u`, `EqAtom.__repr__~u` | UNOWNED | Python |
+| `theories/euf/euf.py` | 2 | 24 | `EUFTheory`, `EUFTheory.__init__`, `EUFTheory._new`, `EUFTheory.term`, `EUFTheory.value`, `EUFTheory._apply`, `EUFTheory._index_app`, `EUFTheory.find~u`, `EUFTheory.equal~u`, `EUFTheory.explain`, `EUFTheory._reroot`, `EUFTheory._union`, `EUFTheory._undo_union`, `EUFTheory._process`, `EUFTheory._explain_edge`, `EUFTheory._explain`, `EUFTheory.register_atom`, `EUFTheory._index_atom`, `EUFTheory.assert_lit`, `EUFTheory.check`, `EUFTheory.propagate`, `EUFTheory.push_level`, `EUFTheory.pop_level`, `EUFTheory.__repr__~u` | landed 2 e5dd23f | Rust |
+| `theories/euf/euf_adapter.py` | 4 | 12 | `_inherits_from_basic`, `EUFAdapter`, `EUFAdapter.__init__`, `EUFAdapter.interprets~u`, `EUFAdapter.register`, `EUFAdapter.attach`, `EUFAdapter.term`, `EUFAdapter.node_term`, `EUFAdapter._intern`, `EUFAdapter.term_of`, `EUFAdapter.terms_since`, `EUFAdapter.shared_terms` | UNOWNED | Python |
+| `theories/euf/euf_adapter.py` | 4 | 2 | `structural`, `EUFAdapter.interned` | landed C1 63e085d | Rust |
+| `theories/lra/constfield.py` | 1b | 6 | `Constant`, `Constant.__repr__~u`, `_coerce_foreign~u`, `Element.to_sympy~u`, `Element.__repr__~u`, `_sympy_constant~u` | UNOWNED | Python |
+| `theories/lra/constfield.py` | 1b | 80 | `Undecided`, `TooLarge`, `_zero`, `_mk`, `_add`, `_neg`, `_sub~u`, `_scale`, `_mul`, `_too_many_bits~u`, `_add_bounded~u`, `_mul_bounded~u`, `_mul_fast~u`, `_mul_checked`, `_pow_checked`, `_deg~u`, `_lc~u`, `_lcrec`, `_shift~u`, `_divexact`, `_monomial`, `_order`, `_udiv~u`, `_monic~u`, `_ugcd~u`, `_inner_gcd`, `_denominators~u`, `_gcd~u`, `_psize`, `_checked`, `_vars`, `_qenc`, `_ieval`, `_scaled_down`, `_atan_inv`, `_pi_enclose`, `_e_enclose~u`, `_iroot~u`, `formally_zero`, `sign`, `_make`, `_coerce`, `Element`, `Element.__init__~u`, `Element.numerator~u`, `Element.denominator~u`, `Element.constants~u`, `Element._varset`, `Element._size`, `Element._budget_scale`, `Element._budget_product`, `Element._single_transcendental`, `Element.__hash__`, `Element.__neg__`, `Element.__pos__~u`, `Element.__abs__~u`, `Element.__add__`, `Element.__sub__`, `Element.__rsub__`, `Element.__mul__`, `Element._inverse`, `Element.__truediv__`, `Element.__rtruediv__`, `Element.__pow__`, `Element._env`, `Element._precisions`, `Element._nonzero`, `Element.sign`, `Element.enclosure`, `Element._cmp`, `Element.__eq__`, `Element.__ne__`, `Element.__lt__`, `Element.__le__`, `Element.__gt__`, `Element.__ge__`, `Element.__bool__`, `Element.__floor__`, `Element.__ceil__`, `Element.is_integer` | landed 1b 60493d6 | Rust |
+| `theories/lra/constfield.py` | 1b | 7 | `_to_dmp~u`, `_from_dmp~u`, `_sympy_inner_gcd~u`, `_short~u`, `Constant.enclose`, `Element._new`, `pi_laurent` | landed 1b 60493d6 (partial) | called back |
+| `theories/lra/constfield.py` | 1b | 4 | `num`, `from_sympy`, `_Unread`, `_from_sympy` | landed D db697fc | Rust |
+| `theories/lra/constfield.py` | 1b | 4 | `Constant.__init__~i`, `constant~i`, `radical~u`, `_generic` | landed D db697fc (partial) | called back |
+| `theories/lra/lra.py` | 1a | 9 | `Negated`, `Negated.__new__~u`, `Negated.__getnewargs__~u`, `Negated.__repr__~u`, `Integral`, `Integral.__new__`, `Integral.__getnewargs__~u`, `Integral.__repr__~u`, `constraint~u` | UNOWNED | Python |
+| `theories/lra/lra.py` | 1a | 41 | `_is_int~u`, `_floor`, `_ceil`, `_dedupe`, `LRATheory`, `LRATheory.__init__`, `LRATheory.undecidable~u`, `LRATheory.rational_values~u`, `LRATheory._new_var`, `LRATheory._term_var`, `LRATheory._slack`, `LRATheory._give_up~u`, `LRATheory.register_atom`, `LRATheory.assert_lit`, `LRATheory.check`, `LRATheory.propagate`, `LRATheory._register_atom`, `LRATheory._lin`, `LRATheory._var_of_form`, `LRATheory._register_integral`, `LRATheory.push_level`, `LRATheory.pop_level`, `LRATheory._undo_to`, `LRATheory._assert_kind`, `LRATheory._set_upper`, `LRATheory._set_lower`, `LRATheory._update`, `LRATheory._assert_integral`, `LRATheory._int_verdict`, `LRATheory._int_verdict_bounds`, `LRATheory._int_bounds`, `LRATheory._branch`, `LRATheory._simplex`, `LRATheory._pivot_and_update`, `LRATheory._pivot_rational`, `LRATheory._pivot`, `LRATheory._concrete`, `LRATheory._model`, `LRATheory._check`, `LRATheory._implied`, `LRATheory.__repr__~u` | landed 1a 69639da | Rust |
+| `theories/lra/lra.py` | 1a | 5 | `_within_cert`, `LRATheory.certified~u`, `LRATheory.certified_with~u`, `LRATheory._certificate`, `LRATheory._certify` | landed 1b 60493d6 | Rust |
+| `theories/lra/lra_adapter.py` | 4 | 17 | `constant_bounds`, `constant_enclosure~u`, `to_constraint~u`, `terms~u`, `_memoized`, `LRAAdapter`, `LRAAdapter.__init__`, `LRAAdapter.register`, `LRAAdapter._attach`, `LRAAdapter.interpret`, `LRAAdapter.order_sides`, `LRAAdapter.integer_form`, `LRAAdapter.register_integer`, `LRAAdapter.terms`, `LRAAdapter.to_constraint~u`, `LRAAdapter.register_bounds~u`, `LRAAdapter.shared_terms` | UNOWNED | Python |
+| `theories/lra/lra_adapter.py` | 4 | 10 | `_Unhandled`, `_lin`, `_closed`, `closed_sign`, `_linear`, `_constraint`, `interpret`, `_side`, `order_sides`, `integer_form` | landed D db697fc | Rust |
+| `theories/lra/lra_cert.py` | 1a/1b | 11 | `_ceil_abs`, `_magnitude`, `within`, `_window`, `_decided`, `limits`, `_limits_suffice`, `CertAtoms`, `CertAtoms.__init__`, `CertAtoms.update`, `certify` | landed 1b 60493d6 | Rust |
+| `theories/transfer.py` | 3 | 22 | `transfer_wanted`, `TransferTheory`, `TransferTheory.__init__`, `TransferTheory.guard`, `TransferTheory.switch`, `TransferTheory._kind`, `TransferTheory._why`, `TransferTheory._merged`, `TransferTheory.register_atom`, `TransferTheory.assert_lit`, `TransferTheory.set_fixed`, `TransferTheory._explain`, `TransferTheory._members_on`, `TransferTheory._scan`, `TransferTheory._spread`, `TransferTheory._classes`, `TransferTheory.propagate`, `TransferTheory.check`, `TransferTheory.decide`, `TransferTheory.push_level`, `TransferTheory.pop_level`, `TransferTheory.__repr__~u` | landed 3 0d3f392 | Rust |
+
+## UNOWNED, by module, with a proposed owner
+
+- **`scope.py`** (6: `Scope`, `linked_terms`, `scope_of_atoms`, `theory_scope`, `_custom_pred`, `extension_atoms`; only `affine_pair` moved, in C1. C1 wraps `linked_terms` to count it, but its body stays Python.) **Proposed:** its own 5c session after 5c5 and before 5c10, since both relations' and the engine's callers reach it. Until then the engine's calls into it are called back and counted.
+- **`sympy_api.py`** (8). **Proposed:** `_const_base`, `_const_free`, `_closed_keys`, `_expr_keys` and `_arg_keys` (:693-778, the helpers `_keys` calls) join 5c8, whose stated range starts at :779. The relevance gate in `_ask_general` (:576) also goes to 5c8. `_ask` (:560) and `_engine_ask` (:1111) go to 5c10 if they stay port (see below).
+- **`engine.py`** (2: `InconsistentAssumptions`, `_construction_level`). **Proposed:** 5c10, with the module helpers.
+- **`relations.py`** (2: `AdapterSpec`, `Uninterpreted`). **Proposed:** 5c5.
+- **`knowledge/compile.py`** (2: `_Lit`, `_Lit.__init__`). **Proposed:** 5c2, with its callers.
+- **`state/memos.py`, `state/epoch.py`** (23). **Proposed:** add them to 5c9, the memos step.
+- **`sat/formula.py`** (24: `Formula` and its subclasses, `atoms_of`). No component in section 10 owns them. **Proposed:** a named step after 5c ("formula"). It needs a ruling on whether these are the converted format, since `to_formula` builds them.
+- **`sat/solver.py`** (7: `BlockOwner`, `root_step`, `provenance`). These are provenance only, and Rust raises `NotImplementedError` there. **Proposed:** a named step after 5c, or reclassify them (below).
+- **`theories/lra/lra_adapter.py`** (17: `LRAAdapter` and its methods, `terms`, `to_constraint`, `_memoized`, `constant_*`) **and `theories/euf/euf_adapter.py`** (12: `EUFAdapter`, `_inherits_from_basic`). These are component 4's remainder. **Proposed:** a named step after 5c4 ("adapters"), since 5c4's `_adapter` calls them.
+- **`theories/lra/lra.py`** (9: `Negated`, `Integral`, `constraint`), **`theories/euf/euf.py`** (4: `EqAtom`) **and `theories/lra/constfield.py`** (6: `Constant`, display helpers, `_coerce_foreign`). These are payload and display classes. **Proposed:** the same "adapters" step.
+- **Component 6 remainder.** `templates/_common.py` 17, `table.py` 18, `core.py` 30, `functions.py` 14, `wiring.py` 22, `registry.py` 16, `__init__.py` 2, `nodes.py` 3, `rootof.py` 3, `special.py` 4, `physics.py` 1, `stats.py` 1, `rules.py` 1 (`_basis_models`). **Proposed:** named 6-steps after 5c, which can run beside it by family: 6d `_common`+`table`, 6e `core`, 6f `functions`/`special`/`rootof`/`nodes`/`physics`/`stats`, 6g `wiring` per-node + `registry.templates_for`/`clauses_for`. Plus one step wiring `knowledge_live` into `rust_plugin.py`, so the 31 owned items run by default.
+- **`templates/limits.py`** (8). Kept on Python by the planner's ruling, so no owner is needed (below).
+- **`__init__.py`** (1: `__getattr__`). Compatibility, not runtime (below).
+
+## Items the inventory may have classed wrong (they stay in the table above)
+
+- `satassume/knowledge/templates/limits.py:75-186`, all 8: Appendix A says port, but section 2 (PORT-INVENTORY.md:52) and the planner's Sum/Product/Integral ruling keep it on Python.
+- `satassume/sympy_api.py:560` `_ask` and `:1111` `_engine_ask` are the entry point and the `to_formula` call. Section 2 calls `ask` and the answer memo conversion, so these are likely conversion. `:576` `_ask_general` holds that memo too.
+- `satassume/knowledge/templates/registry.py`: `_redefines:62`, `_covers:124`, `classes:245` and `_collect:250` are the class walk, which section 2 calls conversion. `register:161` is user `register`, which stays Python. `own_facts:54`, `lazy:97`, `_load:141`, `_imported:136` and `load_all:155` are import-time loading.
+- `satassume/knowledge/templates/wiring.py:87` `functions`, and `:151`/`:94` `load`/`template`: section 2 calls these offline.
+- `satassume/knowledge/templates/functions.py:398` `_value_units`: section 2 calls it an offline table, and D generated it.
+- `satassume/knowledge/templates/core.py:448,575,584`: they build `IPI_TABLE`, which is import-time data.
+- `satassume/knowledge/templates/__init__.py:142` `_may_be_nan`: conversion reads it (`convert.py:300`).
+- `satassume/theories/euf/euf_adapter.py:66` `_inherits_from_basic`: conversion calls it (`convert.py:390`).
+- `satassume/sat/theory.py:108-181`: typing Protocols with `...` bodies, so there's nothing to port. They're counted as S.
+- `satassume/sat/solver.py:68-83`, `:2754`, `:2793`: provenance only, which the engine never asks for.
+- `satassume/theories/lra/lra.py:265` `constraint`: only tests call it.
+- `satassume/__init__.py:15` `__getattr__`: an import-time alias shim.
+- Questionable rather than wrong: `engine.py:1418-1527`, the Engine property plumbing; `compile.py:478` `_Lit`; `scope.py:122` `Scope`, `engine.py:123` and `relations.py:378,455`, which are declarations; and constfield's display methods (`:727`, `:1281`, `:1293`, `:1439`).
+
+Not checked: whether each "Rust" row in a module counted whole is still reached on every query path. The status comes from the reports and from rg of `rust_plugin.py`, `session_live.py`, `term_live.py`, `lra_live.py` and `solver_rs/src`, not from a run.
