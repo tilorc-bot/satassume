@@ -348,7 +348,7 @@ _REL_METHODS = {
 }
 #: Plants that live in `relations_core.rs`.
 _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-trichotomy', 'drop-interpret', 'drop-guard',
-               'drop-bound', 'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-not-inert', 'fresh-skew')
+               'drop-bound', 'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-not-inert', 'fresh-skew', 'skip-trichotomy')
 
 
 def _install_relations():

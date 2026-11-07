@@ -47,6 +47,8 @@ const DROP_SELECTOR: u8 = 9;
 const DROP_EQ_INFINITY: u8 = 10;
 const FRESH_NOT_INERT: u8 = 11;
 const FRESH_SKEW: u8 = 12;
+/// All of `_trichotomy` off, as a test patching Python's method does. `DROP_TRICHOTOMY` keeps its `ensure`s, vars and roles.
+const SKIP_TRICHOTOMY: u8 = 13;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -69,6 +71,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("drop-eq-infinity") => DROP_EQ_INFINITY,
         Some("fresh-not-inert") => FRESH_NOT_INERT,
         Some("fresh-skew") => FRESH_SKEW,
+        Some("skip-trichotomy") => SKIP_TRICHOTOMY,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -366,6 +369,10 @@ fn rel_order_infinite<'py>(rel: &Bound<'py, PyAny>, var: i32, sides: &Bound<'py,
 fn rel_trichotomy<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAny>) -> PyResult<()> {
     let p = rel.py();
     tick(session::REL_TRICHOTOMY);
+    if PLANT.load(Relaxed) == SKIP_TRICHOTOMY {
+        tick(session::REL_PLANT);
+        return Ok(());
+    }
     let h = hooks()?;
     let (s, c) = session_of(p, &h, rel)?;
     let c = c.borrow();

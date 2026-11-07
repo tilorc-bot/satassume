@@ -245,6 +245,26 @@ def _direct():
     return dict(cases=out, counts=mod.counts() if mod else {})
 
 
+def _share():
+    """`tests/test_relations.py::test_equality_sharing_is_needed_and_works`'s query. It patches `Relations._trichotomy` to turn the
+    clause off; `rel_interpret` calls Rust's directly, so under Rust that patch reaches nothing."""
+    sys.path.insert(0, os.path.join(HERE, '..', '..', 'tests'))
+    mod = _rust() if os.environ.get('MODE', 'rust') == 'rust' else None
+    from sympy import Q
+    from satassume.relations import Relations
+    from test_relations import ask_with, dummy_specs, f, relation_engine, x, y
+    prop, assum = Q.eq(f(x), f(y)), (x <= y) & (y <= x)
+    patch = os.environ.get('PATCH')
+    if patch == 'first':
+        Relations._trichotomy = lambda self, var, atom: None
+    on = ask_with(relation_engine(dummy_specs()), prop, assum)
+    Relations._share = lambda self: False
+    if patch == 'after':
+        Relations._trichotomy = lambda self, var, atom: None
+    off = ask_with(relation_engine(dummy_specs()), prop, assum)
+    return dict(on=repr(on), off=repr(off), fired=mod.counts()['rel:plant_fired'] if mod else 0)
+
+
 def _join():
     """A query's input term and the same text under another `Function('f')`, each visited first in turn."""
     from sympy import Function, Q, Symbol
@@ -414,6 +434,19 @@ def test_fresh_not_inert_fires():
     assert _call('run', SLICE_SESSION_PLANT='fresh-not-inert')['counts']['rel:plant_fired'] > 0
 
 
+def test_a_patch_on_a_moved_method_reaches_nothing():
+    """Why that suite test fails under Rust: the patch, and not the query. Turn the method off in Rust and it answers as Python's does with the patch in place from the start."""
+    want = dict(on='True', off='None', fired=0)
+    assert _call('share', MODE='py', PATCH='after') == want
+    assert _call('share', SLICE_REL='py', PATCH='after') == want
+    # Rust's calls go past the patch. If this starts answering None, the suite test passes again: drop its name from the report.
+    assert _call('share', PATCH='after') == dict(on='True', off='True', fired=0)
+    # With the method really off, from the start, Rust answers as Python does.
+    assert _call('share', MODE='py', PATCH='first') == dict(on='None', off='None', fired=0)
+    got = _call('share', SLICE_SESSION_PLANT='skip-trichotomy')
+    assert got['fired'] > 0 and (got['on'], got['off']) == ('None', 'None')
+
+
 def test_link_crossings_add_up(rust):
     """Each kind of crossing the report quotes, against the calls that make it."""
     c = rust['counts']
@@ -440,4 +473,4 @@ def test_link_outside_a_query_is_none():
 
 
 if __name__ == '__main__':
-    print(json.dumps({'run': _run, 'join': _join, 'direct': _direct}[sys.argv[1]]()))
+    print(json.dumps({'run': _run, 'join': _join, 'direct': _direct, 'share': _share}[sys.argv[1]]()))
