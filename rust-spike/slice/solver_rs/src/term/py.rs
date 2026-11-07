@@ -1,7 +1,9 @@
 //! The Python face of the term module. Python holds ints; nothing here keeps state across queries.
 use super::offline;
+use super::rat::Rat;
 use super::table::{Kind, Refuse, TermTable, V};
 use super::TermId;
+use num_bigint::BigInt;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
@@ -13,7 +15,7 @@ fn refuse(r: Refuse) -> PyErr {
     TermRefuse::new_err(r.0)
 }
 
-#[pyclass(name = "TermTable", frozen)]
+#[pyclass(name = "TermTable")]
 pub struct PyTermTable(TermTable);
 
 fn req<'py, T: FromPyObjectOwned<'py>>(d: &Bound<'py, PyDict>, k: &str) -> PyResult<T> {
@@ -124,6 +126,56 @@ impl PyTermTable {
     /// `default_sort_key` order, as -1, 0 or 1. Raises TermRefuse.
     fn key_cmp(&self, a: u32, b: u32) -> PyResult<i8> {
         self.0.key_cmp(TermId(a), TermId(b)).map(|o| o as i8).map_err(refuse)
+    }
+
+    /// `n_input`: rows from conversion; later ids are derived.
+    #[getter]
+    fn n_input(&self) -> usize {
+        self.0.n_input
+    }
+
+    /// The term of a rational, by value.
+    fn number(&mut self, p: BigInt, q: BigInt) -> u32 {
+        self.0.number(&Rat::new(p, q)).0
+    }
+
+    /// `-t`. Raises TermRefuse, as do the rest.
+    fn neg(&mut self, t: u32) -> PyResult<u32> {
+        self.0.neg(TermId(t)).map(|x| x.0).map_err(refuse)
+    }
+
+    fn add(&mut self, args: Vec<u32>) -> PyResult<u32> {
+        self.0.add(args.into_iter().map(TermId).collect()).map(|x| x.0).map_err(refuse)
+    }
+
+    fn mul(&mut self, args: Vec<u32>) -> PyResult<u32> {
+        self.0.mul(args.into_iter().map(TermId).collect()).map(|x| x.0).map_err(refuse)
+    }
+
+    fn sub(&mut self, a: u32, b: u32) -> PyResult<u32> {
+        self.0.sub(TermId(a), TermId(b)).map(|x| x.0).map_err(refuse)
+    }
+
+    fn raw_add(&mut self, args: Vec<u32>) -> u32 {
+        self.0.raw_add(args.into_iter().map(TermId).collect()).0
+    }
+
+    fn raw_mul(&mut self, args: Vec<u32>) -> u32 {
+        self.0.raw_mul(args.into_iter().map(TermId).collect()).0
+    }
+
+    fn coeff_add(&mut self, t: u32) -> PyResult<(u32, u32)> {
+        self.0.coeff_add(TermId(t)).map(|(a, b)| (a.0, b.0)).map_err(refuse)
+    }
+
+    fn coeff_mul(&mut self, t: u32) -> PyResult<(u32, u32)> {
+        self.0.coeff_mul(TermId(t)).map(|(a, b)| (a.0, b.0)).map_err(refuse)
+    }
+
+    /// `default_sort_key(t)`, as `row` gives keys.
+    fn sort_key<'py>(&self, py: Python<'py>, t: u32) -> PyResult<Bound<'py, PyAny>> {
+        let k = self.0.sort_key(TermId(t)).map_err(refuse)?;
+        value(py, &self.0, &k)
     }
 
     /// The kinds that have a row but that this slice doesn't use yet stay readable through `class_row`.

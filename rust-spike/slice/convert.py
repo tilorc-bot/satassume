@@ -58,7 +58,11 @@ _KIND_INDEX = {n: i for i, n in enumerate(KINDS)}
 FLAGS = ('is_Add', 'is_Mul', 'is_Pow', 'is_Atom', 'is_Number', 'is_Rational', 'is_Integer', 'is_Float', 'is_Symbol',
          'is_Dummy', 'is_Order', 'is_Function', 'is_NumberSymbol', 'is_commutative_fixed')
 # Term fact bits, in order: Rust's `fact` constants.
-F_NUMBER, F_NAN, F_BAD, F_FLOAT, F_UNDEF, F_MAYBE_NAN, F_READ = 1, 2, 4, 8, 16, 32, 64
+F_NUMBER, F_NAN, F_BAD, F_FLOAT, F_UNDEF, F_MAYBE_NAN, F_READ, F_COMMUTATIVE = 1, 2, 4, 8, 16, 32, 64, 128
+# Class flags past FLAGS: `flag::PLAIN_OPS`, `flag::PLAIN_BASE`. The algebra refuses a class that overrides any of these.
+_PLAIN_OPS, _PLAIN_BASE = 1 << 14, 1 << 15
+_OPS = ('__neg__', '__add__', '__radd__', '__sub__', '__rsub__', '__mul__', '__rmul__', '__truediv__', 'as_coeff_Add',
+        'as_coeff_Mul', 'as_coeff_mul')
 
 # Rust can build these with none in the input, so their rows are always sent, first.
 _PREFIX = (Add, Mul, Pow, Integer, Rational, type(S.Zero), type(S.One), type(S.NegativeOne), type(S.Half))
@@ -79,7 +83,7 @@ class Kept:
 
 class Converted:
     """`tables`: for sa_solver.TermTable. `ids`: {term: id} by SymPy's hash and ==. `objects`: term by id."""
-    __slots__ = ('tables', 'ids', 'objects', 'counts', 'classes')
+    __slots__ = ('__dict__', 'tables', 'ids', 'objects', 'counts', 'classes')
 
     def __init__(self, tables, ids, objects, counts, classes):
         self.tables = tables
@@ -206,6 +210,11 @@ class _Walk:
         for bit, f in enumerate(FLAGS):
             if getattr(cls, f, False) is True:
                 flags |= 1 << bit
+        if (issubclass(cls, Expr) and not getattr(cls, 'is_Order', False) and cls._op_priority == Expr._op_priority
+                and all(getattr(cls, f) is getattr(Expr, f) for f in _OPS)):
+            flags |= _PLAIN_OPS
+        if issubclass(cls, Expr) and cls.as_base_exp is Expr.as_base_exp:
+            flags |= _PLAIN_BASE
         try:
             ckey = cls.class_key()
             found = registry.templates_for(cls)
@@ -265,6 +274,8 @@ class _Walk:
             bits |= F_UNDEF
         if _may_be_nan(t):
             bits |= F_MAYBE_NAN
+        if t.is_commutative is True:
+            bits |= F_COMMUTATIVE
         out += (T_INT, bits, T_INT, constructed_noncommutative(t))
         if number and isinstance(t, Expr):
             self.closed(t, out)

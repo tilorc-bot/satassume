@@ -53,7 +53,32 @@ pub mod fact {
     pub const MAYBE_NAN: u8 = 32;
     /// Facts were read for this term: not a node of the formula's skeleton.
     pub const READ: u8 = 64;
+    /// `is_commutative` is True.
+    pub const COMMUTATIVE: u8 = 128;
 }
+
+/// Bits of `ClassRow::flags`: `FLAGS` in `convert.py`, same order.
+pub mod flag {
+    pub const IS_NUMBER: u32 = 1 << 4;
+    pub const IS_NUMBER_SYMBOL: u32 = 1 << 12;
+    /// The operators and coefficient splits are `Expr`'s own, at `Expr`'s priority.
+    pub const PLAIN_OPS: u32 = 1 << 14;
+    /// `as_base_exp` is `Expr`'s own: `(self, 1)`.
+    pub const PLAIN_BASE: u32 = 1 << 15;
+}
+
+/// `_PREFIX` in `convert.py`: rows always sent first, since Rust can build these with none in the input.
+pub const CLASS_ADD: ClassId = ClassId(0);
+pub const CLASS_MUL: ClassId = ClassId(1);
+pub const CLASS_INTEGER: ClassId = ClassId(3);
+pub const CLASS_RATIONAL: ClassId = ClassId(4);
+pub const CLASS_ZERO: ClassId = ClassId(5);
+pub const CLASS_ONE: ClassId = ClassId(6);
+pub const CLASS_NEGATIVE_ONE: ClassId = ClassId(7);
+pub const CLASS_HALF: ClassId = ClassId(8);
+const PREFIX_KINDS: [Kind; 9] = [
+    Kind::Add, Kind::Mul, Kind::Pow, Kind::Integer, Kind::Rational, Kind::Zero, Kind::One, Kind::NegativeOne, Kind::Half,
+];
 
 pub struct ClassRow {
     pub name: u32,
@@ -95,6 +120,8 @@ pub struct TermTable {
     pub settings: V,
     /// (proposition, assumptions or None): nested tuples headed by a tag string; relation atoms stay (name, lhs, rhs).
     pub formula: V,
+    /// Rows from conversion; the ones after these are derived.
+    pub n_input: usize,
     index: HashMap<(ClassId, Arc<[V]>), TermId>,
 }
 
@@ -207,6 +234,11 @@ impl TermTable {
                 custom_content: f[7] == V::Bool(true),
             });
         }
+        for (i, k) in PREFIX_KINDS.iter().enumerate() {
+            if class_rows.get(i).map(|c| c.kind) != Some(*k) {
+                return Err(format!("class row {i}: not the prefix"));
+            }
+        }
         let mut r = Reader { t: terms, i: 0 };
         let mut rows = Vec::with_capacity(n_terms);
         let mut index = HashMap::with_capacity(n_terms);
@@ -267,7 +299,7 @@ impl TermTable {
         }
         let settings = Reader { t: settings, i: 0 }.value(&strings)?;
         let formula = Reader { t: formula, i: 0 }.value(&strings)?;
-        Ok(TermTable { strings, classes: class_rows, terms: rows, settings, formula, index })
+        Ok(TermTable { strings, classes: class_rows, terms: rows, settings, formula, n_input: n_terms, index })
     }
 
     pub fn len(&self) -> usize {
@@ -289,6 +321,29 @@ impl TermTable {
     /// The term with this class and content, if the table holds it: how a derived term will merge with an input term.
     pub fn find(&self, class: ClassId, content: &Arc<[V]>) -> Option<TermId> {
         self.index.get(&(class, content.clone())).copied()
+    }
+
+    pub(super) fn index_insert(&mut self, class: ClassId, content: Arc<[V]>, t: TermId) {
+        self.index.insert((class, content), t);
+    }
+
+    /// The class SymPy gives this rational's value.
+    pub(super) fn class_of_rational(&self, r: &Rat) -> ClassId {
+        if r.is_int() {
+            if r.is_zero() {
+                CLASS_ZERO
+            } else if r.is_one() {
+                CLASS_ONE
+            } else if r.neg().is_one() {
+                CLASS_NEGATIVE_ONE
+            } else {
+                CLASS_INTEGER
+            }
+        } else if *r == Rat::new(BigInt::from(1), BigInt::from(2)) {
+            CLASS_HALF
+        } else {
+            CLASS_RATIONAL
+        }
     }
 
     /// `_cmp_name`: the same name is equal, whichever classes hold it. Ranks first, and names only if neither has one.
@@ -357,11 +412,8 @@ impl TermTable {
         })
     }
 
-    /// `default_sort_key(a) < default_sort_key(b)`, as an ordering. For input terms only so far.
+    /// `default_sort_key(a) < default_sort_key(b)`, as an ordering.
     pub fn key_cmp(&self, a: TermId, b: TermId) -> Result<Ordering, Refuse> {
-        match (&self.row(a).key, &self.row(b).key) {
-            (Some(x), Some(y)) => self.value_cmp(x, y),
-            _ => Err(Refuse("key: not supplied")),
-        }
+        self.value_cmp(&self.sort_key(a)?, &self.sort_key(b)?)
     }
 }
