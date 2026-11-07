@@ -2,11 +2,13 @@
 
 **The rise is scaffolding. All of it comes from the eight `rel_*` functions C2b and C2c moved into Rust. They read and write `Relations`' Python dicts and sets, which are keyed by SymPy objects, and Python's `Relations.process`, `_share` and `Session` call them with SymPy objects. 5c moves `Relations.__init__`, `process`, `_share` and `Session` onto per-query ids, so every one of these sites goes away by design.** The few sites that stay after 5c are in the EUF and LRA adapters and in `scope.py`. They were there at bfac870 and haven't changed since: 46,140 `Basic` and 26,603 `Integer` on fuzz.
 
+**The rise isn't new work. It's hashing that moved from Python into Rust.** Pass 2 counts every `Basic.__hash__` and `Integer.__hash__` start, whether Rust or Python made it. Over bfac870 → C2b → C2c, the total in rust mode falls slightly: fuzz `Basic` 4,472,779 → 4,432,036 → 4,436,003, and `Integer` 1,384,818 → 1,355,458 → 1,367,878. Dev goes 327,122 → 325,352 → 325,313 and 55,645 → 54,459 → 54,885. Each run's Rust-made rows equal its `rust2py` counts, checked in the script.
+
 This is a count, not a timing. No speed was measured or claimed.
 
 ## How it was counted
 - **Counter:** `rust-spike/slice/hash_trace.py` is sa-port-86's `qt86.py` (639abd6) with its `count` kind and the same install sequence. It adds one key: each Rust-to-Python callback is also keyed by the Rust callable on top of the stack and the Python line that called it. The `rust2py` totals are qt86's numbers by construction, and the per-site rows sum exactly to them (the `TOTAL site` row equals `TOTAL rust2py` in every column).
-- **Runs:** pareto1, under a shared lease, by `rust-spike/slice/p1/hash_trace_job.sh`, `PYTHONHASHSEED=0`. Each tree is my own clone with a `.so` built in the job: base bfac870 (`.so` db2e4182…), C2b a62bd61 (492b80de…), C2c 5a8740b = de8bd3a plus the counter only (a348bf35…, the same sha as sa-port-91's C2c build). Each run imported `satassume` from its own tree. Rows are on pareto1 under `~/sp19/sa-rust-ids-work/sa-port-94/trace1`, with a copy on orion under `~/sa-rust-ids-work/sa-port-94/trace1`.
+- **Runs:** pareto1, under a shared lease, by `rust-spike/slice/p1/hash_trace_job.sh`, `PYTHONHASHSEED=0`. Each tree is my own clone with a `.so` built in the job: base bfac870 (`.so` db2e4182…), C2b a62bd61 (492b80de…), C2c 5a8740b = de8bd3a plus the counter only (a348bf35…, the same sha as sa-port-91's C2c build). Each run imported `satassume` from its own tree. Rows are on pareto1 under `~/sp19/sa-rust-ids-work/sa-port-94/trace1` and `trace2`, with copies on orion under `~/sa-rust-ids-work/sa-port-94/`. Pass 2 ran on c2c tree 452ab0f, which changes only the job script.
 - **Reproduces every number in the brief exactly:** fuzz 708,603 / 207,017 → 1,563,962 / 615,456, and dev 43,401 / 8,137 → 73,784 / 22,856. Answer digests are as pinned on every run: dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6. The C2c dev count was also run on orion (aarch64) and gave the same numbers.
 - **Only callbacks made directly from Rust are counted, as in qt86.** A hash that Python code or a C slot makes isn't counted, and a `__hash__` that Python code calls during the walk isn't counted either.
 
@@ -49,6 +51,19 @@ This is a count, not a timing. No speed was measured or claimed.
 - **The link:** its hashes land inside `rel_link` and `rel_interpret`, and this counter can't separate them. The bound from `port-c2c.md` stands: at most one per `link:cross_hash`, which is 81,134 on fuzz. `Cx::structural`'s share is part of that bound and isn't split out here.
 
 **After 5c, by design:** at C2c, everything but the three "stays" rows goes. That's 1,517,822 of 1,563,962 `Basic` and 588,853 of 615,456 `Integer` on fuzz, and 71,006 of 73,784 and 21,880 of 22,856 on dev. It assumes three things: `EqualitySharing` gets ids, `scope.py` stays outside 5c, and the knowledge caller of `dvar` goes. Whatever converting the input to ids costs at the query entry remains: once per term per query, not once per crossing. Per the ruling, that cost gets reported when the engine port lands.
+
+## Pass 2: every hash, from Rust (R) or not (P), with Python mode
+Same job with `BUILD=0 MODES="rust py"`, on the same `.so` files. Rows: `trace2`, next to `trace1`. The answer digests are as pinned in all 12 runs.
+
+| | dev `Basic` P + R = total | dev `Integer` | fuzz `Basic` | fuzz `Integer` |
+|---|--:|--:|--:|--:|
+| Python mode, any tree | 242,832 | 40,793 | 4,367,041 | 1,038,274 |
+| rust, bfac870 | 283,721 + 43,401 = 327,122 | 47,508 + 8,137 = 55,645 | 3,764,176 + 708,603 = 4,472,779 | 1,177,801 + 207,017 = 1,384,818 |
+| rust, C2b | 264,325 + 61,027 = 325,352 | 38,160 + 16,299 = 54,459 | 3,266,031 + 1,166,005 = 4,432,036 | 933,157 + 422,301 = 1,355,458 |
+| rust, C2c | 251,529 + 73,784 = 325,313 | 32,029 + 22,856 = 54,885 | 2,872,041 + 1,563,962 = 4,436,003 | 752,422 + 615,456 = 1,367,878 |
+
+- **Python mode's count is the same on all three trees,** as it should be.
+- **What does stay is rust mode's excess over Python mode, and it was already there at bfac870.** At C2c that excess is fuzz `Basic` +1.6% and `Integer` +31.7%, and dev +34% and +35%. On orion's C2c dev run, the largest Python-side rows in rust mode come from the term conversion: `convert.py _Walk.walk` at 36,749 and `term_live.py term_id` at 31,609. That fits the input-conversion cost the rulings already expect to remain, but it isn't split per site here.
 
 ## Not done
 - No timing.
