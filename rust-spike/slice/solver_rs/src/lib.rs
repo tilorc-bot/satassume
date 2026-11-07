@@ -7,6 +7,7 @@
 mod block;
 mod euf;
 mod euf_py;
+mod formula_py;
 mod handle;
 // One source for the rational core: the replay binary in lra/port builds the same files.
 #[path = "../../../lra/port/src/lra.rs"]
@@ -557,5 +558,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySolver>()?;
     m.add_class::<lra_py::LraCore>()?;
     euf_py::add_to(m)?;
+    formula_py::register(m)?;
     transfer_py::register(m)
 }
