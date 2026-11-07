@@ -3,7 +3,7 @@
 For ports that hold terms before component 0 lands everywhere. Section 9 of `PORT-INVENTORY.md` is the format; this is
 the part another component codes against. Stable from this commit: additions only, and any change gets a note here.
 
-**Built so far:** the handle types, `convert.py` and `TermTable`'s reads (`row`, `class_of`, `find`, `compare`, `key_cmp` on input terms), run on dev under a shadow. The algebra (`neg`, `sub`, `add`, `mul`, `coeff_add`, `coeff_mul`, `raw_add`, `raw_mul`, `number`) and `sort_key` of derived terms are code in `solver_rs/src/term/algebra.rs`, checked by hand cases only so far and not yet under the real engine.
+**Built so far:** the handle types, `convert.py`, `TermTable`'s reads (`row`, `class_of`, `find`, `compare`, `key_cmp`), the algebra (`neg`, `sub`, `add`, `mul`, `coeff_add`, `coeff_mul`, `raw_add`, `raw_mul`, `number`) and `sort_key` of derived terms (`solver_rs/src/term/algebra.rs`). All of it runs beside the real engine under a shadow that checks it against Python on dev, fuzz and corpus, with memos cleared per query. **Nothing consumes it yet: the shadow decides nothing,** so no answer comes from this code. The first consumer has to meet section 9's limit on discarded runs in `PORT-INVENTORY.md`, and recount `engine.py:1906` with conversion raising there.
 
 ## The handle
 

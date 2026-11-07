@@ -556,7 +556,7 @@ def synthetic(c, table):
         check_op(op, 'synthetic', operands, real, _OPS[op])
     for a in terms:
         one('__neg__', [a], lambda: -a)
-        for k in (S(2), S(-1), S.Half, Rational(-3, 2)):
+        for k in (S(2), S(-1), S(-2), S.Half, Rational(-3, 2)):   # -2: keep_coeff's -1 branch taken wrongly (planted bug)
             one('__mul__', [k, a], lambda: k * a)
             one('__add__', [a, k], lambda: a + k)
         for b in terms:

@@ -329,7 +329,7 @@ One call per top-level query, Python to Rust: flat arrays of the tables below. R
 | Terms | Distinct term | Class; arg ids; payload: rational `p`, `q` as bytes; `Float` mantissa and precision; symbol name; `Dummy` index; `ComplexRootOf` coefficients and index | R1, R14, R16 |
 | Term facts | Term | `is_number`; free-symbol ids; `has_nan`, `has_bad`, `has_float`, `has_applied_undef`; non-commutative level 0, 1 or 2; `may_be_nan`; `sort_key` in a form that compares the same | R3, R4, R8, R18; `_may_be_nan` |
 | Closed terms | Closed term | `is_finite`; `complex()` value as two exact `f64` bit patterns, for a factor in a sort key | R17; section 3 |
-| Power factors | `Pow` factor of a term | `decompose_power` split: base id, exponent rational. If the base isn't an input term, the query is refused | Section 3 |
+| Power factors | `Pow` factor of a term | `decompose_power` split: base id, exponent rational. If the base isn't an input term, the row holds no base and a key that needs it refuses ("Refused during a run") | Section 3 |
 | Atomic numbers | Atomic number | Truth values for the whole vocabulary, from `const_value` | R5 |
 | Symbols | Symbol | `assumptions0` | R6 |
 | Generic constants | Closed generic constant | The 128-bit bound (`_IV_PREC`) | R9 |
@@ -345,9 +345,11 @@ Conversion decides each of these before sending anything, and the query runs on 
 - A non-default registry: `register`, custom templates, `clause_templates`, custom `relation_specs`, node facts or custom handlers (section 7, item 2).
 - `Sum`, `Product` or `Integral` anywhere in the query (section 7, item 4).
 - Args `==` but not `is` (R12).
-- A `Pow` factor whose `decompose_power` base isn't an input term.
 
 **Refused during a run.** Rust can also return "refused, with reason" when it reaches a derived shape the term algebra doesn't handle (section 3). Python discards that run and answers on Python. Rust holds no state after a query, so nothing needs undoing, and the query counts as kept on Python.
+
+- **A `Pow` factor whose `decompose_power` base isn't an input term** refuses when a key needs it, not at conversion (planner's ruling on component 0, 7 Nov). This is that mechanism: the whole run is discarded and answered on Python, with no partial result, and it isn't 1a's state transfer. It's an unported shape, so it's reported as a gap, not as a new exception. Reported: refusals at key time, and queries holding such a `Pow` that finished without refusing. The refusal count must not change across hash seeds.
+- **A limit on "Rust holds no state":** that covers Rust only. Until component 5, Python's engine and its memos are still running. Component 0's shadow only counts, so it isn't affected. Whichever session first uses Rust's key for real must show that a discarded run leaves nothing in Python, or ask the planner.
 
 ### Offline data, read once at load
 
