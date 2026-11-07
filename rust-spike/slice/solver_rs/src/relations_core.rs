@@ -1465,6 +1465,7 @@ fn rel_link_probe(core: &Bound<'_, SessionCore>, x: &Bound<'_, PyAny>) -> PyResu
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("REL_KINDS", (SD, EN, MC, IE, IL))?;
     m.add_function(wrap_pyfunction!(rel_link_probe, m)?)?;
     m.add_function(wrap_pyfunction!(rel_install, m)?)?;
     m.add_function(wrap_pyfunction!(rel_plant, m)?)?;
