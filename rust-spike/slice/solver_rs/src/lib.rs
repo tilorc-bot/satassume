@@ -5,6 +5,7 @@
 //! Not ported: provenance (`owner`, `provenance`, `root_step`). The engine sets `track_owners = False`, so it never
 //! asks; those raise NotImplementedError rather than answer wrongly.
 mod block;
+mod compile;
 mod constfield;
 mod euf;
 mod euf_py;
@@ -19,6 +20,7 @@ mod map;
 mod rat;
 mod realroots;
 mod rows;
+mod session;
 mod solver;
 mod term;
 mod theory;
@@ -565,5 +567,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     formula_py::register(m)?;
     realroots::register(m)?;
     rows::register(m)?;
+    session::register(m)?;
     transfer_py::register(m)
 }

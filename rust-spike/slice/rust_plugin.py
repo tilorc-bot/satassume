@@ -96,6 +96,8 @@ if BACKEND == "rust":
     # Slice D: lra_adapter's term work from Rust. SLICE_LRA_TERM=py keeps it off.
     import lra_live
     lra_live.from_env()
+    import session_live     # Component 5, step 5a. SLICE_SESSION=py keeps it off.
+    session_live.from_env()
 
 # Rust EUF on Python's solver: the tests whose harness reads Solver internals fail on the crate's solver before any EUF
 # answer is read (the 77 and 46), so this is the only way they check the Rust EUF. SLICE_EUF=rust asks for it.

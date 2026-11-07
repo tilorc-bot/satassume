@@ -341,6 +341,8 @@ def main():
         term_live.from_env()
         import lra_live     # Slice D. SLICE_LRA_TERM=py keeps it off.
         lra_live.from_env()
+        import session_live     # Component 5, step 5a. SLICE_SESSION=py keeps it off.
+        session_live.from_env()
     if args.check == "plain":
         if backend:
             backend.install()

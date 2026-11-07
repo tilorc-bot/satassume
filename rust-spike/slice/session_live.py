@@ -1,0 +1,294 @@
+"""Component 5, step 5a: `VarTable`, `compile_formula` and `Session`'s variable and clause surface run in Rust (`session.rs`,
+`compile.rs`). What stays here is the shell: `Session` keeps discovery, `Relations` and the templates, and reaches the core
+through the views below, which keep `table` and `base` readable as they were. `SLICE_SESSION=py` keeps it off.
+
+Keys are the session's own node ids, joined as Python's dicts join objects, not the per-query table's ids as the planner's 5a
+says. Kept queries have no table. Dev's census of visited nodes (`SESSION_REPORT`): 2,246 input rows, 53 derived rows, 177
+`Add` and `Mul` with no row yet, 6 on kept queries, none of another class. Whether to link them is 5b's question.
+"""
+import os
+
+import sa_solver
+
+from satassume import engine
+from satassume.knowledge import compile as C
+from satassume.knowledge import rules
+from satassume.sat import formula as Fm
+
+#: Test plants: 'var-off' moves every answer of `Session.var` called from Python; 'guard-drop' compiles `assume_formula`'s
+#: formula with no selector, through `compile.rs`.
+PLANT = [None]
+PLANT_FIRED = [0]
+
+#: SESSION_REPORT=FILE: for each visited node, whether the per-query table has a row for it, read with no learning. Written
+#: at exit, with the build that loaded and the crossings by kind.
+CENSUS = None
+
+_rules = [None]
+
+
+def _core_rules():
+    if _rules[0] is None:
+        _rules[0] = sa_solver.SessionRules(
+            rules.BASIS, rules.DEF_LITS,
+            [Fm.P, Fm.And, Fm.Or, Fm.Not, Fm.Implies, Fm.Equivalent, Fm.Exclusive, Fm.ITE, C._Lit],
+            rules.def_implications)
+    return _rules[0]
+
+
+class _Custom:
+    """`table.custom`."""
+    __slots__ = ('c',)
+
+    def __init__(self, c):
+        self.c = c
+
+    def get(self, a, default=None):
+        v = self.c.custom_get(a)
+        return default if v is None else v
+
+    def __contains__(self, a):
+        return self.c.custom_get(a) is not None
+
+    def __getitem__(self, a):
+        v = self.c.custom_get(a)
+        if v is None:
+            raise KeyError(a)
+        return v
+
+
+class _BaseOf:
+    """`table.base_of`."""
+    __slots__ = ('c',)
+
+    def __init__(self, c):
+        self.c = c
+
+    def get(self, n, default=None):
+        v = self.c.base_of_get(n)
+        return default if v is None else v
+
+    def __contains__(self, n):
+        return self.c.base_of_get(n) is not None
+
+    def __getitem__(self, n):
+        v = self.c.base_of_get(n)
+        if v is None:
+            raise KeyError(n)
+        return v
+
+
+class _Base:
+    """`Session.base`: the visited nodes."""
+    __slots__ = ('c',)
+
+    def __init__(self, c):
+        self.c = c
+
+    def get(self, n, default=None):
+        v = self.c.base_get(n)
+        return default if v is None else v
+
+    def __contains__(self, n):
+        return self.c.base_get(n) is not None
+
+    def __getitem__(self, n):
+        v = self.c.base_get(n)
+        if v is None:
+            raise KeyError(n)
+        return v
+
+    def __len__(self):
+        return self.c.n_base()
+
+
+class _Slots:
+    """`table.slots`: `Relations.sync_transfer` reads it by cursor."""
+    __slots__ = ('c',)
+
+    def __init__(self, c):
+        self.c = c
+
+    def __len__(self):
+        return self.c.n_vars() + 1
+
+    def __getitem__(self, v):
+        return self.c.slot(v)
+
+
+class TableView:
+    """`VarTable`'s surface. The core comes when `Session.__init__` assigns this to `self.table`, by then with its solver."""
+
+    def bind(self, session):
+        import weakref
+        self.core = sa_solver.SessionCore(_core_rules(), weakref.ref(session))
+        c = self.core
+        self.custom, self.base_of, self.slots = _Custom(c), _BaseOf(c), _Slots(c)
+        self.var, self.aux, self.node_base = c.table_var_py, c.aux, c.node_base
+        self.atom = c.atom
+        self.base_view = _Base(c)
+
+    @property
+    def new_nodes(self):
+        return self.core.new_nodes()
+
+    @new_nodes.setter
+    def new_nodes(self, value):
+        assert not value
+        self.core.clear_new_nodes()
+
+    @property
+    def new_custom(self):
+        return self.core.new_custom()
+
+    @new_custom.setter
+    def new_custom(self, value):
+        assert not value
+        self.core.clear_new_custom()
+
+    @property
+    def atom_of(self):
+        return [None] + [self.atom(v) for v in range(1, len(self))]
+
+    @property
+    def naux(self):
+        return self.core.naux()
+
+    @property
+    def true_var(self):
+        return self.core.true_var()
+
+    def __len__(self):
+        return self.core.n_vars()
+
+    def lit_name(self, lit):
+        a = self.atom(abs(lit))
+        s = repr(a) if a is not None else f"aux{abs(lit)}"
+        return ("~" if lit < 0 else "") + s
+
+
+def _table_get(self):
+    return self.__dict__['_table_view']
+
+
+def _table_set(self, view):
+    view.bind(self)
+    self.__dict__['_table_view'] = view
+
+
+def _base_get(self):
+    return self.__dict__['_table_view'].base_view
+
+
+def _base_set(self, value):
+    assert not value    # `Session.__init__`'s `{}`
+
+
+def _node(self, node, demanded=None):
+    c = self.table.core
+    b = c.base_get(node)
+    if b is not None:
+        if demanded is not None and (node in self.pending or node in self.pending_c):
+            self._compile_pending(node, demanded)
+        return b
+    return c.visit(node, demanded)
+
+
+def _census(node):
+    import term_live
+    q = term_live.current()
+    if q is None:
+        k = 'no-query'
+    elif q.kept is not None:
+        k = 'kept-query'
+    elif q.ids.get(node) is not None:
+        k = 'input-row'
+    elif q.derived.get(node) is not None:
+        k = 'derived-row'
+    else:
+        k = 'no-row:' + type(node).__name__
+    CENSUS[k] = CENSUS.get(k, 0) + 1
+
+
+def _core_visit(self, node, b, demanded):
+    if CENSUS is not None:
+        _census(node)
+    constructing = self.engine._constructing
+    constructing.add(node)
+    try:
+        self._visit(node, b, demanded)
+    finally:
+        constructing.discard(node)
+
+
+def _var(self, pred, node):
+    v = self.table.core.var(pred, node)
+    if PLANT[0] == 'var-off' and v > 1:
+        PLANT_FIRED[0] += 1
+        return v - 1
+    return v
+
+
+def _dvar_public(self, dn, need='both'):
+    return self.table.core.dvar(dn, need)
+
+
+def _dvar_raw(self, d, node, need, link=False):
+    return self.table.core.dvar_raw_py(d, node, need, link)
+
+
+def _compile_formula(f, table, emit, dv=None):
+    """`assume_formula` passes its own `emit`, which appends `-self.sel`; every other call site passes `Session.emit`."""
+    session = getattr(emit, '__self__', None)
+    guard = 0
+    if session is None:
+        guard = emit.__closure__[0].cell_contents
+    if PLANT[0] == 'guard-drop':
+        guard = 0
+    table.core.compile(f, guard, dv is not None)
+
+
+def _formula_literal(f, table, emit, dv=None):
+    return table.core.literal(f, dv is not None)
+
+
+def install():
+    """Returns the undo."""
+    S = engine.Session
+    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'node', 'var', 'dvar', '_dvar', '_core_visit')}
+    g = (engine.VarTable, engine.compile_formula, engine.formula_literal)
+    S.table = property(_table_get, _table_set)
+    S.base = property(_base_get, _base_set)
+    S.node, S.var, S.dvar, S._dvar, S._core_visit = _node, _var, _dvar_public, _dvar_raw, _core_visit
+    engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
+
+    def undo():
+        for n, v in saved.items():
+            if v is None:
+                delattr(S, n)
+            else:
+                setattr(S, n, v)
+        engine.VarTable, engine.compile_formula, engine.formula_literal = g
+    return undo
+
+
+def _write_report(path):
+    import json
+    json.dump(dict(so=sa_solver.__file__, counts=counts(), nodes=CENSUS, plant_fired=PLANT_FIRED[0]), open(path, 'w'), sort_keys=True)
+
+
+def from_env():
+    global CENSUS
+    if os.environ.get('SLICE_SESSION', 'rust') == 'rust':
+        if os.environ.get('SESSION_REPORT'):
+            import atexit
+            CENSUS = {}
+            atexit.register(_write_report, os.environ['SESSION_REPORT'])
+        if os.environ.get('SLICE_SESSION_PLANT'):
+            PLANT[0] = os.environ['SLICE_SESSION_PLANT']
+        return install()
+    return None
+
+
+def counts():
+    return dict(sa_solver.session_counts())

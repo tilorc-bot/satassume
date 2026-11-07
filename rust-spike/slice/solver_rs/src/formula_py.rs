@@ -55,6 +55,12 @@ fn is_frozen(slf: &Bound<'_, PyP>, name: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(slf.is_exact_instance_of::<PyP>() || name.eq(intern!(p, "pred"))? || name.eq(intern!(p, "expr"))?)
 }
 
+impl PyP {
+    pub fn fields(&self) -> (&Py<PyAny>, &Py<PyAny>) {
+        (&self.pred, &self.expr)
+    }
+}
+
 #[pymethods]
 impl PyP {
     #[new]
