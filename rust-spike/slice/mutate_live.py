@@ -5,7 +5,8 @@ the unmutated build and each mutant:
   dev-ans, fuzz-ans       `live.py --check plain`: answers only, with `backend.install()`. This is the digest column.
   dev-state, fuzz-state   `live.py --check entry`: session state and call streams.
 A cell is: caught (with the first query), no, or hang/crash when out of time or dead. Results are written as each check
-ends: results.jsonl, table.md. The unmutated row must read "no" throughout.
+ends: results.jsonl, table.md. The unmutated row must read "no" throughout. `finished.txt` is written last.
+--resume keeps WORK's builds and results.jsonl's cells and runs only the missing cells. Use it only with the same crate.
 """
 import argparse
 import concurrent.futures as cf
@@ -14,6 +15,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -128,23 +130,33 @@ def main():
     p.add_argument("--timeout", type=float, default=1800)
     p.add_argument("--only")
     p.add_argument("--checks", default=",".join(CHECKS))
+    p.add_argument("--resume", action="store_true")
     a = p.parse_args()
     a.work, a.ref = os.path.abspath(a.work), os.path.abspath(a.ref)
     import shutil
     crate = os.path.join(a.work, "crate")
     os.makedirs(os.path.join(a.work, "logs"), exist_ok=True)
-    if os.path.exists(crate):
-        shutil.rmtree(os.path.join(crate, "src"))
-    shutil.copytree(os.path.join(HERE, "solver_rs"), crate, dirs_exist_ok=True, ignore=shutil.ignore_patterns("target"))
     only = set(map(int, a.only.split(","))) if a.only else set(range(len(M)))
-    sos = {"base": build(crate, os.path.join(a.work, "base"))}
-    for i in range(len(M)):
-        if i in only:
-            sos[i] = mutated_build(crate, a.work, i)
+    if a.resume:
+        sos = {"base": os.path.join(a.work, "base"), **{i: os.path.join(a.work, f"m{i}") for i in sorted(only)}}
+    else:
+        if os.path.exists(crate):
+            shutil.rmtree(os.path.join(crate, "src"))
+        shutil.copytree(os.path.join(HERE, "solver_rs"), crate, dirs_exist_ok=True, ignore=shutil.ignore_patterns("target"))
+        sos = {"base": build(crate, os.path.join(a.work, "base"))}
+        for i in range(len(M)):
+            if i in only:
+                sos[i] = mutated_build(crate, a.work, i)
     shas = {k: sha(os.path.join(d, "sa_solver.so")) for k, d in sos.items()}
     if len(set(shas.values())) != len(shas):
         sys.exit(f"VOID: two builds are the same file: {shas}")
     rows = {k: {} for k in sos}
+    if a.resume:
+        for line in open(os.path.join(a.work, "results.jsonl")):
+            r = json.loads(line)
+            k, c = r.pop("mutant"), r.pop("check")
+            if k in rows:
+                rows[k][c] = r
     write(a, rows)
     checks = a.checks.split(",")
 
@@ -156,9 +168,11 @@ def main():
                 f.write(json.dumps(dict(mutant=k, check=c, **r)) + "\n")
             write(a, rows)
     with cf.ThreadPoolExecutor(a.jobs) as ex:
-        for fu in cf.as_completed([ex.submit(job, k, c) for k in sos for c in checks]):
+        for fu in cf.as_completed([ex.submit(job, k, c) for k in sos for c in checks if c not in rows[k]]):
             fu.result()
     print(open(os.path.join(a.work, "table.md")).read())
+    with open(os.path.join(a.work, "finished.txt"), "w") as f:
+        f.write(time.strftime("%H:%M:%S UTC\n", time.gmtime()))
 
 
 if __name__ == "__main__":
