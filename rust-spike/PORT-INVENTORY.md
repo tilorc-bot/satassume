@@ -1,13 +1,14 @@
 # Port inventory: what moves to Rust, what is converted, what stays offline (issue 323)
 
-**Status: partial, handed off by sa-port-2 at its context note. Not done.** Sections 9 and 10 are still drafts. Sections 2 to 7 hold what was read and measured. Section 8 lists what's still open; `HANDOFF-sa-port-2.md` says how to continue and `HANDOFF-sa-port-1.md` has the map. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5) was read, not applied.
+**Status: complete, by sa-port-3, 7 Nov. Sections 9 and 10 are final. No code was ported, and no Rust ran for anything here.** Two censuses didn't complete; section 8 says which, and what rests on them. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5, open, needs-human) was run as a separate tree, not applied.
 
 **Where it stands:**
 
+- **Hard blockers:** none. Section 7 has the 4 items closest to one. This is a clearance from reading and Python runs, not from a port.
+- **Needs a ruling:** `Sum`, `Product`, `Integral`. A Rust version can't match Python's answers without SymPy's evaluation: 158 of 1,800 queries chosen to break it lost an answer, while 0 of 2,592 plain ones did. **Call:** they stay on Python. Section 7 has the options.
+- **Real-hash order: cause found.** PR 328's sites account for all of it: 39, 131 and 13 queries on dev, fuzz and corpus go to 0 with its tree. The reference for state comparison is `rust-slice` plus PR 328 (section 5).
 - **History independence:** per-query ids hold up on reading, and they're stronger than Python's own position (section 5). No answer run tested this, because nothing is built yet.
-- **Hardest part: derived terms, now sized.** Only small shapes reach a sort key: `0`, sums of input terms with rational coefficients, and one product shape (section 3). A Python check computed form, arg order and sort key without building the term, with 0 mismatches. It's a Python check over synthetic combinations of input terms, not Rust. Not yet measured on the suite.
-- **New: real-hash order reaches solver state today,** in 39 of 1,985 dev and 131 of 3,000 fuzz queries, with no answer changing (section 5). Whether PR 328 removes all of it wasn't run. Until it is, a Rust first-seen order can't be held to matching Python's state on those queries.
-- **Hard blockers:** none found so far. Section 7 has the 3 items closest to one. The review isn't complete, so this isn't a clearance.
+- **Hardest part: derived terms, sized on five workloads, not on the suite.** Only small shapes reach a sort key there, and a Python check computed form, arg order and key without building the term, with 0 mismatches over synthetic combinations (section 3).
 
 ## 1. Target and method
 
@@ -21,7 +22,7 @@
 - **[doc]:** taken from a docstring or comment only, not checked against the code.
 - **[run]:** a direct check in this SymPy (1.15.0.dev).
 
-**Not reached:** a suite-wide census was started and its result wasn't read, so sites only the suite reaches (`limits`, `special`, `stats`, `rootof`, `physics`) are [static] at best.
+**Not reached:** the suite-wide census didn't finish in time to be read (section 8), so sites only the suite reaches (`special`, `stats`, `rootof`, `physics`) are [static] at best. `limits` was measured directly (section 7).
 
 ## 2. Classification
 
@@ -39,7 +40,7 @@ Appendix A lists every function. These are the module-level calls; a function's 
 | `relations.py`, `engine.py`, `scope.py`, `knowledge/compile.py` | port | **Call on `compile.py`:** it's runtime, not offline. `VarTable` and `compile_formula` run per session, and its `.args` reads are of `Formula` objects, not SymPy [static] |
 | `sympy_api.py` | **split** | `ask` and the answer memo (:418), `to_formula` (:354), `_applied_category` (:257), `check_strict` (:178), `out_of_scope` (:300) and matrix tests are conversion. **Call:** the relevance layer (`_keys_rel`, `_Split` :864, `_relevant` :929, `_consistent` :1088) is port, because it calls `Engine.verdict` and its inputs are terms |
 | `knowledge/rules.py` | **split** | Import-time compile is offline, output read as data. `cnf_of` (:207), `expand_clause` (:270), `closure_mask` (:355), `unit_propagate` (:383) and others that ran at query time are port. Appendix A marks each by [census] |
-| `knowledge/domain.py` | conversion, except `kept_product` | `_noncommutative` becomes a bit per node. `kept_product` builds a `Mul` (:482): port, section 3 |
+| `knowledge/domain.py` | conversion, except `kept_product` | `constructed_noncommutative` (:58) becomes a level per node, 0, 1 or 2, not a bit (`engine.py:165`, `_noncommutative_answer`). `kept_product` builds a `Mul` (:482): port, section 3 |
 | `knowledge/extensions.py` | **stays Python** | User functions take SymPy arguments. Section 7, item 2 |
 | `knowledge/realroots.py` | port | Plain Python over `int` and `Fraction` [doc]; polynomial data comes from conversion |
 | `templates/_rows.py` | **offline** | **Call:** language and compiler. `wiring.py:42` says a query doesn't need it, and `_rows_runtime.py` holds what a query does |
@@ -47,7 +48,8 @@ Appendix A lists every function. These are the module-level calls; a function's 
 | `tools/compile_rows.py`, family modules (`add`, `mul`, `power`, `trig`, ... the names of `ROW_FAMILIES`, `__init__.py`) | **offline** | They state `RULES` only [doc], and `wiring.load` doesn't import them (:151-157) |
 | `templates/_rows_runtime.py` | port | **Call:** `from_text` (:32) and `constant_value` (:47) parse the row texts into SymPy numbers. Rust parses the same texts into its own numbers. `generator` (:91) becomes the data reader |
 | `templates/wiring.py` | **split** | **Call:** `functions` (:87) is offline. `load` (:151) and `template` (:94) become one offline step, a table from function name to template kind, resolved against classes by conversion. Per-node code (`matches` :196, the `template` closure in `power` :275, `expand` :381, `_instances` :453, `rules_for` :596, `product`, `addition`, `any_arity`) is port. The data tables (`PI_MULTIPLE` :53 and on) move by name |
-| `templates/_common.py`, `table.py`, `core.py`, `functions.py`, `atoms.py`, `nodes.py`, `rootof.py`, `special.py`, `limits.py`, `stats.py`, `physics.py` | port | Runtime templates. `core`'s module-level tables are built at import, so they're data |
+| `templates/_common.py`, `table.py`, `core.py`, `functions.py`, `atoms.py`, `nodes.py`, `rootof.py`, `special.py`, `stats.py`, `physics.py` | port | Runtime templates. `core`'s module-level tables are built at import, so they're data. `functions.py:404` (`_value_units`) evaluates six functions at a constant: **call,** an offline table for its range, section 3 |
+| `templates/limits.py` | **stays Python, pending a ruling** | **Call,** section 7 item 4. `Sum`, `Product` and `Integral` keep the whole query on Python |
 | `templates/registry.py` | **split** | **Call:** the class walk and `_redefines` (:67) read classes, so conversion resolves them. User `register` stays on Python (section 7, item 2) |
 | `state/memos.py`, `state/epoch.py` | port (thin) | Section 5 |
 | `ref.py`, `_compat.py` | **not ported** | `ref.py` is a reference, not on the query path [static; imports only]. `_compat.py` handles old import names [doc] |
@@ -72,7 +74,16 @@ Appendix A lists every function. These are the module-level calls; a function's 
 | `_rows_runtime.py:40`, `:62-68` | Numbers from row text | Parser over Rust numbers. `-1/E` and `exp(-1)` need the constant field, not a rational | Low to medium |
 | `sympy_api.py:386`, `:1134` | Error text, `str(expr)` | Python keeps the original objects and writes the message | Low |
 
-Static only, so reach unknown: `special.py:60,62` (`Add(*x.args)`, `Mul(S(2), x, evaluate=False)`), and `a/2` at `wiring.py:147`. `constfield.py:1284-1297` builds SymPy text or terms for display; I didn't read it.
+**Added by the unread-modules reading [read, sa-port-3 confirmed each line]:**
+
+| Site | What it builds | Rust replacement | Difficulty |
+|---|---|---|---|
+| `functions.py:90`, `:92`, `:93`, `:315` | `Add(*x.args)` as a test, `Add(x, c, evaluate=False)`, `x + c`, `Add(*others)`. The result becomes a template slot, so it can reach the node table and a sort key | Term algebra; the `Add(*x.args)` rebuild test is refused unless the sum's args are plain | Medium |
+| `functions.py:404` `_value_units` | `expr.func(c)`, evaluating six functions (`factorial2`, `subfactorial`, `catalan`, `andre`, `partition`, `genocchi`, per the reading, not re-derived) at an integer of size 200 or less | **Call:** an offline table of each value's unit facts. Only the value's facts are used, so nothing built reaches a node | Low |
+| `relations.py:1176` `_trichotomy` | A second route into `_affine_strip`, through `relation_atom("eq", a, b)` | Same as `_affine_strip` | Medium |
+| `limits.py:83`, `:92`, `:172`, `:208` | Inner limit, the `xreplace`, `b - a + 1`, `a - b` | None: these stay on Python, section 7 item 4 | - |
+
+Static only, so reach unknown: `special.py:60,62` (`Add(*x.args)`, `Mul(S(2), x, evaluate=False)`), and `a/2` at `wiring.py:147`. `constfield.py:1281` `to_sympy` builds terms, but only tests call it, by search; `:1293-1297` is `__repr__`. Neither is at query time.
 
 **Why canonical form must be exact, not just stable.** A derived term can equal an input term (`Q.zero(x - y)` and `Q.eq(x, y)` in one query), and then Python has one node. Cones count nodes, and the discovery budget reads that count (`Engine._struct` :1609, `_cone_info` :1676), so a missed merge can change an answer as well as state.
 
@@ -90,7 +101,7 @@ Static only, so reach unknown: `special.py:60,62` (`Add(*x.args)`, `Mul(S(2), x,
 
 Options, in the order I'd try them:
 
-1. Find out how many derived terms actually reach a sort key (open item 1). If it's only stripped sums of input terms, a small Rust key may do.
+1. Find out how many derived terms actually reach a sort key (measured below). If it's only stripped sums of input terms, a small Rust key may do.
 2. Port `sort_key` for the derived shapes, with number factors' `complex` values supplied by conversion.
 3. Propose a PR 328-style change to Python's key for atom orientation, to a structural order Rust can compute. That changes the reference, so it would be for Tilo.
 
@@ -137,6 +148,9 @@ Appendix B lists every direct call site [census], collapsed per function. By kin
 | R14 | `poly`, `index`, `poly.domain` of `ComplexRootOf` | `rootof.py:25-26`, `:47` | Up front: coefficients and index, in the term payload |
 | R15 | `_redefines` and handler lookups on classes | `registry.py:67` | Up front: resolved per class, in the class row |
 | R16 | `Dummy`, `Wild` and other atoms' names, via `sort_key` and `str` | Inside R8 | Up front: part of the key |
+| R17 | `is_finite` of a closed term | `relations.py:683`, in `_termwise` | Up front per closed input term. For a derived closed term, Rust computes it from a nonzero rational times a closed input term, and refuses other shapes. **New, an assumptions read not in R1 to R16** [read] |
+| R18 | The construction-time non-commutative level | `domain.py:58`, reading `_assumptions0`, the class MRO, the `is_commutative` slot and `type(a).doit` | Up front: level 0, 1 or 2 per term, with `noncommutative_false` as data [read] |
+| R19 | `is_commutative` evaluated on every subterm | `limits.py:106` `_scalar` | Stays on Python, with the limits. The notes report it writes SymPy's `_assumptions` cache, against `domain.py:36-41`; that's in Python today and I didn't re-run it |
 
 ## 5. History independence and cross-query memos
 
@@ -183,7 +197,28 @@ Appendix B lists every direct call site [census], collapsed per function. By kin
 | dev, seed 0 and 2 | 31 of 1,985 | 0 | 0 |
 | fuzz, seed 0 and 1 | 131 of 3,000 | 0 | 0 |
 
-This contradicts any reading of `set-iter-audit.md` (16 SAFE, 0 UNSAFE) as "set order doesn't reach state". **Cause not established:** PR 328's sites are the likely source, since it changes `_share` and `shared_terms`, but neither the differing field nor a run on its tree was checked. Open item 4. If some of it survives PR 328, the state gate can't compare against Python on those queries until each site has an order.
+This contradicts any reading of `set-iter-audit.md` (16 SAFE, 0 UNSAFE) as "set order doesn't reach state".
+
+**Cause: the sites PR 328 changes [run, sa-port-3].** The same tool on PR 328's tree (68c86b5, extracted with `git archive`, first on `PYTHONPATH`):
+
+| Workload | Without PR 328: state differs (seeds 0, 1) | With PR 328: state differs | Seed pairs run with PR 328 | Answers or session counts different |
+|---|---|---|---|---|
+| dev (1,985) | 39 | **0** | 0-1, 0-2, 0-3 | 0 |
+| fuzz 424242 (3,000) | 131 | **0** | 0-1, 0-2 | 0 |
+| corpus (2,863) | 13 | **0** | 0-1 | 0 |
+
+On 8 of the 39 dev queries, the fields that differ are `trail`, `reason`, `clauses`, `watches` and `acache`, plus `level` and `learnts` on one. In query 825 the trail reorders variables 184, 186 and 188 and nothing else near them, which fits interface equalities being created in another order (`relations.py:1581` with `sat/theory.py:206-215`, by reading). That's the path PR 328 changes.
+
+**Call: the reference for state comparison is `rust-slice` plus PR 328.** Rust takes PR 328's order (section 6). Without it, Python's state on these queries depends on the seed, so a state gate can only compare answers there.
+
+**The other set iterations don't need an order, for now.** `engine.py:1713` and `:1767` and the rest of the 31 sites PR 328's text names moved no solver state on these workloads. By reading, they change traversal order and not the budget's verdict (`_within_budget`, above).
+
+**What this doesn't show:**
+
+- `PYTHONHASHSEED` moves `str` hashes, and through them `Symbol` hashes. It's a sample of orders, not a proof, over 2 to 4 seeds.
+- The digest covers the solver dump (`state.dump_py`). LRA and EUF internals appear only through what they give the solver.
+- The suite wasn't run this way, so suite-only shapes aren't covered. Queries that stay on Python (section 7, items 2 and 4) don't need it.
+- Nothing here shows that Rust's first-seen order equals PR 328's, only that PR 328's is stable. The state gate of each port tests that.
 
 **What this doesn't show:** nothing here ran. The tests in SLICE-PLAN section 3's list still have to pass for each component.
 
@@ -200,7 +235,15 @@ This contradicts any reading of `set-iter-audit.md` (16 SAFE, 0 UNSAFE) as "set 
 | `scope.py:96`, `engine.py:1783` `_within_budget` | Discovery budget decides whether a query is answered | "A budget, not a scope" (`scope.py:96-97`) |
 | `engine.py:1642-1652` | Over-wide sum or product: templates not built | Budget |
 | `wiring.py:372`, `:378` `LEAVE_OUT_WIDE`, `SOME_PER_ARGUMENT` | Rules left out of wide nodes | Drops facts by size |
-| `Session.escalate` `engine.py:813`, `want_of` :2340 | Demand-driven instantiation | Unread beyond the docstring; named so it gets checked |
+| `relations.py:629-655`, with its docstring `:172-181` | Zero twins only under an application | Fixed for cost: per the docstring, widening costs 56%, and it leaves a pinned difference (`Q.zero(k - x + 1)` None where `Q.eq` gives False) |
+| `relations.py:691-695`, docstring `:323-329` | Interface atoms with non-rational constants left out | Search cost is the stated reason; the docstring calls it a relaxation |
+| `relations.py:1423-1425`, `:408-415`; `constfield.py:1123-1132`, `PREC_CAP` :164 | A sign that stays `Undecided` at the precision cap drops clauses or sign facts | A cap decides whether facts exist. Deterministic |
+| `relations.py:1989`, `:2011`, `:2018` | `except Exception` around adapter reads in `glue_objects` | Which terms get counted shapes the discovery budget. An error that Rust can't predict would change a weight. Port as "the adapter refuses", and the state gate catches a mismatch |
+| `functions.py:395` `MAX_VALUE_ARG` | Value facts only for an integer of size 200 or less | A cap on facts |
+| `limits.py:84`, `:92`, `engine.py:1245` | Nested queries always use a default engine, budget 400, and an unanswered one means the rule isn't built | **Hidden, and visible to users [run]:** `Q.finite(Sum(...))` with `n` a positive integer, caller budget 100,000: 50 terms gives True; 450 gives None with `last_budget_limited` False. Stays on Python with item 4 of section 7 |
+| `engine.py:1998` | A re-entrant `is_` on a node under construction returns None | A guard, not a choice, but it does decide an answer. Port exactly |
+
+**Checked and not a heuristic:** `Session.escalate` (`engine.py:813`) and `want_of` (:2340). The callers I read (`:1971`, `:2112`) pass no budget, the docstrings at `:1270` and `:1793` say escalation is uncapped, and `truncated` needs an explicit budget. Two independent readings say demand only parks clauses, so it's a performance order. I read the callers, not the whole of `want_of`. No differential run.
 
 **My reading, for the planner to confirm:** the rule stops the port adding such things. It doesn't remove these, which are defined functions of the query and the settings. No port step needs a new one so far.
 
@@ -213,60 +256,146 @@ Write against this order, from its diff:
 - `_share` passes those lists to `EqualitySharing.update` without building sets (`relations.py:1586-1587`).
 - The pinned behaviour: `update([[1,2,3],[2,3,1]]) == [(2,1),(2,3),(1,3)]`, and `shared == [2,1,3]`.
 
-The PR leaves `engine.py:1713` and `:1767` alone, and its text says 31 sites still iterate sets of two or more on dev, moving nothing there. Those are real-hash orders in Python that a Rust first-seen order won't copy. **Open item 4.**
+The PR leaves `engine.py:1713` and `:1767` alone, and its text says 31 sites still iterate sets of two or more on dev, moving nothing there. Those are real-hash orders in Python that a Rust first-seen order won't copy. Measured in section 5: with the PR, no solver state moves on dev, fuzz or corpus, so they need no order yet.
+
+PR 328 is held for Tilo and isn't on `rust-slice`. The port needs its order as the state reference, whether or not it merges (section 10).
 
 ## 7. Closest things to blockers
 
-1. **Derived-term canonical form and sort key** (section 3). The rule forbids the easy way out. Scale unknown until open item 1 runs.
+1. **Derived-term canonical form and sort key** (section 3). The rule forbids the easy way out. Sized on five workloads, not on the suite (section 8).
 2. **User registrations.** `register` (extensions), custom templates and custom `relation_specs` hand SymPy objects to user code by design, and `Engine.__init__` takes `clause_templates` (`engine.py:1338`). **Call:** a query under a non-default registry stays wholly on Python, reported as "kept on Python with reason". It's not a temporary callback; the backend is optional, so this meets the terms. Counted, not fixed.
-3. **Generic-constant enclosures** (R9). A permanent read-only callback unless someone ports mpmath's interval functions. It's a small exception to "everything runs in Rust", and rare, but the planner should see it.
+3. **Generic-constant enclosures** (R9). A permanent read-only callback unless someone ports mpmath's interval functions. It's a small exception to "everything runs in Rust", and rare, but the planner should see it. Read in full now: `_interval` (`lra_bounds.py:150`) builds no SymPy term past its head and handles a closed set of heads, so a port is possible, but it must round as mpmath does.
+4. **`Sum`, `Product`, `Integral` (`limits.py:92`): settled as a call, and it needs a ruling.** See below.
 
-## 8. Still open
+### Limits: the one place the rules can't all hold
 
-Done by sa-port-2, with results above: the derived-term census on five workloads (section 3); `_within_budget` (section 5); `is` on compound terms (R12). The `is` scan classed all 968 compares by AST: 906 are constants, `type()`, sentinels, classes or `S.x`. Of the other 62, `wiring.py:210` and `:310` are the only term reads that matter. About 12 were read in context and the rest by their line alone. `relations.py:1134`, `:1136` are by line only.
+`_inner` asks a nested engine about `inner.xreplace({v: Dummy(v.name, **assumptions)})` for up to 6 domains. `xreplace` rebuilds with evaluation, so SymPy rewrites the summand from the `Dummy`'s assumptions: `Mod(k, 1)` becomes `0`, `log(exp(k))` becomes `_k`. Rust can't do that without SymPy's evaluators, and the facts this produces reach answers.
 
-Left, in order:
+**Differential [run, Python only, patched from outside the source].** `lim_replay.py` replaces the `xreplace` with a structural substitution that evaluates nothing, as a Rust version would, and compares against today's code, fresh engine per query.
 
-1. **Real-hash order (section 5).** Run `seed_state.py` on PR 328's tree, then find the differing field for any query that still moves. Each survivor needs an order or "doesn't reach state".
-2. **Unread modules:** `knowledge/domain.py`, `knowledge/extensions.py`, `templates/functions.py`, `templates/limits.py`, the rest of `relations.py`, `engine.py:813`, `lra_bounds._interval`, `constfield.py:1284-1297`. A research subagent was still reading these at handoff; check for its notes before repeating it.
-3. **Suite census,** and the derived census over the suite (never run).
-4. **The converted format, in full.** Section 9 is a draft. It should drop the `is` bits (R12), and add the class rank, `complex()` per closed factor and `decompose_power` split from section 3.
-5. **Port order.** Section 10 is a draft.
-
-Then remove the partial status.
-
-## 9. The converted format (draft)
-
-One call per top-level query: Python to Rust, flat arrays, no handles kept except a list of original objects for R9 and for error text.
-
-- **Classes:** one row per distinct `type`, first-seen. Name; kind enum (`Add`, `Mul`, `Pow`, `Symbol`, `Dummy`, `Wild`, `Integer`, `Rational`, `Float`, each number symbol, `AppliedUndef`, named function, other); the class flags of R2; the resolved template kinds (R15); `structural` (`euf_adapter.py:85-92`); `class_key` for sort keys.
-- **Terms:** one row per distinct term under real hash and ==, numbered first-seen by a defined walk: proposition, then assumptions, `.args` in order. Class; arg ids; payload (rational `p`, `q` as bytes; `Float` mantissa and precision; symbol name; `Dummy` index; `ComplexRootOf` coefficients and index).
-- **Per term, supplied:** `is_number`; free-symbol ids; `has_nan`, `has_bad`, `has_float`, `has_applied_undef`; `noncommutative`; `may_be_nan` (`templates/__init__.py`, `_may_be_nan`); `sort_key` in a form that compares the same (R8).
-- **Per atomic number:** truth values for the whole vocabulary, from `const_value` (R5).
-- **Per symbol:** `assumptions0` (R6).
-- **Per closed generic constant:** the 128-bit bound (R9).
-- **`is` bits:** for `Pow`, base is exponent, and the pairs row shapes need (R12).
-- **Formula:** tree of `And`, `Or`, `Not`, `Implies`, `Equivalent`, `ITE`, and atoms as predicate id plus term ids, after `to_formula`'s scope check.
-- **Refused, query stays on Python:** a non-`Basic` value in a term, a non-default registry, a class conversion can't row.
-- **Offline data, read once:** rule base output of `rules.py`; `_compiled_rows.py`'s `FAMILIES`, with its number texts; `wiring.py`'s tables by name; `core.py`'s module-level tables.
-
-**Returned:** answer as true, false, none or a status (inconsistent, uninterpreted, budget-limited, gave up), so Python raises what it raises today and writes `last_budget_limited`.
-
-## 10. Port order (draft)
-
-**Call: the order needs a component 0.** EUF, relations, engine and knowledge all need the term table and its algebra; only LRA can go without.
-
-| # | Component | Needs | Parallel with | Scaffolding callbacks |
+| Queries | Substitutions rewritten by SymPy | Nested results differ | Answers differ | Direction |
 |---|---|---|---|---|
-| 0 | Term table, conversion, term algebra | Section 9; open items 1 and 3 | LRA | None; refuses by routing to Python |
-| 1 | LRA: connect the port, then constants | Solver (done). `lra.rs` takes the payloads as they are; adapters stay in Python until 5 | 0, EUF core, transfer core | Adapter stays Python. R9 enclosure, long-lived. Constant-field gcd: none, with a Rust gcd |
-| 2 | EUF core | Solver. Terms as handles from Python until 0 lands | 0, 1, 3 | Python adapter, `euf_adapter` |
-| 3 | Transfer core | Solver, `BASIS_INDEX` as data, EUF classes (via the Python adapter until 2) | 0, 1, 2 | Same |
-| 4 | Relations | 0, 1, 2, 3 | No: it touches every adapter | Template and `is_` calls back into Python until 5 and 6 |
-| 5 | Engine and session | 0, 4 | Part of 6 | Templates as a callback returning clauses over ids |
-| 6 | Runtime knowledge | 0, offline data generator | Part of 5, by family | `is_` from relations and engine |
+| Plain summands, 2,592 (`floor(k)`, `cos(pi*k)`, `Abs(k)`, `sin(k)`, `f(k)`, ...) | 4,800 of 12,312 | 0 of 4,800 | 0 | - |
+| Chosen to break it, 1,800 (`Mod(k, 1)`, `tan(pi*k)`, `Heaviside(k)`, `arg(k)`, `log(exp(k))`, ...) | 3,912 of 7,404 | 1,512 of 3,912 | **158** | All True or False to None |
+| The suite's, 46 distinct, from the 9 test files I chose | 0 of 192 | 0 | 0 | - |
 
-**Terms each is held to:** answers and state matching Python (per session, section 5), the suite with the three-number report, planted bugs where they apply; speed reported, not a gate. Callback counts are reported per component.
+- **Control:** with all domain facts removed, 266 of the first grid's 266 decided answers and 15 of the suite's 23 become None, so this path does carry answers.
+- **No wrong answer appeared,** only lost ones, and no fact was held only by the structural form in the 63 distinct differences kept. That's two grids I wrote, not a proof. Python's extra facts rest on SymPy's automatic evaluation, which isn't ground truth (issue 247), and I checked none of them independently.
+- **Reach:** 0 of 32,627 queries on dev, fuzz, corpus, battery and stream-unique hold any of the three classes. Only the suite and direct `ask` calls do.
+
+**Call: a query holding `Sum`, `Product` or `Integral` stays wholly on Python,** reported as kept on Python with a reason, like user registrations. Conversion sees it from the class row. A search of `satassume/` finds these classes built only at `limits.py:83`, from one already in the input, so no derived term can introduce one. `lra.py:247` `Integral` is LRA's own unrelated tuple class. It keeps answers the same and breaks neither rule, and costs nothing on the five workloads.
+
+**The ruling needed, from the planner or Tilo,** because the call leaves these three classes unported, against "pretty much everything":
+
+| Option | Answers | Rule it strains |
+|---|---|---|
+| A. Stay on Python (the call) | Same | "Everything from there on runs in Rust" |
+| B. Conversion runs the `xreplace` once per limit and domain and sends the results as input rows, with the nested queries in Rust | Same, by reading; not run | "No SymPy expression construction at query time", and it also reads SymPy's assumptions |
+| C. Rust structural substitution | Loses facts (158 of 1,800 above) | "Answers matching Python" |
+
+This isn't a blocker: option A works today, and the port doesn't depend on the choice.
+
+## 8. What wasn't completed, and what rests on it
+
+Nothing is open that stops sections 9 and 10. Done by sa-port-2: the derived-term census on five workloads, `_within_budget`, and `is` on compound terms (R12). The `is` scan classed all 968 compares by AST: 906 are constants, `type()`, sentinels, classes or `S.x`. Of the other 62, `wiring.py:210` and `:310` are the only term reads that matter. About 12 were read in context and the rest by their line alone. `relations.py:1134`, `:1136` are by line only. Done by sa-port-3: the hash-order cause, the unread modules, the limits differential, and sections 9 and 10.
+
+**Not completed:**
+
+1. **Suite census.** sa-port-2's run was still going at about 85% when this was written, and its result isn't read here. Output `suite2/`, under `~/sa-rust-ids-work/port-census/`. **Rests on it:** the reach of `special`, `stats`, `rootof` and `physics`, and appendix A's marks for functions only the suite runs.
+2. **Derived census over the suite: not run.** `derived_plugin.py` works on one test file (`tests/test_history.py`) after a fix, and nothing more. **Rests on it:** "only small shapes reach a sort key", section 3's option 1, and therefore the size of the term algebra in component 0. The one file's output shows `Pow`, `f(0)` and deeper sums and products as "derived", but it isn't evidence either way: plain `Symbol`s appear too, so input capture misses some of those tests' terms. **If the suite shows more shapes, the plan doesn't change:** an unhandled shape refuses and stays on Python, so only the count kept on Python moves.
+
+**Read, not run:** sections 2, 4, 9 and 10; the `relations.py` lines around `:1570-1830` and `constfield.py:1123`, `:1400-1450` were read only in part. The unread-modules findings come from two subagent readings, and only the sites named as confirmed in section 3 and section 6 were checked by me. Option B of section 7 wasn't run.
+
+## 9. The converted format
+
+**Final as a specification. Nothing has built it, and no Rust has read it.** The Python algebra check is the only part that ran against real terms (section 3).
+
+One call per top-level query, Python to Rust: flat arrays of the tables below. Rust owns the layout. Python keeps no handles except a list of the original objects by term id, used for R9 and for error text. Nothing here crosses queries, so history independence follows from the query alone (section 5).
+
+**When conversion runs.** `Engine.answers` (`sympy_api.py:418` on) stays first and holds its answer memo. On a miss, conversion runs and either sends the tables or keeps the query on Python.
+
+**Ids.** `u32`, numbered by first sight in one defined walk: proposition, then assumptions, each preorder over `.args` in order. Same id exactly when SymPy's hash and `==` agree (R13). Derived terms take the next ids in Rust, in the order Rust first builds them.
+
+### Tables
+
+| Table | One row per | Fields | From |
+|---|---|---|---|
+| Strings | Distinct text | Bytes | Names, used by the rows below |
+| Settings | Query | `discovery_budget`, `transfer`, `uninterpreted`, `relevance`, generic-constants setting | `Engine.__init__` (`engine.py:1313` on) |
+| Predicates | Predicate in the formula | Name or vocabulary index, arity | R10 |
+| Classes | Distinct class under `==`, not `is`, since undefined functions compare by SymPy's rule | Name; kind enum (`Add`, `Mul`, `Pow`, `Symbol`, `Dummy`, `Wild`, `Integer`, `Rational`, `Float`, each number singleton including `Zero`, `One`, `Half`, `NegativeOne`, each number symbol, `AppliedUndef`, named function, other); class flags; resolved template kinds; `structural`; `class_key`; rank for `Basic.compare` (`_cmp_name`, `ordering_of_classes`) | R1, R2, R11, R15; `euf_adapter.py:85-92`; section 3 |
+| Terms | Distinct term | Class; arg ids; payload: rational `p`, `q` as bytes; `Float` mantissa and precision; symbol name; `Dummy` index; `ComplexRootOf` coefficients and index | R1, R14, R16 |
+| Term facts | Term | `is_number`; free-symbol ids; `has_nan`, `has_bad`, `has_float`, `has_applied_undef`; non-commutative level 0, 1 or 2; `may_be_nan`; `sort_key` in a form that compares the same | R3, R4, R8, R18; `_may_be_nan` |
+| Closed terms | Closed term | `is_finite`; `complex()` value as two exact `f64` bit patterns, for a factor in a sort key | R17; section 3 |
+| Power factors | `Pow` factor of a term | `decompose_power` split: base id, exponent rational. If the base isn't an input term, the query is refused | Section 3 |
+| Atomic numbers | Atomic number | Truth values for the whole vocabulary, from `const_value` | R5 |
+| Symbols | Symbol | `assumptions0` | R6 |
+| Generic constants | Closed generic constant | The 128-bit bound (`_IV_PREC`) | R9 |
+| Formula | Node | `And`, `Or`, `Not`, `Implies`, `Equivalent`, `ITE`, or an atom as predicate id plus term ids, after `to_formula`'s scope check | R10 |
+
+**Dropped from the draft:** the `is` bits. **Call:** args that are `==` but not `is` keep the query on Python (R12). On dev, fuzz and corpus only `MatMul` and `MatrixSlice` hold such args, and those are corpus-only.
+
+### Kept on Python
+
+Conversion decides each of these before sending anything, and the query runs on Python as if Rust didn't exist. Each is counted with its reason.
+
+- A non-`Basic` value in a term, or a class conversion can't row.
+- A non-default registry: `register`, custom templates, `clause_templates`, custom `relation_specs`, node facts or custom handlers (section 7, item 2).
+- `Sum`, `Product` or `Integral` anywhere in the query (section 7, item 4).
+- Args `==` but not `is` (R12).
+- A `Pow` factor whose `decompose_power` base isn't an input term.
+
+**Refused during a run.** Rust can also return "refused, with reason" when it reaches a derived shape the term algebra doesn't handle (section 3). Python discards that run and answers on Python. Rust holds no state after a query, so nothing needs undoing, and the query counts as kept on Python.
+
+### Offline data, read once at load
+
+Generated offline, in one versioned file with a hash of its sources. Rust refuses a file whose hash doesn't match. Nothing here is computed at query time.
+
+- `rules.py` output, including `BASIS_INDEX` (`rules.py:61`), and `_compiled_rows.py`'s `FAMILIES`, with number texts for Rust's parser.
+- `wiring.py`'s tables by name, and `core.py`'s module-level tables.
+- `noncommutative_false()` (`domain.py:388`).
+- **New:** unit facts for `VALUE_AT_INTEGER` (`wiring.py:69`) at integers of size 200 or less, replacing `_value_units`' evaluation.
+
+### Returned
+
+Answer as true, false, none or a status (inconsistent, uninterpreted, budget-limited, gave up), so Python raises what it raises today, writing the text from its original objects, and sets `last_budget_limited`. Also: refused with a reason, the theory-gave-up count for `Engine.stats`, and the count of each callback.
+
+### The one permanent callback
+
+`enclose(term_id, precision) -> (lo, hi)`, read-only, on the original object, during a sign test (R9). It builds no term. By reading, only input terms should reach it: with `lra_adapter.py:213` multiplying field elements directly (section 3), a derived closed value is an element over input constants. No run confirms that, so a derived term reaching it refuses.
+
+## 10. Port order
+
+**Final as a plan. It comes from reading and the censuses, and no step has run.** Solver and the rational LRA core already exist in Rust (`slice/solver_rs`, `lra/port/src/lra.rs`).
+
+**Call: the order needs a component 0.** EUF, relations, engine and knowledge all need the term table and its algebra; only LRA's rational core can go without. **Call: every step works end to end before the next,** with Python doing what isn't ported yet. That follows Tilo's "something that works first", and speed is reported, not a gate.
+
+| # | Component | Modules | Needs from the others | Can run in parallel with | Temporary callbacks |
+|---|---|---|---|---|---|
+| D | Offline data generator | Writes section 9's file | Nothing | Everything | None |
+| 0 | Conversion, term table, term algebra | `sympy_api.py`'s conversion part; `domain.py` reads; `registry.py` class walk; `Add`, `Mul`, negation, key from section 3 | Section 9 | D, 1a, 2, 3 | None. Unhandled shapes refuse and stay on Python |
+| 1a | LRA rational: connect the port | `lra.py`, `lra_cert.py` | Solver | D, 0, 2, 3 | Adapter stays Python, calling Rust |
+| 1b | LRA constants | `constfield.py`, with a Rust gcd for `_sympy_inner_gcd` | 1a. Term rows from 0 for `_from_sympy` | 2, 3, 6 | R9 `enclose`: **permanent** |
+| 2 | EUF core | `euf.py` | Solver; terms as handles until 0 lands | D, 0, 1, 3 | `euf_adapter` stays Python |
+| 3 | Transfer core | `transfer.py`, `EqualitySharing`, `P` | Solver; `BASIS_INDEX` from D; EUF classes, through the Python adapter until 2 | D, 0, 1, 2 | Same |
+| 4 | Relations and adapters | `relations.py`, `lra_adapter.py` and `euf_adapter.py` term work, `scope.py` | 0, 1, 2, 3 | 6, by family. Not 1, 2 or 3 while their interfaces move, since it touches every adapter | Templates and `is_` into Python, until 5 and 6. Takes ids and returns clauses over ids |
+| 5 | Engine, session, relevance | `engine.py`, `knowledge/compile.py`, `state/`, `_keys_rel`, `_Split`, `_relevant`, `_consistent` | 0, 4 | 6, by family | Templates into Python, until 6 |
+| 6 | Runtime knowledge | `rules.py` runtime part, `_rows_runtime.py`, `wiring.py` per-node code, templates except `limits.py`, `realroots.py` | 0, D. `is_` from relations and engine, by callback until 4 and 5 | 1b, 4, 5, by family | `is_` into Python-side engine, until 5 |
+
+**Order to start:** D, 0, 1a, 2 and 3 can begin together. 4 follows 0 to 3. 5 follows 4. 6 can run from 0 and D onward, and finishes after 5. 1b can start after 1a and needs 0's rows to finish.
+
+**The scaffolding has one cost to name.** Until 6 lands, a template callback on a *derived* term needs that term in SymPy, and it isn't there. In that window, Python builds it from Rust's class-and-args recipe. That's SymPy construction at query time, and it's allowed only as temporary scaffolding: Rust's own algebra has still decided the form, and the callback's rebuilt term is checked against it. It goes away with 6, and its count is reported per step. If the planner won't accept even that, 6 has to land before 4, and 4 and 5 then wait for it.
+
+**At the end,** the only callback left is R9's `enclose`, and Python holds conversion, the answer memo, error text and the queries kept on Python. Those are section 9's list, and `lra_bounds.py` and `extensions.py`.
+
+### What each step is held to
+
+- **Reference:** `rust-slice` plus PR 328 (section 5). It's held for Tilo; if it doesn't merge, the port's comparison still applies it. Answers and state match Python per session, on a fresh engine with memos cleared. For queries kept on Python there's nothing to compare.
+- **Report:** the suite with the three-number report, planted bugs where they apply, callback counts per component, and queries kept on Python, by reason. Speed is reported, not a gate.
+- **Standing rulings:**
+  - A public-API version of `test_incremental_matches_fresh` and its family during step 5 at the latest, added alongside the existing tests.
+  - Each component's port re-scores its own boundary, since these boundaries move. Mutants 2, 5, 6, 7 and 9 rest on the API fuzzer alone and get rerun once real theories run on Rust (from 1a, 2 and 3). 10 of the 25 boundary mutants have no real-engine catch, and the boundary suite column wasn't run.
+- **Exactness:** the discovery budget reads node counts, so `_struct` and `_cone_info` weights, including how derived terms merge, must match exactly (section 3). Step 4 tests this with the budget at the boundary values.
 
 ## Appendix A: every function
 
