@@ -4,15 +4,15 @@
 
 `_eq_links` and `_eq_infinity` run on a recording session, so the trace compared is every ensure, var allocation, selector and
 emit, in order: that is what var numbering rests on. Fresh dev makes 0 `_eq_infinity` plans, which is why this exists. Also
-`relation_atom` for all six names, `_ext_atoms`, `_is_number`, `affine_pair`, `_under_apps`, `structural`, `interned` and
-`_structural_subterms`. A refusal is counted by reason and is no evidence. `differs:*` is a finding. Exit 0 with none.
+`relation_atom` for all six names, `_ext_atoms`, `_is_number`, `affine_pair`, `_under_apps`, `zero_twin`, `structural`, `interned`
+and `_structural_subterms`. Fresh dev and fuzz make 0 nonempty `_under_apps`, so this is that function's evidence too. A refusal is counted by reason and is no evidence. `differs:*` is a finding. Exit 0 with none.
 """
 import argparse
 import collections
 import random
 import sys
 
-from sympy import And, Q, oo
+from sympy import And, Q, Rational, S, oo, pi, sqrt, zoo
 from satassume import relations as R, scope, sympy_api as A
 from satassume.sat.formula import P
 from satassume.theories.euf import euf_adapter as EA
@@ -22,6 +22,10 @@ import convert
 import sa_solver
 import term_ids_direct_terms as T
 import term_live as TL
+
+
+#: Closed sides: Rationals answer False, a closed non-Rational answers None, the infinities answer True for their own.
+NUMBERS = (S(2), S(-3), Rational(1, 2), S.Zero, pi, sqrt(2), pi + 1, 2*pi, oo, -oo, zoo)
 
 
 class Rec:
@@ -98,8 +102,11 @@ def main():
     for _ in range(a.n):
         p, q0 = T.term(r), T.term(r)
         k = r.random()
-        if k < 0.15:
+        if k < 0.3:
             q0 = r.choice((oo, -oo))
+            if r.random() < 0.5:
+                # A closed side, so `_eq_infinity`'s callback on `is_` runs: each of its three answers, by `Rec.is_`.
+                p = r.choice(NUMBERS)
         third = T.term(r)
         conv = convert.convert(And(Q.positive(p), Q.positive(q0), Q.positive(third)), True, A.default_engine())
         if isinstance(conv, convert.Kept):
@@ -118,6 +125,7 @@ def main():
                 step('structural', lambda: same('structural', EA.structural.__wrapped__(e), EA.structural(e), e))
                 step('_under_apps', lambda: same('_under_apps', set(R._under_apps.__wrapped__(e)), set(R._under_apps(e)), e)
                      if R._under_apps.__wrapped__(e) == R._under_apps(e) else differs('_under_apps', e))
+                step('zero_twin', lambda: same('zero_twin', R.zero_twin.__wrapped__(e), R.zero_twin(e), e))
                 step('subterms', lambda: same('subterms', R._structural_subterms.__wrapped__(e), R._structural_subterms(e), e))
             step('interned', lambda: same('interned', EA.EUFAdapter.interned.__wrapped__(None, [p, q0, third]),
                                           EA.EUFAdapter.interned(None, [p, q0, third]), p, q0, third))
@@ -135,7 +143,7 @@ def main():
     for k in sorted(c):
         print(f'{c[k]}\t{k}', file=out)
     for k in sorted(TL.COUNTS):
-        if k.startswith(('plan:', 'is_:')):
+        if k.startswith(('plan:', 'is_:', 'under_apps:', 'zero_twin', 'affine_pair:', 'term:py:')):
             print(f'{TL.COUNTS[k]}\t{k}', file=out)
     for b in bad:
         print(b, file=out)

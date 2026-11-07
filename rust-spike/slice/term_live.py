@@ -242,6 +242,8 @@ SCAFFOLD_BAD = []
 KEY_BAD = []
 #: Test plants on Rust's answers: 'swap' reverses `eq_sides`, 'termwise-true' and 'termwise-false' fix `_termwise`, 'no-strip'
 #: drops `_affine_strip` where it changed a side, 'key-reverse' flips a matched key, 'scaffold-form' fails the form check.
+#: Slice C's: 'le-swap', 'no-ext', 'is-number-false', 'affine-false', 'linked-drop', 'under-empty', 'interned-reversed',
+#: 'plan-drop', 'plan-pred', 'twin-one'.
 PLANT = [None]
 #: SLICE_TERM_CHECK: at each answer from Rust, also run Python's own function and compare, counted as `check:same:<site>` and
 #: `check:differs:<site>`, with the first few in `CHECK_BAD`. It builds in SymPy, so it's for evidence, never for a number
@@ -566,7 +568,8 @@ def _zero_twin(py):
             return py(e)
         tw = q.memo.get(('twin', e))
         if tw is None:
-            tw = q.memo[('twin', e)] = relations.relation_atom('eq', e, S.Zero)
+            COUNTS['zero_twin'] += 1
+            tw = q.memo[('twin', e)] = relations.relation_atom('eq', e, S.One if PLANT[0] == 'twin-one' else S.Zero)
         return tw
     zero_twin.__wrapped__ = py
     return zero_twin
@@ -723,7 +726,7 @@ def _glue_objects(py):
     return glue_objects
 
 
-def _plant_plan(plan, zero_only=False):
+def _plant_plan(plan):
     """The plan plants: a dropped clause and a swapped pred, each on the plan's last clause."""
     if PLANT[0] == 'plan-drop' and plan:
         return plan[:-1]

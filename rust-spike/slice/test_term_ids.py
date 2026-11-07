@@ -241,3 +241,186 @@ def test_scaffold_rejects_what_sympy_would_not_build():
     with pytest.raises(sa_solver.TermRefuse):
         term_live.scaffold(q, m, 't')
     assert term_live.SCAFFOLD_BAD
+
+
+# Slice C: lt, le, gt, ge by `order_relation`, the plans, scope and the EUF term work, each against Python's own function.
+
+ORDER_PAIRS = [(x, y), (y, x), (x + 1, y), (2*x, S(1)), (oo, x), (x, -oo), (nan, x), (x, nan), (nan, nan), (S(1), S(2)), (f(x), g(y))]
+
+
+@pytest.mark.parametrize('name', ['lt', 'gt', 'le', 'ge'])
+@pytest.mark.parametrize('a,b', ORDER_PAIRS)
+def test_an_order_relation_matches_python(live, name, a, b):
+    q = table_for(a, b)
+    term_live.stack().append(q)
+    try:
+        got, want = R.relation_atom(name, a, b), R.relation_atom.__wrapped__(name, a, b)
+    finally:
+        term_live.stack().pop()
+    assert got == want and repr(got) == repr(want)
+    assert live.counts()['term:rust:relation_atom'] >= 1
+
+
+class _Rec:
+    """A session that records every call, in order, as `relations_direct.py`'s does. `is_` answers by `answer`."""
+    def __init__(self, answer):
+        self.log, self.vars, self.answer, self.engine = [], {}, answer, self
+
+    def is_(self, e, pred):
+        self.log.append(('is_', e, pred))
+        return self.answer
+
+    def ensure(self, e, preds):
+        self.log.append(('ensure', e, sorted(preds)))
+
+    def var(self, pred, e):
+        # `Session.var` is get-or-allocate and a plan asks per clause, so only an allocation is state to compare.
+        if (pred, e) not in self.vars:
+            self.log.append(('var', pred, e))
+        return self.vars.setdefault((pred, e), 100 + len(self.vars))
+
+    def emit(self, clause):
+        self.log.append(('emit', list(clause)))
+
+
+class _Rel:
+    def __init__(self, s):
+        self.session = s
+
+    def _atom_selector(self, atom):
+        self.session.log.append(('selector', atom))
+        return 7
+
+
+def _plan_trace(method, atom, answer=None):
+    s = _Rec(answer)
+    method(_Rel(s), 5, atom)
+    return s.log
+
+
+@pytest.mark.parametrize('side,inf,answer,path', [
+    (x, oo, None, 'symbolic'),
+    (S(2), oo, False, 'closed, decided'),
+    (oo, oo, True, 'closed, decided'),
+    (pi, -oo, None, 'closed, undecided'),
+])
+def test_eq_infinity_paths_match_python(live, side, inf, answer, path):
+    from satassume.knowledge.extensions import Args
+    from satassume.sat.formula import P
+    q = table_for(side, inf)
+    term_live.stack().append(q)
+    try:
+        atom = P('eq', Args((side, inf)))
+        m = R.Relations._eq_infinity
+        got = _plan_trace(m, atom, answer)
+        assert got == _plan_trace(m.__wrapped__, atom, answer), path
+    finally:
+        term_live.stack().pop()
+    c = live.counts()
+    assert c['plan:_eq_infinity'] == 1
+    assert c.get('is_:_eq_infinity', 0) == (0 if path == 'symbolic' else 1)
+    assert any(step[0] == 'is_' for step in got) == (path != 'symbolic')
+    assert any(step[0] == 'selector' for step in got) == (path != 'closed, decided')
+
+
+def _in_query(*terms):
+    q = table_for(*terms)
+    term_live.stack().append(q)
+    return q
+
+
+def test_under_apps_matches_python_and_its_plant_shows(live):
+    t = f(x + 1) + g(S(1))
+    _in_query(t)
+    try:
+        want = R._under_apps.__wrapped__(t)
+        assert want and R._under_apps(t) == want
+        assert live.counts()['under_apps:nonempty'] == 1
+        live.PLANT[0] = 'under-empty'
+        assert R._under_apps(t) == frozenset()
+    finally:
+        term_live.stack().pop()
+
+
+def test_zero_twin_matches_python_and_its_plant_shows(live):
+    _in_query(x)
+    try:
+        assert R.zero_twin(x) == R.zero_twin.__wrapped__(x)
+    finally:
+        term_live.stack().pop()
+    assert live.counts()['zero_twin'] == 1
+    _in_query(y)
+    try:
+        live.PLANT[0] = 'twin-one'
+        assert R.zero_twin(y) != R.zero_twin.__wrapped__(y)
+    finally:
+        term_live.stack().pop()
+
+
+@pytest.mark.parametrize('plant,name', [('le-swap', 'le'), ('no-ext', 'le')])
+def test_an_order_plant_changes_the_atom(live, plant, name):
+    _in_query(x, y)
+    try:
+        want = R.relation_atom.__wrapped__(name, x, y)
+        assert R.relation_atom(name, x, y) == want
+        live.PLANT[0] = plant
+        got = R.relation_atom(name, x, y)
+        # `le-swap` moves a negated atom's sides and `no-ext` drops the extended reads: either way, not Python's value.
+        assert got != want or repr(got) != repr(want)
+    finally:
+        term_live.stack().pop()
+
+
+def test_a_plan_plant_changes_the_trace(live):
+    from satassume.knowledge.extensions import Args
+    from satassume.sat.formula import P
+    _in_query(x, y)
+    try:
+        atom = P('eq', Args((x, oo)))
+        q = table_for(x, oo)
+        term_live.stack().append(q)
+        m = R.Relations._eq_infinity
+        want = _plan_trace(m.__wrapped__, atom)
+        assert _plan_trace(m, atom) == want
+        live.PLANT[0] = 'plan-drop'
+        assert _plan_trace(m, atom) != want
+        live.PLANT[0] = 'plan-pred'
+        assert _plan_trace(m, atom) != want
+        term_live.stack().pop()
+    finally:
+        term_live.stack().pop()
+
+
+@pytest.mark.parametrize('plant,check', [
+    ('is-number-false', lambda: R._is_number(S(2)) is False),
+    ('affine-false', None),
+])
+def test_a_scope_plant_shows(live, plant, check):
+    from satassume import scope
+    from satassume.sat.formula import P
+    atoms = [P('zero', x + 1), P('positive', y)]
+    _in_query(x + 1, y)
+    try:
+        live.PLANT[0] = plant
+        if check is not None:
+            assert check()
+        else:
+            assert scope.affine_pair(atoms) is False
+    finally:
+        term_live.stack().pop()
+
+
+def test_interned_keeps_python_and_its_plant_shows(live):
+    from satassume.theories.euf import euf_adapter as EA
+    ts = [x + 1, f(y), S(2)]
+    _in_query(*ts)
+    try:
+        want = EA.EUFAdapter.interned.__wrapped__(None, ts)
+        assert EA.EUFAdapter.interned(None, ts) == want
+        assert EA.structural(x + 1) == EA.structural.__wrapped__(x + 1)
+        assert R._structural_subterms(f(y)) == R._structural_subterms.__wrapped__(f(y))
+        live.PLANT[0] = 'interned-reversed'
+        got = EA.EUFAdapter.interned(None, ts)
+        assert got != want
+    finally:
+        term_live.stack().pop()
