@@ -19,13 +19,14 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--seed", type=int, default=1)
 ap.add_argument("--rounds", type=int, default=2000)
 ap.add_argument("--so")
-ap.add_argument("--only", default="pyset,sharing,wanted,theory")
+ap.add_argument("--only", default="pyset,sharing,wanted,wanted_edge,p,theory")
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
 import sa_solver  # noqa: E402
 from satassume.knowledge.rules import BASIS_INDEX, NPRED  # noqa: E402
-from satassume.sat.formula import P  # noqa: E402
+from satassume.knowledge.extensions import Args  # noqa: E402
+from satassume.sat.formula import And, Implies, Not, Or, P  # noqa: E402
 from satassume.sat.theory import EqualitySharing as PySharing  # noqa: E402
 from satassume.theories.euf.euf import EqAtom, EUFTheory  # noqa: E402
 from satassume.theories.transfer import TransferTheory as PyT, transfer_wanted as py_wanted  # noqa: E402
@@ -36,6 +37,7 @@ if a.so and os.path.dirname(os.path.abspath(sa_solver.__file__)) != os.path.absp
 R = random.Random(a.seed)
 fails = {}
 ran = {}
+known = []
 
 
 def fail(part, case):
@@ -282,9 +284,336 @@ def part_theory():
     ran["theory ops"] = total
 
 
+def obs(fn, text=True):
+    """What a call does, down to the exception's text. `text=False` for a constructor's argument errors, whose name differs."""
+    try:
+        return ("ok", fn())
+    except BaseException as e:
+        return ("raise", type(e).__name__, str(e) if text else "")
+
+
+class Raises:
+    def __hash__(self):
+        return 7
+
+    def __eq__(self, o):
+        raise ZeroDivisionError("from __eq__")
+
+    def __repr__(self):
+        return "Raises"
+
+
+class Fmt:
+    def __init__(self, out):
+        self.out = out
+
+    def __format__(self, spec):
+        return self.out
+
+
+class StrSub(str):
+    def __format__(self, spec):
+        return "formatted"
+
+
+class InstFmt:
+    """`__format__` on the instance: an f-string looks on the type, so this one must not be called."""
+
+    def __init__(self):
+        self.__format__ = lambda spec: "instance"
+
+    def __repr__(self):
+        return "InstFmt"
+
+
+class BadBool:
+    def __hash__(self):
+        return 3
+
+    def __eq__(self, o):
+        return self
+
+    def __bool__(self):
+        raise ZeroDivisionError("from __bool__")
+
+
+class Cycle:
+    pass
+
+
+def shape(x):
+    """A value comparable across the two `P` classes: the class by name, the rest by repr."""
+    return (type(x).__name__, repr(x))
+
+
+# The differences that stay, by exact row, each named in formula_py.rs and in the report. Printed on every run and don't fail
+# it, so anything else does. Smallest cases: `is_dataclass(P)`, `P("a", 1).__dict__`, a `pickle.loads` of bytes written by
+# Python's class, and a subclass with a `pred` property (Python refuses to build it, Rust builds it and ignores the property).
+KNOWN = {"is_dataclass", "instance dict", "subclass overriding a field",
+         *(f"pickle {i} written by Python's" for i in range(6))}
+
+
+def part_p():
+    """`sa_solver.P` against Python's `P`, on everything visible. One row per behaviour; both classes get the same objects."""
+    import copy
+    import gc
+    import pickle
+    import weakref
+    Y = sa_solver.P
+    nan = float("nan")
+    values = [1, 1.0, True, 0, -1, 2 ** 64, 1.5, nan, float("nan"), "a", "eq", "", b"a", None, (), (1, 2), (1, (2, 3)),
+              frozenset({1}), "\ud800", [1], {}, {1}, Args((1, 2)), Args((2, 1)), Raises(), BadBool(), Fmt("f"), Fmt(5), StrSub("s"),
+              InstFmt(), object()]
+    preds = ["a", "lt", "eq", StrSub("a"), 1, None, [1]]
+    n = 0
+
+    def row(name, f):
+        nonlocal n
+        n += 1
+        x, y = obs(lambda: f(P)), obs(lambda: f(Y))
+        if x != y:
+            (known.append if name in KNOWN else lambda c: fail("p", c))((name, x, y))
+
+    # construction: the error's class is compared; the text names __init__ on one and __new__ on the other
+    for name, f in [("no args", lambda C: C()), ("one", lambda C: C("a")), ("three", lambda C: C("a", 1, 2)),
+                    ("bad kw", lambda C: C("a", 1, z=2)), ("kw", lambda C: shape(C(expr=1, pred="a")))]:
+        n += 1
+        x, y = obs(lambda: f(P), False), obs(lambda: f(Y), False)
+        if x != y:
+            fail("p", ("construct " + name, x, y))
+
+    for pr in preds:
+        for v in values:
+            tag = f"{pr!r}/{type(v).__name__}"
+            row("hash " + tag, lambda C: hash(C(pr, v)))
+            row("repr " + tag, lambda C: repr(C(pr, v)))
+            row("str " + tag, lambda C: str(C(pr, v)))
+            row("fields " + tag, lambda C: (C(pr, v).pred is pr, C(pr, v).expr is v))
+            row("self eq " + tag, lambda C: (lambda q: (q == q, q != q))(C(pr, v)))
+            row("copy eq " + tag, lambda C: (C(pr, v) == C(pr, v), C(pr, v) != C(pr, v)))
+            row("copy " + tag, lambda C: (lambda q: (type(copy.copy(q)) is C, copy.copy(q).expr is v))(C(pr, v)))
+
+    # `==` across every pair, both ways: 1 and 1.0, NaN by identity, a raising __eq__, a __bool__ that raises
+    for v in values:
+        for w in values:
+            tag = f"{type(v).__name__}/{type(w).__name__}"
+            row("eq " + tag, lambda C: (C("a", v) == C("a", w), C("a", v) != C("a", w)))
+            row("set " + tag, lambda C: len({C("a", v), C("a", w)}))
+    row("eq pred", lambda C: C("a", 1) == C("b", 1))
+    for other in [1, "a", None, ("a", 1), Raises()]:
+        row("eq other", lambda C: (C("a", 1) == other, other == C("a", 1), C("a", 1) != other))
+
+    # the class check, and what it reads: `other.__class__`, then `other.pred`, on a non-instance that says it's a P
+    class Liar:
+        pred, expr = "a", 1
+
+        def __init__(self, C):
+            self.C = C
+
+        @property
+        def __class__(self):
+            return self.C
+
+    row("eq liar", lambda C: (C("a", 1) == Liar(C), Liar(C) == C("a", 1), C("a", 2) == Liar(C)))
+
+    PS, YS = type("Sub", (P,), {}), type("Sub", (Y,), {})
+
+    def sub(f):
+        nonlocal n
+        n += 1
+        x, y = obs(lambda: f(P, PS)), obs(lambda: f(Y, YS))
+        if x != y:
+            (known.append if "subclass " + f.__doc__ in KNOWN else lambda c: fail("p", c))(("subclass " + f.__doc__, x, y))
+
+    def s1(C, S):
+        "eq"
+        return (S("a", 1) == C("a", 1), C("a", 1) == S("a", 1), S("a", 1) == S("a", 1), hash(S("a", 1)) == hash(C("a", 1)))
+
+    def s2(C, S):
+        "repr, type, fields"
+        s = S("a", 1)
+        return (repr(s), type(s).__name__, s.pred, s.expr, isinstance(s, C))
+
+    def s3(C, S):
+        "assign a field"
+        S("a", 1).pred = 2
+
+    def s4(C, S):
+        "assign a non-field"
+        s = S("a", 1)
+        s.other = 2
+        return s.other
+
+    def s5(C, S):
+        "delete a field"
+        del S("a", 1).expr
+
+    def s6(C, S):
+        "copy"
+        s = copy.copy(S("a", 1))
+        return (type(s).__name__, s.pred, s.expr)
+
+    def s7(C, S):
+        "delete a non-field"
+        s = S("a", 1)
+        s.other = 2
+        del s.other
+        return hasattr(s, "other")
+
+    def s8(C, S):
+        "delete an absent non-field"
+        del S("a", 1).other
+
+    over = {"pred": property(lambda self: "over")}
+    PO, YO = type("Over", (P,), over), type("Over", (Y,), over)
+
+    def s9(C, S):
+        "overriding a field"
+        O = PO if C is P else YO
+        return (repr(O("a", 1)), O("a", 1) == O("b", 1), hash(O("a", 1)) == hash(O("b", 1)))
+
+    for f in (s1, s2, s3, s4, s5, s6, s7, s8, s9):
+        sub(f)
+
+    # ordering isn't defined
+    for op in ("__lt__", "__le__", "__gt__", "__ge__"):
+        row(op, lambda C: getattr(C("a", 1), op)(C("a", 1)) is NotImplemented)
+    row("lt", lambda C: C("a", 1) < C("a", 2))
+
+    # frozen: both assign and delete, a field and not a field, with the exception's text
+    def assign(C, name):
+        setattr(C("a", 1), name, 2)
+
+    def delete(C, name):
+        delattr(C("a", 1), name)
+
+    for name in ("pred", "expr", "other", "__class__"):
+        row("assign " + name, lambda C: assign(C, name))
+        row("delete " + name, lambda C: delete(C, name))
+    row("frozen is an AttributeError", lambda C: issubclass(obs_type(lambda: assign(C, "pred")), AttributeError))
+
+    # operators, both sides, against atoms, formulas and things that aren't
+    q = {P: P("b", 2), Y: Y("b", 2)}
+    forms = [Not, lambda r: And(r, r), lambda r: Or(r, r), lambda r: Implies(r, r)]
+    row("invert", lambda C: shape(~C("a", 1)))
+    row("invert twice", lambda C: shape(~~C("a", 1)))
+    for name, op in [("and", lambda x, y: x & y), ("or", lambda x, y: x | y), ("rshift", lambda x, y: x >> y),
+                     ("xor", lambda x, y: x ^ y), ("add", lambda x, y: x + y)]:
+        row(name + " atom", lambda C: shape(op(C("a", 1), q[C])))
+        row(name + " int", lambda C: shape(op(C("a", 1), 1)))
+        row(name + " rev int", lambda C: shape(op(1, C("a", 1))))
+        for g in forms:
+            row(name + " formula", lambda C: shape(op(C("a", 1), g(q[C]))))
+            row(name + " rev formula", lambda C: shape(op(g(q[C]), C("a", 1))))
+
+    # match, pickle, deepcopy
+    def match(C):
+        match C("a", 1):
+            case C(pred, expr):
+                return (pred, expr)
+        return None
+
+    row("match", match)
+    row("match_args", lambda C: C.__match_args__)
+    row("name", lambda C: (C.__name__, C.__qualname__, C.__module__, C.__doc__))
+    row("weakref", lambda C: (lambda q: weakref.ref(q)() is q)(C("a", 1)))
+    row("deepcopy", lambda C: (lambda q: (type(q) is C, q.pred, q.expr))(copy.deepcopy(C("a", (1, 2)))))
+    row("is_dataclass", lambda C: __import__("dataclasses").is_dataclass(C))
+    row("instance dict", lambda C: C("a", 1).__dict__)
+
+    # pickle needs the class at its module's name, so the swap is made here for the Rust column. Every protocol, then a
+    # pickle written by Python's class read back by Rust's, which is what an old file would hold.
+    import satassume.sat.formula as SF
+    for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+        def rt(C):
+            SF.P = C
+            try:
+                q = pickle.loads(pickle.dumps(C("a", (1, 2)), proto))
+                return (type(q) is C, q.pred, q.expr, q == C("a", (1, 2)))
+            finally:
+                SF.P = P
+        row(f"pickle {proto}", rt)
+        blob = pickle.dumps(P("a", (1, 2)), proto)
+
+        def old(C):
+            SF.P = C
+            try:
+                q = pickle.loads(blob)
+                return (type(q) is C, q.pred, q.expr, q == C("a", (1, 2)))
+            finally:
+                SF.P = P
+        row(f"pickle {proto} written by Python's", old)
+
+    # a cycle through an atom: is it collected? Only a difference in memory, never in an answer
+    def cycle(C):
+        c = Cycle()
+        c.p = C("a", c)
+        r = weakref.ref(c)
+        del c
+        gc.collect()
+        return r() is None
+
+    row("cycle collected", cycle)
+    ran["p"] = n
+
+
+def obs_type(fn):
+    try:
+        fn()
+    except BaseException as e:
+        return type(e)
+    return type(None)
+
+
+def part_wanted_edge():
+    """`transfer_wanted` on atoms that aren't pairs. Fixed cases, so the smallest case is itself; the first three are the ones
+    the handoff names. Each is tried under `py_wanted` and Rust, with the exception's text."""
+    a12, a21 = P("lt", (1, 2)), P("lt", (2, 1))
+    nan = float("nan")
+    cases = {
+        "lt lt lt3": [a12, a21, P("lt", (1, 2, 3))],
+        "lt3 lt lt": [P("lt", (1, 2, 3)), a12, a21],
+        "lt3 alone": [P("lt", (1, 2, 3))],
+        "lt1 alone": [P("lt", (1,))],
+        "lt0 alone": [P("lt", ())],
+        "list": [P("lt", [1, 2])],
+        "two lists": [P("lt", [1, 2]), P("lt", [2, 1])],
+        "int": [P("lt", 5)],
+        "str pair": [P("lt", "ab"), P("lt", "ba")],
+        "str three": [P("lt", "abc")],
+        "unhashable side": [P("lt", ([], 1))],
+        "frozenset": [P("lt", frozenset({1, 2}))],
+        "same sides": [P("lt", (1, 1))],
+        "1 and 1.0": [P("lt", (1, 2)), P("lt", (2.0, 1.0))],
+        "nan identity": [P("lt", (nan, 1)), P("lt", (1, nan))],
+        "nan apart": [P("lt", (float("nan"), 1)), P("lt", (1, float("nan")))],
+        "raising eq": [P("lt", (Raises(), 1)), P("lt", (1, Raises()))],
+        "eq before a bad lt": [P("lt", 5), P("eq", 5)],
+        "not an atom": [5],
+        "not iterable": 5,
+    }
+    # the order Python's `for x, y in lts` meets a malformed atom depends on hash order; try a spread of ints
+    for i in range(40):
+        cases[f"lt3 with {i}"] = [P("lt", (i, i + 1)), P("lt", (i + 1, i)), P("lt", (i, i + 1, i + 2))]
+    for name, atoms in cases.items():
+        x, y = obs(lambda: py_wanted(atoms)), obs(lambda: sa_solver.transfer_wanted(atoms))
+        if x != y:
+            fail("wanted_edge", (name, x, y))
+    ran["wanted_edge"] = len(cases)
+
+
 for part in a.only.split(","):
     globals()["part_" + part]()
 print("ran", ran)
+if known:
+    print("named differences, not failures:", len(known), sorted(c[0] for c in known))
 for part, cs in fails.items():
     print(part, len(cs), "differences; smallest:", min(cs, key=lambda c: len(repr(c))))
+    if part in ("p", "wanted_edge"):
+        # fixed rows, so every distinct kind of row is worth seeing; one example each
+        seen = {}
+        for c in cs:
+            seen.setdefault((c[0].split(" ")[0] + c[0].split(" ")[-1][:3], c[1][0], c[2][0], c[1][1] if c[1][0] == "raise" else "", c[2][1] if c[2][0] == "raise" else ""), c)
+        for c in seen.values():
+            print("  ", repr(c)[:300])
 sys.exit(1 if fails else 0)
