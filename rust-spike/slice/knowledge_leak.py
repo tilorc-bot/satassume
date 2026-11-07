@@ -63,10 +63,11 @@ def run(a):
                 name = getattr(f, '__qualname__', repr(f))
                 sym[name] = sym.get(name, 0) + n
         facts = {}
-        for t in terms:
+        for pos, t in enumerate(terms):
             d = getattr(t, '_assumptions', None)
             if d:
-                facts[str(t)[:80] + ':' + type(t).__name__] = sorted(map(repr, d.items()))
+                # By walk position, never str(t): printing writes to cacheit and asks is_* itself, so it would count its own writes as conversion's.
+                facts[f'{pos}:{type(t).__name__}'] = sorted(map(repr, d.items()))
         return memos, sym, facts
 
     def hits():

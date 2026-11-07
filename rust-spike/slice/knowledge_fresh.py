@@ -14,6 +14,7 @@ ap.add_argument('--mode', default='shadow', choices=['plain', 'atoms', 'shadow',
 ap.add_argument('--limit', type=int)
 ap.add_argument('--handlers', help='handler_count rows here, `where` the query index; after the run, one planted raise at each call in the two tries, so a zero is about a counter shown to fire in this process')
 ap.add_argument('--shuffle', type=int, help='run in this seeded order; the first column stays the query index, so sort before comparing')
+ap.add_argument('--plant', help='a planted bug from knowledge_plants, to show a compare fires')
 args = ap.parse_args()
 from harness.state import reset_module_state
 from satassume import sympy_api, engine as E
@@ -29,6 +30,8 @@ order = list(enumerate(pairs))
 if args.shuffle is not None:
     import random
     random.Random(args.shuffle).shuffle(order)
+if args.plant:
+    import knowledge_plants
 K = None
 if args.mode == 'discard':
     import collections, convert
@@ -37,11 +40,15 @@ if args.mode == 'discard':
     def _discard(p, a, eng):
         c = convert.convert(p, a, eng)
         done['kept' if isinstance(c, convert.Kept) else 'converted'] += 1
+        if args.plant:
+            knowledge_plants.after_convert(args.plant, p, a)
         return py_ask(p, a, eng)
     sympy_api._ask = _discard
 elif args.mode != 'plain':
     import knowledge_live as K
     K.install(shadow=args.mode == 'shadow')
+    if args.plant:
+        knowledge_plants.wrap_templates(args.plant)
 H = None
 if args.handlers:
     import handler_count as H
