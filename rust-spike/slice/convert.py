@@ -4,9 +4,10 @@ Section 9 of PORT-INVENTORY.md is the format; TERMS-INTERFACE.md is the interfac
 everything lives in one `_Walk`. Rows are token streams of ints (see `_enc`), read by solver_rs/src/term/table.rs.
 
 Conversion reads SymPy and may construct inside it: default_sort_key, decompose_power and `.has` on input terms belong
-to the Python input layer (planner's ruling 5); the shadow counts them separately. A Pow whose decompose_power base
-isn't an input term gets base -1 here and refuses at run time when a key needs it, which is section 9's "refused during
-a run" (planner's ruling 1).
+to the Python input layer (planner's ruling 5); the shadow counts them separately. What can evaluate isn't read here:
+Rust asks for it when a key needs it (`_Walk.read`, section 9's read-only callbacks). A Pow whose decompose_power base
+isn't an input term reads as base -1 and refuses at run time when a key needs it, which is section 9's "refused during a
+run" (planner's ruling 1).
 """
 import numbers
 import struct
