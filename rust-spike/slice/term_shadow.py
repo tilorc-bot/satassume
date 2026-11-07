@@ -402,8 +402,7 @@ def _wrap_op(cls, name, f, static):
 
 
 def _wrap_new(cls, name):
-    f = cls.__dict__['__new__']
-    f = f.__func__ if isinstance(f, staticmethod) else f
+    f = cls.__new__     # AssocOp's, which both inherit
     raw = {'Add': lambda t, *x: t.raw_add(list(x)), 'Mul': lambda t, *x: t.raw_mul(list(x))}[name]
     ev = {'Add': lambda t, *x: t.add(list(x)), 'Mul': lambda t, *x: t.mul(list(x))}[name]
 
@@ -429,7 +428,7 @@ def install_algebra():
             continue
         seen.add(k)
         stack.extend(k.__subclasses__())
-    for k in sorted(seen, key=lambda k: (k.__module__, k.__qualname__)):
+    for k in sorted(seen, key=lambda k: (str(k.__module__), k.__qualname__)):
         for name in _OPS:
             f = k.__dict__.get(name)
             if f is None:
