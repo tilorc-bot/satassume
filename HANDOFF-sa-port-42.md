@@ -4,29 +4,36 @@ Written 2026-11-07 12:14 UTC, at the context note. Replaces HANDOFF-sa-port-41.m
 
 ## State
 
-**Nothing is ported in the sense of the brief, and nothing new has compiled or run.** `port/1b` still builds 1a, because `solver_rs/src/lib.rs` still includes `lra/port/src/lra.rs`.
+**Nothing is ported into the engine.** `port/1b` should still run 1a, because `solver_rs/src/lib.rs` still includes `lra/port/src/lra.rs`.
 
-Written, never compiled: `rust-spike/slice/solver_rs/src/lra.rs`, the whole theory over `Num`. It needs `constfield.rs` and `lra_cert.rs`, which don't exist on this branch.
+Written, never compiled: `rust-spike/slice/solver_rs/src/lra.rs`, the whole theory over `Num`. `constfield.rs` and `lra_cert.rs` are on this branch, tested only by the bridge, and the gcd stalls (next section).
 
 None of the bar's 5 items has started. The transfer (`_Move`, `_move`, `TransferFailed`) is still in place. Nothing suggests it has to outlive 1b.
 
-## The subagent's worktree: check this first
+## constfield.rs and lra_cert.rs: written, gcd stalls (updated 12:36 UTC)
 
-I launched a subagent at about 12:06 UTC for `constfield.rs`, `lra_cert.rs` and `test_cf_diff.py`, in the worktree `~/sa-rust-ids-work/sa-port-42/cf`, local branch `port/1b-cf`, notes meant for `~/sa-rust-ids-work/sa-port-42/cf-out/notes.md`.
+The subagent finished after this handoff was first written. Its work (abbc330) is merged into `port/1b`: `constfield.rs` (2,094 lines), `lra_cert.rs` (475), `test_cf_diff.py`, `mod` lines in `lib.rs`. I relayed the numbers below from its report and didn't rerun them. Whether the merged branch builds wasn't checked; the merge only adds the unused `lra.rs` and this file to what it built. Notes: `~/sa-rust-ids-work/sa-port-42/cf-out/notes.md`.
 
-**At 12:13 UTC it had no commits, no uncommitted files in that worktree and no `cf-out`. It may or may not survive this session's end, and I have no result from it.** Nothing about that port is known. Run `git -C ~/sa-rust-ids-work/sa-port-42/cf log --oneline -5` and read its notes. If it stopped short, take over its commits or redo that part. Its branch is local to this clone and isn't pushed.
+**Blocker: `rgcd`, the primitive PRS, stalls from expression swell.** It sat in `cf_inner_gcd` over 100 s on an input (4 vars, degree-3 factors) that `_sympy_inner_gcd` had just returned on. The large run (seed 20261107, 20,000 ops) also stalled in `cf_op` at about 165 s, with 0 mismatches before that; the gcd as that stall's cause is inferred, not confirmed. **Don't patch `constfield._sympy_inner_gcd` yet.** The subagent's suggested fix, not started: port `dmp_zz_heu_gcd` with the PRS as fallback. The monic gcd is unique, so the algorithm shouldn't change the answer; show that by the differential test.
 
-The interface it was told to provide, which `lra.rs` codes against:
-`CfErr {Undecided, TooLarge, ZeroDiv, Arithmetic, Py}` with `is_undecided()` and `From<CfErr> for PyErr`; `Num {Q(Rat), E(Rc<Elem>)}` with `zero one add sub mul div neg inverse formally_zero sign nonzero py_eq lt le floor ceil is_integer from_py to_py`, floor and ceil returning an integer `Rat`; structural `Eq + Hash`; `refresh_limits()`; bridges `sa_solver.cf_op`, `sa_solver.cf_inner_gcd`.
+- **Differential test:** `CF_GCD=120 CF_CERT=250 $PY -u test_cf_diff.py 7 4000`: 6,800 comparisons, 0 mismatches, including 283 TooLarge, 63 Undecided, 191 certified-true. **No large run completed**, and the gcd generator was cut to 3 vars, degree 2, so multivariate gcd is shown only on small inputs.
+- **Test bug:** its cache-mismatch report can crash on mixed key types (seen with mutant 109).
+- **Planted bugs** (`--features mutants`, `LRA_MUT=n`): fired 101, 103, 104, 106, 108, 109, 110. **Survived:** 102 (`mul_fast <=`), 107 (`budget_scale >=`), so those boundary decisions are unproven; 105 (pi guard 31), maybe near-equivalent, not examined. The numbers don't collide with the core's mutants 1-9.
+- **Unit tests:** `test_constfield.py`, `test_lra_constants.py`: 91 passed, 3 skipped. These run Python's module, so they say nothing about Rust.
+- **Differences to name:** Element `_enc`, `_hash`, `_size_`, `_vars` aren't written back, `_sign` is. The registry is read live, not cached. Native enclosures fill `Constant._cache`. `pi_laurent` stays Python, so certify calls it for Element atoms. A negative `PREC_START` isn't handled. `Num::pow` on a Fraction is untested.
+
+Interface as built: `CfErr {Undecided, TooLarge, ZeroDiv, Arithmetic, Py}` with `is_undecided()` (also true for a callback's own Undecided held in `Py`) and `is_zero_div`; `Num` with `zero one add sub mul div neg inverse pow abs formally_zero sign nonzero py_eq lt le gt ge floor ceil is_integer enclosure from_py to_py`; `refresh_limits()`; bridges `sa_solver.cf_op`, `sa_solver.cf_inner_gcd`.
 
 ## Left to write in lra.rs
 
-`lra.rs` names three things nobody has defined; the subagent wasn't told these names:
-- `crate::lra_cert::CertMemo` (`Default`; the field `Theory.cert`, :313): `_cert` and `_cagg`.
-- `crate::lra_cert::Y`, and `crate::lra_cert::within(&Num, &Y) -> R<bool>` (:813, :901-907).
-- `Theory::certificate(values) -> R<(bool, Option<Y>)>`, not written. Port lra.py:448-473: memo key `(len(atoms), len(ints), len(slack_of), len(key), limits())`, `except Exception` gives `(False, None)`, `certify` over `len(key) - len(rows)`. It needs atoms and ints in `reg_order`. Since it swallows every exception, `cert_skips`' `?` only sees `within`'s.
+`lra.rs` was written before that API existed, so it needs adapting:
+- `crate::lra_cert::Y` (:813, :901) doesn't exist: **`Y` is an integer `Rat`.** `within(&Num, &Rat) -> R<bool>` is there.
+- `crate::lra_cert::CertMemo` (the field `Theory.cert`, :313) doesn't exist: the memo and `except Exception` are the caller's. Define it in `lra.rs`, holding `_cert` and a `CertAtoms::new()`.
+- `Theory::certificate(values) -> R<(bool, Option<Rat>)>` isn't written. Port lra.py:448-473: memo key `(len(atoms), len(ints), len(slack_of), len(key), limits())`, `except Exception` gives `(False, None)`. Call `refresh_limits()` first. Call:
+  `certify(g: &mut CertAtoms, atoms, ints, forms, nt: usize, values: Option<&(Rat, BigInt)>) -> Result<(bool, Option<Rat>), CfErr>`. All three iterators are `DoubleEndedIterator + ExactSizeIterator` in registration order: `atoms` yields `(is_eq_or_ne, &Num)`, `ints` yields `(&m, &k)`, `forms` yields `&[(u32, Num)]`; `nt` is `len(_key) - len(_rows)`. Registration order needs `reg_order` for atoms and ints, and `slack_of` by slack id for forms.
+- Use `Num::gt`, `Num::ge` in place of `lra.rs`'s `gt`, `ge`; that settles correction 7 if they follow Python's own operand order.
 
-Also `rational_values` (lra.py:434), and `certified`, `certified_with` answered from it. **The choice proposed, not yet made or shown: port all of `lra_cert`, so no test is kept on Python for this.** Name it in the report.
+`rational_values(iter) -> Option<(Rat, BigInt)>` exists; `certified` and `certified_with` answer from the same port. **The choice proposed, not yet shown in the engine: port all of `lra_cert`, so no test is kept on Python for this.** Name it in the report.
 
 ## Corrections to the earlier design
 
@@ -40,8 +47,8 @@ Also `rational_values` (lra.py:434), and `certified`, `certified_with` answered 
 
 ## What's left, in order
 
-1. Settle `constfield.rs`, `lra_cert.rs` and the differential test, with a planted bug firing.
-2. Add the certificate glue above. In `lib.rs` add the `mod`s and replace the `#[path]` `lra` with `mod lra;` (keep `rat`'s `#[path]`; `lra/port` keeps its frozen copy of `lra.rs`). Compile. Remember `lra.rs:10-11` imports both.
+1. Fix the gcd stall, then complete a large differential run with multivariate gcd. This doesn't have to come before wiring: the stall only needs larger inputs, so wire first if that's quicker, and report it as open until fixed.
+2. Add the certificate glue above. In `lib.rs` add the `mod`s and replace the `#[path]` `lra` with `mod lra;` (keep `rat`'s `#[path]`; `lra/port` keeps its frozen copy of `lra.rs`). Compile. `lib.rs` already has the new `mod` lines. Remember `lra.rs` imports both.
 3. `lra_py.rs` (`rat_of` :11, `pairs_of` :22, `frac` :53, hooks :106-168, `dump` :208): `Num::from_py`, `to_py`; hooks return `PyResult` via `CfErr`, `check` returns None when gave up; `gave_up` no-ops in push and pop *before* the IndexError check (lra.py:750, :756); add getter `gave_up`, method `give_up()`, `set_fields()`, `touch(pairs) -> bool` (it now takes pairs and runs `_lin`); stats `gave_up` real (today hard-wired at :201); dump adds `fields`, `gave_up`, `int_memo`, `row_order` order for `rows`, and `forms_order` replaces the `forms.sort_by` at :298. `refresh_limits()` at hook entry when `t.fields`.
 4. `lra_backend.py`, delete: `TransferFailed` :33, `moves` and `counts["moved"]` :38-40, `_Move` :43, `_once` and `_Replay` :47-65, `rebuilt`, the raises :191, :207, :238, `_move` :307, `_view`, and every `core is None` branch :103-175.
    - `register_atom`: `if core.gave_up: return` first (lra.py:546), then the literal checks, all in `try ... except Undecided: core.give_up()`.
