@@ -6,9 +6,9 @@ Built from the code it reaches, never from held-out data (planner's hidden-gap r
 `Quantity`, `RandomSymbol`, `asin`/`acos` of a constant (`_in_unit_interval_units`, both sides of -1 and 1, Rational and Float),
 `cosh(r + I*pi*c*s)` (`_cosh_shift_split`, `_cosh_shift_rules`, even and odd `c`, with and without `s`, a cancelling Add),
 `sin`/`cos(pi*c*s)` with a constant `c` and no `s` (`_pi_trig_rules`' number branch), `re`/`im` of `floor`/`ceiling`, and
-unary rows with shifted slots on a cancelling Add (`shifted`'s #184 guard).
+unary rows with shifted slots on a cancelling Add (`shifted`'s #184 guard), and n-ary rows (`nary`).
 """
-from sympy import (Add, Float, I, Idx, Mul, Q, Rational, S, Symbol, acos, asin, ceiling, cos, cosh, floor, im, log, pi, re,
+from sympy import (Add, Mod, RisingFactorial, besselj, beta, binomial, lowergamma, polylog, zeta, Float, I, Idx, Mul, Q, Rational, S, Symbol, acos, asin, ceiling, cos, cosh, floor, im, log, pi, re,
                    sin, tan)
 from sympy.calculus.accumulationbounds import AccumulationBounds
 
@@ -59,6 +59,12 @@ def queries():
         if isinstance(node, AccumulationBounds):
             ask(node)
             out.append((Q.positive(node), Q.positive(lo)))
+    for a, b in ((n, S(3)), (x, y), (S(2), x), (k, m), (Add(y, -y, 1, evaluate=False), n), (Rational(1, 2), S(-2))):
+        for f in (Mod, polylog, besselj, binomial, lowergamma, zeta, beta, RisingFactorial):
+            try:
+                ask(f(a, b, evaluate=False))
+            except Exception:
+                pass
     i, j = Idx('i'), Idx('j', 10)
     for node in (i, j, i + j, 2 * i + 1):
         ask(node)
