@@ -23,6 +23,9 @@ import state as T
 if args.wl == 'fuzz':
     from evalbench.fuzz import queries
     pairs = queries(424242)
+elif args.wl == 'value':
+    import knowledge_value_wl
+    pairs = knowledge_value_wl.queries()
 else:
     pairs = workload(args.wl)
 pairs = pairs[:args.limit] if args.limit else pairs

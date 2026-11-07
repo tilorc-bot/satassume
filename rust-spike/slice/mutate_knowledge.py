@@ -6,7 +6,7 @@ PLAIN_DIR holds dev-plain.tsv and fuzz-plain.tsv from the same tree. Each column
 only died, which includes KnowledgeFault), or `no`:
   direct  knowledge_units_cmp over generated fact lists; sees only Rules::units, so row and table bugs can't show here.
   shadow  knowledge_fresh dev --mode shadow; a field mismatch, or an answer or digest off plain.
-  off     knowledge_fresh dev and fuzz --mode atoms against plain, byte for byte: answers and session digests only, the real mode.
+  off     knowledge_fresh dev, fuzz and value --mode atoms against plain, byte for byte: answers and session digests only, the real mode.
 `off` is what a user's run would see; a bug only `shadow` catches changed a field and no answer. Each row records which build
 loaded: a column from another build is void. The base row must read `no` in all three. WORK/results.jsonl as each ends.
 """
@@ -55,8 +55,10 @@ M = [
     ('boundary', 'conv-no-constant-rows', CONV, 'return tuple(const_value(t, p) for p in _CONST_BASIS)', 'return ()'),
     ('boundary', 'conv-no-symbol-rows', CONV, 'return tuple(t.assumptions0.items())', 'return ()'),
     ('boundary', 'conv-symbol-facts-sorted', CONV, 'tuple(t.assumptions0.items())', 'tuple(sorted(t.assumptions0.items()))'),
-    ('wiring', 'live-any-class-row', LIVE, 'if i is not None and type(q.objects[i]) is type(expr):', 'if i is not None:'),
-    ('wiring', 'live-all-derived', LIVE, 'if i is not None and type(q.objects[i]) is type(expr):', 'if False:'),
+    ('wiring', 'live-any-class-row', LIVE, 'if i is not None and type(q.objects[i]) is type(value):', 'if i is not None:'),
+    ('wiring', 'live-all-derived', LIVE, 'if i is not None and type(q.objects[i]) is type(value):', 'if False:'),
+    ('wiring', 'live-value-on-value', LIVE, 'return Compiled((obj,), pat)', 'return Compiled((value,), pat)'),
+    ('wiring', 'live-value-negated', LIVE, "'value', False, value, obj)", "'value', False, -value, obj)"),
     ('wiring', 'live-derived-keeps-commutative', LIVE, "if f in VOCAB and v is not None and f != 'commutative']", "if f in VOCAB and v is not None]"),
     ('wiring', 'live-stack-not-popped', LIVE, 'finally:\n            stack.pop()', 'finally:\n            pass'),
     ('wiring', 'live-fault-quiet', LIVE, 'class KnowledgeFault(BaseException):', 'class KnowledgeFault(Exception):'),
@@ -134,7 +136,7 @@ def score(name, kind, path, old, new, a):
         row['shadow'] = 'cmp' if c.get('shadow:mismatch') or not filecmp.cmp(out, os.path.join(a.plain, 'dev-plain.tsv'), False) else 'no'
     # off
     row['off'] = 'no'
-    for wl in ('dev', 'fuzz'):
+    for wl in ('dev', 'fuzz', 'value'):
         rc, out = fresh(d, env, log, wl, 'atoms')
         if rc:
             row['off'] = 'crash'
