@@ -45,9 +45,13 @@ def install_transfer():
         import transfer_shadow
         transfer_shadow.ShadowTransfer.rust_class = TransferTheory
         transfer.TransferTheory = transfer_shadow.ShadowTransfer
+        transfer_shadow.ShadowSharing.rust_class = sa_solver.EqualitySharing
+        transfer_shadow.rust_wanted[0] = sa_solver.transfer_wanted
+        transfer.transfer_wanted = relations.transfer_wanted = scope.transfer_wanted = transfer_shadow.shadow_wanted
+        relations.EqualitySharing = theory.EqualitySharing = transfer_shadow.ShadowSharing
     elif mode == "rust":
         transfer.TransferTheory = TransferTheory
-    if mode in ("rust", "shadow"):
+    if mode == "rust":
         transfer.transfer_wanted = relations.transfer_wanted = scope.transfer_wanted = sa_solver.transfer_wanted
     if mode == "rust":
         relations.EqualitySharing = theory.EqualitySharing = sa_solver.EqualitySharing

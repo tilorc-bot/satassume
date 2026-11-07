@@ -10,9 +10,13 @@ import collections
 import json
 import sys
 
+from satassume.sat import theory as _theory
 from satassume.theories import transfer as _py
 
 PyTransfer = _py.TransferTheory
+_py_wanted = _py.transfer_wanted
+_PySharing = _theory.EqualitySharing
+rust_wanted = [None]
 stats = collections.Counter()
 diffs = []
 log = None    # an open file, or None
@@ -121,6 +125,11 @@ class ShadowTransfer:
             except BaseException as e:    # a Rust panic is a BaseException
                 rr = ("raise", type(e).__name__, str(e))
         self._same(name, args, rp, rr)
+        if rp[0] == "ok" and rp[1]:
+            if name == "propagate":
+                stats["lemmas"] += len(rp[1])
+            elif name in ("check", "decide"):
+                stats[name + " hit"] += 1
         if rp[0] == "raise":
             raise getattr(__import__("builtins"), rp[1], RuntimeError)(rp[2])
         return rp[1]
@@ -159,24 +168,100 @@ class ShadowTransfer:
         return self._both("pop_level")
 
 
-QUIET = {"engine.py": (1890, 1920), "sympy_api.py": (1095, 1115)}
+QUIET = {("engine.py", "_build_context"), ("sympy_api.py", "_consistent")}
 catches = collections.Counter()
+handled_all = collections.Counter()
 
 
 def count_quiet_catches():
     """Count what the quiet handlers catch (`engine.py:1906`, `sympy_api.py:1107`), by file, line and exception type,
-    with `sys.monitoring`, so neither handler is edited. Only these two windows, so unrelated handled exceptions cost
-    a filter and nothing else."""
+    with `sys.monitoring`, so neither handler is edited. Keyed by the catching function's name: sa-port-17's version
+    filtered on `co_firstlineno` inside a line window that started after both functions begin, so it could never fire.
+    `Uninterpreted` passes through `_build_context` by a bare re-raise and isn't a catch. `handled_all` tallies every
+    exception handled in a satassume frame, by file, function and type, so two backends compare by more than the two
+    named handlers."""
     mon = sys.monitoring
     tool = 4
-    mon.use_tool_id(tool, "sa-port-17-quiet")
+    mon.use_tool_id(tool, "sa-port-quiet")
 
     def handled(code, offset, exc):
-        name = code.co_filename.rsplit("/", 1)[-1]
-        win = QUIET.get(name)
-        if win and "satassume" in code.co_filename and win[0] <= code.co_firstlineno <= win[1] + 400:
-            line = sys._getframe(1).f_lineno
-            if win[0] <= line <= win[1]:
-                catches[f"{name}:{line} {type(exc).__name__}"] += 1
+        fn = code.co_filename
+        if "satassume" not in fn or "rust-spike" in fn:
+            return
+        name = fn.rsplit("/", 1)[-1]
+        ty = type(exc).__name__
+        handled_all[f"{name}:{code.co_name} {ty}"] += 1
+        if (name, code.co_name) in QUIET and ty != "Uninterpreted":
+            catches[f"{name}:{code.co_name} {ty}"] += 1
     mon.register_callback(tool, mon.events.EXCEPTION_HANDLED, handled)
     mon.set_events(tool, mon.events.EXCEPTION_HANDLED)
+
+
+class ShadowSharing:
+    """Python's and Rust's `EqualitySharing` side by side. Python's result is returned; `update` and `shared` compare
+    after each call, by the objects' identity, since Python hands back particular objects. The first difference is
+    logged and stops this instance's comparing."""
+    rust_class = None
+
+    def __init__(self):
+        self.py = _PySharing()
+        self.rs = self.rust_class()
+        self.dead = False
+        stats["sharing instances"] += 1
+
+    @property
+    def shared(self):
+        return self.py.shared
+
+    def update(self, term_sets):
+        term_sets = [list(ts) for ts in term_sets]
+        rp = self.py.update(term_sets)
+        if self.dead:
+            return rp
+        stats["calls"] += 1
+        stats["call sharing.update"] += 1
+        try:
+            rr = self.rs.update(term_sets)
+        except KeyboardInterrupt:
+            raise
+        except BaseException as e:
+            rr = ("raise", type(e).__name__, str(e))
+        same = isinstance(rr, list) and len(rp) == len(rr) and all(
+            a[0] is b[0] and a[1] is b[1] for a, b in zip(rp, rr))
+        same = same and len(self.py.shared) == len(self.rs.shared) and all(
+            a is b for a, b in zip(self.py.shared, self.rs.shared))
+        if not same:
+            self.dead = True
+            _diff("sharing.update", term_sets, "result", repr(rp), repr(rr))
+        return rp
+
+
+def shadow_wanted(atoms):
+    """Python's `transfer_wanted` beside Rust's; Python's answer or exception stands."""
+    atoms = tuple(atoms)
+    try:
+        rp = ("ok", _py_wanted(atoms))
+    except Exception as e:
+        rp = ("raise", type(e).__name__, str(e))
+    try:
+        rr = ("ok", rust_wanted[0](atoms))
+    except KeyboardInterrupt:
+        raise
+    except BaseException as e:
+        rr = ("raise", type(e).__name__, str(e))
+    stats["calls"] += 1
+    stats["call transfer_wanted"] += 1
+    if rp != rr:
+        _diff("transfer_wanted", atoms, "result", repr(rp), repr(rr))
+    if rp[0] == "raise":
+        raise getattr(__import__("builtins"), rp[1], RuntimeError)(rp[2])
+    return rp[1]
+
+
+def _diff(hook, args, field, py, rust):
+    stats["differences"] += 1
+    d = dict(query=where["query"], hook=hook, args=repr(args)[:300], field=field, py=py[:800], rust=rust[:800])
+    diffs.append(d)
+    if log:
+        log.write(json.dumps(d) + "\n")
+        log.flush()
