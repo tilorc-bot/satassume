@@ -13,11 +13,11 @@
 | `tests/test_verify_integration.py::test_theory_levels_match_the_solver_after_ask` | same, `tests/test_verify_integration.py:97` |
 | `tests/test_wide_derived.py::test_wide_derived_or_against_or_is_fast[nor-or]` | wall clock, 2.23 s against `< 2.0` |
 
-The other failure is `test_performance_smoke_300_vars`, the same id that failed in the Python base run; read its outcome by id before relying on that.
+The fifth failure is the one that didn't move: `test_performance_smoke_300_vars`, which also failed in the Python base run.
 
 **The `_lims` three are a gap, not a pass and not shown to be a wrong answer.** They read a private the crate's class doesn't have (known difference 5). `run_seed` stops at that line, so **the real-theory answer comparison in `match_fresh_solvers` doesn't get through on Rust EUF**, and that's the test this mode was meant to reach. Don't edit the tests. Options: a read-only level count on the crate's class, or a named shim in `rust_plugin.py`, as with `_n_conflicts`. Whichever you pick, name it in the report and read what those tests then do. Not raised with the planner yet.
 
-`test_real_theories` aside, the handoff's point stands: the mixed run is the only one where the 77 and the 46 read a Rust EUF answer, and those ids passed there. Nothing else in it moved.
+**The 77 and the 46 in this run, by id:** 120 of 123 passed; the rest are in the table above. Passing here doesn't show a test read an EUF answer, since most of them may never build an EUF theory; that wasn't counted. Nothing else in the run moved.
 
 ## Results so far
 
