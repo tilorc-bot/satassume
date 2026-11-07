@@ -11,6 +11,16 @@ a finished tsv ends in `END`. Read: `mismatches` (want []), `counts` keys `f6:*`
 `scaffold:rebuilt:f6`, `f6:refuse`, `f6:derived:*`, `realroots:root_facts`. Runner: `~/sa-rust-ids-work/sa-port-111/run.sh WL
 MODE OUT [--limit N] [--plant ..]` (MODE plain|atoms|shadow; atoms = install without shadow).
 
+## Shadow results (finished 7 Nov ~23:59 UTC, all four END, no tracebacks)
+0 mismatches on f6, value, rootof and core. Every swapped name fires: f6 wl `_accum` 54, `_cosh_shift_rules` 640,
+`_cosh_shift_split` 1040, `_idx_facts` 32, `_parts_of_round_rules` 192, `_pi_trig_rules` 736, `_quantity_facts` 32,
+`_random_units` 36, `_unit_interval_units` 162, `shifted` 388; value wl `_doubled` 168, `_genocchi_half_rules` 562,
+`_multigamma_rules` 120, `multigamma_value:python` 168, `shifted` 2474; rootof wl `_facts` 5187; core wl `_pi_trig_rules`
+372. **Explain first:** `f6:refuse` 90 (f6) and 138 (value), `scaffold:mismatch` 16 (f6). Likely the raw-Add/Mul risk below,
+or `algebra.rs` refusing. Find which wrapper raised and whether that query then ran on Python. `realroots:root_facts`
+10374 = 2 x 5187 under shadow, because Python's reference `_facts` calls the rust_root wrapper too. Check the count under
+atoms mode.
+
 ## What was done (3001337)
 - `rust-spike/slice/solver_rs/src/term/tf6.rs`: `pi_trig_rules`, `cosh_shift_rules`, `parts_of_round_rules`,
   `genocchi_half_rules`, `unit_interval_units`, `accum_rules`, `multigamma_rules`, `rootof_facts` (calls
