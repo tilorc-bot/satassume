@@ -35,9 +35,9 @@ Caveats:
 | `gen(R, c)` | 283 | **0** | 1,562 |
 | `constant_value` on Rust | 1,239 | 5,575 | 3,310 |
 | of those, gone to Python | 0 | 0 | 906 |
-| `rows:kept` | 12 | 0 | not read |
+| `rows:kept` | 12 | 0 | 0 |
 
-dev and fuzz counts are from 8dec4f9. **The fuzz MATCH says nothing about `gen(R, c)`, and neither dev nor fuzz reaches a Python fallback in `constant_value`.** Only the rows workload and `rows_cmp` reach those. Suite reach: unknown.
+dev and fuzz counts are from 8dec4f9. **The kept path of the rewritten `rust_generator` has had no run on the head: the rows workload has 0 kept calls, and the 12 on dev predate the rewrite.** **The fuzz MATCH says nothing about `gen(R, c)`, and neither dev nor fuzz reaches a Python fallback in `constant_value`.** Only the rows workload and `rows_cmp` reach those. Suite reach: unknown.
 
 ## Inventory claims checked
 
