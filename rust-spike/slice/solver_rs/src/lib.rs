@@ -5,11 +5,13 @@
 //! Not ported: provenance (`owner`, `provenance`, `root_step`). The engine sets `track_owners = False`, so it never
 //! asks; those raise NotImplementedError rather than answer wrongly.
 mod block;
+mod constfield;
 mod euf;
 mod euf_py;
 // One source for the rational core: the replay binary in lra/port builds the same files.
 #[path = "../../../lra/port/src/lra.rs"]
 mod lra;
+mod lra_cert;
 mod lra_py;
 mod map;
 #[path = "../../../lra/port/src/rat.rs"]
@@ -552,5 +554,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     term::py::register(m)?;
     m.add_class::<PySolver>()?;
     m.add_class::<lra_py::LraCore>()?;
+    constfield::register(m)?;
+    lra_cert::register(m)?;
     euf_py::add_to(m)
 }
