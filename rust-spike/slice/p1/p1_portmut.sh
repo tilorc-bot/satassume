@@ -4,9 +4,9 @@ OUT=${OUT:-$REAL/sa-rust-ids-work/sa-port-21/portmut}; mkdir -p $OUT; date -u >$
 # lib.rs reaches the core by a relative #[path]: crate/src/../../.. is $OUT here
 ln -sfn $S/../lra $OUT/lra
 mkdir -p $OUT/so; $PY port_mutants.py build $OUT/so >$OUT/build.log 2>&1 || { echo build failed >$OUT/done; exit 1; }
-for wl in dev ground fuzz; do
+for wl in ${WLS:-dev ground fuzz}; do
   ref=${REF:-$REAL/sa-rust-ids-work/sa-port-21/checks/fresh}/$wl-py.jsonl
-  [ $wl = ground ] && ref=$B/ground/py.jsonl
+  [ $wl = ground ] && [ -z "$REF" ] && ref=$B/ground/py.jsonl
   D=$OUT/$wl; mkdir -p $D
   N=$($PY -c "import live; print(len(live.load('$wl')))")
   for name in $($PY port_mutants.py list); do

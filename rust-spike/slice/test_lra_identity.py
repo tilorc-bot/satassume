@@ -56,3 +56,19 @@ def test_forms_key_keeps_the_same_objects_on_both():
     x1, x2, y1 = T("x"), T("x"), T("y")
     atoms = [le([(x1, 1)], 1), le([(x2, 1), (y1, 1)], 3)]
     assert kept(Py, atoms)[1] == kept(lra_backend.LRATheory, atoms)[1]
+
+
+@pytest.mark.xfail(strict=True, reason="found by identity_rule.py, reported, not fixed: `_forms` iterates in first-registration order "
+                   "on Python, and the Rust dump sorts by key (lra_py.rs, `forms.sort_by`). state.py sorts it too, so the "
+                   "comparison can't see this, which is `order:_forms` not caught. No aliasing needed.")
+def test_forms_iterate_in_the_same_order_on_both():
+    x, y = T("x"), T("y")
+    atoms = [le([(x, 1), (y, 1)], 1), le([(x, 1)], 2)]
+
+    def order(cls):
+        t = cls()
+        for lit, atom in enumerate(atoms, 1):
+            t.register_atom(lit, atom)
+        st = t._state() if hasattr(t, "_state") else {"_forms": t._forms}
+        return [sorted(a.name for a, _ in f) for f in st["_forms"]]
+    assert order(Py) == order(lra_backend.LRATheory)
