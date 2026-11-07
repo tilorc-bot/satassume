@@ -1,8 +1,10 @@
 # Component 6: `knowledge/realroots.py` on Rust (issue 323)
 
-**Not on `rust-slice` yet.** The port is tested on `port/realroots` at 5cd0319, on a base of `rust-slice` 4b2f12b. The brief says 1b lands first, and 1b's landing job was still running at 14:00 UTC on 7 Nov. Landing ahead of it would change code that job executes, so I handed off. These numbers are for 5cd0319, and the landing source needs its own run if the rebase brings in code the run executes.
+**On `rust-slice`, landed ahead of 1b.** The port was tested on `port/realroots` at 5cd0319, on a base of `rust-slice` 4b2f12b. `rust-slice` was still at 4b2f12b at landing, so the branch fast-forwarded: 5cd0319 itself is the landed source, with no rebase and no rerun. These numbers are for 5cd0319.
 
-**Module: whole.** All 16 functions have a Rust counterpart in `solver_rs/src/realroots.rs`. **When landed, 1 of the 32 runtime modules newly runs whole because of this: `knowledge/realroots.py`,** as the brief expected. I didn't recount the total.
+**The sequencing changed.** The port's brief said 1b lands first, and 1b's landing job was still running at 14:00 UTC on 7 Nov, so sa-port-56 stopped at a handoff, tested and not landed. The architect then replaced that order with landing now, ahead of 1b. The architect's reasons: the tested base is `rust-slice`'s head, so nothing needs rerunning; waiting would mean a 16-minute rerun on top of 1b's much larger change; the diff is additive; and sa-port-51's diff check found `knowledge_live.install` isn't called on 1b's run path. The landing session didn't repeat that diff check. The diff's only removed lines are 2 replaced in `mutate_knowledge.py`, a harness. 1b now lands on top of this one, under the rebase rule.
+
+**Module: whole.** All 16 functions have a Rust counterpart in `solver_rs/src/realroots.rs`. **1 of the 32 runtime modules newly runs whole because of this: `knowledge/realroots.py`,** as the brief expected. I didn't recount the total.
 
 Tested x86-64 on pareto1, hash seed 0, `.so` sha256 starts df615dc50020. Job output: `~/sa-rust-ids-work/sa-port-56/land1/` on pareto1.
 

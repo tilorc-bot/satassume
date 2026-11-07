@@ -1,8 +1,8 @@
 # Handoff: sa-port-56, `knowledge/realroots.py` port (issue 323)
 
-**State:** ported whole and tested at 5cd0319 on `port/realroots`, not on `rust-slice`. Results: `rust-spike/slice/results/port-realroots.md`. All that's left is to land after 1b: rebase, rerun if the incoming diff needs it, update the report, push.
+**State:** ported whole and tested at 5cd0319, and landed on `rust-slice` ahead of 1b by sa-port-59, with no rebase and no rerun. Results: `rust-spike/slice/results/port-realroots.md`. Nothing is left here.
 
-**Why it stopped:** the brief says 1b lands first. sa-port-51 handed off with 1b's landing job running (journal 0279697, `~/dev/architect/briefs/NEXT-port-1b.txt`). Landing ahead would change `knowledge_live.py` and the crate under that job. The planner's rule says 1b's successor does its landing runs on top of what they overlap with, so this could restart them.
+**Why it stopped:** the brief said 1b lands first. sa-port-51 had handed off with 1b's landing job running (journal 0279697, `~/dev/architect/briefs/NEXT-port-1b.txt`). Landing ahead would change `knowledge_live.py` and the crate under that job. The planner's rule says 1b's successor does its landing runs on top of what they overlap with, so this could restart them. The architect then changed the order to land this first; the report gives the reasons.
 
 ## Map
 
