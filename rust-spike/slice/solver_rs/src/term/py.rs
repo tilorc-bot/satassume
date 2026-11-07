@@ -193,6 +193,26 @@ impl PyTermTable {
         self.0.key_cmp(TermId(a), TermId(b)).map(|o| o as i8).map_err(refuse)
     }
 
+    /// `_is_number` of a term.
+    fn is_number_term(&self, t: u32) -> bool {
+        self.0.is_number_term(TermId(t))
+    }
+
+    /// The sides of `relation_atom`'s eq atom, stripped and in order. Raises TermRefuse.
+    fn eq_sides(&mut self, l: u32, r: u32) -> PyResult<(u32, u32)> {
+        self.0.eq_sides(TermId(l), TermId(r)).map(|(a, b)| (a.0, b.0)).map_err(refuse)
+    }
+
+    /// `_termwise(a, b, d)`. Raises TermRefuse.
+    fn termwise(&mut self, a: u32, b: u32, d: u32) -> PyResult<bool> {
+        self.0.termwise(TermId(a), TermId(b), TermId(d)).map_err(refuse)
+    }
+
+    /// `_eq_links`'s difference `p - q`, or None when it isn't used. Raises TermRefuse.
+    fn eq_diff(&mut self, p: u32, q: u32) -> PyResult<Option<u32>> {
+        self.0.eq_diff(TermId(p), TermId(q)).map(|d| d.map(|t| t.0)).map_err(refuse)
+    }
+
     /// `n_input`: rows from conversion; later ids are derived.
     #[getter]
     fn n_input(&self) -> usize {

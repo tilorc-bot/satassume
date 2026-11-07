@@ -35,4 +35,5 @@ pub mod knowledge;
 pub mod offline;
 pub mod py;
 pub mod rat;
+pub mod relations;
 pub mod table;
