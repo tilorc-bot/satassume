@@ -96,6 +96,8 @@ M = [
     ("euf_py.rs", "on_merge: arguments swapped", "f.bind(p).call1((ra, rb))?;", "f.bind(p).call1((rb, ra))?;", False),
     ("euf_py.rs", "on_merge: never called", "if let Some(f) = listener {\n                    f.bind(p).call1((ra, rb))?;\n                }", "let _ = listener;", False),
     ("euf_py.rs", "on_merge: a raise is swallowed", "f.bind(p).call1((ra, rb))?;", "let _ = f.bind(p).call1((ra, rb));", False),
+    # Control for real_theory_fuzz's level check: the level is lost only at depth 3, so Rust's `_lims` runs short of the solver.
+    ("euf.rs", "push_level: the third level isn't recorded", "self.lims.push(self.trail.len());", "if self.lims.len() != 2 { self.lims.push(self.trail.len()); }", False),
 ]
 CHECKS = {"digest": ("step1", "answers"), "state": ("step1", "state"), "fuzz-a": ("fuzz", "answers"), "fuzz": ("fuzz", "state")}
 LOCK = threading.Lock()

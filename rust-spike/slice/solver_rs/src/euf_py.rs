@@ -161,6 +161,12 @@ impl PyEuf {
         drop(old);
     }
 
+    /// The trail mark of each open level, as Python's `_lims`. Rust's own marks, copied on each read; read-only.
+    #[getter(_lims)]
+    fn get_lims(&self) -> Vec<usize> {
+        self.core.borrow().lims.clone()
+    }
+
     /// term -> its class representative. A live, read-only view.
     #[getter]
     fn rep(slf: Py<Self>) -> RepView {

@@ -68,7 +68,10 @@ def compare(ref, got, state):
 def score(k, so, check, a):
     wl, level = CHECKS[check]
     out = os.path.join(a.work, "logs", f"m{k}-{check}.jsonl")
-    cmd = [sys.executable, os.path.join(HERE, "live.py"), wl, "rust", out, "--check", level, "--so", so]
+    quiet = out + ".handlers"
+    if os.path.exists(quiet):
+        os.remove(quiet)
+    cmd = [sys.executable, os.path.join(HERE, "live.py"), wl, "rust", out, "--check", level, "--so", so, "--handlers", quiet]
     with open(out + ".err", "w") as err:
         try:
             rc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=err, timeout=a.timeout).returncode
@@ -78,6 +81,8 @@ def score(k, so, check, a):
     ref, rtot = read(os.path.join(a.ref, f"{wl}-py.jsonl"))
     n, first = compare(ref, got, level != "plain")
     r = dict(rc=rc, done=len(got), of=len(ref), n=n, first=first)
+    # engine.py's and sympy_api's `except Exception` turn a raise into a quiet answer: count them on every mutant run.
+    r["quiet"] = sum(1 for _ in open(quiet)) if os.path.exists(quiet) else None
     if total:
         if total["so_sha"] != sha(os.path.join(so, "sa_solver.so")):
             sys.exit(f"VOID: m{k} {check} loaded the wrong build")
