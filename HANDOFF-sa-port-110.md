@@ -1,6 +1,6 @@
 # Handoff: sa-port-110 to the next 6f session (functions, special, rootof, nodes, physics, stats; issue 323)
 
-**State (8 Nov, see git log for time):** port/6f on rust-slice 2540ca7. Done: the trace (scope item 1) and a workload that
+**State (7 Nov 23:47 UTC):** port/6f on rust-slice 2540ca7. Done: the trace (scope item 1) and a workload that
 reaches every item. No Rust yet. Handed off at about 130k context to leave room for the port.
 
 ## Done
