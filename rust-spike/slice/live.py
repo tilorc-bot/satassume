@@ -247,6 +247,9 @@ def load(wl):
     if wl == "ground":      # not from the eval sets: atoms that cancel, for `_ground` and `_pending_ground`
         from ground_queries import queries
         return queries()
+    if wl == "port":        # not from the eval sets: aimed at the lines port_mutants.py changes
+        from port_queries import queries
+        return queries()
     if wl == "fuzz":
         from evalbench.fuzz import queries
         return queries(424242)
