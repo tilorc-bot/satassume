@@ -30,6 +30,8 @@ M = [
     ('alg', 'keep-coeff-minus-one', ALG, 'if *a == Rat::int(-1) {', 'if *a == Rat::int(-2) {'),
     ('alg', 'no-merge-with-known', ALG, 'content: Arc<[V]>) -> TermId {\n        if let Some(t) = self.find(class, &content) {', 'content: Arc<[V]>) -> TermId {\n        if let Some(t) = None::<TermId> {'),
     ('order', 'key-arg-count', ALG, 'tuple(vec![int(n), tuple(ordered)])', 'tuple(vec![int(n + 1), tuple(ordered)])'),
+    ('order', 'mul-key-arg-count', ALG, 'let n = keys.len() as i64;', 'let n = keys.len() as i64 + 1;'),
+    ('order', 'mul-key-unsorted', ALG, 'self.sort_values(&mut keys)?;', ''),
     ('order', 'compare-length-flipped', TAB, 'let c = st.len().cmp(&ot.len());', 'let c = ot.len().cmp(&st.len());'),
     ('order', 'tuple-length-flipped', TAB, 'x.len().cmp(&y.len())', 'y.len().cmp(&x.len())'),
     ('order', 'rat-order-flipped', TAB, '(V::Rat(x), V::Rat(y)) => x.cmp(y),', '(V::Rat(x), V::Rat(y)) => y.cmp(x),'),
