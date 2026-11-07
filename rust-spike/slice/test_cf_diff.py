@@ -221,6 +221,6 @@ print("by op", {n: sum(c for (m, _), c in stats.items() if m == n) for n in sort
 for need in ("Undecided", "TooLarge", "ZeroDivisionError", "RuntimeError", "ValueError"):
     if not outs[need]: print("WEAK: never saw", need); bad.append("weak:" + need)
 if not certified: print("WEAK: nothing certified"); bad.append("weak:cert")
-print("gcd counts at end (heuristic, callback)", S.cf_gcd_counts())
+print("gcd counts at end (heuristic, callback)", S.cf_gcd_counts(), "guard rounds, largest image bits", S.cf_gcd_guard_count())
 print("MISMATCHES", len(bad), Counter(b.split(":")[0] + ":" + b.split(":")[-1] for b in bad).most_common(12))
 sys.exit(1 if bad else 0)

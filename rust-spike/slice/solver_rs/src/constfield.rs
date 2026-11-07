@@ -758,6 +758,15 @@ fn denominators(p: &Poly, acc: BigInt) -> R<BigInt> {
 /// Top-level gcds answered by `heu_gcd`, and by the callback to Python. Written only, never read to choose a route.
 static GCD_HEURISTIC: AtomicU64 = AtomicU64::new(0);
 static GCD_CALLBACK: AtomicU64 = AtomicU64::new(0);
+/// Rounds `heu_gcd` gave up at the size guard, at any level of its recursion. Written only, like the two above.
+static GCD_GUARD: AtomicU64 = AtomicU64::new(0);
+/// The largest `image_bits` seen. Written only: it shows how close a run came to the limit.
+static GCD_MAX_IMAGE: AtomicU64 = AtomicU64::new(0);
+
+/// The size guard's limit on `image_bits`, in bits. A fixed number, so the route depends on the input alone. Set by
+/// `gcd_probe.py` with the guard off: at most 1 s up to about this size, then steep (36,024 bits 0.91 s, 90,908 bits 31 s,
+/// where Python took under 1 s). It bounds each image, not the whole gcd. Plant 113 removes the guard.
+const MAX_IMAGE_BITS: u64 = 1 << 15;
 
 /// Python's `_sympy_inner_gcd` itself, for what `heu_gcd` gives up on: read-only on its inputs, and Python's behaviour
 /// on hard inputs comes with it, including any stall of its own. Scaffolding: on the backend PR list with porting
@@ -867,6 +876,23 @@ fn int_content(p: &Poly, acc: BigInt) -> BigInt {
     }
 }
 
+/// The bits of `p`'s largest integer coefficient.
+fn coeff_bits(p: &Poly) -> u64 {
+    match p {
+        PQ(r) => rat_parts(r).0.bits(),
+        PT(_, cs) => cs.iter().map(coeff_bits).max().unwrap_or(0),
+    }
+}
+
+/// An estimate of the size of `p` evaluated at `x`: the bits of `x` times the degree in `v`, plus the coefficient bits.
+fn image_bits(p: &Poly, v: u32, x: &BigInt) -> u64 {
+    let deg = match p {
+        PT(w, cs) if *w == v => cs.len() as u64 - 1,
+        _ => 0,
+    };
+    x.bits().saturating_mul(deg).saturating_add(coeff_bits(p))
+}
+
 fn int_rat(n: &BigInt) -> Rat {
     Rat::norm_big(n.clone(), BigInt::one())
 }
@@ -923,8 +949,10 @@ fn interpolate(h: &Poly, x: &BigInt, v: u32) -> Poly {
 /// - If `v` is in `c`, then `c - m = (v - x)*q` for a nonzero integer polynomial `q`. On the unit torus `|v - x| >= x - 1`,
 ///   so by Parseval the 2-norm of `(v - x)*q` is at least `(x - 1)*|q|_2 >= x - 1`, and `|c|_2 >= x - 1 - |m| >= x/2 - 1`.
 ///   But `c` divides `f`, and Mahler's measure is multiplicative and at least 1 on nonzero integer polynomials, so
-///   `|c|_1 <= 2**(sum of c's degrees) * M(c) <= 2**(sum of f's degrees) * M(f) <= factor_bound(f)`, using `M(f) <= |f|_2`,
-///   and the same for `g`. So `x/2 - 1 <= B`, a contradiction.
+///   `|c|_1 <= 2**(sum of c's degrees) * M(c) <= 2**(sum of f's degrees) * M(f) <= factor_bound(f)`, using `M(f) <= |f|_1`,
+///   and the same for `g`. So `x/2 - 1 <= B`, a contradiction. The two inequalities are (4) and (5) of K. Mahler, "On some
+///   inequalities for polynomials in several variables", J. London Math. Soc. 37 (1962) 341-344, reprinted in Documenta
+///   Mathematica, Extra Volume Mahler Selecta (2019) 619-623.
 /// SymPy's sup-norm start doesn't support the second case with several variables, since `|f|_2` isn't bounded by the
 /// largest coefficient alone. Larger points cost larger integers, not correctness.
 fn heu_gcd(f: &Poly, g: &Poly) -> Option<Poly> {
@@ -940,6 +968,13 @@ fn heu_gcd(f: &Poly, g: &Poly) -> Option<Poly> {
     let (f, g) = (scale(f, &kinv), scale(g, &kinv));
     let mut x = (factor_bound(&f).min(factor_bound(&g)) * 2u32) + 29u32;
     for _ in 0..6 {
+        // The guard: x grows every round and the recursion multiplies sizes, so it's checked here and not up front.
+        let bits = image_bits(&f, v, &x).max(image_bits(&g, v, &x));
+        GCD_MAX_IMAGE.fetch_max(bits, Ordering::Relaxed);
+        if bits > MAX_IMAGE_BITS && !crate::lra::mutant(113) {
+            GCD_GUARD.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
         let xr = int_rat(&x);
         let (ff, gg) = (eval_top(&f, v, &xr), eval_top(&g, v, &xr));
         if !is_zero(&ff) && !is_zero(&gg) {
@@ -2052,6 +2087,12 @@ pub fn cf_gcd_counts() -> (u64, u64) {
     (GCD_HEURISTIC.load(Ordering::Relaxed), GCD_CALLBACK.load(Ordering::Relaxed))
 }
 
+/// `(rounds given up at heu_gcd's size guard, largest image_bits seen)`, since the process began.
+#[pyfunction]
+pub fn cf_gcd_guard_count() -> (u64, u64) {
+    (GCD_GUARD.load(Ordering::Relaxed), GCD_MAX_IMAGE.load(Ordering::Relaxed))
+}
+
 #[pyfunction]
 pub fn cf_refresh_limits() -> PyResult<()> {
     refresh_limits()
@@ -2172,6 +2213,7 @@ pub fn cf_native_enclose<'py>(which: &Bound<'py, PyAny>, prec: i64) -> PyResult<
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(cf_inner_gcd, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_gcd_counts, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(cf_gcd_guard_count, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_refresh_limits, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_op, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_poly_op, m)?)?;
