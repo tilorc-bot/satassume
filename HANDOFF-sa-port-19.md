@@ -10,7 +10,7 @@ Read first: my brief `~/.local/state/agent/briefs/sa-port-19-20261107T085132Z.tx
 
 | Job | Where | Done when | State at handoff | If it's missing |
 |---|---|---|---|---|
-| sa-port-12's suite, Rust then Python | orion, `$B12/suite1-*` | `$B12/suite1.done` | Rust side still running 09:08 UTC, no `exit.txt` | Don't touch it. It's a reading anyway: use the pareto1 suite below |
+| sa-port-12's suite, Rust then Python | orion, `$B12/suite1-*` | `$B12/suite1.done` | Rust side finished: `123 failed, 5961 passed, 23 skipped, 18 xfailed`, Python side running at 09:24 UTC. **A reading only:** before 496f250, and not compared by id, so 123 against 77 + 46 is not shown to be the same tests | Don't touch it. It's a reading anyway: use the pareto1 suite below |
 | sa-port-12's dump mutants, dev | orion, `$B12/dm/dev` | `done`, `score.txt` | **Finished 09:09 UTC**, read below | Not needed |
 | Move at every 16th call, fuzz | pareto1, `$P/mv` | `$P/mv/done` | **Finished 09:24 UTC**, read below | Not needed |
 | Ground workload | pareto1, `$P/ground` | `$P/ground/done` | **Finished 09:19 UTC**, read below | Not needed |
