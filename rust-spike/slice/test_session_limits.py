@@ -189,6 +189,7 @@ def _cases():
     })
     # Which object a slot keeps, when compiling reaches atoms in another order than the formula has them.
     out.update({f'kept:formula:{i}': _kept_formula(i) for i in range(120)})
+    out.update(_object_rule_cases())
     return out
 
 
@@ -211,13 +212,124 @@ def both():
     return _run('py'), _run('rust')
 
 
+def _twins():
+    """Two `==` objects with one hash: after a cache clear `Pow(a, a)` and `Pow(a2, a)` are built apart."""
+    from sympy import Pow, Symbol
+    from sympy.core.cache import clear_cache
+    a = Symbol('a')
+    o = Pow(a, a)
+    clear_cache()
+    y = Pow(Symbol('a'), a)
+    assert o == y and o is not y and hash(o) == hash(y)
+    return o, y
+
+
+def _object_case(first, body):
+    """`body(s, slot, passed)`, reporting which of the two objects each visit got and which one the slot holds. Sa-port-34's rule,
+    `results/port-1a.md`: the first object to reach, in the session. So Python's slot keeps the first and its visit takes the one
+    passed; `first` swaps the two objects, for both orders."""
+    def fn(s):
+        twins = _twins()
+        slot, passed = twins[first], twins[1 - first]
+        name = lambda n: 'slot' if n is slot else 'passed' if n is passed else repr(n)
+        seen = []
+        orig = s._visit
+
+        def visit(n, *r):
+            seen.append(name(n))
+            return orig(n, *r)
+        s._visit = visit
+        out = body(s, slot, passed)
+        held = s.table.slots[s.table.node_base(slot)][0]
+        return dict(out=out, visited=seen, slot_holds=name(held))
+    return fn
+
+
+def _kept_second_visited(first, how):
+    return _object_case(first, lambda s, slot, passed: (s.table.node_base(slot), how(s, passed))[1])
+
+
+def _visit_reenters(first):
+    """A template passes a second object while a formula holding the first compiles: the slot takes the template's, and Python's
+    compiler still visits the formula's own atom."""
+    from sympy import Symbol
+    from satassume.sat.formula import And, P
+
+    def body(s, slot, passed):
+        w = Symbol('w')
+        orig = s._visit
+
+        def visit(n, *r):
+            if n is w:
+                s.table.node_base(passed)
+            return orig(n, *r)
+        s._visit = visit
+        return s.assume_formula(And(P('real', w), P('positive', slot)))
+    return _object_case(first, body)
+
+
+def _second_custom(first, how):
+    """An `Args` and a `Tuple` are `==` with one hash. The custom atom keeps its own expr, and the first to reach `table.var`."""
+    def fn(s):
+        from sympy import Symbol, Tuple
+        from satassume.knowledge.extensions import Args
+        a, b = Symbol('a'), Symbol('b')
+        pair = (Tuple(a, b), Args((a, b)))
+        assert pair[0] == pair[1] and hash(pair[0]) == hash(pair[1])
+        v = how(s, *(pair if first == 0 else pair[::-1]))
+        t = s.table
+        return dict(v=v, expr=type(t.slots[v].expr).__name__, new=[type(x.expr).__name__ for x in t.new_custom])
+    return fn
+
+
+def _object_rule_cases():
+    from satassume.engine import DEF_LITS
+    from satassume.sat.formula import And, Or, P
+    ways = {
+        'var-basis': lambda s, n: s.var('extended_real', n),
+        'var-one-lit': lambda s, n: s.var('infinite', n),
+        'var-several': lambda s, n: s.var('positive', n),
+        'dvar-one-lit': lambda s, n: s.dvar((DEF_LITS['infinite'], n)),
+        'dvar-several': lambda s, n: s.dvar((DEF_LITS['positive'], n)),
+        'dvar-pos': lambda s, n: s.dvar((DEF_LITS['positive'], n), 'pos'),
+        'dvar-negunit': lambda s, n: s.dvar((DEF_LITS['positive'], n), 'negunit'),
+        'dvar-basis': lambda s, n: s.dvar(P('extended_real', n), 'basis'),
+        '_dvar': lambda s, n: s._dvar(DEF_LITS['positive'], n, 3),
+        'node': lambda s, n: s.node(n),
+        'assume': lambda s, n: s.assume_formula(P('positive', n)),
+        'assume-and': lambda s, n: s.assume_formula(And(P('real', n), P('positive', n))),
+        'literal_of': lambda s, n: s.literal_of(Or(P('positive', n), P('real', 'z'))),
+    }
+    out = {}
+    for first in (0, 1):
+        for k, how in ways.items():
+            out[f'a1:{k}:{first}'] = _kept_second_visited(first, how)
+        out[f'a1:reenter:{first}'] = _visit_reenters(first)
+        node_then_var = lambda s, x, y: (s.table.node_base(x), s.table.var(P('sexyprime', y)))[1]
+        var_then_node = lambda s, x, y: (lambda v: (s.table.node_base(x), v)[1])(s.table.var(P('sexyprime', y)))
+        vars_two = lambda s, x, y: (s.table.var(P('sexyprime', x)), s.table.var(P('sexyprime', y)))[1]
+        out[f'a2:node-then-var:{first}'] = _second_custom(first, node_then_var)
+        out[f'a2:var-then-node:{first}'] = _second_custom(first, var_then_node)
+        out[f'a2:two-atoms:{first}'] = _second_custom(first, vars_two)
+        out[f'a2:dvar-basis:{first}'] = _second_custom(first, lambda s, x, y: (s.table.node_base(x), s.dvar(P('sexyprime', y), 'basis'))[1])
+        out[f'a2:formula:{first}'] = _second_custom(first, lambda s, x, y: (s.assume_formula(And(P('real', x), P('sexyprime', y))), s.table.var(P('sexyprime', y)))[1])
+        out[f'a2:formula-two:{first}'] = _second_custom(first, lambda s, x, y: (s.assume_formula(And(P('sexyprime', x), P('sexyprime', y))), s.table.var(P('sexyprime', y)))[1])
+    return out
+
+
+_OBJECT_WAYS = ('var-basis', 'var-one-lit', 'var-several', 'dvar-one-lit', 'dvar-several', 'dvar-pos', 'dvar-negunit', 'dvar-basis', '_dvar',
+                'node', 'assume', 'assume-and', 'literal_of', 'reenter')
+_CUSTOM_WAYS = ('node-then-var', 'var-then-node', 'two-atoms', 'dvar-basis', 'formula', 'formula-two')
+_OBJECT_IDS = [f'a1:{k}:{i}' for i in (0, 1) for k in _OBJECT_WAYS] + [f'a2:{k}:{i}' for i in (0, 1) for k in _CUSTOM_WAYS]
+
+
 def _ids():
     # Named without importing the engine at collection.
     names = [f'{e}:{s}:{d}' for s in SHAPES for d in (1, 10, 63, 64, 65, 66, 100, 300, 3500) for e in ('assume', 'literal_of')]
     return names + ['unhashable:compile', 'unhashable:literal', 'unhashable:assume', 'unhashable:literal_of', 'pred-int:assume',
-                    'pred-int:literal_of', 'pred-int:compile', 'pred-joined', 'node-joined', 'node-joined:or', 'node-joined:custom', 'pred-none', 'pred-list:assume',
+                    'pred-int:literal_of', 'pred-int:compile', 'pred-joined', 'node-joined', 'node-joined:or', 'node-joined:custom', 'node-joined:custom-then-block', 'pred-none', 'pred-list:assume',
                     'pred-list:compile', 'pred-custom-str', 'not-a-formula', 'not-a-formula:compile', 'stop-from-args',
-                    'kept:two-steps', 'kept:then-node-base'] + [f'kept:formula:{i}' for i in range(120)]
+                    'kept:two-steps', 'kept:then-node-base'] + [f'kept:formula:{i}' for i in range(120)] + _OBJECT_IDS
 
 
 @pytest.mark.parametrize('name', _ids())
@@ -234,13 +346,33 @@ def test_pred_joined_across_nodes_differs_only_in_shown_pred(both):
     assert {k: v for k, v in py.items() if k != 'atoms'} == {k: v for k, v in rust.items() if k != 'atoms'}
 
 
-def test_node_joined_first_object_is_the_first_seen(both):
-    """Named difference, limit 3. A custom atom keeps its own `expr` on Python. Rust has one object per node id, the first seen at
-    the boundary, so `mine(1.0)` shows as `mine(True)` when a block atom on `True` got there first. Only objects `==` across
-    classes can do this; `join` counts objects joined that way, and the report says how often it fires."""
+def test_node_joined_custom_atom_keeps_its_own_expr(both):
+    """A custom atom keeps its own `expr` on both, so `mine(1.0)` stays that when a block atom on `True` joins its node. Once a
+    named difference, ended by keeping each custom atom's expr apart from the node's object."""
     py, rust = (b['cases']['node-joined:custom-then-block'] for b in both)
-    assert 'mine(1.0)' in py['atoms'] and 'mine(True)' in rust['atoms']
-    assert {k: v for k, v in py.items() if k != 'atoms'} == {k: v for k, v in rust.items() if k != 'atoms'}
+    assert 'mine(1.0)' in py['atoms'] and 'mine(1.0)' in rust['atoms']
+    assert py == rust
+
+
+def test_visit_takes_the_object_passed_and_the_slot_the_first(both):
+    """Sa-port-34's rule for `Session`, both orders: `node_base(slot)` first, so the slot keeps it, and the object passed after it
+    is the one visited. A template that reads identity (`Pow`'s `same` row) sees that object on both."""
+    for first in (0, 1):
+        for way in ('var-basis', 'var-one-lit', 'var-several', 'dvar-one-lit', 'dvar-several', 'dvar-pos', 'dvar-basis', '_dvar', 'node'):
+            py, rust = (b['cases'][f'a1:{way}:{first}']['out'] for b in both)
+            assert py == rust, way
+            assert "'slot_holds': 'slot'" in py[1], way
+            # A basis atom under a connective takes a variable and no visit.
+            assert ("'visited': []" if way == 'dvar-basis' else "'visited': ['passed'") in py[1], (way, py)
+
+
+def test_custom_atom_keeps_the_first_to_reach_the_table(both):
+    """Sa-port-34's rule, both orders, and `facts_for` reads this `expr`: a `Tuple` there means no two-argument handler matches."""
+    for way, want in (('node-then-var', ('Args', 'Tuple')), ('var-then-node', ('Args', 'Tuple')), ('two-atoms', ('Tuple', 'Args')), ('dvar-basis', ('Args', 'Tuple'))):
+        for first, name in enumerate(want):
+            py, rust = (b['cases'][f'a2:{way}:{first}']['out'] for b in both)
+            assert py == rust, way
+            assert f"'expr': '{name}'" in py[1], (way, first, py)
 
 
 def test_cases_exercise_what_they_name(both):

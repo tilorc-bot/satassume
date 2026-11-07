@@ -14,9 +14,9 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 16] = [
+const NAMES: [&str; 18] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
-    "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object",
+    "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -34,6 +34,8 @@ const EMIT_CB: usize = 12;
 const REFUSE_DEPTH: usize = 13;
 const REFUSE_CONVERT: usize = 14;
 const REFUSE_OBJECT: usize = 15;
+const SECOND_VISIT: usize = 16;
+const CUSTOM_OWN: usize = 17;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -41,7 +43,7 @@ const REFUSE_OBJECT: usize = 15;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 16] = const { [const { Cell::new(0) }; 16] };
+    static COUNTS: [Cell<u64>; 18] = const { [const { Cell::new(0) }; 18] };
 }
 
 fn tick(i: usize) {
@@ -169,6 +171,8 @@ pub struct SessionCore {
     /// Custom predicates: a dict, because Python's table takes any hashable there, joined as a dict joins them.
     custom_ids: Py<PyDict>,
     custom_preds: RefCell<Vec<Py<PyAny>>>,
+    /// Each custom atom's own expr: an `Args` and a `Tuple` are `==`, so one node, and the node's object isn't the atom's.
+    custom_exprs: RefCell<HashMap<(u32, u32), Py<PyAny>>>,
     st: RefCell<St>,
 }
 
@@ -209,17 +213,47 @@ impl SessionCore {
     }
 
     /// `nid_of` for an atom in a formula being converted. Conversion walks the formula and compiling may reach its atoms in
-    /// another order, so a second object there refuses, before anything is emitted, and Python's compiler passes them in its
+    /// another order, and a node with no visit yet may be visited from here, where Python visits the atom's own object. So a
+    /// second object for a node with no visit refuses, before anything is emitted, and Python's compiler passes them in its
     /// own order over this same table.
     fn nid_in_formula(&self, x: &Bound<'_, PyAny>) -> PyResult<u32> {
         if let Some(n) = self.known(x)? {
-            if self.second_object(x, n) {
-                self.refused_object.set(true);
-                return Err(PyValueError::new_err("a second object for a node with no slot"));
+            if !self.objs.borrow()[n as usize].bind(x.py()).is(x) && self.st.borrow().visited(n) == 0 {
+                return Err(self.refuse_object());
             }
             return Ok(n);
         }
         self.nid_of(x)
+    }
+
+    fn refuse_object(&self) -> PyErr {
+        self.refused_object.set(true);
+        PyValueError::new_err("a second object for a node with no visit")
+    }
+
+    /// A custom atom's own expr reaching a direct entry: Python's `custom` keeps the first atom to reach `table.var`, so with
+    /// no variable yet this is the one it would keep, and with one nothing changes.
+    fn custom_expr(&self, pred: u32, nid: u32, x: &Bound<'_, PyAny>) {
+        if matches!(self.kind_of(x.py(), pred), Kind::Custom) && !self.st.borrow().custom.contains_key(&(pred, nid)) {
+            self.custom_exprs.borrow_mut().insert((pred, nid), x.clone().unbind());
+        }
+    }
+
+    /// The same in a formula being converted, which may reach its atoms in another order: a different expr with no variable
+    /// yet refuses, as a second object does.
+    fn custom_in_formula(&self, pred: u32, nid: u32, x: &Bound<'_, PyAny>) -> PyResult<()> {
+        if !matches!(self.kind_of(x.py(), pred), Kind::Custom) || self.st.borrow().custom.contains_key(&(pred, nid)) {
+            return Ok(());
+        }
+        let mut exprs = self.custom_exprs.borrow_mut();
+        match exprs.get(&(pred, nid)) {
+            Some(o) if !o.bind(x.py()).is(x) => Err(self.refuse_object()),
+            Some(_) => Ok(()),
+            None => {
+                exprs.insert((pred, nid), x.clone().unbind());
+                Ok(())
+            }
+        }
     }
 
     fn known(&self, x: &Bound<'_, PyAny>) -> PyResult<Option<u32>> {
@@ -283,7 +317,9 @@ impl SessionCore {
         let c = &self.rules.classes;
         if f.is_instance_of::<PyP>() || f.is_instance(c[0].bind(p))? {
             let (pred, expr) = self.atom_fields(f)?;
-            return Ok(Rc::new(F::Atom(pred, self.nid_in_formula(&expr)?)));
+            let n = self.nid_in_formula(&expr)?;
+            self.custom_in_formula(pred, n, &expr)?;
+            return Ok(Rc::new(F::Atom(pred, n)));
         }
         let args = |f: &Bound<'_, PyAny>| -> PyResult<Vec<R>> {
             let a = f.getattr(intern!(p, "args"))?;
@@ -352,11 +388,18 @@ impl SessionCore {
         Ok(())
     }
 
-    /// `Session.node` with `demanded=None`.
-    fn node_id(&self, p: Python<'_>, nid: u32) -> PyResult<i32> {
+    /// `Session.node` with `demanded=None`. Python visits the object passed, whichever one the slot holds; `passed` is that
+    /// object, and `None` is a formula's atom, which conversion has refused unless it's the one in `objs` or already visited.
+    fn node_id(&self, p: Python<'_>, nid: u32, passed: Option<&Bound<'_, PyAny>>) -> PyResult<i32> {
         let b = self.st.borrow().visited(nid);
         if b != 0 {
             return Ok(b);
+        }
+        if let Some(o) = passed {
+            if !self.objs.borrow()[nid as usize].bind(p).is(o) {
+                tick(SECOND_VISIT);
+            }
+            return self.visit_id(o, nid, p.None().bind(p));
         }
         let o = self.objs.borrow()[nid as usize].clone_ref(p);
         self.visit_id(o.bind(p), nid, p.None().bind(p))
@@ -380,18 +423,18 @@ impl SessionCore {
         Ok(b)
     }
 
-    fn var_id(&self, p: Python<'_>, pred: u32, nid: u32, name: impl FnOnce() -> PyErr) -> PyResult<i32> {
+    fn var_id(&self, p: Python<'_>, pred: u32, nid: u32, passed: &Bound<'_, PyAny>, name: impl FnOnce() -> PyErr) -> PyResult<i32> {
         match self.kind_of(p, pred) {
-            Kind::Basis(i) => Ok(self.node_id(p, nid)? + i as i32),
+            Kind::Basis(i) => Ok(self.node_id(p, nid, Some(passed))? + i as i32),
             Kind::Custom => Err(name()),
             Kind::Derived(d) => {
                 if d.1.len() > 1 {
-                    return self.dvar_raw(p, &d, nid, 3, false);
+                    return self.dvar_raw(p, &d, nid, Some(passed), 3, false);
                 }
                 if let Some(&v) = self.st.borrow().defvars.get(&(pred, nid)) {
                     return Ok(v);
                 }
-                let b = self.node_id(p, nid)?;
+                let b = self.node_id(p, nid, Some(passed))?;
                 let lits = block_lits(b, &d.1);
                 let v = {
                     let mut st = self.st.borrow_mut();
@@ -422,10 +465,10 @@ impl SessionCore {
 
     /// `Session._dvar`. Python reads the memo before visiting and allocates on what it read, so a visit that made the same key
     /// is overwritten; a key that was there is read again after, because the Python holds its list.
-    fn dvar_raw(&self, p: Python<'_>, d: &Def, nid: u32, need: i32, link: bool) -> PyResult<i32> {
+    fn dvar_raw(&self, p: Python<'_>, d: &Def, nid: u32, passed: Option<&Bound<'_, PyAny>>, need: i32, link: bool) -> PyResult<i32> {
         let key = (d.clone(), nid);
         let had = self.st.borrow().dv.contains_key(&key);
-        let b = self.node_id(p, nid)?;
+        let b = self.node_id(p, nid, passed)?;
         if !had {
             let v = {
                 let mut st = self.st.borrow_mut();
@@ -539,8 +582,17 @@ impl SessionCore {
         self.rules.classes[0].bind(p).call1((self.pred_name(p, pred), o))
     }
 
+    /// `slots[v]` of a custom atom. Every route to its variable records the expr first.
+    fn custom_atom<'py>(&self, p: Python<'py>, pred: u32, nid: u32) -> PyResult<Bound<'py, PyAny>> {
+        let o = self.custom_exprs.borrow()[&(pred, nid)].clone_ref(p);
+        if !self.objs.borrow()[nid as usize].bind(p).is(&o) {
+            tick(CUSTOM_OWN);
+        }
+        self.rules.classes[0].bind(p).call1((self.pred_name(p, pred), o))
+    }
+
     /// `Session.dvar` for a derived atom.
-    fn dvar_def(&self, p: Python<'_>, d: &Def, nid: u32, need: Need) -> PyResult<Option<i32>> {
+    fn dvar_def(&self, p: Python<'_>, d: &Def, nid: u32, passed: Option<&Bound<'_, PyAny>>, need: Need) -> PyResult<Option<i32>> {
         let need = match need {
             Need::NegUnit | Need::PosUnit => {
                 tick(NEG);
@@ -557,7 +609,7 @@ impl SessionCore {
             n => n,
         };
         if d.1.len() == 1 {
-            let b = self.node_id(p, nid)?;
+            let b = self.node_id(p, nid, passed)?;
             let v = block_lits(b, &d.1)[0];
             self.link(p, d, nid, v)?;
             return Ok(Some(v));
@@ -567,7 +619,7 @@ impl SessionCore {
             Need::Pos => 1,
             _ => 2,
         };
-        self.dvar_raw(p, d, nid, mask, true).map(Some)
+        self.dvar_raw(p, d, nid, passed, mask, true).map(Some)
     }
 }
 
@@ -620,7 +672,7 @@ impl Cx for PyCx<'_, '_> {
     }
 
     fn dv(&mut self, d: &Def, nid: u32, need: Need) -> PyResult<Option<i32>> {
-        self.core.dvar_def(self.p, d, nid, need)
+        self.core.dvar_def(self.p, d, nid, None, need)
     }
 
     fn dv_basis(&mut self, pred: u32, nid: u32) -> PyResult<i32> {
@@ -655,6 +707,7 @@ impl SessionCore {
             bad: RefCell::new(vec![]),
             custom_ids: PyDict::new(p).unbind(),
             custom_preds: RefCell::new(vec![]),
+            custom_exprs: RefCell::new(HashMap::new()),
             st: RefCell::new(St {
                 base_of: vec![],
                 base: vec![],
@@ -675,7 +728,7 @@ impl SessionCore {
         tick(VAR);
         let p = pred.py();
         let (i, n) = (self.pred_id(p, pred)?, self.nid_of(node)?);
-        self.var_id(p, i, n, || PyKeyError::new_err(pred.clone().unbind()))
+        self.var_id(p, i, n, node, || PyKeyError::new_err(pred.clone().unbind()))
     }
 
     #[pyo3(signature = (dn, need="both"))]
@@ -685,6 +738,7 @@ impl SessionCore {
         if need == "basis" {
             let (i, e) = self.atom_fields(dn)?;
             let n = self.nid_of_atom(p, i, &e)?;
+            self.custom_expr(i, n, &e);
             let mut cx = PyCx { core: self, p, via: None, use_dv: true };
             return cx.dv_basis(i, n).map(Some);
         }
@@ -697,7 +751,7 @@ impl SessionCore {
             "negunit" => Need::NegUnit,
             _ => Need::Both,
         };
-        self.dvar_def(p, &Rc::new((op == "&", ls)), self.nid_of(&node)?, need)
+        self.dvar_def(p, &Rc::new((op == "&", ls)), self.nid_of(&node)?, Some(&node), need)
     }
 
     /// `_dvar` as Python's `var` and tests call it.
@@ -705,7 +759,7 @@ impl SessionCore {
     fn dvar_raw_py(&self, d: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, need: i32, link: bool) -> PyResult<i32> {
         tick(DVAR);
         let (op, ls): (String, Vec<i32>) = d.extract()?;
-        self.dvar_raw(d.py(), &Rc::new((op == "&", ls)), self.nid_of(node)?, need, link)
+        self.dvar_raw(d.py(), &Rc::new((op == "&", ls)), self.nid_of(node)?, Some(node), need, link)
     }
 
     fn base_get(&self, node: &Bound<'_, PyAny>) -> PyResult<Option<i32>> {
@@ -742,7 +796,9 @@ impl SessionCore {
     fn table_var_py(&self, a: &Bound<'_, PyAny>) -> PyResult<i32> {
         tick(TABLE);
         let (i, e) = self.atom_fields(a)?;
-        self.table_var(a.py(), i, self.nid_of_atom(a.py(), i, &e)?)
+        let n = self.nid_of_atom(a.py(), i, &e)?;
+        self.custom_expr(i, n, &e);
+        self.table_var(a.py(), i, n)
     }
 
     fn aux(&self) -> i32 {
@@ -797,7 +853,7 @@ impl SessionCore {
         let s = self.st.borrow().slots[v];
         match s {
             Slot::Aux => Ok(p.None().into_bound(p)),
-            Slot::Custom(i, n) => self.make_atom(p, i, n),
+            Slot::Custom(i, n) => self.custom_atom(p, i, n),
             Slot::Block(n, b) => {
                 let o = self.objs.borrow()[n as usize].clone_ref(p);
                 Ok(PyTuple::new(p, [o.into_bound(p), b.into_pyobject(p)?.into_any()])?.into_any())
@@ -810,7 +866,7 @@ impl SessionCore {
         let s = self.st.borrow().slots[v];
         match s {
             Slot::Aux => Ok(p.None().into_bound(p)),
-            Slot::Custom(i, n) => self.make_atom(p, i, n),
+            Slot::Custom(i, n) => self.custom_atom(p, i, n),
             Slot::Block(n, b) => self.make_atom(p, v as u32 - b as u32, n),
         }
     }
@@ -832,7 +888,7 @@ impl SessionCore {
         let got = self.st.borrow().new_custom.clone();
         let mut out = Vec::with_capacity(got.len());
         for (i, n) in got {
-            out.push(self.make_atom(p, i, n)?);
+            out.push(self.custom_atom(p, i, n)?);
         }
         PyList::new(p, out)
     }
