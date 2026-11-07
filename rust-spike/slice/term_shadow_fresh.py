@@ -18,6 +18,7 @@ ap.add_argument('wl')
 ap.add_argument('out')
 ap.add_argument('--plain', action='store_true')
 ap.add_argument('--limit', type=int)
+ap.add_argument('--synthetic', action='store_true')
 args = ap.parse_args()
 
 from harness.state import reset_module_state
@@ -37,6 +38,7 @@ import term_shadow
 if not args.plain:
     term_shadow.install()
     term_shadow.install_algebra()
+    term_shadow.SYNTHETIC[0] = args.synthetic
 
 sha = hashlib.sha256()
 with open(args.out + '.answers', 'w') as ans:
