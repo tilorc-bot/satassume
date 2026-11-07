@@ -15,10 +15,12 @@ from satassume.knowledge import compile as C
 from satassume.knowledge import rules
 from satassume.sat import formula as Fm
 
-#: Test plants: 'var-off' moves every answer of `Session.var` called from Python; 'guard-drop' compiles `assume_formula`'s
-#: formula with no selector, through `compile.rs`.
+#: Test plants: 'var-off' moves every answer of `Session.var` called from Python, 'var-off:PRED' only those for one predicate,
+#: and 'var-count' moves none and counts them per predicate in the report; 'guard-drop' compiles `assume_formula`'s formula
+#: with no selector, through `compile.rs`.
 PLANT = [None]
 PLANT_FIRED = [0]
+VAR_PREDS = {}
 #: Python's `compile_formula` and `formula_literal`, for what Rust won't compile.
 PY_COMPILE = [None, None]
 
@@ -229,9 +231,12 @@ def _core_visit(self, node, b, demanded):
 
 def _var(self, pred, node):
     v = self.table.core.var(pred, node)
-    if PLANT[0] == 'var-off' and v > 1:
-        PLANT_FIRED[0] += 1
-        return v - 1
+    if PLANT[0] is not None and v > 1:
+        if PLANT[0] == 'var-count':
+            VAR_PREDS[str(pred)] = VAR_PREDS.get(str(pred), 0) + 1
+        elif PLANT[0] == 'var-off' or PLANT[0] == f'var-off:{pred}':
+            PLANT_FIRED[0] += 1
+            return v - 1
     return v
 
 
@@ -294,7 +299,7 @@ def install():
 
 def _write_report(path):
     import json
-    json.dump(dict(so=sa_solver.__file__, counts=counts(), nodes=CENSUS, plant_fired=PLANT_FIRED[0]), open(path, 'w'), sort_keys=True)
+    json.dump(dict(so=sa_solver.__file__, counts=counts(), nodes=CENSUS, plant_fired=PLANT_FIRED[0], var_preds=VAR_PREDS), open(path, 'w'), sort_keys=True)
 
 
 def from_env():
