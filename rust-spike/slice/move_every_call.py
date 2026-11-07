@@ -17,6 +17,7 @@ HOOKS = ("register_atom", "assert_lit", "check", "propagate", "push_level", "pop
 
 
 class S:
+    q = None
     g = -1
     n = 0
     fired = False
@@ -54,7 +55,7 @@ def drive(wl, out, items, on_end=None):
     real = sympy_api.ask
 
     def ask(item, a):
-        S.g, S.n, S.fired = item.g, 0, False
+        S.q, S.g, S.n, S.fired = item.q, item.g, 0, False
         try:
             return real(item.p, a)
         finally:

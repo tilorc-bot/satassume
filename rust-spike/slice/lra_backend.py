@@ -29,6 +29,12 @@ _STATE = frozenset(("_key", "_var_of", "_slack_of", "_forms", "_lo", "_up", "_lo
                     "_cols", "_atoms", "_ground", "_atoms_on", "_assigned", "_diseqs", "_ints", "_ints_on", "_int_lits",
                     "_trail", "_lims", "_dirty", "_pending_ground"))
 
+
+class TransferFailed(BaseException):
+    """A move to Python that failed. Not an `Exception`: `Engine._build_context` catches those from a complete check and
+    answers unknown from a fresh session (engine.py:1906), which here would be the quiet fallback the ruling forbids."""
+
+
 counts = {"sessions": 0, "views": 0, "moved": 0}
 #: One entry per moved session: (reason, call index, decision level).
 moves = []
@@ -302,7 +308,10 @@ class LRATheory(PyLRA):
         """This session becomes the real Python theory. If building the state fails nothing has changed and the
         exception goes up: there is no other state to carry on in."""
         core = self._core
-        st = self._state()
+        try:
+            st = self._state()
+        except Exception as e:
+            raise TransferFailed(f"{reason}: {e}") from e
         self.__dict__.update(st)
         self.__dict__["_core"] = None
         self.__dict__["_moved"] = (reason, core.calls, core.level)
