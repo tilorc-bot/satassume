@@ -24,6 +24,7 @@ import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KN, PY, TAB, CONV, LIVE = ('solver_rs/src/term/knowledge.rs', 'solver_rs/src/term/py.rs', 'solver_rs/src/term/table.rs',
+RW = 'solver_rs/src/rows.rs'
                            'convert.py', 'knowledge_live.py')
 RR = 'solver_rs/src/realroots.rs'
 M = [
@@ -71,6 +72,15 @@ M = [
     ('common', 'common-undecidable-premise-kept', KN, "R::Decided(false) | R::Undecidable => continue 'rule,", "R::Decided(false) => continue 'rule,\n                R::Undecidable => {}"),
     ('common', 'common-internal-sign', PY, '(k, 2 * i + n as usize)', '(k, 2 * i + !n as usize)'),
     ('wiring', 'live-any-class-row', LIVE, 'if i is not None and type(q.objects[i]) is type(value):', 'if i is not None:'),
+    ('rows', 'rows-neg-dropped', RW, 'Ast::Neg(x) => eval(py, x, number)?.neg(),', 'Ast::Neg(x) => eval(py, x, number)?,'),
+    ('rows', 'rows-sub-is-add', RW, 'Op::Sub => x.sub(&y).ok()?,', 'Op::Sub => x.add(&y).ok()?,'),
+    ('rows', 'rows-div-is-mul', RW, 'Op::Div => x.div(&y).ok()?,', 'Op::Div => x.mul(&y).ok()?,'),
+    ('rows', 'rows-abs-dropped', RW, '"Abs" => x.abs().ok()?,', '"Abs" => x,'),
+    ('rows', 'rows-int-off-by-one', RW, 'Some(Num::Q(Rat::norm_big(BigInt::from(*i), BigInt::one())))', 'Some(Num::Q(Rat::norm_big(BigInt::from(*i + 1), BigInt::one())))'),
+    ('rows', 'rows-exp-power-sign', RW, 'q.mul(base.pow(sympy_rational(py, &Rat::norm_big(BigInt::from(k), BigInt::one()))?, py.None())?).map(Some)', 'q.mul(base.pow(sympy_rational(py, &Rat::norm_big(BigInt::from(-k), BigInt::one()))?, py.None())?).map(Some)'),
+    ('rows', 'rows-key-ignored', RW, 'if self.by_key.len() > 1 {', 'if self.by_key.len() > 99 {'),
+    ('rows', 'rows-premise-sign', RW, 'Data::Bool(b) => PyBool::new(py, *b).to_owned().into_any(),', 'Data::Bool(b) => PyBool::new(py, !*b).to_owned().into_any(),'),
+    ('rows', 'rows-plain-always', RW, 'if r.len() > 2 {\n                    plain = false;', 'if r.len() > 2 {'),
     ('wiring', 'live-all-derived', LIVE, 'if i is not None and type(q.objects[i]) is type(value):', 'if False:'),
     ('wiring', 'live-value-on-value', LIVE, 'return Compiled((obj,), pat)', 'return Compiled((value,), pat)'),
     ('wiring', 'live-value-negated', LIVE, "'value', False, value, obj)", "'value', False, -value, obj)"),
@@ -152,7 +162,7 @@ def score(name, kind, path, old, new, a):
     # off
     row['off'], by_wl = 'no', {}
     # `rootof` is scored only when its plain rows are there, so older runs keep their columns.
-    wls = ('dev', 'fuzz', 'value') + (('rootof',) if os.path.exists(os.path.join(a.plain, 'rootof-plain.tsv')) else ())
+    wls = ('dev', 'fuzz', 'value') + tuple(w for w in ('rootof', 'rows') if os.path.exists(os.path.join(a.plain, f'{w}-plain.tsv')))
     for wl in wls:
         rc, out = fresh(d, env, log, wl, 'atoms')
         if rc:
@@ -174,6 +184,10 @@ def score(name, kind, path, old, new, a):
     with open(os.path.join(d, 'realroots.txt'), 'w') as f:
         rc = subprocess.run([PYTHON, os.path.join(d, 'realroots_cmp.py'), '--random', '1500'], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
     row['realroots'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
+    # rows, directly
+    with open(os.path.join(d, 'rows.txt'), 'w') as f:
+        rc = subprocess.run([PYTHON, os.path.join(d, 'rows_cmp.py'), '2000'], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
+    row['rows_direct'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
     # unit
     with open(os.path.join(d, 'unit.txt'), 'w') as f:
         rc = subprocess.run([PYTHON, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', os.path.join(d, 'test_knowledge_common.py'), os.path.join(d, 'test_knowledge_realroots.py')], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode

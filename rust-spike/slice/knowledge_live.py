@@ -320,12 +320,14 @@ def install(shadow=False, data=None):
         if rows_kept():
             return py_constant_value(text, c)
         COUNTS['rows:constant_value'] += 1
+        COUNTS[f'rows:constant_value:{type(c).__name__}:{text}'] += 1
         try:
             r = sa_solver.rows_constant_value(text, c)
         except Exception as e:
             COUNTS['fault'] += 1
             raise KnowledgeFault(f'constant_value({text!r}, {c!r}): {e}') from e
         if r is None:       # not a Rust number: `c` a Float, oo or nan, or the value zoo. Python's, by text and class of `c`.
+            COUNTS['rows:constant_value:python'] += 1
             COUNTS[f'rows:constant_value:python:{type(c).__name__}:{text}'] += 1
             return py_constant_value(text, c)
         if shadow:
@@ -334,37 +336,45 @@ def install(shadow=False, data=None):
     rust_constant_value.__wrapped__ = py_constant_value
 
     def rust_generator(name, arity, terms, specs, module, schemas=()):
-        if rows_kept():
-            return py_generator(name, arity, terms, specs, module, schemas)
-        COUNTS['rows:generator'] += 1
-        try:
-            rows = sa_solver.RowsGen(terms, specs, _rows_runtime.from_text, schemas)
-        except Exception as e:
-            COUNTS['fault'] += 1
-            raise KnowledgeFault(f'generator({name!r}): {e}') from e
-        for v in rows.python_values:        # not a Rust number: `I` and `-I`, in Pow's shapes
-            COUNTS[f'rows:value:python:{v}'] += 1
-        python = []
+        python, rows = [], []
 
         def py_gen():
             if not python:
                 python.append(py_generator(name, arity, terms, specs, module, schemas))
             return python[0]
 
+        def read():
+            if not rows:
+                COUNTS['rows:generator'] += 1
+                try:
+                    rows.append(sa_solver.RowsGen(terms, specs, _rows_runtime.from_text, schemas))
+                except Exception as e:
+                    COUNTS['fault'] += 1
+                    raise KnowledgeFault(f'generator({name!r}): {e}') from e
+                for v in rows[0].python_values:     # not a Rust number: `I` and `-I`, in Pow's shapes
+                    COUNTS[f'rows:value:python:{name}:{v}'] += 1
+            return rows[0]
+
         def gen(R, c):
             if rows_kept():
                 return py_gen()(R, c)
             COUNTS['rows:gen'] += 1
+            r = read()
             try:
-                rows(R, c)
+                r(R, c)
             except Exception as e:
                 COUNTS['fault'] += 1
                 raise KnowledgeFault(f'{name}_rows({c!r}): {e}') from e
+        # A family first used by a kept query keeps Python's attributes, with the same values; its later rules are still Rust's.
+        if rows_kept():
+            COUNTS['rows:generator:kept'] += 1
+            source = py_gen()
+        else:
+            source = read()
         gen.__module__ = module
         gen.__name__ = gen.__qualname__ = f'{name}_rows'
-        gen.arity, gen.terms, gen.shifts = arity, rows.terms, rows.shifts
-        gen.specs, gen.plain, gen.schemas = rows.specs, rows.plain, rows.schemas
-        gen.rust_rows = rows
+        gen.arity, gen.terms, gen.shifts = arity, source.terms, source.shifts
+        gen.specs, gen.plain, gen.schemas = source.specs, source.plain, source.schemas
         if shadow:
             theirs = py_gen()
             for f in ('terms', 'shifts', 'specs', 'plain', 'schemas'):
