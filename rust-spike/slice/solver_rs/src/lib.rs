@@ -15,7 +15,6 @@ mod lra;
 mod lra_cert;
 mod lra_py;
 mod map;
-mod pyset;
 #[path = "../../../lra/port/src/rat.rs"]
 mod rat;
 mod realroots;

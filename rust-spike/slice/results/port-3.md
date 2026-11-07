@@ -91,6 +91,8 @@ Against Python, on this source. `@` is the first query that differs; `q` is that
 
 **`pyset.rs` is tied to CPython 3.12's set order,** which it reproduces for iteration. Another CPython could change it. `transfer_fuzz.py` checks it against real sets.
 
+Later (issue 325): `decide` walks `sorted(preds)` on both sides, so `pyset.rs`, `_pyset_replay`, the fuzz part and mutants y01, y02 are gone, and t47, which swapped `union`'s operands, can't change a `BTreeSet`, so it is now a reversed walk.
+
 ## Named gaps
 
 - **`check()`'s conflict path isn't reached by the engine.** On this source `transfer.py:463` ran 3,234 times on `transfer2:7:1500`, 2,017 on fuzz, 70 on dev, 40 on `corpus`; `:464` ran 0 times on all four. `_spread`'s `:382` ran 0 times too. Not shown unreachable. By the architect's ruling this doesn't block.

@@ -1,4 +1,4 @@
-"""Planted bugs in component 3 (`transfer.rs`, `transfer_py.rs`, `pyset.rs`), each scored per check. Builds in WORK; the tree isn't touched.
+"""Planted bugs in component 3 (`transfer.rs`, `transfer_py.rs`), each scored per check. Builds in WORK; the tree isn't touched.
   mutate_transfer.py WORK [--jobs J] [--only a,b] [--wl dev,transfer:1:300] [--timeout T]
 Checks, for each workload W: rust:W    a fresh engine per query, against pure Python, by answer and session digest
                              shadow:W  both side by side, per hook; and the digest compare as in rust:W
@@ -23,7 +23,7 @@ import sys
 import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-T, TP, PS, FP = "transfer.rs", "transfer_py.rs", "pyset.rs", "formula_py.rs"
+T, TP, FP = "transfer.rs", "transfer_py.rs", "formula_py.rs"
 M = [
     ("t01", T, "switch: polar's new variable before full's", "for (v, k) in [(full, 2u8), (polar, 1u8)] {", "for (v, k) in [(polar, 1u8), (full, 2u8)] {"),
     ("t02", T, "switch: kinds swapped", "[(full, 2u8), (polar, 1u8)]", "[(full, 1u8), (polar, 2u8)]"),
@@ -70,7 +70,7 @@ M = [
     ("t44", T, "check: runs when disabled", "if !self.enabled {\n            return Ok(None);\n        }\n        let mut out", "let mut out"),
     ("t45", T, "decide: runs when disabled or nothing partial", "if self.multi.is_empty() || (self.pterms.is_empty() && self.sw.is_empty()) || !self.enabled {", "if self.multi.is_empty() {"),
     ("t46", T, "decide: polar-only term reads pterms", "let ps = if *k == 1 { Some(&self.polar_only) } else { self.pterms.get(m) };", "let ps = self.pterms.get(m);"),
-    ("t47", T, "decide: union's operands swapped", "Some(q) => q.union(ps),", "Some(q) => ps.union(&q),"),
+    ("t47", T, "decide: walks predicates in reverse order", "'pred: for &p in &preds {", "'pred: for &p in preds.iter().rev() {"),
     ("t48", T, "decide: last member's variable", "first = first.or(Some(vs[0]));", "first = Some(vs[0]);"),
     ("t49", T, "decide: a lone atom is decided", "if n > 1 {", "if n >= 1 {"),
     ("t50", T, "decide: assigned predicates not skipped", "if vs.iter().any(|v| self.val.contains_key(v)) {\n                        continue 'pred;\n                    }", ""),
@@ -89,8 +89,6 @@ M = [
     ("p05", TP, "merged: ra in place of rb", "fn _merged(&mut self, _ra: u32, rb: u32) {\n        self.core.merged(TermId(rb));", "fn _merged(&mut self, _ra: u32, rb: u32) {\n        let _ = rb;\n        self.core.merged(TermId(_ra));"),
     ("p06", TP, "PLANTED RAISE: check raises ValueError (forces the quiet handler)", "Ok(self.core.check(&view)?.map(|why| (false, why)))", "let _ = self.core.check(&view)?;\n        Err(PyValueError::new_err(\"planted\"))"),
     ("p07", TP, "PLANTED RAISE: propagate raises RuntimeError on any lemma", "self.core.propagate(&view)\n", "let r = self.core.propagate(&view)?;\n        if !r.is_empty() { return Err(PyRuntimeError::new_err(\"planted\")); }\n        Ok(r)\n"),
-    ("y01", PS, "set order: perturb shift 4", "const PERTURB_SHIFT: u32 = 5;", "const PERTURB_SHIFT: u32 = 4;"),
-    ("y02", PS, "set order: 8 linear probes", "const LINEAR_PROBES: usize = 9;", "const LINEAR_PROBES: usize = 8;"),
     ("f01", FP, "P: hash of (expr, pred)", "PyTuple::new(p, [self.pred.bind(p), self.expr.bind(p)])?.hash()", "PyTuple::new(p, [self.expr.bind(p), self.pred.bind(p)])?.hash()"),
     ("f02", FP, "P: == ignores pred", "let y = PyTuple::new(p, [b.0, b.1])?;", "let y = PyTuple::new(p, [a.pred.bind(p).clone(), b.1])?;"),
     ("f03", FP, "P: repr without the expr's parentheses", "intern!(p, \"(\").clone()", "intern!(p, \" \").clone()"),

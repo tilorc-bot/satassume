@@ -44,7 +44,7 @@ def dump_py(t):
         "dirty_p": _j(t._dirty_p),
         "fixed": _j(f"{m}{{" + ";".join(f"{p}={int(b)}" for p, b in f.items()) + "}"
                     for m, f in sorted(t._fixed.items())),
-        "pterms": _j(f"{m}{{" + ",".join(map(str, s)) + "}" for m, s in sorted(t._pterms.items())),
+        "pterms": _j(f"{m}{{" + ",".join(map(str, sorted(s))) + "}" for m, s in sorted(t._pterms.items())),
         "multi": _j(t._multi),
         "sw": _j(f"{m}:{s[0]}:{s[1]}" for m, s in sorted(t._sw.items())),
         "onv": _j(f"{v}:{o[0]}:{o[1]}" for v, o in sorted(t._onv.items())),

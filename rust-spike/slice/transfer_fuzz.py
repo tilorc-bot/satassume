@@ -1,6 +1,6 @@
 """transfer_fuzz.py [--seed N] [--rounds N] [--so DIR]: component 3 through its API, Rust against Python, with no engine.
 
-Four parts. `pyset`: `PySetOrder` against real CPython sets, on what `decide` builds. `sharing`: `EqualitySharing`, down
+Three parts. `sharing`: `EqualitySharing`, down
 to which of two equal objects comes back. `wanted`: `transfer_wanted`. `theory`: random hook sequences over one real
 Python EUF per pair of theories, with the result and full state compared after every call; the sequences respect the
 solver's contract (levels balance, a variable is asserted once per level lifetime, one value), and they cover guards,
@@ -19,7 +19,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--seed", type=int, default=1)
 ap.add_argument("--rounds", type=int, default=2000)
 ap.add_argument("--so")
-ap.add_argument("--only", default="basis,pyset,sharing,wanted,wanted_edge,p,theory")
+ap.add_argument("--only", default="basis,sharing,wanted,wanted_edge,p,theory")
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
@@ -56,39 +56,12 @@ def fail(part, case):
     fails.setdefault(part, []).append(case)
 
 
-def py_order(groups):
-    acc = None
-    for g in groups:
-        s = set()
-        for k in g:
-            s.add(k)
-        acc = s if acc is None else acc | s
-    return [] if acc is None else list(acc)
-
-
 def part_basis():
     """Polar's index as read from component D's file, against Python's `BASIS_INDEX`."""
     got = sa_solver._polar_index()
     print(f"basis: polar {got}, Python {BASIS_INDEX['polar']}, unread theory {UNREAD}")
     if got != BASIS_INDEX["polar"] or UNREAD != "refused":
         raise SystemExit("basis: differs")
-
-
-def part_pyset():
-    """Every `decide`-shaped set: built by add, unioned left to right. Preds are small; wide values too, for the probes."""
-    for n in range(a.rounds * 5):
-        top = R.choice([NPRED, NPRED, 8, 16, 40, 300, 70000])
-        groups = [[R.randrange(top) for _ in range(R.randrange(1, R.choice([3, 8, 20])))]
-                  for _ in range(R.randrange(1, 6))]
-        if py_order(groups) != sa_solver._pyset_replay(groups):
-            fail("pyset", groups)
-    # all pairs and triples of predicates, both insertion orders
-    import itertools
-    for k in (1, 2, 3):
-        for g in itertools.permutations(range(NPRED), k):
-            if py_order([list(g)]) != sa_solver._pyset_replay([list(g)]):
-                fail("pyset", [list(g)])
-    ran["pyset"] = a.rounds * 5
 
 
 class Eq:

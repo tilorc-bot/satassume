@@ -502,7 +502,7 @@ class TransferTheory:
                     preds = ps if preds is None else preds | ps
             if preds is None:
                 continue
-            for p in preds:
+            for p in sorted(preds):
                 first = None
                 n = 0
                 for m, d, k in ds:

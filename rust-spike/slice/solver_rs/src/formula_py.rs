@@ -150,7 +150,7 @@ impl PyP {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyP>()?;
     // Error text reads `tp_name`, which is the dotted name here and plain `P` on Python's class. `__name__` and `__module__`
-    // don't read it. The string is static, and this build is tied to one CPython's layout anyway (`pyset.rs`).
+    // don't read it. The string is static.
     let t = PyP::type_object(m.py());
     unsafe { (*t.as_ptr().cast::<ffi::PyTypeObject>()).tp_name = c"P".as_ptr() };
     Ok(())

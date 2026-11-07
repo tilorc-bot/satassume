@@ -5,7 +5,6 @@
 //! `&mut self` is held across the calls out. They don't come back: `explain` and the two reads only read, and
 //! `on_merge` fires from EUF's own hooks, not from these. If one ever did, pyo3 raises instead of aliasing.
 use crate::handle::TermId;
-use crate::pyset::PySetOrder;
 use crate::term::offline::OfflineData;
 use crate::transfer::{Classes, Pred, SharingCore, TransferCore};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
@@ -359,28 +358,10 @@ fn unpack2<'py>(v: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, Bound<'py
     Ok((x, y))
 }
 
-/// For `transfer_fuzz.py`: builds each group by `add`, folds them with `|`, and returns the result's iteration order.
-#[pyfunction]
-fn _pyset_replay(groups: Vec<Vec<u32>>) -> Vec<u32> {
-    let mut acc: Option<PySetOrder> = None;
-    for g in &groups {
-        let mut s = PySetOrder::new();
-        for &k in g {
-            s.add(k);
-        }
-        acc = Some(match acc {
-            None => s,
-            Some(a) => a.union(&s),
-        });
-    }
-    acc.map_or_else(Vec::new, |s| s.iter().collect())
-}
-
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTransfer>()?;
     m.add_class::<PySharing>()?;
     m.add_function(wrap_pyfunction!(transfer_wanted, m)?)?;
-    m.add_function(wrap_pyfunction!(_pyset_replay, m)?)?;
     m.add_function(wrap_pyfunction!(read_offline, m)?)?;
     m.add_function(wrap_pyfunction!(_polar_index, m)?)?;
     Ok(())

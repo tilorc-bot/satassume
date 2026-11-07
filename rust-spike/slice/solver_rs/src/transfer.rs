@@ -3,11 +3,10 @@
 //! 2 lands, and the wrapper for Python is there too.
 //!
 //! Order: where Python's order reaches a lemma or a decision, this keeps it. Python's insertion-ordered dicts that are
-//! iterated are `Vec`s here (`TermPreds`, `per`), and the one iterated set is `PySetOrder`. The `HashMap`s are only ever
+//! iterated are `Vec`s here (`TermPreds`, `per`), and the one iterated set is a `BTreeSet`, walked sorted as Python's `decide` does. The `HashMap`s are only ever
 //! looked up, never iterated, except sorted in `dump`, so their random hasher can't reach anything.
 use crate::handle::TermId;
-use crate::pyset::PySetOrder;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub type Pred = u32;
 
@@ -61,7 +60,7 @@ pub struct TransferCore {
     pub sel: Option<i32>,
     pub enabled: bool,
     polar: Pred,
-    polar_only: PySetOrder,
+    polar_only: BTreeSet<Pred>,
     ehist: Vec<(usize, bool)>,
     rescan: bool,
     atoms: HashMap<i32, (TermId, Pred)>,
@@ -72,7 +71,7 @@ pub struct TransferCore {
     dirty: Vec<TermId>,
     dirty_p: Vec<i32>,
     fixed: HashMap<TermId, Vec<(Pred, bool)>>,
-    pterms: HashMap<TermId, PySetOrder>,
+    pterms: HashMap<TermId, BTreeSet<Pred>>,
     multi: Vec<TermId>,
     sw: HashMap<TermId, (i32, i32)>,
     onv: HashMap<i32, (TermId, u8)>,
@@ -88,7 +87,7 @@ impl TransferCore {
             sel: None,
             enabled: true,
             polar,
-            polar_only: PySetOrder::from_single(polar),
+            polar_only: BTreeSet::from([polar]),
             ehist: Vec::new(),
             rescan: false,
             atoms: HashMap::new(),
@@ -164,7 +163,7 @@ impl TransferCore {
     pub fn register_atom(&mut self, literal: i32, term: TermId, pred: Pred, partial: bool) {
         self.atoms.insert(literal, (term, pred));
         if partial {
-            self.pterms.entry(term).or_insert_with(PySetOrder::new).add(pred);
+            self.pterms.entry(term).or_default().insert(pred);
         }
         let d = self.by_term.entry(term).or_default();
         match d.0.iter_mut().find(|e| e.0 == pred) {
@@ -467,18 +466,18 @@ impl TransferCore {
         for r in self.classes(euf)? {
             let members = euf.members(r)?;
             let ds = self.members_on(&members);
-            let mut preds: Option<PySetOrder> = None;
+            let mut preds: Option<BTreeSet<Pred>> = None;
             for (m, _, k) in &ds {
                 let ps = if *k == 1 { Some(&self.polar_only) } else { self.pterms.get(m) };
                 if let Some(ps) = ps {
                     preds = Some(match preds {
                         None => ps.clone(),
-                        Some(q) => q.union(ps),
+                        Some(q) => &q | ps,
                     });
                 }
             }
             let Some(preds) = preds else { continue };
-            'pred: for p in preds.iter() {
+            'pred: for &p in &preds {
                 let mut first = None;
                 let mut n = 0;
                 for (_, d, _) in &ds {
