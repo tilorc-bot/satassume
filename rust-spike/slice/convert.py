@@ -12,7 +12,7 @@ run" (planner's ruling 1).
 import numbers
 import struct
 
-from sympy import Add, Function, Integral, Mul, Pow, Product, S, Sum
+from sympy import Add, Function, Integral, Mul, Pow, Product, S, Sum, exp
 from sympy.assumptions.assume import AppliedPredicate, Predicate
 from sympy.core.basic import Basic, ordering_of_classes
 from sympy.core.expr import Expr
@@ -67,6 +67,8 @@ FLAGS = ('is_Add', 'is_Mul', 'is_Pow', 'is_Atom', 'is_Number', 'is_Rational', 'i
 F_NUMBER, F_NAN, F_BAD, F_FLOAT, F_UNDEF, F_MAYBE_NAN, F_READ, F_COMMUTATIVE = 1, 2, 4, 8, 16, 32, 64, 128
 # Class flags past FLAGS: `flag::PLAIN_OPS`, `flag::PLAIN_BASE`. The algebra refuses a class that overrides any of these.
 _PLAIN_OPS, _PLAIN_BASE = 1 << 14, 1 << 15
+# `flag::IS_EXPR`, `flag::IS_MATRIX`, `flag::IS_EXP`: what `lra_adapter.py` and `_from_sympy` read of a class.
+_IS_EXPR, _IS_MATRIX, _IS_EXP = 1 << 16, 1 << 17, 1 << 18
 _OPS = ('__neg__', '__add__', '__radd__', '__sub__', '__rsub__', '__mul__', '__rmul__', '__truediv__', 'as_coeff_Add',
         'as_coeff_Mul', 'as_coeff_mul')
 
@@ -232,6 +234,12 @@ class _Walk:
             flags |= _PLAIN_OPS
         if issubclass(cls, Expr) and cls.as_base_exp is Expr.as_base_exp:
             flags |= _PLAIN_BASE
+        if issubclass(cls, Expr):
+            flags |= _IS_EXPR
+        if getattr(cls, 'is_Matrix', False) or getattr(cls, 'is_MatrixExpr', False):
+            flags |= _IS_MATRIX
+        if issubclass(cls, exp):
+            flags |= _IS_EXP
         try:
             ckey = cls.class_key()
             found = registry.templates_for(cls)

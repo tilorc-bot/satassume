@@ -96,7 +96,7 @@ impl CfErr {
         }
     }
 
-    fn py_err(self, py: Python<'_>) -> PyResult<PyErr> {
+    pub fn py_err(self, py: Python<'_>) -> PyResult<PyErr> {
         let m = module(py)?;
         Ok(match self {
             CfErr::Py(e) => e,

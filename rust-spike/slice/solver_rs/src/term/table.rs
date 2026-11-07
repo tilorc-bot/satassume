@@ -67,6 +67,13 @@ pub mod flag {
     pub const PLAIN_OPS: u32 = 1 << 14;
     /// `as_base_exp` is `Expr`'s own: `(self, 1)`.
     pub const PLAIN_BASE: u32 = 1 << 15;
+    /// `isinstance(e, Expr)`.
+    pub const IS_EXPR: u32 = 1 << 16;
+    /// `is_Matrix` or `is_MatrixExpr`.
+    pub const IS_MATRIX: u32 = 1 << 17;
+    /// A subclass of `exp`. `ExpMeta` also says yes to a `Pow` of `E`, but `_from_sympy` tests `Pow` first and the rest of its
+    /// `exp` branch can't pass on one: its first arg is `E`, not an Integer.
+    pub const IS_EXP: u32 = 1 << 18;
 }
 
 /// `_PREFIX` in `convert.py`: rows always sent first, since Rust can build these with none in the input.

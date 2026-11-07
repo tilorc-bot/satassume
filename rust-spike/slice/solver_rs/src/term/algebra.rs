@@ -14,7 +14,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-fn is_rational_kind(k: Kind) -> bool {
+pub(super) fn is_rational_kind(k: Kind) -> bool {
     matches!(k, Kind::Integer | Kind::Rational | Kind::Zero | Kind::One | Kind::Half | Kind::NegativeOne)
 }
 

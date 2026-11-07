@@ -32,6 +32,7 @@ impl ClassId {
 
 pub mod algebra;
 pub mod knowledge;
+pub mod lra_read;
 pub mod offline;
 pub mod py;
 pub mod rat;

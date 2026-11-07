@@ -1,4 +1,6 @@
 //! The Python face of the term module. Python holds ints; nothing here keeps state across queries.
+use super::lra_read::{self, items_py, Constraint, Lra, E as LraErr};
+use std::collections::HashMap;
 use super::knowledge::{self, Rules, UnitPattern};
 use super::offline;
 use super::rat::Rat;
@@ -51,8 +53,39 @@ impl Reads for PyReads {
     }
 }
 
+fn lra_err(py: Python<'_>, e: LraErr) -> PyErr {
+    match e {
+        LraErr::Unread => PyValueError::new_err("lra: an unread term reached the top"),
+        LraErr::Refuse(r) => refuse(r),
+        LraErr::Py(x) => x,
+        LraErr::Cf(x) => x.py_err(py).unwrap_or_else(|f| f),
+    }
+}
+
+#[pyfunction]
+fn lra_plant(p: u8) {
+    lra_read::PLANT.store(p, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Python reads and construction on this path, process-wide.
+#[pyfunction]
+fn lra_counts<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let c = &lra_read::COUNTS;
+    let d = PyDict::new(py);
+    d.set_item("registry", c.registry.load(Relaxed))?;
+    d.set_item("generic", c.generic.load(Relaxed))?;
+    d.set_item("bounds", c.bounds.load(Relaxed))?;
+    d.set_item("closed_mul_direct", c.closed_mul_direct.load(Relaxed))?;
+    d.set_item("closed_mul_rust", c.closed_mul_rust.load(Relaxed))?;
+    d.set_item("closed_mul_scaffold", c.closed_mul_scaffold.load(Relaxed))?;
+    d.set_item("product_terms", c.product_terms.load(Relaxed))?;
+    d.set_item("keys", c.keys.load(Relaxed))?;
+    Ok(d)
+}
+
 #[pyclass(name = "TermTable")]
-pub struct PyTermTable(TermTable);
+pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), Py<PyAny>>);
 
 fn req<'py, T: FromPyObjectOwned<'py>>(d: &Bound<'py, PyDict>, k: &str) -> PyResult<T> {
     d.get_item(k)?
@@ -79,6 +112,23 @@ fn value<'py>(py: Python<'py>, t: &TermTable, v: &V) -> PyResult<Bound<'py, PyAn
     })
 }
 
+impl PyTermTable {
+    /// The per-query memo that takes `_INTERPRETED`'s place on this path: it dies with the table.
+    fn lra_memo<'py>(
+        &mut self,
+        py: Python<'py>,
+        key: (u8, u32, u32, bool),
+        f: impl FnOnce(&mut TermTable) -> PyResult<Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(v) = self.1.get(&key) {
+            return Ok(v.bind(py).clone());
+        }
+        let v = f(&mut self.0)?;
+        self.1.insert(key, v.clone().unbind());
+        Ok(v)
+    }
+}
+
 #[pymethods]
 impl PyTermTable {
     #[new]
@@ -100,7 +150,7 @@ impl PyTermTable {
             req(tables, "n_terms")?,
             Box::new(PyReads(reads)),
         )
-        .map(PyTermTable)
+        .map(|t| PyTermTable(t, HashMap::new()))
         .map_err(|e| PyValueError::new_err(format!("tables refused: {e}")))
     }
 
@@ -217,6 +267,82 @@ impl PyTermTable {
     #[getter]
     fn n_input(&self) -> usize {
         self.0.n_input
+    }
+
+    /// `lra_adapter.interpret` after `relation`: None, or `(constraint, term ids)`.
+    fn lra_interpret<'py>(
+        &mut self,
+        py: Python<'py>,
+        name: &str,
+        a: u32,
+        b: u32,
+        generic: bool,
+        objects: Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let n = ["lt", "le", "gt", "ge", "eq", "ne"].iter().position(|x| *x == name);
+        let n = n.ok_or_else(|| PyValueError::new_err("not a relation name"))? as u8;
+        self.lra_memo(py, (n, a, b, generic), |t| {
+            let mut l = Lra { t, py, objects, generic };
+            let Some((c, terms)) = l.interpret(name, TermId(a), TermId(b)).map_err(|e| lra_err(py, e))? else {
+                return Ok(py.None().into_bound(py));
+            };
+            let c = match c {
+                Constraint::Value(v) => v.into_bound_py_any(py)?,
+                Constraint::Payload { items, rhs, strict, equality, positive } => {
+                    (items_py(py, &items)?, rhs.to_py(py)?, strict, equality, positive).into_bound_py_any(py)?
+                }
+            };
+            let ids: Vec<u32> = terms.iter().map(|x| x.0).collect();
+            (c, ids).into_bound_py_any(py)
+        })
+    }
+
+    /// `lra_adapter.order_sides` after `relation`: None, or two `(items, inf)`.
+    fn lra_order_sides<'py>(
+        &mut self,
+        py: Python<'py>,
+        a: u32,
+        b: u32,
+        generic: bool,
+        objects: Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.lra_memo(py, (6, a, b, generic), |t| {
+            let mut l = Lra { t, py, objects, generic };
+            let Some((x, y)) = l.order_sides(TermId(a), TermId(b)).map_err(|e| lra_err(py, e))? else {
+                return Ok(py.None().into_bound(py));
+            };
+            ((items_py(py, &x.0.items)?, x.1), (items_py(py, &y.0.items)?, y.1)).into_bound_py_any(py)
+        })
+    }
+
+    /// `lra_adapter.integer_form`: None, or `(items, constant, key ids)`.
+    fn lra_integer_form<'py>(
+        &mut self,
+        py: Python<'py>,
+        e: u32,
+        generic: bool,
+        objects: Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.lra_memo(py, (7, e, 0, generic), |t| {
+            let mut l = Lra { t, py, objects, generic };
+            let Some((items, c, keys)) = l.integer_form(TermId(e)).map_err(|e| lra_err(py, e))? else {
+                return Ok(py.None().into_bound(py));
+            };
+            let ids: Vec<u32> = keys.iter().map(|x| x.0).collect();
+            (items_py(py, &items)?, c.to_py(py)?, ids).into_bound_py_any(py)
+        })
+    }
+
+    /// `lra_adapter.closed_sign`: `(sign, real)`.
+    fn lra_closed_sign<'py>(
+        &mut self,
+        py: Python<'py>,
+        e: u32,
+        generic: bool,
+        objects: Bound<'py, PyAny>,
+    ) -> PyResult<(Option<i32>, bool)> {
+        let mut l = Lra { t: &mut self.0, py, objects, generic };
+        l.closed_sign(TermId(e)).map_err(|e| lra_err(py, e))
     }
 
     /// The term of a rational, by value.
@@ -435,5 +561,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyKnowledge>()?;
     m.add("TermRefuse", m.py().get_type::<TermRefuse>())?;
     m.add_function(wrap_pyfunction!(sha256_hex, m)?)?;
+    m.add_function(wrap_pyfunction!(lra_plant, m)?)?;
+    m.add_function(wrap_pyfunction!(lra_counts, m)?)?;
     Ok(())
 }

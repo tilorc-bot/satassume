@@ -83,6 +83,7 @@ class _Query:
             self.table = sa_solver.TermTable(c.tables)
             self.ids, self.objects, self.counts = c.ids, c.objects, c.counts
             self.raised = c.raised
+            self.derived, self.rev = {}, {}
 
 
 class _Refused(_Query):
