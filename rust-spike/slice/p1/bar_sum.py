@@ -3,7 +3,7 @@ Prints numbers and lists only. It never says pass or fail: the worker reads and 
 import collections, glob, json, os, re, sys
 
 B, BASE = sys.argv[1], sys.argv[2]
-PHASES = ['build', 'tests', 'suite', 'live', 'plants', 'seed1', 'suiteplants']
+PHASES = ['build', 'tests', 'suite', 'live', 'plants', 'seed1', 'extra', 'suiteplants']
 
 
 def cat(p, n=None):
@@ -95,6 +95,7 @@ plain = suite_numbers(os.path.join(B, 'suite'), base_rows, base_h, 'suite')
 
 print('\n== live (bar 2)')
 L = os.path.join(B, 'live')
+X = os.path.join(B, 'extra')
 for l in cat(os.path.join(L, 'summary.txt')) or ['not run']:
     if l.startswith('==') or l.startswith('answers_sha') or l in ('MATCH', 'DIFFER') or l.startswith('{'):
         print(' ', l[:240])
@@ -106,13 +107,19 @@ for p in sorted(glob.glob(os.path.join(L, '*.handlers'))):
     else:
         hz.append(p)
 print(f'  plant handler files with 0 rows: {len(hz)}')
+print('\n== extra workloads (WLS; bar 2 and the gaps ruling)')
+for l in cat(os.path.join(X, 'summary.txt')) or ['not run']:
+    if l.startswith('==') or l.startswith('answers_sha') or l in ('MATCH', 'DIFFER') or l.startswith('{') or l == 'not run':
+        print(' ', l[:240])
+for p in sorted(glob.glob(os.path.join(X, '*-rust.handlers'))):
+    print('  handler file', os.path.basename(p), 'rows', len(cat(p) or []))
 for p in sorted(glob.glob(os.path.join(L, 'seedx-*.cmp'))):
     print('  ', os.path.basename(p), ' | '.join((cat(p, 2) or [])))
 
 print('\n== plants (bar 3), each against this run\'s Python; fired = max(plant_fired, rel:plant_fired)')
 print('| plant | wl | fired | verdict | first |')
-for p in sorted(glob.glob(os.path.join(L, 'plant-*.cmp'))):
-    m = re.match(r'plant-(dev|fuzz)-(.*)\.cmp$', os.path.basename(p))
+for p in sorted(glob.glob(os.path.join(L, 'plant-*.cmp'))) + sorted(glob.glob(os.path.join(X, 'plant-*.cmp'))):
+    m = re.match(r'plant-([^-]+)-(.*)\.cmp$', os.path.basename(p))
     wl, pl = m.groups()
     try:
         d = json.load(open(p[:-4] + '.session.json'))

@@ -264,6 +264,9 @@ def load(wl):
     if wl == "lra":
         import lra_wl
         return lra_wl.queries()
+    if wl == "loop":    # loop_wl.py: vocabulary functions registered, for `_compile`'s demand path (5c2)
+        import loop_wl
+        return loop_wl.queries()
     return workload(wl)
 
 
