@@ -25,6 +25,7 @@ import threading
 HERE = os.path.dirname(os.path.abspath(__file__))
 KN, PY, TAB, CONV, LIVE = ('solver_rs/src/term/knowledge.rs', 'solver_rs/src/term/py.rs', 'solver_rs/src/term/table.rs',
                            'convert.py', 'knowledge_live.py')
+RR = 'solver_rs/src/realroots.rs'
 M = [
     ('rules', 'closure-sign-swap', KN, 'sw |= if free & EVEN != 0 { free << 1 } else { free >> 1 };', 'sw |= if free & EVEN != 0 { free >> 1 } else { free << 1 };'),
     ('rules', 'closure-conflict-ignored', KN, 'if free == 0 {\n                    return None;', 'if free == 0 {\n                    continue;'),
@@ -57,6 +58,11 @@ M = [
     ('boundary', 'conv-no-constant-rows', CONV, 'return tuple(const_value(t, p) for p in _CONST_BASIS)', 'return ()'),
     ('boundary', 'conv-no-symbol-rows', CONV, 'return tuple(t.assumptions0.items())', 'return ()'),
     ('boundary', 'conv-symbol-facts-sorted', CONV, 'tuple(t.assumptions0.items())', 'tuple(sorted(t.assumptions0.items()))'),
+    ('realroots', 'realroots-chain-no-negate', RR, 'out.push(r.iter().map(Rat::neg).collect());', 'out.push(r);'),
+    ('realroots', 'realroots-imaginary-sign', RR, 'if k % 4 < 2 {', 'if k % 4 < 1 {'),
+    ('realroots', 'realroots-sign-boundary', RR, 'let sign = if *index < BigInt::from(neg) {', 'let sign = if *index <= BigInt::from(neg) {'),
+    ('realroots', 'realroots-bits-off-by-one', RR, '.unwrap_or(0) > MAX_BITS', '.unwrap_or(0) >= MAX_BITS'),
+    ('realroots', 'realroots-squarefree-skipped', RR, '        || !squarefree(&p)\n', ''),
     ('common', 'common-unsubsumed-keeps-subsumed', KN, 'let hit = c.iter().any(|l| index.get(l).is_some_and(|ds| ds.iter().any(|&d| is_subset(&out[d], &c))));', 'let hit = false;'),
     ('common', 'common-resolve-keeps-subsumed', KN, 'if kept.iter().any(|k| is_subset(k, &key)) {', 'if false {'),
     ('common', 'common-contrapositive-sign', KN, '(*k, p.clone(), !*pos)', '(*k, p.clone(), *pos)'),
@@ -145,7 +151,9 @@ def score(name, kind, path, old, new, a):
         row['shadow'] = 'cmp' if c.get('shadow:mismatch') or not filecmp.cmp(out, os.path.join(a.plain, 'dev-plain.tsv'), False) else 'no'
     # off
     row['off'], by_wl = 'no', {}
-    for wl in ('dev', 'fuzz', 'value'):
+    # `rootof` is scored only when its plain rows are there, so older runs keep their columns.
+    wls = ('dev', 'fuzz', 'value') + (('rootof',) if os.path.exists(os.path.join(a.plain, 'rootof-plain.tsv')) else ())
+    for wl in wls:
         rc, out = fresh(d, env, log, wl, 'atoms')
         if rc:
             by_wl[wl] = 'crash'
@@ -162,9 +170,13 @@ def score(name, kind, path, old, new, a):
             if row['off'] == 'no':
                 row.update(off='cmp', off_lines=lines, off_answers=answers, off_wl=wl)
     row['off_by_wl'] = by_wl
+    # realroots, directly
+    with open(os.path.join(d, 'realroots.txt'), 'w') as f:
+        rc = subprocess.run([PYTHON, os.path.join(d, 'realroots_cmp.py'), '--random', '1500'], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
+    row['realroots'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
     # unit
     with open(os.path.join(d, 'unit.txt'), 'w') as f:
-        rc = subprocess.run([PYTHON, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', os.path.join(d, 'test_knowledge_common.py')], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
+        rc = subprocess.run([PYTHON, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', os.path.join(d, 'test_knowledge_common.py'), os.path.join(d, 'test_knowledge_realroots.py')], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
     row['unit'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
     row['outcome'] = 'scored'
     for f in os.listdir(d):

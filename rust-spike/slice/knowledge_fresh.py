@@ -26,6 +26,9 @@ if args.wl == 'fuzz':
 elif args.wl == 'value':
     import knowledge_value_wl
     pairs = knowledge_value_wl.queries()
+elif args.wl == 'rootof':
+    import knowledge_rootof_wl
+    pairs = knowledge_rootof_wl.queries()
 else:
     pairs = workload(args.wl)
 pairs = pairs[:args.limit] if args.limit else pairs

@@ -17,6 +17,7 @@ mod map;
 mod pyset;
 #[path = "../../../lra/port/src/rat.rs"]
 mod rat;
+mod realroots;
 mod solver;
 mod term;
 mod theory;
@@ -559,5 +560,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<lra_py::LraCore>()?;
     euf_py::add_to(m)?;
     formula_py::register(m)?;
+    realroots::register(m)?;
     transfer_py::register(m)
 }

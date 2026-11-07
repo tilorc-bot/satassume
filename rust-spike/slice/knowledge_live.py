@@ -25,6 +25,7 @@ on Python. There is no discarded run in this family: conversion finishes before 
 never refuses mid-run.
 """
 import collections
+import importlib.util
 import os
 import sys
 import threading
@@ -34,6 +35,7 @@ import sympy
 
 import satassume
 from satassume import sympy_api
+from satassume.knowledge import realroots
 from satassume.knowledge.templates import _common, atoms, registry
 from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, const_value
 
@@ -42,6 +44,10 @@ import convert
 HERE = os.path.dirname(os.path.abspath(__file__))
 #: Modules that take `atoms.value_units` by name at import. Both load lazily, so naming them here must not import them.
 VALUE_UNITS_CALLERS = ('satassume.knowledge.templates.functions', 'satassume.knowledge.templates.special')
+#: The public names of `knowledge/realroots.py`, each `sa_solver.realroots_<name>` under `install()`. The private ones have no other reader.
+REALROOTS = ('gcd', 'squarefree', 'real_root_counts', 'imaginary_root_count', 'root_facts')
+#: Takes `root_facts` by name at import, and loads lazily.
+ROOT_FACTS_CALLER = 'satassume.knowledge.templates.rootof'
 COUNTS = collections.Counter()
 #: With `shadow=True`: (kind, repr of the term, field, Rust's, Python's), the first few of each run's differences.
 MISMATCHES = []
@@ -131,6 +137,24 @@ def _bind_value_units(f):
         m = sys.modules.get(name)
         if m is not None:
             m.value_units = f
+
+
+def _python_realroots():
+    """A private copy of the module. Its functions call each other by module global, so with `realroots` swapped the module's own
+    `root_facts` would run on Rust's `squarefree`, and a shadow would compare Rust with Rust."""
+    spec = importlib.util.spec_from_file_location('_satassume_python_realroots', realroots.__file__)
+    m = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = m              # `from __future__ import annotations` and typing read it while it runs
+    spec.loader.exec_module(m)
+    return m
+
+
+def _bind_realroots(fs):
+    for name, f in fs.items():
+        setattr(realroots, name, f)
+    m = sys.modules.get(ROOT_FACTS_CALLER)
+    if m is not None:
+        m.root_facts = fs['root_facts']
 
 
 def install(shadow=False, data=None):
@@ -257,6 +281,36 @@ def install(shadow=False, data=None):
             for f in FIELDS:
                 _mismatch('pattern', node, f, getattr(p, f), getattr(theirs, f))
         return p
+    if sa_solver.realroots_limits() != (realroots.MAX_DEGREE, realroots.MAX_BITS):
+        raise ValueError('sa_solver.realroots_limits differs from realroots.py')
+    saved_roots = {name: getattr(realroots, name) for name in REALROOTS}
+    py_roots = _python_realroots()
+
+    def rust_root(name):
+        py_f, rs_f = getattr(py_roots, name), getattr(sa_solver, 'realroots_' + name)
+
+        def f(*args):
+            stack = _stack()
+            if stack and stack[-1].kept is not None:
+                COUNTS['realroots:kept'] += 1
+                return py_f(*args)
+            COUNTS['realroots:' + name] += 1
+            try:
+                r = rs_f(*args)
+            except IndexError:                  # Python's `real_root_counts` on a zero polynomial raises this too
+                raise
+            except Exception as e:
+                COUNTS['fault'] += 1
+                raise KnowledgeFault(f'realroots.{name}{args!r}: {e}') from e
+            if shadow:
+                COUNTS['shadow:realroots'] += 1
+                _mismatch('realroots:' + name, args, 'result', r, py_f(*args))
+            return r
+        f.__wrapped__ = py_f
+        return f
+
+    _bind_realroots({name: rust_root(name) for name in REALROOTS})
+
     rust_resolve.__wrapped__ = py_resolve
     rust_pattern.__wrapped__ = py_pattern
     _common.resolve, _common.Pattern = rust_resolve, rust_pattern
@@ -308,4 +362,5 @@ def install(shadow=False, data=None):
         registry._mro_cache.clear()
         registry._clauses_cache.clear()
         _bind_value_units(py_value)
+        _bind_realroots(saved_roots)
     return undo
