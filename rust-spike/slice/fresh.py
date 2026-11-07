@@ -160,7 +160,8 @@ with open(a.out, "w") as fh:
             while len(TD.constfield._BY_KEY) > n_const[1]:
                 TD.constfield._BY_KEY.popitem()
             TD.arm(i)
-            term_live.AFTER_ROLLBACK[0] = lambda: (TD.check(), sessions.clear())
+            # A refusal of the run's own, before the plant's call, leaves it armed for the second run: that one must not refuse.
+            term_live.AFTER_ROLLBACK[0] = lambda: (TD.check(), sessions.clear(), TD._arm.__setitem__(0, None))
         if a.term != "py" and not TD:
             term_live.AFTER_ROLLBACK[0] = _drop_discarded
         reset_module_state(sympy_cache=False)
