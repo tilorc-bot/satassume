@@ -1,6 +1,6 @@
 # Component 6: `knowledge/templates/_rows_runtime.py` on Rust (issue 323)
 
-**Tested source `51fda6d`, on `rust-slice` 955098a (slice A), on pareto1 (x86-64), hash seed from `env.sh`, `.so` sha256 starts 31896b57d938.** The commit that lands adds only this report and one hand test to `51fda6d`, and no landing run executes either. Output: `/home/tilo/sa-rust-ids-work/sa-port-63/land2` on pareto1, read copies without the tsvs and plant builds in `~/sa-rust-ids-work/sa-port-63/land2` on orion.
+**Tested source `4095716`, on `rust-slice` b45b72f (slice B), on pareto1 (x86-64), hash seed from `env.sh`, `.so` sha256 starts 2511b9d0f95d.** It lands on 089c70d, whose only change from b45b72f is `results/port-4b.md`, with corrections to this report. Output: `/home/tilo/sa-rust-ids-work/sa-port-63/land4` on pareto1, read copies without the tsvs and plant builds in `~/sa-rust-ids-work/sa-port-63/land4` on orion.
 
 **Module: PARTIAL. 0 of the 32 runtime modules newly run whole because of this, not the expected 1.** I confirm sa-port-61's reading rather than overrule it. All 6 functions have a Rust counterpart, but by the brief's own test some values stay on Python:
 
@@ -13,16 +13,16 @@
 
 ## Landing bar
 
-| Item | Result on 51fda6d |
+| Item | Result on 4095716 |
 |---|---|
-| 1. Suite by id, Rust with `SLICE_KNOWLEDGE=atoms`, against a base run in the same job on 955098a with the same settings | 6,125 ids on both sides, 0 new, 0 gone, **0 changed**. 23 skipped, 18 xfailed |
+| 1. Suite by id, Rust with `SLICE_KNOWLEDGE=atoms`, against a base run in the same job on b45b72f with the same settings | 6,125 ids on both sides, 0 new, 0 gone, **0 changed**. 23 skipped, 18 xfailed |
 | Three numbers | **5,960 passed, 77 kept on Python (needs internals), 46 failed on re-entry, plus 1 failure from 1b** (124 failed) |
 | 2. Fresh dev, plain against atoms and against shadow | Answers and state MATCH: 1,985 queries |
 | 2. Fresh fuzz, same | Answers and state MATCH: 3,000 queries |
 | Fresh `value`, `rootof`, `rows`, same | MATCH: 3,742, 5,187 and 2,872 queries |
 | Shadow, all five workloads | 9,918 compares, **0 mismatches** |
 | Direct, `rows_cmp.py 3000 1` | 0 differences: 95 functions, 475 attributes, 853 `gen` calls, 801 `constant_value`, 1,418 `from_text` |
-| Units: `test_knowledge_rows`, `_common`, `_realroots`, `_lazy` | 96 passed on the tested source |
+| Units: `test_knowledge_rows`, `_common`, `_realroots`, `_lazy` | 97 passed on the tested source |
 | 3. Planted bugs | 8 of 9 caught by the comparison; the ninth can't change a compiled row. See below |
 | 4. Quiet handler firings | The two named cases only: 39 rows, 2 tests, the same as the base. **0 findings** |
 | 5. Known differences in answers or read state | **None measured.** The values kept on Python above are the same values by construction |
@@ -39,15 +39,15 @@ S's gate is met except for the 46 named stub failures, one cause. They stay list
 
 | Calls on Rust | dev | fuzz | value | rootof | rows | suite |
 |---|---|---|---|---|---|---|
-| `RowsGen` built | 27 | 3 | 12 | 3 | 95 | 491, over 7 workers |
-| `gen(R, c)` | 283 | **0** | 3,574 | **0** | 1,562 | 1,328 |
-| `constant_value` | 1,239 | 5,575 | **0** | **0** | 3,310 | 4,758 |
-| of those, gone to Python | **0** | **0** | **0** | **0** | 906 | 907 |
-| `rows:kept` | 12 | 0 | 0 | 0 | 0 | 16 |
+| `RowsGen` built | 27 | 3 | 12 | 3 | 95 | 443, over 7 workers |
+| `gen(R, c)` | 283 | **0** | 3,574 | **0** | 1,562 | 1,339 |
+| `constant_value` | 1,239 | 5,575 | **0** | **0** | 3,310 | 4,743 |
+| of those, gone to Python | **0** | **0** | **0** | **0** | 906 | 902 |
+| `rows:kept` | 12 | 0 | 0 | 0 | 0 | 25 |
 | `rows:generator:kept` | 0 | 0 | 0 | 0 | 0 | 6 |
 | shadow compares | 1,374 | 5,590 | 60 | 15 | 2,879 | not run |
 
-**Fuzz makes 0 `gen` calls, so its MATCH says nothing about `gen`. Neither dev nor fuzz reaches a Python fallback in `constant_value`,** so only `rows`, the suite and `rows_cmp` do. Going to Python by the class of `c`: `rows` Float 434, NaN 152, oo 152, -oo 144, 0 at `1/number` 24; suite Float 377, oo 197, -oo 190, NaN 140, 0 at `1/number` 3. **The suite and plants are what make any MATCH mean something:** the table below shows 4 of the caught plants move no line on dev or fuzz.
+**Fuzz makes 0 `gen` calls, so its MATCH says nothing about `gen`. Neither dev nor fuzz reaches a Python fallback in `constant_value`,** so only `rows`, the suite and `rows_cmp` do. Going to Python by the class of `c`: `rows` Float 434, NaN 152, oo 152, -oo 144, 0 at `1/number` 24; suite Float 373, oo 197, -oo 189, NaN 140, 0 at `1/number` 3. The suite's counts move between runs (`gen` 1,328, 1,362 and 1,339 over the three full runs, `rows:kept` 16, 16 and 25), and those runs were on different sources. I read that as tests landing on different workers with per-process caches, and didn't trace it. **The suite and plants are what make any MATCH mean something:** the table below shows 4 of the caught plants move no line on dev or fuzz.
 
 **A limit of the shadow:** it compares `generator`'s attributes and each Rust-read `constant_value`, not the rules from a `gen(R, c)` call. Those are compared by `rows_cmp` directly and by answers and state in the fresh runs.
 
@@ -89,7 +89,7 @@ From the landing suite run, with 28 planted rows seen across the 7 workers on ea
 
 ## Kept queries
 
-`gen(R, c)` and `constant_value` go to Python in a kept query. A family first used by a kept query keeps Python-built attributes for the process, with the same values, and its later rules are Rust's. **This path now has a run on the head:** the suite reaches it (`rows:kept` 16, `rows:generator:kept` 6), dev reaches the first (12), and `test_family_first_used_by_kept_query` covers it directly.
+`gen(R, c)` and `constant_value` go to Python in a kept query. A family first used by a kept query keeps Python-built attributes for the process, with the same values, and its later rules are Rust's. **This path now has a run on the head:** the suite reaches it (`rows:kept` 25, `rows:generator:kept` 6), dev reaches the first (12), and `test_family_first_used_by_kept_query` covers it directly.
 
 ## Inventory claims checked
 
@@ -100,7 +100,18 @@ From the landing suite run, with 28 planted rows seen across the 7 workers on ea
 
 ## Rebase
 
-`rust-slice` moved from 60493d6 to 955098a during the first job. The incoming diff changes `knowledge_live.py`, `live.py`, `rust_plugin.py`, `term/py.rs` and `term_live.py`, all executed by these runs, so **I reran everything** instead of using the short check. The first job, `a176a45` on 60493d6, gave the same suite totals on head and base (not compared by id) and all fresh MATCH, and I stopped it before its plants finished. It isn't evidence for this source. Conflict: the `undo` block only.
+`rust-slice` moved three times under this port, and each move was checked by its diff.
+
+| Incoming | Changes | Decision |
+|---|---|---|
+| 60493d6 to 955098a, slice A | `knowledge_live.py`, `live.py`, `rust_plugin.py`, `term/py.rs`, `term_live.py` | Executed here, full rerun. Conflict in `undo` only, and the `_stack` break above |
+| 955098a to 9009865, pyset-order | `satassume/theories/transfer.py`, `transfer.rs`, `pyset.rs` removed | Executed here, full rerun. The `_common` precedent doesn't apply: these runs execute this diff |
+| 9009865 to b45b72f, slice B | `term_live.py`, `rust_plugin.py`, `term/py.rs`, `term/relations.rs` | Executed here, full rerun. Clean rebase |
+| b45b72f to 089c70d | `results/port-4b.md` only | Nothing executed, so no rerun. Tested SHA and landed SHA differ by that file and this report |
+
+Earlier runs aren't evidence for the landing source: `a176a45` was stopped before its plants finished, and `51fda6d` and `09d3d7a` each ran the full job on a base that has since moved.
+
+**One failure class moved in one run, and not on the landing source.** On `09d3d7a`, `suite_report.py` gave 45 re-entry and 2 other on head, against 46 and 1 on its base, with 0 outcomes changed. The test is `tests/test_lra_fuzz.py::test_fuzz_entails_and_implied`, which fails on both. In that run the test file's 120s watchdog (`tests/test_lra.py:540`, `no answer within 120s`) fired while Hypothesis was generating a case, and it surfaced as `FlakyStrategyDefinition`. Alone, 3 runs on each tree failed on `Already mutably borrowed` with no timeout, and the landing source's full run gives 46 and 1 on both sides. That job was running plants and fresh alongside two suites, so I read it as load, not measured beyond that. Output: `land3/retest/` on pareto1.
 
 `HANDOFF-sa-port-61.md` lands, because `rust-slice` keeps earlier handoffs.
 
