@@ -18,7 +18,7 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty',
-          'drop-pat-demand')
+          'drop-pat-demand', 'drop-custom-rel', 'drop-custom-facts', 'drop-visit-items', 'drop-dv-link')
 
 
 def _cases():
@@ -120,6 +120,73 @@ def _cases():
         k = "+".join(preds) or "none"
         out[f'pending:{k}'] = lambda s, p=preds: list(D._cases()['escalate:0'](s))[:6] + [pend(s, p)]
         out[f'pending-own:{k}'] = lambda s, p=preds: list(own_steps(s, p))
+
+    # 5c2's second part. `_custom`: a relation atom with no Relations yet (made, counted in scope_misses, and given the
+    # assumptions' atoms when there are some), and a custom atom whose registered facts compile; by `_flush` and by name.
+    from sympy import Integer, pi
+    from satassume.relations import relation_atom
+
+    def rel_seen(s):
+        r = s.relations
+        return [r is None, s.engine.stats.get('scope_misses', 0), None if r is None else [repr(a) for a in r.queue]]
+
+    def rel_steps(af, by):
+        def fn(s):
+            if af is not None:
+                yield 'assume', lambda: setattr(s, 'assumption_formula', af(s)) or rel_seen(s)
+            a = relation_atom('lt', x, y * z)
+            if by == 'flush':
+                yield 'compile', lambda: compiled(Or(a, P('positive', z)))(s)
+                yield 'flush', lambda: s._flush(None) or rel_seen(s)
+            else:
+                yield 'custom', lambda: s._custom(a) or rel_seen(s)
+                yield 'custom', lambda: s._custom(relation_atom('eq', z, w)) or rel_seen(s)
+            yield 'ensure', lambda: s.ensure(x * y, ['positive'])
+        return fn
+    for af_name, af in {'none': None, 'set': lambda s: And(P('positive', x), relation_atom('lt', z, w)),
+                        'plain': lambda s: Or(P('negative', y), P('zero', x))}.items():
+        for by in ('flush', 'name'):
+            out[f'custom:rel:{af_name}:{by}'] = rel_steps(af, by)
+    out['custom:facts:name'] = with_mine(lambda s: [('custom', lambda: s._custom(P('mine', y * z))),
+                                                    ('custom', lambda: s._custom(P('mine', x * y))), ('flush', lambda: s._flush(None))])
+    out['custom:no-ext'] = lambda s: [('no-ext', lambda: setattr(s.engine, '_extensions', None)),
+                                      ('custom', lambda: s._custom(P('mine', y * z)))]
+
+    # `_link`, by name on forged definitions (the engine's own calls come from `var`/`dvar`, and run in every case that
+    # compiles a derived predicate)
+    DEFS = [('&', (1,)), ('|', (1, 2)), ('&', (2, -3)), ('&', (3,)), ('|', (2, 3)), ('|', (1, 2)), ('&', (1, 4, -5))]
+
+    def link_steps(s, node, vs):
+        yield 'vars', lambda: s.solver.ensure_vars(80)
+        for d, v in zip(DEFS, vs):
+            yield 'link', lambda d=d, v=v: s._link(d, node, v)
+    out['link:one-node'] = lambda s: list(link_steps(s, x * y, [41, 42, 43, 44, 45, 42, 46]))
+    out['link:repeat'] = lambda s: list(link_steps(s, x * y, [41, 42, 43, 44, 45, 47, 46])) + list(link_steps(s, z, [50, 51, 52, 53, 54, 55, 56]))
+    out['link:derived'] = lambda s: [('compile', lambda: compiled(Or(P('nonpositive', x * y), P('nonzero', x * y)))(s)),
+                                     ('compile', lambda: compiled(Implies(P('extended_nonnegative', x * y), P('nonzero', z)))(s)),
+                                     ('compile', lambda: compiled(Or(P('nonnegative', z * w), P('nonzero', z * w)))(s))]
+
+    # `_visit` through `Session.node` (the core's visit): node facts from a vocabulary function (compiled now, or parked under
+    # a demand), a constant whose complete pattern decides it, and `engine._constructing` empty after
+    def visit_own(t, d):
+        def fn(s):
+            yield 'register', lambda: register('even', Add)(own) and None
+            try:
+                yield from visit_steps(x + t, d)(s)
+            finally:
+                unregister('even')
+        return fn
+
+    def visit_steps(t, d):
+        def fn(s):
+            yield 'node', lambda: s.node(t, d)
+            yield 'node', lambda: s.node(t * w + 1, d)
+            yield 'constructing', lambda: sorted(map(str, s.engine._constructing))
+        return fn
+    for t, d in ((x * y * z, None), (z * w, ['positive']), (Integer(3), None), (pi, ['positive']), (Integer(2) * x, ['zero'])):
+        out[f'visit:{t}:{d}'] = visit_steps(t, d)
+        out[f'visit-mine:{t}:{d}'] = with_mine(visit_steps(t, d))
+        out[f'visit-own:{t}:{d}'] = visit_own(t, d)
     return out
 
 
@@ -164,7 +231,10 @@ def test_cases_run_and_reach_what_they_say(both):
     # some parked formula was compiled: `pending` shrank across the step
     assert any(sum(len(v) for _, v in s[-2][3]['pending']) < sum(len(v) for _, v in s[-3][3]['pending']) for k, s in st.items() if k.startswith('pending-own:'))
     c = rust['counts']
-    assert all(c[f'ses:{m}'] > 0 for m in ('want_of', 'split', 'emit_pattern', 'flush', 'compile', 'compile_pending', 'compile_patterns'))
+    assert all(c[f'ses:{m}'] > 0 for m in ('want_of', 'split', 'emit_pattern', 'flush', 'compile', 'compile_pending', 'compile_patterns',
+                                         'custom', 'visit', 'core_visit', 'link'))
+    # `_custom` made a Relations and counted the scope miss; with the assumptions' atoms noted
+    assert any(s[-2][1] != 'None' and 'False, 1' in s[-2][1] for k, s in st.items() if k.startswith('custom:rel:'))
 
 
 @pytest.mark.parametrize('plant', PLANTS)

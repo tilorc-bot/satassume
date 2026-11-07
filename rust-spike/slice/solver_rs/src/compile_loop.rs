@@ -2,7 +2,8 @@
 //! `_emit_pattern`, `_flush`, `_compile`, `_compile_pending`, `_compile_patterns`. As in 5c1 (`discovery.rs`), the session's containers
 //! (`pending`, `pending_c`, `demand`, `frontier`, `deferred`) and the memos `_WANT` and `_SPLIT` stay Python objects that
 //! Python reads later, so state is Python's by construction; every read Python makes, Rust makes in the same order.
-//! Still Python, called back by name: `_custom`, `compile_formula` (the module global, `session_live`'s under the core) and
+//! 5c2's second part adds `_custom`, `_visit` and the core's visit callback (`core_visit`); `Session._link` is `session.rs`'s
+//! `link`. Still Python, called back by name: `compile_formula` (the module global, `session_live`'s under the core) and
 //! `Session.emit` (passed to it as Python passes it). The Formula objects of `items` are read as Python reads them
 //! (`atom.expr`, `atom.pred`, `!=`), counted callbacks until the formula step after 5c.
 use pyo3::intern;
@@ -10,9 +11,13 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PySet, PyTuple};
 
 use crate::relations_core::{
-    planted, DROP_COMPILE_DEMAND, DROP_EMIT_MENT, DROP_FLUSH_CUSTOM, DROP_PEND_COMPILE, DROP_PAT_DEMAND, DROP_SPLIT_LATER, WANT_EMPTY,
+    planted, DROP_COMPILE_DEMAND, DROP_CUSTOM_FACTS, DROP_CUSTOM_REL, DROP_EMIT_MENT, DROP_FLUSH_CUSTOM, DROP_PEND_COMPILE, DROP_PAT_DEMAND,
+    DROP_SPLIT_LATER, DROP_VISIT_ITEMS, WANT_EMPTY,
 };
-use crate::session::{tick, SessionCore, SES_COMPILE, SES_COMPILE_PATTERNS, SES_COMPILE_PENDING, SES_EMIT_PATTERN, SES_FLUSH, SES_SPLIT, SES_WANT_OF};
+use crate::session::{
+    tick, SessionCore, SES_COMPILE, SES_COMPILE_PATTERNS, SES_COMPILE_PENDING, SES_CORE_VISIT, SES_CUSTOM, SES_EMIT_PATTERN, SES_FLUSH,
+    SES_SPLIT, SES_VISIT, SES_WANT_OF,
+};
 
 fn engine_mod(p: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
     p.import(intern!(p, "satassume.engine"))
@@ -140,6 +145,7 @@ pub(crate) fn flush(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<(
             continue;
         }
         for atom in atoms.try_iter()? {
+            // by name, as Python's `self._custom`: the class's is Rust's (`ses_custom`), and an override is honoured
             s.call_method1(intern!(p, "_custom"), (atom?,))?;
         }
     }
@@ -314,6 +320,150 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
     table.setattr(intern!(p, "new_nodes"), PyList::empty(p))
 }
 
+/// `Session._custom`: a custom-predicate atom was allocated. A relation atom goes to the session's `Relations` (made here, and
+/// counted in `engine.stats["scope_misses"]`, when the session has none); otherwise the extensions' facts for it compile.
+pub(crate) fn custom(s: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<()> {
+    tick(SES_CUSTOM);
+    let p = s.py();
+    let eng = engine_mod(p)?;
+    let engine = s.getattr(intern!(p, "engine"))?;
+    if eng.getattr(intern!(p, "RELATION_ATOMS"))?.contains(atom.getattr(intern!(p, "pred"))?)?
+        && engine.getattr(intern!(p, "_relation_specs"))?.is_truthy()?
+    {
+        let mut rel = s.getattr(intern!(p, "relations"))?;
+        if rel.is_none() {
+            let stats = engine.getattr(intern!(p, "stats"))?;
+            let k = intern!(p, "scope_misses");
+            stats.set_item(k, stats.get_item(k)?.add(1)?)?;
+            rel = eng.getattr(intern!(p, "Relations"))?.call1((s, engine.getattr(intern!(p, "_relation_specs"))?))?;
+            s.setattr(intern!(p, "relations"), &rel)?;
+            let af = s.getattr(intern!(p, "assumption_formula"))?;
+            if !af.is_none() {
+                rel.call_method1(intern!(p, "note_formula"), (eng.getattr(intern!(p, "atoms_of"))?.call1((af,))?,))?;
+            }
+        }
+        if !planted(DROP_CUSTOM_REL) {
+            rel.call_method1(intern!(p, "enqueue"), (atom,))?;
+        }
+        return Ok(());
+    }
+    let ext = engine.getattr(intern!(p, "_extensions"))?;
+    if ext.is_none() {
+        return Ok(());
+    }
+    for f in ext.call_method1(intern!(p, "facts_for"), (atom,))?.try_iter()? {
+        let f = f?;
+        if planted(DROP_CUSTOM_FACTS) {
+            continue;
+        }
+        eng.getattr(intern!(p, "compile_formula"))?.call1((f, s.getattr(intern!(p, "table"))?, s.getattr(intern!(p, "emit"))?))?;
+    }
+    Ok(())
+}
+
+/// `Session._visit`, the body of `Session.node`: the node's templates and node facts, its rule-base block, then its patterns
+/// and formulas (parked under a demand).
+pub(crate) fn visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, demanded: &Bound<'_, PyAny>) -> PyResult<()> {
+    tick(SES_VISIT);
+    let p = s.py();
+    let eng = engine_mod(p)?;
+    let engine = s.getattr(intern!(p, "engine"))?;
+    let ct = engine.getattr(intern!(p, "clause_templates"))?;
+    let (compiled, mut formulas) = if !ct.is_none() {
+        let two: Vec<Bound<'_, PyAny>> = ct.call1((node,))?.try_iter()?.collect::<PyResult<_>>()?;
+        let [c, f]: [Bound<'_, PyAny>; 2] =
+            two.try_into().map_err(|v: Vec<_>| pyo3::exceptions::PyValueError::new_err(format!("expected 2 values to unpack, got {}", v.len())))?;
+        (c, f)
+    } else {
+        (PyTuple::empty(p).into_any(), engine.call_method1(intern!(p, "_templates"), (node,))?)
+    };
+    let ext = engine.getattr(intern!(p, "_extensions"))?;
+    if !ext.is_none() && ext.getattr(intern!(p, "has_node_facts"))?.is_truthy()? {
+        let l = PyList::new(p, formulas.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any();
+        formulas = l.add(ext.call_method1(intern!(p, "node_facts"), (node,))?)?;
+    }
+    let has_formulas = formulas.is_truthy()?;
+    let items = if has_formulas {
+        let atoms_of = eng.getattr(intern!(p, "atoms_of"))?;
+        let mut v = Vec::new();
+        for f in formulas.try_iter()? {
+            let f = f?;
+            let a = atoms_of.call1((&f,))?;
+            v.push(PyTuple::new(p, [f, a])?);
+        }
+        Some(PyList::new(p, v)?)
+    } else {
+        None
+    };
+    let solver = s.getattr(intern!(p, "solver"))?;
+    let complete_constant = compiled.len()? == 1
+        && compiled.get_item(0)?.getattr(intern!(p, "pattern"))?.getattr(intern!(p, "complete"))?.is_truthy()?
+        && !has_formulas;
+    if !complete_constant {
+        let mut own = 0i64.into_pyobject(p)?.into_any();
+        if compiled.is_truthy()? {
+            let want = if demanded.is_none() { p.None().into_bound(p) } else { want_of(demanded)? };
+            for comp in compiled.try_iter()? {
+                let pat = comp?.getattr(intern!(p, "pattern"))?;
+                let k0 = pat.getattr(intern!(p, "node"))?;
+                for km in split(&pat.getattr(intern!(p, "clauses"))?, &want)?.get_item(3)?.try_iter()? {
+                    let km = km?;
+                    let (k, m) = (km.get_item(0)?, km.get_item(1)?);
+                    if k.eq(&k0)? {
+                        own = own.bitor(m)?;
+                    }
+                }
+            }
+        }
+        solver.call_method1(intern!(p, "register_block"), (b, own))?;
+    } else {
+        let npred = eng.getattr(intern!(p, "NPRED"))?;
+        solver.call_method1(intern!(p, "ensure_vars"), (npred.add(b)?.sub(1)?,))?;
+    }
+    if compiled.is_truthy()? {
+        compile_patterns(s, node, &compiled, demanded)?;
+    }
+    if let Some(items) = items {
+        if items.is_truthy()? && !planted(DROP_VISIT_ITEMS) {
+            if demanded.is_none() {
+                compile(s, node, items.as_any())?;
+            } else {
+                s.getattr(intern!(p, "pending"))?.set_item(node, &items)?;
+                compile_pending(s, node, demanded)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What the core calls to visit a node (`session_live._core_visit` until 5c2): the census when on, and the node marked in
+/// `engine._constructing` while its visit runs.
+pub(crate) fn core_visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, demanded: &Bound<'_, PyAny>) -> PyResult<()> {
+    tick(SES_CORE_VISIT);
+    let p = s.py();
+    let sl = p.import(intern!(p, "session_live"))?;
+    if !sl.getattr(intern!(p, "CENSUS"))?.is_none() {
+        sl.getattr(intern!(p, "_census"))?.call1((node,))?;
+    }
+    let constructing = s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "_constructing"))?;
+    constructing.call_method1(intern!(p, "add"), (node,))?;
+    // by name, as Python's `Session.node` calls `self._visit`: the class's is Rust's (`ses_visit`); a test's instance override
+    // (test_session_limits.py `_object_case`) is honoured
+    let r = s.call_method1(intern!(p, "_visit"), (node, b, demanded)).map(|_| ());
+    constructing.call_method1(intern!(p, "discard"), (node,))?;
+    r
+}
+
+#[pyfunction]
+fn ses_custom(s: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<()> {
+    custom(s, atom)
+}
+
+#[pyfunction]
+fn ses_visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, demanded: &Bound<'_, PyAny>) -> PyResult<()> {
+    visit(s, node, b, demanded)
+}
+
 #[pyfunction]
 fn ses_compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, compiled: &Bound<'_, PyAny>, demanded: &Bound<'_, PyAny>) -> PyResult<()> {
     compile_patterns(s, node, compiled, demanded)
@@ -360,5 +510,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ses_flush, m)?)?;
     m.add_function(wrap_pyfunction!(ses_compile, m)?)?;
     m.add_function(wrap_pyfunction!(ses_compile_pending, m)?)?;
+    m.add_function(wrap_pyfunction!(ses_custom, m)?)?;
+    m.add_function(wrap_pyfunction!(ses_visit, m)?)?;
     m.add_function(wrap_pyfunction!(ses_compile_patterns, m)?)
 }

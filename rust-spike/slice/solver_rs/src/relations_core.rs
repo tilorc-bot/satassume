@@ -83,6 +83,10 @@ pub(crate) const DROP_COMPILE_DEMAND: u8 = 41;
 pub(crate) const DROP_PEND_COMPILE: u8 = 42;
 pub(crate) const WANT_EMPTY: u8 = 43;
 pub(crate) const DROP_PAT_DEMAND: u8 = 44;
+pub(crate) const DROP_CUSTOM_REL: u8 = 45;
+pub(crate) const DROP_CUSTOM_FACTS: u8 = 46;
+pub(crate) const DROP_VISIT_ITEMS: u8 = 47;
+pub(crate) const DROP_DV_LINK: u8 = 48;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -137,6 +141,10 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("drop-pend-compile") => DROP_PEND_COMPILE,
         Some("want-empty") => WANT_EMPTY,
         Some("drop-pat-demand") => DROP_PAT_DEMAND,
+        Some("drop-custom-rel") => DROP_CUSTOM_REL,
+        Some("drop-custom-facts") => DROP_CUSTOM_FACTS,
+        Some("drop-visit-items") => DROP_VISIT_ITEMS,
+        Some("drop-dv-link") => DROP_DV_LINK,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
