@@ -1,5 +1,5 @@
 """mutate.py's 10 mutants on the slice crate, each scored per check. Builds in a scratch copy; the tree isn't touched.
-  mutate_slice.py WORKDIR [--sessions N] [--step1 N] [--seed S] [--jobs J] [--only I,J] [--timeout T] [--triage T]
+  mutate_slice.py WORKDIR [--sessions N] [--step1 N] [--seed S] [--jobs J] [--only I,J] [--timeout T] [--triage T] [--shrink T]
 Checks: digest   answers only, step 1's corpus
         state    state compare, step 1's corpus
         fuzz-a   answers only, fuzz sessions (can this mutant change an answer the fuzzer sees?)

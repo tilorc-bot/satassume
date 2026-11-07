@@ -8,7 +8,7 @@ two solvers must agree on, by level:
 call, which hid the ring's None and `_fill` paths).
 
   fuzz.py [--sessions N] [--seed S] [--corpus fuzz|step1] [--level answers|state] [--so DIR] [--reach] [--one SEED]
-          [--label L] [--progress FILE] [--shrink-seconds T] [--no-shrink] [--json] [--known]
+          [--label L] [--progress FILE] [--shrink-seconds T] [--no-shrink] [--no-fixed] [--json] [--known]
 
 --corpus step1 runs step 1's hand and random scripts instead of fuzz sessions. --so loads sa_solver from DIR (a mutant).
 --reach adds the reentry table and the lines of solver.py never run. A mismatch prints the first differing field, then
@@ -17,6 +17,7 @@ script for every candidate, with a state dump per call, so a long script can tak
 --label runs one session by its label ("fixed 2", a seed, or a step 1 index). --progress names a file holding the label
 of the session now running, so a run that gets killed says where. --known runs each listed known difference and the
 self-test of its exemption, and prints what each solver does.
+--no-fixed leaves out the hand-written sessions, to see whether the random ones reach a path by themselves.
 """
 import argparse
 import collections
@@ -45,6 +46,7 @@ _a.add_argument("--label")
 _a.add_argument("--progress")
 _a.add_argument("--shrink-seconds", type=float, default=60)
 _a.add_argument("--known", action="store_true")
+_a.add_argument("--no-fixed", action="store_true")
 ARGS = _a.parse_args() if __name__ == "__main__" else _a.parse_args([])
 sys.path.insert(0, HERE)
 if ARGS.so:
@@ -874,7 +876,7 @@ def main():
     elif ARGS.corpus == "step1":
         sessions = list(enumerate(step1_sessions()))
     else:
-        sessions = [(f"fixed {i}", x) for i, x in enumerate(fixed_sessions())]
+        sessions = [(f"fixed {i}", x) for i, x in enumerate(fixed_sessions())] if not ARGS.no_fixed else []
         sessions = itertools.chain(sessions, ((ARGS.seed + i, gen_session(ARGS.seed + i)) for i in range(ARGS.sessions)))
     if ARGS.label is not None:
         sessions = itertools.islice((x for x in sessions if str(x[0]) == ARGS.label), 1)
