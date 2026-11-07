@@ -102,7 +102,8 @@ def _cases():
         # Limit 3: objects `==` across classes, first seen in different orders.
         'node-joined': lambda s: s.assume_formula(And(P('real', 1), P('positive', 1.0), P('zero', True))),
         'node-joined:or': lambda s: s.literal_of(Or(P('real', 1.0), P('positive', 1), P('zero', True))),
-        'node-joined:custom': lambda s: s.assume_formula(And(P('mine', 1.0), P('mine', 1), P('real', True))),
+        'node-joined:custom': lambda s: s.assume_formula(And(P('mine', 1.0), P('mine', 1))),
+        'node-joined:custom-then-block': lambda s: s.assume_formula(And(P('mine', 1.0), P('real', True))),
         'pred-none': lambda s: s.literal_of(Or(a, P(None, 'b'))),
         'pred-list:assume': lambda s: s.assume_formula(And(a, P(['p'], 'b'))),
         'pred-list:compile': _compile_direct(And(a, Or(b, c), P(['p'], 'b'))),
@@ -152,6 +153,15 @@ def test_pred_joined_across_nodes_differs_only_in_shown_pred(both):
     id. `1` and `True` are `==` with one hash, so no dict lookup can tell them apart, and only the shown form differs."""
     py, rust = (b['cases']['pred-joined-across-nodes'] for b in both)
     assert py['atoms'][-1] == 'True(c)' and rust['atoms'][-1] == '1(c)'
+    assert {k: v for k, v in py.items() if k != 'atoms'} == {k: v for k, v in rust.items() if k != 'atoms'}
+
+
+def test_node_joined_first_object_is_the_first_seen(both):
+    """Named difference, limit 3. Python's block slots hold the first object passed to `node_base`, and a custom atom doesn't
+    pass through it. Rust has one object per node id, the first seen at the boundary. It takes a custom atom and a block atom on
+    objects `==` across classes; `join` counts objects joined that way, and the report says how often it fires."""
+    py, rust = (b['cases']['node-joined:custom-then-block'] for b in both)
+    assert 'real(True)' in py['atoms'] and 'real(1.0)' in rust['atoms']
     assert {k: v for k, v in py.items() if k != 'atoms'} == {k: v for k, v in rust.items() if k != 'atoms'}
 
 

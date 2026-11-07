@@ -10,7 +10,7 @@ $PY -c 'import satassume; print(satassume.__file__)' >"$W2/tree.txt"
 for wl in dev fuzz; do
   $PY live.py $wl py "$W2/$wl-py.jsonl" --check $CHECK >"$W2/$wl-py.tot" 2>"$W2/$wl-py.err" &
   $PY live.py $wl py "$W2/$wl-py2.jsonl" --check $CHECK >"$W2/$wl-py2.tot" 2>"$W2/$wl-py2.err" &
-  $PY live.py $wl rust "$W2/$wl-rust.jsonl" --check $CHECK >"$W2/$wl-rust.tot" 2>"$W2/$wl-rust.err" &
+  SESSION_REPORT="$W2/$wl-rust.session.json" $PY live.py $wl rust "$W2/$wl-rust.jsonl" --handlers "$W2/$wl-rust.handlers" --check $CHECK >"$W2/$wl-rust.tot" 2>"$W2/$wl-rust.err" &
   # No subclass and no hook wrappers on these: end states and answers only, from what a user would run.
   $PY live.py $wl rust "$W2/$wl-rust-raw.jsonl" --check raw >"$W2/$wl-rust-raw.tot" 2>"$W2/$wl-rust-raw.err" &
   $PY live.py $wl py "$W2/$wl-py-raw.jsonl" --check raw >"$W2/$wl-py-raw.tot" 2>"$W2/$wl-py-raw.err" &
