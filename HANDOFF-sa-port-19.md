@@ -12,10 +12,10 @@ Read first: my brief `~/.local/state/agent/briefs/sa-port-19-20261107T085132Z.tx
 |---|---|---|---|---|
 | sa-port-12's suite, Rust then Python | orion, `$B12/suite1-*` | `$B12/suite1.done` | Rust side still running 09:08 UTC, no `exit.txt` | Don't touch it. It's a reading anyway: use the pareto1 suite below |
 | sa-port-12's dump mutants, dev | orion, `$B12/dm/dev` | `done`, `score.txt` | **Finished 09:09 UTC**, read below | Not needed |
-| Move at every 16th call, fuzz | pareto1, `$P/mv` | `$P/mv/done` | In its count phase | Restart command below |
+| Move at every 16th call, fuzz | pareto1, `$P/mv` | `$P/mv/done` | **Finished 09:24 UTC**, read below | Not needed |
 | Ground workload | pareto1, `$P/ground` | `$P/ground/done` | **Finished 09:19 UTC**, read below | Not needed |
 
-Mine were started from this session and may die with it. **Check the marker and `machine ls` first.** Restart: `machine run pareto1 --shared -r WHY -- bash /home/tilo/sp19/p1_job.sh /home/tilo/sp19/p1_move.sh` Run it in the background, and move `$P/mv` aside first.
+None of mine are still running. To rerun on new source: `machine run pareto1 --shared -r WHY -- bash /home/tilo/sp19/p1_job.sh /home/tilo/sp19/p1_move.sh`, in the background, with `$P/mv` moved aside first. It takes about 17 minutes.
 
 ## What ran, and what it shows
 
@@ -24,8 +24,11 @@ Mine were started from this session and may die with it. **Check the marker and 
 | Fuzz, **fresh** | 3,000 queries, 4,943 sessions, 0 differences in answer, message, session count, end, stream, LRA state. `answers_sha` 173502b6ef285ad6 both. **MATCH** | `$P/fresh2/fuzz.cmp` |
 | Dev, fresh, rerun | 1,985 queries, 3,332 sessions, 0 differences. `answers_sha` 31cd0945c07f02a6, same as sa-port-12's on orion. **MATCH** | `$P/fresh2/dev.cmp` |
 | Ground workload, fresh | 18 chosen queries, 24 sessions, 0 differences. **MATCH** | `$P/ground/fresh.cmp` |
+| Move at every 16th call, fuzz, **sampled** | 29,581 moves over 2,947 queries of 446,601 calls, 24,995 at level > 0, levels up to 40, **0 differences** in answer, message, session count, end, stream or LRA state | `$P/mv/fuzz.cmp` |
 | `test_lra_dirty.py`, `test_lra_raises.py` under pytest | 3 passed | `~/sa-rust-ids-work/sa-port-19/lra_tests_pytest.log` |
 | Faults planted in LRA hooks, dev | Table under "1107" | `$P/exc/` |
+
+**Branch budget, condition 2,** from `$P/mv/branch.txt`: of those 29,581 moved sessions, 7,765 had branched before the move, 16,443 had by the end, and 2,538 ended `exhausted`. Exhausted is read at the end only, so how many were already exhausted at the move isn't known. This is every 16th call on fuzz; dev (8,406) and ground (2,316) are every call, but their rows don't carry these counts for dev.
 
 `fresh2` ran one edit before 628a82c: that edit only adds `branching` to rows and `_moved_branches` at a move, so its rows have no branch counts. The final fresh rerun will have them.
 
@@ -101,11 +104,11 @@ Setup was short. From early row counts, each process ran about 4 to 7 times fast
 
 ## Order from here
 
-`HANDOFF-sa-port-12.md`'s items, with what's left:
+`HANDOFF-sa-port-12.md`'s items, with what's left. **Start with 1.** It's the largest thing still open:
 
 1. **Suite:** run it on the final source, both backends, on pareto1 (`bash run_suite.sh WORK rust|python` under `p1_job.sh`, `SLICE_SUITE_SHUFFLE=1`, `PYTEST_N="-n 8"`). sa-port-12's ran before 496f250, so it's a reading only. Then `suite_report.py`, by id against 5,961 / 77 / 46, `test_lra*` id by id against `port-census/pr328-check/suite-lists.md`. Sum `lra` and `caught`.
 2. **Dump mutants:** read, and tabled above. Report them split that way. What's left is the `drop:` hole, if you decide to close it.
-3. **Move on fuzz:** 446,601 calls over 2,947 queries, so stride 16 is about 27,900 moves. Read `$P/mv/fuzz.cmp`, `count.txt`, `branch.txt`, `stride`. State it's sampled, and at what stride. Confirm branched and exhausted sessions are included; if `branch.txt` shows none, choose queries that branch. Fresh fuzz itself is done.
+3. **Fresh fuzz and move on fuzz: done,** on the source before the final rerun. Rerun if `lra_backend.py` or the crate changes.
 4. `LRA_MUT` 6, 7 on full dev and fuzz with `--so` and a mutant build (`--features mutants`). The pytest half is done.
 5. `real_theory_fuzz`, `test_solver_real_theories`, `run_history.sh`, `historycmp.py`, hash seeds. All of these suit pareto1.
 6. Solver mutants 2, 5, 6, 7, 9; boundary mutants including `--suite` and the 10 with no real-engine catch; new mutants in payload conversion, term ids, model rendering.
