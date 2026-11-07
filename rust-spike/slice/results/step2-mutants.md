@@ -1,6 +1,6 @@
 # S step 2: mutant scores and known differences (issue 323)
 
-Run on orion: `mutate_slice.py WORK --sessions 1500 --step1 300 --seed 1 --jobs 4 --timeout 600 --triage 120 --shrink 60`, 01:42 to 01:45 UTC, 7 Nov. Crate unchanged since 35debd6 plus the dump edits of 1b84ef9 and b4b4763.
+Run on orion: `mutate_slice.py WORK --sessions 1500 --step1 300 --seed 1 --jobs 4 --timeout 600 --triage 120 --shrink 60`, 01:42 to 01:45 UTC, 7 Nov. Sweep code at faad621; the crate last changed at 1b84ef9.
 
 **Columns.** digest: answers only, step 1's corpus (325 sessions, 24,288 calls). state: state compare, same corpus. fuzz answers: answers only, fuzz sessions (1506 sessions, 178,613 calls on the unmutated build). fuzz state: state compare, fuzz sessions. A cell names the first difference, the session, and the calls left after shrinking. Hand-written sessions run first, so "fixed N" doesn't show that random sessions would miss it; the second table tests that for the 5 missed.
 
