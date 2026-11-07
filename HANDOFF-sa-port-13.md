@@ -20,15 +20,18 @@ Planner, through the architect, on ruling 6: no ruling yet and no lazy path. The
 |---|---|
 | Hand cases, `sa-port-13/smoke.txt`: not the engine | 3,424 ops, 1,577 derived terms with keys and compares: 0 mismatches, 586 refused by design reasons |
 | Dev, first 100 queries, hash seed 0, fresh engine, `lim100.json` | Answers sha 40feb0ad39ac3f6f, same as `--plain`. 2,070 ops, 846 derived, 639 merged with input, 262 cones all fully known, weight 524, 326 new nodes (12 derived): 0 mismatches, 0 refused, 0 unknown |
-| Dev, full, `sa-port-13/dev3/{plain,shadow}.json` | **Started in the background at the end of this session. Read it, don't assume it.** Compare `*.answers` with `cmp`. If the files are missing or the logs show a crash, rerun |
+| Dev, full, 1,985 queries, hash seed 0, fresh engine, `sa-port-13/dev3/{plain,shadow}.json`, summary `dev3/summary.txt` | Answers sha a5349612416b55ef, `cmp` identical to plain. 1,935 converted, 50 kept (out-of-scope). 12,129 ops, 4,870 derived terms with keys and compares, 4,555 merged with input: **0 mismatches, 0 algebra refusals, 0 unknown operands.** 12 key-order refusals, 6 each way, the same count as dev2 |
 
-Note what 100 queries doesn't exercise: 0 refusals, and only `core.py:173`, `:84`, `:419`, so `relations.py`, `wiring.py` and `functions.py` sites haven't been seen yet.
+**The gap in that dev run, not explained yet:** exactness isn't shown for all of it.
+- `cone:calls` 5,749, `cone:fully-known` 5,090: **659 cones hold an unmapped object (659 `cone:unknown-objects`), so their merge and weight checks did not run.** `struct:unknown-object` 725 likewise. The examples shown are P atoms such as `lt((x, -pi/2))`. Unread guess: `cone_id` reads `o.arg` wrongly for these atoms, or their term was never registered.
+- `keys-used-unknown` 549 and `node:unknown` 9 (`engine.py:805`): the first examples are all `0`, class `Zero`, which reached the key or node without going through a checked op. Only the first examples are recorded, so don't assume all 549 are `0`. Registering rationals by value in `cone_id`, `counted` and `node`, as `operand_id` does, may close most of it. Rerun and count; don't reclassify.
+- Sites: read `dev3/summary.txt` for those checked. Over-budget cones: 0 on dev.
 
 **What the cone check does and doesn't show:** weights still come from Python's `_struct`, since templates aren't ported. The check shows that cone objects map one to one onto Rust ids, so Rust's node count would equal Python's. Over-budget cones have no object list and only get the per-object weight check in `struct_`.
 
 ## Open, in the brief's order
 
-1. **Slice item 1:** read `dev3`. Look especially at unknown operands by site (`show.py`'s "unknown sites"): each is a construction path section 3 missed. Report with `Status: progress` once it's read.
+1. **Slice item 1, ran on dev with the gap above:** close the 659 cones and 549 keys, and rerun dev. Until then, don't report `_cone_info` weights as matched on the whole of dev. `_struct` weights are Python's own, as noted below.
 2. **Slice item 2, not started:** the 12 key-order pairs Python orders and Rust refuses. `check_order`'s refused branch only counts: record the pair in `BAD`, smallest case first. My untested guess, to check rather than rely on: a `V::Rat` coefficient slot against a `V::Term` slot (`Float` or `oo`), which `value_cmp` refuses.
 3. **Slice item 3, not started:** fuzz, corpus (`derived.py` shows the workloads; `--limit` helps), other hash seeds (the refusal count must not change across them), and the per-query construction count (count `Basic.__new__`, a separate run with `CHECK_ON` off, and with `sympy_cache=True` since cached results hide constructions).
 4. **Not run at all:** the suite's three numbers against 5,961 / 77 / 46 by id, including D's crate changes and these; `tests_offline.py`; planted bugs; boundary re-score; history independence; rebase and landing on `rust-slice`. The ruling's Pow counts (refusals at key time, queries holding such a Pow that finished, same across seeds) and the section 9 bullet move. `dev1/shadow.json` is a bad run; don't quote it.
