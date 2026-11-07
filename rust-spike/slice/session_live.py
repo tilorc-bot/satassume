@@ -558,6 +558,50 @@ def _install_compile_loop():
     return undo
 
 
+# -- step 5c3: the queries (query.rs) --------------------------------------------------------------------------------------
+PY_QUERY = {}
+
+
+def _q(name, rname):
+    rf = getattr(sa_solver, rname)
+
+    def f(self, *a):
+        if not isinstance(self.table, TableView):
+            return PY_QUERY[name](self, *a)
+        return rf(self, *a)
+    f.__name__ = name
+    return f
+
+
+def _ses_query_literal(self, lit, assumptions=(), search=True):
+    if not isinstance(self.table, TableView):
+        return PY_QUERY['query_literal'](self, lit, assumptions, search)
+    return sa_solver.ses_query_literal(self, lit, assumptions, search)
+
+
+_QUERY_METHODS = {'query_lit': _q('query_lit', 'ses_query_lit'), 'prepare_query': _q('prepare_query', 'ses_prepare_query'),
+                  'emit': _q('emit', 'ses_emit'), 'query_literal': _ses_query_literal,
+                  '_query_all': _q('_query_all', 'ses_query_all'), 'literal_of': _q('literal_of', 'ses_literal_of'),
+                  '_relations': _q('_relations', 'ses_relations'), '_ensure_atoms': _q('_ensure_atoms', 'ses_ensure_atoms'),
+                  '_ensure_twins': _q('_ensure_twins', 'ses_ensure_twins')}
+_QUERY_PLANTS = ('drop-prep-twins', 'drop-prep-rel', 'query-lit-tuple', 'drop-ql-mention', 'ql-skip-consistent', 'drop-qa-mention',
+                 'drop-lo-memo', 'drop-lo-discover', 'drop-rel-process', 'drop-ea-ensure', 'drop-twins-var', 'drop-emit')
+
+
+def _install_queries():
+    """Returns the undo."""
+    S = engine.Session
+    saved = {n: S.__dict__[n] for n in _QUERY_METHODS}
+    PY_QUERY.update(saved)
+    for n, f in _QUERY_METHODS.items():
+        setattr(S, n, f)
+
+    def undo():
+        for n, f in saved.items():
+            setattr(S, n, f)
+    return undo
+
+
 def _install_relations():
     """Returns the undo."""
     import term_live
@@ -617,8 +661,11 @@ def install():
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None
     undo_disc = _install_discovery() if os.environ.get('SLICE_DISC', 'rust') == 'rust' else None
     undo_loop = _install_compile_loop() if os.environ.get('SLICE_LOOP', 'rust') == 'rust' else None
+    undo_query = _install_queries() if os.environ.get('SLICE_QUERY', 'rust') == 'rust' else None
 
     def undo():
+        if undo_query is not None:
+            undo_query()
         if undo_loop is not None:
             undo_loop()
         if undo_disc is not None:
@@ -648,7 +695,7 @@ def from_env():
             atexit.register(_write_report, os.environ['SESSION_REPORT'])
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
-            if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS:
+            if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

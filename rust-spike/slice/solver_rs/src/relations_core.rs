@@ -87,6 +87,18 @@ pub(crate) const DROP_CUSTOM_REL: u8 = 45;
 pub(crate) const DROP_CUSTOM_FACTS: u8 = 46;
 pub(crate) const DROP_VISIT_ITEMS: u8 = 47;
 pub(crate) const DROP_DV_LINK: u8 = 48;
+pub(crate) const DROP_PREP_TWINS: u8 = 49;
+pub(crate) const DROP_PREP_REL: u8 = 50;
+pub(crate) const QUERY_LIT_TUPLE: u8 = 51;
+pub(crate) const DROP_QL_MENTION: u8 = 52;
+pub(crate) const QL_SKIP_CONSISTENT: u8 = 53;
+pub(crate) const DROP_QA_MENTION: u8 = 54;
+pub(crate) const DROP_LO_MEMO: u8 = 55;
+pub(crate) const DROP_LO_DISCOVER: u8 = 56;
+pub(crate) const DROP_REL_PROCESS: u8 = 57;
+pub(crate) const DROP_EA_ENSURE: u8 = 58;
+pub(crate) const DROP_TWINS_VAR: u8 = 59;
+pub(crate) const DROP_EMIT: u8 = 60;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -145,6 +157,18 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("drop-custom-facts") => DROP_CUSTOM_FACTS,
         Some("drop-visit-items") => DROP_VISIT_ITEMS,
         Some("drop-dv-link") => DROP_DV_LINK,
+        Some("drop-prep-twins") => DROP_PREP_TWINS,
+        Some("drop-prep-rel") => DROP_PREP_REL,
+        Some("query-lit-tuple") => QUERY_LIT_TUPLE,
+        Some("drop-ql-mention") => DROP_QL_MENTION,
+        Some("ql-skip-consistent") => QL_SKIP_CONSISTENT,
+        Some("drop-qa-mention") => DROP_QA_MENTION,
+        Some("drop-lo-memo") => DROP_LO_MEMO,
+        Some("drop-lo-discover") => DROP_LO_DISCOVER,
+        Some("drop-rel-process") => DROP_REL_PROCESS,
+        Some("drop-ea-ensure") => DROP_EA_ENSURE,
+        Some("drop-twins-var") => DROP_TWINS_VAR,
+        Some("drop-emit") => DROP_EMIT,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
