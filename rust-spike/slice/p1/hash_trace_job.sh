@@ -1,6 +1,7 @@
 #!/bin/bash
 # hash_trace_job.sh: sa-port-94, on pareto1 under a shared lease. Builds sa_solver.so in each tree given (unless BUILD=0),
-# then runs hash_trace.py (copied from this branch into the output dir) on dev and fuzz, rust arm, PYTHONHASHSEED from env.sh.
+# then runs hash_trace.py (copied from this branch into the output dir) on dev and fuzz in each of MODES (default rust; py writes
+# NAME-WL-py.json), PYTHONHASHSEED from env.sh.
 # Usage: hash_trace_job.sh OUT NAME=TREE [NAME=TREE ...]. Writes OUT/NAME-{dev,fuzz}.json, .err, OUT/source.txt and OUT/DONE.
 set -u
 export REAL=/home/tilo CARGO_HOME=/home/tilo/.cargo RUSTUP_HOME=/home/tilo/.rustup PATH=/home/tilo/.cargo/bin:$PATH HOME=/home/tilo/sp19
@@ -17,10 +18,11 @@ for nt in "$@"; do
     cp $O/target-$n/release/libsa_solver.so $S/sa_solver.so
   fi
   sha256sum $S/sa_solver.so >> $O/source.txt
-  for wl in dev fuzz; do
-    echo "+ PYTHONPATH=$T:$W/sympy:$W/shim SLICE_DIR=$S $PY $O/hash_trace.py $wl" >> $O/source.txt
-    (cd $S && PYTHONPATH=$T:$W/sympy:$W/shim SLICE_DIR=$S timeout 1800 $PY $O/hash_trace.py $wl > $O/$n-$wl.json 2> $O/$n-$wl.err)
-    echo "$n $wl exit $?" >> $O/source.txt
-  done
+  for m in ${MODES:-rust}; do for wl in dev fuzz; do
+    o=$O/$n-$wl; [ $m = rust ] || o=$o-$m
+    echo "+ PYTHONPATH=$T:$W/sympy:$W/shim SLICE_DIR=$S $PY $O/hash_trace.py $wl $m" >> $O/source.txt
+    (cd $S && PYTHONPATH=$T:$W/sympy:$W/shim SLICE_DIR=$S timeout 1800 $PY $O/hash_trace.py $wl $m > $o.json 2> $o.err)
+    echo "$n $wl $m exit $?" >> $O/source.txt
+  done; done
 done
 date -u > $O/DONE
