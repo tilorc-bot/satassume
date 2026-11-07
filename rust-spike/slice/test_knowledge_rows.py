@@ -183,3 +183,10 @@ def test_family_first_used_by_kept_query(live, monkeypatch):
         term_live.stack().pop()
     assert rules(gen) == rules(python) and len(built) == 1     # Rust's after it
     assert live.COUNTS['rows:gen'] == 1
+
+
+def test_shaped_row_is_not_plain():
+    """No compiled row can tell: the 2 functions with a shaped row also have a term that isn't `x + c`. So `rows-plain-always` needs this."""
+    specs = ((2, (((((0, 'zero', True),), ((3, 'zero', True),), (('value', '1/2'), None)),))),)
+    assert sa_solver.RowsGen((), specs, RT.from_text).plain is False
+    assert RT.generator('f', 2, (), specs, __name__).plain is False
