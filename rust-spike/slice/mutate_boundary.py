@@ -52,11 +52,11 @@ def rows_of(d):
 def suite(k, so, a, base_rows):
     d = os.path.join(a.work, f"m{k}-suite")
     os.makedirs(d, exist_ok=True)
-    for f in glob.glob(os.path.join(d, "rows.*.jsonl")):
+    for f in glob.glob(os.path.join(d, "rows.*.jsonl")) + glob.glob(os.path.join(d, "handlers.*.jsonl")):
         os.remove(f)
     env = dict(os.environ, SLICE_SUITE_OUT=d, SLICE_SUITE_BACKEND="rust", SLICE_SO=so, HYPOTHESIS_STORAGE_DIRECTORY=os.path.join(d, "hyp"),
                PYTHONPATH=os.environ["PYTHONPATH"] + ":" + HERE)
-    cmd = [sys.executable, "-m", "pytest", "-p", "rust_plugin", "-q", "--tb=line", "-p", "no:cacheprovider", *a.suite]
+    cmd = [sys.executable, "-m", "pytest", "-p", "rust_plugin", "-p", "handler_count", "-q", "--tb=line", "-p", "no:cacheprovider", *a.suite]
     with open(os.path.join(d, "pytest.log"), "w") as o:
         try:
             rc = subprocess.run(cmd, stdout=o, stderr=subprocess.STDOUT, cwd=ROOT, env=env, timeout=a.suite_timeout).returncode
@@ -103,6 +103,8 @@ def main():
     p.add_argument("--suite", nargs="*", default=[])
     a = p.parse_args()
     a.work, a.builds = os.path.abspath(a.work), os.path.abspath(a.builds)
+    # Globs are the suite's, relative to the tree: the shell that started this may sit elsewhere and pass them on unexpanded.
+    a.suite = [os.path.relpath(f, ROOT) for pat in a.suite for f in sorted(glob.glob(os.path.join(ROOT, pat)))]
     os.makedirs(a.work, exist_ok=True)
     ids = sorted(map(int, a.only.split(","))) if a.only else [i for i in range(len(M)) if os.path.isdir(f"{a.builds}/m{i}")]
     sos = {"base": os.path.join(a.builds, "base"), **{i: os.path.join(a.builds, f"m{i}") for i in ids}}

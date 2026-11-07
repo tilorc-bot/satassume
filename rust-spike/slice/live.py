@@ -248,6 +248,7 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--only", help="comma-separated query numbers")
     ap.add_argument("--so", help="load sa_solver from this directory (a mutant)")
+    ap.add_argument("--handlers", help="count the quiet Exception handlers here: handler_count.py")
     ap.add_argument("--fork", action="store_true", help="each query in its own child, forked after import")
     ap.add_argument("--twice", action="store_true", help=f"each query twice in a row; the repeat is numbered q + {TWICE}")
     args = ap.parse_args()
@@ -258,6 +259,9 @@ def main():
     import state
     T.digest = state.digest
     pairs = load(args.wl)
+    if args.handlers:
+        import handler_count
+        handler_count.install(args.handlers)
     py_made = [0]
     oinit = SV.Solver.__init__
 
@@ -322,6 +326,8 @@ def main():
                searches=0)
     with open(args.out, "w") as out:
         for pos, i in enumerate(order):
+            if args.handlers:
+                handler_count.where = i
             p, a = pairs[i]
             key = i + TWICE if args.twice and pos % 2 else i
             if args.fork:
