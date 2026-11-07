@@ -166,6 +166,23 @@ def mutating_class(base, name, log):
 
 def go(name, wl, items, out):
     import lra_backend
+    import state
+    # A dropped field kills the state read after the session. Without this the row dies with it, and nothing says
+    # whether the answer or the stream changed.
+    real_of, real_branching = state.lra_of, state.lra_branching
+
+    def lra_of(solver):
+        try:
+            return real_of(solver)
+        except Exception as e:
+            return f"unreadable:{type(e).__name__}:{e}"[:80], "moved:unreadable"
+
+    def lra_branching(solver):
+        try:
+            return real_branching(solver)
+        except Exception as e:
+            return f"unreadable:{type(e).__name__}"
+    state.lra_of, state.lra_branching = lra_of, lra_branching
     M.S.mutated = False
     side = open(out + ".eff", "a")
     cur = {}
@@ -221,6 +238,10 @@ def score(ref, d):
                     hit.append("sessions")
                 for a, b in zip(p["sessions"], r["sessions"]):
                     hit += [f for f in ("end", "stream", "lra") if a[f] != b[f]]
+                    if str(b["lra"]).startswith("unreadable:"):
+                        hit = [h for h in hit if h != "lra"] + ["unreadable"]
+                if r.get("caught"):
+                    hit.append("quiet")     # an exception reached engine.py:1906 or sympy_api.py:1107, answer or not
             for h in set(hit):
                 kinds[h] = kinds.get(h, 0) + 1
             if hit and firstq is None:
@@ -231,6 +252,8 @@ def score(ref, d):
     idle = [n for n, v in res.items() if not v["effective"] and not v["caught"]]
     missed = [n for n, v in res.items() if v["effective"] and not v["caught"]]
     only_raise = [n for n in caught if set(res[n]["kinds"]) <= {"raise", "died"}]
+    only_read = [n for n in caught if set(res[n]["kinds"]) <= {"unreadable", "died"}]
+    print(f"caught only by the state read: {len(only_read)}: {only_read}")
     print(f"mutants {len(res)} caught {len(caught)} missed {len(missed)} never effective {len(idle)}; caught only by a raise: {len(only_raise)}")
     print("MISSED:", missed)
     print("NEVER EFFECTIVE:", idle)

@@ -359,7 +359,9 @@ def main():
                 out.flush()
                 child = os.fork()
                 if child:
-                    os.waitpid(child, 0)
+                    status = os.waitpid(child, 0)[1]
+                    if status:      # its row is missing: say how it died, since a signal leaves no traceback
+                        print(f"child of query {key} died, wait status {status}", file=sys.stderr, flush=True)
                     continue
             T.solvers = []
             if i == q_detail:
