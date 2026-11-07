@@ -313,7 +313,7 @@ def scaffold(q, i, site):
     o = q.rev.get(i)
     if o is not None:
         return o
-    row = t.row(i)
+    row = t.shape(i)        # forces no facts
     args = row[0]
     name = t.class_row(i)[0]
     if not args:

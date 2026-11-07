@@ -6,13 +6,13 @@
 //! nan, Float, non-commutative terms, classes that override an operator, factors sharing a base, a numeric-base power
 //! beside a coefficient.
 use super::rat::Rat;
-use super::table::{fact, flag, Kind, Refuse, TermRow, TermTable, CLASS_ADD, CLASS_MUL, V};
+use super::table::{fact, flag, Facts, Kind, Refuse, TermRow, TermTable, CLASS_ADD, CLASS_MUL, V};
 use super::TermId;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub(super) fn is_rational_kind(k: Kind) -> bool {
     matches!(k, Kind::Integer | Kind::Rational | Kind::Zero | Kind::One | Kind::Half | Kind::NegativeOne)
@@ -61,7 +61,7 @@ impl TermTable {
         if bits & fact::READ == 0 {
             return Err(Refuse("algebra: not an expression"));
         }
-        if bits & (fact::BAD | fact::NAN | fact::FLOAT) != 0 {
+        if self.facts(t)?.bits & (fact::BAD | fact::NAN | fact::FLOAT) != 0 {
             return Err(Refuse("algebra: holds an infinity, nan or Float"));
         }
         if !self.commutative_of(t)? {
@@ -75,31 +75,16 @@ impl TermTable {
         if let Some(t) = self.find(class, &content) {
             return t;
         }
-        // `Expr.is_number` is all args; `.has` and free symbols are the union of the args'.
-        let inherit = fact::NAN | fact::BAD | fact::FLOAT | fact::UNDEF;
-        let mut bits = fact::READ | fact::COMMUTATIVE;
-        let mut number = true;
-        let mut free: Vec<TermId> = Vec::new();
-        for a in args.iter() {
-            let r = self.row(*a);
-            bits |= r.bits & inherit;
-            number &= r.bits & fact::NUMBER != 0;
-            free.extend_from_slice(&r.free);
-        }
-        if number {
-            bits |= fact::NUMBER;
-        }
-        free.sort_unstable();
-        free.dedup();
+        // Its facts are worked out from the args' when something asks: `TermTable::facts`, `rest`.
         let id = TermId(self.terms.len() as u32);
         self.index_insert(class, content.clone(), id);
         self.terms.push(TermRow {
             class,
             args,
             content,
-            free: free.into(),
-            bits,
-            level: 0,
+            bits: fact::READ | fact::COMMUTATIVE,
+            facts: OnceLock::new(),
+            rest: OnceLock::new(),
             has_power: false,
         });
         id
@@ -118,9 +103,9 @@ impl TermTable {
             class,
             args: Box::default(),
             content,
-            free: Box::default(),
-            bits: fact::READ | fact::COMMUTATIVE | fact::NUMBER,
-            level: 0,
+            bits: fact::READ | fact::COMMUTATIVE,
+            facts: OnceLock::from(Facts { free: Box::default(), bits: fact::NUMBER }),
+            rest: OnceLock::from((0, 0)),
             has_power: false,
         });
         id
@@ -640,7 +625,7 @@ impl TermTable {
                 if !self.commutative_of(f)? {
                     return Err(Refuse("key: non-commutative"));
                 }
-                if row.bits & fact::NUMBER != 0 {
+                if self.facts(f)?.bits & fact::NUMBER != 0 {
                     let w = self.complex_of(f)?.ok_or(Refuse("key: a closed factor with no complex value"))?;
                     z = (z.0 * w.0 - z.1 * w.1, z.0 * w.1 + z.1 * w.0);
                     continue;

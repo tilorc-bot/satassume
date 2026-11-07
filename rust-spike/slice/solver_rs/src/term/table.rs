@@ -7,7 +7,7 @@ use super::{ClassId, TermId};
 use num_bigint::BigInt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Why Rust won't go on with this query.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -118,6 +118,10 @@ pub enum Read {
     Symbol,
     Constant,
     OwnBase,
+    /// prototype/conv-floor: free symbols and NUMBER, NAN, BAD, FLOAT, when conversion left them out.
+    Facts,
+    /// prototype/conv-floor: UNDEF, MAYBE_NAN and the level, which only the row dump reads.
+    Rest,
 }
 
 /// The way back to Python. `Ok(None)`: the read raised an `Exception`, which each caller refuses on as it did when these
@@ -131,14 +135,22 @@ pub const READ_RAISED: &str = "read: raised past Exception";
 /// Tokens of a read whose value holds a term the table doesn't: `T_MISS` in `convert.py`.
 const T_MISS: i64 = 10;
 
+/// A term's facts: what `TermTable::facts` hands out. Preset when the tokens carry them, read or derived on first use otherwise.
+pub struct Facts {
+    pub free: Box<[TermId]>,
+    pub bits: u8,
+}
+
 pub struct TermRow {
     pub class: ClassId,
     pub args: Box<[TermId]>,
     /// `_hashable_content`.
     pub content: Arc<[V]>,
-    pub free: Box<[TermId]>,
+    /// READ and COMMUTATIVE only. Everything else goes through `TermTable::facts` or `rest`.
     pub bits: u8,
-    pub level: u8,
+    pub facts: OnceLock<Facts>,
+    /// (UNDEF | MAYBE_NAN, level)
+    pub rest: OnceLock<(u8, u8)>,
     /// `decompose_power` can split this term, so a key asks for its base and exponent.
     pub has_power: bool,
 }
@@ -319,10 +331,18 @@ impl TermTable {
                 V::Tuple(c) => c.clone(),
                 _ => return Err("content".into()),
             };
-            let free = match &f[3] {
-                V::None => Box::default(),
-                v => ids(v)?,
-            };
+            let bits = int(&f[4])? as u8;
+            // Python's lazy row has None for free and READ set. A skeleton node has None and no READ: its facts are empty.
+            let (facts, rest) = (OnceLock::new(), OnceLock::new());
+            let lazy = matches!(f[3], V::None) && bits & fact::READ != 0;
+            if !lazy {
+                let free = match &f[3] {
+                    V::None => Box::default(),
+                    v => ids(v)?,
+                };
+                let _ = facts.set(Facts { free, bits });
+                let _ = rest.set((bits & (fact::UNDEF | fact::MAYBE_NAN), int(&f[5])? as u8));
+            }
             let id = TermId(i as u32);
             if index.insert((class, content.clone()), id).is_some() {
                 return Err(format!("term {i}: two input ids for one (class, content)"));
@@ -331,9 +351,9 @@ impl TermTable {
                 class,
                 args,
                 content,
-                free,
-                bits: int(&f[4])? as u8,
-                level: int(&f[5])? as u8,
+                bits: bits & (fact::READ | fact::COMMUTATIVE),
+                facts,
+                rest,
                 has_power: false,
             });
         }
@@ -360,7 +380,14 @@ impl TermTable {
         if let Some(v) = self.memo.lock().unwrap().get(&(kind, t)) {
             return Ok(v.clone());
         }
-        let v = match self.reads.read(kind, t)? {
+        let v = self.fetch(kind, t)?;
+        self.memo.lock().unwrap().insert((kind, t), v.clone());
+        Ok(v)
+    }
+
+    /// One crossing to Python, with nothing kept here.
+    fn fetch(&self, kind: Read, t: TermId) -> Result<Option<V>, Refuse> {
+        Ok(match self.reads.read(kind, t)? {
             None => None,
             Some((tokens, _)) if tokens == [T_MISS] => return Err(Refuse("read: a value holds a term the table doesn't")),
             Some((tokens, strings)) => Some(
@@ -368,9 +395,71 @@ impl TermTable {
                     .value(&strings)
                     .map_err(|_| Refuse("read: tokens Rust can't read"))?,
             ),
+        })
+    }
+
+    /// A term's free symbols and NUMBER, NAN, BAD and FLOAT. An input term's are read once from Python; a derived term's are
+    /// the union over its args (`Expr.is_number` is all args; `.has` and free symbols are the union). No lock is held while
+    /// Python runs: if two threads race, both compute the same value and the first stays.
+    pub fn facts(&self, t: TermId) -> Result<&Facts, Refuse> {
+        let row = &self.terms[t.index()];
+        if let Some(f) = row.facts.get() {
+            return Ok(f);
+        }
+        let f = if t.index() < self.n_input {
+            let v = self.fetch(Read::Facts, t)?.ok_or(Refuse("facts: the read raised"))?;
+            match &v {
+                V::Tuple(p) if p.len() == 2 => Facts {
+                    free: ids(&p[0]).map_err(|_| Refuse("read: tokens Rust can't read"))?,
+                    bits: int(&p[1]).map_err(|_| Refuse("read: tokens Rust can't read"))? as u8,
+                },
+                _ => return Err(Refuse("read: tokens Rust can't read")),
+            }
+        } else {
+            let mut bits = 0;
+            let mut number = true;
+            let mut free: Vec<TermId> = Vec::new();
+            for a in row.args.iter() {
+                let r = self.facts(*a)?;
+                bits |= r.bits & (fact::NAN | fact::BAD | fact::FLOAT);
+                number &= r.bits & fact::NUMBER != 0;
+                free.extend_from_slice(&r.free);
+            }
+            if number {
+                bits |= fact::NUMBER;
+            }
+            free.sort_unstable();
+            free.dedup();
+            Facts { free: free.into(), bits }
         };
-        self.memo.lock().unwrap().insert((kind, t), v.clone());
-        Ok(v)
+        let _ = row.facts.set(f);
+        Ok(row.facts.get().unwrap())
+    }
+
+    /// UNDEF | MAYBE_NAN, and the level: only the row dump reads these. A derived term inherits UNDEF, and has level 0.
+    pub fn rest(&self, t: TermId) -> Result<(u8, u8), Refuse> {
+        let row = &self.terms[t.index()];
+        if let Some(r) = row.rest.get() {
+            return Ok(*r);
+        }
+        let r = if t.index() < self.n_input {
+            let v = self.fetch(Read::Rest, t)?.ok_or(Refuse("facts: the read raised"))?;
+            match &v {
+                V::Tuple(p) if p.len() == 2 => (
+                    int(&p[0]).map_err(|_| Refuse("read: tokens Rust can't read"))? as u8,
+                    int(&p[1]).map_err(|_| Refuse("read: tokens Rust can't read"))? as u8,
+                ),
+                _ => return Err(Refuse("read: tokens Rust can't read")),
+            }
+        } else {
+            let mut bits = 0;
+            for a in row.args.iter() {
+                bits |= self.rest(*a)?.0 & fact::UNDEF;
+            }
+            (bits, 0)
+        };
+        let _ = row.rest.set(r);
+        Ok(r)
     }
 
     /// What's been read so far, forcing nothing: outer None if it hasn't been.
@@ -446,7 +535,7 @@ impl TermTable {
     /// `is_finite` of a closed input term: None when SymPy doesn't know, when the read raised, or for a term with no
     /// read, which is a derived term or one that isn't a closed `Expr`.
     pub fn finite_of(&self, t: TermId) -> Result<Option<bool>, Refuse> {
-        if t.index() >= self.n_input || self.row(t).bits & fact::NUMBER == 0 {
+        if t.index() >= self.n_input || self.facts(t)?.bits & fact::NUMBER == 0 {
             return Ok(None);
         }
         Ok(match self.read(Read::Finite, t)? {
@@ -457,7 +546,7 @@ impl TermTable {
 
     /// `complex()` of a closed input term as exact f64s: None when it raises, or for a term with no read, as `finite_of`.
     pub fn complex_of(&self, t: TermId) -> Result<Option<(f64, f64)>, Refuse> {
-        if t.index() >= self.n_input || self.row(t).bits & fact::NUMBER == 0 {
+        if t.index() >= self.n_input || self.facts(t)?.bits & fact::NUMBER == 0 {
             return Ok(None);
         }
         match self.read(Read::Complex, t)? {

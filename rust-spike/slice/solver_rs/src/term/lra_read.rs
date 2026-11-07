@@ -156,8 +156,8 @@ impl<'py> Lra<'_, 'py> {
         self.flags(t) & flag::IS_EXPR != 0
     }
 
-    fn free(&self, t: TermId) -> bool {
-        !self.t.row(t).free.is_empty()
+    fn free(&self, t: TermId) -> Result<bool, Refuse> {
+        Ok(!self.t.facts(t)?.free.is_empty())
     }
 
     /// What `isinstance(e, Expr) and not is_Matrix and not is_MatrixExpr` reads.
@@ -167,11 +167,10 @@ impl<'py> Lra<'_, 'py> {
 
     /// `e.has(*_BAD)`, off the bits conversion read.
     fn has_bad(&self, t: TermId) -> Result<bool, Refuse> {
-        let bits = self.t.row(t).bits;
-        if bits & fact::READ == 0 {
+        if self.t.row(t).bits & fact::READ == 0 {
             return Err(Refuse("lra: a term whose facts weren't read"));
         }
-        Ok(bits & (fact::NAN | fact::BAD) != 0)
+        Ok(self.t.facts(t)?.bits & (fact::NAN | fact::BAD) != 0)
     }
 
     /// The value of a term with `is_Rational`. A class of its own with that flag refuses.
@@ -194,7 +193,7 @@ impl<'py> Lra<'_, 'py> {
         if !self.plain_expr(e) {
             return Err(E::Unread);
         }
-        if !self.free(e) {
+        if !self.free(e)? {
             return self.closed(e, scale, out, c);
         }
         let flags = self.flags(e);
@@ -210,7 +209,7 @@ impl<'py> Lra<'_, 'py> {
             let mut rest = Vec::new();
             let mut closed = Vec::new();
             for f in args {
-                if self.free(f) {
+                if self.free(f)? {
                     rest.push(f);
                 } else if self.flags(f) & IS_RATIONAL != 0 {
                     coeff = coeff.mul(&self.rational(f)?);
@@ -324,7 +323,7 @@ impl<'py> Lra<'_, 'py> {
             *c = c.add(&scale.mul(&v)?)?;
             return Ok(());
         }
-        if self.t.row(e).bits & fact::FLOAT != 0 {
+        if self.t.facts(e)?.bits & fact::FLOAT != 0 {
             return Err(E::Unread);
         }
         if self.constant_bounds(e)?.is_none() {
@@ -386,11 +385,10 @@ impl<'py> Lra<'_, 'py> {
             Kind::Exp1 => return self.registry("E"),
             _ => {}
         }
-        let bits = self.t.row(e).bits;
-        if bits & fact::READ == 0 {
+        if self.t.row(e).bits & fact::READ == 0 {
             return Err(E::Refuse(Refuse("lra: a term whose facts weren't read")));
         }
-        if self.free(e) || bits & (fact::FLOAT | fact::NAN | fact::BAD) != 0 {
+        if self.free(e)? || self.t.facts(e)?.bits & (fact::FLOAT | fact::NAN | fact::BAD) != 0 {
             return Err(E::Unread);
         }
         let args: Vec<TermId> = self.t.row(e).args.to_vec();

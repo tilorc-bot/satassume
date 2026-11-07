@@ -9,9 +9,9 @@ use std::collections::HashMap;
 
 impl TermTable {
     /// `_is_number`: `is_number` and no free symbols.
-    pub fn is_number_term(&self, t: TermId) -> bool {
-        let r = self.row(t);
-        r.bits & fact::NUMBER != 0 && r.free.is_empty()
+    pub fn is_number_term(&self, t: TermId) -> Result<bool, Refuse> {
+        let r = self.facts(t)?;
+        Ok(r.bits & fact::NUMBER != 0 && r.free.is_empty())
     }
 
     /// The Rational coefficient `as_coeff_Add` or `as_coeff_Mul` reads off `t`, when that split can strip anything: only
@@ -59,7 +59,7 @@ impl TermTable {
     /// `default_sort_key` would compare it. Otherwise `sorted((l, r), key=_key)`, which is stable: they swap only when
     /// the key of `r` is below the key of `l`.
     pub fn eq_sides(&mut self, lhs: TermId, rhs: TermId) -> Result<(TermId, TermId), Refuse> {
-        let (l, r) = if self.is_number_term(lhs) || self.is_number_term(rhs) {
+        let (l, r) = if self.is_number_term(lhs)? || self.is_number_term(rhs)? {
             (lhs, rhs)
         } else {
             self.affine_strip(lhs, rhs)?
@@ -98,7 +98,7 @@ impl TermTable {
             if self.class_of(t).flags & flag::IS_NUMBER != 0 {
                 continue;
             }
-            if self.is_number_term(t) && self.closed_finite(t)? == Some(true) {
+            if self.is_number_term(t)? && self.closed_finite(t)? == Some(true) {
                 continue;
             }
             out.push(t);
@@ -125,7 +125,7 @@ impl TermTable {
     /// One difference of `_eq_links`: `p - q` when it's no number and SymPy would build it term by term.
     pub fn eq_diff(&mut self, p: TermId, q: TermId) -> Result<Option<TermId>, Refuse> {
         let d = self.sub(p, q)?;
-        if self.is_number_term(d) || !self.termwise(p, q, d)? {
+        if self.is_number_term(d)? || !self.termwise(p, q, d)? {
             return Ok(None);
         }
         Ok(Some(d))
@@ -177,7 +177,7 @@ impl TermTable {
 
     /// `Relations._eq_links`' clauses, in its order. Empty for a side that is a number.
     pub fn eq_links_plan(&mut self, a: TermId, b: TermId) -> Result<Vec<PlanOp>, Refuse> {
-        if self.is_number_term(a) || self.is_number_term(b) {
+        if self.is_number_term(a)? || self.is_number_term(b)? {
             return Ok(vec![]);
         }
         const INF: [&str; 2] = ["positive_infinite", "negative_infinite"];
@@ -197,7 +197,7 @@ impl TermTable {
 
     /// `Relations._eq_infinity`: the other side, the pred, whether that side is a number (Python then asks `engine.is_`,
     /// and only an unknown goes on to the plan), and the plan. None when neither side is infinite.
-    pub fn eq_infinity_plan(&self, a: TermId, b: TermId) -> Option<(TermId, &'static str, bool, Vec<PlanOp>)> {
+    pub fn eq_infinity_plan(&self, a: TermId, b: TermId) -> Result<Option<(TermId, &'static str, bool, Vec<PlanOp>)>, Refuse> {
         for (kind, pred) in [(Kind::Infinity, "positive_infinite"), (Kind::NegativeInfinity, "negative_infinite")] {
             let e = if self.class_of(b).kind == kind {
                 a
@@ -211,28 +211,30 @@ impl TermTable {
                 PlanOp::Clause(vec![(true, None), (false, Some((pred, e)))]),
                 PlanOp::Clause(vec![(false, None), (true, Some((pred, e)))]),
             ];
-            return Some((e, pred, self.is_number_term(e), plan));
+            return Ok(Some((e, pred, self.is_number_term(e)?, plan)));
         }
-        None
+        Ok(None)
     }
 
     /// `scope.affine_pair`, given the argument of each sign atom in order.
-    pub fn affine_pair(&self, signs: &[TermId]) -> bool {
+    pub fn affine_pair(&self, signs: &[TermId]) -> Result<bool, Refuse> {
         let mut sums: Vec<TermId> = vec![];
         for &e in signs {
             if self.class_of(e).flags & flag::IS_ADD == 0 || sums.contains(&e) {
                 continue;
             }
-            let free = &self.row(e).free;
+            let free = &self.facts(e)?.free;
             if free.is_empty() {
                 continue;
             }
-            if sums.iter().any(|&o| self.row(o).free.iter().any(|x| free.contains(x))) {
-                return true;
+            for &o in &sums {
+                if self.facts(o)?.free.iter().any(|x| free.contains(x)) {
+                    return Ok(true);
+                }
             }
             sums.push(e);
         }
-        false
+        Ok(false)
     }
 
     /// `_under_apps` of the sides: every term at or under an argument of an `AppliedUndef`. None when a side's class has its

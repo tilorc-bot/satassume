@@ -213,6 +213,15 @@ impl PyTermTable {
             .map(|t| t.into_any())
     }
 
+    /// (args, content), forcing nothing: what `term_live.scaffold` reads of a derived term.
+    fn shape<'py>(&self, py: Python<'py>, i: u32) -> PyResult<Bound<'py, PyAny>> {
+        let r = self.0.row(TermId(i));
+        let content = r.content.iter().map(|x| value(py, &self.0, x)).collect::<PyResult<Vec<_>>>()?;
+        (r.args.iter().map(|a| a.0).collect::<Vec<_>>(), PyTuple::new(py, content)?)
+            .into_pyobject(py)
+            .map(|t| t.into_any())
+    }
+
     /// (args, content, key, free, bits, level, closed, power). Key, closed and power are what's been read so far, None
     /// if nothing has: this forces no read. `sort_key`, `closed`, `power` and `commutative` read.
     fn row<'py>(&self, py: Python<'py>, i: u32) -> PyResult<Bound<'py, PyAny>> {
@@ -222,13 +231,16 @@ impl PyTermTable {
         let key = self.0.peek(Read::Key, id).flatten().map(|k| value(py, &self.0, &k)).transpose()?;
         let closed = self.0.peek_closed(id);
         let power = self.0.peek_power(id).map(|(b, e)| (b.map(|b| b.0), e));
+        // This one forces the facts, for the shadow. `shape` doesn't.
+        let facts = self.0.facts(id).map_err(refuse)?;
+        let (rest, level) = self.0.rest(id).map_err(refuse)?;
         (
             r.args.iter().map(|a| a.0).collect::<Vec<_>>(),
             PyTuple::new(py, content)?,
             key,
-            r.free.iter().map(|a| a.0).collect::<Vec<_>>(),
-            r.bits,
-            r.level,
+            facts.free.iter().map(|a| a.0).collect::<Vec<_>>(),
+            r.bits | facts.bits | rest,
+            level,
             closed,
             power,
         )
@@ -278,8 +290,8 @@ impl PyTermTable {
     }
 
     /// `_is_number` of a term.
-    fn is_number_term(&self, t: u32) -> bool {
-        self.0.is_number_term(TermId(t))
+    fn is_number_term(&self, t: u32) -> PyResult<bool> {
+        self.0.is_number_term(TermId(t)).map_err(refuse)
     }
 
     /// The sides of `relation_atom`'s eq atom, stripped and in order. Raises TermRefuse.
@@ -317,13 +329,14 @@ impl PyTermTable {
     }
 
     /// `_eq_infinity`: None, or (other side, pred, that side is a number, plan).
-    fn eq_infinity_plan(&self, a: u32, b: u32) -> Option<(u32, &'static str, bool, Vec<PlanRow>)> {
-        self.0.eq_infinity_plan(TermId(a), TermId(b)).map(|(e, pred, closed, p)| (e.0, pred, closed, plan_rows(&p)))
+    fn eq_infinity_plan(&self, a: u32, b: u32) -> PyResult<Option<(u32, &'static str, bool, Vec<PlanRow>)>> {
+        let got = self.0.eq_infinity_plan(TermId(a), TermId(b)).map_err(refuse)?;
+        Ok(got.map(|(e, pred, closed, p)| (e.0, pred, closed, plan_rows(&p))))
     }
 
     /// `scope.affine_pair`, given each sign atom's argument.
-    fn affine_pair(&self, signs: Vec<u32>) -> bool {
-        self.0.affine_pair(&ids_of(signs))
+    fn affine_pair(&self, signs: Vec<u32>) -> PyResult<bool> {
+        self.0.affine_pair(&ids_of(signs)).map_err(refuse)
     }
 
     /// `_under_apps` of the sides, or None when a side's class has its own `atoms`.

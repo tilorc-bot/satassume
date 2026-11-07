@@ -10,6 +10,7 @@ isn't an input term reads as base -1 and refuses at run time when a key needs it
 run" (planner's ruling 1).
 """
 import numbers
+import os
 import struct
 
 from sympy import Add, Function, Integral, Mul, Pow, Product, S, Sum, exp
@@ -24,6 +25,7 @@ from sympy.core.symbol import Dummy, Symbol, Wild
 from sympy.logic.boolalg import BooleanAtom, BooleanFunction
 
 from satassume import sympy_api as A
+from satassume.state.epoch import EPOCH
 from satassume.knowledge.domain import constructed_noncommutative
 from satassume.knowledge.templates import _may_be_nan, registry
 from satassume.knowledge.templates._common import const_value
@@ -46,7 +48,7 @@ REASONS = (
 T_NONE, T_FALSE, T_TRUE, T_INT, T_BIG, T_STR, T_TUPLE, T_TERM, T_RAT, T_OPAQUE, T_MISS = range(11)
 # What Rust reads lazily: Rust's `Read`, same order. Each can evaluate (surveyed in lazy_probe.py), so nothing here runs in
 # conversion: Rust asks, on the original object, when a key needs it, and memoizes in the table, which dies with the query.
-READS = ('key', 'finite', 'complex', 'power', 'commutative', 'symbol', 'constant', 'own_base')
+READS = ('key', 'finite', 'complex', 'power', 'commutative', 'symbol', 'constant', 'own_base', 'facts', 'rest')
 _I64 = 1 << 63
 
 # Kind enum: Rust's `Kind`, same order. Exact class only: a subclass is Other, or Function for a function.
@@ -114,6 +116,28 @@ class _Keep(Exception):
 
 def _template_name(f):
     return f'{getattr(f, "__module__", "?")}.{getattr(f, "__qualname__", repr(type(f)))}'
+
+
+# ---- prototype/conv-floor: the class-row cache. Not adopted into MEMOS: harness.state.reset_module_state clears those per
+# query in fresh.py, so an adopted cache would never be read across queries and fresh.py would test nothing about it.
+# SLICE_CONV_CACHE: '' off, '1' on, 'check' recomputes the row on every hit and compares.
+_CACHE = os.environ.get('SLICE_CONV_CACHE', '')
+# SLICE_CONV_LAZY=1: a term row leaves its facts out, and Rust reads them when something asks (`_read_facts`, `_read_rest`).
+_LAZY = os.environ.get('SLICE_CONV_LAZY') == '1'
+_ROW_CACHE = {}                 # {cls: (tokens, [(pos, text), ...])}: no term ids, its own string numbering
+_ROW_CACHE_EPOCH = [EPOCH[0]]
+_ROW_CACHE_CAP = 4096           # Function('f_i') makes a class per name
+CACHE_COUNTS = {'hit': 0, 'miss': 0, 'uncacheable': 0, 'epoch_clear': 0, 'cap_clear': 0, 'check': 0, 'check_differ': 0}
+CACHE_DIFFERS = []              # (class name, cached, recomputed) of each hit the check mode found different
+
+
+class _Str(int):
+    """A string's slot in a row being recorded: the token is patched with the query's own number when the row is used."""
+    # (no slots: a nonempty __slots__ is refused on an int subclass)
+
+
+class _Uncacheable(Exception):
+    """The row holds a term or an opaque value, which belong to one query."""
 
 
 class _Walk:
@@ -216,6 +240,28 @@ class _Walk:
         if c is not None:
             return c
         c = self.classes[cls] = len(self.classes)
+        if _CACHE:
+            e = _ROW_CACHE.get(cls)
+            if e is None:
+                CACHE_COUNTS['miss'] += 1
+                e = _record_row(cls)
+                if e is not None:
+                    _store_row(cls, e)
+            else:
+                CACHE_COUNTS['hit'] += 1
+                if _CACHE == 'check':
+                    _check_row(cls, e)
+            if e is not None:
+                out = self.class_rows
+                base = len(out)
+                out += e[0]
+                for pos, text in e[1]:
+                    out[base + pos] = self.s(text)
+                return c
+        self.class_row(cls)
+        return c
+
+    def class_row(self, cls):
         name = cls.__name__
         try:
             rank = ordering_of_classes.index(name)
@@ -257,7 +303,6 @@ class _Walk:
         self.enc(names, out)
         self.enc(_structural_class(cls), out)
         self.enc(cls._hashable_content is not Basic._hashable_content, out)
-        return c
 
     # ---- rows
 
@@ -277,6 +322,9 @@ class _Walk:
         # (key_growth.py). A lazy key can't add a term, so its row goes in here, where the eager key's walk put it.
         if t is S.NaN:
             self.term(S.NegativeInfinity)
+        if _LAZY:
+            out += (T_NONE, T_INT, F_READ, T_INT, 0)
+            return
         # The facts of section 9's Term facts row, each read as its site reads it. Key, is_finite, complex, decompose_power
         # and is_commutative can evaluate, so they're lazy: `read`.
         free = t.free_symbols
@@ -351,6 +399,30 @@ class _Walk:
     def _read_key(self, t):
         return default_sort_key(t)
 
+    def _read_facts(self, t):
+        """Free symbols and NUMBER, NAN, BAD, FLOAT, as `term_row` reads them. A free symbol the table doesn't hold misses and
+        refuses: conversion has finished, so it can't be added, where the eager row's `self.term(x)` walked it."""
+        free = sorted(t.free_symbols, key=lambda x: self.ids.get(x, -1))
+        bits = 0
+        if getattr(t, 'is_number', False) is True:
+            bits |= F_NUMBER
+        if t.has(S.NaN):
+            bits |= F_NAN
+        if t.has(*_BAD):
+            bits |= F_BAD
+        if t.has(Float):
+            bits |= F_FLOAT
+        return tuple(free), bits
+
+    def _read_rest(self, t):
+        """UNDEF, MAYBE_NAN and the level: only the row dump asks."""
+        bits = 0
+        if t.atoms(AppliedUndef):
+            bits |= F_UNDEF
+        if _may_be_nan(t):
+            bits |= F_MAYBE_NAN
+        return bits, constructed_noncommutative(t)
+
     def _read_finite(self, t):
         if not isinstance(t, Expr):
             return None
@@ -382,6 +454,63 @@ class _Walk:
         """What `constant_units` reads: `const_value` over `_CONST_BASIS`, in that order. Rust's copy of the basis comes
         from the offline file, and `knowledge_live.install` refuses one that differs."""
         return tuple(const_value(t, p) for p in _CONST_BASIS)
+
+
+class _RowRecorder(_Walk):
+    """`_Walk.class_row` itself, recording: the same encoder, with the strings left as slots and no way to reach a term."""
+
+    def s(self, text):
+        slot = _Str(0)
+        slot.text = text
+        return slot
+
+    def term(self, t):
+        raise _Uncacheable
+
+
+def _record_row(cls):
+    """(tokens, patches) of this class's row, or None if it can't be kept. A `_Keep` goes on up, uncached."""
+    w = _RowRecorder()
+    try:
+        w.class_row(cls)
+    except _Uncacheable:
+        CACHE_COUNTS['uncacheable'] += 1
+        return None
+    if w.opaque:
+        CACHE_COUNTS['uncacheable'] += 1
+        return None
+    tokens = w.class_rows
+    patches = [(i, x.text) for i, x in enumerate(tokens) if type(x) is _Str]
+    for i, _ in patches:
+        tokens[i] = 0
+    return tokens, patches
+
+
+def _store_row(cls, e):
+    if len(_ROW_CACHE) >= _ROW_CACHE_CAP:
+        CACHE_COUNTS['cap_clear'] += 1
+        _ROW_CACHE.clear()
+    _ROW_CACHE[cls] = e
+
+
+def _check_row(cls, e):
+    CACHE_COUNTS['check'] += 1
+    try:
+        fresh = _record_row(cls)
+    except _Keep as k:
+        fresh = ('keep', k.reason)
+    if fresh != e:
+        CACHE_COUNTS['check_differ'] += 1
+        CACHE_DIFFERS.append((cls.__name__, e, fresh))
+
+
+def _row_cache_check_epoch():
+    """Once per `convert`: every registration that can change a row bumps the epoch."""
+    if _ROW_CACHE_EPOCH[0] != EPOCH[0]:
+        _ROW_CACHE_EPOCH[0] = EPOCH[0]
+        if _ROW_CACHE:
+            CACHE_COUNTS['epoch_clear'] += 1
+            _ROW_CACHE.clear()
 
 
 def _structural_class(cls):
@@ -457,6 +586,8 @@ def convert(proposition, assumptions, eng):
             fa = None if assumptions is True else formula(assumptions, rel, True)
         except A.Unsupported:
             return Kept('out-of-scope')
+        if _CACHE:
+            _row_cache_check_epoch()
         w = _Walk()
         for cls in _PREFIX:
             w.klass(cls)
