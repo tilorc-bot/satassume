@@ -1,4 +1,5 @@
 //! The Python face of the term module. Python holds ints; nothing here keeps state across queries.
+use super::knowledge::{Rules, UnitPattern};
 use super::offline;
 use super::rat::Rat;
 use super::table::{Kind, Read, Reads, Refuse, TermTable, READ_RAISED, V};
@@ -7,7 +8,8 @@ use num_bigint::BigInt;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyDict, PyFrozenSet, PyList, PyTuple};
+use pyo3::IntoPyObjectExt;
 
 create_exception!(sa_solver, TermRefuse, PyException, "Rust refuses this query: it goes back to Python.");
 
@@ -267,6 +269,79 @@ impl PyOfflineData {
     }
 }
 
+/// The atoms family of runtime knowledge. Holds offline data only, so it can live as long as the process.
+#[pyclass(name = "Knowledge", frozen)]
+pub struct PyKnowledge(Rules);
+
+fn pattern<'py>(py: Python<'py>, k: &Rules, p: &UnitPattern) -> PyResult<Bound<'py, PyAny>> {
+    // Exactly `Pattern`'s fields, as `Pattern.__init__` and `units` build them.
+    let empty = PyTuple::empty(py);
+    let rules = PyList::empty(py);
+    for r in &p.rules {
+        let cs: Vec<(i32, &str, bool)> = r.iter().map(|&(i, pos)| (0, k.basis[i].as_str(), pos)).collect();
+        rules.append((empty.clone(), PyTuple::new(py, cs)?))?;
+    }
+    let clauses = PyList::empty(py);
+    for c in &p.clauses {
+        let lits: Vec<(i32, usize, bool)> = c.iter().map(|&(i, n)| (0, i, n)).collect();
+        let preds: Vec<usize> = c.iter().map(|&(i, _)| i).collect();
+        let internal: Vec<(i32, usize)> = c.iter().map(|&(i, n)| (0, 2 * i + n as usize)).collect();
+        clauses.append((PyTuple::new(py, lits)?, PyFrozenSet::new(py, preds)?, PyTuple::new(py, internal)?))?;
+    }
+    (rules, clauses, !p.clauses.is_empty(), p.complete).into_bound_py_any(py)
+}
+
+#[pymethods]
+impl PyKnowledge {
+    #[new]
+    fn new(data: &PyOfflineData) -> PyResult<Self> {
+        Rules::load(&data.0).map(PyKnowledge).map_err(PyValueError::new_err)
+    }
+
+    /// `symbol_units` of input term `t`, reading it now: (rules, clauses, used, complete). An Exception from the read is a
+    /// TermRefuse and anything past Exception goes on up as itself; the caller treats a TermRefuse as a fault.
+    fn symbol_units<'py>(&self, py: Python<'py>, table: &PyTermTable, t: u32) -> PyResult<Bound<'py, PyAny>> {
+        let k = &self.0;
+        let items = table.0.symbol_facts(TermId(t)).map_err(refuse)?;
+        let mut facts: Vec<(&str, bool)> = Vec::with_capacity(items.len());
+        for (name, value) in &items {
+            if let (true, Some(v)) = (k.in_vocab(name) && &**name != "commutative", value) {
+                facts.push((name, *v));
+            }
+        }
+        let p = k.units(&facts).map_err(PyValueError::new_err)?;
+        pattern(py, k, &p)
+    }
+
+    /// `constant_units` of input term `t`, reading it now. As `symbol_units`.
+    fn constant_units<'py>(&self, py: Python<'py>, table: &PyTermTable, t: u32) -> PyResult<Bound<'py, PyAny>> {
+        let k = &self.0;
+        let values = table.0.constant_facts(TermId(t)).map_err(refuse)?;
+        if values.len() != k.const_basis.len() {
+            return Err(PyValueError::new_err(format!("constant read {t}: {} values", values.len())));
+        }
+        let facts: Vec<(&str, bool)> =
+            k.const_basis.iter().zip(&values).filter_map(|(name, v)| v.map(|v| (name.as_str(), v))).collect();
+        let p = k.units(&facts).map_err(PyValueError::new_err)?;
+        pattern(py, k, &p)
+    }
+
+    /// The same for facts Python read off a node that isn't an input term: `[(pred, value), ...]`, already filtered.
+    fn units<'py>(&self, py: Python<'py>, facts: Vec<(String, bool)>) -> PyResult<Bound<'py, PyAny>> {
+        let f: Vec<(&str, bool)> = facts.iter().map(|(p, v)| (p.as_str(), *v)).collect();
+        let p = self.0.units(&f).map_err(PyValueError::new_err)?;
+        pattern(py, &self.0, &p)
+    }
+
+    fn const_basis(&self) -> Vec<String> {
+        self.0.const_basis.clone()
+    }
+
+    fn in_vocab(&self, pred: &str) -> bool {
+        self.0.in_vocab(pred)
+    }
+}
+
 #[pyfunction]
 fn sha256_hex(data: &[u8]) -> String {
     offline::sha256(data)
@@ -275,6 +350,7 @@ fn sha256_hex(data: &[u8]) -> String {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOfflineData>()?;
     m.add_class::<PyTermTable>()?;
+    m.add_class::<PyKnowledge>()?;
     m.add("TermRefuse", m.py().get_type::<TermRefuse>())?;
     m.add_function(wrap_pyfunction!(sha256_hex, m)?)?;
     Ok(())

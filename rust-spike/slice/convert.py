@@ -26,6 +26,8 @@ from sympy.logic.boolalg import BooleanAtom, BooleanFunction
 from satassume import sympy_api as A
 from satassume.knowledge.domain import constructed_noncommutative
 from satassume.knowledge.templates import _may_be_nan, registry
+from satassume.knowledge.templates._common import const_value
+from satassume.knowledge.templates.atoms import _CONST_BASIS
 from satassume.theories.euf.euf_adapter import _STRUCTURAL, _inherits_from_basic
 from satassume.theories.lra.lra_adapter import _BAD
 from sympy.integrals.transforms import IntegralTransform
@@ -44,7 +46,7 @@ REASONS = (
 T_NONE, T_FALSE, T_TRUE, T_INT, T_BIG, T_STR, T_TUPLE, T_TERM, T_RAT, T_OPAQUE, T_MISS = range(11)
 # What Rust reads lazily: Rust's `Read`, same order. Each can evaluate (surveyed in lazy_probe.py), so nothing here runs in
 # conversion: Rust asks, on the original object, when a key needs it, and memoizes in the table, which dies with the query.
-READS = ('key', 'finite', 'complex', 'power', 'commutative')
+READS = ('key', 'finite', 'complex', 'power', 'commutative', 'symbol', 'constant')
 _I64 = 1 << 63
 
 # Kind enum: Rust's `Kind`, same order. Exact class only: a subclass is Other, or Function for a function.
@@ -354,6 +356,15 @@ class _Walk:
 
     def _read_commutative(self, t):
         return t.is_commutative is True
+
+    def _read_symbol(self, t):
+        """What `symbol_units` reads, in dict order. Asked for when that template visits the term, as Python reads it."""
+        return tuple(t.assumptions0.items())
+
+    def _read_constant(self, t):
+        """What `constant_units` reads: `const_value` over `_CONST_BASIS`, in that order. Rust's copy of the basis comes
+        from the offline file, and `knowledge_live.install` refuses one that differs."""
+        return tuple(const_value(t, p) for p in _CONST_BASIS)
 
 
 def _structural_class(cls):
