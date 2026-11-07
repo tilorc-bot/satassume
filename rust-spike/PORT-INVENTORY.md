@@ -1,6 +1,6 @@
 # Port inventory: what moves to Rust, what is converted, what stays offline (issue 323)
 
-**Status: complete, by sa-port-3, 7 Nov. Sections 9 and 10 are final. No code was ported, and no Rust ran for anything here.** One census wasn't run and one is partial; section 8 says which, and what rests on them. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5, open, needs-human) was run as a separate tree, not applied.
+**Status: complete, by sa-port-3, 7 Nov. Sections 9 and 10 are final. No code was ported, and no Rust ran for anything here.** One census wasn't run and one is partial; section 8 says which, and what rests on them. Line numbers are of `rust-slice` at c230ee0. PR 328 (head 68c86b5, open, needs-human) was run as a separate tree for this document, and has since been applied to `rust-slice` as 2d00bea, unmerged (`slice/results/pr328-check.md`).
 
 **Where it stands:**
 
@@ -199,6 +199,8 @@ Appendix B lists every direct call site [census], collapsed per function. By kin
 
 This contradicts any reading of `set-iter-audit.md` (16 SAFE, 0 UNSAFE) as "set order doesn't reach state".
 
+**Repeated in the source [run, sa-port-4]:** with PR 328 applied on this branch the same sample gives 39 and 131 without it and 0 with it, on the same seed pairs (`slice/results/pr328-check.md`).
+
 **Cause: the sites PR 328 changes [run, sa-port-3].** The same tool on PR 328's tree (68c86b5, extracted with `git archive`, first on `PYTHONPATH`):
 
 | Workload | Without PR 328: state differs (seeds 0, 1) | With PR 328: state differs | Seed pairs run with PR 328 | Answers or session counts different |
@@ -258,7 +260,7 @@ Write against this order, from its diff:
 
 The PR leaves `engine.py:1713` and `:1767` alone, and its text says 31 sites still iterate sets of two or more on dev, moving nothing there. Those are real-hash orders in Python that a Rust first-seen order won't copy. Measured in section 5: with the PR, no solver state moves on dev, fuzz or corpus, so they need no order yet.
 
-PR 328 is held for Tilo and isn't on `rust-slice`. The port needs its order as the state reference, whether or not it merges (section 10).
+PR 328 is held for Tilo and isn't on main. It's on `rust-slice` as 2d00bea, so the port has its order as the state reference, whether or not it merges (section 10). Checks: `slice/results/pr328-check.md`. `lra/port/src/lra.rs` still carries the set copy, until step 1a.
 
 ## 7. Closest things to blockers
 
@@ -390,7 +392,7 @@ Answer as true, false, none or a status (inconsistent, uninterpreted, budget-lim
 
 ### What each step is held to
 
-- **Reference:** `rust-slice` plus PR 328 (section 5). It's held for Tilo; if it doesn't merge, the port's comparison still applies it. Answers and state match Python per session, on a fresh engine with memos cleared. For queries kept on Python there's nothing to compare.
+- **Reference:** `rust-slice`, which now holds PR 328 (2d00bea; section 5). The PR is held for Tilo; if it doesn't merge, the port's comparison still applies it. Answers and state match Python per session, on a fresh engine with memos cleared. For queries kept on Python there's nothing to compare.
 - **Report:** the suite with the three-number report, planted bugs where they apply, callback counts per component, and queries kept on Python, by reason. Speed is reported, not a gate.
 - **Standing rulings:**
   - A public-API version of `test_incremental_matches_fresh` and its family during step 5 at the latest, added alongside the existing tests.

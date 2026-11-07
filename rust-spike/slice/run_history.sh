@@ -6,10 +6,14 @@
 #   twice-*                                      run 3: each query twice in a row in one process
 #   seed1-*, seed2-*                             run 4: other hash seeds, recorded order
 # Each run leaves .jsonl, .tot, .err and a line in done.txt. historycmp.py reads them. Skips a run that finished.
+# The tree under test is the one holding this script, not the path env.sh names; tree.txt records what imported.
+T=$(cd "$(dirname "$0")/../.." && pwd)
 . ~/sa-rust-ids-work/env.sh
+PYTHONPATH=$T:$W/sympy:$W/shim
 export SA_EVAL_DATA PYTHONPATH
 W2=$(mkdir -p "$1" && cd "$1" && pwd); J=${2:-4}
 cd "$(dirname "$0")"
+$PY -c 'import satassume; print(satassume.__file__)' >"$W2/tree.txt"
 one() { # name seed backend wl flags...
   n=$1; seed=$2; b=$3; wl=$4; shift 4
   f="$W2/$n-$wl-$b"
