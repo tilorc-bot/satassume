@@ -5,6 +5,8 @@ Same install sequence as qt86.py (what `live.py --check plain` installs), so its
 Added keys:
   site:   "rust callable|caller file:line qualname|caller's caller file qualname|callee" -> count, for callees named *__hash__
   byrust: "rust callable|callee" -> count, for every callback
+  allhash: "callee|R or P|caller file qualname" -> count, for every Basic.__hash__ / Integer.__hash__ start, from Rust (R,
+           as counted in rust2py) or not (P: Python code or C called from Python). Its R rows sum to rust2py's two rows.
 A count, not a timing: the timer is meaningless under sys.monitoring. No satassume or crate source changes.
 MODE: rust (default) or py (no install; site/byrust stay empty).
 """
@@ -36,7 +38,8 @@ if wl == "fuzz":
 else:
     pairs = workload(wl)
 
-cnt = dict(py2rust=collections.Counter(), rust2py=collections.Counter(), site=collections.Counter(), byrust=collections.Counter())
+cnt = dict(py2rust=collections.Counter(), rust2py=collections.Counter(), site=collections.Counter(), byrust=collections.Counter(),
+           allhash=collections.Counter())
 M = sys.monitoring
 TOOL = 3
 M.use_tool_id(TOOL, "hash_trace")
@@ -116,9 +119,17 @@ def on_c_end(code, off, f, arg0):
         stack.pop()
 
 
+HASHES = ("Basic.__hash__", "Integer.__hash__")
+
+
 def on_start(code, off):
+    q = code.co_qualname
+    if q in HASHES:
+        up = sys._getframe(1).f_back
+        w = f"{short(up.f_code.co_filename)} {up.f_code.co_qualname}" if up is not None else "-"
+        fr = "R" if stack and stack[-1][1] == depth[0] else "P"
+        cnt["allhash"][f"{q}|{fr}|{w}"] += 1
     if stack and stack[-1][1] == depth[0]:
-        q = code.co_qualname
         cnt["rust2py"][q] += 1
         top = stack[-1]
         cnt["byrust"][f"{top[2]}|{q}"] += 1
