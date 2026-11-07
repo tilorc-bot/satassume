@@ -36,6 +36,38 @@ M = [
     ("solver.rs", "_learn: bump after joining learnts", "self.bump_clause(c); // before it joins learnts: a rescale here misses it, as in Python\n            self.learnts.push(c);", "self.learnts.push(c);\n            self.bump_clause(c);", True),
     ("solver.rs", "_pick_branch: decisions not counted on -1", "self.n.decisions += 1;\n                nxt = self.pick_branch();", "nxt = self.pick_branch();\n                if nxt >= 0 { self.n.decisions += 1; }", False),
     ("solver.rs", "theory unit reason stored as learnt", "Reason::Clause(self.new_clause(vec![l], false))", "Reason::Clause(self.new_clause(vec![l], true))", True),
+    # The boundary mutants, step 4. A batch: the crate has no batching layer, so these are the batches it has. Swapped callback order, a dropped result, a stale handle, and the rest of `lib.rs`'s callback layer. A list in place of the old text is several (old, new) sites.
+    ("solver.rs", "batch flush: pending trail reaches theories newest first", "let l = self.trail[i];\n            i += 1;\n            let v = (l >> 1) as usize;\n            if self.tmap[v].is_empty() {", "let l = self.trail[self.trail.len() - 1 - (i - self.thead)];\n            i += 1;\n            let v = (l >> 1) as usize;\n            if self.tmap[v].is_empty() {", False),
+    ("lib.rs", "batch: add_clauses in reverse", "run(|| Ok(self.s.add_clauses(&c)))", "{ let mut c = c; c.reverse(); run(|| Ok(self.s.add_clauses(&c))) }", False),
+    ("lib.rs", "batch: add_internal clauses in reverse", "run(|| self.s.add_internal(&c, mentions.as_deref()))", "{ let mut c = c; c.reverse(); run(|| self.s.add_internal(&c, mentions.as_deref())) }", False),
+    ("solver.rs", "callback order: check, last theory first", "for t in 0..self.theories.len() {\n            match self.theories[t].check() {", "for t in (0..self.theories.len()).rev() {\n            match self.theories[t].check() {", False),
+    ("solver.rs", "callback order: push_level, last theory first", "for t in &mut self.theories {\n            t.push_level();", "for t in self.theories.iter_mut().rev() {\n            t.push_level();", False),
+    ("solver.rs", "callback order: pop_level, last theory first", "for t in &mut self.theories {\n                    t.pop_level();", "for t in self.theories.iter_mut().rev() {\n                    t.pop_level();", False),
+    ("solver.rs", "callback order: propagate, last theory first", "for pi in 0..self.tprops.len() {", "for pi in (0..self.tprops.len()).rev() {", False),
+    ("solver.rs", "callback order: decide, last theory first", "for di in 0..self.tdecides.len() {", "for di in (0..self.tdecides.len()).rev() {", False),
+    ("solver.rs", "callback order: a shared variable's theories, last first", "for k in 0..self.tmap[v].len() {\n                let t = self.tmap[v][k] as usize;\n                if let Some(c) = self.theories[t].assert_lit(x) {\n                    self.thead = i;", "for k in (0..self.tmap[v].len()).rev() {\n                let t = self.tmap[v][k] as usize;\n                if let Some(c) = self.theories[t].assert_lit(x) {\n                    self.thead = i;", False),
+    ("lib.rs", "dropped: assert_lit's conflict", "ok(conflict_of(&r))\n    }\n\n    fn check", "let _ = ok(conflict_of(&r));\n        None\n    }\n\n    fn check", False),
+    ("lib.rs", "dropped: check's conflict", "Some(c) => Check::Conflict(c),", "Some(_) => Check::Nothing,", False),
+    ("lib.rs", "dropped: check's model", "None => Check::Model(PyObj(ok(r.get_item(1)).unbind())),", "None => Check::Nothing,", False),
+    ("lib.rs", "dropped: propagate's first pair", "PyProps(ok(r.try_iter()))", "let mut it = ok(r.try_iter());\n        let _ = it.next();\n        PyProps(it)", False),
+    ("lib.rs", "dropped: decide's answer", "Some(ok(int_of(&r)))", "let _ = ok(int_of(&r));\n            None", False),
+    ("lib.rs", "dropped: register_atom never reaches the theory", "ok(self.obj.bind(p).call_method1(self.n_register.bind(p), (var, payload)));", "let _ = (p, var, payload);", False),
+    ("lib.rs", "dropped: pop_level never reaches the theory", "ok(self.obj.bind(p).call_method0(self.n_pop.bind(p)));", "let _ = p;", False),
+    ("lib.rs", "dropped: assert_lit's exception", "let r = ok(self.obj.bind(p).call_method1(self.n_assert.bind(p), (x,)));", "let r = match self.obj.bind(p).call_method1(self.n_assert.bind(p), (x,)) {\n            Ok(r) => r,\n            Err(_) => return None,\n        };", False),
+    ("lib.rs", "conflict_of: any falsy first item, not `is False`", "!r.get_item(0)?.is(PyBool::new(r.py(), false))", "r.get_item(0)?.is_truthy()?", False),
+    ("lib.rs", "hook_lits: a theory's clause reversed", "xs.try_iter()?.map(|x| Ok(int_of(&x?)?.clamp(-(i32::MAX as i64), i32::MAX as i64) as i32 as u32)).collect()", "let mut v = xs.try_iter()?.map(|x| Ok(int_of(&x?)?.clamp(-(i32::MAX as i64), i32::MAX as i64) as i32 as u32)).collect::<PyResult<Vec<u32>>>()?;\n    v.reverse();\n    Ok(v)", False),
+    ("lib.rs", "stale handle: check goes to the process's latest theory at that place", [
+        ("struct PyObj(Py<PyAny>);", "thread_local! { static SLOT: std::cell::RefCell<Vec<Py<PyAny>>> = const { std::cell::RefCell::new(Vec::new()) }; }\n\nstruct PyObj(Py<PyAny>);"),
+        ("struct PyTheory {\n", "struct PyTheory {\n    slot: usize,\n"),
+        ("Ok(PyTheory {\n", "Ok(PyTheory {\n            slot: 0,\n"),
+        ("let t = PyTheory::new(theory)?;", "let mut t = PyTheory::new(theory)?;\n        t.slot = self.s.theories.len();\n        SLOT.with(|s| { let mut s = s.borrow_mut(); let o = theory.clone().unbind(); if s.len() <= t.slot { s.push(o); } else { s[t.slot] = o; } });"),
+        ("let r = ok(self.obj.bind(p).call_method0(self.n_check.bind(p)));", "let target = SLOT.with(|s| s.borrow()[self.slot].clone_ref(p));\n        let r = ok(target.bind(p).call_method0(self.n_check.bind(p)));"),
+    ], None, False),
+    ("lib.rs", "stale handle: a variable keeps the process's first payload", "ok(self.obj.bind(p).call_method1(self.n_register.bind(p), (var, payload)));", "thread_local! { static SEEN: std::cell::RefCell<std::collections::HashMap<i32, Py<PyAny>>> = std::cell::RefCell::new(std::collections::HashMap::new()); }\n        let payload = SEEN.with(|s| s.borrow_mut().entry(var).or_insert(payload).clone_ref(p));\n        ok(self.obj.bind(p).call_method1(self.n_register.bind(p), (var, payload)));", False),
+    ("lib.rs", "lifetime: __traverse__ misses the theory, so a cycle never frees", "visit.call(&t.obj)?;", "", False),
+    ("lib.rs", "theory_models: reversed", "let items = ms.iter().map(|m| m.as_ref().map(|x| x.0.clone_ref(p)));", "let items = ms.iter().rev().map(|m| m.as_ref().map(|x| x.0.clone_ref(p)));", False),
+    ("lib.rs", "run: a solver fault raises ValueError, not RuntimeError", "Ok(m) => Err(PyRuntimeError::new_err(m.0)),", "Ok(m) => Err(PyValueError::new_err(m.0)),", False),
+    ("lib.rs", "model: an unassigned variable reads False", "F => Some(false),\n                _ => None,", "_ => Some(false),", False),
 ]
 CHECKS = {"digest": ("step1", "answers"), "state": ("step1", "state"), "fuzz-a": ("fuzz", "answers"), "fuzz": ("fuzz", "state")}
 LOCK = threading.Lock()
@@ -159,6 +191,23 @@ def build(crate, d):
     return d
 
 
+def mutated_build(crate, work, i):
+    """Build mutant i in `crate` and restore the source. Exits if a site doesn't match exactly once."""
+    f, name, x, y, _ = M[i]
+    path = os.path.join(crate, "src", f)
+    src = open(path).read()
+    out = src
+    for old, new in x if isinstance(x, list) else [(x, y)]:
+        if out.count(old) != 1:
+            sys.exit(f"NOMATCH {name}: {out.count(old)} matches of {old[:60]!r}")
+        out = out.replace(old, new)
+    open(path, "w").write(out)
+    try:
+        return build(crate, os.path.join(work, f"m{i}"))
+    finally:
+        open(path, "w").write(src)
+
+
 def probe(d):
     return subprocess.run([sys.executable, "-c", PROBE, d], capture_output=True, text=True, check=True).stdout.strip()
 
@@ -184,18 +233,9 @@ def main():
     only = set(map(int, a.only.split(","))) if a.only else set(range(len(M)))
     base = build(crate, os.path.join(a.work, "base"))
     sos = {"base": base}
-    for i, (f, name, x, y, _) in enumerate(M):
-        if i not in only:
-            continue
-        path = os.path.join(crate, "src", f)
-        src = open(path).read()
-        if src.count(x) != 1:
-            sys.exit(f"NOMATCH {name}: {src.count(x)} matches")
-        open(path, "w").write(src.replace(x, y))
-        try:
-            sos[i] = build(crate, os.path.join(a.work, f"m{i}"))
-        finally:
-            open(path, "w").write(src)
+    for i in range(len(M)):
+        if i in only:
+            sos[i] = mutated_build(crate, a.work, i)
     # Load proof. Every build is different, each check verifies the file its process loaded, and one mutant visibly
     # behaves differently from the unmutated build on a fixed script.
     shas = {k: sha(os.path.join(d, "sa_solver.so")) for k, d in sos.items()}

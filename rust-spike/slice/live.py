@@ -226,6 +226,9 @@ def install_hooks_on_attach(cls):
     cls.attach_theory = attach_theory
 
 
+TWICE = 1000000
+
+
 def load(wl):
     from evalbench.common import workload
     if wl == "fuzz":
@@ -245,6 +248,8 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--only", help="comma-separated query numbers")
     ap.add_argument("--so", help="load sa_solver from this directory (a mutant)")
+    ap.add_argument("--fork", action="store_true", help="each query in its own child, forked after import")
+    ap.add_argument("--twice", action="store_true", help=f"each query twice in a row; the repeat is numbered q + {TWICE}")
     args = ap.parse_args()
     T.check = args.check
 
@@ -308,13 +313,22 @@ def main():
     if args.only:
         order = [int(x) for x in args.only.split(",")]
 
+    if args.twice:
+        order = [i for i in order for _ in (0, 1)]
     answers = {}
     reach, hist = {}, {}
     tot = dict(queries=len(order), solvers=0, queries_with_solver=0, queries_with_search=0, entries=0, hooks=0,
                searches=0)
     with open(args.out, "w") as out:
-        for i in order:
+        for pos, i in enumerate(order):
             p, a = pairs[i]
+            key = i + TWICE if args.twice and pos % 2 else i
+            if args.fork:
+                out.flush()
+                child = os.fork()
+                if child:
+                    os.waitpid(child, 0)
+                    continue
             T.solvers = []
             if i == q_detail:
                 T.detail = open(f_detail, "w")
@@ -327,8 +341,8 @@ def main():
                 r, msg = "ValueError", str(e)
             except Exception as e:
                 r, msg = "raise " + type(e).__name__, str(e)
-            answers[i] = r
-            rec = dict(q=i, ans=r, msg=ADDR.sub("0xX", msg))
+            answers[key] = r
+            rec = dict(q=key, ans=r, msg=ADDR.sub("0xX", msg))
             if args.check != "plain":
                 sess = []
                 for st in T.solvers:
@@ -354,12 +368,21 @@ def main():
             hist[str(r)] = hist.get(str(r), 0) + 1
             out.write(json.dumps(rec) + "\n")
             out.flush()
+            if args.fork:
+                os._exit(0)     # a child that died first leaves its row out, and livecmp counts the queries
             if T.detail:
                 T.detail.close()
                 T.detail = None
             T.solvers = []
         st = None
         gc.collect()
+        if args.fork:   # the counts are in the children's rows: the parent takes back what it can
+            out.flush()
+            rows = [json.loads(x) for x in open(args.out)]
+            answers = {x["q"]: x["ans"] for x in rows}
+            for x in rows:
+                hist[str(x["ans"])] = hist.get(str(x["ans"]), 0) + 1
+                tot["solvers"] += len(x.get("sessions", []))
         tot.update(wl=args.wl, mode=args.mode, check=args.check, shuffle=args.shuffle,
                    answers_sha=hashlib.sha256(json.dumps([answers[i] for i in sorted(answers)]).encode())
                    .hexdigest()[:16],

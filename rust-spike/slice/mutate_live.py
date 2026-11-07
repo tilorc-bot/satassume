@@ -17,7 +17,7 @@ import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from mutate_slice import M, build, sha  # noqa: E402
+from mutate_slice import M, build, mutated_build, sha  # noqa: E402
 
 CHECKS = {"dev-ans": ("dev", "plain"), "fuzz-ans": ("fuzz", "plain"), "dev-state": ("dev", "entry"),
           "fuzz-state": ("fuzz", "entry")}
@@ -138,18 +138,9 @@ def main():
     shutil.copytree(os.path.join(HERE, "solver_rs"), crate, dirs_exist_ok=True, ignore=shutil.ignore_patterns("target"))
     only = set(map(int, a.only.split(","))) if a.only else set(range(len(M)))
     sos = {"base": build(crate, os.path.join(a.work, "base"))}
-    for i, (f, name, x, y, _) in enumerate(M):
-        if i not in only:
-            continue
-        path = os.path.join(crate, "src", f)
-        src = open(path).read()
-        if src.count(x) != 1:
-            sys.exit(f"NOMATCH {name}: {src.count(x)} matches")
-        open(path, "w").write(src.replace(x, y))
-        try:
-            sos[i] = build(crate, os.path.join(a.work, f"m{i}"))
-        finally:
-            open(path, "w").write(src)
+    for i in range(len(M)):
+        if i in only:
+            sos[i] = mutated_build(crate, a.work, i)
     shas = {k: sha(os.path.join(d, "sa_solver.so")) for k, d in sos.items()}
     if len(set(shas.values())) != len(shas):
         sys.exit(f"VOID: two builds are the same file: {shas}")
