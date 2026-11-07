@@ -59,7 +59,7 @@ The planner asked for the state check on real refusals, because C changes what a
 
 | Real refusals | Checked | Left something | Emptied | No-rollback control: left something |
 |---|---:|---:|---:|---:|
-| a858030, before the fix, 8 tests | 19 | **10** | counted as left | 16, with `_INTERPRETED` |
+| a858030, before the fix, 8 tests | 19 | **10**, 5 of them `_INTERPRETED` | counted as left | 16 |
 | a44fac2, the fix, C without D, 8 tests | 19 | **0** | 32 | 16, with `_INTERPRETED` 5 |
 | **6533bdb, landing, C and D, 21 tests** | **345** | **0** | 52 | 342, without `_INTERPRETED` |
 
@@ -124,7 +124,7 @@ Suite, on this source: `plan:_eq_links` 16,186, `plan:_eq_infinity` 1,167, `is_:
 | Suite, all reasons | 363 | 345 |
 
 - Slice B's 19 on 6 was on an earlier base, so this table's base is db697fc's own.
-- **`mul: factors share a base` is 308 on both:** that's the refusal this line must keep. It is D's mode reaching it: it wasn't in slice B's counts.
+- **`mul: factors share a base` is 308 on both:** that's the refusal this line must keep. It wasn't in slice B's counts and is on D's base, so I read it as D's mode reaching it, but I didn't test that.
 - **Direct and shadow match on these forms:** `term_ids_direct`, 0 differs. Shadow dev and fuzz, 0 bad.
 - **The direct refusal columns aren't before and after:** slice C changed `term_ids_direct.py`'s generator, so head and base ran different cases. Head's `own as_base_exp, and Mul changes the factor` is 238, against base's 896, and `key: power base not an input term` under `sub` is 2,529 against 236. I'd expect some of those to be terms now passing `mul` and refusing at the key, but I can't say how many from these columns.
 - **A new refusal, safe:** `scaffold: rebuilt form differs from Rust`, 5 on direct, 0 on the suite and fresh. The check did its job. I didn't look at the 5 forms.
