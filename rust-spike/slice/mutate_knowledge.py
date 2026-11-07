@@ -24,8 +24,8 @@ import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KN, PY, TAB, CONV, LIVE = ('solver_rs/src/term/knowledge.rs', 'solver_rs/src/term/py.rs', 'solver_rs/src/term/table.rs',
-RW = 'solver_rs/src/rows.rs'
                            'convert.py', 'knowledge_live.py')
+RW = 'solver_rs/src/rows.rs'
 RR = 'solver_rs/src/realroots.rs'
 M = [
     ('rules', 'closure-sign-swap', KN, 'sw |= if free & EVEN != 0 { free << 1 } else { free >> 1 };', 'sw |= if free & EVEN != 0 { free >> 1 } else { free << 1 };'),
