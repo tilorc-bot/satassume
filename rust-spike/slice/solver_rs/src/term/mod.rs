@@ -32,3 +32,5 @@ impl ClassId {
 
 pub mod offline;
 pub mod py;
+pub mod rat;
+pub mod table;
