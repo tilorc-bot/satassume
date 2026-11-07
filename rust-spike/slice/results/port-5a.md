@@ -13,6 +13,7 @@ Tested source 55cb00d, on `rust-slice` d29e94b, x86-64, pareto0, .so db2e4182250
 
 ## The bar
 1. **Suite, `-n 8`:** 5,960 passed, 124 failed, 23 skipped, 18 xfailed; 6,125 ids. Against `suite-cea574c`: 0 new, 0 gone, 0 changed. Against `pr328-check/suite-rust`: 0 new, 0 gone, 1 changed, the known `test_split_beyond_the_certificate_bound_counts_as_exhausted`. `test_performance_smoke_300_vars` passed.
+   Against `pr328-check/suite-python`, by `suite_report.py`: 5,960 ran on Rust and passed, 77 kept on Python as needs internals, 46 failed on Rust from re-entry, plus 1 other that passes on Python, the test named above. 0 Python solvers in the Rust run.
 2. **Dev and fuzz:** all 8 comparisons MATCH. Dev digest 31cd0945c07f02a6, 1,985 queries, 918 Python sessions and 0 Python solvers on Rust. Fuzz 3,000 queries. Handlers empty on both.
 3. **Plants** (`--so`; `limits` is `test_session_limits.py`, 242 tests, 242 passed unplanted):
 
@@ -86,4 +87,4 @@ History and seed reruns, forced moves, the native path, mutants 2, 5, 6, 7, 9 an
 5b about 4 to 6 sessions, 5c about 4 to 6: sa-port-75's estimate, from source lengths only, nothing tried.
 
 ## Speed
-Quiet-lease timing after landing, reported separately. No target.
+**Not measured.** The quiet lease on pareto1 wasn't granted after the 10-minute queue on 7 Nov, 18:50 UTC, blocked by another session's shared lease, `synth-speed-2`, which held about 3 hours more unless released. No number from another machine or an unpinned run stands in for it. To run it from orion: `machine run pareto1 --quiet -r WHY -- bash ~/sp19/job84.sh ~/sp19/timing.sh`, dev and fuzz, Python and Rust alternating, 3 rounds; output in `~/sp19/sa-rust-ids-work/sa-port-84/timing/times.txt`. No target.
