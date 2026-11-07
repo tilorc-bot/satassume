@@ -8,7 +8,7 @@ only died, which includes KnowledgeFault), or `no`:
   shadow  knowledge_fresh dev --mode shadow; a field mismatch, or an answer or digest off plain.
   off     knowledge_fresh dev, fuzz and value --mode atoms against plain, byte for byte: answers and session digests only, the real mode.
           `off_by_wl` scores each workload; `off` and `off_wl` are the first that caught it.
-  unit    test_knowledge_common.py, the random and hand cases against Python's `resolve` and `Pattern`.
+  unit    test_knowledge_common.py, test_knowledge_realroots.py and test_knowledge_core.py against Python's.
 `off` is what a user's run would see; a bug only `shadow` catches changed a field and no answer. Each row records which build
 loaded: a column from another build is void. The base row must read `no` in all three. WORK/results.jsonl as each ends.
 """
@@ -72,6 +72,21 @@ M = [
     ('common', 'common-undecidable-premise-kept', KN, "R::Decided(false) | R::Undecidable => continue 'rule,", "R::Decided(false) => continue 'rule,\n                R::Undecidable => {}"),
     ('common', 'common-internal-sign', PY, '(k, 2 * i + n as usize)', '(k, 2 * i + !n as usize)'),
     ('wiring', 'live-any-class-row', LIVE, 'if i is not None and type(q.objects[i]) is type(value):', 'if i is not None:'),
+    ('core', 'core-half-split-q3', 'solver_rs/src/term/tcore.rs', 'if c.d != BigInt::from(2) {', 'if c.d != BigInt::from(2) && c.d != BigInt::from(3) {'),
+    ('core', 'core-half-parity', 'solver_rs/src/term/tcore.rs', 'let parity = |r: &Rat| -> u8 { if two.mul(r).n.mod_floor(&BigInt::from(2)).is_zero() { 0 } else { 1 } };', 'let parity = |r: &Rat| -> u8 { if two.mul(r).n.mod_floor(&BigInt::from(2)).is_zero() { 1 } else { 0 } };'),
+    ('core', 'core-coeff-no-rest', 'solver_rs/src/term/tcore.rs', 'let t = if rest.len() == 1 { Rest::One(rest[0]) } else { Rest::Product(rest.to_vec()) };', 'let t = Rest::One(rest[0]);'),
+    ('core', 'core-bound-zero-kept', 'solver_rs/src/term/tcore.rs', 'if self.rat(c).ok_or(Refuse("core: a Rational class without a value"))?.is_zero() {', 'if false {'),
+    ('core', 'core-bound-number-kept', 'solver_rs/src/term/tcore.rs', '            if self.core_is_number(u)? {\n                return Ok(None);', '            if false && self.core_is_number(u)? {\n                return Ok(None);'),
+    ('core', 'core-recip-any-exp', 'solver_rs/src/term/tcore.rs', 'if self.class_of(args[1]).kind != Kind::NegativeOne || self.core_is_number(args[0])? {', 'if self.core_is_number(args[0])? {'),
+    ('core', 'core-imag-two-rest', 'solver_rs/src/term/tcore.rs', 'if rest.len() + 1 != args.len() || rest.len() > 1 {', 'if rest.len() + 1 != args.len() || rest.len() > 2 {'),
+    ('core', 'core-imag-split-partial', 'solver_rs/src/term/tcore.rs', 'None => none = true,    // Python reads every term before it tests for None', 'None => {}'),
+    ('core', 'core-half-rules-parity', 'solver_rs/src/term/tcore.rs', 'out.push((prem, vec![(m, "integer", num_odd == 0)]));', 'out.push((prem, vec![(m, "integer", num_odd == 1)]));'),
+    ('core', 'core-half-rules-max', 'solver_rs/src/term/tcore.rs', 'if o.len() > MAX_HALF_ODD {', 'if o.len() >= MAX_HALF_ODD {'),
+    ('core', 'core-bound-rules-sign', 'solver_rs/src/term/tcore.rs', 'let pos = c1.n.is_positive();\n    for (ps, lower, b) in INT_BOUNDS {', 'let pos = !c1.n.is_positive();\n    for (ps, lower, b) in INT_BOUNDS {'),
+    ('core', 'core-recip-rules-noswap', 'solver_rs/src/term/tcore.rs', '        if c1.n.is_negative() {\n            std::mem::swap(&mut a, &mut b);', '        if false {\n            std::mem::swap(&mut a, &mut b);'),
+    ('core', 'core-imag-rules-strict', 'solver_rs/src/term/tcore.rs', 'if k == j { strict[k] } else { weak[k] }', 'if k == j { weak[k] } else { weak[k] }'),
+    ('core', 'core-imag-number-rules', 'solver_rs/src/term/tcore.rs', '(vec![(0, "real", true), (0, "zero", false)], vec![(1, "imaginary", true)]),', '(vec![(0, "real", true)], vec![(1, "imaginary", true)]),'),
+    ('core', 'core-not-unit-two', 'solver_rs/src/term/tcore.rs', '*lower == pos && v >= two || *lower != pos && v <= minus_two', '*lower == pos && v >= Rat::int(1) || *lower != pos && v <= minus_two'),
     ('rows', 'rows-neg-dropped', RW, 'Ast::Neg(x) => eval(py, x, number)?.neg(),', 'Ast::Neg(x) => eval(py, x, number)?,'),
     ('rows', 'rows-sub-is-add', RW, 'Op::Sub => x.sub(&y).ok()?,', 'Op::Sub => x.add(&y).ok()?,'),
     ('rows', 'rows-div-is-mul', RW, 'Op::Div => x.div(&y).ok()?,', 'Op::Div => x.mul(&y).ok()?,'),
@@ -190,7 +205,7 @@ def score(name, kind, path, old, new, a):
     row['rows_direct'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
     # unit
     with open(os.path.join(d, 'unit.txt'), 'w') as f:
-        rc = subprocess.run([PYTHON, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', os.path.join(d, 'test_knowledge_common.py'), os.path.join(d, 'test_knowledge_realroots.py')], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
+        rc = subprocess.run([PYTHON, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', os.path.join(d, 'test_knowledge_common.py'), os.path.join(d, 'test_knowledge_realroots.py'), os.path.join(d, 'test_knowledge_core.py')], env=env, cwd=d, stdout=f, stderr=subprocess.STDOUT).returncode
     row['unit'] = 'cmp' if rc == 1 else 'no' if rc == 0 else f'rc={rc}'
     row['outcome'] = 'scored'
     for f in os.listdir(d):

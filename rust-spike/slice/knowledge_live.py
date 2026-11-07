@@ -38,6 +38,7 @@ from satassume.knowledge.templates import _rows_runtime, wiring
 from satassume.knowledge.templates import _common, atoms, registry
 from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, const_value
 
+import knowledge_core_live
 import term_live
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -452,6 +453,8 @@ def install(shadow=False, data=None):
     registry._clauses_cache.clear()
     _bind_value_units(rust_value_units)
 
+    # Step 6e: core.py's Add family (knowledge_core_live.py).
+    undo_core = knowledge_core_live.install(shadow, COUNTS, KnowledgeFault, _mismatch)
     undo_term = term_live.install()
 
     def undo():
@@ -459,6 +462,7 @@ def install(shadow=False, data=None):
         active[0] = False
         wiring.generator, wiring.constant_value = py_generator, py_constant_value
         undo_term()
+        undo_core()
         _common.resolve, _common.Pattern = py_resolve, py_pattern
         for cls, ts in saved_lists.items():
             registry._by_class[cls][:] = ts

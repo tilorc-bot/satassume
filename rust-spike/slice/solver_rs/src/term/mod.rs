@@ -31,6 +31,7 @@ impl ClassId {
 }
 
 pub mod algebra;
+pub mod tcore;
 pub mod knowledge;
 pub mod lra_read;
 pub mod offline;

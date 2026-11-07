@@ -1,6 +1,7 @@
 //! The Python face of the term module. Python holds ints; nothing here keeps state across queries.
 use super::lra_read::{self, items_py, Constraint, Lra, E as LraErr};
 use std::collections::HashMap;
+use super::tcore;
 use super::knowledge::{self, Rules, UnitPattern};
 use super::offline;
 use super::rat::Rat;
@@ -665,6 +666,124 @@ fn sha256_hex(data: &[u8]) -> String {
     offline::sha256(data)
 }
 
+// ---- core.py (step 6e): splits over ids, rule builders over small ints and rationals. `knowledge_live.py` builds the keys.
+
+fn core_ct<'py>(py: Python<'py>, ct: &tcore::CoeffTerm) -> PyResult<(Option<u32>, Bound<'py, PyAny>)> {
+    let t = match &ct.1 {
+        tcore::Rest::One(t) => t.0.into_bound_py_any(py)?,
+        tcore::Rest::Product(fs) => fs.iter().map(|f| f.0).collect::<Vec<u32>>().into_bound_py_any(py)?,
+    };
+    Ok((ct.0.map(|c| c.0), t))
+}
+
+fn core_ids(ids: Vec<u32>) -> Vec<TermId> {
+    ids.into_iter().map(TermId).collect()
+}
+
+fn core_rat(p: BigInt, q: BigInt) -> PyResult<Rat> {
+    if q == BigInt::from(0) {
+        return Err(PyValueError::new_err("core: zero denominator"));
+    }
+    Ok(Rat::new(p, q))
+}
+
+/// `_half_split`: `(a0, [(a_k % 2, c_k, t_k)])`, `c_k` an id or None for 1, `t_k` an id or a list of factor ids for Python's
+/// `kept_product`.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn core_half_split<'py>(
+    py: Python<'py>,
+    table: &PyTermTable,
+    args: Vec<u32>,
+) -> PyResult<Option<(u8, Vec<(u8, Option<u32>, Bound<'py, PyAny>)>)>> {
+    let Some((a0, terms)) = table.0.core_half_split(&core_ids(args)).map_err(refuse)? else { return Ok(None) };
+    let mut out = Vec::with_capacity(terms.len());
+    for (a, ct) in &terms {
+        let (c, t) = core_ct(py, ct)?;
+        out.push((*a, c, t));
+    }
+    Ok(Some((a0, out)))
+}
+
+/// `_bound_split`: `(c0, c, t)` as `core_half_split` gives its terms.
+#[pyfunction]
+fn core_bound_split<'py>(
+    py: Python<'py>,
+    table: &PyTermTable,
+    args: Vec<u32>,
+) -> PyResult<Option<(u32, Option<u32>, Bound<'py, PyAny>)>> {
+    let Some((c0, ct)) = table.0.core_bound_split(&core_ids(args)).map_err(refuse)? else { return Ok(None) };
+    let (c, t) = core_ct(py, &ct)?;
+    Ok(Some((c0.0, c, t)))
+}
+
+#[pyfunction]
+fn core_recip_base(table: &PyTermTable, u: u32) -> PyResult<Option<u32>> {
+    table.0.core_recip_base(TermId(u)).map(|x| x.map(|v| v.0)).map_err(refuse)
+}
+
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn core_imag_split(table: &PyTermTable, args: Vec<u32>) -> PyResult<Option<Vec<(Option<u32>, Option<u32>)>>> {
+    let r = table.0.core_imag_split(&core_ids(args)).map_err(refuse)?;
+    Ok(r.map(|ts| ts.into_iter().map(|(c, x)| (c.map(|v| v.0), x.map(|v| v.0))).collect()))
+}
+
+#[pyfunction]
+fn core_is_number(table: &PyTermTable, t: u32) -> PyResult<bool> {
+    table.0.core_is_number(TermId(t)).map_err(refuse)
+}
+
+/// Rust's side of `kept_product(factors)`: `mul`'s product, if it is a Mul that keeps exactly these factors. Raises
+/// TermRefuse where `mul` refuses.
+#[pyfunction]
+fn core_kept_product(mut table: PyRefMut<'_, PyTermTable>, factors: Vec<u32>) -> PyResult<Option<u32>> {
+    let fs = core_ids(factors);
+    let t = table.0.mul(fs.clone()).map_err(refuse)?;
+    let row = table.0.row(t);
+    if table.0.class_of(t).kind != Kind::Mul || row.args.len() != fs.len() {
+        return Ok(None);
+    }
+    let (mut a, mut b): (Vec<u32>, Vec<u32>) = (row.args.iter().map(|x| x.0).collect(), fs.iter().map(|x| x.0).collect());
+    a.sort_unstable();
+    b.sort_unstable();
+    Ok(if a == b { Some(t.0) } else { None })
+}
+
+#[pyfunction]
+fn core_half_rules(a0: u8, odd: Vec<bool>, m: usize) -> PyResult<Vec<tcore::Rule>> {
+    if odd.len() < m {
+        return Err(PyValueError::new_err("core: odd shorter than m"));
+    }
+    Ok(tcore::half_rules(a0, &odd, m))
+}
+
+#[pyfunction]
+fn core_bound_rules(p0: BigInt, q0: BigInt, p1: BigInt, q1: BigInt) -> PyResult<Vec<tcore::Rule>> {
+    Ok(tcore::bound_rules(&core_rat(p0, q0)?, &core_rat(p1, q1)?))
+}
+
+#[pyfunction]
+fn core_recip_rules(p0: BigInt, q0: BigInt, p1: BigInt, q1: BigInt) -> PyResult<Vec<tcore::Rule>> {
+    Ok(tcore::recip_rules(&core_rat(p0, q0)?, &core_rat(p1, q1)?))
+}
+
+#[pyfunction]
+fn core_imag_rules(signs: Vec<i8>, c_pos: bool, c_neg: bool) -> Vec<tcore::Rule> {
+    tcore::imag_rules(&signs, c_pos, c_neg)
+}
+
+#[pyfunction]
+fn core_imag_number_rules() -> Vec<tcore::Rule> {
+    tcore::imag_number_rules()
+}
+
+/// Indices into `_INT_BOUNDS`.
+#[pyfunction]
+fn core_not_unit_premises(p0: BigInt, q0: BigInt, p1: BigInt, q1: BigInt) -> PyResult<Vec<usize>> {
+    Ok(tcore::not_unit_premises(&core_rat(p0, q0)?, &core_rat(p1, q1)?))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOfflineData>()?;
     m.add_class::<PyTermTable>()?;
@@ -673,5 +792,17 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sha256_hex, m)?)?;
     m.add_function(wrap_pyfunction!(lra_plant, m)?)?;
     m.add_function(wrap_pyfunction!(lra_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(core_half_split, m)?)?;
+    m.add_function(wrap_pyfunction!(core_bound_split, m)?)?;
+    m.add_function(wrap_pyfunction!(core_recip_base, m)?)?;
+    m.add_function(wrap_pyfunction!(core_imag_split, m)?)?;
+    m.add_function(wrap_pyfunction!(core_is_number, m)?)?;
+    m.add_function(wrap_pyfunction!(core_kept_product, m)?)?;
+    m.add_function(wrap_pyfunction!(core_half_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(core_bound_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(core_recip_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(core_imag_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(core_imag_number_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(core_not_unit_premises, m)?)?;
     Ok(())
 }
