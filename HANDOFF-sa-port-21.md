@@ -16,6 +16,8 @@ Read first: my brief `~/.local/state/agent/briefs/sa-port-21-20261107T092600Z.tx
 
 **Don't rsync the tree to pareto1 while these run.** They start new processes from `~/sp19/dev/sa-port-19`, and `live.py` and `rust_plugin.py` are newer on orion than there on purpose. If a job fails, its log is the lease log above.
 
+**Latest reading, `suite2`, at 10:00 UTC:** suite2 Rust rows 6125, failed 123, off the base lists 0, on the lists but not failing 0; caught 49: {('verdict<consistent_by', 'Uninterpreted'): 3, ('verdict<_consistent', 'Uninterpreted'): 7, ('verdict<_consistent', 'AttributeError'): 38, ('complete_check', 'RuntimeError'): 1}. Python: still running. Rust's exit line: `123 failed, 5961 passed, 23 skipped, 18 xfailed`. This is on df393bb's source, so it isn't the rebased result.
+
 ## What ran, and what it shows
 
 ### Suite, first run, final source at df393bb, pareto1, shuffled, `-n 8`: `$O/suite`
