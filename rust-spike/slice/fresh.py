@@ -22,6 +22,7 @@ ap.add_argument("mode", choices=["py", "rust"])
 ap.add_argument("out")
 ap.add_argument("--counts")
 ap.add_argument("--so")
+ap.add_argument("--handlers", help="count the quiet Exception handlers here: handler_count.py")
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
@@ -88,6 +89,9 @@ if a.wl == "fuzz":
     pairs = queries(424242)
 else:
     pairs = workload(a.wl)
+if a.handlers:
+    import handler_count
+    handler_count.install(a.handlers)
 sessions = []
 _init = E.Session.__init__
 
@@ -106,6 +110,8 @@ def digest(s):
 
 with open(a.out, "w") as fh:
     for i, (p, q) in enumerate(pairs):
+        if a.handlers:
+            handler_count.where = i
         reset_module_state(sympy_cache=False)
         sympy_api.set_default_engine(E.Engine())
         sessions.clear()
