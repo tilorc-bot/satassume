@@ -74,6 +74,11 @@ if BACKEND == "rust":
 
         _euf.EUFTheory = _euf_adapter.EUFTheory = EUFTheory
 
+    # Before collection, so that a test module's `from ... import LRATheory` gets it. SLICE_LRA=python: solver only.
+    if os.environ.get("SLICE_LRA", "rust") == "rust":
+        import lra_backend
+        lra_backend.install()
+
 # Rust EUF on Python's solver: the tests whose harness reads Solver internals fail on the crate's solver before any EUF
 # answer is read (the 77 and 46), so this is the only way they check the Rust EUF. SLICE_EUF=rust asks for it.
 if BACKEND != "rust" and os.environ.get("SLICE_EUF") == "rust":
@@ -123,6 +128,8 @@ def _failure(rep):
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
     before = dict(counts)
+    lb = sys.modules.get("lra_backend")
+    lra_before = dict(lb.counts) if lb else None
     private_writes.clear()
     os.environ["PROBE_TEST"] = item.nodeid      # probe_build.py's counters read it; nothing else does
     h = sys.modules.get("theory_harness") if os.environ.get("SLICE_AUDIT_OFF") else None
@@ -146,7 +153,8 @@ def pytest_runtest_protocol(item, nextitem):
             outcome = "xpassed"
     _record(id=item.nodeid, backend=BACKEND, outcome=outcome, failure=fail,
             rust_made=counts["rust_made"] - before["rust_made"], py_made=counts["py_made"] - before["py_made"],
-            private_writes=sorted(private_writes))
+            private_writes=sorted(private_writes),
+            lra={k: v - lra_before[k] for k, v in lb.counts.items()} if lb else None)
 
 
 @pytest.hookimpl(hookwrapper=True)

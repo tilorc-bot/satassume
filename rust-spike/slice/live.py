@@ -70,6 +70,7 @@ class T:
     check = "entry"
     dump = None
     digest = None
+    hook_self = None
     outside = 0         # hook calls with no solver call on the stack
     created = 0
     dropped = 0
@@ -185,8 +186,21 @@ def wrap_hooks(cls):
 def _hook(cname, name, f):
     tag = cname + "." + name
 
-    @functools.wraps(f)
     def w(self, *a):
+        # A theory calling its own hook (LRATheory._check's push_level) isn't a boundary crossing: Python's does and
+        # Rust's core can't be seen to. The stream holds what the solver called.
+        if T.hook_self is self:
+            return f(self, *a)
+        outer, T.hook_self = T.hook_self, self
+        try:
+            return _hook_call(self, f, a, cname, name, tag)
+        finally:
+            T.hook_self = outer
+    return functools.wraps(f)(w)
+
+
+def _hook_call(self, f, a, cname, name, tag):
+    if True:
         st = T.stack[-1] if T.stack else None
         T.hookcount[tag] = T.hookcount.get(tag, 0) + 1
         args = show(a)
@@ -206,7 +220,6 @@ def _hook(cname, name, f):
         if T.detail:
             T.detail.write(json.dumps(dict(ev="hook", line=line[:2000])) + "\n")
         return r
-    return w
 
 
 def _gen(st, cname, name, args, r):
@@ -257,6 +270,7 @@ def main():
     from satassume import engine, ref, sympy_api
     from satassume.sat import solver as SV
     import state
+    lra_groups = {}
     T.digest = state.digest
     pairs = load(args.wl)
     if args.handlers:
@@ -285,6 +299,9 @@ def main():
         if backend:
             backend.install()
     elif args.check == "raw":
+        if backend and os.environ.get("SLICE_LRA", "rust") == "rust":
+            import lra_backend
+            lra_backend.install()
         if backend:
             make, T.dump = backend.make, state.with_euf(backend.RustSolver.dump, backend.RustSolver.theories)
         else:
@@ -298,6 +315,9 @@ def main():
         engine.Solver = ref.Solver = factory
     else:
         if args.mode == "rust":
+            if os.environ.get("SLICE_LRA", "rust") == "rust":
+                import lra_backend
+                lra_backend.install()
             base, T.dump = backend.RustSolver, state.with_euf(backend.RustSolver.dump, backend.RustSolver.theories)
         else:
             base, T.dump = SV.Solver, state.with_euf(state.dump_py, SV.Solver.theories)
@@ -363,8 +383,11 @@ def main():
                     if T.detail:
                         json.dump(dict(ev="end", state=canon(T.dump(st.solver))), T.detail)
                         T.detail.write("\n")
+                    lra_d, group = state.lra_of(st.solver)
+                    if group:
+                        lra_groups[group] = lra_groups.get(group, 0) + 1
                     sess.append(dict(end=e, stream=st.h.hexdigest(), entries=st.entries, hooks=st.hooks,
-                                     searches=st.searches))
+                                     searches=st.searches, lra=lra_d, group=group))
                     tot["entries"] += st.entries
                     tot["hooks"] += st.hooks
                     tot["searches"] += st.searches
@@ -397,6 +420,7 @@ def main():
                    reentry=T.reentry, addr_masked=T.addr, hook_outside_solver=T.outside, hook_counts=T.hookcount,
                    entry_raises=T.raises, reach=reach, answers=hist,
                    theory_classes=sorted(c.__name__ for c in T.theory_classes),
+                   lra_groups=lra_groups,
                    hashseed=os.environ.get("PYTHONHASHSEED"))
         if backend:
             tot["backend_created"], tot["backend_dropped"] = backend.created, backend.dropped

@@ -22,7 +22,7 @@ def main():
     first = {}
     end_only = "--end-only" in sys.argv
     n = dict(queries_a=len(a), queries_b=len(b), both=0, answer_diff=0, msg_diff=0, session_count_diff=0, sessions=0,
-             end_diff=0, stream_diff=0)
+             end_diff=0, stream_diff=0, lra_diff=0, group_counts={})
     for q in sorted(set(a) & set(b)):
         x, y = a[q], b[q]
         n["both"] += 1
@@ -41,6 +41,13 @@ def main():
             if u["end"] != v["end"]:
                 n["end_diff"] += 1
                 first.setdefault("end", (q, i))
+            if u.get("lra") != v.get("lra"):
+                n["lra_diff"] += 1
+                first.setdefault("lra", (q, i, v.get("group")))
+            g = v.get("group")
+            if g:
+                g = g.split(":")[0]
+                n["group_counts"][g] = n["group_counts"].get(g, 0) + 1
             if not end_only and u["stream"] != v["stream"]:
                 n["stream_diff"] += 1
                 first.setdefault("stream", (q, i, u["entries"], v["entries"], u["hooks"], v["hooks"]))

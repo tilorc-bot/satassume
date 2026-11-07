@@ -3,7 +3,8 @@
 //!
 //! What must keep Python's order, and how:
 //! - Row dicts: insertion order decides conflict literal order and later rows, so `Row` is an ordered Vec.
-//! - `_dirty`: a set of ints whose iteration order decides propagate's order, so `PySet` reproduces CPython's table.
+//! - `_dirty`: `LRATheory.propagate` walks it in ascending order (`sorted`), so a `BTreeSet`. No hash order anywhere:
+//!   the `Map`s below are only looked up, and `dump_*` sorts or uses `reg_order`.
 //! - `_cols`: sets whose order changes nothing (each row's update is independent), so they are plain Vecs.
 //! - `for b in rows`: only the minimum violating basic variable matters, so a scan in variable order is the same.
 use crate::rat::Rat;
@@ -128,95 +129,25 @@ impl Row {
     }
 }
 
-/// CPython 3.12's set of small non-negative ints, for its iteration order. Only add and iterate: `_dirty` never
-/// discards. hash(x) == x. See set_add_entry and set_table_resize in Objects/setobject.c.
-pub struct PySet {
-    table: Vec<i64>, // -1 empty
-    mask: usize,
-    fill: usize,
+/// `_dirty`. `first_added` exists only for the planted bug that walks it in the order of first addition.
+#[derive(Default)]
+pub struct Dirty {
+    pub(crate) set: std::collections::BTreeSet<u32>,
     #[cfg(feature = "mutants")]
     first_added: Vec<u32>,
 }
 
-const LINEAR_PROBES: usize = 9;
-
-impl PySet {
-    pub fn new() -> PySet {
-        PySet {
-            table: vec![-1; 8],
-            mask: 7,
-            fill: 0,
-            #[cfg(feature = "mutants")]
-            first_added: Vec::new(),
-        }
+impl Dirty {
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty()
     }
     #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.fill == 0
-    }
     pub fn add(&mut self, key: u32) {
         #[cfg(feature = "mutants")]
-        if !self.first_added.contains(&key) {
+        if !self.set.contains(&key) {
             self.first_added.push(key);
         }
-        let hash = key as usize;
-        let key = key as i64;
-        let mask = self.mask;
-        let mut i = hash & mask;
-        let mut perturb = hash;
-        loop {
-            let probes = if i + LINEAR_PROBES <= mask { LINEAR_PROBES } else { 0 };
-            for j in 0..=probes {
-                let e = self.table[i + j];
-                if e == -1 {
-                    self.table[i + j] = key;
-                    self.fill += 1;
-                    if self.fill * 5 >= mask * 3 {
-                        self.resize();
-                    }
-                    return;
-                }
-                if e == key {
-                    return;
-                }
-            }
-            perturb >>= 5;
-            i = (i.wrapping_mul(5).wrapping_add(1).wrapping_add(perturb)) & mask;
-        }
-    }
-    fn resize(&mut self) {
-        let minused = if self.fill > 50000 { self.fill * 2 } else { self.fill * 4 };
-        let mut newsize = 8;
-        while newsize <= minused {
-            newsize <<= 1;
-        }
-        let old = std::mem::replace(&mut self.table, vec![-1; newsize]);
-        self.mask = newsize - 1;
-        let mask = self.mask;
-        for &key in old.iter().filter(|&&k| k != -1) {
-            let hash = key as usize;
-            let mut i = hash & mask;
-            let mut perturb = hash;
-            'find: loop {
-                if self.table[i] == -1 {
-                    self.table[i] = key;
-                    break 'find;
-                }
-                if i + LINEAR_PROBES <= mask {
-                    for j in 1..=LINEAR_PROBES {
-                        if self.table[i + j] == -1 {
-                            self.table[i + j] = key;
-                            break 'find;
-                        }
-                    }
-                }
-                perturb >>= 5;
-                i = (i.wrapping_mul(5).wrapping_add(1).wrapping_add(perturb)) & mask;
-            }
-        }
-    }
-    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
-        self.table.iter().filter(|&&k| k != -1).map(|&k| k as u32)
+        self.set.insert(key);
     }
 }
 
@@ -230,7 +161,7 @@ pub enum CheckResult {
     Sat(Vec<(u32, Rat)>), // the model: term id, value, in variable order
 }
 
-enum Trail {
+pub(crate) enum Trail {
     Lo(u32, Option<Bound>, i32),
     Up(u32, Option<Bound>, i32),
     Asg(u32),
@@ -302,38 +233,48 @@ fn ceil_d(q: &Rat, d: &Rat) -> Rat {
 
 pub struct Theory {
     pub exhausted: bool,
+    /// `self.eager`: run the simplex inside `assert_lit` of a bound.
+    pub eager: bool,
+    /// `self.branched_rational`.
+    pub branched_rational: bool,
+    /// Every registered literal in order: the insertion order of `_atoms`, `_ints`, `_ground` and `_ints_on`, which the
+    /// maps don't keep. Only the dump reads it.
+    pub(crate) reg_order: Vec<u32>,
     pub stats: Stats,
-    key: Vec<i64>, // term id, -1 for a slack
-    var_of: Map<u32, u32>,
-    slack_of: Map<Vec<(u32, Rat)>, u32>,
-    forms: Map<Vec<(u32, Rat)>, (u32, Rat)>,
-    lo: Vec<Option<Bound>>,
-    up: Vec<Option<Bound>>,
-    lo_r: Vec<i32>,
-    up_r: Vec<i32>,
-    vq: Vec<Rat>,
-    vd: Vec<Rat>,
-    rows: Vec<Option<Row>>,
-    nrows: usize,
-    cols: Vec<Vec<u32>>,
-    atoms: Map<u32, (u32, Kind, Rat)>,
-    ground: Map<u32, bool>,
-    atoms_on: Vec<Vec<u32>>,
-    assigned: Map<u32, bool>,
-    diseqs: Vec<(u32, Rat, i32)>,
-    ints: Map<u32, (u32, Rat, Rat)>,
-    ints_on: Map<u32, Vec<u32>>,
-    int_lits: Vec<(u32, Rat, Rat, i32)>,
-    trail: Vec<Trail>,
-    lims: Vec<usize>,
-    dirty: PySet,
-    pending_ground: Vec<u32>,
+    pub(crate) key: Vec<i64>, // term id, -1 for a slack
+    pub(crate) var_of: Map<u32, u32>,
+    pub(crate) slack_of: Map<Vec<(u32, Rat)>, u32>,
+    pub(crate) forms: Map<Vec<(u32, Rat)>, (u32, Rat)>,
+    pub(crate) lo: Vec<Option<Bound>>,
+    pub(crate) up: Vec<Option<Bound>>,
+    pub(crate) lo_r: Vec<i32>,
+    pub(crate) up_r: Vec<i32>,
+    pub(crate) vq: Vec<Rat>,
+    pub(crate) vd: Vec<Rat>,
+    pub(crate) rows: Vec<Option<Row>>,
+    pub(crate) nrows: usize,
+    pub(crate) cols: Vec<Vec<u32>>,
+    pub(crate) atoms: Map<u32, (u32, Kind, Rat)>,
+    pub(crate) ground: Map<u32, bool>,
+    pub(crate) atoms_on: Vec<Vec<u32>>,
+    pub(crate) assigned: Map<u32, bool>,
+    pub(crate) diseqs: Vec<(u32, Rat, i32)>,
+    pub(crate) ints: Map<u32, (u32, Rat, Rat)>,
+    pub(crate) ints_on: Map<u32, Vec<u32>>,
+    pub(crate) int_lits: Vec<(u32, Rat, Rat, i32)>,
+    pub(crate) trail: Vec<Trail>,
+    pub(crate) lims: Vec<usize>,
+    pub(crate) dirty: Dirty,
+    pub(crate) pending_ground: Vec<u32>,
 }
 
 impl Theory {
     pub fn new() -> Theory {
         Theory {
             exhausted: false,
+            eager: true,
+            branched_rational: false,
+            reg_order: vec![],
             stats: Stats::default(),
             key: vec![],
             var_of: Map::default(),
@@ -358,7 +299,7 @@ impl Theory {
             int_lits: vec![],
             trail: vec![],
             lims: vec![],
-            dirty: PySet::new(),
+            dirty: Dirty::default(),
             pending_ground: vec![],
         }
     }
@@ -386,6 +327,13 @@ impl Theory {
             self.var_of.insert(key as u32, v);
         }
         v
+    }
+
+    /// The variables of a payload whose number then raised: `_lin` had already run.
+    pub fn touch(&mut self, ids: &[u32]) {
+        for i in ids {
+            self.term_var(*i);
+        }
     }
 
     fn term_var(&mut self, key: u32) -> u32 {
@@ -469,6 +417,7 @@ impl Theory {
     }
 
     pub fn register_atom(&mut self, literal: u32, payload: &Payload) {
+        self.reg_order.push(literal);
         match payload {
             Payload::Integral { offset, terms } => self.register_integral(literal, offset, terms),
             Payload::Plain { neg, strict, eq, constant, terms } => {
@@ -575,7 +524,7 @@ impl Theory {
         if conflict.is_none() && !self.int_lits.is_empty() && self.ints_on.contains_key(&v) {
             conflict = self.int_bounds(v);
         }
-        if conflict.is_none() && kind != Ne {
+        if conflict.is_none() && self.eager && kind != Ne {
             conflict = self.simplex();
         }
         if conflict.is_some() {
@@ -776,6 +725,7 @@ impl Theory {
         }
         *budget -= 1;
         self.stats.branches += 1;
+        self.branched_rational = true; // no payload here has constants
         let mut expl = vec![-lit];
         for (kind, n) in cases.iter() {
             let kind = if m.is_neg() { flip_kind(*kind) } else { *kind };
@@ -1010,11 +960,12 @@ impl Theory {
             .collect()
     }
 
-    pub fn check(&mut self) -> CheckResult {
+    /// `budget` is `BRANCH_BUDGET`, read by the caller per check since Python's is a patchable module global.
+    pub fn check(&mut self, branch_budget: i64) -> CheckResult {
         self.stats.checks += 1;
         let mut conflict = self.simplex();
         if conflict.is_none() && !self.int_lits.is_empty() {
-            let mut budget = BRANCH_BUDGET;
+            let mut budget = branch_budget;
             conflict = self.branch(&mut budget);
         }
         if let Some(c) = conflict {
@@ -1101,19 +1052,17 @@ impl Theory {
         if self.dirty.is_empty() {
             return out;
         }
-        let dirty = std::mem::replace(&mut self.dirty, PySet::new());
+        let dirty = std::mem::take(&mut self.dirty);
         #[cfg(feature = "mutants")]
-        let order: Vec<u32> = {
-            let mut xs: Vec<u32> = dirty.iter().collect();
-            if mutant(6) {
-                xs.sort(); // ascending variable, instead of CPython's table
-            } else if mutant(7) {
-                xs = dirty.first_added.clone(); // the order they were first added, instead of CPython's table
-            }
-            xs
+        let order: Vec<u32> = if mutant(6) {
+            dirty.set.iter().rev().copied().collect() // descending, instead of ascending
+        } else if mutant(7) {
+            dirty.first_added.clone() // the order of first addition, instead of ascending
+        } else {
+            dirty.set.iter().copied().collect()
         };
         #[cfg(not(feature = "mutants"))]
-        let order = dirty.iter();
+        let order = dirty.set.iter().copied();
         for v in order {
             let vi = v as usize;
             if self.lo[vi].is_none() && self.up[vi].is_none() {

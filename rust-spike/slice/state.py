@@ -216,3 +216,57 @@ def digest(d):
         h.update(k.encode())
         h.update(d[k].encode())
     return h.hexdigest()
+
+
+def lra_text(t):
+    """The whole of an LRATheory's state, as canonical text. Insertion order is kept where Python's order can be read
+    later (row entries, atoms, assigned literals, slack forms); it's sorted where only membership counts (`_rows`'
+    outer order, `_cols`, `_forms`, `_dirty`). The `_ONE`/`_ZERO` identity shows as `I` on an integrality atom."""
+    from satassume.theories.lra.lra import _ONE, _ZERO
+
+    def fast(m, k):
+        return "I" if m is _ONE and k is _ZERO else repr((m, k))
+    d = t.__dict__
+    get = lambda n: d[n]
+    parts = dict(
+        key=[None if k is None else str(k) for k in get("_key")],
+        var_of=[(str(k), v) for k, v in get("_var_of").items()],
+        slack_of=list(get("_slack_of").items()),
+        forms=sorted((sorted((str(a), repr(b)) for a, b in k), repr(v)) for k, v in get("_forms").items()),
+        lo=get("_lo"), up=get("_up"), lo_r=get("_lo_r"), up_r=get("_up_r"), vq=get("_vq"), vd=get("_vd"),
+        rows=sorted((b, list(r.items())) for b, r in get("_rows").items()),
+        cols=[sorted(c) for c in get("_cols")],
+        atoms=list(get("_atoms").items()), ground=list(get("_ground").items()), atoms_on=get("_atoms_on"),
+        assigned=list(get("_assigned").items()), diseqs=get("_diseqs"),
+        ints=[(a, v, fast(m, k)) for a, (v, m, k) in get("_ints").items()],
+        ints_on=list(get("_ints_on").items()),
+        int_lits=[(v, fast(m, k), lit) for v, m, k, lit in get("_int_lits")],
+        int_memo=sorted(repr(x) for x in get("_int_memo").items()),
+        trail=get("_trail"), lims=get("_lims"), dirty=sorted(get("_dirty")), pending=get("_pending_ground"),
+        fields=get("_fields"), gave_up=get("gave_up"), eager=get("eager"),
+        exhausted=t.exhausted, branched=t.branched_rational, stats=t.stats)
+    return repr(parts)
+
+
+def lra_of(solver):
+    """(digest of the state of each LRATheory of a solver, group), or (None, None) without one. Group: "python" from
+    the start, "rust" throughout, or "moved:REASON:CALL:LEVEL"."""
+    out, group = [], None
+    for t in solver.theories():
+        if not any(k.__name__ == "LRATheory" for k in type(t).__mro__):
+            continue
+        core = t.__dict__.get("_core", 0)
+        if core == 0:
+            group = "python"
+            v = t
+        elif core is None:
+            r, c, lev = t.__dict__["_moved"]
+            group = f"moved:{r}:{c}:{lev}"
+            v = t
+        else:
+            group = "rust"
+            v = t._view()
+        out.append(lra_text(v))
+    if not out:
+        return None, None
+    return hashlib.blake2b("".join(out).encode(), digest_size=16).hexdigest(), group

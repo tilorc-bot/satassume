@@ -57,8 +57,15 @@ def install():
     saved = engine.Solver, ref.Solver
     engine.Solver = ref.Solver = make
     undo_euf = install_euf()
+    # SLICE_LRA=python keeps LRA on Python with the solver on Rust: step 4's arrangement, for comparison.
+    undo_lra = None
+    if os.environ.get("SLICE_LRA", "rust") == "rust":
+        import lra_backend
+        undo_lra = lra_backend.install()
 
     def undo():
         engine.Solver, ref.Solver = saved
         undo_euf()
+        if undo_lra is not None:
+            undo_lra()
     return undo

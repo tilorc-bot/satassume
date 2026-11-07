@@ -185,7 +185,7 @@ fn run_check(wl: &str, dir: &str, ops: &[Op], max_t: usize) {
                 (*t, "N".to_string())
             }
             Op::Check(t) => {
-                let r = ths[*t as usize].as_mut().unwrap().check();
+                let r = ths[*t as usize].as_mut().unwrap().check(lra::BRANCH_BUDGET);
                 (*t, check_text(&r))
             }
             Op::Reg(t, l, p) => {
@@ -240,7 +240,7 @@ fn run_timed(wl: &str, ops: &[Op], max_t: usize, cls: &[usize]) {
             Op::Push(t) => ths[*t as usize].as_mut().unwrap().push_level(),
             Op::Pop(t) => ths[*t as usize].as_mut().unwrap().pop_level(),
             Op::Check(t) => {
-                black_box(ths[*t as usize].as_mut().unwrap().check());
+                black_box(ths[*t as usize].as_mut().unwrap().check(lra::BRANCH_BUDGET));
             }
             Op::Reg(t, l, p) => ths[*t as usize].as_mut().unwrap().register_atom(*l, p),
             Op::New(t) => ths[*t as usize] = Some(Theory::new()),

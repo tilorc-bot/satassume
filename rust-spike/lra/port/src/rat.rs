@@ -86,7 +86,7 @@ impl Rat {
     }
 
     /// From lowest-terms BigInts (den > 0): back to `S` if it fits.
-    fn norm_big(n: BigInt, d: BigInt) -> Rat {
+    pub fn norm_big(n: BigInt, d: BigInt) -> Rat {
         #[cfg(feature = "prof")]
         prof::bigop();
         if let (Some(a), Some(b)) = (n.to_i64(), d.to_i64()) {
