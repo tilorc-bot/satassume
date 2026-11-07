@@ -8,6 +8,7 @@ Nothing here prints an input term: `str(y + r)` goes through `as_ordered_terms` 
 """
 import gc
 import os
+import subprocess
 import sys
 import weakref
 
@@ -367,3 +368,65 @@ def test_the_walk_dies_with_table_and_converted():
     del table, c
     gc.collect()
     assert w() is None, 'something kept the per-query walk, and through it every read'
+
+
+_DRIVE_ASK = r"""
+import sys
+from sympy import Q, Symbol
+from sympy.core.expr import Expr
+from sympy.polys.rootoftools import CRootOf
+import term_shadow as TS
+from satassume import engine as E, sympy_api
+
+TS.install()
+TS.install_algebra()
+TS.DRIVE[0] = True
+sympy_api.set_default_engine(E.Engine())
+x, y = Symbol('x'), Symbol('y')
+r = CRootOf(x**5 - x + 1, 3)
+calls = [0]
+real = Expr.__complex__
+def counted(self):
+    calls[0] += 1
+    return real(self)
+Expr.__complex__ = counted
+PLANT_BODY
+answer = sympy_api.ask(Q.positive(y + r))
+print('RESULT', answer, calls[0], len(TS.BAD), sum(TS.KEPT.values()), dict(TS.COUNTS))
+"""
+
+
+def _drive(plant=''):
+    """The whole ask, the shadow driving, in a subprocess: `term_shadow.install` can't be undone. (answer, complex calls)"""
+    src = _DRIVE_ASK.replace('PLANT_BODY', plant)
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([here, *sys.path]))
+    p = subprocess.run([sys.executable, '-c', src], env=env, capture_output=True, text=True, timeout=600)
+    assert p.returncode == 0, p.stderr[-2000:]
+    line = next(l for l in p.stdout.splitlines() if l.startswith('RESULT'))
+    return line.split(' ', 2)[1], int(line.split(' ', 3)[2]), line
+
+
+def test_whole_ask_under_drive_makes_zero_complex_calls():
+    """`Q.positive(y + r)` through `sympy_api`, with Rust's algebra following the run: the count, not a clock."""
+    answer, calls, line = _drive()
+    assert calls == 0, line
+    assert answer == 'None', line
+    assert line.split(' ', 5)[3:5] == ['0', '0'], line   # no mismatch, and the query wasn't kept on Python: the shadow ran it
+
+
+def test_whole_ask_under_drive_fails_with_the_eager_read_restored():
+    """The plant: conversion's walk reads the key as eagerly as it used to. The count must see it."""
+    plant = """
+import convert as C
+real_convert = C.convert
+def eager(prop, assumptions, eng, *a, **k):
+    from sympy import default_sort_key
+    from sympy.core.basic import preorder_traversal
+    for t in preorder_traversal(prop):
+        if hasattr(t, 'is_Add') and t.is_Add:
+            default_sort_key(t)
+    return real_convert(prop, assumptions, eng, *a, **k)
+C.convert = eager
+"""
+    _, calls, line = _drive(plant)
+    assert calls > 0, line
