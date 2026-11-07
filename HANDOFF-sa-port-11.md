@@ -1,6 +1,6 @@
 # Handoff: sa-port-11 to the next EUF port session (issue 323)
 
-**Component 2 isn't done, and nothing is on `rust-slice`.** Rust EUF has now run real queries and matches Python, but on a build one commit older than the current one. Read the brief first: `~/.local/state/agent/briefs/sa-port-11-20261107T074613Z.txt`. Its terms still apply. Work only in `~/dev/sa-port-7`, branch `port/2`. Job output goes under `~/sa-rust-ids-work/sa-port-11/` (or your own session's directory for new runs). Handed off at the 150k context note, not because of a blocker.
+**Component 2 isn't done, and nothing is on `rust-slice`.** Rust EUF has now run real queries and matches Python. `run_live` was on a build one commit older than the current one; the suite and fresh engine are on the current one. Read the brief first: `~/.local/state/agent/briefs/sa-port-11-20261107T074613Z.txt`. Its terms still apply. Work only in `~/dev/sa-port-7`, branch `port/2`. Job output goes under `~/sa-rust-ids-work/sa-port-11/` (or your own session's directory for new runs). Handed off at the 150k context note, not because of a blocker.
 
 ## Results so far (orion; `tree.txt` confirms this clone)
 
@@ -18,18 +18,39 @@
 
 All 11 are in the base's numbers, against `port-census/pr328-check/suite-rust/classes.json`: **5 in the 77** (`_val`: `test_solver_congruence_unsat_and_sat`, `test_solver_transitivity_unsat`, `test_solver_values`, `test_perf_through_solver_chain`, `test_perf_through_solver_disjunctive_chain`) and **6 in the 46** (4 `Already mutably borrowed`, plus the 2 ExceptionGroups). The ExceptionGroups' sub-exceptions were read, and match on base, Rust EUF and Python EUF: `test_dpll_t_matches_enumeration` has `_trail_lim`, `_val`, borrow; `test_every_full_assignment_through_solver` has `_val`, borrow. So they aren't EUF's. **Equally, they never read an EUF answer on the Rust solver, so they aren't evidence for it.** That's why `SLICE_EUF=rust` exists (below).
 
-## Running when this was written
+## Finished after the first report, build a3181a8 (sha256 starts 08912bb0cfb7)
 
-Started by this session; **they may die with it.** Check for the end marker, and rerun if it's missing. Both use a3181a8's `.so` (sha256 starts 08912bb0cfb7).
+**Suite** (`suite-rust/`, `suite-report.md`; `SLICE_SUITE_SHUFFLE=1`, `-n 4`, load 37-51): **5,959 / 77 / 46, plus 2 other failures**, against the base's 5,961 / 77 / 46. By id against `port-census/pr328-check/suite-rust`: 6,125 ids on both, none gone or added, the 77 and the 46 are the same ids, and exactly 2 outcomes moved, passed to failed, both wall-clock asserts:
+- `tests/test_wide_derived.py::test_wide_derived_or_against_or_is_fast[nor-or]`: 2.19 s against `< 2.0`
+- `tests/test_wide_derived.py::test_wide_pattern_builds_are_fast[extended_positive-Add]`: 4.85 s against `< 4.0`
 
-- **Suite, Rust solver and Rust EUF:** `suite-rust/`, `SLICE_SUITE_SHUFFLE=1`, `-n 4`, ends with `exit.txt`. Took 17 min at load 14 last time; load is now 37.
-- **Fresh engine:** `fresh/`, from `scratchpad/fresh.sh` (dev and fuzz, py and rust, hash seeds 0 and 1, then a counted Rust run), ends with `fresh/done.txt`. The script is only in my scratchpad, `/tmp/claude-1000/-home-tilo-dev-satassume/5d19cfbc-ed0e-423f-b72f-58e1c3920090/scratchpad/fresh.sh`, and it's a short loop over `fresh.py`, so rewrite it if that's gone. Compare with `cmp`: py-0 against rust-0, and each backend's seed 0 against seed 1. **Partial only:** the first 521 dev queries were byte-identical, py and rust, when I looked. `{dev,fuzz}-counts.json` holds the crossings.
+Alone, the two passed 3 of 3 with Rust EUF, 3 of 3 with Python EUF on the Rust solver, and 2 of 2 on pure Python, at load about 50. So they point at load, but **that's not shown**: passing alone isn't a speed comparison, and they stay in the numbers as failures until a full suite run passes them. A quieter rerun, or the timing lease, settles it. `test_performance_smoke_300_vars` passed. The Python rows are `pr328-check/suite-python`, reused: `git diff 2d00bea -- satassume tests` is empty.
+
+**Fresh engine, memos cleared** (`fresh/`, `fresh.py`): identical line for line, answers and digests, for dev 1,985 and fuzz 3,000: py against rust at seed 0 and at seed 1, py and rust each across seeds 0 and 1, and counted against uncounted. Only 2 seeds, so a sample of orders.
+
+**The digests do hold EUF:** a check on the first 400 dev queries found all 18 fields in every session with an EUF theory, non-empty. **But EUF's reach is modest:** 18 of 489 sessions in that sample.
+
+**Crossings** (`fresh/{dev,fuzz}-counts.json`), Rust run, fresh engine. `rep` and `members` count attribute reads, not item reads through a view:
+
+| | dev, 1,985 queries | fuzz, 3,000 queries |
+|---|---:|---:|
+| Theories made | 222 | 3,192 |
+| `term` / `value` | 665 / 384 | 16,017 / 10,685 |
+| `register_atom` | 588 | 12,973 |
+| `assert_lit` | 1,250 | 33,116 |
+| `check` / `propagate` | 446 / 4,444 | 8,081 / 147,772 |
+| `push_level` / `pop_level` | 3,666 / 3,242 | 119,828 / 111,394 |
+| `on_merge` | 35 | 1,728 |
+| `explain` | 13 | 5,570 |
+| `rep` / `members` reads | 1,397 / 1,522 | 89,439 / 89,232 |
+
+dev's 35 merges and 13 explains are thin, so fuzz carries most of the real-engine evidence.
 
 `fresh.py` replaces `port-census/seed_state.py` for this: that one digests Python's solver only, has no EUF fields, and imports `state` from `~/dev/sa-port`.
 
 ## What's left, in order
 
-1. **Read the suite.** `suite_report.py suite-rust PYTHON`, with PYTHON `port-census/pr328-check/suite-python`. `git diff 2d00bea -- satassume tests` is empty, so that Python run has the same source; say you reused it, or rerun it if the machine allows. Compare by id against 5,961 / 77 / 46 in `port-census/pr328-check/suite-rust`. `tests/` builds EUF directly, so tests can move between numbers: explain each. Note any test reading EUF privates (`_keys`, `_trail`, ...); the wider suite wasn't checked for them. `test_performance_smoke_300_vars`: see the brief.
+1. **Settle the 2 wall-clock failures** above, by rerunning the suite on the final build. Any move by id gets explained. Whether any test reads EUF privates: none showed up as a failure, and the 77 and 46 are unchanged.
 2. **Mixed mode, not run yet:** `SLICE_EUF=rust bash run_suite.sh DIR python`: Rust EUF on Python's solver. It's the only run where the 11, and whichever of the 77 and 46 reach EUF, read a Rust EUF answer. Compare with the Python rows by id. Run at least `tests/test_euf*.py tests/test_transfer*`, preferably everything.
 3. **Mutants.** 27 added at the end of `mutate_slice.py`'s `M`, numbers 35 to 61, each site checked to match exactly once. **None has been built or scored.** The scratch-copy build does pick up `euf.rs` and `euf_py.rs`, since it copies the crate and writes `src/<file>`. `mutate_live.py WORK ~/sa-rust-ids-work/sa-port-11/live --only 2,5,6,7,9,11,17,18,26,27,29,31,32,33,34,35,...,61 --checks ...`, then `euf_fuzz.py --so WORK/mK` on the same builds for the API column. Fuzz state took about 20 minutes per build at this load, so score dev-ans, dev-state and fuzz-ans first, then fuzz-state only on what's left, using `--resume`. Then `mutate_boundary.py` with `--suite tests/test_euf.py tests/test_euf_adapter.py tests/test_euf_fuzz.py tests/test_transfer*.py`: that's the boundary suite column nobody has run. State how many of the 10 no-real-engine-catch mutants (11, 26, 33, 34, 27, 29, 31, 17, 18, 32) now get a catch. Those are solver and boundary mutants, so they may well still not be caught; say so if that's the result. Anything uncaught in 35-61 is a finding: report it, don't drop it. `run5_harness.sh`, `run-audit.sh` and `run6_counts.sh` still have the old path; fix them before use.
 4. **History:** `run_history.sh`, then `historycmp.py`. Also rerun `run_live.sh` on the final build, with the same check on tree.txt.
